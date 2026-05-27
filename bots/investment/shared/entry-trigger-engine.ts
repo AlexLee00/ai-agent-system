@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { recordGuardEvent } from './guard-event-recorder.ts';
 import {
   ensureLunaDiscoveryEntryTables,
   expireEntryTriggers,
@@ -1258,35 +1259,24 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       reason: 'tradingview_guard_error',
       error: error?.message || String(error),
     }));
+    // notify mode: tradingview 게이트 → 알림 기록 후 계속 진행 (HARD block X)
     if (tradingViewGuard?.blocked) {
-      blocked++;
+      recordGuardEvent({
+        guardName: 'tradingview_chart_entry_guard',
+        symbol: activeCandidate.symbol || null,
+        exchange,
+        reason: tradingViewGuard.reason || 'tradingview_chart_blocked',
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerType, triggerId: persisted.id },
+        decisionAfter: { action: ACTIONS.BUY, notifyMode: true },
+        guardMetadata: { tradingViewReason: tradingViewGuard.reason, tradingViewGuard },
+      });
       await updateEntryTriggerState(persisted.id, {
-        triggerState: 'waiting',
         triggerMetaPatch: {
-          reason: 'tradingview_chart_guard_blocked',
           tradingViewReason: tradingViewGuard.reason || null,
-          tradingViewGuard,
+          tradingViewGuardNotify: true,
         },
       }).catch(() => {});
-      output.push({
-        ...activeCandidate,
-        action: ACTIONS.HOLD,
-        amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: tradingview_chart_guard(${tradingViewGuard.reason || 'blocked'}) | ${candidate.reasoning || ''}`.slice(0, 220),
-        block_meta: {
-          ...(activeCandidate.block_meta || {}),
-          event_type: 'entry_trigger_blocked',
-          entryTrigger: {
-            triggerId: persisted.id,
-            triggerType,
-            state: 'waiting',
-            reason: 'tradingview_chart_guard_blocked',
-            tradingViewReason: tradingViewGuard.reason || null,
-          },
-          tradingViewGuard,
-        },
-      });
-      continue;
     }
 
     const technicalChangeGate = evaluateTechnicalEntryChangeGate({
@@ -1295,44 +1285,38 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       context,
       fireReadiness,
     });
+    // notify mode: technical change 게이트 → 알림 기록 후 계속 진행
     if (!technicalChangeGate.ok) {
-      blocked++;
+      recordGuardEvent({
+        guardName: 'technical_change_entry_gate',
+        symbol: activeCandidate.symbol || null,
+        exchange,
+        reason: technicalChangeGate.reason || 'technical_change_gate_blocked',
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerType, triggerId: persisted.id },
+        decisionAfter: { action: ACTIONS.BUY, notifyMode: true },
+        guardMetadata: { technicalChangeReason: technicalChangeGate.reason, blockers: technicalChangeGate.blockers },
+      });
       await updateEntryTriggerState(persisted.id, {
-        triggerState: 'waiting',
         triggerMetaPatch: {
-          reason: 'technical_change_gate_blocked',
           technicalChangeReason: technicalChangeGate.reason,
-          technicalChangeGate,
+          technicalChangeGateNotify: true,
         },
       }).catch(() => {});
-      output.push({
-        ...activeCandidate,
-        action: ACTIONS.HOLD,
-        amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: ${technicalChangeGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
-        block_meta: {
-          ...(activeCandidate.block_meta || {}),
-          event_type: 'entry_trigger_blocked',
-          entryTrigger: {
-            triggerId: persisted.id,
-            triggerType,
-            state: 'waiting',
-            reason: 'technical_change_gate_blocked',
-            technicalChangeReason: technicalChangeGate.reason,
-          },
-          technicalChangeGate,
-        },
-      });
-      continue;
     }
 
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: activeCandidate, trigger: persisted, context, flags });
-    if (!riskGate.ok) {
+    // HARD limit (자금 한도 / 잔고 상태): 절대 보존
+    const CAPITAL_HARD_BLOCKS = new Set([
+      'no_remaining_position_slots', 'buyable_amount_below_required',
+      'balance_status_not_ok', 'capital_mode_not_active',
+    ]);
+    if (!riskGate.ok && CAPITAL_HARD_BLOCKS.has(riskGate.reason)) {
       blocked++;
       await updateEntryTriggerState(persisted.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
-          reason: 'live_risk_gate_blocked',
+          reason: 'live_risk_gate_capital_hard_block',
           riskGateReason: riskGate.reason,
           riskGateDetails: riskGate.details || {},
         },
@@ -1341,7 +1325,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: ${riskGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
+        reasoning: `entry_trigger_blocked(capital): ${riskGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
           ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
@@ -1349,13 +1333,25 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
             triggerId: persisted.id,
             triggerType,
             state: 'waiting',
-            reason: 'live_risk_gate_blocked',
+            reason: 'live_risk_gate_capital_hard_block',
             riskGateReason: riskGate.reason,
-            riskGateDetails: riskGate.details || {},
           },
         },
       });
       continue;
+    }
+    // notify mode: 자금 외 live risk gate → 알림 기록 후 계속 진행
+    if (!riskGate.ok) {
+      recordGuardEvent({
+        guardName: 'live_risk_gate_notify',
+        symbol: activeCandidate.symbol || null,
+        exchange,
+        reason: riskGate.reason || 'live_risk_gate_blocked',
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerType, triggerId: persisted.id },
+        decisionAfter: { action: ACTIONS.BUY, notifyMode: true },
+        guardMetadata: { riskGateReason: riskGate.reason, riskGateDetails: riskGate.details || {} },
+      });
     }
 
     const recentFired = await getRecentFiredEntryTrigger({
@@ -1818,27 +1814,27 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       reason: 'tradingview_guard_error',
       error: error?.message || String(error),
     }));
+    // notify mode: tradingview 게이트 → 알림 기록 후 계속 진행
     if (tradingViewGuard?.blocked) {
-      readyBlocked++;
+      recordGuardEvent({
+        guardName: 'tradingview_chart_active_guard',
+        symbol: trigger.symbol || null,
+        exchange,
+        reason: tradingViewGuard.reason || 'tradingview_chart_blocked',
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerId: trigger.id, triggerType: trigger.trigger_type },
+        decisionAfter: { action: ACTIONS.BUY, notifyMode: true },
+        guardMetadata: { tradingViewReason: tradingViewGuard.reason, tradingViewGuard },
+      });
       await updateTriggerState(trigger.id, {
-        triggerState: 'waiting',
         triggerMetaPatch: {
           lastReadyAt: nowIso(),
-          reason: 'tradingview_chart_guard_blocked',
           tradingViewReason: tradingViewGuard.reason || null,
-          tradingViewGuard,
+          tradingViewGuardNotify: true,
         },
       }).catch(() => null);
-      results.push({
-        triggerId: trigger.id,
-        symbol: trigger.symbol,
-        state: 'waiting',
-        fired: false,
-        reason: 'tradingview_chart_guard_blocked',
-        tradingViewReason: tradingViewGuard.reason || null,
-      });
-      continue;
     }
+
     const technicalChangeGate = evaluateTechnicalEntryChangeGate({
       candidate: effectiveCandidate,
       event,
@@ -1846,36 +1842,40 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       context,
       fireReadiness,
     });
+    // notify mode: technical change 게이트 → 알림 기록 후 계속 진행
     if (!technicalChangeGate.ok) {
-      readyBlocked++;
+      recordGuardEvent({
+        guardName: 'technical_change_active_gate',
+        symbol: trigger.symbol || null,
+        exchange,
+        reason: technicalChangeGate.reason || 'technical_change_gate_blocked',
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerId: trigger.id, triggerType: trigger.trigger_type },
+        decisionAfter: { action: ACTIONS.BUY, notifyMode: true },
+        guardMetadata: { technicalChangeReason: technicalChangeGate.reason, blockers: technicalChangeGate.blockers },
+      });
       await updateTriggerState(trigger.id, {
-        triggerState: 'waiting',
         triggerMetaPatch: {
           lastReadyAt: nowIso(),
-          reason: 'technical_change_gate_blocked',
           technicalChangeReason: technicalChangeGate.reason,
-          technicalChangeGate,
+          technicalChangeGateNotify: true,
         },
       }).catch(() => null);
-      results.push({
-        triggerId: trigger.id,
-        symbol: trigger.symbol,
-        state: 'waiting',
-        fired: false,
-        reason: 'technical_change_gate_blocked',
-        technicalChangeReason: technicalChangeGate.reason,
-        technicalChangeGate,
-      });
-      continue;
     }
+
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: effectiveCandidate, trigger, context, flags });
-    if (!riskGate.ok) {
+    // HARD limit (자금 한도): 절대 보존
+    const CAPITAL_HARD_BLOCKS_ACTIVE = new Set([
+      'no_remaining_position_slots', 'buyable_amount_below_required',
+      'balance_status_not_ok', 'capital_mode_not_active',
+    ]);
+    if (!riskGate.ok && CAPITAL_HARD_BLOCKS_ACTIVE.has(riskGate.reason)) {
       readyBlocked++;
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
       await updateTriggerState(trigger.id, {
         triggerState: terminalBlock ? 'expired' : 'waiting',
         triggerMetaPatch: {
-          reason: terminalBlock ? 'live_risk_gate_terminal_blocked' : 'live_risk_gate_blocked',
+          reason: 'live_risk_gate_capital_hard_block',
           riskGateReason: riskGate.reason,
           riskGateDetails: riskGate.details || {},
           terminalBlock,
@@ -1887,11 +1887,24 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         symbol: trigger.symbol,
         state: terminalBlock ? 'expired' : 'waiting',
         fired: false,
-        reason: terminalBlock ? 'live_risk_gate_terminal_blocked' : 'live_risk_gate_blocked',
+        reason: 'live_risk_gate_capital_hard_block',
         riskGateReason: riskGate.reason,
         terminalBlock,
       });
       continue;
+    }
+    // notify mode: 자금 외 risk gate → 알림 기록 후 계속 진행
+    if (!riskGate.ok) {
+      recordGuardEvent({
+        guardName: 'live_risk_gate_active_notify',
+        symbol: trigger.symbol || null,
+        exchange,
+        reason: riskGate.reason || 'live_risk_gate_blocked',
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerId: trigger.id },
+        decisionAfter: { action: ACTIONS.BUY, notifyMode: true },
+        guardMetadata: { riskGateReason: riskGate.reason, riskGateDetails: riskGate.details || {} },
+      });
     }
     const recentFired = await getRecentFiredEntryTrigger({
       symbol: trigger.symbol,

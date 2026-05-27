@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { recordGuardEvents } from './guard-event-recorder.ts';
+
 const DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled', 'no']);
 const ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
 const HARD_EXIT_REASONS = new Set([
@@ -312,7 +314,8 @@ export function evaluateTechnicalEntryChangeGate({
   const enabled = boolEnv('LUNA_TECHNICAL_CHANGE_ENTRY_GATE_ENABLED', true, env);
   if (!enabled) return { ok: true, enabled: false, reason: 'technical_change_entry_gate_disabled' };
 
-  const hardBlock = boolEnv('LUNA_TECHNICAL_CHANGE_ENTRY_HARD_BLOCK_ENABLED', true, env);
+  // 마스터 비전: "가드 = 막지 X, 알림 + 학습!" — 기본값 false (notify mode)
+  const hardBlock = boolEnv('LUNA_TECHNICAL_CHANGE_ENTRY_HARD_BLOCK_ENABLED', false, env);
   const rsiOverbought = numEnv('LUNA_TECHNICAL_ENTRY_RSI_OVERBOUGHT', 70, env);
   const rsiOversold = numEnv('LUNA_TECHNICAL_ENTRY_RSI_OVERSOLD', 35, env);
   const bbUpper = numEnv('LUNA_TECHNICAL_ENTRY_BB_UPPER_POS', 0.85, env);
@@ -370,13 +373,36 @@ export function evaluateTechnicalEntryChangeGate({
   }
 
   const blocked = blockers.length > 0 && hardBlock;
+
+  // notify mode: 블로커 있어도 항상 guard_events 기록 (기회비용 측정)
+  if (blockers.length > 0) {
+    const symbol = candidate?.symbol || null;
+    const exchangeVal = context?.exchange || null;
+    recordGuardEvents(blockers.map((b) => ({
+      guardName: 'technical_change_entry_gate',
+      symbol,
+      exchange: exchangeVal,
+      reason: b,
+      severity: blocked ? 'warning' : 'info',
+      decisionBefore: {
+        triggerType,
+        rsi: round(snapshot.rsi, 2),
+        macdHist: round(snapshot.macdHist, 6),
+        bbPos: round(snapshot.bbPos, 4),
+      },
+      decisionAfter: { notifyMode: !blocked, hardBlock },
+      guardMetadata: { blockers, warnings, hardBlock },
+    })));
+  }
+
   return {
     ok: !blocked,
     enabled: true,
-    reason: blocked ? blockers[0] : blockers.length > 0 ? 'technical_change_gate_shadow_block' : 'technical_change_gate_passed',
+    reason: blocked ? blockers[0] : blockers.length > 0 ? 'technical_change_gate_notify' : 'technical_change_gate_passed',
     blockers,
     warnings,
     hardBlock,
+    notifyMode: blockers.length > 0 && !blocked,
     wouldProbe: blockers.includes('technical_overbought_chase_block') || blockers.includes('technical_bearish_pressure_block'),
     evidence: {
       ...snapshot,

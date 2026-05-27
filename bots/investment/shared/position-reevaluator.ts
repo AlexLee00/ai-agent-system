@@ -25,6 +25,7 @@ import {
   buildDisabledDynamicTrailSnapshot,
   buildPositionMonitorAgentPlan,
 } from './position-monitor-agent-plan.ts';
+import { recordGuardEvent } from './guard-event-recorder.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -1658,6 +1659,30 @@ export async function reevaluateOpenPositions({
       heldHours,
       analysisSummary,
     });
+
+    // 기회비용 측정: 가드가 EXIT/ADJUST를 HOLD로 변경한 경우 guard_events 기록
+    const originalDecisionBeforeGuards = decision?.decision?.recommendation || 'HOLD';
+    if (
+      (originalDecisionBeforeGuards === 'EXIT' || originalDecisionBeforeGuards === 'ADJUST')
+      && effectiveDecision.recommendation === 'HOLD'
+    ) {
+      recordGuardEvent({
+        guardName: 'reevaluation_hold_guard',
+        symbol: position.symbol,
+        exchange: position.exchange,
+        reason: effectiveDecision.reasonCode || 'hold_guard_overrode_exit',
+        severity: 'info',
+        decisionBefore: { recommendation: originalDecisionBeforeGuards, reasonCode: decision?.decision?.reasonCode },
+        decisionAfter: { recommendation: 'HOLD', reasonCode: effectiveDecision.reasonCode },
+        guardMetadata: {
+          pnlPct: safeNumber(pnlPct),
+          heldHours: safeNumber(heldHours),
+          tradeMode: effectiveTradeMode,
+          dynamicTrailBreached: dynamicTrail?.breached === true,
+          validityAction: validityDecision?.validityReason || null,
+        },
+      });
+    }
 
     const runtimeState = buildPositionRuntimeState({
       position: {
