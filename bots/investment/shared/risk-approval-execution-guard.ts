@@ -6,6 +6,7 @@ import {
   executionFreshnessRiskModel,
   runRiskApprovalChain,
 } from './risk-approval-chain.ts';
+import { recordGuardEvent } from './guard-event-recorder.ts';
 
 function normalizeVerdict(value = null) {
   return String(value || '').toLowerCase();
@@ -33,6 +34,16 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
 
   const verdict = signal.nemesis_verdict || signal.nemesisVerdict || null;
   if (!isNemesisApproved(signal)) {
+    // HARD block: 네메시스 미승인 → 실투자 안전 보호 유지 + 이벤트 기록
+    recordGuardEvent({
+      guardName: 'nemesis_bypass_guard',
+      symbol: signal.symbol || null,
+      exchange: market || null,
+      reason: `nemesis_verdict=${verdict || 'null'}`,
+      severity: 'danger',
+      decisionBefore: { action, nemesis_verdict: verdict },
+      guardMetadata: { codePrefix, executionBlockedBy },
+    });
     return {
       approved: false,
       code: `${codePrefix}_nemesis_bypass_guard`,
@@ -62,6 +73,25 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
     const staleStep = (result.steps || []).find((step) => step.model === 'execution_freshness') || null;
     const ageMatch = String(staleStep?.reason || result.rejectReason || '').match(/(\d+)초/u);
     const ageSeconds = ageMatch ? Number(ageMatch[1]) : null;
+    // Notify: 승인 만료는 경고 기록 후 계속 진행 (HARD limit 아님)
+    // 실제 시장 조건 변화 학습 데이터 수집 목적
+    recordGuardEvent({
+      guardName: 'execution_freshness_guard',
+      symbol: signal.symbol || null,
+      exchange: market || null,
+      reason: result.rejectReason || staleStep?.reason || 'stale_approval',
+      severity: 'warning',
+      decisionBefore: {
+        action,
+        approved_at: signal.approved_at || signal.approvedAt || null,
+        age_seconds: ageSeconds,
+      },
+      guardMetadata: {
+        decision: result.decision,
+        steps: result.steps || [],
+        codePrefix,
+      },
+    });
     return {
       approved: false,
       code: `${codePrefix}_stale_approval`,

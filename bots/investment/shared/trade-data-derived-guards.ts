@@ -4,6 +4,10 @@
  *
  * These rules intentionally stay deterministic and env-disableable so live
  * trading behavior can be audited without depending on the current DB state.
+ *
+ * Block→Notify 변환 (2026-05-27):
+ *   - CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS (스테이블코인 쌍) → HARD block 유지
+ *   - 그 외 모든 blockers → notify 모드 (거래 허용 + guard_events DB 기록)
  */
 
 import {
@@ -11,6 +15,7 @@ import {
   shouldUseDevelopmentDerivedHardGates,
   shouldUseRowForPolicyLearning,
 } from './luna-operating-epoch.ts';
+import { recordGuardEvents } from './guard-event-recorder.ts';
 
 const DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled']);
 const ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
@@ -623,6 +628,18 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   };
 }
 
+/**
+ * 구조적 HARD block인지 판단.
+ * 스테이블코인 쌍은 방향성 엣지가 없으므로 항상 HARD block 유지.
+ */
+function isStructuralHardBlock(guard = {}) {
+  const blockers = Array.isArray(guard.blockers) ? guard.blockers : [];
+  // structural block은 checkTradeDataWeakSymbol → CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS 경유
+  const weakSymbol = guard?.meta?.weakSymbol;
+  if (weakSymbol?.source === 'pre_entry/crypto_structural_symbol_block') return true;
+  return blockers.includes('crypto_structural_symbol_block');
+}
+
 export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = null, env = process.env) {
   const guard = evaluateTradeDataEntryGuard({
     ...decision,
@@ -636,6 +653,19 @@ export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = nul
     const adjustedAmount = shouldResize
       ? Number((Number(decision.amount_usdt || 0) * sizingMultiplier).toFixed(4))
       : decision.amount_usdt;
+    // 경고만 있는 경우도 guard_events에 기록 (info 레벨)
+    if (guard.warnings.length > 0) {
+      recordGuardEvents(guard.warnings.map((w) => ({
+        guardName: 'trade_data_entry_guard',
+        symbol: decision.symbol || null,
+        exchange: exchange || decision.exchange || null,
+        market: decision.market || null,
+        reason: w,
+        severity: 'info',
+        decisionBefore: { action: decision.action, amount_usdt: decision.amount_usdt },
+        guardMetadata: { warnings: guard.warnings, sizingMultiplier: guard?.meta?.sizingMultiplier },
+      })));
+    }
     return {
       decision: {
         ...decision,
@@ -656,16 +686,66 @@ export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = nul
     };
   }
 
+  // HARD block (스테이블코인 구조 차단) → 기존 block 동작 유지
+  if (isStructuralHardBlock(guard)) {
+    recordGuardEvents([{
+      guardName: 'trade_data_structural_hard_block',
+      symbol: decision.symbol || null,
+      exchange: exchange || decision.exchange || null,
+      market: decision.market || null,
+      reason: guard.blockers[0] || 'structural_hard_block',
+      severity: 'danger',
+      decisionBefore: { action: decision.action, amount_usdt: decision.amount_usdt },
+      guardMetadata: { blockers: guard.blockers, weakSymbol: guard?.meta?.weakSymbol },
+    }]);
+    return {
+      decision: {
+        ...decision,
+        action: 'HOLD',
+        amount_usdt: 0,
+        confidence: Math.max(0, Number(decision.confidence || 0) - 0.15),
+        reasoning: `trade_data_structural_hard_block: ${guard.blockers.join(',')} | ${decision.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(decision.block_meta || {}),
+          trade_data_guard: guard,
+        },
+      },
+      guard,
+      changed: true,
+    };
+  }
+
+  // Notify 모드: 구조 외 블로커 → 거래 허용 + 경고 기록 + guard_events 저장
+  // 마스터 비전: "가드 = 막지 X, 알림 + 학습!"
+  const sizingMultiplier = Number(guard?.meta?.sizingMultiplier ?? 0.65);
+  const notifySizingMultiplier = Math.min(0.65, Math.max(0.25, sizingMultiplier));
+  const adjustedAmount = Number(decision.amount_usdt || 0) > 0
+    ? Number((Number(decision.amount_usdt || 0) * notifySizingMultiplier).toFixed(4))
+    : decision.amount_usdt;
+
+  recordGuardEvents(guard.blockers.map((blocker) => ({
+    guardName: 'trade_data_entry_guard',
+    symbol: decision.symbol || null,
+    exchange: exchange || decision.exchange || null,
+    market: decision.market || null,
+    reason: blocker,
+    severity: 'warning',
+    decisionBefore: { action: decision.action, amount_usdt: decision.amount_usdt },
+    decisionAfter: { action: decision.action, amount_usdt: adjustedAmount, notifyMode: true },
+    guardMetadata: { blockers: guard.blockers, warnings: guard.warnings, notifySizingMultiplier },
+  })));
+
   return {
     decision: {
       ...decision,
-      action: 'HOLD',
-      amount_usdt: 0,
-      confidence: Math.max(0, Number(decision.confidence || 0) - 0.15),
-      reasoning: `trade_data_entry_guard_blocked: ${guard.blockers.join(',')} | ${decision.reasoning || ''}`.slice(0, 220),
+      amount_usdt: adjustedAmount,
+      confidence: Math.max(0, Number(decision.confidence || 0) - 0.08),
+      reasoning: `trade_data_guard_notify(${guard.blockers.join(',')}) | ${decision.reasoning || ''}`.slice(0, 220),
       block_meta: {
         ...(decision.block_meta || {}),
         trade_data_guard: guard,
+        guardNotifyMode: true,
+        guardWarnings: guard.blockers,
       },
     },
     guard,
