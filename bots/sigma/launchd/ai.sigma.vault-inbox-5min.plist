@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.sigma.vault-inbox-5min</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/npm</string>
+    <string>--prefix</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+    <string>run</string>
+    <string>-s</string>
+    <string>vault:inbox</string>
+    <string>--</string>
+    <string>--json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>SIGMA_VAULT_PROCESSOR_MODE</key>
+    <string>shadow</string>
+    <key>SIGMA_VAULT_LLM_CLASSIFICATION</key>
+    <string>false</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>TimeOut</key>
+  <integer>240</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.sigma.vault-inbox-5min.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.sigma.vault-inbox-5min.err.log</string>
+</dict>
+</plist>
