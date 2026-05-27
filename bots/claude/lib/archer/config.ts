@@ -24,7 +24,6 @@ module.exports = {
     'anthropic-sdk-py':  'https://api.github.com/repos/anthropics/anthropic-sdk-python/releases/latest',
     'mcp-sdk':           'https://api.github.com/repos/modelcontextprotocol/typescript-sdk/releases/latest',
     'groq-node':         'https://api.github.com/repos/groq/groq-typescript/releases/latest',
-    'gemini-js':         'https://api.github.com/repos/googleapis/js-genai/releases/latest',
     // 런타임·프레임워크
     'claude-code':       'https://api.github.com/repos/anthropics/claude-code/releases/latest',
     'node':              'https://api.github.com/repos/nodejs/node/releases/latest',

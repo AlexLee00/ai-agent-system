@@ -26,45 +26,45 @@ const DEFAULT_RUNTIME_CONFIG = {
     payloadWarningLimit: 50,
   },
   jayModels: {
-    gatewayPrimary: 'gemini-cli-oauth/gemini-2.5-flash',
+    gatewayPrimary: 'openai-oauth/gpt-5.4-mini',
     intentPrimary: 'gpt-5.4',
-    intentFallback: 'gemini-cli-oauth/gemini-2.5-flash',
+    intentFallback: 'openai-oauth/gpt-5.4-mini',
     chatFallbackChain: [
       { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
-      { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 300, temperature: 0.3 },
     ],
   },
   llmSelectorOverrides: {
     'orchestrator.jay.intent': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4' },
-      fallback: { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash' },
+      fallback: { provider: 'openai-oauth', model: 'gpt-5.4-mini' },
     },
     'orchestrator.jay.chat_fallback': {
       chain: [
         { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 300, temperature: 0.3 },
       ],
     },
     'orchestrator.steward.digest': {
       chain: [
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash-lite', maxTokens: 220, temperature: 0.1, timeoutMs: 20_000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 220, temperature: 0.1, timeoutMs: 20_000 },
       ],
     },
     'orchestrator.steward.work': {
       chain: [
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 320, temperature: 0.2, timeoutMs: 30_000 },
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash-lite', maxTokens: 320, temperature: 0.2, timeoutMs: 25_000 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 320, temperature: 0.2, timeoutMs: 20_000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 320, temperature: 0.2, timeoutMs: 25_000 },
       ],
     },
     'orchestrator.steward.incident_plan': {
       chain: [
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 700, temperature: 0.2, timeoutMs: 45_000 },
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash-lite', maxTokens: 700, temperature: 0.2, timeoutMs: 30_000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.2, timeoutMs: 30_000 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 700, temperature: 0.2, timeoutMs: 30_000 },
       ],
     },
     'orchestrator.steward.pro_canary': {
       chain: [
-        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-pro', maxTokens: 128, temperature: 0.2, timeoutMs: 60_000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 128, temperature: 0.2, timeoutMs: 20_000 },
       ],
     },
   },

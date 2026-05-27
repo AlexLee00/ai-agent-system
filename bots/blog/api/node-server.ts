@@ -160,6 +160,16 @@ app.post('/api/blog/node/related-posts', async (req: any, res: any) => {
   }
 });
 
+function blogChunkedWriterEnabled(): boolean {
+  const modeValues = [
+    process.env.BLOG_WRITER_MODE,
+    process.env.BLOG_LLM_MODE,
+    process.env.BLOG_LLM_MODEL,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  const explicitFlag = String(process.env.BLOG_CHUNKED_WRITER_ENABLED || '').trim().toLowerCase();
+  return modeValues.includes('chunked') || ['1', 'true', 'yes', 'y', 'on'].includes(explicitFlag);
+}
+
 app.post('/api/blog/node/write-lecture', async (req: any, res: any) => {
   const { sessionId, lectureNumber, lectureTitle, sectionVariation } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
@@ -183,7 +193,7 @@ app.post('/api/blog/node/write-lecture', async (req: any, res: any) => {
       relatedPosts: sessionData['related-posts'] || [],
     };
 
-    const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+    const useChunked = blogChunkedWriterEnabled();
     const post = useChunked
       ? await posWriter.writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation || {})
       : await posWriter.writeLecturePost(lectureNumber, lectureTitle, researchData, sectionVariation || {});
@@ -219,7 +229,7 @@ app.post('/api/blog/node/write-general', async (req: any, res: any) => {
       relatedPosts: sessionData['related-posts'] || [],
     };
 
-    const useChunked = process.env.BLOG_LLM_MODEL === 'gemini';
+    const useChunked = blogChunkedWriterEnabled();
     const post = useChunked
       ? await gemsWriter.writeGeneralPostChunked(category, researchData, sectionVariation || {})
       : await gemsWriter.writeGeneralPost(category, researchData, sectionVariation || {});

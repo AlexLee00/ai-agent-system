@@ -405,7 +405,7 @@ function parseKeyword(text) {
   return null;
 }
 
-// ─── 3단계: Gemini LLM (Chain-of-Thought + Few-shot) ─────────────────
+// ─── 3단계: Hub LLM (Chain-of-Thought + Few-shot) ─────────────────────
 
 const SYSTEM_PROMPT_BASE = `너는 AI 봇 시스템 제이(Jay)의 명령 분류기다.
 사용자의 자연어 메시지를 분석해서 intent와 args를 JSON으로만 응답해.

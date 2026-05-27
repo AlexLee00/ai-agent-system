@@ -52,7 +52,7 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
   totalTokens: { input: number; output: number };
 }> {
   const {
-    model = 'gemini',
+    model = 'hub',
     contextCarry = 200,
     maxRetries = 1,
     timeoutMs,

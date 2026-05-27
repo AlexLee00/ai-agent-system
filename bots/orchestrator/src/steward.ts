@@ -88,7 +88,7 @@ async function runHourly() {
         incidentKey: 'general:local_embedding_health_degraded',
         payload: {
           component: 'local_embedding_infrastructure',
-          steward_llm_route: 'gemini-cli-oauth',
+          steward_llm_route: 'openai-oauth',
           expected_embedding_model: localLLMClient.LOCAL_MODEL_EMBED,
           mode: llmHealth.mode || 'embeddings',
           embed_model_ok: Boolean(llmHealth.embedModelOk),

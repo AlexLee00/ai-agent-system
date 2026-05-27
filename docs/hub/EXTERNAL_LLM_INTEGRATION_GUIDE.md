@@ -402,6 +402,7 @@ curl -fsS \
 - 이미지/RAG 기능을 쓰는 프로젝트는 `/hub/llm/vision`, `/hub/llm/embeddings` dry-run fixture 호출도 통과시킨다.
 - 운영 전 `hub.llm_request_log`에 `request_id`, `runtime_purpose`, `estimated_cost_usd`, `budget_guard_status`가 남는지 확인한다.
 - Gemini off 운영이면 `gateway-contract.providerPolicy.geminiDisabled=true`와 agent-level drill 결과의 Gemini 잔여 `0건`을 확인한다.
+- 게시/팀 운영 소스 잔여 검사는 `npm --prefix bots/hub run -s llm:gemini-residue-audit`로 확인한다.
 
 ## 13. Stage C 운영 계약
 

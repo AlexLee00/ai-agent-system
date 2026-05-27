@@ -13,7 +13,6 @@ const {
   resolveFormatterMode,
   resolveFormatterLlmConfig,
   resolveFormatterPolicyOverride,
-  resolveFormatterAvoidProviders,
 } = require('../lib/edux-formatter.ts');
 const { formatContentForEduXWeb, validatePostQuality } = require('../lib/edux-runtime-support.ts');
 const { getFixturePayload } = require('../lib/edux-fixtures.ts');
@@ -34,12 +33,10 @@ async function withCleanFormatterEnv(fn) {
     'EDUX_KIS_FORMATTER_SELECTOR_KEY',
     'EDUX_OVERSEAS_FORMATTER_SELECTOR_KEY',
     'EDUX_FORMATTER_POLICY_OVERRIDE',
-    'EDUX_FORMATTER_GEMINI_ENABLED',
     'EDUX_FORMATTER_FALLBACK_MAX_TOKENS',
     'EDUX_FORMATTER_PRIMARY_TIMEOUT_MS',
     'EDUX_FORMATTER_DEEP_FALLBACK_TIMEOUT_MS',
     'EDUX_FORMATTER_MINI_FALLBACK_TIMEOUT_MS',
-    'HUB_LLM_GEMINI_DISABLED',
   ];
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
@@ -103,15 +100,14 @@ async function main() {
   assert.equal(defaultPolicyOverride.chain[0].provider, 'openai-oauth', 'formatter should prefer the high-quality OpenAI route');
   assert.equal(defaultPolicyOverride.chain[0].model, 'gpt-5.4', 'formatter should prefer the high-quality OpenAI model');
   assert.equal(defaultPolicyOverride.chain[0].retryAttempts, 0, 'formatter route fallback should disable per-route OpenAI OAuth retry');
-  assert.equal(defaultPolicyOverride.chain.some((entry) => String(entry.provider || '').includes('gemini')), false, 'formatter should not include Gemini routes unless explicitly enabled');
+  assert.deepEqual(
+    defaultPolicyOverride.chain.map((entry) => entry.provider),
+    ['openai-oauth', 'groq', 'openai-oauth'],
+    'formatter should use the approved OpenAI/Groq/OpenAI chain',
+  );
   assert.equal(defaultPolicyOverride.chain.some((entry) => entry.provider === 'groq'), true, 'formatter should keep a fast Groq fallback route');
   assert.equal(defaultPolicyOverride.chain[0].timeoutMs < defaultLlmConfig.timeoutMs, true, 'primary route timeout should leave room for fallback inside the client timeout');
   assert.equal(defaultPolicyOverride.chain.every((entry) => entry.timeoutMs <= defaultLlmConfig.timeoutMs), true, 'route timeouts should never exceed the caller timeout');
-  assert.deepEqual(
-    await withCleanFormatterEnv(() => resolveFormatterAvoidProviders()),
-    ['gemini-oauth', 'gemini-cli-oauth', 'gemini-codeassist-oauth'],
-    'formatter should explicitly avoid Gemini providers by default',
-  );
   const cryptoDefault = await withCleanFormatterEnv(() => formatPost('crypto', '1400', cryptoFixture.marketData, cryptoFixture.evidenceItems, cryptoFixture.technicalData, { formatterMode: 'deterministic' }));
   assert.equal(cryptoDefault.source, 'crypto_deterministic', 'crypto formatter should support deterministic override');
   const kisFixture = getFixturePayload('kis');

@@ -9,7 +9,7 @@ const kst = require('../../../packages/core/lib/kst');
  *
  * IT 전략 컨설턴트 페르소나
  * 필수 6,000자 이상 (목표 6,500~7,000자)
- * 모델: GPT-4o (OpenAI) 또는 Gemini Flash (분할생성)
+ * 모델: Hub LLM Gateway (OpenAI/Groq/Claude fallback)
  */
 
 const toolLogger          = require('../../../packages/core/lib/tool-logger');
@@ -1698,10 +1698,10 @@ ${content}
   };
 }
 
-// ─── 분할 생성 (Gemini Flash 무료) ──────────────────────────────────────
+// ─── 분할 생성 (Hub LLM Gateway fallback) ────────────────────────────────
 
 /**
- * 3그룹 분할 생성 — Gemini Flash (무료) 기본
+ * 3그룹 분할 생성 — Hub LLM Gateway fallback 기본
  * group_a: AI스니펫 + 목차 + 인사말 + 본론1  (~1,900자+)
  * group_b: 본론2 + 본론3                      (~2,700자+)
  * group_c: 스터디카페 홍보 + 마무리 (~1,250자+)

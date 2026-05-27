@@ -16,7 +16,7 @@ const { selectLLMPolicy, selectLLMChain } = require('../../../packages/core/lib/
 };
 
 function getGatewayPrimaryModel(): string {
-  return getJayModelConfig().gatewayPrimary || 'google-gemini-cli/gemini-2.5-flash';
+  return getJayModelConfig().gatewayPrimary || 'openai-oauth/gpt-5.4-mini';
 }
 
 function buildIntentParsePolicy(): Record<string, any> {
@@ -24,7 +24,7 @@ function buildIntentParsePolicy(): Record<string, any> {
   const selectorOverrides = getLLMSelectorOverrides();
   const legacyOverride = {
     primary: { provider: 'openai-oauth', model: config.intentPrimary || 'gpt-5.4' },
-    fallback: { provider: 'gemini', model: config.intentFallback || 'gemini-2.5-flash' },
+    fallback: { provider: 'openai-oauth', model: config.intentFallback || 'gpt-5.4-mini' },
   };
   return selectLLMPolicy('orchestrator.jay.intent', {
     policyOverride: selectorOverrides['orchestrator.jay.intent'] || legacyOverride,

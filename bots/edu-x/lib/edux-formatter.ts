@@ -27,14 +27,12 @@ const DEFAULT_LLM_ABSTRACT_MODEL = 'anthropic_opus';
 const DEFAULT_LLM_MAX_TOKENS = 4096;
 const DEFAULT_LLM_TEMPERATURE = 0.2;
 const DEFAULT_LLM_PRIMARY_MODEL = 'gpt-5.4';
-const DEFAULT_LLM_GEMINI_PRO_MODEL = 'gemini-2.5-pro';
 const DEFAULT_LLM_DEEP_FALLBACK_MODEL = 'qwen/qwen3-32b';
 const DEFAULT_LLM_MINI_FALLBACK_MODEL = 'gpt-5.4-mini';
 const DEFAULT_LLM_PRIMARY_TIMEOUT_MS = 135000;
 const DEFAULT_LLM_DEEP_FALLBACK_TIMEOUT_MS = 25000;
 const DEFAULT_LLM_MINI_FALLBACK_TIMEOUT_MS = 15000;
 const DEFAULT_LLM_FALLBACK_MAX_TOKENS = 2048;
-const GEMINI_PROVIDER_NAMES = ['gemini-oauth', 'gemini-cli-oauth', 'gemini-codeassist-oauth'];
 const MAX_CONTENT_LEN = 19500;
 const TARGET_MIN_LEN = 0;
 const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
@@ -229,10 +227,6 @@ function flagDisabled(value) {
   return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
 }
 
-function flagEnabled(value) {
-  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
-}
-
 function boundedInteger(value, fallback, min, max) {
   const parsed = Number(value);
   const numeric = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
@@ -259,16 +253,6 @@ function resolveFormatterFallbackMaxTokens(llmConfig) {
   );
 }
 
-function formatterGeminiEnabled() {
-  if (flagEnabled(process.env.HUB_LLM_GEMINI_DISABLED)) return false;
-  return flagEnabled(process.env.EDUX_FORMATTER_GEMINI_ENABLED);
-}
-
-function resolveFormatterAvoidProviders() {
-  if (formatterGeminiEnabled()) return [];
-  return GEMINI_PROVIDER_NAMES.slice();
-}
-
 function resolveFormatterPolicyOverride(llmConfig, options = {}) {
   if (options.policyOverride) return options.policyOverride;
   if (flagDisabled(process.env.EDUX_FORMATTER_POLICY_OVERRIDE)) return undefined;
@@ -276,7 +260,6 @@ function resolveFormatterPolicyOverride(llmConfig, options = {}) {
   const maxTokens = llmConfig.maxTokens || DEFAULT_LLM_MAX_TOKENS;
   const temperature = llmConfig.temperature ?? DEFAULT_LLM_TEMPERATURE;
   const primaryModel = cleanConfigValue(process.env.EDUX_FORMATTER_PRIMARY_MODEL || DEFAULT_LLM_PRIMARY_MODEL);
-  const geminiProModel = cleanConfigValue(process.env.EDUX_FORMATTER_GEMINI_PRO_MODEL || DEFAULT_LLM_GEMINI_PRO_MODEL);
   const deepFallbackModel = cleanConfigValue(process.env.EDUX_FORMATTER_DEEP_FALLBACK_MODEL || DEFAULT_LLM_DEEP_FALLBACK_MODEL);
   const miniFallbackModel = cleanConfigValue(process.env.EDUX_FORMATTER_MINI_FALLBACK_MODEL || DEFAULT_LLM_MINI_FALLBACK_MODEL);
   const category = options.category || 'crypto';
@@ -294,16 +277,6 @@ function resolveFormatterPolicyOverride(llmConfig, options = {}) {
       retryAttempts: 0,
     },
   ];
-
-  if (formatterGeminiEnabled()) {
-    chain.push({
-      provider: 'gemini-cli-oauth',
-      model: geminiProModel,
-      maxTokens,
-      temperature,
-      timeoutMs: resolveFormatterRouteTimeoutMs(category, 'GEMINI', DEFAULT_LLM_DEEP_FALLBACK_TIMEOUT_MS, llmConfig.timeoutMs),
-    });
-  }
 
   chain.push(
     { provider: 'groq', model: deepFallbackModel, maxTokens: fallbackMaxTokens, temperature, timeoutMs: deepFallbackTimeoutMs },
@@ -1168,7 +1141,6 @@ async function callFormatterLlm({ category, systemPrompt, userPrompt, options = 
     timeoutMs: llmConfig.timeoutMs,
     taskType: `edux_market_post_${category}`,
     cacheEnabled: false,
-    avoidProviders: resolveFormatterAvoidProviders(),
     policyOverride,
   });
 }
@@ -1285,5 +1257,4 @@ module.exports = {
   resolveFormatterMode,
   resolveFormatterLlmConfig,
   resolveFormatterPolicyOverride,
-  resolveFormatterAvoidProviders,
 };

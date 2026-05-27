@@ -63,7 +63,7 @@ const AI_AGENT_CONTEXT = `
 - 블로팀: 블로그 자동 포스팅 — 블로·리처·포스·젬스·퍼블 5봇
 - 워커팀: 외주 인력 관리 SaaS (Near-OWASP 보안 적용)
 
-기술 스택: Node.js, PostgreSQL+pgvector(RAG), OpenAI/Groq/Gemini LLM
+기술 스택: Node.js, PostgreSQL+pgvector(RAG), OpenAI/Groq/Claude LLM
 특징: MessageEnvelope 봇 간 통신, trace_id 전체 추적, Shadow Mode 단계별 자율화
 
 강의 주제별 실제 적용 매핑:
@@ -86,7 +86,7 @@ const AI_AGENT_CONTEXT = `
 
 const GEO_RULES = `
 [GEO(Generative Engine Optimization) 규칙]
-AI 검색엔진(네이버 AI, ChatGPT, Gemini)이 이 글을 출처로 인용할 수 있도록:
+AI 검색엔진(네이버 AI, ChatGPT 등)이 이 글을 출처로 인용할 수 있도록:
 1. 글 최상단 [핵심 요약 3줄] — AI가 즉시 추출 가능한 150자 요약 (인사말 섹션 바로 위)
 2. FAQ 질문을 실제 사용자가 검색할 법한 문장으로 작성 (예: "Node.js에서 XXX를 방어하는 가장 좋은 방법은?")
 3. 비교 표에 "결론" 행 추가 (AI 한줄 요약 추출용)
