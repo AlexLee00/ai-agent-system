@@ -2,6 +2,31 @@
 
 외부 프로젝트는 Hub를 단일 LLM gateway로 사용한다. 외부 프로젝트는 OpenAI/Groq/Gemini 토큰을 직접 보유하지 않고, Hub `/hub/llm/call`, `/hub/llm/jobs`, `/hub/llm/vision`, `/hub/llm/embeddings`만 호출한다. 모델 선택, fallback, 비용 로그, BillingGuard, provider circuit은 Hub가 담당한다.
 
+## 0. 현재 운영 기준
+
+2026-05-27 기준 운영 Hub 연결 상태는 다음 정책을 따른다.
+
+- LaunchAgent: `ai.hub.resource-api`
+- 기본 URL: `http://localhost:7788`
+- 인증: `Authorization: Bearer <HUB_AUTH_TOKEN>`
+- Gemini 정책: `HUB_LLM_GEMINI_DISABLED=true`
+- Gemini 직접 호출/토큰 refresh 점검: Gemini off 상태에서는 skip
+- Direct provider endpoint: 기본 차단, 외부 프로젝트 사용 금지
+- 표준 검증: `gateway-contract`, guide smoke, agent-level LLM drill
+
+현재 운영 상태와 문서 일치 여부는 아래 명령으로 확인한다. 토큰 값은 출력하지 않는다.
+
+```bash
+launchctl print gui/$(id -u)/ai.hub.resource-api | \
+  rg 'state =|pid =|HUB_LLM_GEMINI_DISABLED|HUB_BASE_URL'
+test -n "$(launchctl getenv HUB_AUTH_TOKEN)" && echo "HUB_AUTH_TOKEN present"
+
+curl -fsS "$HUB_BASE_URL/hub/health/live"
+curl -fsS "$HUB_BASE_URL/hub/health/ready"
+curl -fsS -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
+  "$HUB_BASE_URL/hub/llm/gateway-contract" | jq '{ok, contractVersion, selectorPolicy, providerPolicy}'
+```
+
 ## 1. 연동 원칙
 
 - 외부 프로젝트는 provider 직접 엔드포인트(`/hub/llm/oauth`, `/hub/llm/groq`)를 사용하지 않는다. 기본 운영에서는 차단된다.
@@ -11,6 +36,7 @@
 - 모든 요청은 `Authorization: Bearer <HUB_AUTH_TOKEN>`을 사용한다.
 - 외부 프로젝트별 `callerTeam`, `agent`, `taskType`, `requestId`를 항상 넣어 비용/장애/품질 추적이 가능하게 한다.
 - secret, 원문 OAuth token, provider API key는 외부 프로젝트에 배포하지 않는다.
+- `HUB_LLM_GEMINI_DISABLED=true` 운영 중에는 Gemini route가 selector/caller/direct OAuth 경로에서 제거되며, 외부 프로젝트는 Gemini provider를 기대값으로 고정하지 않는다.
 
 ## 2. 사전 준비
 
@@ -61,11 +87,12 @@ curl -fsS "$HUB_BASE_URL/hub/llm/call" \
   -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -H "X-Hub-Team: external-blog" \
-  -H "X-Hub-Agent: writer" \
+  -H "X-Hub-Agent: smoke" \
   -H "X-Hub-Priority: normal" \
   -d '{
     "callerTeam": "external-blog",
-    "agent": "writer",
+    "agent": "smoke",
+    "selectorKey": "blog.star.summarize",
     "taskType": "draft_outline",
     "requestId": "external-blog-20260513-0001",
     "abstractModel": "anthropic_haiku",
@@ -82,20 +109,23 @@ curl -fsS "$HUB_BASE_URL/hub/llm/call" \
 ```json
 {
   "ok": true,
-  "provider": "gemini-cli-oauth",
+  "provider": "groq",
   "result": "...",
-  "durationMs": 7244,
+  "durationMs": 243,
   "fallbackCount": 0,
-  "selectorKey": "blog.pos.writer",
-  "selected_route": "gemini-cli-oauth/gemini-2.5-flash",
+  "selectorKey": "blog.star.summarize",
+  "selected_route": "groq/llama-3.1-8b-instant",
   "budgetGuardStatus": "allowed",
   "providerTiers": [
-    { "provider": "gemini-cli-oauth", "route": "gemini-cli-oauth/gemini-2.5-flash", "tier": 3, "fallbackIndex": 0 },
-    { "provider": "openai-oauth", "route": "openai-oauth/gpt-5.4", "tier": 1, "fallbackIndex": 1 }
+    { "provider": "groq", "route": "groq/llama-3.1-8b-instant", "tier": 2, "fallbackIndex": 0 }
   ],
   "traceId": "..."
 }
 ```
+
+Gemini off 운영 중 정상 응답의 `provider` 또는 `selected_route`에 `gemini-*`가 나오면 가이드/운영 불일치로 본다.
+
+긴 글쓰기/고품질 작성 경로는 `blog.pos.writer` 또는 `blog.gems.writer`처럼 Claude/OpenAI selector를 사용한다. 이 경로는 smoke보다 높은 `maxBudgetUsd`와 더 긴 timeout이 필요하므로, 단순 연결 확인에는 사용하지 않는다.
 
 ## 5. Selector 지정 방식
 
@@ -104,6 +134,13 @@ curl -fsS "$HUB_BASE_URL/hub/llm/call" \
 1. 외부 프로젝트가 이미 Hub registry에 등록된 팀/에이전트라면 `callerTeam + agent`를 사용한다.
 2. registry에 아직 등록되지 않은 외부 프로젝트는 `callerTeam + agent + selectorKey`를 사용한다.
 3. `chain` 직접 지정은 기본 차단된다. 운영 예외가 필요하면 Hub 쪽에서 별도 승인과 환경 게이트를 설정해야 한다.
+
+현재 Gemini 비활성 정책:
+
+- `HUB_LLM_GEMINI_DISABLED=true`이면 `gemini-oauth`, `gemini-cli-oauth`, `gemini-codeassist-oauth`는 실행 전 제거된다.
+- Gemini만 남은 selector는 `gemini_provider_disabled`로 실패한다.
+- Gemini token refresh/monitor는 off 상태에서 skip되어 불필요한 인증 경고를 만들지 않는다.
+- Gemini 재활성화 절차는 `docs/strategy/HUB_LLM_GEMINI_DISABLE_GUIDE.md`를 따른다.
 
 예시:
 
@@ -318,6 +355,7 @@ def call_hub_llm(prompt: str, *, task_type: str = "external_llm_call") -> dict:
 | `400 invalid_llm_call_payload` | payload 스키마 오류 | 요청 생성 코드 수정 |
 | `429` | rate/admission 제한 | `Retry-After` 기반 backoff |
 | `503` | Hub 준비 안 됨 또는 shutdown | exponential backoff |
+| `ok=false`, `gemini_provider_disabled` | Gemini 비활성 상태에서 Gemini-only 경로 요청 | selectorKey 또는 Hub registry를 OpenAI/Groq/Claude/Local 포함 경로로 수정 |
 | `ok=false`, `fallback_exhausted` | provider chain 전체 실패 | 짧은 backoff 후 1회 재시도, 이후 incident 발행 |
 
 ## 11. 관측과 비용 확인
@@ -363,6 +401,7 @@ curl -fsS \
 - staging에서 `/hub/llm/call` 1회, `/hub/llm/jobs` 1회, `/hub/llm/stats` 조회를 통과시킨다.
 - 이미지/RAG 기능을 쓰는 프로젝트는 `/hub/llm/vision`, `/hub/llm/embeddings` dry-run fixture 호출도 통과시킨다.
 - 운영 전 `hub.llm_request_log`에 `request_id`, `runtime_purpose`, `estimated_cost_usd`, `budget_guard_status`가 남는지 확인한다.
+- Gemini off 운영이면 `gateway-contract.providerPolicy.geminiDisabled=true`와 agent-level drill 결과의 Gemini 잔여 `0건`을 확인한다.
 
 ## 13. Stage C 운영 계약
 
@@ -372,6 +411,23 @@ Stage C부터 외부 프로젝트 연동은 Hub 표준 LLM Gateway 계약으로 
 - 통합 검증: `npm --prefix bots/hub run -s llm:external-gateway-contract-smoke`
 - 전체 Stage C 검증: `npm --prefix bots/hub run -s check:llm-stage-c`
 - 운영 문서: `docs/hub/HUB_STAGE_C_OPERATIONS.md`
+- 에이전트 단위 LLM 검증: `npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=all --primary-only`
+
+대량 live drill은 Hub LLM rate limit과 provider OAuth timeout 영향을 줄이기 위해 아래처럼 저속 실행한다.
+
+```bash
+HUB_MULTI_AGENT_LLM_DRILL_CONCURRENCY=1 \
+HUB_MULTI_AGENT_LLM_DRILL_DELAY_MS=2000 \
+HUB_MULTI_AGENT_LLM_DRILL_MAX_TOKENS=8 \
+npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=all --primary-only
+```
+
+최근 운영 대조 결과:
+
+- Mock agent drill: 108/108 통과
+- Live agent drill: Gemini 잔여 0건
+- Live strict primary sweep: 108건 중 102건 primary 일치
+- OpenAI OAuth 일시 abort 6건: fallback 성공 후 개별 재시도에서 6/6 primary 통과
 
 외부 프로젝트는 장애 시 자체 provider fallback을 구현하지 않는다. Hub 응답의 `Retry-After`, `providerBackpressure`, `fallbackCount`, `traceId`를 사용해 재시도/incident 정책만 수행한다.
 

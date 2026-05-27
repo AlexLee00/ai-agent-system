@@ -5,6 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { PROFILES } = require('../lib/runtime-profiles.ts');
 
+const HUB_ROOT = path.resolve(__dirname, '..');
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+
 const PLACEHOLDER_RE = /(__SET_|CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER|changeme)/i;
 const UNSUITABLE_AGENT_RE = /(image|gemma|stt|whisper|local)/i;
 
@@ -15,6 +18,10 @@ function flag(name) {
 function usableSecret(value) {
   const text = String(value || '').trim();
   return text.length >= 12 && !PLACEHOLDER_RE.test(text);
+}
+
+function isGeminiDisabled() {
+  return flag('HUB_LLM_GEMINI_DISABLED');
 }
 
 function baseUrl() {
@@ -28,9 +35,13 @@ function timeoutMs() {
 function reportOutputPath(live) {
   const raw = String(process.env.HUB_TEAM_LLM_DRILL_OUTPUT || '').trim();
   if (/^(none|false|0|-)$/.test(raw)) return null;
-  if (raw) return path.resolve(raw);
+  if (raw) {
+    if (path.isAbsolute(raw)) return raw;
+    const normalized = raw.replace(/\\/g, '/');
+    return path.resolve(normalized.startsWith('bots/hub/') ? REPO_ROOT : HUB_ROOT, raw);
+  }
   if (!live && !flag('HUB_TEAM_LLM_DRILL_WRITE_REPORT')) return null;
-  return path.resolve(__dirname, '..', 'output', 'team-llm-route-drill-live.json');
+  return path.resolve(HUB_ROOT, 'output', 'team-llm-route-drill-live.json');
 }
 
 function scenarios() {
@@ -73,7 +84,7 @@ function firstSupportedRoute(profile) {
 function isOauthProvider(provider) {
   return provider === 'openai-oauth'
     || provider === 'claude-code-oauth'
-    || provider === 'gemini-cli-oauth';
+    || (!isGeminiDisabled() && provider === 'gemini-cli-oauth');
 }
 
 function defaultBudgetForProvider(provider) {
@@ -87,7 +98,13 @@ function defaultProfileScenarios() {
   return Object.entries(PROFILES || {})
     .flatMap(([callerTeam, profiles]) => {
       const entries = Object.entries(profiles || {})
-        .filter(([agent, profile]) => !UNSUITABLE_AGENT_RE.test(agent) && firstSupportedRoute(profile));
+        .filter(([agent, profile]) => {
+          const route = firstSupportedRoute(profile);
+          const provider = routeToProvider(route);
+          return !UNSUITABLE_AGENT_RE.test(agent)
+            && route
+            && !(isGeminiDisabled() && provider === 'gemini-cli-oauth');
+        });
       const oauthFirst = entries.find(([, profile]) => isOauthProvider(routeToProvider(firstSupportedRoute(profile))));
       const geminiPrimary = entries.find(([, profile]) => {
         const provider = routeToProvider(firstSupportedRoute(profile));
@@ -97,18 +114,18 @@ function defaultProfileScenarios() {
       const selected = oauthFirst || defaultEntry || entries[0];
       if (!selected) return [];
       const selectedEntries = [selected];
-      if (geminiPrimary && geminiPrimary[0] !== selected[0]) selectedEntries.push(geminiPrimary);
+      if (!isGeminiDisabled() && geminiPrimary && geminiPrimary[0] !== selected[0]) selectedEntries.push(geminiPrimary);
       return selectedEntries.map(([agent, profile]) => {
-      const route = firstSupportedRoute(profile);
-      const expectedProvider = routeToProvider(route) || 'any';
-      return {
-        name: `${callerTeam}_${agent}_${expectedProvider.replace(/[^a-z0-9]+/gi, '_')}`,
-        callerTeam,
-        agent,
-        expectedProvider,
-        selectedRoute: route,
-        maxBudgetUsd: defaultBudgetForProvider(expectedProvider),
-      };
+        const route = firstSupportedRoute(profile);
+        const expectedProvider = routeToProvider(route) || 'any';
+        return {
+          name: `${callerTeam}_${agent}_${expectedProvider.replace(/[^a-z0-9]+/gi, '_')}`,
+          callerTeam,
+          agent,
+          expectedProvider,
+          selectedRoute: route,
+          maxBudgetUsd: defaultBudgetForProvider(expectedProvider),
+        };
       });
     })
     .sort((a, b) => a.callerTeam.localeCompare(b.callerTeam));

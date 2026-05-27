@@ -39,8 +39,8 @@ function validateAbStage(percent: number, minPct: number, maxPct: number): { per
     },
     () => {
       for (let i = 0; i < samples; i += 1) {
-        const provider = providerFromChain('hub.alarm.classifier', { rolloutKey: `ab-${i}` });
-        if (provider === 'gemini-cli-oauth') oauth4Hits += 1;
+        const provider = providerFromChain('investment.agent_policy', { rolloutKey: `ab-${i}`, agentName: 'default' });
+        if (provider === 'groq') oauth4Hits += 1;
       }
     },
   );
@@ -120,6 +120,7 @@ function main(): void {
     'claude-code': 0,
     'openai-oauth': 0,
     'gemini-cli-oauth': 0,
+    'local-embedding': 0,
     groq: 0,
     other: 0,
   };
@@ -158,6 +159,10 @@ function main(): void {
     else providerCounts.other += 1;
   }
 
+  const chronosBacktestProvider = providerFromChain('chronos.backtest', selectorOptions);
+  if (providerCounts[chronosBacktestProvider] != null) providerCounts[chronosBacktestProvider] += 1;
+  else providerCounts.other += 1;
+
   for (const key of ['sigma.agent_policy', 'darwin.agent_policy']) {
     const chain = selector.selectLLMChain(key, { ...selectorOptions, agentName: 'commander' });
     assert(chain.length > 0, `${key} chain must be non-empty`);
@@ -170,8 +175,8 @@ function main(): void {
   });
   assert.deepEqual(
     darwinEvaluatorChain.map((entry: any) => entry.provider),
-    ['gemini-cli-oauth', 'openai-oauth', 'groq'],
-    'darwin.evaluator must avoid the openai->groq-only exhaustion path by using Gemini as the first live route',
+    ['groq', 'openai-oauth', 'groq'],
+    'darwin.evaluator must use non-Gemini fast route with OpenAI fallback',
   );
 
   const darwinQueryPlannerChain = selector.selectLLMChain('darwin.agent_policy', {
@@ -189,13 +194,15 @@ function main(): void {
     claudeCodePct: Number(pct(providerCounts['claude-code'], total).toFixed(2)),
     openaiPct: Number(pct(providerCounts['openai-oauth'], total).toFixed(2)),
     geminiPct: Number(pct(providerCounts['gemini-cli-oauth'], total).toFixed(2)),
+    localEmbeddingPct: Number(pct(providerCounts['local-embedding'], total).toFixed(2)),
     groqPct: Number(pct(providerCounts.groq, total).toFixed(2)),
   };
 
   assert(shares.claudeCodePct >= 0 && shares.claudeCodePct <= 10, `claude-code share out of range: ${shares.claudeCodePct}%`);
-  assert(shares.openaiPct >= 25 && shares.openaiPct <= 40, `openai share out of range: ${shares.openaiPct}%`);
-  assert(shares.geminiPct >= 20 && shares.geminiPct <= 45, `gemini share out of range: ${shares.geminiPct}%`);
-  assert(shares.groqPct >= 25 && shares.groqPct <= 50, `groq share out of range: ${shares.groqPct}%`);
+  assert(shares.openaiPct >= 20 && shares.openaiPct <= 60, `openai share out of range: ${shares.openaiPct}%`);
+  assert.equal(shares.geminiPct, 0, `gemini share must be zero for non-diagnostic agent routing: ${shares.geminiPct}%`);
+  assert(shares.groqPct >= 25 && shares.groqPct <= 75, `groq share out of range: ${shares.groqPct}%`);
+  assert(shares.localEmbeddingPct > 0, 'local embedding share must cover Chronos backtest');
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');
 
   const { PROFILES } = require('../lib/runtime-profiles.ts');

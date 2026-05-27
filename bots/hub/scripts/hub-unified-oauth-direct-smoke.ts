@@ -11,6 +11,9 @@ const originalEnv: Record<string, string | undefined> = {
   HUB_BUDGET_GUARDIAN_ENABLED: process.env.HUB_BUDGET_GUARDIAN_ENABLED,
   HUB_LLM_PROVIDER_CIRCUIT_ENABLED: process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED,
   HUB_LLM_ALLOW_ADHOC_CHAIN: process.env.HUB_LLM_ALLOW_ADHOC_CHAIN,
+  HUB_LLM_GEMINI_DISABLED: process.env.HUB_LLM_GEMINI_DISABLED,
+  HUB_OPENAI_OAUTH_RETRY_ATTEMPTS: process.env.HUB_OPENAI_OAUTH_RETRY_ATTEMPTS,
+  HUB_OPENAI_OAUTH_RETRY_DELAY_MS: process.env.HUB_OPENAI_OAUTH_RETRY_DELAY_MS,
 };
 const originalFetch = globalThis.fetch;
 
@@ -75,6 +78,7 @@ async function main() {
 
     throw new Error(`unexpected fetch URL: ${url}`);
   }) as typeof fetch;
+  const successfulOpenAiFetch = globalThis.fetch;
 
   try {
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
@@ -94,6 +98,57 @@ async function main() {
     assert.equal(openAiResult.result, 'openai direct ok');
 
     assert.deepEqual(calls.map((call) => call.provider), ['openai-oauth']);
+
+    process.env.HUB_OPENAI_OAUTH_RETRY_ATTEMPTS = '1';
+    process.env.HUB_OPENAI_OAUTH_RETRY_DELAY_MS = '0';
+    let transientOpenAiCalls = 0;
+    try {
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes('/codex/responses')) {
+          transientOpenAiCalls += 1;
+          if (transientOpenAiCalls === 1) {
+            throw new DOMException('This operation was aborted', 'AbortError');
+          }
+        }
+        return successfulOpenAiFetch(input, init);
+      }) as typeof fetch;
+
+      const retryRecovered = await callWithFallback({
+        callerTeam: 'hub',
+        agent: 'unified-oauth-openai-retry-smoke',
+        chain: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini' }],
+        prompt: 'This path should recover from one transient OpenAI OAuth abort.',
+        timeoutMs: 5000,
+        cacheEnabled: false,
+        suppressFallbackExhaustionAlarm: true,
+      });
+      assert.equal(retryRecovered.ok, true);
+      assert.equal(retryRecovered.provider, 'openai-oauth');
+      assert.equal(retryRecovered.fallbackCount, 0, 'OpenAI OAuth retry must preserve primary route success');
+      assert.equal(retryRecovered.retryCount, 1, 'one transient abort should be retried once');
+      assert.equal(transientOpenAiCalls, 2);
+    } finally {
+      globalThis.fetch = successfulOpenAiFetch;
+    }
+
+    process.env.HUB_LLM_GEMINI_DISABLED = 'true';
+    const geminiDisabledFallback = await callWithFallback({
+      callerTeam: 'hub',
+      agent: 'oauth-monitor',
+      chain: [
+        { provider: 'gemini-cli-oauth', model: 'gemini-2.5-flash' },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini' },
+      ],
+      prompt: 'Gemini is disabled; use OpenAI.',
+      timeoutMs: 5000,
+      cacheEnabled: false,
+    });
+    assert.equal(geminiDisabledFallback.ok, true);
+    assert.equal(geminiDisabledFallback.provider, 'openai-oauth');
+    assert.equal(geminiDisabledFallback.selected_route, 'openai-oauth/gpt-5.4-mini');
+    assert.equal(geminiDisabledFallback.fallbackCount, 0, 'disabled Gemini route should be removed before execution');
+    assert.deepEqual(calls.map((call) => call.provider), ['openai-oauth', 'openai-oauth', 'openai-oauth']);
+    delete process.env.HUB_LLM_GEMINI_DISABLED;
 
     assert.equal(
       unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
@@ -174,6 +229,8 @@ async function main() {
       ok: true,
       providers: calls.map((call) => call.provider),
       gemini_oauth_retired: true,
+      gemini_disabled_fallback: true,
+      openai_oauth_transient_retry: true,
       fallback_exhaustion_suppressed: true,
       core_fallback_used: false,
     }));

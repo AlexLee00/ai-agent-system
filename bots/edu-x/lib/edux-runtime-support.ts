@@ -510,9 +510,12 @@ function formatContentForEduXWeb(content) {
 }
 
 function writeDryRunArtifact({ category, slot, title, content, imagePaths = [], metadata = {} }) {
-  ensureDir(DRY_RUN_DIR);
+  const artifactDir = metadata?.fixture === true
+    ? path.join(DRY_RUN_DIR, 'fixture')
+    : DRY_RUN_DIR;
+  ensureDir(artifactDir);
   const stamp = `${yyyymmdd()}-${slot}-${category}`;
-  const base = path.join(DRY_RUN_DIR, stamp);
+  const base = path.join(artifactDir, stamp);
   const jsonPath = `${base}.json`;
   const mdPath = `${base}.md`;
   const payload = {

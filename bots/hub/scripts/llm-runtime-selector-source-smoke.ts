@@ -47,31 +47,30 @@ const claudeLead = selectRuntimeProfile('claude', 'lead');
 assert.equal(claudeLead.selector_key, 'claude.lead.system_issue_triage');
 assert.equal(claudeLead.primary_routes[0], 'openai-oauth/runtime-env-perf');
 assert(claudeLead.fallback_routes.includes('groq/runtime-env-deep'));
-assert(claudeLead.fallback_routes.includes('gemini-cli-oauth/runtime-env-flash'));
+assert(!claudeLead.fallback_routes.some((route: string) => route.startsWith('gemini-cli-oauth/')));
 
 const lunaDefault = selectRuntimeProfile('luna', 'default');
 assert.equal(lunaDefault.selector_key, 'investment._default');
 assert.equal(lunaDefault.primary_routes[0], 'groq/runtime-env-deep');
 assert(lunaDefault.fallback_routes.includes('openai-oauth/runtime-env-mini'));
-assert(lunaDefault.fallback_routes.includes('gemini-cli-oauth/runtime-env-lite'));
+assert(!lunaDefault.fallback_routes.some((route: string) => route.startsWith('gemini-cli-oauth/')));
 
 const orchestratorSummary = selectRuntimeProfile('orchestrator', 'summary');
 assert.equal(orchestratorSummary.selector_key, 'orchestrator.jay.summary');
-assert.equal(orchestratorSummary.primary_routes[0], 'gemini-cli-oauth/runtime-env-flash');
-assert(orchestratorSummary.fallback_routes.includes('groq/runtime-env-fast'));
+assert.equal(orchestratorSummary.primary_routes[0], 'groq/runtime-env-fast');
 assert(orchestratorSummary.fallback_routes.includes('openai-oauth/runtime-env-mini'));
 
 const justinStage3 = selectRuntimeProfile('justin', 'stage-3');
 assert.equal(justinStage3.selector_key, 'justin.stage-3');
 assert.equal(justinStage3.primary_routes[0], 'openai-oauth/runtime-env-perf');
-assert(justinStage3.fallback_routes.includes('gemini-cli-oauth/runtime-env-flash'));
 assert(justinStage3.fallback_routes.includes('groq/runtime-env-deep'));
+assert(!justinStage3.fallback_routes.some((route: string) => route.startsWith('gemini-cli-oauth/')));
 
 const resolveSelectorChain = unifiedCaller._testOnly._resolveSelectorChain;
 const blogDefaultChain = resolveSelectorChain({ callerTeam: 'blog', agent: 'default' }, 'blog');
 assert.equal(blogDefaultChain.selectorKey, 'blog._default');
 assert.equal(blogDefaultChain.runtimeProfile, 'blog.default');
-assert.equal(blogDefaultChain.chain[0]?.provider, 'gemini-cli-oauth');
+assert.equal(blogDefaultChain.chain[0]?.provider, 'openai-oauth');
 
 const hubDefaultChain = resolveSelectorChain({ callerTeam: 'hub' }, 'hub');
 assert.equal(hubDefaultChain.selectorKey, 'hub._default');
@@ -147,7 +146,7 @@ async function main() {
     chain: [{ provider: 'openai-oauth', model: 'manual-single-route' }],
   }, 'justin');
   assert.equal(selectorWinsOverAdhoc.selectorKey, 'justin.stage-3');
-  assert(selectorWinsOverAdhoc.chain.length >= 3, 'justin.stage-3 must preserve managed fallback routes');
+  assert(selectorWinsOverAdhoc.chain.length >= 2, 'justin.stage-3 must preserve managed fallback routes');
   assert.notEqual(selectorWinsOverAdhoc.chain[0]?.model, 'manual-single-route');
   delete process.env.HUB_LLM_ALLOW_ADHOC_CHAIN;
 

@@ -36,6 +36,33 @@ function flag(name: string, fallback = false): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
 }
 
+function geminiLlmDisabled(): boolean {
+  return flag('HUB_LLM_GEMINI_DISABLED', false);
+}
+
+function geminiMonitorDisabledResult(source = 'env') {
+  return {
+    healthy: true,
+    skipped: true,
+    disabled: true,
+    source,
+    expires_in_hours: null,
+    needs_refresh: false,
+    local_credential_needs_refresh: false,
+    live_refresh_ok: null,
+    live_refresh_provider: null,
+    live_refresh_route: null,
+    live_refresh_auth_path: null,
+    live_refresh_attempts: 0,
+    post_probe_reimport_ok: null,
+    post_probe_expires_in_hours: null,
+    credential_refresh_ok: null,
+    credential_refresh_error: null,
+    quota_project_configured: false,
+    error: 'gemini_provider_disabled',
+  };
+}
+
 function thresholdHours(name: string, fallback: number): number {
   const value = Number(process.env[name] || fallback);
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -1027,15 +1054,20 @@ async function checkOpenAiCodexOAuth() {
 }
 
 function geminiCliMonitorRequired(): boolean {
+  if (geminiLlmDisabled()) return false;
   const record = getProviderRecord('gemini-cli-oauth');
   return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI', Boolean(record?.token?.access_token || record?.token?.refresh_token));
 }
 
 function geminiCodeAssistServiceRequired(): boolean {
+  if (geminiLlmDisabled()) return false;
   return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE', geminiCliMonitorRequired());
 }
 
 async function runGeminiCliLiveRefreshProbe() {
+  if (geminiLlmDisabled()) {
+    return { ok: false, skipped: true, attempts: 0, error: 'gemini_provider_disabled' };
+  }
   if (!flag('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY', true)) {
     return { ok: false, skipped: true, error: 'live_probe_disabled' };
   }
@@ -1142,6 +1174,10 @@ function finalizeGeminiCliMonitorState({
 }
 
 async function checkGeminiCliOAuth() {
+  if (geminiLlmDisabled()) {
+    console.log('[oauth-monitor] Gemini CLI OAuth 스킵: HUB_LLM_GEMINI_DISABLED=true');
+    return geminiMonitorDisabledResult('disabled_by_env');
+  }
   const record = getProviderRecord('gemini-cli-oauth');
   const required = geminiCliMonitorRequired();
   const alarmHours = geminiCliOAuthAlarmHours();
@@ -1398,6 +1434,19 @@ async function checkGeminiCliOAuth() {
 }
 
 async function checkGeminiCodeAssistService() {
+  if (geminiLlmDisabled()) {
+    console.log('[oauth-monitor] Gemini Code Assist service 스킵: HUB_LLM_GEMINI_DISABLED=true');
+    return {
+      healthy: true,
+      skipped: true,
+      disabled: true,
+      required: false,
+      service: CLOUD_AI_COMPANION_SERVICE,
+      project_id_configured: false,
+      state: null,
+      error: 'gemini_provider_disabled',
+    };
+  }
   const required = geminiCodeAssistServiceRequired();
   const record = getProviderRecord('gemini-cli-oauth');
   const accessToken = String(record?.token?.access_token || '').trim();
@@ -1559,4 +1608,17 @@ async function main() {
   }));
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+if (require.main === module) {
+  main().catch(e => { console.error(e); process.exit(1); });
+}
+
+module.exports = {
+  _testOnly: {
+    checkGeminiCliOAuth,
+    checkGeminiCodeAssistService,
+    geminiCliMonitorRequired,
+    geminiCodeAssistServiceRequired,
+    geminiLlmDisabled,
+    runGeminiCliLiveRefreshProbe,
+  },
+};

@@ -32,6 +32,8 @@ const GROQ_PRICING: Record<string, { input: number; output: number }> = {
 
 const DEFAULT_GROQ_RETRY_AFTER_MS = 60_000;
 const MAX_GROQ_RETRY_AFTER_MS = 30 * 60_000;
+const DEFAULT_GROQ_MAX_COMPLETION_TOKENS = 4096;
+const DEFAULT_GROQ_MAX_TOTAL_TOKENS = 12_000;
 
 function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
   const pricing = GROQ_PRICING[model];
@@ -102,6 +104,47 @@ function resolveGroqMaxAttempts(): number {
   if (Number.isFinite(configured) && configured > 0) return Math.max(1, Math.min(Math.floor(configured), 25));
   if (process.env.GROQ_API_KEY) return 1;
   return Math.max(1, Math.min(loadGroqAccounts().length || 1, 25));
+}
+
+function resolveGroqMaxCompletionTokens(): number {
+  const configured = Number(process.env.HUB_GROQ_MAX_COMPLETION_TOKENS || process.env.LLM_GROQ_MAX_COMPLETION_TOKENS || '');
+  if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
+  return DEFAULT_GROQ_MAX_COMPLETION_TOKENS;
+}
+
+function resolveGroqMaxTotalTokens(): number {
+  const configured = Number(process.env.HUB_GROQ_MAX_TOTAL_TOKENS || process.env.LLM_GROQ_MAX_TOTAL_TOKENS || '');
+  if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
+  return DEFAULT_GROQ_MAX_TOTAL_TOKENS;
+}
+
+function estimateTextTokens(value: string | undefined): number {
+  const text = String(value || '');
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
+function resolveGroqTokenGuard(req: GroqRequest): {
+  ok: boolean;
+  promptTokens: number;
+  requestedCompletionTokens: number;
+  estimatedTotalTokens: number;
+  maxCompletionTokens: number;
+  maxTotalTokens: number;
+  reason?: string;
+} {
+  const promptTokens = estimateTextTokens(req.systemPrompt) + estimateTextTokens(req.prompt);
+  const requestedCompletionTokens = Number.isFinite(Number(req.maxTokens)) ? Math.max(0, Math.floor(Number(req.maxTokens))) : 1024;
+  const estimatedTotalTokens = promptTokens + requestedCompletionTokens;
+  const maxCompletionTokens = resolveGroqMaxCompletionTokens();
+  const maxTotalTokens = resolveGroqMaxTotalTokens();
+  if (requestedCompletionTokens > maxCompletionTokens) {
+    return { ok: false, promptTokens, requestedCompletionTokens, estimatedTotalTokens, maxCompletionTokens, maxTotalTokens, reason: 'completion_token_limit' };
+  }
+  if (estimatedTotalTokens > maxTotalTokens) {
+    return { ok: false, promptTokens, requestedCompletionTokens, estimatedTotalTokens, maxCompletionTokens, maxTotalTokens, reason: 'total_token_pressure' };
+  }
+  return { ok: true, promptTokens, requestedCompletionTokens, estimatedTotalTokens, maxCompletionTokens, maxTotalTokens };
 }
 
 function resolveServiceTier(req: GroqRequest): string | undefined {
@@ -259,6 +302,17 @@ async function doGroqCall(
 }
 
 export async function callGroqFallback(req: GroqRequest): Promise<LLMCallResponse> {
+  const tokenGuard = resolveGroqTokenGuard(req);
+  if (!tokenGuard.ok) {
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: 0,
+      retryAfterMs: 0,
+      error: `groq_token_pressure_guard:${tokenGuard.reason}`,
+      tokenGuard,
+    } as LLMCallResponse & { retryAfterMs: number; tokenGuard: typeof tokenGuard };
+  }
   const apiKey = pickGroqApiKey();
   if (!apiKey) {
     return {
@@ -277,4 +331,7 @@ export const _testOnly = {
   resolveGroqRetryAfterMs,
   buildGroqRequestBody,
   resolveGroqMaxAttempts,
+  resolveGroqMaxCompletionTokens,
+  resolveGroqMaxTotalTokens,
+  resolveGroqTokenGuard,
 };

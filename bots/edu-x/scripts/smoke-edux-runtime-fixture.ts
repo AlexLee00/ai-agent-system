@@ -31,6 +31,11 @@ function runScript(script, args = []) {
     maxBuffer: 1024 * 1024 * 8,
   });
   assert(stdout.includes('"status": "dry_run"'), `${script} did not dry-run: ${stdout.slice(-500)}`);
+  const result = JSON.parse(stdout.slice(stdout.indexOf('{')));
+  assert(
+    result.artifact?.mdPath?.includes('/output/dry-run/fixture/'),
+    `${script} fixture dry-run must not overwrite production artifacts: ${result.artifact?.mdPath}`,
+  );
   return stdout;
 }
 

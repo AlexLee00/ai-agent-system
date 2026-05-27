@@ -5,10 +5,10 @@
 /**
  * edux-launchd-doctor.ts
  *
- * Audits and optionally bootstraps the five Edu-X dry-run LaunchAgents.
- * The apply path is intentionally narrow: it only loads missing ai.edux.*
- * agents after every plist proves EDUX_DRY_RUN=true and live publish flags
- * are false. It never unloads, restarts, or kickstarts an existing service.
+ * Audits and optionally bootstraps/reloads the five Edu-X LaunchAgents.
+ * Dry-run apply only loads missing agents after every plist proves safe
+ * dry-run flags. Live apply requires an explicit live confirm token and a
+ * non-fixture PASS promotion gate report before reloading ai.edux.* agents.
  */
 
 const fs = require('fs');
@@ -21,7 +21,9 @@ const EDUX_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'edu-x');
 const LAUNCHD_DIR = path.join(EDUX_ROOT, 'launchd');
 const OUTPUT_DIR = path.join(EDUX_ROOT, 'output');
 const REPORT_PATH = path.join(OUTPUT_DIR, 'edux-launchd-doctor.json');
-const CONFIRM_TOKEN = 'edux-launchd-dry-run';
+const PROMOTION_GATE_REPORT = path.join(OUTPUT_DIR, 'edux-promotion-gate.json');
+const DRY_RUN_CONFIRM_TOKEN = 'edux-launchd-dry-run';
+const LIVE_CONFIRM_TOKEN = 'edux-launchd-live';
 const LABEL_PREFIX = 'ai.edux.';
 const EXPECTED_COUNT = 5;
 
@@ -32,6 +34,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     json: false,
     noWrite: false,
     strict: false,
+    mode: process.env.EDUX_LAUNCHD_MODE || 'auto',
   };
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
@@ -39,6 +42,10 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (item === '--json') args.json = true;
     else if (item === '--no-write') args.noWrite = true;
     else if (item === '--strict') args.strict = true;
+    else if (item === '--live') args.mode = 'live';
+    else if (item === '--dry-run') args.mode = 'dry-run';
+    else if (item === '--mode' && argv[i + 1]) args.mode = argv[++i];
+    else if (item.startsWith('--mode=')) args.mode = item.split('=', 2)[1];
     else if (item === '--confirm' && argv[i + 1]) args.confirm = argv[++i];
     else if (item.startsWith('--confirm=')) args.confirm = item.split('=', 2)[1];
   }
@@ -96,18 +103,69 @@ function sameFileContent(a, b) {
   return fs.readFileSync(a, 'utf8') === fs.readFileSync(b, 'utf8');
 }
 
-function validatePlist(filePath, plist) {
+function normalizeMode(mode) {
+  const value = String(mode || 'auto').trim().toLowerCase();
+  if (['live', 'production', 'prod'].includes(value)) return 'live';
+  if (['dry-run', 'dry_run', 'dryrun', 'shadow'].includes(value)) return 'dry-run';
+  return 'auto';
+}
+
+function detectRuntimeMode(envVars = {}) {
+  if (
+    envVars.EDUX_DRY_RUN === 'true'
+    && envVars.EDUX_LIVE_PUBLISH_APPROVED === 'false'
+    && envVars.EDUX_PROMOTION_GATE_PASSED === 'false'
+  ) return 'dry-run';
+  if (
+    envVars.EDUX_DRY_RUN === 'false'
+    && envVars.EDUX_LIVE_PUBLISH_APPROVED === 'true'
+    && envVars.EDUX_PROMOTION_GATE_PASSED === 'true'
+  ) return 'live';
+  return 'invalid';
+}
+
+function loadPromotionGateReport() {
+  try {
+    if (!fs.existsSync(PROMOTION_GATE_REPORT)) return null;
+    return JSON.parse(fs.readFileSync(PROMOTION_GATE_REPORT, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function livePromotionGateReady() {
+  const report = loadPromotionGateReport();
+  return {
+    ok: Boolean(report?.allPass && report?.fixture !== true && report?.mode !== 'fixture'),
+    report: report ? {
+      generatedAt: report.generatedAt || null,
+      mode: report.mode || null,
+      fixture: Boolean(report.fixture),
+      summary: report.summary || null,
+      allPass: Boolean(report.allPass),
+    } : null,
+  };
+}
+
+function confirmTokenFor(mode) {
+  return mode === 'live' ? LIVE_CONFIRM_TOKEN : DRY_RUN_CONFIRM_TOKEN;
+}
+
+function validatePlist(filePath, plist, requestedMode = 'auto') {
   const issues = [];
   const label = String(plist.Label || '');
   const envVars = plist.EnvironmentVariables || {};
   const programArgs = Array.isArray(plist.ProgramArguments) ? plist.ProgramArguments : [];
   const calendar = plist.StartCalendarInterval || {};
+  const mode = detectRuntimeMode(envVars);
+  const expectedMode = normalizeMode(requestedMode);
+  const imageAttachmentsEnabled = String(envVars.EDUX_IMAGE_ATTACHMENTS_ENABLED || 'false') === 'true';
 
   if (!label.startsWith(LABEL_PREFIX)) issues.push('label_not_ai_edux');
   if (!path.basename(filePath).startsWith(`${label}.`)) issues.push('filename_label_mismatch');
-  if (envVars.EDUX_DRY_RUN !== 'true') issues.push('EDUX_DRY_RUN_not_true');
-  if (envVars.EDUX_LIVE_PUBLISH_APPROVED !== 'false') issues.push('EDUX_LIVE_PUBLISH_APPROVED_not_false');
-  if (envVars.EDUX_PROMOTION_GATE_PASSED !== 'false') issues.push('EDUX_PROMOTION_GATE_PASSED_not_false');
+  if (mode === 'invalid') issues.push('edux_runtime_flags_invalid');
+  if (expectedMode !== 'auto' && mode !== expectedMode) issues.push(`edux_runtime_mode_not_${expectedMode}`);
+  if (imageAttachmentsEnabled) issues.push('image_attachments_enabled');
   if (plist.RunAtLoad !== false) issues.push('RunAtLoad_not_false');
   if (plist.KeepAlive !== false) issues.push('KeepAlive_not_false');
   if (!Number.isInteger(calendar.Hour) || !Number.isInteger(calendar.Minute)) issues.push('StartCalendarInterval_missing');
@@ -163,21 +221,56 @@ function bootstrapPlist(label, destination, apply, loadedBefore = isLoaded(label
   };
 }
 
+function reloadPlist(label, destination, apply, reloadNeeded) {
+  if (!reloadNeeded) return null;
+  if (!apply) return { action: 'would_reload', loadedAfter: isLoaded(label) };
+
+  const target = launchTarget();
+  const bootout = run('/bin/launchctl', ['bootout', target, destination]);
+  const bootstrap = run('/bin/launchctl', ['bootstrap', target, destination]);
+  const enable = run('/bin/launchctl', ['enable', `${target}/${label}`]);
+  const loadedAfter = isLoaded(label);
+  return {
+    action: loadedAfter ? 'reloaded' : 'reload_failed',
+    loadedAfter,
+    bootoutStatus: bootout.status,
+    bootoutError: bootout.ok ? null : (bootout.stderr || bootout.error || bootout.stdout),
+    bootstrapStatus: bootstrap.status,
+    bootstrapError: bootstrap.ok ? null : (bootstrap.stderr || bootstrap.error || bootstrap.stdout),
+    enableStatus: enable.status,
+    enableError: enable.ok ? null : (enable.stderr || enable.error || enable.stdout),
+  };
+}
+
 function buildReport(args) {
-  const allowApply = args.apply && args.confirm === CONFIRM_TOKEN;
-  const applyRejected = args.apply && !allowApply;
+  const mode = normalizeMode(args.mode);
+  const liveGate = mode === 'live' ? livePromotionGateReady() : null;
+  const applyModeExplicit = mode !== 'auto';
+  const expectedConfirm = applyModeExplicit ? confirmTokenFor(mode) : null;
   const plists = listPlists();
-  const entries = plists.map((filePath) => {
+  const sources = plists.map((filePath) => {
     const plist = readPlist(filePath);
     const label = String(plist.Label || path.basename(filePath, '.plist'));
-    const issues = validatePlist(filePath, plist);
+    const issues = validatePlist(filePath, plist, mode);
     const destination = destinationFor(filePath);
+    return { filePath, plist, label, issues, destination };
+  });
+  const preflightValidationFailures = sources.filter((source) => source.issues.length > 0);
+  const sourceSetSafe = plists.length === EXPECTED_COUNT && preflightValidationFailures.length === 0;
+  const confirmOk = applyModeExplicit
+    && args.confirm === expectedConfirm
+    && (mode !== 'live' || liveGate?.ok === true);
+  const allowApply = Boolean(args.apply && confirmOk && sourceSetSafe);
+  const applyRejected = Boolean(args.apply && !allowApply);
+  const entries = sources.map(({ filePath, plist, label, issues, destination }) => {
     const safeToApply = issues.length === 0;
     const loadedBefore = isLoaded(label);
     const copy = safeToApply ? copyPlist(filePath, destination, allowApply) : { action: 'blocked_by_validation', path: destination };
-    const bootstrap = safeToApply ? bootstrapPlist(label, destination, allowApply, loadedBefore) : { action: 'blocked_by_validation', loadedAfter: false };
+    const reloadNeeded = safeToApply && loadedBefore && copy.inSyncBefore === false;
+    const reload = safeToApply ? reloadPlist(label, destination, allowApply, reloadNeeded) : null;
+    const bootstrap = safeToApply && !reloadNeeded ? bootstrapPlist(label, destination, allowApply, loadedBefore) : { action: reloadNeeded ? 'handled_by_reload' : 'blocked_by_validation', loadedAfter: isLoaded(label) };
     const loaded = isLoaded(label);
-    const reloadRequired = safeToApply && loadedBefore && copy.inSyncBefore === false;
+    const reloadRequired = safeToApply && loadedBefore && copy.inSyncBefore === false && !(allowApply && reload && reload.loadedAfter);
     return {
       label,
       source: filePath,
@@ -186,9 +279,12 @@ function buildReport(args) {
       dryRun: plist.EnvironmentVariables?.EDUX_DRY_RUN || null,
       liveApproved: plist.EnvironmentVariables?.EDUX_LIVE_PUBLISH_APPROVED || null,
       promotionGatePassed: plist.EnvironmentVariables?.EDUX_PROMOTION_GATE_PASSED || null,
+      imageAttachmentsEnabled: plist.EnvironmentVariables?.EDUX_IMAGE_ATTACHMENTS_ENABLED || null,
+      runtimeMode: detectRuntimeMode(plist.EnvironmentVariables || {}),
       validationIssues: issues,
       copy,
       bootstrap,
+      reload,
       loadedBefore,
       loaded,
       reloadRequired,
@@ -204,15 +300,18 @@ function buildReport(args) {
     && validationFailures.length === 0
     && missing.length === 0
     && reloadRequired.length === 0
+    && (mode !== 'live' || liveGate?.ok === true)
     && !applyRejected;
 
   return {
     generatedAt: new Date().toISOString(),
-    mode: allowApply ? 'apply_dry_run_launchd' : 'audit',
+    mode: allowApply ? `apply_${mode}_launchd` : 'audit',
+    targetMode: mode,
+    livePromotionGate: liveGate,
     applyRequested: args.apply,
     applyAllowed: allowApply,
     applyRejected,
-    confirmRequired: args.apply && !allowApply ? CONFIRM_TOKEN : null,
+    confirmRequired: args.apply && !confirmOk ? (expectedConfirm || '--mode=dry-run|--mode=live') : null,
     ok,
     expectedCount: EXPECTED_COUNT,
     plistCount: plists.length,
@@ -222,9 +321,14 @@ function buildReport(args) {
     validationFailureCount: validationFailures.length,
     entries,
     nextStep: ok
-      ? ['Edu-X dry-run LaunchAgents are loaded. Continue dry-run accumulation until promotion gate reaches 5/5.']
+      ? [mode === 'live'
+          ? 'Edu-X live LaunchAgents are loaded. Scheduled posts will publish when slot jobs run.'
+          : 'Edu-X dry-run LaunchAgents are loaded. Continue dry-run accumulation until promotion gate reaches 5/5.']
       : [
-          applyRejected ? `Re-run with --confirm=${CONFIRM_TOKEN} to apply.` : null,
+          applyRejected && !applyModeExplicit ? 'Apply requires an explicit --dry-run or --live mode.' : null,
+          applyRejected && applyModeExplicit && args.confirm !== expectedConfirm ? `Re-run with --confirm=${expectedConfirm} to apply after blockers are clear.` : null,
+          applyRejected && confirmOk && !sourceSetSafe ? 'Apply blocked until all expected plist files pass validation.' : null,
+          mode === 'live' && liveGate?.ok !== true ? 'Live apply blocked until non-fixture promotion gate report is PASS.' : null,
           missing.length ? `Load missing dry-run LaunchAgents: ${missing.join(', ')}` : null,
           reloadRequired.length ? `Loaded LaunchAgents need explicit reload approval: ${reloadRequired.join(', ')}` : null,
           validationFailures.length ? 'Fix plist validation failures before applying.' : null,
@@ -244,7 +348,7 @@ function main() {
   console.log(summary);
   if (report.missingLabels.length) console.log(`missing: ${report.missingLabels.join(', ')}`);
   if (report.reloadRequiredLabels.length) console.log(`reload required: ${report.reloadRequiredLabels.join(', ')}`);
-  if (report.applyRejected) console.log(`apply rejected: pass --confirm=${CONFIRM_TOKEN}`);
+  if (report.applyRejected) console.log(`apply rejected: pass --confirm=${report.confirmRequired}`);
   console.log(`report: ${args.noWrite ? '(no-write)' : REPORT_PATH}`);
   if (args.json) console.log(JSON.stringify(report, null, 2));
   if (args.strict && !report.ok) process.exit(1);

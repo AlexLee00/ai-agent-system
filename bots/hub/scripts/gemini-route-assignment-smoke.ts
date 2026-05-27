@@ -28,39 +28,44 @@ async function main() {
   assert(runtimeSummary, 'orchestrator.summary runtime profile is required');
   assert.equal(
     runtimeSummary.primary_routes?.[0],
-    'gemini-cli-oauth/gemini-2.5-flash',
-    'orchestrator.summary runtime primary must use the low-cost Gemini summary route',
+    'groq/llama-3.1-8b-instant',
+    'orchestrator.summary runtime primary must use the fast non-Gemini summary route',
   );
   assert(
     runtimeSummary.fallback_routes?.includes('openai-oauth/gpt-5.4-mini'),
     'orchestrator.summary runtime must keep OpenAI OAuth as a safety fallback',
   );
 
+  assert(
+    !runtimeSummary.fallback_routes?.some((route) => String(route).startsWith('gemini-cli-oauth/')),
+    'orchestrator.summary runtime must not keep Gemini fallback',
+  );
+
   const selected = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     firstProviderFromSelector(selected),
-    'gemini-cli-oauth',
-    'orchestrator/summary selector primary must use the low-cost Gemini summary route',
+    'groq',
+    'orchestrator/summary selector primary must use the fast non-Gemini summary route',
   );
   assert(
     hasProvider(selected, 'openai-oauth'),
     'orchestrator/summary selector must keep OpenAI OAuth fallback',
   );
   assert(
-    hasProvider(selected, 'groq'),
-    'orchestrator/summary selector must keep Groq fallback while Claude Code quota is saturated',
+    !hasProvider(selected, 'gemini-cli-oauth'),
+    'orchestrator/summary selector must not keep Gemini route',
   );
 
   assert(
-    drillSource.includes('geminiPrimary'),
-    'team LLM drill must include at least one Gemini-primary profile check when present',
+    drillSource.includes('firstSupportedRoute'),
+    'team LLM drill must inspect selector-backed runtime routes',
   );
 
   console.log(JSON.stringify({
     ok: true,
     runtime_profile: 'orchestrator.summary',
-    primary_provider: 'gemini-cli-oauth',
-    fallbacks: ['groq', 'openai-oauth'],
+    primary_provider: 'groq',
+    fallbacks: ['openai-oauth'],
   }));
 }
 

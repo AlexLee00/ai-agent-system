@@ -11,8 +11,8 @@
       "current": "claude-haiku-4-5-20251001",
       "previous": ["claude-haiku-4-5-preview-20250815"],
       "released_at": "2025-10-15",
-      "cost_per_1m_input_usd": 0.8,
-      "cost_per_1m_output_usd": 4.0,
+      "cost_per_1m_input_usd": 1.0,
+      "cost_per_1m_output_usd": 5.0,
       "max_context_tokens": 200000,
       "recommended_for": ["fast_classification", "batch_processing", "rule_based_decisions"]
     },
@@ -23,7 +23,7 @@
       "cost_per_1m_input_usd": 3.0,
       "cost_per_1m_output_usd": 15.0,
       "max_context_tokens": 1000000,
-      "max_output_tokens": 128000,
+      "max_output_tokens": 64000,
       "recommended_for": ["structured_reasoning", "code_generation", "analysis"]
     },
     "anthropic_opus": {

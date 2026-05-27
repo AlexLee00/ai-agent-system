@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "mode": "live",
+  "baseUrl": "http://localhost:7788",
+  "generatedAt": "2026-05-27T05:20:01.325Z",
+  "teams": [
+    "justin"
+  ],
+  "agentFilter": [
+    "justin.neutral-bench"
+  ],
+  "slotFilter": "primary",
+  "totals": {
+    "agents": 1,
+    "selectedAgents": 1,
+    "skippedAgents": 0,
+    "checks": 1,
+    "failed": 0
+  },
+  "byTeam": {
+    "justin": {
+      "agents": 1,
+      "selectedAgents": 1,
+      "skippedAgents": 0,
+      "checks": 1,
+      "failed": 0,
+      "providers": [
+        "openai-oauth"
+      ]
+    }
+  },
+  "skippedAgents": [],
+  "failures": [],
+  "results": [
+    {
+      "ok": true,
+      "team": "justin",
+      "label": "justin",
+      "agent": "neutral-bench",
+      "selectorKey": "justin.opinion",
+      "role": "primary",
+      "route": "openai-oauth/gpt-5.4",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "status": 200,
+      "durationMs": 1146,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "error": null,
+      "traceIdPresent": true
+    }
+  ]
+}

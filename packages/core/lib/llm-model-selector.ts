@@ -64,6 +64,7 @@ const GEMINI_CLI_PRO_MODEL = configuredModel(
   'gemini-2.5-pro',
   ['gemini-cli-oauth', 'gemini-oauth', 'gemini'],
 );
+const LOCAL_EMBED_MODEL = configuredModel('LLM_LOCAL_EMBED_MODEL', 'qwen3-embed-0.6b', ['local-embedding', 'local']);
 const TEAM_SELECTOR_VERSION_LEGACY = 'v2_legacy';
 const TEAM_SELECTOR_VERSION_OAUTH4 = 'v3_oauth_4';
 
@@ -173,6 +174,7 @@ function resolveSelectorVersionForKey(selectorKey: string, options: SelectorOpti
 
 export function inferProviderFromModel(model = ''): string {
   if (!model) return 'claude-code';
+  if (model.startsWith('local-embedding/') || model === LOCAL_EMBED_MODEL) return 'local-embedding';
   if (model.startsWith('claude-code/')) return 'claude-code';
   if (model.startsWith('gemma4') || model.startsWith('gemma-4')) return 'local';
   if (model.startsWith('local/') || model === 'qwen2.5-7b' || model === 'deepseek-r1-32b') return 'local';
@@ -249,6 +251,7 @@ function buildRouteFromAgentModel(agentModel: string | null | undefined, {
   if (!normalized) return null;
   if (normalized === openaiPerfLabel || normalized === openaiPerfModel) return 'openai_perf';
   if (normalized === openaiMiniLabel || normalized === openaiMiniModel) return 'openai_mini';
+  if (normalized === LOCAL_EMBED_MODEL || normalized.startsWith('local-embedding/')) return 'local_embedding';
   if (normalized.startsWith('openai-oauth/')) return 'openai_mini';
   if (normalized.startsWith('local/')) return normalized.includes('deepseek') ? 'local_deep' : 'local_primary';
   if (normalized.startsWith('groq/')) {
@@ -348,12 +351,183 @@ function replacementForClaudeCode(entry: LLMChainEntry, options: SelectorOptions
   };
 }
 
+const GEMINI_DIAGNOSTIC_SELECTOR_KEYS = new Set([
+  'hub.gemini.cli.adapter.smoke',
+  'hub.gemini.cli.readiness.live',
+  'hub.unified.oauth.gemini.smoke',
+]);
+
+const CLAUDE_FIRST_WRITING_SELECTOR_KEYS = new Set([
+  'blog.pos.writer',
+  'blog.gems.writer',
+  'blog.curriculum.generate',
+  'blog.book_review.preview',
+]);
+
+function providerOfEntry(entry: LLMChainEntry): string {
+  const explicit = String(entry?.provider || '').trim();
+  if (explicit === 'gemini-oauth') return 'gemini-cli-oauth';
+  if (explicit) return explicit;
+  return inferProviderFromModel(String(entry?.model || ''));
+}
+
+function isGeminiProviderName(provider: string): boolean {
+  return ['gemini-cli-oauth', 'gemini-oauth', 'gemini-codeassist-oauth', 'gemini-code-assist-oauth'].includes(
+    String(provider || '').trim(),
+  );
+}
+
+function isGeminiEntry(entry: LLMChainEntry): boolean {
+  const model = String(entry?.model || '').trim().toLowerCase();
+  return isGeminiProviderName(providerOfEntry(entry))
+    || model.startsWith('gemini-')
+    || model.startsWith('gemini-cli-oauth/')
+    || model.startsWith('gemini-oauth/')
+    || model.startsWith('google-gemini-cli/')
+    || model.startsWith('gemini-codeassist-oauth/')
+    || model.startsWith('gemini-code-assist-oauth/');
+}
+
+function isGroqEntry(entry: LLMChainEntry): boolean {
+  return providerOfEntry(entry) === 'groq';
+}
+
+function isOpenAiEntry(entry: LLMChainEntry): boolean {
+  const provider = providerOfEntry(entry);
+  return provider === 'openai-oauth' || provider === 'openai';
+}
+
+function isClaudeCodeEntry(entry: LLMChainEntry): boolean {
+  return providerOfEntry(entry) === 'claude-code';
+}
+
+function entryMaxTokens(entry: LLMChainEntry | null | undefined, fallback = 1024): number {
+  const value = Number(entry?.maxTokens);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function groqRouteMaxTokens(): number {
+  const configured = Number(process.env.LLM_GROQ_ROUTE_MAX_TOKENS || process.env.HUB_GROQ_ROUTE_MAX_TOKENS || '');
+  if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
+  return 4096;
+}
+
+function isExplicitGeminiDiagnosticSelector(selectorKey: string): boolean {
+  return GEMINI_DIAGNOSTIC_SELECTOR_KEYS.has(String(selectorKey || ''));
+}
+
+function isBacktestSelector(selectorKey: string, options: SelectorOptions = {}): boolean {
+  const key = String(selectorKey || '').trim();
+  const agentName = String(options.agentName || '').trim().toLowerCase();
+  const taskType = String((options as any).taskType || (options as any).runtimePurpose || '').trim().toLowerCase();
+  return key === 'chronos.backtest'
+    || key === 'investment.chronos.backtest'
+    || (key === 'investment.agent_policy' && agentName === 'chronos' && taskType === 'backtest_embedding');
+}
+
+function openAiEntry(template: LLMChainEntry | null | undefined, model: string): LLMChainEntry {
+  return {
+    provider: 'openai-oauth',
+    model: model.replace(/^openai-oauth\//, ''),
+    maxTokens: entryMaxTokens(template, model === OPENAI_MINI_MODEL ? 1024 : 2048),
+    temperature: template?.temperature ?? 0.1,
+    ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
+  };
+}
+
+function groqFastEntry(template: LLMChainEntry | null | undefined): LLMChainEntry {
+  return {
+    provider: 'groq',
+    model: GROQ_FAST_MODEL,
+    maxTokens: entryMaxTokens(template, 1024),
+    temperature: template?.temperature ?? 0.1,
+    ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
+  };
+}
+
+function claudeWritingEntry(template: LLMChainEntry | null | undefined): LLMChainEntry {
+  return {
+    provider: 'claude-code',
+    model: 'claude-code/haiku',
+    maxTokens: entryMaxTokens(template, 4096),
+    temperature: template?.temperature ?? 0.7,
+    ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
+  };
+}
+
+function localEmbeddingEntry(): LLMChainEntry {
+  return { provider: 'local-embedding', model: LOCAL_EMBED_MODEL, maxTokens: 0, temperature: 0 };
+}
+
+function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
+  const selectorKey = String(options.selectorKey || '');
+  const maxTokens = entryMaxTokens(entry, Number(options.maxTokens) || 1024);
+  if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) {
+    const candidate = claudeWritingEntry(entry);
+    if (!shouldAvoidClaudeCode(candidate, options)) return candidate;
+    return openAiEntry(entry, maxTokens > 1500 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
+  }
+  if (selectorKey.startsWith('claude.')) {
+    return openAiEntry(entry, maxTokens > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
+  }
+  if (maxTokens <= 1024) return groqFastEntry(entry);
+  if (maxTokens <= 2048) return openAiEntry(entry, OPENAI_MINI_MODEL);
+  return openAiEntry(entry, OPENAI_PERF_MODEL);
+}
+
+function ensureOpenAiPrimary(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  const nonGemini = chain.filter((entry) => !isGeminiEntry(entry) && !isClaudeCodeEntry(entry));
+  const existingOpenAi = nonGemini.find(isOpenAiEntry);
+  const primary = existingOpenAi || openAiEntry(chain[0], entryMaxTokens(chain[0], 1024) > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
+  const rest = nonGemini.filter((entry) => entry !== existingOpenAi && !(
+    providerOfEntry(entry) === providerOfEntry(primary) && entry.model === primary.model
+  ));
+  return dedupeByProviderModel([primary, ...rest]).map((entry) => (
+    shouldAvoidPublicOpenAi(entry, options) ? replacementForPublicOpenAi(entry) : entry
+  ));
+}
+
+function ensureClaudeWritingPrimary(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  const nonGemini = chain.filter((entry) => !isGeminiEntry(entry));
+  const existingClaude = nonGemini.find(isClaudeCodeEntry);
+  const primary = existingClaude || claudeWritingEntry(chain[0]);
+  if (shouldAvoidClaudeCode(primary, options)) return ensureOpenAiPrimary(nonGemini, options);
+  const rest = nonGemini.filter((entry) => entry !== existingClaude && !(
+    providerOfEntry(entry) === providerOfEntry(primary) && entry.model === primary.model
+  ));
+  return dedupeByProviderModel([primary, ...rest]);
+}
+
+function applyGroqTokenPolicy(chain: LLMChainEntry[]): LLMChainEntry[] {
+  const limit = groqRouteMaxTokens();
+  const hasNonGroq = chain.some((entry) => !isGroqEntry(entry));
+  if (!hasNonGroq) return chain;
+  const filtered = chain.filter((entry) => !isGroqEntry(entry) || entryMaxTokens(entry, 1024) <= limit);
+  return filtered.length > 0 ? filtered : chain;
+}
+
+function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  const selectorKey = String(options.selectorKey || '');
+  if (isBacktestSelector(selectorKey, options)) return [localEmbeddingEntry()];
+  if (isExplicitGeminiDiagnosticSelector(selectorKey)) return chain;
+
+  let optimized = chain.map((entry) => (isGeminiEntry(entry) ? replacementForGemini(entry, options) : entry));
+  optimized = optimized.filter((entry) => !isGeminiEntry(entry));
+
+  if (selectorKey.startsWith('claude.')) optimized = ensureOpenAiPrimary(optimized, options);
+  if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) optimized = ensureClaudeWritingPrimary(optimized, options);
+
+  optimized = applyGroqTokenPolicy(dedupeByProviderModel(optimized));
+  return optimized.length > 0 ? optimized : [openAiEntry(chain[0], OPENAI_MINI_MODEL)];
+}
+
 function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
-  return dedupeByProviderModel(chain.map((entry) => {
+  const guarded = dedupeByProviderModel(chain.map((entry) => {
     if (shouldAvoidClaudeCode(entry, options)) return replacementForClaudeCode(entry, options);
     if (shouldAvoidPublicOpenAi(entry, options)) return replacementForPublicOpenAi(entry);
     return entry;
   }));
+  return applySelectorOptimizationPolicy(guarded, options);
 }
 
 const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
@@ -1375,6 +1549,9 @@ function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelecto
   if (normalized === 'openai_mini') {
     return { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 };
   }
+  if (normalized === 'local_embedding') {
+    return localEmbeddingEntry();
+  }
   if (normalized === 'gemini_flash') {
     return { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2048, temperature: 0.1 };
   }
@@ -1672,6 +1849,9 @@ function buildSelectorRegistry(): Record<string, any> {
           ? (configuredRoute || modelDerivedRoute || 'groq_scout')
           : (modelDerivedRoute || configuredRoute || 'groq_scout'));
       const routeChains: Record<string, LLMChainEntry[]> = {
+        local_embedding: [
+          localEmbeddingEntry(),
+        ],
         openai_perf: [
           { provider: 'openai-oauth', model: openaiPerfModel },
           { provider: 'groq', model: groqScoutModel },
@@ -1792,6 +1972,15 @@ SELECTOR_REGISTRY['investment._default'] = (options: SelectorOptions = {}) => (
   SELECTOR_REGISTRY['investment.agent_policy']({ ...options, agentName: 'default' })
 );
 
+SELECTOR_REGISTRY['chronos.backtest'] = () => ({
+  route: 'local_embedding',
+  primary: localEmbeddingEntry(),
+  fallbacks: [],
+  fallbackChain: [localEmbeddingEntry()],
+});
+
+SELECTOR_REGISTRY['investment.chronos.backtest'] = SELECTOR_REGISTRY['chronos.backtest'];
+
 for (const agentName of INVESTMENT_EXPLICIT_SELECTOR_AGENTS) {
   SELECTOR_REGISTRY[`investment.${agentName}`] = (options: SelectorOptions = {}) => (
     SELECTOR_REGISTRY['investment.agent_policy']({ ...options, agentName })
@@ -1824,7 +2013,7 @@ export function selectLLMChain(key: string, options: SelectorOptions = {}): LLMC
   const resolved = selectLLMPolicy(key, options);
   const normalizedChain = normalizeChainFromPolicy(resolved);
   if (!normalizedChain) throw new Error(`LLM selector key ${key} 는 chain이 아닙니다`);
-  return applyProviderRuntimeGuards(normalizedChain, options);
+  return applyProviderRuntimeGuards(normalizedChain, { ...options, selectorKey: key });
 }
 
 export function describeLLMSelector(key: string, options: SelectorOptions = {}): any {
@@ -1834,7 +2023,7 @@ export function describeLLMSelector(key: string, options: SelectorOptions = {}):
   }
   const chain = normalizeChainFromPolicy(resolved);
   if (chain) {
-    const guardedChain = applyProviderRuntimeGuards(chain, options);
+    const guardedChain = applyProviderRuntimeGuards(chain, { ...options, selectorKey: key });
     return { key, kind: 'chain', primary: guardedChain[0] || null, fallbacks: guardedChain.slice(1), chain: guardedChain };
   }
   return { key, kind: 'policy', policy: resolved };

@@ -19,6 +19,7 @@ const {
 } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
+const rag = require('../../../../packages/core/lib/rag');
 const { resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
 const providerRegistry = require('./provider-registry');
 const sender = require('../../../../packages/core/lib/telegram-sender');
@@ -31,6 +32,9 @@ const CLAUDE_CODE_MODEL = {
 
 const DEFAULT_CLAUDE_CODE_TIMEOUT_MS = 90_000;
 const CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE = 'openai-oauth/gpt-5.4';
+const DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS = 1;
+const DEFAULT_OPENAI_OAUTH_RETRY_DELAY_MS = 750;
+const MAX_OPENAI_OAUTH_RETRY_ATTEMPTS = 3;
 const CLAUDE_CODE_BUDGET_FLOORS_USD = {
   haiku: 0.05,
   sonnet: 0.2,
@@ -358,6 +362,10 @@ async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   const circuitKey = _providerCircuitKey(provider, normalizedRoute);
   const started = Date.now();
 
+  if (_isGeminiProvider(provider) && isGeminiDisabled()) {
+    return { ok: false, provider: 'failed', error: 'gemini_provider_disabled', durationMs: 0 };
+  }
+
   if (_providerCircuitEnabled(provider) && !providerRegistry.canCall(circuitKey)) {
     return {
       ok: false,
@@ -415,8 +423,12 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
     const model = normalizedRoute.slice('local/'.length);
     return callLocalOllama({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, timeoutMs });
   }
+  if (normalizedRoute.startsWith('local-embedding/')) {
+    const model = normalizedRoute.slice('local-embedding/'.length);
+    return _callLocalEmbeddingOnly(req, model);
+  }
   if (normalizedRoute.startsWith('openai-oauth/')) {
-    return callOpenAiCodexOAuth({
+    return _callOpenAiCodexOAuthWithRetry({
       prompt: req.prompt,
       model: normalizedRoute.slice('openai-oauth/'.length),
       systemPrompt: req.systemPrompt,
@@ -428,7 +440,7 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
   if (normalizedRoute.startsWith('gemini-oauth/')
     || normalizedRoute.startsWith('gemini-cli-oauth/')
     || normalizedRoute.startsWith('gemini-codeassist-oauth/')) {
-    if (isGeminiDisabled()) {
+    if (_isGeminiProvider(_routeToProvider(normalizedRoute)) && isGeminiDisabled()) {
       return { ok: false, provider: 'failed', error: 'gemini_provider_disabled', durationMs: 0 };
     }
     if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) {
@@ -455,6 +467,103 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
   return { ok: false, provider: 'failed', error: `unsupported_provider:${normalizedRoute}`, durationMs: 0 };
 }
 
+async function _callOpenAiCodexOAuthWithRetry(input) {
+  const started = Date.now();
+  const retryAttempts = _openAiOAuthRetryAttempts();
+  const retryErrors = [];
+
+  for (let attempt = 0; ; attempt += 1) {
+    const result = await callOpenAiCodexOAuth(input);
+    if (result.ok) {
+      return {
+        ...result,
+        durationMs: Date.now() - started,
+        retryCount: attempt,
+        retryErrors: retryErrors.length ? retryErrors : undefined,
+      };
+    }
+
+    const error = String(result.error || 'provider_failed');
+    const shouldRetry = attempt < retryAttempts && _isRetryableOpenAiOAuthError(error);
+    if (!shouldRetry) {
+      return {
+        ...result,
+        durationMs: Date.now() - started,
+        retryCount: attempt,
+        retryErrors: retryErrors.length ? retryErrors.concat(error) : undefined,
+      };
+    }
+
+    retryErrors.push(error);
+    console.warn(`[llm/unified] OpenAI OAuth 일시 오류 (${error}) → 재시도 ${attempt + 1}/${retryAttempts}`);
+    await _sleep(_openAiOAuthRetryDelayMs(attempt));
+  }
+}
+
+function _isRetryableOpenAiOAuthError(error) {
+  return /openai_codex_oauth_timeout_or_abort/i.test(String(error || ''));
+}
+
+function _openAiOAuthRetryAttempts() {
+  return _boundedIntegerEnv(
+    'HUB_OPENAI_OAUTH_RETRY_ATTEMPTS',
+    DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS,
+    0,
+    MAX_OPENAI_OAUTH_RETRY_ATTEMPTS,
+  );
+}
+
+function _openAiOAuthRetryDelayMs(attempt) {
+  const baseDelayMs = _boundedIntegerEnv(
+    'HUB_OPENAI_OAUTH_RETRY_DELAY_MS',
+    DEFAULT_OPENAI_OAUTH_RETRY_DELAY_MS,
+    0,
+    30_000,
+  );
+  return baseDelayMs * Math.max(1, Number(attempt || 0) + 1);
+}
+
+function _sleep(ms) {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function _callLocalEmbeddingOnly(req, model) {
+  const started = Date.now();
+  try {
+    const text = String(req.prompt || req.systemPrompt || 'backtest').slice(0, 8000);
+    const embeddings = await rag.createEmbeddingBatch([text]);
+    const vector = embeddings?.[0] || [];
+    const dimensions = Array.isArray(vector) ? vector.length : 0;
+    const digest = crypto.createHash('sha256')
+      .update(JSON.stringify(Array.isArray(vector) ? vector.slice(0, 16) : []))
+      .digest('hex')
+      .slice(0, 16);
+    return {
+      ok: true,
+      provider: 'local-embedding',
+      result: JSON.stringify({ mode: 'embedding_only', model, dimensions, embedding_hash: digest }),
+      durationMs: Date.now() - started,
+      modelUsage: { [model]: { input_texts: 1, dimensions } },
+      embeddingOnly: true,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: 'failed',
+      error: `local_embedding_failed:${error?.message || error}`,
+      durationMs: Date.now() - started,
+    };
+  }
+}
+
+function _isGeminiProvider(provider) {
+  return provider === 'gemini-oauth'
+    || provider === 'gemini-cli-oauth'
+    || provider === 'gemini-codeassist-oauth'
+    || provider === 'gemini';
+}
+
 function _providerCircuitEnabled(provider) {
   if (process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED === 'false') return false;
   return Boolean(provider && provider !== 'failed');
@@ -477,6 +586,7 @@ function _chainEntryToRoute(entry) {
   }
   if (provider === 'claude-code') return model.startsWith('claude-code/') ? model : `claude-code/${model}`;
   if (provider === 'groq') return model.startsWith('groq/') ? model : `groq/${model}`;
+  if (provider === 'local-embedding') return model.startsWith('local-embedding/') ? model : `local-embedding/${model}`;
   if (provider === 'openai-oauth') return model.startsWith('openai-oauth/') ? model : `openai-oauth/${model}`;
   if (provider === 'openai') {
     const normalizedModel = model.replace(/^openai\//, '').replace(/^openai-oauth\//, '');
@@ -510,6 +620,7 @@ function _chainEntryToRoute(entry) {
 function _isProviderSupported(route) {
   return route.startsWith('claude-code/')
     || route.startsWith('groq/')
+    || route.startsWith('local-embedding/')
     || route.startsWith('local/')
     || route.startsWith('openai-oauth/')
     || route.startsWith('openai/')
@@ -525,6 +636,7 @@ function _routeToProvider(route) {
   const normalizedRoute = _normalizeRoute(route);
   if (normalizedRoute.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalizedRoute.startsWith('groq/')) return 'groq';
+  if (normalizedRoute.startsWith('local-embedding/')) return 'local-embedding';
   if (normalizedRoute.startsWith('openai-oauth/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('openai/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
@@ -597,6 +709,13 @@ function _positiveNumber(value, fallback = null) {
   const parsed = Number(value);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
   return fallback;
+}
+
+function _boundedIntegerEnv(name, fallback, min, max) {
+  const raw = process.env[name];
+  const parsed = raw == null || raw === '' ? fallback : Number(raw);
+  const value = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+  return Math.min(max, Math.max(min, value));
 }
 
 function _estimatedCostUsd(req) {
@@ -736,9 +855,14 @@ module.exports = {
     _runWithInflightDedupe,
     _inflightDedupeSize: () => inFlightDedupe.size,
     _normalizeRoute,
+    _isGeminiProvider,
     _providerCircuitKey,
     _resolveSelectorChain,
     _adhocChainAllowed,
+    _callOpenAiCodexOAuthWithRetry,
+    _isRetryableOpenAiOAuthError,
+    _openAiOAuthRetryAttempts,
+    _openAiOAuthRetryDelayMs,
     _shouldSuppressFallbackExhaustionAlarm,
     _safeFallbackForSelectorExhaustion,
   },

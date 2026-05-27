@@ -81,6 +81,7 @@ function providerOf(label: string): string {
   if (normalized.startsWith('gemini-cli-oauth/') || normalized.startsWith('gemini-oauth/') || normalized.startsWith('gemini-')) return 'gemini-cli-oauth';
   if (normalized.startsWith('groq/') || normalized.startsWith('meta-llama/') || normalized.startsWith('openai/gpt-oss-') || normalized.startsWith('qwen/')) return 'groq';
   if (normalized.startsWith('claude-code/') || normalized.startsWith('anthropic/') || normalized.startsWith('claude-')) return 'claude-code';
+  if (normalized.startsWith('local-embedding/')) return 'local-embedding';
   if (normalized.startsWith('local/') || normalized.startsWith('ollama/')) return 'local';
   return normalized.split('/')[0] || 'unknown';
 }
@@ -234,7 +235,14 @@ function summarize(rows: any[], routeTargets: any[]): any {
   const chainProviderCounts: Record<string, number> = {};
   const claudeCodePrimaryRoutes = [];
   const claudeCodeFallbackRoutes = [];
+  const approvedClaudeCodePrimaryRoutes = [];
   const missingModelAgents = [];
+  const approvedClaudeCodeSelectors = new Set([
+    'blog.pos.writer',
+    'blog.gems.writer',
+    'blog.curriculum.generate',
+    'blog.book_review.preview',
+  ]);
 
   for (const target of routeTargets) addCount(countsByKind, clean(target?.kind) || 'unknown');
 
@@ -247,7 +255,10 @@ function summarize(rows: any[], routeTargets: any[]): any {
     if (providerEligible) {
       for (const provider of providers) addCount(chainProviderCounts, provider);
     }
-    if (primaryProvider === 'claude-code' && !row.blockReason) claudeCodePrimaryRoutes.push(row);
+    if (primaryProvider === 'claude-code' && !row.blockReason) {
+      if (approvedClaudeCodeSelectors.has(row.selectorKey)) approvedClaudeCodePrimaryRoutes.push(row);
+      else claudeCodePrimaryRoutes.push(row);
+    }
     if ((row.fallbacks || []).some((fallback: string) => providerOf(fallback) === 'claude-code') && !row.blockReason) {
       claudeCodeFallbackRoutes.push(row);
     }
@@ -272,6 +283,7 @@ function summarize(rows: any[], routeTargets: any[]): any {
     chainProviderCounts,
     claudeCodePrimaryRoutes: claudeCodePrimaryRoutes.map(compactRoute),
     claudeCodeFallbackRoutes: claudeCodeFallbackRoutes.map(compactRoute),
+    approvedClaudeCodePrimaryRoutes: approvedClaudeCodePrimaryRoutes.map(compactRoute),
     missingModelAgents: missingModelAgents.map(compactRoute),
   };
 }
@@ -292,7 +304,7 @@ function compactRoute(row: any): any {
 function recommendations(summary: any): string[] {
   const list = [];
   if (summary.claudeCodePrimaryRoutes.length > 0) {
-    list.push('active claude-code primary routes remain; replace with openai-oauth/gpt-5.4 or gemini-cli-oauth/gemini-2.5-flash');
+    list.push('unexpected claude-code primary routes remain; keep Claude primary only for approved long-form writing selectors');
   }
   if (summary.claudeCodeFallbackRoutes.length > 0) {
     list.push('claude-code fallback routes remain; keep only behind LLM_CLAUDE_CODE_* quota guard or replace with OpenAI/Gemini fallback');
@@ -310,6 +322,7 @@ function markdown(report: any): string {
   const activeRows = rows.filter((row: any) => !row.blockReason && row.kind !== 'task_route').slice(0, 120);
   const missingRows = report.summary.missingModelAgents;
   const claudeRows = [...report.summary.claudeCodePrimaryRoutes, ...report.summary.claudeCodeFallbackRoutes];
+  const approvedClaudeRows = report.summary.approvedClaudeCodePrimaryRoutes || [];
 
   function table(items: any[]): string {
     if (items.length === 0) return '_없음_';
@@ -340,6 +353,9 @@ ${JSON.stringify(report.summary.primaryProviderCounts, null, 2)}
 
 ## Claude Code Routes
 ${table(claudeRows)}
+
+## Approved Claude Code Writing Routes
+${table(approvedClaudeRows)}
 
 ## Missing Active Model Rows
 ${table(missingRows)}

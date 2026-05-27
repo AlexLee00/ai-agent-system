@@ -37,7 +37,8 @@ const blogWriter = hubSelector.resolveHubLlmSelection({ callerTeam: 'blog', agen
 assert.equal(blogWriter.ok, true);
 assert.equal(blogWriter.selectorKey, 'blog.pos.writer');
 assert.equal(blogWriter.routeTargetKind, 'visible_agent');
-assert(Array.isArray(blogWriter.chain) && blogWriter.chain.length >= 3, 'blog writer must resolve managed fallback chain');
+assert(Array.isArray(blogWriter.chain) && blogWriter.chain.length >= 2, 'blog writer must resolve managed fallback chain');
+assert.equal(blogWriter.chain[0]?.provider, 'claude-code-oauth', 'blog writer must use Claude-first long-form route');
 assert(blogWriter.providerTiers.some((tier: any) => tier.provider === 'openai-oauth'), 'OpenAI OAuth tier must be present');
 assert(blogWriter.providerTiers.every((tier: any) => Number.isFinite(Number(tier.tier))), 'provider tiers must be numeric');
 

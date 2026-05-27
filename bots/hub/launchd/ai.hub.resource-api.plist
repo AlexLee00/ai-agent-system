@@ -39,6 +39,8 @@
     <string>gemini-cli-oauth/gemini-2.5-flash</string>
     <key>LLM_GEMINI_FLASH_LITE_MODEL</key>
     <string>gemini-cli-oauth/gemini-2.5-flash-lite</string>
+    <key>HUB_LLM_GEMINI_DISABLED</key>
+    <string>true</string>
     <key>LLM_CLAUDE_CODE_REPLACEMENT_MODEL</key>
     <string>openai-oauth/gpt-5.4</string>
     <key>LLM_CLAUDE_CODE_SONNET_REPLACEMENT</key>

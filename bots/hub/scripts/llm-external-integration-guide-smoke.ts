@@ -41,6 +41,10 @@ for (const required of [
   'Python 최소 클라이언트',
   'Vision/Embedding 호출',
   'Stage C 운영 계약',
+  '현재 운영 기준',
+  'HUB_LLM_GEMINI_DISABLED',
+  'gemini_provider_disabled',
+  'team:agent-llm-drill:live',
 ]) {
   assert(guide.includes(required), `external guide missing required contract text: ${required}`);
 }
@@ -56,6 +60,12 @@ assert(
 );
 assert(llmRoute.includes('direct_llm_provider_route_disabled'), 'direct provider routes must remain disabled by default');
 assert(llmRoute.includes('llmGatewayContractRoute'), 'Hub must expose machine-readable external gateway contract');
+assert(
+  llmRoute.includes('providerPolicy') &&
+    llmRoute.includes('geminiDisabled') &&
+    llmRoute.includes('HUB_LLM_GEMINI_DISABLED'),
+  'Gateway contract must expose current Gemini provider policy',
+);
 assert(llmRoute.includes('llmVisionRoute'), 'Hub must expose external vision gateway');
 assert(llmRoute.includes('llmEmbeddingsRoute'), 'Hub must expose external embedding gateway');
 assert(

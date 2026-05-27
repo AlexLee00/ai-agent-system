@@ -18,6 +18,11 @@ const MAX_RETRY = 3;
 const DEFAULT_TIMEOUT_MS = 15000;
 const EDUX_CATEGORY = 'free';
 const REQUIRED_SECRET_KEYS = ['base_url', 'bot_email', 'bot_password'];
+const IMAGE_ATTACHMENTS_ENV = 'EDUX_IMAGE_ATTACHMENTS_ENABLED';
+
+function imageAttachmentsEnabled() {
+  return String(process.env[IMAGE_ATTACHMENTS_ENV] || 'false').trim().toLowerCase() === 'true';
+}
 
 function normalizeEduxCredentials(raw, source = 'unknown') {
   if (!raw || typeof raw !== 'object') return null;
@@ -256,7 +261,7 @@ class EduxClient {
       title = title.slice(0, 200);
     }
     const body = { title: title || null, content, category: EDUX_CATEGORY };
-    if (imageUrl) body.imageUrl = imageUrl;
+    if (imageUrl && imageAttachmentsEnabled()) body.imageUrl = imageUrl;
     return this.request('POST', '/api/community/posts', { body });
   }
 
@@ -305,6 +310,7 @@ module.exports = {
   getEduxClient,
   EDUX_CATEGORY,
   REQUIRED_SECRET_KEYS,
+  imageAttachmentsEnabled,
   normalizeEduxCredentials,
   getEduxSecrets,
   fetchWithTimeout,

@@ -6,7 +6,9 @@
  * edux-promotion-gate.ts — Dry-run → 실 발행 승격 게이트
  *
  * 검증 항목 (5/5 모두 통과해야 실 발행 가능):
- *   ① 7일 Dry-run 누적 건수 (35건+)
+ *   ① 7일 검증 실행 누적 건수 (35건+)
+ *      - dry_run과 실제 API 성공([TEST] one-off 포함)을 모두 인정한다.
+ *      - 단, fixture / 본문 없음 / 이미지 첨부 / post_id 없는 success는 제외한다.
  *   ② 본문 생성 로그 정상 (글자수 hard gate 없음)
  *   ③ 이미지 미첨부 정책 준수
  *   ④ JWT 갱신 정상 (24h 내 success 기록)
@@ -61,16 +63,49 @@ function launchdSummary() {
 
 // ─── 검증 항목 ────────────────────────────────────────────────────
 
-async function check1_DryRunCount() {
+const BASE_RUN_SCOPE_FILTER = `
+  status IN ('dry_run', 'success')
+  AND created_at >= $1
+  AND COALESCE((metadata->>'fixture')::boolean, false) IS NOT TRUE
+  AND (
+    status = 'dry_run'
+    OR (status = 'success' AND post_id IS NOT NULL AND post_url IS NOT NULL)
+  )
+`;
+
+const VALIDATED_RUN_FILTER = `
+  ${BASE_RUN_SCOPE_FILTER}
+  AND COALESCE((metadata->>'contentLen')::int, 0) > 0
+  AND COALESCE(jsonb_array_length(COALESCE(image_urls, '[]'::jsonb)), 0) = 0
+`;
+
+const NON_TEST_RUN_SCOPE_FILTER = `
+  ${BASE_RUN_SCOPE_FILTER}
+  AND COALESCE(title, '') NOT ILIKE '[TEST]%'
+`;
+
+async function check1_ValidatedRunCount() {
   if (!pgPool) return { ok: false, reason: 'pgPool 없음', value: 0, required: 35 };
   try {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
     const result = await dbQuery(pgPool, `
-      SELECT COUNT(*) AS cnt FROM edux_publish_log
-      WHERE status = 'dry_run' AND created_at >= $1
+      SELECT
+        COUNT(*) AS cnt,
+        COUNT(*) FILTER (WHERE status = 'dry_run') AS dry_run_cnt,
+        COUNT(*) FILTER (WHERE status = 'success') AS live_success_cnt
+      FROM edux_publish_log
+      WHERE ${VALIDATED_RUN_FILTER}
     `, [sevenDaysAgo], 'public');
-    const cnt = Number(result?.rows?.[0]?.cnt || 0);
-    return { ok: cnt >= 35, reason: `7일 dry_run ${cnt}건`, value: cnt, required: 35 };
+    const row = result?.rows?.[0] || {};
+    const cnt = Number(row.cnt || 0);
+    const dryRunCnt = Number(row.dry_run_cnt || 0);
+    const liveSuccessCnt = Number(row.live_success_cnt || 0);
+    return {
+      ok: cnt >= 35,
+      reason: `7일 검증 실행 ${cnt}건 (dry_run ${dryRunCnt}, 실 API 성공 ${liveSuccessCnt})`,
+      value: cnt,
+      required: 35,
+    };
   } catch (err) {
     return { ok: false, reason: `조회 실패: ${err?.message}`, value: 0, required: 35 };
   }
@@ -86,7 +121,7 @@ async function check2_ContentQuality() {
         COUNT(*) FILTER (WHERE COALESCE((metadata->>'contentLen')::int, 0) > 0) AS with_content,
         ROUND(AVG((metadata->>'contentLen')::int) FILTER (WHERE metadata->>'contentLen' IS NOT NULL)) AS avg_len
       FROM edux_publish_log
-      WHERE status = 'dry_run' AND created_at >= $1
+      WHERE ${BASE_RUN_SCOPE_FILTER}
     `, [sevenDaysAgo], 'public');
     const row = result?.rows?.[0] || {};
     const total = Number(row.total || 0);
@@ -110,13 +145,13 @@ async function check3_ImageAttachmentPolicy() {
     const result = await dbQuery(pgPool, `
       SELECT
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE jsonb_array_length(image_urls) > 0 AND (metadata->>'fixture')::boolean IS NOT TRUE) AS with_images
+        COUNT(*) FILTER (WHERE COALESCE(jsonb_array_length(COALESCE(image_urls, '[]'::jsonb)), 0) > 0) AS with_images
       FROM edux_publish_log
-      WHERE status = 'dry_run' AND created_at >= $1
+      WHERE ${NON_TEST_RUN_SCOPE_FILTER}
     `, [sevenDaysAgo], 'public');
     const total = Number(result?.rows?.[0]?.total || 0);
     const withImages = Number(result?.rows?.[0]?.with_images || 0);
-    return { ok: withImages === 0, reason: `${total}건 중 이미지 첨부 ${withImages}건`, value: withImages, required: 0 };
+    return { ok: withImages === 0, reason: `비테스트 ${total}건 중 이미지 첨부 ${withImages}건`, value: withImages, required: 0 };
   } catch (err) {
     return { ok: false, reason: `조회 실패: ${err?.message}`, value: 0, required: 0 };
   }
@@ -169,7 +204,7 @@ async function generateReport(options = {}) {
   const checks = options.fixture
     ? fixtureChecks.map((value, index) => ({ index: index + 1, ...value }))
     : await Promise.allSettled([
-        check1_DryRunCount(),
+        check1_ValidatedRunCount(),
         check2_ContentQuality(),
         check3_ImageAttachmentPolicy(),
         check4_JwtHealth(),
@@ -180,7 +215,7 @@ async function generateReport(options = {}) {
       })));
 
   const labels = [
-    '7일 Dry-run 누적 (35건+)',
+    '7일 검증 실행 누적 (35건+)',
     '본문 생성 로그 정상 (글자수 hard gate 없음)',
     '이미지 미첨부 정책 준수',
     'JWT 갱신 정상 (24h)',

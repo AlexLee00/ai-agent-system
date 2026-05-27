@@ -25,12 +25,23 @@ const PROVIDER_TIERS = {
   'gemini-cli-oauth': 3,
   'gemini-codeassist-oauth': 3,
   local: 4,
+  'local-embedding': 4,
   'claude-code-oauth': 5,
   'claude-code': 5,
 };
 
 function isGeminiDisabled() {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase());
+}
+
+function isGeminiProvider(providerOrRoute) {
+  const provider = String(providerOrRoute || '').includes('/')
+    ? providerFromRoute(providerOrRoute)
+    : clean(providerOrRoute);
+  return provider === 'gemini-oauth'
+    || provider === 'gemini-cli-oauth'
+    || provider === 'gemini-codeassist-oauth'
+    || provider === 'gemini';
 }
 
 function getActiveProviderTiers() {
@@ -84,6 +95,7 @@ function providerFromRoute(route) {
   if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('gemini-oauth/') || normalized.startsWith('gemini/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
+  if (normalized.startsWith('local-embedding/')) return 'local-embedding';
   if (normalized.startsWith('local/')) return 'local';
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
   return normalized.split('/')[0] || 'unknown';
@@ -93,7 +105,13 @@ function providerTier(providerOrRoute) {
   const provider = String(providerOrRoute || '').includes('/')
     ? providerFromRoute(providerOrRoute)
     : clean(providerOrRoute);
-  return PROVIDER_TIERS[provider] || 99;
+  return getActiveProviderTiers()[provider] || 99;
+}
+
+function getActiveChain(chain = []) {
+  const entries = Array.isArray(chain) ? chain : [];
+  if (!isGeminiDisabled()) return entries;
+  return entries.filter((entry) => !isGeminiProvider(entry?.provider || routeLabel(entry)));
 }
 
 function enrichChain(chain = []) {
@@ -142,11 +160,16 @@ function resolveRuntimeProfile(req = {}, team) {
 }
 
 function selectionResult(base, chain) {
-  const enriched = enrichChain(chain);
+  const original = Array.isArray(chain) ? chain : [];
+  const activeChain = getActiveChain(original);
+  const enriched = enrichChain(activeChain);
+  const disabledProvidersRemoved = original.length - activeChain.length;
   return {
     ok: enriched.length > 0,
     ...base,
+    ...(enriched.length === 0 && original.length > 0 ? { error: 'gemini_provider_disabled' } : {}),
     chain: enriched,
+    disabledProvidersRemoved,
     providerTiers: enriched.map((entry) => ({
       provider: entry.provider,
       route: entry.route,
@@ -292,8 +315,10 @@ module.exports = {
   NON_LLM_TARGETS,
   PROVIDER_TIERS,
   enrichChain,
+  getActiveChain,
   getActiveProviderTiers,
   isGeminiDisabled,
+  isGeminiProvider,
   isHubNonLlmTarget,
   isHubLlmRouteTargetAllowed,
   providerFromRoute,

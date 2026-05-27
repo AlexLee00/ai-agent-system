@@ -70,6 +70,8 @@ async function main(): Promise<void> {
       assert.equal(body.endpoints.vision.path, '/hub/llm/vision');
       assert.equal(body.endpoints.embeddings.path, '/hub/llm/embeddings');
       assert.equal(body.selectorPolicy.directProviderRoutes, 'disabled_by_default');
+      assert.equal(body.providerPolicy.geminiDisableFlag, 'HUB_LLM_GEMINI_DISABLED');
+      assert.equal(typeof body.providerPolicy.geminiDisabled, 'boolean');
 
       const invalidVision = await fetch(`${baseUrl}/hub/llm/vision`, {
         method: 'POST',

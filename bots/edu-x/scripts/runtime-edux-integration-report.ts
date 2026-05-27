@@ -44,7 +44,7 @@ function fixtureReport() {
     mode: 'fixture',
     dryRunDays: 7,
     expectedSlotsPerDay: 5,
-    summary: { dryRunCount7d: 35, successCount7d: 0, avgContentLen: 1200, imageAttachmentCount7d: 0 },
+    summary: { validatedRunCount7d: 35, dryRunCount7d: 35, successCount7d: 0, avgContentLen: 1200, imageAttachmentCount7d: 0 },
     blockers: [],
     generatedAt: new Date().toISOString(),
   };
@@ -73,17 +73,35 @@ async function generateReport(options = {}) {
       COUNT(*) FILTER (WHERE status = 'dry_run' AND created_at >= NOW() - INTERVAL '7 days') AS dry_run_7d,
       COUNT(*) FILTER (WHERE status = 'success' AND created_at >= NOW() - INTERVAL '7 days') AS success_7d,
       ROUND(AVG((metadata->>'contentLen')::int) FILTER (WHERE metadata->>'contentLen' IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days')) AS avg_content_len,
-      COUNT(*) FILTER (WHERE status = 'dry_run' AND jsonb_array_length(image_urls) > 0 AND (metadata->>'fixture')::boolean IS NOT TRUE AND created_at >= NOW() - INTERVAL '7 days') AS image_attached
+      COUNT(*) FILTER (
+        WHERE status IN ('dry_run', 'success')
+          AND created_at >= NOW() - INTERVAL '7 days'
+          AND COALESCE((metadata->>'fixture')::boolean, false) IS NOT TRUE
+          AND COALESCE((metadata->>'contentLen')::int, 0) > 0
+          AND jsonb_array_length(image_urls) = 0
+          AND (
+            status = 'dry_run'
+            OR (status = 'success' AND post_id IS NOT NULL AND post_url IS NOT NULL)
+          )
+      ) AS validated_run_7d,
+      COUNT(*) FILTER (
+        WHERE status IN ('dry_run', 'success')
+          AND created_at >= NOW() - INTERVAL '7 days'
+          AND COALESCE((metadata->>'fixture')::boolean, false) IS NOT TRUE
+          AND jsonb_array_length(image_urls) > 0
+          AND title !~* '^\\[TEST\\]'
+      ) AS image_attached
     FROM edux_publish_log
   `, [], 'public');
   const row = rows.rows?.[0] || {};
   report.summary = {
+    validatedRunCount7d: Number(row.validated_run_7d || 0),
     dryRunCount7d: Number(row.dry_run_7d || 0),
     successCount7d: Number(row.success_7d || 0),
     avgContentLen: Number(row.avg_content_len || 0),
     imageAttachmentCount7d: Number(row.image_attached || 0),
   };
-  if (report.summary.dryRunCount7d < 35) report.blockers.push('dry_run_7d_below_35');
+  if (report.summary.validatedRunCount7d < 35) report.blockers.push('validated_run_7d_below_35');
   if (report.launchd && report.launchd.ok === false) report.blockers.push('launchd_dry_run_agents_not_loaded');
   if (report.summary.imageAttachmentCount7d > 0) report.blockers.push('image_attachment_policy_violation');
   report.ok = report.blockers.length === 0;

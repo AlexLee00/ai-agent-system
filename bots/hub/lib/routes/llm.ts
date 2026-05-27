@@ -14,7 +14,7 @@ const {
   getJobStoreState,
 } = require('../llm/job-store');
 const { parseLlmCallPayload } = require('../llm/request-schema');
-const { isHubLlmRouteTargetAllowed, resolveHubLlmSelection } = require('../../src/llm-selector');
+const { isHubLlmRouteTargetAllowed, resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
 const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
 const {
   getProviderCooldownSnapshot,
@@ -405,6 +405,12 @@ export async function llmGatewayContractRoute(req, res) {
       adHocChain: 'blocked_by_default',
       directProviderRoutes: 'disabled_by_default',
       nonLlmTargets: 'blocked',
+    },
+    providerPolicy: {
+      geminiDisabled: isGeminiDisabled(),
+      geminiDisableFlag: 'HUB_LLM_GEMINI_DISABLED',
+      geminiDisabledError: 'gemini_provider_disabled',
+      directTokenRefreshChecks: isGeminiDisabled() ? 'skipped_for_gemini' : 'enabled',
     },
     observability: {
       requestLog: 'hub.llm_request_log',

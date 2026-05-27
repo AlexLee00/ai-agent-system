@@ -12,6 +12,9 @@ const {
   isHubNonLlmTarget,
 } = require('../src/llm-selector.ts');
 
+const HUB_ROOT = path.resolve(__dirname, '..');
+const REPO_ROOT = path.resolve(__dirname, '../../..');
+
 const DEFAULT_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin'];
 const ALL_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin', 'luna', 'investment', 'justin', 'ska'];
 const TEAM_LABELS = {
@@ -65,11 +68,21 @@ function logFlushMs() {
   return Math.max(0, Number(process.env.HUB_MULTI_AGENT_LLM_DRILL_LOG_FLUSH_MS || 1000) || 1000);
 }
 
+function delayMs() {
+  return Math.max(0, Number(process.env.HUB_MULTI_AGENT_LLM_DRILL_DELAY_MS || 0) || 0);
+}
+
 function targetTeams() {
   const raw = String(argValue('--teams', process.env.HUB_MULTI_AGENT_LLM_DRILL_TEAMS || '') || '').trim();
   if (!raw) return DEFAULT_TARGET_TEAMS;
   if (raw.toLowerCase() === 'all') return ALL_TARGET_TEAMS;
   return [...new Set(raw.split(',').map((item) => item.trim()).filter(Boolean))];
+}
+
+function targetAgents() {
+  const raw = String(argValue('--agents', process.env.HUB_MULTI_AGENT_LLM_DRILL_AGENTS || '') || '').trim();
+  if (!raw || raw.toLowerCase() === 'all') return null;
+  return new Set(raw.split(',').map((item) => item.trim()).filter(Boolean));
 }
 
 function slotFilter() {
@@ -102,12 +115,19 @@ function redact(value) {
   return String(value || '').replace(TOKEN_RE, '$1…redacted');
 }
 
+function resolveReportPath(raw) {
+  if (path.isAbsolute(raw)) return raw;
+  const normalized = String(raw || '').replace(/\\/g, '/');
+  if (normalized.startsWith('bots/hub/')) return path.resolve(REPO_ROOT, raw);
+  return path.resolve(HUB_ROOT, raw);
+}
+
 function reportOutputPath(live) {
   const raw = String(process.env.HUB_MULTI_AGENT_LLM_DRILL_OUTPUT || '').trim();
   if (/^(none|false|0|-)$/.test(raw)) return null;
-  if (raw) return path.resolve(raw);
+  if (raw) return resolveReportPath(raw);
   if (!live && !flag('HUB_MULTI_AGENT_LLM_DRILL_WRITE_REPORT')) return null;
-  return path.resolve(__dirname, '..', 'output', 'multi-team-agent-llm-drill-live.json');
+  return path.resolve(HUB_ROOT, 'output', 'multi-team-agent-llm-drill-live.json');
 }
 
 function routeFromEntry(entry) {
@@ -176,9 +196,11 @@ function budgetForRoute(route) {
 
 function buildPlans() {
   const teams = targetTeams();
+  const agentsFilter = targetAgents();
   const agents = teams.flatMap((team) =>
     listAgentModelTargets(team)
       .filter((target) => !isHubNonLlmTarget({ callerTeam: team, agent: target.agent, selectorKey: target.selectorKey }))
+      .filter((target) => !agentsFilter || agentsFilter.has(target.agent) || agentsFilter.has(`${team}.${target.agent}`))
       .map((target) => ({ ...target, label: TEAM_LABELS[team] || team }))
   );
 
@@ -355,6 +377,10 @@ async function mapConcurrent(items, limit, worker) {
   return results;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   const live = flag('HUB_MULTI_AGENT_LLM_DRILL_LIVE') || argFlag('--live');
   const useLocalApp = live && (flag('HUB_MULTI_AGENT_LLM_DRILL_LOCAL_APP') || argFlag('--local-app'));
@@ -386,7 +412,12 @@ async function main() {
       const address = server.address();
       targetBaseUrl = `http://127.0.0.1:${address.port}`;
     }
-    const results = await mapConcurrent(checks, live ? concurrency() : 8, (check) => callCheck(check, token, targetBaseUrl));
+    const requestDelayMs = live ? delayMs() : 0;
+    const results = await mapConcurrent(checks, live ? concurrency() : 8, async (check) => {
+      const result = await callCheck(check, token, targetBaseUrl);
+      if (requestDelayMs > 0) await sleep(requestDelayMs);
+      return result;
+    });
     if (useLocalApp) await new Promise((resolve) => setTimeout(resolve, logFlushMs()));
     const skippedAgents = plans.filter((plan) => !plan.selected).map((plan) => ({
       team: plan.team,
@@ -415,6 +446,7 @@ async function main() {
       baseUrl: live ? targetBaseUrl : 'mock',
       generatedAt: new Date().toISOString(),
       teams: targetTeams(),
+      agentFilter: targetAgents() ? [...targetAgents()].sort() : null,
       slotFilter: slotFilter(),
       totals: {
         agents: plans.length,

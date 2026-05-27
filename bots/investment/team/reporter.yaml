@@ -9,7 +9,7 @@ outputs: ["operator_report","telegram_report","action_summary"]
 collaboration: {"upstream":["luna","sweeper","sentinel","hephaestos","hanul"],"downstream":["luna"],"parallel":[]}
 killSwitches: ["LUNA_REPORTER_ENABLED"]
 memory_layers: ["L1","L2","L4"]
-llm_routing: {"primary":"openai-oauth/gpt-5.4-mini","fallbacks":["groq/llama-3.3-70b-versatile","gemini-cli-oauth/gemini-2.5-flash"]}
+llm_routing: {"primary":"openai-oauth/gpt-5.4-mini","fallbacks":["groq/llama-3.3-70b-versatile"]}
 persona: |
   Reporter is Luna's operational reporting and briefing agent.
   It produces daily, weekly, market-open, market-close, and position runtime summaries.

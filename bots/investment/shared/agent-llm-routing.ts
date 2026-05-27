@@ -109,7 +109,7 @@ const TASK_SELECTOR_KEYS: Record<string, string> = {
   'hermes:any:sentiment': 'investment.hermes',
   'oracle:crypto:onchain': 'investment.oracle',
   'oracle:any:onchain': 'investment.oracle',
-  'chronos:any:backtest': 'investment.chronos',
+  'chronos:any:backtest': 'chronos.backtest',
   'zeus:any:debate_bull': 'investment.zeus',
   'athena:any:debate_bear': 'investment.athena',
   'sentinel:any:anomaly_detect': 'investment.sentinel',

@@ -83,6 +83,20 @@ function isGeminiProModel(model) {
   return /(^|\/)gemini-2\.5-pro$/i.test(String(model || '').trim());
 }
 
+function isGeminiDisabled() {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase());
+}
+
+function geminiDisabledResult(model, started) {
+  return {
+    ok: false,
+    provider: 'failed',
+    model,
+    durationMs: Date.now() - started,
+    error: 'gemini_provider_disabled',
+  };
+}
+
 function getGeminiOAuthProjectId(record, model = '') {
   const proProjectId = isGeminiProModel(model)
     ? (process.env.GEMINI_OAUTH_PRO_PROJECT_ID || process.env.GEMINI_PRO_OAUTH_PROJECT_ID || '')
@@ -588,6 +602,7 @@ function buildGeminiCodeAssistBody(input, model, projectId) {
 async function callGeminiOAuth(input) {
   const started = Date.now();
   const model = normalizeGeminiModel(input?.model);
+  if (isGeminiDisabled()) return geminiDisabledResult(model, started);
   try {
     const credential = resolveGeminiCredential();
     if (!credential?.accessToken) throw new Error('gemini_oauth_token_missing');
@@ -653,6 +668,7 @@ async function callGeminiOAuth(input) {
 async function callGeminiCliOAuth(input) {
   const started = Date.now();
   const model = normalizeGeminiCliModel(input?.model);
+  if (isGeminiDisabled()) return geminiDisabledResult(model, started);
   try {
     const command = getGeminiCliCommand();
     const args = [
@@ -700,6 +716,7 @@ async function callGeminiCliOAuth(input) {
 async function callGeminiCodeAssistOAuth(input) {
   const started = Date.now();
   const model = normalizeGeminiCodeAssistModel(input?.model);
+  if (isGeminiDisabled()) return geminiDisabledResult(model, started);
   try {
     const credential = resolveGeminiCodeAssistCredential();
     if (!credential?.accessToken) throw new Error('gemini_codeassist_oauth_token_missing');
@@ -756,4 +773,7 @@ module.exports = {
   callGeminiOAuth,
   callGeminiCliOAuth,
   callGeminiCodeAssistOAuth,
+  _testOnly: {
+    isGeminiDisabled,
+  },
 };

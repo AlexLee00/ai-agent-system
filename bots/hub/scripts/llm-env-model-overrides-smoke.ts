@@ -23,16 +23,17 @@ function labels(key: string): string[] {
 const claudeLead = labels('claude.lead.system_issue_triage');
 assert.equal(claudeLead[0], 'openai-oauth/gpt-env-perf');
 assert(claudeLead.includes('groq/groq-env-deep'));
-assert(claudeLead.includes('gemini-cli-oauth/gemini-env-flash'));
+assert(!claudeLead.some((label) => label.startsWith('gemini-cli-oauth/')));
 
 const claudeArcher = labels('claude.archer.tech_analysis');
 assert.equal(claudeArcher[0], 'openai-oauth/gpt-env-mini');
-assert(claudeArcher.includes('gemini-cli-oauth/gemini-env-lite'));
+assert(!claudeArcher.some((label) => label.startsWith('gemini-cli-oauth/')));
 
 const hubClassifier = labels('hub.alarm.classifier');
-assert.equal(hubClassifier[0], 'gemini-cli-oauth/gemini-env-lite');
+assert.equal(hubClassifier[0], 'groq/groq-env-fast');
 assert(hubClassifier.includes('groq/groq-env-fast'));
 assert(hubClassifier.includes('openai-oauth/gpt-env-mini'));
+assert(!hubClassifier.some((label) => label.startsWith('gemini-cli-oauth/')));
 
 console.log(JSON.stringify({
   ok: true,
