@@ -1,0 +1,498 @@
+{
+  "ok": true,
+  "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
+  "generatedAt": "2026-05-27T04:04:50.296Z",
+  "fixture": false,
+  "shadowOnly": true,
+  "liveTradeImpact": false,
+  "market": "domestic",
+  "symbols": 25,
+  "ready": 25,
+  "partial": 0,
+  "shadowLogLedger": {
+    "writeApplied": true,
+    "rows": 575,
+    "confirmRequired": "luna-analysis-prediction-phase-a-shadow-log"
+  },
+  "results": [
+    {
+      "symbol": "001450",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.6887,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 79,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "037460",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.735,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 65,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "021880",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.6753,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "005830",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.4885,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "003280",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5496,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 59,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "321260",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.795,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "090460",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7227,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "003490",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7086,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "161390",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.6597,
+      "selectedFamily": "mean_reversion",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "006360",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5167,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "183300",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.705,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "088350",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.6378,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "000270",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7226,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 59,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "050890",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.756,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "144960",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7764,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 78,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "072950",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7527,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "086960",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7203,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "021240",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.6946,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "090430",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5296,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "120110",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5539,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "161890",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.6021,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "204320",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7806,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "375500",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5324,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 79,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "016360",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.7471,
+      "selectedFamily": "equity_swing",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "039490",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5752,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 77,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    }
+  ],
+  "nextChecks": [
+    "npm --prefix bots/investment run -s smoke:luna-analysis-prediction-phase-a",
+    "npm --prefix bots/investment run -s runtime:luna-analysis-prediction-phase-a -- --json --market=domestic --symbols=auto --limit=5 --no-write"
+  ]
+}
