@@ -1,3 +1,58 @@
+# 세션 인수인계 — 2026-05-27 (CODEX_LUNA_GUARD_TRANSFORMATION 4 Phase 완료)
+
+## 완료 요약 ✅ — Luna 가드 변환: Block→Notify + Self-Tuning
+
+### 마스터 철학 100% 반영: "가드 = 막지 X, 알림 + 학습 + 자율 조정!"
+
+| Phase | 파일 | 상태 |
+|-------|------|------|
+| 1. 가드 분류 | `scripts/guard-classification-audit.ts` + `docs/strategy/LUNA_GUARD_INVENTORY_2026-05-27.md` | ✅ 완성 |
+| 2. Block→Notify | `shared/trade-data-derived-guards.ts` + `shared/risk-approval-execution-guard.ts` | ✅ 완성 |
+| 3. Events + 효과 측정 | `migrations/20260603000002_guard_events.sql` + `shared/guard-event-recorder.ts` + `scripts/guard-effectiveness-report.ts` + launchd 일요일 06:00 | ✅ 완성 |
+| 4. Self-Tuning | `shared/guard-self-tuning.ts` + `scripts/guard-self-tuning-weekly.ts` + launchd 일요일 06:10 + `sigma/a2a/skills/guard-tuning-meta-learning.ts` | ✅ 완성 |
+
+### 커밋
+- `1cc5de112` feat(luna): CODEX_LUNA_GUARD_TRANSFORMATION_2026-05-27 자동 실행 완료
+- 11개 파일 변경, 1,233줄 추가
+
+### 다음 세션 필수 작업
+
+1. **DB Migration 실행** (OPS에서):
+   ```bash
+   psql -h localhost -U postgres -d jay -f bots/hub/migrations/20260603000002_guard_events.sql
+   ```
+
+2. **launchd 2개 등록** (OPS에서):
+   ```bash
+   cp bots/investment/launchd/ai.luna.guard-effectiveness-weekly-sun-0600.plist ~/Library/LaunchAgents/
+   cp bots/investment/launchd/ai.luna.guard-self-tuning-weekly-sun-0600.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/ai.luna.guard-effectiveness-weekly-sun-0600.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.guard-self-tuning-weekly-sun-0600.plist
+   ```
+
+3. **Phase 2 후속** — entry-trigger-engine.ts C 분류 5곳 Block→Notify (마스터 승인 후):
+   - `backtest_missing_or_stale` → notify
+   - `predictive_evidence_missing` → notify
+   - `promotion_shadow_readiness_incomplete` → notify
+
+4. **paper 강제 17곳** 마스터 의도 확인:
+   - luna-fallback-policy.ts (5곳), capital-manager.ts (4곳), trade-data-hygiene.ts (3곳),
+     luna-portfolio-decision-guards.ts (3곳), position-sync.ts (2곳)
+
+5. **LUNA_GUARD_INVENTORY_2026-05-27.md 검토** (docs/strategy/ — gitignore 제외):
+   - A/B/C 분류 승인
+   - paper 강제 의도 확인
+
+### 7중 안전 상태
+- ✅ pre-rollback 태그: `pre-codex-luna-guard-transformation-*` (이전 세션 생성)
+- ✅ PROTECTED launchd 무중단 (기존 11개 불변)
+- ✅ HARD limit 절대 보존 (자금한도/거래소API/PROTECTED종목/스테이블코인 구조)
+- ✅ 스테이블코인 구조 HARD block 유지 (CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS)
+- ✅ 네메시스 미승인 BUY → HARD block 유지
+
+---
+
+<!-- 이전 세션 기록 보존 -->
 # 세션 인수인계 — 2026-05-27 (CODEX_LUNA_AGENTIC_LEARNING_REDESIGN 6 Phase 완료)
 
 ## 완료 요약 ✅ — Luna Agentic Learning 재설계
