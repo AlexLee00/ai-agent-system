@@ -1,3 +1,105 @@
+# 세션 인수인계 — 2026-05-27 (CODEX_LUNA_TRADE_LEARN_EVOLVE 3 Phase 완료)
+
+## 완료 요약 ✅ — Luna 가드 Notify 전환 + 자동 피드백 + 에이전트 진화
+
+### 마스터 철학: "가드로 인해 기대수익 손실! 매 거래 분석/피드백 → 에이전트 진화!"
+
+| Phase | 파일 | 상태 |
+|-------|------|------|
+| 1. 가드 notify 전환 | `technical-change-gates.ts`, `entry-trigger-engine.ts`, `position-reevaluator.ts` | ✅ |
+| 2. 자동 피드백 파이프라인 | `feedback-action-mapper.ts` + 5개 launchd plist | ✅ |
+| 3. 에이전트 자율 진화 | `loss/win-pattern-extractor.ts`, `luna-agent-evolution.ts`, `sigma/luna-evolution-meta-learning.ts` | ✅ |
+
+### 커밋
+- `0fbdb9d10` feat(luna): CODEX_LUNA_TRADE_LEARN_EVOLVE_2026-05-27 자동 실행 완료
+- 14개 파일 변경, 1,837줄 추가
+
+### OPS 배포 필수 작업
+
+1. **DB Migration 실행** (OPS에서) — 신규 테이블:
+   ```sql
+   -- luna_loss_patterns
+   CREATE TABLE IF NOT EXISTS investment.luna_loss_patterns (
+     id SERIAL PRIMARY KEY, pattern_key TEXT UNIQUE NOT NULL,
+     market TEXT, symbol_count INT, trade_count INT,
+     avg_loss_pct NUMERIC, total_penalty NUMERIC,
+     reason_codes JSONB, pattern_types JSONB,
+     regime TEXT, strategy_family TEXT,
+     avoidance_guide TEXT, confidence NUMERIC,
+     extracted_at TIMESTAMPTZ
+   );
+   -- luna_win_patterns
+   CREATE TABLE IF NOT EXISTS investment.luna_win_patterns (
+     id SERIAL PRIMARY KEY, pattern_key TEXT UNIQUE NOT NULL,
+     market TEXT, symbol_count INT, trade_count INT,
+     avg_win_pct NUMERIC, total_profit NUMERIC,
+     reason_codes JSONB, pattern_types JSONB,
+     regime TEXT, strategy_family TEXT,
+     priority_guide TEXT, confidence NUMERIC,
+     extracted_at TIMESTAMPTZ
+   );
+   -- agent_curriculum_state
+   CREATE TABLE IF NOT EXISTS investment.agent_curriculum_state (
+     week_id TEXT PRIMARY KEY,
+     avoid_patterns JSONB, priority_patterns JSONB,
+     market_weights JSONB, regime_weights JSONB,
+     strategy_weights JSONB, evolution_notes TEXT,
+     updated_at TIMESTAMPTZ
+   );
+   -- luna_evolution_log
+   CREATE TABLE IF NOT EXISTS investment.luna_evolution_log (
+     week_id TEXT PRIMARY KEY,
+     loss_pattern_count INT, win_pattern_count INT,
+     adjustment_count INT, adjustments_json JSONB,
+     evolution_summary TEXT, logged_at TIMESTAMPTZ
+   );
+   -- sigma_meta_learning_log
+   CREATE TABLE IF NOT EXISTS investment.sigma_meta_learning_log (
+     week_id TEXT PRIMARY KEY,
+     consistency_score NUMERIC, findings_json JSONB,
+     recommendations_json JSONB, analyzed_at TIMESTAMPTZ
+   );
+   -- feedback_to_action_map (이미 있으면 skip)
+   CREATE TABLE IF NOT EXISTS investment.feedback_to_action_map (
+     id SERIAL PRIMARY KEY, symbol TEXT NOT NULL, market TEXT NOT NULL,
+     reflexion_ids INT[], pattern_summary TEXT, suggested_action TEXT,
+     action_type TEXT, confidence NUMERIC,
+     created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ,
+     UNIQUE(symbol, market)
+   );
+   ```
+
+2. **launchd 5개 등록** (OPS에서):
+   ```bash
+   for plist in \
+     ai.luna.posttrade-feedback-15min \
+     ai.luna.reflexion-engine-daily-0700 \
+     ai.luna.meta-reflexion-daily-0800 \
+     ai.luna.strategy-feedback-weekly-sun-0900 \
+     ai.luna.agent-evolution-weekly-sun-0600; do
+     cp bots/investment/launchd/${plist}.plist ~/Library/LaunchAgents/
+     launchctl load ~/Library/LaunchAgents/${plist}.plist
+   done
+   ```
+
+3. **이전 세션 launchd 2개** (GUARD_TRANSFORMATION에서 미완료):
+   ```bash
+   cp bots/investment/launchd/ai.luna.guard-effectiveness-weekly-sun-0600.plist ~/Library/LaunchAgents/
+   cp bots/investment/launchd/ai.luna.guard-self-tuning-weekly-sun-0600.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/ai.luna.guard-effectiveness-weekly-sun-0600.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.guard-self-tuning-weekly-sun-0600.plist
+   ```
+
+### 안전 상태
+- ✅ CAPITAL HARD_BLOCKS 절대 유지: `no_remaining_position_slots`, `buyable_amount_below_required`, `balance_status_not_ok`, `capital_mode_not_active`
+- ✅ 거래소 API DOWN → HARD block 유지
+- ✅ PROTECTED 종목/스테이블코인 → HARD block 유지
+- ✅ 네메시스 미승인 BUY → HARD block 유지
+- ✅ PROTECTED launchd 11개 무중단 (기존 그대로)
+
+---
+
+<!-- 이전 세션 기록 보존 -->
 # 세션 인수인계 — 2026-05-27 (CODEX_LUNA_GUARD_TRANSFORMATION 4 Phase 완료)
 
 ## 완료 요약 ✅ — Luna 가드 변환: Block→Notify + Self-Tuning

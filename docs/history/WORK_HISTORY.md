@@ -4,6 +4,24 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-27: CODEX_LUNA_TRADE_LEARN_EVOLVE — Phase 1~3 완료 (가드 notify + 피드백 파이프라인 + 에이전트 진화)
+
+- **Phase 1 — 가드 notify 전환**:
+  - `technical-change-gates.ts`: hardBlock default `false`, blockers 발생 시 guard_events 기록
+  - `entry-trigger-engine.ts`: tradingview/technical-change/live-risk 가드 → notify 전환. CAPITAL_HARD_BLOCKS 4개 예외 유지
+  - `position-reevaluator.ts`: EXIT→HOLD 오버라이드 시 기회비용 guard_event 기록
+- **Phase 2 — 자동 피드백 파이프라인**:
+  - `feedback-action-mapper.ts`: luna_failure_reflexions → feedback_to_action_map 자동 매핑 (rule+LLM)
+  - launchd 5개: posttrade-15min / reflexion-0700 / meta-0800 / strategy-weekly-0900 / agent-evolution-0600
+- **Phase 3 — 에이전트 자율 진화**:
+  - `loss-pattern-extractor.ts`: 손실 패턴 클러스터링 + LLM 회피 가이드 → luna_loss_patterns
+  - `win-pattern-extractor.ts`: 수익 패턴 클러스터링 + LLM 우선순위 가이드 → luna_win_patterns
+  - `luna-agent-evolution.ts`: 주간 커리큘럼 갱신 (agent_curriculum_state, luna_evolution_log)
+  - `sigma/luna-evolution-meta-learning.ts`: 시그마 커리큘럼 일관성 검증
+  - `runtime-luna-agent-evolution.ts`: launchd 진입점
+- **커밋**: `0fbdb9d10` — 14 files, 1,837줄 추가
+- **OPS 필요**: DB 신규 테이블 5개 생성 + launchd 5개 등록 (HANDOFF 참조)
+
 ## 2026-05-21: CODEX_CLAUDE_TEAM_SYMPHONY_TRANSITION — Phase 1 완료 검증 + 단위 테스트 추가
 
 - **Phase 1 현황 검증**: SPEC.md / DB migration / Hub /tasks API / GitHub webhook / route-registry 전체 확인 → 이미 완료 (2026-05-17)
