@@ -29,6 +29,18 @@ const PROVIDER_TIERS = {
   'claude-code': 5,
 };
 
+function isGeminiDisabled() {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase());
+}
+
+function getActiveProviderTiers() {
+  if (!isGeminiDisabled()) return PROVIDER_TIERS;
+  const tiers = { ...PROVIDER_TIERS };
+  delete tiers['gemini-cli-oauth'];
+  delete tiers['gemini-codeassist-oauth'];
+  return tiers;
+}
+
 function clean(value) {
   return String(value || '').trim();
 }
@@ -280,6 +292,8 @@ module.exports = {
   NON_LLM_TARGETS,
   PROVIDER_TIERS,
   enrichChain,
+  getActiveProviderTiers,
+  isGeminiDisabled,
   isHubNonLlmTarget,
   isHubLlmRouteTargetAllowed,
   providerFromRoute,

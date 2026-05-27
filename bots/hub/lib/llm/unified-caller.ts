@@ -19,7 +19,7 @@ const {
 } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
-const { resolveHubLlmSelection } = require('../../src/llm-selector');
+const { resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
 const providerRegistry = require('./provider-registry');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
@@ -425,30 +425,27 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
       timeoutMs,
     });
   }
-  if (normalizedRoute.startsWith('gemini-oauth/')) {
+  if (normalizedRoute.startsWith('gemini-oauth/')
+    || normalizedRoute.startsWith('gemini-cli-oauth/')
+    || normalizedRoute.startsWith('gemini-codeassist-oauth/')) {
+    if (isGeminiDisabled()) {
+      return { ok: false, provider: 'failed', error: 'gemini_provider_disabled', durationMs: 0 };
+    }
+    if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) {
+      return callGeminiCodeAssistOAuth({
+        prompt: req.prompt,
+        model: normalizedRoute.slice('gemini-codeassist-oauth/'.length),
+        systemPrompt: req.systemPrompt,
+        maxTokens: chainEntry.maxTokens,
+        temperature: chainEntry.temperature,
+        timeoutMs,
+      });
+    }
     return callGeminiCliOAuth({
       prompt: req.prompt,
-      model: normalizedRoute.slice('gemini-oauth/'.length),
-      systemPrompt: req.systemPrompt,
-      maxTokens: chainEntry.maxTokens,
-      temperature: chainEntry.temperature,
-      timeoutMs,
-    });
-  }
-  if (normalizedRoute.startsWith('gemini-cli-oauth/')) {
-    return callGeminiCliOAuth({
-      prompt: req.prompt,
-      model: normalizedRoute.slice('gemini-cli-oauth/'.length),
-      systemPrompt: req.systemPrompt,
-      maxTokens: chainEntry.maxTokens,
-      temperature: chainEntry.temperature,
-      timeoutMs,
-    });
-  }
-  if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) {
-    return callGeminiCodeAssistOAuth({
-      prompt: req.prompt,
-      model: normalizedRoute.slice('gemini-codeassist-oauth/'.length),
+      model: normalizedRoute.startsWith('gemini-oauth/')
+        ? normalizedRoute.slice('gemini-oauth/'.length)
+        : normalizedRoute.slice('gemini-cli-oauth/'.length),
       systemPrompt: req.systemPrompt,
       maxTokens: chainEntry.maxTokens,
       temperature: chainEntry.temperature,
