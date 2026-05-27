@@ -279,15 +279,24 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
       cycleNewCancelDetections === 0
     ) {
       const delta = cancelledCount - previousCancelledCount;
-      log(`🚨 취소 카운터 증가 이상 감지: 오늘 취소 ${previousCancelledCount}→${cancelledCount} (+${delta}), 이번 사이클 신규 취소 처리 0건`);
-      await sendAlert({
-        type: 'error',
-        title: '🚨 네이버 취소 카운터 증가 이상',
-        date: todaySeoul,
-        status: `오늘 취소 ${previousCancelledCount}→${cancelledCount}`,
-        reason: `카운터는 ${delta}건 증가했지만 이번 사이클 신규 취소 처리 0건`,
-        action: '취소 탭 / cancelled_keys / naver-monitor 로그를 즉시 확인하세요.',
-      });
+      const handledByKnownCancelKeys = cancelledCount > 0 && currentCancelledList.length >= cancelledCount;
+      if (handledByKnownCancelKeys) {
+        log(`✅ 취소 카운터 증가 확인: 오늘 취소 ${previousCancelledCount}→${cancelledCount} (+${delta}), 취소 탭 ${currentCancelledList.length}건 모두 기존 처리 이력으로 확인`);
+        await resolveSystemAlertByTitle(
+          '🚨 네이버 취소 카운터 증가 이상',
+          `오늘 취소 ${cancelledCount}건이 취소 탭 기존 처리 이력과 일치`,
+        );
+      } else {
+        log(`🚨 취소 카운터 증가 이상 감지: 오늘 취소 ${previousCancelledCount}→${cancelledCount} (+${delta}), 이번 사이클 신규 취소 처리 0건`);
+        await sendAlert({
+          type: 'error',
+          title: '🚨 네이버 취소 카운터 증가 이상',
+          date: todaySeoul,
+          status: `오늘 취소 ${previousCancelledCount}→${cancelledCount}`,
+          reason: `카운터는 ${delta}건 증가했지만 이번 사이클 신규 취소 처리 0건`,
+          action: '취소 탭 / cancelled_keys / naver-monitor 로그를 즉시 확인하세요.',
+        });
+      }
     } else if (
       previousCancelledCount !== null &&
       cancelledCount === previousCancelledCount &&
