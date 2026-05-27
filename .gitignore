@@ -209,6 +209,8 @@ bots/claude/reports/patches/*.json
 
 # 투자팀 런타임 스냅샷
 bots/investment/output/ops/market-regime-capture.json
+bots/investment/python/rl/data/
+bots/investment/python/rl/models/
 
 # ── 내부 문서 (공개 불필요!) ──
 docs/codex/*

@@ -265,19 +265,25 @@ async function ensureStrategyMutationAuditSchema() {
     CREATE TABLE IF NOT EXISTS investment.strategy_mutation_events (
       id SERIAL PRIMARY KEY,
       event_type TEXT NOT NULL,
-      lifecycle_phase TEXT NOT NULL DEFAULT 'phase5_monitor',
-      position_scope_key TEXT NOT NULL,
-      exchange TEXT NOT NULL,
-      symbol TEXT NOT NULL,
+      lifecycle_phase TEXT NOT NULL DEFAULT 'shadow',
+      position_scope_key TEXT NOT NULL DEFAULT 'global',
+      exchange TEXT NOT NULL DEFAULT 'unknown',
+      symbol TEXT NOT NULL DEFAULT 'unknown',
       trade_mode TEXT NOT NULL DEFAULT 'normal',
       old_setup_type TEXT,
       new_setup_type TEXT,
       validity_score DOUBLE PRECISION,
       predictive_score DOUBLE PRECISION,
       reason TEXT,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await db.run(`ALTER TABLE investment.strategy_mutation_events ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`).catch(() => {});
+  await db.run(`ALTER TABLE investment.strategy_mutation_events ALTER COLUMN lifecycle_phase SET DEFAULT 'shadow'`).catch(() => {});
+  await db.run(`ALTER TABLE investment.strategy_mutation_events ALTER COLUMN position_scope_key SET DEFAULT 'global'`).catch(() => {});
+  await db.run(`ALTER TABLE investment.strategy_mutation_events ALTER COLUMN exchange SET DEFAULT 'unknown'`).catch(() => {});
+  await db.run(`ALTER TABLE investment.strategy_mutation_events ALTER COLUMN symbol SET DEFAULT 'unknown'`).catch(() => {});
 }
 
 async function recordMutationLifecycleEvent(event: StrategyMutationLifecycleEvent, { strict = false } = {}): Promise<void> {

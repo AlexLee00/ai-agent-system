@@ -13,6 +13,10 @@ import { registerConsistencyCheckSkill } from './skills/consistency-check.ts';
 import { registerOptimizationProposalSkill } from './skills/optimization-proposal.ts';
 import { registerTeamAuditSkill } from './skills/team-audit.ts';
 import { registerCrossTeamBroadcastSkill } from './skills/cross-team-broadcast.ts';
+import { registerGuardTuningMetaLearningSkill } from './skills/guard-tuning-meta-learning.ts';
+import { registerLunaEvolutionMetaLearningSkill } from './skills/luna-evolution-meta-learning.ts';
+import { registerSigmaToLunaFeedbackSkill } from './skills/sigma-to-luna-feedback.ts';
+import { registerMultiAgentMetaLearningSkill } from './skills/multi-agent-meta-learning.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -30,6 +34,10 @@ registerConsistencyCheckSkill();
 registerOptimizationProposalSkill();
 registerTeamAuditSkill();
 registerCrossTeamBroadcastSkill();
+registerGuardTuningMetaLearningSkill();
+registerLunaEvolutionMetaLearningSkill();
+registerSigmaToLunaFeedbackSkill();
+registerMultiAgentMetaLearningSkill();
 
 const _streams: Map<string, any[]> = new Map();
 

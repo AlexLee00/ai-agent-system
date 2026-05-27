@@ -3,15 +3,19 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.luna.agent-evolution-weekly-sun-0600</string>
+  <string>ai.sigma.luna-feedback-daily-0600</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-agent-evolution.ts</string>
-    <string>--json</string>
+    <string>/opt/homebrew/bin/npm</string>
+    <string>run</string>
+    <string>-s</string>
+    <string>luna:feedback</string>
+    <string>--</string>
+    <string>--write</string>
+    <string>--no-dry-run</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -21,8 +25,6 @@
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Weekday</key>
-    <integer>0</integer>
     <key>Hour</key>
     <integer>6</integer>
     <key>Minute</key>
@@ -31,8 +33,8 @@
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>/tmp/ai.luna.agent-evolution-weekly-sun-0600.out.log</string>
+  <string>/tmp/ai.sigma.luna-feedback-daily-0600.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/ai.luna.agent-evolution-weekly-sun-0600.err.log</string>
+  <string>/tmp/ai.sigma.luna-feedback-daily-0600.err.log</string>
 </dict>
 </plist>

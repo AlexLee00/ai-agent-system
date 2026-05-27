@@ -12,22 +12,34 @@ import argparse
 import importlib.util
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
-from luna_trading_env import FEATURE_NAMES, fixture_sample
+from luna_trading_env import FEATURE_NAMES, LunaTradingEnv, fixture_sample
 
 
-OPTIONAL_DEPS = {
+MODEL_DEPS = {
+    "stable_baselines3": "stable_baselines3",
+    "gymnasium": "gymnasium",
+    "torch": "torch",
+    "numpy": "numpy",
+}
+SERVICE_DEPS = {
     "fastapi": "fastapi",
     "uvicorn": "uvicorn",
-    "stable_baselines3": "stable_baselines3",
-    "torch": "torch",
 }
 
 
 def dependency_status():
-    loaded = {name: importlib.util.find_spec(module) is not None for name, module in OPTIONAL_DEPS.items()}
-    missing = [name for name, ok in loaded.items() if not ok]
-    return {"loaded": loaded, "missing": missing}
+    model_loaded = {name: importlib.util.find_spec(module) is not None for name, module in MODEL_DEPS.items()}
+    service_loaded = {name: importlib.util.find_spec(module) is not None for name, module in SERVICE_DEPS.items()}
+    missing_model = [name for name, ok in model_loaded.items() if not ok]
+    missing_service = [name for name, ok in service_loaded.items() if not ok]
+    return {
+        "loaded": {**model_loaded, **service_loaded},
+        "missing": missing_model,
+        "missing_service_optional": missing_service,
+        "model_ready": not missing_model,
+    }
 
 
 def deterministic_shadow_action(features):
@@ -52,16 +64,64 @@ def deterministic_shadow_action(features):
     }
 
 
-def run_test():
+def load_features(raw_json: str = ""):
+    if raw_json:
+        payload = json.loads(raw_json)
+        return payload.get("features", payload)
+    return fixture_sample()["features"]
+
+
+def model_action(features, model_path: str):
+    import numpy as np
+    from stable_baselines3 import PPO
+
+    target = Path(model_path).expanduser().resolve()
+    if not target.exists():
+        return None
+    sample = {"features": {name: float(features.get(name, 0.0)) for name in FEATURE_NAMES}, "next_return": 0.0}
+    env = LunaTradingEnv([sample])
+    obs, _info = env.reset()
+    model = PPO.load(str(target), env=env, device="auto")
+    action, _state = model.predict(obs, deterministic=True)
+    action_value = float(np.asarray(action).reshape(-1)[0])
+    if action_value >= 0.1:
+        action_type = "buy"
+    elif action_value <= -0.1:
+        action_type = "sell"
+    else:
+        action_type = "hold"
+    return {
+        "action": round(action_value, 6),
+        "action_type": action_type,
+        "confidence": round(min(1.0, 0.3 + abs(action_value) * 0.6), 4),
+        "model_status": "ppo_model_loaded",
+        "model_path": str(target),
+    }
+
+
+def run_test(model_path: str = "", features_json: str = ""):
     deps = dependency_status()
-    sample = fixture_sample()
-    inference = deterministic_shadow_action(sample["features"])
+    features = load_features(features_json)
+    default_model = Path(__file__).resolve().parent / "models" / "luna_ppo_v1.zip"
+    model_target = model_path or str(default_model)
+    inference = None
+    if deps["model_ready"]:
+        try:
+            inference = model_action(features, model_target)
+        except Exception as exc:
+            inference = {"model_status": f"ppo_model_load_failed:{type(exc).__name__}", "model_error": str(exc)}
+    if not inference or "action" not in inference:
+        inference = {
+            **deterministic_shadow_action(features),
+            "model_status": inference.get("model_status") if isinstance(inference, dict) else "deterministic_shadow_proxy",
+            "model_error": inference.get("model_error") if isinstance(inference, dict) else None,
+        }
     return {
         "ok": True,
-        "status": "ready" if not deps["missing"] else "missing_optional_deps",
+        "status": "ready" if deps["model_ready"] else "missing_model_deps",
         "optional_dependencies": deps,
         "service_started": False,
-        "model_loaded": False,
+        "model_loaded": inference.get("model_status") == "ppo_model_loaded",
         "shadow_only": True,
         "contract": {
             "endpoint": "POST /infer",
@@ -72,7 +132,6 @@ def run_test():
         "sample": {
             **inference,
             "shadow_only": True,
-            "model_status": "deterministic_shadow_proxy",
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -82,10 +141,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--model-path", default="")
+    parser.add_argument("--features-json", default="")
     args = parser.parse_args()
     if not args.test:
         raise SystemExit("Phase 7 runner is shadow-only. Use --test --json.")
-    result = run_test()
+    result = run_test(model_path=args.model_path, features_json=args.features_json)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:

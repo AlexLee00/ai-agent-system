@@ -165,6 +165,22 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "multi-agent-coordination",
+      "name": "RL Multi-Agent Coordination Shadow",
+      "description": "Analyst/Data Scientist/Strategy/Trader/Risk 5-role DAG를 조율하고 Shadow Mode 의사결정 후보만 산출",
+      "tags": ["finance", "rl", "multi-agent", "coordination", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "multi-agent-trade-decision",
+      "name": "Multi-Agent Trade Decision Shadow",
+      "description": "5-role 후보 투표를 가중 집계해 매매 의사결정 후보를 산출하되 live 주문에는 반영하지 않음",
+      "tags": ["finance", "multi-agent", "decision", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

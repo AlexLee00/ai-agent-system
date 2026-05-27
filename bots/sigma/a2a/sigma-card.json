@@ -51,6 +51,38 @@
       "tags": ["meta", "broadcast", "notification", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "guard-tuning-meta-learning",
+      "name": "가드 튜닝 메타 학습",
+      "description": "루나 가드 이벤트와 튜닝 로그를 분석해 과민/저민감 가드 조정 후보를 도출",
+      "tags": ["luna", "guard", "meta-learning", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "luna-evolution-meta-learning",
+      "name": "루나 진화 메타 학습",
+      "description": "루나 failure reflexion, feedback action, Sigma fact를 통합해 학습 루프 병목을 분석",
+      "tags": ["luna", "rl", "sigma", "meta-learning", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sigma-to-luna-feedback",
+      "name": "시그마→루나 피드백",
+      "description": "시그마 feedback_effectiveness를 루나 agent_curriculum_state shadow 제안으로 변환",
+      "tags": ["sigma", "luna", "feedback", "curriculum", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "multi-agent-meta-learning",
+      "name": "멀티 에이전트 메타 학습",
+      "description": "에이전트 커리큘럼 상태를 5개 역할 관점으로 재집계해 역할별 자율성 조정안을 반환",
+      "tags": ["multi-agent", "curriculum", "meta-learning", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     }
   ]
 }

@@ -177,7 +177,7 @@ async function stepEvaluateTradeQuality(p: TradeOutcomePayload): Promise<Feedbac
       INSERT INTO investment.trade_quality_evaluations (
         trade_id, market_decision_score, pipeline_quality_score,
         monitoring_score, backtest_utilization_score, overall_score,
-        category, rationale, created_at
+        category, rationale, evaluated_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
       ON CONFLICT (trade_id) DO UPDATE SET
         overall_score = EXCLUDED.overall_score,

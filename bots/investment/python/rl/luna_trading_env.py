@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Luna Phase 7 RL trading environment scaffold.
+"""Luna RL trading environment.
 
-This file intentionally keeps Gymnasium optional. The production training path is
-not activated by Phase 7 shadow implementation; tests only verify the contract
-shape and deterministic reward/action semantics.
+Gymnasium remains optional for smoke tests, but when installed this class
+implements the contract expected by Stable-Baselines3 PPO.
 """
 
 from __future__ import annotations
@@ -11,6 +10,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+try:
+    import numpy as np
+except Exception:  # pragma: no cover - optional until PPO deps are installed
+    np = None
+
+try:
+    import gymnasium as gym
+    from gymnasium import spaces
+except Exception:  # pragma: no cover - optional until PPO deps are installed
+    gym = None
+    spaces = None
 
 FEATURE_NAMES = [
     "momentum5",
@@ -36,21 +46,36 @@ class LunaTradingEnvConfig:
     trade_penalty: float = 0.02
 
 
-class LunaTradingEnv:
+BaseEnv = gym.Env if gym is not None else object
+
+
+class LunaTradingEnv(BaseEnv):
     """Minimal Gym-compatible environment contract for FinRL/PPO integration."""
 
     metadata = {"render_modes": ["human"]}
 
     def __init__(self, samples: List[Dict[str, Any]] | None = None, config: LunaTradingEnvConfig | None = None):
+        if gym is not None:
+            super().__init__()
         self.samples = samples or [fixture_sample()]
         self.config = config or LunaTradingEnvConfig()
         self.index = 0
         self.cash = self.config.initial_cash
         self.position = 0.0
         self.equity_peak = self.config.initial_cash
+        if spaces is not None and np is not None:
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+            self.observation_space = spaces.Box(
+                low=-np.inf,
+                high=np.inf,
+                shape=(len(FEATURE_NAMES),),
+                dtype=np.float32,
+            )
 
     def reset(self, *, seed: int | None = None, options: Dict[str, Any] | None = None) -> Tuple[List[float], Dict[str, Any]]:
-        del seed, options
+        if gym is not None:
+            super().reset(seed=seed)
+        del options
         self.index = 0
         self.cash = self.config.initial_cash
         self.position = 0.0
@@ -58,6 +83,10 @@ class LunaTradingEnv:
         return self._observation(), {"shadow_only": True}
 
     def step(self, action: float) -> Tuple[List[float], float, bool, bool, Dict[str, Any]]:
+        if np is not None:
+            action = float(np.asarray(action).reshape(-1)[0])
+        elif isinstance(action, (list, tuple)):
+            action = float(action[0] if action else 0.0)
         action = max(-1.0, min(1.0, float(action or 0.0)))
         sample = self.samples[min(self.index, len(self.samples) - 1)]
         price_return = float(sample.get("next_return", 0.0))
@@ -82,7 +111,10 @@ class LunaTradingEnv:
     def _observation(self) -> List[float]:
         sample = self.samples[min(self.index, len(self.samples) - 1)]
         features = sample.get("features", sample)
-        return [float(features.get(name, 0.0)) for name in FEATURE_NAMES]
+        obs = [float(features.get(name, 0.0)) for name in FEATURE_NAMES]
+        if np is not None:
+            return np.asarray(obs, dtype=np.float32)
+        return obs
 
 
 def fixture_sample() -> Dict[str, Any]:
@@ -119,6 +151,8 @@ def contract_summary() -> Dict[str, Any]:
         "truncated": truncated,
         "shadow_only": info.get("shadow_only") and step_info.get("shadow_only"),
         "next_observation_size": len(next_obs),
+        "gymnasium_available": gym is not None,
+        "spaces_available": spaces is not None,
     }
 
 

@@ -3,12 +3,14 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.luna.agent-evolution-weekly-sun-0600</string>
+  <string>ai.luna.feedback-action-mapper-daily-0830</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-agent-evolution.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-feedback-action-mapper.ts</string>
     <string>--json</string>
+    <string>--write</string>
+    <string>--no-dry-run</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
@@ -21,18 +23,16 @@
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Weekday</key>
-    <integer>0</integer>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>8</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>30</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>/tmp/ai.luna.agent-evolution-weekly-sun-0600.out.log</string>
+  <string>/tmp/ai.luna.feedback-action-mapper-daily-0830.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/ai.luna.agent-evolution-weekly-sun-0600.err.log</string>
+  <string>/tmp/ai.luna.feedback-action-mapper-daily-0830.err.log</string>
 </dict>
 </plist>

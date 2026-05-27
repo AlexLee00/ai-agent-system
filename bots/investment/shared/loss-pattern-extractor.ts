@@ -1,15 +1,9 @@
 // @ts-nocheck
 /**
- * shared/loss-pattern-extractor.ts — 손실 매매 패턴 추출기
- *
- * luna_failure_reflexions + trade_history → 손실 원인 분류 → 회피 가이드 생성
- * 마스터 비전: "매 거래 데이터 = 핵심! 손실 → 왜? 분석!"
+ * Loss pattern extractor based on real Luna post-trade tables.
  */
 
 import * as db from './db.ts';
-import { callLunaLLM } from './luna-hub-llm.ts';
-
-const LOG = '[loss-pattern-extractor]';
 
 export interface LossPattern {
   patternKey: string;
@@ -27,220 +21,167 @@ export interface LossPattern {
   extractedAt: string;
 }
 
-export async function extractLossPatterns({
-  market = 'all',
-  lookbackDays = 30,
-  minTradeCount = 3,
-  llmEnabled = true,
-}: {
-  market?: string;
-  lookbackDays?: number;
-  minTradeCount?: number;
-  llmEnabled?: boolean;
-} = {}): Promise<LossPattern[]> {
-  console.log(`${LOG} 시작 market=${market} lookbackDays=${lookbackDays}`);
-
-  const reflexions = await fetchRecentLossReflexions({ market, lookbackDays });
-  if (reflexions.length === 0) {
-    console.log(`${LOG} 손실 reflexion 없음`);
-    return [];
-  }
-
-  console.log(`${LOG} ${reflexions.length}개 reflexion 분석 시작`);
-  const clusters = clusterByPattern(reflexions);
-  const patterns: LossPattern[] = [];
-
-  for (const cluster of clusters) {
-    if (cluster.rows.length < minTradeCount) continue;
-    try {
-      const pattern = await buildLossPattern(cluster, { llmEnabled });
-      patterns.push(pattern);
-    } catch (err) {
-      console.error(`${LOG} 클러스터 처리 실패:`, err?.message);
-    }
-  }
-
-  if (patterns.length > 0) {
-    await persistLossPatterns(patterns);
-    console.log(`${LOG} ${patterns.length}개 패턴 저장 완료`);
-  }
-
-  return patterns;
+function asNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-async function fetchRecentLossReflexions({
-  market,
-  lookbackDays,
-}: {
-  market: string;
-  lookbackDays: number;
-}) {
-  const marketClause = market === 'all'
-    ? ''
-    : `AND COALESCE(market, 'crypto') = $2`;
-  const params = market === 'all' ? [lookbackDays] : [lookbackDays, market];
+function compactText(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 
+async function ensureLossPatternTable(): Promise<void> {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS investment.luna_loss_patterns (
+      pattern_key TEXT PRIMARY KEY,
+      market TEXT NOT NULL DEFAULT 'all',
+      symbol_count INTEGER NOT NULL DEFAULT 0,
+      trade_count INTEGER NOT NULL DEFAULT 0,
+      avg_loss_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+      total_penalty DOUBLE PRECISION NOT NULL DEFAULT 0,
+      reason_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      pattern_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+      regime TEXT,
+      strategy_family TEXT,
+      avoidance_guide TEXT,
+      confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+      extracted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `).catch(() => null);
+}
+
+async function fetchRecentLossReflexions({ market, lookbackDays }: { market: string; lookbackDays: number }) {
+  const params = market === 'all'
+    ? [Math.max(1, lookbackDays)]
+    : [Math.max(1, lookbackDays), market];
+  const marketFilter = market === 'all'
+    ? ''
+    : `AND COALESCE(tj.market, lfr.avoid_pattern->>'market', 'crypto') = $2`;
   return db.query(
-    `SELECT id, symbol, market, exchange, reason_code, lesson,
-            penalty, pattern_type, regime, strategy_family, created_at
-       FROM investment.luna_failure_reflexions
-      WHERE penalty > 0
-        AND created_at >= NOW() - ($1::int * INTERVAL '1 day')
-        ${marketClause}
-      ORDER BY penalty DESC, created_at DESC
-      LIMIT 500`,
+    `SELECT
+       lfr.id,
+       lfr.trade_id,
+       lfr.five_why,
+       lfr.stage_attribution,
+       lfr.hindsight,
+       lfr.avoid_pattern,
+       lfr.created_at,
+       tj.symbol,
+       tj.market,
+       tj.exchange,
+       tj.pnl_percent,
+       tj.exit_reason,
+       tj.hold_duration,
+       tj.market_regime,
+       tj.strategy_family
+     FROM investment.luna_failure_reflexions lfr
+     LEFT JOIN investment.trade_journal tj ON tj.trade_id = lfr.trade_id::text
+     WHERE lfr.created_at >= NOW() - ($1::int * INTERVAL '1 day')
+       ${marketFilter}
+     ORDER BY lfr.created_at DESC
+     LIMIT 500`,
     params,
   ).catch(() => []);
 }
 
-interface PatternCluster {
-  key: string;
-  reasonCode: string;
-  patternType: string;
-  regime: string | null;
-  strategyFamily: string | null;
-  market: string;
-  rows: any[];
+function classifyReason(row: Record<string, unknown>): { reasonCode: string; patternType: string } {
+  const text = [
+    compactText(row.hindsight),
+    compactText(row.five_why),
+    compactText(row.stage_attribution),
+    compactText(row.avoid_pattern),
+    compactText(row.exit_reason),
+  ].join(' ').toLowerCase();
+  if (text.includes('stop') || text.includes('손절') || text.includes('청산')) {
+    return { reasonCode: 'exit_timing_loss', patternType: 'exit' };
+  }
+  if (text.includes('size') || text.includes('sizing') || text.includes('비중')) {
+    return { reasonCode: 'position_sizing_loss', patternType: 'risk' };
+  }
+  if (text.includes('regime') || text.includes('레짐')) {
+    return { reasonCode: 'regime_mismatch_loss', patternType: 'regime' };
+  }
+  if (text.includes('entry') || text.includes('진입')) {
+    return { reasonCode: 'entry_timing_loss', patternType: 'entry' };
+  }
+  return { reasonCode: 'unclassified_loss', patternType: 'general' };
 }
 
-function clusterByPattern(reflexions: any[]): PatternCluster[] {
-  const groups = new Map<string, PatternCluster>();
-
-  for (const r of reflexions) {
-    const reasonCode = String(r.reason_code || 'unknown');
-    const patternType = String(r.pattern_type || 'unknown');
-    const regime = r.regime ? String(r.regime) : null;
-    const strategyFamily = r.strategy_family ? String(r.strategy_family) : null;
-    const market = String(r.market || 'crypto');
-    const key = `${market}:${reasonCode}:${patternType}:${regime || 'any'}`;
-
+function clusterByPattern(rows: any[]) {
+  const groups = new Map();
+  for (const row of rows) {
+    const classified = classifyReason(row);
+    const market = String(row.market || row.avoid_pattern?.market || 'crypto');
+    const regime = row.market_regime ? String(row.market_regime) : null;
+    const strategyFamily = row.strategy_family ? String(row.strategy_family) : null;
+    const key = `${market}:${classified.reasonCode}:${classified.patternType}:${regime || 'any'}:${strategyFamily || 'any'}`;
     if (!groups.has(key)) {
-      groups.set(key, { key, reasonCode, patternType, regime, strategyFamily, market, rows: [] });
+      groups.set(key, {
+        key,
+        market,
+        reasonCode: classified.reasonCode,
+        patternType: classified.patternType,
+        regime,
+        strategyFamily,
+        rows: [],
+      });
     }
-    groups.get(key)!.rows.push(r);
+    groups.get(key).rows.push(row);
   }
-
-  return [...groups.values()].sort((a, b) => {
-    const totalA = a.rows.reduce((s, r) => s + Number(r.penalty || 0), 0);
-    const totalB = b.rows.reduce((s, r) => s + Number(r.penalty || 0), 0);
-    return totalB - totalA;
-  });
+  return [...groups.values()].sort((a, b) => b.rows.length - a.rows.length);
 }
 
-async function buildLossPattern(
-  cluster: PatternCluster,
-  { llmEnabled }: { llmEnabled: boolean },
-): Promise<LossPattern> {
-  const symbols = [...new Set(cluster.rows.map((r) => String(r.symbol || '')).filter(Boolean))];
-  const totalPenalty = cluster.rows.reduce((s, r) => s + Number(r.penalty || 0), 0);
-  const avgPenalty = totalPenalty / cluster.rows.length;
-  const lessons = cluster.rows.map((r) => String(r.lesson || '')).filter(Boolean).slice(0, 6);
-  const reasonCodes = [...new Set(cluster.rows.map((r) => String(r.reason_code || '')).filter(Boolean))];
-  const patternTypes = [...new Set(cluster.rows.map((r) => String(r.pattern_type || '')).filter(Boolean))];
-
-  let avoidanceGuide = buildRuleBasedAvoidanceGuide({ cluster, avgPenalty, symbols });
-  let confidence = 0.6;
-
-  if (llmEnabled && cluster.rows.length >= 5) {
-    try {
-      const llmResult = await generateAvoidanceGuideWithLLM({ cluster, lessons, avgPenalty });
-      if (llmResult) {
-        avoidanceGuide = llmResult.guide;
-        confidence = Math.max(confidence, llmResult.confidence);
-      }
-    } catch (err) {
-      console.warn(`${LOG} LLM 회피가이드 실패:`, err?.message);
-    }
-  }
+function buildLossPattern(cluster): LossPattern {
+  const symbols = [...new Set(cluster.rows.map((row) => String(row.symbol || row.avoid_pattern?.symbol || '')).filter(Boolean))];
+  const losses = cluster.rows.map((row) => Math.abs(asNumber(row.pnl_percent, 0))).filter((n) => n > 0);
+  const avgLossPct = losses.length ? losses.reduce((sum, n) => sum + n, 0) / losses.length : 0;
+  const totalPenalty = cluster.rows.length * Math.max(0.1, avgLossPct / 100);
+  const guideParts = [
+    `${cluster.reasonCode} 패턴 ${cluster.rows.length}건`,
+    avgLossPct > 0 ? `평균 손실 ${avgLossPct.toFixed(2)}%` : '손실률 미기록',
+  ];
+  if (cluster.regime) guideParts.push(`${cluster.regime} 레짐에서 감지`);
+  if (symbols.length > 0) guideParts.push(`대상 ${symbols.slice(0, 3).join(', ')}`);
 
   return {
     patternKey: cluster.key,
     market: cluster.market,
     symbolCount: symbols.length,
     tradeCount: cluster.rows.length,
-    avgLossPct: avgPenalty,
+    avgLossPct,
     totalPenalty,
-    reasonCodes,
-    patternTypes,
+    reasonCodes: [cluster.reasonCode],
+    patternTypes: [cluster.patternType],
     regime: cluster.regime,
     strategyFamily: cluster.strategyFamily,
-    avoidanceGuide,
-    confidence,
+    avoidanceGuide: `${guideParts.join(' - ')}: 동일 조건 신규 진입 bias/size를 shadow에서 축소`,
+    confidence: Math.min(0.9, 0.45 + cluster.rows.length * 0.05 + Math.min(0.25, avgLossPct / 100)),
     extractedAt: new Date().toISOString(),
   };
 }
 
-function buildRuleBasedAvoidanceGuide({ cluster, avgPenalty, symbols }: {
-  cluster: PatternCluster;
-  avgPenalty: number;
-  symbols: string[];
-}): string {
-  const parts = [];
-  if (avgPenalty >= 0.2) {
-    parts.push(`고강도 손실 패턴 (avg penalty ${avgPenalty.toFixed(3)})`);
-    parts.push('신규 진입 보류 또는 sizing 20% 이하 권고');
-  }
-  if (cluster.regime) {
-    parts.push(`${cluster.regime} 레짐에서 ${cluster.reasonCode} 패턴 반복`);
-  }
-  if (symbols.length >= 3) {
-    parts.push(`${symbols.slice(0, 3).join(', ')} 등 ${symbols.length}개 종목에서 동일 패턴`);
-  }
-  parts.push(`원인: ${cluster.reasonCode} | 유형: ${cluster.patternType}`);
-  return parts.join(' — ');
-}
-
-async function generateAvoidanceGuideWithLLM({ cluster, lessons, avgPenalty }: {
-  cluster: PatternCluster;
-  lessons: string[];
-  avgPenalty: number;
-}): Promise<{ guide: string; confidence: number } | null> {
-  const systemPrompt = '당신은 퀀트 트레이딩 손실 패턴 분석 전문가입니다. JSON으로만 답합니다.';
-  const userPrompt = `
-손실 패턴 클러스터:
-- 시장: ${cluster.market}
-- reason_code: ${cluster.reasonCode}
-- pattern_type: ${cluster.patternType}
-- 레짐: ${cluster.regime || '알 수 없음'}
-- 전략: ${cluster.strategyFamily || '알 수 없음'}
-- 거래 수: ${cluster.rows.length}
-- 평균 페널티: ${avgPenalty.toFixed(4)}
-- 주요 교훈:
-${lessons.map((l, i) => `  ${i + 1}. ${l}`).join('\n')}
-
-다음 JSON으로 회피 가이드를 작성하세요:
-{
-  "guide": "구체적 회피/개선 가이드 (한국어, 3문장 이하)",
-  "confidence": 0.0~1.0
-}`;
-
-  const text = await callLunaLLM('luna.loss_pattern_extractor', systemPrompt, userPrompt, 200).catch(() => null);
-  if (!text) return null;
-  try {
-    const parsed = JSON.parse(String(text).match(/\{[\s\S]*\}/)?.[0] || '{}');
-    if (!parsed.guide) return null;
-    return { guide: String(parsed.guide), confidence: Math.max(0, Math.min(1, Number(parsed.confidence || 0.6))) };
-  } catch {
-    return null;
-  }
-}
-
 async function persistLossPatterns(patterns: LossPattern[]): Promise<void> {
+  await ensureLossPatternTable();
   for (const p of patterns) {
     await db.run(
       `INSERT INTO investment.luna_loss_patterns
-         (pattern_key, market, symbol_count, trade_count, avg_loss_pct,
-          total_penalty, reason_codes, pattern_types, regime, strategy_family,
-          avoidance_guide, confidence, extracted_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         (pattern_key, market, symbol_count, trade_count, avg_loss_pct, total_penalty,
+          reason_codes, pattern_types, regime, strategy_family, avoidance_guide, confidence, extracted_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13)
        ON CONFLICT (pattern_key) DO UPDATE SET
-         symbol_count    = EXCLUDED.symbol_count,
-         trade_count     = EXCLUDED.trade_count,
-         avg_loss_pct    = EXCLUDED.avg_loss_pct,
-         total_penalty   = EXCLUDED.total_penalty,
+         symbol_count = EXCLUDED.symbol_count,
+         trade_count = EXCLUDED.trade_count,
+         avg_loss_pct = EXCLUDED.avg_loss_pct,
+         total_penalty = EXCLUDED.total_penalty,
          avoidance_guide = EXCLUDED.avoidance_guide,
-         confidence      = EXCLUDED.confidence,
-         extracted_at    = EXCLUDED.extracted_at`,
+         confidence = EXCLUDED.confidence,
+         extracted_at = EXCLUDED.extracted_at`,
       [
         p.patternKey,
         p.market,
@@ -260,39 +201,51 @@ async function persistLossPatterns(patterns: LossPattern[]): Promise<void> {
   }
 }
 
-export async function getTopLossPatterns({
+export async function extractLossPatterns({
   market = 'all',
-  limit = 10,
+  lookbackDays = 30,
+  minTradeCount = 2,
+  persist = false,
 }: {
   market?: string;
-  limit?: number;
+  lookbackDays?: number;
+  minTradeCount?: number;
+  llmEnabled?: boolean;
+  persist?: boolean;
 } = {}): Promise<LossPattern[]> {
-  const marketClause = market === 'all' ? '' : `WHERE market = $2`;
-  const params = market === 'all' ? [limit] : [limit, market];
+  const rows = await fetchRecentLossReflexions({ market, lookbackDays });
+  const patterns = clusterByPattern(rows)
+    .filter((cluster) => cluster.rows.length >= Math.max(1, minTradeCount))
+    .map(buildLossPattern);
+  if (persist && patterns.length > 0) await persistLossPatterns(patterns);
+  return patterns;
+}
+
+export async function getTopLossPatterns({ market = 'all', limit = 10 }: { market?: string; limit?: number } = {}): Promise<LossPattern[]> {
+  const params = market === 'all' ? [Math.max(1, limit)] : [Math.max(1, limit), market];
+  const where = market === 'all' ? '' : 'WHERE market = $2';
   const rows = await db.query(
-    `SELECT pattern_key, market, symbol_count, trade_count, avg_loss_pct,
-            total_penalty, reason_codes, pattern_types, regime, strategy_family,
-            avoidance_guide, confidence, extracted_at
+    `SELECT *
        FROM investment.luna_loss_patterns
-       ${marketClause}
-       ORDER BY total_penalty DESC
-       LIMIT $1`,
+       ${where}
+      ORDER BY total_penalty DESC, extracted_at DESC
+      LIMIT $1`,
     params,
   ).catch(() => []);
-  return rows.map((r: any) => ({
-    patternKey: r.pattern_key,
-    market: r.market,
-    symbolCount: Number(r.symbol_count || 0),
-    tradeCount: Number(r.trade_count || 0),
-    avgLossPct: Number(r.avg_loss_pct || 0),
-    totalPenalty: Number(r.total_penalty || 0),
-    reasonCodes: Array.isArray(r.reason_codes) ? r.reason_codes : [],
-    patternTypes: Array.isArray(r.pattern_types) ? r.pattern_types : [],
-    regime: r.regime || null,
-    strategyFamily: r.strategy_family || null,
-    avoidanceGuide: r.avoidance_guide || '',
-    confidence: Number(r.confidence || 0),
-    extractedAt: r.extracted_at || '',
+  return rows.map((row: any) => ({
+    patternKey: row.pattern_key,
+    market: row.market,
+    symbolCount: Number(row.symbol_count || 0),
+    tradeCount: Number(row.trade_count || 0),
+    avgLossPct: Number(row.avg_loss_pct || 0),
+    totalPenalty: Number(row.total_penalty || 0),
+    reasonCodes: Array.isArray(row.reason_codes) ? row.reason_codes : [],
+    patternTypes: Array.isArray(row.pattern_types) ? row.pattern_types : [],
+    regime: row.regime || null,
+    strategyFamily: row.strategy_family || null,
+    avoidanceGuide: row.avoidance_guide || '',
+    confidence: Number(row.confidence || 0),
+    extractedAt: row.extracted_at || '',
   }));
 }
 

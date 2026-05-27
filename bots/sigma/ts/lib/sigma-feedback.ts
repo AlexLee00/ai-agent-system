@@ -43,6 +43,7 @@ const SCHEMA = 'sigma';
 
 export async function ensureSigmaTables(): Promise<void> {
   await pgPool.run('public', `CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`, []);
+  await pgPool.run('public', 'CREATE EXTENSION IF NOT EXISTS pgcrypto', []).catch(() => {});
   await pgPool.run(SCHEMA, `
     CREATE TABLE IF NOT EXISTS ${SCHEMA}.daily_runs (
       id BIGSERIAL PRIMARY KEY,
@@ -77,6 +78,46 @@ export async function ensureSigmaTables(): Promise<void> {
       measured BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
+  `, []);
+  await pgPool.run(SCHEMA, `
+    ALTER TABLE ${SCHEMA}.feedback_effectiveness
+      ADD COLUMN IF NOT EXISTS feedback_date TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS target_team VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS feedback_type VARCHAR(30),
+      ADD COLUMN IF NOT EXISTS content TEXT,
+      ADD COLUMN IF NOT EXISTS formation JSONB,
+      ADD COLUMN IF NOT EXISTS analyst_used VARCHAR(30),
+      ADD COLUMN IF NOT EXISTS before_metric JSONB,
+      ADD COLUMN IF NOT EXISTS after_metric JSONB,
+      ADD COLUMN IF NOT EXISTS effectiveness DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS effective BOOLEAN,
+      ADD COLUMN IF NOT EXISTS measured_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS measured BOOLEAN,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ
+  `, []);
+  await pgPool.run(SCHEMA, `
+    UPDATE ${SCHEMA}.feedback_effectiveness
+       SET feedback_date = COALESCE(feedback_date, NOW()),
+           formation = COALESCE(formation, '{}'::jsonb),
+           before_metric = COALESCE(before_metric, '{}'::jsonb),
+           after_metric = COALESCE(after_metric, '{}'::jsonb),
+           measured = COALESCE(measured, FALSE),
+           created_at = COALESCE(created_at, NOW())
+     WHERE feedback_date IS NULL
+        OR formation IS NULL
+        OR before_metric IS NULL
+        OR after_metric IS NULL
+        OR measured IS NULL
+        OR created_at IS NULL
+  `, []);
+  await pgPool.run(SCHEMA, `
+    ALTER TABLE ${SCHEMA}.feedback_effectiveness
+      ALTER COLUMN feedback_date SET DEFAULT NOW(),
+      ALTER COLUMN formation SET DEFAULT '{}'::jsonb,
+      ALTER COLUMN before_metric SET DEFAULT '{}'::jsonb,
+      ALTER COLUMN after_metric SET DEFAULT '{}'::jsonb,
+      ALTER COLUMN measured SET DEFAULT FALSE,
+      ALTER COLUMN created_at SET DEFAULT NOW()
   `, []);
   await pgPool.run(SCHEMA, `
     CREATE INDEX IF NOT EXISTS idx_sigma_fb_team

@@ -100,6 +100,37 @@ async function ensureSigmaSchema(): Promise<void> {
     )
   `);
   await pgPool.run('sigma', `
+    ALTER TABLE sigma.entity_facts
+      ADD COLUMN IF NOT EXISTS entity_type TEXT,
+      ADD COLUMN IF NOT EXISTS confidence NUMERIC(4,3),
+      ADD COLUMN IF NOT EXISTS source_event_id BIGINT,
+      ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+  `);
+  await pgPool.run('sigma', `
+    UPDATE sigma.entity_facts
+       SET entity_type = COALESCE(entity_type, 'general'),
+           confidence = COALESCE(confidence, 0.700),
+           created_at = COALESCE(created_at, NOW()),
+           updated_at = COALESCE(updated_at, NOW())
+     WHERE entity_type IS NULL
+        OR confidence IS NULL
+        OR created_at IS NULL
+        OR updated_at IS NULL
+  `);
+  await pgPool.run('sigma', `
+    ALTER TABLE sigma.entity_facts
+      ALTER COLUMN entity_type SET DEFAULT 'general',
+      ALTER COLUMN entity_type SET NOT NULL,
+      ALTER COLUMN confidence SET DEFAULT 0.700,
+      ALTER COLUMN confidence SET NOT NULL,
+      ALTER COLUMN created_at SET DEFAULT NOW(),
+      ALTER COLUMN created_at SET NOT NULL,
+      ALTER COLUMN updated_at SET DEFAULT NOW(),
+      ALTER COLUMN updated_at SET NOT NULL
+  `);
+  await pgPool.run('sigma', `
     CREATE INDEX IF NOT EXISTS idx_sigma_ef_team_entity
     ON sigma.entity_facts (team, agent_name, entity, confidence DESC)
   `);

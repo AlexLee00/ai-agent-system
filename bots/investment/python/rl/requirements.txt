@@ -1,10 +1,13 @@
-# Phase 7 FinRL/PPO optional dependencies.
-# The shadow scaffold does not require these packages for smoke tests.
-finrl
-stable-baselines3[extra]
-gymnasium
-torch
-numpy
-pandas
+# Luna RL/PPO training dependencies.
+# FinRL remains optional because Luna uses a custom Gymnasium environment for
+# PPO and the FinRL package pulls a broad, conflict-prone quant stack.
+stable-baselines3==2.7.1
+gymnasium==1.1.1
+torch==2.8.0
+numpy==1.23.5
+pandas==2.3.3
 fastapi
 uvicorn
+
+# Optional, install only in an isolated environment if needed:
+# finrl

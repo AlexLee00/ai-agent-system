@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
-import { runLunaAgentEvolution } from '../shared/luna-agent-evolution.ts';
+import { runFeedbackActionMapper } from '../shared/feedback-action-mapper.ts';
 
 function argValue(name: string, fallback: string | null = null): string | null {
   const prefix = `--${name}=`;
@@ -13,14 +13,16 @@ async function main() {
   const json = process.argv.includes('--json');
   const write = process.argv.includes('--write');
   const noDryRun = process.argv.includes('--no-dry-run');
-  const result = await runLunaAgentEvolution({
+  const result = await runFeedbackActionMapper({
     market: argValue('market', 'all') || 'all',
-    lookbackDays: Math.max(1, Number(argValue('lookback-days', '14')) || 14),
+    days: Math.max(1, Number(argValue('days', '30')) || 30),
+    limit: Math.max(1, Number(argValue('limit', '50')) || 50),
     dryRun: !noDryRun,
     write,
   });
   if (json) console.log(JSON.stringify(result, null, 2));
-  else console.log(`[luna-agent-evolution] ${result.evolutionSummary}`);
+  else console.log(`[luna-feedback-action-mapper] mapped=${result.mapped} dryRun=${result.dryRun}`);
+  if (!result.ok) process.exitCode = 1;
 }
 
 main().catch((error) => {

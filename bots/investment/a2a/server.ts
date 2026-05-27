@@ -29,6 +29,8 @@ import { registerHybridFinalClosureSkill } from './skills/hybrid-final-closure.t
 import { registerFundamentalQuantTradingSkill } from './skills/fundamental-quant-trading.ts';
 import { registerEarningsSurpriseTradingSkill } from './skills/earnings-surprise-trading.ts';
 import { registerDisclosureEventDrivenSkill } from './skills/disclosure-event-driven.ts';
+import { register as registerMultiAgentTradeDecisionSkill } from './skills/multi-agent-trade-decision.ts';
+import { registerMultiAgentCoordinationSkill } from './skills/multi-agent-coordination.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -56,6 +58,8 @@ registerHybridFinalClosureSkill();
 registerFundamentalQuantTradingSkill();
 registerEarningsSurpriseTradingSkill();
 registerDisclosureEventDrivenSkill();
+registerMultiAgentTradeDecisionSkill();
+registerMultiAgentCoordinationSkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();

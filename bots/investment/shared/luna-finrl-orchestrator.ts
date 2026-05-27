@@ -12,6 +12,7 @@
  */
 
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,8 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_ROOT = path.resolve(__dirname, '..');
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(INVESTMENT_ROOT, '../..');
-const PYTHON_BIN = process.env.LUNA_PYTHON_BIN || '/opt/homebrew/bin/python3';
+const DEFAULT_PYTHON_BIN = existsSync('/opt/homebrew/bin/python3') ? '/opt/homebrew/bin/python3' : 'python3';
+const PYTHON_BIN = process.env.LUNA_PYTHON_BIN || DEFAULT_PYTHON_BIN;
 const FINRL_DIR = path.join(PROJECT_ROOT, 'bots/investment/python/finrl-x');
 
 // ─── 타입 ────────────────────────────────────────────────────
@@ -151,12 +153,17 @@ async function recordTrainingResult(
   try {
     await db.query(`
       INSERT INTO investment.strategy_mutation_events (
-        event_type, lifecycle_phase, old_setup_type, validity_score, predictive_score, created_at
-      ) VALUES ('weekly_finrl_training', 'shadow', $1, $2, $3, NOW())
+        event_type, lifecycle_phase, position_scope_key, exchange, symbol, trade_mode,
+        old_setup_type, validity_score, predictive_score, reason, metadata, created_at
+      ) VALUES ('weekly_finrl_training', 'shadow', $1, 'learning', $2, 'shadow', $3, $4, $5, $6, $7::jsonb, NOW())
     `, [
-      JSON.stringify({ market, layers: layers.map(l => ({ layer: l.layer, success: l.success, durationMs: l.durationMs })) }),
+      `finrl:${market}:weekly`,
+      `${market}:portfolio`,
+      `finrl:${market}`,
       layers.filter(l => l.success).length / Math.max(1, layers.length),
       (learningReport as any)?.learningVelocity ?? 0.5,
+      `weekly FinRL/PPO shadow training result for ${market}`,
+      JSON.stringify({ market, layers: layers.map(l => ({ layer: l.layer, success: l.success, durationMs: l.durationMs })), learningReport }),
     ]);
   } catch (_err) {
     // 기록 실패해도 학습 결과에 영향 X

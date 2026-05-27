@@ -179,13 +179,17 @@ async function createMutationsFromHarness(results: HarnessCheckResult[]): Promis
     try {
       await db.query(`
         INSERT INTO investment.strategy_mutation_events (
-          event_type, lifecycle_phase, old_setup_type, validity_score, predictive_score, created_at
-        ) VALUES ($1, 'shadow', $2, $3, $4, NOW())
+          event_type, lifecycle_phase, position_scope_key, exchange, symbol, trade_mode,
+          old_setup_type, validity_score, predictive_score, reason, metadata, created_at
+        ) VALUES ($1, 'shadow', $2, 'learning', $3, 'shadow', $3, $4, $5, $6, $7::jsonb, NOW())
       `, [
         mutationType,
+        `harness:${result.harnessName}`,
         result.harnessName,
         result.score,
         result.score + 0.10,  // 기대 개선
+        `harness ${result.harnessName} score=${result.score.toFixed(3)} triggered ${mutationType}`,
+        JSON.stringify({ source: 'luna_harness_auto_adjustment', harnessName: result.harnessName, score: result.score }),
       ]);
       created++;
       console.log(`[HarnessAdjust] mutation 생성: ${mutationType} ← ${result.harnessName}(${result.score.toFixed(2)})`);

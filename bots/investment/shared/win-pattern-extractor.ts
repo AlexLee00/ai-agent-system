@@ -1,15 +1,9 @@
 // @ts-nocheck
 /**
- * shared/win-pattern-extractor.ts — 수익 매매 패턴 추출기
- *
- * trade_history(수익 거래) → 수익 조건 분류 → 우선순위 가이드 생성
- * 마스터 비전: "어떤 조건에서 수익? → 미래 매매 우선순위!"
+ * Win pattern extractor based on trade_journal.
  */
 
 import * as db from './db.ts';
-import { callLunaLLM } from './luna-hub-llm.ts';
-
-const LOG = '[win-pattern-extractor]';
 
 export interface WinPattern {
   patternKey: string;
@@ -27,133 +21,88 @@ export interface WinPattern {
   extractedAt: string;
 }
 
-export async function extractWinPatterns({
-  market = 'all',
-  lookbackDays = 30,
-  minTradeCount = 3,
-  llmEnabled = true,
-}: {
-  market?: string;
-  lookbackDays?: number;
-  minTradeCount?: number;
-  llmEnabled?: boolean;
-} = {}): Promise<WinPattern[]> {
-  console.log(`${LOG} 시작 market=${market} lookbackDays=${lookbackDays}`);
-
-  const trades = await fetchRecentWinTrades({ market, lookbackDays });
-  if (trades.length === 0) {
-    console.log(`${LOG} 수익 거래 없음`);
-    return [];
-  }
-
-  console.log(`${LOG} ${trades.length}개 수익 거래 분석 시작`);
-  const clusters = clusterByPattern(trades);
-  const patterns: WinPattern[] = [];
-
-  for (const cluster of clusters) {
-    if (cluster.rows.length < minTradeCount) continue;
-    try {
-      const pattern = await buildWinPattern(cluster, { llmEnabled });
-      patterns.push(pattern);
-    } catch (err) {
-      console.error(`${LOG} 클러스터 처리 실패:`, err?.message);
-    }
-  }
-
-  if (patterns.length > 0) {
-    await persistWinPatterns(patterns);
-    console.log(`${LOG} ${patterns.length}개 패턴 저장 완료`);
-  }
-
-  return patterns;
+function asNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-async function fetchRecentWinTrades({
-  market,
-  lookbackDays,
-}: {
-  market: string;
-  lookbackDays: number;
-}) {
-  const marketClause = market === 'all'
-    ? ''
-    : `AND COALESCE(market, 'crypto') = $2`;
-  const params = market === 'all' ? [lookbackDays] : [lookbackDays, market];
+async function ensureWinPatternTable(): Promise<void> {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS investment.luna_win_patterns (
+      pattern_key TEXT PRIMARY KEY,
+      market TEXT NOT NULL DEFAULT 'all',
+      symbol_count INTEGER NOT NULL DEFAULT 0,
+      trade_count INTEGER NOT NULL DEFAULT 0,
+      avg_win_pct DOUBLE PRECISION NOT NULL DEFAULT 0,
+      total_profit DOUBLE PRECISION NOT NULL DEFAULT 0,
+      reason_codes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      pattern_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+      regime TEXT,
+      strategy_family TEXT,
+      priority_guide TEXT,
+      confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+      extracted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `).catch(() => null);
+}
 
+async function fetchRecentWinTrades({ market, lookbackDays }: { market: string; lookbackDays: number }) {
+  const params = market === 'all'
+    ? [Math.max(1, lookbackDays)]
+    : [Math.max(1, lookbackDays), market];
+  const marketFilter = market === 'all' ? '' : 'AND market = $2';
   return db.query(
-    `SELECT id, symbol, market, exchange,
-            entry_reason, exit_reason, pnl_pct, pnl_usd,
-            regime, strategy_family, entry_at, exit_at
-       FROM investment.trade_history
-      WHERE pnl_pct > 0
-        AND exit_at IS NOT NULL
-        AND exit_at >= NOW() - ($1::int * INTERVAL '1 day')
-        ${marketClause}
-      ORDER BY pnl_pct DESC, exit_at DESC
-      LIMIT 500`,
+    `SELECT
+       trade_id,
+       symbol,
+       market,
+       exchange,
+       pnl_percent,
+       pnl_amount,
+       pnl_net,
+       exit_reason,
+       market_regime,
+       strategy_family,
+       exit_time,
+       created_at
+     FROM investment.trade_journal
+     WHERE COALESCE(pnl_percent, 0) > 0
+       AND exit_time IS NOT NULL
+       AND to_timestamp(exit_time / 1000.0) >= NOW() - ($1::int * INTERVAL '1 day')
+       ${marketFilter}
+     ORDER BY pnl_percent DESC, exit_time DESC
+     LIMIT 500`,
     params,
   ).catch(() => []);
 }
 
-interface WinCluster {
-  key: string;
-  entryReason: string;
-  exitReason: string;
-  regime: string | null;
-  strategyFamily: string | null;
-  market: string;
-  rows: any[];
-}
-
-function clusterByPattern(trades: any[]): WinCluster[] {
-  const groups = new Map<string, WinCluster>();
-
-  for (const t of trades) {
-    const entryReason = String(t.entry_reason || 'unknown');
-    const exitReason = String(t.exit_reason || 'unknown');
-    const regime = t.regime ? String(t.regime) : null;
-    const strategyFamily = t.strategy_family ? String(t.strategy_family) : null;
-    const market = String(t.market || 'crypto');
-    const key = `${market}:${entryReason}:${exitReason}:${regime || 'any'}`;
-
+function clusterByPattern(rows: any[]) {
+  const groups = new Map();
+  for (const row of rows) {
+    const market = String(row.market || 'crypto');
+    const exitReason = String(row.exit_reason || 'unknown_exit');
+    const regime = row.market_regime ? String(row.market_regime) : null;
+    const strategyFamily = row.strategy_family ? String(row.strategy_family) : null;
+    const key = `${market}:${strategyFamily || 'any'}:${exitReason}:${regime || 'any'}`;
     if (!groups.has(key)) {
-      groups.set(key, { key, entryReason, exitReason, regime, strategyFamily, market, rows: [] });
+      groups.set(key, { key, market, exitReason, regime, strategyFamily, rows: [] });
     }
-    groups.get(key)!.rows.push(t);
+    groups.get(key).rows.push(row);
   }
-
-  return [...groups.values()].sort((a, b) => {
-    const totalA = a.rows.reduce((s, t) => s + Number(t.pnl_pct || 0), 0);
-    const totalB = b.rows.reduce((s, t) => s + Number(t.pnl_pct || 0), 0);
-    return totalB - totalA;
-  });
+  return [...groups.values()].sort((a, b) => b.rows.length - a.rows.length);
 }
 
-async function buildWinPattern(
-  cluster: WinCluster,
-  { llmEnabled }: { llmEnabled: boolean },
-): Promise<WinPattern> {
-  const symbols = [...new Set(cluster.rows.map((t) => String(t.symbol || '')).filter(Boolean))];
-  const totalProfit = cluster.rows.reduce((s, t) => s + Number(t.pnl_usd || 0), 0);
-  const avgWinPct = cluster.rows.reduce((s, t) => s + Number(t.pnl_pct || 0), 0) / cluster.rows.length;
-  const reasonCodes = [...new Set(cluster.rows.map((t) => String(t.entry_reason || '')).filter(Boolean))];
-  const patternTypes = [...new Set(cluster.rows.map((t) => String(t.exit_reason || '')).filter(Boolean))];
-
-  let priorityGuide = buildRuleBasedPriorityGuide({ cluster, avgWinPct, symbols });
-  let confidence = 0.6;
-
-  if (llmEnabled && cluster.rows.length >= 5) {
-    try {
-      const llmResult = await generatePriorityGuideWithLLM({ cluster, avgWinPct, totalProfit });
-      if (llmResult) {
-        priorityGuide = llmResult.guide;
-        confidence = Math.max(confidence, llmResult.confidence);
-      }
-    } catch (err) {
-      console.warn(`${LOG} LLM 우선순위 가이드 실패:`, err?.message);
-    }
-  }
-
+function buildWinPattern(cluster): WinPattern {
+  const symbols = [...new Set(cluster.rows.map((row) => String(row.symbol || '')).filter(Boolean))];
+  const wins = cluster.rows.map((row) => asNumber(row.pnl_percent, 0)).filter((n) => n > 0);
+  const avgWinPct = wins.length ? wins.reduce((sum, n) => sum + n, 0) / wins.length : 0;
+  const totalProfit = cluster.rows.reduce((sum, row) => sum + asNumber(row.pnl_net ?? row.pnl_amount, 0), 0);
+  const guideParts = [
+    `${cluster.strategyFamily || 'unknown_strategy'} 패턴 ${cluster.rows.length}건`,
+    `평균 수익 ${avgWinPct.toFixed(2)}%`,
+  ];
+  if (cluster.regime) guideParts.push(`${cluster.regime} 레짐`);
+  if (symbols.length > 0) guideParts.push(`대상 ${symbols.slice(0, 3).join(', ')}`);
   return {
     patternKey: cluster.key,
     market: cluster.market,
@@ -161,86 +110,32 @@ async function buildWinPattern(
     tradeCount: cluster.rows.length,
     avgWinPct,
     totalProfit,
-    reasonCodes,
-    patternTypes,
+    reasonCodes: [cluster.strategyFamily || 'unknown_strategy'],
+    patternTypes: [cluster.exitReason],
     regime: cluster.regime,
     strategyFamily: cluster.strategyFamily,
-    priorityGuide,
-    confidence,
+    priorityGuide: `${guideParts.join(' - ')}: 동일 조건 재현 시 shadow 우선순위 상승 후보`,
+    confidence: Math.min(0.9, 0.45 + cluster.rows.length * 0.05 + Math.min(0.25, avgWinPct / 100)),
     extractedAt: new Date().toISOString(),
   };
 }
 
-function buildRuleBasedPriorityGuide({ cluster, avgWinPct, symbols }: {
-  cluster: WinCluster;
-  avgWinPct: number;
-  symbols: string[];
-}): string {
-  const parts = [];
-  if (avgWinPct >= 0.05) {
-    parts.push(`고수익 패턴 (avg win ${(avgWinPct * 100).toFixed(2)}%)`);
-    parts.push('동일 조건 재현 시 sizing 우선 확대 권고');
-  }
-  if (cluster.regime) {
-    parts.push(`${cluster.regime} 레짐에서 ${cluster.entryReason} 패턴 반복 수익`);
-  }
-  if (symbols.length >= 3) {
-    parts.push(`${symbols.slice(0, 3).join(', ')} 등 ${symbols.length}개 종목에서 동일 패턴`);
-  }
-  parts.push(`진입: ${cluster.entryReason} | 청산: ${cluster.exitReason}`);
-  return parts.join(' — ');
-}
-
-async function generatePriorityGuideWithLLM({ cluster, avgWinPct, totalProfit }: {
-  cluster: WinCluster;
-  avgWinPct: number;
-  totalProfit: number;
-}): Promise<{ guide: string; confidence: number } | null> {
-  const systemPrompt = '당신은 퀀트 트레이딩 수익 패턴 분석 전문가입니다. JSON으로만 답합니다.';
-  const userPrompt = `
-수익 패턴 클러스터:
-- 시장: ${cluster.market}
-- 진입 이유: ${cluster.entryReason}
-- 청산 이유: ${cluster.exitReason}
-- 레짐: ${cluster.regime || '알 수 없음'}
-- 전략: ${cluster.strategyFamily || '알 수 없음'}
-- 거래 수: ${cluster.rows.length}
-- 평균 수익률: ${(avgWinPct * 100).toFixed(2)}%
-- 총 수익: $${totalProfit.toFixed(2)}
-
-다음 JSON으로 우선순위 가이드를 작성하세요:
-{
-  "guide": "이 패턴을 미래 매매에서 우선 활용하는 구체적 가이드 (한국어, 3문장 이하)",
-  "confidence": 0.0~1.0
-}`;
-
-  const text = await callLunaLLM('luna.win_pattern_extractor', systemPrompt, userPrompt, 200).catch(() => null);
-  if (!text) return null;
-  try {
-    const parsed = JSON.parse(String(text).match(/\{[\s\S]*\}/)?.[0] || '{}');
-    if (!parsed.guide) return null;
-    return { guide: String(parsed.guide), confidence: Math.max(0, Math.min(1, Number(parsed.confidence || 0.6))) };
-  } catch {
-    return null;
-  }
-}
-
 async function persistWinPatterns(patterns: WinPattern[]): Promise<void> {
+  await ensureWinPatternTable();
   for (const p of patterns) {
     await db.run(
       `INSERT INTO investment.luna_win_patterns
-         (pattern_key, market, symbol_count, trade_count, avg_win_pct,
-          total_profit, reason_codes, pattern_types, regime, strategy_family,
-          priority_guide, confidence, extracted_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         (pattern_key, market, symbol_count, trade_count, avg_win_pct, total_profit,
+          reason_codes, pattern_types, regime, strategy_family, priority_guide, confidence, extracted_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13)
        ON CONFLICT (pattern_key) DO UPDATE SET
-         symbol_count   = EXCLUDED.symbol_count,
-         trade_count    = EXCLUDED.trade_count,
-         avg_win_pct    = EXCLUDED.avg_win_pct,
-         total_profit   = EXCLUDED.total_profit,
+         symbol_count = EXCLUDED.symbol_count,
+         trade_count = EXCLUDED.trade_count,
+         avg_win_pct = EXCLUDED.avg_win_pct,
+         total_profit = EXCLUDED.total_profit,
          priority_guide = EXCLUDED.priority_guide,
-         confidence     = EXCLUDED.confidence,
-         extracted_at   = EXCLUDED.extracted_at`,
+         confidence = EXCLUDED.confidence,
+         extracted_at = EXCLUDED.extracted_at`,
       [
         p.patternKey,
         p.market,
@@ -260,39 +155,51 @@ async function persistWinPatterns(patterns: WinPattern[]): Promise<void> {
   }
 }
 
-export async function getTopWinPatterns({
+export async function extractWinPatterns({
   market = 'all',
-  limit = 10,
+  lookbackDays = 30,
+  minTradeCount = 2,
+  persist = false,
 }: {
   market?: string;
-  limit?: number;
+  lookbackDays?: number;
+  minTradeCount?: number;
+  llmEnabled?: boolean;
+  persist?: boolean;
 } = {}): Promise<WinPattern[]> {
-  const marketClause = market === 'all' ? '' : `WHERE market = $2`;
-  const params = market === 'all' ? [limit] : [limit, market];
+  const rows = await fetchRecentWinTrades({ market, lookbackDays });
+  const patterns = clusterByPattern(rows)
+    .filter((cluster) => cluster.rows.length >= Math.max(1, minTradeCount))
+    .map(buildWinPattern);
+  if (persist && patterns.length > 0) await persistWinPatterns(patterns);
+  return patterns;
+}
+
+export async function getTopWinPatterns({ market = 'all', limit = 10 }: { market?: string; limit?: number } = {}): Promise<WinPattern[]> {
+  const params = market === 'all' ? [Math.max(1, limit)] : [Math.max(1, limit), market];
+  const where = market === 'all' ? '' : 'WHERE market = $2';
   const rows = await db.query(
-    `SELECT pattern_key, market, symbol_count, trade_count, avg_win_pct,
-            total_profit, reason_codes, pattern_types, regime, strategy_family,
-            priority_guide, confidence, extracted_at
+    `SELECT *
        FROM investment.luna_win_patterns
-       ${marketClause}
-       ORDER BY total_profit DESC
-       LIMIT $1`,
+       ${where}
+      ORDER BY total_profit DESC, avg_win_pct DESC, extracted_at DESC
+      LIMIT $1`,
     params,
   ).catch(() => []);
-  return rows.map((r: any) => ({
-    patternKey: r.pattern_key,
-    market: r.market,
-    symbolCount: Number(r.symbol_count || 0),
-    tradeCount: Number(r.trade_count || 0),
-    avgWinPct: Number(r.avg_win_pct || 0),
-    totalProfit: Number(r.total_profit || 0),
-    reasonCodes: Array.isArray(r.reason_codes) ? r.reason_codes : [],
-    patternTypes: Array.isArray(r.pattern_types) ? r.pattern_types : [],
-    regime: r.regime || null,
-    strategyFamily: r.strategy_family || null,
-    priorityGuide: r.priority_guide || '',
-    confidence: Number(r.confidence || 0),
-    extractedAt: r.extracted_at || '',
+  return rows.map((row: any) => ({
+    patternKey: row.pattern_key,
+    market: row.market,
+    symbolCount: Number(row.symbol_count || 0),
+    tradeCount: Number(row.trade_count || 0),
+    avgWinPct: Number(row.avg_win_pct || 0),
+    totalProfit: Number(row.total_profit || 0),
+    reasonCodes: Array.isArray(row.reason_codes) ? row.reason_codes : [],
+    patternTypes: Array.isArray(row.pattern_types) ? row.pattern_types : [],
+    regime: row.regime || null,
+    strategyFamily: row.strategy_family || null,
+    priorityGuide: row.priority_guide || '',
+    confidence: Number(row.confidence || 0),
+    extractedAt: row.extracted_at || '',
   }));
 }
 

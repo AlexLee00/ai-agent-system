@@ -1215,6 +1215,65 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   `);
   try { await run(`CREATE INDEX IF NOT EXISTS idx_fam_source_trade ON feedback_to_action_map (source_trade_id, applied_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_fam_parameter ON feedback_to_action_map (parameter_name, applied_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_feedback_to_action_map_mapper_symbol ON feedback_to_action_map ((metadata->>'mapper'), (metadata->>'symbol'), applied_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_feedback_to_action_map_shadow_action ON feedback_to_action_map ((metadata->>'actionType'), applied_at DESC) WHERE COALESCE(metadata->>'shadowOnly', 'false') = 'true'`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS strategy_mutation_events (
+      id                 BIGSERIAL PRIMARY KEY,
+      event_type         TEXT NOT NULL,
+      lifecycle_phase    TEXT NOT NULL DEFAULT 'shadow',
+      position_scope_key TEXT NOT NULL DEFAULT 'global',
+      exchange           TEXT NOT NULL DEFAULT 'unknown',
+      symbol             TEXT NOT NULL DEFAULT 'unknown',
+      trade_mode         TEXT NOT NULL DEFAULT 'normal',
+      old_setup_type     TEXT,
+      new_setup_type     TEXT,
+      validity_score     DOUBLE PRECISION,
+      predictive_score   DOUBLE PRECISION,
+      reason             TEXT,
+      metadata           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at         TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS position_scope_key TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS exchange TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS symbol TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS trade_mode TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS old_setup_type TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS new_setup_type TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS validity_score DOUBLE PRECISION`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS predictive_score DOUBLE PRECISION`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS reason TEXT`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`).catch(() => {});
+  await run(`
+    UPDATE strategy_mutation_events
+       SET position_scope_key = COALESCE(position_scope_key, 'global'),
+           exchange = COALESCE(exchange, 'unknown'),
+           symbol = COALESCE(symbol, 'unknown'),
+           trade_mode = COALESCE(trade_mode, 'normal'),
+           metadata = COALESCE(metadata, '{}'::jsonb)
+     WHERE position_scope_key IS NULL
+        OR exchange IS NULL
+        OR symbol IS NULL
+        OR trade_mode IS NULL
+        OR metadata IS NULL
+  `).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN lifecycle_phase SET DEFAULT 'shadow'`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN position_scope_key SET DEFAULT 'global'`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN position_scope_key SET NOT NULL`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN exchange SET DEFAULT 'unknown'`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN exchange SET NOT NULL`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN symbol SET DEFAULT 'unknown'`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN symbol SET NOT NULL`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN trade_mode SET DEFAULT 'normal'`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN trade_mode SET NOT NULL`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN metadata SET DEFAULT '{}'::jsonb`).catch(() => {});
+  await run(`ALTER TABLE strategy_mutation_events ALTER COLUMN metadata SET NOT NULL`).catch(() => {});
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_strategy_mutation_events_created ON strategy_mutation_events (created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_strategy_mutation_events_scope ON strategy_mutation_events (position_scope_key, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_strategy_mutation_events_symbol ON strategy_mutation_events (exchange, symbol, trade_mode, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_strategy_mutation_events_type_phase ON strategy_mutation_events (event_type, lifecycle_phase, created_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
     CREATE TABLE IF NOT EXISTS luna_posttrade_skills (

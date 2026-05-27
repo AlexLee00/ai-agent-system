@@ -96,10 +96,13 @@ async function runMultiAgentTradeDecision(input, queryFn) {
   const winningVotes = voteMap[finalDecision] || 0;
   const confidence = totalVotes > 0 ? Number((winningVotes / totalVotes).toFixed(3)) : 0;
 
-  // 4. 결정 기록 (에이전트 메시지 로그)
-  await recordDecisionMessage(queryFn, {
-    symbol, market, finalDecision, confidence, voteDetails, riskVeto,
-  });
+  // 4. 결정 기록은 명시 옵션이 있을 때만 수행한다. Shadow 기본 호출은 read-only.
+  const recordDecision = Boolean(input?.recordDecision || input?.record === true) && input?.dryRun !== true;
+  if (recordDecision) {
+    await recordDecisionMessage(queryFn, {
+      symbol, market, finalDecision, confidence, voteDetails, riskVeto,
+    });
+  }
 
   return {
     symbol,
@@ -110,6 +113,9 @@ async function runMultiAgentTradeDecision(input, queryFn) {
     voteDetails,
     riskVeto,
     agentCount: candidateActions.length,
+    recorded: recordDecision,
+    shadowMode: true,
+    liveTrade: false,
   };
 }
 
