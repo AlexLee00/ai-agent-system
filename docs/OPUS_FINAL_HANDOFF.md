@@ -1,4 +1,50 @@
-# 세션 인수인계 — 2026-05-24 (CODEX_BLOG_V3_UNIFIED_MASTER H영역 재검증 + H5 테스트)
+# 세션 인수인계 — 2026-05-27 (CODEX_LUNA_AGENTIC_LEARNING_REDESIGN 6 Phase 완료)
+
+## 완료 요약 ✅ — Luna Agentic Learning 재설계
+
+### 마스터 철학 구현: "거래 = 데이터 수집! 끊임없는 분석/피드백/진화!"
+
+| Phase | 파일 | 상태 |
+|-------|------|------|
+| A. 데이터 수집 우선 | `shared/luna-data-collection-priority.ts` | ✅ 완성 |
+| B. Closed-loop 피드백 | `shared/luna-feedback-loop-orchestrator.ts` + `scripts/luna-feedback-loop-daily.ts` + launchd 06:00 + `migrations/20260527000001_luna_learning_progress_view.sql` | ✅ 완성 |
+| C. 통합 분석 + 회사 확장 | `shared/unified-analyst.ts` (기술+펀더멘털+감성) + `python/korea-data/fundamentals_expander.py` + launchd 05:00 | ✅ 완성 |
+| D. FinRL-X 4-layer | `python/finrl-x/layer1~4.py` + `shared/luna-self-rewarding-engine.ts` + `shared/luna-finrl-orchestrator.ts` + launchd 일요일 02:00 | ✅ 완성 |
+| E. A2A 5 Agent 협업 | `a2a/skills/multi-agent-trade-decision.ts` + `a2a/skills/cross-agent-validation.ts` | ✅ 완성 |
+| F. 하네스 자율 조정 | `shared/luna-harness-auto-adjustment.ts` + `scripts/luna-harness-daily.ts` + launchd 06:10 | ✅ 완성 |
+
+### 커밋
+- `52e96a3e9` feat(luna): CODEX_LUNA_AGENTIC_LEARNING_REDESIGN_2026-05-27 자동 실행 완료
+- 21개 신규 파일, 3,628줄 추가
+
+### 다음 세션 필수 작업
+1. **OPS 배포** (git pull + launchd 등록):
+   ```bash
+   # OPS 맥 스튜디오에서
+   cd /Users/alexlee/projects/ai-agent-system && git pull
+   # 신규 launchd 4개 등록:
+   launchctl load ~/Library/LaunchAgents/ai.luna.feedback-loop-daily-0600.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.fundamentals-expander-daily.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.finrl-weekly-training.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.harness-daily-0600.plist
+   ```
+2. **DB Migration** 실행:
+   ```bash
+   psql -h localhost -U postgres -d jay -f bots/investment/migrations/20260527000001_luna_learning_progress_view.sql
+   ```
+3. **실매매 활성화** (마스터 직접!):
+   - `docs/strategy/LUNA_ACTUAL_LIVE_TRADING_GUIDE.md` 참조
+   - secrets-store.json: `trading_mode: 'live'` + `paper_mode: false`
+
+### 7중 안전 상태
+- ✅ pre-rollback 태그: `pre-codex-luna-agentic-learning-20260527-*`
+- ✅ PROTECTED launchd 무중단 (기존 11개 불변)
+- ✅ Shadow Mode (실매매 활성화는 마스터 별도 승인 필요)
+
+---
+
+<!-- 이전 세션 기록 보존 -->
+# 이전 세션 — 2026-05-24 (CODEX_BLOG_V3_UNIFIED_MASTER H영역 재검증 + H5 테스트)
 
 ## 완료 요약 ✅
 
