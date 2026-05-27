@@ -38,6 +38,12 @@
 		<string>true</string>
 		<key>LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED</key>
 		<string>true</string>
+		<key>LUNA_PHASE_A_AUTOPILOT_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_PHASE_A_AUTOPILOT_LIMIT</key>
+		<string>3</string>
+		<key>LUNA_PHASE_A_INFLUENCE_MODE</key>
+		<string>shadow_bias</string>
 		<key>LUNA_CROSS_AGENT_BUS_ENABLED</key>
 		<string>true</string>
 		<key>LUNA_AGENT_CROSS_BUS_ENABLED</key>

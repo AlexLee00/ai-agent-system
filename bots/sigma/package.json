@@ -19,6 +19,8 @@
     "observation:7day": "tsx scripts/runtime-sigma-7day-completion-report.ts --json",
     "observation:7day:telegram": "tsx scripts/runtime-sigma-7day-completion-report.ts --telegram --json",
     "consistency:monitor": "tsx scripts/runtime-sigma-consistency-monitor.ts --json",
+    "vault:classify": "tsx scripts/runtime-sigma-vault-classifier.ts --json",
+    "check:para-vault": "node --check ts/lib/vault-manager.ts && node --check scripts/runtime-sigma-vault-classifier.ts && node --check scripts/sigma-vault-manager-smoke.ts && tsx scripts/sigma-vault-manager-smoke.ts",
     "check:library": "tsx scripts/sigma-intelligent-library-smoke.ts",
     "check:library:activation": "tsx scripts/sigma-final-activation-smoke.ts",
     "check:library:observation": "node --check scripts/sigma-runtime-env.ts && node --check scripts/sigma-protected-runtime.ts && node --check scripts/sigma-alarm-dispatch.ts && node --check scripts/sigma-alarm-dispatch-smoke.ts && node --check scripts/sigma-observation-history.ts && node --check scripts/runtime-sigma-observation-history-smoke.ts && node --check scripts/runtime-sigma-observation-review.ts && tsx scripts/sigma-alarm-dispatch-smoke.ts && tsx scripts/runtime-sigma-observation-history-smoke.ts && tsx scripts/runtime-sigma-observation-review.ts --json --strict",

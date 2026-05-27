@@ -8,6 +8,7 @@ import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
 import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutotune } from './runtime-position-runtime-autotune.ts';
+import { runLunaAnalysisPredictionPhaseA } from './runtime-luna-analysis-prediction-phase-a.ts';
 import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { assessPhase6SafetyReadiness } from '../shared/position-closeout-engine.ts';
 import { refreshPositionSignals } from '../shared/position-signal-refresh.ts';
@@ -45,6 +46,9 @@ function parseArgs(argv = []) {
     skipOrphanProfileSweep: false,
     applyOrphanProfileSweep: false,
     orphanProfileSweepExchange: null,
+    phaseA: false,
+    phaseALimit: null,
+    phaseAInfluence: null,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -62,6 +66,9 @@ function parseArgs(argv = []) {
     else if (raw === '--skip-runtime-reevaluation') args.skipRuntimeReevaluation = true;
     else if (raw === '--skip-orphan-profile-sweep') args.skipOrphanProfileSweep = true;
     else if (raw === '--apply-orphan-profile-sweep') args.applyOrphanProfileSweep = true;
+    else if (raw === '--phase-a') args.phaseA = true;
+    else if (raw.startsWith('--phase-a-limit=')) args.phaseALimit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
+    else if (raw.startsWith('--phase-a-influence=')) args.phaseAInfluence = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--orphan-profile-sweep-exchange=')) args.orphanProfileSweepExchange = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--position-sync-markets=')) {
       const rawMarkets = raw.split('=').slice(1).join('=') || 'crypto';
@@ -126,6 +133,106 @@ function readRuntimeEnv(name) {
 
 function runtimeFlagEnabled(name, readEnv = readRuntimeEnv) {
   return TRUE_VALUES.has(String(readEnv(name) || '').trim().toLowerCase());
+}
+
+function envNumber(name, fallback, readEnv = readRuntimeEnv) {
+  const value = Number(readEnv(name));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function marketForExchange(exchange = 'binance') {
+  const value = String(exchange || '').trim().toLowerCase();
+  if (value === 'kis' || value === 'domestic') return 'domestic';
+  if (value === 'kis_overseas' || value === 'overseas') return 'overseas';
+  return 'crypto';
+}
+
+function phaseAAutopilotEnabled(args = {}, readEnv = readRuntimeEnv) {
+  return args.phaseA === true || runtimeFlagEnabled('LUNA_PHASE_A_AUTOPILOT_ENABLED', readEnv);
+}
+
+function buildPhaseAAutopilotTargets(runtimeReport = null, args = {}, readEnv = readRuntimeEnv) {
+  const limit = Math.max(1, Math.min(20, Number(args.phaseALimit || envNumber('LUNA_PHASE_A_AUTOPILOT_LIMIT', 5, readEnv)) || 5));
+  const rows = Array.isArray(runtimeReport?.rows) ? runtimeReport.rows : [];
+  const seen = new Set();
+  const targets = [];
+  for (const row of rows) {
+    const symbol = String(row?.symbol || row?.position?.symbol || '').trim();
+    const exchange = String(row?.exchange || row?.position?.exchange || args.exchange || 'binance').trim().toLowerCase();
+    if (!symbol || !exchange) continue;
+    const key = `${exchange}:${symbol}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    targets.push({ symbol, exchange, market: marketForExchange(exchange) });
+    if (targets.length >= limit) break;
+  }
+  return targets;
+}
+
+async function runPhaseAAutopilotShadow(args = {}, runtimeReport = null, readEnv = readRuntimeEnv) {
+  if (!phaseAAutopilotEnabled(args, readEnv)) {
+    return {
+      enabled: false,
+      status: 'phase_a_autopilot_disabled',
+      liveTradeImpact: false,
+      results: [],
+    };
+  }
+  const targets = buildPhaseAAutopilotTargets(runtimeReport, args, readEnv);
+  if (targets.length === 0) {
+    return {
+      enabled: true,
+      status: 'phase_a_autopilot_no_runtime_targets',
+      liveTradeImpact: false,
+      results: [],
+    };
+  }
+  const runner = args.phaseARunner || runLunaAnalysisPredictionPhaseA;
+  const influence = String(args.phaseAInfluence || readEnv('LUNA_PHASE_A_INFLUENCE_MODE') || 'shadow_bias');
+  const results = [];
+  for (const target of targets) {
+    const result = await Promise.resolve(runner({
+      symbol: target.symbol,
+      market: target.market,
+      write: false,
+      apply: false,
+      phaseAInfluence: influence,
+      fetchBars: args.phaseAFetchBars !== false,
+    })).catch((error) => ({
+      ok: false,
+      status: 'phase_a_autopilot_shadow_failed',
+      phaseA: {
+        symbol: target.symbol,
+        market: target.market,
+        blockers: [error?.message || String(error)],
+      },
+      marketData: { error: error?.message || String(error) },
+      strategyRoute: null,
+    }));
+    results.push({
+      symbol: target.symbol,
+      exchange: target.exchange,
+      market: target.market,
+      ok: result?.ok === true,
+      status: result?.status || 'unknown',
+      predictiveScore: result?.phaseA?.predictiveScore ?? null,
+      selectedFamily: result?.strategyRoute?.selectedFamily || null,
+      influenceMode: result?.strategyRoute?.phaseA?.influenceMode || influence,
+      influenceWeight: result?.strategyRoute?.phaseA?.influenceWeight ?? null,
+      marketData: result?.marketData || null,
+      blockers: result?.phaseA?.blockers || [],
+    });
+  }
+  const ready = results.filter((item) => item.ok === true).length;
+  return {
+    enabled: true,
+    status: ready > 0 ? 'phase_a_autopilot_shadow_ready' : 'phase_a_autopilot_shadow_partial',
+    liveTradeImpact: false,
+    influenceMode: influence,
+    targets: targets.length,
+    ready,
+    results,
+  };
 }
 
 export function resolveAutonomousDispatchGate(args = {}, decision = {}, readEnv = readRuntimeEnv) {
@@ -261,6 +368,9 @@ function renderText(result = {}) {
   if (result.orphanProfileSweep?.enabled) {
     lines.push(`orphan profile sweep: ${result.orphanProfileSweep.status || 'unknown'} / candidates ${result.orphanProfileSweep.candidates ?? 0} / retired ${result.orphanProfileSweep.retired ?? 0}`);
   }
+  if (result.phaseA?.enabled) {
+    lines.push(`phase A shadow: ${result.phaseA.status || 'unknown'} / ready ${result.phaseA.ready || 0}/${result.phaseA.targets || 0}`);
+  }
   for (const item of result.decision?.nextActions || []) lines.push(`- ${item}`);
   return lines.join('\n');
 }
@@ -318,6 +428,7 @@ function buildHistorySnapshot({
   positionSyncSummary,
   runtimeReevaluation,
   phase6SafetyReadiness,
+  phaseA,
   runtimeReport,
   tuning,
   dispatchPreview,
@@ -438,6 +549,21 @@ function buildHistorySnapshot({
     cadenceRecommendationByExchange,
     cadenceAppliedByExchange,
     phase6SafetyReadiness: phase6SafetyReadiness || null,
+    phaseA: phaseA ? {
+      enabled: phaseA.enabled === true,
+      status: phaseA.status || null,
+      influenceMode: phaseA.influenceMode || null,
+      targets: Number(phaseA.targets || 0),
+      ready: Number(phaseA.ready || 0),
+      results: (phaseA.results || []).slice(0, 10).map((item) => ({
+        exchange: item.exchange || null,
+        symbol: item.symbol || null,
+        ok: item.ok === true,
+        predictiveScore: item.predictiveScore ?? null,
+        selectedFamily: item.selectedFamily || null,
+        influenceWeight: item.influenceWeight ?? null,
+      })),
+    } : null,
   };
 }
 
@@ -601,6 +727,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     error: error?.message || String(error),
   }));
   const runtimeReport = await runPositionRuntimeReport({ exchange: args.exchange || null, limit: 200, json: true });
+  const phaseA = await runPhaseAAutopilotShadow(args, runtimeReport);
   const tuning = await runPositionRuntimeTuning({ exchange: args.exchange || null, json: true });
   const dispatchPreview = await runPositionRuntimeDispatch({ exchange: args.exchange || null, limit: args.limit || 5, phase6: true, json: true });
   const autotunePreview = await runPositionRuntimeAutotune({ exchange: args.exchange || null, json: true });
@@ -625,6 +752,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       runtimeReevaluation,
       autonomousDispatchGate,
       orphanProfileSweep,
+      phaseA,
       phase6SafetyReadiness,
       runtimeReport,
       tuning,
@@ -640,6 +768,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       runtimeReevaluation,
       autonomousDispatchGate,
       orphanProfileSweep,
+      phaseA,
       phase6SafetyReadiness,
       runtimeReport,
       tuning,
@@ -669,6 +798,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       runtimeReevaluation,
       autonomousDispatchGate,
       orphanProfileSweep,
+      phaseA,
       phase6SafetyReadiness,
       reason: 'use --confirm=position-runtime-autopilot',
     };
@@ -685,6 +815,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       runtimeReevaluation,
       autonomousDispatchGate,
       orphanProfileSweep,
+      phaseA,
       phase6SafetyReadiness,
       reason: 'phase6 safety readiness failed; fix runtime guards before execute/apply',
     };
@@ -701,6 +832,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       runtimeReevaluation,
       autonomousDispatchGate,
       orphanProfileSweep,
+      phaseA,
       phase6SafetyReadiness,
       reason: lifecycleReadiness.blockers.join(', ') || 'lifecycle readiness blocked',
     };
@@ -753,6 +885,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     runtimeReevaluation,
     autonomousDispatchGate,
     orphanProfileSweep,
+    phaseA,
     phase6SafetyReadiness,
     runtimeReport,
     tuning,
@@ -777,6 +910,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     runtimeReevaluation,
     autonomousDispatchGate,
     orphanProfileSweep,
+    phaseA,
     phase6SafetyReadiness,
     runtimeReport,
     tuning,

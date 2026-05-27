@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.phase-a-promotion-daily</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-analysis-prediction-phase-a.ts</string>
+    <string>--json</string>
+    <string>--promotion-gate</string>
+    <string>--market=domestic</string>
+    <string>--min-shadow-days=7</string>
+    <string>--min-samples=7</string>
+    <string>--output=/Users/alexlee/projects/ai-agent-system/bots/investment/output/luna-analysis-prediction-phase-a-promotion-gate.json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>LUNA_PHASE_A_SHADOW_MODE</key>
+    <string>true</string>
+    <key>LUNA_PHASE_A_INFLUENCE_MODE</key>
+    <string>shadow_bias</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>TimeOut</key>
+  <integer>900</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.phase-a-promotion-daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.phase-a-promotion-daily.err.log</string>
+</dict>
+</plist>

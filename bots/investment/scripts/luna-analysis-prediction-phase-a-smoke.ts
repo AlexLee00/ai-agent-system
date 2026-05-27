@@ -12,7 +12,12 @@ import { analyzeFinbertSentiment } from '../shared/finbert-analyzer.ts';
 import { calculateWorldQuantAlphas } from '../shared/worldquant-alphas.ts';
 import { buildLunaAnalysisPredictionPhaseA } from '../shared/luna-analysis-prediction-phase-a.ts';
 import { buildStrategyRoute, applyStrategyRouteDecisionBias } from '../shared/strategy-router.ts';
-import { PHASE_A_SHADOW_LOG_CONFIRM, runLunaAnalysisPredictionPhaseA } from './runtime-luna-analysis-prediction-phase-a.ts';
+import {
+  PHASE_A_SHADOW_LOG_CONFIRM,
+  runLunaAnalysisPredictionPhaseA,
+  runLunaAnalysisPredictionPhaseABatch,
+  runLunaAnalysisPredictionPhaseAPromotionGate,
+} from './runtime-luna-analysis-prediction-phase-a.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_ROOT = resolve(__dirname, '..');
@@ -96,6 +101,7 @@ export async function runLunaAnalysisPredictionPhaseASmoke() {
   assert.equal(route.phaseA.shadowOnly, true);
   assert.equal(route.phaseA.predictiveScore, phaseA.predictiveScore);
   assert.equal(route.phaseA.influenceMode, 'shadow_bias');
+  assert.equal(route.phaseA.influenceWeight, 0.25);
 
   const adjusted = applyStrategyRouteDecisionBias(
     { action: 'BUY', confidence: phaseA.predictiveScore, amount_usdt: 50000, reasoning: 'phase a' },
@@ -110,11 +116,55 @@ export async function runLunaAnalysisPredictionPhaseASmoke() {
   assert.equal(runtime.shadowOnly, true);
   assert.equal(runtime.shadowLogLedger.writeApplied, false);
 
-  const partialRuntime = await runLunaAnalysisPredictionPhaseA({ fixture: false, write: false });
+  const partialRuntime = await runLunaAnalysisPredictionPhaseA({ fixture: false, fetchBars: false, write: false });
   assert.equal(partialRuntime.ok, false);
   assert.equal(partialRuntime.strategyRoute, null);
   assert.equal(partialRuntime.adjustedDecision, null);
   assert.equal(partialRuntime.shadowLogLedger.reason, 'phase_a_not_ready');
+
+  const runtimeWithProvidedBars = await runLunaAnalysisPredictionPhaseA({
+    fixture: false,
+    write: false,
+    bars,
+    marketDataSource: 'smoke_provided_bars',
+  });
+  assert.equal(runtimeWithProvidedBars.ok, true);
+  assert.equal(runtimeWithProvidedBars.marketData.source, 'smoke_provided_bars');
+  assert.equal(runtimeWithProvidedBars.marketData.bars, bars.length);
+
+  const batchRuntime = await runLunaAnalysisPredictionPhaseABatch({
+    market: 'domestic',
+    symbols: '005930,000660',
+    write: false,
+    getOhlcv: async () => bars.map((bar, index) => [index, bar.open, bar.high, bar.low, bar.close, bar.volume]),
+  });
+  assert.equal(batchRuntime.ok, true);
+  assert.equal(batchRuntime.symbols, 2);
+  assert.equal(batchRuntime.ready, 2);
+
+  const promotionGate = await runLunaAnalysisPredictionPhaseAPromotionGate({
+    write: false,
+    market: 'domestic',
+    query: async () => [{
+      symbol: '005930',
+      market: 'domestic',
+      hmm_samples: 8,
+      shadow_days: 8,
+      latest_observed_at: new Date().toISOString(),
+      avg_regime_confidence: 0.71,
+      garch_samples: 8,
+      avg_position_size_factor: 0.86,
+      sentiment_samples: 8,
+      avg_sentiment_score: 0.12,
+      alpha_samples: 160,
+      alpha_shadow_days: 8,
+      avg_alpha_composite: 0.09,
+    }],
+  });
+  assert.equal(promotionGate.ok, true);
+  assert.equal(promotionGate.summary.ready, 1);
+  assert.equal(promotionGate.candidates[0].canPromote, false);
+  assert.equal(promotionGate.candidates[0].activeBiasWeight, 0.5);
 
   const writeCalls = [];
   const appliedRuntime = await runLunaAnalysisPredictionPhaseA({

@@ -128,25 +128,33 @@ function applyExternalEvidenceFeatures({
   }
 }
 
+function phaseAInfluenceWeight(phaseAEvidence = null, influenceMode = 'diagnostic') {
+  if (!phaseAEvidence || influenceMode === 'diagnostic') return 0;
+  if (influenceMode === 'shadow_bias' && phaseAEvidence.shadowOnly === true) return 0.25;
+  if (influenceMode === 'active_bias' && phaseAEvidence.promotion?.canPromote === true) return 0.5;
+  return 0;
+}
+
 function applyPhaseAFeatures({ exchange = 'binance', phaseAEvidence = null, influenceMode = 'diagnostic', scores, reasons }) {
-  if (!phaseAEvidence || phaseAEvidence.shadowOnly !== true || influenceMode !== 'shadow_bias') return;
+  const weight = phaseAInfluenceWeight(phaseAEvidence, influenceMode);
+  if (weight <= 0) return;
   const strategyBias = phaseAEvidence.strategy?.bias || {};
   for (const [family, value] of Object.entries(strategyBias)) {
     if (scores[family] != null && Number.isFinite(Number(value))) {
-      add(scores, family, clamp(Number(value), -0.16, 0.16), 'Phase A shadow analysis/prediction bias', reasons);
+      add(scores, family, clamp(Number(value) * weight, -0.16, 0.16), `Phase A ${influenceMode} analysis/prediction bias`, reasons);
     }
   }
   const predictiveScore = Number(phaseAEvidence.predictiveScore);
   if (Number.isFinite(predictiveScore)) {
     if (predictiveScore >= 0.62) {
-      add(scores, exchange === 'binance' ? 'momentum_rotation' : 'equity_swing', 0.04, 'Phase A predictive score strong', reasons);
+      add(scores, exchange === 'binance' ? 'momentum_rotation' : 'equity_swing', 0.04 * weight, 'Phase A predictive score strong', reasons);
     } else if (predictiveScore < 0.42) {
-      add(scores, 'defensive_rotation', 0.05, 'Phase A predictive score weak', reasons);
+      add(scores, 'defensive_rotation', 0.05 * weight, 'Phase A predictive score weak', reasons);
     }
   }
   const positionSizeFactor = Number(phaseAEvidence.positionSizeFactor);
   if (Number.isFinite(positionSizeFactor) && positionSizeFactor < 0.65) {
-    add(scores, 'defensive_rotation', 0.05, 'Phase A GARCH volatility size dampener', reasons);
+    add(scores, 'defensive_rotation', 0.05 * weight, 'Phase A GARCH volatility size dampener', reasons);
   }
 }
 
@@ -405,6 +413,7 @@ export async function buildStrategyRoute({
       worldquantSignal: phaseAEvidence.modules?.worldquant?.signal || null,
       shadowOnly: phaseAEvidence.shadowOnly === true,
       influenceMode: phaseAInfluence,
+      influenceWeight: phaseAInfluenceWeight(phaseAEvidence, phaseAInfluence),
     } : null,
     familyPerformance: {
       bias: familyFeedback.bias,
@@ -475,7 +484,7 @@ export function applyStrategyRouteDecisionBias(decision = null, route = null, ex
     if (family === 'defensive_rotation') amount *= 0.82;
     if (familyPerformanceBias < 0) amount *= familyPerformanceBias <= -0.14 ? 0.72 : 0.84;
     const phaseASizeFactor = Number(route.phaseA?.positionSizeFactor);
-    if (route.phaseA?.influenceMode === 'shadow_bias' && Number.isFinite(phaseASizeFactor) && phaseASizeFactor > 0 && phaseASizeFactor < 1) {
+    if (['shadow_bias', 'active_bias'].includes(route.phaseA?.influenceMode) && Number.isFinite(phaseASizeFactor) && phaseASizeFactor > 0 && phaseASizeFactor < 1) {
       amount *= Math.max(0.25, phaseASizeFactor);
     }
     if ((exchange === 'kis' || exchange === 'kis_overseas') && amount > 0) {
