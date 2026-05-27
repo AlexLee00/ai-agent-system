@@ -166,6 +166,30 @@ export async function runLunaAnalysisPredictionPhaseASmoke() {
   assert.equal(promotionGate.candidates[0].canPromote, false);
   assert.equal(promotionGate.candidates[0].activeBiasWeight, 0.5);
 
+  const promotionGateSchemaCalls = [];
+  await runLunaAnalysisPredictionPhaseAPromotionGate({
+    write: false,
+    market: 'domestic',
+    query: async () => [],
+    run: async (sql, params = []) => {
+      promotionGateSchemaCalls.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  assert.equal(promotionGateSchemaCalls.length, 0);
+
+  await runLunaAnalysisPredictionPhaseAPromotionGate({
+    write: false,
+    market: 'domestic',
+    ensureSchema: true,
+    query: async () => [],
+    run: async (sql, params = []) => {
+      promotionGateSchemaCalls.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  assert.ok(promotionGateSchemaCalls.some((call) => String(call.sql).includes('CREATE TABLE IF NOT EXISTS investment.hmm_regime_log')));
+
   const writeCalls = [];
   const appliedRuntime = await runLunaAnalysisPredictionPhaseA({
     fixture: true,

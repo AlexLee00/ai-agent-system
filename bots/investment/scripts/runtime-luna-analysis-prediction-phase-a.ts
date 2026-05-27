@@ -456,7 +456,7 @@ export async function runLunaAnalysisPredictionPhaseAPromotionGate(options = {})
   let rows = [];
   let queryError = null;
   try {
-    if (!options.query || options.ensureSchema === true) {
+    if (options.ensureSchema === true) {
       await ensurePhaseALogSchema(runFn);
     }
     rows = await Promise.resolve(queryFn(
@@ -610,6 +610,7 @@ async function main() {
     lookbackDays: Number(argValue('lookback-days', 120) || 120),
     minShadowDays: Number(argValue('min-shadow-days', 7) || 7),
     minSamples: Number(argValue('min-samples', 7) || 7),
+    ensureSchema: hasFlag('ensure-schema'),
     apply: hasFlag('apply'),
     confirm: argValue('confirm', ''),
   };
