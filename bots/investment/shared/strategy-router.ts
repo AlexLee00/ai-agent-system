@@ -64,7 +64,7 @@ function buildRegimeBias(regime = null, exchange = 'binance') {
   if (value.includes('bull')) {
     return exchange === 'binance'
       ? { trend_following: 0.24, momentum_rotation: 0.18, breakout: 0.14, micro_swing: 0.06, short_term_scalping: 0.03, mean_reversion: -0.04, defensive_rotation: -0.12 }
-      : { equity_swing: 0.22, breakout: 0.12, micro_swing: 0.05, short_term_scalping: 0.02, mean_reversion: -0.02, defensive_rotation: -0.10 };
+      : { equity_swing: 0.30, breakout: 0.12, micro_swing: 0.05, short_term_scalping: 0.02, mean_reversion: -0.02, defensive_rotation: -0.20 };
   }
   if (value.includes('bear')) {
     return exchange === 'binance'

@@ -912,6 +912,16 @@ function applyStrategyAwareDecision(baseDecision, {
 function decideReevaluation(position, analysisSummary, strategyProfile = null, latestBacktest = null) {
   const pnlPct = calcPnlPct(position);
   const heldHours = deriveHeldHours(position, strategyProfile);
+  const positionExchange = String(position?.exchange || 'binance');
+
+  // KIS 국내장 24h+ 손실 포지션: 추가 악화 방지 조기 청산
+  if (positionExchange === 'kis' && heldHours > 24 && pnlPct < 0) {
+    return {
+      recommendation: 'EXIT',
+      reasonCode: 'domestic_holding_limit_24h',
+      reason: `국내장 보유 ${heldHours.toFixed(1)}h > 24h 제한 + 손실 ${pnlPct.toFixed(2)}%`,
+    };
+  }
   const buy = Number(analysisSummary.buy || 0);
   const hold = Number(analysisSummary.hold || 0);
   const sell = Number(analysisSummary.sell || 0);

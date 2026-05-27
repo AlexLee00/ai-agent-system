@@ -255,7 +255,7 @@ export function classifyStrategyFamily(input: ClassifyInput): ClassifyResult {
   // 4. regime 기반 기본값
   if (regime === 'trending_bear' || regime === 'volatile') {
     return {
-      family: isDomestic ? 'defensive_rotation' : 'mean_reversion',
+      family: isDomestic ? 'equity_swing' : 'mean_reversion',
       source: 'regime_default',
       confidence: 'low',
     };

@@ -283,3 +283,24 @@ export function createLunaPortfolioDecisionGuards({
     applyBudgetCheckerToDecisions,
   };
 }
+
+/**
+ * 국내장(KIS) 보유 시간 24h 초과 포지션 식별.
+ * domestic_holding_limit_24h exit 처리 대상 목록 반환.
+ */
+export function enforceDomesticHoldingLimit(positions = [], maxHoldHours = 24) {
+  return positions
+    .filter((pos) => {
+      if (pos.exchange !== 'kis') return false;
+      const heldHours = Number(pos.held_hours ?? pos.heldHours ?? 0);
+      return heldHours > maxHoldHours;
+    })
+    .map((pos) => ({
+      symbol: pos.symbol,
+      exchange: pos.exchange,
+      heldHours: Number(pos.held_hours ?? pos.heldHours ?? 0),
+      positionValue: Number(pos.position_value ?? pos.amount ?? 0),
+      tradeMode: pos.trade_mode ?? 'normal',
+      exit_reason: 'domestic_holding_limit_24h',
+    }));
+}
