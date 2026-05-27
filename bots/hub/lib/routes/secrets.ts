@@ -368,6 +368,15 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     const store = loadSecretsStore();
     return sanitizeConfig(store ? mergeRuntimeAndSecrets(runtime, store) : runtime);
   },
+
+  langfuse: () => {
+    const store = loadSecretsStore();
+    return {
+      host: store?.langfuse?.host || process.env.LANGFUSE_HOST || 'http://localhost:3000',
+      public_key: store?.langfuse?.public_key || process.env.LANGFUSE_PUBLIC_KEY || '',
+      secret_key: store?.langfuse?.secret_key || process.env.LANGFUSE_SECRET_KEY || '',
+    };
+  },
 };
 
 async function secretsRoute(req: SecretsRequest, res: SecretsResponse): Promise<SecretsResponse | void> {

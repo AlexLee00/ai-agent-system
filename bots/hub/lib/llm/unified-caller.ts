@@ -5,6 +5,9 @@
 
 const crypto = require('node:crypto');
 
+const path = require('node:path');
+const { traceLLMCall } = require(path.join(__dirname, '../langfuse-tracer'));
+
 const { callClaudeCodeOAuth } = require('./claude-code-oauth');
 const { callGroqFallback } = require('./groq-fallback');
 const { callLocalOllama } = require('./local-ollama');
@@ -49,10 +52,21 @@ function _groqModel() {
 }
 
 async function callWithFallback(req) {
+  let result;
   if (_inflightDedupeEnabled(req)) {
-    return _runWithInflightDedupe(req, () => _callWithFallbackInternal(req));
+    result = await _runWithInflightDedupe(req, () => _callWithFallbackInternal(req));
+  } else {
+    result = await _callWithFallbackInternal(req);
   }
-  return _callWithFallbackInternal(req);
+  traceLLMCall(req, result, {
+    agent: req.agent,
+    callerTeam: req.callerTeam,
+    taskType: req.taskType,
+    selectorKey: req.selectorKey,
+    abstractModel: req.abstractModel,
+    budgetGuardStatus: req._budgetGuardStatus,
+  });
+  return result;
 }
 
 async function _callWithFallbackInternal(req) {

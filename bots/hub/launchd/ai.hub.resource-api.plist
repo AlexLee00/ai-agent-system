@@ -95,6 +95,14 @@
     <string>2700000</string>
     <key>HUB_LLM_QUEUE_TIMEOUT_MS</key>
     <string>15000</string>
+    <key>LLM_AUTO_ROUTING_ENABLED</key>
+    <string>shadow</string>
+    <key>HUB_BUDGET_GUARDIAN_ENABLED</key>
+    <string>true</string>
+    <key>LANGFUSE_HOST</key>
+    <string>http://localhost:3000</string>
+    <key>LANGFUSE_ENABLED</key>
+    <string>true</string>
   </dict>
 
   <key>RunAtLoad</key>

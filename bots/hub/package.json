@@ -141,6 +141,8 @@
     "hub:bg-deploy": "tsx scripts/hub-blue-green-deploy.ts deploy",
     "hub:bg-switch": "tsx scripts/hub-blue-green-deploy.ts switch",
     "hub:bg-rollback": "tsx scripts/hub-blue-green-deploy.ts rollback",
+    "langfuse:smoke": "tsx scripts/langfuse-integration-smoke.ts",
+    "hub:migrate:llm-tables": "PG_DIRECT=true tsx -e \"const {Pool}=require('pg');const fs=require('fs');const pool=new Pool({connectionString:process.env.DATABASE_URL||'postgresql://localhost:5432/jay'});Promise.all(['bots/hub/migrations/20260527000001_llm_auto_routing_log.sql','bots/hub/migrations/20260527000002_permission_audit_log.sql','bots/hub/migrations/20260527000003_token_budget_log.sql'].map(f=>pool.query(fs.readFileSync(f,'utf8')))).then(()=>{console.log('migrate ok');pool.end();process.exit(0)}).catch(e=>{console.error(e.message);process.exit(1)})\"",
     "hub:secrets-monitor": "tsx scripts/secrets-store-monitor-runner.ts",
     "hub:secrets-expiry-monitor": "tsx scripts/secrets-store-monitor-runner.ts",
     "hub:secrets-monitor:apply-migration": "PG_DIRECT=true tsx -e \"const pg=require('../../packages/core/lib/pg-pool');const fs=require('fs');const sql=fs.readFileSync('bots/hub/migrations/20261001000070_hub_secrets_rotation_log.sql','utf8');pg.query('public',sql).then(()=>{console.log('migration ok');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
@@ -165,6 +167,7 @@
   "dependencies": {
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "langfuse": "^3.38.20",
     "tsx": "^4.22.3"
   },
   "jest": {
@@ -172,6 +175,12 @@
       "^.+\\.tsx?$": "<rootDir>/jest-esbuild-transform.cjs"
     },
     "testEnvironment": "node",
-    "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"]
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "json"
+    ]
   }
 }
