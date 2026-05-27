@@ -448,6 +448,7 @@ export async function runLunaAnalysisPredictionPhaseABatch(options = {}) {
 export async function runLunaAnalysisPredictionPhaseAPromotionGate(options = {}) {
   const market = normalizeMarket(options.market || 'domestic');
   const queryFn = options.query || dbQuery;
+  const runFn = options.run || dbRun;
   const minShadowDays = Math.max(1, Number(options.minShadowDays || 7) || 7);
   const minSamples = Math.max(1, Number(options.minSamples || minShadowDays) || minShadowDays);
   const windowDays = Math.max(minShadowDays, Number(options.windowDays || 14) || 14);
@@ -455,6 +456,9 @@ export async function runLunaAnalysisPredictionPhaseAPromotionGate(options = {})
   let rows = [];
   let queryError = null;
   try {
+    if (!options.query || options.ensureSchema === true) {
+      await ensurePhaseALogSchema(runFn);
+    }
     rows = await Promise.resolve(queryFn(
       `WITH hmm AS (
          SELECT symbol, market,
