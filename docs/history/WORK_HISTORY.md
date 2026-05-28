@@ -4,18 +4,30 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
-## 2026-05-28: CODEX_CLAUDE_REFACTORER_HARNESS — Phase 1~3 전체 완료
+## 2026-05-28: CODEX_CLAUDE_REFACTORER_HARNESS — Phase 3 시범 리팩토링 완료
 
-- **Phase 1+2** (이전 세션):
+- **Phase 1+2** (이전 세션, 커밋 fb4a8ef55 → ea52608f5):
   - 리팩터 에이전트: `bots/claude/agents/refactorer.md`
   - plugin-eval 3계층 하네스: Static / LLM Judge (Hub Gateway) / Monte Carlo 50회
   - 리팩토링 안전 훅 6계층: pre-refactor / type-check / test-green / complexity / dependency / verify-loop
   - MCP 5도구 (port 8774): analyze_tech_debt / suggest_refactoring / split_large_file / restore_types / verify_refactoring
   - A2A 스킬, 기술부채 인벤토리, launchd plist, CLAUDE.md 업데이트
-- **Phase 3 — 시범 리팩토링** (이번 세션):
-  - @ts-nocheck 16개 제거 (darwin A2A 10 + blog/claude/orchestrator 6)
-  - darwin typecheck strict exit 0 확인
-  - 커밋: `d176d714a`
+- **Phase 3-A — @ts-nocheck 복구** (이번 세션):
+  - 7개 소형 파일 @ts-nocheck 제거 완료:
+    - `bots/claude/lib/alert-publisher.ts` (6줄, CJS shim)
+    - `bots/claude/lib/symphony/index.ts` (12줄, CJS re-export)
+    - `bots/claude/a2a/handlers/notification-handler.ts` (15줄, ESM 완전 타입)
+    - `bots/darwin/a2a/handlers/notification-handler.ts` (15줄)
+    - `bots/blog/a2a/handlers/notification-handler.ts` (15줄)
+    - `bots/orchestrator/src/orchestrator.ts` (4줄, CJS shim)
+    - `bots/orchestrator/src/mainbot.ts` (8줄, deprecated shim)
+  - `tsc --noEmit` 0 에러 확인 (claude tsconfig)
+  - CJS 파일: `"type": "commonjs"` + `strict: false` 조합으로 안전 확인
+- **Phase 3-C — commenter.ts 분할 계획** (이번 세션):
+  - 6,215줄 구조 전수 분석 완료 (37개 public export, ~90개 내부 함수)
+  - 5개 모듈 분할 계획 수립: commenter-utils → queue → browser → neighbor → core
+  - 의존성 방향 단방향 설계 (E → D → B → C → A)
+  - `docs/strategy/TECH_DEBT_INVENTORY.md` Phase 3-A ✅ + Phase 3-C 상세 계획 추가
 - **OPS 필요**: launchd plist 등록 — `ai.claude.refactor-mcp` (port 8774)
 
 ## 2026-05-27: CODEX_LUNA_TRADE_LEARN_EVOLVE — Phase 1~3 완료 (가드 notify + 피드백 파이프라인 + 에이전트 진화)
