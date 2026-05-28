@@ -211,8 +211,8 @@ function main(): void {
   });
   assert.deepEqual(
     darwinEvaluatorChain.map((entry: any) => entry.provider),
-    ['groq', 'openai-oauth', 'groq'],
-    'darwin.evaluator must use non-Gemini fast route with OpenAI fallback',
+    ['openai-oauth', 'groq'],
+    'darwin.evaluator must avoid Groq primary during Groq pool/cooldown pressure',
   );
 
   const darwinQueryPlannerChain = selector.selectLLMChain('darwin.agent_policy', {

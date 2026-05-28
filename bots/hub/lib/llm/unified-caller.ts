@@ -582,6 +582,17 @@ function _providerCircuitKey(provider, normalizedRoute) {
 function _shouldRecordProviderCircuitFailure(provider, error) {
   const message = String(error || '');
   if (
+    provider === 'groq'
+    && (
+      /Groq 429/i.test(message)
+      || /rate[-_\s]?limit/i.test(message)
+      || /rate-limited/i.test(message)
+      || /계정 풀 비어있음|cooldown/i.test(message)
+    )
+  ) {
+    return false;
+  }
+  if (
     provider === 'openai-oauth'
     && /openai_codex_oauth_bad_request/i.test(message)
     && /unsupported parameter|max_output_tokens/i.test(message)

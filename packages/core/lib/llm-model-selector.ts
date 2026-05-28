@@ -462,6 +462,9 @@ function localEmbeddingEntry(): LLMChainEntry {
 function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
   const selectorKey = String(options.selectorKey || '');
   const maxTokens = entryMaxTokens(entry, Number(options.maxTokens) || 1024);
+  if (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy') {
+    return openAiEntry(entry, maxTokens > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
+  }
   if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) {
     const candidate = claudeWritingEntry(entry);
     if (!shouldAvoidClaudeCode(candidate, options)) return candidate;
@@ -514,6 +517,9 @@ function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: Select
   let optimized = chain.map((entry) => (isGeminiEntry(entry) ? replacementForGemini(entry, options) : entry));
   optimized = optimized.filter((entry) => !isGeminiEntry(entry));
 
+  if (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy') {
+    optimized = dedupeByProvider(ensureOpenAiPrimary(optimized, options));
+  }
   if (selectorKey.startsWith('claude.')) optimized = ensureOpenAiPrimary(optimized, options);
   if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) optimized = ensureClaudeWritingPrimary(optimized, options);
 

@@ -4,62 +4,110 @@
       "path": "docs/codex/CODEX_SKA_INTELLIGENT_AUTONOMY_PLAN.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.173Z"
+      "lastSeenAt": "2026-05-28T22:00:01.858Z"
     },
     "CODEX_HUB_LLM_TRUE_GAP_ACTIVATION_2026-05-27.md": {
       "path": "docs/codex/CODEX_HUB_LLM_TRUE_GAP_ACTIVATION_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.165Z"
+      "lastSeenAt": "2026-05-28T22:00:01.807Z"
     },
     "CODEX_LUNA_AGENTIC_LEARNING_REDESIGN_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_AGENTIC_LEARNING_REDESIGN_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.166Z"
+      "lastSeenAt": "2026-05-28T22:00:01.822Z"
     },
     "CODEX_LUNA_GUARD_TRANSFORMATION_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_GUARD_TRANSFORMATION_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.166Z"
+      "lastSeenAt": "2026-05-28T22:00:01.844Z"
     },
     "CODEX_LUNA_PAPER_GUARD_TRUTH_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_PAPER_GUARD_TRUTH_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.167Z"
+      "lastSeenAt": "2026-05-28T22:00:01.852Z"
     },
     "CODEX_LUNA_PAPER_TO_LIVE_ACTIVATION_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_PAPER_TO_LIVE_ACTIVATION_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.168Z"
+      "lastSeenAt": "2026-05-28T22:00:01.852Z"
     },
     "CODEX_LUNA_REDESIGN_DEFENSIVE_FIX_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_REDESIGN_DEFENSIVE_FIX_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.171Z"
+      "lastSeenAt": "2026-05-28T22:00:01.853Z"
     },
     "CODEX_LUNA_RL_SIGMA_BRAIN_CYCLE_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_RL_SIGMA_BRAIN_CYCLE_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.172Z"
+      "lastSeenAt": "2026-05-28T22:00:01.855Z"
     },
     "CODEX_LUNA_TRADE_LEARN_EVOLVE_2026-05-27.md": {
       "path": "docs/codex/CODEX_LUNA_TRADE_LEARN_EVOLVE_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.173Z"
+      "lastSeenAt": "2026-05-28T22:00:01.856Z"
     },
     "CODEX_WEEK2-4_MASTER_IMPLEMENTATION_2026-05-27.md": {
       "path": "docs/codex/CODEX_WEEK2-4_MASTER_IMPLEMENTATION_2026-05-27.md",
       "total": 0,
       "done": 0,
-      "lastSeenAt": "2026-05-27T22:00:03.174Z"
+      "lastSeenAt": "2026-05-28T22:00:01.858Z"
+    },
+    "CODEX_CLAUDE_REFACTORER_HARNESS_2026-05-28.md": {
+      "path": "docs/codex/CODEX_CLAUDE_REFACTORER_HARNESS_2026-05-28.md",
+      "total": 0,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.805Z"
+    },
+    "CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE_2026-05-28.md",
+      "total": 0,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.819Z"
+    },
+    "CODEX_LUNA_BACKTEST_RELIABILITY_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_BACKTEST_RELIABILITY_2026-05-28.md",
+      "total": 10,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.828Z"
+    },
+    "CODEX_LUNA_BACKTEST_RELIABILITY_V2_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_BACKTEST_RELIABILITY_V2_2026-05-28.md",
+      "total": 6,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.832Z"
+    },
+    "CODEX_LUNA_BACKTEST_RELIABILITY_V3_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_BACKTEST_RELIABILITY_V3_2026-05-28.md",
+      "total": 7,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.835Z"
+    },
+    "CODEX_LUNA_EXIT_RELIABILITY_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_EXIT_RELIABILITY_2026-05-28.md",
+      "total": 8,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.838Z"
+    },
+    "CODEX_LUNA_FULL_DATA_LOOP_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_FULL_DATA_LOOP_2026-05-28.md",
+      "total": 0,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.841Z"
+    },
+    "CODEX_LUNA_MASTER_DATA_LOOP_IMPLEMENTATION_2026-05-28.md": {
+      "path": "docs/codex/CODEX_LUNA_MASTER_DATA_LOOP_IMPLEMENTATION_2026-05-28.md",
+      "total": 0,
+      "done": 0,
+      "lastSeenAt": "2026-05-28T22:00:01.849Z"
     }
   },
-  "updatedAt": "2026-05-27T22:00:03.174Z"
+  "updatedAt": "2026-05-28T22:00:01.858Z"
 }

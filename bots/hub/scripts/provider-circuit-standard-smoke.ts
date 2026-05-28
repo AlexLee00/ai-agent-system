@@ -42,6 +42,16 @@ function main() {
     true,
     'OpenAI Codex timeout/abort failures should still be counted by provider circuit health',
   );
+  assert.equal(
+    unified._testOnly._shouldRecordProviderCircuitFailure('groq', 'Groq 429: rate limit reached, retry later'),
+    false,
+    'Groq 429/rate-limit should be handled by key cooldown rotation, not by opening the model circuit',
+  );
+  assert.equal(
+    unified._testOnly._shouldRecordProviderCircuitFailure('groq', 'Groq 계정 풀 비어있음 또는 rate-limit cooldown 중'),
+    false,
+    'Groq pool cooldown should not open the route circuit because per-key retry-after already gates retries',
+  );
 
   const registry = require('../lib/llm/provider-registry.ts');
   const provider = 'hub-provider-circuit-smoke';
@@ -73,6 +83,7 @@ function main() {
   console.log(JSON.stringify({
     ok: true,
     provider_circuit: 'model_aware_for_groq',
+    groq_rate_limit_circuit_recording: 'suppressed',
     direct_provider_routes_default: 'disabled',
   }));
 }
