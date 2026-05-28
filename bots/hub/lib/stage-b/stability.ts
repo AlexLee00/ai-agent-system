@@ -136,10 +136,57 @@ function readLaunchctlPrintState(label) {
   }
 }
 
+function readRecentLogExcerpt(filePath, maxBytes = 2000) {
+  try {
+    const text = fs.readFileSync(filePath, 'utf8');
+    return text.slice(-maxBytes);
+  } catch {
+    return '';
+  }
+}
+
+function classifyExpectedIdleLog(text) {
+  const normalized = String(text || '');
+  if (!normalized.trim()) {
+    return {
+      category: 'no_stderr_evidence',
+      retryable: null,
+      summary: 'stderr log is missing or empty; run the dry-run command for current evidence',
+    };
+  }
+  if (/(rate limit exceeded|HTTP 429|\b429\b)/i.test(normalized)) {
+    return {
+      category: 'retryable_rate_limit',
+      retryable: true,
+      summary: 'last non-zero exit was caused by Hub alarm rate limiting; current code path should be verified with dry-run',
+    };
+  }
+  if (/(unauthorized|forbidden|auth|token|401|403)/i.test(normalized)) {
+    return {
+      category: 'auth_or_secret_failure',
+      retryable: false,
+      summary: 'last non-zero exit looks like auth or secret failure; operator credential review is required',
+    };
+  }
+  if (/(Cannot find module|ERR_MODULE_NOT_FOUND|ENOENT|syntaxerror|typeerror|referenceerror)/i.test(normalized)) {
+    return {
+      category: 'script_runtime_failure',
+      retryable: false,
+      summary: 'last non-zero exit looks like a script/runtime failure',
+    };
+  }
+  return {
+    category: 'unclassified_nonzero_exit',
+    retryable: null,
+    summary: 'last non-zero exit is not classified by the Stage B expected-idle diagnostics',
+  };
+}
+
 function buildExpectedIdleDiagnostic(label) {
   const defaultErrorLogPath = `/tmp/${label.replace(/^ai\.hub\./, 'hub-')}.err.log`;
   const diagnostic = EXPECTED_IDLE_DIAGNOSTICS[label] || {};
   const errorLogPath = diagnostic.errorLogPath || defaultErrorLogPath;
+  const recentStderr = readRecentLogExcerpt(errorLogPath);
   let errorLog = {
     path: errorLogPath,
     exists: false,
@@ -158,10 +205,13 @@ function buildExpectedIdleDiagnostic(label) {
     // Missing stderr logs are still useful evidence for expected-idle jobs.
   }
   const tailCommand = `tail -n 120 ${errorLogPath}`;
+  const classification = classifyExpectedIdleLog(recentStderr);
   return {
     dryRunCommand: diagnostic.dryRunCommand || null,
     tailCommand,
     errorLog,
+    classification,
+    recentStderrTail: recentStderr.split(/\r?\n/).filter(Boolean).slice(-3),
     currentVerification: diagnostic.dryRunCommand ? 'dry_run_available' : 'log_review_only',
   };
 }
@@ -857,5 +907,6 @@ module.exports = {
   OUTPUT_PATH,
   buildHubStageBStabilityReport,
   buildSelfHealingPlan,
+  classifyExpectedIdleLog,
   writeHubStageBStabilityReport,
 };
