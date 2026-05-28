@@ -4,6 +4,22 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-28: CODEX_CLAUDE_REFACTORER_HARNESS — 리팩터 에이전트 + 하네스 신설 완료
+
+- **리팩터 에이전트**: `bots/claude/agents/refactorer.md` — 기술부채 분석가 역할 정의
+- **plugin-eval 3계층 하네스**: `bots/claude/lib/refactor-harness/plugin-eval.ts`
+  - Layer 1 Static (구조 분석 <2s) / Layer 2 LLM Judge (Hub Gateway, ~30s) / Layer 3 Monte Carlo (50회)
+- **리팩토링 안전 훅 6계층**: `bots/claude/hooks/refactor-hooks/`
+  - pre-refactor(git tag+베이스라인) / type-check / test-green(자동롤백) / complexity / dependency / verify-loop(3회재시도)
+- **MCP 5도구**: `bots/claude/mcp/claude-refactor-mcp/src/server.ts` (port 8774)
+  - analyze_tech_debt / suggest_refactoring / split_large_file / restore_types / verify_refactoring
+- **A2A 스킬**: `bots/claude/a2a/skills/refactor-analysis.ts` + index.ts 등록
+- **기술부채 인벤토리**: `docs/strategy/TECH_DEBT_INVENTORY.md`
+  - @ts-nocheck 62.5%(1,577개) / 대형 파일 23개 / 복구 로드맵 3 Phase
+- **launchd plist**: `bots/claude/launchd/ai.claude.refactor-mcp.plist`
+- **커밋**: `fb4a8ef55` (구현) + `3177bc5e5` (완료) + `ea52608f5` (CLAUDE.md+plist)
+- **OPS 필요**: launchd plist 등록 — `ai.claude.refactor-mcp` (port 8774 상시 기동)
+
 ## 2026-05-27: CODEX_LUNA_TRADE_LEARN_EVOLVE — Phase 1~3 완료 (가드 notify + 피드백 파이프라인 + 에이전트 진화)
 
 - **Phase 1 — 가드 notify 전환**:
