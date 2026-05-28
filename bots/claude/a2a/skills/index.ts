@@ -11,6 +11,7 @@ export { registerSyncGithubSkill, runSyncGithub } from './sync-github.ts';
 export { registerHermesLearnSkill, runHermesLearn } from './hermes-learn.ts';
 export { registerSelfHealSkill, runSelfHeal } from './self-heal.ts';
 export { registerQualityGateSkill, runQualityGate } from './quality-gate.ts';
+export { registerRefactorAnalysisSkill, runRefactorAnalysis } from './refactor-analysis.ts';
 
 import { registerDispatchTicketSkill } from './dispatch-ticket.ts';
 import { registerPollTasksSkill } from './poll-tasks.ts';
@@ -20,6 +21,7 @@ import { registerSyncGithubSkill } from './sync-github.ts';
 import { registerHermesLearnSkill } from './hermes-learn.ts';
 import { registerSelfHealSkill } from './self-heal.ts';
 import { registerQualityGateSkill } from './quality-gate.ts';
+import { registerRefactorAnalysisSkill } from './refactor-analysis.ts';
 
 export function registerSymphonyA2ASkills(): void {
   registerDispatchTicketSkill();
@@ -30,4 +32,5 @@ export function registerSymphonyA2ASkills(): void {
   registerHermesLearnSkill();
   registerSelfHealSkill();
   registerQualityGateSkill();
+  registerRefactorAnalysisSkill();
 }
