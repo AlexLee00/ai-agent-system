@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-26T17:21:57.293Z",
+  "checkedAt": "2026-05-28T04:46:18.936Z",
   "stage": "hub_stage_b",
   "status": "stage_b_operational_ready",
   "goals": {
@@ -113,15 +113,15 @@
         "loaded": true,
         "expectedIdle": false,
         "healthy": true,
-        "pid": 79277,
+        "pid": 50582,
         "state": "running",
         "status": "running",
-        "lastLaunchctlListStatus": "-9",
-        "historicalExitStatus": "-9",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
         "idleExitStatus": null,
         "attention": false,
-        "lastTerminatingSignal": "Killed: 9",
-        "runs": 25,
+        "lastTerminatingSignal": null,
+        "runs": 32,
         "checked": true
       },
       {
@@ -138,7 +138,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 458,
+        "runs": 599,
         "checked": true
       },
       {
@@ -155,7 +155,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 18,
+        "runs": 20,
         "checked": true
       },
       {
@@ -206,7 +206,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 37,
+        "runs": 39,
         "checked": true
       },
       {
@@ -223,7 +223,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 26,
+        "runs": 27,
         "checked": true
       },
       {
@@ -240,7 +240,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 597,
+        "runs": 633,
         "checked": true
       },
       {
@@ -291,7 +291,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 26,
+        "runs": 28,
         "checked": true
       },
       {
@@ -308,7 +308,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 603,
+        "runs": 639,
         "checked": true
       },
       {
@@ -351,86 +351,143 @@
     "ok": true,
     "skipped": false,
     "hours": 24,
-    "total": 18427,
-    "failures": 0,
-    "failureRatePct": 0,
-    "unresolvedFailures": 0,
+    "total": 7845,
+    "failures": 14,
+    "failureRatePct": 0.1785,
+    "unresolvedFailures": 3,
+    "operationalTotal": 7301,
+    "operationalFailures": 7,
+    "operationalFailureRatePct": 0.0959,
+    "operationalUnresolvedFailures": 2,
+    "diagnosticFailures": 7,
+    "diagnosticUnresolvedFailures": 1,
     "byProvider": [
       {
-        "provider": "openai-oauth",
-        "count": 13477,
-        "cost_usd": 0
-      },
-      {
         "provider": "groq",
-        "count": 2133,
-        "cost_usd": 1.0329588599999995
-      },
-      {
-        "provider": "gemini-cli-oauth",
-        "count": 1556,
-        "cost_usd": 0
+        "count": 4525,
+        "cost_usd": 0.8854949749999971
       },
       {
         "provider": "dedupe",
-        "count": 1261,
+        "count": 2637,
+        "cost_usd": 0
+      },
+      {
+        "provider": "openai-oauth",
+        "count": 637,
+        "cost_usd": 0
+      },
+      {
+        "provider": "claude-code-oauth",
+        "count": 17,
+        "cost_usd": 0.7255581000000001
+      },
+      {
+        "provider": "cache",
+        "count": 14,
+        "cost_usd": 0
+      },
+      {
+        "provider": "failed",
+        "count": 14,
+        "cost_usd": 0
+      },
+      {
+        "provider": "gemini-cli-oauth",
+        "count": 1,
         "cost_usd": 0
       }
     ],
     "byBudgetStatus": [
       {
         "budget_guard_status": "allowed",
-        "count": 18427
+        "count": 7831
+      },
+      {
+        "budget_guard_status": "unknown",
+        "count": 14
       }
     ],
     "byTier": [
       {
         "provider_tier": "1",
-        "count": 13477
+        "count": 637
       },
       {
         "provider_tier": "2",
-        "count": 3394
+        "count": 7162
       },
       {
         "provider_tier": "3",
-        "count": 1556
+        "count": 1
+      },
+      {
+        "provider_tier": "5",
+        "count": 17
+      },
+      {
+        "provider_tier": "unknown",
+        "count": 28
       }
     ],
-    "avgDurationMs": 3490,
-    "maxDurationMs": 77951,
+    "avgDurationMs": 1607,
+    "maxDurationMs": 126231,
     "latencyByProvider": [
       {
-        "provider": "gemini-cli-oauth",
-        "count": 1556,
+        "provider": "claude-code-oauth",
+        "count": 17,
         "failures": 0,
-        "avg_duration_ms": 16903,
-        "max_duration_ms": 59889,
-        "p95_duration_ms": 33694
+        "avg_duration_ms": 28748,
+        "max_duration_ms": 90950,
+        "p95_duration_ms": 79756
+      },
+      {
+        "provider": "gemini-cli-oauth",
+        "count": 1,
+        "failures": 0,
+        "avg_duration_ms": 26318,
+        "max_duration_ms": 26318,
+        "p95_duration_ms": 26318
+      },
+      {
+        "provider": "failed",
+        "count": 14,
+        "failures": 14,
+        "avg_duration_ms": 7598,
+        "max_duration_ms": 51627,
+        "p95_duration_ms": 47433
       },
       {
         "provider": "openai-oauth",
-        "count": 13477,
+        "count": 637,
         "failures": 0,
-        "avg_duration_ms": 2322,
-        "max_duration_ms": 77951,
-        "p95_duration_ms": 4008
+        "avg_duration_ms": 3525,
+        "max_duration_ms": 126231,
+        "p95_duration_ms": 8422
       },
       {
         "provider": "dedupe",
-        "count": 1261,
+        "count": 2637,
         "failures": 0,
-        "avg_duration_ms": 2075,
-        "max_duration_ms": 3633,
-        "p95_duration_ms": 2910
+        "avg_duration_ms": 2101,
+        "max_duration_ms": 8077,
+        "p95_duration_ms": 3259
       },
       {
         "provider": "groq",
-        "count": 2133,
+        "count": 4525,
         "failures": 0,
-        "avg_duration_ms": 1921,
-        "max_duration_ms": 9787,
-        "p95_duration_ms": 3813
+        "avg_duration_ms": 928,
+        "max_duration_ms": 8078,
+        "p95_duration_ms": 2490
+      },
+      {
+        "provider": "cache",
+        "count": 14,
+        "failures": 0,
+        "avg_duration_ms": 0,
+        "max_duration_ms": 0,
+        "p95_duration_ms": 0
       }
     ],
     "slowRoutes": [
@@ -444,93 +501,37 @@
         "provider_tier": "1",
         "count": 5,
         "failures": 0,
-        "avg_duration_ms": 31679,
-        "max_duration_ms": 47476,
-        "p95_duration_ms": 44822
+        "avg_duration_ms": 46895,
+        "max_duration_ms": 126231,
+        "p95_duration_ms": 106908
       },
       {
-        "route": "gemini-cli-oauth/gemini-2.5-flash",
-        "provider": "gemini-cli-oauth",
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "sigma",
+        "agent": "commander",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "multi_agent_llm_drill_primary",
+        "provider_tier": "1",
+        "count": 6,
+        "failures": 0,
+        "avg_duration_ms": 8626,
+        "max_duration_ms": 42536,
+        "p95_duration_ms": 32674
+      },
+      {
+        "route": "openai-oauth/gpt-5.4-mini",
+        "provider": "openai-oauth",
         "caller_team": "darwin",
         "agent": "darwin.planner",
         "abstract_model": "anthropic_sonnet",
         "runtime_purpose": "unknown",
-        "provider_tier": "3",
-        "count": 187,
-        "failures": 0,
-        "avg_duration_ms": 18129,
-        "max_duration_ms": 52525,
-        "p95_duration_ms": 31488
-      },
-      {
-        "route": "gemini-cli-oauth/gemini-2.5-flash-lite",
-        "provider": "gemini-cli-oauth",
-        "caller_team": "darwin",
-        "agent": "darwin.evaluator",
-        "abstract_model": "anthropic_sonnet",
-        "runtime_purpose": "evaluation_scoring",
-        "provider_tier": "3",
-        "count": 1369,
-        "failures": 0,
-        "avg_duration_ms": 16736,
-        "max_duration_ms": 59889,
-        "p95_duration_ms": 33857
-      },
-      {
-        "route": "openai-oauth/gpt-5.4",
-        "provider": "openai-oauth",
-        "caller_team": "blog",
-        "agent": "neighbor-commenter",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "comment",
         "provider_tier": "1",
-        "count": 32,
+        "count": 124,
         "failures": 0,
-        "avg_duration_ms": 5320,
-        "max_duration_ms": 18643,
-        "p95_duration_ms": 10455
-      },
-      {
-        "route": "openai-oauth/gpt-5.4",
-        "provider": "openai-oauth",
-        "caller_team": "claude",
-        "agent": "ai-analyst",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "system_diagnosis",
-        "provider_tier": "1",
-        "count": 8,
-        "failures": 0,
-        "avg_duration_ms": 3568,
-        "max_duration_ms": 6145,
-        "p95_duration_ms": 5288
-      },
-      {
-        "route": "openai-oauth/gpt-5.4",
-        "provider": "openai-oauth",
-        "caller_team": "claude",
-        "agent": "lead",
-        "abstract_model": "anthropic_sonnet",
-        "runtime_purpose": "system_issue_triage",
-        "provider_tier": "1",
-        "count": 9,
-        "failures": 0,
-        "avg_duration_ms": 3357,
-        "max_duration_ms": 4218,
-        "p95_duration_ms": 4028
-      },
-      {
-        "route": "groq/qwen/qwen3-32b",
-        "provider": "groq",
-        "caller_team": "darwin",
-        "agent": "darwin.planner",
-        "abstract_model": "anthropic_sonnet",
-        "runtime_purpose": "unknown",
-        "provider_tier": "2",
-        "count": 331,
-        "failures": 0,
-        "avg_duration_ms": 3017,
-        "max_duration_ms": 6460,
-        "p95_duration_ms": 4521
+        "avg_duration_ms": 6316,
+        "max_duration_ms": 22635,
+        "p95_duration_ms": 12225
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -540,25 +541,39 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "regime_analysis",
         "provider_tier": "2",
-        "count": 19,
+        "count": 13,
         "failures": 0,
-        "avg_duration_ms": 2983,
-        "max_duration_ms": 6087,
-        "p95_duration_ms": 5222
+        "avg_duration_ms": 3505,
+        "max_duration_ms": 7236,
+        "p95_duration_ms": 7030
       },
       {
-        "route": "openai-oauth/gpt-5.4-mini",
+        "route": "openai-oauth/gpt-5.4",
         "provider": "openai-oauth",
-        "caller_team": "darwin",
-        "agent": "darwin.evaluator",
+        "caller_team": "blog",
+        "agent": "neighbor-commenter",
         "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "paper_evaluation",
+        "runtime_purpose": "comment",
         "provider_tier": "1",
-        "count": 40,
+        "count": 6,
         "failures": 0,
-        "avg_duration_ms": 2730,
-        "max_duration_ms": 6744,
-        "p95_duration_ms": 5322
+        "avg_duration_ms": 3000,
+        "max_duration_ms": 3556,
+        "p95_duration_ms": 3462
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "darwin",
+        "agent": "darwin.planner",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "unknown",
+        "provider_tier": "2",
+        "count": 15,
+        "failures": 0,
+        "avg_duration_ms": 2892,
+        "max_duration_ms": 4937,
+        "p95_duration_ms": 4039
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -568,14 +583,177 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "debate_bull",
         "provider_tier": "2",
-        "count": 49,
+        "count": 51,
         "failures": 0,
-        "avg_duration_ms": 2352,
-        "max_duration_ms": 9787,
-        "p95_duration_ms": 4017
+        "avg_duration_ms": 2401,
+        "max_duration_ms": 6104,
+        "p95_duration_ms": 4524
+      },
+      {
+        "route": "openai-oauth/gpt-5.4-mini",
+        "provider": "openai-oauth",
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "evaluation_scoring",
+        "provider_tier": "1",
+        "count": 292,
+        "failures": 0,
+        "avg_duration_ms": 2364,
+        "max_duration_ms": 34657,
+        "p95_duration_ms": 4073
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "luna",
+        "agent": "luna.reflexion_coach",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "trade_signal",
+        "provider_tier": "2",
+        "count": 478,
+        "failures": 0,
+        "avg_duration_ms": 2226,
+        "max_duration_ms": 8078,
+        "p95_duration_ms": 3142
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "dedupe",
+        "caller_team": "luna",
+        "agent": "luna.reflexion_coach",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "trade_signal",
+        "provider_tier": "2",
+        "count": 2637,
+        "failures": 0,
+        "avg_duration_ms": 2101,
+        "max_duration_ms": 8077,
+        "p95_duration_ms": 3259
       }
     ],
-    "recentErrors": []
+    "recentErrors": [
+      {
+        "request_id": "e3448588-e05f-47c0-bfe5-f17e3a641b0b",
+        "provider": "failed",
+        "caller_team": "luna",
+        "agent": "luna",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "entry_decision_shadow",
+        "error": "fallback_exhausted: provider_circuit_open:openai-oauth",
+        "created_at": "2026-05-28T03:21:25.518Z",
+        "diagnostic": false,
+        "resolved_by_later_success": true
+      },
+      {
+        "request_id": "9aa35c7b-b760-40c0-9f8c-e6530b7111a7",
+        "provider": "failed",
+        "caller_team": "luna",
+        "agent": "luna",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "entry_decision_shadow",
+        "error": "fallback_exhausted: openai_codex_oauth_call_failed:HTTP 400",
+        "created_at": "2026-05-28T03:21:25.455Z",
+        "diagnostic": false,
+        "resolved_by_later_success": true
+      },
+      {
+        "request_id": "3fd992e5-41c9-45fd-ac75-cb2daefd3076",
+        "provider": "failed",
+        "caller_team": "luna",
+        "agent": "luna.reflexion_coach",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "trade_signal",
+        "error": "fallback_exhausted: provider_circuit_open:openai-oauth",
+        "created_at": "2026-05-28T01:21:19.350Z",
+        "diagnostic": false,
+        "resolved_by_later_success": true
+      },
+      {
+        "request_id": "c38d6d2d-5440-421a-ace1-f91e866e2365",
+        "provider": "failed",
+        "caller_team": "luna",
+        "agent": "luna.reflexion_coach",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "trade_signal",
+        "error": "fallback_exhausted: provider_circuit_open:openai-oauth",
+        "created_at": "2026-05-28T01:21:19.325Z",
+        "diagnostic": false,
+        "resolved_by_later_success": true
+      },
+      {
+        "request_id": "5415c6d3-ab90-4783-804b-6ffe7561fbc1",
+        "provider": "failed",
+        "caller_team": "luna",
+        "agent": "luna.reflexion_coach",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "trade_signal",
+        "error": "fallback_exhausted: openai_codex_oauth_call_failed:HTTP 400",
+        "created_at": "2026-05-28T01:21:19.282Z",
+        "diagnostic": false,
+        "resolved_by_later_success": true
+      },
+      {
+        "request_id": "525fd7d1-a5f5-4626-8f18-c3a894db7c61",
+        "provider": "failed",
+        "caller_team": "darwin",
+        "agent": "synthesis",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "proposal_generation",
+        "error": "fallback_exhausted: Groq 계정 풀 비어있음 또는 rate-limit cooldown 중",
+        "created_at": "2026-05-27T21:02:11.727Z",
+        "diagnostic": false,
+        "resolved_by_later_success": false
+      },
+      {
+        "request_id": "28dc6cb6-0ec8-477a-98cc-5bceeff7c165",
+        "provider": "failed",
+        "caller_team": "darwin",
+        "agent": "synthesis",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "proposal_generation",
+        "error": "fallback_exhausted: Groq 계정 풀 비어있음 또는 rate-limit cooldown 중",
+        "created_at": "2026-05-27T21:02:11.208Z",
+        "diagnostic": false,
+        "resolved_by_later_success": false
+      },
+      {
+        "request_id": "guide-alignment-smoke-20260527",
+        "provider": "failed",
+        "caller_team": "external-blog",
+        "agent": "writer",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "guide_alignment_smoke",
+        "error": "fallback_exhausted: openai_codex_oauth_timeout_or_abort:This operation was aborted",
+        "created_at": "2026-05-27T05:44:30.058Z",
+        "diagnostic": true,
+        "resolved_by_later_success": false
+      },
+      {
+        "request_id": "9b99f409-0628-4ec8-b218-82ff82a051db",
+        "provider": "failed",
+        "caller_team": "darwin",
+        "agent": "learner",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "multi_agent_llm_drill_primary",
+        "error": "fallback_exhausted: provider_circuit_open:gemini-cli-oauth",
+        "created_at": "2026-05-27T05:01:31.979Z",
+        "diagnostic": true,
+        "resolved_by_later_success": true
+      },
+      {
+        "request_id": "6047967b-537e-4010-b8ad-4b2982872d63",
+        "provider": "failed",
+        "caller_team": "darwin",
+        "agent": "applier",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "multi_agent_llm_drill_primary",
+        "error": "fallback_exhausted: Command failed: gemini --skip-trust --output-format json --model gemini-2.5-flash-lite --prompt You are running a routing health check. Reply exactly with ok.\n\nReply exactly: ok\nWarning: 256-color support not detected. Using a terminal with at least 256-color support is recommended for a better visual experience.\nError when talking to Gemini API Full report available at: /var/folders/3t/d17p50zs45",
+        "created_at": "2026-05-27T04:59:53.502Z",
+        "diagnostic": true,
+        "resolved_by_later_success": true
+      }
+    ]
   },
   "circuits": {
     "ok": true,
@@ -681,6 +859,24 @@
         "command": "npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run",
         "evidenceCommand": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
         "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
+      },
+      {
+        "action": "targeted_llm_route_drill",
+        "reason": "operational unresolved LLM request failures exist in hub.llm_request_log",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=<team> --primary-only",
+        "effect": "verifies the affected agent route without mutating protected services"
+      },
+      {
+        "action": "diagnostic_llm_failure_review",
+        "reason": "diagnostic smoke/drill LLM failures exist but are separated from operational promotion evidence",
+        "command": "npm --prefix bots/hub run -s check:llm-stage-d",
+        "effect": "replays the non-mutating Hub LLM evidence checks before treating diagnostic failures as operational blockers"
+      },
+      {
+        "action": "openai_codex_bad_request_guard_verification",
+        "reason": "OpenAI Codex OAuth 400 responses previously opened provider circuits and exhausted fallbacks",
+        "command": "npx tsx bots/hub/scripts/openai-oauth-direct-smoke.ts && npx tsx bots/hub/scripts/provider-circuit-standard-smoke.ts",
+        "effect": "verifies unsupported request parameters are not sent by default and 400 bad requests do not poison provider circuits"
       }
     ],
     "confirmRequiredActions": [],

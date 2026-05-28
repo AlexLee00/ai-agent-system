@@ -57,6 +57,17 @@ function runScript(id: string, script: string, args: string[] = [], options: { r
   };
 }
 
+function skippedStep(id: string, reason: string): StepResult {
+  return {
+    id,
+    ok: true,
+    required: false,
+    exit_code: 0,
+    parsed: { ok: true, skipped: true, reason },
+    error: null,
+  };
+}
+
 function providerSummary(teamReadiness: any) {
   const providers = teamReadiness?.providers || {};
   return {
@@ -84,27 +95,34 @@ function providerSummary(teamReadiness: any) {
 }
 
 function main(): void {
+  const geminiDisabled = flag('HUB_LLM_GEMINI_DISABLED');
   const requireGeminiQuotaProject = flag('HUB_OAUTH_OPS_REQUIRE_GEMINI_QUOTA_PROJECT');
   const liveSteward = flag('HUB_OAUTH_OPS_LIVE_STEWARD_DRILL');
 
   const steps = [
     runScript('team_oauth_readiness', 'team-oauth-readiness-report.ts'),
-    runScript('gemini_cli_readiness', 'gemini-cli-oauth-readiness.ts', ['--json', ...(requireGeminiQuotaProject ? ['--require-project'] : [])], {
-      required: requireGeminiQuotaProject,
-    }),
-    runScript('gemini_codeassist_service', 'gemini-codeassist-service-status.ts', ['--json', ...(requireGeminiQuotaProject ? ['--require-live'] : [])], {
-      required: requireGeminiQuotaProject,
-    }),
+    geminiDisabled
+      ? skippedStep('gemini_cli_readiness', 'gemini_provider_disabled')
+      : runScript('gemini_cli_readiness', 'gemini-cli-oauth-readiness.ts', ['--json', ...(requireGeminiQuotaProject ? ['--require-project'] : [])], {
+        required: requireGeminiQuotaProject,
+      }),
+    geminiDisabled
+      ? skippedStep('gemini_codeassist_service', 'gemini_provider_disabled')
+      : runScript('gemini_codeassist_service', 'gemini-codeassist-service-status.ts', ['--json', ...(requireGeminiQuotaProject ? ['--require-live'] : [])], {
+        required: requireGeminiQuotaProject,
+      }),
     runScript('team_llm_route_drill_mock', 'team-llm-route-drill.ts'),
-    runScript(
-      liveSteward ? 'steward_gemini_drill_live' : 'steward_gemini_drill_mock',
-      'steward-gemini-model-drill.ts',
-      ['--json', ...(liveSteward ? [] : ['--mock'])],
-      {
-        required: liveSteward,
-        env: liveSteward ? {} : { HUB_AUTH_TOKEN: process.env.HUB_AUTH_TOKEN || 'steward-gemini-drill-mock-token' },
-      },
-    ),
+    geminiDisabled
+      ? skippedStep(liveSteward ? 'steward_gemini_drill_live' : 'steward_gemini_drill_mock', 'gemini_provider_disabled')
+      : runScript(
+        liveSteward ? 'steward_gemini_drill_live' : 'steward_gemini_drill_mock',
+        'steward-gemini-model-drill.ts',
+        ['--json', ...(liveSteward ? [] : ['--mock'])],
+        {
+          required: liveSteward,
+          env: liveSteward ? {} : { HUB_AUTH_TOKEN: process.env.HUB_AUTH_TOKEN || 'steward-gemini-drill-mock-token' },
+        },
+      ),
   ];
 
   const teamReadiness = steps.find((step) => step.id === 'team_oauth_readiness')?.parsed;
@@ -113,13 +131,16 @@ function main(): void {
   const stewardDrill = steps.find((step) => step.id.startsWith('steward_gemini_drill'))?.parsed;
   const failedRequired = steps.filter((step) => step.required && !step.ok);
   const provider = providerSummary(teamReadiness);
+  const geminiCliReadinessSkipped = geminiCliReadiness?.skipped === true;
+  const geminiCodeAssistServiceSkipped = geminiCodeAssistService?.skipped === true;
+  const stewardDrillSkipped = stewardDrill?.skipped === true;
   const geminiQuotaMissing = provider.gemini_cli_oauth.required_by_team
     && provider.gemini_cli_oauth.quota_project_required
     && !provider.gemini_cli_oauth.quota_project_configured;
   const ok = failedRequired.length === 0
     && provider.claude_code_oauth.healthy
     && provider.openai_oauth.healthy
-    && provider.gemini_cli_oauth.healthy
+    && (geminiDisabled || provider.gemini_cli_oauth.healthy)
     && (!requireGeminiQuotaProject || !geminiQuotaMissing)
     && (stewardDrill?.ok !== false);
 
@@ -129,31 +150,38 @@ function main(): void {
     mode: {
       live_steward_drill: liveSteward,
       require_gemini_quota_project: requireGeminiQuotaProject,
+      gemini_disabled: geminiDisabled,
       gemini_oauth_retired: true,
       public_api_tokens_are_optional: true,
     },
     providers: provider,
     gemini_cli_readiness: {
       ok: Boolean(geminiCliReadiness?.ok),
-      command_ok: Boolean(geminiCliReadiness?.command?.ok),
-      credentials_ok: Boolean(geminiCliReadiness?.credentials?.ok),
-      quota_project_configured: Boolean(geminiCliReadiness?.credentials?.quota_project_configured),
-      quota_project_status: geminiCliReadiness?.quota_project_policy?.status || null,
-      quota_project_required: Boolean(geminiCliReadiness?.quota_project_policy?.required),
-      live_requested: Boolean(geminiCliReadiness?.live_requested),
+      skipped: geminiCliReadinessSkipped,
+      reason: geminiCliReadiness?.reason || null,
+      command_ok: geminiCliReadinessSkipped ? null : Boolean(geminiCliReadiness?.command?.ok),
+      credentials_ok: geminiCliReadinessSkipped ? null : Boolean(geminiCliReadiness?.credentials?.ok),
+      quota_project_configured: geminiCliReadinessSkipped ? null : Boolean(geminiCliReadiness?.credentials?.quota_project_configured),
+      quota_project_status: geminiCliReadinessSkipped ? 'skipped_disabled' : (geminiCliReadiness?.quota_project_policy?.status || null),
+      quota_project_required: geminiCliReadinessSkipped ? false : Boolean(geminiCliReadiness?.quota_project_policy?.required),
+      live_requested: geminiCliReadinessSkipped ? false : Boolean(geminiCliReadiness?.live_requested),
       live_ok: geminiCliReadiness?.live?.ok ?? null,
       warnings: geminiCliReadiness?.warnings || [],
     },
     gemini_codeassist_service: {
       ok: Boolean(geminiCodeAssistService?.ok),
+      skipped: geminiCodeAssistServiceSkipped,
+      reason: geminiCodeAssistService?.reason || null,
       service: geminiCodeAssistService?.service || 'cloudaicompanion.googleapis.com',
-      project_id_configured: Boolean(geminiCodeAssistService?.project_id_configured),
+      project_id_configured: geminiCodeAssistServiceSkipped ? null : Boolean(geminiCodeAssistService?.project_id_configured),
       state: geminiCodeAssistService?.service_status?.state || null,
       error: geminiCodeAssistService?.service_status?.error || null,
       activation_url: geminiCodeAssistService?.service_status?.activation_url || null,
     },
     steward_gemini: {
       ok: Boolean(stewardDrill?.ok),
+      skipped: stewardDrillSkipped,
+      reason: stewardDrill?.reason || null,
       mode: stewardDrill?.mode || null,
       required_count: Number(stewardDrill?.requiredCount || 0),
       optional_count: Number(stewardDrill?.optionalCount || 0),
@@ -177,17 +205,19 @@ function main(): void {
     })),
     next_actions: [
       ...(geminiQuotaMissing ? ['Set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT because strict Gemini CLI quota-project readiness is enabled.'] : []),
-      ...(geminiCodeAssistService?.ok === false && geminiCodeAssistService?.service_status?.activation_url ? [`Enable Gemini for Google Cloud API: ${geminiCodeAssistService.service_status.activation_url}`] : []),
-      ...(!geminiQuotaMissing && provider.gemini_cli_oauth.quota_project_status === 'optional_missing' ? ['Optional: set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution.'] : []),
+      ...(!geminiDisabled && geminiCodeAssistService?.ok === false && geminiCodeAssistService?.service_status?.activation_url ? [`Enable Gemini for Google Cloud API: ${geminiCodeAssistService.service_status.activation_url}`] : []),
+      ...(!geminiDisabled && !geminiQuotaMissing && provider.gemini_cli_oauth.quota_project_status === 'optional_missing' ? ['Optional: set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution.'] : []),
       ...(provider.claude_code_oauth.needs_refresh ? ['Run Claude Code browser re-auth before token expiry if refresh/import does not recover automatically.'] : []),
       ...(provider.openai_oauth.needs_refresh ? ['Run Codex/OpenAI OAuth re-auth before token expiry if refresh/import does not recover automatically.'] : []),
-      ...(provider.gemini_cli_oauth.needs_cli_refresh ? ['Run npm --prefix bots/hub run -s oauth:gemini-cli-readiness -- --live to verify Gemini CLI refresh path; re-run gemini auth login only if live probe fails.'] : []),
-      ...(liveSteward ? [] : ['Run HUB_OAUTH_OPS_LIVE_STEWARD_DRILL=1 npm --prefix bots/hub run -s oauth:ops-readiness for live Steward latency verification.']),
+      ...(!geminiDisabled && provider.gemini_cli_oauth.required_by_team && provider.gemini_cli_oauth.needs_cli_refresh ? ['Run npm --prefix bots/hub run -s oauth:gemini-cli-readiness -- --live to verify Gemini CLI refresh path; re-run gemini auth login only if live probe fails.'] : []),
+      ...(geminiDisabled || liveSteward ? [] : ['Run HUB_OAUTH_OPS_LIVE_STEWARD_DRILL=1 npm --prefix bots/hub run -s oauth:ops-readiness for live Steward latency verification.']),
     ],
     notes: [
       'No provider token, account id, chat id, or raw secret is included in this report.',
       'public_api_tokens_are_optional: OpenAI/Claude public API tokens are optional; Hub uses Codex/Claude Code OAuth paths unless strict public API mode is explicitly enabled.',
-      'gemini-oauth is retired in Hub operations; gemini-cli-oauth is the only Gemini OAuth boundary for Steward/Jay summary routing.',
+      geminiDisabled
+        ? 'Gemini provider checks are skipped because HUB_LLM_GEMINI_DISABLED=true.'
+        : 'gemini-oauth is retired in Hub operations; gemini-cli-oauth is the only Gemini OAuth boundary for Steward/Jay summary routing.',
     ],
   };
 

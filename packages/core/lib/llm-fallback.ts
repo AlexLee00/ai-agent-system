@@ -691,6 +691,15 @@ async function _readJsonResponse(res: Response): Promise<any> {
   }
 }
 
+function _extractOpenAIErrorMessage(body: any, status: number): string {
+  const detail = body?.detail;
+  if (typeof body?.error?.message === 'string' && body.error.message.trim()) return body.error.message;
+  if (typeof body?.message === 'string' && body.message.trim()) return body.message;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) return JSON.stringify(detail).slice(0, 500);
+  return `HTTP ${status}`;
+}
+
 function _extractResponsesText(resp: any): string {
   if (typeof resp?.output_text === 'string' && resp.output_text.trim()) {
     return resp.output_text.trim();
@@ -874,7 +883,7 @@ async function _callOpenAICodexBackendResponses({
       signal,
     });
     if (!res.ok) {
-      const message = String((await _readJsonResponse(res))?.error?.message || `HTTP ${res.status}`).slice(0, 400);
+      const message = String(_extractOpenAIErrorMessage(await _readJsonResponse(res), res.status)).slice(0, 400);
       const error = new Error(`OpenAI Codex backend 호출 실패: ${message}`) as Error & { status?: number; responseBody?: any };
       error.status = res.status;
       throw error;
@@ -945,7 +954,7 @@ async function _callOpenAIOAuthResponses({
     result = await _postOpenAIJson({ url, token, body: baseBody, timeoutMs });
   }
   if (!result.ok) {
-    const message = String(result.body?.error?.message || result.body?.message || `HTTP ${result.status}`).slice(0, 400);
+    const message = String(_extractOpenAIErrorMessage(result.body, result.status)).slice(0, 400);
     const error = new Error(`OpenAI OAuth Responses 호출 실패: ${message}`) as Error & { status?: number; responseBody?: any };
     error.status = result.status;
     error.responseBody = result.body;

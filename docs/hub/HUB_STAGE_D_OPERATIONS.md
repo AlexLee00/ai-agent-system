@@ -44,6 +44,11 @@ uptime, and L5 readiness reports. Observed readiness is informational only; the
 certification fields above must still be set from retained Shadow/Canary
 operations evidence before `productionCertified=true`.
 
+Stage D uses Stage B's operational request-log counters for the error-rate
+gate. Raw failures and smoke/drill/diagnostic failures remain in the nested
+evidence, but they are separated from operational traffic so dashboard consumers
+can distinguish a verification failure from a production path failure.
+
 The top-level `promotionGate` mirrors the operationally important subset:
 `remainingForProductionCertified`, `observedReadyButNotAttested`,
 `observedSnapshot`, and per-gate `nextActions`. Dashboard consumers should use

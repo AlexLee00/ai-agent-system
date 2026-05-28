@@ -129,8 +129,30 @@ function main() {
     ];
     assert.ok(routes.length > 0, `darwin/${profile} runtime profile must have routes`);
   }
+  const darwinSynthesisRoutes = [
+    ...(PROFILES.darwin.synthesis.primary_routes || []),
+    ...(PROFILES.darwin.synthesis.fallback_routes || []),
+  ];
+  assert.ok(
+    String(darwinSynthesisRoutes[0] || '').startsWith('openai-oauth/'),
+    'darwin/synthesis runtime profile must start on OpenAI OAuth to avoid Groq pool/cooldown exhaustion',
+  );
+  assert.ok(
+    darwinSynthesisRoutes.some((route) => String(route).startsWith('groq/')),
+    'darwin/synthesis runtime profile must keep Groq as a fallback route',
+  );
 
-  const { resolveHubLlmSelection } = require('../src/llm-selector.ts');
+  const hubSelector = require('../src/llm-selector.ts');
+  const {
+    getActiveChain,
+    enrichChain,
+    isGeminiDisabled,
+    isGeminiProvider,
+    resolveHubLlmSelection,
+  } = hubSelector;
+  const geminiDisabled = isGeminiDisabled();
+  const geminiActiveRoutesAllowed = !geminiDisabled
+    && ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_ALLOW_GEMINI_ACTIVE_ROUTES || '').trim().toLowerCase());
   const darwinResearchSelection = resolveHubLlmSelection({
     callerTeam: 'darwin',
     agent: 'research',
@@ -138,16 +160,28 @@ function main() {
     abstractModel: 'anthropic_haiku',
   });
   const darwinResearchRoutes = (darwinResearchSelection.chain || []).map((entry) => entry.route);
-  assert.equal(
-    darwinResearchRoutes[0],
-    'gemini-cli-oauth/gemini-2.5-flash-lite',
-    'darwin research paper evaluation must use Gemini CLI OAuth first to avoid openai->groq-only exhaustion',
-  );
-  assert.equal(
-    darwinResearchRoutes.some((route) => String(route).startsWith('gemini-cli-oauth/')),
-    true,
-    'darwin research paper evaluation must keep Gemini CLI in the route chain',
-  );
+  if (!geminiActiveRoutesAllowed) {
+    assert.equal(
+      darwinResearchRoutes.some((route) => String(route).startsWith('gemini-cli-oauth/')),
+      false,
+      'darwin research paper evaluation must not use Gemini CLI routes in the default active routing policy',
+    );
+    assert.ok(
+      ['groq/', 'openai-oauth/'].some((prefix) => String(darwinResearchRoutes[0] || '').startsWith(prefix)),
+      'darwin research paper evaluation must keep a non-Gemini primary in the default active routing policy',
+    );
+  } else {
+    assert.equal(
+      darwinResearchRoutes[0],
+      'gemini-cli-oauth/gemini-2.5-flash-lite',
+      'darwin research paper evaluation must use Gemini CLI OAuth first to avoid openai->groq-only exhaustion',
+    );
+    assert.equal(
+      darwinResearchRoutes.some((route) => String(route).startsWith('gemini-cli-oauth/')),
+      true,
+      'darwin research paper evaluation must keep Gemini CLI in the route chain',
+    );
+  }
 
   for (const agent of REQUIRED_BLOG_AGENTS) {
     const description = selector.describeAgentModel('blog', agent);
@@ -163,13 +197,12 @@ function main() {
     assert.ok(chain.length > 0, `${selectorKey} chain must be non-empty`);
     assert.equal(
       chain[0]?.provider,
-      'openai-oauth',
-      `${selectorKey} primary must stay on OpenAI OAuth for long-form draft quality`,
+      'claude-code',
+      `${selectorKey} primary must stay on Claude Code for long-form draft quality`,
     );
-    assert.equal(
-      chain[0]?.model,
-      'gpt-5.4',
-      `${selectorKey} primary model must stay on gpt-5.4`,
+    assert.ok(
+      chain.some((entry) => entry?.provider === 'openai-oauth' && entry?.model === 'gpt-5.4'),
+      `${selectorKey} must keep OpenAI OAuth gpt-5.4 as quality fallback`,
     );
   }
 
@@ -206,35 +239,49 @@ function main() {
     assert.ok(Array.isArray(description.chain) && description.chain.length > 0, `orchestrator/${agent} selector chain must be non-empty`);
   }
   const orchestratorSummary = selector.describeAgentModel('orchestrator', 'summary');
+  const orchestratorSummaryChain = enrichChain(getActiveChain(orchestratorSummary?.chain || []));
+  assert.ok(orchestratorSummaryChain.length > 0, 'orchestrator/summary active selector chain must be non-empty');
   assert.equal(
-    orchestratorSummary?.chain?.[0]?.provider,
-    'gemini-cli-oauth',
-    'orchestrator/summary must start with the low-cost Gemini CLI OAuth summary route',
+    !geminiActiveRoutesAllowed ? isGeminiProvider(orchestratorSummaryChain?.[0]?.provider) : orchestratorSummaryChain?.[0]?.provider,
+    !geminiActiveRoutesAllowed ? false : 'gemini-cli-oauth',
+    !geminiActiveRoutesAllowed
+      ? 'orchestrator/summary must use a non-Gemini primary in the default active routing policy'
+      : 'orchestrator/summary must start with the low-cost Gemini CLI OAuth summary route',
   );
   assert.ok(
-    orchestratorSummary?.chain?.some((entry) => entry.provider === 'openai-oauth'),
+    orchestratorSummaryChain?.some((entry) => entry.provider === 'openai-oauth'),
     'orchestrator/summary must keep OpenAI OAuth as a safety fallback route',
   );
 
   const elsaChat = selector.describeAgentModel('elsa', 'chat');
   assert.equal(elsaChat?.selectorKey, 'elsa.chat.answer', 'elsa/chat must use the production Elsa chat selector');
+  const elsaChatChain = enrichChain(getActiveChain(elsaChat?.chain || []));
+  assert.ok(elsaChatChain.length > 0, 'elsa/chat active selector chain must be non-empty');
   assert.equal(
-    elsaChat?.chain?.[0]?.provider,
-    'gemini-cli-oauth',
-    'elsa/chat must not depend on the single-route OpenAI smoke selector as primary',
+    !geminiActiveRoutesAllowed ? isGeminiProvider(elsaChatChain?.[0]?.provider) : elsaChatChain?.[0]?.provider,
+    !geminiActiveRoutesAllowed ? false : 'gemini-cli-oauth',
+    !geminiActiveRoutesAllowed
+      ? 'elsa/chat must use a non-Gemini primary in the default active routing policy'
+      : 'elsa/chat must not depend on the single-route OpenAI smoke selector as primary',
   );
   assert.ok(
-    elsaChat?.chain?.some((entry) => entry.provider === 'groq'),
+    elsaChatChain?.some((entry) => entry.provider === 'groq'),
     'elsa/chat must keep Groq as a non-OpenAI fallback',
   );
   assert.ok(
-    elsaChat?.chain?.some((entry) => entry.provider === 'openai-oauth'),
+    elsaChatChain?.some((entry) => entry.provider === 'openai-oauth'),
     'elsa/chat may keep OpenAI OAuth only as a safety fallback',
   );
 
-  const elsaCard = selector.selectLLMChain('elsa.chat.card_gen');
+  const elsaCard = enrichChain(getActiveChain(selector.selectLLMChain('elsa.chat.card_gen')));
   assert.equal(elsaCard[0]?.provider, 'groq', 'elsa card generation should start on fast Groq route');
-  assert.ok(elsaCard.some((entry) => entry.provider === 'gemini-cli-oauth'), 'elsa card generation must keep Gemini CLI fallback');
+  assert.equal(
+    elsaCard.some((entry) => isGeminiProvider(entry.provider)),
+    geminiActiveRoutesAllowed,
+    !geminiActiveRoutesAllowed
+      ? 'elsa card generation must not use Gemini CLI fallback in the default active routing policy'
+      : 'elsa card generation must keep Gemini CLI fallback',
+  );
   assert.ok(elsaCard.some((entry) => entry.provider === 'openai-oauth'), 'elsa card generation must keep OpenAI safety fallback');
 
   const hubClient = require('../../../packages/core/lib/hub-client');
@@ -248,6 +295,8 @@ function main() {
     ska_agents: REQUIRED_SKA_AGENTS.length,
     orchestrator_agents: REQUIRED_ORCHESTRATOR_AGENTS.length,
     investment_agents: REQUIRED_INVESTMENT_AGENTS.length,
+    gemini_disabled: geminiDisabled,
+    gemini_active_routes_allowed: geminiActiveRoutesAllowed,
   }, null, 2));
 }
 

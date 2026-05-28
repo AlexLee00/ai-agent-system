@@ -20,8 +20,8 @@ assert.match(
 );
 assert.match(
   source,
-  /steward_llm_route:\s*'gemini-cli-oauth'/,
-  'alarm payload must make clear that steward LLM routing is Gemini OAuth, not local LLM',
+  /steward_llm_route:\s*'openai-oauth'/,
+  'alarm payload must make clear that steward LLM routing is OpenAI OAuth, not local LLM or Gemini',
 );
 assert.match(
   source,

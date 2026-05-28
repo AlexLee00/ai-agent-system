@@ -1,13 +1,13 @@
 # LLM Agent Model Inventory
 
-Generated at: 2026-05-27T04:57:15.217Z
+Generated at: 2026-05-28T04:46:12.309Z
 
 ## Summary
-- Selector route targets: 162
-- Active visible agents: 80
+- Selector route targets: 164
+- Active visible agents: 81
 - Active runtime services: 9
 - Task routes: 43
-- Alias routes: 30
+- Alias routes: 31
 - Planned rows: 1
 - Pending runtime rows: 11
 
@@ -15,9 +15,8 @@ Generated at: 2026-05-27T04:57:15.217Z
 ```json
 {
   "claude-code": 4,
-  "openai-oauth": 63,
-  "groq": 94,
-  "local-embedding": 2
+  "openai-oauth": 66,
+  "groq": 95
 }
 ```
 
@@ -62,6 +61,7 @@ _없음_
 | darwin | planner | alias | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
 | darwin | reflexion | alias | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
 | darwin | scanner | alias | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
+| darwin | synthesis | alias | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
 | darwin | verifier | alias | selected | darwin.agent_policy | groq/qwen/qwen3-32b | groq/llama-3.1-8b-instant | selector_chain |
 | darwin | applier | visible_agent | selected | darwin.agent_policy | groq/llama-3.1-8b-instant |  | selector_chain |
 | darwin | darwin.commander | visible_agent | selected | darwin.agent_policy | openai-oauth/gpt-5.4 | groq/qwen/qwen3-32b | selector_chain |
@@ -71,6 +71,7 @@ _없음_
 | darwin | darwin.reflexion | visible_agent | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
 | darwin | darwin.scanner | visible_agent | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
 | darwin | darwin.self_rewarding_judge | visible_agent | selected | darwin.agent_policy | groq/llama-3.1-8b-instant | groq/qwen/qwen3-32b | selector_chain |
+| darwin | darwin.synthesis | visible_agent | selected | darwin.agent_policy | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b | selector_chain |
 | darwin | darwin.verifier | visible_agent | selected | darwin.agent_policy | groq/qwen/qwen3-32b | groq/llama-3.1-8b-instant | selector_chain |
 | darwin | implementor | visible_agent | selected | darwin.agent_policy | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | darwin | learner | visible_agent | selected | darwin.agent_policy | groq/llama-3.1-8b-instant |  | selector_chain |
@@ -87,7 +88,7 @@ _없음_
 | investment | aria | alias | selected | investment.aria | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | athena | alias | selected | investment.athena | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | budget | alias | selected | investment.budget | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | chronos | alias | selected | investment.chronos | local-embedding/qwen3-embed-0.6b |  | selector_chain |
+| investment | chronos | alias | selected | investment.chronos | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | commander | alias | selected | investment.agent_policy | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | default | alias | selected | investment._default | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | hanul | alias | selected | investment.hanul | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
@@ -97,7 +98,7 @@ _없음_
 | investment | luna | alias | selected | investment.luna | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | nemesis | alias | selected | investment.nemesis | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | oracle | alias | selected | investment.oracle | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | reporter | alias | selected | investment.reporter | openai-oauth/gpt-5.4 | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| investment | reporter | alias | selected | investment.reporter | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
 | investment | scout | alias | selected | investment.scout | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | sentinel | alias | selected | investment.sentinel | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | sophia | alias | selected | investment.sophia | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
@@ -111,7 +112,7 @@ _없음_
 | investment | aria | visible_agent | selected | investment.aria | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | athena | visible_agent | selected | investment.athena | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | budget | visible_agent | selected | investment.budget | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | chronos | visible_agent | selected | investment.chronos | local-embedding/qwen3-embed-0.6b |  | selector_chain |
+| investment | chronos | visible_agent | selected | investment.chronos | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | hanul | visible_agent | selected | investment.hanul | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | hephaestos | visible_agent | selected | investment.hephaestos | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | hermes | visible_agent | selected | investment.hermes | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
@@ -119,7 +120,7 @@ _없음_
 | investment | luna | visible_agent | selected | investment.luna | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | nemesis | visible_agent | selected | investment.nemesis | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | oracle | visible_agent | selected | investment.oracle | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | reporter | visible_agent | selected | investment.reporter | openai-oauth/gpt-5.4 | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| investment | reporter | visible_agent | selected | investment.reporter | openai-oauth/gpt-5.4-mini | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
 | investment | scout | visible_agent | selected | investment.scout | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | sentinel | visible_agent | selected | investment.sentinel | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | sophia | visible_agent | selected | investment.sophia | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
@@ -156,8 +157,6 @@ _없음_
 | orchestrator | steward-digest | runtime_service | selected | orchestrator.steward.digest | groq/llama-3.1-8b-instant |  | selector_chain |
 | orchestrator | steward-incident | runtime_service | selected | orchestrator.steward.incident_plan | groq/llama-3.1-8b-instant |  | selector_chain |
 | orchestrator | steward-pro-canary | runtime_service | selected | orchestrator.steward.pro_canary | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
-| orchestrator | steward-work | runtime_service | selected | orchestrator.steward.work | groq/llama-3.1-8b-instant |  | selector_chain |
-| orchestrator | steward | runtime_service | selected | orchestrator.steward.work | groq/llama-3.1-8b-instant |  | selector_chain |
 
 ## Recommendations
 - planned/pending_runtime teams must remain blocked until runtime source and selector ownership exist

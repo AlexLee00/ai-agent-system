@@ -51,7 +51,8 @@ async function main() {
     assert.equal(headers?.['chatgpt-account-id'], 'acct_openai_oauth_direct_smoke');
     assert.equal(headers?.accept, 'text/event-stream');
     assert.equal(body.model, 'gpt-5.4-mini');
-    assert.equal(body.max_output_tokens, 64);
+    assert.equal(Object.prototype.hasOwnProperty.call(body, 'max_output_tokens'), false);
+    assert.match(body.instructions, /64 output tokens/);
 
     return new Response([
       'data: {"type":"response.output_text.delta","delta":"direct oauth "}',
@@ -93,12 +94,29 @@ async function main() {
     assert.equal(aborted.ok, false);
     assert.match(aborted.error, /openai_codex_oauth_timeout_or_abort/);
 
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ detail: 'Unsupported parameter: max_output_tokens' }),
+      {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    )) as typeof fetch;
+    const badRequest = await callOpenAiCodexOAuth({
+      model: 'gpt-5.4-mini',
+      prompt: 'Return a tiny success string.',
+      maxTokens: 64,
+      timeoutMs: 5000,
+    });
+    assert.equal(badRequest.ok, false);
+    assert.match(badRequest.error, /openai_codex_oauth_bad_request:Unsupported parameter: max_output_tokens/);
+
     console.log(JSON.stringify({
       ok: true,
       provider: result.provider,
       model: result.model,
       endpoint: calls[0].url,
       abort_error_normalized: true,
+      bad_request_detail_normalized: true,
       public_api_used: false,
     }));
   } finally {

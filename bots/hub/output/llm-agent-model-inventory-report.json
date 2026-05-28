@@ -1,25 +1,25 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-27T04:57:15.217Z",
+  "generatedAt": "2026-05-28T04:46:12.309Z",
   "selectorVersion": "v3.0_oauth_4",
   "summary": {
-    "selectorRouteTargets": 162,
-    "activeTargets": 89,
-    "visibleAgents": 80,
+    "selectorRouteTargets": 164,
+    "activeTargets": 90,
+    "visibleAgents": 81,
     "runtimeServices": 9,
     "taskRoutes": 43,
-    "aliases": 30,
+    "aliases": 31,
     "planned": 1,
     "pendingRuntime": 11,
     "retired": 0,
     "countsByKind": {
-      "visible_agent": 80,
+      "visible_agent": 81,
       "task_route": 43,
-      "alias": 30,
+      "alias": 31,
       "runtime_service": 9
     },
     "countsByModelStatus": {
-      "selector_chain": 162,
+      "selector_chain": 164,
       "team_container": 4,
       "auto_dev_implementation_model": 1,
       "non_llm_role": 3,
@@ -28,15 +28,13 @@
     },
     "primaryProviderCounts": {
       "claude-code": 4,
-      "openai-oauth": 63,
-      "groq": 94,
-      "local-embedding": 2
+      "openai-oauth": 66,
+      "groq": 95
     },
     "chainProviderCounts": {
       "claude-code": 4,
-      "groq": 188,
-      "openai-oauth": 137,
-      "local-embedding": 2
+      "groq": 191,
+      "openai-oauth": 142
     },
     "claudeCodePrimaryRoutes": [],
     "claudeCodeFallbackRoutes": [],
@@ -679,6 +677,22 @@
       "source": "selector",
       "team": "darwin",
       "namespace": "darwin",
+      "agent": "synthesis",
+      "kind": "alias",
+      "status": "selected",
+      "selectorKey": "darwin.agent_policy",
+      "primary": "openai-oauth/gpt-5.4-mini",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": false
+    },
+    {
+      "source": "selector",
+      "team": "darwin",
+      "namespace": "darwin",
       "agent": "verifier",
       "kind": "alias",
       "status": "selected",
@@ -731,7 +745,7 @@
       "kind": "task_route",
       "status": "selected",
       "selectorKey": "darwin.agent_policy",
-      "primary": "groq/llama-3.1-8b-instant",
+      "primary": "openai-oauth/gpt-5.4-mini",
       "fallbacks": [
         "groq/qwen/qwen3-32b"
       ],
@@ -948,6 +962,22 @@
       "status": "selected",
       "selectorKey": "darwin.agent_policy",
       "primary": "groq/llama-3.1-8b-instant",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "darwin",
+      "namespace": "darwin",
+      "agent": "darwin.synthesis",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "darwin.agent_policy",
+      "primary": "openai-oauth/gpt-5.4-mini",
       "fallbacks": [
         "groq/qwen/qwen3-32b"
       ],
@@ -1233,8 +1263,10 @@
       "kind": "alias",
       "status": "selected",
       "selectorKey": "investment.chronos",
-      "primary": "local-embedding/qwen3-embed-0.6b",
-      "fallbacks": [],
+      "primary": "groq/qwen/qwen3-32b",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4-mini"
+      ],
       "modelStatus": "selector_chain",
       "blockReason": null,
       "countable": false,
@@ -1422,10 +1454,10 @@
       "kind": "alias",
       "status": "selected",
       "selectorKey": "investment.reporter",
-      "primary": "openai-oauth/gpt-5.4",
+      "primary": "openai-oauth/gpt-5.4-mini",
       "fallbacks": [
         "groq/qwen/qwen3-32b",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -1659,8 +1691,10 @@
       "kind": "visible_agent",
       "status": "selected",
       "selectorKey": "investment.chronos",
-      "primary": "local-embedding/qwen3-embed-0.6b",
-      "fallbacks": [],
+      "primary": "groq/qwen/qwen3-32b",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4-mini"
+      ],
       "modelStatus": "selector_chain",
       "blockReason": null,
       "countable": true
@@ -1787,10 +1821,10 @@
       "kind": "visible_agent",
       "status": "selected",
       "selectorKey": "investment.reporter",
-      "primary": "openai-oauth/gpt-5.4",
+      "primary": "openai-oauth/gpt-5.4-mini",
       "fallbacks": [
         "groq/qwen/qwen3-32b",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,

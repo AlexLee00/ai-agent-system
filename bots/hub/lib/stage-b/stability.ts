@@ -40,6 +40,11 @@ const EXPECTED_IDLE_DIAGNOSTICS = {
   },
 };
 
+function safeSelectorArg(value) {
+  const text = String(value || '').trim();
+  return /^[A-Za-z0-9_.-]+$/.test(text) ? text : 'unknown';
+}
+
 function readText(relativePath) {
   return fs.readFileSync(path.join(PROJECT_ROOT, relativePath), 'utf8');
 }
@@ -201,6 +206,14 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       byProvider: [],
       byBudgetStatus: [],
       byTier: [],
+      operationalTotal: 0,
+      operationalFailures: 0,
+      operationalFailureRatePct: 0,
+      operationalUnresolvedFailures: 0,
+      diagnosticFailures: 0,
+      diagnosticUnresolvedFailures: 0,
+      unresolvedOperationalErrors: [],
+      unresolvedDiagnosticErrors: [],
       avgDurationMs: 0,
       maxDurationMs: 0,
       latencyByProvider: [],
@@ -208,6 +221,28 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       recentErrors: [],
     };
   }
+
+  const diagnosticPredicate = (alias) => `(
+    lower(coalesce(${alias}.runtime_purpose, '')) LIKE '%smoke%'
+    OR lower(coalesce(${alias}.runtime_purpose, '')) LIKE '%drill%'
+    OR lower(coalesce(${alias}.runtime_purpose, '')) LIKE '%diagnostic%'
+    OR lower(coalesce(${alias}.request_id, '')) LIKE '%smoke%'
+    OR lower(coalesce(${alias}.request_id, '')) LIKE '%drill%'
+    OR lower(coalesce(${alias}.agent, '')) LIKE '%smoke%'
+    OR lower(coalesce(${alias}.agent, '')) LIKE '%drill%'
+  )`;
+  const unresolvedPredicate = (alias) => `(
+    ${alias}.success IS FALSE
+    AND NOT EXISTS (
+      SELECT 1
+      FROM hub.llm_request_log s
+      WHERE s.created_at > ${alias}.created_at
+        AND s.success IS TRUE
+        AND COALESCE(s.caller_team, '') = COALESCE(${alias}.caller_team, '')
+        AND COALESCE(s.agent, '') = COALESCE(${alias}.agent, '')
+        AND COALESCE(s.abstract_model, '') = COALESCE(${alias}.abstract_model, '')
+    )
+  )`;
 
   try {
     const [
@@ -218,26 +253,22 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       latencyByProvider,
       slowRoutes,
       recentErrors,
+      unresolvedOperationalErrors,
+      unresolvedDiagnosticErrors,
     ] = await Promise.all([
       pgPool.query('public', `
         SELECT count(*)::int AS total,
-               count(*) FILTER (WHERE success IS FALSE)::int AS failures,
-               count(*) FILTER (
-                 WHERE success IS FALSE
-                   AND NOT EXISTS (
-                     SELECT 1
-                     FROM hub.llm_request_log s
-                     WHERE s.created_at > hub.llm_request_log.created_at
-                       AND s.success IS TRUE
-                       AND COALESCE(s.caller_team, '') = COALESCE(hub.llm_request_log.caller_team, '')
-                       AND COALESCE(s.agent, '') = COALESCE(hub.llm_request_log.agent, '')
-                       AND COALESCE(s.abstract_model, '') = COALESCE(hub.llm_request_log.abstract_model, '')
-                   )
-               )::int AS unresolved_failures,
-               COALESCE(ROUND(AVG(duration_ms))::int, 0) AS avg_duration_ms,
-               COALESCE(MAX(duration_ms)::int, 0) AS max_duration_ms
-        FROM hub.llm_request_log
-        WHERE created_at >= now() - ($1::int * interval '1 hour')
+               count(*) FILTER (WHERE l.success IS FALSE)::int AS failures,
+               count(*) FILTER (WHERE NOT ${diagnosticPredicate('l')})::int AS operational_total,
+               count(*) FILTER (WHERE l.success IS FALSE AND NOT ${diagnosticPredicate('l')})::int AS operational_failures,
+               count(*) FILTER (WHERE l.success IS FALSE AND ${diagnosticPredicate('l')})::int AS diagnostic_failures,
+               count(*) FILTER (WHERE ${unresolvedPredicate('l')})::int AS unresolved_failures,
+               count(*) FILTER (WHERE ${unresolvedPredicate('l')} AND NOT ${diagnosticPredicate('l')})::int AS operational_unresolved_failures,
+               count(*) FILTER (WHERE ${unresolvedPredicate('l')} AND ${diagnosticPredicate('l')})::int AS diagnostic_unresolved_failures,
+               COALESCE(ROUND(AVG(l.duration_ms))::int, 0) AS avg_duration_ms,
+               COALESCE(MAX(l.duration_ms)::int, 0) AS max_duration_ms
+        FROM hub.llm_request_log l
+        WHERE l.created_at >= now() - ($1::int * interval '1 hour')
       `, [hours]),
       pgPool.query('public', `
         SELECT provider, count(*)::int AS count, COALESCE(sum(cost_usd), 0)::float AS cost_usd
@@ -309,8 +340,10 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
                f.caller_team,
                f.agent,
                f.abstract_model,
+               f.runtime_purpose,
                f.error,
                f.created_at,
+               ${diagnosticPredicate('f')} AS diagnostic,
                EXISTS (
                  SELECT 1
                  FROM hub.llm_request_log s
@@ -326,10 +359,54 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
         ORDER BY f.created_at DESC
         LIMIT 10
       `, [hours]),
+      pgPool.query('public', `
+        SELECT COALESCE(NULLIF(f.caller_team, ''), 'unknown') AS caller_team,
+               COALESCE(NULLIF(f.agent, ''), 'unknown') AS agent,
+               COALESCE(NULLIF(f.abstract_model, ''), 'unknown') AS abstract_model,
+               COALESCE(NULLIF(f.runtime_purpose, ''), 'unknown') AS runtime_purpose,
+               count(*)::int AS count,
+               min(f.created_at) AS first_seen_at,
+               max(f.created_at) AS last_seen_at,
+               (array_agg(f.error ORDER BY f.created_at DESC))[1] AS sample_error
+        FROM hub.llm_request_log f
+        WHERE f.created_at >= now() - ($1::int * interval '1 hour')
+          AND ${unresolvedPredicate('f')}
+          AND NOT ${diagnosticPredicate('f')}
+        GROUP BY
+          COALESCE(NULLIF(f.caller_team, ''), 'unknown'),
+          COALESCE(NULLIF(f.agent, ''), 'unknown'),
+          COALESCE(NULLIF(f.abstract_model, ''), 'unknown'),
+          COALESCE(NULLIF(f.runtime_purpose, ''), 'unknown')
+        ORDER BY count DESC, max(f.created_at) DESC
+        LIMIT 10
+      `, [hours]),
+      pgPool.query('public', `
+        SELECT COALESCE(NULLIF(f.caller_team, ''), 'unknown') AS caller_team,
+               COALESCE(NULLIF(f.agent, ''), 'unknown') AS agent,
+               COALESCE(NULLIF(f.abstract_model, ''), 'unknown') AS abstract_model,
+               COALESCE(NULLIF(f.runtime_purpose, ''), 'unknown') AS runtime_purpose,
+               count(*)::int AS count,
+               min(f.created_at) AS first_seen_at,
+               max(f.created_at) AS last_seen_at,
+               (array_agg(f.error ORDER BY f.created_at DESC))[1] AS sample_error
+        FROM hub.llm_request_log f
+        WHERE f.created_at >= now() - ($1::int * interval '1 hour')
+          AND ${unresolvedPredicate('f')}
+          AND ${diagnosticPredicate('f')}
+        GROUP BY
+          COALESCE(NULLIF(f.caller_team, ''), 'unknown'),
+          COALESCE(NULLIF(f.agent, ''), 'unknown'),
+          COALESCE(NULLIF(f.abstract_model, ''), 'unknown'),
+          COALESCE(NULLIF(f.runtime_purpose, ''), 'unknown')
+        ORDER BY count DESC, max(f.created_at) DESC
+        LIMIT 10
+      `, [hours]),
     ]);
 
     const total = Number(totals?.[0]?.total || 0);
     const failures = Number(totals?.[0]?.failures || 0);
+    const operationalTotal = Number(totals?.[0]?.operational_total || 0);
+    const operationalFailures = Number(totals?.[0]?.operational_failures || 0);
     return {
       ok: true,
       skipped: false,
@@ -338,6 +415,12 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       failures,
       failureRatePct: total > 0 ? Number(((failures / total) * 100).toFixed(4)) : 0,
       unresolvedFailures: Number(totals?.[0]?.unresolved_failures || 0),
+      operationalTotal,
+      operationalFailures,
+      operationalFailureRatePct: operationalTotal > 0 ? Number(((operationalFailures / operationalTotal) * 100).toFixed(4)) : 0,
+      operationalUnresolvedFailures: Number(totals?.[0]?.operational_unresolved_failures || 0),
+      diagnosticFailures: Number(totals?.[0]?.diagnostic_failures || 0),
+      diagnosticUnresolvedFailures: Number(totals?.[0]?.diagnostic_unresolved_failures || 0),
       byProvider,
       byBudgetStatus,
       byTier,
@@ -346,6 +429,14 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       latencyByProvider,
       slowRoutes,
       recentErrors,
+      unresolvedOperationalErrors: unresolvedOperationalErrors.map((item) => ({
+        ...item,
+        count: Number(item.count || 0),
+      })),
+      unresolvedDiagnosticErrors: unresolvedDiagnosticErrors.map((item) => ({
+        ...item,
+        count: Number(item.count || 0),
+      })),
     };
   } catch (error) {
     return {
@@ -359,6 +450,14 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       byProvider: [],
       byBudgetStatus: [],
       byTier: [],
+      operationalTotal: 0,
+      operationalFailures: 0,
+      operationalFailureRatePct: 0,
+      operationalUnresolvedFailures: 0,
+      diagnosticFailures: 0,
+      diagnosticUnresolvedFailures: 0,
+      unresolvedOperationalErrors: [],
+      unresolvedDiagnosticErrors: [],
       avgDurationMs: 0,
       maxDurationMs: 0,
       latencyByProvider: [],
@@ -560,12 +659,62 @@ function buildSelfHealingPlan(report) {
     });
   }
 
-  if ((report.requestLog?.unresolvedFailures || 0) > 0) {
+  const unresolvedOperationalErrors = Array.isArray(report.requestLog?.unresolvedOperationalErrors)
+    ? report.requestLog.unresolvedOperationalErrors
+    : [];
+  if ((report.requestLog?.operationalUnresolvedFailures ?? report.requestLog?.unresolvedFailures ?? 0) > 0) {
+    if (unresolvedOperationalErrors.length > 0) {
+      for (const item of unresolvedOperationalErrors.slice(0, 5)) {
+        const team = safeSelectorArg(item.caller_team);
+        const agent = safeSelectorArg(item.agent);
+        safeReadOnlyActions.push({
+          action: 'targeted_llm_route_drill',
+          team,
+          agent,
+          runtimePurpose: item.runtime_purpose || 'unknown',
+          count: Number(item.count || 0),
+          reason: `operational unresolved LLM request failures exist for ${team}/${agent}`,
+          command: `npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=${team} --agents=${agent} --primary-only`,
+          liveCommand: `npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=${team} --agents=${agent} --primary-only`,
+          effect: 'mock dry-run verifies the current selector route without provider traffic; live verification is evidence collection and still requires an approved runtime window',
+        });
+      }
+    } else {
+      safeReadOnlyActions.push({
+        action: 'targeted_llm_route_drill',
+        reason: 'operational unresolved LLM request failures exist in hub.llm_request_log',
+        command: 'npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=<team> --agents=<agent> --primary-only',
+        liveCommand: 'npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=<team> --agents=<agent> --primary-only',
+        effect: 'mock dry-run verifies the affected route without mutating protected services; live verification requires an approved runtime window',
+      });
+    }
+  }
+
+  if (false) {
     safeReadOnlyActions.push({
       action: 'targeted_llm_route_drill',
-      reason: 'unresolved LLM request failures exist in hub.llm_request_log',
+      reason: 'operational unresolved LLM request failures exist in hub.llm_request_log',
       command: 'npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=<team> --primary-only',
       effect: 'verifies the affected agent route without mutating protected services',
+    });
+  }
+
+  if ((report.requestLog?.diagnosticUnresolvedFailures || 0) > 0) {
+    safeReadOnlyActions.push({
+      action: 'diagnostic_llm_failure_review',
+      reason: 'diagnostic smoke/drill LLM failures exist but are separated from operational promotion evidence',
+      command: 'npm --prefix bots/hub run -s check:llm-stage-d',
+      effect: 'replays the non-mutating Hub LLM evidence checks before treating diagnostic failures as operational blockers',
+    });
+  }
+
+  const recentErrors = Array.isArray(report.requestLog?.recentErrors) ? report.requestLog.recentErrors : [];
+  if (recentErrors.some((item) => /openai_codex_oauth_(bad_request|call_failed:HTTP 400)/i.test(String(item?.error || '')))) {
+    safeReadOnlyActions.push({
+      action: 'openai_codex_bad_request_guard_verification',
+      reason: 'OpenAI Codex OAuth 400 responses previously opened provider circuits and exhausted fallbacks',
+      command: 'npx tsx bots/hub/scripts/openai-oauth-direct-smoke.ts && npx tsx bots/hub/scripts/provider-circuit-standard-smoke.ts',
+      effect: 'verifies unsupported request parameters are not sent by default and 400 bad requests do not poison provider circuits',
     });
   }
 

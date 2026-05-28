@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-26T17:21:57.637Z",
+  "checkedAt": "2026-05-28T04:46:19.066Z",
   "stage": "hub_stage_d",
   "status": "stage_d_code_complete_promotion_evidence_pending",
   "codeComplete": true,
@@ -21,7 +21,7 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-26T17:21:57.293Z",
+      "checkedAt": "2026-05-28T04:46:18.936Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -30,7 +30,7 @@
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-26T17:21:57.635Z",
+      "checkedAt": "2026-05-28T04:46:19.063Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -291,16 +291,6 @@
             "fallbackIndex": 0
           },
           {
-            "provider": "gemini-cli-oauth",
-            "model": "gemini-2.5-flash",
-            "maxTokens": 4096,
-            "temperature": 0.2,
-            "timeoutMs": 45000,
-            "route": "gemini-cli-oauth/gemini-2.5-flash",
-            "providerTier": 3,
-            "fallbackIndex": 1
-          },
-          {
             "provider": "groq",
             "model": "qwen/qwen3-32b",
             "maxTokens": 4096,
@@ -308,9 +298,10 @@
             "timeoutMs": 30000,
             "route": "groq/qwen/qwen3-32b",
             "providerTier": 2,
-            "fallbackIndex": 2
+            "fallbackIndex": 1
           }
         ],
+        "disabledProvidersRemoved": 0,
         "providerTiers": [
           {
             "provider": "openai-oauth",
@@ -319,16 +310,10 @@
             "fallbackIndex": 0
           },
           {
-            "provider": "gemini-cli-oauth",
-            "route": "gemini-cli-oauth/gemini-2.5-flash",
-            "tier": 3,
-            "fallbackIndex": 1
-          },
-          {
             "provider": "groq",
             "route": "groq/qwen/qwen3-32b",
             "tier": 2,
-            "fallbackIndex": 2
+            "fallbackIndex": 1
           }
         ]
       },
@@ -374,16 +359,6 @@
                 "fallbackIndex": 0
               },
               {
-                "provider": "gemini-cli-oauth",
-                "model": "gemini-2.5-flash",
-                "maxTokens": 4096,
-                "temperature": 0.2,
-                "timeoutMs": 45000,
-                "route": "gemini-cli-oauth/gemini-2.5-flash",
-                "providerTier": 3,
-                "fallbackIndex": 1
-              },
-              {
                 "provider": "groq",
                 "model": "qwen/qwen3-32b",
                 "maxTokens": 4096,
@@ -391,9 +366,10 @@
                 "timeoutMs": 30000,
                 "route": "groq/qwen/qwen3-32b",
                 "providerTier": 2,
-                "fallbackIndex": 2
+                "fallbackIndex": 1
               }
             ],
+            "disabledProvidersRemoved": 0,
             "providerTiers": [
               {
                 "provider": "openai-oauth",
@@ -402,16 +378,10 @@
                 "fallbackIndex": 0
               },
               {
-                "provider": "gemini-cli-oauth",
-                "route": "gemini-cli-oauth/gemini-2.5-flash",
-                "tier": 3,
-                "fallbackIndex": 1
-              },
-              {
                 "provider": "groq",
                 "route": "groq/qwen/qwen3-32b",
                 "tier": 2,
-                "fallbackIndex": 2
+                "fallbackIndex": 1
               }
             ]
           }
@@ -420,7 +390,7 @@
     },
     "uptime": {
       "ok": true,
-      "uptimeSeconds": 67416,
+      "uptimeSeconds": 3645,
       "startupComplete": true,
       "httpStatus": 200
     },
@@ -433,46 +403,75 @@
       "selfHealingTargetMet": false,
       "observed": {
         "source": "read_only_stage_reports",
-        "stageBCheckedAt": "2026-05-26T17:21:57.293Z",
+        "stageBCheckedAt": "2026-05-28T04:46:18.936Z",
         "requestLogHours": 24,
-        "totalRequests": 18427,
-        "failures": 0,
-        "unresolvedFailures": 0,
-        "failureRatePct": 0,
-        "avgDurationMs": 3490,
-        "maxDurationMs": 77951,
+        "rawTotalRequests": 7845,
+        "rawFailures": 14,
+        "rawUnresolvedFailures": 3,
+        "totalRequests": 7301,
+        "failures": 7,
+        "unresolvedFailures": 2,
+        "diagnosticFailures": 7,
+        "diagnosticUnresolvedFailures": 1,
+        "failureRatePct": 0.0959,
+        "avgDurationMs": 1607,
+        "maxDurationMs": 126231,
         "latencyByProvider": [
           {
-            "provider": "gemini-cli-oauth",
-            "count": 1556,
+            "provider": "claude-code-oauth",
+            "count": 17,
             "failures": 0,
-            "avg_duration_ms": 16903,
-            "max_duration_ms": 59889,
-            "p95_duration_ms": 33694
+            "avg_duration_ms": 28748,
+            "max_duration_ms": 90950,
+            "p95_duration_ms": 79756
+          },
+          {
+            "provider": "gemini-cli-oauth",
+            "count": 1,
+            "failures": 0,
+            "avg_duration_ms": 26318,
+            "max_duration_ms": 26318,
+            "p95_duration_ms": 26318
+          },
+          {
+            "provider": "failed",
+            "count": 14,
+            "failures": 14,
+            "avg_duration_ms": 7598,
+            "max_duration_ms": 51627,
+            "p95_duration_ms": 47433
           },
           {
             "provider": "openai-oauth",
-            "count": 13477,
+            "count": 637,
             "failures": 0,
-            "avg_duration_ms": 2322,
-            "max_duration_ms": 77951,
-            "p95_duration_ms": 4008
+            "avg_duration_ms": 3525,
+            "max_duration_ms": 126231,
+            "p95_duration_ms": 8422
           },
           {
             "provider": "dedupe",
-            "count": 1261,
+            "count": 2637,
             "failures": 0,
-            "avg_duration_ms": 2075,
-            "max_duration_ms": 3633,
-            "p95_duration_ms": 2910
+            "avg_duration_ms": 2101,
+            "max_duration_ms": 8077,
+            "p95_duration_ms": 3259
           },
           {
             "provider": "groq",
-            "count": 2133,
+            "count": 4525,
             "failures": 0,
-            "avg_duration_ms": 1921,
-            "max_duration_ms": 9787,
-            "p95_duration_ms": 3813
+            "avg_duration_ms": 928,
+            "max_duration_ms": 8078,
+            "p95_duration_ms": 2490
+          },
+          {
+            "provider": "cache",
+            "count": 14,
+            "failures": 0,
+            "avg_duration_ms": 0,
+            "max_duration_ms": 0,
+            "p95_duration_ms": 0
           }
         ],
         "slowRoutes": [
@@ -486,37 +485,51 @@
             "provider_tier": "1",
             "count": 5,
             "failures": 0,
-            "avg_duration_ms": 31679,
-            "max_duration_ms": 47476,
-            "p95_duration_ms": 44822
+            "avg_duration_ms": 46895,
+            "max_duration_ms": 126231,
+            "p95_duration_ms": 106908
           },
           {
-            "route": "gemini-cli-oauth/gemini-2.5-flash",
-            "provider": "gemini-cli-oauth",
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "sigma",
+            "agent": "commander",
+            "abstract_model": "anthropic_haiku",
+            "runtime_purpose": "multi_agent_llm_drill_primary",
+            "provider_tier": "1",
+            "count": 6,
+            "failures": 0,
+            "avg_duration_ms": 8626,
+            "max_duration_ms": 42536,
+            "p95_duration_ms": 32674
+          },
+          {
+            "route": "openai-oauth/gpt-5.4-mini",
+            "provider": "openai-oauth",
             "caller_team": "darwin",
             "agent": "darwin.planner",
             "abstract_model": "anthropic_sonnet",
             "runtime_purpose": "unknown",
-            "provider_tier": "3",
-            "count": 187,
+            "provider_tier": "1",
+            "count": 124,
             "failures": 0,
-            "avg_duration_ms": 18129,
-            "max_duration_ms": 52525,
-            "p95_duration_ms": 31488
+            "avg_duration_ms": 6316,
+            "max_duration_ms": 22635,
+            "p95_duration_ms": 12225
           },
           {
-            "route": "gemini-cli-oauth/gemini-2.5-flash-lite",
-            "provider": "gemini-cli-oauth",
-            "caller_team": "darwin",
-            "agent": "darwin.evaluator",
-            "abstract_model": "anthropic_sonnet",
-            "runtime_purpose": "evaluation_scoring",
-            "provider_tier": "3",
-            "count": 1369,
+            "route": "groq/qwen/qwen3-32b",
+            "provider": "groq",
+            "caller_team": "luna",
+            "agent": "luna",
+            "abstract_model": "anthropic_haiku",
+            "runtime_purpose": "regime_analysis",
+            "provider_tier": "2",
+            "count": 13,
             "failures": 0,
-            "avg_duration_ms": 16736,
-            "max_duration_ms": 59889,
-            "p95_duration_ms": 33857
+            "avg_duration_ms": 3505,
+            "max_duration_ms": 7236,
+            "p95_duration_ms": 7030
           },
           {
             "route": "openai-oauth/gpt-5.4",
@@ -526,32 +539,18 @@
             "abstract_model": "anthropic_haiku",
             "runtime_purpose": "comment",
             "provider_tier": "1",
-            "count": 32,
+            "count": 6,
             "failures": 0,
-            "avg_duration_ms": 5320,
-            "max_duration_ms": 18643,
-            "p95_duration_ms": 10455
-          },
-          {
-            "route": "openai-oauth/gpt-5.4",
-            "provider": "openai-oauth",
-            "caller_team": "claude",
-            "agent": "ai-analyst",
-            "abstract_model": "anthropic_haiku",
-            "runtime_purpose": "system_diagnosis",
-            "provider_tier": "1",
-            "count": 8,
-            "failures": 0,
-            "avg_duration_ms": 3568,
-            "max_duration_ms": 6145,
-            "p95_duration_ms": 5288
+            "avg_duration_ms": 3000,
+            "max_duration_ms": 3556,
+            "p95_duration_ms": 3462
           }
         ],
-        "uptimeSeconds": 67416,
-        "uptimeDays": 0.78,
+        "uptimeSeconds": 3645,
+        "uptimeDays": 0.04,
         "l5Status": "l5_acceptance_evidence_ready",
         "l5Ok": true,
-        "errorRateObservedOk": true,
+        "errorRateObservedOk": false,
         "latencyObservedOk": false,
         "uptimeWindowObservedOk": false,
         "selfHealingReadinessObservedOk": true
@@ -589,8 +588,8 @@
           "observedOk": false,
           "certificationOk": false,
           "evidence": {
-            "uptimeSeconds": 67416,
-            "uptimeDays": 0.78,
+            "uptimeSeconds": 3645,
+            "uptimeDays": 0.04,
             "currentStartupOk": true
           },
           "nextAction": "Accumulate a 7d uptime window from the runtime monitor before attesting."
@@ -604,40 +603,48 @@
           "certificationOk": false,
           "evidence": {
             "requestLogHours": 24,
-            "avgDurationMs": 3490,
-            "maxDurationMs": 77951,
+            "avgDurationMs": 1607,
+            "maxDurationMs": 126231,
             "latencyByProvider": [
               {
-                "provider": "gemini-cli-oauth",
-                "count": 1556,
+                "provider": "claude-code-oauth",
+                "count": 17,
                 "failures": 0,
-                "avg_duration_ms": 16903,
-                "max_duration_ms": 59889,
-                "p95_duration_ms": 33694
+                "avg_duration_ms": 28748,
+                "max_duration_ms": 90950,
+                "p95_duration_ms": 79756
+              },
+              {
+                "provider": "gemini-cli-oauth",
+                "count": 1,
+                "failures": 0,
+                "avg_duration_ms": 26318,
+                "max_duration_ms": 26318,
+                "p95_duration_ms": 26318
+              },
+              {
+                "provider": "failed",
+                "count": 14,
+                "failures": 14,
+                "avg_duration_ms": 7598,
+                "max_duration_ms": 51627,
+                "p95_duration_ms": 47433
               },
               {
                 "provider": "openai-oauth",
-                "count": 13477,
+                "count": 637,
                 "failures": 0,
-                "avg_duration_ms": 2322,
-                "max_duration_ms": 77951,
-                "p95_duration_ms": 4008
+                "avg_duration_ms": 3525,
+                "max_duration_ms": 126231,
+                "p95_duration_ms": 8422
               },
               {
                 "provider": "dedupe",
-                "count": 1261,
+                "count": 2637,
                 "failures": 0,
-                "avg_duration_ms": 2075,
-                "max_duration_ms": 3633,
-                "p95_duration_ms": 2910
-              },
-              {
-                "provider": "groq",
-                "count": 2133,
-                "failures": 0,
-                "avg_duration_ms": 1921,
-                "max_duration_ms": 9787,
-                "p95_duration_ms": 3813
+                "avg_duration_ms": 2101,
+                "max_duration_ms": 8077,
+                "p95_duration_ms": 3259
               }
             ],
             "slowRoutes": [
@@ -651,37 +658,51 @@
                 "provider_tier": "1",
                 "count": 5,
                 "failures": 0,
-                "avg_duration_ms": 31679,
-                "max_duration_ms": 47476,
-                "p95_duration_ms": 44822
+                "avg_duration_ms": 46895,
+                "max_duration_ms": 126231,
+                "p95_duration_ms": 106908
               },
               {
-                "route": "gemini-cli-oauth/gemini-2.5-flash",
-                "provider": "gemini-cli-oauth",
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "sigma",
+                "agent": "commander",
+                "abstract_model": "anthropic_haiku",
+                "runtime_purpose": "multi_agent_llm_drill_primary",
+                "provider_tier": "1",
+                "count": 6,
+                "failures": 0,
+                "avg_duration_ms": 8626,
+                "max_duration_ms": 42536,
+                "p95_duration_ms": 32674
+              },
+              {
+                "route": "openai-oauth/gpt-5.4-mini",
+                "provider": "openai-oauth",
                 "caller_team": "darwin",
                 "agent": "darwin.planner",
                 "abstract_model": "anthropic_sonnet",
                 "runtime_purpose": "unknown",
-                "provider_tier": "3",
-                "count": 187,
+                "provider_tier": "1",
+                "count": 124,
                 "failures": 0,
-                "avg_duration_ms": 18129,
-                "max_duration_ms": 52525,
-                "p95_duration_ms": 31488
+                "avg_duration_ms": 6316,
+                "max_duration_ms": 22635,
+                "p95_duration_ms": 12225
               },
               {
-                "route": "gemini-cli-oauth/gemini-2.5-flash-lite",
-                "provider": "gemini-cli-oauth",
-                "caller_team": "darwin",
-                "agent": "darwin.evaluator",
-                "abstract_model": "anthropic_sonnet",
-                "runtime_purpose": "evaluation_scoring",
-                "provider_tier": "3",
-                "count": 1369,
+                "route": "groq/qwen/qwen3-32b",
+                "provider": "groq",
+                "caller_team": "luna",
+                "agent": "luna",
+                "abstract_model": "anthropic_haiku",
+                "runtime_purpose": "regime_analysis",
+                "provider_tier": "2",
+                "count": 13,
                 "failures": 0,
-                "avg_duration_ms": 16736,
-                "max_duration_ms": 59889,
-                "p95_duration_ms": 33857
+                "avg_duration_ms": 3505,
+                "max_duration_ms": 7236,
+                "p95_duration_ms": 7030
               },
               {
                 "route": "openai-oauth/gpt-5.4",
@@ -691,43 +712,33 @@
                 "abstract_model": "anthropic_haiku",
                 "runtime_purpose": "comment",
                 "provider_tier": "1",
-                "count": 32,
+                "count": 6,
                 "failures": 0,
-                "avg_duration_ms": 5320,
-                "max_duration_ms": 18643,
-                "p95_duration_ms": 10455
-              },
-              {
-                "route": "openai-oauth/gpt-5.4",
-                "provider": "openai-oauth",
-                "caller_team": "claude",
-                "agent": "ai-analyst",
-                "abstract_model": "anthropic_haiku",
-                "runtime_purpose": "system_diagnosis",
-                "provider_tier": "1",
-                "count": 8,
-                "failures": 0,
-                "avg_duration_ms": 3568,
-                "max_duration_ms": 6145,
-                "p95_duration_ms": 5288
+                "avg_duration_ms": 3000,
+                "max_duration_ms": 3556,
+                "p95_duration_ms": 3462
               }
             ]
           },
-          "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=31679ms."
+          "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=46895ms."
         },
         {
           "id": "error_rate_lt_0_1",
           "label": "error rate < 0.1%",
           "required": "HUB_STAGE_D_ERROR_RATE_LT_0_1=true",
           "attested": false,
-          "observedOk": true,
+          "observedOk": false,
           "certificationOk": false,
           "evidence": {
             "requestLogHours": 24,
-            "totalRequests": 18427,
-            "failures": 0,
-            "unresolvedFailures": 0,
-            "failureRatePct": 0
+            "rawTotalRequests": 7845,
+            "rawFailures": 14,
+            "diagnosticFailures": 7,
+            "diagnosticUnresolvedFailures": 1,
+            "totalRequests": 7301,
+            "failures": 7,
+            "unresolvedFailures": 2,
+            "failureRatePct": 0.0959
           },
           "nextAction": "Keep unresolved failures at zero and retain the observation window before attesting."
         },
@@ -740,7 +751,7 @@
           "certificationOk": false,
           "evidence": {
             "stageBReadOnlyPlanOk": true,
-            "safeReadOnlyActions": 3,
+            "safeReadOnlyActions": 6,
             "confirmRequiredActions": 0
           },
           "nextAction": "Run the approved Stage D self-healing shadow/canary window and retain success-rate evidence before attesting."
@@ -755,7 +766,6 @@
         "self_healing_gt_95"
       ],
       "observedReadyButNotAttested": [
-        "error_rate_lt_0_1",
         "self_healing_gt_95"
       ]
     }
@@ -800,23 +810,22 @@
       "self_healing_gt_95"
     ],
     "observedReadyButNotAttested": [
-      "error_rate_lt_0_1",
       "self_healing_gt_95"
     ],
     "observedSnapshot": {
-      "totalRequests": 18427,
-      "failureRatePct": 0,
-      "avgDurationMs": 3490,
-      "maxDurationMs": 77951,
-      "uptimeDays": 0.78,
+      "totalRequests": 7301,
+      "failureRatePct": 0.0959,
+      "avgDurationMs": 1607,
+      "maxDurationMs": 126231,
+      "uptimeDays": 0.04,
       "topLatencyHotspot": {
         "route": "openai-oauth/gpt-5.4",
         "provider": "openai-oauth",
         "callerTeam": "luna",
         "agent": "reporter",
         "runtimePurpose": "edux_market_post_crypto",
-        "avgDurationMs": 31679,
-        "p95DurationMs": 44822,
+        "avgDurationMs": 46895,
+        "p95DurationMs": 106908,
         "count": 5
       }
     },
@@ -839,11 +848,11 @@
       {
         "id": "latency_lt_500ms",
         "observedOk": false,
-        "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=31679ms."
+        "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=46895ms."
       },
       {
         "id": "error_rate_lt_0_1",
-        "observedOk": true,
+        "observedOk": false,
         "nextAction": "Keep unresolved failures at zero and retain the observation window before attesting."
       },
       {
@@ -857,13 +866,13 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-26T17:21:57.293Z",
+      "checkedAt": "2026-05-28T04:46:18.936Z",
       "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-b-stability-report.json"
     },
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-26T17:21:57.635Z",
+      "checkedAt": "2026-05-28T04:46:19.063Z",
       "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-c-resilience-report.json"
     }
   }

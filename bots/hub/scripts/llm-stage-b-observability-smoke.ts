@@ -20,6 +20,8 @@ async function main() {
   assert.equal(report.stage, 'hub_stage_b');
   assert.equal(report.dashboard.type, 'json');
   assert.equal(typeof report.requestLog.failureRatePct, 'number', 'request log must expose failure-rate evidence');
+  assert.equal(typeof report.requestLog.operationalFailureRatePct, 'number', 'request log must expose operational failure-rate evidence');
+  assert.equal(typeof report.requestLog.diagnosticFailures, 'number', 'request log must separate smoke/drill failures from operational failures');
   assert.equal(typeof report.requestLog.avgDurationMs, 'number', 'request log must expose latency evidence');
   assert(Array.isArray(report.requestLog.latencyByProvider), 'request log must expose provider latency breakdown');
   assert(Array.isArray(report.requestLog.slowRoutes), 'request log must expose slow route hotspots');

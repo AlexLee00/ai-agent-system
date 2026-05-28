@@ -1904,10 +1904,10 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.1 },
         ],
         market_reporter: [
+          { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 4096, temperature: 0.2, timeoutMs: 45_000 },
+          { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 45_000 },
           { provider: 'openai-oauth', model: openaiPerfModel, maxTokens: 4096, temperature: 0.2, timeoutMs: 90_000 },
           { provider: 'gemini-cli-oauth', model: GEMINI_CLI_PRO_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 90_000 },
-          { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 60_000 },
-          { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 4096, temperature: 0.2, timeoutMs: 60_000 },
         ],
         gemini_flash: [
           { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1000, temperature: 0.1 },

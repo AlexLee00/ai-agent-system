@@ -177,6 +177,28 @@ function main(): void {
   if (providerCounts[chronosBacktestProvider] != null) providerCounts[chronosBacktestProvider] += 1;
   else providerCounts.other += 1;
 
+  const investmentReporterChain = selector.selectLLMChain('investment.agent_policy', {
+    ...selectorOptions,
+    agentName: 'reporter',
+    openaiPerfModel: 'smoke-openai-perf',
+    policyOverride: {
+      openaiMiniModel: 'smoke-openai-mini',
+    },
+  });
+  assert.equal(
+    investmentReporterChain[0]?.model,
+    'smoke-openai-mini',
+    'investment/reporter must start on OpenAI mini to avoid Stage D reporter latency hotspots',
+  );
+  assert.ok(
+    investmentReporterChain.some((entry: any) => entry.provider === 'groq'),
+    'investment/reporter must keep Groq as the first non-OpenAI fallback',
+  );
+  assert.ok(
+    investmentReporterChain.slice(1).some((entry: any) => entry.model === 'smoke-openai-perf'),
+    'investment/reporter must keep OpenAI perf as a quality fallback instead of removing it',
+  );
+
   for (const key of ['sigma.agent_policy', 'darwin.agent_policy']) {
     const chain = selector.selectLLMChain(key, { ...selectorOptions, agentName: 'commander' });
     assert(chain.length > 0, `${key} chain must be non-empty`);
@@ -213,6 +235,20 @@ function main(): void {
     'darwin.rag.synthesizer must not be Groq-only during Groq pool cooldown',
   );
 
+  const { PROFILES } = require('../lib/runtime-profiles.ts');
+  const darwinSynthesisRuntimeRoutes = [
+    ...(PROFILES?.darwin?.synthesis?.primary_routes || []),
+    ...(PROFILES?.darwin?.synthesis?.fallback_routes || []),
+  ];
+  assert.ok(
+    String(darwinSynthesisRuntimeRoutes[0] || '').startsWith('openai-oauth/'),
+    'darwin/synthesis runtime profile must use the synthesis selector, not planner/Gemini routing',
+  );
+  assert.ok(
+    darwinSynthesisRuntimeRoutes.some((route) => String(route).startsWith('groq/')),
+    'darwin/synthesis runtime profile must keep Groq as fallback for OpenAI outage coverage',
+  );
+
   const total = Object.values(providerCounts).reduce((acc, value) => acc + value, 0);
   const shares = {
     claudeCodePct: Number(pct(providerCounts['claude-code'], total).toFixed(2)),
@@ -231,7 +267,6 @@ function main(): void {
   assert(shares.localEmbeddingPct > 0, 'local embedding share must cover Chronos backtest');
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');
 
-  const { PROFILES } = require('../lib/runtime-profiles.ts');
   const sonnetPrimaryProfiles: string[] = [];
   for (const [team, profiles] of Object.entries(PROFILES || {})) {
     for (const [profile, config] of Object.entries(profiles as Record<string, any>)) {

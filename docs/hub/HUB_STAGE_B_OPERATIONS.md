@@ -41,6 +41,8 @@ Never run these from Stage B automation without a separate current approval:
 The Stage B report includes:
 
 - provider tier usage from `hub.llm_request_log`;
+- raw failure counts plus `operational*` failure counts that exclude explicit
+  smoke/drill/diagnostic request-log rows;
 - provider latency and slow route hotspots from `hub.llm_request_log`;
 - BillingGuard usage status;
 - protected Hub launchd visibility;
@@ -49,6 +51,12 @@ The Stage B report includes:
 - provider circuit state;
 - Sentry MCP readiness contract;
 - Self-Healing action plan.
+
+Smoke, drill, and diagnostic rows are not dropped. They remain visible as
+`diagnosticFailures`, `diagnosticUnresolvedFailures`, and per-error
+`diagnostic=true` evidence in `recentErrors`. Promotion and self-healing
+blocker checks use the operational fields first, so a failed verification smoke
+does not silently masquerade as a production traffic outage.
 
 Sentry MCP is treated as optional enrichment. If Sentry credentials are absent, Hub incidents and reports remain the primary error system, and the report marks the mode as `adapter_ready_config_pending`.
 

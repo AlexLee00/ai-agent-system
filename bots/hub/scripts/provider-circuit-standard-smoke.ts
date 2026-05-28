@@ -32,6 +32,16 @@ function main() {
     'openai-oauth',
     'non-Groq provider circuits should remain provider-scoped',
   );
+  assert.equal(
+    unified._testOnly._shouldRecordProviderCircuitFailure('openai-oauth', 'openai_codex_oauth_bad_request:Unsupported parameter: max_output_tokens'),
+    false,
+    'OpenAI Codex bad-request contract errors must not open the provider circuit',
+  );
+  assert.equal(
+    unified._testOnly._shouldRecordProviderCircuitFailure('openai-oauth', 'openai_codex_oauth_timeout_or_abort:This operation was aborted'),
+    true,
+    'OpenAI Codex timeout/abort failures should still be counted by provider circuit health',
+  );
 
   const registry = require('../lib/llm/provider-registry.ts');
   const provider = 'hub-provider-circuit-smoke';

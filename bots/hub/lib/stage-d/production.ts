@@ -368,12 +368,17 @@ function buildPromotionEvidence(options = {}) {
   const l5Report = options.l5Report || readJsonIfExists('bots/hub/output/l5-acceptance-report.json');
   const uptime = options.uptime || {};
   const requestLog = stageBReport?.requestLog || {};
-  const totalRequests = Number(requestLog.total || 0);
-  const failures = Number(requestLog.failures || 0);
-  const unresolvedFailures = Number(requestLog.unresolvedFailures || 0);
-  const rawFailureRatePct = requestLog.failureRatePct == null
-    ? (totalRequests > 0 ? (failures / totalRequests) * 100 : 0)
-    : Number(requestLog.failureRatePct);
+  const rawTotalRequests = Number(requestLog.total || 0);
+  const rawFailures = Number(requestLog.failures || 0);
+  const rawUnresolvedFailures = Number(requestLog.unresolvedFailures || 0);
+  const totalRequests = Number(requestLog.operationalTotal ?? rawTotalRequests);
+  const failures = Number(requestLog.operationalFailures ?? rawFailures);
+  const unresolvedFailures = Number(requestLog.operationalUnresolvedFailures ?? rawUnresolvedFailures);
+  const rawFailureRatePct = requestLog.operationalFailureRatePct == null
+    ? (requestLog.failureRatePct == null
+      ? (totalRequests > 0 ? (failures / totalRequests) * 100 : 0)
+      : Number(requestLog.failureRatePct))
+    : Number(requestLog.operationalFailureRatePct);
   const failureRatePct = Number.isFinite(rawFailureRatePct)
     ? Number(rawFailureRatePct.toFixed(4))
     : 0;
@@ -397,9 +402,14 @@ function buildPromotionEvidence(options = {}) {
     source: 'read_only_stage_reports',
     stageBCheckedAt: stageBReport?.checkedAt || null,
     requestLogHours: Number(requestLog.hours || 0),
+    rawTotalRequests,
+    rawFailures,
+    rawUnresolvedFailures,
     totalRequests,
     failures,
     unresolvedFailures,
+    diagnosticFailures: Number(requestLog.diagnosticFailures || 0),
+    diagnosticUnresolvedFailures: Number(requestLog.diagnosticUnresolvedFailures || 0),
     failureRatePct: Number(failureRatePct || 0),
     avgDurationMs,
     maxDurationMs: Number(requestLog.maxDurationMs || 0),
@@ -468,6 +478,10 @@ function buildPromotionEvidence(options = {}) {
       observedOk: observed.errorRateObservedOk,
       evidence: {
         requestLogHours: observed.requestLogHours,
+        rawTotalRequests,
+        rawFailures,
+        diagnosticFailures: observed.diagnosticFailures,
+        diagnosticUnresolvedFailures: observed.diagnosticUnresolvedFailures,
         totalRequests,
         failures,
         unresolvedFailures,

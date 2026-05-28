@@ -78,10 +78,16 @@ async function main() {
       checkedAt: new Date().toISOString(),
       requestLog: {
         hours: 24,
-        total: 1000,
-        failures: 0,
-        unresolvedFailures: 0,
-        failureRatePct: 0,
+        total: 1010,
+        failures: 10,
+        unresolvedFailures: 2,
+        failureRatePct: 0.9901,
+        operationalTotal: 1000,
+        operationalFailures: 0,
+        operationalUnresolvedFailures: 0,
+        operationalFailureRatePct: 0,
+        diagnosticFailures: 10,
+        diagnosticUnresolvedFailures: 2,
         avgDurationMs: 250,
         maxDurationMs: 900,
         latencyByProvider: [
@@ -117,6 +123,9 @@ async function main() {
     env: {},
   });
   assert.equal(promotionEvidence.observed.errorRateObservedOk, true, 'Stage D must derive observed error-rate evidence');
+  assert.equal(promotionEvidence.observed.rawFailures, 10, 'Stage D must retain raw diagnostic failure evidence');
+  assert.equal(promotionEvidence.observed.diagnosticUnresolvedFailures, 2, 'Stage D must expose diagnostic unresolved failures separately');
+  assert.equal(promotionEvidence.observed.failures, 0, 'Stage D promotion error-rate evidence must use operational failures');
   assert.equal(promotionEvidence.observed.latencyObservedOk, true, 'Stage D must derive observed latency evidence');
   assert.equal(promotionEvidence.observed.slowRoutes.length, 1, 'Stage D must preserve latency hotspot evidence');
   assert.equal(promotionEvidence.requirements.find((item) => item.id === 'latency_lt_500ms')?.evidence.slowRoutes.length, 1, 'Stage D latency requirement must include hotspot evidence');

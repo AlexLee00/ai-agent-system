@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-26T17:21:57.635Z",
+  "checkedAt": "2026-05-28T04:46:19.063Z",
   "stage": "hub_stage_c",
   "status": "stage_c_resilience_ready",
   "goals": {
@@ -178,9 +178,9 @@
           "selectorKey": "blog.pos.writer",
           "providerTiers": [
             {
-              "provider": "gemini-cli-oauth",
-              "route": "gemini-cli-oauth/gemini-2.5-flash",
-              "tier": 3,
+              "provider": "claude-code-oauth",
+              "route": "claude-code/haiku",
+              "tier": 5,
               "fallbackIndex": 0
             },
             {
@@ -188,12 +188,6 @@
               "route": "openai-oauth/gpt-5.4",
               "tier": 1,
               "fallbackIndex": 1
-            },
-            {
-              "provider": "groq",
-              "route": "groq/qwen/qwen3-32b",
-              "tier": 2,
-              "fallbackIndex": 2
             }
           ],
           "error": null

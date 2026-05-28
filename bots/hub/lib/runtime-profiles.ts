@@ -120,7 +120,7 @@ const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
     research: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
     paper_evaluation: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
     paper_evaluation_retry: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
-    synthesis: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.planner'),
+    synthesis: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.synthesis'),
     review: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.verifier'),
   },
   justin: {
