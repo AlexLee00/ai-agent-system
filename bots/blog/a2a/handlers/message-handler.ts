@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { A2AMessage, A2AMessageResult } from '../types.ts';
 
 type MessageListener = (msg: A2AMessage) => void;
