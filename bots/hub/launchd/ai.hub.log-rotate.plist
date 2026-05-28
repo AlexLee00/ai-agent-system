@@ -6,10 +6,20 @@
   <key>Label</key>
   <string>ai.hub.log-rotate</string>
 
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
-    <string>bots/hub/scripts/hub-log-rotate.ts</string>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/hub-log-rotate.ts</string>
   </array>
 
   <key>WorkingDirectory</key>

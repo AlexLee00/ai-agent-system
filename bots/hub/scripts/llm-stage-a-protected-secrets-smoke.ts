@@ -49,6 +49,12 @@ assert(secretsEntry, 'secrets expiry label must be in ownership catalog');
 assert.equal(secretsEntry.owner, 'launchd');
 assert(fs.existsSync(path.join(launchdDir, 'ai.hub.secrets-expiry-check.plist')), 'secrets expiry launchd plist must exist');
 
+const logRotatePlistPath = path.join(launchdDir, 'ai.hub.log-rotate.plist');
+const logRotatePlist = fs.readFileSync(logRotatePlistPath, 'utf8');
+assert(logRotatePlist.includes('<string>/opt/homebrew/bin/tsx</string>'), 'Hub log rotate launchd must use the system tsx shim');
+assert(logRotatePlist.includes('/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin'), 'Hub log rotate launchd must set PATH so env node resolves under launchd');
+assert(logRotatePlist.includes('/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/hub-log-rotate.ts'), 'Hub log rotate launchd must use an absolute script path');
+
 const healthProviderSource = fs.readFileSync(healthProviderPath, 'utf8');
 assert(
   healthProviderSource.includes('sanitizeLaunchctlPrintDetail')
@@ -78,6 +84,7 @@ console.log(JSON.stringify({
   ok: true,
   protected_hub_labels: PROTECTED_14.length,
   secrets_expiry_monitored: true,
+  log_rotate_launchd_path: true,
   secrets_monitor_only: true,
   launchctl_detail_redacted: true,
   historical_status_separated: true,
