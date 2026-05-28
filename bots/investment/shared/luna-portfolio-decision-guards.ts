@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { recordGuardEvent } from './guard-event-recorder.ts';
+
 export function createLunaPortfolioDecisionGuards({
   ACTIONS,
   db,
@@ -117,6 +119,16 @@ export function createLunaPortfolioDecisionGuards({
               at: new Date().toISOString(),
             })],
           ).catch(() => {});
+          recordGuardEvent({
+            guardName: 'trade_data_entry_guard',
+            symbol: currentDecision.symbol,
+            exchange,
+            market,
+            reason: (tradeDataGuard.guard.blockers || []).join('; ').slice(0, 500) || 'trade_data_entry_guard_blocked',
+            severity: 'warning',
+            decisionBefore: { action: decision.action, confidence: decision.confidence },
+            guardMetadata: { meta: tradeDataGuard.guard.meta || {} },
+          });
           continue;
         }
       }
@@ -150,6 +162,16 @@ export function createLunaPortfolioDecisionGuards({
             at: new Date().toISOString(),
           })],
         ).catch(() => {});
+        recordGuardEvent({
+          guardName: 'symbol_blacklist_entry_guard',
+          symbol: currentDecision.symbol,
+          exchange,
+          market,
+          reason: blacklist.blockReason || 'symbol_blacklist_entry_blocked',
+          severity: 'warning',
+          decisionBefore: { action: currentDecision.action, confidence: currentDecision.confidence },
+          guardMetadata: { source: blacklist.source || 'pre_entry/symbol_blacklist' },
+        });
         continue;
       }
 
@@ -192,6 +214,19 @@ export function createLunaPortfolioDecisionGuards({
             at: new Date().toISOString(),
           })],
         ).catch(() => {});
+        recordGuardEvent({
+          guardName: 'reflexion_entry_guard',
+          symbol: currentDecision.symbol,
+          exchange,
+          market,
+          reason: reflexion?.warningMessage || 'reflexion_entry_blocked',
+          severity: 'warning',
+          decisionBefore: { action: currentDecision.action, confidence: currentDecision.confidence },
+          guardMetadata: {
+            confidenceDelta: Number(reflexion?.confidenceDelta || 0),
+            failures: Number(reflexion?.relevantFailures?.length || 0),
+          },
+        });
         continue;
       }
 
@@ -270,6 +305,15 @@ export function createLunaPortfolioDecisionGuards({
         amount_usdt: 0,
         reasoning: `capital_backpressure: ${check.reason} | ${d.reasoning || ''}`.slice(0, 200),
         block_meta: { capitalCheck: enrichedCheck },
+      });
+      recordGuardEvent({
+        guardName: 'capital_backpressure_guard',
+        symbol: d.symbol,
+        exchange,
+        reason: check.reason || `capital_backpressure: ${check.result}`,
+        severity: 'warning',
+        decisionBefore: { action: d.action, amount_usdt: desired },
+        guardMetadata: { result: check.result, enrichedCheck },
       });
     }
 
