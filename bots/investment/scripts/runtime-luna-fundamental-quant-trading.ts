@@ -50,10 +50,12 @@ export async function runLunaFundamentalQuantTrading(options = {}) {
     } : null,
   });
   const signals = extractKoreaDataShadowSignals('fundamental-quant-trading', result);
+  let writtenSignals = [];
   if (apply) {
     await ensureKoreaDataShadowSignalSchema(options.run || undefined);
-    await insertKoreaDataShadowSignals(signals, options.run || undefined);
+    writtenSignals = await insertKoreaDataShadowSignals(signals, options.run || undefined);
   }
+  const ledgerSignals = apply ? writtenSignals : signals;
   const payload = {
     ok: result.status === 'completed',
     status: 'luna_fundamental_quant_shadow_ready',
@@ -63,7 +65,10 @@ export async function runLunaFundamentalQuantTrading(options = {}) {
     shadowSignalLedger: {
       writeApplied: apply,
       writeMode: apply ? 'shadow-signal-ledger-apply' : 'plan-only',
-      ...summarizeKoreaDataShadowSignals(signals),
+      plannedTotal: signals.length,
+      insertedTotal: apply ? writtenSignals.length : null,
+      skippedDuplicateTotal: apply ? Math.max(0, signals.length - writtenSignals.length) : 0,
+      ...summarizeKoreaDataShadowSignals(ledgerSignals),
     },
     result,
   };

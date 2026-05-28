@@ -7,14 +7,12 @@
   "shadowSignalLedger": {
     "writeApplied": true,
     "writeMode": "shadow-signal-ledger-apply",
-    "total": 5,
-    "byStrategy": {
-      "disclosure-event-driven": 5
-    },
-    "byAction": {
-      "avoid_or_reduce_watchlist": 4,
-      "event_review": 1
-    },
+    "plannedTotal": 50,
+    "insertedTotal": 0,
+    "skippedDuplicateTotal": 50,
+    "total": 0,
+    "byStrategy": {},
+    "byAction": {},
     "shadowOnly": true,
     "liveOrderAllowed": false
   },
@@ -29,137 +27,1025 @@
       "dataHealth": "shadow_ready",
       "events": [
         {
-          "stockCode": "052770",
-          "companyName": "아이톡시",
-          "reportName": "소송등의제기ㆍ신청(일정금액이상의청구)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260522901016",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "052710",
-          "companyName": "아모텍",
-          "reportName": "주요사항보고서(유무상증자결정)",
+          "stockCode": "356860",
+          "companyName": "티엘비",
+          "reportName": "효력발생안내( 2026.5.12. 제출 증권신고서(지분증권) )",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260522000661",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260513100001",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "008830",
-          "companyName": "대동기어",
-          "reportName": "[기재정정]증권신고서(지분증권)",
+          "stockCode": "291230",
+          "companyName": "엔피",
+          "reportName": "효력발생안내( 2026.5.15. 제출 증권신고서(합병) )",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [
+            "ma"
+          ],
+          "receiptNo": "20260515100006",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016360",
+          "companyName": "삼성증권",
+          "reportName": "타법인주식및출자증권취득결정",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [],
+          "receiptNo": "20260528800002",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "라우드랩스",
+          "reportName": "특수관계인의유상증자참여",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260522000666",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260528000296",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "052710",
-          "companyName": "아모텍",
-          "reportName": "증권신고서(지분증권)",
+          "stockCode": "276040",
+          "companyName": "스코넥",
+          "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260522000667",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260528000391",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "024720",
-          "companyName": "콜마홀딩스",
-          "reportName": "투자판단관련주요경영사항(자회사의 주요경영사항)",
+          "stockCode": "121850",
+          "companyName": "코이즈",
+          "reportName": "[첨부정정]주요사항보고서(전환사채권발행결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260528000310",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "퍼시픽어소시에이트",
+          "reportName": "특수관계인의유상증자참여",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260528000444",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(한국투자미국하이일드증권자투자신탁UH(채권-재간접형))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260527000619",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "대신밸런스제20호기업인수목적",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000047",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋팬아시아컨슈머증권자투자신탁1호(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000181",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋인덱스플러스연금증권전환형자투자신탁1호(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000167",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋사랑나눔증권자투자신탁(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000165",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋장기성장포커스증권자투자신탁3호(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000161",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋FINEMMF1호(국공채))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000138",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋개인연금아시아그레이트컨슈머증권전환형자투자신탁1호(주식-재간접형))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000137",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋퇴직플랜원자재안정형증권자투자신탁(채권혼합))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000127",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋퇴직플랜농산물안정형증권자투자신탁(채권혼합))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000122",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋퇴직연금클린인프라증권자투자신탁[주식])",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000118",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016360",
+          "companyName": "삼성증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000302",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "029780",
+          "companyName": "삼성카드",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000312",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "008670",
+          "companyName": "신한투자증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000452",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "214260",
+          "companyName": "라파스",
+          "reportName": "[기재정정]투자판단관련주요경영사항(임상시험계획승인신청)              (알레르기비염 면역치료제 DF19001의 임상 2b/3상 임상시험계획(IND) 승인 신청)",
           "reportType": "corporate_action",
           "importanceScore": 6,
           "direction": "event_review",
           "keywords": [],
-          "receiptNo": "20260522800995",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260528900196",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "[기재정정]투자설명서(집합투자증권)(미래에셋TIGER미국배당다우존스증권상장지수투자신탁(주식))",
+          "reportType": "general",
+          "importanceScore": 6,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260528000263",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "[기재정정]투자설명서(집합투자증권)(미래에셋TIGER미국S&P500배당귀족증권상장지수투자신탁(주식))",
+          "reportType": "general",
+          "importanceScore": 6,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260528000028",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "008700",
+          "companyName": "아남전자",
+          "reportName": "주요사항보고서(자기주식취득신탁계약체결결정)",
+          "reportType": "shareholder_return",
+          "importanceScore": 6,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "buyback"
+          ],
+          "receiptNo": "20260528000311",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "011090",
+          "companyName": "에넥스",
+          "reportName": "[기재정정]분기보고서 (2026.03)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000053",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "신보2022제11차유동화전문유한회사",
+          "reportName": "[기재정정]사업보고서(유동화전문회사) (2026.02)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000108",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "477850",
+          "companyName": "마키나락스",
+          "reportName": "분기보고서 (2026.03)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000113",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "티월드제구십팔차유동화전문유한회사",
+          "reportName": "사업보고서(유동화전문회사) (2026.02)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000259",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "서울로보틱스",
+          "reportName": "분기보고서 (2026.03)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000340",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "티월드제일백일십차유동화전문유한회사",
+          "reportName": "사업보고서(유동화전문회사) (2026.02)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000380",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "테이크원컴퍼니",
+          "reportName": "분기보고서 (2026.03)",
+          "reportType": "periodic_report",
+          "importanceScore": 5,
+          "direction": "observe",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000446",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "044820",
+          "companyName": "코스맥스비티아이",
+          "reportName": "주식등의대량보유상황보고서(일반)",
+          "reportType": "ownership",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [
+            "ownership"
+          ],
+          "receiptNo": "20260527000620",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "게일인터내셔널코리아",
+          "reportName": "비유동자산처분결정",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527000618",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "흥국자산운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100015",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한화자산운용",
+          "reportName": "효력발생안내( 2026.5.20. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100052",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한화자산운용",
+          "reportName": "효력발생안내( 2026.5.20. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100053",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한화자산운용",
+          "reportName": "효력발생안내( 2026.5.20. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100054",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한화자산운용",
+          "reportName": "효력발생안내( 2026.5.20. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100055",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한화자산운용",
+          "reportName": "효력발생안내( 2026.5.20. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100056",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한화자산운용",
+          "reportName": "효력발생안내( 2026.5.20. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100057",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100130",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100131",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100132",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.22. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100133",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100134",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100135",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100136",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100139",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "효력발생안내( 2026.5.21. 제출 일괄신고서(집합투자증권-신탁형) )",
+          "reportType": "general",
+          "importanceScore": 3,
+          "direction": "observe",
+          "keywords": [],
+          "receiptNo": "20260527100140",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         }
       ],
       "highImportanceEvents": [
         {
-          "stockCode": "052770",
-          "companyName": "아이톡시",
-          "reportName": "소송등의제기ㆍ신청(일정금액이상의청구)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260522901016",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "052710",
-          "companyName": "아모텍",
-          "reportName": "주요사항보고서(유무상증자결정)",
+          "stockCode": "356860",
+          "companyName": "티엘비",
+          "reportName": "효력발생안내( 2026.5.12. 제출 증권신고서(지분증권) )",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260522000661",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260513100001",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "008830",
-          "companyName": "대동기어",
-          "reportName": "[기재정정]증권신고서(지분증권)",
+          "stockCode": "291230",
+          "companyName": "엔피",
+          "reportName": "효력발생안내( 2026.5.15. 제출 증권신고서(합병) )",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [
+            "ma"
+          ],
+          "receiptNo": "20260515100006",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016360",
+          "companyName": "삼성증권",
+          "reportName": "타법인주식및출자증권취득결정",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [],
+          "receiptNo": "20260528800002",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "라우드랩스",
+          "reportName": "특수관계인의유상증자참여",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260522000666",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260528000296",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "052710",
-          "companyName": "아모텍",
-          "reportName": "증권신고서(지분증권)",
+          "stockCode": "276040",
+          "companyName": "스코넥",
+          "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260522000667",
-          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "receiptNo": "20260528000391",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "121850",
+          "companyName": "코이즈",
+          "reportName": "[첨부정정]주요사항보고서(전환사채권발행결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260528000310",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "퍼시픽어소시에이트",
+          "reportName": "특수관계인의유상증자참여",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260528000444",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자신탁운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(한국투자미국하이일드증권자투자신탁UH(채권-재간접형))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260527000619",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "대신밸런스제20호기업인수목적",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000047",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋팬아시아컨슈머증권자투자신탁1호(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000181",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋인덱스플러스연금증권전환형자투자신탁1호(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000167",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋사랑나눔증권자투자신탁(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000165",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋장기성장포커스증권자투자신탁3호(주식))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000161",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋FINEMMF1호(국공채))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000138",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋개인연금아시아그레이트컨슈머증권전환형자투자신탁1호(주식-재간접형))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000137",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋퇴직플랜원자재안정형증권자투자신탁(채권혼합))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000127",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋퇴직플랜농산물안정형증권자투자신탁(채권혼합))",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000122",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "미래에셋자산운용",
+          "reportName": "증권발행실적보고서(집합투자증권)(미래에셋퇴직연금클린인프라증권자투자신탁[주식])",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000118",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016360",
+          "companyName": "삼성증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000302",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "029780",
+          "companyName": "삼성카드",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000312",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "008670",
+          "companyName": "신한투자증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260528000452",
+          "receiptDate": "2026-05-27T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         }

@@ -121,11 +121,22 @@ export async function ensureKoreaDataShadowSignalSchema(runFn = run) {
 export async function insertKoreaDataShadowSignals(signals = [], runFn = run) {
   const inserted = [];
   for (const signal of signals || []) {
-    await Promise.resolve(runFn(
+    const receiptNo = text(signal.evidence?.receiptNo || signal.result?.receiptNo || '');
+    const writeResult = await Promise.resolve(runFn(
       `INSERT INTO investment.korea_public_data_shadow_signals
          (strategy, stock_code, company_name, action, confidence, signal_score,
           data_health, source, evidence, result, shadow_only, live_order_allowed, observed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,true,false,$11)`,
+       SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,true,false,$11
+        WHERE (
+          $12 = ''
+          OR NOT EXISTS (
+            SELECT 1
+              FROM investment.korea_public_data_shadow_signals
+             WHERE strategy = $1
+               AND COALESCE(evidence->>'receiptNo', result->>'receiptNo', '') = $12
+          )
+        )
+       RETURNING id`,
       [
         signal.strategy,
         signal.stockCode || null,
@@ -138,9 +149,10 @@ export async function insertKoreaDataShadowSignals(signals = [], runFn = run) {
         JSON.stringify(signal.evidence || {}),
         JSON.stringify(signal.result || {}),
         signal.observedAt || new Date().toISOString(),
+        receiptNo,
       ],
     ));
-    inserted.push(signal);
+    if (!writeResult || writeResult.rowCount !== 0) inserted.push(signal);
   }
   return inserted;
 }

@@ -50,6 +50,18 @@ async function main() {
   assert.match(guide, /Hub→Selector→Agent/, 'guide must document control-plane flow');
   assert.match(guide, /Self-Healing/, 'guide must document self-healing boundaries');
 
+  const stabilitySource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/stage-b/stability.ts'), 'utf8');
+  assert.match(
+    stabilitySource,
+    /s\.runtime_purpose[\s\S]*\$\{alias\}\.runtime_purpose/,
+    'unresolved failure detection must resolve only against the same runtime purpose',
+  );
+  assert.match(
+    stabilitySource,
+    /s\.runtime_purpose[\s\S]*f\.runtime_purpose[\s\S]*resolved_by_later_success/,
+    'recent error resolution evidence must include runtime purpose',
+  );
+
   console.log(JSON.stringify({
     ok: true,
     stage: 'hub_stage_b',

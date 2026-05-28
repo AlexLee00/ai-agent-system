@@ -278,7 +278,7 @@ function _contentToHtml(content, title, images = null) {
   text = text.replace(/^\s*#{1,6}\s*(\[[^\]\n]+\])\s*$/gm, '$1');
 
   function displaySectionTitle(value) {
-    const raw = String(value || '').trim();
+    const raw = String(value || '').trim().replace(/^\[|\]$/g, '').trim();
     const normalized = raw.replace(/\s+/g, ' ');
     const map = {
       'AI 스니펫 요약': '핵심 요약',
@@ -332,7 +332,7 @@ function _contentToHtml(content, title, images = null) {
       if (looksLikeSentenceHeading(h3Match[1])) {
         htmlLines.push(`<p>${h3Match[1]}</p>`);
       } else {
-        htmlLines.push(`<h3>${h3Match[1]}</h3>`);
+        htmlLines.push(`<h3>${displaySectionTitle(h3Match[1])}</h3>`);
       }
       continue;
     }
@@ -342,7 +342,7 @@ function _contentToHtml(content, title, images = null) {
       if (looksLikeSentenceHeading(h2Match[1])) {
         htmlLines.push(`<p>${h2Match[1]}</p>`);
       } else {
-        htmlLines.push(`<h2 class="section-title">${h2Match[1]}</h2>`);
+        htmlLines.push(`<h2 class="section-title">${displaySectionTitle(h2Match[1])}</h2>`);
       }
       continue;
     }

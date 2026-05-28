@@ -184,9 +184,7 @@ function checkReaderFacingArtifacts(content, type) {
   const plain = stripHtml(raw);
   const headings = [
     ...Array.from(raw.matchAll(/<h[1-3][^>]*>\s*([^<]+?)\s*<\/h[1-3]>/gi)).map((m) => String(m[1] || '').trim()),
-    ...Array.from(raw.matchAll(/^\s*\[([^\]\n]+)\]\s*$/gm)).map((m) => String(m[1] || '').trim()),
-    ...Array.from(raw.matchAll(/^\s*#{2,3}\s+(.+?)\s*$/gm)).map((m) => String(m[1] || '').trim()),
-  ];
+  ].map((heading) => heading.replace(/^\[|\]$/g, '').trim());
   const leaked = headings.filter((heading) => /^(AI 스니펫 요약|본론 섹션\s*\d+|스터디카페 홍보(?: 섹션)?|승호아빠 인사말)$/.test(heading));
   if (leaked.length > 0) {
     issues.push({ severity: 'error', msg: `독자 노출용 내부 섹션명 감지: ${[...new Set(leaked)].join(', ')}` });

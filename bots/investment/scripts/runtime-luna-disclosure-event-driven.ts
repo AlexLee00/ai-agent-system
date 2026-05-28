@@ -47,10 +47,12 @@ export async function runLunaDisclosureEventDriven(options = {}) {
     } : null,
   });
   const signals = extractKoreaDataShadowSignals('disclosure-event-driven', result);
+  let writtenSignals = [];
   if (apply) {
     await ensureKoreaDataShadowSignalSchema(options.run || undefined);
-    await insertKoreaDataShadowSignals(signals, options.run || undefined);
+    writtenSignals = await insertKoreaDataShadowSignals(signals, options.run || undefined);
   }
+  const ledgerSignals = apply ? writtenSignals : signals;
   const payload = {
     ok: result.status === 'completed',
     status: 'luna_disclosure_event_shadow_ready',
@@ -60,7 +62,10 @@ export async function runLunaDisclosureEventDriven(options = {}) {
     shadowSignalLedger: {
       writeApplied: apply,
       writeMode: apply ? 'shadow-signal-ledger-apply' : 'plan-only',
-      ...summarizeKoreaDataShadowSignals(signals),
+      plannedTotal: signals.length,
+      insertedTotal: apply ? writtenSignals.length : null,
+      skippedDuplicateTotal: apply ? Math.max(0, signals.length - writtenSignals.length) : 0,
+      ...summarizeKoreaDataShadowSignals(ledgerSignals),
     },
     result,
   };

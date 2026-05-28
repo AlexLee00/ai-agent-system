@@ -7,9 +7,16 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-opendart-financial-refresh.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-opendart-financial-batch-refresh.ts</string>
     <string>--json</string>
+    <string>--bulk</string>
+    <string>--network</string>
+    <string>--limit=250</string>
+    <string>--bsns-years=2024,2023,2022,2021,2020,2019</string>
+    <string>--reprt-codes=11011</string>
+    <string>--skip-fresh</string>
     <string>--write</string>
+    <string>--confirm=luna-opendart-financial-batch-write</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>

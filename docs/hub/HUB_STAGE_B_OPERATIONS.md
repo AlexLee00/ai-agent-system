@@ -59,6 +59,13 @@ blocker checks use the operational fields first, so a failed verification smoke
 does not silently masquerade as a production traffic outage.
 
 Operational unresolved failures are grouped in `unresolvedOperationalErrors`.
+Later successes only resolve a failure when `team`, `agent`, `abstract_model`,
+and `runtime_purpose` match, so a healthy call for another purpose does not hide
+a still-broken production path.
+Slow route hotspots also create read-only `latency_hotspot_route_drill` actions.
+Those actions run the same mock selector drill as failure diagnostics, so the
+operator can distinguish stale 24h telemetry from current route drift before
+opening a live evidence window.
 Stage B uses that evidence to emit concrete mock drill commands such as
 `team:agent-llm-drill -- --teams=darwin --agents=synthesis --primary-only`.
 The separate `liveCommand` is evidence collection for an approved runtime

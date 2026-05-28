@@ -9,6 +9,8 @@
     <string>/opt/homebrew/bin/node</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-disclosure-event-driven.ts</string>
     <string>--json</string>
+    <string>--apply</string>
+    <string>--confirm=luna-disclosure-event-shadow-signal</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>

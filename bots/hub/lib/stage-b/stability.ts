@@ -241,6 +241,7 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
         AND COALESCE(s.caller_team, '') = COALESCE(${alias}.caller_team, '')
         AND COALESCE(s.agent, '') = COALESCE(${alias}.agent, '')
         AND COALESCE(s.abstract_model, '') = COALESCE(${alias}.abstract_model, '')
+        AND COALESCE(NULLIF(s.runtime_purpose, ''), 'unknown') = COALESCE(NULLIF(${alias}.runtime_purpose, ''), 'unknown')
     )
   )`;
 
@@ -352,6 +353,7 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
                    AND COALESCE(s.caller_team, '') = COALESCE(f.caller_team, '')
                    AND COALESCE(s.agent, '') = COALESCE(f.agent, '')
                    AND COALESCE(s.abstract_model, '') = COALESCE(f.abstract_model, '')
+                   AND COALESCE(NULLIF(s.runtime_purpose, ''), 'unknown') = COALESCE(NULLIF(f.runtime_purpose, ''), 'unknown')
                ) AS resolved_by_later_success
         FROM hub.llm_request_log f
         WHERE f.created_at >= now() - ($1::int * interval '1 hour')
@@ -696,6 +698,31 @@ function buildSelfHealingPlan(report) {
       reason: 'diagnostic smoke/drill LLM failures exist but are separated from operational promotion evidence',
       command: 'npm --prefix bots/hub run -s check:llm-stage-d',
       effect: 'replays the non-mutating Hub LLM evidence checks before treating diagnostic failures as operational blockers',
+    });
+  }
+
+  const slowRoutes = Array.isArray(report.requestLog?.slowRoutes)
+    ? report.requestLog.slowRoutes
+    : [];
+  for (const route of slowRoutes.slice(0, 5)) {
+    const avgDurationMs = Number(route.avg_duration_ms || route.avgDurationMs || 0);
+    const p95DurationMs = Number(route.p95_duration_ms || route.p95DurationMs || 0);
+    if (avgDurationMs <= 500 && p95DurationMs <= 500) continue;
+    const team = safeSelectorArg(route.caller_team || route.callerTeam);
+    const agent = safeSelectorArg(route.agent);
+    safeReadOnlyActions.push({
+      action: 'latency_hotspot_route_drill',
+      team,
+      agent,
+      route: route.route || 'unknown',
+      runtimePurpose: route.runtime_purpose || route.runtimePurpose || 'unknown',
+      count: Number(route.count || 0),
+      avgDurationMs,
+      p95DurationMs,
+      reason: `slow LLM route hotspot exists for ${team}/${agent}`,
+      command: `npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=${team} --agents=${agent} --primary-only`,
+      liveCommand: `npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=${team} --agents=${agent} --primary-only`,
+      effect: 'mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window',
     });
   }
 

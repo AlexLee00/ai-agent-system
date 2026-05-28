@@ -14,7 +14,17 @@ import {
   summarizeDomesticOfficialReference,
 } from '../shared/domestic-official-reference.ts';
 import { resolveOpenDartCredentials } from '../lib/korea-data/opendart-client.ts';
-import { runLunaOpenDartFinancialRefresh } from './runtime-luna-opendart-financial-refresh.ts';
+import {
+  OpenDartClient,
+  extractOpenDartFinancialRows,
+} from '../lib/korea-data/opendart-client.ts';
+import {
+  ensureOpenDartFinancialSchema,
+  insertFinancialRow,
+  runLunaOpenDartFinancialRefresh,
+  upsertFundamental,
+} from './runtime-luna-opendart-financial-refresh.ts';
+import { calculateCorpFundamental, scoreCorpFundamental } from '../lib/korea-data/corp-fundamental.ts';
 
 export const OPENDART_FINANCIAL_BATCH_CONFIRM = 'luna-opendart-financial-batch-write';
 
@@ -22,12 +32,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_ROOT = resolve(__dirname, '..');
 const DEFAULT_OUTPUT = resolve(INVESTMENT_ROOT, 'output/luna-opendart-financial-batch-refresh.json');
 const DEFAULT_LIMIT = 10;
-const MAX_REFERENCE_SCAN = 500;
+const MAX_REFERENCE_SCAN = 5_000;
 const FIXTURE_CORP_CODES = {
   '005930': { corpCode: '00126380', corpName: '삼성전자' },
   '000660': { corpCode: '00164779', corpName: 'SK하이닉스' },
   '005380': { corpCode: '00164742', corpName: '현대차' },
 };
+const BULK_CORP_CODE_CHUNK_SIZE = 100;
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
@@ -55,6 +66,14 @@ function symbolsFrom(value = '') {
     .filter(Boolean))];
 }
 
+function csvValues(value = '', fallback = []) {
+  const items = String(value || '')
+    .split(',')
+    .map((item) => text(item))
+    .filter(Boolean);
+  return items.length > 0 ? [...new Set(items)] : fallback;
+}
+
 function parseManualCorpCodeMap(value = '') {
   const map = new Map();
   for (const part of String(value || '').split(',')) {
@@ -64,6 +83,13 @@ function parseManualCorpCodeMap(value = '') {
     if (symbol && corpCode) map.set(symbol, { corpCode, corpName: '' });
   }
   return map;
+}
+
+function chunk(values = [], size = BULK_CORP_CODE_CHUNK_SIZE) {
+  const n = Math.max(1, Number(size || BULK_CORP_CODE_CHUNK_SIZE));
+  const chunks = [];
+  for (let index = 0; index < values.length; index += n) chunks.push(values.slice(index, index + n));
+  return chunks;
 }
 
 function selectReferenceCandidates(reference = {}, options = {}) {
@@ -237,18 +263,22 @@ export async function runLunaOpenDartFinancialBatchRefresh(options = {}) {
   const reference = await resolveReference(options);
   const freshSymbols = options.skipFresh === true ? await loadFreshFundamentalSymbols() : new Set();
   const offset = Math.max(0, Number(options.offset || 0));
+  const bsnsYears = csvValues(options.bsnsYears || options.bsnsYear || process.env.LUNA_OPENDART_FINANCIAL_BSNS_YEARS, [
+    text(process.env.LUNA_OPENDART_FINANCIAL_BSNS_YEAR || '2024'),
+  ]);
+  const reprtCodes = csvValues(options.reprtCodes || options.reprtCode || process.env.LUNA_OPENDART_FINANCIAL_REPRT_CODES, [
+    text(process.env.LUNA_OPENDART_FINANCIAL_REPRT_CODE || '11011'),
+  ]);
   const candidates = selectReferenceCandidates(reference, {
     ...options,
-    limit: Math.max(1, Math.min(100, Number(options.limit || DEFAULT_LIMIT))) + offset + freshSymbols.size,
+    limit: Math.max(1, Math.min(MAX_REFERENCE_SCAN, Number(options.limit || DEFAULT_LIMIT))) + offset + freshSymbols.size,
   })
     .filter((row) => options.skipFresh !== true || !freshSymbols.has(normalizeDomesticOfficialSymbol(row.symbol)))
-    .slice(offset, offset + Math.max(1, Math.min(100, Number(options.limit || DEFAULT_LIMIT))));
+    .slice(offset, offset + Math.max(1, Math.min(MAX_REFERENCE_SCAN, Number(options.limit || DEFAULT_LIMIT))));
   const symbols = candidates.map((row) => normalizeDomesticOfficialSymbol(row.symbol)).filter(Boolean);
   const corpCodeMap = await resolveCorpCodeMap(symbols, options);
   const networkFinancialFetch = options.fixture === true || options.network === true || write;
   const existingCoverage = await loadExistingCoverage();
-  const bsnsYear = text(options.bsnsYear || process.env.LUNA_OPENDART_FINANCIAL_BSNS_YEAR || '2024');
-  const reprtCode = text(options.reprtCode || process.env.LUNA_OPENDART_FINANCIAL_REPRT_CODE || '11011');
   const fsDiv = text(options.fsDiv || process.env.LUNA_OPENDART_FINANCIAL_FS_DIV || 'CFS');
 
   const planned = candidates.map((row) => {
@@ -270,41 +300,112 @@ export async function runLunaOpenDartFinancialBatchRefresh(options = {}) {
 
   const refreshed = [];
   const skipped = [];
-  if (networkFinancialFetch) {
+  const bulkFinancialFetch = options.bulk === true && networkFinancialFetch && options.fixture !== true;
+  if (bulkFinancialFetch && planned.some((item) => item.corpCode)) {
+    const client = await OpenDartClient.fromSecrets(options);
+    if (write) await ensureOpenDartFinancialSchema(options.run || undefined);
+    const byCorp = new Map(planned.filter((item) => item.corpCode).map((item) => [item.corpCode, item]));
+    for (const bsnsYear of bsnsYears) {
+      for (const reprtCode of reprtCodes) {
+        for (const corpCodes of chunk([...byCorp.keys()])) {
+          const request = await client.multiAccounts({
+            corpCodes: corpCodes.join(','),
+            bsnsYear,
+            reprtCode,
+            timeoutMs: options.timeoutMs,
+          });
+          const rows = request.ok ? extractOpenDartFinancialRows(request) : [];
+          const grouped = new Map();
+          for (const row of rows) {
+            const corpCode = text(row.corpCode);
+            if (!corpCode) continue;
+            if (!grouped.has(corpCode)) grouped.set(corpCode, []);
+            grouped.get(corpCode).push(row);
+          }
+          for (const corpCode of corpCodes) {
+            const item = byCorp.get(corpCode);
+            const financialRows = grouped.get(corpCode) || [];
+            const fundamental = calculateCorpFundamental({
+              corpCode,
+              stockCode: item.symbol,
+              companyName: item.companyName,
+              bsnsYear,
+              reprtCode,
+              fsDiv,
+              marketCap: item.marketCap,
+              listedShares: item.listedShares,
+              price: item.price,
+              financialRows,
+              source: 'opendart_multi',
+            });
+            if (write && financialRows.length > 0) {
+              for (const row of financialRows) {
+                await insertFinancialRow(row, { ...item, stockCode: item.symbol, corpCode, bsnsYear, reprtCode }, options.run || undefined);
+              }
+              if (fundamental.stockCode) await upsertFundamental(fundamental, options.run || undefined);
+            }
+            refreshed.push({
+              symbol: item.symbol,
+              corpCode,
+              companyName: item.companyName,
+              bsnsYear,
+              reprtCode,
+              ok: request.ok && financialRows.length > 0,
+              status: request.ok && financialRows.length > 0 ? 'luna_opendart_financial_bulk_refresh_ready' : 'luna_opendart_financial_bulk_refresh_empty',
+              rows: financialRows.length,
+              composite: scoreCorpFundamental(fundamental)?.composite ?? null,
+              writeApplied: write && financialRows.length > 0,
+              request: {
+                ok: request.ok,
+                dartStatus: request.dartStatus,
+                error: request.error,
+              },
+            });
+          }
+        }
+      }
+    }
+  } else if (networkFinancialFetch) {
     for (const item of planned) {
       if (!item.corpCode) {
         skipped.push({ ...item, reason: 'corp_code_missing' });
         continue;
       }
-      const result = await runLunaOpenDartFinancialRefresh({
-        fixture: options.fixture === true,
-        write,
-        corpCode: item.corpCode,
-        stockCode: item.symbol,
-        companyName: item.companyName,
-        bsnsYear,
-        reprtCode,
-        fsDiv,
-        marketCap: item.marketCap,
-        listedShares: item.listedShares,
-        price: item.price,
-        run: options.run,
-      });
-      refreshed.push({
-        symbol: item.symbol,
-        corpCode: item.corpCode,
-        companyName: item.companyName,
-        ok: result.ok,
-        status: result.status,
-        rows: result.rows,
-        composite: result.factorScores?.composite ?? null,
-        writeApplied: result.writeApplied === true,
-        request: result.request ? {
-          ok: result.request.ok,
-          dartStatus: result.request.dartStatus,
-          error: result.request.error,
-        } : null,
-      });
+      for (const bsnsYear of bsnsYears) {
+        for (const reprtCode of reprtCodes) {
+          const result = await runLunaOpenDartFinancialRefresh({
+            fixture: options.fixture === true,
+            write,
+            corpCode: item.corpCode,
+            stockCode: item.symbol,
+            companyName: item.companyName,
+            bsnsYear,
+            reprtCode,
+            fsDiv,
+            marketCap: item.marketCap,
+            listedShares: item.listedShares,
+            price: item.price,
+            run: options.run,
+          });
+          refreshed.push({
+            symbol: item.symbol,
+            corpCode: item.corpCode,
+            companyName: item.companyName,
+            bsnsYear,
+            reprtCode,
+            ok: result.ok,
+            status: result.status,
+            rows: result.rows,
+            composite: result.factorScores?.composite ?? null,
+            writeApplied: result.writeApplied === true,
+            request: result.request ? {
+              ok: result.request.ok,
+              dartStatus: result.request.dartStatus,
+              error: result.request.error,
+            } : null,
+          });
+        }
+      }
     }
   }
 
@@ -326,8 +427,9 @@ export async function runLunaOpenDartFinancialBatchRefresh(options = {}) {
       referenceNetwork: options.referenceNetwork === true,
       refreshReference: options.refreshReference === true,
       dbWriteRequiresConfirm: OPENDART_FINANCIAL_BATCH_CONFIRM,
-      bsnsYear,
-      reprtCode,
+      bulkFinancialFetch,
+      bsnsYears,
+      reprtCodes,
       fsDiv,
       offset,
       skipFresh: options.skipFresh === true,
@@ -347,6 +449,7 @@ export async function runLunaOpenDartFinancialBatchRefresh(options = {}) {
     counts: {
       candidates: candidates.length,
       planned: planned.length,
+      plannedJobs: planned.filter((item) => item.corpCode).length * bsnsYears.length * reprtCodes.length,
       readyToFetch: planned.filter((item) => item.corpCode).length,
       missingCorpCode: planned.filter((item) => !item.corpCode).length,
       refreshed: refreshed.length,
@@ -386,12 +489,15 @@ async function main() {
     corpCodeMap: argValue('corp-code-map', ''),
     limit: Number(argValue('limit', DEFAULT_LIMIT)),
     bsnsYear: argValue('bsns-year', null),
+    bsnsYears: argValue('bsns-years', null),
     reprtCode: argValue('reprt-code', null),
+    reprtCodes: argValue('reprt-codes', null),
     fsDiv: argValue('fs-div', null),
     baseDate: argValue('base-date', null),
     timeoutMs: Number(argValue('timeout-ms', 8000)),
     includeIneligible: hasFlag('include-ineligible'),
     skipFresh: hasFlag('skip-fresh'),
+    bulk: hasFlag('bulk'),
     offset: Number(argValue('offset', 0)),
     output: argValue('output', DEFAULT_OUTPUT),
     writeReport: !hasFlag('no-write'),

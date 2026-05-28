@@ -18,6 +18,9 @@ const MIGRATIONS = [
 ];
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_ROOT = resolve(__dirname, '..');
+const DEFAULT_PAGE_COUNT = 100;
+const DEFAULT_LOOKBACK_DAYS = 7;
+const DEFAULT_MAX_PAGES = 10;
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
@@ -102,22 +105,51 @@ export async function runLunaOpenDartDisclosureRefresh(options = {}) {
   const fixture = options.fixture === true;
   const write = options.write === true;
   const endDe = options.endDe || yyyymmddKst();
-  const bgnDe = options.bgnDe || addDaysYyyymmdd(endDe, -1);
+  const lookbackDays = Math.max(0, Number(options.lookbackDays ?? process.env.LUNA_OPENDART_DISCLOSURE_LOOKBACK_DAYS ?? DEFAULT_LOOKBACK_DAYS));
+  const bgnDe = options.bgnDe || addDaysYyyymmdd(endDe, -lookbackDays);
+  const pageCount = Math.max(1, Math.min(100, Number(options.pageCount || process.env.LUNA_OPENDART_DISCLOSURE_PAGE_COUNT || DEFAULT_PAGE_COUNT)));
+  const pageStart = Math.max(1, Number(options.pageNo || 1));
+  const maxPages = Math.max(1, Math.min(100, Number(options.maxPages || process.env.LUNA_OPENDART_DISCLOSURE_MAX_PAGES || DEFAULT_MAX_PAGES)));
   let rows = [];
   let source = 'fixture';
   let request = null;
+  const requests = [];
   if (fixture) {
     rows = fixtureDisclosures();
   } else {
     const client = await OpenDartClient.fromSecrets(options);
-    request = await client.listDisclosures({
-      bgnDe,
-      endDe,
-      pageNo: options.pageNo || 1,
-      pageCount: options.pageCount || 100,
-      timeoutMs: options.timeoutMs,
-    });
-    rows = request.ok ? extractOpenDartList(request) : [];
+    const seen = new Set();
+    for (let offset = 0; offset < maxPages; offset += 1) {
+      const pageNo = pageStart + offset;
+      request = await client.listDisclosures({
+        bgnDe,
+        endDe,
+        pageNo,
+        pageCount,
+        timeoutMs: options.timeoutMs,
+      });
+      requests.push({
+        ok: request.ok,
+        pageNo,
+        pageCount,
+        dartStatus: request.dartStatus,
+        error: request.error,
+        totalCount: Number(request.data?.total_count || 0) || null,
+        totalPage: Number(request.data?.total_page || 0) || null,
+        rows: Array.isArray(request.data?.list) ? request.data.list.length : 0,
+        usage: request.usage,
+      });
+      if (!request.ok) break;
+      const pageRows = extractOpenDartList(request);
+      for (const row of pageRows) {
+        const key = row.receiptNo || `${row.corpCode}:${row.reportName}:${row.receiptDate}`;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        rows.push(row);
+      }
+      const totalPage = Number(request.data?.total_page || 0);
+      if (pageRows.length < pageCount || (Number.isFinite(totalPage) && totalPage > 0 && pageNo >= totalPage)) break;
+    }
     source = 'opendart_api';
   }
 
@@ -132,11 +164,13 @@ export async function runLunaOpenDartDisclosureRefresh(options = {}) {
     dryRun: !write,
     shadowOnly: true,
     source,
-    window: { bgnDe, endDe },
+    window: { bgnDe, endDe, lookbackDays },
+    pagination: { pageStart, pageCount, maxPages, requests: requests.length },
     rows: rows.length,
     highImportance: rows.filter((row) => row.importanceScore >= 7).length,
     top: rows.slice(0, Number(options.limit || 20)),
     request: request ? { ok: request.ok, endpoint: request.endpoint, dartStatus: request.dartStatus, error: request.error, usage: request.usage } : null,
+    requests,
     llmPolicy: {
       hubGatewayRequiredForPromotion: true,
       deterministicFallbackUsed: true,
@@ -154,6 +188,8 @@ async function main() {
     endDe: argValue('end-de', null),
     pageNo: Number(argValue('page-no', 1)),
     pageCount: Number(argValue('page-count', 100)),
+    maxPages: Number(argValue('max-pages', process.env.LUNA_OPENDART_DISCLOSURE_MAX_PAGES || DEFAULT_MAX_PAGES)),
+    lookbackDays: Number(argValue('lookback-days', process.env.LUNA_OPENDART_DISCLOSURE_LOOKBACK_DAYS || DEFAULT_LOOKBACK_DAYS)),
     limit: Number(argValue('limit', 20)),
   });
   if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));

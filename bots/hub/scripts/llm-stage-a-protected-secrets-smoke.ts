@@ -49,9 +49,28 @@ assert(secretsEntry, 'secrets expiry label must be in ownership catalog');
 assert.equal(secretsEntry.owner, 'launchd');
 assert(fs.existsSync(path.join(launchdDir, 'ai.hub.secrets-expiry-check.plist')), 'secrets expiry launchd plist must exist');
 
+function assertLaunchdNodeImportTsx(plistName: string): void {
+  const plistPath = path.join(launchdDir, plistName);
+  const plist = fs.readFileSync(plistPath, 'utf8');
+  assert(plist.includes('<string>/opt/homebrew/bin/node</string>'), `${plistName} must use an absolute Node binary`);
+  assert(plist.includes('<string>--disable-warning=DEP0205</string>'), `${plistName} must suppress known tsx DEP0205 stderr noise`);
+  assert(plist.includes('<string>--import</string>') && plist.includes('<string>tsx</string>'), `${plistName} must load tsx via node --import`);
+}
+
+assertLaunchdNodeImportTsx('ai.hub.resource-api.plist');
+const resourceApiPlist = fs.readFileSync(path.join(launchdDir, 'ai.hub.resource-api.plist'), 'utf8');
+for (const key of [
+  'GEMINI_CLI_OAUTH_PROJECT_ID',
+  'HUB_ALARM_RATE_LIMIT_PER_MIN',
+  'HUB_EVENTS_RATE_LIMIT_PER_MIN',
+  'HUB_BUDGET_GUARDIAN_ENABLED',
+]) {
+  assert(resourceApiPlist.includes(`<key>${key}</key>`), `Hub resource-api launchd must include ${key}`);
+}
+
 const logRotatePlistPath = path.join(launchdDir, 'ai.hub.log-rotate.plist');
 const logRotatePlist = fs.readFileSync(logRotatePlistPath, 'utf8');
-assert(logRotatePlist.includes('<string>/opt/homebrew/bin/tsx</string>'), 'Hub log rotate launchd must use the system tsx shim');
+assertLaunchdNodeImportTsx('ai.hub.log-rotate.plist');
 assert(logRotatePlist.includes('/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin'), 'Hub log rotate launchd must set PATH so env node resolves under launchd');
 assert(logRotatePlist.includes('/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/hub-log-rotate.ts'), 'Hub log rotate launchd must use an absolute script path');
 

@@ -166,11 +166,12 @@ def calc_fundamentals_from_db(conn, stock_code: str, bsns_year: str, reprt_code:
     net_margin = safe_div(net_income, revenue)
 
     return {
-        "roe": round(roe * 100, 2) if roe is not None else None,
-        "roa": round(roa * 100, 2) if roa is not None else None,
-        "debt_ratio": round(debt_ratio * 100, 2) if debt_ratio is not None else None,
-        "operating_margin": round(operating_margin * 100, 2) if operating_margin is not None else None,
-        "net_margin": round(net_margin * 100, 2) if net_margin is not None else None,
+        # Store ratios in the same 0.0-1.0 scale as the TypeScript OpenDART pipeline.
+        "roe": round(roe, 6) if roe is not None else None,
+        "roa": round(roa, 6) if roa is not None else None,
+        "debt_ratio": round(debt_ratio, 6) if debt_ratio is not None else None,
+        "operating_margin": round(operating_margin, 6) if operating_margin is not None else None,
+        "net_margin": round(net_margin, 6) if net_margin is not None else None,
     }
 
 

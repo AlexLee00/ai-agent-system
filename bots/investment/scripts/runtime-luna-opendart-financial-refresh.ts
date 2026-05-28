@@ -45,7 +45,7 @@ function argValue(name, fallback = null) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
-async function ensureSchema(runFn = run) {
+export async function ensureOpenDartFinancialSchema(runFn = run) {
   for (const file of MIGRATIONS) {
     const sql = readFileSync(resolve(INVESTMENT_ROOT, file), 'utf8');
     for (const statement of sql.split(/;\s*(?:\n|$)/u).map((part) => part.trim()).filter(Boolean)) {
@@ -98,7 +98,7 @@ function bigintAmount(value) {
   return Math.round(n);
 }
 
-async function insertFinancialRow(row, meta, runFn = run) {
+export async function insertFinancialRow(row, meta, runFn = run) {
   await Promise.resolve(runFn(
     `INSERT INTO investment.corp_financial_reports
        (corp_code, stock_code, company_name, bsns_year, reprt_code, row_key, fs_div, sj_div,
@@ -135,7 +135,7 @@ async function insertFinancialRow(row, meta, runFn = run) {
   ));
 }
 
-async function upsertFundamental(fundamental, runFn = run) {
+export async function upsertFundamental(fundamental, runFn = run) {
   await Promise.resolve(runFn(
     `INSERT INTO investment.corp_fundamentals
        (stock_code, corp_code, company_name, bsns_year, reprt_code, per, pbr, roe, roa,
@@ -219,7 +219,7 @@ export async function runLunaOpenDartFinancialRefresh(options = {}) {
   const factorScores = scoreCorpFundamental(fundamental);
 
   if (write) {
-    await ensureSchema(options.run || run);
+    await ensureOpenDartFinancialSchema(options.run || run);
     for (const row of rows) await insertFinancialRow(row, meta, options.run || run);
     if (fundamental.stockCode) await upsertFundamental(fundamental, options.run || run);
   }
