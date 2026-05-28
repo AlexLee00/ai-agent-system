@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
-  "generatedAt": "2026-05-28T12:24:40.230Z",
+  "generatedAt": "2026-05-28T13:09:43.568Z",
   "fixture": false,
   "shadowOnly": true,
   "liveTradeImpact": false,
@@ -39,7 +39,7 @@
       "market": "domestic",
       "ok": true,
       "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.5866,
+      "predictiveScore": 0.5995,
       "selectedFamily": "mean_reversion",
       "influenceMode": "shadow_bias",
       "influenceWeight": 0.25,
