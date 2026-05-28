@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 // Canonical current module name. The shared legacy rail still lives in

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Darwin A2A Server — Google A2A Protocol (JSON-RPC 2.0 + SSE)
  * Port: 8766

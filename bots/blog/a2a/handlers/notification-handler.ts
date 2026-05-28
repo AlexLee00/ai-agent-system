@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { A2ANotification } from '../types.ts';
 
 type NotifListener = (n: A2ANotification) => void;
