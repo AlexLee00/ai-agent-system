@@ -31,6 +31,14 @@ const fixture = {
     ok: false,
     operationalUnresolvedFailures: 1,
     diagnosticUnresolvedFailures: 1,
+    unresolvedOperationalErrors: [
+      {
+        caller_team: 'darwin',
+        agent: 'synthesis',
+        runtime_purpose: 'proposal_generation',
+        count: 2,
+      },
+    ],
     recentErrors: [
       { error: 'fallback_exhausted: openai_codex_oauth_bad_request:Unsupported parameter: max_output_tokens' },
     ],
@@ -45,6 +53,8 @@ assert.equal(plan.mode, 'read_only_by_default');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'tier_probe'), 'tier probe should be safe read-only recovery');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'request_log_diagnostics'), 'request log diagnostics should be read-only');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'diagnostic_llm_failure_review'), 'diagnostic failures should be separated from operational blockers');
+assert(plan.safeReadOnlyActions.some((item) => item.action === 'targeted_llm_route_drill' && item.command.includes('--teams=darwin') && item.command.includes('--agents=synthesis')), 'operational unresolved failures should produce concrete mock route drills');
+assert(plan.safeReadOnlyActions.some((item) => item.action === 'targeted_llm_route_drill' && item.liveCommand?.includes('team:agent-llm-drill:live')), 'operational unresolved failures should include a separate live evidence command');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'openai_codex_bad_request_guard_verification'), 'OpenAI 400 bad-request guard must have a read-only verification action');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'expected_idle_exit_status_review' && item.command.includes('weekly-advisory-digest:dry-run')), 'expected-idle warnings should provide dry-run verification');
 assert(plan.confirmRequiredActions.some((item) => item.action === 'protected_service_recovery'), 'protected service recovery must require confirmation');

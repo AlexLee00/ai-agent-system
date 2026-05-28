@@ -58,6 +58,13 @@ Smoke, drill, and diagnostic rows are not dropped. They remain visible as
 blocker checks use the operational fields first, so a failed verification smoke
 does not silently masquerade as a production traffic outage.
 
+Operational unresolved failures are grouped in `unresolvedOperationalErrors`.
+Stage B uses that evidence to emit concrete mock drill commands such as
+`team:agent-llm-drill -- --teams=darwin --agents=synthesis --primary-only`.
+The separate `liveCommand` is evidence collection for an approved runtime
+window; the default command stays mock-only and does not generate provider
+traffic.
+
 Sentry MCP is treated as optional enrichment. If Sentry credentials are absent, Hub incidents and reports remain the primary error system, and the report marks the mode as `adapter_ready_config_pending`.
 
 Expected-idle non-zero launchd status is not treated as a protected service outage

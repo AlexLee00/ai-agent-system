@@ -690,15 +690,6 @@ function buildSelfHealingPlan(report) {
     }
   }
 
-  if (false) {
-    safeReadOnlyActions.push({
-      action: 'targeted_llm_route_drill',
-      reason: 'operational unresolved LLM request failures exist in hub.llm_request_log',
-      command: 'npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=<team> --primary-only',
-      effect: 'verifies the affected agent route without mutating protected services',
-    });
-  }
-
   if ((report.requestLog?.diagnosticUnresolvedFailures || 0) > 0) {
     safeReadOnlyActions.push({
       action: 'diagnostic_llm_failure_review',
