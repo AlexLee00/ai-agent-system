@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -317,6 +318,91 @@ def robust_rank_score(item: dict) -> float:
     )
 
 
+def split_is_oos(df, oos_ratio: float = 0.3):
+    """시계열 순서 유지 (셔플 금지) — OOS는 항상 뒤 구간"""
+    n = len(df)
+    cut = int(n * (1 - oos_ratio))
+    return df.iloc[:cut], df.iloc[cut:]
+
+
+def deflated_sharpe(sharpe: float, n_trials: int, n_obs: int) -> float:
+    """다중비교 보정 — Bailey/López de Prado 간이 근사"""
+    if n_trials <= 1 or n_obs < 20:
+        return sharpe
+    expected_max = math.sqrt(2 * math.log(max(2, n_trials)))
+    penalty = expected_max / math.sqrt(max(1, n_obs))
+    return sharpe - penalty
+
+
+def check_stability(sharpe_oos: float, total_trades_oos: int, n_obs: int,
+                    overfit_gap: float, max_dd_oos: float, env: dict) -> tuple:
+    """OOS 지표 안정성 검사 — 위배 시 unstable + reasons"""
+    min_trades = int(env.get('LUNA_BT_MIN_TRADES') or 10)
+    min_bars = int(env.get('LUNA_BT_MIN_BARS') or 60)
+    sharpe_cap = float(env.get('LUNA_BT_SHARPE_CAP') or 5.0)
+    max_overfit_gap = float(env.get('LUNA_BT_MAX_OVERFIT_GAP') or 2.0)
+    max_dd_limit = float(env.get('LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN') or 30.0)
+
+    reasons = []
+    if total_trades_oos < min_trades:
+        reasons.append(f'backtest_unstable_sample(oos_trades={total_trades_oos},min={min_trades})')
+    if n_obs < min_bars:
+        reasons.append(f'backtest_unstable_sample(oos_bars={n_obs},min={min_bars})')
+    if sharpe_oos > sharpe_cap:
+        reasons.append(f'unrealistic_sharpe(oos={sharpe_oos:.2f},cap={sharpe_cap})')
+    if overfit_gap > max_overfit_gap:
+        reasons.append(f'overfit_gap_high({overfit_gap:.2f})')
+    if max_dd_oos > max_dd_limit:
+        reasons.append(f'drawdown_high(oos={max_dd_oos:.1f}%)')
+
+    return ('unstable' if reasons else 'ok'), reasons
+
+
+def select_on_is_evaluate_on_oos(df, deps: dict, env: dict):
+    """IS(앞 70%)에서 grid 최적화 → OOS(뒤 30%)에서 독립 평가 (과적합 차단)"""
+    oos_ratio = float(env.get('LUNA_BT_OOS_RATIO') or 0.3)
+    is_df, oos_df = split_is_oos(df, oos_ratio)
+
+    if len(is_df) < 30 or len(oos_df) < 10:
+        return None
+
+    is_grid = grid_search(is_df, deps)
+    n_grid_trials = is_grid[0].get('n_grid_trials', 0) if is_grid else 0
+    if not is_grid:
+        return None
+
+    best_is = is_grid[0]
+    try:
+        oos_result = run_backtest(oos_df, best_is['params'], deps)
+    except Exception:
+        return None
+
+    n_obs = len(oos_df)
+    sharpe_is = safe_float(best_is.get('sharpe_ratio'))
+    sharpe_oos = safe_float(oos_result.get('sharpe_ratio'))
+    overfit_gap = sharpe_is - sharpe_oos
+    sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, n_obs)
+    max_dd_oos = abs(safe_float(oos_result.get('max_drawdown')))
+    total_trades_oos = int(safe_float(oos_result.get('total_trades')))
+
+    oos_status, oos_reasons = check_stability(
+        sharpe_oos, total_trades_oos, n_obs, overfit_gap, max_dd_oos, env
+    )
+
+    return {
+        **oos_result,
+        'sharpe_is': sharpe_is,
+        'sharpe_oos': sharpe_oos,
+        'sharpe_oos_deflated': sharpe_oos_def,
+        'overfit_gap': overfit_gap,
+        'n_grid_trials': n_grid_trials,
+        'walk_forward_sharpe': None,
+        'oos_status': oos_status,
+        'oos_reasons': oos_reasons,
+        'params': best_is['params'],
+    }
+
+
 def grid_search(df, deps: dict):
     results = []
     rsi_periods = [10, 14, 20]
@@ -407,6 +493,7 @@ def grid_search(df, deps: dict):
                 except Exception as exc:
                     results.append({"error": str(exc), "params": params})
 
+    n_total = len(results)
     results = [item for item in results if "error" not in item]
     results.sort(
         key=lambda item: (
@@ -415,6 +502,12 @@ def grid_search(df, deps: dict):
         ),
         reverse=True,
     )
+    for item in results:
+        item['n_grid_trials'] = n_total
+        item.setdefault('sharpe_is', item.get('sharpe_ratio'))
+        item.setdefault('sharpe_oos', None)
+        item.setdefault('sharpe_oos_deflated', None)
+        item.setdefault('overfit_gap', None)
     return results
 
 
@@ -457,10 +550,20 @@ def main():
     if deps["missing"]:
         return emit_missing_dependency_error(deps["missing"], args.json)
 
+    env = dict(os.environ)
+    wf_enabled = env.get('LUNA_BT_WALK_FORWARD_ENABLED', 'false').strip().lower() not in ('0', 'false', 'off', '')
+
     try:
         df = fetch_ohlcv(args.symbol, args.days, deps)
         if args.grid:
-            result = grid_search(df, deps)[:10]
+            if wf_enabled:
+                oos_result = select_on_is_evaluate_on_oos(df, deps, env)
+                if oos_result is not None:
+                    result = [oos_result]
+                else:
+                    result = grid_search(df, deps)[:10]
+            else:
+                result = grid_search(df, deps)[:10]
         else:
             result = run_backtest(df, {"tp_pct": args.tp, "sl_pct": args.sl}, deps)
     except Exception as exc:
@@ -476,10 +579,12 @@ def main():
         return 0
 
     if args.grid:
-        print(f"[VectorBT] top results for {args.symbol}")
+        print(f"[VectorBT] top results for {args.symbol} (walk_forward={wf_enabled})")
         for index, item in enumerate(result[:5], start=1):
+            sharpe_oos = item.get('sharpe_oos')
+            oos_str = f" oos_sharpe={sharpe_oos:.2f}" if sharpe_oos is not None else ""
             print(
-                f"  #{index}: sharpe={item['sharpe_ratio']:.2f} "
+                f"  #{index}: sharpe_is={item.get('sharpe_is', item['sharpe_ratio']):.2f}{oos_str} "
                 f"return={item['total_return']:.1f}% "
                 f"mdd={item['max_drawdown']:.1f}% "
                 f"win={item['win_rate']:.1f}% "
