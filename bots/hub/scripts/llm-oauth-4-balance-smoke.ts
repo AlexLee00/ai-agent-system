@@ -86,11 +86,24 @@ function main(): void {
     'hub.roundtable.judge',
     'hub._default',
   ];
+  const localOnlyAlarmInterpreters = new Set([
+    'hub.alarm.interpreter.work',
+    'hub.alarm.interpreter.report',
+    'hub.alarm.interpreter.error',
+    'hub.alarm.interpreter.critical',
+  ]);
 
   for (const key of hubKeys) {
     const chain = selector.selectLLMChain(key, selectorOptions);
     assert(chain.length > 0, `${key} chain must be non-empty`);
     assert.notEqual(chain[0]?.provider, 'anthropic', `${key} primary must not use anthropic provider`);
+    if (localOnlyAlarmInterpreters.has(key)) {
+      assert.deepEqual(
+        chain.map((entry: any) => entry.provider),
+        ['local'],
+        `${key} must stay local-only so alarm enrichment cannot amplify provider outages`,
+      );
+    }
   }
 
   const investmentAgents = [
@@ -120,6 +133,7 @@ function main(): void {
     'claude-code': 0,
     'openai-oauth': 0,
     'gemini-cli-oauth': 0,
+    local: 0,
     'local-embedding': 0,
     groq: 0,
     other: 0,
@@ -204,6 +218,7 @@ function main(): void {
     claudeCodePct: Number(pct(providerCounts['claude-code'], total).toFixed(2)),
     openaiPct: Number(pct(providerCounts['openai-oauth'], total).toFixed(2)),
     geminiPct: Number(pct(providerCounts['gemini-cli-oauth'], total).toFixed(2)),
+    localPct: Number(pct(providerCounts.local, total).toFixed(2)),
     localEmbeddingPct: Number(pct(providerCounts['local-embedding'], total).toFixed(2)),
     groqPct: Number(pct(providerCounts.groq, total).toFixed(2)),
   };
@@ -211,6 +226,7 @@ function main(): void {
   assert(shares.claudeCodePct >= 0 && shares.claudeCodePct <= 10, `claude-code share out of range: ${shares.claudeCodePct}%`);
   assert(shares.openaiPct >= 20 && shares.openaiPct <= 60, `openai share out of range: ${shares.openaiPct}%`);
   assert.equal(shares.geminiPct, 0, `gemini share must be zero for non-diagnostic agent routing: ${shares.geminiPct}%`);
+  assert(shares.localPct > 0, 'local share must cover Hub alarm interpreter fail-open enrichment');
   assert(shares.groqPct >= 25 && shares.groqPct <= 75, `groq share out of range: ${shares.groqPct}%`);
   assert(shares.localEmbeddingPct > 0, 'local embedding share must cover Chronos backtest');
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');

@@ -639,6 +639,7 @@ function _routeToProvider(route) {
   const normalizedRoute = _normalizeRoute(route);
   if (normalizedRoute.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalizedRoute.startsWith('groq/')) return 'groq';
+  if (normalizedRoute.startsWith('local/')) return 'local';
   if (normalizedRoute.startsWith('local-embedding/')) return 'local-embedding';
   if (normalizedRoute.startsWith('openai-oauth/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('openai/')) return 'openai-oauth';

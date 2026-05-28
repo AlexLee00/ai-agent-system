@@ -80,7 +80,7 @@ const speedSensitive = [
 ];
 for (const key of speedSensitive) {
   const chain = chainFor(key);
-  assert(['groq', 'openai-oauth'].includes(providerOf(chain[0])), `${key} must use fast non-Gemini primary`);
+  assert(['groq', 'openai-oauth', 'local'].includes(providerOf(chain[0])), `${key} must use fast non-Gemini primary`);
   assert.notEqual(providerOf(chain[0]), 'claude-code', `${key} must not put Claude on speed-sensitive path`);
   assert(!chain.some(isGemini), `${key} must not fall back to Gemini`);
 }

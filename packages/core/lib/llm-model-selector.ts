@@ -873,30 +873,20 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     'alarm.interpreter.work': {
-      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 200, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 200, temperature: 0.1 },
-      ],
+      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 160, temperature: 0.1 },
+      fallbacks: [],
     },
     'alarm.interpreter.report': {
-      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 300, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 300, temperature: 0.1 },
-      ],
+      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 220, temperature: 0.1 },
+      fallbacks: [],
     },
     'alarm.interpreter.error': {
-      primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 400, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 400, temperature: 0.1 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 400, temperature: 0.1 },
-      ],
+      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 320, temperature: 0.1 },
+      fallbacks: [],
     },
     'alarm.interpreter.critical': {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 400, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 400, temperature: 0.1 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 400, temperature: 0.1 },
-      ],
+      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 320, temperature: 0.1 },
+      fallbacks: [],
     },
     'roundtable.jay': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 500, temperature: 0.2 },
