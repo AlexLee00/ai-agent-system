@@ -14,18 +14,21 @@
  *   4. guard_events.outcome + outcome_pnl_usd 업데이트
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-
-const path = require('path');
-const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
-
-const { query, run, closeAll } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+import { query, run } from '../shared/db/core.ts';
 
 const MIN_AGE_HOURS = 4;
 const OUTCOME_WINDOW_HOURS = 24;
 const MAX_AGE_DAYS = 30;
 const BATCH_LIMIT = 500;
+const ENABLED_ENV = 'LUNA_GUARD_OUTCOME_TRACKER_ENABLED';
+
+function boolEnv(name, fallback = false, env = process.env) {
+  const raw = String(env?.[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
+  return fallback;
+}
 
 async function refreshTradesView() {
   try {
@@ -79,10 +82,17 @@ async function updateGuardOutcome(id, outcome, pnlUsd) {
 }
 
 async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+  const enabled = boolEnv(ENABLED_ENV, false);
+  const dryRun = process.argv.includes('--dry-run') || !enabled;
+  const json = process.argv.includes('--json');
   console.log(`[GuardOutcome] ${new Date().toISOString()} 아웃컴 측정 시작${dryRun ? ' (dry-run)' : ''}`);
+  if (!enabled) {
+    console.log(`[GuardOutcome] ${ENABLED_ENV}=false/미설정 — DB 업데이트는 수행하지 않음`);
+  }
 
-  await refreshTradesView();
+  if (enabled && !dryRun) {
+    await refreshTradesView();
+  }
 
   const pending = await loadPendingGuardEvents();
   console.log(`[GuardOutcome] 처리 대상: ${pending.length}건`);
@@ -118,8 +128,15 @@ async function main() {
   }
 
   console.log(`[GuardOutcome] 완료 — success:${stats.success} failure:${stats.failure} no_trade:${stats.no_trade} skipped:${stats.skipped}`);
-
-  try { await closeAll(); } catch {}
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      enabled,
+      dryRun,
+      pending: pending.length,
+      stats,
+    }, null, 2));
+  }
   process.exit(0);
 }
 

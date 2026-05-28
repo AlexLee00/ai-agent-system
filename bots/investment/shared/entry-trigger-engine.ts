@@ -109,6 +109,10 @@ function boolConfig(value, fallback = false) {
   return fallback;
 }
 
+function boolEnv(name, fallback = false, env = process.env) {
+  return boolConfig(env?.[name], fallback);
+}
+
 function normalizeEntryTriggerMarket(exchange = 'binance') {
   const value = String(exchange || '').trim().toLowerCase();
   if (value === 'binance') return 'crypto';
@@ -871,6 +875,7 @@ function isTerminalEntryTriggerLiveRiskGateBlock(riskGate = {}) {
 }
 
 export async function evaluateEntryTriggers(candidates = [], context = {}) {
+  const env = context?.env || process.env;
   const flags = getLunaIntelligentDiscoveryFlags();
   const posttradeCfg = getPosttradeFeedbackRuntimeConfig();
   const constitutionalEnabled = posttradeCfg?.constitutional_feedback?.enabled === true;
@@ -889,7 +894,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const shouldMutate = flags.shouldEntryTriggerMutate();
-  const LUNA_FULL_DATA_LOOP = process.env.LUNA_FULL_DATA_LOOP_ENABLED === 'true';
+  const LUNA_FULL_DATA_LOOP = boolEnv('LUNA_FULL_DATA_LOOP_ENABLED', false, env);
   const activeMap = new Map();
   const existing = await listActiveEntryTriggers({ exchange, limit: 1000 }).catch(() => []);
   for (const row of existing) {
@@ -952,14 +957,14 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     const triggerType = resolveTriggerType(candidate);
     if (!isAllowedTriggerType(triggerType, flags)) {
       recordGuardEvent({
-        guardName: 'trigger_type_disabled',
+        guardName: 'trigger_type_disabled_notify',
         symbol: candidate.symbol || null,
         exchange,
         reason: 'trigger_type_disabled',
         severity: 'info',
         decisionBefore: { action: ACTIONS.BUY, triggerType },
         decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
-        guardMetadata: { triggerType },
+        guardMetadata: { triggerType, fullDataLoopEnabled: LUNA_FULL_DATA_LOOP },
       });
       if (!LUNA_FULL_DATA_LOOP) {
         blocked++;
@@ -1054,14 +1059,14 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
 
     if (constitutionalEnabled && constitutionBlocked) {
       recordGuardEvent({
-        guardName: 'constitution_blocked',
+        guardName: 'constitution_blocked_notify',
         symbol: candidate.symbol || null,
         exchange,
         reason: 'constitution_blocked',
         severity: 'warning',
         decisionBefore: { action: ACTIONS.BUY, triggerType },
         decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
-        guardMetadata: { violations: constitutionAudit?.violations || [], confidence },
+        guardMetadata: { violations: constitutionAudit?.violations || [], confidence, fullDataLoopEnabled: LUNA_FULL_DATA_LOOP },
       });
       if (!LUNA_FULL_DATA_LOOP) {
         blocked++;
@@ -1091,14 +1096,14 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     const matureHold = await isMaturePosition(String(activeCandidate?.symbol || ''), exchange).catch(() => false);
     if (matureHold) {
       recordGuardEvent({
-        guardName: 'mature_position_hold',
+        guardName: 'mature_position_hold_notify',
         symbol: activeCandidate.symbol || null,
         exchange,
         reason: 'mature_position_hold',
         severity: 'info',
         decisionBefore: { action: ACTIONS.BUY, triggerType },
         decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
-        guardMetadata: {},
+        guardMetadata: { fullDataLoopEnabled: LUNA_FULL_DATA_LOOP },
       });
       if (!LUNA_FULL_DATA_LOOP) {
         blocked++;
@@ -1130,14 +1135,14 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
 
     if (confidence < minConfidence && !predictiveObservation) {
       recordGuardEvent({
-        guardName: 'low_confidence',
+        guardName: 'low_confidence_notify',
         symbol: activeCandidate.symbol || null,
         exchange,
         reason: 'low_confidence',
         severity: 'info',
         decisionBefore: { action: ACTIONS.BUY, triggerType },
         decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
-        guardMetadata: { confidence, minConfidence, ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}) },
+        guardMetadata: { confidence, minConfidence, fullDataLoopEnabled: LUNA_FULL_DATA_LOOP, ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}) },
       });
       if (!LUNA_FULL_DATA_LOOP) {
         blocked++;
@@ -1179,14 +1184,14 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
 
     if (reflexionMatched && !shouldMutate) {
       recordGuardEvent({
-        guardName: 'reflexion_penalty_applied',
+        guardName: 'reflexion_penalty_applied_notify',
         symbol: activeCandidate.symbol || null,
         exchange,
         reason: reflexionGuard?.reason || 'reflexion_match',
         severity: 'info',
         decisionBefore: { action: ACTIONS.BUY, triggerType },
         decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : 'SKIP', notifyMode: LUNA_FULL_DATA_LOOP },
-        guardMetadata: { confidenceBefore: rawConfidence, confidenceAfter: confidence, reflexionMatchMeta },
+        guardMetadata: { confidenceBefore: rawConfidence, confidenceAfter: confidence, reflexionMatchMeta, fullDataLoopEnabled: LUNA_FULL_DATA_LOOP },
       });
       if (!LUNA_FULL_DATA_LOOP) {
         observed++;
