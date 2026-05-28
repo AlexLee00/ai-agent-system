@@ -110,8 +110,8 @@ defmodule TeamJay.Application do
       TeamJay.Teams.BlogShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor,
       Jay.V2.Supervisor,
-      Sigma.V2.Supervisor,
-      Darwin.V2.Supervisor,
+      {Sigma.V2.Supervisor, suppress_http: true},
+      {Darwin.V2.Supervisor, suppress_http: true},
       Luna.V2.Supervisor
     ]
   end

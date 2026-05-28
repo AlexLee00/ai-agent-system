@@ -25,7 +25,7 @@ defmodule Darwin.V2.Supervisor do
     []
   end
 
-  def init(_opts) do
+  def init(opts) do
     if Darwin.V2.Config.v2_enabled?() do
       kill_switch_on = Darwin.V2.Config.kill_switch?()
 
@@ -36,7 +36,7 @@ defmodule Darwin.V2.Supervisor do
           support_children(kill_switch_on) ++
           maybe_shadow_children() ++
           maybe_codebase_analyzer() ++
-          maybe_http_children()
+          maybe_http_children(opts)
 
       Logger.info("[다윈V2] 수퍼바이저 기동 — #{length(children)}개 자식 프로세스")
 
@@ -150,12 +150,12 @@ defmodule Darwin.V2.Supervisor do
   end
 
   # HTTP 서버 선택적 기동 — 포트 사용 가능할 때만
-  defp maybe_http_children do
+  defp maybe_http_children(opts) do
     port = Darwin.V2.Config.http_port()
     mcp_enabled = Darwin.V2.Config.mcp_server_enabled?()
 
     cond do
-      embedded_http_suppressed?() ->
+      embedded_http_suppressed?(opts) ->
         []
 
       check_port_available(port) ->
@@ -169,8 +169,9 @@ defmodule Darwin.V2.Supervisor do
     end
   end
 
-  defp embedded_http_suppressed? do
-    System.get_env("TEAM_JAY_SUPPRESS_EMBEDDED_HTTP") == "true"
+  defp embedded_http_suppressed?(opts) do
+    Keyword.get(opts, :suppress_http, false) or
+      System.get_env("TEAM_JAY_SUPPRESS_EMBEDDED_HTTP") == "true"
   end
 
   # 포트 가용성 확인

@@ -16,7 +16,7 @@ defmodule Sigma.V2.Supervisor do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  def init(_opts) do
+  def init(opts) do
     if System.get_env("SIGMA_V2_ENABLED") == "true" do
       children =
         [
@@ -25,7 +25,7 @@ defmodule Sigma.V2.Supervisor do
           Sigma.V2.RollbackScheduler,
           Sigma.V2.MapeKLoop
         ] ++
-          maybe_http_children()
+          maybe_http_children(opts)
 
       Supervisor.init(children, strategy: :one_for_one)
     else
@@ -33,14 +33,14 @@ defmodule Sigma.V2.Supervisor do
     end
   end
 
-  defp maybe_http_children do
+  defp maybe_http_children(opts) do
     port_str = System.get_env("SIGMA_HTTP_PORT")
     port = if port_str, do: String.to_integer(port_str), else: nil
 
     # SIGMA_HTTP_PORT가 설정되고 포트가 비어있을 때 HTTP 서버 기동.
     # MCP OFF → /sigma/* Shadow 경로만 노출, MCP ON → /mcp/* 추가 활성화.
     cond do
-      embedded_http_suppressed?() ->
+      embedded_http_suppressed?(opts) ->
         []
 
       port && port_available?(port) ->
@@ -51,8 +51,9 @@ defmodule Sigma.V2.Supervisor do
     end
   end
 
-  defp embedded_http_suppressed? do
-    System.get_env("TEAM_JAY_SUPPRESS_EMBEDDED_HTTP") == "true"
+  defp embedded_http_suppressed?(opts) do
+    Keyword.get(opts, :suppress_http, false) or
+      System.get_env("TEAM_JAY_SUPPRESS_EMBEDDED_HTTP") == "true"
   end
 
   defp port_available?(port) do
