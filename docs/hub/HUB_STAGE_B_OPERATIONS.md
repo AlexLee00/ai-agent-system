@@ -76,7 +76,9 @@ Sentry MCP is treated as optional enrichment. If Sentry credentials are absent, 
 
 Expected-idle non-zero launchd status is not treated as a protected service outage
 when the job is loaded and otherwise healthy. Stage B keeps it as an operations
-warning and attaches read-only evidence commands. Use the dry-run commands below
+warning and attaches read-only evidence commands. The report also classifies the
+latest stderr tail, so retryable Hub alarm rate limits are separated from
+auth/secret failures and script/runtime failures. Use the dry-run commands below
 to verify the current code path without sending external alarms:
 
 ```bash
