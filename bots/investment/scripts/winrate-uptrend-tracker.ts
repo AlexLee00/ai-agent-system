@@ -17,10 +17,18 @@
  *   6. 텔레그램 마스터 보고
  */
 
-import { query, closeAll } from '../shared/db/core.ts';
-import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
+import { query } from '../shared/db/core.ts';
 
 const TODAY = new Date().toISOString().split('T')[0];
+const ENABLED_ENV = 'LUNA_WINRATE_UPTREND_TRACKER_ENABLED';
+
+function boolEnv(name, fallback = false, env = process.env) {
+  const raw = String(env?.[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
+  return fallback;
+}
 
 // ─── DB 조회 함수 ─────────────────────────────────────────────────────────────
 
@@ -215,12 +223,17 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const json = process.argv.includes('--json');
   const days = Number(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || 30);
+  const enabled = boolEnv(ENABLED_ENV, false);
 
   console.log(`[WinrateTracker] ${new Date().toISOString()} 수익 확률 추적 시작`);
-
-  try {
-    await initHubConfig().catch(() => null);
-  } catch {}
+  if (!enabled && !dryRun) {
+    console.log(`[WinrateTracker] 비활성화 (${ENABLED_ENV}=false/미설정)`);
+    if (json) console.log(JSON.stringify({ ok: true, skipped: true, reason: 'disabled', enabled, dryRun }, null, 2));
+    process.exit(0);
+  }
+  if (!enabled && dryRun) {
+    console.log(`[WinrateTracker] ${ENABLED_ENV}=false/미설정 — dry-run 검증만 수행`);
+  }
 
   const [winrateRows, regimeWeights, totalStats] = await Promise.allSettled([
     fetchWinrateUptrend(days),
@@ -238,16 +251,12 @@ async function main() {
   printSummary(winrateData);
 
   if (json) {
-    console.log(JSON.stringify({ winrateData, regimeWeights: weights, totalStats: total }, null, 2));
+    console.log(JSON.stringify({ ok: true, enabled, dryRun, winrateData, regimeWeights: weights, totalStats: total }, null, 2));
   }
 
   if (!dryRun) {
     await sendTelegram(message);
   }
-
-  try {
-    await closeAll();
-  } catch {}
 
   console.log(`[WinrateTracker] 완료`);
   process.exit(0);
