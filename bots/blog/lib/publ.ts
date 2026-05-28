@@ -290,7 +290,10 @@ function _contentToHtml(content, title, images = null) {
       '스터디카페 홍보': '생각을 정리하기 좋은 환경',
       '마무리 제언': '마무리',
     };
-    return map[normalized] || raw;
+    if (map[normalized]) return map[normalized];
+    if (/^본론 섹션\s*4$/.test(normalized)) return '기대치 관리 타이밍';
+    if (/^본론 섹션\s*\d+$/.test(normalized)) return '추가 실무 기준';
+    return raw;
   }
 
   function looksLikeSentenceHeading(value) {
@@ -592,7 +595,7 @@ async function rewriteReadyDraft(postId, postData) {
   } = postData || {};
 
   const publishDate = normalizePublishDate(row.publish_date || kst.today());
-  const safeTitle = String(title || '').replace(/[^가-힣a-zA-Z0-9\\s-]/g, '').slice(0, 50).trim();
+  const safeTitle = String(title || '').replace(/[^가-힣a-zA-Z0-9\s-]/g, '').slice(0, 50).trim();
   const filename = `${publishDate}_${postType}_${safeTitle}.html`;
   const filepath = path.join(OUTPUT_DIR, filename);
   const today = kst.today();
@@ -616,11 +619,11 @@ async function rewriteReadyDraft(postId, postData) {
 
   const mergedMetadata = {
     ...(row.metadata || {}),
-    schedule_id: row.metadata?.schedule_id || null,
+    ...(metadata || {}),
+    schedule_id: row.metadata?.schedule_id || metadata?.schedule_id || null,
     filename,
     generated_on: today,
-    writer_name: writerName || row.metadata?.writer_name || null,
-    ...(metadata || {}),
+    writer_name: writerName || metadata?.writer_name || row.metadata?.writer_name || null,
   };
 
   await pgPool.run('blog', `
