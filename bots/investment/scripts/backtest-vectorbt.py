@@ -333,6 +333,19 @@ def int_env(name: str, default: int) -> int:
         return default
 
 
+def int_env_any(names: list[str], default: int) -> int:
+    for name in names:
+        raw = os.environ.get(name)
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            value = int(raw)
+            return value if value > 0 else default
+        except Exception:
+            return default
+    return default
+
+
 def float_env(name: str, default: float) -> float:
     try:
         value = float(os.environ.get(name, default))
@@ -760,13 +773,14 @@ def main():
     try:
         df = fetch_ohlcv(args.symbol, args.days, deps)
         if args.grid:
-            if bool_env("LUNA_BT_WALK_FORWARD_ENABLED", False):
+            wf_enabled = bool_env("LUNA_BT_WALK_FORWARD_ENABLED", False)
+            if wf_enabled:
                 wf_result = walk_forward(
                     df,
                     deps,
-                    folds=int_env("LUNA_BT_WALK_FORWARD_FOLDS", 6),
-                    train_days=int_env("LUNA_BT_WALK_FORWARD_TRAIN_DAYS", 90),
-                    test_days=int_env("LUNA_BT_WALK_FORWARD_TEST_DAYS", 45),
+                    folds=int_env_any(["LUNA_BT_WF_FOLDS", "LUNA_BT_WALK_FORWARD_FOLDS"], 6),
+                    train_days=int_env_any(["LUNA_BT_WF_TRAIN_DAYS", "LUNA_BT_WALK_FORWARD_TRAIN_DAYS"], 90),
+                    test_days=int_env_any(["LUNA_BT_WF_TEST_DAYS", "LUNA_BT_WALK_FORWARD_TEST_DAYS"], 45),
                 )
                 split_result = None if wf_result is not None else select_on_is_evaluate_on_oos(df, deps)
                 result = [item for item in [wf_result, split_result] if item is not None]
