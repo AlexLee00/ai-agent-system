@@ -588,6 +588,28 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   const onlyUnstable = wouldBlock
     && (unrealisticSharpe || lowTradeSample)
     && !reasons.some((r) => r.startsWith('sharpe_negative') || r.startsWith('walk_forward_period_failed') || r.startsWith('win_rate_low') || r.startsWith('drawdown_high'));
+  // OOS aggregate — WF 활성 시 qualityRows에 OOS 필드가 있으면 집계
+  const oosRows = qualityRows.filter((r) => r?.sharpe_oos != null);
+  const avgSharpeOos = oosRows.length > 0
+    ? oosRows.reduce((s, r) => s + safeNum(r?.sharpe_oos), 0) / oosRows.length
+    : null;
+  const avgSharpeIs = oosRows.length > 0
+    ? oosRows.reduce((s, r) => s + safeNum(r?.sharpe_is ?? r?.sharpe_ratio), 0) / oosRows.length
+    : null;
+  const avgSharpeOosDeflated = oosRows.filter((r) => r?.sharpe_oos_deflated != null).length > 0
+    ? oosRows.filter((r) => r?.sharpe_oos_deflated != null).reduce((s, r) => s + safeNum(r?.sharpe_oos_deflated), 0) / oosRows.filter((r) => r?.sharpe_oos_deflated != null).length
+    : null;
+  const avgOverfitGap = oosRows.filter((r) => r?.overfit_gap != null).length > 0
+    ? oosRows.filter((r) => r?.overfit_gap != null).reduce((s, r) => s + safeNum(r?.overfit_gap), 0) / oosRows.filter((r) => r?.overfit_gap != null).length
+    : null;
+  const avgNGridTrials = qualityRows.filter((r) => r?.n_grid_trials != null).length > 0
+    ? Math.round(qualityRows.filter((r) => r?.n_grid_trials != null).reduce((s, r) => s + safeNum(r?.n_grid_trials), 0) / qualityRows.filter((r) => r?.n_grid_trials != null).length)
+    : null;
+
+  // OOS reasons에서 overfit_gap_high 등 전파
+  const oosReasons = qualityRows.flatMap((r) => (r?.oos_reasons || []) as string[]);
+  const mergedReasons = [...new Set([...reasons, ...oosReasons])];
+
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),
@@ -595,7 +617,7 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     healthy: !wouldBlock,
     gateStatus: wouldBlock ? (onlyUnstable ? 'would_block_unstable_backtest' : 'would_block_unhealthy') : 'pass',
     wouldBlock,
-    reasons,
+    reasons: mergedReasons,
     totalTrades,
     minPeriodTrades: minTrades,
     stablePeriodCount,
@@ -603,6 +625,11 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     qualityRows,
     qualityRowSelection: 'best_per_walk_forward_period',
     qualityRowSelectionPolicy: 'stable_sample_first',
+    sharpeOos: avgSharpeOos != null ? Number(avgSharpeOos.toFixed(4)) : null,
+    sharpeIs: avgSharpeIs != null ? Number(avgSharpeIs.toFixed(4)) : null,
+    sharpeOosDeflated: avgSharpeOosDeflated != null ? Number(avgSharpeOosDeflated.toFixed(4)) : null,
+    overfitGap: avgOverfitGap != null ? Number(avgOverfitGap.toFixed(4)) : null,
+    nGridTrials: avgNGridTrials,
   };
 }
 
@@ -620,8 +647,9 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
     INSERT INTO candidate_backtest_status
       (symbol, market, fresh, healthy, sharpe, max_drawdown, win_rate,
        last_backtest_at, next_refresh_at, gate_status, would_block, enforced,
-       block_reasons, backtest_run_metadata, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW())
+       block_reasons, backtest_run_metadata, updated_at,
+       sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap, n_grid_trials)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18)
     ON CONFLICT (symbol, market) DO UPDATE SET
       fresh = EXCLUDED.fresh,
       healthy = EXCLUDED.healthy,
@@ -635,7 +663,12 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       enforced = EXCLUDED.enforced,
       block_reasons = EXCLUDED.block_reasons,
       backtest_run_metadata = EXCLUDED.backtest_run_metadata,
-      updated_at = NOW()
+      updated_at = NOW(),
+      sharpe_oos = EXCLUDED.sharpe_oos,
+      sharpe_is = EXCLUDED.sharpe_is,
+      sharpe_oos_deflated = EXCLUDED.sharpe_oos_deflated,
+      overfit_gap = EXCLUDED.overfit_gap,
+      n_grid_trials = EXCLUDED.n_grid_trials
   `, [
     symbol,
     market,
@@ -669,7 +702,17 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       minPeriodTrades: payload.minPeriodTrades ?? null,
       stablePeriodCount: payload.stablePeriodCount ?? null,
       lowTradeShortWindowTolerated: payload.lowTradeShortWindowTolerated === true,
+      sharpeOos: payload.sharpeOos ?? null,
+      sharpeIs: payload.sharpeIs ?? null,
+      sharpeOosDeflated: payload.sharpeOosDeflated ?? null,
+      overfitGap: payload.overfitGap ?? null,
+      nGridTrials: payload.nGridTrials ?? null,
     }),
+    payload.sharpeOos ?? null,
+    payload.sharpeIs ?? null,
+    payload.sharpeOosDeflated ?? null,
+    payload.overfitGap ?? null,
+    payload.nGridTrials ?? null,
   ]);
 }
 
