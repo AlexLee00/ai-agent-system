@@ -277,6 +277,22 @@ function _contentToHtml(content, title, images = null) {
   let text = String(content || '').replace(/_THE_END_/g, '').trim();
   text = text.replace(/^\s*#{1,6}\s*(\[[^\]\n]+\])\s*$/gm, '$1');
 
+  function displaySectionTitle(value) {
+    const raw = String(value || '').trim();
+    const normalized = raw.replace(/\s+/g, ' ');
+    const map = {
+      'AI 스니펫 요약': '핵심 요약',
+      '승호아빠 인사말': '시작하며',
+      '본론 섹션 1': '문제가 생기는 지점',
+      '본론 섹션 2': '놓치기 쉬운 기준',
+      '본론 섹션 3': '실무 체크리스트',
+      '스터디카페 홍보 섹션': '생각을 정리하기 좋은 환경',
+      '스터디카페 홍보': '생각을 정리하기 좋은 환경',
+      '마무리 제언': '마무리',
+    };
+    return map[normalized] || raw;
+  }
+
   function looksLikeSentenceHeading(value) {
     const normalized = String(value || '').trim();
     if (!normalized) return false;
@@ -307,7 +323,7 @@ function _contentToHtml(content, title, images = null) {
 
     const secMatch = line.match(/^\[(.+)\]\s*$/);
     if (secMatch) {
-      htmlLines.push(`<h2 class="section-title">${secMatch[1]}</h2>`);
+      htmlLines.push(`<h2 class="section-title">${displaySectionTitle(secMatch[1])}</h2>`);
       continue;
     }
 

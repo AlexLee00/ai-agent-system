@@ -169,6 +169,45 @@ function checkBriefingStructure(content, type) {
   return issues;
 }
 
+function stripHtml(content) {
+  return String(content || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function checkReaderFacingArtifacts(content, type) {
+  const issues = [];
+  const raw = String(content || '');
+  const plain = stripHtml(raw);
+  const headings = [
+    ...Array.from(raw.matchAll(/<h[1-3][^>]*>\s*([^<]+?)\s*<\/h[1-3]>/gi)).map((m) => String(m[1] || '').trim()),
+    ...Array.from(raw.matchAll(/^\s*\[([^\]\n]+)\]\s*$/gm)).map((m) => String(m[1] || '').trim()),
+    ...Array.from(raw.matchAll(/^\s*#{2,3}\s+(.+?)\s*$/gm)).map((m) => String(m[1] || '').trim()),
+  ];
+  const leaked = headings.filter((heading) => /^(AI 스니펫 요약|본론 섹션\s*\d+|스터디카페 홍보(?: 섹션)?|승호아빠 인사말)$/.test(heading));
+  if (leaked.length > 0) {
+    issues.push({ severity: 'error', msg: `독자 노출용 내부 섹션명 감지: ${[...new Set(leaked)].join(', ')}` });
+  }
+
+  if (type === 'general' && /업계 통계|통계에 따르면|조사에 따르면|연구에 따르면/.test(plain)) {
+    const statisticalClaim = plain.match(/.{0,80}(?:업계 통계|통계에 따르면|조사에 따르면|연구에 따르면).{0,220}/);
+    const sourceWindow = statisticalClaim ? statisticalClaim[0] : plain;
+    const hasSourceSignal = /출처|Source|보고서|리포트|PMI|Standish|McKinsey|Gartner|Forrester|IEEE|ACM|정부|공식|https?:\/\//i.test(sourceWindow);
+    if (!hasSourceSignal) {
+      issues.push({ severity: 'error', msg: '출처 없는 통계/조사 표현 감지 — 근거를 명시하거나 경험 기반 표현으로 바꿔야 함' });
+    }
+  }
+
+  if (type === 'general' && /저희 스터디카페에서는.*진행합니다|문의는 언제든 편하게 연락주세요/.test(plain)) {
+    issues.push({ severity: 'warn', msg: '스터디카페 섹션이 직접 광고문처럼 보임 — 작업 환경/집중 맥락 중심으로 자연화 권장' });
+  }
+
+  return issues;
+}
+
 function sanitizeForAIDetection(content) {
   return String(content || '')
     .replace(/```[\s\S]*?```/g, ' ')
@@ -284,6 +323,7 @@ function checkQuality(content, type) {
   }
 
   issues.push(...checkBriefingStructure(content, type));
+  issues.push(...checkReaderFacingArtifacts(content, type));
   issues.push(...checkTruncatedEnding(content, type));
 
   return {
