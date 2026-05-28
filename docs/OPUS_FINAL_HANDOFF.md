@@ -1,6 +1,6 @@
-# 세션 인수인계 — 2026-05-28 (CODEX_CLAUDE_REFACTORER_HARNESS Phase 3 완료)
+# 세션 인수인계 — 2026-05-28 (CODEX_CLAUDE_REFACTORER_HARNESS 전체 완료 + Phase 3-A 2차)
 
-## 완료 요약 ✅ — 리팩터 에이전트 + 하네스 + 훅 + Phase 3 시범 리팩토링
+## 완료 요약 ✅ — 리팩터 에이전트 + 하네스 + 훅 + Phase 3-A 시범 리팩토링
 
 | 구분 | 파일/내용 | 상태 |
 |------|-----------|------|
@@ -9,22 +9,20 @@
 | 훅 6계층 | `bots/claude/hooks/refactor-hooks/*.ts` | ✅ Phase 2 |
 | MCP 5도구 (port 8774) | `bots/claude/mcp/claude-refactor-mcp/src/server.ts` | ✅ Phase 1 |
 | A2A 스킬 | `bots/claude/a2a/skills/refactor-analysis.ts` | ✅ Phase 1 |
-| 기술부채 인벤토리 | `docs/strategy/TECH_DEBT_INVENTORY.md` | ✅ Phase 1 |
+| 기술부채 인벤토리 | `docs/strategy/TECH_DEBT_INVENTORY.md` | ✅ 업데이트 |
 | launchd plist | `bots/claude/launchd/ai.claude.refactor-mcp.plist` | ✅ Phase 1 |
 | CLAUDE.md 업데이트 | `bots/claude/CLAUDE.md` | ✅ Phase 1 |
-| **Phase 3 시범 리팩토링** | **@ts-nocheck 16개 제거 (darwin A2A 10 + 기타 6)** | ✅ Phase 3 |
+| **Phase 3-A (1차)** | **@ts-nocheck 7개 제거 (CJS shim 확인)** | ✅ 2026-05-28 |
+| **Phase 3-A (2차)** | **@ts-nocheck 7개 실제 제거 (A2A handlers/skills)** | ✅ 2026-05-28 |
 
-### Phase 3 상세 — darwin typecheck strict: exit 0 ✅
-- `bots/darwin/a2a/` 10개: A2A handlers(3) + skills(5) + server + client
-- `bots/blog/claude/a2a/handlers/notification-handler.ts` 2개
-- `bots/claude/lib/alert-publisher.ts`, `symphony/index.ts` 2개
-- `bots/orchestrator/src/mainbot.ts`, `orchestrator.ts` 2개
-- 제외: `research-scanner-canary.ts` (CommonJS require() 사용, 의도적 유지)
-
-### 커밋
-- `d176d714a` refactor(darwin): Phase 3 시범 리팩토링 — A2A/인프라 파일 @ts-nocheck 16개 제거
-- `ea52608f5` feat(claude): 리팩터 에이전트 CLAUDE.md 등록 + launchd plist 추가
-- `fb4a8ef55` feat(claude): 리팩터 에이전트 + 하네스 신설
+### Phase 3-A 2차 상세 — 실제 @ts-nocheck 제거 7개 파일
+- `bots/claude/a2a/handlers/message-handler.ts` — 완전 ESM 타입, nocheck 불필요
+- `bots/claude/a2a/skills/system-monitor.ts` — unknown 타입 명시, nocheck 불필요
+- `bots/claude/a2a/skills/billing-check.ts` — 타입 assertion 사용, nocheck 불필요
+- `bots/ska/a2a/handlers/notification-handler.ts` — 동일 패턴
+- `bots/ska/a2a/handlers/message-handler.ts` — 동일 패턴
+- `bots/ska/a2a/skills/today-audit.ts` — 동일 패턴
+- `bots/blog/a2a/handlers/message-handler.ts` — 동일 패턴
 
 ### OPS 배포 필요
 1. launchd plist 등록:
@@ -34,9 +32,9 @@
    ```
 2. MCP 서버 확인: `curl http://localhost:8774/health`
 
-### 다음 단계 (Phase 3 계속)
-- @ts-nocheck 복구 다음 우선순위: claude 팀 (124개 중 소형 파일부터)
-- 대형 파일 분할: `commenter.ts` 6,215줄 (별도 세션 권장)
+### 다음 단계
+- **Phase 3-B**: claude 팀 A2A skills 나머지 @ts-nocheck 복구 (assign-agent, dispatch-ticket 등)
+- **Phase 3-C 실행**: 통합 테스트 먼저 → commenter.ts 5-모듈 분할
 
 ---
 
