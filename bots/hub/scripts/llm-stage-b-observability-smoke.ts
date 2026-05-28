@@ -12,6 +12,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const {
   OUTPUT_PATH,
   buildHubStageBStabilityReport,
+  classifyExpectedIdleLog,
   writeHubStageBStabilityReport,
 } = require('../lib/stage-b/stability.ts');
 
@@ -33,6 +34,16 @@ async function main() {
   assert(report.dashboard.panels.includes('protected_launchd_status'), 'dashboard must expose protected launchd status');
   assert(report.dashboard.panels.includes('expected_idle_exit_diagnostics'), 'dashboard must expose expected-idle diagnostics');
   assert(Array.isArray(report.protected.idleExitWarnings), 'protected status must expose expected-idle non-zero exit warnings');
+  assert.equal(
+    classifyExpectedIdleLog('[hub-alarm-client] hub alarm failed: rate limit exceeded (200/min)').category,
+    'retryable_rate_limit',
+    'expected-idle diagnostics must classify retryable Hub alarm rate limits',
+  );
+  assert.equal(
+    classifyExpectedIdleLog('hub_alarm_auth_missing 401 unauthorized').category,
+    'auth_or_secret_failure',
+    'expected-idle diagnostics must classify auth/secret failures separately',
+  );
   assert.equal(report.sentry.ok, true, 'Sentry readiness contract must be fail-closed and reportable');
   assert.equal(report.sentry.contract.noSecretLogging, true, 'Sentry contract must forbid secret logging');
   assert.equal(report.sentry.contract.failClosedOnMissingToken, true, 'Sentry contract must fail closed on missing token');
