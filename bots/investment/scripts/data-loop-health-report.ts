@@ -17,7 +17,10 @@
  */
 
 import { query, close } from '../shared/db/core.ts';
-import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys.js');
 
 const TODAY = new Date().toISOString().split('T')[0];
 
