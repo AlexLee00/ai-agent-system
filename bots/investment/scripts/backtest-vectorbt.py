@@ -403,6 +403,8 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
         "selection_method": method,
         "oos_status": oos_status,
         "oos_reasons": oos_reasons,
+        "gate_status": "unstable" if oos_reasons else "ok",
+        "reasons": oos_reasons,
         "params": best_is.get("params", oos_result.get("params", {})),
     }
     if extra:
@@ -527,6 +529,8 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
     all_oos_reasons = [r for item in usable for r in (item.get("oos_reasons") or [])]
     aggregate["oos_status"] = "unstable" if all_oos_reasons else "ok"
     aggregate["oos_reasons"] = list(dict.fromkeys(all_oos_reasons))
+    aggregate["gate_status"] = "unstable" if aggregate["oos_reasons"] else "ok"
+    aggregate["reasons"] = aggregate["oos_reasons"]
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate
 

@@ -47,6 +47,7 @@ export async function ensureCandidateBacktestSchema() {
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_cbs_oos_deflated ON candidate_backtest_status(sharpe_oos_deflated DESC NULLS LAST, updated_at DESC)`);
 
   await run(`
     CREATE TABLE IF NOT EXISTS predictive_validation_log (
