@@ -380,7 +380,7 @@ async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   if (_providerCircuitEnabled(provider)) {
     if (result.ok) {
       providerRegistry.recordSuccess(circuitKey, latencyMs);
-    } else {
+    } else if (_shouldRecordProviderCircuitFailure(provider, result.error)) {
       providerRegistry.recordFailure(circuitKey, result.error || 'provider_failed', latencyMs);
     }
   }
@@ -577,6 +577,18 @@ function _providerCircuitKey(provider, normalizedRoute) {
     return String(normalizedRoute);
   }
   return provider;
+}
+
+function _shouldRecordProviderCircuitFailure(provider, error) {
+  const message = String(error || '');
+  if (
+    provider === 'openai-oauth'
+    && /openai_codex_oauth_bad_request/i.test(message)
+    && /unsupported parameter|max_output_tokens/i.test(message)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function _chainEntryToRoute(entry) {
@@ -873,5 +885,6 @@ module.exports = {
     _openAiOAuthRetryDelayMs,
     _shouldSuppressFallbackExhaustionAlarm,
     _safeFallbackForSelectorExhaustion,
+    _shouldRecordProviderCircuitFailure,
   },
 };

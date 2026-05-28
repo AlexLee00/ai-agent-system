@@ -164,6 +164,15 @@ async function readJsonResponse(response) {
   }
 }
 
+function extractErrorMessage(payload, status) {
+  const detail = payload?.detail;
+  if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) return payload.error.message;
+  if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail) && detail.length > 0) return JSON.stringify(detail).slice(0, 500);
+  return `HTTP ${status}`;
+}
+
 function normalizeUsage(usage) {
   if (!usage || typeof usage !== 'object') return null;
   const input = Number(usage.input_tokens ?? usage.prompt_tokens ?? 0) || 0;
@@ -246,12 +255,26 @@ function resolveOpenAiCodexMaxOutputTokens(value) {
   return Math.min(8192, Math.max(16, Math.floor(parsed)));
 }
 
+function shouldSendOpenAiCodexMaxOutputTokens() {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(
+    String(process.env.OPENAI_CODEX_BACKEND_ENABLE_MAX_OUTPUT_TOKENS || '').trim().toLowerCase(),
+  );
+}
+
+function withOutputBudgetInstruction(systemPrompt, maxTokens) {
+  const budget = resolveOpenAiCodexMaxOutputTokens(maxTokens);
+  const base = String(systemPrompt || '').trim();
+  if (!budget || shouldSendOpenAiCodexMaxOutputTokens()) return base;
+  const instruction = `Keep the final answer within about ${budget} output tokens.`;
+  return base ? `${base}\n\n${instruction}` : instruction;
+}
+
 function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTokens, images, imageBase64, imageDataUrl, mimeType, imageDetail }) {
   const body = {
     model: String(model || 'gpt-5.4').replace(/^openai-oauth\//, '').replace(/^openai-codex\//, ''),
     store: false,
     stream: true,
-    instructions: systemPrompt || '',
+    instructions: withOutputBudgetInstruction(systemPrompt, maxTokens),
     input: [
       {
         role: 'user',
@@ -268,7 +291,7 @@ function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTok
     body.temperature = temperature;
   }
   const maxOutputTokens = resolveOpenAiCodexMaxOutputTokens(maxTokens);
-  if (maxOutputTokens) body.max_output_tokens = maxOutputTokens;
+  if (maxOutputTokens && shouldSendOpenAiCodexMaxOutputTokens()) body.max_output_tokens = maxOutputTokens;
   return body;
 }
 
@@ -367,8 +390,11 @@ async function callOpenAiCodexOAuth(input) {
 
       if (!response.ok) {
         const payload = await readJsonResponse(response);
-        const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
-        throw new Error(`openai_codex_oauth_call_failed:${message}`);
+        const message = String(extractErrorMessage(payload, response.status)).slice(0, 400);
+        const prefix = response.status === 400
+          ? 'openai_codex_oauth_bad_request'
+          : 'openai_codex_oauth_call_failed';
+        throw new Error(`${prefix}:${message}`);
       }
 
       const events = await readSseEvents(response);
