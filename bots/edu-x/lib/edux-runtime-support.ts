@@ -6,6 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
+const {
+  sanitizePublicPostContent,
+  ensurePublicMarketBriefDisclaimer,
+  hasPublicMarketBriefDisclaimer,
+  detectPublicPostContentLeaks,
+} = require('./edux-content-safety.ts');
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'edu-x', 'output');
 const DRY_RUN_DIR = path.join(OUTPUT_DIR, 'dry-run');
@@ -164,7 +170,7 @@ function resolvePublishLogSafetyMetadata(record = {}) {
 }
 
 function normalizePublishLogContentPreview(content = '') {
-  return String(content || '')
+  return ensurePublicMarketBriefDisclaimer(content)
     .replace(/<p>\s*&nbsp;\s*<\/p>/gi, '\n\n')
     .replace(/<\/p>\s*<p>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
@@ -342,6 +348,8 @@ function validatePostQuality({ content, imagePaths = [], imageUrls = [], categor
   if (/\bactivity\b/i.test(text) || /카테고리\s*:\s*activity/i.test(text)) forbidden.push('activity');
   if (/notion/i.test(text)) forbidden.push('notion');
   if (/좋아요|댓글/.test(text)) forbidden.push('likes_or_comments');
+  forbidden.push(...detectPublicPostContentLeaks(text));
+  if (!hasPublicMarketBriefDisclaimer(text)) forbidden.push('required_disclaimer_missing');
   const imageCount = Math.max(imagePaths.length, imageUrls.length);
   return {
     ok: text.length >= MIN_CONTENT_LEN && sectionCount >= requiredSectionCount && sectionValidation.missingSections.length === 0 && infoIssues.length === 0 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
@@ -364,7 +372,7 @@ function validatePostQuality({ content, imagePaths = [], imageUrls = [], categor
 }
 
 function stripImagePlaceholders(content) {
-  return String(content || '')
+  return ensurePublicMarketBriefDisclaimer(content)
     .replace(/\n?(?:③\s*)?\[이미지 2장 플레이스홀더 — 실제 URL은 후처리\]\n?/g, '\n📌 핵심 데이터 체크포인트\n')
     .replace(/\n?(?:③\s*)?\[이미지 플레이스홀더\]\n?/g, '\n📌 핵심 데이터 체크포인트\n')
     .replace(/\[이미지 2장 플레이스홀더 — 실제 URL은 후처리\]/g, '')
@@ -510,6 +518,7 @@ function formatContentForEduXWeb(content) {
 }
 
 function writeDryRunArtifact({ category, slot, title, content, imagePaths = [], metadata = {} }) {
+  const safeContent = ensurePublicMarketBriefDisclaimer(content);
   const artifactDir = metadata?.fixture === true
     ? path.join(DRY_RUN_DIR, 'fixture')
     : DRY_RUN_DIR;
@@ -523,7 +532,7 @@ function writeDryRunArtifact({ category, slot, title, content, imagePaths = [], 
     slot,
     dryRun: true,
     title,
-    contentLen: String(content || '').length,
+    contentLen: String(safeContent || '').length,
     imagePaths,
     metadata,
     generatedAt: new Date().toISOString(),
@@ -532,7 +541,7 @@ function writeDryRunArtifact({ category, slot, title, content, imagePaths = [], 
   const imageSection = imagePaths.length
     ? `\n\n## Images\n${imagePaths.map((p) => `- ${p}`).join('\n')}`
     : '';
-  fs.writeFileSync(mdPath, `# ${title || `${category} ${slot}`}\n\n${content || ''}${imageSection}\n`, 'utf8');
+  fs.writeFileSync(mdPath, `# ${title || `${category} ${slot}`}\n\n${safeContent || ''}${imageSection}\n`, 'utf8');
   return { jsonPath, mdPath };
 }
 
@@ -631,6 +640,10 @@ module.exports = {
   validatePostQuality,
   stripImagePlaceholders,
   replaceImagePlaceholders,
+  sanitizePublicPostContent,
+  ensurePublicMarketBriefDisclaimer,
+  hasPublicMarketBriefDisclaimer,
+  detectPublicPostContentLeaks,
   formatContentForEduXWeb,
   writeDryRunArtifact,
   loadPromotionGateReport,

@@ -620,6 +620,7 @@
     "kis-mcp:quote:overseas": "python3 scripts/kis-market-mcp-server.py --quote --market overseas --symbol AAPL --json",
     "kis-mcp:balance:domestic": "python3 scripts/kis-market-mcp-server.py --balance --market domestic --json",
     "kis-mcp:balance:overseas": "python3 scripts/kis-market-mcp-server.py --balance --market overseas --json",
+    "kis-mcp:routing-smoke": "node scripts/kis-mcp-bridge-routing-smoke.ts --json",
     "binance-mcp:doctor": "python3 scripts/binance-market-mcp-server.py --doctor --json",
     "binance-mcp:test": "python3 scripts/binance-market-mcp-server.py --test --json",
     "binance-mcp:quote": "python3 scripts/binance-market-mcp-server.py --quote --symbol BTC/USDT --json",

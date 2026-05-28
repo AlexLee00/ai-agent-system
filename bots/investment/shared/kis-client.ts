@@ -60,10 +60,16 @@ const KIS_OVERSEAS_PRICE_EXCD = {
   SPY: 'AMS',
   JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
   XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
-  NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NYS',
+  NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NAS',
   JD:   'NYS', BIDU: 'NYS',
   ABEV: 'NYS', NET: 'NYS', XYZ: 'NYS', HPQ: 'NYS',
   RIVN: 'NAS', LCID: 'NAS', PLTR: 'NAS', UBER: 'NYS', LYFT: 'NAS',
+  QBTS: 'NYS', RDW: 'NYS', F: 'NYS', ACHR: 'NYS', BB: 'NYS',
+  BSX: 'NYS', RDDT: 'NYS', WOLF: 'NYS', UMC: 'NYS', CLF: 'NYS', CCL: 'NYS',
+  NOK: 'NYS',
+  PLUG: 'NAS', SNGX: 'NAS', RGTI: 'NAS', ONDS: 'NAS', SOFI: 'NAS',
+  VRRM: 'NAS', OPEN: 'NAS', MARA: 'NAS', ZS: 'NAS', ASTC: 'NAS',
+  APPS: 'NAS', IREN: 'NAS', LUNR: 'NAS', CIFR: 'NAS', CLSK: 'NAS',
 };
 
 const KIS_OVERSEAS_ORDER_EXCD = {
@@ -76,10 +82,16 @@ const KIS_OVERSEAS_ORDER_EXCD = {
   SPY: 'AMEX',
   JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
   XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
-  NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NYSE',
+  NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NASD',
   JD:   'NYSE', BIDU: 'NYSE',
   ABEV: 'NYSE', NET: 'NYSE', XYZ: 'NYSE', HPQ: 'NYSE',
   RIVN: 'NASD', LCID: 'NASD', PLTR: 'NASD', UBER: 'NYSE', LYFT: 'NASD',
+  QBTS: 'NYSE', RDW: 'NYSE', F: 'NYSE', ACHR: 'NYSE', BB: 'NYSE',
+  BSX: 'NYSE', RDDT: 'NYSE', WOLF: 'NYSE', UMC: 'NYSE', CLF: 'NYSE', CCL: 'NYSE',
+  NOK: 'NYSE',
+  PLUG: 'NASD', SNGX: 'NASD', RGTI: 'NASD', ONDS: 'NASD', SOFI: 'NASD',
+  VRRM: 'NASD', OPEN: 'NASD', MARA: 'NASD', ZS: 'NASD', ASTC: 'NASD',
+  APPS: 'NASD', IREN: 'NASD', LUNR: 'NASD', CIFR: 'NASD', CLSK: 'NASD',
 };
 
 const KIS_MIN_INTERVAL_MS = 380;
@@ -148,6 +160,11 @@ async function scheduleKisSlot(paper, lane = 'quote') {
 function isKisRateLimitMessage(message = '') {
   const text = String(message || '');
   return text.includes('초당 거래건수를 초과') || text.toLowerCase().includes('rate limit');
+}
+
+function isKisProviderLimitMessage(message = '') {
+  const text = String(message || '');
+  return isKisRateLimitMessage(text) || /EGW00201|EGW00123|too many requests|HTTP\s*429/i.test(text);
 }
 
 // ─── 토큰 관리 ─────────────────────────────────────────────────────
@@ -220,6 +237,15 @@ export function getKisMcpRoutingDiagnostics() {
     bridgeMode: KIS_MCP_BRIDGE_MODE,
     marketdataMcpServerMode: KIS_MARKETDATA_MCP_SERVER_MODE,
     useBridge: shouldUseKisMcp(),
+  };
+}
+
+export function resolveKisOverseasExchangeCodes(symbol = '') {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  return {
+    symbol: normalizedSymbol,
+    priceExcd: KIS_OVERSEAS_PRICE_EXCD[normalizedSymbol] || null,
+    orderExcd: KIS_OVERSEAS_ORDER_EXCD[normalizedSymbol] || null,
   };
 }
 
@@ -309,10 +335,16 @@ async function runKisMcpBridge(action, payload = {}) {
       : '';
     const actionRejected = String(error?.code || '').trim().toLowerCase() === 'kis_mcp_action_rejected'
       || parsedError?.status === 'error';
-    const rawMessage = parsedMessage || error?.message || error;
+    const stderrMessage = truncateKisMessage(error?.stderr || '', 220);
+    const rawMessage = parsedMessage || stderrMessage || error?.message || error;
     const message = actionRejected
       ? `KIS 주문 거절 (${action}): ${rawMessage}`
       : `KIS MCP bridge failed (${action}): ${rawMessage}`;
+    const providerLimited = isKisProviderLimitMessage([
+      parsedMessage,
+      stderrMessage,
+      error?.message || '',
+    ].filter(Boolean).join(' '));
     if (isMutatingAction) {
       const failClosed = /** @type {any} */ (new Error(message));
       failClosed.code = actionRejected ? 'kis_order_rejected' : 'kis_mcp_mutating_bridge_failed';
@@ -325,13 +357,31 @@ async function runKisMcpBridge(action, payload = {}) {
       };
       throw failClosed;
     }
+    if (providerLimited) {
+      if (KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS > 0) {
+        _kisMcpNonMutatingFailureCooldowns.set(
+          normalizedAction,
+          Date.now() + KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS,
+        );
+      }
+      const throttled = /** @type {any} */ (new Error(
+        `KIS provider rate limited (${action}); direct fallback suppressed: ${rawMessage}`,
+      ));
+      throttled.code = 'kis_provider_rate_limited';
+      throttled.meta = {
+        action: normalizedAction || null,
+        parsedStatus: parsedError?.status || null,
+        cooldownMs: KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS,
+      };
+      throw throttled;
+    }
     if (KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS > 0) {
       _kisMcpNonMutatingFailureCooldowns.set(
         normalizedAction,
         Date.now() + KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS,
       );
     }
-    console.warn(`  ⚠️ [KIS MCP] bridge 실패 (${action}) — direct fallback: ${error?.message || error}`);
+    console.warn(`  ⚠️ [KIS MCP] bridge 실패 (${action}) — direct fallback: ${message}`);
     return null;
   }
 }

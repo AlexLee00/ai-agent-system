@@ -14,7 +14,13 @@ const {
   resolveFormatterLlmConfig,
   resolveFormatterPolicyOverride,
 } = require('../lib/edux-formatter.ts');
-const { formatContentForEduXWeb, validatePostQuality } = require('../lib/edux-runtime-support.ts');
+const {
+  formatContentForEduXWeb,
+  validatePostQuality,
+  sanitizePublicPostContent,
+  ensurePublicMarketBriefDisclaimer,
+  hasPublicMarketBriefDisclaimer,
+} = require('../lib/edux-runtime-support.ts');
 const { getFixturePayload } = require('../lib/edux-fixtures.ts');
 
 async function withCleanFormatterEnv(fn) {
@@ -56,6 +62,7 @@ async function check(category, slot) {
   const quality = validateContentQuality(result.content, category);
   assert.equal(quality.ok, true, `${category} formatter quality failed: ${JSON.stringify(quality)}`);
   assert.equal(result.content.includes('[이미지'), false, `${category} still contains image placeholder`);
+  assert.equal(hasPublicMarketBriefDisclaimer(result.content), true, `${category} should include the required public disclaimer`);
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(result.content), false, `${category} should not render legacy section numbers`);
   assert.equal(result.content.includes('🤖 인공지능 추천안'), true, `${category} should include AI recommendation block`);
   assert.equal(/N\/A|데이터 없음/.test(result.content), false, `${category} should not expose N/A placeholders`);
@@ -76,6 +83,38 @@ async function check(category, slot) {
 }
 
 async function main() {
+  const leakedDraft = `<think>
+Okay, let's tackle this. The user wants a pre-market brief for the Edu-X platform.
+</think>
+
+⚡ 핵심 3줄
+- 코스피와 코스닥은 장 초반 방향 확인이 필요합니다.
+
+📌 지수·수급 지도
+- 원/달러와 외국인 수급을 함께 확인합니다.
+
+👀 섹터 워치
+- 반도체·2차전지·바이오를 우선 관찰합니다.
+
+🌐 커뮤니티·뉴스 이슈 Top 3
+1. 반도체 업종의 장중 거래대금 변화
+2. 2차전지 공급망 뉴스 반응
+3. 바이오 임상·수출 이벤트 확인
+
+🤖 인공지능 추천안
+- 매수·매도 지시가 아니라 관찰 우선순위만 제시합니다.
+
+⚠️ 오늘 체크포인트 + 면책
+- 본 글은 교육 콘텐츠이며 투자 권유가 아닙니다.`;
+  assert.equal(sanitizePublicPostContent(leakedDraft).includes('<think>'), false, 'sanitizer should remove think tags');
+  assert.equal(sanitizePublicPostContent(leakedDraft).includes('Okay, let'), false, 'sanitizer should remove internal reasoning text');
+  assert.equal(formatContentForEduXWeb(leakedDraft).includes('&lt;think'), false, 'web formatter must not escape and publish think tags');
+  assert.equal(hasPublicMarketBriefDisclaimer(ensurePublicMarketBriefDisclaimer(leakedDraft)), true, 'disclaimer guard should append required public disclaimer');
+  const leakedQuality = validatePostQuality({ content: leakedDraft, category: 'kis' });
+  assert.equal(leakedQuality.ok, false, 'quality gate must reject raw reasoning leaks');
+  assert.equal(leakedQuality.forbidden.includes('reasoning_tag'), true, 'quality gate should report reasoning_tag');
+  assert.equal(leakedQuality.forbidden.includes('required_disclaimer_missing'), true, 'quality gate should report missing required disclaimer');
+
   const results = [
     await check('crypto', '0600'),
     await check('kis', '0900'),
