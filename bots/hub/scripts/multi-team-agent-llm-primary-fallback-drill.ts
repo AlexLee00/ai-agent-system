@@ -98,6 +98,12 @@ function agentFilterMatches(team, target, filter) {
     || filter === `${team}.${target.selectorKey}`;
 }
 
+function agentFilterExactMatches(team, target, filter) {
+  return filter === target.agent
+    || filter === target.selectorKey
+    || filter === `${team}.${target.selectorKey}`;
+}
+
 function filterBelongsToTeam(team, filter) {
   const parts = String(filter || '').split('.');
   return parts.length <= 1 || parts[0] === team;
@@ -106,6 +112,29 @@ function filterBelongsToTeam(team, filter) {
 function agentNameForTeam(team, filter) {
   const prefix = `${team}.`;
   return String(filter || '').startsWith(prefix) ? String(filter).slice(prefix.length) : String(filter || '');
+}
+
+function targetKey(target) {
+  return `${target.team || ''}:${target.agent || ''}:${target.selectorKey || ''}`;
+}
+
+function selectInventoryTargets(team, targets, agentsFilter) {
+  if (!agentsFilter) return targets;
+  const selected = [];
+  const seen = new Set();
+  for (const filter of agentsFilter) {
+    const exactMatches = targets.filter((target) => agentFilterExactMatches(team, target, filter));
+    const matches = exactMatches.length > 0
+      ? exactMatches
+      : targets.filter((target) => agentFilterMatches(team, target, filter));
+    for (const target of matches) {
+      const key = targetKey(target);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      selected.push(target);
+    }
+  }
+  return selected;
 }
 
 function usableSecret(value) {
@@ -215,10 +244,14 @@ function buildPlans() {
   const teams = targetTeams();
   const agentsFilter = targetAgents();
   const agents = teams.flatMap((team) => {
-    const inventoryTargets = listAgentModelTargets(team)
-      .filter((target) => !isHubNonLlmTarget({ callerTeam: team, agent: target.agent, selectorKey: target.selectorKey }))
-      .filter((target) => !agentsFilter || [...agentsFilter].some((filter) => agentFilterMatches(team, target, filter)));
+    const inventoryTargets = selectInventoryTargets(
+      team,
+      listAgentModelTargets(team)
+        .filter((target) => !isHubNonLlmTarget({ callerTeam: team, agent: target.agent, selectorKey: target.selectorKey })),
+      agentsFilter
+    );
     const targets = [...inventoryTargets];
+    const targetKeys = new Set(targets.map((target) => targetKey(target)));
     if (agentsFilter) {
       const existingFilters = new Set();
       for (const target of inventoryTargets) {
@@ -233,13 +266,17 @@ function buildPlans() {
         const chain = Array.isArray(description?.chain) ? description.chain : [];
         if (!description?.selected || chain.length === 0) continue;
         if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: description.selectorKey })) continue;
-        targets.push({
+        const syntheticTarget = {
           team,
           agent,
           selected: true,
           selectorKey: description.selectorKey,
           aliasOnly: true,
-        });
+        };
+        const key = targetKey(syntheticTarget);
+        if (targetKeys.has(key)) continue;
+        targetKeys.add(key);
+        targets.push(syntheticTarget);
       }
     }
     return targets.map((target) => ({ ...target, label: TEAM_LABELS[team] || team }));
