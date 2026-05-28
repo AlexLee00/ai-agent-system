@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { createRequire } from 'module';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
 import type { A2ATaskResult } from '../types.ts';

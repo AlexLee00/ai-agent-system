@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * plugin-eval 3계층 리팩토링 검증 하네스
  *

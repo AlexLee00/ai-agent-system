@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * verify-loop-hook: 실패 시 자동 수정 재시도 (Claude Forge /verify-loop 패턴)
  * - 최대 3회 반복

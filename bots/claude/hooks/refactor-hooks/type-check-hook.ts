@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * type-check-hook: @ts-nocheck 제거 후 타입 검사
  * - 새 타입 에러 차단

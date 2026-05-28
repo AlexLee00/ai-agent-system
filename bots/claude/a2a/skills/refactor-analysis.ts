@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { registerSkillHandler } from '../handlers/task-handler.ts';
 import type { A2ATaskResult } from '../types.ts';
 import { completed } from './symphony-common.ts';

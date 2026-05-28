@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * 리팩토링 안전 훅 6계층 (Claude Forge 패턴)
  *

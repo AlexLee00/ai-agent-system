@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * test-green-hook: 리팩토링 후 테스트 green 확인
  * - 실패 시 자동 롤백 (rollbackTag 제공 시)

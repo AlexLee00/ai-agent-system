@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { A2ATaskResult } from '../types.ts';
 
 export const SYMPHONY_A2A_SKILLS = [

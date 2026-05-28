@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * pre-refactor-hook: 리팩토링 시작 전 실행
  * - git tag 자동 생성 (롤백 포인트)

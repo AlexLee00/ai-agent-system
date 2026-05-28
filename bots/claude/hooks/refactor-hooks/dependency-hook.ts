@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dependency-hook: 순환 의존성 차단
  * - import 그래프 기반 단순 순환 감지

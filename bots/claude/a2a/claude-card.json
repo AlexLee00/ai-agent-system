@@ -118,6 +118,14 @@
       "tags": ["symphony", "quality", "promotion", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "refactor-analysis",
+      "name": "리팩터 분석",
+      "description": "기술부채 분석 (analyze), 리팩토링 제안 (suggest), 리팩토링 검증 (verify) — claude-refactor-mcp 경유",
+      "tags": ["refactor", "tech-debt", "quality", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     }
   ]
 }
