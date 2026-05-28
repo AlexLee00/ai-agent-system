@@ -1,4 +1,34 @@
-# 세션 인수인계 — 2026-05-27 (CODEX_LUNA_TRADE_LEARN_EVOLVE 3 Phase 완료)
+# 세션 인수인계 — 2026-05-28 (CODEX_CLAUDE_REFACTORER_HARNESS 완료)
+
+## 완료 요약 ✅ — 리팩터 에이전트 + plugin-eval 3계층 하네스 + 훅 6계층 신설
+
+| 구분 | 파일 | 상태 |
+|------|------|------|
+| 리팩터 에이전트 | `bots/claude/agents/refactorer.md` | ✅ |
+| plugin-eval 3계층 | `bots/claude/lib/refactor-harness/plugin-eval.ts` | ✅ |
+| 훅 6계층 | `bots/claude/hooks/refactor-hooks/*.ts` | ✅ |
+| MCP 5도구 (port 8774) | `bots/claude/mcp/claude-refactor-mcp/src/server.ts` | ✅ |
+| A2A 스킬 | `bots/claude/a2a/skills/refactor-analysis.ts` | ✅ |
+| 기술부채 인벤토리 | `docs/strategy/TECH_DEBT_INVENTORY.md` | ✅ |
+| launchd plist | `bots/claude/launchd/ai.claude.refactor-mcp.plist` | ✅ |
+| CLAUDE.md 업데이트 | `bots/claude/CLAUDE.md` | ✅ |
+
+### 커밋
+- `fb4a8ef55` feat(claude): 리팩터 에이전트 + 하네스 신설
+- `3177bc5e5` feat(codex): CODEX_CLAUDE_REFACTORER_HARNESS_2026-05-28 자동 실행 완료
+- `ea52608f5` feat(claude): 리팩터 에이전트 CLAUDE.md 등록 + launchd plist 추가
+
+### OPS 배포 필요
+1. launchd plist 등록:
+   ```bash
+   cp bots/claude/launchd/ai.claude.refactor-mcp.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/ai.claude.refactor-mcp.plist
+   ```
+2. MCP 서버 확인: `curl http://localhost:8774/health`
+
+---
+
+# 이전 세션 — 2026-05-27 (CODEX_LUNA_TRADE_LEARN_EVOLVE 3 Phase 완료)
 
 ## 완료 요약 ✅ — Luna 가드 Notify 전환 + 자동 피드백 + 에이전트 진화
 
