@@ -5,7 +5,10 @@ const { execFileSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
-const { listAgentModelTargets } = require(path.join(PROJECT_ROOT, 'packages/core/lib/llm-model-selector'));
+const {
+  describeAgentModel,
+  listAgentModelTargets,
+} = require(path.join(PROJECT_ROOT, 'packages/core/lib/llm-model-selector'));
 const { BudgetGuardian } = require('../budget-guardian');
 const { getAllCircuitStatuses } = require(path.join(PROJECT_ROOT, 'packages/core/lib/local-circuit-breaker'));
 
@@ -48,6 +51,9 @@ function safeSelectorArg(value) {
 
 function hasAgentDrillTarget(team, agent) {
   try {
+    const description = describeAgentModel(team, agent);
+    const chain = Array.isArray(description?.chain) ? description.chain : [];
+    if (description?.selected && chain.length > 0) return true;
     return listAgentModelTargets(team).some((target) =>
       target.agent === agent || `${team}.${target.agent}` === agent
     );

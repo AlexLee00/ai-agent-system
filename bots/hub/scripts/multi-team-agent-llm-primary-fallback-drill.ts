@@ -91,6 +91,23 @@ function slotFilter() {
   return String(process.env.HUB_MULTI_AGENT_LLM_DRILL_SLOT_FILTER || 'all').trim().toLowerCase() || 'all';
 }
 
+function agentFilterMatches(team, target, filter) {
+  return filter === target.agent
+    || filter === `${team}.${target.agent}`
+    || filter === target.selectorKey
+    || filter === `${team}.${target.selectorKey}`;
+}
+
+function filterBelongsToTeam(team, filter) {
+  const parts = String(filter || '').split('.');
+  return parts.length <= 1 || parts[0] === team;
+}
+
+function agentNameForTeam(team, filter) {
+  const prefix = `${team}.`;
+  return String(filter || '').startsWith(prefix) ? String(filter).slice(prefix.length) : String(filter || '');
+}
+
 function usableSecret(value) {
   const text = String(value || '').trim();
   return text.length >= 12 && !PLACEHOLDER_RE.test(text);
@@ -197,12 +214,36 @@ function budgetForRoute(route) {
 function buildPlans() {
   const teams = targetTeams();
   const agentsFilter = targetAgents();
-  const agents = teams.flatMap((team) =>
-    listAgentModelTargets(team)
+  const agents = teams.flatMap((team) => {
+    const inventoryTargets = listAgentModelTargets(team)
       .filter((target) => !isHubNonLlmTarget({ callerTeam: team, agent: target.agent, selectorKey: target.selectorKey }))
-      .filter((target) => !agentsFilter || agentsFilter.has(target.agent) || agentsFilter.has(`${team}.${target.agent}`))
-      .map((target) => ({ ...target, label: TEAM_LABELS[team] || team }))
-  );
+      .filter((target) => !agentsFilter || [...agentsFilter].some((filter) => agentFilterMatches(team, target, filter)));
+    const targets = [...inventoryTargets];
+    if (agentsFilter) {
+      const existingFilters = new Set();
+      for (const target of inventoryTargets) {
+        for (const filter of agentsFilter) {
+          if (agentFilterMatches(team, target, filter)) existingFilters.add(filter);
+        }
+      }
+      for (const filter of agentsFilter) {
+        if (existingFilters.has(filter) || !filterBelongsToTeam(team, filter)) continue;
+        const agent = agentNameForTeam(team, filter);
+        const description = describeAgentModel(team, agent);
+        const chain = Array.isArray(description?.chain) ? description.chain : [];
+        if (!description?.selected || chain.length === 0) continue;
+        if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: description.selectorKey })) continue;
+        targets.push({
+          team,
+          agent,
+          selected: true,
+          selectorKey: description.selectorKey,
+          aliasOnly: true,
+        });
+      }
+    }
+    return targets.map((target) => ({ ...target, label: TEAM_LABELS[team] || team }));
+  });
 
   return agents.map((agent) => {
     if (!agent.selected) {
@@ -266,7 +307,7 @@ function findUnmatchedAgentFilters(plans) {
   const filters = targetAgents();
   if (!filters) return [];
   return [...filters].filter((filter) =>
-    !plans.some((plan) => filter === plan.agent || filter === `${plan.team}.${plan.agent}`)
+    !plans.some((plan) => agentFilterMatches(plan.team, plan, filter))
   );
 }
 

@@ -80,7 +80,7 @@ assert(plan.safeReadOnlyActions.some((item) => item.action === 'targeted_llm_rou
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'targeted_llm_route_drill' && item.liveCommand?.includes('team:agent-llm-drill:live')), 'operational unresolved failures should include a separate live evidence command');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_drill' && item.command.includes('--teams=luna') && item.command.includes('--agents=reporter')), 'latency hotspots should produce concrete mock route drills');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_drill' && item.liveCommand?.includes('team:agent-llm-drill:live')), 'latency hotspots should include a separate live evidence command');
-assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_mapping_review' && item.team === 'blog' && item.agent === 'neighbor-commenter'), 'unmapped latency hotspot agents should produce mapping review actions');
+assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_drill' && item.command.includes('--teams=blog') && item.command.includes('--agents=neighbor-commenter')), 'selector alias latency hotspots should produce concrete mock route drills');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'openai_codex_bad_request_guard_verification'), 'OpenAI 400 bad-request guard must have a read-only verification action');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'expected_idle_exit_status_review' && item.command.includes('weekly-advisory-digest:dry-run')), 'expected-idle warnings should provide dry-run verification');
 assert(plan.confirmRequiredActions.some((item) => item.action === 'protected_service_recovery'), 'protected service recovery must require confirmation');
@@ -97,7 +97,7 @@ const zeroTargetDrill = spawnSync(process.execPath, [
   'tsx',
   'bots/hub/scripts/multi-team-agent-llm-primary-fallback-drill.ts',
   '--teams=blog',
-  '--agents=neighbor-commenter',
+  '--agents=neighbor-commenter-missing',
   '--primary-only',
 ], {
   cwd: repoRoot,
