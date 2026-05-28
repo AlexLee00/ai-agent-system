@@ -341,6 +341,39 @@ def float_env(name: str, default: float) -> float:
         return default
 
 
+def deflated_sharpe(sharpe: float, n_trials: int, n_obs: int) -> float:
+    """다중비교 보정 — Bailey/López de Prado 간이 근사 (IS에서 n_trials 중 최고를 골랐으므로 차감)"""
+    if n_trials <= 1 or n_obs < 20:
+        return sharpe
+    expected_max = math.sqrt(2 * math.log(max(2, n_trials)))
+    penalty = expected_max / math.sqrt(max(1, n_obs))
+    return sharpe - penalty
+
+
+def check_stability(sharpe_oos: float, total_trades_oos: int, n_obs: int,
+                    overfit_gap: float, max_dd_oos: float) -> tuple:
+    """OOS 지표 안정성 검사 — 위배 시 ('unstable', [reasons])"""
+    min_trades = int_env("LUNA_BT_MIN_TRADES", 10)
+    min_bars = int_env("LUNA_BT_MIN_BARS", 60)
+    sharpe_cap = float_env("LUNA_BT_SHARPE_CAP", 5.0)
+    max_overfit_gap = float_env("LUNA_BT_MAX_OVERFIT_GAP", 2.0)
+    max_dd_limit = float_env("LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN", 30.0)
+
+    reasons = []
+    if total_trades_oos < min_trades:
+        reasons.append(f"backtest_unstable_sample(oos_trades={total_trades_oos},min={min_trades})")
+    if n_obs < min_bars:
+        reasons.append(f"backtest_unstable_sample(oos_bars={n_obs},min={min_bars})")
+    if sharpe_oos > sharpe_cap:
+        reasons.append(f"unrealistic_sharpe(oos={sharpe_oos:.2f},cap={sharpe_cap})")
+    if overfit_gap > max_overfit_gap:
+        reasons.append(f"overfit_gap_high({overfit_gap:.2f})")
+    if max_dd_oos > max_dd_limit:
+        reasons.append(f"drawdown_high(oos={max_dd_oos:.1f}%)")
+
+    return ("unstable" if reasons else "ok"), reasons
+
+
 def split_is_oos(df, oos_ratio: float = 0.3):
     """시계열 순서 유지 (셔플 금지) — OOS는 항상 뒤 구간"""
     n = len(df)
@@ -352,16 +385,24 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
                          method: str, extra: dict | None = None) -> dict:
     sharpe_is = safe_float(best_is.get("sharpe_ratio"))
     sharpe_oos = safe_float(oos_result.get("sharpe_ratio"))
+    overfit_gap = sharpe_is - sharpe_oos
+    sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, n_obs)
+    total_trades_oos = int(safe_float(oos_result.get("total_trades")))
+    max_dd_oos = abs(safe_float(oos_result.get("max_drawdown")))
+    oos_status, oos_reasons = check_stability(sharpe_oos, total_trades_oos, n_obs, overfit_gap, max_dd_oos)
     payload = {
         **oos_result,
         "sharpe_ratio": sharpe_oos,
         "sharpe_is": sharpe_is,
         "sharpe_oos": sharpe_oos,
-        "overfit_gap": sharpe_is - sharpe_oos,
+        "sharpe_oos_deflated": sharpe_oos_def,
+        "overfit_gap": overfit_gap,
         "n_grid_trials": n_grid_trials,
         "n_obs_oos": n_obs,
         "walk_forward_sharpe": None,
         "selection_method": method,
+        "oos_status": oos_status,
+        "oos_reasons": oos_reasons,
         "params": best_is.get("params", oos_result.get("params", {})),
     }
     if extra:
@@ -479,6 +520,13 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
         "folds": fold_results,
         "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
     }
+    # deflation: 전체 grid trials 기준으로 OOS sharpe 보정
+    total_n_trials = int(safe_float(aggregate.get("n_grid_trials")))
+    total_n_obs = int(safe_float(aggregate.get("n_obs_oos")))
+    aggregate["sharpe_oos_deflated"] = deflated_sharpe(avg("sharpe_oos"), total_n_trials, total_n_obs)
+    all_oos_reasons = [r for item in usable for r in (item.get("oos_reasons") or [])]
+    aggregate["oos_status"] = "unstable" if all_oos_reasons else "ok"
+    aggregate["oos_reasons"] = list(dict.fromkeys(all_oos_reasons))
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate
 
@@ -586,7 +634,10 @@ def grid_search(df, deps: dict):
         item['n_grid_trials'] = n_total
         item.setdefault('sharpe_is', item.get('sharpe_ratio'))
         item.setdefault('sharpe_oos', None)
+        item.setdefault('sharpe_oos_deflated', None)
         item.setdefault('overfit_gap', None)
+        item.setdefault('oos_status', None)
+        item.setdefault('oos_reasons', [])
     return results
 
 
