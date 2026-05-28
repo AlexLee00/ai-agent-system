@@ -318,49 +318,61 @@ def robust_rank_score(item: dict) -> float:
     )
 
 
+def bool_env(name: str, default: bool = False) -> bool:
+    raw = str(os.environ.get(name, "")).strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on", "enabled", "shadow"}
+
+
+def int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, default))
+        return value if value > 0 else default
+    except Exception:
+        return default
+
+
+def float_env(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, default))
+        return value if math.isfinite(value) else default
+    except Exception:
+        return default
+
+
 def split_is_oos(df, oos_ratio: float = 0.3):
     """시계열 순서 유지 (셔플 금지) — OOS는 항상 뒤 구간"""
     n = len(df)
-    cut = int(n * (1 - oos_ratio))
+    cut = max(1, min(n - 1, int(n * (1 - oos_ratio))))
     return df.iloc[:cut], df.iloc[cut:]
 
 
-def deflated_sharpe(sharpe: float, n_trials: int, n_obs: int) -> float:
-    """다중비교 보정 — Bailey/López de Prado 간이 근사"""
-    if n_trials <= 1 or n_obs < 20:
-        return sharpe
-    expected_max = math.sqrt(2 * math.log(max(2, n_trials)))
-    penalty = expected_max / math.sqrt(max(1, n_obs))
-    return sharpe - penalty
+def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_obs: int,
+                         method: str, extra: dict | None = None) -> dict:
+    sharpe_is = safe_float(best_is.get("sharpe_ratio"))
+    sharpe_oos = safe_float(oos_result.get("sharpe_ratio"))
+    payload = {
+        **oos_result,
+        "sharpe_ratio": sharpe_oos,
+        "sharpe_is": sharpe_is,
+        "sharpe_oos": sharpe_oos,
+        "overfit_gap": sharpe_is - sharpe_oos,
+        "n_grid_trials": n_grid_trials,
+        "n_obs_oos": n_obs,
+        "walk_forward_sharpe": None,
+        "selection_method": method,
+        "params": best_is.get("params", oos_result.get("params", {})),
+    }
+    if extra:
+        payload.update(extra)
+    payload["robust_score"] = robust_rank_score(payload)
+    return payload
 
 
-def check_stability(sharpe_oos: float, total_trades_oos: int, n_obs: int,
-                    overfit_gap: float, max_dd_oos: float, env: dict) -> tuple:
-    """OOS 지표 안정성 검사 — 위배 시 unstable + reasons"""
-    min_trades = int(env.get('LUNA_BT_MIN_TRADES') or 10)
-    min_bars = int(env.get('LUNA_BT_MIN_BARS') or 60)
-    sharpe_cap = float(env.get('LUNA_BT_SHARPE_CAP') or 5.0)
-    max_overfit_gap = float(env.get('LUNA_BT_MAX_OVERFIT_GAP') or 2.0)
-    max_dd_limit = float(env.get('LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN') or 30.0)
-
-    reasons = []
-    if total_trades_oos < min_trades:
-        reasons.append(f'backtest_unstable_sample(oos_trades={total_trades_oos},min={min_trades})')
-    if n_obs < min_bars:
-        reasons.append(f'backtest_unstable_sample(oos_bars={n_obs},min={min_bars})')
-    if sharpe_oos > sharpe_cap:
-        reasons.append(f'unrealistic_sharpe(oos={sharpe_oos:.2f},cap={sharpe_cap})')
-    if overfit_gap > max_overfit_gap:
-        reasons.append(f'overfit_gap_high({overfit_gap:.2f})')
-    if max_dd_oos > max_dd_limit:
-        reasons.append(f'drawdown_high(oos={max_dd_oos:.1f}%)')
-
-    return ('unstable' if reasons else 'ok'), reasons
-
-
-def select_on_is_evaluate_on_oos(df, deps: dict, env: dict):
+def select_on_is_evaluate_on_oos(df, deps: dict):
     """IS(앞 70%)에서 grid 최적화 → OOS(뒤 30%)에서 독립 평가 (과적합 차단)"""
-    oos_ratio = float(env.get('LUNA_BT_OOS_RATIO') or 0.3)
+    oos_ratio = float_env("LUNA_BT_OOS_RATIO", 0.3)
     is_df, oos_df = split_is_oos(df, oos_ratio)
 
     if len(is_df) < 30 or len(oos_df) < 10:
@@ -377,30 +389,98 @@ def select_on_is_evaluate_on_oos(df, deps: dict, env: dict):
     except Exception:
         return None
 
-    n_obs = len(oos_df)
-    sharpe_is = safe_float(best_is.get('sharpe_ratio'))
-    sharpe_oos = safe_float(oos_result.get('sharpe_ratio'))
-    overfit_gap = sharpe_is - sharpe_oos
-    sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, n_obs)
-    max_dd_oos = abs(safe_float(oos_result.get('max_drawdown')))
-    total_trades_oos = int(safe_float(oos_result.get('total_trades')))
-
-    oos_status, oos_reasons = check_stability(
-        sharpe_oos, total_trades_oos, n_obs, overfit_gap, max_dd_oos, env
+    return aggregate_oos_result(
+        oos_result,
+        best_is,
+        n_grid_trials,
+        len(oos_df),
+        "is_oos_split",
+        {"is_bars": len(is_df), "oos_bars": len(oos_df)},
     )
 
-    return {
-        **oos_result,
-        'sharpe_is': sharpe_is,
-        'sharpe_oos': sharpe_oos,
-        'sharpe_oos_deflated': sharpe_oos_def,
-        'overfit_gap': overfit_gap,
-        'n_grid_trials': n_grid_trials,
-        'walk_forward_sharpe': None,
-        'oos_status': oos_status,
-        'oos_reasons': oos_reasons,
-        'params': best_is['params'],
+
+def infer_rows_for_days(df, days: int) -> int:
+    try:
+        if df is None or len(df.index) < 2:
+            return max(1, days)
+        deltas = df.index.to_series().diff().dropna().dt.total_seconds()
+        median_seconds = float(deltas.median()) if not deltas.empty else 86400.0
+        return max(1, int((days * 86400) / max(1.0, median_seconds)))
+    except Exception:
+        return max(1, days)
+
+
+def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days: int = 30):
+    """Rolling walk-forward: train에서 최적화하고 바로 다음 test 구간에서 평가한다."""
+    train_rows = infer_rows_for_days(df, train_days)
+    test_rows = infer_rows_for_days(df, test_days)
+    min_window = train_rows + test_rows
+    if len(df) < min_window or train_rows < 30 or test_rows < 10:
+        return None
+
+    windows = []
+    start = 0
+    while start + min_window <= len(df):
+        train_start = start
+        train_end = train_start + train_rows
+        test_end = train_end + test_rows
+        windows.append((train_start, train_end, test_end))
+        start += test_rows
+    windows = windows[-max(1, folds):]
+
+    fold_results = []
+    for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
+        train_df = df.iloc[train_start:train_end]
+        test_df = df.iloc[train_end:test_end]
+        grid = grid_search(train_df, deps)
+        if not grid:
+            continue
+        best_is = grid[0]
+        try:
+            oos_result = run_backtest(test_df, best_is["params"], deps)
+        except Exception as exc:
+            fold_results.append({"fold": fold_index, "error": str(exc)})
+            continue
+        fold_results.append(aggregate_oos_result(
+            oos_result,
+            best_is,
+            best_is.get("n_grid_trials", len(grid)),
+            len(test_df),
+            "walk_forward_fold",
+            {
+                "fold": fold_index,
+                "train_bars": len(train_df),
+                "test_bars": len(test_df),
+            },
+        ))
+
+    usable = [item for item in fold_results if "error" not in item]
+    if not usable:
+        return None
+
+    avg = lambda key: sum(safe_float(item.get(key)) for item in usable) / len(usable)
+    total_trades = sum(int(safe_float(item.get("total_trades"))) for item in usable)
+    aggregate = {
+        "status": "ok",
+        "selection_method": "walk_forward",
+        "sharpe_ratio": avg("sharpe_oos"),
+        "sharpe_is": avg("sharpe_is"),
+        "sharpe_oos": avg("sharpe_oos"),
+        "overfit_gap": avg("overfit_gap"),
+        "walk_forward_sharpe": avg("sharpe_oos"),
+        "total_return": avg("total_return"),
+        "max_drawdown": max(abs(safe_float(item.get("max_drawdown"))) for item in usable),
+        "win_rate": avg("win_rate"),
+        "profit_factor": avg("profit_factor"),
+        "total_trades": total_trades,
+        "n_grid_trials": sum(int(safe_float(item.get("n_grid_trials"))) for item in usable),
+        "n_obs_oos": sum(int(safe_float(item.get("n_obs_oos"))) for item in usable),
+        "fold_count": len(usable),
+        "folds": fold_results,
+        "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
     }
+    aggregate["robust_score"] = robust_rank_score(aggregate)
+    return aggregate
 
 
 def grid_search(df, deps: dict):
@@ -506,7 +586,6 @@ def grid_search(df, deps: dict):
         item['n_grid_trials'] = n_total
         item.setdefault('sharpe_is', item.get('sharpe_ratio'))
         item.setdefault('sharpe_oos', None)
-        item.setdefault('sharpe_oos_deflated', None)
         item.setdefault('overfit_gap', None)
     return results
 
@@ -550,18 +629,19 @@ def main():
     if deps["missing"]:
         return emit_missing_dependency_error(deps["missing"], args.json)
 
-    env = dict(os.environ)
-    wf_enabled = env.get('LUNA_BT_WALK_FORWARD_ENABLED', 'false').strip().lower() not in ('0', 'false', 'off', '')
-
     try:
         df = fetch_ohlcv(args.symbol, args.days, deps)
         if args.grid:
-            if wf_enabled:
-                oos_result = select_on_is_evaluate_on_oos(df, deps, env)
-                if oos_result is not None:
-                    result = [oos_result]
-                else:
-                    result = grid_search(df, deps)[:10]
+            if bool_env("LUNA_BT_WALK_FORWARD_ENABLED", False):
+                wf_result = walk_forward(
+                    df,
+                    deps,
+                    folds=int_env("LUNA_BT_WALK_FORWARD_FOLDS", 3),
+                    train_days=int_env("LUNA_BT_WALK_FORWARD_TRAIN_DAYS", 60),
+                    test_days=int_env("LUNA_BT_WALK_FORWARD_TEST_DAYS", 30),
+                )
+                split_result = None if wf_result is not None else select_on_is_evaluate_on_oos(df, deps)
+                result = [item for item in [wf_result, split_result] if item is not None]
             else:
                 result = grid_search(df, deps)[:10]
         else:
