@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+// @ts-nocheck
+/**
+ * scripts/run-regime-weight-learner.ts — 체제별 가중치 학습 일일 실행
+ *
+ * 매일 07:00 KST
+ * launchd: ai.luna.weight-adaptive-tuner-daily-0700.plist
+ *
+ * 실행 내용:
+ *   1. 전날 거래 데이터 DB에서 분석
+ *   2. 체제별 승률 + 손익비 계산
+ *   3. fusion 가중치 조정 (상승/하락/횡보/변동성)
+ *   4. signal 가중치 조정
+ *   5. luna_regime_weight_snapshots 기록
+ *   6. ta-weight-adaptive-tuner 동기화
+ *   7. 텔레그램 보고
+ */
+
+import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
+import { runRegimeWeightLearner } from '../shared/regime-weight-learner.ts';
+import * as db from '../shared/db.ts';
+
+async function sendTelegram(message) {
+  try {
+    const hubUrl = process.env.HUB_URL || 'http://localhost:7788';
+    const hubToken = process.env.HUB_AUTH_TOKEN;
+    if (!hubToken) return;
+    await fetch(`${hubUrl}/hub/notifications/telegram`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${hubToken}`,
+      },
+      body: JSON.stringify({ message, source: 'regime-weight-learner', parseMode: 'Markdown' }),
+    }).catch(() => null);
+  } catch {
+    // ignore
+  }
+}
+
+async function main() {
+  const dryRun = process.argv.includes('--dry-run');
+  const days = Number(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || 7);
+
+  console.log(`[RegimeWeightLearner] ${new Date().toISOString()} 학습 실행 시작 (dryRun=${dryRun}, days=${days})`);
+
+  try {
+    await initHubConfig().catch(() => null);
+    await db.initSchema().catch(() => null);
+  } catch {}
+
+  const result = await runRegimeWeightLearner({ dryRun, days });
+
+  if (result.skipped) {
+    console.log(`[RegimeWeightLearner] 건너뜀: ${result.reason}`);
+    process.exit(0);
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  let msg = `🧠 *루나 체제별 가중치 학습 — ${today}*\n\n`;
+  msg += `📊 분석: 최근 ${result.days}일 | 학습률: ${result.learnRate}\n\n`;
+
+  for (const s of result.snapshots || []) {
+    const regime = s.regime.replace('TRENDING_', '');
+    const winPct = (s.winRate * 100).toFixed(1);
+    const pf = s.profitFactor.toFixed(2);
+    msg += `*${regime}* (거래 ${s.totalTrades}건 | 승률 ${winPct}% | PF ${pf})\n`;
+
+    const fw = s.fusionWeights || {};
+    msg += `  fusion: TA=${(fw.ta || 0).toFixed(2)} 펀더=${(fw.fundamental || 0).toFixed(2)} 감성=${(fw.sentiment || 0).toFixed(2)} WQ=${(fw.worldquant || 0).toFixed(2)}\n`;
+    msg += '\n';
+  }
+
+  msg += `_데이터 → 가중치 → 수익 확률 우상향 ♻️_`;
+
+  if (!dryRun) {
+    await sendTelegram(msg);
+  }
+
+  console.log(`[RegimeWeightLearner] 완료 (체제 ${result.regimesUpdated}개 업데이트)`);
+  process.exit(0);
+}
+
+main().catch((err) => {
+  console.error(`[RegimeWeightLearner] 오류:`, err);
+  process.exit(1);
+});
