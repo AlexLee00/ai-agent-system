@@ -28,7 +28,7 @@ defmodule TeamJay.Dashboard.Endpoint do
     at: "/assets",
     from: :team_jay,
     gzip: false,
-    only: ~w(dashboard.css)
+    only: ~w(dashboard.css app.js)
 
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]

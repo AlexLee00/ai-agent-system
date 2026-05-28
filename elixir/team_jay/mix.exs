@@ -26,8 +26,8 @@ defmodule TeamJay.MixProject do
       "darwin.migrate": ["darwin.migrate"],
       "luna.migrate": ["luna.migrate"],
       # cycle #53 M2: assets pipeline
-      "assets.build": ["tailwind default"],
-      "assets.deploy": ["tailwind default --minify"],
+      "assets.build": ["tailwind default", "esbuild default"],
+      "assets.deploy": ["tailwind default --minify", "esbuild default --minify"],
       "assets.watch": ["tailwind default --watch"]
     ]
   end

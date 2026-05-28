@@ -13,6 +13,7 @@ defmodule TeamJay.Dashboard.Layouts do
         <link rel="stylesheet" href="/assets/dashboard.css" />
         <script src="/assets/phoenix.js"></script>
         <script src="/assets/phoenix_live_view.js"></script>
+        <script defer src="/assets/app.js"></script>
         <script>
           let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content");
           let liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, {params: {_csrf_token: csrfToken}});
