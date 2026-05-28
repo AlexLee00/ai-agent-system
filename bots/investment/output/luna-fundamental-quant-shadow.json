@@ -1,19 +1,22 @@
 {
   "ok": true,
   "status": "luna_fundamental_quant_shadow_ready",
-  "dryRun": false,
+  "dryRun": true,
   "shadowOnly": true,
   "liveOrderAllowed": false,
   "shadowSignalLedger": {
-    "writeApplied": true,
-    "writeMode": "shadow-signal-ledger-apply",
-    "total": 25,
+    "writeApplied": false,
+    "writeMode": "plan-only",
+    "plannedTotal": 50,
+    "insertedTotal": null,
+    "skippedDuplicateTotal": 0,
+    "total": 50,
     "byStrategy": {
-      "fundamental-quant-trading": 25
+      "fundamental-quant-trading": 50
     },
     "byAction": {
-      "long_watchlist": 1,
-      "observe": 24
+      "observe": 48,
+      "long_watchlist": 2
     },
     "shadowOnly": true,
     "liveOrderAllowed": false
@@ -29,15 +32,125 @@
       "dataHealth": "shadow_ready",
       "recommendations": [
         {
-          "stockCode": "000270",
-          "companyName": "기아",
-          "action": "long_watchlist",
-          "confidence": 0.7633,
+          "stockCode": "192400",
+          "companyName": "쿠쿠홀딩스",
+          "action": "observe",
+          "confidence": 0.7947,
           "scores": {
-            "value": 0.8601,
-            "quality": 0.8051,
+            "value": 0.8661,
+            "quality": 0.8702,
             "growth": 0.5,
-            "composite": 0.7633,
+            "composite": 0.7947,
+            "flags": [
+              "low_per",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "029530",
+          "companyName": "신도리코",
+          "action": "observe",
+          "confidence": 0.7888,
+          "scores": {
+            "value": 0.9058,
+            "quality": 0.8262,
+            "growth": 0.5,
+            "composite": 0.7888,
+            "flags": [
+              "low_per",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "079810",
+          "companyName": "APS이노베이션",
+          "action": "observe",
+          "confidence": 0.7837,
+          "scores": {
+            "value": 0.8913,
+            "quality": 0.826,
+            "growth": 0.5,
+            "composite": 0.7837,
+            "flags": [
+              "low_per",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "006660",
+          "companyName": "삼성공조",
+          "action": "observe",
+          "confidence": 0.7756,
+          "scores": {
+            "value": 0.9028,
+            "quality": 0.7991,
+            "growth": 0.5,
+            "composite": 0.7756,
+            "flags": [
+              "low_per",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "025770",
+          "companyName": "한국정보통신",
+          "action": "observe",
+          "confidence": 0.7739,
+          "scores": {
+            "value": 0.8336,
+            "quality": 0.8491,
+            "growth": 0.5,
+            "composite": 0.7739,
+            "flags": [
+              "low_per",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "352480",
+          "companyName": "씨앤씨인터내셔널",
+          "action": "long_watchlist",
+          "confidence": 0.765,
+          "scores": {
+            "value": 0.808,
+            "quality": 0.8494,
+            "growth": 0.5,
+            "composite": 0.765,
             "flags": [
               "low_per",
               "high_roe",
@@ -53,15 +166,61 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "012330",
-          "companyName": "현대모비스",
-          "action": "observe",
-          "confidence": 0.7359,
+          "stockCode": "059210",
+          "companyName": "메타바이오메드",
+          "action": "long_watchlist",
+          "confidence": 0.7637,
           "scores": {
-            "value": 0.7848,
-            "quality": 0.8027,
+            "value": 0.8681,
+            "quality": 0.7998,
             "growth": 0.5,
-            "composite": 0.7359,
+            "composite": 0.7637,
+            "flags": [
+              "low_per",
+              "high_roe",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "ROE>15%",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "448710",
+          "companyName": "코츠테크놀로지",
+          "action": "observe",
+          "confidence": 0.7583,
+          "scores": {
+            "value": 0.7324,
+            "quality": 0.8933,
+            "growth": 0.5,
+            "composite": 0.7583,
+            "flags": [
+              "high_roe",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "ROE>15%",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "109080",
+          "companyName": "옵티시스",
+          "action": "observe",
+          "confidence": 0.7387,
+          "scores": {
+            "value": 0.7387,
+            "quality": 0.8448,
+            "growth": 0.5,
+            "composite": 0.7387,
             "flags": [
               "low_debt"
             ]
@@ -73,15 +232,97 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "005380",
-          "companyName": "현대자동차",
+          "stockCode": "021080",
+          "companyName": "에이티넘인베스트",
           "action": "observe",
-          "confidence": 0.6642,
+          "confidence": 0.7384,
           "scores": {
-            "value": 0.8225,
-            "quality": 0.6141,
+            "value": 0.7933,
+            "quality": 0.8016,
             "growth": 0.5,
-            "composite": 0.6642,
+            "composite": 0.7384,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "382480",
+          "companyName": "지아이텍",
+          "action": "observe",
+          "confidence": 0.7156,
+          "scores": {
+            "value": 0.7415,
+            "quality": 0.7912,
+            "growth": 0.5,
+            "composite": 0.7156,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "009290",
+          "companyName": "광동제약",
+          "action": "observe",
+          "confidence": 0.7071,
+          "scores": {
+            "value": 0.859,
+            "quality": 0.6811,
+            "growth": 0.5,
+            "composite": 0.7071,
+            "flags": [
+              "low_per",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "049480",
+          "companyName": "오픈베이스",
+          "action": "observe",
+          "confidence": 0.704,
+          "scores": {
+            "value": 0.8137,
+            "quality": 0.7093,
+            "growth": 0.5,
+            "composite": 0.704,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "101330",
+          "companyName": "모베이스",
+          "action": "observe",
+          "confidence": 0.6981,
+          "scores": {
+            "value": 0.9519,
+            "quality": 0.5887,
+            "growth": 0.5,
+            "composite": 0.6981,
             "flags": [
               "low_per"
             ]
@@ -93,15 +334,35 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "028260",
-          "companyName": "삼성물산",
+          "stockCode": "200880",
+          "companyName": "서연이화",
           "action": "observe",
-          "confidence": 0.6288,
+          "confidence": 0.6958,
           "scores": {
-            "value": 0.6283,
-            "quality": 0.6865,
+            "value": 0.9533,
+            "quality": 0.5826,
             "growth": 0.5,
-            "composite": 0.6288,
+            "composite": 0.6958,
+            "flags": [
+              "low_per"
+            ]
+          },
+          "reasons": [
+            "PER<10"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "088340",
+          "companyName": "유라클",
+          "action": "observe",
+          "confidence": 0.6845,
+          "scores": {
+            "value": 0.6518,
+            "quality": 0.792,
+            "growth": 0.5,
+            "composite": 0.6845,
             "flags": [
               "low_debt"
             ]
@@ -113,15 +374,57 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "005490",
-          "companyName": "POSCO홀딩스",
+          "stockCode": "194370",
+          "companyName": "제이에스코퍼레이션",
           "action": "observe",
-          "confidence": 0.6004,
+          "confidence": 0.6747,
           "scores": {
-            "value": 0.5305,
-            "quality": 0.6993,
+            "value": 0.9166,
+            "quality": 0.5641,
             "growth": 0.5,
-            "composite": 0.6004,
+            "composite": 0.6747,
+            "flags": [
+              "low_per",
+              "high_roe"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "ROE>15%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003010",
+          "companyName": "혜인",
+          "action": "observe",
+          "confidence": 0.6742,
+          "scores": {
+            "value": 0.8375,
+            "quality": 0.6247,
+            "growth": 0.5,
+            "composite": 0.6742,
+            "flags": [
+              "low_per"
+            ]
+          },
+          "reasons": [
+            "PER<10"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "042420",
+          "companyName": "네오위즈홀딩스",
+          "action": "observe",
+          "confidence": 0.6714,
+          "scores": {
+            "value": 0.7331,
+            "quality": 0.6996,
+            "growth": 0.5,
+            "composite": 0.6714,
             "flags": [
               "low_debt"
             ]
@@ -133,15 +436,35 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "001820",
-          "companyName": "삼화콘덴서공업",
+          "stockCode": "241590",
+          "companyName": "화승엔터프라이즈",
           "action": "observe",
-          "confidence": 0.5911,
+          "confidence": 0.6379,
           "scores": {
-            "value": 0.3455,
-            "quality": 0.8226,
+            "value": 0.885,
+            "quality": 0.5071,
             "growth": 0.5,
-            "composite": 0.5911,
+            "composite": 0.6379,
+            "flags": [
+              "low_per"
+            ]
+          },
+          "reasons": [
+            "PER<10"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "411080",
+          "companyName": "샌즈랩",
+          "action": "observe",
+          "confidence": 0.6271,
+          "scores": {
+            "value": 0.623,
+            "quality": 0.6868,
+            "growth": 0.5,
+            "composite": 0.6271,
             "flags": [
               "low_debt"
             ]
@@ -153,37 +476,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "402340",
-          "companyName": "SK스퀘어",
+          "stockCode": "026890",
+          "companyName": "스틱인베스트먼트",
           "action": "observe",
-          "confidence": 0.5631,
+          "confidence": 0.6254,
           "scores": {
-            "value": 0.1017,
-            "quality": 0.9501,
+            "value": 0.4856,
+            "quality": 0.7899,
             "growth": 0.5,
-            "composite": 0.5631,
-            "flags": [
-              "high_roe",
-              "low_debt"
-            ]
-          },
-          "reasons": [
-            "ROE>15%",
-            "debt_ratio<100%"
-          ],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "005930",
-          "companyName": "삼성전자",
-          "action": "observe",
-          "confidence": 0.5562,
-          "scores": {
-            "value": 0.2493,
-            "quality": 0.8198,
-            "growth": 0.5,
-            "composite": 0.5562,
+            "composite": 0.6254,
             "flags": [
               "low_debt"
             ]
@@ -195,59 +496,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "042700",
-          "companyName": "한미반도체",
+          "stockCode": "137950",
+          "companyName": "제이씨케미칼",
           "action": "observe",
-          "confidence": 0.5382,
+          "confidence": 0.6203,
           "scores": {
-            "value": 0,
-            "quality": 0.9738,
+            "value": 0.777,
+            "quality": 0.552,
             "growth": 0.5,
-            "composite": 0.5382,
-            "flags": [
-              "high_roe",
-              "low_debt"
-            ]
-          },
-          "reasons": [
-            "ROE>15%",
-            "debt_ratio<100%"
-          ],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "000660",
-          "companyName": "SK하이닉스",
-          "action": "observe",
-          "confidence": 0.509,
-          "scores": {
-            "value": 0,
-            "quality": 0.9088,
-            "growth": 0.5,
-            "composite": 0.509,
-            "flags": [
-              "high_roe",
-              "low_debt"
-            ]
-          },
-          "reasons": [
-            "ROE>15%",
-            "debt_ratio<100%"
-          ],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "047040",
-          "companyName": "대우건설",
-          "action": "observe",
-          "confidence": 0.5043,
-          "scores": {
-            "value": 0.3421,
-            "quality": 0.6323,
-            "growth": 0.5,
-            "composite": 0.5043,
+            "composite": 0.6203,
             "flags": []
           },
           "reasons": [],
@@ -255,69 +512,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "011070",
-          "companyName": "LG이노텍",
+          "stockCode": "007570",
+          "companyName": "일양약품",
           "action": "observe",
-          "confidence": 0.4998,
+          "confidence": 0.6156,
           "scores": {
-            "value": 0.29,
-            "quality": 0.6628,
+            "value": 0.7346,
+            "quality": 0.5745,
             "growth": 0.5,
-            "composite": 0.4998,
-            "flags": []
-          },
-          "reasons": [],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066570",
-          "companyName": "LG전자",
-          "action": "observe",
-          "confidence": 0.4925,
-          "scores": {
-            "value": 0.4269,
-            "quality": 0.5402,
-            "growth": 0.5,
-            "composite": 0.4925,
-            "flags": []
-          },
-          "reasons": [],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "036930",
-          "companyName": "주성엔지니어링",
-          "action": "observe",
-          "confidence": 0.4886,
-          "scores": {
-            "value": 0,
-            "quality": 0.8636,
-            "growth": 0.5,
-            "composite": 0.4886,
-            "flags": [
-              "high_roe",
-              "low_debt"
-            ]
-          },
-          "reasons": [
-            "ROE>15%",
-            "debt_ratio<100%"
-          ],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "006400",
-          "companyName": "삼성SDI",
-          "action": "observe",
-          "confidence": 0.4846,
-          "scores": {
-            "value": 0.3669,
-            "quality": 0.5694,
-            "growth": 0.5,
-            "composite": 0.4846,
+            "composite": 0.6156,
             "flags": [
               "low_debt"
             ]
@@ -329,15 +532,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "080220",
-          "companyName": "제주반도체",
+          "stockCode": "101360",
+          "companyName": "에코앤드림",
           "action": "observe",
-          "confidence": 0.4819,
+          "confidence": 0.6145,
           "scores": {
-            "value": 0,
-            "quality": 0.8486,
+            "value": 0.6991,
+            "quality": 0.5995,
             "growth": 0.5,
-            "composite": 0.4819,
+            "composite": 0.6145,
             "flags": [
               "low_debt"
             ]
@@ -349,15 +552,35 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "012450",
-          "companyName": "한화에어로스페이스",
+          "stockCode": "093320",
+          "companyName": "케이아이엔엑스",
           "action": "observe",
-          "confidence": 0.4551,
+          "confidence": 0.6101,
           "scores": {
-            "value": 0.3288,
-            "quality": 0.5333,
+            "value": 0.4822,
+            "quality": 0.7586,
             "growth": 0.5,
-            "composite": 0.4551,
+            "composite": 0.6101,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "093520",
+          "companyName": "매커스",
+          "action": "observe",
+          "confidence": 0.5959,
+          "scores": {
+            "value": 0.6738,
+            "quality": 0.5779,
+            "growth": 0.5,
+            "composite": 0.5959,
             "flags": [
               "high_roe"
             ]
@@ -369,15 +592,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "009150",
-          "companyName": "삼성전기",
+          "stockCode": "460940",
+          "companyName": "피앤에스로보틱스",
           "action": "observe",
-          "confidence": 0.4538,
+          "confidence": 0.5904,
           "scores": {
-            "value": 0,
-            "quality": 0.7862,
+            "value": 0.3491,
+            "quality": 0.8183,
             "growth": 0.5,
-            "composite": 0.4538,
+            "composite": 0.5904,
             "flags": [
               "low_debt"
             ]
@@ -389,15 +612,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "001440",
-          "companyName": "대한전선",
+          "stockCode": "064800",
+          "companyName": "포니링크",
           "action": "observe",
-          "confidence": 0.4514,
+          "confidence": 0.5877,
           "scores": {
-            "value": 0.0742,
-            "quality": 0.7232,
+            "value": 0.7299,
+            "quality": 0.5161,
             "growth": 0.5,
-            "composite": 0.4514,
+            "composite": 0.5877,
             "flags": [
               "low_debt"
             ]
@@ -409,47 +632,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "006800",
-          "companyName": "미래에셋증권",
+          "stockCode": "000020",
+          "companyName": "동화약품",
           "action": "observe",
-          "confidence": 0.4121,
+          "confidence": 0.5728,
           "scores": {
-            "value": 0.3546,
-            "quality": 0.4178,
+            "value": 0.4742,
+            "quality": 0.6819,
             "growth": 0.5,
-            "composite": 0.4121,
-            "flags": []
-          },
-          "reasons": [],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "034020",
-          "companyName": "두산에너빌리티",
-          "action": "observe",
-          "confidence": 0.407,
-          "scores": {
-            "value": 0.1522,
-            "quality": 0.5639,
-            "growth": 0.5,
-            "composite": 0.407,
-            "flags": []
-          },
-          "reasons": [],
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "069540",
-          "companyName": "빛과전자",
-          "action": "observe",
-          "confidence": 0.401,
-          "scores": {
-            "value": 0.25,
-            "quality": 0.4745,
-            "growth": 0.5,
-            "composite": 0.401,
+            "composite": 0.5728,
             "flags": [
               "low_debt"
             ]
@@ -461,15 +652,15 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "298040",
-          "companyName": "효성중공업",
+          "stockCode": "030610",
+          "companyName": "교보증권",
           "action": "observe",
-          "confidence": 0.3408,
+          "confidence": 0.5698,
           "scores": {
-            "value": 0,
-            "quality": 0.5351,
+            "value": 0.8148,
+            "quality": 0.4102,
             "growth": 0.5,
-            "composite": 0.3408,
+            "composite": 0.5698,
             "flags": []
           },
           "reasons": [],
@@ -477,15 +668,75 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "329180",
-          "companyName": "HD현대중공업",
+          "stockCode": "370090",
+          "companyName": "퓨런티어",
           "action": "observe",
-          "confidence": 0.32,
+          "confidence": 0.5663,
           "scores": {
-            "value": 0,
-            "quality": 0.4888,
+            "value": 0.3735,
+            "quality": 0.7457,
             "growth": 0.5,
-            "composite": 0.32,
+            "composite": 0.5663,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "101670",
+          "companyName": "하이드로리튬",
+          "action": "observe",
+          "confidence": 0.566,
+          "scores": {
+            "value": 0.6772,
+            "quality": 0.5088,
+            "growth": 0.5,
+            "composite": 0.566,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "058820",
+          "companyName": "CMG제약",
+          "action": "observe",
+          "confidence": 0.5618,
+          "scores": {
+            "value": 0.4328,
+            "quality": 0.6895,
+            "growth": 0.5,
+            "composite": 0.5618,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "025900",
+          "companyName": "동화기업",
+          "action": "observe",
+          "confidence": 0.5441,
+          "scores": {
+            "value": 0.7223,
+            "quality": 0.4251,
+            "growth": 0.5,
+            "composite": 0.5441,
             "flags": []
           },
           "reasons": [],
@@ -493,15 +744,263 @@
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "010170",
-          "companyName": "대한광통신",
+          "stockCode": "451220",
+          "companyName": "아이엠티",
           "action": "observe",
-          "confidence": 0.2267,
+          "confidence": 0.5394,
           "scores": {
-            "value": 0.25,
-            "quality": 0.0872,
+            "value": 0.5337,
+            "quality": 0.5613,
             "growth": 0.5,
-            "composite": 0.2267,
+            "composite": 0.5394,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "271980",
+          "companyName": "제일약품",
+          "action": "observe",
+          "confidence": 0.532,
+          "scores": {
+            "value": 0.6957,
+            "quality": 0.4189,
+            "growth": 0.5,
+            "composite": 0.532,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "225430",
+          "companyName": "케이엠제약",
+          "action": "observe",
+          "confidence": 0.5227,
+          "scores": {
+            "value": 0.7176,
+            "quality": 0.3813,
+            "growth": 0.5,
+            "composite": 0.5227,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "189860",
+          "companyName": "서전기전",
+          "action": "observe",
+          "confidence": 0.5106,
+          "scores": {
+            "value": 0.3689,
+            "quality": 0.6255,
+            "growth": 0.5,
+            "composite": 0.5106,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "089980",
+          "companyName": "상아프론테크",
+          "action": "observe",
+          "confidence": 0.5016,
+          "scores": {
+            "value": 0.3936,
+            "quality": 0.5863,
+            "growth": 0.5,
+            "composite": 0.5016,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "307750",
+          "companyName": "국전",
+          "action": "observe",
+          "confidence": 0.4885,
+          "scores": {
+            "value": 0.3963,
+            "quality": 0.555,
+            "growth": 0.5,
+            "composite": 0.4885,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "220100",
+          "companyName": "퓨쳐켐",
+          "action": "observe",
+          "confidence": 0.4643,
+          "scores": {
+            "value": 0.3489,
+            "quality": 0.5381,
+            "growth": 0.5,
+            "composite": 0.4643,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "300080",
+          "companyName": "플리토",
+          "action": "observe",
+          "confidence": 0.4518,
+          "scores": {
+            "value": 0,
+            "quality": 0.7817,
+            "growth": 0.5,
+            "composite": 0.4518,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "317120",
+          "companyName": "라닉스",
+          "action": "observe",
+          "confidence": 0.4206,
+          "scores": {
+            "value": 0.6442,
+            "quality": 0.2115,
+            "growth": 0.5,
+            "composite": 0.4206,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "298690",
+          "companyName": "에어부산",
+          "action": "observe",
+          "confidence": 0.3967,
+          "scores": {
+            "value": 0.4017,
+            "quality": 0.3468,
+            "growth": 0.5,
+            "composite": 0.3967,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "900140",
+          "companyName": "엘브이엠씨",
+          "action": "observe",
+          "confidence": 0.3873,
+          "scores": {
+            "value": 0,
+            "quality": 0.6385,
+            "growth": 0.5,
+            "composite": 0.3873,
+            "flags": [
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "187420",
+          "companyName": "HLB제넥스",
+          "action": "observe",
+          "confidence": 0.379,
+          "scores": {
+            "value": 0.5824,
+            "quality": 0.1671,
+            "growth": 0.5,
+            "composite": 0.379,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "166480",
+          "companyName": "코아스템켐온",
+          "action": "observe",
+          "confidence": 0.3558,
+          "scores": {
+            "value": 0.5008,
+            "quality": 0.179,
+            "growth": 0.5,
+            "composite": 0.3558,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "232830",
+          "companyName": "아이티센피엔에스",
+          "action": "observe",
+          "confidence": 0.3367,
+          "scores": {
+            "value": 0.3461,
+            "quality": 0.2567,
+            "growth": 0.5,
+            "composite": 0.3367,
+            "flags": []
+          },
+          "reasons": [],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "086820",
+          "companyName": "바이오솔루션",
+          "action": "observe",
+          "confidence": 0.3136,
+          "scores": {
+            "value": 0.312,
+            "quality": 0.232,
+            "growth": 0.5,
+            "composite": 0.3136,
             "flags": []
           },
           "reasons": [],
@@ -511,15 +1010,39 @@
       ],
       "topBuyWatchlist": [
         {
-          "stockCode": "000270",
-          "companyName": "기아",
+          "stockCode": "352480",
+          "companyName": "씨앤씨인터내셔널",
           "action": "long_watchlist",
-          "confidence": 0.7633,
+          "confidence": 0.765,
           "scores": {
-            "value": 0.8601,
-            "quality": 0.8051,
+            "value": 0.808,
+            "quality": 0.8494,
             "growth": 0.5,
-            "composite": 0.7633,
+            "composite": 0.765,
+            "flags": [
+              "low_per",
+              "high_roe",
+              "low_debt"
+            ]
+          },
+          "reasons": [
+            "PER<10",
+            "ROE>15%",
+            "debt_ratio<100%"
+          ],
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "059210",
+          "companyName": "메타바이오메드",
+          "action": "long_watchlist",
+          "confidence": 0.7637,
+          "scores": {
+            "value": 0.8681,
+            "quality": 0.7998,
+            "growth": 0.5,
+            "composite": 0.7637,
             "flags": [
               "low_per",
               "high_roe",
@@ -543,7 +1066,7 @@
     "metadata": {
       "shadowOnly": true,
       "liveOrderAllowed": false,
-      "rows": 25
+      "rows": 50
     }
   }
 }
