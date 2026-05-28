@@ -543,7 +543,9 @@ async function runOhlcvFallbackBacktest(symbol: string, market: string, days: nu
 function evaluateQuality(rows: any[], market: string = 'all') {
   const usable = (rows || []).filter((r) => {
     const status = String(r?.status || 'ok').toLowerCase();
-    return ['ok', 'unstable'].includes(status) && safeNum(r?.total_trades) > 0;
+    const oosStatus = String(r?.oos_status || '').toLowerCase();
+    const isBacktestReliabilityRow = Boolean(r?.selection_method || oosStatus);
+    return (['ok', 'unstable'].includes(status) || isBacktestReliabilityRow) && safeNum(r?.total_trades) > 0;
   });
   if (usable.length === 0) {
     const statuses = (rows || []).map((r) => String(r?.status || '').trim()).filter(Boolean);
