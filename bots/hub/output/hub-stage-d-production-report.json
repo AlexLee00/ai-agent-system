@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-28T05:30:03.693Z",
+  "checkedAt": "2026-05-28T05:35:27.910Z",
   "stage": "hub_stage_d",
   "status": "stage_d_code_complete_promotion_evidence_pending",
   "codeComplete": true,
@@ -21,7 +21,7 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-28T05:30:03.524Z",
+      "checkedAt": "2026-05-28T05:35:27.735Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -30,7 +30,7 @@
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-28T05:30:03.691Z",
+      "checkedAt": "2026-05-28T05:35:27.907Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -390,7 +390,7 @@
     },
     "uptime": {
       "ok": true,
-      "uptimeSeconds": 80,
+      "uptimeSeconds": 157,
       "startupComplete": true,
       "httpStatus": 200
     },
@@ -403,35 +403,35 @@
       "selfHealingTargetMet": false,
       "observed": {
         "source": "read_only_stage_reports",
-        "stageBCheckedAt": "2026-05-28T05:30:03.524Z",
+        "stageBCheckedAt": "2026-05-28T05:35:27.735Z",
         "requestLogHours": 24,
-        "rawTotalRequests": 6332,
+        "rawTotalRequests": 6273,
         "rawFailures": 8,
         "rawUnresolvedFailures": 3,
-        "totalRequests": 6231,
+        "totalRequests": 6242,
         "failures": 7,
         "unresolvedFailures": 2,
         "diagnosticFailures": 1,
         "diagnosticUnresolvedFailures": 1,
-        "failureRatePct": 0.1123,
-        "avgDurationMs": 1743,
+        "failureRatePct": 0.1121,
+        "avgDurationMs": 1751,
         "maxDurationMs": 126231,
         "latencyByProvider": [
           {
             "provider": "claude-code-oauth",
-            "count": 11,
+            "count": 9,
             "failures": 0,
-            "avg_duration_ms": 40353,
+            "avg_duration_ms": 47893,
             "max_duration_ms": 90950,
-            "p95_duration_ms": 83954
+            "p95_duration_ms": 85353
           },
           {
             "provider": "openai-oauth",
-            "count": 161,
+            "count": 142,
             "failures": 0,
-            "avg_duration_ms": 7115,
+            "avg_duration_ms": 7834,
             "max_duration_ms": 126231,
-            "p95_duration_ms": 25892
+            "p95_duration_ms": 27585
           },
           {
             "provider": "failed",
@@ -451,11 +451,11 @@
           },
           {
             "provider": "groq",
-            "count": 3432,
+            "count": 3394,
             "failures": 0,
-            "avg_duration_ms": 1056,
+            "avg_duration_ms": 1067,
             "max_duration_ms": 8078,
-            "p95_duration_ms": 2720
+            "p95_duration_ms": 2729
           },
           {
             "provider": "cache",
@@ -531,14 +531,14 @@
             "abstract_model": "anthropic_haiku",
             "runtime_purpose": "debate_bull",
             "provider_tier": "2",
-            "count": 50,
+            "count": 51,
             "failures": 0,
-            "avg_duration_ms": 2377,
+            "avg_duration_ms": 2358,
             "max_duration_ms": 6104,
-            "p95_duration_ms": 4527
+            "p95_duration_ms": 4524
           }
         ],
-        "uptimeSeconds": 80,
+        "uptimeSeconds": 157,
         "uptimeDays": 0,
         "l5Status": "l5_acceptance_evidence_ready",
         "l5Ok": true,
@@ -580,7 +580,7 @@
           "observedOk": false,
           "certificationOk": false,
           "evidence": {
-            "uptimeSeconds": 80,
+            "uptimeSeconds": 157,
             "uptimeDays": 0,
             "currentStartupOk": true
           },
@@ -595,24 +595,24 @@
           "certificationOk": false,
           "evidence": {
             "requestLogHours": 24,
-            "avgDurationMs": 1743,
+            "avgDurationMs": 1751,
             "maxDurationMs": 126231,
             "latencyByProvider": [
               {
                 "provider": "claude-code-oauth",
-                "count": 11,
+                "count": 9,
                 "failures": 0,
-                "avg_duration_ms": 40353,
+                "avg_duration_ms": 47893,
                 "max_duration_ms": 90950,
-                "p95_duration_ms": 83954
+                "p95_duration_ms": 85353
               },
               {
                 "provider": "openai-oauth",
-                "count": 161,
+                "count": 142,
                 "failures": 0,
-                "avg_duration_ms": 7115,
+                "avg_duration_ms": 7834,
                 "max_duration_ms": 126231,
-                "p95_duration_ms": 25892
+                "p95_duration_ms": 27585
               },
               {
                 "provider": "failed",
@@ -632,11 +632,11 @@
               },
               {
                 "provider": "groq",
-                "count": 3432,
+                "count": 3394,
                 "failures": 0,
-                "avg_duration_ms": 1056,
+                "avg_duration_ms": 1067,
                 "max_duration_ms": 8078,
-                "p95_duration_ms": 2720
+                "p95_duration_ms": 2729
               }
             ],
             "slowRoutes": [
@@ -704,11 +704,11 @@
                 "abstract_model": "anthropic_haiku",
                 "runtime_purpose": "debate_bull",
                 "provider_tier": "2",
-                "count": 50,
+                "count": 51,
                 "failures": 0,
-                "avg_duration_ms": 2377,
+                "avg_duration_ms": 2358,
                 "max_duration_ms": 6104,
-                "p95_duration_ms": 4527
+                "p95_duration_ms": 4524
               }
             ]
           },
@@ -723,14 +723,14 @@
           "certificationOk": false,
           "evidence": {
             "requestLogHours": 24,
-            "rawTotalRequests": 6332,
+            "rawTotalRequests": 6273,
             "rawFailures": 8,
             "diagnosticFailures": 1,
             "diagnosticUnresolvedFailures": 1,
-            "totalRequests": 6231,
+            "totalRequests": 6242,
             "failures": 7,
             "unresolvedFailures": 2,
-            "failureRatePct": 0.1123
+            "failureRatePct": 0.1121
           },
           "nextAction": "Keep unresolved failures at zero and retain the observation window before attesting."
         },
@@ -805,9 +805,9 @@
       "self_healing_gt_95"
     ],
     "observedSnapshot": {
-      "totalRequests": 6231,
-      "failureRatePct": 0.1123,
-      "avgDurationMs": 1743,
+      "totalRequests": 6242,
+      "failureRatePct": 0.1121,
+      "avgDurationMs": 1751,
       "maxDurationMs": 126231,
       "uptimeDays": 0,
       "topLatencyHotspot": {
@@ -858,13 +858,13 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-28T05:30:03.524Z",
+      "checkedAt": "2026-05-28T05:35:27.735Z",
       "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-b-stability-report.json"
     },
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-28T05:30:03.691Z",
+      "checkedAt": "2026-05-28T05:35:27.907Z",
       "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-c-resilience-report.json"
     }
   }

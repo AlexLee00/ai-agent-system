@@ -5,6 +5,7 @@ const { execFileSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const { listAgentModelTargets } = require(path.join(PROJECT_ROOT, 'packages/core/lib/llm-model-selector'));
 const { BudgetGuardian } = require('../budget-guardian');
 const { getAllCircuitStatuses } = require(path.join(PROJECT_ROOT, 'packages/core/lib/local-circuit-breaker'));
 
@@ -43,6 +44,16 @@ const EXPECTED_IDLE_DIAGNOSTICS = {
 function safeSelectorArg(value) {
   const text = String(value || '').trim();
   return /^[A-Za-z0-9_.-]+$/.test(text) ? text : 'unknown';
+}
+
+function hasAgentDrillTarget(team, agent) {
+  try {
+    return listAgentModelTargets(team).some((target) =>
+      target.agent === agent || `${team}.${target.agent}` === agent
+    );
+  } catch {
+    return false;
+  }
 }
 
 function readText(relativePath) {
@@ -710,6 +721,25 @@ function buildSelfHealingPlan(report) {
     if (avgDurationMs <= 500 && p95DurationMs <= 500) continue;
     const team = safeSelectorArg(route.caller_team || route.callerTeam);
     const agent = safeSelectorArg(route.agent);
+    const command = `npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=${team} --agents=${agent} --primary-only`;
+    const liveCommand = `npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=${team} --agents=${agent} --primary-only`;
+    if (!hasAgentDrillTarget(team, agent)) {
+      safeReadOnlyActions.push({
+        action: 'latency_hotspot_route_mapping_review',
+        team,
+        agent,
+        route: route.route || 'unknown',
+        runtimePurpose: route.runtime_purpose || route.runtimePurpose || 'unknown',
+        count: Number(route.count || 0),
+        avgDurationMs,
+        p95DurationMs,
+        reason: `slow LLM route hotspot references an agent that is not in the current selector inventory: ${team}/${agent}`,
+        command: 'npm --prefix bots/hub run -s llm:agent-model-inventory-report',
+        evidenceCommand: command,
+        effect: 'read-only inventory review separates historical or external caller labels from current selectable agents; live latency evidence requires a mapped selector target first',
+      });
+      continue;
+    }
     safeReadOnlyActions.push({
       action: 'latency_hotspot_route_drill',
       team,
@@ -720,8 +750,8 @@ function buildSelfHealingPlan(report) {
       avgDurationMs,
       p95DurationMs,
       reason: `slow LLM route hotspot exists for ${team}/${agent}`,
-      command: `npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=${team} --agents=${agent} --primary-only`,
-      liveCommand: `npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=${team} --agents=${agent} --primary-only`,
+      command,
+      liveCommand,
       effect: 'mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window',
     });
   }

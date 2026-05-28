@@ -262,6 +262,14 @@ function buildChecks(plans) {
   })));
 }
 
+function findUnmatchedAgentFilters(plans) {
+  const filters = targetAgents();
+  if (!filters) return [];
+  return [...filters].filter((filter) =>
+    !plans.some((plan) => filter === plan.agent || filter === `${plan.team}.${plan.agent}`)
+  );
+}
+
 function setupMockFetch(checks) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input, init) => {
@@ -426,7 +434,24 @@ async function main() {
       selectorKey: plan.selectorKey,
       reason: plan.skippedReason,
     }));
-    const failed = results.filter((result) => !result.ok);
+    const unmatchedAgentFilters = findUnmatchedAgentFilters(plans);
+    const selectionFailures = unmatchedAgentFilters.map((agent) => ({
+      ok: false,
+      error: 'agent_filter_matched_no_targets',
+      agent,
+      team: null,
+      role: slotFilter(),
+    }));
+    if (checks.length === 0) {
+      selectionFailures.push({
+        ok: false,
+        error: 'no_llm_drill_checks_selected',
+        agent: null,
+        team: targetTeams().join(','),
+        role: slotFilter(),
+      });
+    }
+    const failed = [...results.filter((result) => !result.ok), ...selectionFailures];
     const byTeam = {};
     for (const team of targetTeams()) {
       const teamResults = results.filter((result) => result.team === team);
@@ -448,6 +473,7 @@ async function main() {
       teams: targetTeams(),
       agentFilter: targetAgents() ? [...targetAgents()].sort() : null,
       slotFilter: slotFilter(),
+      unmatchedAgentFilters,
       totals: {
         agents: plans.length,
         selectedAgents: plans.filter((plan) => plan.selected).length,

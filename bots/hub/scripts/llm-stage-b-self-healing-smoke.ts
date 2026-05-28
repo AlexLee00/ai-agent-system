@@ -2,9 +2,12 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
+const repoRoot = path.resolve(__dirname, '../../..');
 const { buildSelfHealingPlan } = require('../lib/stage-b/stability.ts');
 
 const fixture = {
@@ -49,6 +52,15 @@ const fixture = {
         avg_duration_ms: 45880,
         p95_duration_ms: 103533,
       },
+      {
+        route: 'openai-oauth/gpt-5.4',
+        caller_team: 'blog',
+        agent: 'neighbor-commenter',
+        runtime_purpose: 'comment',
+        count: 7,
+        avg_duration_ms: 2932,
+        p95_duration_ms: 3443,
+      },
     ],
     recentErrors: [
       { error: 'fallback_exhausted: openai_codex_oauth_bad_request:Unsupported parameter: max_output_tokens' },
@@ -68,6 +80,7 @@ assert(plan.safeReadOnlyActions.some((item) => item.action === 'targeted_llm_rou
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'targeted_llm_route_drill' && item.liveCommand?.includes('team:agent-llm-drill:live')), 'operational unresolved failures should include a separate live evidence command');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_drill' && item.command.includes('--teams=luna') && item.command.includes('--agents=reporter')), 'latency hotspots should produce concrete mock route drills');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_drill' && item.liveCommand?.includes('team:agent-llm-drill:live')), 'latency hotspots should include a separate live evidence command');
+assert(plan.safeReadOnlyActions.some((item) => item.action === 'latency_hotspot_route_mapping_review' && item.team === 'blog' && item.agent === 'neighbor-commenter'), 'unmapped latency hotspot agents should produce mapping review actions');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'openai_codex_bad_request_guard_verification'), 'OpenAI 400 bad-request guard must have a read-only verification action');
 assert(plan.safeReadOnlyActions.some((item) => item.action === 'expected_idle_exit_status_review' && item.command.includes('weekly-advisory-digest:dry-run')), 'expected-idle warnings should provide dry-run verification');
 assert(plan.confirmRequiredActions.some((item) => item.action === 'protected_service_recovery'), 'protected service recovery must require confirmation');
@@ -78,6 +91,24 @@ const unsafeCommands = [
   ...plan.safeReadOnlyActions.map((item) => item.command || ''),
 ].filter((command) => /\b(kill|bootout|unload|kickstart\s+-k)\b/.test(command));
 assert.deepEqual(unsafeCommands, [], 'safe actions must never contain protected mutation commands');
+
+const zeroTargetDrill = spawnSync(process.execPath, [
+  '--import',
+  'tsx',
+  'bots/hub/scripts/multi-team-agent-llm-primary-fallback-drill.ts',
+  '--teams=blog',
+  '--agents=neighbor-commenter',
+  '--primary-only',
+], {
+  cwd: repoRoot,
+  encoding: 'utf8',
+  env: {
+    ...process.env,
+    HUB_MULTI_AGENT_LLM_DRILL_WRITE_REPORT: '0',
+  },
+});
+assert.notEqual(zeroTargetDrill.status, 0, 'zero-target agent drill must fail closed');
+assert.match(zeroTargetDrill.stdout, /agent_filter_matched_no_targets/, 'zero-target drill must expose filter miss evidence');
 
 console.log(JSON.stringify({
   ok: true,
