@@ -648,6 +648,11 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   const oosStatuses = qualityRows
     .map((r) => String(r?.oos_status || '').trim().toLowerCase())
     .filter(Boolean);
+  const selectionMethod = qualityRows.some((r) => String(r?.selection_method || '').trim() === 'walk_forward')
+    ? 'walk_forward'
+    : qualityRows.map((r) => String(r?.selection_method || '').trim()).find(Boolean) || null;
+  const foldCounts = qualityRows.map((r) => safeNum(r?.fold_count, NaN)).filter(Number.isFinite);
+  const foldCount = foldCounts.length > 0 ? Math.max(...foldCounts) : null;
   const oosStatus = oosSampleRows.length > 0 && oosRows.length === 0 && oosStatuses.includes('insufficient_data')
     ? 'insufficient_data'
     : oosStatuses.includes('unstable')
@@ -681,6 +686,8 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     nObsOos: minNObsOos != null ? Math.round(minNObsOos) : null,
     totalTradesOos: minTradesOos != null ? Math.round(minTradesOos) : null,
     oosStatus,
+    selectionMethod,
+    foldCount: foldCount != null ? Math.round(foldCount) : null,
   };
 }
 
@@ -700,8 +707,8 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
        last_backtest_at, next_refresh_at, gate_status, would_block, enforced,
        block_reasons, backtest_run_metadata, updated_at,
        sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap, n_grid_trials, walk_forward_sharpe,
-       n_obs_oos, total_trades_oos, oos_status)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       n_obs_oos, total_trades_oos, oos_status, selection_method, fold_count)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
     ON CONFLICT (symbol, market) DO UPDATE SET
       fresh = EXCLUDED.fresh,
       healthy = EXCLUDED.healthy,
@@ -724,7 +731,9 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       walk_forward_sharpe = EXCLUDED.walk_forward_sharpe,
       n_obs_oos = EXCLUDED.n_obs_oos,
       total_trades_oos = EXCLUDED.total_trades_oos,
-      oos_status = EXCLUDED.oos_status
+      oos_status = EXCLUDED.oos_status,
+      selection_method = EXCLUDED.selection_method,
+      fold_count = EXCLUDED.fold_count
   `, [
     symbol,
     market,
@@ -767,6 +776,8 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       nObsOos: payload.nObsOos ?? null,
       totalTradesOos: payload.totalTradesOos ?? null,
       oosStatus: payload.oosStatus ?? null,
+      selectionMethod: payload.selectionMethod ?? null,
+      foldCount: payload.foldCount ?? null,
     }),
     payload.sharpeOos ?? null,
     payload.sharpeIs ?? null,
@@ -777,6 +788,8 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
     payload.nObsOos ?? null,
     payload.totalTradesOos ?? null,
     payload.oosStatus ?? null,
+    payload.selectionMethod ?? null,
+    payload.foldCount ?? null,
   ]);
 }
 
