@@ -154,14 +154,23 @@ defmodule Darwin.V2.Supervisor do
     port = Darwin.V2.Config.http_port()
     mcp_enabled = Darwin.V2.Config.mcp_server_enabled?()
 
-    if check_port_available(port) do
-      router = if mcp_enabled, do: Darwin.V2.HTTP.MCPRouter, else: Darwin.V2.HTTP.Router
-      Logger.info("[다윈V2] HTTP 서버 기동 — 포트 #{port}, MCP=#{mcp_enabled}")
-      [{Bandit, plug: router, port: port, scheme: :http}]
-    else
-      Logger.warning("[다윈V2] 포트 #{port} 사용 불가 — HTTP 서버 생략")
-      []
+    cond do
+      embedded_http_suppressed?() ->
+        []
+
+      check_port_available(port) ->
+        router = if mcp_enabled, do: Darwin.V2.HTTP.MCPRouter, else: Darwin.V2.HTTP.Router
+        Logger.info("[다윈V2] HTTP 서버 기동 — 포트 #{port}, MCP=#{mcp_enabled}")
+        [{Bandit, plug: router, port: port, scheme: :http}]
+
+      true ->
+        Logger.warning("[다윈V2] 포트 #{port} 사용 불가 — HTTP 서버 생략")
+        []
     end
+  end
+
+  defp embedded_http_suppressed? do
+    System.get_env("TEAM_JAY_SUPPRESS_EMBEDDED_HTTP") == "true"
   end
 
   # 포트 가용성 확인

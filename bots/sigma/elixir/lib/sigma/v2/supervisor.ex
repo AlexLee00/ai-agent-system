@@ -39,11 +39,20 @@ defmodule Sigma.V2.Supervisor do
 
     # SIGMA_HTTP_PORT가 설정되고 포트가 비어있을 때 HTTP 서버 기동.
     # MCP OFF → /sigma/* Shadow 경로만 노출, MCP ON → /mcp/* 추가 활성화.
-    if port && port_available?(port) do
-      [{Bandit, plug: Sigma.V2.HTTP.Router, port: port, scheme: :http}]
-    else
-      []
+    cond do
+      embedded_http_suppressed?() ->
+        []
+
+      port && port_available?(port) ->
+        [{Bandit, plug: Sigma.V2.HTTP.Router, port: port, scheme: :http}]
+
+      true ->
+        []
     end
+  end
+
+  defp embedded_http_suppressed? do
+    System.get_env("TEAM_JAY_SUPPRESS_EMBEDDED_HTTP") == "true"
   end
 
   defp port_available?(port) do
