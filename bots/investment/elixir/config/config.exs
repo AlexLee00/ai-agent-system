@@ -92,13 +92,19 @@ config :luna,
   position_watch_backtest_drift_min_trades:
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_MIN_TRADES", "4")),
   position_watch_backtest_drift_adjust_sharpe_drop:
-    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ADJUST_SHARPE_DROP", "0.75")),
+    String.to_float(
+      System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ADJUST_SHARPE_DROP", "0.75")
+    ),
   position_watch_backtest_drift_exit_sharpe_drop:
     String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_EXIT_SHARPE_DROP", "1.5")),
   position_watch_backtest_drift_adjust_return_drop_pct:
-    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ADJUST_RETURN_DROP_PCT", "5.0")),
+    String.to_float(
+      System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_ADJUST_RETURN_DROP_PCT", "5.0")
+    ),
   position_watch_backtest_drift_exit_return_drop_pct:
-    String.to_float(System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_EXIT_RETURN_DROP_PCT", "10.0")),
+    String.to_float(
+      System.get_env("LUNA_POSITION_WATCH_BACKTEST_DRIFT_EXIT_RETURN_DROP_PCT", "10.0")
+    ),
   position_watch_strategy_exit_enabled:
     System.get_env("LUNA_POSITION_WATCH_STRATEGY_EXIT_ENABLED", "true") == "true",
   position_watch_strategy_exit_cooldown_minutes:
@@ -116,7 +122,9 @@ config :luna,
   layer1_working_memory_ttl_ms:
     String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_TTL_MS", "900000")),
   layer1_working_memory_prune_interval_ms:
-    String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_PRUNE_INTERVAL_MS", "60000")),
+    String.to_integer(
+      System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_PRUNE_INTERVAL_MS", "60000")
+    ),
 
   # Wave 1 final closure: Elixir shadow/parallel agents are enabled by default
   # only after the V2 supervisor itself is enabled.

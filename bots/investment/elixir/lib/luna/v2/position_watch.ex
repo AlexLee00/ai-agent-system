@@ -382,7 +382,10 @@ defmodule Luna.V2.PositionWatch do
       if exchange not in ["binance", "kis_overseas"] do
         nil
       else
-        entry_ref = position[:position_entry_time] || position[:position_created_at] || position[:updated_at]
+        entry_ref =
+          position[:position_entry_time] || position[:position_created_at] ||
+            position[:updated_at]
+
         held_minutes = max(0, position_age_minutes(entry_ref))
         held_days = held_minutes / 1440.0
         regime = normalize_regime(position[:current_regime])
@@ -462,7 +465,9 @@ defmodule Luna.V2.PositionWatch do
   defp regime_exit_policy(_),
     do: %{max_hold_days: KillSwitch.position_watch_exit_maxhold_unknown_days()}
 
-  defp format_days(days) when is_number(days), do: :erlang.float_to_binary(days * 1.0, decimals: 1)
+  defp format_days(days) when is_number(days),
+    do: :erlang.float_to_binary(days * 1.0, decimals: 1)
+
   defp format_days(_), do: "0.0"
 
   # KIS 최대 보유 시간 감지 — 목표 1일(1440분), 경고 80%=1152분
@@ -479,7 +484,11 @@ defmodule Luna.V2.PositionWatch do
         Map.get(
           position,
           :position_created_at,
-          Map.get(position, "position_created_at", Map.get(position, :created_at, Map.get(position, "created_at")))
+          Map.get(
+            position,
+            "position_created_at",
+            Map.get(position, :created_at, Map.get(position, "created_at"))
+          )
         )
     }
 
@@ -666,9 +675,18 @@ defmodule Luna.V2.PositionWatch do
 
   defp runtime_cadence_ms(position) do
     state = normalize_json_map(position[:strategy_state])
-    runtime_state = normalize_json_map(Map.get(state, "positionRuntimeState", state[:positionRuntimeState]))
-    policy = normalize_json_map(Map.get(runtime_state, "monitoringPolicy", runtime_state[:monitoringPolicy]))
-    cadence = policy["cadenceMs"] || policy[:cadenceMs] || runtime_state["adaptiveCadenceMs"] || runtime_state[:adaptiveCadenceMs]
+
+    runtime_state =
+      normalize_json_map(Map.get(state, "positionRuntimeState", state[:positionRuntimeState]))
+
+    policy =
+      normalize_json_map(
+        Map.get(runtime_state, "monitoringPolicy", runtime_state[:monitoringPolicy])
+      )
+
+    cadence =
+      policy["cadenceMs"] || policy[:cadenceMs] || runtime_state["adaptiveCadenceMs"] ||
+        runtime_state[:adaptiveCadenceMs]
 
     case cadence do
       value when is_integer(value) and value > 0 -> value
@@ -737,14 +755,14 @@ defmodule Luna.V2.PositionWatch do
       end)
     end)
 
-	    case Req.get("#{KillSwitch.position_watch_tv_base_url()}/latest",
-	           params: [
-	             symbols: Enum.join(symbols, ","),
-	             timeframes: Enum.join(timeframes, ","),
-	             requireReal: "true"
-	           ],
-	           retry: false
-	         ) do
+    case Req.get("#{KillSwitch.position_watch_tv_base_url()}/latest",
+           params: [
+             symbols: Enum.join(symbols, ","),
+             timeframes: Enum.join(timeframes, ","),
+             requireReal: "true"
+           ],
+           retry: false
+         ) do
       {:ok, %Req.Response{status: 200, body: %{"bars" => bars, "tv_ws" => tv_ws}}} ->
         mapped =
           Enum.reduce(bars || [], %{}, fn row, acc ->
