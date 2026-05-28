@@ -885,7 +885,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const openPositionSymbols = await loadOpenEntryPositionSymbols(exchange, context);
   await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const ttlMinutes = Number(flags.entryTrigger.ttlMinutes || 180);
-  const minConfidence = Number(flags.entryTrigger.minConfidence || 0.48);
+  const _envMinConf = process.env.LUNA_MIN_CONFIDENCE ? Number(process.env.LUNA_MIN_CONFIDENCE) : NaN;
+  const minConfidence = Number.isFinite(_envMinConf) ? _envMinConf : Number(flags.entryTrigger.minConfidence || 0.48);
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const shouldMutate = flags.shouldEntryTriggerMutate();
