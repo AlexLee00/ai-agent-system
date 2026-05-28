@@ -384,12 +384,24 @@ def split_is_oos(df, oos_ratio: float = 0.3):
 def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_obs: int,
                          method: str, extra: dict | None = None) -> dict:
     sharpe_is = safe_float(best_is.get("sharpe_ratio"))
-    sharpe_oos = safe_float(oos_result.get("sharpe_ratio"))
-    overfit_gap = sharpe_is - sharpe_oos
-    sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, n_obs)
     total_trades_oos = int(safe_float(oos_result.get("total_trades")))
     max_dd_oos = abs(safe_float(oos_result.get("max_drawdown")))
-    oos_status, oos_reasons = check_stability(sharpe_oos, total_trades_oos, n_obs, overfit_gap, max_dd_oos)
+    min_oos_trades = int_env("LUNA_BT_MIN_OOS_TRADES", 15)
+    min_oos_bars = int_env("LUNA_BT_MIN_OOS_BARS", int_env("LUNA_BT_MIN_BARS", 60))
+    raw_sharpe_oos = safe_float(oos_result.get("sharpe_ratio"))
+
+    if total_trades_oos < min_oos_trades or n_obs < min_oos_bars:
+        sharpe_oos = None
+        overfit_gap = None
+        sharpe_oos_def = None
+        oos_status = "insufficient_data"
+        oos_reasons = [f"insufficient_oos_sample(trades={total_trades_oos},bars={n_obs})"]
+    else:
+        sharpe_oos = raw_sharpe_oos
+        overfit_gap = sharpe_is - sharpe_oos
+        sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, n_obs)
+        oos_status, oos_reasons = check_stability(sharpe_oos, total_trades_oos, n_obs, overfit_gap, max_dd_oos)
+
     payload = {
         **oos_result,
         "sharpe_ratio": sharpe_oos,
@@ -399,6 +411,7 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
         "overfit_gap": overfit_gap,
         "n_grid_trials": n_grid_trials,
         "n_obs_oos": n_obs,
+        "total_trades_oos": total_trades_oos,
         "walk_forward_sharpe": None,
         "selection_method": method,
         "oos_status": oos_status,
@@ -501,23 +514,58 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
     if not usable:
         return None
 
-    avg = lambda key: sum(safe_float(item.get(key)) for item in usable) / len(usable)
+    oos_usable = [item for item in usable if item.get("sharpe_oos") is not None]
+    avg = lambda rows, key: sum(safe_float(item.get(key)) for item in rows) / len(rows)
     total_trades = sum(int(safe_float(item.get("total_trades"))) for item in usable)
+    all_oos_reasons = [r for item in usable for r in (item.get("oos_reasons") or [])]
+    min_n_obs_oos = min((int(safe_float(item.get("n_obs_oos"))) for item in usable), default=0)
+    min_trades_oos = min((int(safe_float(item.get("total_trades_oos", item.get("total_trades")))) for item in usable), default=0)
+
+    if not oos_usable:
+        aggregate = {
+            "status": "unstable",
+            "selection_method": "walk_forward",
+            "sharpe_ratio": None,
+            "sharpe_is": avg(usable, "sharpe_is"),
+            "sharpe_oos": None,
+            "sharpe_oos_deflated": None,
+            "overfit_gap": None,
+            "walk_forward_sharpe": None,
+            "total_return": avg(usable, "total_return"),
+            "max_drawdown": max(abs(safe_float(item.get("max_drawdown"))) for item in usable),
+            "win_rate": avg(usable, "win_rate"),
+            "profit_factor": avg(usable, "profit_factor"),
+            "total_trades": total_trades,
+            "n_grid_trials": sum(int(safe_float(item.get("n_grid_trials"))) for item in usable),
+            "n_obs_oos": min_n_obs_oos,
+            "total_trades_oos": min_trades_oos,
+            "fold_count": len(usable),
+            "folds": fold_results,
+            "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
+            "oos_status": "insufficient_data",
+            "oos_reasons": list(dict.fromkeys(all_oos_reasons)) or [f"insufficient_oos_sample(trades={min_trades_oos},bars={min_n_obs_oos})"],
+        }
+        aggregate["gate_status"] = "unstable"
+        aggregate["reasons"] = aggregate["oos_reasons"]
+        aggregate["robust_score"] = robust_rank_score(aggregate)
+        return aggregate
+
     aggregate = {
         "status": "ok",
         "selection_method": "walk_forward",
-        "sharpe_ratio": avg("sharpe_oos"),
-        "sharpe_is": avg("sharpe_is"),
-        "sharpe_oos": avg("sharpe_oos"),
-        "overfit_gap": avg("overfit_gap"),
-        "walk_forward_sharpe": avg("sharpe_oos"),
-        "total_return": avg("total_return"),
+        "sharpe_ratio": avg(oos_usable, "sharpe_oos"),
+        "sharpe_is": avg(oos_usable, "sharpe_is"),
+        "sharpe_oos": avg(oos_usable, "sharpe_oos"),
+        "overfit_gap": avg(oos_usable, "overfit_gap"),
+        "walk_forward_sharpe": avg(oos_usable, "sharpe_oos"),
+        "total_return": avg(oos_usable, "total_return"),
         "max_drawdown": max(abs(safe_float(item.get("max_drawdown"))) for item in usable),
-        "win_rate": avg("win_rate"),
-        "profit_factor": avg("profit_factor"),
+        "win_rate": avg(oos_usable, "win_rate"),
+        "profit_factor": avg(oos_usable, "profit_factor"),
         "total_trades": total_trades,
         "n_grid_trials": sum(int(safe_float(item.get("n_grid_trials"))) for item in usable),
-        "n_obs_oos": sum(int(safe_float(item.get("n_obs_oos"))) for item in usable),
+        "n_obs_oos": min_n_obs_oos,
+        "total_trades_oos": min_trades_oos,
         "fold_count": len(usable),
         "folds": fold_results,
         "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
@@ -525,8 +573,7 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
     # deflation: 전체 grid trials 기준으로 OOS sharpe 보정
     total_n_trials = int(safe_float(aggregate.get("n_grid_trials")))
     total_n_obs = int(safe_float(aggregate.get("n_obs_oos")))
-    aggregate["sharpe_oos_deflated"] = deflated_sharpe(avg("sharpe_oos"), total_n_trials, total_n_obs)
-    all_oos_reasons = [r for item in usable for r in (item.get("oos_reasons") or [])]
+    aggregate["sharpe_oos_deflated"] = deflated_sharpe(avg(oos_usable, "sharpe_oos"), total_n_trials, total_n_obs)
     aggregate["oos_status"] = "unstable" if all_oos_reasons else "ok"
     aggregate["oos_reasons"] = list(dict.fromkeys(all_oos_reasons))
     aggregate["gate_status"] = "unstable" if aggregate["oos_reasons"] else "ok"

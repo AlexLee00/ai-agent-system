@@ -44,6 +44,9 @@ export async function ensureCandidateBacktestSchema() {
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS overfit_gap DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS n_grid_trials INT`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS walk_forward_sharpe DOUBLE PRECISION`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS n_obs_oos INT`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS total_trades_oos INT`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_status TEXT`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`);
@@ -139,6 +142,7 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     || overfitFlagged
     || reasons.some((item) => String(item).startsWith('unrealistic_sharpe')
       || String(item).startsWith('backtest_unstable_sample')
+      || String(item).startsWith('insufficient_oos_sample')
       || String(item).startsWith('overfit_gap_high'));
   const reason = !fresh
     ? 'candidate_backtest_stale'
