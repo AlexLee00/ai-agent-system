@@ -341,12 +341,18 @@ def float_env(name: str, default: float) -> float:
         return default
 
 
-def deflated_sharpe(sharpe: float, n_trials: int, n_obs: int) -> float:
-    """다중비교 보정 — Bailey/López de Prado 간이 근사 (IS에서 n_trials 중 최고를 골랐으므로 차감)"""
-    if n_trials <= 1 or n_obs < 20:
+def clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def deflated_sharpe(sharpe: float, n_trials: int, total_trades_oos: int) -> float:
+    """다중비교 보정 — 거래 수를 독립 정보량의 보수적 근사로 사용한다."""
+    if not math.isfinite(sharpe):
         return sharpe
-    expected_max = math.sqrt(2 * math.log(max(2, n_trials)))
-    penalty = expected_max / math.sqrt(max(1, n_obs))
+    trials = max(2, int(n_trials or 2))
+    trades = max(1, int(total_trades_oos or 1))
+    expected_max = math.sqrt(2 * math.log(trials))
+    penalty = expected_max / math.sqrt(trades)
     return sharpe - penalty
 
 
@@ -355,7 +361,7 @@ def check_stability(sharpe_oos: float, total_trades_oos: int, n_obs: int,
     """OOS 지표 안정성 검사 — 위배 시 ('unstable', [reasons])"""
     min_trades = int_env("LUNA_BT_MIN_TRADES", 10)
     min_bars = int_env("LUNA_BT_MIN_BARS", 60)
-    sharpe_cap = float_env("LUNA_BT_SHARPE_CAP", 5.0)
+    sharpe_cap = float_env("LUNA_BT_SHARPE_REALISTIC_CAP", float_env("LUNA_BT_SHARPE_CAP", 5.0))
     max_overfit_gap = float_env("LUNA_BT_MAX_OVERFIT_GAP", 2.0)
     max_dd_limit = float_env("LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN", 30.0)
 
@@ -364,7 +370,7 @@ def check_stability(sharpe_oos: float, total_trades_oos: int, n_obs: int,
         reasons.append(f"backtest_unstable_sample(oos_trades={total_trades_oos},min={min_trades})")
     if n_obs < min_bars:
         reasons.append(f"backtest_unstable_sample(oos_bars={n_obs},min={min_bars})")
-    if sharpe_oos > sharpe_cap:
+    if abs(sharpe_oos) > sharpe_cap:
         reasons.append(f"unrealistic_sharpe(oos={sharpe_oos:.2f},cap={sharpe_cap})")
     if overfit_gap > max_overfit_gap:
         reasons.append(f"overfit_gap_high({overfit_gap:.2f})")
@@ -399,8 +405,13 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
     else:
         sharpe_oos = raw_sharpe_oos
         overfit_gap = sharpe_is - sharpe_oos
-        sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, n_obs)
+        sharpe_oos_def = deflated_sharpe(sharpe_oos, n_grid_trials, total_trades_oos)
         oos_status, oos_reasons = check_stability(sharpe_oos, total_trades_oos, n_obs, overfit_gap, max_dd_oos)
+        realistic_cap = float_env("LUNA_BT_SHARPE_REALISTIC_CAP", 4.0)
+        if abs(sharpe_oos_def) > realistic_cap:
+            oos_reasons.append(f"sharpe_out_of_realistic_range(val={sharpe_oos_def:.2f},cap={realistic_cap})")
+            sharpe_oos_def = clamp(sharpe_oos_def, -realistic_cap, realistic_cap)
+            oos_status = "unstable"
 
     payload = {
         **oos_result,
@@ -572,10 +583,17 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
     }
     # deflation: 전체 grid trials 기준으로 OOS sharpe 보정
     total_n_trials = int(safe_float(aggregate.get("n_grid_trials")))
-    total_n_obs = int(safe_float(aggregate.get("n_obs_oos")))
-    aggregate["sharpe_oos_deflated"] = deflated_sharpe(avg(oos_usable, "sharpe_oos"), total_n_trials, total_n_obs)
+    total_trades_oos = int(safe_float(aggregate.get("total_trades_oos")))
+    aggregate["sharpe_oos_deflated"] = deflated_sharpe(avg(oos_usable, "sharpe_oos"), total_n_trials, total_trades_oos)
+    realistic_cap = float_env("LUNA_BT_SHARPE_REALISTIC_CAP", 4.0)
     aggregate["oos_status"] = "unstable" if all_oos_reasons else "ok"
     aggregate["oos_reasons"] = list(dict.fromkeys(all_oos_reasons))
+    if abs(safe_float(aggregate.get("sharpe_oos_deflated"))) > realistic_cap:
+        aggregate["oos_reasons"].append(
+            f"sharpe_out_of_realistic_range(val={aggregate['sharpe_oos_deflated']:.2f},cap={realistic_cap})"
+        )
+        aggregate["sharpe_oos_deflated"] = clamp(aggregate["sharpe_oos_deflated"], -realistic_cap, realistic_cap)
+        aggregate["oos_status"] = "unstable"
     aggregate["gate_status"] = "unstable" if aggregate["oos_reasons"] else "ok"
     aggregate["reasons"] = aggregate["oos_reasons"]
     aggregate["robust_score"] = robust_rank_score(aggregate)
