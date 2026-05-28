@@ -889,6 +889,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const shouldMutate = flags.shouldEntryTriggerMutate();
+  const LUNA_FULL_DATA_LOOP = process.env.LUNA_FULL_DATA_LOOP_ENABLED === 'true';
   const activeMap = new Map();
   const existing = await listActiveEntryTriggers({ exchange, limit: 1000 }).catch(() => []);
   for (const row of existing) {
@@ -950,25 +951,37 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     const confidence = Math.max(0, rawConfidence - Number(reflexionGuard?.penalty || 0));
     const triggerType = resolveTriggerType(candidate);
     if (!isAllowedTriggerType(triggerType, flags)) {
-      blocked++;
-      const meta = {
-        triggerType,
-        state: shouldMutate ? 'blocked' : 'observed',
+      recordGuardEvent({
+        guardName: 'trigger_type_disabled',
+        symbol: candidate.symbol || null,
+        exchange,
         reason: 'trigger_type_disabled',
-        mode: flags.mode,
-      };
-      output.push(shouldMutate ? {
-        ...candidate,
-        action: ACTIONS.HOLD,
-        amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: trigger_type_disabled(${triggerType}) | ${candidate.reasoning || ''}`.slice(0, 220),
-        block_meta: {
-          ...(candidate.block_meta || {}),
-          event_type: 'entry_trigger_blocked',
-          entryTrigger: meta,
-        },
-      } : annotateEntryTrigger(candidate, meta));
-      continue;
+        severity: 'info',
+        decisionBefore: { action: ACTIONS.BUY, triggerType },
+        decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
+        guardMetadata: { triggerType },
+      });
+      if (!LUNA_FULL_DATA_LOOP) {
+        blocked++;
+        const meta = {
+          triggerType,
+          state: shouldMutate ? 'blocked' : 'observed',
+          reason: 'trigger_type_disabled',
+          mode: flags.mode,
+        };
+        output.push(shouldMutate ? {
+          ...candidate,
+          action: ACTIONS.HOLD,
+          amount_usdt: 0,
+          reasoning: `entry_trigger_blocked: trigger_type_disabled(${triggerType}) | ${candidate.reasoning || ''}`.slice(0, 220),
+          block_meta: {
+            ...(candidate.block_meta || {}),
+            event_type: 'entry_trigger_blocked',
+            entryTrigger: meta,
+          },
+        } : annotateEntryTrigger(candidate, meta));
+        continue;
+      }
     }
     const key = `${candidate.symbol}:${triggerType}`;
     const existingTrigger = activeMap.get(key) || null;
@@ -1040,106 +1053,154 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     } : candidateWithTpSl;
 
     if (constitutionalEnabled && constitutionBlocked) {
-      blocked++;
-      const constitutionMeta = {
-        triggerType,
-        state: shouldMutate ? 'blocked' : 'observed',
+      recordGuardEvent({
+        guardName: 'constitution_blocked',
+        symbol: candidate.symbol || null,
+        exchange,
         reason: 'constitution_blocked',
-        confidence,
-        mode: flags.mode,
-        violations: constitutionAudit?.violations || candidate?.block_meta?.constitution?.violations || [],
-      };
-      output.push(shouldMutate ? {
-        ...candidateWithConstitution,
-        action: ACTIONS.HOLD,
-        amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: constitution_blocked | ${candidate.reasoning || ''}`.slice(0, 220),
-        block_meta: {
-          ...(candidateWithConstitution.block_meta || {}),
-          event_type: 'entry_trigger_blocked',
-          entryTrigger: constitutionMeta,
-        },
-      } : annotateEntryTrigger(candidateWithConstitution, constitutionMeta));
-      continue;
+        severity: 'warning',
+        decisionBefore: { action: ACTIONS.BUY, triggerType },
+        decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
+        guardMetadata: { violations: constitutionAudit?.violations || [], confidence },
+      });
+      if (!LUNA_FULL_DATA_LOOP) {
+        blocked++;
+        const constitutionMeta = {
+          triggerType,
+          state: shouldMutate ? 'blocked' : 'observed',
+          reason: 'constitution_blocked',
+          confidence,
+          mode: flags.mode,
+          violations: constitutionAudit?.violations || candidate?.block_meta?.constitution?.violations || [],
+        };
+        output.push(shouldMutate ? {
+          ...candidateWithConstitution,
+          action: ACTIONS.HOLD,
+          amount_usdt: 0,
+          reasoning: `entry_trigger_blocked: constitution_blocked | ${candidate.reasoning || ''}`.slice(0, 220),
+          block_meta: {
+            ...(candidateWithConstitution.block_meta || {}),
+            event_type: 'entry_trigger_blocked',
+            entryTrigger: constitutionMeta,
+          },
+        } : annotateEntryTrigger(candidateWithConstitution, constitutionMeta));
+        continue;
+      }
     }
     const activeCandidate = candidateWithConstitution;
     const matureHold = await isMaturePosition(String(activeCandidate?.symbol || ''), exchange).catch(() => false);
     if (matureHold) {
-      blocked++;
-      const matureMeta = {
-        triggerType,
-        state: shouldMutate ? 'blocked' : 'observed',
+      recordGuardEvent({
+        guardName: 'mature_position_hold',
+        symbol: activeCandidate.symbol || null,
+        exchange,
         reason: 'mature_position_hold',
-        mode: flags.mode,
-      };
-      if (!shouldMutate) {
-        observed++;
-        output.push(annotateEntryTrigger(activeCandidate, matureMeta));
+        severity: 'info',
+        decisionBefore: { action: ACTIONS.BUY, triggerType },
+        decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
+        guardMetadata: {},
+      });
+      if (!LUNA_FULL_DATA_LOOP) {
+        blocked++;
+        const matureMeta = {
+          triggerType,
+          state: shouldMutate ? 'blocked' : 'observed',
+          reason: 'mature_position_hold',
+          mode: flags.mode,
+        };
+        if (!shouldMutate) {
+          observed++;
+          output.push(annotateEntryTrigger(activeCandidate, matureMeta));
+          continue;
+        }
+        output.push({
+          ...activeCandidate,
+          action: ACTIONS.HOLD,
+          amount_usdt: 0,
+          reasoning: `entry_trigger_blocked: mature_position_hold | ${candidate.reasoning || ''}`.slice(0, 220),
+          block_meta: {
+            ...(activeCandidate.block_meta || {}),
+            event_type: 'entry_trigger_blocked',
+            entryTrigger: matureMeta,
+          },
+        });
         continue;
       }
-      output.push({
-        ...activeCandidate,
-        action: ACTIONS.HOLD,
-        amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: mature_position_hold | ${candidate.reasoning || ''}`.slice(0, 220),
-        block_meta: {
-          ...(activeCandidate.block_meta || {}),
-          event_type: 'entry_trigger_blocked',
-          entryTrigger: matureMeta,
-        },
-      });
-      continue;
     }
 
     if (confidence < minConfidence && !predictiveObservation) {
-      blocked++;
-      if (!shouldMutate) {
+      recordGuardEvent({
+        guardName: 'low_confidence',
+        symbol: activeCandidate.symbol || null,
+        exchange,
+        reason: 'low_confidence',
+        severity: 'info',
+        decisionBefore: { action: ACTIONS.BUY, triggerType },
+        decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : ACTIONS.HOLD, notifyMode: LUNA_FULL_DATA_LOOP },
+        guardMetadata: { confidence, minConfidence, ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}) },
+      });
+      if (!LUNA_FULL_DATA_LOOP) {
+        blocked++;
+        if (!shouldMutate) {
+          observed++;
+          output.push(annotateEntryTrigger(activeCandidate, {
+            triggerType,
+            state: 'observed',
+            reason: 'low_confidence',
+            confidence,
+            minConfidence,
+            mode: flags.mode,
+          }));
+          continue;
+        }
+        const blockedDecision = {
+          ...activeCandidate,
+          action: ACTIONS.HOLD,
+          amount_usdt: 0,
+          reasoning: `entry_trigger_blocked: confidence ${confidence.toFixed(2)} < ${minConfidence.toFixed(2)} | ${candidate.reasoning || ''}`.slice(0, 220),
+          block_meta: {
+            ...(activeCandidate.block_meta || {}),
+            ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}),
+            event_type: 'entry_trigger_blocked',
+            entryTrigger: {
+              triggerType,
+              state: 'blocked',
+              reason: 'low_confidence',
+              confidence,
+              minConfidence,
+              ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}),
+            },
+          },
+        };
+        output.push(blockedDecision);
+        continue;
+      }
+    }
+
+    if (reflexionMatched && !shouldMutate) {
+      recordGuardEvent({
+        guardName: 'reflexion_penalty_applied',
+        symbol: activeCandidate.symbol || null,
+        exchange,
+        reason: reflexionGuard?.reason || 'reflexion_match',
+        severity: 'info',
+        decisionBefore: { action: ACTIONS.BUY, triggerType },
+        decisionAfter: { action: LUNA_FULL_DATA_LOOP ? ACTIONS.BUY : 'SKIP', notifyMode: LUNA_FULL_DATA_LOOP },
+        guardMetadata: { confidenceBefore: rawConfidence, confidenceAfter: confidence, reflexionMatchMeta },
+      });
+      if (!LUNA_FULL_DATA_LOOP) {
         observed++;
         output.push(annotateEntryTrigger(activeCandidate, {
           triggerType,
           state: 'observed',
-          reason: 'low_confidence',
-          confidence,
-          minConfidence,
-          mode: flags.mode,
+          reason: 'reflexion_penalty_applied',
+          confidenceBefore: rawConfidence,
+          confidenceAfter: confidence,
+          reflexionReason: reflexionGuard?.reason || '',
+          reflexion_match: reflexionMatchMeta,
         }));
         continue;
       }
-      const blockedDecision = {
-        ...activeCandidate,
-        action: ACTIONS.HOLD,
-        amount_usdt: 0,
-        reasoning: `entry_trigger_blocked: confidence ${confidence.toFixed(2)} < ${minConfidence.toFixed(2)} | ${candidate.reasoning || ''}`.slice(0, 220),
-        block_meta: {
-          ...(activeCandidate.block_meta || {}),
-          ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}),
-          event_type: 'entry_trigger_blocked',
-          entryTrigger: {
-            triggerType,
-            state: 'blocked',
-            reason: 'low_confidence',
-            confidence,
-            minConfidence,
-            ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}),
-          },
-        },
-      };
-      output.push(blockedDecision);
-      continue;
-    }
-
-    if (reflexionMatched && !shouldMutate) {
-      observed++;
-      output.push(annotateEntryTrigger(activeCandidate, {
-        triggerType,
-        state: 'observed',
-        reason: 'reflexion_penalty_applied',
-        confidenceBefore: rawConfidence,
-        confidenceAfter: confidence,
-        reflexionReason: reflexionGuard?.reason || '',
-        reflexion_match: reflexionMatchMeta,
-      }));
-      continue;
     }
 
     const persisted = await insertEntryTrigger({
