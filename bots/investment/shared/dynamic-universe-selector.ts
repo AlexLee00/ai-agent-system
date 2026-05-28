@@ -248,7 +248,7 @@ export async function buildDynamicUniverse(
     axisWeights,
     selectedSymbols: selected,
     universeSize: selected.length,
-    shadowOnly: !boolEnv('LUNA_DYNAMIC_UNIVERSE_ACTIVE', false),
+    shadowOnly: !boolEnv('LUNA_DYNAMIC_UNIVERSE_ACTIVE', true),
   };
 }
 

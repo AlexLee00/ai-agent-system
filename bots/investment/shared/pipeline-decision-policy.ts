@@ -225,12 +225,12 @@ export function isMidGapPromotionCandidate({ exchange, investmentTradeMode, deci
 }
 
 export function buildMidGapPromotedAmount(amountUsdt, exchange) {
-  const numeric = Number(amountUsdt || (exchange === 'binance' ? 100 : 500));
+  const numeric = Number(amountUsdt || (exchange === 'binance' ? 10 : 500));
   if (!Number.isFinite(numeric) || numeric <= 0) {
-    return exchange === 'binance' ? 50 : 500;
+    return exchange === 'binance' ? 10 : 500;
   }
   if (exchange === 'binance') {
-    return Math.max(50, Math.round(numeric * 0.7));
+    return Math.max(10, Math.round(numeric * 0.7));
   }
   return numeric;
 }
@@ -363,7 +363,7 @@ export function buildPredictiveObservationAmount(amountUsdt, exchange, ratio = 0
     ? (rule.minOrderAmount || 200_000)
     : exchange === 'kis_overseas'
       ? (rule.minOrderAmount || 200)
-      : 50;
+      : (rule.minOrderAmount || 10);
   const numeric = Number(amountUsdt || fallback);
   const base = Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
   const safeRatio = Math.max(0.05, Math.min(1, Number(ratio || 0.35)));
@@ -373,7 +373,7 @@ export function buildPredictiveObservationAmount(amountUsdt, exchange, ratio = 0
   const bounded = Math.max(minOrder, reduced);
   const capped = maxOrder > 0 ? Math.min(maxOrder, bounded) : bounded;
   if (exchange === 'kis') return Math.round(capped / 1000) * 1000;
-  if (exchange === 'binance') return Math.max(minOrder, 50, Math.round(capped));
+  if (exchange === 'binance') return Math.max(minOrder, Math.round(capped));
   return Math.max(minOrder, Math.round(capped * 100) / 100);
 }
 

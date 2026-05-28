@@ -64,7 +64,7 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
     : null;
   const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_PHASE2_PAPER_SYMBOLS || '');
   const equityUsdt = Math.max(1, Number(options.equityUsdt || process.env.LUNA_PHASE2_PAPER_EQUITY_USDT || 1000));
-  const maxOrderUsdt = Math.max(0, Number(process.env.LUNA_MAX_TRADE_USDT || 50));
+  const maxOrderUsdt = Math.max(0, Number(process.env.LUNA_MAX_TRADE_USDT || 0));
 
   if (apply && confirm !== 'luna-paper-trading-shadow') {
     throw new Error('runtime:luna-paper-trading-shadow apply requires --confirm=luna-paper-trading-shadow');

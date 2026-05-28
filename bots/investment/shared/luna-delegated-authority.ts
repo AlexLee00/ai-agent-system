@@ -4,9 +4,10 @@ import { spawnSync } from 'node:child_process';
 
 export const LUNA_DELEGATED_AUTHORITY_TOKEN = 'luna-delegated-authority';
 
-const DEFAULT_MAX_TRADE_USDT = 50;
+// 0 means no per-trade USDT cap; daily/open-position gates still apply.
+const DEFAULT_MAX_TRADE_USDT = 0;
 const DEFAULT_MAX_DAILY_USDT = 200;
-const DEFAULT_MAX_OPEN_POSITIONS = 2;
+const DEFAULT_MAX_OPEN_POSITIONS = 5;
 const SUPPORTED_DELEGATED_ACTIONS = new Set([
   'report',
   'live_fire_enable',
@@ -37,6 +38,12 @@ function boolEnv(value, fallback = false) {
 }
 
 function positiveNumber(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function optionalPositiveNumber(value, fallback = 0) {
+  if (value == null || value === '') return fallback;
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
@@ -78,7 +85,7 @@ export function getLunaDelegatedAuthorityPolicy(env = null) {
     reportOnly: delegated || mode === 'report_only' || boolEnv(effectiveEnv.LUNA_MASTER_REPORT_ONLY),
     requireFinalGate: boolEnv(effectiveEnv.LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE, true),
     allowReconcileAck: boolEnv(effectiveEnv.LUNA_DELEGATED_RECONCILE_ACK_ENABLED, false),
-    maxTradeUsdt: positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_TRADE_USDT || effectiveEnv.LUNA_MAX_TRADE_USDT, DEFAULT_MAX_TRADE_USDT),
+    maxTradeUsdt: optionalPositiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_TRADE_USDT || effectiveEnv.LUNA_MAX_TRADE_USDT, DEFAULT_MAX_TRADE_USDT),
     maxDailyUsdt: positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_DAILY_USDT || effectiveEnv.LUNA_LIVE_FIRE_MAX_DAILY, DEFAULT_MAX_DAILY_USDT),
     maxOpenPositions: Math.max(1, Math.round(positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_OPEN_POSITIONS || effectiveEnv.LUNA_LIVE_FIRE_MAX_OPEN, DEFAULT_MAX_OPEN_POSITIONS))),
     auditRequired: true,
@@ -95,10 +102,10 @@ export function getLunaDelegatedAuthorityPolicy(env = null) {
 
 function capBlockers(caps = {}, policy) {
   const blockers = [];
-  const maxUsdt = positiveNumber(caps.maxUsdt, DEFAULT_MAX_TRADE_USDT);
+  const maxUsdt = optionalPositiveNumber(caps.maxUsdt, DEFAULT_MAX_TRADE_USDT);
   const maxDailyUsdt = positiveNumber(caps.maxDailyUsdt, DEFAULT_MAX_DAILY_USDT);
   const maxOpen = Math.max(1, Math.round(positiveNumber(caps.maxOpen, DEFAULT_MAX_OPEN_POSITIONS)));
-  if (maxUsdt > policy.maxTradeUsdt) blockers.push(`trade_cap_exceeded:${maxUsdt}>${policy.maxTradeUsdt}`);
+  if (policy.maxTradeUsdt > 0 && maxUsdt > policy.maxTradeUsdt) blockers.push(`trade_cap_exceeded:${maxUsdt}>${policy.maxTradeUsdt}`);
   if (maxDailyUsdt > policy.maxDailyUsdt) blockers.push(`daily_cap_exceeded:${maxDailyUsdt}>${policy.maxDailyUsdt}`);
   if (maxOpen > policy.maxOpenPositions) blockers.push(`open_position_cap_exceeded:${maxOpen}>${policy.maxOpenPositions}`);
   return blockers;

@@ -899,7 +899,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const shouldMutate = flags.shouldEntryTriggerMutate();
-  const LUNA_FULL_DATA_LOOP = boolEnv('LUNA_FULL_DATA_LOOP_ENABLED', false, env);
+  const LUNA_FULL_DATA_LOOP = boolEnv('LUNA_FULL_DATA_LOOP_ENABLED', true, env);
   const activeMap = new Map();
   const existing = await listActiveEntryTriggers({ exchange, limit: 1000 }).catch(() => []);
   for (const row of existing) {
@@ -1964,8 +1964,32 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       });
       continue;
     }
-    // notify mode: 자금 외 risk gate → 알림 기록 후 계속 진행
     if (!riskGate.ok) {
+      const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
+      if (terminalBlock) {
+        readyBlocked++;
+        await updateTriggerState(trigger.id, {
+          triggerState: 'expired',
+          triggerMetaPatch: {
+            reason: 'live_risk_gate_terminal_blocked',
+            riskGateReason: riskGate.reason,
+            riskGateDetails: riskGate.details || {},
+            terminalBlock: true,
+            terminalBlockedAt: nowIso(),
+          },
+        }).catch(() => null);
+        results.push({
+          triggerId: trigger.id,
+          symbol: trigger.symbol,
+          state: 'expired',
+          fired: false,
+          reason: 'live_risk_gate_terminal_blocked',
+          riskGateReason: riskGate.reason,
+          terminalBlock: true,
+        });
+        continue;
+      }
+      // notify mode: 자금 외 risk gate → 알림 기록 후 계속 진행
       recordGuardEvent({
         guardName: 'live_risk_gate_active_notify',
         symbol: trigger.symbol || null,

@@ -16,7 +16,7 @@
  *   7. LUNA_FULL_DATA_LOOP 활성 여부
  */
 
-import { query, closeAll } from '../shared/db/core.ts';
+import { query, close } from '../shared/db/core.ts';
 import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -207,7 +207,8 @@ async function main() {
     await initHubConfig().catch(() => null);
   } catch {}
 
-  const fullDataLoop = process.env.LUNA_FULL_DATA_LOOP_ENABLED === 'true';
+  const fullDataLoop = !['0', 'false', 'no', 'off', 'disabled']
+    .includes(String(process.env.LUNA_FULL_DATA_LOOP_ENABLED ?? 'true').toLowerCase());
 
   const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning] = await Promise.allSettled([
     fetchTradeStats(),
@@ -234,7 +235,7 @@ async function main() {
     console.log(message);
   }
 
-  try { await closeAll(); } catch {}
+  try { await close(); } catch {}
   process.exit(0);
 }
 

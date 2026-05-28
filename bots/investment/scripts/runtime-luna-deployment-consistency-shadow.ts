@@ -45,11 +45,11 @@ function fixtureRows() {
     backtest: { fresh: true, healthy: true, sharpe: 1.25, win_rate: 58, max_drawdown: 9, last_backtest_at: now },
     predictive: { decision: 'pass_prediction', score: 0.82, threshold: 0.55, component_coverage: 0.85, created_at: now },
     community: { avg_score: 0.35, source_count: 3, last_seen_at: now },
-  }, { riskBudgetUsdt: 50 });
+  }, { riskBudgetUsdt: 0 });
   const paper = buildLunaPaperTradingPlan(weight, {
     position: { amount: 0, avg_price: 65000 },
     equityUsdt: 1000,
-    maxOrderUsdt: 50,
+    maxOrderUsdt: 0,
     minNotionalUsdt: 5,
   });
   return [{ weightVector: weight, paperPlan: paper }];
@@ -138,7 +138,7 @@ export async function runLunaDeploymentConsistencyShadow(options: any = {}, deps
             paperPlan: buildLunaPaperTradingPlan(weightVector, {
               position: null,
               equityUsdt: Number(process.env.LUNA_PHASE2_PAPER_EQUITY_USDT || 1000),
-              maxOrderUsdt: Number(process.env.LUNA_MAX_TRADE_USDT || 50),
+              maxOrderUsdt: Number(process.env.LUNA_MAX_TRADE_USDT || 0),
               minNotionalUsdt: 5,
               fallbackPrice: 1,
             }),

@@ -223,7 +223,7 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const json = process.argv.includes('--json');
   const days = Number(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || 30);
-  const enabled = boolEnv(ENABLED_ENV, false);
+  const enabled = boolEnv(ENABLED_ENV, true);
 
   console.log(`[WinrateTracker] ${new Date().toISOString()} 수익 확률 추적 시작`);
   if (!enabled && !dryRun) {

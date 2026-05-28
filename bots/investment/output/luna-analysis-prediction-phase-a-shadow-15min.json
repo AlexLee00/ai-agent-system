@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
-  "generatedAt": "2026-05-28T06:23:37.638Z",
+  "generatedAt": "2026-05-28T06:38:38.476Z",
   "fixture": false,
   "shadowOnly": true,
   "liveTradeImpact": false,
@@ -406,7 +406,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 80,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -425,7 +425,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 80,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -444,7 +444,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 80,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -482,7 +482,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 80,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null

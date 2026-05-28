@@ -9,9 +9,9 @@ import { evaluateLunaLiveFireReadinessGate } from './luna-live-fire-readiness-co
 import { buildLunaLiveFireReadinessGate } from './luna-live-fire-readiness-gate.ts';
 
 const CONFIRM = 'enable-luna-live-fire';
-const DEFAULT_MAX_TRADE_USDT = 50;
+const DEFAULT_MAX_TRADE_USDT = 0;
 const DEFAULT_MAX_DAILY_USDT = 200;
-const DEFAULT_MAX_OPEN_POSITIONS = 2;
+const DEFAULT_MAX_OPEN_POSITIONS = 5;
 const DEFAULT_POSITION_DISPATCH_ENABLED = false;
 
 function hasFlag(name) {
@@ -40,13 +40,26 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function optionalPositiveNumber(value, fallback = 0) {
+  if (value == null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function buildMaxTradeEnvCommand(maxUsdt = DEFAULT_MAX_TRADE_USDT) {
+  const cap = optionalPositiveNumber(maxUsdt, DEFAULT_MAX_TRADE_USDT);
+  return cap > 0
+    ? `launchctl setenv LUNA_MAX_TRADE_USDT ${cap}`
+    : 'launchctl unsetenv LUNA_MAX_TRADE_USDT';
+}
+
 function buildLiveFireCommand({
   maxUsdt = DEFAULT_MAX_TRADE_USDT,
   maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
   maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
   positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
 } = {}) {
-  return `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${maxOpen} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED ${positionDispatchEnabled ? 'true' : 'false'} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+  return `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && ${buildMaxTradeEnvCommand(maxUsdt)} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${maxOpen} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED ${positionDispatchEnabled ? 'true' : 'false'} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
 }
 
 function applyLiveFireEnv({
@@ -56,14 +69,17 @@ function applyLiveFireEnv({
   positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
 } = {}) {
   const setMode = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
-  const setMaxTrade = runCommand('launchctl', ['setenv', 'LUNA_MAX_TRADE_USDT', String(maxUsdt)]);
+  const maxTradeCap = optionalPositiveNumber(maxUsdt, DEFAULT_MAX_TRADE_USDT);
+  const setMaxTrade = maxTradeCap > 0
+    ? runCommand('launchctl', ['setenv', 'LUNA_MAX_TRADE_USDT', String(maxTradeCap)])
+    : runCommand('launchctl', ['unsetenv', 'LUNA_MAX_TRADE_USDT']);
   const setMaxDaily = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_DAILY', String(maxDailyUsdt)]);
   const setMaxOpen = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_OPEN', String(maxOpen)]);
   const setPositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', positionDispatchEnabled ? 'true' : 'false']);
   const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
   return {
     ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && setPositionDispatch.ok && enableLiveFire.ok,
-    caps: { maxUsdt, maxDailyUsdt, maxOpen, positionDispatchEnabled },
+    caps: { maxUsdt: maxTradeCap, maxDailyUsdt, maxOpen, positionDispatchEnabled },
     steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, setPositionDispatch, enableLiveFire },
   };
 }
@@ -77,7 +93,7 @@ export async function runLunaLiveFireOperator({
   positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
 } = {}) {
   const caps = {
-    maxUsdt: positiveNumber(maxUsdt, DEFAULT_MAX_TRADE_USDT),
+    maxUsdt: optionalPositiveNumber(maxUsdt, DEFAULT_MAX_TRADE_USDT),
     maxDailyUsdt: positiveNumber(maxDailyUsdt, DEFAULT_MAX_DAILY_USDT),
     maxOpen: Math.max(1, Math.round(positiveNumber(maxOpen, DEFAULT_MAX_OPEN_POSITIONS))),
     positionDispatchEnabled: positionDispatchEnabled === true,

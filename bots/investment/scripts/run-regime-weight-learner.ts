@@ -43,7 +43,10 @@ async function main() {
 
   console.log(`[RegimeWeightLearner] ${new Date().toISOString()} 학습 실행 시작 (dryRun=${dryRun}, days=${days})`);
 
-  if (!dryRun && String(process.env.LUNA_ADAPTIVE_WEIGHT_ENABLED || '').toLowerCase() === 'true') {
+  const adaptiveWeightEnabled = !['0', 'false', 'no', 'off', 'disabled']
+    .includes(String(process.env.LUNA_ADAPTIVE_WEIGHT_ENABLED ?? 'true').toLowerCase());
+
+  if (!dryRun && adaptiveWeightEnabled) {
     try {
       await db.initSchema().catch(() => null);
     } catch {}

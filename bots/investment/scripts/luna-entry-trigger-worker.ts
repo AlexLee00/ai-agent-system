@@ -575,9 +575,12 @@ async function fetchRecentFiredUnmaterializedEntryTriggers({ exchange = 'binance
 }
 
 function resolveEntryTriggerSignalAmount({ capitalSnapshot = {}, trigger = {} } = {}) {
-  const maxTradeUsdt = Math.max(1, numberEnv('LUNA_MAX_TRADE_USDT', 50));
   const buyableAmount = Number(capitalSnapshot?.buyableAmount || 0);
   const minOrderAmount = Number(capitalSnapshot?.minOrderAmount || 0);
+  const configuredCap = numberEnv('LUNA_MAX_TRADE_USDT', 0);
+  const hasConfiguredCap = Number.isFinite(configuredCap) && configuredCap > 0;
+  if (!(buyableAmount > 0) && !hasConfiguredCap) return null;
+  const maxTradeUsdt = hasConfiguredCap ? configuredCap : buyableAmount;
   if (buyableAmount > 0 && minOrderAmount > 0 && buyableAmount < minOrderAmount) return null;
   const targetAmount = Math.min(maxTradeUsdt, buyableAmount > 0 ? buyableAmount : maxTradeUsdt);
   const amount = Math.max(minOrderAmount || 0, targetAmount);

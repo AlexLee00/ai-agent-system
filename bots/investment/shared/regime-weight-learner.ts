@@ -244,7 +244,7 @@ async function saveWeightVectorShadow(snapshot) {
 export async function runRegimeWeightLearner(options = {}) {
   const env = options.env || process.env;
   const dryRun = options.dryRun === true;
-  const enabled = boolEnv(REGIME_WEIGHT_LEARNER_ENABLED_KEY, false, env);
+  const enabled = boolEnv(REGIME_WEIGHT_LEARNER_ENABLED_KEY, true, env);
   if (!enabled && !dryRun) {
     console.log(`[RegimeWeightLearner] 비활성화 (${REGIME_WEIGHT_LEARNER_ENABLED_KEY}=false/미설정)`);
     return { skipped: true, reason: 'disabled' };

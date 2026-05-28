@@ -7,7 +7,7 @@ import { evaluateActiveEntryTriggersAgainstMarketEvents } from '../shared/entry-
 import { insertEntryTrigger } from '../shared/luna-discovery-entry-store.ts';
 import { writeEntryTriggerWorkerHeartbeat } from './luna-entry-trigger-worker.ts';
 
-const DEFAULT_MAX_USDT = 50;
+const DEFAULT_MAX_USDT = 0;
 const DEFAULT_VALIDATION_SYMBOL = 'LUNA_ENTRY_TRIGGER_VALIDATION/USDT';
 
 function argValue(name, fallback = null) {
@@ -41,10 +41,8 @@ function withEnv(patch = {}, fn) {
 function parseArgs() {
   const dryRun = boolEnv('LUNA_FIRST_CYCLE_DRY_RUN', true);
   const paperOnly = boolEnv('LUNA_FIRST_CYCLE_PAPER_ONLY', true);
-  const maxUsdt = Math.min(
-    DEFAULT_MAX_USDT,
-    Math.max(1, Number(argValue('--max-usdt', process.env.LUNA_FIRST_CYCLE_MAX_USDT || DEFAULT_MAX_USDT))),
-  );
+  const rawMaxUsdt = Number(argValue('--max-usdt', process.env.LUNA_FIRST_CYCLE_MAX_USDT || DEFAULT_MAX_USDT));
+  const maxUsdt = Number.isFinite(rawMaxUsdt) && rawMaxUsdt > 0 ? rawMaxUsdt : DEFAULT_MAX_USDT;
   return {
     json: process.argv.includes('--json'),
     cleanup: process.argv.includes('--cleanup'),
@@ -58,11 +56,12 @@ function parseArgs() {
 }
 
 function buildCapitalSnapshot(maxUsdt = DEFAULT_MAX_USDT) {
+  const simulatedBuyable = Number(maxUsdt || 100);
   return {
     mode: 'ACTIVE_DISCOVERY',
     reasonCode: 'first_close_cycle_validation',
     balanceStatus: 'ok',
-    buyableAmount: Math.max(100, Number(maxUsdt || DEFAULT_MAX_USDT) * 2),
+    buyableAmount: Math.max(100, simulatedBuyable * 2),
     minOrderAmount: 1,
     remainingSlots: 1,
   };
@@ -89,7 +88,8 @@ async function cleanupTrigger(id = null, { allValidation = false } = {}) {
 export async function runLunaEntryTriggerSimulateFire(args = {}) {
   const exchange = args.exchange || 'binance';
   const symbol = args.symbol || DEFAULT_VALIDATION_SYMBOL;
-  const maxUsdt = Math.min(DEFAULT_MAX_USDT, Math.max(1, Number(args.maxUsdt || DEFAULT_MAX_USDT)));
+  const rawMaxUsdt = Number(args.maxUsdt || DEFAULT_MAX_USDT);
+  const maxUsdt = Number.isFinite(rawMaxUsdt) && rawMaxUsdt > 0 ? rawMaxUsdt : DEFAULT_MAX_USDT;
   const triggerType = `first_cycle_validation_${Date.now().toString(36)}`;
   const envPatch = {
     LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
@@ -187,8 +187,14 @@ export async function runLunaEntryTriggerSimulateFire(args = {}) {
     };
     const result = await evaluateActiveEntryTriggersAgainstMarketEvents([event], {
       exchange,
-      defaultAmountUsdt: maxUsdt,
+      defaultAmountUsdt: maxUsdt > 0 ? maxUsdt : 100,
       capitalSnapshot: buildCapitalSnapshot(maxUsdt),
+      activeQualityGateEnabled: false,
+      binanceTopVolumeUniverse: {
+        source: 'runtime_luna_entry_trigger_simulate_fire_fixture',
+        limit: 30,
+        ranks: { [String(symbol).toUpperCase()]: 1 },
+      },
       regime: 'trending_bull',
       market: 'crypto',
     });

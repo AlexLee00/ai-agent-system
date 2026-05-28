@@ -13,9 +13,8 @@ function delegatedEnv(extra = {}) {
   return {
     LUNA_DELEGATED_AUTHORITY_ENABLED: 'true',
     LUNA_MASTER_REPORT_ONLY: 'true',
-    LUNA_MAX_TRADE_USDT: '50',
     LUNA_LIVE_FIRE_MAX_DAILY: '200',
-    LUNA_LIVE_FIRE_MAX_OPEN: '2',
+    LUNA_LIVE_FIRE_MAX_OPEN: '5',
     ...extra,
   };
 }
@@ -25,7 +24,7 @@ export function runLunaDelegatedAuthoritySmoke() {
     action: 'live_fire_cutover',
     env: {},
     finalGate: { ok: true, blockers: [] },
-    caps: { maxUsdt: 50, maxDailyUsdt: 200, maxOpen: 2 },
+    caps: { maxUsdt: 0, maxDailyUsdt: 200, maxOpen: 5 },
   });
   assert.equal(disabled.canSelfApprove, false);
   assert.ok(disabled.blockers.includes('delegated_authority_disabled'));
@@ -34,7 +33,7 @@ export function runLunaDelegatedAuthoritySmoke() {
     action: 'live_fire_cutover',
     env: delegatedEnv(),
     finalGate: { ok: true, blockers: [] },
-    caps: { maxUsdt: 50, maxDailyUsdt: 200, maxOpen: 2 },
+    caps: { maxUsdt: 0, maxDailyUsdt: 200, maxOpen: 5 },
   });
   assert.equal(approved.canSelfApprove, true);
   assert.equal(approved.approvalToken, LUNA_DELEGATED_AUTHORITY_TOKEN);
@@ -63,9 +62,9 @@ export function runLunaDelegatedAuthoritySmoke() {
 
   const capBlocked = buildLunaDelegatedAuthorityDecision({
     action: 'live_fire_cutover',
-    env: delegatedEnv(),
+    env: delegatedEnv({ LUNA_DELEGATED_MAX_TRADE_USDT: '50' }),
     finalGate: { ok: true, blockers: [] },
-    caps: { maxUsdt: 51, maxDailyUsdt: 200, maxOpen: 2 },
+    caps: { maxUsdt: 51, maxDailyUsdt: 200, maxOpen: 5 },
   });
   assert.equal(capBlocked.canSelfApprove, false);
   assert.ok(capBlocked.blockers.some((item) => item.startsWith('trade_cap_exceeded')));
@@ -74,7 +73,7 @@ export function runLunaDelegatedAuthoritySmoke() {
     action: 'live_fire_cutover',
     env: delegatedEnv(),
     finalGate: { ok: false, blockers: ['manual_reconcile_tasks:1'] },
-    caps: { maxUsdt: 50, maxDailyUsdt: 200, maxOpen: 2 },
+    caps: { maxUsdt: 0, maxDailyUsdt: 200, maxOpen: 5 },
   });
   assert.equal(gateBlocked.canSelfApprove, false);
   assert.ok(gateBlocked.blockers.includes('manual_reconcile_tasks:1'));

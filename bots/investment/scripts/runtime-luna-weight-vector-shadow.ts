@@ -145,7 +145,7 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
           mode: 'shadow',
         });
   const config = {
-    riskBudgetUsdt: Number(process.env.LUNA_MAX_TRADE_USDT || 50),
+    riskBudgetUsdt: Number(process.env.LUNA_MAX_TRADE_USDT || 0),
     weights: adaptiveWeights?.weights || DEFAULT_LUNA_WEIGHT_POLICY,
     autonomousWeightFeedback: adaptiveWeights,
   };

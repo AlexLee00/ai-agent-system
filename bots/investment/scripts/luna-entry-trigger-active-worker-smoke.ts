@@ -203,6 +203,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         },
       ], {
         exchange: 'binance',
+        env: { ...process.env, LUNA_FULL_DATA_LOOP_ENABLED: 'false' },
         capitalSnapshot,
         binanceTopVolumeUniverse,
       });

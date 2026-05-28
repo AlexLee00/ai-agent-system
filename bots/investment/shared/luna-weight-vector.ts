@@ -621,7 +621,7 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     : counterfactualSignal === 'watch'
       ? cap * counterfactualConfidence * 0.35
       : 0;
-  const riskBudgetUsdt = finiteNumber(config?.riskBudgetUsdt, 50);
+  const riskBudgetUsdt = finiteNumber(config?.riskBudgetUsdt, 0);
   const qualityActionPlan = buildQualityActionPlan({
     symbol,
     market,
@@ -751,7 +751,7 @@ export function buildLunaWeightVector(input = {}, config = {}) {
 
 export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
   const equityUsdt = Math.max(1, finiteNumber(context?.equityUsdt, 1000));
-  const maxOrderUsdt = Math.max(0, finiteNumber(context?.maxOrderUsdt, 50));
+  const maxOrderUsdt = Math.max(0, finiteNumber(context?.maxOrderUsdt, 0));
   const current = context?.position || {};
   const referencePrice = Math.max(0, finiteNumber(current?.avg_price ?? current?.avgPrice ?? context?.referencePrice, 0));
   const currentNotional = Math.max(0, finiteNumber(current?.amount, 0) * referencePrice);

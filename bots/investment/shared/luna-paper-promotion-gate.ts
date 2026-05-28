@@ -57,7 +57,7 @@ export function normalizeLunaPaperPromotionGateConfig(config = {}) {
     minAvgConfidence: Math.max(0, Math.min(1, minAvgConfidence)),
     paperMinAvgConfidence: Math.max(0, Math.min(1, paperMinAvgConfidence)),
     entryTriggerPromotionMinConfidence: Math.max(0, Math.min(1, entryTriggerMinConfidence)),
-    maxOrderUsdt: Math.max(0, finiteNumber(config.maxOrderUsdt ?? process.env.LUNA_MAX_TRADE_USDT, 50)),
+    maxOrderUsdt: Math.max(0, finiteNumber(config.maxOrderUsdt ?? process.env.LUNA_MAX_TRADE_USDT, 0)),
     maxPromotionSharpe: Math.max(1, finiteNumber(config.maxPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MAX_SHARPE, 8)),
     minPromotionSharpe: finiteNumber(config.minPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MIN_SHARPE, 0),
     maxPromotionDrawdown: Math.max(0, finiteNumber(config.maxPromotionDrawdown ?? process.env.LUNA_PAPER_PROMOTION_MAX_DRAWDOWN, 30)),
@@ -414,7 +414,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const hardHoldRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).hardHold, false));
   const preventedRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).preventedOrder, false));
   const noLookaheadViolationRows = history.filter((row) => noLookaheadOk(row) === false);
-  const overCapRows = history.filter((row) => row.paperNotionalUsdt > cfg.maxOrderUsdt + 0.000001);
+  const overCapRows = cfg.maxOrderUsdt > 0
+    ? history.filter((row) => row.paperNotionalUsdt > cfg.maxOrderUsdt + 0.000001)
+    : [];
   const backtestQualityRows = history
     .map((row) => getPromotionBacktestQuality(row, cfg))
     .filter((quality) => quality.present);

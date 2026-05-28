@@ -82,7 +82,7 @@ async function updateGuardOutcome(id, outcome, pnlUsd) {
 }
 
 async function main() {
-  const enabled = boolEnv(ENABLED_ENV, false);
+  const enabled = boolEnv(ENABLED_ENV, true);
   const dryRun = process.argv.includes('--dry-run') || !enabled;
   const json = process.argv.includes('--json');
   console.log(`[GuardOutcome] ${new Date().toISOString()} 아웃컴 측정 시작${dryRun ? ' (dry-run)' : ''}`);
