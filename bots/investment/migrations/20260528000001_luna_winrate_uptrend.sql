@@ -35,17 +35,30 @@ WITH daily_trades AS (
   SELECT
     DATE(to_timestamp(tj.exit_time / 1000.0))  AS trade_date,
     COALESCE(tj.market, 'crypto')              AS market,
-    COALESCE(tj.regime, 'RANGING')             AS regime,
+    COALESCE(tj.market_regime, 'RANGING')      AS regime,
     COUNT(*)                                   AS total_trades,
-    COUNT(*) FILTER (WHERE COALESCE(tj.pnl, 0) > 0) AS win_trades,
-    SUM(CASE WHEN COALESCE(tj.pnl, 0) > 0 THEN COALESCE(tj.pnl, 0) ELSE 0 END)      AS gross_profit,
-    SUM(CASE WHEN COALESCE(tj.pnl, 0) < 0 THEN ABS(COALESCE(tj.pnl, 0)) ELSE 0 END) AS gross_loss,
-    AVG(COALESCE(tj.pnl_pct, 0))               AS avg_pnl_pct
+    COUNT(*) FILTER (WHERE COALESCE(tj.pnl_net, tj.pnl_amount, 0) > 0) AS win_trades,
+    SUM(CASE WHEN COALESCE(tj.pnl_net, tj.pnl_amount, 0) > 0 THEN COALESCE(tj.pnl_net, tj.pnl_amount, 0) ELSE 0 END)      AS gross_profit,
+    SUM(CASE WHEN COALESCE(tj.pnl_net, tj.pnl_amount, 0) < 0 THEN ABS(COALESCE(tj.pnl_net, tj.pnl_amount, 0)) ELSE 0 END) AS gross_loss,
+    AVG(COALESCE(
+      CASE
+        WHEN tj.pnl_percent IS NOT NULL AND ABS(tj.pnl_percent) <= 1000 THEN tj.pnl_percent
+        WHEN tj.entry_price > 0 AND tj.exit_price IS NOT NULL THEN
+          CASE
+            WHEN LOWER(COALESCE(tj.direction, 'long')) IN ('short', 'sell') THEN
+              ((tj.entry_price - tj.exit_price) / tj.entry_price) * 100
+            ELSE
+              ((tj.exit_price - tj.entry_price) / tj.entry_price) * 100
+          END
+        ELSE NULL
+      END,
+      0
+    )) AS avg_pnl_pct
   FROM investment.trade_journal tj
   WHERE tj.exit_time IS NOT NULL
     AND NOT COALESCE(tj.is_paper, false)
     AND to_timestamp(tj.exit_time / 1000.0) >= CURRENT_DATE - INTERVAL '90 days'
-  GROUP BY DATE(to_timestamp(tj.exit_time / 1000.0)), COALESCE(tj.market, 'crypto'), COALESCE(tj.regime, 'RANGING')
+  GROUP BY DATE(to_timestamp(tj.exit_time / 1000.0)), COALESCE(tj.market, 'crypto'), COALESCE(tj.market_regime, 'RANGING')
 ),
 daily_stats AS (
   SELECT
@@ -72,9 +85,11 @@ daily_stats AS (
     CASE
       WHEN total_trades > 0 AND gross_loss > 0 THEN
         ROUND(
-          (win_trades::NUMERIC / total_trades) *
-          (gross_profit / gross_loss) /
-          (1 + gross_profit / gross_loss)
+          (
+            (win_trades::NUMERIC / total_trades) *
+            (gross_profit::NUMERIC / gross_loss::NUMERIC) /
+            (1 + gross_profit::NUMERIC / gross_loss::NUMERIC)
+          )::NUMERIC
         , 4)
       ELSE 0
     END AS profit_probability

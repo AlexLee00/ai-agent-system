@@ -1,0 +1,315 @@
+{
+  "cachedAtMs": 1779957878620,
+  "value": {
+    "source": "curated_volume_top50_overseas",
+    "fetchedAt": "2026-05-28T08:44:38.593Z",
+    "market": "overseas",
+    "limit": 50,
+    "symbols": [
+      "NVDA",
+      "TSLA",
+      "AAPL",
+      "AMZN",
+      "META",
+      "MSFT",
+      "GOOGL",
+      "AMD",
+      "PLTR",
+      "INTC",
+      "COIN",
+      "MSTR",
+      "SOFI",
+      "MARA",
+      "RIVN",
+      "CLSK",
+      "IREN",
+      "CIFR",
+      "RIOT",
+      "SPY",
+      "QQQ",
+      "PYPL",
+      "UBER",
+      "LYFT",
+      "SHOP",
+      "NET",
+      "CRWD",
+      "SNOW",
+      "RBLX",
+      "MRNA",
+      "SNGX",
+      "RGTI",
+      "ACHR",
+      "MU",
+      "AVGO",
+      "QCOM",
+      "QBTS",
+      "NIO",
+      "XPEV",
+      "LI",
+      "LCID",
+      "PLUG",
+      "EOSE",
+      "BAC",
+      "JPM",
+      "BABA",
+      "PDD",
+      "F",
+      "BB",
+      "NOK"
+    ],
+    "ranks": {
+      "NVDA": 1,
+      "TSLA": 2,
+      "AAPL": 3,
+      "AMZN": 4,
+      "META": 5,
+      "MSFT": 6,
+      "GOOGL": 7,
+      "AMD": 8,
+      "PLTR": 9,
+      "INTC": 10,
+      "COIN": 11,
+      "MSTR": 12,
+      "SOFI": 13,
+      "MARA": 14,
+      "RIVN": 15,
+      "CLSK": 16,
+      "IREN": 17,
+      "CIFR": 18,
+      "RIOT": 19,
+      "SPY": 20,
+      "QQQ": 21,
+      "PYPL": 22,
+      "UBER": 23,
+      "LYFT": 24,
+      "SHOP": 25,
+      "NET": 26,
+      "CRWD": 27,
+      "SNOW": 28,
+      "RBLX": 29,
+      "MRNA": 30,
+      "SNGX": 31,
+      "RGTI": 32,
+      "ACHR": 33,
+      "MU": 34,
+      "AVGO": 35,
+      "QCOM": 36,
+      "QBTS": 37,
+      "NIO": 38,
+      "XPEV": 39,
+      "LI": 40,
+      "LCID": 41,
+      "PLUG": 42,
+      "EOSE": 43,
+      "BAC": 44,
+      "JPM": 45,
+      "BABA": 46,
+      "PDD": 47,
+      "F": 48,
+      "BB": 49,
+      "NOK": 50
+    },
+    "rows": [
+      {
+        "symbol": "NVDA",
+        "rank": 1
+      },
+      {
+        "symbol": "TSLA",
+        "rank": 2
+      },
+      {
+        "symbol": "AAPL",
+        "rank": 3
+      },
+      {
+        "symbol": "AMZN",
+        "rank": 4
+      },
+      {
+        "symbol": "META",
+        "rank": 5
+      },
+      {
+        "symbol": "MSFT",
+        "rank": 6
+      },
+      {
+        "symbol": "GOOGL",
+        "rank": 7
+      },
+      {
+        "symbol": "AMD",
+        "rank": 8
+      },
+      {
+        "symbol": "PLTR",
+        "rank": 9
+      },
+      {
+        "symbol": "INTC",
+        "rank": 10
+      },
+      {
+        "symbol": "COIN",
+        "rank": 11
+      },
+      {
+        "symbol": "MSTR",
+        "rank": 12
+      },
+      {
+        "symbol": "SOFI",
+        "rank": 13
+      },
+      {
+        "symbol": "MARA",
+        "rank": 14
+      },
+      {
+        "symbol": "RIVN",
+        "rank": 15
+      },
+      {
+        "symbol": "CLSK",
+        "rank": 16
+      },
+      {
+        "symbol": "IREN",
+        "rank": 17
+      },
+      {
+        "symbol": "CIFR",
+        "rank": 18
+      },
+      {
+        "symbol": "RIOT",
+        "rank": 19
+      },
+      {
+        "symbol": "SPY",
+        "rank": 20
+      },
+      {
+        "symbol": "QQQ",
+        "rank": 21
+      },
+      {
+        "symbol": "PYPL",
+        "rank": 22
+      },
+      {
+        "symbol": "UBER",
+        "rank": 23
+      },
+      {
+        "symbol": "LYFT",
+        "rank": 24
+      },
+      {
+        "symbol": "SHOP",
+        "rank": 25
+      },
+      {
+        "symbol": "NET",
+        "rank": 26
+      },
+      {
+        "symbol": "CRWD",
+        "rank": 27
+      },
+      {
+        "symbol": "SNOW",
+        "rank": 28
+      },
+      {
+        "symbol": "RBLX",
+        "rank": 29
+      },
+      {
+        "symbol": "MRNA",
+        "rank": 30
+      },
+      {
+        "symbol": "SNGX",
+        "rank": 31
+      },
+      {
+        "symbol": "RGTI",
+        "rank": 32
+      },
+      {
+        "symbol": "ACHR",
+        "rank": 33
+      },
+      {
+        "symbol": "MU",
+        "rank": 34
+      },
+      {
+        "symbol": "AVGO",
+        "rank": 35
+      },
+      {
+        "symbol": "QCOM",
+        "rank": 36
+      },
+      {
+        "symbol": "QBTS",
+        "rank": 37
+      },
+      {
+        "symbol": "NIO",
+        "rank": 38
+      },
+      {
+        "symbol": "XPEV",
+        "rank": 39
+      },
+      {
+        "symbol": "LI",
+        "rank": 40
+      },
+      {
+        "symbol": "LCID",
+        "rank": 41
+      },
+      {
+        "symbol": "PLUG",
+        "rank": 42
+      },
+      {
+        "symbol": "EOSE",
+        "rank": 43
+      },
+      {
+        "symbol": "BAC",
+        "rank": 44
+      },
+      {
+        "symbol": "JPM",
+        "rank": 45
+      },
+      {
+        "symbol": "BABA",
+        "rank": 46
+      },
+      {
+        "symbol": "PDD",
+        "rank": 47
+      },
+      {
+        "symbol": "F",
+        "rank": 48
+      },
+      {
+        "symbol": "BB",
+        "rank": 49
+      },
+      {
+        "symbol": "NOK",
+        "rank": 50
+      }
+    ]
+  }
+}

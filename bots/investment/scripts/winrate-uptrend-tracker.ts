@@ -75,8 +75,21 @@ async function fetchTotalTrades() {
   const row = await query(
     `SELECT
        COUNT(*) AS total,
-       COUNT(*) FILTER (WHERE COALESCE(pnl, 0) > 0) AS wins,
-       AVG(COALESCE(pnl_pct, 0)) AS avg_pnl_pct
+       COUNT(*) FILTER (WHERE COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
+       AVG(COALESCE(
+         CASE
+           WHEN pnl_percent IS NOT NULL AND ABS(pnl_percent) <= 1000 THEN pnl_percent
+           WHEN entry_price > 0 AND exit_price IS NOT NULL THEN
+             CASE
+               WHEN LOWER(COALESCE(direction, 'long')) IN ('short', 'sell') THEN
+                 ((entry_price - exit_price) / entry_price) * 100
+               ELSE
+                 ((exit_price - entry_price) / entry_price) * 100
+             END
+           ELSE NULL
+         END,
+         0
+       )) AS avg_pnl_pct
      FROM investment.trade_journal
      WHERE exit_time IS NOT NULL
        AND NOT COALESCE(is_paper, false)
@@ -151,7 +164,7 @@ function buildTelegramMessage(winrateData, regimeWeights, totalStats) {
 
   msg += `*📊 30일 종합*\n`;
   msg += `  • 총 거래: ${total30}건 | 승률: ${winRate30}%\n`;
-  msg += `  • 평균 손익률: ${(avgPnl30 * 100).toFixed(2)}%\n\n`;
+  msg += `  • 평균 손익률: ${avgPnl30.toFixed(2)}%\n\n`;
 
   // 시장별 상세
   const marketEmojis = { crypto: '₿', domestic: '🇰🇷', overseas: '🌍' };

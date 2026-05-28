@@ -60,23 +60,36 @@ function normalizeWeights(weights) {
 // ─── DB 거래 이력 조회 (체제 + 지표별) ────────────────────────────────────────
 
 async function fetchRegimeTradeStats(days = 7) {
-  // trade_journal: exit_time(ms), is_paper, pnl, regime, signal_type, market
+  // trade_journal: exit_time(ms), is_paper, pnl_net/pnl_amount, market_regime, strategy_family/trade_mode, market
   const rows = await query(
     `SELECT
-       COALESCE(tj.regime, 'RANGING')         AS regime,
-       COALESCE(tj.signal_type, 'momentum')   AS signal_type,
+       COALESCE(tj.market_regime, 'RANGING')  AS regime,
+       COALESCE(tj.strategy_family, tj.trade_mode, 'momentum') AS signal_type,
        COALESCE(tj.market, 'crypto')           AS market,
        COUNT(*)                               AS total_trades,
-       COUNT(*) FILTER (WHERE COALESCE(tj.pnl, 0) > 0) AS win_trades,
-       AVG(COALESCE(tj.pnl, 0))               AS avg_pnl,
-       AVG(COALESCE(tj.pnl_pct, 0))           AS avg_pnl_pct,
-       SUM(CASE WHEN COALESCE(tj.pnl, 0) > 0 THEN COALESCE(tj.pnl, 0) ELSE 0 END) AS gross_profit,
-       SUM(CASE WHEN COALESCE(tj.pnl, 0) < 0 THEN ABS(COALESCE(tj.pnl, 0)) ELSE 0 END) AS gross_loss
+       COUNT(*) FILTER (WHERE COALESCE(tj.pnl_net, tj.pnl_amount, 0) > 0) AS win_trades,
+       AVG(COALESCE(tj.pnl_net, tj.pnl_amount, 0)) AS avg_pnl,
+       AVG(COALESCE(
+         CASE
+           WHEN tj.pnl_percent IS NOT NULL AND ABS(tj.pnl_percent) <= 1000 THEN tj.pnl_percent
+           WHEN tj.entry_price > 0 AND tj.exit_price IS NOT NULL THEN
+             CASE
+               WHEN LOWER(COALESCE(tj.direction, 'long')) IN ('short', 'sell') THEN
+                 ((tj.entry_price - tj.exit_price) / tj.entry_price) * 100
+               ELSE
+                 ((tj.exit_price - tj.entry_price) / tj.entry_price) * 100
+             END
+           ELSE NULL
+         END,
+         0
+       )) AS avg_pnl_pct,
+       SUM(CASE WHEN COALESCE(tj.pnl_net, tj.pnl_amount, 0) > 0 THEN COALESCE(tj.pnl_net, tj.pnl_amount, 0) ELSE 0 END) AS gross_profit,
+       SUM(CASE WHEN COALESCE(tj.pnl_net, tj.pnl_amount, 0) < 0 THEN ABS(COALESCE(tj.pnl_net, tj.pnl_amount, 0)) ELSE 0 END) AS gross_loss
      FROM investment.trade_journal tj
      WHERE tj.exit_time IS NOT NULL
        AND NOT COALESCE(tj.is_paper, false)
        AND to_timestamp(tj.exit_time / 1000.0) >= NOW() - ($1 || ' days')::interval
-     GROUP BY COALESCE(tj.regime, 'RANGING'), COALESCE(tj.signal_type, 'momentum'), COALESCE(tj.market, 'crypto')
+     GROUP BY COALESCE(tj.market_regime, 'RANGING'), COALESCE(tj.strategy_family, tj.trade_mode, 'momentum'), COALESCE(tj.market, 'crypto')
      ORDER BY total_trades DESC`,
     [days],
   ).catch(() => []);
