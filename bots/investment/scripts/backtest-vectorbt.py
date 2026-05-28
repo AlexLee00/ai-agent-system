@@ -483,6 +483,13 @@ def infer_rows_for_days(df, days: int) -> int:
     try:
         if df is None or len(df.index) < 2:
             return max(1, days)
+        span_seconds = (df.index[-1] - df.index[0]).total_seconds()
+        span_days = span_seconds / 86400.0
+        if span_days >= 7:
+            # Market-hour data (for example US/KR 1h bars) has overnight/weekend gaps.
+            # Use observed rows per calendar day instead of assuming 24h continuous bars.
+            rows_per_day = len(df) / max(1.0, span_days)
+            return max(1, int(days * rows_per_day))
         deltas = df.index.to_series().diff().dropna().dt.total_seconds()
         median_seconds = float(deltas.median()) if not deltas.empty else 86400.0
         return max(1, int((days * 86400) / max(1.0, median_seconds)))
