@@ -9,6 +9,8 @@
     <string>/opt/homebrew/bin/node</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-ppo-retrain-weekly.ts</string>
     <string>--json</string>
+    <string>--train</string>
+    <string>--confirm=luna-ppo-shadow-train</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
