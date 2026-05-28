@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-28: CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE — 동적 가중치 + 수익 확률 우상향 launchd 설치 완료
+
+- **검증 결과** — 4 Phase 전체 이미 구현됨, launchd 설치 완료:
+  - 모든 코드/DB/마이그레이션 이전 세션에서 완료
+  - `~/Library/LaunchAgents` 4개 plist 설치: weight-adaptive-tuner(07:00), universe-refresh(08:30), winrate-tracker(09:00), guard-outcome-tracker(09:00)
+  - dry-run 검증: 국내 49종목 + 해외 50종목 + 크립토 30종목 유니버스 정상 ✅
+  - 가중치 학습 dry-run: 442건 실거래, 4체제 분석 정상 ✅
+  - 수익 확률 추적: 54승/442건, 평균 +2.04% PnL ✅
+
 ## 2026-05-28: CODEX_LUNA_AGENTIC_LEARNING_REDESIGN — 6 Phase Agentic Trading 재설계 검증 완료
 
 - **검증 결과** — 6 Phase 전체 구현 확인:

@@ -1,4 +1,32 @@
-# 세션 인수인계 — 2026-05-28 (CODEX_LUNA_AGENTIC_LEARNING_REDESIGN 완료 검증)
+# 세션 인수인계 — 2026-05-28 (CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE 검증 + launchd 설치 완료)
+
+## 완료 요약 ✅ — 동적 가중치 + 수익 확률 우상향 시스템 가동 확인
+
+### CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE_2026-05-28 검증 결과
+- **구현 상태**: 전 Phase (1~4) 이미 구현 완료 + DB 마이그레이션 완료
+- **DB 테이블**: `luna_regime_weight_snapshots`, `universe_selection_shadow`, `v_winrate_uptrend` — 모두 존재
+- **launchd 설치 완료** (~/Library/LaunchAgents 등록 + 재부팅 영속성 확보):
+  - `ai.luna.weight-adaptive-tuner-daily-0700` ✅ 설치됨 (07:00 체제별 가중치 학습)
+  - `ai.luna.universe-refresh-daily-0830` ✅ 설치됨 (08:30 동적 유니버스 갱신)
+  - `ai.luna.winrate-tracker-daily-0900` ✅ 설치됨 (09:00 수익 확률 추세 보고)
+  - `ai.luna.guard-outcome-tracker-daily-0900` ✅ 설치됨 (09:00 가드 효과성 측정)
+- **dry-run 검증**: 3 스크립트 모두 정상 작동 확인
+  - 국내 49종목, 해외 50종목, 크립토 30종목 유니버스 갱신 ✅
+  - 체제별 가중치 학습 4체제 완료 ✅ (TRENDING_BULL 7거래, BEAR 3거래, RANGING 2거래)
+  - 수익 확률 추적: 442건 실거래, 54승, 평균 +2.04% ✅
+- **현재 활성화 상태**:
+  - `LUNA_FULL_DATA_LOOP_ENABLED=true` (기본값, 가동 중)
+  - `LUNA_ADAPTIVE_WEIGHT_ENABLED` — 미설정 (기본 true, 실제 학습 중)
+  - `LUNA_MIN_CONFIDENCE` — 미설정 (기본값 사용)
+
+### 다음 단계 (마스터 결정 필요)
+1. 가중치 학습 1주 후 → `luna_regime_weight_snapshots` 확인 (승률 개선 여부)
+2. `LUNA_MIN_CONFIDENCE` 조정 (현재 live Binance: 0.35, KIS: 0.22)
+3. 수익 확률 우상향 추세 측정 (1주 후 Telegram 보고 확인)
+
+---
+
+# 이전 세션 — 2026-05-28 (CODEX_LUNA_AGENTIC_LEARNING_REDESIGN 완료 검증)
 
 ## 완료 요약 ✅ — 6 Phase 전체 구현 검증 완료
 
