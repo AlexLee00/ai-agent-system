@@ -28,6 +28,7 @@ const MARKER_ALIASES = {
     '마무리 제언': ['마무리'],
   },
   lecture: {
+    '승호아빠 인사말': ['시작하며'],
     '[함께 읽으면 좋은 글]': ['[마무리 인사 + 함께 읽으면 좋은 글]'],
     '[해시태그]': ['[마무리 인사 + 해시태그]'],
     '함께 읽으면 좋은 글': ['마무리 인사 + 함께 읽으면 좋은 글'],
@@ -214,6 +215,28 @@ function checkReaderFacingArtifacts(content, type) {
   return issues;
 }
 
+function checkTerminalSectionOverflow(content) {
+  const issues = [];
+  const raw = String(content || '');
+
+  const explicitEndIndex = raw.indexOf('_THE_END_');
+  if (explicitEndIndex >= 0 && raw.slice(explicitEndIndex + '_THE_END_'.length).trim().length > 0) {
+    issues.push({ severity: 'error', msg: '_THE_END_ 이후 본문 감지 — 마감 뒤에 본문이 다시 붙음' });
+  }
+
+  const hashtagSection = /(^|\n)\s*(?:<h[1-3][^>]*>\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:<\/h[1-3]>)?\s*(?:\n|$)/i.exec(raw);
+  if (!hashtagSection) return issues;
+
+  const afterHashtagIndex = hashtagSection.index + hashtagSection[0].length;
+  const afterHashtag = raw.slice(afterHashtagIndex);
+  const overflow = /\n\s*(?:━{3,}|-{3,}|#{1,6}\s+|\[[^\]\n]+\]|<h[1-3][^>]*>)/m.exec(afterHashtag);
+  if (overflow) {
+    issues.push({ severity: 'error', msg: '해시태그 이후 본문/섹션 재개 감지 — 마감 섹션 뒤 구조를 정리해야 함' });
+  }
+
+  return issues;
+}
+
 function sanitizeForAIDetection(content) {
   return String(content || '')
     .replace(/```[\s\S]*?```/g, ' ')
@@ -330,6 +353,7 @@ function checkQuality(content, type) {
 
   issues.push(...checkBriefingStructure(content, type));
   issues.push(...checkReaderFacingArtifacts(content, type));
+  issues.push(...checkTerminalSectionOverflow(content));
   issues.push(...checkTruncatedEnding(content, type));
 
   return {

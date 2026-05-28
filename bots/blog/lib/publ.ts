@@ -273,8 +273,28 @@ function ensurePublishBriefingFloor(content, postType, title) {
   return next.trim();
 }
 
+function trimTerminalOverflowContent(content) {
+  let next = String(content || '').trim();
+  if (!next) return next;
+
+  const explicitEndIndex = next.indexOf('_THE_END_');
+  if (explicitEndIndex >= 0) {
+    next = next.slice(0, explicitEndIndex).trimEnd();
+  }
+
+  const hashtagSection = /(^|\n)\s*(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\n|$)/i.exec(next);
+  if (!hashtagSection) return next.trim();
+
+  const afterHashtagIndex = hashtagSection.index + hashtagSection[0].length;
+  const afterHashtag = next.slice(afterHashtagIndex);
+  const overflow = /\n\s*(?:━{3,}|-{3,}|#{1,6}\s+|\[[^\]\n]+\])/m.exec(afterHashtag);
+  if (!overflow) return next.trim();
+
+  return next.slice(0, afterHashtagIndex + overflow.index).trimEnd();
+}
+
 function _contentToHtml(content, title, images = null) {
-  let text = String(content || '').replace(/_THE_END_/g, '').trim();
+  let text = trimTerminalOverflowContent(content);
   text = text.replace(/^\s*#{1,6}\s*(\[[^\]\n]+\])\s*$/gm, '$1');
 
   function displaySectionTitle(value) {
@@ -480,11 +500,11 @@ async function publishToFile(postData) {
   const filepath = path.join(OUTPUT_DIR, filename);
 
   const titleUrlMap = await loadPublishedLinkMap();
-  const normalizedContent = ensurePersonalVoiceFloor(
+  const normalizedContent = trimTerminalOverflowContent(ensurePersonalVoiceFloor(
     ensurePublishBriefingFloor(content, postType, title),
     postType,
     title,
-  );
+  ));
   const linkedContent = replaceInternalLinkPlaceholders(normalizedContent, titleUrlMap);
 
   const htmlContent = _contentToHtml(linkedContent, title, images);
@@ -601,11 +621,11 @@ async function rewriteReadyDraft(postId, postData) {
   const today = kst.today();
 
   const titleUrlMap = await loadPublishedLinkMap();
-  const normalizedContent = ensurePersonalVoiceFloor(
+  const normalizedContent = trimTerminalOverflowContent(ensurePersonalVoiceFloor(
     ensurePublishBriefingFloor(content, postType, title),
     postType,
     title,
-  );
+  ));
   const linkedContent = replaceInternalLinkPlaceholders(normalizedContent, titleUrlMap);
   const htmlContent = _contentToHtml(linkedContent, title, images);
 
@@ -899,5 +919,6 @@ module.exports = {
   getViewCollectionCandidates,
   OUTPUT_DIR,
   normalizeTitleKey,
+  trimTerminalOverflowContent,
   replaceInternalLinkPlaceholders,
 };
