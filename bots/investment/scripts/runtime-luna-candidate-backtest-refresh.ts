@@ -283,6 +283,10 @@ function reliabilityReasons(row: any): string[] {
     .filter(Boolean);
 }
 
+function reliabilitySharpe(row: any, fallback = NaN): number {
+  return safeNum(row?.sharpe_oos_deflated ?? row?.sharpe_oos ?? row?.sharpe_ratio ?? row?.sharpe, fallback);
+}
+
 function rowsHaveUsableTrades(rows: any[]) {
   return Array.isArray(rows) && rows.some((row) => {
     const status = String(row?.status || 'ok').toLowerCase();
@@ -292,7 +296,7 @@ function rowsHaveUsableTrades(rows: any[]) {
 
 function qualityRank(row: any) {
   const trades = safeNum(row?.total_trades, 0);
-  const sharpe = safeNum(row?.sharpe_ratio, NaN);
+  const sharpe = reliabilitySharpe(row, NaN);
   const drawdown = Math.abs(safeNum(row?.max_drawdown, 0));
   const winRate = safeNum(row?.win_rate, 0);
   const sampleOk = trades >= GATE.MIN_PERIOD_TRADES;
@@ -312,7 +316,7 @@ function qualityRank(row: any) {
           ? 1
           : 0;
   const robust = safeNum(row?.robust_score, NaN);
-  const rawRank = Number.isFinite(robust) ? robust : safeNum(row?.sharpe_ratio, -Infinity);
+  const rawRank = Number.isFinite(robust) ? robust : reliabilitySharpe(row, -Infinity);
   const boundedRank = Math.max(-1_000, Math.min(1_000, rawRank));
   return selectionTier * 1_000_000 + boundedRank;
 }
@@ -555,7 +559,7 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   }
 
   const qualityRows = selectBestQualityRows(usable);
-  const rawAvgSharpe = qualityRows.reduce((s, r) => s + safeNum(r?.sharpe_ratio), 0) / qualityRows.length;
+  const rawAvgSharpe = qualityRows.reduce((s, r) => s + reliabilitySharpe(r, 0), 0) / qualityRows.length;
   const avgSharpe = Math.max(-GATE.MAX_ABS_SHARPE, Math.min(GATE.MAX_ABS_SHARPE, rawAvgSharpe));
   const totalTrades = qualityRows.reduce((sum, r) => sum + safeNum(r?.total_trades), 0);
   const minTrades = Math.min(...qualityRows.map((r) => safeNum(r?.total_trades)));
@@ -566,10 +570,10 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   for (const reason of oosReasons) reasons.push(reason);
   if (avgSharpe < GATE.MIN_SHARPE) reasons.push(`sharpe_negative(${avgSharpe.toFixed(2)})`);
   const periodFailures = qualityRows
-    .filter((r) => safeNum(r?.sharpe_ratio) < GATE.MIN_SHARPE
+    .filter((r) => reliabilitySharpe(r, NaN) < GATE.MIN_SHARPE
       || Math.abs(safeNum(r?.max_drawdown)) > GATE.MAX_DRAWDOWN
       || safeNum(r?.win_rate) < GATE.MIN_WIN_RATE)
-    .map((r) => `${r.quality_period}d:sharpe=${safeNum(r?.sharpe_ratio).toFixed(2)},drawdown=${Math.abs(safeNum(r?.max_drawdown)).toFixed(1)}%,winRate=${safeNum(r?.win_rate).toFixed(1)}%`);
+    .map((r) => `${r.quality_period}d:sharpe=${reliabilitySharpe(r, 0).toFixed(2)},drawdown=${Math.abs(safeNum(r?.max_drawdown)).toFixed(1)}%,winRate=${safeNum(r?.win_rate).toFixed(1)}%`);
   for (const failure of periodFailures) {
     reasons.push(`walk_forward_period_failed(${failure})`);
   }

@@ -94,6 +94,15 @@ function parseReasons(value) {
   return [];
 }
 
+function finiteNumber(value, fallback = null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function reliabilitySharpe(row = null) {
+  return finiteNumber(row?.sharpe_oos_deflated ?? row?.sharpe_oos ?? row?.sharpe, null);
+}
+
 export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const mode = getCandidateBacktestGateMode(env);
   if (mode === 'off') {
@@ -116,12 +125,14 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const drawdownWouldBlock = Number.isFinite(maxDrawdown) && Number.isFinite(maxDrawdownLimit) && maxDrawdown > maxDrawdownLimit;
 
   // OOS 필드 — sharpe_oos_deflated 가 있으면 raw sharpe 대신 사용 (과적합 차단)
-  const sharpeOosDeflated = row.sharpe_oos_deflated != null ? Number(row.sharpe_oos_deflated) : null;
+  const effectiveSharpe = reliabilitySharpe(row);
+  const minSharpe = Number(env.LUNA_CANDIDATE_BACKTEST_MIN_SHARPE || 0);
+  const sharpeWouldBlock = effectiveSharpe != null && Number.isFinite(minSharpe) && effectiveSharpe < minSharpe;
   const overfitGap = row.overfit_gap != null ? Number(row.overfit_gap) : null;
   const maxOverfitGap = Number(env.LUNA_BT_MAX_OVERFIT_GAP || 2.0);
   const overfitFlagged = overfitGap != null && Number.isFinite(overfitGap) && overfitGap > maxOverfitGap;
 
-  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock;
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock;
   const reasons = parseReasons(row.block_reasons);
   const gateStatus = String(row.gate_status || row.gateStatus || '').toLowerCase();
   const unstableBacktest = gateStatus.includes('unstable')
@@ -133,6 +144,8 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     ? 'candidate_backtest_stale'
     : unstableBacktest
       ? 'candidate_backtest_unstable'
+    : sharpeWouldBlock
+      ? 'candidate_backtest_sharpe_oos_deflated_low'
     : !healthy
       ? 'candidate_backtest_unhealthy'
       : drawdownWouldBlock
@@ -143,9 +156,13 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const baseReasons = overfitFlagged && !reasons.some((item) => String(item).startsWith('overfit_gap_high'))
     ? [...reasons, `overfit_gap_high(${overfitGap!.toFixed(2)})`]
     : reasons;
-  const effectiveReasons = drawdownWouldBlock && !baseReasons.some((item) => String(item).startsWith('drawdown_'))
-    ? [...baseReasons, `drawdown_high(${maxDrawdown.toFixed(1)}%)`]
-    : baseReasons;
+  let effectiveReasons = baseReasons;
+  if (drawdownWouldBlock && !effectiveReasons.some((item) => String(item).startsWith('drawdown_'))) {
+    effectiveReasons = [...effectiveReasons, `drawdown_high(${maxDrawdown.toFixed(1)}%)`];
+  }
+  if (sharpeWouldBlock && !effectiveReasons.some((item) => String(item).startsWith('sharpe_oos_deflated_low'))) {
+    effectiveReasons = [...effectiveReasons, `sharpe_oos_deflated_low(${effectiveSharpe.toFixed(2)}<${minSharpe})`];
+  }
   return {
     ok: mode !== 'enforce' || !wouldBlock,
     mode,
@@ -180,7 +197,7 @@ async function auditBacktestGate({ symbol, market, result, signal }) {
     symbol,
     market,
     result.blocked ? 'block_backtest_gate' : 'would_block_backtest_gate',
-    result.row?.sharpe ?? null,
+    reliabilitySharpe(result.row) ?? result.row?.sharpe ?? null,
     0,
     signal?.block_meta?.predictiveValidation?.componentCoverage ?? null,
     result.reason || result.reasons?.join(',') || 'candidate_backtest_gate',
