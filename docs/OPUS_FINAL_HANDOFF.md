@@ -1,4 +1,50 @@
-# 세션 인수인계 — 2026-05-28 (CODEX_LUNA_MASTER_DATA_LOOP 완전 동적 자기학습 시스템)
+# 세션 인수인계 — 2026-05-28 (CODEX_LUNA_AGENTIC_LEARNING_REDESIGN 완료 검증)
+
+## 완료 요약 ✅ — 6 Phase 전체 구현 검증 완료
+
+| Phase | 파일 | 상태 |
+|-------|------|------|
+| A. 실매매/데이터수집 | `luna-data-collection-priority.ts` (297줄) | ✅ (라이브러리, 통합 대기) |
+| B. Closed-loop | `luna-feedback-loop-orchestrator.ts` (437줄) + runner + plist | ✅ |
+| C. 통합분석 | `unified-analyst.ts` (291줄) + `fundamentals_expander.py` | ✅ (라이브러리, 통합 대기) |
+| D. FinRL-X | 4-layer Python + `luna-finrl-orchestrator.ts` + runner + plist | ✅ |
+| D. Self-Reward | `luna-self-rewarding-engine.ts` (305줄) | ✅ (finrl-orchestrator에서 사용) |
+| E. A2A 협업 | `multi-agent-trade-decision.ts` + `cross-agent-validation.ts` | ✅ |
+| F. 하네스 자율 | `luna-harness-auto-adjustment.ts` (296줄) + runner + plist | ✅ |
+
+### 핵심 파일
+- `bots/investment/shared/luna-data-collection-priority.ts` — 라이브러리 (거래 실행 시 호출 예정)
+- `bots/investment/shared/luna-feedback-loop-orchestrator.ts` — 매일 06:00 자동 실행
+- `bots/investment/shared/unified-analyst.ts` — 라이브러리 (신호 생성 시 호출 예정)
+- `bots/investment/shared/luna-finrl-orchestrator.ts` — 매주 일요일 02:00 자동 실행
+- `bots/investment/shared/luna-self-rewarding-engine.ts` — finrl-orchestrator에서 사용
+- `bots/investment/shared/luna-harness-auto-adjustment.ts` — 매일 06:10 자동 실행
+- `bots/investment/python/finrl-x/layer{1-4}-*.py` — FinRL-X 4-layer Python 모듈
+- `bots/investment/python/korea-data/fundamentals_expander.py` — KOSPI 펀더멘털 확장
+
+### 통합 대기 항목 (마스터 승인 후)
+- `luna-data-collection-priority.ts::recordTradeAttempt()` → 거래 실행 코드에서 호출
+- `unified-analyst.ts::runUnifiedAnalysis()` → 신호 생성 플로우에서 호출
+- `LUNA_ADAPTIVE_WEIGHT_ENABLED=true` → 체제별 가중치 자율 조정 활성화
+
+### launchd 등록 필요 (OPS)
+```bash
+cp bots/investment/launchd/ai.luna.feedback-loop-daily-0600.plist ~/Library/LaunchAgents/
+cp bots/investment/launchd/ai.luna.fundamentals-expander-daily.plist ~/Library/LaunchAgents/
+cp bots/investment/launchd/ai.luna.finrl-weekly-training.plist ~/Library/LaunchAgents/
+cp bots/investment/launchd/ai.luna.harness-daily-0600.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/ai.luna.feedback-loop-daily-0600.plist
+launchctl load ~/Library/LaunchAgents/ai.luna.fundamentals-expander-daily.plist
+launchctl load ~/Library/LaunchAgents/ai.luna.finrl-weekly-training.plist
+launchctl load ~/Library/LaunchAgents/ai.luna.harness-daily-0600.plist
+```
+
+### git tag
+`luna-agentic-learning-complete-20260528-1951`
+
+---
+
+# 이전 세션 — 2026-05-28 (CODEX_LUNA_MASTER_DATA_LOOP 완전 동적 자기학습 시스템)
 
 ## 완료 요약 ✅ — 5 Phase 완전 구현 (완전 동적 자기학습 루프)
 

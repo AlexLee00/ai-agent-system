@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-28: CODEX_LUNA_AGENTIC_LEARNING_REDESIGN — 6 Phase Agentic Trading 재설계 검증 완료
+
+- **검증 결과** — 6 Phase 전체 구현 확인:
+  - Phase A: `luna-data-collection-priority.ts` (297줄) — 라이브러리, 통합 대기
+  - Phase B: `luna-feedback-loop-orchestrator.ts` (437줄) — 매일 06:00 자동 실행
+  - Phase C: `unified-analyst.ts` (291줄) + `fundamentals_expander.py` — 라이브러리
+  - Phase D: FinRL-X 4-layer Python + `luna-finrl-orchestrator.ts` + `luna-self-rewarding-engine.ts`
+  - Phase E: `multi-agent-trade-decision.ts` + `cross-agent-validation.ts` (A2A 협업)
+  - Phase F: `luna-harness-auto-adjustment.ts` (296줄) — 매일 06:10 자동 실행
+- **통합 대기** — Phase A/C 라이브러리 → 마스터 승인 후 실매매 파이프라인 연결
+- **git tag**: `luna-agentic-learning-complete-20260528-1951`
+
 ## 2026-05-28: CODEX_LUNA_MASTER_DATA_LOOP — 완전 동적 자기학습 시스템 구현 완료
 
 - **Phase 1** — soft 가드 제거 (데이터 수집):
