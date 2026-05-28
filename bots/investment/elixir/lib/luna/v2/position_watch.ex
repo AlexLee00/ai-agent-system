@@ -113,6 +113,7 @@ defmodule Luna.V2.PositionWatch do
     adjust_gain_pct = KillSwitch.position_watch_adjust_gain_pct()
     stale_minutes = KillSwitch.position_watch_stale_minutes()
     crypto_dust_usdt = KillSwitch.position_watch_crypto_dust_usdt()
+    regime_max_age_minutes = KillSwitch.position_watch_regime_max_age_minutes()
     tv_enabled? = KillSwitch.position_watch_tv_enabled?()
     tv_timeframes = KillSwitch.position_watch_tv_timeframes()
     tv_stale_ms = KillSwitch.position_watch_tv_stale_ms()
@@ -128,6 +129,7 @@ defmodule Luna.V2.PositionWatch do
       COALESCE(size, 0) * COALESCE(entry_price, 0) AS notional_value,
       updated_at,
       investment.live_positions.created_at AS position_created_at,
+      open_journal.entry_time AS position_entry_time,
       psp.strategy_name,
       psp.setup_type,
       psp.monitoring_plan,
@@ -142,11 +144,33 @@ defmodule Luna.V2.PositionWatch do
       bt.max_drawdown AS backtest_max_drawdown,
       bt.total_trades AS backtest_total_trades,
       CASE
+        WHEN mrs.captured_at IS NULL
+          OR mrs.captured_at < now() - ($1::int || ' minutes')::interval
+        THEN 'unknown'
+        ELSE mrs.regime
+      END AS current_regime,
+      COALESCE(mrs.confidence, 0) AS regime_confidence,
+      mrs.captured_at AS regime_captured_at,
+      CASE
+        WHEN mrs.captured_at IS NULL
+          OR mrs.captured_at < now() - ($1::int || ' minutes')::interval
+        THEN true
+        ELSE false
+      END AS regime_stale,
+      CASE
         WHEN COALESCE(size, 0) * COALESCE(entry_price, 0) > 0
         THEN COALESCE(unrealized_pnl, 0) / (COALESCE(size, 0) * COALESCE(entry_price, 0))
         ELSE NULL
       END AS pnl_ratio
     FROM investment.live_positions
+    LEFT JOIN LATERAL (
+      SELECT MIN(tj.entry_time) AS entry_time
+      FROM investment.trade_journal tj
+      WHERE tj.symbol = investment.live_positions.symbol
+        AND tj.exchange = investment.live_positions.exchange
+        AND COALESCE(tj.trade_mode, 'normal') = COALESCE(investment.live_positions.trade_mode, 'normal')
+        AND tj.status = 'open'
+    ) open_journal ON TRUE
     LEFT JOIN LATERAL (
       SELECT strategy_name, setup_type, monitoring_plan, exit_plan, backtest_plan
              , strategy_context, strategy_state
@@ -166,12 +190,24 @@ defmodule Luna.V2.PositionWatch do
       ORDER BY bt.created_at DESC
       LIMIT 1
     ) bt ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT regime, confidence, captured_at
+      FROM investment.market_regime_snapshots mrs
+      WHERE mrs.market = CASE
+        WHEN investment.live_positions.exchange = 'binance' THEN 'crypto'
+        WHEN investment.live_positions.exchange = 'kis' THEN 'domestic'
+        WHEN investment.live_positions.exchange = 'kis_overseas' THEN 'overseas'
+        ELSE investment.live_positions.exchange
+      END
+      ORDER BY captured_at DESC
+      LIMIT 1
+    ) mrs ON TRUE
     WHERE status = 'open'
     ORDER BY updated_at DESC NULLS LAST
     LIMIT 200
     """
 
-    case Jay.Core.Repo.query(query, []) do
+    case Jay.Core.Repo.query(query, [regime_max_age_minutes]) do
       {:ok, %{rows: rows, columns: columns}} ->
         positions =
           Enum.map(rows, fn row ->
@@ -256,6 +292,7 @@ defmodule Luna.V2.PositionWatch do
     adjusted_gain_pct = strategy_adjust_gain_pct(adjust_gain_pct, setup_type)
     adjusted_stop_loss_pct = strategy_stop_loss_pct(stop_loss_pct, setup_type)
     kis_hold_attention = classify_kis_hold_time(position)
+    regime_hold_attention = classify_regime_hold(position)
 
     strategy_tv_attention =
       classify_strategy_tv_attention(
@@ -271,6 +308,11 @@ defmodule Luna.V2.PositionWatch do
 
     base_attention =
       cond do
+        # 하드캡 (60일 진입 기준): 체제·정책 불문 강제 재평가 — 영구 방치 차단
+        is_map(regime_hold_attention) and
+            regime_hold_attention[:attention_type] == :hard_max_hold_exceeded ->
+          Map.merge(position, regime_hold_attention)
+
         not is_nil(kis_hold_attention) ->
           Map.merge(position, kis_hold_attention)
 
@@ -282,6 +324,10 @@ defmodule Luna.V2.PositionWatch do
 
         not is_nil(tv_attention) ->
           Map.merge(position, tv_attention)
+
+        # 체제별 상한 초과 (regime_max_hold_exceeded): stale보다 강한 신호
+        is_map(regime_hold_attention) ->
+          Map.merge(position, regime_hold_attention)
 
         stale? ->
           Map.merge(position, %{attention_type: :stale_position, reason: "updated_at stale"})
@@ -326,6 +372,98 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp stale_position?(_, _stale_minutes), do: false
+
+  defp classify_regime_hold(position) do
+    if not KillSwitch.position_watch_regime_exit_shadow_enabled?() do
+      nil
+    else
+      exchange = to_string(position[:exchange] || "")
+
+      if exchange not in ["binance", "kis_overseas"] do
+        nil
+      else
+        entry_ref = position[:position_entry_time] || position[:position_created_at] || position[:updated_at]
+        held_minutes = max(0, position_age_minutes(entry_ref))
+        held_days = held_minutes / 1440.0
+        regime = normalize_regime(position[:current_regime])
+        policy = regime_exit_policy(regime)
+        hard_days = KillSwitch.position_watch_exit_hard_max_hold_days()
+
+        cond do
+          held_days >= hard_days ->
+            %{
+              attention_type: :hard_max_hold_exceeded,
+              reason:
+                "동적 청산 hard cap 초과 #{format_days(held_days)}/#{hard_days}일 regime=#{regime}",
+              current_regime: regime,
+              regime_confidence: to_float(position[:regime_confidence]),
+              regime_stale: position[:regime_stale] == true,
+              held_days: held_days,
+              max_hold_days: hard_days,
+              execution_origin: "regime_dynamic_exit",
+              shadow: true,
+              mutate: false
+            }
+
+          regime == "trending_bull" and held_days >= policy.max_hold_days ->
+            # 추세장 승자는 시간만으로 조기청산하지 않는다.
+            nil
+
+          held_days >= policy.max_hold_days ->
+            %{
+              attention_type: :regime_max_hold_exceeded,
+              reason:
+                "체제별 보유 상한 초과 #{format_days(held_days)}/#{policy.max_hold_days}일 regime=#{regime}",
+              current_regime: regime,
+              regime_confidence: to_float(position[:regime_confidence]),
+              regime_stale: position[:regime_stale] == true,
+              held_days: held_days,
+              max_hold_days: policy.max_hold_days,
+              execution_origin: "regime_dynamic_exit",
+              shadow: true,
+              mutate: false
+            }
+
+          true ->
+            nil
+        end
+      end
+    end
+  end
+
+  defp normalize_regime(nil), do: "unknown"
+
+  defp normalize_regime(value) do
+    regime = value |> to_string() |> String.downcase()
+
+    cond do
+      String.contains?(regime, "bull") -> "trending_bull"
+      String.contains?(regime, "bear") -> "trending_bear"
+      String.contains?(regime, "volatile") -> "volatile"
+      String.contains?(regime, "range") -> "ranging"
+      String.contains?(regime, "sideways") -> "ranging"
+      regime == "" -> "unknown"
+      true -> regime
+    end
+  end
+
+  defp regime_exit_policy("trending_bull"),
+    do: %{max_hold_days: KillSwitch.position_watch_exit_maxhold_bull_days()}
+
+  defp regime_exit_policy("trending_bear"),
+    do: %{max_hold_days: KillSwitch.position_watch_exit_maxhold_bear_days()}
+
+  defp regime_exit_policy("volatile"),
+    do: %{max_hold_days: KillSwitch.position_watch_exit_maxhold_volatile_days()}
+
+  defp regime_exit_policy("ranging"),
+    do: %{max_hold_days: KillSwitch.position_watch_exit_maxhold_ranging_days()}
+
+  defp regime_exit_policy(_),
+    do: %{max_hold_days: KillSwitch.position_watch_exit_maxhold_unknown_days()}
+
+  defp format_days(days) when is_number(days), do: :erlang.float_to_binary(days * 1.0, decimals: 1)
+  defp format_days(_), do: "0.0"
 
   # KIS 최대 보유 시간 감지 — 목표 1일(1440분), 경고 80%=1152분
   # 데이터 기반: 평균 4,535분(3.15일) → 목표 1,440분
@@ -395,6 +533,15 @@ defmodule Luna.V2.PositionWatch do
 
   defp position_age_minutes(%DateTime{} = created_at) do
     DateTime.diff(DateTime.utc_now(), created_at, :minute)
+  end
+
+  defp position_age_minutes(created_at) when is_integer(created_at) do
+    now_ms = DateTime.utc_now() |> DateTime.to_unix(:millisecond)
+    div(max(0, now_ms - created_at), 60_000)
+  end
+
+  defp position_age_minutes(created_at) when is_float(created_at) do
+    position_age_minutes(trunc(created_at))
   end
 
   defp position_age_minutes(created_at) when is_binary(created_at) do
@@ -1204,6 +1351,8 @@ defmodule Luna.V2.PositionWatch do
         :partial_adjust_attention,
         :tv_live_bearish,
         :backtest_drift_attention,
+        :hard_max_hold_exceeded,
+        :regime_max_hold_exceeded,
         :tv_bar_stale
       ]
   end
@@ -1216,6 +1365,7 @@ defmodule Luna.V2.PositionWatch do
 
     exchange in ["binance", "kis", "kis_overseas"] and
       (attention in [:stop_loss_attention, :backtest_drift_attention] or
+         attention in [:hard_max_hold_exceeded, :regime_max_hold_exceeded] or
          (risk_mission == "strict_risk_gate" and attention == :tv_live_bearish) or
          (watch_mission == "risk_sentinel" and attention == :tv_live_bearish))
   end

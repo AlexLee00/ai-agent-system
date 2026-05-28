@@ -21,9 +21,10 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const DEFAULT_MAX_USDT = 10;
 const EPSILON = 0.000001;
+const DUST_SWEEP_ENABLED = process.env.LUNA_DUST_SWEEP_ENABLED === 'true';
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const dryRun = argv.includes('--dry-run');
+  const dryRun = argv.includes('--dry-run') || !DUST_SWEEP_ENABLED;
   const maxUsdtArg = argv.find((arg) => arg.startsWith('--max-usdt='));
   const maxUsdt = Number(maxUsdtArg?.split('=')[1] || DEFAULT_MAX_USDT);
   return {
@@ -236,7 +237,7 @@ async function tryMarketSell(ex, candidate, dryRun) {
   };
 }
 
-async function executeDustCandidate(ex, candidate, dryRun) {
+export async function executeDustCandidate(ex, candidate, dryRun) {
   const reasons = [];
 
   try {
@@ -270,18 +271,48 @@ async function executeDustCandidate(ex, candidate, dryRun) {
   };
 }
 
-async function main() {
-  const { dryRun, maxUsdt } = parseArgs();
+async function recordDustCleanupJournal(result, { dryRun }) {
+  if (dryRun || !result || result.mode === 'unresolved') return;
+
+  const now = Date.now();
+  const symbol = result.symbol || `${result.coin}/USDT`;
+  const amount = Number(result.amount || 0);
+  const entryValue = Number(result.usdtValue || 0);
+  const entryPrice = amount > 0 ? entryValue / amount : 0;
+  const tradeId = `DUST-${result.coin}-${now}-${String(result.orderId || 'manual').replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+  await db.run(
+    `INSERT INTO investment.trade_journal
+       (trade_id, market, exchange, symbol, is_paper, trade_mode,
+        entry_time, entry_price, entry_size, entry_value, direction,
+        exit_time, exit_price, exit_value, exit_reason,
+        status, hold_duration, execution_origin, quality_flag,
+        exclude_from_learning, incident_link, created_at)
+     VALUES ($1, 'crypto', 'binance', $2, false, 'normal',
+             $3, $4, $5, $6, 'dust_cleanup',
+             $3, $4, $6, 'sweeper_manual_dust',
+             'closed', 0, 'sweeper_manual_dust', 'exclude_from_learning',
+             true, 'binance_dust_sweeper', $3)
+     ON CONFLICT (trade_id) DO NOTHING`,
+    [tradeId, symbol, now, entryPrice, amount, entryValue],
+  ).catch((error) => {
+    console.warn(`[dust] trade_journal 기록 실패 ${symbol}: ${error.message}`);
+  });
+}
+
+export async function sweepBinanceDust({ dryRun, maxUsdt = DEFAULT_MAX_USDT } = {}) {
   await initHubSecrets().catch(() => false);
   await db.initSchema();
 
+  const effectiveDryRun = dryRun !== false || !DUST_SWEEP_ENABLED;
   const ex = getBinanceDustExchange();
   const candidates = await buildDustCandidates(ex, maxUsdt);
   const results = [];
 
   for (const candidate of candidates) {
-    const result = await executeDustCandidate(ex, candidate, dryRun);
+    const result = await executeDustCandidate(ex, candidate, effectiveDryRun);
     results.push(result);
+    await recordDustCleanupJournal(result, { dryRun: effectiveDryRun });
   }
 
   const converted = results.filter((row) => row.mode === 'convert' || row.mode === 'convert_dry_run');
@@ -289,7 +320,7 @@ async function main() {
   const unresolved = results.filter((row) => row.mode === 'unresolved');
 
   let syncResult = null;
-  if (!dryRun) {
+  if (!effectiveDryRun) {
     syncResult = await syncPositionsAtMarketOpen('crypto').catch((error) => ({
       ok: false,
       error: error.message,
@@ -297,7 +328,7 @@ async function main() {
   }
 
   const payload = {
-    dryRun,
+    dryRun: effectiveDryRun,
     maxUsdt,
     candidateCount: candidates.length,
     convertedCount: converted.length,
@@ -307,7 +338,7 @@ async function main() {
   };
 
   const messageLines = [
-    dryRun ? '🧪 [dust] 바이낸스 더스트 청산 드라이런' : '🧹 [dust] 바이낸스 더스트 청산 완료',
+    effectiveDryRun ? '🧪 [dust] 바이낸스 더스트 청산 드라이런' : '🧹 [dust] 바이낸스 더스트 청산 완료',
     `기준: < ${maxUsdt} USDT`,
     `대상 ${candidates.length}개`,
     `convert ${converted.length}개 / market sell ${sold.length}개 / unresolved ${unresolved.length}개`,
@@ -326,9 +357,9 @@ async function main() {
     payload,
   }).catch(() => {});
 
-  console.log(JSON.stringify({
+  return {
     ok: true,
-    dryRun,
+    dryRun: effectiveDryRun,
     maxUsdt,
     candidates: candidates.map((row) => ({
       coin: row.coin,
@@ -339,7 +370,13 @@ async function main() {
     })),
     results: results.map(summarizeExecution),
     syncResult,
-  }, null, 2));
+  };
+}
+
+async function main() {
+  const { dryRun, maxUsdt } = parseArgs();
+  const payload = await sweepBinanceDust({ dryRun, maxUsdt });
+  console.log(JSON.stringify(payload, null, 2));
 }
 
 if (isDirectExecution(import.meta.url)) {

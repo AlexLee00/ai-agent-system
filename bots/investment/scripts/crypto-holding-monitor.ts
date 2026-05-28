@@ -11,9 +11,13 @@
  *
  * 게이트 (기본: shadow/dry_run):
  *   LUNA_CRYPTO_STALE_SWEEP_ENABLED=false → dry_run만 (기본값)
- *   LUNA_CRYPTO_MAX_HOLD_DAYS=14     (binance 소프트 캡)
- *   LUNA_OVERSEAS_MAX_HOLD_DAYS=10   (kis_overseas 소프트 캡)
- *   LUNA_CRYPTO_HARD_MAX_HOLD_DAYS=30 (하드 캡, 재평가 없이 강제 청산)
+ *   LUNA_REGIME_MAX_AGE_MIN=90
+ *   LUNA_EXIT_MAXHOLD_BULL_DAYS=45
+ *   LUNA_EXIT_MAXHOLD_BEAR_DAYS=5
+ *   LUNA_EXIT_MAXHOLD_RANGING_DAYS=12
+ *   LUNA_EXIT_MAXHOLD_VOLATILE_DAYS=7
+ *   LUNA_EXIT_MAXHOLD_UNKNOWN_DAYS=12
+ *   LUNA_EXIT_HARD_MAX_HOLD_DAYS=60 (하드 캡, 재평가 없이 강제 청산)
  *
  * 실행:
  *   node bots/investment/scripts/crypto-holding-monitor.ts
@@ -30,8 +34,37 @@ import { executeSignal as executeOverseasSignal } from '../team/hanul.ts';
 
 const CRYPTO_SOFT_CAP_DAYS = Number(process.env.LUNA_CRYPTO_MAX_HOLD_DAYS ?? 14);
 const OVERSEAS_SOFT_CAP_DAYS = Number(process.env.LUNA_OVERSEAS_MAX_HOLD_DAYS ?? 10);
-const HARD_CAP_DAYS = Number(process.env.LUNA_CRYPTO_HARD_MAX_HOLD_DAYS ?? 30);
+const REGIME_MAX_AGE_MIN = Number(process.env.LUNA_REGIME_MAX_AGE_MIN ?? 90);
+const HARD_CAP_DAYS = Number(process.env.LUNA_EXIT_HARD_MAX_HOLD_DAYS ?? process.env.LUNA_CRYPTO_HARD_MAX_HOLD_DAYS ?? 60);
 const SWEEP_ENABLED = process.env.LUNA_CRYPTO_STALE_SWEEP_ENABLED === 'true';
+
+const REGIME_EXIT_POLICY = {
+  trending_bull: {
+    maxHoldDays: Number(process.env.LUNA_EXIT_MAXHOLD_BULL_DAYS ?? 45),
+    timeOnlyExit: false,
+    description: '추세장 승자 보유, 시간만으로 청산 금지',
+  },
+  trending_bear: {
+    maxHoldDays: Number(process.env.LUNA_EXIT_MAXHOLD_BEAR_DAYS ?? 5),
+    timeOnlyExit: true,
+    description: '하락장 빠른 청산 편향',
+  },
+  ranging: {
+    maxHoldDays: Number(process.env.LUNA_EXIT_MAXHOLD_RANGING_DAYS ?? 12),
+    timeOnlyExit: true,
+    description: '횡보장 중기 상한',
+  },
+  volatile: {
+    maxHoldDays: Number(process.env.LUNA_EXIT_MAXHOLD_VOLATILE_DAYS ?? 7),
+    timeOnlyExit: true,
+    description: '고변동장 짧은 상한',
+  },
+  unknown: {
+    maxHoldDays: Number(process.env.LUNA_EXIT_MAXHOLD_UNKNOWN_DAYS ?? 12),
+    timeOnlyExit: true,
+    description: '신선도 미달 보수 정책',
+  },
+};
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -53,6 +86,59 @@ function getSoftCapDays(exchange) {
   return String(exchange).startsWith('kis_overseas') ? OVERSEAS_SOFT_CAP_DAYS : CRYPTO_SOFT_CAP_DAYS;
 }
 
+function marketForExchange(exchange) {
+  if (String(exchange).startsWith('kis_overseas')) return 'overseas';
+  if (String(exchange).startsWith('kis')) return 'domestic';
+  return 'crypto';
+}
+
+function regimeLookupKeys(market) {
+  if (market === 'crypto') return ['crypto', 'binance'];
+  if (market === 'overseas') return ['overseas', 'kis_overseas'];
+  if (market === 'domestic') return ['domestic', 'kis'];
+  return [market].filter(Boolean);
+}
+
+function normalizeRegime(regime) {
+  const value = String(regime || '').trim().toLowerCase();
+  if (value.includes('bull')) return 'trending_bull';
+  if (value.includes('bear')) return 'trending_bear';
+  if (value.includes('volatile')) return 'volatile';
+  if (value.includes('range') || value.includes('sideways')) return 'ranging';
+  return value || 'unknown';
+}
+
+function isFreshRegime(snapshot) {
+  if (!snapshot?.captured_at) return false;
+  const capturedAt = new Date(snapshot.captured_at).getTime();
+  return Number.isFinite(capturedAt) && (Date.now() - capturedAt) <= REGIME_MAX_AGE_MIN * 60_000;
+}
+
+async function loadRegimeByMarket() {
+  const markets = ['crypto', 'overseas'];
+  const entries = await Promise.all(markets.map(async (market) => {
+    for (const key of regimeLookupKeys(market)) {
+      const snapshot = await db.getLatestMarketRegimeSnapshot(key).catch(() => null);
+      if (snapshot) return [market, snapshot];
+    }
+    return [market, null];
+  }));
+  return Object.fromEntries(entries);
+}
+
+function resolveRegimePolicy(snapshot) {
+  const fresh = isFreshRegime(snapshot);
+  const regime = fresh ? normalizeRegime(snapshot?.regime) : 'unknown';
+  const policy = REGIME_EXIT_POLICY[regime] || REGIME_EXIT_POLICY.unknown;
+  return {
+    regime,
+    fresh,
+    confidence: fresh ? Number(snapshot?.confidence ?? 0) : 0,
+    capturedAt: snapshot?.captured_at ?? null,
+    ...policy,
+  };
+}
+
 function getExecuteSignalFn(exchange) {
   return String(exchange).startsWith('kis_overseas') ? executeOverseasSignal : executeBinanceSignal;
 }
@@ -68,14 +154,25 @@ async function identifyStaleCandidates() {
     ...(overseasResult.status === 'fulfilled' ? (overseasResult.value ?? []) : []),
   ];
 
+  const regimeByMarket = await loadRegimeByMarket();
   const candidates = [];
   for (const pos of allPositions) {
     const heldDays = calcHeldDays(pos.entry_time);
-    const softCap = getSoftCapDays(pos.exchange);
-    if (heldDays >= softCap) {
+    const market = marketForExchange(pos.exchange);
+    const regimePolicy = resolveRegimePolicy(regimeByMarket[market]);
+    const softCap = Number.isFinite(regimePolicy.maxHoldDays)
+      ? regimePolicy.maxHoldDays
+      : getSoftCapDays(pos.exchange);
+    if (heldDays >= softCap || heldDays >= HARD_CAP_DAYS) {
       candidates.push({
         symbol: pos.symbol,
         exchange: pos.exchange,
+        market,
+        regime: regimePolicy.regime,
+        regimeFresh: regimePolicy.fresh,
+        regimeConfidence: regimePolicy.confidence,
+        regimeCapturedAt: regimePolicy.capturedAt,
+        regimePolicy,
         heldDays,
         positionValue: calcPositionValue(pos),
         tradeMode: pos.trade_mode ?? 'normal',
@@ -90,7 +187,7 @@ async function identifyStaleCandidates() {
   return candidates;
 }
 
-async function createStaleExitSignal(candidate, reasoning) {
+async function createStaleExitSignal(candidate, reasoning, executionOrigin = 'stale_holding_sweep') {
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -101,17 +198,17 @@ async function createStaleExitSignal(candidate, reasoning) {
     tradeMode: candidate.tradeMode,
     nemesisVerdict: 'approved',
     approvedAt: new Date().toISOString(),
-    executionOrigin: 'stale_holding_sweep',
+    executionOrigin,
     qualityFlag: 'exclude_from_learning',
     excludeFromLearning: true,
-    incidentLink: 'crypto_holding_stale_sweep',
+    incidentLink: executionOrigin,
   });
   const signal = await db.getSignalById(signalId);
   return {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
-    exit_reason_override: 'stale_holding_sweep',
+    exit_reason_override: executionOrigin,
   };
 }
 
@@ -135,6 +232,41 @@ async function runTechnicalReevaluation(candidate) {
   } catch (err) {
     return { recommendation: null, reason: `재평가 오류: ${err.message}` };
   }
+}
+
+function isSellRecommendation(recommendation) {
+  return !recommendation || recommendation === 'SELL' || recommendation === 'ADJUST';
+}
+
+function recordExitDecision(candidate, decision, details = {}) {
+  recordGuardEvent({
+    guardName: 'regime_dynamic_exit',
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    market: candidate.market,
+    reason: details.reason || decision,
+    severity: decision.includes('EXIT') ? 'warning' : 'info',
+    decisionBefore: {
+      action: 'HOLD',
+      heldDays: candidate.heldDays,
+      positionValue: candidate.positionValue,
+      regime: candidate.regime,
+      regimeFresh: candidate.regimeFresh,
+      softCapDays: candidate.softCapDays,
+      hardCapDays: HARD_CAP_DAYS,
+    },
+    decisionAfter: {
+      action: decision,
+      dryRun: details.dryRun === true,
+      recommendation: details.recommendation ?? null,
+      reason: details.revalReason ?? null,
+    },
+    guardMetadata: {
+      regimePolicy: candidate.regimePolicy,
+      source: 'crypto-holding-monitor',
+      executionOrigin: details.executionOrigin || 'regime_dynamic_exit',
+    },
+  });
 }
 
 async function main() {
@@ -163,15 +295,17 @@ async function main() {
 
   for (const candidate of candidates) {
     const dayStr = candidate.heldDays.toFixed(1);
+    const policy = candidate.regimePolicy || REGIME_EXIT_POLICY.unknown;
+    const executionOrigin = 'regime_dynamic_exit';
 
     // ─── Hard cap: 재평가 없이 강제 청산 ────────────────────────
     if (candidate.isHardCap) {
-      const reasoning = `방치 포지션 hard cap 초과 (${dayStr}일 ≥ ${HARD_CAP_DAYS}일) — 강제 청산`;
-      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 hard cap → 강제 청산`);
+      const reasoning = `체제별 동적 청산 hard cap 초과 (${dayStr}일 ≥ ${HARD_CAP_DAYS}일, regime=${candidate.regime}) — 강제 청산`;
+      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 hard cap regime=${candidate.regime} → 강제 청산`);
 
       if (!options.dryRun) {
         try {
-          const signal = await createStaleExitSignal(candidate, reasoning);
+          const signal = await createStaleExitSignal(candidate, reasoning, executionOrigin);
           const execResult = await getExecuteSignalFn(candidate.exchange)(signal);
           console.log(`  ✅ 청산 완료: ${candidate.symbol}`);
           results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'executed', capType: 'hard', execResult });
@@ -180,6 +314,7 @@ async function main() {
           results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'error', capType: 'hard', error: err.message });
         }
       } else {
+        recordExitDecision(candidate, 'WOULD_EXIT_HARD_CAP', { dryRun: true, reason: reasoning, executionOrigin });
         results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'dry_run', capType: 'hard' });
       }
       continue;
@@ -190,39 +325,67 @@ async function main() {
     const recommendation = reval.recommendation;
     const revalReason = reval.reason;
 
-    const shouldSell = !recommendation || recommendation === 'SELL' || recommendation === 'ADJUST';
-    const reasoning = `방치 포지션 soft cap 초과 (${dayStr}일 ≥ ${candidate.softCapDays}일), 재평가=${recommendation ?? 'null'}: ${revalReason}`;
+    const shouldSell = isSellRecommendation(recommendation);
+    const timeOnlyBlocked = candidate.regime === 'trending_bull' && policy.timeOnlyExit === false && !shouldSell;
+    const reasoning = `체제별 동적 청산 soft cap 초과 (${dayStr}일 ≥ ${candidate.softCapDays}일, regime=${candidate.regime}, fresh=${candidate.regimeFresh}), 재평가=${recommendation ?? 'null'}: ${revalReason}`;
+
+    if (timeOnlyBlocked) {
+      const holdReason = `추세장 보유 연장: ${candidate.symbol} ${dayStr}일 ≥ ${candidate.softCapDays}일이나 재평가=${recommendation ?? 'null'}로 시간 단독 청산 차단`;
+      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 regime=trending_bull → 시간 단독 청산 금지 (${revalReason})`);
+      recordExitDecision(candidate, 'HOLD_TRENDING_WINNER_TIME_ONLY_BLOCKED', {
+        dryRun: options.dryRun,
+        recommendation,
+        revalReason,
+        reason: holdReason,
+        executionOrigin,
+      });
+      results.push({
+        symbol: candidate.symbol,
+        heldDays: candidate.heldDays,
+        status: 'held',
+        capType: 'soft',
+        regime: candidate.regime,
+        recommendation,
+        revalReason,
+        protectedBy: 'trending_bull_no_time_only_exit',
+      });
+      continue;
+    }
 
     if (shouldSell) {
-      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 soft cap, 재평가=${recommendation ?? 'null'} → 청산`);
+      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 soft cap regime=${candidate.regime}, 재평가=${recommendation ?? 'null'} → 청산`);
 
       if (!options.dryRun) {
         try {
-          const signal = await createStaleExitSignal(candidate, reasoning);
+          const signal = await createStaleExitSignal(candidate, reasoning, executionOrigin);
           const execResult = await getExecuteSignalFn(candidate.exchange)(signal);
           console.log(`  ✅ 청산 완료: ${candidate.symbol}`);
-          results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'executed', capType: 'soft', recommendation, execResult });
+          results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'executed', capType: 'soft', regime: candidate.regime, recommendation, execResult });
         } catch (err) {
           console.error(`  ❌ 청산 실패: ${candidate.symbol} — ${err.message}`);
           results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'error', capType: 'soft', error: err.message });
         }
       } else {
-        results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'dry_run', capType: 'soft', recommendation, revalReason });
+        recordExitDecision(candidate, 'WOULD_EXIT_SOFT_CAP', {
+          dryRun: true,
+          recommendation,
+          revalReason,
+          reason: reasoning,
+          executionOrigin,
+        });
+        results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'dry_run', capType: 'soft', regime: candidate.regime, recommendation, revalReason });
       }
     } else {
       // HOLD — 보유 연장, guard_events에 사유 기록
-      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 soft cap, 재평가=${recommendation} → 보유 연장 (${revalReason})`);
-      recordGuardEvent({
-        guardName: 'stale_holding_sweep',
-        symbol: candidate.symbol,
-        exchange: candidate.exchange,
+      console.log(`${prefix} ${candidate.symbol} ${dayStr}일 soft cap regime=${candidate.regime}, 재평가=${recommendation} → 보유 연장 (${revalReason})`);
+      recordExitDecision(candidate, 'HOLD_EXTENDED', {
+        dryRun: options.dryRun,
+        recommendation,
+        revalReason,
         reason: reasoning,
-        severity: 'info',
-        decisionBefore: { heldDays: candidate.heldDays, softCapDays: candidate.softCapDays, action: 'SELL_CANDIDATE' },
-        decisionAfter: { action: 'HOLD_EXTENDED', recommendation, revalReason },
-        guardMetadata: { capType: 'soft', hardCapDays: HARD_CAP_DAYS },
+        executionOrigin,
       });
-      results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'held', capType: 'soft', recommendation, revalReason });
+      results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'held', capType: 'soft', regime: candidate.regime, recommendation, revalReason });
     }
   }
 

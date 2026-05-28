@@ -54,6 +54,22 @@ config :luna,
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_STALE_MINUTES", "120")),
   position_watch_crypto_dust_usdt:
     String.to_float(System.get_env("LUNA_POSITION_WATCH_CRYPTO_DUST_USDT", "10.0")),
+  position_watch_regime_exit_shadow_enabled:
+    System.get_env("LUNA_POSITION_WATCH_REGIME_EXIT_SHADOW_ENABLED", "false") == "true",
+  position_watch_regime_max_age_minutes:
+    String.to_integer(System.get_env("LUNA_REGIME_MAX_AGE_MIN", "90")),
+  position_watch_exit_maxhold_bull_days:
+    String.to_integer(System.get_env("LUNA_EXIT_MAXHOLD_BULL_DAYS", "45")),
+  position_watch_exit_maxhold_bear_days:
+    String.to_integer(System.get_env("LUNA_EXIT_MAXHOLD_BEAR_DAYS", "5")),
+  position_watch_exit_maxhold_ranging_days:
+    String.to_integer(System.get_env("LUNA_EXIT_MAXHOLD_RANGING_DAYS", "12")),
+  position_watch_exit_maxhold_volatile_days:
+    String.to_integer(System.get_env("LUNA_EXIT_MAXHOLD_VOLATILE_DAYS", "7")),
+  position_watch_exit_maxhold_unknown_days:
+    String.to_integer(System.get_env("LUNA_EXIT_MAXHOLD_UNKNOWN_DAYS", "12")),
+  position_watch_exit_hard_max_hold_days:
+    String.to_integer(System.get_env("LUNA_EXIT_HARD_MAX_HOLD_DAYS", "60")),
   position_watch_tv_enabled: System.get_env("LUNA_POSITION_WATCH_TV_ENABLED", "true") == "true",
   position_watch_tv_base_url:
     System.get_env("LUNA_POSITION_WATCH_TV_BASE_URL", "http://127.0.0.1:8083"),

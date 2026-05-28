@@ -136,6 +136,30 @@ defmodule Luna.V2.KillSwitch do
   def position_watch_crypto_dust_usdt,
     do: Application.get_env(:luna, :position_watch_crypto_dust_usdt, 10.0)
 
+  def position_watch_regime_exit_shadow_enabled?,
+    do: Application.get_env(:luna, :position_watch_regime_exit_shadow_enabled, false)
+
+  def position_watch_regime_max_age_minutes,
+    do: Application.get_env(:luna, :position_watch_regime_max_age_minutes, 90)
+
+  def position_watch_exit_maxhold_bull_days,
+    do: Application.get_env(:luna, :position_watch_exit_maxhold_bull_days, 45)
+
+  def position_watch_exit_maxhold_bear_days,
+    do: Application.get_env(:luna, :position_watch_exit_maxhold_bear_days, 5)
+
+  def position_watch_exit_maxhold_ranging_days,
+    do: Application.get_env(:luna, :position_watch_exit_maxhold_ranging_days, 12)
+
+  def position_watch_exit_maxhold_volatile_days,
+    do: Application.get_env(:luna, :position_watch_exit_maxhold_volatile_days, 7)
+
+  def position_watch_exit_maxhold_unknown_days,
+    do: Application.get_env(:luna, :position_watch_exit_maxhold_unknown_days, 12)
+
+  def position_watch_exit_hard_max_hold_days,
+    do: Application.get_env(:luna, :position_watch_exit_hard_max_hold_days, 60)
+
   def position_watch_tv_enabled?, do: Application.get_env(:luna, :position_watch_tv_enabled, true)
 
   def position_watch_tv_base_url,
