@@ -113,6 +113,11 @@ function boolEnv(name, fallback = false, env = process.env) {
   return boolConfig(env?.[name], fallback);
 }
 
+function numEnv(name, fallback = 0, env = process.env) {
+  const value = finiteNumber(env?.[name], NaN);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function normalizeEntryTriggerMarket(exchange = 'binance') {
   const value = String(exchange || '').trim().toLowerCase();
   if (value === 'binance') return 'crypto';
@@ -890,7 +895,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const openPositionSymbols = await loadOpenEntryPositionSymbols(exchange, context);
   await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const ttlMinutes = Number(flags.entryTrigger.ttlMinutes || 180);
-  const minConfidence = Number(flags.entryTrigger.minConfidence || 0.48);
+  const minConfidence = numEnv('LUNA_MIN_CONFIDENCE', Number(flags.entryTrigger.minConfidence || 0.48), env);
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const shouldMutate = flags.shouldEntryTriggerMutate();

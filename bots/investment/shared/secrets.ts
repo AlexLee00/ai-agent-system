@@ -58,6 +58,14 @@ function normalizeMode(value) {
   return null;
 }
 
+function boolEnv(value, fallback = false) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  return fallback;
+}
+
 function normalizeHostName(value) {
   return String(value || '')
     .trim()
@@ -687,14 +695,42 @@ export function isKisPaper() {
 }
 
 export function getKisExecutionModeInfo(marketLabel = '주식') {
-  return getMarketExecutionModeInfo('stocks', marketLabel);
+  const label = String(marketLabel || '');
+  return getMarketExecutionModeInfo(label.includes('해외') || label.includes('미국') ? 'kis_overseas' : 'kis', marketLabel);
+}
+
+function resolveMarketLiveOverride(marketType = 'crypto', marketLabel = '시장') {
+  const normalized = String(marketType || 'crypto').trim().toLowerCase();
+  const label = String(marketLabel || '').trim().toLowerCase();
+  const isOverseas = normalized === 'kis_overseas'
+    || label.includes('overseas')
+    || label.includes('us')
+    || label.includes('해외')
+    || label.includes('미국');
+  const envKey = normalized === 'crypto' || normalized === 'binance'
+    ? 'LUNA_LIVE_MODE_BINANCE'
+    : isOverseas
+      ? 'LUNA_LIVE_OVERSEAS'
+      : (normalized === 'kis' || normalized === 'stock' || normalized === 'stocks')
+        ? 'LUNA_LIVE_DOMESTIC'
+        : null;
+
+  if (!envKey || !boolEnv(process.env[envKey], false)) return null;
+  if (!isLiveTradingHostAllowed()) {
+    warnOnce(
+      `market-live-override-host:${envKey}`,
+      `⚠️ [secrets] ${envKey}=true 이지만 허용 호스트가 아니므로 ${marketLabel} live override를 paper로 차단`,
+    );
+    return 'paper';
+  }
+  return 'live';
 }
 
 export function getMarketExecutionModeInfo(marketType = 'crypto', marketLabel = '시장') {
   const normalized = String(marketType || 'crypto').trim().toLowerCase();
   const isStockMarket = normalized === 'kis' || normalized === 'kis_overseas' || normalized === 'stock' || normalized === 'stocks';
   const broker = isStockMarket ? 'KIS' : 'BINANCE';
-  const executionMode = getExecutionMode();
+  const executionMode = resolveMarketLiveOverride(marketType, marketLabel) || getExecutionMode();
   const brokerAccountMode = getBrokerAccountMode(isStockMarket ? 'stocks' : 'crypto');
   const investmentTradeMode = getInvestmentTradeMode();
   const paper = executionMode === 'paper';
