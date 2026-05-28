@@ -10,12 +10,18 @@ CREATE TABLE IF NOT EXISTS investment.luna_regime_weight_snapshots (
   regime         TEXT NOT NULL,                -- TRENDING_BULL / TRENDING_BEAR / RANGING / VOLATILE
   fusion_weights JSONB NOT NULL DEFAULT '{}'::jsonb,  -- ta/fundamental/sentiment/worldquant
   signal_weights JSONB NOT NULL DEFAULT '{}'::jsonb,  -- momentum/breakout/mean_reversion/defensive
+  universe_weights JSONB NOT NULL DEFAULT '{}'::jsonb, -- volume/cap/sector
   win_rate       DOUBLE PRECISION NOT NULL DEFAULT 0,
   profit_factor  DOUBLE PRECISION NOT NULL DEFAULT 0,
+  performance_metric DOUBLE PRECISION NOT NULL DEFAULT 0,
   total_trades   INT NOT NULL DEFAULT 0,
   learn_rate     DOUBLE PRECISION NOT NULL DEFAULT 0.08,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE investment.luna_regime_weight_snapshots
+  ADD COLUMN IF NOT EXISTS universe_weights JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS performance_metric DOUBLE PRECISION NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_luna_regime_weight_snapshots_regime_time
   ON investment.luna_regime_weight_snapshots (regime, created_at DESC);

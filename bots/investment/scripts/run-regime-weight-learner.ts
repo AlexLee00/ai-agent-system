@@ -16,7 +16,6 @@
  *   7. 텔레그램 보고
  */
 
-import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
 import { runRegimeWeightLearner } from '../shared/regime-weight-learner.ts';
 import * as db from '../shared/db.ts';
 
@@ -44,10 +43,11 @@ async function main() {
 
   console.log(`[RegimeWeightLearner] ${new Date().toISOString()} 학습 실행 시작 (dryRun=${dryRun}, days=${days})`);
 
-  try {
-    await initHubConfig().catch(() => null);
-    await db.initSchema().catch(() => null);
-  } catch {}
+  if (!dryRun && String(process.env.LUNA_ADAPTIVE_WEIGHT_ENABLED || '').toLowerCase() === 'true') {
+    try {
+      await db.initSchema().catch(() => null);
+    } catch {}
+  }
 
   const result = await runRegimeWeightLearner({ dryRun, days });
 

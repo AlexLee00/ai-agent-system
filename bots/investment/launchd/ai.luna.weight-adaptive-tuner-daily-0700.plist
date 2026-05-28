@@ -17,8 +17,6 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
-    <key>LUNA_REGIME_WEIGHT_LEARNER_ENABLED</key>
-    <string>true</string>
   </dict>
   <!-- 매일 07:00 KST — 전날 거래 분석 + 체제별 fusion/signal 가중치 조정 -->
   <key>StartCalendarInterval</key>

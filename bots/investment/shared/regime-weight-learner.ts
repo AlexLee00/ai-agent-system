@@ -6,20 +6,21 @@
 
 import { query } from './db/core.ts';
 import { persistAdaptedWeights, retrieveAdaptedWeights } from './ta-weight-adaptive-tuner.ts';
+import { REGIME_AXIS_WEIGHTS } from './dynamic-universe-selector.ts';
 
 // ─── 환경 게이트 ──────────────────────────────────────────────────────────────
-function boolEnv(name, fallback = false) {
-  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+function boolEnv(name, fallback = false, env = process.env) {
+  const raw = String(env?.[name] ?? '').trim().toLowerCase();
   if (!raw) return fallback;
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 }
 
-function numEnv(name, fallback = 0) {
-  const raw = Number(process.env[name]);
+function numEnv(name, fallback = 0, env = process.env) {
+  const raw = Number(env?.[name]);
   return Number.isFinite(raw) ? raw : fallback;
 }
 
-export const REGIME_WEIGHT_LEARNER_ENABLED_KEY = 'LUNA_REGIME_WEIGHT_LEARNER_ENABLED';
+export const REGIME_WEIGHT_LEARNER_ENABLED_KEY = 'LUNA_ADAPTIVE_WEIGHT_ENABLED';
 
 // ─── 4 체제 기본 fusion 가중치 (REGIME_GUIDES 기반) ─────────────────────────
 // fusion: [기술분석, 온체인/펀더, 감성/뉴스, WorldQuant]
@@ -189,15 +190,18 @@ function adjustSignalWeightsFromPerformance(baseSignalWeights, performance, lear
 async function saveWeightSnapshot(snapshot) {
   await query(
     `INSERT INTO investment.luna_regime_weight_snapshots
-       (regime, fusion_weights, signal_weights, win_rate, profit_factor, total_trades, learn_rate, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       (regime, fusion_weights, signal_weights, universe_weights,
+        win_rate, profit_factor, performance_metric, total_trades, learn_rate, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
      ON CONFLICT DO NOTHING`,
     [
       snapshot.regime,
       JSON.stringify(snapshot.fusionWeights),
       JSON.stringify(snapshot.signalWeights),
+      JSON.stringify(snapshot.universeWeights || {}),
       snapshot.winRate,
       snapshot.profitFactor,
+      snapshot.performanceMetric || 0,
       snapshot.totalTrades,
       snapshot.learnRate,
     ],
@@ -206,17 +210,51 @@ async function saveWeightSnapshot(snapshot) {
   });
 }
 
+async function saveWeightVectorShadow(snapshot) {
+  await query(
+    `INSERT INTO investment.luna_weight_vector_shadow
+       (symbol, market, exchange, candidate_score, backtest_score, predictive_score,
+        community_score, target_weight, confidence, risk_budget_usdt, signal,
+        gate_status, no_lookahead_ok, shadow_only, evidence, observed_at)
+     VALUES ($1, 'multi', 'all', $2, $3, $4, 0, 0, $5, 0, 'weight_update',
+             'shadow', TRUE, TRUE, $6::jsonb, NOW())`,
+    [
+      `__REGIME_${snapshot.regime}__`,
+      snapshot.winRate,
+      snapshot.profitFactor,
+      snapshot.performanceMetric || 0,
+      snapshot.winRate,
+      JSON.stringify({
+        source: 'regime-weight-learner',
+        regime: snapshot.regime,
+        fusionWeights: snapshot.fusionWeights,
+        signalWeights: snapshot.signalWeights,
+        universeWeights: snapshot.universeWeights || {},
+        totalTrades: snapshot.totalTrades,
+        learnRate: snapshot.learnRate,
+      }),
+    ],
+  ).catch((err) => {
+    console.warn(`[RegimeWeightLearner] weight_vector_shadow 저장 실패 (테이블 없음 무시): ${err?.message}`);
+  });
+}
+
 // ─── 메인 학습 함수 ──────────────────────────────────────────────────────────
 
 export async function runRegimeWeightLearner(options = {}) {
-  const enabled = boolEnv(REGIME_WEIGHT_LEARNER_ENABLED_KEY, true);
-  if (!enabled) {
-    console.log('[RegimeWeightLearner] 비활성화 (LUNA_REGIME_WEIGHT_LEARNER_ENABLED=false)');
+  const env = options.env || process.env;
+  const dryRun = options.dryRun === true;
+  const enabled = boolEnv(REGIME_WEIGHT_LEARNER_ENABLED_KEY, false, env);
+  if (!enabled && !dryRun) {
+    console.log(`[RegimeWeightLearner] 비활성화 (${REGIME_WEIGHT_LEARNER_ENABLED_KEY}=false/미설정)`);
     return { skipped: true, reason: 'disabled' };
   }
+  if (!enabled && dryRun) {
+    console.log(`[RegimeWeightLearner] ${REGIME_WEIGHT_LEARNER_ENABLED_KEY}=false/미설정 — dry-run 검증만 수행`);
+  }
 
-  const days = numEnv('LUNA_WEIGHT_LEARNER_LOOKBACK_DAYS', 7) || options.days || 7;
-  const learnRate = Math.max(0.01, Math.min(0.20, numEnv('LUNA_TA_WEIGHT_ADAPTIVE_LEARN_RATE', 0.08)));
+  const days = Number(options.days ?? numEnv('LUNA_WEIGHT_LEARNER_LOOKBACK_DAYS', 7, env)) || 7;
+  const learnRate = Math.max(0.01, Math.min(0.20, numEnv('LUNA_TA_WEIGHT_ADAPTIVE_LEARN_RATE', 0.08, env)));
 
   console.log(`[RegimeWeightLearner] 학습 시작 — 기간: ${days}일, 학습률: ${learnRate}`);
 
@@ -252,17 +290,25 @@ export async function runRegimeWeightLearner(options = {}) {
   const snapshots = [];
   for (const [regime, fusionWeights] of Object.entries(updatedFusion)) {
     const perf = performance[regime] || {};
+    const winRate = perf.winRate || 0;
+    const profitFactor = perf.profitFactor || 0;
+    const performanceMetric = Number((winRate * Math.min(2, profitFactor)).toFixed(6));
     const snapshot = {
       regime,
       fusionWeights,
       signalWeights: updatedSignal[regime] || BASE_SIGNAL_WEIGHTS[regime],
-      winRate: perf.winRate || 0,
-      profitFactor: perf.profitFactor || 0,
+      universeWeights: REGIME_AXIS_WEIGHTS[regime] || REGIME_AXIS_WEIGHTS.RANGING || {},
+      winRate,
+      profitFactor,
+      performanceMetric,
       totalTrades: perf.totalTrades || 0,
       learnRate,
     };
     snapshots.push(snapshot);
-    if (!options.dryRun) await saveWeightSnapshot(snapshot);
+    if (!dryRun) {
+      await saveWeightSnapshot(snapshot);
+      await saveWeightVectorShadow(snapshot);
+    }
   }
 
   // 7. 결과 요약
@@ -282,6 +328,8 @@ export async function runRegimeWeightLearner(options = {}) {
 
   return {
     ok: true,
+    enabled,
+    dryRun,
     days,
     learnRate,
     regimesUpdated: snapshots.length,
@@ -295,7 +343,8 @@ export async function runRegimeWeightLearner(options = {}) {
 export async function getLatestRegimeWeights(regime = null) {
   const rows = await query(
     `SELECT DISTINCT ON (regime)
-       regime, fusion_weights, signal_weights, win_rate, profit_factor, total_trades, created_at
+       regime, fusion_weights, signal_weights, universe_weights,
+       win_rate, profit_factor, performance_metric, total_trades, created_at
      FROM investment.luna_regime_weight_snapshots
      WHERE ($1::text IS NULL OR regime = $1)
      ORDER BY regime, created_at DESC`,
@@ -306,8 +355,10 @@ export async function getLatestRegimeWeights(regime = null) {
     regime: r.regime,
     fusionWeights: r.fusion_weights || BASE_FUSION_WEIGHTS[r.regime],
     signalWeights: r.signal_weights || BASE_SIGNAL_WEIGHTS[r.regime],
+    universeWeights: r.universe_weights || REGIME_AXIS_WEIGHTS[r.regime] || REGIME_AXIS_WEIGHTS.RANGING,
     winRate: r.win_rate,
     profitFactor: r.profit_factor,
+    performanceMetric: r.performance_metric,
     totalTrades: r.total_trades,
     updatedAt: r.created_at,
   }));
