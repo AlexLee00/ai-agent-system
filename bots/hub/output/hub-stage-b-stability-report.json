@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-28T05:48:19.398Z",
+  "checkedAt": "2026-05-28T06:11:24.680Z",
   "stage": "hub_stage_b",
   "status": "stage_b_operational_ready",
   "goals": {
@@ -66,6 +66,16 @@
             "sizeBytes": 400,
             "modifiedAt": "2026-05-25T00:00:05.345Z"
           },
+          "classification": {
+            "category": "retryable_rate_limit",
+            "retryable": true,
+            "summary": "last non-zero exit was caused by Hub alarm rate limiting; current code path should be verified with dry-run"
+          },
+          "recentStderrTail": [
+            "[noisy-auto-learn] noisy-producers API HTTP 429 — 빈 목록 반환",
+            "[hub-alarm-client] hub alarm failed: rate limit exceeded (200/min)",
+            "[noisy-auto-learn] meeting 발송 실패: rate limit exceeded (200/min)"
+          ],
           "currentVerification": "dry_run_available"
         }
       },
@@ -84,6 +94,12 @@
             "sizeBytes": 0,
             "modifiedAt": null
           },
+          "classification": {
+            "category": "no_stderr_evidence",
+            "retryable": null,
+            "summary": "stderr log is missing or empty; run the dry-run command for current evidence"
+          },
+          "recentStderrTail": [],
           "currentVerification": "dry_run_available"
         }
       },
@@ -102,6 +118,16 @@
             "sizeBytes": 335,
             "modifiedAt": "2026-05-25T02:00:02.340Z"
           },
+          "classification": {
+            "category": "retryable_rate_limit",
+            "retryable": true,
+            "summary": "last non-zero exit was caused by Hub alarm rate limiting; current code path should be verified with dry-run"
+          },
+          "recentStderrTail": [
+            "(Use `node --trace-deprecation ...` to show where the warning was created)",
+            "[hub-alarm-client] hub alarm failed: rate limit exceeded (200/min)",
+            "[weekly-advisory-digest] 알람 발송 실패: rate limit exceeded (200/min)"
+          ],
           "currentVerification": "dry_run_available"
         }
       }
@@ -113,7 +139,7 @@
         "loaded": true,
         "expectedIdle": false,
         "healthy": true,
-        "pid": 99940,
+        "pid": 46712,
         "state": "running",
         "status": "running",
         "lastLaunchctlListStatus": "0",
@@ -121,7 +147,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 4,
+        "runs": 6,
         "checked": true
       },
       {
@@ -138,7 +164,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 603,
+        "runs": 604,
         "checked": true
       },
       {
@@ -351,30 +377,30 @@
     "ok": true,
     "skipped": false,
     "hours": 24,
-    "total": 6235,
+    "total": 6246,
     "failures": 7,
-    "failureRatePct": 0.1123,
+    "failureRatePct": 0.1121,
     "unresolvedFailures": 2,
-    "operationalTotal": 6233,
+    "operationalTotal": 6246,
     "operationalFailures": 7,
-    "operationalFailureRatePct": 0.1123,
+    "operationalFailureRatePct": 0.1121,
     "operationalUnresolvedFailures": 2,
     "diagnosticFailures": 0,
     "diagnosticUnresolvedFailures": 0,
     "byProvider": [
       {
         "provider": "groq",
-        "count": 3371,
-        "cost_usd": 0.8439718799999983
+        "count": 3369,
+        "cost_usd": 0.8408289099999979
       },
       {
         "provider": "dedupe",
-        "count": 2706,
+        "count": 2721,
         "cost_usd": 0
       },
       {
         "provider": "openai-oauth",
-        "count": 128,
+        "count": 126,
         "cost_usd": 0
       },
       {
@@ -396,7 +422,7 @@
     "byBudgetStatus": [
       {
         "budget_guard_status": "allowed",
-        "count": 6221
+        "count": 6232
       },
       {
         "budget_guard_status": "unknown",
@@ -406,11 +432,11 @@
     "byTier": [
       {
         "provider_tier": "1",
-        "count": 128
+        "count": 126
       },
       {
         "provider_tier": "2",
-        "count": 6077
+        "count": 6090
       },
       {
         "provider_tier": "5",
@@ -421,7 +447,7 @@
         "count": 21
       }
     ],
-    "avgDurationMs": 1748,
+    "avgDurationMs": 1736,
     "maxDurationMs": 126231,
     "latencyByProvider": [
       {
@@ -434,27 +460,27 @@
       },
       {
         "provider": "openai-oauth",
-        "count": 128,
+        "count": 126,
         "failures": 0,
-        "avg_duration_ms": 8544,
+        "avg_duration_ms": 8331,
         "max_duration_ms": 126231,
-        "p95_duration_ms": 28935
+        "p95_duration_ms": 27228
       },
       {
         "provider": "dedupe",
-        "count": 2706,
+        "count": 2721,
         "failures": 0,
-        "avg_duration_ms": 2132,
+        "avg_duration_ms": 2119,
         "max_duration_ms": 8077,
-        "p95_duration_ms": 3431
+        "p95_duration_ms": 3342
       },
       {
         "provider": "groq",
-        "count": 3371,
+        "count": 3369,
         "failures": 0,
-        "avg_duration_ms": 1070,
+        "avg_duration_ms": 1067,
         "max_duration_ms": 8078,
-        "p95_duration_ms": 2734
+        "p95_duration_ms": 2721
       },
       {
         "provider": "failed",
@@ -538,11 +564,11 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "debate_bull",
         "provider_tier": "2",
-        "count": 50,
+        "count": 49,
         "failures": 0,
-        "avg_duration_ms": 2361,
+        "avg_duration_ms": 2351,
         "max_duration_ms": 6104,
-        "p95_duration_ms": 4527
+        "p95_duration_ms": 4530
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -552,11 +578,11 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "trade_signal",
         "provider_tier": "2",
-        "count": 487,
+        "count": 490,
         "failures": 0,
-        "avg_duration_ms": 2245,
+        "avg_duration_ms": 2239,
         "max_duration_ms": 8078,
-        "p95_duration_ms": 3258
+        "p95_duration_ms": 3219
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -566,11 +592,11 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "trade_signal",
         "provider_tier": "2",
-        "count": 2706,
+        "count": 2721,
         "failures": 0,
-        "avg_duration_ms": 2132,
+        "avg_duration_ms": 2119,
         "max_duration_ms": 8077,
-        "p95_duration_ms": 3431
+        "p95_duration_ms": 3342
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -582,9 +608,9 @@
         "provider_tier": "2",
         "count": 386,
         "failures": 0,
-        "avg_duration_ms": 2087,
+        "avg_duration_ms": 2071,
         "max_duration_ms": 5942,
-        "p95_duration_ms": 4396
+        "p95_duration_ms": 4209
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -594,11 +620,11 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "final_decision",
         "provider_tier": "2",
-        "count": 140,
+        "count": 139,
         "failures": 0,
-        "avg_duration_ms": 2044,
+        "avg_duration_ms": 2040,
         "max_duration_ms": 5834,
-        "p95_duration_ms": 4250
+        "p95_duration_ms": 4120
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -893,9 +919,9 @@
         "agent": "zeus",
         "route": "groq/qwen/qwen3-32b",
         "runtimePurpose": "debate_bull",
-        "count": 50,
-        "avgDurationMs": 2361,
-        "p95DurationMs": 4527,
+        "count": 49,
+        "avgDurationMs": 2351,
+        "p95DurationMs": 4530,
         "reason": "slow LLM route hotspot exists for luna/zeus",
         "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=luna --agents=zeus --primary-only",
         "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=luna --agents=zeus --primary-only",
