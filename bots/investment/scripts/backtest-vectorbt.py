@@ -477,8 +477,13 @@ def infer_rows_for_days(df, days: int) -> int:
         return max(1, days)
 
 
-def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days: int = 30):
-    """Rolling walk-forward: train에서 최적화하고 바로 다음 test 구간에서 평가한다."""
+def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days: int = 45):
+    """Rolling walk-forward: fold OOS 거래를 풀링하여 저빈도 전략도 평가 가능하게 한다.
+
+    저빈도 전략(주식 1d)은 단일 fold에서 거래 ~8건으로 insufficient_data가 됨.
+    fold 6개를 누적하면 OOS ~270일·40건+으로 v2 소표본 기준(15건)을 넘긴다.
+    v2 거부/deflation/클램프는 풀 집계값에 1회만 적용한다.
+    """
     train_rows = infer_rows_for_days(df, train_days)
     test_rows = infer_rows_for_days(df, test_days)
     min_window = train_rows + test_rows
@@ -495,7 +500,9 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
         start += test_rows
     windows = windows[-max(1, folds):]
 
-    fold_results = []
+    # Phase 1-1: fold별 raw 수집 (거부 없이)
+    fold_raw = []
+    n_trials_max = 0
     for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
         train_df = df.iloc[train_start:train_end]
         test_df = df.iloc[train_end:test_end]
@@ -503,99 +510,100 @@ def walk_forward(df, deps: dict, folds: int = 3, train_days: int = 60, test_days
         if not grid:
             continue
         best_is = grid[0]
+        n_trials_fold = best_is.get("n_grid_trials", len(grid))
+        n_trials_max = max(n_trials_max, n_trials_fold)
         try:
-            oos_result = run_backtest(test_df, best_is["params"], deps)
+            oos_raw = run_backtest(test_df, best_is["params"], deps)
         except Exception as exc:
-            fold_results.append({"fold": fold_index, "error": str(exc)})
+            fold_raw.append({"fold": fold_index, "error": str(exc)})
             continue
-        fold_results.append(aggregate_oos_result(
-            oos_result,
-            best_is,
-            best_is.get("n_grid_trials", len(grid)),
-            len(test_df),
-            "walk_forward_fold",
-            {
-                "fold": fold_index,
-                "train_bars": len(train_df),
-                "test_bars": len(test_df),
-            },
-        ))
+        fold_raw.append({
+            "fold": fold_index,
+            "train_bars": len(train_df),
+            "test_bars": len(test_df),
+            "sharpe_oos_fold": safe_float(oos_raw.get("sharpe_ratio")),
+            "trades_fold": int(safe_float(oos_raw.get("total_trades"))),
+            "n_obs_fold": len(test_df),
+            "ret_fold": safe_float(oos_raw.get("total_return")),
+            "dd_fold": abs(safe_float(oos_raw.get("max_drawdown"))),
+            "win_fold": safe_float(oos_raw.get("win_rate")),
+            "pf_fold": safe_float(oos_raw.get("profit_factor")),
+            "sharpe_is_fold": safe_float(best_is.get("sharpe_ratio")),
+            "n_grid_trials_fold": n_trials_fold,
+            "params": best_is.get("params", {}),
+        })
 
-    usable = [item for item in fold_results if "error" not in item]
+    usable = [f for f in fold_raw if "error" not in f]
     if not usable:
         return None
 
-    oos_usable = [item for item in usable if item.get("sharpe_oos") is not None]
-    avg = lambda rows, key: sum(safe_float(item.get(key)) for item in rows) / len(rows)
-    total_trades = sum(int(safe_float(item.get("total_trades"))) for item in usable)
-    all_oos_reasons = [r for item in usable for r in (item.get("oos_reasons") or [])]
-    min_n_obs_oos = min((int(safe_float(item.get("n_obs_oos"))) for item in usable), default=0)
-    min_trades_oos = min((int(safe_float(item.get("total_trades_oos", item.get("total_trades")))) for item in usable), default=0)
+    # Phase 1-2: 풀 집계 — 합계 거래수 기준
+    pooled_trades = sum(f["trades_fold"] for f in usable)
+    pooled_bars = sum(f["n_obs_fold"] for f in usable)
+    # 거래수 가중 평균: 저거래 fold의 과대표집 방지
+    total_w = max(1, pooled_trades)
+    pooled_sharpe_oos = sum(f["sharpe_oos_fold"] * f["trades_fold"] for f in usable) / total_w
+    pooled_sharpe_is = sum(f["sharpe_is_fold"] * f["trades_fold"] for f in usable) / total_w
+    pooled_win = sum(f["win_fold"] * f["trades_fold"] for f in usable) / total_w
+    pooled_pf = sum(f["pf_fold"] * f["trades_fold"] for f in usable) / total_w
+    pooled_max_dd = max(f["dd_fold"] for f in usable)
+    pooled_return = sum(f["ret_fold"] for f in usable) / len(usable)
+    overfit_gap = pooled_sharpe_is - pooled_sharpe_oos
+    # grid trials: max 사용 (더 보수적인 deflation penalty)
+    n_trials = max(2, n_trials_max)
 
-    if not oos_usable:
-        aggregate = {
-            "status": "unstable",
-            "selection_method": "walk_forward",
-            "sharpe_ratio": None,
-            "sharpe_is": avg(usable, "sharpe_is"),
-            "sharpe_oos": None,
-            "sharpe_oos_deflated": None,
-            "overfit_gap": None,
-            "walk_forward_sharpe": None,
-            "total_return": avg(usable, "total_return"),
-            "max_drawdown": max(abs(safe_float(item.get("max_drawdown"))) for item in usable),
-            "win_rate": avg(usable, "win_rate"),
-            "profit_factor": avg(usable, "profit_factor"),
-            "total_trades": total_trades,
-            "n_grid_trials": sum(int(safe_float(item.get("n_grid_trials"))) for item in usable),
-            "n_obs_oos": min_n_obs_oos,
-            "total_trades_oos": min_trades_oos,
-            "fold_count": len(usable),
-            "folds": fold_results,
-            "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
-            "oos_status": "insufficient_data",
-            "oos_reasons": list(dict.fromkeys(all_oos_reasons)) or [f"insufficient_oos_sample(trades={min_trades_oos},bars={min_n_obs_oos})"],
-        }
-        aggregate["gate_status"] = "unstable"
-        aggregate["reasons"] = aggregate["oos_reasons"]
-        aggregate["robust_score"] = robust_rank_score(aggregate)
-        return aggregate
+    # Phase 1-3: v2 안전장치를 풀 집계값에 1회 적용
+    min_oos_trades = int_env("LUNA_BT_MIN_OOS_TRADES", 15)
+    min_oos_bars = int_env("LUNA_BT_MIN_OOS_BARS", int_env("LUNA_BT_MIN_BARS", 60))
+    realistic_cap = float_env("LUNA_BT_SHARPE_REALISTIC_CAP", 4.0)
+
+    oos_reasons = []
+    if pooled_trades < min_oos_trades or pooled_bars < min_oos_bars:
+        oos_status = "insufficient_data"
+        oos_reasons = [f"insufficient_oos_sample(trades={pooled_trades},bars={pooled_bars})"]
+        sharpe_oos_deflated = None
+        sharpe_oos_out = None
+        overfit_gap_out = None
+    else:
+        sharpe_oos_out = pooled_sharpe_oos
+        overfit_gap_out = overfit_gap
+        sharpe_oos_deflated = deflated_sharpe(pooled_sharpe_oos, n_trials, pooled_trades)
+        _, stability_reasons = check_stability(
+            pooled_sharpe_oos, pooled_trades, pooled_bars, overfit_gap, pooled_max_dd
+        )
+        oos_reasons = stability_reasons
+        if abs(sharpe_oos_deflated) > realistic_cap:
+            oos_reasons.append(
+                f"sharpe_out_of_realistic_range(val={sharpe_oos_deflated:.2f},cap={realistic_cap})"
+            )
+            sharpe_oos_deflated = clamp(sharpe_oos_deflated, -realistic_cap, realistic_cap)
+        oos_status = "unstable" if oos_reasons else "ok"
 
     aggregate = {
-        "status": "ok",
+        "status": oos_status,
         "selection_method": "walk_forward",
-        "sharpe_ratio": avg(oos_usable, "sharpe_oos"),
-        "sharpe_is": avg(oos_usable, "sharpe_is"),
-        "sharpe_oos": avg(oos_usable, "sharpe_oos"),
-        "overfit_gap": avg(oos_usable, "overfit_gap"),
-        "walk_forward_sharpe": avg(oos_usable, "sharpe_oos"),
-        "total_return": avg(oos_usable, "total_return"),
-        "max_drawdown": max(abs(safe_float(item.get("max_drawdown"))) for item in usable),
-        "win_rate": avg(oos_usable, "win_rate"),
-        "profit_factor": avg(oos_usable, "profit_factor"),
-        "total_trades": total_trades,
-        "n_grid_trials": sum(int(safe_float(item.get("n_grid_trials"))) for item in usable),
-        "n_obs_oos": min_n_obs_oos,
-        "total_trades_oos": min_trades_oos,
+        "sharpe_ratio": sharpe_oos_out if oos_status != "insufficient_data" else None,
+        "sharpe_is": pooled_sharpe_is,
+        "sharpe_oos": sharpe_oos_out,
+        "sharpe_oos_deflated": sharpe_oos_deflated,
+        "overfit_gap": overfit_gap_out,
+        "walk_forward_sharpe": sharpe_oos_out,
+        "total_return": pooled_return,
+        "max_drawdown": pooled_max_dd,
+        "win_rate": pooled_win,
+        "profit_factor": pooled_pf,
+        "total_trades": pooled_trades,
+        "n_grid_trials": n_trials,
+        "n_obs_oos": pooled_bars,
+        "total_trades_oos": pooled_trades,
         "fold_count": len(usable),
-        "folds": fold_results,
+        "folds": fold_raw,
         "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
+        "oos_status": oos_status,
+        "oos_reasons": oos_reasons,
+        "gate_status": "unstable" if oos_reasons else "ok",
+        "reasons": oos_reasons,
     }
-    # deflation: 전체 grid trials 기준으로 OOS sharpe 보정
-    total_n_trials = int(safe_float(aggregate.get("n_grid_trials")))
-    total_trades_oos = int(safe_float(aggregate.get("total_trades_oos")))
-    aggregate["sharpe_oos_deflated"] = deflated_sharpe(avg(oos_usable, "sharpe_oos"), total_n_trials, total_trades_oos)
-    realistic_cap = float_env("LUNA_BT_SHARPE_REALISTIC_CAP", 4.0)
-    aggregate["oos_status"] = "unstable" if all_oos_reasons else "ok"
-    aggregate["oos_reasons"] = list(dict.fromkeys(all_oos_reasons))
-    if abs(safe_float(aggregate.get("sharpe_oos_deflated"))) > realistic_cap:
-        aggregate["oos_reasons"].append(
-            f"sharpe_out_of_realistic_range(val={aggregate['sharpe_oos_deflated']:.2f},cap={realistic_cap})"
-        )
-        aggregate["sharpe_oos_deflated"] = clamp(aggregate["sharpe_oos_deflated"], -realistic_cap, realistic_cap)
-        aggregate["oos_status"] = "unstable"
-    aggregate["gate_status"] = "unstable" if aggregate["oos_reasons"] else "ok"
-    aggregate["reasons"] = aggregate["oos_reasons"]
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate
 
@@ -756,9 +764,9 @@ def main():
                 wf_result = walk_forward(
                     df,
                     deps,
-                    folds=int_env("LUNA_BT_WALK_FORWARD_FOLDS", 3),
-                    train_days=int_env("LUNA_BT_WALK_FORWARD_TRAIN_DAYS", 60),
-                    test_days=int_env("LUNA_BT_WALK_FORWARD_TEST_DAYS", 30),
+                    folds=int_env("LUNA_BT_WALK_FORWARD_FOLDS", 6),
+                    train_days=int_env("LUNA_BT_WALK_FORWARD_TRAIN_DAYS", 90),
+                    test_days=int_env("LUNA_BT_WALK_FORWARD_TEST_DAYS", 45),
                 )
                 split_result = None if wf_result is not None else select_on_is_evaluate_on_oos(df, deps)
                 result = [item for item in [wf_result, split_result] if item is not None]
