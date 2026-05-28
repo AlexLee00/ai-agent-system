@@ -1,4 +1,74 @@
-# 세션 인수인계 — 2026-05-28 (CODEX_CLAUDE_REFACTORER_HARNESS 전체 완료 + Phase 3-A 2차)
+# 세션 인수인계 — 2026-05-28 (CODEX_LUNA_MASTER_DATA_LOOP 완전 동적 자기학습 시스템)
+
+## 완료 요약 ✅ — 5 Phase 완전 구현 (완전 동적 자기학습 루프)
+
+| Phase | 내용 | 상태 |
+|-------|------|------|
+| 1. soft 가드 제거 | entry-trigger-engine 5개 notify 전환 + LUNA_FULL_DATA_LOOP_ENABLED=true | ✅ |
+| 2. 동적 유니버스 | dynamic-universe-selector + kis-top-volume + sector-rotation | ✅ |
+| 3. 동적 가중치 학습 | regime-weight-learner + luna_regime_weight_snapshots | ✅ |
+| 4. minConfidence 환경변수 | LUNA_MIN_CONFIDENCE (기본 0.48) + LUNA_LIVE_MODE_BINANCE 준비 | ✅ |
+| 5. 수익 확률 우상향 | winrate-uptrend-tracker + v_winrate_uptrend view | ✅ |
+
+### 핵심 파일
+- `bots/investment/shared/entry-trigger-engine.ts` — LUNA_FULL_DATA_LOOP_ENABLED 게이트 (기본 true)
+- `bots/investment/shared/dynamic-universe-selector.ts` — 3축(거래량/시총/섹터) × 체제별 유니버스
+- `bots/investment/shared/regime-weight-learner.ts` — 체제별 fusion/signal 가중치 학습
+- `bots/investment/shared/kis-top-volume-universe.ts` — KIS 국내/해외 거래량 Top50
+- `bots/investment/shared/sector-rotation-universe.ts` — 섹터별 동적 풀
+- `bots/investment/scripts/runtime-guard-outcome-tracker.ts` — 가드 outcome 측정 (매일 09:00)
+- `bots/investment/scripts/winrate-uptrend-tracker.ts` — 승률 우상향 추세 보고 (매일 09:00)
+- `bots/investment/scripts/run-universe-refresh.ts` — 유니버스 갱신 (매일 08:30)
+- `bots/investment/scripts/run-regime-weight-learner.ts` — 가중치 학습 (매일 07:00)
+- `bots/investment/migrations/20260528000003_luna_regime_weight_snapshots.sql` — DB 마이그레이션
+
+### DB 구조 (모두 존재 확인됨)
+- `investment.guard_events` — 가드 이벤트 + outcome 컬럼
+- `investment.v_guard_effectiveness` — 가드 효과성 뷰
+- `investment.universe_selection_shadow` — 동적 유니버스 기록
+- `investment.luna_regime_weight_snapshots` — 체제별 가중치 스냅샷
+- `investment.luna_weight_vector_shadow` — 가중치 벡터 shadow
+- `investment.v_winrate_uptrend` — 승률 우상향 추세 뷰
+
+### launchd plists (4개 신규)
+- `ai.luna.guard-outcome-tracker-daily-0900` — guard_events outcome 업데이트
+- `ai.luna.universe-refresh-daily-0830` — 3축 유니버스 갱신
+- `ai.luna.weight-adaptive-tuner-daily-0700` — 체제별 가중치 학습
+- `ai.luna.winrate-tracker-daily-0900` — 수익 확률 추세 보고
+
+### 안전 장치 (확인됨)
+- HARD limit 4개 모두 유지 (persist_failed, tp_sl_required_not_met, open_position_reentry_guard, CAPITAL_HARD_BLOCKS)
+- LUNA_ADAPTIVE_WEIGHT_ENABLED = false (기본, 마스터 승인 후 활성화)
+- LUNA_LIVE_MODE_BINANCE = false (기본, 마스터 승인 후 활성화)
+- git tag: `luna-master-data-loop-complete-20260528-1935`
+
+### OPS 배포 필수 작업
+1. **DB Migration** (OPS에서):
+   ```bash
+   /opt/homebrew/bin/psql -d jay -f bots/investment/migrations/20260528000003_luna_regime_weight_snapshots.sql
+   ```
+   (이미 실행됨 — 테이블 존재 확인됨)
+
+2. **launchd plist 등록** (4개):
+   ```bash
+   cp bots/investment/launchd/ai.luna.guard-outcome-tracker-daily-0900.plist ~/Library/LaunchAgents/
+   cp bots/investment/launchd/ai.luna.universe-refresh-daily-0830.plist ~/Library/LaunchAgents/
+   cp bots/investment/launchd/ai.luna.weight-adaptive-tuner-daily-0700.plist ~/Library/LaunchAgents/
+   cp bots/investment/launchd/ai.luna.winrate-tracker-daily-0900.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/ai.luna.guard-outcome-tracker-daily-0900.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.universe-refresh-daily-0830.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.weight-adaptive-tuner-daily-0700.plist
+   launchctl load ~/Library/LaunchAgents/ai.luna.winrate-tracker-daily-0900.plist
+   ```
+
+3. **환경변수 단계적 활성화** (마스터 승인 후):
+   - 1주차 (현재): LUNA_FULL_DATA_LOOP_ENABLED=true (이미 기본값)
+   - 2주차: `launchctl setenv LUNA_MIN_CONFIDENCE 0.42`
+   - 3주차: `launchctl setenv LUNA_ADAPTIVE_WEIGHT_ENABLED true`
+
+---
+
+# 이전 세션 — 2026-05-28 (CODEX_CLAUDE_REFACTORER_HARNESS 전체 완료 + Phase 3-A 2차)
 
 ## 완료 요약 ✅ — 리팩터 에이전트 + 하네스 + 훅 + Phase 3-A 시범 리팩토링
 

@@ -4,6 +4,32 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-28: CODEX_LUNA_MASTER_DATA_LOOP — 완전 동적 자기학습 시스템 구현 완료
+
+- **Phase 1** — soft 가드 제거 (데이터 수집):
+  - `entry-trigger-engine.ts` soft 가드 5개 → notify + 거래 진행 (LUNA_FULL_DATA_LOOP_ENABLED=true 기본)
+  - `runtime-guard-outcome-tracker.ts` — guard_events outcome 측정 (매일 09:00)
+  - `v_guard_effectiveness` — 가드 효과성 뷰 (success_rate 측정)
+  - HARD limit 4개 유지 확인
+- **Phase 2** — 동적 유니버스 (거래량/시총/섹터 × 체제):
+  - `dynamic-universe-selector.ts` — 3축 × 체제별 가중치 (초기값: TRENDING_BULL{volume:0.5, cap:0.2, sector:0.3})
+  - `kis-top-volume-universe.ts` — 국내/해외 거래량 Top50
+  - `sector-rotation-universe.ts` — 강세 섹터 동적 식별
+  - `universe_selection_shadow` 테이블 + launchd 08:30
+- **Phase 3** — 동적 가중치 학습 (fusion/signal × 체제):
+  - `regime-weight-learner.ts` — 체제별 가중치 밴딧 학습 (학습률 0.08)
+  - `luna_regime_weight_snapshots` 테이블 + 마이그레이션
+  - launchd 07:00 (LUNA_ADAPTIVE_WEIGHT_ENABLED 게이트, 기본 false)
+- **Phase 4** — minConfidence + live 준비:
+  - LUNA_MIN_CONFIDENCE 환경변수화 (0.48 기본, 0.42→0.40 단계적)
+  - LUNA_LIVE_MODE_BINANCE 게이트 (마스터 승인 대기)
+- **Phase 5** — 수익 확률 우상향 측정:
+  - `winrate-uptrend-tracker.ts` — 승률/손익비 추세 보고 (매일 09:00)
+  - `v_winrate_uptrend` — MA7/MA30/기울기/우상향여부 뷰
+  - launchd 09:00
+- **git tag**: `luna-master-data-loop-complete-20260528-1935`
+- **마스터 비전**: "이길 확률 우상향!" = 수집→분석→피드백→학습→진화 무한 루프
+
 ## 2026-05-28: CODEX_CLAUDE_REFACTORER_HARNESS — Phase 3 시범 리팩토링 완료
 
 - **Phase 1+2** (이전 세션, 커밋 fb4a8ef55 → ea52608f5):
