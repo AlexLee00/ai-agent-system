@@ -6,8 +6,11 @@
  */
 
 import { runWeeklySelfTuningAnalysis } from '../shared/guard-self-tuning.ts';
-import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
 import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys.js');
 
 async function sendTelegramNotification(message) {
   try {

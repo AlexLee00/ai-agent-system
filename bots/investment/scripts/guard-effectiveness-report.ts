@@ -13,8 +13,11 @@
  */
 
 import { query, run } from '../shared/db/core.ts';
-import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
 import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { initHubConfig } = require('../../../packages/core/lib/llm-keys.js');
 
 const REPORT_DATE = new Date().toISOString().split('T')[0];
 const REPORT_DAYS = 7;
