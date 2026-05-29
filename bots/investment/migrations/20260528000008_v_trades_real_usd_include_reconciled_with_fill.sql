@@ -1,16 +1,12 @@
--- investment.v_trades_real_usd — USD 정규화 Materialized View
--- CODEX_LUNA_TRADES_USD_NORMALIZATION Task B
--- 2026-05-12
---
--- 핵심 로직:
---   - trade_journal 기반 (pnl_amount 채워짐 비율이 더 높음)
---   - unresolved journal_reconciled / sweeper_manual_dust / orphan_cleanup 자동 제외
---   - 실제 fill 매칭된 journal_reconciled_* 거래는 pnl_amount가 있으면 포함
---   - KIS → KRW, Binance/Upbit → USDT, KIS Overseas → USD
---   - latest_fx CTE로 최신 환율 자동 반영 (fx_rates 미갱신 시 fallback)
---   - 기존 원천 테이블은 수정하지 않고, 기존 view가 있으면 보존
+-- v_trades_real_usd 정밀화
+-- journal_reconciled_with_fill / journal_reconciled_sell_trade 처럼 실제 PnL이
+-- 확인된 reconciliation 거래는 분석 뷰에 포함한다.
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS investment.v_trades_real_usd AS
+BEGIN;
+
+DROP MATERIALIZED VIEW IF EXISTS investment.v_trades_real_usd;
+
+CREATE MATERIALIZED VIEW investment.v_trades_real_usd AS
 WITH latest_fx AS (
   SELECT DISTINCT ON (base_currency)
     base_currency,
@@ -43,33 +39,25 @@ normalized AS (
     j.exit_price,
     j.exit_value,
     j.exit_reason,
-    j.pnl_amount                          AS pnl_raw,
+    j.pnl_amount AS pnl_raw,
     j.status,
     j.market_regime,
     j.strategy_family,
-    -- 통화 추론
     CASE
-      WHEN j.exchange = 'kis'          THEN 'KRW'
+      WHEN j.exchange = 'kis' THEN 'KRW'
       WHEN j.exchange = 'kis_overseas' THEN 'USD'
-      ELSE                                  'USDT'
+      ELSE 'USDT'
     END AS currency,
-    -- USD 환산 PnL
     CASE
-      WHEN j.exchange = 'kis'
-        THEN j.pnl_amount * (SELECT rate FROM krw_rate)
-      ELSE
-        j.pnl_amount
+      WHEN j.exchange = 'kis' THEN j.pnl_amount * (SELECT rate FROM krw_rate)
+      ELSE j.pnl_amount
     END AS pnl_usd,
-    -- USD 환산 진입 금액
     CASE
-      WHEN j.exchange = 'kis'
-        THEN j.entry_value * (SELECT rate FROM krw_rate)
-      ELSE
-        j.entry_value
+      WHEN j.exchange = 'kis' THEN j.entry_value * (SELECT rate FROM krw_rate)
+      ELSE j.entry_value
     END AS entry_value_usd
   FROM investment.trade_journal j
-  WHERE
-    j.exit_reason IS NOT NULL
+  WHERE j.exit_reason IS NOT NULL
     AND COALESCE(j.exit_reason, '') NOT IN (
       'journal_reconciled_no_position',
       'journal_reconciled_duplicate_open'
@@ -80,7 +68,6 @@ normalized AS (
 )
 SELECT * FROM normalized;
 
--- 인덱스
 CREATE UNIQUE INDEX IF NOT EXISTS idx_v_trades_real_usd_id
   ON investment.v_trades_real_usd (id);
 
@@ -95,3 +82,5 @@ CREATE INDEX IF NOT EXISTS idx_v_trades_real_usd_paper
 
 CREATE INDEX IF NOT EXISTS idx_v_trades_real_usd_exchange_paper
   ON investment.v_trades_real_usd (exchange, is_paper);
+
+COMMIT;

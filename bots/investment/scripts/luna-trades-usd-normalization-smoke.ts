@@ -33,7 +33,9 @@ export async function runLunaTradesUsdNormalizationSmoke() {
 
   assert.match(viewSql, /CREATE MATERIALIZED VIEW IF NOT EXISTS investment\.v_trades_real_usd/);
   assert.doesNotMatch(viewSql, /DROP MATERIALIZED VIEW/i);
-  assert.match(viewSql, /exit_reason NOT LIKE 'journal_reconciled%'/);
+  assert.match(viewSql, /journal_reconciled_no_position/);
+  assert.match(viewSql, /journal_reconciled_duplicate_open/);
+  assert.doesNotMatch(viewSql, /exit_reason NOT LIKE 'journal_reconciled%'/);
   assert.match(viewSql, /WHEN j\.exchange = 'kis'\s+THEN j\.pnl_amount \*/);
   assert.match(viewSql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_v_trades_real_usd_id/);
 
