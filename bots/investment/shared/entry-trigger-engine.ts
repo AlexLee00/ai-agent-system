@@ -218,6 +218,9 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     true,
   );
   if (!enabled) return { ok: true, enabled: false, reason: 'active_quality_gate_disabled' };
+  const mode = String(
+    context?.activeQualityGateMode ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_MODE ?? 'notify',
+  ).trim().toLowerCase();
 
   const minPredictiveScore = clamp01(
     context?.activeQualityGateMinPredictiveScore ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_MIN_PREDICTIVE_SCORE,
@@ -276,11 +279,14 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
   }
 
   const uniqueReasons = [...new Set(reasons)];
+  const notifyMode = mode !== 'hard_gate';
   return {
-    ok: uniqueReasons.length === 0,
+    ok: notifyMode ? true : uniqueReasons.length === 0,
     enabled: true,
+    notifyMode,
     reason: uniqueReasons[0] || 'active_quality_gate_passed',
     reasons: uniqueReasons,
+    blockedReasons: uniqueReasons,
     symbol: normalizeSymbol(trigger.symbol || quality?.symbol || ''),
     minPredictiveScore,
     maxBacktestAgeHours,
@@ -1668,6 +1674,18 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const preflightQualityGate = activeQualityGateEnabled
       ? evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context)
       : null;
+    if (preflightQualityGate?.notifyMode && preflightQualityGate.blockedReasons?.length > 0) {
+      recordGuardEvent({
+        guardName: 'active_quality_gate_notify',
+        symbol: trigger.symbol || null,
+        exchange,
+        reason: preflightQualityGate.blockedReasons.join(','),
+        severity: 'info',
+        decisionBefore: { wouldBlock: true, reasons: preflightQualityGate.blockedReasons },
+        decisionAfter: { notifyMode: true, action: 'BUY_ALLOWED' },
+        guardMetadata: { activeQualityGate: preflightQualityGate },
+      });
+    }
     if (
       expireQualityBlockedActive
       && preflightQualityGate
@@ -1836,6 +1854,19 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       continue;
     }
     const qualityGate = preflightQualityGate || evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context);
+    if (qualityGate.notifyMode && qualityGate.blockedReasons?.length > 0 && !preflightQualityGate) {
+      // preflight에서 이미 기록하지 않은 경우만 (preflightQualityGate가 없을 때)
+      recordGuardEvent({
+        guardName: 'active_quality_gate_notify',
+        symbol: trigger.symbol || null,
+        exchange,
+        reason: qualityGate.blockedReasons.join(','),
+        severity: 'info',
+        decisionBefore: { wouldBlock: true, reasons: qualityGate.blockedReasons },
+        decisionAfter: { notifyMode: true, action: 'BUY_ALLOWED' },
+        guardMetadata: { activeQualityGate: qualityGate },
+      });
+    }
     if (!qualityGate.ok) {
       readyBlocked++;
       await updateTriggerState(trigger.id, {
