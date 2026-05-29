@@ -63,7 +63,7 @@
     <key>LUNA_PREDICTIVE_VALIDATION_ENABLED</key>
     <string>true</string>
     <key>LUNA_PREDICTIVE_VALIDATION_MODE</key>
-    <string>hard_gate</string>
+    <string>advisory</string>
     <key>LUNA_PREDICTIVE_OBSERVATION_LANE_ENABLED</key>
     <string>true</string>
     <key>LUNA_REGIME_8WAY_ENABLED</key>
