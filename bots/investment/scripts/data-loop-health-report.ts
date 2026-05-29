@@ -168,12 +168,26 @@ async function fetchLaunchdHealth() {
   }
 }
 
+function loadDefinedOpsSchedulerJobNames() {
+  try {
+    const schedulerFile = new URL('./runtime-luna-ops-scheduler.ts', import.meta.url).pathname;
+    const source = fs.readFileSync(schedulerFile, 'utf8');
+    const names = [...source.matchAll(/\bname:\s*['"`]([^'"`]+)['"`]/g)].map((match) => match[1]);
+    return new Set(names);
+  } catch (err) {
+    console.error('[DataLoopHealth] ops-scheduler 정의 점검 실패:', err);
+    return null;
+  }
+}
+
 async function fetchOpsSchedulerHealth() {
   try {
     const stateFile = new URL('../output/ops/luna-ops-scheduler-state.json', import.meta.url).pathname;
     const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     const now = Date.now();
+    const definedJobNames = loadDefinedOpsSchedulerJobNames();
     const staleJobs: { name: string; elapsedHours: number; thresholdHours: number }[] = [];
+    const residueJobs: { name: string; elapsedHours: number }[] = [];
 
     for (const [name, job] of Object.entries(state.jobs || {})) {
       const lastRunAt = (job as any).lastRunAt;
@@ -181,8 +195,16 @@ async function fetchOpsSchedulerHealth() {
 
       const elapsedHours = (now - new Date(lastRunAt).getTime()) / 3_600_000;
 
-      // 30일(720h) 이상 미실행 = 이름 변경 후 옛 이름 잔재 — stale 체크 제외
-      if (elapsedHours > 720) continue;
+      if (definedJobNames && !definedJobNames.has(name)) {
+        residueJobs.push({ name, elapsedHours: Math.round(elapsedHours) });
+        continue;
+      }
+
+      // 정의 파일을 읽지 못한 경우의 안전 fallback: 30일 이상 미실행은 stale 대신 잔재로 분류
+      if (!definedJobNames && elapsedHours > 720) {
+        residueJobs.push({ name, elapsedHours: Math.round(elapsedHours) });
+        continue;
+      }
 
       let thresholdHours = 48;
       if (/15min|30min|hourly/.test(name)) thresholdHours = 6;
@@ -193,10 +215,10 @@ async function fetchOpsSchedulerHealth() {
       }
     }
 
-    return { staleJobs };
+    return { staleJobs, residueJobs };
   } catch (err) {
     console.error('[DataLoopHealth] ops-scheduler 점검 실패:', err);
-    return { staleJobs: [] };
+    return { staleJobs: [], residueJobs: [] };
   }
 }
 
@@ -306,6 +328,7 @@ async function fetchTableFreshness() {
 function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?) {
   const tables: any[] = Array.isArray(tableFreshness) ? tableFreshness : [];
   const staleJobs: any[] = opsScheduler?.staleJobs ?? [];
+  const residueJobs: any[] = opsScheduler?.residueJobs ?? [];
   const unregistered: string[] = launchd?.unregistered ?? [];
   const ldDefined: number = launchd?.defined ?? 0;
   const ldRegistered: number = launchd?.registered ?? 0;
@@ -361,6 +384,11 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
   for (const j of staleJobs) {
     section += `⚠️ WARN: ops \`${j.name}\` ${j.elapsedHours}h 정지 (기대: ${j.thresholdHours}h)\n`;
     hasWarn = true;
+  }
+
+  if (residueJobs.length > 0) {
+    const sample = residueJobs.slice(0, 3).map((job) => `\`${job.name}\``).join(', ');
+    section += `ℹ️ ops 정의 외 state 잔재 ${residueJobs.length}개 무시${sample ? ` (${sample})` : ''}\n`;
   }
 
   // Launchd unregistered
@@ -485,7 +513,7 @@ async function main() {
   console.log(`[DataLoopHealth] 피드백: ${feedback.total}건 | reflexion: ${reflexion.total}건`);
   console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
   console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
-  console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개`);
+  console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개, residue ignored ${(opsScheduler.residueJobs ?? []).length}개`);
   const criticalTables = (tableFreshness ?? []).filter((t) =>
     ['missing', 'missing_column'].includes(t.status)
     || (t.status === 'stale' && (t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)),
