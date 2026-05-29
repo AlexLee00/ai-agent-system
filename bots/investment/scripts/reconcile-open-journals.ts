@@ -192,6 +192,11 @@ function splitIdList(value) {
   return text.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function serializeIdList(values = []) {
+  const ids = [...new Set(splitIdList(values).map(String).filter(Boolean))];
+  return ids.length > 0 ? ids.join(',') : null;
+}
+
 async function fetchPreviouslyAttributedFillIds(latestEntry = {}) {
   const rows = await db.query(
     `SELECT exit_fill_ids
@@ -286,6 +291,9 @@ async function closeEntriesFromResolvedFill(rows, resolvedFill, dryRun) {
   const exitTotal = safeNumber(resolvedFill?.exitValue, 0);
   const exitPrice = safeNumber(resolvedFill?.exitPrice, 0);
   const exitTime = resolvedFill?.lastFillAt ? new Date(resolvedFill.lastFillAt).getTime() : Date.now();
+  const exchangeTradeIds = resolvedFill?.tradeIds || [];
+  const exchangeOrderIds = resolvedFill?.orderIds || [];
+  const exitMatchSource = resolvedFill?.matchedBy || null;
   const closedTradeIds = [];
 
   for (const row of rows) {
@@ -308,10 +316,10 @@ async function closeEntriesFromResolvedFill(rows, resolvedFill, dryRun) {
         execution_origin: 'cleanup',
         quality_flag: 'trusted',
         exclude_from_learning: false,
-        incident_link: `journal_reconcile:fetchMyTrades:fills=${resolvedFill?.fillCount || 0}`,
-        exit_order_ids: resolvedFill?.orderIds?.length ? resolvedFill.orderIds.join(',') : null,
-        exit_fill_ids: resolvedFill?.tradeIds?.length ? resolvedFill.tradeIds.join(',') : null,
-        exit_match_source: resolvedFill?.matchedBy || null,
+        incident_link: `journal_reconcile:${resolvedFill?.source || 'fetchMyTrades'}:match=${exitMatchSource || 'unknown'}:fills=${resolvedFill?.fillCount || 0}`,
+        exit_order_ids: serializeIdList(exchangeOrderIds),
+        exit_fill_ids: serializeIdList(exchangeTradeIds),
+        exit_match_source: exitMatchSource,
       });
       await journalDb.ensureAutoReview(row.trade_id).catch(() => {});
     }
@@ -324,8 +332,9 @@ async function closeEntriesFromResolvedFill(rows, resolvedFill, dryRun) {
     exitTime,
     fillCount: resolvedFill?.fillCount || 0,
     matchedQty: resolvedFill?.matchedQty || null,
-    exchangeTradeIds: resolvedFill?.tradeIds || [],
-    exchangeOrderIds: resolvedFill?.orderIds || [],
+    exchangeTradeIds,
+    exchangeOrderIds,
+    exitMatchSource,
   };
 }
 

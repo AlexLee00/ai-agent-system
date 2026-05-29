@@ -56,6 +56,9 @@
  * @property {number} [pnlPercent]
  * @property {number} [feeTotal]
  * @property {number} [pnlNet]
+ * @property {string} [exit_order_ids]
+ * @property {string} [exit_fill_ids]
+ * @property {string} [exit_match_source]
  */
 
 import { get, query, run } from './db.ts';
@@ -359,6 +362,9 @@ export async function initJournalSchema() {
       quality_flag      VARCHAR DEFAULT 'trusted',
       exclude_from_learning BOOLEAN DEFAULT false,
       incident_link     VARCHAR,
+      exit_order_ids    TEXT,
+      exit_fill_ids     TEXT,
+      exit_match_source TEXT,
 
       created_at        BIGINT NOT NULL
     )
