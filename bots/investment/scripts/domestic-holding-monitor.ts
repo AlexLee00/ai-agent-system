@@ -108,7 +108,7 @@ async function main() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runCliMain(main);
+  runCliMain({ run: main });
 }
 
 export { parseArgs, main };
