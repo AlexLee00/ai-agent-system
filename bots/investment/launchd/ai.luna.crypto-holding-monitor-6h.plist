@@ -7,6 +7,9 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/crypto-holding-monitor.ts</string>
   </array>
   <key>WorkingDirectory</key>
@@ -21,7 +24,7 @@
     <string>production</string>
   </dict>
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
   <key>KeepAlive</key>
   <false/>
   <key>StartInterval</key>
