@@ -85,6 +85,24 @@ assert.equal(orcaAmbiguous.source, 'unresolved');
 assert.equal(orcaAmbiguous.reason, 'ambiguous_no_orderid');
 assert.equal(orcaAmbiguous.exactQtyMatches, 2);
 
+// partial 시나리오: order_id 매칭되나 matchedQty(60) < expectedQty(100) — partial=true 반환 확인
+const partialFill = await resolveFillForClosedJournal({
+  symbol: 'SOL/USDT',
+  entryTime: now - 1_000,
+  entrySize: 100,
+  entryPrice: 1,
+  entryValue: 100,
+  expectedSide: 'sell',
+  orderIds: ['SOL-TP-PARTIAL'],
+  fetchMyTrades: async () => [
+    trade({ id: 'sol-partial-fill', order: 'SOL-TP-PARTIAL', amount: 60, price: 1.05, offsetMs: 1 }),
+  ],
+});
+assert.equal(partialFill.source, 'fetchMyTrades_orderid');
+assert.equal(partialFill.partial, true);
+assert.equal(partialFill.matchedQty, 60);
+assert.equal(partialFill.expectedQty, 100);
+
 const excludedFallback = await resolveFillForClosedJournal({
   symbol: 'KAT/USDT',
   entryTime: now - 1_000,
@@ -108,6 +126,7 @@ console.log(JSON.stringify({
     { symbol: 'KAT/USDT', matchedBy: katDca.matchedBy, tradeIds: katDca.tradeIds },
     { symbol: 'TAO/USDT', matchedBy: taoShort.matchedBy, tradeIds: taoShort.tradeIds },
     { symbol: 'ORCA/USDT', reason: orcaAmbiguous.reason, exactQtyMatches: orcaAmbiguous.exactQtyMatches },
+    { symbol: 'SOL/USDT', partial: partialFill.partial, matchedQty: partialFill.matchedQty, expectedQty: partialFill.expectedQty },
     { symbol: 'KAT/USDT', reason: excludedFallback.reason, excludedFillIds: ['already-attributed-fill'] },
   ],
   misattributionCount,
