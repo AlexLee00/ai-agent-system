@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
-  "generatedAt": "2026-05-29T06:58:51.849Z",
+  "generatedAt": "2026-05-29T07:13:52.856Z",
   "fixture": false,
   "shadowOnly": true,
   "liveTradeImpact": false,
@@ -20,13 +20,13 @@
       "market": "domestic",
       "ok": true,
       "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.7919,
+      "predictiveScore": 0.742,
       "selectedFamily": "equity_swing",
       "influenceMode": "shadow_bias",
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 78,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -39,13 +39,13 @@
       "market": "domestic",
       "ok": true,
       "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.5628,
+      "predictiveScore": 0.5175,
       "selectedFamily": "defensive_rotation",
       "influenceMode": "shadow_bias",
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 78,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
