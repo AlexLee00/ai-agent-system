@@ -187,6 +187,31 @@ function stripHtml(content) {
     .trim();
 }
 
+const UNSUPPORTED_STAT_TRIGGER_RE = /업계 통계|통계에 따르면|조사에 따르면|연구에 따르면/g;
+const STAT_SOURCE_SIGNAL_RE = /출처|Source|보고서|리포트|PMI|Standish|McKinsey|Gartner|Forrester|IEEE|ACM|정부|공식|https?:\/\//i;
+const STAT_TRIGGER_REPLACEMENTS = {
+  '업계 통계': '실무 사례',
+  '통계에 따르면': '여러 운영 사례를 보면',
+  '조사에 따르면': '현장 사례를 보면',
+  '연구에 따르면': '관련 사례를 보면',
+};
+
+function hasStatSourceSignal(content, index, phraseLength) {
+  const raw = String(content || '');
+  const sourceWindow = raw.slice(
+    Math.max(0, Number(index || 0) - 80),
+    Math.min(raw.length, Number(index || 0) + Number(phraseLength || 0) + 220),
+  );
+  return STAT_SOURCE_SIGNAL_RE.test(sourceWindow);
+}
+
+function repairUnsupportedStatisticalClaims(content) {
+  return String(content || '').replace(UNSUPPORTED_STAT_TRIGGER_RE, (phrase, offset) => {
+    if (hasStatSourceSignal(content, offset, phrase.length)) return phrase;
+    return STAT_TRIGGER_REPLACEMENTS[phrase] || phrase;
+  });
+}
+
 function checkReaderFacingArtifacts(content, type) {
   const issues = [];
   const raw = String(content || '');
@@ -199,13 +224,14 @@ function checkReaderFacingArtifacts(content, type) {
     issues.push({ severity: 'error', msg: `독자 노출용 내부 섹션명 감지: ${[...new Set(leaked)].join(', ')}` });
   }
 
-  if (type === 'general' && /업계 통계|통계에 따르면|조사에 따르면|연구에 따르면/.test(plain)) {
-    const statisticalClaim = plain.match(/.{0,80}(?:업계 통계|통계에 따르면|조사에 따르면|연구에 따르면).{0,220}/);
-    const sourceWindow = statisticalClaim ? statisticalClaim[0] : plain;
-    const hasSourceSignal = /출처|Source|보고서|리포트|PMI|Standish|McKinsey|Gartner|Forrester|IEEE|ACM|정부|공식|https?:\/\//i.test(sourceWindow);
-    if (!hasSourceSignal) {
+  if (type === 'general') {
+    UNSUPPORTED_STAT_TRIGGER_RE.lastIndex = 0;
+    const hasUnsupportedClaim = Array.from(plain.matchAll(UNSUPPORTED_STAT_TRIGGER_RE))
+      .some((match) => !hasStatSourceSignal(plain, match.index, match[0].length));
+    if (hasUnsupportedClaim) {
       issues.push({ severity: 'error', msg: '출처 없는 통계/조사 표현 감지 — 근거를 명시하거나 경험 기반 표현으로 바꿔야 함' });
     }
+    UNSUPPORTED_STAT_TRIGGER_RE.lastIndex = 0;
   }
 
   if (type === 'general' && /저희 스터디카페에서는.*진행합니다|문의는 언제든 편하게 연락주세요/.test(plain)) {
@@ -240,6 +266,8 @@ function checkTerminalSectionOverflow(content) {
 function repairTerminalQualityArtifacts(content) {
   let next = String(content || '').trimEnd();
   if (!next.trim()) return next;
+
+  next = repairUnsupportedStatisticalClaims(next);
 
   const explicitEndIndex = next.indexOf('_THE_END_');
   if (explicitEndIndex >= 0) {
@@ -782,6 +810,7 @@ module.exports = {
   scoreSEO,
   checkDuplicate30d,
   repairTerminalQualityArtifacts,
+  repairUnsupportedStatisticalClaims,
   runCriticLoop,
   MIN_CHARS,
   GOAL_CHARS,

@@ -14,7 +14,7 @@ async function main() {
     '일반 포스팅 제목',
     '',
     '[AI 스니펫 요약]',
-    '오늘 글은 말단 포맷 오류가 최종 발행을 막는 상황을 재현합니다.',
+    '통계에 따르면 오늘 글은 말단 포맷 오류가 최종 발행을 막는 상황을 재현합니다.',
     '',
     '[해시태그]',
     '#블로그 #자동화 #품질검사',
@@ -36,12 +36,27 @@ async function main() {
 
   assert(!repaired.includes('_THE_END_'), 'terminal sentinel should be stripped');
   assert(!repaired.includes('마감 뒤에 잘못 붙은 본문'), 'overflow after sentinel should be removed');
+  assert(!/업계 통계|통계에 따르면|조사에 따르면|연구에 따르면/.test(repaired), 'unsupported statistical trigger phrases should be rewritten');
   assert.strictEqual((repaired.slice(-1500).match(/\*\*/g) || []).length % 2, 0, 'bold markers should be balanced');
   assert(
     !after.issues.some((issue) => String(issue.msg).includes('강조 마커'))
       && !after.issues.some((issue) => String(issue.msg).includes('_THE_END_ 이후')),
     'terminal quality issues should be repaired'
   );
+
+  const sourced = [
+    '일반 포스팅 제목',
+    '',
+    'McKinsey 보고서 연구에 따르면 팀 운영 자동화는 반복 업무를 줄이는 데 도움이 됩니다.',
+    '',
+    '[해시태그]',
+    '#블로그 #자동화 #운영',
+    '_THE_END_',
+    '마감 뒤에 잘못 붙은 본문',
+  ].join('\n');
+  const sourcedRepaired = repairTerminalQualityArtifacts(sourced);
+  assert(sourcedRepaired.includes('McKinsey 보고서 연구에 따르면'), 'sourced statistical phrasing should be preserved');
+  assert(!sourcedRepaired.includes('마감 뒤에 잘못 붙은 본문'), 'sourced fixture overflow should still be removed');
 
   console.log(JSON.stringify({ ok: true, repairedLength: repaired.length }, null, 2));
 }

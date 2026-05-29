@@ -946,9 +946,60 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   });
   _logQualityResult(quality, post.charCount);
 
+  if (kind === 'general' && !quality.passed) {
+    const repairedContent = repairTerminalQualityArtifacts(post.content);
+    if (repairedContent && repairedContent !== post.content) {
+      const repairedPost = {
+        ...post,
+        content: repairedContent,
+        charCount: repairedContent.length,
+        deterministicArtifactsRepaired: true,
+      };
+      const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
+        category: context.category,
+        bookInfo: context.book_info || context.data?.book_info || null,
+        topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
+        expectedTitlePattern: context.researchData?.strategy_preferred_pattern || context.data?.strategy_preferred_pattern || null,
+      });
+      post = repairedPost;
+      quality = repairedQuality;
+      if (repairedQuality.passed) {
+        console.log('[품질] ✅ 일반 포스팅 규칙 기반 보정 통과');
+      }
+    }
+  }
+
   for (let attempt = 0; attempt < 2 && (!quality.passed || quality.autoRewriteRecommended); attempt += 1) {
     console.log(`[품질] 초안 보정 시도... (${attempt + 1}/2)`);
-    const retry = await repairFn(context, post, quality, variation);
+    let retry;
+    try {
+      retry = await repairFn(context, post, quality, variation);
+    } catch (error) {
+      if (kind === 'general') {
+        const repairedContent = repairTerminalQualityArtifacts(post.content);
+        if (repairedContent && repairedContent !== post.content) {
+          const repairedPost = {
+            ...post,
+            content: repairedContent,
+            charCount: repairedContent.length,
+            deterministicArtifactsRepaired: true,
+          };
+          const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
+            category: context.category,
+            bookInfo: context.book_info || context.data?.book_info || null,
+            topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
+            expectedTitlePattern: context.researchData?.strategy_preferred_pattern || context.data?.strategy_preferred_pattern || null,
+          });
+          post = repairedPost;
+          quality = repairedQuality;
+          if (repairedQuality.passed) {
+            console.log(`[품질] ✅ LLM 보정 실패 후 규칙 기반 보정 통과: ${error.message}`);
+            break;
+          }
+        }
+      }
+      throw error;
+    }
     const repaired = kind === 'lecture' ? _ensureLectureClosingFloor(retry, context) : retry;
     const retryQuality = await checkQualityEnhanced(repaired.content, kind, {
       lectureNumber: kind === 'lecture' ? context.number : null,
@@ -982,8 +1033,8 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
       const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
         category: context.category,
         bookInfo: context.book_info || context.data?.book_info || null,
-        topicTitleCandidate: context.researchData?.topic_title_candidate || null,
-        expectedTitlePattern: context.researchData?.strategy_preferred_pattern || null,
+        topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
+        expectedTitlePattern: context.researchData?.strategy_preferred_pattern || context.data?.strategy_preferred_pattern || null,
       });
       post = repairedPost;
       quality = repairedQuality;
