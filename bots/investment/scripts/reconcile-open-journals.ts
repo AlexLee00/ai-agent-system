@@ -503,18 +503,35 @@ export async function reconcileOpenJournals({
           })
         : null;
       if (['fetchMyTrades', 'fetchMyTrades_orderid'].includes(exchangeFillResolve?.source)) {
-        const closePlan = await closeEntriesFromResolvedFill(rows, exchangeFillResolve, dryRun);
+        const resolvedPartial = Boolean(exchangeFillResolve?.partial);
+        if (!resolvedPartial) {
+          const closePlan = await closeEntriesFromResolvedFill(rows, exchangeFillResolve, dryRun);
+          results.push({
+            scope: key,
+            symbol: latest.symbol,
+            action: dryRun ? 'would_close_all_no_position_from_exchange_fill' : 'close_all_no_position_from_exchange_fill',
+            targetQty,
+            totalQty,
+            totalValue,
+            latestQty: Number(latest.entry_size || 0),
+            fillResolve: exchangeFillResolve,
+            ...closePlan,
+          });
+          continue;
+        }
+        // 부분 매칭 → with_fill close 금지, no_position(pnl=NULL) 폴백
         results.push({
           scope: key,
           symbol: latest.symbol,
-          action: dryRun ? 'would_close_all_no_position_from_exchange_fill' : 'close_all_no_position_from_exchange_fill',
-          targetQty,
-          totalQty,
-          totalValue,
-          latestQty: Number(latest.entry_size || 0),
+          action: 'skip_partial_exchange_fill',
+          reason: 'partial_fill_match_insufficient_for_full_close',
+          matchedQty: exchangeFillResolve.matchedQty,
+          expectedQty: exchangeFillResolve.expectedQty,
           fillResolve: exchangeFillResolve,
-          ...closePlan,
         });
+        for (const row of rows) {
+          await closeEntryAtBreakeven(row, 'journal_reconciled_no_position', dryRun);
+        }
         continue;
       }
       for (const row of rows) {
