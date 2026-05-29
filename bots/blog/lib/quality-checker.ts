@@ -306,7 +306,7 @@ function checkTerminalSectionOverflow(content) {
   const issues = [];
   const raw = String(content || '');
 
-  const explicitEndIndex = raw.indexOf('_THE_END_');
+  const explicitEndIndex = raw.lastIndexOf('_THE_END_');
   if (explicitEndIndex >= 0 && raw.slice(explicitEndIndex + '_THE_END_'.length).trim().length > 0) {
     issues.push({ severity: 'error', msg: '_THE_END_ 이후 본문 감지 — 마감 뒤에 본문이 다시 붙음' });
   }
@@ -330,9 +330,9 @@ function repairTerminalQualityArtifacts(content) {
 
   next = repairUnsupportedStatisticalClaims(next);
 
-  const explicitEndIndex = next.indexOf('_THE_END_');
+  const explicitEndIndex = next.lastIndexOf('_THE_END_');
   if (explicitEndIndex >= 0) {
-    next = next.slice(0, explicitEndIndex).trimEnd();
+    next = next.slice(0, explicitEndIndex).replace(/_THE_END_/g, '').trimEnd();
   }
 
   const hashtagSection = /(^|\n)\s*(?:<p[^>]*>\s*)?(?:<h[1-3][^>]*>\s*)?(?:<strong>\s*)?(?:\*\*\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\*\*)?(?:\s*<\/strong>)?(?:\s*<\/h[1-3]>)?(?:\s*<\/p>)?\s*(?:\n|$)/i.exec(next);

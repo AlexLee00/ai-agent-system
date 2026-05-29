@@ -292,9 +292,9 @@ function trimTerminalOverflowContent(content) {
   let next = String(content || '').trim();
   if (!next) return next;
 
-  const explicitEndIndex = next.indexOf('_THE_END_');
+  const explicitEndIndex = next.lastIndexOf('_THE_END_');
   if (explicitEndIndex >= 0) {
-    next = next.slice(0, explicitEndIndex).trimEnd();
+    next = next.slice(0, explicitEndIndex).replace(/_THE_END_/g, '').trimEnd();
   }
 
   const hashtagSection = /(^|\n)\s*(?:<strong>\s*)?(?:\*\*\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\*\*)?(?:\s*<\/strong>)?\s*(?:\n|$)/i.exec(next);
