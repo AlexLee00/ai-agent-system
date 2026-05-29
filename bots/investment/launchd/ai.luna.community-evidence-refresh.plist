@@ -25,13 +25,13 @@
   <false/>
   <key>KeepAlive</key>
   <false/>
-  <!-- 매일 06:15 KST — 스케줄 분산(06:00 피크 완화) -->
+  <!-- 매일 01:30 KST — 새벽 분산(06시 피크 완화) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>1</integer>
     <key>Minute</key>
-    <integer>15</integer>
+    <integer>30</integer>
   </dict>
   <key>TimeOut</key>
   <integer>600</integer>

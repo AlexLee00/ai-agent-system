@@ -19,15 +19,15 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매주 일요일 06:55 KST — 스케줄 분산(06:00 피크 완화) -->
+  <!-- 매주 일요일 05:30 KST — 새벽 분산(06시 피크 완화) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
     <integer>0</integer>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>5</integer>
     <key>Minute</key>
-    <integer>55</integer>
+    <integer>30</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>

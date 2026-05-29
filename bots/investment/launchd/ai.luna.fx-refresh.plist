@@ -15,11 +15,11 @@
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
-  <!-- 매일 06:00 KST = 21:00 UTC (launchd는 KST 기준, UTC 변환 금지) -->
+  <!-- 매일 00:00 KST — 새벽 분산(06시 피크 완화, 환율은 가장 먼저) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>0</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>
