@@ -28,11 +28,15 @@ function main() {
   const env = plist.EnvironmentVariables || {};
 
   assert.equal(plist.Label, 'ai.hub.llm-oauth-monitor', 'unexpected launchd label');
+  assert.equal(args[0], '/opt/homebrew/bin/node', 'oauth monitor launchd must run through node so warning flags are honored');
+  assert(args.includes('--disable-warning=DEP0205'), 'oauth monitor launchd must suppress known tsx DEP0205 stderr noise');
+  assert(args.includes('--import') && args.includes('tsx'), 'oauth monitor launchd must load tsx through node --import');
   assert(args.some((entry) => String(entry).endsWith('/bots/hub/scripts/run-oauth-monitor.ts')), 'oauth monitor must run run-oauth-monitor.ts');
   assert.equal(plist.RunAtLoad, true, 'oauth monitor must run at load');
   assert(asNumber(plist.StartInterval, 'StartInterval') <= 900, 'oauth monitor interval must be 15 minutes or less');
   assert.equal(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI, undefined, 'retired gemini-oauth monitor must not be configured');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI || '').trim(), 'true', 'Gemini CLI OAuth monitor must be explicitly required');
+  assert.equal(String(env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase(), 'false', 'Gemini CLI OAuth monitor must override inherited HUB_LLM_GEMINI_DISABLED=true');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE || '').trim(), 'true', 'Gemini Code Assist service monitor must be explicitly required');
   assert.equal(String(env.HUB_OAUTH_MONITOR_ALLOW_KEYCHAIN || '').trim(), 'true', 'Claude Code OAuth monitor must sync refreshed credentials into Keychain');
   assert.equal(String(env.HUB_OAUTH_MONITOR_PUBLISH_EVENTS || '').trim(), 'true', 'OAuth monitor must publish standard event_lake events');
