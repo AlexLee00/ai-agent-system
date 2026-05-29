@@ -492,6 +492,8 @@ await build({
   format: 'cjs',
   target: ['node22'],
   sourcemap: true,
+  define: { 'import.meta.url': '__IMPORT_META_URL__' },
+  banner: { js: "const __IMPORT_META_URL__ = require('node:url').pathToFileURL(__filename).href;" },
   logLevel: 'info',
   tsconfig: path.join(root, 'tsconfig.strict.json'),
 });

@@ -1798,7 +1798,6 @@ async function buildReport() {
     positionStrategyRemediationActionRetireApplyCommand: remediationView.actionRetireApplyCommand,
     positionStrategyRemediationReportCommand: remediationView.reportCommand,
     positionStrategyRemediationHistoryCommand: remediationView.historyCommand,
-    positionStrategyRemediationRefreshCommand: remediationView.refreshCommand,
     positionStrategyRemediationNormalizeDryRunCommand: remediationView.normalizeDryRunCommand,
     positionStrategyRemediationNormalizeApplyCommand: remediationView.normalizeApplyCommand,
     positionStrategyRemediationRetireDryRunCommand: remediationView.retireDryRunCommand,

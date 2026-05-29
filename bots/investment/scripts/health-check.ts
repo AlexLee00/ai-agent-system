@@ -1316,7 +1316,6 @@ async function main() {
             remediationReportCommand: remediationView.remediationReportCommand,
             remediationAutonomousApplyCommand: remediationView.remediationActionAutonomousApplyCommand || remediationView.remediationCommands?.autonomousApply || null,
             remediationHistoryCommand: remediationView.remediationHistoryCommand,
-            remediationRefreshCommand,
             remediationNormalizeDryRunCommand: remediationView.remediationNormalizeDryRunCommand,
             remediationNormalizeApplyCommand: remediationView.remediationNormalizeApplyCommand,
             remediationRetireDryRunCommand: remediationView.remediationRetireDryRunCommand,
