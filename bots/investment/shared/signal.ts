@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import { isPaperMode } from './secrets.ts';
 import { publishAlert } from './alert-publisher.ts';
+import * as journalDb from './trade-journal-db.ts';
 import { getCapitalConfig, getMarketAvailableFunds } from './capital-manager.ts';
 import { getExchangeEvidenceBaseline, getInvestmentExecutionRuntimeConfig } from './runtime-config.ts';
 
@@ -365,6 +366,220 @@ export async function checkSafetyGates(signal) {
 
 // ─── 단일 실행 진입점 ───────────────────────────────────────────────
 
+function isDataCollectionPaperSignal(signal = {}) {
+  return signal.dataCollectionPaper === true || signal.data_collection_paper === true;
+}
+
+function normalizeSignalAmountUsdt(signal = {}) {
+  return Number(signal.amount_usdt ?? signal.amountUsdt ?? signal.amount ?? 0);
+}
+
+function inferSignalMarket(signal = {}) {
+  if (signal.market) return signal.market;
+  if (signal.exchange === 'kis') return 'domestic_stock';
+  if (signal.exchange === 'kis_overseas') return 'overseas_stock';
+  return 'crypto';
+}
+
+function normalizePaperPrice(order = {}) {
+  const price = Number(order.price ?? order.average ?? order.avgPrice ?? 0);
+  return Number.isFinite(price) && price > 0 ? price : 0;
+}
+
+function normalizePaperFilled(order = {}, amountUsdt = 0, price = 0) {
+  const filled = Number(order.filled ?? order.amount ?? 0);
+  if (Number.isFinite(filled) && filled > 0) return filled;
+  if (price > 0 && amountUsdt > 0) return amountUsdt / price;
+  return 0;
+}
+
+function normalizeEpochMs(value, fallback) {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+async function defaultPaperMarketBuy(symbol, amountUsdt) {
+  const { marketBuy } = await import('../team/hephaestos.ts');
+  return marketBuy(symbol, amountUsdt, true);
+}
+
+async function defaultPaperMarketSell(symbol, amount) {
+  const { marketSell } = await import('../team/hephaestos.ts');
+  return marketSell(symbol, amount, true);
+}
+
+export async function executePaperSimulation(signal, {
+  traceId = signal.traceId || `SIG-PAPER-${Date.now()}`,
+  reason = 'global_paper',
+  marketBuyFn = defaultPaperMarketBuy,
+  marketSellFn = defaultPaperMarketSell,
+  journal = journalDb,
+  dbRun = db.run,
+  alertPublisher = publishAlert,
+  nowFn = Date.now,
+} = {}) {
+  const symbol = String(signal.symbol || '').trim().toUpperCase();
+  const action = String(signal.action || '').toUpperCase();
+  const exchange = signal.exchange || 'binance';
+  const amountUsdt = normalizeSignalAmountUsdt(signal);
+  const now = nowFn();
+
+  if (exchange !== 'binance') {
+    throw new Error(`[PAPER:${traceId}] paper simulation supports binance only: ${exchange}`);
+  }
+  if (!symbol) throw new Error(`[PAPER:${traceId}] symbol required`);
+
+  if (action === ACTIONS.BUY) {
+    if (!(amountUsdt > 0)) throw new Error(`[PAPER:${traceId}] BUY amount_usdt > 0 required`);
+
+    const order = await marketBuyFn(symbol, amountUsdt, true);
+    if (order?.dryRun !== true) {
+      throw new Error(`[PAPER:${traceId}] paper BUY guard failed: marketBuy did not return dryRun=true`);
+    }
+
+    const entryPrice = normalizePaperPrice(order);
+    const entrySize = normalizePaperFilled(order, amountUsdt, entryPrice);
+    const entryValue = Number(order.cost ?? order.totalUsdt ?? (entryPrice > 0 && entrySize > 0 ? entryPrice * entrySize : amountUsdt));
+    const tradeId = await journal.generateTradeId();
+
+    await journal.insertJournalEntry({
+      trade_id: tradeId,
+      signal_id: signal.id ?? null,
+      market: inferSignalMarket(signal),
+      exchange,
+      symbol,
+      is_paper: true,
+      trade_mode: 'paper_data',
+      entry_time: now,
+      entry_price: entryPrice,
+      entry_size: entrySize,
+      entry_value: Number.isFinite(entryValue) && entryValue > 0 ? entryValue : amountUsdt,
+      direction: 'long',
+      signal_time: normalizeEpochMs(signal.signal_time ?? signal.created_at_ms, now),
+      decision_time: normalizeEpochMs(signal.decision_time, now),
+      execution_time: now,
+      signal_to_exec_ms: now - normalizeEpochMs(signal.signal_time ?? signal.created_at_ms, now),
+      confidence: signal.confidence ?? null,
+      reasoning: signal.reasoning ?? null,
+      market_regime: signal.market_regime ?? signal.regime ?? null,
+      market_regime_confidence: signal.market_regime_confidence ?? null,
+      strategy_family: signal.strategy_family ?? null,
+      strategy_quality: signal.strategy_quality ?? null,
+      strategy_readiness: signal.strategy_readiness ?? null,
+      strategy_route: signal.strategy_route ?? null,
+      execution_origin: reason === 'data_collection'
+        ? 'paper_data_collection'
+        : 'global_paper_simulation',
+      quality_flag: 'paper_data',
+      exclude_from_learning: false,
+      incident_link: `paper_simulation:${reason}:${traceId}`,
+    });
+    if (typeof journal.getJournalEntryByTradeId === 'function') {
+      const persisted = await journal.getJournalEntryByTradeId(tradeId).catch(() => null);
+      if (!persisted) {
+        throw new Error(`[PAPER:${traceId}] trade_journal paper position insert verification failed: ${tradeId}`);
+      }
+    }
+
+    await dbRun(
+      `UPDATE signals SET trace_id = ?, status = 'paper_executed' WHERE id = ?`,
+      [traceId, signal.id ?? ''],
+    ).catch(() => {});
+
+    const msg = `[PAPER:${traceId}] ${symbol} BUY $${amountUsdt} @ ${entryPrice || 'unknown'} (${reason})`;
+    console.log(msg);
+    alertPublisher({
+      from_bot: 'luna',
+      event_type: 'trade',
+      alert_level: 1,
+      message: msg,
+      payload: { ...signal, traceId, paperPositionId: tradeId, paperOrder: order },
+    });
+
+    return {
+      executed: true,
+      mode: 'paper',
+      traceId,
+      reason,
+      paperPositionId: tradeId,
+      paperOrder: order,
+    };
+  }
+
+  if (action === ACTIONS.SELL) {
+    const openRows = await db.query(
+      `SELECT trade_id, entry_size, entry_price, entry_value
+       FROM investment.trade_journal
+       WHERE symbol = ?
+         AND exchange = ?
+         AND is_paper = true
+         AND trade_mode = 'paper_data'
+         AND status = 'open'
+       ORDER BY entry_time DESC
+       LIMIT 1`,
+      [symbol, exchange],
+    ).catch(() => []);
+    const open = openRows?.[0] || null;
+    if (!open) {
+      return { executed: false, mode: 'paper', traceId, reason, skipped: 'no_open_paper_position' };
+    }
+
+    const amount = Number(signal.amount ?? signal.quantity ?? signal.size ?? open.entry_size ?? 0);
+    if (!(amount > 0)) {
+      return { executed: false, mode: 'paper', traceId, reason, skipped: 'invalid_sell_amount' };
+    }
+
+    const order = await marketSellFn(symbol, amount, true);
+    if (order?.dryRun !== true) {
+      throw new Error(`[PAPER:${traceId}] paper SELL guard failed: marketSell did not return dryRun=true`);
+    }
+
+    const exitPrice = normalizePaperPrice(order);
+    const exitValue = Number(order.cost ?? order.totalUsdt ?? (exitPrice > 0 ? exitPrice * amount : 0));
+    const entryValue = Number(open.entry_value || 0);
+    const pnlAmount = exitValue - entryValue;
+    const pnlPercent = entryValue > 0 ? (pnlAmount / entryValue) * 100 : null;
+
+    await journal.closeJournalEntry(open.trade_id, {
+      exitTime: now,
+      exitPrice,
+      exitValue,
+      exitReason: `paper_${reason}`,
+      pnlAmount,
+      pnlPercent,
+      feeTotal: 0,
+      pnlNet: pnlAmount,
+      execution_origin: reason === 'data_collection'
+        ? 'paper_data_collection'
+        : 'global_paper_simulation',
+      quality_flag: 'paper_data',
+      exclude_from_learning: false,
+      incident_link: `paper_simulation:${reason}:${traceId}`,
+      exit_match_source: 'paper_simulation',
+    });
+
+    await dbRun(
+      `UPDATE signals SET trace_id = ?, status = 'paper_executed' WHERE id = ?`,
+      [traceId, signal.id ?? ''],
+    ).catch(() => {});
+
+    return {
+      executed: true,
+      mode: 'paper',
+      traceId,
+      reason,
+      paperPositionId: open.trade_id,
+      paperOrder: order,
+      pnlAmount,
+      pnlPercent,
+    };
+  }
+
+  return { executed: false, mode: 'paper', traceId, reason, skipped: `unsupported_action:${action}` };
+}
+
 /**
  * executeSignal — 모든 실행봇의 단일 진입점
  *
@@ -377,18 +592,15 @@ export async function executeSignal(signal) {
   const traceId  = `SIG-${(signal.exchange || 'UNK').toUpperCase()}-${Date.now()}`;
   signal.traceId = traceId;
 
-  const paperMode = isPaperMode();
+  const globalPaperMode = isPaperMode();
+  const paperExecution = globalPaperMode || isDataCollectionPaperSignal(signal);
 
-  // ── 1단계: PAPER_MODE 최우선 체크 ───────────────────────────────
-  if (paperMode) {
-    const msg = `[PAPER:${traceId}] ${signal.symbol} ${signal.action} $${signal.amount_usdt}`;
-    console.log(msg);
-    await db.run(
-      `UPDATE signals SET trace_id = ?, status = 'paper' WHERE id = ?`,
-      [traceId, signal.id ?? ''],
-    ).catch(() => {});
-    publishAlert({ from_bot: 'luna', event_type: 'trade', alert_level: 1, message: msg, payload: signal });
-    return { executed: false, mode: 'paper', traceId };
+  // ── 1단계: PAPER_MODE / data-collection paper 최우선 체크 ───────
+  if (paperExecution) {
+    return executePaperSimulation(signal, {
+      traceId,
+      reason: globalPaperMode ? 'global_paper' : 'data_collection',
+    });
   }
 
   // ── 2단계: 자산 보호 5원칙 검사 ─────────────────────────────────

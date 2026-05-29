@@ -187,6 +187,7 @@ const {
   getMinSellAmount,
   isBinanceOrderStillOpen,
 } = marketOrderExecution;
+export { marketBuy, marketSell };
 
 export function buildBinancePendingReconcilePayload(signal = {}) {
   return buildBinancePendingReconcilePayloadBase(signal, {
