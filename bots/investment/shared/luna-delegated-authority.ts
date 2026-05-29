@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { spawnSync } from 'node:child_process';
+import { getMinOrderAmount } from './order-rules.ts';
 
 export const LUNA_DELEGATED_AUTHORITY_TOKEN = 'luna-delegated-authority';
 
@@ -149,15 +150,33 @@ function calcRatioLimits(availableBalance, tradeRatio, dailyRatio, tradeHardCapR
 
 /**
  * ratio 모드에서 가용잔고 0 → 거래 보류(안전).
- * maxTradeUsdt = 0(no-cap)이면 안전 fallback으로 최솟값($11)을 한도로 사용.
+ * maxTradeUsdt=0은 레거시 no-cap처럼 보일 수 있으므로 capBlockers에서 별도 차단한다.
  */
 function safeRatioFallback() {
   return {
-    maxTradeUsdt: BINANCE_MIN_ORDER_USDT,   // 최소 주문 금액 이하 허용 → 사실상 차단
-    maxDailyUsdt: BINANCE_MIN_ORDER_USDT,
-    hardCapTradeUsdt: BINANCE_MIN_ORDER_USDT,
-    hardCapDailyUsdt: BINANCE_MIN_ORDER_USDT,
+    maxTradeUsdt: 0,
+    maxDailyUsdt: 0,
+    hardCapTradeUsdt: 0,
+    hardCapDailyUsdt: 0,
   };
+}
+
+function normalizeExchange(exchange) {
+  const value = String(exchange || '').trim().toLowerCase();
+  if (value === 'kis_domestic') return 'kis';
+  if (value === 'overseas' || value === 'kis-us' || value === 'kis_us') return 'kis_overseas';
+  return value || 'binance';
+}
+
+function resolveMinOrderAmount(exchange) {
+  const normalized = normalizeExchange(exchange);
+  const ruleMin = Number(getMinOrderAmount(normalized) || 0);
+  return normalized === 'binance' ? Math.max(BINANCE_MIN_ORDER_USDT, ruleMin) : ruleMin;
+}
+
+function shouldEnforceMinOrderInDelegatedPolicy(exchange) {
+  // 주식 1주 최소 주문은 심볼별 현재가가 필요하므로 KIS 주문/사이징 단계에서 처리한다.
+  return normalizeExchange(exchange) === 'binance';
 }
 
 // ─── Async runtime inputs ──────────────────────────────────────────────────────
@@ -167,6 +186,7 @@ function safeRatioFallback() {
  * 실패 시 { availableBalance: 0, regime: null } → 거래 보류(안전).
  */
 export async function resolveRuntimeLimitInputs(exchange = 'binance', market = 'binance') {
+  const resolvedExchange = normalizeExchange(exchange);
   const [capitalMod, dbStrategyMod] = await Promise.allSettled([
     import('./capital-manager.ts'),
     import('./db/strategy.ts'),
@@ -175,7 +195,11 @@ export async function resolveRuntimeLimitInputs(exchange = 'binance', market = '
   let availableBalance = 0;
   if (capitalMod.status === 'fulfilled') {
     try {
-      availableBalance = await capitalMod.value.getAvailableBalance(exchange);
+      if (typeof capitalMod.value.getMarketAvailableFunds === 'function') {
+        availableBalance = await capitalMod.value.getMarketAvailableFunds(resolvedExchange);
+      } else {
+        availableBalance = await capitalMod.value.getAvailableBalance(resolvedExchange);
+      }
     } catch (e) {
       console.warn('[delegated-authority] 잔고 조회 실패:', e?.message);
     }
@@ -191,7 +215,12 @@ export async function resolveRuntimeLimitInputs(exchange = 'binance', market = '
     }
   }
 
-  return { availableBalance: availableBalance ?? 0, regime };
+  return {
+    availableBalance: availableBalance ?? 0,
+    regime,
+    exchange: resolvedExchange,
+    minOrderAmount: resolveMinOrderAmount(resolvedExchange),
+  };
 }
 
 // ─── Core policy ───────────────────────────────────────────────────────────────
@@ -215,6 +244,8 @@ export function getLunaDelegatedAuthorityPolicy(env = null, runtimeInputs = null
     null
   );
   const regimeMultiplier = getRegimeMultiplier(currentRegime, effectiveEnv);
+  const exchange = normalizeExchange(runtimeInputs?.exchange || effectiveEnv.LUNA_DELEGATED_RATIO_EXCHANGE || 'binance');
+  const minOrderAmount = Number(runtimeInputs?.minOrderAmount ?? resolveMinOrderAmount(exchange) ?? 0);
 
   // ── 한도 계산: ratio 모드(v2) vs 레거시 $ 모드 ──
   let maxTradeUsdt, maxDailyUsdt, hardCaps, limitMode;
@@ -267,6 +298,8 @@ export function getLunaDelegatedAuthorityPolicy(env = null, runtimeInputs = null
       effectiveEnv.LUNA_DELEGATED_MAX_OPEN_POSITIONS || effectiveEnv.LUNA_LIVE_FIRE_MAX_OPEN,
       DEFAULT_MAX_OPEN_POSITIONS,
     ))),
+    exchange,
+    minOrderAmount,
     regime: currentRegime,
     regimeMultiplier,
     availableBalance: runtimeInputs?.availableBalance ?? null,
@@ -304,6 +337,16 @@ function capBlockers(caps = {}, policy) {
   const maxUsdt      = optionalPositiveNumber(caps.maxUsdt, DEFAULT_MAX_TRADE_USDT);
   const maxDailyUsdt = positiveNumber(caps.maxDailyUsdt, DEFAULT_MAX_DAILY_USDT);
   const maxOpen      = Math.max(1, Math.round(positiveNumber(caps.maxOpen, DEFAULT_MAX_OPEN_POSITIONS)));
+  if (policy.limitMode === 'ratio') {
+    if (!(Number(policy.availableBalance) > 0)) blockers.push('available_funds_unavailable');
+    if (
+      shouldEnforceMinOrderInDelegatedPolicy(policy.exchange)
+      && Number(policy.minOrderAmount) > 0
+      && Number(policy.maxTradeUsdt) < Number(policy.minOrderAmount)
+    ) {
+      blockers.push(`trade_cap_below_min_order:${policy.maxTradeUsdt}<${policy.minOrderAmount}`);
+    }
+  }
   if (policy.maxTradeUsdt > 0 && maxUsdt > policy.maxTradeUsdt) blockers.push(`trade_cap_exceeded:${maxUsdt}>${policy.maxTradeUsdt}`);
   if (maxDailyUsdt > policy.maxDailyUsdt) blockers.push(`daily_cap_exceeded:${maxDailyUsdt}>${policy.maxDailyUsdt}`);
   if (maxOpen > policy.maxOpenPositions) blockers.push(`open_position_cap_exceeded:${maxOpen}>${policy.maxOpenPositions}`);
@@ -363,12 +406,13 @@ function _buildDecision({ action = 'report', policy, finalGate = null, readiness
 export function buildLunaDelegatedAuthorityDecision({
   action = 'report',
   env = null,
+  runtimeInputs = null,
   finalGate = null,
   readiness = null,
   caps = {},
   reconcileEvidence = null,
 } = {}) {
-  const policy = getLunaDelegatedAuthorityPolicy(env, null);
+  const policy = getLunaDelegatedAuthorityPolicy(env, runtimeInputs);
   return _buildDecision({ action, policy, finalGate, readiness, caps, reconcileEvidence });
 }
 
