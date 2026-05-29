@@ -27,7 +27,7 @@ OPENDART_API_KEY = os.environ.get("OPENDART_API_KEY", "")
 OPENDART_BASE_URL = os.environ.get("OPENDART_BASE_URL", "https://opendart.fss.or.kr/api")
 PG_DSN = os.environ.get(
     "PG_DSN",
-    "host=localhost port=5432 dbname=jay user=postgres"
+    "host=localhost port=5432 dbname=jay"
 )
 
 # 일일 처리 한도 (기본 200건 — API 부하 제한)
