@@ -91,6 +91,30 @@ assert.equal(candidateBacktestTest.rowsHaveUsableTrades([
 const fallbackQuality = candidateBacktestTest.evaluateQuality(fallbackRows);
 assert.equal(fallbackQuality.fresh ?? true, true, 'usable OHLCV fallback should be considered fresh');
 assert.equal(fallbackQuality.qualityRowSelection, 'best_per_walk_forward_period', 'quality gate should use period representatives');
+const fallbackNoOosQuality = candidateBacktestTest.applyFallbackNoOosGate({ ...fallbackQuality }, true);
+assert.equal(fallbackNoOosQuality.healthy, false, 'OOS-less fallback rows must not be healthy');
+assert.equal(fallbackNoOosQuality.wouldBlock, true, 'OOS-less fallback rows must would-block');
+assert.equal(fallbackNoOosQuality.gateStatus, 'would_block_no_oos', 'OOS-less fallback rows should have an explicit no-OOS gate status');
+assert.ok(fallbackNoOosQuality.reasons.includes('fallback_no_oos_validation'), 'OOS-less fallback block reason should be explicit');
+const walkForwardOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candidateBacktestTest.evaluateQuality([
+  {
+    status: 'ok',
+    selection_method: 'walk_forward',
+    oos_status: 'ok',
+    walk_forward_days: 365,
+    total_trades: 30,
+    total_trades_oos: 12,
+    n_obs_oos: 109,
+    sharpe_ratio: 1.4,
+    sharpe_is: 1.4,
+    sharpe_oos: 1.2,
+    sharpe_oos_deflated: 1.1,
+    max_drawdown: 10,
+    win_rate: 55,
+  },
+]), false);
+assert.equal(walkForwardOosQuality.gateStatus, 'pass', 'walk-forward OOS rows should stay eligible when fallback was not used');
+assert.equal(walkForwardOosQuality.healthy, true, 'walk-forward OOS rows should remain healthy when they pass quality gates');
 
 const officialDomesticRows = candidateBacktestTest.buildOfficialDomesticOhlcvRows([
   { basDt: '20260520', mkp: '1000', hipr: '1030', lopr: '990', clpr: '1020', trqu: '10000' },
@@ -189,6 +213,8 @@ const payload = {
   wouldBlocked: result.wouldBlocked,
   negativeReasons: negative?.reasons || [],
   ohlcvFallbackUsable: candidateBacktestTest.rowsHaveUsableTrades(fallbackRows),
+  fallbackNoOosGateStatus: fallbackNoOosQuality.gateStatus,
+  walkForwardOosGateStatus: walkForwardOosQuality.gateStatus,
   unrealisticSharpeCapped: unrealisticSharpeQuality.sharpe,
   periodRepresentativeRows: periodRepresentativeQuality.qualityRows.length,
   stableSampleFirst: lowSampleHighSharpeRepresentativeQuality.gateStatus === 'pass',

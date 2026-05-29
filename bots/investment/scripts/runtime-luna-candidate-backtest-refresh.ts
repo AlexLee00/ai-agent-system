@@ -712,6 +712,17 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   };
 }
 
+function applyFallbackNoOosGate(quality: any, fallbackUsed: boolean) {
+  if (!fallbackUsed) return quality;
+  const reasons = Array.isArray(quality?.reasons) ? quality.reasons : [];
+  quality.healthy = false;
+  quality.wouldBlock = true;
+  quality.gateStatus = 'would_block_no_oos';
+  quality.reasons = [...new Set([...reasons, 'fallback_no_oos_validation'])];
+  if (quality.oosStatus == null) quality.oosStatus = 'insufficient_data';
+  return quality;
+}
+
 function fixtureRows(symbol: string) {
   if (symbol.includes('NEG')) {
     return [{ status: 'ok', total_trades: 12, sharpe_ratio: -0.7, max_drawdown: 18, win_rate: 24 }];
@@ -955,6 +966,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       }
     }
     const quality = evaluateQuality(allRows, market);
+    applyFallbackNoOosGate(quality, fallbackUsed);
     if (budgetPartial) {
       quality.healthy = false;
       quality.wouldBlock = true;
@@ -1118,6 +1130,7 @@ export const __test = {
   buildOhlcvMomentumBacktestRows,
   buildOfficialDomesticOhlcvRows,
   evaluateQuality,
+  applyFallbackNoOosGate,
   interleaveCandidatesByMarket,
   rowsHaveUsableTrades,
   selectBestQualityRows,
