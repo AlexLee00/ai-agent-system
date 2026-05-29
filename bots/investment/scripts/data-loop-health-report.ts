@@ -18,6 +18,8 @@
 
 import { query, close } from '../shared/db/core.ts';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys.js');
@@ -133,8 +135,157 @@ async function fetchLearningProgress() {
   return rows || [];
 }
 
+async function fetchLaunchdHealth() {
+  try {
+    const launchdDir = new URL('../launchd', import.meta.url).pathname;
+    const plistFiles = fs.readdirSync(launchdDir).filter((f) => f.endsWith('.plist'));
+
+    const definedLabels: string[] = [];
+    for (const file of plistFiles) {
+      const content = fs.readFileSync(`${launchdDir}/${file}`, 'utf8');
+      const match = content.match(/<key>Label<\/key>\s*<string>(.*?)<\/string>/);
+      if (match) definedLabels.push(match[1].trim());
+    }
+
+    const result = spawnSync('launchctl', ['list'], { encoding: 'utf8', timeout: 5000 });
+    const registeredLabels = new Set<string>();
+    if (result.stdout) {
+      for (const line of result.stdout.split('\n')) {
+        const parts = line.split('\t');
+        if (parts.length >= 3) registeredLabels.add(parts[2].trim());
+      }
+    }
+
+    const unregistered = definedLabels.filter((l) => !registeredLabels.has(l));
+    return {
+      defined: definedLabels.length,
+      registered: definedLabels.length - unregistered.length,
+      unregistered,
+    };
+  } catch (err) {
+    console.error('[DataLoopHealth] launchd 점검 실패:', err);
+    return { defined: 0, registered: 0, unregistered: [] };
+  }
+}
+
+async function fetchOpsSchedulerHealth() {
+  try {
+    const stateFile = new URL('../output/ops/luna-ops-scheduler-state.json', import.meta.url).pathname;
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const now = Date.now();
+    const staleJobs: { name: string; elapsedHours: number; thresholdHours: number }[] = [];
+
+    for (const [name, job] of Object.entries(state.jobs || {})) {
+      const lastRunAt = (job as any).lastRunAt;
+      if (!lastRunAt) continue;
+
+      const elapsedHours = (now - new Date(lastRunAt).getTime()) / 3_600_000;
+      let thresholdHours = 48;
+      if (/15min|30min|hourly/.test(name)) thresholdHours = 6;
+      else if (/weekly/.test(name)) thresholdHours = 336;
+
+      if (elapsedHours > thresholdHours) {
+        staleJobs.push({ name, elapsedHours: Math.round(elapsedHours), thresholdHours });
+      }
+    }
+
+    return { staleJobs };
+  } catch (err) {
+    console.error('[DataLoopHealth] ops-scheduler 점검 실패:', err);
+    return { staleJobs: [] };
+  }
+}
+
+async function fetchTableFreshness() {
+  const checks = [
+    { table: 'investment.positions', tsCol: 'updated_at', epochMs: false, expectHours: 1 },
+    { table: 'investment.trade_journal', tsCol: 'entry_time', epochMs: true, expectHours: 168 },
+    { table: 'investment.market_regime_snapshots', tsCol: 'captured_at', epochMs: false, expectHours: 2 },
+    { table: 'investment.candidate_universe', tsCol: 'created_at', epochMs: false, expectHours: 48 },
+    { table: 'investment.guard_events', tsCol: 'triggered_at', epochMs: false, expectHours: 48 },
+    { table: 'investment.account_balances', tsCol: 'updated_at', epochMs: false, expectHours: 1 },
+  ];
+
+  const results: { table: string; status: 'ok' | 'stale' | 'missing'; elapsedHours?: number; expectHours: number }[] = [];
+
+  for (const { table, tsCol, epochMs, expectHours } of checks) {
+    try {
+      const tsExpr = epochMs ? `to_timestamp(MAX(${tsCol}) / 1000.0)` : `MAX(${tsCol})`;
+      const rows = await query(`SELECT ${tsExpr} AS latest FROM ${table}`, []);
+      const latest = rows?.[0]?.latest;
+      if (!latest) {
+        results.push({ table, status: 'stale', elapsedHours: undefined, expectHours });
+        continue;
+      }
+      const elapsedHours = (Date.now() - new Date(latest).getTime()) / 3_600_000;
+      results.push({
+        table,
+        status: elapsedHours > expectHours ? 'stale' : 'ok',
+        elapsedHours: Math.round(elapsedHours),
+        expectHours,
+      });
+    } catch (err: any) {
+      const isMissing = /relation|does not exist/i.test(err?.message || '');
+      results.push({ table, status: isMissing ? 'missing' : 'stale', expectHours });
+    }
+  }
+
+  return results;
+}
+
+function buildFreshnessSection(launchd, opsScheduler, tableFreshness) {
+  const tables: any[] = Array.isArray(tableFreshness) ? tableFreshness : [];
+  const staleJobs: any[] = opsScheduler?.staleJobs ?? [];
+  const unregistered: string[] = launchd?.unregistered ?? [];
+  const ldDefined: number = launchd?.defined ?? 0;
+  const ldRegistered: number = launchd?.registered ?? 0;
+
+  let section = `*7. 프로세스/테이블 신선도*\n`;
+  let hasCritical = false;
+  let hasWarn = false;
+
+  // Table freshness
+  for (const t of tables) {
+    if (t.status === 'missing') {
+      section += `🔴 CRITICAL: \`${t.table}\` MISSING\n`;
+      hasCritical = true;
+    } else if (t.status === 'stale') {
+      const hrs = t.elapsedHours !== undefined ? `${t.elapsedHours}h` : '?h';
+      if ((t.elapsedHours ?? 0) > 24) {
+        section += `🔴 CRITICAL: \`${t.table}\` STALE ${hrs} (기대: ${t.expectHours}h)\n`;
+        hasCritical = true;
+      } else {
+        section += `⚠️ WARN: \`${t.table}\` STALE ${hrs} (기대: ${t.expectHours}h)\n`;
+        hasWarn = true;
+      }
+    }
+  }
+
+  // Ops-scheduler stale jobs
+  for (const j of staleJobs) {
+    section += `⚠️ WARN: ops \`${j.name}\` ${j.elapsedHours}h 정지 (기대: ${j.thresholdHours}h)\n`;
+    hasWarn = true;
+  }
+
+  // Launchd unregistered
+  if (unregistered.length > 0) {
+    section += `⚠️ WARN: launchd 미등록 ${unregistered.length}개:\n`;
+    for (const l of unregistered) {
+      section += `  • \`${l}\`\n`;
+    }
+    hasWarn = true;
+  }
+
+  if (!hasCritical && !hasWarn) {
+    section += `✅ 모두 정상 (미등록/stale 없음)\n`;
+  }
+
+  section += `  launchd: ${ldRegistered}/${ldDefined} 등록\n`;
+  return { section, hasCritical };
+}
+
 function buildTelegramMessage(data) {
-  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop } = data;
+  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness } = data;
   const loopStatus = fullDataLoop ? '🟢 ENABLED' : '🟡 DISABLED (shadow)';
 
   let msg = `📊 *루나 데이터 루프 건강 보고 — ${TODAY}*\n\n`;
@@ -180,7 +331,11 @@ function buildTelegramMessage(data) {
     msg += `  • ${latest.trade_date}: ${Number(latest.avg_progress || 0).toFixed(3)}\n\n`;
   }
 
-  msg += `_데이터 루프: 거래 → 분석 → 피드백 → 학습 → 진화 ♻️_`;
+  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness);
+  msg += freshnessSection + '\n';
+
+  const statusEmoji = hasCritical ? '🚨' : '✅';
+  msg += `_${statusEmoji} 데이터 루프: 거래 → 분석 → 피드백 → 학습 → 진화 ♻️_`;
   return msg;
 }
 
@@ -213,7 +368,7 @@ async function main() {
   const fullDataLoop = !['0', 'false', 'no', 'off', 'disabled']
     .includes(String(process.env.LUNA_FULL_DATA_LOOP_ENABLED ?? 'true').toLowerCase());
 
-  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning] = await Promise.allSettled([
+  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness] = await Promise.allSettled([
     fetchTradeStats(),
     fetchGuardOutcomeStats(),
     fetchGuardEffectiveness(),
@@ -221,14 +376,21 @@ async function main() {
     fetchReflexionStats(),
     fetchCurriculumStats(),
     fetchLearningProgress(),
-  ]).then((results) => results.map((r) => r.status === 'fulfilled' ? r.value : {}));
+    fetchLaunchdHealth(),
+    fetchOpsSchedulerHealth(),
+    fetchTableFreshness(),
+  ]).then((results) => results.map((r) => r.status === 'fulfilled' ? r.value : r.status === 'rejected' ? {} : {}));
 
-  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop };
+  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness };
 
   console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
   console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade}`);
   console.log(`[DataLoopHealth] 피드백: ${feedback.total}건 | reflexion: ${reflexion.total}건`);
   console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
+  console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
+  console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개`);
+  const criticalTables = (tableFreshness ?? []).filter((t) => t.status === 'missing' || (t.status === 'stale' && (t.elapsedHours ?? 0) > 24));
+  console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
 
   const message = buildTelegramMessage(data);
   if (!dryRun) {
