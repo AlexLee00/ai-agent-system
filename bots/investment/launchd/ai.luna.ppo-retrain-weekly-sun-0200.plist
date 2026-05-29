@@ -7,6 +7,9 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-ppo-retrain-weekly.ts</string>
     <string>--json</string>
     <string>--train</string>
@@ -21,12 +24,13 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
+  <!-- 라벨명에 0200 표기 있으나 실제 실행은 일요일 10:00 KST (메모리 분산) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
     <integer>0</integer>
     <key>Hour</key>
-    <integer>2</integer>
+    <integer>10</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>

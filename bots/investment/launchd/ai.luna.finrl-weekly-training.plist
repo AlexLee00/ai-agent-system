@@ -7,6 +7,9 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-finrl-weekly-training.ts</string>
   </array>
   <key>WorkingDirectory</key>
@@ -18,13 +21,13 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매주 일요일 02:00 KST — M4 Max 36GB 활용 심야 학습 (launchd는 KST 기준) -->
+  <!-- 매주 일요일 14:00 KST — ppo(10:00)와 4시간 간격, 무거운 RL 동시 실행 방지 -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
     <integer>0</integer>
     <key>Hour</key>
-    <integer>2</integer>
+    <integer>14</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>
