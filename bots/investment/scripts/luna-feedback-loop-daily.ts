@@ -6,10 +6,12 @@
  */
 
 import { runDailyFeedbackLoop } from '../shared/luna-feedback-loop-orchestrator.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const MARKETS = ['crypto', 'stocks'];
 
 async function main() {
+  if (maybeSkipForMemory('luna.feedback-loop')) return;
   const date = new Date().toISOString().split('T')[0];
   console.log(`[FeedbackLoopDaily] ${date} 시작`);
 
