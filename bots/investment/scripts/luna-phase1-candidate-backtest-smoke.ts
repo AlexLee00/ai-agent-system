@@ -51,7 +51,7 @@ assert.equal(cappedResult.total, 1, 'maxSymbols should cap processed candidates'
 assert.equal(cappedResult.candidateBudget.truncatedByMaxSymbols, true, 'candidate budget should report symbol truncation');
 assert.equal(cappedResult.candidateBudget.selectedBeforeBudget, 2, 'candidate budget should expose pre-cap selection size');
 assert.equal(cappedResult.candidateBudget.selected, 1, 'candidate budget should expose capped selection size');
-assert.equal(cappedResult.candidateBudget.orderingPolicy, 'market_round_robin_score_desc', 'candidate budget should expose ordering policy');
+assert.equal(cappedResult.candidateBudget.orderingPolicy, 'backtest_due_priority_then_market_round_robin_score_desc', 'candidate budget should expose ordering policy');
 
 const runtimeBudgetResult = await runCandidateBacktestRefresh({
   json: true,
