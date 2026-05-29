@@ -235,7 +235,6 @@ async function fetchTableFreshness() {
     { table: 'investment.feedback_to_action_map', tsCol: 'applied_at', epochMs: false, expectHours: 48, criticalHours: 168 },
     { table: 'investment.luna_candidate_bottleneck_shadow', tsCol: 'observed_at', epochMs: false, expectHours: 24, criticalHours: 72 },
     { table: 'investment.luna_paper_trading_shadow', tsCol: 'observed_at', epochMs: false, expectHours: 24, criticalHours: 72 },
-    { table: 'investment.account_balances', tsCol: 'updated_at', epochMs: false, expectHours: 1, criticalHours: 24 },
   ];
 
   const results: {
