@@ -192,6 +192,7 @@ check_svc      "ai.luna.marketdata-mcp"              "루나 마켓데이터 MCP
 check_svc      "ai.elixir.supervisor"                "루나 엘릭서 슈퍼바이저"
 check_periodic "ai.investment.runtime-autopilot"     "루나 런타임 오토파일럿"
 check_periodic "ai.luna.ops-scheduler"               "루나 운영 스케줄러"
+check_periodic "ai.luna.log-rotate"                  "루나 로그 로테이트"
 
 log "🏪 SKA팀"
 check_svc      "ai.ska.commander"            "스카 커맨더"

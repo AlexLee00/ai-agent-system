@@ -1023,6 +1023,7 @@ function tailText(text, maxChars) {
 }
 
 function summarizeExecutedForLog(item = {}) {
+  const keepTail = !item.ok || Number(item.approvedSignals || 0) > 0;
   return {
     name: item.name,
     dryRun: item.dryRun === true,
@@ -1035,8 +1036,10 @@ function summarizeExecutedForLog(item = {}) {
     summary: item.summary || null,
     approvedSignals: item.approvedSignals ?? null,
     error: item.error || null,
-    stdoutTail: item.stdoutTail || '',
-    stderrTail: item.stderrTail || '',
+    ...(keepTail ? {
+      stdoutTail: typeof item.stdoutTail === 'string' ? item.stdoutTail.slice(-500) : '',
+      stderrTail: typeof item.stderrTail === 'string' ? item.stderrTail.slice(-500) : '',
+    } : {}),
   };
 }
 

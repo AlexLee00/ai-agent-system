@@ -234,6 +234,7 @@ stop_service_if_registered "ai.elixir.supervisor" "루나 엘릭서 슈퍼바이
 stop_service_if_registered "ai.investment.runtime-autopilot" "루나 runtime autopilot"
 stop_service_if_registered "ai.luna.ops-scheduler" "루나 ops scheduler"
 stop_service_if_registered "ai.luna.tradingview-ws" "루나 TradingView WS"
+stop_service_if_registered "ai.luna.log-rotate" "루나 로그 로테이트"
 
 log "🏪 SKA팀"
 stop_service_if_registered "ai.ska.commander" "스카 커맨더"
