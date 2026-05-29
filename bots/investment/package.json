@@ -58,6 +58,7 @@
     "runtime:luna-promotion-entry-trigger-materialize": "node scripts/runtime-luna-promotion-entry-trigger-materialize.ts --json",
     "runtime:luna-posttrade-mutation-shadow": "node scripts/runtime-luna-posttrade-mutation-shadow.ts --json",
     "runtime:luna-deployment-consistency-shadow": "node scripts/runtime-luna-deployment-consistency-shadow.ts --json",
+    "runtime:luna-sample-bias-report": "node scripts/luna-sample-bias-report.ts --json",
     "runtime:luna-live-forward-validation-shadow": "node scripts/runtime-luna-live-forward-validation-shadow.ts --json",
     "runtime:luna-phase4-strategy-enhancement-shadow": "node scripts/runtime-luna-phase4-strategy-enhancement-shadow.ts --json",
     "runtime:luna-phase5-shadow": "node scripts/runtime-luna-phase5-shadow.ts --json",
