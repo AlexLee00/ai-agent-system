@@ -18,7 +18,22 @@ const env = require('../../../packages/core/lib/env');
 const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output');
-const GDRIVE_DIR = process.env.GDRIVE_BLOG_DIR || '/tmp/blog-output';
+function resolveGoogleDriveBlogDir() {
+  const configured = String(process.env.GDRIVE_BLOG_DIR || '').trim();
+  if (configured) return configured;
+
+  const home = process.env.HOME || '';
+  const candidates = [
+    path.join(home, 'Library', 'CloudStorage', 'GoogleDrive-leejearyong@gmail.com', '내 드라이브', '010_BlogPost'),
+    path.join(home, 'Library', 'CloudStorage', 'GoogleDrive-leejearyong@gmail.com', '내 드라이브', '010_BlogPost'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return '/tmp/blog-output';
+}
+
+const GDRIVE_DIR = resolveGoogleDriveBlogDir();
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 let _performanceColumnsState = null;
 

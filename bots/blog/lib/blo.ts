@@ -946,7 +946,7 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   });
   _logQualityResult(quality, post.charCount);
 
-  if (kind === 'general' && !quality.passed) {
+  if (!quality.passed) {
     const repairedContent = repairTerminalQualityArtifacts(post.content);
     if (repairedContent && repairedContent !== post.content) {
       const repairedPost = {
@@ -956,6 +956,8 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
         deterministicArtifactsRepaired: true,
       };
       const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
+        lectureNumber: kind === 'lecture' ? context.number : null,
+        expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
         category: context.category,
         bookInfo: context.book_info || context.data?.book_info || null,
         topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
@@ -964,7 +966,7 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
       post = repairedPost;
       quality = repairedQuality;
       if (repairedQuality.passed) {
-        console.log('[품질] ✅ 일반 포스팅 규칙 기반 보정 통과');
+        console.log(`[품질] ✅ ${kind} 규칙 기반 보정 통과`);
       }
     }
   }
@@ -975,27 +977,27 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
     try {
       retry = await repairFn(context, post, quality, variation);
     } catch (error) {
-      if (kind === 'general') {
-        const repairedContent = repairTerminalQualityArtifacts(post.content);
-        if (repairedContent && repairedContent !== post.content) {
-          const repairedPost = {
-            ...post,
-            content: repairedContent,
-            charCount: repairedContent.length,
-            deterministicArtifactsRepaired: true,
-          };
-          const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
-            category: context.category,
-            bookInfo: context.book_info || context.data?.book_info || null,
-            topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
-            expectedTitlePattern: context.researchData?.strategy_preferred_pattern || context.data?.strategy_preferred_pattern || null,
-          });
-          post = repairedPost;
-          quality = repairedQuality;
-          if (repairedQuality.passed) {
-            console.log(`[품질] ✅ LLM 보정 실패 후 규칙 기반 보정 통과: ${error.message}`);
-            break;
-          }
+      const repairedContent = repairTerminalQualityArtifacts(post.content);
+      if (repairedContent && repairedContent !== post.content) {
+        const repairedPost = {
+          ...post,
+          content: repairedContent,
+          charCount: repairedContent.length,
+          deterministicArtifactsRepaired: true,
+        };
+        const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
+          lectureNumber: kind === 'lecture' ? context.number : null,
+          expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
+          category: context.category,
+          bookInfo: context.book_info || context.data?.book_info || null,
+          topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
+          expectedTitlePattern: context.researchData?.strategy_preferred_pattern || context.data?.strategy_preferred_pattern || null,
+        });
+        post = repairedPost;
+        quality = repairedQuality;
+        if (repairedQuality.passed) {
+          console.log(`[품질] ✅ LLM 보정 실패 후 규칙 기반 보정 통과: ${error.message}`);
+          break;
         }
       }
       throw error;
@@ -1021,7 +1023,7 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
     }
   }
 
-  if (kind === 'general' && !quality.passed) {
+  if (!quality.passed) {
     const repairedContent = repairTerminalQualityArtifacts(post.content);
     if (repairedContent && repairedContent !== post.content) {
       const repairedPost = {
@@ -1031,6 +1033,8 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
         terminalArtifactsRepaired: true,
       };
       const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
+        lectureNumber: kind === 'lecture' ? context.number : null,
+        expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
         category: context.category,
         bookInfo: context.book_info || context.data?.book_info || null,
         topicTitleCandidate: context.researchData?.topic_title_candidate || context.data?.topic_title_candidate || null,
@@ -1039,7 +1043,7 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
       post = repairedPost;
       quality = repairedQuality;
       if (repairedQuality.passed) {
-        console.log('[품질] ✅ 일반 포스팅 말단 포맷 보정 통과');
+        console.log(`[품질] ✅ ${kind} 말단 포맷 보정 통과`);
       }
     }
   }
