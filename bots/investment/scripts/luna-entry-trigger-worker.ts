@@ -77,6 +77,89 @@ function argValue(name, fallback = null) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+function boolEnv(name, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+function countBy(items = [], keyFn = () => null) {
+  const counts = {};
+  for (const item of items || []) {
+    const key = keyFn(item) || 'unknown';
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+function summarizeEntryTriggerWorkerOutput(output = {}) {
+  const result = output.result || {};
+  const materializedSignals = output.materializedSignals || {};
+  const recoveredFiredSignals = output.recoveredFiredSignals || {};
+  const results = Array.isArray(result.results) ? result.results : [];
+  const shouldKeepDetailed = boolEnv('LUNA_ENTRY_TRIGGER_LOG_VERBOSE', false)
+    || Number(result.fired || 0) > 0
+    || Number(materializedSignals.materialized || 0) > 0
+    || Number(recoveredFiredSignals.materialized || 0) > 0
+    || Boolean(output.refresh?.error);
+  if (shouldKeepDetailed) return output;
+  return {
+    ok: output.ok,
+    dryRun: output.dryRun,
+    exchange: output.exchange,
+    eventSource: output.eventSource,
+    eventCount: output.eventCount,
+    agentPlan: {
+      source: output.agentPlan?.source || null,
+      phases: output.agentPlan?.phases || null,
+      warnings: output.agentPlan?.warnings || [],
+    },
+    refresh: {
+      enabled: output.refresh?.enabled === true,
+      refreshed: Number(output.refresh?.refreshed || 0),
+      armed: Number(output.refresh?.armed || 0),
+      fired: Number(output.refresh?.fired || 0),
+      blocked: Number(output.refresh?.blocked || 0),
+      sourceSignals: Number(output.refresh?.sourceSignals || 0),
+      reason: output.refresh?.reason || null,
+    },
+    riskContext: output.riskContext,
+    materializedSignals: {
+      enabled: materializedSignals.enabled === true,
+      materialized: Number(materializedSignals.materialized || 0),
+      skipped: Number(materializedSignals.skipped || 0),
+      reason: materializedSignals.reason || null,
+    },
+    recoveredFiredSignals: {
+      enabled: recoveredFiredSignals.enabled === true,
+      materialized: Number(recoveredFiredSignals.materialized || 0),
+      skipped: Number(recoveredFiredSignals.skipped || 0),
+      inspected: Number(recoveredFiredSignals.inspected || 0),
+      reason: recoveredFiredSignals.reason || null,
+    },
+    result: {
+      enabled: result.enabled === true,
+      dryRun: result.dryRun === true,
+      mode: result.mode || null,
+      allowLiveFire: result.allowLiveFire === true,
+      checked: Number(result.checked || 0),
+      fired: Number(result.fired || 0),
+      readyBlocked: Number(result.readyBlocked || 0),
+      qualityExpired: Number(result.qualityExpired || 0),
+      reasonCounts: countBy(results, (item) => item?.reason || item?.state || (item?.fired ? 'fired' : null)),
+      sample: results.slice(0, 5).map((item) => ({
+        triggerId: item?.triggerId || null,
+        symbol: item?.symbol || null,
+        state: item?.state || null,
+        fired: item?.fired === true,
+        reason: item?.reason || null,
+      })),
+    },
+    heartbeatPath: output.heartbeatPath || null,
+    compact: true,
+  };
+}
+
 function parseEvents() {
   const raw = argValue('--events-json', process.env.LUNA_ENTRY_TRIGGER_EVENTS_JSON || '[]');
   try {
@@ -924,7 +1007,7 @@ export async function runLunaEntryTriggerWorker() {
 
 async function main() {
   const result = await runLunaEntryTriggerWorker();
-  if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
+  if (process.argv.includes('--json')) console.log(JSON.stringify(summarizeEntryTriggerWorkerOutput(result), null, 2));
   else {
     console.log(`luna entry trigger worker ok — checked=${result.result.checked} fired=${result.result.fired} readyBlocked=${result.result.readyBlocked}`);
   }

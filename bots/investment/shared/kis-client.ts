@@ -115,11 +115,25 @@ const KIS_MCP_MUTATING_ACTIONS = new Set([
   'overseas_buy',
   'overseas_sell',
 ]);
+const KIS_OVERSEAS_EMPTY_QUOTE_TTL_MS = Math.max(
+  60_000,
+  Number(process.env.KIS_OVERSEAS_EMPTY_QUOTE_TTL_MS || 10 * 60_000),
+);
+const KIS_OVERSEAS_EMPTY_QUOTE_MAX_RETRIES = Math.max(
+  1,
+  Math.round(Number(process.env.KIS_OVERSEAS_EMPTY_QUOTE_MAX_RETRIES || 2)),
+);
+const KIS_OVERSEAS_EMPTY_QUOTE_LOG_INTERVAL_MS = Math.max(
+  30_000,
+  Number(process.env.KIS_OVERSEAS_EMPTY_QUOTE_LOG_INTERVAL_MS || 5 * 60_000),
+);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const KIS_MCP_SERVER_PATH = process.env.KIS_MCP_SERVER_PATH || path.resolve(__dirname, '../scripts/kis-market-mcp-server.py');
 const execFileAsync = promisify(execFile);
 const _kisMcpNonMutatingFailureCooldowns = new Map();
+const _kisOverseasEmptyQuoteCache = new Map();
+const _kisDedupLogState = new Map();
 
 const _requestState = {
   paper: {
@@ -131,6 +145,52 @@ const _requestState = {
     order: { nextAt: 0, tail: Promise.resolve() },
   },
 };
+
+function overseasQuoteCacheKey(symbol, priceCode) {
+  return `${String(symbol || '').toUpperCase()}:${String(priceCode || '').toUpperCase()}`;
+}
+
+function logKisDedup(key, message, level = 'warn') {
+  const now = Date.now();
+  const state = _kisDedupLogState.get(key) || { count: 0, lastLogAt: 0 };
+  state.count += 1;
+  if (!state.lastLogAt || now - state.lastLogAt >= KIS_OVERSEAS_EMPTY_QUOTE_LOG_INTERVAL_MS) {
+    const suffix = state.count > 1 ? ` (suppressed=${state.count - 1})` : '';
+    const line = `${message}${suffix}`;
+    if (level === 'log') console.log(line);
+    else console.warn(line);
+    state.count = 0;
+    state.lastLogAt = now;
+  }
+  _kisDedupLogState.set(key, state);
+}
+
+function getCachedOverseasEmptyQuote(symbol, priceCode) {
+  const key = overseasQuoteCacheKey(symbol, priceCode);
+  const state = _kisOverseasEmptyQuoteCache.get(key);
+  if (!state) return null;
+  if (Number(state.until || 0) <= Date.now()) {
+    _kisOverseasEmptyQuoteCache.delete(key);
+    return null;
+  }
+  return state;
+}
+
+function markOverseasEmptyQuote(symbol, priceCode, reason = 'empty') {
+  const key = overseasQuoteCacheKey(symbol, priceCode);
+  const prev = _kisOverseasEmptyQuoteCache.get(key) || { count: 0, until: 0 };
+  const count = Number(prev.count || 0) + 1;
+  const until = count >= KIS_OVERSEAS_EMPTY_QUOTE_MAX_RETRIES
+    ? Date.now() + KIS_OVERSEAS_EMPTY_QUOTE_TTL_MS
+    : Number(prev.until || 0);
+  _kisOverseasEmptyQuoteCache.set(key, { count, until, reason, updatedAt: Date.now() });
+  if (until > Date.now()) {
+    logKisDedup(
+      `empty_quote_cache:${key}`,
+      `  ⚠️ [KIS] ${symbol} ${priceCode} 빈 응답 반복 ${count}회 → ${Math.round(KIS_OVERSEAS_EMPTY_QUOTE_TTL_MS / 1000)}초 캐시로 재조회 억제`,
+    );
+  }
+}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -739,11 +799,27 @@ export async function getOverseasQuoteSnapshot(symbol) {
     return mcp.quote;
   }
   // 시세 조회는 항상 실서버 (openapivts는 해외시세 미지원)
-  const tryFetch = async (excd) => kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
-    trId:   TR_ID.OVERSEAS_PRICE,
-    params: { AUTH: '', EXCD: excd, SYMB: normalizedSymbol },
-    paper:  false,
-  });
+  const tryFetch = async (excd) => {
+    const cachedEmpty = getCachedOverseasEmptyQuote(normalizedSymbol, excd);
+    if (cachedEmpty) {
+      logKisDedup(
+        `empty_quote_skip:${overseasQuoteCacheKey(normalizedSymbol, excd)}`,
+        `  ⚠️ [KIS] ${normalizedSymbol} ${excd} 빈 응답 캐시 적중 → KIS 재조회 스킵`,
+      );
+      throw new Error(`KIS 빈 응답 캐시 (${excd})`);
+    }
+    try {
+      return await kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
+        trId:   TR_ID.OVERSEAS_PRICE,
+        params: { AUTH: '', EXCD: excd, SYMB: normalizedSymbol },
+        paper:  false,
+      });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (/KIS 빈 응답/.test(msg)) markOverseasEmptyQuote(normalizedSymbol, excd, msg);
+      throw error;
+    }
+  };
 
   const priceExcd = KIS_OVERSEAS_PRICE_EXCD[normalizedSymbol];
 
@@ -764,10 +840,17 @@ export async function getOverseasQuoteSnapshot(symbol) {
           changePct: parseFloat(data.output?.rate || data.output?.prdy_vrss_rt || '0'),
         };
       }
-      console.warn(`  ⚠️ [KIS] ${normalizedSymbol} 맵 거래소 ${priceExcd} 빈 응답 → NAS/NYS/AMX 자동 탐색`);
+      markOverseasEmptyQuote(normalizedSymbol, priceExcd, 'zero_price');
+      logKisDedup(
+        `mapped_empty:${overseasQuoteCacheKey(normalizedSymbol, priceExcd)}`,
+        `  ⚠️ [KIS] ${normalizedSymbol} 맵 거래소 ${priceExcd} 빈 응답 → NAS/NYS/AMX 자동 탐색`,
+      );
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.warn(`  ⚠️ [KIS] ${normalizedSymbol} 맵 거래소 ${priceExcd} 조회 실패 → 자동 탐색 (${msg})`);
+      logKisDedup(
+        `mapped_fail:${overseasQuoteCacheKey(normalizedSymbol, priceExcd)}:${msg}`,
+        `  ⚠️ [KIS] ${normalizedSymbol} 맵 거래소 ${priceExcd} 조회 실패 → 자동 탐색 (${msg})`,
+      );
     }
   }
 
@@ -777,7 +860,11 @@ export async function getOverseasQuoteSnapshot(symbol) {
       const data  = await tryFetch(priceCode);
       const price = parseFloat(data.output?.last || '0');
       if (price > 0) {
-        console.log(`  ℹ️ [KIS] ${normalizedSymbol} 거래소 자동 탐지: ${priceCode} → PRICE_EXCD 맵에 추가 권장`);
+        logKisDedup(
+          `auto_detect:${normalizedSymbol}:${priceCode}`,
+          `  ℹ️ [KIS] ${normalizedSymbol} 거래소 자동 탐지: ${priceCode} → PRICE_EXCD 맵에 추가 권장`,
+          'log',
+        );
         return {
           symbol: normalizedSymbol,
           price,
@@ -789,6 +876,7 @@ export async function getOverseasQuoteSnapshot(symbol) {
           changePct: parseFloat(data.output?.rate || data.output?.prdy_vrss_rt || '0'),
         };
       }
+      markOverseasEmptyQuote(normalizedSymbol, priceCode, 'zero_price');
     } catch { /* 다음 거래소 시도 */ }
   }
   throw new Error(`${symbol} 해외 현재가 조회 실패 — NAS/NYS/AMX 전체 응답 없음`);

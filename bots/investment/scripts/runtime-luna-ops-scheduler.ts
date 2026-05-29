@@ -14,6 +14,8 @@ const DEFAULT_STATE_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-
 const DEFAULT_LOCK_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler.lock');
 const LOCK_STALE_MS = 20 * 60 * 1000;
 const DEFAULT_JOB_TIMEOUT_MS = 3 * 60 * 1000;
+const DEFAULT_STDOUT_TAIL_CHARS = 500;
+const DEFAULT_STDERR_TAIL_CHARS = 1000;
 const PRE_MARKET_ANALYSIS_MAX_SYMBOLS = '5';
 const PRE_MARKET_ANALYSIS_MAX_ENRICHMENT_SYMBOLS = '2';
 const PRE_MARKET_REFRESH_WINDOW_MINUTES = Object.freeze({
@@ -830,6 +832,18 @@ function argValue(name, fallback = null, argv = process.argv.slice(2)) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+function boolEnv(name, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
+
+function positiveIntEnv(name, fallback) {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw) || raw <= 0) return fallback;
+  return Math.max(100, Math.round(raw));
+}
+
 export function resolveOnlyJobArg(argv = process.argv.slice(2)) {
   return argValue('only-job', argValue('job', null, argv), argv);
 }
@@ -1002,6 +1016,65 @@ function resolveJobTimeoutMs(job = {}, fallback = DEFAULT_JOB_TIMEOUT_MS) {
   return Math.max(10_000, Math.round(parsed));
 }
 
+function tailText(text, maxChars) {
+  const raw = String(text || '');
+  const limit = Math.max(1, Number(maxChars) || 1);
+  return raw.length > limit ? raw.slice(-limit) : raw;
+}
+
+function summarizeExecutedForLog(item = {}) {
+  return {
+    name: item.name,
+    dryRun: item.dryRun === true,
+    startedAt: item.startedAt || null,
+    finishedAt: item.finishedAt || null,
+    ok: item.ok === true,
+    status: item.status ?? null,
+    signal: item.signal || null,
+    outcome: item.outcome || null,
+    summary: item.summary || null,
+    approvedSignals: item.approvedSignals ?? null,
+    error: item.error || null,
+    stdoutTail: item.stdoutTail || '',
+    stderrTail: item.stderrTail || '',
+  };
+}
+
+function summarizePlanForLog(plan = {}) {
+  const jobs = Array.isArray(plan.jobs) ? plan.jobs : [];
+  return {
+    ok: plan.ok === true,
+    generatedAt: plan.generatedAt || null,
+    force: plan.force === true,
+    onlyJob: plan.onlyJob || null,
+    total: Number(plan.total || jobs.length || 0),
+    due: Number(plan.due || jobs.filter((job) => job?.due).length || 0),
+    dueJobs: jobs
+      .filter((job) => job?.due)
+      .slice(0, 20)
+      .map((job) => ({
+        name: job.name,
+        category: job.category || null,
+        market: job.market || null,
+        cadence: job.cadence || null,
+      })),
+  };
+}
+
+function summarizeOpsSchedulerResultForLog(result = {}) {
+  if (boolEnv('LUNA_OPS_SCHEDULER_LOG_VERBOSE', false)) return result;
+  const executed = Array.isArray(result.executed) ? result.executed : [];
+  return {
+    ok: result.ok === true,
+    status: result.status || null,
+    dryRun: result.dryRun === true,
+    statePath: result.statePath || null,
+    plan: summarizePlanForLog(result.plan || {}),
+    executed: executed.map(summarizeExecutedForLog),
+    compact: true,
+  };
+}
+
 function runCommand(job, { timeoutMs = DEFAULT_JOB_TIMEOUT_MS, runner = null } = {}) {
   if (runner) {
     const result = runner(job);
@@ -1018,12 +1091,14 @@ function runCommand(job, { timeoutMs = DEFAULT_JOB_TIMEOUT_MS, runner = null } =
   });
   const stdout = String(result.stdout || '');
   const stderr = String(result.stderr || '');
+  const stdoutTailChars = positiveIntEnv('LUNA_OPS_SCHEDULER_STDOUT_TAIL_CHARS', DEFAULT_STDOUT_TAIL_CHARS);
+  const stderrTailChars = positiveIntEnv('LUNA_OPS_SCHEDULER_STDERR_TAIL_CHARS', DEFAULT_STDERR_TAIL_CHARS);
   const baseResult = {
     ok: result.status === 0,
     status: result.status,
     signal: result.signal || null,
-    stdoutTail: stdout.slice(-2000),
-    stderrTail: stderr.slice(-2000),
+    stdoutTail: tailText(stdout, stdoutTailChars),
+    stderrTail: tailText(stderr, stderrTailChars),
     error: result.error?.message || null,
   };
   return {
@@ -1269,7 +1344,7 @@ async function main() {
     writeState: !hasArg('no-write-state', argv),
     agentPlan: resolveAgentPlanArg(argv),
   });
-  if (hasArg('json', argv)) console.log(JSON.stringify(result, null, 2));
+  if (hasArg('json', argv)) console.log(JSON.stringify(summarizeOpsSchedulerResultForLog(result), null, 2));
   else console.log(`runtime-luna-ops-scheduler ${result.status} due=${result.plan?.due || 0} executed=${result.executed?.length || 0}`);
   if (!result.ok) process.exitCode = 1;
 }
