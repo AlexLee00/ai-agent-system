@@ -58,6 +58,22 @@ async function main() {
   assert(sourcedRepaired.includes('McKinsey 보고서 연구에 따르면'), 'sourced statistical phrasing should be preserved');
   assert(!sourcedRepaired.includes('마감 뒤에 잘못 붙은 본문'), 'sourced fixture overflow should still be removed');
 
+  const multiSentinel = [
+    '[핵심 요약]',
+    '강의 청크 중간에 종료 마커가 잘못 섞인 상황입니다.',
+    '_THE_END_',
+    '[마무리 인사]',
+    '중간 마커 뒤에 있는 필수 마감 섹션은 보존되어야 합니다.',
+    '[해시태그]',
+    '#Nodejs #강의 #프롬프트엔지니어링',
+    '_THE_END_',
+    '마지막 종료 마커 뒤에 붙은 쓰레기 본문',
+  ].join('\n');
+  const multiRepaired = repairTerminalQualityArtifacts(multiSentinel);
+  assert(multiRepaired.includes('[마무리 인사]'), 'sections after an intermediate sentinel should be preserved');
+  assert(!multiRepaired.includes('_THE_END_'), 'all terminal sentinels should be stripped');
+  assert(!multiRepaired.includes('쓰레기 본문'), 'overflow after the last sentinel should be removed');
+
   const boldHashtagOverflow = [
     '일반 포스팅 제목',
     '',

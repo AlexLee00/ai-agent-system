@@ -4,20 +4,40 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 const billingGuard = require(path.join(PROJECT_ROOT, 'packages/core/lib/billing-guard'));
 
-const TEAM_QUOTAS: Record<string, number> = {
+const DEFAULT_TEAM_QUOTAS: Record<string, number> = {
   luna: 30,
   darwin: 15,
   sigma: 10,
   claude: 10,
-  blog: 5,
+  blog: 15,
   ska: 5,
   justin: 3,
   hub: 5,
   data: 2,
 };
 
-const GLOBAL_LIMIT_USD = 80;
-const EMERGENCY_CUTOFF_USD = 100;
+function readPositiveNumberEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readTeamQuota(team: string, fallback: number): number {
+  const key = `HUB_BUDGET_TEAM_${String(team || '').toUpperCase().replace(/[^A-Z0-9]/g, '_')}_USD`;
+  return readPositiveNumberEnv(key, fallback);
+}
+
+function getTeamQuotas(): Record<string, number> {
+  const quotas: Record<string, number> = {};
+  for (const [team, fallback] of Object.entries(DEFAULT_TEAM_QUOTAS)) {
+    quotas[team] = readTeamQuota(team, fallback);
+  }
+  return quotas;
+}
+
+const GLOBAL_LIMIT_USD = readPositiveNumberEnv('HUB_BUDGET_GLOBAL_LIMIT_USD', 80);
+const EMERGENCY_CUTOFF_USD = readPositiveNumberEnv('HUB_BUDGET_EMERGENCY_CUTOFF_USD', 100);
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const WARN_RATIO = 0.8;
 
@@ -52,7 +72,7 @@ export class BudgetGuardian {
 
   private constructor() {
     // Initialize team usage tracking
-    for (const team of Object.keys(TEAM_QUOTAS)) {
+    for (const team of Object.keys(getTeamQuotas())) {
       this.teamUsed[team] = 0;
     }
 
@@ -85,6 +105,7 @@ export class BudgetGuardian {
     }
 
     const normalizedTeam = normalizeTeam(team);
+    const teamQuotas = getTeamQuotas();
     const activeStop = billingGuard.getBlockReason(normalizedTeam);
     if (activeStop) {
       return {
@@ -96,7 +117,7 @@ export class BudgetGuardian {
     }
 
     const globalRatio = this.globalUsed / GLOBAL_LIMIT_USD;
-    const teamQuota = TEAM_QUOTAS[normalizedTeam] ?? 5;
+    const teamQuota = teamQuotas[normalizedTeam] ?? readTeamQuota(normalizedTeam, 5);
     const teamUsedAmt = this.teamUsed[normalizedTeam] ?? 0;
     const teamRatio = teamUsedAmt / teamQuota;
 
@@ -155,7 +176,7 @@ export class BudgetGuardian {
   getCurrentUsage(team?: string): UsageState & { team?: TeamUsage } {
     const globalRatio = this.globalUsed / GLOBAL_LIMIT_USD;
     const teams: Record<string, TeamUsage> = {};
-    for (const [t, quota] of Object.entries(TEAM_QUOTAS)) {
+    for (const [t, quota] of Object.entries(getTeamQuotas())) {
       teams[t] = { used: this.teamUsed[t] ?? 0, quota };
     }
 
@@ -186,7 +207,7 @@ export class BudgetGuardian {
       }
 
       this.globalUsed = newGlobal;
-      for (const team of Object.keys(TEAM_QUOTAS)) {
+      for (const team of Object.keys(getTeamQuotas())) {
         this.teamUsed[team] = newTeamUsed[team] ?? 0;
       }
     } catch (e: any) {
@@ -218,7 +239,7 @@ async function queryRequestLogCosts(): Promise<Array<{ caller_team?: string; tea
       SELECT COALESCE(NULLIF(caller_team, ''), 'hub') AS caller_team,
              COALESCE(SUM(cost_usd), 0) AS total
       FROM hub.llm_request_log
-      WHERE created_at >= CURRENT_DATE
+      WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')
       GROUP BY 1
     `);
   } catch {
@@ -226,7 +247,7 @@ async function queryRequestLogCosts(): Promise<Array<{ caller_team?: string; tea
       SELECT COALESCE(NULLIF(caller_team, ''), 'hub') AS caller_team,
              COALESCE(SUM(cost_usd), 0) AS total
       FROM public.llm_routing_log
-      WHERE created_at >= CURRENT_DATE
+      WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')
       GROUP BY 1
     `);
   }
