@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.data-coherence-check</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/data-source-coherence-check.ts</string>
+    <string>--exchange=binance</string>
+    <string>--include-balance</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+  <!-- 매일 09:10 KST — data-loop-health 이후, 세 소스 + 거래소 잔고 정합성 점검 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.data-coherence-check.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.data-coherence-check.err.log</string>
+</dict>
+</plist>
