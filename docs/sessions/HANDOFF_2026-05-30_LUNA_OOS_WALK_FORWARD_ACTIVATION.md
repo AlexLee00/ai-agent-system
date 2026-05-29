@@ -109,3 +109,44 @@ system 자리에 도구 정의 9~10종 주입(set_config_value "allowedDirectori
 - backtest-vectorbt.py:78 ccxt.binance(crypto 5m), :45/102 yfinance(주식 1d), :396 split_is_oos(0.3), :408/576 min_oos_trades=15, :500 walk_forward(folds6/train90/test45).
 - runtime-luna-candidate-backtest-refresh.ts:L895+ vectorbt→fallback 전환, :384-460 buildOhlcvMomentumBacktestRows(fallback, OOS 미기록), :502 runOhlcvFallbackBacktest.
 - candidate-backtest-gate.ts:108,132 sharpe_oos_deflated 요구(healthy 게이트).
+
+---
+
+## [추가2] 보강 검증 완료 + force 백필 필요 (§8) — 2026-05-30
+
+### 보강 CODEX 구현 + 검증 완료
+- CODEX_LUNA_OOS_STOCK_PERIOD_FALLBACK_FIX_2026-05-30.md (44줄).
+- Codex 구현 (커밋 **270bb74a8** "fix(luna-backtest): preserve OOS walk-forward status"):
+  - periodsForMarket(:54-59): crypto [180] / domestic·overseas [365], env override(LUNA_BT_PERIODS_CRYPTO/STOCK).
+  - :1066 candidatePeriods = periodsForMarket(market, periods) → :1067 refreshCandidate(symbol, market, candidatePeriods).
+  - fallback 보존(:316-319): walk_forward insufficient_data && total_trades>0면 보존(fallback NULL 덮어쓰기 방지).
+  - smoke fallback overwrite 방지 케이스 추가.
+- 메티 검증: 코드 정확. periodsForMarket 호출(:1066) 확인, fallback 보존(:316-319) 확인.
+- ★ **force 1종목 dry-run 실측(AAL overseas --force)**: gateStatus=pass, **healthy=true**, fallbackUsed=false, vectorbtEnabled=true. 즉 force 재처리 → 주식 365 walk_forward → OOS 산출 → healthy! 보강 입증.
+- 마스터 dry-run(AAL/006660 fallbackUsed=false, gateStatus=pass)과 일치.
+
+### kickstart 결과 (보강 후 첫 정규 실행)
+- 후보 10건 발견 → 10건 모두 skipped=true (fresh, 24h내 백테스트).
+- 로그 periods=[180]은 :1041 전역 표시(정상). candidatePeriods(:1066)가 주식 365 적용(비-skip 시).
+- fresh skip이라 새 백테스트 없음 → DB 지표 변화 없음(NULL 564 / oos_null 560 / healthy 65 유지).
+- **force 필요**: :889 if(!force && !fixture && existingFresh && ...) → skip. force=true면 우회.
+
+### 다음 단계 (새 채팅) — force 백필
+1. force 백필(수동 실행, market별 점진, crypto 제외 — 이미 walk_forward):
+   - `cd /Users/alexlee/projects/ai-agent-system && npx tsx bots/investment/scripts/runtime-luna-candidate-backtest-refresh.ts --force --market=overseas` (189개, ~100분)
+   - 검증 후 `--force --market=domestic` (330개, ~175분)
+   - ⚠️ cwd=레포 루트 필수(bots/investment cwd면 ERR_MODULE_NOT_FOUND). shadow-apply(DB 반영). 백그라운드(nohup) 권장.
+2. force 백필 후 검증(메티):
+   - 주식 selection_method NULL → walk_forward 전환(288개 IS-only 대상).
+   - sharpe_oos NULL 560 → 감소 / healthy 65 → 증가.
+   - crypto selection_method walk_forward 180 유지(회귀 방지).
+   - runtime_budget_partial 추이(주식 365 timeout 45초 초과 여부) → 초과 多면 timeout 60s.
+   - 실거래(binance/upbit/kis) + PROTECTED 11개 무중단.
+3. 잔여(이전 핸드오프): risk-gate smoke 정정(notify 동작 반영), auto_settle 아카이빙.
+
+### 핵심 사실 (force 백필)
+- force=true → :889 skip 우회. --force 플래그(:1139) 또는 env LUNA_CANDIDATE_BACKTEST_FORCE=true.
+- 주식 365일 walk_forward ~31.8초/종목(timeout 45초 내). overseas 189≈100분, domestic 330≈175분, 전체 ~4.6시간.
+- candidate-backtest-refresh: tsx 직접 실행 → 코드 변경 자동 반영(reload 불필요). launchd --periods=180은 fallback(periodsForMarket 우선).
+- gateThresholds 실측: MIN_SHARPE 0, MAX_DRAWDOWN 30, MIN_WIN_RATE 30, MAX_ABS_SHARPE 8, MIN_PERIOD_TRADES 5, MIN_TOTAL_TRADES 12, STALE_HOURS 24.
+- 커밋 270bb74a8(롤백 포인트). 이전: 9cc012ac8(walk_forward activation), pre-oos-walk-forward-20260530-033923(태그).
