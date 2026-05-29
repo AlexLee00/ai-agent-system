@@ -18,6 +18,7 @@
  */
 
 import { query } from '../shared/db/core.ts';
+import { learningPnlValidSql } from '../shared/trade-journal-learning-guard.ts';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const ENABLED_ENV = 'LUNA_WINRATE_UPTREND_TRACKER_ENABLED';
@@ -93,6 +94,7 @@ async function fetchTotalTrades() {
      FROM investment.trade_journal
      WHERE exit_time IS NOT NULL
        AND NOT COALESCE(is_paper, false)
+       AND ${learningPnlValidSql('')}
        AND to_timestamp(exit_time / 1000.0) >= CURRENT_DATE - INTERVAL '30 days'`,
     [],
   ).catch(() => [{}]);

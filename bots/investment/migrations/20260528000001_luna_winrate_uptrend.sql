@@ -57,6 +57,9 @@ WITH daily_trades AS (
   FROM investment.trade_journal tj
   WHERE tj.exit_time IS NOT NULL
     AND NOT COALESCE(tj.is_paper, false)
+    AND tj.pnl_amount IS NOT NULL
+    AND COALESCE(tj.exit_reason, '') NOT LIKE 'journal_reconciled%'
+    AND COALESCE(tj.exit_reason, '') NOT LIKE 'sweeper_manual_dust%'
     AND to_timestamp(tj.exit_time / 1000.0) >= CURRENT_DATE - INTERVAL '90 days'
   GROUP BY DATE(to_timestamp(tj.exit_time / 1000.0)), COALESCE(tj.market, 'crypto'), COALESCE(tj.market_regime, 'RANGING')
 ),
