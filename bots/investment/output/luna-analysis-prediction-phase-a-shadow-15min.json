@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
-  "generatedAt": "2026-05-29T05:58:47.660Z",
+  "generatedAt": "2026-05-29T06:13:48.678Z",
   "fixture": false,
   "shadowOnly": true,
   "liveTradeImpact": false,
@@ -159,7 +159,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 80,
+        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
