@@ -198,16 +198,30 @@ async function fetchOpsSchedulerHealth() {
 
 async function fetchPositionSyncHealth() {
   const logPath = '/tmp/investment-runtime-autopilot.log';
+  const counts = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE COALESCE(paper, false) = false) AS live_count,
+       COUNT(*) FILTER (WHERE COALESCE(paper, false) = true) AS paper_count,
+       COUNT(*) AS total_count
+     FROM investment.positions`,
+    [],
+  ).then((rows) => ({
+    liveCount: Number(rows?.[0]?.live_count || 0),
+    paperCount: Number(rows?.[0]?.paper_count || 0),
+    totalCount: Number(rows?.[0]?.total_count || 0),
+  })).catch(() => ({ liveCount: 0, paperCount: 0, totalCount: 0 }));
+
   try {
     const stat = fs.statSync(logPath);
     const elapsedMin = (Date.now() - stat.mtimeMs) / 60000;
     // autopilot StartInterval=120초(2분), 15분 초과 → sync 정지 의심
     return {
+      ...counts,
       lastRunMinAgo: Math.round(elapsedMin),
       status: elapsedMin > 15 ? 'critical' : 'ok',
     };
   } catch {
-    return { lastRunMinAgo: -1, status: 'missing_log' };
+    return { ...counts, lastRunMinAgo: -1, status: 'missing_log' };
   }
 }
 
@@ -300,7 +314,14 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
   // Position sync 생존 (데이터 나이 대신 sync 프로세스 기준)
   if (positionSync) {
     if (positionSync.status === 'ok') {
-      section += `✅ positions: live 보유 없음 정상 (sync 가동 중, ${positionSync.lastRunMinAgo}분 전)\n`;
+      if (Number(positionSync.liveCount || 0) === 0) {
+        section += `✅ positions: live 보유 없음 정상 (sync 가동 중, ${positionSync.lastRunMinAgo}분 전)\n`;
+      } else {
+        section += `✅ positions: live ${positionSync.liveCount}건 추적 중 (sync 가동 중, ${positionSync.lastRunMinAgo}분 전)\n`;
+      }
+      if (Number(positionSync.paperCount || 0) > 0) {
+        section += `ℹ️ positions: paper 고아 후보 ${positionSync.paperCount}건 (archive 대상)\n`;
+      }
     } else if (positionSync.status === 'critical') {
       section += `🔴 CRITICAL: position-sync 정지 ${positionSync.lastRunMinAgo}분 (autopilot 로그 미갱신)\n`;
       hasCritical = true;
@@ -467,7 +488,7 @@ async function main() {
     || (t.status === 'stale' && (t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)),
   );
   console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
-  console.log(`[DataLoopHealth] position-sync: ${positionSync?.status ?? '?'} (${positionSync?.lastRunMinAgo ?? '?'}분 전)`);
+  console.log(`[DataLoopHealth] position-sync: status=${positionSync?.status ?? '?'} lastRunMinAgo=${positionSync?.lastRunMinAgo ?? '?'} live=${positionSync?.liveCount ?? '?'} paper=${positionSync?.paperCount ?? '?'}`);
 
   const message = buildTelegramMessage(data);
   if (!dryRun) {
