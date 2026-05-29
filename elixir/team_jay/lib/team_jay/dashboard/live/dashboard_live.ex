@@ -137,7 +137,13 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   @impl true
   def handle_info({:event_lake_new, event}, socket) do
-    events = [event | Enum.take(socket.assigns.events, 49)]
+    events =
+      if dashboard_event?(event) do
+        [event | Enum.take(socket.assigns.events, 49)]
+      else
+        socket.assigns.events
+      end
+
     stats = safe_call(fn -> Jay.Core.EventLake.get_stats() end, socket.assigns.event_stats)
     cycles = safe_call(fn -> load_recent_cycles() end, socket.assigns.cycles)
     team_health = update_team_last_active(socket.assigns.team_health, event)
@@ -2852,6 +2858,13 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   defp event_trace_id(_), do: nil
+
+  defp dashboard_event?(event) when is_map(event) do
+    event_type = event["event_type"] || event[:event_type] || ""
+    not String.starts_with?(to_string(event_type), "luna.tv.bar.")
+  end
+
+  defp dashboard_event?(_), do: true
 
   defp langfuse_trace_url(trace_id) do
     host =

@@ -210,6 +210,7 @@ defmodule Jay.Core.EventLake do
 
   defp load_recent_events_from_db do
     EventLakeSchema
+    |> where([event], not like(event.event_type, "luna.tv.bar.%"))
     |> order_by([event], desc: event.created_at, desc: event.id)
     |> limit(^@max_cache)
     |> Repo.all()

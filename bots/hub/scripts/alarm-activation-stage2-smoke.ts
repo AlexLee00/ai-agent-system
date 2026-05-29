@@ -137,6 +137,7 @@ async function main(): Promise<void> {
       assert(getDispatchMode() === 'supervised', 'dispatch mode must be supervised');
 
       const res = makeRes();
+      const incidentKey = `stage2:supervised:${Date.now()}`;
       await alarmRoute({
         body: {
           team: 'hub',
@@ -147,7 +148,7 @@ async function main(): Promise<void> {
           actionability: 'none',
           title: 'stage2 supervised delivery check',
           message: 'synthetic Stage 2 supervised delivery verification',
-          incidentKey: `stage2:supervised:${Date.now()}`,
+          incidentKey,
         },
       }, res);
 
@@ -165,6 +166,10 @@ async function main(): Promise<void> {
       assert(roundtableCalls === 0, 'Stage 2 must not run roundtable');
       assert(autoDevCalls === 0, 'Stage 2 work notification must not run auto_dev');
       assert(records.some((row) => row.eventType === 'hub_alarm'), 'event lake hub_alarm record missing');
+      assert(
+        records.some((row) => row.eventType === 'hub_alarm' && row.traceId === incidentKey),
+        'hub_alarm event must expose incidentKey as traceId for dashboard correlation',
+      );
       assert(dbRuns.some((sql) => sql.includes('agent.hub_alarm_classifications')), 'classification mirror SQL missing');
       assert(dbRuns.some((sql) => sql.includes('agent.hub_alarms')), 'alarm mirror SQL missing');
     });

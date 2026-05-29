@@ -115,6 +115,7 @@ function unitSmokeScripts(): string[] {
     'auto-dev-alarm-result-smoke.ts',
     'alarm-producer-contract-smoke.ts',
     'alarm-contract-audit-smoke.ts',
+    'event-publish-trace-smoke.ts',
     'hub-alarm-no-legacy-shim-smoke.ts',
     'hub-alarm-env-smoke.ts',
     'hub-alarm-import-transition-smoke.ts',

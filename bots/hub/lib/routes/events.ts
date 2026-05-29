@@ -1,6 +1,19 @@
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const { collectHealthSnapshot } = require('./health');
 
+const defaultRouteEventLake = {
+  record: (...args: any[]) => eventLake.record(...args),
+};
+let routeEventLake = defaultRouteEventLake;
+
+export function _testOnly_setEventsRouteEventLakeMocks(overrides: Partial<typeof defaultRouteEventLake> = {}) {
+  routeEventLake = { ...defaultRouteEventLake, ...overrides };
+}
+
+export function _testOnly_resetEventsRouteEventLakeMocks() {
+  routeEventLake = defaultRouteEventLake;
+}
+
 function text(value: unknown, fallback = '') {
   const normalized = String(value == null ? fallback : value).trim();
   return normalized || fallback;
@@ -23,17 +36,43 @@ function deriveTeam(source: string, topic: string) {
   return candidate || 'general';
 }
 
+function objectValue(input: unknown, key: string): unknown {
+  if (!input || typeof input !== 'object') return null;
+  return (input as Record<string, unknown>)[key];
+}
+
+function explicitHeader(req: any, name: string): string {
+  const value = req?.headers?.[name] || req?.headers?.[name.toLowerCase()];
+  return text(Array.isArray(value) ? value[0] : value, '');
+}
+
+export function resolvePublishedEventTraceId(body: any = {}, req: any = {}): string {
+  return text(
+    body.traceId
+      || body.trace_id
+      || objectValue(body.payload, 'traceId')
+      || objectValue(body.payload, 'trace_id')
+      || body.incidentKey
+      || body.incident_key
+      || explicitHeader(req, 'x-trace-id')
+      || explicitHeader(req, 'x-hub-trace-id'),
+    '',
+  );
+}
+
 export async function eventsPublishRoute(req: any, res: any) {
   try {
     const body = req.body || {};
     const source = text(body.source || body.botName || body.bot_name, 'unknown');
     const topic = text(body.topic || body.eventType || body.event_type, 'general_event');
     const severity = text(body.severity, 'info').toLowerCase();
-    const id = await eventLake.record({
+    const traceId = resolvePublishedEventTraceId(body, req);
+    const id = await routeEventLake.record({
       eventType: topic,
       team: text(body.team, deriveTeam(source, topic)),
       botName: source,
       severity: ['debug', 'info', 'warn', 'error', 'critical'].includes(severity) ? severity : 'info',
+      traceId,
       title: text(body.title, topic),
       message: text(body.message, ''),
       tags: ['hub-events-publish', source].filter(Boolean),

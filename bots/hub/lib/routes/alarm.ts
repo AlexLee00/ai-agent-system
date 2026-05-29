@@ -786,6 +786,7 @@ export async function alarmRoute(req: any, res: any) {
       team,
       botName: fromBot,
       severity,
+      traceId: incidentKey,
       title,
       message,
       tags: [
@@ -886,6 +887,7 @@ export async function alarmRoute(req: any, res: any) {
             team,
             botName: 'hub-alarm-governor',
             severity: severity === 'critical' ? 'warn' : 'info',
+            traceId: incidentKey,
             title: 'Alarm auto repair document queued',
             message: `auto_dev repair document queued for ${incidentKey}`,
             tags: ['hub', 'alarm', 'auto_repair', `team:${team}`],
