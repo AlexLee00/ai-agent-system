@@ -140,8 +140,9 @@ async function fetchAlarmReadiness(): Promise<{ classTopics: boolean; suppressio
     clearTimeout(timer);
     if (!resp.ok) return null;
     const data = await resp.json().catch(() => null);
+    const classTopics = data?.class_topics;
     return {
-      classTopics: Boolean(data?.class_topics_enabled),
+      classTopics: Boolean(data?.class_topics_enabled ?? (classTopics?.enabled && classTopics?.ready)),
       suppressionRules: Number(data?.suppression_rule_count || 0) >= 0,
     };
   } catch {

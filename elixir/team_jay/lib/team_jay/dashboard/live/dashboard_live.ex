@@ -837,6 +837,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           <tbody>
             <%= for event <- @events do %>
               <% trace_id = event_trace_id(event) %>
+              <% correlation_id = event_correlation_id(event) %>
               <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
                 <td class="py-1 pr-3 text-gray-200 font-mono truncate max-w-[180px]">
                   {event["event_type"] || event[:event_type] || "—"}
@@ -872,7 +873,17 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
                       >↗</a>
                     </span>
                   <% else %>
-                    <span class="text-gray-700 text-[10px] opacity-60">—</span>
+                    <%= if correlation_id do %>
+                      <span
+                        class="inline-flex items-center gap-1 text-amber-300"
+                        title="Langfuse trace가 아닌 incident/correlation key입니다"
+                      >
+                        <span class="text-[9px] uppercase tracking-wide text-amber-500">incident</span>
+                        <span>{short_trace_id(correlation_id)}</span>
+                      </span>
+                    <% else %>
+                      <span class="text-gray-700 text-[10px] opacity-60">—</span>
+                    <% end %>
                   <% end %>
                 </td>
                 <td class="py-1 text-gray-400 whitespace-nowrap">
@@ -1753,7 +1764,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> refresh_phase_status()
     |> assign(
       :events,
-      safe_call(fn -> Jay.Core.EventLake.get_recent(50) end, socket.assigns.events)
+      safe_call(fn -> load_dashboard_events(50) end, socket.assigns.events)
     )
     |> assign(
       :event_stats,
@@ -2590,7 +2601,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     growth_scheduler =
       safe_call(fn -> load_growth_scheduler_status() end, default_growth_scheduler())
 
-    events = safe_call(fn -> Jay.Core.EventLake.get_recent(50) end, [])
+    events = safe_call(fn -> load_dashboard_events(50) end, [])
 
     event_stats =
       safe_call(fn -> Jay.Core.EventLake.get_stats() end, %{total: 0, by_type: %{}, by_team: %{}})
@@ -2632,6 +2643,66 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       _ -> default
     catch
       :exit, _ -> default
+    end
+  end
+
+  defp load_dashboard_events(limit) do
+    events =
+      Jay.Core.EventLake.get_recent(max(limit * 20, limit))
+      |> Enum.filter(&dashboard_event?/1)
+      |> Enum.take(limit)
+
+    if length(events) >= limit do
+      events
+    else
+      load_dashboard_events_from_db(limit)
+    end
+  end
+
+  defp load_dashboard_events_from_db(limit) do
+    sql = """
+    SELECT id, event_type, team, bot_name, severity, trace_id, title, message, tags, metadata, created_at, updated_at
+    FROM agent.event_lake
+    WHERE event_type NOT LIKE 'luna.tv.bar.%'
+      AND event_type <> 'port_agent_started'
+    ORDER BY created_at DESC, id DESC
+    LIMIT $1
+    """
+
+    case Jay.Core.Repo.query(sql, [limit]) do
+      {:ok, %{rows: rows}} ->
+        Enum.map(rows, fn [
+                            id,
+                            event_type,
+                            team,
+                            bot_name,
+                            severity,
+                            trace_id,
+                            title,
+                            message,
+                            tags,
+                            metadata,
+                            created_at,
+                            updated_at
+                          ] ->
+          %{
+            "id" => id,
+            "event_type" => event_type,
+            "team" => team,
+            "bot_name" => bot_name,
+            "severity" => severity,
+            "trace_id" => trace_id,
+            "title" => title,
+            "message" => message,
+            "tags" => tags || [],
+            "metadata" => metadata || %{},
+            "created_at" => created_at,
+            "updated_at" => updated_at
+          }
+        end)
+
+      _ ->
+        []
     end
   end
 
@@ -2854,17 +2925,61 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         end
       end)
 
+    trace_id = trace_id || event_metadata_trace_id(event)
+
     if valid_trace_id?(trace_id), do: trace_id
   end
 
   defp event_trace_id(_), do: nil
 
+  defp event_correlation_id(event) when is_map(event) do
+    correlation_id = event_metadata_correlation_id(event)
+
+    if valid_correlation_id?(correlation_id) and not valid_trace_id?(correlation_id) do
+      correlation_id
+    end
+  end
+
+  defp event_correlation_id(_), do: nil
+
   defp dashboard_event?(event) when is_map(event) do
     event_type = event["event_type"] || event[:event_type] || ""
-    not String.starts_with?(to_string(event_type), "luna.tv.bar.")
+    event_type = to_string(event_type)
+
+    not String.starts_with?(event_type, "luna.tv.bar.") and event_type != "port_agent_started"
   end
 
   defp dashboard_event?(_), do: true
+
+  defp event_metadata_trace_id(event) when is_map(event) do
+    event
+    |> event_metadata()
+    |> metadata_value(["traceId", "trace_id"])
+  end
+
+  defp event_metadata_trace_id(_), do: nil
+
+  defp event_metadata_correlation_id(event) when is_map(event) do
+    event
+    |> event_metadata()
+    |> metadata_value(["incidentKey", "incident_key", "requestId", "request_id"])
+  end
+
+  defp event_metadata_correlation_id(_), do: nil
+
+  defp event_metadata(event) when is_map(event), do: event["metadata"] || event[:metadata] || %{}
+  defp event_metadata(_), do: %{}
+
+  defp metadata_value(metadata, keys) when is_map(metadata) do
+    Enum.find_value(keys, fn key ->
+      case Map.get(metadata, key) do
+        value when is_binary(value) and value != "" -> value
+        _ -> nil
+      end
+    end)
+  end
+
+  defp metadata_value(_, _), do: nil
 
   defp langfuse_trace_url(trace_id) do
     host =
@@ -2889,10 +3004,20 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp short_trace_id(trace_id), do: trace_id |> to_string() |> String.slice(0, 8)
 
   defp valid_trace_id?(trace_id) when is_binary(trace_id) do
-    trace_id != "" and trace_id != "00000000000000000000000000000000"
+    trace_id = String.trim(trace_id)
+
+    trace_id != "" and
+      trace_id != "00000000000000000000000000000000" and
+      not String.contains?(trace_id, ":")
   end
 
   defp valid_trace_id?(_), do: false
+
+  defp valid_correlation_id?(value) when is_binary(value) do
+    String.trim(value) != "" and value != "00000000000000000000000000000000"
+  end
+
+  defp valid_correlation_id?(_), do: false
 
   defp format_kst_label(%NaiveDateTime{} = dt) do
     date = NaiveDateTime.to_date(dt)

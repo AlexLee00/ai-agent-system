@@ -180,7 +180,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ "Process.send_after(self(), :refresh_core_visibility, 30_000)"
     assert source =~ "def handle_info(:refresh_core_visibility, socket)"
     assert source =~ "defp refresh_core_visibility(socket)"
-    assert source =~ "Jay.Core.EventLake.get_recent(50)"
+    assert source =~ "load_dashboard_events(50)"
     assert source =~ "Jay.Core.EventLake.get_stats()"
     assert source =~ "load_recent_cycles()"
     assert source =~ "load_cross_pipelines()"
