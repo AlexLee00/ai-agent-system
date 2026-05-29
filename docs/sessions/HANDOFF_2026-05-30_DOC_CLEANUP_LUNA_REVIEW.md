@@ -37,3 +37,12 @@
 - Phase1 fail 2지점: ordering(테스트 정정) + overseas(소스 구현)
 - 실거래 무중단(tsx). PROTECTED launchd 11개 보류 금지. 크립토 live(binance/upbit) + KIS stocks 무중단.
 - 미완료 검토 결론: ordering 구현 / overseas 구현 / auto_settle 진단→수정 / FILL_V2 스킵
+
+## ★ 정정 (세션 말 — 정직)
+- **ordering policy 이미 완료**: Codex가 이 세션 중(02:19) 정정+커밋(a02886d7e). 단독 smoke exit=0.
+  - CODEX_LUNA_ORDERING_POLICY_TEST_FIX 불필요 → archive 이동(전달 안 함).
+  - 메티가 이전 fail 상태(ordering AssertionError)로 작성했으나 그 사이 Codex가 해결.
+- **Phase1 남은 fail = overseas만** (community_coverage_gate_failed:overseas:events<10/sources<3/freshness<0.5).
+- **Codex 전달 대기(수정): 2개** — CODEX_BUILDTS_WARNING_CLEANUP + CODEX_LUNA_AUTO_SETTLE_DIAGNOSIS.
+- smoke.ts git status M은 이미 커밋(a02886d7e)이라 내용=HEAD, 부차적(mtime).
+- **다음 세션 overseas 구현 완료 시 → Phase1 12개 즉시 아카이빙 가능**(ordering 이미 해결).
