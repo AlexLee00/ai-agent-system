@@ -13,6 +13,7 @@ import {
   redactMetaReflexionValue,
 } from '../shared/meta-neural-reflexion-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const CONFIRM_TOKEN = 'luna-meta-reflexion-shadow';
 
@@ -316,8 +317,10 @@ export async function runLunaMetaReflexionShadow(options = parseArgs(), deps = {
 }
 
 async function main() {
-  const result = await runLunaMetaReflexionShadow(parseArgs());
-  if (process.argv.includes('--json')) {
+  const args = parseArgs();
+  if (maybeSkipForMemory('luna.meta-reflexion', { json: args.json })) return;
+  const result = await runLunaMetaReflexionShadow(args);
+  if (args.json) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }

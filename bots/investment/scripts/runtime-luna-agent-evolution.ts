@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { runLunaAgentEvolution } from '../shared/luna-agent-evolution.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 function argValue(name: string, fallback: string | null = null): string | null {
   const prefix = `--${name}=`;
@@ -11,6 +12,7 @@ function argValue(name: string, fallback: string | null = null): string | null {
 
 async function main() {
   const json = process.argv.includes('--json');
+  if (maybeSkipForMemory('luna.agent-evolution', { json })) return;
   const write = process.argv.includes('--write');
   const noDryRun = process.argv.includes('--no-dry-run');
   const result = await runLunaAgentEvolution({

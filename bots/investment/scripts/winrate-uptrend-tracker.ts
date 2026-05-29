@@ -19,6 +19,7 @@
 
 import { query } from '../shared/db/core.ts';
 import { learningPnlValidSql } from '../shared/trade-journal-learning-guard.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const TODAY = new Date().toISOString().split('T')[0];
 const ENABLED_ENV = 'LUNA_WINRATE_UPTREND_TRACKER_ENABLED';
@@ -239,6 +240,7 @@ async function main() {
   const json = process.argv.includes('--json');
   const days = Number(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || 30);
   const enabled = boolEnv(ENABLED_ENV, true);
+  if (maybeSkipForMemory('luna.winrate-tracker', { json })) return;
 
   console.log(`[WinrateTracker] ${new Date().toISOString()} 수익 확률 추적 시작`);
   if (!enabled && !dryRun) {

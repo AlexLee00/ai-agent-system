@@ -7,6 +7,7 @@
 
 import { runWeeklySelfTuningAnalysis } from '../shared/guard-self-tuning.ts';
 import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 async function sendTelegramNotification(message) {
   try {
@@ -25,6 +26,7 @@ async function sendTelegramNotification(message) {
 }
 
 async function main() {
+  if (maybeSkipForMemory('luna.guard-self-tuning')) return;
   const date = new Date().toISOString().split('T')[0];
   console.log(`[GuardSelfTuning] ${date} 주간 자율 조정 분석 시작`);
 

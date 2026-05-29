@@ -18,6 +18,7 @@
 
 import { runRegimeWeightLearner } from '../shared/regime-weight-learner.ts';
 import * as db from '../shared/db.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 async function sendTelegram(message) {
   try {
@@ -40,6 +41,7 @@ async function sendTelegram(message) {
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const days = Number(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || 7);
+  if (maybeSkipForMemory('luna.weight-adaptive-tuner')) return;
 
   console.log(`[RegimeWeightLearner] ${new Date().toISOString()} 학습 실행 시작 (dryRun=${dryRun}, days=${days})`);
 

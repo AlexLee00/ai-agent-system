@@ -12,13 +12,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 from datetime import datetime
 from typing import Optional
 
-import psycopg2
-import psycopg2.extras
 import requests
 
 # ─── 설정 ────────────────────────────────────────────────────
@@ -33,6 +33,81 @@ PG_DSN = os.environ.get(
 # 일일 처리 한도 (기본 200건 — API 부하 제한)
 DEFAULT_DAILY_LIMIT = 200
 DEFAULT_BATCH_SIZE = 20
+
+LEVEL_RANK = {"normal": 0, "warn": 1, "warning": 1, "critical": 2}
+psycopg2 = None
+
+
+def _bool_env(name: str, fallback: bool = False) -> bool:
+    raw = str(os.environ.get(name, "")).strip().lower()
+    if not raw:
+        return fallback
+    if raw in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if raw in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return fallback
+
+
+def _normalize_level(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    if raw == "warning":
+        return "warn"
+    if raw in {"normal", "warn", "critical"}:
+        return raw
+    return "normal"
+
+
+def _parse_free_pct(text: str) -> Optional[float]:
+    for pattern in (
+        r"System-wide memory free percentage:\s*([0-9]+(?:\.[0-9]+)?)%",
+        r"memory free percentage:\s*([0-9]+(?:\.[0-9]+)?)%",
+        r"free percentage:\s*([0-9]+(?:\.[0-9]+)?)%",
+    ):
+        match = re.search(pattern, text or "", re.IGNORECASE)
+        if match:
+            return float(match.group(1))
+    return None
+
+
+def _read_memory_pressure() -> tuple[str, Optional[float], str]:
+    simulated_level = os.environ.get("LUNA_MEMORY_GUARD_SIMULATE_LEVEL", "").strip()
+    simulated_free = os.environ.get("LUNA_MEMORY_GUARD_SIMULATE_FREE_PCT", "").strip()
+    if simulated_level or simulated_free:
+        free_pct = float(simulated_free) if simulated_free else None
+        return _normalize_level(simulated_level), free_pct, "simulated"
+    try:
+        proc = subprocess.run(
+            ["/usr/bin/memory_pressure"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        text = f"{proc.stdout}\n{proc.stderr}"
+    except Exception:
+        text = ""
+    lower = text.lower()
+    level = "critical" if "critical" in lower else "warn" if "warn" in lower else "normal"
+    return level, _parse_free_pct(text), "memory_pressure" if text else "unavailable_fail_open"
+
+
+def should_skip_for_memory(job_name: str = "luna.fundamentals-expander") -> bool:
+    if _bool_env("LUNA_MEMORY_GUARD_DISABLED", False):
+        return False
+    threshold_level = _normalize_level(os.environ.get("LUNA_MEMORY_GUARD_LEVEL", "warn"))
+    threshold_free_pct = float(os.environ.get("LUNA_MEMORY_GUARD_FREE_PCT", "10") or 10)
+    level, free_pct, detail = _read_memory_pressure()
+    level_pressure = LEVEL_RANK.get(level, 0) >= LEVEL_RANK.get(threshold_level, 1)
+    pct_pressure = free_pct is not None and free_pct < threshold_free_pct
+    if not (level_pressure or pct_pressure):
+        return False
+    free_label = "n/a" if free_pct is None else f"{free_pct:.1f}%"
+    print(
+        f"[MemoryGuard] skip {job_name}: level={level} freePct={free_label} detail={detail}",
+        flush=True,
+    )
+    return True
 API_DELAY_SECONDS = 0.5    # API 호출 간 딜레이
 
 # 최신 보고서 코드 (연간 11011, Q1 11013, Q2 11012, Q3 11014)
@@ -41,12 +116,22 @@ CURRENT_YEAR = str(datetime.now().year)
 
 # ─── DB 헬퍼 ─────────────────────────────────────────────────
 
+def _ensure_psycopg2():
+    global psycopg2
+    if psycopg2 is None:
+        import psycopg2 as _psycopg2
+        import psycopg2.extras
+        psycopg2 = _psycopg2
+    return psycopg2
+
+
 def get_db_conn():
-    return psycopg2.connect(PG_DSN)
+    return _ensure_psycopg2().connect(PG_DSN)
 
 def get_symbols_without_fundamentals(conn, limit: int) -> list[dict]:
     """corp_financial_reports에 있지만 corp_fundamentals에 없는 종목"""
-    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+    pg = _ensure_psycopg2()
+    with conn.cursor(cursor_factory=pg.extras.DictCursor) as cur:
         cur.execute("""
             SELECT DISTINCT
                 cfr.stock_code,
@@ -119,7 +204,8 @@ def fetch_finstate_from_reports(corp_code: str, bsns_year: str, reprt_code: str)
 
 def calc_fundamentals_from_db(conn, stock_code: str, bsns_year: str, reprt_code: str) -> Optional[dict]:
     """corp_financial_reports 데이터로 펀더멘털 지표 계산"""
-    with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+    pg = _ensure_psycopg2()
+    with conn.cursor(cursor_factory=pg.extras.DictCursor) as cur:
         cur.execute("""
             SELECT account_nm, account_id, thstrm_amount, frmtrm_amount, sj_div, fs_div
             FROM investment.corp_financial_reports
@@ -281,6 +367,9 @@ def main():
     parser.add_argument("--limit", type=int, default=DEFAULT_DAILY_LIMIT, help="일일 처리 한도")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="배치 크기")
     args = parser.parse_args()
+
+    if should_skip_for_memory():
+        sys.exit(0)
 
     success, failed = expand_fundamentals(limit=args.limit, batch_size=args.batch_size)
     sys.exit(0 if failed == 0 else 1)

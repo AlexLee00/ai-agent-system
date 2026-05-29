@@ -14,6 +14,7 @@
 
 import { query, run } from '../shared/db/core.ts';
 import { initHubConfig } from '../../../packages/core/lib/llm-keys.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const REPORT_DATE = new Date().toISOString().split('T')[0];
 const REPORT_DAYS = 7;
@@ -163,6 +164,7 @@ async function sendTelegramNotification(message) {
 }
 
 async function main() {
+  if (maybeSkipForMemory('luna.guard-effectiveness')) return;
   console.log(`[GuardEffectiveness] ${REPORT_DATE} 보고서 생성 시작`);
 
   try {

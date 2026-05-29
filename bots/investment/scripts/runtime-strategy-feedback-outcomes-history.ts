@@ -4,6 +4,7 @@
 import fs from 'fs';
 import { buildStrategyFeedbackOutcomes } from './runtime-strategy-feedback-outcomes.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const DEFAULT_FILE = '/tmp/investment-runtime-strategy-feedback-outcomes-history.jsonl';
 
@@ -143,6 +144,7 @@ export async function buildStrategyFeedbackOutcomesHistory({ days = 90, file = D
 
 async function main() {
   const args = parseArgs();
+  if (maybeSkipForMemory('luna.strategy-feedback', { json: args.json })) return;
   const result = await buildStrategyFeedbackOutcomesHistory(args);
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else console.log(result);

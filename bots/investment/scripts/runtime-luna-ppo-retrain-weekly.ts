@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,6 +18,7 @@ function argValue(name: string, fallback: string | null = null): string | null {
 
 async function main() {
   const json = process.argv.includes('--json');
+  if (maybeSkipForMemory('luna.ppo-retrain', { json })) return;
   const train = process.argv.includes('--train');
   const confirm = argValue('confirm', '') || '';
   const defaultPython = existsSync('/opt/homebrew/bin/python3') ? '/opt/homebrew/bin/python3' : 'python3';

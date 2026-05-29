@@ -6,10 +6,12 @@
  */
 
 import { runWeeklyFinRLTraining } from '../shared/luna-finrl-orchestrator.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const MARKETS = ['crypto', 'stocks'];
 
 async function main() {
+  if (maybeSkipForMemory('luna.finrl-weekly-training')) return;
   const date = new Date().toISOString().split('T')[0];
   console.log(`[FinRLWeekly] ${date} 주간 학습 시작`);
 

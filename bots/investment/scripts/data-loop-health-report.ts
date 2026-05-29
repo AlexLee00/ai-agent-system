@@ -20,6 +20,7 @@ import { query, close } from '../shared/db/core.ts';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const require = createRequire(import.meta.url);
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys.js');
@@ -483,6 +484,8 @@ async function sendTelegram(message) {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
+  const json = process.argv.includes('--json');
+  if (maybeSkipForMemory('luna.data-loop-health', { json })) return;
   console.log(`[DataLoopHealth] ${new Date().toISOString()} 루프 건강 보고 시작`);
 
   try {

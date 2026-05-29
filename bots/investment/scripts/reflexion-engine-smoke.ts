@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { checkAvoidPatterns } from '../shared/reflexion-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 async function runSmoke() {
   const result = await checkAvoidPatterns('BTC/USDT', 'crypto', 'long', 'trending_bull');
@@ -14,6 +15,7 @@ async function runSmoke() {
 }
 
 async function main() {
+  if (maybeSkipForMemory('luna.reflexion-engine', { json: process.argv.includes('--json') })) return;
   const result = await runSmoke();
   if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
   else console.log('reflexion-engine-smoke ok');
@@ -25,4 +27,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ reflexion-engine-smoke 실패:',
   });
 }
-

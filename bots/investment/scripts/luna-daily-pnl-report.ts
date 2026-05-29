@@ -14,6 +14,7 @@
  */
 
 import { createRequire } from 'module';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 const require = createRequire(import.meta.url);
 
 const path = require('path');
@@ -156,6 +157,7 @@ function buildMessage(
 // ─── 메인 ────────────────────────────────────────────────────────────
 
 async function main() {
+  if (maybeSkipForMemory('luna.daily-pnl-report')) return;
   const dateStr = today();
 
   const [exchangeRows, total, todayStats, fxRate] = await Promise.all([

@@ -15,6 +15,7 @@
  */
 
 import { query, run } from '../shared/db/core.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const MIN_AGE_HOURS = 4;
 const OUTCOME_WINDOW_HOURS = 24;
@@ -85,6 +86,7 @@ async function main() {
   const enabled = boolEnv(ENABLED_ENV, true);
   const dryRun = process.argv.includes('--dry-run') || !enabled;
   const json = process.argv.includes('--json');
+  if (maybeSkipForMemory('luna.guard-outcome-tracker', { json })) return;
   console.log(`[GuardOutcome] ${new Date().toISOString()} 아웃컴 측정 시작${dryRun ? ' (dry-run)' : ''}`);
   if (!enabled) {
     console.log(`[GuardOutcome] ${ENABLED_ENV}=false/미설정 — DB 업데이트는 수행하지 않음`);
