@@ -442,6 +442,9 @@ export async function executePaperSimulation(signal, {
     const entryPrice = normalizePaperPrice(order);
     const entrySize = normalizePaperFilled(order, amountUsdt, entryPrice);
     const entryValue = Number(order.cost ?? order.totalUsdt ?? (entryPrice > 0 && entrySize > 0 ? entryPrice * entrySize : amountUsdt));
+    if (!(entryPrice > 0) || !(entrySize > 0)) {
+      throw new Error(`[PAPER:${traceId}] paper BUY data-quality guard failed: invalid price/size`);
+    }
     const tradeId = await journal.generateTradeId();
 
     await journal.insertJournalEntry({
