@@ -3,6 +3,7 @@
 
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
+import { resolveFillForClosedJournal } from '../shared/binance-fill-resolver.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 export function scopeKey(entry) {
@@ -149,6 +150,12 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function boolEnv(name, fallback = false, env = process.env) {
+  const raw = String(env?.[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(raw);
+}
+
 export function pickMatchingSellTradeForOpenScope(sellTrades = [], totalQty = 0) {
   const expectedQty = safeNumber(totalQty, 0);
   if (!(expectedQty > 0)) return null;
@@ -228,6 +235,51 @@ async function closeEntriesFromSellTrade(rows, sellTrade, dryRun) {
   };
 }
 
+async function closeEntriesFromResolvedFill(rows, resolvedFill, dryRun) {
+  const totalQty = rows.reduce((sum, row) => sum + safeNumber(row.entry_size, 0), 0);
+  const exitTotal = safeNumber(resolvedFill?.exitValue, 0);
+  const exitPrice = safeNumber(resolvedFill?.exitPrice, 0);
+  const exitTime = resolvedFill?.lastFillAt ? new Date(resolvedFill.lastFillAt).getTime() : Date.now();
+  const closedTradeIds = [];
+
+  for (const row of rows) {
+    const entryQty = safeNumber(row.entry_size, 0);
+    const ratio = totalQty > 0 ? entryQty / totalQty : 0;
+    const exitValue = exitTotal * ratio;
+    const entryValue = safeNumber(row.entry_value, 0);
+    const pnlAmount = exitValue - entryValue;
+    const pnlPercent = entryValue > 0 ? journalDb.ratioToPercent(pnlAmount / entryValue) : null;
+    closedTradeIds.push(row.trade_id);
+    if (!dryRun) {
+      await journalDb.closeJournalEntry(row.trade_id, {
+        exitTime,
+        exitPrice,
+        exitValue,
+        exitReason: 'journal_reconciled_with_fill',
+        pnlAmount,
+        pnlPercent,
+        pnlNet: pnlAmount,
+        execution_origin: 'cleanup',
+        quality_flag: 'trusted',
+        exclude_from_learning: false,
+        incident_link: `journal_reconcile:fetchMyTrades:fills=${resolvedFill?.fillCount || 0}`,
+      });
+      await journalDb.ensureAutoReview(row.trade_id).catch(() => {});
+    }
+  }
+
+  return {
+    closedTradeIds,
+    exitPrice,
+    exitValue: exitTotal,
+    exitTime,
+    fillCount: resolvedFill?.fillCount || 0,
+    matchedQty: resolvedFill?.matchedQty || null,
+    exchangeTradeIds: resolvedFill?.tradeIds || [],
+    exchangeOrderIds: resolvedFill?.orderIds || [],
+  };
+}
+
 export function buildWriteImpactGuard(summary = {}, maxAffectedTrades = 10) {
   const max = Number(maxAffectedTrades);
   if (!Number.isFinite(max) || max <= 0) return null;
@@ -251,6 +303,8 @@ export function parseReconcileOpenJournalsArgs(args = []) {
   const dustCloseMaxValueArg = args.find((arg) => arg.startsWith('--dust-close-max-value-usdt='))?.split('=')[1];
   const maxAffectedArg = args.find((arg) => arg.startsWith('--max-affected-trades='))?.split('=')[1];
   const symbolsArg = args.find((arg) => arg.startsWith('--symbols='))?.split('=')[1];
+  const resolveFillsDryRun = args.includes('--resolve-fills-dry-run')
+    || boolEnv('LUNA_RECONCILE_FILL_RESOLVE_DRY_RUN', false);
   const symbols = symbolsArg
     ? symbolsArg.split(',').map((value) => value.trim()).filter(Boolean)
     : [];
@@ -265,6 +319,8 @@ export function parseReconcileOpenJournalsArgs(args = []) {
     noPositionMinAgeHours: Number.isFinite(Number(minAgeArg)) ? Number(minAgeArg) : 6,
     dustCloseMaxValueUsdt: Number.isFinite(Number(dustCloseMaxValueArg)) ? Number(dustCloseMaxValueArg) : 1,
     maxAffectedTrades: Number.isFinite(Number(maxAffectedArg)) ? Number(maxAffectedArg) : 10,
+    resolveFillsDryRun,
+    fillResolveEnabled: boolEnv('LUNA_RECONCILE_FILL_RESOLVE_ENABLED', false),
   };
 }
 
@@ -276,6 +332,8 @@ export async function reconcileOpenJournals({
   symbols = [],
   confirmLive = false,
   maxAffectedTrades = 10,
+  resolveFillsDryRun = false,
+  fillResolveEnabled = boolEnv('LUNA_RECONCILE_FILL_RESOLVE_ENABLED', false),
 } = {}) {
   if (dryRun === false && confirmLive !== true) {
     return {
@@ -369,6 +427,35 @@ export async function reconcileOpenJournals({
         });
         continue;
       }
+      const shouldResolveExchangeFills = (
+        (dryRun === true && resolveFillsDryRun === true)
+        || (dryRun === false && fillResolveEnabled === true)
+      ) && String(latest.exchange || '').toLowerCase() === 'binance' && !Boolean(latest.is_paper);
+      let exchangeFillResolve = shouldResolveExchangeFills
+        ? await resolveFillForClosedJournal({
+            symbol: latest.symbol,
+            entryTime: Math.min(...rows.map((row) => Number(row.entry_time || Date.now()))),
+            entrySize: totalQty,
+            entryPrice: totalQty > 0 ? totalValue / totalQty : latest.entry_price,
+            entryValue: totalValue,
+            paperMode: Boolean(latest.is_paper),
+          })
+        : null;
+      if (exchangeFillResolve?.source === 'fetchMyTrades') {
+        const closePlan = await closeEntriesFromResolvedFill(rows, exchangeFillResolve, dryRun);
+        results.push({
+          scope: key,
+          symbol: latest.symbol,
+          action: dryRun ? 'would_close_all_no_position_from_exchange_fill' : 'close_all_no_position_from_exchange_fill',
+          targetQty,
+          totalQty,
+          totalValue,
+          latestQty: Number(latest.entry_size || 0),
+          fillResolve: exchangeFillResolve,
+          ...closePlan,
+        });
+        continue;
+      }
       for (const row of rows) {
         await closeEntryAtBreakeven(row, 'journal_reconciled_no_position', dryRun);
       }
@@ -382,6 +469,10 @@ export async function reconcileOpenJournals({
         dustCloseMaxValueUsdt: Number(dustCloseMaxValueUsdt || 0),
         latestQty: Number(latest.entry_size || 0),
         closedTradeIds,
+        fillResolve: exchangeFillResolve || {
+          source: 'skipped',
+          reason: shouldResolveExchangeFills ? 'resolver_not_attempted' : 'disabled_or_non_binance_or_paper',
+        },
       });
       continue;
     }
