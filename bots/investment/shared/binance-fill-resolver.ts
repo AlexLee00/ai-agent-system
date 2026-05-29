@@ -85,8 +85,10 @@ export async function resolveFillForClosedJournal({
   paperMode = false,
   expectedSide = 'sell',  // H4: 호출부가 direction 기반으로 전달; 기본값 'sell' 유지
   orderIds = [],           // H1: 진입 스코프의 sl_order_id + tp_order_id 목록
+  excludedFillIds = [],    // Phase 2: 이미 다른 journal에 귀속된 fill은 fallback 후보에서 제외
   lookbackMs,              // H2: 미지정 시 DEFAULT_LOOKBACK_MS(10분)
   limit = DEFAULT_LIMIT,
+  fetchMyTrades = null,    // smoke/invariant test injection
 } = {}) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const expectedQty = num(entrySize, 0);
@@ -107,12 +109,17 @@ export async function resolveFillForClosedJournal({
   const since = Math.max(0, num(entryTime, Date.now() - 30 * 24 * 3600_000) - resolvedLookbackMs);
 
   try {
-    const ex = await getReadOnlyExchange();
-    const rawTrades = await ex.fetchMyTrades(normalizedSymbol, since, Math.max(1, num(limit, DEFAULT_LIMIT)));
+    const fetchTrades = fetchMyTrades || (async (...args) => {
+      const ex = await getReadOnlyExchange();
+      return ex.fetchMyTrades(...args);
+    });
+    const rawTrades = await fetchTrades(normalizedSymbol, since, Math.max(1, num(limit, DEFAULT_LIMIT)));
     const side = String(expectedSide || 'sell').toLowerCase();
+    const excludedFillSet = new Set((excludedFillIds || []).filter(Boolean).map(String));
     const candidates = (rawTrades || [])
       .map(normalizeTrade)
       .filter((t) => t.side === side && t.timestamp >= since && t.amount > 0 && t.price > 0)
+      .filter((t) => !t.id || !excludedFillSet.has(String(t.id)))
       .sort((a, b) => a.timestamp - b.timestamp);
 
     // === 1차: order_id 매칭 ===
@@ -153,8 +160,9 @@ export async function resolveFillForClosedJournal({
 
     // === 2차: 보수적 fallback — 수량이 정확히 일치하는 단일 fill 한 건만 허용 ===
     // 누적 매칭은 DCA 종목에서 다른 진입 fill을 오귀속할 수 있으므로 사용하지 않는다.
-    const singleMatch = candidates.find((t) => Math.abs(t.amount - expectedQty) <= tolerance(expectedQty));
-    if (singleMatch) {
+    const singleMatches = candidates.filter((t) => Math.abs(t.amount - expectedQty) <= tolerance(expectedQty));
+    if (singleMatches.length === 1) {
+      const singleMatch = singleMatches[0];
       const qty = singleMatch.amount;
       const value = singleMatch.cost || singleMatch.amount * singleMatch.price;
       const exitPrice = value > 0 && qty > 0 ? value / qty : null;
@@ -191,6 +199,7 @@ export async function resolveFillForClosedJournal({
       since,
       fillCount: 0,
       inspectedTrades: candidates.length,
+      exactQtyMatches: singleMatches.length,
     };
   } catch (error) {
     return {

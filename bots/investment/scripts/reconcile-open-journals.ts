@@ -165,6 +165,52 @@ export function pickMatchingSellTradeForOpenScope(sellTrades = [], totalQty = 0)
   }) || null;
 }
 
+export function deriveExpectedExitSide(direction = '') {
+  const normalized = String(direction || '').trim().toLowerCase();
+  return normalized === 'short' || normalized === 'sell' ? 'buy' : 'sell';
+}
+
+export function collectProtectiveOrderIds(rows = []) {
+  return [...new Set((rows || [])
+    .flatMap((row) => [row?.sl_order_id, row?.tp_order_id])
+    .filter(Boolean)
+    .map(String))];
+}
+
+function splitIdList(value) {
+  if (Array.isArray(value)) return value.flatMap(splitIdList);
+  const text = String(value || '').trim();
+  if (!text) return [];
+  if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed.flatMap(splitIdList);
+    } catch {
+      // fall through to comma split
+    }
+  }
+  return text.split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+async function fetchPreviouslyAttributedFillIds(latestEntry = {}) {
+  const rows = await db.query(
+    `SELECT exit_fill_ids
+      FROM trade_journal
+      WHERE symbol = $1
+        AND exchange = $2
+        AND is_paper = $3
+        AND COALESCE(trade_mode, 'normal') = $4
+        AND exit_fill_ids IS NOT NULL`,
+    [
+      latestEntry.symbol,
+      latestEntry.exchange || 'binance',
+      Boolean(latestEntry.is_paper),
+      latestEntry.trade_mode || 'normal',
+    ],
+  ).catch(() => []);
+  return [...new Set((rows || []).flatMap((row) => splitIdList(row.exit_fill_ids)).filter(Boolean))];
+}
+
 async function findMatchingSellTradeForOpenScope(latestEntry, totalQty) {
   const entryTimeMs = Number(latestEntry?.entry_time || 0);
   const after = entryTimeMs > 0
@@ -442,9 +488,12 @@ export async function reconcileOpenJournals({
             entryPrice: totalQty > 0 ? totalValue / totalQty : latest.entry_price,
             entryValue: totalValue,
             paperMode: Boolean(latest.is_paper),
+            expectedSide: deriveExpectedExitSide(latest.direction),
+            orderIds: collectProtectiveOrderIds(rows),
+            excludedFillIds: await fetchPreviouslyAttributedFillIds(latest),
           })
         : null;
-      if (exchangeFillResolve?.source === 'fetchMyTrades') {
+      if (['fetchMyTrades', 'fetchMyTrades_orderid'].includes(exchangeFillResolve?.source)) {
         const closePlan = await closeEntriesFromResolvedFill(rows, exchangeFillResolve, dryRun);
         results.push({
           scope: key,

@@ -6,6 +6,8 @@ import {
   buildLatestMismatchManualPlan,
   buildScopeMap,
   buildWriteImpactGuard,
+  collectProtectiveOrderIds,
+  deriveExpectedExitSide,
   entryAgeHours,
   isDustNoPositionScope,
   parseReconcileOpenJournalsArgs,
@@ -29,6 +31,12 @@ assert.ok(tolerance(100) >= 1);
 assert.ok(entryAgeHours(entry) >= 6.9);
 assert.equal(isDustNoPositionScope(0.05, 1), true);
 assert.equal(isDustNoPositionScope(1.01, 1), false);
+assert.equal(deriveExpectedExitSide('BUY'), 'sell');
+assert.equal(deriveExpectedExitSide('short'), 'buy');
+assert.deepEqual(collectProtectiveOrderIds([
+  { sl_order_id: 'sl-1', tp_order_id: 'tp-1' },
+  { sl_order_id: 'sl-1', tp_order_id: null },
+]), ['sl-1', 'tp-1']);
 
 const grouped = buildScopeMap([
   { ...entry, trade_id: 'old', entry_time: Date.now() - 10_000 },
