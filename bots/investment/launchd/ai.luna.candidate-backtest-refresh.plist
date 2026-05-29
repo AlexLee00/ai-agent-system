@@ -8,7 +8,7 @@
   <array>
     <string>/opt/homebrew/bin/node</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-candidate-backtest-refresh.ts</string>
-    <string>--days=30</string>
+    <string>--periods=180</string>
     <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
@@ -23,6 +23,10 @@
     <string>true</string>
     <key>LUNA_BACKTEST_STALE_HOURS</key>
     <string>24</string>
+    <key>LUNA_BT_WALK_FORWARD_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_VECTORBT_TIMEOUT_MS</key>
+    <string>45000</string>
   </dict>
   <key>RunAtLoad</key>
   <false/>
