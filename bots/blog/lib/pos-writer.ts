@@ -82,6 +82,14 @@ const AI_AGENT_CONTEXT = `
 구체적 봇 이름, 모듈명을 사용하라 — AI가 만들어낼 수 없는 고유 정보.
 `.trim();
 
+const CAFE_FACT_GUARDRAILS = `
+[커피랑도서관 분당서현점 사실 검증 규칙]
+- 우리 스터디카페 이름은 "커피랑도서관 분당서현점"이다. "카페온"이라고 쓰지 말라.
+- 현재 할인행사, 할인 이벤트, 쿠폰, 무료 체험, 프로모션을 진행한다고 쓰지 말라.
+- 가격/할인/행사/예약 혜택은 검증된 입력이 없으면 절대 만들지 말라.
+- 세스코 에어는 공기질 관리 기능으로만 설명하라. 과장된 효능이나 인증 표현을 만들지 말라.
+`.trim();
+
 // ─── GEO 최적화 규칙 ─────────────────────────────────────────────────
 
 const GEO_RULES = `
@@ -328,6 +336,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const userPrompt = `
 ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ${AI_AGENT_CONTEXT}
+${CAFE_FACT_GUARDRAILS}
 ${GEO_RULES}
 ${AI_BRIEFING_RULES}
 ${LECTURE_AI_BRIEFING_ORDER}

@@ -62,6 +62,14 @@ const AI_AGENT_CONTEXT = `
 샌드위치 화법의 "일상 에피소드" 부분에서 1~2회 자연스럽게 언급하라.
 `.trim();
 
+const CAFE_FACT_GUARDRAILS = `
+[커피랑도서관 분당서현점 사실 검증 규칙]
+- 우리 스터디카페 이름은 "커피랑도서관 분당서현점"이다. "카페온"이라고 쓰지 말라.
+- 현재 할인행사, 할인 이벤트, 쿠폰, 무료 체험, 프로모션을 진행한다고 쓰지 말라.
+- 가격/할인/행사/예약 혜택은 검증된 입력이 없으면 절대 만들지 말라.
+- 세스코 에어는 공기질 관리 기능으로만 설명하라. 과장된 효능이나 인증 표현을 만들지 말라.
+`.trim();
+
 // ─── IT 카테고리 뉴스 분석 섹션 적용 대상 ────────────────────────────
 
 const IT_NEWS_CATEGORIES = ['최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅'];
@@ -1388,6 +1396,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const userPrompt = `
 ${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 ${AI_AGENT_CONTEXT}
+${CAFE_FACT_GUARDRAILS}
 ${GEO_RULES}
 ${AI_BRIEFING_RULES}
 ${GENERAL_AI_BRIEFING_ORDER}
@@ -1788,6 +1797,7 @@ ${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 [카테고리] ${category}
 [발행일] ${today}
 [오늘 날씨] ${weatherContext}
+${CAFE_FACT_GUARDRAILS}
 [최신 IT 뉴스] ${newsBlock}
 ${bookReviewBlock}${experienceBlock}
 ${recentThemeBlock}

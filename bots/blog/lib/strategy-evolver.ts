@@ -267,7 +267,7 @@ function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
 
   if (revenueImpactPct < -0.05) {
     focus.unshift('매출 하락 구간용 전환형 주제와 CTA 강화');
-    recommendations.unshift('예약 문의, 상담 신청, 무료 체험처럼 자연스러운 전환 CTA를 일반 글 후반부에 더 자주 배치하세요.');
+    recommendations.unshift('예약 문의와 이용 전 확인 포인트처럼 검증된 정보 기반 CTA를 일반 글 후반부에 더 자주 배치하세요.');
     next.preferredCategory = next.preferredCategory || '홈페이지와App';
   } else if (revenueImpactPct > 0.05) {
     focus.unshift('매출 우세 신호가 있는 포맷 재사용');

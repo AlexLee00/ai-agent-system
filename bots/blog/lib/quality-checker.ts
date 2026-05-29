@@ -197,6 +197,19 @@ const STAT_TRIGGER_REPLACEMENTS = {
   '조사에 따르면': '현장 사례를 보면',
   '연구에 따르면': '관련 사례를 보면',
 };
+const FALSE_CAFEON_RE = /카페온/i;
+const UNSUPPORTED_CAFE_PROMO_RE = /(?:할인\s*(?:행사|이벤트|프로모션|혜택)?|쿠폰|무료\s*(?:체험|이용|제공)|프로모션|이벤트\s*(?:진행|중|혜택|행사)|행사\s*(?:진행|중|혜택))/gi;
+const CAFE_CONTEXT_RE = /커피랑도서관|분당서현|스터디카페|스터디룸|좌석|예약|공부공간|작업공간/i;
+
+function hasUnsupportedCafePromoClaim(content) {
+  const text = String(content || '');
+  UNSUPPORTED_CAFE_PROMO_RE.lastIndex = 0;
+  return Array.from(text.matchAll(UNSUPPORTED_CAFE_PROMO_RE)).some((match) => {
+    const index = Number(match.index || 0);
+    const window = text.slice(Math.max(0, index - 80), Math.min(text.length, index + match[0].length + 80));
+    return CAFE_CONTEXT_RE.test(window);
+  });
+}
 
 function hasStatSourceSignal(content, index, phraseLength) {
   const raw = String(content || '');
@@ -218,6 +231,12 @@ function checkReaderFacingArtifacts(content, type) {
   const issues = [];
   const raw = String(content || '');
   const plain = stripHtml(raw);
+  if (FALSE_CAFEON_RE.test(plain)) {
+    issues.push({ severity: 'error', msg: '허위 매장명 감지: 카페온이 아니라 커피랑도서관 분당서현점으로 작성해야 함' });
+  }
+  if (hasUnsupportedCafePromoClaim(plain)) {
+    issues.push({ severity: 'error', msg: '검증되지 않은 스터디카페 할인/이벤트/쿠폰/무료체험 표현 감지 — 현재 진행하지 않는 내용은 삭제해야 함' });
+  }
   const headings = [
     ...Array.from(raw.matchAll(/<h[1-3][^>]*>\s*([^<]+?)\s*<\/h[1-3]>/gi)).map((m) => String(m[1] || '').trim()),
   ].map((heading) => heading.replace(/^\[|\]$/g, '').trim());

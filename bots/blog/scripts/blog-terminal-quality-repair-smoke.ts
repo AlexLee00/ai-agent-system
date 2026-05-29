@@ -92,6 +92,25 @@ async function main() {
     'HTML bold hashtag marker overflow should be detected'
   );
 
+  const falseCafeClaims = [
+    '일반 포스팅 제목',
+    '',
+    '[AI 스니펫 요약]',
+    '카페온 스터디카페에서 할인행사를 진행한다는 문구는 사실이 아니므로 차단되어야 합니다.',
+    '',
+    '[해시태그]',
+    '#커피랑도서관 #분당서현 #스터디카페',
+  ].join('\n');
+  const falseCafeBefore = await checkQuality(falseCafeClaims, 'general');
+  assert(
+    falseCafeBefore.issues.some((issue) => String(issue.msg).includes('허위 매장명')),
+    'CafeOn false brand claims should be blocked'
+  );
+  assert(
+    falseCafeBefore.issues.some((issue) => String(issue.msg).includes('할인/이벤트')),
+    'unsupported cafe discount/event claims should be blocked'
+  );
+
   console.log(JSON.stringify({ ok: true, repairedLength: repaired.length }, null, 2));
 }
 
