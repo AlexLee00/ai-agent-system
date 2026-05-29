@@ -377,6 +377,9 @@ export async function initJournalSchema() {
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS quality_flag VARCHAR DEFAULT 'trusted'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exclude_from_learning BOOLEAN DEFAULT false`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS incident_link VARCHAR`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exit_order_ids TEXT`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exit_fill_ids TEXT`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exit_match_source TEXT`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_market ON trade_journal(market, created_at)`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_journal_status ON trade_journal(status, created_at)`); } catch { /* 이미 있으면 무시 */ }
 
@@ -609,7 +612,7 @@ export async function insertJournalEntry(entry) {
  * @param {JournalCloseInput} [input]
  * @returns {Promise<void>}
  */
-export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValue, exitReason, pnlAmount, pnlPercent, feeTotal, pnlNet, execution_origin = null, quality_flag = null, exclude_from_learning = null, incident_link = null } = {}) {
+export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValue, exitReason, pnlAmount, pnlPercent, feeTotal, pnlNet, execution_origin = null, quality_flag = null, exclude_from_learning = null, incident_link = null, exit_order_ids = null, exit_fill_ids = null, exit_match_source = null } = {}) {
   await ensureInit();
   const now = Date.now();
   const existingRows = await query(
@@ -639,6 +642,9 @@ export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValu
          quality_flag     = COALESCE(?, quality_flag),
          exclude_from_learning = COALESCE(?, exclude_from_learning),
          incident_link    = COALESCE(?, incident_link),
+         exit_order_ids   = COALESCE(?, exit_order_ids),
+         exit_fill_ids    = COALESCE(?, exit_fill_ids),
+         exit_match_source = COALESCE(?, exit_match_source),
          status        = 'closed',
          hold_duration = ? - entry_time
      WHERE trade_id = ?`,
@@ -647,6 +653,7 @@ export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValu
       exitReason ?? 'manual',
       pnlAmount ?? null, normalizedPnlPercent, feeTotal ?? null, pnlNet ?? null,
       execution_origin ?? null, quality_flag ?? null, exclude_from_learning, incident_link ?? null,
+      exit_order_ids ?? null, exit_fill_ids ?? null, exit_match_source ?? null,
       exitTime ?? now,
       tradeId,
     ],

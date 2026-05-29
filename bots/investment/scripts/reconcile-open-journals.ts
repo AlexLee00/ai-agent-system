@@ -263,6 +263,9 @@ async function closeEntriesFromResolvedFill(rows, resolvedFill, dryRun) {
         quality_flag: 'trusted',
         exclude_from_learning: false,
         incident_link: `journal_reconcile:fetchMyTrades:fills=${resolvedFill?.fillCount || 0}`,
+        exit_order_ids: resolvedFill?.orderIds?.length ? resolvedFill.orderIds.join(',') : null,
+        exit_fill_ids: resolvedFill?.tradeIds?.length ? resolvedFill.tradeIds.join(',') : null,
+        exit_match_source: resolvedFill?.matchedBy || null,
       });
       await journalDb.ensureAutoReview(row.trade_id).catch(() => {});
     }
