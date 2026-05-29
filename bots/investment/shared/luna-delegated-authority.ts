@@ -8,6 +8,24 @@ export const LUNA_DELEGATED_AUTHORITY_TOKEN = 'luna-delegated-authority';
 const DEFAULT_MAX_TRADE_USDT = 0;
 const DEFAULT_MAX_DAILY_USDT = 200;
 const DEFAULT_MAX_OPEN_POSITIONS = 5;
+
+// Absolute hard caps — regime multiplier cannot exceed these.
+const DEFAULT_TRADE_HARD_CAP_USDT = 80;
+const DEFAULT_DAILY_HARD_CAP_USDT = 300;
+
+// Regime multiplier defaults. Configurable via LUNA_REGIME_LIMIT_MULT_<REGIME_UPPER>.
+// Unknown/missing regime → REGIME_MULT_FALLBACK (ranging-equivalent, conservative).
+const REGIME_MULT_DEFAULTS = {
+  low_volatility_bull: 1.3,
+  high_volatility_bull: 1.0,
+  ranging: 0.8,
+  trending_bull: 1.0,
+  trending_bear: 0.5,
+  low_volatility_bear: 0.6,
+  high_volatility_bear: 0.4,
+};
+const REGIME_MULT_FALLBACK = 0.8;
+
 const SUPPORTED_DELEGATED_ACTIONS = new Set([
   'report',
   'live_fire_enable',
@@ -30,6 +48,9 @@ const POLICY_ENV_KEYS = [
   'LUNA_LIVE_FIRE_MAX_DAILY',
   'LUNA_DELEGATED_MAX_OPEN_POSITIONS',
   'LUNA_LIVE_FIRE_MAX_OPEN',
+  'LUNA_CURRENT_REGIME',
+  'LUNA_DELEGATED_MAX_TRADE_USDT_HARD_CAP',
+  'LUNA_DELEGATED_MAX_DAILY_USDT_HARD_CAP',
 ];
 
 function boolEnv(value, fallback = false) {
@@ -73,21 +94,54 @@ function activePolicyEnv() {
   return env;
 }
 
+function getRegimeMultiplier(regime, effectiveEnv) {
+  const normalized = String(regime || '').trim().toLowerCase();
+  if (normalized) {
+    const envKey = `LUNA_REGIME_LIMIT_MULT_${normalized.toUpperCase().replace(/-/g, '_')}`;
+    const envValue = effectiveEnv[envKey] ?? launchctlGetenv(envKey) ?? '';
+    if (envValue !== '') {
+      const n = Number(envValue);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    if (REGIME_MULT_DEFAULTS[normalized] != null) return REGIME_MULT_DEFAULTS[normalized];
+  }
+  return REGIME_MULT_FALLBACK;
+}
+
 export function getLunaDelegatedAuthorityPolicy(env = null) {
   const effectiveEnv = env || activePolicyEnv();
   const mode = boolEnv(effectiveEnv.LUNA_DELEGATED_AUTHORITY_ENABLED)
     ? 'delegated'
     : normalizeMode(effectiveEnv.LUNA_MASTER_AUTHORITY_MODE || effectiveEnv.LUNA_AUTHORITY_MODE);
   const delegated = mode === 'delegated';
+
+  const baseTradeUsdt = optionalPositiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_TRADE_USDT || effectiveEnv.LUNA_MAX_TRADE_USDT, DEFAULT_MAX_TRADE_USDT);
+  const baseDailyUsdt = positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_DAILY_USDT || effectiveEnv.LUNA_LIVE_FIRE_MAX_DAILY, DEFAULT_MAX_DAILY_USDT);
+
+  // Regime-based dynamic limit scaling
+  const currentRegime = String(effectiveEnv.LUNA_CURRENT_REGIME || '').trim().toLowerCase() || null;
+  const regimeMultiplier = getRegimeMultiplier(currentRegime, effectiveEnv);
+  const hardCapTrade = positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_TRADE_USDT_HARD_CAP, DEFAULT_TRADE_HARD_CAP_USDT);
+  const hardCapDaily = positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_DAILY_USDT_HARD_CAP, DEFAULT_DAILY_HARD_CAP_USDT);
+
+  // Apply multiplier then clamp by hard cap. If base is 0 (no cap), keep 0.
+  const maxTradeUsdt = baseTradeUsdt > 0
+    ? Math.min(+(baseTradeUsdt * regimeMultiplier).toFixed(2), hardCapTrade)
+    : 0;
+  const maxDailyUsdt = Math.min(+(baseDailyUsdt * regimeMultiplier).toFixed(2), hardCapDaily);
+
   return {
     mode,
     delegated,
     reportOnly: delegated || mode === 'report_only' || boolEnv(effectiveEnv.LUNA_MASTER_REPORT_ONLY),
     requireFinalGate: boolEnv(effectiveEnv.LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE, true),
     allowReconcileAck: boolEnv(effectiveEnv.LUNA_DELEGATED_RECONCILE_ACK_ENABLED, false),
-    maxTradeUsdt: optionalPositiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_TRADE_USDT || effectiveEnv.LUNA_MAX_TRADE_USDT, DEFAULT_MAX_TRADE_USDT),
-    maxDailyUsdt: positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_DAILY_USDT || effectiveEnv.LUNA_LIVE_FIRE_MAX_DAILY, DEFAULT_MAX_DAILY_USDT),
+    maxTradeUsdt,
+    maxDailyUsdt,
     maxOpenPositions: Math.max(1, Math.round(positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_OPEN_POSITIONS || effectiveEnv.LUNA_LIVE_FIRE_MAX_OPEN, DEFAULT_MAX_OPEN_POSITIONS))),
+    regime: currentRegime,
+    regimeMultiplier,
+    hardCaps: { tradeUsdt: hardCapTrade, dailyUsdt: hardCapDaily },
     auditRequired: true,
     hardSafetyNonDelegable: [
       'broker_order_identity_missing',
