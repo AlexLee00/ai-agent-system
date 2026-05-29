@@ -37,16 +37,56 @@ const MARKER_ALIASES = {
     '마무리 인사': ['마무리 인사 + 함께 읽으면 좋은 글'],
   },
 };
+const MARKER_KEYS = {
+  general: {
+    'AI 스니펫 요약': 'general-summary',
+    '이 글에서 배울 수 있는 것': 'general-learning-points',
+    '승호아빠 인사말': 'general-greeting',
+    '본론 섹션 1': 'general-body-1',
+    '본론 섹션 2': 'general-body-2',
+    '본론 섹션 3': 'general-body-3',
+    '스터디카페 홍보 섹션': 'general-cafe',
+    '마무리 제언': 'general-closing',
+    '함께 읽으면 좋은 글': 'general-links',
+    '해시태그': 'general-hashtags',
+  },
+  lecture: {},
+};
+
+function countGeneralBodyHeadings(text) {
+  const h2Matches = Array.from(String(text || '').matchAll(/<h2[^>]*class=["'][^"']*section-title[^"']*["'][^>]*>\s*([\s\S]*?)\s*<\/h2>/gi));
+  const terminalTitles = new Set([
+    '당신의 루틴에 맞는 공간 찾기',
+    '질문형 Q&A',
+    '마무리 제언',
+    '함께 읽으면 좋은 글',
+    '해시태그',
+  ]);
+  let count = 0;
+  for (const match of h2Matches) {
+    const title = String(match[1] || '').replace(/<[^>]*>/g, '').trim();
+    if (terminalTitles.has(title)) break;
+    count += 1;
+  }
+  return count;
+}
 
 function hasSectionMarker(content, type, marker) {
   const text = String(content || '');
   if (text.includes(marker)) return true;
+  if (type === 'general' && marker === '본론 섹션 2' && countGeneralBodyHeadings(text) >= 1) return true;
+  if (type === 'general' && marker === '본론 섹션 3' && countGeneralBodyHeadings(text) >= 2) return true;
   const normalizedMarker = String(marker || '').replace(/^\[|\]$/g, '').trim();
   if (normalizedMarker) {
     const headingPattern = new RegExp(`<h2[^>]*class="section-title"[^>]*>\\s*${normalizedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<\\/h2>`, 'i');
     if (headingPattern.test(text)) return true;
     const dataMarkerPattern = new RegExp(`<h2[^>]*data-marker=["']${normalizedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`, 'i');
     if (dataMarkerPattern.test(text)) return true;
+    const markerKey = MARKER_KEYS[type]?.[marker];
+    if (markerKey) {
+      const dataMarkerKeyPattern = new RegExp(`<h2[^>]*data-marker-key=["']${markerKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`, 'i');
+      if (dataMarkerKeyPattern.test(text)) return true;
+    }
   }
   const aliases = MARKER_ALIASES[type]?.[marker] || [];
   return aliases.some((alias) => {

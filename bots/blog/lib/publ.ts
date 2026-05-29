@@ -341,7 +341,22 @@ function _contentToHtml(content, title, images = null) {
     const marker = structured[1].replace(/\s+/g, ' ').trim();
     const suffix = String(structured[2] || '').replace(/^\]\s*/, '').trim();
     const title = displaySectionTitle(suffix ? `${marker}] ${suffix}` : marker);
-    return `<h2 class="section-title" data-marker="${marker}">${title}</h2>`;
+    const markerKeyMap = {
+      'AI 스니펫 요약': 'general-summary',
+      '이 글에서 배울 수 있는 것': 'general-learning-points',
+      '승호아빠 인사말': 'general-greeting',
+      '본론 섹션 1': 'general-body-1',
+      '본론 섹션 2': 'general-body-2',
+      '본론 섹션 3': 'general-body-3',
+      '스터디카페 홍보 섹션': 'general-cafe',
+      '스터디카페 홍보': 'general-cafe',
+      '질문형 Q&A': 'general-faq',
+      '마무리 제언': 'general-closing',
+      '함께 읽으면 좋은 글': 'general-links',
+      '해시태그': 'general-hashtags',
+    };
+    const markerKey = markerKeyMap[marker];
+    return `<h2 class="section-title">${title}</h2>`;
   }
 
   function looksLikeSentenceHeading(value) {

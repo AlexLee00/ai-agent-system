@@ -102,10 +102,11 @@ async function loadMonitorPassCandidates({ hours = 24, limit = 50, market = null
     `SELECT DISTINCT ON (symbol, market)
             id, symbol, market, exchange, candidate_score, recommended_action,
             reasons, evidence, observed_at
-       FROM investment.luna_candidate_bottleneck_shadow
+      FROM investment.luna_candidate_bottleneck_shadow
       WHERE observed_at >= NOW() - (?::text || ' hours')::interval
         AND recommended_action = 'monitor_pass_candidate'
         AND shadow_only IS TRUE
+        AND exchange = 'binance'
         ${marketWhere}
       ORDER BY symbol, market, observed_at DESC
       LIMIT ?`,

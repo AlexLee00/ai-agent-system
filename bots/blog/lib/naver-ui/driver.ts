@@ -181,41 +181,45 @@ async function detectSecurityOrLoginInterruption(page) {
 }
 
 async function markEditable(page, role = 'body') {
-  return page.evaluate((targetRole) => {
-    function visible(el) {
-      if (!el) return false;
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 10 && rect.height > 10;
-    }
-    const titleSelectors = [
-      '.se-title-text p',
-      '.se-title-text [contenteditable="true"]',
-      '[data-placeholder*="제목"]',
-      'textarea[placeholder*="제목"]',
-      'input[placeholder*="제목"]',
-    ];
-    const bodySelectors = [
-      '.se-component-content div[contenteditable="true"]',
-      '.se-section-text div[contenteditable="true"]',
-      '.se-main-container div[contenteditable="true"]',
-      'div[role="textbox"]',
-      'div[contenteditable="true"]',
-      'textarea',
-    ];
-    const selectors = targetRole === 'title' ? titleSelectors : bodySelectors;
-    document.querySelectorAll('[data-naver-publish-assist-target]').forEach((node) => node.removeAttribute('data-naver-publish-assist-target'));
-    for (const selector of selectors) {
-      const nodes = Array.from(document.querySelectorAll(selector)).filter(visible);
-      for (const node of nodes) {
-        const text = String(node.innerText || node.textContent || node.getAttribute('placeholder') || '');
-        if (targetRole === 'body' && /제목/.test(text) && nodes.length > 1) continue;
-        node.setAttribute('data-naver-publish-assist-target', targetRole);
-        return { ok: true, selector: '[data-naver-publish-assist-target]', tagName: node.tagName, textPreview: text.slice(0, 60) };
+  const script = `
+    (() => {
+      const targetRole = ${JSON.stringify(role)};
+      const isVisible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 10 && rect.height > 10;
+      };
+      const titleSelectors = [
+        '.se-title-text p',
+        '.se-title-text [contenteditable="true"]',
+        '[data-placeholder*="제목"]',
+        'textarea[placeholder*="제목"]',
+        'input[placeholder*="제목"]',
+      ];
+      const bodySelectors = [
+        '.se-component-content div[contenteditable="true"]',
+        '.se-section-text div[contenteditable="true"]',
+        '.se-main-container div[contenteditable="true"]',
+        'div[role="textbox"]',
+        'div[contenteditable="true"]',
+        'textarea',
+      ];
+      const selectors = targetRole === 'title' ? titleSelectors : bodySelectors;
+      document.querySelectorAll('[data-naver-publish-assist-target]').forEach((node) => node.removeAttribute('data-naver-publish-assist-target'));
+      for (const selector of selectors) {
+        const nodes = Array.from(document.querySelectorAll(selector)).filter(isVisible);
+        for (const node of nodes) {
+          const text = String(node.innerText || node.textContent || node.getAttribute('placeholder') || '');
+          if (targetRole === 'body' && /제목/.test(text) && nodes.length > 1) continue;
+          node.setAttribute('data-naver-publish-assist-target', targetRole);
+          return { ok: true, selector: '[data-naver-publish-assist-target]', tagName: node.tagName, textPreview: text.slice(0, 60) };
+        }
       }
-    }
-    return { ok: false, reason: `${targetRole}_editor_not_found` };
-  }, role);
+      return { ok: false, reason: targetRole + '_editor_not_found' };
+    })()
+  `;
+  return page.evaluate(script);
 }
 
 async function focusMarkedEditable(page, role = 'body') {
