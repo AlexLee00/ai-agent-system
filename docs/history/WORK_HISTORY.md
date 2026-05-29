@@ -4,6 +4,13 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-29: CODEX_LUNA_CRYPTO_HOLDING_REGISTER — crypto-holding-monitor-6h launchd 등록 (dry_run)
+
+- **plist 수정**: ProgramArguments `--disable-warning=DEP0205 --import tsx` 추가, RunAtLoad=true
+- **등록 완료**: launchctl bootstrap → exit 0, dry_run 즉시 실행 확인
+- **검증**: `[크립토보유모니터][DRY-RUN]` 방치포지션 없음, 실제 청산 0건, PROTECTED 무중단
+- **커밋**: `9c006e6b4`
+
 ## 2026-05-29: CODEX_LUNA_PNL_DATA_INTEGRITY Phase 1 — trade_journal pnl 정합성 학습 노이즈 차단
 
 - **진단**: binance 635건 closed 중 298건(47%)이 journal_reconciled_no_position (entry=exit, pnl=0 가짜)

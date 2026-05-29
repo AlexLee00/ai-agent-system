@@ -1,4 +1,28 @@
-# 세션 인수인계 — 2026-05-29 (CODEX_LUNA_PNL_DATA_INTEGRITY — Phase 1 완료)
+# 세션 인수인계 — 2026-05-29 (CODEX_LUNA_CRYPTO_HOLDING_REGISTER — dry_run 등록 완료)
+
+## 완료 요약 ✅ — crypto-holding-monitor-6h launchd 등록 (dry_run 모드)
+
+### CODEX_LUNA_CRYPTO_HOLDING_REGISTER_2026-05-29 결과
+- **plist 수정**: ProgramArguments에 `--disable-warning=DEP0205 --import tsx` 추가, RunAtLoad=true 설정
+- **등록**: `launchctl bootstrap gui/<uid>` 성공
+- **검증**: exit 0, `[크립토보유모니터][DRY-RUN] LUNA_CRYPTO_STALE_SWEEP_ENABLED=false — shadow 모드 (실제 청산 없음)`
+- **방치 포지션**: 현재 없음 (binance≥14일, overseas≥10일 초과 없음)
+- **PROTECTED 무중단**: ops-scheduler, marketdata-mcp, tradingview-ws, investment.commander, ska.* 모두 exit 0 ✓
+- **커밋**: `9c006e6b4`
+
+### 현재 상태
+- crypto-holding-monitor: **dry_run 모드로 운영 중** (6시간 주기, SWEEP_ENABLED 미설정)
+- 실제 청산 활성화: 마스터가 `LUNA_CRYPTO_STALE_SWEEP_ENABLED=true` 설정 후 별도 CODEX로 처리
+
+### 다음 세션 (이번 범위 밖)
+1. dry_run 로그 분석 (6시간 후) → 청산 대상 유효성 판단
+2. positions stale 영향 확인 (5/4 stale positions 기반 여부)
+3. 나머지 미등록 잡: ppo-retrain/finrl(shadow 재학습), harness(폐기 후보)
+4. Phase 2 PnL 정합성: reconcile-open-journals.ts fetchMyTrades 통합
+
+---
+
+# 이전 세션 — 2026-05-29 (CODEX_LUNA_PNL_DATA_INTEGRITY — Phase 1 완료)
 
 ## 완료 요약 ✅ — trade_journal pnl 정합성 Phase 1 적용
 
