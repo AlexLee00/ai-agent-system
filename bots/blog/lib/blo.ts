@@ -84,7 +84,10 @@ const {
   repairGeneralPostDraft,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/gems-writer.ts'));
 const { ensureBlogCoreSchema }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schema.ts'));
-const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
+const {
+  checkQualityEnhanced,
+  repairTerminalQualityArtifacts,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/insta-crosspost.ts'));
 const { hasRemainingPublishQuota }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/platform-orchestrator.ts'));
@@ -964,6 +967,29 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
       if (!retryQuality.autoRewriteRecommended) break;
     } else {
       console.log('[품질] ⚠️ 초안 보정 후에도 미달 — 추가 보정 여부 판단');
+    }
+  }
+
+  if (kind === 'general' && !quality.passed) {
+    const repairedContent = repairTerminalQualityArtifacts(post.content);
+    if (repairedContent && repairedContent !== post.content) {
+      const repairedPost = {
+        ...post,
+        content: repairedContent,
+        charCount: repairedContent.length,
+        terminalArtifactsRepaired: true,
+      };
+      const repairedQuality = await checkQualityEnhanced(repairedPost.content, kind, {
+        category: context.category,
+        bookInfo: context.book_info || context.data?.book_info || null,
+        topicTitleCandidate: context.researchData?.topic_title_candidate || null,
+        expectedTitlePattern: context.researchData?.strategy_preferred_pattern || null,
+      });
+      post = repairedPost;
+      quality = repairedQuality;
+      if (repairedQuality.passed) {
+        console.log('[품질] ✅ 일반 포스팅 말단 포맷 보정 통과');
+      }
     }
   }
 

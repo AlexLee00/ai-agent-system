@@ -237,6 +237,38 @@ function checkTerminalSectionOverflow(content) {
   return issues;
 }
 
+function repairTerminalQualityArtifacts(content) {
+  let next = String(content || '').trimEnd();
+  if (!next.trim()) return next;
+
+  const explicitEndIndex = next.indexOf('_THE_END_');
+  if (explicitEndIndex >= 0) {
+    next = next.slice(0, explicitEndIndex).trimEnd();
+  }
+
+  const hashtagSection = /(^|\n)\s*(?:<h[1-3][^>]*>\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:<\/h[1-3]>)?\s*(?:\n|$)/i.exec(next);
+  if (hashtagSection) {
+    const afterHashtagIndex = hashtagSection.index + hashtagSection[0].length;
+    const afterHashtag = next.slice(afterHashtagIndex);
+    const overflow = /\n\s*(?:━{3,}|-{3,}|#{1,6}\s+|\[[^\]\n]+\]|<h[1-3][^>]*>)/m.exec(afterHashtag);
+    if (overflow) {
+      next = next.slice(0, afterHashtagIndex + overflow.index).trimEnd();
+    }
+  }
+
+  let tail = next.slice(-1500);
+  if (((tail.match(/\*\*/g) || []).length % 2) !== 0) {
+    next = `${next}**`;
+  }
+
+  tail = next.slice(-1500);
+  if (((tail.match(/`/g) || []).length % 2) !== 0) {
+    next = `${next}\``;
+  }
+
+  return next.trim();
+}
+
 function sanitizeForAIDetection(content) {
   return String(content || '')
     .replace(/```[\s\S]*?```/g, ' ')
@@ -749,6 +781,7 @@ module.exports = {
   checkAIDetectionRisk,
   scoreSEO,
   checkDuplicate30d,
+  repairTerminalQualityArtifacts,
   runCriticLoop,
   MIN_CHARS,
   GOAL_CHARS,
