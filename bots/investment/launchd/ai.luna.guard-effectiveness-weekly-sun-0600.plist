@@ -18,15 +18,15 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매주 일요일 06:00 KST (launchd는 KST 기준, UTC 변환 금지) -->
+  <!-- 매주 일요일 07:05 KST — 스케줄 분산(07:00 reflexion/weight-tuner와 분산) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
     <integer>0</integer>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>7</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>5</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>

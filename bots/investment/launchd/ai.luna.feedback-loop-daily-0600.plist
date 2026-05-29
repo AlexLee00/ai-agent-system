@@ -18,13 +18,13 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매일 06:00 KST (launchd는 KST 기준, UTC 변환 금지) -->
+  <!-- 매일 06:05 KST — 스케줄 분산(06:00 피크 완화), fx-refresh(06:00) 이후 -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
     <integer>6</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>5</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>

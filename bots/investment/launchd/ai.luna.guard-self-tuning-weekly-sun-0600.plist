@@ -18,7 +18,7 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매주 일요일 06:10 KST — 효과 보고서(06:00) 이후 실행 -->
+  <!-- 매주 일요일 06:45 KST — 스케줄 분산(06:00 피크 완화) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
@@ -26,7 +26,7 @@
     <key>Hour</key>
     <integer>6</integer>
     <key>Minute</key>
-    <integer>10</integer>
+    <integer>45</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>
