@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-29: CODEX_LUNA_PNL_DATA_INTEGRITY Phase 1 — trade_journal pnl 정합성 학습 노이즈 차단
+
+- **진단**: binance 635건 closed 중 298건(47%)이 journal_reconciled_no_position (entry=exit, pnl=0 가짜)
+- **migration 20260528000007**: 가짜 pnl=0 → NULL 백필 (OPS 적용 대기)
+- **trade-journal-learning-guard.ts 신규**: `learningPnlValidSql()` SQL 헬퍼
+- **학습 코어 12곳**: NULL 가드 추가 (regime-weight-learner, analyst-accuracy 등 전범위)
+- **Phase 2 예정**: reconcile-open-journals.ts에 fetchMyTrades 통합, dry_run 1주
+- **Phase 3 예정**: data-source-coherence-check.ts (정합성 점검 스크립트)
+
 ## 2026-05-28: CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE — 동적 가중치 + 수익 확률 우상향 launchd 설치 완료
 
 - **검증 결과** — 4 Phase 전체 이미 구현됨, launchd 설치 완료:

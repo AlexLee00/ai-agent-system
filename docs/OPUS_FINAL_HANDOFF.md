@@ -1,4 +1,33 @@
-# 세션 인수인계 — 2026-05-28 (CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE 검증 + launchd 설치 완료)
+# 세션 인수인계 — 2026-05-29 (CODEX_LUNA_PNL_DATA_INTEGRITY — Phase 1 완료)
+
+## 완료 요약 ✅ — trade_journal pnl 정합성 Phase 1 적용
+
+### CODEX_LUNA_PNL_DATA_INTEGRITY_2026-05-28 Phase 1 결과
+- **진단 확인**: binance closed 635건 중 298건(47%)이 journal_reconciled_no_position — entry=exit, pnl=0 가짜 close
+- **migration 20260528000007**: pnl_amount=0 AND entry_price=exit_price → NULL 백필 (journal_reconciled%, sweeper_manual_dust%)
+- **trade-journal-learning-guard.ts**: `learningPnlValidSql(alias)` 헬퍼 생성
+- **학습 코어 12곳 NULL 가드 추가** (hook이 자동 propagation):
+  - regime-weight-learner, win/loss-pattern-extractor, feedback-action-mapper
+  - analyst-accuracy, reflexion-guard, trade-quality-evaluator
+  - discovery-reflection, posttrade-trade-journal-adapter
+  - luna-feedback-loop-orchestrator, winrate-uptrend-tracker
+  - migration 20260528000001 SQL 뷰 포함
+- **커밋**: `3e226ade3`, `e106bbf90`
+
+### 남은 Phase
+- **Phase 2** (별도, 1~2주 dry_run): reconcile-open-journals.ts에 fetchMyTrades 통합 → 실제 fill로 pnl 채우기
+  - binance-fill-resolver.ts (신규), exit_reason 'journal_reconciled_with_fill' 추가
+  - v_trades_real_usd 뷰 정밀화, LUNA_RECONCILE_FILL_RESOLVE_ENABLED 게이트
+- **Phase 3** (Phase 1과 병행 가능): data-source-coherence-check.ts + launchd 일 1회
+
+### 즉시 필요 (마스터)
+1. migration 20260528000007을 OPS에 적용 (`psql -d jay < bots/investment/migrations/20260528000007_trade_journal_pnl_nullify_reconciled.sql`)
+2. NOTICE 출력으로 대상 건수 확인
+3. regime-weight-learner 재실행 → 가중치 변화 관찰
+
+---
+
+# 이전 세션 — 2026-05-28 (CODEX_LUNA_ADAPTIVE_WEIGHT_WINRATE 검증 + launchd 설치 완료)
 
 ## 완료 요약 ✅ — 동적 가중치 + 수익 확률 우상향 시스템 가동 확인
 
