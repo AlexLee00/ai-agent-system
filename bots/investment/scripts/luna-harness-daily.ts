@@ -6,10 +6,13 @@
  */
 
 import { runHarnessAutoAdjustment } from '../shared/luna-harness-auto-adjustment.ts';
+import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 
 const MARKETS = ['crypto', 'stocks'];
 
 async function main() {
+  if (maybeSkipForMemory('luna.harness')) return;
+
   const date = new Date().toISOString().split('T')[0];
   console.log(`[HarnessDaily] ${date} 시작`);
 

@@ -7,12 +7,17 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-harness-daily.ts</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
