@@ -45,6 +45,8 @@ function hasSectionMarker(content, type, marker) {
   if (normalizedMarker) {
     const headingPattern = new RegExp(`<h2[^>]*class="section-title"[^>]*>\\s*${normalizedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<\\/h2>`, 'i');
     if (headingPattern.test(text)) return true;
+    const dataMarkerPattern = new RegExp(`<h2[^>]*data-marker=["']${normalizedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["'][^>]*>`, 'i');
+    if (dataMarkerPattern.test(text)) return true;
   }
   const aliases = MARKER_ALIASES[type]?.[marker] || [];
   return aliases.some((alias) => {
@@ -250,12 +252,12 @@ function checkTerminalSectionOverflow(content) {
     issues.push({ severity: 'error', msg: '_THE_END_ 이후 본문 감지 — 마감 뒤에 본문이 다시 붙음' });
   }
 
-  const hashtagSection = /(^|\n)\s*(?:<h[1-3][^>]*>\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:<\/h[1-3]>)?\s*(?:\n|$)/i.exec(raw);
+  const hashtagSection = /(^|\n)\s*(?:<p[^>]*>\s*)?(?:<h[1-3][^>]*>\s*)?(?:<strong>\s*)?(?:\*\*\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\*\*)?(?:\s*<\/strong>)?(?:\s*<\/h[1-3]>)?(?:\s*<\/p>)?\s*(?:\n|$)/i.exec(raw);
   if (!hashtagSection) return issues;
 
   const afterHashtagIndex = hashtagSection.index + hashtagSection[0].length;
   const afterHashtag = raw.slice(afterHashtagIndex);
-  const overflow = /\n\s*(?:━{3,}|-{3,}|#{1,6}\s+|\[[^\]\n]+\]|<h[1-3][^>]*>)/m.exec(afterHashtag);
+  const overflow = /\n\s*(?:━{3,}|-{3,}|(?:\*\*\s*)?#{1,6}\s+|(?:\*\*\s*)?\[[^\]\n]+\]|<h[1-3][^>]*>|<strong>\s*\[[^\]\n]+\])/m.exec(afterHashtag);
   if (overflow) {
     issues.push({ severity: 'error', msg: '해시태그 이후 본문/섹션 재개 감지 — 마감 섹션 뒤 구조를 정리해야 함' });
   }
@@ -274,11 +276,11 @@ function repairTerminalQualityArtifacts(content) {
     next = next.slice(0, explicitEndIndex).trimEnd();
   }
 
-  const hashtagSection = /(^|\n)\s*(?:<h[1-3][^>]*>\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:<\/h[1-3]>)?\s*(?:\n|$)/i.exec(next);
+  const hashtagSection = /(^|\n)\s*(?:<p[^>]*>\s*)?(?:<h[1-3][^>]*>\s*)?(?:<strong>\s*)?(?:\*\*\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\*\*)?(?:\s*<\/strong>)?(?:\s*<\/h[1-3]>)?(?:\s*<\/p>)?\s*(?:\n|$)/i.exec(next);
   if (hashtagSection) {
     const afterHashtagIndex = hashtagSection.index + hashtagSection[0].length;
     const afterHashtag = next.slice(afterHashtagIndex);
-    const overflow = /\n\s*(?:━{3,}|-{3,}|#{1,6}\s+|\[[^\]\n]+\]|<h[1-3][^>]*>)/m.exec(afterHashtag);
+    const overflow = /\n\s*(?:━{3,}|-{3,}|(?:\*\*\s*)?#{1,6}\s+|(?:\*\*\s*)?\[[^\]\n]+\]|<h[1-3][^>]*>|<strong>\s*\[[^\]\n]+\])/m.exec(afterHashtag);
     if (overflow) {
       next = next.slice(0, afterHashtagIndex + overflow.index).trimEnd();
     }

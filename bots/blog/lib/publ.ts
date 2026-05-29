@@ -282,12 +282,12 @@ function trimTerminalOverflowContent(content) {
     next = next.slice(0, explicitEndIndex).trimEnd();
   }
 
-  const hashtagSection = /(^|\n)\s*(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\n|$)/i.exec(next);
+  const hashtagSection = /(^|\n)\s*(?:<strong>\s*)?(?:\*\*\s*)?(?:#{1,6}\s*)?\[?\s*(?:마무리 인사\s*\+\s*)?해시태그\s*\]?\s*(?:\*\*)?(?:\s*<\/strong>)?\s*(?:\n|$)/i.exec(next);
   if (!hashtagSection) return next.trim();
 
   const afterHashtagIndex = hashtagSection.index + hashtagSection[0].length;
   const afterHashtag = next.slice(afterHashtagIndex);
-  const overflow = /\n\s*(?:━{3,}|-{3,}|#{1,6}\s+|\[[^\]\n]+\])/m.exec(afterHashtag);
+  const overflow = /\n\s*(?:━{3,}|-{3,}|(?:\*\*\s*)?#{1,6}\s+|(?:\*\*\s*)?\[[^\]\n]+\]|<strong>\s*\[[^\]\n]+\])/m.exec(afterHashtag);
   if (!overflow) return next.trim();
 
   return next.slice(0, afterHashtagIndex + overflow.index).trimEnd();
@@ -297,9 +297,27 @@ function _contentToHtml(content, title, images = null) {
   let text = trimTerminalOverflowContent(content);
   text = text.replace(/^\s*#{1,6}\s*(\[[^\]\n]+\])\s*$/gm, '$1');
 
+  const structuredSectionMarkers = [
+    'AI 스니펫 요약',
+    '이 글에서 배울 수 있는 것',
+    '승호아빠 인사말',
+    '본론 섹션 1',
+    '본론 섹션 2',
+    '본론 섹션 3',
+    '스터디카페 홍보 섹션',
+    '스터디카페 홍보',
+    '질문형 Q&A',
+    '마무리 제언',
+    '함께 읽으면 좋은 글',
+    '해시태그',
+  ];
+  const structuredSectionPattern = new RegExp(`^\\[?(${structuredSectionMarkers.map((marker) => marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\]?\\s*(.*)$`);
+
   function displaySectionTitle(value) {
     const raw = String(value || '').trim().replace(/^\[|\]$/g, '').trim();
     const normalized = raw.replace(/\s+/g, ' ');
+    const bracketTitle = normalized.match(/^(AI 스니펫 요약|이 글에서 배울 수 있는 것|승호아빠 인사말|본론 섹션\s*\d+|스터디카페 홍보 섹션|스터디카페 홍보|질문형 Q&A|마무리 제언|함께 읽으면 좋은 글|해시태그)\]\s*(.+)$/);
+    if (bracketTitle?.[2]) return bracketTitle[2].trim();
     const map = {
       'AI 스니펫 요약': '핵심 요약',
       '승호아빠 인사말': '시작하며',
@@ -314,6 +332,16 @@ function _contentToHtml(content, title, images = null) {
     if (/^본론 섹션\s*4$/.test(normalized)) return '기대치 관리 타이밍';
     if (/^본론 섹션\s*\d+$/.test(normalized)) return '추가 실무 기준';
     return raw;
+  }
+
+  function renderSectionHeading(value) {
+    const raw = String(value || '').trim();
+    const structured = raw.match(structuredSectionPattern);
+    if (!structured) return `<h2 class="section-title">${displaySectionTitle(raw)}</h2>`;
+    const marker = structured[1].replace(/\s+/g, ' ').trim();
+    const suffix = String(structured[2] || '').replace(/^\]\s*/, '').trim();
+    const title = displaySectionTitle(suffix ? `${marker}] ${suffix}` : marker);
+    return `<h2 class="section-title" data-marker="${marker}">${title}</h2>`;
   }
 
   function looksLikeSentenceHeading(value) {
@@ -344,9 +372,9 @@ function _contentToHtml(content, title, images = null) {
       continue;
     }
 
-    const secMatch = line.match(/^\[(.+)\]\s*$/);
+    const secMatch = line.match(/^(?:\*\*\s*)?\[([^\]\n]+)\](?:\s+(.+?))?(?:\s*\*\*)?\s*$/);
     if (secMatch) {
-      htmlLines.push(`<h2 class="section-title">${displaySectionTitle(secMatch[1])}</h2>`);
+      htmlLines.push(renderSectionHeading(secMatch[2] ? `${secMatch[1]}] ${secMatch[2]}` : secMatch[1]));
       continue;
     }
 
@@ -365,7 +393,7 @@ function _contentToHtml(content, title, images = null) {
       if (looksLikeSentenceHeading(h2Match[1])) {
         htmlLines.push(`<p>${h2Match[1]}</p>`);
       } else {
-        htmlLines.push(`<h2 class="section-title">${displaySectionTitle(h2Match[1])}</h2>`);
+        htmlLines.push(renderSectionHeading(h2Match[1]));
       }
       continue;
     }

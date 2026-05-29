@@ -445,10 +445,16 @@ function groqFastEntry(template: LLMChainEntry | null | undefined): LLMChainEntr
   };
 }
 
-function claudeWritingEntry(template: LLMChainEntry | null | undefined): LLMChainEntry {
+function claudeWritingModelForSelector(selectorKey = ''): string {
+  return selectorKey === 'blog.pos.writer' || selectorKey === 'blog.gems.writer'
+    ? 'claude-code/sonnet'
+    : 'claude-code/haiku';
+}
+
+function claudeWritingEntry(template: LLMChainEntry | null | undefined, selectorKey = ''): LLMChainEntry {
   return {
     provider: 'claude-code',
-    model: 'claude-code/haiku',
+    model: claudeWritingModelForSelector(selectorKey),
     maxTokens: entryMaxTokens(template, 4096),
     temperature: template?.temperature ?? 0.7,
     ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
@@ -466,7 +472,7 @@ function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {
     return openAiEntry(entry, maxTokens > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
   }
   if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) {
-    const candidate = claudeWritingEntry(entry);
+    const candidate = claudeWritingEntry(entry, selectorKey);
     if (!shouldAvoidClaudeCode(candidate, options)) return candidate;
     return openAiEntry(entry, maxTokens > 1500 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
   }
@@ -491,11 +497,14 @@ function ensureOpenAiPrimary(chain: LLMChainEntry[], options: SelectorOptions = 
 }
 
 function ensureClaudeWritingPrimary(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  const selectorKey = String(options.selectorKey || '');
   const nonGemini = chain.filter((entry) => !isGeminiEntry(entry));
   const existingClaude = nonGemini.find(isClaudeCodeEntry);
-  const primary = existingClaude || claudeWritingEntry(chain[0]);
+  const preferredClaudeModel = claudeWritingModelForSelector(selectorKey);
+  const preferredClaude = nonGemini.find((entry) => isClaudeCodeEntry(entry) && String(entry.model || '') === preferredClaudeModel);
+  const primary = preferredClaude || (existingClaude && preferredClaudeModel === 'claude-code/haiku' ? existingClaude : null) || claudeWritingEntry(chain[0], selectorKey);
   if (shouldAvoidClaudeCode(primary, options)) return ensureOpenAiPrimary(nonGemini, options);
-  const rest = nonGemini.filter((entry) => entry !== existingClaude && !(
+  const rest = nonGemini.filter((entry) => entry !== primary && !(
     providerOfEntry(entry) === providerOfEntry(primary) && entry.model === primary.model
   ));
   return dedupeByProviderModel([primary, ...rest]);
@@ -664,13 +673,13 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       fallbacks: [
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 12000, temperature: 0.75 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
-        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 8000, temperature: 0.72 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.72 },
       ],
     },
     'gems.writer': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.85 },
       fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 8000, temperature: 0.75 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.75 },
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 12000, temperature: 0.75 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
       ],

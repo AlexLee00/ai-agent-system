@@ -896,13 +896,25 @@ const GENERAL_SECTION_TARGETS = {
 };
 
 function _detectGeneralSectionMarker(line) {
-  const normalized = String(line || '')
-    .trim()
+  const raw = String(line || '').trim();
+  const hasExplicitMarkerSyntax = /^\s*(?:<h[1-3][^>]*>\s*)?(?:<strong>\s*)?(?:\*\*\s*)?(?:#{1,6}\s*)?\[/.test(raw);
+  const normalized = raw
+    .replace(/^<h[1-3][^>]*>\s*/i, '')
+    .replace(/\s*<\/h[1-3]>\s*$/i, '')
+    .replace(/^<strong>\s*/i, '')
+    .replace(/\s*<\/strong>\s*$/i, '')
+    .replace(/^\*\*\s*/, '')
+    .replace(/\s*\*\*$/, '')
     .replace(/^#{1,6}\s*/, '')
-    .replace(/^\[|\]$/g, '')
     .trim();
   if (!normalized) return null;
-  return GENERAL_SECTION_MARKERS.find((marker) => marker === normalized) || null;
+  const bracketPrefix = hasExplicitMarkerSyntax
+    ? normalized.match(/^\[\s*([^\]\n]+?)\s*\](?:\s+.+)?$/)
+    : null;
+  const candidate = String(bracketPrefix?.[1] || normalized)
+    .replace(/^\[|\]$/g, '')
+    .trim();
+  return GENERAL_SECTION_MARKERS.find((marker) => marker === candidate) || null;
 }
 
 function _normalizeGeneralStructure(content) {

@@ -75,6 +75,7 @@ function stripHtml(content) {
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/gi, '&')
     .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -82,7 +83,7 @@ function stripHtml(content) {
 
 function extractHtmlSectionTitles(content) {
   return Array.from(String(content || '').matchAll(/<h2[^>]*class="section-title"[^>]*>([^<]+)<\/h2>/gi))
-    .map((match) => String(match[1] || '').trim())
+    .map((match) => String(match[1] || '').replace(/&amp;/gi, '&').replace(/&nbsp;/gi, ' ').trim())
     .filter(Boolean);
 }
 

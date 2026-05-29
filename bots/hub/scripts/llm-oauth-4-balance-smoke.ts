@@ -268,6 +268,7 @@ function main(): void {
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');
 
   const sonnetPrimaryProfiles: string[] = [];
+  const allowedSonnetPrimaryProfiles = new Set(['blog.writer']);
   for (const [team, profiles] of Object.entries(PROFILES || {})) {
     for (const [profile, config] of Object.entries(profiles as Record<string, any>)) {
       if ((config as any)?.primary_routes?.[0] === 'claude-code/sonnet') {
@@ -275,7 +276,8 @@ function main(): void {
       }
     }
   }
-  assert.equal(sonnetPrimaryProfiles.length, 0, `runtime profiles must not start with Sonnet: ${sonnetPrimaryProfiles.join(', ')}`);
+  const unexpectedSonnetPrimaryProfiles = sonnetPrimaryProfiles.filter((profile) => !allowedSonnetPrimaryProfiles.has(profile));
+  assert.equal(unexpectedSonnetPrimaryProfiles.length, 0, `runtime profiles must not start with Sonnet: ${unexpectedSonnetPrimaryProfiles.join(', ')}`);
 
   console.log(JSON.stringify({
     ok: true,
@@ -284,6 +286,7 @@ function main(): void {
     provider_counts: providerCounts,
     provider_shares: shares,
     sonnet_primary_profiles: sonnetPrimaryProfiles.length,
+    allowed_sonnet_primary_profiles: Array.from(allowedSonnetPrimaryProfiles).filter((profile) => sonnetPrimaryProfiles.includes(profile)),
     anthropic_primary: 0,
   }, null, 2));
 }
