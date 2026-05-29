@@ -196,9 +196,24 @@ async function fetchOpsSchedulerHealth() {
   }
 }
 
+async function fetchPositionSyncHealth() {
+  const logPath = '/tmp/investment-runtime-autopilot.log';
+  try {
+    const stat = fs.statSync(logPath);
+    const elapsedMin = (Date.now() - stat.mtimeMs) / 60000;
+    // autopilot StartInterval=120초(2분), 15분 초과 → sync 정지 의심
+    return {
+      lastRunMinAgo: Math.round(elapsedMin),
+      status: elapsedMin > 15 ? 'critical' : 'ok',
+    };
+  } catch {
+    return { lastRunMinAgo: -1, status: 'missing_log' };
+  }
+}
+
 async function fetchTableFreshness() {
   const checks = [
-    { table: 'investment.positions', tsCol: 'updated_at', epochMs: false, expectHours: 1, criticalHours: 24 },
+    // investment.positions는 데이터 나이 대신 sync 프로세스 생존(fetchPositionSyncHealth)으로 판정
     { table: 'investment.trade_journal', tsCol: 'entry_time', epochMs: true, expectHours: 168, criticalHours: 336 },
     { table: 'investment.market_regime_snapshots', tsCol: 'captured_at', epochMs: false, expectHours: 2, criticalHours: 24 },
     { table: 'investment.candidate_universe', tsCol: 'discovered_at', epochMs: false, expectHours: 48, criticalHours: 96 },
@@ -271,7 +286,7 @@ async function fetchTableFreshness() {
   return results;
 }
 
-function buildFreshnessSection(launchd, opsScheduler, tableFreshness) {
+function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?) {
   const tables: any[] = Array.isArray(tableFreshness) ? tableFreshness : [];
   const staleJobs: any[] = opsScheduler?.staleJobs ?? [];
   const unregistered: string[] = launchd?.unregistered ?? [];
@@ -281,6 +296,19 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness) {
   let section = `*7. 프로세스/테이블 신선도*\n`;
   let hasCritical = false;
   let hasWarn = false;
+
+  // Position sync 생존 (데이터 나이 대신 sync 프로세스 기준)
+  if (positionSync) {
+    if (positionSync.status === 'ok') {
+      section += `✅ positions: live 보유 없음 정상 (sync 가동 중, ${positionSync.lastRunMinAgo}분 전)\n`;
+    } else if (positionSync.status === 'critical') {
+      section += `🔴 CRITICAL: position-sync 정지 ${positionSync.lastRunMinAgo}분 (autopilot 로그 미갱신)\n`;
+      hasCritical = true;
+    } else {
+      section += `⚠️ WARN: autopilot 로그 없음 (position-sync 상태 불명)\n`;
+      hasWarn = true;
+    }
+  }
 
   // Table freshness
   for (const t of tables) {
@@ -329,7 +357,7 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness) {
 }
 
 function buildTelegramMessage(data) {
-  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness } = data;
+  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync } = data;
   const loopStatus = fullDataLoop ? '🟢 ENABLED' : '🟡 DISABLED (shadow)';
 
   let msg = `📊 *루나 데이터 루프 건강 보고 — ${TODAY}*\n\n`;
@@ -375,7 +403,7 @@ function buildTelegramMessage(data) {
     msg += `  • ${latest.trade_date}: ${Number(latest.avg_progress || 0).toFixed(3)}\n\n`;
   }
 
-  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness);
+  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync);
   msg += freshnessSection + '\n';
 
   const statusEmoji = hasCritical ? '🚨' : '✅';
@@ -412,7 +440,7 @@ async function main() {
   const fullDataLoop = !['0', 'false', 'no', 'off', 'disabled']
     .includes(String(process.env.LUNA_FULL_DATA_LOOP_ENABLED ?? 'true').toLowerCase());
 
-  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness] = await Promise.allSettled([
+  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness, positionSync] = await Promise.allSettled([
     fetchTradeStats(),
     fetchGuardOutcomeStats(),
     fetchGuardEffectiveness(),
@@ -423,9 +451,10 @@ async function main() {
     fetchLaunchdHealth(),
     fetchOpsSchedulerHealth(),
     fetchTableFreshness(),
+    fetchPositionSyncHealth(),
   ]).then((results) => results.map((r) => r.status === 'fulfilled' ? r.value : r.status === 'rejected' ? {} : {}));
 
-  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness };
+  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync };
 
   console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
   console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade}`);
@@ -438,6 +467,7 @@ async function main() {
     || (t.status === 'stale' && (t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)),
   );
   console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
+  console.log(`[DataLoopHealth] position-sync: ${positionSync?.status ?? '?'} (${positionSync?.lastRunMinAgo ?? '?'}분 전)`);
 
   const message = buildTelegramMessage(data);
   if (!dryRun) {
