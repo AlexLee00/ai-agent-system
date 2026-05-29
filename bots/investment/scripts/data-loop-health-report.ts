@@ -180,6 +180,10 @@ async function fetchOpsSchedulerHealth() {
       if (!lastRunAt) continue;
 
       const elapsedHours = (now - new Date(lastRunAt).getTime()) / 3_600_000;
+
+      // 30일(720h) 이상 미실행 = 이름 변경 후 옛 이름 잔재 — stale 체크 제외
+      if (elapsedHours > 720) continue;
+
       let thresholdHours = 48;
       if (/15min|30min|hourly/.test(name)) thresholdHours = 6;
       else if (/weekly/.test(name)) thresholdHours = 336;
