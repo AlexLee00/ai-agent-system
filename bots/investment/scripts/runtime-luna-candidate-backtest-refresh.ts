@@ -51,6 +51,15 @@ function periodsFrom(value: any) {
     .filter((item) => Number.isFinite(item) && item > 0);
 }
 
+function periodsForMarket(candidateMarket: string, fallback: number[]) {
+  const m = normalizeMarket(candidateMarket);
+  const cryptoEnv = process.env.LUNA_BT_PERIODS_CRYPTO;
+  const stockEnv = process.env.LUNA_BT_PERIODS_STOCK;
+  if (m === 'crypto') return cryptoEnv ? periodsFrom(cryptoEnv) : [180];
+  if (m === 'domestic' || m === 'overseas') return stockEnv ? periodsFrom(stockEnv) : [365];
+  return fallback;
+}
+
 function optionalPositiveInt(value: any, fallback: number | null = null): number | null {
   if (value == null || value === '') return fallback;
   const parsed = Number(value);
@@ -297,7 +306,17 @@ function reliabilitySharpe(row: any, fallback = NaN): number {
 function rowsHaveUsableTrades(rows: any[]) {
   return Array.isArray(rows) && rows.some((row) => {
     const status = String(row?.status || 'ok').toLowerCase();
+    const hasReliabilityResult = Boolean(row?.selection_method || row?.oos_status || row?.n_obs_oos != null || row?.total_trades_oos != null);
+    if (hasReliabilityResult && safeNum(row?.total_trades) > 0) return true;
     return ['ok', 'unstable'].includes(status) && safeNum(row?.total_trades) > 0;
+  });
+}
+
+function rowsHaveWalkForwardPartialData(rows: any[]) {
+  // walk_forward이 IS는 산출했으나 OOS 데이터 부족(insufficient_data) — fallback 덮어쓰기 방지
+  return Array.isArray(rows) && rows.some((row) => {
+    const status = String(row?.status || '').toLowerCase();
+    return status === 'insufficient_data' && safeNum(row?.total_trades) > 0;
   });
 }
 
@@ -921,7 +940,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
           if (fallbackRemainingMs != null && fallbackTimeoutMs < OHLCV_TIMEOUT_MS) budgetPartial = true;
           return [];
         });
-        if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+        if (Array.isArray(fallbackRows) && fallbackRows.length > 0 && !rowsHaveWalkForwardPartialData(rows)) {
           rows = fallbackRows;
           fallbackUsed = true;
         }
@@ -1044,7 +1063,8 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       continue;
     }
     const deadlineAt = maxRuntimeMs == null ? null : startedAt + maxRuntimeMs;
-    const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force, deadlineAt });
+    const candidatePeriods = periodsForMarket(market, periods);
+    const result = await refreshCandidate(symbol, market, candidatePeriods, { dryRun, fixture, force, deadlineAt });
     result.binanceTop30Rank = top30Gate.rank;
     result.inBinanceTop30Universe = normalizeMarket(market) === 'crypto' ? top30Gate.ok === true : null;
     results.push(result);

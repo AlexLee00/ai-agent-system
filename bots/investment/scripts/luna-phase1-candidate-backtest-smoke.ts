@@ -85,6 +85,9 @@ const syntheticOhlcv = Array.from({ length: 80 }, (_, index) => {
 });
 const fallbackRows = candidateBacktestTest.buildOhlcvMomentumBacktestRows(syntheticOhlcv, 30, 'crypto');
 assert.equal(candidateBacktestTest.rowsHaveUsableTrades(fallbackRows), true, 'OHLCV fallback should produce usable trade rows for trending candles');
+assert.equal(candidateBacktestTest.rowsHaveUsableTrades([
+  { status: 'insufficient_data', selection_method: 'walk_forward', oos_status: 'insufficient_data', total_trades: 3, n_obs_oos: 214, total_trades_oos: 3 },
+]), true, 'walk-forward OOS insufficiency should be preserved instead of overwritten by fallback rows');
 const fallbackQuality = candidateBacktestTest.evaluateQuality(fallbackRows);
 assert.equal(fallbackQuality.fresh ?? true, true, 'usable OHLCV fallback should be considered fresh');
 assert.equal(fallbackQuality.qualityRowSelection, 'best_per_walk_forward_period', 'quality gate should use period representatives');
