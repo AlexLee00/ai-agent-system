@@ -23,13 +23,13 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매일 06:25 KST — 스케줄 분산(06:00 피크 완화) -->
+  <!-- 매일 10:00 KST — 빈 시간대(06시 피크 완화, 전일 데이터/shadow 독립이라 시간 유연) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>6</integer>
+    <integer>10</integer>
     <key>Minute</key>
-    <integer>25</integer>
+    <integer>0</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>
