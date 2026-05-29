@@ -1028,23 +1028,14 @@ defmodule Jay.Core.Diagnostics do
     })
   end
 
-  defp memory_bucket(total_bytes) when is_integer(total_bytes) do
-    bucket_size = 5_000_000
-    div(total_bytes, bucket_size) * bucket_size
-  end
-
   defp memory_signature(nil), do: "missing"
 
-  # `:ok` 메모리는 5MB 경계만 흔들려도 signature가 바뀌어 30초마다 info 이벤트를
-  # 남길 수 있으므로 정상 구간에서는 severity만 추적한다.
+  # 메모리 총량은 GC/바이너리 힙 변동으로 수 MB씩 흔들린다. 압박 상태가 유지되는
+  # 동안에는 동일 signature로 묶고, ok/warn/error 전환만 EventLake에 남긴다.
   defp memory_signature(%{severity: :ok}), do: "ok"
-
-  defp memory_signature(%{severity: severity, value: total_bytes}) do
-    Enum.join([
-      Atom.to_string(severity),
-      Integer.to_string(memory_bucket(total_bytes || 0))
-    ], "|")
-  end
+  defp memory_signature(%{severity: :warn}), do: "warn"
+  defp memory_signature(%{severity: :error}), do: "error"
+  defp memory_signature(%{severity: severity}), do: Atom.to_string(severity)
 
   defp maybe_alarm_shadow_report(report, "warn") do
     failing_agents =

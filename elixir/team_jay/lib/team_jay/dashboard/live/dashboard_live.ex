@@ -2655,11 +2655,11 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     if length(events) >= limit do
       events
     else
-      load_dashboard_events_from_db(limit)
+      load_dashboard_events_from_db(limit, events)
     end
   end
 
-  defp load_dashboard_events_from_db(limit) do
+  defp load_dashboard_events_from_db(limit, fallback_events) do
     sql = """
     SELECT id, event_type, team, bot_name, severity, trace_id, title, message, tags, metadata, created_at, updated_at
     FROM agent.event_lake
@@ -2671,20 +2671,21 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
     case Jay.Core.Repo.query(sql, [limit]) do
       {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [
-                            id,
-                            event_type,
-                            team,
-                            bot_name,
-                            severity,
-                            trace_id,
-                            title,
-                            message,
-                            tags,
-                            metadata,
-                            created_at,
-                            updated_at
-                          ] ->
+        rows
+        |> Enum.map(fn [
+                         id,
+                         event_type,
+                         team,
+                         bot_name,
+                         severity,
+                         trace_id,
+                         title,
+                         message,
+                         tags,
+                         metadata,
+                         created_at,
+                         updated_at
+                       ] ->
           %{
             "id" => id,
             "event_type" => event_type,
@@ -2700,9 +2701,13 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
             "updated_at" => updated_at
           }
         end)
+        |> case do
+          [] -> fallback_events
+          events -> events
+        end
 
       _ ->
-        []
+        fallback_events
     end
   end
 
