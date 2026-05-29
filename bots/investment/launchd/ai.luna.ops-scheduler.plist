@@ -96,16 +96,18 @@
     <string>true</string>
     <key>LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE</key>
     <string>true</string>
-    <key>LUNA_DELEGATED_MAX_TRADE_USDT</key>
-    <string>50</string>
-    <key>LUNA_DELEGATED_MAX_DAILY_USDT</key>
-    <string>200</string>
+    <key>LUNA_DELEGATED_TRADE_RATIO</key>
+    <string>0.05</string>
+    <key>LUNA_DELEGATED_DAILY_RATIO</key>
+    <string>0.20</string>
+    <key>LUNA_DELEGATED_TRADE_RATIO_HARD_CAP</key>
+    <string>0.10</string>
+    <key>LUNA_DELEGATED_DAILY_RATIO_HARD_CAP</key>
+    <string>0.40</string>
+    <key>LUNA_DELEGATED_RATIO_EXCHANGE</key>
+    <string>binance</string>
     <key>LUNA_DELEGATED_MAX_OPEN_POSITIONS</key>
-    <string>2</string>
-    <key>LUNA_DELEGATED_MAX_TRADE_USDT_HARD_CAP</key>
-    <string>80</string>
-    <key>LUNA_DELEGATED_MAX_DAILY_USDT_HARD_CAP</key>
-    <string>300</string>
+    <string>5</string>
     <key>LUNA_LIVE_FIRE_ENABLED</key>
     <string>true</string>
     <key>LUNA_INTELLIGENT_DISCOVERY_MODE</key>
