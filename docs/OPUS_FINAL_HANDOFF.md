@@ -1,4 +1,30 @@
-# 세션 인수인계 — 2026-05-29 (CODEX_LUNA_CRYPTO_HOLDING_REGISTER — dry_run 등록 완료)
+# 세션 인수인계 — 2026-05-30 (CODEX_LUNA_POSITIONS_STALE_RESOLUTION — false positive 해소 완료)
+
+## 완료 요약 ✅ — positions stale false positive 제거 + 고아 paper 아카이브
+
+### CODEX_LUNA_POSITIONS_STALE_RESOLUTION_2026-05-30 결과
+- **Phase 1**: `data-loop-health-report.ts` positions 체크를 sync 생존 기준으로 재정의
+  - `fetchPositionSyncHealth()` 신규: autopilot 로그 mtime으로 sync 프로세스 생존 판정
+  - live 보유 0건 정상 상태에서 false positive 완전 제거
+  - sync >15분 미갱신 → CRITICAL, sync ok + 보유 0 → "정상(보유 없음)"
+- **Phase 2**: `migrations/20260530000001_archive_orphan_paper_positions.sql`
+  - live(paper=false) 0건 안전 확인 후 고아 paper 11건 positions_archive로 이동
+  - position_strategy_profiles 참조 건도 동일 처리
+- **검증 통과**: `check:luna-active-refresh-stale-close` ✅, `check:luna-operational-closure` ✅
+- **교훈 확정**: 프로세스/상태 문제는 "데이터 나이" 아닌 "프로세스 생존 직접 확인"으로 판정
+
+### 현재 상태
+- data-loop-health-report: positions stale false positive 해소됨
+- autopilot sync 2분 주기 정상 가동, live 보유 0건 정상 인식
+
+### 다음 세션 (이번 범위 밖)
+1. crypto-holding-monitor dry_run 로그 분석 (6시간 후) → 청산 대상 유효성 판단
+2. PnL Phase 2: reconcile-open-journals.ts fetchMyTrades 통합 (1~2주 dry_run)
+3. autopilot 로그 로테이션 (Phase 3, /tmp 1.7GB)
+
+---
+
+# 이전 세션 — 2026-05-29 (CODEX_LUNA_CRYPTO_HOLDING_REGISTER — dry_run 등록 완료)
 
 ## 완료 요약 ✅ — crypto-holding-monitor-6h launchd 등록 (dry_run 모드)
 

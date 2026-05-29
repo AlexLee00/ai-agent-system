@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-30: CODEX_LUNA_POSITIONS_STALE_RESOLUTION — positions stale false positive 해소 + 고아 paper 아카이브
+
+- **Phase 1**: `data-loop-health-report.ts` fetchPositionSyncHealth() 신규 — autopilot log mtime으로 sync 생존 판정
+  - live 보유 0 + sync 정상 → false positive 완전 제거 / sync >15분 미갱신 → CRITICAL
+- **Phase 2**: migration `20260530000001` — 고아 paper positions 11건 positions_archive 이동 (live 0 안전 확인 후)
+- **검증**: `check:luna-active-refresh-stale-close` ✅, `check:luna-operational-closure` ✅
+- **교훈**: 모니터는 "데이터 나이"가 아닌 "프로세스 생존 직접 확인" 기준으로 설계
+
 ## 2026-05-29: CODEX_LUNA_CRYPTO_HOLDING_REGISTER — crypto-holding-monitor-6h launchd 등록 (dry_run)
 
 - **plist 수정**: ProgramArguments `--disable-warning=DEP0205 --import tsx` 추가, RunAtLoad=true
