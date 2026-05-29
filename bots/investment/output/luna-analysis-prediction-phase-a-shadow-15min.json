@@ -1,17 +1,17 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
-  "generatedAt": "2026-05-29T05:13:31.123Z",
+  "generatedAt": "2026-05-29T05:28:41.826Z",
   "fixture": false,
   "shadowOnly": true,
   "liveTradeImpact": false,
   "market": "domestic",
-  "symbols": 14,
-  "ready": 14,
+  "symbols": 12,
+  "ready": 12,
   "partial": 0,
   "shadowLogLedger": {
     "writeApplied": true,
-    "rows": 322,
+    "rows": 276,
     "confirmRequired": "luna-analysis-prediction-phase-a-shadow-log"
   },
   "results": [
@@ -92,25 +92,6 @@
       "blockers": []
     },
     {
-      "symbol": "084650",
-      "market": "domestic",
-      "ok": true,
-      "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.3558,
-      "selectedFamily": "defensive_rotation",
-      "influenceMode": "shadow_bias",
-      "influenceWeight": 0.25,
-      "marketData": {
-        "source": "kis_1d_ohlcv",
-        "bars": 79,
-        "timeframe": "1d",
-        "lookbackDays": 120,
-        "error": null
-      },
-      "shadowRows": 23,
-      "blockers": []
-    },
-    {
       "symbol": "064400",
       "market": "domestic",
       "ok": true,
@@ -122,25 +103,6 @@
       "marketData": {
         "source": "kis_1d_ohlcv",
         "bars": 78,
-        "timeframe": "1d",
-        "lookbackDays": 120,
-        "error": null
-      },
-      "shadowRows": 23,
-      "blockers": []
-    },
-    {
-      "symbol": "047770",
-      "market": "domestic",
-      "ok": true,
-      "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.4719,
-      "selectedFamily": "defensive_rotation",
-      "influenceMode": "shadow_bias",
-      "influenceWeight": 0.25,
-      "marketData": {
-        "source": "kis_1d_ohlcv",
-        "bars": 79,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -168,55 +130,55 @@
       "blockers": []
     },
     {
-      "symbol": "217500",
+      "symbol": "000150",
       "market": "domestic",
       "ok": true,
       "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.4316,
-      "selectedFamily": "defensive_rotation",
-      "influenceMode": "shadow_bias",
-      "influenceWeight": 0.25,
-      "marketData": {
-        "source": "kis_1d_ohlcv",
-        "bars": 79,
-        "timeframe": "1d",
-        "lookbackDays": 120,
-        "error": null
-      },
-      "shadowRows": 23,
-      "blockers": []
-    },
-    {
-      "symbol": "009070",
-      "market": "domestic",
-      "ok": true,
-      "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.5238,
-      "selectedFamily": "defensive_rotation",
-      "influenceMode": "shadow_bias",
-      "influenceWeight": 0.25,
-      "marketData": {
-        "source": "kis_1d_ohlcv",
-        "bars": 79,
-        "timeframe": "1d",
-        "lookbackDays": 120,
-        "error": null
-      },
-      "shadowRows": 23,
-      "blockers": []
-    },
-    {
-      "symbol": "090360",
-      "market": "domestic",
-      "ok": true,
-      "status": "luna_analysis_prediction_phase_a_shadow_ready",
-      "predictiveScore": 0.7222,
+      "predictiveScore": 0.782,
       "selectedFamily": "equity_swing",
       "influenceMode": "shadow_bias",
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "336370",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.5007,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
+        "timeframe": "1d",
+        "lookbackDays": 120,
+        "error": null
+      },
+      "shadowRows": 23,
+      "blockers": []
+    },
+    {
+      "symbol": "012210",
+      "market": "domestic",
+      "ok": true,
+      "status": "luna_analysis_prediction_phase_a_shadow_ready",
+      "predictiveScore": 0.4539,
+      "selectedFamily": "defensive_rotation",
+      "influenceMode": "shadow_bias",
+      "influenceWeight": 0.25,
+      "marketData": {
+        "source": "kis_1d_ohlcv",
+        "bars": 80,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
