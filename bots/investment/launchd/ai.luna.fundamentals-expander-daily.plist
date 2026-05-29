@@ -6,7 +6,7 @@
   <string>ai.luna.fundamentals-expander-daily</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/python3</string>
+    <string>/opt/homebrew/bin/python3.12</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/python/korea-data/fundamentals_expander.py</string>
     <string>--limit</string>
     <string>200</string>
