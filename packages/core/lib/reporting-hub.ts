@@ -625,8 +625,8 @@ export function normalizeEvent({
 }
 
 /**
- * @deprecated Legacy orchestrator queue rail. Prefer webhook, telegram, RAG,
- * or n8n targets for current runtime fanout.
+ * @deprecated Legacy orchestrator queue rail. Prefer webhook, telegram, or RAG
+ * targets for current runtime fanout.
  */
 export async function publishToQueue({
   pgPool,

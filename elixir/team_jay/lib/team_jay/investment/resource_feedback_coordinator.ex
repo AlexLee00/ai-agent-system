@@ -7,7 +7,6 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
 
   헬스체크 대상:
   - LLM: MLX OpenAI-compatible `/v1/models`
-  - n8n: `/healthz`
   - market_data: price_watcher 활성 여부 (last_feedback 기반)
   - agent_memory: memory snapshot count
   - rag/vectorbt/chronos_ta/onchain: 이벤트 수신 기반 추론
@@ -106,7 +105,7 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
   defp maybe_publish(state) do
     resources = build_resources(state)
     ready_resources = Enum.count(resources, fn {_name, meta} -> meta.ready end)
-    recommendation = if ready_resources >= 6, do: :planner_ready, else: :observe
+    recommendation = if ready_resources >= 5, do: :planner_ready, else: :observe
 
     snapshot =
       Events.resource_feedback(state.symbol,
@@ -137,7 +136,6 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
 
   defp build_resources(state) do
     llm_ready = ping_http("#{Config.local_llm_base_url()}/v1/models", 2_000)
-    n8n_ready = ping_http("#{Config.n8n_base_url()}/healthz", 2_000)
 
     memory_count = get_in(state, [:last_memory, :snapshot_count]) || 0
     override_present = not is_nil(state.last_override)
@@ -149,7 +147,6 @@ defmodule TeamJay.Investment.ResourceFeedbackCoordinator do
       rag:          %{ready: override_present, status: if(override_present, do: :active, else: :idle), rationale: :runtime_override_seen},
       agent_memory: %{ready: memory_count > 0, status: if(memory_count > 0, do: :tracking, else: :empty), rationale: :memory_snapshot_count},
       vectorbt:     %{ready: override_present, status: :guard_ready, rationale: :override_guard},
-      n8n:          %{ready: n8n_ready, status: if(n8n_ready, do: :online, else: :offline), rationale: :http_ping},
       market_data:  %{ready: feedback_present, status: if(feedback_present, do: :active, else: :idle), rationale: :feedback_loop},
       chronos_ta:   %{ready: profile_present, status: if(profile_present, do: :profile_selected, else: :no_profile), rationale: :strategy_profile},
       onchain:      %{ready: true, status: :watch_enabled, rationale: :passive_watch}

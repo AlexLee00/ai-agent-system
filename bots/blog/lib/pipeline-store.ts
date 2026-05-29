@@ -9,7 +9,7 @@
  *
  * 역할:
  * - session_id 기반 노드 결과 저장/조회
- * - n8n/node-server/direct fallback 사이의 결과 연결
+ * - node-server/direct 경로 사이의 결과 연결
  * - 부분 재실행/결과 회수 지원
  */
 

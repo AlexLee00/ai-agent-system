@@ -9,7 +9,6 @@ defmodule Jay.V2.ModulesTest do
     Jay.V2.DailyBriefing,
     Jay.V2.DecisionEngine,
     Jay.V2.GrowthCycle,
-    Jay.V2.N8nBridge,
     Jay.V2.TeamConnector,
     Jay.V2.Topics,
     Jay.V2.WeeklyReport,
@@ -30,7 +29,6 @@ defmodule Jay.V2.ModulesTest do
           Jay.V2.DailyBriefing,
           Jay.V2.DecisionEngine,
           Jay.V2.GrowthCycle,
-          Jay.V2.N8nBridge,
           Jay.V2.TeamConnector,
           Jay.V2.Topics,
           Jay.V2.WeeklyReport,
@@ -77,10 +75,6 @@ defmodule Jay.V2.ModulesTest do
 
     test "GrowthCycle.run_cycle_sync/1 export" do
       assert function_exported?(Jay.V2.GrowthCycle, :run_cycle_sync, 1)
-    end
-
-    test "N8nBridge.get_status/0 export" do
-      assert function_exported?(Jay.V2.N8nBridge, :get_status, 0)
     end
 
     test "TeamConnector.collect_all/0 export" do

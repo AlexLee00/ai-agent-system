@@ -60,7 +60,7 @@ const RETIRED_TEAM_PATHS = [
   'bots/orchestrator/lib/commanders/video-adapter.ts',
 ];
 
-const RETIRED_TEAM_MARKER_PATTERN = 'bots/worker/|bots/video/|ai\\.worker\\.|/worker-health|worker-ops\\.settings|video-edi\\.settings|VIDEO_N8N_TOKEN|/api/video';
+const RETIRED_TEAM_MARKER_PATTERN = 'bots/worker/|bots/video/|ai\\.worker\\.|/worker-health|worker-ops\\.settings|video-edi\\.settings|/api/video';
 
 const RUNTIME_SOURCE_SCOPES = [
   'packages/core/lib',

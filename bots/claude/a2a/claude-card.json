@@ -18,7 +18,7 @@
     {
       "id": "health-check",
       "name": "시스템 헬스 체크",
-      "description": "22개 체크 항목 전체 실행 — DB·n8n·봇·비용·에러로그 종합",
+      "description": "체크 항목 전체 실행 — DB·봇·비용·에러로그 종합",
       "tags": ["ops", "health", "monitoring", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]

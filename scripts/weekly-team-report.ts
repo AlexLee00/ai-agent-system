@@ -4,7 +4,7 @@
 /**
  * scripts/weekly-team-report.js — 현역 팀 KPI 주간 종합 리포트
  *
- * 매주 일요일 09:00 실행 (launchd 또는 n8n)
+ * 매주 일요일 09:00 실행 (launchd)
  * 스카팀 / 루나팀 / 클로드팀 / 블로팀 핵심 지표 수집 → 텔레그램 발송 + RAG 저장
  *
  * 실행: node scripts/weekly-team-report.js [--days=7]

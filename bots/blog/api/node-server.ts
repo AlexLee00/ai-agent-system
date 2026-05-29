@@ -1,7 +1,7 @@
 /**
  * bots/blog/api/node-server.ts — 블로그 노드 API 서버
  *
- * n8n이 각 파이프라인 노드를 HTTP로 호출.
+ * 블로그 파이프라인 노드를 HTTP로 호출.
  * 포트: 3100 (BLOG_API_PORT 환경변수로 변경 가능)
  *
  * 실행: node bots/blog/api/node-server.ts

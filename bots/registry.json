@@ -536,11 +536,6 @@
       "bootMechanism": "MEMORY.md 자동 로드 (200줄 제한)",
       "contextFormat": "~/.claude/projects/{project}/memory/*.md"
     },
-    "n8n": {
-      "description": "n8n 워크플로우 - API 로그인 (맥미니 구매 후)",
-      "bootMechanism": "System Prompt 주입",
-      "contextFormat": "텍스트 직접 주입"
-    },
     "ollama-direct": {
       "description": "Ollama 직접 호출 - 로컬 모델",
       "bootMechanism": "System Prompt 주입",

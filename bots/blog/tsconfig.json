@@ -16,7 +16,6 @@
   "include": [
     "./api/**/*.ts",
     "./lib/**/*.ts",
-    "./n8n/**/*.ts",
     "./scripts/**/*.ts"
   ],
   "exclude": [

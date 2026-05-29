@@ -4,7 +4,7 @@
 /**
  * lib/mainbot-client.js — 클로드팀 알람 발행 클라이언트 (CJS)
  *
- * Hub alarm 경유로 전달하고, 실패 시 queue/n8n 정책에 따른다.
+ * Hub alarm 경유로 전달하고, 실패 시 queue 정책에 따른다.
  */
 
 const os = require('os');

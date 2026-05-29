@@ -24,11 +24,6 @@
       "warnThreshold": 3,
       "cleanupDays": 30
     },
-    "n8n": {
-      "healthUrl": "http://127.0.0.1:5678/healthz",
-      "criticalWebhookUrl": "http://127.0.0.1:5678/webhook/critical",
-      "timeoutMs": 5000
-    },
     "quickcheck": {
       "alertCooldownMs": 3600000,
       "restartCooldownMs": 1800000,

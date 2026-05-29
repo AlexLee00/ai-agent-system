@@ -14,7 +14,6 @@ const { publishToWebhook } = require('../reporting-hub');
  *   quietHours?: any,
  *   includeQueue?: boolean,
  *   includeTelegram?: boolean,
- *   includeN8n?: boolean
  * }} input
  */
 function createEventReporter({
