@@ -1,6 +1,7 @@
 // @ts-nocheck
 import * as db from './db.ts';
 import { getLunaOperatingEpoch } from './luna-operating-epoch.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
 
@@ -139,6 +140,7 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
       WHERE LOWER(COALESCE(tj.status, '')) = 'closed'
         AND tj.exit_time IS NOT NULL
         AND ${idExpr} IS NOT NULL
+        AND ${learningPnlValidSql('tj')}
         AND tqe.trade_id IS NULL
         ${marketClause}
         ${operatingEpochClause}

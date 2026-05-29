@@ -28,8 +28,10 @@ const require = createRequire(import.meta.url);
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 const kst     = require('../../../packages/core/lib/kst');
 const { getAgentsByTeam } = require('../../../packages/core/lib/agent-registry');
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 const SCHEMA = 'investment';
+const JOURNAL_LEARNING_GUARD = learningPnlValidSql('j');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = join(__dirname, '..', 'config.yaml');
 const OVERRIDE_DIR = join(__dirname, '..', 'data');
@@ -233,6 +235,7 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
     JOIN trade_journal j ON j.trade_id = r.trade_id
     WHERE r.reviewed_at > $2
       AND COALESCE(j.exclude_from_learning, false) = false
+      AND ${JOURNAL_LEARNING_GUARD}
       AND analyst_accuracy != '{}'::jsonb
   `, [jsonbKey, cutoff]);
 
@@ -260,6 +263,7 @@ async function getWeeklyAccuracy(botName, weeks = 1) {
     JOIN trade_journal j ON j.trade_id = r.trade_id
     WHERE r.reviewed_at > $1
       AND COALESCE(j.exclude_from_learning, false) = false
+      AND ${JOURNAL_LEARNING_GUARD}
       AND ${col} IS NOT NULL
   `, [cutoff]);
 
@@ -288,8 +292,8 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
     const to   = _weekCutoff(w - 2);
 
     const jsonbWhereClause = w === 1
-      ? `WHERE r.reviewed_at > $1 AND COALESCE(j.exclude_from_learning, false) = false AND (r.analyst_accuracy->>$2) IS NOT NULL`
-      : `WHERE r.reviewed_at > $1 AND r.reviewed_at <= $2 AND COALESCE(j.exclude_from_learning, false) = false AND (r.analyst_accuracy->>$3) IS NOT NULL`;
+      ? `WHERE r.reviewed_at > $1 AND COALESCE(j.exclude_from_learning, false) = false AND ${JOURNAL_LEARNING_GUARD} AND (r.analyst_accuracy->>$2) IS NOT NULL`
+      : `WHERE r.reviewed_at > $1 AND r.reviewed_at <= $2 AND COALESCE(j.exclude_from_learning, false) = false AND ${JOURNAL_LEARNING_GUARD} AND (r.analyst_accuracy->>$3) IS NOT NULL`;
     const jsonbParams = w === 1 ? [from, jsonbKey] : [from, to, jsonbKey];
     const jsonbRow = await pgPool.get(SCHEMA, `
       SELECT
@@ -320,10 +324,10 @@ async function getWeeklyAccuracyHistory(botName, nWeeks = 4) {
     let whereClause;
     let params;
     if (w === 1) {
-      whereClause = `WHERE r.reviewed_at > $1 AND COALESCE(j.exclude_from_learning, false) = false AND ${col} IS NOT NULL`;
+      whereClause = `WHERE r.reviewed_at > $1 AND COALESCE(j.exclude_from_learning, false) = false AND ${JOURNAL_LEARNING_GUARD} AND ${col} IS NOT NULL`;
       params      = [from];
     } else {
-      whereClause = `WHERE r.reviewed_at > $1 AND r.reviewed_at <= $2 AND COALESCE(j.exclude_from_learning, false) = false AND ${col} IS NOT NULL`;
+      whereClause = `WHERE r.reviewed_at > $1 AND r.reviewed_at <= $2 AND COALESCE(j.exclude_from_learning, false) = false AND ${JOURNAL_LEARNING_GUARD} AND ${col} IS NOT NULL`;
       params      = [from, to];
     }
 

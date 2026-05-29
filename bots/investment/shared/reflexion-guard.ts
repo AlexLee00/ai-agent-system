@@ -14,6 +14,7 @@
 import * as crypto from 'crypto';
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 import * as db from './db.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 import { checkTradeDataWeakSymbol } from './trade-data-derived-guards.ts';
 
 const REFLEXION_ENABLED = () => isAgentMemoryFeatureEnabled('reflexionAutoAvoidEnabled');
@@ -286,6 +287,7 @@ export async function checkSymbolLossStreak(
         symbol = $1
         AND market = $2
         AND (status = 'closed' OR exit_time IS NOT NULL)
+        AND ${learningPnlValidSql('')}
         AND created_at >= NOW() - INTERVAL '30 days'
       ORDER BY COALESCE(exit_time, created_at) DESC
       LIMIT 20

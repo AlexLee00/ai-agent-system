@@ -1,5 +1,6 @@
 // @ts-nocheck
 import * as db from './db.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 const REFLECTION_STATE_TABLE = 'discovery_reflection_state';
 
@@ -74,7 +75,7 @@ export async function recordDiscoveryAttribution({
 }
 
 export async function buildDiscoveryReflectionSummary({ days = 30, exchange = null } = {}) {
-  const conds = [`tj.status = 'closed'`, `tj.exit_time IS NOT NULL`, `to_timestamp(tj.exit_time / 1000.0) >= now() - ($1::int * INTERVAL '1 day')`];
+  const conds = [`tj.status = 'closed'`, `tj.exit_time IS NOT NULL`, learningPnlValidSql('tj'), `to_timestamp(tj.exit_time / 1000.0) >= now() - ($1::int * INTERVAL '1 day')`];
   const params = [Math.max(1, Number(days || 30))];
   if (exchange) {
     params.push(exchange);

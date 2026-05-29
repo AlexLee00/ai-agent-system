@@ -4,6 +4,7 @@
  */
 
 import * as db from './db.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 export interface LossPattern {
   patternKey: string;
@@ -84,6 +85,7 @@ async function fetchRecentLossReflexions({ market, lookbackDays }: { market: str
      LEFT JOIN investment.trade_journal tj ON tj.trade_id = lfr.trade_id::text
      WHERE lfr.created_at >= NOW() - ($1::int * INTERVAL '1 day')
        ${marketFilter}
+       AND (tj.id IS NULL OR ${learningPnlValidSql('tj')})
      ORDER BY lfr.created_at DESC
      LIMIT 500`,
     params,

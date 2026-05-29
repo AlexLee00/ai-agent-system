@@ -4,6 +4,7 @@
  */
 
 import * as db from './db.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 export interface WinPattern {
   patternKey: string;
@@ -65,8 +66,9 @@ async function fetchRecentWinTrades({ market, lookbackDays }: { market: string; 
        strategy_family,
        exit_time,
        created_at
-     FROM investment.trade_journal
+     FROM investment.trade_journal tj
      WHERE COALESCE(pnl_percent, 0) > 0
+       AND ${learningPnlValidSql('tj')}
        AND exit_time IS NOT NULL
        AND to_timestamp(exit_time / 1000.0) >= NOW() - ($1::int * INTERVAL '1 day')
        ${marketFilter}

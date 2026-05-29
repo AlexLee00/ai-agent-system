@@ -7,6 +7,7 @@
  */
 
 import * as db from './db.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 const MAPPER_ID = 'luna_feedback_action_mapper_v2';
 
@@ -91,6 +92,7 @@ async function fetchReflexions({ market, days, limit }: { market: string; days: 
      LEFT JOIN investment.trade_journal tj ON tj.trade_id = lfr.trade_id::text
      WHERE lfr.created_at >= NOW() - ($1::int * INTERVAL '1 day')
        ${marketClause(market)}
+       AND (tj.id IS NULL OR ${learningPnlValidSql('tj')})
        AND NOT EXISTS (
          SELECT 1
            FROM investment.feedback_to_action_map fam

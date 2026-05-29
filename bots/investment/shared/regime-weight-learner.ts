@@ -7,6 +7,7 @@
 import { query } from './db/core.ts';
 import { persistAdaptedWeights, retrieveAdaptedWeights } from './ta-weight-adaptive-tuner.ts';
 import { REGIME_AXIS_WEIGHTS } from './dynamic-universe-selector.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 // ─── 환경 게이트 ──────────────────────────────────────────────────────────────
 function boolEnv(name, fallback = false, env = process.env) {
@@ -88,6 +89,7 @@ async function fetchRegimeTradeStats(days = 7) {
      FROM investment.trade_journal tj
      WHERE tj.exit_time IS NOT NULL
        AND NOT COALESCE(tj.is_paper, false)
+       AND ${learningPnlValidSql('tj')}
        AND to_timestamp(tj.exit_time / 1000.0) >= NOW() - ($1 || ' days')::interval
      GROUP BY COALESCE(tj.market_regime, 'RANGING'), COALESCE(tj.strategy_family, tj.trade_mode, 'momentum'), COALESCE(tj.market, 'crypto')
      ORDER BY total_trades DESC`,

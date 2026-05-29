@@ -9,6 +9,7 @@
  */
 
 import * as db from './db/core.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
 const ANALYST_ACCURACY_COLUMNS: Record<string, string> = {
   aria: 'aria_accurate',
@@ -314,6 +315,7 @@ async function stepGenerateStrategyMutations(market: string): Promise<number> {
       ON sp.symbol = tj.symbol
      AND sp.exchange = tj.exchange
     WHERE tj.market = $1
+      AND ${learningPnlValidSql('tj')}
       AND tqe.evaluated_at >= NOW() - INTERVAL '7 days'
     GROUP BY COALESCE(tj.trade_id, sp.id::text), COALESCE(tj.exchange, sp.exchange, 'unknown'),
       COALESCE(tj.symbol, sp.symbol, 'unknown'), COALESCE(tj.trade_mode, sp.trade_mode, 'normal'), sp.setup_type
@@ -362,6 +364,7 @@ async function stepUpdateAgentCurriculum(market: string): Promise<number> {
         FROM investment.trade_review
         JOIN investment.trade_journal tj ON tj.trade_id = investment.trade_review.trade_id
         WHERE tj.market = $1
+          AND ${learningPnlValidSql('tj')}
           AND investment.trade_review.reviewed_at >= EXTRACT(EPOCH FROM (NOW() - INTERVAL '30 days')) * 1000
           AND ${column} IS NOT NULL
       `, [market]);

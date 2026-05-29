@@ -13,6 +13,7 @@ import * as db from './db.ts';
 import { callLLM } from './llm-client.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 import { evaluateLunaConstitutionForTrade } from './luna-constitution.ts';
+import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 import {
   fetchPendingTradeJournalPosttradeCandidates,
   fetchTradeJournalPosttradeTrade,
@@ -320,6 +321,7 @@ async function fetchRejectedReflexionRetryCandidates({
          ON ${idExpr} = tqe.trade_id
       WHERE LOWER(COALESCE(tqe.category, '')) = 'rejected'
         AND lfr.trade_id IS NULL
+        AND (tj.id IS NULL OR ${learningPnlValidSql('tj')})
         ${marketClause}
       ORDER BY tqe.evaluated_at DESC NULLS LAST
       LIMIT $1`,
