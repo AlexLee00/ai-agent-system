@@ -84,7 +84,7 @@ async function fetchGuardEffectiveness() {
 async function fetchFeedbackStats() {
   const row = await query(
     `SELECT COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS recent7d
+            COUNT(*) FILTER (WHERE applied_at >= NOW() - INTERVAL '7 days') AS recent7d
      FROM investment.feedback_to_action_map`,
     [],
   ).catch(() => [{}]);
@@ -151,7 +151,7 @@ async function fetchLaunchdHealth() {
     const registeredLabels = new Set<string>();
     if (result.stdout) {
       for (const line of result.stdout.split('\n')) {
-        const parts = line.split('\t');
+        const parts = line.trim().split(/\s+/);
         if (parts.length >= 3) registeredLabels.add(parts[2].trim());
       }
     }
@@ -198,23 +198,58 @@ async function fetchOpsSchedulerHealth() {
 
 async function fetchTableFreshness() {
   const checks = [
-    { table: 'investment.positions', tsCol: 'updated_at', epochMs: false, expectHours: 1 },
-    { table: 'investment.trade_journal', tsCol: 'entry_time', epochMs: true, expectHours: 168 },
-    { table: 'investment.market_regime_snapshots', tsCol: 'captured_at', epochMs: false, expectHours: 2 },
-    { table: 'investment.candidate_universe', tsCol: 'created_at', epochMs: false, expectHours: 48 },
-    { table: 'investment.guard_events', tsCol: 'triggered_at', epochMs: false, expectHours: 48 },
-    { table: 'investment.account_balances', tsCol: 'updated_at', epochMs: false, expectHours: 1 },
+    { table: 'investment.positions', tsCol: 'updated_at', epochMs: false, expectHours: 1, criticalHours: 24 },
+    { table: 'investment.trade_journal', tsCol: 'entry_time', epochMs: true, expectHours: 168, criticalHours: 336 },
+    { table: 'investment.market_regime_snapshots', tsCol: 'captured_at', epochMs: false, expectHours: 2, criticalHours: 24 },
+    { table: 'investment.candidate_universe', tsCol: 'discovered_at', epochMs: false, expectHours: 48, criticalHours: 96 },
+    { table: 'investment.guard_events', tsCol: 'triggered_at', epochMs: false, expectHours: 48, criticalHours: 96 },
+    { table: 'investment.feedback_to_action_map', tsCol: 'applied_at', epochMs: false, expectHours: 48, criticalHours: 168 },
+    { table: 'investment.luna_candidate_bottleneck_shadow', tsCol: 'observed_at', epochMs: false, expectHours: 24, criticalHours: 72 },
+    { table: 'investment.luna_paper_trading_shadow', tsCol: 'observed_at', epochMs: false, expectHours: 24, criticalHours: 72 },
+    { table: 'investment.account_balances', tsCol: 'updated_at', epochMs: false, expectHours: 1, criticalHours: 24 },
   ];
 
-  const results: { table: string; status: 'ok' | 'stale' | 'missing'; elapsedHours?: number; expectHours: number }[] = [];
+  const results: {
+    table: string;
+    status: 'ok' | 'stale' | 'missing' | 'missing_column' | 'error';
+    elapsedHours?: number;
+    expectHours: number;
+    criticalHours: number;
+    latest?: string | null;
+    message?: string;
+  }[] = [];
 
-  for (const { table, tsCol, epochMs, expectHours } of checks) {
+  for (const { table, tsCol, epochMs, expectHours, criticalHours } of checks) {
+    const [schema, tableName] = table.split('.');
     try {
+      const relation = await query(
+        `SELECT to_regclass($1) AS rel`,
+        [table],
+      ).then((rows) => rows?.[0]?.rel).catch(() => null);
+      if (!relation) {
+        results.push({ table, status: 'missing', expectHours, criticalHours });
+        continue;
+      }
+
+      const column = await query(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = $1
+            AND table_name = $2
+            AND column_name = $3
+          LIMIT 1`,
+        [schema, tableName, tsCol],
+      ).then((rows) => rows?.[0]?.column_name).catch(() => null);
+      if (!column) {
+        results.push({ table, status: 'missing_column', expectHours, criticalHours, message: `${tsCol} column missing` });
+        continue;
+      }
+
       const tsExpr = epochMs ? `to_timestamp(MAX(${tsCol}) / 1000.0)` : `MAX(${tsCol})`;
       const rows = await query(`SELECT ${tsExpr} AS latest FROM ${table}`, []);
       const latest = rows?.[0]?.latest;
       if (!latest) {
-        results.push({ table, status: 'stale', elapsedHours: undefined, expectHours });
+        results.push({ table, status: 'stale', elapsedHours: undefined, expectHours, criticalHours, latest: null });
         continue;
       }
       const elapsedHours = (Date.now() - new Date(latest).getTime()) / 3_600_000;
@@ -223,10 +258,13 @@ async function fetchTableFreshness() {
         status: elapsedHours > expectHours ? 'stale' : 'ok',
         elapsedHours: Math.round(elapsedHours),
         expectHours,
+        criticalHours,
+        latest: new Date(latest).toISOString(),
       });
     } catch (err: any) {
-      const isMissing = /relation|does not exist/i.test(err?.message || '');
-      results.push({ table, status: isMissing ? 'missing' : 'stale', expectHours });
+      const message = err?.message || String(err);
+      const isMissing = /relation .* does not exist/i.test(message);
+      results.push({ table, status: isMissing ? 'missing' : 'error', expectHours, criticalHours, message });
     }
   }
 
@@ -249,9 +287,15 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness) {
     if (t.status === 'missing') {
       section += `🔴 CRITICAL: \`${t.table}\` MISSING\n`;
       hasCritical = true;
+    } else if (t.status === 'missing_column') {
+      section += `🔴 CRITICAL: \`${t.table}\` ${t.message || 'timestamp column missing'}\n`;
+      hasCritical = true;
+    } else if (t.status === 'error') {
+      section += `⚠️ WARN: \`${t.table}\` freshness check error: ${String(t.message || 'unknown').slice(0, 120)}\n`;
+      hasWarn = true;
     } else if (t.status === 'stale') {
       const hrs = t.elapsedHours !== undefined ? `${t.elapsedHours}h` : '?h';
-      if ((t.elapsedHours ?? 0) > 24) {
+      if ((t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)) {
         section += `🔴 CRITICAL: \`${t.table}\` STALE ${hrs} (기대: ${t.expectHours}h)\n`;
         hasCritical = true;
       } else {
@@ -389,7 +433,10 @@ async function main() {
   console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
   console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
   console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개`);
-  const criticalTables = (tableFreshness ?? []).filter((t) => t.status === 'missing' || (t.status === 'stale' && (t.elapsedHours ?? 0) > 24));
+  const criticalTables = (tableFreshness ?? []).filter((t) =>
+    ['missing', 'missing_column'].includes(t.status)
+    || (t.status === 'stale' && (t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)),
+  );
   console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
 
   const message = buildTelegramMessage(data);
