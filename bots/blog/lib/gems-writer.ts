@@ -1683,6 +1683,12 @@ ${content}
   }
 
   repaired = _normalizeGeneralStructure(repaired);
+  repaired = _ensureGeneralQualityFloor(repaired, {
+    category,
+    weatherContext,
+    relatedPosts: researchData.relatedPosts || [],
+    minChars: Number(generationRuntimeConfig.gemsMinChars || 7000),
+  });
   repaired = _enforceGeneralTitleAlignment(repaired, category, researchData);
   const firstLine = repaired.split('\n').find(line => line.trim().length > 0) || '';
   const title = firstLine.slice(0, 80).trim();
@@ -1875,16 +1881,22 @@ ${linkingBlock}
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
   });
 
-  let content   = _normalizeGeneralStructure(result.content);
+  let content = _normalizeGeneralStructure(result.content);
+  content = _ensureGeneralQualityFloor(content, {
+    category,
+    weatherContext,
+    relatedPosts,
+    minChars: Number(generationRuntimeConfig.gemsMinChars || 7000),
+  });
   content = _enforceGeneralTitleAlignment(content, category, researchData);
   content = _ensureBookReviewIdentity(content, category, researchData);
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
 
-  console.log(`[젬스청크] 전체 ${result.charCount}자 (${chunks.length}청크)`);
+  console.log(`[젬스청크] 전체 ${content.length}자 (${chunks.length}청크)`);
 
-  return { content, charCount: result.charCount, model: `chunked-${model}`, title };
+  return { content, charCount: content.length, model: `chunked-${model}`, title };
 }
 
 module.exports = {
