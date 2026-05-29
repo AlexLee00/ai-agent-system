@@ -45,7 +45,6 @@ const checks = {
   llmCost:        require('../lib/checks/llm-cost'),
   billing:        require('../lib/checks/billing'),
   workspaceGit:   require('../lib/checks/workspace-git'),
-  n8n:            require('../lib/checks/n8n'),
   botBehavior:    require('../lib/checks/bot-behavior'),
 };
 
@@ -134,7 +133,6 @@ async function main() {
     () => checks.llmCost.run(),
     () => checks.billing.run(),
     () => checks.workspaceGit.run(),
-    () => checks.n8n.run(),
   ];
 
   for (const run of runners) {

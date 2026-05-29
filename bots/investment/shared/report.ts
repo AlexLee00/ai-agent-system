@@ -123,7 +123,6 @@ const publishLunaMessage = createEventReporter({
   },
   includeQueue: false,
   includeTelegram: false,
-  includeN8n: true,
 });
 
 // ─── 기본 발송 ───────────────────────────────────────────────────────

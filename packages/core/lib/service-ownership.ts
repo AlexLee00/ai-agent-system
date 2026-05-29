@@ -50,7 +50,6 @@ function getHubServiceLabels() {
     'ai.investment.runtime-autopilot',
     'ai.luna.ops-scheduler',
     'ai.mlx.server',
-    'ai.n8n.server',
     'ai.jay.runtime',
     'ai.hub.resource-api',
   ];

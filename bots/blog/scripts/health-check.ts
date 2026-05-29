@@ -44,14 +44,12 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
   domain: 'blog health',
 });
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
-const N8N_HEALTH_URL = new URL(runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz');
 const SOCIAL_MEDIA_ENABLED = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
 const IMAGE_GEN_ENABLED = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
 const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`);
 const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
-const N8N_HEALTH_TIMEOUT_MS = Number(runtimeConfig.n8nHealthTimeoutMs || 2500);
 const IMAGE_HEALTH_TIMEOUT_MS = 2500;
 const COMMENTER_CONFIG = runtimeConfig.commenter || {};
 const COMMENTER_ACTIVE_START_HOUR = Number(COMMENTER_CONFIG.activeStartHour || 9);
@@ -298,44 +296,6 @@ function checkNodeServerHealth() {
     });
     req.on('error', (e) => {
       resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? `포트 ${NODE_SERVER_HEALTH_URL.port || 80} 연결 거부` : e.message.slice(0, 80) });
-    });
-    req.end();
-  });
-}
-
-function checkN8nHealth() {
-  return new Promise((resolve) => {
-    const req = http.request(
-      {
-        hostname: N8N_HEALTH_URL.hostname,
-        port: Number(N8N_HEALTH_URL.port || 80),
-        path: `${N8N_HEALTH_URL.pathname}${N8N_HEALTH_URL.search}`,
-        method: 'GET',
-        timeout: N8N_HEALTH_TIMEOUT_MS,
-      },
-      (res) => {
-        let body = '';
-        res.on('data', (d) => body += d);
-        res.on('end', () => {
-          try {
-            const json = JSON.parse(body);
-            if (json.status === 'ok') {
-              resolve({ ok: true, detail: 'n8n healthz 정상' });
-            } else {
-              resolve({ ok: false, detail: `비정상 응답: ${body.slice(0, 80)}` });
-            }
-          } catch {
-            resolve({ ok: false, detail: `JSON 파싱 실패 (HTTP ${res.statusCode})` });
-          }
-        });
-      }
-    );
-    req.on('timeout', () => {
-      req.destroy();
-      resolve({ ok: false, detail: `응답 없음 (${N8N_HEALTH_TIMEOUT_MS}ms 타임아웃)` });
-    });
-    req.on('error', (e) => {
-      resolve({ ok: false, detail: e.code === 'ECONNREFUSED' ? `포트 ${N8N_HEALTH_URL.port || 80} 연결 거부` : e.message.slice(0, 80) });
     });
     req.end();
   });
@@ -1078,25 +1038,6 @@ async function main() {
     }
   }
 
-  const n8nHealth = /** @type {any} */ (await checkN8nHealth());
-  const n8nKey = 'n8n:http';
-  // @ts-ignore checkJs is too narrow for runtime health payloads
-  if (!n8nHealth.ok) {
-    if (hsm.canAlert(state, n8nKey)) {
-      issues.push({
-        key: n8nKey,
-        level: 1,
-        // @ts-ignore checkJs is too narrow for runtime health payloads
-        msg: `⚠️ [블로그 헬스] n8n 비정상\n${n8nHealth.detail}\n직접 실행 폴백은 가능하지만 웹훅 경로를 점검하세요.`,
-      });
-    }
-  } else if (state[n8nKey]) {
-      // @ts-ignore checkJs is too narrow for runtime health payloads
-      const recoveryMsg = `✅ [블로그 헬스] n8n 회복\n${n8nHealth.detail}`;
-    await notify(recoveryMsg, 1);
-    await rememberHealthEvent(n8nKey, 'recovery', recoveryMsg, 1);
-    hsm.clearAlert(state, n8nKey);
-  }
 
   if (IMAGE_GEN_ENABLED && (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things')) {
     const imageHealth = /** @type {any} */ (await checkDrawThingsHealth());

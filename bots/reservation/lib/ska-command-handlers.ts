@@ -2,9 +2,7 @@
 
 const { execFileSync } = require('child_process');
 const fs = require('fs');
-const { runWithN8nFallback } = require('../../../packages/core/lib/n8n-runner');
 const { storeReservationResolution } = require('../../../packages/core/lib/reservation-rag');
-const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { createSkaReadService } = require('./ska-read-service');
 const { runManualReservationRegistration } = require('./manual-reservation');
 const { runManualReservationCancellation } = require('./manual-cancellation');
@@ -13,7 +11,6 @@ const { resolveOpenKioskBlockFollowups } = require('./db');
 type HandlerArgs = Record<string, unknown>;
 
 function createSkaCommandHandlers({ pgPool, rag }) {
-  const N8N_HEALTH_URL = process.env.N8N_SKA_HEALTH_URL || 'http://localhost:5678/healthz';
   const readService = createSkaReadService({ pgPool, rag });
   const uid = process.getuid();
 
@@ -38,49 +35,16 @@ function createSkaCommandHandlers({ pgPool, rag }) {
     }
   }
 
-  async function getCommandWebhookCandidates(command) {
-    const scoped = process.env[`N8N_SKA_WEBHOOK_${String(command || '').toUpperCase()}`];
-    const shared = process.env.N8N_SKA_COMMAND_WEBHOOK;
-    return buildWebhookCandidates({
-      workflowName: '스카팀 읽기 명령 intake',
-      method: 'POST',
-      pathSuffix: 'ska-command',
-      configured: [scoped, shared],
-      defaults: [
-      'http://localhost:3031/api/webhooks/n8n/ska-command',
-      'http://localhost:5678/webhook/ska-command',
-      'http://localhost:5678/webhook-test/ska-command',
-      ],
-    });
-  }
-
-  async function runCommandWithN8n(command, args, directRunner) {
-    return runWithN8nFallback({
-      circuitName: `ska:${command}`,
-      webhookCandidates: await getCommandWebhookCandidates(command),
-      healthUrl: N8N_HEALTH_URL,
-      body: {
-        team: 'ska',
-        command,
-        args: args || {},
-        source: 'ska-commander',
-        requestedAt: new Date().toISOString(),
-      },
-      directRunner,
-      logger: console,
-    });
-  }
-
   async function handleQueryReservations(args: HandlerArgs = {}) {
-    return runCommandWithN8n('query_reservations', args, () => readService.queryReservations(args));
+    return readService.queryReservations(args);
   }
 
   async function handleQueryTodayStats(args: HandlerArgs = {}) {
-    return runCommandWithN8n('query_today_stats', args, () => readService.queryTodayStats(args));
+    return readService.queryTodayStats(args);
   }
 
   async function handleQueryAlerts(args: HandlerArgs = {}) {
-    return runCommandWithN8n('query_alerts', args, () => readService.queryAlerts(args));
+    return readService.queryAlerts(args);
   }
 
   async function resolveErrorAlerts(args: HandlerArgs = {}) {
@@ -133,14 +97,10 @@ function createSkaCommandHandlers({ pgPool, rag }) {
   }
 
   async function handleRegisterReservation(args: HandlerArgs = {}) {
-    // Reservation registration is a write path that must return the real
-    // Pickko/Naver outcome, not just an n8n webhook acceptance.
     return runManualReservationRegistration(args);
   }
 
   async function handleCancelReservation(args: HandlerArgs = {}) {
-    // Cancellation is also a write path that must surface partial-success
-    // details from Pickko cancel / Naver unblock directly.
     return runManualReservationCancellation(args);
   }
 

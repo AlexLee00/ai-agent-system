@@ -10,15 +10,10 @@ const CONFIG_PATH = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'config.json');
 const DEFAULTS = {
   health: {
     nodeServerHealthUrl: 'http://127.0.0.1:3100/health',
-    n8nHealthUrl: 'http://127.0.0.1:5678/healthz',
-    blogWebhookUrl: 'http://127.0.0.1:5678/webhook/blog-pipeline',
     nodeServerTimeoutMs: 3000,
-    n8nHealthTimeoutMs: 2500,
-    webhookTimeoutMs: 5000,
     dailyLogStaleMs: 36 * 60 * 60 * 1000,
   },
   generation: {
-    useN8nPipeline: false,
     gemsMinChars: 6000,
     posMinChars: 7000,
     continueMaxTokens: 8000,
@@ -26,9 +21,6 @@ const DEFAULTS = {
     writerTimeoutMs: 90000,
     continueTimeoutMs: 90000,
     chunkTimeoutMs: 120000,
-    maestroWebhookTimeoutMs: 180000,
-    maestroHealthTimeoutMs: 2500,
-    maestroCircuitCooldownMs: 30 * 60 * 1000,
   },
   competition: {
     enabled: false,

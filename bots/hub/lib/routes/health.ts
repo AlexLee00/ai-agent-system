@@ -144,20 +144,6 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
     };
   }
 
-  if (env.N8N_ENABLED) {
-    const n8nStart = Date.now();
-    const ok = await checkHttp(`${env.N8N_BASE_URL}/healthz`, 3000);
-    resources.n8n = {
-      status: ok ? 'ok' : 'warn',
-      detail: ok ? 'health ok' : 'health unreachable',
-      latency_ms: Date.now() - n8nStart,
-    };
-  } else {
-    resources.n8n = {
-      status: 'ok',
-      detail: 'disabled in current mode',
-    };
-  }
 
   const localLlmStart = Date.now();
   const localLlmJson = await fetchJson(`${env.LOCAL_LLM_BASE_URL}/v1/models`, 4000);

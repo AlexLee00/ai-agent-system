@@ -1,5 +1,4 @@
 const fs = require('fs');
-const { runWithN8nFallback } = require('./n8n-runner');
 const hubAlarmClient = require('./hub-alarm-client');
 
 const ALERT_LEVEL_LABELS = {
@@ -22,7 +21,6 @@ const MOBILE_LINE_MAX = 88;
 const MOBILE_DIVIDER = '──────────';
 
 const DELIVERY_STATE = new Map();
-const DEFAULT_CRITICAL_WEBHOOK_URL = process.env.N8N_CRITICAL_WEBHOOK || 'http://127.0.0.1:5678/webhook/critical';
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
 const LEGACY_QUEUE_USAGE_LOG = process.env.MAINBOT_QUEUE_USAGE_LOG || '/tmp/mainbot-queue-usage.jsonl';
 const LEGACY_QUEUE_PUBLISH_ENABLED = process.env.MAINBOT_QUEUE_PUBLISH_ENABLED === 'true';
@@ -167,16 +165,6 @@ type RagPublisherInput = {
   event: EventInput;
   metadata?: Record<string, unknown>;
   contentBuilder?: ((event: NormalizedEvent) => string) | null;
-  policy?: DeliveryPolicy;
-};
-
-type N8nPublisherInput = {
-  circuitName?: string;
-  webhookCandidates: string[];
-  healthUrl?: string;
-  event: EventInput;
-  bodyBuilder?: ((event: NormalizedEvent) => unknown) | null;
-  directResult?: { ok?: boolean; source?: string };
   policy?: DeliveryPolicy;
 };
 
@@ -882,50 +870,6 @@ export async function publishToRag({
   }
 }
 
-export async function publishToN8n({
-  circuitName,
-  webhookCandidates,
-  healthUrl,
-  event,
-  bodyBuilder,
-  directResult = { ok: false, source: 'direct_bypass' },
-  policy,
-}: N8nPublisherInput) {
-  const normalized = normalizeEvent(event);
-  const decision = evaluateDeliveryPolicy('n8n', normalized, policy);
-  if (!decision.allowed) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: decision.reason,
-      channel: 'n8n',
-      event: normalized,
-    };
-  }
-  if (!Array.isArray(webhookCandidates) || webhookCandidates.length === 0) {
-    return { ok: false, channel: 'n8n', event: normalized, error: 'missing_webhook_candidates' };
-  }
-
-  try {
-    const result = await runWithN8nFallback({
-      circuitName: circuitName || `reporting:${normalized.team}:${normalized.event_type}`,
-      webhookCandidates,
-      healthUrl,
-      body: typeof bodyBuilder === 'function' ? bodyBuilder(normalized) : normalized,
-      directRunner: async () => directResult,
-      logger: console,
-    });
-    return {
-      ok: Boolean(result?.ok || result?.source === 'n8n'),
-      channel: 'n8n',
-      event: normalized,
-      result,
-    };
-  } catch (error) {
-    console.warn(`[reporting-hub] n8n publish failed: ${(error as Error).message}`);
-    return { ok: false, channel: 'n8n', event: normalized, error: (error as Error).message };
-  }
-}
 
 /** @param {any} [input] */
 export async function publishEventPipeline({
@@ -979,17 +923,6 @@ export async function publishEventPipeline({
           event: normalized,
           metadata: target.metadata,
           contentBuilder: target.contentBuilder,
-          policy: { ...policy, ...(target.policy || {}) },
-        }));
-        break;
-      case 'n8n':
-        results.push(await publishToN8n({
-          circuitName: target.circuitName,
-          webhookCandidates: target.webhookCandidates,
-          healthUrl: target.healthUrl,
-          event: normalized,
-          bodyBuilder: target.bodyBuilder,
-          directResult: target.directResult,
           policy: { ...policy, ...(target.policy || {}) },
         }));
         break;
@@ -1268,9 +1201,7 @@ export function buildSeverityTargets({
   telegramPrefix = '',
   includeQueue = false,
   includeTelegram = true,
-  includeN8n = true,
   criticalTelegramMode = 'both',
-  criticalWebhookUrl = DEFAULT_CRITICAL_WEBHOOK_URL,
 }: {
   event?: EventInput;
   pgPool?: QueuePublisherInput['pgPool'];
@@ -1281,9 +1212,7 @@ export function buildSeverityTargets({
   telegramPrefix?: string;
   includeQueue?: boolean;
   includeTelegram?: boolean;
-  includeN8n?: boolean;
   criticalTelegramMode?: string;
-  criticalWebhookUrl?: string;
 } = {}) {
   const normalized = normalizeEvent(event);
   const targets = [];
@@ -1309,25 +1238,6 @@ export function buildSeverityTargets({
       topicTeam,
       prefix: telegramPrefix,
       criticalMode: criticalTelegramMode,
-    });
-  }
-
-  if (includeN8n && normalized.alert_level >= 4 && criticalWebhookUrl) {
-    targets.push({
-      type: 'n8n',
-      webhookCandidates: [criticalWebhookUrl],
-      healthUrl: 'http://127.0.0.1:5678/healthz',
-      bodyBuilder: (payloadEvent: NormalizedEvent) => ({
-        severity: 'critical',
-        service: payloadEvent.team || payloadEvent.from_bot,
-        message: payloadEvent.message,
-        detail: payloadEvent.payload?.detail || payloadEvent.payload?.summary || '',
-        source_bot: payloadEvent.from_bot,
-        event_type: payloadEvent.event_type,
-      }),
-      policy: {
-        dedupe: false,
-      },
     });
   }
 

@@ -25,7 +25,6 @@ const {
   getLaunchctlStatus,
   buildServiceRows,
   buildFileActivityHealth,
-  buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const fs = require('node:fs');
@@ -50,10 +49,6 @@ const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const PICKKO_LOG = '/tmp/pickko-kiosk-monitor.log';
 const TODAY_AUDIT_LOG = '/tmp/today-audit.log';
 const LOG_STALE_MS = 15 * 60 * 1000;
-const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || 'http://127.0.0.1:5678/healthz';
-const DEFAULT_N8N_WEBHOOK_URL = process.env.SKA_N8N_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook/ska-command';
-const RESERVATION_COMMAND_WORKFLOW_NAME =
-  process.env.RESERVATION_COMMAND_WORKFLOW_NAME || '스카팀 읽기 명령 intake';
 const CANCEL_COUNTER_DRIFT_TITLE = '🚨 네이버 취소 카운터 증가 이상';
 
 function getCurrentKstParts() {
@@ -396,23 +391,6 @@ function buildTodayAuditHealth() {
   }
 }
 
-async function buildN8nCommandHealth() {
-  return buildResolvedWebhookHealth({
-    // Keep the operator-facing wording as "예약팀" while resolving against the
-    // current n8n workflow name that is still registered under the legacy Ska label.
-    workflowName: RESERVATION_COMMAND_WORKFLOW_NAME,
-    pathSuffix: 'ska-command',
-    healthUrl: N8N_HEALTH_URL,
-    defaultWebhookUrl: DEFAULT_N8N_WEBHOOK_URL,
-    probeBody: {
-      command: 'query_today_stats',
-      args: { date: new Date().toISOString().slice(0, 10) },
-    },
-    okLabel: 'ska command webhook',
-    warnLabel: 'ska command webhook',
-  });
-}
-
 async function buildDailySummaryIntegrityHealth() {
   try {
     const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -668,7 +646,7 @@ async function buildDuplicateSlotHealth() {
   }
 }
 
-function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth) {
+function buildDecision(coreServiceRows, monitorHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -680,16 +658,6 @@ function buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySu
         active: monitorHealth.warn.length > 0,
         level: 'medium',
         reason: 'naver-monitor 로그 활동성이 멈춰 크래시루프 가능성을 확인해야 합니다.',
-      },
-      {
-        active: !n8nCommandHealth.n8nHealthy,
-        level: 'medium',
-        reason: 'n8n healthz 응답이 없어 예약 command 노드 경로를 사용할 수 없습니다.',
-      },
-      {
-        active: n8nCommandHealth.n8nHealthy && !n8nCommandHealth.webhookRegistered,
-        level: 'medium',
-        reason: `n8n은 살아 있지만 reservation command webhook이 미등록 상태입니다 (${n8nCommandHealth.webhookReason}).`,
       },
       {
         active: dailySummaryIntegrityHealth.warn.length > 0,
@@ -734,7 +702,6 @@ function formatText(report) {
         ok: report.todayAuditHealth.samples || [],
       }, 5),
       buildHealthCountSection('■ 모니터 상태', report.monitorHealth, { okLimit: 3 }),
-      buildHealthCountSection('■ n8n 예약 명령 경로', report.n8nCommandHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 취소 카운터 드리프트', report.cancelCounterDriftHealth, { okLimit: 2, warnLimit: 4 }),
       buildHealthSampleSection('■ 취소 카운터 드리프트 샘플', {
         ok: report.cancelCounterDriftHealth.samples || [],
@@ -779,7 +746,6 @@ async function buildReport() {
     missingOkText: (name) => `  ${name}: 대기 (다음 스케줄 실행 전)`,
   });
   const monitorHealth = buildCombinedMonitorHealth();
-  const n8nCommandHealth = await buildN8nCommandHealth();
   const cancelCounterDriftHealth = await buildCancelCounterDriftHealth();
   const duplicateSlotHealth = await buildDuplicateSlotHealth();
   const dailySummaryIntegrityHealth = await buildDailySummaryIntegrityHealth();
@@ -794,7 +760,7 @@ async function buildReport() {
     }
   }
 
-  const decision = buildDecision(coreServiceRows, monitorHealth, n8nCommandHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth);
+  const decision = buildDecision(coreServiceRows, monitorHealth, dailySummaryIntegrityHealth, cancelCounterDriftHealth, duplicateSlotHealth, todayAuditHealth);
 
   return {
     coreServiceHealth: {
@@ -830,18 +796,6 @@ async function buildReport() {
       missingTodayRun: todayAuditHealth.missingTodayRun,
       summary: todayAuditHealth.summary,
       recentSuccess: todayAuditHealth.recentSuccess,
-    },
-    n8nCommandHealth: {
-      okCount: n8nCommandHealth.ok.length,
-      warnCount: n8nCommandHealth.warn.length,
-      ok: n8nCommandHealth.ok,
-      warn: n8nCommandHealth.warn,
-      n8nHealthy: n8nCommandHealth.n8nHealthy,
-      webhookRegistered: n8nCommandHealth.webhookRegistered,
-      webhookReason: n8nCommandHealth.webhookReason,
-      webhookStatus: n8nCommandHealth.webhookStatus,
-      webhookUrl: n8nCommandHealth.webhookUrl,
-      resolvedWebhookUrl: n8nCommandHealth.resolvedWebhookUrl,
     },
     cancelCounterDriftHealth: {
       okCount: cancelCounterDriftHealth.ok.length,

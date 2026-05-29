@@ -21,7 +21,6 @@ const {
   buildServiceRows,
   buildHttpChecks,
   buildFileActivityHealth,
-  buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const { getBlogHealthRuntimeConfig, getBlogNeighborCommenterConfig } = require('../lib/runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
@@ -52,13 +51,11 @@ const runtimeConfig = getBlogHealthRuntimeConfig();
 const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
 const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
-const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';
 const SOCIAL_MEDIA_ENABLED = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
 const IMAGE_GEN_ENABLED = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
 const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`).toString();
-const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
 const TEAM_JAY_ROOT = path.join(env.PROJECT_ROOT, 'elixir', 'team_jay');
 const SOCIAL_ASSET_DUE_HOUR = Number(process.env.BLOG_SOCIAL_ASSET_DUE_HOUR || runtimeConfig.socialAssetDueHour || 7);
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
@@ -620,15 +617,6 @@ async function buildNodeHealth() {
       okText: (data) => `  node-server API: 정상 (port ${data.port || 3100})`,
       warnText: '  node-server API: 응답 없음',
     },
-    {
-      label: 'n8n',
-      url: N8N_HEALTH_URL,
-      expectJson: true,
-      timeoutMs: Number(runtimeConfig.n8nHealthTimeoutMs || 2500),
-      isOk: (data) => data?.status === 'ok',
-      okText: '  n8n healthz: 정상',
-      warnText: '  n8n healthz: 응답 없음',
-    },
   ];
 
   const drawthingsRequired = IMAGE_GEN_ENABLED && (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things');
@@ -653,7 +641,6 @@ async function buildNodeHealth() {
     ok: checks.ok,
     warn: checks.warn,
     nodeServerOk: Boolean(checks.results.nodeServer?.ok),
-    n8nOk: checks.results.n8n?.status === 'ok',
     drawthingsOk,
   };
 }
@@ -812,24 +799,6 @@ function buildNaverUrlBackfillHealth() {
     ],
     latest,
   };
-}
-
-async function buildN8nPipelineHealth() {
-  return buildResolvedWebhookHealth({
-    workflowName: '블로그팀 동적 포스팅',
-    pathSuffix: 'blog-pipeline',
-    healthUrl: N8N_HEALTH_URL,
-    defaultWebhookUrl: DEFAULT_BLOG_WEBHOOK_URL,
-    probeBody: {
-      postType: 'general',
-      sessionId: 'n8n-blog-health-probe',
-      pipeline: ['weather'],
-      variations: {},
-    },
-    okLabel: 'blog pipeline webhook',
-    warnLabel: 'blog pipeline webhook',
-    timeoutMs: Number(runtimeConfig.webhookTimeoutMs || 5000),
-  });
 }
 
 async function buildBookCatalogHealth() {
@@ -2462,7 +2431,7 @@ async function buildMarketingExpansionHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null, opsDoctorPriority = null) {
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null, opsDoctorPriority = null) {
   const previewBundleHint = [
     socialAutomationHealth.latestReelUrl ? `reel=${socialAutomationHealth.latestReelUrl}` : '',
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
@@ -2627,7 +2596,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHe
       {
         active: nodeHealth.warn.length > 0,
         level: 'medium',
-        reason: `node-server/n8n 경고 ${nodeHealth.warn.length}건이 있어 실행 백엔드 상태 확인이 필요합니다.`,
+        reason: `node-server 경고 ${nodeHealth.warn.length}건이 있어 실행 백엔드 상태 확인이 필요합니다.`,
       },
       {
         active: IMAGE_GEN_ENABLED && IMAGE_PROVIDER === 'drawthings' && nodeHealth.drawthingsOk === false,
@@ -2643,16 +2612,6 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHe
         active: Number(pendingPublishHealth?.stalePendingCount || 0) > 0,
         level: 'high',
         reason: `기한이 지난 네이버 미발행 ready 포스트 ${Number(pendingPublishHealth?.stalePendingCount || 0)}건이 남아 있습니다.`,
-      },
-      {
-        active: !n8nPipelineHealth.n8nHealthy,
-        level: 'medium',
-        reason: 'n8n healthz 응답이 없어 블로 pipeline 워크플로우 경로를 사용할 수 없습니다.',
-      },
-      {
-        active: n8nPipelineHealth.n8nHealthy && !n8nPipelineHealth.webhookRegistered,
-        level: 'medium',
-        reason: `n8n은 살아 있지만 blog pipeline webhook이 미등록 상태입니다 (${n8nPipelineHealth.webhookReason}).`,
       },
       {
         active: instagramHealth.critical,
@@ -2927,7 +2886,6 @@ function formatText(report) {
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ 리모델링 진행 요약', report.remodelProgress, { okLimit: 6, warnLimit: 3 }),
       buildHealthCountSection('■ 실행 백엔드 상태', report.nodeHealth, { okLimit: 3 }),
-      buildHealthCountSection('■ n8n pipeline 경로', report.n8nPipelineHealth, { okLimit: 2 }),
       buildHealthCountSection('■ 인스타 업로드 상태', report.instagramHealth, { okLimit: 3 }),
       buildHealthCountSection('■ 소셜 자동등록 상태', report.socialAutomationHealth, { okLimit: 6, warnLimit: 5 }),
       buildHealthCountSection('■ 댓글·공감 운영 상태', report.engagementHealth, { okLimit: 5, warnLimit: 5 }),
@@ -2971,7 +2929,6 @@ async function buildReport() {
   const dailyRunHealth = buildDailyRunHealth(status['ai.blog.daily']);
   const naverUrlBackfillHealth = buildNaverUrlBackfillHealth();
   const pendingPublishHealth = await buildPendingPublishHealth();
-  const n8nPipelineHealth = await buildN8nPipelineHealth();
   const instagramHealth = await buildInstagramHealth();
   const socialAutomationHealth = await buildSocialAutomationHealth();
   const engagementHealth = await buildEngagementHealth();
@@ -2987,7 +2944,7 @@ async function buildReport() {
   const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
   const marketingDoctorPriority = buildDoctorPriority(MARKETING_DOCTOR_COMMAND, 'marketing doctor');
   const opsDoctorPriority = buildDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, 'ops doctor');
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
   const doctorPriority = {
     okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount + marketingDoctorPriority.okCount,
@@ -3030,17 +2987,6 @@ async function buildReport() {
     },
     naverUrlBackfillHealth,
     pendingPublishHealth,
-    n8nPipelineHealth: {
-      okCount: n8nPipelineHealth.ok.length,
-      warnCount: n8nPipelineHealth.warn.length,
-      ok: n8nPipelineHealth.ok,
-      warn: n8nPipelineHealth.warn,
-      webhookRegistered: n8nPipelineHealth.webhookRegistered,
-      webhookReason: n8nPipelineHealth.webhookReason,
-      webhookStatus: n8nPipelineHealth.webhookStatus,
-      webhookUrl: n8nPipelineHealth.webhookUrl,
-      resolvedWebhookUrl: n8nPipelineHealth.resolvedWebhookUrl,
-    },
     instagramHealth,
     socialAutomationHealth,
     engagementHealth,

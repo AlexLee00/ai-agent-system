@@ -20,8 +20,7 @@ defmodule Jay.V2.Supervisor do
         [
           Jay.V2.AutonomyController,
           Jay.V2.GrowthCycle,
-          Jay.V2.CrossTeamRouter,
-          Jay.V2.N8nBridge
+          Jay.V2.CrossTeamRouter
           # Jay.V2.Commander는 함수형 호출 (시그마 패턴) — Phase 4에서 AgentServer로 전환
         ]
       else

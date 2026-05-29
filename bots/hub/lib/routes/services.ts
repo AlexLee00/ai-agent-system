@@ -161,7 +161,6 @@ export async function envRoute(_req: any, res: any) {
     mode: env.MODE,
     node_env: env.NODE_ENV,
     paper_mode: env.PAPER_MODE,
-    n8n_enabled: env.N8N_ENABLED,
     launchd_available: env.LAUNCHD_AVAILABLE,
     pg_host: env.PG_HOST,
     pg_port: env.PG_PORT,

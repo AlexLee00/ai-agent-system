@@ -7,14 +7,12 @@ const kst = require('../../../packages/core/lib/kst');
  * 역할:
  *   1. 오늘의 파이프라인 동적 결정 (노드 순서/구조/변형 매번 다르게)
  *   2. 최근 7일 이력 조회 → 패턴 회피
- *   3. n8n 웹훅 트리거 (실패 시 blo.js 직접 실행 폴백)
- *   4. sectionVariation 결정 → pos-writer/gems-writer에 전달
+ *   3. sectionVariation 결정 → pos-writer/gems-writer에 전달
  */
 
 const crypto = require('crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
-const { buildWebhookCandidates } = require('../../../packages/core/lib/n8n-webhook-registry');
 const { getBlogGenerationRuntimeConfig, getBlogCompetitionRuntimeConfig } = require('./runtime-config.ts');
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot');
 const { buildDynamicVariation } = require('./section-variation.ts');
@@ -23,19 +21,10 @@ const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIR
 const RESEARCH_NODES = ['weather', 'it-news', 'nodejs-updates'];
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const competitionRuntimeConfig = getBlogCompetitionRuntimeConfig();
-const N8N_PIPELINE_ENABLED = generationRuntimeConfig.useN8nPipeline === true;
-const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_BLOG_TIMEOUT_MS || generationRuntimeConfig.maestroWebhookTimeoutMs || 180000);
-const N8N_HEALTH_TIMEOUT_MS = Number(process.env.N8N_BLOG_HEALTH_TIMEOUT_MS || generationRuntimeConfig.maestroHealthTimeoutMs || 2500);
-const N8N_CIRCUIT_COOLDOWN_MS = Number(generationRuntimeConfig.maestroCircuitCooldownMs || (30 * 60 * 1000));
 const COMPETITION_ENABLED = competitionRuntimeConfig.enabled === true;
 const COMPETITION_DAYS = Array.isArray(competitionRuntimeConfig.days) && competitionRuntimeConfig.days.length
   ? competitionRuntimeConfig.days
   : [1, 3, 5];
-
-const _n8nCircuit = {
-  disabledUntil: 0,
-  reason: '',
-};
 
 let _competitionEngine = null;
 function _getCompetitionEngine() {
@@ -144,46 +133,6 @@ function _buildMarketingContext(payload = {}) {
   };
 }
 
-async function _getDefaultWebhookCandidates() {
-  const configured = process.env.N8N_BLOG_WEBHOOK;
-  return buildWebhookCandidates({
-    workflowName: '블로그팀 동적 포스팅',
-    method: 'POST',
-    pathSuffix: 'blog-pipeline',
-    configured: configured ? [configured] : [],
-    defaults: [
-      'http://localhost:5678/webhook/blog-pipeline',
-      'http://localhost:5678/webhook-test/blog-pipeline',
-    ],
-  });
-}
-
-async function _probeN8nHealth() {
-  try {
-    const res = await fetch('http://localhost:5678/healthz', {
-      method: 'GET',
-      signal: AbortSignal.timeout(N8N_HEALTH_TIMEOUT_MS),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-function _isCircuitOpen() {
-  return _n8nCircuit.disabledUntil > Date.now();
-}
-
-function _openCircuit(reason) {
-  _n8nCircuit.disabledUntil = Date.now() + N8N_CIRCUIT_COOLDOWN_MS;
-  _n8nCircuit.reason = reason;
-}
-
-function _resetCircuit() {
-  _n8nCircuit.disabledUntil = 0;
-  _n8nCircuit.reason = '';
-}
-
 function _shouldRunCompetition() {
   if (!COMPETITION_ENABLED) return false;
   return COMPETITION_DAYS.includes(new Date().getDay());
@@ -196,12 +145,8 @@ function _logMaestroSession(postType, sessionId, pipeline, variations, gemmaReco
   if (gemmaRecommendation) console.log(`  gemma4 추천 반영 후보:\n${gemmaRecommendation}`);
 }
 
-function _buildMaestroPayload(postType, sessionId, pipeline, variations, gemmaRecommendation, payload) {
-  return JSON.stringify({ postType, sessionId, pipeline, variations, gemmaRecommendation, ...payload });
-}
-
-function _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation, n8nTriggered) {
-  return { sessionId, pipeline, variations, gemmaRecommendation, n8nTriggered };
+function _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation) {
+  return { sessionId, pipeline, variations, gemmaRecommendation };
 }
 
 async function runCompetition(topic, postType) {
@@ -259,64 +204,6 @@ async function _generateTopicRecommendation(postType, history, payload) {
   return recResult.content.trim();
 }
 
-async function _triggerN8nPipeline(body, dryRun) {
-  if (!N8N_PIPELINE_ENABLED) {
-    console.log('  ↳ n8n 파이프라인 비활성화 — 로컬 생성 경로 사용');
-    return false;
-  }
-
-  if (dryRun) {
-    console.log('  ↳ dry-run: n8n 웹훅 트리거 생략');
-    return false;
-  }
-
-  if (_isCircuitOpen()) {
-    console.log(`  ↳ n8n 우회 중 (${_n8nCircuit.reason})`);
-    return false;
-  }
-
-  if (!(await _probeN8nHealth())) {
-    _openCircuit('health_unreachable');
-    console.warn('  ⚠️ n8n 헬스체크 실패 — 직접 실행 폴백');
-    return false;
-  }
-
-  for (const n8nUrl of await _getDefaultWebhookCandidates()) {
-    try {
-      const res = await fetch(n8nUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        signal: AbortSignal.timeout(N8N_WEBHOOK_TIMEOUT_MS),
-      });
-
-      if (res.ok) {
-        _resetCircuit();
-        console.log(`  ↳ n8n 트리거 성공 (${n8nUrl})`);
-        return true;
-      }
-
-      if (res.status === 404) {
-        console.warn(`  ⚠️ n8n 웹훅 없음 (${n8nUrl}) — 다음 후보 확인`);
-        continue;
-      }
-
-      console.warn(`  ⚠️ n8n 응답 오류 (${res.status}, ${n8nUrl}) — 직접 실행 폴백`);
-      _openCircuit(`http_${res.status}`);
-      return false;
-    } catch (e) {
-      console.warn(`  ⚠️ n8n 트리거 실패 (${e.message}, ${n8nUrl})`);
-    }
-  }
-
-  if (!_isCircuitOpen()) {
-    _openCircuit('webhook_unavailable');
-    console.warn('  ⚠️ n8n 유효 웹훅 미확인 — 직접 실행 폴백');
-  }
-
-  return false;
-}
-
 async function run(postType, directRunner = null, payload = {}) {
   await _ensureHistoryTable();
 
@@ -335,10 +222,8 @@ async function run(postType, directRunner = null, payload = {}) {
   variations.marketingContext = _buildMarketingContext(payload);
   _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation);
 
-  const body = _buildMaestroPayload(postType, sessionId, pipeline, variations, gemmaRecommendation, payload);
   // @ts-ignore JS checkJs default-param inference is too narrow here
   const dryRun = !!payload.dryRun;
-  const n8nOk = await _triggerN8nPipeline(body, dryRun);
 
   if (!dryRun) {
     await saveExecutionHistory(
@@ -351,12 +236,12 @@ async function run(postType, directRunner = null, payload = {}) {
     console.log('  ↳ dry-run: execution_history 저장 생략');
   }
 
-  if ((!N8N_PIPELINE_ENABLED || !n8nOk) && directRunner) {
+  if (directRunner) {
     console.log('  ↳ directRunner 실행');
     return await directRunner(variations, { ...payload, gemmaRecommendation });
   }
 
-  return _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation, n8nOk);
+  return _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation);
 }
 
 module.exports = { run, runCompetition, buildDynamicPipeline, buildDynamicVariation };

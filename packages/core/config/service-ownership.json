@@ -1,5 +1,4 @@
 [
-  { "label": "ai.n8n.server", "owner": "launchd", "core": true },
   { "label": "ai.mlx.server", "owner": "launchd" },
 
   { "label": "ai.claude.commander", "owner": "launchd" },

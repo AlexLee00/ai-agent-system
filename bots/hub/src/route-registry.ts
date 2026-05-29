@@ -17,12 +17,6 @@ const {
   alarmSuppressionApplyRoute,
 } = require('../lib/routes/alarm');
 const { pgQueryRoute } = require('../lib/routes/pg');
-const {
-  n8nWebhookRoute,
-  n8nHealthRoute,
-  n8nWorkflowsRoute,
-  n8nTriggerWorkflowRoute,
-} = require('../lib/routes/n8n');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
 const { secretsRoute, secretsMetaRoute, secretsMetaAllRoute } = require('../lib/routes/secrets');
 const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors');
@@ -191,10 +185,6 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/alarm/readiness', alarmLimiter, alarmReadinessRoute);
   app.get('/hub/alarm/suppression/proposals', alarmLimiter, alarmSuppressionProposalsRoute);
   app.post('/hub/alarm/suppression/apply', alarmLimiter, alarmSuppressionApplyRoute);
-  app.post('/hub/n8n/webhook/:path', generalLimiter, n8nWebhookRoute);
-  app.get('/hub/n8n/health', generalLimiter, n8nHealthRoute);
-  app.get('/hub/n8n/workflows', generalLimiter, n8nWorkflowsRoute);
-  app.post('/hub/n8n/workflows/:workflowId/run', generalLimiter, n8nTriggerWorkflowRoute);
   app.get('/hub/services/status', generalLimiter, servicesStatusRoute);
   app.get('/hub/env', generalLimiter, envRoute);
   app.get('/hub/errors/recent', generalLimiter, errorsRecentRoute);

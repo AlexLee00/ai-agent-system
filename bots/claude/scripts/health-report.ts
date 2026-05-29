@@ -28,7 +28,6 @@ const {
   getLaunchctlStatus,
   buildServiceRows,
   buildHttpChecks,
-  buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 const {
   isExpectedIdleService,
@@ -174,28 +173,7 @@ async function buildDashboardHealth() {
     };
 }
 
-async function buildN8nHealth() {
-  const webhookHealth = await buildResolvedWebhookHealth({
-    workflowName: 'CRITICAL 알림 에스컬레이션',
-    pathSuffix: 'critical',
-    defaultUrl: 'http://127.0.0.1:5678/webhook/critical',
-    label: 'critical webhook',
-    body: {
-      severity: 'critical',
-      service: 'claude-health-report',
-      status: 'probe',
-      detail: 'n8n critical webhook health probe',
-    },
-    timeoutMs: 5000,
-  });
-
-  return {
-    ok: webhookHealth.ok,
-    warn: webhookHealth.warn,
-  };
-}
-
-function buildDecision(serviceRows, dashboardHealth, n8nHealth) {
+function buildDecision(serviceRows, dashboardHealth) {
   return buildHealthDecision({
     warnings: [
       {
@@ -207,11 +185,6 @@ function buildDecision(serviceRows, dashboardHealth, n8nHealth) {
         active: dashboardHealth.warn.length > 0,
         level: 'medium',
         reason: `health-dashboard 경고 ${dashboardHealth.warn.length}건이 있어 리드 모드/그림자 상태 확인이 필요합니다.`,
-      },
-      {
-        active: n8nHealth.warn.length > 0,
-        level: 'high',
-        reason: `n8n 경고 ${n8nHealth.warn.length}건이 있어 critical webhook 경로 점검이 필요합니다.`,
       },
     ],
     okReason: '클로드 핵심 서비스와 health-dashboard가 현재는 안정 구간입니다.',
@@ -225,7 +198,6 @@ function formatText(report) {
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ health-dashboard 상태', report.dashboardHealth, { okLimit: 4 }),
-      buildHealthCountSection('■ n8n 경로 상태', report.n8nHealth, { okLimit: 4 }),
       {
         title: null,
         lines: buildHealthDecisionSection({
@@ -253,8 +225,7 @@ async function buildReport() {
     missingOkText: (name) => `  ${name}: expected idle`,
   });
   const dashboardHealth = await buildDashboardHealth();
-  const n8nHealth = await buildN8nHealth();
-  const decision = buildDecision(serviceRows, dashboardHealth, n8nHealth);
+  const decision = buildDecision(serviceRows, dashboardHealth);
 
   const report = {
     serviceHealth: {
@@ -274,12 +245,6 @@ async function buildReport() {
       shadowTotal: dashboardHealth.shadowTotal,
       mismatched: dashboardHealth.mismatched,
       mismatchRate: dashboardHealth.mismatchRate,
-    },
-    n8nHealth: {
-      okCount: n8nHealth.ok.length,
-      warnCount: n8nHealth.warn.length,
-      ok: n8nHealth.ok,
-      warn: n8nHealth.warn,
     },
     decision,
   };

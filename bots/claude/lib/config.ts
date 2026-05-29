@@ -169,11 +169,6 @@ module.exports = {
         warnThreshold: 3,
         cleanupDays: 30,
       },
-      n8n: {
-        healthUrl: 'http://127.0.0.1:5678/healthz',
-        criticalWebhookUrl: 'http://127.0.0.1:5678/webhook/critical',
-        timeoutMs: 5000,
-      },
       quickcheck: {
         alertCooldownMs: 60 * 60 * 1000,
         restartCooldownMs: 30 * 60 * 1000,

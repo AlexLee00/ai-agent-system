@@ -18,10 +18,7 @@ const { createRuntimeConfigLoader } = require('../../../packages/core/lib/runtim
 
 const DEFAULT_RUNTIME_CONFIG = {
   health: {
-    n8nHealthUrl: 'http://127.0.0.1:5678/healthz',
-    criticalWebhookUrl: 'http://127.0.0.1:5678/webhook/critical',
     httpTimeoutMs: 2500,
-    webhookTimeoutMs: 5000,
     payloadWarningWithinHours: 24,
     payloadWarningLimit: 50,
   },

@@ -75,7 +75,6 @@ function getKnownLaunchdPids() {
 function isAllowedNodeCommand(command = '') {
   const cmd = String(command || '');
   const ALLOWED_PATTERNS = [
-    ' n8n start',
     'node_modules/.bin/next start',
     'scripts/telegram-callback-poller.js',
     'bots/hub/src/hub.ts',

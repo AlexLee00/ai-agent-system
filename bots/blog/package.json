@@ -70,8 +70,6 @@
     "runtime:blog-v3-shadow-gate": "../../node_modules/.bin/tsx scripts/runtime-blog-v3-shadow-gate.ts",
     "runtime:blog-v3-shadow-evidence": "../../node_modules/.bin/tsx scripts/runtime-blog-v3-shadow-evidence.ts",
     "check:blog-v3-unified": "../../node_modules/.bin/tsx scripts/check-blog-v3-unified.ts --json && ../../node_modules/.bin/tsx scripts/blog-naver-mcp-smoke.ts --json && python3 python/reddit_trend_analyzer.py --fixture --dry-run --json --max-llm-calls=0 >/dev/null && python3 -m py_compile python/reddit_trend_analyzer.py && plutil -lint launchd/ai.blog.reddit-trends.plist launchd/ai.blog.bestseller-sync.plist launchd/ai.blog.crank-tracker.plist",
-    "setup:n8n": "node n8n/setup-blog-workflows.ts",
-    "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.ts",
     "seed-curriculum": "node scripts/seed-curriculum.ts",
     "seed-curriculum:dry": "node scripts/seed-curriculum.ts --dry-run"
   },

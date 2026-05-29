@@ -14,7 +14,7 @@ const HUB_BASE = 'http://localhost:7788';
 export const CLAUDE_DEXTER_MCP_TOOLS = [
   {
     name: 'run_checks',
-    description: '덱스터 22개 체크 시스템 실행. 선택적 카테고리 필터 가능 (bots/resources/database/n8n/patterns).',
+    description: '덱스터 체크 시스템 실행. 선택적 카테고리 필터 가능 (bots/resources/database/patterns).',
   },
   {
     name: 'get_health_summary',

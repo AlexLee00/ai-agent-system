@@ -5,14 +5,6 @@ const hsm = require('./health-state-manager') as {
   shortLabel: (label: string) => string;
 };
 
-const { resolveProductionWebhookUrl } = require('./n8n-webhook-registry') as {
-  resolveProductionWebhookUrl: (input?: {
-    workflowName?: string;
-    method?: string;
-    pathSuffix?: string;
-  }) => Promise<string | null>;
-};
-
 type LaunchctlServiceStatus = {
   running: boolean;
   pid: number | null;
@@ -63,18 +55,6 @@ type FileActivityInput = {
   missingText?: string;
   staleText?: string | ((state: FileStaleness) => string);
   okText?: string | ((state: FileStaleness) => string);
-};
-
-type ResolvedWebhookHealthInput = {
-  workflowName?: string;
-  pathSuffix?: string;
-  method?: string;
-  healthUrl?: string;
-  defaultWebhookUrl?: string;
-  probeBody?: Record<string, unknown>;
-  timeoutMs?: number;
-  okLabel?: string;
-  warnLabel?: string;
 };
 
 type WebhookRegistrationResult = {
@@ -473,52 +453,6 @@ function buildFileActivityHealth({
   };
 }
 
-async function buildResolvedWebhookHealth({
-  workflowName,
-  pathSuffix,
-  method = 'POST',
-  healthUrl = 'http://127.0.0.1:5678/healthz',
-  defaultWebhookUrl = '',
-  probeBody = {},
-  timeoutMs = 5000,
-  okLabel = 'webhook',
-  warnLabel = 'webhook',
-}: ResolvedWebhookHealthInput = {}): Promise<Record<string, unknown>> {
-  const ok: string[] = [];
-  const warn: string[] = [];
-  const n8nHealthy = await checkHttp(healthUrl, 2500);
-  const resolvedWebhookUrl = await resolveProductionWebhookUrl({
-    workflowName,
-    method,
-    pathSuffix,
-  });
-  const webhookUrl = resolvedWebhookUrl || defaultWebhookUrl;
-  const webhook = await checkWebhookRegistration(webhookUrl, probeBody, { timeoutMs });
-
-  if (n8nHealthy) ok.push('  n8n healthz: 정상');
-  else warn.push('  n8n healthz: 응답 없음');
-
-  if (!webhook.healthy) {
-    warn.push(`  ${warnLabel}: 미도달 (${webhook.error || webhook.reason})`);
-  } else if (!webhook.registered) {
-    warn.push(`  ${warnLabel}: 미등록 (${webhook.reason}, status ${webhook.status})`);
-  } else {
-    ok.push(`  ${okLabel}: 등록됨 (${webhook.reason}, status ${webhook.status})`);
-  }
-
-  return {
-    ok,
-    warn,
-    n8nHealthy,
-    webhookRegistered: webhook.registered,
-    webhookReason: webhook.reason,
-    webhookStatus: webhook.status,
-    webhookHealthy: webhook.healthy,
-    webhookUrl,
-    resolvedWebhookUrl,
-  };
-}
-
 export = {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
@@ -530,5 +464,4 @@ export = {
   checkFileStaleness,
   buildHttpChecks,
   buildFileActivityHealth,
-  buildResolvedWebhookHealth,
 };

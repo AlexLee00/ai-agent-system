@@ -1328,22 +1328,17 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       path.join(root, 'bots', 'blog', 'scripts', 'health-report.ts'),
       path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
     ),
-    critical: firstExistingPath(
-      path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.ts'),
-      path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.js'),
-    ),
     feedback: firstExistingPath(
       path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.ts'),
       path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),
     ),
   };
 
-  const [luna, claude, ska, blog, criticalPath, feedback] = await Promise.all([
+  const [luna, claude, ska, blog, feedback] = await Promise.all([
     runNodeScriptJson(scripts.luna, ['--json']),
     runNodeScriptJson(scripts.claude, ['--json']),
     runNodeScriptJson(scripts.ska, ['--json']),
     runNodeScriptJson(scripts.blog, ['--json']),
-    runNodeScriptJson(scripts.critical),
     runNodeScriptJson(scripts.feedback, ['--json']),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
@@ -1359,28 +1354,19 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const rows = [
     {
       title: '오케스트레이터',
-      summary: criticalPath
-        ? `n8n ${criticalPath.n8nHealthy ? '정상' : '경고'} / critical webhook ${criticalPath.webhookRegistered ? '등록됨' : '이상'}${reportingWarningSummary.count > 0 ? ` / payload 경고 ${reportingWarningSummary.count}건` : ''}`
-        : '조회 실패',
-      detail: criticalPath
-        ? [
-          `  n8n healthz: ${criticalPath.n8nHealthy ? '정상' : '응답 없음'}`,
-          `  critical webhook: ${criticalPath.webhookRegistered ? `등록됨 (status ${criticalPath.webhookStatus})` : `경고 (${criticalPath.webhookReason || 'unknown'}, status ${criticalPath.webhookStatus || 0})`}`,
-          ...(reportingWarningSummary.count > 0
-            ? [
-              `  reporting payload 경고: ${reportingWarningSummary.count}건`,
-              ...reportingWarningSummary.topProducers,
-            ]
-            : ['  reporting payload 경고 없음']),
-          ...(criticalPath.resolvedWebhookUrl ? [`  resolved: ${criticalPath.resolvedWebhookUrl}`] : []),
-        ].join('\n')
-        : '  critical webhook 진단 실행 실패',
-      hasWarn: !criticalPath || !criticalPath.n8nHealthy || !criticalPath.webhookRegistered || reportingWarningSummary.count > 0,
-      priority: !criticalPath ? 5 : Math.max(
-        criticalPath.n8nHealthy ? 0 : 4,
-        criticalPath.webhookRegistered ? 0 : 4,
-        reportingWarningSummary.count > 0 ? Math.min(3, 1 + Math.ceil(reportingWarningSummary.count / 5)) : 0,
-      ),
+      summary: reportingWarningSummary.count > 0
+        ? `payload 경고 ${reportingWarningSummary.count}건`
+        : '안정',
+      detail: [
+        ...(reportingWarningSummary.count > 0
+          ? [
+            `  reporting payload 경고: ${reportingWarningSummary.count}건`,
+            ...reportingWarningSummary.topProducers,
+          ]
+          : ['  reporting payload 경고 없음']),
+      ].join('\n'),
+      hasWarn: reportingWarningSummary.count > 0,
+      priority: reportingWarningSummary.count > 0 ? Math.min(3, 1 + Math.ceil(reportingWarningSummary.count / 5)) : 0,
     },
     {
       title: '루나',
@@ -1482,9 +1468,6 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const reasons = warnCount > 0
     ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
     : ['오케스트레이터, 루나, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
-  if (!criticalPath || !criticalPath.n8nHealthy || !criticalPath.webhookRegistered) {
-    reasons.push(`오케스트레이터 critical webhook: ${criticalPath ? `${criticalPath.webhookReason || 'unknown'} (status ${criticalPath.webhookStatus || 0})` : '조회 실패'}`);
-  }
   if (reportingWarningSummary.count > 0) {
     reasons.push(`reporting payload 경고: ${reportingWarningSummary.count}건`);
   }

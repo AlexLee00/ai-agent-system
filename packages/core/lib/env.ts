@@ -120,14 +120,6 @@ export const NODE_ENV = process.env.NODE_ENV || (IS_OPS ? 'production' : 'develo
 
 // ─── 서비스 접근 주소 ─────────────────────────────────────────────────────
 
-export const N8N_BASE_URL = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
-
-export const N8N_ENABLED = IS_OPS
-  ? (process.env.N8N_ENABLED !== 'false')
-  : (process.env.N8N_ENABLED === 'true');
-
-export const N8N_API_KEY = process.env.N8N_API_KEY || '';
-
 export const PG_HOST = process.env.PG_HOST || 'localhost';
 export const PG_PORT = parseInt(process.env.PG_PORT || '5432', 10);
 

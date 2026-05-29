@@ -204,21 +204,6 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: e.message }));
     }
-  } else if (req.method === 'POST' && req.url === '/api/webhooks/n8n/ska-command') {
-    if (!isWebhookAuthorized(req)) {
-      res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
-      return;
-    }
-    try {
-      const payload = await readJsonBody(req);
-      const result = await runWebhookCommand(payload);
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ...result, source: result.source || 'ska-webhook' }));
-    } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: e.message, code: 'SKA_WEBHOOK_FAILED' }));
-    }
   } else if (req.method === 'GET' && (req.url === '/' || req.url === '/dashboard')) {
     try {
       const html = fs.readFileSync(HTML_FILE, 'utf8');
@@ -237,6 +222,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`[스카 대시보드] 서버 시작: http://localhost:${PORT}`);
   console.log(`  예약 현황 API: http://localhost:${PORT}/api/today`);
-  console.log(`  n8n Webhook API: http://localhost:${PORT}/api/webhooks/n8n/ska-command`);
   console.log('  종료: Ctrl+C');
 });
