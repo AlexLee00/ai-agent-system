@@ -338,6 +338,22 @@ async function closeEntriesFromResolvedFill(rows, resolvedFill, dryRun) {
   };
 }
 
+export function buildPartialExchangeFillSkipResult({
+  scope,
+  latest = {},
+  exchangeFillResolve = {},
+} = {}) {
+  return {
+    scope,
+    symbol: latest.symbol,
+    action: 'skip_partial_exchange_fill',
+    reason: 'partial_fill_match_insufficient_for_full_close',
+    matchedQty: exchangeFillResolve.matchedQty,
+    expectedQty: exchangeFillResolve.expectedQty,
+    fillResolve: exchangeFillResolve,
+  };
+}
+
 export function buildWriteImpactGuard(summary = {}, maxAffectedTrades = 10) {
   const max = Number(maxAffectedTrades);
   if (!Number.isFinite(max) || max <= 0) return null;
@@ -520,15 +536,11 @@ export async function reconcileOpenJournals({
           continue;
         }
         // 부분 매칭 → with_fill close 금지, no_position(pnl=NULL) 폴백
-        results.push({
+        results.push(buildPartialExchangeFillSkipResult({
           scope: key,
-          symbol: latest.symbol,
-          action: 'skip_partial_exchange_fill',
-          reason: 'partial_fill_match_insufficient_for_full_close',
-          matchedQty: exchangeFillResolve.matchedQty,
-          expectedQty: exchangeFillResolve.expectedQty,
-          fillResolve: exchangeFillResolve,
-        });
+          latest,
+          exchangeFillResolve,
+        }));
         for (const row of rows) {
           await closeEntryAtBreakeven(row, 'journal_reconciled_no_position', dryRun);
         }

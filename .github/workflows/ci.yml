@@ -49,6 +49,9 @@ jobs:
       - name: Check for secrets in code
         run: ./node_modules/.bin/tsx bots/hub/scripts/secret-leak-smoke.ts
 
+      - name: Investment fill resolver smoke
+        run: npm --prefix bots/investment run smoke:fill-resolver-dca
+
   deploy:
     name: 운영 배포 (맥 스튜디오)
     needs: lint-and-check

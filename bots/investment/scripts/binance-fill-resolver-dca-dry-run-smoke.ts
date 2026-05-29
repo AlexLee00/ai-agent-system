@@ -3,9 +3,11 @@
 
 import assert from 'node:assert/strict';
 import { resolveFillForClosedJournal } from '../shared/binance-fill-resolver.ts';
+import { buildPartialExchangeFillSkipResult } from './reconcile-open-journals.ts';
 
 const now = Date.parse('2026-05-28T00:00:00.000Z');
 let misattributionCount = 0;
+let partialSkipCount = 0;
 
 function trade({
   id,
@@ -102,6 +104,15 @@ assert.equal(partialFill.source, 'fetchMyTrades_orderid');
 assert.equal(partialFill.partial, true);
 assert.equal(partialFill.matchedQty, 60);
 assert.equal(partialFill.expectedQty, 100);
+const partialSkip = buildPartialExchangeFillSkipResult({
+  scope: 'binance:SOL/USDT:live:validation',
+  latest: { symbol: 'SOL/USDT' },
+  exchangeFillResolve: partialFill,
+});
+assert.equal(partialSkip.action, 'skip_partial_exchange_fill');
+assert.equal(partialSkip.reason, 'partial_fill_match_insufficient_for_full_close');
+assert.equal(partialSkip.fillResolve.partial, true);
+partialSkipCount += 1;
 
 const excludedFallback = await resolveFillForClosedJournal({
   symbol: 'KAT/USDT',
@@ -126,8 +137,9 @@ console.log(JSON.stringify({
     { symbol: 'KAT/USDT', matchedBy: katDca.matchedBy, tradeIds: katDca.tradeIds },
     { symbol: 'TAO/USDT', matchedBy: taoShort.matchedBy, tradeIds: taoShort.tradeIds },
     { symbol: 'ORCA/USDT', reason: orcaAmbiguous.reason, exactQtyMatches: orcaAmbiguous.exactQtyMatches },
-    { symbol: 'SOL/USDT', partial: partialFill.partial, matchedQty: partialFill.matchedQty, expectedQty: partialFill.expectedQty },
+    { symbol: 'SOL/USDT', partial: partialFill.partial, partialAction: partialSkip.action, matchedQty: partialFill.matchedQty, expectedQty: partialFill.expectedQty },
     { symbol: 'KAT/USDT', reason: excludedFallback.reason, excludedFillIds: ['already-attributed-fill'] },
   ],
   misattributionCount,
+  partialSkipCount,
 }, null, 2));
