@@ -140,10 +140,10 @@ ai-agent-system/
 
 ```
 Agents:          122 (across 10 teams)
-launchd Services: 107 (30 running continuously)
+launchd Services: 145 (29 running continuously)
 Telegram Topics:  4 (per-team routing)
-Codex Archives:   73+ (completed implementation prompts)
-Repository Size:  132M (optimized)
+Codex Archives:   181+ (completed implementation prompts)
+Repository Size:  156M (optimized)
 Monthly API Cost: $0 (fully local LLM inference)
 ```
 
