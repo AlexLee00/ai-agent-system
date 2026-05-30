@@ -58,7 +58,8 @@ function shouldExposeHistoricalPattern(activeIssues, key) {
 }
 
 function shouldExposeNewError(activeIssues, key) {
-  return shouldExposeHistoricalPattern(activeIssues, key);
+  const activeStatus = activeIssues instanceof Map ? activeIssues.get(key) : null;
+  return ['error', 'critical'].includes(String(activeStatus || '').toLowerCase());
 }
 
 async function run(results = []) {

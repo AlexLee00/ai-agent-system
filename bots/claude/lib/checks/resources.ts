@@ -124,7 +124,10 @@ function checkSwap(items) {
     }
     const usedMB = parseFloat(usedM[1]);
     const freeGB = getAvailableMemoryGB();
-    if (usedMB > 8192 || (usedMB > 2048 && freeGB < cfg.THRESHOLDS.memMinFreeGB)) {
+    const highSwapMB = 8192;
+    const severeSwapMB = 16384;
+    const memoryPressure = freeGB < cfg.THRESHOLDS.memMinFreeGB;
+    if ((usedMB > highSwapMB && memoryPressure) || usedMB > severeSwapMB) {
       items.push({ label: 'Swap', status: 'warn', detail: `${(usedMB / 1024).toFixed(1)}GB 사용 중 — 메모리 여유와 함께 확인 필요` });
     } else if (usedMB > 0) {
       items.push({ label: 'Swap', status: 'ok', detail: `${usedMB.toFixed(0)}MB 사용 (여유 메모리 ${freeGB.toFixed(1)}GB)` });

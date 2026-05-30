@@ -59,5 +59,10 @@ assert.strictEqual(
   true,
   'active new hard issue remains visible',
 );
+assert.strictEqual(
+  shouldExposeNewError(active, '코드 무결성||TS 런타임 경로 감사'),
+  false,
+  'active new soft WARN must not be double-counted by pattern analysis',
+);
 
 console.log('✅ dexter pattern severity follows active issue severity');
