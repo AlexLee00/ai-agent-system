@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_promotion_gate_not_ready",
-  "generatedAt": "2026-05-29T18:00:03.423Z",
+  "generatedAt": "2026-05-30T18:00:04.961Z",
   "market": "domestic",
   "shadowOnly": true,
   "liveTradeImpact": false,
@@ -17,33 +17,6 @@
   "queryError": null,
   "candidates": [
     {
-      "symbol": "005930",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 3,
-        "hmmSamples": 122,
-        "garchSamples": 122,
-        "sentimentSamples": 122,
-        "alphaSamples": 2440,
-        "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.410Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.8705,
-        "avgPositionSizeFactor": 0.9972,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": 0.6458
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
-    },
-    {
       "symbol": "005380",
       "market": "domestic",
       "promotionReady": false,
@@ -55,18 +28,72 @@
         "alpha_shadow_days_below_target"
       ],
       "metrics": {
-        "shadowDays": 3,
-        "hmmSamples": 129,
-        "garchSamples": 129,
-        "sentimentSamples": 129,
-        "alphaSamples": 2580,
-        "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.394Z",
-        "latestAgeHours": 0.01,
+        "shadowDays": 4,
+        "hmmSamples": 204,
+        "garchSamples": 204,
+        "sentimentSamples": 204,
+        "alphaSamples": 4080,
+        "alphaShadowDays": 4,
+        "latestObservedAt": "2026-05-30T17:46:42.852Z",
+        "latestAgeHours": 0.22,
         "avgRegimeConfidence": 0.9317,
         "avgPositionSizeFactor": 0.7787,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.8177
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "005930",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 4,
+        "hmmSamples": 197,
+        "garchSamples": 197,
+        "sentimentSamples": 197,
+        "alphaSamples": 3940,
+        "alphaShadowDays": 4,
+        "latestObservedAt": "2026-05-30T17:46:42.797Z",
+        "latestAgeHours": 0.22,
+        "avgRegimeConfidence": 0.8708,
+        "avgPositionSizeFactor": 0.9983,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.6467
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "005830",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 3,
+        "hmmSamples": 98,
+        "garchSamples": 98,
+        "sentimentSamples": 98,
+        "alphaSamples": 1960,
+        "alphaShadowDays": 3,
+        "latestObservedAt": "2026-05-30T03:30:25.641Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.6249,
+        "avgPositionSizeFactor": 0.8564,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1137
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -83,17 +110,17 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 67,
-        "garchSamples": 67,
-        "sentimentSamples": 67,
-        "alphaSamples": 1340,
+        "hmmSamples": 101,
+        "garchSamples": 101,
+        "sentimentSamples": 101,
+        "alphaSamples": 2020,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.341Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.3857,
-        "avgPositionSizeFactor": 0.997,
+        "latestObservedAt": "2026-05-30T02:30:08.951Z",
+        "latestAgeHours": 15.5,
+        "avgRegimeConfidence": 0.4878,
+        "avgPositionSizeFactor": 0.998,
         "avgSentimentScore": 0,
-        "avgAlphaComposite": -0.0769
+        "avgAlphaComposite": -0.1268
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -110,13 +137,13 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 96,
-        "garchSamples": 96,
-        "sentimentSamples": 96,
-        "alphaSamples": 1920,
+        "hmmSamples": 130,
+        "garchSamples": 130,
+        "sentimentSamples": 130,
+        "alphaSamples": 2600,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.292Z",
-        "latestAgeHours": 0.01,
+        "latestObservedAt": "2026-05-30T02:30:08.909Z",
+        "latestAgeHours": 15.5,
         "avgRegimeConfidence": 0.8795,
         "avgPositionSizeFactor": 0.8539,
         "avgSentimentScore": 0,
@@ -137,13 +164,13 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 49,
-        "garchSamples": 49,
-        "sentimentSamples": 49,
-        "alphaSamples": 980,
+        "hmmSamples": 83,
+        "garchSamples": 83,
+        "sentimentSamples": 83,
+        "alphaSamples": 1660,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.279Z",
-        "latestAgeHours": 0.01,
+        "latestObservedAt": "2026-05-30T02:30:08.894Z",
+        "latestAgeHours": 15.5,
         "avgRegimeConfidence": 0.7359,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -164,17 +191,17 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 49,
-        "garchSamples": 49,
-        "sentimentSamples": 49,
-        "alphaSamples": 980,
+        "hmmSamples": 83,
+        "garchSamples": 83,
+        "sentimentSamples": 83,
+        "alphaSamples": 1660,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.263Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.3535,
-        "avgPositionSizeFactor": 0.9468,
+        "latestObservedAt": "2026-05-30T02:30:08.880Z",
+        "latestAgeHours": 15.5,
+        "avgRegimeConfidence": 0.3537,
+        "avgPositionSizeFactor": 0.9484,
         "avgSentimentScore": 0,
-        "avgAlphaComposite": 0.0355
+        "avgAlphaComposite": 0.027
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -191,17 +218,17 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 49,
-        "garchSamples": 49,
-        "sentimentSamples": 49,
-        "alphaSamples": 980,
+        "hmmSamples": 83,
+        "garchSamples": 83,
+        "sentimentSamples": 83,
+        "alphaSamples": 1660,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.244Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.933,
-        "avgPositionSizeFactor": 0.8605,
+        "latestObservedAt": "2026-05-30T02:30:08.865Z",
+        "latestAgeHours": 15.5,
+        "avgRegimeConfidence": 0.9349,
+        "avgPositionSizeFactor": 0.858,
         "avgSentimentScore": 0,
-        "avgAlphaComposite": -0.2013
+        "avgAlphaComposite": -0.2033
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -218,17 +245,17 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 49,
-        "garchSamples": 49,
-        "sentimentSamples": 49,
-        "alphaSamples": 980,
+        "hmmSamples": 83,
+        "garchSamples": 83,
+        "sentimentSamples": 83,
+        "alphaSamples": 1660,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.205Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.265,
+        "latestObservedAt": "2026-05-30T02:30:08.848Z",
+        "latestAgeHours": 15.5,
+        "avgRegimeConfidence": 0.2672,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
-        "avgAlphaComposite": -0.0281
+        "avgAlphaComposite": -0.0348
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -245,17 +272,17 @@
       ],
       "metrics": {
         "shadowDays": 3,
-        "hmmSamples": 49,
-        "garchSamples": 49,
-        "sentimentSamples": 49,
-        "alphaSamples": 980,
+        "hmmSamples": 83,
+        "garchSamples": 83,
+        "sentimentSamples": 83,
+        "alphaSamples": 1660,
         "alphaShadowDays": 3,
-        "latestObservedAt": "2026-05-29T17:59:33.182Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.7169,
-        "avgPositionSizeFactor": 0.9608,
+        "latestObservedAt": "2026-05-30T02:30:08.819Z",
+        "latestAgeHours": 15.5,
+        "avgRegimeConfidence": 0.7102,
+        "avgPositionSizeFactor": 0.9611,
         "avgSentimentScore": 0,
-        "avgAlphaComposite": 0.4709
+        "avgAlphaComposite": 0.4603
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -268,7 +295,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 3,
@@ -278,13 +306,13 @@
         "alphaSamples": 1960,
         "alphaShadowDays": 3,
         "latestObservedAt": "2026-05-29T04:28:06.621Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.6392,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.3393
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "050890",
@@ -295,7 +323,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 3,
@@ -305,13 +334,13 @@
         "alphaSamples": 1960,
         "alphaShadowDays": 3,
         "latestObservedAt": "2026-05-29T04:28:06.606Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.2319,
         "avgPositionSizeFactor": 0.7853,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.5375
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "021880",
@@ -322,7 +351,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 3,
@@ -332,13 +362,13 @@
         "alphaSamples": 1960,
         "alphaShadowDays": 3,
         "latestObservedAt": "2026-05-29T04:28:06.591Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.7444,
         "avgPositionSizeFactor": 0.9924,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1872
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "037460",
@@ -349,7 +379,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 3,
@@ -359,11 +390,200 @@
         "alphaSamples": 1960,
         "alphaShadowDays": 3,
         "latestObservedAt": "2026-05-29T04:28:06.573Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.9407,
         "avgPositionSizeFactor": 0.9655,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.4164
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
+    },
+    {
+      "symbol": "000660",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 41,
+        "garchSamples": 41,
+        "sentimentSamples": 41,
+        "alphaSamples": 820,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T17:46:42.827Z",
+        "latestAgeHours": 0.22,
+        "avgRegimeConfidence": 0.994,
+        "avgPositionSizeFactor": 0.9203,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 1.3469
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "064400",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 98,
+        "garchSamples": 98,
+        "sentimentSamples": 98,
+        "alphaSamples": 1960,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T04:00:32.064Z",
+        "latestAgeHours": 13.99,
+        "avgRegimeConfidence": 0.8145,
+        "avgPositionSizeFactor": 0.9241,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.8732
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "353200",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 9,
+        "garchSamples": 9,
+        "sentimentSamples": 9,
+        "alphaSamples": 180,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T03:30:25.722Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.9716,
+        "avgPositionSizeFactor": 0.8622,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 1.0358
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "002310",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 27,
+        "garchSamples": 27,
+        "sentimentSamples": 27,
+        "alphaSamples": 540,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T03:30:25.664Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.4859,
+        "avgPositionSizeFactor": 0.7807,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.0515
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "004150",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 29,
+        "garchSamples": 29,
+        "sentimentSamples": 29,
+        "alphaSamples": 580,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T03:30:25.629Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.6336,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.5755
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "013580",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 29,
+        "garchSamples": 29,
+        "sentimentSamples": 29,
+        "alphaSamples": 580,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T03:30:25.617Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.8719,
+        "avgPositionSizeFactor": 0.5553,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.0804
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "109070",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 2,
+        "hmmSamples": 29,
+        "garchSamples": 29,
+        "sentimentSamples": 29,
+        "alphaSamples": 580,
+        "alphaShadowDays": 2,
+        "latestObservedAt": "2026-05-30T03:30:25.600Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.8245,
+        "avgPositionSizeFactor": 0.7334,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1422
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -380,13 +600,13 @@
       ],
       "metrics": {
         "shadowDays": 2,
-        "hmmSamples": 49,
-        "garchSamples": 49,
-        "sentimentSamples": 49,
-        "alphaSamples": 980,
+        "hmmSamples": 83,
+        "garchSamples": 83,
+        "sentimentSamples": 83,
+        "alphaSamples": 1660,
         "alphaShadowDays": 2,
-        "latestObservedAt": "2026-05-29T17:59:33.383Z",
-        "latestAgeHours": 0.01,
+        "latestObservedAt": "2026-05-30T02:30:08.988Z",
+        "latestAgeHours": 15.5,
         "avgRegimeConfidence": 0.9995,
         "avgPositionSizeFactor": 0.7218,
         "avgSentimentScore": 0,
@@ -407,44 +627,17 @@
       ],
       "metrics": {
         "shadowDays": 2,
-        "hmmSamples": 54,
-        "garchSamples": 54,
-        "sentimentSamples": 54,
-        "alphaSamples": 1080,
+        "hmmSamples": 88,
+        "garchSamples": 88,
+        "sentimentSamples": 88,
+        "alphaSamples": 1760,
         "alphaShadowDays": 2,
-        "latestObservedAt": "2026-05-29T17:59:33.373Z",
-        "latestAgeHours": 0.01,
+        "latestObservedAt": "2026-05-30T02:30:08.977Z",
+        "latestAgeHours": 15.5,
         "avgRegimeConfidence": 0.7865,
         "avgPositionSizeFactor": 0.8219,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0696
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
-    },
-    {
-      "symbol": "064400",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 2,
-        "hmmSamples": 58,
-        "garchSamples": 58,
-        "sentimentSamples": 58,
-        "alphaSamples": 1160,
-        "alphaShadowDays": 2,
-        "latestObservedAt": "2026-05-29T17:59:33.363Z",
-        "latestAgeHours": 0.01,
-        "avgRegimeConfidence": 0.8145,
-        "avgPositionSizeFactor": 0.9241,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": 0.8732
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
     },
@@ -461,13 +654,13 @@
       ],
       "metrics": {
         "shadowDays": 2,
-        "hmmSamples": 70,
-        "garchSamples": 70,
-        "sentimentSamples": 70,
-        "alphaSamples": 1400,
+        "hmmSamples": 104,
+        "garchSamples": 104,
+        "sentimentSamples": 104,
+        "alphaSamples": 2080,
         "alphaShadowDays": 2,
-        "latestObservedAt": "2026-05-29T17:59:33.325Z",
-        "latestAgeHours": 0.01,
+        "latestObservedAt": "2026-05-30T02:30:08.937Z",
+        "latestAgeHours": 15.5,
         "avgRegimeConfidence": 0.8041,
         "avgPositionSizeFactor": 0.9423,
         "avgSentimentScore": 0,
@@ -488,13 +681,13 @@
       ],
       "metrics": {
         "shadowDays": 2,
-        "hmmSamples": 70,
-        "garchSamples": 70,
-        "sentimentSamples": 70,
-        "alphaSamples": 1400,
+        "hmmSamples": 104,
+        "garchSamples": 104,
+        "sentimentSamples": 104,
+        "alphaSamples": 2080,
         "alphaShadowDays": 2,
-        "latestObservedAt": "2026-05-29T17:59:33.309Z",
-        "latestAgeHours": 0.01,
+        "latestObservedAt": "2026-05-30T02:30:08.924Z",
+        "latestAgeHours": 15.5,
         "avgRegimeConfidence": 0.6168,
         "avgPositionSizeFactor": 0.8613,
         "avgSentimentScore": 0,
@@ -511,7 +704,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -521,13 +715,13 @@
         "alphaSamples": 320,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-29T02:12:33.192Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.2263,
         "avgPositionSizeFactor": 0.8206,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1467
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "072770",
@@ -538,7 +732,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -548,13 +743,13 @@
         "alphaSamples": 920,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:29.061Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.3728,
         "avgPositionSizeFactor": 0.7826,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0419
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "297570",
@@ -565,7 +760,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -575,13 +771,13 @@
         "alphaSamples": 920,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:29.046Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.4935,
         "avgPositionSizeFactor": 0.8754,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.2559
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "024800",
@@ -592,7 +788,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -602,13 +799,13 @@
         "alphaSamples": 920,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:29.031Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.8723,
         "avgPositionSizeFactor": 0.7742,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.3433
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "035890",
@@ -619,7 +816,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -629,13 +827,13 @@
         "alphaSamples": 920,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:29.018Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.9796,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.1716
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "131400",
@@ -646,7 +844,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -656,13 +855,13 @@
         "alphaSamples": 920,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:29.002Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.1551,
         "avgPositionSizeFactor": 0.7825,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.9168
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "027040",
@@ -673,7 +872,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -683,13 +883,13 @@
         "alphaSamples": 920,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:28.983Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.9149,
         "avgPositionSizeFactor": 0.5925,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.4971
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "126730",
@@ -700,7 +900,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -710,13 +911,13 @@
         "alphaSamples": 1060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:28.963Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.9809,
         "avgPositionSizeFactor": 0.8513,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.5905
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "012170",
@@ -727,7 +928,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -737,13 +939,13 @@
         "alphaSamples": 1060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T23:25:28.925Z",
-        "latestAgeHours": 18.58,
+        "latestAgeHours": 42.58,
         "avgRegimeConfidence": 0.1248,
         "avgPositionSizeFactor": 0.8017,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.9976
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "214180",
@@ -754,7 +956,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -764,13 +967,13 @@
         "alphaSamples": 480,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T19:55:17.060Z",
-        "latestAgeHours": 22.08,
+        "latestAgeHours": 46.08,
         "avgRegimeConfidence": 0.7411,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0609
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "023590",
@@ -781,7 +984,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 2,
@@ -791,13 +995,13 @@
         "alphaSamples": 480,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T19:55:17.049Z",
-        "latestAgeHours": 22.08,
+        "latestAgeHours": 46.08,
         "avgRegimeConfidence": 0.6277,
         "avgPositionSizeFactor": 0.859,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0244
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "039490",
@@ -819,7 +1023,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.648Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.1559,
         "avgPositionSizeFactor": 0.9731,
         "avgSentimentScore": 0,
@@ -847,7 +1051,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.632Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.4056,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -875,7 +1079,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.620Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.7264,
         "avgPositionSizeFactor": 0.793,
         "avgSentimentScore": 0,
@@ -903,7 +1107,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.604Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.5712,
         "avgPositionSizeFactor": 0.9143,
         "avgSentimentScore": 0,
@@ -931,7 +1135,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.591Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.134,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -959,7 +1163,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.567Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.4808,
         "avgPositionSizeFactor": 0.9465,
         "avgSentimentScore": 0,
@@ -987,7 +1191,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.552Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.6603,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -1015,7 +1219,7 @@
         "alphaSamples": 2060,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T05:37:02.538Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.9637,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -1043,7 +1247,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.766Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.1161,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -1071,7 +1275,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.728Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.5179,
         "avgPositionSizeFactor": 0.7635,
         "avgSentimentScore": 0,
@@ -1099,7 +1303,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.718Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.1107,
         "avgPositionSizeFactor": 0.9436,
         "avgSentimentScore": 0,
@@ -1127,7 +1331,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.706Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.6448,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -1155,7 +1359,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.696Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.8481,
         "avgPositionSizeFactor": 0.8491,
         "avgSentimentScore": 0,
@@ -1183,7 +1387,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.687Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.2908,
         "avgPositionSizeFactor": 0.9565,
         "avgSentimentScore": 0,
@@ -1211,7 +1415,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.676Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.1871,
         "avgPositionSizeFactor": 0.9572,
         "avgSentimentScore": 0,
@@ -1239,7 +1443,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.655Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.2256,
         "avgPositionSizeFactor": 0.9535,
         "avgSentimentScore": 0,
@@ -1267,7 +1471,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.644Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.9929,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -1295,39 +1499,11 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.633Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.4169,
         "avgPositionSizeFactor": 0.5183,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1861
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
-    },
-    {
-      "symbol": "005830",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target",
-        "latest_shadow_stale"
-      ],
-      "metrics": {
-        "shadowDays": 2,
-        "hmmSamples": 94,
-        "garchSamples": 94,
-        "sentimentSamples": 94,
-        "alphaSamples": 1880,
-        "alphaShadowDays": 2,
-        "latestObservedAt": "2026-05-28T03:21:22.617Z",
-        "latestAgeHours": 38.64,
-        "avgRegimeConfidence": 0.6249,
-        "avgPositionSizeFactor": 0.8564,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": -0.1137
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
@@ -1351,7 +1527,7 @@
         "alphaSamples": 1880,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-28T03:21:22.562Z",
-        "latestAgeHours": 38.64,
+        "latestAgeHours": 62.65,
         "avgRegimeConfidence": 0.558,
         "avgPositionSizeFactor": 0.9857,
         "avgSentimentScore": 0,
@@ -1379,13 +1555,547 @@
         "alphaSamples": 1600,
         "alphaShadowDays": 2,
         "latestObservedAt": "2026-05-27T23:51:00.956Z",
-        "latestAgeHours": 42.15,
+        "latestAgeHours": 66.15,
         "avgRegimeConfidence": 0.5951,
         "avgPositionSizeFactor": 0.9348,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.4896
       },
       "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
+    },
+    {
+      "symbol": "073490",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T13:31:30.630Z",
+        "latestAgeHours": 4.48,
+        "avgRegimeConfidence": 0.4455,
+        "avgPositionSizeFactor": 0.7844,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.0449
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "054210",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T13:31:30.602Z",
+        "latestAgeHours": 4.48,
+        "avgRegimeConfidence": 0.5816,
+        "avgPositionSizeFactor": 0.8156,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.2589
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "007720",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.923Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.8275,
+        "avgPositionSizeFactor": 0.7273,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1898
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "006650",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.914Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.6127,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.0558
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "056190",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.902Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.5399,
+        "avgPositionSizeFactor": 0.8965,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1209
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "199820",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.892Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.1251,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1682
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "051900",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.881Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.2177,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.1467
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "042370",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.869Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.7973,
+        "avgPositionSizeFactor": 0.9243,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1774
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "000210",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.857Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.7816,
+        "avgPositionSizeFactor": 0.9806,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.0722
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "084110",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T11:31:18.841Z",
+        "latestAgeHours": 6.48,
+        "avgRegimeConfidence": 0.9777,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.3571
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "332570",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T05:30:38.743Z",
+        "latestAgeHours": 12.49,
+        "avgRegimeConfidence": 0.9261,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.5407
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "263750",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 8,
+        "garchSamples": 8,
+        "sentimentSamples": 8,
+        "alphaSamples": 160,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T05:30:38.728Z",
+        "latestAgeHours": 12.49,
+        "avgRegimeConfidence": 0.8703,
+        "avgPositionSizeFactor": 0.4844,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1043
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "046890",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 8,
+        "garchSamples": 8,
+        "sentimentSamples": 8,
+        "alphaSamples": 160,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T05:30:38.707Z",
+        "latestAgeHours": 12.49,
+        "avgRegimeConfidence": 0.3787,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.2098
+      },
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "036570",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T03:30:25.703Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.2439,
+        "avgPositionSizeFactor": 0.944,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.4329
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "002780",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T03:30:25.694Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.8703,
+        "avgPositionSizeFactor": 0.7792,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.189
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "097230",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T03:30:25.687Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.9108,
+        "avgPositionSizeFactor": 0.6709,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.1816
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "138080",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T03:30:25.678Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.1875,
+        "avgPositionSizeFactor": 0.999,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": -0.0466
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+    },
+    {
+      "symbol": "005500",
+      "market": "domestic",
+      "promotionReady": false,
+      "canPromote": false,
+      "activeBiasWeight": null,
+      "shadowBiasWeight": 0.25,
+      "blockers": [
+        "shadow_days_below_target",
+        "hmm_samples_below_target",
+        "garch_samples_below_target",
+        "sentiment_samples_below_target",
+        "alpha_shadow_days_below_target"
+      ],
+      "metrics": {
+        "shadowDays": 1,
+        "hmmSamples": 4,
+        "garchSamples": 4,
+        "sentimentSamples": 4,
+        "alphaSamples": 80,
+        "alphaShadowDays": 1,
+        "latestObservedAt": "2026-05-30T03:30:25.654Z",
+        "latestAgeHours": 14.49,
+        "avgRegimeConfidence": 0.3553,
+        "avgPositionSizeFactor": 1,
+        "avgSentimentScore": 0,
+        "avgAlphaComposite": 0.067
+      },
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
     },
     {
       "symbol": "417860",
@@ -1406,7 +2116,7 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T06:13:48.641Z",
-        "latestAgeHours": 11.77,
+        "latestAgeHours": 35.77,
         "avgRegimeConfidence": 0.9589,
         "avgPositionSizeFactor": 0.7429,
         "avgSentimentScore": 0,
@@ -1436,7 +2146,7 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T06:13:48.630Z",
-        "latestAgeHours": 11.77,
+        "latestAgeHours": 35.77,
         "avgRegimeConfidence": 0.7908,
         "avgPositionSizeFactor": 0.7432,
         "avgSentimentScore": 0,
@@ -1466,7 +2176,7 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T06:13:48.618Z",
-        "latestAgeHours": 11.77,
+        "latestAgeHours": 35.77,
         "avgRegimeConfidence": 0.8947,
         "avgPositionSizeFactor": 0.9111,
         "avgSentimentScore": 0,
@@ -1496,7 +2206,7 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T06:13:48.597Z",
-        "latestAgeHours": 11.77,
+        "latestAgeHours": 35.77,
         "avgRegimeConfidence": 0.7191,
         "avgPositionSizeFactor": 0.8076,
         "avgSentimentScore": 0,
@@ -1516,7 +2226,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1526,13 +2237,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T05:43:42.646Z",
-        "latestAgeHours": 12.27,
+        "latestAgeHours": 36.27,
         "avgRegimeConfidence": 0.8143,
         "avgPositionSizeFactor": 0.9374,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.2569
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "090360",
@@ -1546,7 +2257,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1556,13 +2268,13 @@
         "alphaSamples": 100,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T05:13:31.083Z",
-        "latestAgeHours": 12.78,
+        "latestAgeHours": 36.78,
         "avgRegimeConfidence": 0.7031,
         "avgPositionSizeFactor": 0.944,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.3784
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "009070",
@@ -1576,7 +2288,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1586,13 +2299,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T05:13:31.074Z",
-        "latestAgeHours": 12.78,
+        "latestAgeHours": 36.78,
         "avgRegimeConfidence": 0.6116,
         "avgPositionSizeFactor": 0.7891,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0285
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "217500",
@@ -1606,7 +2319,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1616,13 +2330,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T05:13:31.065Z",
-        "latestAgeHours": 12.78,
+        "latestAgeHours": 36.78,
         "avgRegimeConfidence": 0.8369,
         "avgPositionSizeFactor": 0.9013,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.3276
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "047770",
@@ -1636,7 +2350,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1646,13 +2361,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T05:13:31.046Z",
-        "latestAgeHours": 12.78,
+        "latestAgeHours": 36.78,
         "avgRegimeConfidence": 0.9043,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.2074
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "084650",
@@ -1666,7 +2381,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1676,13 +2392,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T05:13:31.022Z",
-        "latestAgeHours": 12.78,
+        "latestAgeHours": 36.78,
         "avgRegimeConfidence": 0.8848,
         "avgPositionSizeFactor": 0.7964,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.5623
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "071090",
@@ -1696,7 +2412,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1706,13 +2423,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T04:28:06.723Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.9215,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.2306
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "000430",
@@ -1726,7 +2443,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1736,13 +2454,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T04:28:06.715Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.0945,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.4231
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "005290",
@@ -1756,7 +2474,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1766,13 +2485,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T04:28:06.687Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.1745,
         "avgPositionSizeFactor": 0.8762,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.021
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "031330",
@@ -1786,7 +2505,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1796,13 +2516,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T04:28:06.677Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.9996,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.392
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "015760",
@@ -1816,7 +2536,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1826,13 +2547,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T04:28:06.669Z",
-        "latestAgeHours": 13.53,
+        "latestAgeHours": 37.53,
         "avgRegimeConfidence": 0.386,
         "avgPositionSizeFactor": 0.893,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.097
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "307950",
@@ -1843,7 +2564,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1853,13 +2575,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T03:27:48.899Z",
-        "latestAgeHours": 14.54,
+        "latestAgeHours": 38.54,
         "avgRegimeConfidence": 0.9912,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.3622
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "004980",
@@ -1873,7 +2595,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1883,13 +2606,13 @@
         "alphaSamples": 100,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T03:27:48.861Z",
-        "latestAgeHours": 14.54,
+        "latestAgeHours": 38.54,
         "avgRegimeConfidence": 0.7828,
         "avgPositionSizeFactor": 0.5555,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0293
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "037440",
@@ -1903,7 +2626,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1913,13 +2637,13 @@
         "alphaSamples": 100,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T03:27:48.852Z",
-        "latestAgeHours": 14.54,
+        "latestAgeHours": 38.54,
         "avgRegimeConfidence": 0.3363,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0821
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "000020",
@@ -1933,7 +2657,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1943,13 +2668,13 @@
         "alphaSamples": 100,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T03:27:48.841Z",
-        "latestAgeHours": 14.54,
+        "latestAgeHours": 38.54,
         "avgRegimeConfidence": 0.1403,
         "avgPositionSizeFactor": 0.8585,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0876
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "140430",
@@ -1963,7 +2688,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -1973,13 +2699,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.380Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.5644,
         "avgPositionSizeFactor": 0.6227,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.6125
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "246690",
@@ -1993,7 +2719,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2003,13 +2730,13 @@
         "alphaSamples": 120,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.371Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.9175,
         "avgPositionSizeFactor": 0.8045,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.1968
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "208710",
@@ -2020,7 +2747,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2030,13 +2758,13 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.359Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.9408,
         "avgPositionSizeFactor": 0.7922,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 2.2738
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "389140",
@@ -2047,7 +2775,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2057,13 +2786,13 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.349Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.7872,
         "avgPositionSizeFactor": 0.8295,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.003
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "317770",
@@ -2074,7 +2803,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2084,13 +2814,13 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.339Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.6935,
         "avgPositionSizeFactor": 0.9516,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0191
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "189330",
@@ -2101,7 +2831,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2111,13 +2842,13 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.328Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.9839,
         "avgPositionSizeFactor": 0.8516,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.3605
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "015260",
@@ -2131,7 +2862,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2141,13 +2873,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.319Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.234,
         "avgPositionSizeFactor": 0.7202,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.5786
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "004410",
@@ -2158,7 +2890,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2168,13 +2901,13 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.311Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.6013,
         "avgPositionSizeFactor": 0.7429,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0156
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "181710",
@@ -2188,7 +2921,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2198,13 +2932,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.302Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.5117,
         "avgPositionSizeFactor": 0.7858,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.7232
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "136490",
@@ -2215,7 +2949,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2225,13 +2960,13 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.255Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.2157,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0426
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "007820",
@@ -2242,7 +2977,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2252,13 +2988,13 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.243Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.6228,
         "avgPositionSizeFactor": 0.94,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.1175
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "036800",
@@ -2269,7 +3005,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2279,13 +3016,13 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T02:12:33.226Z",
-        "latestAgeHours": 15.79,
+        "latestAgeHours": 39.79,
         "avgRegimeConfidence": 0.1996,
         "avgPositionSizeFactor": 0.7461,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0985
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "011080",
@@ -2299,7 +3036,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2309,13 +3047,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:42:27.959Z",
-        "latestAgeHours": 16.29,
+        "latestAgeHours": 40.29,
         "avgRegimeConfidence": 0.8325,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.02
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "012205",
@@ -2326,7 +3064,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2336,13 +3075,13 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:42:27.900Z",
-        "latestAgeHours": 16.29,
+        "latestAgeHours": 40.29,
         "avgRegimeConfidence": 0.9305,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.5142
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "018880",
@@ -2356,7 +3095,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2366,13 +3106,13 @@
         "alphaSamples": 80,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:42:27.881Z",
-        "latestAgeHours": 16.29,
+        "latestAgeHours": 40.29,
         "avgRegimeConfidence": 0.5657,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.6486
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "456010",
@@ -2386,7 +3126,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2396,13 +3137,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.957Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.9375,
         "avgPositionSizeFactor": 0.9043,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.0938
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "241520",
@@ -2416,7 +3157,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2426,43 +3168,13 @@
         "alphaSamples": 100,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.942Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.6988,
         "avgPositionSizeFactor": 0.9137,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.111
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
-    },
-    {
-      "symbol": "353200",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "hmm_samples_below_target",
-        "garch_samples_below_target",
-        "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 1,
-        "hmmSamples": 5,
-        "garchSamples": 5,
-        "sentimentSamples": 5,
-        "alphaSamples": 100,
-        "alphaShadowDays": 1,
-        "latestObservedAt": "2026-05-29T01:12:11.898Z",
-        "latestAgeHours": 16.8,
-        "avgRegimeConfidence": 0.9716,
-        "avgPositionSizeFactor": 0.8622,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": 1.0358
-      },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "036530",
@@ -2476,7 +3188,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2486,13 +3199,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.783Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.6657,
         "avgPositionSizeFactor": 0.79,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0189
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "004590",
@@ -2506,7 +3219,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2516,13 +3230,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.775Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.4607,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.11
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "006200",
@@ -2536,7 +3250,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2546,13 +3261,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.754Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.8168,
         "avgPositionSizeFactor": 0.9344,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0447
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "200130",
@@ -2566,7 +3281,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2576,13 +3292,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.733Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.331,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0255
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "042500",
@@ -2596,7 +3312,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2606,13 +3323,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.719Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.9012,
         "avgPositionSizeFactor": 0.5045,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.2098
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "083930",
@@ -2626,7 +3343,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2636,13 +3354,13 @@
         "alphaSamples": 60,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T01:12:11.708Z",
-        "latestAgeHours": 16.8,
+        "latestAgeHours": 40.8,
         "avgRegimeConfidence": 0.6508,
         "avgPositionSizeFactor": 0.9459,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0604
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "289080",
@@ -2656,7 +3374,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2666,13 +3385,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.431Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.9388,
         "avgPositionSizeFactor": 0.7536,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.2156
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "388790",
@@ -2686,7 +3405,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2696,13 +3416,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.425Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.2464,
         "avgPositionSizeFactor": 0.8296,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.3168
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "263800",
@@ -2716,7 +3436,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2726,13 +3447,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.416Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.6431,
         "avgPositionSizeFactor": 0.6687,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0651
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "293580",
@@ -2746,7 +3467,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2756,13 +3478,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.399Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.6071,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0032
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "084990",
@@ -2776,7 +3498,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2786,13 +3509,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.382Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.57,
         "avgPositionSizeFactor": 0.7627,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.2498
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "357880",
@@ -2806,7 +3529,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2816,13 +3540,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.374Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.9751,
         "avgPositionSizeFactor": 0.8058,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.1838
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "149950",
@@ -2836,7 +3560,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2846,13 +3571,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.366Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.668,
         "avgPositionSizeFactor": 0.8805,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.8367
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "126640",
@@ -2866,7 +3591,8 @@
         "hmm_samples_below_target",
         "garch_samples_below_target",
         "sentiment_samples_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2876,13 +3602,13 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-29T00:26:23.273Z",
-        "latestAgeHours": 17.56,
+        "latestAgeHours": 41.56,
         "avgRegimeConfidence": 0.8717,
         "avgPositionSizeFactor": 0.8752,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.887
       },
-      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, hmm_samples_below_target, garch_samples_below_target, sentiment_samples_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "073570",
@@ -2893,7 +3619,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2903,13 +3630,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.232Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.216,
         "avgPositionSizeFactor": 0.844,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1664
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "123330",
@@ -2920,7 +3647,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2930,13 +3658,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.224Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.7221,
         "avgPositionSizeFactor": 0.8134,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.2388
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "066980",
@@ -2947,7 +3675,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2957,13 +3686,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.217Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.9481,
         "avgPositionSizeFactor": 0.9071,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.9972
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "417010",
@@ -2974,7 +3703,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -2984,13 +3714,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.210Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.7835,
         "avgPositionSizeFactor": 0.8566,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 1.5665
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "006120",
@@ -3001,7 +3731,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3011,13 +3742,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.132Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.5184,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0893
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "007570",
@@ -3028,7 +3759,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3038,13 +3770,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.122Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.7735,
         "avgPositionSizeFactor": 0.7618,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0281
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "024880",
@@ -3055,7 +3787,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3065,13 +3798,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.110Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.5164,
         "avgPositionSizeFactor": 0.8068,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0773
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "263020",
@@ -3082,7 +3815,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3092,13 +3826,13 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.098Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.228,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1055
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "041930",
@@ -3109,7 +3843,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3119,13 +3854,13 @@
         "alphaSamples": 660,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.084Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.1084,
         "avgPositionSizeFactor": 0.9483,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0415
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "042420",
@@ -3136,7 +3871,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3146,13 +3882,13 @@
         "alphaSamples": 660,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T13:54:46.064Z",
-        "latestAgeHours": 28.09,
+        "latestAgeHours": 52.09,
         "avgRegimeConfidence": 0.2976,
         "avgPositionSizeFactor": 0.961,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1581
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "005870",
@@ -3163,7 +3899,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3173,13 +3910,13 @@
         "alphaSamples": 460,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.491Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.9307,
         "avgPositionSizeFactor": 0.666,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.1934
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "011200",
@@ -3190,7 +3927,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3200,13 +3938,13 @@
         "alphaSamples": 780,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.483Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.1401,
         "avgPositionSizeFactor": 0.6999,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1487
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "037710",
@@ -3217,7 +3955,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3227,40 +3966,13 @@
         "alphaSamples": 460,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.473Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.2659,
         "avgPositionSizeFactor": 0.8552,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0869
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
-    },
-    {
-      "symbol": "002310",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 1,
-        "hmmSamples": 23,
-        "garchSamples": 23,
-        "sentimentSamples": 23,
-        "alphaSamples": 460,
-        "alphaShadowDays": 1,
-        "latestObservedAt": "2026-05-28T11:53:58.464Z",
-        "latestAgeHours": 30.1,
-        "avgRegimeConfidence": 0.4859,
-        "avgPositionSizeFactor": 0.7807,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": 0.0515
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "049070",
@@ -3271,7 +3983,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3281,13 +3994,13 @@
         "alphaSamples": 460,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.455Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.2287,
         "avgPositionSizeFactor": 0.9363,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.3284
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "055490",
@@ -3298,7 +4011,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3308,13 +4022,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.446Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.1273,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.3596
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "079960",
@@ -3325,7 +4039,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3335,13 +4050,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.438Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.8282,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0686
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "090350",
@@ -3352,7 +4067,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3362,13 +4078,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.430Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.4685,
         "avgPositionSizeFactor": 0.7859,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0978
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "131030",
@@ -3379,7 +4095,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3389,13 +4106,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.413Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.9051,
         "avgPositionSizeFactor": 0.4297,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.1143
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "007460",
@@ -3406,7 +4123,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3416,40 +4134,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.403Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.1271,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0231
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
-    },
-    {
-      "symbol": "004150",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 1,
-        "hmmSamples": 25,
-        "garchSamples": 25,
-        "sentimentSamples": 25,
-        "alphaSamples": 500,
-        "alphaShadowDays": 1,
-        "latestObservedAt": "2026-05-28T11:53:58.392Z",
-        "latestAgeHours": 30.1,
-        "avgRegimeConfidence": 0.6336,
-        "avgPositionSizeFactor": 1,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": 0.5755
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "032940",
@@ -3460,7 +4151,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3470,13 +4162,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.382Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.8813,
         "avgPositionSizeFactor": 0.8938,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0529
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "032190",
@@ -3487,7 +4179,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3497,13 +4190,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.369Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.5923,
         "avgPositionSizeFactor": 0.8803,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0791
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "078340",
@@ -3514,7 +4207,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3524,13 +4218,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.358Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.6692,
         "avgPositionSizeFactor": 0.8421,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.0004
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "035600",
@@ -3541,7 +4235,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3551,13 +4246,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.349Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.4552,
         "avgPositionSizeFactor": 0.8,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.1064
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "213500",
@@ -3568,7 +4263,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3578,13 +4274,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.339Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.7398,
         "avgPositionSizeFactor": 0.8785,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.057
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "084690",
@@ -3595,7 +4291,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3605,13 +4302,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.319Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.2324,
         "avgPositionSizeFactor": 0.8751,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.2368
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "077500",
@@ -3622,7 +4319,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3632,13 +4330,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.307Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.1636,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.402
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "095570",
@@ -3649,7 +4347,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3659,13 +4358,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.293Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.408,
         "avgPositionSizeFactor": 0.9802,
         "avgSentimentScore": 0,
         "avgAlphaComposite": 0.0848
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "137950",
@@ -3676,7 +4375,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3686,13 +4386,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.281Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.8337,
         "avgPositionSizeFactor": 0.6235,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.1218
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "241590",
@@ -3703,7 +4403,8 @@
       "shadowBiasWeight": 0.25,
       "blockers": [
         "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
+        "alpha_shadow_days_below_target",
+        "latest_shadow_stale"
       ],
       "metrics": {
         "shadowDays": 1,
@@ -3713,67 +4414,13 @@
         "alphaSamples": 500,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T11:53:58.267Z",
-        "latestAgeHours": 30.1,
+        "latestAgeHours": 54.1,
         "avgRegimeConfidence": 0.8097,
         "avgPositionSizeFactor": 0.8732,
         "avgSentimentScore": 0,
         "avgAlphaComposite": -0.1728
       },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
-    },
-    {
-      "symbol": "013580",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 1,
-        "hmmSamples": 25,
-        "garchSamples": 25,
-        "sentimentSamples": 25,
-        "alphaSamples": 500,
-        "alphaShadowDays": 1,
-        "latestObservedAt": "2026-05-28T11:53:58.253Z",
-        "latestAgeHours": 30.1,
-        "avgRegimeConfidence": 0.8719,
-        "avgPositionSizeFactor": 0.5553,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": -0.0804
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
-    },
-    {
-      "symbol": "109070",
-      "market": "domestic",
-      "promotionReady": false,
-      "canPromote": false,
-      "activeBiasWeight": null,
-      "shadowBiasWeight": 0.25,
-      "blockers": [
-        "shadow_days_below_target",
-        "alpha_shadow_days_below_target"
-      ],
-      "metrics": {
-        "shadowDays": 1,
-        "hmmSamples": 25,
-        "garchSamples": 25,
-        "sentimentSamples": 25,
-        "alphaSamples": 500,
-        "alphaShadowDays": 1,
-        "latestObservedAt": "2026-05-28T11:53:58.232Z",
-        "latestAgeHours": 30.1,
-        "avgRegimeConfidence": 0.8245,
-        "avgPositionSizeFactor": 0.7334,
-        "avgSentimentScore": 0,
-        "avgAlphaComposite": -0.1422
-      },
-      "reason": "shadow_days_below_target, alpha_shadow_days_below_target"
+      "reason": "shadow_days_below_target, alpha_shadow_days_below_target, latest_shadow_stale"
     },
     {
       "symbol": "257720",
@@ -3798,7 +4445,7 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.802Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.704,
         "avgPositionSizeFactor": 0.8744,
         "avgSentimentScore": 0,
@@ -3826,7 +4473,7 @@
         "alphaSamples": 160,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.749Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.1295,
         "avgPositionSizeFactor": 0.7345,
         "avgSentimentScore": 0,
@@ -3854,7 +4501,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.737Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.9441,
         "avgPositionSizeFactor": 0.7905,
         "avgSentimentScore": 0,
@@ -3882,7 +4529,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.724Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.7613,
         "avgPositionSizeFactor": 0.9763,
         "avgSentimentScore": 0,
@@ -3910,7 +4557,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.712Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.9928,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -3938,7 +4585,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.705Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.4913,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -3966,7 +4613,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.699Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.9996,
         "avgPositionSizeFactor": 0.8654,
         "avgSentimentScore": 0,
@@ -3994,7 +4641,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.692Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.2268,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -4022,7 +4669,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.676Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.3165,
         "avgPositionSizeFactor": 0.8122,
         "avgSentimentScore": 0,
@@ -4050,7 +4697,7 @@
         "alphaSamples": 320,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.668Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.5911,
         "avgPositionSizeFactor": 0.787,
         "avgSentimentScore": 0,
@@ -4078,7 +4725,7 @@
         "alphaSamples": 180,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:37:02.580Z",
-        "latestAgeHours": 36.38,
+        "latestAgeHours": 60.38,
         "avgRegimeConfidence": 0.2536,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -4106,7 +4753,7 @@
         "alphaSamples": 140,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T05:06:55.317Z",
-        "latestAgeHours": 36.89,
+        "latestAgeHours": 60.89,
         "avgRegimeConfidence": 0.1556,
         "avgPositionSizeFactor": 0.9195,
         "avgSentimentScore": 0,
@@ -4137,7 +4784,7 @@
         "alphaSamples": 40,
         "alphaShadowDays": 1,
         "latestObservedAt": "2026-05-28T03:51:43.524Z",
-        "latestAgeHours": 38.14,
+        "latestAgeHours": 62.14,
         "avgRegimeConfidence": 0.214,
         "avgPositionSizeFactor": 1,
         "avgSentimentScore": 0,
@@ -4147,9 +4794,9 @@
     }
   ],
   "summary": {
-    "candidates": 147,
+    "candidates": 166,
     "ready": 0,
-    "blocked": 147
+    "blocked": 166
   },
   "nextChecks": [
     "npm --prefix bots/investment run -s runtime:luna-analysis-prediction-phase-a -- --json --market=domestic --symbols=auto --limit=5 --no-write",
