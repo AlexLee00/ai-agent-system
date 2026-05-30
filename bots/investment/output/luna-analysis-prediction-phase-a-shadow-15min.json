@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_analysis_prediction_phase_a_batch_shadow_ready",
-  "generatedAt": "2026-05-29T22:14:52.889Z",
+  "generatedAt": "2026-05-30T00:15:00.078Z",
   "fixture": false,
   "shadowOnly": true,
   "liveTradeImpact": false,
@@ -26,7 +26,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -45,7 +45,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -64,7 +64,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -83,7 +83,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -102,7 +102,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 78,
+        "bars": 77,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -121,7 +121,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 78,
+        "bars": 77,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -140,7 +140,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -159,7 +159,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -178,7 +178,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -197,7 +197,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 78,
+        "bars": 77,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -216,7 +216,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null
@@ -235,7 +235,7 @@
       "influenceWeight": 0.25,
       "marketData": {
         "source": "kis_1d_ohlcv",
-        "bars": 79,
+        "bars": 78,
         "timeframe": "1d",
         "lookbackDays": 120,
         "error": null

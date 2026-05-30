@@ -712,13 +712,16 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   };
 }
 
-function applyFallbackNoOosGate(quality: any, fallbackUsed: boolean) {
-  if (!fallbackUsed) return quality;
+function applyFallbackNoOosGate(quality: any, fallbackUsed: boolean, options: any = {}) {
+  const hasOosValidation = quality?.sharpeOos != null || quality?.sharpeOosDeflated != null || quality?.walkForwardSharpe != null;
+  const shouldBlock = fallbackUsed || (options.enforceAnyNoOos === true && quality?.healthy === true && !hasOosValidation);
+  if (!shouldBlock) return quality;
   const reasons = Array.isArray(quality?.reasons) ? quality.reasons : [];
+  const reason = fallbackUsed ? 'fallback_no_oos_validation' : 'backtest_no_oos_validation';
   quality.healthy = false;
   quality.wouldBlock = true;
   quality.gateStatus = 'would_block_no_oos';
-  quality.reasons = [...new Set([...reasons, 'fallback_no_oos_validation'])];
+  quality.reasons = [...new Set([...reasons, reason])];
   if (quality.oosStatus == null) quality.oosStatus = 'insufficient_data';
   return quality;
 }
@@ -966,7 +969,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       }
     }
     const quality = evaluateQuality(allRows, market);
-    applyFallbackNoOosGate(quality, fallbackUsed);
+    applyFallbackNoOosGate(quality, fallbackUsed, { enforceAnyNoOos: !fixture });
     if (budgetPartial) {
       quality.healthy = false;
       quality.wouldBlock = true;

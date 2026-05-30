@@ -150,3 +150,50 @@ system 자리에 도구 정의 9~10종 주입(set_config_value "allowedDirectori
 - candidate-backtest-refresh: tsx 직접 실행 → 코드 변경 자동 반영(reload 불필요). launchd --periods=180은 fallback(periodsForMarket 우선).
 - gateThresholds 실측: MIN_SHARPE 0, MAX_DRAWDOWN 30, MIN_WIN_RATE 30, MAX_ABS_SHARPE 8, MIN_PERIOD_TRADES 5, MIN_TOTAL_TRADES 12, STALE_HOURS 24.
 - 커밋 270bb74a8(롤백 포인트). 이전: 9cc012ac8(walk_forward activation), pre-oos-walk-forward-20260530-033923(태그).
+
+---
+
+## [추가3] fallback healthy 차단 검증 완료 + force 백필 필요 (§8) — 2026-05-30
+
+### §8 발견: healthy 증가가 OOS 없는 fallback healthy였음
+- 보강(market별 365 + fallback 보존, 270bb74a8) 후 healthy 65→75 (overseas 13→23).
+- 단 overseas healthy 23개 전부 selection_method NULL, oos_status NULL = **OOS 없는 fallback healthy**.
+- 원인: refresh.ts:690 healthy=!wouldBlock. fallback(ohlcv_momentum)은 OOS 미검증 → insufficient_oos_sample reason 없음(:628 wouldBlock 조건) → IS sharpe만 좋으면 healthy.
+- 예: AAL DB sharpe=3.55(IS), sharpe_oos=NULL, block_reasons=[], healthy=true, gate_status=pass.
+- 우려: OOS 검증 없는 IS 기반 healthy = 과적합 위험.
+
+### fallback healthy 차단 CODEX + 구현 + 검증 완료
+- CODEX_LUNA_OOS_FALLBACK_HEALTHY_GATE_2026-05-30.md (41줄).
+- Codex 구현 (커밋 **40cb9a2f3** "CODEX_LUNA_OOS_FALLBACK_HEALTHY_GATE 자동 실행 완료"):
+  - applyFallbackNoOosGate(:715): fallbackUsed=true면 healthy=false, wouldBlock=true, gateStatus='would_block_no_oos', reason='fallback_no_oos_validation', oosStatus='insufficient_data'.
+  - :969 호출. walk_forward(fallbackUsed=false)는 영향 없음(if !fallbackUsed return).
+  - smoke: fallbackNoOos 차단 + walkForwardOos 통과 케이스 추가.
+- 메티 검증: applyFallbackNoOosGate 본문(:715) 정확 확인, :969 호출 확인, walk_forward 영향 없음.
+- 마스터 검증: node --check 통과, smoke 통과, dry-run BTC/USDT fallbackUsed=true→would_block_no_oos/healthy=false/DB write 없음, walk_forward OOS→pass/healthy=true.
+- 롤백 태그: pre-oos-fallback-healthy-gate-20260530-072600.
+- ⚠️ **DB 현재 차단 미반영**: healthy 75 / overseas fallback healthy(NULL) 23 여전 (코드 변경만, force 백필 전).
+
+### 다음 단계 (새 채팅) — force 백필
+1. force 백필(수동, 레포 루트 cwd, crypto 제외 — 이미 walk_forward):
+   - `cd /Users/alexlee/projects/ai-agent-system && npx tsx bots/investment/scripts/runtime-luna-candidate-backtest-refresh.ts --force --market=overseas` (189개, ~100분)
+   - 검증 후 `--force --market=domestic` (330개, ~175분)
+   - ⚠️ cwd=레포 루트 필수(bots/investment cwd면 ERR_MODULE_NOT_FOUND). 백그라운드(nohup) 권장. shadow-apply(DB 반영).
+2. force 백필 효과(차단 적용 + walk_forward OOS):
+   - overseas fallback healthy 23개 → walk_forward 재처리:
+     - OOS 산출되면 → healthy(진짜, AAL deflated 2.91 입증).
+     - OOS 안 되면 fallback → healthy=false(applyFallbackNoOosGate 차단).
+   - → healthy 품질 ↑ (OOS 검증된 selection_method=walk_forward만).
+3. force 백필 후 검증(메티):
+   - fallback healthy 23개 → walk_forward OOS healthy 또는 fallback unhealthy.
+   - selection_method NULL → walk_forward 전환, sharpe_oos 산출 증가.
+   - crypto 180 walk_forward 유지(회귀 방지).
+   - runtime_budget_partial 추이(주식 365 timeout 45초 초과 여부) → 초과 多면 timeout 60s.
+   - 실거래(binance/upbit/kis) + PROTECTED 11개 무중단.
+4. 잔여(이전 핸드오프): risk-gate smoke 정정(notify 동작 반영), auto_settle 아카이빙.
+
+### 핵심 사실
+- applyFallbackNoOosGate(:715, :969 호출): fallbackUsed → healthy=false. force 백필/정규 실행으로 DB 적용.
+- ⚠️ 미푸시: 로컬이 원격보다 2커밋 앞섬(40cb9a2f3 등). 마스터 푸시 대기.
+- 커밋 이력: 40cb9a2f3(fallback gate), 270bb74a8(market별 365+fallback 보존), 9cc012ac8(walk_forward activation).
+- 롤백 태그: pre-oos-fallback-healthy-gate-20260530-072600, pre-oos-walk-forward-20260530-033923.
+- 주식 365 walk_forward ~31.8초/종목(timeout 45초). overseas 189≈100분, domestic 330≈175분.

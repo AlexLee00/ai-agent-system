@@ -96,6 +96,12 @@ assert.equal(fallbackNoOosQuality.healthy, false, 'OOS-less fallback rows must n
 assert.equal(fallbackNoOosQuality.wouldBlock, true, 'OOS-less fallback rows must would-block');
 assert.equal(fallbackNoOosQuality.gateStatus, 'would_block_no_oos', 'OOS-less fallback rows should have an explicit no-OOS gate status');
 assert.ok(fallbackNoOosQuality.reasons.includes('fallback_no_oos_validation'), 'OOS-less fallback block reason should be explicit');
+const legacyNoOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candidateBacktestTest.evaluateQuality([
+  { status: 'ok', walk_forward_days: 365, total_trades: 30, sharpe_ratio: 1.2, max_drawdown: 10, win_rate: 55 },
+]), false, { enforceAnyNoOos: true });
+assert.equal(legacyNoOosQuality.healthy, false, 'non-fixture OOS-less backtests must not be healthy even when fallback was not used');
+assert.equal(legacyNoOosQuality.gateStatus, 'would_block_no_oos', 'non-fixture OOS-less backtests should have an explicit no-OOS gate status');
+assert.ok(legacyNoOosQuality.reasons.includes('backtest_no_oos_validation'), 'non-fallback OOS-less block reason should be explicit');
 const walkForwardOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candidateBacktestTest.evaluateQuality([
   {
     status: 'ok',
@@ -214,6 +220,7 @@ const payload = {
   negativeReasons: negative?.reasons || [],
   ohlcvFallbackUsable: candidateBacktestTest.rowsHaveUsableTrades(fallbackRows),
   fallbackNoOosGateStatus: fallbackNoOosQuality.gateStatus,
+  legacyNoOosGateStatus: legacyNoOosQuality.gateStatus,
   walkForwardOosGateStatus: walkForwardOosQuality.gateStatus,
   unrealisticSharpeCapped: unrealisticSharpeQuality.sharpe,
   periodRepresentativeRows: periodRepresentativeQuality.qualityRows.length,
