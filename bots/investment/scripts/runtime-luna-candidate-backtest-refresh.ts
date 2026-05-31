@@ -715,14 +715,31 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     .filter(Number.isFinite);
   const oosBars = oosBarsValues.length > 0 ? oosBarsValues.reduce((s, v) => s + v, 0) : null;
 
+  // Phase 1b-2: DSR 게이트 (환경변수 기본 OFF — 마스터 명시적 활성화 필요)
+  const dsrGateEnabled = String(process.env.LUNA_DSR_GATE_ENABLED || 'false').trim().toLowerCase();
+  const dsrGateActive = !['0', 'false', 'off', 'disabled'].includes(dsrGateEnabled);
+  const dsrMin = Number(process.env.LUNA_DSR_MIN || 0.90);
+  const dsrMinTrades = Number(process.env.LUNA_DSR_MIN_TRADES || 30);
+  const dsrVals = oosRows.map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
+  const avgDsr = dsrVals.length > 0 ? dsrVals.reduce((s, v) => s + v, 0) / dsrVals.length : null;
+  const dsrInsufficientTrades = minTradesOos != null && minTradesOos < dsrMinTrades;
+  const dsrWouldBlock = dsrGateActive && avgDsr != null && (dsrInsufficientTrades || avgDsr < dsrMin);
+  const dsrReasons: string[] = [];
+  if (dsrWouldBlock) {
+    if (dsrInsufficientTrades) dsrReasons.push(`candidate_backtest_insufficient_trades(${minTradesOos}<${dsrMinTrades})`);
+    if (avgDsr < dsrMin) dsrReasons.push(`candidate_backtest_dsr_low(${avgDsr.toFixed(4)}<${dsrMin})`);
+  }
+  const effectiveWouldBlock = wouldBlock || dsrWouldBlock;
+  const effectiveMergedReasons = dsrReasons.length > 0 ? [...new Set([...mergedReasons, ...dsrReasons])] : mergedReasons;
+
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),
     winRate: Number(avgWinRate.toFixed(4)),
-    healthy: !wouldBlock,
-    gateStatus: wouldBlock ? (onlyUnstable ? 'would_block_unstable_backtest' : 'would_block_unhealthy') : 'pass',
-    wouldBlock,
-    reasons: mergedReasons,
+    healthy: !effectiveWouldBlock,
+    gateStatus: effectiveWouldBlock ? (onlyUnstable ? 'would_block_unstable_backtest' : 'would_block_unhealthy') : 'pass',
+    wouldBlock: effectiveWouldBlock,
+    reasons: effectiveMergedReasons,
     totalTrades,
     minPeriodTrades: minTrades,
     stablePeriodCount,

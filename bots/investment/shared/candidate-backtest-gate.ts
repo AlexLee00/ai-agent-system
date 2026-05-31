@@ -148,7 +148,16 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const maxOverfitGap = Number(env.LUNA_BT_MAX_OVERFIT_GAP || 2.0);
   const overfitFlagged = overfitGap != null && Number.isFinite(overfitGap) && overfitGap > maxOverfitGap;
 
-  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock;
+  // Phase 1b-2: DSR 게이트 (환경변수 기본 OFF — 마스터 명시적 활성화 필요)
+  const dsrGateActive = !DISABLED.has(String(env.LUNA_DSR_GATE_ENABLED || 'false').trim().toLowerCase());
+  const dsrMin = Number(env.LUNA_DSR_MIN || 0.90);
+  const dsrMinTrades = Number(env.LUNA_DSR_MIN_TRADES || 30);
+  const dsr = row.dsr != null ? finiteNumber(row.dsr, null) : null;
+  const totalTradesOos = row.total_trades_oos != null ? finiteNumber(row.total_trades_oos, null) : null;
+  const insufficientTrades = totalTradesOos != null && totalTradesOos < dsrMinTrades;
+  const dsrWouldBlock = dsrGateActive && dsr != null && (insufficientTrades || dsr < dsrMin);
+
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock;
   const reasons = parseReasons(row.block_reasons);
   const gateStatus = String(row.gate_status || row.gateStatus || '').toLowerCase();
   const unstableBacktest = gateStatus.includes('unstable')
@@ -167,9 +176,11 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
       ? 'candidate_backtest_unhealthy'
       : drawdownWouldBlock
         ? 'candidate_backtest_drawdown_high'
-        : wouldBlock
-          ? 'candidate_backtest_would_block'
-        : null;
+        : dsrWouldBlock
+          ? (insufficientTrades ? 'candidate_backtest_insufficient_trades' : 'candidate_backtest_dsr_low')
+          : wouldBlock
+            ? 'candidate_backtest_would_block'
+          : null;
   const baseReasons = overfitFlagged && !reasons.some((item) => String(item).startsWith('overfit_gap_high'))
     ? [...reasons, `overfit_gap_high(${overfitGap!.toFixed(2)})`]
     : reasons;
@@ -179,6 +190,14 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   }
   if (sharpeWouldBlock && !effectiveReasons.some((item) => String(item).startsWith('sharpe_oos_deflated_low'))) {
     effectiveReasons = [...effectiveReasons, `sharpe_oos_deflated_low(${effectiveSharpe.toFixed(2)}<${minSharpe})`];
+  }
+  if (dsrWouldBlock) {
+    if (insufficientTrades && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_insufficient_trades'))) {
+      effectiveReasons = [...effectiveReasons, `candidate_backtest_insufficient_trades(${totalTradesOos}<${dsrMinTrades})`];
+    }
+    if (dsr < dsrMin && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_dsr_low'))) {
+      effectiveReasons = [...effectiveReasons, `candidate_backtest_dsr_low(${dsr.toFixed(4)}<${dsrMin})`];
+    }
   }
   return {
     ok: mode !== 'enforce' || !wouldBlock,
