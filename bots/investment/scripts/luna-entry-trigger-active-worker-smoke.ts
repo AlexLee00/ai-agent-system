@@ -749,6 +749,15 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(dsrQualityGate.ok, false, 'hard_gate should block entry triggers when stored DSR is below threshold');
       assert.equal(dsrQualityGate.reason, 'backtest_unhealthy_or_would_block');
       assert.equal(dsrQualityGate.backtest?.dsr, 0.42);
+      const dsrNotifyGate = evaluateActiveEntryTriggerQualityGate(
+        { symbol: dsrQualitySymbol },
+        dsrQuality,
+        { activeQualityGateEnabled: true, activeQualityGateMode: 'notify' },
+      );
+      assert.equal(dsrNotifyGate.notifyMode, true, 'DSR-only hard block should not require global active quality hard_gate');
+      assert.equal(dsrNotifyGate.hardBlock, true, 'enabled DSR gate should hard-block low DSR rows even in notify mode');
+      assert.equal(dsrNotifyGate.ok, false, 'notify mode must not allow DSR-gated backtests through');
+      assert.equal(dsrNotifyGate.hardBlockReason, 'candidate_backtest_dsr_gate');
 
       const qualityPredictiveFallbackTrigger = await insertEntryTrigger({
         symbol: qualityPredictiveFallbackSymbol,

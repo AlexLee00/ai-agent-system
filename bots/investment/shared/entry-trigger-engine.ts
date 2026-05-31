@@ -170,6 +170,15 @@ function applyBacktestGateEvaluation(backtest = null, env = process.env) {
   };
 }
 
+function hasDsrBacktestHardBlock(backtest = null) {
+  const reasons = parseJsonMaybe(backtest?.blockReasons ?? backtest?.block_reasons, []);
+  return reasons.some((reason) => {
+    const value = String(reason || '');
+    return value.startsWith('candidate_backtest_dsr_low')
+      || value.startsWith('candidate_backtest_insufficient_trades');
+  });
+}
+
 function normalizeQualityMap(input = null) {
   if (!input) return new Map();
   if (input instanceof Map) {
@@ -292,6 +301,7 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
   const backtest = quality?.backtest || null;
   const predictive = quality?.predictive || null;
   const evaluatedBacktest = backtest ? applyBacktestGateEvaluation(backtest, context.env || process.env).backtest : null;
+  const dsrHardBlock = hasDsrBacktestHardBlock(evaluatedBacktest);
   let backtestRawFresh = false;
   let backtestFresh = false;
   let backtestAgeHours = null;
@@ -338,10 +348,13 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
 
   const uniqueReasons = [...new Set(reasons)];
   const notifyMode = mode !== 'hard_gate';
+  const effectiveOk = notifyMode && !dsrHardBlock ? true : uniqueReasons.length === 0;
   return {
-    ok: notifyMode ? true : uniqueReasons.length === 0,
+    ok: effectiveOk,
     enabled: true,
     notifyMode,
+    hardBlock: dsrHardBlock,
+    hardBlockReason: dsrHardBlock ? 'candidate_backtest_dsr_gate' : null,
     reason: uniqueReasons[0] || 'active_quality_gate_passed',
     reasons: uniqueReasons,
     blockedReasons: uniqueReasons,
@@ -1743,7 +1756,9 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         reason: preflightQualityGate.blockedReasons.join(','),
         severity: 'info',
         decisionBefore: { wouldBlock: true, reasons: preflightQualityGate.blockedReasons },
-        decisionAfter: { notifyMode: true, action: 'BUY_ALLOWED' },
+        decisionAfter: preflightQualityGate.hardBlock
+          ? { notifyMode: true, hardBlock: true, action: 'BUY_BLOCKED' }
+          : { notifyMode: true, action: 'BUY_ALLOWED' },
         guardMetadata: { activeQualityGate: preflightQualityGate },
       });
     }
@@ -1924,7 +1939,9 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         reason: qualityGate.blockedReasons.join(','),
         severity: 'info',
         decisionBefore: { wouldBlock: true, reasons: qualityGate.blockedReasons },
-        decisionAfter: { notifyMode: true, action: 'BUY_ALLOWED' },
+        decisionAfter: qualityGate.hardBlock
+          ? { notifyMode: true, hardBlock: true, action: 'BUY_BLOCKED' }
+          : { notifyMode: true, action: 'BUY_ALLOWED' },
         guardMetadata: { activeQualityGate: qualityGate },
       });
     }
