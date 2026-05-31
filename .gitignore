@@ -21,6 +21,8 @@ naver-profile/
 *.pid
 *.lock
 !mix.lock
+output/metty-trace-state.json
+bots/investment/output/luna-analysis-prediction-phase-a-shadow-15min.json
 
 # OS
 .DS_Store
