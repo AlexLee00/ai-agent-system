@@ -54,6 +54,12 @@ export async function ensureCandidateBacktestSchema() {
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_returns_skew DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_returns_kurt DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_bars INTEGER`);
+  // Phase 1b: 정통 DSR/PSR 컬럼 (SHADOW — 기존 컬럼/판정 불변)
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS dsr DOUBLE PRECISION`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS psr DOUBLE PRECISION`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS sr0 DOUBLE PRECISION`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS sr_oos_unann DOUBLE PRECISION`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS periods_per_year DOUBLE PRECISION`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`);

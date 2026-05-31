@@ -683,6 +683,11 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_returns_skew DOUBLE PRECISION`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_returns_kurt DOUBLE PRECISION`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_bars INTEGER`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS dsr DOUBLE PRECISION`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS psr DOUBLE PRECISION`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS sr0 DOUBLE PRECISION`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS sr_oos_unann DOUBLE PRECISION`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS periods_per_year DOUBLE PRECISION`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`); } catch { /* 무시 */ }

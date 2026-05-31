@@ -103,6 +103,7 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
         df = pd.DataFrame(all_rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         df = df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
+        df.attrs["luna_market_calendar"] = "crypto"
         return df
 
     if yf is None:
@@ -134,6 +135,7 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
         }
     )[["timestamp", "open", "high", "low", "close", "volume"]]
     df = df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
+    df.attrs["luna_market_calendar"] = "stock"
     return df
 
 
@@ -303,7 +305,11 @@ def run_backtest(df, params: dict, deps: dict):
         "win_rate": float(stats.get("Win Rate [%]", 0) or 0),
         "total_trades": int(stats.get("Total Trades", 0) or 0),
         "profit_factor": float(stats.get("Profit Factor", 0) or 0),
-        "params": {**params, "portfolio_freq": portfolio_freq},
+        "params": {
+            **params,
+            "portfolio_freq": portfolio_freq,
+            "market_calendar": params.get("market_calendar") or df.attrs.get("luna_market_calendar") or "crypto",
+        },
         "oos_returns_skew": oos_returns_skew,
         "oos_returns_kurt": oos_returns_kurt,
     }
@@ -394,6 +400,76 @@ def deflated_sharpe(sharpe: float, n_trials: int, total_trades_oos: int) -> floa
     return sharpe - penalty
 
 
+# --- Phase 1b: 정통 DSR/PSR 산출 (Bailey & López de Prado 2014) ---
+
+def periods_per_year(freq: str, market: str = "crypto") -> float:
+    """포트폴리오 주파수 → 연간 주기 수.
+
+    기준: crypto 1d=365(24/7), stock 1d=252(영업일). 비연율화 변환 계수로 사용.
+    """
+    freq = (freq or "5min").lower().replace(" ", "")
+    _map: dict[str, float] = {
+        "1min": 525600.0, "1m": 525600.0,
+        "5min": 105120.0, "5m": 105120.0,
+        "15min": 35040.0, "15m": 35040.0,
+        "30min": 17520.0, "30m": 17520.0,
+        "1h": 8760.0, "1hour": 8760.0, "60min": 8760.0, "60m": 8760.0,
+        "4h": 2190.0, "4hour": 2190.0, "240min": 2190.0, "240m": 2190.0,
+        "1d": 365.0 if market == "crypto" else 252.0,
+        "1day": 365.0 if market == "crypto" else 252.0,
+        "d": 365.0 if market == "crypto" else 252.0,
+    }
+    return _map.get(freq, 105120.0)  # 매핑 없으면 5m 기본
+
+
+def expected_max_sharpe(var_sr_unann: float, n_trials: int) -> float:
+    """FST 임계 SR — N개 시도 중 무능 전략의 기대 최대 SR (비연율화).
+
+    maxZ = (1-γ)·Φ⁻¹(1-1/N) + γ·Φ⁻¹(1-1/(N·e))    γ=Euler-Mascheroni=0.5772156649
+    SR0  = sqrt(var_SR_unann) · maxZ
+    """
+    if _scipy_stats is None or var_sr_unann is None or not math.isfinite(var_sr_unann) or var_sr_unann <= 0:
+        return 0.0
+    n = max(2, int(n_trials or 2))
+    gamma_em = 0.5772156649
+    try:
+        z1 = _scipy_stats.norm.ppf(1.0 - 1.0 / n)
+        z2 = _scipy_stats.norm.ppf(1.0 - 1.0 / (n * math.e))
+        max_z = (1.0 - gamma_em) * z1 + gamma_em * z2
+        sr0 = math.sqrt(var_sr_unann) * max_z
+        return sr0 if math.isfinite(sr0) else 0.0
+    except Exception:
+        return 0.0
+
+
+def probabilistic_sharpe_ratio(
+    sr_unann: float, sr0: float, skew, kurt, T: int
+) -> "float | None":
+    """DSR/PSR 산출 (Bailey & López de Prado 2014).
+
+    DSR = Φ( (SR-SR0)·sqrt(T-1) / sqrt(1 - skew·SR + (kurt-1)/4·SR²) )
+
+    sr_unann: 비연율화 OOS SR.  sr0: FST 임계 SR (PSR시 0.0).
+    skew/kurt: Pearson 정의(정규=0/3). T: OOS bars.
+    단위 주의: sr_unann·sr0 모두 비연율화(per-period)여야 함.
+    """
+    if _scipy_stats is None or sr_unann is None or not math.isfinite(sr_unann):
+        return None
+    if T is None or T < 2:
+        return None
+    sk = float(skew) if skew is not None and math.isfinite(float(skew)) else 0.0
+    kt = float(kurt) if kurt is not None and math.isfinite(float(kurt)) else 3.0
+    denom_sq = 1.0 - sk * sr_unann + (kt - 1.0) / 4.0 * sr_unann ** 2
+    if denom_sq <= 0.0:
+        return None
+    try:
+        z = (sr_unann - sr0) * math.sqrt(T - 1) / math.sqrt(denom_sq)
+        prob = float(_scipy_stats.norm.cdf(z))
+        return prob if math.isfinite(prob) else None
+    except Exception:
+        return None
+
+
 def check_stability(sharpe_oos: float, total_trades_oos: int, n_obs: int,
                     overfit_gap: float, max_dd_oos: float) -> tuple:
     """OOS 지표 안정성 검사 — 위배 시 ('unstable', [reasons])"""
@@ -451,12 +527,20 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
     oos_returns_skew = oos_result.get("oos_returns_skew")
     oos_returns_kurt = oos_result.get("oos_returns_kurt")
 
+    # Phase 1b: 비연율화 계수 — oos_result.params에 portfolio_freq 저장됨
+    _params = (oos_result.get("params") or best_is.get("params") or {})
+    _pf = _params.get("portfolio_freq") or (best_is.get("params") or {}).get("portfolio_freq", "5min")
+    _market = _params.get("market_calendar") or (extra or {}).get("market", "crypto")
+    ppy = periods_per_year(_pf, _market)  # periods per year (비연율화 변환 계수)
+
     if total_trades_oos < min_oos_trades or n_obs < min_oos_bars:
         sharpe_oos = None
         overfit_gap = None
         sharpe_oos_def = None
         oos_status = "insufficient_data"
         oos_reasons = [f"insufficient_oos_sample(trades={total_trades_oos},bars={n_obs})"]
+        # Phase 1b: insufficient_data 시 DSR 필드 None
+        dsr = psr = sr0 = sr_oos_unann = None
     else:
         sharpe_oos = raw_sharpe_oos
         overfit_gap = sharpe_is - sharpe_oos
@@ -467,6 +551,14 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
             oos_reasons.append(f"sharpe_out_of_realistic_range(val={sharpe_oos_def:.2f},cap={realistic_cap})")
             sharpe_oos_def = clamp(sharpe_oos_def, -realistic_cap, realistic_cap)
             oos_status = "unstable"
+
+        # Phase 1b: 비연율화 변환 후 정통 DSR/PSR 산출
+        # sr_unann = sr_ann / sqrt(ppy),  var_unann = var_ann / ppy
+        sr_oos_unann = sharpe_oos / math.sqrt(ppy) if math.isfinite(sharpe_oos) else None
+        var_sr_unann = (var_sharpe / ppy) if var_sharpe is not None and math.isfinite(var_sharpe) else None
+        sr0 = expected_max_sharpe(var_sr_unann, n_grid_trials)
+        dsr = probabilistic_sharpe_ratio(sr_oos_unann, sr0, oos_returns_skew, oos_returns_kurt, n_obs)
+        psr = probabilistic_sharpe_ratio(sr_oos_unann, 0.0, oos_returns_skew, oos_returns_kurt, n_obs)
 
     payload = {
         **oos_result,
@@ -485,12 +577,18 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
         "gate_status": "unstable" if oos_reasons else "ok",
         "reasons": oos_reasons,
         "params": best_is.get("params", oos_result.get("params", {})),
-        # Phase 1a: DSR 입력 데이터 (Phase 1b에서 정통 DSR 계산에 사용)
+        # Phase 1a: DSR 입력 데이터
         "trial_sharpes": _ts,
         "var_sharpe": var_sharpe,
         "oos_returns_skew": oos_returns_skew,
         "oos_returns_kurt": oos_returns_kurt,
         "oos_bars": n_obs,  # T — OOS 관측 수 (n_obs_oos의 명시적 DSR alias)
+        # Phase 1b: 정통 DSR/PSR (SHADOW — 기존 deflated_sharpe/healthy/gate_status 불변)
+        "dsr": dsr,
+        "psr": psr,
+        "sr0": sr0,
+        "sr_oos_unann": sr_oos_unann if (total_trades_oos >= min_oos_trades and n_obs >= min_oos_bars) else None,
+        "periods_per_year": ppy,
     }
     if extra:
         payload.update(extra)
@@ -678,6 +776,23 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
         if _kurt_data else None
     )
 
+    # Phase 1b: 비연율화 계수 — fold params에 portfolio_freq 저장됨 (run_backtest → IS grid 경유)
+    _wf_params = usable[0].get("params") or {}
+    _wf_pf = _wf_params.get("portfolio_freq", "5min")
+    _wf_market = _wf_params.get("market_calendar", "crypto")
+    wf_ppy = periods_per_year(_wf_pf, _wf_market)
+
+    if oos_status == "insufficient_data":
+        wf_dsr = wf_psr = wf_sr0 = wf_sr_oos_unann = None
+    else:
+        # sr_unann = sr_ann / sqrt(ppy),  var_unann = var_ann / ppy
+        wf_sr_oos_unann = sharpe_oos_out / math.sqrt(wf_ppy) if sharpe_oos_out is not None and math.isfinite(sharpe_oos_out) else None
+        wf_var_sr_unann = (var_sharpe / wf_ppy) if var_sharpe is not None and math.isfinite(var_sharpe) else None
+        wf_sr0 = expected_max_sharpe(wf_var_sr_unann, n_trials)
+        wf_dsr = probabilistic_sharpe_ratio(wf_sr_oos_unann, wf_sr0, pooled_oos_skew, pooled_oos_kurt, pooled_bars)
+        wf_psr = probabilistic_sharpe_ratio(wf_sr_oos_unann, 0.0, pooled_oos_skew, pooled_oos_kurt, pooled_bars)
+        wf_sr0 = wf_sr0  # sr0 보존 (insufficient 아닐 때만)
+
     aggregate = {
         "status": oos_status,
         "selection_method": "walk_forward",
@@ -697,17 +812,29 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
         "total_trades_oos": pooled_trades,
         "fold_count": len(usable),
         "folds": fold_raw,
-        "params": {"walk_forward_train_days": train_days, "walk_forward_test_days": test_days, "folds": len(usable)},
+        "params": {
+            "walk_forward_train_days": train_days,
+            "walk_forward_test_days": test_days,
+            "folds": len(usable),
+            "portfolio_freq": _wf_pf,
+            "market_calendar": _wf_market,
+        },
         "oos_status": oos_status,
         "oos_reasons": oos_reasons,
         "gate_status": "unstable" if oos_reasons else "ok",
         "reasons": oos_reasons,
-        # Phase 1a: DSR 입력 데이터 (Phase 1b에서 정통 DSR 계산에 사용)
+        # Phase 1a: DSR 입력 데이터
         "trial_sharpes": all_trial_sharpes,
         "var_sharpe": var_sharpe,
         "oos_returns_skew": pooled_oos_skew,
         "oos_returns_kurt": pooled_oos_kurt,
         "oos_bars": pooled_bars,  # T — n_obs_oos의 명시적 DSR alias
+        # Phase 1b: 정통 DSR/PSR (SHADOW — 기존 deflated_sharpe/healthy/gate_status 불변)
+        "dsr": wf_dsr,
+        "psr": wf_psr,
+        "sr0": wf_sr0 if oos_status != "insufficient_data" else None,
+        "sr_oos_unann": wf_sr_oos_unann,
+        "periods_per_year": wf_ppy,
     }
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate

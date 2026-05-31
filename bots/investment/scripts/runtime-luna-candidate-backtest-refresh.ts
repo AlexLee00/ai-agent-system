@@ -747,6 +747,27 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     oosReturnsSkew: avgOosSkew != null ? Number(avgOosSkew.toFixed(6)) : null,
     oosReturnsKurt: avgOosKurt != null ? Number(avgOosKurt.toFixed(6)) : null,
     oosBars: oosBars != null ? Math.round(oosBars) : null,
+    // Phase 1b: 정통 DSR/PSR (SHADOW — 기존 판정 불변)
+    dsr: (() => {
+      const vals = oosRows.map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    psr: (() => {
+      const vals = oosRows.map((r) => safeNum(r?.psr, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    sr0: (() => {
+      const vals = oosRows.map((r) => safeNum(r?.sr0, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    srOosUnann: (() => {
+      const vals = oosRows.map((r) => safeNum(r?.sr_oos_unann, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    periodsPerYear: (() => {
+      const vals = qualityRows.map((r) => safeNum(r?.periods_per_year, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)) : null;
+    })(),
   };
 }
 
@@ -781,8 +802,9 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
        block_reasons, backtest_run_metadata, updated_at,
        sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap, n_grid_trials, walk_forward_sharpe,
        n_obs_oos, total_trades_oos, oos_status, selection_method, fold_count,
-       trial_sharpes, var_sharpe, oos_returns_skew, oos_returns_kurt, oos_bars)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29)
+       trial_sharpes, var_sharpe, oos_returns_skew, oos_returns_kurt, oos_bars,
+       dsr, psr, sr0, sr_oos_unann, periods_per_year)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34)
     ON CONFLICT (symbol, market) DO UPDATE SET
       fresh = EXCLUDED.fresh,
       healthy = EXCLUDED.healthy,
@@ -812,7 +834,12 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       var_sharpe = EXCLUDED.var_sharpe,
       oos_returns_skew = EXCLUDED.oos_returns_skew,
       oos_returns_kurt = EXCLUDED.oos_returns_kurt,
-      oos_bars = EXCLUDED.oos_bars
+      oos_bars = EXCLUDED.oos_bars,
+      dsr = EXCLUDED.dsr,
+      psr = EXCLUDED.psr,
+      sr0 = EXCLUDED.sr0,
+      sr_oos_unann = EXCLUDED.sr_oos_unann,
+      periods_per_year = EXCLUDED.periods_per_year
   `, [
     symbol,
     market,
@@ -862,6 +889,11 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       oosReturnsSkew: payload.oosReturnsSkew ?? null,
       oosReturnsKurt: payload.oosReturnsKurt ?? null,
       oosBars: payload.oosBars ?? null,
+      dsr: payload.dsr ?? null,
+      psr: payload.psr ?? null,
+      sr0: payload.sr0 ?? null,
+      srOosUnann: payload.srOosUnann ?? null,
+      periodsPerYear: payload.periodsPerYear ?? null,
     }),
     payload.sharpeOos ?? null,
     payload.sharpeIs ?? null,
@@ -879,6 +911,11 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
     payload.oosReturnsSkew ?? null,
     payload.oosReturnsKurt ?? null,
     payload.oosBars ?? null,
+    payload.dsr ?? null,
+    payload.psr ?? null,
+    payload.sr0 ?? null,
+    payload.srOosUnann ?? null,
+    payload.periodsPerYear ?? null,
   ]);
 }
 
