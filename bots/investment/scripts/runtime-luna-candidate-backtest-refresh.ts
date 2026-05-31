@@ -745,6 +745,22 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   }
   const effectiveWouldBlock = wouldBlock || dsrWouldBlock;
   const effectiveMergedReasons = dsrReasons.length > 0 ? [...new Set([...mergedReasons, ...dsrReasons])] : mergedReasons;
+  const metaLabelRows = (() => {
+    const seen = new Set<string>();
+    const rows = [];
+    for (const row of qualityRows) {
+      if (!row?.meta_label_dist || typeof row.meta_label_dist !== 'object') continue;
+      const key = JSON.stringify({
+        dist: row.meta_label_dist,
+        method: row.meta_label_method || null,
+        trades: row.meta_label_n_trades ?? null,
+      });
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+    return rows;
+  })();
 
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
@@ -827,8 +843,7 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     })(),
     // Phase 2 Stage 1: meta-label 분포 (SHADOW — 판정 미반영)
     metaLabelDist: (() => {
-      const rows = qualityRows.filter((r) => r?.meta_label_dist && typeof r.meta_label_dist === 'object');
-      const dist = rows.reduce((acc, row) => {
+      const dist = metaLabelRows.reduce((acc, row) => {
         acc.pos += Math.max(0, Math.round(safeNum(row.meta_label_dist.pos, 0)));
         acc.neg += Math.max(0, Math.round(safeNum(row.meta_label_dist.neg, 0)));
         acc.neutral += Math.max(0, Math.round(safeNum(row.meta_label_dist.neutral, 0)));
@@ -838,14 +853,14 @@ function evaluateQuality(rows: any[], market: string = 'all') {
       return total > 0 ? { ...dist, total, pos_rate: Number((dist.pos / total).toFixed(6)) } : null;
     })(),
     metaLabelPosRate: (() => {
-      const vals = qualityRows.filter((r) => r?.meta_label_pos_rate != null).map((r) => safeNum(r?.meta_label_pos_rate, NaN)).filter(Number.isFinite);
+      const vals = metaLabelRows.filter((r) => r?.meta_label_pos_rate != null).map((r) => safeNum(r?.meta_label_pos_rate, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
     })(),
     metaLabelNTrades: (() => {
-      const vals = qualityRows.filter((r) => r?.meta_label_n_trades != null).map((r) => safeNum(r?.meta_label_n_trades, NaN)).filter(Number.isFinite);
+      const vals = metaLabelRows.filter((r) => r?.meta_label_n_trades != null).map((r) => safeNum(r?.meta_label_n_trades, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? vals.reduce((s, v) => s + Math.round(v), 0) : null;
     })(),
-    metaLabelMethod: qualityRows.map((r) => String(r?.meta_label_method || '').trim()).find(Boolean) || null,
+    metaLabelMethod: metaLabelRows.map((r) => String(r?.meta_label_method || '').trim()).find(Boolean) || null,
   };
 }
 
