@@ -1153,6 +1153,12 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       reasons: quality.reasons,
       fallbackUsed,
       vectorbtEnabled: VECTORBT_ENABLED,
+      pbo: quality.pbo ?? null,
+      perfDegradation: quality.perfDegradation ?? null,
+      probLoss: quality.probLoss ?? null,
+      dominanceFirstOrder: quality.dominanceFirstOrder ?? null,
+      pboNBlocks: quality.pboNBlocks ?? null,
+      pboNCombinations: quality.pboNCombinations ?? null,
       error: null,
     };
   } catch (error) {
