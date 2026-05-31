@@ -10,6 +10,7 @@ VectorBT 기반 백테스팅 스캐폴드.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import os
@@ -258,7 +259,7 @@ def infer_portfolio_freq(df) -> str:
     return "1d"
 
 
-def run_backtest(df, params: dict, deps: dict):
+def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False):
     vbt = deps["vbt"]
     pd = deps["pd"]
     if vbt is None or pd is None:
@@ -284,8 +285,10 @@ def run_backtest(df, params: dict, deps: dict):
     stats = pf.stats()
 
     # OOS returns 분포 통계 — DSR Phase 1b 입력 (skew/kurt). fisher=False = Pearson 정의(정규=3)
+    returns_series = None
     try:
-        ret_arr = pf.returns().dropna().values
+        returns_series = pf.returns().fillna(0)
+        ret_arr = returns_series.dropna().values
         if _scipy_stats is not None and len(ret_arr) >= 4:
             _sk = float(_scipy_stats.skew(ret_arr))
             _kt = float(_scipy_stats.kurtosis(ret_arr, fisher=False))
@@ -313,6 +316,18 @@ def run_backtest(df, params: dict, deps: dict):
         "oos_returns_skew": oos_returns_skew,
         "oos_returns_kurt": oos_returns_kurt,
     }
+    if collect_returns:
+        try:
+            if returns_series is None:
+                returns_series = pf.returns().fillna(0)
+            result["returns_series"] = [float(x) if math.isfinite(float(x)) else 0.0 for x in returns_series.tolist()]
+            result["returns_index"] = [
+                int(ts.timestamp()) if hasattr(ts, "timestamp") else int(index)
+                for index, ts in enumerate(returns_series.index)
+            ]
+        except Exception:
+            result["returns_series"] = []
+            result["returns_index"] = []
     result["robust_score"] = robust_rank_score(result)
     return result
 
@@ -840,8 +855,9 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
     return aggregate
 
 
-def grid_search(df, deps: dict):
-    results = []
+def build_grid_params() -> list[dict]:
+    """백테스트 파라미터 그리드. grid_search와 CPCV/PBO가 동일 그리드를 공유한다."""
+    params_list: list[dict] = []
     rsi_periods = [10, 14, 20]
     macd_configs = [
         {"macd_fast": 12, "macd_slow": 26, "macd_signal": 9},
@@ -864,13 +880,7 @@ def grid_search(df, deps: dict):
                         "strategy": "rsi_macd_reversal",
                         **macd_cfg,
                     }
-                    try:
-                        results.append(run_backtest(df, params, deps))
-                    except Exception as exc:
-                        results.append({
-                            "error": str(exc),
-                            "params": params,
-                        })
+                    params_list.append(params)
 
     for ema_cfg in [
         {"ema_fast": 8, "ema_slow": 34},
@@ -891,10 +901,7 @@ def grid_search(df, deps: dict):
                     **ema_cfg,
                     **rsi_band,
                 }
-                try:
-                    results.append(run_backtest(df, params, deps))
-                except Exception as exc:
-                    results.append({"error": str(exc), "params": params})
+                params_list.append(params)
 
     for breakout_window in [24, 48, 96]:
         for volume_mult in [1.0, 1.25]:
@@ -907,10 +914,7 @@ def grid_search(df, deps: dict):
                     "sl_pct": sl_pct,
                     "tp_pct": tp_pct,
                 }
-                try:
-                    results.append(run_backtest(df, params, deps))
-                except Exception as exc:
-                    results.append({"error": str(exc), "params": params})
+                params_list.append(params)
 
     for bb_window in [20, 40]:
         for rsi_oversold in [28, 34]:
@@ -925,10 +929,21 @@ def grid_search(df, deps: dict):
                     "sl_pct": sl_pct,
                     "tp_pct": tp_pct,
                 }
-                try:
-                    results.append(run_backtest(df, params, deps))
-                except Exception as exc:
-                    results.append({"error": str(exc), "params": params})
+                params_list.append(params)
+
+    return params_list
+
+
+def grid_search(df, deps: dict):
+    results = []
+    for params in build_grid_params():
+        try:
+            results.append(run_backtest(df, params, deps))
+        except Exception as exc:
+            results.append({
+                "error": str(exc),
+                "params": params,
+            })
 
     n_total = len(results)
     results = [item for item in results if "error" not in item]
@@ -948,6 +963,193 @@ def grid_search(df, deps: dict):
         item.setdefault('oos_status', None)
         item.setdefault('oos_reasons', [])
     return results
+
+
+def _pbo_none(status: str, reasons: list[str], n_blocks: int, n_trials: int = 0, n_combinations: int = 0) -> dict:
+    return {
+        "pbo": None,
+        "perf_degradation": None,
+        "prob_loss": None,
+        "dominance_first_order": None,
+        "pbo_n_blocks": n_blocks,
+        "pbo_n_combinations": n_combinations,
+        "pbo_n_trials": n_trials,
+        "pbo_status": status,
+        "pbo_reasons": reasons,
+    }
+
+
+def _safe_sr(values) -> float:
+    if _np is None:
+        return 0.0
+    arr = _np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return 0.0
+    mean = float(_np.mean(arr))
+    std = float(_np.std(arr, ddof=1)) if arr.size >= 2 else 0.0
+    if not math.isfinite(mean) or not math.isfinite(std) or std <= 0.0:
+        return 0.0
+    sr = mean / std
+    return sr if math.isfinite(sr) else 0.0
+
+
+def _rank_high_is_better(values, selected_index: int) -> float:
+    selected = float(values[selected_index])
+    less = sum(1 for value in values if float(value) < selected)
+    equal = sum(1 for value in values if float(value) == selected)
+    return less + (equal + 1.0) / 2.0
+
+
+def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: int) -> dict:
+    """CSCV/PBO 핵심 계산. 행=시점, 열=trial."""
+    if _np is None:
+        return _pbo_none("dependency_missing", ["numpy_missing"], n_blocks)
+    try:
+        matrix = _np.asarray(returns_matrix, dtype=float)
+    except Exception as exc:
+        return _pbo_none("error", [f"matrix_parse_error({exc})"], n_blocks)
+
+    if matrix.ndim != 2:
+        return _pbo_none("insufficient", [f"invalid_matrix_shape({matrix.shape})"], n_blocks)
+
+    rows, trials = matrix.shape
+    if trials < min_trials or rows < n_blocks:
+        return _pbo_none(
+            "insufficient",
+            [f"trials={trials},bars={rows},min_trials={min_trials},n_blocks={n_blocks}"],
+            n_blocks,
+            trials,
+        )
+
+    block_len = rows // n_blocks
+    if block_len <= 0:
+        return _pbo_none("insufficient", [f"block_len={block_len},bars={rows},n_blocks={n_blocks}"], n_blocks, trials)
+
+    usable_rows = block_len * n_blocks
+    matrix = matrix[:usable_rows, :]
+    blocks = [matrix[i * block_len:(i + 1) * block_len, :] for i in range(n_blocks)]
+    block_sums = _np.asarray([_np.sum(block, axis=0) for block in blocks], dtype=float)
+    block_sumsq = _np.asarray([_np.sum(block * block, axis=0) for block in blocks], dtype=float)
+    combos = list(itertools.combinations(range(n_blocks), n_blocks // 2))
+    if not combos:
+        return _pbo_none("insufficient", [f"combinations=0,n_blocks={n_blocks}"], n_blocks, trials)
+
+    lambdas: list[float] = []
+    selected_is_sr: list[float] = []
+    selected_oos_sr: list[float] = []
+    oos_mean_sr_by_combo: list[float] = []
+    eps = float_env("LUNA_PBO_RANK_EPSILON", 1e-6)
+
+    def sr_from_block_indices(indices) -> "_np.ndarray":
+        count = block_len * len(indices)
+        if count < 2:
+            return _np.zeros(trials, dtype=float)
+        sums = _np.sum(block_sums[list(indices)], axis=0)
+        sumsq = _np.sum(block_sumsq[list(indices)], axis=0)
+        means = sums / count
+        variances = (sumsq - (sums * sums) / count) / (count - 1)
+        variances = _np.where(_np.isfinite(variances) & (variances > 0.0), variances, _np.nan)
+        stds = _np.sqrt(variances)
+        sr = _np.divide(means, stds, out=_np.zeros_like(means, dtype=float), where=_np.isfinite(stds) & (stds > 0.0))
+        return _np.where(_np.isfinite(sr), sr, 0.0)
+
+    for combo in combos:
+        is_set = set(combo)
+        is_indices = [index for index in range(n_blocks) if index in is_set]
+        oos_indices = [index for index in range(n_blocks) if index not in is_set]
+        if not is_indices or not oos_indices:
+            continue
+        is_sr_arr = sr_from_block_indices(is_indices)
+        oos_sr_arr = sr_from_block_indices(oos_indices)
+        oos_sr = [float(value) for value in oos_sr_arr.tolist()]
+        selected = int(_np.argmax(is_sr_arr))
+        rank = _rank_high_is_better(oos_sr, selected)
+        omega = clamp(rank / (trials + 1.0), eps, 1.0 - eps)
+        lambdas.append(math.log(omega / (1.0 - omega)))
+        selected_is_sr.append(float(is_sr_arr[selected]))
+        selected_oos_sr.append(float(oos_sr[selected]))
+        oos_mean_sr_by_combo.append(float(_np.mean(oos_sr_arr)))
+
+    combinations = len(lambdas)
+    if combinations == 0:
+        return _pbo_none("insufficient", [f"usable_combinations=0,n_blocks={n_blocks}"], n_blocks, trials)
+
+    pbo = sum(1 for value in lambdas if value <= 0.0) / combinations
+    prob_loss = sum(1 for value in selected_oos_sr if value < 0.0) / combinations
+    perf_degradation = None
+    if len(selected_is_sr) >= 2 and len(set(round(value, 12) for value in selected_is_sr)) >= 2:
+        try:
+            slope = float(_np.polyfit(selected_is_sr, selected_oos_sr, 1)[0])
+            perf_degradation = slope if math.isfinite(slope) else None
+        except Exception:
+            perf_degradation = None
+    dominance_first_order = bool(float(_np.mean(selected_oos_sr)) > float(_np.mean(oos_mean_sr_by_combo)))
+
+    return {
+        "pbo": float(pbo),
+        "perf_degradation": perf_degradation,
+        "prob_loss": float(prob_loss),
+        "dominance_first_order": dominance_first_order,
+        "pbo_n_blocks": n_blocks,
+        "pbo_n_combinations": combinations,
+        "pbo_n_trials": trials,
+        "pbo_status": "ok",
+        "pbo_reasons": [],
+    }
+
+
+def compute_pbo_cscv(df, deps: dict) -> dict:
+    """Combinatorial Symmetric Cross-Validation 기반 PBO 기록용 SHADOW 지표."""
+    n_blocks = int_env("LUNA_PBO_N_BLOCKS", 16)
+    min_trials = int_env("LUNA_PBO_MIN_TRIALS", 10)
+    if _np is None:
+        return _pbo_none("dependency_missing", ["numpy_missing"], n_blocks)
+
+    trial_rows = []
+    for params in build_grid_params():
+        try:
+            result = run_backtest(df, params, deps, collect_returns=True)
+        except Exception:
+            continue
+        returns_series = result.get("returns_series") or []
+        returns_index = result.get("returns_index") or []
+        if not returns_series or not returns_index or len(returns_series) != len(returns_index):
+            continue
+        trial_rows.append({
+            "params": params,
+            "returns_series": returns_series,
+            "returns_index": returns_index,
+        })
+
+    if len(trial_rows) < min_trials:
+        return _pbo_none(
+            "insufficient",
+            [f"trials={len(trial_rows)},bars=0,min_trials={min_trials},n_blocks={n_blocks}"],
+            n_blocks,
+            len(trial_rows),
+        )
+
+    timeline = sorted({int(ts) for row in trial_rows for ts in row["returns_index"]})
+    if len(timeline) < n_blocks:
+        return _pbo_none(
+            "insufficient",
+            [f"trials={len(trial_rows)},bars={len(timeline)},min_trials={min_trials},n_blocks={n_blocks}"],
+            n_blocks,
+            len(trial_rows),
+        )
+
+    rows = []
+    for ts in timeline:
+        values = []
+        for trial in trial_rows:
+            mapping = trial.get("_return_map")
+            if mapping is None:
+                mapping = {int(index): float(value) for index, value in zip(trial["returns_index"], trial["returns_series"])}
+                trial["_return_map"] = mapping
+            values.append(float(mapping.get(ts, 0.0)))
+        rows.append(values)
+
+    return compute_pbo_from_returns_matrix(rows, n_blocks=n_blocks, min_trials=min_trials)
 
 
 def sanitize_json_value(value):
@@ -1005,6 +1207,16 @@ def main():
                 result = [item for item in [wf_result, split_result] if item is not None]
             else:
                 result = grid_search(df, deps)[:10]
+            try:
+                pbo_result = compute_pbo_cscv(df, deps)
+            except Exception as pbo_exc:
+                pbo_result = _pbo_none(
+                    "error",
+                    [f"compute_pbo_cscv_error({pbo_exc})"],
+                    int_env("LUNA_PBO_N_BLOCKS", 16),
+                )
+            if isinstance(result, list):
+                result = [{**item, **pbo_result} for item in result]
         else:
             result = run_backtest(df, {"tp_pct": args.tp, "sl_pct": args.sl}, deps)
     except Exception as exc:

@@ -795,6 +795,32 @@ function evaluateQuality(rows: any[], market: string = 'all') {
       const vals = qualityRows.filter((r) => r?.periods_per_year != null).map((r) => safeNum(r?.periods_per_year, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)) : null;
     })(),
+    // Phase 1c: CPCV/PBO (SHADOW — healthy/gate_status 판정 미반영)
+    pbo: (() => {
+      const vals = qualityRows.filter((r) => r?.pbo != null).map((r) => safeNum(r?.pbo, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    perfDegradation: (() => {
+      const vals = qualityRows.filter((r) => r?.perf_degradation != null).map((r) => safeNum(r?.perf_degradation, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    probLoss: (() => {
+      const vals = qualityRows.filter((r) => r?.prob_loss != null).map((r) => safeNum(r?.prob_loss, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    dominanceFirstOrder: qualityRows.some((r) => r?.dominance_first_order === true)
+      ? true
+      : qualityRows.some((r) => r?.dominance_first_order === false)
+        ? false
+        : null,
+    pboNBlocks: (() => {
+      const vals = qualityRows.filter((r) => r?.pbo_n_blocks != null).map((r) => safeNum(r?.pbo_n_blocks, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Math.max(...vals.map((v) => Math.round(v))) : null;
+    })(),
+    pboNCombinations: (() => {
+      const vals = qualityRows.filter((r) => r?.pbo_n_combinations != null).map((r) => safeNum(r?.pbo_n_combinations, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? vals.reduce((s, v) => s + Math.round(v), 0) : null;
+    })(),
   };
 }
 
@@ -830,8 +856,9 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
        sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap, n_grid_trials, walk_forward_sharpe,
        n_obs_oos, total_trades_oos, oos_status, selection_method, fold_count,
        trial_sharpes, var_sharpe, oos_returns_skew, oos_returns_kurt, oos_bars,
-       dsr, psr, sr0, sr_oos_unann, periods_per_year)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+       dsr, psr, sr0, sr_oos_unann, periods_per_year,
+       pbo, perf_degradation, prob_loss, dominance_first_order, pbo_n_blocks, pbo_n_combinations)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
     ON CONFLICT (symbol, market) DO UPDATE SET
       fresh = EXCLUDED.fresh,
       healthy = EXCLUDED.healthy,
@@ -866,7 +893,13 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       psr = EXCLUDED.psr,
       sr0 = EXCLUDED.sr0,
       sr_oos_unann = EXCLUDED.sr_oos_unann,
-      periods_per_year = EXCLUDED.periods_per_year
+      periods_per_year = EXCLUDED.periods_per_year,
+      pbo = EXCLUDED.pbo,
+      perf_degradation = EXCLUDED.perf_degradation,
+      prob_loss = EXCLUDED.prob_loss,
+      dominance_first_order = EXCLUDED.dominance_first_order,
+      pbo_n_blocks = EXCLUDED.pbo_n_blocks,
+      pbo_n_combinations = EXCLUDED.pbo_n_combinations
   `, [
     symbol,
     market,
@@ -921,6 +954,12 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       sr0: payload.sr0 ?? null,
       srOosUnann: payload.srOosUnann ?? null,
       periodsPerYear: payload.periodsPerYear ?? null,
+      pbo: payload.pbo ?? null,
+      perfDegradation: payload.perfDegradation ?? null,
+      probLoss: payload.probLoss ?? null,
+      dominanceFirstOrder: payload.dominanceFirstOrder ?? null,
+      pboNBlocks: payload.pboNBlocks ?? null,
+      pboNCombinations: payload.pboNCombinations ?? null,
     }),
     payload.sharpeOos ?? null,
     payload.sharpeIs ?? null,
@@ -943,6 +982,12 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
     payload.sr0 ?? null,
     payload.srOosUnann ?? null,
     payload.periodsPerYear ?? null,
+    payload.pbo ?? null,
+    payload.perfDegradation ?? null,
+    payload.probLoss ?? null,
+    payload.dominanceFirstOrder ?? null,
+    payload.pboNBlocks ?? null,
+    payload.pboNCombinations ?? null,
   ]);
 }
 

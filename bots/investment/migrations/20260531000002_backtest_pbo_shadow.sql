@@ -1,0 +1,8 @@
+ALTER TABLE investment.candidate_backtest_status
+  ADD COLUMN IF NOT EXISTS pbo DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS perf_degradation DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS prob_loss DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS dominance_first_order BOOLEAN,
+  ADD COLUMN IF NOT EXISTS pbo_n_blocks INTEGER,
+  ADD COLUMN IF NOT EXISTS pbo_n_combinations INTEGER;
+
