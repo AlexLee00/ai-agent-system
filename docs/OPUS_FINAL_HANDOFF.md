@@ -1,4 +1,29 @@
-# 세션 인수인계 — 2026-05-30 (CODEX_LUNA_POSITIONS_STALE_RESOLUTION — false positive 해소 완료)
+# 세션 인수인계 — 2026-06-01 (CODEX_LUNA_PHASE2_STAGE2_1 — Secondary Model 학습 완료)
+
+## 완료 요약 ✅ — Secondary Model 학습 데이터셋 + Tier 1 학습 (SHADOW)
+
+### CODEX_LUNA_PHASE2_STAGE2_1_SECONDARY_MODEL_TRAIN_2026-06-01 결과
+- **meta-model-dataset.py**: trade_journal 필터(normal_exit, exclude_from_learning=false, pnl_net IS NOT NULL) + position_signal_history LEFT JOIN. 진입 시점 피처만(누수 금지). entry_time ASC 정렬 반환.
+- **meta-model-train.py**: LogisticRegression(class_weight=balanced, RANDOM_STATE). 시계열 split(TEST_RATIO). precision/recall/F1/AUC 평가. joblib 저장 + luna_meta_model_versions DB 기록(active=false).
+- **migration 20260601000001**: luna_meta_model_versions 테이블 (active=false 기본, 단계 2-2에서 교체)
+- **test_meta_model_dry.py**: 합성 200건(시드 42)으로 결정성·누수·AUC 재현 3종 검증 통과
+  - 데이터셋 결정성 ✓, 누수 없음(train max < test min) ✓, AUC=0.5025 동일 ✓
+- **SHADOW 불변**: LUNA_META_MODEL_ENABLED=false(기본) → 기존 동작 0 변경
+- **커밋**: `2258589f2`
+
+### 현재 상태
+- 학습 스크립트 준비 완료. 실제 실행은 OPS에서 LUNA_META_MODEL_ENABLED=true 설정 후.
+- OPS migration 적용 필요: `psql -d jay < bots/investment/migrations/20260601000001_luna_meta_model_versions.sql`
+- 모델 실행: `python3 bots/investment/scripts/meta-model-train.py` (LUNA_META_MODEL_ENABLED=true)
+
+### 다음 세션 (이번 범위 밖)
+1. **단계 2-2**: 자동 재학습 트리거 (LUNA_META_MODEL_RETRAIN_DELTA 증가 시) + 모델 버전 교체 로직 (active=true 갱신, 성능 회귀 방지)
+2. **단계 2-3**: 예측 SHADOW (meta_model_prob DB 기록) + 가드 관측 (차단 거래 pos_rate)
+3. crypto live(binance/upbit) 무중단 확인 ✓
+
+---
+
+# 이전 세션 — 2026-05-30 (CODEX_LUNA_POSITIONS_STALE_RESOLUTION — false positive 해소 완료)
 
 ## 완료 요약 ✅ — positions stale false positive 제거 + 고아 paper 아카이브
 
