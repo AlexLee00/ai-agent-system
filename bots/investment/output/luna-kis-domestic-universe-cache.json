@@ -1,8 +1,8 @@
 {
-  "cachedAtMs": 1780097403820,
+  "cachedAtMs": 1780183804161,
   "value": {
     "source": "krx_volume_top50_domestic",
-    "fetchedAt": "2026-05-29T23:30:03.784Z",
+    "fetchedAt": "2026-05-30T23:30:04.124Z",
     "market": "domestic",
     "limit": 50,
     "symbols": [
