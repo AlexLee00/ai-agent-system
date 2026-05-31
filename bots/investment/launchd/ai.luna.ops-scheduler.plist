@@ -112,6 +112,8 @@
     <string>true</string>
     <key>LUNA_INTELLIGENT_DISCOVERY_MODE</key>
     <string>autonomous</string>
+    <key>LUNA_DSR_GATE_ENABLED</key>
+    <string>true</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
