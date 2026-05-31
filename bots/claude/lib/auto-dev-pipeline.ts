@@ -39,6 +39,8 @@ const AUTO_DEV_JOB_LOCK_DIR = process.env.CLAUDE_AUTO_DEV_JOB_LOCK_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-job-locks');
 const AUTO_DEV_WORKTREE_DIR = process.env.CLAUDE_AUTO_DEV_WORKTREE_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-worktrees');
+const AUTO_DEV_TARGET_BRANCH = 'main';
+const AUTO_DEV_TARGET_REMOTE = String(process.env.CLAUDE_AUTO_DEV_TARGET_REMOTE || 'origin').trim() || 'origin';
 
 const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Read,Glob,Grep';
 const DEFAULT_HARD_TEST_COMMANDS = [
@@ -1203,6 +1205,43 @@ function isGitRepository(cwd = ROOT) {
   }
 }
 
+function getCurrentGitBranch(cwd = ROOT) {
+  try {
+    return runGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd, 10000);
+  } catch {
+    return '';
+  }
+}
+
+function ensureAutoDevTargetBranch() {
+  const currentBranch = getCurrentGitBranch(ROOT);
+  if (currentBranch === AUTO_DEV_TARGET_BRANCH) {
+    return {
+      ok: true,
+      branch: AUTO_DEV_TARGET_BRANCH,
+      switched: false,
+      previousBranch: currentBranch,
+    };
+  }
+
+  try {
+    runGit(['switch', AUTO_DEV_TARGET_BRANCH], ROOT, 60000);
+    return {
+      ok: true,
+      branch: AUTO_DEV_TARGET_BRANCH,
+      switched: true,
+      previousBranch: currentBranch || null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      branch: AUTO_DEV_TARGET_BRANCH,
+      previousBranch: currentBranch || null,
+      error: summarizeExecError(error, 1600),
+    };
+  }
+}
+
 function ensureExecutionContext(job, options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
   const dryRun = runtimeConfig.dryRun;
@@ -1220,6 +1259,19 @@ function ensureExecutionContext(job, options = {}) {
         baseSha: null,
         profile: runtimeConfig.profile,
       },
+    };
+  }
+
+  const targetBranchResult = ensureAutoDevTargetBranch();
+  if (!targetBranchResult.ok) {
+    return {
+      ok: false,
+      stage: 'blocked_target_branch_unavailable',
+      status: 'blocked',
+      reason: `auto_dev 기준 브랜치를 ${AUTO_DEV_TARGET_BRANCH}로 전환하지 못해 자동 구현을 차단합니다.`,
+      targetBranch: AUTO_DEV_TARGET_BRANCH,
+      previousBranch: targetBranchResult.previousBranch,
+      error: targetBranchResult.error,
     };
   }
 
@@ -1246,7 +1298,7 @@ function ensureExecutionContext(job, options = {}) {
     AUTO_DEV_WORKTREE_DIR,
     `${job.id}-${Date.now().toString(36)}`
   );
-  const baseSha = runGit(['rev-parse', 'HEAD'], ROOT, 10000);
+  const baseSha = runGit(['rev-parse', AUTO_DEV_TARGET_BRANCH], ROOT, 10000);
   runGit(['worktree', 'add', '--detach', worktreePath, baseSha], ROOT, 20000);
   ensureWorktreeDependencyLinks(worktreePath);
 
@@ -1263,6 +1315,9 @@ function ensureExecutionContext(job, options = {}) {
       baseDirtyBlocking: dirtyPartition.blocking,
       baseDirtyIgnored: dirtyPartition.ignored,
       profile: runtimeConfig.profile,
+      targetBranch: AUTO_DEV_TARGET_BRANCH,
+      targetRemote: AUTO_DEV_TARGET_REMOTE,
+      targetBranchSwitch: targetBranchResult,
     },
   };
 }
@@ -2283,6 +2338,19 @@ function integrateWorktreeChanges(job, executionContext, {
     };
   }
 
+  const targetBranchResult = ensureAutoDevTargetBranch();
+  if (!targetBranchResult.ok) {
+    return {
+      ...patchResult,
+      ok: false,
+      reason: 'target_branch_unavailable',
+      error: `auto_dev 통합 대상 브랜치를 ${AUTO_DEV_TARGET_BRANCH}로 전환하지 못했습니다: ${targetBranchResult.error}`,
+      integrationMode: runtimeConfig.integrationMode,
+      targetBranch: AUTO_DEV_TARGET_BRANCH,
+      previousBranch: targetBranchResult.previousBranch,
+    };
+  }
+
   const rootStatus = captureGitStatusShort(ROOT);
   const rootDirty = [...collectChangedPaths(rootStatus)];
   const rootDirtyConflicts = findDirtyPathConflicts(rootDirty, changedFiles);
@@ -2312,7 +2380,7 @@ function integrateWorktreeChanges(job, executionContext, {
     formatAutoDevCommitMessage(job),
   ], executionContext.cwd, 120000);
   const worktreeCommitSha = runGit(['rev-parse', 'HEAD'], executionContext.cwd, 10000);
-  const targetBranch = runGit(['rev-parse', '--abbrev-ref', 'HEAD'], ROOT, 10000);
+  const targetBranch = targetBranchResult.branch;
   let targetCommitSha = null;
   try {
     runGit(['cherry-pick', worktreeCommitSha], ROOT, 120000);
@@ -2352,8 +2420,52 @@ function integrateWorktreeChanges(job, executionContext, {
     worktreeCommitSha,
     targetCommitSha,
     targetBranch,
+    targetRemote: AUTO_DEV_TARGET_REMOTE,
+    targetBranchSwitch: targetBranchResult,
     targetRoot: ROOT,
   };
+}
+
+function pushIntegratedChanges(integration = null) {
+  if (!integration || integration.mode !== 'cherry_picked') {
+    return {
+      attempted: false,
+      pushed: false,
+      reason: 'push_not_required',
+    };
+  }
+
+  const targetBranch = toSafeString(integration.targetBranch || AUTO_DEV_TARGET_BRANCH);
+  const targetRemote = toSafeString(integration.targetRemote || AUTO_DEV_TARGET_REMOTE);
+  if (!targetBranch || !targetRemote) {
+    return {
+      attempted: true,
+      pushed: false,
+      reason: 'push_target_missing',
+      targetBranch,
+      targetRemote,
+    };
+  }
+
+  try {
+    runGit(['push', targetRemote, targetBranch], ROOT, 120000);
+    return {
+      attempted: true,
+      pushed: true,
+      targetBranch,
+      targetRemote,
+      ref: `${targetRemote}/${targetBranch}`,
+    };
+  } catch (error) {
+    return {
+      attempted: true,
+      pushed: false,
+      targetBranch,
+      targetRemote,
+      ref: `${targetRemote}/${targetBranch}`,
+      error: summarizeExecError(error, 1600),
+    };
+  }
 }
 
 function rollbackIntegratedChanges(integration = null) {
@@ -2804,6 +2916,7 @@ async function processAutoDevDocument(filePath, options = {}) {
   let cleanupResult = null;
   let integrationResult = null;
   let integrationRollback = null;
+  let targetPushResult = null;
   let archivedPath = null;
   let archiveManifestPath = null;
   let completionDocumentPath = null;
@@ -3062,6 +3175,43 @@ async function processAutoDevDocument(filePath, options = {}) {
       }
     }
 
+    targetPushResult = pushIntegratedChanges(integrationResult);
+    integrationResult = {
+      ...integrationResult,
+      targetPush: targetPushResult,
+      pushed: Boolean(targetPushResult?.pushed),
+    };
+    if (targetPushResult.attempted && !targetPushResult.pushed) {
+      const rollbackErrors = [];
+      integrationRollback = rollbackIntegratedChanges(integrationResult);
+      if (integrationRollback?.attempted && !integrationRollback?.rolledBack) {
+        rollbackErrors.push(`integration_rollback_failed:${integrationRollback.error || integrationRollback.reason || 'unknown'}`);
+      }
+      const manifestAbsolute = archiveManifestPath ? path.join(ROOT, archiveManifestPath) : null;
+      if (manifestAbsolute && fs.existsSync(manifestAbsolute)) {
+        try {
+          fs.unlinkSync(manifestAbsolute);
+          archiveManifestPath = null;
+        } catch (rollbackError) {
+          rollbackErrors.push(`manifest_rollback_failed:${rollbackError.message}`);
+        }
+      }
+      const archivedAbsolute = archivedPath ? path.join(ROOT, archivedPath) : null;
+      if (archivedAbsolute && fs.existsSync(archivedAbsolute) && !fs.existsSync(filePath)) {
+        try {
+          fs.renameSync(archivedAbsolute, filePath);
+          archivedPath = null;
+          archiveManifestPath = null;
+          completionDocumentPath = null;
+          implementationCompletedAt = null;
+        } catch (rollbackError) {
+          rollbackErrors.push(`archive_rollback_failed:${rollbackError.message}`);
+        }
+      }
+      const suffix = rollbackErrors.length > 0 ? ` (${rollbackErrors.join(', ')})` : '';
+      throw new Error(`target push failed: ${targetPushResult.error || targetPushResult.reason || 'unknown'}${suffix}`);
+    }
+
     cleanupResult = cleanupExecutionContext(executionContext, options);
     const finalJob = updateJobState(job, 'completed', {
       analysis,
@@ -3085,6 +3235,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       implementationStatus: implementationCompletedAt ? IMPLEMENTATION_COMPLETED_MARKER : null,
       implementationCompletedAt,
       implementationModelMeta: resolvedImplementationModelMeta,
+      targetPush: targetPushResult,
       profile: runtimeConfig.profile,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
@@ -3168,6 +3319,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       worktreeCleanup: cleanupResult,
       integration: integrationResult || null,
       integrationRollback: integrationRollback || null,
+      targetPush: targetPushResult || null,
       archivedPath: archivedPath || null,
       archiveManifestPath: archiveManifestPath || null,
       targetTeam: policy?.targetTeam || null,

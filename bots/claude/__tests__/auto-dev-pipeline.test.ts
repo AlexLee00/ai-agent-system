@@ -1893,6 +1893,7 @@ async function test_cherry_pick_integration_commits_and_applies_patch() {
   const doc = makeDoc(tmpRoot, 'CODEX_CHERRY_PICK.md', '# Cherry\npick');
   const gitCalls = [];
   let worktreeStatusCalls = 0;
+  let rootBranch = 'codex/feature-work';
 
   const { mocks } = makeMocks(tmpRoot, {
     child_process: {
@@ -1905,8 +1906,13 @@ async function test_cherry_pick_integration_commits_and_applies_patch() {
           const joined = args.join(' ');
           const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
           if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse main') return 'base-head\n';
           if (joined === 'rev-parse HEAD') return inWorktree ? 'worktree-commit\n' : 'base-head\n';
-          if (joined === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+          if (joined === 'rev-parse --abbrev-ref HEAD') return `${rootBranch}\n`;
+          if (joined === 'switch main') {
+            rootBranch = 'main';
+            return '';
+          }
           if (joined.startsWith('diff')) {
             return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
           }
@@ -1939,12 +1945,20 @@ async function test_cherry_pick_integration_commits_and_applies_patch() {
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.integration.mode, 'cherry_picked');
     assert.strictEqual(result.integration.targetBranch, 'main');
+    assert.strictEqual(result.integration.pushed, true);
+    assert.strictEqual(result.integration.targetPush?.ref, 'origin/main');
   }, testEnv(tmpRoot, {
     CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
   }));
 
   assert.ok(gitCalls.some(call => call.args.includes('commit')), 'worktree changes must be committed before cherry-pick');
+  assert.ok(gitCalls.some(call => call.args.join(' ') === 'switch main'), 'auto-dev must switch the root worktree to main before implementation');
+  assert.ok(
+    gitCalls.some(call => call.args[0] === 'worktree' && call.args[1] === 'add' && call.args[2] === '--detach' && call.args[4] === 'base-head'),
+    'detached implementation worktree must be based on main'
+  );
   assert.ok(gitCalls.some(call => call.args[0] === 'cherry-pick'), 'worktree commit must be cherry-picked into main');
+  assert.ok(gitCalls.some(call => call.args.join(' ') === 'push origin main'), 'successful cherry-pick must be pushed to origin/main');
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: cherry-pick integration commits and applies patch');
