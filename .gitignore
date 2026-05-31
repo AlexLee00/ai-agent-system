@@ -214,6 +214,9 @@ bots/investment/output/ops/market-regime-capture.json
 bots/investment/python/rl/data/
 bots/investment/python/rl/models/
 
+# Secondary Model 학습 결과 (joblib 파일 대용량)
+bots/investment/output/meta-model/*.joblib
+
 # ── 내부 문서 (공개 불필요!) ──
 docs/codex/*
 docs/auto_dev/*
