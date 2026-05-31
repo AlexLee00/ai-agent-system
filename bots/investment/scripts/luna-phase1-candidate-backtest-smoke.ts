@@ -117,10 +117,17 @@ const walkForwardOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candi
     sharpe_oos_deflated: 1.1,
     max_drawdown: 10,
     win_rate: 55,
+    dsr: 0.91,
+    psr: 0.97,
+    sr0: 0.022,
+    sr_oos_unann: 0.011,
+    periods_per_year: 105120,
   },
 ]), false);
 assert.equal(walkForwardOosQuality.gateStatus, 'pass', 'walk-forward OOS rows should stay eligible when fallback was not used');
 assert.equal(walkForwardOosQuality.healthy, true, 'walk-forward OOS rows should remain healthy when they pass quality gates');
+assert.equal(walkForwardOosQuality.dsr, 0.91, 'DSR shadow value should be carried without changing gate status');
+assert.equal(walkForwardOosQuality.periodsPerYear, 105120, 'DSR annualization factor should be carried for audit');
 
 const officialDomesticRows = candidateBacktestTest.buildOfficialDomesticOhlcvRows([
   { basDt: '20260520', mkp: '1000', hipr: '1030', lopr: '990', clpr: '1020', trqu: '10000' },
