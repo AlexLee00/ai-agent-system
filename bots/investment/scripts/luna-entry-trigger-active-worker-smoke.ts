@@ -6,7 +6,9 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import * as db from '../shared/db.ts';
 import { insertEntryTrigger } from '../shared/luna-discovery-entry-store.ts';
 import {
+  evaluateActiveEntryTriggerQualityGate,
   evaluateActiveEntryTriggersAgainstMarketEvents,
+  loadActiveEntryTriggerQuality,
   refreshEntryTriggersFromRecentBuySignals,
 } from '../shared/entry-trigger-engine.ts';
 import {
@@ -693,6 +695,60 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(qualityHardGateRow?.trigger_state, 'expired');
       assert.equal(qualityHardGateRow?.trigger_meta?.reason, 'active_entry_trigger_quality_terminal_blocked');
       assert.equal(qualityHardGateRow?.trigger_meta?.terminalBlock, true);
+
+      const dsrQualitySymbol = `DSRQUALITY${Date.now().toString(36).toUpperCase()}/USDT`;
+      const dsrQualityMap = await withEnv({ LUNA_DSR_GATE_ENABLED: 'true' }, () => loadActiveEntryTriggerQuality([dsrQualitySymbol], {
+        market: 'crypto',
+        queryFn: async (sql) => {
+          const statement = String(sql || '');
+          if (statement.includes('candidate_backtest_status')) {
+            return [{
+              symbol: dsrQualitySymbol,
+              market: 'crypto',
+              fresh: true,
+              healthy: true,
+              sharpe: 1.2,
+              max_drawdown: 10,
+              win_rate: 55,
+              last_backtest_at: new Date().toISOString(),
+              gate_status: 'pass',
+              would_block: false,
+              block_reasons: [],
+              updated_at: new Date().toISOString(),
+              total_trades_oos: 45,
+              dsr: 0.42,
+            }];
+          }
+          if (statement.includes('predictive_validation_log')) {
+            return [{
+              symbol: dsrQualitySymbol,
+              market: 'crypto',
+              decision: 'pass',
+              score: 0.82,
+              threshold: 0.55,
+              component_coverage: 1,
+              blocked_reason: null,
+              created_at: new Date().toISOString(),
+            }];
+          }
+          return [];
+        },
+      }));
+      const dsrQuality = dsrQualityMap.get(dsrQualitySymbol);
+      assert.equal(dsrQuality?.backtest?.healthy, false, 'enabled DSR gate should downgrade stored healthy rows at entry-trigger load time');
+      assert.equal(dsrQuality?.backtest?.wouldBlock, true, 'enabled DSR gate should make low-DSR stored rows would-block');
+      assert.ok(
+        dsrQuality?.backtest?.blockReasons?.some((reason) => String(reason).startsWith('candidate_backtest_dsr_low')),
+        'entry-trigger quality load should preserve explicit low-DSR reason',
+      );
+      const dsrQualityGate = evaluateActiveEntryTriggerQualityGate(
+        { symbol: dsrQualitySymbol },
+        dsrQuality,
+        { activeQualityGateEnabled: true, activeQualityGateMode: 'hard_gate' },
+      );
+      assert.equal(dsrQualityGate.ok, false, 'hard_gate should block entry triggers when stored DSR is below threshold');
+      assert.equal(dsrQualityGate.reason, 'backtest_unhealthy_or_would_block');
+      assert.equal(dsrQualityGate.backtest?.dsr, 0.42);
 
       const qualityPredictiveFallbackTrigger = await insertEntryTrigger({
         symbol: qualityPredictiveFallbackSymbol,

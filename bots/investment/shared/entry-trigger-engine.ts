@@ -18,6 +18,7 @@ import { isMaturePosition } from './luna-discovery-mature-policy.ts';
 import { enforceTpSlRequirement } from './tp-sl-enforcer.ts';
 import { evaluateTradingViewEntryGuard } from './tradingview-entry-guard.ts';
 import { query as dbQuery } from './db/core.ts';
+import { evaluateCandidateBacktestStatus } from './candidate-backtest-gate.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
@@ -130,6 +131,45 @@ function isTruthy(value) {
   return value === true || String(value).trim().toLowerCase() === 'true';
 }
 
+function backtestRowForGate(backtest = {}) {
+  if (!backtest) return null;
+  return {
+    ...backtest,
+    max_drawdown: backtest.max_drawdown ?? backtest.maxDrawdown,
+    win_rate: backtest.win_rate ?? backtest.winRate,
+    gate_status: backtest.gate_status ?? backtest.gateStatus,
+    would_block: backtest.would_block ?? backtest.wouldBlock,
+    block_reasons: backtest.block_reasons ?? backtest.blockReasons,
+    last_backtest_at: backtest.last_backtest_at ?? backtest.lastBacktestAt,
+    total_trades_oos: backtest.total_trades_oos ?? backtest.totalTradesOos,
+  };
+}
+
+function applyBacktestGateEvaluation(backtest = null, env = process.env) {
+  if (!backtest) return { backtest: null, evaluation: null };
+  const evaluation = evaluateCandidateBacktestStatus(backtestRowForGate(backtest), env);
+  const evaluatedWouldBlock = isTruthy(backtest.wouldBlock ?? backtest.would_block) || evaluation?.wouldBlock === true;
+  const evaluatedHealthy = evaluation?.wouldBlock === true ? false : backtest.healthy;
+  const currentGateStatus = String(backtest.gateStatus || backtest.gate_status || '').trim();
+  const evaluatedGateStatus = evaluation?.wouldBlock === true && !currentGateStatus.toLowerCase().startsWith('would_block')
+    ? 'would_block_unhealthy'
+    : currentGateStatus || null;
+  const blockReasons = [
+    ...parseJsonMaybe(backtest.blockReasons ?? backtest.block_reasons, []),
+    ...(Array.isArray(evaluation?.reasons) ? evaluation.reasons : []),
+  ];
+  return {
+    evaluation,
+    backtest: {
+      ...backtest,
+      healthy: evaluatedHealthy,
+      gateStatus: evaluatedGateStatus,
+      wouldBlock: evaluatedWouldBlock,
+      blockReasons: [...new Set(blockReasons.map((item) => String(item || '').trim()).filter(Boolean))],
+    },
+  };
+}
+
 function normalizeQualityMap(input = null) {
   if (!input) return new Map();
   if (input instanceof Map) {
@@ -152,7 +192,10 @@ export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) 
   const [backtestRows, predictiveRows] = await Promise.all([
     queryFn(
       `SELECT symbol, market, fresh, healthy, sharpe, max_drawdown, win_rate,
-              last_backtest_at, gate_status, would_block, block_reasons, updated_at
+              last_backtest_at, gate_status, would_block, block_reasons, updated_at,
+              sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap,
+              n_obs_oos, total_trades_oos, oos_status, selection_method,
+              dsr, psr, sr0, sr_oos_unann, periods_per_year
          FROM candidate_backtest_status
         WHERE symbol = ANY($1::text[])
           AND market = $2`,
@@ -174,22 +217,36 @@ export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) 
   for (const row of backtestRows || []) {
     const symbol = normalizeSymbol(row.symbol);
     if (!symbol) continue;
+    const { backtest } = applyBacktestGateEvaluation({
+      fresh: row.fresh,
+      healthy: row.healthy,
+      sharpe: row.sharpe == null ? null : Number(row.sharpe),
+      maxDrawdown: row.max_drawdown == null ? null : Number(row.max_drawdown),
+      winRate: row.win_rate == null ? null : Number(row.win_rate),
+      lastBacktestAt: row.last_backtest_at || null,
+      gateStatus: row.gate_status || null,
+      wouldBlock: row.would_block,
+      blockReasons: Array.isArray(row.block_reasons) ? row.block_reasons : parseJsonMaybe(row.block_reasons, []),
+      updatedAt: row.updated_at || null,
+      sharpeOos: row.sharpe_oos == null ? null : Number(row.sharpe_oos),
+      sharpeIs: row.sharpe_is == null ? null : Number(row.sharpe_is),
+      sharpeOosDeflated: row.sharpe_oos_deflated == null ? null : Number(row.sharpe_oos_deflated),
+      overfitGap: row.overfit_gap == null ? null : Number(row.overfit_gap),
+      nObsOos: row.n_obs_oos == null ? null : Number(row.n_obs_oos),
+      totalTradesOos: row.total_trades_oos == null ? null : Number(row.total_trades_oos),
+      oosStatus: row.oos_status || null,
+      selectionMethod: row.selection_method || null,
+      dsr: row.dsr == null ? null : Number(row.dsr),
+      psr: row.psr == null ? null : Number(row.psr),
+      sr0: row.sr0 == null ? null : Number(row.sr0),
+      srOosUnann: row.sr_oos_unann == null ? null : Number(row.sr_oos_unann),
+      periodsPerYear: row.periods_per_year == null ? null : Number(row.periods_per_year),
+    }, context.env || process.env);
     qualityBySymbol.set(symbol, {
       ...(qualityBySymbol.get(symbol) || {}),
       symbol,
       market,
-      backtest: {
-        fresh: row.fresh,
-        healthy: row.healthy,
-        sharpe: row.sharpe == null ? null : Number(row.sharpe),
-        maxDrawdown: row.max_drawdown == null ? null : Number(row.max_drawdown),
-        winRate: row.win_rate == null ? null : Number(row.win_rate),
-        lastBacktestAt: row.last_backtest_at || null,
-        gateStatus: row.gate_status || null,
-        wouldBlock: row.would_block,
-        blockReasons: Array.isArray(row.block_reasons) ? row.block_reasons : parseJsonMaybe(row.block_reasons, []),
-        updatedAt: row.updated_at || null,
-      },
+      backtest,
     });
   }
   for (const row of predictiveRows || []) {
@@ -234,6 +291,7 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
   const reasons = [];
   const backtest = quality?.backtest || null;
   const predictive = quality?.predictive || null;
+  const evaluatedBacktest = backtest ? applyBacktestGateEvaluation(backtest, context.env || process.env).backtest : null;
   let backtestRawFresh = false;
   let backtestFresh = false;
   let backtestAgeHours = null;
@@ -242,23 +300,23 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     reasons.push('active_quality_evidence_missing');
   }
 
-  if (!backtest) {
+  if (!evaluatedBacktest) {
     reasons.push('backtest_missing_or_stale');
   } else {
-    const gateStatus = String(backtest.gateStatus || backtest.gate_status || '').trim().toLowerCase();
-    const lastBacktestAt = backtest.lastBacktestAt || backtest.last_backtest_at || null;
+    const gateStatus = String(evaluatedBacktest.gateStatus || evaluatedBacktest.gate_status || '').trim().toLowerCase();
+    const lastBacktestAt = evaluatedBacktest.lastBacktestAt || evaluatedBacktest.last_backtest_at || null;
     const ageHours = lastBacktestAt ? (nowMs - new Date(lastBacktestAt).getTime()) / 3600000 : null;
-    backtestRawFresh = backtest.fresh === true;
+    backtestRawFresh = evaluatedBacktest.fresh === true;
     backtestAgeHours = Number.isFinite(ageHours) ? Number(ageHours.toFixed(2)) : null;
     backtestFresh = backtestRawFresh
       && Boolean(lastBacktestAt)
       && !(Number.isFinite(ageHours) && ageHours > maxBacktestAgeHours);
-    if (backtest.fresh !== true || !lastBacktestAt || (Number.isFinite(ageHours) && ageHours > maxBacktestAgeHours)) {
+    if (evaluatedBacktest.fresh !== true || !lastBacktestAt || (Number.isFinite(ageHours) && ageHours > maxBacktestAgeHours)) {
       reasons.push('backtest_missing_or_stale');
     }
     if (
-      backtest.healthy !== true
-      || isTruthy(backtest.wouldBlock ?? backtest.would_block)
+      evaluatedBacktest.healthy !== true
+      || isTruthy(evaluatedBacktest.wouldBlock ?? evaluatedBacktest.would_block)
       || gateStatus.startsWith('would_block')
     ) {
       reasons.push('backtest_unhealthy_or_would_block');
@@ -290,17 +348,20 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     symbol: normalizeSymbol(trigger.symbol || quality?.symbol || ''),
     minPredictiveScore,
     maxBacktestAgeHours,
-    backtest: backtest ? {
+    backtest: evaluatedBacktest ? {
       fresh: backtestFresh,
       rawFresh: backtestRawFresh,
-      healthy: backtest.healthy === true,
-      gateStatus: backtest.gateStatus || backtest.gate_status || null,
-      wouldBlock: isTruthy(backtest.wouldBlock ?? backtest.would_block),
-      sharpe: backtest.sharpe ?? null,
-      maxDrawdown: backtest.maxDrawdown ?? backtest.max_drawdown ?? null,
-      winRate: backtest.winRate ?? backtest.win_rate ?? null,
-      lastBacktestAt: backtest.lastBacktestAt || backtest.last_backtest_at || null,
+      healthy: evaluatedBacktest.healthy === true,
+      gateStatus: evaluatedBacktest.gateStatus || evaluatedBacktest.gate_status || null,
+      wouldBlock: isTruthy(evaluatedBacktest.wouldBlock ?? evaluatedBacktest.would_block),
+      sharpe: evaluatedBacktest.sharpe ?? null,
+      maxDrawdown: evaluatedBacktest.maxDrawdown ?? evaluatedBacktest.max_drawdown ?? null,
+      winRate: evaluatedBacktest.winRate ?? evaluatedBacktest.win_rate ?? null,
+      lastBacktestAt: evaluatedBacktest.lastBacktestAt || evaluatedBacktest.last_backtest_at || null,
       ageHours: backtestAgeHours,
+      blockReasons: evaluatedBacktest.blockReasons || evaluatedBacktest.block_reasons || [],
+      dsr: evaluatedBacktest.dsr ?? null,
+      totalTradesOos: evaluatedBacktest.totalTradesOos ?? evaluatedBacktest.total_trades_oos ?? null,
     } : null,
     predictive: predictive ? {
       decision: predictive.decision || null,
