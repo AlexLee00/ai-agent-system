@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
-import { runVectorBtGrid } from '../shared/vectorbt-runner.ts';
+import { runVectorBtGrid, runVectorBtPbo } from '../shared/vectorbt-runner.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureCandidateBacktestSchema, evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
@@ -23,6 +23,8 @@ const OHLCV_FALLBACK_ENABLED = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_ENABLED 
 const VECTORBT_ENABLED = process.env.LUNA_BACKTEST_VECTORBT_ENABLED !== 'false';
 const VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
 const OHLCV_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_BACKTEST_OHLCV_TIMEOUT_MS || 20_000));
+const LUNA_PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
+const LUNA_PBO_ENABLED = process.env.LUNA_PBO_ENABLED !== 'false';
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
 
 const GATE = {
@@ -1102,6 +1104,8 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
         periodErrors[String(days)] = rows?.message || rows?.error || 'vectorbt_no_rows';
         rows = [];
       }
+      // PBO 자격: vectorbt grid가 usable trades를 반환한 경우만 (fallback 이전 판정)
+      const pboEligibleThisPeriod = !fixture && VECTORBT_ENABLED && rowsHaveUsableTrades(rows);
       if (!fixture && !rowsHaveUsableTrades(rows)) {
         const fallbackRemainingMs = deadlineAt == null ? null : deadlineAt - Date.now();
         if (fallbackRemainingMs != null && fallbackRemainingMs <= OHLCV_TIMEOUT_MS + 1_000) {
@@ -1124,6 +1128,21 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
         if (fallbackRemainingMs != null && Date.now() >= deadlineAt - 1_000 && !rowsHaveUsableTrades(rows)) {
           budgetPartial = true;
           break;
+        }
+      }
+      // PBO 분리 산출: usable trades 통과 + PBO 활성 시만 호출 (fallback 경로 제외)
+      if (pboEligibleThisPeriod && LUNA_PBO_ENABLED && Array.isArray(rows)) {
+        const pboRaw = runVectorBtPbo(symbol, days, { timeoutMs: LUNA_PBO_TIMEOUT_MS });
+        if (Array.isArray(pboRaw) && pboRaw.length > 0) {
+          const src = pboRaw[0];
+          const pboFields: any = {};
+          const PBO_KEYS = ['pbo', 'perf_degradation', 'prob_loss', 'dominance_first_order', 'pbo_n_blocks', 'pbo_n_combinations', 'pbo_n_trials', 'pbo_status', 'pbo_reasons'];
+          for (const key of PBO_KEYS) {
+            if (key in src) pboFields[key] = src[key];
+          }
+          if (Object.keys(pboFields).length > 0) {
+            rows = rows.map((row: any) => ({ ...row, ...pboFields }));
+          }
         }
       }
       if (Array.isArray(rows)) {

@@ -8,6 +8,7 @@ const SHARED_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_DIR = path.resolve(SHARED_DIR, '..', 'scripts');
 const VECTORBT_SCRIPT = path.join(SCRIPT_DIR, 'backtest-vectorbt.py');
 const DEFAULT_VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
+const PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
 
 function runVectorBtCommand(args = [], options = {}) {
   const timeoutMs = Math.max(5_000, Number(options.timeoutMs || DEFAULT_VECTORBT_TIMEOUT_MS));
@@ -59,6 +60,11 @@ export function runVectorBtBacktest(symbol, days, { tpPct, slPct, timeoutMs } = 
 
 export function runVectorBtGrid(symbol, days, options = {}) {
   return runVectorBtCommand(['--symbol', symbol, '--days', String(days), '--grid'], options);
+}
+
+export function runVectorBtPbo(symbol, days, options = {}) {
+  const opts = { timeoutMs: PBO_TIMEOUT_MS, ...options };
+  return runVectorBtCommand(['--symbol', symbol, '--days', String(days), '--grid', '--pbo'], opts);
 }
 
 export function getVectorBtScriptPath() {

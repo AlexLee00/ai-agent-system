@@ -1182,6 +1182,7 @@ def main():
     parser.add_argument("--symbol", default="BTC/USDT")
     parser.add_argument("--days", type=int, default=90)
     parser.add_argument("--grid", action="store_true")
+    parser.add_argument("--pbo", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--tp", type=float, default=0.06)
     parser.add_argument("--sl", type=float, default=0.03)
@@ -1207,16 +1208,17 @@ def main():
                 result = [item for item in [wf_result, split_result] if item is not None]
             else:
                 result = grid_search(df, deps)[:10]
-            try:
-                pbo_result = compute_pbo_cscv(df, deps)
-            except Exception as pbo_exc:
-                pbo_result = _pbo_none(
-                    "error",
-                    [f"compute_pbo_cscv_error({pbo_exc})"],
-                    int_env("LUNA_PBO_N_BLOCKS", 16),
-                )
-            if isinstance(result, list):
-                result = [{**item, **pbo_result} for item in result]
+            if args.pbo:
+                try:
+                    pbo_result = compute_pbo_cscv(df, deps)
+                except Exception as pbo_exc:
+                    pbo_result = _pbo_none(
+                        "error",
+                        [f"compute_pbo_cscv_error({pbo_exc})"],
+                        int_env("LUNA_PBO_N_BLOCKS", 16),
+                    )
+                if isinstance(result, list):
+                    result = [{**item, **pbo_result} for item in result]
         else:
             result = run_backtest(df, {"tp_pct": args.tp, "sl_pct": args.sl}, deps)
     except Exception as exc:
