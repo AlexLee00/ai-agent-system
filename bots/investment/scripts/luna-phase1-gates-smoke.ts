@@ -70,6 +70,40 @@ assert.equal(drawdownEnforce.wouldBlock, true);
 assert.equal(drawdownEnforce.blocked, true);
 assert.equal(drawdownEnforce.reason, 'candidate_backtest_drawdown_high');
 
+const dsrGateOff = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, dsr: 0.42, total_trades_oos: 45, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow' },
+);
+assert.equal(dsrGateOff.wouldBlock, false, 'DSR gate must be disabled by default');
+
+const dsrGateLow = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, dsr: 0.42, total_trades_oos: 45, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_DSR_GATE_ENABLED: 'true' },
+);
+assert.equal(dsrGateLow.wouldBlock, true);
+assert.equal(dsrGateLow.reason, 'candidate_backtest_dsr_low');
+assert.ok(dsrGateLow.reasons.some((reason) => reason.startsWith('candidate_backtest_dsr_low')));
+
+const dsrGateBlankEnv = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, dsr: 0.42, total_trades_oos: 45, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_DSR_GATE_ENABLED: 'true', LUNA_DSR_MIN: '', LUNA_DSR_MIN_TRADES: '' },
+);
+assert.equal(dsrGateBlankEnv.wouldBlock, true);
+assert.equal(dsrGateBlankEnv.reason, 'candidate_backtest_dsr_low');
+
+const dsrGateSmallSample = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, dsr: 0.95, total_trades_oos: 15, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_DSR_GATE_ENABLED: 'true' },
+);
+assert.equal(dsrGateSmallSample.wouldBlock, true);
+assert.equal(dsrGateSmallSample.reason, 'candidate_backtest_insufficient_trades');
+
+const dsrNullUnaffected = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, dsr: null, total_trades_oos: 15, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_DSR_GATE_ENABLED: 'true' },
+);
+assert.equal(dsrNullUnaffected.wouldBlock, false, 'DSR null must not block crypto/top30 candidates');
+
 const prevMode = process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE;
 process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE = 'shadow';
 const shadowDeps = baseDeps();
@@ -109,6 +143,11 @@ const payload = {
   smoke: 'luna-phase1-gates',
   staleShadow,
   staleEnforce,
+  dsrGateOff,
+  dsrGateLow,
+  dsrGateBlankEnv,
+  dsrGateSmallSample,
+  dsrNullUnaffected,
   enforceCode: enforceDeps.captured[0].payload.code,
   predictive: {
     shadowDecision: shadowPredictive.decision,

@@ -96,6 +96,24 @@ assert.equal(fallbackNoOosQuality.healthy, false, 'OOS-less fallback rows must n
 assert.equal(fallbackNoOosQuality.wouldBlock, true, 'OOS-less fallback rows must would-block');
 assert.equal(fallbackNoOosQuality.gateStatus, 'would_block_no_oos', 'OOS-less fallback rows should have an explicit no-OOS gate status');
 assert.ok(fallbackNoOosQuality.reasons.includes('fallback_no_oos_validation'), 'OOS-less fallback block reason should be explicit');
+
+function withEnv(updates, fn) {
+  const previous = {};
+  for (const [key, value] of Object.entries(updates)) {
+    previous[key] = process.env[key];
+    if (value == null) delete process.env[key];
+    else process.env[key] = String(value);
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 const legacyNoOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candidateBacktestTest.evaluateQuality([
   { status: 'ok', walk_forward_days: 365, total_trades: 30, sharpe_ratio: 1.2, max_drawdown: 10, win_rate: 55 },
 ]), false, { enforceAnyNoOos: true });
@@ -128,6 +146,46 @@ assert.equal(walkForwardOosQuality.gateStatus, 'pass', 'walk-forward OOS rows sh
 assert.equal(walkForwardOosQuality.healthy, true, 'walk-forward OOS rows should remain healthy when they pass quality gates');
 assert.equal(walkForwardOosQuality.dsr, 0.91, 'DSR shadow value should be carried without changing gate status');
 assert.equal(walkForwardOosQuality.periodsPerYear, 105120, 'DSR annualization factor should be carried for audit');
+
+const dsrLowRows = [{
+  status: 'ok',
+  selection_method: 'walk_forward',
+  oos_status: 'ok',
+  walk_forward_days: 365,
+  total_trades: 45,
+  total_trades_oos: 45,
+  n_obs_oos: 109,
+  sharpe_ratio: 1.3,
+  sharpe_oos: 1.2,
+  sharpe_oos_deflated: 1.1,
+  max_drawdown: 10,
+  win_rate: 55,
+  dsr: 0.42,
+}];
+const dsrGateOffQuality = withEnv({ LUNA_DSR_GATE_ENABLED: null }, () => candidateBacktestTest.evaluateQuality(dsrLowRows));
+assert.equal(dsrGateOffQuality.gateStatus, 'pass', 'DSR gate must be inert by default');
+const dsrLowBlockedQuality = withEnv({ LUNA_DSR_GATE_ENABLED: 'true' }, () => candidateBacktestTest.evaluateQuality(dsrLowRows));
+assert.equal(dsrLowBlockedQuality.gateStatus, 'would_block_unhealthy', 'enabled DSR gate should block low DSR candidates');
+assert.ok(dsrLowBlockedQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_dsr_low')), 'low DSR block reason should be explicit');
+const dsrBlankEnvQuality = withEnv({
+  LUNA_DSR_GATE_ENABLED: 'true',
+  LUNA_DSR_MIN: '',
+  LUNA_DSR_MIN_TRADES: '',
+}, () => candidateBacktestTest.evaluateQuality(dsrLowRows));
+assert.equal(dsrBlankEnvQuality.gateStatus, 'would_block_unhealthy', 'blank DSR threshold envs should fall back to safe defaults');
+assert.ok(dsrBlankEnvQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_dsr_low')), 'blank DSR threshold envs must not weaken the DSR gate');
+const dsrSmallSampleBlockedQuality = withEnv({ LUNA_DSR_GATE_ENABLED: 'true' }, () => candidateBacktestTest.evaluateQuality([{
+  ...dsrLowRows[0],
+  total_trades_oos: 15,
+  dsr: 0.95,
+}]));
+assert.equal(dsrSmallSampleBlockedQuality.gateStatus, 'would_block_unhealthy', 'enabled DSR gate should block small OOS trade samples');
+assert.ok(dsrSmallSampleBlockedQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_insufficient_trades')), 'small OOS sample block reason should be explicit');
+const dsrNullQuality = withEnv({ LUNA_DSR_GATE_ENABLED: 'true' }, () => candidateBacktestTest.evaluateQuality([{
+  ...dsrLowRows[0],
+  dsr: null,
+}]));
+assert.equal(dsrNullQuality.gateStatus, 'pass', 'DSR null must not affect candidate quality when DSR gate is enabled');
 
 const officialDomesticRows = candidateBacktestTest.buildOfficialDomesticOhlcvRows([
   { basDt: '20260520', mkp: '1000', hipr: '1030', lopr: '990', clpr: '1020', trqu: '10000' },

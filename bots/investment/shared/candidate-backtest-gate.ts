@@ -3,6 +3,7 @@
 import { get, run } from './db/core.ts';
 
 const DISABLED = new Set(['0', 'false', 'off', 'disabled']);
+const ENABLED = new Set(['1', 'true', 'on', 'enabled', 'yes']);
 
 export function getCandidateBacktestGateMode(env = process.env) {
   const raw = String(env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE || 'shadow').trim().toLowerCase();
@@ -115,6 +116,12 @@ function finiteNumber(value, fallback = null) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function envNumber(value, fallback) {
+  if (value == null || String(value).trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function reliabilitySharpe(row = null) {
   return finiteNumber(row?.sharpe_oos_deflated ?? row?.sharpe_oos ?? row?.sharpe, null);
 }
@@ -149,9 +156,9 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const overfitFlagged = overfitGap != null && Number.isFinite(overfitGap) && overfitGap > maxOverfitGap;
 
   // Phase 1b-2: DSR 게이트 (환경변수 기본 OFF — 마스터 명시적 활성화 필요)
-  const dsrGateActive = !DISABLED.has(String(env.LUNA_DSR_GATE_ENABLED || 'false').trim().toLowerCase());
-  const dsrMin = Number(env.LUNA_DSR_MIN || 0.90);
-  const dsrMinTrades = Number(env.LUNA_DSR_MIN_TRADES || 30);
+  const dsrGateActive = ENABLED.has(String(env.LUNA_DSR_GATE_ENABLED || 'false').trim().toLowerCase());
+  const dsrMin = envNumber(env.LUNA_DSR_MIN, 0.90);
+  const dsrMinTrades = Math.max(1, Math.floor(envNumber(env.LUNA_DSR_MIN_TRADES, 30)));
   const dsr = row.dsr != null ? finiteNumber(row.dsr, null) : null;
   const totalTradesOos = row.total_trades_oos != null ? finiteNumber(row.total_trades_oos, null) : null;
   const insufficientTrades = totalTradesOos != null && totalTradesOos < dsrMinTrades;

@@ -23,6 +23,7 @@ const OHLCV_FALLBACK_ENABLED = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_ENABLED 
 const VECTORBT_ENABLED = process.env.LUNA_BACKTEST_VECTORBT_ENABLED !== 'false';
 const VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
 const OHLCV_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_BACKTEST_OHLCV_TIMEOUT_MS || 20_000));
+const TRUE_ENV_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
 
 const GATE = {
   MIN_SHARPE: 0,
@@ -271,6 +272,16 @@ function isRefreshDue(nextRefreshAt: Date | string | null): boolean {
 function safeNum(v: any, fallback = 0): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function envNumber(value: any, fallback: number): number {
+  if (value == null || String(value).trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function envFlagEnabled(value: any): boolean {
+  return TRUE_ENV_VALUES.has(String(value || 'false').trim().toLowerCase());
 }
 
 function parseJsonArray(value: any): any[] {
@@ -716,11 +727,10 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   const oosBars = oosBarsValues.length > 0 ? oosBarsValues.reduce((s, v) => s + v, 0) : null;
 
   // Phase 1b-2: DSR 게이트 (환경변수 기본 OFF — 마스터 명시적 활성화 필요)
-  const dsrGateEnabled = String(process.env.LUNA_DSR_GATE_ENABLED || 'false').trim().toLowerCase();
-  const dsrGateActive = !['0', 'false', 'off', 'disabled'].includes(dsrGateEnabled);
-  const dsrMin = Number(process.env.LUNA_DSR_MIN || 0.90);
-  const dsrMinTrades = Number(process.env.LUNA_DSR_MIN_TRADES || 30);
-  const dsrVals = oosRows.map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
+  const dsrGateActive = envFlagEnabled(process.env.LUNA_DSR_GATE_ENABLED);
+  const dsrMin = envNumber(process.env.LUNA_DSR_MIN, 0.90);
+  const dsrMinTrades = Math.max(1, Math.floor(envNumber(process.env.LUNA_DSR_MIN_TRADES, 30)));
+  const dsrVals = oosRows.filter((r) => r?.dsr != null).map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
   const avgDsr = dsrVals.length > 0 ? dsrVals.reduce((s, v) => s + v, 0) / dsrVals.length : null;
   const dsrInsufficientTrades = minTradesOos != null && minTradesOos < dsrMinTrades;
   const dsrWouldBlock = dsrGateActive && avgDsr != null && (dsrInsufficientTrades || avgDsr < dsrMin);
@@ -766,23 +776,23 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     oosBars: oosBars != null ? Math.round(oosBars) : null,
     // Phase 1b: 정통 DSR/PSR (SHADOW — 기존 판정 불변)
     dsr: (() => {
-      const vals = oosRows.map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
+      const vals = oosRows.filter((r) => r?.dsr != null).map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
     })(),
     psr: (() => {
-      const vals = oosRows.map((r) => safeNum(r?.psr, NaN)).filter(Number.isFinite);
+      const vals = oosRows.filter((r) => r?.psr != null).map((r) => safeNum(r?.psr, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
     })(),
     sr0: (() => {
-      const vals = oosRows.map((r) => safeNum(r?.sr0, NaN)).filter(Number.isFinite);
+      const vals = oosRows.filter((r) => r?.sr0 != null).map((r) => safeNum(r?.sr0, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
     })(),
     srOosUnann: (() => {
-      const vals = oosRows.map((r) => safeNum(r?.sr_oos_unann, NaN)).filter(Number.isFinite);
+      const vals = oosRows.filter((r) => r?.sr_oos_unann != null).map((r) => safeNum(r?.sr_oos_unann, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
     })(),
     periodsPerYear: (() => {
-      const vals = qualityRows.map((r) => safeNum(r?.periods_per_year, NaN)).filter(Number.isFinite);
+      const vals = qualityRows.filter((r) => r?.periods_per_year != null).map((r) => safeNum(r?.periods_per_year, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)) : null;
     })(),
   };
