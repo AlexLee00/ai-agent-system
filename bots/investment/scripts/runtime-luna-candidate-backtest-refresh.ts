@@ -683,6 +683,38 @@ function evaluateQuality(rows: any[], market: string = 'all') {
         : null;
   const mergedReasons = [...new Set(reasons)];
 
+  // Phase 1a: DSR 입력 집계
+  const trialSharpesAll = qualityRows
+    .flatMap((r) => (Array.isArray(r?.trial_sharpes) ? r.trial_sharpes : []))
+    .map((value) => (value == null ? NaN : Number(value)))
+    .filter(Number.isFinite);
+  const varSharpe = (() => {
+    if (trialSharpesAll.length >= 2) {
+      const n = trialSharpesAll.length;
+      const mu = trialSharpesAll.reduce((s, x) => s + Number(x), 0) / n;
+      const v = trialSharpesAll.reduce((s, x) => s + (Number(x) - mu) ** 2, 0) / (n - 1);
+      return Number.isFinite(v) ? v : null;
+    }
+    const vsRows = qualityRows.filter((r) => r?.var_sharpe != null);
+    if (vsRows.length > 0) {
+      const v = safeNum(vsRows[0].var_sharpe, NaN);
+      return Number.isFinite(v) ? v : null;
+    }
+    return null;
+  })();
+  const oosSkewRows = oosRows.filter((r) => r?.oos_returns_skew != null);
+  const oosKurtRows = oosRows.filter((r) => r?.oos_returns_kurt != null);
+  const avgOosSkew = oosSkewRows.length > 0
+    ? oosSkewRows.reduce((s, r) => s + safeNum(r.oos_returns_skew), 0) / oosSkewRows.length
+    : null;
+  const avgOosKurt = oosKurtRows.length > 0
+    ? oosKurtRows.reduce((s, r) => s + safeNum(r.oos_returns_kurt), 0) / oosKurtRows.length
+    : null;
+  const oosBarsValues = qualityRows
+    .map((r) => safeNum(r?.oos_bars ?? r?.n_obs_oos, NaN))
+    .filter(Number.isFinite);
+  const oosBars = oosBarsValues.length > 0 ? oosBarsValues.reduce((s, v) => s + v, 0) : null;
+
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),
@@ -709,6 +741,12 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     oosStatus,
     selectionMethod,
     foldCount: foldCount != null ? Math.round(foldCount) : null,
+    // Phase 1a: DSR 입력 데이터
+    trialSharpes: trialSharpesAll.length > 0 ? trialSharpesAll : null,
+    varSharpe: varSharpe != null ? Number(varSharpe.toFixed(6)) : null,
+    oosReturnsSkew: avgOosSkew != null ? Number(avgOosSkew.toFixed(6)) : null,
+    oosReturnsKurt: avgOosKurt != null ? Number(avgOosKurt.toFixed(6)) : null,
+    oosBars: oosBars != null ? Math.round(oosBars) : null,
   };
 }
 
@@ -742,8 +780,9 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
        last_backtest_at, next_refresh_at, gate_status, would_block, enforced,
        block_reasons, backtest_run_metadata, updated_at,
        sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap, n_grid_trials, walk_forward_sharpe,
-       n_obs_oos, total_trades_oos, oos_status, selection_method, fold_count)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+       n_obs_oos, total_trades_oos, oos_status, selection_method, fold_count,
+       trial_sharpes, var_sharpe, oos_returns_skew, oos_returns_kurt, oos_bars)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29)
     ON CONFLICT (symbol, market) DO UPDATE SET
       fresh = EXCLUDED.fresh,
       healthy = EXCLUDED.healthy,
@@ -768,7 +807,12 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       total_trades_oos = EXCLUDED.total_trades_oos,
       oos_status = EXCLUDED.oos_status,
       selection_method = EXCLUDED.selection_method,
-      fold_count = EXCLUDED.fold_count
+      fold_count = EXCLUDED.fold_count,
+      trial_sharpes = EXCLUDED.trial_sharpes,
+      var_sharpe = EXCLUDED.var_sharpe,
+      oos_returns_skew = EXCLUDED.oos_returns_skew,
+      oos_returns_kurt = EXCLUDED.oos_returns_kurt,
+      oos_bars = EXCLUDED.oos_bars
   `, [
     symbol,
     market,
@@ -813,6 +857,11 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       oosStatus: payload.oosStatus ?? null,
       selectionMethod: payload.selectionMethod ?? null,
       foldCount: payload.foldCount ?? null,
+      trialSharpes: payload.trialSharpes ?? null,
+      varSharpe: payload.varSharpe ?? null,
+      oosReturnsSkew: payload.oosReturnsSkew ?? null,
+      oosReturnsKurt: payload.oosReturnsKurt ?? null,
+      oosBars: payload.oosBars ?? null,
     }),
     payload.sharpeOos ?? null,
     payload.sharpeIs ?? null,
@@ -825,6 +874,11 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
     payload.oosStatus ?? null,
     payload.selectionMethod ?? null,
     payload.foldCount ?? null,
+    payload.trialSharpes != null ? JSON.stringify(payload.trialSharpes) : null,
+    payload.varSharpe ?? null,
+    payload.oosReturnsSkew ?? null,
+    payload.oosReturnsKurt ?? null,
+    payload.oosBars ?? null,
   ]);
 }
 

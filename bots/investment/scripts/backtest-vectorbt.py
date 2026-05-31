@@ -19,6 +19,13 @@ from datetime import datetime, timedelta, timezone
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
+try:
+    import numpy as _np
+    from scipy import stats as _scipy_stats
+except Exception:
+    _np = None
+    _scipy_stats = None
+
 
 def load_optional_deps():
     missing = []
@@ -273,6 +280,22 @@ def run_backtest(df, params: dict, deps: dict):
     )
 
     stats = pf.stats()
+
+    # OOS returns 분포 통계 — DSR Phase 1b 입력 (skew/kurt). fisher=False = Pearson 정의(정규=3)
+    try:
+        ret_arr = pf.returns().dropna().values
+        if _scipy_stats is not None and len(ret_arr) >= 4:
+            _sk = float(_scipy_stats.skew(ret_arr))
+            _kt = float(_scipy_stats.kurtosis(ret_arr, fisher=False))
+            oos_returns_skew = _sk if math.isfinite(_sk) else None
+            oos_returns_kurt = _kt if math.isfinite(_kt) else None
+        else:
+            oos_returns_skew = None
+            oos_returns_kurt = None
+    except Exception:
+        oos_returns_skew = None
+        oos_returns_kurt = None
+
     result = {
         "total_return": float(stats.get("Total Return [%]", 0) or 0),
         "sharpe_ratio": float(stats.get("Sharpe Ratio", 0) or 0),
@@ -281,6 +304,8 @@ def run_backtest(df, params: dict, deps: dict):
         "total_trades": int(stats.get("Total Trades", 0) or 0),
         "profit_factor": float(stats.get("Profit Factor", 0) or 0),
         "params": {**params, "portfolio_freq": portfolio_freq},
+        "oos_returns_skew": oos_returns_skew,
+        "oos_returns_kurt": oos_returns_kurt,
     }
     result["robust_score"] = robust_rank_score(result)
     return result
@@ -401,13 +426,30 @@ def split_is_oos(df, oos_ratio: float = 0.3):
 
 
 def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_obs: int,
-                         method: str, extra: dict | None = None) -> dict:
+                         method: str, extra: dict | None = None,
+                         trial_sharpes: list | None = None) -> dict:
+    """IS 최적화 결과와 OOS 평가 결과를 병합하여 표준 dict를 반환한다.
+
+    trial_sharpes: grid_search의 전체 trial SR 목록 (var_sharpe 계산용, Phase 1b DSR 입력)
+    """
     sharpe_is = safe_float(best_is.get("sharpe_ratio"))
     total_trades_oos = int(safe_float(oos_result.get("total_trades")))
     max_dd_oos = abs(safe_float(oos_result.get("max_drawdown")))
     min_oos_trades = int_env("LUNA_BT_MIN_OOS_TRADES", 15)
     min_oos_bars = int_env("LUNA_BT_MIN_OOS_BARS", int_env("LUNA_BT_MIN_BARS", 60))
     raw_sharpe_oos = safe_float(oos_result.get("sharpe_ratio"))
+
+    # var_sharpe: trial SR 분산 (selection bias 측정, DSR Phase 1b 입력)
+    _ts = trial_sharpes or []
+    var_sharpe = (
+        float(_np.var(_ts, ddof=1))
+        if _np is not None and len(_ts) >= 2
+        else None
+    )
+
+    # OOS returns 분포 — run_backtest에서 이미 계산됨
+    oos_returns_skew = oos_result.get("oos_returns_skew")
+    oos_returns_kurt = oos_result.get("oos_returns_kurt")
 
     if total_trades_oos < min_oos_trades or n_obs < min_oos_bars:
         sharpe_oos = None
@@ -443,6 +485,12 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
         "gate_status": "unstable" if oos_reasons else "ok",
         "reasons": oos_reasons,
         "params": best_is.get("params", oos_result.get("params", {})),
+        # Phase 1a: DSR 입력 데이터 (Phase 1b에서 정통 DSR 계산에 사용)
+        "trial_sharpes": _ts,
+        "var_sharpe": var_sharpe,
+        "oos_returns_skew": oos_returns_skew,
+        "oos_returns_kurt": oos_returns_kurt,
+        "oos_bars": n_obs,  # T — OOS 관측 수 (n_obs_oos의 명시적 DSR alias)
     }
     if extra:
         payload.update(extra)
@@ -469,6 +517,9 @@ def select_on_is_evaluate_on_oos(df, deps: dict):
     except Exception:
         return None
 
+    # IS grid의 전체 trial SR 목록 (var_sharpe 계산용)
+    trial_sharpes = [r.get("sharpe_ratio", 0) for r in is_grid]
+
     return aggregate_oos_result(
         oos_result,
         best_is,
@@ -476,6 +527,7 @@ def select_on_is_evaluate_on_oos(df, deps: dict):
         len(oos_df),
         "is_oos_split",
         {"is_bars": len(is_df), "oos_bars": len(oos_df)},
+        trial_sharpes=trial_sharpes,
     )
 
 
@@ -523,6 +575,9 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
     # Phase 1-1: fold별 raw 수집 (거부 없이)
     fold_raw = []
     n_trials_max = 0
+    # 대표 trial SR 목록: 전체 fold의 valid grid trial SR을 fold 순으로 축적
+    # (var_sharpe = selection bias 측정용, DSR Phase 1b 입력)
+    all_trial_sharpes: list[float] = []
     for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
         train_df = df.iloc[train_start:train_end]
         test_df = df.iloc[train_end:test_end]
@@ -532,6 +587,8 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
         best_is = grid[0]
         n_trials_fold = best_is.get("n_grid_trials", len(grid))
         n_trials_max = max(n_trials_max, n_trials_fold)
+        # grid는 이미 error 제거 후 반환 — 전체 SR 수집 (var_sharpe 계산용)
+        all_trial_sharpes.extend(r.get("sharpe_ratio", 0) for r in grid)
         try:
             oos_raw = run_backtest(test_df, best_is["params"], deps)
         except Exception as exc:
@@ -551,6 +608,9 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
             "sharpe_is_fold": safe_float(best_is.get("sharpe_ratio")),
             "n_grid_trials_fold": n_trials_fold,
             "params": best_is.get("params", {}),
+            # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
+            "oos_returns_skew": oos_raw.get("oos_returns_skew"),
+            "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
         })
 
     usable = [f for f in fold_raw if "error" not in f]
@@ -599,6 +659,25 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
             sharpe_oos_deflated = clamp(sharpe_oos_deflated, -realistic_cap, realistic_cap)
         oos_status = "unstable" if oos_reasons else "ok"
 
+    # Phase 1a: DSR 입력 집계
+    # var_sharpe: 전체 fold grid trial SR의 표본 분산 (ddof=1, 불편 추정)
+    var_sharpe = (
+        float(_np.var(all_trial_sharpes, ddof=1))
+        if _np is not None and len(all_trial_sharpes) >= 2
+        else None
+    )
+    # OOS returns 분포: 거래수 가중 평균 (충분한 fold만 포함)
+    _skew_data = [(f["oos_returns_skew"], f["trades_fold"]) for f in usable if f.get("oos_returns_skew") is not None]
+    _kurt_data = [(f["oos_returns_kurt"], f["trades_fold"]) for f in usable if f.get("oos_returns_kurt") is not None]
+    pooled_oos_skew = (
+        sum(s * w for s, w in _skew_data) / max(1, sum(w for _, w in _skew_data))
+        if _skew_data else None
+    )
+    pooled_oos_kurt = (
+        sum(k * w for k, w in _kurt_data) / max(1, sum(w for _, w in _kurt_data))
+        if _kurt_data else None
+    )
+
     aggregate = {
         "status": oos_status,
         "selection_method": "walk_forward",
@@ -623,6 +702,12 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
         "oos_reasons": oos_reasons,
         "gate_status": "unstable" if oos_reasons else "ok",
         "reasons": oos_reasons,
+        # Phase 1a: DSR 입력 데이터 (Phase 1b에서 정통 DSR 계산에 사용)
+        "trial_sharpes": all_trial_sharpes,
+        "var_sharpe": var_sharpe,
+        "oos_returns_skew": pooled_oos_skew,
+        "oos_returns_kurt": pooled_oos_kurt,
+        "oos_bars": pooled_bars,  # T — n_obs_oos의 명시적 DSR alias
     }
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate
