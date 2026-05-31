@@ -9,6 +9,7 @@ const SCRIPT_DIR = path.resolve(SHARED_DIR, '..', 'scripts');
 const VECTORBT_SCRIPT = path.join(SCRIPT_DIR, 'backtest-vectorbt.py');
 const DEFAULT_VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
 const PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
+const META_LABEL_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_META_LABEL_TIMEOUT_MS || 60_000));
 
 function runVectorBtCommand(args = [], options = {}) {
   const timeoutMs = Math.max(5_000, Number(options.timeoutMs || DEFAULT_VECTORBT_TIMEOUT_MS));
@@ -65,6 +66,11 @@ export function runVectorBtGrid(symbol, days, options = {}) {
 export function runVectorBtPbo(symbol, days, options = {}) {
   const opts = { timeoutMs: PBO_TIMEOUT_MS, ...options };
   return runVectorBtCommand(['--symbol', symbol, '--days', String(days), '--grid', '--pbo'], opts);
+}
+
+export function runVectorBtMetaLabels(symbol, days, options = {}) {
+  const opts = { timeoutMs: META_LABEL_TIMEOUT_MS, ...options };
+  return runVectorBtCommand(['--symbol', symbol, '--days', String(days), '--grid', '--meta-labels'], opts);
 }
 
 export function getVectorBtScriptPath() {

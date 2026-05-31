@@ -259,7 +259,7 @@ def infer_portfolio_freq(df) -> str:
     return "1d"
 
 
-def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False):
+def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, collect_meta_labels: bool = False):
     vbt = deps["vbt"]
     pd = deps["pd"]
     if vbt is None or pd is None:
@@ -328,6 +328,8 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False):
         except Exception:
             result["returns_series"] = []
             result["returns_index"] = []
+    if collect_meta_labels:
+        result.update(compute_meta_labels(pf, deps))
     result["robust_score"] = robust_rank_score(result)
     return result
 
@@ -1152,6 +1154,168 @@ def compute_pbo_cscv(df, deps: dict) -> dict:
     return compute_pbo_from_returns_matrix(rows, n_blocks=n_blocks, min_trials=min_trials)
 
 
+def _meta_label_none(method: str, reasons: list[str], n_trades: int = 0) -> dict:
+    return {
+        "meta_label_dist": None,
+        "meta_label_pos_rate": None,
+        "meta_label_n_trades": n_trades,
+        "meta_label_method": method,
+        "meta_label_status": "insufficient" if n_trades == 0 else "error",
+        "meta_label_reasons": reasons,
+    }
+
+
+def compute_meta_label_distribution_from_returns(returns, method: str | None = None, neutral_eps: float | None = None) -> dict:
+    """거래별 Return 부호 기반 triple-barrier meta-label 분포.
+
+    Stage 1은 방법 A만 지원한다: ret > eps = +1, ret < -eps = -1, 그 외 0.
+    """
+    label_method = str(method or os.environ.get("LUNA_META_LABEL_METHOD", "A")).strip().upper() or "A"
+    if label_method != "A":
+        return _meta_label_none(label_method, [f"unsupported_meta_label_method({label_method})"])
+
+    eps = neutral_eps if neutral_eps is not None else float_env("LUNA_META_LABEL_NEUTRAL_EPS", 0.0)
+    values = []
+    iterable = [] if returns is None else returns
+    for value in iterable:
+        try:
+            out = float(value)
+        except Exception:
+            continue
+        if math.isfinite(out):
+            values.append(out)
+
+    if not values:
+        return _meta_label_none(label_method, ["meta_label_no_trades"], 0)
+
+    pos = sum(1 for value in values if value > eps)
+    neg = sum(1 for value in values if value < -eps)
+    neutral = len(values) - pos - neg
+    total = len(values)
+    pos_rate = pos / total if total > 0 else None
+    dist = {
+        "pos": pos,
+        "neg": neg,
+        "neutral": neutral,
+        "total": total,
+        "pos_rate": pos_rate,
+    }
+    return {
+        "meta_label_dist": dist,
+        "meta_label_pos_rate": pos_rate,
+        "meta_label_n_trades": total,
+        "meta_label_method": label_method,
+        "meta_label_status": "ok",
+        "meta_label_reasons": [],
+    }
+
+
+def _extract_trade_returns(pf) -> list[float]:
+    candidates = []
+    try:
+        candidates.append(pf.trades.returns)
+    except Exception:
+        pass
+    try:
+        readable = pf.trades.records_readable
+        readable = readable() if callable(readable) else readable
+        for column in ["Return", "Return [%]", "return", "return_pct"]:
+            if hasattr(readable, "columns") and column in readable.columns:
+                candidates.append(readable[column])
+                break
+    except Exception:
+        pass
+
+    for raw in candidates:
+        try:
+            value = raw() if callable(raw) else raw
+            if hasattr(value, "dropna"):
+                value = value.dropna()
+            if hasattr(value, "to_numpy"):
+                values = value.to_numpy()
+            elif hasattr(value, "values"):
+                values = value.values
+            else:
+                values = value
+            output = []
+            for item in values:
+                try:
+                    number = float(item)
+                except Exception:
+                    continue
+                if math.isfinite(number):
+                    output.append(number)
+            if output:
+                return output
+        except Exception:
+            continue
+    return []
+
+
+def compute_meta_labels(pf, deps: dict) -> dict:
+    """vectorbt Portfolio trades Return 기반 meta-label 분포 산출."""
+    method = str(os.environ.get("LUNA_META_LABEL_METHOD", "A")).strip().upper() or "A"
+    try:
+        trade_returns = _extract_trade_returns(pf)
+        return compute_meta_label_distribution_from_returns(trade_returns, method=method)
+    except Exception as exc:
+        return _meta_label_none(method, [f"meta_label_error({exc})"])
+
+
+def _run_dry_test_meta_labels(as_json: bool = False) -> int:
+    """합성 거래 결과로 triple-barrier 라벨 산출 결정성 + ε 경계 정확성 검증."""
+    failures: list[str] = []
+
+    def check(case: str, got, expected):
+        if got != expected:
+            failures.append(f"{case}: got={got!r} expected={expected!r}")
+
+    # 기본 eps=0.0 분포
+    d = compute_meta_label_distribution_from_returns([0.05, -0.02, 0.001, 0.0, -0.05, 0.03], neutral_eps=0.0)
+    dist = d.get("meta_label_dist") or {}
+    check("eps0.pos", dist.get("pos"), 3)
+    check("eps0.neg", dist.get("neg"), 2)
+    check("eps0.neutral", dist.get("neutral"), 1)
+    check("eps0.total", dist.get("total"), 6)
+    check("eps0.status", d.get("meta_label_status"), "ok")
+
+    # ε=0.005 경계: 0.001·-0.001·0.0 전부 neutral
+    d2 = compute_meta_label_distribution_from_returns([0.001, -0.001, 0.0], neutral_eps=0.005)
+    dist2 = d2.get("meta_label_dist") or {}
+    check("eps5.pos", dist2.get("pos"), 0)
+    check("eps5.neg", dist2.get("neg"), 0)
+    check("eps5.neutral", dist2.get("neutral"), 3)
+
+    # ε=0.0 / pos_rate 결정성
+    d3 = compute_meta_label_distribution_from_returns([0.1, 0.2, -0.1], neutral_eps=0.0)
+    check("pos_rate", round(d3.get("meta_label_pos_rate", 0), 6), round(2 / 3, 6))
+
+    # 거래 없음 → None
+    d4 = compute_meta_label_distribution_from_returns([], neutral_eps=0.0)
+    check("empty.dist", d4.get("meta_label_dist"), None)
+
+    # 단일 극단값
+    d5 = compute_meta_label_distribution_from_returns([0.99], neutral_eps=0.0)
+    check("single.pos", (d5.get("meta_label_dist") or {}).get("pos"), 1)
+
+    n_tests = 11
+    if failures:
+        payload = {"dry_test_meta_labels": "fail", "failures": failures, "tests": n_tests}
+        if as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            for fail in failures:
+                print(f"  FAIL: {fail}")
+        return 1
+
+    payload = {"dry_test_meta_labels": "pass", "tests": n_tests}
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"[dry_test_meta_labels] PASS ({n_tests} tests)")
+    return 0
+
+
 def sanitize_json_value(value):
     if isinstance(value, dict):
         return {key: sanitize_json_value(item) for key, item in value.items()}
@@ -1183,10 +1347,15 @@ def main():
     parser.add_argument("--days", type=int, default=90)
     parser.add_argument("--grid", action="store_true")
     parser.add_argument("--pbo", action="store_true")
+    parser.add_argument("--meta-labels", action="store_true")
+    parser.add_argument("--dry-test-meta-labels", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--tp", type=float, default=0.06)
     parser.add_argument("--sl", type=float, default=0.03)
     args = parser.parse_args()
+
+    if args.dry_test_meta_labels:
+        return _run_dry_test_meta_labels(as_json=args.json)
 
     deps = load_optional_deps()
     if deps["missing"]:
@@ -1219,6 +1388,38 @@ def main():
                     )
                 if isinstance(result, list):
                     result = [{**item, **pbo_result} for item in result]
+            if args.meta_labels:
+                try:
+                    if isinstance(result, list) and result:
+                        best_params = result[0].get("params")
+                        if best_params and str(best_params.get("strategy", "")).strip():
+                            meta_source = run_backtest(df, best_params, deps, collect_meta_labels=True)
+                        else:
+                            meta_grid = grid_search(df, deps)
+                            meta_source = run_backtest(df, meta_grid[0]["params"], deps, collect_meta_labels=True) if meta_grid else _meta_label_none(
+                                os.environ.get("LUNA_META_LABEL_METHOD", "A"),
+                                ["meta_label_no_grid_results"],
+                            )
+                        meta_result = {
+                            key: meta_source.get(key)
+                            for key in [
+                                "meta_label_dist",
+                                "meta_label_pos_rate",
+                                "meta_label_n_trades",
+                                "meta_label_method",
+                                "meta_label_status",
+                                "meta_label_reasons",
+                            ]
+                        }
+                    else:
+                        meta_result = _meta_label_none(os.environ.get("LUNA_META_LABEL_METHOD", "A"), ["meta_label_no_grid_results"])
+                except Exception as meta_exc:
+                    meta_result = _meta_label_none(
+                        os.environ.get("LUNA_META_LABEL_METHOD", "A"),
+                        [f"compute_meta_labels_error({meta_exc})"],
+                    )
+                if isinstance(result, list):
+                    result = [{**item, **meta_result} for item in result]
         else:
             result = run_backtest(df, {"tp_pct": args.tp, "sl_pct": args.sl}, deps)
     except Exception as exc:

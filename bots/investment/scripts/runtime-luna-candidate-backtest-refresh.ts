@@ -2,7 +2,7 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
-import { runVectorBtGrid, runVectorBtPbo } from '../shared/vectorbt-runner.ts';
+import { runVectorBtGrid, runVectorBtPbo, runVectorBtMetaLabels } from '../shared/vectorbt-runner.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureCandidateBacktestSchema, evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
@@ -26,6 +26,8 @@ const OHLCV_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_BACKTEST_OHLCV_
 const LUNA_PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
 const LUNA_PBO_ENABLED = process.env.LUNA_PBO_ENABLED !== 'false';
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
+const LUNA_META_LABEL_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_META_LABEL_TIMEOUT_MS || 60_000));
+const LUNA_META_LABEL_ENABLED = TRUE_ENV_VALUES.has(String(process.env.LUNA_META_LABEL_ENABLED || 'false').trim().toLowerCase());
 
 const GATE = {
   MIN_SHARPE: 0,
@@ -823,6 +825,27 @@ function evaluateQuality(rows: any[], market: string = 'all') {
       const vals = qualityRows.filter((r) => r?.pbo_n_combinations != null).map((r) => safeNum(r?.pbo_n_combinations, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? vals.reduce((s, v) => s + Math.round(v), 0) : null;
     })(),
+    // Phase 2 Stage 1: meta-label 분포 (SHADOW — 판정 미반영)
+    metaLabelDist: (() => {
+      const rows = qualityRows.filter((r) => r?.meta_label_dist && typeof r.meta_label_dist === 'object');
+      const dist = rows.reduce((acc, row) => {
+        acc.pos += Math.max(0, Math.round(safeNum(row.meta_label_dist.pos, 0)));
+        acc.neg += Math.max(0, Math.round(safeNum(row.meta_label_dist.neg, 0)));
+        acc.neutral += Math.max(0, Math.round(safeNum(row.meta_label_dist.neutral, 0)));
+        return acc;
+      }, { pos: 0, neg: 0, neutral: 0 });
+      const total = dist.pos + dist.neg + dist.neutral;
+      return total > 0 ? { ...dist, total, pos_rate: Number((dist.pos / total).toFixed(6)) } : null;
+    })(),
+    metaLabelPosRate: (() => {
+      const vals = qualityRows.filter((r) => r?.meta_label_pos_rate != null).map((r) => safeNum(r?.meta_label_pos_rate, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
+    })(),
+    metaLabelNTrades: (() => {
+      const vals = qualityRows.filter((r) => r?.meta_label_n_trades != null).map((r) => safeNum(r?.meta_label_n_trades, NaN)).filter(Number.isFinite);
+      return vals.length > 0 ? vals.reduce((s, v) => s + Math.round(v), 0) : null;
+    })(),
+    metaLabelMethod: qualityRows.map((r) => String(r?.meta_label_method || '').trim()).find(Boolean) || null,
   };
 }
 
@@ -859,8 +882,9 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
        n_obs_oos, total_trades_oos, oos_status, selection_method, fold_count,
        trial_sharpes, var_sharpe, oos_returns_skew, oos_returns_kurt, oos_bars,
        dsr, psr, sr0, sr_oos_unann, periods_per_year,
-       pbo, perf_degradation, prob_loss, dominance_first_order, pbo_n_blocks, pbo_n_combinations)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
+       pbo, perf_degradation, prob_loss, dominance_first_order, pbo_n_blocks, pbo_n_combinations,
+       meta_label_dist, meta_label_pos_rate, meta_label_n_trades, meta_label_method)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8,$9,$10,$11,$12::jsonb,$13::jsonb,NOW(),$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41::jsonb,$42,$43,$44)
     ON CONFLICT (symbol, market) DO UPDATE SET
       fresh = EXCLUDED.fresh,
       healthy = EXCLUDED.healthy,
@@ -901,7 +925,11 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       prob_loss = EXCLUDED.prob_loss,
       dominance_first_order = EXCLUDED.dominance_first_order,
       pbo_n_blocks = EXCLUDED.pbo_n_blocks,
-      pbo_n_combinations = EXCLUDED.pbo_n_combinations
+      pbo_n_combinations = EXCLUDED.pbo_n_combinations,
+      meta_label_dist = EXCLUDED.meta_label_dist,
+      meta_label_pos_rate = EXCLUDED.meta_label_pos_rate,
+      meta_label_n_trades = EXCLUDED.meta_label_n_trades,
+      meta_label_method = EXCLUDED.meta_label_method
   `, [
     symbol,
     market,
@@ -962,6 +990,10 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       dominanceFirstOrder: payload.dominanceFirstOrder ?? null,
       pboNBlocks: payload.pboNBlocks ?? null,
       pboNCombinations: payload.pboNCombinations ?? null,
+      metaLabelDist: payload.metaLabelDist ?? null,
+      metaLabelPosRate: payload.metaLabelPosRate ?? null,
+      metaLabelNTrades: payload.metaLabelNTrades ?? null,
+      metaLabelMethod: payload.metaLabelMethod ?? null,
     }),
     payload.sharpeOos ?? null,
     payload.sharpeIs ?? null,
@@ -990,6 +1022,10 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
     payload.dominanceFirstOrder ?? null,
     payload.pboNBlocks ?? null,
     payload.pboNCombinations ?? null,
+    payload.metaLabelDist != null ? JSON.stringify(payload.metaLabelDist) : null,
+    payload.metaLabelPosRate ?? null,
+    payload.metaLabelNTrades ?? null,
+    payload.metaLabelMethod ?? null,
   ]);
 }
 
@@ -1104,8 +1140,9 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
         periodErrors[String(days)] = rows?.message || rows?.error || 'vectorbt_no_rows';
         rows = [];
       }
-      // PBO 자격: vectorbt grid가 usable trades를 반환한 경우만 (fallback 이전 판정)
+      // 부가 SHADOW 지표 자격: vectorbt grid가 usable trades를 반환한 경우만 (fallback 이전 판정)
       const pboEligibleThisPeriod = !fixture && VECTORBT_ENABLED && rowsHaveUsableTrades(rows);
+      const metaLabelEligibleThisPeriod = !fixture && VECTORBT_ENABLED && rowsHaveUsableTrades(rows);
       if (!fixture && !rowsHaveUsableTrades(rows)) {
         const fallbackRemainingMs = deadlineAt == null ? null : deadlineAt - Date.now();
         if (fallbackRemainingMs != null && fallbackRemainingMs <= OHLCV_TIMEOUT_MS + 1_000) {
@@ -1145,6 +1182,21 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
           }
         }
       }
+      // Meta-label Stage 1: usable trades 통과 + 명시 활성화 시만 호출 (fallback 경로 제외)
+      if (metaLabelEligibleThisPeriod && LUNA_META_LABEL_ENABLED && Array.isArray(rows)) {
+        const metaRaw = runVectorBtMetaLabels(symbol, days, { timeoutMs: LUNA_META_LABEL_TIMEOUT_MS });
+        if (Array.isArray(metaRaw) && metaRaw.length > 0) {
+          const src = metaRaw[0];
+          const metaFields: any = {};
+          const META_LABEL_KEYS = ['meta_label_dist', 'meta_label_pos_rate', 'meta_label_n_trades', 'meta_label_method', 'meta_label_status', 'meta_label_reasons'];
+          for (const key of META_LABEL_KEYS) {
+            if (key in src) metaFields[key] = src[key];
+          }
+          if (Object.keys(metaFields).length > 0) {
+            rows = rows.map((row: any) => ({ ...row, ...metaFields }));
+          }
+        }
+      }
       if (Array.isArray(rows)) {
         rowsByPeriod[String(days)] = rows;
         allRows.push(...rows.map((row) => ({ ...row, walk_forward_days: days })));
@@ -1178,6 +1230,10 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       dominanceFirstOrder: quality.dominanceFirstOrder ?? null,
       pboNBlocks: quality.pboNBlocks ?? null,
       pboNCombinations: quality.pboNCombinations ?? null,
+      metaLabelDist: quality.metaLabelDist ?? null,
+      metaLabelPosRate: quality.metaLabelPosRate ?? null,
+      metaLabelNTrades: quality.metaLabelNTrades ?? null,
+      metaLabelMethod: quality.metaLabelMethod ?? null,
       error: null,
     };
   } catch (error) {

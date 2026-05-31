@@ -694,6 +694,10 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS dominance_first_order BOOLEAN`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS pbo_n_blocks INTEGER`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS pbo_n_combinations INTEGER`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_dist JSONB`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_pos_rate DOUBLE PRECISION`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_n_trades INTEGER`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_method TEXT`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`); } catch { /* 무시 */ }

@@ -67,6 +67,10 @@ export async function ensureCandidateBacktestSchema() {
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS dominance_first_order BOOLEAN`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS pbo_n_blocks INTEGER`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS pbo_n_combinations INTEGER`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_dist JSONB`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_pos_rate DOUBLE PRECISION`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_n_trades INTEGER`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS meta_label_method TEXT`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`);
