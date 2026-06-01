@@ -109,6 +109,23 @@ function trialSharpes(row = {}) {
   return raw.map((item) => safeNumber(item)).filter((item) => item != null);
 }
 
+function runMetadata(row = {}) {
+  return parseJson(row.backtest_run_metadata, row.backtest_run_metadata || {});
+}
+
+function trialOosSharpes(row = {}) {
+  const metadata = runMetadata(row);
+  const raw = row.trial_oos_sharpes
+    ?? row.trialOosSharpes
+    ?? metadata.trial_oos_sharpes
+    ?? metadata.trialOosSharpes
+    ?? metadata.grid_oos_sharpes
+    ?? metadata.gridOosSharpes
+    ?? [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => safeNumber(item)).filter((item) => item != null);
+}
+
 function ensembleIsSharpe(row = {}, ensembleSize = 1) {
   const trials = trialSharpes(row);
   if (trials.length === 0 || Number(ensembleSize) <= 1) {
@@ -116,6 +133,20 @@ function ensembleIsSharpe(row = {}, ensembleSize = 1) {
   }
   const top = [...trials].sort((a, b) => b - a).slice(0, Math.max(1, Number(ensembleSize)));
   return mean(top);
+}
+
+function ensembleOosSharpe(row = {}, ensembleSize = 1) {
+  if (Number(ensembleSize) <= 1) return safeNumber(row.sharpe_oos);
+  const isTrials = trialSharpes(row);
+  const oosTrials = trialOosSharpes(row);
+  if (isTrials.length === 0 || oosTrials.length !== isTrials.length) return null;
+  const selected = isTrials
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, Math.max(1, Number(ensembleSize)))
+    .map((item) => oosTrials[item.index])
+    .filter((value) => value != null);
+  return selected.length > 0 ? mean(selected) : null;
 }
 
 function normalizeRegime(row = {}) {
@@ -132,9 +163,12 @@ function trendRegimePass(regimeInfo = {}, threshold = 0.55) {
 }
 
 export function evaluatePolicyForRow(row = {}, policy = {}, regimeInfo = {}) {
-  const oosSharpe = safeNumber(row.sharpe_oos);
+  const oosSharpe = ensembleOosSharpe(row, policy.ensembleSize);
   if (oosSharpe == null) {
-    return { ok: false, reason: 'missing_oos_sharpe' };
+    const reason = Number(policy.ensembleSize || 1) > 1
+      ? 'unsupported_ensemble_missing_trial_oos'
+      : 'missing_oos_sharpe';
+    return { ok: false, reason };
   }
   if (policy.regimeMode === 'trend_filter' && !trendRegimePass(regimeInfo, policy.regimeConfidenceThreshold)) {
     return { ok: false, reason: 'regime_filter_no_pass' };

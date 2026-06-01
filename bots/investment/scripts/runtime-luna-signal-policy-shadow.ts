@@ -120,7 +120,7 @@ async function loadCandidateRows(queryFn, options) {
   return queryFn(
     `SELECT symbol, market, healthy, gate_status, sharpe, sharpe_is, sharpe_oos,
             overfit_gap, selection_method, oos_status, total_trades_oos,
-            trial_sharpes, dsr, pbo, updated_at
+            trial_sharpes, backtest_run_metadata, dsr, pbo, updated_at
        FROM candidate_backtest_status
       WHERE market = ANY($1::text[])
         AND updated_at >= NOW() - ($2::int * INTERVAL '1 hour')
@@ -214,7 +214,7 @@ export async function runLunaSignalPolicyShadow(options = parseArgs(), deps = {}
     observedAt: new Date(),
   });
 
-  const canWrite = enabled && options.apply && options.confirm === CONFIRM_TOKEN && !options.dryRun;
+  const canWrite = enabled && options.apply && options.confirm === CONFIRM_TOKEN && !options.dryRun && !options.fixture;
   if (canWrite) {
     await ensureLunaSignalPolicyShadowTable(runFn);
     for (const row of rows) {
