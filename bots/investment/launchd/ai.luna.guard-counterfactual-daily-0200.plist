@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.guard-counterfactual-daily-0200</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-guard-counterfactual.ts</string>
+    <string>--json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>LUNA_GUARD_COUNTERFACTUAL_ENABLED</key>
+    <string>true</string>
+  </dict>
+  <!-- 매일 02:00 KST (launchd는 KST 기준, UTC 변환 금지) -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.guard-counterfactual-daily-0200.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.guard-counterfactual-daily-0200.err.log</string>
+</dict>
+</plist>
