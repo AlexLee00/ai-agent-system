@@ -12,18 +12,25 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import os
+import subprocess
 from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-import psycopg2
-import psycopg2.extras
+
+try:
+    import psycopg2  # type: ignore
+    import psycopg2.extras  # type: ignore
+except ModuleNotFoundError:
+    psycopg2 = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
-PG_DSN = os.environ.get("PG_DSN", "host=localhost port=5432 dbname=jay user=postgres")
+PG_DSN = os.environ.get("PG_DSN", "dbname=jay")
+PSQL_DB = os.environ.get("PGDATABASE", "jay")
 
 _FETCH_QUERY = """
 SELECT
@@ -50,6 +57,33 @@ ORDER BY j.entry_time ASC
 # 원-핫 기준 값 고정 — 데이터에 없는 레짐도 피처 차원 일관 유지
 _KNOWN_REGIMES = ['ranging', 'trending', 'unknown', 'volatile']
 _KNOWN_DIRECTIONS = ['long', 'short']
+
+
+def _psql_args() -> List[str]:
+    """psycopg2가 없는 DEV 환경에서도 psql CLI로 동일 쿼리를 수행한다."""
+    explicit_dsn = os.environ.get("PG_DSN")
+    if explicit_dsn:
+        return ["psql", explicit_dsn]
+    return ["psql", "-d", PSQL_DB]
+
+
+def _fetch_dataframe_with_psql() -> pd.DataFrame:
+    query = _FETCH_QUERY.strip().rstrip(";")
+    copy_sql = f"COPY ({query}) TO STDOUT WITH CSV HEADER"
+    proc = subprocess.run(
+        _psql_args() + ["-X", "-q", "-v", "ON_ERROR_STOP=1", "-c", copy_sql],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "[meta-model-dataset] psql 조회 실패: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        )
+    if not proc.stdout.strip():
+        return pd.DataFrame()
+    return pd.read_csv(io.StringIO(proc.stdout))
 
 
 def _feature_matrix(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
@@ -109,19 +143,23 @@ def build_dataset() -> Tuple[np.ndarray, np.ndarray, List[str], List]:
     Returns: (X, y, feature_names, entry_times)
       - 행 순서는 entry_time ASC (시계열 split을 위한 보장)
     """
-    conn = psycopg2.connect(PG_DSN)
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(_FETCH_QUERY)
-            rows = cur.fetchall()
-    finally:
-        conn.close()
+    if psycopg2 is not None:
+        conn = psycopg2.connect(PG_DSN)
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(_FETCH_QUERY)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+        df = pd.DataFrame([dict(r) for r in rows])
+    else:
+        logger.info('[meta-model-dataset] psycopg2 없음 → psql CLI fallback 사용')
+        df = _fetch_dataframe_with_psql()
 
-    if not rows:
+    if df.empty:
         logger.warning('[meta-model-dataset] 조회 결과 없음 — 필터 조건 확인 요망')
         return np.empty((0, 0)), np.empty(0), [], []
 
-    df = pd.DataFrame([dict(r) for r in rows])
     logger.info('[meta-model-dataset] %d건 로드 (entry_time ASC 정렬 확인)', len(df))
 
     y = (df['pnl_net'] > 0).astype(int).values

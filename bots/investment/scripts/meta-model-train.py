@@ -12,10 +12,13 @@ SHADOW 원칙: LUNA_META_MODEL_ENABLED=false(기본) → 학습 미실행.
 from __future__ import annotations
 
 import importlib.util
+import csv
+import io
 import json
 import logging
 import math
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,10 +26,13 @@ from typing import List, Optional, Tuple
 
 import joblib
 import numpy as np
-import psycopg2
-import psycopg2.extras
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+
+try:
+    import psycopg2  # type: ignore
+except ModuleNotFoundError:
+    psycopg2 = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +43,18 @@ MIN_TRADES = int(os.environ.get('LUNA_META_MODEL_MIN_TRADES', '50'))
 TEST_RATIO = float(os.environ.get('LUNA_META_MODEL_TEST_RATIO', '0.25'))
 RANDOM_STATE = int(os.environ.get('LUNA_META_MODEL_RANDOM_STATE', '42'))
 
-PG_DSN = os.environ.get('PG_DSN', 'host=localhost port=5432 dbname=jay user=postgres')
+PG_DSN = os.environ.get('PG_DSN', 'dbname=jay')
+PSQL_DB = os.environ.get('PGDATABASE', 'jay')
 
 OUTPUT_DIR = Path(__file__).parent.parent / 'output' / 'meta-model'
+
+
+def _psql_args() -> List[str]:
+    """psycopg2가 없는 DEV 환경에서도 버전 기록을 남기기 위한 psql CLI fallback."""
+    explicit_dsn = os.environ.get('PG_DSN')
+    if explicit_dsn:
+        return ['psql', explicit_dsn]
+    return ['psql', '-d', PSQL_DB]
 
 
 def _load_dataset_module():
@@ -136,32 +151,72 @@ def _record_version(
 ) -> None:
     """luna_meta_model_versions에 학습 결과를 기록한다. active=false (단계 2-2에서 교체)."""
     auc_val = None if math.isnan(metrics['auc']) else metrics['auc']
-    conn = psycopg2.connect(PG_DSN)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO investment.luna_meta_model_versions
-                  (version, tier, model_type, n_trades,
-                   auc, precision_score, recall_score, f1_score,
-                   feature_names, model_path, active, notes)
-                VALUES (%s, %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s::jsonb, %s, false,
-                        'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.')
-                RETURNING id
-                """,
-                (
-                    version, tier, MODEL_TYPE, n_trades,
-                    auc_val, metrics['precision'], metrics['recall'], metrics['f1'],
-                    json.dumps(feature_names), str(model_path),
-                ),
-            )
-            row_id = cur.fetchone()[0]
-        conn.commit()
-        logger.info('[meta-model-train] 버전 DB 기록 완료: id=%s version=%s', row_id, version)
-    finally:
-        conn.close()
+    if psycopg2 is not None:
+        conn = psycopg2.connect(PG_DSN)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO investment.luna_meta_model_versions
+                      (version, tier, model_type, n_trades,
+                       auc, precision_score, recall_score, f1_score,
+                       feature_names, model_path, active, notes)
+                    VALUES (%s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s::jsonb, %s, false,
+                            'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.')
+                    RETURNING id
+                    """,
+                    (
+                        version, tier, MODEL_TYPE, n_trades,
+                        auc_val, metrics['precision'], metrics['recall'], metrics['f1'],
+                        json.dumps(feature_names), str(model_path),
+                    ),
+                )
+                row_id = cur.fetchone()[0]
+            conn.commit()
+            logger.info('[meta-model-train] 버전 DB 기록 완료: id=%s version=%s', row_id, version)
+        finally:
+            conn.close()
+        return
+
+    logger.info('[meta-model-train] psycopg2 없음 → psql CLI fallback 사용')
+    row = io.StringIO()
+    writer = csv.writer(row, lineterminator='\n')
+    writer.writerow([
+        version,
+        tier,
+        MODEL_TYPE,
+        n_trades,
+        auc_val,
+        metrics['precision'],
+        metrics['recall'],
+        metrics['f1'],
+        json.dumps(feature_names),
+        str(model_path),
+        'false',
+        'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.',
+    ])
+    copy_script = (
+        "\\copy investment.luna_meta_model_versions "
+        "(version, tier, model_type, n_trades, auc, precision_score, recall_score, "
+        "f1_score, feature_names, model_path, active, notes) "
+        "FROM STDIN WITH CSV\n"
+        f"{row.getvalue()}\\.\n"
+    )
+    proc = subprocess.run(
+        _psql_args() + ['-X', '-q', '-v', 'ON_ERROR_STOP=1'],
+        input=copy_script,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "[meta-model-train] psql 버전 기록 실패: "
+            f"{(proc.stderr or proc.stdout).strip()}"
+        )
+    logger.info('[meta-model-train] 버전 DB 기록 완료: version=%s', version)
 
 
 def train_and_save(
