@@ -99,8 +99,14 @@ export function computeTripleBarrierOutcome({
   if (!start) {
     return { ok: false, status: 'invalid_blocked_at', virtualLabel: null, barsEvaluated: 0 };
   }
+  const barrierAt = addMs(start, timeframeMs(timeframe) * Math.max(1, Number(timeBarrierBars || 1)));
   const rows = Array.isArray(candles)
-    ? candles.filter((row) => candleTs(row) >= start.getTime()).sort((a, b) => candleTs(a) - candleTs(b))
+    ? candles
+      .filter((row) => {
+        const ts = candleTs(row);
+        return ts >= start.getTime() && ts <= barrierAt.getTime();
+      })
+      .sort((a, b) => candleTs(a) - candleTs(b))
     : [];
   if (rows.length === 0) {
     return { ok: false, status: 'missing_ohlcv_after_block', virtualLabel: null, barsEvaluated: 0 };
@@ -114,7 +120,6 @@ export function computeTripleBarrierOutcome({
   const resolvedTp = safeNumber(takeProfit, resolvedEntry * (1 + TP_PCT));
   const resolvedSl = safeNumber(stopLoss, resolvedEntry * (1 - SL_PCT));
   const horizonRows = rows.slice(0, Math.max(1, Number(timeBarrierBars || 1)));
-  const barrierAt = addMs(start, timeframeMs(timeframe) * Math.max(1, Number(timeBarrierBars || 1)));
 
   for (const row of horizonRows) {
     const high = candleHigh(row);
@@ -233,7 +238,7 @@ async function loadBlockedTriggers(limit = BATCH_LIMIT) {
       ) AS blocked_at
     FROM entry_triggers t
     LEFT JOIN luna_guard_counterfactual cf ON cf.trigger_id = t.id
-    WHERE cf.trigger_id IS NULL
+    WHERE (cf.trigger_id IS NULL OR cf.ohlcv_status <> 'ok')
       AND t.trigger_state = 'expired'
       AND COALESCE(t.trigger_meta->>'reason', '') = ANY($1::text[])
       AND COALESCE(t.updated_at, t.created_at) >= NOW() - INTERVAL '1 day' * $2
@@ -266,7 +271,10 @@ async function computeForTrigger(trigger, options = {}) {
   const from = blockedAt.toISOString();
   const to = addMs(blockedAt, horizonMs).toISOString();
   const exchange = normalizeExchange(trigger.exchange);
-  const candles = options.candles || await getOHLCV(trigger.symbol, timeframe, from, to, marketForExchange(exchange)).catch((error) => {
+  // Yahoo-style KIS fallback treats to-date as exclusive; pad fetch only, then
+  // computeTripleBarrierOutcome enforces the original time barrier.
+  const fetchTo = exchange === 'kis' ? addMs(blockedAt, horizonMs + timeframeMs('1d')).toISOString() : to;
+  const candles = options.candles || await getOHLCV(trigger.symbol, timeframe, from, fetchTo, marketForExchange(exchange)).catch((error) => {
     return { __error: error?.message || String(error) };
   });
   if (!Array.isArray(candles)) {
