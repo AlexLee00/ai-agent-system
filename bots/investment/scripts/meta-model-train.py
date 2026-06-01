@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-루나 Secondary Model — Tier 1 학습, 저장, 버전 DB 기록
+루나 Secondary Model — Tier 1/2 학습, 저장, 버전 DB 기록
 
 SHADOW 원칙: LUNA_META_MODEL_ENABLED=false(기본) → 학습 미실행.
 기존 entry-trigger / refresh / backtest 동작 0 변경.
@@ -22,10 +22,11 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import joblib
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
@@ -42,6 +43,10 @@ MODEL_TYPE = os.environ.get('LUNA_META_MODEL_TYPE', 'logistic')
 MIN_TRADES = int(os.environ.get('LUNA_META_MODEL_MIN_TRADES', '50'))
 TEST_RATIO = float(os.environ.get('LUNA_META_MODEL_TEST_RATIO', '0.25'))
 RANDOM_STATE = int(os.environ.get('LUNA_META_MODEL_RANDOM_STATE', '42'))
+RF_N_ESTIMATORS = int(os.environ.get('LUNA_META_MODEL_RF_N_ESTIMATORS', '200'))
+RF_MAX_DEPTH = int(os.environ.get('LUNA_META_MODEL_RF_MAX_DEPTH', '5'))
+RF_MIN_SAMPLES_LEAF = int(os.environ.get('LUNA_META_MODEL_RF_MIN_SAMPLES_LEAF', '5'))
+RF_N_JOBS = int(os.environ.get('LUNA_META_MODEL_RF_N_JOBS', '1'))
 
 PG_DSN = os.environ.get('PG_DSN', 'dbname=jay')
 PSQL_DB = os.environ.get('PGDATABASE', 'jay')
@@ -85,20 +90,30 @@ def time_series_split(
     )
 
 
-def build_model(model_type: str, random_state: int) -> LogisticRegression:
-    if model_type == 'logistic':
+def build_model(model_type: str, random_state: int) -> Any:
+    normalized = model_type.strip().lower()
+    if normalized == 'logistic':
         return LogisticRegression(
             class_weight='balanced',
             random_state=random_state,
             max_iter=1000,
         )
+    if normalized == 'random_forest':
+        return RandomForestClassifier(
+            n_estimators=RF_N_ESTIMATORS,
+            max_depth=RF_MAX_DEPTH,
+            min_samples_leaf=RF_MIN_SAMPLES_LEAF,
+            class_weight='balanced',
+            random_state=random_state,
+            n_jobs=RF_N_JOBS,
+        )
     raise ValueError(
         f'지원하지 않는 모델 타입: {model_type!r}. '
-        'LUNA_META_MODEL_TYPE 확인 (현재: logistic)'
+        'LUNA_META_MODEL_TYPE 확인 (지원: logistic, random_forest)'
     )
 
 
-def evaluate(model: LogisticRegression, X_test: np.ndarray, y_test: np.ndarray) -> dict:
+def evaluate(model: Any, X_test: np.ndarray, y_test: np.ndarray) -> dict:
     """precision/recall/F1/AUC 반환. accuracy는 불균형 데이터에 부적합하므로 제외."""
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:, 1]
@@ -117,15 +132,18 @@ def evaluate(model: LogisticRegression, X_test: np.ndarray, y_test: np.ndarray) 
 
 
 def _save_model(
-    model: LogisticRegression,
+    model: Any,
     feature_names: List[str],
     metrics: dict,
     n_trades: int,
     version: str,
+    model_type: str = MODEL_TYPE,
+    tier: int = 1,
 ) -> Path:
     """모델을 타임스탬프 파일명으로 저장하고 경로를 반환."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = OUTPUT_DIR / f'meta-model-tier1-{version}.joblib'
+    safe_model_type = model_type.replace('/', '_').replace(' ', '_')
+    model_path = OUTPUT_DIR / f'meta-model-tier{tier}-{safe_model_type}-{version}.joblib'
     payload = {
         'model': model,
         'meta': {
@@ -133,7 +151,8 @@ def _save_model(
             'feature_names': feature_names,
             'metrics': metrics,
             'n_trades': n_trades,
-            'model_type': MODEL_TYPE,
+            'tier': tier,
+            'model_type': model_type,
         },
     }
     joblib.dump(payload, model_path)
@@ -148,6 +167,8 @@ def _record_version(
     n_trades: int,
     version: str,
     tier: int = 1,
+    model_type: str = MODEL_TYPE,
+    notes: str = 'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.',
 ) -> None:
     """luna_meta_model_versions에 학습 결과를 기록한다. active=false (단계 2-2에서 교체)."""
     auc_val = None if math.isnan(metrics['auc']) else metrics['auc']
@@ -163,14 +184,13 @@ def _record_version(
                        feature_names, model_path, active, notes)
                     VALUES (%s, %s, %s, %s,
                             %s, %s, %s, %s,
-                            %s::jsonb, %s, false,
-                            'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.')
+                            %s::jsonb, %s, false, %s)
                     RETURNING id
                     """,
                     (
-                        version, tier, MODEL_TYPE, n_trades,
+                        version, tier, model_type, n_trades,
                         auc_val, metrics['precision'], metrics['recall'], metrics['f1'],
-                        json.dumps(feature_names), str(model_path),
+                        json.dumps(feature_names), str(model_path), notes,
                     ),
                 )
                 row_id = cur.fetchone()[0]
@@ -186,7 +206,7 @@ def _record_version(
     writer.writerow([
         version,
         tier,
-        MODEL_TYPE,
+        model_type,
         n_trades,
         auc_val,
         metrics['precision'],
@@ -195,7 +215,7 @@ def _record_version(
         json.dumps(feature_names),
         str(model_path),
         'false',
-        'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.',
+        notes,
     ])
     copy_script = (
         "\\copy investment.luna_meta_model_versions "
@@ -225,6 +245,9 @@ def train_and_save(
     feature_names: List[str],
     entry_times: List,
     dry_run: bool = False,
+    model_type: Optional[str] = None,
+    tier: int = 1,
+    notes: Optional[str] = None,
 ) -> Optional[dict]:
     """
     데이터셋을 받아 학습→평가→저장→DB 기록 수행.
@@ -253,9 +276,16 @@ def train_and_save(
         len(y_test),  min(times_test)  if times_test  else 'N/A',
     )
 
-    model = build_model(MODEL_TYPE, RANDOM_STATE)
+    selected_model_type = (model_type or MODEL_TYPE).strip().lower()
+    model = build_model(selected_model_type, RANDOM_STATE)
     model.fit(X_train, y_train)
     metrics = evaluate(model, X_test, y_test)
+    result = dict(metrics)
+    result.update({
+        'n_trades': n,
+        'tier': tier,
+        'model_type': selected_model_type,
+    })
 
     logger.info(
         '[meta-model-train] 평가: precision=%.3f recall=%.3f f1=%.3f auc=%s',
@@ -265,10 +295,19 @@ def train_and_save(
 
     if not dry_run:
         version = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        model_path = _save_model(model, feature_names, metrics, n, version)
-        _record_version(model_path, feature_names, metrics, n, version)
+        model_path = _save_model(
+            model, feature_names, metrics, n, version,
+            model_type=selected_model_type, tier=tier,
+        )
+        _record_version(
+            model_path, feature_names, metrics, n, version,
+            tier=tier,
+            model_type=selected_model_type,
+            notes=notes or 'SHADOW 학습 — 단계 2-1. 예측/진입 차단 없음.',
+        )
+        result.update({'version': version, 'model_path': str(model_path)})
 
-    return metrics
+    return result
 
 
 def main() -> None:

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.meta-model-retrain-weekly-sun-1530</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/meta-model-retrain.py</string>
+    <string>--json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LUNA_META_MODEL_ENABLED</key>
+    <string>false</string>
+  </dict>
+  <!-- 초안만 작성. bootstrap/load는 마스터 승인 후 별도 수행. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>15</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.meta-model-retrain-weekly-sun-1530.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.meta-model-retrain-weekly-sun-1530.err.log</string>
+</dict>
+</plist>
