@@ -10,6 +10,7 @@
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { query, run } from '../shared/db/core.ts';
+import ccxt from 'ccxt';
 
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
 const ENABLED = TRUE_VALUES.has(String(process.env.LUNA_GUARD_COUNTERFACTUAL_ENABLED || 'false').trim().toLowerCase());
@@ -35,6 +36,7 @@ const LOOKBACK_DAYS = Math.max(1, Number(process.env.LUNA_GUARD_COUNTERFACTUAL_L
 const ENTERED_COMPARE_DAYS = Math.max(1, Number(process.env.LUNA_GUARD_COUNTERFACTUAL_COMPARE_DAYS || 30));
 const ENTERED_MATCH_WINDOW_MINUTES = Math.max(1, Number(process.env.LUNA_GUARD_COUNTERFACTUAL_MATCH_WINDOW_MINUTES || 120));
 const POS_RATE_EPS = Math.max(0, Number(process.env.LUNA_GUARD_COUNTERFACTUAL_POS_RATE_EPS || 0));
+let binanceMarketStatusCache = null;
 
 export function candleTs(row) {
   return Number(row?.[0] ?? row?.timestamp ?? row?.ts ?? row?.candle_ts ?? 0);
@@ -84,6 +86,28 @@ function timeframeMs(timeframe) {
 function safeNumber(value, fallback = null) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+async function getBinanceMarketStatus(symbol) {
+  if (!binanceMarketStatusCache) {
+    binanceMarketStatusCache = (async () => {
+      const exchange = new ccxt.binance({
+        timeout: 10_000,
+        enableRateLimit: true,
+        options: { defaultType: 'spot' },
+      });
+      try {
+        await exchange.loadMarkets();
+        return exchange.markets || {};
+      } finally {
+        await exchange.close?.().catch(() => null);
+      }
+    })();
+  }
+  const markets = await binanceMarketStatusCache.catch(() => ({}));
+  const market = markets?.[symbol];
+  if (!market) return 'missing';
+  return market.active === false ? 'inactive' : 'active';
 }
 
 export function computeTripleBarrierOutcome({
@@ -238,7 +262,10 @@ async function loadBlockedTriggers(limit = BATCH_LIMIT) {
       ) AS blocked_at
     FROM entry_triggers t
     LEFT JOIN luna_guard_counterfactual cf ON cf.trigger_id = t.id
-    WHERE (cf.trigger_id IS NULL OR cf.ohlcv_status <> 'ok')
+    WHERE (
+      cf.trigger_id IS NULL
+      OR (cf.ohlcv_status <> 'ok' AND cf.ohlcv_status NOT LIKE 'skipped_%')
+    )
       AND t.trigger_state = 'expired'
       AND COALESCE(t.trigger_meta->>'reason', '') = ANY($1::text[])
       AND COALESCE(t.updated_at, t.created_at) >= NOW() - INTERVAL '1 day' * $2
@@ -289,17 +316,31 @@ async function computeForTrigger(trigger, options = {}) {
       candles: [],
     };
   }
+  const outcome = computeTripleBarrierOutcome({
+    candles,
+    blockedAt,
+    entryPrice: trigger.target_price,
+    takeProfit: trigger.take_profit,
+    stopLoss: trigger.stop_loss,
+    timeBarrierBars: options.timeBarrierBars || TIME_BARRIER_BARS,
+    timeframe,
+  });
+  if (outcome.status === 'missing_ohlcv_after_block' && exchange === 'binance') {
+    const marketStatus = await getBinanceMarketStatus(trigger.symbol);
+    if (marketStatus !== 'active') {
+      outcome.skipped = true;
+      outcome.status = marketStatus === 'inactive'
+        ? 'skipped_inactive_binance_symbol'
+        : 'skipped_missing_binance_symbol';
+    }
+  }
+  if (outcome.status === 'missing_ohlcv_after_block' && exchange === 'kis' && candles.length > 0) {
+    outcome.skipped = true;
+    outcome.status = 'skipped_no_market_session_within_barrier';
+  }
   return {
     trigger,
-    outcome: computeTripleBarrierOutcome({
-      candles,
-      blockedAt,
-      entryPrice: trigger.target_price,
-      takeProfit: trigger.take_profit,
-      stopLoss: trigger.stop_loss,
-      timeBarrierBars: options.timeBarrierBars || TIME_BARRIER_BARS,
-      timeframe,
-    }),
+    outcome,
     candles,
   };
 }
@@ -442,6 +483,7 @@ async function fetchAllTradeComparison() {
 
 function summarize(results) {
   const computed = results.filter((item) => item.outcome?.ok);
+  const skipped = results.filter((item) => item.outcome?.skipped);
   const total = computed.length;
   const pos = computed.filter((item) => item.outcome.virtualLabel === 1).length;
   const neg = computed.filter((item) => item.outcome.virtualLabel === -1).length;
@@ -463,6 +505,7 @@ function summarize(results) {
     pos,
     neg,
     neutral,
+    skipped: skipped.length,
     posRate: total > 0 ? Number((pos / total).toFixed(6)) : null,
     byReason,
   };
@@ -498,7 +541,8 @@ export async function runGuardCounterfactual(options = {}) {
     timeBarrierBars: TIME_BARRIER_BARS,
     processed: results.length,
     computed: summary.total,
-    failed: results.length - summary.total,
+    skipped: summary.skipped,
+    failed: results.length - summary.total - summary.skipped,
     summary,
     enteredComparison,
     allTradeComparison,
