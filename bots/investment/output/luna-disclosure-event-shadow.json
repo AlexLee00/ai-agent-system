@@ -27,128 +27,23 @@
       "dataHealth": "shadow_ready",
       "events": [
         {
-          "stockCode": "294090",
-          "companyName": "이오플로우",
-          "reportName": "소송등의판결ㆍ결정              (영업비밀보호법(“DTSA”)에 따른 영업비밀)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901513",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "099520",
-          "companyName": "DGI",
-          "reportName": "기타시장안내              (상장폐지 관련 이의신청서 접수)",
+          "stockCode": "091810",
+          "companyName": "트리니티항공",
+          "reportName": "불성실공시법인지정",
           "reportType": "risk_event",
           "importanceScore": 9,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "delisting_risk"
           ],
-          "receiptNo": "20260529901382",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601801361",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "033270",
-          "companyName": "유나이티드",
-          "reportName": "소송등의판결ㆍ결정(일정금액이상의청구)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529801833",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "067310",
-          "companyName": "하나마이크론",
-          "reportName": "[기재정정]소송등의판결ㆍ결정              (주주총회결의취소)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901780",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066790",
-          "companyName": "씨씨에스",
-          "reportName": "소송등의제기ㆍ신청(경영권분쟁소송)              (주주총회결의 집행금지 가처분)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901863",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "131030",
-          "companyName": "옵투스제약",
-          "reportName": "불성실공시법인미지정              (지정유예)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "delisting_risk"
-          ],
-          "receiptNo": "20260529901993",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066790",
-          "companyName": "씨씨에스",
-          "reportName": "소송등의제기ㆍ신청(경영권분쟁소송)              (직무대행자선임 가처분)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901867",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "090470",
-          "companyName": "제이스로보틱스",
-          "reportName": "불성실공시법인미지정              (지정유예)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "delisting_risk"
-          ],
-          "receiptNo": "20260529902056",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "017040",
-          "companyName": "광명전기",
+          "stockCode": "015590",
+          "companyName": "DKME",
           "reportName": "소송등의판결ㆍ결정",
           "reportType": "risk_event",
           "importanceScore": 9,
@@ -156,57 +51,59 @@
           "keywords": [
             "lawsuit"
           ],
-          "receiptNo": "20260529802079",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601801339",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "464440",
-          "companyName": "한국제13호스팩",
-          "reportName": "기타시장안내              (주권 상장폐지 우려 예고)",
+          "stockCode": "030610",
+          "companyName": "교보증권",
+          "reportName": "주요사항보고서(소송등의제기)",
+          "reportType": "risk_event",
+          "importanceScore": 9,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "lawsuit"
+          ],
+          "receiptNo": "20260601001737",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "237750",
+          "companyName": "피앤씨테크",
+          "reportName": "소송등의판결ㆍ결정",
+          "reportType": "risk_event",
+          "importanceScore": 9,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "lawsuit"
+          ],
+          "receiptNo": "20260601901775",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "032680",
+          "companyName": "소프트센",
+          "reportName": "기타시장안내              (소프트센 1우선주 관리종목지정 우려예고)",
           "reportType": "risk_event",
           "importanceScore": 9,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "delisting_risk"
           ],
-          "receiptNo": "20260529902044",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901777",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "083790",
-          "companyName": "CG인바이츠",
-          "reportName": "불성실공시법인지정예고              (공시변경)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "delisting_risk"
-          ],
-          "receiptNo": "20260529902181",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "145990",
-          "companyName": "삼양사",
-          "reportName": "타법인주식및출자증권취득결정(종속회사의주요경영사항)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529801443",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "261780",
-          "companyName": "아리바이오LAB",
+          "stockCode": "462350",
+          "companyName": "이노스페이스",
           "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -214,14 +111,74 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001608",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001294",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "073640",
-          "companyName": "테라사이언스",
+          "stockCode": "328130",
+          "companyName": "루닛",
+          "reportName": "[기재정정]전환사채(해외전환사채포함)발행후만기전사채취득              (제1회차)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901065",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "328130",
+          "companyName": "루닛",
+          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득              (제2회차)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901071",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "462350",
+          "companyName": "이노스페이스",
+          "reportName": "[발행조건확정]증권신고서(지분증권)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601001401",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "462350",
+          "companyName": "이노스페이스",
+          "reportName": "유상증자최종발행가액확정              (주주배정후 실권주 일반공모)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901176",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "052770",
+          "companyName": "아이톡시",
           "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -229,188 +186,72 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001620",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001456",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "220100",
-          "companyName": "퓨쳐켐",
-          "reportName": "주권매매거래정지              (무상증자)",
+          "stockCode": "052770",
+          "companyName": "아이톡시",
+          "reportName": "기타주요경영사항              (제3자배정 유상증자결정 철회)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529901518",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901216",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "288980",
-          "companyName": "모아데이타",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "stockCode": "014280",
+          "companyName": "금강공업",
+          "reportName": "주요사항보고서(교환사채권발행결정)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001619",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001516",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "220100",
-          "companyName": "퓨쳐켐",
-          "reportName": "주요사항보고서(유무상증자결정)",
+          "stockCode": "026910",
+          "companyName": "광진실업",
+          "reportName": "증권발행결과(자율공시)              (제3자배정 유상증자)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001682",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901218",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "307180",
-          "companyName": "아이엘",
-          "reportName": "주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001709",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "067630",
-          "companyName": "HLB생명과학",
-          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득              (제13회차)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529901374",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "068940",
-          "companyName": "셀피글로벌",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001762",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "475580",
-          "companyName": "에이럭스",
-          "reportName": "[기재정정]타법인주식및출자증권처분결정",
+          "stockCode": "321820",
+          "companyName": "아티스트컴퍼니",
+          "reportName": "주요사항보고서(타법인주식및출자증권양도결정)",
           "reportType": "corporate_action",
           "importanceScore": 8,
           "direction": "event_review",
           "keywords": [],
-          "receiptNo": "20260529901569",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001445",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "475580",
-          "companyName": "에이럭스",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901575",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "475580",
-          "companyName": "에이럭스",
-          "reportName": "[기재정정]유상증자결정(종속회사의주요경영사항)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529901584",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "064800",
-          "companyName": "포니링크",
-          "reportName": "주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001660",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "070300",
-          "companyName": "엑스큐어",
-          "reportName": "[기재정정]주요사항보고서(타법인주식및출자증권양도결정)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529001653",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "220100",
-          "companyName": "퓨쳐켐",
-          "reportName": "증권신고서(지분증권)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001989",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "200230",
-          "companyName": "텔콘RF제약",
+          "stockCode": "290660",
+          "companyName": "다이나믹솔루션",
           "reportName": "주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)",
           "reportType": "corporate_action",
           "importanceScore": 8,
@@ -418,14 +259,27 @@
           "keywords": [
             "ma"
           ],
-          "receiptNo": "20260529901730",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901311",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": null,
-          "companyName": "농협금융지주",
+          "stockCode": "230240",
+          "companyName": "에치에프알",
+          "reportName": "타법인주식및출자증권처분결정",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [],
+          "receiptNo": "20260601901401",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "154040",
+          "companyName": "다산솔루에타",
           "reportName": "주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -433,83 +287,14 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002036",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001578",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "094860",
-          "companyName": "네오리진",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정              (철회)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901784",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "094860",
-          "companyName": "네오리진",
-          "reportName": "기타주요경영사항              (타법인 주식 및 출자증권 취득결정 철회)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901792",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "003490",
-          "companyName": "대한항공",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529801777",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "068940",
-          "companyName": "셀피글로벌",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002094",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "142760",
-          "companyName": "모아라이프플러스",
-          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529901894",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066980",
-          "companyName": "한성크린텍",
+          "stockCode": "012210",
+          "companyName": "삼미금속",
           "reportName": "주요사항보고서(전환사채권발행결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -517,42 +302,29 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002160",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001500",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "180640",
-          "companyName": "한진칼",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정(자회사의 주요경영사항)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529801865",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "011000",
-          "companyName": "진원생명과학",
-          "reportName": "[기재정정]주요사항보고서(자기전환사채매도결정)",
+          "stockCode": "026910",
+          "companyName": "광진실업",
+          "reportName": "[기재정정]증권발행결과(자율공시)              (제3자배정 유상증자)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002157",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901540",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "317770",
-          "companyName": "엑스페릭스",
+          "stockCode": "032790",
+          "companyName": "엠젠솔루션",
           "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -560,14 +332,14 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002142",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001705",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "089140",
-          "companyName": "넥스턴앤롤코리아",
+          "stockCode": "076610",
+          "companyName": "해성옵틱스",
           "reportName": "주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -575,14 +347,59 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002201",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001750",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "293490",
-          "companyName": "카카오게임즈",
+          "stockCode": "179900",
+          "companyName": "유티아이",
+          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득              (제1회차)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901560",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "001340",
+          "companyName": "PKC",
+          "reportName": "전환가액ㆍ신주인수권행사가액ㆍ교환가액의조정(안내공시)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601801677",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "105550",
+          "companyName": "엣지파운드리",
+          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601001815",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "154040",
+          "companyName": "다산솔루에타",
           "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -590,130 +407,102 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002223",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001872",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "293490",
-          "companyName": "카카오게임즈",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "stockCode": "219750",
+          "companyName": "한국비티비",
+          "reportName": "주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [
+            "ma"
+          ],
+          "receiptNo": "20260601901619",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "246690",
+          "companyName": "TS인베스트먼트",
+          "reportName": "주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [
+            "ma"
+          ],
+          "receiptNo": "20260601901703",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "061970",
+          "companyName": "LB세미콘",
+          "reportName": "[기재정정]증권신고서(지분증권)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002244",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001967",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "003200",
-          "companyName": "일신방직",
-          "reportName": "[기재정정]타법인주식및출자증권처분결정",
+          "stockCode": "011790",
+          "companyName": "SKC",
+          "reportName": "전환청구권ㆍ신주인수권ㆍ교환청구권행사",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601801854",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "011300",
+          "companyName": "우성머티리얼스",
+          "reportName": "전환가액ㆍ신주인수권행사가액ㆍ교환가액의조정(안내공시)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601801795",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "025550",
+          "companyName": "한국선재",
+          "reportName": "타법인주식및출자증권처분결정",
           "reportType": "corporate_action",
           "importanceScore": 8,
           "direction": "event_review",
           "keywords": [],
-          "receiptNo": "20260529802090",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901888",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "348370",
-          "companyName": "엔켐",
-          "reportName": "[기재정정]타법인주식및출자증권처분결정",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901992",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "018000",
-          "companyName": "유니슨",
-          "reportName": "주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002274",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "[기재정정]주요사항보고서(자기전환사채매도결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002325",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002378",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "주요사항보고서(자기전환사채만기전취득결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002348",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "주요사항보고서(자기전환사채만기전취득결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002373",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "320000",
-          "companyName": "한울반도체",
+          "stockCode": "042940",
+          "companyName": "상지건설",
           "reportName": "정정신고서제출요구( 2026.05.15. 제출 증권신고서(지분증권) )",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -721,27 +510,119 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529100006",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601100055",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "148250",
-          "companyName": "알엔투테크놀로지",
-          "reportName": "[기재정정]주요사항보고서(타법인주식및출자증권양도결정)",
-          "reportType": "corporate_action",
+          "stockCode": null,
+          "companyName": "엔에이치농협캐피탈",
+          "reportName": "주요사항보고서(유상증자결정)",
+          "reportType": "dilution",
           "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260528001044",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601002035",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "008560",
-          "companyName": "메리츠증권",
+          "stockCode": "226950",
+          "companyName": "올릭스",
+          "reportName": "주요사항보고서(유상증자결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601002040",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "199800",
+          "companyName": "툴젠",
+          "reportName": "정정신고서제출요구( 2026.05.15. 제출 증권신고서(지분증권) )",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601100051",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "321370",
+          "companyName": "센서뷰",
+          "reportName": "정정신고서제출요구( 2026.05.18. 제출 증권신고서(지분증권) )",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601100053",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003620",
+          "companyName": "KG모빌리티",
+          "reportName": "영업(잠정)실적(공정공시)",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601801104",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "000270",
+          "companyName": "기아",
+          "reportName": "영업(잠정)실적(공정공시)",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601801132",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "005380",
+          "companyName": "현대자동차",
+          "reportName": "영업(잠정)실적(공정공시)",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601801279",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016610",
+          "companyName": "DB증권",
           "reportName": "증권발행실적보고서",
           "reportType": "earnings",
           "importanceScore": 7,
@@ -749,136 +630,166 @@
           "keywords": [
             "earnings"
           ],
-          "receiptNo": "20260529001621",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001636",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003540",
+          "companyName": "대신증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001647",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016610",
+          "companyName": "DB증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001650",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003540",
+          "companyName": "대신증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001655",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001669",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "004170",
+          "companyName": "신세계",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001671",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "하나증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001687",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "하나증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001694",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "039490",
+          "companyName": "키움증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001715",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001734",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         }
       ],
       "highImportanceEvents": [
         {
-          "stockCode": "294090",
-          "companyName": "이오플로우",
-          "reportName": "소송등의판결ㆍ결정              (영업비밀보호법(“DTSA”)에 따른 영업비밀)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901513",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "099520",
-          "companyName": "DGI",
-          "reportName": "기타시장안내              (상장폐지 관련 이의신청서 접수)",
+          "stockCode": "091810",
+          "companyName": "트리니티항공",
+          "reportName": "불성실공시법인지정",
           "reportType": "risk_event",
           "importanceScore": 9,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "delisting_risk"
           ],
-          "receiptNo": "20260529901382",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601801361",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "033270",
-          "companyName": "유나이티드",
-          "reportName": "소송등의판결ㆍ결정(일정금액이상의청구)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529801833",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "067310",
-          "companyName": "하나마이크론",
-          "reportName": "[기재정정]소송등의판결ㆍ결정              (주주총회결의취소)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901780",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066790",
-          "companyName": "씨씨에스",
-          "reportName": "소송등의제기ㆍ신청(경영권분쟁소송)              (주주총회결의 집행금지 가처분)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901863",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "131030",
-          "companyName": "옵투스제약",
-          "reportName": "불성실공시법인미지정              (지정유예)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "delisting_risk"
-          ],
-          "receiptNo": "20260529901993",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066790",
-          "companyName": "씨씨에스",
-          "reportName": "소송등의제기ㆍ신청(경영권분쟁소송)              (직무대행자선임 가처분)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "lawsuit"
-          ],
-          "receiptNo": "20260529901867",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "090470",
-          "companyName": "제이스로보틱스",
-          "reportName": "불성실공시법인미지정              (지정유예)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "delisting_risk"
-          ],
-          "receiptNo": "20260529902056",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "017040",
-          "companyName": "광명전기",
+          "stockCode": "015590",
+          "companyName": "DKME",
           "reportName": "소송등의판결ㆍ결정",
           "reportType": "risk_event",
           "importanceScore": 9,
@@ -886,57 +797,59 @@
           "keywords": [
             "lawsuit"
           ],
-          "receiptNo": "20260529802079",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601801339",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "464440",
-          "companyName": "한국제13호스팩",
-          "reportName": "기타시장안내              (주권 상장폐지 우려 예고)",
+          "stockCode": "030610",
+          "companyName": "교보증권",
+          "reportName": "주요사항보고서(소송등의제기)",
+          "reportType": "risk_event",
+          "importanceScore": 9,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "lawsuit"
+          ],
+          "receiptNo": "20260601001737",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "237750",
+          "companyName": "피앤씨테크",
+          "reportName": "소송등의판결ㆍ결정",
+          "reportType": "risk_event",
+          "importanceScore": 9,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "lawsuit"
+          ],
+          "receiptNo": "20260601901775",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "032680",
+          "companyName": "소프트센",
+          "reportName": "기타시장안내              (소프트센 1우선주 관리종목지정 우려예고)",
           "reportType": "risk_event",
           "importanceScore": 9,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "delisting_risk"
           ],
-          "receiptNo": "20260529902044",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901777",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "083790",
-          "companyName": "CG인바이츠",
-          "reportName": "불성실공시법인지정예고              (공시변경)",
-          "reportType": "risk_event",
-          "importanceScore": 9,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "delisting_risk"
-          ],
-          "receiptNo": "20260529902181",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "145990",
-          "companyName": "삼양사",
-          "reportName": "타법인주식및출자증권취득결정(종속회사의주요경영사항)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529801443",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "261780",
-          "companyName": "아리바이오LAB",
+          "stockCode": "462350",
+          "companyName": "이노스페이스",
           "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -944,14 +857,74 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001608",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001294",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "073640",
-          "companyName": "테라사이언스",
+          "stockCode": "328130",
+          "companyName": "루닛",
+          "reportName": "[기재정정]전환사채(해외전환사채포함)발행후만기전사채취득              (제1회차)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901065",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "328130",
+          "companyName": "루닛",
+          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득              (제2회차)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901071",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "462350",
+          "companyName": "이노스페이스",
+          "reportName": "[발행조건확정]증권신고서(지분증권)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601001401",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "462350",
+          "companyName": "이노스페이스",
+          "reportName": "유상증자최종발행가액확정              (주주배정후 실권주 일반공모)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901176",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "052770",
+          "companyName": "아이톡시",
           "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -959,188 +932,72 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001620",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001456",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "220100",
-          "companyName": "퓨쳐켐",
-          "reportName": "주권매매거래정지              (무상증자)",
+          "stockCode": "052770",
+          "companyName": "아이톡시",
+          "reportName": "기타주요경영사항              (제3자배정 유상증자결정 철회)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529901518",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901216",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "288980",
-          "companyName": "모아데이타",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "stockCode": "014280",
+          "companyName": "금강공업",
+          "reportName": "주요사항보고서(교환사채권발행결정)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001619",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001516",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "220100",
-          "companyName": "퓨쳐켐",
-          "reportName": "주요사항보고서(유무상증자결정)",
+          "stockCode": "026910",
+          "companyName": "광진실업",
+          "reportName": "증권발행결과(자율공시)              (제3자배정 유상증자)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529001682",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901218",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "307180",
-          "companyName": "아이엘",
-          "reportName": "주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001709",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "067630",
-          "companyName": "HLB생명과학",
-          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득              (제13회차)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529901374",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "068940",
-          "companyName": "셀피글로벌",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001762",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "475580",
-          "companyName": "에이럭스",
-          "reportName": "[기재정정]타법인주식및출자증권처분결정",
+          "stockCode": "321820",
+          "companyName": "아티스트컴퍼니",
+          "reportName": "주요사항보고서(타법인주식및출자증권양도결정)",
           "reportType": "corporate_action",
           "importanceScore": 8,
           "direction": "event_review",
           "keywords": [],
-          "receiptNo": "20260529901569",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001445",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "475580",
-          "companyName": "에이럭스",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901575",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "475580",
-          "companyName": "에이럭스",
-          "reportName": "[기재정정]유상증자결정(종속회사의주요경영사항)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529901584",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "064800",
-          "companyName": "포니링크",
-          "reportName": "주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001660",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "070300",
-          "companyName": "엑스큐어",
-          "reportName": "[기재정정]주요사항보고서(타법인주식및출자증권양도결정)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529001653",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "220100",
-          "companyName": "퓨쳐켐",
-          "reportName": "증권신고서(지분증권)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529001989",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "200230",
-          "companyName": "텔콘RF제약",
+          "stockCode": "290660",
+          "companyName": "다이나믹솔루션",
           "reportName": "주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)",
           "reportType": "corporate_action",
           "importanceScore": 8,
@@ -1148,14 +1005,27 @@
           "keywords": [
             "ma"
           ],
-          "receiptNo": "20260529901730",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901311",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": null,
-          "companyName": "농협금융지주",
+          "stockCode": "230240",
+          "companyName": "에치에프알",
+          "reportName": "타법인주식및출자증권처분결정",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [],
+          "receiptNo": "20260601901401",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "154040",
+          "companyName": "다산솔루에타",
           "reportName": "주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -1163,83 +1033,14 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002036",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001578",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "094860",
-          "companyName": "네오리진",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정              (철회)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901784",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "094860",
-          "companyName": "네오리진",
-          "reportName": "기타주요경영사항              (타법인 주식 및 출자증권 취득결정 철회)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901792",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "003490",
-          "companyName": "대한항공",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529801777",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "068940",
-          "companyName": "셀피글로벌",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002094",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "142760",
-          "companyName": "모아라이프플러스",
-          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529901894",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "066980",
-          "companyName": "한성크린텍",
+          "stockCode": "012210",
+          "companyName": "삼미금속",
           "reportName": "주요사항보고서(전환사채권발행결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -1247,42 +1048,29 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002160",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001500",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "180640",
-          "companyName": "한진칼",
-          "reportName": "[기재정정]타법인주식및출자증권취득결정(자회사의 주요경영사항)",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529801865",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "011000",
-          "companyName": "진원생명과학",
-          "reportName": "[기재정정]주요사항보고서(자기전환사채매도결정)",
+          "stockCode": "026910",
+          "companyName": "광진실업",
+          "reportName": "[기재정정]증권발행결과(자율공시)              (제3자배정 유상증자)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002157",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901540",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "317770",
-          "companyName": "엑스페릭스",
+          "stockCode": "032790",
+          "companyName": "엠젠솔루션",
           "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -1290,14 +1078,14 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002142",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001705",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "089140",
-          "companyName": "넥스턴앤롤코리아",
+          "stockCode": "076610",
+          "companyName": "해성옵틱스",
           "reportName": "주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -1305,14 +1093,59 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002201",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001750",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "293490",
-          "companyName": "카카오게임즈",
+          "stockCode": "179900",
+          "companyName": "유티아이",
+          "reportName": "전환사채(해외전환사채포함)발행후만기전사채취득              (제1회차)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601901560",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "001340",
+          "companyName": "PKC",
+          "reportName": "전환가액ㆍ신주인수권행사가액ㆍ교환가액의조정(안내공시)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601801677",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "105550",
+          "companyName": "엣지파운드리",
+          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601001815",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "154040",
+          "companyName": "다산솔루에타",
           "reportName": "[기재정정]주요사항보고서(유상증자결정)",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -1320,130 +1153,102 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002223",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001872",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "293490",
-          "companyName": "카카오게임즈",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "stockCode": "219750",
+          "companyName": "한국비티비",
+          "reportName": "주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [
+            "ma"
+          ],
+          "receiptNo": "20260601901619",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "246690",
+          "companyName": "TS인베스트먼트",
+          "reportName": "주권매매거래정지              (주식의 병합, 분할 등 전자등록 변경, 말소)",
+          "reportType": "corporate_action",
+          "importanceScore": 8,
+          "direction": "event_review",
+          "keywords": [
+            "ma"
+          ],
+          "receiptNo": "20260601901703",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "061970",
+          "companyName": "LB세미콘",
+          "reportName": "[기재정정]증권신고서(지분증권)",
           "reportType": "dilution",
           "importanceScore": 8,
           "direction": "avoid_or_reduce_watchlist",
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529002244",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001967",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "003200",
-          "companyName": "일신방직",
-          "reportName": "[기재정정]타법인주식및출자증권처분결정",
+          "stockCode": "011790",
+          "companyName": "SKC",
+          "reportName": "전환청구권ㆍ신주인수권ㆍ교환청구권행사",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601801854",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "011300",
+          "companyName": "우성머티리얼스",
+          "reportName": "전환가액ㆍ신주인수권행사가액ㆍ교환가액의조정(안내공시)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601801795",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "025550",
+          "companyName": "한국선재",
+          "reportName": "타법인주식및출자증권처분결정",
           "reportType": "corporate_action",
           "importanceScore": 8,
           "direction": "event_review",
           "keywords": [],
-          "receiptNo": "20260529802090",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601901888",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "348370",
-          "companyName": "엔켐",
-          "reportName": "[기재정정]타법인주식및출자증권처분결정",
-          "reportType": "corporate_action",
-          "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260529901992",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "018000",
-          "companyName": "유니슨",
-          "reportName": "주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002274",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "[기재정정]주요사항보고서(자기전환사채매도결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002325",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002378",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "주요사항보고서(자기전환사채만기전취득결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002348",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "290690",
-          "companyName": "소룩스",
-          "reportName": "주요사항보고서(자기전환사채만기전취득결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260529002373",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "320000",
-          "companyName": "한울반도체",
+          "stockCode": "042940",
+          "companyName": "상지건설",
           "reportName": "정정신고서제출요구( 2026.05.15. 제출 증권신고서(지분증권) )",
           "reportType": "dilution",
           "importanceScore": 8,
@@ -1451,27 +1256,119 @@
           "keywords": [
             "dilution"
           ],
-          "receiptNo": "20260529100006",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601100055",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "148250",
-          "companyName": "알엔투테크놀로지",
-          "reportName": "[기재정정]주요사항보고서(타법인주식및출자증권양도결정)",
-          "reportType": "corporate_action",
+          "stockCode": null,
+          "companyName": "엔에이치농협캐피탈",
+          "reportName": "주요사항보고서(유상증자결정)",
+          "reportType": "dilution",
           "importanceScore": 8,
-          "direction": "event_review",
-          "keywords": [],
-          "receiptNo": "20260528001044",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601002035",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         },
         {
-          "stockCode": "008560",
-          "companyName": "메리츠증권",
+          "stockCode": "226950",
+          "companyName": "올릭스",
+          "reportName": "주요사항보고서(유상증자결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601002040",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "199800",
+          "companyName": "툴젠",
+          "reportName": "정정신고서제출요구( 2026.05.15. 제출 증권신고서(지분증권) )",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601100051",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "321370",
+          "companyName": "센서뷰",
+          "reportName": "정정신고서제출요구( 2026.05.18. 제출 증권신고서(지분증권) )",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260601100053",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003620",
+          "companyName": "KG모빌리티",
+          "reportName": "영업(잠정)실적(공정공시)",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601801104",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "000270",
+          "companyName": "기아",
+          "reportName": "영업(잠정)실적(공정공시)",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601801132",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "005380",
+          "companyName": "현대자동차",
+          "reportName": "영업(잠정)실적(공정공시)",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601801279",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016610",
+          "companyName": "DB증권",
           "reportName": "증권발행실적보고서",
           "reportType": "earnings",
           "importanceScore": 7,
@@ -1479,8 +1376,143 @@
           "keywords": [
             "earnings"
           ],
-          "receiptNo": "20260529001621",
-          "receiptDate": "2026-05-28T15:00:00.000Z",
+          "receiptNo": "20260601001636",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003540",
+          "companyName": "대신증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001647",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "016610",
+          "companyName": "DB증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001650",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "003540",
+          "companyName": "대신증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001655",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001669",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "004170",
+          "companyName": "신세계",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001671",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "하나증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001687",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "하나증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001694",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "039490",
+          "companyName": "키움증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001715",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": null,
+          "companyName": "한국투자증권",
+          "reportName": "증권발행실적보고서",
+          "reportType": "earnings",
+          "importanceScore": 7,
+          "direction": "positive_watchlist",
+          "keywords": [
+            "earnings"
+          ],
+          "receiptNo": "20260601001734",
+          "receiptDate": "2026-05-31T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
         }
