@@ -1,4 +1,41 @@
-# 세션 인수인계 — 2026-06-02 (CODEX_LUNA_BACKTEST_RELIABILITY_V3 — Walk-Forward fold 풀링 확인)
+# 세션 인수인계 — 2026-06-02 (CODEX_LUNA_TRADE_GUARD_NOTIFY_REOPEN + BACKTEST_RELIABILITY_V3)
+
+## 완료 요약 ✅ — trade-data guard Block→Notify 실행 경로 구현 완료
+
+### CODEX_LUNA_TRADE_GUARD_NOTIFY_REOPEN_2026-06-02 상태
+
+**구현 완료 (2026-06-02 오후):**
+- `classifyTradeDataGuardDecision()` 추가: `hard_block | notify | allow` 3단계 분류
+- `resolveTradeDataGuardNotifySizingMultiplier()` 추가: 기본 0.65, 하한 0.25 clamp
+- `execution-guards.ts`: hard_block만 reject, notify→`{success:true, tradeDataGuardNotify:{...}}`
+- `signal-executor.ts`: `tradeDataGuardNotify` 패턴으로 실행 금액 반영
+- `luna-entry-trigger-worker.ts`: hard_block만 skip, notify→materialize+sizing 축소
+- `applyTradeDataEntryGuardToDecision()`: classifyTradeDataGuardDecision 일원화
+
+**smoke 결과:**
+- defensive_rotation+evidence0+presignal_false → notify ✅
+- trend_following+confirmation_missing → notify ✅
+- stablecoin(USDC/USDT) → hard_block ✅
+- strict 모드 → confirmation_quality_thin hard_block ✅
+
+**dry-run DB 확인:**
+- 5/31~ 차단 26건 (defensive_rotation 24건 + trend_following 2건) → 모두 notify 통과 예정
+- crypto 마지막 체결: 2026-06-02 12:00 (defensive_rotation 진행 중)
+
+**신호 품질 (STOP-4):**
+- defensive_rotation crypto: 청산 0건 (포지션 오픈 중, 실현 P&L 미확인)
+- trend_following crypto: 4건 청산, avg +0.07%, 승률 50% (경계선 양호)
+- 결론: notify로 열되 기본 multiplier 0.65 + SHADOW 48-72h 관찰 후 mastr 승인 권고
+
+**live 재개 금지 준수**: launchctl/secrets 변경 없음. 다음 scheduler 자연 주기 관찰 필요.
+
+### 다음 세션 필수 작업
+
+1. **SHADOW 관찰**: push→OPS pull 후 첫 scheduler 사이클에서 `trade_data_entry_guard_rejected` 신호가 notify 통과로 전환되는지 확인
+2. **live 재개 승인**: 마스터 승인 후 별도 `launchctl kickstart` 또는 자동 주기로 활성화
+3. **선택적**: `LUNA_TRADE_DATA_NOTIFY_SIZING_MULTIPLIER=0.35`로 초기 더 보수적 운용 (0.65 대신)
+
+---
 
 ## 완료 요약 ✅ — Walk-Forward fold 풀링 검증 완료 (v3 코드 전체 구현됨)
 

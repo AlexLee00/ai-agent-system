@@ -4,6 +4,19 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-06-02: CODEX_LUNA_TRADE_GUARD_NOTIFY_REOPEN — Block→Notify 실행 경로 구현 완료
+
+- **원인**: 5/31~ crypto 신호 26건 trade_data_entry_guard_rejected(hard block) — defensive_rotation 24건, trend_following 2건
+- **구현**: `classifyTradeDataGuardDecision()` 3단계 분류 함수 + `resolveTradeDataGuardNotifySizingMultiplier()` 추가
+- **경로 수정**: execution-guards(hephaestos), luna-entry-trigger-worker — hard_block만 reject, notify 통과
+- **signal-executor**: `tradeDataGuardNotify` 패턴으로 실행 금액 65% sizing 반영
+- **stablecoin 차단 유지**: USDC/USDT 등 구조적 hard_block 변경 없음
+- **smoke**: defensive_rotation→notify, trend_following→notify, stablecoin→hard_block, strict→hard_block ✅
+- **신호 품질(STOP-4)**: defensive_rotation 청산 미확인, trend_following avg+0.07% — SHADOW 48-72h 관찰 권고
+- **금지사항 준수**: live 활성화/launchctl/secrets 변경 없음
+- **결과 문서**: `docs/codex/LUNA_TRADE_GUARD_NOTIFY_REOPEN_RESULT_2026-06-02.md`
+- **커밋**: `8574ae285`
+
 ## 2026-06-02: CODEX_LUNA_BACKTEST_RELIABILITY_V3 — Walk-Forward fold 풀링 완료 확인 + plist 명시화
 
 - **확인**: walk_forward() 이미 v3 사양 구현됨 (fold별 raw 수집 → 풀 집계 → v2 안전장치 1회 적용)
