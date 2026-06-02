@@ -1,4 +1,34 @@
-# 세션 인수인계 — 2026-06-03 (CODEX_S1_C2_1_PIPELINE_ACTIVATION)
+# 세션 인수인계 — 2026-06-03 (CODEX_S1_C2_2b_VAULT_INGEST_EMBED)
+
+## 완료 요약 ✅ — vault addToInbox 임베딩 통합 (작업 A)
+
+### S1-C2-2b 상태 (2026-06-03)
+
+**작업 A — addToInbox 임베딩 통합 (완료):**
+- `bots/sigma/vault/vault-manager.ts` 수정
+- `createVaultEmbedding()`: local MLX qwen3-embed-0.6b → POST `/v1/embeddings` → `data[0].embedding`
+- INSERT에 `embedding` 컬럼(`$8::vector`) 추가
+- ON CONFLICT upsert: `COALESCE(EXCLUDED.embedding, 기존값)` — 서버 다운 시 기존 임베딩 보존
+- graceful: 임베딩 실패 시 `embedding = NULL` 적재, 경고 로그, 적재 자체는 계속
+- 반환값 `embedded: boolean` 추가 (inbox-processor 하위 호환 유지)
+- **차원 검증**: `vector(1024)` ↔ qwen3-embed-0.6b(1024-dim) 일치 → **마이그레이션 불필요**
+- 커밋: `b6f75068d`
+
+**작업 B — collectLibraryRecords → vault_entries 적재 (미구현, 다음 단계):**
+- CODEX S1-C2-2b 목표 2: 거래 SourceKind 포함 → vault_entries 0→N
+- dataset-builder.ts의 collectLibraryRecords 읽기(SELECT) → addToInbox 연결 신규 스크립트
+
+**작업 C — pgvector 검색 + launchd (미구현, 마스터 담당):**
+- pgvector 검색 동작 확인 후 plist 등록
+
+**다음 단계 (작업 B 구현 시 필요 파일):**
+- `bots/sigma/ts/lib/dataset-builder.ts` — collectLibraryRecords 또는 외부 LibraryRecord 공급자
+- `bots/sigma/ts/lib/intelligent-library.js` — collectLibraryRecords 실제 위치 확인 필요
+- 신규 스크립트: `bots/sigma/scripts/collect-vault-entries.ts`
+
+---
+
+# 이전 세션 인수인계 — 2026-06-03 (CODEX_S1_C2_1_PIPELINE_ACTIVATION)
 
 ## 완료 요약 ✅ — entity_facts 경로 plist 준비 + loss/win persist 가동
 
