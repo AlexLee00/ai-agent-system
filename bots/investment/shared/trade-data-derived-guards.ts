@@ -640,13 +640,60 @@ function isStructuralHardBlock(guard = {}) {
   return blockers.includes('crypto_structural_symbol_block');
 }
 
+// strict 모드에서 hard_block으로 승격 가능한 confirmation 계열 블로커
+const CONFIRMATION_BLOCKER_CODES = new Set([
+  'crypto_trending_bull_confirmation_quality_thin',
+  'crypto_trend_following_confirmation_quality_thin',
+  'promotion_ready_shadow_confirmation_quality_thin',
+  'crypto_defensive_rotation_confirmation_quality_thin',
+  'crypto_mean_reversion_confirmation_quality_thin',
+  'crypto_short_term_scalping_confirmation_quality_thin',
+]);
+
+/**
+ * guard 결과를 3단계로 분류한다.
+ * - 'hard_block': 구조적 stablecoin 차단 OR strict 모드에서 confirmation 블로커
+ * - 'notify':     그 외 블로커 → 거래 허용 + sizing 축소 + 이벤트 기록
+ * - 'allow':      blocked=false
+ *
+ * 실행 경로(execution-guards, entry-trigger-worker)가 이 함수를 사용해
+ * hard_block만 reject/skip하고 나머지는 notify로 통과시킨다.
+ */
+export function classifyTradeDataGuardDecision(guard = {}, env = process.env) {
+  if (!guard.blocked) return 'allow';
+  if (isStructuralHardBlock(guard)) return 'hard_block';
+  const blockers = Array.isArray(guard.blockers) ? guard.blockers : [];
+  // LUNA_TRADE_DATA_STRICT_CONFIRMATION_GUARD=true일 때 confirmation 계열 → hard_block 승격
+  if (isStrictTradeDataConfirmationGuardEnabled(env) && blockers.some((b) => CONFIRMATION_BLOCKER_CODES.has(b))) {
+    return 'hard_block';
+  }
+  return 'notify';
+}
+
+export function resolveTradeDataGuardNotifySizingMultiplier(guard = {}, env = process.env) {
+  const envMultiplier = Number(
+    env.LUNA_TRADE_DATA_NOTIFY_SIZING_MULTIPLIER
+      ?? env.LUNA_TRADE_DATA_NOTIFY_MULTIPLIER
+      ?? NaN,
+  );
+  const guardMultiplier = Number(guard?.meta?.sizingMultiplier ?? NaN);
+  const raw = Number.isFinite(envMultiplier)
+    ? envMultiplier
+    : Number.isFinite(guardMultiplier)
+      ? guardMultiplier
+      : 0.65;
+  return Number(Math.min(0.65, Math.max(0.25, raw)).toFixed(4));
+}
+
 export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = null, env = process.env) {
   const guard = evaluateTradeDataEntryGuard({
     ...decision,
     exchange,
     market: decision.market || exchange,
   }, env);
-  if (!guard.blocked) {
+  const guardClass = classifyTradeDataGuardDecision(guard, env);
+
+  if (guardClass === 'allow') {
     const sizingMultiplier = Number(guard?.meta?.sizingMultiplier ?? 1);
     const shouldResize = Number.isFinite(sizingMultiplier) && sizingMultiplier > 0 && sizingMultiplier < 1 && Number(decision.amount_usdt || 0) > 0;
     if (guard.warnings.length === 0 && !shouldResize) return { decision, guard, changed: false };
@@ -686,8 +733,8 @@ export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = nul
     };
   }
 
-  // HARD block (스테이블코인 구조 차단) → 기존 block 동작 유지
-  if (isStructuralHardBlock(guard)) {
+  // HARD block (stablecoin 구조 차단 OR strict confirmation) → HOLD
+  if (guardClass === 'hard_block') {
     recordGuardEvents([{
       guardName: 'trade_data_structural_hard_block',
       symbol: decision.symbol || null,
@@ -717,8 +764,7 @@ export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = nul
 
   // Notify 모드: 구조 외 블로커 → 거래 허용 + 경고 기록 + guard_events 저장
   // 마스터 비전: "가드 = 막지 X, 알림 + 학습!"
-  const sizingMultiplier = Number(guard?.meta?.sizingMultiplier ?? 0.65);
-  const notifySizingMultiplier = Math.min(0.65, Math.max(0.25, sizingMultiplier));
+  const notifySizingMultiplier = resolveTradeDataGuardNotifySizingMultiplier(guard, env);
   const adjustedAmount = Number(decision.amount_usdt || 0) > 0
     ? Number((Number(decision.amount_usdt || 0) * notifySizingMultiplier).toFixed(4))
     : decision.amount_usdt;
@@ -763,5 +809,7 @@ export default {
   checkTradeDataWeakSymbol,
   buildTradeDataConfirmationQuality,
   evaluateTradeDataEntryGuard,
+  classifyTradeDataGuardDecision,
+  resolveTradeDataGuardNotifySizingMultiplier,
   applyTradeDataEntryGuardToDecision,
 };

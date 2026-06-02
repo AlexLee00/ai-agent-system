@@ -123,10 +123,10 @@ async function executeSignal(signal) {
     signalId,
     symbol,
     action,
-    amountUsdt,
     base,
     tag,
   } = executionContext;
+  let { amountUsdt } = executionContext;
   let { effectivePaperMode } = executionContext;
   const executionAgentPlan = extractExecutionAgentPlan(signal);
 
@@ -160,7 +160,7 @@ async function executeSignal(signal) {
   const hephaestosRoleState = hephaestosRoleStatePromise
     ? await hephaestosRoleStatePromise
     : await getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null);
-  const persistFailure = createSignalFailurePersister({
+  let persistFailure = createSignalFailurePersister({
     db,
     signalId,
     symbol,
@@ -205,7 +205,7 @@ async function executeSignal(signal) {
         }
       }
 
-      const safetyRejected = await runBuySafetyGuards({
+      const safetyResult = await runBuySafetyGuards({
         persistFailure,
         symbol,
         action,
@@ -219,7 +219,22 @@ async function executeSignal(signal) {
         getDailyTradeCount,
         formatDailyTradeLimitReason,
       });
-      if (safetyRejected) return safetyRejected;
+      if (safetyResult?.success === false) return safetyResult;
+      const tradeDataGuardNotify = safetyResult?.tradeDataGuardNotify || null;
+      if (tradeDataGuardNotify?.adjustedAmountUsdt > 0 && tradeDataGuardNotify.adjustedAmountUsdt < amountUsdt) {
+        amountUsdt = tradeDataGuardNotify.adjustedAmountUsdt;
+        signal.amount_usdt = amountUsdt;
+        signal.amountUsdt = amountUsdt;
+        persistFailure = createSignalFailurePersister({
+          db,
+          signalId,
+          symbol,
+          action,
+          amountUsdt,
+          failedStatus: SIGNAL_STATUS.FAILED,
+        });
+        console.log(`  ⚠️ [거래데이터 가드] 실행 금액 축소 적용 $${tradeDataGuardNotify.requestedAmountUsdt} → $${amountUsdt}`);
+      }
 
       const absorbed = await tryAbsorbUntrackedBalance({
         signalId,

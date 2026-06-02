@@ -17,7 +17,12 @@ import { get as dbGet } from '../shared/db/core.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 import { listActiveEntryTriggers, updateEntryTriggerState } from '../shared/luna-discovery-entry-store.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
-import { evaluateTradeDataEntryGuard } from '../shared/trade-data-derived-guards.ts';
+import {
+  classifyTradeDataGuardDecision,
+  evaluateTradeDataEntryGuard,
+  resolveTradeDataGuardNotifySizingMultiplier,
+} from '../shared/trade-data-derived-guards.ts';
+import { recordGuardEvents } from '../shared/guard-event-recorder.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
@@ -780,7 +785,9 @@ export async function materializeFiredEntryTriggerSignals({
       triggerHints: strategy.triggerHints,
       hasTechnicalPresignal: strategy.hasTechnicalPresignal,
     }, process.env);
-    if (tradeDataGuard.blocked) {
+    const tradeDataGuardClass = classifyTradeDataGuardDecision(tradeDataGuard, process.env);
+    if (tradeDataGuardClass === 'hard_block') {
+      // 구조적 stablecoin 또는 strict confirmation → 트리거 skip
       skipped += 1;
       await Promise.resolve(triggerUpdater(trigger.id, {
         triggerState: 'fired',
@@ -794,10 +801,41 @@ export async function materializeFiredEntryTriggerSignals({
         triggerId: trigger.id,
         symbol,
         status: 'skipped',
-        reason: 'trade_data_entry_guard_blocked',
+        reason: 'trade_data_entry_guard_hard_blocked',
         blockers: tradeDataGuard.blockers || [],
       });
       continue;
+    }
+    if (tradeDataGuardClass === 'notify') {
+      // notify 모드: materialize 계속 + guard_events 기록 + sizing 축소 표시
+      const notifyBlockers = Array.isArray(tradeDataGuard.blockers) ? tradeDataGuard.blockers : [];
+      const notifySizingMultiplier = resolveTradeDataGuardNotifySizingMultiplier(tradeDataGuard, process.env);
+      console.log(`  ⚠️ [entry-trigger 가드] notify 모드 통과 ${symbol}: ${notifyBlockers.join(', ')}`);
+      recordGuardEvents(notifyBlockers.map((blocker) => ({
+        guardName: 'trade_data_entry_guard',
+        symbol,
+        exchange,
+        market: resolveMaterializedSignalMarket(exchange),
+        reason: blocker,
+        severity: 'warning',
+        guardMetadata: {
+          blockers: notifyBlockers,
+          guardClass: 'notify',
+          sizingMultiplier: notifySizingMultiplier,
+          triggerType: trigger.trigger_type || null,
+        },
+      })));
+      await Promise.resolve(triggerUpdater(trigger.id, {
+        triggerState: 'fired',
+        triggerMetaPatch: {
+          tradeDataGuardNotify: {
+            blockers: notifyBlockers,
+            sizingMultiplier: notifySizingMultiplier,
+            notifiedAt: new Date().toISOString(),
+          },
+        },
+      })).catch(() => null);
+      strategy._notifyGuardSizingMultiplier = notifySizingMultiplier;
     }
     const duplicate = await Promise.resolve(duplicateFinder({
       symbol,
@@ -817,19 +855,28 @@ export async function materializeFiredEntryTriggerSignals({
       items.push({ triggerId: trigger.id, symbol, status: 'skipped', reason: 'duplicate_existing_signal', signalId: duplicate.id });
       continue;
     }
-    const amountUsdt = resolveEntryTriggerSignalAmount({ capitalSnapshot: riskContext.capitalSnapshot, trigger });
+    const rawAmountUsdt = resolveEntryTriggerSignalAmount({ capitalSnapshot: riskContext.capitalSnapshot, trigger });
+    const notifyMultiplier = strategy._notifyGuardSizingMultiplier ?? 1;
+    const amountUsdt = notifyMultiplier < 1
+      ? Number((rawAmountUsdt * notifyMultiplier).toFixed(4))
+      : rawAmountUsdt;
     if (!(amountUsdt > 0)) {
       skipped += 1;
       items.push({ triggerId: trigger.id, symbol, status: 'skipped', reason: 'amount_unavailable' });
       continue;
     }
     const event = events.find((row) => String(row?.symbol || '').toUpperCase() === symbol.toUpperCase()) || trigger.trigger_meta?.event || null;
+    const notifyGuardActive = (strategy._notifyGuardSizingMultiplier ?? 1) < 1;
     const signalId = await signalInserter({
       symbol,
       action: 'BUY',
       amountUsdt,
-      confidence: Number(trigger.confidence || 0),
-      reasoning: `entry_trigger_fired(${trigger.trigger_type}) ${symbol}`,
+      confidence: notifyGuardActive
+        ? Math.max(0, Number(trigger.confidence || 0) - 0.05)
+        : Number(trigger.confidence || 0),
+      reasoning: notifyGuardActive
+        ? `entry_trigger_fired(${trigger.trigger_type}) ${symbol} | trade_data_guard_notify(${strategy._notifyGuardSizingMultiplier})`
+        : `entry_trigger_fired(${trigger.trigger_type}) ${symbol}`,
       status: 'approved',
       exchange,
       strategyFamily: strategy.family,

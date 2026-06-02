@@ -1,6 +1,11 @@
 // @ts-nocheck
 
-import { evaluateTradeDataEntryGuard } from '../../shared/trade-data-derived-guards.ts';
+import {
+  classifyTradeDataGuardDecision,
+  evaluateTradeDataEntryGuard,
+  resolveTradeDataGuardNotifySizingMultiplier,
+} from '../../shared/trade-data-derived-guards.ts';
+import { recordGuardEvents } from '../../shared/guard-event-recorder.ts';
 import { evaluateCandidateBacktestEntryGate } from '../../shared/candidate-backtest-gate.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
@@ -72,11 +77,13 @@ export async function runBuySafetyGuards({
     exchange: signal.exchange || 'binance',
     market: signal.market || 'crypto',
   }, process.env);
-  if (tradeDataGuard.blocked) {
+  const tradeDataGuardClass = classifyTradeDataGuardDecision(tradeDataGuard, process.env);
+  if (tradeDataGuardClass === 'hard_block') {
+    // 구조적 stablecoin 또는 strict confirmation → 거래 거부
     const blockers = Array.isArray(tradeDataGuard.blockers) && tradeDataGuard.blockers.length > 0
       ? tradeDataGuard.blockers.join(', ')
       : 'trade_data_policy';
-    const reason = `trade-data entry guard blocked: ${blockers}`;
+    const reason = `trade-data entry guard hard-blocked: ${blockers}`;
     console.log(`  ⛔ [거래데이터 가드] ${reason}`);
     return rejectExecution({
       persistFailure,
@@ -92,6 +99,44 @@ export async function runBuySafetyGuards({
       }),
       notify: notifyEnabled ? 'skip' : false,
     });
+  }
+  if (tradeDataGuardClass === 'notify') {
+    // notify 모드: 거래 계속 + guard_events 기록 + 실행 직전 sizing 축소
+    const blockers = Array.isArray(tradeDataGuard.blockers) ? tradeDataGuard.blockers : [];
+    const notifySizingMultiplier = resolveTradeDataGuardNotifySizingMultiplier(tradeDataGuard, process.env);
+    const requestedAmountUsdt = Number(signal.amount_usdt ?? signal.amountUsdt ?? 0);
+    const adjustedAmountUsdt = requestedAmountUsdt > 0
+      ? Number((requestedAmountUsdt * notifySizingMultiplier).toFixed(4))
+      : requestedAmountUsdt;
+    if (adjustedAmountUsdt > 0 && adjustedAmountUsdt < requestedAmountUsdt) {
+      signal.amount_usdt = adjustedAmountUsdt;
+      signal.amountUsdt = adjustedAmountUsdt;
+    }
+    console.log(`  ⚠️ [거래데이터 가드] notify 모드 통과: ${blockers.join(', ')} x${notifySizingMultiplier}`);
+    recordGuardEvents(blockers.map((blocker) => ({
+      guardName: 'trade_data_entry_guard',
+      symbol,
+      exchange: signal.exchange || 'binance',
+      market: signal.market || 'crypto',
+      reason: blocker,
+      severity: 'warning',
+      decisionBefore: { action, amount_usdt: requestedAmountUsdt || null },
+      decisionAfter: { action, amount_usdt: adjustedAmountUsdt, notifyMode: true },
+      guardMetadata: {
+        blockers,
+        guardClass: 'notify',
+        sizingMultiplier: notifySizingMultiplier,
+      },
+    })));
+    return {
+      success: true,
+      tradeDataGuardNotify: {
+        blockers,
+        sizingMultiplier: notifySizingMultiplier,
+        requestedAmountUsdt,
+        adjustedAmountUsdt,
+      },
+    };
   }
 
   const backtestGate = await evaluateCandidateBacktestEntryGate({

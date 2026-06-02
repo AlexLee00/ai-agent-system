@@ -97,6 +97,65 @@ const dailyResult = await runBuySafetyGuards(dailyLimit.input);
 assert.equal(dailyResult.success, false);
 assert.equal(dailyLimit.captured[0].payload.meta.guardKind, 'daily_trade_limit');
 
+// [GUARD_NOTIFY_REOPEN] crypto defensive_rotation without evidence → notify 모드 통과 (reject 아님)
+const defRotNotify = createDeps({
+  symbol: 'ORCA/USDT',
+  signal: {
+    symbol: 'ORCA/USDT',
+    action: ACTIONS.BUY,
+    exchange: 'binance',
+    market: 'crypto',
+    strategy_family: 'defensive_rotation',
+    externalEvidence: { evidenceCount: 0 },
+    hasTechnicalPresignal: false,
+  },
+});
+const defRotResult = await runBuySafetyGuards(defRotNotify.input);
+// notify 모드: success:true + tradeDataGuardNotify 있어야 함 (success:false 아님)
+assert.ok(defRotResult?.success !== false, 'defensive_rotation without evidence: notify 모드여야 함 (success !== false)');
+assert.ok(defRotResult?.tradeDataGuardNotify != null, 'defensive_rotation notify: tradeDataGuardNotify 있어야 함');
+assert.equal(defRotNotify.captured.length, 0, 'defensive_rotation notify: persistFailure 호출 없어야 함');
+
+// [GUARD_NOTIFY_REOPEN] crypto trend_following without confirmation → notify 모드 통과
+const trendFollowNotify = createDeps({
+  symbol: 'ORCA/USDT',
+  signal: {
+    symbol: 'ORCA/USDT',
+    action: ACTIONS.BUY,
+    exchange: 'binance',
+    market: 'crypto',
+    strategy_family: 'trend_following',
+    strategy_route: { selectedFamily: 'trend_following', familyPerformance: { selectedBias: 0.0 } },
+    externalEvidence: { evidenceCount: 0 },
+    hasTechnicalPresignal: false,
+  },
+});
+const trendFollowResult = await runBuySafetyGuards(trendFollowNotify.input);
+assert.ok(trendFollowResult?.success !== false, 'trend_following without confirmation: notify 모드여야 함 (success !== false)');
+assert.ok(trendFollowResult?.tradeDataGuardNotify != null, 'trend_following notify: tradeDataGuardNotify 있어야 함');
+assert.equal(trendFollowNotify.captured.length, 0, 'trend_following notify: persistFailure 호출 없어야 함');
+
+// [GUARD_NOTIFY_REOPEN] stablecoin → hard_block 유지
+const stablecoinBlocked = createDeps({
+  symbol: 'USDC/USDT',
+  signal: {
+    symbol: 'USDC/USDT',
+    action: ACTIONS.BUY,
+    exchange: 'binance',
+    market: 'crypto',
+  },
+  binanceTopVolumeUniverse: {
+    source: 'smoke',
+    fetchedAt: new Date().toISOString(),
+    limit: 30,
+    symbols: ['USDC/USDT'],
+    ranks: { 'USDC/USDT': 1 },
+  },
+});
+const stablecoinResult = await runBuySafetyGuards(stablecoinBlocked.input);
+assert.equal(stablecoinResult?.success, false, 'stablecoin: hard_block이어야 함');
+assert.equal(stablecoinBlocked.captured[0]?.payload?.code, 'trade_data_entry_guard_rejected', 'stablecoin: trade_data_entry_guard_rejected 코드여야 함');
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-execution-guards',
@@ -104,6 +163,9 @@ const payload = {
   tradeDataBlocked: tradeDataBlocked.captured[0],
   maxPositions: maxPositions.captured[0],
   dailyLimit: dailyLimit.captured[0],
+  defRotNotify: { result: defRotResult, captured: defRotNotify.captured.length },
+  trendFollowNotify: { result: trendFollowResult, captured: trendFollowNotify.captured.length },
+  stablecoinBlocked: stablecoinBlocked.captured[0],
 };
 
 if (process.argv.includes('--json')) {
