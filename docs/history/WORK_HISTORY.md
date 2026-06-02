@@ -7,10 +7,10 @@
 ## 2026-06-03: CODEX_S1_3_3_C2_ON_GATE — L2 ON 전환 게이트 구현
 
 - **목표**: luna_vault_shadow_eval 집계 → (market, family, direction)별 vault/base 적중률 게이트 판정 → ON 후보 기록
-- **신규 테이블**: `investment.luna_vault_on_candidates` (market/family/direction/vault_hit_rate/base_hit_rate/lift/scored_sample/gate_status/block_reasons)
+- **신규 테이블**: `investment.luna_vault_shadow_on_candidates` (scope_market/scope_family/scope_direction/vault_hit_rate/base_hit_rate/lift/sample_n/eval_days/gate_status/gate_reason)
 - **신규 모듈**: `bots/investment/shared/luna-vault-on-gate.ts` — 집계 CTE + applyGate() + upsertCandidate()
-- **신규 스크립트**: `bots/investment/scripts/luna-vault-on-gate.ts` — CLI (`--dry-run` / `--write` / `--report` / `--json`)
-- **게이트**: 4조건 ALL PASS — scored_sample≥30, vault_hit_rate≥0.6, vault≥base, duration≥14d
+- **신규 스크립트**: `bots/investment/scripts/luna-vault-on-gate.ts` — CLI (`--dry-run` / `--report` / `--json`, 기본 write)
+- **게이트**: 4조건 ALL PASS — sample_n≥30, vault_hit_rate≥0.6, vault≥base, eval_days≥14
 - **실행 결과**: 4그룹 검출 전부 BLOCK(insufficient_sample) — C1 데이터 미축적 예상 동작
 - **read-only**: shadow_eval/shadow_adjustments/trade_journal/curriculum 무수정
 - **커밋**: 이번 세션
