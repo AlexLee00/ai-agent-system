@@ -646,6 +646,8 @@
     "runtime:luna-score-fusion-safety-smoke": "node scripts/luna-score-fusion-safety-smoke.ts --json",
     "runtime:luna-feedback-action-mapper": "node scripts/runtime-luna-feedback-action-mapper.ts --json",
     "runtime:luna-agent-evolution": "node scripts/runtime-luna-agent-evolution.ts --json",
+    "runtime:luna-vault-shadow-eval": "node scripts/runtime-luna-vault-shadow-eval.ts --json",
+    "vault:eval-report": "node scripts/runtime-luna-vault-shadow-eval.ts --json --report-only",
     "runtime:luna-pattern-persist": "node scripts/runtime-luna-pattern-persist.ts --json",
     "runtime:luna-ppo-retrain-weekly": "node scripts/runtime-luna-ppo-retrain-weekly.ts --json",
     "runtime:luna-rl-check-deps": "bash python/rl/check-deps.sh --json",

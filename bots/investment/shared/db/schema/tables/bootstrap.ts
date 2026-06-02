@@ -1117,6 +1117,30 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_adjustments_agreement ON luna_vault_shadow_adjustments(agreement, created_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_vault_shadow_eval (
+      id                   BIGSERIAL PRIMARY KEY,
+      shadow_id            BIGINT REFERENCES luna_vault_shadow_adjustments(id) ON DELETE CASCADE,
+      pattern_key          TEXT NOT NULL,
+      market               TEXT,
+      regime               TEXT,
+      eval_window_start    BIGINT NOT NULL,
+      eval_window_end      BIGINT NOT NULL,
+      post_trade_count     INTEGER NOT NULL DEFAULT 0,
+      post_avg_pnl         DOUBLE PRECISION,
+      base_adjustment_type TEXT NOT NULL,
+      vault_shadow_type    TEXT,
+      base_correct         BOOLEAN,
+      vault_correct        BOOLEAN,
+      evaluated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      metadata             JSONB NOT NULL DEFAULT '{}'::jsonb,
+      UNIQUE (shadow_id, eval_window_start, eval_window_end)
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_eval_pattern ON luna_vault_shadow_eval(pattern_key, evaluated_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_eval_evaluated ON luna_vault_shadow_eval(evaluated_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_eval_market ON luna_vault_shadow_eval(market, evaluated_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS agent_messages (
       id           BIGSERIAL PRIMARY KEY,
       incident_key TEXT,
