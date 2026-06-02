@@ -1,4 +1,62 @@
-# 세션 인수인계 — 2026-06-03 (CODEX_S1_S1_3_2_VAULT_LEARNING_SHADOW)
+# 세션 인수인계 — 2026-06-03 (CODEX_S1_3_3_C2_ON_GATE)
+
+## 완료 요약 ✅ — L2 ON 전환 게이트 (S1.3-3 C2)
+
+### S1.3-3 C2 상태 (2026-06-03)
+
+**구현 완료:**
+- `investment.luna_vault_on_candidates` 테이블 신설 (DDL 자동 생성)
+- `bots/investment/shared/luna-vault-on-gate.ts` — 집계 + 게이트 판정 + ON 후보 기록 (공용 모듈)
+- `bots/investment/scripts/luna-vault-on-gate.ts` — CLI 실행 스크립트 (`--dry-run` / `--report` / `--json`)
+
+**게이트 로직:**
+- `luna_vault_shadow_eval`을 (market, family=pattern_key.split(':')[1], direction=positive/negative) 단위로 집계
+- 4개 조건 ALL 충족 시 PASS → ON 후보 기록:
+  1. scored_sample ≥ VAULT_ON_GATE_MIN_SAMPLE (기본 30)
+  2. vault_hit_rate ≥ VAULT_ON_GATE_MIN_HIT (기본 0.6)
+  3. vault_hit_rate ≥ base_hit_rate (비열등)
+  4. duration_days ≥ VAULT_ON_GATE_MIN_DAYS (기본 14)
+- block_reasons: 실패 조건 전체 기록 (복수 허용)
+- ON CONFLICT (market, family, direction) DO UPDATE → 재실행 시 갱신
+
+**실행 결과 (2026-06-03):**
+- 4그룹 검출: crypto/{defensive_rotation,mean_reversion,regime_mismatch_loss,trend_following}/negative
+- 전부 BLOCK (insufficient_sample + no_vault_score + insufficient_duration) — **예상대로**
+- C1 hit_rate 전부 null(후속 청산 거래 0) → 데이터 축적 시 자동 PASS 전환
+
+**안전 보장:**
+- luna_vault_shadow_eval / 거래 / shadow / curriculum 완전 read-only
+- ON 후보 기록만 write (luna_vault_on_candidates)
+- 거래 의사결정 / agent_curriculum_state 무변경
+- 환경변수(VAULT_ON_GATE_MIN_HIT/SAMPLE/DAYS)로 임계 조정 가능
+
+**검증 절차 (메티):**
+```bash
+# DRY-RUN 집계 확인
+node --disable-warning=DEP0205 --import tsx \
+  bots/investment/scripts/luna-vault-on-gate.ts --dry-run
+
+# 기존 후보 현황
+node --disable-warning=DEP0205 --import tsx \
+  bots/investment/scripts/luna-vault-on-gate.ts --report
+
+# DB 직접 확인
+SELECT market, family, direction, gate_status, block_reasons, scored_sample, vault_hit_rate
+FROM investment.luna_vault_on_candidates
+ORDER BY gate_status, market;
+-- 기대: 4건 BLOCK, scored_sample=0, vault_hit_rate=NULL
+```
+
+**커밋**: 이 세션
+
+**다음 단계:**
+- shadow 데이터 + C1 평가 데이터 축적 후 게이트 자동 재실행
+- scored_sample ≥ 30 + hit_rate ≥ 0.6 도달 그룹 → PASS → C3 ON 화이트리스트 연결
+- C3 = L3 단계적 ON (buildPriorityAdjustments 이중 스위치 + 화이트리스트) — 별도 CODEX
+
+---
+
+# 이전 인수인계 — 2026-06-03 (CODEX_S1_S1_3_2_VAULT_LEARNING_SHADOW)
 
 ## 완료 요약 ✅ — vault RAG SHADOW 보강 (S1.3-2)
 

@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-06-03: CODEX_S1_3_3_C2_ON_GATE — L2 ON 전환 게이트 구현
+
+- **목표**: luna_vault_shadow_eval 집계 → (market, family, direction)별 vault/base 적중률 게이트 판정 → ON 후보 기록
+- **신규 테이블**: `investment.luna_vault_on_candidates` (market/family/direction/vault_hit_rate/base_hit_rate/lift/scored_sample/gate_status/block_reasons)
+- **신규 모듈**: `bots/investment/shared/luna-vault-on-gate.ts` — 집계 CTE + applyGate() + upsertCandidate()
+- **신규 스크립트**: `bots/investment/scripts/luna-vault-on-gate.ts` — CLI (`--dry-run` / `--write` / `--report` / `--json`)
+- **게이트**: 4조건 ALL PASS — scored_sample≥30, vault_hit_rate≥0.6, vault≥base, duration≥14d
+- **실행 결과**: 4그룹 검출 전부 BLOCK(insufficient_sample) — C1 데이터 미축적 예상 동작
+- **read-only**: shadow_eval/shadow_adjustments/trade_journal/curriculum 무수정
+- **커밋**: 이번 세션
+
 ## 2026-06-03: CODEX_S1_S1_3_2_VAULT_LEARNING_SHADOW — vault RAG SHADOW 보강
 
 - **목표**: agent-evolution이 vault RAG 유사 사례를 조회해 base vs vault 방향 일치 여부를 SHADOW 기록
