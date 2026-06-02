@@ -13,6 +13,30 @@ const PROJECT_ROOT = path.resolve(
   '../../..'
 );
 
+const { getEmbeddingsUrl } = require(path.join(PROJECT_ROOT, 'packages/core/lib/local-llm-client'));
+const LOCAL_MODEL_EMBED = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
+
+async function createVaultEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const url: string = getEmbeddingsUrl();
+    if (!url) return null;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: LOCAL_MODEL_EMBED, input: text }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const payload = await resp.json() as any;
+    const embedding = payload?.data?.[0]?.embedding;
+    if (!Array.isArray(embedding) || embedding.length === 0) throw new Error('embedding missing');
+    return embedding as number[];
+  } catch (err: any) {
+    console.warn(`[vault-manager] 임베딩 생성 실패 (graceful): ${err?.message || err}`);
+    return null;
+  }
+}
+
 export interface VaultEntry {
   id?: string;
   title: string;
@@ -44,11 +68,16 @@ export class VaultManager {
     this.pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
   }
 
-  async addToInbox(entry: VaultEntry): Promise<{ ok: boolean; id?: string; message: string }> {
+  async addToInbox(entry: VaultEntry): Promise<{ ok: boolean; id?: string; message: string; embedded: boolean }> {
     try {
+      // 임베딩 생성 (graceful — 서버 미가동/실패 시 NULL 적재, 적재 자체는 진행)
+      const textToEmbed = entry.content || entry.title;
+      const embedding = await createVaultEmbedding(textToEmbed);
+      const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
+
       const rows = await this.pgPool.query('sigma', `
-        INSERT INTO sigma.vault_entries (title, type, content, tags, para_category, file_path, source, meta)
-        VALUES ($1, $2, $3, $4, 'inbox', $5, $6, $7)
+        INSERT INTO sigma.vault_entries (title, type, content, tags, para_category, file_path, source, meta, embedding)
+        VALUES ($1, $2, $3, $4, 'inbox', $5, $6, $7, $8::vector)
         ON CONFLICT (file_path) WHERE file_path IS NOT NULL
         DO UPDATE SET
           title = EXCLUDED.title,
@@ -57,6 +86,7 @@ export class VaultManager {
           tags = EXCLUDED.tags,
           source = EXCLUDED.source,
           meta = sigma.vault_entries.meta || EXCLUDED.meta,
+          embedding = COALESCE(EXCLUDED.embedding, sigma.vault_entries.embedding),
           updated_at = NOW()
         RETURNING id
       `, [
@@ -67,6 +97,7 @@ export class VaultManager {
         entry.filePath || null,
         entry.source || 'vault',
         JSON.stringify(entry.meta || {}),
+        embeddingStr,
       ]);
 
       const id = rows?.[0]?.id || rows?.rows?.[0]?.id;
@@ -79,9 +110,9 @@ export class VaultManager {
         applied: true,
       });
 
-      return { ok: true, id, message: `inbox에 추가됨 (id=${id})` };
+      return { ok: true, id, message: `inbox에 추가됨 (id=${id})`, embedded: embedding !== null };
     } catch (err: any) {
-      return { ok: false, message: `addToInbox 실패: ${err?.message || err}` };
+      return { ok: false, message: `addToInbox 실패: ${err?.message || err}`, embedded: false };
     }
   }
 
