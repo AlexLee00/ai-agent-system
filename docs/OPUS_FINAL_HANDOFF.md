@@ -1,4 +1,44 @@
-# 세션 인수인계 — 2026-06-02 (CODEX_LUNA_TRADE_GUARD_NOTIFY_REOPEN + BACKTEST_RELIABILITY_V3)
+# 세션 인수인계 — 2026-06-03 (CODEX_S1_C2_1_PIPELINE_ACTIVATION)
+
+## 완료 요약 ✅ — entity_facts 경로 plist 준비 + loss/win persist 가동
+
+### S1-C2-1 상태 (2026-06-03)
+
+**작업 A — entity_facts plist 안정화 (마스터 bootstrap 대기):**
+- `ai.sigma.luna-feed-15min.plist`: npm run exit 1 문제 → `node --disable-warning=DEP0205 --import tsx` 직접 실행
+- `ai.sigma.luna-feedback-daily-0600.plist`: 동일 패턴 적용
+- dry-run: luna:feed facts=10, luna:feedback feedbackRows=5 에러 없음
+- **마스터 launchctl bootstrap 3개 실행 필요** (아래 명령)
+
+**작업 B — loss/win persist 활성화 (완료):**
+- `runtime-luna-pattern-persist.ts` 신규: loss/win 패턴만 persist, curriculum 비접촉
+- `ai.luna.pattern-persist-weekly-sun-0630.plist` 신규: 일요일 06:30 KST 주간 자동 실행
+- DB 결과: luna_loss_patterns 0→2행, luna_win_patterns 0→3행
+- agent_curriculum_state: 153행 불변 ✅ 거래 경로 무영향 ✅
+
+**마스터 설치 명령 (작업 A + B plist):**
+```bash
+cd /Users/alexlee/projects/ai-agent-system
+cp bots/sigma/launchd/ai.sigma.luna-feed-15min.plist ~/Library/LaunchAgents/
+cp bots/sigma/launchd/ai.sigma.luna-feedback-daily-0600.plist ~/Library/LaunchAgents/
+cp bots/investment/launchd/ai.luna.pattern-persist-weekly-sun-0630.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.sigma.luna-feed-15min.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.sigma.luna-feedback-daily-0600.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.luna.pattern-persist-weekly-sun-0630.plist
+```
+
+**설치 후 검증 (15분 후):**
+```sql
+SELECT count(*), max(updated_at) FROM sigma.entity_facts;  -- rows > 0 확인
+SELECT count(*) FROM investment.agent_curriculum_state;    -- 여전히 153행
+```
+
+**다음 단계: S1-C2-2** — vault 통합 (거래 SourceKind P0 + dataset-builder→vault 연결 + 임베딩)
+- 메티 검증 먼저: sigma.entity_facts rows>0 + loss/win rows>0 + curriculum 불변 독립 확인
+
+---
+
+# 이전 세션 인수인계 — 2026-06-02 (CODEX_LUNA_TRADE_GUARD_NOTIFY_REOPEN + BACKTEST_RELIABILITY_V3)
 
 ## 완료 요약 ✅ — trade-data guard Block→Notify 실행 경로 구현 완료
 
