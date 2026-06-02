@@ -123,7 +123,7 @@ function factFromSignal(row) {
     entityType: 'runtime_signal',
     fact: `Luna signal ${row.event_type || 'event'} for ${symbol} source=${row.source || 'unknown'} confidence=${Number(row.confidence || 0).toFixed(3)}`,
     confidence: Math.max(0.4, Math.min(0.9, Number(row.confidence || 0.5))),
-    sourceEventId: row.id,
+    sourceEventId: null,
   };
 }
 
