@@ -8,16 +8,37 @@ function hasFlag(name: string): boolean {
 }
 
 function argValue(name: string, fallback: string | null = null): string | null {
+  const args = process.argv.slice(2);
   const prefix = `--${name}=`;
-  const found = process.argv.slice(2).find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
+  const found = args.find((arg) => arg.startsWith(prefix));
+  if (found) return found.slice(prefix.length);
+
+  const flagIndex = args.indexOf(`--${name}`);
+  if (flagIndex >= 0) {
+    const value = args[flagIndex + 1];
+    if (value && !value.startsWith('--')) return value;
+  }
+  return fallback;
 }
 
 function collectValues(name: string): string[] {
+  const values: string[] = [];
+  const args = process.argv.slice(2);
   const prefix = `--${name}=`;
-  return process.argv.slice(2)
-    .filter((arg) => arg.startsWith(prefix))
-    .flatMap((arg) => arg.slice(prefix.length).split(','))
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg.startsWith(prefix)) {
+      values.push(arg.slice(prefix.length));
+      continue;
+    }
+    if (arg === `--${name}`) {
+      const next = args[i + 1];
+      if (next && !next.startsWith('--')) values.push(next);
+      i += 1;
+    }
+  }
+  return values
+    .flatMap((item) => item.split(','))
     .map((item) => item.trim())
     .filter(Boolean);
 }
