@@ -8,6 +8,8 @@ import {
   runBuySafetyGuards,
 } from '../team/hephaestos/execution-guards.ts';
 
+process.env.LUNA_GUARD_EVENT_RECORDING_DISABLED = 'true';
+
 function createDeps(overrides = {}) {
   const captured = [];
   return {

@@ -10,6 +10,8 @@
 
 import { run } from './db/core.ts';
 
+const DISABLE_VALUES = new Set(['1', 'true', 'on', 'yes', 'disabled']);
+
 export type GuardSeverity = 'info' | 'warning' | 'danger';
 
 export interface GuardEventInput {
@@ -64,12 +66,17 @@ async function insertGuardEvent(input: GuardEventInput): Promise<void> {
   );
 }
 
+export function isGuardEventRecordingDisabled(env = process.env): boolean {
+  return DISABLE_VALUES.has(String(env.LUNA_GUARD_EVENT_RECORDING_DISABLED || '').trim().toLowerCase());
+}
+
 /**
  * 가드 이벤트를 비동기(fire-and-forget)로 기록한다.
  * 동기 가드 함수에서 호출 시 실행 흐름을 차단하지 않는다.
  * 실패해도 절대 throw하지 않는다.
  */
 export function recordGuardEvent(input: GuardEventInput): void {
+  if (isGuardEventRecordingDisabled()) return;
   setImmediate(() => {
     insertGuardEvent(input).catch(() => null);
   });
@@ -81,10 +88,11 @@ export function recordGuardEvent(input: GuardEventInput): void {
 export function recordGuardEvents(
   events: GuardEventInput[],
 ): void {
+  if (isGuardEventRecordingDisabled()) return;
   if (!Array.isArray(events) || events.length === 0) return;
   setImmediate(() => {
     Promise.allSettled(events.map((ev) => insertGuardEvent(ev))).catch(() => null);
   });
 }
 
-export default { recordGuardEvent, recordGuardEvents };
+export default { isGuardEventRecordingDisabled, recordGuardEvent, recordGuardEvents };
