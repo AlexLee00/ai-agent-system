@@ -1,4 +1,53 @@
-# 세션 인수인계 — 2026-06-01 (CODEX_LUNA_PHASE2_STAGE2_1 — Secondary Model 학습 완료)
+# 세션 인수인계 — 2026-06-02 (CODEX_LUNA_BACKTEST_RELIABILITY_V3 — Walk-Forward fold 풀링 확인)
+
+## 완료 요약 ✅ — Walk-Forward fold 풀링 검증 완료 (v3 코드 전체 구현됨)
+
+### CODEX_LUNA_BACKTEST_RELIABILITY_V3_2026-05-28 상태
+
+**이미 구현됨 (이번 세션 확인):**
+- `walk_forward()` (backtest-vectorbt.py): fold별 거부 없이 raw 수집 → 풀 집계 (합계 거래수, 거래수 가중 sharpe) → v2 안전장치 1회 적용 ✅
+- fold 파라미터: folds=5, train_days=90, test_days=75 (기존 folds=6/test_days=45에서 변경) ✅
+- `LUNA_BT_WALK_FORWARD_ENABLED=true` in plist ✅ (shadow 활성)
+- 폴백(단일 OOS) 경로 유지 ✅
+- **이번 세션 추가**: plist에 `LUNA_BT_WF_FOLDS=5`, `LUNA_BT_WF_TRAIN_DAYS=90`, `LUNA_BT_WF_TEST_DAYS=75` 명시 추가
+
+### DB 검증 결과 (2026-06-02 오전 12:07 KST 실행 기준 — OLD 파라미터 folds=6)
+
+| 지표 | 현재 | 목표 | 판정 |
+|------|------|------|------|
+| insufficient_pct (walk_forward) | 52.3% | <50% | ⚠️ 근접 |
+| sd_defl | 2.50 | <3 | ✅ |
+| over_cap | 0 | 0 | ✅ |
+| avg_pooled_trades | 13.8 | ≥15 | ⚠️ 근접 |
+| avg_folds | 5.9 (old=6) | 5 | 📅 갱신 예정 |
+
+**원인**: 오늘 noon 백필(12:07 KST)이 이전 파라미터(folds=6, test_days=45)로 실행됨. HEAD 커밋은 19:51 KST에 생성(folds=5, test_days=75)이므로 DB 갱신은 **내일 2026-06-03 noon KST** 실행 후 반영.
+
+### 다음 세션 필수 작업
+
+1. **내일 (2026-06-03) noon KST 이후** 재검증:
+```sql
+SELECT
+  count(*) FILTER (WHERE oos_status='insufficient_data') AS insufficient,
+  count(*) FILTER (WHERE oos_status='ok') AS ok_,
+  count(*) FILTER (WHERE oos_status='unstable') AS unstable_,
+  round(100.0*count(*) FILTER (WHERE oos_status='insufficient_data')/nullif(count(*),0),1) AS insufficient_pct,
+  round(stddev(sharpe_oos_deflated)::numeric,2) AS sd_defl,
+  count(*) FILTER (WHERE sharpe_oos_deflated > 4) AS over_cap,
+  round(avg(total_trades_oos)::numeric,1) AS avg_pooled_trades,
+  round(avg(fold_count)::numeric,1) AS avg_folds
+FROM investment.candidate_backtest_status
+WHERE selection_method='walk_forward';
+```
+- 성공 기준: insufficient_pct<50 & avg_pooled_trades≥15 & sd_defl<3 & over_cap=0 & avg_folds≈5
+- fold_count=6 레코드가 fold_count=5로 교체됐는지 확인
+
+2. 검증 통과 시 **3순위** 진행: regime-weight-learner cold-start prior 연결
+3. Phase2 Stage2-2: 자동 재학습 트리거 + 모델 버전 교체
+
+---
+
+# 이전 세션 — 2026-06-01 (CODEX_LUNA_PHASE2_STAGE2_1 — Secondary Model 학습 완료)
 
 ## 완료 요약 ✅ — Secondary Model 학습 데이터셋 + Tier 1 학습 (SHADOW)
 

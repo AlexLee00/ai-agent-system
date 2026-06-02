@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-06-02: CODEX_LUNA_BACKTEST_RELIABILITY_V3 — Walk-Forward fold 풀링 완료 확인 + plist 명시화
+
+- **확인**: walk_forward() 이미 v3 사양 구현됨 (fold별 raw 수집 → 풀 집계 → v2 안전장치 1회 적용)
+- **파라미터**: folds=5, train_days=90, test_days=75 (이전 folds=6/test_days=45에서 변경, 오늘 19:51 KST 커밋)
+- **plist 명시화**: `LUNA_BT_WF_FOLDS=5`, `LUNA_BT_WF_TRAIN_DAYS=90`, `LUNA_BT_WF_TEST_DAYS=75` 추가
+- **DB 현황**: insufficient_pct=52.3%, sd_defl=2.50✓, over_cap=0✓ — OLD folds=6 데이터로 측정됨
+- **내일 noon 이후**: 새 파라미터 백필 완료 후 insufficient_pct<50% 달성 여부 재확인 필요
+- **커밋**: 이번 세션
+
 ## 2026-05-30: CODEX_LUNA_POSITIONS_STALE_RESOLUTION — positions stale false positive 해소 + 고아 paper 아카이브
 
 - **Phase 1**: `data-loop-health-report.ts` fetchPositionSyncHealth() 신규 — autopilot log mtime으로 sync 생존 판정
