@@ -21,7 +21,7 @@ const STALE_HOURS = Number(process.env.LUNA_BACKTEST_STALE_HOURS || 24);
 const REFRESH_UNHEALTHY = process.env.LUNA_BACKTEST_REFRESH_UNHEALTHY !== 'false';
 const OHLCV_FALLBACK_ENABLED = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_ENABLED !== 'false';
 const VECTORBT_ENABLED = process.env.LUNA_BACKTEST_VECTORBT_ENABLED !== 'false';
-const VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
+const VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 60_000));
 const OHLCV_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_BACKTEST_OHLCV_TIMEOUT_MS || 20_000));
 const LUNA_PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
 const LUNA_PBO_ENABLED = process.env.LUNA_PBO_ENABLED !== 'false';
@@ -865,7 +865,13 @@ function evaluateQuality(rows: any[], market: string = 'all') {
 }
 
 function applyFallbackNoOosGate(quality: any, fallbackUsed: boolean, options: any = {}) {
-  const hasOosValidation = quality?.sharpeOos != null || quality?.sharpeOosDeflated != null || quality?.walkForwardSharpe != null;
+  const hasOosValidation = quality?.sharpeOos != null
+    || quality?.sharpeOosDeflated != null
+    || quality?.walkForwardSharpe != null
+    || quality?.selectionMethod === 'walk_forward'
+    || quality?.oosStatus != null
+    || quality?.nObsOos != null
+    || quality?.totalTradesOos != null;
   const shouldBlock = fallbackUsed || (options.enforceAnyNoOos === true && quality?.healthy === true && !hasOosValidation);
   if (!shouldBlock) return quality;
   const reasons = Array.isArray(quality?.reasons) ? quality.reasons : [];

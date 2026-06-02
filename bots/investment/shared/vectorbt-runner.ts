@@ -7,7 +7,7 @@ import path from 'path';
 const SHARED_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT_DIR = path.resolve(SHARED_DIR, '..', 'scripts');
 const VECTORBT_SCRIPT = path.join(SCRIPT_DIR, 'backtest-vectorbt.py');
-const DEFAULT_VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
+const DEFAULT_VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 60_000));
 const PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
 const META_LABEL_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_META_LABEL_TIMEOUT_MS || 60_000));
 
