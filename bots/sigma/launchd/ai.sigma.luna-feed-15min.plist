@@ -6,11 +6,12 @@
   <string>ai.sigma.luna-feed-15min</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/npm</string>
-    <string>run</string>
-    <string>-s</string>
-    <string>luna:feed</string>
-    <string>--</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>scripts/runtime-sigma-luna-feed.ts</string>
+    <string>--json</string>
     <string>--write</string>
     <string>--no-dry-run</string>
   </array>

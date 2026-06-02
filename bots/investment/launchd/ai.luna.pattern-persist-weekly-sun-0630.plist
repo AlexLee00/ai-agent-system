@@ -3,20 +3,17 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.sigma.luna-feedback-daily-0600</string>
+  <string>ai.luna.pattern-persist-weekly-sun-0630</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>--disable-warning=DEP0205</string>
-    <string>--import</string>
-    <string>tsx</string>
-    <string>scripts/runtime-sigma-luna-feedback.ts</string>
-    <string>--json</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-pattern-persist.ts</string>
     <string>--write</string>
     <string>--no-dry-run</string>
+    <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -24,18 +21,21 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
+  <!-- 매주 일요일 06:30 KST — agent-evolution(05:30) 완료 후 패턴 적재 -->
   <key>StartCalendarInterval</key>
   <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
     <key>Hour</key>
     <integer>6</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>30</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>/tmp/ai.sigma.luna-feedback-daily-0600.out.log</string>
+  <string>/tmp/ai.luna.pattern-persist-weekly-sun-0630.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/ai.sigma.luna-feedback-daily-0600.err.log</string>
+  <string>/tmp/ai.luna.pattern-persist-weekly-sun-0630.err.log</string>
 </dict>
 </plist>
