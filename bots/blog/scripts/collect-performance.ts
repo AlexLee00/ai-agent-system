@@ -17,6 +17,11 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
+function parsePositiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 async function main() {
   const args = parseArgs();
   const rows = await getPerformanceCollectionCandidates(args.days);
@@ -84,10 +89,11 @@ async function main() {
 
   if (!args.dryRun && updated > 0) {
     try {
+      const analysisTimeoutMs = Math.max(30000, parsePositiveNumber(process.env.BLOG_PERFORMANCE_ANALYSIS_TIMEOUT_MS, 90000));
       execFileSync('node', ['scripts/analyze-blog-performance.ts'], {
         cwd: path.join(env.PROJECT_ROOT, 'bots', 'blog'),
         stdio: 'inherit',
-        timeout: 30000,
+        timeout: analysisTimeoutMs,
       });
     } catch (error) {
       console.warn(`[collect-performance] 성과 분석 실패 (무시): ${error.message}`);

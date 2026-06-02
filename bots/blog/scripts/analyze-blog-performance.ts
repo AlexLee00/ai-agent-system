@@ -10,6 +10,13 @@ const eventLake = require('../../../packages/core/lib/event-lake');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const performanceMemory = createAgentMemory({ agentId: 'blog.performance', team: 'blog' });
 
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const MIN_WRITER_POSTS_FOR_FEEDBACK = parsePositiveInteger(process.env.BLOG_PERFORMANCE_MIN_WRITER_POSTS, 3);
+
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
   return {
@@ -147,16 +154,22 @@ function aggregateByCategory(rows) {
 
 async function applyWriterFeedback(rankings, { dryRun = false } = {}) {
   if (!rankings.length) return [];
-  const avgScore = rankings.reduce((sum, item) => sum + item.score, 0) / Math.max(1, rankings.length);
+  const eligibleRankings = rankings.filter((item) => item.posts >= MIN_WRITER_POSTS_FOR_FEEDBACK);
+  const baselineRows = eligibleRankings.length > 0 ? eligibleRankings : rankings;
+  const avgScore = baselineRows.reduce((sum, item) => sum + item.score, 0) / Math.max(1, baselineRows.length);
   const updates = [];
 
   for (const writer of rankings) {
+    const feedbackEligible = writer.posts >= MIN_WRITER_POSTS_FOR_FEEDBACK;
     const relativeScore = avgScore > 0 ? writer.score / avgScore : 1;
-    const adjustment = clamp((relativeScore - 1.0) * 0.5, -0.5, 0.5);
+    const rawAdjustment = clamp((relativeScore - 1.0) * 0.5, -0.5, 0.5);
+    const adjustment = feedbackEligible ? rawAdjustment : 0;
     const taskScore = clamp(5 + adjustment * 5, 0, 10);
-    const reason = `[blog-performance-feedback] avgViews=${writer.avgViews} avgLikes=${writer.avgLikes} avgComments=${writer.avgComments} relative=${round(relativeScore)}`;
+    const reason = feedbackEligible
+      ? `[blog-performance-feedback] avgViews=${writer.avgViews} avgLikes=${writer.avgLikes} avgComments=${writer.avgComments} relative=${round(relativeScore)} posts=${writer.posts}`
+      : `[blog-performance-feedback] 표본 부족(posts=${writer.posts},min=${MIN_WRITER_POSTS_FOR_FEEDBACK}) — 점수 보정 보류`;
 
-    if (!dryRun) {
+    if (!dryRun && feedbackEligible) {
       await registry.updateScore(writer.name, taskScore, reason, null);
     }
 
@@ -165,6 +178,8 @@ async function applyWriterFeedback(rankings, { dryRun = false } = {}) {
       relativeScore: round(relativeScore),
       adjustment: round(adjustment),
       taskScore: round(taskScore),
+      feedbackEligible,
+      feedbackReason: reason,
     });
   }
 
