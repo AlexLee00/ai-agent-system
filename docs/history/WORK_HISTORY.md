@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-06-03: CODEX_S1_S1_3_2_VAULT_LEARNING_SHADOW — vault RAG SHADOW 보강
+
+- **목표**: agent-evolution이 vault RAG 유사 사례를 조회해 base vs vault 방향 일치 여부를 SHADOW 기록
+- **신규 테이블**: `investment.luna_vault_shadow_adjustments` (week/pattern_key/market/regime/base_adjustment_type/vault_shadow_type/vault_evidence/agreement/confidence)
+- **신규 모듈**: `bots/investment/shared/luna-vault-shadow-adjustments.ts` — `recordVaultShadowAdjustments()` + 수치 PnL/텍스트 키워드 신호 결합
+- **수정**: `luna-agent-evolution.ts` — `isVaultShadowAdjustEnabled()` + `recordVaultShadowAdjustments()` 통합. `buildPriorityAdjustments` 출력/curriculum/거래 경로 무변경
+- **Kill Switch**: `VAULT_SHADOW_ADJUST_ENABLED=false`(기본) — OFF 시 shadow 기록 0건, 기존 동작 완전 동일
+- **커밋**: `ce2d29452`
+
 ## 2026-06-02: CODEX_LUNA_TRADE_GUARD_NOTIFY_REOPEN — Block→Notify 실행 경로 구현 완료
 
 - **원인**: 5/31~ crypto 신호 26건 trade_data_entry_guard_rejected(hard block) — defensive_rotation 24건, trend_following 2건

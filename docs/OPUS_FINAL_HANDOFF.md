@@ -1,4 +1,45 @@
-# 세션 인수인계 — 2026-06-03 (CODEX_S1_C2_2b_VAULT_INGEST_EMBED)
+# 세션 인수인계 — 2026-06-03 (CODEX_S1_S1_3_2_VAULT_LEARNING_SHADOW)
+
+## 완료 요약 ✅ — vault RAG SHADOW 보강 (S1.3-2)
+
+### S1.3-2 상태 (2026-06-03)
+
+**구현 완료:**
+- `investment.luna_vault_shadow_adjustments` 테이블 신설 (마이그레이션 + bootstrap)
+- `bots/investment/shared/luna-vault-shadow-adjustments.ts` — vault RAG 조회 + shadow 기록
+- `bots/investment/shared/luna-agent-evolution.ts` — shadow booster 통합 (kill switch 기본 OFF)
+
+**안전 보장:**
+- `buildPriorityAdjustments()` 출력 무변경 (vault 호출은 adjustments 산출 이후)
+- `agent_curriculum_state` 무영향 — vault shadow 데이터 미포함
+- Kill Switch OFF(기본 false) 시 shadow 테이블 write 0건, 거래/신호 경로 완전 무영향
+- 임베딩 서버 다운 시 graceful (skipped 카운트 증가, 예외 미전파)
+
+**검증 절차 (메티):**
+```bash
+# Kill Switch OFF 확인 (기본 동작, shadow 0건)
+node bots/investment/scripts/run-agent-evolution.js --dry-run
+SELECT count(*) FROM investment.luna_vault_shadow_adjustments;  -- → 0
+
+# Kill Switch ON + shadow 기록 확인
+VAULT_SHADOW_ADJUST_ENABLED=true \
+  node bots/investment/scripts/run-agent-evolution.js --dry-run
+SELECT count(*), count(*) FILTER (WHERE agreement = true) AS agree,
+       round(avg(confidence)::numeric, 4) AS avg_conf
+FROM investment.luna_vault_shadow_adjustments
+WHERE created_at > now() - interval '5 minutes';
+```
+
+**커밋**: `ce2d29452`
+
+**다음 단계:**
+- shadow 데이터 충분 축적 후 agreement rate 모니터링
+- 실제 반영(폐루프 닫기)은 shadow 효과 검증 후 별도 단계
+- S1 종합 → S2(파이프라인 정합) 진행 가능
+
+---
+
+# 이전 인수인계 — 2026-06-03 (CODEX_S1_C2_2b_VAULT_INGEST_EMBED)
 
 ## 완료 요약 ✅ — vault addToInbox 임베딩 통합 (작업 A)
 
