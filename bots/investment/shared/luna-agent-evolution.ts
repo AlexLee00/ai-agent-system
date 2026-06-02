@@ -9,6 +9,7 @@
 import * as db from './db.ts';
 import { extractLossPatterns, getTopLossPatterns } from './loss-pattern-extractor.ts';
 import { extractWinPatterns, getTopWinPatterns } from './win-pattern-extractor.ts';
+import { isVaultShadowAdjustEnabled, recordVaultShadowAdjustments } from './luna-vault-shadow-adjustments.ts';
 
 export interface PriorityAdjustment {
   target: string;
@@ -29,6 +30,14 @@ export interface EvolutionResult {
   priorityAdjustments: PriorityAdjustment[];
   evolutionSummary: string;
   executedAt: string;
+  vaultShadow?: {
+    enabled: boolean;
+    attempted: number;
+    recorded: number;
+    skipped: number;
+    warnings: string[];
+    agreementRate: number | null;
+  };
 }
 
 function weekId(date = new Date()): string {
@@ -145,6 +154,13 @@ export async function runLunaAgentEvolution({
   const winPatterns = freshWin.length ? freshWin : topWin;
   const adjustments = buildPriorityAdjustments(lossPatterns, winPatterns);
   const summary = buildSummary(lossPatterns, winPatterns, adjustments);
+  const vaultShadowEnabled = isVaultShadowAdjustEnabled();
+  const vaultShadow = vaultShadowEnabled
+    ? await recordVaultShadowAdjustments({ week, adjustments }).catch((err: any) => {
+      console.warn(`[agent-evolution] vault shadow failed: ${err?.message ?? String(err)}`);
+      return { enabled: true, attempted: 0, recorded: 0, skipped: 0, warnings: [err?.message ?? String(err)], agreementRate: null };
+    })
+    : null;
 
   if (!effectiveDryRun) {
     await persistCurriculum({ market, week, lossPatterns, winPatterns, adjustments, summary });
@@ -160,6 +176,7 @@ export async function runLunaAgentEvolution({
     priorityAdjustments: adjustments,
     evolutionSummary: summary,
     executedAt: new Date().toISOString(),
+    ...(vaultShadowEnabled ? { vaultShadow } : {}),
   };
 }
 

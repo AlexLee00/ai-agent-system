@@ -1098,6 +1098,25 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_curriculum_agent_market ON agent_curriculum_state(agent_name, market)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_vault_shadow_adjustments (
+      id                   BIGSERIAL PRIMARY KEY,
+      week                 TEXT,
+      pattern_key          TEXT NOT NULL,
+      market               TEXT,
+      regime               TEXT,
+      base_adjustment_type TEXT NOT NULL,
+      vault_shadow_type    TEXT,
+      vault_evidence       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      agreement            BOOLEAN,
+      confidence           DOUBLE PRECISION NOT NULL DEFAULT 0,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_adjustments_pattern ON luna_vault_shadow_adjustments(pattern_key, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_adjustments_market ON luna_vault_shadow_adjustments(market, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_vault_shadow_adjustments_agreement ON luna_vault_shadow_adjustments(agreement, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS agent_messages (
       id           BIGSERIAL PRIMARY KEY,
       incident_key TEXT,
