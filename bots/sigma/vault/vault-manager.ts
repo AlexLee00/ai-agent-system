@@ -13,13 +13,14 @@ const PROJECT_ROOT = path.resolve(
   '../../..'
 );
 
-const { getEmbeddingsUrl } = require(path.join(PROJECT_ROOT, 'packages/core/lib/local-llm-client'));
+const { getEmbeddingsUrl } = require(path.join(PROJECT_ROOT, 'packages/core/lib/local-llm-client.js'));
 const LOCAL_MODEL_EMBED = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';
+const VAULT_EMBED_DIM = Number(process.env.SIGMA_VAULT_EMBED_DIM || 1024);
 
-async function createVaultEmbedding(text: string): Promise<number[] | null> {
+export async function createVaultEmbedding(text: string): Promise<{ embedding: number[] | null; dim: number | null; warning?: string }> {
   try {
     const url: string = getEmbeddingsUrl();
-    if (!url) return null;
+    if (!url) return { embedding: null, dim: null, warning: 'embedding_url_missing' };
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -30,10 +31,18 @@ async function createVaultEmbedding(text: string): Promise<number[] | null> {
     const payload = await resp.json() as any;
     const embedding = payload?.data?.[0]?.embedding;
     if (!Array.isArray(embedding) || embedding.length === 0) throw new Error('embedding missing');
-    return embedding as number[];
+    if (embedding.length !== VAULT_EMBED_DIM) {
+      return {
+        embedding: null,
+        dim: embedding.length,
+        warning: `embedding_dimension_mismatch:${embedding.length}!=${VAULT_EMBED_DIM}`,
+      };
+    }
+    return { embedding: embedding as number[], dim: embedding.length };
   } catch (err: any) {
-    console.warn(`[vault-manager] 임베딩 생성 실패 (graceful): ${err?.message || err}`);
-    return null;
+    const warning = err?.message || String(err);
+    console.warn(`[vault-manager] 임베딩 생성 실패 (graceful): ${warning}`);
+    return { embedding: null, dim: null, warning };
   }
 }
 
@@ -68,11 +77,12 @@ export class VaultManager {
     this.pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
   }
 
-  async addToInbox(entry: VaultEntry): Promise<{ ok: boolean; id?: string; message: string; embedded: boolean }> {
+  async addToInbox(entry: VaultEntry): Promise<{ ok: boolean; id?: string; message: string; embedded: boolean; embeddingDim?: number | null; embeddingWarning?: string | null }> {
     try {
       // 임베딩 생성 (graceful — 서버 미가동/실패 시 NULL 적재, 적재 자체는 진행)
       const textToEmbed = entry.content || entry.title;
-      const embedding = await createVaultEmbedding(textToEmbed);
+      const embeddingResult = await createVaultEmbedding(textToEmbed);
+      const embedding = embeddingResult.embedding;
       const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
 
       const rows = await this.pgPool.query('sigma', `
@@ -110,9 +120,16 @@ export class VaultManager {
         applied: true,
       });
 
-      return { ok: true, id, message: `inbox에 추가됨 (id=${id})`, embedded: embedding !== null };
+      return {
+        ok: true,
+        id,
+        message: `inbox에 추가됨 (id=${id})`,
+        embedded: embedding !== null,
+        embeddingDim: embeddingResult.dim,
+        embeddingWarning: embeddingResult.warning || null,
+      };
     } catch (err: any) {
-      return { ok: false, message: `addToInbox 실패: ${err?.message || err}`, embedded: false };
+      return { ok: false, message: `addToInbox 실패: ${err?.message || err}`, embedded: false, embeddingDim: null, embeddingWarning: err?.message || String(err) };
     }
   }
 
