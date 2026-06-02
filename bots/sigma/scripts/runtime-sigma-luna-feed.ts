@@ -121,7 +121,7 @@ function factFromSignal(row) {
     agentName: 'luna_signal_runtime',
     entity: `${row.exchange || 'unknown'}:${symbol}`,
     entityType: 'runtime_signal',
-    fact: `Luna signal ${row.event_type || 'event'} for ${symbol} source=${row.source || 'unknown'} confidence=${Number(row.confidence || 0).toFixed(3)}`,
+    fact: `Luna signal ${row.event_type || 'event'} for ${symbol} source=${row.source || 'unknown'} confidence=${Number(row.confidence || 0).toFixed(3)} event_id=${row.id || 'unknown'}`,
     confidence: Math.max(0.4, Math.min(0.9, Number(row.confidence || 0.5))),
     sourceEventId: null,
   };
