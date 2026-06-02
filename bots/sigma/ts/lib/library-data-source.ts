@@ -19,7 +19,10 @@ export type LibrarySourceKind =
   | 'luna_reflexion'
   | 'sigma_directive'
   | 'dpo_preference'
-  | 'mcp_usage';
+  | 'mcp_usage'
+  | 'luna_trade_journal'
+  | 'luna_signal'
+  | 'luna_trade_review';
 
 export interface LibraryRecord {
   team: SigmaTeam;
@@ -350,6 +353,96 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
     if (record && allowedTeams.has(record.team)) records.push(record);
   }
 
+  const tradeJournals = await safeQuery<any>('investment', 'investment.trade_journal', `
+    SELECT id, trade_id, symbol, strategy_family, direction, pnl_net, pnl_percent,
+           exit_reason, market, is_paper, entry_time, exit_time
+      FROM investment.trade_journal
+     WHERE exit_time >= (EXTRACT(EPOCH FROM NOW()) - $1::float * 3600)::bigint * 1000
+        OR (exit_time IS NULL AND entry_time >= (EXTRACT(EPOCH FROM NOW()) - $1::float * 3600)::bigint * 1000)
+     ORDER BY COALESCE(exit_time, entry_time) DESC
+     LIMIT $2
+  `, [String(sinceHours), limit], warnings);
+  for (const row of tradeJournals) {
+    const tsMs = row.exit_time ?? row.entry_time;
+    const createdAt = tsMs != null ? new Date(Number(tsMs)).toISOString() : new Date(0).toISOString();
+    const record = buildRecord({
+      team: 'luna',
+      agent: 'luna',
+      sourceKind: 'luna_trade_journal',
+      sourceId: row.trade_id ?? row.id,
+      createdAt,
+      text: compactText([row.symbol, row.strategy_family, row.direction, row.pnl_net, row.pnl_percent, row.exit_reason, row.market, row.is_paper]),
+      payload: {
+        pnlNet: row.pnl_net,
+        pnlPercent: row.pnl_percent,
+        tradeId: row.trade_id,
+        strategyFamily: row.strategy_family,
+        market: row.market,
+        isPaper: row.is_paper,
+        exitReason: row.exit_reason,
+      },
+    });
+    if (record && allowedTeams.has(record.team)) records.push(record);
+  }
+
+  const lunaSignals = await safeQuery<any>('investment', 'investment.signals', `
+    SELECT id, symbol, strategy_family, strategy_route, trade_mode, block_code, status, created_at
+      FROM investment.signals
+     WHERE created_at >= NOW() - ($1 || ' hours')::INTERVAL
+     ORDER BY created_at DESC
+     LIMIT $2
+  `, [String(sinceHours), limit], warnings);
+  for (const row of lunaSignals) {
+    const record = buildRecord({
+      team: 'luna',
+      agent: 'luna',
+      sourceKind: 'luna_signal',
+      sourceId: row.id,
+      createdAt: row.created_at,
+      text: compactText([row.symbol, row.strategy_family, row.strategy_route, row.trade_mode, row.block_code, row.status]),
+      payload: {
+        strategyFamily: row.strategy_family,
+        strategyRoute: row.strategy_route,
+        tradeMode: row.trade_mode,
+        blockCode: row.block_code,
+        status: row.status,
+      },
+    });
+    if (record && allowedTeams.has(record.team)) records.push(record);
+  }
+
+  const tradeReviews = await safeQuery<any>('investment', 'investment.trade_review', `
+    SELECT r.id, r.trade_id, r.entry_timing, r.exit_timing, r.signal_accuracy,
+           r.risk_managed, r.tp_sl_protected, r.luna_review, r.lessons_learned,
+           r.strategy_adjustment, r.reviewed_at,
+           ra.luna_decision, ra.luna_reasoning, ra.nemesis_verdict
+      FROM investment.trade_review r
+      LEFT JOIN investment.trade_rationale ra ON ra.trade_id = r.trade_id
+     WHERE r.reviewed_at >= (EXTRACT(EPOCH FROM NOW()) - $1::float * 3600)::bigint * 1000
+     ORDER BY r.reviewed_at DESC
+     LIMIT $2
+  `, [String(sinceHours), limit], warnings);
+  for (const row of tradeReviews) {
+    const createdAt = row.reviewed_at != null ? new Date(Number(row.reviewed_at)).toISOString() : new Date(0).toISOString();
+    const record = buildRecord({
+      team: 'luna',
+      agent: 'luna',
+      sourceKind: 'luna_trade_review',
+      sourceId: row.id ?? row.trade_id,
+      createdAt,
+      text: compactText([row.luna_review, row.lessons_learned, row.strategy_adjustment, row.luna_reasoning, row.luna_decision, row.entry_timing, row.exit_timing, row.signal_accuracy]),
+      payload: {
+        tradeId: row.trade_id,
+        riskManaged: row.risk_managed,
+        tpSlProtected: row.tp_sl_protected,
+        nemesisVerdict: row.nemesis_verdict,
+        entryTiming: row.entry_timing,
+        exitTiming: row.exit_timing,
+      },
+    });
+    if (record && allowedTeams.has(record.team)) records.push(record);
+  }
+
   const unique = new Map<string, LibraryRecord>();
   for (const record of records) {
     if (!unique.has(record.contentHash)) unique.set(record.contentHash, record);
@@ -397,6 +490,11 @@ export function buildSelfImprovementSignalsFromRecords(records: readonly Library
       else if (Number.isFinite(status) && status >= 500) outcome = 'failure';
     }
     if (record.sourceKind === 'agent_message' && payload.responded === true) outcome = 'success';
+    if (record.sourceKind === 'luna_trade_journal' && payload.pnlNet != null) {
+      const pnlNet = Number(payload.pnlNet);
+      if (Number.isFinite(pnlNet) && pnlNet > 0) outcome = 'success';
+      else if (Number.isFinite(pnlNet) && pnlNet < 0) outcome = 'failure';
+    }
 
     if (outcome === 'neutral') return [];
     const pattern = record.piiRedactedText
