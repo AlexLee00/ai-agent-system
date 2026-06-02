@@ -18,7 +18,7 @@ import {
 
 const CONFIRM = 'enable-luna-live-fire';
 const DEFAULT_MAX_TRADE_USDT = 0;
-const DEFAULT_MAX_DAILY_USDT = 200;
+const DEFAULT_MAX_DAILY_USDT = 160;
 const DEFAULT_MAX_OPEN_POSITIONS = 5;
 const DEFAULT_POSITION_DISPATCH_ENABLED = false;
 const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false';
@@ -171,7 +171,7 @@ export async function runLunaLiveFireCutoverSmoke() {
   const autonomousCommand = buildCutoverCommand({ positionDispatchEnabled: true });
   assert.ok(safeDefaultCommand.includes('autonomous_l5'));
   assert.ok(safeDefaultCommand.includes('launchctl unsetenv LUNA_MAX_TRADE_USDT'));
-  assert.ok(safeDefaultCommand.includes('LUNA_LIVE_FIRE_MAX_DAILY 200'));
+  assert.ok(safeDefaultCommand.includes('LUNA_LIVE_FIRE_MAX_DAILY 160'));
   assert.ok(safeDefaultCommand.includes('LUNA_LIVE_FIRE_MAX_OPEN 5'));
   assert.ok(safeDefaultCommand.includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false'));
   assert.ok(autonomousCommand.includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED true'));

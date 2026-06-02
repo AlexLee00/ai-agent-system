@@ -664,11 +664,11 @@ def infer_rows_for_days(df, days: int) -> int:
         return max(1, days)
 
 
-def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days: int = 45):
+def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 90, test_days: int = 75):
     """Rolling walk-forward: fold OOS 거래를 풀링하여 저빈도 전략도 평가 가능하게 한다.
 
     저빈도 전략(주식 1d)은 단일 fold에서 거래 ~8건으로 insufficient_data가 됨.
-    fold 6개를 누적하면 OOS ~270일·40건+으로 v2 소표본 기준(15건)을 넘긴다.
+    fold 5개를 누적하면 OOS ~375일로 v2 소표본 기준(15건)을 넘길 가능성을 높인다.
     v2 거부/deflation/클램프는 풀 집계값에 1회만 적용한다.
     """
     train_rows = infer_rows_for_days(df, train_days)
@@ -703,7 +703,7 @@ def walk_forward(df, deps: dict, folds: int = 6, train_days: int = 90, test_days
         n_trials_fold = best_is.get("n_grid_trials", len(grid))
         n_trials_max = max(n_trials_max, n_trials_fold)
         # grid는 이미 error 제거 후 반환 — 전체 SR 수집 (var_sharpe 계산용)
-        all_trial_sharpes.extend(r.get("sharpe_ratio", 0) for r in grid)
+        all_trial_sharpes.extend(safe_float(r.get("sharpe_ratio"), 0.0) for r in grid)
         try:
             oos_raw = run_backtest(test_df, best_is["params"], deps)
         except Exception as exc:
@@ -1369,9 +1369,9 @@ def main():
                 wf_result = walk_forward(
                     df,
                     deps,
-                    folds=int_env_any(["LUNA_BT_WF_FOLDS", "LUNA_BT_WALK_FORWARD_FOLDS"], 6),
+                    folds=int_env_any(["LUNA_BT_WF_FOLDS", "LUNA_BT_WALK_FORWARD_FOLDS"], 5),
                     train_days=int_env_any(["LUNA_BT_WF_TRAIN_DAYS", "LUNA_BT_WALK_FORWARD_TRAIN_DAYS"], 90),
-                    test_days=int_env_any(["LUNA_BT_WF_TEST_DAYS", "LUNA_BT_WALK_FORWARD_TEST_DAYS"], 45),
+                    test_days=int_env_any(["LUNA_BT_WF_TEST_DAYS", "LUNA_BT_WALK_FORWARD_TEST_DAYS"], 75),
                 )
                 split_result = None if wf_result is not None else select_on_is_evaluate_on_oos(df, deps)
                 result = [item for item in [wf_result, split_result] if item is not None]

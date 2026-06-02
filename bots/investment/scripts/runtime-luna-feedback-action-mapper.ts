@@ -2,6 +2,10 @@
 // @ts-nocheck
 
 import { runFeedbackActionMapper } from '../shared/feedback-action-mapper.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const STATE_PATH = new URL('../output/ops/luna-feedback-action-mapper-state.json', import.meta.url).pathname;
 
 function argValue(name: string, fallback: string | null = null): string | null {
   const prefix = `--${name}=`;
@@ -20,6 +24,11 @@ async function main() {
     dryRun: !noDryRun,
     write,
   });
+  fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
+  fs.writeFileSync(STATE_PATH, JSON.stringify({
+    ...result,
+    stateWrittenAt: new Date().toISOString(),
+  }, null, 2));
   if (json) console.log(JSON.stringify(result, null, 2));
   else console.log(`[luna-feedback-action-mapper] mapped=${result.mapped} dryRun=${result.dryRun}`);
   if (!result.ok) process.exitCode = 1;

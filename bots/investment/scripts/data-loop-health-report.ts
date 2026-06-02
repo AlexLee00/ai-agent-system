@@ -308,13 +308,23 @@ async function fetchTableFreshness() {
         continue;
       }
       const elapsedHours = (Date.now() - new Date(latest).getTime()) / 3_600_000;
+      let status = elapsedHours > expectHours ? 'stale' : 'ok';
+      let message;
+      if (status === 'stale' && table === 'investment.feedback_to_action_map') {
+        const mapperState = readFeedbackActionMapperState();
+        if (mapperState.ok && mapperState.elapsedHours <= expectHours) {
+          status = 'ok';
+          message = `feedback mapper ran ${mapperState.elapsedHours}h ago with mapped=${mapperState.mapped}; no new action rows is acceptable`;
+        }
+      }
       results.push({
         table,
-        status: elapsedHours > expectHours ? 'stale' : 'ok',
+        status,
         elapsedHours: Math.round(elapsedHours),
         expectHours,
         criticalHours,
         latest: new Date(latest).toISOString(),
+        message,
       });
     } catch (err: any) {
       const message = err?.message || String(err);
@@ -324,6 +334,22 @@ async function fetchTableFreshness() {
   }
 
   return results;
+}
+
+function readFeedbackActionMapperState() {
+  try {
+    const statePath = new URL('../output/ops/luna-feedback-action-mapper-state.json', import.meta.url).pathname;
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const ts = state.stateWrittenAt || state.generatedAt;
+    const elapsedHours = ts ? Math.round((Date.now() - new Date(ts).getTime()) / 3_600_000) : Number.POSITIVE_INFINITY;
+    return {
+      ok: state.ok === true,
+      elapsedHours,
+      mapped: Number(state.mapped || 0),
+    };
+  } catch {
+    return { ok: false, elapsedHours: Number.POSITIVE_INFINITY, mapped: 0 };
+  }
 }
 
 function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?) {

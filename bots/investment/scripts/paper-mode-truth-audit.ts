@@ -92,11 +92,11 @@ async function analyzeTradesTable() {
       exchange,
       trade_mode,
       COUNT(*) AS trades,
-      ROUND(SUM(pnl_usdt)::numeric, 2) AS total_pnl_usdt,
-      COUNT(CASE WHEN pnl_usdt > 0 THEN 1 END) AS wins
+      ROUND(SUM(realized_pnl_usdt)::numeric, 2) AS total_pnl_usdt,
+      COUNT(CASE WHEN realized_pnl_usdt > 0 THEN 1 END) AS wins
     FROM investment.trades
     WHERE paper = false
-      AND pnl_usdt IS NOT NULL
+      AND realized_pnl_usdt IS NOT NULL
     GROUP BY exchange, trade_mode
     ORDER BY exchange, trade_mode
   `);
@@ -106,7 +106,7 @@ async function analyzeTradesTable() {
     SELECT
       exchange,
       COUNT(*) AS cnt,
-      ROUND(SUM(pnl_usdt)::numeric, 2) AS pnl_usdt
+      ROUND(SUM(realized_pnl_usdt)::numeric, 2) AS pnl_usdt
     FROM investment.trades
     WHERE paper = false AND trade_mode = 'validation'
     GROUP BY exchange
@@ -121,12 +121,12 @@ async function analyzeTradesTable() {
 async function sampleNullOrderTrades() {
   return query('investment', `
     SELECT id, exchange, symbol, side, trade_mode, tp_order_id, sl_order_id,
-           pnl_usdt, created_at
+           realized_pnl_usdt AS pnl_usdt, executed_at
     FROM investment.trades
     WHERE paper = false
       AND tp_order_id IS NULL
       AND trade_mode = 'normal'
-    ORDER BY created_at DESC
+    ORDER BY executed_at DESC
     LIMIT 5
   `);
 }

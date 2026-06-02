@@ -10,7 +10,7 @@ import { buildLunaLiveFireReadinessGate } from './luna-live-fire-readiness-gate.
 
 const CONFIRM = 'enable-luna-live-fire';
 const DEFAULT_MAX_TRADE_USDT = 0;
-const DEFAULT_MAX_DAILY_USDT = 200;
+const DEFAULT_MAX_DAILY_USDT = 160;
 const DEFAULT_MAX_OPEN_POSITIONS = 5;
 const DEFAULT_POSITION_DISPATCH_ENABLED = false;
 

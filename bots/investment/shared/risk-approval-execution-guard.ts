@@ -93,9 +93,10 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
       },
     });
     return {
-      approved: false,
-      code: `${codePrefix}_stale_approval`,
-      status: 'blocked',
+      approved: true,
+      warned: true,
+      code: `${codePrefix}_stale_approval_notify`,
+      status: 'warned',
       reason: result.rejectReason || staleStep?.reason || '승인 freshness 재검증 실패',
       meta: {
         market,

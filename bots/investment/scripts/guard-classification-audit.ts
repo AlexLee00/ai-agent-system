@@ -11,10 +11,10 @@
  * 결과: docs/strategy/LUNA_GUARD_INVENTORY_2026-05-27.md
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 
-const PROJECT_ROOT = resolve(new URL('../../../..', import.meta.url).pathname);
+const PROJECT_ROOT = resolve(new URL('../../..', import.meta.url).pathname);
 const SHARED = resolve(PROJECT_ROOT, 'bots/investment/shared');
 
 const TARGET_FILES = [
@@ -38,20 +38,34 @@ const BLOCK_PATTERNS = [
   { pattern: /status:\s*['"]blocked['"]/g, label: "status:'blocked'" },
 ];
 
-// 안전 가드 키워드 (분류 A)
+// 안전 가드 키워드 (분류 A): 실제 자금/포지션/운영 안전을 보호하므로 보존한다.
 const SAFETY_KEYWORDS = [
   'capital',
   'hard_limit',
+  'HARD limit',
+  'HARD block',
   'PROTECTED',
+  'structural_hard_block',
+  'crypto_structural_symbol_block',
   'stop_loss_threshold',
+  'tp_sl_required_not_met',
   'dynamic_trail_stop_breached',
   'nemesis',
+  'open_position_reentry_guard',
+  'duplicate_fire_cooldown',
+  'predictive_observation_cycle_cap',
+  'llm_emergency_stop',
+  'persist_failed',
+  'circuit',
+  'correlation_guard',
+  'mode_blocked',
+  'mode_observe_only',
   'api.*fail',
   'fund.*limit',
   'max.*capital',
 ];
 
-// 데이터 수집 가드 키워드 (분류 B)
+// 데이터 수집/notify 가드 키워드 (분류 B): 알림/기록/관찰 경로로 전환되어 데이터 루프를 유지한다.
 const DATA_COLLECTION_KEYWORDS = [
   'reflexion',
   'quality_eval',
@@ -61,6 +75,24 @@ const DATA_COLLECTION_KEYWORDS = [
   'dryRun',
   'dry_run',
   'budget',
+  'recordGuardEvent',
+  'notifyMode',
+  'notify mode',
+  'LUNA_FULL_DATA_LOOP',
+  'fullDataLoopEnabled',
+  'observed',
+  'observedOnly',
+  'entry_trigger_armed',
+  'triggerState',
+  'tradingview_chart',
+  'low_confidence',
+  'mature_position_hold',
+  'constitution_blocked',
+  'trigger_type_disabled',
+  'pullback_confirmation_incomplete',
+  'fire_condition_unmet',
+  'promotion_shadow_readiness_incomplete',
+  'execution_freshness_guard',
 ];
 
 // paper 강제 패턴
@@ -70,9 +102,10 @@ const PAPER_FORCE_PATTERNS = [
   { pattern: /paper_mode:\s*true/g,          label: 'paper_mode:true' },
 ];
 
-function classifyLine(line, lineNum) {
-  const hasSafetyKeyword = SAFETY_KEYWORDS.some((kw) => new RegExp(kw, 'i').test(line));
-  const hasDataKeyword = DATA_COLLECTION_KEYWORDS.some((kw) => new RegExp(kw, 'i').test(line));
+function classifyLine(line, lineNum, context = '') {
+  const searchable = `${context}\n${line}`;
+  const hasSafetyKeyword = SAFETY_KEYWORDS.some((kw) => new RegExp(kw, 'i').test(searchable));
+  const hasDataKeyword = DATA_COLLECTION_KEYWORDS.some((kw) => new RegExp(kw, 'i').test(searchable));
 
   for (const { pattern, label } of BLOCK_PATTERNS) {
     const clone = new RegExp(pattern.source, pattern.flags);
@@ -101,7 +134,8 @@ function scanFile(filename) {
   const lines = content.split('\n');
   const results = [];
   for (let i = 0; i < lines.length; i++) {
-    const match = classifyLine(lines[i], i + 1);
+    const context = lines.slice(Math.max(0, i - 8), Math.min(lines.length, i + 9)).join('\n');
+    const match = classifyLine(lines[i], i + 1, context);
     if (match) results.push(match);
   }
   return { filename, lines: lines.length, results };
@@ -175,6 +209,7 @@ async function main() {
   const report = buildReport(scans);
 
   const outPath = resolve(PROJECT_ROOT, 'docs/strategy/LUNA_GUARD_INVENTORY_2026-05-27.md');
+  mkdirSync(resolve(PROJECT_ROOT, 'docs/strategy'), { recursive: true });
   writeFileSync(outPath, report, 'utf-8');
 
   const total = scans.flatMap((s) => s.results).length;

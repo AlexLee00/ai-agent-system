@@ -9,6 +9,7 @@
 //   tsx bots/hub/scripts/shadow-mode-activation-smoke.ts --write
 
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
 function hasFlag(name: string): boolean {
@@ -24,11 +25,27 @@ interface SmokeResult {
   summary: string;
 }
 
-async function checkEnvVar(name: string, expected?: string): Promise<{ ok: boolean; value?: string; message: string }> {
-  const value = process.env[name];
+async function checkEnvVar(name: string, expected?: string, aliases: string[] = []): Promise<{ ok: boolean; value?: string; message: string }> {
+  const value = readEnvWithAliases(name, aliases);
   if (!value) return { ok: false, message: `${name} 미설정` };
   if (expected && value !== expected) return { ok: false, value, message: `${name}=${value} (기대값: ${expected})` };
   return { ok: true, value, message: `${name}=${value} ✅` };
+}
+
+function readLaunchctlEnv(name: string): string {
+  try {
+    return execFileSync('launchctl', ['getenv', name], { encoding: 'utf8' }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function readEnvWithAliases(name: string, aliases: string[] = []): string {
+  for (const key of [name, ...aliases]) {
+    const value = process.env[key] || readLaunchctlEnv(key);
+    if (value) return value;
+  }
+  return '';
 }
 
 async function testDbWrite(pgPool: any): Promise<{ ok: boolean; rowId?: number; message: string }> {
@@ -52,7 +69,7 @@ export async function runShadowModeActivationSmoke(options: { write?: boolean } 
   const envChecks = await Promise.all([
     checkEnvVar('LLM_AUTO_ROUTING_ENABLED'),
     checkEnvVar('PERMISSION_TIER_ENFORCE'),
-    checkEnvVar('HUB_BUDGET_GUARDIAN_ENABLED'),
+    checkEnvVar('HUB_BUDGET_GUARDIAN_ENABLED', undefined, ['BUDGET_GUARDIAN_ENABLED']),
   ]);
 
   const checks = {

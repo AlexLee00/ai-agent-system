@@ -548,7 +548,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     SELECT id, date, title, owner, task_ids, status, project_id, created_at
     FROM project.milestones
     WHERE project_id = ANY($1::text[])
-      AND date >= CURRENT_DATE - INTERVAL '7 days'
+      AND date >= CURRENT_DATE - INTERVAL '14 days'
     ORDER BY date ASC, id ASC
     LIMIT 12
     """
@@ -887,15 +887,30 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       ON CONFLICT (id) DO UPDATE SET
         title = EXCLUDED.title,
         project_id = EXCLUDED.project_id,
-        stage = EXCLUDED.stage,
+        stage = CASE
+          WHEN project.tasks.stage = 'done' AND EXCLUDED.stage <> 'done' THEN project.tasks.stage
+          ELSE EXCLUDED.stage
+        END,
         assignee = EXCLUDED.assignee,
         started_at = EXCLUDED.started_at,
-        finished_at = EXCLUDED.finished_at,
-        elapsed_seconds = EXCLUDED.elapsed_seconds,
+        finished_at = CASE
+          WHEN project.tasks.stage = 'done' AND EXCLUDED.stage <> 'done' THEN project.tasks.finished_at
+          ELSE EXCLUDED.finished_at
+        END,
+        elapsed_seconds = CASE
+          WHEN project.tasks.stage = 'done' AND EXCLUDED.stage <> 'done' THEN project.tasks.elapsed_seconds
+          ELSE EXCLUDED.elapsed_seconds
+        END,
         source_doc = EXCLUDED.source_doc,
         active_session_id = EXCLUDED.active_session_id,
-        verify = EXCLUDED.verify,
-        observe = EXCLUDED.observe
+        verify = CASE
+          WHEN project.tasks.stage = 'done' AND EXCLUDED.stage <> 'done' THEN project.tasks.verify
+          ELSE EXCLUDED.verify
+        END,
+        observe = CASE
+          WHEN project.tasks.stage = 'done' AND EXCLUDED.stage <> 'done' THEN project.tasks.observe
+          ELSE EXCLUDED.observe
+        END
       """,
       [
         task.id,
@@ -977,6 +992,20 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   defp ingest_codex_task_event(event_type, event, metadata) do
+    source_doc =
+      map_value(metadata, :file_path) ||
+        infer_codex_source_doc(event) ||
+        "agent.event_lake"
+
+    if missing_codex_source_doc?(source_doc) do
+      Logger.info("[ProjectVisibility] ignore stale codex task event without source_doc=#{source_doc}")
+      :ignored
+    else
+      ingest_codex_task_event_with_source(event_type, event, metadata, source_doc)
+    end
+  end
+
+  defp ingest_codex_task_event_with_source(event_type, event, metadata, source_doc) do
     stage =
       cond do
         String.ends_with?(event_type, ".archived") ->
@@ -992,10 +1021,10 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     attrs = %{
       id: map_value(metadata, :task_id) || event_slug(event),
       title: map_value(event, :title, "코덱스 작업"),
-      project_id: project_id_from_path(map_value(metadata, :file_path, "")),
+      project_id: project_id_from_path(source_doc),
       stage: stage,
       assignee: "codex",
-      source_doc: map_value(metadata, :file_path, "agent.event_lake"),
+      source_doc: source_doc,
       started_at: map_value(event, :created_at) || map_value(metadata, :observed_at),
       finished_at: if(stage == "done", do: DateTime.utc_now(), else: nil),
       verify: %{
@@ -1013,6 +1042,28 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       broadcast_project_event("project.task.stage_changed", task)
       {:ok, task}
     end
+  end
+
+  defp missing_codex_source_doc?(source_doc) do
+    source_doc = to_string(source_doc || "")
+
+    String.starts_with?(source_doc, "docs/codex/") and
+      not File.exists?(Path.join(repo_root(), source_doc))
+  end
+
+  defp infer_codex_source_doc(event) do
+    text = "#{map_value(event, :title, "")} #{map_value(event, :message, "")}"
+
+    case Regex.run(~r/\b(CODEX_[A-Z0-9_-]+(?:_\d{4}-\d{2}-\d{2})?\.md)\b/u, text) do
+      [_, filename] -> "docs/codex/#{filename}"
+      _ -> nil
+    end
+  end
+
+  defp repo_root do
+    Application.get_env(:team_jay, :repo_root) ||
+      System.get_env("REPO_ROOT") ||
+      "/Users/alexlee/projects/ai-agent-system"
   end
 
   defp ingest_project_task_event(event_type, event, metadata) do

@@ -22,6 +22,22 @@ function withEnv(patch = {}, fn) {
     });
 }
 
+async function waitForGuardEvent(symbol, guardName, attempts = 10) {
+  for (let i = 0; i < attempts; i += 1) {
+    const rows = await db.query(
+      `SELECT guard_name, reason, decision_after
+         FROM investment.guard_events
+        WHERE symbol = $1 AND guard_name = $2
+        ORDER BY triggered_at DESC
+        LIMIT 1`,
+      [symbol, guardName],
+    ).catch(() => []);
+    if (rows[0]) return rows[0];
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return null;
+}
+
 export async function runLunaEntryTriggerRiskGateSmoke() {
   return withEnv({
     LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
@@ -29,10 +45,12 @@ export async function runLunaEntryTriggerRiskGateSmoke() {
     LUNA_LIVE_FIRE_ENABLED: 'true',
     LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
     LUNA_ENTRY_TRIGGER_REQUIRE_LIVE_RISK_CONTEXT: 'true',
+    LUNA_ENTRY_TRIGGER_REQUIRE_CAPITAL_ACTIVE: 'true',
     LUNA_ENTRY_TRIGGER_MIN_CONFIDENCE: '0.4',
   }, async () => {
     const symbol = `RISKGATE${Date.now().toString(36).toUpperCase()}/USDT`;
     const allowedSymbol = symbol.replace('/USDT', '2/USDT');
+    const capitalBlockedSymbol = symbol.replace('/USDT', '3/USDT');
     const candidate = {
       symbol,
       action: 'BUY',
@@ -53,12 +71,29 @@ export async function runLunaEntryTriggerRiskGateSmoke() {
       },
     };
     try {
-      const blocked = await evaluateEntryTriggers([candidate], { exchange: 'binance' });
-      assert.equal(blocked.stats.fired, 0);
-      assert.equal(blocked.stats.blocked, 1);
-      assert.equal(blocked.decisions[0].action, 'HOLD');
-      assert.equal(blocked.decisions[0].block_meta?.entryTrigger?.reason, 'live_risk_gate_blocked');
-      assert.equal(blocked.decisions[0].block_meta?.entryTrigger?.riskGateReason, 'risk_context_missing');
+      const notified = await evaluateEntryTriggers([candidate], { exchange: 'binance' });
+      assert.equal(notified.stats.fired, 1);
+      assert.equal(notified.stats.blocked, 0);
+      assert.equal(notified.decisions[0].action, 'BUY');
+      const riskNotify = await waitForGuardEvent(symbol, 'live_risk_gate_notify');
+      assert.equal(riskNotify?.reason, 'risk_context_missing');
+      assert.equal(riskNotify?.decision_after?.notifyMode, true);
+
+      const capitalBlocked = await evaluateEntryTriggers([{ ...candidate, symbol: capitalBlockedSymbol }], {
+        exchange: 'binance',
+        capitalSnapshot: {
+          mode: 'ACTIVE_DISCOVERY',
+          balanceStatus: 'ok',
+          buyableAmount: 0,
+          minOrderAmount: 10,
+          remainingSlots: 2,
+        },
+      });
+      assert.equal(capitalBlocked.stats.fired, 0);
+      assert.equal(capitalBlocked.stats.blocked, 1);
+      assert.equal(capitalBlocked.decisions[0].action, 'HOLD');
+      assert.equal(capitalBlocked.decisions[0].block_meta?.entryTrigger?.reason, 'live_risk_gate_capital_hard_block');
+      assert.equal(capitalBlocked.decisions[0].block_meta?.entryTrigger?.riskGateReason, 'buyable_amount_below_required');
 
       const allowed = await evaluateEntryTriggers([{ ...candidate, symbol: allowedSymbol }], {
         exchange: 'binance',
@@ -75,11 +110,13 @@ export async function runLunaEntryTriggerRiskGateSmoke() {
 
       return {
         ok: true,
-        blocked: blocked.decisions[0].block_meta?.entryTrigger,
+        notified: notified.decisions[0].block_meta?.entryTrigger,
+        capitalBlocked: capitalBlocked.decisions[0].block_meta?.entryTrigger,
         allowed: allowed.decisions[0].block_meta?.entryTrigger,
       };
     } finally {
-      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1 OR symbol = $2`, [symbol, allowedSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = ANY($1::text[])`, [[symbol, allowedSymbol, capitalBlockedSymbol]]).catch(() => {});
+      await db.run(`DELETE FROM investment.guard_events WHERE symbol = ANY($1::text[])`, [[symbol, allowedSymbol, capitalBlockedSymbol]]).catch(() => {});
     }
   });
 }

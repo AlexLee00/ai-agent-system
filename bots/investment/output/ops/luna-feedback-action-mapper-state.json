@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "market": "all",
+  "days": 30,
+  "dryRun": true,
+  "inspected": 0,
+  "mapped": 0,
+  "skipped": 0,
+  "errors": 0,
+  "candidates": [],
+  "generatedAt": "2026-06-02T10:41:04.751Z",
+  "stateWrittenAt": "2026-06-02T10:41:04.751Z"
+}
