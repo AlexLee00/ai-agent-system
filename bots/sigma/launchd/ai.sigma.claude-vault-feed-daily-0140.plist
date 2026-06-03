@@ -12,6 +12,8 @@
     <string>tsx</string>
     <string>scripts/runtime-sigma-claude-vault-feed.ts</string>
     <string>--json</string>
+    <string>--write</string>
+    <string>--no-dry-run</string>
     <string>--since-hours=720</string>
     <string>--limit-per-source=80</string>
   </array>
