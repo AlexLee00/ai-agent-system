@@ -105,7 +105,9 @@ function fixtureRowsForRule(
   return rows.filter((row) => {
     const severity = String(row.severity || '').toLowerCase();
     const status = String(row.status || 'new').toLowerCase();
-    const receivedAt = new Date(String(row.received_at || row.receivedAt || now.toISOString())).getTime();
+    const metadata = (row.metadata && typeof row.metadata === 'object') ? row.metadata as Record<string, unknown> : {};
+    const anchor = metadata.severity_decayed_at || row.received_at || row.receivedAt || now.toISOString();
+    const receivedAt = new Date(String(anchor)).getTime();
     const count = Number(row.fingerprint_count || row.fingerprintCount || 0);
     return severity === rule.fromSeverity
       && !['resolved', 'suppressed'].includes(status)
@@ -127,7 +129,7 @@ async function applyDecayRule(
         FROM agent.hub_alarms
         WHERE severity = $1
           AND status NOT IN ('resolved', 'suppressed')
-          AND received_at <= NOW() - make_interval(hours => $2::integer)
+          AND COALESCE((metadata->>'severity_decayed_at')::timestamptz, received_at) <= NOW() - make_interval(hours => $2::integer)
           AND (fingerprint_count IS NULL OR fingerprint_count < $3)
         ORDER BY received_at ASC
         LIMIT 200
@@ -143,9 +145,9 @@ async function applyDecayRule(
         UPDATE agent.hub_alarms
         SET severity = $1,
             metadata = COALESCE(metadata, '{}') || jsonb_build_object(
-              'severity_decayed_from', $2,
+              'severity_decayed_from', $2::text,
               'severity_decayed_at', NOW()::text,
-              'severity_decay_date', $3
+              'severity_decay_date', $3::text
             )
         WHERE id = ANY($4::bigint[])
       `, [rule.toSeverity, rule.fromSeverity, today, ids]);

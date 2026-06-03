@@ -15,8 +15,20 @@ async function test_make_interval_guard_exists() {
     'severity decay query uses make_interval with integer hours',
   );
   assert.ok(
+    SOURCE.includes("COALESCE((metadata->>'severity_decayed_at')::timestamptz, received_at)"),
+    'severity decay uses last decay timestamp as age anchor to prevent same-run cascading demotion',
+  );
+  assert.ok(
     SOURCE.includes('const minAgeHours = Math.max(1, Math.trunc(Number(rule.minAgeHours) || 0));'),
     'severity decay normalizes minAgeHours before query execution',
+  );
+  assert.ok(
+    SOURCE.includes("'severity_decayed_from', $2::text"),
+    'severity decay update casts jsonb_build_object severity parameter',
+  );
+  assert.ok(
+    SOURCE.includes("'severity_decay_date', $3::text"),
+    'severity decay update casts jsonb_build_object date parameter',
   );
   console.log('✅ severity-decay: SQL interval typing guard present');
 }
