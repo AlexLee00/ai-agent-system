@@ -1409,6 +1409,31 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_lps_unique_market_agent_pattern ON luna_posttrade_skills (market, agent_name, skill_type, pattern_key)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_lps_market_agent_type ON luna_posttrade_skills (market, agent_name, skill_type, success_rate DESC, updated_at DESC)`); } catch { /* 무시 */ }
 
+  // ── S2 C2: 통합 가드 SHADOW 비교 테이블 ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS unified_guard_shadow (
+      id                    BIGSERIAL PRIMARY KEY,
+      signal_id             TEXT,
+      symbol                TEXT NOT NULL,
+      exchange              TEXT NOT NULL DEFAULT 'binance',
+      trade_mode            TEXT NOT NULL DEFAULT 'normal',
+      action                TEXT,
+      existing_decision     TEXT,
+      existing_block_code   TEXT,
+      existing_block_reason TEXT,
+      unified_decision      TEXT NOT NULL,
+      unified_reason        TEXT,
+      unified_checks        JSONB DEFAULT '{}'::jsonb,
+      agreement             BOOLEAN,
+      gap_flag              BOOLEAN NOT NULL DEFAULT false,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_unified_guard_shadow_signal ON unified_guard_shadow(signal_id, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_unified_guard_shadow_symbol ON unified_guard_shadow(exchange, symbol, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_unified_guard_shadow_gap ON unified_guard_shadow(gap_flag, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_unified_guard_shadow_agreement ON unified_guard_shadow(agreement, created_at DESC)`); } catch { /* 무시 */ }
+
   // 스키마 버전 기록
   try {
     for (const [v, name] of [
@@ -1428,6 +1453,7 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
       [14, 'luna_regime_llm_shadow'],
       [15, 'luna_entry_llm_shadow'],
       [16, 'luna_dynamic_tpsl_shadow'],
+      [17, 's2_c2_unified_guard_shadow'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
