@@ -972,6 +972,66 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(materializedMeta[0].meta.entryTrigger.strategy.quality, 'watch');
       assert.equal(materializedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'approved_signal_inserted');
 
+      const hygieneAdvisoryPayloads = [];
+      const hygieneAdvisoryUpdates = [];
+      const hygieneAdvisoryResult = await materializeFiredEntryTriggerSignals({
+        exchange: 'binance',
+        result: {
+          allowLiveFire: true,
+          results: [{ triggerId: 'fake-trigger-hygiene-advisory', symbol: 'FAKE/USDT', fired: true }],
+        },
+        riskContext: { capitalSnapshot },
+        events: [{ symbol: 'FAKE/USDT', price: 101, targetPrice: 101 }],
+        deps: {
+          binanceTopVolumeUniverse,
+          tradeDataHygieneBuilder: async () => ({
+            ok: false,
+            status: 'needs_attention',
+            severity: 'P2',
+            blockers: [],
+          }),
+          triggerFetcher: async () => ({
+            id: 'fake-trigger-hygiene-advisory',
+            symbol: 'FAKE/USDT',
+            exchange: 'binance',
+            setup_type: 'mean_reversion',
+            trigger_type: 'pullback_to_support',
+            trigger_state: 'fired',
+            confidence: 0.73,
+            predictive_score: 0.63,
+            trigger_context: {
+              strategyRoute: {
+                selectedFamily: 'mean_reversion',
+                setupType: 'pullback_to_support',
+                quality: 'watch',
+                readinessScore: 0.66,
+                hasTechnicalPresignal: true,
+                externalEvidence: {
+                  evidenceCount: 3,
+                  sourceCount: 2,
+                  avgQuality: 0.72,
+                  avgFreshness: 0.8,
+                },
+              },
+            },
+            trigger_meta: {},
+          }),
+          duplicateFinder: async () => null,
+          signalInserter: async (payload) => {
+            hygieneAdvisoryPayloads.push(payload);
+            return 'fake-signal-hygiene-advisory';
+          },
+          blockMetaMerger: async () => null,
+          triggerUpdater: async (id, patch) => {
+            hygieneAdvisoryUpdates.push({ id, patch });
+          },
+        },
+      });
+      assert.equal(hygieneAdvisoryResult.materialized, 1, 'non-P0 hygiene advisory must not batch-block materialization');
+      assert.equal(hygieneAdvisoryResult.skipped, 0, 'non-P0 hygiene advisory should continue to per-trigger guards');
+      assert.equal(hygieneAdvisoryPayloads.length, 1, 'non-P0 hygiene advisory should insert approved signal');
+      assert.equal(hygieneAdvisoryUpdates[0].patch.triggerMetaPatch.materializeStatus, 'approved_signal_inserted');
+
       const hygieneBlockedUpdates = [];
       const hygieneBlockedPayloads = [];
       const hygieneBlockedResult = await materializeFiredEntryTriggerSignals({

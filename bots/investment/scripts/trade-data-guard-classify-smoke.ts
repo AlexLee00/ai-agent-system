@@ -9,7 +9,7 @@
  *   B. trend_following+confirmation missing → notify
  *   C. stablecoin 구조 → hard_block
  *   D. strict env true → confirmation blocker hard_block 승격
- *   E. notify sizing multiplier clamp/env override
+ *   E. STOP-4 loss family notify sizing multiplier + clamp/env override
  *
  * 주의: applyTradeDataEntryGuardToDecision()은 guard_events를 fire-and-forget으로
  * 기록하므로 smoke에서 호출하지 않는다. 이 스크립트는 순수 분류 검증만 수행한다.
@@ -87,9 +87,11 @@ if (strictGuard.blockers.includes('crypto_defensive_rotation_confirmation_qualit
   assert.ok(['notify', 'hard_block'].includes(strictClass), 'D: strict 모드 결과 유효 분류');
 }
 
-// E. notify sizing multiplier clamp/env override
+// E. STOP-4 loss family notify sizing multiplier clamp/env override
 const notifyMultiplier = resolveTradeDataGuardNotifySizingMultiplier(defRotGuard, baseEnv);
-assert.equal(notifyMultiplier, 0.65, 'E: 기본 notify multiplier=0.65');
+assert.equal(notifyMultiplier, 0.25, 'E: defensive_rotation STOP-4 notify multiplier=0.25');
+const trendNotifyMultiplier = resolveTradeDataGuardNotifySizingMultiplier(trendGuard, baseEnv);
+assert.equal(trendNotifyMultiplier, 0.25, 'E: trend_following STOP-4 notify multiplier=0.25');
 const clampedMultiplier = resolveTradeDataGuardNotifySizingMultiplier(defRotGuard, {
   ...baseEnv,
   LUNA_TRADE_DATA_NOTIFY_SIZING_MULTIPLIER: '0.1',
@@ -103,7 +105,7 @@ const payload = {
   B: { class: trendClass, blockers: trendGuard.blockers },
   C: { class: stablecoinClass, blockers: stablecoinGuard.blockers },
   D: { class: strictClass, blockers: strictGuard.blockers },
-  E: { notifyMultiplier, clampedMultiplier },
+  E: { notifyMultiplier, trendNotifyMultiplier, clampedMultiplier },
 };
 
 if (process.argv.includes('--json')) {
@@ -111,5 +113,5 @@ if (process.argv.includes('--json')) {
 } else {
   console.log('trade-data-guard-classify-smoke ok');
   console.log(`  A(defensive_rotation)→${payload.A.class}  B(trend_following)→${payload.B.class}  C(stablecoin)→${payload.C.class}  D(strict)→${payload.D.class}`);
-  console.log(`  E notifyMultiplier=${payload.E.notifyMultiplier} clamped=${payload.E.clampedMultiplier}`);
+  console.log(`  E defensiveRotationMultiplier=${payload.E.notifyMultiplier} trendMultiplier=${payload.E.trendNotifyMultiplier} clamped=${payload.E.clampedMultiplier}`);
 }
