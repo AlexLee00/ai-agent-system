@@ -1079,7 +1079,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(blockedMaterializeResult.materialized, 0);
       assert.equal(blockedMaterializeResult.skipped, 1);
       assert.equal(blockedPayloads.length, 0);
-      assert.equal(blockedMaterializeResult.items[0].reason, 'trade_data_entry_guard_blocked');
+      assert.equal(blockedMaterializeResult.items[0].reason, 'trade_data_entry_guard_hard_blocked');
       assert.equal(blockedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'blocked_by_trade_data_entry_guard');
 
       const trendNoMtfPayloads = [];
@@ -1127,15 +1127,18 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
           },
         },
       });
-      assert.equal(trendNoMtfResult.materialized, 0);
-      assert.equal(trendNoMtfResult.skipped, 1);
-      assert.equal(trendNoMtfPayloads.length, 0);
-      assert.equal(trendNoMtfResult.items[0].reason, 'trade_data_entry_guard_blocked');
+      assert.equal(trendNoMtfResult.materialized, 1);
+      assert.equal(trendNoMtfResult.skipped, 0);
+      assert.equal(trendNoMtfPayloads.length, 1);
+      assert.equal(trendNoMtfResult.items[0].status, 'materialized');
       assert.ok(
-        trendNoMtfResult.items[0].blockers.includes('crypto_trending_bull_without_mtf_confirmation'),
-        'trending_bull trigger context must reach trade-data entry guard',
+        trendNoMtfUpdates.some((item) => item.patch?.triggerMetaPatch?.tradeDataGuardNotify?.blockers?.includes('crypto_trending_bull_without_mtf_confirmation')),
+        'trending_bull trigger context must reach trade-data entry guard notify path',
       );
-      assert.equal(trendNoMtfUpdates[0].patch.triggerMetaPatch.materializeStatus, 'blocked_by_trade_data_entry_guard');
+      assert.ok(
+        trendNoMtfUpdates.some((item) => item.patch?.triggerMetaPatch?.materializeStatus === 'approved_signal_inserted'),
+        'notify path must keep materializing approved signal',
+      );
 
       return {
         ok: true,

@@ -405,6 +405,8 @@
     "runtime:luna-entry-trigger-live-gate-smoke": "node scripts/luna-entry-trigger-live-gate-smoke.ts --json",
     "runtime:luna-entry-trigger-worker": "node scripts/luna-entry-trigger-worker.ts --json",
     "runtime:luna-entry-trigger-diagnose": "node scripts/runtime-luna-entry-trigger-diagnose.ts --json",
+    "runtime:luna-entry-preflight-shadow-report": "node scripts/runtime-luna-entry-preflight-shadow-report.ts --json",
+    "smoke:luna-entry-preflight-shadow": "node scripts/entry-materialize-preflight-smoke.ts --json",
     "runtime:luna-discovery-refresh": "node scripts/runtime-discovery-orchestrator-refresh.ts --json",
     "runtime:luna-discovery-funnel": "node scripts/runtime-luna-discovery-funnel-report.ts --json",
     "runtime:tradingview-open-position-sync": "node scripts/runtime-tradingview-open-position-subscription-sync.ts --json",

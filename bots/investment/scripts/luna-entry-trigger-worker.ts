@@ -32,6 +32,10 @@ import {
   buildRuntimeTradeDataHygiene,
   isTradeDataHygieneGateClear,
 } from './runtime-luna-trade-data-hygiene.ts';
+import {
+  attachEntryPreflightShadowSignal,
+  runEntryMaterializePreflightShadow,
+} from '../shared/entry-materialize-preflight.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -57,6 +61,8 @@ const LAUNCHCTL_ENV_KEYS = [
   'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS',
   'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_LIMIT',
   'LUNA_ENTRY_TRIGGER_TRADE_DATA_HYGIENE_GATE',
+  'ENTRY_PREFLIGHT_SHADOW_ENABLED',
+  'LUNA_ENTRY_PREFLIGHT_SHADOW_ENABLED',
 ];
 
 function hydrateEntryTriggerEnvFromLaunchctl() {
@@ -698,6 +704,8 @@ export async function materializeFiredEntryTriggerSignals({
   const signalInserter = deps.signalInserter || insertSignal;
   const blockMetaMerger = deps.blockMetaMerger || mergeSignalBlockMeta;
   const triggerUpdater = deps.triggerUpdater || updateEntryTriggerState;
+  const entryPreflightShadowRunner = deps.entryPreflightShadowRunner || runEntryMaterializePreflightShadow;
+  const entryPreflightShadowAttacher = deps.entryPreflightShadowAttacher || attachEntryPreflightShadowSignal;
   const binanceTopVolumeUniverse = exchange === 'binance'
     ? deps.binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
       source: 'binance_top30_unavailable',
@@ -867,6 +875,18 @@ export async function materializeFiredEntryTriggerSignals({
     }
     const event = events.find((row) => String(row?.symbol || '').toUpperCase() === symbol.toUpperCase()) || trigger.trigger_meta?.event || null;
     const notifyGuardActive = (strategy._notifyGuardSizingMultiplier ?? 1) < 1;
+    const entryPreflightShadow = await Promise.resolve(entryPreflightShadowRunner({
+      trigger,
+      exchange,
+      amountUsdt,
+      rawAmountUsdt,
+      notifyMultiplier,
+      event,
+    })).catch((error) => ({
+      enabled: true,
+      error: String(error?.message || error),
+      preflight: { decision: 'shadow_error', reason: String(error?.message || error), wouldDefer: false },
+    }));
     const signalId = await signalInserter({
       symbol,
       action: 'BUY',
@@ -888,6 +908,9 @@ export async function materializeFiredEntryTriggerSignals({
       nemesisVerdict: 'approved',
       approvedAt: new Date().toISOString(),
     });
+    if (entryPreflightShadow?.shadowId) {
+      await Promise.resolve(entryPreflightShadowAttacher(entryPreflightShadow.shadowId, signalId)).catch(() => null);
+    }
     await Promise.resolve(blockMetaMerger(signalId, {
       event_type: 'entry_trigger_fired_signal_materialized',
       entryTrigger: {
@@ -920,7 +943,18 @@ export async function materializeFiredEntryTriggerSignals({
       },
     })).catch(() => null);
     materialized += 1;
-    items.push({ triggerId: trigger.id, symbol, status: 'materialized', signalId, amountUsdt });
+    items.push({
+      triggerId: trigger.id,
+      symbol,
+      status: 'materialized',
+      signalId,
+      amountUsdt,
+      entryPreflightShadow: entryPreflightShadow?.enabled ? {
+        shadowId: entryPreflightShadow.shadowId || null,
+        decision: entryPreflightShadow.preflight?.decision || null,
+        reason: entryPreflightShadow.preflight?.reason || entryPreflightShadow.error || null,
+      } : undefined,
+    });
   }
   return { enabled: true, materialized, skipped, items };
 }

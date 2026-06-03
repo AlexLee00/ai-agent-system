@@ -1434,6 +1434,34 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_unified_guard_shadow_gap ON unified_guard_shadow(gap_flag, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_unified_guard_shadow_agreement ON unified_guard_shadow(agreement, created_at DESC)`); } catch { /* 무시 */ }
 
+  // ── S2 C3: entry-trigger materialize preflight SHADOW 비교 테이블 ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS entry_preflight_shadow (
+      id                     BIGSERIAL PRIMARY KEY,
+      trigger_id             TEXT,
+      candidate_id           TEXT,
+      symbol                 TEXT NOT NULL,
+      exchange               TEXT NOT NULL DEFAULT 'binance',
+      trade_mode             TEXT NOT NULL DEFAULT 'normal',
+      preflight_decision     TEXT NOT NULL,
+      preflight_reason       TEXT,
+      preflight_checks       JSONB NOT NULL DEFAULT '{}'::jsonb,
+      would_defer            BOOLEAN NOT NULL DEFAULT false,
+      materialized_signal_id TEXT,
+      executor_status        TEXT,
+      executor_block_code    TEXT,
+      executor_block_reason  TEXT,
+      agreement              BOOLEAN,
+      created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entry_preflight_shadow_trigger ON entry_preflight_shadow(trigger_id, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entry_preflight_shadow_signal ON entry_preflight_shadow(materialized_signal_id, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entry_preflight_shadow_decision ON entry_preflight_shadow(preflight_decision, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entry_preflight_shadow_symbol ON entry_preflight_shadow(exchange, symbol, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entry_preflight_shadow_agreement ON entry_preflight_shadow(agreement, created_at DESC)`); } catch { /* 무시 */ }
+
   // 스키마 버전 기록
   try {
     for (const [v, name] of [
@@ -1454,6 +1482,7 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
       [15, 'luna_entry_llm_shadow'],
       [16, 'luna_dynamic_tpsl_shadow'],
       [17, 's2_c2_unified_guard_shadow'],
+      [18, 's2_c3_entry_preflight_shadow'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
