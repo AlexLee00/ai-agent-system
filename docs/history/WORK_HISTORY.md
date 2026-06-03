@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-06-03: CODEX_S2_C1_EXECUTION_LINKAGE — S2 T1 실행 연결 규명 (read-only)
+
+- **목표**: entry_trigger_fired signal → executeSignal 경로 코드 추적·확정·문서화
+- **결론**: 연결 완전 — Hephaestos(pending-signal-processing)가 status='approved' signal을 폴링해 executeSignal 호출
+- **경로**: ops-scheduler(60s) → luna-entry-trigger-worker → insertSignal(approved) → crypto_cycle(300s) → processAllPendingSignals → executeSignal
+- **signal 값**: status='approved'(삽입 즉시), execution_origin='entry_trigger', block=NULL
+- **문서**: `docs/strategy/S2_C1_EXECUTION_LINKAGE_ANALYSIS_2026-06-03.md` 생성, S2 설계문서 §7 업데이트
+- **완전 read-only**: 코드/DB 무수정
+
 ## 2026-06-03: CODEX_S1_3_3_C2_ON_GATE — L2 ON 전환 게이트 구현
 
 - **목표**: luna_vault_shadow_eval 집계 → (market, family, direction)별 vault/base 적중률 게이트 판정 → ON 후보 기록

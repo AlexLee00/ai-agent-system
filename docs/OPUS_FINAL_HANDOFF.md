@@ -1,4 +1,42 @@
-# 세션 인수인계 — 2026-06-03 (CODEX_S1_3_3_C2_ON_GATE)
+# 세션 인수인계 — 2026-06-03 (CODEX_S2_C1_EXECUTION_LINKAGE)
+
+## 완료 요약 ✅ — S2 T1 실행 연결 규명 (C1, read-only)
+
+### 핵심 결론
+entry_trigger_fired signal → executeSignal 연결고리 **확정 — 누락 없음**.
+
+**연결 경로 (코드 추적 완료):**
+```
+ai.luna.ops-scheduler (launchd, 60s 주기)
+  ├─ active_entry_trigger_evaluator_crypto (60s)
+  │     scripts/luna-entry-trigger-worker.ts → materializeFiredEntryTriggerSignals
+  │       → insertSignal(status='approved')  ← 즉시 승인 (pending 바이패스)
+  └─ crypto_market_cycle (300s)
+        markets/crypto.ts → processAllPendingSignals (Hephaestos)
+          → getApprovedSignals → executeSignal  ← entry_trigger 신호 여기서 실행
+```
+
+**signal 값 확정 (`luna-entry-trigger-worker.ts:870-890`):**
+- `status='approved'` (기본값 'pending' 아님)
+- `execution_origin='entry_trigger'`, `qualityFlag='trusted'`, `nemesisVerdict='approved'`
+- `block_code=NULL`, `block_reason=NULL`
+
+**관련 파일:**
+- `scripts/runtime-luna-ops-scheduler.ts` L166-176 (job 정의)
+- `scripts/luna-entry-trigger-worker.ts` L870-890 (signal 삽입)
+- `team/hephaestos/pending-signal-processing.ts` L87-115 (폴링)
+- `shared/db/signals.ts` L283-304 (getApprovedSignals)
+
+**문서 생성:**
+- `docs/strategy/S2_C1_EXECUTION_LINKAGE_ANALYSIS_2026-06-03.md` (전체 분석)
+- `docs/strategy/S2_PIPELINE_COHERENCE_DESIGN_2026-06-03.md` §7 업데이트
+
+**다음 단계 (C2):**
+T4 race 조건 분석: Hephaestos와 L31이 같은 approved signal을 동시에 처리하는 빈도·방어 충분성 검증 (read-only 분석 먼저).
+
+---
+
+# 이전 인수인계 — 2026-06-03 (CODEX_S1_3_3_C2_ON_GATE)
 
 ## 완료 요약 ✅ — L2 ON 전환 게이트 (S1.3-3 C2)
 
