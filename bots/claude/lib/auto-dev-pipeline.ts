@@ -23,6 +23,7 @@ const {
   markAutoDevManifestState,
   syncAutoDevManifest,
 } = require('../../../packages/core/lib/auto-dev-manifest.ts');
+const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { mergeTrustedEnvWithUntrustedPatch } = require('../../../packages/core/lib/runtime-env-policy');
 const teamBus = require('./team-bus');
 const runtimePaths = require('./runtime-paths.js');
@@ -51,6 +52,16 @@ function parseNonNegativeIntegerEnv(value, fallback) {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return Math.floor(parsed);
+}
+
+function maskSensitiveText(value, maxLength = 1000) {
+  const text = String(value || '')
+    .replace(/sk-[A-Za-z0-9_-]{12,}/g, 'sk-***')
+    .replace(/sk-proj-[A-Za-z0-9_-]{12,}/g, 'sk-proj-***')
+    .replace(/AIza[0-9A-Za-z_-]{20,}/g, 'AIza***')
+    .replace(/(api[_-]?key|token|secret|password)\s*[:=]\s*['"]?[^'"\s,}]+/gi, '$1=***')
+    .replace(/\b[A-Za-z0-9_=-]{32,}\b/g, '[redacted-token]');
+  return text.slice(0, maxLength);
 }
 
 const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Read,Glob,Grep';
@@ -2955,6 +2966,79 @@ async function markAgentError(error) {
   try { await teamBus.markError('auto-dev', error); } catch {}
 }
 
+function firstEventAt(job) {
+  const events = Array.isArray(job?.events) ? job.events : [];
+  const first = events.find(event => event?.at);
+  return first?.at || job?.updatedAt || null;
+}
+
+function durationMsForJob(job) {
+  const first = Date.parse(firstEventAt(job) || '');
+  const last = Date.parse(job?.updatedAt || nowIso());
+  if (!Number.isFinite(first) || !Number.isFinite(last) || last < first) return null;
+  return last - first;
+}
+
+function elapsedMsSince(startedAtMs) {
+  if (!Number.isFinite(startedAtMs)) return null;
+  return Math.max(0, Date.now() - startedAtMs);
+}
+
+function commitShaForJob(job, extra = {}) {
+  return extra.commitSha
+    || job?.integration?.worktreeCommitSha
+    || job?.targetPush?.commitSha
+    || job?.targetPush?.sha
+    || null;
+}
+
+async function recordAutoDevOutcome(job, outcome, extra = {}) {
+  const relPath = job?.relPath || extra.relPath || null;
+  if (!relPath) return { ok: false, skipped: true, reason: 'missing_rel_path' };
+  const errorSummary = extra.errorSummary || extra.error || job?.error || null;
+  const meta = {
+    profile: extra.profile || job?.profile || null,
+    reason: extra.reason || job?.reason || null,
+    policyDecision: extra.policyDecision || job?.policyDecision || null,
+    targetTeam: extra.targetTeam || job?.targetTeam || null,
+    writeScope: extra.writeScope || job?.writeScope || null,
+    riskTier: extra.riskTier || job?.riskTier || null,
+    archivedPath: extra.archivedPath || job?.archivedPath || null,
+    archiveManifestPath: extra.archiveManifestPath || job?.archiveManifestPath || null,
+    completionDocumentPath: extra.completionDocumentPath || job?.completionDocumentPath || null,
+    changedFiles: extra.changedFiles || job?.newlyChangedFiles || [],
+    source: 'claude-auto-dev',
+  };
+  try {
+    const rows = await pgPool.query('claude', `
+      INSERT INTO claude.auto_dev_outcomes (
+        job_id, rel_path, outcome, stage, content_hash, attempts,
+        stale_recovery_count, duration_ms, test_pass, error_summary,
+        commit_sha, meta
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+      RETURNING id
+    `, [
+      job?.id || extra.jobId || null,
+      relPath,
+      String(outcome || 'unknown'),
+      extra.stage || job?.stage || null,
+      job?.contentHash || extra.contentHash || null,
+      Math.max(1, Number(extra.attempts || job?.attempts || 1) || 1),
+      Math.max(0, Number(extra.staleRecoveryCount ?? job?.staleRecoveryCount ?? 0) || 0),
+      extra.durationMs ?? durationMsForJob(job),
+      extra.testPass ?? job?.test?.pass ?? null,
+      errorSummary ? maskSensitiveText(errorSummary, 1000) : null,
+      commitShaForJob(job, extra),
+      JSON.stringify(meta),
+    ]);
+    return { ok: true, id: rows?.[0]?.id || null };
+  } catch (error) {
+    console.warn(`[auto-dev] outcome record failed: ${error?.message || error}`);
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
 function buildMissingAutoDevDocumentResult(filePath, relPath, reason = 'missing_document') {
   markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
     archivedAt: nowIso(),
@@ -2976,6 +3060,7 @@ function buildMissingAutoDevDocumentResult(filePath, relPath, reason = 'missing_
 }
 
 async function processAutoDevDocument(filePath, options = {}) {
+  const processStartedAtMs = Date.now();
   const relPath = relativeToRoot(filePath);
   if (!fs.existsSync(filePath)) {
     return buildMissingAutoDevDocumentResult(filePath, relPath);
@@ -3002,6 +3087,13 @@ async function processAutoDevDocument(filePath, options = {}) {
       archivedAt: nowIso(),
       archivedBy: 'auto-dev-pipeline',
       reason: 'already_completed',
+    });
+    await recordAutoDevOutcome(state.jobs[id], 'skipped', {
+      stage: 'already_completed',
+      reason: 'already_completed',
+      relPath,
+      contentHash,
+      durationMs: elapsedMsSince(processStartedAtMs),
     });
     return { ok: true, skipped: true, reason: 'already_completed', job: state.jobs[id] };
   }
@@ -3047,6 +3139,13 @@ async function processAutoDevDocument(filePath, options = {}) {
       },
     });
     console.warn(`[auto-dev] stale recovery exhausted: ${relPath} (${nextStaleRecoveryCount}/${MAX_STALE_RECOVERY})`);
+    await recordAutoDevOutcome(blockedJob, 'stale_recovery_exhausted', {
+      stage: 'stale_recovery_exhausted',
+      reason: 'stale_recovery_exhausted',
+      staleRecoveryCount: nextStaleRecoveryCount,
+      profile: runtimeConfig.profile,
+      durationMs: elapsedMsSince(processStartedAtMs),
+    });
     await markAgentDone();
     return { ok: true, skipped: true, reason: 'stale_recovery_exhausted', job: blockedJob };
   }
@@ -3138,6 +3237,16 @@ async function processAutoDevDocument(filePath, options = {}) {
         policyDecision: policy.policyDecision,
         profile: runtimeConfig.profile,
       });
+      await recordAutoDevOutcome(blockedJob, 'blocked', {
+        stage: policy.decision,
+        reason: policy.reason,
+        profile: runtimeConfig.profile,
+        targetTeam: policy.targetTeam,
+        writeScope: policy.writeScope,
+        riskTier: policy.riskTier,
+        policyDecision: policy.policyDecision,
+        durationMs: elapsedMsSince(processStartedAtMs),
+      });
       await markAgentDone();
       return { ok: true, skipped: true, reason: policy.decision, job: blockedJob };
     }
@@ -3160,6 +3269,16 @@ async function processAutoDevDocument(filePath, options = {}) {
         baseDirtyBlocking: contextResult.baseDirtyBlocking || [],
         baseDirtyIgnored: contextResult.baseDirtyIgnored || [],
         profile: runtimeConfig.profile,
+      });
+      await recordAutoDevOutcome(blockedJob, 'blocked', {
+        stage: contextResult.stage || 'blocked_dirty_worktree',
+        reason: contextResult.reason || 'execution context unavailable',
+        profile: runtimeConfig.profile,
+        targetTeam: policy.targetTeam,
+        writeScope: policy.writeScope,
+        riskTier: policy.riskTier,
+        policyDecision: 'blocked_dirty_worktree',
+        durationMs: elapsedMsSince(processStartedAtMs),
       });
       await markAgentDone();
       return { ok: true, skipped: true, reason: contextResult.stage || 'blocked_dirty_worktree', job: blockedJob };
@@ -3446,6 +3565,20 @@ async function processAutoDevDocument(filePath, options = {}) {
         profile: executionContext.profile,
       },
     });
+    await recordAutoDevOutcome(finalJob, 'completed', {
+      stage: 'completed',
+      testPass: testResult.pass,
+      profile: runtimeConfig.profile,
+      targetTeam: policy.targetTeam,
+      writeScope: policy.writeScope,
+      riskTier: policy.riskTier,
+      policyDecision: policy.policyDecision,
+      changedFiles: newlyChangedFiles,
+      archivedPath,
+      archiveManifestPath,
+      completionDocumentPath,
+      durationMs: elapsedMsSince(processStartedAtMs),
+    });
     const changedPreview = newlyChangedFiles.length === 0
       ? '변경 후보 파일 없음'
       : `변경 후보 파일 ${newlyChangedFiles.length}개\n${newlyChangedFiles.slice(0, 10).map(file => `- ${file}`).join('\n')}`;
@@ -3534,6 +3667,19 @@ async function processAutoDevDocument(filePath, options = {}) {
           profile: executionContext.profile,
         }
         : null,
+    });
+    await recordAutoDevOutcome(failedJob, 'failed', {
+      stage: 'failed',
+      errorSummary: error.message,
+      profile: runtimeConfig.profile,
+      targetTeam: policy?.targetTeam || null,
+      writeScope: policy?.writeScope || [],
+      riskTier: policy?.riskTier || null,
+      policyDecision: policy?.policyDecision || null,
+      changedFiles: newlyChangedFiles,
+      archivedPath,
+      archiveManifestPath,
+      durationMs: elapsedMsSince(processStartedAtMs),
     });
     await sendStageAlarm(
       { ...job, analysis: job.analysis || { title: job.title, relPath } },

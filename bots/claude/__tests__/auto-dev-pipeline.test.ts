@@ -61,6 +61,7 @@ function makeDoc(tmpRoot, fileName = 'CODEX_SAMPLE.md', content = '# A\nx') {
 
 function makeMocks(tmpRoot, overrides = {}) {
   const alarms = [];
+  const autoDevOutcomes = [];
   const childProcessMock = {
     execFileSync: (command) => {
       if (command === 'bash') return '/usr/local/bin/claude\n';
@@ -73,12 +74,37 @@ function makeMocks(tmpRoot, overrides = {}) {
 
   return {
     alarms,
+    autoDevOutcomes,
     mocks: {
       '../../../packages/core/lib/env': { PROJECT_ROOT: tmpRoot },
       '../../../packages/core/lib/hub-alarm-client': {
         postAlarm: async payload => {
           alarms.push(payload);
           return { ok: true };
+        },
+      },
+      '../../../packages/core/lib/pg-pool.js': {
+        query: async (schema, sql, params = []) => {
+          if (schema === 'claude' && /INSERT INTO claude\.auto_dev_outcomes/.test(sql)) {
+            const row = {
+              id: autoDevOutcomes.length + 1,
+              job_id: params[0],
+              rel_path: params[1],
+              outcome: params[2],
+              stage: params[3],
+              content_hash: params[4],
+              attempts: params[5],
+              stale_recovery_count: params[6],
+              duration_ms: params[7],
+              test_pass: params[8],
+              error_summary: params[9],
+              commit_sha: params[10],
+              meta: params[11],
+            };
+            autoDevOutcomes.push(row);
+            return [{ id: row.id }];
+          }
+          return [];
         },
       },
       './team-bus': {
@@ -771,25 +797,81 @@ async function test_analyzeAutoDevDocument_extracts_code_refs() {
 async function test_processAutoDevDocument_runs_full_dry_pipeline() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_SAMPLE.md', '# A\nx');
-  const { mocks, alarms } = makeMocks(tmpRoot);
+  const { mocks, alarms, autoDevOutcomes } = makeMocks(tmpRoot);
+  const originalDateNow = Date.now;
+  let fakeNow = 1_000_000;
 
-  await withMocks(mocks, async pipeline => {
-    const result = await pipeline.processAutoDevDocument(doc, {
-      test: true,
-      shadow: false,
-      force: true,
-    });
-    assert.strictEqual(result.ok, true);
-    assert.strictEqual(result.job.status, 'completed');
-    assert.strictEqual(result.job.stage, 'completed');
-    assert.ok(Array.isArray(result.job.beforeStatus));
-    assert.ok(Array.isArray(result.job.afterStatus));
-    assert.ok(Array.isArray(result.job.newlyChangedFiles));
-  }, testEnv(tmpRoot));
+  try {
+    Date.now = () => {
+      fakeNow += 25;
+      return fakeNow;
+    };
+    await withMocks(mocks, async pipeline => {
+      const result = await pipeline.processAutoDevDocument(doc, {
+        test: true,
+        shadow: false,
+        force: true,
+      });
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(result.job.status, 'completed');
+      assert.strictEqual(result.job.stage, 'completed');
+      assert.ok(Array.isArray(result.job.beforeStatus));
+      assert.ok(Array.isArray(result.job.afterStatus));
+      assert.ok(Array.isArray(result.job.newlyChangedFiles));
+    }, testEnv(tmpRoot));
+  } finally {
+    Date.now = originalDateNow;
+  }
 
   assert.strictEqual(alarms.length, 0, 'test 모드는 실제 알림 대신 shadow');
+  assert.strictEqual(autoDevOutcomes.length, 1);
+  assert.strictEqual(autoDevOutcomes[0].outcome, 'completed');
+  assert.strictEqual(autoDevOutcomes[0].stage, 'completed');
+  assert.strictEqual(autoDevOutcomes[0].test_pass, true);
+  assert.ok(autoDevOutcomes[0].duration_ms > 0);
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: processes dry pipeline to completion');
+}
+
+async function test_auto_dev_failed_outcome_masks_secrets() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_SECRET_FAIL.md', '# Fail\nx');
+  const { mocks, autoDevOutcomes } = makeMocks(tmpRoot, {
+    '../src/reviewer': {
+      runReview: async () => ({
+        summary: { pass: false },
+        message: 'review failed api_key=fixture-secret-value password=plain-secret',
+      }),
+    },
+  });
+  const originalDateNow = Date.now;
+  let fakeNow = 2_000_000;
+
+  try {
+    Date.now = () => {
+      fakeNow += 25;
+      return fakeNow;
+    };
+    await withMocks(mocks, async pipeline => {
+      const result = await pipeline.processAutoDevDocument(doc, {
+        test: true,
+        force: true,
+      });
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(result.job.status, 'failed');
+    }, testEnv(tmpRoot));
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  assert.strictEqual(autoDevOutcomes.length, 1);
+  assert.strictEqual(autoDevOutcomes[0].outcome, 'failed');
+  assert.strictEqual(autoDevOutcomes[0].stage, 'failed');
+  assert.ok(autoDevOutcomes[0].duration_ms > 0);
+  assert.ok(!autoDevOutcomes[0].error_summary.includes('fixture-secret-value'));
+  assert.ok(!autoDevOutcomes[0].error_summary.includes('plain-secret'));
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: failed outcome masks sensitive error summaries');
 }
 
 async function test_stale_running_job_retries_with_recovery_count() {
@@ -2495,6 +2577,7 @@ async function main() {
     test_blog_health_recovery_snapshot_is_skipped,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
+    test_auto_dev_failed_outcome_masks_secrets,
     test_stale_running_job_retries_with_recovery_count,
     test_stale_running_job_blocks_after_recovery_exhaustion,
     test_invalid_stale_recovery_env_falls_back_to_default_limit,

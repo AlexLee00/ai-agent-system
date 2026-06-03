@@ -22,7 +22,8 @@ export type LibrarySourceKind =
   | 'mcp_usage'
   | 'luna_trade_journal'
   | 'luna_signal'
-  | 'luna_trade_review';
+  | 'luna_trade_review'
+  | 'claude_auto_dev';
 
 export interface LibraryRecord {
   team: SigmaTeam;
@@ -246,6 +247,43 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
         messageType: row.message_type,
         responded: Boolean(row.responded_at),
         payload: row.payload ?? {},
+      },
+    });
+    if (record && allowedTeams.has(record.team)) records.push(record);
+  }
+
+  const claudeAutoDevOutcomes = await safeQuery<any>('claude', 'claude.auto_dev_outcomes', `
+    SELECT id, job_id, rel_path, outcome, stage, attempts, stale_recovery_count,
+           test_pass, error_summary, meta, created_at
+      FROM claude.auto_dev_outcomes
+     WHERE created_at >= NOW() - ($1 || ' hours')::INTERVAL
+     ORDER BY created_at DESC
+     LIMIT $2
+  `, [String(sinceHours), limit], warnings);
+  for (const row of claudeAutoDevOutcomes) {
+    const record = buildRecord({
+      team: 'claude',
+      agent: 'auto-dev',
+      sourceKind: 'claude_auto_dev',
+      sourceId: row.id ?? row.job_id,
+      createdAt: row.created_at,
+      text: compactText([
+        row.outcome,
+        row.stage,
+        row.rel_path,
+        row.test_pass == null ? null : `test_pass=${row.test_pass}`,
+        row.error_summary,
+      ]),
+      payload: {
+        jobId: row.job_id,
+        relPath: row.rel_path,
+        outcome: row.outcome,
+        stage: row.stage,
+        attempts: row.attempts,
+        staleRecoveryCount: row.stale_recovery_count,
+        testPass: row.test_pass,
+        errorSummary: row.error_summary,
+        meta: row.meta ?? {},
       },
     });
     if (record && allowedTeams.has(record.team)) records.push(record);
@@ -490,6 +528,14 @@ export function buildSelfImprovementSignalsFromRecords(records: readonly Library
       else if (Number.isFinite(status) && status >= 500) outcome = 'failure';
     }
     if (record.sourceKind === 'agent_message' && payload.responded === true) outcome = 'success';
+    if (record.sourceKind === 'claude_auto_dev') {
+      const rawOutcome = String(payload.outcome ?? '').toLowerCase();
+      if (/completed|success|resolved/.test(rawOutcome) || payload.testPass === true) {
+        outcome = 'success';
+      } else if (/failed|blocked|stale_recovery_exhausted|error/.test(rawOutcome)) {
+        outcome = 'failure';
+      }
+    }
     if (record.sourceKind === 'luna_trade_journal' && payload.pnlNet != null) {
       const pnlNet = Number(payload.pnlNet);
       if (Number.isFinite(pnlNet) && pnlNet > 0) outcome = 'success';
