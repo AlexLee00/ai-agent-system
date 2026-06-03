@@ -55,8 +55,9 @@ config :team_jay, TeamJay.Dashboard.Endpoint,
 config :team_jay, :dashboard_pubsub, TeamJay.PubSub
 config :jay_core, :dashboard_pubsub, TeamJay.PubSub
 
-# Phase 3: 코덱스 자동 실행 (true = 마스터 승인 없이 자동 실행)
-config :team_jay, :codex_auto_execute, true
+# Deprecated: docs/codex 자동 실행은 폐기했다.
+# 클로드팀 자동 구현은 docs/auto_dev launchd 파이프라인만 사용한다.
+config :team_jay, :codex_auto_execute, false
 
 # cycle #53 M2: Tailwind JIT + esbuild assets pipeline
 config :tailwind,

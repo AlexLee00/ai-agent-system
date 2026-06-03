@@ -765,8 +765,8 @@ function handleSessionClose(args) {
 }
 
 /**
- * 코덱스 승인 — Elixir FeedbackLoop → CodexPipeline.approve
- * agent.event_lake에 codex_approval 이벤트 삽입 → PG NOTIFY → FeedbackLoop 처리
+ * 코덱스 승인 — deprecated.
+ * docs/codex 자동 실행은 폐기됐고, 자동 구현은 docs/auto_dev 인박스만 사용한다.
  */
 async function handleCodexApprove(args) {
   const codexName = (args.codex_name || args.name || '').trim();
@@ -778,14 +778,14 @@ async function handleCodexApprove(args) {
       VALUES ('codex_approval', 'claude', 'claude-commander', $1, 'info')
     `, [codexName]);
     console.log(`[클로드] 코덱스 승인 이벤트 발송: ${codexName}`);
-    return { ok: true, message: `✅ 코덱스 승인: ${codexName}\nElixir FeedbackLoop → CodexPipeline 처리 중` };
+    return { ok: true, message: `ℹ️ 코덱스 승인 이벤트 기록: ${codexName}\n자동 실행 경로는 폐기됨. 구현 요청은 docs/auto_dev 인박스를 사용하세요.` };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 }
 
 /**
- * 코덱스 거부 — Elixir FeedbackLoop → CodexPipeline.reject
+ * 코덱스 거부 — deprecated.
  */
 async function handleCodexReject(args) {
   const codexName = (args.codex_name || args.name || '').trim();

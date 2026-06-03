@@ -49,7 +49,7 @@
 |---|---|
 | `daily-summary.ts` | "📋 스튜어드 일일 요약" 텍스트 생성 |
 | `tracker-sync.ts` | `docs/PLATFORM_IMPLEMENTATION_TRACKER.md` 24h 커밋 분석 자동 갱신 |
-| `codex-manager.ts` | 완료된 코덱스 작업 → `docs/codex/archive/` 자동 이동 |
+| `codex-manager.ts` | 폐기된 호환 stub. `docs/codex` 자동 추적/아카이빙 없음, 자동 구현은 `docs/auto_dev`만 사용 |
 | `git-hygiene.ts` | 의심 파일 패턴 스캔 (`.pyc`, `.log`, `__pycache__`, `node_modules` 등) |
 | `env-sync-checker.ts` | origin/main 대비 local 동기화 상태 |
 | `launchd-manager.ts` | launchd 서비스 헬스체크 |

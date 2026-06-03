@@ -59,10 +59,10 @@ async function fetchCodexStats() {
     let activeCount = 0;
     let phasesCompleted = 0;
 
-    // 활성 코덱스 프로세스 카운트
+    // 활성 auto_dev 구현 프로세스만 카운트한다. docs/codex 직접 실행 경로는 폐기됐다.
     try {
       const ps = execSync(
-        "ps aux | grep -E 'claude.*CODEX|claude.*codex|claude.*--print' | grep -v grep | grep -v 'codex-notifier'",
+        "ps aux | grep -E 'docs/auto_dev|auto-dev|auto_dev|claude-auto-dev' | grep -v grep | grep -v 'codex-notifier'",
         { encoding: 'utf8', timeout: 5000, stdio: 'pipe' }
       ).trim();
       activeCount = ps ? ps.split('\n').filter(Boolean).length : 0;

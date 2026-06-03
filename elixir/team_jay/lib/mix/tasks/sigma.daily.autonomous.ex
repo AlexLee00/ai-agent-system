@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Sigma.Daily.Autonomous do
 
   @shortdoc "Sigma V2 완전자율 일일 실행 (MAPE-K 실사이클)"
 
-  # app.start는 TeamJay 전체 트리를 기동해 Claude CodexPipeline, Blog/Ska
+  # app.start는 TeamJay 전체 트리를 기동해 Claude/Blog/Ska
   # PortAgent까지 깨운다. Sigma daily는 Sigma MAPE-K에 필요한 최소 런타임만
   # 올려야 LLM/프로세스 누수가 생기지 않는다.
   @requirements ["app.config"]

@@ -145,6 +145,16 @@ function findPromptFileByName(promptName) {
   return `${AUTO_DEV_REL_DIR}/${stem}.md`;
 }
 
+function hasAutoDevExecutionContext(cmdLine) {
+  const normalized = String(cmdLine || '').replace(/\\/g, '/').toLowerCase();
+  return (
+    normalized.includes('docs/auto_dev/') ||
+    normalized.includes('auto-dev-runner') ||
+    normalized.includes('claude-auto-dev') ||
+    normalized.includes('/auto_dev/')
+  );
+}
+
 function extractPromptFileFromCmdLine(cmdLine) {
   const normalized = String(cmdLine || '').replace(/\\/g, '/');
   const directMatch = normalized.match(/(?:^|\s|["'])((?:[^\s"']+\/)?docs\/auto_dev\/[A-Za-z0-9_.-]+\.md)(?=$|\s|["')])/i);
@@ -156,11 +166,13 @@ function extractPromptFileFromCmdLine(cmdLine) {
   const unsupportedDocsMatch = normalized.match(/(?:^|\s|["'])((?:[^\s"']+\/)?docs\/(?!auto_dev\/)[A-Za-z0-9_./-]+\.md)(?=$|\s|["')])/i);
   if (unsupportedDocsMatch) return '';
 
+  if (!hasAutoDevExecutionContext(normalized)) return '';
+
   const stemMatch = normalized.match(/\b(CODEX_[A-Z0-9_]+)\.md\b/i)
     || normalized.match(/\b(CODEX_[A-Z0-9_]+(?:_EVOLUTION|_REMODEL|_COMPLETE|_PLAN)?)\b/i);
-  const promptName = stemMatch ? stemMatch[1] : 'CODEX_CLAUDE_EVOLUTION';
+  if (!stemMatch) return '';
 
-  return findPromptFileByName(promptName);
+  return findPromptFileByName(stemMatch[1]);
 }
 
 // ─── 상태 관리 ────────────────────────────────────────────────────────
@@ -359,9 +371,9 @@ async function detectCodexProcesses() {
   const executions = [];
 
   try {
-    // claude --print 또는 claude CLI 실행 감지
+    // auto_dev 구현 프로세스만 감지한다. docs/codex 직접 실행 경로는 폐기됐다.
     const ps = safeExec(
-      "ps aux | grep -E 'claude.*CODEX|claude.*codex|claude.*--print' | grep -v grep | grep -v 'codex-notifier'",
+      "ps aux | grep -E 'docs/auto_dev|auto-dev|auto_dev|claude-auto-dev' | grep -v grep | grep -v 'codex-notifier'",
     );
     if (!ps) return executions;
 

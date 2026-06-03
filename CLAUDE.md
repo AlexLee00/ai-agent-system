@@ -69,19 +69,20 @@ LLM 아키텍처:
 개발:     docs/DEVELOPMENT.md + docs/dev/{팀}.md
 히스토리: docs/history/ (WORK_HISTORY, CHANGELOG, TEST_RESULTS)
 연구:     docs/research/ (RESEARCH_JOURNAL, RESEARCH_2026)
-코덱스:   docs/codex/ (메티+코덱스 작업 분석/프롬프트, gitignore) + docs/auto_dev/ (자동 구현 인박스)
+코덱스:   docs/codex/ (분석/설계/검토 문서, 자동실행 금지) + docs/auto_dev/ (자동 구현 단일 인박스)
 가이드:   docs/guides/ (coding, security, ops, db, llm)
 아카이브: docs/archive/ (완료된 문서)
 ```
 
 ### 문서 관리 원칙
 1. 새 자동 구현 프롬프트 → `docs/auto_dev/`에 생성
-2. 클로드팀 auto-dev가 `docs/auto_dev/*.md`를 접수하면 문서/코드 분석 → 구현계획 알림 → 구현 → 리뷰/보안 → 수정 → 테스트 → 수정 → 완료 알림 순서로 처리
-3. 코덱스 완료 시 → `docs/archive/codex-completed/`로 이동
-4. 세션 종료 시 → `docs/OPUS_FINAL_HANDOFF.md` 업데이트 필수
-5. 전략 변경 시 → `docs/STRATEGY.md` 또는 `docs/strategy/{팀}.md` 반영
-6. 작업 기록 → `docs/history/WORK_HISTORY.md`에 날짜별 추가
-7. 연구/리서치 → `docs/research/`에 축적
+2. `docs/codex/`는 자동 구현 트리거가 아니다. 분석/설계/검토 문서 보관 전용이며, 감시/실행/커밋/푸시 경로를 두지 않는다.
+3. 클로드팀 auto-dev가 `docs/auto_dev/*.md`를 접수하면 문서/코드 분석 → 구현계획 알림 → 구현 → 리뷰/보안 → 수정 → 테스트 → 수정 → 완료 알림 순서로 처리
+4. 코덱스 완료 시 → `docs/archive/codex-completed/`로 이동
+5. 세션 종료 시 → `docs/OPUS_FINAL_HANDOFF.md` 업데이트 필수
+6. 전략 변경 시 → `docs/STRATEGY.md` 또는 `docs/strategy/{팀}.md` 반영
+7. 작업 기록 → `docs/history/WORK_HISTORY.md`에 날짜별 추가
+8. 연구/리서치 → `docs/research/`에 축적
 
 ## 역할 원칙 (불변)
 

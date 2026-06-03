@@ -383,6 +383,44 @@ async function test_extractPromptFileFromCmdLine_ignores_docs_codex_path() {
   console.log('✅ codex-notifier: ignores docs/codex prompt paths');
 }
 
+// ─── Test 17: bare CODEX stem은 auto_dev로 오인하지 않음 ──────────────
+
+async function test_extractPromptFileFromCmdLine_ignores_bare_codex_stem_without_auto_dev_context() {
+  const tmpDir = path.join(os.tmpdir(), 'notifier-bare-codex-ignore-' + Date.now());
+
+  const mocks = makeNotifierMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
+  });
+
+  await withMocks(mocks, async (notifier) => {
+    const promptFile = notifier.extractPromptFileFromCmdLine(
+      'claude --print # CODEX_CLAUDE_SYMPHONY_LUNA_PATTERNS_ENHANCED'
+    );
+    assert.strictEqual(promptFile, '', 'auto_dev 문맥 없는 bare CODEX stem은 무시');
+  });
+
+  console.log('✅ codex-notifier: ignores bare CODEX stems without auto_dev context');
+}
+
+// ─── Test 18: auto_dev runner 문맥의 bare CODEX stem만 fallback 허용 ───
+
+async function test_extractPromptFileFromCmdLine_allows_bare_codex_stem_with_auto_dev_context() {
+  const tmpDir = path.join(os.tmpdir(), 'notifier-bare-codex-autodev-' + Date.now());
+
+  const mocks = makeNotifierMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
+  });
+
+  await withMocks(mocks, async (notifier) => {
+    const promptFile = notifier.extractPromptFileFromCmdLine(
+      'node bots/claude/scripts/auto-dev-runner.ts --prompt CODEX_SAMPLE_EVOLUTION'
+    );
+    assert.strictEqual(promptFile, 'docs/auto_dev/CODEX_SAMPLE_EVOLUTION.md', 'auto_dev runner 문맥에서는 fallback 허용');
+  });
+
+  console.log('✅ codex-notifier: allows bare CODEX stems only in auto_dev context');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -404,6 +442,8 @@ async function main() {
     test_findPromptFileByName_uses_auto_dev_only,
     test_extractPromptFileFromCmdLine_detects_auto_dev_path,
     test_extractPromptFileFromCmdLine_ignores_docs_codex_path,
+    test_extractPromptFileFromCmdLine_ignores_bare_codex_stem_without_auto_dev_context,
+    test_extractPromptFileFromCmdLine_allows_bare_codex_stem_with_auto_dev_context,
   ];
 
   let passed = 0, failed = 0;

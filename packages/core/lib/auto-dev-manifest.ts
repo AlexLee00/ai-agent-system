@@ -6,7 +6,7 @@ const path = require('path');
 const env = require('./env');
 
 const MANIFEST_FILE_NAME = '.auto-dev-manifest.json';
-const INCIDENT_FILE_PREFIX = 'ALARM_INCIDENT_';
+const AUTO_DEV_FILE_PREFIXES = ['ALARM_INCIDENT_', 'CODEX_', 'PATCH_REQUEST'];
 
 function getProjectRoot() {
   const override = String(process.env.PROJECT_ROOT || process.env.CODEX_PROJECT_ROOT || '').trim();
@@ -23,6 +23,15 @@ function ensureDir(dir) {
 
 function manifestPathForDir(autoDevDir) {
   return path.join(autoDevDir, MANIFEST_FILE_NAME);
+}
+
+function isAutoDevInboxMarkdown(name) {
+  const normalized = String(name || '').trim();
+  return Boolean(
+    normalized.endsWith('.md')
+    && !normalized.startsWith('.')
+    && AUTO_DEV_FILE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
 }
 
 function loadAutoDevManifest(autoDevDir) {
@@ -79,10 +88,7 @@ function markAutoDevManifestState(autoDevDir, relPath, state, patch = {}) {
 function syncAutoDevManifest(autoDevDir) {
   ensureDir(autoDevDir);
   const manifest = loadAutoDevManifest(autoDevDir);
-  const names = fs.readdirSync(autoDevDir)
-    .filter((name) => name.endsWith('.md'))
-    .filter((name) => name.startsWith(INCIDENT_FILE_PREFIX))
-    .filter((name) => !name.startsWith('.'));
+  const names = fs.readdirSync(autoDevDir).filter(isAutoDevInboxMarkdown);
 
   for (const name of names) {
     const abs = path.join(autoDevDir, name);
@@ -167,7 +173,7 @@ function listAutoDevManifestEntries(autoDevDir, allowedStates = ['inbox']) {
   const manifest = syncAutoDevManifest(autoDevDir);
   const allowed = new Set((allowedStates || []).map((item) => String(item)));
   return Object.values(manifest.entries || {})
-    .filter((entry) => entry?.relPath && path.basename(String(entry.relPath || '')).startsWith(INCIDENT_FILE_PREFIX))
+    .filter((entry) => entry?.relPath && isAutoDevInboxMarkdown(path.basename(String(entry.relPath || ''))))
     .filter((entry) => allowed.has(String(entry.state || '')))
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .map((entry) => entry.relPath);
@@ -175,6 +181,8 @@ function listAutoDevManifestEntries(autoDevDir, allowedStates = ['inbox']) {
 
 module.exports = {
   MANIFEST_FILE_NAME,
+  AUTO_DEV_FILE_PREFIXES,
+  isAutoDevInboxMarkdown,
   manifestPathForDir,
   loadAutoDevManifest,
   saveAutoDevManifest,

@@ -202,7 +202,8 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'codex'), { recursive: true });
   fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_SAMPLE.md'), withRequiredMetadata('# A'), 'utf8');
-  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_SAMPLE.md'), withRequiredMetadata('# Ignored'), 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_SAMPLE.md'), withRequiredMetadata('# Codex'), 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'PATCH_REQUEST.md'), withRequiredMetadata('# Patch'), 'utf8');
   fs.writeFileSync(
     path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_NOTE.md'),
     withRequiredMetadata('# Note', { task_type: 'planning_note' }),
@@ -218,7 +219,11 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   const { mocks } = makeMocks(tmpRoot);
   await withMocks(mocks, async pipeline => {
     const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
-    assert.deepStrictEqual(docs, ['docs/auto_dev/ALARM_INCIDENT_SAMPLE.md']);
+    assert.deepStrictEqual(docs.sort(), [
+      'docs/auto_dev/ALARM_INCIDENT_SAMPLE.md',
+      'docs/auto_dev/CODEX_SAMPLE.md',
+      'docs/auto_dev/PATCH_REQUEST.md',
+    ].sort());
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1109,7 +1114,7 @@ async function test_profile_resolver_maps_runtime_profiles() {
     assert.strictEqual(autonomous.executeImplementation, true);
     assert.strictEqual(autonomous.archiveOnSuccess, true);
     assert.strictEqual(autonomous.runHardTests, true);
-    assert.strictEqual(autonomous.integrationMode, 'cherry_pick');
+    assert.strictEqual(autonomous.integrationMode, 'direct_push');
     assert.strictEqual(autonomous.implementationProvider, 'openai-oauth');
     assert.strictEqual(autonomous.implementationModel, 'openai-oauth/gpt-5.4');
     assert.strictEqual(autonomous.implementationCliModelArg, 'gpt-5.4');
@@ -1429,26 +1434,35 @@ async function test_lock_heartbeat_sidecar_enforces_parent_liveness() {
   console.log('✅ auto-dev: lock heartbeat sidecar validates parent liveness');
 }
 
-async function test_dirty_base_blocks_when_within_write_scope() {
+async function test_dirty_base_is_ignored_when_worktree_isolated() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(
     tmpRoot,
     'CODEX_DIRTY_SCOPE.md',
     withRequiredMetadata('# Dirty\nscope', { write_scope: ['bots/claude/**'] })
   );
-  let gitStatusOutput = ' M bots/claude/src/reviewer.ts\n';
+  let rootStatusCalls = 0;
+  let worktreeStatusCalls = 0;
 
   const { mocks } = makeMocks(tmpRoot, {
     child_process: {
       execFileSync: (command, args = []) => {
         if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') return 'true\n';
+        if (command === 'git' && args[0] === 'rev-parse' && args[1] === 'origin/main') return 'base-head\n';
         if (command === 'bash') return '/usr/local/bin/claude\n';
         if (command === 'claude') return 'ok';
         if (command === 'rg') throw new Error('no match');
         return '';
       },
-      execSync: (command) => {
-        if (String(command).includes('git status --short')) return gitStatusOutput;
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return '';
+          }
+          rootStatusCalls += 1;
+          return ' M bots/claude/src/reviewer.ts\n';
+        }
         return '';
       },
     },
@@ -1460,31 +1474,22 @@ async function test_dirty_base_blocks_when_within_write_scope() {
       test: false,
       dryRun: false,
       executeImplementation: true,
+      archiveOnSuccess: false,
       maxRevisionPasses: 0,
     });
     assert.strictEqual(result.ok, true);
-    assert.strictEqual(result.skipped, true);
-    assert.strictEqual(result.reason, 'blocked_dirty_worktree');
-    assert.deepStrictEqual(result.job.baseDirtyBlocking, ['bots/claude/src/reviewer.ts']);
-
-    gitStatusOutput = ' M output/metty-trace-state.json\n';
-    const recovered = await pipeline.processAutoDevDocument(doc, {
-      force: true,
-      test: false,
-      dryRun: false,
-      executeImplementation: true,
-      maxRevisionPasses: 0,
-    });
-    assert.strictEqual(recovered.ok, true);
-    assert.deepStrictEqual(recovered.job.baseDirtyBlocking, []);
-    assert.deepStrictEqual(recovered.job.baseDirtyIgnored, ['output/metty-trace-state.json']);
+    assert.strictEqual(result.skipped, undefined);
+    assert.strictEqual(result.job.executionContext.mode, 'worktree');
+    assert.strictEqual(result.job.executionContext.baseSha, 'base-head');
+    assert.ok(worktreeStatusCalls > 0, 'worktree status는 실행 전후 확인해야 함');
+    assert.strictEqual(rootStatusCalls, 0, 'ROOT dirty status는 auto-dev 차단 조건으로 읽지 않아야 함');
   }, testEnv(tmpRoot, {
     CLAUDE_AUTO_DEV_PROFILE: 'autonomous_l5',
-    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+    CLAUDE_AUTO_DEV_COMPAT_MODE: 'false',
   }));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  console.log('✅ auto-dev: dirty base blocks when changed path overlaps write_scope');
+  console.log('✅ auto-dev: dirty base is ignored under worktree isolation');
 }
 
 async function test_review_cycle_uses_execution_context() {
@@ -1737,6 +1742,79 @@ async function test_archive_manifest_failure_is_fail_closed() {
   console.log('✅ auto-dev: archive manifest failure is fail-closed');
 }
 
+async function test_archive_manifest_failure_does_not_push_direct_commit() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_DIRECT_PUSH_ARCHIVE_FAIL.md', '# Direct\narchive fail');
+  const gitCalls = [];
+  let worktreeStatusCalls = 0;
+  const realFs = require('fs');
+  const fsMock = {
+    ...realFs,
+    writeFileSync: (targetPath, ...args) => {
+      if (String(targetPath).endsWith('.manifest.json')) {
+        throw new Error('manifest_write_failed');
+      }
+      return realFs.writeFileSync(targetPath, ...args);
+    },
+  };
+  const { mocks } = makeMocks(tmpRoot, {
+    fs: fsMock,
+    child_process: {
+      execFileSync: (command, args = [], opts = {}) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        if (command === 'git') {
+          gitCalls.push({ args, cwd: opts.cwd });
+          const joined = args.join(' ');
+          const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
+          if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse origin/main') return 'base-head\n';
+          if (joined === 'rev-parse HEAD') return inWorktree ? 'worktree-commit\n' : 'root-head\n';
+          if (joined.startsWith('diff')) {
+            return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return worktreeStatusCalls === 1 ? '' : ' M bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      integrationMode: 'direct_push',
+      archiveOnSuccess: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /archive failed|manifest_write_failed/i);
+    assert.strictEqual(result.job.integrationRollback?.reason, 'direct_push_not_pushed');
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  assert.ok(!gitCalls.some(call => call.args.join(' ') === 'push origin HEAD:main'), 'archive failure must not push a direct integration commit');
+  assert.ok(fs.existsSync(doc), 'archive failure should restore source document');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: archive manifest failure does not push direct commit');
+}
+
 async function test_archive_manifest_failure_rolls_back_cherry_pick() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_ARCHIVE_ROLLBACK.md', '# Archive\nrollback');
@@ -1888,6 +1966,88 @@ async function test_worktree_cleanup_runs_after_success() {
   console.log('✅ auto-dev: worktree cleanup runs after successful job');
 }
 
+async function test_direct_push_integration_commits_and_pushes_from_worktree() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_DIRECT_PUSH.md', '# Direct\npush');
+  const gitCalls = [];
+  let worktreeStatusCalls = 0;
+  let rootStatusCalls = 0;
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = [], opts = {}) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        if (command === 'git') {
+          gitCalls.push({ args, cwd: opts.cwd });
+          const joined = args.join(' ');
+          const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
+          if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
+          if (joined === 'rev-parse origin/main') return 'base-head\n';
+          if (joined === 'rev-parse HEAD') return inWorktree ? 'worktree-commit\n' : 'root-head\n';
+          if (joined.startsWith('diff')) {
+            return 'diff --git a/bots/claude/src/reviewer.ts b/bots/claude/src/reviewer.ts\n';
+          }
+          return '';
+        }
+        return '';
+      },
+      execSync: (command, opts = {}) => {
+        if (String(command).includes('git status --short')) {
+          if (String(opts.cwd || '').includes('claude-auto-dev-worktrees')) {
+            worktreeStatusCalls += 1;
+            return worktreeStatusCalls === 1 ? '' : ' M bots/claude/src/reviewer.ts\n';
+          }
+          rootStatusCalls += 1;
+          return ' M bots/claude/src/reviewer.ts\n';
+        }
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      integrationMode: 'direct_push',
+      archiveOnSuccess: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.integration.mode, 'direct_pushed');
+    assert.strictEqual(result.integration.targetBranch, 'main');
+    assert.strictEqual(result.integration.pushed, true);
+    assert.strictEqual(result.integration.targetPush?.ref, 'origin/main');
+    assert.strictEqual(result.job.targetPush.reason, 'pushed_from_worktree');
+    assert.strictEqual(result.job.integrationAuditUpdate?.archiveManifest?.updated, true);
+    assert.strictEqual(result.job.integrationAuditUpdate?.completionDocument?.updated, true);
+    const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, result.job.archiveManifestPath), 'utf8'));
+    assert.strictEqual(manifest.integration.mode, 'direct_pushed');
+    assert.strictEqual(manifest.integration.targetPush.reason, 'pushed_from_worktree');
+    const archivedContent = fs.readFileSync(path.join(tmpRoot, result.job.completionDocumentPath), 'utf8');
+    assert.match(archivedContent, /integration_mode: `direct_pushed`/);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  assert.ok(gitCalls.some(call => call.args.includes('commit')), 'worktree changes must be committed before direct push');
+  assert.ok(
+    gitCalls.some(call => call.args[0] === 'worktree' && call.args[1] === 'add' && call.args[2] === '--detach' && call.args[4] === 'base-head'),
+    'detached implementation worktree must be based on origin/main'
+  );
+  assert.ok(gitCalls.some(call => call.args.join(' ') === 'push origin HEAD:main'), 'worktree commit must be pushed directly to origin/main');
+  assert.ok(!gitCalls.some(call => call.args.join(' ') === 'switch main'), 'direct push must not switch the ROOT worktree branch');
+  assert.ok(!gitCalls.some(call => call.args[0] === 'cherry-pick'), 'direct push must not cherry-pick through ROOT');
+  assert.strictEqual(rootStatusCalls, 0, 'direct push must not inspect ROOT dirty status');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: direct push integration commits and pushes from worktree');
+}
+
 async function test_cherry_pick_integration_commits_and_applies_patch() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_CHERRY_PICK.md', '# Cherry\npick');
@@ -1906,7 +2066,7 @@ async function test_cherry_pick_integration_commits_and_applies_patch() {
           const joined = args.join(' ');
           const inWorktree = String(opts.cwd || '').includes('claude-auto-dev-worktrees');
           if (joined === 'rev-parse --is-inside-work-tree') return 'true\n';
-          if (joined === 'rev-parse main') return 'base-head\n';
+          if (joined === 'rev-parse origin/main') return 'base-head\n';
           if (joined === 'rev-parse HEAD') return inWorktree ? 'worktree-commit\n' : 'base-head\n';
           if (joined === 'rev-parse --abbrev-ref HEAD') return `${rootBranch}\n`;
           if (joined === 'switch main') {
@@ -1952,10 +2112,10 @@ async function test_cherry_pick_integration_commits_and_applies_patch() {
   }));
 
   assert.ok(gitCalls.some(call => call.args.includes('commit')), 'worktree changes must be committed before cherry-pick');
-  assert.ok(gitCalls.some(call => call.args.join(' ') === 'switch main'), 'auto-dev must switch the root worktree to main before implementation');
+  assert.ok(gitCalls.some(call => call.args.join(' ') === 'switch main'), 'legacy cherry-pick integration must switch the root worktree to main');
   assert.ok(
     gitCalls.some(call => call.args[0] === 'worktree' && call.args[1] === 'add' && call.args[2] === '--detach' && call.args[4] === 'base-head'),
-    'detached implementation worktree must be based on main'
+    'detached implementation worktree must be based on origin/main'
   );
   assert.ok(gitCalls.some(call => call.args[0] === 'cherry-pick'), 'worktree commit must be cherry-picked into main');
   assert.ok(gitCalls.some(call => call.args.join(' ') === 'push origin main'), 'successful cherry-pick must be pushed to origin/main');
@@ -2061,6 +2221,10 @@ async function test_status_snapshot_includes_profile_worktree_patch_counts() {
     assert.strictEqual(snapshot.counts.worktrees, 1);
     assert.strictEqual(snapshot.counts.patches, 1);
     assert.strictEqual(snapshot.counts.completedJobs, 1);
+    assert.strictEqual(snapshot.targetBranch, 'main');
+    assert.strictEqual(snapshot.targetRemote, 'origin');
+    assert.strictEqual(snapshot.baseRef, 'origin/main');
+    assert.strictEqual(snapshot.rootIsolation, true);
   }, testEnv(tmpRoot, {
     CLAUDE_AUTO_DEV_STATE_FILE: statePath,
     CLAUDE_AUTO_DEV_WORKTREE_DIR: worktreeDir,
@@ -2138,7 +2302,7 @@ async function main() {
     test_claude_code_compat_invocation_includes_model_arg,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
-    test_dirty_base_blocks_when_within_write_scope,
+    test_dirty_base_is_ignored_when_worktree_isolated,
     test_review_cycle_uses_execution_context,
     test_test_scope_is_executed_in_non_test_mode,
     test_test_scope_rejects_unsafe_shell_command,
@@ -2146,8 +2310,10 @@ async function main() {
     test_test_scope_normalizes_silent_hub_commands,
     test_archive_manifest_is_created,
     test_archive_manifest_failure_is_fail_closed,
+    test_archive_manifest_failure_does_not_push_direct_commit,
     test_archive_manifest_failure_rolls_back_cherry_pick,
     test_worktree_cleanup_runs_after_success,
+    test_direct_push_integration_commits_and_pushes_from_worktree,
     test_cherry_pick_integration_commits_and_applies_patch,
     test_cherry_pick_failure_aborts_and_fails_closed,
     test_status_snapshot_includes_profile_worktree_patch_counts,

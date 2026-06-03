@@ -4,10 +4,15 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
   @claude_agents [
     # claude 주기 작업은 launchd가 canonical owner다.
     %{name: :dexter, script: "bots/claude/src/dexter.ts", runner: :tsx, schedule: nil},
-    %{name: :dexter_daily, script: "bots/claude/src/dexter.ts --daily-report --telegram", runner: :tsx, schedule: nil},
+    %{
+      name: :dexter_daily,
+      script: "bots/claude/src/dexter.ts --daily-report --telegram",
+      runner: :tsx,
+      schedule: nil
+    },
     # launchd ai.claude.dexter.quick 가 canonical owner이므로 Elixir PortAgent에선 중복 실행하지 않는다.
     # launchd가 canonical owner인 상시/캘린더 서비스는 PortAgent 목록에서 제외한다.
-    %{name: :speed_test, script: "bots/claude/scripts/speed-test.ts", runner: :tsx, schedule: nil},
+    %{name: :speed_test, script: "bots/claude/scripts/speed-test.ts", runner: :tsx, schedule: nil}
   ]
 
   def start_link(opts \\ []) do
@@ -24,9 +29,8 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
       TeamJay.Claude.Doctor.Dispatch,
       # 모니터
       TeamJay.Claude.Monitor.DeploymentMonitor,
-      # 코덱스 파이프라인
-      TeamJay.Claude.Codex.CodexWatcher,
-      TeamJay.Claude.Codex.CodexPipeline,
+      # docs/codex 자동 실행 경로는 폐기했다.
+      # 클로드팀 자동 구현의 단일 인박스는 launchd 소유 docs/auto_dev 파이프라인이다.
       # 크로스팀 피드백 루프
       TeamJay.Claude.FeedbackLoop,
       # 히스토리 라이터 (주간 RAG 축적)
@@ -36,10 +40,17 @@ defmodule TeamJay.Teams.ClaudeSupervisor do
     port_children =
       Enum.map(@claude_agents, fn agent ->
         {Jay.Core.Agents.PortAgent,
-         name: agent.name, team: :claude, script: agent.script,
-         runner: Map.get(agent, :runner, :tsx), schedule: agent.schedule}
+         name: agent.name,
+         team: :claude,
+         script: agent.script,
+         runner: Map.get(agent, :runner, :tsx),
+         schedule: agent.schedule}
       end)
 
-    Supervisor.init(native_children ++ port_children, strategy: :one_for_one, max_restarts: 8, max_seconds: 60)
+    Supervisor.init(native_children ++ port_children,
+      strategy: :one_for_one,
+      max_restarts: 8,
+      max_seconds: 60
+    )
   end
 end

@@ -36,12 +36,6 @@ const WATCH_PATHS = [
     eventType: 'metty.session.handoff_updated',
     filter: (file) => file.startsWith('NEXT_SESSION_HANDOFF_') && file.endsWith('.md'),
   },
-  {
-    dir: 'docs/codex',
-    stage: 'analyzed',
-    eventType: 'metty.session.analyzed',
-    filter: (file) => file.startsWith('CODEX_') && file.endsWith('.md'),
-  },
 ];
 
 function argValue(name, fallback = null, argv = process.argv.slice(2)) {

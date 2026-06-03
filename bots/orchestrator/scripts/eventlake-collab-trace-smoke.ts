@@ -23,11 +23,11 @@ async function runSmoke() {
     'README.md',
   ]);
 
-  assert.equal(events.length, 5);
+  assert.equal(events.length, 4);
   assert.equal(events.some((event) => event.event_type === 'metty.session.lesson_added'), true);
   assert.equal(events.some((event) => event.event_type === 'metty.session.designed'), true);
   assert.equal(events.some((event) => event.event_type === 'metty.session.handoff_updated'), true);
-  assert.equal(events.some((event) => event.event_type === 'metty.session.analyzed'), true);
+  assert.equal(events.some((event) => event.metadata?.file_path?.startsWith('docs/codex/')), false);
   assert.equal(events.every((event) => event.team === 'meta' && event.bot_name === 'metty'), true);
 
   return {

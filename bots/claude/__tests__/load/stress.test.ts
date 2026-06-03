@@ -141,7 +141,7 @@ async function stress_scenario_3_codex_notifier_multi_process() {
     return Array.from({ length: count }, (_, i) => ({
       pid:              40000 + i,
       started_at:       Date.now() - i * 60000,
-      prompt_file:      `docs/codex/CODEX_TEAM${i}_EVOLUTION.md`,
+      prompt_file:      `docs/auto_dev/CODEX_TEAM${i}_EVOLUTION.md`,
       total_phases:     [{ id: 'A', name: `Phase A`, estimated: '2일' }],
       current_phase:    null,
       completed_phases: [],

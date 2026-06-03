@@ -9,10 +9,10 @@ const env = require('../../../../packages/core/lib/env');
 
 const ROOT = env.PROJECT_ROOT;
 const DOCS_DIR = path.join(ROOT, 'docs');
-const CODEX_DIR = path.join(DOCS_DIR, 'codex');
-const CODEX_ARCHIVE_DIR = path.join(CODEX_DIR, 'archive');
 const TRACKER_PATH = path.join(DOCS_DIR, 'PLATFORM_IMPLEMENTATION_TRACKER.md');
 const MAX_TRACKER_ADDS = 5;
+const CODEX_AUTOMATION_DISABLED_REASON =
+  'docs/codex automation is decommissioned; use docs/auto_dev for auto implementation';
 
 const TRACKER_SECTION_BY_PREFIX = [
   { prefix: 'packages/core/lib/', heading: '### 공용 계층' },
@@ -38,75 +38,18 @@ function listMarkdownFiles(dirPath) {
     .sort();
 }
 
-function countChecklist(text) {
-  const open = (text.match(/^\s*[-*]?\s*\[ \]\s+/gm) || []).length;
-  const done = (text.match(/^\s*[-*]?\s*\[[xX]\]\s+/gm) || []).length;
-  return { open, done, total: open + done };
-}
-
-function hasImplementationCommit(fileName) {
-  const stem = fileName
-    .replace(/^CODEX_/, '')
-    .replace(/\.md$/i, '')
-    .replace(/_/g, ' ')
-    .trim();
-  if (!stem) return false;
-  try {
-    const output = safeExec(`git log --oneline --all --perl-regexp --grep='^(feat|fix|refactor|chore)\\b.*${stem}$' -i -n 1`);
-    return Boolean(output);
-  } catch {
-    return false;
-  }
-}
-
 function scanCompletedCodex() {
-  return listMarkdownFiles(CODEX_DIR)
-    .map((file) => {
-      const absolute = path.join(CODEX_DIR, file);
-      const content = fs.readFileSync(absolute, 'utf8');
-      const checklist = countChecklist(content);
-      if (checklist.total > 0 && checklist.open === 0) {
-        return {
-          file,
-          reason: 'checklist_complete',
-          checklist: { total: checklist.total, done: checklist.done },
-        };
-      }
-      if (hasImplementationCommit(file)) {
-        return {
-          file,
-          reason: 'implementation_commit_found',
-          checklist: { total: checklist.total, done: checklist.done },
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  return [];
 }
 
 function archiveCompletedCodex(completedFiles) {
-  const completed = Array.isArray(completedFiles) ? completedFiles.slice(0, 5) : [];
-  if (!completed.length) return { moved: [], commitHash: null };
-
-  const moved = [];
-  fs.mkdirSync(CODEX_ARCHIVE_DIR, { recursive: true });
-  completed.forEach((entry) => {
-    if (!entry?.file || !entry.file.endsWith('.md')) return;
-    const from = path.join('docs', 'codex', entry.file);
-    const to = path.join('docs', 'codex', 'archive', entry.file);
-    safeExec(`git mv ${JSON.stringify(from)} ${JSON.stringify(to)}`);
-    moved.push(entry.file);
-  });
-
-  if (!moved.length) return { moved: [], commitHash: null };
-
-  const summary = completed
-    .filter((entry) => moved.includes(entry.file))
-    .map((entry) => `${entry.file} (${entry.checklist.done}/${entry.checklist.total || 0})`)
-    .join(', ');
-  safeExec(`git commit -m ${JSON.stringify(`docs(write): 자동 아카이빙 — ${summary}`)}`);
-  const commitHash = safeExec('git rev-parse --short HEAD');
-  return { moved, commitHash };
+  return {
+    moved: [],
+    commitHash: null,
+    disabled: true,
+    ignored: Array.isArray(completedFiles) ? completedFiles.length : 0,
+    reason: CODEX_AUTOMATION_DISABLED_REASON,
+  };
 }
 
 function scanStaleRootDocs() {
