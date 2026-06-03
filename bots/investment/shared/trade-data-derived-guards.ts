@@ -440,8 +440,8 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     };
     applySizingAdjustment(meta, {
       code: 'crypto_trend_following_current_epoch_probe_only',
-      multiplier: tradeMode === 'validation' ? 0.85 : 0.75,
-      reason: 'trend_following 최근 실현 성과가 약해 차단 대신 live/probe sizing을 축소',
+      multiplier: 0.25,
+      reason: 'trend_following STOP-4 실측 적자(-0.455%): 최소 25% probe sizing으로 강제',
     });
     if (noExternalEvidence || noTechnicalPresignal) {
       blockers.push('crypto_trend_following_without_confirmation');
@@ -513,6 +513,11 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   }
 
   if (market === 'crypto' && strategyFamily === 'defensive_rotation') {
+    applySizingAdjustment(meta, {
+      code: 'crypto_defensive_rotation_loss_epoch_probe',
+      multiplier: 0.25,
+      reason: 'defensive_rotation STOP-4 실측 적자(-1.335%): 최소 25% probe sizing으로 강제',
+    });
     if (noExternalEvidence || noTechnicalPresignal) {
       blockers.push('crypto_defensive_rotation_without_live_evidence');
       meta.cryptoDefensiveRotationEvidence = {

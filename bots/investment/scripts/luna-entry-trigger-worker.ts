@@ -247,18 +247,22 @@ function summarizeTradeDataHygieneGate(report = {}) {
 
 async function buildMaterializationTradeDataHygieneGate(deps = {}) {
   if (!tradeDataHygieneGateEnabled()) {
-    return { blocked: false, disabled: true, report: { ok: true, status: 'disabled', blockers: [] } };
+    return { blocked: false, advisory: false, disabled: true, report: { ok: true, status: 'disabled', blockers: [] } };
   }
   const builder = deps.tradeDataHygieneBuilder || buildRuntimeTradeDataHygiene;
   try {
     const report = summarizeTradeDataHygieneGate(await Promise.resolve(builder()));
+    // P0만 batch 차단: buildRuntimeTradeDataHygiene은 P0 findings만 blockers에 기록함
+    const hasP0Blockers = (report.blockers || []).length > 0;
     return {
-      blocked: !isTradeDataHygieneGateClear(report),
+      blocked: hasP0Blockers,
+      advisory: !hasP0Blockers && !isTradeDataHygieneGateClear(report),
       report,
     };
   } catch (error) {
     return {
       blocked: true,
+      advisory: false,
       report: {
         ok: false,
         status: 'hygiene_check_failed',
@@ -719,9 +723,11 @@ export async function materializeFiredEntryTriggerSignals({
   const items = [];
   let materialized = 0;
   let skipped = 0;
+  let hygieneGate = null;
   if (firedResults.length > 0) {
-    const hygieneGate = await buildMaterializationTradeDataHygieneGate(deps);
+    hygieneGate = await buildMaterializationTradeDataHygieneGate(deps);
     if (hygieneGate.blocked) {
+      // P0 치명적 데이터 무결성 → batch 전체 차단 유지
       for (const fired of firedResults) {
         skipped += 1;
         await Promise.resolve(triggerUpdater(fired.triggerId, {
@@ -742,6 +748,10 @@ export async function materializeFiredEntryTriggerSignals({
         });
       }
       return { enabled: true, materialized, skipped, items, tradeDataHygiene: hygieneGate.report };
+    }
+    if (hygieneGate.advisory) {
+      // 비-P0 경고성 hygiene → batch 차단 해제, 개별 trigger guard 진행 (hygiene_advisory)
+      console.log(`  ⚠️ [hygiene gate] advisory (non-P0, status=${hygieneGate.report.status}): batch 차단 해제 → 개별 guard 진행`);
     }
   }
   for (const fired of firedResults) {
