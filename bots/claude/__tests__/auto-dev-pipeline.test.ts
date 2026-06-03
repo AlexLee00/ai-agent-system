@@ -263,6 +263,94 @@ async function test_listAutoDevDocuments_respects_manifest_states() {
   console.log('✅ auto-dev: manifest states gate document pickup');
 }
 
+async function test_completed_history_prevents_archived_missing_requeue() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_completed.md';
+  fs.writeFileSync(path.join(tmpRoot, relPath), withRequiredMetadata('# Completed'), 'utf8');
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived_missing',
+        archivedAt: '2026-06-03T00:00:00.000Z',
+        archivedBy: 'auto-dev-pipeline',
+        archivedPath: 'docs/archive/codex-completed/ALARM_INCIDENT_completed.done.md',
+        createdAt: '2026-06-03T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, 'auto-dev-state.json'), JSON.stringify({
+    jobs: {
+      completed: {
+        id: 'completed',
+        relPath,
+        status: 'completed',
+        stage: 'completed',
+        updatedAt: '2026-06-03T00:10:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
+    assert.deepStrictEqual(docs, []);
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'archived_missing');
+    assert.strictEqual(manifest.entries[relPath].source, 'completed_no_requeue');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed history prevents archived_missing requeue');
+}
+
+async function test_archived_missing_without_completed_history_requeues() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_requeue.md';
+  fs.writeFileSync(path.join(tmpRoot, relPath), withRequiredMetadata('# Requeue'), 'utf8');
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived_missing',
+        archivedAt: '2026-06-03T00:00:00.000Z',
+        archivedBy: 'auto-dev-pipeline',
+        archivedPath: 'docs/archive/codex-completed/ALARM_INCIDENT_requeue.done.md',
+        createdAt: '2026-06-03T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
+    assert.deepStrictEqual(docs, [relPath]);
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'inbox');
+    assert.strictEqual(manifest.entries[relPath].source, 'requeued_missing_archive');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: archived_missing without completed history requeues');
+}
+
+async function test_auto_dev_watch_passes_state_file_to_manifest_sync() {
+  const source = fs.readFileSync(path.resolve(__dirname, '../scripts/auto-dev-watch.ts'), 'utf8');
+  assert.match(source, /const STATE_FILE = process\.env\.CLAUDE_AUTO_DEV_STATE_FILE/);
+  assert.match(source, /const manifestOptions = \{ autoDevStateFile: STATE_FILE \};/);
+  assert.match(source, /syncAutoDevManifest\(AUTO_DEV_DIR, manifestOptions\);/);
+  assert.match(source, /listAutoDevManifestEntries\(AUTO_DEV_DIR, \['inbox'\], manifestOptions\)/);
+  console.log('✅ auto-dev: watch path passes state file to manifest sync');
+}
+
 async function test_missing_auto_dev_document_is_skipped() {
   const tmpRoot = makeTempRoot();
   const missingDoc = path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_missing.md');
@@ -702,6 +790,132 @@ async function test_processAutoDevDocument_runs_full_dry_pipeline() {
   assert.strictEqual(alarms.length, 0, 'test 모드는 실제 알림 대신 shadow');
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: processes dry pipeline to completion');
+}
+
+async function test_stale_running_job_retries_with_recovery_count() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_STALE_RETRY.md', '# Stale\nretry');
+  const content = fs.readFileSync(doc, 'utf8');
+  const jobId = computeJobId(tmpRoot, doc, content);
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  fs.writeFileSync(statePath, JSON.stringify({
+    jobs: {
+      [jobId]: {
+        id: jobId,
+        relPath: 'docs/auto_dev/CODEX_STALE_RETRY.md',
+        status: 'running',
+        stage: 'implementation',
+        staleRecoveryCount: 1,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      shadow: false,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.job.status, 'completed');
+    assert.strictEqual(result.job.staleRecoveryCount, 2);
+    assert.ok(
+      result.job.events.some(event => event.type === 'recovered_stale_running_job' && event.staleRecoveryCount === 2),
+      'stale recovery event should include incremented count'
+    );
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_STATE_FILE: statePath,
+    CLAUDE_AUTO_DEV_MAX_STALE_RECOVERY: '3',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: stale running job retries with recovery count');
+}
+
+async function test_stale_running_job_blocks_after_recovery_exhaustion() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_STALE_EXHAUSTED.md', '# Stale\nexhausted');
+  const content = fs.readFileSync(doc, 'utf8');
+  const relPath = 'docs/auto_dev/CODEX_STALE_EXHAUSTED.md';
+  const jobId = computeJobId(tmpRoot, doc, content);
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  fs.writeFileSync(statePath, JSON.stringify({
+    jobs: {
+      [jobId]: {
+        id: jobId,
+        relPath,
+        status: 'running',
+        stage: 'implementation',
+        staleRecoveryCount: 3,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      shadow: false,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'stale_recovery_exhausted');
+    assert.strictEqual(result.job.status, 'blocked');
+    assert.strictEqual(result.job.stage, 'stale_recovery_exhausted');
+    assert.strictEqual(result.job.staleRecoveryCount, 4);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'docs', 'auto_dev', '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'failed');
+    assert.strictEqual(manifest.entries[relPath].reason, 'stale_recovery_exhausted');
+    assert.strictEqual(manifest.entries[relPath].staleRecoveryCount, 4);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_STATE_FILE: statePath,
+    CLAUDE_AUTO_DEV_MAX_STALE_RECOVERY: '3',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: stale running job blocks after recovery exhaustion');
+}
+
+async function test_invalid_stale_recovery_env_falls_back_to_default_limit() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_STALE_INVALID_ENV.md', '# Stale\ninvalid env');
+  const content = fs.readFileSync(doc, 'utf8');
+  const relPath = 'docs/auto_dev/CODEX_STALE_INVALID_ENV.md';
+  const jobId = computeJobId(tmpRoot, doc, content);
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  fs.writeFileSync(statePath, JSON.stringify({
+    jobs: {
+      [jobId]: {
+        id: jobId,
+        relPath,
+        status: 'running',
+        stage: 'implementation',
+        staleRecoveryCount: 3,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      shadow: false,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'stale_recovery_exhausted');
+    assert.strictEqual(result.job.maxStaleRecovery, 3);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_STATE_FILE: statePath,
+    CLAUDE_AUTO_DEV_MAX_STALE_RECOVERY: 'not-a-number',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: invalid stale recovery env falls back to default limit');
 }
 
 async function test_completed_document_is_updated_after_actual_implementation() {
@@ -2266,6 +2480,9 @@ async function main() {
     test_js_bridge_loads_pipeline_status_snapshot,
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_listAutoDevDocuments_respects_manifest_states,
+    test_completed_history_prevents_archived_missing_requeue,
+    test_archived_missing_without_completed_history_requeues,
+    test_auto_dev_watch_passes_state_file_to_manifest_sync,
     test_missing_auto_dev_document_is_skipped,
     test_missing_auto_dev_document_after_listing_is_skipped,
     test_success_only_blog_engagement_alarm_is_skipped,
@@ -2278,6 +2495,9 @@ async function main() {
     test_blog_health_recovery_snapshot_is_skipped,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
+    test_stale_running_job_retries_with_recovery_count,
+    test_stale_running_job_blocks_after_recovery_exhaustion,
+    test_invalid_stale_recovery_env_falls_back_to_default_limit,
     test_completed_document_is_updated_after_actual_implementation,
     test_completed_job_is_skipped_without_force,
     test_content_hash_job_id_prevents_touch_reprocessing,

@@ -25,12 +25,62 @@ function manifestPathForDir(autoDevDir) {
   return path.join(autoDevDir, MANIFEST_FILE_NAME);
 }
 
+function resolveAutoDevStateFile(options = {}) {
+  const configured = String(
+    options.autoDevStateFile
+    || options.stateFile
+    || process.env.CLAUDE_AUTO_DEV_STATE_FILE
+    || process.env.CLAUDE_AUTO_DEV_STATE_PATH
+    || ''
+  ).trim();
+  return configured || null;
+}
+
 function isAutoDevInboxMarkdown(name) {
   const normalized = String(name || '').trim();
   return Boolean(
     normalized.endsWith('.md')
     && !normalized.startsWith('.')
     && AUTO_DEV_FILE_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  );
+}
+
+function loadCompletedAutoDevRelPaths(options = {}) {
+  const stateFile = resolveAutoDevStateFile(options);
+  if (!stateFile) return new Set();
+  try {
+    if (!fs.existsSync(stateFile)) return new Set();
+    const parsed = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    const jobs = parsed?.jobs && typeof parsed.jobs === 'object' ? Object.values(parsed.jobs) : [];
+    return new Set(
+      jobs
+        .filter((job) => job && typeof job === 'object')
+        .filter((job) => String(job.status || '') === 'completed')
+        .map((job) => normalizeRelPath(job.relPath || ''))
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function hasCompletedManifestRecord(entry) {
+  const reason = String(entry?.reason || '').trim();
+  const implementationStatus = String(entry?.implementationStatus || entry?.implementation_status || '').trim();
+  return Boolean(
+    ['completed', 'already_completed', 'implementation_completed', 'auto_dev_implementation_completed'].includes(reason)
+    || ['completed', 'done', 'implementation_completed', 'auto_dev_implementation_completed'].includes(implementationStatus)
+  );
+}
+
+function hasCompletedAutoDevHistory(relPath, entry, completedRelPaths) {
+  const normalized = normalizeRelPath(relPath);
+  return Boolean(
+    normalized
+    && (
+      completedRelPaths.has(normalized)
+      || hasCompletedManifestRecord(entry)
+    )
   );
 }
 
@@ -85,10 +135,11 @@ function markAutoDevManifestState(autoDevDir, relPath, state, patch = {}) {
   return upsertAutoDevManifestEntry(autoDevDir, relPath, { state, ...patch });
 }
 
-function syncAutoDevManifest(autoDevDir) {
+function syncAutoDevManifest(autoDevDir, options = {}) {
   ensureDir(autoDevDir);
   const manifest = loadAutoDevManifest(autoDevDir);
   const names = fs.readdirSync(autoDevDir).filter(isAutoDevInboxMarkdown);
+  const completedRelPaths = loadCompletedAutoDevRelPaths(options);
 
   for (const name of names) {
     const abs = path.join(autoDevDir, name);
@@ -108,6 +159,16 @@ function syncAutoDevManifest(autoDevDir) {
       continue;
     }
     if (!current.state || current.state === 'archived_missing') {
+      if (current.state === 'archived_missing' && hasCompletedAutoDevHistory(relPath, current, completedRelPaths)) {
+        manifest.entries[relPath] = {
+          ...current,
+          state: 'archived_missing',
+          updatedAt: new Date().toISOString(),
+          source: 'completed_no_requeue',
+          completedNoRequeueAt: new Date().toISOString(),
+        };
+        continue;
+      }
       manifest.entries[relPath] = {
         ...current,
         state: 'inbox',
@@ -134,6 +195,16 @@ function syncAutoDevManifest(autoDevDir) {
           updatedAt: new Date().toISOString(),
         };
       } else {
+        if (hasCompletedAutoDevHistory(relPath, entry, completedRelPaths)) {
+          manifest.entries[relPath] = {
+            ...entry,
+            state: 'archived_missing',
+            updatedAt: new Date().toISOString(),
+            source: 'completed_no_requeue',
+            completedNoRequeueAt: new Date().toISOString(),
+          };
+          continue;
+        }
         // archivedPath 소실 또는 없음 = Hub 재생성/루트 잔존 케이스 → inbox 재진입
         const { archivedAt, archivedBy, archivedPath: _ap, reason, note, resolvedReason, ...rest } = entry;
         manifest.entries[relPath] = {
@@ -169,8 +240,8 @@ function syncAutoDevManifest(autoDevDir) {
   return manifest;
 }
 
-function listAutoDevManifestEntries(autoDevDir, allowedStates = ['inbox']) {
-  const manifest = syncAutoDevManifest(autoDevDir);
+function listAutoDevManifestEntries(autoDevDir, allowedStates = ['inbox'], options = {}) {
+  const manifest = syncAutoDevManifest(autoDevDir, options);
   const allowed = new Set((allowedStates || []).map((item) => String(item)));
   return Object.values(manifest.entries || {})
     .filter((entry) => entry?.relPath && isAutoDevInboxMarkdown(path.basename(String(entry.relPath || ''))))
@@ -183,6 +254,8 @@ module.exports = {
   MANIFEST_FILE_NAME,
   AUTO_DEV_FILE_PREFIXES,
   isAutoDevInboxMarkdown,
+  loadCompletedAutoDevRelPaths,
+  hasCompletedAutoDevHistory,
   manifestPathForDir,
   loadAutoDevManifest,
   saveAutoDevManifest,

@@ -45,6 +45,14 @@ const AUTO_DEV_BASE_REF = String(
   process.env.CLAUDE_AUTO_DEV_BASE_REF || `${AUTO_DEV_TARGET_REMOTE}/${AUTO_DEV_TARGET_BRANCH}`
 ).trim() || `${AUTO_DEV_TARGET_REMOTE}/${AUTO_DEV_TARGET_BRANCH}`;
 
+function parseNonNegativeIntegerEnv(value, fallback) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
 const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Read,Glob,Grep';
 const DEFAULT_HARD_TEST_COMMANDS = [
   'npm --prefix bots/claude run typecheck',
@@ -66,6 +74,7 @@ const DEFAULT_SCOPED_TEST_PREFIX_ALLOWLIST = [
 const DEFAULT_LOCK_TTL_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_TTL_MS || 15 * 60 * 1000);
 const DEFAULT_LOCK_HEARTBEAT_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_HEARTBEAT_MS || 60 * 1000);
 const DEFAULT_RUNNING_STALE_MS = Number(process.env.CLAUDE_AUTO_DEV_RUNNING_STALE_MS || 30 * 60 * 1000);
+const MAX_STALE_RECOVERY = parseNonNegativeIntegerEnv(process.env.CLAUDE_AUTO_DEV_MAX_STALE_RECOVERY, 3);
 const DEFAULT_TARGET_TEAM = String(process.env.CLAUDE_AUTO_DEV_TARGET_TEAM || 'claude').toLowerCase();
 const AUTO_DEV_ARTIFACT_DIR = process.env.CLAUDE_AUTO_DEV_ARTIFACT_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-artifacts');
@@ -1339,8 +1348,9 @@ function saveState(state) {
 
 function listAutoDevDocuments() {
   ensureDir(AUTO_DEV_DIR);
-  syncAutoDevManifest(AUTO_DEV_DIR);
-  return listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox', 'claimed', 'active', 'failed'])
+  const manifestOptions = { autoDevStateFile: STATE_FILE };
+  syncAutoDevManifest(AUTO_DEV_DIR, manifestOptions);
+  return listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox', 'claimed', 'active', 'failed'], manifestOptions)
     .map(relPath => path.join(ROOT, relPath))
     .map(filePath => {
       try {
@@ -2866,7 +2876,7 @@ function updateJobState(job, stageId, data = {}) {
     ? 'completed'
     : stageId === 'failed'
       ? 'failed'
-      : stageId.startsWith('blocked_')
+      : stageId === 'stale_recovery_exhausted' || stageId.startsWith('blocked_')
         ? 'blocked'
         : stageId.startsWith('routed_')
           ? 'routed'
@@ -3001,8 +3011,44 @@ async function processAutoDevDocument(filePath, options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
   const implementationModelMeta = buildImplementationModelMeta(runtimeConfig);
   const staleRunningJob = state.jobs[id]?.status === 'running' ? state.jobs[id] : null;
+  const staleRunningJobIsStale = Boolean(
+    staleRunningJob && isTimestampStale(staleRunningJob.updatedAt, DEFAULT_RUNNING_STALE_MS)
+  );
+  const currentStaleRecoveryCount = Math.max(0, Number(staleRunningJob?.staleRecoveryCount || 0));
+  const nextStaleRecoveryCount = staleRunningJobIsStale
+    ? currentStaleRecoveryCount + 1
+    : currentStaleRecoveryCount;
   if (!options.force && staleRunningJob && !isTimestampStale(staleRunningJob.updatedAt, DEFAULT_RUNNING_STALE_MS)) {
     return { ok: true, skipped: true, reason: 'already_running', job: staleRunningJob };
+  }
+  if (!options.force && staleRunningJobIsStale && nextStaleRecoveryCount > MAX_STALE_RECOVERY) {
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'failed', {
+      failedAt: nowIso(),
+      failedBy: 'auto-dev-pipeline',
+      reason: 'stale_recovery_exhausted',
+      staleRecoveryCount: nextStaleRecoveryCount,
+      maxStaleRecovery: MAX_STALE_RECOVERY,
+    });
+    const blockedJob = updateJobState(job, 'stale_recovery_exhausted', {
+      contentHash,
+      reason: 'stale_recovery_exhausted',
+      staleRecoveryCount: nextStaleRecoveryCount,
+      maxStaleRecovery: MAX_STALE_RECOVERY,
+      previousStage: staleRunningJob.stage,
+      previousUpdatedAt: staleRunningJob.updatedAt,
+      implementationModelMeta,
+      profile: runtimeConfig.profile,
+      event: {
+        type: 'stale_recovery_exhausted',
+        previousStage: staleRunningJob.stage,
+        previousUpdatedAt: staleRunningJob.updatedAt,
+        staleRecoveryCount: nextStaleRecoveryCount,
+        maxStaleRecovery: MAX_STALE_RECOVERY,
+      },
+    });
+    console.warn(`[auto-dev] stale recovery exhausted: ${relPath} (${nextStaleRecoveryCount}/${MAX_STALE_RECOVERY})`);
+    await markAgentDone();
+    return { ok: true, skipped: true, reason: 'stale_recovery_exhausted', job: blockedJob };
   }
 
   const jobLock = acquireFileLock(
@@ -3035,7 +3081,7 @@ async function processAutoDevDocument(filePath, options = {}) {
   let completionDocumentPath = null;
   let implementationCompletedAt = null;
   try {
-    updateJobState(job, 'received', {
+    const receivedState = {
       contentHash,
       profile: runtimeConfig.profile,
       implementationModelMeta,
@@ -3049,9 +3095,16 @@ async function processAutoDevDocument(filePath, options = {}) {
           type: 'recovered_stale_running_job',
           previousStage: staleRunningJob.stage,
           previousUpdatedAt: staleRunningJob.updatedAt,
+          staleRecoveryCount: nextStaleRecoveryCount,
+          maxStaleRecovery: MAX_STALE_RECOVERY,
         }
         : null,
-    });
+    };
+    if (staleRunningJobIsStale) {
+      receivedState.staleRecoveryCount = nextStaleRecoveryCount;
+      receivedState.maxStaleRecovery = MAX_STALE_RECOVERY;
+    }
+    updateJobState(job, 'received', receivedState);
     await setAgentStatus('received', job);
 
     const analysis = analyzeAutoDevDocument(filePath, content);

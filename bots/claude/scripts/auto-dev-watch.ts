@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const runtimePaths = require('../lib/runtime-paths.js');
 const {
   listAutoDevManifestEntries,
   markAutoDevManifestState,
@@ -23,6 +24,9 @@ const {
 
 const ROOT = env.PROJECT_ROOT;
 const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
+const WORKSPACE = runtimePaths.workspaceDir();
+const STATE_FILE = process.env.CLAUDE_AUTO_DEV_STATE_FILE ||
+  path.join(WORKSPACE, 'claude-auto-dev-state.json');
 function isEnabled(): boolean {
   const raw = String(process.env.CLAUDE_AUTO_DEV_WATCH_ENABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
@@ -40,8 +44,9 @@ async function scanAndEnqueue(): Promise<{
     return result;
   }
 
-  syncAutoDevManifest(AUTO_DEV_DIR);
-  const targets = listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox'])
+  const manifestOptions = { autoDevStateFile: STATE_FILE };
+  syncAutoDevManifest(AUTO_DEV_DIR, manifestOptions);
+  const targets = listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox'], manifestOptions)
     .filter((relPath) => {
       const name = path.basename(relPath);
       return name.startsWith('ALARM_INCIDENT_') || name.startsWith('CODEX_SKA_EXCEPTION_');
