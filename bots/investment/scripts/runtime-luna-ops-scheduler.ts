@@ -794,6 +794,14 @@ export function getOpsSchedulerJobs() {
         '--json',
       ]),
     },
+    ...(boolEnv('RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED', false) ? [{
+      name: 'reconcile_open_journals',
+      category: 'reconcile',
+      market: 'crypto',
+      immutable: true,
+      cadence: { type: 'interval', seconds: 300 },
+      ...nodeScript('reconcile-open-journals.ts', ['--write', '--confirm-live', '--market=crypto', '--json']),
+    }] : []),
     {
       name: 'external_evidence_gap_queue_worker',
       category: 'position_monitor',
