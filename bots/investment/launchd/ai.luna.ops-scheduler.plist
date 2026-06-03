@@ -114,6 +114,8 @@
     <string>autonomous</string>
     <key>LUNA_DSR_GATE_ENABLED</key>
     <string>true</string>
+    <key>ENTRY_PREFLIGHT_SHADOW_ENABLED</key>
+    <string>true</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>
