@@ -1,4 +1,40 @@
-# 세션 인수인계 — 2026-06-03 (CODEX_S2_C1_EXECUTION_LINKAGE)
+# 세션 인수인계 — 2026-06-03 (CODEX_S2_C3_PREFLIGHT_SHADOW)
+
+## 완료 요약 ✅ — S2 C3 entry-trigger materialize preflight SHADOW
+
+### 구현 내용
+entry-trigger worker가 fired signal을 materialize하기 **전에** capital/reentry/sizing preflight를 shadow 실행.
+★기존 materialize·executor 경로 **무변경** — ENTRY_PREFLIGHT_SHADOW_ENABLED=true 일 때만 기록.
+
+**Kill Switch:** `ENTRY_PREFLIGHT_SHADOW_ENABLED` (launchctl getenv 지원, 기본 false)
+
+**신규 파일:**
+- `bots/investment/shared/entry-materialize-preflight.ts` — 3-check preflight 함수 + shadow 기록 + report
+  - `evaluateEntryMaterializePreflight()`: capital(max_positions) / reentry(LIVE 중복) / sizing(최소주문) 판정
+  - `runEntryMaterializePreflightShadow()`: 활성화 체크 + eval + DB INSERT
+  - `attachEntryPreflightShadowSignal()`: materialize 후 signal_id 연결
+  - `loadEntryPreflightShadowReport()`: 예측 적중도 집계 (agree/miss/overblock)
+- `bots/investment/migrations/20260603000004_entry_preflight_shadow.sql`
+- `bots/investment/scripts/entry-materialize-preflight-smoke.ts` (4케이스 all pass)
+- `bots/investment/scripts/runtime-luna-entry-preflight-shadow-report.ts` — 적중도 CLI
+
+**수정 파일:**
+- `bots/investment/scripts/luna-entry-trigger-worker.ts` — materialize 직전 shadow 훅 + 직후 signal_id 연결
+- `bots/investment/shared/db/schema/tables/bootstrap.ts` — DDL + schema v18
+
+**agreement 판정 기준:**
+- agree: preflight defer/skip → executor `status='blocked'` (예측 적중)
+- miss: preflight allow → executor blocked (놓침)
+- overblock: preflight defer/skip → executor 통과 (과잉 차단)
+
+**다음 단계:**
+- OPS 배포 후 `ENTRY_PREFLIGHT_SHADOW_ENABLED=true` 설정
+- 1~2주 적중도 모니터링: `npm run -w bots/investment runtime:luna-entry-preflight-shadow-report`
+- 적중도 충분하면 → 실제 preflight 차단 적용 (기존 경로 변경) 검토
+
+---
+
+# 이전 인수인계 — 2026-06-03 (CODEX_S2_C1_EXECUTION_LINKAGE)
 
 ## 완료 요약 ✅ — S2 T1 실행 연결 규명 (C1, read-only)
 
