@@ -56,6 +56,32 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
       log(`  • ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | ${entry.amount}원`);
     }
 
+    let excludedEntries: Record<string, any>[] = [];
+    try {
+      const { entries: allEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
+      const paidKeys = new Set(kioskEntries.map((entry) => `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`));
+      excludedEntries = allEntries.filter((entry) => {
+        const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
+        if (paidKeys.has(key)) return false;
+        const statusText = String(entry.statusText || '');
+        if (statusText.includes('취소') || statusText.includes('환불')) return false;
+        return true;
+      });
+
+      if (excludedEntries.length > 0) {
+        log(`\n[Pickko 진단] 차단 대상 제외 예약: ${excludedEntries.length}건 (0원/결제대기 등, 자동 차단 안 함)`);
+        for (const entry of excludedEntries.slice(0, 10)) {
+          log(`  · 제외 ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | ${entry.amount}원 | ${entry.statusText || '상태미상'}`);
+        }
+        if (excludedEntries.length > 10) {
+          log(`  · 외 ${excludedEntries.length - 10}건`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`⚠️ [Pickko 진단] 전체 예약 조회 실패 — 유료 예약 처리만 계속 진행 (${message})`);
+    }
+
     const kioskFlags = await Promise.all(
       kioskEntries.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
     );
@@ -126,6 +152,7 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
       newEntries,
       retryEntries,
       toBlockEntries,
+      excludedEntries,
       refundedEntries,
       cancelledStatusEntries,
       dedupedCancelledEntries,

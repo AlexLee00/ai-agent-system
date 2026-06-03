@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 
 const { delay } = require('./utils');
+const { installBrowserEvalShim } = require('./browser');
 
 type PickkoEntry = {
   name: string;
@@ -35,6 +36,7 @@ type PickkoMemberLookupResult = {
 
 async function loginToPickko(page: any, id: string, pw: string, delayFn?: (ms: number) => Promise<unknown>) {
   const d = delayFn || delay;
+  await installBrowserEvalShim(page);
   try {
     await page.goto('https://pickkoadmin.com/manager/login.html', { waitUntil: 'domcontentloaded' });
   } catch (e: unknown) {
@@ -112,6 +114,7 @@ async function fetchPickkoEntries(
     receiptDate = ''
   } = opts;
 
+  await installBrowserEvalShim(page);
   try {
     await page.goto('https://pickkoadmin.com/study/index.html', {
       waitUntil: 'networkidle2', timeout: 30000

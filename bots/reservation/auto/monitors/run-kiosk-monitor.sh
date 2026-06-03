@@ -5,7 +5,8 @@
 # - 로그 유지 (날짜별 아카이브, 7일 보존)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/opt/homebrew/bin/tsx"
+NODE="/opt/homebrew/bin/node"
+TSX_IMPORT="/opt/homebrew/lib/node_modules/tsx/dist/loader.mjs"
 RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/pickko-kiosk-monitor.ts"
 WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-${JAY_WORKSPACE:-$HOME/.ai-agent-system/workspace}}"
 mkdir -p "$WORKSPACE_DIR"
@@ -33,7 +34,7 @@ ln -sf "$LOG_FILE" "$LOG_SYMLINK" 2>/dev/null
 
 echo "[$(date)] ▶ pickko-kiosk-monitor 시작" >> "$LOG_FILE"
 
-MODE=ops TELEGRAM_ENABLED=1 PLAYWRIGHT_HEADLESS=true PICKKO_HEADLESS=1 "$NODE" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
+MODE=ops TELEGRAM_ENABLED=1 PLAYWRIGHT_HEADLESS=true PICKKO_HEADLESS=1 "$NODE" --disable-warning=DEP0205 --import "$TSX_IMPORT" "$RUNTIME_SCRIPT" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 
 echo "[$(date)] ⏹ pickko-kiosk-monitor 완료 (exit: $EXIT_CODE)" >> "$LOG_FILE"
