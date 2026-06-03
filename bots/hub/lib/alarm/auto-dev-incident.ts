@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../../packages/core/lib/env');
-const { upsertAutoDevManifestEntry } = require('../../../../packages/core/lib/auto-dev-manifest.ts');
+const { upsertAutoDevManifestEntry, loadAutoDevManifest } = require('../../../../packages/core/lib/auto-dev-manifest.ts');
 
 const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
 
@@ -214,6 +214,15 @@ export async function ensureAlarmAutoDevDocument(input: {
 
   await fs.promises.mkdir(dir, { recursive: true });
   if (fs.existsSync(filePath)) {
+    // 정상 완료된 incident(archivedPath 파일 실존)는 재처리 skip
+    const manifest = loadAutoDevManifest(dir);
+    const existingEntry = manifest.entries?.[relPath] || manifest.entries?.[relPath.replace(/\\/g, '/')];
+    if (existingEntry?.state === 'archived' && existingEntry.archivedPath) {
+      const archivedAbs = path.join(env.PROJECT_ROOT, String(existingEntry.archivedPath));
+      if (fs.existsSync(archivedAbs)) {
+        return { ok: true, created: false, path: relPath, skipped: true };
+      }
+    }
     upsertAutoDevManifestEntry(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_existing' });
     return { ok: true, created: false, path: relPath };
   }

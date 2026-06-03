@@ -120,11 +120,23 @@ function syncAutoDevManifest(autoDevDir) {
     if (!hasArchivedRecord) continue;
 
     if (fs.existsSync(abs)) {
-      manifest.entries[relPath] = {
-        ...entry,
-        state: 'archived',
-        updatedAt: new Date().toISOString(),
-      };
+      if (archivedAbs && fs.existsSync(archivedAbs)) {
+        // archivedPath 파일이 실제로 존재 → 정상 완료, archived 유지
+        manifest.entries[relPath] = {
+          ...entry,
+          state: 'archived',
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        // archivedPath 소실 또는 없음 = Hub 재생성/루트 잔존 케이스 → inbox 재진입
+        const { archivedAt, archivedBy, archivedPath: _ap, reason, note, resolvedReason, ...rest } = entry;
+        manifest.entries[relPath] = {
+          ...rest,
+          state: 'inbox',
+          updatedAt: new Date().toISOString(),
+          source: 'requeued_missing_archive',
+        };
+      }
       continue;
     }
 
