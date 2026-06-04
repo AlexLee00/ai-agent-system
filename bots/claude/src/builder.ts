@@ -24,6 +24,7 @@ const { execSync } = require('child_process');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env          = require('../../../packages/core/lib/env');
 const reviewer     = require('./reviewer');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const ROOT = env.PROJECT_ROOT;
 
@@ -232,7 +233,7 @@ function formatBuildReport(results) {
 
 // ─── 메인 실행 ────────────────────────────────────────────────────────
 
-async function runBuildCheck(options = {}) {
+async function runBuildCheckCore(options = {}) {
   const enabled  = process.env.CLAUDE_BUILDER_ENABLED === 'true';
   const testMode = Boolean(options.test) || process.argv.includes('--test');
 
@@ -275,6 +276,30 @@ async function runBuildCheck(options = {}) {
   }
 
   return { results, pass: !anyFailed, sent, message };
+}
+
+async function runBuildCheck(options = {}) {
+  const start = Date.now();
+  try {
+    const result = await runBuildCheckCore(options);
+    await writeClaudeHeartbeat('builder', 'ok', {
+      durationMs: Date.now() - start,
+      skipped: Boolean(result?.skipped || result?.message?.includes('Kill Switch OFF')),
+      pass: result?.pass !== false,
+      plans: Number(result?.results?.length || 0),
+      failed: Number((result?.results || []).filter(item => !item.pass && !item.skipped).length),
+      forced: Boolean(options.force),
+      test: Boolean(options.test),
+    });
+    return result;
+  } catch (error) {
+    await writeClaudeHeartbeat('builder', 'error', errorHeartbeatMeta(error, {
+      durationMs: Date.now() - start,
+      forced: Boolean(options.force),
+      test: Boolean(options.test),
+    }));
+    throw error;
+  }
 }
 
 /**

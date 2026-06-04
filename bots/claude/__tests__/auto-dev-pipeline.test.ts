@@ -112,6 +112,10 @@ function makeMocks(tmpRoot, overrides = {}) {
         markDone: async () => {},
         markError: async () => {},
       },
+      './agent-heartbeat': {
+        writeClaudeHeartbeat: async () => ({ ok: true }),
+        errorHeartbeatMeta: (error, meta = {}) => ({ ...meta, message: error?.message || String(error) }),
+      },
       '../src/reviewer': {
         runReview: async () => ({ summary: { pass: true }, message: 'review ok' }),
       },

@@ -25,6 +25,7 @@ const cfg     = require('../lib/archer/config');
 const teamBus = require('../lib/team-bus');
 const kst     = require('../../../packages/core/lib/kst');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const ARGS       = process.argv.slice(2);
 const TELEGRAM   = ARGS.includes('--telegram');
@@ -100,6 +101,14 @@ async function main() {
       console.log(JSON.stringify({ github: Object.keys(data.github), npm: Object.keys(data.npm), webSources: data.webSources?.length, audit: data.audit?.total }, null, 2));
       writeLog('FETCH_ONLY OK');
       try { teamBus.markDone('archer'); } catch { /* 무시 */ }
+      await writeClaudeHeartbeat('archer', 'ok', {
+        runDate,
+        fetchOnly: true,
+        durationMs: Date.now() - start,
+        githubSources: Object.keys(data.github || {}).length,
+        npmSources: Object.keys(data.npm || {}).length,
+        webSources: data.webSources?.length || 0,
+      });
       return;
     }
 
@@ -214,11 +223,28 @@ async function main() {
 
     // 팀버스: 완료 등록
     try { teamBus.markDone('archer'); } catch { /* 무시 */ }
+    await writeClaudeHeartbeat('archer', 'ok', {
+      runDate,
+      durationMs: elapsed,
+      telegram: TELEGRAM,
+      noClaude: NO_CLAUDE,
+      patches: (analysis?.patches || []).length,
+      security: (analysis?.security || []).length,
+      llmApi: (analysis?.llm_api || []).length,
+      report: filePath || null,
+    });
 
   } catch (e) {
     console.error(`\n❌ ${BOT_NAME} 오류: ${e.message}`);
     writeLog(`ERROR: ${e.message}`);
     try { teamBus.markError('archer', e.message); } catch { /* 무시 */ }
+    await writeClaudeHeartbeat('archer', 'error', errorHeartbeatMeta(e, {
+      runDate,
+      durationMs: Date.now() - start,
+      telegram: TELEGRAM,
+      noClaude: NO_CLAUDE,
+      fetchOnly: FETCH_ONLY,
+    }));
     process.exitCode = 1;
   } finally {
     releaseLock();

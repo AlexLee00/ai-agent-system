@@ -21,6 +21,7 @@ const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const teamBus = require('../lib/team-bus');
 const runtimePaths = require('../lib/runtime-paths.js');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 const {
   AUTO_PROMOTE_DEFAULTS,
   normalizeIntentText,
@@ -1102,6 +1103,7 @@ async function processCommands() {
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
 let _identityCounter = 0;
+let _heartbeatCycle = 0;
 
 async function main() {
   await initHubConfig();
@@ -1116,8 +1118,24 @@ async function main() {
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
   while (true) {
-    try { await processCommands(); }
-    catch (e) { console.error(`[클로드] 루프 오류:`, e.message); }
+    _heartbeatCycle++;
+    const cycleStart = Date.now();
+    try {
+      const processed = await processCommands();
+      await writeClaudeHeartbeat('commander', 'ok', {
+        cycle: _heartbeatCycle,
+        processed,
+        durationMs: Date.now() - cycleStart,
+        status: processed > 0 ? 'processed_commands' : 'idle',
+      });
+    }
+    catch (e) {
+      console.error(`[클로드] 루프 오류:`, e.message);
+      await writeClaudeHeartbeat('commander', 'error', errorHeartbeatMeta(e, {
+        cycle: _heartbeatCycle,
+        durationMs: Date.now() - cycleStart,
+      }));
+    }
 
     // 팀원 정체성 점검 + 자신의 정체성 리로드: 시작 1분 후 첫 실행, 이후 6시간마다
     _identityCounter++;
@@ -1149,6 +1167,7 @@ module.exports = {
 if (require.main === module) {
   main().catch(e => {
     console.error(`[클로드] 치명적 오류:`, e);
-    process.exit(1);
+    writeClaudeHeartbeat('commander', 'error', errorHeartbeatMeta(e, { fatal: true }))
+      .finally(() => process.exit(1));
   });
 }

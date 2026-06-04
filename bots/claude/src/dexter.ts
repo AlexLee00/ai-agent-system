@@ -20,6 +20,7 @@ const cfg     = require('../lib/config');
 const teamBus = require('../lib/team-bus');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { publishToMainBot } = require('../lib/mainbot-client');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -376,6 +377,16 @@ async function main() {
   // PortAgent는 "스크립트 실행 실패"와 "운영 이슈 발견"을 구분해야 한다.
   // 덱스터는 점검 결과를 teamBus/event bus/텔레그램으로 이미 보고하므로,
   // 정상 점검이 끝난 뒤에는 error findings가 있어도 exit 0으로 마무리한다.
+  await writeClaudeHeartbeat('dexter', 'ok', {
+    durationMs: elapsed,
+    full: FULL,
+    telegram: TELEGRAM,
+    fix: FIX,
+    checks: results.length,
+    errors: results.filter(r => r.status === 'error').length,
+    criticals: results.filter(r => r.status === 'critical').length,
+    warnings: results.filter(r => r.status === 'warn').length,
+  });
   process.exit(0);
 }
 
@@ -431,6 +442,7 @@ if (_args.includes('--daily-report')) {
   if (!SILENT) console.log(`\n🤖 ${BOT_NAME} (Dexter) 가동...\n`);
   main().catch(e => {
     console.error(`❌ ${BOT_NAME} 오류:`, e.message);
-    process.exit(1);
+    writeClaudeHeartbeat('dexter', 'error', errorHeartbeatMeta(e))
+      .finally(() => process.exit(1));
   });
 }

@@ -29,6 +29,10 @@ function makeReviewerMocks(overrides = {}) {
     '../../../packages/core/lib/env': {
       PROJECT_ROOT: '/tmp/test-project',
     },
+    '../lib/agent-heartbeat': {
+      writeClaudeHeartbeat: async () => ({ ok: true }),
+      errorHeartbeatMeta: (error, meta = {}) => ({ ...meta, message: error?.message || String(error) }),
+    },
     child_process: {
       execSync: (cmd) => {
         if (cmd.includes('git diff'))   return 'bots/claude/src/reviewer.ts';

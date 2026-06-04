@@ -28,6 +28,10 @@ function makeBuilderMocks(overrides = {}) {
       analyzeChanges: async () => ({ files: [], added_lines: 0, removed_lines: 0, diff_summary: '' }),
       getChangedFiles: async () => [],
     },
+    '../lib/agent-heartbeat': {
+      writeClaudeHeartbeat: async () => ({ ok: true }),
+      errorHeartbeatMeta: (error, meta = {}) => ({ ...meta, message: error?.message || String(error) }),
+    },
     child_process: {
       execSync: (cmd) => {
         if (cmd.includes('npm run build')) return 'Build complete';

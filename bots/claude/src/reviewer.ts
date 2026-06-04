@@ -25,6 +25,7 @@ const fs      = require('fs');
 const skills       = require('../../../packages/core/lib/skills');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env          = require('../../../packages/core/lib/env');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const DEFAULT_ROOT = env.PROJECT_ROOT;
 
@@ -278,7 +279,7 @@ function runTypeScriptCheck(files = [], options = {}) {
 /**
  * 메인 리뷰 실행
  */
-async function runReview(options = {}) {
+async function runReviewCore(options = {}) {
   const enabled  = process.env.CLAUDE_REVIEWER_ENABLED === 'true';
   const testMode = Boolean(options.test) || process.argv.includes('--test');
   const rootDir = resolveRootDir(options);
@@ -333,6 +334,30 @@ async function runReview(options = {}) {
   }
 
   return { files: jsFiles, rootDir, summary, sent, skipped: false, message, findings: allFindings };
+}
+
+async function runReview(options = {}) {
+  const start = Date.now();
+  try {
+    const result = await runReviewCore(options);
+    await writeClaudeHeartbeat('reviewer', 'ok', {
+      durationMs: Date.now() - start,
+      skipped: Boolean(result?.skipped),
+      files: Number(result?.files?.length || 0),
+      pass: result?.summary?.pass !== false,
+      sent: Boolean(result?.sent),
+      forced: Boolean(options.force),
+      test: Boolean(options.test),
+    });
+    return result;
+  } catch (error) {
+    await writeClaudeHeartbeat('reviewer', 'error', errorHeartbeatMeta(error, {
+      durationMs: Date.now() - start,
+      forced: Boolean(options.force),
+      test: Boolean(options.test),
+    }));
+    throw error;
+  }
 }
 
 /**

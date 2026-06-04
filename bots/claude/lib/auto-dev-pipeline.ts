@@ -27,6 +27,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { mergeTrustedEnvWithUntrustedPatch } = require('../../../packages/core/lib/runtime-env-policy');
 const teamBus = require('./team-bus');
 const runtimePaths = require('./runtime-paths.js');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('./agent-heartbeat');
 
 const ROOT = env.PROJECT_ROOT;
 const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
@@ -3719,7 +3720,7 @@ async function processAutoDevDocument(filePath, options = {}) {
   }
 }
 
-async function runAutoDevPipeline(options = {}) {
+async function runAutoDevPipelineCore(options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
   if (runtimeConfig.hardDisabled) {
     return {
@@ -3860,6 +3861,37 @@ async function runAutoDevPipeline(options = {}) {
     },
     results,
   };
+}
+
+async function runAutoDevPipeline(options = {}) {
+  const start = Date.now();
+  try {
+    const result = await runAutoDevPipelineCore(options);
+    await writeClaudeHeartbeat('auto-dev', result?.ok ? 'ok' : 'error', {
+      durationMs: Date.now() - start,
+      profile: result?.runtime?.profile || options.profile || process.env.CLAUDE_AUTO_DEV_PROFILE || null,
+      count: Number(result?.count || 0),
+      processedCount: Number(result?.processedCount || 0),
+      skippedCount: Number(result?.skippedCount || 0),
+      failedCount: Number(result?.failedCount || 0),
+      once: Boolean(options.once),
+      test: Boolean(options.test),
+      dryRun: Boolean(result?.runtime?.dryRun ?? options.dryRun),
+      enabled: Boolean(result?.runtime?.enabled),
+      lockAcquired: Boolean(result?.lock?.acquired),
+      reason: result?.results?.[0]?.reason || null,
+    });
+    return result;
+  } catch (error) {
+    await writeClaudeHeartbeat('auto-dev', 'error', errorHeartbeatMeta(error, {
+      durationMs: Date.now() - start,
+      profile: options.profile || process.env.CLAUDE_AUTO_DEV_PROFILE || null,
+      once: Boolean(options.once),
+      test: Boolean(options.test),
+      dryRun: Boolean(options.dryRun),
+    }));
+    throw error;
+  }
 }
 
 function listDirectoryEntriesSafe(dir, predicate = null) {

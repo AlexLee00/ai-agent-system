@@ -28,6 +28,7 @@ const {
   getServiceOwnership,
   isRetiredService,
 } = require('../../../packages/core/lib/service-ownership.js');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('./agent-heartbeat');
 
 const SCHEMA      = 'reservation';
 const ROOT        = path.join(__dirname, '../../../');
@@ -392,7 +393,7 @@ function getAvailableTasks() {
  * 팀장(claude-lead)이 createTask로 발행한 복구 지시를 독터가 처리
  * dexter.js 마지막에 호출
  */
-async function pollDoctorTasks() {
+async function pollDoctorTasksCore() {
   const stateBus = require('./state-bus-bridge.js');
   let tasks;
   try {
@@ -526,6 +527,24 @@ async function pollDoctorTasks() {
       await stateBus.failTask(task.id, e.message).catch(() => {});
       console.error(`  [독터] 태스크 id=${task.id} 실행 오류:`, e.message);
     }
+  }
+}
+
+async function pollDoctorTasks() {
+  const start = Date.now();
+  try {
+    const result = await pollDoctorTasksCore();
+    await writeClaudeHeartbeat('doctor', 'ok', {
+      cycle: 'pollDoctorTasks',
+      durationMs: Date.now() - start,
+    });
+    return result;
+  } catch (error) {
+    await writeClaudeHeartbeat('doctor', 'error', errorHeartbeatMeta(error, {
+      cycle: 'pollDoctorTasks',
+      durationMs: Date.now() - start,
+    }));
+    throw error;
   }
 }
 
@@ -665,7 +684,7 @@ async function recoverDownServices(downServices) {
   return results;
 }
 
-async function scanAndRecover() {
+async function scanAndRecoverCore() {
   const { fetchOpsErrors } = require('../../../packages/core/lib/hub-client');
   const recoveries = [];
 
@@ -721,6 +740,26 @@ async function scanAndRecover() {
   } catch (error) {
     console.warn('[doctor] scanAndRecover 실패:', error.message);
     return recoveries;
+  }
+}
+
+async function scanAndRecover() {
+  const start = Date.now();
+  try {
+    const recoveries = await scanAndRecoverCore();
+    await writeClaudeHeartbeat('doctor', 'ok', {
+      cycle: 'scanAndRecover',
+      durationMs: Date.now() - start,
+      recoveries: Number(recoveries?.length || 0),
+      succeeded: Number((recoveries || []).filter(item => item.success).length),
+    });
+    return recoveries;
+  } catch (error) {
+    await writeClaudeHeartbeat('doctor', 'error', errorHeartbeatMeta(error, {
+      cycle: 'scanAndRecover',
+      durationMs: Date.now() - start,
+    }));
+    throw error;
   }
 }
 
@@ -876,7 +915,7 @@ async function verifyRecovery(taskType, params) {
  * @param {string} requestedBy    - 요청자
  * @returns {Promise<RecoveryResult & { attempts: number, verified: boolean }>}
  */
-async function executeWithVerifyLoop(taskType, params = {}, requestedBy = 'claude-commander') {
+async function executeWithVerifyLoopCore(taskType, params = {}, requestedBy = 'claude-commander') {
   let lastResult = null;
 
   for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
@@ -928,6 +967,32 @@ async function executeWithVerifyLoop(taskType, params = {}, requestedBy = 'claud
   }
 
   return { success: false, message: 'Verify Loop 종료', attempts: MAX_RETRY, verified: false };
+}
+
+async function executeWithVerifyLoop(taskType, params = {}, requestedBy = 'claude-commander') {
+  const start = Date.now();
+  try {
+    const result = await executeWithVerifyLoopCore(taskType, params, requestedBy);
+    await writeClaudeHeartbeat('doctor', result?.success ? 'ok' : 'error', {
+      cycle: 'executeWithVerifyLoop',
+      taskType,
+      requestedBy,
+      durationMs: Date.now() - start,
+      attempts: result?.attempts ?? null,
+      verified: result?.verified ?? null,
+      success: Boolean(result?.success),
+      message: result?.success ? undefined : String(result?.message || '').slice(0, 500),
+    });
+    return result;
+  } catch (error) {
+    await writeClaudeHeartbeat('doctor', 'error', errorHeartbeatMeta(error, {
+      cycle: 'executeWithVerifyLoop',
+      taskType,
+      requestedBy,
+      durationMs: Date.now() - start,
+    }));
+    throw error;
+  }
 }
 
 async function _logVerifyLoop(taskType, params, requestedBy, attempts, executed, verified, errorMsg) {

@@ -58,6 +58,10 @@ function makeCommanderMocks(overrides = {}) {
       markDone:  async () => {},
       markError: async () => {},
     },
+    '../lib/agent-heartbeat': {
+      writeClaudeHeartbeat: async () => ({ ok: true }),
+      errorHeartbeatMeta: (error, meta = {}) => ({ ...meta, message: error?.message || String(error) }),
+    },
     '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async () => {},
     },

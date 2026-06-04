@@ -28,6 +28,7 @@ const skills        = require('../../../packages/core/lib/skills');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env           = require('../../../packages/core/lib/env');
 const reviewer      = require('./reviewer');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const ROOT         = env.PROJECT_ROOT;
 
@@ -262,7 +263,7 @@ function layer6_networkAudit(options = {}) {
 
 // ─── 종합 보안 스캔 ────────────────────────────────────────────────────
 
-async function runFullSecurityScan(options = {}) {
+async function runFullSecurityScanCore(options = {}) {
   const enabled  = process.env.CLAUDE_GUARDIAN_ENABLED === 'true';
   const testMode = Boolean(options.test) || process.argv.includes('--test');
   const rootDir = resolveRootDir(options);
@@ -324,6 +325,31 @@ async function runFullSecurityScan(options = {}) {
     message,
     pass: payload.critical.length === 0 && payload.high.length === 0,
   };
+}
+
+async function runFullSecurityScan(options = {}) {
+  const start = Date.now();
+  try {
+    const result = await runFullSecurityScanCore(options);
+    await writeClaudeHeartbeat('guardian', 'ok', {
+      durationMs: Date.now() - start,
+      skipped: Boolean(result?.message?.includes('Kill Switch OFF')),
+      files: Number(result?.files?.length || 0),
+      pass: result?.pass !== false,
+      critical: Number(result?.critical?.length || 0),
+      high: Number(result?.high?.length || 0),
+      forced: Boolean(options.force),
+      test: Boolean(options.test),
+    });
+    return result;
+  } catch (error) {
+    await writeClaudeHeartbeat('guardian', 'error', errorHeartbeatMeta(error, {
+      durationMs: Date.now() - start,
+      forced: Boolean(options.force),
+      test: Boolean(options.test),
+    }));
+    throw error;
+  }
 }
 
 // ─── 리포트 포맷 ──────────────────────────────────────────────────────
