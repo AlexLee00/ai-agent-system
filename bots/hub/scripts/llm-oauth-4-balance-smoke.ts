@@ -214,6 +214,11 @@ function main(): void {
     ['openai-oauth', 'groq'],
     'darwin.evaluator must avoid Groq primary during Groq pool/cooldown pressure',
   );
+  assert.equal(
+    darwinEvaluatorChain[1]?.model,
+    'llama-3.1-8b-instant',
+    'darwin.evaluator Groq fallback must avoid qwen/qwen3-32b capacity hotspots',
+  );
 
   const darwinQueryPlannerChain = selector.selectLLMChain('darwin.agent_policy', {
     ...selectorOptions,
@@ -224,6 +229,11 @@ function main(): void {
     ['openai-oauth', 'groq'],
     'darwin.rag.query_planner must not depend on gemini-cli-oauth as a single route',
   );
+  assert.equal(
+    darwinQueryPlannerChain[1]?.model,
+    'llama-3.1-8b-instant',
+    'darwin.rag.query_planner Groq fallback must avoid qwen/qwen3-32b capacity hotspots',
+  );
 
   const darwinSynthesisChain = selector.selectLLMChain('darwin.agent_policy', {
     ...selectorOptions,
@@ -233,6 +243,11 @@ function main(): void {
     darwinSynthesisChain.map((entry: any) => entry.provider),
     ['openai-oauth', 'groq'],
     'darwin.rag.synthesizer must not be Groq-only during Groq pool cooldown',
+  );
+  assert.equal(
+    darwinSynthesisChain[1]?.model,
+    'llama-3.1-8b-instant',
+    'darwin.rag.synthesizer Groq fallback must avoid qwen/qwen3-32b capacity hotspots',
   );
 
   const { PROFILES } = require('../lib/runtime-profiles.ts');
