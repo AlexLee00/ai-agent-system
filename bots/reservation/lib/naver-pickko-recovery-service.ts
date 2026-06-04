@@ -10,13 +10,20 @@ export type CreateNaverPickkoRecoveryServiceDeps = {
   getReservation: (id: string) => Promise<any>;
   findReservationByCompositeKey: (key: string) => Promise<any>;
   findReservationBySlot: (phone: string, date: string, start: string, room: string) => Promise<any>;
-  getReservationsBySlot: (phone: string, date: string, start: string, room: string) => Promise<any[]>;
+  getReservationsBySlot: (
+    phone: string,
+    date: string,
+    start: string,
+    room: string,
+    end?: string | null,
+  ) => Promise<any[]>;
   hideDuplicateReservationsForSlot: (
     canonicalId: string,
     phone: string,
     date: string,
     start: string,
     room: string,
+    end?: string | null,
   ) => Promise<number>;
   updateReservation: (id: string, patch: Record<string, any>) => Promise<any>;
   markSeen: (id: string) => Promise<any>;
@@ -92,6 +99,7 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
       booking.date,
       booking.start,
       booking.room,
+      booking.end,
     ).catch(() => []);
 
     if (!Array.isArray(slotRows) || slotRows.length <= 1) {
@@ -106,6 +114,7 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
           booking.date,
           booking.start,
           booking.room,
+          booking.end,
         ).catch(() => 0)
       : 0;
 
@@ -133,12 +142,14 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
       booking.date,
       booking.start,
       booking.room,
+      booking.end,
     ).catch(() => []);
 
     const peerCompleted = Array.isArray(slotRows) && slotRows.some((row) =>
       String(row.id) !== String(bookingId) &&
       row.status === 'completed' &&
-      ['paid', 'manual', 'manual_retry', 'verified'].includes(row.pickkoStatus),
+      ['paid', 'manual', 'manual_retry', 'verified'].includes(row.pickkoStatus) &&
+      String(row.end || row.end_time || '') === String(booking.end || ''),
     );
 
     if (!peerCompleted) return false;

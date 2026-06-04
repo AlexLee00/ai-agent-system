@@ -99,6 +99,7 @@ async function reconcileSlotDuplicatesAfterPayScan(entry: any) {
     entry.date,
     entry.start,
     entry.room,
+    entry.end,
   ).catch(() => []);
 
   if (!Array.isArray(slotRows) || slotRows.length <= 1) {
@@ -113,6 +114,7 @@ async function reconcileSlotDuplicatesAfterPayScan(entry: any) {
         entry.date,
         entry.start,
         entry.room,
+        entry.end,
       ).catch(() => 0)
     : 0;
 

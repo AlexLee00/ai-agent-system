@@ -235,7 +235,7 @@ async function findReservationBySlot(phone, date, start, room = null) {
   return row ? _decryptRow(row) : null;
 }
 
-async function getReservationsBySlot(phone, date, start, room = null) {
+async function getReservationsBySlot(phone, date, start, room = null, end = null) {
   const normalizedPhone = String(phone || '').replace(/\D+/g, '');
   const rows = await pgPool.query(
     SCHEMA,
@@ -246,14 +246,15 @@ async function getReservationsBySlot(phone, date, start, room = null) {
         AND date = $2
         AND start_time = $3
         AND ($4::text IS NULL OR room = $4)
+        AND ($5::text IS NULL OR end_time = $5)
       ORDER BY updated_at DESC NULLS LAST, id DESC
     `,
-    [normalizedPhone, date, start, room || null],
+    [normalizedPhone, date, start, room || null, end || null],
   );
   return rows.map(_decryptRow);
 }
 
-async function hideDuplicateReservationsForSlot(canonicalId, phone, date, start, room = null) {
+async function hideDuplicateReservationsForSlot(canonicalId, phone, date, start, room = null, end = null) {
   const normalizedPhone = String(phone || '').replace(/\D+/g, '');
   const result = await pgPool.run(
     SCHEMA,
@@ -267,9 +268,10 @@ async function hideDuplicateReservationsForSlot(canonicalId, phone, date, start,
         AND date = $3
         AND start_time = $4
         AND ($5::text IS NULL OR room = $5)
+        AND ($6::text IS NULL OR end_time = $6)
         AND seen_only = 0
     `,
-    [String(canonicalId), normalizedPhone, date, start, room || null],
+    [String(canonicalId), normalizedPhone, date, start, room || null, end || null],
   );
   return result.rowCount;
 }
