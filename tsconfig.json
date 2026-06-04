@@ -55,7 +55,6 @@
     "bots/hub/lib/routes/logs.ts",
     "bots/hub/lib/routes/events.ts",
     "bots/hub/lib/routes/pg.ts",
-    "bots/hub/lib/routes/n8n.ts",
     "bots/hub/lib/routes/secrets.ts",
     "bots/hub/lib/routes/services.ts",
     "bots/hub/lib/routes/agents.ts",
