@@ -8,6 +8,7 @@
 process.env.PG_DIRECT = process.env.PG_DIRECT || 'true';
 
 const pipeline = require('../lib/auto-dev-pipeline');
+const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const args = process.argv.slice(2);
 const once = args.includes('--once');
@@ -24,6 +25,13 @@ const profile = profileArg
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function writeRunnerHeartbeat(status = 'ok', meta = {}) {
+  await writeClaudeHeartbeat('auto-dev', status, {
+    source: 'auto-dev-runner',
+    ...meta,
+  });
 }
 
 async function runOnce() {
@@ -45,16 +53,35 @@ async function runOnce() {
 
 async function main() {
   const runtime = pipeline.resolveAutoDevRuntimeConfig({ profile, test, dryRun });
+  await writeRunnerHeartbeat('ok', {
+    stage: 'runtime_resolved',
+    profile: runtime.profile,
+    enabled: runtime.enabled,
+    hardDisabled: runtime.hardDisabled,
+  });
   if (runtime.hardDisabled) {
     console.log(`[auto-dev] Hard Kill Switch ON — ${runtime.disabledReason || 'CLAUDE_AUTO_DEV_DISABLED'}`);
+    await writeRunnerHeartbeat('ok', {
+      stage: 'hard_disabled',
+      profile: runtime.profile,
+      disabledReason: runtime.disabledReason || 'CLAUDE_AUTO_DEV_DISABLED',
+    });
     return;
   }
   const enabled = runtime.enabled || once || test;
   if (!enabled) {
     console.log(`[auto-dev] Kill Switch OFF — CLAUDE_AUTO_DEV_PROFILE=${runtime.profile} enabled=false`);
+    await writeRunnerHeartbeat('ok', {
+      stage: 'disabled_idle',
+      profile: runtime.profile,
+    });
     if (process.env.CLAUDE_AUTO_DEV_DISABLED_IDLE === 'true') {
       const idleMs = Number(process.env.CLAUDE_AUTO_DEV_DISABLED_IDLE_MS || 10 * 60 * 1000);
       while (true) {
+        await writeRunnerHeartbeat('ok', {
+          stage: 'disabled_idle',
+          profile: runtime.profile,
+        });
         await sleep(idleMs);
       }
     }
@@ -70,12 +97,24 @@ async function main() {
   console.log(`[auto-dev] 시작 — docs/auto_dev 감시 (${intervalMs}ms, profile=${runtime.profile})`);
 
   while (true) {
-    await runOnce();
+    await writeRunnerHeartbeat('ok', {
+      stage: 'polling',
+      profile: runtime.profile,
+    });
+    const result = await runOnce();
+    await writeRunnerHeartbeat(result.ok ? 'ok' : 'error', {
+      stage: 'cycle_complete',
+      profile: runtime.profile,
+      count: result.count,
+      failedCount: result.failedCount,
+      skippedCount: result.skippedCount,
+    });
     await sleep(intervalMs);
   }
 }
 
 main().catch(error => {
   console.error('[auto-dev] Fatal:', error.message);
-  process.exit(1);
+  writeRunnerHeartbeat('error', errorHeartbeatMeta(error, { stage: 'fatal' }))
+    .finally(() => process.exit(1));
 });

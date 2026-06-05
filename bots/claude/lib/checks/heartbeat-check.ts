@@ -15,6 +15,21 @@ const AGENT_THRESHOLDS = {
   'andy': { label: '스카팀 andy heartbeat', warnMinutes: 20, errorMinutes: 45 },
 };
 
+const OPERATIONALLY_QUIET_CLAUDE_AGENTS = {
+  'claude-archer': {
+    launchdLabel: 'ai.claude.archer',
+    reason: 'on-demand intelligence agent',
+  },
+  'claude-guardian': {
+    launchdLabel: 'ai.claude.guardian',
+    reason: 'on-demand review gate',
+  },
+  'claude-reviewer': {
+    launchdLabel: 'ai.claude.reviewer',
+    reason: 'on-demand review gate',
+  },
+};
+
 function resolveStatus(ageMinutes, warnMinutes, errorMinutes) {
   if (ageMinutes >= errorMinutes) return 'error';
   if (ageMinutes >= warnMinutes) return 'warn';
@@ -111,6 +126,21 @@ function softenRetiredLunaCryptoHeartbeatIfReplacementHealthy(item) {
   };
 }
 
+function softenQuietClaudeHeartbeatIfLaunchdHealthy(item, agentName) {
+  const quietPolicy = OPERATIONALLY_QUIET_CLAUDE_AGENTS[agentName];
+  if (!quietPolicy) return item;
+
+  const launchdStatus = getLaunchdStatus(quietPolicy.launchdLabel);
+  if (!isHealthyLaunchdStatus(launchdStatus)) return item;
+
+  const stateLabel = launchdStatus.state || (launchdStatus.lastExitCode === 0 ? 'loaded' : 'unknown');
+  return {
+    ...item,
+    status: 'ok',
+    detail: `${item.detail} | operationally quiet: ${quietPolicy.reason}; ${quietPolicy.launchdLabel} ${stateLabel}`,
+  };
+}
+
 async function run() {
   const items = [];
   let rows = [];
@@ -148,6 +178,10 @@ async function run() {
 
     if (row.agent_name === 'luna-crypto' && status !== 'ok') {
       item = softenRetiredLunaCryptoHeartbeatIfReplacementHealthy(item);
+    }
+
+    if (status !== 'ok') {
+      item = softenQuietClaudeHeartbeatIfLaunchdHealthy(item, row.agent_name);
     }
 
     items.push(item);

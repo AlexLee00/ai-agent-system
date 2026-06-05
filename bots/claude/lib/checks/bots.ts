@@ -78,6 +78,7 @@ function isAllowedNodeCommand(command = '') {
     'node_modules/.bin/next start',
     'scripts/telegram-callback-poller.js',
     'bots/hub/src/hub.ts',
+    'bots/claude/scripts/auto-dev-runner.ts',
     'bots/claude/src/dexter.js',
     'bots/claude/src/dexter-quickcheck.js',
     'bots/claude/src/claude-commander.js',

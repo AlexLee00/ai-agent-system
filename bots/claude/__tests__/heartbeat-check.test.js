@@ -25,8 +25,34 @@ async function test_retired_luna_crypto_softening_exists() {
   console.log('✅ heartbeat-check: retired luna-crypto heartbeat softening present');
 }
 
+async function test_quiet_claude_agent_softening_exists() {
+  assert.ok(
+    SOURCE.includes('softenQuietClaudeHeartbeatIfLaunchdHealthy'),
+    'quiet Claude heartbeat softening helper exists',
+  );
+  assert.ok(
+    SOURCE.includes('OPERATIONALLY_QUIET_CLAUDE_AGENTS'),
+    'quiet Claude heartbeat policy map exists',
+  );
+  for (const label of [
+    'ai.claude.archer',
+    'ai.claude.guardian',
+    'ai.claude.reviewer',
+  ]) {
+    assert.ok(SOURCE.includes(label), `quiet Claude launchd mapping exists: ${label}`);
+  }
+  assert.ok(
+    SOURCE.includes('operationally quiet'),
+    'quiet Claude heartbeat detail explains operationally quiet state',
+  );
+  console.log('✅ heartbeat-check: quiet Claude heartbeat softening present');
+}
+
 async function main() {
-  const tests = [test_retired_luna_crypto_softening_exists];
+  const tests = [
+    test_retired_luna_crypto_softening_exists,
+    test_quiet_claude_agent_softening_exists,
+  ];
   let passed = 0;
 
   for (const testFn of tests) {
