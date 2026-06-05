@@ -6,6 +6,38 @@
 	<dict>
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
+		<key>JAY_3TIER_TELEGRAM</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_BOT_QUEUE_ENABLED</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_DISPATCH</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_ENABLED</key>
+		<string>true</string>
+		<key>JAY_GROWTH_DISABLED_REASON</key>
+		<string>master_decision:growth_pod_not_cutover</string>
+		<key>JAY_GROWTH_ENABLED</key>
+		<string>false</string>
+		<key>JAY_HUB_PLAN_INTEGRATION</key>
+		<string>true</string>
+		<key>JAY_INCIDENT_STORE_ENABLED</key>
+		<string>true</string>
+		<key>JAY_LLM_DAILY_BUDGET_USD</key>
+		<string>5.0</string>
+		<key>JAY_SKILL_EXTRACTION</key>
+		<string>true</string>
+		<key>JAY_SYMPHONY_CANARY_PERCENT</key>
+		<string>0</string>
+		<key>JAY_SYMPHONY_CUTOVER_MODE</key>
+		<string>shadow</string>
+		<key>JAY_SYMPHONY_FORCE_COMMANDER</key>
+		<string>true</string>
+		<key>JAY_SYMPHONY_LIVE_SENSITIVE_BLOCK</key>
+		<string>true</string>
+		<key>JAY_SYMPHONY_SHADOW_TEAMS</key>
+		<string>claude</string>
+		<key>JAY_TEAM_BUS_ENABLED</key>
+		<string>true</string>
 		<key>MODE</key>
 		<string>ops</string>
 		<key>NODE_ENV</key>
@@ -14,28 +46,6 @@
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 		<key>PG_DIRECT</key>
 		<string>true</string>
-		<key>JAY_INCIDENT_STORE_ENABLED</key>
-		<string>true</string>
-		<key>JAY_HUB_PLAN_INTEGRATION</key>
-		<string>true</string>
-		<key>JAY_COMMANDER_ENABLED</key>
-		<string>true</string>
-		<key>JAY_COMMANDER_DISPATCH</key>
-		<string>true</string>
-		<key>JAY_TEAM_BUS_ENABLED</key>
-		<string>true</string>
-		<key>JAY_COMMANDER_BOT_QUEUE_ENABLED</key>
-		<string>true</string>
-		<key>JAY_3TIER_TELEGRAM</key>
-		<string>true</string>
-		<key>JAY_SKILL_EXTRACTION</key>
-		<string>true</string>
-		<key>JAY_GROWTH_ENABLED</key>
-		<string>false</string>
-		<key>JAY_GROWTH_DISABLED_REASON</key>
-		<string>master_decision:growth_pod_not_cutover</string>
-		<key>JAY_LLM_DAILY_BUDGET_USD</key>
-		<string>5.0</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
