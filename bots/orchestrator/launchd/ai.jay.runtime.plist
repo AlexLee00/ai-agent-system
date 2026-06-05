@@ -35,7 +35,7 @@
 		<key>JAY_SYMPHONY_LIVE_SENSITIVE_BLOCK</key>
 		<string>true</string>
 		<key>JAY_SYMPHONY_SHADOW_TEAMS</key>
-		<string>claude</string>
+		<string>claude,darwin,blog,ska,sigma,jay</string>
 		<key>JAY_TEAM_BUS_ENABLED</key>
 		<string>true</string>
 		<key>MODE</key>
