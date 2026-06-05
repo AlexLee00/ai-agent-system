@@ -36,6 +36,9 @@ const {
   queueCommanderTask,
   dispatchCommanderQueue,
 } = require('../../hub/lib/control/commander-dispatcher');
+const {
+  buildSymphonyCutoverShadowReports,
+} = require('../lib/jay-symphony-cutover-shadow');
 
 /**
  * Jay runtime
@@ -367,6 +370,15 @@ async function dispatchMutatingPlanSteps(input) {
   const steps = extractPlanSteps(plan).filter(isCommanderDelegatedStep);
   if (!steps.length) return { ok: true, dispatched: false, count: 0 };
 
+  await recordSymphonyCutoverShadow({
+    incident,
+    plan,
+    steps,
+    goal,
+  }).catch((error) => warnNonBlocking('symphony_cutover_shadow_record', error, {
+    incidentKey,
+  }));
+
   if (!flags.teamBusEnabled || !flags.commanderDispatch || !flags.commanderEnabled) {
     return {
       ok: false,
@@ -421,6 +433,24 @@ async function dispatchMutatingPlanSteps(input) {
     count: steps.length,
     dispatch,
   };
+}
+
+async function recordSymphonyCutoverShadow(input = {}) {
+  const incidentKey = normalizeText(input?.incident?.incidentKey, '');
+  const reports = buildSymphonyCutoverShadowReports(input);
+  if (!incidentKey || reports.length === 0) {
+    return { ok: true, count: 0, skipped: true };
+  }
+  for (const report of reports) {
+    // Shadow events are audit-only. Legacy commander remains source-of-truth.
+    // eslint-disable-next-line no-await-in-loop
+    await appendIncidentEvent({
+      incidentKey,
+      eventType: 'symphony_cutover_shadow_decision',
+      payload: report,
+    });
+  }
+  return { ok: true, count: reports.length };
 }
 
 async function processIncident(incident, flags) {
@@ -814,6 +844,7 @@ module.exports = {
     maxObservationReplans,
     isRetryableObservation,
     dispatchMutatingPlanSteps,
+    recordSymphonyCutoverShadow,
     normalizeTopicTeam,
     splitMessage,
     isPidAlive,

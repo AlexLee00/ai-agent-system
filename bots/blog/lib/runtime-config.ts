@@ -18,9 +18,9 @@ const DEFAULTS = {
     posMinChars: 7000,
     continueMaxTokens: 8000,
     writerMaxRetries: 1,
-    writerTimeoutMs: 90000,
-    continueTimeoutMs: 90000,
-    chunkTimeoutMs: 120000,
+    writerTimeoutMs: 600000,
+    continueTimeoutMs: 600000,
+    chunkTimeoutMs: 600000,
   },
   competition: {
     enabled: false,

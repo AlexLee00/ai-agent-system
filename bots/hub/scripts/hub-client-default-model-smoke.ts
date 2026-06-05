@@ -39,16 +39,37 @@ async function main() {
     await callHubLlm({ callerTeam: 'smoke', agent: 'default', prompt: 'default model smoke' });
     await callHubLlm({ callerTeam: 'smoke', agent: 'default', prompt: 'unknown model smoke', abstractModel: 'unexpected-model' });
     await callHubLlm({ callerTeam: 'smoke', agent: 'default', prompt: 'explicit sonnet smoke', abstractModel: 'claude-code/sonnet' });
+    await callHubLlm({ callerTeam: 'smoke', agent: 'default', prompt: 'timeout clamp smoke', timeoutMs: 600_000 });
+    await callHubLlm({
+      callerTeam: 'blog',
+      agent: 'pos',
+      selectorKey: 'blog.pos.writer',
+      prompt: 'long blog writer timeout smoke',
+      timeoutMs: 600_000,
+    });
+    await callHubLlm({
+      callerTeam: 'luna',
+      agent: 'risk',
+      selectorKey: 'blog.pos.writer',
+      prompt: 'non-blog selector timeout clamp smoke',
+      timeoutMs: 600_000,
+    });
 
     assert.equal(capturedBodies[0]?.abstractModel, 'anthropic_haiku', 'missing abstractModel must default to Haiku, not Sonnet');
     assert.equal(capturedBodies[1]?.abstractModel, 'anthropic_haiku', 'unknown abstractModel must downgrade to Haiku');
     assert.equal(capturedBodies[2]?.abstractModel, 'anthropic_sonnet', 'explicit Sonnet request should still be preserved');
+    assert.equal(capturedBodies[3]?.timeoutMs, 180_000, 'non-blog LLM calls must stay capped at 180s');
+    assert.equal(capturedBodies[4]?.timeoutMs, 600_000, 'blog writer LLM calls must preserve long batch timeout');
+    assert.equal(capturedBodies[5]?.timeoutMs, 180_000, 'non-blog calls must not bypass timeout cap with blog writer selector');
 
     console.log(JSON.stringify({
       ok: true,
       default_abstract_model: capturedBodies[0]?.abstractModel,
       unknown_abstract_model: capturedBodies[1]?.abstractModel,
       explicit_sonnet_preserved: capturedBodies[2]?.abstractModel === 'anthropic_sonnet',
+      non_blog_timeout_ms: capturedBodies[3]?.timeoutMs,
+      blog_writer_timeout_ms: capturedBodies[4]?.timeoutMs,
+      non_blog_blog_selector_timeout_ms: capturedBodies[5]?.timeoutMs,
     }));
   } finally {
     global.fetch = originalFetch;

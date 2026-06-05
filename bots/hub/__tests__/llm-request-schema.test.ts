@@ -32,4 +32,42 @@ describe('hub llm request schema', () => {
     });
     expect(parsed.ok).toBe(false);
   });
+
+  test('accepts long timeout for blog writer batch work', () => {
+    const parsed = parseLlmCallPayload({
+      prompt: 'write a long lecture draft',
+      abstractModel: 'anthropic_sonnet',
+      timeoutMs: 600000,
+      callerTeam: 'blog',
+      agent: 'pos',
+      selectorKey: 'blog.pos.writer',
+    });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.timeoutMs).toBe(600000);
+  });
+
+  test('keeps non-blog llm timeout capped at 180 seconds', () => {
+    const parsed = parseLlmCallPayload({
+      prompt: 'risk check',
+      abstractModel: 'anthropic_sonnet',
+      timeoutMs: 600000,
+      callerTeam: 'luna',
+      agent: 'risk',
+    });
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error.details.fieldErrors.timeoutMs[0]).toContain('180000');
+  });
+
+  test('does not allow non-blog callers to bypass timeout cap with blog selector', () => {
+    const parsed = parseLlmCallPayload({
+      prompt: 'risk check',
+      abstractModel: 'anthropic_sonnet',
+      timeoutMs: 600000,
+      callerTeam: 'luna',
+      agent: 'risk',
+      selectorKey: 'blog.pos.writer',
+    });
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error.details.fieldErrors.timeoutMs[0]).toContain('180000');
+  });
 });

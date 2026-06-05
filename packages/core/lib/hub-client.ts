@@ -512,9 +512,7 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
   if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub LLM call');
 
   const requestedTimeoutMs = Math.max(1000, Number(request.timeoutMs || 30000) || 30000);
-  // Hub route validation currently caps timeoutMs at 180s, so clamp here
-  // to avoid rejecting otherwise valid writer calls that request a longer wait.
-  const timeoutMs = Math.min(requestedTimeoutMs, 180_000);
+  const timeoutMs = Math.min(requestedTimeoutMs, resolveHubLlmMaxTimeoutMs(request));
   const abstractModel = normalizeHubAbstractModel(request.abstractModel || 'claude_code_haiku');
   const payload = {
     ...request,
@@ -593,6 +591,21 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
   } finally {
     clearTimeout(timer);
   }
+}
+
+function resolveHubLlmMaxTimeoutMs(request: HubLlmCallRequest): number {
+  return isLongRunningBlogWriterRequest(request) ? 600_000 : 180_000;
+}
+
+function isLongRunningBlogWriterRequest(request: HubLlmCallRequest): boolean {
+  const callerTeam = String(request?.callerTeam || '').trim().toLowerCase();
+  const selectorKey = String(request?.selectorKey || '').trim().toLowerCase();
+  const agent = String(request?.agent || '').trim().toLowerCase();
+  if (callerTeam !== 'blog') return false;
+  return selectorKey === 'blog.pos.writer'
+    || selectorKey === 'blog.gems.writer'
+    || agent === 'pos'
+    || agent === 'gems';
 }
 
 export async function callHubVision(request: HubVisionRequest): Promise<HubLlmCallResponse> {
