@@ -936,7 +936,7 @@ async function checkClaudeCodeOAuth() {
 
   if (expires <= alarmHours) {
     const level = expires <= criticalHours ? 3 : 2;
-    console.warn(`[oauth-monitor] Claude OAuth 갱신 필요: ${expires.toFixed(1)}h 후 만료`);
+    console.log(`[oauth-monitor] Claude OAuth 갱신 필요: ${expires.toFixed(1)}h 후 만료`);
     await sendOAuthAlarm({
       level,
       title: '[Hub OAuth] Claude Code OAuth 재인증 예정',
@@ -1027,7 +1027,7 @@ async function checkOpenAiCodexOAuth() {
     const refreshHint = refresh?.error === 'oauth_flow_disabled'
       ? ` Hub OpenAI Codex OAuth refresh 설정이 비활성/누락되어 자동 refresh는 수행되지 않았습니다. missing=${missingRefreshConfig.join(',') || 'unknown'}. Codex auth.json 재동기화 결과 reimport_ok=${reimport?.ok === true}. 공식 OpenAI API 인증은 API key Bearer 방식이며, Codex ChatGPT OAuth 무인 refresh는 OAuth client 설정 또는 codex login 재인증이 필요합니다.`
       : '';
-    console.warn(`[oauth-monitor] OpenAI OAuth 갱신 필요: ${Number(finalHours).toFixed(1)}h 후 만료`);
+    console.log(`[oauth-monitor] OpenAI OAuth 갱신 필요: ${Number(finalHours).toFixed(1)}h 후 만료`);
     await sendOAuthAlarm({
       level,
       title: manualReauthRequired ? '[Hub OAuth] OpenAI Codex OAuth 수동 재인증 필요' : '[Hub OAuth] OpenAI Codex OAuth 재인증 예정',

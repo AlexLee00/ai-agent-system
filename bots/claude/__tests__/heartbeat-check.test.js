@@ -38,6 +38,7 @@ async function test_quiet_claude_agent_softening_exists() {
     'ai.claude.archer',
     'ai.claude.guardian',
     'ai.claude.reviewer',
+    'ai.claude.refactor-cycle',
   ]) {
     assert.ok(SOURCE.includes(label), `quiet Claude launchd mapping exists: ${label}`);
   }

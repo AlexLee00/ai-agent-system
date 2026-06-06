@@ -28,6 +28,11 @@ const OPERATIONALLY_QUIET_CLAUDE_AGENTS = {
     launchdLabel: 'ai.claude.reviewer',
     reason: 'on-demand review gate',
   },
+  'claude-refactorer': {
+    launchdLabel: 'ai.claude.refactor-cycle',
+    reason: 'scheduled shadow refactor cycle',
+    allowIdle: true,
+  },
 };
 
 function resolveStatus(ageMinutes, warnMinutes, errorMinutes) {
@@ -105,9 +110,12 @@ function getLaunchdStatus(label) {
   }
 }
 
-function isHealthyLaunchdStatus(status) {
+function isHealthyLaunchdStatus(status, options = {}) {
   if (!status) return false;
   if (status.state === 'running' || status.state === 'xpcproxy') return true;
+  if (options.allowIdle && (status.state === 'not running' || status.state === 'loaded')) {
+    return !Number.isFinite(status.lastExitCode) || status.lastExitCode === 0;
+  }
   return Number.isFinite(status.lastExitCode) && status.lastExitCode === 0;
 }
 
@@ -131,7 +139,7 @@ function softenQuietClaudeHeartbeatIfLaunchdHealthy(item, agentName) {
   if (!quietPolicy) return item;
 
   const launchdStatus = getLaunchdStatus(quietPolicy.launchdLabel);
-  if (!isHealthyLaunchdStatus(launchdStatus)) return item;
+  if (!isHealthyLaunchdStatus(launchdStatus, { allowIdle: quietPolicy.allowIdle })) return item;
 
   const stateLabel = launchdStatus.state || (launchdStatus.lastExitCode === 0 ? 'loaded' : 'unknown');
   return {

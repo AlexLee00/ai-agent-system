@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
+const DEFAULT_RETENTION_DAYS = 14;
 
 function hasFlag(flag) {
   return process.argv.includes(flag);
@@ -19,10 +20,19 @@ function argValue(name) {
   return raw ? raw.slice(prefix.length) : null;
 }
 
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function sha256(filePath) {
-  const hash = crypto.createHash('sha256');
-  hash.update(fs.readFileSync(filePath));
-  return hash.digest('hex');
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
 }
 
 function run(command, args, options = {}) {
@@ -40,9 +50,50 @@ function run(command, args, options = {}) {
   };
 }
 
+function isBackupRunDirName(name) {
+  return /^\d{8}T\d{6}Z$/.test(String(name || ''));
+}
+
+function isHubStageDBackupDir(dirPath) {
+  const manifestPath = path.join(dirPath, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return false;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    return manifest?.stage === 'hub_stage_d' && manifest?.task === 'D4_daily_backup';
+  } catch {
+    return false;
+  }
+}
+
+function pruneOldBackups(backupDir, currentRunDir, retentionDays) {
+  if (hasFlag('--no-prune')) return { enabled: false, retentionDays, removed: [] };
+  const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const current = path.resolve(currentRunDir);
+  const removed = [];
+
+  if (!fs.existsSync(backupDir)) return { enabled: true, retentionDays, removed };
+
+  for (const entry of fs.readdirSync(backupDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !isBackupRunDirName(entry.name)) continue;
+    const dirPath = path.resolve(backupDir, entry.name);
+    if (dirPath === current) continue;
+    if (!isHubStageDBackupDir(dirPath)) continue;
+    const stat = fs.statSync(dirPath);
+    if (stat.mtimeMs > cutoffMs) continue;
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    removed.push({ path: dirPath, mtime: stat.mtime.toISOString() });
+  }
+
+  return { enabled: true, retentionDays, removed };
+}
+
 function buildPlan() {
   const database = process.env.PGDATABASE || process.env.POSTGRES_DB || 'jay';
   const backupDir = argValue('--backup-dir') || process.env.HUB_STAGE_D_BACKUP_DIR || DEFAULT_BACKUP_DIR;
+  const retentionDays = parsePositiveInt(
+    argValue('--retention-days') || process.env.HUB_STAGE_D_BACKUP_RETENTION_DAYS,
+    DEFAULT_RETENTION_DAYS,
+  );
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, 'Z');
   const runDir = path.join(backupDir, stamp);
   return {
@@ -53,6 +104,10 @@ function buildPlan() {
     database,
     backupDir,
     runDir,
+    retention: {
+      enabled: !hasFlag('--no-prune'),
+      days: retentionDays,
+    },
     files: {
       agentSchema: path.join(runDir, 'hub_agent_schema.sql'),
       routingLogSchema: path.join(runDir, 'hub_routing_log_schema.sql'),
@@ -73,9 +128,24 @@ function buildPlan() {
 async function main() {
   const json = hasFlag('--json');
   const planOnly = hasFlag('--plan');
+  const pruneOnly = hasFlag('--prune-only');
   const plan = buildPlan();
   if (planOnly) {
     console.log(JSON.stringify(plan, null, 2));
+    return;
+  }
+  if (pruneOnly) {
+    const prunedBackups = pruneOldBackups(plan.backupDir, plan.runDir, plan.retention.days);
+    const payload = {
+      ok: true,
+      stage: plan.stage,
+      task: plan.task,
+      mode: 'prune_only',
+      backupDir: plan.backupDir,
+      retention: plan.retention,
+      prunedBackups,
+    };
+    console.log(json ? JSON.stringify(payload, null, 2) : `[hub-stage-d-backup] pruned=${prunedBackups.removed.length}`);
     return;
   }
 
@@ -110,14 +180,16 @@ async function main() {
     secretsBackup = { ok: gpg.ok, status: gpg.ok ? 'encrypted' : 'gpg_failed', stderr: gpg.stderr };
   }
 
-  const files = Object.entries(plan.files)
-    .filter(([key, filePath]) => key !== 'manifest' && fs.existsSync(filePath))
-    .map(([key, filePath]) => ({
-      key,
-      path: filePath,
-      bytes: fs.statSync(filePath).size,
-      sha256: sha256(filePath),
-    }));
+  const files = await Promise.all(
+    Object.entries(plan.files)
+      .filter(([key, filePath]) => key !== 'manifest' && fs.existsSync(filePath))
+      .map(async ([key, filePath]) => ({
+        key,
+        path: filePath,
+        bytes: fs.statSync(filePath).size,
+        sha256: await sha256(filePath),
+      })),
+  );
 
   const manifest = {
     ...plan,
@@ -126,7 +198,11 @@ async function main() {
     commandResults: results,
     secretsBackup,
     artifacts: files,
+    prunedBackups: null,
   };
+  if (manifest.ok) {
+    manifest.prunedBackups = pruneOldBackups(plan.backupDir, plan.runDir, plan.retention.days);
+  }
   fs.writeFileSync(plan.files.manifest, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 
   if (json) {
