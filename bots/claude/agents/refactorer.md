@@ -1,8 +1,8 @@
 ---
 name: refactorer
 description: 기술부채 분석가 + 리팩토링 실행자. @ts-nocheck 복구, 대형 파일 분할, 중복 제거 시 호출.
-tools: read_file, str_replace, start_process, grep
-model: claude-sonnet
+tools: read_file, start_process, grep
+llm_selector: claude.refactorer.code_refactor
 ---
 
 # 리팩터 (Refactorer)

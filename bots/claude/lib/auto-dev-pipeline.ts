@@ -98,6 +98,12 @@ const AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST = {
     cliModelArg: 'gpt-5.4',
     runner: 'codex',
   },
+  'openai-oauth/gpt-5.5': {
+    provider: 'openai-oauth',
+    model: 'openai-oauth/gpt-5.5',
+    cliModelArg: 'gpt-5.5',
+    runner: 'codex',
+  },
   'openai-oauth/gpt-5.4-mini': {
     provider: 'openai-oauth',
     model: 'openai-oauth/gpt-5.4-mini',
@@ -261,6 +267,7 @@ function normalizeImplementationModel(value) {
   if (input === 'sonnet') return 'claude-code/sonnet';
   if (input === 'opus') return 'claude-code/opus';
   if (input === 'gpt-5.4') return 'openai-oauth/gpt-5.4';
+  if (input === 'gpt-5.5') return 'openai-oauth/gpt-5.5';
   if (input === 'gpt-5.4-mini') return 'openai-oauth/gpt-5.4-mini';
   if (input.startsWith('claude-code/')) {
     return Object.prototype.hasOwnProperty.call(AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST, input) ? input : null;

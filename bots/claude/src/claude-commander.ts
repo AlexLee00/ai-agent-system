@@ -96,6 +96,7 @@ const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 const TG_MAX_CHARS = 3500;
 const COMMANDER_CLAUDE_MODEL_ALLOWLIST = {
   'openai-oauth/gpt-5.4': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4', selectorKey: 'claude.lead.system_issue_triage' },
+  'openai-oauth/gpt-5.5': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.5', selectorKey: 'claude.lead.system_issue_triage' },
   'openai-oauth/gpt-5.4-mini': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4-mini', selectorKey: 'claude._default' },
   'claude-code/sonnet': { provider: 'claude-code', model: 'claude-code/sonnet', cliModelArg: 'sonnet' },
   'claude-code/opus': { provider: 'claude-code', model: 'claude-code/opus', cliModelArg: 'opus' },
@@ -193,6 +194,7 @@ function normalizeCommanderClaudeModel(value) {
   if (input === 'sonnet') return 'claude-code/sonnet';
   if (input === 'opus') return 'claude-code/opus';
   if (input === 'gpt-5.4') return 'openai-oauth/gpt-5.4';
+  if (input === 'gpt-5.5') return 'openai-oauth/gpt-5.5';
   if (input === 'gpt-5.4-mini') return 'openai-oauth/gpt-5.4-mini';
   if (input.startsWith('claude-code/')) {
     return Object.prototype.hasOwnProperty.call(COMMANDER_CLAUDE_MODEL_ALLOWLIST, input) ? input : null;

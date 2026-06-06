@@ -47,8 +47,10 @@ function configuredModel(name: string, fallback: string, providerPrefixes: strin
 
 const OPENAI_PERF_MODEL = configuredModel('LLM_OPENAI_PERF_MODEL', 'gpt-5.4', ['openai-oauth', 'openai']);
 const OPENAI_MINI_MODEL = configuredModel('LLM_OPENAI_MINI_MODEL', 'gpt-5.4-mini', ['openai-oauth', 'openai']);
+const OPENAI_OPUS_MODEL = configuredModel('LLM_OPENAI_OPUS_MODEL', 'gpt-5.5', ['openai-oauth', 'openai']);
 const GROQ_FAST_MODEL = configuredModel('LLM_GROQ_FAST_MODEL', 'llama-3.1-8b-instant', ['groq']);
 const GROQ_DEEP_MODEL = configuredModel('LLM_GROQ_DEEP_MODEL', 'qwen/qwen3-32b', ['groq']);
+const GROQ_SCOUT_MODEL = configuredModel('LLM_GROQ_SCOUT_MODEL', 'llama-4-scout-17b-16e-instruct', ['groq']);
 const GEMINI_CLI_FLASH_LITE_MODEL = configuredModel(
   'LLM_GEMINI_FLASH_LITE_MODEL',
   'gemini-2.5-flash-lite',
@@ -364,6 +366,13 @@ const CLAUDE_FIRST_WRITING_SELECTOR_KEYS = new Set([
   'blog.book_review.preview',
 ]);
 
+const CLAUDE_CODE_FALLBACK_SELECTOR_KEYS = new Set([
+  'claude.refactorer.code_refactor',
+  'claude.auto_dev.code_fix',
+  'claude.reviewer.code_review',
+  'claude.doctor.recovery',
+]);
+
 function providerOfEntry(entry: LLMChainEntry): string {
   const explicit = String(entry?.provider || '').trim();
   if (explicit === 'gemini-oauth') return 'gemini-cli-oauth';
@@ -485,7 +494,9 @@ function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {
 }
 
 function ensureOpenAiPrimary(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
-  const nonGemini = chain.filter((entry) => !isGeminiEntry(entry) && !isClaudeCodeEntry(entry));
+  const selectorKey = String(options.selectorKey || '');
+  const allowClaudeCodeFallback = CLAUDE_CODE_FALLBACK_SELECTOR_KEYS.has(selectorKey);
+  const nonGemini = chain.filter((entry) => !isGeminiEntry(entry) && (allowClaudeCodeFallback || !isClaudeCodeEntry(entry)));
   const existingOpenAi = nonGemini.find(isOpenAiEntry);
   const primary = existingOpenAi || openAiEntry(chain[0], entryMaxTokens(chain[0], 1024) > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
   const rest = nonGemini.filter((entry) => entry !== existingOpenAi && !(
@@ -659,11 +670,46 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
-    _fallback: {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1024, temperature: 0.1 },
+    'refactorer.code_refactor': {
+      primary: { provider: 'openai-oauth', model: OPENAI_OPUS_MODEL, maxTokens: 8192, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 1024, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 8192, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 4096, temperature: 0.1 },
+      ],
+    },
+    'auto_dev.code_fix': {
+      primary: { provider: 'openai-oauth', model: OPENAI_OPUS_MODEL, maxTokens: 8192, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 8192, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 4096, temperature: 0.1 },
+      ],
+    },
+    'reviewer.code_review': {
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 4096, temperature: 0.1 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.1 },
+      ],
+    },
+    'doctor.recovery': {
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 4096, temperature: 0.1 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.1 },
+      ],
+    },
+    'guardian.safety': {
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 2048, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 2048, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 1024, temperature: 0.1 },
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
@@ -941,31 +987,31 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
   },
   claude: {
     dexter: {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1500, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 1500, temperature: 0.2 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.2 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
     archer: {
-      primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 800, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 800, temperature: 0.1 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 800, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 4096, temperature: 0.3 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.2 },
       ],
     },
     lead: {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1500, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 1500, temperature: 0.1 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
     _fallback: {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 2000, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 2000, temperature: 0.2 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2000, temperature: 0.2 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 1024, temperature: 0.1 },
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1024, temperature: 0.1 },
       ],
     },
   },
@@ -1125,14 +1171,17 @@ function resolveTeamSelectorDefaults(version: TeamSelectorVersion): Record<strin
 
 const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
   claude: {
-    reviewer: 'claude._default',
-    guardian: 'claude.lead.system_issue_triage',
+    reviewer: 'claude.reviewer.code_review',
+    guardian: 'claude.guardian.safety',
     builder: 'claude._default',
     'quality-report': 'claude._default',
     dexter: 'claude.dexter.ai_analyst',
     archer: 'claude.archer.tech_analysis',
     lead: 'claude.lead.system_issue_triage',
     commander: 'claude.lead.system_issue_triage',
+    refactorer: 'claude.refactorer.code_refactor',
+    'auto-dev': 'claude.auto_dev.code_fix',
+    doctor: 'claude.doctor.recovery',
   },
   blog: {
     blo: 'blog._default',
@@ -1632,6 +1681,11 @@ function buildSelectorRegistry(): Record<string, any> {
     'claude.archer.tech_analysis': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.archer.tech_analysis', options),
     'claude.lead.system_issue_triage': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.lead.system_issue_triage', options),
     'claude.dexter.ai_analyst': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.dexter.ai_analyst', options),
+    'claude.refactorer.code_refactor': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.refactorer.code_refactor', options),
+    'claude.auto_dev.code_fix': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.auto_dev.code_fix', options),
+    'claude.reviewer.code_review': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.reviewer.code_review', options),
+    'claude.doctor.recovery': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.doctor.recovery', options),
+    'claude.guardian.safety': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.guardian.safety', options),
 
     'orchestrator.jay.intent': ({ intentPrimary, intentFallback }: SelectorOptions = {}) => ({
       primary: {
