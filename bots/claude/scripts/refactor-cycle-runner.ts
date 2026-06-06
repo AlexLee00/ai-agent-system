@@ -115,7 +115,8 @@ function resolveTarget(target = DEFAULT_TARGET) {
 
 function isProtectedTarget(relativePath = '') {
   const normalized = String(relativePath || '').replace(/\\/g, '/');
-  return PROTECTED_TARGET_FRAGMENTS.some((fragment) => normalized.includes(fragment));
+  const withSlash = normalized.endsWith('/') ? normalized : `${normalized}/`;
+  return PROTECTED_TARGET_FRAGMENTS.some((fragment) => normalized.includes(fragment) || withSlash.includes(fragment));
 }
 
 function safeRead(filePath, limit = 2_000_000) {

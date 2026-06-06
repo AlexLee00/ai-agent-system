@@ -20,6 +20,7 @@ async function test_protected_target_guard() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
   assert.strictEqual(runner.isProtectedTarget('bots/investment/markets/crypto.ts'), true);
+  assert.strictEqual(runner.isProtectedTarget('bots/investment/markets'), true);
   assert.strictEqual(runner.isProtectedTarget('bots/claude/src/reviewer.ts'), false);
   const outside = runner.resolveTarget('../outside-project');
   assert.strictEqual(outside.ok, false);
