@@ -85,7 +85,13 @@ const {
 } = require('../lib/routes/agents');
 const { llmDashboardRoute, llmCacheStatsRoute } = require('../lib/routes/llm-dashboard');
 const { llmHealthRoute, llmTierProbeRoute } = require('../lib/routes/llm-health');
-const { reserveBudgetRoute, budgetUsageRoute } = require('../lib/routes/budget');
+const {
+  reserveBudgetRoute,
+  budgetUsageRoute,
+  tokenBudgetCheckRoute,
+  tokenBudgetProfilesRoute,
+  tokenBudgetUsageRoute,
+} = require('../lib/routes/budget');
 const { metricsRoute, metricsJsonRoute } = require('../lib/metrics/prometheus-exporter');
 const {
   oauthStartRoute,
@@ -276,6 +282,9 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.post('/hub/llm/tier-probe', generalLimiter, llmTierProbeRoute);
   app.post('/hub/budget/reserve', generalLimiter, reserveBudgetRoute);
   app.get('/hub/budget/usage', generalLimiter, budgetUsageRoute);
+  app.post('/hub/budget/token/check', generalLimiter, tokenBudgetCheckRoute);
+  app.get('/hub/budget/token/profiles', generalLimiter, tokenBudgetProfilesRoute);
+  app.get('/hub/budget/token/usage', generalLimiter, tokenBudgetUsageRoute);
   app.get('/hub/metrics', generalLimiter, metricsRoute);
   app.get('/hub/metrics/json', generalLimiter, metricsJsonRoute);
 

@@ -28,6 +28,7 @@ type HubLlmCallRequest = {
   maxTokens?: number;
   temperature?: number;
   maxBudgetUsd?: number;
+  tokenBudgetProfile?: string;
   preferredApi?: string;
   groqModel?: string;
   configuredProviders?: string[];

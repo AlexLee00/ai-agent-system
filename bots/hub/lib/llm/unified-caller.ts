@@ -23,6 +23,12 @@ const rag = require('../../../../packages/core/lib/rag');
 const { resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
 const providerRegistry = require('./provider-registry');
 const sender = require('../../../../packages/core/lib/telegram-sender');
+const {
+  applyTokenBudgetToFallbackChain,
+  estimateCostUsd,
+  recordTokenBudgetUsage,
+  resolveTokenBudget,
+} = require('../../../../packages/core/lib/token-budget');
 
 const CLAUDE_CODE_MODEL = {
   anthropic_haiku: 'haiku',
@@ -75,65 +81,71 @@ async function callWithFallback(req) {
 
 async function _callWithFallbackInternal(req) {
   const team = req.callerTeam || 'hub';
-  const estimatedCostUsd = _estimatedCostUsd(req);
-  req._estimatedCostUsd = estimatedCostUsd;
+  const tokenBudget = resolveTokenBudget(req);
+  req._tokenBudget = tokenBudget;
+  req.maxTokens = tokenBudget.maxOutputTokens;
+  req.timeoutMs = tokenBudget.timeoutMs;
+  req.maxBudgetUsd = tokenBudget.budgetCostUsd;
+  req.tokenBudgetProfile = tokenBudget.profileName;
+  req._estimatedCostUsd = _estimatedCostUsd(req);
 
-  // 0. Budget check
-  if (process.env.HUB_BUDGET_GUARDIAN_ENABLED !== 'false') {
-    try {
-      const { BudgetGuardian } = require('../budget-guardian');
-      const budgetCheck = BudgetGuardian.getInstance().checkAndReserve(team, estimatedCostUsd);
-      req._budgetGuardStatus = budgetCheck.ok ? 'allowed' : 'blocked';
-      if (!budgetCheck.ok) {
-        console.warn(`[llm/unified] 예산 차단 (${team}): ${budgetCheck.reason}`);
-        return {
-          ok: false,
-          provider: 'failed',
-          error: `budget_exceeded: ${budgetCheck.reason}`,
-          durationMs: 0,
-          estimatedCostUsd,
-          budgetGuardStatus: 'blocked',
-        };
-      }
-    } catch (e) {
-      console.warn('[llm/unified] BudgetGuardian 오류 (무시):', e.message);
-      req._budgetGuardStatus = 'error_ignored';
-    }
-  } else {
-    req._budgetGuardStatus = 'disabled';
+  if (!tokenBudget.ok) {
+    const blocked = {
+      ok: false,
+      provider: 'failed',
+      error: `token_budget_exceeded: ${tokenBudget.reason}`,
+      durationMs: 0,
+      estimatedCostUsd: req._estimatedCostUsd,
+      tokenBudget,
+      tokenBudgetStatus: 'blocked',
+      budgetGuardStatus: 'blocked',
+    };
+    await _recordBudgetUsage(req, blocked, 'blocked');
+    return blocked;
   }
 
-  // 1. Cache check
+  // 0. Cache check. Cache hits should not consume USD budget.
   if (req.cacheEnabled) {
     try {
       const cacheKey = _cacheKey(req);
       const cached = await checkCache(cacheKey);
       if (cached.hit) {
         console.log(`[llm/unified] 캐시 히트 (${req.abstractModel})`);
-        return { ok: true, provider: 'cache', result: cached.response, durationMs: 0, totalCostUsd: 0, cacheHit: true, cachedAt: cached.cachedAt };
+        const cacheHit = { ok: true, provider: 'cache', result: cached.response, durationMs: 0, totalCostUsd: 0, cacheHit: true, cachedAt: cached.cachedAt, tokenBudget, tokenBudgetStatus: 'allowed' };
+        await _recordBudgetUsage(req, cacheHit, 'cache_hit');
+        return cacheHit;
       }
     } catch (e) {
       console.warn('[llm/unified] 캐시 조회 오류 (무시):', e.message);
     }
   }
 
-  // 2. Build chain from the Hub selector registry. Runtime profiles only map
+  // 1. Build chain from the Hub selector registry. Runtime profiles only map
   // team/purpose to selector keys; they do not own model selection.
   if (_hasAdhocChain(req) && !req.selectorKey && !_adhocChainAllowed()) {
-    return {
+    const blocked = {
       ok: false,
       provider: 'failed',
       durationMs: 0,
       error: 'llm_adhoc_chain_blocked',
       fallbackCount: 0,
+      estimatedCostUsd: req._estimatedCostUsd || null,
+      budgetGuardStatus: req._budgetGuardStatus || null,
+      tokenBudget,
+      tokenBudgetStatus: 'allowed',
     };
+    await _recordBudgetUsage(req, blocked, 'blocked');
+    return blocked;
   }
   const selection = _resolveSelectorChain(req, team);
   if (selection?.chain?.length) {
+    req._estimatedCostUsd = _estimatedCostUsd(req, selection);
+    const budgetBlocked = await _checkUsdBudget(req, team, tokenBudget);
+    if (budgetBlocked) return budgetBlocked;
     return _callWithSelectorChain(req, selection, team);
   }
   if (selection?.error) {
-    return {
+    const failed = {
       ok: false,
       provider: 'failed',
       durationMs: 0,
@@ -142,19 +154,31 @@ async function _callWithFallbackInternal(req) {
       selectorKey: selection.selectorKey || null,
       routeTargetKind: selection.routeTargetKind || selection.target?.kind || null,
       runtimePurpose: selection.runtimePurpose || null,
-      estimatedCostUsd,
+      estimatedCostUsd: req._estimatedCostUsd || null,
       budgetGuardStatus: req._budgetGuardStatus || null,
       providerTiers: selection.providerTiers || [],
+      tokenBudget,
+      tokenBudgetStatus: 'allowed',
     };
+    await _recordBudgetUsage(req, failed, 'error');
+    return failed;
   }
-  if (process.env.HUB_LLM_ALLOW_LEGACY_CHAIN === 'true') return _callLegacy(req, team);
-  return {
+  if (process.env.HUB_LLM_ALLOW_LEGACY_CHAIN === 'true') {
+    const budgetBlocked = await _checkUsdBudget(req, team, tokenBudget);
+    if (budgetBlocked) return budgetBlocked;
+    return _callLegacy(req, team);
+  }
+  const failed = {
     ok: false,
     provider: 'failed',
     durationMs: 0,
     error: 'llm_selector_chain_required',
     fallbackCount: 0,
+    tokenBudget,
+    tokenBudgetStatus: 'allowed',
   };
+  await _recordBudgetUsage(req, failed, 'error');
+  return failed;
 }
 
 function _inflightDedupeEnabled(req) {
@@ -244,16 +268,18 @@ function _applySelectorAvoidProviders(req, selectorChain) {
 }
 
 async function _callWithSelectorChain(req, selectorChain, team) {
-  const chainTimeout = req.timeoutMs || 30_000;
+  const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
+  const budgetedChain = applyTokenBudgetToFallbackChain(selectorChain.chain || [], tokenBudget);
+  const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
   const attempts = [];
 
-  for (const entry of selectorChain.chain) {
+  for (const entry of budgetedChain) {
     const route = _chainEntryToRoute(entry);
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
     const result = await _callRoute(route, req, entry.timeoutMs || chainTimeout, entry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
-      return {
+      const success = {
         ...result,
         provider: _routeToProvider(selectedRoute),
         selected_route: selectedRoute,
@@ -264,21 +290,28 @@ async function _callWithSelectorChain(req, selectorChain, team) {
         providerTiers: selectorChain.providerTiers || [],
         estimatedCostUsd: req._estimatedCostUsd || null,
         budgetGuardStatus: req._budgetGuardStatus || null,
+        tokenBudget,
+        tokenBudgetStatus: 'allowed',
         avoidedProviders: selectorChain.avoidedProviders || [],
         fallbackCount: attempts.length,
         attempted_providers: attempts.map(a => a.provider),
       };
+      await _recordBudgetUsage(req, success, 'success');
+      return success;
     }
     attempts.push({ provider: selectedRoute, error: result.error || 'unknown', durationMs: result.durationMs });
     console.warn(`[llm/unified] ${selectorChain.selectorKey}:${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
   const safeFallback = _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team);
-  if (safeFallback) return safeFallback;
+  if (safeFallback) {
+    await _recordBudgetUsage(req, safeFallback, 'degraded');
+    return safeFallback;
+  }
   if (!_shouldSuppressFallbackExhaustionAlarm(req, selectorChain)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
-  return {
+  const exhausted = {
     ok: false,
     provider: 'failed',
     durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),
@@ -293,7 +326,11 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     providerTiers: selectorChain.providerTiers || [],
     estimatedCostUsd: req._estimatedCostUsd || null,
     budgetGuardStatus: req._budgetGuardStatus || null,
+    tokenBudget,
+    tokenBudgetStatus: 'allowed',
   };
+  await _recordBudgetUsage(req, exhausted, 'error');
+  return exhausted;
 }
 
 async function _callWithProfileChain(req, profile, team) {
@@ -302,21 +339,27 @@ async function _callWithProfileChain(req, profile, team) {
     ...(profile.fallback_routes || []),
   ].filter(_isProviderSupported);
 
-  const chainTimeout = profile.timeout_ms || req.timeoutMs || 30_000;
+  const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
+  const budgetedChain = applyTokenBudgetToFallbackChain(chain, tokenBudget);
+  const chainTimeout = Math.min(profile.timeout_ms || req.timeoutMs || 30_000, tokenBudget.perAttemptTimeoutMs || 30_000);
   const attempts = [];
 
-  for (const route of chain) {
+  for (const route of budgetedChain) {
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
-    const result = await _callRoute(route, req, chainTimeout);
+    const result = await _callRoute(route, req, route.timeoutMs || chainTimeout, route);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
-      return {
+      const success = {
         ...result,
         provider: _routeToProvider(selectedRoute),
         selected_route: selectedRoute,
         fallbackCount: attempts.length,
         attempted_providers: attempts.map(a => a.provider),
+        tokenBudget,
+        tokenBudgetStatus: 'allowed',
       };
+      await _recordBudgetUsage(req, success, 'success');
+      return success;
     }
     attempts.push({ provider: selectedRoute, error: result.error || 'unknown', durationMs: result.durationMs });
     console.warn(`[llm/unified] ${selectedRoute} 실패 (${result.error}) → 다음 시도`);
@@ -325,13 +368,17 @@ async function _callWithProfileChain(req, profile, team) {
   if (!_shouldSuppressFallbackExhaustionAlarm(req, null)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
-  return {
+  const exhausted = {
     ok: false, provider: 'failed',
     durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
     attempted_providers: attempts.map(a => a.provider),
     fallbackCount: attempts.length,
+    tokenBudget,
+    tokenBudgetStatus: 'allowed',
   };
+  await _recordBudgetUsage(req, exhausted, 'error');
+  return exhausted;
 }
 
 async function _callLegacy(req, _team) {
@@ -749,10 +796,115 @@ function _boundedIntegerValue(value, fallback, min, max) {
   return Math.min(max, Math.max(min, numeric));
 }
 
-function _estimatedCostUsd(req) {
+function _estimatedCostUsd(req, selection = null) {
   const explicit = _positiveNumber(req?.estimatedCostUsd ?? req?.estimated_cost_usd, null);
   if (explicit !== null) return explicit;
+  const selectedCost = _estimateSelectionCostUsd(req, selection);
+  if (selectedCost !== null) return selectedCost;
+  const tokenBudgetCost = _positiveNumber(req?._tokenBudget?.estimatedCostUsd, null);
+  if (tokenBudgetCost !== null) return tokenBudgetCost;
   return _positiveNumber(process.env.HUB_LLM_DEFAULT_ESTIMATED_COST_USD, 0.01);
+}
+
+function _estimateSelectionCostUsd(req, selection) {
+  const chain = Array.isArray(selection?.chain) ? selection.chain : [];
+  if (!chain.length) return null;
+  const budget = req?._tokenBudget || resolveTokenBudget(req || {});
+  const costs = chain.map((entry) => {
+    const route = _normalizeRoute(_chainEntryToRoute(entry), req?.abstractModel);
+    const provider = _routeToProvider(route);
+    const model = route.startsWith(`${provider}/`) ? route.slice(provider.length + 1) : route;
+    return estimateCostUsd({
+      provider,
+      model,
+      inputTokens: budget.inputTokens,
+      outputTokens: Math.min(_positiveNumber(entry?.maxTokens, budget.maxOutputTokens), budget.maxOutputTokens),
+    });
+  });
+  return Math.max(0, ...costs);
+}
+
+async function _checkUsdBudget(req, team, tokenBudget) {
+  if (process.env.HUB_BUDGET_GUARDIAN_ENABLED === 'false') {
+    req._budgetGuardStatus = 'disabled';
+    return null;
+  }
+  try {
+    const { BudgetGuardian } = require('../budget-guardian');
+    const estimatedCostUsd = _positiveNumber(req?._estimatedCostUsd, _estimatedCostUsd(req));
+    if (estimatedCostUsd > Number(tokenBudget?.budgetCostUsd || 0)) {
+      const blocked = {
+        ok: false,
+        provider: 'failed',
+        error: `token_budget_exceeded: estimated_cost_exceeded:${estimatedCostUsd.toFixed(6)}>${Number(tokenBudget?.budgetCostUsd || 0).toFixed(6)}`,
+        durationMs: 0,
+        estimatedCostUsd,
+        budgetGuardStatus: 'blocked',
+        tokenBudget,
+        tokenBudgetStatus: 'blocked',
+      };
+      req._budgetGuardStatus = 'blocked';
+      await _recordBudgetUsage(req, blocked, 'blocked');
+      return blocked;
+    }
+    const budgetCheck = BudgetGuardian.getInstance().checkAndReserve(team, estimatedCostUsd);
+    req._budgetGuardStatus = budgetCheck.ok ? 'allowed' : 'blocked';
+    if (budgetCheck.ok) return null;
+    console.warn(`[llm/unified] 예산 차단 (${team}): ${budgetCheck.reason}`);
+    const blocked = {
+      ok: false,
+      provider: 'failed',
+      error: `budget_exceeded: ${budgetCheck.reason}`,
+      durationMs: 0,
+      estimatedCostUsd,
+      budgetGuardStatus: 'blocked',
+      tokenBudget,
+      tokenBudgetStatus: 'allowed',
+    };
+    await _recordBudgetUsage(req, blocked, 'blocked');
+    return blocked;
+  } catch (e) {
+    console.warn('[llm/unified] BudgetGuardian 오류 (무시):', e.message);
+    req._budgetGuardStatus = 'error_ignored';
+    return null;
+  }
+}
+
+async function _recordBudgetUsage(req, resp, status) {
+  const budget = req?._tokenBudget || resp?.tokenBudget || resolveTokenBudget(req || {});
+  const selectedRoute = resp?.selected_route || null;
+  await recordTokenBudgetUsage({
+    traceId: req?.traceId || resp?.traceId || null,
+    requestId: req?.requestId || req?.traceId || resp?.sessionId || null,
+    callerTeam: req?.callerTeam || 'hub',
+    agent: req?.agent || 'unknown',
+    taskType: req?.taskType || 'default',
+    selectorKey: resp?.selectorKey || req?.selectorKey || null,
+    profileName: budget.profileName,
+    provider: resp?.provider || 'failed',
+    model: resp?.model || selectedRoute,
+    selectedRoute,
+    status,
+    error: resp?.error || null,
+    inputTokens: budget.inputTokens,
+    maxOutputTokens: budget.maxOutputTokens,
+    estimatedTotalTokens: budget.estimatedTotalTokens,
+    estimatedCostUsd: Number(resp?.estimatedCostUsd ?? budget.estimatedCostUsd) || 0,
+    budgetCostUsd: budget.budgetCostUsd,
+    timeoutMs: budget.timeoutMs,
+    durationMs: Number(resp?.durationMs || 0),
+    fallbackCount: Number(resp?.fallbackCount || 0),
+    attemptedProviders: Array.isArray(resp?.attempted_providers) ? resp.attempted_providers : [],
+    promptHash: budget.promptHash,
+    requestFingerprint: budget.requestFingerprint,
+    metadata: {
+      abstractModel: req?.abstractModel || null,
+      budgetGuardStatus: resp?.budgetGuardStatus || req?._budgetGuardStatus || null,
+      tokenBudgetStatus: resp?.tokenBudgetStatus || null,
+      cacheHit: Boolean(resp?.cacheHit),
+      dedupeHit: Boolean(resp?.dedupeHit),
+    },
+  });
 }
 
 function _claudeCodeFamily(model) {
