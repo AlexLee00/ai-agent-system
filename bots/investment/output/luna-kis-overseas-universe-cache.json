@@ -1,8 +1,8 @@
 {
-  "cachedAtMs": 1780615803910,
+  "cachedAtMs": 1780702201353,
   "value": {
     "source": "curated_volume_top50_overseas",
-    "fetchedAt": "2026-06-04T23:30:03.874Z",
+    "fetchedAt": "2026-06-05T23:30:01.300Z",
     "market": "overseas",
     "limit": 50,
     "symbols": [
