@@ -12,6 +12,7 @@ const { createLogger } = require('../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const rag = require('../../../packages/core/lib/rag');
+const failureTrajectory = require('../../../packages/core/lib/failure-trajectory');
 const { runFullVerification } = require('../../../packages/core/lib/skills/verify-loop');
 const env = require('../../../packages/core/lib/env');
 const proposalStore = require('./proposal-store');
@@ -36,6 +37,11 @@ interface AlarmPayload {
 
 interface EventLake {
   record(payload: Record<string, unknown>): Promise<string | null>;
+}
+
+interface FailureTrajectory {
+  recordFailureTrajectory(input: Record<string, unknown>): Promise<unknown>;
+  searchFailureHints(query: string, options?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 }
 
 interface ProposalPaper {
@@ -79,6 +85,7 @@ interface FullVerificationRunner {
 }
 
 const eventLakeTyped: EventLake = eventLake;
+const failureTrajectoryTyped: FailureTrajectory = failureTrajectory;
 const proposalStoreTyped: ProposalStore = proposalStore;
 const autonomyLevelTyped: AutonomyLevelModule = autonomyLevel;
 const runFullVerificationTyped: FullVerificationRunner = runFullVerification;
@@ -140,6 +147,74 @@ function _decideVerificationPass(verification: VerificationReport, verificationT
   return verification.overall && /\bPASS\b/i.test(text) && !/\bFAIL\b/i.test(text);
 }
 
+function _formatFailureHints(hints: Array<Record<string, unknown>> = []): string {
+  if (!Array.isArray(hints) || hints.length === 0) return '없음';
+  return hints.slice(0, 3).map((hit, index) => {
+    const metadata = (hit.metadata || {}) as Record<string, unknown>;
+    return [
+      `${index + 1}. signature=${String(metadata.signature || 'unknown')}`,
+      metadata.root_cause ? `root=${String(metadata.root_cause).slice(0, 180)}` : '',
+      metadata.resolution_hint ? `hint=${String(metadata.resolution_hint).slice(0, 240)}` : '',
+      metadata.test_result ? `test=${String(metadata.test_result).slice(0, 180)}` : '',
+      metadata.stderr_tail ? `stderr=${String(metadata.stderr_tail).slice(0, 180)}` : '',
+    ].filter(Boolean).join(' | ');
+  }).join('\n');
+}
+
+async function _loadFailureHintsForVerification(proposalId: string, proposal: ProposalRecord, changedFiles: string[], verification: VerificationReport): Promise<string> {
+  const query = [
+    proposalId,
+    proposal.title,
+    proposal.paper?.title,
+    changedFiles.join('\n'),
+    verification.summary,
+  ].filter(Boolean).join('\n').slice(0, 4000);
+  try {
+    const hints = await failureTrajectoryTyped.searchFailureHints(query || proposalId, {
+      team: 'darwin',
+      agent: 'proof-r',
+      intent: 'darwin_auto_verification',
+      limit: 3,
+    });
+    return _formatFailureHints(hints);
+  } catch (error) {
+    logger.warn(`검증 실패 궤적 힌트 조회 실패: ${toErrorMessage(error)}`);
+    return '조회 실패';
+  }
+}
+
+async function _recordVerificationFailureTrajectory(
+  proposalId: string,
+  proposal: ProposalRecord,
+  branchName: string,
+  changedFiles: string[],
+  failureText: string,
+  verificationSummary = ''
+): Promise<void> {
+  try {
+    await failureTrajectoryTyped.recordFailureTrajectory({
+      team: 'darwin',
+      agent: 'proof-r',
+      intent: 'darwin_auto_verification',
+      command: `darwin verifier ${proposalId}`,
+      stderr: failureText,
+      rootCause: failureText,
+      resolutionHint: '유사 검증 실패를 다음 검증 프롬프트에 주입하고 syntax/security/diff 실패 원인을 우선 확인한다.',
+      testResult: verificationSummary || 'verification_failed',
+      recoveryResult: 'stored_for_next_darwin_verification',
+      incidentKey: `darwin:verifier:${proposalId}`,
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+        files: changedFiles,
+        title: proposal.title || proposal.paper?.title || '',
+      },
+    });
+  } catch (recordError) {
+    logger.warn(`검증 실패 궤적 저장 실패: ${toErrorMessage(recordError)}`);
+  }
+}
+
 function _resolveVerificationFiles(proposal: ProposalRecord | null): string[] {
   const preferred = Array.isArray(proposal?.changed_files) ? proposal.changed_files : [];
   const existing = preferred.filter((file: string) => {
@@ -170,6 +245,7 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
       baseBranch: 'main',
     });
     const fileContents = _loadContents(changedFiles).slice(0, 8);
+    const failureHints = await _loadFailureHintsForVerification(proposalId, proposal, changedFiles, verification);
 
     const verificationResult = await callHubLlm({
       callerTeam: 'darwin',
@@ -193,7 +269,12 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
 ${fileContents.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')}
 
 사전 자동 검증 리포트:
-${verification.summary}`,
+${verification.summary}
+
+이전 유사 검증 실패 궤적:
+${failureHints}
+
+위 실패 궤적이 있으면 같은 검증 누락을 반복하지 말고, PASS/FAIL 판정에 반영하세요.`,
       timeoutMs: 30_000,
     }) as HubLlmResponse | string;
 
@@ -203,6 +284,16 @@ ${verification.summary}`,
     const passed = _decideVerificationPass(verification, verificationText);
     const requiresApproval = autonomyLevelTyped.requiresApproval();
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
+    if (!passed) {
+      await _recordVerificationFailureTrajectory(
+        proposalId,
+        proposal,
+        branchName,
+        changedFiles,
+        verificationText,
+        verification.summary || ''
+      );
+    }
 
     proposalStoreTyped.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
       branch: branchName,
@@ -277,6 +368,7 @@ ${verification.summary}`,
     const errorMessage = toErrorMessage(error);
     logger.error(`검증 실패: ${proposalId} -> ${errorMessage}`);
     autonomyLevelTyped.recordError(error);
+    await _recordVerificationFailureTrajectory(proposalId, proposal, branchName, [], errorMessage, 'verification_error');
     proposalStoreTyped.updateStatus(proposalId, 'verification_failed', {
       branch: branchName,
       error: errorMessage,
@@ -368,5 +460,6 @@ module.exports = {
   triggerVerification,
   mergeVerifiedProposal,
   mergeBranch,
+  _formatFailureHints,
   _testOnly_REPO_ROOT: REPO_ROOT,
 };

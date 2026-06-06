@@ -11,6 +11,7 @@ const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { createLogger } = require('../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
+const failureTrajectory = require('../../../packages/core/lib/failure-trajectory');
 const env = require('../../../packages/core/lib/env');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
@@ -45,6 +46,11 @@ interface AlarmPayload {
 
 interface EventLake {
   record(payload: Record<string, unknown>): Promise<string | null>;
+}
+
+interface FailureTrajectory {
+  recordFailureTrajectory(input: Record<string, unknown>): Promise<unknown>;
+  searchFailureHints(query: string, options?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 }
 
 interface ProposalStore {
@@ -110,6 +116,7 @@ interface ApplyResult {
 }
 
 const eventLakeTyped: EventLake = eventLake;
+const failureTrajectoryTyped: FailureTrajectory = failureTrajectory;
 const proposalStoreTyped: ProposalStore = proposalStore;
 const autonomyLevelTyped: AutonomyLevelModule = autonomyLevel;
 
@@ -119,6 +126,86 @@ function toErrorMessage(error: unknown): string {
     return String(maybe.stderr || maybe.stdout || maybe.message || 'unknown error');
   }
   return String(error || 'unknown error');
+}
+
+function _hasReasoningLeak(value: unknown): boolean {
+  return /<\/?think>/i.test(String(value || ''));
+}
+
+function _assertProposalCleanForImplementation(proposalId: string, proposal: ProposalRecord): void {
+  if (!_hasReasoningLeak(proposal.proposal) && !_hasReasoningLeak(proposal.prototype)) return;
+
+  proposalStoreTyped.updateStatus(proposalId, 'manual_review', {
+    error: 'reasoning_leak_detected',
+    reasoning_leak_detected_at: new Date().toISOString(),
+  });
+  throw new Error(`proposal contains reasoning leak: ${proposalId}`);
+}
+
+function _formatFailureHints(hints: Array<Record<string, unknown>> = []): string {
+  if (!Array.isArray(hints) || hints.length === 0) return '없음';
+  return hints.slice(0, 3).map((hit, index) => {
+    const metadata = (hit.metadata || {}) as Record<string, unknown>;
+    const parts = [
+      `${index + 1}. signature=${String(metadata.signature || 'unknown')}`,
+      metadata.root_cause ? `root=${String(metadata.root_cause).slice(0, 180)}` : '',
+      metadata.resolution_hint ? `hint=${String(metadata.resolution_hint).slice(0, 240)}` : '',
+      metadata.test_result ? `test=${String(metadata.test_result).slice(0, 180)}` : '',
+      metadata.stderr_tail ? `stderr=${String(metadata.stderr_tail).slice(0, 180)}` : '',
+    ].filter(Boolean);
+    return parts.join(' | ');
+  }).join('\n');
+}
+
+async function _loadFailureHintsForImplementation(proposalId: string, proposal: ProposalRecord): Promise<string> {
+  const query = [
+    proposalId,
+    proposal.title,
+    proposal.paper?.title,
+    proposal.proposal,
+    proposal.prototype,
+  ].filter(Boolean).join('\n').slice(0, 4000);
+  try {
+    const hints = await failureTrajectoryTyped.searchFailureHints(query || proposalId, {
+      team: 'darwin',
+      agent: 'implementor',
+      intent: 'darwin_auto_implementation',
+      limit: 3,
+    });
+    return _formatFailureHints(hints);
+  } catch (error) {
+    logger.warn(`실패 궤적 힌트 조회 실패: ${toErrorMessage(error)}`);
+    return '조회 실패';
+  }
+}
+
+async function _recordImplementationFailureTrajectory(
+  proposalId: string,
+  proposal: ProposalRecord,
+  branchName: string,
+  errorMessage: string
+): Promise<void> {
+  try {
+    await failureTrajectoryTyped.recordFailureTrajectory({
+      team: 'darwin',
+      agent: 'implementor',
+      intent: 'darwin_auto_implementation',
+      command: `darwin implementor ${proposalId}`,
+      stderr: errorMessage,
+      rootCause: errorMessage,
+      resolutionHint: '유사 실패 힌트를 다음 auto_implementation 프롬프트에 주입하고, no_files_extracted/path/syntax 실패를 우선 회피한다.',
+      testResult: 'implementation_failed',
+      recoveryResult: 'stored_for_next_darwin_implementation',
+      incidentKey: `darwin:implementor:${proposalId}`,
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+        title: proposal.title || proposal.paper?.title || '',
+      },
+    });
+  } catch (recordError) {
+    logger.warn(`구현 실패 궤적 저장 실패: ${toErrorMessage(recordError)}`);
+  }
 }
 
 function _runGit(args: string[], opts: ExecFileOptions = {}): string {
@@ -319,6 +406,7 @@ function _checkSyntax(paths: string[]): SyntaxCheckResult[] {
 async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
   const proposal = proposalStoreTyped.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
+  _assertProposalCleanForImplementation(proposalId, proposal);
 
   const originalBranch = _getCurrentBranch();
   const branchName = proposal.branch || _sanitizeBranchName(proposalId);
@@ -342,6 +430,7 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
   }
 
   try {
+    const failureHints = await _loadFailureHintsForImplementation(proposalId, proposal);
     const implementationResult = await callHubLlm({
       callerTeam: 'darwin',
       agent: 'synthesis',
@@ -367,6 +456,11 @@ ${proposal.proposal || ''}
 
 프로토타입:
 ${proposal.prototype || ''}
+
+이전 유사 실패 궤적:
+${failureHints}
+
+위 실패 궤적이 있으면 같은 실패를 반복하지 마세요. 특히 파일 출력 형식, 경로, module.exports, syntax 오류를 우선 회피하세요.
 
 현재 상태:
 ${JSON.stringify(proposal.verification || {})}`,
@@ -448,6 +542,7 @@ ${JSON.stringify(proposal.verification || {})}`,
     const errorMessage = toErrorMessage(error);
     logger.error(`구현 실패: ${proposalId} -> ${errorMessage}`);
     autonomyLevelTyped.recordError(error);
+    await _recordImplementationFailureTrajectory(proposalId, proposal, branchName, errorMessage);
     proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
       branch: branchName,
       error: errorMessage,
@@ -496,5 +591,8 @@ ${JSON.stringify(proposal.verification || {})}`,
 module.exports = {
   triggerImplementation,
   _extractFiles,
+  _formatFailureHints,
+  _hasReasoningLeak,
+  _assertProposalCleanForImplementation,
   _testOnly_REPO_ROOT: REPO_ROOT,
 };

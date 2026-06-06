@@ -22,6 +22,7 @@ const path       = require('path');
 const { execSync, execFileSync } = require('child_process');
 const pgPool     = require('../../../packages/core/lib/pg-pool');
 const eventLake  = require('../../../packages/core/lib/event-lake');
+const failureTrajectory = require('../../../packages/core/lib/failure-trajectory');
 const { publishToRag, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 const {
@@ -41,6 +42,63 @@ const RECOVERY_BLACKLIST = new Set([
 ]);
 const RESTART_TIMEOUT_COOLDOWN_MINUTES = 15;
 const RESTART_TIMEOUT_COOLDOWN_FAILS = 3;
+
+function formatFailureTrajectoryHints(hints = []) {
+  if (!Array.isArray(hints) || hints.length === 0) return '';
+  const lines = hints.slice(0, 3).map((hit, index) => {
+    const metadata = hit?.metadata || {};
+    return [
+      `${index + 1}. signature=${String(metadata.signature || 'unknown')}`,
+      metadata.root_cause ? `root=${String(metadata.root_cause).slice(0, 160)}` : '',
+      metadata.resolution_hint ? `hint=${String(metadata.resolution_hint).slice(0, 220)}` : '',
+      metadata.stderr_tail ? `stderr=${String(metadata.stderr_tail).slice(0, 160)}` : '',
+    ].filter(Boolean).join(' | ');
+  });
+  return `\n\n[표준 실패 궤적]\n${lines.join('\n')}`;
+}
+
+async function recallFailureTrajectoryHints(taskType, params = {}, requestedBy = 'dexter') {
+  try {
+    const query = [taskType, requestedBy, params?.label, params?.filePath, JSON.stringify(params || {})]
+      .filter(Boolean)
+      .join(' ')
+      .slice(0, 2000);
+    const hints = await failureTrajectory.searchFailureHints(query || String(taskType || ''), {
+      team: 'claude',
+      agent: 'doctor',
+      intent: `doctor_${String(taskType || 'recovery')}`,
+      limit: 3,
+    });
+    return formatFailureTrajectoryHints(hints);
+  } catch (error) {
+    console.warn('[doctor] 표준 실패 궤적 조회 실패 (무시):', error.message);
+    return '';
+  }
+}
+
+async function recordDoctorFailureTrajectory(taskType, params = {}, requestedBy = 'dexter', errorMsg = '', result = null) {
+  try {
+    await failureTrajectory.recordFailureTrajectory({
+      team: 'claude',
+      agent: 'doctor',
+      intent: `doctor_${String(taskType || 'recovery')}`,
+      command: `doctor.execute:${String(taskType || 'unknown')}`,
+      exitCode: result?.exitCode ?? null,
+      stderr: errorMsg,
+      rootCause: errorMsg || `doctor ${taskType} failed`,
+      resolutionHint: '다음 doctor 실행 전에 같은 taskType/label의 실패 궤적을 조회해 cooldown, blacklist, retired service, launchctl timeout 여부를 먼저 확인한다.',
+      recoveryResult: result ? JSON.stringify(result).slice(0, 1000) : '',
+      incidentKey: `claude:doctor:${String(taskType || 'unknown')}`,
+      metadata: {
+        task_type: taskType,
+        requested_by: requestedBy,
+        params,
+      },
+    });
+  } catch (error) {
+    console.warn('[doctor] 표준 실패 궤적 저장 실패 (무시):', error.message);
+  }
+}
 
 function retiredServiceMessage(label) {
   const replacement = getServiceOwnership(label)?.replacement;
@@ -228,13 +286,16 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     },
   ).catch(() => '');
   const memoryHints = `${recentRecoveryHint}${semanticRecoveryHint}`;
+  const trajectoryHints = await recallFailureTrajectoryHints(taskType, params, requestedBy);
+  const recoveryHints = `${memoryHints}${trajectoryHints}`;
 
   // 1. 블랙리스트 체크
   const banned = _checkBlacklist(params);
   if (banned) {
     const msg = `블랙리스트 위반 — "${banned}" 포함 파라미터 거부`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: `${msg}${memoryHints}` };
+    await recordDoctorFailureTrajectory(taskType, params, requestedBy, msg);
+    return { success: false, message: `${msg}${recoveryHints}` };
   }
 
   // 2. 화이트리스트 확인
@@ -242,20 +303,22 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   if (!task) {
     const msg = `화이트리스트에 없는 작업: ${taskType}`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: `${msg}${memoryHints}` };
+    await recordDoctorFailureTrajectory(taskType, params, requestedBy, msg);
+    return { success: false, message: `${msg}${recoveryHints}` };
   }
 
   // 3. 마스터 확인 필요 시 — 현재는 거부 후 알림으로 처리 (추후 텔레그램 연동 확장)
   if (task.requires_confirmation) {
     const msg = `"${task.description}" 작업은 마스터 확인이 필요합니다. 텔레그램으로 요청하세요.`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: `${msg}${memoryHints}`, requiresConfirmation: true };
+    return { success: false, message: `${msg}${recoveryHints}`, requiresConfirmation: true };
   }
 
   if (taskType === 'restart_launchd_service' && await isRestartCooldownActive(params?.label)) {
     const msg = `최근 launchctl timeout이 반복되어 재시작을 잠시 보류합니다: ${params?.label}`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    return { success: false, message: `${msg}${memoryHints}` };
+    await recordDoctorFailureTrajectory(taskType, params, requestedBy, msg);
+    return { success: false, message: `${msg}${recoveryHints}` };
   }
 
   // 4. 실행
@@ -264,12 +327,13 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     await logRecovery(taskType, params, data, true, requestedBy, 'auto');
     const msg = `✅ [독터] ${task.description} 완료`;
     console.log(`${msg} — ${JSON.stringify(data)}`);
-    return { success: true, message: `${msg}${memoryHints}`, data };
+    return { success: true, message: `${msg}${recoveryHints}`, data };
   } catch (e) {
     await logRecovery(taskType, params, null, false, requestedBy, null, e.message);
     const msg = `❌ [독터] ${task.description} 실패: ${e.message}`;
     console.error(msg);
-    return { success: false, message: `${msg}${memoryHints}` };
+    await recordDoctorFailureTrajectory(taskType, params, requestedBy, e.message);
+    return { success: false, message: `${msg}${recoveryHints}` };
   }
 }
 

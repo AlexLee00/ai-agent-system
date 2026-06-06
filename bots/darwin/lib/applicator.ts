@@ -116,6 +116,13 @@ function toErrorMessage(err: unknown): string {
     : String(err || 'unknown error');
 }
 
+function stripReasoningBlocks(text: unknown): string {
+  return String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .trim();
+}
+
 async function generateProposal(paper: Partial<ResearchPaper>): Promise<string> {
   const result = await callHubLlm({
     callerTeam: 'darwin',
@@ -144,7 +151,7 @@ ${TEAM_CONTEXT}
 ${paper.github.summary}` : ''}`,
     timeoutMs: 12_000,
   });
-  return result.text || '';
+  return stripReasoningBlocks(result.text);
 }
 
 async function generatePrototype(paper: Partial<ResearchPaper>, proposal: string): Promise<string> {
@@ -164,7 +171,7 @@ Node.js (ES5, require) 스타일로 작성.
     prompt: `논문: ${paper.title}\n적용 방안:\n${proposal}`,
     timeoutMs: 15_000,
   });
-  return result.text || '';
+  return stripReasoningBlocks(result.text);
 }
 
 function verifyPrototype(code: string): VerificationResult {
@@ -349,4 +356,5 @@ module.exports = {
   generateProposal,
   generatePrototype,
   verifyPrototype,
+  _testOnly_stripReasoningBlocks: stripReasoningBlocks,
 };
