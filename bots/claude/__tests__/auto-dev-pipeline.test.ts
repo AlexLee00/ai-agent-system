@@ -878,6 +878,44 @@ async function test_auto_dev_failed_outcome_masks_secrets() {
   console.log('✅ auto-dev: failed outcome masks sensitive error summaries');
 }
 
+async function test_record_outcome_accepts_refactor_meta_tags() {
+  const tmpRoot = makeTempRoot();
+  const { mocks, autoDevOutcomes } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.recordAutoDevOutcome({
+      id: 'refactor-cycle-fixture',
+      relPath: 'docs/codex/refactor-plans/REFACTOR_fixture.md',
+      stage: 'refactor_shadow_plan',
+      profile: 'refactor-shadow',
+      targetTeam: 'claude',
+      writeScope: ['bots/claude/lib/agent-heartbeat.ts'],
+      riskTier: 'normal',
+    }, 'completed', {
+      kind: 'refactor',
+      refactorType: 'ts_nocheck',
+      cycleId: 'refactor-fixture',
+      source: 'claude-refactorer',
+      meta: {
+        mode: 'shadow',
+        phase: 'phase1',
+      },
+    });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot));
+
+  assert.strictEqual(autoDevOutcomes.length, 1);
+  const meta = JSON.parse(autoDevOutcomes[0].meta);
+  assert.strictEqual(meta.kind, 'refactor');
+  assert.strictEqual(meta.refactorType, 'ts_nocheck');
+  assert.strictEqual(meta.cycleId, 'refactor-fixture');
+  assert.strictEqual(meta.source, 'claude-refactorer');
+  assert.strictEqual(meta.mode, 'shadow');
+  assert.strictEqual(meta.phase, 'phase1');
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: outcome meta supports refactor tags without schema change');
+}
+
 async function test_stale_running_job_retries_with_recovery_count() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_STALE_RETRY.md', '# Stale\nretry');
@@ -2582,6 +2620,7 @@ async function main() {
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
     test_auto_dev_failed_outcome_masks_secrets,
+    test_record_outcome_accepts_refactor_meta_tags,
     test_stale_running_job_retries_with_recovery_count,
     test_stale_running_job_blocks_after_recovery_exhaustion,
     test_invalid_stale_recovery_env_falls_back_to_default_limit,

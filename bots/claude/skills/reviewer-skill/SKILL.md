@@ -2,6 +2,7 @@
 
 ## Purpose
 Reviewer inspects code diffs for correctness, regressions, maintainability, and missing tests.
+For the refactorer cycle, Reviewer owns the refactor diff review before any commit or document-completion step.
 
 ## Review Priorities
 - Correctness and behavioral regressions.

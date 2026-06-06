@@ -32,6 +32,13 @@ llm_selector: claude.refactorer.code_refactor
 - 리팩터 → 닥터 (리팩토링 중 오류 복구)
 - 리팩터 → 가디언 (보안 영향 검토)
 
+**Claude Team Cycle Role**:
+- 클로드팀 9번째 에이전트: commander, dexter, archer, doctor, reviewer, guardian, builder, auto-dev, refactorer.
+- 7단계 cycle: 분석 → 계획 → 리팩토링 → 검증 → 오류수정 → 커밋 → 문서 완료.
+- 트리거: Dexter/Reviewer가 기술부채나 리뷰 지적을 발견하면 refactorer가 analyze/plan을 수행한다.
+- A2A handoff: refactorer는 오류 복구를 doctor-heal/auto-dev에, 품질 검증을 builder/reviewer/quality-gate에 넘긴다.
+- Heartbeat: cycle 종료 시 `writeClaudeHeartbeat('claude-refactorer', ok|error, meta)`로 상태를 남긴다.
+
 **Safety Rules**:
 - git tag 먼저 (롤백 포인트)
 - 테스트 green 유지

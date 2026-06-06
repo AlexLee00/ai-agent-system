@@ -23,7 +23,8 @@ export type LibrarySourceKind =
   | 'luna_trade_journal'
   | 'luna_signal'
   | 'luna_trade_review'
-  | 'claude_auto_dev';
+  | 'claude_auto_dev'
+  | 'claude_refactor';
 
 export interface LibraryRecord {
   team: SigmaTeam;
@@ -261,16 +262,21 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
      LIMIT $2
   `, [String(sinceHours), limit], warnings);
   for (const row of claudeAutoDevOutcomes) {
+    const meta = row.meta && typeof row.meta === 'object' && !Array.isArray(row.meta) ? row.meta : {};
+    const refactorOutcome = String(meta.kind ?? '').toLowerCase() === 'refactor';
+    const sourceKind = refactorOutcome ? 'claude_refactor' : 'claude_auto_dev';
     const record = buildRecord({
       team: 'claude',
-      agent: 'auto-dev',
-      sourceKind: 'claude_auto_dev',
+      agent: refactorOutcome ? 'refactorer' : 'auto-dev',
+      sourceKind,
       sourceId: row.id ?? row.job_id,
       createdAt: row.created_at,
       text: compactText([
         row.outcome,
         row.stage,
         row.rel_path,
+        refactorOutcome ? `refactor_type=${meta.refactorType ?? 'unknown'}` : null,
+        refactorOutcome ? `cycle_id=${meta.cycleId ?? 'unknown'}` : null,
         row.test_pass == null ? null : `test_pass=${row.test_pass}`,
         row.error_summary,
       ]),
@@ -283,7 +289,7 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
         staleRecoveryCount: row.stale_recovery_count,
         testPass: row.test_pass,
         errorSummary: row.error_summary,
-        meta: row.meta ?? {},
+        meta,
       },
     });
     if (record && allowedTeams.has(record.team)) records.push(record);
@@ -528,7 +534,7 @@ export function buildSelfImprovementSignalsFromRecords(records: readonly Library
       else if (Number.isFinite(status) && status >= 500) outcome = 'failure';
     }
     if (record.sourceKind === 'agent_message' && payload.responded === true) outcome = 'success';
-    if (record.sourceKind === 'claude_auto_dev') {
+    if (record.sourceKind === 'claude_auto_dev' || record.sourceKind === 'claude_refactor') {
       const rawOutcome = String(payload.outcome ?? '').toLowerCase();
       if (/completed|success|resolved/.test(rawOutcome) || payload.testPass === true) {
         outcome = 'success';

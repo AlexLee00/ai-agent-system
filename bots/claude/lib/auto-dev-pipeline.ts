@@ -3000,11 +3000,17 @@ function commitShaForJob(job, extra = {}) {
     || null;
 }
 
+function safeMetaObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 async function recordAutoDevOutcome(job, outcome, extra = {}) {
   const relPath = job?.relPath || extra.relPath || null;
   if (!relPath) return { ok: false, skipped: true, reason: 'missing_rel_path' };
   const errorSummary = extra.errorSummary || extra.error || job?.error || null;
+  const extraMeta = safeMetaObject(extra.meta);
   const meta = {
+    ...extraMeta,
     profile: extra.profile || job?.profile || null,
     reason: extra.reason || job?.reason || null,
     policyDecision: extra.policyDecision || job?.policyDecision || null,
@@ -3015,7 +3021,10 @@ async function recordAutoDevOutcome(job, outcome, extra = {}) {
     archiveManifestPath: extra.archiveManifestPath || job?.archiveManifestPath || null,
     completionDocumentPath: extra.completionDocumentPath || job?.completionDocumentPath || null,
     changedFiles: extra.changedFiles || job?.newlyChangedFiles || [],
-    source: 'claude-auto-dev',
+    kind: extra.kind || extraMeta.kind || null,
+    refactorType: extra.refactorType || extraMeta.refactorType || null,
+    cycleId: extra.cycleId || extraMeta.cycleId || null,
+    source: extra.source || extraMeta.source || 'claude-auto-dev',
   };
   try {
     const rows = await pgPool.query('claude', `
@@ -3973,6 +3982,7 @@ module.exports = {
   runAutoDevPipeline,
   getAutoDevStatusSnapshot,
   loadState,
+  recordAutoDevOutcome,
   _testOnly_buildImplementationModelMeta: buildImplementationModelMeta,
   _testOnly_buildAutoDevChildEnv: buildAutoDevChildEnv,
   _testOnly_evaluateDocumentPolicy: evaluateDocumentPolicy,

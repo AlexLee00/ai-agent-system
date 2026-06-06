@@ -34,19 +34,31 @@ function shortHash(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex').slice(0, 24);
 }
 
+function effectiveSourceKind(record: any): string {
+  return record.sourceKind === 'claude_refactor' ? 'claude_refactor' : 'claude_auto_dev';
+}
+
 function titleForRecord(record: any): string {
   const payload = record.payload || {};
   const relPath = String(payload.relPath || '').replace(/^docs\/auto_dev\//, '');
+  const sourceKind = effectiveSourceKind(record);
   const firstText = String(record.piiRedactedText || record.text || '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 96);
-  return `[claude_auto_dev] ${relPath || firstText || record.sourceId}`;
+  return `[${sourceKind}] ${relPath || firstText || record.sourceId}`;
 }
 
 function tagsForRecord(record: any): string[] {
   const payload = record.payload || {};
-  const tags = new Set(['sigma-library', 'claude', 'auto_dev', String(record.sourceKind || 'unknown')]);
+  const sourceKind = effectiveSourceKind(record);
+  const tags = new Set(['sigma-library', 'claude', sourceKind, String(record.sourceKind || 'unknown')]);
+  if (sourceKind === 'claude_refactor') {
+    tags.add('refactor');
+    tags.add('refactorer');
+  } else {
+    tags.add('auto_dev');
+  }
   if (payload.outcome) tags.add(`outcome:${payload.outcome}`);
   if (payload.stage) tags.add(`stage:${payload.stage}`);
   if (payload.testPass === true) tags.add('test:pass');
@@ -55,17 +67,19 @@ function tagsForRecord(record: any): string[] {
 }
 
 function entryForRecord(record: any) {
+  const sourceKind = effectiveSourceKind(record);
   return {
     title: titleForRecord(record),
-    type: 'auto_dev_outcome',
+    type: sourceKind === 'claude_refactor' ? 'refactor_outcome' : 'auto_dev_outcome',
     content: record.piiRedactedText || record.text,
     tags: tagsForRecord(record),
-    filePath: `library/claude_auto_dev/${shortHash(record.sourceId)}`,
-    source: record.sourceKind,
+    filePath: `library/${sourceKind}/${shortHash(record.sourceId)}`,
+    source: sourceKind,
     meta: {
       contentHash: record.contentHash,
       sourceId: record.sourceId,
-      sourceKind: record.sourceKind,
+      sourceKind,
+      originalSourceKind: record.sourceKind,
       team: record.team,
       agent: record.agent,
       createdAt: record.createdAt,
@@ -94,7 +108,7 @@ export async function runSigmaClaudeVaultFeed(options: {
   });
 
   const candidates = sourceReport.records
-    .filter((record) => record.sourceKind === 'claude_auto_dev')
+    .filter((record) => record.sourceKind === 'claude_auto_dev' || record.sourceKind === 'claude_refactor')
     .filter((record) => record.constitutionAllowed !== false)
     .filter((record) => String(record.piiRedactedText || record.text || '').trim().length > 0);
   const skipped = sourceReport.records.length - candidates.length;
@@ -111,7 +125,7 @@ export async function runSigmaClaudeVaultFeed(options: {
       const entry = entryForRecord(record);
       const persisted = await manager.addToInbox(entry);
       results.push({
-        sourceKind: record.sourceKind,
+        sourceKind: effectiveSourceKind(record),
         sourceId: record.sourceId,
         filePath: entry.filePath,
         ok: persisted.ok,
@@ -134,9 +148,9 @@ export async function runSigmaClaudeVaultFeed(options: {
     sourceWarnings: sourceReport.warnings,
     candidates: candidates.length,
     skipped,
-    candidatesBySource: countBy(candidates, (record) => record.sourceKind),
+    candidatesBySource: countBy(candidates, (record) => effectiveSourceKind(record)),
     embeddingProbe: {
-      sourceKind: embeddingProbeRecord?.sourceKind || null,
+      sourceKind: embeddingProbeRecord ? effectiveSourceKind(embeddingProbeRecord) : null,
       dim: embeddingProbe.dim,
       embedded: Boolean(embeddingProbe.embedding),
       warning: embeddingProbe.warning || null,
@@ -151,14 +165,14 @@ export async function runSigmaClaudeVaultFeed(options: {
       failures: failed.slice(0, 10),
     },
     sample: candidates.slice(0, 3).map((record) => ({
-      sourceKind: record.sourceKind,
+      sourceKind: effectiveSourceKind(record),
       sourceId: record.sourceId,
       createdAt: record.createdAt,
       title: titleForRecord(record),
       filePath: entryForRecord(record).filePath,
       text: String(record.piiRedactedText || record.text || '').slice(0, 220),
     })),
-    selfImprovementReady: sourceReport.records.some((record) => record.sourceKind === 'claude_auto_dev'),
+    selfImprovementReady: sourceReport.records.some((record) => record.sourceKind === 'claude_auto_dev' || record.sourceKind === 'claude_refactor'),
     generatedAt: new Date().toISOString(),
     safety: {
       defaultDryRun: true,

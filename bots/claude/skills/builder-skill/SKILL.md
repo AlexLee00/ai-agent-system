@@ -2,6 +2,7 @@
 
 ## Purpose
 Builder owns build, test, and packaging verification for Claude-team code.
+For the refactorer cycle, Builder owns scoped validation using `testScope`, `changedFiles`, and `riskTier` from the refactor plan.
 
 ## Inputs
 - `testScope`: exact commands or workspace-specific smoke checks.

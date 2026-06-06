@@ -2,6 +2,7 @@
 
 ## Purpose
 Doctor plans Claude-team recovery using the L1/L2/L3 ladder.
+For the refactorer cycle, Doctor owns recovery planning for failed verify-loop or build/test steps and returns the fixFn path or rollback requirement.
 
 ## Levels
 - L1: diagnose and collect evidence.
