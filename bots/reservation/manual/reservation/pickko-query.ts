@@ -204,14 +204,12 @@ if (filtered.length === 0) {
     }).catch(() => {});
     process.exit(0);
   })();
-  return;
-}
-
-const groups: Record<string, Booking[]> = {};
-for (const b of filtered) {
-  if (!groups[b.date]) groups[b.date] = [];
-  groups[b.date].push(b);
-}
+} else {
+  const groups: Record<string, Booking[]> = {};
+  for (const b of filtered) {
+    if (!groups[b.date]) groups[b.date] = [];
+    groups[b.date].push(b);
+  }
 
 let message = `${filterLabel} · 총 ${filtered.length}건\n`;
 let idx = 1;
@@ -223,7 +221,7 @@ for (const [date, list] of Object.entries(groups).sort()) {
 }
 message = message.trim();
 const memoryQuery = buildQueryMemoryQuery('result', [filterLabel, `${filtered.length}-bookings`]);
-(async () => {
+  (async () => {
   const { episodicHint, semanticHint } = await buildQueryMemoryHints(memoryQuery, ['result', 'empty']);
   const aiSummary = await buildReservationCliInsight({
     bot: 'pickko-query',
@@ -268,4 +266,5 @@ const memoryQuery = buildQueryMemoryQuery('result', [filterLabel, `${filtered.le
     limit: 10,
   }).catch(() => {});
   process.exit(0);
-})();
+  })();
+}

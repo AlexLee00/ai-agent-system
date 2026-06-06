@@ -3,6 +3,11 @@ import path from 'path';
 import puppeteer from 'puppeteer';
 import { getReservationBrowserConfig } from './runtime-config';
 
+const {
+  collectAquaUIObservation,
+  recordAquaUITrace,
+} = require('../../../packages/playwright-utils');
+
 const HEADED_FLAG = path.join(__dirname, '..', '.playwright-headed');
 
 function readLegacyHeadlessEnv(scope: string): string | undefined {
@@ -138,6 +143,10 @@ export async function navigateWithTimeout(
   const runtime = getReservationBrowserConfig();
   try {
     await page.goto(url, { timeout: timeout || runtime.navigationTimeoutMs, waitUntil: 'networkidle2' });
+    await recordReservationAquaUITrace(page, {
+      scope: 'reservation.navigate',
+      url,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if ((error as Error)?.name === 'TimeoutError' || message.includes('timeout')) {
@@ -145,5 +154,30 @@ export async function navigateWithTimeout(
       return;
     }
     throw error;
+  }
+}
+
+export async function recordReservationAquaUITrace(
+  page: any,
+  context: Record<string, unknown> = {},
+): Promise<number | string | null> {
+  if (process.env.AQUAUI_TRACE_ENABLED === 'false' || process.env.RESERVATION_AQUAUI_TRACE_ENABLED === 'false') {
+    return null;
+  }
+  try {
+    const observation = await collectAquaUIObservation(page, {
+      maxTextChars: Number(process.env.AQUAUI_TRACE_MAX_TEXT_CHARS || 3000),
+      includeScreenshotHash: process.env.AQUAUI_TRACE_SCREENSHOT_HASH === 'true',
+    });
+    return await recordAquaUITrace(observation, {
+      team: 'reservation',
+      botName: String(context.botName || context.bot || 'reservation-browser'),
+      scope: String(context.scope || 'reservation'),
+      traceId: String(context.traceId || ''),
+      title: 'Reservation AQuaUI trace',
+      ...context,
+    });
+  } catch {
+    return null;
   }
 }

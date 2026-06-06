@@ -393,7 +393,7 @@ async function main() {
   }
 
   const storedRows = noStore ? result.rows : await getPickkoOrderRawByDate(targetDate);
-  const payload = {
+  const payload: any = {
     ok: true,
     stored: !noStore,
     ...result,

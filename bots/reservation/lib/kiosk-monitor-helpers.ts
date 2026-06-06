@@ -154,7 +154,7 @@ export function splitKioskEntryForNaverBlocks(entry: KioskEntry): KioskEntry[] {
   const endMin = toClockMinutes(entry?.end);
   if (startMin == null || endMin == null || endMin > startMin) return [entry];
 
-  const splitEntries = [
+  const splitEntries: KioskEntry[] = [
     {
       ...entry,
       end: '24:00',

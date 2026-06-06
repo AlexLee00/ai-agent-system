@@ -93,6 +93,11 @@ function activeAutocommitEnabled(value = process.env.REFACTORER_ACTIVE_AUTOCOMMI
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function normalizeDirtyScope(value = process.env.REFACTORER_DIRTY_SCOPE) {
+  const scope = String(value || '').trim().toLowerCase();
+  return ['file', 'workspace', 'tree'].includes(scope) ? scope : 'workspace';
+}
+
 function autofixEnabled(value = process.env.REFACTORER_AUTOFIX_ENABLED) {
   return activeAutocommitEnabled(value);
 }
@@ -724,29 +729,80 @@ function gitStatusShort() {
   }
 }
 
+function normalizeScopePath(value = '') {
+  return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
+}
+
+function refactorScopePrefixes(targetRelPath = '', scope = 'workspace') {
+  const normalizedScope = normalizeDirtyScope(scope);
+  const target = normalizeScopePath(targetRelPath);
+  if (!target || normalizedScope === 'tree') return [];
+  if (normalizedScope === 'file') return [target];
+
+  const parts = target.split('/').filter(Boolean);
+  if (parts.length >= 2 && ['packages', 'bots', 'elixir'].includes(parts[0])) {
+    return [`${parts[0]}/${parts[1]}`];
+  }
+  return parts[0] ? [parts[0]] : [];
+}
+
+function gitStatusScoped(prefixes = []) {
+  const scopePrefixes = (Array.isArray(prefixes) ? prefixes : [])
+    .map(normalizeScopePath)
+    .filter(Boolean);
+  if (scopePrefixes.length === 0) return gitStatusShort();
+  try {
+    return runGit(['status', '--short', '--', ...scopePrefixes]).trim();
+  } catch (error) {
+    return `git_status_failed:${error?.message || String(error)}`;
+  }
+}
+
 function gitStatusLines(statusText = '') {
   return String(statusText || '').split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean);
 }
 
 function pathFromStatusLine(line = '') {
-  const text = String(line || '');
-  if (text.includes(' -> ')) return text;
-  return text.slice(3).trim();
+  return String(line || '').slice(3).trim();
 }
 
-function unexpectedMutationLines(currentStatus, baselineStatus, allowedFiles = []) {
+function pathMatchesPrefix(filePath = '', prefix = '') {
+  const file = normalizeScopePath(filePath);
+  const scopePrefix = normalizeScopePath(prefix);
+  return Boolean(file && scopePrefix && (file === scopePrefix || file.startsWith(`${scopePrefix}/`)));
+}
+
+function statusLinePaths(line = '') {
+  return pathFromStatusLine(line)
+    .split(' -> ')
+    .map(normalizeScopePath)
+    .filter(Boolean);
+}
+
+function statusLineInScope(line = '', scopePrefixes = []) {
+  const prefixes = (Array.isArray(scopePrefixes) ? scopePrefixes : [])
+    .map(normalizeScopePath)
+    .filter(Boolean);
+  if (prefixes.length === 0) return true;
+  const paths = statusLinePaths(line);
+  return paths.some((statusPath) => prefixes.some((prefix) => pathMatchesPrefix(statusPath, prefix)));
+}
+
+function unexpectedMutationLines(currentStatus, baselineStatus, allowedFiles = [], scopePrefixes = []) {
   const baseline = new Set(gitStatusLines(baselineStatus));
-  const allowed = new Set(allowedFiles.map((file) => String(file || '').replace(/\\/g, '/')));
+  const allowed = new Set(allowedFiles.map(normalizeScopePath).filter(Boolean));
   return gitStatusLines(currentStatus).filter((line) => {
+    if (!statusLineInScope(line, scopePrefixes)) return false;
     if (baseline.has(line)) return false;
-    const statusPath = pathFromStatusLine(line).replace(/\\/g, '/');
+    const statusPath = normalizeScopePath(pathFromStatusLine(line));
     return !allowed.has(statusPath);
   });
 }
 
-function cleanupUnexpectedUntracked(lines = [], baselineStatus = '') {
+function cleanupUnexpectedUntracked(lines = [], baselineStatus = '', scopePrefixes = []) {
   const baseline = new Set(gitStatusLines(baselineStatus));
   for (const line of lines) {
+    if (!statusLineInScope(line, scopePrefixes)) continue;
     if (baseline.has(line) || !line.startsWith('?? ')) continue;
     const rel = pathFromStatusLine(line);
     const absolutePath = path.resolve(ROOT, rel);
@@ -892,6 +948,8 @@ function buildActiveDocumentContent(context, analysis, active) {
     '- phase: 3',
     `- target: ${context.target.relativePath}`,
     `- refactor_type: ${context.refactorType}`,
+    `- dirty_scope: ${context.dirtyScope}`,
+    `- scope_prefixes: ${(context.refactorScopePrefixes || []).join(', ') || 'tree'}`,
     `- generated_at: ${context.startedAt}`,
     `- autocommit: ${context.activeAutocommit ? 'true' : 'false'}`,
     `- max_files: ${context.activeMaxFiles}`,
@@ -919,6 +977,8 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- patch_path: ${active.patchRelPath || 'none'}`,
     `- worktree_restored: ${active.worktreeRestored === true}`,
     `- final_git_status: ${active.finalGitStatus || 'unknown'}`,
+    `- final_scoped_status: ${active.finalScopedStatus || 'clean'}`,
+    `- target_git_status: ${active.targetGitStatus || 'clean'}`,
     '',
     '## Seven-Step Cycle Status',
     '1. Analyze: complete',
@@ -987,7 +1047,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
   }
 
   for (let attempt = 1; attempt <= context.autofixMaxAttempts; attempt++) {
-    const beforeFixStatus = gitStatusShort();
+    const beforeFixStatus = context.gitStatusShortFn();
     const currentContent = fs.readFileSync(absolutePath, 'utf8');
     const fix = await callAutofixer(context, {
       fileRel,
@@ -1006,12 +1066,13 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
       billingGuard: Boolean(fix?.billingGuard),
     });
     const unexpectedAfterFixer = unexpectedMutationLines(
-      gitStatusShort(),
+      context.gitStatusShortFn(),
       beforeFixStatus,
-      [fileRel]
+      [fileRel],
+      context.refactorScopePrefixes || []
     );
     if (unexpectedAfterFixer.length > 0) {
-      cleanupUnexpectedUntracked(unexpectedAfterFixer, beforeFixStatus);
+      cleanupUnexpectedUntracked(unexpectedAfterFixer, beforeFixStatus, context.refactorScopePrefixes || []);
       restoreFileSnapshot(snapshots, absolutePath);
       return {
         stage: 'active_deferred_unfixable',
@@ -1030,12 +1091,13 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
 
     fs.writeFileSync(absolutePath, fix.fixedContent, 'utf8');
     const unexpectedAfterWrite = unexpectedMutationLines(
-      gitStatusShort(),
+      context.gitStatusShortFn(),
       context.initialGitStatus || '',
-      [fileRel]
+      [fileRel],
+      context.refactorScopePrefixes || []
     );
     if (unexpectedAfterWrite.length > 0) {
-      cleanupUnexpectedUntracked(unexpectedAfterWrite, context.initialGitStatus || '');
+      cleanupUnexpectedUntracked(unexpectedAfterWrite, context.initialGitStatus || '', context.refactorScopePrefixes || []);
       restoreFileSnapshot(snapshots, absolutePath);
       return {
         stage: 'active_deferred_unfixable',
@@ -1246,12 +1308,16 @@ async function recordRefactorOutcome(context, result) {
     changedFiles,
     errorSummary: firstErrorSummary,
     autofix: autofixMeta,
+    dirtyScope: context.dirtyScope,
+    refactorScopePrefixes: context.refactorScopePrefixes || [],
     meta: {
       kind: 'refactor',
       refactorType: result.plan?.candidate?.refactorType || context.refactorType,
       cycleId: context.cycleId,
       mode: context.mode,
       target: context.target.relativePath,
+      dirtyScope: context.dirtyScope,
+      refactorScopePrefixes: context.refactorScopePrefixes || [],
       planPath: result.plan?.relPath || null,
       patchPath: result.plan?.patchRelPath || null,
       analysisSource: result.analysis?.source || null,
@@ -1277,6 +1343,8 @@ async function writeRefactorHeartbeat(context, status, meta = {}) {
     mode: context.mode,
     target: context.target?.relativePath || null,
     refactorType: context.refactorType,
+    dirtyScope: context.dirtyScope,
+    refactorScopePrefixes: context.refactorScopePrefixes || [],
     durationMs: Date.now() - context.startedAtMs,
     ...meta,
   });
@@ -1287,6 +1355,8 @@ function buildCycleContext(options = {}) {
   const target = resolveTarget(options.target || DEFAULT_TARGET);
   const seed = `${nowIso()}:${target.relativePath || options.target || DEFAULT_TARGET}`;
   const cycleId = `refactor-${cycleStamp()}-${crypto.createHash('sha1').update(seed).digest('hex').slice(0, 8)}`;
+  const dirtyScope = normalizeDirtyScope(options.dirtyScope ?? process.env.REFACTORER_DIRTY_SCOPE);
+  const scopePrefixes = refactorScopePrefixes(target.relativePath || '', dirtyScope);
   return {
     mode,
     target,
@@ -1300,6 +1370,10 @@ function buildCycleContext(options = {}) {
     noHeartbeat: Boolean(options.noHeartbeat),
     noWriteOutcome: Boolean(options.noWriteOutcome),
     allowDirtyWorktreeForTest: Boolean(options.allowDirtyWorktreeForTest),
+    dirtyScope,
+    refactorScopePrefixes: scopePrefixes,
+    gitStatusShortFn: options.gitStatusShortFn || gitStatusShort,
+    gitStatusScopedFn: options.gitStatusScopedFn || gitStatusScoped,
     activeMaxFiles: activeMaxFiles(options.activeMaxFiles ?? process.env.REFACTORER_ACTIVE_MAX_FILES),
     activeAutocommit: activeAutocommitEnabled(options.activeAutocommit ?? process.env.REFACTORER_ACTIVE_AUTOCOMMIT),
     autofixEnabled: mode === 'active' && autofixEnabled(options.autofixEnabled ?? process.env.REFACTORER_AUTOFIX_ENABLED),
@@ -1337,11 +1411,29 @@ async function runRefactorCycle(options = {}) {
         result.heartbeat = await writeRefactorHeartbeat(context, 'error', { stage: 'blocked', reason: result.reason });
         return result;
       }
-      const initialGitStatus = gitStatusShort();
+      const initialGitStatus = context.gitStatusShortFn();
       context.initialGitStatus = initialGitStatus;
-      if (initialGitStatus && !context.allowDirtyWorktreeForTest) {
-        const result = { ok: false, blocked: true, reason: 'dirty_worktree', mode: context.mode, gitStatus: initialGitStatus };
-        result.heartbeat = await writeRefactorHeartbeat(context, 'error', { stage: 'blocked', reason: result.reason });
+      const scopePrefixes = refactorScopePrefixes(context.target.relativePath, context.dirtyScope);
+      context.refactorScopePrefixes = scopePrefixes;
+      const scopedDirty = context.gitStatusScopedFn(scopePrefixes);
+      context.initialScopedGitStatus = scopedDirty;
+      if (scopedDirty && !context.allowDirtyWorktreeForTest) {
+        const result = {
+          ok: false,
+          blocked: true,
+          reason: 'dirty_worktree_in_scope',
+          mode: context.mode,
+          dirtyScope: context.dirtyScope,
+          scope: scopePrefixes,
+          gitStatus: scopedDirty,
+          fullGitStatus: initialGitStatus,
+        };
+        result.heartbeat = await writeRefactorHeartbeat(context, 'error', {
+          stage: 'blocked',
+          reason: result.reason,
+          dirtyScope: context.dirtyScope,
+          scope: scopePrefixes,
+        });
         return result;
       }
     }
@@ -1390,8 +1482,10 @@ async function runRefactorCycle(options = {}) {
 
       const active = await runActiveRefactor(context, analysis, candidates);
       active.vaultFeedback = vaultFeedback;
-      active.finalGitStatus = gitStatusShort();
-      active.worktreeRestored = context.allowDirtyWorktreeForTest ? true : active.finalGitStatus === '';
+      active.finalGitStatus = context.gitStatusShortFn();
+      active.finalScopedStatus = context.gitStatusScopedFn(context.refactorScopePrefixes || []);
+      active.targetGitStatus = context.gitStatusScopedFn([context.target.relativePath]);
+      active.worktreeRestored = context.allowDirtyWorktreeForTest ? true : active.targetGitStatus.trim() === '';
       const artifacts = writeActiveArtifacts(context, analysis, active);
       const result = {
         ok: active.ok,
@@ -1524,4 +1618,9 @@ module.exports = {
   runRefactorCycle,
   selectCandidate,
   fetchRefactorVaultFeedback,
+  cleanupUnexpectedUntracked,
+  gitStatusScoped,
+  normalizeDirtyScope,
+  refactorScopePrefixes,
+  unexpectedMutationLines,
 };

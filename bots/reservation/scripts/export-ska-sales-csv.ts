@@ -68,7 +68,7 @@ async function main() {
   }
 
   fs.writeFileSync(outputPath, lines.join('\n') + '\n', 'utf8');
-  const payload = {
+  const payload: any = {
     ok: true,
     output: outputPath,
     rows: rows.length,

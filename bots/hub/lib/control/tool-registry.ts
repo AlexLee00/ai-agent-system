@@ -10,6 +10,10 @@ const {
 } = require('./agent-bus');
 const { buildPlaybookTemplate } = require('./playbook');
 const { validateSubagentSandbox } = require('./subagent-sandbox');
+const {
+  validateAgentToolAdmission,
+  recordAgentGuardAudit,
+} = require('./agent-guard');
 
 function normalizeText(value, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
@@ -357,21 +361,62 @@ async function callHubControlTool(name, input, context) {
   if (!tool) {
     return { ok: false, error: 'unknown_tool', tool: normalized };
   }
-  if (!tool.executeEnabled && !['none', 'read_only'].includes(tool.sideEffect)) {
+  const admission = validateAgentToolAdmission({
+    tool,
+    input: input || {},
+    context: context || {},
+  });
+  if (!admission.ok) {
+    await recordAgentGuardAudit(admission, {
+      traceId: input?.traceId || context?.traceId || '',
+      context: {
+        requiredTopicLevel: tool.requiredTopicLevel,
+        executeEnabled: tool.executeEnabled,
+      },
+    });
     return {
+      ok: false,
+      error: admission.error,
+      tool: normalized,
+      admission: admission.audit,
+      statusCode: 403,
+    };
+  }
+  if (!tool.executeEnabled && !['none', 'read_only'].includes(tool.sideEffect)) {
+    const blocked = {
       ok: false,
       error: 'mutating_tool_disabled',
       tool: normalized,
       sideEffect: tool.sideEffect,
       requiredTopicLevel: tool.requiredTopicLevel,
     };
+    await recordAgentGuardAudit({
+      ok: false,
+      error: blocked.error,
+      audit: {
+        ...admission.audit,
+        decision: 'denied',
+        reason: blocked.error,
+      },
+    }, {
+      traceId: input?.traceId || context?.traceId || '',
+    });
+    return blocked;
   }
+  await recordAgentGuardAudit(admission, {
+    traceId: input?.traceId || context?.traceId || '',
+    context: {
+      requiredTopicLevel: tool.requiredTopicLevel,
+      executeEnabled: tool.executeEnabled,
+    },
+  });
   try {
     const result = await tool.handler(input || {}, context || {});
     return {
       ok: true,
       tool: normalized,
       result,
+      admission: admission.audit,
     };
   } catch (error) {
     const message = String(error?.message || error || 'tool_execution_failed');

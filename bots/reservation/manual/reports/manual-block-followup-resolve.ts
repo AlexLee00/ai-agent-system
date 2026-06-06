@@ -3,14 +3,12 @@
  * manual-block-followup-resolve.js — manual 등록 후속 네이버 차단 수동 처리 결과 반영
  */
 
-import { createRequire } from 'node:module';
 import { parseArgs } from '../../lib/args.ts';
 import { outputResult, fail } from '../../lib/cli.ts';
-import { upsertKioskBlock, recordKioskBlockAttempt } from '../../lib/db.ts';
 import { buildReservationCliInsight } from '../../lib/cli-insight.ts';
 
-const require = createRequire(import.meta.url);
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { upsertKioskBlock, recordKioskBlockAttempt } = require('../../lib/db.ts');
 
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
@@ -76,7 +74,7 @@ async function findOpenRows(fromDate: string): Promise<TargetRow[]> {
 
 async function findTargetRows(): Promise<TargetRow[]> {
   const allOpen = Boolean(ARGS['all-open'] || ARGS.allOpen);
-  const fromDate = ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  const fromDate = String(ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }));
 
   if (allOpen) {
     return findOpenRows(fromDate);

@@ -3,18 +3,16 @@
  * manual-block-followup-report.js — manual 등록 후속 네이버 차단 점검 리포트
  */
 
-import { createRequire } from 'node:module';
 import { parseArgs } from '../../lib/args.ts';
 import { outputResult, fail } from '../../lib/cli.ts';
-import { getKioskBlock, getBlockedKioskBlocks } from '../../lib/db.ts';
 import { buildReservationCliInsight } from '../../lib/cli-insight.ts';
 
-const require = createRequire(import.meta.url);
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { getKioskBlock, getBlockedKioskBlocks } = require('../../lib/db.ts');
 
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
-const fromDate = ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+const fromDate = String(ARGS.from || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }));
 const onlyOpen = Boolean(ARGS['only-open'] || ARGS.onlyOpen);
 
 type ReservationRow = {

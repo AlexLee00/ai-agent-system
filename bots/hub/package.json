@@ -161,6 +161,8 @@
     "hub:secrets-expiry-monitor": "tsx scripts/secrets-store-monitor-runner.ts",
     "hub:secrets-monitor:apply-migration": "PG_DIRECT=true tsx -e \"const pg=require('../../packages/core/lib/pg-pool');const fs=require('fs');const sql=fs.readFileSync('bots/hub/migrations/20261001000070_hub_secrets_rotation_log.sql','utf8');pg.query('public',sql).then(()=>{console.log('migration ok');process.exit(0)}).catch(e=>{console.error(e);process.exit(1)})\"",
     "server-hardening-smoke": "tsx scripts/server-hardening-smoke.ts",
+    "agentguard:smoke": "tsx scripts/agentguard-attestation-smoke.ts",
+    "aquaui:trace-smoke": "tsx scripts/aquaui-trace-smoke.ts",
     "hardcoded-path-smoke": "tsx scripts/hub-hardcoded-path-smoke.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
     "retired-gateway:residue-audit": "tsx scripts/retired-gateway-residue-audit.ts",

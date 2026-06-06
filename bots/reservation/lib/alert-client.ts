@@ -1,7 +1,8 @@
 import os from 'os';
 import path from 'path';
 import { publishToWebhook } from '../../../packages/core/lib/reporting-hub';
-import { updateCriticalIncidentCache } from './critical-incident-bridge';
+
+const { updateCriticalIncidentCache } = require('./critical-incident-bridge');
 
 export interface PublishReservationAlertOptions {
   from_bot?: string;

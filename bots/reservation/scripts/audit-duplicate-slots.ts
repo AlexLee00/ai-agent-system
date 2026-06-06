@@ -168,7 +168,7 @@ async function loadDuplicateGroups() {
   return detailed;
 }
 
-function buildReport(groups) {
+function buildReport(groups): any {
   const risky = groups.filter((group) => group.classification.severity === 'risky');
   const historical = groups.filter((group) => group.classification.severity === 'historical');
   const unknown = groups.filter((group) => group.classification.severity === 'unknown');

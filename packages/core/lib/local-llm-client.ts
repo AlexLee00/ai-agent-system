@@ -10,7 +10,7 @@ function makeSemaphore(max) {
 
   function acquire() {
     if (count < max) { count++; return Promise.resolve(); }
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       queue.push(() => { count++; resolve(); });
     });
   }

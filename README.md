@@ -103,11 +103,11 @@ The system continuously improves through three layers of feedback:
 | **Local LLMs** | MLX Server — Qwen 2.5 7B (fast), DeepSeek R1 32B (reasoning) |
 | **Embeddings** | MLX Qwen3-Embedding-0.6B (1024-dim, fully local) |
 | **Cloud LLMs** | Groq (free, fallback), OpenAI/Anthropic (selective) |
-| **Hardware** | Mac Studio M4 Max 36GB (OPS) + MacBook Air M3 (DEV) |
+| **Hardware** | Mac Studio M4 Max 36GB (OPS — 개발·운영 통합) |
 | **Orchestration** | launchd (76 services), Hub API (:7788) |
 | **Communication** | Telegram Bot API (12 topic channels) |
 | **CI/CD** | GitHub Actions + deploy.sh (5-min cron) |
-| **VPN** | Tailscale (DEV ↔ OPS secure tunnel) |
+| **VPN** | Tailscale (secure remote access) |
 
 
 <h2 id="getting-started">🚀 Project Structure</h2>

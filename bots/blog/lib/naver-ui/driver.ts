@@ -11,6 +11,10 @@ const {
   assertSafeScheduledAt,
   formatKstScheduleFields,
 } = require('./scheduled-publish-policy.ts');
+const {
+  collectAquaUIObservation,
+  recordAquaUITrace,
+} = require('../../../../packages/playwright-utils');
 
 const BROWSER_CONNECT_TIMEOUT_MS = 5000;
 const BROWSER_PROTOCOL_TIMEOUT_MS = 180000;
@@ -159,7 +163,33 @@ async function gotoWritePage(page, config = getPublishAssistConfig()) {
   const url = buildWriteUrl(config);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAVER_NAVIGATION_TIMEOUT_MS });
   await page.waitForFunction(() => document.readyState !== 'loading', { timeout: 10000 }).catch(() => {});
+  await recordBlogAquaUITrace(page, {
+    scope: 'blog.naver.write_page',
+    url,
+  });
   return url;
+}
+
+async function recordBlogAquaUITrace(page, context = {}) {
+  if (process.env.AQUAUI_TRACE_ENABLED === 'false' || process.env.BLOG_AQUAUI_TRACE_ENABLED === 'false') {
+    return null;
+  }
+  try {
+    const observation = await collectAquaUIObservation(page, {
+      maxTextChars: Number(process.env.AQUAUI_TRACE_MAX_TEXT_CHARS || 3000),
+      includeScreenshotHash: process.env.AQUAUI_TRACE_SCREENSHOT_HASH === 'true',
+    });
+    return await recordAquaUITrace(observation, {
+      team: 'blog',
+      botName: 'blog-naver-ui',
+      scope: context.scope || 'blog',
+      traceId: context.traceId || '',
+      title: 'Blog AQuaUI trace',
+      ...context,
+    });
+  } catch {
+    return null;
+  }
 }
 
 async function detectSecurityOrLoginInterruption(page) {

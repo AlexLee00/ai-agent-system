@@ -1,7 +1,8 @@
 import { logLLMCall } from './llm-logger';
 import { selectRuntime } from './runtime-selector';
-import { callLocalLLM } from './local-llm-client';
 import { callHubLlm } from './hub-client';
+
+const { callLocalLLM } = require('./local-llm-client');
 
 type Runtime = {
   provider?: string;

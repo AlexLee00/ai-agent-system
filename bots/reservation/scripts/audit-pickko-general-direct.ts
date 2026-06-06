@@ -217,7 +217,7 @@ async function main() {
     await pgPool.closeAll();
   }
 
-  const payload = {
+  const payload: any = {
     ok: true,
     fromDate,
     toDate,

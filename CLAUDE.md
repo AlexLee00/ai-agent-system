@@ -43,7 +43,7 @@ Layer 1: 팀원 봇 (규칙) — 실행·보고
 ```
 OPS: Mac Studio M4 Max 36GB (24/7 운영)
   Hub(:7788), PostgreSQL(:5432), n8n(:5678), MLX(:11434)
-DEV: MacBook Air M3 (개발 전용, Tailscale 연결)
+개발도 OPS에서 직접 (DEV 맥북 에어 은퇴, 2026-06)
 배포: git push → 5분 cron 자동 pull + GitHub Actions CI (self-hosted runner OPS)
 DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
 
@@ -90,7 +90,7 @@ LLM 아키텍처:
   - **신규 요청·설계 시: `/brainstorming` 자동** → 3~5개 대안 → 트레이드오프 → 마스터 결정 후 구현
 - **코덱스(Codex)** = 코드 구현 에이전트 (Claude Code Sonnet). 모든 실제 구현 담당.
 - 코덱스 구현 → 메티 점검(문법/소프트/하드 테스트) → 마스터 승인 순서 준수.
-- 모든 코드 구현은 **맥북 에어(DEV)**에서 진행. 맥 스튜디오(OPS) 직접 수정 금지가 기본.
+- 모든 코드 구현은 **OPS(맥 스튜디오)**에서 직접 진행 (DEV 맥북 에어 은퇴). 메티→코덱스→검증→마스터 승인 절차 + PROTECTED·crypto 무중단 준수.
 
 ## 절대 규칙 (변경 불가)
 
