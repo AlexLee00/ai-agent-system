@@ -47,6 +47,27 @@ type ExperienceHit = {
   created_at?: string;
 };
 
+type ExecutionResult = 'success' | 'failure';
+
+type ExecutionTrajectoryInput = FailureTrajectoryInput & {
+  result?: ExecutionResult;
+};
+
+type FailureTrajectoryLoopOptions = FailureTrajectoryInput & {
+  query?: string;
+  limit?: number;
+  hintTitle?: string;
+};
+
+type FailureTrajectoryLoopContext = {
+  hints: ExperienceHit[];
+  failureHints: ExperienceHit[];
+  successHints: ExperienceHit[];
+  hintText: string;
+  recordFailure: (overrides?: Partial<FailureTrajectoryInput>) => Promise<{ signature: string; experienceId: unknown; eventId: unknown }>;
+  recordSuccess: (overrides?: Partial<FailureTrajectoryInput>) => Promise<{ signature: string; experienceId: unknown; eventId: unknown }>;
+};
+
 function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
@@ -117,6 +138,54 @@ function buildContent(summary: FailureTrajectorySummary): string {
   ].filter(Boolean).join('\n');
 }
 
+function buildExecutionContent(summary: FailureTrajectorySummary, result: ExecutionResult): string {
+  return [
+    `${result} trajectory: ${summary.team}/${summary.agent}/${summary.intent}`,
+    summary.command ? `command: ${summary.command}` : '',
+    summary.exitCode ? `exit_code: ${summary.exitCode}` : '',
+    summary.recoveryResult ? `recovery_result: ${summary.recoveryResult}` : '',
+    summary.resolutionHint ? `resolution_hint: ${summary.resolutionHint}` : '',
+    summary.testResult ? `test_result: ${summary.testResult}` : '',
+    summary.rootCause ? `root_cause: ${summary.rootCause}` : '',
+    summary.stderrTail ? `stderr_tail: ${summary.stderrTail}` : '',
+    summary.stdoutTail ? `stdout_tail: ${summary.stdoutTail}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function formatFailureHints(hints: ExperienceHit[] = [], options: { title?: string; limit?: number } = {}): string {
+  if (!Array.isArray(hints) || hints.length === 0) return '';
+  const title = normalizeText(options.title, '표준 실패 궤적');
+  const limit = Math.max(1, Math.min(Number(options.limit || 3), 10));
+  const lines = hints.slice(0, limit).map((hit, index) => {
+    const metadata = hit?.metadata || {};
+    return [
+      `${index + 1}. signature=${String(metadata.signature || 'unknown')}`,
+      metadata.root_cause ? `root=${String(metadata.root_cause).slice(0, 180)}` : '',
+      metadata.resolution_hint ? `hint=${String(metadata.resolution_hint).slice(0, 240)}` : '',
+      metadata.test_result ? `test=${String(metadata.test_result).slice(0, 180)}` : '',
+      metadata.stderr_tail ? `stderr=${String(metadata.stderr_tail).slice(0, 180)}` : '',
+    ].filter(Boolean).join(' | ');
+  });
+  return `\n\n[${title}]\n${lines.join('\n')}`;
+}
+
+function formatExecutionHints(hints: ExperienceHit[] = [], options: { title?: string; limit?: number } = {}): string {
+  if (!Array.isArray(hints) || hints.length === 0) return '';
+  const title = normalizeText(options.title, '표준 성공 궤적');
+  const limit = Math.max(1, Math.min(Number(options.limit || 3), 10));
+  const lines = hints.slice(0, limit).map((hit, index) => {
+    const metadata = hit?.metadata || {};
+    return [
+      `${index + 1}. signature=${String(metadata.signature || 'unknown')}`,
+      metadata.recovery_result ? `result=${String(metadata.recovery_result).slice(0, 220)}` : '',
+      metadata.resolution_hint ? `hint=${String(metadata.resolution_hint).slice(0, 240)}` : '',
+      metadata.test_result ? `test=${String(metadata.test_result).slice(0, 180)}` : '',
+      metadata.stdout_tail ? `stdout=${String(metadata.stdout_tail).slice(0, 180)}` : '',
+    ].filter(Boolean).join(' | ');
+  });
+  return `\n\n[${title}]\n${lines.join('\n')}`;
+}
+
 async function recordFailureTrajectory(input: FailureTrajectoryInput): Promise<{ signature: string; experienceId: unknown; eventId: unknown }> {
   const summary = buildFailureTrajectory(input);
   const content = buildContent(summary);
@@ -166,6 +235,59 @@ async function recordFailureTrajectory(input: FailureTrajectoryInput): Promise<{
   return { signature: summary.signature, experienceId, eventId };
 }
 
+async function recordExecutionTrajectory(input: ExecutionTrajectoryInput): Promise<{ signature: string; experienceId: unknown; eventId: unknown }> {
+  const result: ExecutionResult = input.result === 'failure' ? 'failure' : 'success';
+  const summary = buildFailureTrajectory(input);
+  const content = buildExecutionContent(summary, result);
+  const details = {
+    metadata: summary.metadata,
+    kind: 'execution_trajectory',
+    result,
+    team: summary.team,
+    agent: summary.agent,
+    signature: summary.signature,
+    trace_id: summary.traceId,
+    command: summary.command,
+    exit_code: summary.exitCode,
+    stdout_tail: summary.stdoutTail,
+    stderr_tail: summary.stderrTail,
+    diff_summary: summary.diffSummary,
+    test_result: summary.testResult,
+    recovery_result: summary.recoveryResult,
+    root_cause: summary.rootCause,
+    resolution_hint: summary.resolutionHint,
+    incident_key: summary.incidentKey,
+  };
+
+  const experienceId = await experienceStore.storeExperience({
+    userInput: content,
+    intent: summary.intent,
+    response: summary.recoveryResult || summary.resolutionHint || summary.rootCause || summary.stderrTail || `${result} trajectory recorded`,
+    result,
+    why: result === 'success'
+      ? summary.recoveryResult || summary.testResult || summary.resolutionHint || 'execution succeeded'
+      : summary.rootCause || summary.testResult || summary.stderrTail || 'execution failed',
+    team: summary.team,
+    sourceBot: summary.agent,
+    details,
+    successOnly: false,
+  });
+
+  const eventId = await eventLake.record({
+    eventType: 'execution_trajectory_recorded',
+    team: summary.team,
+    botName: summary.agent,
+    severity: result === 'success' ? 'info' : 'warn',
+    traceId: summary.traceId,
+    title: `${summary.intent}:${result}:${summary.signature}`,
+    message: content.slice(0, 1000),
+    tags: ['execution_trajectory', result, summary.intent, summary.agent],
+    metadata: details,
+  });
+
+  return { signature: summary.signature, experienceId, eventId };
+}
+
 async function searchFailureHints(query: string, options: { team?: string; agent?: string; intent?: string; limit?: number } = {}): Promise<ExperienceHit[]> {
   const team = normalizeText(options.team);
   const intent = normalizeText(options.intent, 'failure_recovery');
@@ -184,9 +306,119 @@ async function searchFailureHints(query: string, options: { team?: string; agent
   }) as Promise<ExperienceHit[]>;
 }
 
+async function searchExecutionHints(query: string, options: { team?: string; agent?: string; intent?: string; result?: ExecutionResult; limit?: number } = {}): Promise<ExperienceHit[]> {
+  const team = normalizeText(options.team);
+  const intent = normalizeText(options.intent, 'failure_recovery');
+  const limit = Math.max(1, Math.min(Number(options.limit || 5), 20));
+  const filter: Record<string, unknown> = {
+    kind: 'execution_trajectory',
+    intent,
+  };
+  if (options.result) filter.result = options.result;
+  if (team) filter.team = team;
+  if (options.agent) filter.agent = normalizeText(options.agent);
+
+  return rag.search('experience', query, {
+    limit,
+    filter,
+  }) as Promise<ExperienceHit[]>;
+}
+
+async function prepareFailureTrajectoryLoop(options: FailureTrajectoryLoopOptions): Promise<FailureTrajectoryLoopContext> {
+  const team = normalizeText(options.team, 'general');
+  const agent = normalizeText(options.agent, 'unknown');
+  const intent = normalizeText(options.intent, 'failure_recovery');
+  const query = normalizeText(
+    options.query,
+    [
+      normalizeCommand(options.command),
+      normalizeText(options.rootCause),
+      normalizeText(options.stderr),
+      normalizeText(options.testResult),
+    ].filter(Boolean).join('\n') || intent,
+  ).slice(0, 4000);
+
+  let hints: ExperienceHit[] = [];
+  try {
+    hints = await searchFailureHints(query, {
+      team,
+      agent,
+      intent,
+      limit: options.limit || 3,
+    });
+  } catch {
+    hints = [];
+  }
+
+  let successHints: ExperienceHit[] = [];
+  try {
+    successHints = await searchExecutionHints(query, {
+      team,
+      agent,
+      intent,
+      result: 'success',
+      limit: options.limit || 3,
+    });
+  } catch {
+    successHints = [];
+  }
+
+  const failureHintText = formatFailureHints(hints, {
+    title: options.hintTitle,
+    limit: options.limit,
+  });
+  const successHintText = formatExecutionHints(successHints, {
+    limit: options.limit,
+  });
+
+  return {
+    hints,
+    failureHints: hints,
+    successHints,
+    hintText: `${failureHintText}${successHintText}`,
+    recordFailure: (overrides: Partial<FailureTrajectoryInput> = {}) => recordFailureTrajectory({
+      ...options,
+      ...overrides,
+      team,
+      agent,
+      intent,
+      metadata: {
+        ...(options.metadata || {}),
+        ...(overrides.metadata || {}),
+        failure_hint_count: hints.length,
+        success_hint_count: successHints.length,
+        failure_loop_applied: true,
+      },
+    }),
+    recordSuccess: (overrides: Partial<FailureTrajectoryInput> = {}) => recordExecutionTrajectory({
+      ...options,
+      ...overrides,
+      result: 'success',
+      team,
+      agent,
+      intent,
+      metadata: {
+        ...(options.metadata || {}),
+        ...(overrides.metadata || {}),
+        failure_hint_count: hints.length,
+        success_hint_count: successHints.length,
+        execution_loop_applied: true,
+      },
+    }),
+  };
+}
+
+const prepareExecutionTrajectoryLoop = prepareFailureTrajectoryLoop;
+
 export = {
   buildFailureTrajectory,
+  formatExecutionHints,
+  formatFailureHints,
+  prepareExecutionTrajectoryLoop,
+  prepareFailureTrajectoryLoop,
+  recordExecutionTrajectory,
   recordFailureTrajectory,
+  searchExecutionHints,
   searchFailureHints,
   _testOnly_signatureFor: signatureFor,
 };

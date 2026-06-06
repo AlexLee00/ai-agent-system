@@ -54,6 +54,8 @@ async function main() {
   assert.match(implementor._formatFailureHints(hintRows), /no files extracted/);
   assert.match(verifier._formatFailureHints(hintRows), /signature=abc123/);
   assert.match(verifier._formatFailureHints(hintRows), /use --- FILE/);
+  assert.strictEqual(typeof implementor._recordImplementationSuccessTrajectory, 'function');
+  assert.strictEqual(typeof verifier._recordVerificationSuccessTrajectory, 'function');
 
   console.log('✅ darwin auto-apply root smoke ok');
 }

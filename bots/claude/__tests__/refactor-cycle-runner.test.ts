@@ -6,6 +6,46 @@ const path = require('path');
 
 const RUNNER_PATH = path.resolve(__dirname, '../scripts/refactor-cycle-runner.ts');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
+const ACTIVE_TARGET = 'bots/claude/lib/agent-heartbeat.ts';
+const AUTOFIX_MARKER = 'const __refactorAutofixFixture = true;';
+
+function targetContent(target = ACTIVE_TARGET) {
+  return fs.readFileSync(path.join(PROJECT_ROOT, target), 'utf8');
+}
+
+function verifierModulesForAutofix(target = ACTIVE_TARGET) {
+  const calls = { builder: [], reviewer: [] };
+  const builderModule = {
+    async runBuildCheck(options) {
+      calls.builder.push(options);
+      assert.deepStrictEqual(options.files, [target]);
+      assert.strictEqual(options.force, true);
+      assert.strictEqual(options.test, true);
+      const content = targetContent(target);
+      const pass = content.includes(AUTOFIX_MARKER);
+      return {
+        pass,
+        skipped: false,
+        message: pass ? 'forced builder pass after autofix' : 'forced builder fail before autofix',
+        results: [{
+          pass,
+          skipped: false,
+          error: pass ? null : 'TS2322: mocked type error after ts-nocheck removal',
+        }],
+      };
+    },
+  };
+  const reviewerModule = {
+    async runReview(options) {
+      calls.reviewer.push(options);
+      assert.deepStrictEqual(options.files, [target]);
+      assert.strictEqual(options.force, true);
+      assert.strictEqual(options.test, true);
+      return { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [], sent: false };
+    },
+  };
+  return { calls, builderModule, reviewerModule };
+}
 
 async function test_mode_defaults_off() {
   delete require.cache[RUNNER_PATH];
@@ -196,6 +236,161 @@ async function test_active_verify_skip_defers_and_restores() {
   console.log('✅ refactor-cycle: verify skip defers and restores without self-heal');
 }
 
+async function test_autofix_off_preserves_phase3_defer() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { calls, builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  let fixerCalls = 0;
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    builderModule,
+    reviewerModule,
+    fixerFn: async () => {
+      fixerCalls += 1;
+      return { ok: true, fixedContent: 'should-not-be-called' };
+    },
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.active.stage, 'active_deferred');
+  assert.strictEqual(result.active.results[0].stage, 'active_deferred');
+  assert.strictEqual(fixerCalls, 0);
+  assert.strictEqual(calls.builder.length, 1);
+  assert.strictEqual(calls.reviewer.length, 1);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix off keeps Phase 3 defer path');
+}
+
+async function test_autofix_success_captures_patch_and_restores() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { calls, builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  let fixerCalls = 0;
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    builderModule,
+    reviewerModule,
+    fixerFn: async (_context, params) => {
+      fixerCalls += 1;
+      assert.strictEqual(params.fileRel, target);
+      assert.match(params.builderError, /TS2322/);
+      return {
+        ok: true,
+        fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+        model: 'mock-refactorer',
+        provider: 'mock',
+      };
+    },
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.active.stage, 'active_autofixed_ready_for_commit');
+  assert.strictEqual(result.active.results[0].stage, 'active_autofixed_ready_for_commit');
+  assert.strictEqual(result.active.results[0].autofixAttempts, 1);
+  assert.strictEqual(result.active.results[0].model, 'mock-refactorer');
+  assert.deepStrictEqual(result.active.changedFiles, [target]);
+  assert.match(result.active.patchText, /-\/\/ @ts-nocheck/);
+  assert.match(result.active.patchText, new RegExp(AUTOFIX_MARKER));
+  assert.strictEqual(result.steps.find((step) => step.id === 'fix').status, 'autofix_complete');
+  assert.strictEqual(fixerCalls, 1);
+  assert.strictEqual(calls.builder.length, 2);
+  assert.strictEqual(calls.reviewer.length, 2);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix success re-verifies, captures patch, and restores');
+}
+
+async function test_autofix_failure_defers_unfixable_and_restores() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { calls, builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  let fixerCalls = 0;
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    autofixMaxAttempts: 1,
+    builderModule,
+    reviewerModule,
+    fixerFn: async (_context, params) => {
+      fixerCalls += 1;
+      return { ok: true, fixedContent: params.currentContent, model: 'mock-bad-fix' };
+    },
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.active.stage, 'active_deferred_unfixable');
+  assert.strictEqual(result.active.results[0].stage, 'active_deferred_unfixable');
+  assert.strictEqual(result.active.results[0].autofixAttempts, 1);
+  assert.match(result.active.results[0].errorSummary, /mocked type error|verify_failed|builder/);
+  assert.strictEqual(fixerCalls, 1);
+  assert.strictEqual(calls.builder.length, 2);
+  assert.strictEqual(calls.reviewer.length, 2);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix failure defers unfixable and restores');
+}
+
+async function test_autofix_rejects_unexpected_mutation() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const unexpectedRel = 'bots/claude/__tests__/tmp-refactor-unexpected.txt';
+  const unexpectedAbs = path.join(PROJECT_ROOT, unexpectedRel);
+  fs.rmSync(unexpectedAbs, { force: true });
+  const { builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    builderModule,
+    reviewerModule,
+    fixerFn: async (_context, params) => {
+      fs.writeFileSync(unexpectedAbs, 'unexpected mutation', 'utf8');
+      return {
+        ok: true,
+        fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+        model: 'mock-mutating-fix',
+      };
+    },
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.active.results[0].stage, 'active_deferred_unfixable');
+  assert.match(result.active.results[0].errorSummary, /autofix_unexpected_mutation/);
+  assert.strictEqual(fs.existsSync(unexpectedAbs), false);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix rejects and cleans unexpected mutation');
+}
+
 async function main() {
   console.log('=== Refactor Cycle Runner 테스트 시작 ===\n');
   const tests = [
@@ -207,6 +402,10 @@ async function main() {
     test_plan_includes_sigma_feedback_context,
     test_active_verifies_and_restores_without_autocommit,
     test_active_verify_skip_defers_and_restores,
+    test_autofix_off_preserves_phase3_defer,
+    test_autofix_success_captures_patch_and_restores,
+    test_autofix_failure_defers_unfixable_and_restores,
+    test_autofix_rejects_unexpected_mutation,
   ];
   let passed = 0;
   let failed = 0;

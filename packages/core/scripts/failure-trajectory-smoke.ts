@@ -35,7 +35,15 @@ async function main() {
           calls.push({ kind: 'rag.search', payload: { collection, query, options } });
           return [{
             content: 'previous failure',
-            metadata: { agent: 'doctor', signature: 'abc' },
+            metadata: options?.filter?.result === 'success'
+              ? {
+                  agent: 'doctor',
+                  signature: 'success-abc',
+                  recovery_result: 'previous recovery worked',
+                  resolution_hint: 'repeat safe recovery pattern',
+                  result: 'success',
+                }
+              : { agent: 'doctor', signature: 'abc' },
           }];
         },
       };
@@ -112,6 +120,90 @@ async function main() {
       kind: 'failure_trajectory',
       result: 'failure',
       intent: 'restart_launchd_service',
+      team: 'claude',
+      agent: 'doctor',
+    });
+
+    const loop = await trajectory.prepareFailureTrajectoryLoop({
+      team: 'claude',
+      agent: 'doctor',
+      intent: 'restart_launchd_service',
+      command: 'launchctl kickstart',
+      query: 'bootstrap failed',
+      limit: 2,
+      hintTitle: '테스트 실패 궤적',
+      metadata: {
+        task_type: 'restart_launchd_service',
+      },
+    });
+    assert.strictEqual(loop.hints.length, 1);
+    assert.strictEqual(loop.failureHints.length, 1);
+    assert.strictEqual(loop.successHints.length, 1);
+    assert.match(loop.hintText, /\[테스트 실패 궤적\]/);
+    assert.match(loop.hintText, /signature=abc/);
+    assert.match(loop.hintText, /\[표준 성공 궤적\]/);
+    assert.match(loop.hintText, /previous recovery worked/);
+    assert.strictEqual(typeof trajectory.prepareExecutionTrajectoryLoop, 'function');
+    const loopRecorded = await loop.recordFailure({
+      stderr: 'Bootstrap failed again',
+      rootCause: 'repeated launchd bootstrap failure',
+      metadata: {
+        attempt: 2,
+      },
+    });
+    assert.match(loopRecorded.signature, /^[a-f0-9]{16}$/);
+    const loopExperience = calls.filter((call) => call.kind === 'experience').at(-1);
+    assert.ok(loopExperience, 'expected loop experience record');
+    const loopDetails = loopExperience.payload.details as Record<string, unknown>;
+    assert.strictEqual(loopDetails.kind, 'failure_trajectory');
+    assert.deepStrictEqual(loopDetails.metadata, {
+      task_type: 'restart_launchd_service',
+      attempt: 2,
+      failure_hint_count: 1,
+      success_hint_count: 1,
+      failure_loop_applied: true,
+    });
+
+    const successRecorded = await loop.recordSuccess({
+      stdout: 'service restarted',
+      recoveryResult: 'launchd service restarted successfully',
+      resolutionHint: 'same label can be retried after cooldown check passes',
+      metadata: {
+        attempt: 3,
+      },
+    });
+    assert.match(successRecorded.signature, /^[a-f0-9]{16}$/);
+    const successExperience = calls.filter((call) => call.kind === 'experience').at(-1);
+    assert.ok(successExperience, 'expected success experience record');
+    assert.strictEqual(successExperience.payload.result, 'success');
+    assert.strictEqual(successExperience.payload.successOnly, false);
+    const successDetails = successExperience.payload.details as Record<string, unknown>;
+    assert.strictEqual(successDetails.kind, 'execution_trajectory');
+    assert.strictEqual(successDetails.result, 'success');
+    assert.deepStrictEqual(successDetails.metadata, {
+      task_type: 'restart_launchd_service',
+      attempt: 3,
+      failure_hint_count: 1,
+      success_hint_count: 1,
+      execution_loop_applied: true,
+    });
+    const successEvent = calls.filter((call) => call.kind === 'event').at(-1);
+    assert.strictEqual(successEvent?.payload.eventType, 'execution_trajectory_recorded');
+    assert.strictEqual(successEvent?.payload.severity, 'info');
+
+    const successHints = await trajectory.searchExecutionHints('service restarted', {
+      team: 'claude',
+      agent: 'doctor',
+      intent: 'restart_launchd_service',
+      result: 'success',
+    });
+    assert.strictEqual(successHints.length, 1);
+    const successSearchCall = calls.filter((call) => call.kind === 'rag.search').at(-1);
+    const successSearchOptions = successSearchCall?.payload.options as Record<string, unknown>;
+    assert.deepStrictEqual(successSearchOptions.filter, {
+      kind: 'execution_trajectory',
+      intent: 'restart_launchd_service',
+      result: 'success',
       team: 'claude',
       agent: 'doctor',
     });

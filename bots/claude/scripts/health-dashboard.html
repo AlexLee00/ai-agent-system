@@ -192,7 +192,26 @@ function render(data) {
       </table>
     </div>`;
 
-  // 6. 리소스 카드
+  // 6. 실행 궤적 카드
+  const trajectory = data.execution_trajectory || {};
+  const trajectoryRows = (trajectory.latest || []).slice(0, 6).map(r => `<tr>
+    <td>${formatTime(r.created_at)}</td>
+    <td>${r.team || '—'}/${r.agent || '—'}</td>
+    <td>${badge(r.result === 'success' ? 'ok' : 'warn')}</td>
+    <td>${r.failure_hint_count ?? '0'}/${r.success_hint_count ?? '0'}</td>
+  </tr>`).join('');
+  const trajectoryCard = `
+    <div class="card">
+      <div class="card-title">🔁 실행 궤적 루프 (24h)</div>
+      <div class="res-row"><span class="res-label">총 궤적</span><span class="res-val">${trajectory.total || 0}건</span></div>
+      <div class="res-row"><span class="res-label">성공/실패</span><span class="res-val">${trajectory.success || 0}/${trajectory.failure || 0}</span></div>
+      <table style="margin-top:10px">
+        <thead><tr><th>시간</th><th>에이전트</th><th>결과</th><th>힌트 F/S</th></tr></thead>
+        <tbody>${trajectoryRows || '<tr><td colspan="4" class="empty">최근 실행 궤적 없음</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  // 7. 리소스 카드
   const res = data.resources || {};
   const memStatus = res.mem_used_pct >= 90 ? 'error' : res.mem_used_pct >= 75 ? 'warn' : 'ok';
   const resourceCard = `
@@ -206,7 +225,7 @@ function render(data) {
       <div class="res-row"><span class="res-label">CPU 코어</span><span class="res-val">${res.cpu_count || '?'}코어</span></div>
     </div>`;
 
-  grid.innerHTML = botCard + leadCard + doctorCard + issueCard + logCard + resourceCard;
+  grid.innerHTML = botCard + leadCard + doctorCard + issueCard + logCard + trajectoryCard + resourceCard;
   document.getElementById('last-updated').textContent =
     '마지막 갱신: ' + new Date().toLocaleTimeString('ko-KR');
 }

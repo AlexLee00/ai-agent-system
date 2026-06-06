@@ -100,6 +100,78 @@ async function recordDoctorFailureTrajectory(taskType, params = {}, requestedBy 
   }
 }
 
+async function prepareDoctorFailureTrajectoryLoop(taskType, params = {}, requestedBy = 'dexter') {
+  try {
+    const query = [taskType, requestedBy, params?.label, params?.filePath, JSON.stringify(params || {})]
+      .filter(Boolean)
+      .join(' ')
+      .slice(0, 2000);
+    return await failureTrajectory.prepareExecutionTrajectoryLoop({
+      team: 'claude',
+      agent: 'doctor',
+      intent: `doctor_${String(taskType || 'recovery')}`,
+      command: `doctor.execute:${String(taskType || 'unknown')}`,
+      query,
+      limit: 3,
+      hintTitle: '표준 실패 궤적',
+      incidentKey: `claude:doctor:${String(taskType || 'unknown')}`,
+      metadata: {
+        task_type: taskType,
+        requested_by: requestedBy,
+        params,
+      },
+    });
+  } catch (error) {
+    console.warn('[doctor] 표준 실패 궤적 루프 준비 실패 (무시):', error.message);
+    return {
+      hints: [],
+      failureHints: [],
+      successHints: [],
+      hintText: '',
+      recordFailure: async (overrides = {}) => recordDoctorFailureTrajectory(
+        taskType,
+        params,
+        requestedBy,
+        overrides.rootCause || overrides.stderr || 'failure trajectory loop fallback',
+        { exitCode: overrides.exitCode ?? null, recoveryResult: overrides.recoveryResult || null }
+      ),
+      recordSuccess: async () => null,
+    };
+  }
+}
+
+async function recordDoctorLoopFailure(loop, taskType, params = {}, requestedBy = 'dexter', errorMsg = '', result = null) {
+  try {
+    if (loop && typeof loop.recordFailure === 'function') {
+      await loop.recordFailure({
+        exitCode: result?.exitCode ?? null,
+        stderr: errorMsg,
+        rootCause: errorMsg || `doctor ${taskType} failed`,
+        resolutionHint: '다음 doctor 실행 전에 같은 taskType/label의 실패 궤적을 조회해 cooldown, blacklist, retired service, launchctl timeout 여부를 먼저 확인한다.',
+        recoveryResult: result ? JSON.stringify(result).slice(0, 1000) : '',
+      });
+      return;
+    }
+  } catch (error) {
+    console.warn('[doctor] 표준 실패 궤적 루프 저장 실패 (fallback):', error.message);
+  }
+  await recordDoctorFailureTrajectory(taskType, params, requestedBy, errorMsg, result);
+}
+
+async function recordDoctorLoopSuccess(loop, taskType, params = {}, data = null) {
+  try {
+    if (!loop || typeof loop.recordSuccess !== 'function') return;
+    await loop.recordSuccess({
+      stdout: data ? JSON.stringify(data).slice(0, 1000) : '',
+      recoveryResult: data ? JSON.stringify(data).slice(0, 1000) : 'doctor action succeeded',
+      resolutionHint: '성공한 doctor 실행 패턴을 다음 유사 복구에서 참고한다.',
+      testResult: 'doctor_action_success',
+    });
+  } catch (error) {
+    console.warn('[doctor] 표준 성공 궤적 저장 실패 (무시):', error.message);
+  }
+}
+
 function retiredServiceMessage(label) {
   const replacement = getServiceOwnership(label)?.replacement;
   return replacement
@@ -286,7 +358,8 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     },
   ).catch(() => '');
   const memoryHints = `${recentRecoveryHint}${semanticRecoveryHint}`;
-  const trajectoryHints = await recallFailureTrajectoryHints(taskType, params, requestedBy);
+  const trajectoryLoop = await prepareDoctorFailureTrajectoryLoop(taskType, params, requestedBy);
+  const trajectoryHints = trajectoryLoop.hintText || '';
   const recoveryHints = `${memoryHints}${trajectoryHints}`;
 
   // 1. 블랙리스트 체크
@@ -294,7 +367,7 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   if (banned) {
     const msg = `블랙리스트 위반 — "${banned}" 포함 파라미터 거부`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    await recordDoctorFailureTrajectory(taskType, params, requestedBy, msg);
+    await recordDoctorLoopFailure(trajectoryLoop, taskType, params, requestedBy, msg);
     return { success: false, message: `${msg}${recoveryHints}` };
   }
 
@@ -303,7 +376,7 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   if (!task) {
     const msg = `화이트리스트에 없는 작업: ${taskType}`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    await recordDoctorFailureTrajectory(taskType, params, requestedBy, msg);
+    await recordDoctorLoopFailure(trajectoryLoop, taskType, params, requestedBy, msg);
     return { success: false, message: `${msg}${recoveryHints}` };
   }
 
@@ -317,7 +390,7 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   if (taskType === 'restart_launchd_service' && await isRestartCooldownActive(params?.label)) {
     const msg = `최근 launchctl timeout이 반복되어 재시작을 잠시 보류합니다: ${params?.label}`;
     await logRecovery(taskType, params, null, false, requestedBy, null, msg);
-    await recordDoctorFailureTrajectory(taskType, params, requestedBy, msg);
+    await recordDoctorLoopFailure(trajectoryLoop, taskType, params, requestedBy, msg);
     return { success: false, message: `${msg}${recoveryHints}` };
   }
 
@@ -325,6 +398,7 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
   try {
     const data = await task.action(params);
     await logRecovery(taskType, params, data, true, requestedBy, 'auto');
+    await recordDoctorLoopSuccess(trajectoryLoop, taskType, params, data);
     const msg = `✅ [독터] ${task.description} 완료`;
     console.log(`${msg} — ${JSON.stringify(data)}`);
     return { success: true, message: `${msg}${recoveryHints}`, data };
@@ -332,7 +406,7 @@ async function execute(taskType, params = {}, requestedBy = 'dexter') {
     await logRecovery(taskType, params, null, false, requestedBy, null, e.message);
     const msg = `❌ [독터] ${task.description} 실패: ${e.message}`;
     console.error(msg);
-    await recordDoctorFailureTrajectory(taskType, params, requestedBy, e.message);
+    await recordDoctorLoopFailure(trajectoryLoop, taskType, params, requestedBy, e.message);
     return { success: false, message: `${msg}${recoveryHints}` };
   }
 }

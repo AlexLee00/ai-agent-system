@@ -158,6 +158,53 @@ async function getRecentIssues() {
   }
 }
 
+async function getExecutionTrajectoryStats() {
+  try {
+    const rows = await pgPool.query('reservation', `
+      SELECT
+        metadata->>'team' AS team,
+        metadata->>'agent' AS agent,
+        metadata->>'intent' AS intent,
+        metadata->>'kind' AS kind,
+        COALESCE(metadata->>'result', CASE WHEN metadata->>'kind' = 'failure_trajectory' THEN 'failure' END) AS result,
+        COUNT(*)::int AS count,
+        MAX(created_at) AS latest_at
+      FROM reservation.rag_experience
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+        AND metadata->>'kind' IN ('failure_trajectory', 'execution_trajectory')
+      GROUP BY 1, 2, 3, 4, 5
+      ORDER BY latest_at DESC
+      LIMIT 12
+    `);
+    const latest = await pgPool.query('reservation', `
+      SELECT
+        id,
+        metadata->>'team' AS team,
+        metadata->>'agent' AS agent,
+        metadata->>'intent' AS intent,
+        metadata->>'kind' AS kind,
+        COALESCE(metadata->>'result', CASE WHEN metadata->>'kind' = 'failure_trajectory' THEN 'failure' END) AS result,
+        metadata->'metadata'->>'failure_hint_count' AS failure_hint_count,
+        metadata->'metadata'->>'success_hint_count' AS success_hint_count,
+        created_at
+      FROM reservation.rag_experience
+      WHERE metadata->>'kind' IN ('failure_trajectory', 'execution_trajectory')
+      ORDER BY id DESC
+      LIMIT 8
+    `);
+    const total = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+    const success = rows
+      .filter(row => row.result === 'success')
+      .reduce((sum, row) => sum + Number(row.count || 0), 0);
+    const failure = rows
+      .filter(row => row.result === 'failure')
+      .reduce((sum, row) => sum + Number(row.count || 0), 0);
+    return { total, success, failure, rows, latest };
+  } catch {
+    return { total: 0, success: 0, failure: 0, rows: [], latest: [] };
+  }
+}
+
 function extractDecision(result) {
   if (!result || typeof result !== 'object') return '';
   return String(result.decision || result.action || '').toLowerCase().trim();
@@ -387,10 +434,11 @@ function getResourceStats() {
 }
 
 async function getHealthData() {
-  const [doctorStats, recentIssues, shadowStats] = await Promise.all([
+  const [doctorStats, recentIssues, shadowStats, executionTrajectory] = await Promise.all([
     getDoctorStats(),
     getRecentIssues(),
     getShadowStats(),
+    getExecutionTrajectoryStats(),
   ]);
 
   const botStatuses = getBotStatuses();
@@ -433,6 +481,7 @@ async function getHealthData() {
     doctor_stats:  doctorStats,
     recent_issues: recentIssues,
     shadow_stats:  shadowStats,
+    execution_trajectory: executionTrajectory,
     pool_stats:    poolStats,
     log_health:    logHealth,
     resources,

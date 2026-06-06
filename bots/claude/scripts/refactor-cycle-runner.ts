@@ -27,6 +27,11 @@ const ROOT = env.PROJECT_ROOT || path.resolve(__dirname, '..', '..', '..');
 const DEFAULT_TARGET = 'bots/claude';
 const DEFAULT_REFACTOR_TYPE = 'ts_nocheck';
 const DEFAULT_MCP_BASE = process.env.REFACTOR_MCP_URL || 'http://localhost:8774';
+const DEFAULT_HUB_BASE = process.env.HUB_URL || 'http://localhost:7788';
+const AUTOFIX_SELECTOR_KEY = 'claude.refactorer.code_refactor';
+const AUTOFIX_FILE_MAX_LINES = 1200;
+const AUTOFIX_FILE_MAX_BYTES = 60 * 1024;
+const AUTOFIX_TIMEOUT_MS = 120000;
 const PLAN_DIR = path.join(ROOT, 'docs', 'codex', 'refactor-plans');
 const PATCH_DIR = path.join(PLAN_DIR, 'patches');
 const MAX_SCAN_FILES = Math.max(1, Number(process.env.REFACTORER_MAX_SCAN_FILES || 5000) || 5000);
@@ -86,6 +91,14 @@ function activeMaxFiles(value = process.env.REFACTORER_ACTIVE_MAX_FILES) {
 
 function activeAutocommitEnabled(value = process.env.REFACTORER_ACTIVE_AUTOCOMMIT) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function autofixEnabled(value = process.env.REFACTORER_AUTOFIX_ENABLED) {
+  return activeAutocommitEnabled(value);
+}
+
+function autofixMaxAttempts(value = process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS) {
+  return parsePositiveInt(value, 1, 2);
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -268,6 +281,162 @@ async function callRefactorMcp(tool, params, options = {}) {
   }
 }
 
+function byteLength(value = '') {
+  return Buffer.byteLength(String(value || ''), 'utf8');
+}
+
+function lineCount(value = '') {
+  return String(value || '').split(/\r?\n/).length;
+}
+
+function stripMarkdownFence(value = '') {
+  let text = String(value || '').trim();
+  const fenced = text.match(/^```[a-zA-Z0-9_.-]*\s*\n([\s\S]*?)\n```$/);
+  if (fenced) text = fenced[1].trim();
+  return text;
+}
+
+function extractHubText(json = {}) {
+  return stripMarkdownFence(
+    json.text
+      || json.outputText
+      || json.output
+      || json.result?.text
+      || json.data?.text
+      || ''
+  );
+}
+
+function isBillingGuardError(status, json = {}, errorText = '') {
+  const text = [
+    status === 429 ? '429' : '',
+    json.error,
+    json.message,
+    json.reason,
+    errorText,
+  ].filter(Boolean).join(' ').toLowerCase();
+  return status === 429 || /budget|billing|quota|insufficient[_ -]?credit|payment/.test(text);
+}
+
+function builderErrorText(verify) {
+  const builder = verify?.builder || {};
+  const resultErrors = Array.isArray(builder.results)
+    ? builder.results.map((item) => item.error || item.warning || item.message).filter(Boolean)
+    : [];
+  return [
+    builder.error,
+    builder.message,
+    ...resultErrors,
+  ].filter(Boolean).join('\n').slice(0, 6000);
+}
+
+function reviewerHighFindings(verify) {
+  const findings = Array.isArray(verify?.reviewer?.findings) ? verify.reviewer.findings : [];
+  return findings
+    .filter((item) => ['high', 'critical'].includes(String(item.severity || '').toLowerCase()))
+    .map((item) => ({
+      file: item.file || null,
+      line: item.line || null,
+      severity: item.severity || null,
+      desc: item.desc || item.message || item.title || null,
+    }))
+    .slice(0, 20);
+}
+
+function buildFixerSystemPrompt() {
+  return [
+    'You are Claude team refactorer code fixer.',
+    'Fix TypeScript type errors exposed by removing // @ts-nocheck.',
+    'Return only the complete revised file content.',
+    'Do not wrap the answer in Markdown fences and do not include explanations.',
+    'Make the smallest change required for tsc/reviewer to pass.',
+    'Do not add features, change runtime behavior, or edit unrelated code.',
+    'Do not reinsert @ts-nocheck.',
+  ].join(' ');
+}
+
+function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, attempt }) {
+  return [
+    `file: ${fileRel}`,
+    `attempt: ${attempt}`,
+    '',
+    'Current file content:',
+    currentContent,
+    '',
+    'Builder/TypeScript error text:',
+    builderError || '(none)',
+    '',
+    'Reviewer high-severity findings:',
+    JSON.stringify(reviewerFindings || [], null, 2),
+    '',
+    'Return the complete revised file content only.',
+  ].join('\n');
+}
+
+async function attemptTypeFix(context, { fileRel, currentContent, builderError, reviewerFindings, attempt }) {
+  try {
+    if (lineCount(currentContent) > AUTOFIX_FILE_MAX_LINES || byteLength(currentContent) > AUTOFIX_FILE_MAX_BYTES) {
+      return { ok: false, fixedContent: null, error: 'too_large' };
+    }
+    const token = String(process.env.HUB_AUTH_TOKEN || '').trim();
+    if (!token) return { ok: false, fixedContent: null, error: 'missing_hub_auth_token' };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), AUTOFIX_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${context.hubBaseUrl || DEFAULT_HUB_BASE}/hub/llm/call`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          callerTeam: 'claude',
+          agent: 'refactorer',
+          abstractModel: 'anthropic_sonnet',
+          selectorKey: AUTOFIX_SELECTOR_KEY,
+          taskType: 'code_refactor',
+          prompt: buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, attempt }),
+          systemPrompt: buildFixerSystemPrompt(),
+          maxTokens: 8192,
+          temperature: 0.1,
+          timeoutMs: AUTOFIX_TIMEOUT_MS,
+        }),
+        signal: controller.signal,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok !== true) {
+        return {
+          ok: false,
+          fixedContent: null,
+          status: res.status,
+          billingGuard: isBillingGuardError(res.status, json),
+          error: String(json.error || json.message || `http_${res.status}`),
+        };
+      }
+      const fixedContent = extractHubText(json);
+      if (!fixedContent) return { ok: false, fixedContent: null, error: 'empty_fixer_output' };
+      if (/@ts-nocheck/.test(fixedContent)) return { ok: false, fixedContent: null, error: 'ts_nocheck_reinserted' };
+      return {
+        ok: true,
+        fixedContent,
+        model: json.model || json.result?.model || null,
+        provider: json.provider || json.result?.provider || null,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (error) {
+    const message = String(error?.message || error);
+    return {
+      ok: false,
+      fixedContent: null,
+      billingGuard: isBillingGuardError(null, {}, message),
+      error: message,
+    };
+  }
+}
+
 async function analyzeStep(context) {
   const local = analyzeLocalTechDebt(context.target);
   if (context.noMcp) {
@@ -314,6 +483,7 @@ function deriveAvoidedFilesFromFeedback(feedback, threshold = 2) {
   for (const item of results) {
     const status = `${item.stage || ''}:${item.outcome || ''}`.toLowerCase();
     if (!/(deferred|failed|error)/.test(status)) continue;
+    const weight = status.includes('active_deferred_unfixable') ? 2 : 1;
     const files = [
       item.file,
       item.target,
@@ -321,7 +491,7 @@ function deriveAvoidedFilesFromFeedback(feedback, threshold = 2) {
       ...(Array.isArray(item.changedFiles) ? item.changedFiles : []),
     ].filter(Boolean);
     for (const file of files) {
-      counts.set(file, (counts.get(file) || 0) + 1);
+      counts.set(file, (counts.get(file) || 0) + weight);
     }
   }
   const avoided = new Set();
@@ -554,6 +724,38 @@ function gitStatusShort() {
   }
 }
 
+function gitStatusLines(statusText = '') {
+  return String(statusText || '').split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean);
+}
+
+function pathFromStatusLine(line = '') {
+  const text = String(line || '');
+  if (text.includes(' -> ')) return text;
+  return text.slice(3).trim();
+}
+
+function unexpectedMutationLines(currentStatus, baselineStatus, allowedFiles = []) {
+  const baseline = new Set(gitStatusLines(baselineStatus));
+  const allowed = new Set(allowedFiles.map((file) => String(file || '').replace(/\\/g, '/')));
+  return gitStatusLines(currentStatus).filter((line) => {
+    if (baseline.has(line)) return false;
+    const statusPath = pathFromStatusLine(line).replace(/\\/g, '/');
+    return !allowed.has(statusPath);
+  });
+}
+
+function cleanupUnexpectedUntracked(lines = [], baselineStatus = '') {
+  const baseline = new Set(gitStatusLines(baselineStatus));
+  for (const line of lines) {
+    if (baseline.has(line) || !line.startsWith('?? ')) continue;
+    const rel = pathFromStatusLine(line);
+    const absolutePath = path.resolve(ROOT, rel);
+    const relativePath = relPath(absolutePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath) || isProtectedTarget(relativePath)) continue;
+    fs.rmSync(absolutePath, { recursive: true, force: true });
+  }
+}
+
 function gitDiffForFiles(files = []) {
   const relFiles = files.map((file) => {
     const absolutePath = path.isAbsolute(file) ? file : path.resolve(ROOT, file);
@@ -570,6 +772,22 @@ function gitDiffForFiles(files = []) {
 function normalizeReviewHighCount(reviewResult) {
   const summary = reviewResult?.summary || {};
   return Number(summary.high || 0) + Number(summary.critical || 0);
+}
+
+const READY_STAGES = new Set([
+  'active_verified_ready_for_commit',
+  'active_autofixed_ready_for_commit',
+]);
+
+function isReadyResult(item) {
+  return READY_STAGES.has(item?.stage);
+}
+
+function activeFixStepStatus(active) {
+  if (!active) return 'none';
+  if (Number(active.autofixedCount || 0) > 0) return 'autofix_complete';
+  if (Number(active.unfixableCount || 0) > 0) return 'active_deferred_unfixable';
+  return active.ok ? 'none' : 'active_deferred_no_auto_fix';
 }
 
 function resolveVerifierModules(context) {
@@ -599,6 +817,36 @@ async function verifyChangedFiles(context, changedFiles) {
   };
 }
 
+async function callAutofixer(context, params) {
+  const fixer = context.fixerFn || attemptTypeFix;
+  try {
+    const result = await fixer(context, params);
+    if (!result || result.ok !== true) {
+      return {
+        ...result,
+        ok: false,
+        fixedContent: null,
+        error: result?.error || 'fixer_failed',
+      };
+    }
+    if (!result.fixedContent || /@ts-nocheck/.test(String(result.fixedContent))) {
+      return {
+        ...result,
+        ok: false,
+        fixedContent: null,
+        error: !result.fixedContent ? 'empty_fixer_output' : 'ts_nocheck_reinserted',
+      };
+    }
+    return result;
+  } catch (error) {
+    return {
+      ok: false,
+      fixedContent: null,
+      error: String(error?.message || error),
+    };
+  }
+}
+
 function formatErrorSummary({ stage, candidate, verify, error }) {
   const file = candidate?.file || 'unknown';
   if (error) return `stage=${stage}; file=${file}; error=${String(error?.message || error).slice(0, 500)}`;
@@ -623,8 +871,10 @@ function formatErrorSummary({ stage, candidate, verify, error }) {
 function buildActiveDocumentContent(context, analysis, active) {
   const summary = analysis?.summary || {};
   const feedback = active.vaultFeedback || {};
-  const successful = active.results.filter((item) => item.stage === 'active_verified_ready_for_commit');
-  const deferred = active.results.filter((item) => item.stage === 'active_deferred');
+  const successful = active.results.filter(isReadyResult);
+  const autofixed = active.results.filter((item) => item.stage === 'active_autofixed_ready_for_commit');
+  const unfixable = active.results.filter((item) => item.stage === 'active_deferred_unfixable');
+  const deferred = active.results.filter((item) => !isReadyResult(item));
   const changedFiles = active.changedFiles || [];
   const feedbackLines = Array.isArray(feedback.results) && feedback.results.length > 0
     ? feedback.results.map((item, index) => {
@@ -660,6 +910,10 @@ function buildActiveDocumentContent(context, analysis, active) {
     '',
     '## Active Results',
     `- verified_ready_for_commit: ${successful.length}`,
+    `- autofixed_ready_for_commit: ${autofixed.length}`,
+    `- unfixable: ${unfixable.length}`,
+    `- autofix_enabled: ${context.autofixEnabled === true}`,
+    `- autofix_attempts_total: ${active.totalFixAttempts || 0}`,
     `- deferred: ${deferred.length}`,
     `- changed_files: ${changedFiles.length ? changedFiles.join(', ') : 'none'}`,
     `- patch_path: ${active.patchRelPath || 'none'}`,
@@ -671,7 +925,7 @@ function buildActiveDocumentContent(context, analysis, active) {
     '2. Plan: complete',
     `3. Refactor: ${changedFiles.length ? 'complete' : 'no_change'}`,
     `4. Verify: ${successful.length ? 'pass' : 'deferred'}`,
-    `5. Fix: ${deferred.length ? 'active_deferred_no_auto_fix' : 'none'}`,
+    `5. Fix: ${activeFixStepStatus(active)}`,
     `6. Commit: ${successful.length ? 'ready_for_review_autocommit_false' : 'not_ready'}`,
     '7. Document: complete',
     '',
@@ -683,6 +937,8 @@ function buildActiveDocumentContent(context, analysis, active) {
       `- builder_skipped: ${item.verify?.builderSkipped ?? false}`,
       `- reviewer_high: ${item.verify?.reviewerHigh ?? 'unknown'}`,
       `- reviewer_skipped: ${item.verify?.reviewerSkipped ?? false}`,
+      `- autofix_attempts: ${item.autofixAttempts || 0}`,
+      item.model ? `- autofix_model: ${item.model}` : null,
       item.errorSummary ? `- error_summary: ${item.errorSummary}` : null,
       '',
     ].filter(Boolean).join('\n')),
@@ -713,6 +969,122 @@ function writeActiveArtifacts(context, analysis, active) {
     relPath: relPath(planPath),
     patchRelPath: active.patchText ? relPath(patchPath) : null,
     content,
+  };
+}
+
+async function runAutofixLoop(context, candidate, absolutePath, initialVerify, snapshots) {
+  const fileRel = relPath(absolutePath);
+  let verify = initialVerify;
+  let lastFix = null;
+  const attempts = [];
+  if (context.autofixBillingStopped) {
+    return {
+      stage: 'active_deferred_unfixable',
+      verify,
+      autofixAttempts: 0,
+      errorSummary: formatErrorSummary({ stage: 'autofix', candidate, error: 'billing_guard_stopped' }),
+    };
+  }
+
+  for (let attempt = 1; attempt <= context.autofixMaxAttempts; attempt++) {
+    const beforeFixStatus = gitStatusShort();
+    const currentContent = fs.readFileSync(absolutePath, 'utf8');
+    const fix = await callAutofixer(context, {
+      fileRel,
+      currentContent,
+      builderError: builderErrorText(verify),
+      reviewerFindings: reviewerHighFindings(verify),
+      attempt,
+    });
+    lastFix = fix;
+    attempts.push({
+      attempt,
+      ok: Boolean(fix?.ok),
+      error: fix?.error || null,
+      model: fix?.model || null,
+      provider: fix?.provider || null,
+      billingGuard: Boolean(fix?.billingGuard),
+    });
+    const unexpectedAfterFixer = unexpectedMutationLines(
+      gitStatusShort(),
+      beforeFixStatus,
+      [fileRel]
+    );
+    if (unexpectedAfterFixer.length > 0) {
+      cleanupUnexpectedUntracked(unexpectedAfterFixer, beforeFixStatus);
+      restoreFileSnapshot(snapshots, absolutePath);
+      return {
+        stage: 'active_deferred_unfixable',
+        verify,
+        autofixAttempts: attempt,
+        autofix: attempts,
+        errorSummary: formatErrorSummary({
+          stage: 'autofix',
+          candidate,
+          error: `autofix_unexpected_mutation:${unexpectedAfterFixer.join('|')}`,
+        }),
+      };
+    }
+    if (fix.billingGuard) context.autofixBillingStopped = true;
+    if (!fix.ok || !fix.fixedContent) break;
+
+    fs.writeFileSync(absolutePath, fix.fixedContent, 'utf8');
+    const unexpectedAfterWrite = unexpectedMutationLines(
+      gitStatusShort(),
+      context.initialGitStatus || '',
+      [fileRel]
+    );
+    if (unexpectedAfterWrite.length > 0) {
+      cleanupUnexpectedUntracked(unexpectedAfterWrite, context.initialGitStatus || '');
+      restoreFileSnapshot(snapshots, absolutePath);
+      return {
+        stage: 'active_deferred_unfixable',
+        verify,
+        autofixAttempts: attempt,
+        autofix: attempts,
+        errorSummary: formatErrorSummary({
+          stage: 'autofix',
+          candidate,
+          error: `autofix_unexpected_mutation:${unexpectedAfterWrite.join('|')}`,
+        }),
+      };
+    }
+
+    try {
+      verify = await verifyChangedFiles(context, [fileRel]);
+    } catch (error) {
+      return {
+        stage: 'active_deferred_unfixable',
+        verify,
+        autofixAttempts: attempt,
+        autofix: attempts,
+        errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
+      };
+    }
+    if (verify.ok) {
+      return {
+        stage: 'active_autofixed_ready_for_commit',
+        verify,
+        autofixAttempts: attempt,
+        autofix: attempts,
+        model: fix.model || null,
+        provider: fix.provider || null,
+      };
+    }
+    if (context.autofixBillingStopped) break;
+  }
+
+  restoreFileSnapshot(snapshots, absolutePath);
+  return {
+    stage: 'active_deferred_unfixable',
+    verify,
+    autofixAttempts: attempts.length,
+    autofix: attempts,
+    errorSummary: formatErrorSummary({
+      stage: 'autofix',
+      candidate,
+      error: lastFix?.error || `verify_failed_after_${attempts.length}_attempts`,
+    }),
   };
 }
 
@@ -770,29 +1142,57 @@ async function runActiveRefactor(context, analysis, candidates) {
           verify,
         });
       } else {
-        restoreFileSnapshot(snapshots, absolutePath);
-        results.push({
-          candidate,
-          stage: 'active_deferred',
-          verify,
-          errorSummary: formatErrorSummary({ stage: 'verify', candidate, verify }),
-        });
+        if (context.autofixEnabled) {
+          const fixed = await runAutofixLoop(context, candidate, absolutePath, verify, snapshots);
+          if (isReadyResult(fixed)) {
+            if (!changedFiles.includes(fileRel)) changedFiles.push(fileRel);
+            results.push({
+              candidate,
+              ...fixed,
+            });
+          } else {
+            restoreFileSnapshot(snapshots, absolutePath);
+            results.push({
+              candidate,
+              ...fixed,
+            });
+          }
+        } else {
+          restoreFileSnapshot(snapshots, absolutePath);
+          results.push({
+            candidate,
+            stage: 'active_deferred',
+            verify,
+            errorSummary: formatErrorSummary({ stage: 'verify', candidate, verify }),
+          });
+        }
       }
     }
     const successfulFiles = results
-      .filter((item) => item.stage === 'active_verified_ready_for_commit')
+      .filter(isReadyResult)
       .map((item) => item.candidate?.file)
       .filter(Boolean);
     patchText = successfulFiles.length > 0 ? gitDiffForFiles(successfulFiles) : '';
+    const hasReady = results.some(isReadyResult);
+    const hasDeferred = results.some((item) => !isReadyResult(item));
+    const hasUnfixable = results.some((item) => item.stage === 'active_deferred_unfixable');
+    const readyResults = results.filter(isReadyResult);
+    const allReadyAutofixed = readyResults.length > 0
+      && readyResults.every((item) => item.stage === 'active_autofixed_ready_for_commit');
+    const totalFixAttempts = results.reduce((sum, item) => sum + Number(item.autofixAttempts || 0), 0);
     return {
-      ok: results.some((item) => item.stage === 'active_verified_ready_for_commit'),
-      stage: results.some((item) => item.stage === 'active_verified_ready_for_commit')
-        ? (results.some((item) => item.stage === 'active_deferred') ? 'active_partial' : 'active_verified_ready_for_commit')
-        : 'active_deferred',
+      ok: hasReady,
+      stage: hasReady
+        ? (hasDeferred ? 'active_partial' : allReadyAutofixed ? 'active_autofixed_ready_for_commit' : 'active_verified_ready_for_commit')
+        : hasUnfixable ? 'active_deferred_unfixable' : 'active_deferred',
       changedFiles,
       mutationStarted,
       patchText,
       results,
+      totalFixAttempts,
+      autofixedCount: results.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
+      unfixableCount: results.filter((item) => item.stage === 'active_deferred_unfixable').length,
+      autofixBillingStopped: Boolean(context.autofixBillingStopped),
     };
   } finally {
     restoreFileSnapshots(snapshots);
@@ -812,8 +1212,18 @@ async function recordRefactorOutcome(context, result) {
   const verifyResults = Array.isArray(active?.results) ? active.results : [];
   const firstErrorSummary = verifyResults.find((item) => item.errorSummary)?.errorSummary || null;
   const testPass = isActive
-    ? verifyResults.some((item) => item.stage === 'active_verified_ready_for_commit')
+    ? verifyResults.some(isReadyResult)
     : null;
+  const autofixModels = [...new Set(verifyResults.map((item) => item.model).filter(Boolean))];
+  const autofixMeta = isActive ? {
+    enabled: Boolean(context.autofixEnabled),
+    attempts: verifyResults.reduce((sum, item) => sum + Number(item.autofixAttempts || 0), 0),
+    autofixed: verifyResults.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
+    unfixable: verifyResults.filter((item) => item.stage === 'active_deferred_unfixable').length,
+    model: autofixModels[0] || null,
+    models: autofixModels,
+    billingStopped: Boolean(active?.autofixBillingStopped),
+  } : null;
   return recordAutoDevOutcome({
     id: context.cycleId,
     relPath: result.plan?.relPath || `docs/codex/refactor-plans/${context.cycleId}.md`,
@@ -835,6 +1245,7 @@ async function recordRefactorOutcome(context, result) {
     candidateFiles,
     changedFiles,
     errorSummary: firstErrorSummary,
+    autofix: autofixMeta,
     meta: {
       kind: 'refactor',
       refactorType: result.plan?.candidate?.refactorType || context.refactorType,
@@ -853,6 +1264,7 @@ async function recordRefactorOutcome(context, result) {
       builderPass: verifyResults.length ? verifyResults.every((item) => item.verify?.builderPass !== false) : null,
       reviewerFindings: verifyResults.reduce((sum, item) => sum + Number(item.verify?.reviewerHigh || 0), 0),
       autocommit: Boolean(context.activeAutocommit),
+      autofix: autofixMeta,
     },
   });
 }
@@ -890,6 +1302,11 @@ function buildCycleContext(options = {}) {
     allowDirtyWorktreeForTest: Boolean(options.allowDirtyWorktreeForTest),
     activeMaxFiles: activeMaxFiles(options.activeMaxFiles ?? process.env.REFACTORER_ACTIVE_MAX_FILES),
     activeAutocommit: activeAutocommitEnabled(options.activeAutocommit ?? process.env.REFACTORER_ACTIVE_AUTOCOMMIT),
+    autofixEnabled: mode === 'active' && autofixEnabled(options.autofixEnabled ?? process.env.REFACTORER_AUTOFIX_ENABLED),
+    autofixMaxAttempts: autofixMaxAttempts(options.autofixMaxAttempts ?? process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS),
+    autofixBillingStopped: false,
+    fixerFn: options.fixerFn || null,
+    hubBaseUrl: String(options.hubBaseUrl || DEFAULT_HUB_BASE).replace(/\/+$/, ''),
     avoidThreshold: parsePositiveInt(options.avoidThreshold ?? process.env.REFACTORER_AVOID_THRESHOLD, 2, 20),
     builderModule: options.builderModule || null,
     reviewerModule: options.reviewerModule || null,
@@ -921,6 +1338,7 @@ async function runRefactorCycle(options = {}) {
         return result;
       }
       const initialGitStatus = gitStatusShort();
+      context.initialGitStatus = initialGitStatus;
       if (initialGitStatus && !context.allowDirtyWorktreeForTest) {
         const result = { ok: false, blocked: true, reason: 'dirty_worktree', mode: context.mode, gitStatus: initialGitStatus };
         result.heartbeat = await writeRefactorHeartbeat(context, 'error', { stage: 'blocked', reason: result.reason });
@@ -1001,7 +1419,7 @@ async function runRefactorCycle(options = {}) {
           { id: 'plan', status: artifacts.wrote ? 'complete' : 'dry_run', mutates: Boolean(artifacts.wrote) },
           { id: 'refactor', status: active.mutationStarted ? 'complete_restored' : 'no_change', mutates: true, restored: active.worktreeRestored },
           { id: 'verify', status: active.ok ? 'complete' : 'failed', mutates: false },
-          { id: 'fix', status: active.ok ? 'none' : 'active_deferred_no_auto_fix', mutates: false },
+          { id: 'fix', status: activeFixStepStatus(active), mutates: false },
           { id: 'commit', status: active.ok ? 'ready_for_review_autocommit_false' : 'not_ready', mutates: false },
           { id: 'document', status: artifacts.wrote ? 'complete' : 'dry_run', mutates: Boolean(artifacts.wrote) },
         ],
@@ -1013,6 +1431,11 @@ async function runRefactorCycle(options = {}) {
         patchPath: artifacts.patchRelPath || null,
         builderPass: active.results.every((item) => item.verify?.builderPass !== false),
         reviewerFindings: active.results.reduce((sum, item) => sum + Number(item.verify?.reviewerHigh || 0), 0),
+        autofixEnabled: Boolean(context.autofixEnabled),
+        autofixedCount: active.autofixedCount || 0,
+        unfixableCount: active.unfixableCount || 0,
+        totalFixAttempts: active.totalFixAttempts || 0,
+        autofixBillingStopped: Boolean(active.autofixBillingStopped),
         worktreeRestored: active.worktreeRestored,
         outcomeOk: Boolean(result.outcome?.ok),
       });

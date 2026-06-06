@@ -49,6 +49,7 @@ interface EventLake {
 }
 
 interface FailureTrajectory {
+  recordExecutionTrajectory(input: Record<string, unknown>): Promise<unknown>;
   recordFailureTrajectory(input: Record<string, unknown>): Promise<unknown>;
   searchFailureHints(query: string, options?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 }
@@ -205,6 +206,40 @@ async function _recordImplementationFailureTrajectory(
     });
   } catch (recordError) {
     logger.warn(`구현 실패 궤적 저장 실패: ${toErrorMessage(recordError)}`);
+  }
+}
+
+async function _recordImplementationSuccessTrajectory(
+  proposalId: string,
+  proposal: ProposalRecord,
+  branchName: string,
+  changedFiles: string[],
+  syntaxChecks: SyntaxCheckResult[],
+  syntaxPassed: boolean
+): Promise<void> {
+  try {
+    await failureTrajectoryTyped.recordExecutionTrajectory({
+      result: 'success',
+      team: 'darwin',
+      agent: 'implementor',
+      intent: 'darwin_auto_implementation',
+      command: `darwin implementor ${proposalId}`,
+      stdout: `changed_files=${changedFiles.join(',')}`,
+      recoveryResult: `implementation_completed:${branchName}`,
+      resolutionHint: '유사 구현 요청에서 같은 출력 형식, 안전 경로, syntax check 패턴을 재사용한다.',
+      testResult: syntaxPassed ? 'syntax_passed' : 'syntax_partial_fail',
+      incidentKey: `darwin:implementor:${proposalId}`,
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+        title: proposal.title || proposal.paper?.title || '',
+        changed_files: changedFiles,
+        syntax_checks: syntaxChecks,
+        syntax_passed: syntaxPassed,
+      },
+    });
+  } catch (recordError) {
+    logger.warn(`구현 성공 궤적 저장 실패: ${toErrorMessage(recordError)}`);
   }
 }
 
@@ -520,6 +555,14 @@ ${JSON.stringify(proposal.verification || {})}`,
         syntax_passed: syntaxPassed,
       },
     }).catch(() => null);
+    await _recordImplementationSuccessTrajectory(
+      proposalId,
+      proposal,
+      branchName,
+      changedFiles,
+      syntaxChecks,
+      syntaxPassed
+    );
 
     await postAlarm({
       message: [
@@ -594,5 +637,6 @@ module.exports = {
   _formatFailureHints,
   _hasReasoningLeak,
   _assertProposalCleanForImplementation,
+  _recordImplementationSuccessTrajectory,
   _testOnly_REPO_ROOT: REPO_ROOT,
 };

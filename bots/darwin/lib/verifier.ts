@@ -40,6 +40,7 @@ interface EventLake {
 }
 
 interface FailureTrajectory {
+  recordExecutionTrajectory(input: Record<string, unknown>): Promise<unknown>;
   recordFailureTrajectory(input: Record<string, unknown>): Promise<unknown>;
   searchFailureHints(query: string, options?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
 }
@@ -215,6 +216,38 @@ async function _recordVerificationFailureTrajectory(
   }
 }
 
+async function _recordVerificationSuccessTrajectory(
+  proposalId: string,
+  proposal: ProposalRecord,
+  branchName: string,
+  changedFiles: string[],
+  verificationText: string,
+  verificationSummary = ''
+): Promise<void> {
+  try {
+    await failureTrajectoryTyped.recordExecutionTrajectory({
+      result: 'success',
+      team: 'darwin',
+      agent: 'proof-r',
+      intent: 'darwin_auto_verification',
+      command: `darwin verifier ${proposalId}`,
+      stdout: verificationText,
+      recoveryResult: 'verification_passed',
+      resolutionHint: '유사 검증 요청에서 syntax/security/diff 통과 조건과 PASS 판정 패턴을 재사용한다.',
+      testResult: verificationSummary || 'verification_passed',
+      incidentKey: `darwin:verifier:${proposalId}`,
+      metadata: {
+        proposal_id: proposalId,
+        branch: branchName,
+        files: changedFiles,
+        title: proposal.title || proposal.paper?.title || '',
+      },
+    });
+  } catch (recordError) {
+    logger.warn(`검증 성공 궤적 저장 실패: ${toErrorMessage(recordError)}`);
+  }
+}
+
 function _resolveVerificationFiles(proposal: ProposalRecord | null): string[] {
   const preferred = Array.isArray(proposal?.changed_files) ? proposal.changed_files : [];
   const existing = preferred.filter((file: string) => {
@@ -286,6 +319,15 @@ ${failureHints}
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
     if (!passed) {
       await _recordVerificationFailureTrajectory(
+        proposalId,
+        proposal,
+        branchName,
+        changedFiles,
+        verificationText,
+        verification.summary || ''
+      );
+    } else {
+      await _recordVerificationSuccessTrajectory(
         proposalId,
         proposal,
         branchName,
@@ -461,5 +503,6 @@ module.exports = {
   mergeVerifiedProposal,
   mergeBranch,
   _formatFailureHints,
+  _recordVerificationSuccessTrajectory,
   _testOnly_REPO_ROOT: REPO_ROOT,
 };
