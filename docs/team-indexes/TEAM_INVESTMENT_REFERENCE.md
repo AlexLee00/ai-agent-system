@@ -111,6 +111,16 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/scripts/validate-ru
 node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/binance-balance.js
 ```
 
+## 구현 완료 내역 (git 기준, 2026-05~06)
+
+- **S1/S2 파이프라인 정합 (shadow)** — vault RAG shadow outcome attribution C1 `454596784` + vault shadow on-gate `5dbba9f78` + S1.3-3 C2 L2 ON 전환 게이트 `44243aa98`·`0621b9f49` + S2 통합 가드 SHADOW(중복/포지션 방어 일원화) `248553ff9` + S2 entry-trigger materialize preflight SHADOW `5fc27768b`(ops 적용 `9d44b55e8`). 전부 kill switch 기본 OFF, 거래 경로 무변경.
+- **가드 Block→Notify 전환 + Self-Tuning** — hard_block/notify/allow 3분류 + guard_events + 효과 측정 + 주간 self-tuning(상세 OPUS 핸드오프 2026-05-27~06-02). HARD limit(자금한도·거래소API·PROTECTED종목·스테이블코인) 보존.
+- **자율 학습 루프** — feedback-loop-orchestrator(일 06:00) + loss/win-pattern-extractor + agent-evolution + FinRL-X 4-layer + 동적 유니버스/체제별 가중치 학습 + 승률 우상향 추적.
+- **PnL 데이터 정합성** — trade_journal pnl NULL 가드(학습 코어 12곳) + reconcile-open-journals 주기화 `48e707bcd` + hygiene gate reopen `9e952873a`·`ddc94b8e6`.
+- **메타 모델(Secondary)** — meta-model 데이터셋/학습 SHADOW(`luna_meta_model_versions`, active=false 기본).
+
+상세 세션 기록: `docs/OPUS_FINAL_HANDOFF.md`.
+
 ## 관련 문서
 
 - [TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md](/Users/alexlee/projects/ai-agent-system/docs/TEAM_RUNTIME_CONFIG_GUIDE_2026-03-17.md)

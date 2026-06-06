@@ -46,6 +46,22 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:quick
 cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksums
 ```
 
+## 클로드팀 에이전트 구성 (2026-06 기준)
+
+클로드팀은 9개 에이전트로 운영된다: commander · dexter · archer · doctor · reviewer · guardian · builder · auto-dev · **refactorer**. (본 문서 상단은 dexter/archer 중심이며, 아래는 git 기준 최근 구현 완료 내역.)
+
+## 구현 완료 내역 (git 기준, 2026-05~06)
+
+- **리팩터러 cycle Phase 1** — `ad4a1229a` feat(claude): add refactorer shadow cycle with sigma feedback
+  - `bots/claude/scripts/refactor-cycle-runner.ts` 골격(shadow): 7단계(분석→계획→리팩토링→검증→오류수정→커밋→문서), kill switch `REFACTORER_CYCLE_MODE`(off/shadow/active, 기본 off), active 차단, crypto/PROTECTED 타깃 제외, heartbeat `claude-refactorer` 편입, outcome `meta.kind='refactor'`. shadow=analyze+plan + sigma vault search(읽기) 피드백 주입.
+  - protected 판정 trailing-slash 보강(bare 디렉터리도 차단). 단위 테스트 `bots/claude/__tests__/refactor-cycle-runner.test.ts` 6/6.
+  - ★Phase 2(`ai.claude.refactor-cycle` launchd shadow, 03:00) 대기 중.
+- **리팩터러 에이전트 + 하네스 신설** — `fb4a8ef55`, `ea52608f5`: agents/refactorer.md + plugin-eval 3계층 + hook 6계층 + MCP `claude-refactor-mcp`(port 8774 상주) + A2A refactor-analysis + CLAUDE.md/plist.
+- **@ts-nocheck 복구** — `251f05f13`(Phase 3-A, 소형 A2A 7개), `3d06a81ce`(Phase 3-B, A2A 스킬/훅/하네스 22개) + claude-card 스킬 등록.
+- **auto-dev 자가진화 강화** — vault feed `f448de19a`(claude+sigma, auto_dev_outcomes→vault) + self-heal 강화 `c65438534` + main 격리/커밋 경로 `2e61784fc`·`2980a714a`.
+- **dexter 안정화** — heartbeat 체크 안정화 `89fb4926c` + soft warning 노이즈 감소 `8fe27fd5f`.
+- **인프라 정리** — n8n decommission `2e73df922`·`b225f5deb` + LLM selector OpenAI-first `d0187f2d0`.
+
 ## 관련 문서
 
 - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
