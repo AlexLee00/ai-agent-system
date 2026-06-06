@@ -55,7 +55,7 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksu
 - **리팩터러 cycle Phase 1** — `ad4a1229a` feat(claude): add refactorer shadow cycle with sigma feedback
   - `bots/claude/scripts/refactor-cycle-runner.ts` 골격(shadow): 7단계(분석→계획→리팩토링→검증→오류수정→커밋→문서), kill switch `REFACTORER_CYCLE_MODE`(off/shadow/active, 기본 off), active 차단, crypto/PROTECTED 타깃 제외, heartbeat `claude-refactorer` 편입, outcome `meta.kind='refactor'`. shadow=analyze+plan + sigma vault search(읽기) 피드백 주입.
   - protected 판정 trailing-slash 보강(bare 디렉터리도 차단). 단위 테스트 `bots/claude/__tests__/refactor-cycle-runner.test.ts` 6/6.
-  - ★Phase 2(`ai.claude.refactor-cycle` launchd shadow, 03:00) 대기 중.
+  - **Phase 2 source plist 추가** — `bots/claude/launchd/ai.claude.refactor-cycle.plist`: shadow-only, 일 1회 03:00, RunAtLoad/KeepAlive=false. 마스터 launchctl 등록 대기.
 - **리팩터러 에이전트 + 하네스 신설** — `fb4a8ef55`, `ea52608f5`: agents/refactorer.md + plugin-eval 3계층 + hook 6계층 + MCP `claude-refactor-mcp`(port 8774 상주) + A2A refactor-analysis + CLAUDE.md/plist.
 - **@ts-nocheck 복구** — `251f05f13`(Phase 3-A, 소형 A2A 7개), `3d06a81ce`(Phase 3-B, A2A 스킬/훅/하네스 22개) + claude-card 스킬 등록.
 - **auto-dev 자가진화 강화** — vault feed `f448de19a`(claude+sigma, auto_dev_outcomes→vault) + self-heal 강화 `c65438534` + main 격리/커밋 경로 `2e61784fc`·`2980a714a`.
