@@ -191,33 +191,33 @@ module.exports = {
         'claude.archer.tech_analysis': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
-            { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.3 },
+            { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 4096, temperature: 0.3 },
           ],
         },
         'claude.lead.system_issue_triage': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
-            { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
+            { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 300, temperature: 0.1 },
           ],
         },
         'claude.dexter.ai_analyst': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
-            { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 300, temperature: 0.1 },
+            { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 300, temperature: 0.1 },
           ],
         },
         'claude.refactorer.code_refactor': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.5', maxTokens: 8192, temperature: 0.1 },
             { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 8192, temperature: 0.1 },
-            { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.1 },
+            { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 4096, temperature: 0.1 },
           ],
         },
         'claude.auto_dev.code_fix': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.5', maxTokens: 8192, temperature: 0.1 },
             { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 8192, temperature: 0.1 },
-            { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 4096, temperature: 0.1 },
+            { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 4096, temperature: 0.1 },
           ],
         },
         'claude.reviewer.code_review': {
@@ -237,7 +237,7 @@ module.exports = {
         'claude.guardian.safety': {
           chain: [
             { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2048, temperature: 0.1 },
-            { provider: 'groq', model: 'llama-4-scout-17b-16e-instruct', maxTokens: 2048, temperature: 0.1 },
+            { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2048, temperature: 0.1 },
             { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
           ],
         },

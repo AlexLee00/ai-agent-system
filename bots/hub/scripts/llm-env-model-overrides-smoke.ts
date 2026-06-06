@@ -26,7 +26,7 @@ assert(claudeLead.includes('groq/groq-env-deep'));
 assert(!claudeLead.some((label) => label.startsWith('gemini-cli-oauth/')));
 
 const claudeArcher = labels('claude.archer.tech_analysis');
-assert.equal(claudeArcher[0], 'openai-oauth/gpt-env-mini');
+assert.equal(claudeArcher[0], 'openai-oauth/gpt-env-perf');
 assert(!claudeArcher.some((label) => label.startsWith('gemini-cli-oauth/')));
 
 const hubClassifier = labels('hub.alarm.classifier');

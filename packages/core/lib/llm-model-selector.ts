@@ -50,7 +50,7 @@ const OPENAI_MINI_MODEL = configuredModel('LLM_OPENAI_MINI_MODEL', 'gpt-5.4-mini
 const OPENAI_OPUS_MODEL = configuredModel('LLM_OPENAI_OPUS_MODEL', 'gpt-5.5', ['openai-oauth', 'openai']);
 const GROQ_FAST_MODEL = configuredModel('LLM_GROQ_FAST_MODEL', 'llama-3.1-8b-instant', ['groq']);
 const GROQ_DEEP_MODEL = configuredModel('LLM_GROQ_DEEP_MODEL', 'qwen/qwen3-32b', ['groq']);
-const GROQ_SCOUT_MODEL = configuredModel('LLM_GROQ_SCOUT_MODEL', 'llama-4-scout-17b-16e-instruct', ['groq']);
+const GROQ_SCOUT_MODEL = configuredModel('LLM_GROQ_SCOUT_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct', ['groq']);
 const GEMINI_CLI_FLASH_LITE_MODEL = configuredModel(
   'LLM_GEMINI_FLASH_LITE_MODEL',
   'gemini-2.5-flash-lite',
@@ -651,14 +651,14 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     dexter: {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 300, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
     archer: {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 4096, temperature: 0.3 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.3 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.2 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 2048, temperature: 0.2 },
       ],
@@ -666,7 +666,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     lead: {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 300, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
@@ -674,14 +674,14 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: OPENAI_OPUS_MODEL, maxTokens: 8192, temperature: 0.1 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 8192, temperature: 0.1 },
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 4096, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.1 },
       ],
     },
     'auto_dev.code_fix': {
       primary: { provider: 'openai-oauth', model: OPENAI_OPUS_MODEL, maxTokens: 8192, temperature: 0.1 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 8192, temperature: 0.1 },
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 4096, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.1 },
       ],
     },
     'reviewer.code_review': {
@@ -701,14 +701,14 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     'guardian.safety': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 2048, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 2048, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 2048, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 },
       ],
     },
     _fallback: {
       primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 1024, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1024, temperature: 0.1 },
       ],
     },
@@ -989,28 +989,28 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
     dexter: {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 300, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
     archer: {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 4096, temperature: 0.3 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.3 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.2 },
       ],
     },
     lead: {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 300, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1 },
       ],
     },
     _fallback: {
       primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
-        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 1024, temperature: 0.1 },
         { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 1024, temperature: 0.1 },
       ],
     },
