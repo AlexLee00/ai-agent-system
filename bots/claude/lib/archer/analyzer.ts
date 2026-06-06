@@ -70,7 +70,7 @@ function packageCriticality(pkg) {
 function buildDeterministicPatchList(data = {}, existingPatches = []) {
   const npm = data.npm || {};
   const packageUsage = data.packageUsage || {};
-  const currentVersions = config.CURRENT_VERSIONS || {};
+  const currentVersions = data.currentVersions || config.CURRENT_VERSIONS || {};
   const existingMap = new Map((existingPatches || []).map(patch => [patch.package, patch]));
   const patches = [];
 
@@ -338,9 +338,9 @@ const SYSTEM_PROMPT = `당신은 AI 개발팀의 수석 기술 인텔리전스 �
 
 // ─── 컨텍스트 빌더 ───────────────────────────────────────────────────
 
-function buildContext({ github, npm, webSources, audit, cache }) {
+function buildContext({ github, npm, webSources, audit, cache, currentVersions }) {
   const packageUsage = cache?.packageUsage || {};
-  const prev = cache?.versions || {};
+  const installedVersions = currentVersions || cache?.currentVersions || config.CURRENT_VERSIONS || {};
   const lines = [];
 
   // 1. GitHub 릴리스
@@ -356,7 +356,7 @@ function buildContext({ github, npm, webSources, audit, cache }) {
   // 2. npm 최신 버전 vs 현재 사용 버전
   lines.push('\n## npm 패키지 버전 현황');
   for (const [pkg, info] of Object.entries(npm)) {
-    const current = prev[pkg] || config.CURRENT_VERSIONS[pkg] || '알 수 없음';
+    const current = installedVersions[pkg] || '알 수 없음';
     const latest  = info.version || '알 수 없음';
     const mark    = current !== '알 수 없음' && latest !== '알 수 없음' && current !== latest ? ' ⬆️' : '';
     const usage = packageUsage[pkg] || { count: 0, coreCount: 0, coreFiles: [] };

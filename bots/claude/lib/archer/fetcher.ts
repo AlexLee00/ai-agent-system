@@ -13,6 +13,7 @@
 const https    = require('https');
 const http     = require('http');
 const fs       = require('fs');
+const path     = require('path');
 const { execSync } = require('child_process');
 const config   = require('./config');
 
@@ -199,6 +200,24 @@ function fetchPackageUsage(packages = []) {
   return usage;
 }
 
+function readCurrentVersionsFromLock(packages = config.NPM.PACKAGES, lockFile = path.join(config.ROOT, 'package-lock.json')) {
+  const versions = {};
+  let lock;
+  try {
+    lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+  } catch {
+    return versions;
+  }
+
+  const packageEntries = lock.packages || {};
+  const dependencies = lock.dependencies || {};
+  for (const pkg of packages || []) {
+    const installed = packageEntries[`node_modules/${pkg}`]?.version || dependencies[pkg]?.version;
+    if (installed) versions[pkg] = installed;
+  }
+  return versions;
+}
+
 // ─── npm audit ────────────────────────────────────────────────────────
 
 /**
@@ -304,6 +323,7 @@ async function fetchAll(opts = {}) {
     fetchAllNpm(),
   ]);
   const packageUsage = fetchPackageUsage(config.NPM.PACKAGES);
+  const currentVersions = readCurrentVersionsFromLock(config.NPM.PACKAGES);
 
   let webSources = [];
   if (!opts.skipWeb) {
@@ -317,13 +337,14 @@ async function fetchAll(opts = {}) {
     audit = runNpmAudit();
   }
 
-  return { github, npm, webSources, audit, packageUsage };
+  return { github, npm, webSources, audit, packageUsage, currentVersions };
 }
 
 module.exports = {
   fetchGithubRelease, fetchAllGithub,
   fetchNpmVersion, fetchAllNpm,
   fetchPackageUsage,
+  readCurrentVersionsFromLock,
   fetchWebSource, fetchAllWebSources,
   runNpmAudit,
   fetchAll,

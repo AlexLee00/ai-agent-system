@@ -16,6 +16,7 @@
 
 const fs      = require('fs');
 const path    = require('path');
+const crypto  = require('crypto');
 const fetcher = require('../lib/archer/fetcher');
 const analyzer= require('../lib/archer/analyzer');
 const reporter= require('../lib/archer/reporter');
@@ -70,6 +71,20 @@ function extractVersions(data) {
     if (info.version) versions[pkg] = info.version;
   }
   return versions;
+}
+
+function hashContent(content) {
+  return crypto.createHash('sha256').update(String(content || '')).digest('hex');
+}
+
+function isExpectedRagStoreSkip(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    message.includes('duplicate key value') ||
+    message.includes('unique constraint') ||
+    (message.includes('model') && message.includes('not found') && message.includes('embed')) ||
+    message.includes('qwen3-embed-0.6b')
+  );
 }
 
 // ─── 메인 ─────────────────────────────────────────────────────────────
@@ -201,17 +216,28 @@ async function main() {
             techItems.join(' / '),
             analysis.summary ? `요약: ${analysis.summary.slice(0, 100)}` : '',
           ].filter(Boolean).join(' | ');
-          await rag.store('tech', content, {
+          const contentHash = hashContent(content);
+          const storedId = await rag.store('tech', content, {
             run_date:       runDate,
             patch_count:    (analysis.patches  || []).length,
             security_count: (analysis.security || []).length,
             llm_api_count:  (analysis.llm_api  || []).length,
             change_type:    'weekly_report',
+            content_hash:   contentHash,
+            dedupe_key:     `archer:${runDate}:${contentHash.slice(0, 16)}`,
           }, 'archer');
-          console.log(`  [아처] RAG 저장 완료 (tech ${techItems.length}건)`);
+          if (storedId) {
+            console.log(`  [아처] RAG 저장 완료 (tech ${techItems.length}건, id=${storedId})`);
+          } else {
+            console.log(`  [아처] RAG 저장 생략 (guard/backoff, tech ${techItems.length}건)`);
+          }
         }
       } catch (e) {
-        console.warn('[archer] RAG 저장 실패 (무시):', e.message);
+        if (isExpectedRagStoreSkip(e)) {
+          console.log('[archer] RAG 저장 생략:', String(e.message || e).slice(0, 180));
+        } else {
+          console.warn('[archer] RAG 저장 실패 (무시):', e.message);
+        }
       }
     }
 
