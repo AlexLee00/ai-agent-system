@@ -1,4 +1,5 @@
 type Logger = (message: string) => void;
+const { normalizeKioskSlotEndTime } = require('./kiosk-monitor-helpers');
 
 type ConnectBrowserFn = (options: { browserWSEndpoint: string }) => Promise<any>;
 type LoginFn = (page: any) => Promise<boolean>;
@@ -24,7 +25,6 @@ export function createKioskVerifyService(deps: CreateKioskVerifyServiceDeps) {
     naverBookingLogin,
     selectBookingDate,
     verifyBlockInGrid,
-    roundUpToHalfHour,
     delay,
     bookingUrl,
     log,
@@ -68,7 +68,7 @@ export function createKioskVerifyService(deps: CreateKioskVerifyServiceDeps) {
         return false;
       }
       await capture('date-selected');
-      const verified = await verifyBlockInGrid(verifyPage, room, start, roundUpToHalfHour(end));
+      const verified = await verifyBlockInGrid(verifyPage, room, start, normalizeKioskSlotEndTime(end));
       await capture(verified ? 'verified' : 'verify-failed');
       return verified;
     } finally {

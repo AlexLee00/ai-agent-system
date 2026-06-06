@@ -128,33 +128,12 @@ async function main() {
     const remaining = listBackupFiles().length;
 
     const successMessage = `✅ [스카 백업 완료]\n${dateStr} / ${sizeKB}KB / 보관 ${remaining}개`;
-    const memoryQuery = buildBackupMemoryQuery('success', dateStr);
-    const episodicHint = await backupMemory.recallCountHint(memoryQuery, {
-      type: 'episodic',
-      limit: 2,
-      threshold: 0.33,
-      title: '최근 유사 백업',
-      separator: 'pipe',
-      metadataKey: 'kind',
-      labels: {
-        success: '성공',
-        failure: '실패',
-      },
-      order: ['success', 'failure'],
-    }).catch(() => '');
-    const semanticHint = await backupMemory.recallHint(`${memoryQuery} consolidated backup pattern`, {
-      type: 'semantic',
-      limit: 2,
-      threshold: 0.28,
-      title: '최근 통합 패턴',
-      separator: 'newline',
-    }).catch(() => '');
     console.log(`[백업] 완료 — ${sizeKB}KB, 보관 ${remaining}개`);
     await publishReservationAlert({
       from_bot: 'ska',
       event_type: 'report',
       alert_level: 1,
-      message: `${successMessage}${episodicHint}${semanticHint}`,
+      message: successMessage,
     }).catch(() => {});
     await backupMemory.remember(successMessage, 'episodic', {
       importance: 0.64,

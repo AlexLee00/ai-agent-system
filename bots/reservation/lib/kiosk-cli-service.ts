@@ -1,4 +1,5 @@
 type Logger = (message: string) => void;
+const { splitKioskEntryForNaverBlocks } = require('./kiosk-monitor-helpers');
 
 export type CreateKioskCliServiceDeps = {
   readWsEndpoint: () => string | null;
@@ -23,12 +24,32 @@ export function createKioskCliService(deps: CreateKioskCliServiceDeps) {
 
   async function blockSlotOnly(entry: Record<string, any>) {
     const wsEndpoint = readWsEndpoint();
-    return runBlockSlotOnly({ entry, wsEndpoint });
+    const blockEntries = splitKioskEntryForNaverBlocks(entry);
+    if (blockEntries.length > 1) {
+      log(`↪ 날짜 넘어감 차단 분할: ${entry.date} ${entry.start}~${entry.end} → ${blockEntries.map((item: Record<string, any>) => `${item.date} ${item.start}~${item.end}`).join(', ')}`);
+    }
+
+    let exitCode = 0;
+    for (const blockEntry of blockEntries) {
+      const result = await runBlockSlotOnly({ entry: blockEntry, wsEndpoint });
+      if (result !== 0) exitCode = result || 1;
+    }
+    return exitCode;
   }
 
   async function unblockSlotOnly(entry: Record<string, any>) {
     const wsEndpoint = readWsEndpoint();
-    return runUnblockSlotOnly({ entry, wsEndpoint });
+    const unblockEntries = splitKioskEntryForNaverBlocks(entry);
+    if (unblockEntries.length > 1) {
+      log(`↪ 날짜 넘어감 해제 분할: ${entry.date} ${entry.start}~${entry.end} → ${unblockEntries.map((item: Record<string, any>) => `${item.date} ${item.start}~${item.end}`).join(', ')}`);
+    }
+
+    let exitCode = 0;
+    for (const unblockEntry of unblockEntries) {
+      const result = await runUnblockSlotOnly({ entry: unblockEntry, wsEndpoint });
+      if (result !== 0) exitCode = result || 1;
+    }
+    return exitCode;
   }
 
   async function auditToday(dateOverride: string | null = null) {
@@ -38,7 +59,17 @@ export function createKioskCliService(deps: CreateKioskCliServiceDeps) {
 
   async function verifySlotOnly(entry: Record<string, any>) {
     const wsEndpoint = readWsEndpoint();
-    return runVerifySlotOnly({ entry, wsEndpoint });
+    const verifyEntries = splitKioskEntryForNaverBlocks(entry);
+    if (verifyEntries.length > 1) {
+      log(`↪ 날짜 넘어감 검증 분할: ${entry.date} ${entry.start}~${entry.end} → ${verifyEntries.map((item: Record<string, any>) => `${item.date} ${item.start}~${item.end}`).join(', ')}`);
+    }
+
+    let exitCode = 0;
+    for (const verifyEntry of verifyEntries) {
+      const result = await runVerifySlotOnly({ entry: verifyEntry, wsEndpoint });
+      if (result !== 0) exitCode = result || 1;
+    }
+    return exitCode;
   }
 
   async function handleAuditTodayFailure(err: any) {

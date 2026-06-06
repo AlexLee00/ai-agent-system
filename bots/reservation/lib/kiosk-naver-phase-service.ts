@@ -1,5 +1,6 @@
 type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
+const { isKioskEntryEnded } = require('./kiosk-monitor-helpers');
 
 export type CreateKioskNaverPhaseServiceDeps = {
   log: Logger;
@@ -196,13 +197,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         const key = `${entry.phoneRaw}|${entry.date}|${entry.start}`;
         log(`\n처리 중: ${key}`);
 
-        const nowKst = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-        const nowDateStr = `${nowKst.getFullYear()}-${String(nowKst.getMonth() + 1).padStart(2, '0')}-${String(nowKst.getDate()).padStart(2, '0')}`;
-        const nowMin = nowKst.getHours() * 60 + nowKst.getMinutes();
-        const [endHour, endMinute] = (entry.end || '23:59').split(':').map(Number);
-        const isTimeElapsed =
-          entry.date < nowDateStr ||
-          (entry.date === nowDateStr && nowMin >= endHour * 60 + endMinute);
+        const isTimeElapsed = isKioskEntryEnded(entry);
 
         if (isTimeElapsed) {
           log(`  ⏰ [시간 경과] 네이버 차단 생략: ${entry.date} ${entry.end} 이미 종료됨`);

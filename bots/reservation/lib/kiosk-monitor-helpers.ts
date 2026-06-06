@@ -109,10 +109,80 @@ export function roundUpToHalfHour(timeStr: unknown): string {
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
 }
 
+export function normalizeKioskSlotEndTime(timeStr: unknown): string {
+  // Naver booking only exposes 30-minute slot boundaries in the settings panel.
+  // Pickko can show ends such as 00:50/23:50, so block through the containing slot.
+  return roundUpToHalfHour(timeStr);
+}
+
 export function toClockMinutes(timeStr: unknown): number | null {
   const [h, m] = String(timeStr || '').split(':').map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
+}
+
+export function getKioskEntryEndDateTime(entry: KioskEntry): Date | null {
+  const date = String(entry?.date || '').trim();
+  const startMin = toClockMinutes(entry?.start);
+  const endMin = toClockMinutes(entry?.end || '23:59');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || startMin == null || endMin == null) return null;
+
+  const endDateTime = new Date(`${date}T00:00:00+09:00`);
+  endDateTime.setMinutes(endMin);
+  if (endMin <= startMin) {
+    endDateTime.setDate(endDateTime.getDate() + 1);
+  }
+  return endDateTime;
+}
+
+export function isKioskEntryEnded(entry: KioskEntry, now: Date = new Date()): boolean {
+  const endDateTime = getKioskEntryEndDateTime(entry);
+  if (!endDateTime) return false;
+  return now.getTime() >= endDateTime.getTime();
+}
+
+export function addKstDays(dateStr: unknown, days: number): string {
+  const date = String(dateStr || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const kstDate = new Date(`${date}T00:00:00+09:00`);
+  kstDate.setDate(kstDate.getDate() + days);
+  return kstDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+}
+
+export function splitKioskEntryForNaverBlocks(entry: KioskEntry): KioskEntry[] {
+  const startMin = toClockMinutes(entry?.start);
+  const endMin = toClockMinutes(entry?.end);
+  if (startMin == null || endMin == null || endMin > startMin) return [entry];
+
+  const splitEntries = [
+    {
+      ...entry,
+      end: '24:00',
+      splitFromOvernight: true,
+      splitPart: 'same_day',
+      originalDate: entry.date,
+      originalStart: entry.start,
+      originalEnd: entry.end,
+    },
+  ];
+
+  if (endMin > 0) {
+    splitEntries.push(
+      {
+        ...entry,
+        date: addKstDays(entry.date, 1),
+        start: '00:00',
+        end: normalizeKioskSlotEndTime(entry.end),
+        splitFromOvernight: true,
+        splitPart: 'next_day',
+        originalDate: entry.date,
+        originalStart: entry.start,
+        originalEnd: entry.end,
+      },
+    );
+  }
+
+  return splitEntries;
 }
 
 export function to24Hour(timeText: unknown): string | null {

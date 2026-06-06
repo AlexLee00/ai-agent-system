@@ -1,4 +1,5 @@
 type Logger = (message: string) => void;
+const { normalizeKioskSlotEndTime } = require('./kiosk-monitor-helpers');
 
 export type CreateKioskBlockFlowServiceDeps = {
   log: Logger;
@@ -20,7 +21,6 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
     log,
     delay,
     bookingUrl,
-    roundUpToHalfHour,
     toClockMinutes,
     maskName,
     selectBookingDate,
@@ -57,7 +57,7 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
       }
       await capture('date-selected');
 
-      const endRounded = roundUpToHalfHour(end);
+      const endRounded = normalizeKioskSlotEndTime(end);
       if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
       const alreadyBlocked = await verifyBlockInGrid(page, room, start, endRounded);
       if (alreadyBlocked) {
@@ -272,7 +272,7 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
         }
 
         log('  ⚠️ avail-gone 방식 차단 감지 → 같은 룸 다른 슬롯으로 패널 열어 예약가능 복구 시도');
-        const endRoundedAG = roundUpToHalfHour(end);
+        const endRoundedAG = normalizeKioskSlotEndTime(end);
         const doneAG = await restoreAvailGoneSlot(page, room, start, endRoundedAG);
         log(`  avail-gone 복구: ${doneAG ? '✅ 성공' : '❌ 실패 — 수동 확인 필요'}`);
         if (!doneAG) {
@@ -290,7 +290,7 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
         return false;
       }
 
-      const endRounded = roundUpToHalfHour(end);
+      const endRounded = normalizeKioskSlotEndTime(end);
       if (endRounded !== end) log(`  종료시간 올림: ${end} → ${endRounded}`);
       const done = await fillAvailablePopup(page, date, start, endRounded);
       if (!done) {

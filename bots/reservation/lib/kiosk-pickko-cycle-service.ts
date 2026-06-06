@@ -2,6 +2,10 @@ type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
 type GetKioskBlockFn = (phoneRaw: string, date: string, start: string, end?: string, room?: string) => Promise<any>;
 type CompareEntrySequenceFn = (a: Record<string, any>, b: Record<string, any>) => number;
+const {
+  isKioskEntryEnded,
+  splitKioskEntryForNaverBlocks,
+} = require('./kiosk-monitor-helpers');
 type KioskEntry = Record<string, any> & {
   phoneRaw: string;
   date: string;
@@ -50,7 +54,8 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     log(`✅ 픽코 로그인 완료: ${page.url()}`);
 
     log(`\n[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=결제완료`);
-    const { entries: kioskEntries, fetchOk } = await fetchPickkoEntries(page, today, { minAmount: 1 });
+    const { entries: rawKioskEntries, fetchOk } = await fetchPickkoEntries(page, today, { minAmount: 1 });
+    const kioskEntries = rawKioskEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
 
     for (const entry of kioskEntries) {
       log(`  • ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | ${entry.amount}원`);
@@ -58,7 +63,8 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
 
     let excludedEntries: Record<string, any>[] = [];
     try {
-      const { entries: allEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
+      const { entries: rawAllEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
+      const allEntries = rawAllEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
       const paidKeys = new Set(kioskEntries.map((entry) => `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`));
       excludedEntries = allEntries.filter((entry) => {
         const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
@@ -87,19 +93,13 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     );
     const newEntries = kioskEntries.filter((_, index) => !kioskFlags[index]);
 
-    const nowForRetry = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-    const nowDateForRetry = `${nowForRetry.getFullYear()}-${String(nowForRetry.getMonth() + 1).padStart(2, '0')}-${String(nowForRetry.getDate()).padStart(2, '0')}`;
-    const nowMinForRetry = nowForRetry.getHours() * 60 + nowForRetry.getMinutes();
+    const nowForRetry = new Date();
     const retryEntries = kioskEntries.filter((entry, index) => {
       const saved = kioskFlags[index];
       if (!saved) return false;
       if (saved.naverBlocked) return false;
       if (saved.naverUnblockedAt) return false;
-      const [endHour, endMinute] = (entry.end || '23:59').split(':').map(Number);
-      const isExpired =
-        entry.date < nowDateForRetry ||
-        (entry.date === nowDateForRetry && nowMinForRetry >= endHour * 60 + endMinute);
-      return !isExpired;
+      return !isKioskEntryEnded(entry, nowForRetry);
     });
 
     const toBlockEntries: Record<string, any>[] = [];
@@ -114,9 +114,11 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
 
     log('\n[Phase 2B] 픽코 취소/환불 예약 직접 조회');
     log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=환불`);
-    const { entries: refundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
+    const { entries: rawRefundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
+    const refundedEntries = rawRefundedEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
     log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=취소`);
-    const { entries: cancelledStatusEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '취소', minAmount: 1 });
+    const { entries: rawCancelledStatusEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '취소', minAmount: 1 });
+    const cancelledStatusEntries = rawCancelledStatusEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
 
     const rawCancelledEntries = [...refundedEntries, ...cancelledStatusEntries];
     const dedupedCancelledEntries: Record<string, any>[] = [];
