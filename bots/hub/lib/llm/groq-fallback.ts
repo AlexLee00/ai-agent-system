@@ -157,6 +157,10 @@ function isGptOssModel(model: string): boolean {
   return model === 'openai/gpt-oss-20b' || model === 'openai/gpt-oss-120b';
 }
 
+function isQwenReasoningModel(model: string): boolean {
+  return model === 'qwen/qwen3-32b' || model === 'qwen3-32b' || model === 'qwen-qwq-32b';
+}
+
 function isStructuredOutputModel(model: string): boolean {
   return isGptOssModel(model)
     || model === 'openai/gpt-oss-safeguard-20b'
@@ -166,6 +170,7 @@ function isStructuredOutputModel(model: string): boolean {
 function resolveReasoningEffort(req: GroqRequest, model: string): string | undefined {
   if (req.reasoningEffort) return req.reasoningEffort;
   if (isGptOssModel(model)) return 'low';
+  if (isQwenReasoningModel(model)) return 'none';
   return undefined;
 }
 

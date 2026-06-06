@@ -40,6 +40,15 @@ async function main() {
   assert.equal(payload.response_format.type, 'json_schema');
   assert.equal(payload.response_format.json_schema.strict, true);
 
+  const qwenPayload = _testOnly.buildGroqRequestBody({
+    prompt: 'qwen reasoning check',
+    model: 'qwen/qwen3-32b',
+    temperature: 0,
+  }, 'qwen/qwen3-32b');
+  assert.equal(qwenPayload.reasoning_effort, 'none');
+  assert.equal(qwenPayload.reasoning_format, undefined);
+  assert.equal(qwenPayload.include_reasoning, undefined);
+
   let fetchCalls = 0;
   global.fetch = async () => {
     fetchCalls += 1;
