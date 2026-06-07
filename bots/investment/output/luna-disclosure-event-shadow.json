@@ -27,6 +27,21 @@
       "dataHealth": "shadow_ready",
       "events": [
         {
+          "stockCode": "066980",
+          "companyName": "한성크린텍",
+          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260605000668",
+          "receiptDate": "2026-06-07T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
           "stockCode": "066790",
           "companyName": "씨씨에스",
           "reportName": "소송등의제기ㆍ신청(경영권분쟁소송)              (임시주주총회 개최금지 가처분-즉시항고)",
@@ -745,21 +760,6 @@
             "dilution"
           ],
           "receiptNo": "20260605000593",
-          "receiptDate": "2026-06-04T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "261780",
-          "companyName": "아리바이오LAB",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260605000576",
           "receiptDate": "2026-06-04T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
@@ -767,6 +767,21 @@
       ],
       "highImportanceEvents": [
         {
+          "stockCode": "066980",
+          "companyName": "한성크린텍",
+          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260605000668",
+          "receiptDate": "2026-06-07T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
           "stockCode": "066790",
           "companyName": "씨씨에스",
           "reportName": "소송등의제기ㆍ신청(경영권분쟁소송)              (임시주주총회 개최금지 가처분-즉시항고)",
@@ -1485,21 +1500,6 @@
             "dilution"
           ],
           "receiptNo": "20260605000593",
-          "receiptDate": "2026-06-04T15:00:00.000Z",
-          "shadowOnly": true,
-          "liveOrderAllowed": false
-        },
-        {
-          "stockCode": "261780",
-          "companyName": "아리바이오LAB",
-          "reportName": "[기재정정]주요사항보고서(전환사채권발행결정)",
-          "reportType": "dilution",
-          "importanceScore": 8,
-          "direction": "avoid_or_reduce_watchlist",
-          "keywords": [
-            "dilution"
-          ],
-          "receiptNo": "20260605000576",
           "receiptDate": "2026-06-04T15:00:00.000Z",
           "shadowOnly": true,
           "liveOrderAllowed": false
