@@ -34,6 +34,8 @@ const AUTOFIX_FILE_MAX_BYTES = 60 * 1024;
 const AUTOFIX_TIMEOUT_MS = 120000;
 const PLAN_DIR = path.join(ROOT, 'docs', 'codex', 'refactor-plans');
 const PATCH_DIR = path.join(PLAN_DIR, 'patches');
+const REFACTORER_LOCK_PATH = path.join(ROOT, '.refactorer-active.lock');
+const REFACTORER_LOCK_STALE_MS = 10 * 60 * 1000;
 const MAX_SCAN_FILES = Math.max(1, Number(process.env.REFACTORER_MAX_SCAN_FILES || 5000) || 5000);
 const MAX_LARGE_FILES = Math.max(1, Number(process.env.REFACTORER_MAX_LARGE_FILES || 10) || 10);
 
@@ -93,8 +95,28 @@ function booleanEnvEnabled(value) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function booleanEnvEnabledByDefault(value, fallback = true) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const normalized = String(value || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
 function applyEnabled(value = process.env.REFACTORER_APPLY_ENABLED) {
   return booleanEnvEnabled(value);
+}
+
+function applyPushEnabled(value = process.env.REFACTORER_APPLY_PUSH) {
+  return booleanEnvEnabledByDefault(value, true);
+}
+
+function applyStrictGateEnabled(value = process.env.REFACTORER_APPLY_STRICT_GATE) {
+  return booleanEnvEnabledByDefault(value, true);
+}
+
+function applyMaxPerCycle(value = process.env.REFACTORER_APPLY_MAX_PER_CYCLE) {
+  return parsePositiveInt(value, 3, 10);
 }
 
 function normalizeDirtyScope(value = process.env.REFACTORER_DIRTY_SCOPE) {
@@ -759,6 +781,61 @@ function defaultCommitFile(relFile, message, gitFn = runGit) {
   }
 }
 
+function localBin(name) {
+  return path.join(ROOT, 'node_modules', '.bin', name);
+}
+
+function currentGitHead(gitFn = runGit) {
+  return String(gitFn(['rev-parse', 'HEAD']) || '').trim();
+}
+
+function defaultPushHead(gitFn = runGit) {
+  gitFn(['push', 'origin', 'HEAD']);
+  return { ok: true };
+}
+
+function defaultOriginContainsCommit(sha, gitFn = runGit) {
+  if (!sha) return false;
+  try {
+    gitFn(['fetch', 'origin', 'main']);
+    gitFn(['merge-base', '--is-ancestor', sha, 'origin/main']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function defaultRollbackToHead(head, relFile = null, gitFn = runGit) {
+  if (!head) throw new Error('rollback_head_missing');
+  gitFn(['reset', '--soft', head]);
+  const normalized = normalizeScopePath(relFile || '');
+  if (normalized && !normalized.startsWith('..') && !path.isAbsolute(normalized)) {
+    gitFn(['reset', '--', normalized]);
+  }
+  return { ok: true };
+}
+
+function defaultStrictCheck() {
+  const tscBin = fs.existsSync(localBin('tsc')) ? localBin('tsc') : 'tsc';
+  try {
+    execFileSync(tscBin, ['-p', 'tsconfig.strict.json', '--noEmit'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: Number(process.env.REFACTORER_STRICT_GATE_TIMEOUT_MS || 120000),
+    });
+    return { pass: true, skipped: false, command: 'tsc -p tsconfig.strict.json --noEmit' };
+  } catch (error) {
+    const output = `${error?.stdout || ''}\n${error?.stderr || ''}`.trim();
+    return {
+      pass: false,
+      skipped: false,
+      command: 'tsc -p tsconfig.strict.json --noEmit',
+      error: output || error?.message || String(error),
+    };
+  }
+}
+
 function refactorScopePrefixes(targetRelPath = '', scope = 'workspace') {
   const normalizedScope = normalizeDirtyScope(scope);
   const target = normalizeScopePath(targetRelPath);
@@ -836,6 +913,74 @@ function cleanupUnexpectedUntracked(lines = [], baselineStatus = '', scopePrefix
     if (relativePath.startsWith('..') || path.isAbsolute(relativePath) || isProtectedTarget(relativePath)) continue;
     fs.rmSync(absolutePath, { recursive: true, force: true });
   }
+}
+
+function readRefactorLock(lockPath = REFACTORER_LOCK_PATH, nowMs = Date.now()) {
+  try {
+    const stat = fs.statSync(lockPath);
+    const ageMs = nowMs - stat.mtimeMs;
+    return {
+      exists: true,
+      stale: ageMs >= REFACTORER_LOCK_STALE_MS,
+      ageMs,
+      path: lockPath,
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { exists: false, stale: false, ageMs: null, path: lockPath };
+    return { exists: true, stale: false, ageMs: null, path: lockPath, error: error?.message || String(error) };
+  }
+}
+
+function acquireRefactorLock(lockPath = REFACTORER_LOCK_PATH, meta = {}) {
+  const payload = JSON.stringify({
+    pid: process.pid,
+    startedAt: nowIso(),
+    cycleId: meta?.context?.cycleId || null,
+  }) + '\n';
+  try {
+    const fd = fs.openSync(lockPath, 'wx');
+    fs.writeFileSync(fd, payload, 'utf8');
+    fs.closeSync(fd);
+    return { ok: true, path: lockPath, staleReplaced: false };
+  } catch (error) {
+    if (error?.code !== 'EEXIST') {
+      return { ok: false, reason: 'lock_create_failed', error: error?.message || String(error), path: lockPath };
+    }
+    const lock = readRefactorLock(lockPath);
+    if (lock.exists && !lock.stale) {
+      return { ok: false, reason: 'another_cycle_active', lock };
+    }
+    try {
+      fs.rmSync(lockPath, { force: true });
+      const fd = fs.openSync(lockPath, 'wx');
+      fs.writeFileSync(fd, payload, 'utf8');
+      fs.closeSync(fd);
+      return { ok: true, path: lockPath, staleReplaced: true, previous: lock };
+    } catch (replaceError) {
+      return {
+        ok: false,
+        reason: 'lock_replace_failed',
+        error: replaceError?.message || String(replaceError),
+        path: lockPath,
+        previous: lock,
+      };
+    }
+  }
+}
+
+function releaseRefactorLock(lock, _meta = {}) {
+  const lockPath = typeof lock === 'string' ? lock : lock?.path;
+  if (!lockPath) return { ok: true, skipped: true, reason: 'missing_lock_path' };
+  try {
+    const payload = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    if (payload?.pid && Number(payload.pid) !== process.pid) {
+      return { ok: true, skipped: true, reason: 'lock_not_owned', path: lockPath };
+    }
+  } catch {
+    // Remove malformed locks created by this process path best-effort.
+  }
+  fs.rmSync(lockPath, { force: true });
+  return { ok: true, path: lockPath };
 }
 
 function gitDiffForFiles(files = []) {
@@ -1293,20 +1438,61 @@ async function runActiveRefactor(context, analysis, candidates) {
       .filter(Boolean);
     patchText = successfulFiles.length > 0 ? gitDiffForFiles(successfulFiles) : '';
     if (context.applyEnabled && !context.dryRun) {
+      let appliedCount = 0;
       for (const item of results.filter(isReadyResult)) {
         const relFile = item.candidate?.file;
         if (!relFile) continue;
+        if (appliedCount >= context.applyMaxPerCycle) {
+          item.stage = 'active_deferred_rate_limited';
+          item.applied = false;
+          item.errorSummary = formatErrorSummary({ stage: 'rate_limited', candidate: item.candidate, error: `apply_max_per_cycle:${context.applyMaxPerCycle}` });
+          applyResults.push({ file: relFile, applied: false, reason: 'rate_limited' });
+          continue;
+        }
+        if (context.applyStrictGateEnabled) {
+          const strict = await context.strictCheckFn({ file: relFile, results, context });
+          if (!strict || strict.pass !== true) {
+            const errorMessage = String(strict?.error || strict?.message || 'strict_gate_failed').slice(0, 300);
+            item.stage = 'active_deferred_strict_failed';
+            item.applied = false;
+            item.strict = strict || { pass: false };
+            item.errorSummary = formatErrorSummary({ stage: 'strict_gate', candidate: item.candidate, error: errorMessage });
+            applyResults.push({ file: relFile, applied: false, reason: 'strict_failed', error: errorMessage });
+            continue;
+          }
+          item.strict = strict;
+        }
+        const beforeCommitHead = String(await context.currentHeadFn({ file: relFile, context }) || '').trim();
         try {
           const commit = await context.commitFileFn(
             relFile,
             `refactor(ts): drop @ts-nocheck from ${relFile} [refactorer ${context.cycleId}]`
           );
+          let pushed = false;
+          let originContains = null;
+          if (context.applyPushEnabled) {
+            const pushResult = await context.pushFn({ commit, file: relFile, context });
+            if (pushResult && pushResult.ok === false) {
+              throw new Error(pushResult.error || 'push_failed');
+            }
+            originContains = await context.originContainsFn(commit, { file: relFile, context });
+            if (!originContains) throw new Error(`push_verify_failed:${commit}`);
+            pushed = true;
+          }
           snapshots.delete(path.resolve(ROOT, relFile));
           item.applied = true;
           item.commit = commit;
-          applyResults.push({ file: relFile, applied: true, commit });
+          item.pushed = pushed;
+          item.originContains = originContains;
+          appliedCount += 1;
+          applyResults.push({ file: relFile, applied: true, commit, pushed, originContains });
         } catch (error) {
           const errorMessage = String(error?.message || error).slice(0, 300);
+          try {
+            await context.rollbackFn(beforeCommitHead, { file: relFile, context });
+          } catch (rollbackError) {
+            item.rollbackError = String(rollbackError?.message || rollbackError).slice(0, 300);
+          }
           item.stage = 'active_apply_failed';
           item.applied = false;
           item.errorSummary = formatErrorSummary({ stage: 'apply_failed', candidate: item.candidate, error: errorMessage });
@@ -1473,6 +1659,9 @@ function buildCycleContext(options = {}) {
     gitStatusScopedFn: options.gitStatusScopedFn || gitStatusScoped,
     activeMaxFiles: activeMaxFiles(options.activeMaxFiles ?? process.env.REFACTORER_ACTIVE_MAX_FILES),
     applyEnabled: mode === 'active' && applyEnabled(options.applyEnabled ?? process.env.REFACTORER_APPLY_ENABLED),
+    applyPushEnabled: applyPushEnabled(options.applyPushEnabled ?? process.env.REFACTORER_APPLY_PUSH),
+    applyStrictGateEnabled: applyStrictGateEnabled(options.applyStrictGateEnabled ?? process.env.REFACTORER_APPLY_STRICT_GATE),
+    applyMaxPerCycle: applyMaxPerCycle(options.applyMaxPerCycle ?? process.env.REFACTORER_APPLY_MAX_PER_CYCLE),
     autofixEnabled: mode === 'active' && autofixEnabled(options.autofixEnabled ?? process.env.REFACTORER_AUTOFIX_ENABLED),
     autofixMaxAttempts: autofixMaxAttempts(options.autofixMaxAttempts ?? process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS),
     autofixBillingStopped: false,
@@ -1482,11 +1671,20 @@ function buildCycleContext(options = {}) {
     builderModule: options.builderModule || null,
     reviewerModule: options.reviewerModule || null,
     commitFileFn: options.commitFileFn || defaultCommitFile,
+    pushFn: options.pushFn || (() => defaultPushHead()),
+    originContainsFn: options.originContainsFn || ((sha) => defaultOriginContainsCommit(sha)),
+    rollbackFn: options.rollbackFn || ((head, meta) => defaultRollbackToHead(head, meta?.file)),
+    currentHeadFn: options.currentHeadFn || (() => currentGitHead()),
+    strictCheckFn: options.strictCheckFn || (() => defaultStrictCheck()),
+    lockPath: options.lockPath || REFACTORER_LOCK_PATH,
+    acquireLockFn: options.acquireLockFn || acquireRefactorLock,
+    releaseLockFn: options.releaseLockFn || releaseRefactorLock,
   };
 }
 
 async function runRefactorCycle(options = {}) {
   const context = buildCycleContext(options);
+  let activeLock = null;
   try {
     if (context.mode === 'off') {
       const result = { ok: true, skipped: true, reason: 'cycle_mode_off', mode: context.mode };
@@ -1528,6 +1726,27 @@ async function runRefactorCycle(options = {}) {
           scope: scopePrefixes,
         });
         return result;
+      }
+      if (context.applyEnabled) {
+        const lock = await context.acquireLockFn(context.lockPath, { context });
+        if (!lock?.ok) {
+          const result = {
+            ok: true,
+            skipped: true,
+            reason: lock?.reason || 'another_cycle_active',
+            mode: context.mode,
+            cycleId: context.cycleId,
+            target: context.target.relativePath,
+            lock,
+          };
+          result.heartbeat = await writeRefactorHeartbeat(context, 'ok', {
+            stage: 'skipped_active_lock',
+            reason: result.reason,
+            lockAgeMs: lock?.lock?.ageMs ?? null,
+          });
+          return result;
+        }
+        activeLock = lock;
       }
     }
 
@@ -1679,6 +1898,14 @@ async function runRefactorCycle(options = {}) {
     };
     result.heartbeat = await writeRefactorHeartbeat(context, 'error', errorHeartbeatMeta(error, { stage: 'fatal' }));
     return result;
+  } finally {
+    if (activeLock) {
+      try {
+        await context.releaseLockFn(activeLock, { context });
+      } catch {
+        // Cycle result should not be masked by a best-effort lock cleanup failure.
+      }
+    }
   }
 }
 
@@ -1717,8 +1944,12 @@ module.exports = {
   fetchRefactorVaultFeedback,
   cleanupUnexpectedUntracked,
   defaultCommitFile,
+  acquireRefactorLock,
+  releaseRefactorLock,
   gitStatusScoped,
   applyEnabled,
+  applyPushEnabled,
+  applyStrictGateEnabled,
   normalizeDirtyScope,
   refactorScopePrefixes,
   unexpectedMutationLines,

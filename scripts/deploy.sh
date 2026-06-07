@@ -2,8 +2,21 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-/Users/alexlee/projects/ai-agent-system}"
+REFACTORER_LOCK_FILE="${PROJECT_ROOT}/.refactorer-active.lock"
+REFACTORER_LOCK_MAX_AGE_SECONDS="${REFACTORER_LOCK_MAX_AGE_SECONDS:-600}"
 
 cd "$PROJECT_ROOT"
+
+if [ -f "$REFACTORER_LOCK_FILE" ]; then
+  LOCK_MTIME="$(stat -f %m "$REFACTORER_LOCK_FILE" 2>/dev/null || stat -c %Y "$REFACTORER_LOCK_FILE" 2>/dev/null || echo 0)"
+  NOW="$(date +%s)"
+  LOCK_AGE=$((NOW - LOCK_MTIME))
+  if [ "$LOCK_MTIME" -gt 0 ] && [ "$LOCK_AGE" -lt "$REFACTORER_LOCK_MAX_AGE_SECONDS" ]; then
+    echo "refactorer active lock is fresh (${LOCK_AGE}s); deploy sync skipped"
+    exit 0
+  fi
+fi
+
 echo "=== OPS deploy sync ==="
 git fetch origin main
 echo "HEAD(before): $(git rev-parse --short HEAD)"

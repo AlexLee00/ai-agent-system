@@ -126,6 +126,10 @@ function reviewerModuleAlwaysPass(target = ACTIVE_TARGET) {
   };
 }
 
+function strictPass() {
+  return { pass: true, skipped: false, message: 'mock strict pass' };
+}
+
 async function runActiveWithBuilderResult(builderResult, target = ACTIVE_TARGET) {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -539,6 +543,8 @@ async function test_apply_on_commits_ready_file_and_keeps_change() {
   const before = targetContent(target);
   const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
   const commits = [];
+  const pushes = [];
+  const originChecks = [];
   let result = null;
   try {
     result = await runner.runRefactorCycle({
@@ -553,6 +559,19 @@ async function test_apply_on_commits_ready_file_and_keeps_change() {
       applyEnabled: true,
       builderModule,
       reviewerModule,
+      strictCheckFn: async () => strictPass(),
+      currentHeadFn: async () => 'before-apply-sha',
+      rollbackFn: async () => {
+        throw new Error('rollback should not be called');
+      },
+      pushFn: async (params) => {
+        pushes.push(params);
+        return { ok: true };
+      },
+      originContainsFn: async (sha) => {
+        originChecks.push(sha);
+        return true;
+      },
       commitFileFn: async (file, message) => {
         commits.push({ file, message });
         return 'fake-sha-apply';
@@ -560,8 +579,11 @@ async function test_apply_on_commits_ready_file_and_keeps_change() {
     });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.active.applied, true);
-    assert.deepStrictEqual(result.active.applyResults, [{ file: target, applied: true, commit: 'fake-sha-apply' }]);
+    assert.deepStrictEqual(result.active.applyResults, [{ file: target, applied: true, commit: 'fake-sha-apply', pushed: true, originContains: true }]);
     assert.strictEqual(commits.length, 1);
+    assert.strictEqual(pushes.length, 1);
+    assert.strictEqual(pushes[0].commit, 'fake-sha-apply');
+    assert.deepStrictEqual(originChecks, ['fake-sha-apply']);
     assert.strictEqual(commits[0].file, target);
     assert.match(commits[0].message, /refactor\(ts\): drop @ts-nocheck/);
     assert.notStrictEqual(targetContent(target), before);
@@ -673,6 +695,7 @@ async function test_apply_commit_failure_restores_and_reports_apply_failed() {
   const before = targetContent(target);
   const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
   const commits = [];
+  const rollbacks = [];
   let result = null;
   try {
     result = await runner.runRefactorCycle({
@@ -687,6 +710,12 @@ async function test_apply_commit_failure_restores_and_reports_apply_failed() {
       applyEnabled: true,
       builderModule,
       reviewerModule,
+      strictCheckFn: async () => strictPass(),
+      currentHeadFn: async () => 'before-commit-failure-sha',
+      rollbackFn: async (head) => {
+        rollbacks.push(head);
+        return { ok: true };
+      },
       commitFileFn: async (file, message) => {
         commits.push({ file, message });
         throw new Error('mock commit failed');
@@ -700,12 +729,210 @@ async function test_apply_commit_failure_restores_and_reports_apply_failed() {
     assert.strictEqual(result.active.results[0].stage, 'active_apply_failed');
     assert.match(result.active.results[0].errorSummary, /apply_failed/);
     assert.strictEqual(commits.length, 1);
+    assert.deepStrictEqual(rollbacks, ['before-commit-failure-sha']);
     assert.strictEqual(targetContent(target), before);
   } finally {
     fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
     cleanupRefactorArtifacts(result);
   }
   console.log('✅ refactor-cycle: apply commit failure restores and reports apply_failed');
+}
+
+async function test_apply_push_failure_rolls_back_and_reports_failed() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const rollbacks = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      strictCheckFn: async () => strictPass(),
+      currentHeadFn: async () => 'before-push-failure-sha',
+      rollbackFn: async (head) => {
+        rollbacks.push(head);
+        return { ok: true };
+      },
+      commitFileFn: async () => 'fake-sha-push-fail',
+      pushFn: async () => ({ ok: false, error: 'mock push failed' }),
+      originContainsFn: async () => {
+        throw new Error('origin check should not run after push failure');
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.applied, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_apply_failed');
+    assert.deepStrictEqual(result.active.applyResults[0], { file: target, applied: false, error: 'mock push failed' });
+    assert.deepStrictEqual(rollbacks, ['before-push-failure-sha']);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: apply push failure rolls back local commit and reports failed');
+}
+
+async function test_apply_strict_failure_defers_before_commit() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      strictCheckFn: async () => ({ pass: false, skipped: false, error: 'mock strict failed' }),
+      commitFileFn: async (file, message) => {
+        commits.push({ file, message });
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.applied, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.deepStrictEqual(result.active.applyResults[0], {
+      file: target,
+      applied: false,
+      reason: 'strict_failed',
+      error: 'mock strict failed',
+    });
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict gate failure defers before commit');
+}
+
+async function test_apply_lock_fresh_skips_stale_proceeds_and_releases() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const lockPath = path.join(PROJECT_ROOT, 'bots/claude/__tests__/tmp-refactorer-active.lock');
+  fs.rmSync(lockPath, { force: true });
+  fs.writeFileSync(lockPath, 'fresh lock\n', 'utf8');
+  const fresh = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    applyEnabled: true,
+    lockPath,
+  });
+  assert.strictEqual(fresh.skipped, true);
+  assert.strictEqual(fresh.reason, 'another_cycle_active');
+  assert.strictEqual(fs.existsSync(lockPath), true);
+
+  const staleDate = new Date(Date.now() - (11 * 60 * 1000));
+  fs.utimesSync(lockPath, staleDate, staleDate);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const stale = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    applyEnabled: true,
+    lockPath,
+    builderModule,
+    reviewerModule,
+  });
+  assert.notStrictEqual(stale.reason, 'another_cycle_active');
+  assert.strictEqual(fs.existsSync(lockPath), false);
+  console.log('✅ refactor-cycle: active apply lock skips fresh, replaces stale, and releases');
+}
+
+async function test_apply_rate_limit_defers_extra_ready_files() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const targetDir = 'bots/claude/__tests__/tmp-refactor-rate-limit';
+  const absDir = path.join(PROJECT_ROOT, targetDir);
+  const fileA = `${targetDir}/a.ts`;
+  const fileB = `${targetDir}/b.ts`;
+  fs.rmSync(absDir, { recursive: true, force: true });
+  fs.mkdirSync(absDir, { recursive: true });
+  fs.writeFileSync(path.join(PROJECT_ROOT, fileA), '// @ts-nocheck\nexport const a = 1;\n', 'utf8');
+  fs.writeFileSync(path.join(PROJECT_ROOT, fileB), '// @ts-nocheck\nexport const b = 2;\n', 'utf8');
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target: targetDir,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      applyMaxPerCycle: 1,
+      activeMaxFiles: 2,
+      builderModule: {
+        async runTargetedTypeCheck(files, options) {
+          assert.strictEqual(files.length, 1);
+          assert.deepStrictEqual(options.files, files);
+          return { pass: true, skipped: false, results: [{ pass: true, skipped: false }] };
+        },
+      },
+      reviewerModule: {
+        async runReview(options) {
+          assert.strictEqual(options.files.length, 1);
+          return { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [], sent: false };
+        },
+      },
+      strictCheckFn: async () => strictPass(),
+      currentHeadFn: async () => 'before-rate-limit-sha',
+      rollbackFn: async () => ({ ok: true }),
+      pushFn: async () => ({ ok: true }),
+      originContainsFn: async () => true,
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return `sha-${commits.length}`;
+      },
+    });
+    assert.strictEqual(result.active.stage, 'active_partial');
+    assert.strictEqual(result.active.applyResults.length, 2);
+    assert.strictEqual(result.active.applyResults.filter((item) => item.applied).length, 1);
+    assert.strictEqual(result.active.applyResults.filter((item) => item.reason === 'rate_limited').length, 1);
+    assert.strictEqual(commits.length, 1);
+  } finally {
+    fs.rmSync(absDir, { recursive: true, force: true });
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: apply max-per-cycle rate limits extra ready files');
 }
 
 async function test_builder_all_skipped_defers() {
@@ -816,6 +1043,7 @@ async function test_autofix_success_captures_patch_and_restores() {
     noWriteOutcome: true,
     allowDirtyWorktreeForTest: true,
     autofixEnabled: true,
+    gitStatusShortFn: () => '',
     builderModule,
     reviewerModule,
     fixerFn: async (_context, params) => {
@@ -864,6 +1092,7 @@ async function test_autofix_failure_defers_unfixable_and_restores() {
     allowDirtyWorktreeForTest: true,
     autofixEnabled: true,
     autofixMaxAttempts: 1,
+    gitStatusShortFn: () => '',
     builderModule,
     reviewerModule,
     fixerFn: async (_context, params) => {
@@ -1047,6 +1276,10 @@ async function main() {
     test_apply_on_verify_fail_does_not_commit_and_restores,
     test_apply_on_dry_run_does_not_commit_and_restores,
     test_apply_commit_failure_restores_and_reports_apply_failed,
+    test_apply_push_failure_rolls_back_and_reports_failed,
+    test_apply_strict_failure_defers_before_commit,
+    test_apply_lock_fresh_skips_stale_proceeds_and_releases,
+    test_apply_rate_limit_defers_extra_ready_files,
     test_builder_all_skipped_defers,
     test_builder_no_results_skipped_defers,
     test_builder_executed_pass_still_ready,

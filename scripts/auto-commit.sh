@@ -13,6 +13,18 @@ log() {
 
 cd "$REPO_DIR" || { log "ERROR: 디렉토리 이동 실패 - $REPO_DIR"; exit 1; }
 
+REFACTORER_LOCK_FILE="$REPO_DIR/.refactorer-active.lock"
+REFACTORER_LOCK_MAX_AGE_SECONDS="${REFACTORER_LOCK_MAX_AGE_SECONDS:-600}"
+if [ -f "$REFACTORER_LOCK_FILE" ]; then
+  LOCK_MTIME="$(stat -f %m "$REFACTORER_LOCK_FILE" 2>/dev/null || stat -c %Y "$REFACTORER_LOCK_FILE" 2>/dev/null || echo 0)"
+  NOW="$(date +%s)"
+  LOCK_AGE=$((NOW - LOCK_MTIME))
+  if [ "$LOCK_MTIME" -gt 0 ] && [ "$LOCK_AGE" -lt "$REFACTORER_LOCK_MAX_AGE_SECONDS" ]; then
+    log "refactorer active lock is fresh (${LOCK_AGE}s). auto-commit skipped."
+    exit 0
+  fi
+fi
+
 # 변경사항 확인
 if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
   log "변경사항 없음. 스킵."

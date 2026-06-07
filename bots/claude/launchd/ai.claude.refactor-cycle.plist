@@ -13,7 +13,17 @@
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 		<key>REFACTORER_CYCLE_MODE</key>
-		<string>shadow</string>
+		<string>active</string>
+		<key>REFACTORER_APPLY_ENABLED</key>
+		<string>true</string>
+		<key>REFACTORER_DIRTY_SCOPE</key>
+		<string>workspace</string>
+		<key>REFACTORER_APPLY_PUSH</key>
+		<string>true</string>
+		<key>REFACTORER_APPLY_STRICT_GATE</key>
+		<string>true</string>
+		<key>REFACTORER_APPLY_MAX_PER_CYCLE</key>
+		<string>3</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>
