@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn } from 'child_process';
 const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
+export const PICKKO_CANCEL_BLOCKED_CODE = 98;
 
 type Logger = (message: string) => void;
 
@@ -110,6 +111,12 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           resolve(0);
           return;
         }
+      }
+
+      if (process.env.PICKKO_CANCEL_MUTATION_ENABLE !== '1') {
+        log(`🛡️ [픽코 취소 차단] PICKKO_CANCEL_MUTATION_ENABLE!=1 — 실제 취소 실행 안 함: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
+        resolve(PICKKO_CANCEL_BLOCKED_CODE);
+        return;
       }
 
       const args = buildPickkoCancelArgs(manualCancelScriptPath, booking);

@@ -9,7 +9,9 @@
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 		<key>PICKKO_CANCEL_ENABLE</key>
-		<string>1</string>
+		<string>0</string>
+		<key>PICKKO_CANCEL_MUTATION_ENABLE</key>
+		<string>0</string>
 		<key>PICKKO_ENABLE</key>
 		<string>1</string>
 		<key>PICKKO_HEADLESS</key>

@@ -166,9 +166,13 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
             if (newCount >= runtimeConfig.staleConfirmCount && elapsed >= runtimeConfig.staleMinElapsedMs) {
               log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + ${Math.floor(elapsed / 60000)}분 경과 → 취소 확정`);
               pendingCancelMap.delete(cancelKey);
-              await addCancelledKey(cancelKey);
-              cycleNewCancelDetections += 1;
-              await runPickkoCancel(booking, cancelKey);
+              const result = await runPickkoCancel(booking, cancelKey);
+              if (result === 0) {
+                await addCancelledKey(cancelKey);
+                cycleNewCancelDetections += 1;
+              } else {
+                log(`🛡️ [취소감지4] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time}`);
+              }
             } else {
               pendingCancelMap.set(cancelKey, { ...pending, source: 'future_stale', booking, count: newCount });
               log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 stale (${Math.floor(elapsed / 60000)}분 경과) → 취소 대기 (${runtimeConfig.staleConfirmCount}회/${Math.floor(runtimeConfig.staleMinElapsedMs / 60000)}분 필요)`);

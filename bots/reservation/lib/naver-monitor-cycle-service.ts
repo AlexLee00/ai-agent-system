@@ -254,7 +254,7 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
 
     const nextPreviousConfirmedList = currentConfirmedList;
 
-    if (checkCount % 3 === 1) {
+    if (checkCount % 3 === 1 && process.env.PICKKO_CANCEL_ENABLE === '1') {
       try {
         cycleNewCancelDetections = await futureCancelService.processFutureCancelSnapshot({
           checkCount,
@@ -271,6 +271,8 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
         }
         log(`⚠️ [취소감지4] 오류 — 스킵: ${err.message}`);
       }
+    } else if (checkCount % 3 === 1) {
+      log('ℹ️ [취소감지4] PICKKO_CANCEL_ENABLE!=1 — 미래 stale 취소 감지 스킵');
     }
 
     if (
