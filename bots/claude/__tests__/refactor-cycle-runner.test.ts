@@ -40,6 +40,17 @@ function requireBuilder() {
   return require(BUILDER_PATH);
 }
 
+function cleanupRefactorArtifacts(result) {
+  for (const rel of [
+    result?.active?.patchRelPath,
+    result?.active?.planRelPath,
+    result?.plan?.patchRelPath,
+    result?.plan?.relPath,
+  ].filter(Boolean)) {
+    fs.rmSync(path.join(PROJECT_ROOT, rel), { force: true });
+  }
+}
+
 function verifierModulesForAutofix(target = ACTIVE_TARGET) {
   const calls = { builder: [], reviewer: [] };
   const builderModule = {
@@ -378,7 +389,7 @@ async function test_plan_includes_sigma_feedback_context() {
   console.log('✅ refactor-cycle: plan embeds Sigma refactor feedback');
 }
 
-async function test_active_verifies_and_restores_without_autocommit() {
+async function test_active_verifies_and_restores_without_apply() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
   const target = 'bots/claude/lib/agent-heartbeat.ts';
@@ -430,9 +441,11 @@ async function test_active_verifies_and_restores_without_autocommit() {
   assert.match(result.active.patchText, /-\/\/ @ts-nocheck/);
   assert.strictEqual(result.active.worktreeRestored, true);
   assert.strictEqual(result.steps.find((step) => step.id === 'fix').status, 'none');
-  assert.strictEqual(result.steps.find((step) => step.id === 'commit').status, 'ready_for_review_autocommit_false');
+  assert.strictEqual(result.active.applied, false);
+  assert.deepStrictEqual(result.active.applyResults, []);
+  assert.strictEqual(result.steps.find((step) => step.id === 'commit').status, 'ready_for_review_apply_disabled');
   assert.strictEqual(fs.readFileSync(absoluteTarget, 'utf8'), before);
-  console.log('✅ refactor-cycle: active verifies, captures patch, and restores without autocommit');
+  console.log('✅ refactor-cycle: active verifies, captures patch, and restores without apply');
 }
 
 async function test_active_verify_skip_defers_and_restores() {
@@ -478,6 +491,221 @@ async function test_active_verify_skip_defers_and_restores() {
   assert.strictEqual(result.steps.find((step) => step.id === 'fix').status, 'active_deferred_no_auto_fix');
   assert.strictEqual(fs.readFileSync(absoluteTarget, 'utf8'), before);
   console.log('✅ refactor-cycle: verify skip defers and restores without self-heal');
+}
+
+async function test_apply_off_does_not_commit_and_restores() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      builderModule,
+      reviewerModule,
+      commitFileFn: async (file, message) => {
+        commits.push({ file, message });
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.active.applied, false);
+    assert.deepStrictEqual(result.active.applyResults, []);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(result.steps.find((step) => step.id === 'refactor').status, 'complete_restored');
+    assert.strictEqual(result.steps.find((step) => step.id === 'commit').status, 'ready_for_review_apply_disabled');
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: apply off does not commit and restores ready changes');
+}
+
+async function test_apply_on_commits_ready_file_and_keeps_change() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      commitFileFn: async (file, message) => {
+        commits.push({ file, message });
+        return 'fake-sha-apply';
+      },
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.active.applied, true);
+    assert.deepStrictEqual(result.active.applyResults, [{ file: target, applied: true, commit: 'fake-sha-apply' }]);
+    assert.strictEqual(commits.length, 1);
+    assert.strictEqual(commits[0].file, target);
+    assert.match(commits[0].message, /refactor\(ts\): drop @ts-nocheck/);
+    assert.notStrictEqual(targetContent(target), before);
+    assert.strictEqual(result.steps.find((step) => step.id === 'refactor').status, 'complete_applied');
+    assert.strictEqual(result.steps.find((step) => step.id === 'commit').status, 'committed:fake-sha-apply');
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: apply on commits ready file and keeps the verified mutation');
+}
+
+async function test_default_commit_file_is_path_scoped() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const calls = [];
+  const sha = runner.defaultCommitFile(ACTIVE_TARGET, 'mock commit', (args) => {
+    calls.push(args);
+    if (args[0] === 'rev-parse') return 'fake-default-sha\n';
+    return '';
+  });
+  assert.strictEqual(sha, 'fake-default-sha');
+  assert.deepStrictEqual(calls[0], ['add', '--', ACTIVE_TARGET]);
+  assert.deepStrictEqual(calls[1], ['commit', '-m', 'mock commit', '--', ACTIVE_TARGET]);
+  assert.deepStrictEqual(calls[2], ['rev-parse', 'HEAD']);
+  assert.ok(!calls.flat().includes('-A'));
+  assert.ok(!calls.flat().includes('-a'));
+  console.log('✅ refactor-cycle: default apply commit is path-scoped and avoids broad staging');
+}
+
+async function test_apply_on_verify_fail_does_not_commit_and_restores() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const reviewerModule = reviewerModuleAlwaysPass(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule: {
+        async runTargetedTypeCheck() {
+          return { pass: false, skipped: false, results: [{ pass: false, skipped: false, error: 'mock fail' }] };
+        },
+      },
+      reviewerModule,
+      commitFileFn: async (file, message) => {
+        commits.push({ file, message });
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.applied, false);
+    assert.deepStrictEqual(result.active.applyResults, []);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: apply on verify failure does not commit and restores');
+}
+
+async function test_apply_on_dry_run_does_not_commit_and_restores() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    applyEnabled: true,
+    builderModule,
+    reviewerModule,
+    commitFileFn: async (file, message) => {
+      commits.push({ file, message });
+      return 'unexpected';
+    },
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.active.applied, false);
+  assert.deepStrictEqual(result.active.applyResults, []);
+  assert.deepStrictEqual(commits, []);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: apply enabled dry-run does not commit and restores');
+}
+
+async function test_apply_commit_failure_restores_and_reports_apply_failed() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      commitFileFn: async (file, message) => {
+        commits.push({ file, message });
+        throw new Error('mock commit failed');
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.stage, 'active_deferred');
+    assert.strictEqual(result.active.applied, false);
+    assert.strictEqual(result.active.applyResults.length, 1);
+    assert.deepStrictEqual(result.active.applyResults[0], { file: target, applied: false, error: 'mock commit failed' });
+    assert.strictEqual(result.active.results[0].stage, 'active_apply_failed');
+    assert.match(result.active.results[0].errorSummary, /apply_failed/);
+    assert.strictEqual(commits.length, 1);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: apply commit failure restores and reports apply_failed');
 }
 
 async function test_builder_all_skipped_defers() {
@@ -811,8 +1039,14 @@ async function main() {
     test_dirty_scope_mutation_isolation_and_cleanup,
     test_shadow_dry_run_analyze_plan_only,
     test_plan_includes_sigma_feedback_context,
-    test_active_verifies_and_restores_without_autocommit,
+    test_active_verifies_and_restores_without_apply,
     test_active_verify_skip_defers_and_restores,
+    test_apply_off_does_not_commit_and_restores,
+    test_apply_on_commits_ready_file_and_keeps_change,
+    test_default_commit_file_is_path_scoped,
+    test_apply_on_verify_fail_does_not_commit_and_restores,
+    test_apply_on_dry_run_does_not_commit_and_restores,
+    test_apply_commit_failure_restores_and_reports_apply_failed,
     test_builder_all_skipped_defers,
     test_builder_no_results_skipped_defers,
     test_builder_executed_pass_still_ready,

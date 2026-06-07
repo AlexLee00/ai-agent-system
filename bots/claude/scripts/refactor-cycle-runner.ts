@@ -89,8 +89,12 @@ function activeMaxFiles(value = process.env.REFACTORER_ACTIVE_MAX_FILES) {
   return parsePositiveInt(value, 1, 3);
 }
 
-function activeAutocommitEnabled(value = process.env.REFACTORER_ACTIVE_AUTOCOMMIT) {
+function booleanEnvEnabled(value) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function applyEnabled(value = process.env.REFACTORER_APPLY_ENABLED) {
+  return booleanEnvEnabled(value);
 }
 
 function normalizeDirtyScope(value = process.env.REFACTORER_DIRTY_SCOPE) {
@@ -99,7 +103,7 @@ function normalizeDirtyScope(value = process.env.REFACTORER_DIRTY_SCOPE) {
 }
 
 function autofixEnabled(value = process.env.REFACTORER_AUTOFIX_ENABLED) {
-  return activeAutocommitEnabled(value);
+  return booleanEnvEnabled(value);
 }
 
 function autofixMaxAttempts(value = process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS) {
@@ -733,6 +737,28 @@ function normalizeScopePath(value = '') {
   return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
+function defaultCommitFile(relFile, message, gitFn = runGit) {
+  const normalized = normalizeScopePath(relFile);
+  if (!normalized || normalized.startsWith('..') || path.isAbsolute(normalized)) {
+    throw new Error(`invalid_commit_path:${relFile || 'empty'}`);
+  }
+  if (isProtectedTarget(normalized)) {
+    throw new Error(`protected_commit_path:${normalized}`);
+  }
+  try {
+    gitFn(['add', '--', normalized]);
+    gitFn(['commit', '-m', message, '--', normalized]);
+    return String(gitFn(['rev-parse', 'HEAD']) || '').trim();
+  } catch (error) {
+    try {
+      gitFn(['reset', '--', normalized]);
+    } catch {
+      // Best-effort index cleanup; caller still restores the file snapshot.
+    }
+    throw error;
+  }
+}
+
 function refactorScopePrefixes(targetRelPath = '', scope = 'workspace') {
   const normalizedScope = normalizeDirtyScope(scope);
   const target = normalizeScopePath(targetRelPath);
@@ -856,6 +882,21 @@ function activeFixStepStatus(active) {
   return active.ok ? 'none' : 'active_deferred_no_auto_fix';
 }
 
+function activeRefactorStepStatus(active) {
+  if (!active) return 'no_change';
+  if (active.applied) return 'complete_applied';
+  return active.mutationStarted ? 'complete_restored' : 'no_change';
+}
+
+function activeCommitStepStatus(active) {
+  const commits = (active?.applyResults || [])
+    .filter((item) => item.applied)
+    .map((item) => item.commit)
+    .filter(Boolean);
+  if (commits.length > 0) return `committed:${commits.join(',')}`;
+  return active?.ok ? 'ready_for_review_apply_disabled' : 'not_ready';
+}
+
 function resolveVerifierModules(context) {
   return {
     builder: context.builderModule || require('../src/builder'),
@@ -963,7 +1004,7 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- dirty_scope: ${context.dirtyScope}`,
     `- scope_prefixes: ${(context.refactorScopePrefixes || []).join(', ') || 'tree'}`,
     `- generated_at: ${context.startedAt}`,
-    `- autocommit: ${context.activeAutocommit ? 'true' : 'false'}`,
+    `- apply_enabled: ${context.applyEnabled ? 'true' : 'false'}`,
     `- max_files: ${context.activeMaxFiles}`,
     '',
     '## Analysis',
@@ -986,6 +1027,8 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- autofix_attempts_total: ${active.totalFixAttempts || 0}`,
     `- deferred: ${deferred.length}`,
     `- changed_files: ${changedFiles.length ? changedFiles.join(', ') : 'none'}`,
+    `- applied: ${active.applied === true}`,
+    `- apply_commits: ${(active.applyResults || []).filter((item) => item.applied).map((item) => item.commit).filter(Boolean).join(', ') || 'none'}`,
     `- patch_path: ${active.patchRelPath || 'none'}`,
     `- worktree_restored: ${active.worktreeRestored === true}`,
     `- final_git_status: ${active.finalGitStatus || 'unknown'}`,
@@ -998,7 +1041,7 @@ function buildActiveDocumentContent(context, analysis, active) {
     `3. Refactor: ${changedFiles.length ? 'complete' : 'no_change'}`,
     `4. Verify: ${successful.length ? 'pass' : 'deferred'}`,
     `5. Fix: ${activeFixStepStatus(active)}`,
-    `6. Commit: ${successful.length ? 'ready_for_review_autocommit_false' : 'not_ready'}`,
+    `6. Commit: ${activeCommitStepStatus(active)}`,
     '7. Document: complete',
     '',
     '## Verification Summary',
@@ -1168,6 +1211,7 @@ async function runActiveRefactor(context, analysis, candidates) {
   const snapshots = snapshotFiles(targetFiles);
   const results = [];
   const changedFiles = [];
+  const applyResults = [];
   let patchText = '';
   let mutationStarted = false;
   try {
@@ -1248,6 +1292,33 @@ async function runActiveRefactor(context, analysis, candidates) {
       .map((item) => item.candidate?.file)
       .filter(Boolean);
     patchText = successfulFiles.length > 0 ? gitDiffForFiles(successfulFiles) : '';
+    if (context.applyEnabled && !context.dryRun) {
+      for (const item of results.filter(isReadyResult)) {
+        const relFile = item.candidate?.file;
+        if (!relFile) continue;
+        try {
+          const commit = await context.commitFileFn(
+            relFile,
+            `refactor(ts): drop @ts-nocheck from ${relFile} [refactorer ${context.cycleId}]`
+          );
+          snapshots.delete(path.resolve(ROOT, relFile));
+          item.applied = true;
+          item.commit = commit;
+          applyResults.push({ file: relFile, applied: true, commit });
+        } catch (error) {
+          const errorMessage = String(error?.message || error).slice(0, 300);
+          item.stage = 'active_apply_failed';
+          item.applied = false;
+          item.errorSummary = formatErrorSummary({ stage: 'apply_failed', candidate: item.candidate, error: errorMessage });
+          applyResults.push({ file: relFile, applied: false, error: errorMessage });
+        }
+      }
+      changedFiles.length = 0;
+      for (const file of results.filter(isReadyResult).map((item) => item.candidate?.file).filter(Boolean)) {
+        if (!changedFiles.includes(file)) changedFiles.push(file);
+      }
+    }
+    const applied = applyResults.some((item) => item.applied);
     const hasReady = results.some(isReadyResult);
     const hasDeferred = results.some((item) => !isReadyResult(item));
     const hasUnfixable = results.some((item) => item.stage === 'active_deferred_unfixable');
@@ -1264,6 +1335,8 @@ async function runActiveRefactor(context, analysis, candidates) {
       mutationStarted,
       patchText,
       results,
+      applied,
+      applyResults,
       totalFixAttempts,
       autofixedCount: results.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
       unfixableCount: results.filter((item) => item.stage === 'active_deferred_unfixable').length,
@@ -1321,6 +1394,12 @@ async function recordRefactorOutcome(context, result) {
     changedFiles,
     errorSummary: firstErrorSummary,
     autofix: autofixMeta,
+    apply: isActive ? {
+      enabled: Boolean(context.applyEnabled),
+      applied: Boolean(active?.applied),
+      results: active?.applyResults || [],
+      commits: (active?.applyResults || []).filter((item) => item.applied).map((item) => item.commit).filter(Boolean),
+    } : null,
     dirtyScope: context.dirtyScope,
     refactorScopePrefixes: context.refactorScopePrefixes || [],
     meta: {
@@ -1342,7 +1421,12 @@ async function recordRefactorOutcome(context, result) {
       changedFiles,
       builderPass: verifyResults.length ? verifyResults.every((item) => item.verify?.builderPass !== false) : null,
       reviewerFindings: verifyResults.reduce((sum, item) => sum + Number(item.verify?.reviewerHigh || 0), 0),
-      autocommit: Boolean(context.activeAutocommit),
+      apply: isActive ? {
+        enabled: Boolean(context.applyEnabled),
+        applied: Boolean(active?.applied),
+        results: active?.applyResults || [],
+        commits: (active?.applyResults || []).filter((item) => item.applied).map((item) => item.commit).filter(Boolean),
+      } : null,
       autofix: autofixMeta,
     },
   });
@@ -1388,7 +1472,7 @@ function buildCycleContext(options = {}) {
     gitStatusShortFn: options.gitStatusShortFn || gitStatusShort,
     gitStatusScopedFn: options.gitStatusScopedFn || gitStatusScoped,
     activeMaxFiles: activeMaxFiles(options.activeMaxFiles ?? process.env.REFACTORER_ACTIVE_MAX_FILES),
-    activeAutocommit: activeAutocommitEnabled(options.activeAutocommit ?? process.env.REFACTORER_ACTIVE_AUTOCOMMIT),
+    applyEnabled: mode === 'active' && applyEnabled(options.applyEnabled ?? process.env.REFACTORER_APPLY_ENABLED),
     autofixEnabled: mode === 'active' && autofixEnabled(options.autofixEnabled ?? process.env.REFACTORER_AUTOFIX_ENABLED),
     autofixMaxAttempts: autofixMaxAttempts(options.autofixMaxAttempts ?? process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS),
     autofixBillingStopped: false,
@@ -1397,6 +1481,7 @@ function buildCycleContext(options = {}) {
     avoidThreshold: parsePositiveInt(options.avoidThreshold ?? process.env.REFACTORER_AVOID_THRESHOLD, 2, 20),
     builderModule: options.builderModule || null,
     reviewerModule: options.reviewerModule || null,
+    commitFileFn: options.commitFileFn || defaultCommitFile,
   };
 }
 
@@ -1419,11 +1504,6 @@ async function runRefactorCycle(options = {}) {
       return result;
     }
     if (context.mode === 'active') {
-      if (context.activeAutocommit) {
-        const result = { ok: false, blocked: true, reason: 'active_autocommit_not_supported_phase3', mode: context.mode };
-        result.heartbeat = await writeRefactorHeartbeat(context, 'error', { stage: 'blocked', reason: result.reason });
-        return result;
-      }
       const initialGitStatus = context.gitStatusShortFn();
       context.initialGitStatus = initialGitStatus;
       const scopePrefixes = refactorScopePrefixes(context.target.relativePath, context.dirtyScope);
@@ -1524,10 +1604,10 @@ async function runRefactorCycle(options = {}) {
         steps: [
           { id: 'analyze', status: 'complete', mutates: false },
           { id: 'plan', status: artifacts.wrote ? 'complete' : 'dry_run', mutates: Boolean(artifacts.wrote) },
-          { id: 'refactor', status: active.mutationStarted ? 'complete_restored' : 'no_change', mutates: true, restored: active.worktreeRestored },
+          { id: 'refactor', status: activeRefactorStepStatus(active), mutates: true, restored: active.worktreeRestored },
           { id: 'verify', status: active.ok ? 'complete' : 'failed', mutates: false },
           { id: 'fix', status: activeFixStepStatus(active), mutates: false },
-          { id: 'commit', status: active.ok ? 'ready_for_review_autocommit_false' : 'not_ready', mutates: false },
+          { id: 'commit', status: activeCommitStepStatus(active), mutates: Boolean(active.applied) },
           { id: 'document', status: artifacts.wrote ? 'complete' : 'dry_run', mutates: Boolean(artifacts.wrote) },
         ],
       };
@@ -1543,6 +1623,10 @@ async function runRefactorCycle(options = {}) {
         unfixableCount: active.unfixableCount || 0,
         totalFixAttempts: active.totalFixAttempts || 0,
         autofixBillingStopped: Boolean(active.autofixBillingStopped),
+        applyEnabled: Boolean(context.applyEnabled),
+        applied: Boolean(active.applied),
+        applyCommits: (active.applyResults || []).filter((item) => item.applied).map((item) => item.commit).filter(Boolean),
+        applyResults: active.applyResults || [],
         worktreeRestored: active.worktreeRestored,
         outcomeOk: Boolean(result.outcome?.ok),
       });
@@ -1632,7 +1716,9 @@ module.exports = {
   selectCandidate,
   fetchRefactorVaultFeedback,
   cleanupUnexpectedUntracked,
+  defaultCommitFile,
   gitStatusScoped,
+  applyEnabled,
   normalizeDirtyScope,
   refactorScopePrefixes,
   unexpectedMutationLines,
