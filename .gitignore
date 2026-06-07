@@ -202,6 +202,7 @@ bots/legal/cases/
 
 # ─── 런타임 생성 파일 ───
 bots/claude/.checksums.json
+.refactorer-tscheck-*.json
 bots/reservation/src/.test-counter
 .test-counter
 

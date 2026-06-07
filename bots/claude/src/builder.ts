@@ -19,7 +19,7 @@
 
 const path    = require('path');
 const fs      = require('fs');
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env          = require('../../../packages/core/lib/env');
@@ -27,6 +27,9 @@ const reviewer     = require('./reviewer');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const ROOT = env.PROJECT_ROOT;
+const TARGET_TYPECHECK_EXTS = new Set(['.ts', '.tsx', '.cts', '.mts', '.js', '.jsx']);
+const TARGET_TYPECHECK_TEMP_PREFIX = '.refactorer-tscheck-';
+const TARGET_TYPECHECK_TIMEOUT_MS = Number(process.env.REFACTORER_TARGETED_TSC_TIMEOUT_MS || 120000);
 
 // ─── 빌드 패턴 정의 ───────────────────────────────────────────────────
 
@@ -117,6 +120,208 @@ function safeExec(command, options = {}) {
     encoding: 'utf8',
     ...options,
   });
+}
+
+function toProjectRelative(filePath) {
+  return path.relative(ROOT, filePath).replace(/\\/g, '/');
+}
+
+function normalizePathForMatch(filePath) {
+  return String(filePath || '').replace(/\\/g, '/');
+}
+
+function absoluteTargetPath(filePath) {
+  return path.isAbsolute(filePath)
+    ? path.normalize(filePath)
+    : path.join(ROOT, filePath);
+}
+
+function isTargetTypecheckFile(filePath) {
+  const normalized = normalizePathForMatch(filePath).toLowerCase();
+  if (normalized.endsWith('.d.ts')) return false;
+  return TARGET_TYPECHECK_EXTS.has(path.extname(normalized));
+}
+
+function findNearestTsconfig(startPath) {
+  const absolute = absoluteTargetPath(startPath);
+  let dir = fs.existsSync(absolute) && fs.statSync(absolute).isDirectory()
+    ? absolute
+    : path.dirname(absolute);
+
+  while (true) {
+    const candidate = path.join(dir, 'tsconfig.json');
+    if (fs.existsSync(candidate)) return candidate;
+    if (dir === ROOT || !dir.startsWith(ROOT)) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return path.join(ROOT, 'tsconfig.json');
+}
+
+function projectTscBin() {
+  const binName = process.platform === 'win32' ? 'tsc.cmd' : 'tsc';
+  const localBin = path.join(ROOT, 'node_modules', '.bin', binName);
+  return fs.existsSync(localBin) ? localBin : null;
+}
+
+function errorOutput(error) {
+  return [
+    error?.stdout,
+    error?.stderr,
+    error?.message,
+  ].filter(Boolean).map(value => String(value)).join('\n').trim();
+}
+
+function targetDiagnosticNeedles(files) {
+  return files.flatMap((file) => {
+    const absolute = normalizePathForMatch(path.resolve(file));
+    const relative = normalizePathForMatch(toProjectRelative(path.resolve(file)));
+    return [absolute, relative];
+  });
+}
+
+function filterTargetDiagnostics(output, files) {
+  const text = String(output || '');
+  if (!text.trim()) return '';
+  const needles = targetDiagnosticNeedles(files);
+  const lines = text.split(/\r?\n/);
+  const filtered = [];
+  let includeContinuation = false;
+
+  for (const line of lines) {
+    const normalizedLine = normalizePathForMatch(line);
+    const isTargetLine = needles.some(needle => needle && normalizedLine.includes(needle));
+    if (isTargetLine) {
+      filtered.push(line);
+      includeContinuation = true;
+      continue;
+    }
+    if (includeContinuation && /^\s+/.test(line) && !/error TS\d+/.test(line)) {
+      filtered.push(line);
+      continue;
+    }
+    includeContinuation = false;
+  }
+
+  return filtered.join('\n').trim();
+}
+
+function hasNonSourceTypeScriptError(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .filter(line => /error TS\d+/.test(line))
+    .some(line => !/\.(ts|tsx|cts|mts|js|jsx)\(\d+,\d+\): error TS\d+/.test(normalizePathForMatch(line)));
+}
+
+function hasSourceTypeScriptError(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .some(line => /\.(ts|tsx|cts|mts|js|jsx)\(\d+,\d+\): error TS\d+/.test(normalizePathForMatch(line)));
+}
+
+function writeTargetedTsconfig(tsconfigPath, files) {
+  const configDir = path.dirname(tsconfigPath);
+  const tempName = `${TARGET_TYPECHECK_TEMP_PREFIX}${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`;
+  const tempPath = path.join(configDir, tempName);
+  const payload = {
+    extends: tsconfigPath,
+    files: files.map(file => path.resolve(file)),
+    compilerOptions: {
+      noEmit: true,
+    },
+  };
+  fs.writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  return tempPath;
+}
+
+function runTscProject(tsconfigPath, timeout = TARGET_TYPECHECK_TIMEOUT_MS) {
+  const localTsc = projectTscBin();
+  if (localTsc) {
+    return execFileSync(localTsc, ['-p', tsconfigPath], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout,
+    });
+  }
+  return execFileSync('npx', ['tsc', '-p', tsconfigPath], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    timeout,
+  });
+}
+
+function groupFilesByTsconfig(files) {
+  const groups = new Map();
+  for (const file of files) {
+    const tsconfigPath = findNearestTsconfig(file);
+    const list = groups.get(tsconfigPath) || [];
+    list.push(file);
+    groups.set(tsconfigPath, list);
+  }
+  return groups;
+}
+
+async function runTargetedTypeCheck(files = [], options = {}) {
+  const requested = Array.isArray(files) ? files : [];
+  const targetFiles = [...new Set(requested
+    .map(absoluteTargetPath)
+    .filter(isTargetTypecheckFile)
+    .map(file => path.resolve(file)))];
+
+  if (targetFiles.length === 0) {
+    const message = '✅ 타깃 타입체크 스킵 — 타입체크 대상 TS 없음';
+    return { results: [], pass: true, skipped: true, message };
+  }
+
+  const results = [];
+  const groups = groupFilesByTsconfig(targetFiles);
+  const timeout = Number(options.timeout || options.timeoutMs || TARGET_TYPECHECK_TIMEOUT_MS);
+
+  for (const [tsconfigPath, groupFiles] of groups.entries()) {
+    let tempConfig = null;
+    const plan = {
+      id: `targeted-tsc:${toProjectRelative(tsconfigPath)}`,
+      name: `targeted tsc (${groupFiles.map(toProjectRelative).join(', ')})`,
+      type: 'targeted-typescript',
+      cwd: toProjectRelative(path.dirname(tsconfigPath)) || '.',
+      timeout,
+    };
+
+    try {
+      tempConfig = writeTargetedTsconfig(tsconfigPath, groupFiles);
+      runTscProject(tempConfig, timeout);
+      results.push({ plan, pass: true, skipped: false });
+    } catch (error) {
+      const output = errorOutput(error);
+      const targetDiagnostics = filterTargetDiagnostics(output, groupFiles);
+      const nonTargetSourceOnly = !targetDiagnostics
+        && hasSourceTypeScriptError(output)
+        && !hasNonSourceTypeScriptError(output);
+      const pass = nonTargetSourceOnly;
+      results.push({
+        plan,
+        pass,
+        skipped: false,
+        error: pass ? null : (targetDiagnostics || output || String(error?.message || error)).slice(0, 1800),
+        message: pass && output ? '대상 파일 외 진단만 발생해 통과 처리' : undefined,
+      });
+    } finally {
+      if (tempConfig) fs.rmSync(tempConfig, { force: true });
+    }
+  }
+
+  const anyFailed = results.some(r => !r.pass && !r.skipped);
+  return {
+    results,
+    pass: !anyFailed,
+    skipped: false,
+    sent: false,
+    message: formatBuildReport(results),
+  };
 }
 
 /**
@@ -314,12 +519,15 @@ async function reportBuildStatus(results) {
 
 module.exports = {
   runBuildCheck,
+  runTargetedTypeCheck,
   needsBuild,
   reportBuildStatus,
   runTypescriptBuild,
   runElixirCompile,
   runNextJsBuild,
   formatBuildReport,
+  findNearestTsconfig,
+  filterTargetDiagnostics,
   BUILD_PLANS,
 };
 

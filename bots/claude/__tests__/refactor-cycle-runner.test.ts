@@ -5,19 +5,47 @@ const fs = require('fs');
 const path = require('path');
 
 const RUNNER_PATH = path.resolve(__dirname, '../scripts/refactor-cycle-runner.ts');
+const BUILDER_PATH = path.resolve(__dirname, '../src/builder.ts');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const ACTIVE_TARGET = 'bots/claude/lib/agent-heartbeat.ts';
 const AUTOFIX_MARKER = 'const __refactorAutofixFixture = true;';
+const TARGETED_TSC_TMP_DIR = path.join(PROJECT_ROOT, 'packages/core/lib/tmp-refactorer-targeted-typecheck');
 
 function targetContent(target = ACTIVE_TARGET) {
   return fs.readFileSync(path.join(PROJECT_ROOT, target), 'utf8');
 }
 
+function resetTargetedTypecheckTmp() {
+  fs.rmSync(TARGETED_TSC_TMP_DIR, { recursive: true, force: true });
+  fs.mkdirSync(TARGETED_TSC_TMP_DIR, { recursive: true });
+}
+
+function cleanupTargetedTypecheckTmp() {
+  fs.rmSync(TARGETED_TSC_TMP_DIR, { recursive: true, force: true });
+  for (const name of fs.readdirSync(PROJECT_ROOT)) {
+    if (/^\.refactorer-tscheck-.*\.json$/.test(name)) {
+      fs.rmSync(path.join(PROJECT_ROOT, name), { force: true });
+    }
+  }
+}
+
+function writeTmpTsFile(name, content) {
+  const absolute = path.join(TARGETED_TSC_TMP_DIR, name);
+  fs.writeFileSync(absolute, content, 'utf8');
+  return path.relative(PROJECT_ROOT, absolute).replace(/\\/g, '/');
+}
+
+function requireBuilder() {
+  delete require.cache[BUILDER_PATH];
+  return require(BUILDER_PATH);
+}
+
 function verifierModulesForAutofix(target = ACTIVE_TARGET) {
   const calls = { builder: [], reviewer: [] };
   const builderModule = {
-    async runBuildCheck(options) {
+    async runTargetedTypeCheck(files, options) {
       calls.builder.push(options);
+      assert.deepStrictEqual(files, [target]);
       assert.deepStrictEqual(options.files, [target]);
       assert.strictEqual(options.force, true);
       assert.strictEqual(options.test, true);
@@ -50,8 +78,9 @@ function verifierModulesForAutofix(target = ACTIVE_TARGET) {
 function verifierModulesAlwaysPass(target = ACTIVE_TARGET) {
   const calls = { builder: [], reviewer: [] };
   const builderModule = {
-    async runBuildCheck(options) {
+    async runTargetedTypeCheck(files, options) {
       calls.builder.push(options);
+      assert.deepStrictEqual(files, [target]);
       assert.deepStrictEqual(options.files, [target]);
       assert.strictEqual(options.force, true);
       assert.strictEqual(options.test, true);
@@ -100,7 +129,8 @@ async function runActiveWithBuilderResult(builderResult, target = ACTIVE_TARGET)
     noWriteOutcome: true,
     allowDirtyWorktreeForTest: true,
     builderModule: {
-      async runBuildCheck(options) {
+      async runTargetedTypeCheck(files, options) {
+        assert.deepStrictEqual(files, [target]);
         assert.deepStrictEqual(options.files, [target]);
         assert.strictEqual(options.force, true);
         assert.strictEqual(options.test, true);
@@ -356,8 +386,9 @@ async function test_active_verifies_and_restores_without_autocommit() {
   const before = fs.readFileSync(absoluteTarget, 'utf8');
   const calls = { builder: [], reviewer: [] };
   const builderModule = {
-    async runBuildCheck(options) {
+    async runTargetedTypeCheck(files, options) {
       calls.builder.push(options);
+      assert.deepStrictEqual(files, [target]);
       assert.deepStrictEqual(options.files, [target]);
       assert.strictEqual(options.force, true);
       assert.strictEqual(options.test, true);
@@ -411,7 +442,8 @@ async function test_active_verify_skip_defers_and_restores() {
   const absoluteTarget = path.join(PROJECT_ROOT, target);
   const before = fs.readFileSync(absoluteTarget, 'utf8');
   const builderModule = {
-    async runBuildCheck(options) {
+    async runTargetedTypeCheck(files, options) {
+      assert.deepStrictEqual(files, [target]);
       assert.deepStrictEqual(options.files, [target]);
       assert.strictEqual(options.force, true);
       assert.strictEqual(options.test, true);
@@ -661,6 +693,110 @@ async function test_autofix_rejects_unexpected_mutation() {
   console.log('✅ refactor-cycle: autofix rejects and cleans unexpected mutation');
 }
 
+async function test_targeted_typecheck_finds_nearest_tsconfig() {
+  const builder = requireBuilder();
+  const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
+  const coreConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('packages/core/lib/news-credentials.legacy.ts')).replace(/\\/g, '/');
+  assert.strictEqual(claudeConfig, 'bots/claude/tsconfig.json');
+  assert.strictEqual(coreConfig, 'tsconfig.json');
+  console.log('✅ builder: targeted typecheck resolves nearest tsconfig with root fallback');
+}
+
+async function test_targeted_typecheck_empty_input_skips() {
+  const builder = requireBuilder();
+  const result = await builder.runTargetedTypeCheck([], { test: true });
+  assert.strictEqual(result.pass, true);
+  assert.strictEqual(result.skipped, true);
+  assert.deepStrictEqual(result.results, []);
+  console.log('✅ builder: targeted typecheck skips empty/non-TS input honestly');
+}
+
+async function test_targeted_typecheck_clean_and_error_files() {
+  const builder = requireBuilder();
+  resetTargetedTypecheckTmp();
+  try {
+    const clean = writeTmpTsFile('clean.ts', 'export const value: number = 1;\n');
+    const cleanResult = await builder.runTargetedTypeCheck([clean], { test: true });
+    assert.strictEqual(cleanResult.pass, true);
+    assert.strictEqual(cleanResult.skipped, false);
+    assert.strictEqual(cleanResult.results[0].skipped, false);
+
+    const bad = writeTmpTsFile('bad.ts', 'export const value: number = "bad";\n');
+    const badResult = await builder.runTargetedTypeCheck([bad], { test: true });
+    assert.strictEqual(badResult.pass, false);
+    assert.strictEqual(badResult.skipped, false);
+    assert.match(badResult.results[0].error, /TS2322/);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ builder: targeted typecheck passes clean files and fails target diagnostics');
+}
+
+async function test_targeted_typecheck_filters_dependency_errors() {
+  const builder = requireBuilder();
+  resetTargetedTypecheckTmp();
+  try {
+    writeTmpTsFile('bad-dep.ts', 'export const dep: number = "bad";\n');
+    const target = writeTmpTsFile('target.ts', '/// <reference path="./bad-dep.ts" />\nexport const ok: number = 1;\n');
+    const result = await builder.runTargetedTypeCheck([target], { test: true });
+    assert.strictEqual(result.pass, true);
+    assert.strictEqual(result.skipped, false);
+    assert.match(result.results[0].message, /대상 파일 외 진단/);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ builder: targeted typecheck filters non-target dependency diagnostics');
+}
+
+async function test_targeted_typecheck_respects_ts_nocheck_scope() {
+  const builder = requireBuilder();
+  resetTargetedTypecheckTmp();
+  try {
+    const target = writeTmpTsFile('nocheck.ts', '// @ts-nocheck\nexport const value: number = "bad";\n');
+    const suppressed = await builder.runTargetedTypeCheck([target], { test: true });
+    assert.strictEqual(suppressed.pass, true);
+
+    const unsuppressed = writeTmpTsFile('nocheck.ts', 'export const value: number = "bad";\n');
+    const failed = await builder.runTargetedTypeCheck([unsuppressed], { test: true });
+    assert.strictEqual(failed.pass, false);
+    assert.match(failed.results[0].error, /TS2322/);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ builder: targeted typecheck treats @ts-nocheck as file-local only');
+}
+
+async function test_targeted_typecheck_temp_config_cleanup_and_gitignore() {
+  const builder = requireBuilder();
+  resetTargetedTypecheckTmp();
+  try {
+    const bad = writeTmpTsFile('cleanup-fail.ts', 'export const value: number = "bad";\n');
+    const result = await builder.runTargetedTypeCheck([bad], { test: true });
+    assert.strictEqual(result.pass, false);
+    const leftovers = fs.readdirSync(PROJECT_ROOT).filter(name => /^\.refactorer-tscheck-.*\.json$/.test(name));
+    assert.deepStrictEqual(leftovers, []);
+    assert.match(fs.readFileSync(path.join(PROJECT_ROOT, '.gitignore'), 'utf8'), /^\.refactorer-tscheck-\*\.json$/m);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ builder: targeted typecheck removes temp configs and gitignore covers them');
+}
+
+async function test_targeted_typecheck_command_failure_fails_closed() {
+  const builder = requireBuilder();
+  resetTargetedTypecheckTmp();
+  try {
+    const clean = writeTmpTsFile('timeout.ts', 'export const value: number = 1;\n');
+    const result = await builder.runTargetedTypeCheck([clean], { test: true, timeout: 1 });
+    assert.strictEqual(result.pass, false);
+    assert.strictEqual(result.skipped, false);
+    assert.match(result.results[0].error, /timed out|SIGTERM|ETIMEDOUT|spawnSync/i);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ builder: targeted typecheck fails closed on tsc command failures');
+}
+
 async function main() {
   console.log('=== Refactor Cycle Runner 테스트 시작 ===\n');
   const tests = [
@@ -685,6 +821,13 @@ async function main() {
     test_autofix_success_captures_patch_and_restores,
     test_autofix_failure_defers_unfixable_and_restores,
     test_autofix_rejects_unexpected_mutation,
+    test_targeted_typecheck_finds_nearest_tsconfig,
+    test_targeted_typecheck_empty_input_skips,
+    test_targeted_typecheck_clean_and_error_files,
+    test_targeted_typecheck_filters_dependency_errors,
+    test_targeted_typecheck_respects_ts_nocheck_scope,
+    test_targeted_typecheck_temp_config_cleanup_and_gitignore,
+    test_targeted_typecheck_command_failure_fails_closed,
   ];
   let passed = 0;
   let failed = 0;

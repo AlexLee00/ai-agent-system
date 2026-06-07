@@ -866,7 +866,7 @@ function resolveVerifierModules(context) {
 async function verifyChangedFiles(context, changedFiles) {
   const { builder, reviewer } = resolveVerifierModules(context);
   const verifyOptions = { files: changedFiles, force: true, test: true };
-  const builderResult = await builder.runBuildCheck(verifyOptions);
+  const builderResult = await builder.runTargetedTypeCheck(changedFiles, verifyOptions);
   const reviewerResult = await reviewer.runReview(verifyOptions);
   const reviewerHigh = normalizeReviewHighCount(reviewerResult);
   const builderSkipReasonValue = builderSkipReason(builderResult);
