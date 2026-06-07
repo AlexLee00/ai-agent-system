@@ -263,6 +263,7 @@ async function runBuildCheckCore(options = {}) {
   }
 
   const anyFailed = results.some(r => !r.pass && !r.skipped);
+  const allSkipped = results.length > 0 && results.every(r => r.skipped);
   const message = formatBuildReport(results);
 
   let sent = false;
@@ -275,7 +276,7 @@ async function runBuildCheckCore(options = {}) {
     })).ok;
   }
 
-  return { results, pass: !anyFailed, sent, message };
+  return { results, pass: !anyFailed, sent, message, skipped: allSkipped };
 }
 
 async function runBuildCheck(options = {}) {

@@ -830,6 +830,16 @@ function normalizeReviewHighCount(reviewResult) {
   return Number(summary.high || 0) + Number(summary.critical || 0);
 }
 
+function builderSkipReason(builderResult) {
+  const results = Array.isArray(builderResult?.results) ? builderResult.results : [];
+  if (Boolean(builderResult?.skipped) && results.length === 0) return 'no_build_plan';
+  if (results.length === 0) return 'no_build_plan';
+  const ranAnyPlan = results.some((item) => item && item.skipped === false);
+  if (!ranAnyPlan) return 'build_not_executed';
+  if (Boolean(builderResult?.skipped)) return 'build_not_executed';
+  return null;
+}
+
 const READY_STAGES = new Set([
   'active_verified_ready_for_commit',
   'active_autofixed_ready_for_commit',
@@ -859,7 +869,8 @@ async function verifyChangedFiles(context, changedFiles) {
   const builderResult = await builder.runBuildCheck(verifyOptions);
   const reviewerResult = await reviewer.runReview(verifyOptions);
   const reviewerHigh = normalizeReviewHighCount(reviewerResult);
-  const builderSkipped = Boolean(builderResult?.skipped);
+  const builderSkipReasonValue = builderSkipReason(builderResult);
+  const builderSkipped = builderSkipReasonValue !== null;
   const reviewerSkipped = Boolean(reviewerResult?.skipped);
   return {
     ok: builderResult?.pass !== false && reviewerHigh === 0 && !builderSkipped && !reviewerSkipped,
@@ -867,6 +878,7 @@ async function verifyChangedFiles(context, changedFiles) {
     reviewer: reviewerResult,
     builderPass: builderResult?.pass !== false,
     builderSkipped,
+    builderSkipReason: builderSkipReasonValue,
     reviewerHigh,
     reviewerSkipped,
     options: verifyOptions,
@@ -995,6 +1007,7 @@ function buildActiveDocumentContent(context, analysis, active) {
       `- stage: ${item.stage}`,
       `- builder_pass: ${item.verify?.builderPass ?? false}`,
       `- builder_skipped: ${item.verify?.builderSkipped ?? false}`,
+      item.verify?.builderSkipReason ? `- builder_skip_reason: ${item.verify.builderSkipReason}` : null,
       `- reviewer_high: ${item.verify?.reviewerHigh ?? 'unknown'}`,
       `- reviewer_skipped: ${item.verify?.reviewerSkipped ?? false}`,
       `- autofix_attempts: ${item.autofixAttempts || 0}`,

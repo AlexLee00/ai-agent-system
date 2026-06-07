@@ -55,7 +55,12 @@ function verifierModulesAlwaysPass(target = ACTIVE_TARGET) {
       assert.deepStrictEqual(options.files, [target]);
       assert.strictEqual(options.force, true);
       assert.strictEqual(options.test, true);
-      return { pass: true, skipped: false, message: 'forced builder pass' };
+      return {
+        pass: true,
+        skipped: false,
+        message: 'forced builder pass',
+        results: [{ pass: true, skipped: false, message: 'forced builder pass' }],
+      };
     },
   };
   const reviewerModule = {
@@ -68,6 +73,44 @@ function verifierModulesAlwaysPass(target = ACTIVE_TARGET) {
     },
   };
   return { calls, builderModule, reviewerModule };
+}
+
+function reviewerModuleAlwaysPass(target = ACTIVE_TARGET) {
+  return {
+    async runReview(options) {
+      assert.deepStrictEqual(options.files, [target]);
+      assert.strictEqual(options.force, true);
+      assert.strictEqual(options.test, true);
+      return { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [], sent: false };
+    },
+  };
+}
+
+async function runActiveWithBuilderResult(builderResult, target = ACTIVE_TARGET) {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const before = targetContent(target);
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    builderModule: {
+      async runBuildCheck(options) {
+        assert.deepStrictEqual(options.files, [target]);
+        assert.strictEqual(options.force, true);
+        assert.strictEqual(options.test, true);
+        return builderResult;
+      },
+    },
+    reviewerModule: reviewerModuleAlwaysPass(target),
+  });
+  assert.strictEqual(targetContent(target), before);
+  return result;
 }
 
 async function test_mode_defaults_off() {
@@ -318,7 +361,12 @@ async function test_active_verifies_and_restores_without_autocommit() {
       assert.deepStrictEqual(options.files, [target]);
       assert.strictEqual(options.force, true);
       assert.strictEqual(options.test, true);
-      return { pass: true, skipped: false, message: 'forced builder test' };
+      return {
+        pass: true,
+        skipped: false,
+        message: 'forced builder test',
+        results: [{ pass: true, skipped: false, message: 'forced builder test' }],
+      };
     },
   };
   const reviewerModule = {
@@ -398,6 +446,64 @@ async function test_active_verify_skip_defers_and_restores() {
   assert.strictEqual(result.steps.find((step) => step.id === 'fix').status, 'active_deferred_no_auto_fix');
   assert.strictEqual(fs.readFileSync(absoluteTarget, 'utf8'), before);
   console.log('✅ refactor-cycle: verify skip defers and restores without self-heal');
+}
+
+async function test_builder_all_skipped_defers() {
+  const result = await runActiveWithBuilderResult({
+    pass: true,
+    skipped: true,
+    message: 'all skipped',
+    results: [{ pass: true, skipped: true, message: 'tsconfig missing' }],
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.active.stage, 'active_deferred');
+  assert.strictEqual(result.active.results[0].verify.builderSkipped, true);
+  assert.strictEqual(result.active.results[0].verify.builderSkipReason, 'build_not_executed');
+  assert.match(result.active.results[0].errorSummary, /builder_skipped=true/);
+  console.log('✅ refactor-cycle: all-skipped builder results defer instead of false-accept');
+}
+
+async function test_builder_no_results_skipped_defers() {
+  const result = await runActiveWithBuilderResult({
+    pass: true,
+    skipped: true,
+    message: 'no build plan',
+    results: [],
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.active.stage, 'active_deferred');
+  assert.strictEqual(result.active.results[0].verify.builderSkipped, true);
+  assert.strictEqual(result.active.results[0].verify.builderSkipReason, 'no_build_plan');
+  console.log('✅ refactor-cycle: no-result skipped builder defers');
+}
+
+async function test_builder_executed_pass_still_ready() {
+  const result = await runActiveWithBuilderResult({
+    pass: true,
+    skipped: false,
+    message: 'actual build passed',
+    results: [{ pass: true, skipped: false, message: 'tsc passed' }],
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.active.stage, 'active_verified_ready_for_commit');
+  assert.strictEqual(result.active.results[0].verify.builderSkipped, false);
+  assert.strictEqual(result.active.results[0].verify.builderSkipReason, null);
+  console.log('✅ refactor-cycle: executed passing builder remains ready');
+}
+
+async function test_builder_executed_fail_defers() {
+  const result = await runActiveWithBuilderResult({
+    pass: false,
+    skipped: false,
+    message: 'actual build failed',
+    results: [{ pass: false, skipped: false, message: 'tsc failed' }],
+  });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.active.stage, 'active_deferred');
+  assert.strictEqual(result.active.results[0].verify.builderSkipped, false);
+  assert.strictEqual(result.active.results[0].verify.builderPass, false);
+  assert.strictEqual(result.active.results[0].verify.builderSkipReason, null);
+  console.log('✅ refactor-cycle: executed failing builder defers');
 }
 
 async function test_autofix_off_preserves_phase3_defer() {
@@ -571,6 +677,10 @@ async function main() {
     test_plan_includes_sigma_feedback_context,
     test_active_verifies_and_restores_without_autocommit,
     test_active_verify_skip_defers_and_restores,
+    test_builder_all_skipped_defers,
+    test_builder_no_results_skipped_defers,
+    test_builder_executed_pass_still_ready,
+    test_builder_executed_fail_defers,
     test_autofix_off_preserves_phase3_defer,
     test_autofix_success_captures_patch_and_restores,
     test_autofix_failure_defers_unfixable_and_restores,

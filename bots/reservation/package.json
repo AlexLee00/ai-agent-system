@@ -12,6 +12,7 @@
     "check:naver-cancel-drift": "tsx scripts/naver-cancel-counter-drift-smoke.ts && tsx scripts/naver-cancel-counter-drift-guard-smoke.ts",
     "check:naver-recovery-window": "tsx scripts/naver-recovery-window-smoke.ts",
     "check:ska-self-healing": "tsx scripts/ska-self-healing-autodev-smoke.ts",
+    "check:ts-bridge-eisdir": "tsx scripts/ts-bridge-eisdir-smoke.ts",
     "runtime:ska-agent-llm-drill": "tsx scripts/ska-agent-llm-primary-fallback-call-drill.ts"
   },
   "dependencies": {

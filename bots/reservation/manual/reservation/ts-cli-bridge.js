@@ -5,9 +5,20 @@ const ts = require('typescript');
 
 const compileCache = new Map();
 
+function isRegularFile(filePath) {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function resolveTsCandidate(basePath) {
   const direct = basePath.replace(/\.js$/i, '.ts');
-  if (fs.existsSync(direct)) return direct;
+  if (isRegularFile(direct)) return direct;
+  if (fs.existsSync(direct)) {
+    throw new Error(`TS source path is not a regular file: ${direct}`);
+  }
   throw new Error(`Unable to locate TS source for ${basePath}`);
 }
 
@@ -22,7 +33,7 @@ function resolveRelativeTsImport(sourcePath, request) {
   ];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (isRegularFile(candidate)) return candidate;
   }
 
   return null;

@@ -7,6 +7,14 @@ const ts = require('typescript');
 
 const bridgeCache = new Map();
 
+function isRegularFile(filePath) {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function resolveSourcePath(currentDir, moduleBaseName) {
   const candidates = [
     path.join(currentDir, `${moduleBaseName}.ts`),
@@ -14,7 +22,10 @@ function resolveSourcePath(currentDir, moduleBaseName) {
   ];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (isRegularFile(candidate)) return candidate;
+    if (fs.existsSync(candidate)) {
+      throw new Error(`TS source path is not a regular file: ${candidate}`);
+    }
   }
 
   throw new Error(`Unable to locate ${moduleBaseName}.ts runtime source (checked: ${candidates.join(', ')})`);
@@ -30,7 +41,7 @@ function resolveRelativeTsImport(sourcePath, request) {
   ];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (isRegularFile(candidate)) return candidate;
   }
 
   return null;
