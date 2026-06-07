@@ -87,6 +87,18 @@ test('downgrades darwin weekly research snapshot even when legacy event says err
   assert.ok(result.confidence >= 0.8);
 });
 
+test('downgrades steward daily summary even when legacy event says error', async () => {
+  const { classifyAlarmTypeWithConfidence } = await loadModule();
+  const result = classifyAlarmTypeWithConfidence({
+    severity: 'info',
+    eventType: 'steward_error',
+    title: 'general alarm',
+    message: '📋 스튜어드 일일 요약 (2026-06-07)\n\n⚠️ git 위생: 의심 파일 1건\n✅ 텔레그램: 전체 토픽 정상',
+  });
+
+  assert.deepEqual(result, { type: 'report', confidence: 0.97 });
+});
+
 test('keeps actionable runtime failure as error', async () => {
   const { classifyAlarmTypeWithConfidence } = await loadModule();
   const result = classifyAlarmTypeWithConfidence({

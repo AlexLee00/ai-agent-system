@@ -57,6 +57,16 @@ async function generateDailySummary() {
     team: 'general',
     alertLevel: 1,
     fromBot: 'steward',
+    alarmType: 'report',
+    visibility: 'digest',
+    actionability: 'none',
+    eventType: 'steward_daily_summary',
+    incidentKey: `general:steward:steward_daily_summary:${kst.today()}`,
+    payload: {
+      event_type: 'steward_daily_summary',
+      alarm_type: 'report',
+      summary_date: kst.today(),
+    },
   });
   return message;
 }

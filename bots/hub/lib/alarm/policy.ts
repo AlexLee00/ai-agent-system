@@ -96,6 +96,11 @@ function classifyOperationalSnapshot({
     return { type: 'report', confidence: 0.92 };
   }
 
+  if ((event === 'steward_error' || event === 'steward_daily_summary')
+    && lower.includes('스튜어드 일일 요약')) {
+    return { type: 'report', confidence: 0.97 };
+  }
+
   return null;
 }
 
