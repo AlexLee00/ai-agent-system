@@ -55,7 +55,15 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksu
 - **리팩터러 cycle Phase 1** — `ad4a1229a` feat(claude): add refactorer shadow cycle with sigma feedback
   - `bots/claude/scripts/refactor-cycle-runner.ts` 골격(shadow): 7단계(분석→계획→리팩토링→검증→오류수정→커밋→문서), kill switch `REFACTORER_CYCLE_MODE`(off/shadow/active, 기본 off), active 차단, crypto/PROTECTED 타깃 제외, heartbeat `claude-refactorer` 편입, outcome `meta.kind='refactor'`. shadow=analyze+plan + sigma vault search(읽기) 피드백 주입.
   - protected 판정 trailing-slash 보강(bare 디렉터리도 차단). 단위 테스트 `bots/claude/__tests__/refactor-cycle-runner.test.ts` 6/6.
-  - **Phase 2 source plist 추가** — `bots/claude/launchd/ai.claude.refactor-cycle.plist`: shadow-only, 일 1회 03:00, RunAtLoad/KeepAlive=false. 마스터 launchctl 등록 대기.
+  - **Phase 2 source plist 추가** — `bots/claude/launchd/ai.claude.refactor-cycle.plist`: shadow-only, 일 1회 03:00, RunAtLoad/KeepAlive=false. 이후 Phase 2~3에서 active+apply로 등록·가동(아래 참조).
+- **리팩터러 Phase 2~3: active + apply 자율운영 (LIVE, 2026-06-07~08)** — shadow → active → 게이트형 apply → 무인 자율까지 완성.
+  - Phase 3 active `ccfa0d78f` + autofix/execution-trajectory 루프 `4ecacedba` + Phase B targeted typecheck `b9093c47c`(최근접 tsconfig+대상파일 진단필터, fail-closed) + dirty-scope 가드 `3a621256b`(`REFACTORER_DIRTY_SCOPE=workspace`).
+  - **게이트형 apply (opt-in)** `7b28310a7`: path-scoped 단일 커밋(`git add/commit -- <file>`, -A/-a 금지) + Phase A builder-skip 안전성(tsc 미실행 시 verify 보류, false-accept 차단).
+  - **자율운영 레일**(HEAD 반영): push 후 origin 반영 검증(`merge-base --is-ancestor`)→실패 시 rollback, strict 게이트(`tsconfig.strict.json`) 사전 통과, 사이클 락(`.refactorer-active.lock`; deploy/auto-commit도 락 확인), 회당 적용 상한(`REFACTORER_APPLY_MAX_PER_CYCLE`).
+  - **첫 자율 적용** `a5f9711`(news-credentials.legacy.ts @ts-nocheck 제거, 1파일/1삭제). **첫 자율 사이클**: validation-adapter.ts TS2339 포착→안전 보류·복원(true-defer). plist active/apply/strict/push 가동, 03:00 스케줄.
+  - **학습루프 검증**: outcome→`claude.auto_dev_outcomes`(에러 원문 적재) →(01:40 sigma 일배치)→ `sigma.vault_entries` → `fetchRefactorVaultFeedback` 회수(vaultFeedbackCount=3 실증) + `deriveAvoidedFiles` 회피.
+  - **autofix 학습기반 보완**(진행 중·미커밋, 42/42 테스트 검증): 대상 파일 과거 실패(`deriveFilePriorErrors`)를 fixer 프롬프트에 주입(`priorErrors`). 설계 `docs/codex/CODEX_REFACTORER_AUTOFIX_LEARNING_2026-06-08.md`. 관찰검증(apply OFF)→운영 전환 대기.
+  - deploy.sh 안전화 `63d74b09b`(dirty/ahead skip, reset는 클린 ff만). 테스트 38(커밋)/42(워크트리).
 - **리팩터러 에이전트 + 하네스 신설** — `fb4a8ef55`, `ea52608f5`: agents/refactorer.md + plugin-eval 3계층 + hook 6계층 + MCP `claude-refactor-mcp`(port 8774 상주) + A2A refactor-analysis + CLAUDE.md/plist.
 - **@ts-nocheck 복구** — `251f05f13`(Phase 3-A, 소형 A2A 7개), `3d06a81ce`(Phase 3-B, A2A 스킬/훅/하네스 22개) + claude-card 스킬 등록.
 - **auto-dev 자가진화 강화** — vault feed `f448de19a`(claude+sigma, auto_dev_outcomes→vault) + self-heal 강화 `c65438534` + main 격리/커밋 경로 `2e61784fc`·`2980a714a`.

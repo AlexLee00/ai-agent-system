@@ -119,6 +119,8 @@ node /Users/alexlee/projects/ai-agent-system/bots/investment/manual/balance/bina
 - **PnL 데이터 정합성** — trade_journal pnl NULL 가드(학습 코어 12곳) + reconcile-open-journals 주기화 `48e707bcd` + hygiene gate reopen `9e952873a`·`ddc94b8e6`.
 - **메타 모델(Secondary)** — meta-model 데이터셋/학습 SHADOW(`luna_meta_model_versions`, active=false 기본).
 
+- **Symphony↔Hub cutover 비교기 (shadow)** — `98f25bc37` feat(symphony+hub): add cutover shadow comparator (전환 전 결과 비교, 거래 경로 무변경; Luna는 Symphony shadow 편성).
+
 상세 세션 기록: `docs/OPUS_FINAL_HANDOFF.md`.
 
 ## 관련 문서
