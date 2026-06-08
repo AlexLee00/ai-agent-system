@@ -7,28 +7,75 @@ const { callWithFallback } = require('../llm/unified-caller');
 const COMPACTION_TABLE = 'agent.jay_session_compactions';
 const CONTROL_RUN_TABLE = 'agent.hub_control_runs';
 const BUS_MESSAGE_TABLE = 'agent.hub_agent_bus_messages';
-let ensurePromise = null;
+let ensurePromise: Promise<void> | null = null;
 
-function normalizeText(value, fallback = '') {
+type RuntimeEstimate = {
+  messageCount: number;
+  tokenEstimate: number;
+};
+type SessionCompactionInput = {
+  sessionId?: string;
+  runId?: string;
+  incidentKey?: string;
+  summary?: string;
+  triggerReason?: string;
+  useLlmSummary?: boolean;
+  recentMessages?: unknown[];
+  messageCount?: number;
+  tokenEstimate?: number;
+  force?: boolean;
+  state?: unknown;
+  artifacts?: unknown[];
+  label?: string;
+  parentCheckpointId?: string;
+  messageThreshold?: number;
+  tokenThreshold?: number;
+  limit?: number;
+};
+type SummaryResult = {
+  ok: boolean;
+  summary?: string;
+  source?: string;
+  provider?: string | null;
+  model?: string | null;
+  error?: string;
+};
+type ControlRunRow = {
+  plan?: unknown;
+  result?: unknown;
+};
+type CountRow = {
+  count?: number | string;
+};
+type LlmSummaryResponse = {
+  ok?: boolean;
+  result?: string;
+  text?: string;
+  provider?: string;
+  model?: string;
+  error?: string;
+};
+
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeObject(value) {
+function normalizeObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value;
+  return value as Record<string, unknown>;
 }
 
-function parseBoolean(value, fallback = false) {
+function parseBoolean(value: unknown, fallback = false): boolean {
   const text = normalizeText(value, fallback ? 'true' : 'false').toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
-function makeId(prefix = 'jcompact') {
+function makeId(prefix = 'jcompact'): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-async function ensureSessionCompactionTable() {
+async function ensureSessionCompactionTable(): Promise<void> {
   if (ensurePromise) return ensurePromise;
   ensurePromise = (async () => {
     await pgPool.run('agent', `
@@ -56,7 +103,7 @@ async function ensureSessionCompactionTable() {
   return ensurePromise;
 }
 
-async function estimateSessionRuntime(sessionId) {
+async function estimateSessionRuntime(sessionId: string): Promise<RuntimeEstimate> {
   const normalizedSessionId = normalizeText(sessionId, '');
   if (!normalizedSessionId) {
     return { messageCount: 0, tokenEstimate: 0 };
@@ -66,15 +113,15 @@ async function estimateSessionRuntime(sessionId) {
       SELECT COUNT(*)::int AS count
       FROM ${BUS_MESSAGE_TABLE}
       WHERE incident_key = $1 OR run_id = $1 OR trace_id = $1
-    `, [normalizedSessionId]);
+    `, [normalizedSessionId]) as CountRow | null;
     const runRows = await pgPool.query('agent', `
       SELECT plan, result
       FROM ${CONTROL_RUN_TABLE}
       WHERE run_id = $1 OR trace_id = $1
       ORDER BY updated_at DESC
       LIMIT 50
-    `, [normalizedSessionId]);
-    const tokenEstimate = runRows.reduce((sum, row) => {
+    `, [normalizedSessionId]) as ControlRunRow[];
+    const tokenEstimate = runRows.reduce((sum: number, row: ControlRunRow) => {
       const payload = `${JSON.stringify(row?.plan || {})} ${JSON.stringify(row?.result || {})}`;
       return sum + Math.ceil(payload.length / 4);
     }, 0);
@@ -87,7 +134,7 @@ async function estimateSessionRuntime(sessionId) {
   }
 }
 
-function resolveThresholds(input = {}) {
+function resolveThresholds(input: SessionCompactionInput = {}): { messageThreshold: number; tokenThreshold: number } {
   const messageThreshold = Math.max(
     50,
     Number(input.messageThreshold || process.env.HUB_SESSION_COMPACTION_MESSAGE_THRESHOLD || 200) || 200,
@@ -99,7 +146,10 @@ function resolveThresholds(input = {}) {
   return { messageThreshold, tokenThreshold };
 }
 
-async function buildCompactionSummary(input = {}, observed = {}) {
+async function buildCompactionSummary(
+  input: SessionCompactionInput = {},
+  observed: RuntimeEstimate = { messageCount: 0, tokenEstimate: 0 },
+): Promise<SummaryResult> {
   const provided = normalizeText(input?.summary, '');
   if (provided) return { ok: true, summary: provided, source: 'provided' };
 
@@ -110,7 +160,7 @@ async function buildCompactionSummary(input = {}, observed = {}) {
   if (!useLlm) return { ok: true, summary: fallbackSummary, source: 'heuristic' };
 
   const recentMessages = Array.isArray(input?.recentMessages)
-    ? input.recentMessages.slice(-12).map((message) => String(message || '').slice(0, 1000))
+    ? input.recentMessages.slice(-12).map((message: unknown) => String(message || '').slice(0, 1000))
     : [];
   const prompt = [
     'Summarize this Jay orchestration session for safe handoff.',
@@ -129,7 +179,10 @@ async function buildCompactionSummary(input = {}, observed = {}) {
     maxTokens: 700,
     temperature: 0.1,
     maxBudgetUsd: 0.05,
-  }).catch((error) => ({ ok: false, error: String(error?.message || error || 'llm_summary_failed') }));
+  }).catch((error: unknown): LlmSummaryResponse => {
+    const msg = error instanceof Error ? error.message : String(error || 'llm_summary_failed');
+    return { ok: false, error: msg };
+  }) as LlmSummaryResponse;
 
   if (response?.ok && normalizeText(response.result || response.text, '')) {
     return {
@@ -151,7 +204,7 @@ async function buildCompactionSummary(input = {}, observed = {}) {
   };
 }
 
-async function maybeCompactSession(input = {}) {
+async function maybeCompactSession(input: SessionCompactionInput = {}) {
   const enabled = parseBoolean(process.env.HUB_SESSION_COMPACTION, false) || input?.force === true;
   if (!enabled) return { ok: true, skipped: true, reason: 'session_compaction_disabled' };
 
@@ -187,9 +240,9 @@ async function maybeCompactSession(input = {}) {
   }
   const summary = summaryResult.summary;
   const state = normalizeObject(input?.state);
-  const artifacts = Array.isArray(input?.artifacts) ? input.artifacts.map((v) => String(v || '').trim()).filter(Boolean) : [];
+  const artifacts = Array.isArray(input?.artifacts) ? input.artifacts.map((v: unknown) => String(v || '').trim()).filter(Boolean) : [];
   const recentMessages = Array.isArray(input?.recentMessages)
-    ? input.recentMessages.slice(-5).map((message) => String(message || '').slice(0, 2000))
+    ? input.recentMessages.slice(-5).map((message: unknown) => String(message || '').slice(0, 2000))
     : [];
   const checkpointRecord = checkpoint.createSessionCheckpoint({
     sessionId,
@@ -247,7 +300,7 @@ async function maybeCompactSession(input = {}) {
   };
 }
 
-async function listRecentCompactions(input = {}) {
+async function listRecentCompactions(input: SessionCompactionInput = {}) {
   await ensureSessionCompactionTable();
   const sessionId = normalizeText(input?.sessionId, '');
   const limit = Math.max(1, Number(input?.limit || 20) || 20);
