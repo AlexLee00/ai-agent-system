@@ -39,6 +39,24 @@ defmodule Jay.Core.HubClient do
     end
   end
 
+  def save_blog_topic_candidates(candidates, target_date) when is_list(candidates) do
+    target_date =
+      case target_date do
+        %Date{} -> Date.to_iso8601(target_date)
+        value -> to_string(value)
+      end
+
+    case Req.post("#{hub_url()}/hub/blog/topic-candidates",
+           json: %{candidates: candidates, target_date: target_date},
+           headers: headers(),
+           retry: false
+         ) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body}
+      {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
+      {:error, err} -> {:error, err}
+    end
+  end
+
   def post_alarm(message, team \\ "system", from_bot \\ "elixir") do
     if alerts_disabled?() do
       Logger.debug("[HubClient] post_alarm globally suppressed team=#{team} from_bot=#{from_bot}")
@@ -63,7 +81,11 @@ defmodule Jay.Core.HubClient do
       |> Enum.into(%{})
       |> Map.put(:target_team, target_team)
 
-    case Req.get("#{hub_url()}/hub/events/commands/inbox", headers: headers(), params: params, retry: false) do
+    case Req.get("#{hub_url()}/hub/events/commands/inbox",
+           headers: headers(),
+           params: params,
+           retry: false
+         ) do
       {:ok, %{status: 200, body: body}} -> {:ok, body}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
       {:error, err} -> {:error, err}
@@ -96,14 +118,19 @@ defmodule Jay.Core.HubClient do
   end
 
   defp do_command_lifecycle(body, attempts_left) when attempts_left > 0 do
-    case Req.post("#{hub_url()}/hub/events/commands/lifecycle", json: body, headers: headers(), retry: false) do
+    case Req.post("#{hub_url()}/hub/events/commands/lifecycle",
+           json: body,
+           headers: headers(),
+           retry: false
+         ) do
       {:ok, %{status: 200, body: response_body}} ->
         {:ok, response_body}
 
       {:ok, %{status: status, body: response_body}} ->
         {:error, "HTTP #{status}: #{inspect(response_body)}"}
 
-      {:error, %Req.TransportError{reason: reason} = err} when reason in [:closed, :econnrefused] ->
+      {:error, %Req.TransportError{reason: reason} = err}
+      when reason in [:closed, :econnrefused] ->
         if attempts_left > 1 do
           Logger.debug(
             "[HubClient] command lifecycle retry #{status_label(body["status"])} " <>
@@ -160,7 +187,12 @@ defmodule Jay.Core.HubClient do
   """
   def memory_remember(agent_id, team, content, type \\ "episodic", opts \\ %{}) do
     body = Map.merge(%{agentId: agent_id, team: team, content: content, type: type}, opts)
-    case Req.post("#{hub_url()}/hub/memory/remember", json: body, headers: headers(), retry: false) do
+
+    case Req.post("#{hub_url()}/hub/memory/remember",
+           json: body,
+           headers: headers(),
+           retry: false
+         ) do
       {:ok, %{status: 200, body: body}} -> {:ok, body["memoryId"]}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}
       {:error, err} -> {:error, err}
@@ -173,6 +205,7 @@ defmodule Jay.Core.HubClient do
   """
   def memory_recall(agent_id, team, query, opts \\ %{}) do
     body = Map.merge(%{agentId: agent_id, team: team, query: query}, opts)
+
     case Req.post("#{hub_url()}/hub/memory/recall", json: body, headers: headers(), retry: false) do
       {:ok, %{status: 200, body: body}} -> {:ok, body["memories"] || []}
       {:ok, %{status: status, body: body}} -> {:error, "HTTP #{status}: #{inspect(body)}"}

@@ -17,6 +17,7 @@ const {
   alarmSuppressionApplyRoute,
 } = require('../lib/routes/alarm');
 const { pgQueryRoute } = require('../lib/routes/pg');
+const { blogTopicCandidatesRoute } = require('../lib/routes/blog');
 const { servicesStatusRoute, envRoute } = require('../lib/routes/services');
 const { secretsRoute, secretsMetaRoute, secretsMetaAllRoute } = require('../lib/routes/secrets');
 const { errorsRecentRoute, errorsSummaryRoute } = require('../lib/routes/errors');
@@ -183,6 +184,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.patch('/hub/tasks/:id', generalLimiter, tasksPatchRoute);
 
   app.post('/hub/pg/query', pgLimiter, pgQueryRoute);
+  app.post('/hub/blog/topic-candidates', generalLimiter, blogTopicCandidatesRoute);
   app.post('/hub/alarm', alarmLimiter, alarmRoute);
   app.get('/hub/alarm/noisy-producers', alarmLimiter, alarmNoisyProducersRoute);
   app.post('/hub/alarm/suppress/dry-run', alarmLimiter, alarmSuppressDryRunRoute);

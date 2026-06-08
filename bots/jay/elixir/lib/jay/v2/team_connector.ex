@@ -53,10 +53,14 @@ defmodule Jay.V2.TeamConnector do
         """
           SELECT
             COUNT(*)::int AS trades_7d,
-            COALESCE(SUM(pnl_usdt), 0.0) AS pnl_usdt_7d,
-            COALESCE(SUM(amount_usdt), 0.0) AS traded_usdt_7d,
-            COUNT(*) FILTER (WHERE pnl_usdt > 0)::int AS win_count,
-            COUNT(*) FILTER (WHERE status = 'active')::int AS live_positions
+            COALESCE(SUM(realized_pnl_usdt), 0.0) AS pnl_usdt_7d,
+            COALESCE(SUM(total_usdt), 0.0) AS traded_usdt_7d,
+            COUNT(*) FILTER (WHERE realized_pnl_usdt > 0)::int AS win_count,
+            (
+              SELECT COUNT(*)::int
+              FROM investment.positions
+              WHERE COALESCE(amount, 0) > 0
+            ) AS live_positions
           FROM investment.trades
           WHERE executed_at >= NOW() - interval '7 days'
         """,
@@ -65,7 +69,7 @@ defmodule Jay.V2.TeamConnector do
 
     regime =
       query_one(
-        "SELECT regime FROM investment.market_regimes ORDER BY recorded_at DESC LIMIT 1",
+        "SELECT regime FROM investment.market_regime_snapshots ORDER BY captured_at DESC LIMIT 1",
         "investment"
       )
 
@@ -106,7 +110,9 @@ defmodule Jay.V2.TeamConnector do
               COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
               COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
             FROM reservation.reservations
-            WHERE date >= CURRENT_DATE - 1 AND date <= CURRENT_DATE
+            WHERE date ~ '^\\d{4}-\\d{2}-\\d{2}$'
+              AND date::date >= CURRENT_DATE - 1
+              AND date::date <= CURRENT_DATE
           """,
           "reservation"
         )
@@ -114,9 +120,10 @@ defmodule Jay.V2.TeamConnector do
       revenue =
         query_one(
           """
-            SELECT COALESCE(SUM(amount), 0)::int AS revenue_7d
-            FROM reservation.payments
-            WHERE paid_at >= NOW() - interval '7 days' AND status = 'paid'
+            SELECT COALESCE(SUM(total_amount), 0)::int AS revenue_7d
+            FROM reservation.daily_summary
+            WHERE date ~ '^\\d{4}-\\d{2}-\\d{2}$'
+              AND date::date >= CURRENT_DATE - 7
           """,
           "reservation"
         )
@@ -140,7 +147,14 @@ defmodule Jay.V2.TeamConnector do
             COUNT(*) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published'))::int AS published_7d,
             COUNT(*) FILTER (WHERE status = 'ready')::int  AS ready_count,
             COUNT(*) FILTER (WHERE status = 'draft')::int  AS draft_count,
-            COALESCE(AVG(view_count) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published')), 0)::numeric(10,1) AS avg_views_7d
+            COALESCE(
+              AVG(NULLIF(metadata->>'view_count', '')::numeric)
+                FILTER (WHERE created_at >= NOW() - interval '7 days'
+                  AND status IN ('ready','published')
+                  AND metadata ? 'view_count'
+                  AND metadata->>'view_count' ~ '^[0-9]+(\\.[0-9]+)?$'),
+              0
+            )::numeric(10,1) AS avg_views_7d
           FROM blog.posts
         """,
         "blog"
@@ -199,8 +213,14 @@ defmodule Jay.V2.TeamConnector do
               exit_code,
               checked_at,
               ROW_NUMBER() OVER (PARTITION BY service ORDER BY checked_at DESC) AS rn
-            FROM claude.service_health
-            WHERE checked_at >= NOW() - interval '1 hour'
+            FROM (
+              SELECT
+                agent_name AS service,
+                CASE WHEN status IN ('ok','healthy','active','running') THEN 0 ELSE 1 END AS exit_code,
+                last_heartbeat AS checked_at
+              FROM claude.agent_heartbeats
+              WHERE last_heartbeat >= NOW() - interval '1 hour'
+            ) service_health
           ) latest
           WHERE rn = 1
           ORDER BY checked_at DESC

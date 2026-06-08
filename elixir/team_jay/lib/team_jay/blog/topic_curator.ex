@@ -21,12 +21,11 @@ defmodule TeamJay.Blog.TopicCurator do
   alias Jay.V2.Topics
 
   @curation_hour_utc 13
-  @candidates_per_day 3    # 카테고리당 후보 수
+  # 카테고리당 후보 수
+  @candidates_per_day 3
 
-  defstruct [
-    last_curated_date: nil,
-    last_curated_at: nil,
-  ]
+  defstruct last_curated_date: nil,
+            last_curated_at: nil
 
   # ─── Public API ──────────────────────────────────────────
 
@@ -99,17 +98,22 @@ defmodule TeamJay.Blog.TopicCurator do
 
   defp run_curation_script(target_date) do
     date_str = Date.to_iso8601(target_date)
-    script = "bots/blog/scripts/curate-daily-topics.ts --date=#{date_str} --count=#{@candidates_per_day} --json"
+
+    script =
+      "bots/blog/scripts/curate-daily-topics.ts --date=#{date_str} --count=#{@candidates_per_day} --json"
 
     case run_node_script(script) do
       {:ok, output} ->
         case Jason.decode(output) do
           {:ok, %{"ok" => true, "candidates" => candidates}} when is_list(candidates) ->
             {:ok, candidates}
+
           {:ok, %{"ok" => false, "error" => err}} ->
             {:error, err}
+
           {:ok, data} when is_list(data) ->
             {:ok, data}
+
           _ ->
             {:error, :parse_error}
         end
@@ -120,7 +124,9 @@ defmodule TeamJay.Blog.TopicCurator do
   end
 
   defp run_node_script(script) do
-    project_root = Application.get_env(:team_jay, :project_root, "/Users/alexlee/projects/ai-agent-system")
+    project_root =
+      Application.get_env(:team_jay, :project_root, "/Users/alexlee/projects/ai-agent-system")
+
     tsx = Path.join(project_root, "node_modules/.bin/tsx")
     [cmd | args] = String.split(script, " ")
     script_path = Path.join(project_root, cmd)
@@ -151,45 +157,25 @@ defmodule TeamJay.Blog.TopicCurator do
   # ─── DB 저장 ─────────────────────────────────────────────
 
   defp save_candidates(candidates, target_date) do
-    date_str = Date.to_iso8601(target_date)
+    case Jay.Core.HubClient.save_blog_topic_candidates(candidates, target_date) do
+      {:ok, %{"saved_count" => saved}} ->
+        saved
 
-    Enum.reduce(candidates, 0, fn c, acc ->
-      category  = c["category"] || "자기계발"
-      title     = c["title"] || ""
-      question  = c["question"] || ""
-      diff      = c["diff"] || ""
-      keywords  = c["keywords"] || []
-      score     = c["score"] || 0.5
-      keywords_pg = "{#{Enum.map(keywords, &~s("#{&1}")) |> Enum.join(",")}}"
+      {:ok, %{saved_count: saved}} ->
+        saved
 
-      result = Jay.Core.HubClient.pg_query("""
-        INSERT INTO blog.topic_candidates
-          (category, title, question, diff, keywords, score, status, target_date)
-        VALUES (
-          '#{escape(category)}',
-          '#{escape(title)}',
-          '#{escape(question)}',
-          '#{escape(diff)}',
-          '#{keywords_pg}',
-          #{score},
-          'pending',
-          '#{date_str}'
-        )
-        ON CONFLICT DO NOTHING
-      """, "blog")
+      {:ok, _} ->
+        0
 
-      case result do
-        {:ok, _} -> acc + 1
-        _ -> acc
-      end
-    end)
+      {:error, reason} ->
+        Logger.warning("[TopicCurator] save_candidates 실패: #{inspect(reason)}")
+        0
+    end
   rescue
     e ->
       Logger.warning("[TopicCurator] save_candidates 예외: #{inspect(e)}")
       0
   end
-
-  defp escape(str), do: String.replace(to_string(str), "'", "''")
 
   # ─── JayBus & 알림 ───────────────────────────────────────
 
@@ -228,7 +214,14 @@ defmodule TeamJay.Blog.TopicCurator do
 
   defp schedule_next_curation do
     now_utc = DateTime.utc_now()
-    target_today = %{now_utc | hour: @curation_hour_utc, minute: 0, second: 0, microsecond: {0, 0}}
+
+    target_today = %{
+      now_utc
+      | hour: @curation_hour_utc,
+        minute: 0,
+        second: 0,
+        microsecond: {0, 0}
+    }
 
     ms_until =
       if DateTime.compare(now_utc, target_today) == :lt do

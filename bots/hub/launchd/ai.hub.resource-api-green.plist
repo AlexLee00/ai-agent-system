@@ -57,6 +57,24 @@
     <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
     <key>HUB_PG_DATABASE</key>
     <string>jay</string>
+    <key>PG_POOL_MAX</key>
+    <string>6</string>
+    <key>PG_POOL_WARN_MIN_TOTAL</key>
+    <string>6</string>
+    <key>PG_POOL_WARN_WAITING_LIMIT</key>
+    <string>1</string>
+    <key>HUB_PG_ACTIVE_LIMIT</key>
+    <string>6</string>
+    <key>HUB_PG_WAITING_LIMIT</key>
+    <string>5</string>
+    <key>HUB_JSON_LIMIT_MB</key>
+    <string>1</string>
+    <key>HUB_EVENTS_JSON_LIMIT_MB</key>
+    <string>4</string>
+    <key>HUB_LLM_JSON_LIMIT_MB</key>
+    <string>8</string>
+    <key>HUB_MEMORY_JSON_LIMIT_MB</key>
+    <string>8</string>
     <key>HUB_CONTROL_CALLBACK_SECRET</key>
     <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
     <key>HUB_ALARM_USE_CLASS_TOPICS</key>
