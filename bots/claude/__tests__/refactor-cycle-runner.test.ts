@@ -15,6 +15,12 @@ function targetContent(target = ACTIVE_TARGET) {
   return fs.readFileSync(path.join(PROJECT_ROOT, target), 'utf8');
 }
 
+function finalNewline(content) {
+  if (content.endsWith('\r\n')) return '\r\n';
+  if (content.endsWith('\n')) return '\n';
+  return '';
+}
+
 function resetTargetedTypecheckTmp() {
   fs.rmSync(TARGETED_TSC_TMP_DIR, { recursive: true, force: true });
   fs.mkdirSync(TARGETED_TSC_TMP_DIR, { recursive: true });
@@ -1074,6 +1080,122 @@ async function test_autofix_success_captures_patch_and_restores() {
   console.log('✅ refactor-cycle: autofix success re-verifies, captures patch, and restores');
 }
 
+async function test_autofix_preserves_original_final_newline() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  assert.strictEqual(before.endsWith('\n'), true);
+  assert.strictEqual(finalNewline(before), '\n');
+  const calls = { builder: [] };
+  const builderModule = {
+    async runTargetedTypeCheck(files, options) {
+      calls.builder.push(options);
+      assert.deepStrictEqual(files, [target]);
+      assert.deepStrictEqual(options.files, [target]);
+      const content = targetContent(target);
+      const pass = content.includes(AUTOFIX_MARKER);
+      if (pass) {
+        assert.strictEqual(finalNewline(content), '\n');
+        assert.strictEqual(content.endsWith('\n\n'), false);
+        assert.doesNotMatch(content, /@ts-nocheck/);
+      }
+      return {
+        pass,
+        skipped: false,
+        message: pass ? 'forced builder pass after newline-preserving autofix' : 'forced builder fail before autofix',
+        results: [{ pass, skipped: false, error: pass ? null : 'TS2322: mocked type error' }],
+      };
+    },
+  };
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    gitStatusShortFn: () => '',
+    builderModule,
+    reviewerModule: reviewerModuleAlwaysPass(target),
+    fixerFn: async (_context, params) => ({
+      ok: true,
+      fixedContent: params.currentContent.replace(/^\/\/ @ts-nocheck\n/, '').trimEnd() + `\n${AUTOFIX_MARKER}`,
+      model: 'mock-refactorer',
+      provider: 'mock',
+    }),
+  });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.active.stage, 'active_autofixed_ready_for_commit');
+  assert.strictEqual(calls.builder.length, 2);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix preserves original final newline before re-verify');
+}
+
+async function test_autofix_preserves_original_crlf_final_newline() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const targetAbs = path.join(PROJECT_ROOT, target);
+  const before = targetContent(target);
+  const crlfBefore = before.replace(/\n/g, '\r\n');
+  fs.writeFileSync(targetAbs, crlfBefore, 'utf8');
+  try {
+    assert.strictEqual(finalNewline(targetContent(target)), '\r\n');
+    const calls = { builder: [] };
+    const builderModule = {
+      async runTargetedTypeCheck(files, options) {
+        calls.builder.push(options);
+        assert.deepStrictEqual(files, [target]);
+        assert.deepStrictEqual(options.files, [target]);
+        const content = targetContent(target);
+        const pass = content.includes(AUTOFIX_MARKER);
+        if (pass) {
+          assert.strictEqual(finalNewline(content), '\r\n');
+          assert.strictEqual(content.endsWith(`${AUTOFIX_MARKER}\r\n`), true);
+          assert.doesNotMatch(content, /@ts-nocheck/);
+        }
+        return {
+          pass,
+          skipped: false,
+          message: pass ? 'forced builder pass after CRLF-preserving autofix' : 'forced builder fail before autofix',
+          results: [{ pass, skipped: false, error: pass ? null : 'TS2322: mocked type error' }],
+        };
+      },
+    };
+    const result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: true,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      autofixEnabled: true,
+      gitStatusShortFn: () => '',
+      builderModule,
+      reviewerModule: reviewerModuleAlwaysPass(target),
+      fixerFn: async (_context, params) => ({
+        ok: true,
+        fixedContent: params.currentContent.replace(/^\/\/ @ts-nocheck\r?\n/, '').trimEnd() + `\r\n${AUTOFIX_MARKER}`,
+        model: 'mock-refactorer',
+        provider: 'mock',
+      }),
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.active.stage, 'active_autofixed_ready_for_commit');
+    assert.strictEqual(calls.builder.length, 2);
+    assert.strictEqual(targetContent(target), crlfBefore);
+  } finally {
+    fs.writeFileSync(targetAbs, before, 'utf8');
+  }
+  console.log('✅ refactor-cycle: autofix preserves original CRLF final newline before re-verify');
+}
+
 async function test_autofix_failure_defers_unfixable_and_restores() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -1467,6 +1589,8 @@ async function main() {
     test_builder_executed_fail_defers,
     test_autofix_off_preserves_phase3_defer,
     test_autofix_success_captures_patch_and_restores,
+    test_autofix_preserves_original_final_newline,
+    test_autofix_preserves_original_crlf_final_newline,
     test_autofix_failure_defers_unfixable_and_restores,
     test_autofix_rejects_unexpected_mutation,
     test_autofix_prior_errors_filter_and_cap,

@@ -770,11 +770,13 @@ function restoreFileSnapshot(snapshots, file) {
 }
 
 function removeTsNocheckLine(content = '') {
-  const lines = String(content).split(/\r?\n/);
+  const text = String(content);
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
   const index = lines.findIndex((line) => /^\s*\/\/\s*@ts-nocheck\s*$/.test(line));
   if (index < 0) return { changed: false, content };
   lines.splice(index, 1);
-  return { changed: true, content: lines.join('\n') };
+  return { changed: true, content: lines.join(newline) };
 }
 
 function runGit(args = [], options = {}) {
@@ -1333,7 +1335,15 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
     if (fix.billingGuard) context.autofixBillingStopped = true;
     if (!fix.ok || !fix.fixedContent) break;
 
-    fs.writeFileSync(absolutePath, fix.fixedContent, 'utf8');
+    const originalFinalNewline = currentContent.endsWith('\r\n')
+      ? '\r\n'
+      : currentContent.endsWith('\n')
+        ? '\n'
+        : '';
+    const fixedToWrite = originalFinalNewline && !fix.fixedContent.endsWith('\n')
+      ? `${fix.fixedContent}${originalFinalNewline}`
+      : fix.fixedContent;
+    fs.writeFileSync(absolutePath, fixedToWrite, 'utf8');
     const unexpectedAfterWrite = unexpectedMutationLines(
       context.gitStatusShortFn(),
       context.initialGitStatus || '',
