@@ -1,158 +1,118 @@
-# 루나 일일 투자회의 + 펀더멘털 리서치 파이프라인 — 설계 (DESIGN)
+# 루나 투자회의 + 펀더멘털 리서치 — 설계 (SSOT)
 
-> 버전 v0.1 (2026-06-08) · 작성: 메티 · 상태: 초안(마스터 검토 대기)
-> SSOT. 변경 시 버전 갱신. 핸드오프: `docs/handoff/LUNA_MEETING_ROOM_HANDOFF.md`
-> 불변·안전: 3역할 절차 / PROTECTED launchd 무중단 / crypto LIVE·스카 매출 무중단 / loopback+Tailscale / 자동 부작용 금지 / 부품 재사용 우선
+> 버전 v0.2 (2026-06-08) · 작성: 메티 · 상태: 실험판(마스터 승인 — 구현 착수)
+> 전제: 단일 사용자 · 개발 중 · paper 단계. **실험 우선 · 성능 비중(완전 교체 비용 무시) · 가드 최소("게이트를 치우고 계측을 깐다")**.
+> 상위 자산 재사용: `bots/investment`(루나팀). 회의실=신규 오케스트레이터만, 분석/실행/리스크/메모리/졸업은 기존 부품 재사용.
 
 ## 1. 목적 · 범위 · 비목표
-
-### 1.1 목적
-- 매일 마스터가 의장(부재 시 루나)으로 참여하는 **국내주식 투자 회의(웹)**를 운영한다. 분석가 에이전트가 종목 선정·전략을 제시하고, 불·베어 토론과 리스크 심의를 거쳐 의장이 결정한다.
-- 회의를 뒷받침하는 **펀더멘털 리서치 파이프라인**이 1차 자료(공시·재무·뉴스·수급) 기반 리포트와 내러티브를 생산해 RAG에 적재한다.
-- 초기 보조(human-in-the-loop)에서 출발해 데이터·실적이 쌓이면 점진적으로 자율로 졸업한다.
-
-### 1.2 범위 (Phase 1)
-- 국내주식(KOSPI/KOSDAQ) · 모의주문(paper) · 웹 회의실 + 리서치 파이프라인 + 회의록(PostgreSQL/RAG).
-
-### 1.3 확장 목표
-- 국내주식에서 검증되면 **해외주식 → 암호화폐**로 확장. 기존 자산(`markets/overseas.ts`·`crypto.ts`, KIS 해외, 루나 crypto LIVE) 재사용. 확장은 §8 졸업 게이트 통과를 조건으로 한다.
-
-### 1.4 비목표
-- 즉시 LIVE 자동매매 · 자동 부작용(거래/이체/공시/통지) · 외부 대상 투자추천. LIVE·자금이동은 자율레벨과 무관하게 항상 별도 게이트.
+- 목적: 국내주식 **일일/주간 투자회의(웹)** + **펀더멘털 리서치 파이프라인**. 보조(human-in-the-loop) → 점진 자율.
+- 목표: 국내주식 검증 시 → 해외주식·암호화폐 확장(markets/{overseas,crypto}·KIS 해외·루나 crypto LIVE 활용, 자율 졸업 프레임 연동).
+- 비목표: 즉시 LIVE 자동매매 · 자동 부작용(실거래/이체/공시) · 외부 투자추천.
 
 ## 2. 운영 정책 · 불변 원칙
-- LLM 계층: 리서치/회의=Claude Code/OpenAI(클라우드, 이종 모델), LOCAL LLM=백테스트 전용.
-- 출력: RAG(pgvector) + 리포트 파일(파일=감사·재현, RAG=회수·학습).
-- 마스터 부재 시: 루나 의장 단독 회의 → 모의주문. LIVE는 async 승인(레벨 상승 시).
-- 모든 고정값(라운드 수·임계·케이던스·비중 한도)은 설정으로 분리 → 추후 동적/자율 전환.
-- 불변: 3역할 절차, PROTECTED launchd 무중단, crypto LIVE·스카 매출 무중단, loopback+Tailscale 전용, 자동 부작용 금지, 부품 재사용 우선(오케스트레이터만 신규).
+- 국내주식 우선 · 보조 · 리서치/회의 LLM=Claude Code/OpenAI(클라우드), LOCAL LLM=백테스트 전용 · 출력=RAG(pgvector)+리포트 파일.
+- 마스터 부재 시 루나 단독=모의주문(→다이얼로 LIVE 확장). 고정값→동적/자율 지향.
+- **불변(무중단)**: PROTECTED launchd `ai.{ska,luna,investment,claude,elixir,hub}.*` · crypto LIVE · 스카 실매출 · 3역할 절차.
 
-## 3. 시스템 아키텍처
+## 3. 가드 철학 — "게이트를 치우고 계측을 깐다" [실험판 핵심]
+세 종류를 구분해 **가드만 제거**:
+- **가드(절차 마찰)** = 제거 → G1~G10·승급 게이트·액션 승인은 **차단이 아니라 표시·점수·advisory**로 강등.
+- **계측(데이터 진실성)** = 유지 → 측정이 거짓이면 실험 자체가 무의미.
+- **경계(되돌릴 수 없는 손실)** = 유지 → 실거래·자금이동·운영 중단.
+**유지하는 3개(마찰≈0)**:
+1. **실거래·자금이동 = 명시적 마스터 행동**(모의/섀도는 무제한 자율).
+2. **point-in-time / 누수 차단**(계측 진실성 — 룩어헤드·정보누수 금지).
+3. **crypto LIVE · 스카 무중단**.
+→ 그 외 모든 게이트는 실험 속도를 위해 advisory(통과 가능, 점수만 기록).
 
-### 3.1 컴포넌트 개요
-- **meeting-room 서비스** (`bots/investment/services/meeting-room/`)
-  - `server/orchestrator`: 회의 세션 FSM + 발언자 선택 + 액션가드
-  - `server/adapters`: 기존 파이프라인(L01~L34)·펀더멘털·주문·RAG 래핑 (신규 로직 X)
-  - `server/minutes`: 회의록 작성 → PostgreSQL + RAG
-  - `server/ws`: WebSocket(실시간 발언/상태)
-  - `web`: React 회의실(2화면)
-  - `config`: 회의 설정(라운드·임계·케이던스)
-- **리서치 파이프라인**: 펀더멘털 데스크가 OpenDART/KIS/네이버/수급 데이터로 1차 자료 리포트+내러티브 생성 → `corp_*` 테이블 + RAG.
-- **Hub (:7788, Express)**: 회의실 라우트 마운트, 인증(loopback+Tailscale), LLM 라우팅.
-- **팀 제이 대시보드 (:7787)**: 회의실과 상호 링크 + 동일 PostgreSQL.
+## 4. 시스템 아키텍처
+- 컴포넌트: 회의실 오케스트레이터(신규) ↔ 기존 노드/팀(어댑터 경유) ↔ Hub(:7788) ↔ 대시보드(:7787) ↔ PostgreSQL17/pgvector.
+- 데이터 흐름: 트리거 → 세션 생성(DB) → 안건 FSM 진행(Lane 구동) → 발언/토론/결정 → 회의록·모의주문 원장(DB) + 리포트 파일 → RAG 색인.
+- 결합도: 노드 간 결합 0 · RAG 간접 연동 · 회의실은 기존 부품의 **오케스트레이션 계층**일 뿐.
 
-### 3.2 데이터 흐름 (일일 회의 1회)
-1. (회의 전) 리서치 데스크 pre-read: 밤사이 공시·뉴스·가격 스캔 → morning-note 포맷 1차 자료 → RAG 적재
-2. (회의) 안건 FSM: 시황 → 후보 → 분석(TA·감성·펀더멘털) → 불·베어 토론(이종 모델) → 리스크 심의 → 의장 결정(액션가드) → 회의록
-3. (승인 시) 모의주문(l31 paper + kis-client) → 회의록·결정 PostgreSQL + RAG 적재
-4. (사후) 체결·성과 추적 → reflexion/사후평가 → (Phase 2) CVRF 신념 갱신 → 다음 회의 컨텍스트
+## 5. 레포 배치 · 재사용 매핑
+- 회의실=`bots/investment/services/meeting-room/`:
+  - `server/orchestrator/{meeting-session.ts, speaker-select.ts, action-guards.ts}`
+  - `server/adapters/{nodes-adapter, fundamentals-adapter, order-adapter, rag-adapter}`
+  - `server/{minutes, ws, index.ts}` · `web/`(React) · `config/meeting.config.ts`
+- 신규 최소: 오케스트레이터·어댑터·웹·`isKrTradingDay` 헬퍼·migration·폴백 plist 2개·슬래시 액션.
+- 재사용: `nodes/l01~l34`(l11/l12 불·베어 토론 보유) · `team/{aria,sophia,nemesis,luna,hanul,chronos…}` · `shared/{kis-client,autonomy-phase,korea-data-promotion-gate,dynamic-position-sizer,execution-risk-and-capital,kis-market-hours-guard…}` · reflexion-engine · agent-memory-4layer · `python/{finrl-x,quant,rl}` · shadow-mode-runner.
 
-## 4. 레포 배치 · 재사용 매핑
+## 6. 회의 운영 모델
+- **안건 8단계 FSM**(인간 뷰) → 내부적으로 6 Lane(§10)을 구동. FSM은 충돌이 아니라 Lane의 진행을 사람이 보는 창.
+- 의장 = 마스터(부재 시 루나). 발언자 선택 = manual/auto.
+- 토론 = 2R 기본 / cap 3 + 이종 모델 + 조기 합의 탐지(§15).
+- 케이던스 = **일일 전술 + 주간 전략**(§7).
 
-### 4.1 신규 디렉터리
-```
-bots/investment/services/meeting-room/
-  server/
-    orchestrator/{meeting-session.ts, speaker-select.ts, action-guards.ts}
-    adapters/{nodes-adapter.ts, fundamentals-adapter.ts, order-adapter.ts, rag-adapter.ts}
-    minutes/   ws/   index.ts
-  web/                      # React
-  config/meeting.config.ts
-bots/investment/launchd/ai.luna.meeting-room.plist     # 비-PROTECTED
-bots/investment/migrations/2026xxxx_luna_meeting_room.sql
-docs/codex/CODEX_LUNA_MEETING_ROOM_PHASE{1,2,3}.md
-```
+## 7. 회의 시작 트리거 — 웹 버튼 + 루나 폴백
+- **트리거 = 웹 "회의 시작" 버튼**(마스터 주도, launchd 자동발사 아님). 휴장일=버튼 비활성+안내 팝업. 버튼=수시(ad-hoc) 시작도 겸함.
+- 버튼 → Hub `POST :7788/luna/meeting/start` (+ CLI `run-meeting --mode=adhoc`).
+- **일일**: 05:00–06:00 KST 창(국내 거래일만). 창 내 미클릭 시 → **루나 자동 폴백**.
+  - 구현: 폴백 launchd `ai.luna.meeting-room-daily-fallback.plist`(hour=6, 거래일 게이트) → 오늘 일일 세션 없으면 루나 시작. 버튼 클릭=세션 생성 → 06:00 체크 skip(폴백 취소).
+- **주간**: 일요일 06:00–07:00 KST 창. 폴백 `ai.luna.meeting-room-weekly-fallback.plist`(weekday=0, hour=7) → 이번 ISO주 주간 세션 없으면 루나 시작.
+- launchd 역할 = **폴백 워처**(비-PROTECTED). 이번 주=버튼 수동, 다음 주=폴백 정례화.
+- **일일=전술**(밤사이 스캔→당일 포지셔닝, morning-note+모의주문, ~30–45분, 1p). **주간=전략**(성과 리뷰·thesis·CVRF 신념 갱신·전략 리더보드·승급·ic-memo, ~60–90분).
 
-### 4.2 재사용 매핑 (신규 로직 금지 — 어댑터로 호출만)
-- **토론**: `nodes/l11-bull-debate`·`l12-bear-debate`·`l11b-quant-debate`·`l12b-risk-debate` (이미 존재)
-- **이종 모델**: `shared/dual-model-report`·`agent-llm-routing`
-- **결정**: `nodes/l13-final-decision`·`l14-portfolio-decision`
-- **주문(모의)**: `nodes/l31-order-execute`(paper) + `shared/kis-client`
-- **RAG**: `nodes/l33-rag-store` / 회의록 적재
-- **분석가**: `team/{aria,sophia,nemesis,luna,hanul,chronos…}`
-- **자율·게이트**: `shared/{autonomy-phase,korea-data-promotion-gate,candidate-backtest-gate,guard-self-tuning,adaptive-cadence-resolver}`, `scripts/run-graduation-analysis`
-- **데이터**: OpenDART(`ai.luna.opendart-*`) + `corp_fundamentals/disclosures/financial_reports`, `korean-factor-model`, `markets/domestic`
-- **백테스트(로컬)**: `python/{finrl-x,quant,rl}`, chronos
-- **안전**: `kis-market-hours-guard`, `VALIDATION_LANE_POLICY`
+## 8. 회의실 UI (2화면 · :7787 연동)
+- 스택=React(네이티브 TS 재사용, Magentic-UI는 참고만/fork X). 전용 웹.
+- 화면① 일일 회의실: 안건 진행·참석 에이전트·발언/토론·결정·회의록.
+- 화면② 에이전트 직접 질의: @멘션으로 개별 에이전트 질의(보조). 기본 창구는 루나.
+- 팀 제이 대시보드 :7787 연동(상호 링크 + 동일 PostgreSQL).
 
-## 5. 회의 운영 모델
+## 9. 펀더멘털 리서치 파이프라인
+- 데이터: OpenDART(Hub 키)·KIS·korean-factor / 갭 후보: KRX 공식 시세·지수, 수급·외국인5%·행동주의 공시, 네이버 금융 컨텍스트.
+- 포맷: **morning-note**(밤사이 필링·트랜스크립트·뉴스→당일 브리프) · **ic-memo**(불/베어 + 과집중 체크 + "what makes this wrong"). financial-services SKILL.md 컨벤션 차용.
+- 슬래시 액션(차용): `/morning-note`·`/screen <섹터>`·`/comps`·`/earnings`·`/thesis`·`/catalysts`.
 
-### 5.1 안건 FSM (8단계)
-① 시황 → ② 후보 종목 → ③ 분석(TA·감성·펀더멘털) → ④ 불·베어 토론 → ⑤ 리스크 심의 → ⑥ 의장 결정 → ⑦ 회의록 → ⑧ 사후 추적 등록. 각 단계는 상태 전이 + 산출물(메시지/근거/결정)을 가진다.
+## 10. 6 Lane 매핑 (LUNA_REDESIGN_PHASE_1_TO_5 §4)
+- **Research**: Argos·Aria·Hermes·Sophia·Oracle·Zeus(불)·Athena(베어).
+- **Decision**: Luna(제약형 후보 선택, 자유 BUY/SELL 아님).
+- **Policy**: Nemesis(예산·포지션·재진입·노출·타임존).
+- **Execution**: Hanul·Hephaestos.
+- **Validation**: Chronos + 엔진 — **가장 약한 레인 → 코어로 승격(회의실의 핵심 기여)**.
+- **Review**: 사후 리뷰·학습 피드백.
+- 안건 8단계 FSM = 이 레인들을 사람이 보는 뷰. 노드 결합 0 · RAG 간접.
 
-### 5.2 발언자 선택
-manual(의장=마스터 호출) / auto(루나 또는 team-router가 적합 에이전트 선택). 마스터 부재 시 루나 의장이 auto 진행.
+## 11. 자율 · 다이얼 (C1)
+- **마스터 수동 다이얼 + earned 텔레메트리(advisory)**. 별도 L0~L3 병렬 체계 신설 안 함.
+- 기존 `LUNA_AUTONOMY_PHASES`(L4_PRE/POST_AUTOTUNE·L5) + `resolveLunaAutonomyPhase`/`buildLunaAutonomyPhaseContext`(time-cutover 모델) **정렬**.
+- 경계 = 실거래(L5)/자금이동에만 — 그 외 자율도는 텔레메트리로 권고만(차단 X).
 
-### 5.3 토론 규칙
-라운드 2 기본 / 최대 3(설정). 불=Claude · 베어=OpenAI(이종 모델, anti-monoculture). 조기합의 탐지(유사도 임계)로 거짓합의 차단. 각 발언=근거 인용 + 신뢰도 + 사실/추정 태그.
+## 12. 백테스트 (C2)
+- **walk-forward → CPCV 교체**(purge+embargo · multi-path).
+- **DSR / PBO / MinTRL = 리더보드/계측**(비차단). 백테스트는 필터지 증명이 아님 → 승급은 post-cutoff forward 실적으로.
+- 기존 백테스트 마이그레이션(DSR/PBO/OOS/walk-forward/meta-label) 재사용, **CPCV만 신규 갭**.
 
-### 5.4 케이던스
-일일 전술 회의(종목·진입) + 주간 전략 회의(포트폴리오·신념 갱신). `adaptive-cadence-resolver`로 추후 동적화.
+## 13. 기억 · 학습 (C3)
+- **flat RAG 회수 → temporal-validity 교체**: 사실에 유효기간(validity window) 부여 → 시점정합(누수 차단) 강제.
+- **CVRF 신념층 추가**: 에피소드 자기비판 → 투자 신념(자연어) → **필요한 노드에만 전파**. 기존 4-layer 메모리 보강.
+- napkin 실수노트 · async write.
 
-### 5.5 에이전트 직접 질의
-마스터가 @멘션/auto로 특정 에이전트에 질문 → A2A/`agent-message-bus` 라우팅 → 답변(출처+신뢰도+사실/추정) → RAG 적재. 회의 중/밖 모두. 답변發 액션은 액션가드 통과.
+## 14. 의사결정 (C4) — 듀얼 모드
+- **제약형(allowed universe, trust 트랙)**: 루나가 허용 유니버스 내 후보 선택. 신뢰 누적 트랙.
+- **자유 제안(shadow 트랙)**: 자유 제안은 섀도로만 기록(실거래 영향 0).
+- 루나 = 제약형 후보 선택자(자유 BUY/SELL 아님). 두 트랙 병행 → 자유 제안의 적중을 섀도로 측정.
 
-## 6. 회의실 UI
+## 15. 토론 (C5)
+- **적응 종료**: 수렴/반복 탐지(2R 기본 · max 3). 합의/교착 시 조기 종료.
+- **이종 모델 2~3종**: 불=Claude / 베어=OpenAI(§아래 결정③). 서로 다른 모델로 편향 분산.
+- 심판(Luna)이 가장 강한 불/베어 논거를 통합.
 
-### 6.1 화면 ① 일일 회의실
-헤더(자율레벨·의장·시장 상태) · 안건 스테퍼 · 참석 에이전트 · 발언 스트림(근거 칩·신뢰도·이종 모델 태그·조기합의 표시) · 의장 결정 액션가드 바(승인/수정/반려/보류) · 라이브 회의록 · 모의 포트폴리오.
+## 16. 소스 검증 실측 계약 [코덱스 착수 전 필독]
+- **노드**: 형태 `{id,type,label,run}` · ID 대문자 · 호출 `await node.run({ sessionId, market, symbol })`. 레지스트리 `nodes/index.ts`: `getInvestmentNode(ID)`/`INVESTMENT_NODE_MAP`/`INVESTMENT_NODES`. 등록: L01·L02·L03(sentinel)·L04(market-flow)·L05·L06·L10·L11(bull)·L11b(quant)·L12(bear)·L12b(risk)·L13(final-decision)·L14(portfolio)·L21(llm-risk)·L30·L31(order-execute)·L32·L33(rag-store)·L34. **L20 없음**(l03-news-analysis/l04-sentiment 파일 존재하나 미등록).
+- **의사결정**(`team/luna.ts`): `getSymbolDecision`·`getPortfolioDecision`·`getExitDecisions`·`orchestrate`·`getDebateLimit`·`shouldDebateForSymbol`·`fuseSignals`·`buildAnalystWeights`. 기본 exchange='binance' → 국내는 market 인자 필요.
+- **이종 모델**: `resolveAgentLLMRoute`(shared/agent-llm-routing.ts) + agent yaml `llm_routing`. ⚠️ 현재 zeus.yaml·athena.yaml **둘 다 `openai-oauth/gpt-5.4-mini`**(결정③로 zeus→claude). (`dual-model-report`=N일 리포트, 토론 라우팅 아님.)
+- **사이징/리스크**: `computeDynamicPositionSizing`(shared/dynamic-position-sizer.ts) + `execution-risk-and-capital.ts` facade 재노출: `buildExecutionRiskApprovalGuard`(risk-approval-execution-guard.ts) + capital-manager `preTradeCheck`·`calculatePositionSize`·`checkCircuitBreaker`·`getOpenPositions`·`getDailyPnL`·`getAvailableBalance`·`getCapitalConfig`.
+- **졸업**: `buildKoreaDataPromotionGate`+`DEFAULT_KOREA_DATA_PROMOTION_THRESHOLDS`+`normalizeKoreaDataPromotionThresholds`(shared/korea-data-promotion-gate.ts) + chronos·shadow-mode-runner·run-graduation-analysis.
+- **거래일**: `isKisHoliday`(DB `ska.environment_factors`, async, secrets.ts:498)/`isKisMarketOpen`(secrets.ts:527). `evaluateKisMarketHours({market,now})`→reasonCode `holiday|kis_market_open|kis_market_closed`(kis-market-hours-guard.ts; 국내 KST 09:00–15:30). ⚠️ `KR_HOLIDAYS_2026`/`isKrHoliday` 미export → `isKrTradingDay` 헬퍼는 primary `isKisHoliday()`, fallback `evaluateKisMarketHours().reasonCode==='holiday'`.
+- **kis-client.ts** 존재(+ kis-symbol-policy·kis-top-volume-universe·kis-ws-client.js).
+- **Hub**: 라우트 `bots/hub/lib/routes/*` → `bots/hub/src/route-registry.ts` 등록, `bots/hub/src/server.ts` listen, **`bots/hub/src/hub-proxy.ts` 존재**. 포트 7788. 대시보드 7787. migration `YYYYMMDDHHMMSS_luna_meeting_room.sql`. DB=PostgreSQL17+pgvector.
 
-### 6.2 화면 ② 에이전트 직접 질의
-@멘션/auto 대상 선택 · 질문/답변 스레드(사실·추정 태그·신뢰도·근거) · "RAG 적재 + 답변發 액션은 승인 게이트" 표기.
+## 17. 3대 구현 결정 [마스터 확정]
+1. **paper 주문 = 별도 paper 원장(DB)**. LIVE(마스터 다이얼) 시에만 `l31`+kis-client. (l31엔 paper 플래그 없음.)
+2. **Hub 연결 = meeting-room 독립 loopback 서버(index.ts) + Hub `hub-proxy` 프록시**(route-registry 마운트 아님). 웹+WS 분리.
+3. **이종 모델 = 불(zeus)=Claude / 베어(athena)=OpenAI(현행)**. zeus.yaml `llm_routing.primary`를 claude로 변경.
 
-### 6.3 통합
-Hub Express(:7788)에 라우트 마운트(예: `/luna/meeting`). 팀 제이 대시보드(:7787)와 헤더 탭 상호 링크 + 동일 PostgreSQL(모의 포트폴리오·회의록은 `trade-journal`과 같은 소스 → 숫자 일관).
-
-## 7. 펀더멘털 리서치 파이프라인
-
-### 7.1 산출물
-- **pre-read (morning-note 포맷)**: 밤사이 스캔(공시·뉴스·가격) → Top Call 헤드라인 + 우리 견해 + 후보(논거 + 촉매 + **반증조건**) → 1페이지.
-- **종목 리포트**: 사업·밸류에이션·재무. 사실/추정 구분, 출처 tier.
-- **의장 결정 메모 (ic-memo 경량)**: 요약(추천 + 핵심 리스크 3 + 미티건트) · thesis pillars · 시나리오 · 리스크(심각도×가능성) · **Proceed/Pass/Conditional + 조건**.
-
-### 7.2 데이터
-- 보유: OpenDART(공시·재무·XBRL) + `corp_*`, KIS(시세·체결), korean-factor.
-- 갭(Phase 2): KRX 공식 시세/지수, 수급·외국인 5%·행동주의 공시, 네이버 금융 컨텍스트.
-- 정합: **point-in-time**(as-of 스냅샷, 수정본 금지) + ingestion-lag/embargo → temporal-validity 메모리로 강제.
-
-## 8. 자율 · 졸업 프레임워크
-
-### 8.1 자율 레벨
-L0(마스터 의장·전 결정 승인·학습) → L1(루나 의장·모의 자동·LIVE async 승인) → L2(저위험 자동·마스터 on-the-loop) → L3(완전 자율·범위 내).
-
-### 8.2 이중 트랙 졸업 게이트
-- **퀀트/RL 전략**: CPCV(purge+embargo·다중 경로 분포) + DSR/PBO + Minimum Track Record Length.
-- **LLM 의사결정(회의/토론)**: 백테스트는 학습컷오프 누수로 불충분 → **post-cutoff forward(모의→라이브) 실적**으로만 졸업. + blindfold(익명화) 점검 + 이종 모델.
-- 레벨 상승·모의→LIVE·시장 확장(해외/crypto)은 해당 트랙 통과를 조건으로 한다(`run-graduation-analysis` + `korea-data-promotion-gate` 재사용).
-
-## 9. 정합 · 안전 가드
-
-### 9.1 리서치 가드 (영상 G1~G10)
-G1 시점 정합 · G2 사실/추정 태깅 · G3 출처 tier · G4 인용 · G5 양면(반증조건) · G6 N개 후속질문 · G7 판단 분리 · G8 컨텍스트 분기(새 대화 재검증) · G9 한 번에 한 질문 · G10 독립 재검증.
-
-### 9.2 금융 가드
-point-in-time/데이터 누수 차단 · 백테스트 과최적 방어(CPCV·DSR·PBO·MinTRL) · blindfold 검증 · 이종 모델(anti-monoculture) · **자동 부작용 금지(에이전트 헌법에 명문)**.
-
-## 10. 학습 · 메모리
-- **temporal-validity**: RAG 사실에 as-of+유효기간 → G1 강제.
-- **CVRF (Phase 2)**: 에피소드 자기비판 → 투자 신념(자연어) → **해당 에이전트 노드에만 선택 전파**. reflexion/guard-self-tuning 위에 신념층.
-- **napkin 실수노트 (Phase 2)**: 에이전트별 per-repo 마크다운 실수 기억 → 행동 전 회피. 시그마 오류루프 보강.
-- 4-layer 메모리 정렬 + **async write**(회의 지연 방지) + dedup/노이즈 필터.
-
-## 11. 커넥터 / MCP 전략
-- 커넥터는 공용 레이어에 집중(기존 `shared/kis-client`·`opendart-*` 재사용), 회의실·파이프라인 공유.
-- Phase 2 갭: KRX/수급/외국인·네이버 — `awesome-mcp-korea`의 vetted MCP를 포크/참조(라이선스 확인). **LIVE 주문 경로는 기존 KIS만**, 신규 MCP는 읽기 전용 우선.
-- 시크릿: Hub secrets-store 경유. loopback+Tailscale 전용. 외부 MCP 도입 시 PROTECTED/LIVE 무중단 유지.
-
-## 12. Phase 로드맵
-- **Phase 1 (국내·모의)**: meeting-room 백엔드 + 오케스트레이터(안건 FSM) + 액션가드(autonomy-phase) + 회의록(PostgreSQL/RAG) + L01~L34/KIS 모의 어댑터 + 웹 스캐폴드. morning-note/ic-memo 포맷 · SKILL.md 컨벤션 · point-in-time/누수 규율 · 이종 모델 · 모의 forward 기록.
-- **Phase 2 (학습·데이터·헤드리스)**: CVRF · napkin · CPCV+DSR/PBO 게이트 · KRX/수급/네이버 커넥터 · 대화형↔헤드리스 이중배포 · drift CI.
-- **Phase 3 (자율·확장)**: 이중 트랙 졸업 게이트 자동화 · 완전자율 다이얼 · LIVE 확장 → 국내 검증 후 해외주식 → 암호화폐.
-
-## 13. 리스크 · 미해결
-- LLM 누수로 백테스트 신뢰 한계 → forward 실적 의존(시간 소요).
-- 외부 MCP 도입 시 시크릿·안정성·라이선스 검토 필요.
-- :7787 대시보드 통합 방식(임베드 vs 링크) 상세 확정 필요.
-- CPCV 한국주식 적용(purge/embargo 파라미터) 별도 설계.
-- 회의 LLM 비용(클라우드) 관리(`cost-tracker` 재사용).
-- 미해결(시스템): n8n 자격증명, CalDigit 이더넷(WiFi 사용 중).
+## 18. 리스크 · 미해결
+- 미해결: CPCV 신규 구현 · 폴백 plist 시간대(KST) 정확성 · paper 원장 스키마 · hub-proxy 경로.
+- 검증 후 시장 확장(해외·crypto) 게이트.

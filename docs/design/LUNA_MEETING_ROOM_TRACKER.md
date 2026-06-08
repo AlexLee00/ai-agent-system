@@ -1,94 +1,75 @@
-# 루나 일일 투자회의 — 구현 추적 (TRACKER)
+# 루나 투자회의 — 구현 추적 (TRACKER)
 
-> 버전 v0.1 (2026-06-08) · 작성: 메티 · 상태: Phase 1 착수 전
-> 설계 SSOT: `docs/design/LUNA_MEETING_ROOM_DESIGN.md` · 핸드오프: `docs/handoff/LUNA_MEETING_ROOM_HANDOFF.md`
-> 패턴: PLATFORM_IMPLEMENTATION_TRACKER
+> 버전 v0.2 (2026-06-08) · 작성: 메티 · 상태: Phase 1 착수 전 · SSOT=LUNA_MEETING_ROOM_DESIGN.md
+> 항목: 작업 / 담당(코덱스·메티·마스터) / 상태 / 검증(문법·소프트·하드) / 의존성 / 연결 CODEX
+> 원칙: 부품 재사용 우선(오케스트레이터만 신규) · PROTECTED/LIVE 무중단 · advisory 게이트(차단 X)
 
-## 범례
-- 담당: **C**=코덱스(구현) · **M**=메티(설계·검증) · **마스터**=승인·커밋
-- 상태: ⬜ 대기 · 🟦 진행 · ✅ 완료 · ⏸ 보류
-- 검증: 문법(`node --check`) · 소프트(단위/smoke) · 하드(OPS 라이브). **메티 독립 재실행 후 PASS 선언.**
+## Phase 요약
+- **Phase 1(MVP)**: 회의실 백엔드+오케스트레이터(FSM)+advisory 액션가드+회의록(DB/RAG)+기존 노드/KIS 모의 어댑터+웹 스캐폴드+버튼/폴백. morning-note/ic-memo 포맷·point-in-time 규율·이종모델·모의 forward 기록.
+- **Phase 2**: CVRF 신념층·temporal-validity·napkin·CPCV+DSR/PBO 리더보드·KRX/수급/네이버 커넥터.
+- **Phase 3**: 졸업 게이트 자동화·자율 다이얼·LIVE 확장 → 검증 후 해외·암호화폐.
 
-## Phase 1 — 국내·모의 (meeting-room MVP)
+## 워크스트림 (WS-A ~ WS-H)
 
-### WS-A 서비스/백엔드
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| `index.ts` loopback 바인딩 + Hub(:7788) 라우트 등록 | C | ⬜ | 하드: `:7788/luna/meeting` 응답 | Hub `app.ts` | P1 |
-| `config/meeting.config.ts`(라운드·임계·케이던스) | C | ⬜ | 소프트: 설정 로드 | — | P1 |
+### WS-A. 백엔드 · Hub 연동 [Phase 1]
+- A1 독립 loopback 서버 `services/meeting-room/server/index.ts`(웹+WS) — 코덱스 · 검증: 문법+기동(소프트) · 의존: 없음
+- A2 Hub `hub-proxy` 프록시 경로(`/luna/meeting/*` → loopback) — 코덱스 · 의존: A1, hub-proxy.ts 존재 확인됨
+- A3 migration `YYYYMMDDHHMMSS_luna_meeting_room.sql`(세션·회의록·paper 원장·발언로그) — 코덱스 · 검증: 적용+롤백(하드)
 
-### WS-B 오케스트레이터
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| `meeting-session.ts` 안건 8단계 FSM | C | ⬜ | 소프트: 전이 단위테스트 | config | P1 |
-| `speaker-select.ts`(manual/auto, team-router) | C | ⬜ | 소프트: 선택 로직 테스트 | team-router | P1 |
-| `action-guards.ts` ↔ autonomy-phase(L0 전결정 승인) | C | ⬜ | 소프트: L0 게이트 차단 | `shared/autonomy-phase` | P1 |
+### WS-B. 오케스트레이터 [Phase 1] (신규 — 유일한 신규 로직)
+- B1 `orchestrator/meeting-session.ts`(안건 8단계 FSM, 세션 상태기계) — 코덱스 · 검증: 단위 테스트
+- B2 `orchestrator/speaker-select.ts`(manual/auto 발언자) — 코덱스
+- B3 `orchestrator/action-guards.ts`(**advisory** — 차단 아닌 표시·점수; 실거래/자금이동만 경계) — 코덱스 · 검증: advisory 동작(하드)
 
-### WS-C 어댑터 (기존 호출만 · 신규 로직 금지)
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| `nodes-adapter`(l02/03/04/11/12/12b/13/14) | C | ⬜ | 소프트: 노드 호출 모킹 | `nodes/*` | P1 |
-| `fundamentals-adapter`(corp_* + opendart) | C | ⬜ | 소프트: 조회 테스트 | `corp_*` | P1 |
-| `order-adapter`(l31 paper + kis-client) | C | ⬜ | 하드: 모의주문 1건 | l31, kis-client | P1 |
-| `rag-adapter`(l33 적재/회수) | C | ⬜ | 소프트: 적재·회수 | l33 | P1 |
+### WS-C. 어댑터 [Phase 1] (기존 부품 래핑)
+- C1 `adapters/nodes-adapter`(L01~L34 `node.run({sessionId,market,symbol})`, **L20 없음 주의**) — 코덱스 · 검증: 노드 호출 통과
+- C2 `adapters/fundamentals-adapter`(OpenDART/KIS/korean-factor) — 코덱스
+- C3 `adapters/order-adapter`(**paper 원장 DB**; LIVE 시만 l31+kis-client) — 코덱스 · 검증: 모의주문 원장 기록(하드)
+- C4 `adapters/rag-adapter`(pgvector 색인/회수) — 코덱스
 
-### WS-D 회의록
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| `minutes/` ic-memo 경량 → PostgreSQL + RAG | C | ⬜ | 하드: 회의 1건 기록 | DB, rag-adapter | P1 |
+### WS-D. 웹 UI [Phase 1]
+- D1 React 스캐폴드(네이티브 TS 재사용) — 코덱스
+- D2 화면① 일일 회의실(안건 진행·참석·발언/토론·결정·회의록) — 코덱스
+- D3 화면② 에이전트 직접 질의(@멘션) — 코덱스
+- D4 :7787 대시보드 상호 링크 — 코덱스 · 의존: D1
 
-### WS-E 웹
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| React 회의실 스캐폴드(화면 ①②) | C | ⬜ | 하드: 회의 1건 렌더 | `server/ws` | P1 |
-| :7787 대시보드 상호 링크 | C | ⬜ | 소프트: 링크 동작 | :7787 | P1 |
+### WS-E. 데이터 · 리서치 [Phase 1]
+- E1 morning-note 포맷(밤사이→당일 브리프) — 메티 포맷 + 코덱스 구현
+- E2 ic-memo 포맷(불/베어+과집중+"what makes this wrong") — 메티+코덱스
+- E3 슬래시 액션 `/morning-note`·`/screen`·`/comps`·`/earnings`·`/thesis`·`/catalysts` — 코덱스
 
-### WS-F 데이터·규율
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| point-in-time as-of 스냅샷(opendart 수정본 방지) | C | ⬜ | 소프트: as-of 회수 | opendart | P1 |
-| morning-note pre-read 생성 | C | ⬜ | 하드: pre-read 1건 | fundamentals | P1 |
-| 모의 forward 실적 기록 시작 | C | ⬜ | 하드: 기록 누적 | order-adapter | P1 |
+### WS-G. 회의 트리거 · 정례화 [Phase 1]
+- G1 웹 "회의 시작" 버튼 → `POST :7788/luna/meeting/start`(+CLI adhoc) — 코덱스 · 검증: 세션 생성(하드)
+- G2 `isKrTradingDay` 헬퍼(primary `isKisHoliday`, fallback `evaluateKisMarketHours`) — 코덱스 · 검증: 휴장일 판정 단위테스트
+- G3 휴장일 버튼 비활성+팝업 — 코덱스 · 의존: G2
+- G4 폴백 plist `ai.luna.meeting-room-daily-fallback`(hour=6, 거래일, 세션 없으면 시작) — 코덱스(메티 검토) · **비-PROTECTED**
+- G5 폴백 plist `ai.luna.meeting-room-weekly-fallback`(weekday=0, hour=7, ISO주 세션 없으면) — 코덱스
+- 일정: **이번 주=버튼 수동, 다음 주=폴백 정례화**
 
-### WS-G DB·운영·규율
-| 작업 | 담당 | 상태 | 검증 기준 | 의존성 | 프롬프트 |
-|---|---|---|---|---|---|
-| `migrations/…luna_meeting_room.sql`(sessions/messages/decisions/minutes) | C | ⬜ | 하드: 마이그레이션 적용 | PG17 | P1 |
-| `ai.luna.meeting-room.plist`(비-PROTECTED) | C | ⬜ | 하드: launchd 로드 | index.ts | P1 |
-| SKILL.md 컨벤션(분석가) + 자동부작용 금지 헌법 명문 | M/C | ⬜ | 소프트: 린트 | `team/*` | P1 |
+### WS-F. 게이트 · 검증 [Phase 2]
+- F1 CPCV(purge+embargo·multi-path) **신규** — 코덱스 · 검증: 합성데이터 단위테스트
+- F2 DSR/PBO/MinTRL 리더보드(**advisory**, 비차단) — 코덱스
+- F3 korea-data-promotion-gate 연동(post-cutoff forward 실적 기반 승급) — 코덱스
 
-## Phase 2 — 학습·데이터·헤드리스 (요약)
-| 항목 | 담당 | 상태 |
-|---|---|---|
-| CVRF 학습층(에피소드→투자신념→노드 선택 전파) | C | ⬜ |
-| napkin 실수노트(시그마 오류루프 연동) | C | ⬜ |
-| CPCV + DSR/PBO/MinTRL 게이트(walk-forward 보강) | C | ⬜ |
-| KRX/수급/외국인·네이버 커넥터(읽기 전용) | C | ⬜ |
-| 대화형↔헤드리스 이중배포 구조 | C | ⬜ |
-| 스킬 drift CI(check.py 방식) | C | ⬜ |
-
-## Phase 3 — 자율·확장 (요약)
-| 항목 | 담당 | 상태 |
-|---|---|---|
-| 이중 트랙 졸업 게이트 자동화 | C | ⬜ |
-| 완전자율 다이얼(L2→L3) | C | ⬜ |
-| LIVE 확장(국내) | 마스터 | ⬜ |
-| 해외주식 확장 | C | ⬜ |
-| 암호화폐 확장 | C | ⬜ |
+### WS-H. 학습 · 메모리 [Phase 2]
+- H1 temporal-validity(사실 유효기간→시점정합) — 코덱스
+- H2 CVRF 신념층(에피소드 자기비판→신념→필요 노드만 전파) — 코덱스
+- H3 napkin 실수노트 · async write — 코덱스
 
 ## 재사용 vs 신규
-- **재사용(수정 금지 · 호출만)**: l01~l34, `team/*`, `shared/{kis-client,autonomy-phase,dual-model-report,korea-data-promotion-gate,candidate-backtest-gate,guard-self-tuning,adaptive-cadence-resolver}`, l33-rag-store, `python/{finrl-x,quant,rl}`, korean-factor-model, opendart.
-- **신규**: `services/meeting-room/*`(오케스트레이터·어댑터·minutes·ws·web·config), meeting-room migration, meeting-room plist.
+- **신규(유일)**: WS-B 오케스트레이터 + 어댑터 래퍼 + 웹 + isKrTradingDay + migration + 폴백 plist 2개.
+- **재사용**: 노드 L01~L34 · team/* · shared/*(kis-client·autonomy-phase·korea-data-promotion-gate·dynamic-position-sizer·execution-risk-and-capital·kis-market-hours-guard) · reflexion-engine · agent-memory-4layer · shadow-mode-runner · python/{finrl-x,quant,rl}.
 
-## PROTECTED / LIVE 무중단 체크리스트 (모든 단계 공통)
-- [ ] PROTECTED launchd(ai.{ska,luna,investment,claude,elixir,hub}.*) 중지/변경 없음
-- [ ] crypto LIVE·스카 매출 경로 무영향
-- [ ] LIVE 주문 경로는 기존 KIS만 · 신규 커넥터는 읽기 전용
-- [ ] loopback+Tailscale 바인딩(외부 노출 없음)
-- [ ] 자동 부작용(거래/이체/공시/통지) 없음 — 모두 승인 게이트
-- [ ] deploy.sh / auto-commit cron 영향 확인
+## 무중단 체크리스트 (착수·검증 시 필수)
+- [ ] PROTECTED launchd `ai.{ska,luna,investment,claude,elixir,hub}.*` 미중지
+- [ ] crypto LIVE(루나) 무중단 · 스카 실매출 무중단
+- [ ] 폴백 plist는 신규·비-PROTECTED (기존 plist 미수정)
+- [ ] paper 원장만 사용(LIVE는 마스터 다이얼 시에만)
+- [ ] point-in-time/누수 차단 유지(계측 진실성)
 
-## 시장 확장 게이트 조건 (Phase 3)
-- **국내주식**: 모의 forward 실적(post-cutoff) + 퀀트 CPCV/DSR/PBO 통과 → LIVE 승인(마스터)
-- **해외주식**: 국내 LIVE 안정 + KIS 해외 어댑터 검증
-- **암호화폐**: 해외 검증 + 루나 crypto LIVE 무중단 보장 하에 회의실 연결
+## 시장 확장 게이트 (Phase 3)
+- 국내주식 forward 실적(post-cutoff) + CPCV 리더보드 통과 → 해외주식(KIS 해외·markets/overseas) → 암호화폐(루나 crypto LIVE·markets/crypto).
+- 각 단계 = 마스터 다이얼 승인 경계.
+
+## 연결 CODEX 프롬프트
+- Phase 1 → `docs/codex/CODEX_LUNA_MEETING_ROOM_PHASE1.md` (WS-A~E·G, **v0.3 통합 후 작성**)
