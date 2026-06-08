@@ -1150,6 +1150,187 @@ async function test_autofix_rejects_unexpected_mutation() {
   console.log('✅ refactor-cycle: autofix rejects and cleans unexpected mutation');
 }
 
+async function test_autofix_prior_errors_filter_and_cap() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const feedback = {
+    results: [
+      {
+        file: target,
+        stage: 'active_deferred',
+        outcome: 'failed',
+        errorSummary: 'stage=verify; builder=TS2339 first failure; reviewer=ok',
+      },
+      {
+        candidateFiles: [target],
+        stage: 'active_deferred_unfixable',
+        outcome: 'failed',
+        errorSummary: 'stage=autofix; builder=TS2345 second failure',
+      },
+      {
+        changedFiles: [target],
+        stage: 'active_deferred',
+        outcome: 'failed',
+        errorSummary: 'stage=verify; builder=TS2345 second failure',
+      },
+      {
+        target,
+        stage: 'active_deferred',
+        outcome: 'error',
+        errorSummary: 'stage=verify; builder=TS7006 third failure',
+      },
+      {
+        file: target,
+        stage: 'active_deferred',
+        outcome: 'failed',
+        errorSummary: 'stage=verify; builder=TS9999 fourth failure',
+      },
+      {
+        file: target,
+        stage: 'active_verified_ready_for_commit',
+        outcome: 'completed',
+        errorSummary: 'stage=verify; builder=should be ignored',
+      },
+      {
+        file: 'bots/claude/lib/other.ts',
+        stage: 'active_deferred',
+        outcome: 'failed',
+        errorSummary: 'stage=verify; builder=other file ignored',
+      },
+      {
+        file: target,
+        stage: 'active_deferred',
+        outcome: 'failed',
+        errorSummary: '',
+      },
+    ],
+  };
+  assert.deepStrictEqual(runner.deriveFilePriorErrors(feedback, target), [
+    'TS2339 first failure',
+    'TS2345 second failure',
+    'TS7006 third failure',
+  ]);
+  assert.deepStrictEqual(runner.deriveFilePriorErrors(feedback, target, 2), [
+    'TS2339 first failure',
+    'TS2345 second failure',
+  ]);
+  console.log('✅ refactor-cycle: autofix prior errors filter successful rows, dedupe, and cap');
+}
+
+async function test_autofix_prior_errors_are_passed_to_fixer() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { calls, builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  const captured = [];
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    gitStatusShortFn: () => '',
+    vaultFeedback: {
+      ok: true,
+      results: [{
+        file: target,
+        stage: 'active_deferred',
+        outcome: 'failed',
+        errorSummary: 'stage=verify; builder=TS2339 prior file error; reviewer=ok',
+      }],
+    },
+    builderModule,
+    reviewerModule,
+    fixerFn: async (_context, params) => {
+      captured.push(params.priorErrors);
+      return {
+        ok: true,
+        fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+        model: 'mock-refactorer',
+        provider: 'mock',
+      };
+    },
+  });
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(captured, [['TS2339 prior file error']]);
+  assert.strictEqual(result.active.results[0].priorErrorCount, 1);
+  assert.strictEqual(calls.builder.length, 2);
+  assert.strictEqual(calls.reviewer.length, 2);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: prior errors are passed to autofix fixer params');
+}
+
+async function test_autofix_empty_vault_feedback_passes_empty_prior_errors() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesForAutofix(target);
+  const captured = [];
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    gitStatusShortFn: () => '',
+    builderModule,
+    reviewerModule,
+    fixerFn: async (_context, params) => {
+      captured.push(params.priorErrors);
+      return {
+        ok: true,
+        fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+        model: 'mock-refactorer',
+        provider: 'mock',
+      };
+    },
+  });
+  assert.strictEqual(result.ok, true);
+  assert.deepStrictEqual(captured, [[]]);
+  assert.strictEqual(result.active.results[0].priorErrorCount, 0);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: empty vault feedback keeps autofix priorErrors empty');
+}
+
+async function test_autofix_fixer_prompt_includes_prior_failure_section() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const withPrior = runner.buildFixerPrompt({
+    fileRel: ACTIVE_TARGET,
+    currentContent: 'export const value = 1;\n',
+    builderError: 'TS2339 current',
+    reviewerFindings: [],
+    priorErrors: ['TS2339 previous', 'TS7006 previous'],
+    attempt: 1,
+  });
+  assert.match(withPrior, /Prior failures for THIS file/);
+  assert.match(withPrior, /1\. TS2339 previous/);
+  assert.match(withPrior, /2\. TS7006 previous/);
+  assert.doesNotMatch(withPrior, /@ts-nocheck/);
+
+  const withoutPrior = runner.buildFixerPrompt({
+    fileRel: ACTIVE_TARGET,
+    currentContent: 'export const value = 1;\n',
+    builderError: '',
+    reviewerFindings: [],
+    priorErrors: [],
+    attempt: 1,
+  });
+  assert.match(withoutPrior, /Prior failures for THIS file/);
+  assert.match(withoutPrior, /\(none\)/);
+  console.log('✅ refactor-cycle: fixer prompt includes prior failure advisory section');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -1288,6 +1469,10 @@ async function main() {
     test_autofix_success_captures_patch_and_restores,
     test_autofix_failure_defers_unfixable_and_restores,
     test_autofix_rejects_unexpected_mutation,
+    test_autofix_prior_errors_filter_and_cap,
+    test_autofix_prior_errors_are_passed_to_fixer,
+    test_autofix_empty_vault_feedback_passes_empty_prior_errors,
+    test_autofix_fixer_prompt_includes_prior_failure_section,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

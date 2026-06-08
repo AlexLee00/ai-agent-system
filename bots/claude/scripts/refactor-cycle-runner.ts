@@ -386,7 +386,7 @@ function buildFixerSystemPrompt() {
   ].join(' ');
 }
 
-function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, attempt }) {
+function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }) {
   return [
     `file: ${fileRel}`,
     `attempt: ${attempt}`,
@@ -400,11 +400,16 @@ function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindi
     'Reviewer high-severity findings:',
     JSON.stringify(reviewerFindings || [], null, 2),
     '',
+    'Prior failures for THIS file in past cycles (do NOT reintroduce these errors; fix the root cause):',
+    (Array.isArray(priorErrors) && priorErrors.length > 0)
+      ? priorErrors.map((item, index) => `${index + 1}. ${item}`).join('\n')
+      : '(none)',
+    '',
     'Return the complete revised file content only.',
   ].join('\n');
 }
 
-async function attemptTypeFix(context, { fileRel, currentContent, builderError, reviewerFindings, attempt }) {
+async function attemptTypeFix(context, { fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }) {
   try {
     if (lineCount(currentContent) > AUTOFIX_FILE_MAX_LINES || byteLength(currentContent) > AUTOFIX_FILE_MAX_BYTES) {
       return { ok: false, fixedContent: null, error: 'too_large' };
@@ -427,7 +432,7 @@ async function attemptTypeFix(context, { fileRel, currentContent, builderError, 
           abstractModel: 'anthropic_sonnet',
           selectorKey: AUTOFIX_SELECTOR_KEY,
           taskType: 'code_refactor',
-          prompt: buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, attempt }),
+          prompt: buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }),
           systemPrompt: buildFixerSystemPrompt(),
           maxTokens: 8192,
           temperature: 0.1,
@@ -530,6 +535,40 @@ function deriveAvoidedFilesFromFeedback(feedback, threshold = 2) {
     if (count >= threshold) avoided.add(file);
   }
   return avoided;
+}
+
+function summarizePriorError(value = '') {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const builderMatch = normalized.match(/builder=([^;]+)/i);
+  const summary = (builderMatch?.[1] || normalized).trim();
+  return summary.slice(0, 240);
+}
+
+function deriveFilePriorErrors(vaultFeedback, fileRel, cap = 3) {
+  const target = normalizeScopePath(fileRel);
+  if (!target) return [];
+  const results = Array.isArray(vaultFeedback?.results) ? vaultFeedback.results : [];
+  const seen = new Set();
+  const priorErrors = [];
+  const maxItems = parsePositiveInt(cap, 3, 20);
+  for (const item of results) {
+    const status = `${item?.stage || ''}:${item?.outcome || ''}`.toLowerCase();
+    if (!/(deferred|failed|error)/.test(status)) continue;
+    const files = [
+      item?.file,
+      item?.target,
+      ...(Array.isArray(item?.candidateFiles) ? item.candidateFiles : []),
+      ...(Array.isArray(item?.changedFiles) ? item.changedFiles : []),
+    ].map(normalizeScopePath).filter(Boolean);
+    if (!files.includes(target)) continue;
+    const summary = summarizePriorError(item?.errorSummary);
+    if (!summary || seen.has(summary)) continue;
+    seen.add(summary);
+    priorErrors.push(summary);
+    if (priorErrors.length >= maxItems) break;
+  }
+  return priorErrors;
 }
 
 function sanitizeSegment(value) {
@@ -1235,6 +1274,7 @@ function writeActiveArtifacts(context, analysis, active) {
 
 async function runAutofixLoop(context, candidate, absolutePath, initialVerify, snapshots) {
   const fileRel = relPath(absolutePath);
+  const priorErrors = deriveFilePriorErrors(context.vaultFeedback, fileRel);
   let verify = initialVerify;
   let lastFix = null;
   const attempts = [];
@@ -1243,6 +1283,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
       stage: 'active_deferred_unfixable',
       verify,
       autofixAttempts: 0,
+      priorErrorCount: priorErrors.length,
       errorSummary: formatErrorSummary({ stage: 'autofix', candidate, error: 'billing_guard_stopped' }),
     };
   }
@@ -1255,6 +1296,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
       currentContent,
       builderError: builderErrorText(verify),
       reviewerFindings: reviewerHighFindings(verify),
+      priorErrors,
       attempt,
     });
     lastFix = fix;
@@ -1280,6 +1322,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         verify,
         autofixAttempts: attempt,
         autofix: attempts,
+        priorErrorCount: priorErrors.length,
         errorSummary: formatErrorSummary({
           stage: 'autofix',
           candidate,
@@ -1305,6 +1348,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         verify,
         autofixAttempts: attempt,
         autofix: attempts,
+        priorErrorCount: priorErrors.length,
         errorSummary: formatErrorSummary({
           stage: 'autofix',
           candidate,
@@ -1321,6 +1365,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         verify,
         autofixAttempts: attempt,
         autofix: attempts,
+        priorErrorCount: priorErrors.length,
         errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
       };
     }
@@ -1330,6 +1375,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         verify,
         autofixAttempts: attempt,
         autofix: attempts,
+        priorErrorCount: priorErrors.length,
         model: fix.model || null,
         provider: fix.provider || null,
       };
@@ -1343,6 +1389,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
     verify,
     autofixAttempts: attempts.length,
     autofix: attempts,
+    priorErrorCount: priorErrors.length,
     errorSummary: formatErrorSummary({
       stage: 'autofix',
       candidate,
@@ -1554,6 +1601,7 @@ async function recordRefactorOutcome(context, result) {
     attempts: verifyResults.reduce((sum, item) => sum + Number(item.autofixAttempts || 0), 0),
     autofixed: verifyResults.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
     unfixable: verifyResults.filter((item) => item.stage === 'active_deferred_unfixable').length,
+    priorErrorCount: verifyResults.reduce((sum, item) => sum + Number(item.priorErrorCount || 0), 0),
     model: autofixModels[0] || null,
     models: autofixModels,
     billingStopped: Boolean(active?.autofixBillingStopped),
@@ -1650,6 +1698,7 @@ function buildCycleContext(options = {}) {
     dryRun: Boolean(options.dryRun),
     noMcp: Boolean(options.noMcp),
     noVaultFeedback: Boolean(options.noVaultFeedback),
+    vaultFeedback: options.vaultFeedback || null,
     noHeartbeat: Boolean(options.noHeartbeat),
     noWriteOutcome: Boolean(options.noWriteOutcome),
     allowDirtyWorktreeForTest: Boolean(options.allowDirtyWorktreeForTest),
@@ -1753,10 +1802,11 @@ async function runRefactorCycle(options = {}) {
     const analysis = await analyzeStep(context);
 
     if (context.mode === 'active') {
-      const vaultFeedback = await fetchRefactorVaultFeedback(context, {
+      const vaultFeedback = context.vaultFeedback || await fetchRefactorVaultFeedback(context, {
         file: context.target.relativePath,
         refactorType: context.refactorType,
       });
+      context.vaultFeedback = vaultFeedback;
       const avoidedFiles = deriveAvoidedFilesFromFeedback(vaultFeedback, context.avoidThreshold);
       const candidates = selectActiveCandidates(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles);
       if (candidates.length === 0) {
@@ -1932,8 +1982,10 @@ if (require.main === module) {
 module.exports = {
   analyzeLocalTechDebt,
   buildCycleContext,
+  buildFixerPrompt,
   buildPlanContent,
   cycleStamp,
+  deriveFilePriorErrors,
   isProtectedTarget,
   normalizeCycleMode,
   parseArgs,
