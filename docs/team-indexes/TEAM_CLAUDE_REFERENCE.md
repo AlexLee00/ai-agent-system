@@ -65,7 +65,8 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksu
   - **autofix 학습기반 보완** `5d6dd937e`: 대상 파일 과거 실패(`deriveFilePriorErrors`, vault FAILURE 회수·dedupe·cap 3)를 fixer 프롬프트에 주입(`priorErrors`) + outcome `autofix.priorErrorCount`. 설계 `CODEX_REFACTORER_AUTOFIX_LEARNING_2026-06-08.md`(아카이브).
   - **autofix newline 보존** `7ffdd7a13`: 원본이 EOF 개행을 가졌는데 fixer가 누락한 경우에만 1회 보정(최소 diff).
   - **strict 게이트 baseline-aware 전환**(커밋): 전체 repo strict(기존 6759~6776건)가 모든 안전한 단일파일 apply를 막던 문제 해소 — 클린트리 서명 캡처 → 신규 에러만 차단. boolean env 파서 버그(`includes(normalized)`) + infra 오탐(tsc 진단의 정상 변수명 오인) 동반 수정. fail-closed 규율이 게이트 버그 3건(baseline-aware→newline→infra)을 모두 안전 defer로 포착.
-  - deploy.sh 안전화 `63d74b09b`(dirty/ahead skip, reset는 클린 ff만). 단위 테스트 53/53(커밋, `npm --prefix bots/claude run -s test:refactor-cycle`).
+  - **strict-autofix** `3134c7f3d`: strict 게이트 실패 시 strict 에러를 seed로 autofix 재시도 → strict 게이트 통과 + targeted/reviewer 통과 시에만 apply, 못하면 복원·defer(나쁜 커밋 구조적 불가, reviewer-high도 차단). env `REFACTORER_STRICT_AUTOFIX_ENABLED` 기본 ON. 메티 독립 검증 PASS.
+  - deploy.sh 안전화 `63d74b09b`(dirty/ahead skip, reset는 클린 ff만). 단위 테스트 57/57(커밋, `npm --prefix bots/claude run -s test:refactor-cycle`).
 - **리팩터러 에이전트 + 하네스 신설** — `fb4a8ef55`, `ea52608f5`: agents/refactorer.md + plugin-eval 3계층 + hook 6계층 + MCP `claude-refactor-mcp`(port 8774 상주) + A2A refactor-analysis + CLAUDE.md/plist.
 - **@ts-nocheck 복구** — `251f05f13`(Phase 3-A, 소형 A2A 7개), `3d06a81ce`(Phase 3-B, A2A 스킬/훅/하네스 22개) + claude-card 스킬 등록.
 - **auto-dev 자가진화 강화** — vault feed `f448de19a`(claude+sigma, auto_dev_outcomes→vault) + self-heal 강화 `c65438534` + main 격리/커밋 경로 `2e61784fc`·`2980a714a`.
@@ -83,7 +84,7 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksu
   - **Phase 3**: 파일별 타입-only 점진 수정(로직 불변, @ts-nocheck 금지, 파일 strict=0 + 테스트 통과, 배치 커밋, 다세션).
   - **Phase 4(선택)**: CI 라쳇으로 strict 에러 단조 감소 강제.
 - **진행**: **Phase 1 완료(커밋 대기)** — `tsconfig.strict.json` 테스트 제외 + `allowImportingTsExtensions` → **6776 → 3971**(−2805; TS2304/2593/5097 전량 소거). **Phase 3 pilot 완료** — `packages/core/lib/news-credentials.ts`(캐시 반환 타입) · `meta-graph-config.ts`(`section: string`) 타입 전용 정리로 각 0건. **메티 독립 검증 PASS**(tsc 재측정 3971, 수정 2파일 0, git diff --check 통과, @ts-nocheck 미추가, 게이트 코드 무변경).
-- **잔여**: product 코드 3971(TS7006 1683, TS2339 1204, TS2345 211, TS7031 153, TS18046 151 등). 리포트 `docs/codex/refactor-plans/STRICT_BASELINE_REMAINING_2026-06-08.md`(gitignored). Phase 3 ratchet 후속 세션 반복(1배치=파일 1개, 타입 전용, 파일 strict=0 + 테스트 통과, 배치 커밋). 커밋 후 리팩터러 다음 사이클 baseline이 ~3971로 자동 재캡처(게이트 경량화).
+- **잔여**: product 코드 **3705**(2026-06-09 재측정; 마스터 수동 ratchet로 3971→3705)(TS7006 1603, TS2339 1084, TS2345 211, TS7031 152, TS18046 151 등). 리포트 `docs/codex/refactor-plans/STRICT_BASELINE_REMAINING_2026-06-08.md`(gitignored). Phase 3 ratchet 후속 세션 반복(1배치=파일 1개, 타입 전용, 파일 strict=0 + 테스트 통과, 배치 커밋). 커밋 후 리팩터러 다음 사이클 baseline이 ~3705로 자동 재캡처(게이트 경량화).
 
 ## 관련 문서
 
