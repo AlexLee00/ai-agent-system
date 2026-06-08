@@ -1,4 +1,50 @@
-function parseEnvNumber(name, fallback, minValue) {
+type AdmissionRequest = {
+  body?: {
+    callerTeam?: string;
+    provider?: string;
+    prompt?: unknown;
+  } & Record<string, unknown>;
+  hubRequestContext?: {
+    callerTeam?: string;
+  } & Record<string, unknown>;
+  method?: string;
+  path?: string;
+  once(event: string, listener: () => void): unknown;
+};
+
+type AdmissionResponse = {
+  locals?: Record<string, unknown>;
+  on(event: string, listener: () => void): unknown;
+  set(name: string, value: string): unknown;
+  status(code: number): AdmissionResponse;
+  json(payload: unknown): unknown;
+};
+
+type NextFunction = () => unknown;
+
+type AdmissionError = Error & {
+  code: string;
+  retryAfterMs: number;
+};
+
+type SharedLease = {
+  ok: boolean;
+  reason?: string;
+  scope?: string;
+  retryAfterMs?: number;
+  release?: () => void;
+};
+
+type Waiter = {
+  id: string;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  queuedAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  completed: boolean;
+};
+
+function parseEnvNumber(name: string, fallback: number, minValue: number): number {
   const raw = process.env[name];
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
@@ -12,16 +58,13 @@ const DEFAULT_RETRY_AFTER_MS = parseEnvNumber('HUB_LLM_RETRY_AFTER_MS', 1000, 20
 const { acquireSharedLimiterLease, getSharedLimiterState } = require('./shared-limiter');
 
 let inFlight = 0;
-const waiters = [];
+const waiters: Waiter[] = [];
 
-function createAdmissionError(code, message, retryAfterMs = DEFAULT_RETRY_AFTER_MS) {
-  const error = new Error(message);
-  error.code = code;
-  error.retryAfterMs = retryAfterMs;
-  return error;
+function createAdmissionError(code: string, message: string, retryAfterMs = DEFAULT_RETRY_AFTER_MS): AdmissionError {
+  return Object.assign(new Error(message), { code, retryAfterMs });
 }
 
-function dequeueById(waiterId) {
+function dequeueById(waiterId: string): Waiter | null {
   const index = waiters.findIndex((entry) => entry.id === waiterId);
   if (index < 0) return null;
   const [entry] = waiters.splice(index, 1);
@@ -39,7 +82,7 @@ function drainQueue() {
   }
 }
 
-async function acquireSlot(req) {
+async function acquireSlot(req: AdmissionRequest): Promise<{ queued: boolean; sharedLease: SharedLease }> {
   if (inFlight < DEFAULT_MAX_IN_FLIGHT) {
     inFlight += 1;
     const sharedLease = await acquireSharedLeaseOrReleaseLocal(req);
@@ -56,8 +99,8 @@ async function acquireSlot(req) {
 
   const waiterId = `wait_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-  await new Promise((resolve, reject) => {
-    const waiter = {
+  await new Promise<void>((resolve, reject) => {
+    const waiter: Waiter = {
       id: waiterId,
       resolve,
       reject,
@@ -90,11 +133,11 @@ async function acquireSlot(req) {
   return { queued: true, sharedLease };
 }
 
-async function acquireSharedLeaseOrReleaseLocal(req) {
+async function acquireSharedLeaseOrReleaseLocal(req: AdmissionRequest): Promise<SharedLease> {
   const sharedLease = await acquireSharedLimiterLease({
     team: req.body?.callerTeam || req.hubRequestContext?.callerTeam || 'unknown',
     provider: req.body?.provider || '',
-  });
+  }) as SharedLease;
   if (!sharedLease.ok) {
     releaseSlot();
     throw createAdmissionError(
@@ -106,7 +149,7 @@ async function acquireSharedLeaseOrReleaseLocal(req) {
   return sharedLease;
 }
 
-function releaseSlot() {
+function releaseSlot(): void {
   if (inFlight > 0) inFlight -= 1;
   drainQueue();
 }
@@ -124,7 +167,21 @@ function getLlmAdmissionState() {
   };
 }
 
-async function llmAdmissionMiddleware(req, res, next) {
+function errorCode(error: unknown, fallback = 'admission_rejected'): string {
+  const code = (error as Partial<AdmissionError> | null)?.code;
+  return typeof code === 'string' && code ? code : fallback;
+}
+
+function errorRetryAfterMs(error: unknown): number {
+  const retryAfterMs = Number((error as Partial<AdmissionError> | null)?.retryAfterMs || DEFAULT_RETRY_AFTER_MS);
+  return Math.max(0, Number.isFinite(retryAfterMs) ? retryAfterMs : DEFAULT_RETRY_AFTER_MS);
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+async function llmAdmissionMiddleware(req: AdmissionRequest, res: AdmissionResponse, next: NextFunction) {
   try {
     const acquired = await acquireSlot(req);
     let released = false;
@@ -143,16 +200,16 @@ async function llmAdmissionMiddleware(req, res, next) {
     res.locals.llmAdmissionQueued = acquired.queued;
     return next();
   } catch (error) {
-    const err = error;
-    if (err.code === 'client_disconnected') {
+    const code = errorCode(error);
+    if (code === 'client_disconnected') {
       return;
     }
-    const retryAfterMs = Math.max(0, Number(err.retryAfterMs || DEFAULT_RETRY_AFTER_MS) || DEFAULT_RETRY_AFTER_MS);
+    const retryAfterMs = errorRetryAfterMs(error);
     if (retryAfterMs > 0) {
       res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
     }
-    const status = err.code === 'queue_full' ? 429 : 503;
-    if (err.code === 'queue_full' && shouldOverflowToJob(req)) {
+    const status = code === 'queue_full' ? 429 : 503;
+    if (code === 'queue_full' && shouldOverflowToJob(req)) {
       try {
         const { createLlmJob } = require('./job-store');
         const job = await createLlmJob(req.body || {}, req.hubRequestContext || {}, { source: 'admission_overflow' });
@@ -164,7 +221,7 @@ async function llmAdmissionMiddleware(req, res, next) {
           status: job.status,
           statusUrl: `/hub/llm/jobs/${job.id}`,
           overflow: {
-            reason: err.code,
+            reason: code,
             retryAfterMs,
           },
         });
@@ -173,7 +230,7 @@ async function llmAdmissionMiddleware(req, res, next) {
           ok: false,
           error: {
             code: 'job_enqueue_failed',
-            message: jobError?.message || 'failed to enqueue LLM job',
+            message: errorMessage(jobError, 'failed to enqueue LLM job'),
           },
           retryAfterMs,
         });
@@ -182,8 +239,8 @@ async function llmAdmissionMiddleware(req, res, next) {
     return res.status(status).json({
       ok: false,
       error: {
-        code: err.code || 'admission_rejected',
-        message: err.message || 'admission rejected',
+        code,
+        message: errorMessage(error, 'admission rejected'),
       },
       retryAfterMs,
       inFlight,
@@ -192,10 +249,10 @@ async function llmAdmissionMiddleware(req, res, next) {
   }
 }
 
-function shouldOverflowToJob(req) {
+function shouldOverflowToJob(req: AdmissionRequest): boolean {
   const enabled = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_OVERFLOW_TO_JOB || '').trim().toLowerCase());
   if (!enabled) return false;
-  return req.method === 'POST' && req.path === '/hub/llm/call' && req.body && typeof req.body.prompt === 'string';
+  return Boolean(req.method === 'POST' && req.path === '/hub/llm/call' && req.body && typeof req.body.prompt === 'string');
 }
 
 module.exports = {
