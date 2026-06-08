@@ -123,3 +123,101 @@
 - ✅ **강력권장 6/6 완료**: B-13(회로차단기)·B-10(전이행렬)·B-12(HMM 정밀화)·B-18(검증 3종)·B-06(단일변수 자기개선)·B-01(ADR).
 - 핵심 교훈: **루나는 이미 풍부**(HMM shadow·DSR/PBO/walk-forward/MC/stress shadow·3층 Reflexion·trade_rationale). 보강 대부분 = **기존 확장 + shadow→활성 승격**, 진짜 신규는 소수(peak-drawdown halt·correlation·경험적 전이행렬·HMM 상태수 자동선택·안정성 필터·RST·단일변수 원장·ADR 메타로그).
 - ⏭️ 다음 = **권장 12**(B-02·03·05·07·08·09·11·15·16·17·19·20, 각 소스 딥분석) → 참고/선택 → **DESIGN/TRACKER v0.3 통합** → Phase 1 CODEX.
+
+---
+## §5. 권장 보강안 (12)
+
+### B-05. 성공/실패 스코어러 [권장]
+**소스**: `shared/luna-self-rewarding-engine.ts` — `calcSelfReward`(스코어러)·`recordSelfReward`(agentsInvolved 귀속)·`buildWeeklyLearningReport`(Du 2023 Self-Rewarding) + `trade-quality-evaluator.ts`·`luna-feedback-loop-orchestrator.ts`. = **거의 구축**.
+**기술/최적화**: PostToolUse 훅(async)으로 매 결정 자동 점수화·로그. **신규=결정의 명시 목표/가설(B-01·B-06) 대비 채점 + 레짐별 분해**. 기존 calcSelfReward 확장.
+
+### B-07. CEO 단일 창구 [권장]
+**소스**: `team/luna.ts orchestrate()`(:703)·getSymbolDecision(:401)·getPortfolioDecision(:498) + Hub 단일 API(:7788). = 단일 진입 거의 존재.
+**기술/최적화**: 회의(meeting-room)도 Hub hub-proxy 단일 창구(결정②) · 마스터 단일 창구(웹 "회의 시작"+다이얼)로 통일. Codex PM-에이전트 패턴=orchestrate. **신규 최소**.
+
+### B-08. 비용 최적화 가드 [권장]
+**소스**: Hub `llm-models.json`·`HUB_LLM_GEMINI_DISABLED`(메모리). 루나 전용 비용 가드 미보유.
+**기술/최적화**: **agent-cost-mcp 패턴**(per-message 지출·예산경보·대시보드) + paperclip 예산 100% 자동정지. local 우선(qwen2.5 MLX) 라우팅. **신규=회의/사이클 예산 가드**(초과 시 advisory→하드 정지는 경계). PostToolUse 비용 로그.
+
+### B-09. 병렬 에이전트 뷰 + needs-input 큐 [권장]
+**소스**: meeting-room(설계 중) + A2A Task 라이프사이클(§1.3).
+**기술/최적화**: **A2A Task 상태(submitted→working→input-required→completed)=에이전트 패널 모델**. input-required=마스터 승인 큐(B-07 연계). 6레인 동시 뷰.
+
+### B-11. 차등 사이징 — P(bull)−P(bear) [권장]
+**소스**: `shared/dynamic-position-sizer.ts:28 computeDynamicPositionSizing`=half-Kelly+momentumBoost+defensiveFloor. **레짐 확률 미사용**.
+**기술/최적화**: **신규=레짐 확률 차등**(detectHMMRegime의 P(bull)−P(bear)→conviction 배수). half-Kelly에 레짐-conviction 결합(B-10/12). **안정성 필터(B-12) 통과 시만**.
+
+### B-15. 컨텍스트 예산 [권장]
+**소스**: 메모리 36GB 통합·local 우선.
+**기술/최적화**: Skills **progressive disclosure**(이름/설명 먼저·본문은 사용 시)=컨텍스트 절약. 회의 안건별 컨텍스트 예산 + RAG 회수 상한. B-08 비용 연계.
+
+### B-16. 검증 보강 — 벤치마크·캘리브레이션 [권장]
+**소스**: B-18의 candidate-backtest-gate·stress-test 보유. 캘리브레이션(Brier/reliability)·벤치마크(buy-hold/random) 미확인.
+**기술/최적화**: B-18 확장 — **벤치마크**(buy-hold·random-entry 대비, RST와 연계) + **확률 캘리브레이션**(Brier·reliability: 레짐/신호 확률 보정) + 스트레스(기보유). 캘리브레이션은 신규 가능.
+
+### B-19. 스마트머니/수급 추적 [권장]
+**소스**: `signal.ts MARKET_FLOW`(장중 수급·이벤트) + discovery `dart` 플래그(`LUNA_DISCOVERY_DART` 기본 OFF). = 부분 배선.
+**기술/최적화**: **DART 확장 활성화** — 5%대량보유·임원·외국인/기관 순매수·행동주의 공시를 Research 신호로(B-14 펀더멘털 정합). dart 경로 ON + 수급 어댑터. 해외확장 13F.
+
+### B-20. 트레일링 스톱(래칫) + 래더 [권장]
+**소스**: `luna-exit-policy.ts`·`partial-exit-policy.ts`·`protective-exit.ts`·`optimal-exit-analysis.ts` 보유 — **트레일링 래칫·래더 미보유(genuine 신규)**.
+**기술/최적화**: **신규=트레일링 스톱(플로어 상승만)** + **래더 엔트리(하락 시 분할)**. 기존 protective/partial-exit에 추가. 회로차단기(B-13)·재진입 결합.
+
+### B-02. CONTEXT.md 글로사리 [권장]
+**소스**: CLAUDE.md·team-jay-strategy.md 보유. 루나 전용 용어집 분산.
+**기술/최적화**: **Skill(SKILL.md)로 글로사리**(루나 용어·레짐·에이전트·계약). agentskills.io 포터블(Claude↔Codex). progressive disclosure로 컨텍스트 절약(B-15).
+
+### B-03. grill 자기심문 [권장]
+**소스**: reflexion(자기평가) 보유. grill(설계 심문) 미형식.
+**기술/최적화**: mattpocock grill 패턴=**설계/전략 자기심문**(ADR 전 가정 검증). Skill로 grill 체크리스트. 회의 안건 FSM에 grill 단계.
+
+### B-17. self-evolving 스킬 [권장]
+**소스**: 3층 Reflexion + reflexion-engine(B-06). Hermes 자기진화 패턴(외부).
+**기술/최적화**: 루나 절차를 **self-evolving SKILL.md**로 — reflexion 결과가 skill 갱신(B-06 단일변수 원장 경유). curated memory(pgvector). 하니스 교체 X, 패턴만.
+
+---
+## 진행 상태 (2026-06-08 세션 3)
+- ✅ **권장 12/12 완료**(B-05·07·08·09·11·15·16·19·20·02·03·17). 강력권장 6 + 권장 12 = **18/20 보강안 작성 완료**.
+- 패턴 재확인: B-05(self-rewarding)·B-07(orchestrate)·B-11(sizer)·B-19(MARKET_FLOW/dart) = 기존 확장 · B-20(트레일링/래더)·B-08(비용가드)·B-02/03/17(skill)·B-16(캘리브레이션) = 신규/부분.
+- ⏭️ 다음 = **참고/선택 4**(B-04 좋은에이전트 4기준·B-14 펀더멘털/스윙 원칙·전략 템플릿·도구 패턴) 간단 정리 → **DESIGN/TRACKER v0.3 통합**(20개 + WS-I 등 신규 WS) → Phase 1 CODEX 프롬프트.
+
+---
+## §6. 참고/선택 (4)
+
+### B-04. 좋은 에이전트 4기준 [프레임워크]
+정확 데이터·24/7·명확 목표·자기개선 → 루나 설계 **점검 프레임**(대부분 충족: 데이터 어댑터, launchd 무중단, 목표=수익, reflexion 자기개선). 회의/리뷰 체크리스트로 사용.
+
+### B-14. 펀더멘털/스윙 원칙 [상위 원칙]
+루나=모델 강점(펀더멘털·스윙), **스캘핑/초단타 회피**(배치3 비채택 근거). 전략 선택 가드레일 — B-19(수급)·B-11(사이징)·B-10/12(레짐 스윙)과 정합. **전 보강안의 상위 원칙**.
+
+### 전략 템플릿 [선택]
+추세추종: Donchian 돌파 + EMA 추세필터 + ATR 스톱(×2) + 리스크% 사이징. 스윙 호환. **Skill로 패키징**(B-02/17). Jesse=참고 백테스트.
+
+### 도구 패턴 [선택]
+TradingView **데이터형 MCP만** 보조(제어형/ToS 비채택) · paperclip **거버넌스/롤백**(atomic checkout·예산정지·시크릿 스크러빙) 패턴 차용 · Codex-as-MCP(코덱스를 도구로).
+
+---
+## 진행 상태 (2026-06-08 세션 3 — 보강안 작성 종료)
+- ✅ **전 20개 보강안 작성 완료**: 강력권장 6 + 권장 12 + 참고/선택 4(+전략템플릿·도구패턴).
+- 산출물: `docs/design/LUNA_BOOST_DESIGN.md` — §1 기술서베이 5축 · §2 프레임 · §3 우선순위 · §4 강력권장 · §5 권장 · §6 참고/선택.
+- ⏭️ **다음 세션 = v0.3 통합**: 20개 보강안 → DESIGN/TRACKER v0.3 반영(가드 철학 "경계"에 peak-drawdown halt, Validation 레인=기존 DSR/PBO/MC/stress 활성화, 신규 WS-I 리스크 훅 등) → 커밋 → **Phase 1 CODEX 프롬프트**(`docs/codex/CODEX_LUNA_MEETING_ROOM_PHASE1.md`).
+- v0.3 통합 시 신규 WS 후보: WS-I(리스크 훅: peak-drawdown halt·correlation·PreToolUse) · 레짐(경험적 전이행렬·HMM 정밀화·안정성) · 검증(RST·활성화) · 자기개선(단일변수 원장) · ADR(메타 로그) · skill(글로사리·grill·self-evolving) · 수급(DART 확장) · 출구(트레일링/래더).
+
+---
+## ⏭️ 다음 세션 작업 지시 — 코드 vs 보강안 비교 + 적용안 정밀 검토 (마스터 2026-06-08)
+목표: v0.3 통합 **전에**, B-01~B-20 각각을 **기존 코드(프로세스) ↔ 보강안 정밀 대조** → **구현 가능한 적용안 확정**.
+
+### 각 항목 산출 (정밀 검토 양식)
+1. **기존 코드 실측 상세**: 정확한 파일·함수·시그니처·현재 동작·설정 키·shadow 여부. (예: B-13 `checkCircuitBreaker` 분기, B-18 `candidate-backtest-gate` 컬럼/게이트 ON·OFF.)
+2. **보강안 Δ(차이)**: 이미 있는 것 / 비활성(shadow·flag OFF) / 진짜 신규 — 3분류.
+3. **적용안 정밀**: 어느 파일·함수를 **정확히 어떻게** 변경/추가(인터페이스·계약), advisory vs 경계, 부품 재사용 지점, **무중단**(PROTECTED/LIVE), 마이그레이션·환경변수·테스트(node --check/스모크/OPS).
+4. **리스크/순서**: 의존성·선후관계·롤백.
+
+### 우선순위(검토)
+- 강력권장 6(B-01·06·10·12·13·18) 먼저 정밀 검토 → 권장 → 참고/선택.
+- 특히 **shadow→활성 승격 경로**(B-18 DSR/PBO/MC/stress, B-12 HMM shadow, B-10 전이행렬) — 활성화 조건·게이트·마스터 승인점 명시.
+
+### 산출물
+- `docs/design/LUNA_BOOST_APPLY_REVIEW.md`(신규, 적용 검토) 또는 BOOST §7로 추가.
+- 정밀 검토 완료 → **DESIGN/TRACKER v0.3 통합** → Phase 1 CODEX 프롬프트.
+- 검토 시 실제 소스 재확인 필수(BOOST의 실측은 요약 — 적용 전 해당 파일 전체 재독).
