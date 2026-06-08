@@ -4,7 +4,7 @@
 const { postComment } = require('../lib/commenter.ts');
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+  const get = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
   return {
     url: get('url') || 'https://blog.naver.com/cafe_library/224195637522',
     text: get('text') || '일반 댓글 자동화 등록 테스트입니다. 답글이 아니라 신규 댓글 등록 경로를 확인하고 있어요.',
