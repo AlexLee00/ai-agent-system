@@ -28,13 +28,13 @@ async function ensureMarketingOsSchema() {
     await pgPool.run('blog', 'CREATE SCHEMA IF NOT EXISTS blog');
     await pgPool.query('blog', sql);
     schemaEnsured = true;
-  } catch (error) {
+  } catch (error: unknown) {
     // queue path 자체를 죽이지 않고 상위에서 fallback 판단 가능하게 전달.
-    throw new Error(`marketing_os_schema_bootstrap_failed: ${String(error?.message || error)}`);
+    const errorWithMessage = error as { message?: unknown };
+    throw new Error(`marketing_os_schema_bootstrap_failed: ${String(errorWithMessage?.message || error)}`);
   }
 }
 
 module.exports = {
   ensureMarketingOsSchema,
 };
-
