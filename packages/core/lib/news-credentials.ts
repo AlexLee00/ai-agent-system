@@ -40,11 +40,12 @@ function loadLocalSecretsNewsConfig(): NewsConfig {
   if (localSecretsNewsConfigCache) return localSecretsNewsConfigCache;
   try {
     const store = JSON.parse(fs.readFileSync(SECRETS_STORE_PATH, 'utf8')) || {};
-    localSecretsNewsConfigCache = store.news || {};
+    const newsConfig: NewsConfig = store.news || {};
+    localSecretsNewsConfigCache = newsConfig;
   } catch {
     localSecretsNewsConfigCache = {};
   }
-  return localSecretsNewsConfigCache;
+  return localSecretsNewsConfigCache ?? {};
 }
 
 async function fetchHubNewsConfig(timeoutMs = 3000): Promise<NewsConfig | null> {

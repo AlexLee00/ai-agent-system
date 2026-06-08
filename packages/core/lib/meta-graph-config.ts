@@ -19,7 +19,7 @@ const {
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
-function readStoreSection(section) {
+function readStoreSection(section: string) {
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
     return store?.[section] || {};

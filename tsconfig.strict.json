@@ -4,7 +4,8 @@
     "allowJs": false,
     "checkJs": false,
     "strict": true,
-    "noImplicitAny": true
+    "noImplicitAny": true,
+    "allowImportingTsExtensions": true
   },
   "files": [],
   "include": [
@@ -16,6 +17,9 @@
     "bots/orchestrator/**/*.ts"
   ],
   "exclude": [
-    "**/node_modules/**"
+    "**/node_modules/**",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
   ]
 }
