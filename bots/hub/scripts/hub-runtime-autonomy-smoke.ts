@@ -106,20 +106,72 @@ async function main() {
     assert.equal(topicResp.status, 200);
     assert.equal(topicBody.ok, true);
     assert.equal(topicBody.saved_count, 1);
+
+    const duplicateTopicResp = await fetch(`${baseUrl}/hub/blog/topic-candidates`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        target_date: targetDate,
+        candidates: [{
+          category: '최신IT트렌드',
+          title: smokeTitle,
+          question: '중복 저장 smoke',
+          diff: 'ON CONFLICT DO NOTHING rowCount 검증',
+          keywords: ['hub', 'duplicate'],
+          score: 0.8,
+        }],
+      }),
+    });
+    const duplicateTopicBody = await duplicateTopicResp.json();
+    assert.equal(duplicateTopicResp.status, 200);
+    assert.equal(duplicateTopicBody.ok, true);
+    assert.equal(duplicateTopicBody.saved_count, 0, 'duplicate candidate should not be counted as saved');
+
+    const concurrentTitle = `${smokeTitle}-concurrent`;
+    const concurrentBody = JSON.stringify({
+      target_date: targetDate,
+      candidates: [{
+        category: '최신IT트렌드',
+        title: concurrentTitle,
+        question: '동시 저장 smoke',
+        diff: 'advisory lock 중복 방지 검증',
+        keywords: ['hub', 'concurrency'],
+        score: 0.8,
+      }],
+    });
+    const concurrentRequests = [0, 1].map(() => fetch(`${baseUrl}/hub/blog/topic-candidates`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: concurrentBody,
+    }));
+    const concurrentResponses = await Promise.all(concurrentRequests);
+    const concurrentBodies = await Promise.all(concurrentResponses.map((response) => response.json()));
+    assert.deepEqual(concurrentResponses.map((response) => response.status), [200, 200]);
+    assert.equal(
+      concurrentBodies.reduce((sum, body) => sum + Number(body.saved_count || 0), 0),
+      1,
+      'concurrent duplicate candidates should insert exactly once',
+    );
   });
 
   try {
     const rows = await pgPool.query('blog', `
       SELECT COUNT(*)::int AS count
       FROM blog.topic_candidates
-      WHERE target_date = $1::date AND title = $2
-    `, [targetDate, smokeTitle]);
-    assert.equal(Number(rows[0]?.count || 0), 1);
+      WHERE target_date = $1::date AND title LIKE $2
+    `, [targetDate, `${smokeTitle}%`]);
+    assert.equal(Number(rows[0]?.count || 0), 2);
   } finally {
     await pgPool.run('blog', `
       DELETE FROM blog.topic_candidates
-      WHERE target_date = $1::date AND title = $2
-    `, [targetDate, smokeTitle]).catch(() => null);
+      WHERE target_date = $1::date AND title LIKE $2
+    `, [targetDate, `${smokeTitle}%`]).catch(() => null);
   }
 
   await new Promise((resolve) => setTimeout(resolve, 250));

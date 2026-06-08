@@ -45,7 +45,7 @@ function parsePositiveIntEnv(name: string, fallback: number): number {
 }
 
 const PG_POOL_WARN_MIN_TOTAL = parsePositiveIntEnv('PG_POOL_WARN_MIN_TOTAL', Math.max(3, PG_CONFIG.max));
-const PG_POOL_WARN_WAITING_LIMIT = Math.max(0, parsePositiveIntEnv('PG_POOL_WARN_WAITING_LIMIT', 1) - 1);
+const PG_POOL_WARN_WAITING_LIMIT = parsePositiveIntEnv('PG_POOL_WARN_WAITING_LIMIT', 1);
 
 const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'blog', 'agent', 'sigma', 'rag', 'public', 'legal']);
 const pools = new Map<string, PgPoolLike>();
@@ -326,7 +326,7 @@ export function checkPoolHealth(threshold = 0.8): { stats: PoolStats[]; issues: 
   for (const stat of stats) {
     const activeThreshold = Math.max(1, Math.ceil(maxPool * threshold));
     const saturated = stat.active >= activeThreshold && stat.total >= PG_POOL_WARN_MIN_TOTAL;
-    const queued = stat.waiting > PG_POOL_WARN_WAITING_LIMIT;
+    const queued = stat.waiting >= PG_POOL_WARN_WAITING_LIMIT;
     if (saturated) {
       issues.push({
         schema: stat.schema,
@@ -359,7 +359,7 @@ const monitorTimer = setInterval(() => {
       const active = total - pool.idleCount;
       const highUtilization = active / total > 0.8;
       const shouldWarn = (highUtilization && total >= PG_POOL_WARN_MIN_TOTAL)
-        || pool.waitingCount > PG_POOL_WARN_WAITING_LIMIT;
+        || pool.waitingCount >= PG_POOL_WARN_WAITING_LIMIT;
       if (shouldWarn) {
         console.warn(`[pg-pool:${schema}] ⚠️ 커넥션 풀 80%+ 사용: ${active}/${total} (대기: ${pool.waitingCount})`);
       }
