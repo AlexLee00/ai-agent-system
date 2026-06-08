@@ -1,6 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+
 PROJECT_ROOT="${PROJECT_ROOT:-/Users/alexlee/projects/ai-agent-system}"
 REFACTORER_LOCK_FILE="${PROJECT_ROOT}/.refactorer-active.lock"
 REFACTORER_LOCK_MAX_AGE_SECONDS="${REFACTORER_LOCK_MAX_AGE_SECONDS:-600}"
@@ -18,13 +20,29 @@ if [ -f "$REFACTORER_LOCK_FILE" ]; then
 fi
 
 echo "=== OPS deploy sync ==="
-git fetch origin main
-echo "HEAD(before): $(git rev-parse --short HEAD)"
-echo "FETCH_HEAD:    $(git rev-parse --short FETCH_HEAD)"
 if [ -n "$(git status --porcelain)" ]; then
-  echo "⚠️ 운영 워킹트리에 로컬 변경이 있습니다. 최신 main 기준으로 덮어씁니다."
+  echo "local worktree is dirty; deploy sync skipped to avoid clobbering changes"
   git status --short
+  exit 0
 fi
+
+git fetch origin main
+LOCAL_HEAD="$(git rev-parse HEAD)"
+REMOTE_HEAD="$(git rev-parse FETCH_HEAD)"
+echo "HEAD(before): ${LOCAL_HEAD:0:9}"
+echo "FETCH_HEAD:    ${REMOTE_HEAD:0:9}"
+
+if [ "$LOCAL_HEAD" = "$REMOTE_HEAD" ]; then
+  echo "Already up to date."
+  exit 0
+fi
+
+if ! git merge-base --is-ancestor "$LOCAL_HEAD" "$REMOTE_HEAD"; then
+  echo "local HEAD is not an ancestor of origin/main; deploy sync skipped to preserve local commits"
+  git log --oneline --decorate -5
+  exit 0
+fi
+
 git reset --hard FETCH_HEAD
 echo "HEAD(after):  $(git rev-parse --short HEAD)"
 
