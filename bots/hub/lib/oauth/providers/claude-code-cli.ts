@@ -24,11 +24,11 @@ function detectClaudeCli() {
       version: String(version.stdout || '').trim() || null,
       error: version.status === 0 ? null : (String(version.stderr || '').trim() || `exit_${version.status}`),
     };
-  } catch (error) {
+  } catch (error: unknown) {
     return {
       available: false,
       version: null,
-      error: error?.message || String(error),
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
