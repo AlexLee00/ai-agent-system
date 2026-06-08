@@ -12,24 +12,73 @@ const POISONING_PATTERNS = [
   /disable\s+(security|guard|audit|logging)/i,
 ];
 
-function text(value, fallback = '') {
+type ToolServerDefinition = {
+  name?: string;
+  description?: unknown;
+  schema?: unknown;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  instructions?: unknown;
+  ownerTeam?: string;
+  team?: string;
+  sideEffect?: string;
+  defaultRisk?: string;
+  requiredTopicLevel?: string;
+  executeEnabled?: boolean;
+  commandPath?: string;
+  path?: string;
+  allowedEnv?: unknown[];
+  allowedCwd?: string;
+  cwd?: string;
+  tools?: unknown[];
+  attestationId?: string;
+  [key: string]: unknown;
+};
+type ExpectedAttestation = {
+  attestationId?: string;
+};
+type ToolServerManifest = {
+  name: string;
+  ownerTeam: string;
+  sideEffect: string;
+  defaultRisk: string;
+  requiredTopicLevel: string;
+  executeEnabled: boolean;
+  commandPath: string;
+  allowedEnv: string[];
+  allowedCwd: string;
+  tools: string[];
+  schemaHash: string;
+  outputSchemaHash: string;
+  descriptionHash: string;
+  instructionsHash: string;
+};
+type ToolServerAttestation = {
+  ok: true;
+  attestationId: string;
+  manifest: ToolServerManifest;
+  scriptHash: string | null;
+};
+
+function text(value: unknown, fallback = ''): string {
   const normalized = String(value == null ? fallback : value).trim();
   return normalized || fallback;
 }
 
-function stableJson(value) {
+function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
   }
   return JSON.stringify(value);
 }
 
-function sha256(value) {
+function sha256(value: unknown): string {
   return crypto.createHash('sha256').update(String(value)).digest('hex');
 }
 
-function fileHash(filePath) {
+function fileHash(filePath: unknown): string | null {
   const normalized = text(filePath);
   if (!normalized) return null;
   const resolved = path.resolve(normalized);
@@ -39,7 +88,7 @@ function fileHash(filePath) {
   return sha256(fs.readFileSync(resolved));
 }
 
-function detectPoisoning(tool = {}) {
+function detectPoisoning(tool: ToolServerDefinition = {}): string | null {
   const haystack = [
     tool.name,
     tool.description,
@@ -52,8 +101,8 @@ function detectPoisoning(tool = {}) {
   return pattern ? pattern.source : null;
 }
 
-function buildToolServerAttestation(tool = {}) {
-  const manifest = {
+function buildToolServerAttestation(tool: ToolServerDefinition = {}): ToolServerAttestation {
+  const manifest: ToolServerManifest = {
     name: text(tool.name, 'unknown_tool'),
     ownerTeam: text(tool.ownerTeam || tool.team, 'hub'),
     sideEffect: text(tool.sideEffect, 'none'),
@@ -61,9 +110,9 @@ function buildToolServerAttestation(tool = {}) {
     requiredTopicLevel: text(tool.requiredTopicLevel, 'L0'),
     executeEnabled: tool.executeEnabled !== false,
     commandPath: text(tool.commandPath || tool.path, ''),
-    allowedEnv: Array.isArray(tool.allowedEnv) ? tool.allowedEnv.map((item) => text(item)).filter(Boolean).sort() : [],
+    allowedEnv: Array.isArray(tool.allowedEnv) ? tool.allowedEnv.map((item: unknown) => text(item)).filter(Boolean).sort() : [],
     allowedCwd: text(tool.allowedCwd || tool.cwd, ''),
-    tools: Array.isArray(tool.tools) ? tool.tools.map((item) => text(item)).filter(Boolean).sort() : [],
+    tools: Array.isArray(tool.tools) ? tool.tools.map((item: unknown) => text(item)).filter(Boolean).sort() : [],
     schemaHash: sha256(stableJson(tool.schema || tool.inputSchema || {})),
     outputSchemaHash: sha256(stableJson(tool.outputSchema || {})),
     descriptionHash: sha256(text(tool.description, '')),
@@ -79,7 +128,7 @@ function buildToolServerAttestation(tool = {}) {
   };
 }
 
-function validateToolServerAdmission(tool = {}, expected = {}) {
+function validateToolServerAdmission(tool: ToolServerDefinition = {}, expected: ExpectedAttestation = {}) {
   const poisoningPattern = detectPoisoning(tool);
   if (poisoningPattern) {
     return {
