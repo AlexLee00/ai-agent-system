@@ -163,3 +163,75 @@
 - ✅ 강력권장 6/6 + 권장 B-20(정정: 트레일링 기구현, 래더만 신규).
 - **누적 정정**: B-13 halt=kill-switch 확장 · B-18 대부분 shadow 기구현 · B-10/12 HMM shadow · B-20 트레일링 기구현. → **보강안 다수가 "신규"가 아니라 "활성화/확장"**임이 정밀 검토로 거듭 확인.
 - ⏭️ 다음 = 권장 잔여 11(B-02·03·05·07·08·09·11·15·16·17·19) 정밀 검토 → 참고 → v0.3 통합.
+
+### B-05. 성공/실패 스코어러
+**기존**: `shared/luna-self-rewarding-engine.ts` calcSelfReward(SelfRewardInput)·recordSelfReward(agentsInvolved)·WeeklyLearningReport. **posttrade-auto-trigger**(SELL→품질평가→posttrade-skill-extractor 자동). = 스코어러 **구축+자동**.
+**Δ**: 기존=스코어러·자동 트리거·agent 귀속·주간학습 / 신규=결정 목표·가설(B-01/06) 대비 채점 + 레짐별 분해.
+**적용**: calcSelfReward 입력에 decision_goal/hypothesis_ref 추가 → posttrade 평가가 목표 대비 측정 + 레짐 태그. advisory. 무중단(기존 파이프 확장). 테스트=목표대비 채점·레짐 분해.
+**순서/의존**: B-01·B-06 후. 롤백=필드 무시.
+
+### B-11. 차등 사이징 P(bull)−P(bear)
+**기존**: `shared/dynamic-position-sizer.ts computeDynamicPositionSizing` 입력=pnlPct·currentWeightPct·targetVolatility·realizedVolatility·rewardRisk·winRate → half-Kelly+vol-targeting+momentum+defensiveFloor. **레짐 확률 입력 없음**.
+**Δ**: 기존=Kelly+vol-targeting 사이징 / 신규=레짐 확률 conviction 입력.
+**적용**: 입력에 `regimeProbDelta`(=P(bull)−P(bear), detectHMMRegime) 추가 → targetWeight conviction 배수. **B-12 안정성 필터 통과 시만**. advisory. 무중단(옵셔널, 기본 0=무영향). 테스트=conviction 스케일·안정성 게이트.
+**순서/의존**: B-10/B-12 후. 롤백=regimeProbDelta=0.
+
+### B-16. 검증 보강 — 캘리브레이션·벤치마크
+**기존**: B-18 게이트(DSR/PBO/MC/stress) 보유. **캘리브레이션(Brier/reliability) 확인 결과 부재**.
+**Δ**: 기존=검증 게이트 / 신규=확률 캘리브레이션(Brier·reliability: 레짐/신호 확률)·벤치마크(buy-hold/random, RST 연계).
+**적용**: 신규 calibration 모듈(Brier·reliability bins) — 레짐/신호 확률 보정 측정 → shadow 컬럼. 벤치마크=buy-hold/random(B-18 RST 공유). advisory. 무중단(shadow). 테스트=Brier·reliability.
+**순서/의존**: B-18 후(검증 인프라 공유). 롤백=shadow만.
+
+### B-19. 스마트머니/수급 추적
+**기존(중요)**: OpenDART **광범위 기구현** — `python/korea-data/opendart_client.py`·`team/discovery/domestic/dart-disclosure-collector.ts`·A2A `disclosure-event-driven.ts`·migration `corp_disclosures.sql`·financial-batch/disclosure-refresh 스크립트. korea-data-promotion-gate가 `openDartConfigured`(API키) 체크. `signal.ts MARKET_FLOW`(장중 수급)·discovery `LUNA_DISCOVERY_DART`(기본 OFF).
+**Δ**: 기존=공시/재무 수집·disclosure-event A2A·DART 클라이언트 / 비활성=OpenDART 키 미설정·LUNA_DISCOVERY_DART OFF / 신규=외국인·기관 순매수 흐름(KRX 수급, 공시와 별개일 수)·5%/내부자/행동주의 신호 정제.
+**적용**: ① **활성화**=OpenDART 키(secrets-doctor)+LUNA_DISCOVERY_DART ON. ② disclosure-event-driven → 5%대량보유·임원·행동주의를 Research 신호로. ③ **외국인/기관 순매수(KRX 수급)** 어댑터 — 미보유 시 신규. advisory(Research). 무중단(shadow→활성). 테스트=공시 신호·수급 어댑터.
+**순서/의존**: OpenDART 키 선결. 롤백=flag OFF.
+
+### B-17. self-evolving 스킬 — [정정] 기반 구축
+**기존(중요)**: `shared/posttrade-skill-extractor.ts`(성공 거래→스킬 추출) + **`bots/investment/skills/luna/*.skill.md`**(posttrade-feedback·weekly-review·entry-trigger·**shadow-auto-promote**·l5-readiness…) + 3층 Reflexion. = **self-evolving 기반 구축**.
+**Δ**: 기존=스킬 추출·SKILL.md 패턴·shadow-auto-promote / 신규=reflexion 결과가 스킬 **UPDATE**(추출뿐 아니라 갱신) + B-06 단일변수 원장 경유.
+**적용**: posttrade-skill-extractor + reflexion-engine 연결 → 검증된 개선이 SKILL.md 갱신(B-06 원장 + **B-18 검증 통과분만**). curated memory(pgvector). 하니스 교체 X. advisory(스킬=절차). 무중단(확장).
+**순서/의존**: B-06·B-18 후. 롤백=갱신 중단.
+
+### B-02. CONTEXT.md 글로사리
+**기존**: `skills/luna/` SKILL.md 패턴 확립(다수). 글로사리 skill 없음.
+**Δ**: 신규=글로사리 skill(용어·레짐·에이전트·계약).
+**적용**: skills/luna/에 glossary.skill.md 신규(기존 패턴 재사용). agentskills.io 포터블. progressive disclosure(B-15). 무중단(추가).
+**순서/의존**: 독립. 롤백=파일 제거.
+
+### B-03. grill 자기심문
+**기존**: reflexion(자기평가)·skills/luna 패턴. grill skill 없음.
+**Δ**: 신규=grill skill(설계/전략 가정 심문, ADR 전).
+**적용**: skills/luna/에 grill.skill.md(체크리스트) + 회의 FSM grill 단계. 무중단(추가).
+**순서/의존**: B-01 연계. 롤백=단계 제거.
+
+### B-07. CEO 단일 창구
+**기존**: `team/luna.ts orchestrate()`(:703) + Hub 단일 API + A2A `multi-agent-coordination`. = 단일 진입 거의 존재.
+**Δ**: 기존=orchestrate·Hub·coordination / 신규 최소=회의 단일 창구(웹 "회의 시작"+다이얼) 통일.
+**적용**: meeting-room을 Hub hub-proxy 단일 경유(결정②). orchestrate 재사용. 무중단.
+**순서/의존**: B-09와 함께. 롤백=기존 경로.
+
+### B-08. 비용 최적화 가드
+**기존**: `trade-quality-evaluator.ts ensureDailyEvaluationBudget`(`llm_daily_budget_usd?5`→`llm_daily_budget_exceeded`) = **일일 LLM 예산 가드 부분 존재**. Hub llm-models.json·HUB_LLM_GEMINI_DISABLED.
+**Δ**: 기존=일일 LLM 예산 가드(품질평가) / 신규=회의/사이클 전체 예산 가드 + agent-cost-mcp 대시보드.
+**적용**: ensureDailyEvaluationBudget 패턴을 회의/사이클로 확장 + per-message 비용 로그(PostToolUse). 초과=advisory 경고(하드 정지=경계). local 우선 라우팅. 무중단(확장).
+**순서/의존**: 독립. 롤백=예산 무제한.
+
+### B-09. 병렬 에이전트 뷰 + needs-input 큐
+**기존**: A2A `multi-agent-coordination`·`multi-agent-trade-decision`·`cross-agent-validation`(조정 백엔드 존재). meeting-room UI 설계 중.
+**Δ**: 기존=멀티에이전트 조정 백엔드 / 신규=meeting-room UI 뷰(A2A Task 상태)+needs-input 큐.
+**적용**: A2A Task 상태(submitted→working→input-required→completed)=패널 모델 · input-required=마스터 승인 큐(B-07). 기존 coordination skill 재사용. 무중단(UI 신규).
+**순서/의존**: meeting-room WS. 롤백=뷰 비활성.
+
+### B-15. 컨텍스트 예산
+**기존**: skills progressive disclosure·local 우선. 컨텍스트 예산 정책 명시 없음.
+**Δ**: 신규=회의 안건별 컨텍스트 예산 + RAG 회수 상한.
+**적용**: progressive disclosure(이름/설명 먼저)·안건별 토큰 예산·RAG top-k 상한. B-08 연계. 무중단(정책).
+**순서/의존**: B-08 연계. 롤백=상한 해제.
+
+---
+## 진행 상태 (2026-06-08 세션 6 — 권장 정밀 검토 종료)
+- ✅ **권장 11/11 완료**(B-05·11·16·19·17·02·03·07·08·09·15). 강력권장 6 + 권장 11 + B-20 = **18개 정밀 검토 완료**(참고/선택 4 제외).
+- **거듭 확인된 정정**: B-17(skill-extractor+skills/luna 기구현)·B-08(예산가드 부분존재)·B-09(coordination 백엔드존재)·B-19(OpenDART 기구현)·B-05(scorer 자동) — 보강안 다수가 **활성화/확장/스킬추가**, 진짜 신규는 소수(글로사리·grill·캘리브레이션·conviction 입력·단일변수 원장·ADR·HWM·RST·PBO 게이트·경험 전이행렬·HMM 정밀화·correlation·래더·외국인수급).
+- ⏭️ 다음 = (선택)참고 4 간단 + **DESIGN/TRACKER v0.3 통합**(가드 "경계"=peak-drawdown halt, Validation 레인=env 활성화 경로, 신규 WS, advisory vs 경계 표) → Phase 1 CODEX 프롬프트.
