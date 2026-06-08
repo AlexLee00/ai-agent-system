@@ -12,6 +12,7 @@ const { createRuntimeConfigLoader } = require('../../../packages/core/lib/runtim
       health: Record<string, unknown>;
       jayModels: Record<string, unknown>;
       llmSelectorOverrides?: Record<string, unknown>;
+      jayOrchestration?: Record<string, unknown>;
     };
   };
 };
