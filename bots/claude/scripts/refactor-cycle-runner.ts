@@ -132,6 +132,10 @@ function autofixEnabled(value = process.env.REFACTORER_AUTOFIX_ENABLED) {
   return booleanEnvEnabled(value);
 }
 
+function strictAutofixEnabled(value = process.env.REFACTORER_STRICT_AUTOFIX_ENABLED) {
+  return booleanEnvEnabledByDefault(value, true);
+}
+
 function autofixMaxAttempts(value = process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS) {
   return parsePositiveInt(value, 1, 2);
 }
@@ -1156,6 +1160,13 @@ function builderSkipReason(builderResult) {
   return null;
 }
 
+function mergeAutofixAttempts(existing, next) {
+  return [
+    ...(Array.isArray(existing) ? existing : []),
+    ...(Array.isArray(next) ? next : []),
+  ];
+}
+
 const READY_STAGES = new Set([
   'active_verified_ready_for_commit',
   'active_autofixed_ready_for_commit',
@@ -1315,6 +1326,7 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- unfixable: ${unfixable.length}`,
     `- autofix_enabled: ${context.autofixEnabled === true}`,
     `- autofix_attempts_total: ${active.totalFixAttempts || 0}`,
+    `- strict_autofixed_ready_for_commit: ${active.strictAutofixedCount || 0}`,
     `- deferred: ${deferred.length}`,
     `- changed_files: ${changedFiles.length ? changedFiles.join(', ') : 'none'}`,
     `- applied: ${active.applied === true}`,
@@ -1378,11 +1390,13 @@ function writeActiveArtifacts(context, analysis, active) {
   };
 }
 
-async function runAutofixLoop(context, candidate, absolutePath, initialVerify, snapshots) {
+async function runAutofixLoop(context, candidate, absolutePath, initialVerify, snapshots, options = {}) {
   const fileRel = relPath(absolutePath);
+  const reverifyMode = options.reverify === 'strict' ? 'strict' : 'targeted';
   const priorErrors = deriveFilePriorErrors(context.vaultFeedback, fileRel);
   let verify = initialVerify;
   let lastFix = null;
+  let lastStrict = null;
   const attempts = [];
   if (context.autofixBillingStopped) {
     return {
@@ -1471,17 +1485,80 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
       };
     }
 
-    try {
-      verify = await verifyChangedFiles(context, [fileRel]);
-    } catch (error) {
-      return {
-        stage: 'active_deferred_unfixable',
-        verify,
-        autofixAttempts: attempt,
-        autofix: attempts,
-        priorErrorCount: priorErrors.length,
-        errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
-      };
+    if (reverifyMode === 'strict') {
+      try {
+        lastStrict = await context.strictCheckFn({ file: fileRel, context });
+      } catch (error) {
+        return {
+          stage: 'active_deferred_unfixable',
+          verify,
+          strict: lastStrict || { pass: false, error: String(error?.message || error) },
+          autofixAttempts: attempt,
+          autofix: attempts,
+          priorErrorCount: priorErrors.length,
+          errorSummary: formatErrorSummary({ stage: 'autofix_strict_verify', candidate, error }),
+        };
+      }
+      if (lastStrict && lastStrict.pass === true) {
+        try {
+          verify = await verifyChangedFiles(context, [fileRel]);
+        } catch (error) {
+          return {
+            stage: 'active_deferred_unfixable',
+            verify,
+            strict: lastStrict,
+            autofixAttempts: attempt,
+            autofix: attempts,
+            priorErrorCount: priorErrors.length,
+            errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
+          };
+        }
+        if (verify.ok) {
+          return {
+            stage: 'active_autofixed_ready_for_commit',
+            verify,
+            strict: lastStrict,
+            autofixAttempts: attempt,
+            autofix: attempts,
+            priorErrorCount: priorErrors.length,
+            model: fix.model || null,
+            provider: fix.provider || null,
+          };
+        }
+      } else {
+        verify = {
+          ok: false,
+          builder: {
+            pass: false,
+            skipped: false,
+            error: String(lastStrict?.error || lastStrict?.message || 'strict_new_errors'),
+            results: [{
+              pass: false,
+              skipped: false,
+              error: String(lastStrict?.error || lastStrict?.message || 'strict_new_errors'),
+            }],
+          },
+          reviewer: { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [] },
+          builderPass: false,
+          builderSkipped: false,
+          builderSkipReason: null,
+          reviewerHigh: 0,
+          reviewerSkipped: false,
+        };
+      }
+    } else {
+      try {
+        verify = await verifyChangedFiles(context, [fileRel]);
+      } catch (error) {
+        return {
+          stage: 'active_deferred_unfixable',
+          verify,
+          autofixAttempts: attempt,
+          autofix: attempts,
+          priorErrorCount: priorErrors.length,
+          errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
+        };
+      }
     }
     if (verify.ok) {
       return {
@@ -1501,6 +1578,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
   return {
     stage: 'active_deferred_unfixable',
     verify,
+    strict: lastStrict,
     autofixAttempts: attempts.length,
     autofix: attempts,
     priorErrorCount: priorErrors.length,
@@ -1611,7 +1689,53 @@ async function runActiveRefactor(context, analysis, candidates) {
           continue;
         }
         if (context.applyStrictGateEnabled) {
-          const strict = await context.strictCheckFn({ file: relFile, results, context });
+          let strict = await context.strictCheckFn({ file: relFile, results, context });
+          if (
+            (!strict || strict.pass !== true)
+            && context.autofixEnabled
+            && context.strictAutofixEnabled
+            && !context.autofixBillingStopped
+          ) {
+            const absStrict = path.resolve(ROOT, relFile);
+            const strictError = String(strict?.error || strict?.message || 'strict_new_errors');
+            const seedVerify = {
+              ok: false,
+              builder: {
+                pass: false,
+                skipped: false,
+                error: strictError,
+                results: [{ pass: false, skipped: false, error: strictError }],
+              },
+              reviewer: { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [] },
+              builderPass: false,
+              builderSkipped: false,
+              builderSkipReason: null,
+              reviewerHigh: 0,
+              reviewerSkipped: false,
+            };
+            const fixed = await runAutofixLoop(context, item.candidate, absStrict, seedVerify, snapshots, { reverify: 'strict' });
+            item.autofixAttempts = Number(item.autofixAttempts || 0) + Number(fixed.autofixAttempts || 0);
+            if (isReadyResult(fixed)) {
+              item.stage = 'active_autofixed_ready_for_commit';
+              item.strictAutofixed = true;
+              item.verify = item.verify || fixed.verify;
+              item.autofix = mergeAutofixAttempts(item.autofix, fixed.autofix);
+              item.priorErrorCount = fixed.priorErrorCount;
+              item.model = fixed.model || item.model || null;
+              item.provider = fixed.provider || item.provider || null;
+              strict = fixed.strict || await context.strictCheckFn({ file: relFile, results, context });
+            } else {
+              item.verify = fixed.verify || item.verify;
+              item.autofix = mergeAutofixAttempts(item.autofix, fixed.autofix);
+              item.priorErrorCount = fixed.priorErrorCount;
+              item.model = fixed.model || item.model || null;
+              item.provider = fixed.provider || item.provider || null;
+              strict = {
+                pass: false,
+                error: fixed.errorSummary || strict?.error || strict?.message || 'strict_autofix_failed',
+              };
+            }
+          }
           if (!strict || strict.pass !== true) {
             const errorMessage = String(strict?.error || strict?.message || 'strict_gate_failed').slice(0, 300);
             item.stage = 'active_deferred_strict_failed';
@@ -1686,6 +1810,7 @@ async function runActiveRefactor(context, analysis, candidates) {
       applyResults,
       totalFixAttempts,
       autofixedCount: results.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
+      strictAutofixedCount: results.filter((item) => item.strictAutofixed === true).length,
       unfixableCount: results.filter((item) => item.stage === 'active_deferred_unfixable').length,
       autofixBillingStopped: Boolean(context.autofixBillingStopped),
     };
@@ -1714,6 +1839,7 @@ async function recordRefactorOutcome(context, result) {
     enabled: Boolean(context.autofixEnabled),
     attempts: verifyResults.reduce((sum, item) => sum + Number(item.autofixAttempts || 0), 0),
     autofixed: verifyResults.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
+    strictAutofixed: verifyResults.filter((item) => item.strictAutofixed === true).length,
     unfixable: verifyResults.filter((item) => item.stage === 'active_deferred_unfixable').length,
     priorErrorCount: verifyResults.reduce((sum, item) => sum + Number(item.priorErrorCount || 0), 0),
     model: autofixModels[0] || null,
@@ -1827,6 +1953,7 @@ function buildCycleContext(options = {}) {
     strictGateBaselineEnabled: strictGateBaselineEnabled(options.strictGateBaselineEnabled ?? process.env.REFACTORER_STRICT_GATE_BASELINE),
     applyMaxPerCycle: applyMaxPerCycle(options.applyMaxPerCycle ?? process.env.REFACTORER_APPLY_MAX_PER_CYCLE),
     autofixEnabled: mode === 'active' && autofixEnabled(options.autofixEnabled ?? process.env.REFACTORER_AUTOFIX_ENABLED),
+    strictAutofixEnabled: strictAutofixEnabled(options.strictAutofixEnabled ?? process.env.REFACTORER_STRICT_AUTOFIX_ENABLED),
     autofixMaxAttempts: autofixMaxAttempts(options.autofixMaxAttempts ?? process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS),
     autofixBillingStopped: false,
     fixerFn: options.fixerFn || null,
@@ -2139,6 +2266,7 @@ module.exports = {
   applyEnabled,
   applyPushEnabled,
   applyStrictGateEnabled,
+  strictAutofixEnabled,
   parseStrictErrorSignatures,
   isStrictInfraFailure,
   runStrictTsc,

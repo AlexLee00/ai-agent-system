@@ -840,6 +840,252 @@ async function test_apply_strict_failure_defers_before_commit() {
   console.log('✅ refactor-cycle: strict gate failure defers before commit');
 }
 
+async function test_strict_autofix_success_commits_after_strict_recheck() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const strictErrors = [
+    "TS7006: Parameter 'name' implicitly has an 'any' type.",
+  ];
+  const strictCalls = [];
+  const fixerSeeds = [];
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      autofixEnabled: true,
+      autofixMaxAttempts: 2,
+      builderModule,
+      reviewerModule,
+      strictCheckFn: async () => {
+        strictCalls.push(targetContent(target));
+        if (strictCalls.length === 1) return { pass: false, skipped: false, error: strictErrors[0] };
+        return strictPass();
+      },
+      fixerFn: async (_context, params) => {
+        fixerSeeds.push(params.builderError);
+        assert.match(params.builderError, /TS7006/);
+        return {
+          ok: true,
+          fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+          model: 'mock-strict-fixer',
+          provider: 'mock',
+        };
+      },
+      currentHeadFn: async () => 'before-strict-autofix-sha',
+      rollbackFn: async () => {
+        throw new Error('rollback should not be called');
+      },
+      pushFn: async () => ({ ok: true }),
+      originContainsFn: async () => true,
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'fake-sha-strict-autofix';
+      },
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.active.applied, true);
+    assert.strictEqual(result.active.strictAutofixedCount, 1);
+    assert.strictEqual(result.active.autofixedCount, 1);
+    assert.strictEqual(result.active.results[0].stage, 'active_autofixed_ready_for_commit');
+    assert.strictEqual(result.active.results[0].strictAutofixed, true);
+    assert.strictEqual(result.active.results[0].autofixAttempts, 1);
+    assert.strictEqual(result.active.results[0].strict.pass, true);
+    assert.deepStrictEqual(commits, [target]);
+    assert.strictEqual(strictCalls.length, 2);
+    assert.strictEqual(fixerSeeds.length, 1);
+    assert.notStrictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict autofix retries strict gate and commits only after pass');
+}
+
+async function test_strict_autofix_reviewer_high_blocks_commit() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule } = verifierModulesAlwaysPass(target);
+  let reviewerCalls = 0;
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      autofixEnabled: true,
+      autofixMaxAttempts: 1,
+      builderModule,
+      reviewerModule: {
+        async runReview(options) {
+          reviewerCalls += 1;
+          assert.deepStrictEqual(options.files, [target]);
+          if (reviewerCalls === 1) {
+            return { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [], sent: false };
+          }
+          return {
+            pass: false,
+            skipped: false,
+            summary: { high: 1, critical: 0 },
+            findings: [{ severity: 'high', file: target, message: 'mock reviewer high after strict autofix' }],
+            sent: false,
+          };
+        },
+      },
+      strictCheckFn: async () => {
+        const content = targetContent(target);
+        if (content.includes(AUTOFIX_MARKER)) return strictPass();
+        return { pass: false, skipped: false, error: "TS7006: Parameter 'name' implicitly has an 'any' type." };
+      },
+      fixerFn: async (_context, params) => ({
+        ok: true,
+        fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+        model: 'mock-strict-fixer',
+        provider: 'mock',
+      }),
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.applied, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.strictEqual(result.active.results[0].verify.reviewerHigh, 1);
+    assert.strictEqual(result.active.results[0].autofixAttempts, 1);
+    assert.match(result.active.results[0].errorSummary, /reviewer_high=1|strict_autofix_failed|autofix/);
+    assert.strictEqual(reviewerCalls, 2);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict autofix still requires reviewer gate before commit');
+}
+
+async function test_strict_autofix_failure_restores_and_defers_strict_failed() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  let fixerCalls = 0;
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      autofixEnabled: true,
+      autofixMaxAttempts: 1,
+      builderModule,
+      reviewerModule,
+      strictCheckFn: async () => ({ pass: false, skipped: false, error: "TS7006: Parameter 'name' implicitly has an 'any' type." }),
+      fixerFn: async (_context, params) => {
+        fixerCalls += 1;
+        return {
+          ok: true,
+          fixedContent: `${params.currentContent}\n${AUTOFIX_MARKER}\n`,
+          model: 'mock-strict-fixer',
+          provider: 'mock',
+        };
+      },
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.applied, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.strictEqual(result.active.results[0].autofixAttempts, 1);
+    assert.strictEqual(result.active.results[0].strictAutofixed, undefined);
+    assert.strictEqual(result.active.applyResults[0].reason, 'strict_failed');
+    assert.strictEqual(fixerCalls, 1);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict autofix failure restores snapshot and defers strict_failed');
+}
+
+async function test_strict_autofix_disabled_preserves_immediate_strict_defer() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  let fixerCalls = 0;
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      autofixEnabled: true,
+      strictAutofixEnabled: false,
+      builderModule,
+      reviewerModule,
+      strictCheckFn: async () => ({ pass: false, skipped: false, error: 'mock strict failed' }),
+      fixerFn: async () => {
+        fixerCalls += 1;
+        return { ok: true, fixedContent: 'should-not-be-called' };
+      },
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.strictEqual(result.active.results[0].autofixAttempts, undefined);
+    assert.strictEqual(fixerCalls, 0);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict autofix opt-out preserves immediate strict defer');
+}
+
 async function test_strict_baseline_diff_allows_existing_errors_and_removed_errors() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -1878,6 +2124,10 @@ async function main() {
     test_apply_commit_failure_restores_and_reports_apply_failed,
     test_apply_push_failure_rolls_back_and_reports_failed,
     test_apply_strict_failure_defers_before_commit,
+    test_strict_autofix_success_commits_after_strict_recheck,
+    test_strict_autofix_reviewer_high_blocks_commit,
+    test_strict_autofix_failure_restores_and_defers_strict_failed,
+    test_strict_autofix_disabled_preserves_immediate_strict_defer,
     test_strict_baseline_diff_allows_existing_errors_and_removed_errors,
     test_apply_strict_baseline_passes_and_commits_when_no_new_errors,
     test_apply_strict_baseline_blocks_new_errors_before_commit,
