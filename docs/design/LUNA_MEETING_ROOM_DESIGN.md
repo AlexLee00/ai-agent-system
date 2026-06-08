@@ -1,6 +1,6 @@
 # 루나 투자회의 + 펀더멘털 리서치 — 설계 (SSOT)
 
-> 버전 v0.2 (2026-06-08) · 작성: 메티 · 상태: 실험판(마스터 승인 — 구현 착수)
+> 버전 v0.3 (2026-06-08) · 작성: 메티 · 상태: 실험판 + 20개 보강 통합(코드 대조 완료) · 보강 상세=LUNA_BOOST_DESIGN.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md
 > 전제: 단일 사용자 · 개발 중 · paper 단계. **실험 우선 · 성능 비중(완전 교체 비용 무시) · 가드 최소("게이트를 치우고 계측을 깐다")**.
 > 상위 자산 재사용: `bots/investment`(루나팀). 회의실=신규 오케스트레이터만, 분석/실행/리스크/메모리/졸업은 기존 부품 재사용.
 
@@ -18,7 +18,7 @@
 세 종류를 구분해 **가드만 제거**:
 - **가드(절차 마찰)** = 제거 → G1~G10·승급 게이트·액션 승인은 **차단이 아니라 표시·점수·advisory**로 강등.
 - **계측(데이터 진실성)** = 유지 → 측정이 거짓이면 실험 자체가 무의미.
-- **경계(되돌릴 수 없는 손실)** = 유지 → 실거래·자금이동·운영 중단.
+- **경계(되돌릴 수 없는 손실)** = 유지 → 실거래·자금이동·운영 중단 · **자본보존 halt**(B-13).
 **유지하는 3개(마찰≈0)**:
 1. **실거래·자금이동 = 명시적 마스터 행동**(모의/섀도는 무제한 자율).
 2. **point-in-time / 누수 차단**(계측 진실성 — 룩어헤드·정보누수 금지).
@@ -116,3 +116,44 @@
 ## 18. 리스크 · 미해결
 - 미해결: CPCV 신규 구현 · 폴백 plist 시간대(KST) 정확성 · paper 원장 스키마 · hub-proxy 경로.
 - 검증 후 시장 확장(해외·crypto) 게이트.
+
+## 19. v0.3 보강 통합 (영상 20개 → 코드 대조 → 적용)
+> 입력: `LUNA_VIDEO_REINFORCEMENT`(B-01~20) · `LUNA_BOOST_DESIGN`(설계) · `LUNA_BOOST_APPLY_REVIEW`(코드 대조). **핵심: 보강 다수가 기존 자산 활성화/확장, 진짜 신규는 소수.**
+
+### 19.1 가드 — advisory vs 경계 (확정)
+| 항목 | 분류 | 근거 |
+|---|---|---|
+| 일/주/연속손실 회로 | advisory(완화 가능) | 기존 checkCircuitBreaker+softening |
+| **peak-drawdown halt**(B-13) | **경계**(하드·비완화) | HWM −10%→kill-switch, 마스터 수동 재개 |
+| correlation(B-13) | advisory(감산) | Nemesis 노출 |
+| 검증 게이트(B-18 DSR/PBO/RST) | advisory(승급 차단) | env 활성화 |
+| point-in-time(B-12 forward) | 경계(계측) | 누수 차단 |
+| 자율 다이얼(C1) | advisory | 마스터 다이얼 |
+
+### 19.2 활성화(env/flag) — shadow→active 경로 (마스터 게이팅)
+- **검증(B-18)**: `LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE`(shadow→enforce)·`LUNA_DSR_GATE_ENABLED`·`LUNA_DSR_MIN`(0.90)·신규 `LUNA_PBO_GATE_ENABLED`.
+- **레짐(B-10/12)**: 신규 `LUNA_HMM_REGIME_ENABLED`·기존 `LUNA_ADAPTIVE_WEIGHT_ENABLED`.
+- **수급(B-19)**: OpenDART 키(secrets-doctor)·`LUNA_DISCOVERY_DART`.
+- **트레일링(B-20)**: `shouldApplyDynamicTrail()`.
+
+### 19.3 신규(net-new) — 소수
+HWM 영속 · correlation · RST · PBO 게이트 배선 · 경험적 전이행렬 · HMM 정밀화(상태수/forward/안정성) · 캘리브레이션(Brier) · conviction 입력(P(bull)−P(bear)) · 단일변수 실험원장 · ADR 메타로그 · 래더 엔트리 · 외국인/기관 수급 어댑터 · 글로사리/grill skill · meeting-room UI.
+
+### 19.4 확장 — 기존 자산
+회로차단기(+peak/correlation) · sizer(+conviction) · scorer(+목표대비) · skill-extractor(+reflexion 갱신) · 예산가드(+회의/사이클) · coordination(+UI).
+
+### 19.5 기술 매핑 (Skills·Hooks·A2A·MCP·Codex)
+- **Hooks**: B-13 회로차단=PreToolUse veto · B-05/18=PostToolUse 스코어/로그 · advisory=prompt 핸들러.
+- **Skills**: B-02/03/17=`skills/luna/*.skill.md`(agentskills.io 포터블 Claude↔Codex).
+- **A2A**: B-09=Task 라이프사이클(input-required=마스터 승인) · 6레인=Agent Card.
+- **Codex**: Traces=회의록·ADR(B-01)·관측성.
+
+### 19.6 기존 자산 인벤토리 (재사용 확정 — 코드 대조 결과)
+- **리스크**: `capital-manager`(checkCircuitBreaker)·kill-switch(`luna-kill-switch-consistency`)·`risk-approval-chain`.
+- **레짐**: `hmm-regime-detector`(shadow)·`regime-weight-learner`·`regime-strategy-policy`·A2A `market-regime-analysis`.
+- **검증**: `candidate-backtest-gate`(DSR/PBO/walk-forward)·`quant/monte-carlo`·`quant/stress-test`·`korea-data-promotion-gate`.
+- **자기개선**: 3층 Reflexion(Elixir l1/l2/l3)·`reflexion-engine`·`luna-self-rewarding-engine`·`posttrade-skill-extractor`·darwin apply.
+- **수급**: `opendart_client.py`·`dart-disclosure-collector`·A2A `disclosure-event-driven`.
+- **출구/사이징**: `dynamic-trail-engine`·`dynamic-position-sizer`·`luna-exit-policy`·protective/partial-exit.
+- **스킬**: `skills/luna/*.skill.md` 다수 · A2A skills 18개.
+→ 워크스트림 매핑: TRACKER v0.3 WS-I~ 참조.

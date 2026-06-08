@@ -235,3 +235,29 @@
 - ✅ **권장 11/11 완료**(B-05·11·16·19·17·02·03·07·08·09·15). 강력권장 6 + 권장 11 + B-20 = **18개 정밀 검토 완료**(참고/선택 4 제외).
 - **거듭 확인된 정정**: B-17(skill-extractor+skills/luna 기구현)·B-08(예산가드 부분존재)·B-09(coordination 백엔드존재)·B-19(OpenDART 기구현)·B-05(scorer 자동) — 보강안 다수가 **활성화/확장/스킬추가**, 진짜 신규는 소수(글로사리·grill·캘리브레이션·conviction 입력·단일변수 원장·ADR·HWM·RST·PBO 게이트·경험 전이행렬·HMM 정밀화·correlation·래더·외국인수급).
 - ⏭️ 다음 = (선택)참고 4 간단 + **DESIGN/TRACKER v0.3 통합**(가드 "경계"=peak-drawdown halt, Validation 레인=env 활성화 경로, 신규 WS, advisory vs 경계 표) → Phase 1 CODEX 프롬프트.
+
+## 참고/선택 정밀 검토 (4)
+
+### B-04. 좋은 에이전트 4기준 [프레임워크]
+**기존**: 데이터 어댑터(OpenDART/KIS)·launchd 무중단·목표(수익)·reflexion 자기개선 = 4기준 대부분 충족.
+**적용**: 신규 구현 아님 — 회의/리뷰 **체크리스트**(정확데이터·24/7·명확목표·자기개선). 무해.
+
+### B-14. 펀더멘털/스윙 원칙 [상위 원칙]
+**기존**: signal.ts MARKET_FLOW·펀더멘털 파이프(OpenDART)·레짐 스윙. 스캘핑 미채택.
+**적용**: 코드 아닌 **전략 선택 가드레일 원칙** — 전 보강안(B-10/11/19) 상위. 문서화만.
+
+### 전략 템플릿 [선택]
+**기존**: Donchian/EMA/ATR 부품 산재. 통합 추세추종 템플릿 없음.
+**적용**: skills/luna/에 trend-following.skill.md(B-02/17 패턴). 선택. 무중단(추가).
+
+### 도구 패턴 [선택]
+**기존**: A2A skills 18개·MCP(korea-data). TradingView 제어형/paperclip 거버넌스는 외부 참고.
+**적용**: TradingView **데이터형만** 보조 · paperclip 롤백 패턴 차용 · Codex-as-MCP. 채택 시 신규.
+
+---
+## ✅ 정밀 검토 종료 — 전 20개 + 참고 4
+- 강력권장 6 + 권장 11 + B-20 + 참고/선택 4 = **전 항목 코드 vs 보강안 대조 완료**.
+- **신규(net-new) 최종 목록**: HWM 영속 · correlation · RST · PBO 게이트 배선 · 경험적 전이행렬 · HMM 정밀화(상태수/forward/안정성) · 캘리브레이션(Brier) · conviction 입력(P(bull)−P(bear)) · 단일변수 실험원장 · ADR 메타로그 · 래더 엔트리 · 외국인/기관 수급 어댑터 · 글로사리/grill skill · meeting-room UI.
+- **활성화(env/flag)**: DSR 게이트·HMM 레짐·adaptive weight·OpenDART·dynamic-trail·entry-gate mode.
+- **확장**: 회로차단기·sizer·scorer·skill-extractor·예산가드·coordination.
+- ⏭️ 다음 = **DESIGN/TRACKER v0.3 통합** → Phase 1 CODEX.

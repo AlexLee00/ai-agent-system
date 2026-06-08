@@ -1,6 +1,6 @@
 # 루나 투자회의 — 구현 추적 (TRACKER)
 
-> 버전 v0.2 (2026-06-08) · 작성: 메티 · 상태: Phase 1 착수 전 · SSOT=LUNA_MEETING_ROOM_DESIGN.md
+> 버전 v0.3 (2026-06-08) · 작성: 메티 · 상태: Phase 1 착수 전 + 보강 WS(I~Q) 통합 · SSOT=LUNA_MEETING_ROOM_DESIGN.md(§19) · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md
 > 항목: 작업 / 담당(코덱스·메티·마스터) / 상태 / 검증(문법·소프트·하드) / 의존성 / 연결 CODEX
 > 원칙: 부품 재사용 우선(오케스트레이터만 신규) · PROTECTED/LIVE 무중단 · advisory 게이트(차단 X)
 
@@ -73,3 +73,45 @@
 
 ## 연결 CODEX 프롬프트
 - Phase 1 → `docs/codex/CODEX_LUNA_MEETING_ROOM_PHASE1.md` (WS-A~E·G, **v0.3 통합 후 작성**)
+
+## 워크스트림 — v0.3 보강 (WS-I ~ WS-Q) [Phase 2~3]
+> 코드 대조 결과(LUNA_BOOST_APPLY_REVIEW): 대부분 **활성화/확장**, 신규 소수. 활성화=마스터 게이팅(검증 후 단계 ON).
+
+### WS-I. 리스크 훅 [Phase 2] (B-13) — 경계
+- HWM(고점자본) 영속(**신규 선결**) → `checkCircuitBreaker` peak-drawdown 체크#4 → **kill-switch 연동**(기존 `luna-kill-switch-consistency` 확장) → l31-order-execute 진입 차단 → correlation(advisory 감산).
+- 담당: 코덱스 / 의존: HWM 선결 / 검증: 트리거·수동해제·l31 abort / 활성화: `max_peak_drawdown_pct`+env.
+
+### WS-J. 레짐 정밀화 [Phase 2] (B-10·B-12) — shadow→active
+- 경험적 전이행렬(`regime-weight-learner`+`luna_regime_weight_snapshots` 재사용) + HMM 상태수 자동선택(BIC)·forward 필터·안정성 필터 → `LUNA_HMM_REGIME_ENABLED` 활성화.
+- 의존: phase-a shadow 검증 / 활성화: env+promotion-gate.
+
+### WS-K. 검증 활성화 [Phase 2] (B-16·B-18) — advisory(승급)
+- **RST 신규**(랜덤 엔트리 p-value) + **PBO 게이트 배선**(DSR 미러) + 캘리브레이션(Brier) + MC 2종 확인 + 레짐 OOS → env 활성화(`..._ENTRY_GATE_MODE`·`LUNA_DSR_GATE_ENABLED`·`LUNA_PBO_GATE_ENABLED`).
+- 재사용: candidate-backtest-gate·monte-carlo·stress-test.
+
+### WS-L. 자기개선·ADR [Phase 2] (B-01·B-05·B-06·B-17)
+- 단일변수 실험원장(신규) + ADR 메타로그(JSONB 이벤트 스토어 재사용) + scorer 목표대비(calcSelfReward 확장) + reflexion→skill 갱신(posttrade-skill-extractor 확장).
+- 의존: B-18 검증 게이트(darwin proof-r apply 전제).
+
+### WS-M. 스킬 [Phase 2] (B-02·B-03·B-17)
+- glossary/grill skill 신규(`skills/luna/` 패턴 재사용·agentskills.io 포터블) + self-evolving 연결 + 전략 템플릿(선택).
+
+### WS-N. 수급 활성화 [Phase 2] (B-19)
+- OpenDART 키(secrets-doctor)+`LUNA_DISCOVERY_DART` 활성화 → disclosure-event(5%/내부자/행동주의) Research 신호 + 외국인/기관 순매수(KRX 수급) 어댑터(신규).
+- 재사용: opendart_client·dart-disclosure-collector·disclosure-event-driven(A2A).
+
+### WS-O. 출구·사이징 [Phase 2] (B-11·B-20)
+- 트레일링 활성화(`shouldApplyDynamicTrail` 모드 점검 — **기구현**) + 래더 엔트리(신규·B-13 한도 준수) + conviction 사이징(`dynamic-position-sizer`에 P(bull)−P(bear) 입력).
+- 의존: B-12 안정성 필터(conviction) · B-13 한도(래더).
+
+### WS-P. 비용·컨텍스트 [Phase 2] (B-08·B-15)
+- 예산가드 회의/사이클 확장(`ensureDailyEvaluationBudget` 패턴) + per-message 비용 로그 + 컨텍스트 예산/RAG top-k 상한. advisory(하드정지=경계).
+
+### WS-Q. 회의 UI·단일창구 [Phase 1~2] (B-07·B-09)
+- meeting-room agent-view(A2A Task 상태) + needs-input 큐(input-required=마스터 승인) + 단일 창구(`orchestrate`/Hub 재사용).
+- 재사용: A2A multi-agent-coordination·orchestrate.
+
+## 재사용 vs 신규 — v0.3 보강
+- **신규(net-new)**: HWM·correlation·RST·PBO 게이트·경험 전이행렬·HMM 정밀화·캘리브레이션·conviction 입력·단일변수 원장·ADR 메타·래더·외국인수급 어댑터·glossary/grill skill·meeting-room UI.
+- **활성화(env/flag)**: DSR 게이트·HMM 레짐·adaptive weight·OpenDART·dynamic-trail·entry-gate mode.
+- **확장**: 회로차단기·sizer·scorer·skill-extractor·예산가드·coordination.
