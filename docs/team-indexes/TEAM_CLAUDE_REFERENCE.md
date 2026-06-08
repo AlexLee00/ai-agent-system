@@ -86,6 +86,14 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:checksu
 - **진행**: **Phase 1 완료(커밋 대기)** — `tsconfig.strict.json` 테스트 제외 + `allowImportingTsExtensions` → **6776 → 3971**(−2805; TS2304/2593/5097 전량 소거). **Phase 3 pilot 완료** — `packages/core/lib/news-credentials.ts`(캐시 반환 타입) · `meta-graph-config.ts`(`section: string`) 타입 전용 정리로 각 0건. **메티 독립 검증 PASS**(tsc 재측정 3971, 수정 2파일 0, git diff --check 통과, @ts-nocheck 미추가, 게이트 코드 무변경).
 - **잔여**: product 코드 **3705**(2026-06-09 재측정; 마스터 수동 ratchet로 3971→3705)(TS7006 1603, TS2339 1084, TS2345 211, TS7031 152, TS18046 151 등). 리포트 `docs/codex/refactor-plans/STRICT_BASELINE_REMAINING_2026-06-08.md`(gitignored). Phase 3 ratchet 후속 세션 반복(1배치=파일 1개, 타입 전용, 파일 strict=0 + 테스트 통과, 배치 커밋). 커밋 후 리팩터러 다음 사이클 baseline이 ~3705로 자동 재캡처(게이트 경량화).
 
+## 운영 모니터링 (2026-06-09~)
+
+클로드팀 빌드아웃 일단락 — 리팩터러 자율운영 + 하네스 + auto-dev 자가진화 + dexter 안정화 + 인프라 정리 완료. strict 클린업은 마스터+코덱스 수동 라쳇으로 별도 진행. **클로드팀의 남은 작업은 신규 빌드가 아니라 운영 모니터링이다.**
+
+- **자율 리팩터러** — 03:00 일배치(active/apply/strict/strict-autofix/push). `claude.auto_dev_outcomes`의 applied/deferred/unfixable 비율 + vault 학습 회수 + 게이트/락(`.refactorer-active.lock`)/heartbeat 정상 동작 관찰.
+- **strict-autofix 실증** — `3134c7f3d` 커밋·미실증. 다음 03:00(또는 수동 kickstart)에서 @ts-nocheck 파일이 strict-autofix로 apply되는지(`meta.strictAutofixed`) 1회 확인.
+- **이상 징후 점검** — apply 실패율 급증 / push·origin 불일치 / dirty_worktree_in_scope 빈발 시 조사.
+
 ## 관련 문서
 
 - [CLAUDE.md](/Users/alexlee/projects/ai-agent-system/CLAUDE.md)
