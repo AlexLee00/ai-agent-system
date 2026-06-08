@@ -867,16 +867,32 @@ function _hasLectureSection(content, sectionTitle) {
 }
 
 function _buildLectureHashtagLine(lectureTitle = '') {
+  const normalizedTitle = String(lectureTitle || '');
+  const isAiImplementationSeries = /실전\s*AI\s*구현|Codex|Claude\s*Code/i.test(normalizedTitle);
   const tokens = String(lectureTitle || '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .map((token) => token.trim())
     .filter((token) => token.length >= 2)
     .slice(0, 8);
-  const tagSet = new Set([
+  const aiTags = [
+    '#ChatGPTCodex',
+    '#ClaudeCode',
+    '#실전AI구현입문',
+    '#AI코딩',
+    '#AI코딩에이전트',
+    '#챗GPT활용',
+    '#클로드코드',
+    '#바이브코딩',
+    '#업무자동화',
+  ];
+  const nodeTags = [
     '#Nodejs',
     '#Node강의',
     '#백엔드개발',
+  ];
+  const tagSet = new Set([
+    ...(isAiImplementationSeries ? aiTags : nodeTags),
     '#실무강의',
     '#웹개발',
     '#스터디카페',
