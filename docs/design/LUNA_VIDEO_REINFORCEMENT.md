@@ -93,3 +93,58 @@
 3. **영상 배치 2**: 클로드코드퀀트(ZVMTeDBmSrI)·24시간(6MC1XqZSltw)·완전자동화(y_bsjZThP0o) + paperclip/Hermes/TradingView MCP 딥서칭. **배치 3**: 알고제왕(1SLbe0k6x4I)·주식시장(lH5wrfNwL3k)·단타(3L4LhT5lAWg)·매매분석(QaJnyy3-8Wg).
 4. **통합**: 모든 배치 분석 후 보강안(B-01~) + v0.2를 **v0.3로 한번에 통합** → 커밋. 이후 Phase 1 CODEX 프롬프트.
 - 자막 캐시: `/tmp/ytdistill/clean/`(13개, ephemeral). 유실 시 `/tmp/yt-dlp`로 재취득(바이너리도 /tmp).
+
+
+---
+
+## 배치 2 — 분석 완료 (3편) · ※ 위 복구 메모는 해결됨(v0.2 복원·커밋 1ac91958d 완료)
+분석: 클로드코드퀀트(ZVMTeDBmSrI)·24시간 트레이더(6MC1XqZSltw)·완전자동화 봇(y_bsjZThP0o)
+
+### B-10. Markov 레짐 전이행렬 모델 [강력 권장]
+- 출처: 클로드코드퀀트·완전자동화(Rowan "hedge fund method").
+- 상태(bull/sideways/bear = 20일 누적수익 ±5%) → 전체 이력 라벨링 → **전이행렬 3×3**(행=오늘·열=내일·행합 100%) + stickiness(대각=지속성). 행렬 제곱=다일 예측 · 정상분포=장기 신호소멸.
+- v0.2 매핑: Research/Decision 레인의 **레짐 신호**. C3 temporal-validity(Markov=시점정합)·CONTEXT.md '레짐'(B-02)와 정합.
+
+### B-11. 신호 = P(bull)−P(bear), 차등 사이징 [권장]
+- 출처: 클로드코드퀀트. 신호 = 내일 bull확률 − bear확률. 양수=롱/음수=숏, **차이 크기 = 포지션 크기**(conviction-weighted).
+- v0.2 매핑: `computeDynamicPositionSizing`(§16)에 레짐 conviction 신호 입력.
+
+### B-12. 레짐 모델 정밀화 [강력 권장]
+- 출처: 완전자동화(HMM).
+- **레짐 개수 자동선택**(3~7 테스트→best, 하드코딩 금지) · **forward-algorithm-only**(full predict=룩어헤드 유발 → 누수 차단) · **regime stability filter**(≥3 bar 지속해야 행동, 플리커→사이즈↓+경고).
+- v0.2 매핑: point-in-time 가드(계측 진실성) 강화 · CPCV(C2) 결합 · **HMM 비지도 레짐 + B-10 규칙기반 라벨 일치 시만 진입**(거짓신호↓, fuseSignals/토론 확인 정합).
+
+### B-13. 리스크 회로차단기 = 하드코딩·모델독립 veto [강력 권장]
+- 출처: 완전자동화. "평범전략+훌륭한 리스크관리=소액손실 / 훌륭전략+나쁜 리스크관리=계좌파탄."
+- **AI와 독립된 하드코딩 회로차단기**(veto): 일 −2%→사이즈 반감 · −3%→전량청산 · 주 −5%→반감 · **peak −10%→전 시스템 중단 + block 파일 → 마스터 수동 삭제로만 재개** · **correlation 체크**(기존 포지션과 상관 높으면 진입 금지).
+- v0.2 매핑: **가드 철학의 "경계(되돌릴 수 없는 손실)" → 실험판에서도 유지**. `checkCircuitBreaker`(§16)에 구체 임계값. drawdown→마스터 리셋="실거래=마스터 행동" 정합 · correlation=Nemesis 과집중/ic-memo.
+
+### B-14. 모델 강점 = 펀더멘털/스윙(데이 트레이딩 아님) [전략 원칙]
+- 출처: 24시간. Opus agentic financial analysis = 필링 소화·논지 작성에 강함 → 펀더멘털/스윙. 기술적 데이 트레이딩 아님.
+- v0.2 매핑: 루나 morning-note/ic-memo(OpenDART 필링) 검증. **모델 강점에 전략을 맞춘다.**
+
+### B-15. 컨텍스트 예산 규율 [권장]
+- 출처: 24시간. 토큰=돈, 회의/라우틴당 예산(~200k), context rot(1M 다 안 씀). 시스템지시+전략+거래로그+리서치 모두 소비.
+- v0.2 매핑: 회의 오케스트레이터 **선택적 RAG 회수**(전체 덤프 금지)+세션 예산 관리. B-08 보강.
+
+### B-16. 검증 보강 — 벤치마크·스트레스·캘리브레이션 [권장]
+- 출처: 완전자동화. CPCV 리더보드에 **벤치마크**(buy-and-hold·200일 SMA 추세·random-entry 동일리스크) + **크래시 스트레스 주입**(10~15% 단일일 급락) + **regime/confidence 버킷**(고신뢰가 저신뢰보다 우수한지=캘리브레이션).
+- v0.2 매핑: §12 백테스트(C2)·F2 리더보드에 추가.
+
+### B-17. self-evolving 절차 스킬 [권장]
+- 출처: Hermes(자기개선 루프). 반복 성공 패턴 → **재사용 스킬 문서 자동 생성**(절차적 메모리). "같은 걸 반복 요청 → 스킬화."
+- v0.2 매핑: CVRF(신념·선언적) + **절차적 메모리(스킬)** 보완. 다윈 R&D 정합. agentskills.io 표준 참고.
+
+### 빌드·운영 검증 (영상 ↔ 우리 설계 일치 확인)
+- scaffold 먼저(로직 0)→컴포넌트별→**매 단계 테스트**(완전자동화 134 tests) = 우리 WS/3역할/메티 독립검증.
+- stateless-wake→read files→act→**write-back**(24시간) = C3 메모리·CVRF.
+- paper 우선→≥1달 모니터→live = 결정① paper 원장. 24/7 = 그들=remote/cloud(push-back) / 우리=OPS launchd(push-back 유실=이번 git reset 이슈).
+
+## 도구 딥서칭 결과 (배치 2)
+- **TradingView MCP** (다수·2026초): ①데이터형(bidouilles·호스티드: OHLCV·지표·뉴스) ②CDP 데스크톱 제어형(tradesdontlie·LewisWJackson·78 tools·Pine Script). ⚠️ 제어형=**ToS 충돌·코드주입·로컬 CDP 보안위험**. → 루나(KIS·OpenDART 보유·펀더멘털)엔 **데이터형만 선택적 보조**, 제어형 비채택. Pine Script Markov 시각화는 nice-to-have.
+- **paperclip** (@dotta·MIT·~53k★): 에이전트=회사 오케스트레이션, **빌드 안 함**(기존 에이전트 래핑). → 자체 보유=비채택, **패턴 차용**: atomic checkout+예산 100% 자동정지(B-08)·heartbeat 상태지속(C3)·goal ancestry(B-01)·governance+rollback(git/ADR)·시크릿 스크러빙.
+- **Hermes agent** (Nous Research·MIT·2026.02): 자기개선 학습루프 하니스(self-evolving 스킬·curated 메모리+nudge·FTS5·Honcho·RL/Atropos). → OpenClaw+Claude Code 보유=하니스 교체 비채택, **자기진화 절차-스킬 패턴 차용**(B-17). (우리 헤르메스 에이전트와 무관한 동명.)
+
+## 다음 세션 — 배치 3 (마지막)
+- 알고 트레이딩 제왕(1SLbe0k6x4I)·주식시장(lH5wrfNwL3k)·단타기술(3L4LhT5lAWg)·거래매매분석법(QaJnyy3-8Wg) → 매매기법은 전략/지표로 정제.
+- 이후: 전 배치 보강안(B-01~B-17+) + v0.2 → **DESIGN/TRACKER v0.3 한번에 통합** → 커밋 → Phase 1 CODEX 프롬프트.
