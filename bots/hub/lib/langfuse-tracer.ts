@@ -101,7 +101,7 @@ export function traceLLMCall(
       trace.generation({
         name: 'llm_generation',
         model: result.selected_route || meta.abstractModel || 'unknown',
-        modelParameters: { provider: result.provider },
+        modelParameters: { provider: result.provider ?? null },
         input: req.prompt ? req.prompt.slice(0, 500) : '',
         startTime: new Date(Date.now() - (result.durationMs || 0)),
         endTime: new Date(),
