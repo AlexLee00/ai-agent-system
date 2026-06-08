@@ -6,25 +6,71 @@ const path = require('node:path');
 const os = require('node:os');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
-const SKILL_TABLE = 'agent.jay_skill_memory';
-let ensurePromise = null;
+type JsonRecord = Record<string, unknown>;
 
-function normalizeText(value, fallback = '') {
+type SkillMemoryInput = {
+  incidentKey?: string;
+  team?: string;
+  goal?: string;
+  summary?: string;
+  reflection?: string;
+  strategyKey?: string;
+  evidence?: unknown;
+  outcomeStatus?: string;
+  confidence?: number | string;
+  limit?: number | string;
+  days?: number | string;
+};
+
+type SkillRecordData = {
+  id: string;
+  incidentKey: string;
+  team: string;
+  strategyKey: string;
+  summary: string;
+  evidence: JsonRecord;
+  outcomeStatus: string;
+  confidence: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SkillDbRow = {
+  id: string;
+  incident_key: string;
+  team: string;
+  strategy_key: string;
+  summary: string;
+  evidence?: JsonRecord;
+  outcome_status: string;
+  confidence: number | string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ExtractSkillResult =
+  | { ok: false; error: string }
+  | { ok: true; data: SkillRecordData };
+
+const SKILL_TABLE = 'agent.jay_skill_memory';
+let ensurePromise: Promise<void> | null = null;
+
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeObject(value) {
+function normalizeObject(value: unknown): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value;
+  return value as JsonRecord;
 }
 
-function parseBoolean(value, fallback = false) {
+function parseBoolean(value: unknown, fallback = false): boolean {
   const text = normalizeText(value, fallback ? 'true' : 'false').toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
-function buildSkillId(seed) {
+function buildSkillId(seed: string): string {
   const hash = crypto
     .createHash('sha1')
     .update(seed)
@@ -33,7 +79,7 @@ function buildSkillId(seed) {
   return `jskill_${hash}`;
 }
 
-function mirrorPath() {
+function mirrorPath(): string {
   if (process.env.JAY_SKILL_FILE_MIRROR_PATH) return process.env.JAY_SKILL_FILE_MIRROR_PATH;
   const root = process.env.JAY_RUNTIME_DIR
     || process.env.HUB_RUNTIME_DIR
@@ -41,12 +87,12 @@ function mirrorPath() {
   return path.join(root, 'skills', 'jay-skill-memory.jsonl');
 }
 
-function skillArtifactRoot() {
+function skillArtifactRoot(): string {
   return process.env.JAY_SKILL_ARTIFACT_ROOT
     || path.join(__dirname, '..', '..', '..', 'packages', 'core', 'lib', 'skills', 'jay');
 }
 
-function slugifySkillTopic(value) {
+function slugifySkillTopic(value: unknown): string {
   const slug = normalizeText(value, 'general')
     .toLowerCase()
     .replace(/[^a-z0-9가-힣]+/g, '-')
@@ -55,29 +101,30 @@ function slugifySkillTopic(value) {
   return slug || 'general';
 }
 
-function appendMirrorLine(record) {
+function appendMirrorLine(record: unknown): void {
   if (!parseBoolean(process.env.JAY_SKILL_FILE_MIRROR, false)) return;
   const target = mirrorPath();
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.appendFileSync(target, `${JSON.stringify(record)}\n`, 'utf8');
 }
 
-function writeSkillArtifact(record) {
+function writeSkillArtifact(record: SkillRecordData | SkillDbRow | JsonRecord): string | null {
   if (!parseBoolean(process.env.JAY_SKILL_ARTIFACT_WRITE, false)) return null;
-  const team = slugifySkillTopic(record.team || 'general');
-  const topic = slugifySkillTopic(record.strategy_key || record.strategyKey || record.id || 'general');
+  const skill = record as SkillRecordData & SkillDbRow & JsonRecord;
+  const team = slugifySkillTopic(skill.team || 'general');
+  const topic = slugifySkillTopic(skill.strategy_key || skill.strategyKey || skill.id || 'general');
   const dir = path.join(skillArtifactRoot(), team, topic);
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, 'SKILL.md');
-  const summary = normalizeText(record.summary, 'No summary recorded.');
-  const outcome = normalizeText(record.outcome_status || record.outcomeStatus, 'completed');
-  const confidence = Number(record.confidence || 0);
-  const evidence = JSON.stringify(record.evidence || {}, null, 2);
+  const summary = normalizeText(skill.summary, 'No summary recorded.');
+  const outcome = normalizeText(skill.outcome_status || skill.outcomeStatus, 'completed');
+  const confidence = Number(skill.confidence || 0);
+  const evidence = JSON.stringify(skill.evidence || {}, null, 2);
   const markdown = [
     `# Jay Skill: ${team}/${topic}`,
     '',
     '## When To Use',
-    `Use this when a Jay incident matches strategy \`${normalizeText(record.strategy_key || record.strategyKey, topic)}\`.`,
+    `Use this when a Jay incident matches strategy \`${normalizeText(skill.strategy_key || skill.strategyKey, topic)}\`.`,
     '',
     '## Learned Pattern',
     summary,
@@ -100,7 +147,7 @@ function writeSkillArtifact(record) {
   return target;
 }
 
-async function ensureJaySkillMemoryTable() {
+async function ensureJaySkillMemoryTable(): Promise<void> {
   if (ensurePromise) return ensurePromise;
   ensurePromise = (async () => {
     await pgPool.run('agent', `
@@ -132,14 +179,14 @@ async function ensureJaySkillMemoryTable() {
   return ensurePromise;
 }
 
-function inferStrategyKey(input) {
+function inferStrategyKey(input: SkillMemoryInput): string {
   const team = normalizeText(input?.team, 'general').toLowerCase();
   const goal = normalizeText(input?.goal || input?.summary || '', '').toLowerCase().slice(0, 120);
   const normalizedGoal = goal.replace(/[^a-z0-9가-힣]+/g, '_').replace(/^_+|_+$/g, '');
   return `${team}:${normalizedGoal || 'general_incident'}`;
 }
 
-function extractSkillRecord(input) {
+function extractSkillRecord(input: SkillMemoryInput): ExtractSkillResult {
   const incidentKey = normalizeText(input?.incidentKey, '');
   if (!incidentKey) return { ok: false, error: 'incident_key_required' };
   const team = normalizeText(input?.team, 'general').toLowerCase();
@@ -170,9 +217,10 @@ function extractSkillRecord(input) {
   };
 }
 
-async function saveSkillMemory(input) {
+async function saveSkillMemory(input: SkillMemoryInput) {
   const parsed = extractSkillRecord(input);
   if (!parsed.ok) return parsed;
+  const skillData = parsed.data;
   await ensureJaySkillMemoryTable();
   const row = await pgPool.get('agent', `
     INSERT INTO ${SKILL_TABLE} (
@@ -193,21 +241,22 @@ async function saveSkillMemory(input) {
       to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at,
       to_char(updated_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS updated_at
   `, [
-    parsed.data.id,
-    parsed.data.incidentKey,
-    parsed.data.team,
-    parsed.data.strategyKey,
-    parsed.data.summary,
-    JSON.stringify(parsed.data.evidence),
-    parsed.data.outcomeStatus,
-    parsed.data.confidence,
-  ]);
-  appendMirrorLine(row || parsed.data);
-  const artifactPath = writeSkillArtifact(row || parsed.data);
-  return { ok: true, skill: row || parsed.data, artifactPath };
+    skillData.id,
+    skillData.incidentKey,
+    skillData.team,
+    skillData.strategyKey,
+    skillData.summary,
+    JSON.stringify(skillData.evidence),
+    skillData.outcomeStatus,
+    skillData.confidence,
+  ]) as SkillDbRow | null;
+  const savedSkill = row || skillData;
+  appendMirrorLine(savedSkill);
+  const artifactPath = writeSkillArtifact(savedSkill);
+  return { ok: true, skill: savedSkill, artifactPath };
 }
 
-async function listRecentSkills(input = {}) {
+async function listRecentSkills(input: SkillMemoryInput = {}): Promise<SkillDbRow[]> {
   await ensureJaySkillMemoryTable();
   const team = normalizeText(input?.team, '').toLowerCase();
   const strategyKey = normalizeText(input?.strategyKey, '');
@@ -225,10 +274,10 @@ async function listRecentSkills(input = {}) {
     ORDER BY confidence DESC, updated_at DESC
     LIMIT $4
   `, [team, strategyKey, days, limit]);
-  return rows;
+  return rows as SkillDbRow[];
 }
 
-async function buildSkillContextForPlan(input = {}) {
+async function buildSkillContextForPlan(input: SkillMemoryInput = {}) {
   const team = normalizeText(input?.team, 'general').toLowerCase();
   const strategyKey = normalizeText(input?.strategyKey, '');
   const rows = await listRecentSkills({
@@ -245,7 +294,7 @@ async function buildSkillContextForPlan(input = {}) {
     };
   }
   const lines = ['Recent reusable skills:'];
-  rows.forEach((row, index) => {
+  rows.forEach((row: SkillDbRow, index: number) => {
     lines.push(`${index + 1}. [${row.strategy_key}] ${row.summary}`);
   });
   return {
