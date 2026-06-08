@@ -183,3 +183,26 @@
 - 보강안 **B-01 ~ B-20** + 비채택 판정 완료.
 - **다음 세션: 전 보강안 + v0.2 → DESIGN/TRACKER v0.3로 한번에 통합** → 커밋 → Phase 1 CODEX 프롬프트.
 - 통합 우선순위: **강력권장**(B-01 ADR·B-06 단일변수·B-10 레짐·B-12 레짐정밀·B-13 회로차단기·B-18 검증3종) → **권장**(B-02·B-03·B-05·B-07·B-08·B-09·B-11·B-15·B-16·B-17·B-19·B-20) → **참고/선택**(B-04 프레임워크·B-14 원칙·전략 템플릿·도구 패턴).
+
+
+---
+
+## ⏭️ 다음 세션 작업 계획 — 20개 보강안 상세 설계 (마스터 지시 2026-06-08)
+목표: **B-01 ~ B-20 각각을 구현 가능한 루나팀 보강안으로 작성.** 아이디어가 아니라 소스코드·최신 기술 근거 위에.
+
+### 각 보강안마다 4단계
+1. **소스코드 딥분석**: 관련 우리 코드 전수 분석(`bots/investment` nodes/team/shared, `bots/hub`, `services/meeting-room`, `packages/core/lib/skills`). §16 실측 계약 기준으로 "어디를 바꾸/추가"를 명시.
+2. **최신 기술 적용 검토**: **Anthropic + OpenAI Codex가 GitHub에 릴리스한 재사용 가능 기술** 조사·적용·최적화 — **Skills · Hooks · MCP · A2A · Workflows** 등. 각 B-항목 ↔ 기술 매핑.
+3. **외부 딥서칭**: 관련 베스트프랙티스·논문·레퍼런스 구현 확보.
+4. **최적화**: 부품 재사용 우선(신규 최소) · advisory 게이트 · PROTECTED/LIVE 무중단 유지 · 3역할.
+
+### 딥서칭 시작점 (기술 조사 대상)
+- **Anthropic**: Claude Skills 레포(mattpocock/skills 외 공식/커뮤니티) · agentskills.io 표준 · MCP 서버 생태계 · **Claude Code Hooks** · Claude Code Routines/Workflows · financial-services 플러그인.
+- **OpenAI Codex**: Codex GitHub 릴리스 스킬/워크플로우 · Codex MCP · **A2A(agent-to-agent) 프로토콜**(최신 사양).
+- **우리 자산 재사용**: `packages/core/lib/skills` · 시그마 MCP/Hook/A2A(메모리: A2A Skills 12개+Python RL/Quant 8개) · 클로드팀 자산 · reflexion-engine · agent-memory-4layer.
+
+### 산출물 / 순서
+- 보강안 상세 설계 → **DESIGN/TRACKER v0.3 통합** → 커밋 → Phase 1 CODEX 프롬프트.
+- 우선순위: **강력권장 6**(B-01 ADR·B-06 단일변수·B-10 레짐·B-12 레짐정밀·B-13 회로차단기·B-18 검증3종) 먼저 → 권장 12 → 참고/선택.
+- 분량 큼 → 세션 분할 가능(예: 강력권장 6 → 권장 → 통합).
+- 자막 캐시 `/tmp/ytdistill/clean/`(13)·`/tmp/yt-dlp` 유실 시 재취득.
