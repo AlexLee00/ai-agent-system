@@ -1,11 +1,12 @@
 # 루나 투자회의 — 구현 추적 (TRACKER)
 
-> 버전 v0.3 (2026-06-08) · 작성: 메티 · 상태: Phase 1 착수 전 + 보강 WS(I~Q) 통합 · SSOT=LUNA_MEETING_ROOM_DESIGN.md(§19) · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md
+> 버전 v0.4 (2026-06-08) · 작성: 메티 · 상태: **알파팩터(WS-R) 선행 → 회의실 Phase 1** · SSOT=LUNA_MEETING_ROOM_DESIGN.md(§20) · 성장=LUNA_GROWTH_REINFORCEMENT.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md
 > 항목: 작업 / 담당(코덱스·메티·마스터) / 상태 / 검증(문법·소프트·하드) / 의존성 / 연결 CODEX
 > 원칙: 부품 재사용 우선(오케스트레이터만 신규) · PROTECTED/LIVE 무중단 · advisory 게이트(차단 X)
 
 ## Phase 요약
-- **Phase 1(MVP)**: 회의실 백엔드+오케스트레이터(FSM)+advisory 액션가드+회의록(DB/RAG)+기존 노드/KIS 모의 어댑터+웹 스캐폴드+버튼/폴백. morning-note/ic-memo 포맷·point-in-time 규율·이종모델·모의 forward 기록.
+- **Phase 0(선행, 신규)**: **알파팩터 생성**(WS-R) — 후보 팩터→IC/RankIC→검증게이트(DSR/PBO/OOS)→마스터 게이팅→signal/skill 승격. **회의실보다 먼저.** SI 안전레일=별도 구축 제외(기존 가드 — kill-switch·24h 자동롤백·검증게이트 — 불변).
+- **Phase 1(MVP)**: 회의실 백엔드+오케스트레이터(FSM)+advisory 액션가드+회의록(DB/RAG)+기존 노드/KIS 모의 어댑터+웹 스캐폴드+버튼/폴백. morning-note/ic-memo 포맷·point-in-time 규율·이종모델·모의 forward 기록. **알파팩터를 후보로 활용.**
 - **Phase 2**: CVRF 신념층·temporal-validity·napkin·CPCV+DSR/PBO 리더보드·KRX/수급/네이버 커넥터.
 - **Phase 3**: 졸업 게이트 자동화·자율 다이얼·LIVE 확장 → 검증 후 해외·암호화폐.
 
@@ -71,8 +72,10 @@
 - 국내주식 forward 실적(post-cutoff) + CPCV 리더보드 통과 → 해외주식(KIS 해외·markets/overseas) → 암호화폐(루나 crypto LIVE·markets/crypto).
 - 각 단계 = 마스터 다이얼 승인 경계.
 
-## 연결 CODEX 프롬프트
-- Phase 1 → `docs/codex/CODEX_LUNA_MEETING_ROOM_PHASE1.md` (WS-A~E·G, **v0.3 통합 후 작성**)
+## 연결 CODEX 프롬프트 (순서)
+- **1번 → `docs/codex/CODEX_LUNA_ALPHA_FACTOR.md`** (WS-R 알파팩터 — 회의실 선행, 검증게이트 위)
+- 2번 → `docs/codex/CODEX_LUNA_MEETING_ROOM_PHASE1.md` (WS-A~E·G)
+- (보류) WS-I~Q(v0.3 보강) · SI 정렬 — 성장·검증 누적 후 선택
 
 ## 워크스트림 — v0.3 보강 (WS-I ~ WS-Q) [Phase 2~3]
 > 코드 대조 결과(LUNA_BOOST_APPLY_REVIEW): 대부분 **활성화/확장**, 신규 소수. 활성화=마스터 게이팅(검증 후 단계 ON).
@@ -115,3 +118,20 @@
 - **신규(net-new)**: HWM·correlation·RST·PBO 게이트·경험 전이행렬·HMM 정밀화·캘리브레이션·conviction 입력·단일변수 원장·ADR 메타·래더·외국인수급 어댑터·glossary/grill skill·meeting-room UI.
 - **활성화(env/flag)**: DSR 게이트·HMM 레짐·adaptive weight·OpenDART·dynamic-trail·entry-gate mode.
 - **확장**: 회로차단기·sizer·scorer·skill-extractor·예산가드·coordination.
+
+## 워크스트림 — v0.4 성장 (WS-R) [Phase 0 — 회의실 선행]
+> 방침(마스터): **알파팩터 → 회의실** 순서. SI 안전레일 별도 구축 제외(기존 가드 불변). 상세=DESIGN §20·LUNA_GROWTH_REINFORCEMENT(LG-01).
+
+### WS-R. 알파팩터 생성 [Phase 0] (LG-01) — 로직 성장 핵심
+- R1 팩터 생성기(LLM Chain-of-Alpha 이중체인 또는 RL AlphaGen식, **local 우선**·소규모 예산) — 코덱스 · 검증: 후보 팩터 생성(소프트)
+- R2 IC/RankIC 평가 모듈 — 코덱스 · 검증: 지표 산출 단위테스트
+- R3 `candidate-backtest-gate` 검증 연결(DSR/PBO/OOS) — 코덱스 · 검증: 게이트 통과 판정 / **재사용**(기구현)
+- R4 팩터=**실행가능·감사가능 코드** 저장 + shadow 기록 — 코덱스 · 검증: 저장·재현
+- R5 마스터 게이팅 → 통과분 `signal`/`skill` 승격 — 코덱스(메티 검토) · advisory(승격, 검증 없는 승격 금지)
+- R6 회의실 연결: 승격 팩터 → Research 레인 입력(회의 후보) — 코덱스 · 의존: 회의실 Phase 1
+- 의존: `candidate-backtest-gate`(기구현) · `discovery` · `skills/luna` / **안전: 기존 게이트 경유(신규 안전레일 없음)** / 무중단: shadow→승격
+
+## 재사용 vs 신규 — v0.4 성장(WS-R)
+- **신규**: 팩터 생성기(LLM/RL) · IC/RankIC 평가 · 팩터=감사가능 코드 저장.
+- **재사용**: `candidate-backtest-gate`(검증) · `discovery`(유니버스) · `skills/luna`(승격 대상) · shadow 인프라.
+- **제외**: SI 안전레일 신규 트랙(기존 kill-switch·24h 자동롤백·검증게이트로 충분).
