@@ -22,6 +22,34 @@ function _getPlanner() {
   return _curriculumPlanner;
 }
 
+let _lectureTransitionCheckInFlight = null;
+
+async function _ensureLectureSeriesReadyForSchedule() {
+  if (_lectureTransitionCheckInFlight) return _lectureTransitionCheckInFlight;
+  const planner = _getPlanner();
+  if (!planner?.checkSeriesEndingSoon || !planner?.autoPrepareAndTransitionCompletedSeries) return null;
+
+  _lectureTransitionCheckInFlight = (async () => {
+    const check = await planner.checkSeriesEndingSoon().catch(() => null);
+    if (!check?.currentSeries || Number(check.remainingLectures) > 0) return null;
+    const transitioned = await planner.autoPrepareAndTransitionCompletedSeries(check);
+    if (!transitioned) {
+      const error = new Error('lecture_series_complete_without_next_series');
+      error.code = 'LECTURE_SERIES_TRANSITION_REQUIRED';
+      error.currentSeries = check.currentSeries?.series_name || null;
+      error.remainingLectures = check.remainingLectures;
+      throw error;
+    }
+    return transitioned;
+  })();
+
+  try {
+    return await _lectureTransitionCheckInFlight;
+  } finally {
+    _lectureTransitionCheckInFlight = null;
+  }
+}
+
 const IS_TEST = process.env.BLOG_TEST_MODE === 'true';
 const RUN_DATE = process.env.BLOG_RUN_DATE || null;
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
@@ -39,20 +67,25 @@ function _isDbPermissionError(error) {
 }
 
 async function _buildSyntheticSchedule(date = _today()) {
-  const lecture = await _resolveLecturePlan(date).catch(() => ({ number: 1, lectureTitle: '제1강', seriesName: 'nodejs_120' }));
+  const lecture = await _resolveLecturePlan(date).catch((error) => {
+    if (error?.code === 'LECTURE_SERIES_TRANSITION_REQUIRED') return null;
+    return { number: 1, lectureTitle: '제1강', seriesName: 'nodejs_120' };
+  });
   const general = await _resolveGeneralPlan(date).catch(() => ({ category: '자기계발' }));
-  return [
-    {
+  const rows = [];
+  if (lecture) {
+    rows.push({
       id: null,
       publish_date: date,
       post_type: 'lecture',
-      category: 'Node.js강의',
+      category: _lectureCategoryForSeries(lecture.seriesName),
       lecture_number: lecture.number,
       lecture_title: lecture.lectureTitle,
       status: 'scheduled',
-    },
-    { id: null, publish_date: date, post_type: 'general', category: general.category, status: 'scheduled' },
-  ];
+    });
+  }
+  rows.push({ id: null, publish_date: date, post_type: 'general', category: general.category, status: 'scheduled' });
+  return rows;
 }
 
 function _nextGeneralCategoryFrom(previousCategory) {
@@ -63,11 +96,30 @@ function _nextGeneralCategoryFrom(previousCategory) {
   return GENERAL_CATEGORIES[baseIndex];
 }
 
+async function _getActiveLecturePlan() {
+  const nextLecture = await getNextLectureNumber();
+  const lectureTitle = await getLectureTitle(nextLecture.number, nextLecture.seriesName).catch(() => null);
+  return {
+    number: nextLecture.number,
+    seriesName: nextLecture.seriesName,
+    lectureTitle: lectureTitle || `제${nextLecture.number}강`,
+  };
+}
+
+function _lectureCategoryForSeries(seriesName) {
+  const normalized = String(seriesName || '').trim();
+  if (!normalized || normalized === 'nodejs_120') return 'Node.js강의';
+  return `${normalized}강의`;
+}
+
 async function _resolveLecturePlan(date = _today()) {
+  await _ensureLectureSeriesReadyForSchedule();
+
   const realToday = _realToday();
   const futurePrevious = date > realToday
     ? await pgPool.get('blog', `
-      SELECT COALESCE(s.lecture_number, p.lecture_number) AS lecture_number
+      SELECT COALESCE(s.lecture_number, p.lecture_number) AS lecture_number,
+             p.series_name AS series_name
       FROM blog.publish_schedule s
       LEFT JOIN blog.posts p ON p.id = s.post_id
       WHERE s.post_type = 'lecture'
@@ -81,7 +133,8 @@ async function _resolveLecturePlan(date = _today()) {
   const previous = futurePrevious?.lecture_number
     ? futurePrevious
     : await pgPool.get('blog', `
-      SELECT COALESCE(s.lecture_number, p.lecture_number) AS lecture_number
+      SELECT COALESCE(s.lecture_number, p.lecture_number) AS lecture_number,
+             p.series_name AS series_name
       FROM blog.publish_schedule s
       LEFT JOIN blog.posts p ON p.id = s.post_id
       WHERE s.post_type = 'lecture'
@@ -91,19 +144,18 @@ async function _resolveLecturePlan(date = _today()) {
     `, [date]);
 
   if (previous?.lecture_number) {
-    const seriesName = 'nodejs_120';
+    const activePlan = await _getActiveLecturePlan();
+    const previousSeriesName = String(previous.series_name || 'nodejs_120').trim();
+    if (activePlan.seriesName && previousSeriesName && activePlan.seriesName !== previousSeriesName) {
+      return activePlan;
+    }
+    const seriesName = activePlan.seriesName || previousSeriesName || 'nodejs_120';
     const number = Number(previous.lecture_number) + 1;
     const lectureTitle = await getLectureTitle(number, seriesName).catch(() => null);
     return { number, seriesName, lectureTitle: lectureTitle || `제${number}강` };
   }
 
-  const nextLecture = await getNextLectureNumber();
-  const lectureTitle = await getLectureTitle(nextLecture.number, nextLecture.seriesName).catch(() => null);
-  return {
-    number: nextLecture.number,
-    seriesName: nextLecture.seriesName,
-    lectureTitle: lectureTitle || `제${nextLecture.number}강`,
-  };
+  return _getActiveLecturePlan();
 }
 
 async function _resolveGeneralPlan(date = _today()) {
@@ -260,15 +312,31 @@ async function ensureSchedule(date = _today(), options = {}) {
     await pgPool.run('blog', `
       INSERT INTO blog.publish_schedule (publish_date, post_type, lecture_number, lecture_title, category, status)
       VALUES
-        ($1, 'lecture', $2, $3, 'Node.js강의', 'scheduled'),
+        ($1, 'lecture', $2, $3, $5, 'scheduled'),
         ($1, 'general', NULL, NULL, $4, 'scheduled')
       ON CONFLICT DO NOTHING
-    `, [date, lecturePlan.number, lecturePlan.lectureTitle, generalPlan.category]);
+    `, [
+      date,
+      lecturePlan.number,
+      lecturePlan.lectureTitle,
+      generalPlan.category,
+      _lectureCategoryForSeries(lecturePlan.seriesName),
+    ]);
 
     console.log(`[스케줄] ${date} 자동 생성 — 강의 ${lecturePlan.number}강 / 일반 카테고리: ${generalPlan.category}`);
     const created = await getScheduleByDate(date);
     return created.length > 0 ? created : _buildSyntheticSchedule(date);
   } catch (e) {
+    if (e?.code === 'LECTURE_SERIES_TRANSITION_REQUIRED') {
+      console.warn('[스케줄] 강의 시리즈 완료 — 차기 커리큘럼 전환 전까지 강의 스케줄 생성 중단');
+      return [{
+        id: null,
+        publish_date: date,
+        post_type: 'general',
+        category: (await _resolveGeneralPlan(date).catch(() => ({ category: '자기계발' }))).category,
+        status: 'scheduled',
+      }];
+    }
     if (_isDbPermissionError(e)) {
       console.log('[스케줄] DB 접근 제한 — 합성 스케줄 사용');
     } else {
@@ -300,8 +368,8 @@ async function getTodayContext(options = {}) {
     if (IS_TEST) {
       lectureCtx = await resolveTestLecture();
     } else {
-      const seriesName = 'nodejs_120';
-      const fallbackLecture = await _resolveLecturePlan(_today()).catch(() => ({ number: 1, lectureTitle: null, seriesName }));
+      const fallbackLecture = await _resolveLecturePlan(_today()).catch(() => ({ number: 1, lectureTitle: null, seriesName: 'nodejs_120' }));
+      const seriesName = fallbackLecture.seriesName || 'nodejs_120';
       const number = Number(lectureRow.lecture_number || fallbackLecture.number);
       const planner = _getPlanner();
       const curriculumTitle = planner

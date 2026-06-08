@@ -105,6 +105,36 @@ async function checkSeriesEndingSoon() {
   };
 }
 
+async function getOldestCandidateSeries() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT *
+      FROM blog.curriculum_series
+      WHERE status = 'candidate'
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+    `);
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getOldestPlannedSeries() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT *
+      FROM blog.curriculum_series
+      WHERE status = 'planned'
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+    `);
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 async function searchCommunityTrends() {
   const trends = [];
 
@@ -473,23 +503,40 @@ async function generateCurriculum(topic, lectureCount = 100) {
 
 async function transitionSeries() {
   try {
-    await pgPool.run('blog', `
-      UPDATE blog.curriculum_series
-      SET status = 'completed', end_date = CURRENT_DATE
-      WHERE status = 'active'
-    `);
-
     const next = await pgPool.query('blog', `
-      UPDATE blog.curriculum_series
-      SET status = 'active', start_date = CURRENT_DATE
-      WHERE status = 'planned'
-      ORDER BY id ASC
-      LIMIT 1
-      RETURNING *
+      WITH next_series AS (
+        SELECT id
+        FROM blog.curriculum_series
+        WHERE status = 'planned'
+        ORDER BY created_at ASC, id ASC
+        LIMIT 1
+      ),
+      completed AS (
+        UPDATE blog.curriculum_series
+        SET status = 'completed', end_date = CURRENT_DATE
+        WHERE status = 'active'
+          AND EXISTS (SELECT 1 FROM next_series)
+        RETURNING id
+      ),
+      activated AS (
+        UPDATE blog.curriculum_series s
+        SET status = 'active', start_date = CURRENT_DATE
+        FROM next_series n
+        WHERE s.id = n.id
+        RETURNING s.*
+      )
+      SELECT * FROM activated
     `);
 
     if (next.length > 0) {
       const n = next[0];
+      await pgPool.run('blog', `
+        UPDATE blog.category_rotation
+        SET current_index = 0,
+            series_name = $1,
+            updated_at = NOW()
+        WHERE rotation_type = 'lecture_series'
+      `, [n.series_name]);
       console.log(`[커리큘럼] 🔄 시리즈 전환: ${n.series_name} ${n.total_lectures}강 시작!`);
       const msg = `🔄 [시리즈 전환]\n새 시리즈: ${n.series_name} (${n.total_lectures}강)\n오늘부터 1강 시작!`;
       const transitionMemoryQuery = buildCurriculumMemoryQuery('transition', [n.series_name, String(n.total_lectures)]);
@@ -561,6 +608,23 @@ async function transitionSeries() {
   }
 }
 
+async function autoPrepareAndTransitionCompletedSeries(check) {
+  if (!check?.currentSeries || Number(check.remainingLectures) > 0) return null;
+
+  let planned = await getOldestPlannedSeries();
+  if (!planned) {
+    const candidate = await getOldestCandidateSeries();
+    if (candidate) {
+      console.log(`[커리큘럼] ${check.currentSeries.series_name} 완료 — 후보 자동 선택: ${candidate.series_name}`);
+      await generateCurriculum(candidate.series_name, candidate.total_lectures || MIN_LECTURES);
+      planned = await getOldestPlannedSeries();
+    }
+  }
+
+  if (!planned) return null;
+  return transitionSeries();
+}
+
 async function getNextLectureTitle(seriesName, lectureNumber) {
   try {
     const rows = await pgPool.query('blog', `
@@ -587,6 +651,11 @@ async function dailyCurriculumCheck() {
   }
 
   if (!check.needsPlanning) {
+    if (Number(check.remainingLectures) <= 0) {
+      const transitioned = await autoPrepareAndTransitionCompletedSeries(check);
+      if (transitioned) return;
+      console.warn(`[커리큘럼] ${check.currentSeries?.series_name} 완료 — planned 시리즈 없음, 수동 확인 필요`);
+    }
     if (check.remainingLectures != null) {
       console.log(`[커리큘럼] ${check.currentSeries?.series_name} 잔여 ${check.remainingLectures}강 — 계획 불필요`);
     }
@@ -626,6 +695,7 @@ module.exports = {
   recommendNextSeries,
   generateCurriculum,
   transitionSeries,
+  autoPrepareAndTransitionCompletedSeries,
   getNextLectureTitle,
   dailyCurriculumCheck,
   MIN_LECTURES,
