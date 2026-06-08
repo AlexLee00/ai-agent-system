@@ -18,6 +18,10 @@
 		<string>true</string>
 		<key>REFACTORER_DIRTY_SCOPE</key>
 		<string>workspace</string>
+		<key>REFACTORER_AUTOFIX_ENABLED</key>
+		<string>true</string>
+		<key>REFACTORER_AUTOFIX_MAX_ATTEMPTS</key>
+		<string>2</string>
 		<key>REFACTORER_APPLY_PUSH</key>
 		<string>true</string>
 		<key>REFACTORER_APPLY_STRICT_GATE</key>
