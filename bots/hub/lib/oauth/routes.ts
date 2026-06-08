@@ -19,10 +19,70 @@ const { getOpenAiApiKeyStatus, runOpenAiApiKeyCanary } = require('./providers/op
 const { getOpenAiCodexOauthStatus, runOpenAiCodexOauthCanary } = require('./providers/openai-codex-oauth');
 const { getClaudeCodeCliStatus, runClaudeCodeCliCanary } = require('./providers/claude-code-cli');
 
-const pendingOAuthStates = new Map();
+type OAuthProvider = 'openai-api-key' | 'openai-codex-oauth' | 'claude-code-cli';
+type HubRequest = {
+  params?: Record<string, unknown>;
+  query?: Record<string, unknown>;
+  body?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+type HubResponse = {
+  status: (code: number) => HubResponse;
+  json: (payload: unknown) => unknown;
+};
+type ProviderEntry = {
+  resolveStatus: () => Promise<unknown> | unknown;
+  runCanary: () => Promise<Record<string, unknown>> | Record<string, unknown>;
+};
+type OAuthConfig = {
+  ok: true;
+  provider: OAuthProvider;
+  publicProviderName?: string;
+  authUrl: string;
+  tokenUrl: string;
+  clientId?: string;
+  clientSecret?: string;
+  redirectUri: string;
+  scope?: string;
+  audience?: string;
+  resource?: string;
+  tokenBodyFormat?: string;
+};
+type OAuthConfigError = {
+  ok: false;
+  provider?: string;
+  error?: string;
+  missing?: string[];
+  details?: Record<string, unknown>;
+};
+type OAuthConfigResult = OAuthConfig | OAuthConfigError;
+type PendingOAuthState = {
+  provider: OAuthProvider;
+  state: string;
+  codeVerifier: string;
+  redirectUri: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+  config: OAuthConfig;
+};
+type TokenEndpointResponse = {
+  ok: boolean;
+  status: number;
+};
+type TokenPayload = Record<string, unknown> & {
+  error_description?: string;
+  error?: string | { message?: string };
+};
+type NormalizedTokenResult = {
+  ok: boolean;
+  error?: string;
+  token?: Record<string, unknown> & { expires_at?: string };
+};
+
+const pendingOAuthStates = new Map<string, PendingOAuthState>();
 const OAUTH_STATE_TTL_MS = Number(process.env.HUB_OAUTH_STATE_TTL_MS || 10 * 60 * 1000);
 
-const PROVIDER_ALIASES = {
+const PROVIDER_ALIASES: Record<string, OAuthProvider | null> = {
   openai: 'openai-api-key',
   'openai-api-key': 'openai-api-key',
   'openai-codex': 'openai-codex-oauth',
@@ -35,7 +95,7 @@ const PROVIDER_ALIASES = {
   'gemini-oauth': null,
 };
 
-const PROVIDER_REGISTRY = {
+const PROVIDER_REGISTRY: Record<OAuthProvider, ProviderEntry> = {
   'openai-api-key': {
     resolveStatus: getOpenAiApiKeyStatus,
     runCanary: runOpenAiApiKeyCanary,
@@ -50,13 +110,13 @@ const PROVIDER_REGISTRY = {
   },
 };
 
-function normalizeProvider(raw) {
+function normalizeProvider(raw: unknown): OAuthProvider | null {
   const key = String(raw || '').trim().toLowerCase();
   if (!key) return null;
   return PROVIDER_ALIASES[key] || null;
 }
 
-function buildOAuthStatusResponse(provider, status, canary) {
+function buildOAuthStatusResponse(provider: OAuthProvider, status: unknown, canary: unknown) {
   const record = getProviderRecord(provider);
   const payload = {
     ok: true,
@@ -72,14 +132,14 @@ function buildOAuthStatusResponse(provider, status, canary) {
   return sanitizeOAuthStatusPayload(payload);
 }
 
-async function resolveProviderStatus(provider) {
+async function resolveProviderStatus(provider: OAuthProvider) {
   const entry = PROVIDER_REGISTRY[provider];
   if (!entry) return null;
   const status = await entry.resolveStatus();
   return status;
 }
 
-async function runProviderCanary(provider) {
+async function runProviderCanary(provider: OAuthProvider) {
   const entry = PROVIDER_REGISTRY[provider];
   if (!entry) return null;
   const result = await entry.runCanary();
@@ -95,7 +155,7 @@ function isCodexOAuthEnabled() {
   return String(process.env.HUB_ENABLE_OPENAI_CODEX_OAUTH || '').toLowerCase() === 'true';
 }
 
-function isOauthFlowProvider(provider) {
+function isOauthFlowProvider(provider: OAuthProvider): boolean {
   return provider === 'openai-codex-oauth' || provider === 'claude-code-cli';
 }
 
@@ -105,7 +165,7 @@ function prunePendingOAuthStates(now = Date.now()) {
   }
 }
 
-function createPendingOAuthState(provider, config) {
+function createPendingOAuthState(provider: OAuthProvider, config: OAuthConfig) {
   prunePendingOAuthStates();
   const state = randomToken(24);
   const codeVerifier = randomToken(48);
@@ -121,6 +181,7 @@ function createPendingOAuthState(provider, config) {
     expiresAtMs,
     config: {
       provider,
+      ok: true,
       publicProviderName: config.publicProviderName,
       authUrl: config.authUrl,
       tokenUrl: config.tokenUrl,
@@ -142,7 +203,7 @@ function createPendingOAuthState(provider, config) {
   };
 }
 
-function takePendingOAuthState(provider, state) {
+function takePendingOAuthState(provider: OAuthProvider, state: string): PendingOAuthState | null {
   prunePendingOAuthStates();
   const entry = pendingOAuthStates.get(state);
   if (!entry || entry.provider !== provider) return null;
@@ -150,7 +211,7 @@ function takePendingOAuthState(provider, state) {
   return entry;
 }
 
-function oauthFlowConfigErrorResponse(res, configResult) {
+function oauthFlowConfigErrorResponse(res: HubResponse, configResult: OAuthConfigError) {
   const statusCode = configResult?.error === 'oauth_flow_disabled' ? 403 : 503;
   return res.status(statusCode).json({
     ok: false,
@@ -164,7 +225,7 @@ function oauthFlowConfigErrorResponse(res, configResult) {
   });
 }
 
-function parseBooleanFlag(value, fallback = false) {
+function parseBooleanFlag(value: unknown, fallback = false): boolean {
   if (value == null || value === '') return fallback;
   if (typeof value === 'boolean') return value;
   const text = String(value).trim().toLowerCase();
@@ -173,7 +234,16 @@ function parseBooleanFlag(value, fallback = false) {
   return fallback;
 }
 
-function buildLocalImportOptions(req) {
+function tokenPayloadErrorMessage(payload: TokenPayload, fallback: string): string {
+  const rawError = payload?.error;
+  if (payload?.error_description) return String(payload.error_description);
+  if (rawError && typeof rawError === 'object' && 'message' in rawError) {
+    return String(rawError.message || fallback);
+  }
+  return String(rawError || fallback);
+}
+
+function buildLocalImportOptions(req: HubRequest) {
   const body = req.body || {};
   const query = req.query || {};
   return {
@@ -183,7 +253,7 @@ function buildLocalImportOptions(req) {
   };
 }
 
-async function oauthStatusRoute(req, res) {
+async function oauthStatusRoute(req: HubRequest, res: HubResponse) {
   const provider = normalizeProvider(req.params?.provider);
   if (!provider || !PROVIDER_REGISTRY[provider]) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
@@ -198,7 +268,7 @@ async function oauthStatusRoute(req, res) {
   return res.json(buildOAuthStatusResponse(provider, status, canary));
 }
 
-async function oauthImportLocalRoute(req, res) {
+async function oauthImportLocalRoute(req: HubRequest, res: HubResponse) {
   const provider = normalizeProvider(req.params?.provider);
   if (!provider || !PROVIDER_REGISTRY[provider]) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
@@ -263,7 +333,7 @@ async function oauthImportLocalRoute(req, res) {
   }));
 }
 
-async function oauthStartRoute(req, res) {
+async function oauthStartRoute(req: HubRequest, res: HubResponse) {
   const provider = normalizeProvider(req.params?.provider);
   if (!provider || !PROVIDER_REGISTRY[provider]) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
@@ -297,7 +367,7 @@ async function oauthStartRoute(req, res) {
   }));
 }
 
-async function oauthCallbackRoute(req, res) {
+async function oauthCallbackRoute(req: HubRequest, res: HubResponse) {
   const provider = normalizeProvider(req.params?.provider);
   if (!provider || !PROVIDER_REGISTRY[provider]) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
@@ -315,20 +385,23 @@ async function oauthCallbackRoute(req, res) {
   }
 
   try {
-    const { response, payload } = await exchangeOAuthCode(pending.config, code, pending.codeVerifier);
+    const { response, payload } = await exchangeOAuthCode(pending.config, code, pending.codeVerifier) as {
+      response: TokenEndpointResponse;
+      payload: TokenPayload;
+    };
     if (!response.ok) {
       return res.status(502).json(sanitizeOAuthStatusPayload({
         ok: false,
         provider,
         error: {
           code: 'oauth_exchange_failed',
-          message: String(payload?.error_description || payload?.error?.message || payload?.error || 'token endpoint rejected authorization code').slice(0, 400),
+          message: tokenPayloadErrorMessage(payload, 'token endpoint rejected authorization code').slice(0, 400),
         },
         details: { status: response.status },
       }));
     }
 
-    const normalized = normalizeOAuthToken(provider, payload);
+    const normalized = normalizeOAuthToken(provider, payload) as NormalizedTokenResult;
     if (!normalized.ok) {
       return res.status(502).json({
         ok: false,
@@ -367,19 +440,20 @@ async function oauthCallbackRoute(req, res) {
       token: normalized.token,
       metadata,
     }));
-  } catch (error) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return res.status(502).json({
       ok: false,
       provider,
       error: {
         code: 'oauth_exchange_error',
-        message: String(error?.message || error).slice(0, 400),
+        message: message.slice(0, 400),
       },
     });
   }
 }
 
-async function oauthRefreshRoute(req, res) {
+async function oauthRefreshRoute(req: HubRequest, res: HubResponse) {
   const provider = normalizeProvider(req.params?.provider);
   if (!provider || !PROVIDER_REGISTRY[provider]) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
@@ -412,19 +486,22 @@ async function oauthRefreshRoute(req, res) {
   }
 
   try {
-    const { response, payload } = await refreshOAuthToken(configResult, refreshToken);
+    const { response, payload } = await refreshOAuthToken(configResult, refreshToken) as {
+      response: TokenEndpointResponse;
+      payload: TokenPayload;
+    };
     if (!response.ok) {
       return res.status(502).json(sanitizeOAuthStatusPayload({
         ok: false,
         provider,
         error: {
           code: 'oauth_refresh_failed',
-          message: String(payload?.error_description || payload?.error?.message || payload?.error || 'token endpoint rejected refresh token').slice(0, 400),
+          message: tokenPayloadErrorMessage(payload, 'token endpoint rejected refresh token').slice(0, 400),
         },
         details: { status: response.status },
       }));
     }
-    const normalized = normalizeOAuthToken(provider, payload, record?.token || null);
+    const normalized = normalizeOAuthToken(provider, payload, record?.token || null) as NormalizedTokenResult;
     if (!normalized.ok) {
       return res.status(502).json({
         ok: false,
@@ -461,19 +538,20 @@ async function oauthRefreshRoute(req, res) {
       token: normalized.token,
       metadata,
     }));
-  } catch (error) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     return res.status(502).json({
       ok: false,
       provider,
       error: {
         code: 'oauth_refresh_error',
-        message: String(error?.message || error).slice(0, 400),
+        message: message.slice(0, 400),
       },
     });
   }
 }
 
-async function oauthRevokeLocalRoute(req, res) {
+async function oauthRevokeLocalRoute(req: HubRequest, res: HubResponse) {
   const provider = normalizeProvider(req.params?.provider);
   if (!provider || !PROVIDER_REGISTRY[provider]) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
