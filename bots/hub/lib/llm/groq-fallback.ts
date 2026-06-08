@@ -74,6 +74,10 @@ function readHeader(resp: Response, name: string): string | null {
   return value === null ? null : value;
 }
 
+function hasHeaderValue(entry: readonly [string, string | null]): entry is readonly [string, string] {
+  return entry[1] !== null;
+}
+
 function extractRateLimitHeaders(resp: Response): Record<string, string> {
   const entries = [
     'retry-after',
@@ -87,7 +91,7 @@ function extractRateLimitHeaders(resp: Response): Record<string, string> {
   return Object.fromEntries(
     entries
       .map((name) => [name, readHeader(resp, name)] as const)
-      .filter(([, value]) => value !== null),
+      .filter(hasHeaderValue),
   );
 }
 
