@@ -1,7 +1,6 @@
-// @ts-nocheck
 'use strict';
 
-function buildSymphonyValidationPlan(task = {}) {
+function buildSymphonyValidationPlan(task: { id?: unknown } = {}) {
   return {
     mode: 'plan_only',
     taskId: task.id || null,
