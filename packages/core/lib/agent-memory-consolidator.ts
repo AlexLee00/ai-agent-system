@@ -12,8 +12,10 @@
  * 사용처: steward.ts runDaily()에서 매일 1회 자동 실행
  */
 
-import pgPool = require('./pg-pool');
-import { AgentMemory } from './agent-memory';
+import * as pgPool from './pg-pool';
+import agentMemory = require('./agent-memory');
+
+const { AgentMemory } = agentMemory;
 
 const SCHEMA = 'rag';
 const DEFAULT_OLDER_THAN_DAYS = 30;
