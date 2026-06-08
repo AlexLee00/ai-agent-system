@@ -7,11 +7,56 @@ const DEFAULT_LOCK_TIMEOUT_MS = 120_000;
 const DEFAULT_LOCK_STALE_MS = 180_000;
 const DEFAULT_LOCK_RETRY_MS = 150;
 
-function sleep(ms) {
+type LockProvider = string;
+type LockMetadata = {
+  provider?: string | null;
+  profile_id?: string | null;
+  reason?: string | null;
+  pid?: number | null;
+  created_at?: string | null;
+  [key: string]: unknown;
+};
+type ListLockOptions = {
+  lockDir?: string;
+  staleMs?: number;
+};
+type CleanupLockOptions = ListLockOptions & {
+  apply?: boolean;
+  confirm?: string;
+};
+type AcquireLockOptions = {
+  profileId?: string;
+  timeoutMs?: number;
+  staleMs?: number;
+  retryMs?: number;
+  reason?: string | null;
+};
+type OAuthRefreshLock = {
+  lockPath: string;
+  release: () => void;
+};
+type OAuthRefreshLockTimeoutError = Error & {
+  code?: string;
+  lockPath?: string;
+  provider?: string;
+};
+type OAuthRefreshLockRecord = {
+  lock_name: string;
+  lock_path: string;
+  age_ms: number | null;
+  stale: boolean;
+  provider: string | null;
+  profile_id: string | null;
+  reason: string | null;
+  pid: number | null;
+  created_at: string | null;
+};
+
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function safeLockName(provider, profileId) {
+function safeLockName(provider: LockProvider, profileId: string): string {
   const hash = crypto.createHash('sha256');
   hash.update(String(provider || ''), 'utf8');
   hash.update('\0', 'utf8');
@@ -19,16 +64,16 @@ function safeLockName(provider, profileId) {
   return `sha256-${hash.digest('hex')}`;
 }
 
-function resolveOAuthRefreshLockDir() {
+function resolveOAuthRefreshLockDir(): string {
   return process.env.HUB_OAUTH_REFRESH_LOCK_DIR
     || path.join(env.PROJECT_ROOT, 'bots', 'hub', 'output', 'oauth', 'locks');
 }
 
-function resolveOAuthRefreshLockPath(provider, profileId = provider) {
+function resolveOAuthRefreshLockPath(provider: LockProvider, profileId = provider): string {
   return path.join(resolveOAuthRefreshLockDir(), safeLockName(provider, profileId));
 }
 
-function lockIsStale(lockPath, staleMs) {
+function lockIsStale(lockPath: string, staleMs: number): boolean {
   try {
     const stat = fs.statSync(lockPath);
     return Date.now() - stat.mtimeMs > staleMs;
@@ -37,7 +82,7 @@ function lockIsStale(lockPath, staleMs) {
   }
 }
 
-function writeLockMetadata(lockPath, metadata) {
+function writeLockMetadata(lockPath: string, metadata: LockMetadata): void {
   try {
     fs.writeFileSync(
       path.join(lockPath, 'owner.json'),
@@ -53,7 +98,7 @@ function writeLockMetadata(lockPath, metadata) {
   }
 }
 
-function readLockMetadata(lockPath) {
+function readLockMetadata(lockPath: string): LockMetadata {
   try {
     return JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
   } catch {
@@ -61,14 +106,14 @@ function readLockMetadata(lockPath) {
   }
 }
 
-function listOAuthRefreshLocks(options = {}) {
+function listOAuthRefreshLocks(options: ListLockOptions = {}): OAuthRefreshLockRecord[] {
   const lockDir = options.lockDir || resolveOAuthRefreshLockDir();
   const staleMs = Number(process.env.HUB_OAUTH_REFRESH_LOCK_STALE_MS || options.staleMs || DEFAULT_LOCK_STALE_MS);
   if (!fs.existsSync(lockDir)) return [];
 
   return fs.readdirSync(lockDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => {
+    .filter((entry: import('node:fs').Dirent) => entry.isDirectory())
+    .map((entry: import('node:fs').Dirent) => {
       const lockPath = path.join(lockDir, entry.name);
       let mtimeMs = 0;
       try {
@@ -92,11 +137,11 @@ function listOAuthRefreshLocks(options = {}) {
     });
 }
 
-function cleanupOAuthRefreshLocks(options = {}) {
+function cleanupOAuthRefreshLocks(options: CleanupLockOptions = {}) {
   const staleLocks = listOAuthRefreshLocks(options).filter((lock) => lock.stale);
   const apply = options.apply === true;
   const confirm = String(options.confirm || '').trim();
-  const removed = [];
+  const removed: string[] = [];
   if (apply) {
     if (confirm !== 'hub-oauth-lock-janitor') {
       return {
@@ -127,7 +172,7 @@ function cleanupOAuthRefreshLocks(options = {}) {
   };
 }
 
-async function acquireOAuthRefreshLock(provider, options = {}) {
+async function acquireOAuthRefreshLock(provider: LockProvider, options: AcquireLockOptions = {}): Promise<OAuthRefreshLock> {
   const profileId = options.profileId || provider;
   const lockPath = resolveOAuthRefreshLockPath(provider, profileId);
   const timeoutMs = Number(process.env.HUB_OAUTH_REFRESH_LOCK_TIMEOUT_MS || options.timeoutMs || DEFAULT_LOCK_TIMEOUT_MS);
@@ -154,8 +199,9 @@ async function acquireOAuthRefreshLock(provider, options = {}) {
           }
         },
       };
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
+    } catch (error: unknown) {
+      const fsError = error as { code?: string };
+      if (fsError?.code !== 'EEXIST') throw error;
       if (lockIsStale(lockPath, staleMs)) {
         try {
           fs.rmSync(lockPath, { recursive: true, force: true });
@@ -165,7 +211,7 @@ async function acquireOAuthRefreshLock(provider, options = {}) {
         continue;
       }
       if (Date.now() - started > timeoutMs) {
-        const timeoutError = new Error(`oauth_refresh_lock_timeout:${provider}`);
+        const timeoutError = new Error(`oauth_refresh_lock_timeout:${provider}`) as OAuthRefreshLockTimeoutError;
         timeoutError.code = 'oauth_refresh_lock_timeout';
         timeoutError.lockPath = lockPath;
         timeoutError.provider = provider;
@@ -176,7 +222,12 @@ async function acquireOAuthRefreshLock(provider, options = {}) {
   }
 }
 
-async function withOAuthRefreshLock(provider, reason, work, options = {}) {
+async function withOAuthRefreshLock<T>(
+  provider: LockProvider,
+  reason: string | null,
+  work: () => Promise<T> | T,
+  options: AcquireLockOptions = {},
+): Promise<T> {
   const lock = await acquireOAuthRefreshLock(provider, { ...options, reason });
   try {
     return await work();
