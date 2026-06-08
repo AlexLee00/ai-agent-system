@@ -912,12 +912,12 @@ function strictRunResultSignatures(result) {
 }
 
 function isStrictInfraFailure(error, output = '') {
-  const text = `${output || ''}\n${error?.message || ''}\n${error?.code || ''}\n${error?.signal || ''}`.toLowerCase();
+  const errorText = `${error?.message || ''}\n${error?.code || ''}\n${error?.signal || ''}`.toLowerCase();
   return Boolean(
     error?.killed
     || error?.signal
     || ['ETIMEDOUT', 'ENOENT'].includes(String(error?.code || ''))
-    || /timed out|timeout|spawn.*enoent|no such file or directory/.test(text)
+    || /timed out|timeout|spawn.*enoent|no such file or directory/.test(errorText)
     || /error TS(5058|5083|18003):/i.test(String(output || ''))
   );
 }

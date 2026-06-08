@@ -1063,6 +1063,29 @@ async function test_strict_baseline_rejects_config_error_with_ts_code() {
   console.log('✅ refactor-cycle: strict baseline rejects TypeScript config errors even with TS codes');
 }
 
+async function test_strict_infra_detection_ignores_normal_diagnostic_words() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const diagnosticWithInfraLikeNames = [
+    strictError('bots/blog/scripts/draft-book-review.ts', '7006', "Parameter 'timeoutMs' implicitly has an any type."),
+    strictError('bots/claude/__tests__/auto-dev-pipeline.test.ts', '7034', "Variable 'spawnedScripts' implicitly has type 'any[]'."),
+  ].join('\n');
+  assert.strictEqual(runner.isStrictInfraFailure({}, diagnosticWithInfraLikeNames), false);
+  const baseline = runner.captureStrictBaseline({
+    context: {
+      strictRunFn: () => ({
+        ok: false,
+        output: diagnosticWithInfraLikeNames,
+        infraError: runner.isStrictInfraFailure({}, diagnosticWithInfraLikeNames),
+        command: 'mock strict',
+      }),
+    },
+  });
+  assert.strictEqual(baseline instanceof Set, true);
+  assert.strictEqual(baseline.size, 2);
+  console.log('✅ refactor-cycle: strict infra detection ignores timeout/spawn words inside normal diagnostics');
+}
+
 async function test_strict_after_rejects_timeout_with_partial_diagnostics() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -1861,6 +1884,7 @@ async function main() {
     test_apply_strict_baseline_fails_closed_when_baseline_unavailable,
     test_apply_strict_baseline_fails_closed_when_after_infra_fails,
     test_strict_baseline_rejects_config_error_with_ts_code,
+    test_strict_infra_detection_ignores_normal_diagnostic_words,
     test_strict_after_rejects_timeout_with_partial_diagnostics,
     test_strict_baseline_disabled_preserves_legacy_pass_fail,
     test_apply_lock_fresh_skips_stale_proceeds_and_releases,
