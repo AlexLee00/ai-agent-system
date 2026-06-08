@@ -136,6 +136,10 @@ function strictPass() {
   return { pass: true, skipped: false, message: 'mock strict pass' };
 }
 
+function strictError(file, code, message = 'mock strict error') {
+  return `${file}(1,1): error TS${code}: ${message}`;
+}
+
 async function runActiveWithBuilderResult(builderResult, target = ACTIVE_TARGET) {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -645,6 +649,7 @@ async function test_apply_on_verify_fail_does_not_commit_and_restores() {
         },
       },
       reviewerModule,
+      strictCheckFn: async () => strictPass(),
       commitFileFn: async (file, message) => {
         commits.push({ file, message });
         return 'unexpected';
@@ -833,6 +838,275 @@ async function test_apply_strict_failure_defers_before_commit() {
     cleanupRefactorArtifacts(result);
   }
   console.log('✅ refactor-cycle: strict gate failure defers before commit');
+}
+
+async function test_strict_baseline_diff_allows_existing_errors_and_removed_errors() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const existingA = strictError('bots/blog/__tests__/asset-memory.test.ts', '2304', 'Cannot find name jest');
+  const existingB = strictError('packages/core/lib/runtime-env-policy.ts', '7006', 'Parameter key implicitly has an any type');
+  const unchanged = runner.defaultStrictCheck({
+    file: ACTIVE_TARGET,
+    context: {
+      strictGateBaselineEnabled: true,
+      strictBaseline: new Set([existingA, existingB]),
+      strictRunFn: () => ({ ok: false, output: `${existingA}\n${existingB}`, command: 'mock strict' }),
+    },
+  });
+  assert.strictEqual(unchanged.pass, true);
+  assert.strictEqual(unchanged.newErrorCount, 0);
+
+  const removed = runner.defaultStrictCheck({
+    file: ACTIVE_TARGET,
+    context: {
+      strictGateBaselineEnabled: true,
+      strictBaseline: new Set([existingA, existingB]),
+      strictRunFn: () => ({ ok: false, output: existingA, command: 'mock strict' }),
+    },
+  });
+  assert.strictEqual(removed.pass, true);
+  assert.strictEqual(removed.newErrorCount, 0);
+  console.log('✅ refactor-cycle: strict baseline allows unchanged and removed existing errors');
+}
+
+async function test_apply_strict_baseline_passes_and_commits_when_no_new_errors() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const existing = strictError('bots/blog/__tests__/asset-memory.test.ts', '2304', 'Cannot find name jest');
+  const strictCalls = [];
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      captureStrictBaselineFn: async () => new Set([existing]),
+      strictRunFn: (meta) => {
+        strictCalls.push(meta.stage);
+        return { ok: false, output: existing, command: 'mock strict' };
+      },
+      currentHeadFn: async () => 'before-baseline-pass-sha',
+      rollbackFn: async () => {
+        throw new Error('rollback should not be called');
+      },
+      pushFn: async () => ({ ok: true }),
+      originContainsFn: async () => true,
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'fake-sha-baseline-pass';
+      },
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.active.applied, true);
+    assert.deepStrictEqual(strictCalls, ['after']);
+    assert.deepStrictEqual(commits, [target]);
+    assert.strictEqual(result.active.applyResults[0].commit, 'fake-sha-baseline-pass');
+    assert.notStrictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict baseline allows apply when no new strict errors appear');
+}
+
+async function test_apply_strict_baseline_blocks_new_errors_before_commit() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const existing = strictError('bots/blog/__tests__/asset-memory.test.ts', '2304', 'Cannot find name jest');
+  const introduced = strictError('bots/claude/lib/symphony/consumer.ts', '2339', 'Property id does not exist');
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      captureStrictBaselineFn: async () => new Set([existing]),
+      strictRunFn: () => ({ ok: false, output: `${existing}\n${introduced}`, command: 'mock strict' }),
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.applied, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.strictEqual(result.active.results[0].strict.reason, 'strict_new_errors');
+    assert.deepStrictEqual(result.active.results[0].strict.newErrors, [introduced]);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict baseline blocks newly introduced strict errors');
+}
+
+async function test_apply_strict_baseline_fails_closed_when_baseline_unavailable() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      captureStrictBaselineFn: async () => null,
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.strictEqual(result.active.results[0].strict.reason, 'strict_baseline_unavailable');
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict baseline unavailable fails closed');
+}
+
+async function test_apply_strict_baseline_fails_closed_when_after_infra_fails() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const { builderModule, reviewerModule } = verifierModulesAlwaysPass(target);
+  const existing = strictError('bots/blog/__tests__/asset-memory.test.ts', '2304', 'Cannot find name jest');
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      builderModule,
+      reviewerModule,
+      captureStrictBaselineFn: async () => new Set([existing]),
+      strictRunFn: () => ({ ok: false, output: 'tsc command timed out', infraError: true, command: 'mock strict' }),
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'unexpected';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred_strict_failed');
+    assert.strictEqual(result.active.results[0].strict.reason, 'strict_after_infra_error');
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: strict after-run infrastructure failure fails closed');
+}
+
+async function test_strict_baseline_rejects_config_error_with_ts_code() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const configError = "error TS5058: The specified path does not exist: 'tsconfig.strict.json'.";
+  const baseline = runner.captureStrictBaseline({
+    context: {
+      strictRunFn: () => ({
+        ok: false,
+        output: configError,
+        infraError: runner.isStrictInfraFailure({}, configError),
+        command: 'mock strict',
+      }),
+    },
+  });
+  assert.strictEqual(baseline, null);
+  console.log('✅ refactor-cycle: strict baseline rejects TypeScript config errors even with TS codes');
+}
+
+async function test_strict_after_rejects_timeout_with_partial_diagnostics() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const partialDiagnostic = strictError('packages/core/lib/runtime-env-policy.ts', '7006', 'Parameter key implicitly has an any type');
+  const result = runner.defaultStrictCheck({
+    file: ACTIVE_TARGET,
+    context: {
+      strictGateBaselineEnabled: true,
+      strictBaseline: new Set([partialDiagnostic]),
+      strictRunFn: () => ({
+        ok: false,
+        output: partialDiagnostic,
+        infraError: runner.isStrictInfraFailure({ killed: true, signal: 'SIGTERM' }, partialDiagnostic),
+        command: 'mock strict',
+      }),
+    },
+  });
+  assert.strictEqual(result.pass, false);
+  assert.strictEqual(result.reason, 'strict_after_infra_error');
+  console.log('✅ refactor-cycle: strict after-run rejects timeout even with partial diagnostics');
+}
+
+async function test_strict_baseline_disabled_preserves_legacy_pass_fail() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const legacyFail = runner.defaultStrictCheck({
+    file: ACTIVE_TARGET,
+    context: {
+      strictGateBaselineEnabled: false,
+      strictRunFn: () => ({ ok: false, output: 'legacy strict failed', command: 'mock strict' }),
+    },
+  });
+  assert.strictEqual(legacyFail.pass, false);
+  assert.strictEqual(legacyFail.reason, 'strict_legacy_failed');
+
+  const legacyPass = runner.defaultStrictCheck({
+    file: ACTIVE_TARGET,
+    context: {
+      strictGateBaselineEnabled: false,
+      strictRunFn: () => ({ ok: true, output: '', command: 'mock strict' }),
+    },
+  });
+  assert.strictEqual(legacyPass.pass, true);
+  console.log('✅ refactor-cycle: strict baseline disabled preserves legacy strict pass/fail');
 }
 
 async function test_apply_lock_fresh_skips_stale_proceeds_and_releases() {
@@ -1581,6 +1855,14 @@ async function main() {
     test_apply_commit_failure_restores_and_reports_apply_failed,
     test_apply_push_failure_rolls_back_and_reports_failed,
     test_apply_strict_failure_defers_before_commit,
+    test_strict_baseline_diff_allows_existing_errors_and_removed_errors,
+    test_apply_strict_baseline_passes_and_commits_when_no_new_errors,
+    test_apply_strict_baseline_blocks_new_errors_before_commit,
+    test_apply_strict_baseline_fails_closed_when_baseline_unavailable,
+    test_apply_strict_baseline_fails_closed_when_after_infra_fails,
+    test_strict_baseline_rejects_config_error_with_ts_code,
+    test_strict_after_rejects_timeout_with_partial_diagnostics,
+    test_strict_baseline_disabled_preserves_legacy_pass_fail,
     test_apply_lock_fresh_skips_stale_proceeds_and_releases,
     test_apply_rate_limit_defers_extra_ready_files,
     test_builder_all_skipped_defers,

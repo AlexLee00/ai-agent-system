@@ -97,7 +97,7 @@ function booleanEnvEnabled(value) {
 
 function booleanEnvEnabledByDefault(value, fallback = true) {
   if (value === undefined || value === null || String(value).trim() === '') return fallback;
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value).trim().toLowerCase();
   if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
   return fallback;
@@ -112,6 +112,10 @@ function applyPushEnabled(value = process.env.REFACTORER_APPLY_PUSH) {
 }
 
 function applyStrictGateEnabled(value = process.env.REFACTORER_APPLY_STRICT_GATE) {
+  return booleanEnvEnabledByDefault(value, true);
+}
+
+function strictGateBaselineEnabled(value = process.env.REFACTORER_STRICT_GATE_BASELINE) {
   return booleanEnvEnabledByDefault(value, true);
 }
 
@@ -856,25 +860,125 @@ function defaultRollbackToHead(head, relFile = null, gitFn = runGit) {
   return { ok: true };
 }
 
-function defaultStrictCheck() {
+function strictGateTimeoutMs(value = process.env.REFACTORER_STRICT_GATE_TIMEOUT_MS) {
+  return parsePositiveInt(value, 120000, 600000);
+}
+
+function strictGateCommand() {
+  return 'tsc -p tsconfig.strict.json --noEmit';
+}
+
+function parseStrictErrorSignatures(output = '') {
+  const signatures = new Set();
+  const rootPrefix = ROOT.replace(/\\/g, '/').replace(/\/+$/, '');
+  for (const rawLine of String(output || '').split(/\r?\n/)) {
+    if (!/error TS\d+:/i.test(rawLine)) continue;
+    let line = rawLine.trim().replace(/\\/g, '/');
+    if (line.startsWith(`${rootPrefix}/`)) line = line.slice(rootPrefix.length + 1);
+    line = line.replace(/\s+/g, ' ');
+    if (line) signatures.add(line);
+  }
+  return signatures;
+}
+
+function runStrictTsc() {
   const tscBin = fs.existsSync(localBin('tsc')) ? localBin('tsc') : 'tsc';
+  const command = strictGateCommand();
   try {
-    execFileSync(tscBin, ['-p', 'tsconfig.strict.json', '--noEmit'], {
+    const output = execFileSync(tscBin, ['-p', 'tsconfig.strict.json', '--noEmit'], {
       cwd: ROOT,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: Number(process.env.REFACTORER_STRICT_GATE_TIMEOUT_MS || 120000),
+      timeout: strictGateTimeoutMs(),
     });
-    return { pass: true, skipped: false, command: 'tsc -p tsconfig.strict.json --noEmit' };
+    return { ok: true, output: String(output || ''), command };
   } catch (error) {
     const output = `${error?.stdout || ''}\n${error?.stderr || ''}`.trim();
+    const signatures = parseStrictErrorSignatures(output);
+    const message = output || error?.message || String(error);
+    const infraError = signatures.size === 0 || isStrictInfraFailure(error, output);
+    return {
+      ok: false,
+      output: message,
+      command,
+      infraError,
+      error: message,
+    };
+  }
+}
+
+function strictRunResultSignatures(result) {
+  return parseStrictErrorSignatures(result?.output || result?.error || result?.message || '');
+}
+
+function isStrictInfraFailure(error, output = '') {
+  const text = `${output || ''}\n${error?.message || ''}\n${error?.code || ''}\n${error?.signal || ''}`.toLowerCase();
+  return Boolean(
+    error?.killed
+    || error?.signal
+    || ['ETIMEDOUT', 'ENOENT'].includes(String(error?.code || ''))
+    || /timed out|timeout|spawn.*enoent|no such file or directory/.test(text)
+    || /error TS(5058|5083|18003):/i.test(String(output || ''))
+  );
+}
+
+function captureStrictBaseline({ context } = {}) {
+  const runner = context?.strictRunFn || runStrictTsc;
+  const result = runner({ stage: 'baseline', context });
+  const signatures = strictRunResultSignatures(result);
+  if (result?.ok === true) return signatures;
+  if (signatures.size > 0 && !result?.infraError) return signatures;
+  return null;
+}
+
+function defaultStrictCheck({ file = null, context = {} } = {}) {
+  const runner = context?.strictRunFn || runStrictTsc;
+  if (!strictGateBaselineEnabled(context.strictGateBaselineEnabled)) {
+    const result = runner({ stage: 'legacy', file, context });
+    return {
+      pass: result?.ok === true,
+      skipped: false,
+      command: result?.command || strictGateCommand(),
+      reason: result?.ok === true ? null : 'strict_legacy_failed',
+      error: result?.ok === true ? null : (result?.error || result?.output || result?.message || 'strict_gate_failed'),
+    };
+  }
+
+  const baseline = context?.strictBaseline instanceof Set ? context.strictBaseline : null;
+  if (!baseline) {
     return {
       pass: false,
       skipped: false,
-      command: 'tsc -p tsconfig.strict.json --noEmit',
-      error: output || error?.message || String(error),
+      command: strictGateCommand(),
+      reason: 'strict_baseline_unavailable',
+      error: context?.strictBaselineError || 'strict_baseline_unavailable',
     };
   }
+
+  const result = runner({ stage: 'after', file, context });
+  const after = strictRunResultSignatures(result);
+  if (result?.ok !== true && (result?.infraError || after.size === 0)) {
+    return {
+      pass: false,
+      skipped: false,
+      command: result?.command || strictGateCommand(),
+      reason: 'strict_after_infra_error',
+      error: result?.error || result?.output || result?.message || 'strict_after_infra_error',
+    };
+  }
+
+  const newErrors = [...after].filter((signature) => !baseline.has(signature));
+  return {
+    pass: newErrors.length === 0,
+    skipped: false,
+    command: result?.command || strictGateCommand(),
+    reason: newErrors.length === 0 ? null : 'strict_new_errors',
+    baselineErrorCount: baseline.size,
+    afterErrorCount: after.size,
+    newErrorCount: newErrors.length,
+    newErrors: newErrors.slice(0, 20),
+    error: newErrors.length === 0 ? null : `new strict errors:\n${newErrors.slice(0, 5).join('\n')}`,
+  };
 }
 
 function refactorScopePrefixes(targetRelPath = '', scope = 'workspace') {
@@ -1720,6 +1824,7 @@ function buildCycleContext(options = {}) {
     applyEnabled: mode === 'active' && applyEnabled(options.applyEnabled ?? process.env.REFACTORER_APPLY_ENABLED),
     applyPushEnabled: applyPushEnabled(options.applyPushEnabled ?? process.env.REFACTORER_APPLY_PUSH),
     applyStrictGateEnabled: applyStrictGateEnabled(options.applyStrictGateEnabled ?? process.env.REFACTORER_APPLY_STRICT_GATE),
+    strictGateBaselineEnabled: strictGateBaselineEnabled(options.strictGateBaselineEnabled ?? process.env.REFACTORER_STRICT_GATE_BASELINE),
     applyMaxPerCycle: applyMaxPerCycle(options.applyMaxPerCycle ?? process.env.REFACTORER_APPLY_MAX_PER_CYCLE),
     autofixEnabled: mode === 'active' && autofixEnabled(options.autofixEnabled ?? process.env.REFACTORER_AUTOFIX_ENABLED),
     autofixMaxAttempts: autofixMaxAttempts(options.autofixMaxAttempts ?? process.env.REFACTORER_AUTOFIX_MAX_ATTEMPTS),
@@ -1734,7 +1839,10 @@ function buildCycleContext(options = {}) {
     originContainsFn: options.originContainsFn || ((sha) => defaultOriginContainsCommit(sha)),
     rollbackFn: options.rollbackFn || ((head, meta) => defaultRollbackToHead(head, meta?.file)),
     currentHeadFn: options.currentHeadFn || (() => currentGitHead()),
-    strictCheckFn: options.strictCheckFn || (() => defaultStrictCheck()),
+    strictCheckFnProvided: typeof options.strictCheckFn === 'function',
+    strictRunFn: options.strictRunFn || runStrictTsc,
+    captureStrictBaselineFn: options.captureStrictBaselineFn || captureStrictBaseline,
+    strictCheckFn: options.strictCheckFn || ((params) => defaultStrictCheck(params)),
     lockPath: options.lockPath || REFACTORER_LOCK_PATH,
     acquireLockFn: options.acquireLockFn || acquireRefactorLock,
     releaseLockFn: options.releaseLockFn || releaseRefactorLock,
@@ -1850,6 +1958,23 @@ async function runRefactorCycle(options = {}) {
         result.outcome = await recordRefactorOutcome(context, result);
         result.heartbeat = await writeRefactorHeartbeat(context, 'error', { stage: 'active_deferred', reason: result.reason });
         return result;
+      }
+
+      if (
+        context.applyEnabled
+        && !context.dryRun
+        && context.applyStrictGateEnabled
+        && context.strictGateBaselineEnabled
+        && !context.strictCheckFnProvided
+        && context.strictBaseline === undefined
+      ) {
+        try {
+          const baseline = await context.captureStrictBaselineFn({ context });
+          context.strictBaseline = baseline instanceof Set ? baseline : null;
+        } catch (error) {
+          context.strictBaseline = null;
+          context.strictBaselineError = error?.message || String(error);
+        }
       }
 
       const active = await runActiveRefactor(context, analysis, candidates);
@@ -2005,13 +2130,19 @@ module.exports = {
   selectCandidate,
   fetchRefactorVaultFeedback,
   cleanupUnexpectedUntracked,
+  captureStrictBaseline,
   defaultCommitFile,
+  defaultStrictCheck,
   acquireRefactorLock,
   releaseRefactorLock,
   gitStatusScoped,
   applyEnabled,
   applyPushEnabled,
   applyStrictGateEnabled,
+  parseStrictErrorSignatures,
+  isStrictInfraFailure,
+  runStrictTsc,
+  strictGateBaselineEnabled,
   normalizeDirtyScope,
   refactorScopePrefixes,
   unexpectedMutationLines,
