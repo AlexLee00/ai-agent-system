@@ -8,7 +8,24 @@ type BonusInsight = {
   title: string;
 };
 
-const POS_BASE_CHARS = {
+type BotType = 'pos' | 'gems' | 'star';
+type SectionCharMap = Record<string, number>;
+type SectionRatioRuntimeScope = {
+  jitter?: number;
+  baseChars?: SectionCharMap;
+  bonusBase?: number;
+};
+type SectionRatioRuntimeConfig = {
+  lecture?: SectionRatioRuntimeScope;
+  general?: SectionRatioRuntimeScope;
+  shortform?: SectionRatioRuntimeScope;
+};
+type StrategyAdjustedSections = {
+  baseChars: SectionCharMap;
+  bonusBase: number;
+};
+
+const POS_BASE_CHARS: SectionCharMap = {
   summary: 150,
   greeting: 350,
   tech_briefing: 1200,
@@ -23,7 +40,7 @@ const POS_BASE_CHARS = {
   closing: 400,
 };
 
-const GEMS_BASE_CHARS = {
+const GEMS_BASE_CHARS: SectionCharMap = {
   summary: 150,
   greeting: 400,
   trend: 1000,
@@ -38,7 +55,7 @@ const GEMS_BASE_CHARS = {
   closing: 350,
 };
 
-const STAR_BASE_CHARS = {
+const STAR_BASE_CHARS: SectionCharMap = {
   card_1: 200,
   card_2: 200,
   card_3: 200,
@@ -46,9 +63,9 @@ const STAR_BASE_CHARS = {
   caption: 200,
 };
 
-const BONUS_BASE = { pos: 500, gems: 500, star: 250 };
+const BONUS_BASE: Record<BotType, number> = { pos: 500, gems: 500, star: 250 };
 
-const SECTION_LABELS = {
+const SECTION_LABELS: Record<string, string> = {
   summary: '[핵심 요약 3줄]',
   greeting: '[승호아빠 인사말]',
   tech_briefing: '[최신 기술 브리핑]',
@@ -70,17 +87,17 @@ const SECTION_LABELS = {
   insight_4: '[전문가의 실무 인사이트 ④]',
 };
 
-function clampChars(value, minimum = 120) {
+function clampChars(value: unknown, minimum = 120): number {
   return Math.max(minimum, Math.round(Number(value) || minimum));
 }
 
-function getPriorityMultiplier(priority = 'secondary') {
+function getPriorityMultiplier(priority = 'secondary'): number {
   if (priority === 'primary') return 1.15;
   if (priority === 'supporting') return 0.92;
   return 1.0;
 }
 
-function applyMultiplier(baseChars = {}, keys = [], multiplier = 1) {
+function applyMultiplier(baseChars: SectionCharMap = {}, keys: string[] = [], multiplier = 1): void {
   for (const key of keys) {
     if (typeof baseChars[key] === 'number') {
       baseChars[key] = clampChars(baseChars[key] * multiplier);
@@ -88,7 +105,11 @@ function applyMultiplier(baseChars = {}, keys = [], multiplier = 1) {
   }
 }
 
-function applyStrategySectionOverrides(botType, baseChars = {}, bonusBase = 0) {
+function applyStrategySectionOverrides(
+  botType: BotType,
+  baseChars: SectionCharMap = {},
+  bonusBase = 0,
+): StrategyAdjustedSections {
   const plan = loadStrategyBundle().plan;
   const directives = normalizeExecutionDirectives(plan);
   const adjusted = { ...baseChars };
@@ -145,7 +166,7 @@ function applyStrategySectionOverrides(botType, baseChars = {}, bonusBase = 0) {
   return { baseChars: adjusted, bonusBase: nextBonusBase };
 }
 
-function getSectionRatioDefaults(botType) {
+function getSectionRatioDefaults(botType: BotType): { jitter: number; baseChars: SectionCharMap; bonusBase: number } {
   if (botType === 'pos') {
     return {
       jitter: 0.20,
@@ -167,8 +188,8 @@ function getSectionRatioDefaults(botType) {
   };
 }
 
-function getSectionRatioConfig(botType) {
-  const runtime = getBlogSectionRatioRuntimeConfig() || {};
+function getSectionRatioConfig(botType: BotType): { jitter: number; baseChars: SectionCharMap; bonusBase: number } {
+  const runtime = (getBlogSectionRatioRuntimeConfig() || {}) as SectionRatioRuntimeConfig;
   const defaults = getSectionRatioDefaults(botType);
   const scoped = botType === 'pos'
     ? (runtime.lecture || {})
@@ -192,7 +213,7 @@ function getSectionRatioConfig(botType) {
   };
 }
 
-function calculateSectionChars(botType: 'pos' | 'gems' | 'star', bonusInsights: BonusInsight[] = [], jitter) {
+function calculateSectionChars(botType: BotType, bonusInsights: BonusInsight[] = [], jitter?: number) {
   const config = getSectionRatioConfig(botType);
   const baseMap = { ...config.baseChars } as Record<string, number>;
   const jitterValue = typeof jitter === 'number' ? jitter : config.jitter;
@@ -216,7 +237,7 @@ function calculateSectionChars(botType: 'pos' | 'gems' | 'star', bonusInsights: 
   return { charCounts, totalChars, baseTotal };
 }
 
-function buildCharCountInstruction(charCounts: Record<string, number>, _botType: 'pos' | 'gems' | 'star', bonusInsights: BonusInsight[] = []) {
+function buildCharCountInstruction(charCounts: Record<string, number>, _botType: BotType, bonusInsights: BonusInsight[] = []) {
   const labels = { ...SECTION_LABELS } as Record<string, string>;
   bonusInsights.forEach((bonus) => { labels[`bonus_${bonus.id}`] = bonus.title; });
 
