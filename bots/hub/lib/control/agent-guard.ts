@@ -16,16 +16,87 @@ const SIDE_EFFECT_RISK = {
   external_mutation: 'high',
 };
 
-function text(value, fallback = '') {
+type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+type SideEffect = 'none' | 'read_only' | 'write' | 'external_mutation';
+type AgentGuardTool = {
+  name?: string;
+  ownerTeam?: string;
+  sideEffect?: SideEffect | string;
+  defaultRisk?: RiskLevel | string;
+  attestationId?: string;
+  [key: string]: unknown;
+};
+type AgentGuardInput = {
+  file?: string;
+  filePath?: string;
+  path?: string;
+  output?: string;
+  outputPath?: string;
+  reportPath?: string;
+  writePath?: string;
+  targetPath?: string;
+  files?: unknown[];
+  paths?: unknown[];
+  writePaths?: unknown[];
+  risk?: RiskLevel | string;
+  riskTier?: RiskLevel | string;
+  agent?: string;
+  bot?: string;
+  botName?: string;
+  team?: string;
+  maxRisk?: RiskLevel | string;
+  expectedAttestationId?: string;
+  [key: string]: unknown;
+};
+type AgentGuardContext = {
+  agent?: string;
+  team?: string;
+  ownerTeam?: string;
+  maxRisk?: RiskLevel | string;
+  expectedAttestationId?: string;
+  [key: string]: unknown;
+};
+type AgentGuardAudit = {
+  agent: string;
+  team: string;
+  tool: string;
+  sideEffect: string;
+  risk: string;
+  decision?: string;
+  reason?: string;
+  writePaths?: string[];
+  attestationId?: string | null;
+  maxRisk?: string;
+};
+type AgentGuardDecision = {
+  ok: boolean;
+  error?: string;
+  detail?: unknown;
+  path?: string;
+  audit?: AgentGuardAudit;
+  attestation?: unknown;
+};
+type ValidateAgentToolAdmissionArgs = {
+  tool: AgentGuardTool;
+  input?: AgentGuardInput;
+  context?: AgentGuardContext;
+};
+type AuditExtra = {
+  traceId?: string;
+  context?: unknown;
+};
+
+function text(value: unknown, fallback = ''): string {
   const normalized = String(value == null ? fallback : value).trim();
   return normalized || fallback;
 }
 
-function riskRank(value) {
-  return RISK_RANK[text(value, 'low').toLowerCase()] || RISK_RANK.low;
+function riskRank(value: unknown): number {
+  const key = text(value, 'low').toLowerCase() as RiskLevel;
+  return RISK_RANK[key] || RISK_RANK.low;
 }
 
-function deriveWritePaths(input = {}) {
+function deriveWritePaths(input: AgentGuardInput = {}): string[] {
   const candidates = [
     input.file,
     input.filePath,
@@ -42,11 +113,12 @@ function deriveWritePaths(input = {}) {
   return [...new Set(candidates.map((candidate) => text(candidate)).filter(Boolean))];
 }
 
-function normalizeRisk(tool = {}, input = {}) {
-  return text(input.risk || input.riskTier || tool.defaultRisk || SIDE_EFFECT_RISK[tool.sideEffect] || 'low', 'low').toLowerCase();
+function normalizeRisk(tool: AgentGuardTool = {}, input: AgentGuardInput = {}): string {
+  const sideEffect = text(tool.sideEffect, 'none') as SideEffect;
+  return text(input.risk || input.riskTier || tool.defaultRisk || SIDE_EFFECT_RISK[sideEffect] || 'low', 'low').toLowerCase();
 }
 
-function buildAuditBase(tool = {}, input = {}, context = {}) {
+function buildAuditBase(tool: AgentGuardTool = {}, input: AgentGuardInput = {}, context: AgentGuardContext = {}): AgentGuardAudit {
   const agent = text(context.agent || input.agent || input.bot || input.botName, 'unknown');
   const team = text(context.team || input.team || tool.ownerTeam, tool.ownerTeam || 'hub');
   return {
@@ -58,7 +130,7 @@ function buildAuditBase(tool = {}, input = {}, context = {}) {
   };
 }
 
-function validateAgentToolAdmission({ tool, input = {}, context = {} }) {
+function validateAgentToolAdmission({ tool, input = {}, context = {} }: ValidateAgentToolAdmissionArgs): AgentGuardDecision {
   const audit = buildAuditBase(tool, input, context);
   const attestationDecision = validateToolServerAdmission(tool, {
     attestationId: input.expectedAttestationId || context.expectedAttestationId,
@@ -127,10 +199,10 @@ function validateAgentToolAdmission({ tool, input = {}, context = {} }) {
   };
 }
 
-async function recordAgentGuardAudit(decision, extra = {}) {
+async function recordAgentGuardAudit(decision: AgentGuardDecision, extra: AuditExtra = {}) {
   try {
     const eventLake = require('../../../../packages/core/lib/event-lake');
-    const audit = decision?.audit || {};
+    const audit: Partial<AgentGuardAudit> = decision?.audit || {};
     return await eventLake.record({
       eventType: 'hub_agent_guard_admission',
       team: audit.team || 'hub',
