@@ -30,6 +30,11 @@ const {
   resolveTokenBudget,
 } = require('../../../../packages/core/lib/token-budget');
 
+type AnyRecord = Record<string, any>;
+type LlmRequest = AnyRecord;
+type LlmResponse = AnyRecord;
+type RouteEntry = AnyRecord;
+
 const CLAUDE_CODE_MODEL = {
   anthropic_haiku: 'haiku',
   anthropic_sonnet: 'sonnet',
@@ -47,10 +52,10 @@ const CLAUDE_CODE_BUDGET_FLOORS_USD = {
   opus: 0.5,
 };
 
-const inFlightDedupe = new Map();
+const inFlightDedupe = new Map<string, Promise<LlmResponse>>();
 
-let _groqModelCache;
-function _groqModel() {
+let _groqModelCache: AnyRecord | undefined;
+function _groqModel(): AnyRecord {
   if (!_groqModelCache) {
     _groqModelCache = {
       anthropic_haiku: getGroqFallback('anthropic_haiku'),
@@ -61,7 +66,7 @@ function _groqModel() {
   return _groqModelCache;
 }
 
-async function callWithFallback(req) {
+async function callWithFallback(req: LlmRequest): Promise<LlmResponse> {
   let result;
   if (_inflightDedupeEnabled(req)) {
     result = await _runWithInflightDedupe(req, () => _callWithFallbackInternal(req));
@@ -79,7 +84,7 @@ async function callWithFallback(req) {
   return result;
 }
 
-async function _callWithFallbackInternal(req) {
+async function _callWithFallbackInternal(req: LlmRequest): Promise<LlmResponse> {
   const team = req.callerTeam || 'hub';
   const tokenBudget = resolveTokenBudget(req);
   req._tokenBudget = tokenBudget;
@@ -115,7 +120,7 @@ async function _callWithFallbackInternal(req) {
         await _recordBudgetUsage(req, cacheHit, 'cache_hit');
         return cacheHit;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[llm/unified] 캐시 조회 오류 (무시):', e.message);
     }
   }
@@ -181,12 +186,12 @@ async function _callWithFallbackInternal(req) {
   return failed;
 }
 
-function _inflightDedupeEnabled(req) {
+function _inflightDedupeEnabled(req: LlmRequest): boolean {
   if (_flagDisabled('HUB_LLM_INFLIGHT_DEDUPE_ENABLED')) return false;
   return typeof req?.prompt === 'string' && req.prompt.length > 0;
 }
 
-function _inflightDedupeKey(req) {
+function _inflightDedupeKey(req: LlmRequest): string {
   const payload = {
     callerTeam: req?.callerTeam || 'hub',
     agent: req?.agent || null,
@@ -205,7 +210,7 @@ function _inflightDedupeKey(req) {
   return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 }
 
-async function _runWithInflightDedupe(req, executor) {
+async function _runWithInflightDedupe(req: LlmRequest, executor: () => Promise<LlmResponse>): Promise<LlmResponse> {
   const key = _inflightDedupeKey(req);
   const existing = inFlightDedupe.get(key);
   if (existing) {
@@ -229,35 +234,35 @@ async function _runWithInflightDedupe(req, executor) {
   }
 }
 
-function _resolveSelectorChain(req, team) {
+function _resolveSelectorChain(req: LlmRequest, team: string): AnyRecord | null {
   try {
     const selection = resolveHubLlmSelection(req, { allowAdhocChain: _adhocChainAllowed() });
     if (selection?.chain?.length) return _applySelectorAvoidProviders(req, selection);
     if (selection?.error === 'llm_adhoc_chain_blocked') return null;
     return selection?.error ? selection : null;
-  } catch (e) {
+  } catch (e: any) {
     console.warn(`[llm/unified] selector chain 해석 실패 (${team}/${req.agent || req.selectorKey || 'unknown'}): ${e.message}`);
   }
   return null;
 }
 
-function _hasAdhocChain(req) {
+function _hasAdhocChain(req: LlmRequest): boolean {
   return Array.isArray(req?.chain) && req.chain.length > 0;
 }
 
-function _adhocChainAllowed() {
+function _adhocChainAllowed(): boolean {
   return _truthyEnv('HUB_LLM_ALLOW_ADHOC_CHAIN');
 }
 
-function _applySelectorAvoidProviders(req, selectorChain) {
+function _applySelectorAvoidProviders(req: LlmRequest, selectorChain: AnyRecord): AnyRecord {
   const avoidProviders = Array.isArray(req?.avoidProviders)
-    ? req.avoidProviders.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    ? req.avoidProviders.map((item: unknown) => String(item || '').trim().toLowerCase()).filter(Boolean)
     : [];
   if (!avoidProviders.length || !Array.isArray(selectorChain?.chain)) return selectorChain;
 
   const avoid = new Set(avoidProviders);
-  const preferred = [];
-  const avoided = [];
+  const preferred: AnyRecord[] = [];
+  const avoided: AnyRecord[] = [];
   for (const entry of selectorChain.chain) {
     const provider = String(entry?.provider || _routeToProvider(_chainEntryToRoute(entry))).trim().toLowerCase();
     if (avoid.has(provider)) avoided.push(entry);
@@ -267,11 +272,11 @@ function _applySelectorAvoidProviders(req, selectorChain) {
   return { ...selectorChain, chain: preferred.concat(avoided), avoidedProviders: avoidProviders };
 }
 
-async function _callWithSelectorChain(req, selectorChain, team) {
+async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord, team: string): Promise<LlmResponse> {
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(selectorChain.chain || [], tokenBudget);
   const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
-  const attempts = [];
+  const attempts: AnyRecord[] = [];
 
   for (const entry of budgetedChain) {
     const route = _chainEntryToRoute(entry);
@@ -294,7 +299,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
         tokenBudgetStatus: 'allowed',
         avoidedProviders: selectorChain.avoidedProviders || [],
         fallbackCount: attempts.length,
-        attempted_providers: attempts.map(a => a.provider),
+        attempted_providers: attempts.map((a: AnyRecord) => a.provider),
       };
       await _recordBudgetUsage(req, success, 'success');
       return success;
@@ -314,9 +319,9 @@ async function _callWithSelectorChain(req, selectorChain, team) {
   const exhausted = {
     ok: false,
     provider: 'failed',
-    durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),
+    durationMs: attempts.reduce((s: number, a: AnyRecord) => s + Number(a.durationMs || 0), 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
-    attempted_providers: attempts.map(a => a.provider),
+    attempted_providers: attempts.map((a: AnyRecord) => a.provider),
     avoidedProviders: selectorChain.avoidedProviders || [],
     fallbackCount: attempts.length,
     selectorKey: selectorChain.selectorKey,
@@ -333,7 +338,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
   return exhausted;
 }
 
-async function _callWithProfileChain(req, profile, team) {
+async function _callWithProfileChain(req: LlmRequest, profile: AnyRecord, team: string): Promise<LlmResponse> {
   const chain = [
     ...(profile.primary_routes || []),
     ...(profile.fallback_routes || []),
@@ -342,7 +347,7 @@ async function _callWithProfileChain(req, profile, team) {
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(chain, tokenBudget);
   const chainTimeout = Math.min(profile.timeout_ms || req.timeoutMs || 30_000, tokenBudget.perAttemptTimeoutMs || 30_000);
-  const attempts = [];
+  const attempts: AnyRecord[] = [];
 
   for (const route of budgetedChain) {
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
@@ -354,7 +359,7 @@ async function _callWithProfileChain(req, profile, team) {
         provider: _routeToProvider(selectedRoute),
         selected_route: selectedRoute,
         fallbackCount: attempts.length,
-        attempted_providers: attempts.map(a => a.provider),
+        attempted_providers: attempts.map((a: AnyRecord) => a.provider),
         tokenBudget,
         tokenBudgetStatus: 'allowed',
       };
@@ -370,9 +375,9 @@ async function _callWithProfileChain(req, profile, team) {
   }
   const exhausted = {
     ok: false, provider: 'failed',
-    durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),
+    durationMs: attempts.reduce((s: number, a: AnyRecord) => s + Number(a.durationMs || 0), 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
-    attempted_providers: attempts.map(a => a.provider),
+    attempted_providers: attempts.map((a: AnyRecord) => a.provider),
     fallbackCount: attempts.length,
     tokenBudget,
     tokenBudgetStatus: 'allowed',
@@ -381,8 +386,8 @@ async function _callWithProfileChain(req, profile, team) {
   return exhausted;
 }
 
-async function _callLegacy(req, _team) {
-  const ccModel = CLAUDE_CODE_MODEL[req.abstractModel] || 'haiku';
+async function _callLegacy(req: LlmRequest, _team: string): Promise<LlmResponse> {
+  const ccModel = (CLAUDE_CODE_MODEL as AnyRecord)[req.abstractModel] || 'haiku';
   const groqModel = _groqModel()[req.abstractModel] || getGroqFallback('anthropic_haiku');
 
   const primary = await callClaudeCodeOAuth({
@@ -403,8 +408,8 @@ async function _callLegacy(req, _team) {
   return { ...fallback, provider: fallback.ok ? 'groq' : 'failed', primaryError: primary.error, fallbackCount: 1, cacheHit: false };
 }
 
-async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
-  const normalizedRoute = _normalizeRoute(route, req.abstractModel);
+async function _callRoute(route: unknown, req: LlmRequest, timeoutMs: unknown, chainEntry: RouteEntry = {}): Promise<LlmResponse> {
+  const normalizedRoute = _normalizeRoute(String(route || ''), req.abstractModel);
   const provider = _routeToProvider(normalizedRoute);
   const circuitKey = _providerCircuitKey(provider, normalizedRoute);
   const started = Date.now();
@@ -434,7 +439,7 @@ async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   return result;
 }
 
-async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry = {}) {
+async function _callRouteUnchecked(normalizedRoute: string, req: LlmRequest, timeoutMs: unknown, chainEntry: RouteEntry = {}): Promise<LlmResponse> {
 
   if (normalizedRoute.startsWith('claude-code/')) {
     const model = normalizedRoute.split('/')[1];
@@ -515,12 +520,12 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
   return { ok: false, provider: 'failed', error: `unsupported_provider:${normalizedRoute}`, durationMs: 0 };
 }
 
-async function _callOpenAiCodexOAuthWithRetry(input) {
+async function _callOpenAiCodexOAuthWithRetry(input: AnyRecord): Promise<LlmResponse> {
   const started = Date.now();
   const retryAttempts = input?.retryAttempts == null
     ? _openAiOAuthRetryAttempts()
     : _boundedIntegerValue(input.retryAttempts, DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS, 0, MAX_OPENAI_OAUTH_RETRY_ATTEMPTS);
-  const retryErrors = [];
+  const retryErrors: string[] = [];
 
   for (let attempt = 0; ; attempt += 1) {
     const result = await callOpenAiCodexOAuth(input);
@@ -550,11 +555,11 @@ async function _callOpenAiCodexOAuthWithRetry(input) {
   }
 }
 
-function _isRetryableOpenAiOAuthError(error) {
+function _isRetryableOpenAiOAuthError(error: unknown): boolean {
   return /openai_codex_oauth_timeout_or_abort/i.test(String(error || ''));
 }
 
-function _openAiOAuthRetryAttempts() {
+function _openAiOAuthRetryAttempts(): number {
   return _boundedIntegerEnv(
     'HUB_OPENAI_OAUTH_RETRY_ATTEMPTS',
     DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS,
@@ -563,7 +568,7 @@ function _openAiOAuthRetryAttempts() {
   );
 }
 
-function _openAiOAuthRetryDelayMs(attempt) {
+function _openAiOAuthRetryDelayMs(attempt: unknown): number {
   const baseDelayMs = _boundedIntegerEnv(
     'HUB_OPENAI_OAUTH_RETRY_DELAY_MS',
     DEFAULT_OPENAI_OAUTH_RETRY_DELAY_MS,
@@ -573,12 +578,13 @@ function _openAiOAuthRetryDelayMs(attempt) {
   return baseDelayMs * Math.max(1, Number(attempt || 0) + 1);
 }
 
-function _sleep(ms) {
-  if (!ms) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function _sleep(ms: unknown): Promise<void> {
+  const delayMs = Number(ms || 0);
+  if (!delayMs) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-async function _callLocalEmbeddingOnly(req, model) {
+async function _callLocalEmbeddingOnly(req: LlmRequest, model: string): Promise<LlmResponse> {
   const started = Date.now();
   try {
     const text = String(req.prompt || req.systemPrompt || 'backtest').slice(0, 8000);
@@ -597,7 +603,7 @@ async function _callLocalEmbeddingOnly(req, model) {
       modelUsage: { [model]: { input_texts: 1, dimensions } },
       embeddingOnly: true,
     };
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       provider: 'failed',
@@ -607,26 +613,26 @@ async function _callLocalEmbeddingOnly(req, model) {
   }
 }
 
-function _isGeminiProvider(provider) {
+function _isGeminiProvider(provider: unknown): boolean {
   return provider === 'gemini-oauth'
     || provider === 'gemini-cli-oauth'
     || provider === 'gemini-codeassist-oauth'
     || provider === 'gemini';
 }
 
-function _providerCircuitEnabled(provider) {
+function _providerCircuitEnabled(provider: unknown): boolean {
   if (process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED === 'false') return false;
   return Boolean(provider && provider !== 'failed');
 }
 
-function _providerCircuitKey(provider, normalizedRoute) {
+function _providerCircuitKey(provider: string, normalizedRoute: unknown): string {
   if (provider === 'groq' && String(normalizedRoute || '').startsWith('groq/')) {
     return String(normalizedRoute);
   }
   return provider;
 }
 
-function _shouldRecordProviderCircuitFailure(provider, error) {
+function _shouldRecordProviderCircuitFailure(provider: string, error: unknown): boolean {
   const message = String(error || '');
   if (
     provider === 'groq'
@@ -649,7 +655,7 @@ function _shouldRecordProviderCircuitFailure(provider, error) {
   return true;
 }
 
-function _chainEntryToRoute(entry) {
+function _chainEntryToRoute(entry: RouteEntry): string {
   const provider = String(entry?.provider || '').trim();
   const model = String(entry?.model || '').trim();
   if (!provider || !model) return model || provider;
@@ -690,7 +696,7 @@ function _chainEntryToRoute(entry) {
   return model.includes('/') ? model : `${provider}/${model}`;
 }
 
-function _isProviderSupported(route) {
+function _isProviderSupported(route: string): boolean {
   return route.startsWith('claude-code/')
     || route.startsWith('groq/')
     || route.startsWith('local-embedding/')
@@ -705,7 +711,7 @@ function _isProviderSupported(route) {
     || route.startsWith('gemini/');
 }
 
-function _routeToProvider(route) {
+function _routeToProvider(route: string): string {
   const normalizedRoute = _normalizeRoute(route);
   if (normalizedRoute.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalizedRoute.startsWith('groq/')) return 'groq';
@@ -720,7 +726,7 @@ function _routeToProvider(route) {
   return route;
 }
 
-function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
+function _normalizeRoute(route: string, abstractModel = 'anthropic_haiku'): string {
   const sonnetReplacement = _claudeCodeSonnetReplacementRoute(route);
   if (sonnetReplacement) return sonnetReplacement;
 
@@ -753,18 +759,18 @@ function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
   return route;
 }
 
-function _truthyEnv(name) {
+function _truthyEnv(name: string): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
 }
 
-function _timeGateActive(name) {
+function _timeGateActive(name: string): boolean {
   const raw = String(process.env[name] || '').trim();
   if (!raw) return false;
   const expiresAt = Date.parse(raw);
   return Number.isFinite(expiresAt) && Date.now() < expiresAt;
 }
 
-function _claudeCodeSonnetReplacementRoute(route) {
+function _claudeCodeSonnetReplacementRoute(route: unknown): string | null {
   const normalizedRoute = String(route || '').trim();
   if (!normalizedRoute.startsWith('claude-code/')) return null;
   const claudeCodeDisabled = _truthyEnv('LLM_CLAUDE_CODE_DISABLED') || _timeGateActive('LLM_CLAUDE_CODE_DISABLED_UNTIL');
@@ -775,42 +781,42 @@ function _claudeCodeSonnetReplacementRoute(route) {
   return replacement || CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE;
 }
 
-function _flagDisabled(name) {
+function _flagDisabled(name: string): boolean {
   return ['0', 'false', 'no', 'n', 'off'].includes(String(process.env[name] || '').trim().toLowerCase());
 }
 
-function _positiveNumber(value, fallback = null) {
+function _positiveNumber(value: unknown, fallback: number | null = null): number | null {
   const parsed = Number(value);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
   return fallback;
 }
 
-function _boundedIntegerEnv(name, fallback, min, max) {
+function _boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
   const raw = process.env[name];
   return _boundedIntegerValue(raw == null || raw === '' ? fallback : raw, fallback, min, max);
 }
 
-function _boundedIntegerValue(value, fallback, min, max) {
+function _boundedIntegerValue(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
   const numeric = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
   return Math.min(max, Math.max(min, numeric));
 }
 
-function _estimatedCostUsd(req, selection = null) {
+function _estimatedCostUsd(req: LlmRequest, selection: AnyRecord | null = null): number {
   const explicit = _positiveNumber(req?.estimatedCostUsd ?? req?.estimated_cost_usd, null);
   if (explicit !== null) return explicit;
   const selectedCost = _estimateSelectionCostUsd(req, selection);
   if (selectedCost !== null) return selectedCost;
   const tokenBudgetCost = _positiveNumber(req?._tokenBudget?.estimatedCostUsd, null);
   if (tokenBudgetCost !== null) return tokenBudgetCost;
-  return _positiveNumber(process.env.HUB_LLM_DEFAULT_ESTIMATED_COST_USD, 0.01);
+  return _positiveNumber(process.env.HUB_LLM_DEFAULT_ESTIMATED_COST_USD, 0.01) || 0.01;
 }
 
-function _estimateSelectionCostUsd(req, selection) {
+function _estimateSelectionCostUsd(req: LlmRequest, selection: AnyRecord | null): number | null {
   const chain = Array.isArray(selection?.chain) ? selection.chain : [];
   if (!chain.length) return null;
   const budget = req?._tokenBudget || resolveTokenBudget(req || {});
-  const costs = chain.map((entry) => {
+  const costs = chain.map((entry: AnyRecord) => {
     const route = _normalizeRoute(_chainEntryToRoute(entry), req?.abstractModel);
     const provider = _routeToProvider(route);
     const model = route.startsWith(`${provider}/`) ? route.slice(provider.length + 1) : route;
@@ -818,20 +824,20 @@ function _estimateSelectionCostUsd(req, selection) {
       provider,
       model,
       inputTokens: budget.inputTokens,
-      outputTokens: Math.min(_positiveNumber(entry?.maxTokens, budget.maxOutputTokens), budget.maxOutputTokens),
+      outputTokens: Math.min(_positiveNumber(entry?.maxTokens, budget.maxOutputTokens) || budget.maxOutputTokens, budget.maxOutputTokens),
     });
   });
   return Math.max(0, ...costs);
 }
 
-async function _checkUsdBudget(req, team, tokenBudget) {
+async function _checkUsdBudget(req: LlmRequest, team: string, tokenBudget: AnyRecord): Promise<LlmResponse | null> {
   if (process.env.HUB_BUDGET_GUARDIAN_ENABLED === 'false') {
     req._budgetGuardStatus = 'disabled';
     return null;
   }
   try {
     const { BudgetGuardian } = require('../budget-guardian');
-    const estimatedCostUsd = _positiveNumber(req?._estimatedCostUsd, _estimatedCostUsd(req));
+    const estimatedCostUsd = _positiveNumber(req?._estimatedCostUsd, _estimatedCostUsd(req)) || 0;
     if (estimatedCostUsd > Number(tokenBudget?.budgetCostUsd || 0)) {
       const blocked = {
         ok: false,
@@ -863,14 +869,14 @@ async function _checkUsdBudget(req, team, tokenBudget) {
     };
     await _recordBudgetUsage(req, blocked, 'blocked');
     return blocked;
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[llm/unified] BudgetGuardian 오류 (무시):', e.message);
     req._budgetGuardStatus = 'error_ignored';
     return null;
   }
 }
 
-async function _recordBudgetUsage(req, resp, status) {
+async function _recordBudgetUsage(req: LlmRequest, resp: LlmResponse, status: string): Promise<void> {
   const budget = req?._tokenBudget || resp?.tokenBudget || resolveTokenBudget(req || {});
   const selectedRoute = resp?.selected_route || null;
   await recordTokenBudgetUsage({
@@ -907,14 +913,14 @@ async function _recordBudgetUsage(req, resp, status) {
   });
 }
 
-function _claudeCodeFamily(model) {
+function _claudeCodeFamily(model: unknown): string {
   const value = String(model || '').toLowerCase();
   if (value.includes('opus')) return 'opus';
   if (value.includes('haiku')) return 'haiku';
   return 'sonnet';
 }
 
-function _claudeCodeTimeoutFloorMs(model) {
+function _claudeCodeTimeoutFloorMs(model: unknown): number {
   const family = _claudeCodeFamily(model);
   const envSpecific = process.env[`HUB_CLAUDE_CODE_${family.toUpperCase()}_TIMEOUT_MS`];
   return _positiveNumber(
@@ -923,35 +929,35 @@ function _claudeCodeTimeoutFloorMs(model) {
       process.env.HUB_CLAUDE_CODE_TIMEOUT_MS || process.env.CLAUDE_CODE_TIMEOUT_MS,
       DEFAULT_CLAUDE_CODE_TIMEOUT_MS,
     ),
-  );
+  ) || DEFAULT_CLAUDE_CODE_TIMEOUT_MS;
 }
 
-function _claudeCodeBudgetFloorUsd(model) {
+function _claudeCodeBudgetFloorUsd(model: unknown): number {
   const family = _claudeCodeFamily(model);
   const envSpecific = process.env[`HUB_CLAUDE_CODE_${family.toUpperCase()}_MIN_BUDGET_USD`];
   return _positiveNumber(
     envSpecific,
     _positiveNumber(
       process.env.HUB_CLAUDE_CODE_MIN_BUDGET_USD,
-      CLAUDE_CODE_BUDGET_FLOORS_USD[family],
+      (CLAUDE_CODE_BUDGET_FLOORS_USD as AnyRecord)[family],
     ),
-  );
+  ) || (CLAUDE_CODE_BUDGET_FLOORS_USD as AnyRecord)[family];
 }
 
-function resolveClaudeCodeTimeoutMs(requestedTimeoutMs, model = 'sonnet') {
+function resolveClaudeCodeTimeoutMs(requestedTimeoutMs: unknown, model = 'sonnet'): number {
   const requested = _positiveNumber(requestedTimeoutMs, null);
   const floor = _claudeCodeTimeoutFloorMs(model);
   return Math.max(requested || floor, floor);
 }
 
-function resolveClaudeCodeMaxBudgetUsd(requestedBudgetUsd, model = 'sonnet') {
+function resolveClaudeCodeMaxBudgetUsd(requestedBudgetUsd: unknown, model = 'sonnet'): unknown {
   if (_flagDisabled('HUB_CLAUDE_CODE_BUDGET_FLOOR_ENABLED')) return requestedBudgetUsd;
   const requested = _positiveNumber(requestedBudgetUsd, null);
   if (requested === null) return requestedBudgetUsd;
   return Math.max(requested, _claudeCodeBudgetFloorUsd(model));
 }
 
-async function _saveCache(req, resp) {
+async function _saveCache(req: LlmRequest, resp: LlmResponse): Promise<void> {
   try {
     const cacheKey = _cacheKey(req);
     const tokensIn = (resp.modelUsage && resp.modelUsage.input_tokens) || 0;
@@ -960,7 +966,7 @@ async function _saveCache(req, resp) {
   } catch {}
 }
 
-function _cacheKey(req) {
+function _cacheKey(req: LlmRequest): AnyRecord {
   return {
     abstractModel: req.abstractModel,
     callerTeam: req.callerTeam || 'hub',
@@ -975,7 +981,7 @@ function _cacheKey(req) {
   };
 }
 
-function _shouldSuppressFallbackExhaustionAlarm(req, selectorChain) {
+function _shouldSuppressFallbackExhaustionAlarm(req: LlmRequest, selectorChain: AnyRecord | null): boolean {
   if (req?.suppressFallbackExhaustionAlarm === true) return true;
   const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
   const callerTeam = String(req?.callerTeam || '').trim().toLowerCase();
@@ -987,7 +993,7 @@ function _shouldSuppressFallbackExhaustionAlarm(req, selectorChain) {
   return false;
 }
 
-function _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team) {
+function _safeFallbackForSelectorExhaustion(req: LlmRequest, selectorChain: AnyRecord | null, attempts: AnyRecord[], team: string): LlmResponse | null {
   if (_flagDisabled('HUB_ELSA_CHAT_SAFE_FALLBACK_ENABLED')) return null;
   const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
   const callerTeam = String(req?.callerTeam || team || '').trim().toLowerCase();
@@ -1002,13 +1008,13 @@ function _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team) 
     provider: 'safe-fallback',
     selected_route: 'safe-fallback/elsa-chat-answer',
     result: '현재 답변 생성 경로가 일시적으로 불안정합니다. 요청은 접수되었고, 잠시 후 다시 시도해 주세요.',
-    durationMs: attempts.reduce((sum, attempt) => sum + Number(attempt.durationMs || 0), 0),
+    durationMs: attempts.reduce((sum: number, attempt: AnyRecord) => sum + Number(attempt.durationMs || 0), 0),
     degraded: true,
     safeFallback: true,
     degradedReason: 'selector_chain_exhausted',
     suppressedError: `fallback_exhausted: ${lastErr}`,
     fallbackExhaustionSuppressed: true,
-    attempted_providers: attempts.map((attempt) => attempt.provider),
+    attempted_providers: attempts.map((attempt: AnyRecord) => attempt.provider),
     avoidedProviders: selectorChain?.avoidedProviders || [],
     fallbackCount: attempts.length,
     selectorKey: selectorChain?.selectorKey || req?.selectorKey || null,
@@ -1021,8 +1027,8 @@ function _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team) 
   };
 }
 
-async function _notifyFallbackExhaustion(req, attempts, team) {
-  const tried = attempts.map(a => a.provider).join(' → ');
+async function _notifyFallbackExhaustion(req: LlmRequest, attempts: AnyRecord[], team: string): Promise<void> {
+  const tried = attempts.map((a: AnyRecord) => a.provider).join(' → ');
   const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
   const msg = `🚨 Fallback Exhaustion\n팀: ${team} / 에이전트: ${req.agent || 'default'}\n시도: ${tried}\n최종 에러: ${lastErr}`;
   console.error('[llm/unified]', msg);
