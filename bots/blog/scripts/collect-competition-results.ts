@@ -11,7 +11,74 @@ const COMPETITION_TIMEOUT_HOURS = 24;
 const DEFAULT_REPAIR_DAYS = 14;
 const competitionMemory = createAgentMemory({ agentId: 'blog.competition', team: TEAM });
 
-function _parseArgs(argv = process.argv.slice(2)) {
+type DateLike = string | number | Date;
+
+type CliOptions = {
+  repairTimeouts: boolean;
+  dryRun: boolean;
+  json: boolean;
+  days: number;
+};
+
+type CompetitionRow = {
+  id: number;
+  team?: string;
+  topic?: string;
+  group_a_agents?: unknown;
+  group_b_agents?: unknown;
+  group_a_contract_ids?: unknown;
+  group_b_contract_ids?: unknown;
+  created_at: DateLike;
+  completed_at?: DateLike | null;
+};
+
+type BlogPostRow = {
+  id: number;
+  title?: string;
+  category?: string;
+  status?: string;
+  char_count?: number | string | null;
+  content?: string | null;
+  metadata?: {
+    writer_name?: string;
+  } | Record<string, unknown> | null;
+  created_at?: DateLike;
+};
+
+type ContractRow = {
+  id: number;
+  agent_id?: number | string | null;
+};
+
+type GroupResult = {
+  agents: string[];
+  char_count: number;
+  section_count: number;
+  code_blocks: number;
+  published_count: number;
+  ai_risk: number;
+  match_mode: string;
+  matched_writers: string[];
+};
+
+type CompetitionEngineResult = {
+  winner: 'a' | 'b';
+  scoreA: number;
+  scoreB: number;
+  qualityDiff: number;
+};
+
+type CompetitionOutcome =
+  | { status: 'no_result'; contractIdsA: unknown[]; contractIdsB: unknown[] }
+  | { status: 'dry_run_ready'; contractIdsA: unknown[]; contractIdsB: unknown[]; resultA: GroupResult; resultB: GroupResult; winner: 'a' | 'b' }
+  | { status: 'completed'; result: CompetitionEngineResult; contractIdsA: unknown[]; contractIdsB: unknown[] };
+
+type CollectOptions = Partial<CliOptions> & {
+  allowShared?: boolean;
+  ignoreNextCompetitionBoundary?: boolean;
+};
+
+function _parseArgs(argv: string[] = process.argv.slice(2)): CliOptions {
   const args = new Set(argv);
   const daysArg = argv.find((item) => item.startsWith('--days='));
   const parsedDays = daysArg ? Number.parseInt(daysArg.split('=')[1], 10) : NaN;
@@ -24,7 +91,7 @@ function _parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function _normalizeArray(value) {
+function _normalizeArray(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
     try {
@@ -37,13 +104,13 @@ function _normalizeArray(value) {
   return [];
 }
 
-function _hoursSince(dateLike) {
+function _hoursSince(dateLike: DateLike): number {
   const timestamp = new Date(dateLike).getTime();
   if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
   return (Date.now() - timestamp) / (1000 * 60 * 60);
 }
 
-function _buildCompetitionMemoryQuery(comp, outcome) {
+function _buildCompetitionMemoryQuery(comp: CompetitionRow, outcome: Extract<CompetitionOutcome, { status: 'completed' }>): string {
   return [
     'blog competition completed',
     String(comp?.topic || '').trim(),
@@ -51,7 +118,7 @@ function _buildCompetitionMemoryQuery(comp, outcome) {
   ].filter(Boolean).join(' ');
 }
 
-async function _fetchRunningCompetitions() {
+async function _fetchRunningCompetitions(): Promise<CompetitionRow[]> {
   return pgPool.query(
     'agent',
     `SELECT id, team, topic, group_a_agents, group_b_agents,
@@ -59,10 +126,10 @@ async function _fetchRunningCompetitions() {
      FROM agent.competitions
      WHERE status = 'running'
      ORDER BY created_at ASC`,
-  );
+  ) as Promise<CompetitionRow[]>;
 }
 
-async function _fetchRepairableTimeoutCompetitions(days = DEFAULT_REPAIR_DAYS) {
+async function _fetchRepairableTimeoutCompetitions(days = DEFAULT_REPAIR_DAYS): Promise<CompetitionRow[]> {
   return pgPool.query(
     'agent',
     `SELECT id, team, topic, group_a_agents, group_b_agents,
@@ -74,10 +141,10 @@ async function _fetchRepairableTimeoutCompetitions(days = DEFAULT_REPAIR_DAYS) {
        AND created_at >= NOW() - ($2::text || ' days')::interval
      ORDER BY created_at ASC`,
     [TEAM, String(days)],
-  );
+  ) as Promise<CompetitionRow[]>;
 }
 
-async function _resolveWindowEnd(team, createdAt) {
+async function _resolveWindowEnd(team: string, createdAt: DateLike): Promise<Date> {
   const nextComp = await pgPool.get(
     'agent',
     `SELECT created_at
@@ -95,12 +162,12 @@ async function _resolveWindowEnd(team, createdAt) {
   return nextCreated && nextCreated < maxEnd ? nextCreated : maxEnd;
 }
 
-function _resolveAbsoluteWindowEnd(createdAt) {
+function _resolveAbsoluteWindowEnd(createdAt: DateLike): Date {
   const created = new Date(createdAt);
   return new Date(created.getTime() + COMPETITION_TIMEOUT_HOURS * 60 * 60 * 1000);
 }
 
-async function _fetchTopicPostsInWindow(topic, createdAt, windowEnd = null) {
+async function _fetchTopicPostsInWindow(topic: unknown, createdAt: DateLike, windowEnd: Date | null = null): Promise<BlogPostRow[]> {
   const topicText = String(topic || '').trim();
   if (!topicText) return [];
 
@@ -121,10 +188,10 @@ async function _fetchTopicPostsInWindow(topic, createdAt, windowEnd = null) {
       `%${topicText}%`,
       topicText,
     ],
-  );
+  ) as Promise<BlogPostRow[]>;
 }
 
-async function _fetchPriorTopicPosts(topic, createdAt) {
+async function _fetchPriorTopicPosts(topic: unknown, createdAt: DateLike): Promise<BlogPostRow[]> {
   const topicText = String(topic || '').trim();
   if (!topicText) return [];
 
@@ -143,10 +210,10 @@ async function _fetchPriorTopicPosts(topic, createdAt) {
        )
      ORDER BY created_at DESC`,
     [start, createdAt, `%${topicText}%`, topicText],
-  );
+  ) as Promise<BlogPostRow[]>;
 }
 
-async function _hasPriorCompletedCompetition(topic, createdAt) {
+async function _hasPriorCompletedCompetition(topic: unknown, createdAt: DateLike): Promise<boolean> {
   const row = await pgPool.get(
     'agent',
     `SELECT id
@@ -164,11 +231,10 @@ async function _hasPriorCompletedCompetition(topic, createdAt) {
   return Boolean(row?.id);
 }
 
-function _collectGroupResultFromRows(rows = [], agents = [], options = {}) {
+function _collectGroupResultFromRows(rows: BlogPostRow[] = [], agents: unknown = [], options: CollectOptions = {}): GroupResult {
   const normalizedAgents = _normalizeArray(agents)
     .map((name) => String(name || '').trim())
     .filter(Boolean);
-  // @ts-ignore checkJs default-param inference is too narrow here
   const allowShared = options.allowShared === true;
 
   if (normalizedAgents.length === 0 || !Array.isArray(rows) || rows.length === 0) {
@@ -193,7 +259,7 @@ function _collectGroupResultFromRows(rows = [], agents = [], options = {}) {
   let charCount = 0;
   let sectionCount = 0;
   let codeBlocks = 0;
-  const matchedWriters = new Set();
+  const matchedWriters = new Set<string>();
 
   for (const row of targetRows) {
     const content = String(row.content || '');
@@ -216,9 +282,9 @@ function _collectGroupResultFromRows(rows = [], agents = [], options = {}) {
   };
 }
 
-async function _finalizeContracts(contractIds = [], status = 'completed', scoreResult = null) {
+async function _finalizeContracts(contractIds: unknown[] = [], status = 'completed', scoreResult: number | null = null): Promise<void> {
   const ids = _normalizeArray(contractIds)
-    .map((id) => Number.parseInt(id, 10))
+    .map((id) => Number.parseInt(String(id), 10))
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (ids.length === 0) return;
@@ -229,7 +295,7 @@ async function _finalizeContracts(contractIds = [], status = 'completed', scoreR
      FROM agent.contracts
      WHERE id = ANY($1::int[])`,
     [ids],
-  );
+  ) as ContractRow[];
   if (contracts.length === 0) return;
 
   await pgPool.run(
@@ -243,7 +309,7 @@ async function _finalizeContracts(contractIds = [], status = 'completed', scoreR
   );
 
   const agentIds = contracts
-    .map((row) => Number.parseInt(row.agent_id, 10))
+    .map((row: ContractRow) => Number.parseInt(String(row.agent_id || ''), 10))
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (agentIds.length > 0) {
@@ -257,7 +323,7 @@ async function _finalizeContracts(contractIds = [], status = 'completed', scoreR
   }
 }
 
-async function _markTimeout(competitionId, hoursSinceCreated) {
+async function _markTimeout(competitionId: number, hoursSinceCreated: number): Promise<void> {
   const competition = await pgPool.get(
     'agent',
     `SELECT group_a_contract_ids, group_b_contract_ids
@@ -279,7 +345,7 @@ async function _markTimeout(competitionId, hoursSinceCreated) {
   console.log(`[competition-collector] #${competitionId} timeout (${Math.round(hoursSinceCreated)}h)`);
 }
 
-async function _markSuperseded(competitionId, reason, metadata = {}) {
+async function _markSuperseded(competitionId: number, reason: string, metadata: Record<string, unknown> = {}): Promise<void> {
   await pgPool.run(
     'agent',
     `UPDATE agent.competitions
@@ -293,10 +359,9 @@ async function _markSuperseded(competitionId, reason, metadata = {}) {
   console.log(`[competition-collector] #${competitionId} superseded (${reason})`);
 }
 
-async function _collectCompetitionOutcome(comp, options = {}) {
+async function _collectCompetitionOutcome(comp: CompetitionRow, options: CollectOptions = {}): Promise<CompetitionOutcome> {
   const contractIdsA = _normalizeArray(comp.group_a_contract_ids);
   const contractIdsB = _normalizeArray(comp.group_b_contract_ids);
-  // @ts-ignore checkJs default-param inference is too narrow here
   const windowEnd = options.ignoreNextCompetitionBoundary
     ? _resolveAbsoluteWindowEnd(comp.created_at)
     : await _resolveWindowEnd(comp.team || TEAM, comp.created_at);
@@ -317,19 +382,19 @@ async function _collectCompetitionOutcome(comp, options = {}) {
     return { status: 'no_result', contractIdsA, contractIdsB };
   }
 
-  // @ts-ignore checkJs default-param inference is too narrow here
   if (options.dryRun) {
+    const evaluated = competitionEngine.evaluateResults(resultA, resultB) as CompetitionEngineResult;
     return {
       status: 'dry_run_ready',
       contractIdsA,
       contractIdsB,
       resultA,
       resultB,
-      winner: competitionEngine.evaluateResults(resultA, resultB).scoreA >= competitionEngine.evaluateResults(resultA, resultB).scoreB ? 'a' : 'b',
+      winner: evaluated.scoreA >= evaluated.scoreB ? 'a' : 'b',
     };
   }
 
-  const result = await competitionEngine.completeCompetition(comp.id, resultA, resultB);
+  const result = await competitionEngine.completeCompetition(comp.id, resultA, resultB) as CompetitionEngineResult;
   const winnerContractIds = result.winner === 'a' ? contractIdsA : contractIdsB;
   const loserContractIds = result.winner === 'a' ? contractIdsB : contractIdsA;
 
@@ -344,8 +409,7 @@ async function _collectCompetitionOutcome(comp, options = {}) {
   };
 }
 
-async function _repairTimeoutCompetitions(options = {}) {
-  // @ts-ignore checkJs default-param inference is too narrow here
+async function _repairTimeoutCompetitions(options: CollectOptions = {}) {
   const targets = await _fetchRepairableTimeoutCompetitions(options.days);
   if (targets.length === 0) {
     return { scanned: 0, repaired: 0, superseded: 0, unresolved: 0, dryRunReady: 0 };
@@ -382,7 +446,6 @@ async function _repairTimeoutCompetitions(options = {}) {
       null;
 
     if (supersedeReason) {
-      // @ts-ignore checkJs default-param inference is too narrow here
       if (options.dryRun) {
         superseded += 1;
         console.log(`[competition-collector] #${comp.id} supersede 가능 (dry-run: ${supersedeReason})`);
@@ -508,7 +571,7 @@ async function main() {
         alert_level: 2,
         message,
       },
-    }).catch((error) => {
+    }).catch((error: Error) => {
       console.warn(`[competition-collector] 알림 실패 #${comp.id}: ${error.message}`);
     });
     await competitionMemory.remember(message, 'episodic', {
