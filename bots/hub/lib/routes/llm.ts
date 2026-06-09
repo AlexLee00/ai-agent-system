@@ -22,10 +22,14 @@ const {
 } = require('../../../../packages/core/lib/llm-fallback');
 const { getProviderStats, resetProviderCircuit, resetAllProviderCircuits } = require('../llm/provider-registry');
 
-let routingLogAuditColumnsPromise = null;
+type AnyRecord = Record<string, any>;
+type RouteReq = AnyRecord;
+type RouteRes = AnyRecord;
+
+let routingLogAuditColumnsPromise: Promise<boolean> | null = null;
 
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
-export async function llmCallRoute(req, res) {
+export async function llmCallRoute(req: RouteReq, res: RouteRes) {
   const context = req.hubRequestContext || {};
   const parsed = parseLlmCallPayload(req.body);
   if (!parsed.ok) {
@@ -60,7 +64,7 @@ export async function llmCallRoute(req, res) {
   try {
     const resp = await callWithFallback(normalizedRequest);
 
-    logRouting(resp, normalizedRequest).catch((err) =>
+    logRouting(resp, normalizedRequest).catch((err: any) =>
       console.error('[llm] routing log 기록 실패:', err.message)
     );
 
@@ -77,7 +81,7 @@ export async function llmCallRoute(req, res) {
       },
       ...(providerBackpressure ? { providerBackpressure } : {}),
     });
-  } catch (err) {
+  } catch (err: any) {
     const providerBackpressure = buildProviderBackpressure({ error: err.message });
     if (providerBackpressure?.retryAfterMs) {
       res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1000))));
@@ -94,7 +98,7 @@ export async function llmCallRoute(req, res) {
 }
 
 // POST /hub/llm/vision — Hub-owned multimodal analysis gateway.
-export async function llmVisionRoute(req, res) {
+export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
   const context = req.hubRequestContext || {};
   const body = req.body || {};
   const prompt = String(body.prompt || '').trim();
@@ -174,9 +178,9 @@ export async function llmVisionRoute(req, res) {
     images: [{ mimeType: image.mimeType, dataBase64: image.dataBase64 }],
   };
 
-  const attempts = [];
-  let resp = null;
-  let selectedRoute = null;
+  const attempts: AnyRecord[] = [];
+  let resp: AnyRecord | null = null;
+  let selectedRoute: string | null = null;
   for (const route of selection.routes) {
     const attempt = await callVisionSelectorRoute(route, {
       ...input,
@@ -220,7 +224,7 @@ export async function llmVisionRoute(req, res) {
     budgetGuardStatus: budget.status,
     attempted_providers: attempts.map((attempt) => attempt.provider),
     fallbackCount: attempts.length,
-  }, logBody).catch((err) => console.error('[llm] vision routing log 기록 실패:', err.message));
+  }, logBody).catch((err: any) => console.error('[llm] vision routing log 기록 실패:', err.message));
 
   if (!resp.ok) {
     return res.status(500).json({
@@ -253,7 +257,7 @@ export async function llmVisionRoute(req, res) {
 }
 
 // POST /hub/llm/embeddings — Hub-owned embedding gateway.
-export async function llmEmbeddingsRoute(req, res) {
+export async function llmEmbeddingsRoute(req: RouteReq, res: RouteRes) {
   const context = req.hubRequestContext || {};
   const body = req.body || {};
   const input = body.input ?? body.text ?? body.prompt;
@@ -324,11 +328,11 @@ export async function llmEmbeddingsRoute(req, res) {
       ok: true,
       model: rag.EMBED_MODEL,
       dimensions,
-      data: embeddings.map((embedding, index) => ({ index, embedding })),
+      data: embeddings.map((embedding: unknown, index: number) => ({ index, embedding })),
       durationMs: Date.now() - started,
       traceId: context.traceId || null,
     });
-  } catch (err) {
+  } catch (err: any) {
     logRouting({
       ok: false,
       provider: 'local-embedding',
@@ -354,7 +358,7 @@ export async function llmEmbeddingsRoute(req, res) {
 }
 
 // GET /hub/llm/gateway-contract — 외부 프로젝트용 LLM Gateway 계약
-export async function llmGatewayContractRoute(req, res) {
+export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
   return res.json({
     ok: true,
     contractVersion: 'hub-llm-gateway/v1',
@@ -430,7 +434,7 @@ export async function llmGatewayContractRoute(req, res) {
 }
 
 // POST /hub/llm/jobs — 비동기 LLM job 생성
-export async function llmJobsCreateRoute(req, res) {
+export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
   const context = req.hubRequestContext || {};
   const parsed = parseLlmCallPayload(req.body);
   if (!parsed.ok) {
@@ -473,7 +477,7 @@ export async function llmJobsCreateRoute(req, res) {
 }
 
 // GET /hub/llm/jobs — 최근 비동기 LLM job 목록
-export async function llmJobsListRoute(req, res) {
+export async function llmJobsListRoute(req: RouteReq, res: RouteRes) {
   const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
   return res.json({
     ok: true,
@@ -483,7 +487,7 @@ export async function llmJobsListRoute(req, res) {
 }
 
 // GET /hub/llm/jobs/:id — 비동기 LLM job 상태/결과 조회
-export async function llmJobStatusRoute(req, res) {
+export async function llmJobStatusRoute(req: RouteReq, res: RouteRes) {
   const job = await readJob(req.params?.id);
   if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
   return res.json({
@@ -493,7 +497,7 @@ export async function llmJobStatusRoute(req, res) {
 }
 
 // GET /hub/llm/jobs/:id/result — 완료된 비동기 LLM job 결과만 조회
-export async function llmJobResultRoute(req, res) {
+export async function llmJobResultRoute(req: RouteReq, res: RouteRes) {
   const job = await readJob(req.params?.id);
   if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
   if (job.status !== 'completed') {
@@ -512,7 +516,7 @@ export async function llmJobResultRoute(req, res) {
 }
 
 // POST /hub/llm/oauth — Claude Code OAuth 단독 호출
-export async function llmOAuthRoute(req, res) {
+export async function llmOAuthRoute(req: RouteReq, res: RouteRes) {
   if (!directProviderRoutesEnabled()) {
     return res.status(403).json({
       ok: false,
@@ -535,13 +539,13 @@ export async function llmOAuthRoute(req, res) {
       maxBudgetUsd: body.maxBudgetUsd,
     });
     return res.json(resp);
-  } catch (err) {
+  } catch (err: any) {
     return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
   }
 }
 
 // POST /hub/llm/groq — Groq 단독 호출
-export async function llmGroqRoute(req, res) {
+export async function llmGroqRoute(req: RouteReq, res: RouteRes) {
   if (!directProviderRoutesEnabled()) {
     return res.status(403).json({
       ok: false,
@@ -572,13 +576,13 @@ export async function llmGroqRoute(req, res) {
       temperature: body.temperature,
     });
     return res.json(resp);
-  } catch (err) {
+  } catch (err: any) {
     return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
   }
 }
 
 // GET /hub/llm/stats — provider × team × agent 다차원 집계
-export async function llmStatsRoute(req, res) {
+export async function llmStatsRoute(req: RouteReq, res: RouteRes) {
   const hours = Math.min(Math.max(Number(req.query?.hours ?? 24), 1), 168);
   const team = req.query?.team;
 
@@ -629,9 +633,9 @@ export async function llmStatsRoute(req, res) {
     ]);
 
     const summary = summaryRes;
-    const totalCalls = summary.reduce((s, r) => s + Number(r.total_calls), 0);
-    const totalCost = summary.reduce((s, r) => s + Number(r.total_cost_usd || 0), 0);
-    const totalSuccess = summary.reduce((s, r) => s + Number(r.success_count), 0);
+    const totalCalls = summary.reduce((s: number, r: AnyRecord) => s + Number(r.total_calls), 0);
+    const totalCost = summary.reduce((s: number, r: AnyRecord) => s + Number(r.total_cost_usd || 0), 0);
+    const totalSuccess = summary.reduce((s: number, r: AnyRecord) => s + Number(r.success_count), 0);
 
     return res.json({
       ok: true,
@@ -650,7 +654,7 @@ export async function llmStatsRoute(req, res) {
       admission: getLlmAdmissionState(),
       jobs: await getJobStoreState(),
     });
-  } catch (err) {
+  } catch (err: any) {
     return res.json({
       ok: true,
       hours,
@@ -668,7 +672,7 @@ export async function llmStatsRoute(req, res) {
 }
 
 // GET /hub/llm/load-tests — 최근 부하 테스트 결과 조회
-export async function llmLoadTestsRoute(req, res) {
+export async function llmLoadTestsRoute(req: RouteReq, res: RouteRes) {
   const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
   const scenario = req.query?.scenario;
   const whereClause = scenario ? 'WHERE scenario = $1' : '';
@@ -711,11 +715,11 @@ export async function llmLoadTestsRoute(req, res) {
       `),
     ]);
 
-    const normalizedRows = rows.map((row) => ({
+    const normalizedRows = rows.map((row: AnyRecord) => ({
       ...row,
       notes: parseLoadTestNotes(row.notes),
     }));
-    const scenarioSummary = scenarioRows.map((row) => ({
+    const scenarioSummary = scenarioRows.map((row: AnyRecord) => ({
       ...row,
       notes: parseLoadTestNotes(row.notes),
     }));
@@ -728,7 +732,7 @@ export async function llmLoadTestsRoute(req, res) {
       scenario_summary: scenarioSummary,
       results: normalizedRows,
     });
-  } catch (err) {
+  } catch (err: any) {
     return res.json({
       ok: true,
       count: 0,
@@ -742,7 +746,7 @@ export async function llmLoadTestsRoute(req, res) {
 }
 
 // GET /hub/llm/circuit — local Ollama circuit breaker 상태 조회 + 리셋
-export async function llmCircuitRoute(req, res) {
+export async function llmCircuitRoute(req: RouteReq, res: RouteRes) {
   if (req.method === 'DELETE') {
     const target = req.query?.target;
     const provider = req.query?.provider;
@@ -772,9 +776,9 @@ export async function llmCircuitRoute(req, res) {
   const statuses = getAllCircuitStatuses();
   const providerStats = getProviderStats();
   const providerCooldowns = getProviderCooldownSnapshot();
-  const hasOpen = Object.values(statuses).some((s) => s.state === 'OPEN' || s.state === 'HALF_OPEN')
-    || Object.values(providerStats).some((s) => s.state === 'OPEN')
-    || Object.values(providerCooldowns).some((s) => s.cooling_down);
+  const hasOpen = Object.values(statuses).some((s: any) => s.state === 'OPEN' || s.state === 'HALF_OPEN')
+    || Object.values(providerStats).some((s: any) => s.state === 'OPEN')
+    || Object.values(providerCooldowns).some((s: any) => s.cooling_down);
   return res.json({
     ok: true,
     local_llm_circuits: statuses,
@@ -788,17 +792,17 @@ function directProviderRoutesEnabled() {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_ALLOW_DIRECT_LLM_PROVIDER_ROUTES || '').trim().toLowerCase());
 }
 
-function computeProviderShare(rows) {
-  const total = rows.reduce((s, r) => s + Number(r.total_calls), 0);
+function computeProviderShare(rows: AnyRecord[]): AnyRecord {
+  const total = rows.reduce((s: number, r: AnyRecord) => s + Number(r.total_calls), 0);
   if (total === 0) return {};
-  const share = {};
+  const share: AnyRecord = {};
   for (const r of rows) {
     share[r.provider] = (share[r.provider] || 0) + Number(r.total_calls) / total;
   }
   return share;
 }
 
-function parseLoadTestNotes(notes) {
+function parseLoadTestNotes(notes: unknown): unknown {
   if (!notes || typeof notes !== 'string') return notes;
   try {
     return JSON.parse(notes);
@@ -807,7 +811,7 @@ function parseLoadTestNotes(notes) {
   }
 }
 
-function buildProviderBackpressure(resp) {
+function buildProviderBackpressure(resp: AnyRecord | null | undefined): AnyRecord | null {
   const error = String(resp?.error || '').toLowerCase();
   if (!error) return null;
   const provider = String(resp?.provider || '').trim() || undefined;
@@ -844,7 +848,7 @@ function buildProviderBackpressure(resp) {
   return null;
 }
 
-function normalizeVisionImage(body) {
+function normalizeVisionImage(body: AnyRecord): AnyRecord {
   let dataBase64 = String(body.imageBase64 || body.base64 || '').trim();
   let mimeType = String(body.mimeType || 'image/png').trim() || 'image/png';
   const dataUrl = String(body.imageDataUrl || body.dataUrl || '').trim();
@@ -886,7 +890,7 @@ function normalizeVisionImage(body) {
   };
 }
 
-function estimateVisionCostUsd(body, image, maxTokens) {
+function estimateVisionCostUsd(body: AnyRecord, image: AnyRecord, maxTokens: unknown): number {
   const explicit = Number(body.maxBudgetUsd || 0);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
   const tokenCost = Math.max(0.01, Math.min(0.08, Number(maxTokens || 512) / 16_000));
@@ -894,7 +898,7 @@ function estimateVisionCostUsd(body, image, maxTokens) {
   return Number((tokenCost + imageCost).toFixed(6));
 }
 
-function checkVisionBudget(team, estimatedCostUsd) {
+function checkVisionBudget(team: string, estimatedCostUsd: number): AnyRecord {
   if (process.env.HUB_BUDGET_GUARDIAN_ENABLED === 'false') {
     return { ok: true, estimatedCostUsd, status: 'disabled' };
   }
@@ -907,13 +911,13 @@ function checkVisionBudget(team, estimatedCostUsd) {
       estimatedCostUsd,
       status: check.ok ? 'allowed' : 'blocked',
     };
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[llm] vision budget guardian 오류 (무시):', err.message);
     return { ok: true, estimatedCostUsd, status: 'error_ignored' };
   }
 }
 
-function resolveVisionSelection(request) {
+function resolveVisionSelection(request: AnyRecord): AnyRecord {
   const selection = resolveHubLlmSelection(request);
   if (!selection?.ok) {
     return {
@@ -925,8 +929,8 @@ function resolveVisionSelection(request) {
     };
   }
   const routes = (selection.chain || [])
-    .map((entry) => ({ entry, route: normalizeVisionRoute(entry.route || routeFromEntry(entry)) }))
-    .filter((item) => isVisionRouteSupported(item.route));
+    .map((entry: AnyRecord) => ({ entry, route: normalizeVisionRoute(entry.route || routeFromEntry(entry)) }))
+    .filter((item: AnyRecord) => isVisionRouteSupported(item.route));
   if (!routes.length) {
     return {
       ok: false,
@@ -947,14 +951,14 @@ function resolveVisionSelection(request) {
   };
 }
 
-function routeFromEntry(entry) {
+function routeFromEntry(entry: AnyRecord): string {
   const provider = String(entry?.provider || '').trim();
   const model = String(entry?.model || '').trim();
   if (!provider || !model) return model || provider;
   return model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
 }
 
-function normalizeVisionRoute(route) {
+function normalizeVisionRoute(route: unknown): string {
   const normalized = String(route || '').trim();
   if (normalized.startsWith('openai/')) return `openai-oauth/${normalized.slice('openai/'.length)}`;
   if (normalized.startsWith('gemini/')) return `gemini-cli-oauth/${normalized.slice('gemini/'.length)}`;
@@ -965,14 +969,14 @@ function normalizeVisionRoute(route) {
   return normalized;
 }
 
-function isVisionRouteSupported(route) {
+function isVisionRouteSupported(route: unknown): boolean {
   return String(route || '').startsWith('openai-oauth/')
     || String(route || '').startsWith('gemini-oauth/')
     || String(route || '').startsWith('gemini-cli-oauth/')
     || String(route || '').startsWith('gemini-codeassist-oauth/');
 }
 
-async function callVisionSelectorRoute(route, input) {
+async function callVisionSelectorRoute(route: AnyRecord, input: AnyRecord): Promise<AnyRecord> {
   if (route.route.startsWith('openai-oauth/')) {
     return callOpenAiCodexOAuth({
       ...input,
@@ -1000,7 +1004,7 @@ async function callVisionSelectorRoute(route, input) {
   return { ok: false, provider: 'failed', error: `unsupported_vision_route:${route.route}`, durationMs: 0 };
 }
 
-function redactJobPayload(job) {
+function redactJobPayload(job: AnyRecord): AnyRecord {
   const { payload, ...rest } = job;
   return {
     ...rest,
@@ -1008,12 +1012,12 @@ function redactJobPayload(job) {
   };
 }
 
-async function logRouting(resp, body) {
+async function logRouting(resp: AnyRecord, body: AnyRecord): Promise<void> {
   const audit = buildRoutingLogAudit(body);
   const includeAudit = await ensureRoutingLogAuditColumns();
   try {
     await insertRoutingLog(resp, body, audit, includeAudit);
-  } catch (err) {
+  } catch (err: any) {
     if (includeAudit && isRoutingLogAuditColumnError(err)) {
       routingLogAuditColumnsPromise = null;
       await insertRoutingLog(resp, body, audit, false);
@@ -1023,7 +1027,7 @@ async function logRouting(resp, body) {
   }
 }
 
-async function insertRoutingLog(resp, body, audit, includeAudit) {
+async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyRecord, includeAudit: boolean): Promise<void> {
   const providerForLog = resp?.dedupeHit ? 'dedupe' : resp.provider;
   if (includeAudit) {
     await pgPool.run('public', `
@@ -1083,7 +1087,7 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
   ]);
 }
 
-function buildRoutingLogAudit(body) {
+function buildRoutingLogAudit(body: AnyRecord): AnyRecord {
   const prompt = typeof body?.prompt === 'string' ? body.prompt : '';
   const systemPrompt = typeof body?.systemPrompt === 'string' ? body.systemPrompt : '';
   const promptHash = hashText(prompt);
@@ -1105,12 +1109,12 @@ function buildRoutingLogAudit(body) {
   };
 }
 
-function hashText(value) {
+function hashText(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0) return null;
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function ensureRoutingLogAuditColumns() {
+function ensureRoutingLogAuditColumns(): Promise<boolean> {
   if (!routingLogAuditColumnsPromise) {
     routingLogAuditColumnsPromise = (async () => {
       if (await routingLogAuditColumnsExist()) {
@@ -1199,7 +1203,7 @@ async function createRoutingLogAuditIndexes() {
       CREATE INDEX IF NOT EXISTS idx_llm_routing_log_runtime_purpose
         ON llm_routing_log (caller_team, runtime_purpose, created_at DESC)
     `);
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[llm] routing log audit index ensure skipped:', err?.message || err);
   }
 }
@@ -1240,10 +1244,10 @@ async function ensureHubLlmRequestLogView() {
   `);
 }
 
-function resolveProviderTierForLog(resp) {
+function resolveProviderTierForLog(resp: AnyRecord): string | null {
   const tiers = Array.isArray(resp?.providerTiers) ? resp.providerTiers : [];
   const selectedRoute = String(resp?.selected_route || '');
-  const selected = tiers.find((tier) => tier.route === selectedRoute || tier.provider === resp?.provider);
+  const selected = tiers.find((tier: AnyRecord) => tier.route === selectedRoute || tier.provider === resp?.provider);
   if (selected?.tier != null) return String(selected.tier);
   const provider = String(resp?.provider || '');
   if (provider === 'openai-oauth') return '1';
@@ -1254,8 +1258,8 @@ function resolveProviderTierForLog(resp) {
   return null;
 }
 
-function isRoutingLogAuditColumnError(err) {
-  const message = String(err?.message || err || '').toLowerCase();
+function isRoutingLogAuditColumnError(err: unknown): boolean {
+  const message = String((err as any)?.message || err || '').toLowerCase();
   return message.includes('prompt_hash')
     || message.includes('system_prompt_hash')
     || message.includes('request_fingerprint')
