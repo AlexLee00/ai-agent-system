@@ -27,10 +27,10 @@ type FakeDeps = {
   inserts: FakeInsert[];
   schemaInits: string[];
   initSchema: () => Promise<{ ok: boolean }>;
-  listActiveEntryTriggers: (args: { exchange?: string }) => Promise<Array<{ symbol: string; trigger_state: string }>>;
-  fetchBars: (symbol: string) => Promise<Bar[]>;
-  query: (sql: string) => Promise<Array<Record<string, unknown>>>;
-  run: (sql: string, params: unknown[]) => Promise<{ rowCount: number }>;
+  listActiveEntryTriggers: (args: Record<string, any>) => Promise<Array<{ symbol: string; trigger_state: string }>>;
+  fetchBars: (symbol: string, exchange?: string, options?: Record<string, any>) => Promise<Bar[]>;
+  query: (sql: string, params?: any[]) => Promise<Array<Record<string, unknown>>>;
+  run: (sql: string, params?: any[]) => Promise<{ rowCount: number }>;
 };
 
 function fixtureBars(start = 100, drift = 1, count = 40) {
@@ -91,7 +91,7 @@ function fakeDeps({ existingShadow = false } = {}): FakeDeps {
       }
       return [];
     },
-    run: async (sql: string, params: unknown[]) => {
+    run: async (sql: string, params: any[] = []) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },
