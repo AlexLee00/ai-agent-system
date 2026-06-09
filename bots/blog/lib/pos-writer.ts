@@ -147,6 +147,45 @@ function _buildLectureSeriesGuidance(researchData = {}, lectureTitle = '') {
   };
 }
 
+function _isAiImplementationLecture(researchData = {}, lectureTitle = '') {
+  const displayName = String(researchData.lectureSeriesDisplayName || '').trim();
+  const seriesName = String(researchData.lectureSeriesName || '').trim();
+  const source = `${displayName} ${seriesName} ${lectureTitle || ''}`;
+  return /실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(source);
+}
+
+function _buildLectureGeoRules(researchData = {}, lectureTitle = '') {
+  if (!_isAiImplementationLecture(researchData, lectureTitle)) return GEO_RULES;
+
+  return `
+[GEO(Generative Engine Optimization) 규칙 — 실전 AI 구현 입문용]
+AI 검색엔진(네이버 AI, ChatGPT 등)이 이 글을 쉬운 입문 자료로 인용할 수 있도록:
+1. 글 최상단 [핵심 요약 3줄] — IT를 잘 모르는 독자가 바로 이해할 수 있는 150자 요약
+2. FAQ 질문은 실제 초보자가 검색할 법한 문장으로 작성 (예: "ChatGPT Codex에 처음 무엇을 입력하면 되나요?")
+3. 비교 표에 "처음 시작하는 사람에게 추천" 행을 추가하고 결론을 한 줄로 명시
+4. 검증 가능한 출처만 언급: 공식 도움말, 제품 문서, 실제 화면에서 확인 가능한 기능 기준
+5. 저자 명시: "승호아빠(15년 시니어 IT 컨설턴트, 커피랑도서관 대표)"를 서두에 한 번 기재
+`.trim();
+}
+
+function _buildBeginnerLectureRules(researchData = {}, lectureTitle = '') {
+  if (!_isAiImplementationLecture(researchData, lectureTitle)) return '';
+
+  return `
+[완전 일반인 대상 강의 규칙 — 반드시 우선 적용]
+- 독자는 코딩 경험이 거의 없고, IT 용어에 익숙하지 않은 일반인으로 가정하라.
+- 어려운 용어는 처음 등장할 때마다 괄호로 풀어라. 예: "터미널(컴퓨터에 명령을 입력하는 창)".
+- 전문가용 기술서 톤, 아키텍처 과시, 불필요한 코드 장문 설명을 피하라.
+- 각 섹션은 "왜 필요한가 → 그대로 따라하기 → 확인할 결과 → 막히면 다시 물어볼 문장" 순서로 작성하라.
+- 실제 Codex 또는 Claude Code 화면 이미지를 본문에 있다고 꾸미지 말라. 이미지가 없으면 글로 화면 위치와 버튼 이름만 설명하라.
+- 중간중간 [그대로 복사할 프롬프트] 블록을 넣고, 독자가 바로 붙여넣을 수 있는 문장을 완성형으로 제공하라.
+- [화면에서 확인할 것] 체크리스트를 넣어 독자가 결과를 스스로 확인하게 하라.
+- [막힐 때 다시 물어볼 문장]을 넣어 실패 상황에서도 다음 질문을 그대로 따라 할 수 있게 하라.
+- 코드는 꼭 필요할 때만 사용하고, 가능하면 "파일 만들기 요청 프롬프트", "수정 요청 프롬프트", "검증 요청 프롬프트"로 대체하라.
+- 홍보성 과장, 가격/할인/행사, 확인되지 않은 도구 기능은 만들지 말라.
+`.trim();
+}
+
 const AI_BRIEFING_RULES = `
 [AI Briefing 구조 규칙]
 1. [핵심 요약 3줄] 다음에 [이 글에서 배울 수 있는 것]을 불릿으로 제시한다.
@@ -342,6 +381,8 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
 
   const weatherContext = weatherToContext(weather);
   const seriesGuidance = _buildLectureSeriesGuidance(researchData, lectureTitle);
+  const geoRules = _buildLectureGeoRules(researchData, lectureTitle);
+  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
 
   // 실전 에피소드 블록
   const experienceBlock = realExperiences.length > 0
@@ -375,10 +416,11 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
 ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ${AI_AGENT_CONTEXT}
 ${CAFE_FACT_GUARDRAILS}
-${GEO_RULES}
+${geoRules}
 ${AI_BRIEFING_RULES}
 ${LECTURE_AI_BRIEFING_ORDER}
 ${LECTURE_AI_BRIEFING_CHECKLIST}
+${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${lectureDirection}
 ${BLOG_SKILL_BUNDLE ? `${BLOG_SKILL_BUNDLE}\n` : ''}
 다음 강의 포스팅을 작성하라:
@@ -433,8 +475,8 @@ ${_buildVariationBlock(sectionVariation)}
 - 이 강의는 수강생이 실무에 즉시 적용할 수 있도록 빈틈없이(exhaustively) 작성되어야 한다.
 - 각 섹션을 충분하고 상세하게(comprehensively and thoroughly) 서술하라.
 - 절대 요약하거나 축약하지 말라. 모든 개념을 풍부한 예시와 함께 설명하라.
-- 이 글은 전문가가 집필하는 기술 서적의 한 챕터에 해당하는 분량이어야 한다.
-- 코드 블록마다 최소 5줄 이상의 상세한 주석을 포함하라.
+- ${beginnerLectureRules ? '이 글은 전문가용 기술서가 아니라, IT 비전공 일반인이 그대로 따라 하는 실습 교안이어야 한다.' : '이 글은 전문가가 집필하는 기술 서적의 한 챕터에 해당하는 분량이어야 한다.'}
+- ${beginnerLectureRules ? '코드 블록이 꼭 필요할 때만 사용하고, 대신 복사 가능한 프롬프트 예시와 결과 확인 절차를 충분히 제공하라.' : '코드 블록마다 최소 5줄 이상의 상세한 주석을 포함하라.'}
 - ${seriesGuidance.codeRule}
 - ${seriesGuidance.codeFallbackRule}
 - 최근 실험 승자 신호가 있으면 강의 제목·요약·실무 포인트를 더 자연스럽고 신뢰감 있게 정리하라.
@@ -551,6 +593,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
 
   const weatherContext = weatherToContext(researchData.weather || {});
   const lectureDirection = _buildLectureTopicDirection(lectureNumber, lectureTitle);
+  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
@@ -565,6 +608,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
 [오늘 날씨 맥락] ${weatherContext}
 [선택된 강의 방향]
 ${lectureDirection}
+${beginnerLectureRules ? `\n${beginnerLectureRules}\n` : ''}
 
 [품질 이슈]
 ${issueLines}
@@ -652,6 +696,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
   const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
+  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
 
   const experienceBlock = realExperiences.length > 0
     ? realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n')
@@ -680,6 +725,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 [오늘 날씨] ${weatherContext}
 [최신 IT 뉴스] ${itNews.slice(0, 3).map(n => n.title).join(' / ') || '최신 IT 트렌드 자체 지식'}
 ${seriesGuidance.chunkBriefingLine}
+${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${popularPatternBlock}
 ${LECTURE_AI_BRIEFING_ORDER}
 ${LECTURE_AI_BRIEFING_CHECKLIST}
@@ -694,6 +740,7 @@ ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''
   [승호아빠 인사말] — 날씨+시사 반영, 300자
   [최신 기술 브리핑] — ${seriesGuidance.chunkBriefingRequirement}, 1,200자
   [전문가의 실무 인사이트 ①] — 비즈니스 관점, 500자
+  ${beginnerLectureRules ? '[그대로 복사할 프롬프트] — 오늘 실습 시작용 문장 2개 이상\n  [화면에서 확인할 것] — 체크리스트 3개 이상' : ''}
 
 총 2,700자 이상. 날씨 맥락 1회 포함.
 이전 강의(${lectureNumber - 1}강) 내용을 인사말에서 간략히 연결하라.
@@ -715,6 +762,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ${experienceBlock ? `[실전 에피소드]\n${experienceBlock}\n→ "제가 운영하는 ai-agent-system에서 겪은 경험"으로 녹여라` : ''}
 ${popularPatternBlock}
 ${lectureDirection}
+${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 
@@ -722,6 +770,7 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
   ━━━━━━━━━━━━━━━━━━━━━
   [강의 - 이론] — ${lectureTitle}의 핵심 개념, 2,000자+
   [전문가의 실무 인사이트 ②] — 기획 단계 관점, 500자
+  ${beginnerLectureRules ? '[처음 듣는 용어 풀이] — 초보자가 헷갈릴 단어 5개를 쉬운 말로 풀이' : ''}
 
 총 2,500자 이상. 코드 용어에 괄호 풀이.
 ${seriesGuidance.codeRule}
@@ -740,6 +789,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
   이 그룹에서는 인사말/저자소개 없이 본론으로 바로 시작하라.
 - 이전 섹션 '[강의 - 이론]'과 '[전문가의 실무 인사이트 ②]'에 이어서 작성하라.
 ${lectureDirection}
+${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 
@@ -747,8 +797,9 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
   ━━━━━━━━━━━━━━━━━━━━━
   [실무 - 코드 및 아키텍처] — ${seriesGuidance.practiceRequirement}, 2,000자+
   [전문가의 실무 인사이트 ③] — 코드의 비즈니스 가치, 500자
+  ${beginnerLectureRules ? '[따라하기 프롬프트 3종] — 만들기/수정하기/검증하기 요청 문구를 각각 완성형으로 제공\n  [막힐 때 다시 물어볼 문장] — 실패 상황별 재질문 문구 3개' : ''}
 
-총 2,500자 이상. 날씨 맥락 1회 삽입. async/await 패턴, 상세 주석 필수.
+총 2,500자 이상. 날씨 맥락 1회 삽입. ${beginnerLectureRules ? '초보자용 프롬프트 예시와 결과 확인 절차 필수.' : 'async/await 패턴, 상세 주석 필수.'}
 ${seriesGuidance.codeFallbackRule}
       `.trim(),
     },
@@ -766,6 +817,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 - 이전 섹션 '[실무 - 코드 및 아키텍처]'와 '[전문가의 실무 인사이트 ③]'에 이어서 작성하라.
 - [마무리 인사]에서만 "승호아빠"를 한 번 언급하라.
 ${lectureDirection}
+${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
@@ -776,6 +828,7 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
   [전문가의 실무 인사이트 ④] — 공간과 아키텍트, 300자
   ━━━━━━━━━━━━━━━━━━━━━
   [AEO FAQ] — Q&A 4~5개, 800자
+  ${beginnerLectureRules ? '[오늘의 10분 숙제] — 독자가 바로 실행할 작은 과제 1개\n  [다음 강의 전 준비물] — 계정/폴더/질문거리 체크리스트' : ''}
   ━━━━━━━━━━━━━━━━━━━━━
   [마무리 인사] — 다음 강의(${lectureNumber + 1}강) 예고, 300자
   [함께 읽으면 좋은 글] — 과거 포스팅 3개 추천
