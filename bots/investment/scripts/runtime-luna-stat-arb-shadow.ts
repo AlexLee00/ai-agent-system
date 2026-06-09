@@ -18,13 +18,47 @@ import {
 
 const CONFIRM_TOKEN = 'luna-stat-arb-shadow';
 
-function argValue(name, fallback = null, argv = process.argv.slice(2)) {
+type AnyRecord = Record<string, any>;
+type PriceBar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
+type StatArbOptions = {
+  apply: boolean;
+  force: boolean;
+  json: boolean;
+  confirm: string | null;
+  exchanges: string[];
+  symbol: string | null;
+  strategy: string;
+  limit: number;
+  hours: number;
+  ttlMinutes: number;
+  lookbackDays: number;
+};
+type RuntimeDeps = {
+  query?: (sql: string, params?: any[]) => Promise<any[]> | any[];
+  run?: (sql: string, params?: any[]) => Promise<any> | any;
+  initSchema?: () => Promise<any> | any;
+  fetchBars?: (symbol: string, exchange: string, options?: AnyRecord) => Promise<PriceBar[]> | PriceBar[];
+  listActiveEntryTriggers?: (options: AnyRecord) => Promise<AnyRecord[]> | AnyRecord[];
+};
+type MeanReversionSymbolOptions = {
+  exchange: string;
+  symbol: string | null;
+  limit: number;
+  hours: number;
+};
+
+function argValue(name: string, fallback: string | number | null = null, argv = process.argv.slice(2)): string | null {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
+  return found ? found.slice(prefix.length) : fallback == null ? null : String(fallback);
 }
 
-function parseList(value, fallback = []) {
+function parseList(value: unknown, fallback: string[] = []): string[] {
   const list = String(value || '')
     .split(',')
     .map((item) => item.trim())
@@ -33,7 +67,7 @@ function parseList(value, fallback = []) {
   return list.length ? list : fallback;
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv = process.argv.slice(2)): StatArbOptions {
   const rawExchanges = argValue('exchanges', argValue('exchange', 'binance,kis,kis_overseas', argv), argv);
   return {
     apply: argv.includes('--apply'),
@@ -50,13 +84,13 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function freshEnough(row, ttlMinutes, force = false) {
+function freshEnough(row: AnyRecord | null, ttlMinutes: number, force = false): boolean {
   if (force || !row?.observed_at) return false;
   const ageMs = Date.now() - new Date(row.observed_at).getTime();
   return ageMs >= 0 && ageMs < ttlMinutes * 60 * 1000;
 }
 
-function parseObject(value, fallback = {}) {
+function parseObject(value: unknown, fallback: AnyRecord = {}): AnyRecord {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
   try {
@@ -66,11 +100,11 @@ function parseObject(value, fallback = {}) {
   }
 }
 
-function binanceSymbol(symbol = '') {
+function binanceSymbol(symbol = ''): string {
   return String(symbol || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
-async function fetchJson(url, timeoutMs = 5000) {
+async function fetchJson(url: string, timeoutMs = 5000): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -82,7 +116,7 @@ async function fetchJson(url, timeoutMs = 5000) {
   }
 }
 
-async function fetchStatArbBars(symbol, exchange, { lookbackDays = 90 } = {}) {
+async function fetchStatArbBars(symbol: string, exchange: string, { lookbackDays = 90 }: AnyRecord = {}): Promise<PriceBar[]> {
   const limit = Math.max(20, Math.min(180, Number(lookbackDays || 90)));
   if (exchange === 'kis') {
     return normalizePriceBars(await getDomesticDailyPriceBars(symbol, { days: limit }));
@@ -104,7 +138,7 @@ async function fetchStatArbBars(symbol, exchange, { lookbackDays = 90 } = {}) {
     : [];
 }
 
-function normalizePriceBars(rows = []) {
+function normalizePriceBars(rows: AnyRecord[] = []): PriceBar[] {
   return (Array.isArray(rows) ? rows : [])
     .map((row) => ({
       close: Number(row?.close ?? row?.stck_clpr ?? row?.clos ?? row?.price),
@@ -115,14 +149,23 @@ function normalizePriceBars(rows = []) {
     .filter((bar) => Number.isFinite(bar.close) && bar.close > 0);
 }
 
-function priceHistorySource(exchange) {
+function priceHistorySource(exchange: string): string {
   if (exchange === 'binance') return 'binance_public_1d_klines';
   if (exchange === 'kis') return 'kis_domestic_daily_price';
   if (exchange === 'kis_overseas') return 'kis_overseas_daily_price';
   return 'unknown_price_history';
 }
 
-async function latestStatArbShadow(queryFn, { strategyType, symbols, exchange, ttlMinutes, force }) {
+async function latestStatArbShadow(
+  queryFn: NonNullable<RuntimeDeps['query']>,
+  { strategyType, symbols, exchange, ttlMinutes, force }: {
+    strategyType: string;
+    symbols: string[];
+    exchange: string;
+    ttlMinutes: number;
+    force: boolean;
+  },
+) {
   if (!strategyType || !exchange || !Array.isArray(symbols) || symbols.length === 0) return null;
   const rows = await Promise.resolve(queryFn(
     `SELECT *
@@ -138,7 +181,7 @@ async function latestStatArbShadow(queryFn, { strategyType, symbols, exchange, t
   return freshEnough(row, ttlMinutes, force) ? normalizeStatArbShadowRow(row) : null;
 }
 
-function candidateFromTrigger(trigger = {}, exchange = 'binance') {
+function candidateFromTrigger(trigger: AnyRecord = {}, exchange = 'binance') {
   const triggerContext = parseObject(trigger.trigger_context, trigger.trigger_context || {});
   const triggerMeta = parseObject(trigger.trigger_meta, trigger.trigger_meta || {});
   return {
@@ -149,10 +192,13 @@ function candidateFromTrigger(trigger = {}, exchange = 'binance') {
   };
 }
 
-async function fetchMeanReversionSymbols({ exchange, symbol, limit, hours }, deps) {
+async function fetchMeanReversionSymbols(
+  { exchange, symbol, limit, hours }: MeanReversionSymbolOptions,
+  deps: RuntimeDeps,
+): Promise<string[]> {
   if (symbol) return [symbol];
   const defaults = [...new Set(defaultStatArbPairs(exchange).flat())];
-  const listFn = deps.listActiveEntryTriggers || listActiveEntryTriggers;
+  const listFn = (deps.listActiveEntryTriggers || listActiveEntryTriggers) as (options: AnyRecord) => Promise<AnyRecord[]> | AnyRecord[];
   const since = new Date(Date.now() - Math.max(1, Number(hours || 24)) * 60 * 60 * 1000).toISOString();
   const rows = await Promise.resolve(listFn({
     exchange,
@@ -165,11 +211,11 @@ async function fetchMeanReversionSymbols({ exchange, symbol, limit, hours }, dep
   return [...new Set([...defaults, ...active])].slice(0, Math.max(1, Number(limit || 20)));
 }
 
-async function buildPairRows(exchange, options, deps) {
-  const queryFn = deps.query || db.query;
+async function buildPairRows(exchange: string, options: StatArbOptions, deps: RuntimeDeps) {
+  const queryFn = (deps.query || db.query) as NonNullable<RuntimeDeps['query']>;
   const fetchBars = deps.fetchBars || fetchStatArbBars;
-  const rows = [];
-  const pairs = defaultStatArbPairs(exchange)
+  const rows: AnyRecord[] = [];
+  const pairs = (defaultStatArbPairs(exchange) as string[][])
     .filter((pair) => !options.symbol || pair.includes(options.symbol));
   for (const pair of pairs) {
     const existing = await latestStatArbShadow(queryFn, {
@@ -202,8 +248,8 @@ async function buildPairRows(exchange, options, deps) {
   return rows;
 }
 
-async function buildMeanReversionRows(exchange, options, deps) {
-  const queryFn = deps.query || db.query;
+async function buildMeanReversionRows(exchange: string, options: StatArbOptions, deps: RuntimeDeps) {
+  const queryFn = (deps.query || db.query) as NonNullable<RuntimeDeps['query']>;
   const fetchBars = deps.fetchBars || fetchStatArbBars;
   const symbols = await fetchMeanReversionSymbols({
     exchange,
@@ -211,7 +257,7 @@ async function buildMeanReversionRows(exchange, options, deps) {
     limit: options.limit,
     hours: options.hours,
   }, deps);
-  const rows = [];
+  const rows: AnyRecord[] = [];
   for (const symbol of symbols) {
     const existing = await latestStatArbShadow(queryFn, {
       strategyType: 'mean_reversion',
@@ -239,7 +285,7 @@ async function buildMeanReversionRows(exchange, options, deps) {
   return rows;
 }
 
-async function insertStatArbShadow(runFn, payload) {
+async function insertStatArbShadow(runFn: NonNullable<RuntimeDeps['run']>, payload: AnyRecord) {
   await Promise.resolve(runFn(
     `INSERT INTO investment.luna_stat_arb_shadow
        (strategy_type, symbols, exchange, market, pair_metrics, mean_reversion_metrics, signal, z_score, confidence, data_health, context_evidence, shadow_only)
@@ -261,7 +307,7 @@ async function insertStatArbShadow(runFn, payload) {
   ));
 }
 
-export async function runLunaStatArbShadow(options = parseArgs(), deps = {}) {
+export async function runLunaStatArbShadow(options: StatArbOptions = parseArgs(), deps: RuntimeDeps = {}) {
   if (process.env.LUNA_STAT_ARB_SHADOW_ENABLED === 'false') {
     return {
       ok: true,
@@ -272,14 +318,14 @@ export async function runLunaStatArbShadow(options = parseArgs(), deps = {}) {
     };
   }
 
-  const runFn = deps.run || db.run;
+  const runFn = (deps.run || db.run) as NonNullable<RuntimeDeps['run']>;
   const initSchema = deps.initSchema || db.initSchema;
   const canWrite = options.apply && options.confirm === CONFIRM_TOKEN;
   if (canWrite && initSchema) {
     await Promise.resolve(initSchema()).catch(() => null);
   }
 
-  const rows = [];
+  const rows: AnyRecord[] = [];
   for (const exchange of options.exchanges) {
     if (options.strategy === 'all' || options.strategy === 'pairs' || options.strategy === 'pairs_trading') {
       rows.push(...await buildPairRows(exchange, options, deps));
@@ -335,7 +381,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna stat arb shadow error:',
   });
