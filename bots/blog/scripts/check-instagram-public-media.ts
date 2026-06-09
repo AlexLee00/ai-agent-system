@@ -8,14 +8,14 @@ const {
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   return {
     json: argv.includes('--json'),
     video: readOption(argv, '--video'),
   };
 }
 
-function readOption(argv = [], flag = '') {
+function readOption(argv: string[] = [], flag = '') {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] || '' : '';
 }

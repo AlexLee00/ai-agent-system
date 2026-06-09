@@ -6,7 +6,21 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { markPublished } = require('../lib/publ.ts');
 
-function parseArgs(argv = process.argv.slice(2)) {
+type PublishTargetArgs = {
+  postId?: string | null;
+  scheduleId?: string | null;
+};
+
+type PublishedUrlResult = {
+  postId: unknown;
+  title: unknown;
+  status: string;
+  savedUrl: string;
+  blogId: string;
+  logNo: string;
+};
+
+function parseArgs(argv: string[] = process.argv.slice(2)) {
   return {
     postId: argv.find((arg) => arg.startsWith('--post-id='))?.split('=')[1] || null,
     scheduleId: argv.find((arg) => arg.startsWith('--schedule-id='))?.split('=')[1] || null,
@@ -15,7 +29,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-async function findTargetPost({ postId, scheduleId }) {
+async function findTargetPost({ postId, scheduleId }: PublishTargetArgs) {
   if (postId) {
     return pgPool.get('blog', `
       SELECT id, title, status, naver_url, metadata, created_at
@@ -37,7 +51,7 @@ async function findTargetPost({ postId, scheduleId }) {
   throw new Error('`--post-id` 또는 `--schedule-id` 중 하나가 필요합니다.');
 }
 
-function printHuman(result) {
+function printHuman(result: PublishedUrlResult) {
   const lines = [
     '✅ 블로그 발행 URL 기록 완료',
     '',

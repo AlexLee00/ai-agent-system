@@ -5,7 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { backfillRecentGeneralTitleAlignment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   const args = {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),

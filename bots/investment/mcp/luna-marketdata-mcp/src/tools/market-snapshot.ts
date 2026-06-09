@@ -1,3 +1,10 @@
+type MarketDataArgs = {
+  market?: string;
+  symbol?: string;
+  timeframe?: string;
+  depth?: number;
+};
+
 export function normalizeMarket(market = 'binance') {
   const key = String(market || 'binance').toLowerCase();
   if (key.includes('domestic')) return 'kis_domestic';
@@ -11,7 +18,7 @@ export function normalizeSymbol(symbol = 'BTC/USDT') {
   return String(symbol || 'BTC/USDT').trim().toUpperCase();
 }
 
-function stableNumber(seed, min, max) {
+function stableNumber(seed: string, min: number, max: number): number {
   const text = String(seed);
   let hash = 0;
   for (const ch of text) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
