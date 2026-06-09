@@ -5,13 +5,31 @@ const env = require('../../../../packages/core/lib/env');
 const STORE_FILE = process.env.HUB_OAUTH_STORE_FILE
   || path.join(env.PROJECT_ROOT, 'bots', 'hub', 'output', 'oauth', 'token-store.json');
 
-let cache = null;
-let cacheMtimeMs = null;
+type OAuthProviderRecord = {
+  token?: string | null;
+  metadata?: Record<string, unknown>;
+  canary?: Record<string, unknown>;
+  updatedAt?: string;
+};
 
-function ensureStoreShape(raw) {
+type OAuthStore = {
+  providers: Record<string, OAuthProviderRecord>;
+};
+
+type CanaryInput = {
+  ok?: boolean;
+  error?: unknown;
+  details?: unknown;
+};
+
+let cache: OAuthStore | null = null;
+let cacheMtimeMs: number | null = null;
+
+function ensureStoreShape(raw: unknown): OAuthStore {
   if (!raw || typeof raw !== 'object') return { providers: {} };
-  if (!raw.providers || typeof raw.providers !== 'object') return { providers: {} };
-  return { providers: raw.providers };
+  const candidate = raw as { providers?: unknown };
+  if (!candidate.providers || typeof candidate.providers !== 'object') return { providers: {} };
+  return { providers: candidate.providers as Record<string, OAuthProviderRecord> };
 }
 
 function readStore() {
@@ -34,7 +52,7 @@ function readStore() {
   }
 }
 
-function writeStore(next) {
+function writeStore(next: unknown) {
   cache = ensureStoreShape(next);
   fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
   const tmpFile = `${STORE_FILE}.${process.pid}.${Date.now()}.tmp`;
@@ -52,7 +70,7 @@ function writeStore(next) {
   }
 }
 
-function updateProvider(provider, updater) {
+function updateProvider(provider: string, updater: (entry: OAuthProviderRecord) => OAuthProviderRecord) {
   const current = readStore();
   const prev = current.providers?.[provider] || {};
   const nextEntry = updater(prev) || prev;
@@ -69,12 +87,12 @@ function getOAuthStoreFilePath() {
   return STORE_FILE;
 }
 
-function getProviderRecord(provider) {
+function getProviderRecord(provider: string) {
   const current = readStore();
   return current.providers?.[provider] || {};
 }
 
-function setProviderToken(provider, token, metadata = {}) {
+function setProviderToken(provider: string, token: string | null, metadata: Record<string, unknown> = {}) {
   updateProvider(provider, (entry) => ({
     ...entry,
     token: token || null,
@@ -86,7 +104,7 @@ function setProviderToken(provider, token, metadata = {}) {
   }));
 }
 
-function clearProviderToken(provider) {
+function clearProviderToken(provider: string) {
   updateProvider(provider, (entry) => ({
     ...entry,
     token: null,
@@ -94,7 +112,7 @@ function clearProviderToken(provider) {
   }));
 }
 
-function setProviderCanary(provider, canary) {
+function setProviderCanary(provider: string, canary: CanaryInput) {
   updateProvider(provider, (entry) => ({
     ...entry,
     canary: {

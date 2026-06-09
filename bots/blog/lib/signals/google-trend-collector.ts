@@ -10,6 +10,29 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
+type GoogleTrendsApi = {
+  interestOverTime: (args: Record<string, unknown>) => Promise<string>;
+  relatedQueries: (args: Record<string, unknown>) => Promise<string>;
+};
+
+type RankedKeyword = {
+  query?: string;
+};
+
+type TimelinePoint = {
+  value?: number[];
+};
+
+type GoogleTrendResult = {
+  keyword: string;
+  geo: string;
+  trend_score: number;
+  growth_rate_week: number;
+  related_queries_rising: string[];
+  related_queries_top: string[];
+  collected_at: string;
+};
+
 function isEnabled() {
   return process.env.BLOG_SIGNAL_COLLECTOR_ENABLED === 'true';
 }
@@ -22,15 +45,15 @@ async function loadGoogleTrendsApi() {
   }
 }
 
-async function fetchSingleKeywordTrend(googleTrends, keyword, geo) {
+async function fetchSingleKeywordTrend(googleTrends: GoogleTrendsApi, keyword: string, geo: string): Promise<GoogleTrendResult> {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - 14);
 
   let trendScore = 50;
   let growthRateWeek = 0;
-  let risingQueries = [];
-  let topQueries = [];
+  let risingQueries: string[] = [];
+  let topQueries: string[] = [];
 
   try {
     const interestRaw = await googleTrends.interestOverTime({
@@ -43,12 +66,12 @@ async function fetchSingleKeywordTrend(googleTrends, keyword, geo) {
     const timeline = (interestData && interestData.default && interestData.default.timelineData) || [];
 
     if (timeline.length > 0) {
-      const values = timeline.map((p) => (p.value && p.value[0]) || 0);
+      const values = timeline.map((p: TimelinePoint) => (p.value && p.value[0]) || 0);
       trendScore = values[values.length - 1];
 
       const half = Math.floor(values.length / 2);
-      const prevWeekAvg = values.slice(0, half).reduce((s, v) => s + v, 0) / (half || 1);
-      const thisWeekAvg = values.slice(half).reduce((s, v) => s + v, 0) / ((values.length - half) || 1);
+      const prevWeekAvg = values.slice(0, half).reduce((s: number, v: number) => s + v, 0) / (half || 1);
+      const thisWeekAvg = values.slice(half).reduce((s: number, v: number) => s + v, 0) / ((values.length - half) || 1);
       growthRateWeek = prevWeekAvg > 0 ? ((thisWeekAvg - prevWeekAvg) / prevWeekAvg) * 100 : 0;
     }
   } catch {}
@@ -59,8 +82,8 @@ async function fetchSingleKeywordTrend(googleTrends, keyword, geo) {
     const rising = (relatedData && relatedData.default && relatedData.default.rankedList && relatedData.default.rankedList[0] && relatedData.default.rankedList[0].rankedKeyword) || [];
     const top = (relatedData && relatedData.default && relatedData.default.rankedList && relatedData.default.rankedList[1] && relatedData.default.rankedList[1].rankedKeyword) || [];
 
-    risingQueries = rising.slice(0, 5).map((r) => r.query || '');
-    topQueries = top.slice(0, 5).map((r) => r.query || '');
+    risingQueries = rising.slice(0, 5).map((r: RankedKeyword) => r.query || '');
+    topQueries = top.slice(0, 5).map((r: RankedKeyword) => r.query || '');
   } catch {}
 
   return {
@@ -74,7 +97,7 @@ async function fetchSingleKeywordTrend(googleTrends, keyword, geo) {
   };
 }
 
-async function collectGoogleTrends(keywords, geo) {
+async function collectGoogleTrends(keywords: string[], geo = 'KR') {
   if (!isEnabled()) return [];
   const geoCode = geo || 'KR';
 
@@ -84,15 +107,15 @@ async function collectGoogleTrends(keywords, geo) {
     return [];
   }
 
-  const results = [];
+  const results: GoogleTrendResult[] = [];
 
   for (const keyword of keywords) {
     try {
       await new Promise((r) => setTimeout(r, 1500));
       const result = await fetchSingleKeywordTrend(googleTrends, keyword, geoCode);
       results.push(result);
-    } catch (e) {
-      console.warn(`[구글트렌드] ${keyword} 수집 실패:`, e.message);
+    } catch (e: unknown) {
+      console.warn(`[구글트렌드] ${keyword} 수집 실패:`, e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -104,7 +127,7 @@ async function collectGoogleTrends(keywords, geo) {
   return results;
 }
 
-async function detectGoogleRisingTopics(keywords, geo) {
+async function detectGoogleRisingTopics(keywords: string[], geo = 'KR') {
   const trends = await collectGoogleTrends(keywords, geo);
   const rising = trends
     .filter((t) => t.growth_rate_week > 50 && t.trend_score > 30)
@@ -113,7 +136,7 @@ async function detectGoogleRisingTopics(keywords, geo) {
   return rising.map((r) => r.keyword);
 }
 
-async function saveGoogleTrends(results) {
+async function saveGoogleTrends(results: GoogleTrendResult[]) {
   try {
     for (const r of results) {
       await pgPool.query(
@@ -129,8 +152,8 @@ async function saveGoogleTrends(results) {
         [r.keyword, r.trend_score, r.growth_rate_week, JSON.stringify({ geo: r.geo, related_queries_rising: r.related_queries_rising, related_queries_top: r.related_queries_top })]
       );
     }
-  } catch (e) {
-    console.warn('[구글트렌드] DB 저장 실패:', e.message);
+  } catch (e: unknown) {
+    console.warn('[구글트렌드] DB 저장 실패:', e instanceof Error ? e.message : String(e));
   }
 }
 
