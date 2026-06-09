@@ -7,7 +7,14 @@ const { parseSseJsonEvents, summarizeSseGuard } = require('../../../../packages/
 
 const execFileAsync = promisify(execFile);
 
-function parseExpiryMs(value) {
+type AnyRecord = Record<string, any>;
+type OAuthInput = AnyRecord;
+type ImagePart = {
+  mimeType: string;
+  data: string;
+};
+
+function parseExpiryMs(value: unknown): number {
   if (value == null || value === '') return NaN;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const numeric = Number(value);
@@ -15,19 +22,19 @@ function parseExpiryMs(value) {
   return Date.parse(String(value));
 }
 
-function isExpiredOrNearExpiry(token) {
+function isExpiredOrNearExpiry(token: AnyRecord | null | undefined): boolean {
   const expiresMs = parseExpiryMs(token?.expires_at || token?.expiresAt || token?.expires);
   return Number.isFinite(expiresMs) && expiresMs <= Date.now() + 60_000;
 }
 
-function getUsableToken(record) {
+function getUsableToken(record: AnyRecord | null | undefined): AnyRecord | null {
   const token = record?.token || null;
   const accessToken = String(token?.access_token || '').trim();
   if (!accessToken || isExpiredOrNearExpiry(token)) return null;
   return token;
 }
 
-function decodeJwtPayload(token) {
+function decodeJwtPayload(token: unknown): AnyRecord | null {
   const parts = String(token || '').split('.');
   if (parts.length < 2) return null;
   try {
@@ -37,7 +44,7 @@ function decodeJwtPayload(token) {
   }
 }
 
-function extractOpenAiCodexAccountId(accessToken, fallback) {
+function extractOpenAiCodexAccountId(accessToken: string, fallback: unknown): string | null {
   const direct = String(fallback || '').trim();
   if (direct) return direct;
   const payload = decodeJwtPayload(accessToken);
@@ -45,7 +52,7 @@ function extractOpenAiCodexAccountId(accessToken, fallback) {
   return typeof claim === 'string' && claim.trim() ? claim.trim() : null;
 }
 
-function normalizeOpenAiCodexOAuthError(error) {
+function normalizeOpenAiCodexOAuthError(error: any): string {
   const name = String(error?.name || '').trim();
   const message = String(error?.message || error || 'unknown').trim();
   if (
@@ -79,7 +86,7 @@ function resolveOpenAiCodexCredential() {
   return null;
 }
 
-function isGeminiProModel(model) {
+function isGeminiProModel(model: unknown): boolean {
   return /(^|\/)gemini-2\.5-pro$/i.test(String(model || '').trim());
 }
 
@@ -87,7 +94,7 @@ function isGeminiDisabled() {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase());
 }
 
-function geminiDisabledResult(model, started) {
+function geminiDisabledResult(model: string, started: number): AnyRecord {
   return {
     ok: false,
     provider: 'failed',
@@ -97,7 +104,7 @@ function geminiDisabledResult(model, started) {
   };
 }
 
-function getGeminiOAuthProjectId(record, model = '') {
+function getGeminiOAuthProjectId(record: AnyRecord | null | undefined, model = ''): string {
   const proProjectId = isGeminiProModel(model)
     ? (process.env.GEMINI_OAUTH_PRO_PROJECT_ID || process.env.GEMINI_PRO_OAUTH_PROJECT_ID || '')
     : '';
@@ -145,7 +152,7 @@ function resolveGeminiCodeAssistCredential() {
   return null;
 }
 
-function createTimeoutSignal(timeoutMs) {
+function createTimeoutSignal(timeoutMs: unknown): { signal: AbortSignal; cleanup: () => void } {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs || 30_000)));
   return {
@@ -154,7 +161,7 @@ function createTimeoutSignal(timeoutMs) {
   };
 }
 
-async function readJsonResponse(response) {
+async function readJsonResponse(response: Response): Promise<AnyRecord> {
   const text = await response.text();
   if (!text) return {};
   try {
@@ -164,7 +171,7 @@ async function readJsonResponse(response) {
   }
 }
 
-function extractErrorMessage(payload, status) {
+function extractErrorMessage(payload: AnyRecord, status: number): string {
   const detail = payload?.detail;
   if (typeof payload?.error?.message === 'string' && payload.error.message.trim()) return payload.error.message;
   if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message;
@@ -173,7 +180,7 @@ function extractErrorMessage(payload, status) {
   return `HTTP ${status}`;
 }
 
-function normalizeUsage(usage) {
+function normalizeUsage(usage: AnyRecord | null | undefined): AnyRecord | null {
   if (!usage || typeof usage !== 'object') return null;
   const input = Number(usage.input_tokens ?? usage.prompt_tokens ?? 0) || 0;
   const output = Number(usage.output_tokens ?? usage.completion_tokens ?? 0) || 0;
@@ -201,9 +208,9 @@ function resolveOpenAiCodexResponsesUrl() {
   return `${baseUrl}/codex/responses`;
 }
 
-function normalizeImageParts(input) {
-  const images = [];
-  const appendImage = (item) => {
+function normalizeImageParts(input: OAuthInput): ImagePart[] {
+  const images: ImagePart[] = [];
+  const appendImage = (item: AnyRecord | null | undefined) => {
     if (!item) return;
     let data = String(item.dataBase64 || item.base64 || item.data || '').trim();
     let mimeType = String(item.mimeType || item.mime_type || 'image/png').trim() || 'image/png';
@@ -229,8 +236,8 @@ function normalizeImageParts(input) {
   return images.slice(0, 4);
 }
 
-function buildOpenAiCodexContent(input) {
-  const content = [{ type: 'input_text', text: input?.prompt || '' }];
+function buildOpenAiCodexContent(input: OAuthInput): AnyRecord[] {
+  const content: AnyRecord[] = [{ type: 'input_text', text: input?.prompt || '' }];
   for (const image of normalizeImageParts(input)) {
     content.push({
       type: 'input_image',
@@ -241,15 +248,15 @@ function buildOpenAiCodexContent(input) {
   return content;
 }
 
-function buildGeminiParts(input) {
-  const parts = [{ text: input?.prompt || '' }];
+function buildGeminiParts(input: OAuthInput): AnyRecord[] {
+  const parts: AnyRecord[] = [{ text: input?.prompt || '' }];
   for (const image of normalizeImageParts(input)) {
     parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
   }
   return parts;
 }
 
-function resolveOpenAiCodexMaxOutputTokens(value) {
+function resolveOpenAiCodexMaxOutputTokens(value: unknown): number | null {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.min(8192, Math.max(16, Math.floor(parsed)));
@@ -261,7 +268,7 @@ function shouldSendOpenAiCodexMaxOutputTokens() {
   );
 }
 
-function withOutputBudgetInstruction(systemPrompt, maxTokens) {
+function withOutputBudgetInstruction(systemPrompt: unknown, maxTokens: unknown): string {
   const budget = resolveOpenAiCodexMaxOutputTokens(maxTokens);
   const base = String(systemPrompt || '').trim();
   if (!budget || shouldSendOpenAiCodexMaxOutputTokens()) return base;
@@ -269,8 +276,8 @@ function withOutputBudgetInstruction(systemPrompt, maxTokens) {
   return base ? `${base}\n\n${instruction}` : instruction;
 }
 
-function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTokens, images, imageBase64, imageDataUrl, mimeType, imageDetail }) {
-  const body = {
+function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTokens, images, imageBase64, imageDataUrl, mimeType, imageDetail }: OAuthInput): AnyRecord {
+  const body: AnyRecord = {
     model: String(model || 'gpt-5.4').replace(/^openai-oauth\//, '').replace(/^openai-codex\//, ''),
     store: false,
     stream: true,
@@ -295,7 +302,7 @@ function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTok
   return body;
 }
 
-async function readSseEvents(response) {
+async function readSseEvents(response: Response): Promise<AnyRecord[]> {
   const parsed = await parseSseJsonEvents(response, { source: 'hub-oauth-direct-openai-codex' });
   if (
     parsed.summary.malformed_fragments > 0
@@ -307,11 +314,11 @@ async function readSseEvents(response) {
   return parsed.events;
 }
 
-function extractResponseText(response) {
+function extractResponseText(response: AnyRecord | null | undefined): string {
   if (typeof response?.output_text === 'string' && response.output_text.trim()) {
     return response.output_text.trim();
   }
-  const pieces = [];
+  const pieces: string[] = [];
   for (const item of Array.isArray(response?.output) ? response.output : []) {
     for (const content of Array.isArray(item?.content) ? item.content : []) {
       const text = typeof content?.text === 'string'
@@ -323,10 +330,10 @@ function extractResponseText(response) {
   return pieces.join('\n').trim();
 }
 
-function extractOpenAiCodexStreamResult(events) {
-  const deltas = [];
-  const doneTexts = [];
-  let finalResponse = null;
+function extractOpenAiCodexStreamResult(events: AnyRecord[]): { text: string; response: AnyRecord | null } {
+  const deltas: string[] = [];
+  const doneTexts: string[] = [];
+  let finalResponse: AnyRecord | null = null;
   for (const event of events) {
     const type = String(event?.type || '');
     if (type === 'error') {
@@ -352,7 +359,7 @@ function extractOpenAiCodexStreamResult(events) {
   return { text: extractResponseText(finalResponse || {}), response: finalResponse };
 }
 
-async function callOpenAiCodexOAuth(input) {
+async function callOpenAiCodexOAuth(input: OAuthInput): Promise<AnyRecord> {
   const started = Date.now();
   const model = String(input?.model || 'gpt-5.4').replace(/^openai-oauth\//, '').replace(/^openai\//, '');
   try {
@@ -414,7 +421,7 @@ async function callOpenAiCodexOAuth(input) {
     } finally {
       cleanup();
     }
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       provider: 'failed',
@@ -425,14 +432,14 @@ async function callOpenAiCodexOAuth(input) {
   }
 }
 
-function getGeminiOAuthBaseUrl(model = '') {
+function getGeminiOAuthBaseUrl(model = ''): string {
   const proBaseUrl = isGeminiProModel(model)
     ? (process.env.GEMINI_OAUTH_PRO_BASE_URL || process.env.GEMINI_PRO_OAUTH_BASE_URL || '')
     : '';
   return String(proBaseUrl || process.env.GEMINI_OAUTH_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
 }
 
-function normalizeGeminiModel(model) {
+function normalizeGeminiModel(model: unknown): string {
   const requested = String(model || '').trim();
   const override = isGeminiProModel(requested)
     ? String(process.env.GEMINI_OAUTH_PRO_MODEL || process.env.GEMINI_PRO_OAUTH_MODEL || '').trim()
@@ -443,7 +450,7 @@ function normalizeGeminiModel(model) {
     .replace(/^gemini\//, '');
 }
 
-function normalizeGeminiCodeAssistModel(model) {
+function normalizeGeminiCodeAssistModel(model: unknown): string {
   const requested = String(model || '').trim();
   const override = isGeminiProModel(requested)
     ? String(
@@ -460,7 +467,7 @@ function normalizeGeminiCodeAssistModel(model) {
     .replace(/^gemini\//, '');
 }
 
-function normalizeGeminiCliModel(model) {
+function normalizeGeminiCliModel(model: unknown): string {
   return String(model || 'gemini-2.5-flash')
     .replace(/^gemini-cli-oauth\//, '')
     .replace(/^google-gemini-cli\//, '')
@@ -490,13 +497,13 @@ function getGeminiCliCommand() {
   return String(process.env.GEMINI_CLI_COMMAND || 'gemini').trim() || 'gemini';
 }
 
-function buildGeminiCliPrompt(input) {
+function buildGeminiCliPrompt(input: OAuthInput): string {
   const systemPrompt = String(input?.systemPrompt || '').trim();
   const prompt = String(input?.prompt || '').trim();
   return systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
 }
 
-function parseGeminiCliJson(stdout) {
+function parseGeminiCliJson(stdout: unknown): AnyRecord {
   const raw = String(stdout || '').trim();
   if (!raw) throw new Error('gemini_cli_empty_stdout');
   try {
@@ -509,13 +516,13 @@ function parseGeminiCliJson(stdout) {
   }
 }
 
-function extractGeminiCliText(payload) {
+function extractGeminiCliText(payload: AnyRecord): string {
   if (typeof payload?.response === 'string' && payload.response.trim()) return payload.response.trim();
   if (typeof payload?.text === 'string' && payload.text.trim()) return payload.text.trim();
   return extractGeminiText(payload);
 }
 
-function classifyGeminiCliDiagnostic(stdout, stderr) {
+function classifyGeminiCliDiagnostic(stdout: unknown, stderr: unknown): string {
   const combined = `${stderr || ''}\n${stdout || ''}`;
   if (/MODEL_CAPACITY_EXHAUSTED|No capacity available|RESOURCE_EXHAUSTED|rateLimitExceeded|status 429|\"code\"\\s*:\\s*429/i.test(combined)) {
     return 'gemini_cli_model_capacity_exhausted';
@@ -526,13 +533,13 @@ function classifyGeminiCliDiagnostic(stdout, stderr) {
   return '';
 }
 
-function parseGeminiCliJsonWithDiagnostics(stdout, stderr) {
+function parseGeminiCliJsonWithDiagnostics(stdout: unknown, stderr: unknown): AnyRecord {
   const raw = String(stdout || '').trim();
   if (!raw) throw new Error(classifyGeminiCliDiagnostic(stdout, stderr) || 'gemini_cli_empty_stdout');
   return parseGeminiCliJson(stdout);
 }
 
-function normalizeGeminiCliError(error) {
+function normalizeGeminiCliError(error: any): string {
   const diagnostic = classifyGeminiCliDiagnostic(error?.stdout, error?.stderr);
   if (diagnostic) return diagnostic;
   if (error?.code === 'ENOENT') return 'gemini_cli_unavailable';
@@ -540,7 +547,7 @@ function normalizeGeminiCliError(error) {
   return error?.message || String(error);
 }
 
-function normalizeGeminiCliUsage(payload) {
+function normalizeGeminiCliUsage(payload: AnyRecord): AnyRecord | null {
   const usage = payload?.usage || {};
   const stats = payload?.stats || {};
   const cached = Number(stats.cached ?? stats.cache_read ?? usage.cache_read ?? 0) || 0;
@@ -570,7 +577,7 @@ function normalizeGeminiCliUsage(payload) {
   };
 }
 
-function getGeminiCodeAssistProjectId(credential, model = '') {
+function getGeminiCodeAssistProjectId(credential: AnyRecord | null | undefined, model = ''): string {
   const record = credential?.record || {};
   const proProjectId = isGeminiProModel(model)
     ? String(
@@ -598,14 +605,14 @@ function getGeminiCodeAssistProjectId(credential, model = '') {
   ).trim();
 }
 
-function resolveGeminiMaxOutputTokens(value) {
+function resolveGeminiMaxOutputTokens(value: unknown): number {
   const parsed = Number(value || 1024);
   if (!Number.isFinite(parsed) || parsed <= 0) return 1024;
   return Math.max(32, Math.floor(parsed));
 }
 
-function extractGeminiText(payload) {
-  const pieces = [];
+function extractGeminiText(payload: AnyRecord | null | undefined): string {
+  const pieces: string[] = [];
   for (const candidate of Array.isArray(payload?.candidates) ? payload.candidates : []) {
     for (const part of Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []) {
       if (typeof part?.text === 'string' && part.text.trim()) pieces.push(part.text.trim());
@@ -614,11 +621,11 @@ function extractGeminiText(payload) {
   return pieces.join('\n').trim();
 }
 
-function extractGeminiCodeAssistText(payload) {
+function extractGeminiCodeAssistText(payload: AnyRecord | null | undefined): string {
   return extractGeminiText(payload?.response || payload || {});
 }
 
-function buildGeminiCodeAssistBody(input, model, projectId) {
+function buildGeminiCodeAssistBody(input: OAuthInput, model: string, projectId: string): AnyRecord {
   return {
     model,
     ...(projectId ? { project: projectId } : {}),
@@ -634,7 +641,7 @@ function buildGeminiCodeAssistBody(input, model, projectId) {
   };
 }
 
-async function callGeminiOAuth(input) {
+async function callGeminiOAuth(input: OAuthInput): Promise<AnyRecord> {
   const started = Date.now();
   const model = normalizeGeminiModel(input?.model);
   if (isGeminiDisabled()) return geminiDisabledResult(model, started);
@@ -668,7 +675,7 @@ async function callGeminiOAuth(input) {
         }),
         signal,
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({})) as AnyRecord;
       if (!response.ok) {
         const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
         throw new Error(`gemini_oauth_call_failed:${message}`);
@@ -689,7 +696,7 @@ async function callGeminiOAuth(input) {
     } finally {
       cleanup();
     }
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       provider: 'failed',
@@ -700,7 +707,7 @@ async function callGeminiOAuth(input) {
   }
 }
 
-async function callGeminiCliOAuth(input) {
+async function callGeminiCliOAuth(input: OAuthInput): Promise<AnyRecord> {
   const started = Date.now();
   const model = normalizeGeminiCliModel(input?.model);
   if (isGeminiDisabled()) return geminiDisabledResult(model, started);
@@ -736,7 +743,7 @@ async function callGeminiCliOAuth(input) {
       cacheHit: false,
       sessionId: payload?.session_id || payload?.sessionId || null,
     };
-  } catch (error) {
+  } catch (error: any) {
     const message = normalizeGeminiCliError(error);
     return {
       ok: false,
@@ -748,7 +755,7 @@ async function callGeminiCliOAuth(input) {
   }
 }
 
-async function callGeminiCodeAssistOAuth(input) {
+async function callGeminiCodeAssistOAuth(input: OAuthInput): Promise<AnyRecord> {
   const started = Date.now();
   const model = normalizeGeminiCodeAssistModel(input?.model);
   if (isGeminiDisabled()) return geminiDisabledResult(model, started);
@@ -771,7 +778,7 @@ async function callGeminiCodeAssistOAuth(input) {
         body: JSON.stringify(buildGeminiCodeAssistBody(input, model, projectId)),
         signal,
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({})) as AnyRecord;
       if (!response.ok) {
         const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
         throw new Error(`gemini_codeassist_oauth_call_failed:${message}`);
@@ -792,7 +799,7 @@ async function callGeminiCodeAssistOAuth(input) {
     } finally {
       cleanup();
     }
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       provider: 'failed',
