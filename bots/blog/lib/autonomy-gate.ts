@@ -19,6 +19,17 @@ const PHASE_THRESHOLDS = {
 
 const HARD_HOLD_MIN_CONTENT = 2500;
 
+type BlogPostDraft = {
+  content?: string;
+  title?: string;
+  thumbnailPath?: string;
+};
+type FeedbackPattern = {
+  feedback_type?: string;
+  count?: unknown;
+};
+type AutonomyPhase = 1 | 2 | 3;
+
 /**
  * 현재 자율 Phase 조회
  */
@@ -55,7 +66,7 @@ async function loadFeedbackPatterns() {
 /**
  * 초안 품질 평가 (0~1)
  */
-function evaluatePostQuality(post, feedbackPatterns = []) {
+function evaluatePostQuality(post: BlogPostDraft, feedbackPatterns: FeedbackPattern[] = []) {
   let score = 1.0;
   const reasons = [];
 
@@ -87,12 +98,13 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
 
   // 5. 최근 수정/운영 패턴 반영
   for (const pattern of feedbackPatterns) {
-    if (pattern.feedback_type === 'tone' && pattern.count >= 3) {
+    const patternCount = Number(pattern.count || 0);
+    if (pattern.feedback_type === 'tone' && patternCount >= 3) {
       // 톤 수정이 빈번 → 톤 검증 필요
       score -= 0.05;
       reasons.push('톤 수정 빈출 패턴 감지');
     }
-    if (pattern.feedback_type === 'structure' && pattern.count >= 3) {
+    if (pattern.feedback_type === 'structure' && patternCount >= 3) {
       score -= 0.05;
       reasons.push('구조 수정 빈출 패턴 감지');
     }
@@ -143,9 +155,13 @@ function buildRuntimeThresholdAdjustment(runtimeContext: Record<string, unknown>
  * @param {object} post
  * @param {{ seoScore?: number, criticScore?: number }} [qualityExtra]
  */
-async function decideAutonomy(post, qualityExtra = {}, runtimeContext = {}) {
-  const phase = await getCurrentPhase();
-  const feedbackPatterns = await loadFeedbackPatterns();
+async function decideAutonomy(
+  post: BlogPostDraft,
+  qualityExtra: { seoScore?: number; criticScore?: number } = {},
+  runtimeContext: Record<string, unknown> = {},
+) {
+  const phase = (await getCurrentPhase()) as AutonomyPhase;
+  const feedbackPatterns = (await loadFeedbackPatterns()) as FeedbackPattern[];
   const evaluation = evaluatePostQuality(post, feedbackPatterns);
   const threshold = PHASE_THRESHOLDS[phase] || 0.95;
   const runtimeAdjustment = buildRuntimeThresholdAdjustment(runtimeContext);

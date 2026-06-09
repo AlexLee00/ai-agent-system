@@ -7,7 +7,7 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
-async function getTableColumns(dbName, schemaName, tableName) {
+async function getTableColumns(dbName: string, schemaName: string, tableName: string): Promise<Set<string>> {
   try {
     const rows = await pgPool.query(dbName, `
       SELECT column_name
@@ -15,7 +15,7 @@ async function getTableColumns(dbName, schemaName, tableName) {
       WHERE table_schema = $1
         AND table_name = $2
     `, [schemaName, tableName]);
-    return new Set((rows || []).map((row) => row.column_name));
+    return new Set((rows || []).map((row: { column_name?: string }) => row.column_name || ''));
   } catch {
     return new Set();
   }
@@ -63,8 +63,8 @@ async function analyzeMarketingToRevenue(window = 14) {
       GROUP BY CASE WHEN bd.pub_date IS NOT NULL THEN true ELSE false END
     `, [window]);
 
-    const active = correlation.find(r => r.has_marketing === true) || {};
-    const inactive = correlation.find(r => r.has_marketing === false) || {};
+    const active = correlation.find((r: { has_marketing?: boolean }) => r.has_marketing === true) || {};
+    const inactive = correlation.find((r: { has_marketing?: boolean }) => r.has_marketing === false) || {};
 
     const revenueImpact = (Number(active.avg_revenue || 0) - Number(inactive.avg_revenue || 0));
     const revenueImpactPct = Number(inactive.avg_revenue || 0) > 0
@@ -106,7 +106,7 @@ async function analyzeMarketingToRevenue(window = 14) {
       highViewRevenueAfter: Number(highViewImpact?.[0]?.avg_revenue_after_high_views || 0),
     };
   } catch (err) {
-    console.warn('[revenue-correlation] 상관분석 실패:', err.message);
+    console.warn('[revenue-correlation] 상관분석 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 }

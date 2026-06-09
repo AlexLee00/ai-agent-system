@@ -5,7 +5,15 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { ensureBlogCoreSchema } = require('../schema.ts');
 const { ensurePublishLogSchema } = require('../publish-reporter.ts');
 
-function safeJson(value, fallback = {}) {
+type ScheduledReviewResult = {
+  status?: string;
+  pageUrl?: string;
+  schedule?: unknown;
+  scheduleResult?: { fields?: unknown };
+  dryRun?: boolean;
+};
+
+function safeJson(value: unknown, fallback: Record<string, unknown> = {}) {
   if (value == null) return fallback;
   if (typeof value === 'object') return value;
   try {
@@ -15,7 +23,7 @@ function safeJson(value, fallback = {}) {
   }
 }
 
-function buildScheduledReviewMetadata({ scheduledAt, result }) {
+function buildScheduledReviewMetadata({ scheduledAt, result }: { scheduledAt: string; result?: ScheduledReviewResult }) {
   return {
     naver_scheduled_at: scheduledAt,
     naver_publish_assist_status: result?.status || 'unknown',
@@ -26,7 +34,12 @@ function buildScheduledReviewMetadata({ scheduledAt, result }) {
   };
 }
 
-async function recordNaverScheduledReview({ postId, title, scheduledAt, result }) {
+async function recordNaverScheduledReview({ postId, title, scheduledAt, result }: {
+  postId?: string | number | null;
+  title?: string;
+  scheduledAt: string;
+  result?: ScheduledReviewResult;
+}) {
   if (!postId) {
     return { ok: false, skipped: true, reason: 'missing_post_id' };
   }

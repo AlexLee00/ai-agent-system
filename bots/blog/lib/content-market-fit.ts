@@ -14,7 +14,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const GRADE_THRESHOLDS = { A: 80, B: 60, C: 40, D: 20 };
 
-function scoreToGrade(score) {
+function scoreToGrade(score: number): string {
   if (score >= GRADE_THRESHOLDS.A) return 'A';
   if (score >= GRADE_THRESHOLDS.B) return 'B';
   if (score >= GRADE_THRESHOLDS.C) return 'C';
@@ -22,8 +22,8 @@ function scoreToGrade(score) {
   return 'F';
 }
 
-function generateHints(reach, resonance, retention) {
-  const hints = [];
+function generateHints(reach: number, resonance: number, retention: number): string[] {
+  const hints: string[] = [];
   if (reach < 20) hints.push('조회수 확대: 제목 SEO 강화 또는 발행 시간 최적화 필요');
   if (resonance < 5) hints.push('참여도 향상: 질문형 CTA, 댓글 유도, 공유 버튼 노출 강화');
   if (retention < 10) hints.push('재방문 유도: 시리즈 콘텐츠, 이웃 추가 유도 강화');
@@ -36,7 +36,7 @@ function generateHints(reach, resonance, retention) {
  * @param {string} postId blog.posts.id
  * @param {number} daysAfter 측정 기간
  */
-async function calculateContentMarketFit(postId, daysAfter = 14) {
+async function calculateContentMarketFit(postId: string, daysAfter = 14) {
   try {
     const post = await pgPool.get('blog', `
       SELECT id, views, likes, comments, ctr,
@@ -102,7 +102,7 @@ async function calculateContentMarketFit(postId, daysAfter = 14) {
       improvement_hints: hints,
     };
   } catch (err) {
-    console.warn('[content-market-fit] 계산 실패:', err.message);
+    console.warn('[content-market-fit] 계산 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -149,7 +149,7 @@ async function computePendingCmf(daysAfter = 14) {
       if (result) processed++;
     }
   } catch (err) {
-    console.warn('[content-market-fit] 일괄 계산 실패:', err.message);
+    console.warn('[content-market-fit] 일괄 계산 실패:', err instanceof Error ? err.message : err);
   }
   return processed;
 }
