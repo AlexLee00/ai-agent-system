@@ -1,11 +1,24 @@
 #!/usr/bin/env tsx
 
-function normalizeText(value, fallback = '') {
+type PgPoolLike = {
+  query: (owner: string, sql: string, params?: unknown[]) => Promise<{ rows?: JayIncidentRow[] }>;
+};
+
+type JayIncidentRow = {
+  incident_key?: string;
+  team?: string;
+  intent?: string;
+  status?: string;
+  attempts?: number | string;
+  updated_at?: string;
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function hasArg(name) {
+function hasArg(name: string) {
   return process.argv.includes(name);
 }
 
@@ -25,8 +38,8 @@ function parseMaxAttempts() {
   return Math.max(1, Math.floor(parsed));
 }
 
-async function fetchStaleRows(pgPool, table, statuses, staleMinutes) {
-  return pgPool.query('agent', `
+async function fetchStaleRows(pgPool: PgPoolLike, table: string, statuses: string[], staleMinutes: number) {
+  const result = await pgPool.query('agent', `
     SELECT
       incident_key, team, intent, status, attempts, last_error,
       to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
@@ -36,6 +49,7 @@ async function fetchStaleRows(pgPool, table, statuses, staleMinutes) {
     ORDER BY updated_at ASC
     LIMIT 100
   `, [statuses, staleMinutes]);
+  return Array.isArray(result.rows) ? result.rows : [];
 }
 
 async function main() {
@@ -51,8 +65,8 @@ async function main() {
   const requeueStatuses = ['planning', 'planned'];
   const approvalRows = await fetchStaleRows(pgPool, table, ['awaiting_approval'], Math.max(staleMinutes, 24 * 60));
   const requeueRows = await fetchStaleRows(pgPool, table, requeueStatuses, staleMinutes);
-  const requeued = [];
-  const deadLettered = [];
+  const requeued: string[] = [];
+  const deadLettered: string[] = [];
 
   if (apply) {
     for (const row of requeueRows) {
@@ -111,7 +125,7 @@ async function main() {
     staleMinutes,
     maxAttempts,
     stale: {
-      requeueEligible: requeueRows.map((row) => ({
+      requeueEligible: requeueRows.map((row: JayIncidentRow) => ({
         incidentKey: row.incident_key,
         team: row.team,
         intent: row.intent,
@@ -119,7 +133,7 @@ async function main() {
         attempts: Number(row.attempts || 0),
         updatedAt: row.updated_at,
       })),
-      awaitingApproval: approvalRows.map((row) => ({
+      awaitingApproval: approvalRows.map((row: JayIncidentRow) => ({
         incidentKey: row.incident_key,
         team: row.team,
         intent: row.intent,

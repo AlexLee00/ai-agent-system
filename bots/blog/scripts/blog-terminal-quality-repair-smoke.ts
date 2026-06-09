@@ -9,6 +9,10 @@ const {
   repairTerminalQualityArtifacts,
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 
+type QualityIssue = {
+  msg?: unknown;
+};
+
 async function main() {
   const broken = [
     '일반 포스팅 제목',
@@ -26,8 +30,8 @@ async function main() {
 
   const before = await checkQuality(broken, 'general');
   assert(
-    before.issues.some((issue) => String(issue.msg).includes('강조 마커'))
-      || before.issues.some((issue) => String(issue.msg).includes('_THE_END_ 이후')),
+    before.issues.some((issue: QualityIssue) => String(issue.msg).includes('강조 마커'))
+      || before.issues.some((issue: QualityIssue) => String(issue.msg).includes('_THE_END_ 이후')),
     'fixture should reproduce a terminal quality issue'
   );
 
@@ -39,8 +43,8 @@ async function main() {
   assert(!/업계 통계|통계에 따르면|조사에 따르면|연구에 따르면/.test(repaired), 'unsupported statistical trigger phrases should be rewritten');
   assert.strictEqual((repaired.slice(-1500).match(/\*\*/g) || []).length % 2, 0, 'bold markers should be balanced');
   assert(
-    !after.issues.some((issue) => String(issue.msg).includes('강조 마커'))
-      && !after.issues.some((issue) => String(issue.msg).includes('_THE_END_ 이후')),
+    !after.issues.some((issue: QualityIssue) => String(issue.msg).includes('강조 마커'))
+      && !after.issues.some((issue: QualityIssue) => String(issue.msg).includes('_THE_END_ 이후')),
     'terminal quality issues should be repaired'
   );
 
@@ -88,7 +92,7 @@ async function main() {
   ].join('\n');
   const boldBefore = await checkQuality(boldHashtagOverflow, 'general');
   assert(
-    boldBefore.issues.some((issue) => String(issue.msg).includes('해시태그 이후')),
+    boldBefore.issues.some((issue: QualityIssue) => String(issue.msg).includes('해시태그 이후')),
     'bold hashtag marker overflow should be detected'
   );
   const boldRepaired = repairTerminalQualityArtifacts(boldHashtagOverflow);
@@ -104,7 +108,7 @@ async function main() {
   ].join('\n');
   const htmlBefore = await checkQuality(htmlHashtagOverflow, 'general');
   assert(
-    htmlBefore.issues.some((issue) => String(issue.msg).includes('해시태그 이후')),
+    htmlBefore.issues.some((issue: QualityIssue) => String(issue.msg).includes('해시태그 이후')),
     'HTML bold hashtag marker overflow should be detected'
   );
 
@@ -119,11 +123,11 @@ async function main() {
   ].join('\n');
   const falseCafeBefore = await checkQuality(falseCafeClaims, 'general');
   assert(
-    falseCafeBefore.issues.some((issue) => String(issue.msg).includes('허위 매장명')),
+    falseCafeBefore.issues.some((issue: QualityIssue) => String(issue.msg).includes('허위 매장명')),
     'CafeOn false brand claims should be blocked'
   );
   assert(
-    falseCafeBefore.issues.some((issue) => String(issue.msg).includes('할인/이벤트')),
+    falseCafeBefore.issues.some((issue: QualityIssue) => String(issue.msg).includes('할인/이벤트')),
     'unsupported cafe discount/event claims should be blocked'
   );
 

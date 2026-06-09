@@ -14,7 +14,29 @@ const {
   findLatestThumbPath,
 } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 
-function parseArgs(argv = []) {
+type PreparedAsset = {
+  kind: string;
+  sourcePath: string;
+  targetPath: string;
+  relativePath: string;
+  publicUrl: string;
+  hostMode: string;
+  ready: boolean;
+  sizeBytes: number;
+  copied: boolean;
+};
+
+type PreparedMediaPayload = {
+  dryRun: boolean;
+  publicReady: boolean;
+  noJekyllPath: string;
+  reel: PreparedAsset | null;
+  cover: PreparedAsset | null;
+  thumb: PreparedAsset | null;
+  qaSheet: PreparedAsset | null;
+};
+
+function parseArgs(argv: string[] = []) {
   return {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),
@@ -28,7 +50,7 @@ function parseArgs(argv = []) {
   };
 }
 
-function readOption(argv = [], flag = '') {
+function readOption(argv: string[] = [], flag = '') {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] || '' : '';
 }
@@ -46,7 +68,7 @@ function ensureGithubPagesMarker(dryRun = false) {
   return markerPath;
 }
 
-function stageAsset(filePath = '', kind = 'asset', dryRun = false) {
+function stageAsset(filePath = '', kind = 'asset', dryRun = false): PreparedAsset | null {
   if (!filePath) return null;
   if (!fs.existsSync(filePath)) {
     throw new Error(`배치할 파일을 찾을 수 없습니다: ${filePath}`);
@@ -74,7 +96,7 @@ function stageAsset(filePath = '', kind = 'asset', dryRun = false) {
   };
 }
 
-function printHuman(payload) {
+function printHuman(payload: PreparedMediaPayload) {
   console.log(`[인스타 준비] reel=${payload.reel ? payload.reel.targetPath : 'missing'}`);
   if (payload.cover) {
     console.log(`[인스타 준비] cover=${payload.cover.targetPath}`);

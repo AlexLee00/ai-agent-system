@@ -1,6 +1,33 @@
 'use strict';
 
-function normalizeText(value, fallback = '') {
+type ControlPlanInput = {
+  baseUrl?: string;
+  token?: string;
+  method?: string;
+  endpoint?: string;
+  body?: unknown;
+  timeoutMs?: number;
+  retries?: number;
+  retryDelayMs?: number;
+  extraHeaders?: Record<string, string>;
+  incidentKey?: string;
+  traceId?: string;
+  message?: string;
+  goal?: string;
+  team?: string;
+  dryRun?: boolean;
+  context?: Record<string, unknown>;
+  runId?: string;
+  plan?: unknown;
+  callbackData?: string;
+  fromId?: string;
+  username?: string;
+  chatId?: string;
+  threadId?: string;
+  callbackSecret?: string;
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
@@ -23,11 +50,11 @@ function buildAuthToken() {
   );
 }
 
-function isRetryableStatus(status) {
+function isRetryableStatus(status: number) {
   return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
 }
 
-async function requestWithRetry(input) {
+async function requestWithRetry(input: ControlPlanInput) {
   const baseUrl = normalizeText(input.baseUrl, buildBaseUrl());
   const token = normalizeText(input.token, buildAuthToken());
   const method = normalizeText(input.method, 'POST').toUpperCase();
@@ -62,7 +89,7 @@ async function requestWithRetry(input) {
         body: method === 'GET' ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
       const durationMs = Date.now() - startedAt;
       if (response.ok && payload?.ok === true) {
         return {
@@ -79,7 +106,7 @@ async function requestWithRetry(input) {
         status: response.status,
         durationMs,
         payload,
-        error: normalizeText(payload?.error || payload?.message || `http_${response.status}`),
+        error: normalizeText(payload.error || payload.message || `http_${response.status}`),
         url,
         attempt,
       };
@@ -95,8 +122,8 @@ async function requestWithRetry(input) {
         ok: false,
         status: 0,
         durationMs,
-        error: normalizeText(error?.message || error, 'hub_request_failed'),
-        detail: String(error?.stack || error || ''),
+        error: normalizeText(error instanceof Error ? error.message : error, 'hub_request_failed'),
+        detail: String(error instanceof Error ? error.stack : error || ''),
         url,
         attempt,
       };
@@ -110,7 +137,7 @@ async function requestWithRetry(input) {
   return lastError || { ok: false, error: 'hub_request_failed' };
 }
 
-async function createControlPlanDraft(input) {
+async function createControlPlanDraft(input: ControlPlanInput) {
   const incidentKey = normalizeText(input?.incidentKey, '');
   const traceId = normalizeText(input?.traceId, incidentKey || '');
   const request = {
@@ -143,7 +170,7 @@ async function createControlPlanDraft(input) {
   });
 }
 
-async function executeControlPlan(input) {
+async function executeControlPlan(input: ControlPlanInput) {
   const runId = normalizeText(input?.runId);
   const plan = input?.plan;
   if (!runId && !plan) return { ok: false, error: 'run_id_or_plan_required' };
@@ -161,7 +188,7 @@ async function executeControlPlan(input) {
   });
 }
 
-async function submitControlCallback(input) {
+async function submitControlCallback(input: ControlPlanInput) {
   const callbackData = normalizeText(input?.callbackData);
   if (!callbackData) return { ok: false, error: 'callback_data_required' };
   const fromId = normalizeText(input?.fromId, '0');

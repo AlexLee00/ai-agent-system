@@ -2,11 +2,21 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-function hasArg(name) {
+type RuntimeStep = {
+  script: string;
+  args: string[];
+  ok: boolean;
+  status: number;
+  durationMs: number;
+  stdout: string;
+  stderr: string;
+};
+
+function hasArg(name: string) {
   return process.argv.includes(name);
 }
 
-function run(script, args = []) {
+function run(script: string, args: string[] = []): RuntimeStep {
   const startedAt = Date.now();
   const repoRoot = path.resolve(__dirname, '..', '..', '..');
   const result = spawnSync(path.join(repoRoot, 'node_modules', '.bin', 'tsx'), [path.join(__dirname, script), ...args], {

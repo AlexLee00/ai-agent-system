@@ -11,7 +11,15 @@ const {
   syncRecommendedBooksToCatalog,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/book-review-book.js'));
 
-function parseArgs(argv = []) {
+type BookCatalogItem = {
+  title?: string;
+  author?: string;
+  isbn?: string;
+  loanCount?: number | string;
+  source?: string;
+};
+
+function parseArgs(argv: string[] = []) {
   const args = {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),
@@ -33,7 +41,7 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function summarizeBooks(books = [], limit = 10) {
+function summarizeBooks(books: BookCatalogItem[] = [], limit = 10) {
   return books.slice(0, limit).map((book, index) => ({
     rank: index + 1,
     title: book.title || '',

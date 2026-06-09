@@ -2,11 +2,20 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-function hasArg(name) {
+type StepResult = {
+  name: string;
+  ok: boolean;
+  status: number;
+  durationMs: number;
+  stdout: string;
+  stderr: string;
+};
+
+function hasArg(name: string) {
   return process.argv.includes(name);
 }
 
-function runStep(name, script, args = []) {
+function runStep(name: string, script: string, args: string[] = []): StepResult {
   const repoRoot = path.resolve(__dirname, '..', '..', '..');
   const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
   const startedAt = Date.now();
@@ -26,7 +35,7 @@ function runStep(name, script, args = []) {
   };
 }
 
-function parseJsonOutput(text) {
+function parseJsonOutput(text: string) {
   try {
     return JSON.parse(String(text || '').trim());
   } catch {

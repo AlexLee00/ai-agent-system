@@ -1,21 +1,40 @@
 'use strict';
 
-function normalizeText(value, fallback = '') {
+type CommanderDispatch = {
+  results?: Array<{ ok?: boolean; retrying?: boolean; error?: unknown }>;
+  claimed?: number | string;
+  error?: unknown;
+};
+
+type ExecuteResponse = {
+  payload?: { result?: Array<{ ok?: boolean; error?: unknown }> };
+  skipped?: boolean;
+  reason?: unknown;
+  error?: unknown;
+};
+
+type IncidentObservationInput = {
+  planSteps?: unknown[];
+  commanderDispatch?: CommanderDispatch;
+  executeResponse?: ExecuteResponse;
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeObject(value) {
+function normalizeObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value;
+  return value as Record<string, unknown>;
 }
 
-function normalizeArray(value) {
-  return Array.isArray(value) ? value : [];
+function normalizeArray<T = unknown>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
 }
 
-function summarizeCommanderDispatch(dispatch) {
-  const results = normalizeArray(dispatch?.results);
+function summarizeCommanderDispatch(dispatch?: CommanderDispatch) {
+  const results = normalizeArray<{ ok?: boolean; retrying?: boolean; error?: unknown }>(dispatch?.results);
   const failed = results.filter((result) => !result?.ok);
   const retrying = results.filter((result) => result?.retrying);
   return {
@@ -27,9 +46,9 @@ function summarizeCommanderDispatch(dispatch) {
   };
 }
 
-function summarizeExecuteResponse(executeResponse) {
+function summarizeExecuteResponse(executeResponse?: ExecuteResponse) {
   const payload = normalizeObject(executeResponse?.payload);
-  const result = normalizeArray(payload.result);
+  const result = normalizeArray<{ ok?: boolean; error?: unknown }>(payload.result);
   const failed = result.filter((entry) => entry?.ok === false);
   return {
     skipped: Boolean(executeResponse?.skipped),
@@ -40,7 +59,7 @@ function summarizeExecuteResponse(executeResponse) {
   };
 }
 
-function observeIncidentOutcome(input = {}) {
+function observeIncidentOutcome(input: IncidentObservationInput = {}) {
   const planSteps = normalizeArray(input.planSteps);
   const commander = summarizeCommanderDispatch(input.commanderDispatch);
   const execution = summarizeExecuteResponse(input.executeResponse);
