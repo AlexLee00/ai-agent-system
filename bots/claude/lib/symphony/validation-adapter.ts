@@ -1,6 +1,9 @@
 'use strict';
 
-function buildSymphonyValidationPlan(task = {}) {
+/**
+ * @param {{ id?: unknown }} [task]
+ */
+function buildSymphonyValidationPlan(task = { id: null }) {
   return {
     mode: 'plan_only',
     taskId: task.id || null,

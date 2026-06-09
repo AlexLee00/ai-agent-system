@@ -4,7 +4,8 @@
 const path = require('path');
 const { buildPatternReadinessReport } = require('../lib/symphony/pattern-readiness.ts');
 
-function hasFlag(name: string) {
+/** @param {string} name */
+function hasFlag(name = '') {
   return process.argv.includes(`--${name}`);
 }
 
