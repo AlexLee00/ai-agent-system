@@ -11,13 +11,30 @@ import { runLunaHybridPromotionReview } from './runtime-luna-hybrid-promotion-re
 import { buildLunaBottleneckAutonomyReport } from './runtime-luna-bottleneck-autonomy-operator.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function argValue(name, fallback = null, argv = process.argv.slice(2)) {
+type FinalClosureOptions = {
+  apply?: boolean;
+  json?: boolean;
+  strict?: boolean;
+  noDb?: boolean;
+  noExec?: boolean;
+  hours: number;
+};
+
+type FinalClosureDeps = {
+  phase11Report?: unknown;
+  queryFn?: unknown;
+  investmentRoot?: string;
+  bottleneckReport?: unknown;
+  protectedPidStatus?: unknown;
+};
+
+function argValue(name: string, fallback: string | number | null = null, argv: string[] = process.argv.slice(2)) {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv: string[] = process.argv.slice(2)): FinalClosureOptions {
   return {
     apply: argv.includes('--apply'),
     json: argv.includes('--json'),
@@ -48,7 +65,7 @@ export function getProtectedPidStatus() {
   };
 }
 
-export async function runLunaHybridFinalClosure(options = parseArgs(), deps = {}) {
+export async function runLunaHybridFinalClosure(options: FinalClosureOptions = parseArgs(), deps: FinalClosureDeps = {}) {
   if (options.apply) {
     return {
       ok: false,
@@ -73,7 +90,7 @@ export async function runLunaHybridFinalClosure(options = parseArgs(), deps = {}
     strict: false,
     noDb: options.noDb || options.noExec,
     hours: options.hours,
-  }, { queryFn: deps.queryFn || defaultQuery });
+  } as any, { queryFn: deps.queryFn || defaultQuery } as any);
 
   if (options.noExec) {
     return buildLunaHybridFinalClosureReport({
@@ -116,7 +133,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid final closure failed:',
   });

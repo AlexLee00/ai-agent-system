@@ -5,7 +5,22 @@ import { handleTask } from '../a2a/handlers/task-handler.ts';
 import { createStatArbShadowHandler, registerStatArbShadowSkill } from '../a2a/skills/stat-arb-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function fakeQuery(sql) {
+type A2ASmokeOutput = {
+  ok?: boolean;
+  skill?: string;
+  strategyType?: string;
+  symbols?: string[];
+  dataHealth?: string;
+  broadcastPlanned?: boolean;
+  market?: string;
+};
+
+type A2ASmokeResult = {
+  status: string;
+  output: A2ASmokeOutput;
+};
+
+function fakeQuery(sql: string) {
   if (sql.includes('luna_stat_arb_shadow')) {
     return [{
       strategy_type: 'pairs_trading',
@@ -35,12 +50,13 @@ export async function runLunaStatArbA2ASmoke() {
   });
   assert.equal(result.id, 'stat-arb-a2a-smoke-1');
   assert.equal(result.status, 'completed');
-  assert.equal(result.output.ok, true);
-  assert.equal(result.output.skill, 'stat-arb-shadow');
-  assert.equal(result.output.strategyType, 'pairs_trading');
-  assert.equal(result.output.symbols[0], 'BTC/USDT');
-  assert.equal(result.output.dataHealth, 'ready');
-  assert.equal(result.output.broadcastPlanned, false);
+  const output = result.output as A2ASmokeOutput;
+  assert.equal(output.ok, true);
+  assert.equal(output.skill, 'stat-arb-shadow');
+  assert.equal(output.strategyType, 'pairs_trading');
+  assert.equal(output.symbols?.[0], 'BTC/USDT');
+  assert.equal(output.dataHealth, 'ready');
+  assert.equal(output.broadcastPlanned, false);
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';
@@ -48,7 +64,7 @@ export async function runLunaStatArbA2ASmoke() {
     strategyType: 'pairs_trading',
     symbol: 'BTC/USDT',
     exchange: 'binance',
-  });
+  }) as A2ASmokeResult;
   assert.equal(enabled.output.broadcastPlanned, true);
   if (previous == null) delete process.env.LUNA_A2A_BROADCAST_ENABLED;
   else process.env.LUNA_A2A_BROADCAST_ENABLED = previous;
@@ -79,7 +95,7 @@ export async function runLunaStatArbA2ASmoke() {
       { close: 830 },
       { close: 825 },
     ],
-  });
+  }) as A2ASmokeResult;
   assert.equal(candidateOnly.status, 'completed');
   assert.equal(candidateOnly.output.strategyType, 'mean_reversion');
   assert.equal(candidateOnly.output.market, 'overseas');
@@ -88,8 +104,8 @@ export async function runLunaStatArbA2ASmoke() {
   return {
     ok: true,
     smoke: 'luna-stat-arb-a2a-phase6',
-    skill: result.output.skill,
-    broadcastDefault: result.output.broadcastPlanned,
+    skill: output.skill,
+    broadcastDefault: output.broadcastPlanned,
     broadcastEnabled: enabled.output.broadcastPlanned,
     candidateOnly: candidateOnly.output.dataHealth,
   };
@@ -101,7 +117,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna stat arb A2A smoke failed:',
   });

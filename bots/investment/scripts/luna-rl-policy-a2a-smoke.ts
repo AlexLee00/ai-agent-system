@@ -9,7 +9,23 @@ import {
 } from '../a2a/skills/rl-policy-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function fakeQuery(sql) {
+type A2ASmokeOutput = {
+  ok?: boolean;
+  skill?: string;
+  actionType?: string;
+  dataHealth?: string;
+  shadowMode?: boolean;
+  broadcastPlanned?: boolean;
+  market?: string;
+  trainingPlanned?: boolean;
+  liveMutation?: boolean;
+};
+
+type A2ASmokeResult = {
+  output: A2ASmokeOutput;
+};
+
+function fakeQuery(sql: string) {
   if (sql.includes('luna_rl_policy_shadow')) {
     return [{
       symbol: 'BTC/USDT',
@@ -41,19 +57,20 @@ export async function runLunaRlPolicyA2ASmoke() {
   });
   assert.equal(result.id, 'rl-policy-a2a-smoke-1');
   assert.equal(result.status, 'completed');
-  assert.equal(result.output.ok, true);
-  assert.equal(result.output.skill, 'policy-inference');
-  assert.equal(result.output.actionType, 'buy');
-  assert.equal(result.output.dataHealth, 'ready');
-  assert.equal(result.output.shadowMode, true);
-  assert.equal(result.output.broadcastPlanned, false);
+  const output = result.output as A2ASmokeOutput;
+  assert.equal(output.ok, true);
+  assert.equal(output.skill, 'policy-inference');
+  assert.equal(output.actionType, 'buy');
+  assert.equal(output.dataHealth, 'ready');
+  assert.equal(output.shadowMode, true);
+  assert.equal(output.broadcastPlanned, false);
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';
   const enabled = await createRlPolicyShadowHandler({ queryFn: fakeQuery, skillId: 'rl-policy-shadow' })({
     symbol: 'BTC/USDT',
     exchange: 'binance',
-  });
+  }) as A2ASmokeResult;
   assert.equal(enabled.output.broadcastPlanned, true);
   if (previous == null) delete process.env.LUNA_A2A_BROADCAST_ENABLED;
   else process.env.LUNA_A2A_BROADCAST_ENABLED = previous;
@@ -65,13 +82,13 @@ export async function runLunaRlPolicyA2ASmoke() {
     factorEvidence: { compositeScore: 0.7 },
     entryEvidence: { confidence: 0.62 },
     regimeEvidence: { confidence: 0.58 },
-  });
+  }) as A2ASmokeResult & { status: string };
   assert.equal(candidateOnly.status, 'completed');
   assert.equal(candidateOnly.output.skill, 'rl-policy-shadow');
   assert.equal(candidateOnly.output.market, 'overseas');
   assert.equal(candidateOnly.output.dataHealth, 'ready');
 
-  const updatePlan = await createRlPolicyUpdateHandler()({ broadcast: false });
+  const updatePlan = await createRlPolicyUpdateHandler()({ broadcast: false }) as A2ASmokeResult & { status: string };
   assert.equal(updatePlan.status, 'completed');
   assert.equal(updatePlan.output.trainingPlanned, false);
   assert.equal(updatePlan.output.liveMutation, false);
@@ -79,8 +96,8 @@ export async function runLunaRlPolicyA2ASmoke() {
   return {
     ok: true,
     smoke: 'luna-rl-policy-a2a-phase7',
-    skill: result.output.skill,
-    broadcastDefault: result.output.broadcastPlanned,
+    skill: output.skill,
+    broadcastDefault: output.broadcastPlanned,
     broadcastEnabled: enabled.output.broadcastPlanned,
     candidateOnly: candidateOnly.output.dataHealth,
     policyUpdateShadow: updatePlan.output.shadowMode,
@@ -93,7 +110,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna rl policy A2A smoke failed:',
   });
