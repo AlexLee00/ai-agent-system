@@ -2,22 +2,25 @@ const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { createHubApp } = require('./app');
 const { configureHttpServer, parsePositiveIntEnv } = require('./server-hardening');
+import type { Express } from 'express';
+import type { Server } from 'node:http';
+import type { Socket } from 'node:net';
 
 const SHUTDOWN_TIMEOUT_MS = parsePositiveIntEnv('HUB_SHUTDOWN_TIMEOUT_MS', 10000);
 const UNCAUGHT_OVERFLOW_LIMIT = 3;
 const UNCAUGHT_RESET_MS = 5 * 60 * 1000;
 
 const runtime = {
-  app: null,
-  server: null,
-  activeConnections: new Set(),
+  app: null as Express | null,
+  server: null as Server | null,
+  activeConnections: new Set<Socket>(),
   isShuttingDown: false,
   startupComplete: false,
 };
 
 let uncaughtCount = 0;
 let unhandledRejectionCount = 0;
-let uncaughtResetTimer = null;
+let uncaughtResetTimer: NodeJS.Timeout | null = null;
 let processHooksRegistered = false;
 
 function resetUncaughtOverflowTimer() {
@@ -30,7 +33,7 @@ function resetUncaughtOverflowTimer() {
   uncaughtResetTimer.unref?.();
 }
 
-async function gracefulShutdown(reason, exitCode = 0) {
+async function gracefulShutdown(reason: string, exitCode = 0) {
   if (runtime.isShuttingDown) return;
   runtime.isShuttingDown = true;
   console.error(`[hub] ${reason} → graceful shutdown 시작`);
@@ -47,8 +50,9 @@ async function gracefulShutdown(reason, exitCode = 0) {
   try {
     if (runtime.server) {
       runtime.server.closeIdleConnections?.();
-      await new Promise((resolve) => {
-        runtime.server.close(() => resolve());
+      const server = runtime.server;
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
       });
     }
     await pgPool.closeAll?.();
@@ -74,7 +78,7 @@ function registerProcessHooks() {
       gracefulShutdown('uncaught_overflow', 1).catch(() => {});
     }
   });
-  process.on('unhandledRejection', (error) => {
+  process.on('unhandledRejection', (error: unknown) => {
     unhandledRejectionCount += 1;
     resetUncaughtOverflowTimer();
     console.error(`[hub] unhandledRejection #${unhandledRejectionCount}:`, error);
@@ -93,11 +97,12 @@ export function startHubServer() {
 
   const port = env.HUB_PORT || 7788;
   const bindHost = String(env.HUB_BIND_HOST || '127.0.0.1').trim() || '127.0.0.1';
-  runtime.app = createHubApp({
+  const app = createHubApp({
     isShuttingDown: () => runtime.isShuttingDown,
     isStartupComplete: () => runtime.startupComplete,
   });
-  runtime.server = runtime.app.listen(port, bindHost, () => {
+  runtime.app = app;
+  const server = app.listen(port, bindHost, () => {
     runtime.startupComplete = true;
     console.log(`🌐 Resource API Hub 시작 — http://${bindHost}:${port}/hub/health`);
     console.log(`   인증: ${env.HUB_AUTH_TOKEN ? 'Bearer Token 활성' : '⚠️ HUB_AUTH_TOKEN 미설정'}`);
@@ -105,7 +110,8 @@ export function startHubServer() {
       console.warn('⚠️  Hub가 모든 인터페이스(0.0.0.0)에 바인딩됨 — 운영 환경에서는 권장하지 않음');
     }
   });
-  configureHttpServer(runtime.server, {
+  runtime.server = server;
+  configureHttpServer(server, {
     onFatalError: () => {
       if (!runtime.isShuttingDown) {
         gracefulShutdown('server_error', 1).catch(() => {});
@@ -113,13 +119,13 @@ export function startHubServer() {
     },
   });
 
-  runtime.server.on('connection', (socket) => {
+  server.on('connection', (socket: Socket) => {
     runtime.activeConnections.add(socket);
     socket.on('close', () => runtime.activeConnections.delete(socket));
   });
 
   registerProcessHooks();
-  return runtime.server;
+  return server;
 }
 
 export function getHubRuntimeState() {

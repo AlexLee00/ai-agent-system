@@ -21,6 +21,10 @@ const fs = require('fs');
 
 const INSTA_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images', 'insta');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_INSTA || '/tmp/blog-insta';
+type BlogCategory = '최신IT트렌드' | 'IT정보와분석' | '홈페이지와App' | '개발기획과컨설팅' | '성장과성공';
+type InstaSummary = {
+  summary?: string;
+};
 
 const SUMMARIZE_SYSTEM = `
 당신은 인스타그램 콘텐츠 전문가입니다.
@@ -39,7 +43,7 @@ const SUMMARIZE_SYSTEM = `
 ]
 `.trim();
 
-async function summarizeForInsta(content, count = 3) {
+async function summarizeForInsta(content: string, count = 3): Promise<InstaSummary[]> {
   const userPrompt = `
 다음 블로그 포스팅에서 가장 핵심적인 섹션 ${count}개를 선정하고,
 각 섹션을 15~20자 이내 인스타 카드용 한줄 요약으로 변환하세요.
@@ -117,7 +121,7 @@ function buildStrategyCaptionHint(strategy = null) {
 
 function buildFallbackHashtags(category = '', strategy = null) {
   const directives = normalizeExecutionDirectives(strategy);
-  const categoryTags = {
+  const categoryTags: Record<BlogCategory, string[]> = {
     '최신IT트렌드': ['#IT트렌드', '#AI트렌드', '#기술분석'],
     'IT정보와분석': ['#IT분석', '#실무인사이트', '#디지털전략'],
     '홈페이지와App': ['#UX개선', '#전환율', '#앱기획'],
@@ -132,7 +136,7 @@ function buildFallbackHashtags(category = '', strategy = null) {
 
   return [
     ...REQUIRED_HASHTAGS,
-    ...(categoryTags[category] || ['#개발공부', '#실무팁']),
+    ...(categoryTags[category as BlogCategory] || ['#개발공부', '#실무팁']),
     ...modeTags,
     ...directives.hashtagPolicy.focusTags,
     ...directives.hashtagPolicy.platformTags,
@@ -152,7 +156,7 @@ function buildStrategyCta(title = '', strategy = null) {
     : '블로그에서 더 자세히! 👉 프로필 링크';
 }
 
-async function generateInstaCaption(content, title, category, strategy = null) {
+async function generateInstaCaption(content: string, title: string, category: string, strategy = null) {
   const plan = strategy || loadStrategyBundle().plan;
   const userPrompt = `
 다음 블로그 포스팅의 인스타그램 캡션과 해시태그를 생성하세요.
@@ -205,7 +209,7 @@ ${content.slice(0, 3000)}
   }
 }
 
-async function createInstaContent(content, title, category, cardCount = 3) {
+async function createInstaContent(content: string, title: string, category: string, cardCount = 3) {
   const plan = loadStrategyBundle().plan;
   const effectiveCardCount = resolveInstagramCardCount(cardCount, plan);
   console.log(`[소셜] 인스타 콘텐츠 생성 시작 (카드 ${effectiveCardCount}장)`);
@@ -219,7 +223,7 @@ async function createInstaContent(content, title, category, cardCount = 3) {
 
   if (!fs.existsSync(INSTA_DIR)) fs.mkdirSync(INSTA_DIR, { recursive: true });
   const cardResults = await Promise.allSettled(
-    summaries.map(async (s, i) => {
+    summaries.map(async (s: InstaSummary, i: number) => {
       const filename = `${slug}_card${i + 1}.png`;
       const outputPath = path.join(INSTA_DIR, filename);
       const filePath = await generateInstaCard(s.summary, i + 1, outputPath);

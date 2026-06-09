@@ -7,8 +7,26 @@ const env = require('../../../packages/core/lib/env');
 const { getPerformanceCollectionCandidates, recordPerformance } = require('../lib/publ.ts');
 const { fetchNaverBlogStats } = require('../lib/richer.ts');
 
-function parseArgs(argv = process.argv.slice(2)) {
-  const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+type PerformanceCandidate = {
+  id: string | number;
+  title?: string;
+  naver_url?: string | null;
+};
+
+type PerformanceResult = {
+  ok: boolean;
+  postId: string | number;
+  title?: string;
+  views?: number;
+  comments?: number;
+  likes?: number;
+  source?: string;
+  url?: string | null;
+  error?: string;
+};
+
+function parseArgs(argv: string[] = process.argv.slice(2)) {
+  const get = (name: string) => argv.find((arg: string) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
   return {
     days: Number(get('days') || 7),
     limit: Number(get('limit') || 0),
@@ -17,7 +35,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function parsePositiveNumber(value, fallback) {
+function parsePositiveNumber(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
@@ -27,10 +45,10 @@ async function main() {
   const rows = await getPerformanceCollectionCandidates(args.days);
   const candidates = args.limit > 0 ? rows.slice(0, args.limit) : rows;
 
-  const results = [];
+  const results: PerformanceResult[] = [];
   let updated = 0;
 
-  for (const post of candidates) {
+  for (const post of candidates as PerformanceCandidate[]) {
     try {
       const stats = await fetchNaverBlogStats(post);
       const payload = {
@@ -57,12 +75,13 @@ async function main() {
         url: stats.url || post.naver_url || null,
       });
     } catch (error) {
-      console.warn(`[collect-performance] ${post.id} 실패: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[collect-performance] ${post.id} 실패: ${message}`);
       results.push({
         ok: false,
         postId: post.id,
         title: post.title,
-        error: error.message,
+        error: message,
       });
     }
   }
@@ -96,7 +115,7 @@ async function main() {
         timeout: analysisTimeoutMs,
       });
     } catch (error) {
-      console.warn(`[collect-performance] 성과 분석 실패 (무시): ${error.message}`);
+      console.warn(`[collect-performance] 성과 분석 실패 (무시): ${error instanceof Error ? error.message : error}`);
     }
   }
 }
