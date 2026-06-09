@@ -297,7 +297,13 @@ function isKisRateLimitMessage(message = '') {
 
 function isKisProviderLimitMessage(message = '') {
   const text = String(message || '');
-  return isKisRateLimitMessage(text) || /EGW00201|EGW00123|too many requests|HTTP\s*429/i.test(text);
+  return isKisRateLimitMessage(text)
+    || /EGW00201|EGW00123|too many requests|HTTP\s*429/i.test(text)
+    // KIS occasionally returns APBK1350 ("조회 오류입니다. 다시 조회 하세요.")
+    // for read-only balance/quote lookups. Treat it as transient provider
+    // pressure so non-mutating MCP calls use stale cache/cooldown instead of
+    // immediately hammering the same KIS endpoint via direct fallback.
+    || /APBK1350|조회 오류입니다|다시 조회 하세요/i.test(text);
 }
 
 // ─── 토큰 관리 ─────────────────────────────────────────────────────
@@ -1893,5 +1899,6 @@ export const _testOnlyKisClient = {
   kisMcpCacheKey,
   setKisMcpCachedResponse,
   getKisMcpCachedResponse,
+  isKisProviderLimitMessage,
   clearKisMcpResponseCache: () => _kisMcpNonMutatingResponseCache.clear(),
 };

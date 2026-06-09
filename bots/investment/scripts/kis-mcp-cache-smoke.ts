@@ -39,6 +39,12 @@ export async function runKisMcpCacheSmoke() {
     assert.equal(stale.status, 'ok');
     assert.equal(stale.cache.hit, true);
 
+    assert.equal(
+      _testOnlyKisClient.isKisProviderLimitMessage('KIS API 오류 [APBK1350]: 조회 오류입니다. 다시 조회 하세요.'),
+      true,
+      'APBK1350 read-only lookup errors should use KIS MCP cooldown/stale cache path',
+    );
+
     return { ok: true, cacheKey: _testOnlyKisClient.kisMcpCacheKey('domestic_balance', payloadA) };
   } finally {
     _testOnlyKisClient.clearKisMcpResponseCache();
