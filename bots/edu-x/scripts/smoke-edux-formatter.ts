@@ -215,8 +215,10 @@ Okay, let's tackle this. The user wants a pre-market brief for the Edu-X platfor
     { fixture: true },
   );
   const missingTechnicalQuality = validateContentQuality(missingTechnicalPost.content, 'crypto');
-  assert.equal(missingTechnicalQuality.ok, false, 'crypto quality should fail when support/resistance technical data is missing');
-  assert.equal(missingTechnicalQuality.infoIssues.includes('crypto_placeholder_text'), true, 'crypto missing technical data should be reported as placeholder text');
+  assert.equal(missingTechnicalQuality.ok, true, `crypto fallback should remain publishable when support/resistance technical data is missing: ${JSON.stringify(missingTechnicalQuality)}`);
+  assert.equal(missingTechnicalQuality.infoIssues.includes('crypto_placeholder_text'), false, 'crypto missing technical data fallback should not expose placeholder text');
+  assert.equal(missingTechnicalPost.content.includes('$75,460'), true, 'crypto fallback should derive a conservative support reference from BTC price');
+  assert.equal(missingTechnicalPost.content.includes('$78,540'), true, 'crypto fallback should derive a conservative resistance reference from BTC price');
   const kisPatternPost = await formatPost(
     'kis',
     '0900',

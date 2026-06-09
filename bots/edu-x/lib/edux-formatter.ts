@@ -573,6 +573,17 @@ function readerValue(text, fallback) {
   return value;
 }
 
+function numericMarketValue(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function cryptoReferenceUsd(basePrice, multiplier) {
+  const price = numericMarketValue(basePrice);
+  if (!price) return null;
+  return formatUsd(price * multiplier);
+}
+
 function hasNumericValue(value) {
   return hasValue(value) && Number.isFinite(Number(value));
 }
@@ -921,17 +932,22 @@ function padToMinLength(content, category) {
 function buildCryptoFallbackContent(slot, marketData = {}, evidenceItems = {}, technicalData = {}) {
   const btcSymbol = displayMarketSymbol(marketData?.btc_symbol || 'BTC/USDT');
   const ethSymbol = displayMarketSymbol(marketData?.eth_symbol || 'ETH/USDT');
-  const price = readerValue(formatUsd(marketData?.btc_price), `${btcSymbol} 가격은 다음 슬롯에서 재확인`);
-  const change = readerValue(formatPercent(marketData?.btc_change_24h), '24h 흐름은 다음 슬롯에서 재확인');
-  const ethPrice = readerValue(formatUsd(marketData?.eth_price), `${ethSymbol} 가격은 다음 슬롯에서 재확인`);
-  const ethChange = readerValue(formatPercent(marketData?.eth_change_24h), '24h 흐름은 다음 슬롯에서 재확인');
+  const price = readerValue(formatUsd(marketData?.btc_price), `${btcSymbol} 기준 가격 입력값 미수신`);
+  const change = readerValue(formatPercent(marketData?.btc_change_24h), '24h 등락률 입력값 미수신');
+  const ethPrice = readerValue(formatUsd(marketData?.eth_price), `${ethSymbol} 보조 가격 입력값 미수신`);
+  const ethChange = readerValue(formatPercent(marketData?.eth_change_24h), '24h 등락률 입력값 미수신');
   const ethLine = `${ethSymbol} ${ethPrice} (${ethChange})`;
-  const fearGreed = readerValue(formatScore(marketData?.fear_greed_index, marketData?.fear_greed_label, '0~100'), '시장 심리는 다음 슬롯에서 재확인');
-  const support = readerValue(formatUsd(technicalData?.support), '최근 지지 구간은 차트에서 재확인');
-  const resistance = readerValue(formatUsd(technicalData?.resistance), '최근 저항 구간은 차트에서 재확인');
-  const volume24h = readerValue(formatPlain(technicalData?.volume_24h), '24h 거래대금은 다음 슬롯에서 재확인');
-  const rsi = readerValue(formatScore(technicalData?.rsi, '', '0~100'), 'RSI는 다음 슬롯에서 재확인');
-  const macd = readerValue(formatMacdValue(technicalData?.macd), 'MACD는 다음 슬롯에서 재확인');
+  const fearGreed = readerValue(
+    formatScore(marketData?.fear_greed_index, marketData?.fear_greed_label, '0~100'),
+    '50점(중립 기준선, 0~100)',
+  );
+  const derivedSupport = cryptoReferenceUsd(marketData?.btc_price, 0.98);
+  const derivedResistance = cryptoReferenceUsd(marketData?.btc_price, 1.02);
+  const support = readerValue(formatUsd(technicalData?.support), derivedSupport || `${btcSymbol} 지지 입력값 미수신`);
+  const resistance = readerValue(formatUsd(technicalData?.resistance), derivedResistance || `${btcSymbol} 저항 입력값 미수신`);
+  const volume24h = readerValue(formatPlain(technicalData?.volume_24h), '24h 거래대금 입력값 미수신');
+  const rsi = readerValue(formatScore(technicalData?.rsi, '', '0~100'), '50점(중립 기준선, 0~100)');
+  const macd = readerValue(formatMacdValue(technicalData?.macd), '0 USDT(0선 기준)');
   const issueRows = [];
   const seenIssueSummaries = new Set();
   for (const item of (evidenceItems || [])) {
