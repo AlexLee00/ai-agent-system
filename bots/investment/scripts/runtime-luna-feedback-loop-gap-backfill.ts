@@ -138,7 +138,9 @@ async function persistAttribution(row, classification, context) {
     market: row.market,
     exchange: row.exchange,
     pnlPct: Number(classification.pnlPct.toFixed(4)),
+    pnl_pct: Number(classification.pnlPct.toFixed(4)),
     pnlNet: Number(classification.pnlNet.toFixed(4)),
+    pnl_net: Number(classification.pnlNet.toFixed(4)),
     exitReason: row.exit_reason || null,
     exitedAt: row.exited_at || null,
     shadowOnly: true,
@@ -176,7 +178,9 @@ async function persistFailureReflexion(row, classification, context) {
     from: context.from,
     to: context.to,
     pnlPct: Number(classification.pnlPct.toFixed(4)),
+    pnl_pct: Number(classification.pnlPct.toFixed(4)),
     pnlNet: Number(classification.pnlNet.toFixed(4)),
+    pnl_net: Number(classification.pnlNet.toFixed(4)),
     exitReason: row.exit_reason || null,
     strategyFamily: row.strategy_family || null,
   };
@@ -190,7 +194,9 @@ async function persistFailureReflexion(row, classification, context) {
     reason: 'feedback_loop_gap_backfill_loss',
     evidence: {
       pnlPct: Number(classification.pnlPct.toFixed(4)),
+      pnl_pct: Number(classification.pnlPct.toFixed(4)),
       pnlNet: Number(classification.pnlNet.toFixed(4)),
+      pnl_net: Number(classification.pnlNet.toFixed(4)),
     },
   };
   return run(
@@ -223,7 +229,9 @@ async function persistFeedbackAction(row, classification, context) {
     exchange: row.exchange,
     tradeMode: row.trade_mode || null,
     pnlPct: Number(classification.pnlPct.toFixed(4)),
+    pnl_pct: Number(classification.pnlPct.toFixed(4)),
     pnlNet: Number(classification.pnlNet.toFixed(4)),
+    pnl_net: Number(classification.pnlNet.toFixed(4)),
     actionType: classification.actionType,
     regime: row.market_regime || null,
     strategyFamily: row.strategy_family || null,

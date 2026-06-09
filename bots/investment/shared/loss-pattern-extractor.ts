@@ -6,6 +6,8 @@
 import * as db from './db.ts';
 import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
+const PNL_PERCENT_OUTLIER_ABS = 1000;
+
 export interface LossPattern {
   patternKey: string;
   market: string;
@@ -25,6 +27,22 @@ export interface LossPattern {
 function asNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function patternPnlPercent(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || Math.abs(n) > PNL_PERCENT_OUTLIER_ABS) return null;
+  return n;
+}
+
+function rowLossPct(row: Record<string, any>): number | null {
+  return patternPnlPercent(
+    row.reflexion_pnl_pct
+      ?? row.stage_attribution?.pnl_pct
+      ?? row.stage_attribution?.pnlPct
+      ?? row.pnl_percent,
+  );
 }
 
 function compactText(value: unknown): string {
@@ -70,6 +88,7 @@ async function fetchRecentLossReflexions({ market, lookbackDays }: { market: str
        lfr.trade_id,
        lfr.five_why,
        lfr.stage_attribution,
+       COALESCE(lfr.stage_attribution->>'pnl_pct', lfr.stage_attribution->>'pnlPct') AS reflexion_pnl_pct,
        lfr.hindsight,
        lfr.avoid_pattern,
        lfr.created_at,
@@ -85,6 +104,7 @@ async function fetchRecentLossReflexions({ market, lookbackDays }: { market: str
      LEFT JOIN investment.trade_journal tj ON tj.trade_id = lfr.trade_id::text
      WHERE lfr.created_at >= NOW() - ($1::int * INTERVAL '1 day')
        ${marketFilter}
+       AND COALESCE(lfr.avoid_pattern->>'reason', '') NOT ILIKE '%smoke%'
        AND (tj.id IS NULL OR ${learningPnlValidSql('tj')})
      ORDER BY lfr.created_at DESC
      LIMIT 500`,
@@ -141,7 +161,11 @@ function clusterByPattern(rows: any[]) {
 
 function buildLossPattern(cluster): LossPattern {
   const symbols = [...new Set(cluster.rows.map((row) => String(row.symbol || row.avoid_pattern?.symbol || '')).filter(Boolean))];
-  const losses = cluster.rows.map((row) => Math.abs(asNumber(row.pnl_percent, 0))).filter((n) => n > 0);
+  const losses = cluster.rows
+    .map((row) => rowLossPct(row))
+    .filter((n) => n != null)
+    .map((n) => Math.abs(Number(n)))
+    .filter((n) => n > 0);
   const avgLossPct = losses.length ? losses.reduce((sum, n) => sum + n, 0) / losses.length : 0;
   const totalPenalty = cluster.rows.length * Math.max(0.1, avgLossPct / 100);
   const guideParts = [

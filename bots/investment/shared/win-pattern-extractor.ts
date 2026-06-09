@@ -6,6 +6,8 @@
 import * as db from './db.ts';
 import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
 
+const PNL_PERCENT_OUTLIER_ABS = 1000;
+
 export interface WinPattern {
   patternKey: string;
   market: string;
@@ -25,6 +27,13 @@ export interface WinPattern {
 function asNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function patternPnlPercent(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || Math.abs(n) > PNL_PERCENT_OUTLIER_ABS) return null;
+  return n;
 }
 
 async function ensureWinPatternTable(): Promise<void> {
@@ -68,6 +77,7 @@ async function fetchRecentWinTrades({ market, lookbackDays }: { market: string; 
        created_at
      FROM investment.trade_journal tj
      WHERE COALESCE(pnl_percent, 0) > 0
+       AND ABS(pnl_percent) <= ${PNL_PERCENT_OUTLIER_ABS}
        AND ${learningPnlValidSql('tj')}
        AND exit_time IS NOT NULL
        AND to_timestamp(exit_time / 1000.0) >= NOW() - ($1::int * INTERVAL '1 day')
@@ -96,7 +106,10 @@ function clusterByPattern(rows: any[]) {
 
 function buildWinPattern(cluster): WinPattern {
   const symbols = [...new Set(cluster.rows.map((row) => String(row.symbol || '')).filter(Boolean))];
-  const wins = cluster.rows.map((row) => asNumber(row.pnl_percent, 0)).filter((n) => n > 0);
+  const wins = cluster.rows
+    .map((row) => patternPnlPercent(row.pnl_percent))
+    .filter((n) => n != null && n > 0)
+    .map(Number);
   const avgWinPct = wins.length ? wins.reduce((sum, n) => sum + n, 0) / wins.length : 0;
   const totalProfit = cluster.rows.reduce((sum, row) => sum + asNumber(row.pnl_net ?? row.pnl_amount, 0), 0);
   const guideParts = [

@@ -12,6 +12,8 @@ export function learningPnlValidSql(alias = 'tj') {
     `${prefix}pnl_amount IS NOT NULL`,
     `COALESCE(${prefix}exit_reason, '') NOT LIKE 'journal_reconciled%'`,
     `COALESCE(${prefix}exit_reason, '') NOT LIKE 'sweeper_manual_dust%'`,
+    `COALESCE(${prefix}exit_reason, '') NOT LIKE 'orphan_cleanup%'`,
+    `COALESCE(${prefix}exit_reason, '') NOT LIKE 'broker_no_balance_cleanup%'`,
   ].join('\n  AND ');
 }
 
