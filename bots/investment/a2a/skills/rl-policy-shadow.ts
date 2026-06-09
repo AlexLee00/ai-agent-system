@@ -6,14 +6,75 @@ import {
   normalizeRlPolicyShadowRow,
 } from '../../shared/rl-policy-shadow.ts';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
+import type { A2ATaskResult } from '../types.ts';
+
+type QueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
+
+type RlPolicyCandidate = {
+  symbol?: string;
+  exchange?: string;
+  bars?: unknown[];
+  factorEvidence?: Record<string, unknown>;
+  statArbEvidence?: Record<string, unknown>;
+  entryEvidence?: Record<string, unknown>;
+  regimeEvidence?: Record<string, unknown>;
+  portfolio?: Record<string, unknown>;
+};
+
+type RlPolicyParams = {
+  symbol?: string;
+  symbols?: string[];
+  exchange?: string | null;
+  market?: string;
+  limit?: number;
+  broadcast?: boolean;
+  bars?: unknown[];
+  candidate?: RlPolicyCandidate;
+  factorEvidence?: Record<string, unknown>;
+  statArbEvidence?: Record<string, unknown>;
+  entryEvidence?: Record<string, unknown>;
+  regimeEvidence?: Record<string, unknown>;
+  portfolio?: Record<string, unknown>;
+};
+
+type RlPolicyShadow = Omit<ReturnType<typeof buildRlPolicyShadow>, 'evidence'> & {
+  evidence: Record<string, unknown>;
+};
+type RlPolicyOutput = ReturnType<typeof outputFromShadow> & {
+  rows?: Array<{
+    symbol: unknown;
+    exchange: unknown;
+    actionType: unknown;
+    action: unknown;
+    confidence: unknown;
+    dataHealth: unknown;
+    modelStatus: unknown;
+  }>;
+};
+
+type RlPolicyHandlerOptions = {
+  queryFn?: QueryFn;
+  skillId?: string;
+};
+
+type RlPolicyRowsQuery = {
+  symbol?: string;
+  exchange?: string | null;
+  market?: string;
+  limit?: number;
+};
 
 function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
 }
 
-async function latestRlPolicyRows(queryFn, { symbol, exchange, market, limit }) {
-  const conds = [];
-  const params = [];
+function asRlPolicyParams(params: unknown): RlPolicyParams {
+  return params && typeof params === 'object' ? (params as RlPolicyParams) : {};
+}
+
+async function latestRlPolicyRows(queryFn: QueryFn, { symbol, exchange, market, limit }: RlPolicyRowsQuery) {
+  const conds: string[] = [];
+  const params: unknown[] = [];
   if (symbol) {
     params.push(symbol);
     conds.push(`symbol = $${params.length}`);
@@ -38,7 +99,7 @@ async function latestRlPolicyRows(queryFn, { symbol, exchange, market, limit }) 
   return Array.isArray(rows) ? rows : [];
 }
 
-function outputFromShadow(shadow, skillId, params = {}) {
+function outputFromShadow(shadow: RlPolicyShadow, skillId: string, params: RlPolicyParams = {}) {
   return {
     ok: Boolean(shadow.ok),
     skill: skillId,
@@ -59,11 +120,11 @@ function outputFromShadow(shadow, skillId, params = {}) {
   };
 }
 
-function outputFromRows(rows = [], skillId, params = {}) {
-  const normalized = rows.map(normalizeRlPolicyShadowRow);
+function outputFromRows(rows: unknown[] = [], skillId: string, params: RlPolicyParams = {}): RlPolicyOutput {
+  const normalized = rows.map((row) => normalizeRlPolicyShadowRow(row as Record<string, unknown>));
   const primary = normalized[0] || {};
   return {
-    ...outputFromShadow(primary, skillId, params),
+    ...outputFromShadow(primary as RlPolicyShadow, skillId, params),
     rows: normalized.map((row) => ({
       symbol: row.symbol,
       exchange: row.exchange,
@@ -80,7 +141,7 @@ function outputFromRows(rows = [], skillId, params = {}) {
   };
 }
 
-function outputFromCandidate(params = {}, skillId) {
+function outputFromCandidate(params: RlPolicyParams = {}, skillId: string) {
   const exchange = normalizeRlExchange(params.exchange || params.candidate?.exchange);
   const shadow = buildRlPolicyShadow({
     symbol: params.symbol || params.candidate?.symbol || params.symbols?.[0],
@@ -99,8 +160,9 @@ function outputFromCandidate(params = {}, skillId) {
   return outputFromShadow(shadow, skillId, params);
 }
 
-export function createRlPolicyShadowHandler({ queryFn = defaultQuery, skillId = 'rl-policy-shadow' } = {}) {
-  return async function rlPolicyShadow(params = {}) {
+export function createRlPolicyShadowHandler({ queryFn = defaultQuery as QueryFn, skillId = 'rl-policy-shadow' }: RlPolicyHandlerOptions = {}) {
+  return async function rlPolicyShadow(rawParams: unknown = {}): Promise<A2ATaskResult> {
+    const params = asRlPolicyParams(rawParams);
     const exchange = params.exchange ? normalizeRlExchange(params.exchange) : null;
     const rows = await latestRlPolicyRows(queryFn, {
       symbol: params.symbol,
@@ -112,6 +174,7 @@ export function createRlPolicyShadowHandler({ queryFn = defaultQuery, skillId = 
       ? outputFromRows(rows, skillId, { ...params, exchange })
       : outputFromCandidate({ ...params, exchange: exchange || params?.candidate?.exchange }, skillId);
     return {
+      id: '',
       status: output.ok ? 'completed' : 'failed',
       output,
       metadata: {
@@ -126,8 +189,10 @@ export function createRlPolicyShadowHandler({ queryFn = defaultQuery, skillId = 
 }
 
 export function createRlPolicyUpdateHandler({ skillId = 'policy-update' } = {}) {
-  return async function rlPolicyUpdate(params = {}) {
+  return async function rlPolicyUpdate(rawParams: unknown = {}): Promise<A2ATaskResult> {
+    const params = asRlPolicyParams(rawParams);
     return {
+      id: '',
       status: 'completed',
       output: {
         ok: true,
@@ -152,7 +217,7 @@ export function createRlPolicyUpdateHandler({ skillId = 'policy-update' } = {}) 
   };
 }
 
-export function registerRlPolicyShadowSkills(options = {}) {
+export function registerRlPolicyShadowSkills(options: RlPolicyHandlerOptions = {}) {
   registerSkillHandler('rl-policy-shadow', createRlPolicyShadowHandler({ ...options, skillId: 'rl-policy-shadow' }));
   registerSkillHandler('policy-inference', createRlPolicyShadowHandler({ ...options, skillId: 'policy-inference' }));
   registerSkillHandler('policy-update', createRlPolicyUpdateHandler({ skillId: 'policy-update' }));
