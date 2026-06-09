@@ -16,37 +16,83 @@ export const LUNA_PROTECTED_6 = [
   'ai.hub.resource-api',
 ];
 
+type StatusReport = {
+  ok?: boolean;
+  status?: string;
+  promotionReady?: boolean;
+  readyForMasterReview?: boolean;
+  liveMutation?: boolean;
+  protectedPidMutation?: boolean;
+  gate?: { status?: string };
+};
+
+type BottleneckEvidence = {
+  marketdata?: { ok?: boolean; status?: string; blockers?: unknown[] };
+  finalGate?: { ok?: boolean; status?: string; blockers?: unknown[] };
+  postLive?: { ok?: boolean; status?: string; blockers?: unknown[] };
+};
+
+type BottleneckReport = {
+  status?: string;
+  hardBlockers?: unknown[];
+  bottlenecks?: unknown[];
+  warnings?: unknown[];
+  evidence?: BottleneckEvidence;
+};
+
+type ProtectedPidStatus = {
+  visibleLabels?: unknown[];
+  source?: string;
+};
+
+type ChecklistOptions = {
+  phase11Report?: StatusReport;
+  bottleneckReport?: BottleneckReport;
+  protectedPidStatus?: ProtectedPidStatus;
+  noExec?: boolean;
+};
+
+type ChecklistItem = {
+  name: string;
+  ok: boolean;
+  detail: string;
+};
+
+type FinalClosureOptions = ChecklistOptions & {
+  investmentRoot?: string;
+};
+
 function defaultInvestmentRoot() {
   return path.resolve(import.meta.dirname, '..');
 }
 
-function reviewCommand(script, args = '-- --json', investmentRoot = defaultInvestmentRoot()) {
+function reviewCommand(script: string, args = '-- --json', investmentRoot = defaultInvestmentRoot()) {
   return `npm --prefix ${investmentRoot} run -s ${script} ${args}`;
 }
 
-function list(value = []) {
+function list(value: unknown[] | undefined = []) {
   return Array.isArray(value) ? value : [];
 }
 
-function hasStatus(report = {}, expected = []) {
+function hasStatus(report: StatusReport, expected: string[]) {
   const status = String(report.status || '');
   return expected.includes(status);
 }
 
-function isNonBlockingBottleneck(code) {
+function isNonBlockingBottleneck(code: unknown) {
   return /live_position_reentry_blocked_recent_buy_signal/.test(String(code || ''));
 }
 
-function blockingBottlenecks(report = {}) {
+function blockingBottlenecks(report: BottleneckReport = {}) {
   return list(report.bottlenecks).filter((code) => !isNonBlockingBottleneck(code));
 }
 
-function protectedPidCheck(protectedPidStatus = {}) {
+function protectedPidCheck(protectedPidStatus: ProtectedPidStatus = {}) {
   const visible = new Set(list(protectedPidStatus.visibleLabels));
   const missing = LUNA_PROTECTED_6.filter((label) => !visible.has(label));
   return {
     labels: LUNA_PROTECTED_6,
-    visibleLabels: [...visible].filter((label) => LUNA_PROTECTED_6.includes(label)),
+    visibleLabels: [...visible].filter((label): label is string => typeof label === 'string' && LUNA_PROTECTED_6.includes(label)),
     missing,
     ok: missing.length === 0,
     source: protectedPidStatus.source || 'not_checked',
@@ -58,7 +104,7 @@ function buildChecklist({
   bottleneckReport = {},
   protectedPidStatus = {},
   noExec = false,
-} = {}) {
+}: ChecklistOptions = {}): ChecklistItem[] {
   const protectedPid = protectedPidCheck(protectedPidStatus);
   const bottleneckHardBlockers = list(bottleneckReport.hardBlockers);
   const rawBottlenecks = list(bottleneckReport.bottlenecks);
@@ -139,7 +185,7 @@ function buildChecklist({
   ];
 }
 
-function buildRunbook({ investmentRoot = defaultInvestmentRoot() } = {}) {
+function buildRunbook({ investmentRoot = defaultInvestmentRoot() }: { investmentRoot?: string } = {}) {
   const root = path.resolve(investmentRoot);
   return {
     finalClosureOnly: true,
@@ -169,7 +215,7 @@ function buildRunbook({ investmentRoot = defaultInvestmentRoot() } = {}) {
   };
 }
 
-export function buildLunaHybridFinalClosureReport(options = {}) {
+export function buildLunaHybridFinalClosureReport(options: FinalClosureOptions = {}) {
   const noExec = options.noExec === true;
   const phase11Report = options.phase11Report || {};
   const bottleneckReport = options.bottleneckReport || {};
