@@ -7,17 +7,19 @@ import { registerSkillHandler } from '../handlers/task-handler.ts';
 
 type HybridFinalClosureParams = {
   noExec?: boolean;
-  phase11Report?: unknown;
-  bottleneckReport?: unknown;
-  protectedPidStatus?: unknown;
+  phase11Report?: FinalClosureInput['phase11Report'];
+  bottleneckReport?: FinalClosureInput['bottleneckReport'];
+  protectedPidStatus?: FinalClosureInput['protectedPidStatus'];
   investmentRoot?: string;
   broadcast?: boolean;
 };
 
+type FinalClosureInput = NonNullable<Parameters<typeof buildLunaHybridFinalClosureReport>[0]>;
+
 type HybridFinalClosureOptions = {
-  phase11Report?: unknown;
-  bottleneckReport?: unknown;
-  protectedPidStatus?: unknown;
+  phase11Report?: FinalClosureInput['phase11Report'];
+  bottleneckReport?: FinalClosureInput['bottleneckReport'];
+  protectedPidStatus?: FinalClosureInput['protectedPidStatus'];
   investmentRoot?: string;
 };
 
