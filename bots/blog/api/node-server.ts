@@ -32,8 +32,51 @@ const { createRoiRouter } = require('./roi-dashboard.ts');
 
 const PORT = process.env.BLOG_API_PORT || 3100;
 const HOST = process.env.BLOG_API_HOST || '127.0.0.1';
+const LISTEN_RETRY_MS = Number(process.env.BLOG_NODE_SERVER_LISTEN_RETRY_MS || 1000);
+const LISTEN_MAX_RETRIES = Number(process.env.BLOG_NODE_SERVER_LISTEN_MAX_RETRIES || 5);
 const app = express();
 app.use(express.json());
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAddressInUseError(error: any) {
+  return error?.code === 'EADDRINUSE' && Number(error?.port) === Number(PORT);
+}
+
+function listenOnce() {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, HOST);
+    server.once('listening', () => {
+      console.log(`[노드서버] 블로그 노드 API 서버 기동 — ${HOST}:${PORT}`);
+      console.log(`  헬스체크: http://${HOST}:${PORT}/health`);
+      resolve(server);
+    });
+    server.once('error', reject);
+  });
+}
+
+async function listenWithPortRetry() {
+  for (let attempt = 0; attempt <= LISTEN_MAX_RETRIES; attempt += 1) {
+    try {
+      return await listenOnce();
+    } catch (error: any) {
+      if (!isAddressInUseError(error)) throw error;
+      if (attempt >= LISTEN_MAX_RETRIES) {
+        console.warn(
+          `[노드서버] ${HOST}:${PORT} 이미 사용 중 — 기존 node-server가 응답 중이면 중복 기동을 종료합니다.`,
+        );
+        process.exit(0);
+      }
+      console.warn(
+        `[노드서버] ${HOST}:${PORT} 사용 중 — 이전 인스턴스 종료 대기 후 재시도 (${attempt + 1}/${LISTEN_MAX_RETRIES})`,
+      );
+      await sleep(LISTEN_RETRY_MS);
+    }
+  }
+  return null;
+}
 
 function getRemoteIp(req: any) {
   return String(
@@ -60,10 +103,7 @@ async function bootstrap() {
     console.warn('[노드서버] RAG 스토어 스키마 초기화 실패 (무시):', e.message),
   );
 
-  app.listen(PORT, HOST, () => {
-    console.log(`[노드서버] 블로그 노드 API 서버 기동 — ${HOST}:${PORT}`);
-    console.log(`  헬스체크: http://${HOST}:${PORT}/health`);
-  });
+  await listenWithPortRetry();
 }
 
 app.get('/health', (_req: any, res: any) => {
