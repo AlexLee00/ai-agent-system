@@ -20,19 +20,73 @@ const {
 const TASK_TABLE = teamBus._testOnly.TASK_TABLE;
 const MESSAGE_TABLE = teamBus._testOnly.MESSAGE_TABLE;
 const INCIDENT_EVENT_TABLE = 'agent.jay_incident_events';
-let ensurePromise = null;
+type JsonObject = Record<string, unknown>;
 
-function normalizeText(value, fallback = '') {
+type CommanderTaskRow = JsonObject & {
+  id?: unknown;
+  incidentKey?: unknown;
+  incident_key?: unknown;
+  team?: unknown;
+  stepId?: unknown;
+  step_id?: unknown;
+  status?: unknown;
+  payload?: unknown;
+  externalRef?: unknown;
+  external_ref?: unknown;
+  attempts?: unknown;
+  lastError?: unknown;
+  last_error?: unknown;
+  createdAt?: unknown;
+  created_at?: unknown;
+  updatedAt?: unknown;
+  updated_at?: unknown;
+  completedAt?: unknown;
+  completed_at?: unknown;
+};
+
+type QueueCommanderInput = {
+  incidentKey?: string;
+  team?: string;
+  stepId?: string;
+  payload?: JsonObject;
+};
+
+type UpdateCommanderStatusInput = {
+  id?: string;
+  status?: string;
+  externalRef?: string | null;
+  lastError?: string | null;
+};
+
+type DispatcherOptions = {
+  maxRetry?: number;
+  timeoutMs?: number;
+  limit?: number;
+};
+
+type DispatcherAdapterResult = {
+  ok?: boolean;
+  error?: string;
+  status?: string;
+  commandId?: string;
+  result?: {
+    commandId?: string;
+  };
+};
+
+let ensurePromise: Promise<void> | null = null;
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeObject(value) {
+function normalizeObject(value: unknown): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value;
+  return value as JsonObject;
 }
 
-function parseBoolean(value, fallback = false) {
+function parseBoolean(value: unknown, fallback = false) {
   const text = normalizeText(value, fallback ? 'true' : 'false').toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
@@ -41,7 +95,7 @@ function makeId(prefix = 'jtask') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function isRetryableDispatcherError(errorCode) {
+function isRetryableDispatcherError(errorCode: unknown) {
   const code = normalizeText(errorCode, '').toLowerCase();
   return [
     'bot_command_timeout',
@@ -52,16 +106,16 @@ function isRetryableDispatcherError(errorCode) {
   ].includes(code);
 }
 
-function withTimeout(promise, timeoutMs, timeoutError = 'dispatcher_timeout') {
+function withTimeout(promise: Promise<DispatcherAdapterResult>, timeoutMs: number, timeoutError = 'dispatcher_timeout'): Promise<DispatcherAdapterResult> {
   return Promise.race([
     promise,
-    new Promise((resolve) => {
+    new Promise<DispatcherAdapterResult>((resolve) => {
       setTimeout(() => resolve({ ok: false, error: timeoutError }), timeoutMs);
     }),
   ]);
 }
 
-function rowToTask(row) {
+function rowToTask(row: CommanderTaskRow | null | undefined) {
   if (!row) return null;
   return {
     id: normalizeText(row.id),
@@ -99,7 +153,7 @@ async function ensureCommanderDispatchTables() {
   return ensurePromise;
 }
 
-async function appendIncidentEvent(incidentKey, eventType, payload = {}) {
+async function appendIncidentEvent(incidentKey: string, eventType: string, payload: JsonObject = {}) {
   if (!incidentKey) return;
   await ensureCommanderDispatchTables();
   await pgPool.run('agent', `
@@ -113,7 +167,7 @@ async function appendIncidentEvent(incidentKey, eventType, payload = {}) {
   ]);
 }
 
-async function queueCommanderTask(input) {
+async function queueCommanderTask(input: QueueCommanderInput) {
   await ensureCommanderDispatchTables();
   const incidentKey = normalizeText(input?.incidentKey);
   const team = normalizeText(input?.team, 'general').toLowerCase();
@@ -140,7 +194,7 @@ async function claimCommanderTasks(limit = 4) {
   return claimTeamTasks(limit);
 }
 
-async function updateCommanderTaskStatus(input) {
+async function updateCommanderTaskStatus(input: UpdateCommanderStatusInput) {
   await ensureCommanderDispatchTables();
   const taskId = normalizeText(input?.id);
   const status = normalizeStatus(input?.status, 'failed');
@@ -165,7 +219,7 @@ async function updateCommanderTaskStatus(input) {
   return { ok: true, task };
 }
 
-async function dispatchCommanderTask(task, options = {}) {
+async function dispatchCommanderTask(task: CommanderTaskRow, options: DispatcherOptions = {}) {
   const normalizedTask = rowToTask(task);
   if (!normalizedTask) return { ok: false, error: 'task_required' };
   const maxRetry = Math.max(1, Number(options.maxRetry || process.env.JAY_COMMANDER_MAX_RETRY || 3) || 3);
@@ -284,7 +338,7 @@ async function dispatchCommanderTask(task, options = {}) {
   return { ok: false, error: finalError, retrying, task: normalizedTask };
 }
 
-async function dispatchCommanderQueue(input = {}) {
+async function dispatchCommanderQueue(input: DispatcherOptions = {}) {
   const limit = Math.max(1, Number(input?.limit || 3) || 3);
   const tasks = await claimCommanderTasks(limit);
   const results = [];
