@@ -402,6 +402,53 @@ def float_env(name: str, default: float) -> float:
         return default
 
 
+def _param_signature(params: dict) -> str:
+    runtime_keys = {"portfolio_freq", "market_calendar"}
+    items = {key: value for key, value in (params or {}).items() if key not in runtime_keys}
+    return json.dumps(items, sort_keys=True, default=str)
+
+
+def select_consensus_params(fold_grids: list, folds_total: int):
+    """Select one cross-fold parameter set by median robustness minus dispersion."""
+    import statistics
+
+    penalty = float_env("LUNA_BT_CONSENSUS_STD_PENALTY", 0.5)
+    min_coverage = max(1, (folds_total + 1) // 2)
+    aggregate = {}
+
+    for grid in fold_grids:
+        for item in grid:
+            sig = _param_signature(item.get("params", {}))
+            rec = aggregate.setdefault(sig, {"scores": [], "params": item.get("params", {})})
+            rec["scores"].append(safe_float(item.get("robust_score", robust_rank_score(item)), 0.0))
+
+    best_sig = None
+    best_key = None
+    best_params = None
+    for sig, rec in aggregate.items():
+        scores = rec["scores"]
+        if len(scores) < min_coverage:
+            continue
+        median_score = statistics.median(scores)
+        std_score = statistics.pstdev(scores) if len(scores) >= 2 else 0.0
+        key = median_score - penalty * std_score
+        if best_key is None or key > best_key:
+            best_sig = sig
+            best_key = key
+            best_params = rec["params"]
+
+    return best_params, best_sig, best_key
+
+
+def _select_robust_from_grid(is_grid: list):
+    """Avoid a single lucky IS peak by selecting the median candidate in top-K."""
+    if not is_grid:
+        return None
+    top_k = min(len(is_grid), int_env("LUNA_BT_ROBUST_TOPK", 5))
+    top_grid = is_grid[:top_k]
+    return top_grid[len(top_grid) // 2]
+
+
 def clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 
@@ -626,7 +673,10 @@ def select_on_is_evaluate_on_oos(df, deps: dict):
     if not is_grid:
         return None
 
-    best_is = is_grid[0]
+    robust_on = bool_env("LUNA_BT_ROBUST_SELECTION_ENABLED", False)
+    best_is = _select_robust_from_grid(is_grid) if robust_on else is_grid[0]
+    if not best_is:
+        return None
     try:
         oos_result = run_backtest(oos_df, best_is['params'], deps)
     except Exception:
@@ -641,7 +691,11 @@ def select_on_is_evaluate_on_oos(df, deps: dict):
         n_grid_trials,
         len(oos_df),
         "is_oos_split",
-        {"is_bars": len(is_df), "oos_bars": len(oos_df)},
+        {
+            "is_bars": len(is_df),
+            "oos_bars": len(oos_df),
+            **({"selection_strategy": "split_robust"} if robust_on else {}),
+        },
         trial_sharpes=trial_sharpes,
     )
 
@@ -693,40 +747,99 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
     # 대표 trial SR 목록: 전체 fold의 valid grid trial SR을 fold 순으로 축적
     # (var_sharpe = selection bias 측정용, DSR Phase 1b 입력)
     all_trial_sharpes: list[float] = []
-    for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
-        train_df = df.iloc[train_start:train_end]
-        test_df = df.iloc[train_end:test_end]
-        grid = grid_search(train_df, deps)
-        if not grid:
-            continue
-        best_is = grid[0]
-        n_trials_fold = best_is.get("n_grid_trials", len(grid))
-        n_trials_max = max(n_trials_max, n_trials_fold)
-        # grid는 이미 error 제거 후 반환 — 전체 SR 수집 (var_sharpe 계산용)
-        all_trial_sharpes.extend(safe_float(r.get("sharpe_ratio"), 0.0) for r in grid)
-        try:
-            oos_raw = run_backtest(test_df, best_is["params"], deps)
-        except Exception as exc:
-            fold_raw.append({"fold": fold_index, "error": str(exc)})
-            continue
-        fold_raw.append({
-            "fold": fold_index,
-            "train_bars": len(train_df),
-            "test_bars": len(test_df),
-            "sharpe_oos_fold": safe_float(oos_raw.get("sharpe_ratio")),
-            "trades_fold": int(safe_float(oos_raw.get("total_trades"))),
-            "n_obs_fold": len(test_df),
-            "ret_fold": safe_float(oos_raw.get("total_return")),
-            "dd_fold": abs(safe_float(oos_raw.get("max_drawdown"))),
-            "win_fold": safe_float(oos_raw.get("win_rate")),
-            "pf_fold": safe_float(oos_raw.get("profit_factor")),
-            "sharpe_is_fold": safe_float(best_is.get("sharpe_ratio")),
-            "n_grid_trials_fold": n_trials_fold,
-            "params": best_is.get("params", {}),
-            # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
-            "oos_returns_skew": oos_raw.get("oos_returns_skew"),
-            "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
-        })
+    robust_on = bool_env("LUNA_BT_ROBUST_SELECTION_ENABLED", False)
+    consensus_sig = None
+    consensus_fold_coverage = None
+
+    if robust_on:
+        fold_grids = []
+        fold_windows_kept = []
+        for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
+            train_df = df.iloc[train_start:train_end]
+            grid = grid_search(train_df, deps)
+            if not grid:
+                continue
+            n_trials_fold = grid[0].get("n_grid_trials", len(grid))
+            n_trials_max = max(n_trials_max, n_trials_fold)
+            all_trial_sharpes.extend(safe_float(r.get("sharpe_ratio"), 0.0) for r in grid)
+            fold_grids.append(grid)
+            fold_windows_kept.append((fold_index, train_start, train_end, test_end, grid))
+
+        consensus_params, consensus_sig, _ = select_consensus_params(fold_grids, len(windows))
+        if not consensus_params or not consensus_sig:
+            return None
+        consensus_fold_coverage = sum(
+            1
+            for grid in fold_grids
+            if any(_param_signature(item.get("params", {})) == consensus_sig for item in grid)
+        )
+
+        for fold_index, train_start, train_end, test_end, grid in fold_windows_kept:
+            test_df = df.iloc[train_end:test_end]
+            is_entry = next(
+                (item for item in grid if _param_signature(item.get("params", {})) == consensus_sig),
+                None,
+            )
+            n_trials_fold = (is_entry or grid[0]).get("n_grid_trials", len(grid))
+            try:
+                oos_raw = run_backtest(test_df, consensus_params, deps)
+            except Exception as exc:
+                fold_raw.append({"fold": fold_index, "error": str(exc)})
+                continue
+            fold_raw.append({
+                "fold": fold_index,
+                "train_bars": train_end - train_start,
+                "test_bars": len(test_df),
+                "sharpe_oos_fold": safe_float(oos_raw.get("sharpe_ratio")),
+                "trades_fold": int(safe_float(oos_raw.get("total_trades"))),
+                "n_obs_fold": len(test_df),
+                "ret_fold": safe_float(oos_raw.get("total_return")),
+                "dd_fold": abs(safe_float(oos_raw.get("max_drawdown"))),
+                "win_fold": safe_float(oos_raw.get("win_rate")),
+                "pf_fold": safe_float(oos_raw.get("profit_factor")),
+                "sharpe_is_fold": safe_float((is_entry or {}).get("sharpe_ratio")),
+                "n_grid_trials_fold": n_trials_fold,
+                "params": consensus_params,
+                "consensus_param_signature": consensus_sig,
+                # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
+                "oos_returns_skew": oos_raw.get("oos_returns_skew"),
+                "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
+            })
+    else:
+        for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
+            train_df = df.iloc[train_start:train_end]
+            test_df = df.iloc[train_end:test_end]
+            grid = grid_search(train_df, deps)
+            if not grid:
+                continue
+            best_is = grid[0]
+            n_trials_fold = best_is.get("n_grid_trials", len(grid))
+            n_trials_max = max(n_trials_max, n_trials_fold)
+            # grid는 이미 error 제거 후 반환 — 전체 SR 수집 (var_sharpe 계산용)
+            all_trial_sharpes.extend(safe_float(r.get("sharpe_ratio"), 0.0) for r in grid)
+            try:
+                oos_raw = run_backtest(test_df, best_is["params"], deps)
+            except Exception as exc:
+                fold_raw.append({"fold": fold_index, "error": str(exc)})
+                continue
+            fold_raw.append({
+                "fold": fold_index,
+                "train_bars": len(train_df),
+                "test_bars": len(test_df),
+                "sharpe_oos_fold": safe_float(oos_raw.get("sharpe_ratio")),
+                "trades_fold": int(safe_float(oos_raw.get("total_trades"))),
+                "n_obs_fold": len(test_df),
+                "ret_fold": safe_float(oos_raw.get("total_return")),
+                "dd_fold": abs(safe_float(oos_raw.get("max_drawdown"))),
+                "win_fold": safe_float(oos_raw.get("win_rate")),
+                "pf_fold": safe_float(oos_raw.get("profit_factor")),
+                "sharpe_is_fold": safe_float(best_is.get("sharpe_ratio")),
+                "n_grid_trials_fold": n_trials_fold,
+                "params": best_is.get("params", {}),
+                # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
+                "oos_returns_skew": oos_raw.get("oos_returns_skew"),
+                "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
+            })
 
     usable = [f for f in fold_raw if "error" not in f]
     if not usable:
@@ -853,6 +966,12 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
         "sr_oos_unann": wf_sr_oos_unann,
         "periods_per_year": wf_ppy,
     }
+    if robust_on:
+        aggregate.update({
+            "selection_strategy": "consensus",
+            "consensus_fold_coverage": consensus_fold_coverage,
+            "consensus_param_signature": consensus_sig,
+        })
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate
 
@@ -860,14 +979,15 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
 def build_grid_params() -> list[dict]:
     """백테스트 파라미터 그리드. grid_search와 CPCV/PBO가 동일 그리드를 공유한다."""
     params_list: list[dict] = []
-    rsi_periods = [10, 14, 20]
+    coarse = bool_env("LUNA_BT_GRID_COARSE", False)
+    rsi_periods = [14, 20] if coarse else [10, 14, 20]
     macd_configs = [
         {"macd_fast": 12, "macd_slow": 26, "macd_signal": 9},
         {"macd_fast": 8, "macd_slow": 21, "macd_signal": 5},
         {"macd_fast": 5, "macd_slow": 13, "macd_signal": 3},
     ]
-    sl_pcts = [0.02, 0.03, 0.05]
-    tp_pcts = [0.04, 0.06, 0.08]
+    sl_pcts = [0.03, 0.05] if coarse else [0.02, 0.03, 0.05]
+    tp_pcts = [0.06, 0.08] if coarse else [0.04, 0.06, 0.08]
 
     for rsi_period in rsi_periods:
         for macd_cfg in macd_configs:
@@ -893,7 +1013,8 @@ def build_grid_params() -> list[dict]:
             {"rsi_min": 38, "rsi_max": 70},
             {"rsi_min": 45, "rsi_max": 78},
         ]:
-            for sl_pct, tp_pct in [(0.025, 0.05), (0.035, 0.075), (0.05, 0.10)]:
+            trend_pairs = [(0.035, 0.075), (0.05, 0.10)] if coarse else [(0.025, 0.05), (0.035, 0.075), (0.05, 0.10)]
+            for sl_pct, tp_pct in trend_pairs:
                 params = {
                     "strategy": "ema_trend_pullback",
                     "rsi_period": 14,
@@ -907,7 +1028,8 @@ def build_grid_params() -> list[dict]:
 
     for breakout_window in [24, 48, 96]:
         for volume_mult in [1.0, 1.25]:
-            for sl_pct, tp_pct in [(0.025, 0.05), (0.04, 0.08), (0.06, 0.12)]:
+            breakout_pairs = [(0.04, 0.08), (0.06, 0.12)] if coarse else [(0.025, 0.05), (0.04, 0.08), (0.06, 0.12)]
+            for sl_pct, tp_pct in breakout_pairs:
                 params = {
                     "strategy": "breakout_momentum",
                     "breakout_window": breakout_window,
@@ -920,7 +1042,8 @@ def build_grid_params() -> list[dict]:
 
     for bb_window in [20, 40]:
         for rsi_oversold in [28, 34]:
-            for sl_pct, tp_pct in [(0.02, 0.04), (0.03, 0.06), (0.05, 0.09)]:
+            bb_pairs = [(0.03, 0.06), (0.05, 0.09)] if coarse else [(0.02, 0.04), (0.03, 0.06), (0.05, 0.09)]
+            for sl_pct, tp_pct in bb_pairs:
                 params = {
                     "strategy": "bollinger_mean_reversion",
                     "bb_window": bb_window,
