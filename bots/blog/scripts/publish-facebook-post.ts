@@ -5,7 +5,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { publishFacebookPost } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   const args = {
     dryRun: false,
     json: false,

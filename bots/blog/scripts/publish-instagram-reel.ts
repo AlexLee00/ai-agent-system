@@ -7,23 +7,20 @@ const { publishInstagramReel, buildHostedVideoUrl } = require(path.join(env.PROJ
 const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 const { parseInstagramAuthError } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts'));
 
-/**
- * @typedef {{
- *   dryRun: boolean,
- *   json: boolean,
- *   video?: string,
- *   caption?: string,
- * }} PublishInstagramArgs
- */
+type PublishInstagramArgs = {
+  dryRun: boolean;
+  json: boolean;
+  video?: string;
+  caption?: string;
+};
 
-/** @returns {PublishInstagramArgs} */
-function parseArgs(argv = []) {
-  const args = /** @type {PublishInstagramArgs} */ ({
+function parseArgs(argv: string[] = []) {
+  const args: PublishInstagramArgs = {
     dryRun: false,
     json: false,
     video: undefined,
     caption: undefined,
-  });
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--dry-run') args.dryRun = true;
