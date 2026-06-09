@@ -18,8 +18,6 @@
  * 환경변수 ALARM_CYCLE_SMOKE_REAL_DB=true 시 실제 PG 사용.
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
 const path = require('path');
 const fs = require('fs');
 const env = require('../../../packages/core/lib/env');

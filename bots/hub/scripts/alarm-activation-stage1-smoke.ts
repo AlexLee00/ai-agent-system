@@ -10,7 +10,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const alarmRouteModule = require('../lib/routes/alarm.ts');
 const { isCriticalTypeEnabled } = require('../lib/alarm/classify-alarm-llm.ts');
@@ -26,7 +25,7 @@ const {
   _testOnly_resetAlarmEventLakeMocks,
 } = alarmRouteModule;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const scriptDir = __dirname;
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(`[stage1-smoke] ${message}`);
@@ -65,7 +64,7 @@ async function withEnv<T>(patch: Record<string, string | undefined>, fn: () => P
 }
 
 function assertRepoPlistStage1(): void {
-  const plistPath = path.resolve(__dirname, '../launchd/ai.hub.resource-api.plist');
+  const plistPath = path.resolve(scriptDir, '../launchd/ai.hub.resource-api.plist');
   const text = fs.readFileSync(plistPath, 'utf8');
   const requiredPairs = [
     ['HUB_ALARM_LLM_CLASSIFIER_ENABLED', 'true'],
@@ -94,7 +93,7 @@ function assertRepoPlistStage1(): void {
 }
 
 function assertMigrationCoversTables(): void {
-  const migrationPath = path.resolve(__dirname, '../migrations/20261001000050_hub_alarm_tables.sql');
+  const migrationPath = path.resolve(scriptDir, '../migrations/20261001000050_hub_alarm_tables.sql');
   const text = fs.readFileSync(migrationPath, 'utf8');
   for (const table of ['hub_alarm_classifications', 'hub_alarms', 'alarm_roundtables']) {
     assert(text.includes(`agent.${table}`), `migration missing agent.${table}`);

@@ -3,7 +3,6 @@
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 type TestTarget = 'all' | 'secrets-meta' | 'unit' | 'runtime' | 'runtime-live';
 type Step = {
@@ -293,7 +292,7 @@ function runRuntime(scriptDir: string, hubRoot: string, tsxBin: string): void {
 }
 
 function main(): void {
-  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const scriptDir = __dirname;
   const hubRoot = path.resolve(scriptDir, '..');
   const repoRoot = path.resolve(hubRoot, '..', '..');
   const jestBin = path.join(repoRoot, 'node_modules', '.bin', 'jest');

@@ -44,11 +44,10 @@ function main() {
 
   console.log(JSON.stringify({
     ok: true,
-    blocked: filtered.blocked.map((item) => item.key).sort(),
+    blocked: filtered.blocked.map((item: { key: string }) => item.key).sort(),
     safe_env_passthrough: true,
     auto_dev_child_env_guarded: true,
   }));
 }
 
 main();
-
