@@ -636,7 +636,7 @@ export async function sendFromHubAlarm(team: string, message: string, options: S
   return false;
 }
 
-async function sendBuffered(team: string, message: string): Promise<boolean> {
+export async function sendBuffered(team: string, message: string): Promise<boolean> {
   if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
   const deliveryTeam = _resolveDeliveryTeam(team, normalized, _isUrgent(normalized));
@@ -668,7 +668,7 @@ async function sendBuffered(team: string, message: string): Promise<boolean> {
   return false;
 }
 
-async function sendWithOptions(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
+export async function sendWithOptions(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
   if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
   const deliveryTeam = _resolveDeliveryTeam(team, normalized, _isUrgent(normalized));
