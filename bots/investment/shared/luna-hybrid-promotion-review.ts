@@ -8,19 +8,70 @@ export const LUNA_HYBRID_PHASE11 = 'phase11_hybrid_promotion_review';
 export const PHASE11_RUNTIME_COMMAND = 'runtime:luna-hybrid-promotion-review';
 export const PHASE11_A2A_SKILL = 'hybrid-promotion-review';
 
+type QueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
+type GateReport = Awaited<ReturnType<typeof buildLunaHybridPromotionGateReport>>;
+
+type EvidenceCheck = {
+  phase?: number;
+  name?: string;
+  status?: string;
+  count?: number | null;
+  latestAt?: unknown;
+  ok?: boolean;
+};
+
+type BridgeRow = {
+  bridge_status?: string;
+  count?: number;
+  latest_at?: unknown;
+  items?: unknown;
+};
+
+type BridgeStatus = {
+  ok: boolean;
+  status: string;
+  checked: boolean;
+  pendingApproval: number;
+  latestAt: unknown;
+  rows: BridgeRow[];
+  warning?: string;
+};
+
+type ChecklistItem = {
+  name: string;
+  ok: boolean;
+  detail: string;
+};
+
+type ReviewChecklistOptions = {
+  dataRequired?: boolean;
+  promotionEntryTriggerBridge?: BridgeStatus;
+};
+
+type RunbookOptions = {
+  investmentRoot?: string;
+};
+
+type ReviewReportOptions = RunbookOptions & {
+  projectRoot?: string;
+  hours?: number;
+  dataRequired?: boolean;
+  queryFn?: QueryFn;
+};
+
 function defaultInvestmentRoot() {
   return path.resolve(import.meta.dirname, '..');
 }
 
-function reviewCommand(script, args = '-- --json', investmentRoot = defaultInvestmentRoot()) {
+function reviewCommand(script: string, args = '-- --json', investmentRoot = defaultInvestmentRoot()) {
   return `npm --prefix ${investmentRoot} run -s ${script} ${args}`;
 }
 
-function phaseEvidenceSummary(gateReport = {}) {
+function phaseEvidenceSummary(gateReport: GateReport) {
   const checks = gateReport.evidenceChecks || [];
   return checks
-    .filter((item) => Number(item.phase || 0) >= 1 && Number(item.phase || 0) <= 8)
-    .map((item) => ({
+    .filter((item: EvidenceCheck) => Number(item.phase || 0) >= 1 && Number(item.phase || 0) <= 8)
+    .map((item: EvidenceCheck) => ({
       phase: item.phase,
       name: item.name,
       status: item.status,
@@ -30,7 +81,7 @@ function phaseEvidenceSummary(gateReport = {}) {
     }));
 }
 
-function bridgeReviewDetail(bridge = {}, dataRequired = true) {
+function bridgeReviewDetail(bridge: BridgeStatus, dataRequired = true) {
   if (!dataRequired) return 'skipped in contract-only no-db mode';
   if (bridge.ok === false) {
     return `promotion entry-trigger bridge check failed: ${bridge.warning || bridge.status || 'unknown_error'}`;
@@ -44,9 +95,16 @@ function bridgeReviewDetail(bridge = {}, dataRequired = true) {
     : 'no pending promotion-to-entry-trigger bridge items';
 }
 
-function buildReviewChecklist(gateReport = {}, options = {}) {
+function buildReviewChecklist(gateReport: GateReport, options: ReviewChecklistOptions = {}): ChecklistItem[] {
   const dataRequired = options.dataRequired !== false;
-  const bridge = options.promotionEntryTriggerBridge || {};
+  const bridge = options.promotionEntryTriggerBridge || {
+    ok: false,
+    status: 'promotion_entry_trigger_bridge_not_checked',
+    checked: false,
+    pendingApproval: 0,
+    latestAt: null,
+    rows: [],
+  };
   const bridgeReviewOk = !dataRequired || (bridge.ok !== false && bridge.checked !== false);
   const evidence = phaseEvidenceSummary(gateReport);
   return [
@@ -92,8 +150,9 @@ function buildReviewChecklist(gateReport = {}, options = {}) {
   ];
 }
 
-function buildRunbook(gateReport = {}, options = {}) {
+function buildRunbook(gateReport: GateReport, options: RunbookOptions = {}) {
   const investmentRoot = path.resolve(options.investmentRoot || defaultInvestmentRoot());
+  const extendedGateReport = gateReport as GateReport & { rollbackCommand?: string };
   return {
     reviewOnly: true,
     liveMutationAllowed: false,
@@ -117,7 +176,7 @@ function buildRunbook(gateReport = {}, options = {}) {
       'secret changes',
       'protected PID restart/kill/unload',
     ],
-    rollbackCommand: gateReport.rollbackCommand
+    rollbackCommand: extendedGateReport.rollbackCommand
       || 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false',
     nextAction: gateReport.manualPromotionReviewCandidate
       ? 'master_review_required_before_any_live_promotion'
@@ -125,7 +184,7 @@ function buildRunbook(gateReport = {}, options = {}) {
   };
 }
 
-async function loadPromotionEntryTriggerBridgeStatus({ queryFn = null, hours = 168 } = {}) {
+async function loadPromotionEntryTriggerBridgeStatus({ queryFn, hours = 168 }: { queryFn?: QueryFn; hours?: number } = {}): Promise<BridgeStatus> {
   if (!queryFn) {
     return {
       ok: false,
@@ -137,9 +196,9 @@ async function loadPromotionEntryTriggerBridgeStatus({ queryFn = null, hours = 1
       warning: 'queryFn unavailable; run without --no-db to check promotion entry-trigger bridge status',
     };
   }
-  let rows = [];
+  let rows: BridgeRow[] = [];
   try {
-    rows = await Promise.resolve(queryFn(`
+    const queryRows = await Promise.resolve(queryFn(`
       SELECT bridge_status,
              COUNT(*)::int AS count,
              MAX(updated_at) AS latest_at,
@@ -162,6 +221,7 @@ async function loadPromotionEntryTriggerBridgeStatus({ queryFn = null, hours = 1
        GROUP BY bridge_status
        ORDER BY latest_at DESC
     `, [Math.max(1, Number(hours || 168))]));
+    rows = Array.isArray(queryRows) ? queryRows as BridgeRow[] : [];
   } catch (error) {
     const warning = error instanceof Error ? error.message : String(error);
     return {
@@ -175,10 +235,10 @@ async function loadPromotionEntryTriggerBridgeStatus({ queryFn = null, hours = 1
     };
   }
   const pending = (rows || [])
-    .filter((row) => String(row.bridge_status || '') === 'shadow_bridge_pending_approval')
-    .reduce((sum, row) => sum + Number(row.count || 0), 0);
+    .filter((row: BridgeRow) => String(row.bridge_status || '') === 'shadow_bridge_pending_approval')
+    .reduce((sum: number, row: BridgeRow) => sum + Number(row.count || 0), 0);
   const latestAt = (rows || [])
-    .map((row) => row.latest_at)
+    .map((row: BridgeRow) => row.latest_at)
     .filter(Boolean)
     .sort()
     .at(-1) || null;
@@ -194,7 +254,7 @@ async function loadPromotionEntryTriggerBridgeStatus({ queryFn = null, hours = 1
   };
 }
 
-export async function buildLunaHybridPromotionReviewReport(options = {}) {
+export async function buildLunaHybridPromotionReviewReport(options: ReviewReportOptions = {}) {
   const hours = Math.max(1, Number(options.hours || 168));
   const gateReport = await buildLunaHybridPromotionGateReport({
     queryFn: options.queryFn,
