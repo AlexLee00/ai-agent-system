@@ -33,7 +33,9 @@ console.log(JSON.stringify({
   process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED = 'false';
 
   try {
-    const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
+    const { callWithFallback } = require('../lib/llm/unified-caller.ts') as {
+      callWithFallback: (request: Record<string, unknown>) => Promise<any>;
+    };
     const result = await callWithFallback({
       callerTeam: 'hub',
       agent: 'gemini-cli-readiness',

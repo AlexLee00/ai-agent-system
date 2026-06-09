@@ -70,7 +70,9 @@ async function main() {
   }) as typeof fetch;
 
   try {
-    const { callGeminiCodeAssistOAuth } = await import('../lib/llm/oauth-direct.ts');
+    const { callGeminiCodeAssistOAuth } = require('../lib/llm/oauth-direct.ts') as {
+      callGeminiCodeAssistOAuth: (request: Record<string, unknown>) => Promise<any>;
+    };
     const result = await callGeminiCodeAssistOAuth({
       model: 'gemini-codeassist-oauth/gemini-2.5-pro',
       maxTokens: 32,

@@ -8,7 +8,10 @@
 
 import { callClaudeCodeOAuth } from '../lib/llm/claude-code-oauth';
 import { callGroqFallback } from '../lib/llm/groq-fallback';
-import { callWithFallback } from '../lib/llm/unified-caller';
+
+const { callWithFallback } = require('../lib/llm/unified-caller.ts') as {
+  callWithFallback: (request: Record<string, unknown>) => Promise<any>;
+};
 
 async function main() {
   console.log('🧪 Claude Code OAuth + Groq 통합 테스트\n');

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import env from '../../../packages/core/lib/env.legacy.js';
+import { PROJECT_ROOT } from '../../../packages/core/lib/env.ts';
 
-const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const STORE_PATH = path.join(PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
 type Args = {
   owner: string;

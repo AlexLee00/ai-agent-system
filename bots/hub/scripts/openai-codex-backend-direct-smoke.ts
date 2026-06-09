@@ -71,7 +71,9 @@ async function main() {
   }) as typeof fetch;
 
   try {
-    const { callOpenAiCodexOAuth } = await import('../lib/llm/oauth-direct.ts');
+    const { callOpenAiCodexOAuth } = require('../lib/llm/oauth-direct.ts') as {
+      callOpenAiCodexOAuth: (request: Record<string, unknown>) => Promise<any>;
+    };
     const result = await callOpenAiCodexOAuth({
       model: 'gpt-5.4',
       maxTokens: 32,
