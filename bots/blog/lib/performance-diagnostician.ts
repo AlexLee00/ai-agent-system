@@ -7,7 +7,63 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const BLOG_OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 
-function safeReadDir(dirPath) {
+type OutputPost = {
+  dateString: string;
+  postType: string;
+  category: string;
+  title: string;
+  filename: string;
+};
+
+type CountEntry = {
+  key: string;
+  count: number;
+};
+
+type ExecutionRow = {
+  variations?: {
+    greetingStyle?: string;
+    cafePosition?: string;
+    listStyle?: string;
+  };
+};
+
+type CategoryPatternHotspot = {
+  category: string;
+  total: number;
+  topPattern: string | null;
+  topCount: number;
+  topRatio: number;
+  patterns: CountEntry[];
+};
+
+type VariationStats = {
+  greeting: CountEntry[];
+  cafePosition: CountEntry[];
+  listStyle: CountEntry[];
+};
+
+type Weakness = {
+  code: string;
+  message: string;
+  category?: string;
+  pattern?: string | null;
+  ratio?: number;
+};
+
+type DiagnosisInput = {
+  categoryStats: CountEntry[];
+  patternStats: CountEntry[];
+  categoryPatternHotspots: CategoryPatternHotspot[];
+  posts: OutputPost[];
+};
+
+type RecommendationInput = DiagnosisInput & {
+  variationStats: VariationStats;
+  weakness: Weakness;
+};
+
+function safeReadDir(dirPath: string): string[] {
   try {
     return fs.readdirSync(dirPath);
   } catch {
@@ -43,7 +99,7 @@ function parseOutputFilename(filename = '') {
   return null;
 }
 
-function isWithinDays(dateString, days = 7) {
+function isWithinDays(dateString: string, days = 7) {
   if (!dateString) return false;
   const target = new Date(`${dateString}T00:00:00+09:00`);
   if (Number.isNaN(target.getTime())) return false;
@@ -63,8 +119,8 @@ function detectTitlePattern(title = '') {
   return 'default';
 }
 
-function groupCount(items = [], getKey = (item) => item) {
-  const map = new Map();
+function groupCount<T>(items: T[] = [], getKey: (item: T) => string | undefined = (item) => String(item)) {
+  const map = new Map<string, number>();
   for (const item of items) {
     const key = getKey(item);
     if (!key) continue;
@@ -89,34 +145,35 @@ async function getRecentExecutionRows(days = 7) {
   }
 }
 
-function getRecentOutputPosts(days = 7) {
+function getRecentOutputPosts(days = 7): OutputPost[] {
   return safeReadDir(BLOG_OUTPUT_DIR)
     .map(parseOutputFilename)
-    .filter(Boolean)
+    .filter((post: OutputPost | null): post is OutputPost => Boolean(post))
     .filter((post) => isWithinDays(post.dateString, days))
     .sort((a, b) => String(b.dateString).localeCompare(String(a.dateString)));
 }
 
-function summarizeCategoryPerformance(posts = []) {
+function summarizeCategoryPerformance(posts: OutputPost[] = []) {
   return groupCount(
     posts.filter((post) => post.postType === 'general'),
     (post) => post.category
   );
 }
 
-function summarizeTitlePatterns(posts = []) {
+function summarizeTitlePatterns(posts: OutputPost[] = []) {
   return groupCount(posts, (post) => detectTitlePattern(post.title));
 }
 
-function summarizeCategoryPatternHotspots(posts = []) {
+function summarizeCategoryPatternHotspots(posts: OutputPost[] = []) {
   const generalPosts = posts.filter((post) => post.postType === 'general');
-  const grouped = new Map();
+  const grouped = new Map<string, string[]>();
 
   for (const post of generalPosts) {
     const category = post.category || 'unknown';
     const pattern = detectTitlePattern(post.title);
-    if (!grouped.has(category)) grouped.set(category, []);
-    grouped.get(category).push(pattern);
+    const patterns = grouped.get(category) || [];
+    patterns.push(pattern);
+    grouped.set(category, patterns);
   }
 
   return [...grouped.entries()]
@@ -139,7 +196,7 @@ function summarizeCategoryPatternHotspots(posts = []) {
     });
 }
 
-function summarizeVariationUsage(rows = []) {
+function summarizeVariationUsage(rows: ExecutionRow[] = []): VariationStats {
   return {
     greeting: groupCount(rows, (row) => row?.variations?.greetingStyle),
     cafePosition: groupCount(rows, (row) => row?.variations?.cafePosition),
@@ -147,7 +204,7 @@ function summarizeVariationUsage(rows = []) {
   };
 }
 
-function identifyPrimaryWeakness({ categoryStats, patternStats, categoryPatternHotspots, posts }) {
+function identifyPrimaryWeakness({ categoryStats, patternStats, categoryPatternHotspots, posts }: DiagnosisInput): Weakness {
   const generalPosts = posts.filter((post) => post.postType === 'general');
   if (generalPosts.length >= 3 && categoryStats[0] && (categoryStats[0].count / generalPosts.length) >= 0.6) {
     return {
@@ -187,8 +244,8 @@ function identifyPrimaryWeakness({ categoryStats, patternStats, categoryPatternH
   };
 }
 
-function buildRecommendations({ categoryStats, patternStats, categoryPatternHotspots, variationStats, weakness }) {
-  const recommendations = [];
+function buildRecommendations({ categoryStats, patternStats, categoryPatternHotspots, variationStats, weakness }: RecommendationInput) {
+  const recommendations: string[] = [];
 
   if (weakness.code === 'category_bias' && categoryStats[0]) {
     recommendations.push(`다음 주 일반 글은 ${categoryStats[0].key} 외 카테고리를 1편 이상 우선 배정하세요.`);
@@ -237,6 +294,7 @@ async function diagnoseWeeklyPerformance(days = 7) {
     categoryStats,
     patternStats,
     categoryPatternHotspots,
+    posts,
     variationStats,
     weakness,
   });
