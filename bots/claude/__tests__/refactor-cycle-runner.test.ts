@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RUNNER_PATH = path.resolve(__dirname, '../scripts/refactor-cycle-runner.ts');
+const NODE_CHECK_HOOK_PATH = path.resolve(__dirname, '../hooks/refactor-hooks/node-check-hook.ts');
 const BUILDER_PATH = path.resolve(__dirname, '../src/builder.ts');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const ACTIVE_TARGET = 'bots/claude/lib/agent-heartbeat.ts';
@@ -1996,6 +1997,132 @@ async function test_autofix_fixer_prompt_includes_prior_failure_section() {
   console.log('✅ refactor-cycle: fixer prompt includes prior failure advisory section');
 }
 
+async function test_node_check_hook_passes_and_fails_raw_node_syntax() {
+  delete require.cache[NODE_CHECK_HOOK_PATH];
+  const { runNodeCheckHook } = require(NODE_CHECK_HOOK_PATH);
+  resetTargetedTypecheckTmp();
+  const clean = writeTmpTsFile('node-check-clean.ts', [
+    '#!/usr/bin/env node',
+    "'use strict';",
+    'function main(name = "") { return name; }',
+    'module.exports = { main };',
+    '',
+  ].join('\n'));
+  const bad = writeTmpTsFile('node-check-bad.ts', [
+    '#!/usr/bin/env node',
+    "'use strict';",
+    'function main(name: string) { return name; }',
+    'module.exports = { main };',
+    '',
+  ].join('\n'));
+  const regularModule = writeTmpTsFile('node-check-regular-module.ts', [
+    'export interface RegularModule { name: string }',
+    'export function getName(input: RegularModule): string { return input.name; }',
+    '',
+  ].join('\n'));
+  try {
+    const cleanResult = runNodeCheckHook(clean, PROJECT_ROOT);
+    assert.strictEqual(cleanResult.pass, true);
+    const badResult = runNodeCheckHook(bad, PROJECT_ROOT);
+    assert.strictEqual(badResult.pass, false);
+    assert.match(badResult.error, /Unexpected token|SyntaxError|type/i);
+    const regularResult = runNodeCheckHook(regularModule, PROJECT_ROOT);
+    assert.strictEqual(regularResult.pass, true);
+    assert.strictEqual(regularResult.skipped, true);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ refactor-cycle: node-check hook checks raw Node files and skips regular TS modules');
+}
+
+async function test_active_node_check_failure_defers_before_apply() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const targetDir = 'bots/claude/__tests__/tmp-refactor-node-check';
+  const absDir = path.join(PROJECT_ROOT, targetDir);
+  const target = `${targetDir}/bad-node-script.ts`;
+  fs.rmSync(absDir, { recursive: true, force: true });
+  fs.mkdirSync(absDir, { recursive: true });
+  fs.writeFileSync(path.join(PROJECT_ROOT, target), [
+    '#!/usr/bin/env node',
+    '// @ts-nocheck',
+    "'use strict';",
+    'function hasFlag(name: string) { return process.argv.includes(`--${name}`); }',
+    'module.exports = { hasFlag };',
+    '',
+  ].join('\n'), 'utf8');
+  const before = targetContent(target);
+  const commits = [];
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target: targetDir,
+      dryRun: false,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      applyEnabled: true,
+      gitStatusShortFn: () => '',
+      builderModule: {
+        async runTargetedTypeCheck(files, options) {
+          assert.deepStrictEqual(files, [target]);
+          assert.deepStrictEqual(options.files, [target]);
+          return { pass: true, skipped: false, results: [{ pass: true, skipped: false }] };
+        },
+      },
+      reviewerModule: {
+        async runReview(options) {
+          assert.deepStrictEqual(options.files, [target]);
+          return { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [], sent: false };
+        },
+      },
+      strictCheckFn: async () => strictPass(),
+      commitFileFn: async (file) => {
+        commits.push(file);
+        return 'mock-commit';
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.results[0].stage, 'active_deferred');
+    assert.strictEqual(result.active.results[0].verify.nodeCheckPass, false);
+    assert.match(result.active.results[0].errorSummary, /node_check_pass=false/);
+    assert.deepStrictEqual(commits, []);
+    assert.strictEqual(targetContent(target), before);
+  } finally {
+    cleanupRefactorArtifacts(result);
+    fs.rmSync(absDir, { recursive: true, force: true });
+  }
+  console.log('✅ refactor-cycle: node-check failure defers and prevents apply');
+}
+
+async function test_autofix_prompt_for_node_executable_requires_jsdoc() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    '#!/usr/bin/env node',
+    "'use strict';",
+    'function hasFlag(name) { return process.argv.includes(`--${name}`); }',
+    '',
+  ].join('\n');
+  const prompt = runner.buildFixerPrompt({
+    fileRel: 'bots/claude/scripts/example.ts',
+    currentContent,
+    builderError: 'TS7006',
+    reviewerFindings: [],
+    priorErrors: [],
+    attempt: 1,
+  });
+  const systemPrompt = runner.buildFixerSystemPrompt({ nodeExecutable: true });
+  assert.match(prompt, /node_executable: true/);
+  assert.match(prompt, /JSDoc only/i);
+  assert.match(systemPrompt, /raw Node/);
+  assert.match(systemPrompt, /Never add inline TypeScript type annotations/);
+  console.log('✅ refactor-cycle: node executable autofix prompt requires JSDoc');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -2153,6 +2280,9 @@ async function main() {
     test_autofix_prior_errors_are_passed_to_fixer,
     test_autofix_empty_vault_feedback_passes_empty_prior_errors,
     test_autofix_fixer_prompt_includes_prior_failure_section,
+    test_node_check_hook_passes_and_fails_raw_node_syntax,
+    test_active_node_check_failure_defers_before_apply,
+    test_autofix_prompt_for_node_executable_requires_jsdoc,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

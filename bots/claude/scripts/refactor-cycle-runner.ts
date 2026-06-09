@@ -382,7 +382,70 @@ function reviewerHighFindings(verify) {
     .slice(0, 20);
 }
 
-function buildFixerSystemPrompt() {
+function isNodeExecutableContent(content) {
+  const firstLine = String(content || '').split(/\r?\n/, 1)[0] || '';
+  return /^#!.*\bnode\b/.test(firstLine)
+    || /\brequire\s*\(/.test(content)
+    || /\bmodule\.exports\b/.test(content)
+    || /\bexports\./.test(content);
+}
+
+function isNodeExecutableFile(fileRel, content) {
+  return String(fileRel || '').endsWith('.ts') && isNodeExecutableContent(String(content || ''));
+}
+
+function runNodeCheckForFile(fileRel) {
+  const absPath = path.resolve(ROOT, fileRel);
+  try {
+    execFileSync(process.execPath, ['--check', absPath], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 30000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { pass: true, skipped: false, message: 'node --check pass', error: null };
+  } catch (error) {
+    return {
+      pass: false,
+      skipped: false,
+      message: 'node --check failed',
+      error: String(error?.stderr || error?.stdout || error?.message || error).slice(0, 6000),
+    };
+  }
+}
+
+function runNodeCheckGate(changedFiles) {
+  const results = [];
+  for (const fileRel of changedFiles || []) {
+    const absPath = path.resolve(ROOT, fileRel);
+    if (!fs.existsSync(absPath)) continue;
+    const content = fs.readFileSync(absPath, 'utf8');
+    if (!isNodeExecutableFile(fileRel, content)) {
+      results.push({ file: fileRel, pass: true, skipped: true, message: 'not_node_executable' });
+      continue;
+    }
+    results.push({ file: fileRel, ...runNodeCheckForFile(fileRel) });
+  }
+  const failed = results.filter((item) => item.skipped !== true && item.pass !== true);
+  return {
+    pass: failed.length === 0,
+    failed,
+    results,
+    message: failed.length === 0 ? 'node-check pass' : 'node-check failed',
+  };
+}
+
+function nodeExecutableAutofixInstruction(nodeExecutable) {
+  if (!nodeExecutable) return null;
+  return [
+    'This file is executed or checked by raw Node.',
+    'Never add inline TypeScript type annotations such as `x: Type`, `): Type`, `as Type`, or interface/type declarations that raw Node cannot parse.',
+    'Use JSDoc only for types, for example `/** @param {string} name */` and `/** @returns {boolean} */`.',
+    'The revised file must pass `node --check` as well as TypeScript verification.',
+  ].join(' ');
+}
+
+function buildFixerSystemPrompt(options = {}) {
   return [
     'You are Claude team refactorer code fixer.',
     'Fix TypeScript type errors exposed by removing // @ts-nocheck.',
@@ -391,13 +454,15 @@ function buildFixerSystemPrompt() {
     'Make the smallest change required for tsc/reviewer to pass.',
     'Do not add features, change runtime behavior, or edit unrelated code.',
     'Do not reinsert @ts-nocheck.',
+    nodeExecutableAutofixInstruction(options.nodeExecutable),
   ].join(' ');
 }
 
-function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }) {
+function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt, nodeExecutable = isNodeExecutableFile(fileRel, currentContent) }) {
   return [
     `file: ${fileRel}`,
     `attempt: ${attempt}`,
+    nodeExecutable ? 'node_executable: true — use JSDoc only; inline TypeScript syntax is forbidden because raw Node must parse this file.' : 'node_executable: false',
     '',
     'Current file content:',
     currentContent,
@@ -441,7 +506,7 @@ async function attemptTypeFix(context, { fileRel, currentContent, builderError, 
           selectorKey: AUTOFIX_SELECTOR_KEY,
           taskType: 'code_refactor',
           prompt: buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }),
-          systemPrompt: buildFixerSystemPrompt(),
+          systemPrompt: buildFixerSystemPrompt({ nodeExecutable: isNodeExecutableFile(fileRel, currentContent) }),
           maxTokens: 8192,
           temperature: 0.1,
           timeoutMs: AUTOFIX_TIMEOUT_MS,
@@ -1210,15 +1275,18 @@ async function verifyChangedFiles(context, changedFiles) {
   const verifyOptions = { files: changedFiles, force: true, test: true };
   const builderResult = await builder.runTargetedTypeCheck(changedFiles, verifyOptions);
   const reviewerResult = await reviewer.runReview(verifyOptions);
+  const nodeCheck = runNodeCheckGate(changedFiles);
   const reviewerHigh = normalizeReviewHighCount(reviewerResult);
   const builderSkipReasonValue = builderSkipReason(builderResult);
   const builderSkipped = builderSkipReasonValue !== null;
   const reviewerSkipped = Boolean(reviewerResult?.skipped);
   return {
-    ok: builderResult?.pass !== false && reviewerHigh === 0 && !builderSkipped && !reviewerSkipped,
+    ok: builderResult?.pass !== false && reviewerHigh === 0 && nodeCheck.pass === true && !builderSkipped && !reviewerSkipped,
     builder: builderResult,
     reviewer: reviewerResult,
+    nodeCheck,
     builderPass: builderResult?.pass !== false,
+    nodeCheckPass: nodeCheck.pass === true,
     builderSkipped,
     builderSkipReason: builderSkipReasonValue,
     reviewerHigh,
@@ -1264,15 +1332,19 @@ function formatErrorSummary({ stage, candidate, verify, error }) {
   const reviewerHigh = Number(verify?.reviewerHigh || 0);
   const builderSkipped = Boolean(verify?.builderSkipped);
   const reviewerSkipped = Boolean(verify?.reviewerSkipped);
+  const nodeCheckPass = verify?.nodeCheckPass !== false;
+  const nodeCheckError = String(verify?.nodeCheck?.failed?.[0]?.error || '').replace(/\s+/g, ' ').slice(0, 240);
   const builderMessage = String(verify?.builder?.message || '').replace(/\s+/g, ' ').slice(0, 240);
   const reviewerMessage = String(verify?.reviewer?.message || '').replace(/\s+/g, ' ').slice(0, 240);
   return [
     `stage=${stage}`,
     `file=${file}`,
     `builder_pass=${builderPass}`,
+    `node_check_pass=${nodeCheckPass}`,
     `builder_skipped=${builderSkipped}`,
     `reviewer_high=${reviewerHigh}`,
     `reviewer_skipped=${reviewerSkipped}`,
+    nodeCheckError ? `node_check=${nodeCheckError}` : null,
     builderMessage ? `builder=${builderMessage}` : null,
     reviewerMessage ? `reviewer=${reviewerMessage}` : null,
   ].filter(Boolean).join('; ');
@@ -1353,6 +1425,7 @@ function buildActiveDocumentContent(context, analysis, active) {
       `- builder_pass: ${item.verify?.builderPass ?? false}`,
       `- builder_skipped: ${item.verify?.builderSkipped ?? false}`,
       item.verify?.builderSkipReason ? `- builder_skip_reason: ${item.verify.builderSkipReason}` : null,
+      `- node_check_pass: ${item.verify?.nodeCheckPass ?? false}`,
       `- reviewer_high: ${item.verify?.reviewerHigh ?? 'unknown'}`,
       `- reviewer_skipped: ${item.verify?.reviewerSkipped ?? false}`,
       `- autofix_attempts: ${item.autofixAttempts || 0}`,
@@ -1747,6 +1820,17 @@ async function runActiveRefactor(context, analysis, candidates) {
           }
           item.strict = strict;
         }
+        const nodeCheck = runNodeCheckGate([relFile]);
+        if (!nodeCheck.pass) {
+          const errorMessage = String(nodeCheck.failed?.[0]?.error || nodeCheck.message || 'node_check_failed').slice(0, 300);
+          item.stage = 'active_deferred_node_check_failed';
+          item.applied = false;
+          item.nodeCheck = nodeCheck;
+          item.errorSummary = formatErrorSummary({ stage: 'node_check_gate', candidate: item.candidate, error: errorMessage });
+          applyResults.push({ file: relFile, applied: false, reason: 'node_check_failed', error: errorMessage });
+          continue;
+        }
+        item.nodeCheck = nodeCheck;
         const beforeCommitHead = String(await context.currentHeadFn({ file: relFile, context }) || '').trim();
         try {
           const commit = await context.commitFileFn(
@@ -2243,6 +2327,7 @@ if (require.main === module) {
 
 module.exports = {
   analyzeLocalTechDebt,
+  buildFixerSystemPrompt,
   buildCycleContext,
   buildFixerPrompt,
   buildPlanContent,
@@ -2263,6 +2348,8 @@ module.exports = {
   acquireRefactorLock,
   releaseRefactorLock,
   gitStatusScoped,
+  isNodeExecutableContent,
+  isNodeExecutableFile,
   applyEnabled,
   applyPushEnabled,
   applyStrictGateEnabled,
