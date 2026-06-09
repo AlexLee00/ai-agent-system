@@ -4,16 +4,72 @@ import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
 const DEFAULT_WS_URL = 'wss://stream.binance.com:9443/ws';
 const DEFAULT_DEPTH_URL = 'https://api.binance.com';
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_MARKETDATA_REAL_TIMEOUT_MS || 5000);
-const subscriptions = new Map();
+type BinanceArgs = {
+  symbol?: string;
+  disableReal?: boolean;
+  timeoutMs?: number;
+  wsUrl?: string;
+  depth?: number;
+  restBase?: string;
+  [key: string]: unknown;
+};
+type BinanceTicker = {
+  c?: number | string;
+  lastPrice?: number | string;
+  price?: number | string;
+  o?: number | string;
+  h?: number | string;
+  l?: number | string;
+  v?: number | string;
+  volume?: number | string;
+  q?: number | string;
+  quoteVolume?: number | string;
+  P?: number | string;
+  priceChangePercent?: number | string;
+  E?: number | string;
+};
+type BinanceSnapshot = {
+  ok: boolean;
+  source?: string;
+  providerMode?: string;
+  market?: string;
+  symbol?: string;
+  price?: number;
+  [key: string]: unknown;
+};
+type BinanceOrderBook = {
+  ok: boolean;
+  providerMode?: string;
+  bids?: number[][];
+  asks?: number[][];
+  [key: string]: unknown;
+};
+type WsLike = {
+  addEventListener?: (event: string, handler: (event: any) => void) => void;
+  on?: (event: string, handler: (event: any) => void) => void;
+  close?: () => void;
+};
+type SubscriptionEntry = {
+  key: string;
+  symbol: string;
+  url: string;
+  ws: WsLike;
+  providerMode: string;
+  status: string;
+  openedAt: string;
+  lastSnapshot: BinanceSnapshot | null;
+  lastError: string | null;
+};
+const subscriptions = new Map<string, SubscriptionEntry>();
 
-function normalizeBinanceSymbol(symbol = 'BTC/USDT') {
+function normalizeBinanceSymbol(symbol: unknown = 'BTC/USDT') {
   const text = String(symbol || 'BTC/USDT').trim().toUpperCase();
   if (text.includes('/')) return text;
   if (text.endsWith('USDT')) return `${text.slice(0, -4)}/USDT`;
   return text;
 }
 
-function streamSymbol(symbol = 'BTC/USDT') {
+function streamSymbol(symbol: unknown = 'BTC/USDT') {
   return normalizeBinanceSymbol(symbol).replace('/', '').toLowerCase();
 }
 
@@ -21,28 +77,28 @@ function hasNativeWebSocket() {
   return typeof globalThis.WebSocket === 'function';
 }
 
-function isRealEnabled(args = {}) {
+function isRealEnabled(args: BinanceArgs = {}) {
   if (args.disableReal === true) return false;
   return process.env.LUNA_MARKETDATA_REAL_WS_ENABLED !== 'false';
 }
 
-function fallbackSnapshot(args = {}, reason = 'real_ws_unavailable') {
+function fallbackSnapshot(args: BinanceArgs = {}, reason: unknown = 'real_ws_unavailable'): BinanceSnapshot {
   return simulatedFallbackOrBlock(() => ({
     ...getMarketSnapshot({ ...args, market: 'binance' }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'real_ws_unavailable').slice(0, 240),
-  }), { args, market: 'binance', symbol: args.symbol || 'BTC/USDT', reason, tool: 'get_market_snapshot' });
+  }), { args, market: 'binance', symbol: String(args.symbol || 'BTC/USDT'), reason: String(reason || ''), tool: 'get_market_snapshot' }) as BinanceSnapshot;
 }
 
-function fallbackOrderBook(args = {}, reason = 'real_order_book_unavailable') {
+function fallbackOrderBook(args: BinanceArgs = {}, reason: unknown = 'real_order_book_unavailable'): BinanceOrderBook {
   return simulatedFallbackOrBlock(() => ({
     ...getOrderBook({ ...args, market: 'binance' }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'real_order_book_unavailable').slice(0, 240),
-  }), { args, market: 'binance', symbol: args.symbol || 'BTC/USDT', reason, tool: 'get_order_book' });
+  }), { args, market: 'binance', symbol: String(args.symbol || 'BTC/USDT'), reason: String(reason || ''), tool: 'get_order_book' }) as BinanceOrderBook;
 }
 
-function closeEntry(entry) {
+function closeEntry(entry: SubscriptionEntry | undefined) {
   try {
     entry?.ws?.close?.();
   } catch (_) {
@@ -50,7 +106,7 @@ function closeEntry(entry) {
   }
 }
 
-function buildSnapshot(symbol, ticker = {}) {
+function buildSnapshot(symbol: string, ticker: BinanceTicker = {}): BinanceSnapshot {
   const price = Number(ticker.c || ticker.lastPrice || ticker.price || 0);
   const open = Number(ticker.o || 0);
   const high = Number(ticker.h || 0);
@@ -77,7 +133,7 @@ function buildSnapshot(symbol, ticker = {}) {
   };
 }
 
-function addWsListener(ws, event, handler) {
+function addWsListener(ws: WsLike, event: string, handler: (event: any) => void) {
   if (typeof ws.addEventListener === 'function') {
     ws.addEventListener(event, handler);
     return;
@@ -85,7 +141,7 @@ function addWsListener(ws, event, handler) {
   if (typeof ws.on === 'function') ws.on(event, handler);
 }
 
-function messageText(eventOrRaw) {
+function messageText(eventOrRaw: any): string {
   const raw = eventOrRaw?.data ?? eventOrRaw;
   if (typeof raw === 'string') return raw;
   if (raw instanceof ArrayBuffer) return Buffer.from(raw).toString('utf8');
@@ -93,7 +149,7 @@ function messageText(eventOrRaw) {
   return String(raw || '');
 }
 
-async function ensureSubscription(symbol, args = {}) {
+async function ensureSubscription(symbol: unknown, args: BinanceArgs = {}): Promise<SubscriptionEntry> {
   const normalizedSymbol = normalizeBinanceSymbol(symbol);
   const key = streamSymbol(normalizedSymbol);
   const existing = subscriptions.get(key);
@@ -102,8 +158,8 @@ async function ensureSubscription(symbol, args = {}) {
 
   const timeoutMs = Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS));
   const url = `${String(args.wsUrl || DEFAULT_WS_URL).replace(/\/$/, '')}/${key}@ticker`;
-  const ws = new globalThis.WebSocket(url);
-  const entry = {
+  const ws = new globalThis.WebSocket(url) as WsLike;
+  const entry: SubscriptionEntry = {
     key,
     symbol: normalizedSymbol,
     url,
@@ -116,7 +172,7 @@ async function ensureSubscription(symbol, args = {}) {
   };
   subscriptions.set(key, entry);
 
-  await new Promise((resolve, reject) => {
+  await new Promise<SubscriptionEntry | void>((resolve, reject) => {
     const timer = setTimeout(() => {
       entry.status = entry.lastSnapshot?.ok ? 'ready' : 'timeout';
       if (entry.lastSnapshot?.ok) resolve(entry);
@@ -128,7 +184,7 @@ async function ensureSubscription(symbol, args = {}) {
     });
     addWsListener(ws, 'message', (event) => {
       try {
-        const ticker = JSON.parse(messageText(event));
+        const ticker: BinanceTicker = JSON.parse(messageText(event));
         const snapshot = buildSnapshot(normalizedSymbol, ticker);
         if (snapshot.ok) {
           entry.status = 'ready';
@@ -136,7 +192,7 @@ async function ensureSubscription(symbol, args = {}) {
           clearTimeout(timer);
           resolve(entry);
         }
-      } catch (error) {
+      } catch (error: any) {
         entry.lastError = error?.message || String(error);
       }
     });
@@ -144,7 +200,7 @@ async function ensureSubscription(symbol, args = {}) {
       entry.status = 'error';
       entry.lastError = event?.message || 'binance_ws_error';
       clearTimeout(timer);
-      reject(new Error(entry.lastError));
+      reject(new Error(entry.lastError || 'binance_ws_error'));
     });
     addWsListener(ws, 'close', () => {
       if (entry.status !== 'ready') entry.status = 'closed';
@@ -154,17 +210,17 @@ async function ensureSubscription(symbol, args = {}) {
   return entry;
 }
 
-export async function binanceSnapshot(args = {}) {
+export async function binanceSnapshot(args: BinanceArgs = {}): Promise<BinanceSnapshot> {
   if (!isRealEnabled(args)) return fallbackSnapshot(args, 'real_ws_disabled');
   try {
     const entry = await ensureSubscription(args.symbol || 'BTC/USDT', args);
     return entry.lastSnapshot || fallbackSnapshot(args, 'real_ws_no_snapshot');
-  } catch (error) {
+  } catch (error: any) {
     return fallbackSnapshot(args, error?.message || error);
   }
 }
 
-export async function binanceOrderBook(args = {}) {
+export async function binanceOrderBook(args: BinanceArgs = {}): Promise<BinanceOrderBook> {
   if (!isRealEnabled(args)) return fallbackOrderBook(args, 'real_order_book_disabled');
   try {
     const symbol = streamSymbol(args.symbol || 'BTC/USDT').toUpperCase();
@@ -172,24 +228,24 @@ export async function binanceOrderBook(args = {}) {
     const url = `${String(args.restBase || DEFAULT_DEPTH_URL).replace(/\/$/, '')}/api/v3/depth?symbol=${encodeURIComponent(symbol)}&limit=${depth}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS))) });
     if (!response.ok) throw new Error(`binance_depth_http_${response.status}`);
-    const body = await response.json();
+    const body: any = await response.json();
     return {
       ok: true,
       source: 'binance_depth_rest',
       providerMode: 'rest',
       market: 'binance',
       symbol: normalizeBinanceSymbol(args.symbol || 'BTC/USDT'),
-      bids: (body.bids || []).slice(0, depth).map(([price, size]) => [Number(price), Number(size)]),
-      asks: (body.asks || []).slice(0, depth).map(([price, size]) => [Number(price), Number(size)]),
+      bids: (body.bids || []).slice(0, depth).map(([price, size]: [unknown, unknown]) => [Number(price), Number(size)]),
+      asks: (body.asks || []).slice(0, depth).map(([price, size]: [unknown, unknown]) => [Number(price), Number(size)]),
       lastUpdateId: body.lastUpdateId ?? null,
       fetchedAt: new Date().toISOString(),
     };
-  } catch (error) {
+  } catch (error: any) {
     return fallbackOrderBook(args, error?.message || error);
   }
 }
 
-export async function subscribeBinanceMarketData(args = {}) {
+export async function subscribeBinanceMarketData(args: BinanceArgs = {}) {
   if (!isRealEnabled(args)) {
     const fallback = fallbackSnapshot(args, 'real_ws_disabled');
     return { ok: fallback.ok !== false, subscribed: fallback.ok !== false, providerMode: fallback.providerMode, subscription: fallback };
@@ -209,13 +265,13 @@ export async function subscribeBinanceMarketData(args = {}) {
         lastSnapshot: entry.lastSnapshot,
       },
     };
-  } catch (error) {
+  } catch (error: any) {
     const fallback = fallbackSnapshot(args, error?.message || error);
     return { ok: fallback.ok !== false, subscribed: fallback.ok !== false, providerMode: fallback.providerMode, subscription: fallback };
   }
 }
 
-export function unsubscribeBinanceMarketData(args = {}) {
+export function unsubscribeBinanceMarketData(args: BinanceArgs = {}) {
   const key = streamSymbol(args.symbol || 'BTC/USDT');
   const entry = subscriptions.get(key);
   closeEntry(entry);
