@@ -37,39 +37,73 @@ export const HISTORICAL_STRESS_SCENARIOS = {
   },
 };
 
-function dataHealthForReturns(count) {
+type HistoricalStressScenario = keyof typeof HISTORICAL_STRESS_SCENARIOS;
+
+type StressRiskLimits = {
+  dailyLossPct?: number;
+  weeklyLossPct?: number;
+  monthlyLossPct?: number;
+};
+
+type StressTestInput = {
+  exchange?: string;
+  market?: string;
+  symbols?: string[];
+  scenario?: string;
+  barsBySymbol?: Record<string, unknown[]>;
+  priceHistory?: Record<string, unknown[]>;
+  bars?: unknown[];
+  returns?: number[];
+  riskLimits?: StressRiskLimits;
+};
+
+type StressTestContext = {
+  exchange?: string;
+  market?: string;
+  scenario?: string;
+  source?: string;
+};
+
+const typedReturnsFromBars = returnsFromBars as (bars: unknown[]) => number[];
+const typedMean = mean as (values: number[]) => number;
+const typedStdev = stdev as (values: number[]) => number;
+
+function dataHealthForReturns(count: number) {
   if (count >= 60) return 'ready';
   if (count >= 20) return 'partial';
   return 'insufficient';
 }
 
-function estimateRecoveryDays(lossPct, avgReturn) {
+function estimateRecoveryDays(lossPct: number, avgReturn: number) {
   const loss = Math.abs(finiteNumber(lossPct, 0));
   const daily = Math.max(0.0005, Math.abs(finiteNumber(avgReturn, 0.001)));
   return Math.ceil(Math.log(1 / Math.max(0.01, 1 - loss)) / daily);
 }
 
-function scenarioRiskLevel(lossPct, limits = DEFAULT_RISK_LIMITS) {
+function scenarioRiskLevel(lossPct: number, limits: StressRiskLimits = DEFAULT_RISK_LIMITS) {
   if (lossPct >= finiteNumber(limits.monthlyLossPct, 0.25)) return 'critical';
   if (lossPct >= finiteNumber(limits.weeklyLossPct, 0.15)) return 'high';
   if (lossPct >= finiteNumber(limits.dailyLossPct, 0.05)) return 'medium';
   return 'low';
 }
 
-export function buildStressTestShadow(input = {}, context = {}) {
+export function buildStressTestShadow(input: StressTestInput = {}, context: StressTestContext = {}) {
   const exchange = normalizeRiskExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForRiskExchange(exchange);
   const symbols = Array.isArray(input.symbols) && input.symbols.length
     ? input.symbols.map(String)
     : defaultRiskSymbols(exchange);
   const scenario = String(input.scenario || context.scenario || '2022_luna_ftx').toLowerCase();
-  const scenarioSpec = HISTORICAL_STRESS_SCENARIOS[scenario] || HISTORICAL_STRESS_SCENARIOS['2022_luna_ftx'];
+  const scenarioKey = Object.prototype.hasOwnProperty.call(HISTORICAL_STRESS_SCENARIOS, scenario)
+    ? scenario as HistoricalStressScenario
+    : '2022_luna_ftx';
+  const scenarioSpec = HISTORICAL_STRESS_SCENARIOS[scenarioKey];
   const barsBySymbol = input.barsBySymbol || input.priceHistory || {};
-  const mergedReturns = symbols.flatMap((symbol) => returnsFromBars(barsBySymbol[symbol] || input.bars || []));
+  const mergedReturns = symbols.flatMap((symbol: string) => typedReturnsFromBars(barsBySymbol[symbol] || input.bars || []));
   const returns = Array.isArray(input.returns) && input.returns.length ? input.returns.map(Number).filter(Number.isFinite) : mergedReturns;
   const dataHealth = dataHealthForReturns(returns.length);
-  const avg = mean(returns);
-  const vol = stdev(returns);
+  const avg = typedMean(returns);
+  const vol = typedStdev(returns);
   const baseLoss = scenarioSpec.drawdownPct;
   const volatilityAdjustment = Math.min(0.2, vol * scenarioSpec.volatilityMultiplier);
   const maxLossEstimate = Math.min(0.95, baseLoss + volatilityAdjustment);
