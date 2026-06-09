@@ -15,12 +15,76 @@ const {
   recordAgentGuardAudit,
 } = require('./agent-guard');
 
-function normalizeText(value, fallback = '') {
+type JsonRecord = Record<string, unknown>;
+
+type ToolInput = JsonRecord & {
+  minutes?: number | string;
+  labels?: unknown;
+  cwd?: string;
+  goal?: string;
+  team?: string;
+  contextSummary?: unknown;
+  allowedTools?: unknown;
+  parentTools?: unknown;
+  maxConcurrency?: unknown;
+  maxDepth?: unknown;
+  finalSummaryOnly?: unknown;
+  freshContext?: unknown;
+  agentId?: unknown;
+  roles?: unknown;
+  tools?: unknown;
+  traceId?: string;
+  runId?: string;
+  incidentKey?: string;
+  from?: string;
+  to?: string;
+  role?: string;
+  phase?: string;
+  visibility?: string;
+  payload?: unknown;
+  ackRequired?: boolean;
+  messageId?: unknown;
+  ackedBy?: string;
+  limit?: number | string;
+};
+
+type ToolContext = JsonRecord & {
+  traceId?: string;
+  agent?: string;
+};
+
+type HubControlTool = {
+  name: string;
+  ownerTeam: string;
+  description: string;
+  sideEffect: 'none' | 'read_only' | 'write' | 'external_mutation';
+  defaultRisk: 'low' | 'medium' | 'high';
+  requiredTopicLevel: 'L0' | 'L1' | 'L2' | 'L3';
+  executeEnabled: boolean;
+  handler: (input: ToolInput, context?: ToolContext) => Promise<unknown>;
+};
+
+type OAuthTokenLike = {
+  expires_at?: string;
+  expiresAt?: string;
+};
+
+type EventLakeRow = {
+  id?: string | number;
+  severity?: string;
+  title?: string;
+  message?: string;
+  tags?: unknown[];
+  metadata?: JsonRecord;
+  created_at?: string;
+};
+
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function getLaunchctlStatus(labels) {
+function getLaunchctlStatus(labels: string[]) {
   const provider = require('../../../../packages/core/lib/health-provider');
   return provider.getLaunchctlStatus(labels);
 }
@@ -29,11 +93,15 @@ function getEventLake() {
   return require('../../../../packages/core/lib/event-lake');
 }
 
-function tokenExpiresInHours(token) {
+function tokenExpiresInHours(token: OAuthTokenLike | null): number | null {
   const expiresAt = token?.expires_at || token?.expiresAt || null;
   const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
   if (!Number.isFinite(expiresMs)) return null;
   return (expiresMs - Date.now()) / (60 * 60 * 1000);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function getOAuthOpsStatus() {
@@ -49,8 +117,8 @@ async function getOAuthOpsStatus() {
     openai,
     groq,
   ] = await Promise.all([
-    checkTokenHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
-    checkOpenAIOAuthHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
+    checkTokenHealth().catch((error: unknown) => ({ healthy: false, error: errorMessage(error) })),
+    checkOpenAIOAuthHealth().catch((error: unknown) => ({ healthy: false, error: errorMessage(error) })),
     checkGroqAccounts().catch(() => ({ available_accounts: 0, total_accounts: 0 })),
   ]);
 
@@ -95,7 +163,7 @@ async function getOAuthOpsStatus() {
   };
 }
 
-const HUB_TOOLS = [
+const HUB_TOOLS: HubControlTool[] = [
   {
     name: 'hub.health.query',
     ownerTeam: 'hub',
@@ -104,7 +172,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L0',
     executeEnabled: true,
-    handler: async (input) => {
+    handler: async (input: ToolInput) => {
       const minutes = Math.max(1, Number(input?.minutes ?? 60) || 60);
       const stats = await getEventLake().stats({ minutes }).catch(() => null);
       return {
@@ -124,9 +192,9 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L0',
     executeEnabled: true,
-    handler: async (input) => {
+    handler: async (input: ToolInput) => {
       const labels = Array.isArray(input?.labels)
-        ? input.labels.map((label) => normalizeText(label)).filter(Boolean)
+        ? input.labels.map((label: unknown) => normalizeText(label)).filter(Boolean)
         : ['ai.hub.resource-api', 'ai.claude.auto-dev.autonomous', 'ai.luna.marketdata-mcp'];
       return {
         labels,
@@ -142,7 +210,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L0',
     executeEnabled: true,
-    handler: async (input) => {
+    handler: async (input: ToolInput) => {
       const cwd = normalizeText(input?.cwd, env.PROJECT_ROOT);
       const output = execSync('git status --short', {
         cwd,
@@ -163,7 +231,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L0',
     executeEnabled: true,
-    handler: async (input) => {
+    handler: async (input: ToolInput) => {
       return buildPlaybookTemplate({
         goal: normalizeText(input?.goal, '운영 점검 및 조치'),
         team: normalizeText(input?.team, 'general'),
@@ -178,7 +246,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L1',
     executeEnabled: true,
-    handler: async (input) => validateSubagentSandbox({
+    handler: async (input: ToolInput) => validateSubagentSandbox({
       contextSummary: input?.contextSummary,
       allowedTools: input?.allowedTools,
       parentTools: input?.parentTools,
@@ -196,7 +264,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L1',
     executeEnabled: true,
-    handler: async (input) => registerAgent({
+    handler: async (input: ToolInput) => registerAgent({
       agentId: input?.agentId,
       roles: input?.roles,
       tools: input?.tools,
@@ -220,7 +288,7 @@ const HUB_TOOLS = [
     defaultRisk: 'medium',
     requiredTopicLevel: 'L1',
     executeEnabled: true,
-    handler: async (input, context) => sendAgentMessage({
+    handler: async (input: ToolInput, context?: ToolContext) => sendAgentMessage({
       traceId: input?.traceId || context?.traceId || null,
       runId: input?.runId || null,
       incidentKey: input?.incidentKey || null,
@@ -241,7 +309,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L1',
     executeEnabled: true,
-    handler: async (input, context) => ackAgentMessage({
+    handler: async (input: ToolInput, context?: ToolContext) => ackAgentMessage({
       messageId: input?.messageId,
       ackedBy: input?.ackedBy || context?.agent || 'system',
     }),
@@ -254,7 +322,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L1',
     executeEnabled: true,
-    handler: async (input) => getAgentStatus({
+    handler: async (input: ToolInput) => getAgentStatus({
       agentId: input?.agentId,
       incidentKey: input?.incidentKey,
     }),
@@ -277,7 +345,7 @@ const HUB_TOOLS = [
     defaultRisk: 'low',
     requiredTopicLevel: 'L1',
     executeEnabled: true,
-    handler: async (input) => {
+    handler: async (input: ToolInput) => {
       const minutes = Math.max(1, Number(input?.minutes ?? 24 * 60) || 24 * 60);
       const limit = Math.min(100, Math.max(1, Number(input?.limit ?? 20) || 20));
       const rows = await getEventLake().search({
@@ -285,7 +353,7 @@ const HUB_TOOLS = [
         team: 'hub',
         minutes,
         limit,
-      });
+      }) as EventLakeRow[];
       return {
         checkedAt: new Date().toISOString(),
         minutes,
@@ -298,7 +366,7 @@ const HUB_TOOLS = [
           tags: row.tags || [],
           metadata: row.metadata || {},
           created_at: row.created_at,
-        })),
+        } as EventLakeRow)),
       };
     },
   },
@@ -337,7 +405,7 @@ const HUB_TOOLS = [
   },
 ];
 
-const TOOL_MAP = new Map(HUB_TOOLS.map((tool) => [tool.name, tool]));
+const TOOL_MAP = new Map<string, HubControlTool>(HUB_TOOLS.map((tool) => [tool.name, tool]));
 
 function listHubControlTools() {
   return HUB_TOOLS.map((tool) => ({
@@ -351,11 +419,11 @@ function listHubControlTools() {
   }));
 }
 
-function hasHubControlTool(name) {
+function hasHubControlTool(name: unknown): boolean {
   return TOOL_MAP.has(String(name || '').trim());
 }
 
-async function callHubControlTool(name, input, context) {
+async function callHubControlTool(name: unknown, input: ToolInput = {}, context: ToolContext = {}) {
   const normalized = String(name || '').trim();
   const tool = TOOL_MAP.get(normalized);
   if (!tool) {
@@ -419,7 +487,7 @@ async function callHubControlTool(name, input, context) {
       admission: admission.audit,
     };
   } catch (error) {
-    const message = String(error?.message || error || 'tool_execution_failed');
+    const message = errorMessage(error || 'tool_execution_failed');
     const unavailable = message.includes('state_store_unavailable')
       || message.includes('db_unavailable')
       || message.includes('hub_agent_bus_db_unavailable');
@@ -433,7 +501,7 @@ async function callHubControlTool(name, input, context) {
   }
 }
 
-function isReadOnlyTool(name) {
+function isReadOnlyTool(name: unknown): boolean {
   const tool = TOOL_MAP.get(String(name || '').trim());
   if (!tool) return false;
   return ['none', 'read_only'].includes(tool.sideEffect);
