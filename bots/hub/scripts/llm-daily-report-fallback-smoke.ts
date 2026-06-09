@@ -18,6 +18,7 @@ async function main() {
         return true;
       },
     },
+    sleepImpl: async () => {},
     pgPool: {
       query: async (_schema: string, sql: string) => {
         queries.push(sql);
@@ -46,12 +47,50 @@ async function main() {
 
   const result = await report.generateReport();
   assert.equal(result.ok, true);
+  assert.equal(result.delivery.ok, true);
   assert.equal(result.statsSource, 'db_fallback');
   assert.equal(sent.length, 1, 'fallback report should still send one telegram message');
   assert.equal(sent[0].channel, 'general');
   assert(sent[0].message.includes('통계 소스: DB fallback'), 'report must disclose DB fallback source');
   assert(sent[0].message.includes('총 호출: 3회'), 'report must use fallback DB totals');
   assert(queries.length >= 3, 'fallback must run DB summary, by-agent, and by-hour queries');
+
+  const retried: string[] = [];
+  let attempts = 0;
+  report._testOnly.setDependencies({
+    telegramSender: {
+      send: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('rate limit exceeded (200/min)');
+        return true;
+      },
+    },
+    sleepImpl: async (ms: number) => {
+      retried.push(String(ms));
+    },
+  });
+
+  const retryResult = await report.generateReport();
+  assert.equal(retryResult.ok, true);
+  assert.equal(retryResult.delivery.ok, true);
+  assert.equal(retryResult.delivery.attempts, 2);
+  assert.deepEqual(retried, ['15000']);
+
+  attempts = 0;
+  report._testOnly.setDependencies({
+    telegramSender: {
+      send: async () => {
+        attempts += 1;
+        throw new Error('rate limit exceeded (200/min)');
+      },
+    },
+    sleepImpl: async () => {},
+  });
+
+  const failedDelivery = await report.generateReport();
+  assert.equal(failedDelivery.ok, true, 'report generation should stay non-fatal when delivery is rate-limited');
+  assert.equal(failedDelivery.delivery.ok, false);
+  assert.equal(failedDelivery.delivery.attempts, 3);
 
   console.log(JSON.stringify({
     ok: true,

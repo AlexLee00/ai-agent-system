@@ -8,10 +8,19 @@ const require = createRequire(__filename);
 let telegramSender = require('../../../packages/core/lib/telegram-sender');
 let pgPool = require('../../../packages/core/lib/pg-pool');
 let fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis);
+let sleepImpl = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const FETCH_TIMEOUT_MS = Math.max(1000, Number(process.env.LLM_DAILY_REPORT_FETCH_TIMEOUT_MS || 8000) || 8000);
+const TELEGRAM_MAX_ATTEMPTS = Math.min(
+  5,
+  Math.max(1, Number(process.env.LLM_DAILY_REPORT_TELEGRAM_ATTEMPTS || 3) || 3),
+);
+const TELEGRAM_RETRY_DELAY_MS = Math.max(
+  1000,
+  Number(process.env.LLM_DAILY_REPORT_TELEGRAM_RETRY_MS || 15000) || 15000,
+);
 
 async function fetchStats(hours: number, team?: string): Promise<any> {
   const url = team
@@ -105,6 +114,30 @@ async function fetchStatsFromDb(hours: number, team?: string): Promise<any> {
   };
 }
 
+async function sendTelegramWithRetry(channel: string, message: string) {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= TELEGRAM_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await telegramSender.send(channel, message);
+      return { ok: true, attempts: attempt, error: null };
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < TELEGRAM_MAX_ATTEMPTS) {
+        console.log(
+          `[llm-daily-report] Telegram 전송 재시도 ${attempt}/${TELEGRAM_MAX_ATTEMPTS}: ${lastError.message}`,
+        );
+        await sleepImpl(TELEGRAM_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    attempts: TELEGRAM_MAX_ATTEMPTS,
+    error: lastError?.message || 'telegram_delivery_not_completed',
+  };
+}
+
 async function generateReport() {
   const data = await fetchStats(24);
   const { totals = {}, summary = [], by_agent = [], groq_pool_size = 0 } = data;
@@ -158,9 +191,13 @@ async function generateReport() {
 
   const message = lines.join('\n');
   console.log('[llm-daily-report]', message);
-  await telegramSender.send('general', message);
-  console.log('[llm-daily-report] Telegram 전송 완료');
-  return { ok: true, message, statsSource: data.stats_source || 'hub_http' };
+  const delivery = await sendTelegramWithRetry('general', message);
+  if (delivery.ok) {
+    console.log(`[llm-daily-report] Telegram 전송 완료 (${delivery.attempts}회 시도)`);
+  } else {
+    console.log(`[llm-daily-report] Telegram 전송 미완료: ${delivery.error}`);
+  }
+  return { ok: true, message, statsSource: data.stats_source || 'hub_http', delivery };
 }
 
 if (require.main === module) {
@@ -177,9 +214,10 @@ export {
 };
 
 export const _testOnly = {
-  setDependencies(deps: { telegramSender?: any; pgPool?: any; fetchImpl?: typeof fetch }) {
+  setDependencies(deps: { telegramSender?: any; pgPool?: any; fetchImpl?: typeof fetch; sleepImpl?: typeof sleepImpl }) {
     if (deps.telegramSender) telegramSender = deps.telegramSender;
     if (deps.pgPool) pgPool = deps.pgPool;
     if (deps.fetchImpl) fetchImpl = deps.fetchImpl;
+    if (deps.sleepImpl) sleepImpl = deps.sleepImpl;
   },
 };
