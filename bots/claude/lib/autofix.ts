@@ -129,6 +129,10 @@ function fixLogRotation(fixes) {
   ];
 
   for (const { path: p, label } of logs) {
+    if (typeof p !== 'string' || p.length === 0) {
+      fixes.push({ label: `로그 로테이션 스킵 (${label})`, status: 'skip', detail: 'log_path_unconfigured' });
+      continue;
+    }
     if (!fs.existsSync(p)) continue;
     const mb = fs.statSync(p).size / 1048576;
     if (mb > cfg.THRESHOLDS.logMaxMB) {
