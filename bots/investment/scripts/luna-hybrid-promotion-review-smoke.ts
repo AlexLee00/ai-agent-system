@@ -7,7 +7,18 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const FIXTURE_TIME = '2026-05-12T00:00:00.000Z';
 
-function fakeQuery(sql) {
+type PromotionReviewSmokeReport = {
+  ok: boolean;
+  dataChecked?: boolean;
+  dataRequired?: boolean;
+  readyForMasterReview?: boolean;
+  promotionReady?: boolean;
+  status?: string;
+  blockers: unknown[];
+  liveMutation?: boolean;
+};
+
+function fakeQuery(sql: string) {
   if (
     sql.includes('luna_regime_llm_shadow')
     || sql.includes('luna_entry_llm_shadow')
@@ -23,7 +34,7 @@ function fakeQuery(sql) {
   return [];
 }
 
-function fakeQueryWithBridgeFailure(sql) {
+function fakeQueryWithBridgeFailure(sql: string) {
   if (sql.includes('luna_promotion_entry_trigger_bridge_shadow')) {
     throw new Error('bridge table missing');
   }
@@ -67,11 +78,11 @@ export async function runLunaHybridPromotionReviewSmoke() {
     true,
   );
   assert.equal(
-    bridgeFailure.warnings.some((warning) => warning.includes('promotion_entry_trigger_bridge_check:bridge table missing')),
+    bridgeFailure.warnings.some((warning) => String(warning).includes('promotion_entry_trigger_bridge_check:bridge table missing')),
     true,
   );
 
-  const noDb = await runLunaHybridPromotionReview({ json: true, strict: true, noDb: true, hours: 168 });
+  const noDb = await runLunaHybridPromotionReview({ json: true, strict: true, noDb: true, hours: 168 } as any) as PromotionReviewSmokeReport;
   assert.equal(noDb.ok, true);
   assert.equal(noDb.dataChecked, false);
   assert.equal(noDb.dataRequired, false);
@@ -80,7 +91,7 @@ export async function runLunaHybridPromotionReviewSmoke() {
   assert.equal(noDb.status, 'luna_hybrid_promotion_review_contract_only');
   assert.equal(noDb.blockers.length, 0);
 
-  const applyBlocked = await runLunaHybridPromotionReview({ apply: true, json: true, noDb: true, hours: 168 });
+  const applyBlocked = await runLunaHybridPromotionReview({ apply: true, json: true, noDb: true, hours: 168 } as any) as PromotionReviewSmokeReport;
   assert.equal(applyBlocked.ok, false);
   assert.equal(applyBlocked.status, 'luna_hybrid_promotion_review_apply_blocked');
   assert.equal(applyBlocked.liveMutation, false);
@@ -104,7 +115,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid promotion review smoke failed:',
   });

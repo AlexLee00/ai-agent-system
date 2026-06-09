@@ -1,8 +1,23 @@
-function bool(value) {
+type MarketDataFallbackArgs = {
+  allowSimulatedFallback?: boolean;
+  requireReal?: boolean;
+  liveFire?: boolean;
+  symbol?: string | null;
+};
+
+type MarketDataFallbackOptions = {
+  args?: MarketDataFallbackArgs;
+  market?: string;
+  symbol?: string | null;
+  reason?: string;
+  tool?: string;
+};
+
+function bool(value: unknown) {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
-export function isStrictRealMarketDataRequired(args = {}) {
+export function isStrictRealMarketDataRequired(args: MarketDataFallbackArgs = {}) {
   if (args.allowSimulatedFallback === true) return false;
   if (bool(process.env.LUNA_MARKETDATA_ALLOW_SIMULATED_FALLBACK_IN_LIVE)) return false;
   return args.requireReal === true
@@ -11,7 +26,7 @@ export function isStrictRealMarketDataRequired(args = {}) {
     || bool(process.env.LUNA_MARKETDATA_REQUIRE_REAL);
 }
 
-export function blockSimulatedMarketDataFallback({ args = {}, market = 'unknown', symbol = null, reason = 'real_marketdata_unavailable', tool = 'marketdata' } = {}) {
+export function blockSimulatedMarketDataFallback({ args = {}, market = 'unknown', symbol = null, reason = 'real_marketdata_unavailable', tool = 'marketdata' }: MarketDataFallbackOptions = {}) {
   return {
     ok: false,
     source: 'luna-marketdata-mcp',
@@ -31,7 +46,7 @@ export function blockSimulatedMarketDataFallback({ args = {}, market = 'unknown'
   };
 }
 
-export function simulatedFallbackOrBlock(builder, options = {}) {
+export function simulatedFallbackOrBlock(builder: () => unknown, options: MarketDataFallbackOptions = {}) {
   if (isStrictRealMarketDataRequired(options.args || {})) return blockSimulatedMarketDataFallback(options);
   return builder();
 }

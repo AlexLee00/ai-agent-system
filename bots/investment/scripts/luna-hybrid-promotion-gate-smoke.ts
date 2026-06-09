@@ -7,7 +7,18 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const FIXTURE_TIME = '2026-05-12T00:00:00.000Z';
 
-function fakeQuery(sql) {
+type PromotionGateSmokeReport = {
+  ok: boolean;
+  contractReady?: boolean;
+  dataChecked?: boolean;
+  dataRequired?: boolean;
+  dataReady?: boolean;
+  warnings: unknown[];
+  status?: string;
+  liveMutation?: boolean;
+};
+
+function fakeQuery(sql: string) {
   if (
     sql.includes('luna_regime_llm_shadow')
     || sql.includes('luna_entry_llm_shadow')
@@ -39,7 +50,7 @@ export async function runLunaHybridPromotionGateSmoke() {
   assert.equal(report.blockers.length, 0);
   assert.ok(report.contractChecks.some((item) => item.phase === 10 && item.ok));
 
-  const noDb = await runLunaHybridPromotionGate({ json: true, strict: true, noDb: true, hours: 168 });
+  const noDb = await runLunaHybridPromotionGate({ json: true, strict: true, noDb: true, hours: 168 } as any) as PromotionGateSmokeReport;
   assert.equal(noDb.ok, true);
   assert.equal(noDb.contractReady, true);
   assert.equal(noDb.dataChecked, false);
@@ -48,7 +59,7 @@ export async function runLunaHybridPromotionGateSmoke() {
   assert.equal(noDb.status, 'luna_hybrid_promotion_gate_contract_only');
   assert.equal(noDb.warnings.length, 0);
 
-  const applyBlocked = await runLunaHybridPromotionGate({ apply: true, json: true, noDb: true, hours: 168 });
+  const applyBlocked = await runLunaHybridPromotionGate({ apply: true, json: true, noDb: true, hours: 168 } as any) as PromotionGateSmokeReport;
   assert.equal(applyBlocked.ok, false);
   assert.equal(applyBlocked.status, 'luna_hybrid_promotion_gate_apply_blocked');
   assert.equal(applyBlocked.liveMutation, false);
@@ -71,7 +82,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid promotion gate smoke failed:',
   });

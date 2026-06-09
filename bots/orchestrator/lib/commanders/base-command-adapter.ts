@@ -3,12 +3,31 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { createVirtualCommanderAdapter } = require('../../../../packages/core/lib/commander-contract.ts');
 
-function normalizeText(value, fallback = '') {
+type BotCommandAdapterOptions = {
+  toBot?: string;
+  timeoutMs?: number;
+};
+
+type IncidentTask = {
+  incidentKey?: string;
+  stepId?: string;
+  goal?: string;
+  payload?: unknown;
+  planStep?: unknown;
+  deadlineAt?: string | null;
+};
+
+type SummaryInput = {
+  commandId?: number | string;
+  incidentKey?: string;
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-async function insertBotCommand(toBot, command, args = {}) {
+async function insertBotCommand(toBot: string, command: string, args: Record<string, unknown> = {}) {
   const row = await pgPool.get('claude', `
     INSERT INTO bot_commands (to_bot, command, args)
     VALUES ($1, $2, $3::jsonb)
@@ -17,7 +36,7 @@ async function insertBotCommand(toBot, command, args = {}) {
   return Number(row?.id || 0) || null;
 }
 
-async function waitForBotCommandResult(id, timeoutMs = 120_000) {
+async function waitForBotCommandResult(id: number, timeoutMs = 120_000) {
   const deadline = Date.now() + Math.max(2000, Number(timeoutMs || 120_000) || 120_000);
   while (Date.now() < deadline) {
     const row = await pgPool.get('claude', `
@@ -36,7 +55,7 @@ async function waitForBotCommandResult(id, timeoutMs = 120_000) {
   return null;
 }
 
-function createBotCommandAdapter(team, options = {}) {
+function createBotCommandAdapter(team: string, options: BotCommandAdapterOptions = {}) {
   const normalizedTeam = normalizeText(team, 'general').toLowerCase();
   const toBot = normalizeText(options.toBot, '');
   const base = createVirtualCommanderAdapter(normalizedTeam, { label: `${normalizedTeam}-adapter` });
@@ -51,7 +70,7 @@ function createBotCommandAdapter(team, options = {}) {
   return {
     ...base,
     mode: 'bot_command',
-    async acceptIncidentTask(task) {
+    async acceptIncidentTask(task: IncidentTask) {
       const accepted = await base.acceptIncidentTask(task);
       if (!accepted.ok) return accepted;
       const cmdId = await insertBotCommand(toBot, 'incident_task', {
@@ -75,7 +94,7 @@ function createBotCommandAdapter(team, options = {}) {
         acceptedAt: new Date().toISOString(),
       };
     },
-    async finalSummary(summaryInput) {
+    async finalSummary(summaryInput: SummaryInput) {
       const commandId = Number(summaryInput?.commandId || 0) || null;
       if (!commandId) return base.finalSummary(summaryInput);
       const waited = await waitForBotCommandResult(commandId, Number(options.timeoutMs || 120_000));

@@ -4,19 +4,57 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const TASK_TABLE = 'agent.jay_team_tasks';
 const MESSAGE_TABLE = 'agent.jay_team_messages';
-let ensurePromise = null;
+type JayTeamBusRow = {
+  id?: string;
+  incident_key?: string;
+  team?: string;
+  step_id?: string;
+  status?: string;
+  payload?: unknown;
+  external_ref?: string | null;
+  attempts?: number | string;
+  last_error?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
+};
 
-function normalizeText(value, fallback = '') {
+type TeamMessageInput = {
+  incidentKey?: string;
+  team?: string;
+  taskId?: string | null;
+  status?: string;
+  message?: string;
+  payload?: unknown;
+};
+
+type TeamTaskInput = {
+  incidentKey?: string;
+  team?: string;
+  stepId?: string;
+  payload?: unknown;
+};
+
+type TeamTaskStatusInput = {
+  id?: string;
+  status?: string;
+  externalRef?: string | null;
+  lastError?: string | null;
+};
+
+let ensurePromise: Promise<unknown> | null = null;
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeObject(value) {
+function normalizeObject(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value;
 }
 
-function makeId(prefix) {
+function makeId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -70,7 +108,7 @@ async function ensureJayTeamBusTables() {
   return ensurePromise;
 }
 
-function rowToTask(row) {
+function rowToTask(row: JayTeamBusRow | null | undefined) {
   if (!row) return null;
   return {
     id: normalizeText(row.id),
@@ -88,7 +126,7 @@ function rowToTask(row) {
   };
 }
 
-async function appendTeamMessage(input) {
+async function appendTeamMessage(input: TeamMessageInput) {
   await ensureJayTeamBusTables();
   const id = makeId('jmsg');
   const incidentKey = normalizeText(input?.incidentKey);
@@ -108,7 +146,7 @@ async function appendTeamMessage(input) {
   return { ok: true, id };
 }
 
-async function createTeamTask(input) {
+async function createTeamTask(input: TeamTaskInput) {
   await ensureJayTeamBusTables();
   const id = makeId('jtask');
   const incidentKey = normalizeText(input?.incidentKey);
@@ -157,10 +195,10 @@ async function claimTeamTasks(limit = 10) {
     WHERE dst.id = picked.id
     RETURNING dst.*
   `, [count]);
-  return rows.map(rowToTask).filter(Boolean);
+  return rows.map((row: JayTeamBusRow) => rowToTask(row)).filter(Boolean);
 }
 
-async function updateTeamTaskStatus(input) {
+async function updateTeamTaskStatus(input: TeamTaskStatusInput) {
   await ensureJayTeamBusTables();
   const id = normalizeText(input?.id);
   const status = normalizeText(input?.status, 'queued');
