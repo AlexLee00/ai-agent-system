@@ -23,6 +23,44 @@ const DEFAULT_PUBLIC_MEDIA_INITIAL_DELAY_MS = 5 * 1000;
 const DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS = 60 * 1000;
 const DEFAULT_PUBLIC_MEDIA_BACKOFF_MULTIPLIER = 1.8;
 
+type InstagramConfig = {
+  accessToken: string;
+  igUserId: string;
+  pageId: string;
+  appId: string;
+  appSecret: string;
+  businessAccountId: string;
+  apiVersion: string;
+  baseUrl: string;
+  tokenExpiresAt: number | null;
+  credentialSource: string;
+  tokenHealth: unknown;
+  defaultStatus: string;
+};
+
+type ReelPublishInput = {
+  videoUrl: string;
+  caption: string;
+  dryRun?: boolean;
+};
+
+type ReelMediaInput = {
+  videoUrl: string;
+  caption: string;
+};
+
+type ContainerWaitOptions = {
+  maxAttempts?: number;
+  pollMs?: number;
+};
+
+type PublicMediaVerifyOptions = {
+  maxWaitMs?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  backoffMultiplier?: number;
+};
+
 function readStoreInstagramConfig() {
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
@@ -75,17 +113,17 @@ async function getInstagramConfig() {
   };
 }
 
-function validatePublishInputs({ videoUrl, caption }) {
+function validatePublishInputs({ videoUrl, caption }: ReelMediaInput) {
   if (!videoUrl) throw new Error('videoUrl이 필요합니다.');
   if (!caption) throw new Error('caption이 필요합니다.');
 }
 
-function ensureReady(config) {
+function ensureReady(config: InstagramConfig) {
   if (!config.accessToken) throw new Error('INSTAGRAM_GRAPH_ACCESS_TOKEN이 없습니다.');
   if (!config.igUserId) throw new Error('INSTAGRAM_GRAPH_IG_USER_ID가 없습니다.');
 }
 
-function buildCreateContainerRequest(config, { videoUrl, caption }) {
+function buildCreateContainerRequest(config: InstagramConfig, { videoUrl, caption }: ReelMediaInput) {
   const igUserId = config.igUserId || '{IG_USER_ID}';
   return {
     method: 'POST',
@@ -99,7 +137,7 @@ function buildCreateContainerRequest(config, { videoUrl, caption }) {
   };
 }
 
-function buildPublishRequest(config, creationId) {
+function buildPublishRequest(config: InstagramConfig, creationId: string) {
   const igUserId = config.igUserId || '{IG_USER_ID}';
   return {
     method: 'POST',
@@ -110,7 +148,7 @@ function buildPublishRequest(config, creationId) {
   };
 }
 
-async function postJson(url, body, accessToken) {
+async function postJson(url: string, body: Record<string, unknown>, accessToken: string) {
   const sinceLast = Date.now() - _lastGraphRequestAt;
   if (_lastGraphRequestAt > 0 && sinceLast < MIN_REQUEST_INTERVAL_MS) {
     await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - sinceLast));
@@ -149,7 +187,7 @@ async function postJson(url, body, accessToken) {
   return data;
 }
 
-async function getJson(url, accessToken) {
+async function getJson(url: string, accessToken: string) {
   const sinceLast = Date.now() - _lastGraphRequestAt;
   if (_lastGraphRequestAt > 0 && sinceLast < MIN_REQUEST_INTERVAL_MS) {
     await new Promise((resolve) => setTimeout(resolve, MIN_REQUEST_INTERVAL_MS - sinceLast));
@@ -169,14 +207,14 @@ async function getJson(url, accessToken) {
   return data;
 }
 
-function buildContainerStatusRequest(config, creationId) {
+function buildContainerStatusRequest(config: InstagramConfig, creationId: string) {
   return {
     method: 'GET',
     url: `${config.baseUrl}/${config.apiVersion}/${creationId}?fields=status_code,status`,
   };
 }
 
-async function waitForContainerReady(config, creationId, { maxAttempts = DEFAULT_CONTAINER_MAX_ATTEMPTS, pollMs = DEFAULT_CONTAINER_POLL_MS } = {}) {
+async function waitForContainerReady(config: InstagramConfig, creationId: string, { maxAttempts = DEFAULT_CONTAINER_MAX_ATTEMPTS, pollMs = DEFAULT_CONTAINER_POLL_MS }: ContainerWaitOptions = {}) {
   let lastPayload = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -205,7 +243,7 @@ async function waitForContainerReady(config, creationId, { maxAttempts = DEFAULT
   throw new Error(`Instagram media container 준비 대기 초과: ${JSON.stringify(lastPayload || {})}`);
 }
 
-async function probePublicMediaUrl(url) {
+async function probePublicMediaUrl(url: string) {
   const response = await fetch(url, {
     method: 'HEAD',
   }).catch(() => null);
@@ -237,12 +275,12 @@ async function probePublicMediaUrl(url) {
   };
 }
 
-async function verifyPublicMediaUrl(url, {
+async function verifyPublicMediaUrl(url: string, {
   maxWaitMs = DEFAULT_PUBLIC_MEDIA_MAX_WAIT_MS,
   initialDelayMs = DEFAULT_PUBLIC_MEDIA_INITIAL_DELAY_MS,
   maxDelayMs = DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS,
   backoffMultiplier = DEFAULT_PUBLIC_MEDIA_BACKOFF_MULTIPLIER,
-} = {}) {
+}: PublicMediaVerifyOptions = {}) {
   const waitLimitMs = Math.max(0, Number(maxWaitMs) || 0);
   const maxDelay = Math.max(1000, Number(maxDelayMs) || DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS);
   const factor = Math.max(1.1, Number(backoffMultiplier) || DEFAULT_PUBLIC_MEDIA_BACKOFF_MULTIPLIER);
@@ -287,7 +325,7 @@ async function publishInstagramReel({
   videoUrl,
   caption,
   dryRun = false,
-}) {
+}: ReelPublishInput) {
   validatePublishInputs({ videoUrl, caption });
   const config = await getInstagramConfig();
   const createRequest = buildCreateContainerRequest(config, { videoUrl, caption });
