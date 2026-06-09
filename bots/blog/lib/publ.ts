@@ -511,6 +511,7 @@ async function publishToFile(postData) {
     images,
     scheduleId,
     writerName,
+    seriesName,
     metadata,
   } = postData;
 
@@ -582,14 +583,15 @@ async function publishToFile(postData) {
     try {
       const rows = await pgPool.query('blog', `
         INSERT INTO blog.posts
-          (title, category, post_type, lecture_number, publish_date, status, char_count, content, hashtags, metadata)
-        VALUES ($1, $2, $3, $4, $5, 'ready', $6, $7, $8, $9)
+          (title, category, post_type, lecture_number, series_name, publish_date, status, char_count, content, hashtags, metadata)
+        VALUES ($1, $2, $3, $4, COALESCE($5, 'nodejs_120'), $6, 'ready', $7, $8, $9, $10)
         RETURNING id
       `, [
         title,
         category,
         postType,
         lectureNumber || null,
+        postType === 'lecture' ? seriesName : null,
         publishDate,
         charCount,
         linkedContent,
@@ -669,6 +671,7 @@ async function rewriteReadyDraft(postId, postData) {
     hashtags = [],
     images = null,
     writerName = null,
+    seriesName = null,
     metadata = {},
   } = postData || {};
 
@@ -710,11 +713,12 @@ async function rewriteReadyDraft(postId, postData) {
         category = $3,
         post_type = $4,
         lecture_number = $5,
-        char_count = $6,
-        content = $7,
-        html_content = $8,
-        hashtags = $9,
-        metadata = $10
+        series_name = COALESCE($6, series_name),
+        char_count = $7,
+        content = $8,
+        html_content = $9,
+        hashtags = $10,
+        metadata = $11
     WHERE id = $1
   `, [
     postId,
@@ -722,6 +726,7 @@ async function rewriteReadyDraft(postId, postData) {
     category,
     postType,
     lectureNumber || row.lecture_number || null,
+    postType === 'lecture' ? seriesName : null,
     charCount,
     linkedContent,
     htmlContent,

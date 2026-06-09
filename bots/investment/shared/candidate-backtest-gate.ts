@@ -12,6 +12,88 @@ export function getCandidateBacktestGateMode(env = process.env) {
   return 'shadow';
 }
 
+export function isShadowUnvalidatedPassthroughEnabled(env = process.env) {
+  const raw = String(env?.LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH || 'false').trim().toLowerCase();
+  return ENABLED.has(raw);
+}
+
+const GENUINE_BACKTEST_FAIL_PREFIXES = [
+  'sharpe_below_promotion_floor',
+  'sharpe_negative',
+  'candidate_backtest_sharpe_oos_deflated_low',
+  'sharpe_oos_deflated_low',
+  'drawdown_above_promotion_ceiling',
+  'candidate_backtest_drawdown_high',
+  'backtest_drawdown_high',
+  'drawdown_high',
+  'win_rate_below_promotion_floor',
+  'win_rate_low',
+  'unrealistic_sharpe',
+  'overfit_gap_high',
+  'candidate_backtest_dsr_low',
+];
+
+const UNIVERSE_BLOCK_PREFIXES = [
+  'outside_binance_top30_volume_universe',
+  'would_block_top30_universe',
+  'BINANCE_TOP_VOLUME_BLOCK_REASON',
+];
+
+const DATA_INCOMPLETE_PREFIXES = [
+  'backtest_no_oos_validation',
+  'fallback_no_oos_validation',
+  'insufficient_oos_sample',
+  'backtest_low_trade_sample',
+  'backtest_no_data',
+  'backtest_runtime_budget_partial',
+  'fallback_only_backtest',
+  'non_vectorbt_backtest',
+  'candidate_backtest_insufficient_trades',
+  'candidate_backtest_missing',
+];
+
+const DATA_INCOMPLETE_GATE_STATUSES = new Set([
+  'would_block_no_oos',
+  'would_block_unstable_backtest',
+  'would_block_no_data',
+]);
+
+const GENERIC_DATA_INCOMPLETE_REASONS = new Set([
+  'backtest_unhealthy',
+  'backtest_would_block',
+  'backtest_gate_not_pass',
+  'candidate_backtest_unhealthy',
+  'candidate_backtest_would_block',
+  'candidate_backtest_unstable',
+]);
+
+function normalizeReasonToken(value = '') {
+  return String(value || '').trim();
+}
+
+function reasonStartsWith(reason = '', prefix = '') {
+  const value = normalizeReasonToken(reason);
+  return value === prefix || value.startsWith(`${prefix}(`) || value.startsWith(`${prefix}:`) || value.startsWith(`${prefix}_`);
+}
+
+export function classifyBacktestBlock(reasons = [], gateStatus = '') {
+  const normalizedReasons = parseReasons(reasons).map(normalizeReasonToken).filter(Boolean);
+  const normalizedGateStatus = String(gateStatus || '').trim().toLowerCase();
+  const reasonMatches = (prefixes) => normalizedReasons.some((reason) => (
+    prefixes.some((prefix) => reasonStartsWith(reason, prefix))
+  ));
+  const genuineFail = reasonMatches(GENUINE_BACKTEST_FAIL_PREFIXES);
+  const universeBlock = reasonMatches(UNIVERSE_BLOCK_PREFIXES);
+  const hasDataIncompleteReason = reasonMatches(DATA_INCOMPLETE_PREFIXES);
+  const hasGenericDataIncompleteGate = DATA_INCOMPLETE_GATE_STATUSES.has(normalizedGateStatus)
+    && (
+      normalizedReasons.length === 0
+      || normalizedReasons.some((reason) => GENERIC_DATA_INCOMPLETE_REASONS.has(reason))
+    );
+  const dataIncomplete = !genuineFail && !universeBlock && (hasDataIncompleteReason || hasGenericDataIncompleteGate);
+  return { dataIncomplete, genuineFail, universeBlock };
+}
+
 export async function ensureCandidateBacktestSchema() {
   await run(`
     CREATE TABLE IF NOT EXISTS candidate_backtest_status (
@@ -139,7 +221,17 @@ function reliabilitySharpe(row = null) {
 export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const mode = getCandidateBacktestGateMode(env);
   if (mode === 'off') {
-    return { ok: true, mode, blocked: false, wouldBlock: false, reason: null, row };
+    return {
+      ok: true,
+      mode,
+      blocked: false,
+      wouldBlock: false,
+      reason: null,
+      row,
+      dataIncomplete: false,
+      genuineFail: false,
+      universeBlock: false,
+    };
   }
   if (!row) {
     return {
@@ -149,6 +241,9 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
       wouldBlock: true,
       reason: 'candidate_backtest_missing',
       row: null,
+      dataIncomplete: true,
+      genuineFail: false,
+      universeBlock: false,
     };
   }
   const fresh = row.fresh === true || String(row.fresh).toLowerCase() === 'true';
@@ -216,6 +311,7 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
       effectiveReasons = [...effectiveReasons, `candidate_backtest_dsr_low(${dsr.toFixed(4)}<${dsrMin})`];
     }
   }
+  const blockClass = classifyBacktestBlock(effectiveReasons, gateStatus);
   return {
     ok: mode !== 'enforce' || !wouldBlock,
     mode,
@@ -224,6 +320,7 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     reason,
     reasons: effectiveReasons,
     row,
+    ...blockClass,
   };
 }
 

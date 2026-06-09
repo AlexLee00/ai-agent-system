@@ -789,10 +789,12 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
       confidence           DOUBLE PRECISION DEFAULT 0,
       status               TEXT NOT NULL DEFAULT 'planned',
       shadow_only          BOOLEAN DEFAULT TRUE,
+      shadow_unvalidated   BOOLEAN DEFAULT FALSE,
       evidence             JSONB DEFAULT '{}'::jsonb,
       observed_at          TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  try { await run(`ALTER TABLE luna_paper_trading_shadow ADD COLUMN IF NOT EXISTS shadow_unvalidated BOOLEAN DEFAULT FALSE`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_symbol ON luna_paper_trading_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_side ON luna_paper_trading_shadow(paper_side, observed_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_observed ON luna_paper_trading_shadow(observed_at DESC)`); } catch { /* 무시 */ }

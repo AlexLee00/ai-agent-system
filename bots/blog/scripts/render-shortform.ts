@@ -49,7 +49,8 @@ function parseArgs(argv = []) {
 }
 
 function inferPostType(category = '') {
-  return String(category || '') === 'Node.js강의' ? 'lecture' : 'general';
+  const normalized = String(category || '');
+  return /강의$/.test(normalized) ? 'lecture' : 'general';
 }
 
 async function main() {

@@ -759,6 +759,68 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(dsrNotifyGate.ok, false, 'notify mode must not allow DSR-gated backtests through');
       assert.equal(dsrNotifyGate.hardBlockReason, 'candidate_backtest_dsr_gate');
 
+      const insufficientTradesQuality = {
+        symbol: 'INSUFFICIENT/USDT',
+        market: 'crypto',
+        backtest: {
+          fresh: true,
+          healthy: false,
+          sharpe: 1.2,
+          maxDrawdown: 10,
+          winRate: 55,
+          lastBacktestAt: new Date().toISOString(),
+          gateStatus: 'would_block_no_oos',
+          wouldBlock: true,
+          blockReasons: ['backtest_no_oos_validation', 'candidate_backtest_insufficient_trades(17<30)'],
+          totalTradesOos: 17,
+        },
+        predictive: {
+          decision: 'pass',
+          score: 0.82,
+          componentCoverage: 1,
+          createdAt: new Date().toISOString(),
+        },
+      };
+      const insufficientShadowGate = evaluateActiveEntryTriggerQualityGate(
+        { symbol: 'INSUFFICIENT/USDT' },
+        insufficientTradesQuality,
+        {
+          activeQualityGateEnabled: true,
+          activeQualityGateMode: 'hard_gate',
+          env: {
+            LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH: 'true',
+            LUNA_INTELLIGENT_DISCOVERY_MODE: 'shadow',
+            LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
+            LUNA_LIVE_FIRE_ENABLED: 'false',
+          },
+        },
+      );
+      assert.equal(insufficientShadowGate.ok, true, 'shadow passthrough should allow data-incomplete backtests outside live fire');
+      assert.equal(insufficientShadowGate.shadowUnvalidated, true);
+      assert.equal(insufficientShadowGate.backtest?.shadowUnvalidated, true);
+      assert.equal(insufficientShadowGate.hardBlock, false);
+      assert.equal(insufficientShadowGate.backtest?.gateStatus, 'shadow_unvalidated');
+      assert.equal(insufficientShadowGate.reasons.includes('backtest_unhealthy_or_would_block'), false);
+
+      const insufficientLiveGate = evaluateActiveEntryTriggerQualityGate(
+        { symbol: 'INSUFFICIENT/USDT' },
+        insufficientTradesQuality,
+        {
+          activeQualityGateEnabled: true,
+          activeQualityGateMode: 'hard_gate',
+          env: {
+            LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH: 'true',
+            LUNA_INTELLIGENT_DISCOVERY_MODE: 'autonomous_l5',
+            LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
+            LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
+            LUNA_LIVE_FIRE_ENABLED: 'true',
+          },
+        },
+      );
+      assert.equal(insufficientLiveGate.ok, false, 'live fire must keep strict backtest gate');
+      assert.equal(insufficientLiveGate.reason, 'backtest_unhealthy_or_would_block');
+      assert.equal(insufficientLiveGate.shadowUnvalidated, false);
+
       const qualityPredictiveFallbackTrigger = await insertEntryTrigger({
         symbol: qualityPredictiveFallbackSymbol,
         exchange: 'binance',

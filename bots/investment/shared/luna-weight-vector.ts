@@ -6,6 +6,10 @@ import {
   DEFAULT_LUNA_WEIGHT_POLICY,
   normalizeLunaWeightPolicy,
 } from './luna-autonomous-weight-feedback.ts';
+import {
+  classifyBacktestBlock,
+  isShadowUnvalidatedPassthroughEnabled,
+} from './candidate-backtest-gate.ts';
 
 const VALID_MARKETS = new Set(['crypto', 'domestic', 'overseas']);
 
@@ -227,10 +231,12 @@ export async function ensureLunaPhase2Schema() {
       confidence           DOUBLE PRECISION DEFAULT 0,
       status               TEXT NOT NULL DEFAULT 'planned',
       shadow_only          BOOLEAN DEFAULT TRUE,
+      shadow_unvalidated   BOOLEAN DEFAULT FALSE,
       evidence             JSONB DEFAULT '{}'::jsonb,
       observed_at          TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await run(`ALTER TABLE luna_paper_trading_shadow ADD COLUMN IF NOT EXISTS shadow_unvalidated BOOLEAN DEFAULT FALSE`);
   await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_symbol ON luna_paper_trading_shadow(symbol, market, observed_at DESC)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_side ON luna_paper_trading_shadow(paper_side, observed_at DESC)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_observed ON luna_paper_trading_shadow(observed_at DESC)`);
@@ -286,16 +292,25 @@ function scoreBacktest(backtest = {}) {
   const wouldBlock = backtest?.would_block === true || backtest?.wouldBlock === true || String(backtest?.would_block).toLowerCase() === 'true';
   const drawdown = Math.abs(finiteNumber(backtest?.max_drawdown ?? backtest?.maxDrawdown, 30));
   const drawdownTooHigh = drawdown > 30;
+  const rawBlockReasons = listMaybe(backtest?.block_reasons ?? backtest?.blockReasons);
+  const gateStatus = String(backtest?.gate_status ?? backtest?.gateStatus ?? '').trim();
   if (!fresh || !healthy || wouldBlock || drawdownTooHigh) {
+    const reasons = [
+      ...rawBlockReasons,
+      !fresh ? 'backtest_stale_or_missing' : null,
+      !healthy ? 'backtest_unhealthy' : null,
+      wouldBlock ? 'backtest_would_block' : null,
+      drawdownTooHigh ? 'backtest_drawdown_high' : null,
+    ].filter(Boolean);
+    const blockClass = classifyBacktestBlock(reasons, gateStatus);
     return {
       score: 0,
       pass: false,
-      reasons: [
-        !fresh ? 'backtest_stale_or_missing' : null,
-        !healthy ? 'backtest_unhealthy' : null,
-        wouldBlock ? 'backtest_would_block' : null,
-        drawdownTooHigh ? 'backtest_drawdown_high' : null,
-      ].filter(Boolean),
+      reasons,
+      gateStatus: gateStatus || null,
+      dataIncomplete: blockClass.dataIncomplete,
+      genuineFail: blockClass.genuineFail,
+      universeBlock: blockClass.universeBlock,
     };
   }
 
@@ -303,10 +318,15 @@ function scoreBacktest(backtest = {}) {
   const winRateRaw = finiteNumber(backtest?.win_rate ?? backtest?.winRate, 0);
   const winRateScore = clamp(winRateRaw > 1 ? winRateRaw / 100 : winRateRaw, 0, 1, 0);
   const drawdownScore = clamp(1 - drawdown / 30, 0, 1, 0);
+  const blockClass = classifyBacktestBlock(rawBlockReasons, gateStatus);
   return {
     score: round(sharpeScore * 0.45 + winRateScore * 0.35 + drawdownScore * 0.20, 4),
     pass: true,
-    reasons: [],
+    reasons: rawBlockReasons,
+    gateStatus: gateStatus || null,
+    dataIncomplete: blockClass.dataIncomplete,
+    genuineFail: blockClass.genuineFail,
+    universeBlock: blockClass.universeBlock,
   };
 }
 
@@ -526,6 +546,13 @@ export function buildLunaWeightVector(input = {}, config = {}) {
   const backtest = scoreBacktest(input.backtest || candidate?.backtest || {});
   const predictive = scorePredictive(input.predictive || candidate?.predictive || {});
   const community = scoreCommunity(input.community || candidate?.community || {});
+  const shadowUnvalidatedPassthroughEnabled = isShadowUnvalidatedPassthroughEnabled(config?.env || process.env);
+  const backtestPassForShadow = backtest.pass || (
+    shadowUnvalidatedPassthroughEnabled
+    && backtest.dataIncomplete === true
+    && backtest.genuineFail !== true
+    && backtest.universeBlock !== true
+  );
   const bottleneck = reconcileBottleneckWithCurrentEvidence(
     normalizeBottleneck(input.bottleneck || candidate?.bottleneck || {}),
     { predictive, backtest, community },
@@ -592,7 +619,9 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     !noLookahead.ok ? 'no_lookahead_violation' : null,
   ].filter(Boolean);
   const eligible = !bottleneck.hardHold && !strategyQuality.hardHold && backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
-  const signal = !eligible ? 'hold' : confidence >= 0.72 ? 'increase' : confidence >= 0.55 ? 'watch' : 'hold';
+  const shadowEligible = !bottleneck.hardHold && !strategyQuality.hardHold && backtestPassForShadow && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
+  const shadowUnvalidated = shadowEligible && !eligible;
+  const signal = !shadowEligible ? 'hold' : confidence >= 0.72 ? 'increase' : confidence >= 0.55 ? 'watch' : 'hold';
   const cap = maxTargetWeightByMarket[market] ?? 0.08;
   const counterfactualEligible = backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
   const strategyCounterfactualConfidence = clamp(
@@ -649,15 +678,22 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     confidence: round(confidence, 4),
     riskBudgetUsdt: round(riskBudgetUsdt * clamp(confidence, 0, 1, 0), 4),
     signal,
-    gateStatus: eligible ? 'shadow_pass' : 'shadow_would_block',
+    gateStatus: eligible ? 'shadow_pass' : shadowUnvalidated ? 'shadow_unvalidated' : 'shadow_would_block',
     noLookaheadOk: noLookahead.ok,
     shadowOnly: true,
+    eligible,
+    shadowEligible,
+    shadowUnvalidated,
+    shadow_unvalidated_passthrough: shadowUnvalidated,
     evidence: {
       phase: 'luna_phase2_finrlx',
       source: 'weight_vector_shadow',
       decisionSpecVersion: decisionSpec.specVersion,
       decisionSpecHash: decisionSpec.specHash,
       decisionSpec,
+      shadowUnvalidated,
+      shadow_unvalidated_passthrough: shadowUnvalidated,
+      shadowUnvalidatedPassthroughEnabled,
       components: {
         candidate: {
           score: round(candidateScore, 4),
@@ -666,7 +702,17 @@ export function buildLunaWeightVector(input = {}, config = {}) {
           strategyQualityPenalty: round(strategyQuality.penalty, 4),
           raw: candidate,
         },
-        backtest: { score: round(backtest.score, 4), pass: backtest.pass, raw: input.backtest || null },
+        backtest: {
+          score: round(backtest.score, 4),
+          pass: backtest.pass,
+          passForShadow: backtestPassForShadow,
+          dataIncomplete: backtest.dataIncomplete === true,
+          genuineFail: backtest.genuineFail === true,
+          universeBlock: backtest.universeBlock === true,
+          gateStatus: backtest.gateStatus || null,
+          reasons: backtest.reasons || [],
+          raw: input.backtest || null,
+        },
         predictive: {
           score: round(predictive.score, 4),
           pass: predictive.pass,
@@ -769,6 +815,10 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
   const bottleneck = weightVector?.evidence?.bottleneck || {};
   const strategyQuality = weightVector?.evidence?.strategyQuality || {};
   const counterfactual = bottleneck?.counterfactual || {};
+  const shadowUnvalidated = weightVector?.shadowUnvalidated === true
+    || weightVector?.shadow_unvalidated_passthrough === true
+    || weightVector?.evidence?.shadowUnvalidated === true
+    || weightVector?.evidence?.shadow_unvalidated_passthrough === true;
   const counterfactualTargetWeight = clamp(counterfactual.targetWeight, 0, 1, targetWeight);
   const counterfactualDeltaWeight = counterfactualTargetWeight - currentWeight;
   const counterfactualRawNotional = Math.abs(counterfactualDeltaWeight) * equityUsdt;
@@ -798,9 +848,13 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
     confidence: round(weightVector?.confidence, 4),
     status: paperSide === 'HOLD' ? 'no_action' : 'planned',
     shadowOnly: true,
+    shadowUnvalidated,
+    shadow_unvalidated: shadowUnvalidated,
     evidence: {
       phase: 'luna_phase2_finrlx',
       source: 'paper_trading_shadow',
+      shadowUnvalidated,
+      shadow_unvalidated_passthrough: shadowUnvalidated,
       decisionSpecVersion: weightVector?.evidence?.decisionSpecVersion || weightVector?.evidence?.decisionSpec?.specVersion || null,
       decisionSpecHash: weightVector?.evidence?.decisionSpecHash || weightVector?.evidence?.decisionSpec?.specHash || null,
       decisionSpec: weightVector?.evidence?.decisionSpec || null,
@@ -1121,8 +1175,8 @@ export async function insertLunaPaperTradingShadow(row = {}) {
     INSERT INTO luna_paper_trading_shadow
       (symbol, market, exchange, target_weight, current_weight, delta_weight,
        paper_side, paper_notional_usdt, paper_quantity, reference_price,
-       confidence, status, shadow_only, evidence)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13::jsonb)
+       confidence, status, shadow_only, shadow_unvalidated, evidence)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14::jsonb)
   `, [
     row.symbol,
     row.market,
@@ -1136,6 +1190,7 @@ export async function insertLunaPaperTradingShadow(row = {}) {
     row.referencePrice,
     row.confidence,
     row.status,
+    row.shadowUnvalidated === true || row.shadow_unvalidated === true,
     JSON.stringify(row.evidence || {}),
   ]);
 }

@@ -18,7 +18,10 @@ import { isMaturePosition } from './luna-discovery-mature-policy.ts';
 import { enforceTpSlRequirement } from './tp-sl-enforcer.ts';
 import { evaluateTradingViewEntryGuard } from './tradingview-entry-guard.ts';
 import { query as dbQuery } from './db/core.ts';
-import { evaluateCandidateBacktestStatus } from './candidate-backtest-gate.ts';
+import {
+  evaluateCandidateBacktestStatus,
+  isShadowUnvalidatedPassthroughEnabled,
+} from './candidate-backtest-gate.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
@@ -145,13 +148,24 @@ function backtestRowForGate(backtest = {}) {
   };
 }
 
-function applyBacktestGateEvaluation(backtest = null, env = process.env) {
+function applyBacktestGateEvaluation(backtest = null, env = process.env, options = {}) {
   if (!backtest) return { backtest: null, evaluation: null };
   const evaluation = evaluateCandidateBacktestStatus(backtestRowForGate(backtest), env);
-  const evaluatedWouldBlock = isTruthy(backtest.wouldBlock ?? backtest.would_block) || evaluation?.wouldBlock === true;
-  const evaluatedHealthy = evaluation?.wouldBlock === true ? false : backtest.healthy;
+  const shadowUnvalidatedPassthrough = options.allowShadowUnvalidated === true
+    && isShadowUnvalidatedPassthroughEnabled(env)
+    && evaluation?.dataIncomplete === true
+    && evaluation?.genuineFail !== true
+    && evaluation?.universeBlock !== true;
+  const evaluatedWouldBlock = shadowUnvalidatedPassthrough
+    ? false
+    : (isTruthy(backtest.wouldBlock ?? backtest.would_block) || evaluation?.wouldBlock === true);
+  const evaluatedHealthy = shadowUnvalidatedPassthrough
+    ? true
+    : (evaluation?.wouldBlock === true ? false : backtest.healthy);
   const currentGateStatus = String(backtest.gateStatus || backtest.gate_status || '').trim();
-  const evaluatedGateStatus = evaluation?.wouldBlock === true && !currentGateStatus.toLowerCase().startsWith('would_block')
+  const evaluatedGateStatus = shadowUnvalidatedPassthrough
+    ? 'shadow_unvalidated'
+    : evaluation?.wouldBlock === true && !currentGateStatus.toLowerCase().startsWith('would_block')
     ? 'would_block_unhealthy'
     : currentGateStatus || null;
   const blockReasons = [
@@ -166,16 +180,24 @@ function applyBacktestGateEvaluation(backtest = null, env = process.env) {
       gateStatus: evaluatedGateStatus,
       wouldBlock: evaluatedWouldBlock,
       blockReasons: [...new Set(blockReasons.map((item) => String(item || '').trim()).filter(Boolean))],
+      dataIncomplete: evaluation?.dataIncomplete === true,
+      genuineFail: evaluation?.genuineFail === true,
+      universeBlock: evaluation?.universeBlock === true,
+      shadowUnvalidated: shadowUnvalidatedPassthrough,
+      shadow_unvalidated: shadowUnvalidatedPassthrough,
     },
   };
 }
 
-function hasDsrBacktestHardBlock(backtest = null) {
+function hasDsrBacktestHardBlock(backtest = null, options = {}) {
   const reasons = parseJsonMaybe(backtest?.blockReasons ?? backtest?.block_reasons, []);
   return reasons.some((reason) => {
     const value = String(reason || '');
-    return value.startsWith('candidate_backtest_dsr_low')
-      || value.startsWith('candidate_backtest_insufficient_trades');
+    if (value.startsWith('candidate_backtest_dsr_low')) return true;
+    if (value.startsWith('candidate_backtest_insufficient_trades')) {
+      return options.allowInsufficientTrades !== true;
+    }
+    return false;
   });
 }
 
@@ -300,8 +322,20 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
   const reasons = [];
   const backtest = quality?.backtest || null;
   const predictive = quality?.predictive || null;
-  const evaluatedBacktest = backtest ? applyBacktestGateEvaluation(backtest, context.env || process.env).backtest : null;
-  const dsrHardBlock = hasDsrBacktestHardBlock(evaluatedBacktest);
+  const env = context.env || process.env;
+  const runtimeFlags = context.flags || getLunaIntelligentDiscoveryFlags({ env });
+  const liveEntryFire = typeof runtimeFlags?.shouldAllowLiveEntryFire === 'function'
+    ? runtimeFlags.shouldAllowLiveEntryFire()
+    : false;
+  const allowShadowUnvalidated = !liveEntryFire && isShadowUnvalidatedPassthroughEnabled(env);
+  const backtestEvaluation = backtest
+    ? applyBacktestGateEvaluation(backtest, env, { allowShadowUnvalidated })
+    : { backtest: null, evaluation: null };
+  const evaluatedBacktest = backtestEvaluation.backtest;
+  const shadowUnvalidatedBacktest = evaluatedBacktest?.shadowUnvalidated === true;
+  const dsrHardBlock = hasDsrBacktestHardBlock(evaluatedBacktest, {
+    allowInsufficientTrades: shadowUnvalidatedBacktest,
+  });
   let backtestRawFresh = false;
   let backtestFresh = false;
   let backtestAgeHours = null;
@@ -329,7 +363,9 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
       || isTruthy(evaluatedBacktest.wouldBlock ?? evaluatedBacktest.would_block)
       || gateStatus.startsWith('would_block')
     ) {
-      reasons.push('backtest_unhealthy_or_would_block');
+      if (!shadowUnvalidatedBacktest) {
+        reasons.push('backtest_unhealthy_or_would_block');
+      }
     }
   }
 
@@ -355,6 +391,9 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     notifyMode,
     hardBlock: dsrHardBlock,
     hardBlockReason: dsrHardBlock ? 'candidate_backtest_dsr_gate' : null,
+    shadowUnvalidated: shadowUnvalidatedBacktest,
+    shadow_unvalidated: shadowUnvalidatedBacktest,
+    advisoryReasons: shadowUnvalidatedBacktest ? ['shadow_unvalidated_backtest_passthrough'] : [],
     reason: uniqueReasons[0] || 'active_quality_gate_passed',
     reasons: uniqueReasons,
     blockedReasons: uniqueReasons,
@@ -367,6 +406,10 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
       healthy: evaluatedBacktest.healthy === true,
       gateStatus: evaluatedBacktest.gateStatus || evaluatedBacktest.gate_status || null,
       wouldBlock: isTruthy(evaluatedBacktest.wouldBlock ?? evaluatedBacktest.would_block),
+      dataIncomplete: evaluatedBacktest.dataIncomplete === true,
+      genuineFail: evaluatedBacktest.genuineFail === true,
+      universeBlock: evaluatedBacktest.universeBlock === true,
+      shadowUnvalidated: shadowUnvalidatedBacktest,
       sharpe: evaluatedBacktest.sharpe ?? null,
       maxDrawdown: evaluatedBacktest.maxDrawdown ?? evaluatedBacktest.max_drawdown ?? null,
       winRate: evaluatedBacktest.winRate ?? evaluatedBacktest.win_rate ?? null,

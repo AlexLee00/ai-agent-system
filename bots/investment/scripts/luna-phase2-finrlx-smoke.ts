@@ -13,6 +13,7 @@ import {
 import { runLunaWeightVectorShadow } from './runtime-luna-weight-vector-shadow.ts';
 import { runLunaPaperTradingShadow } from './runtime-luna-paper-trading-shadow.ts';
 import { runLunaPaperPromotionGateShadow } from './runtime-luna-paper-promotion-gate.ts';
+import { evaluateLunaPaperPromotionHistory } from '../shared/luna-paper-promotion-gate.ts';
 
 const now = new Date('2026-05-14T00:00:00.000Z').toISOString();
 const future = new Date('2026-05-14T00:10:00.000Z').toISOString();
@@ -212,6 +213,111 @@ const paper = buildLunaPaperTradingPlan(pass, {
 assert.equal(paper.shadowOnly, true);
 assert.equal(paper.paperSide, 'BUY');
 assert.ok(paper.paperNotionalUsdt <= 50);
+
+const unvalidatedBacktest = {
+  fresh: true,
+  healthy: false,
+  sharpe: 1.2,
+  win_rate: 58,
+  max_drawdown: 12,
+  last_backtest_at: now,
+  gate_status: 'would_block_no_oos',
+  would_block: true,
+  block_reasons: ['backtest_no_oos_validation', 'backtest_low_trade_sample(trades=3)'],
+};
+const shadowPassthroughOff = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'UNOOS/USDT', market: 'crypto', score: 0.93, discovered_at: now },
+  backtest: unvalidatedBacktest,
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+  community: { avg_score: 0.52, source_count: 4, last_seen_at: now },
+}, { riskBudgetUsdt: 50, env: { LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH: 'false' } });
+assert.equal(shadowPassthroughOff.signal, 'hold');
+assert.equal(shadowPassthroughOff.shadowUnvalidated, false);
+
+const shadowPassthroughOn = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'UNOOS/USDT', market: 'crypto', score: 0.93, discovered_at: now },
+  backtest: unvalidatedBacktest,
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+  community: { avg_score: 0.52, source_count: 4, last_seen_at: now },
+}, { riskBudgetUsdt: 50, env: { LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH: 'true' } });
+assert.ok(['increase', 'watch'].includes(shadowPassthroughOn.signal));
+assert.ok(shadowPassthroughOn.targetWeight > 0);
+assert.equal(shadowPassthroughOn.eligible, false);
+assert.equal(shadowPassthroughOn.shadowEligible, true);
+assert.equal(shadowPassthroughOn.shadowUnvalidated, true);
+assert.equal(shadowPassthroughOn.gateStatus, 'shadow_unvalidated');
+assert.equal(shadowPassthroughOn.evidence.components.backtest.pass, false);
+assert.equal(shadowPassthroughOn.evidence.components.backtest.passForShadow, true);
+assert.equal(shadowPassthroughOn.evidence.components.backtest.dataIncomplete, true);
+
+const shadowPaper = buildLunaPaperTradingPlan(shadowPassthroughOn, {
+  position: { amount: 0, avg_price: 100 },
+  equityUsdt: 1000,
+  maxOrderUsdt: 50,
+  minNotionalUsdt: 5,
+});
+assert.equal(shadowPaper.paperSide, 'BUY');
+assert.equal(shadowPaper.status, 'planned');
+assert.equal(shadowPaper.shadowUnvalidated, true);
+assert.equal(shadowPaper.evidence.shadow_unvalidated_passthrough, true);
+
+const genuineBacktestFail = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'GFAIL/USDT', market: 'crypto', score: 0.93, discovered_at: now },
+  backtest: {
+    ...unvalidatedBacktest,
+    block_reasons: ['sharpe_below_promotion_floor'],
+    gate_status: 'would_block_unstable_backtest',
+  },
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+}, { riskBudgetUsdt: 50, env: { LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH: 'true' } });
+assert.equal(genuineBacktestFail.signal, 'hold');
+assert.equal(genuineBacktestFail.shadowUnvalidated, false);
+assert.equal(genuineBacktestFail.evidence.components.backtest.genuineFail, true);
+
+const promotionRows = Array.from({ length: 3 }, (_, index) => ({
+  symbol: 'UNOOS/USDT',
+  market: 'crypto',
+  exchange: 'binance',
+  paper_side: 'BUY',
+  paper_notional_usdt: 25,
+  confidence: 0.82,
+  status: 'planned',
+  shadow_only: true,
+  shadow_unvalidated: true,
+  observed_at: new Date(Date.parse(now) - index * 60_000).toISOString(),
+  evidence: {
+    shadowUnvalidated: true,
+    promotionBacktestQuality: {
+      fresh: true,
+      healthy: false,
+      gateStatus: 'would_block_no_oos',
+      wouldBlock: true,
+      blockReasons: ['backtest_no_oos_validation', 'backtest_low_trade_sample(trades=3)'],
+      fallbackUsed: false,
+      vectorbtEnabled: true,
+      sharpe: 1.2,
+      maxDrawdown: 12,
+      winRate: 58,
+    },
+  },
+}));
+const promotionShadow = evaluateLunaPaperPromotionHistory(promotionRows, {
+  env: { LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH: 'true' },
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.6,
+  maxOrderUsdt: 50,
+});
+assert.equal(promotionShadow.passCount, 3);
+assert.equal(promotionShadow.promotionCandidate, false);
+assert.equal(promotionShadow.decision, 'shadow_promotion_unvalidated_candidate');
+assert.equal(promotionShadow.promotionBlockerClass, 'shadow_unvalidated');
+assert.ok(promotionShadow.blockReasons.includes('promotion_requires_validated_backtest'));
+assert.equal(promotionShadow.evidence.shadowUnvalidatedPassCount, 3);
+assert.equal(promotionShadow.evidence.validatedPassCount, 0);
 
 const weightInserts = [];
 const weightRuntime = await runLunaWeightVectorShadow({

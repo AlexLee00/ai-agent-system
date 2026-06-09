@@ -110,6 +110,43 @@ const BLOG_SKILL_BUNDLE = buildBlogSkillBundle([
   'blogRag',
 ]);
 
+function _buildLectureSeriesGuidance(researchData = {}, lectureTitle = '') {
+  const displayName = String(researchData.lectureSeriesDisplayName || '').trim();
+  const seriesName = String(researchData.lectureSeriesName || '').trim();
+  const source = `${displayName} ${seriesName} ${lectureTitle || ''}`;
+  const isAiImplementation = /실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(source);
+  if (!isAiImplementation) {
+    const nodejsUpdates = researchData.nodejs_updates || [];
+    return {
+      briefingTitle: '최신 Node.js 정보',
+      briefingContent: nodejsUpdates.length > 0
+        ? nodejsUpdates.map(u => `- ${u.tag}: ${u.name} (${u.date})`).join('\n')
+        : '- 최신 Node.js 정보를 자체 보유 지식으로 보충하라',
+      briefingRequirement: 'Node.js 릴리스 + 보안 이슈 상세 설명',
+      codeRule: '코드 블록에서 require/import하는 패키지는 실제 npm 또는 Node.js 표준 라이브러리만 사용하라.',
+      codeFallbackRule: '가상의 API나 메서드는 만들지 말고, 확실하지 않으면 표준 라이브러리로 해결하라.',
+      chunkBriefingLine: `[최신 Node.js] ${nodejsUpdates.map(u => `${u.tag} ${u.name}`).join(', ') || '자체 지식 보충'}`,
+      chunkBriefingRequirement: 'Node.js 릴리스/보안 이슈',
+      practiceRequirement: 'JavaScript(Node.js) 실습 코드 3개+, JSDoc 주석, 안티패턴 vs 권장 패턴',
+    };
+  }
+
+  return {
+    briefingTitle: '최신 AI 코딩 에이전트 정보',
+    briefingContent: [
+      '- ChatGPT Codex와 Claude Code의 실제 사용 흐름, 장단점, 초보자 실습 관점을 중심으로 설명하라.',
+      '- 검증되지 않은 가격, 기능 출시일, 프로모션, 특정 할인 정보는 만들지 말라.',
+      '- 코딩을 모르는 일반인도 따라 할 수 있도록 도구 선택보다 작업 분해와 검증 절차를 우선하라.',
+    ].join('\n'),
+    briefingRequirement: 'AI 코딩 에이전트 활용 흐름 + 실습 준비 + 안전한 검증 관점 상세 설명',
+    codeRule: '코드 예시는 복사해 따라 할 수 있는 HTML, JavaScript, shell 명령, 체크리스트 수준으로 제한하라.',
+    codeFallbackRule: '검증되지 않은 SDK/API를 만들지 말고, 불확실하면 의사코드보다 체크리스트와 파일 구조 예시로 설명하라.',
+    chunkBriefingLine: '[최신 AI 코딩 에이전트] ChatGPT Codex, Claude Code, 프롬프트 기반 구현, 작업 분해, 결과 검증 관점으로 보충',
+    chunkBriefingRequirement: 'AI 코딩 에이전트 활용 흐름/실습 준비/검증 포인트',
+    practiceRequirement: '일반인이 따라 할 수 있는 HTML/JavaScript/명령어/체크리스트 예시 3개+, 단계별 주석, 실패 시 수정 요청 예시',
+  };
+}
+
 const AI_BRIEFING_RULES = `
 [AI Briefing 구조 규칙]
 1. [핵심 요약 3줄] 다음에 [이 글에서 배울 수 있는 것]을 불릿으로 제시한다.
@@ -304,6 +341,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
 
   const weatherContext = weatherToContext(weather);
+  const seriesGuidance = _buildLectureSeriesGuidance(researchData, lectureTitle);
 
   // 실전 에피소드 블록
   const experienceBlock = realExperiences.length > 0
@@ -362,10 +400,8 @@ ${BLOG_SKILL_BUNDLE ? `${BLOG_SKILL_BUNDLE}\n` : ''}
 [오늘 날씨 — 반드시 3회 이상 자연스럽게 활용]
 ${weatherContext}
 
-[최신 Node.js 정보 (브리핑에 활용)]
-${nodejsUpdates.length > 0
-  ? nodejsUpdates.map(u => `- ${u.tag}: ${u.name} (${u.date})`).join('\n')
-  : '- 최신 Node.js 정보를 자체 보유 지식으로 보충하라'}
+[${seriesGuidance.briefingTitle} (브리핑에 활용)]
+${seriesGuidance.briefingContent}
 
 [최신 IT 뉴스 (인사말에 활용)]
 ${itNews.slice(0, 3).map(n => `- ${n.title}`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
@@ -383,7 +419,7 @@ ${charInstruction}
 - [핵심 요약 3줄]: 150자
 - [이 글에서 배울 수 있는 것]: 불릿 3개 이상
 - [승호아빠 인사말]: 300자
-- [최신 기술 브리핑]: 1,200자 (Node.js 릴리스 + 보안 이슈 상세 설명)
+- [최신 기술 브리핑]: 1,200자 (${seriesGuidance.briefingRequirement})
 - [전문가의 실무 인사이트 ①②③④] 각 600자
 - [강의 - 이론]: 2,500자 (개념 + 비유 + 역사 + 원리 상세 설명)
 - [실무 - 코드 및 아키텍처]: 2,500자 (코드 3개 이상 + 주석 + 안티패턴 대비)
@@ -399,8 +435,8 @@ ${_buildVariationBlock(sectionVariation)}
 - 절대 요약하거나 축약하지 말라. 모든 개념을 풍부한 예시와 함께 설명하라.
 - 이 글은 전문가가 집필하는 기술 서적의 한 챕터에 해당하는 분량이어야 한다.
 - 코드 블록마다 최소 5줄 이상의 상세한 주석을 포함하라.
-- 코드 블록에서 require/import하는 패키지는 실제 npm 또는 Node.js 표준 라이브러리만 사용하라.
-- 가상의 API나 메서드는 만들지 말고, 확실하지 않으면 표준 라이브러리로 해결하라.
+- ${seriesGuidance.codeRule}
+- ${seriesGuidance.codeFallbackRule}
 - 최근 실험 승자 신호가 있으면 강의 제목·요약·실무 포인트를 더 자연스럽고 신뢰감 있게 정리하라.
 - 최근 실험 약세 레인이 있으면 유행성/과장형 표현은 피하고 실전형 설명을 우선하라.
 - 반드시 모든 섹션을 작성하고 _THE_END_ 로 마무리하라.
@@ -520,7 +556,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
     .join('\n') || '1. [warn] 품질 보정 필요';
 
   const repairPrompt = `
-다음은 이미 작성된 Node.js 강의 포스팅 초안이다.
+다음은 이미 작성된 강의 포스팅 초안이다.
 이 글을 처음부터 다시 쓰지 말고, 기존 구조와 강의 주제를 유지한 채 부족한 부분만 보정하라.
 
 [강의 정보]
@@ -615,6 +651,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
 
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
+  const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
 
   const experienceBlock = realExperiences.length > 0
     ? realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n')
@@ -642,7 +679,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ★ 이 포스팅의 메인 주제는 반드시 "${lectureTitle}"이어야 한다. 다른 주제로 대체 금지.
 [오늘 날씨] ${weatherContext}
 [최신 IT 뉴스] ${itNews.slice(0, 3).map(n => n.title).join(' / ') || '최신 IT 트렌드 자체 지식'}
-[최신 Node.js] ${nodejsUpdates.map(u => `${u.tag} ${u.name}`).join(', ') || '자체 지식 보충'}
+${seriesGuidance.chunkBriefingLine}
 ${popularPatternBlock}
 ${LECTURE_AI_BRIEFING_ORDER}
 ${LECTURE_AI_BRIEFING_CHECKLIST}
@@ -655,7 +692,7 @@ ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''
   [핵심 요약 3줄] — 150자 내외 AI 스니펫용
   [이 글에서 배울 수 있는 것] — 불릿 3개 이상, 120자 이상
   [승호아빠 인사말] — 날씨+시사 반영, 300자
-  [최신 기술 브리핑] — Node.js 릴리스/보안 이슈, 1,200자
+  [최신 기술 브리핑] — ${seriesGuidance.chunkBriefingRequirement}, 1,200자
   [전문가의 실무 인사이트 ①] — 비즈니스 관점, 500자
 
 총 2,700자 이상. 날씨 맥락 1회 포함.
@@ -687,7 +724,7 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
   [전문가의 실무 인사이트 ②] — 기획 단계 관점, 500자
 
 총 2,500자 이상. 코드 용어에 괄호 풀이.
-코드 블록에서 require/import하는 패키지는 실제 npm 또는 Node.js 표준 라이브러리만 사용하라.
+${seriesGuidance.codeRule}
       `.trim(),
     },
     {
@@ -708,11 +745,11 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
-  [실무 - 코드 및 아키텍처] — JavaScript(Node.js) 실습 코드 3개+, JSDoc 주석, 안티패턴 vs 권장 패턴, 2,000자+
+  [실무 - 코드 및 아키텍처] — ${seriesGuidance.practiceRequirement}, 2,000자+
   [전문가의 실무 인사이트 ③] — 코드의 비즈니스 가치, 500자
 
 총 2,500자 이상. 날씨 맥락 1회 삽입. async/await 패턴, 상세 주석 필수.
-가상의 API나 메서드는 만들지 말고, 패키지가 불확실하면 Node.js 표준 라이브러리를 사용하라.
+${seriesGuidance.codeFallbackRule}
       `.trim(),
     },
     {

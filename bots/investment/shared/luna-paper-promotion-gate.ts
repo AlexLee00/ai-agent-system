@@ -8,6 +8,10 @@ import {
   normalizeLunaPhase2Symbol,
   normalizeLunaPhase2Symbols,
 } from './luna-weight-vector.ts';
+import {
+  classifyBacktestBlock,
+  isShadowUnvalidatedPassthroughEnabled,
+} from './candidate-backtest-gate.ts';
 
 function finiteNumber(value, fallback = 0) {
   const n = Number(value);
@@ -92,6 +96,17 @@ export function normalizeLunaPaperPromotionRow(row = {}) {
     confidence: finiteNumber(row.confidence, 0),
     status: String(row.status || 'planned'),
     shadowOnly: normalizeBool(row.shadow_only ?? row.shadowOnly, true),
+    shadowUnvalidated: normalizeBool(
+      row.shadow_unvalidated
+        ?? row.shadowUnvalidated
+        ?? evidence?.shadowUnvalidated
+        ?? evidence?.shadow_unvalidated_passthrough
+        ?? evidence?.weightVector?.shadowUnvalidated
+        ?? evidence?.weightVector?.shadow_unvalidated_passthrough
+        ?? evidence?.weightVector?.evidence?.shadowUnvalidated
+        ?? evidence?.weightVector?.evidence?.shadow_unvalidated_passthrough,
+      false,
+    ),
     evidence,
     promotionBacktestQuality: evidence?.promotionBacktestQuality || {},
     promotionStrategyQuality: evidence?.promotionStrategyQuality || evidence?.strategyQualityAudit || evidence?.weightVector?.evidence?.strategyQuality || {},
@@ -117,6 +132,7 @@ function clamp01(value) {
 function promotionBlockerClass(blockReasons = [], promotionCandidate = false) {
   if (promotionCandidate) return 'ready_for_master_review';
   const reasons = new Set(blockReasons || []);
+  if (reasons.has('promotion_requires_validated_backtest')) return 'shadow_unvalidated';
   if ([
     'candidate_bottleneck_hard_hold_seen',
     'candidate_bottleneck_prevented_order_seen',
@@ -162,6 +178,13 @@ function buildNextRequiredEvidence({
   }
   const reasons = new Set(blockReasons || []);
   const evidence = [];
+  if (reasons.has('promotion_requires_validated_backtest')) {
+    evidence.push({
+      type: 'validated_backtest',
+      action: 'accumulate_oos_validated_backtest',
+      detail: 'Paper BUY pass came from shadow-only unvalidated backtest passthrough; live promotion requires OOS-validated backtest evidence.',
+    });
+  }
   if (reasons.has('no_paper_buy_pass')) {
     evidence.push({
       type: 'paper_buy_pass',
@@ -320,6 +343,7 @@ function getPromotionBacktestQuality(row = {}, config = {}) {
     maxDrawdown != null && Math.abs(maxDrawdown) > maxPromotionDrawdown ? 'drawdown_above_promotion_ceiling' : null,
     winRate != null && winRate < minPromotionWinRate ? 'win_rate_below_promotion_floor' : null,
   ].filter(Boolean);
+  const blockClass = classifyBacktestBlock([...blockReasons, ...reasons], gateStatus);
   return {
     present: Object.keys(quality || {}).length > 0,
     fallbackUsed,
@@ -341,6 +365,9 @@ function getPromotionBacktestQuality(row = {}, config = {}) {
     minPromotionTotalTrades,
     stable: reasons.length === 0,
     reasons,
+    dataIncomplete: blockClass.dataIncomplete,
+    genuineFail: blockClass.genuineFail,
+    universeBlock: blockClass.universeBlock,
   };
 }
 
@@ -387,6 +414,12 @@ function isPaperPass(row = {}, config = {}) {
   const bottleneck = getBottleneckAvoidance(row);
   const backtestQuality = getPromotionBacktestQuality(row, config);
   const backtestStable = !backtestQuality.present || backtestQuality.stable;
+  const backtestOkForShadowPass = backtestStable || (
+    isShadowUnvalidatedPassthroughEnabled(config?.env || process.env)
+    && backtestQuality.dataIncomplete === true
+    && backtestQuality.genuineFail !== true
+    && backtestQuality.universeBlock !== true
+  );
   return row.paperSide === 'BUY'
     && row.status === 'planned'
     && row.paperNotionalUsdt > 0
@@ -394,11 +427,12 @@ function isPaperPass(row = {}, config = {}) {
     && normalizeBool(bottleneck.hardHold, false) === false
     && normalizeBool(bottleneck.preventedOrder, false) === false
     && noLookaheadOk(row) === true
-    && backtestStable;
+    && backtestOkForShadowPass;
 }
 
 export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const cfg = normalizeLunaPaperPromotionGateConfig(config);
+  const runtimeCfg = { ...cfg, env: config.env || process.env };
   const history = (rows || [])
     .map(normalizeLunaPaperPromotionRow)
     .filter((row) => row.symbol)
@@ -406,11 +440,15 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const head = history[0] || {};
   let consecutivePasses = 0;
   for (const row of history) {
-    if (!isPaperPass(row, cfg)) break;
+    if (!isPaperPass(row, runtimeCfg)) break;
     consecutivePasses += 1;
   }
 
-  const passRows = history.filter((row) => isPaperPass(row, cfg));
+  const passRows = history.filter((row) => isPaperPass(row, runtimeCfg));
+  const shadowUnvalidatedPassRows = passRows.filter((row) => (
+    row.shadowUnvalidated === true || getPromotionBacktestQuality(row, runtimeCfg).dataIncomplete === true
+  ));
+  const validatedPassRows = passRows.filter((row) => !shadowUnvalidatedPassRows.includes(row));
   const hardHoldRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).hardHold, false));
   const preventedRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).preventedOrder, false));
   const noLookaheadViolationRows = history.filter((row) => noLookaheadOk(row) === false);
@@ -418,9 +456,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     ? history.filter((row) => row.paperNotionalUsdt > cfg.maxOrderUsdt + 0.000001)
     : [];
   const backtestQualityRows = history
-    .map((row) => getPromotionBacktestQuality(row, cfg))
+    .map((row) => getPromotionBacktestQuality(row, runtimeCfg))
     .filter((quality) => quality.present);
-  const latestBacktestQuality = getPromotionBacktestQuality(history[0] || {}, cfg);
+  const latestBacktestQuality = getPromotionBacktestQuality(history[0] || {}, runtimeCfg);
   const latestStrategyQuality = getPromotionStrategyQuality(history[0] || {});
   const latestBottleneckAvoidance = getBottleneckAvoidance(history[0] || {});
   const fallbackOnlyRows = backtestQualityRows.filter((quality) => quality.reasons.includes('fallback_only_backtest'));
@@ -455,6 +493,7 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     consecutivePasses < cfg.minConsecutivePasses ? 'insufficient_consecutive_paper_passes' : null,
     avgConfidence < cfg.minAvgConfidence ? 'avg_confidence_below_promotion_floor' : null,
     passRows.length === 0 ? 'no_paper_buy_pass' : null,
+    shadowUnvalidatedPassRows.length > 0 ? 'promotion_requires_validated_backtest' : null,
     latestBottleneckHardHold ? 'candidate_bottleneck_hard_hold_seen' : null,
     latestBottleneckPreventedOrder ? 'candidate_bottleneck_prevented_order_seen' : null,
     noLookaheadViolationRows.length > 0 ? 'no_lookahead_violation_seen' : null,
@@ -488,7 +527,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   });
   const decision = promotionCandidate
     ? 'shadow_promotion_candidate_ready'
-    : passRows.length > 0
+    : shadowUnvalidatedPassRows.length > 0
+      ? 'shadow_promotion_unvalidated_candidate'
+      : passRows.length > 0
       ? 'shadow_promotion_observe'
       : 'shadow_promotion_blocked';
 
@@ -518,6 +559,8 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       source: 'paper_promotion_gate_shadow',
       config: cfg,
       avgConfidenceSource: passRows.length > 0 ? 'paper_buy_pass_rows' : 'all_history_rows_until_first_buy_pass',
+      shadowUnvalidatedPassCount: shadowUnvalidatedPassRows.length,
+      validatedPassCount: validatedPassRows.length,
       latestObservedAt: head.observedAt || null,
       latestPaperSide: head.paperSide || null,
       latestStatus: head.status || null,
@@ -548,14 +591,15 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
         observedAt: row.observedAt,
         paperSide: row.paperSide,
         status: row.status,
+        shadowUnvalidated: row.shadowUnvalidated === true,
         paperNotionalUsdt: round(row.paperNotionalUsdt, 4),
         confidence: round(row.confidence, 4),
         bottleneckAction: getBottleneckAvoidance(row).action || null,
         bottleneckHardHold: normalizeBool(getBottleneckAvoidance(row).hardHold, false),
         noLookaheadOk: noLookaheadOk(row),
-        backtestQuality: getPromotionBacktestQuality(row, cfg),
+        backtestQuality: getPromotionBacktestQuality(row, runtimeCfg),
         strategyQuality: getPromotionStrategyQuality(row),
-        pass: isPaperPass(row, cfg),
+        pass: isPaperPass(row, runtimeCfg),
       })),
       promotionRequiresExplicitMasterApproval: true,
       liveMutation: false,
@@ -678,6 +722,7 @@ export function buildLunaPaperPromotionRowsSql({ marketWhere = '', symbolWhere =
     paper_rows AS (
       SELECT pts.symbol, pts.market, pts.exchange, pts.target_weight, pts.current_weight, pts.delta_weight,
              pts.paper_side, pts.paper_notional_usdt, pts.confidence, pts.status, pts.shadow_only,
+             COALESCE(pts.shadow_unvalidated, false) AS shadow_unvalidated,
            CASE
              WHEN cbs.symbol IS NULL THEN pts.evidence
              ELSE jsonb_set(
@@ -718,6 +763,7 @@ export function buildLunaPaperPromotionRowsSql({ marketWhere = '', symbolWhere =
     )
     SELECT pr.symbol, pr.market, pr.exchange, pr.target_weight, pr.current_weight, pr.delta_weight,
            pr.paper_side, pr.paper_notional_usdt, pr.confidence, pr.status, pr.shadow_only,
+           pr.shadow_unvalidated,
            CASE
              WHEN ls.symbol IS NULL THEN pr.evidence_with_backtest
              ELSE jsonb_set(

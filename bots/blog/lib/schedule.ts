@@ -109,6 +109,9 @@ async function _getActiveLecturePlan() {
 function _lectureCategoryForSeries(seriesName) {
   const normalized = String(seriesName || '').trim();
   if (!normalized || normalized === 'nodejs_120') return 'Node.js강의';
+  if (/실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(normalized)) {
+    return '실전 AI 구현 입문강의';
+  }
   return `${normalized}강의`;
 }
 

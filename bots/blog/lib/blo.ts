@@ -909,6 +909,34 @@ function _buildLectureHashtagLine(lectureTitle = '') {
   return Array.from(tagSet).slice(0, 22).join(' ');
 }
 
+function _lectureDisplayNameForSeries(seriesName = '', lectureTitle = '') {
+  const source = `${seriesName || ''} ${lectureTitle || ''}`;
+  if (/실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(source)) {
+    return '실전 AI 구현 입문';
+  }
+  if (!String(seriesName || '').trim() || String(seriesName).trim() === 'nodejs_120') {
+    return 'Node.js';
+  }
+  return String(seriesName).trim();
+}
+
+function _lectureCategoryForContext(context = {}) {
+  return `${_lectureDisplayNameForSeries(context.seriesName, context.lectureTitle)}강의`;
+}
+
+function _normalizeLecturePostTitle(context = {}) {
+  const number = Number(context.number || 0);
+  const displayName = _lectureDisplayNameForSeries(context.seriesName, context.lectureTitle);
+  const prefix = number > 0 ? `[${displayName} ${number}강]` : `[${displayName}]`;
+  let title = String(context.lectureTitle || '').trim() || `제${number || 1}강`;
+  title = title.replace(/^\s*\[Node\.?js\s*\d+강\]\s*/i, '').trim();
+
+  const escapedDisplay = displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+  const displayPrefixPattern = new RegExp(`^\\s*\\[${escapedDisplay}\\s*${number || '\\d+'}강\\]\\s*`, 'i');
+  if (displayPrefixPattern.test(title)) return title;
+  return `${prefix} ${title}`;
+}
+
 function _ensureLectureClosingFloor(post, context) {
   const content = String(post?.content || '').trim();
   if (!content) return post;
@@ -926,12 +954,13 @@ function _ensureLectureClosingFloor(post, context) {
   }
 
   if (!_hasLectureSection(next, '함께 읽으면 좋은 글')) {
+    const displayName = _lectureDisplayNameForSeries(context?.seriesName, lectureTitle);
     const relatedLines = relatedPosts.length > 0
       ? relatedPosts.slice(0, 3).map((item) => `- ${item.title}`).join('\n')
       : [
-        `- [Node.js ${Math.max(1, lectureNumber - 1)}강] 이전 흐름 복습 포인트`,
+        `- [${displayName} ${Math.max(1, lectureNumber - 1)}강] 이전 흐름 복습 포인트`,
         `- ${lectureTitle}와 연결되는 실무 아키텍처 점검 글`,
-        '- 운영 장애를 줄이는 백엔드 설계 체크리스트',
+        '- AI 도구를 실제 업무에 붙이기 전 점검할 체크리스트',
       ].join('\n');
     next = `${next}\n\n[함께 읽으면 좋은 글]\n${relatedLines}`.trim();
   }
@@ -1375,6 +1404,8 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   console.log(`[블로] MessageEnvelope → 포스 (${writeReq.message_id.slice(0, 8)})`);
 
   const preparedResearch = { ...researchData };
+  preparedResearch.lectureSeriesName = seriesName;
+  preparedResearch.lectureSeriesDisplayName = _lectureDisplayNameForSeries(seriesName, lectureTitle);
   if (researchData.lecturePopularPatterns?.length) {
     preparedResearch.popularPatterns = researchData.lecturePopularPatterns;
   }
@@ -1518,20 +1549,22 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
 }
 
 async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
-  const postTitle = `[Node.js ${context.number}강] ${context.lectureTitle}`;
+  const postTitle = _normalizeLecturePostTitle(context);
+  const lectureCategory = _lectureCategoryForContext(context);
   const autonomy = await _decideAutonomyForPost({
     title: postTitle,
     content: post.content,
     thumbnailPath: null,
     postType: 'lecture',
-    category: 'Node.js강의',
+    category: lectureCategory,
   }, context.daily || {}, quality);
   const published = await _publishAndTrack({
     title:         postTitle,
     content:       post.content,
-    category:      'Node.js강의',
+    category:      lectureCategory,
     postType:      'lecture',
     lectureNumber: context.number,
+    seriesName:    context.seriesName || null,
     charCount:     post.charCount,
     writerName,
     scheduleId,
@@ -1544,7 +1577,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
   }, options);
   await _recordPublishedExperiment({
     postType: 'lecture',
-    category: 'Node.js강의',
+    category: lectureCategory,
     title: postTitle,
     metadata: autonomy ? { autonomy } : {},
   }, published);
@@ -1552,7 +1585,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
   await _accumulatePublishedPost({
     title: postTitle,
     content: post.content,
-    category: 'Node.js강의',
+    category: lectureCategory,
     postType: 'lecture',
     writerName,
     charCount: post.charCount,
@@ -1562,7 +1595,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
 
   await _recordAutonomyDecision({
     title: postTitle,
-    category: 'Node.js강의',
+    category: lectureCategory,
     postType: 'lecture',
     postId: published.postId || null,
   }, autonomy, {
@@ -1585,7 +1618,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     : await _createInstaContentSafe(
       post.content,
       postTitle,
-      'Node.js강의',
+      lectureCategory,
       '강의 인스타',
       { thumbPath: null }
     );
