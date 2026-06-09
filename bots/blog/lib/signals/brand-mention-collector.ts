@@ -12,6 +12,19 @@ const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
+type Sentiment = 'positive' | 'neutral' | 'negative';
+type NaverBlogItem = {
+  title?: string;
+  description?: string;
+  link?: string;
+  bloggername?: string;
+  postdate?: string;
+};
+type BrandMentionSummaryRow = {
+  sentiment?: Sentiment;
+  cnt?: unknown;
+};
+
 function isEnabled() {
   return process.env.BLOG_SIGNAL_COLLECTOR_ENABLED === 'true';
 }
@@ -50,7 +63,7 @@ const POSITIVE_KEYWORDS = [
  * @param {string} text
  * @returns {'positive'|'neutral'|'negative'}
  */
-function analyzeSentiment(text) {
+function analyzeSentiment(text: string): Sentiment {
   if (!text) return 'neutral';
   const normalized = text.toLowerCase();
   const negCount = NEGATIVE_KEYWORDS.filter((kw) => normalized.includes(kw)).length;
@@ -65,7 +78,7 @@ function analyzeSentiment(text) {
  * 네이버 검색 API로 블로그 멘션 수집
  * @param {string} keyword 검색 키워드
  */
-async function searchNaverBlogMentions(keyword) {
+async function searchNaverBlogMentions(keyword: string) {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
 
@@ -86,7 +99,7 @@ async function searchNaverBlogMentions(keyword) {
     if (!response.ok) return [];
 
     const data = await response.json();
-    return (data.items || []).map((item) => ({
+    return (data.items || []).map((item: NaverBlogItem) => ({
       title: item.title?.replace(/<[^>]+>/g, '') || '',
       description: item.description?.replace(/<[^>]+>/g, '') || '',
       link: item.link || '',
@@ -182,9 +195,10 @@ async function getBrandMentionSummary(hours = 24) {
     `, [hours]);
 
     const result = { positive: 0, neutral: 0, negative: 0 };
-    for (const r of (rows || [])) {
-      if (result[r.sentiment] !== undefined) {
-        result[r.sentiment] = Number(r.cnt || 0);
+    for (const r of (rows || []) as BrandMentionSummaryRow[]) {
+      const sentiment = r.sentiment;
+      if (sentiment && result[sentiment] !== undefined) {
+        result[sentiment] = Number(r.cnt || 0);
       }
     }
     return result;

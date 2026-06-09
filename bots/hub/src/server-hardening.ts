@@ -1,3 +1,6 @@
+import type { Server } from 'node:http';
+import type { Socket } from 'node:net';
+
 const { parsePositiveIntEnv } = require('./env-utils');
 
 const REQUEST_TIMEOUT_MS = parsePositiveIntEnv('HUB_REQUEST_TIMEOUT_MS', 120000);
@@ -5,7 +8,7 @@ const HEADERS_TIMEOUT_MS = parsePositiveIntEnv('HUB_HEADERS_TIMEOUT_MS', 65000);
 const KEEP_ALIVE_TIMEOUT_MS = parsePositiveIntEnv('HUB_KEEP_ALIVE_TIMEOUT_MS', 5000);
 const MAX_REQUESTS_PER_SOCKET = parsePositiveIntEnv('HUB_MAX_REQUESTS_PER_SOCKET', 1000);
 
-function configureHttpServer(server, options = {}) {
+function configureHttpServer(server: Server, options: { onFatalError?: (error: Error) => void } = {}) {
   const onFatalError = options.onFatalError || (() => {});
 
   server.requestTimeout = REQUEST_TIMEOUT_MS;
@@ -13,7 +16,7 @@ function configureHttpServer(server, options = {}) {
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
   server.maxRequestsPerSocket = MAX_REQUESTS_PER_SOCKET;
 
-  server.on('clientError', (error, socket) => {
+  server.on('clientError', (error: Error & { code?: string }, socket: Socket) => {
     console.warn('[hub] clientError:', error?.code || error?.message || error);
     try {
       if (socket.writable) socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
@@ -23,7 +26,7 @@ function configureHttpServer(server, options = {}) {
     }
   });
 
-  server.on('error', (error) => {
+  server.on('error', (error: Error) => {
     console.error('[hub] server error:', error);
     onFatalError(error);
   });

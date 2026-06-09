@@ -8,11 +8,19 @@ const registry = require('./provider-registry');
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MIN_RESPONSE_LENGTH = 3;
 
-function getBaseUrl(baseUrl) {
+type LocalOllamaRequest = {
+  model: string;
+  prompt: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+  systemPrompt?: string;
+};
+
+function getBaseUrl(baseUrl?: string): string {
   return baseUrl || process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434';
 }
 
-async function callLocalOllama(req) {
+async function callLocalOllama(req: LocalOllamaRequest) {
   const providerKey = `local/${req.model}`;
   const baseUrl = getBaseUrl(req.baseUrl);
   const timeoutMs = req.timeoutMs || DEFAULT_TIMEOUT_MS;
@@ -45,7 +53,7 @@ async function callLocalOllama(req) {
       return { ok: false, provider: 'failed', error: `${reason}:${res.status}`, durationMs: latency };
     }
 
-    const json = await res.json();
+    const json: any = await res.json();
     const text = (json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) || '';
 
     if (!text || text.trim().length < MIN_RESPONSE_LENGTH) {
@@ -57,10 +65,11 @@ async function callLocalOllama(req) {
     return { ok: true, provider: 'failed', result: text, durationMs: latency, totalCostUsd: 0 };
   } catch (err) {
     const latency = Date.now() - start;
-    const reason = (err && err.name === 'AbortError') ? 'timeout'
-      : (err && err.code === 'ECONNREFUSED') ? 'network' : 'unknown';
+    const error = err as { name?: string; code?: string; message?: string };
+    const reason = (error && error.name === 'AbortError') ? 'timeout'
+      : (error && error.code === 'ECONNREFUSED') ? 'network' : 'unknown';
     registry.recordFailure(providerKey, reason, latency);
-    return { ok: false, provider: 'failed', error: `${reason}:${(err && err.message) || 'unknown'}`, durationMs: latency };
+    return { ok: false, provider: 'failed', error: `${reason}:${(error && error.message) || 'unknown'}`, durationMs: latency };
   } finally {
     clearTimeout(timer);
   }
