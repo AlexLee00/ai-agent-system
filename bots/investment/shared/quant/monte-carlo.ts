@@ -1,4 +1,12 @@
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
+type AnyRecord = Record<string, any>;
+type RiskExchange = 'binance' | 'kis' | 'kis_overseas';
+type PriceBar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
 
 export const DEFAULT_RISK_SYMBOLS = {
   binance: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'],
@@ -12,16 +20,16 @@ export const DEFAULT_RISK_LIMITS = {
   monthlyLossPct: 0.25,
 };
 
-export function finiteNumber(value, fallback = 0) {
+export function finiteNumber(value: unknown, fallback: number | null = 0): number {
   const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  return Number.isFinite(n) ? n : Number(fallback || 0);
 }
 
-export function round(value, digits = 6) {
+export function round(value: unknown, digits = 6): number {
   return Number(Number(value || 0).toFixed(digits));
 }
 
-export function parseJsonMaybe(value, fallback = {}) {
+export function parseJsonMaybe(value: unknown, fallback: unknown = {}): unknown {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
   try {
@@ -31,29 +39,29 @@ export function parseJsonMaybe(value, fallback = {}) {
   }
 }
 
-export function normalizeRiskExchange(value) {
+export function normalizeRiskExchange(value: unknown): RiskExchange {
   const raw = String(value || 'binance').trim().toLowerCase();
   if (raw === 'crypto') return 'binance';
   if (raw === 'domestic') return 'kis';
   if (raw === 'overseas') return 'kis_overseas';
-  return VALID_EXCHANGES.has(raw) ? raw : 'binance';
+  return VALID_EXCHANGES.has(raw) ? raw as RiskExchange : 'binance';
 }
 
-export function marketForRiskExchange(exchange) {
+export function marketForRiskExchange(exchange: unknown): string {
   const normalized = normalizeRiskExchange(exchange);
   if (normalized === 'kis') return 'domestic';
   if (normalized === 'kis_overseas') return 'overseas';
   return 'crypto';
 }
 
-export function defaultRiskSymbols(exchange) {
+export function defaultRiskSymbols(exchange: unknown): string[] {
   const normalized = normalizeRiskExchange(exchange);
   return [...(DEFAULT_RISK_SYMBOLS[normalized] || DEFAULT_RISK_SYMBOLS.binance)];
 }
 
-export function normalizeBars(value = []) {
+export function normalizeBars(value: unknown = []): PriceBar[] {
   const raw = Array.isArray(value) ? value : [];
-  return raw.map((bar) => {
+  return raw.map((bar: any) => {
     if (Array.isArray(bar)) {
       return {
         close: finiteNumber(bar[4] ?? bar[1], NaN),
@@ -68,12 +76,12 @@ export function normalizeBars(value = []) {
       low: finiteNumber(bar.low ?? bar.l ?? bar.close ?? bar.price, NaN),
       volume: finiteNumber(bar.volume ?? bar.v ?? bar.quoteVolume ?? bar.qv, 0),
     };
-  }).filter((bar) => Number.isFinite(bar.close) && bar.close > 0).slice(-720);
+  }).filter((bar: PriceBar) => Number.isFinite(bar.close) && bar.close > 0).slice(-720);
 }
 
-export function returnsFromBars(bars = []) {
+export function returnsFromBars(bars: unknown = []): number[] {
   const normalized = normalizeBars(bars);
-  const out = [];
+  const out: number[] = [];
   for (let i = 1; i < normalized.length; i += 1) {
     const prev = finiteNumber(normalized[i - 1]?.close, 0);
     const curr = finiteNumber(normalized[i]?.close, 0);
@@ -82,19 +90,19 @@ export function returnsFromBars(bars = []) {
   return out;
 }
 
-export function mean(values = []) {
+export function mean(values: number[] = []): number {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-export function stdev(values = []) {
+export function stdev(values: number[] = []): number {
   if (values.length < 2) return 0;
   const avg = mean(values);
   const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / Math.max(1, values.length - 1);
   return Math.sqrt(variance);
 }
 
-function seededRandom(seed) {
+function seededRandom(seed: unknown): () => number {
   let state = Math.max(1, Math.floor(finiteNumber(seed, 7))) % 2147483647;
   return () => {
     state = (state * 48271) % 2147483647;
@@ -102,7 +110,7 @@ function seededRandom(seed) {
   };
 }
 
-function normalPair(rand) {
+function normalPair(rand: () => number): [number, number] {
   const u1 = Math.max(1e-9, rand());
   const u2 = Math.max(1e-9, rand());
   const radius = Math.sqrt(-2 * Math.log(u1));
@@ -110,45 +118,45 @@ function normalPair(rand) {
   return [radius * Math.cos(theta), radius * Math.sin(theta)];
 }
 
-function percentile(sorted = [], p = 0.05) {
+function percentile(sorted: number[] = [], p = 0.05): number {
   if (!sorted.length) return 0;
   const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor(p * (sorted.length - 1))));
   return sorted[idx];
 }
 
-function tailAverage(sorted = [], p = 0.05) {
+function tailAverage(sorted: number[] = [], p = 0.05): number {
   if (!sorted.length) return 0;
   const count = Math.max(1, Math.ceil(sorted.length * p));
   return mean(sorted.slice(0, count));
 }
 
-function estimateRecoveryDays(lossPct, avgReturn) {
+function estimateRecoveryDays(lossPct: unknown, avgReturn: unknown): number {
   const loss = Math.abs(finiteNumber(lossPct, 0));
   const daily = Math.max(0.0005, Math.abs(finiteNumber(avgReturn, 0.001)));
   return Math.ceil(Math.log(1 / Math.max(0.01, 1 - loss)) / daily);
 }
 
-function dataHealthForReturns(count) {
+function dataHealthForReturns(count: number): string {
   if (count >= 60) return 'ready';
   if (count >= 20) return 'partial';
   return 'insufficient';
 }
 
-function scenarioDriftMultiplier(scenario) {
+function scenarioDriftMultiplier(scenario: string): number {
   if (scenario === 'bull') return 1.5;
   if (scenario === 'bear') return -1.2;
   if (scenario === 'black_swan') return -2.5;
   return 0.15;
 }
 
-function scenarioVolMultiplier(scenario) {
+function scenarioVolMultiplier(scenario: string): number {
   if (scenario === 'black_swan') return 3.0;
   if (scenario === 'bear') return 1.8;
   if (scenario === 'bull') return 1.1;
   return 0.75;
 }
 
-export function buildMonteCarloShadow(input = {}, context = {}) {
+export function buildMonteCarloShadow(input: AnyRecord = {}, context: AnyRecord = {}) {
   const exchange = normalizeRiskExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForRiskExchange(exchange);
   const symbols = Array.isArray(input.symbols) && input.symbols.length
@@ -165,7 +173,7 @@ export function buildMonteCarloShadow(input = {}, context = {}) {
   const drift = avg * scenarioDriftMultiplier(scenario);
   const sigma = Math.max(0.0001, vol * scenarioVolMultiplier(scenario));
   const rand = seededRandom(input.seed ?? context.seed ?? 42);
-  const outcomes = [];
+  const outcomes: number[] = [];
   for (let i = 0; i < simulations; i += 1) {
     let cumulative = 1;
     for (let day = 0; day < horizonDays; day += 1) {
@@ -218,7 +226,7 @@ export function buildMonteCarloShadow(input = {}, context = {}) {
   };
 }
 
-export function normalizeRiskSimulationShadowRow(row = {}) {
+export function normalizeRiskSimulationShadowRow(row: AnyRecord = {}) {
   return {
     ok: true,
     analysisType: row.analysis_type || row.analysisType,
@@ -241,7 +249,7 @@ export function normalizeRiskSimulationShadowRow(row = {}) {
     evidence: {
       source: 'investment.luna_risk_simulation_shadow',
       observedAt: row.observed_at || null,
-      ...parseJsonMaybe(row.context_evidence, {}),
+      ...parseJsonMaybe(row.context_evidence, {}) as AnyRecord,
     },
   };
 }
