@@ -404,7 +404,11 @@ function stringifyHubErrorReason(value: unknown): string {
   return String(value).trim();
 }
 
-export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promise<any | null> {
+type FetchHubSecretsOptions = {
+  silentStatuses?: number[];
+};
+
+export async function fetchHubSecrets(category: string, timeoutMs = 3000, options: FetchHubSecretsOptions = {}): Promise<any | null> {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
     warnOnce('hub-auth-missing:secrets', '[hub-client] HUB_AUTH_TOKEN 없음 — hub secrets 조회 생략');
@@ -434,7 +438,10 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
     });
 
     if (!res.ok) {
-      warnOnce(`hub-secrets:${category}:${res.status}`, `[hub-client] ${category}: HTTP ${res.status}`);
+      const silentStatuses = new Set(options.silentStatuses || []);
+      if (!silentStatuses.has(res.status)) {
+        warnOnce(`hub-secrets:${category}:${res.status}`, `[hub-client] ${category}: HTTP ${res.status}`);
+      }
       if (res.status === 429 || res.status >= 500) {
         const stale = useSharedSecretCacheFallback(category, cacheKey, `HTTP ${res.status}`);
         if (stale !== undefined) return stale;

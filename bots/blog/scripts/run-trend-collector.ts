@@ -27,7 +27,7 @@ async function ensureTrendTopicsTable() {
 
 async function injectRedditSecrets() {
   try {
-    const secrets = await fetchHubSecrets('blog').catch(() => null);
+    const secrets = await fetchHubSecrets('blog', 3000, { silentStatuses: [404] }).catch(() => null);
     let injected = 0;
     if (secrets?.REDDIT_CLIENT_ID && !process.env.REDDIT_CLIENT_ID) {
       process.env.REDDIT_CLIENT_ID = secrets.REDDIT_CLIENT_ID;
@@ -38,7 +38,7 @@ async function injectRedditSecrets() {
       injected++;
     }
     if (injected === 0 && (!process.env.REDDIT_CLIENT_ID || !process.env.REDDIT_CLIENT_SECRET)) {
-      console.warn('[트렌드수집] ⚠️  REDDIT API 키 미설정 — secrets-store.json의 blog 섹션에 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET 추가 필요');
+      console.log('[트렌드수집] Reddit API 키 미설정 — 선택 소스 reddit 수집을 건너뜁니다');
     }
   } catch (e: any) {
     console.warn('[트렌드수집] Hub 시크릿 로드 실패:', e.message);
@@ -66,7 +66,7 @@ async function runRedditAnalyzer(options = {}) {
   }
 
   if (!options.fixture && (!process.env.REDDIT_CLIENT_ID || !process.env.REDDIT_CLIENT_SECRET)) {
-    console.warn('[트렌드수집] Reddit API 키 없음 — 트렌드 수집 건너뜀');
+    console.log('[트렌드수집] Reddit API 키 없음 — 트렌드 수집 건너뜀');
     return { ok: false, status: 'blocked', reason: 'missing_secret:reddit', topics: [] };
   }
 
