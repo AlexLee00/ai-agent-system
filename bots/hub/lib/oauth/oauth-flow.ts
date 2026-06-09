@@ -11,7 +11,48 @@ const DEFAULT_CLAUDE_CODE_TOKEN_URL = 'https://platform.claude.com/v1/oauth/toke
 const DEFAULT_CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const DEFAULT_CLAUDE_CODE_SCOPE = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload';
 
-const PROVIDER_FLOW_CONFIG = {
+type AnyRecord = Record<string, any>;
+type ProviderTemplate = {
+  enabledEnv: string[];
+  authUrlEnv: string[];
+  tokenUrlEnv: string[];
+  clientIdEnv: string[];
+  clientSecretEnv: string[];
+  redirectUriEnv: string[];
+  scopeEnv: string[];
+  defaultAuthUrl: string;
+  defaultTokenUrl: string;
+  defaultClientId: string;
+  defaultScope: string;
+  tokenBodyFormat: 'form' | 'json';
+  refreshIncludesScope?: boolean;
+  enabledDefault?: boolean;
+  publicProviderName: string;
+};
+type OAuthRequestLike = {
+  body?: AnyRecord;
+  query?: AnyRecord;
+  headers?: AnyRecord;
+  protocol?: string;
+  get?: (name: string) => string | undefined;
+};
+type OAuthProviderConfig = {
+  ok: true;
+  provider: string;
+  publicProviderName: string;
+  authUrl: string;
+  tokenUrl: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  scope: string;
+  audience: string;
+  resource: string;
+  tokenBodyFormat: 'form' | 'json';
+  refreshIncludesScope: boolean;
+};
+
+const PROVIDER_FLOW_CONFIG: Record<string, ProviderTemplate> = {
   'openai-codex-oauth': {
     enabledEnv: ['HUB_ENABLE_OPENAI_CODEX_OAUTH'],
     authUrlEnv: ['HUB_OPENAI_CODEX_OAUTH_AUTH_URL', 'OPENAI_CODEX_OAUTH_AUTH_URL'],
@@ -46,11 +87,11 @@ const PROVIDER_FLOW_CONFIG = {
   },
 };
 
-function envFlag(name) {
+function envFlag(name: string): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
 }
 
-function firstEnv(names) {
+function firstEnv(names: string[] = []): string {
   for (const name of names || []) {
     const value = String(process.env[name] || '').trim();
     if (value) return value;
@@ -58,7 +99,7 @@ function firstEnv(names) {
   return '';
 }
 
-function isAbsoluteHttpUrl(value) {
+function isAbsoluteHttpUrl(value: unknown): boolean {
   try {
     const url = new URL(String(value || ''));
     return url.protocol === 'http:' || url.protocol === 'https:';
@@ -67,7 +108,7 @@ function isAbsoluteHttpUrl(value) {
   }
 }
 
-function requestBaseUrl(req) {
+function requestBaseUrl(req: OAuthRequestLike): string {
   const explicit = String(process.env.HUB_PUBLIC_BASE_URL || process.env.HUB_BASE_URL || '').trim().replace(/\/+$/, '');
   if (explicit) return explicit;
 
@@ -81,13 +122,13 @@ function requestBaseUrl(req) {
   return 'http://127.0.0.1:7788';
 }
 
-function providerPathSegment(provider) {
+function providerPathSegment(provider: string): string {
   if (provider === 'openai-codex-oauth') return 'openai-codex';
   if (provider === 'claude-code-cli') return 'claude-code';
   return provider;
 }
 
-function resolveRedirectUri(provider, req, baseConfig) {
+function resolveRedirectUri(provider: string, req: OAuthRequestLike, baseConfig: ProviderTemplate): string {
   const requestOverride = String(req?.body?.redirect_uri || req?.query?.redirect_uri || '').trim();
   const configured = firstEnv(baseConfig.redirectUriEnv);
   const redirectUri = requestOverride
@@ -96,19 +137,19 @@ function resolveRedirectUri(provider, req, baseConfig) {
   return redirectUri;
 }
 
-function base64Url(input) {
+function base64Url(input: string | Buffer): string {
   return Buffer.from(input).toString('base64url');
 }
 
-function sha256Base64Url(input) {
+function sha256Base64Url(input: string): string {
   return crypto.createHash('sha256').update(input).digest('base64url');
 }
 
-function randomToken(bytes = 32) {
+function randomToken(bytes = 32): string {
   return crypto.randomBytes(bytes).toString('base64url');
 }
 
-function buildOAuthProviderConfig(provider, req) {
+function buildOAuthProviderConfig(provider: string, req: OAuthRequestLike = {}) {
   const template = PROVIDER_FLOW_CONFIG[provider];
   if (!template) {
     return { ok: false, error: 'oauth_flow_not_supported', missing: ['provider'] };
@@ -124,7 +165,7 @@ function buildOAuthProviderConfig(provider, req) {
   const audience = String(req?.body?.audience || req?.query?.audience || firstEnv([`HUB_${provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_AUDIENCE`]) || '').trim();
   const resource = String(req?.body?.resource || req?.query?.resource || firstEnv([`HUB_${provider.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_RESOURCE`]) || '').trim();
 
-  const missing = [];
+  const missing: string[] = [];
   if (!enabled) missing.push(template.enabledEnv[0]);
   if (!clientId) missing.push(template.clientIdEnv[0]);
   if (!authUrl || !isAbsoluteHttpUrl(authUrl)) missing.push(template.authUrlEnv[0]);
@@ -163,7 +204,7 @@ function buildOAuthProviderConfig(provider, req) {
   };
 }
 
-function buildTokenRequestInit(config, bodyObject, timeoutEnvName) {
+function buildTokenRequestInit(config: OAuthProviderConfig, bodyObject: AnyRecord, timeoutEnvName: string) {
   const timeoutMs = Number(process.env[timeoutEnvName] || 20_000);
   if (config.tokenBodyFormat === 'json') {
     return {
@@ -192,7 +233,7 @@ function buildTokenRequestInit(config, bodyObject, timeoutEnvName) {
   };
 }
 
-function buildAuthorizationUrl(config, state, codeChallenge) {
+function buildAuthorizationUrl(config: OAuthProviderConfig, state: string, codeChallenge: string): string {
   const url = new URL(config.authUrl);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', config.clientId);
@@ -206,7 +247,7 @@ function buildAuthorizationUrl(config, state, codeChallenge) {
   return url.toString();
 }
 
-function normalizeOAuthToken(provider, payload, previousToken = null) {
+function normalizeOAuthToken(provider: string, payload: AnyRecord | null, previousToken: AnyRecord | null = null) {
   const accessToken = payload?.access_token || payload?.accessToken;
   if (typeof accessToken !== 'string' || !accessToken) {
     return { ok: false, error: 'missing_access_token' };
@@ -247,8 +288,8 @@ function normalizeOAuthToken(provider, payload, previousToken = null) {
   };
 }
 
-async function exchangeOAuthCode(config, code, codeVerifier) {
-  const body = {
+async function exchangeOAuthCode(config: OAuthProviderConfig, code: string, codeVerifier: string) {
+  const body: AnyRecord = {
     grant_type: 'authorization_code',
     code,
     redirect_uri: config.redirectUri,
@@ -265,8 +306,8 @@ async function exchangeOAuthCode(config, code, codeVerifier) {
   return { response, payload };
 }
 
-async function refreshOAuthToken(config, refreshToken) {
-  const body = {
+async function refreshOAuthToken(config: OAuthProviderConfig, refreshToken: string) {
+  const body: AnyRecord = {
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: config.clientId,
