@@ -3,6 +3,9 @@ const path = require('node:path');
 
 const LOG_DIR = '/tmp';
 const ERR_SUFFIX = '.err.log';
+const RECENT_TAIL_BYTES = 128 * 1024;
+const RECENT_TAIL_LINES = 400;
+const RECOVERY_QUIET_LINES = 50;
 
 type ErrorSummary = {
   service: string;
@@ -15,6 +18,37 @@ type ErrorSummary = {
 
 function isErrorLikeLine(line: string) {
   return /❌|error|exception|traceback|fatal|uncaught|rejected|failed/i.test(line);
+}
+
+function readRecentLogWindow(filePath: string, stat: any): string {
+  if (stat.size <= RECENT_TAIL_BYTES) return fs.readFileSync(filePath, 'utf8');
+
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(RECENT_TAIL_BYTES);
+    const start = Math.max(0, stat.size - RECENT_TAIL_BYTES);
+    const bytesRead = fs.readSync(fd, buffer, 0, RECENT_TAIL_BYTES, start);
+    let text = buffer.subarray(0, bytesRead).toString('utf8');
+    if (start > 0) text = text.replace(/^[^\n]*(\n|$)/, '');
+    return text;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function recentErrorLines(filePath: string, stat: any): string[] {
+  const lines = readRecentLogWindow(filePath, stat)
+    .split('\n')
+    .slice(-RECENT_TAIL_LINES)
+    .map((line: string) => line.trim())
+    .filter(Boolean);
+  const lastErrorIndex = lines.findLastIndex(isErrorLikeLine);
+  if (lastErrorIndex < 0) return [];
+
+  const quietLinesAfterLastError = lines.length - lastErrorIndex - 1;
+  if (quietLinesAfterLastError >= RECOVERY_QUIET_LINES) return [];
+
+  return lines.filter(isErrorLikeLine);
 }
 
 export async function errorsRecentRoute(req: any, res: any) {
@@ -34,12 +68,11 @@ export async function errorsRecentRoute(req: any, res: any) {
       if (stat.mtimeMs < cutoffMs) continue;
       if (stat.size === 0) continue;
 
-      const content = fs.readFileSync(filePath, 'utf8');
-      const lines = content
-        .split('\n')
-        .map((line: string) => line.trim())
-        .filter(Boolean)
-        .filter(isErrorLikeLine);
+      // A recent mtime only proves the file was appended, not that every
+      // historical error inside the file is recent. Limit the scan to the
+      // newest log window so a harmless stderr append does not resurrect old
+      // KIS/Hub failures for noisy long-running launchd logs.
+      const lines = recentErrorLines(filePath, stat);
       if (lines.length === 0) continue;
 
       results.push({
