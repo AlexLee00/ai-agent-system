@@ -44,3 +44,4 @@ llm_selector: claude.refactorer.code_refactor
 - 테스트 green 유지
 - PROTECTED 서비스 무중단
 - OPS 데이터 직접 수정 금지
+- Node raw 실행형 `.ts`(셰뱅 `node`, `require`, `module.exports`, `exports.`)는 인라인 TypeScript 타입 문법 금지. strict 타입 보강은 JSDoc(`@param`, `@returns`)으로만 수행하고 `node --check` 통과를 필수 조건으로 본다.
