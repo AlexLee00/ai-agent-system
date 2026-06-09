@@ -10,32 +10,57 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
 const DEFAULT_RETENTION_DAYS = 14;
 
-function hasFlag(flag) {
+type CommandResult = {
+  ok: boolean;
+  status: number | null;
+  command: string;
+  stdout: string;
+  stderr: string;
+};
+
+type RemovedBackup = {
+  path: string;
+  mtime: string;
+};
+
+type PruneResult = {
+  enabled: boolean;
+  retentionDays: number;
+  removed: RemovedBackup[];
+};
+
+type SecretsBackupResult = {
+  ok: boolean;
+  status: string;
+  stderr?: string;
+};
+
+function hasFlag(flag: string) {
   return process.argv.includes(flag);
 }
 
-function argValue(name) {
+function argValue(name: string) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
 }
 
-function parsePositiveInt(value, fallback) {
+function parsePositiveInt(value: unknown, fallback: number) {
   const parsed = Number.parseInt(String(value || ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sha256(filePath) {
+function sha256(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256');
     const stream = fs.createReadStream(filePath);
-    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('data', (chunk: Buffer | string) => hash.update(chunk));
     stream.on('error', reject);
     stream.on('end', () => resolve(hash.digest('hex')));
   });
 }
 
-function run(command, args, options = {}) {
+function run(command: string, args: string[], options: Record<string, unknown> = {}): CommandResult {
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     timeout: 120_000,
@@ -50,11 +75,11 @@ function run(command, args, options = {}) {
   };
 }
 
-function isBackupRunDirName(name) {
+function isBackupRunDirName(name: string) {
   return /^\d{8}T\d{6}Z$/.test(String(name || ''));
 }
 
-function isHubStageDBackupDir(dirPath) {
+function isHubStageDBackupDir(dirPath: string) {
   const manifestPath = path.join(dirPath, 'manifest.json');
   if (!fs.existsSync(manifestPath)) return false;
   try {
@@ -65,11 +90,11 @@ function isHubStageDBackupDir(dirPath) {
   }
 }
 
-function pruneOldBackups(backupDir, currentRunDir, retentionDays) {
+function pruneOldBackups(backupDir: string, currentRunDir: string, retentionDays: number): PruneResult {
   if (hasFlag('--no-prune')) return { enabled: false, retentionDays, removed: [] };
   const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   const current = path.resolve(currentRunDir);
-  const removed = [];
+  const removed: RemovedBackup[] = [];
 
   if (!fs.existsSync(backupDir)) return { enabled: true, retentionDays, removed };
 
@@ -150,7 +175,7 @@ async function main() {
   }
 
   fs.mkdirSync(plan.runDir, { recursive: true, mode: 0o700 });
-  const results = [];
+  const results: CommandResult[] = [];
   results.push(run('pg_dump', [
     '-d', plan.database,
     '--schema-only',
@@ -172,7 +197,7 @@ async function main() {
   ]));
   results.push(run('tar', ['-czf', plan.files.launchdArchive, '-C', PROJECT_ROOT, 'bots/hub/launchd']));
 
-  let secretsBackup = { ok: false, status: 'gpg_config_missing' };
+  let secretsBackup: SecretsBackupResult = { ok: false, status: 'gpg_config_missing' };
   const recipient = process.env.HUB_BACKUP_GPG_RECIPIENT;
   if (recipient) {
     const secretsPath = path.join(PROJECT_ROOT, 'bots/hub/secrets-store.json');
@@ -198,7 +223,7 @@ async function main() {
     commandResults: results,
     secretsBackup,
     artifacts: files,
-    prunedBackups: null,
+    prunedBackups: null as PruneResult | null,
   };
   if (manifest.ok) {
     manifest.prunedBackups = pruneOldBackups(plan.backupDir, plan.runDir, plan.retention.days);
