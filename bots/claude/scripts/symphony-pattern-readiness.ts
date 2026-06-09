@@ -1,11 +1,10 @@
 #!/usr/bin/env node
-// @ts-nocheck
 'use strict';
 
 const path = require('path');
 const { buildPatternReadinessReport } = require('../lib/symphony/pattern-readiness.ts');
 
-function hasFlag(name) {
+function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
 }
 
