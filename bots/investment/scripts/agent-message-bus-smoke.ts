@@ -19,6 +19,8 @@ import {
 } from '../shared/agent-message-bus.ts';
 import * as db from '../shared/db.ts';
 
+const dbGet = db.get as (sql: string, params?: unknown[]) => Promise<Record<string, unknown> | null>;
+
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(`FAIL: ${message}`);
 }
@@ -85,7 +87,7 @@ async function main(): Promise<void> {
       });
       assert(responseId > 0 || responseId === -1, '응답 ID는 양수 또는 -1(오류) 필요');
       console.log(`  respondToMessage → responseId=${responseId}`);
-      const responseRow = await db.get(
+      const responseRow = await dbGet(
         `SELECT responded_at FROM investment.agent_messages WHERE id = $1`,
         [responseId],
       );
@@ -110,7 +112,7 @@ async function main(): Promise<void> {
     assert(noAckId > 0, `noAckExpected sendMessage 성공 시 양수 ID 반환 필요, got=${noAckId}`);
     const noAckPending = await getPendingMessages('hermes', { incidentKey: noAckIncidentKey });
     assert(noAckPending.length === 0, 'noAckExpected 메시지는 pending queue에 남지 않아야 함');
-    const noAckRow = await db.get(
+    const noAckRow = await dbGet(
       `SELECT responded_at FROM investment.agent_messages WHERE id = $1`,
       [noAckId],
     );

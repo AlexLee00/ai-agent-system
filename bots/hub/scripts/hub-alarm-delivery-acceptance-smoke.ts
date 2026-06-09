@@ -1,6 +1,6 @@
 const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 

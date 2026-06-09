@@ -14,7 +14,7 @@ function main(): void {
     assert(check.owasp, `security check must include OWASP mapping: ${check.name}`);
   }
   assert(
-    security.requiredCommands.some((command) => command.includes('secret-leak-smoke')),
+    security.requiredCommands.some((command: string) => command.includes('secret-leak-smoke')),
     'Stage C security must require tracked-file secret scan',
   );
 
@@ -22,7 +22,7 @@ function main(): void {
     ok: true,
     stage: 'hub_stage_c',
     standard: security.standard,
-    checks: security.checks.map((check) => check.name),
+    checks: security.checks.map((check: { name: string }) => check.name),
   }, null, 2));
 }
 

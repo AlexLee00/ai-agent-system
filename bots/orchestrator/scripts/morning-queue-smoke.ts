@@ -24,8 +24,8 @@ async function main() {
   assert.equal(before?.sent_at, null, 'new morning queue row must be unsent');
 
   const items = await flushMorningQueue();
-  assert.ok(items.some((item) => item.queue_id === queueId), 'flush must return smoke row');
-  const brief = buildMorningBriefing(items.filter((item) => item.queue_id === queueId));
+  assert.ok(items.some((item: { queue_id?: string }) => item.queue_id === queueId), 'flush must return smoke row');
+  const brief = buildMorningBriefing(items.filter((item: { queue_id?: string }) => item.queue_id === queueId));
   assert.match(brief || '', /morning queue smoke summary/, 'briefing should include smoke summary');
 
   const after = await pgPool.get('claude', `

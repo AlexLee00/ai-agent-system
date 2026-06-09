@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 

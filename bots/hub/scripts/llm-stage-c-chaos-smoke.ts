@@ -11,7 +11,7 @@ function main(): void {
   assert.equal(plan.ok, true, 'Stage C chaos plan must be ready');
   assert.equal(plan.defaultMode, 'fixture_only');
   assert.equal(plan.liveChaosGate, '--apply --confirm=hub-stage-c-chaos');
-  assert(plan.prohibitedActions.some((action) => action.includes('PROTECTED')), 'chaos plan must protect launchd services');
+  assert(plan.prohibitedActions.some((action: string) => action.includes('PROTECTED')), 'chaos plan must protect launchd services');
 
   const fixture = runFixtureChaosDrill();
   assert.equal(fixture.ok, true, 'fixture chaos drill must pass');
@@ -25,7 +25,7 @@ function main(): void {
   console.log(JSON.stringify({
     ok: true,
     stage: 'hub_stage_c',
-    fixture_scenarios: fixture.scenarios.map((scenario) => scenario.name),
+    fixture_scenarios: fixture.scenarios.map((scenario: { name: string }) => scenario.name),
     live_chaos_gate: plan.liveChaosGate,
   }, null, 2));
 }

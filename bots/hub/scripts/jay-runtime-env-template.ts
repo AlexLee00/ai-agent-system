@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-function hasArg(name) {
+function hasArg(name: string): boolean {
   return process.argv.includes(name);
 }
 
-function argValue(prefix, fallback = '') {
+function argValue(prefix: string, fallback = ''): string {
   const match = process.argv.find((arg) => arg.startsWith(`${prefix}=`));
   return match ? match.slice(prefix.length + 1) : fallback;
 }

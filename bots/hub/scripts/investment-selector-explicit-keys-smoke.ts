@@ -32,6 +32,11 @@ const REQUIRED_INVESTMENT_AGENTS = [
   'zeus',
 ].sort();
 
+type AgentModelTarget = {
+  agent: string;
+  selectorKey?: string;
+};
+
 function stableChain(chain: any[]): string {
   return JSON.stringify(chain.map((entry) => ({
     provider: entry.provider,
@@ -66,8 +71,8 @@ function main(): void {
   });
   assert.equal(stableChain(defaultChain), stableChain(delegatedDefault), 'investment._default must match delegated default policy');
 
-  const targets = selector.listAgentModelTargets('investment');
-  const targetMap = new Map(targets.map((entry) => [entry.agent, entry]));
+  const targets = selector.listAgentModelTargets('investment') as AgentModelTarget[];
+  const targetMap = new Map(targets.map((entry: AgentModelTarget) => [entry.agent, entry]));
 
   for (const agentName of REQUIRED_INVESTMENT_AGENTS) {
     const selectorKey = `investment.${agentName}`;

@@ -47,11 +47,11 @@ async function scanAndEnqueue(): Promise<{
   const manifestOptions = { autoDevStateFile: STATE_FILE };
   syncAutoDevManifest(AUTO_DEV_DIR, manifestOptions);
   const targets = listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox'], manifestOptions)
-    .filter((relPath) => {
+    .filter((relPath: string) => {
       const name = path.basename(relPath);
       return name.startsWith('ALARM_INCIDENT_') || name.startsWith('CODEX_SKA_EXCEPTION_');
     })
-    .map((relPath) => path.basename(relPath));
+    .map((relPath: string) => path.basename(relPath));
   result.scanned = targets;
 
   for (const fileName of targets) {
