@@ -8,7 +8,38 @@ import {
 } from '../a2a/skills/hybrid-promotion-review.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function fakeQuery(sql) {
+type PromotionReviewOutput = {
+  ok: boolean;
+  skill?: string;
+  status: string;
+  shadowMode?: boolean;
+  liveMutation: boolean;
+  readyForMasterReview: boolean;
+  masterApprovalRequired?: boolean;
+  promotionReady: boolean;
+  broadcastPlanned: boolean;
+  blockers: Array<{ name?: string }>;
+  summary: {
+    promotionEntryTriggerBridgePending?: number;
+    dataChecked?: boolean;
+    dataRequired?: boolean;
+  };
+  promotionEntryTriggerBridge: {
+    status: string;
+  };
+  runbook: {
+    reviewOnly?: boolean;
+  };
+};
+
+type PromotionReviewTaskResult = {
+  id?: string;
+  status: string;
+  error?: unknown;
+  output: PromotionReviewOutput;
+};
+
+function fakeQuery(sql: string) {
   if (
     sql.includes('luna_regime_llm_shadow')
     || sql.includes('luna_entry_llm_shadow')
@@ -24,7 +55,7 @@ function fakeQuery(sql) {
   return [];
 }
 
-function fakeQueryWithBridgeFailure(sql) {
+function fakeQueryWithBridgeFailure(sql: string) {
   if (sql.includes('luna_promotion_entry_trigger_bridge_shadow')) {
     throw new Error('bridge table missing');
   }
@@ -38,7 +69,7 @@ export async function runLunaHybridPromotionReviewA2ASmoke() {
     id: 'hybrid-promotion-review-a2a-smoke-1',
     skill: { id: 'hybrid-promotion-review' },
     params: { broadcast: false, hours: 168 },
-  });
+  }) as PromotionReviewTaskResult;
   assert.equal(result.id, 'hybrid-promotion-review-a2a-smoke-1');
   assert.equal(result.status, 'completed', JSON.stringify(result.error || result.output, null, 2));
   assert.equal(result.output.ok, true);
@@ -53,7 +84,7 @@ export async function runLunaHybridPromotionReviewA2ASmoke() {
   assert.equal(result.output.broadcastPlanned, false);
   assert.ok(result.output.runbook.reviewOnly);
 
-  const noDb = await createHybridPromotionReviewHandler({ queryFn: fakeQuery })({ noDb: true, broadcast: false, hours: 168 });
+  const noDb = await createHybridPromotionReviewHandler({ queryFn: fakeQuery })({ noDb: true, broadcast: false, hours: 168 }) as unknown as PromotionReviewTaskResult;
   assert.equal(noDb.status, 'completed', JSON.stringify(noDb.error || noDb.output, null, 2));
   assert.equal(noDb.output.ok, true);
   assert.equal(noDb.output.status, 'luna_hybrid_promotion_review_contract_only');
@@ -65,19 +96,19 @@ export async function runLunaHybridPromotionReviewA2ASmoke() {
   const failedBridge = await createHybridPromotionReviewHandler({ queryFn: fakeQueryWithBridgeFailure })({
     broadcast: false,
     hours: 168,
-  });
+  }) as unknown as PromotionReviewTaskResult;
   assert.equal(failedBridge.status, 'failed', JSON.stringify(failedBridge.error || failedBridge.output, null, 2));
   assert.equal(failedBridge.output.ok, false);
   assert.equal(failedBridge.output.readyForMasterReview, false);
   assert.equal(failedBridge.output.promotionEntryTriggerBridge.status, 'promotion_entry_trigger_bridge_query_failed');
   assert.equal(
-    failedBridge.output.blockers.some((blocker) => blocker.name === 'promotion_entry_trigger_bridge_reviewed'),
+    failedBridge.output.blockers.some((blocker: { name?: string }) => blocker.name === 'promotion_entry_trigger_bridge_reviewed'),
     true,
   );
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';
-  const enabled = await createHybridPromotionReviewHandler({ queryFn: fakeQuery })({ hours: 168 });
+  const enabled = await createHybridPromotionReviewHandler({ queryFn: fakeQuery })({ hours: 168 }) as unknown as PromotionReviewTaskResult;
   assert.equal(enabled.output.broadcastPlanned, true);
   if (previous == null) delete process.env.LUNA_A2A_BROADCAST_ENABLED;
   else process.env.LUNA_A2A_BROADCAST_ENABLED = previous;
@@ -101,7 +132,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid promotion review A2A smoke failed:',
   });

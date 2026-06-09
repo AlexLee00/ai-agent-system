@@ -7,6 +7,17 @@ import { buildMonteCarloShadow } from '../shared/quant/monte-carlo.ts';
 import { binanceSymbol, runLunaMonteCarloStressShadow } from './runtime-luna-monte-carlo-stress-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+type FakeInsert = {
+  sql: string;
+  params: unknown[];
+};
+
+type FakeQuery = FakeInsert;
+
+type FakeDepsOptions = {
+  existingShadow?: boolean;
+};
+
 function fixtureBars(start = 100, drift = 0.8, count = 90) {
   return Array.from({ length: count }, (_, index) => {
     const close = start + index * drift + Math.sin(index / 5) * 1.2;
@@ -19,10 +30,10 @@ function fixtureBars(start = 100, drift = 0.8, count = 90) {
   });
 }
 
-function fakeDeps({ existingShadow = false } = {}) {
-  const inserts = [];
-  const schemaInits = [];
-  const queries = [];
+function fakeDeps({ existingShadow = false }: FakeDepsOptions = {}) {
+  const inserts: FakeInsert[] = [];
+  const schemaInits: string[] = [];
+  const queries: FakeQuery[] = [];
   return {
     inserts,
     schemaInits,
@@ -31,12 +42,12 @@ function fakeDeps({ existingShadow = false } = {}) {
       schemaInits.push(new Date().toISOString());
       return { ok: true };
     },
-    fetchBars: async (symbol) => {
+    fetchBars: async (symbol: string) => {
       if (symbol.includes('ETH')) return fixtureBars(60, 0.45);
       if (symbol.includes('SOL')) return fixtureBars(30, 0.24);
       return fixtureBars(100, 0.75);
     },
-    query: async (sql, params) => {
+    query: async (sql: string, params: unknown[]) => {
       queries.push({ sql, params });
       if (sql.includes('luna_risk_simulation_shadow') && existingShadow) {
         return [{
@@ -62,7 +73,7 @@ function fakeDeps({ existingShadow = false } = {}) {
       }
       return [];
     },
-    run: async (sql, params) => {
+    run: async (sql: string, params: unknown[]) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },
@@ -120,6 +131,7 @@ export async function runLunaMonteCarloSmoke() {
     horizonDays: 20,
   }, dryDeps);
   assert.equal(planned.status, 'luna_monte_carlo_stress_shadow_planned');
+  assert.ok(planned.summary);
   assert.equal(planned.summary.planned, 2);
   assert.equal(planned.summary.liveMutation, false);
   assert.equal(dryDeps.inserts.length, 0);
@@ -145,9 +157,10 @@ export async function runLunaMonteCarloSmoke() {
     horizonDays: 20,
   }, applyDeps);
   assert.equal(written.status, 'luna_monte_carlo_stress_shadow_written');
+  assert.ok(written.summary);
   assert.equal(written.summary.written, 1);
   assert.equal(applyDeps.schemaInits.length, 1);
-  assert.equal(JSON.parse(applyDeps.inserts[0].params[1])[0], 'BTC/USDT');
+  assert.equal(JSON.parse(String(applyDeps.inserts[0].params[1]))[0], 'BTC/USDT');
 
   const cachedDeps = fakeDeps({ existingShadow: true });
   const cached = await runLunaMonteCarloStressShadow({
@@ -168,6 +181,7 @@ export async function runLunaMonteCarloSmoke() {
     horizonDays: 20,
   }, cachedDeps);
   assert.equal(cached.status, 'luna_monte_carlo_stress_shadow_cached');
+  assert.ok(cached.summary);
   assert.equal(cached.summary.cached, 1);
   assert.equal(cachedDeps.queries[0].params[2], 'base');
 
@@ -187,7 +201,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna monte carlo smoke failed:',
   });
