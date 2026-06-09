@@ -8,8 +8,8 @@ async function main() {
   const originalSendBuffered = sender.sendBuffered;
   process.env.JAY_3TIER_TELEGRAM = 'true';
 
-  const sent = [];
-  sender.sendBuffered = async (team, message) => {
+  const sent: Array<{ team: string; message: string }> = [];
+  sender.sendBuffered = async (team: string, message: string) => {
     sent.push({ team, message });
     return true;
   };
@@ -51,8 +51,8 @@ async function main() {
     });
     assert.equal(teamProgress?.ok, true);
 
-    const meetingMessages = sent.filter((row) => row.team === 'meeting');
-    const lunaMessages = sent.filter((row) => row.team === 'luna');
+    const meetingMessages = sent.filter((row: { team: string }) => row.team === 'meeting');
+    const lunaMessages = sent.filter((row: { team: string }) => row.team === 'luna');
     assert.equal(meetingMessages.length, 3, 'meeting should receive frame/review/final');
     assert.match(meetingMessages[0].message, /Jay 회의/, 'meeting card should use compact Korean card format');
     assert.match(meetingMessages[1].message, /팀검토/, 'review phase should have readable phase label');
@@ -66,6 +66,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`jay_3tier_routing_smoke_failed: ${error?.message || error}`);
+  console.error(`jay_3tier_routing_smoke_failed: ${error instanceof Error ? error.message : error}`);
   process.exit(1);
 });

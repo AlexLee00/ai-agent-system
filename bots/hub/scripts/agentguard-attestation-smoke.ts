@@ -1,4 +1,4 @@
-function assert(condition, message) {
+function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 
@@ -66,7 +66,7 @@ async function main() {
   assert(disabledTool.ok === false, 'expected disabled mutating tool blocked');
   assert(disabledTool.error === 'mutating_tool_disabled', 'expected disabled tool error');
 
-  let dbRecordId = null;
+  let dbRecordId: unknown = null;
   let dbSearchCount = null;
   if (liveDb) {
     dbRecordId = await recordAgentGuardAudit(deniedWrite, { traceId: 'agentguard-smoke-live-db' });
@@ -80,7 +80,7 @@ async function main() {
       limit: 5,
     });
     dbSearchCount = rows.length;
-    assert(rows.some((row) => String(row.id) === String(dbRecordId)), 'expected inserted agent guard audit searchable');
+    assert(rows.some((row: { id?: unknown }) => String(row.id) === String(dbRecordId)), 'expected inserted agent guard audit searchable');
   }
 
   console.log(JSON.stringify({

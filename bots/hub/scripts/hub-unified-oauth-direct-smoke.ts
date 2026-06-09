@@ -81,8 +81,13 @@ async function main() {
   const successfulOpenAiFetch = globalThis.fetch;
 
   try {
-    const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
-    const unifiedCaller = await import('../lib/llm/unified-caller.ts');
+    const unifiedCaller = require('../lib/llm/unified-caller.ts') as {
+      callWithFallback: (request: Record<string, unknown>) => Promise<any>;
+      _testOnly: {
+        _shouldSuppressFallbackExhaustionAlarm: (request: Record<string, unknown>, error: unknown) => boolean;
+      };
+    };
+    const { callWithFallback } = unifiedCaller;
     const sender = await import('../../../packages/core/lib/telegram-sender.ts');
 
     const openAiResult = await callWithFallback({
@@ -174,7 +179,7 @@ async function main() {
     delete process.env.HUB_LLM_GEMINI_DISABLED;
 
     assert.equal(
-      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+      unifiedCaller._testOnly._shouldSuppressFallbackExhaustionAlarm(
         { selectorKey: 'hub.unified.oauth.openai.smoke' },
         null,
       ),
@@ -182,7 +187,7 @@ async function main() {
       'Hub smoke selectors must suppress production fallback exhaustion alarms',
     );
     assert.equal(
-      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+      unifiedCaller._testOnly._shouldSuppressFallbackExhaustionAlarm(
         { selectorKey: 'hub.alarm.interpreter.work' },
         null,
       ),
@@ -190,7 +195,7 @@ async function main() {
       'Hub alarm interpreter enrichment must fail open without emitting fallback exhaustion criticals',
     );
     assert.equal(
-      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+      unifiedCaller._testOnly._shouldSuppressFallbackExhaustionAlarm(
         { selectorKey: 'hub.alarm.classifier' },
         null,
       ),
@@ -198,7 +203,7 @@ async function main() {
       'Hub alarm classifier enrichment must fail open without emitting fallback exhaustion criticals',
     );
     assert.equal(
-      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+      unifiedCaller._testOnly._shouldSuppressFallbackExhaustionAlarm(
         { selectorKey: 'blog.pos.writer', taskType: 'smoke_test_name_must_not_suppress' },
         null,
       ),

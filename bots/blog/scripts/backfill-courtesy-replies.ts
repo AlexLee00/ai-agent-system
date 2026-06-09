@@ -3,7 +3,7 @@
 
 const { requeueCourtesyReflectionCandidates } = require('../lib/commenter.ts');
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   return {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),

@@ -1,9 +1,13 @@
 #!/usr/bin/env tsx
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-function run(tsxBin, step, cwd) {
+type SmokeStep = {
+  label: string;
+  scriptPath: string;
+};
+
+function run(tsxBin: string, step: SmokeStep, cwd: string): void {
   const result = spawnSync(tsxBin, [step.scriptPath], { stdio: 'inherit', cwd });
   const status = Number(result.status ?? 1);
   if (status !== 0) {
@@ -11,7 +15,7 @@ function run(tsxBin, step, cwd) {
   }
 }
 
-function buildSteps(repoRoot) {
+function buildSteps(repoRoot: string): SmokeStep[] {
   const hubScripts = path.join(repoRoot, 'bots', 'hub', 'scripts');
   const names = [
     'jay-formation-decision-llm-smoke.ts',
@@ -32,7 +36,7 @@ function buildSteps(repoRoot) {
 }
 
 function main() {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const currentDir = __dirname;
   const repoRoot = path.resolve(currentDir, '..', '..', '..');
   const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
   const steps = buildSteps(repoRoot);

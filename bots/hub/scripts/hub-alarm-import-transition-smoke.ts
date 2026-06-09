@@ -65,7 +65,13 @@ const MIGRATED_RUNTIME_SCOPES = [
   'scripts/speed-test.ts',
 ];
 
-function searchPattern(pattern, scopes) {
+type ImportTransitionAssertion = {
+  pattern: string;
+  scopes: string[];
+  message: string;
+};
+
+function searchPattern(pattern: string, scopes: string[]) {
   const rgResult = spawnSync('rg', ['-n', '-S', pattern, ...scopes], {
     cwd: PROJECT_ROOT,
     encoding: 'utf8',
@@ -87,7 +93,7 @@ function searchPattern(pattern, scopes) {
   return { stdout: String(grepResult.stdout || ''), ok: true };
 }
 
-function assertNoMatches({ pattern, scopes, message }) {
+function assertNoMatches({ pattern, scopes, message }: ImportTransitionAssertion) {
   const { stdout, ok } = searchPattern(pattern, scopes);
   if (!ok) return; // search tool unavailable — skip assertion
   const matches = stdout.trim();
