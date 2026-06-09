@@ -5,7 +5,15 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { blog: blogSkills } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/index.js'));
 
-function parseArgs(argv = []) {
+type BookPreview = {
+  title?: string;
+  author?: string;
+  category?: string;
+  priority?: unknown;
+  source?: string;
+};
+
+function parseArgs(argv: string[] = []) {
   const args = {
     json: argv.includes('--json'),
     topic: '일과 삶을 함께 돌아보게 만드는 책',
@@ -45,7 +53,7 @@ async function main() {
       '요즘 많이 읽는 책',
       '삶을 돌아보는 책',
       '베스트셀러 소설',
-      ...preferredBooks.map((book) => [book.title, book.author].filter(Boolean).join(' ')),
+      ...preferredBooks.map((book: BookPreview) => [book.title, book.author].filter(Boolean).join(' ')),
     ],
     preferredBooks,
   });
@@ -53,7 +61,7 @@ async function main() {
   const payload = {
     topic: args.topic,
     reviewedHistoryCount: Array.isArray(reviewedHistory) ? reviewedHistory.length : 0,
-    preferredBooks: preferredBooks.map((book) => ({
+    preferredBooks: preferredBooks.map((book: BookPreview) => ({
       title: book.title,
       author: book.author,
       category: book.category,

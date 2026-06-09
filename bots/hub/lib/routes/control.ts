@@ -412,7 +412,7 @@ async function saveRun(run: ControlRun): Promise<ControlRun> {
     runsFallback.delete(normalized.id);
     return persisted;
   } catch (error) {
-    console.error(`[hub/control] db unavailable saveRun: ${error?.message || error}`);
+    console.error(`[hub/control] db unavailable saveRun: ${error instanceof Error ? error.message : error}`);
     throw buildStoreUnavailableError('saveRun', error);
   }
 }
@@ -430,7 +430,7 @@ async function getRun(runId: string): Promise<ControlRun | null> {
     `, [normalizedRunId]);
     return rowToRun(row);
   } catch (error) {
-    console.error(`[hub/control] db unavailable getRun: ${error?.message || error}`);
+    console.error(`[hub/control] db unavailable getRun: ${error instanceof Error ? error.message : error}`);
     throw buildStoreUnavailableError('getRun', error);
   }
 }
@@ -679,8 +679,8 @@ export async function controlExecuteRoute(req: any, res: any) {
           status: updated.status,
           stepCount: stepResults.length,
         },
-      }).catch((error) => {
-        console.warn(`[hub/control] session compaction skipped: ${error?.message || error}`);
+      }).catch((error: unknown) => {
+        console.warn(`[hub/control] session compaction skipped: ${error instanceof Error ? error.message : error}`);
       });
       return res.json({
         ok: true,

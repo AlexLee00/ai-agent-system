@@ -5,8 +5,13 @@ const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { recordPerformance, getPerformanceCollectionCandidates } = require('../lib/publ.ts');
 
-function parseArgs(argv = process.argv.slice(2)) {
-  const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=') || null;
+type PerformanceArgs = {
+  postId?: string | null;
+  scheduleId?: string | null;
+};
+
+function parseArgs(argv: string[] = process.argv.slice(2)) {
+  const get = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=') || null;
   return {
     postId: get('post-id'),
     scheduleId: get('schedule-id'),
@@ -17,7 +22,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-async function resolvePostId({ postId, scheduleId }) {
+async function resolvePostId({ postId, scheduleId }: PerformanceArgs) {
   if (postId) return Number(postId);
   if (!scheduleId) throw new Error('--post-id 또는 --schedule-id 중 하나가 필요합니다.');
 
@@ -37,7 +42,7 @@ async function main() {
 
   if (args.listOnly) {
     const rows = await getPerformanceCollectionCandidates(7);
-    rows.forEach((row) => {
+    rows.forEach((row: { id: unknown; publish_date: unknown; category: unknown; title: unknown }) => {
       console.log(`${row.id}\t${row.publish_date}\t${row.category}\t${row.title}`);
     });
     return;

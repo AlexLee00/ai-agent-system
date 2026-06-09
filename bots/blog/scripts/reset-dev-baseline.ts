@@ -3,7 +3,7 @@
 
 const { writeDevelopmentBaseline } = require('../lib/dev-baseline.ts');
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   const noteArg = argv.find((item) => item.startsWith('--note='));
   const json = argv.includes('--json');
   return {

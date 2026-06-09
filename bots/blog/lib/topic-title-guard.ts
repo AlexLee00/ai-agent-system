@@ -46,14 +46,14 @@ function leadingTokenSignature(text = '', count = 4) {
 
 function toBigrams(text = '') {
   const normalized = normalizeTitle(text).replace(/\s+/g, '');
-  const set = new Set();
+  const set = new Set<string>();
   for (let i = 0; i < normalized.length - 1; i += 1) {
     set.add(normalized.slice(i, i + 2));
   }
   return set;
 }
 
-function similarity(a, b) {
+function similarity(a: string, b: string): number {
   const first = toBigrams(a);
   const second = toBigrams(b);
   if (!first.size || !second.size) return 0;
@@ -76,7 +76,15 @@ function tokenOverlapRatio(a = '', b = '') {
   return intersection / Math.max(first.size, second.size);
 }
 
-function isTooCloseToRecentTitle(candidate, recentTitles = []) {
+type TitleCandidate = string | {
+  title?: string;
+  topic?: string;
+  question?: string;
+  diff?: string;
+  category?: string;
+};
+
+function isTooCloseToRecentTitle(candidate: TitleCandidate, recentTitles: string[] = []) {
   if (!recentTitles.length) return false;
 
   const title = typeof candidate === 'string' ? candidate : String(candidate?.title || '');
@@ -120,9 +128,9 @@ function isTooCloseToRecentTitle(candidate, recentTitles = []) {
   });
 }
 
-function mergeRecentTitles(...titleGroups) {
-  const seen = new Set();
-  const merged = [];
+function mergeRecentTitles(...titleGroups: unknown[]): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
   for (const group of titleGroups) {
     for (const rawTitle of Array.isArray(group) ? group : []) {
       const title = String(rawTitle || '').trim();

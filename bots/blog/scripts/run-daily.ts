@@ -14,6 +14,11 @@
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { run } = require('../lib/blo.ts');
 
+type BlogRunResult = {
+  error?: unknown;
+  skipped?: unknown;
+};
+
 const dryRun = process.argv.includes('--dry-run');
 const verifyOnly = process.argv.includes('--verify');
 const phase1FastDryRun =
@@ -23,19 +28,19 @@ const json = process.argv.includes('--json');
 
 initHubConfig()
   .then(() => run({ dryRun, verifyOnly, phase1FastDryRun }))
-  .then((results) => {
+  .then((results: BlogRunResult[]) => {
     if (json) {
       console.log(JSON.stringify({ dryRun, verifyOnly, phase1FastDryRun, results }, null, 2));
       process.exit(0);
     }
 
-    const ok = results.filter((r) => !r.error && !r.skipped).length;
-    const err = results.filter((r) => r.error).length;
+    const ok = results.filter((r: BlogRunResult) => !r.error && !r.skipped).length;
+    const err = results.filter((r: BlogRunResult) => r.error).length;
     const modeLabel = verifyOnly ? 'verify' : (dryRun ? 'dry-run' : 'live');
     console.log(`\n완료[${modeLabel}]: ✅${ok}편 생성, ❌${err}편 실패`);
     process.exit(0);
   })
-  .catch((e) => {
-    console.error('❌ 블로그팀 실행 실패:', e.message);
+  .catch((e: unknown) => {
+    console.error('❌ 블로그팀 실행 실패:', e instanceof Error ? e.message : e);
     process.exit(1);
   });
