@@ -17,14 +17,16 @@ const ADAPTER_FACTORIES = {
   legal: createLegalCommanderAdapter,
 };
 
-function normalizeText(value, fallback = '') {
+type CommanderTeam = keyof typeof ADAPTER_FACTORIES;
+
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function getCommanderAdapter(team) {
+function getCommanderAdapter(team: unknown) {
   const normalizedTeam = normalizeText(team, 'general').toLowerCase();
-  const create = ADAPTER_FACTORIES[normalizedTeam];
+  const create = ADAPTER_FACTORIES[normalizedTeam as CommanderTeam];
   if (!create) return createVirtualCommanderAdapter(normalizedTeam, { label: `${normalizedTeam}-virtual` });
   return create();
 }

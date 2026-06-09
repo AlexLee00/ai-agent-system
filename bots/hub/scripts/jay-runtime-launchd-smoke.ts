@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-function repoPath(...parts) {
+function repoPath(...parts: string[]): string {
   return path.resolve(__dirname, '..', '..', '..', ...parts);
 }
 
-function extractString(plist, key) {
+function extractString(plist: string, key: string): string {
   const pattern = new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`, 'm');
   const match = plist.match(pattern);
   return match ? match[1] : '';
@@ -59,6 +59,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`jay_runtime_launchd_smoke_failed: ${error?.message || error}`);
+  console.error(`jay_runtime_launchd_smoke_failed: ${error instanceof Error ? error.message : error}`);
   process.exit(1);
 });

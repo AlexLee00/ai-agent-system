@@ -4,13 +4,14 @@ import assert from 'node:assert/strict';
 function installRuntimeMocks() {
   const controlClientPath = require.resolve('../../orchestrator/lib/jay-control-plan-client.ts');
   const commanderDispatcherPath = require.resolve('../lib/control/commander-dispatcher.ts');
+  const cache = require.cache as Record<string, any>;
 
-  require.cache[controlClientPath] = {
+  cache[controlClientPath] = {
     id: controlClientPath,
     filename: controlClientPath,
     loaded: true,
     exports: {
-      createControlPlanDraft: async (input) => ({
+      createControlPlanDraft: async (input: { team?: string }) => ({
         ok: true,
         payload: {
           ok: true,
@@ -44,7 +45,7 @@ function installRuntimeMocks() {
     },
   };
 
-  require.cache[commanderDispatcherPath] = {
+  cache[commanderDispatcherPath] = {
     id: commanderDispatcherPath,
     filename: commanderDispatcherPath,
     loaded: true,
@@ -124,6 +125,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`jay_incident_e2e_dry_run_smoke_failed: ${error?.message || error}`);
+  console.error(`jay_incident_e2e_dry_run_smoke_failed: ${error instanceof Error ? error.message : error}`);
   process.exit(1);
 });

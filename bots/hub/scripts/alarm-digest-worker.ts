@@ -1,6 +1,6 @@
 const { flushAlarmDigest } = require('../lib/routes/alarm.ts');
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -29,16 +29,16 @@ async function main() {
         minutes: windowMinutes,
         limit,
       });
-      const sentTeams = (result.teams || []).filter((team) => team.sent === true).length;
+      const sentTeams = (result.teams || []).filter((team: { sent?: boolean }) => team.sent === true).length;
       console.log(`[alarm-digest-worker] flush ok selected=${result.selected_count} sent_teams=${sentTeams}`);
     } catch (error) {
-      console.error(`[alarm-digest-worker] flush failed: ${error?.message || error}`);
+      console.error(`[alarm-digest-worker] flush failed: ${error instanceof Error ? error.message : error}`);
     }
     await sleep(intervalMinutes * 60 * 1000);
   }
 }
 
 main().catch((error) => {
-  console.error('[alarm-digest-worker] fatal:', error?.message || error);
+  console.error('[alarm-digest-worker] fatal:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

@@ -24,7 +24,7 @@ async function main() {
   assert.equal(selfHealing.canaryLabels.includes('ai.hub.llm-tier-probe'), true, 'self-healing canary label must be declared');
   assert(Array.isArray(selfHealing.canaryLaunchd), 'self-healing readiness must expose canary launchd state');
   assert(
-    selfHealing.checks.some((item) => item.name === 'tier_probe_placeholder_token_fallback' && item.ok),
+    selfHealing.checks.some((item: { name?: string; ok?: boolean }) => item.name === 'tier_probe_placeholder_token_fallback' && item.ok),
     'tier-probe must ignore launchd placeholder tokens and fall back to launchctl/secrets-store',
   );
   for (const label of SELF_HEALING_CANARY_LABELS) {
@@ -128,7 +128,7 @@ async function main() {
   assert.equal(promotionEvidence.observed.failures, 0, 'Stage D promotion error-rate evidence must use operational failures');
   assert.equal(promotionEvidence.observed.latencyObservedOk, true, 'Stage D must derive observed latency evidence');
   assert.equal(promotionEvidence.observed.slowRoutes.length, 1, 'Stage D must preserve latency hotspot evidence');
-  assert.equal(promotionEvidence.requirements.find((item) => item.id === 'latency_lt_500ms')?.evidence.slowRoutes.length, 1, 'Stage D latency requirement must include hotspot evidence');
+  assert.equal(promotionEvidence.requirements.find((item: { id?: string }) => item.id === 'latency_lt_500ms')?.evidence.slowRoutes.length, 1, 'Stage D latency requirement must include hotspot evidence');
   assert.equal(promotionEvidence.observed.uptimeWindowObservedOk, true, 'Stage D must derive observed uptime-window evidence');
   assert(promotionEvidence.remainingForProductionCertified.includes('shadow_7d'), 'Stage D must keep certification gated by attestation');
   assert(promotionEvidence.observedReadyButNotAttested.includes('error_rate_lt_0_1'), 'Stage D must separate observed readiness from attestation');
@@ -143,7 +143,7 @@ async function main() {
   assert(Array.isArray(report.promotionGate.observedReadyButNotAttested), 'Stage D top-level promotion gate must expose observed-but-unattested gates');
   assert(report.promotionGate.observedSnapshot, 'Stage D top-level promotion gate must expose observed evidence snapshot');
   assert(
-    report.promotionGate.nextActions.some((item) => item.id === 'latency_lt_500ms'),
+    report.promotionGate.nextActions.some((item: { id?: string }) => item.id === 'latency_lt_500ms'),
     'Stage D top-level promotion gate must expose per-gate next actions',
   );
 

@@ -7,8 +7,6 @@
  * launchd ai.hub.severity-decay (StartInterval: 3600, 매시간)
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
 const { runSeverityDecay } = require('../lib/alarm/severity-decay');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
@@ -81,8 +79,8 @@ async function main() {
     `시각: ${kst.datetimeStr ? kst.datetimeStr() : new Date().toISOString()} KST`,
     '',
     ...result.rules_applied
-      .filter((r) => r.count > 0)
-      .map((r) => `  ${r.from} → ${r.to}: ${r.count}건`),
+      .filter((r: { count: number }) => r.count > 0)
+      .map((r: { from: string; to: string; count: number }) => `  ${r.from} → ${r.to}: ${r.count}건`),
   ];
 
   const message = lines.join('\n');
