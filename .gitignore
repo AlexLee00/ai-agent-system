@@ -92,6 +92,9 @@ bots/investment/output/ops/position-parity-report-cache.json
 bots/investment/output/ops/binance-rest-rate-limit-guard.json
 bots/investment/output/ops/luna-feedback-action-mapper-state.json
 bots/investment/output/luna-disclosure-event-shadow.json
+bots/investment/output/luna-fundamental-quant-shadow.json
+bots/investment/output/luna-korean-factor-refresh.json
+bots/investment/output/luna-opendart-financial-batch-refresh.json
 bots/investment/output/luna-kis-domestic-universe-cache.json
 bots/investment/output/luna-kis-overseas-universe-cache.json
 bots/investment/output/reports/luna-final-closure-wave1-report.json
