@@ -308,6 +308,72 @@ function trimTerminalOverflowContent(content) {
   return next.slice(0, afterHashtagIndex + overflow.index).trimEnd();
 }
 
+function replaceSectionBlock(content, sectionTitle, replacement) {
+  const text = String(content || '');
+  const escaped = String(sectionTitle || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const marker = new RegExp(`(^|\\n)\\s*(?:#{1,6}\\s*)?\\[${escaped}\\]\\s*(?:\\n|$)`, 'i');
+  const match = marker.exec(text);
+  if (!match) return text;
+
+  const start = match.index + (match[1] ? 1 : 0);
+  const afterStart = match.index + match[0].length;
+  const rest = text.slice(afterStart);
+  const nextSection = /\n\s*(?:#{1,6}\s*)?\[[^\]\n]+\]\s*(?:\n|$)/.exec(rest);
+  const end = nextSection ? afterStart + nextSection.index : text.length;
+  return `${text.slice(0, start).trimEnd()}\n\n${replacement.trim()}\n\n${text.slice(end).trimStart()}`.trim();
+}
+
+function normalizeOfficialToolAccessText(content) {
+  return String(content || '')
+    .replace(
+      /2026년\s*6월\s*기준,\s*ChatGPT\s*Plus\s*또는\s*Pro\s*플랜에서\s*접근\s*가능합니다\./g,
+      '2026년 6월 기준, Codex는 Free, Go, Plus, Pro, Business, Edu, Enterprise 등 여러 ChatGPT 플랜에 포함되며 사용량 한도는 플랜별로 다릅니다.'
+    )
+    .replace(
+      /Claude\s*Pro\s*플랜\s*가입\s*확인\s*또는\s*가입\s*준비/g,
+      'Claude 계정 또는 Claude Code 사용 환경 확인'
+    );
+}
+
+function normalizeBeginnerLectureContent(content, title) {
+  let next = normalizeOfficialToolAccessText(content);
+  const titleText = String(title || next).trim();
+  const isAiImplementationLecture = /실전\s*AI\s*구현|ChatGPT\s*Codex|Claude\s*Code/i.test(titleText);
+  if (!isAiImplementationLecture) return next;
+
+  const beginnerPrep = [
+    '[실습 전 준비]',
+    '이번 강의는 IT를 잘 모르는 분도 따라올 수 있도록 어려운 최신 기술 뉴스보다 실제 화면에서 무엇을 눌러야 하는지에 집중합니다.',
+    '',
+    '준비물은 두 가지 중 하나면 충분합니다.',
+    '1. ChatGPT에서 Codex를 열어 프롬프트를 입력해봅니다.',
+    '2. Claude Code를 쓰는 분은 터미널에서 claude 명령을 실행할 수 있는지만 확인합니다.',
+    '',
+    '아직 설치나 가입이 끝나지 않았어도 괜찮습니다. 오늘은 아래 프롬프트 문장을 그대로 복사해 넣고, AI가 어떤 식으로 답하는지 비교하는 것이 목표입니다.',
+    '',
+    '[검증 포인트]',
+    '- AI가 만든 결과를 그대로 믿지 말고 화면에 나온 결과를 직접 확인합니다.',
+    '- 에러 문구가 나오면 그 문구 전체를 다시 AI에게 붙여넣습니다.',
+    '- 오늘은 코드를 완벽히 이해하는 것보다 “요청하고, 결과를 보고, 다시 수정 요청하는 흐름”을 익히는 데 집중합니다.',
+  ].join('\n');
+  if (/\[최신 기술 브리핑\]/.test(next)) {
+    next = replaceSectionBlock(next, '최신 기술 브리핑', beginnerPrep);
+  }
+
+  return next
+    .replace(/Claude Code는 Claude 유료 플랜\(Pro 이상\)이 있어야 사용할 수 있습니다\./g, 'Claude Code는 계정/플랜과 사용 환경에 따라 접근 방식이 달라질 수 있으니 공식 안내에서 현재 조건을 확인하는 편이 안전합니다.')
+    .replace(/ChatGPT Codex도 무료 플랜에서는 사용 횟수 제한이 있고, 고급 기능은 유료입니다\./g, 'ChatGPT Codex도 플랜별 사용량 한도가 다르므로, 현재 계정에서 보이는 한도를 기준으로 실습하면 됩니다.');
+}
+
+function normalizePostContentForPublish(content, postType, title) {
+  let next = trimTerminalOverflowContent(content);
+  next = normalizeOfficialToolAccessText(next);
+  if (postType === 'lecture') {
+    next = normalizeBeginnerLectureContent(next, title);
+  }
+  return trimTerminalOverflowContent(next).trim();
+}
+
 function _contentToHtml(content, title, images = null) {
   let text = trimTerminalOverflowContent(content);
   text = text.replace(/^\s*#{1,6}\s*(\[[^\]\n]+\])\s*$/gm, '$1');
@@ -344,6 +410,8 @@ function _contentToHtml(content, title, images = null) {
       '마무리 제언': '마무리',
     };
     if (map[normalized]) return map[normalized];
+    const genericBracketTitle = normalized.match(/^[^\]\n]+\]\s*(.+)$/);
+    if (genericBracketTitle?.[1]) return genericBracketTitle[1].trim();
     if (/^본론 섹션\s*4$/.test(normalized)) return '기대치 관리 타이밍';
     if (/^본론 섹션\s*\d+$/.test(normalized)) return '추가 실무 기준';
     return raw;
@@ -458,7 +526,7 @@ function _contentToHtml(content, title, images = null) {
     htmlLines.push(`<p>${l}</p>`);
   }
 
-  const body = htmlLines.join('\n');
+  const body = htmlLines.join('\n').replace(/(?:<br>\s*){3,}/g, '<br>\n<br>');
 
   const thumbImg = images?.thumb?.filename
     ? `<div class="post-thumb"><img src="images/${images.thumb.filename}" alt="${title || ''}" loading="lazy"></div>`
@@ -559,12 +627,13 @@ async function publishToFile(postData) {
   const filepath = path.join(OUTPUT_DIR, filename);
 
   const titleUrlMap = await loadPublishedLinkMap();
-  const normalizedContent = trimTerminalOverflowContent(ensurePersonalVoiceFloor(
+  const normalizedContent = normalizePostContentForPublish(ensurePersonalVoiceFloor(
     ensurePublishBriefingFloor(content, postType, title),
     postType,
     title,
-  ));
+  ), postType, title);
   const linkedContent = replaceInternalLinkPlaceholders(normalizedContent, titleUrlMap);
+  const finalCharCount = linkedContent.length;
 
   const htmlContent = _contentToHtml(linkedContent, title, images);
 
@@ -593,7 +662,7 @@ async function publishToFile(postData) {
         lectureNumber || null,
         postType === 'lecture' ? seriesName : null,
         publishDate,
-        charCount,
+        finalCharCount,
         linkedContent,
         hashtags || [],
         {
@@ -618,10 +687,10 @@ async function publishToFile(postData) {
       await publishBlogRagEvent({
         collection: 'blog',
         eventType: 'blog_publish_rag',
-        message: `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+        message: `[${postType}] ${title} | ${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${finalCharCount}자`,
         payload: {
           title,
-          summary: `${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${charCount}자`,
+          summary: `${category}${lectureNumber ? ` | ${lectureNumber}강` : ''} | ${finalCharCount}자`,
           details: [
             `type: ${postType}`,
             `publish_date: ${publishDate}`,
@@ -632,7 +701,7 @@ async function publishToFile(postData) {
           type: postType,
           category,
           lecture_number: lectureNumber || null,
-          char_count: charCount,
+          char_count: finalCharCount,
           publish_date: publishDate,
           filename,
         },
@@ -682,12 +751,13 @@ async function rewriteReadyDraft(postId, postData) {
   const today = kst.today();
 
   const titleUrlMap = await loadPublishedLinkMap();
-  const normalizedContent = trimTerminalOverflowContent(ensurePersonalVoiceFloor(
+  const normalizedContent = normalizePostContentForPublish(ensurePersonalVoiceFloor(
     ensurePublishBriefingFloor(content, postType, title),
     postType,
     title,
-  ));
+  ), postType, title);
   const linkedContent = replaceInternalLinkPlaceholders(normalizedContent, titleUrlMap);
+  const finalCharCount = linkedContent.length;
   const htmlContent = _contentToHtml(linkedContent, title, images);
 
   fs.writeFileSync(filepath, htmlContent, 'utf8');
@@ -727,7 +797,7 @@ async function rewriteReadyDraft(postId, postData) {
     postType,
     lectureNumber || row.lecture_number || null,
     postType === 'lecture' ? seriesName : null,
-    charCount,
+    finalCharCount,
     linkedContent,
     htmlContent,
     hashtags || [],

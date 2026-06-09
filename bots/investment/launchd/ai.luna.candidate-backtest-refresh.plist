@@ -25,6 +25,8 @@
     <string>24</string>
     <key>LUNA_BT_WALK_FORWARD_ENABLED</key>
     <string>true</string>
+    <key>LUNA_BT_ROBUST_SELECTION_ENABLED</key>
+    <string>true</string>
     <key>LUNA_BT_WF_FOLDS</key>
     <string>5</string>
     <key>LUNA_BT_WF_TRAIN_DAYS</key>

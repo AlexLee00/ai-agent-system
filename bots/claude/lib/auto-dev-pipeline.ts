@@ -1044,16 +1044,23 @@ function isExecutableFile(candidate) {
   }
 }
 
+function isHomebrewCellarNodePath(candidate) {
+  return /\/(?:opt\/homebrew|usr\/local)\/Cellar\/node\/[^/]+\/bin\/node$/.test(String(candidate || ''));
+}
+
 function resolveNodeExecutable({
   execPath = process.execPath,
   pathEnv = process.env.PATH || '',
 } = {}) {
   const candidates = [];
-  if (execPath) candidates.push(execPath);
+  if (execPath && !isHomebrewCellarNodePath(execPath)) candidates.push(execPath);
   for (const dir of String(pathEnv || '').split(path.delimiter).filter(Boolean)) {
     candidates.push(path.join(dir, 'node'));
   }
+  // Avoid long-lived auto-dev processes pinning a Homebrew Cellar version that can
+  // disappear after `brew upgrade node`; prefer stable symlinks for sidecars.
   candidates.push('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node');
+  if (execPath && isHomebrewCellarNodePath(execPath)) candidates.push(execPath);
   for (const candidate of candidates) {
     if (isExecutableFile(candidate)) return candidate;
   }

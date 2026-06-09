@@ -1772,6 +1772,26 @@ async function test_lock_heartbeat_sidecar_enforces_parent_liveness() {
   console.log('✅ auto-dev: lock heartbeat sidecar validates parent liveness');
 }
 
+async function test_resolve_node_executable_prefers_stable_node_over_homebrew_cellar() {
+  const tmpBin = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-auto-dev-node-bin-'));
+  const stableNode = path.join(tmpBin, 'node');
+  fs.writeFileSync(stableNode, '#!/bin/sh\nexit 0\n', 'utf8');
+  fs.chmodSync(stableNode, 0o755);
+
+  delete require.cache[PIPELINE_PATH];
+  const pipeline = require(PIPELINE_PATH);
+  assert.strictEqual(
+    pipeline._testOnly_resolveNodeExecutable({
+      execPath: '/usr/local/Cellar/node/99.0.0/bin/node',
+      pathEnv: tmpBin,
+    }),
+    stableNode
+  );
+  delete require.cache[PIPELINE_PATH];
+  fs.rmSync(tmpBin, { recursive: true, force: true });
+  console.log('✅ auto-dev: node executable resolver avoids Homebrew Cellar pinning');
+}
+
 async function test_dirty_base_is_ignored_when_worktree_isolated() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(
@@ -2648,6 +2668,7 @@ async function main() {
     test_claude_code_compat_invocation_includes_model_arg,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
+    test_resolve_node_executable_prefers_stable_node_over_homebrew_cellar,
     test_dirty_base_is_ignored_when_worktree_isolated,
     test_review_cycle_uses_execution_context,
     test_test_scope_is_executed_in_non_test_mode,
