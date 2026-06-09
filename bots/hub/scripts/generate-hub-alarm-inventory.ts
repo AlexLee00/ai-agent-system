@@ -26,11 +26,29 @@ const scanPatterns = [
   RETIRED_ENV_PREFIX_PATTERN,
 ];
 
-function isRetiredGatewayGuard(file) {
+type AlarmInventoryCategory = 'hub_alarm_native' | 'retired_gateway_guard' | 'legacy_gateway_compat' | 'other';
+
+type AlarmInventoryRow = {
+  file: string;
+  line: number | null;
+  category: AlarmInventoryCategory;
+  match: string;
+};
+
+type AlarmInventoryPayload = {
+  generated_at: string;
+  scan_patterns: string[];
+  total_matches: number;
+  unique_files: number;
+  categories: Partial<Record<AlarmInventoryCategory, number>>;
+  files: Record<string, AlarmInventoryRow[]>;
+};
+
+function isRetiredGatewayGuard(file: string) {
   return RETIRED_GATEWAY_GUARD_FILES.includes(String(file || ''));
 }
 
-function classifyMatch(file, match) {
+function classifyMatch(file: string, match: string): AlarmInventoryCategory {
   if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';
   if (isRetiredGatewayGuard(file) && (match.includes(LEGACY_ALARM_CLIENT_PATTERN) || match.includes(RETIRED_ENV_PREFIX_PATTERN))) {
     return 'retired_gateway_guard';
@@ -103,8 +121,8 @@ function runInventoryScan() {
   return rgLines !== null ? rgLines : runInventoryScanViaGrep();
 }
 
-function parseRows(lines) {
-  const rows = [];
+function parseRows(lines: string[]) {
+  const rows: AlarmInventoryRow[] = [];
   for (const line of lines) {
     const firstColon = line.indexOf(':');
     const secondColon = line.indexOf(':', firstColon + 1);
@@ -128,12 +146,12 @@ function parseRows(lines) {
   });
 }
 
-function countByCategory(rows) {
-  const counts = rows.reduce((acc, row) => {
+function countByCategory(rows: AlarmInventoryRow[]) {
+  const counts = rows.reduce<Partial<Record<AlarmInventoryCategory, number>>>((acc, row) => {
     acc[row.category] = (acc[row.category] || 0) + 1;
     return acc;
   }, {});
-  const result = {
+  const result: Partial<Record<AlarmInventoryCategory, number>> = {
     hub_alarm_native: counts.hub_alarm_native || 0,
     retired_gateway_guard: counts.retired_gateway_guard || 0,
     legacy_gateway_compat: counts.legacy_gateway_compat || 0,
@@ -142,14 +160,14 @@ function countByCategory(rows) {
   return result;
 }
 
-function stripGeneratedAt(payload) {
+function stripGeneratedAt(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const clone = JSON.parse(JSON.stringify(payload));
   delete clone.generated_at;
   return clone;
 }
 
-function readPreviousGeneratedAt(nextPayload) {
+function readPreviousGeneratedAt(nextPayload: AlarmInventoryPayload) {
   if (!fs.existsSync(outputJsonPath)) return '';
   try {
     const previous = JSON.parse(fs.readFileSync(outputJsonPath, 'utf8'));
@@ -164,16 +182,16 @@ function readPreviousGeneratedAt(nextPayload) {
   return '';
 }
 
-function writeOutputs(rows) {
+function writeOutputs(rows: AlarmInventoryRow[]) {
   fs.mkdirSync(outputDir, { recursive: true });
-  const grouped = rows.reduce((acc, row) => {
+  const grouped = rows.reduce<Record<string, AlarmInventoryRow[]>>((acc, row) => {
     const key = row.file;
     acc[key] = acc[key] || [];
     acc[key].push(row);
     return acc;
   }, {});
 
-  const payload = {
+  const payload: AlarmInventoryPayload = {
     generated_at: '',
     scan_patterns: scanPatterns,
     total_matches: rows.length,
