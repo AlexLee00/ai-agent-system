@@ -8,13 +8,61 @@ import {
 } from '../../shared/stat-arb-shadow.ts';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
 
+type QueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
+
+type StatArbParams = {
+  strategyType?: string;
+  strategy?: string;
+  symbol?: string;
+  symbols?: string[];
+  exchange?: string;
+  market?: string;
+  limit?: number;
+  bars?: unknown[];
+  barsA?: unknown[];
+  barsB?: unknown[];
+  broadcast?: boolean;
+  candidate?: {
+    exchange?: string;
+    symbols?: string[];
+    symbol?: string;
+    bars?: unknown[];
+    barsA?: unknown[];
+    barsB?: unknown[];
+  };
+};
+
+type LatestRowsOptions = {
+  strategyType?: string;
+  symbol?: string;
+  exchange?: string | null;
+  market?: string;
+  limit?: number;
+};
+
+type StatArbShadowOutput = {
+  ok: boolean;
+  skill: string;
+  market: string;
+  shadowMode: boolean;
+  strategyType?: string;
+  symbols: unknown[];
+  signal?: string;
+  zScore?: number;
+  confidence?: number;
+  dataHealth?: string;
+  broadcastPlanned: boolean;
+  evidence: Record<string, unknown>;
+  rows?: Array<Record<string, unknown>>;
+};
+
 function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
 }
 
-async function latestStatArbShadowRows(queryFn, { strategyType, symbol, exchange, market, limit }) {
-  const conds = [];
-  const params = [];
+async function latestStatArbShadowRows(queryFn: QueryFn, { strategyType, symbol, exchange, market, limit }: LatestRowsOptions) {
+  const conds: string[] = [];
+  const params: unknown[] = [];
   if (strategyType) {
     params.push(strategyType);
     conds.push(`strategy_type = $${params.length}`);
@@ -43,7 +91,7 @@ async function latestStatArbShadowRows(queryFn, { strategyType, symbol, exchange
   return Array.isArray(rows) ? rows : [];
 }
 
-function outputFromShadow(shadow, skillId, params = {}) {
+function outputFromShadow(shadow: Record<string, any>, skillId: string, params: StatArbParams = {}): StatArbShadowOutput {
   return {
     ok: Boolean(shadow.ok),
     skill: skillId,
@@ -60,8 +108,8 @@ function outputFromShadow(shadow, skillId, params = {}) {
   };
 }
 
-function outputFromRows(rows = [], skillId, params = {}) {
-  const normalized = rows.map(normalizeStatArbShadowRow);
+function outputFromRows(rows: unknown[] = [], skillId: string, params: StatArbParams = {}) {
+  const normalized = rows.map((row) => normalizeStatArbShadowRow(row as Record<string, unknown>));
   const primary = normalized[0] || {};
   return {
     ...outputFromShadow(primary, skillId, params),
@@ -81,7 +129,7 @@ function outputFromRows(rows = [], skillId, params = {}) {
   };
 }
 
-function outputFromCandidate(params = {}, skillId) {
+function outputFromCandidate(params: StatArbParams = {}, skillId: string) {
   const exchange = normalizeStatArbExchange(params.exchange || params.candidate?.exchange);
   const strategyType = String(params.strategyType || params.strategy || 'mean_reversion');
   const shadow = strategyType === 'pairs_trading' || strategyType === 'pairs'
@@ -99,9 +147,9 @@ function outputFromCandidate(params = {}, skillId) {
   return outputFromShadow(shadow, skillId, params);
 }
 
-export function createStatArbShadowHandler({ queryFn = defaultQuery, skillId = 'stat-arb-shadow' } = {}) {
-  return async function statArbShadow(params = {}) {
-    const exchange = params.exchange ? normalizeStatArbExchange(params.exchange) : null;
+export function createStatArbShadowHandler({ queryFn = defaultQuery as QueryFn, skillId = 'stat-arb-shadow' }: { queryFn?: QueryFn; skillId?: string } = {}) {
+  return async function statArbShadow(params: StatArbParams = {}) {
+    const exchange = params.exchange ? normalizeStatArbExchange(params.exchange) : undefined;
     const rows = await latestStatArbShadowRows(queryFn, {
       strategyType: params.strategyType || params.strategy,
       symbol: params.symbol,
@@ -126,7 +174,7 @@ export function createStatArbShadowHandler({ queryFn = defaultQuery, skillId = '
 }
 
 export function registerStatArbShadowSkill(options = {}) {
-  registerSkillHandler('stat-arb-shadow', createStatArbShadowHandler(options));
+  registerSkillHandler('stat-arb-shadow', createStatArbShadowHandler(options) as any);
 }
 
 export default {
