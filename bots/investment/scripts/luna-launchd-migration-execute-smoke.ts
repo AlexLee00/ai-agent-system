@@ -20,11 +20,13 @@ const SIMULATED_VISIBLE_LABELS = [
   'ai.investment.market-alert-domestic-open',
   'ai.investment.prescreen-domestic',
   'ai.luna.guardrails-hourly',
+  'ai.luna.reflexion-engine-daily-0700',
 ];
 
 export async function runLaunchdMigrationExecuteSmoke() {
   const dryRun = await executeLaunchdMigration({
     visibleLabels: SIMULATED_VISIBLE_LABELS,
+    installedLabels: ['ai.luna.feedback-loop-daily-0600'],
     validationWaitMs: 0,
   });
   assert.equal(dryRun.ok, true);
@@ -34,9 +36,11 @@ export async function runLaunchdMigrationExecuteSmoke() {
   assert.ok(dryRun.steps.some((step) => step.group === 'marketdata_ws_to_mcp' && step.visibleLabels.length === 3));
   assert.ok(dryRun.steps.some((step) => step.group === 'scheduled_ops_to_ops_scheduler' && step.visibleLabels.length === 1));
   assert.equal(dryRun.steps.find((step) => step.group === 'marketdata_ws_to_mcp').validation.ok, true);
+  assert.equal(dryRun.reconcile.results.find((item) => item.label === 'ai.luna.reflexion-engine-daily-0700')?.action, 'reconcile_orphan');
 
   const oneGroup = await executeLaunchdMigration({
     visibleLabels: SIMULATED_VISIBLE_LABELS,
+    installedLabels: ['ai.luna.feedback-loop-daily-0600'],
     group: 'prescreen_to_argos',
     validationWaitMs: 0,
   });
@@ -46,6 +50,7 @@ export async function runLaunchdMigrationExecuteSmoke() {
   const blocked = await executeLaunchdMigration({
     apply: true,
     visibleLabels: SIMULATED_VISIBLE_LABELS,
+    installedLabels: ['ai.luna.feedback-loop-daily-0600'],
     validationWaitMs: 0,
   });
   assert.equal(blocked.ok, false);
@@ -56,6 +61,7 @@ export async function runLaunchdMigrationExecuteSmoke() {
     dryRunGroups: dryRun.steps.length,
     oneGroup: oneGroup.selectedGroups[0],
     confirmGuard: blocked.code,
+    orphanReconcile: dryRun.reconcile.results.filter((item) => item.action === 'reconcile_orphan').length,
   };
 }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
@@ -24,6 +24,17 @@ const TARGET_LABELS = [
   'ai.hub.resource-api',
   'ai.investment.runtime-autopilot',
   'ai.luna.ops-scheduler',
+  'ai.luna.feedback-loop-daily-0600',
+  'ai.luna.reflexion-engine-daily-0700',
+  'ai.luna.meta-reflexion-daily-0800',
+  'ai.luna.feedback-action-mapper-daily-0830',
+];
+
+const FEEDBACK_LOOP_LABELS = [
+  'ai.luna.feedback-loop-daily-0600',
+  'ai.luna.reflexion-engine-daily-0700',
+  'ai.luna.meta-reflexion-daily-0800',
+  'ai.luna.feedback-action-mapper-daily-0830',
 ];
 
 const PROTECTED_LABELS = new Set([
@@ -167,8 +178,53 @@ function plistPathForLabel(label) {
   return resolve(LAUNCHD_ROOT, `${label}.plist`);
 }
 
+function userLaunchAgentPlistPath(label) {
+  return resolve(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
+}
+
+function installedPlistExists(label, { installedLabels = null } = {}) {
+  if (Array.isArray(installedLabels)) return installedLabels.includes(label);
+  return existsSync(userLaunchAgentPlistPath(label));
+}
+
+function buildOrphanReconcilePlan(label, { visible, installedLabels = null } = {}) {
+  const loaded = visible.has(label);
+  const installedPath = userLaunchAgentPlistPath(label);
+  const sourcePath = plistPathForLabel(label);
+  const installed = installedPlistExists(label, { installedLabels });
+  const sourceExists = existsSync(sourcePath);
+  const protectedLabel = PROTECTED_LABELS.has(label);
+  let action = 'keep';
+  if (protectedLabel) action = 'keep_protected';
+  else if (!sourceExists) action = 'source_missing';
+  else if (loaded && !installed) action = 'reconcile_orphan';
+  else if (!loaded && !installed) action = 'install_bootstrap';
+  else if (!loaded && installed) action = 'bootstrap_installed';
+  else action = 'keep_installed_loaded';
+  return {
+    label,
+    loaded,
+    installed,
+    sourceExists,
+    protected: protectedLabel,
+    orphan: loaded && !installed,
+    action,
+    sourcePath,
+    installedPath,
+    installCommand: `cp ${sourcePath} ${installedPath}`,
+    bootoutCommand: `launchctl bootout ${launchdDomain()}/${label}`,
+    enableCommand: `launchctl enable ${launchdDomain()}/${label}`,
+    bootstrapCommand: `launchctl bootstrap ${launchdDomain()} ${installedPath}`,
+  };
+}
+
+function buildOrphanReconcilePlans({ visibleLabels = null, installedLabels = null } = {}) {
+  const visible = getVisibleLabels({ visibleLabels });
+  return FEEDBACK_LOOP_LABELS.map((label) => buildOrphanReconcilePlan(label, { visible, installedLabels }));
+}
+
 function buildBootoutCommand(label) {
-  const userLaunchAgentPlist = resolve(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
+  const userLaunchAgentPlist = userLaunchAgentPlistPath(label);
   const repoPlist = plistPathForLabel(label);
   const plistPath = existsSync(userLaunchAgentPlist) ? userLaunchAgentPlist : repoPlist;
   const plistExists = existsSync(plistPath);
@@ -184,7 +240,7 @@ function buildBootoutCommand(label) {
 }
 
 function buildBootstrapCommand(label) {
-  const userLaunchAgentPlist = resolve(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
+  const userLaunchAgentPlist = userLaunchAgentPlistPath(label);
   const repoPlist = plistPathForLabel(label);
   const plistPath = existsSync(userLaunchAgentPlist) ? userLaunchAgentPlist : repoPlist;
   return {
@@ -262,7 +318,7 @@ async function verifyGroupHealth(group, { visibleLabels = null } = {}) {
   };
 }
 
-export function buildLaunchdMigrationPlan({ visibleLabels = null } = {}) {
+export function buildLaunchdMigrationPlan({ visibleLabels = null, installedLabels = null } = {}) {
   const visible = getVisibleLabels({ visibleLabels });
   const retire = RETIRE_GROUPS.flatMap((group) => group.labels.map((label) => {
     const bootout = buildBootoutCommand(label);
@@ -285,6 +341,8 @@ export function buildLaunchdMigrationPlan({ visibleLabels = null } = {}) {
     requiredConfirm: REQUIRED_CONFIRM,
     targetLabels: TARGET_LABELS,
     protectedLabels: Array.from(PROTECTED_LABELS),
+    feedbackLoopLabels: FEEDBACK_LOOP_LABELS,
+    orphanReconcile: buildOrphanReconcilePlans({ visibleLabels, installedLabels }),
     retireCandidates: retire.filter((item) => item.action === 'retire_candidate'),
     visibleRetireCandidates: retire.filter((item) => item.action === 'retire_candidate' && item.visible),
     protectedViolations,
@@ -315,6 +373,81 @@ async function rollbackBootedOutLabels(labels) {
   return results;
 }
 
+async function executeOrphanReconcile({
+  apply = false,
+  visibleLabels = null,
+  installedLabels = null,
+} = {}) {
+  const plans = buildOrphanReconcilePlans({ visibleLabels, installedLabels });
+  const results = [];
+  for (const plan of plans) {
+    const result = {
+      ...plan,
+      dryRun: !apply,
+      installedResult: null,
+      bootoutResult: null,
+      enableResult: null,
+      bootstrapResult: null,
+      ok: true,
+      skipped: !['reconcile_orphan', 'install_bootstrap', 'bootstrap_installed'].includes(plan.action),
+    };
+
+    if (plan.action === 'source_missing') {
+      result.ok = false;
+      result.skipped = false;
+      result.error = 'source_plist_missing';
+      results.push(result);
+      continue;
+    }
+
+    if (result.skipped || !apply) {
+      results.push(result);
+      continue;
+    }
+
+    if (plan.protected) {
+      result.ok = false;
+      result.error = 'protected_label_refused';
+      results.push(result);
+      continue;
+    }
+    if (!plan.sourceExists && plan.action !== 'bootstrap_installed') {
+      result.ok = false;
+      result.error = 'source_plist_missing';
+      results.push(result);
+      continue;
+    }
+
+    if (plan.action === 'reconcile_orphan') {
+      result.bootoutResult = runLaunchctl(['bootout', `${launchdDomain()}/${plan.label}`], { timeout: 10_000 });
+      if (!result.bootoutResult.ok) {
+        result.ok = false;
+        result.error = 'orphan_bootout_failed';
+        results.push(result);
+        continue;
+      }
+    }
+
+    if (plan.action === 'reconcile_orphan' || plan.action === 'install_bootstrap') {
+      mkdirSync(dirname(plan.installedPath), { recursive: true });
+      copyFileSync(plan.sourcePath, plan.installedPath);
+      result.installedResult = { ok: true, path: plan.installedPath };
+    }
+
+    result.enableResult = runLaunchctl(['enable', `${launchdDomain()}/${plan.label}`], { timeout: 10_000 });
+    result.bootstrapResult = runLaunchctl(['bootstrap', launchdDomain(), plan.installedPath], { timeout: 10_000 });
+    result.ok = Boolean(result.bootstrapResult.ok);
+    if (!result.ok) result.error = result.bootstrapResult.error || result.bootstrapResult.stderr || 'bootstrap_failed';
+    results.push(result);
+  }
+  return {
+    ok: results.every((item) => item.ok !== false),
+    dryRun: !apply,
+    applied: apply,
+    results,
+  };
+}
+
 export async function executeLaunchdMigration({
   apply = false,
   confirm = null,
@@ -323,8 +456,9 @@ export async function executeLaunchdMigration({
   validationWaitMs = 300_000,
   skipValidationWait = false,
   visibleLabels = null,
+  installedLabels = null,
 } = {}) {
-  const plan = buildLaunchdMigrationPlan({ visibleLabels });
+  const plan = buildLaunchdMigrationPlan({ visibleLabels, installedLabels });
   if (!plan.ok) {
     return {
       ok: false,
@@ -351,6 +485,18 @@ export async function executeLaunchdMigration({
   const visible = getVisibleLabels({ visibleLabels });
   const steps = [];
   const bootedOut = [];
+  const reconcile = await executeOrphanReconcile({ apply, visibleLabels, installedLabels });
+  if (!reconcile.ok) {
+    return {
+      ok: false,
+      dryRun: !apply,
+      applied: apply,
+      code: 'orphan_reconcile_failed',
+      plan,
+      reconcile,
+      steps,
+    };
+  }
 
   for (const step of selectedGroups) {
     const visibleLabelsForStep = step.labels.filter((label) => visible.has(label));
@@ -449,6 +595,7 @@ export async function executeLaunchdMigration({
     skippedValidationWait: skipValidationWait,
     bootedOut,
     beforePlan: plan,
+    reconcile,
     steps,
   };
 }

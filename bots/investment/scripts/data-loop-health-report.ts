@@ -108,6 +108,73 @@ async function fetchReflexionStats() {
   };
 }
 
+async function fetchFeedbackLoopStallGuard({ hours = 36 } = {}) {
+  const checks = [
+    { table: 'investment.luna_failure_reflexions', tsCol: 'created_at' },
+    { table: 'investment.feedback_to_action_map', tsCol: 'applied_at' },
+    { table: 'investment.trade_decision_attribution', tsCol: 'created_at' },
+  ];
+  const results: {
+    table: string;
+    tsCol: string;
+    status: 'ok' | 'stalled' | 'missing' | 'missing_column' | 'error';
+    recentRows?: number;
+    totalRows?: number;
+    latest?: string | null;
+    hours: number;
+    message?: string;
+  }[] = [];
+
+  for (const check of checks) {
+    const [schema, tableName] = check.table.split('.');
+    try {
+      const relation = await query(`SELECT to_regclass($1) AS rel`, [check.table])
+        .then((rows) => rows?.[0]?.rel)
+        .catch(() => null);
+      if (!relation) {
+        results.push({ ...check, status: 'missing', hours });
+        continue;
+      }
+      const column = await query(
+        `SELECT column_name
+           FROM information_schema.columns
+          WHERE table_schema = $1
+            AND table_name = $2
+            AND column_name = $3
+          LIMIT 1`,
+        [schema, tableName, check.tsCol],
+      ).then((rows) => rows?.[0]?.column_name).catch(() => null);
+      if (!column) {
+        results.push({ ...check, status: 'missing_column', hours, message: `${check.tsCol} column missing` });
+        continue;
+      }
+      const row = await query(
+        `SELECT
+           COUNT(*)::int AS total_rows,
+           COUNT(*) FILTER (WHERE ${check.tsCol} >= NOW() - ($1::int * INTERVAL '1 hour'))::int AS recent_rows,
+           MAX(${check.tsCol}) AS latest
+         FROM ${check.table}`,
+        [hours],
+      ).then((rows) => rows?.[0] || {}).catch(() => ({}));
+      const recentRows = Number(row.recent_rows || 0);
+      const totalRows = Number(row.total_rows || 0);
+      const latest = row.latest ? new Date(row.latest).toISOString() : null;
+      results.push({
+        ...check,
+        status: recentRows > 0 ? 'ok' : 'stalled',
+        recentRows,
+        totalRows,
+        latest,
+        hours,
+      });
+    } catch (err: any) {
+      results.push({ ...check, status: 'error', hours, message: err?.message || String(err) });
+    }
+  }
+
+  return results;
+}
+
 async function fetchCurriculumStats() {
   const rows = await query(
     `SELECT current_level, COUNT(*) AS cnt
@@ -352,8 +419,9 @@ function readFeedbackActionMapperState() {
   }
 }
 
-function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?) {
+function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?, feedbackLoopStall?) {
   const tables: any[] = Array.isArray(tableFreshness) ? tableFreshness : [];
+  const feedbackStalls: any[] = Array.isArray(feedbackLoopStall) ? feedbackLoopStall : [];
   const staleJobs: any[] = opsScheduler?.staleJobs ?? [];
   const residueJobs: any[] = opsScheduler?.residueJobs ?? [];
   const unregistered: string[] = launchd?.unregistered ?? [];
@@ -382,6 +450,23 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
       section += `⚠️ WARN: autopilot 로그 없음 (position-sync 상태 불명)\n`;
       hasWarn = true;
     }
+  }
+
+  // Feedback-loop stall guard: daily learning jobs should write at least one row within 36h.
+  for (const f of feedbackStalls) {
+    if (f.status === 'ok') continue;
+    if (f.status === 'missing') {
+      section += `🔴 CRITICAL: feedback loop table \`${f.table}\` MISSING\n`;
+    } else if (f.status === 'missing_column') {
+      section += `🔴 CRITICAL: feedback loop table \`${f.table}\` ${f.message || 'timestamp column missing'}\n`;
+    } else if (f.status === 'error') {
+      section += `⚠️ WARN: feedback loop \`${f.table}\` stall check error: ${String(f.message || 'unknown').slice(0, 120)}\n`;
+      hasWarn = true;
+      continue;
+    } else {
+      section += `🔴 CRITICAL: feedback loop \`${f.table}\` 신규 row 0건/${f.hours || 36}h (latest=${f.latest || 'none'})\n`;
+    }
+    hasCritical = true;
   }
 
   // Table freshness
@@ -436,7 +521,7 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
 }
 
 function buildTelegramMessage(data) {
-  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync } = data;
+  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall } = data;
   const loopStatus = fullDataLoop ? '🟢 ENABLED' : '🟡 DISABLED (shadow)';
 
   let msg = `📊 *루나 데이터 루프 건강 보고 — ${TODAY}*\n\n`;
@@ -482,7 +567,7 @@ function buildTelegramMessage(data) {
     msg += `  • ${latest.trade_date}: ${Number(latest.avg_progress || 0).toFixed(3)}\n\n`;
   }
 
-  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync);
+  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall);
   msg += freshnessSection + '\n';
 
   const statusEmoji = hasCritical ? '🚨' : '✅';
@@ -521,7 +606,7 @@ async function main() {
   const fullDataLoop = !['0', 'false', 'no', 'off', 'disabled']
     .includes(String(process.env.LUNA_FULL_DATA_LOOP_ENABLED ?? 'true').toLowerCase());
 
-  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness, positionSync] = await Promise.allSettled([
+  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall] = await Promise.allSettled([
     fetchTradeStats(),
     fetchGuardOutcomeStats(),
     fetchGuardEffectiveness(),
@@ -533,9 +618,10 @@ async function main() {
     fetchOpsSchedulerHealth(),
     fetchTableFreshness(),
     fetchPositionSyncHealth(),
+    fetchFeedbackLoopStallGuard(),
   ]).then((results) => results.map((r) => r.status === 'fulfilled' ? r.value : r.status === 'rejected' ? {} : {}));
 
-  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync };
+  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall };
 
   console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
   console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade}`);
@@ -543,12 +629,16 @@ async function main() {
   console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
   console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
   console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개, residue ignored ${(opsScheduler.residueJobs ?? []).length}개`);
-  const criticalTables = (tableFreshness ?? []).filter((t) =>
+  const tableFreshnessRows = Array.isArray(tableFreshness) ? tableFreshness : [];
+  const feedbackLoopStallRows = Array.isArray(feedbackLoopStall) ? feedbackLoopStall : [];
+  const criticalTables = tableFreshnessRows.filter((t) =>
     ['missing', 'missing_column'].includes(t.status)
     || (t.status === 'stale' && (t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)),
   );
   console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
   console.log(`[DataLoopHealth] position-sync: status=${positionSync?.status ?? '?'} lastRunMinAgo=${positionSync?.lastRunMinAgo ?? '?'} live=${positionSync?.liveCount ?? '?'} paper=${positionSync?.paperCount ?? '?'}`);
+  const stalledFeedback = feedbackLoopStallRows.filter((item) => item.status !== 'ok');
+  console.log(`[DataLoopHealth] feedback-loop stall guard: ${stalledFeedback.map((item) => `${item.table}(${item.status})`).join(', ') || 'clear'}`);
 
   const message = buildTelegramMessage(data);
   if (!dryRun) {
