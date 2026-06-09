@@ -5,19 +5,63 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const INCIDENT_TABLE = 'agent.jay_incidents';
 const EVENT_TABLE = 'agent.jay_incident_events';
-let ensurePromise = null;
+type JsonObject = Record<string, unknown>;
 
-function normalizeText(value, fallback = '') {
+type IncidentStoreInput = JsonObject & {
+  args?: JsonObject;
+  dedupeWindow?: string;
+  windowKey?: string;
+  incidentGroupKey?: string;
+  groupKey?: string;
+  team?: string;
+  intent?: string;
+  message?: string;
+  goal?: string;
+  incidentKey?: string;
+  source?: string;
+  priority?: string;
+  status?: string;
+  runId?: string;
+  plan?: JsonObject;
+  lastError?: string;
+  attemptsDelta?: number;
+  eventType?: string;
+  payload?: JsonObject;
+};
+
+type IncidentRow = JsonObject & {
+  id?: unknown;
+  incident_key?: unknown;
+  source?: unknown;
+  team?: unknown;
+  intent?: unknown;
+  message?: unknown;
+  args?: unknown;
+  status?: unknown;
+  run_id?: unknown;
+  plan?: unknown;
+  priority?: unknown;
+  attempts?: unknown;
+  last_error?: unknown;
+  created_at?: unknown;
+  updated_at?: unknown;
+  completed_at?: unknown;
+  found?: unknown;
+};
+
+let ensurePromise: Promise<void> | null = null;
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeObject(value) {
+function normalizeObject(value: unknown): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value;
+  return value as JsonObject;
 }
 
-function normalizeSignatureText(value, fallback = '') {
+function normalizeSignatureText(value: unknown, fallback = '') {
   return normalizeText(value, fallback)
     .toLowerCase()
     .replace(/\s+/g, ' ')
@@ -29,7 +73,7 @@ function makeId(prefix = 'incident') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function resolveDedupeWindow(input) {
+function resolveDedupeWindow(input: IncidentStoreInput) {
   const args = normalizeObject(input?.args);
   const explicit = normalizeText(
     input?.dedupeWindow
@@ -46,7 +90,7 @@ function resolveDedupeWindow(input) {
   return new Date().toISOString().slice(0, 10);
 }
 
-function resolveIncidentGroup(input) {
+function resolveIncidentGroup(input: IncidentStoreInput) {
   const args = normalizeObject(input?.args);
   return normalizeSignatureText(
     input?.incidentGroupKey
@@ -61,7 +105,7 @@ function resolveIncidentGroup(input) {
   );
 }
 
-function buildIncidentKey(input) {
+function buildIncidentKey(input: IncidentStoreInput) {
   const team = normalizeSignatureText(input?.team, 'general') || 'general';
   const intent = normalizeSignatureText(input?.intent, 'incident') || 'incident';
   const message = normalizeSignatureText(input?.message || input?.goal || '', '').slice(0, 280);
@@ -128,7 +172,7 @@ async function ensureIncidentTables() {
   return ensurePromise;
 }
 
-function rowToIncident(row) {
+function rowToIncident(row: IncidentRow | null | undefined) {
   if (!row) return null;
   return {
     id: normalizeText(row.id),
@@ -150,7 +194,7 @@ function rowToIncident(row) {
   };
 }
 
-async function appendIncidentEvent(input) {
+async function appendIncidentEvent(input: IncidentStoreInput) {
   const incidentKey = normalizeText(input?.incidentKey);
   const eventType = normalizeText(input?.eventType, 'event');
   const payload = normalizeObject(input?.payload);
@@ -164,7 +208,7 @@ async function appendIncidentEvent(input) {
   return { ok: true, id };
 }
 
-async function hasIncidentEvent(input) {
+async function hasIncidentEvent(input: IncidentStoreInput) {
   const incidentKey = normalizeText(input?.incidentKey);
   const eventType = normalizeText(input?.eventType, 'event');
   if (!incidentKey) return false;
@@ -179,7 +223,7 @@ async function hasIncidentEvent(input) {
   return Boolean(row?.found);
 }
 
-async function createIncident(input) {
+async function createIncident(input: IncidentStoreInput) {
   await ensureIncidentTables();
   const id = makeId('inc');
   const incidentKey = normalizeText(input?.incidentKey) || buildIncidentKey(input);
@@ -225,7 +269,7 @@ async function createIncident(input) {
   return { ok: true, incident };
 }
 
-async function getIncidentByKey(incidentKey) {
+async function getIncidentByKey(incidentKey: string) {
   await ensureIncidentTables();
   const key = normalizeText(incidentKey);
   if (!key) return null;
@@ -236,7 +280,7 @@ async function getIncidentByKey(incidentKey) {
   return rowToIncident(row);
 }
 
-async function listIncidentsByStatus(statuses = ['queued'], limit = 20) {
+async function listIncidentsByStatus(statuses: string[] | string = ['queued'], limit = 20) {
   await ensureIncidentTables();
   const normalized = (Array.isArray(statuses) ? statuses : [statuses])
     .map((status) => normalizeText(status).toLowerCase())
@@ -247,10 +291,10 @@ async function listIncidentsByStatus(statuses = ['queued'], limit = 20) {
     ORDER BY created_at ASC
     LIMIT $2
   `, [normalized, Math.max(1, Number(limit || 20) || 20)]);
-  return rows.map(rowToIncident).filter(Boolean);
+  return rows.map((row: IncidentRow) => rowToIncident(row)).filter(Boolean);
 }
 
-async function updateIncidentStatus(input) {
+async function updateIncidentStatus(input: IncidentStoreInput) {
   await ensureIncidentTables();
   const incidentKey = normalizeText(input?.incidentKey);
   const status = normalizeText(input?.status, 'queued').toLowerCase();
@@ -317,6 +361,7 @@ async function claimQueuedIncident() {
   `, []);
   if (!row) return null;
   const incident = rowToIncident(row);
+  if (!incident) return null;
   await appendIncidentEvent({
     incidentKey: incident.incidentKey,
     eventType: 'incident_claimed',

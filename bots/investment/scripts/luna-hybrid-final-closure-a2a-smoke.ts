@@ -9,6 +9,30 @@ import {
 import { LUNA_PROTECTED_6 } from '../shared/luna-hybrid-final-closure.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+type HybridFinalClosureOutput = {
+  ok: boolean;
+  skill?: string;
+  status: string;
+  shadowMode?: boolean;
+  liveMutation: boolean;
+  protectedPidMutation?: boolean;
+  finalClosureReady: boolean;
+  masterApprovalRequired?: boolean;
+  promotionReady: boolean;
+  broadcastPlanned: boolean;
+  blockers: unknown[];
+  runbook: {
+    finalClosureOnly?: boolean;
+  };
+};
+
+type HybridFinalClosureTaskResult = {
+  id?: string;
+  status: string;
+  error?: unknown;
+  output: HybridFinalClosureOutput;
+};
+
 function fixtureParams() {
   return {
     noExec: false,
@@ -45,7 +69,7 @@ export async function runLunaHybridFinalClosureA2ASmoke() {
     id: 'hybrid-final-closure-a2a-smoke-1',
     skill: { id: 'hybrid-final-closure' },
     params: { ...fixtureParams(), broadcast: false },
-  });
+  }) as HybridFinalClosureTaskResult;
   assert.equal(result.id, 'hybrid-final-closure-a2a-smoke-1');
   assert.equal(result.status, 'completed', JSON.stringify(result.error || result.output, null, 2));
   assert.equal(result.output.ok, true);
@@ -59,7 +83,7 @@ export async function runLunaHybridFinalClosureA2ASmoke() {
   assert.equal(result.output.broadcastPlanned, false);
   assert.ok(result.output.runbook.finalClosureOnly);
 
-  const noExec = await createHybridFinalClosureHandler()({ broadcast: false });
+  const noExec = await createHybridFinalClosureHandler()({ broadcast: false }) as unknown as HybridFinalClosureTaskResult;
   assert.equal(noExec.status, 'completed', JSON.stringify(noExec.error || noExec.output, null, 2));
   assert.equal(noExec.output.ok, true);
   assert.equal(noExec.output.status, 'luna_hybrid_final_closure_contract_only');
@@ -68,7 +92,7 @@ export async function runLunaHybridFinalClosureA2ASmoke() {
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';
-  const enabled = await createHybridFinalClosureHandler()({ ...fixtureParams() });
+  const enabled = await createHybridFinalClosureHandler()({ ...fixtureParams() }) as unknown as HybridFinalClosureTaskResult;
   assert.equal(enabled.output.broadcastPlanned, true);
   if (previous == null) delete process.env.LUNA_A2A_BROADCAST_ENABLED;
   else process.env.LUNA_A2A_BROADCAST_ENABLED = previous;
@@ -92,7 +116,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid final closure A2A smoke failed:',
   });
