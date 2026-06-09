@@ -9,23 +9,21 @@ async function main() {
   const live = isEnabled(process.env.JAY_TELEGRAM_LIVE_DRY_RUN);
   const originalThreeTier = process.env.JAY_3TIER_TELEGRAM;
   const originalDedupeTtl = process.env.JAY_MEETING_DEDUPE_TTL_MS;
-  const sender = require('../../../packages/core/lib/telegram-sender');
-  const originalSendBuffered = sender.sendBuffered;
   const captured: Array<{ team: string; text: string }> = [];
 
   process.env.JAY_3TIER_TELEGRAM = 'true';
   process.env.JAY_MEETING_DEDUPE_TTL_MS = '60000';
-  if (!live) {
-    sender.sendBuffered = async (team: string, text: string) => {
+  const reporter = require('../../orchestrator/lib/jay-meeting-reporter.ts');
+  if (!live) reporter._testOnly.setTelegramSenderForTests({
+    sendBuffered: async (team: string, text: string) => {
       captured.push({ team, text });
       return true;
-    };
-  }
+    },
+  });
 
   try {
-    const { publishMeetingSummary } = require('../../orchestrator/lib/jay-meeting-reporter.ts');
     const incidentKey = `jay:telegram-meeting-dry-run:${Date.now()}`;
-    const result = await publishMeetingSummary({
+    const result = await reporter.publishMeetingSummary({
       incidentKey,
       phase: 'review',
       team: 'general',
@@ -49,7 +47,7 @@ async function main() {
       incidentKey,
     }));
   } finally {
-    if (!live) sender.sendBuffered = originalSendBuffered;
+    if (!live) reporter._testOnly.setTelegramSenderForTests(null);
     if (originalThreeTier == null) delete process.env.JAY_3TIER_TELEGRAM;
     else process.env.JAY_3TIER_TELEGRAM = originalThreeTier;
     if (originalDedupeTtl == null) delete process.env.JAY_MEETING_DEDUPE_TTL_MS;
