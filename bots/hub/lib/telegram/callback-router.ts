@@ -1,8 +1,8 @@
-function normalizeText(value) {
+function normalizeText(value: unknown): string {
   return String(value == null ? '' : value).trim();
 }
 
-function resolveHubCallbackTarget(callbackData) {
+function resolveHubCallbackTarget(callbackData: unknown): { route: string; mode: string } | null {
   const normalized = normalizeText(callbackData);
   if (!normalized) return null;
   if (normalized.startsWith('hub_control:')) {

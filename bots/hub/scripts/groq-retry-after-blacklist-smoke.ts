@@ -14,6 +14,15 @@ const ORIGINAL_GROQ_API_KEY = process.env.GROQ_API_KEY;
 const ORIGINAL_GROQ_SERVICE_TIER = process.env.HUB_GROQ_SERVICE_TIER;
 const ORIGINAL_GROQ_MAX_KEY_ATTEMPTS = process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
 
+function readAuthHeader(headers: HeadersInit | undefined): string {
+  if (!headers) return '';
+  if (headers instanceof Headers) return String(headers.get('authorization') || '');
+  if (Array.isArray(headers)) {
+    return String(headers.find(([key]) => String(key).toLowerCase() === 'authorization')?.[1] || '');
+  }
+  return String((headers as Record<string, string>).Authorization || (headers as Record<string, string>).authorization || '');
+}
+
 async function main() {
   resetGroqKeyBlacklistForTests();
   process.env.GROQ_API_KEY = 'groq-smoke-key';
@@ -83,7 +92,7 @@ async function main() {
   fetchCalls = 0;
   global.fetch = async (_url, init) => {
     fetchCalls += 1;
-    const auth = String(init?.headers?.Authorization || init?.headers?.authorization || '');
+    const auth = readAuthHeader(init?.headers);
     assert.match(auth, /groq-smoke-/);
     if (fetchCalls < 5) {
       return new Response(JSON.stringify({ error: { message: 'Rate limit reached. Please try again in 1s.' } }), {

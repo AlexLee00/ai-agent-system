@@ -1,6 +1,6 @@
 const PLAYBOOK_PHASES = ['frame', 'plan', 'review', 'test', 'ship', 'reflect'];
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
@@ -9,7 +9,7 @@ function getPlaybookPhases() {
   return [...PLAYBOOK_PHASES];
 }
 
-function buildPlaybookTemplate(input) {
+function buildPlaybookTemplate(input: { goal?: unknown; team?: unknown }) {
   const goal = normalizeText(input.goal, '운영 상태 점검 및 조치');
   const team = normalizeText(input.team, 'general').toLowerCase();
   return {

@@ -12,21 +12,18 @@ const {
   selectThumbForTitle,
 } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 
-/**
- * @typedef {{
- *   dryRun: boolean,
- *   json: boolean,
- *   title?: string,
- *   category?: string,
- *   thumb?: string,
- *   blogUrl?: string,
- *   durationSec?: number,
- * }} RenderShortformArgs
- */
+type RenderShortformArgs = {
+  dryRun: boolean;
+  json: boolean;
+  title?: string;
+  category?: string;
+  thumb?: string;
+  blogUrl?: string;
+  durationSec?: number;
+};
 
-/** @returns {RenderShortformArgs} */
-function parseArgs(argv = []) {
-  const args = /** @type {RenderShortformArgs} */ ({
+function parseArgs(argv: string[] = []): RenderShortformArgs {
+  const args: RenderShortformArgs = {
     dryRun: false,
     json: false,
     title: undefined,
@@ -34,7 +31,7 @@ function parseArgs(argv = []) {
     thumb: undefined,
     blogUrl: undefined,
     durationSec: undefined,
-  });
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--dry-run') args.dryRun = true;

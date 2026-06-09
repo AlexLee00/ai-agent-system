@@ -210,7 +210,7 @@ async function saveHashtagReport(report: HashtagReport): Promise<void> {
       report.strategy,
     ]);
   } catch (e) {
-    console.warn('[해시태그분석] DB 저장 실패 (테이블 없을 수 있음):', e.message);
+    console.warn('[해시태그분석] DB 저장 실패 (테이블 없을 수 있음):', e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -244,7 +244,7 @@ export async function analyzeHashtagTrend(keyword: string): Promise<HashtagScore
       trend,
     };
   } catch (e) {
-    console.warn(`[해시태그분석] #${keyword} 분석 실패:`, e.message);
+    console.warn(`[해시태그분석] #${keyword} 분석 실패:`, e instanceof Error ? e.message : String(e));
     return null;
   }
 }

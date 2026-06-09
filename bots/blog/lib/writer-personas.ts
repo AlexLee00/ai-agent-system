@@ -33,16 +33,19 @@ const WRITER_PERSONAS = {
   },
 };
 
+type WriterPersonaName = keyof typeof WRITER_PERSONAS;
+
 function getWriterPersona(writerName = '', postType = 'general') {
   const normalized = String(writerName || '').trim();
-  if (normalized && WRITER_PERSONAS[normalized]) {
+  if (normalized && normalized in WRITER_PERSONAS) {
+    const personaName = normalized as WriterPersonaName;
     return {
       name: normalized,
-      ...WRITER_PERSONAS[normalized],
+      ...WRITER_PERSONAS[personaName],
     };
   }
 
-  const fallback = postType === 'lecture' ? 'pos' : 'gems';
+  const fallback: WriterPersonaName = postType === 'lecture' ? 'pos' : 'gems';
   return {
     name: fallback,
     ...WRITER_PERSONAS[fallback],

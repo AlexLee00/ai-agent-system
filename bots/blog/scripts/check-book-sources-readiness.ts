@@ -13,7 +13,7 @@ const {
   searchOpenLibrary,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/book-review-book.js'));
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   const args = {
     json: argv.includes('--json'),
     query: '클린 코드',
@@ -27,12 +27,10 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function buildReadinessFallback(payload = {}) {
-  // @ts-ignore checkJs default-param inference is too narrow here
+function buildReadinessFallback(payload: { ready?: { phase2KeysPresent?: boolean }; sources?: { openlibrary?: { count?: number } } } = {}) {
   if (!payload.ready?.phase2KeysPresent) {
     return '도서 소스 2단계 키가 아직 부족해, Kakao/Data4Library 인증부터 먼저 맞추는 편이 좋습니다.';
   }
-  // @ts-ignore checkJs default-param inference is too narrow here
   if (Number(payload.sources?.openlibrary?.count || 0) > 0) {
     return 'OpenLibrary 기준 기본 조회는 가능하며, 추가 소스 키만 맞추면 도서 소스 확장이 가능합니다.';
   }

@@ -22,8 +22,14 @@ const SERIES = seriesArg || 'nodejs_120';
 
 const CURRICULUM_FILE = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'context', 'curriculum.txt');
 
-function parseCurriculum(text) {
-  const lectures = [];
+type CurriculumLecture = {
+  lecture_number: number;
+  title: string;
+  month_chapter: number;
+};
+
+function parseCurriculum(text: string): CurriculumLecture[] {
+  const lectures: CurriculumLecture[] = [];
   let currentMonth = 1;
 
   const lines = text.split('\n');
@@ -97,7 +103,7 @@ async function main() {
       `, [SERIES, lec.lecture_number, lec.title, lec.month_chapter]);
       inserted++;
     } catch (e) {
-      console.warn(`  [${lec.lecture_number}강] 저장 실패:`, e.message);
+      console.warn(`  [${lec.lecture_number}강] 저장 실패:`, e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -105,7 +111,7 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((e) => {
-  console.error('❌ 시딩 실패:', e.message);
+main().catch((e: unknown) => {
+  console.error('❌ 시딩 실패:', e instanceof Error ? e.message : String(e));
   process.exit(1);
 });

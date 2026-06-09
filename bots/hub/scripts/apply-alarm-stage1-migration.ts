@@ -4,14 +4,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 process.env.PG_DIRECT ||= 'true';
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const CONFIRM = 'alarm-stage1-migration';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const migrationPath = path.resolve(__dirname, '../migrations/20261001000050_hub_alarm_tables.sql');
 const requiredTables = ['hub_alarm_classifications', 'hub_alarms', 'alarm_roundtables'];
 

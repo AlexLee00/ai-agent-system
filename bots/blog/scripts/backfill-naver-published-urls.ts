@@ -4,8 +4,8 @@
 const { backfillNaverPublishedUrls } = require('../lib/naver-url-backfill.ts');
 const { writeNaverUrlBackfillTelemetry } = require('../lib/naver-url-backfill-telemetry.ts');
 
-function parseArgs(argv = process.argv.slice(2)) {
-  const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+function parseArgs(argv: string[] = process.argv.slice(2)) {
+  const get = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
   return {
     days: Number(get('days') || 14),
     limit: Number(get('limit') || 20),
@@ -55,7 +55,7 @@ async function main() {
       unmatched: 0,
       skippedLowConfidence: 0,
       minConfidence: Number(args.minConfidence || 0.9),
-      error: String(error?.message || error || 'unknown_error'),
+      error: String(error instanceof Error ? error.message : error || 'unknown_error'),
     });
     throw error;
   }

@@ -2,7 +2,7 @@
 
 const richer = require('./richer.ts');
 
-function unwrapSettled(result, fallback) {
+function unwrapSettled<T>(result: PromiseSettledResult<T>, fallback: T): T {
   return result && result.status === 'fulfilled' ? result.value : fallback;
 }
 

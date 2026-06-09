@@ -3,8 +3,12 @@
 /**
  * Instagram 발행 오류를 라우팅용 failure kind로 정규화한다.
  */
-function classifyInstagramError(error) {
-  const msg = String(error?.message || error || '').toLowerCase();
+function classifyInstagramError(error: unknown): string {
+  const msg = String(
+    error && typeof error === 'object' && 'message' in error
+      ? error.message
+      : error || '',
+  ).toLowerCase();
   if (msg.includes('access token') || msg.includes('token') || msg.includes('oauth')) return 'auth';
   if (
     msg.includes('prepare')
@@ -26,7 +30,10 @@ function classifyInstagramError(error) {
   return 'unknown';
 }
 
-function resolveInstagramFailureKind(error, { fallback = 'unknown', preferAssetOnUnknown = false } = {}) {
+function resolveInstagramFailureKind(
+  error: unknown,
+  { fallback = 'unknown', preferAssetOnUnknown = false }: { fallback?: string; preferAssetOnUnknown?: boolean } = {},
+): string {
   const classified = classifyInstagramError(error);
   if (classified === 'unknown' && preferAssetOnUnknown) return 'asset_prepare';
   return classified || fallback;

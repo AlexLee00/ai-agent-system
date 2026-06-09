@@ -11,20 +11,20 @@ const {
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   return {
     json: argv.includes('--json'),
   };
 }
 
-function maskValue(value = '') {
+function maskValue(value = ''): string {
   const text = String(value || '');
   if (!text) return '';
   if (text.length <= 8) return '*'.repeat(text.length);
   return `${text.slice(0, 4)}...${text.slice(-4)}`;
 }
 
-function redactUrl(url = '') {
+function redactUrl(url = ''): string {
   if (!url) return '';
   const parsed = new URL(url);
   for (const key of ['access_token', 'client_secret']) {
@@ -35,8 +35,7 @@ function redactUrl(url = '') {
   return parsed.toString();
 }
 
-function buildInstagramTokenFallback(payload = {}) {
-  // @ts-ignore checkJs default-param inference is too narrow here
+function buildInstagramTokenFallback(payload: { health?: { critical?: boolean; needsRefresh?: boolean } } = {}) {
   const health = payload.health || {};
   if (health.critical) {
     return '인스타 토큰이 임계 구간에 가까워 보여 즉시 refresh 경로와 만료일 저장 상태를 점검하는 편이 좋습니다.';

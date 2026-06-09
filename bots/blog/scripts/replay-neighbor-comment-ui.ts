@@ -13,7 +13,7 @@ const env = require('../../../packages/core/lib/env');
 const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
 const NEIGHBOR_REPLAY_PATH = path.join(BLOG_OPS_DIR, 'neighbor-ui-replay.json');
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   const parsed = { json: false, id: 0 };
   for (let i = 0; i < argv.length; i += 1) {
     const token = String(argv[i] || '');
@@ -40,7 +40,7 @@ async function resolveCandidate(id = 0) {
       FROM blog.neighbor_comments
       WHERE id = $1
       LIMIT 1
-    `, [Number(id)]);
+    `, [Number(id)] as number[]);
   }
 
   return pgPool.get('blog', `
@@ -96,7 +96,7 @@ async function main() {
     const payload = {
       ok: false,
       replayedAt: new Date().toISOString(),
-      reason: String(error?.message || error),
+      reason: String(error instanceof Error ? error.message : error),
       candidate: {
         id: candidate.id,
         status: candidate.status,

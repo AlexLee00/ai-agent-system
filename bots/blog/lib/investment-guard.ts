@@ -25,9 +25,9 @@ const DISCLAIMER_TEXT =
  * 매수 권유·수익 확약 감지 + 면책 문구 필수 추가.
  * @returns {{ passed: boolean, warnings: string[], mustAdd: string[] }}
  */
-function checkInvestmentContent(body, title) {
-  const warnings = [];
-  const mustAdd  = [];
+function checkInvestmentContent(body: string, title: string) {
+  const warnings: string[] = [];
+  const mustAdd: string[]  = [];
   const combined = `${title}\n${body}`;
 
   for (const p of BUY_PROMOTION_PATTERNS) {
