@@ -2,7 +2,6 @@
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 type StepResult = {
   id: string;
@@ -13,7 +12,7 @@ type StepResult = {
   error: string | null;
 };
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const scriptDir = __dirname;
 const hubRoot = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(hubRoot, '..', '..');
 const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 
 const originalEnv = {
   HUB_LLM_GEMINI_DISABLED: process.env.HUB_LLM_GEMINI_DISABLED,
