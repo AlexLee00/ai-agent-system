@@ -2,6 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { fxRateSchema, getFxRate } from './tools/fx-rate.ts';
 
+type FxRateInput = {
+  currency: string;
+  startDate?: string;
+  endDate?: string;
+};
+
 const server = new McpServer({
   name: 'luna-fx-mcp',
   version: '1.0.0',
@@ -12,8 +18,8 @@ server.tool(
   'get_fx_rate',
   '한국은행 경제통계시스템(ECOS)에서 환율 데이터 조회',
   fxRateSchema.shape,
-  async (input) => {
-    const data = await getFxRate(input);
+  async (input: unknown) => {
+    const data = await getFxRate(input as FxRateInput);
     return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
   }
 );
@@ -24,7 +30,7 @@ async function main() {
   process.stderr.write('[luna-fx-mcp] MCP server started\n');
 }
 
-main().catch((err) => {
-  process.stderr.write('[luna-fx-mcp] FATAL: ' + err.message + '\n');
+main().catch((err: unknown) => {
+  process.stderr.write('[luna-fx-mcp] FATAL: ' + (err instanceof Error ? err.message : String(err)) + '\n');
   process.exit(1);
 });

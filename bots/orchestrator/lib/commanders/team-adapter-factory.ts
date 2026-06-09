@@ -2,24 +2,24 @@
 
 const { createBotCommandAdapter } = require('./base-command-adapter');
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function parseBoolean(value, fallback = false) {
+function parseBoolean(value: unknown, fallback = false): boolean {
   const text = normalizeText(value, fallback ? 'true' : 'false').toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
-function resolveAdapterMode(team, defaultMode = 'virtual') {
+function resolveAdapterMode(team: unknown, defaultMode = 'virtual'): string {
   const key = `JAY_COMMANDER_ADAPTER_${String(team || '').toUpperCase()}_MODE`;
   const explicit = normalizeText(process.env[key], '');
   if (explicit === 'virtual' || explicit === 'bot_command') return explicit;
   return defaultMode;
 }
 
-function createTeamCommanderAdapter(team, options = {}) {
+function createTeamCommanderAdapter(team: unknown, options: { toBot?: unknown; timeoutMs?: unknown } = {}) {
   const normalizedTeam = normalizeText(team, 'general').toLowerCase();
   const toBot = normalizeText(options.toBot, normalizedTeam);
   const timeoutMs = Math.max(15_000, Number(options.timeoutMs || 300_000) || 300_000);

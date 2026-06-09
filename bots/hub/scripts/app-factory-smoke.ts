@@ -1,11 +1,17 @@
 const { createHubApp } = require('../src/app');
 
-async function withServer(app, fn) {
-  const server = await new Promise((resolve) => {
+type SmokeServer = {
+  address: () => { port: number } | string | null;
+  close: (callback: () => void) => void;
+};
+
+async function withServer(app: { listen: (port: number, host: string, callback: () => void) => SmokeServer }, fn: (baseUrl: string) => Promise<void>) {
+  const server = await new Promise<SmokeServer>((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   try {
     const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server address missing port');
     const baseUrl = `http://127.0.0.1:${address.port}`;
     await fn(baseUrl);
   } finally {
@@ -67,6 +73,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[app-factory-smoke] failed:', error?.message || error);
+  console.error('[app-factory-smoke] failed:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

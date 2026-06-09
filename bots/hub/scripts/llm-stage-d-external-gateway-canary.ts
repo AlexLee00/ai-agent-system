@@ -5,11 +5,11 @@ const { resolveHubLlmSelection } = require('../src/llm-selector');
 
 const CONFIRM = 'hub-stage-d-external-gateway-canary';
 
-function hasFlag(flag) {
+function hasFlag(flag: string): boolean {
   return process.argv.includes(flag);
 }
 
-function argValue(name) {
+function argValue(name: string): string | null {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
@@ -29,7 +29,20 @@ async function main() {
     maxBudgetUsd: 0.05,
   });
 
-  const result = {
+  const result: {
+    ok: boolean;
+    checkedAt: string;
+    stage: string;
+    task: string;
+    dryRun: boolean;
+    project: string;
+    selector: any;
+    baseUrl: string;
+    liveCall: null | { ok: boolean; status: number; bodyPreview: string };
+    applyGate: string;
+    error?: string;
+    requiredConfirm?: string;
+  } = {
     ok: Boolean(selector.ok),
     checkedAt: new Date().toISOString(),
     stage: 'hub_stage_d',

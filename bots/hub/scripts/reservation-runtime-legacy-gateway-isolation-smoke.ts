@@ -19,23 +19,23 @@ const STRICT_LEGACY_FREE_FILES = [
   'bots/reservation/auto/monitors/pickko-kiosk-monitor.ts',
 ];
 
-function readRepoFile(relPath) {
+function readRepoFile(relPath: string): string {
   return fs.readFileSync(path.join(PROJECT_ROOT, relPath), 'utf8');
 }
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-function assertNoRetiredGatewayDefault(relPath) {
+function assertNoRetiredGatewayDefault(relPath: string): void {
   const content = readRepoFile(relPath);
   const match = content.match(RETIRED_GATEWAY_PATTERN);
   assert(!match, `${relPath} must not contain retired gateway runtime defaults`);
 }
 
-function assertContains(relPath, needle) {
+function assertContains(relPath: string, needle: string): void {
   const content = readRepoFile(relPath);
   assert(content.includes(needle), `${relPath} must contain ${needle}`);
 }

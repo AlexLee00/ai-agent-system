@@ -7,7 +7,22 @@ const OAUTH4_OPTIONS = {
   rolloutPercent: 100,
 };
 
-function isAnthropicProvider(entry) {
+type LlmRouteEntry = {
+  provider?: string;
+  model?: string;
+};
+type AgentModelTarget = {
+  selected?: boolean;
+  selectorKey?: string;
+  agent?: string;
+  team?: string;
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isAnthropicProvider(entry: LlmRouteEntry) {
   return String(entry?.provider || '').trim() === 'anthropic';
 }
 
@@ -38,7 +53,7 @@ function runDirectSelectorAudit() {
       findings.push({
         scope: 'selector_key_error',
         key,
-        error: String(error?.message || error),
+        error: errorMessage(error),
       });
     }
   }
@@ -50,9 +65,9 @@ function runAgentCoverageAudit() {
   const targets = selector.listAgentModelTargets();
   const findings = [];
   let checked = 0;
-  const providerCounts = {};
+  const providerCounts: Record<string, number> = {};
 
-  for (const target of targets) {
+  for (const target of targets as AgentModelTarget[]) {
     if (!target?.selected || !target?.selectorKey) continue;
     try {
       const chain = selector.selectLLMChain(target.selectorKey, {
@@ -83,7 +98,7 @@ function runAgentCoverageAudit() {
         team: target.team,
         agent: target.agent,
         selectorKey: target.selectorKey,
-        error: String(error?.message || error),
+        error: errorMessage(error),
       });
     }
   }
@@ -120,6 +135,6 @@ function main() {
 try {
   main();
 } catch (error) {
-  console.error('[llm-anthropic-primary-audit] failed:', error?.message || error);
+  console.error('[llm-anthropic-primary-audit] failed:', errorMessage(error));
   process.exit(1);
 }
