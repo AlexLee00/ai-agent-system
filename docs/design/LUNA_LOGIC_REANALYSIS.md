@@ -64,3 +64,68 @@
 - ✅ 의사결정 척추·정책 본체 심화 완료(위 2.1/3.1).
 - ⏳ 잔여: 3시장 차이(crypto/domestic/overseas)·레짐 내부(market-regime/hmm)·팩터(korean-factor-model)·`robust backtest selection`(2da4aa794)·luna.ts 1001~1388(실행 배선).
 - ➡️ 결정 로직 그림 확보 → **Phase 2(영상 12개)** 또는 잔여 Phase 1. 마스터 결정.
+
+---
+## 2.2 Phase 1 잔여 실측 (2026-06-10 — Phase 1 완결)
+**3시장**(`markets/*.ts`): 구조 **대칭**(state·shouldRunCycle·filter·merge·run{Cycle,ResearchCycle} → 공통 러너 위임). 고유 차이만: crypto=topVolume 유니버스·BTC가격 / domestic=mock-untradable 필터·KST 거래일 / overseas=capital-discovery-hold 알림. → **시장 계층은 건전. 문제는 결정 코어에 집중.**
+**레짐**(`market-regime.ts` 327줄): **운영 레짐 = 단순 휴리스틱** — 상승:하락 종목 카운트 + 평균 |일변동| ·VIX 임계 → 4레짐(bull/bear/ranging/volatile). `REGIME_GUIDES` = 레짐별 agentWeights(0.8~0.95)·tp/sl/positionSize 멀티(0.3~0.8) **매직넘버**. HMM(`hmm-regime-detector`)은 shadow only — 운영 미반영.
+**robust backtest selection**(2da4aa794, `backtest-vectorbt.py` +165줄): `select_consensus_params`(크로스-폴드 합의: median(robust_score) − penalty×std, 커버리지 최소) + `_select_robust_from_grid`(IS top-K **median** 후보 — 단일 행운피크 회피). env `LUNA_BT_ROBUST_SELECTION_ENABLED`(기본 OFF). → **과적합 방지 올바른 방향, 재설계 (a)와 정합. 활성화 후보.**
+**실행 배선**(luna.ts 1001~1388): predictive gate(advisory) → entry trigger(flag) → 결정별 [minConf 필터 → 신호 빌드 → **nemesis evaluateSignal**(리스크) → `buildLunaSignalPersistencePlan` → `insertSignalIfFresh`(중복 방지) → blockUpdate → discovery attribution → notify+RAG]. 주문 자체(L31)는 pipeline-decision-runner 소관. → 영속/리스크/알림 체계는 정연. 단 **minConf·펀딩레이트 경고(0.05/−0.01) 등 매직넘버 여기도 존재**.
+**팩터**(`korean-factor-model.ts`, 기실측): 고정 스타일 팩터(value/quality/growth/momentum/size) 횡단 percentile. **신규 팩터 발견 없음**(LG-01 알파팩터의 빈 곳 재확인).
+
+## ✅ Phase 1 종결 — 최종 진단
+1. **시장/실행 계층 = 건전**(대칭 구조·영속/리스크 체계 정연).
+2. **결정 코어 = 문제 집중**(§3.1): 매직넘버 편재 · 편향 적층 · LLM 과의존 · 조건부 enrichment · advisory 일변.
+3. **레짐 = 가장 약한 입력**: 운영은 카운트 휴리스틱, HMM은 shadow 방치. 그런데 레짐이 가중치·TP/SL·사이즈 멀티를 곱함 → **약한 입력이 큰 영향**.
+4. **검증 자산은 이미 좋아지는 중**: robust backtest selection(OFF)·DSR/PBO 게이트(shadow)·HMM(shadow) — **만들 것보다 켜고 일원화할 것이 많음.**
+→ Phase 3 재설계 핵심 질문: "**약한 휴리스틱 입력×매직넘버 적층을, 검증된 소수 입력(알파팩터 IC·레짐 확률·캘리브레이션)의 단일 스코어 모델로 교체**"
+
+## 다음: Phase 2 — YouTube 12개 분석 (외부 기법 입력) → Phase 3 재설계
+
+---
+## 0-c. 마스터 확장 지시 (2026-06-10) — 전면 개선·총동원
+1. 수정 소스 딥 분석 반영(Phase 1 완료분+증분) 2. **신규 영상 12개** 분석 3. 비용 무시·최적 성능 재설계 4. **지난 세션 히스토리 + 기존 영상 13개 재분석**(제로베이스) 5. **외부 서칭**: 스킬/훅/MCP/A2A → 깃헙·커뮤니티·공식문서·**Anthropic 공개 깃헙** 6. 전 과정 7. 회의실 수정 가능 8. 3시장 전부 9. 설계 범위 확장. 다세션 심층 진행.
+
+## Phase 2 — 신규 영상 12개 (제목 확보 2026-06-10)
+| ID | 제목 | 클러스터 |
+|---|---|---|
+| b3sJIWOO4Z4 | 1천억 단타 천재의 이동평균선 매매법 | 기술 |
+| 5avgkEHjBeY | 퀀트 우승자가 말한 '돈 버는 AI 투자'의 조건 | AI/퀀트 |
+| q50rIFz6GWc | 거래량+볼린저+RSI+MACD+이평 → VWAP 매매전략 | 기술 |
+| IqvnryFzZD4 | I Built an AI Trading System With Claude + TradingView | AI/Claude |
+| B5gENmYJrDs | 터틀 트레이딩 | 기술 |
+| BAfRVpKIxZ4 | The Math of Winning in Trading | 수학 |
+| duzSHbgsYWE | 1$ vs 1000$ Trading Charts (7:23) | 도구 |
+| OtImPEfcpvc | Automated System for Catching Every Crypto Dip (16:04) | 자동화 |
+| CPkrCoIbBIA | Everything I've Learned Trading With Claude (17:48) | AI/Claude |
+| zspMXJVbfAY | Trading Like an Idiot $10k/Month (26:13) | 자동화/단순화 |
+| G1qjT0snIZg | 이 단타 매매법을 알면 인생이 바뀝니다 (12:46) | 기술 |
+| nBOLIrNX_PU | The 5 Minute Scalping Strategy (14:21) | 기술 |
+- 기존 13개 캐시(/tmp/ytdistill/clean/) 생존 — **재분석 대상**. 신규 12개와 중복 없음.
+
+## Phase 2 분석 — 1차 3개 (2026-06-10, 자막 확보분)
+### V-A. BAfRVpKIxZ4 "The Math of Winning" — 수학 기반
+- **기대값 E = winRate×avgWin − lossRate×avgLoss** = 유일 핵심 지표(비용 차감 후). 8R@15% ≈ 1R@70%: **승률 아닌 조합**이 엣지.
+- **R-승률 트레이드오프**: 타깃↑→승률↓는 시장 본질. sweet spot=중간(40~50%@3~4R). breakeven 승률=1/(1+R).
+- **분산**: 동일 시스템도 경로 상이 → **대표본만 진실**(100+ 거래). 갬블러 오류(각 거래 독립). **소표본 판단 금지**.
+- **리스크**: 고정 달러/% 리스크(0.25~2%), 스톱 크기로 포지션 역산. 리스크% vs 파산확률 비선형(1%=18%, 5%=65% @50%DD). 손실 비대칭(−50%→+100%).
+- 🔴 **루나 위반 발견**: `loadReviewConfidenceHint` = closedTrades**≥3**이면 ±0.05~0.08 confidence delta → **소표본(3거래=노이즈) 반응**. 갬블러 오류 구조 내장. 재설계 표적.
+- 매핑: E를 scorer/검증게이트 1급 지표로 · R-승률 sweet spot을 전략군 설계 기준으로 · MinTRL/DSR(대표본)과 정합 · 고정% 리스크=sizer 베이스 확인.
+
+### V-B. CPkrCoIbBIA "Trading With Claude 18min" — 결정론/비결정론 ★재설계 외부 검증
+- **제1원칙: 결정론(고정룰=백테스트 가능) vs 비결정론(LLM=백테스트 불가) 분리.**
+- **비결정론을 코어 전략에 금지** — LLM은 ①리뷰어(자기 thesis에 구멍: 베어케이스·누락 리스크) ②연구(공시/실적 대량 인제스트) ③보조 점수(퀀트와 60/40 블렌드, 가중 조절). 금지: 가격예측·차트 이미지 분석.
+- **3층 아키텍처**: ①결정론 매크로 deployment gate(VIX 레벨·기간구조·breadth(200SMA 위 %)·credit spread·put-call·factor crowding → 각 0-100 → 합성 → **>70 full / 40-70 감축(60%) / <40 중단**) ②결정론 스캐너(5팩터) ③LLM 애널리스트(재무 4분기→0-10, 보조).
+- 🔴 **루나 핵심 진단 일치**: 루나는 **LLM이 최종 결정자**(symbol/portfolio/exit) = 백테스트 불가 코어 + 비재현. 처방 = **결정 코어를 결정론 스코어 모델로, LLM은 리뷰어/보조 점수로 강등**. §3.1 재설계 방향 (c) 외부 검증 확보.
+- 매핑: 매크로 deployment gate(합성→사이징 단계) = 레짐 휴리스틱+capitalGate 대체 후보 · 60/40 블렌드 = 0.7/0.3 위치 교정(결정론 필터 後 보조).
+
+### V-C. IqvnryFzZD4 "Claude + TradingView" — 파이프라인 실전
+- **전문지식 우선**("AI는 전문지식 없으면 slop") — 전략은 트레이더가, AI는 도구.
+- **2단 스캐너**: A=프리마켓 갭(>5%·$3+·50K+·뉴스 catalyst) → B=**전략별 결정론 entry 5규칙**(10am 후·어제고가 위·어제종가>200SMA·프리마켓고가 위·당일고가 위 = trend-join). A 결과만 B 대상. 스케줄 자동화(30분 주기)+Telegram 포맷.
+- **백테스트 단계화**: Pine(1티커)→Mag7→**Python(32티커×30일)** — 도구 한계마다 확장.
+- 매핑: **전략군별 명시 entry 룰**(검증가능) ↔ KIS 자연어 휴리스틱 — 결정론 룰화 처방 · 2단 좁히기=discovery→전략필터 구조화 · TradingView MCP(GitHub 2.9k)=도구 참고(기존 입장: 데이터형만).
+
+### Phase 2 잔여
+- 자막 확보: 5avgkEHjBeY(429 재시도) + 8개(b3sJIWOO4Z4·q50rIFz6GWc·B5gENmYJrDs·duzSHbgsYWE·OtImPEfcpvc·zspMXJVbfAY·G1qjT0snIZg·nBOLIrNX_PU).
+- 기존 13개(/tmp/ytdistill/clean/) **재분석**(제로베이스, 마스터 지시 4).
+- **외부 서칭**(지시 5): 스킬/훅/MCP/A2A — 깃헙(TradingView MCP 등)·커뮤니티·공식문서·**Anthropic 공개 깃헙**(anthropics/skills·claude-code 등).
