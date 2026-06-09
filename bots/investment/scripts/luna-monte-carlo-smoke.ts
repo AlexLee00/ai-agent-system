@@ -42,12 +42,12 @@ function fakeDeps({ existingShadow = false }: FakeDepsOptions = {}) {
       schemaInits.push(new Date().toISOString());
       return { ok: true };
     },
-    fetchBars: async (symbol: string) => {
+    fetchBars: async (symbol: string, exchange?: string, options?: Record<string, any>) => {
       if (symbol.includes('ETH')) return fixtureBars(60, 0.45);
       if (symbol.includes('SOL')) return fixtureBars(30, 0.24);
       return fixtureBars(100, 0.75);
     },
-    query: async (sql: string, params: unknown[]) => {
+    query: async (sql: string, params: any[] = []) => {
       queries.push({ sql, params });
       if (sql.includes('luna_risk_simulation_shadow') && existingShadow) {
         return [{
@@ -73,7 +73,7 @@ function fakeDeps({ existingShadow = false }: FakeDepsOptions = {}) {
       }
       return [];
     },
-    run: async (sql: string, params: unknown[]) => {
+    run: async (sql: string, params: any[] = []) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },

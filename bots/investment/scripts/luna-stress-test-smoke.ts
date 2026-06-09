@@ -38,8 +38,8 @@ function fakeDeps({ existingShadow = false }: FakeDepsOptions = {}) {
       schemaInits.push(new Date().toISOString());
       return { ok: true };
     },
-    fetchBars: async () => fixtureBars(),
-    query: async (sql: string) => {
+    fetchBars: async (symbol?: string, exchange?: string, options?: Record<string, any>) => fixtureBars(),
+    query: async (sql: string, params: any[] = []) => {
       if (sql.includes('luna_risk_simulation_shadow') && existingShadow) {
         return [{
           analysis_type: 'stress_test',
@@ -64,7 +64,7 @@ function fakeDeps({ existingShadow = false }: FakeDepsOptions = {}) {
       }
       return [];
     },
-    run: async (sql: string, params: unknown[]) => {
+    run: async (sql: string, params: any[] = []) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },
