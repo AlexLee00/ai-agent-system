@@ -42,7 +42,13 @@ function recentErrorLines(filePath: string, stat: any): string[] {
     .slice(-RECENT_TAIL_LINES)
     .map((line: string) => line.trim())
     .filter(Boolean);
-  const lastErrorIndex = lines.findLastIndex(isErrorLikeLine);
+  let lastErrorIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (isErrorLikeLine(lines[i])) {
+      lastErrorIndex = i;
+      break;
+    }
+  }
   if (lastErrorIndex < 0) return [];
 
   const quietLinesAfterLastError = lines.length - lastErrorIndex - 1;
