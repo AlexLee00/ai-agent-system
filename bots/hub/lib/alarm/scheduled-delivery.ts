@@ -2,27 +2,44 @@
 
 const { postAlarm: defaultPostAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 
-function readPositiveIntEnv(name, fallback, min, max) {
+type AlarmDeliveryResult = {
+  ok?: boolean;
+  retryable?: boolean;
+  status?: number;
+  retryAfterMs?: number;
+  error?: string;
+};
+
+type ScheduledDeliveryOptions = {
+  postAlarm?: (payload: unknown) => Promise<AlarmDeliveryResult>;
+  sleep?: (ms: number) => Promise<unknown>;
+  logger?: Pick<Console, 'warn'>;
+  maxAttempts?: number;
+  maxDelayMs?: number;
+  deferRetryableFailure?: boolean;
+};
+
+function readPositiveIntEnv(name: string, fallback: number, min: number, max: number) {
   const parsed = Number(process.env[name] || '');
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }
 
-function defaultSleep(ms) {
+function defaultSleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function normalizeRetryDelayMs(value, maxDelayMs) {
+function normalizeRetryDelayMs(value: unknown, maxDelayMs: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return Math.min(1000, maxDelayMs);
   return Math.max(1, Math.min(maxDelayMs, Math.trunc(parsed)));
 }
 
-function isRetryable(result) {
+function isRetryable(result: AlarmDeliveryResult | null) {
   return result?.retryable === true || Number(result?.status) === 429;
 }
 
-async function deliverScheduledAlarm(payload, options = {}) {
+async function deliverScheduledAlarm(payload: unknown, options: ScheduledDeliveryOptions = {}) {
   const sendAlarm = options.postAlarm || defaultPostAlarm;
   const sleep = options.sleep || defaultSleep;
   const logger = options.logger || console;
@@ -70,8 +87,9 @@ async function deliverScheduledAlarm(payload, options = {}) {
 
     if (!lastRetryable || attempt >= maxAttempts) break;
 
-    logger.warn(`[hub-scheduled-delivery] retryable alarm failure (${lastError}) — retry ${attempt + 1}/${maxAttempts} in ${lastRetryAfterMs}ms`);
-    await sleep(lastRetryAfterMs);
+    const retryDelayMs = lastRetryAfterMs ?? Math.min(1000, maxDelayMs);
+    logger.warn(`[hub-scheduled-delivery] retryable alarm failure (${lastError}) — retry ${attempt + 1}/${maxAttempts} in ${retryDelayMs}ms`);
+    await sleep(retryDelayMs);
   }
 
   if (deferRetryableFailure && lastRetryable) {

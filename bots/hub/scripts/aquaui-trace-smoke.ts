@@ -1,8 +1,29 @@
-function assert(condition, message) {
+type FakePage = {
+  evaluate: (fn: (options: unknown) => unknown, options: unknown) => Promise<unknown>;
+  screenshot: () => Promise<Buffer>;
+};
+
+type AquaUIObservation = {
+  ok?: boolean;
+  mode?: string;
+  visibleTextHash?: string;
+  screenshotHash?: string;
+  domSummary: {
+    counts: {
+      buttons: number;
+    };
+  };
+};
+
+type AquaUITraceRow = {
+  id?: unknown;
+};
+
+function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
 }
 
-function createFakePage() {
+function createFakePage(): FakePage {
   return {
     evaluate: async (fn, options) => fn(options),
     screenshot: async () => Buffer.from('fake-screenshot'),
@@ -16,12 +37,12 @@ async function main() {
     recordAquaUITrace,
   } = require('../../../packages/playwright-utils');
 
-  global.document = {
+  (globalThis as any).document = {
     title: 'AQuaUI Smoke Dashboard',
     body: {
       innerText: 'Hub dashboard Trace 미발견 warning. 예약 상태 정상. 블로그 생성 장시간 작업 진행 중.',
     },
-    querySelectorAll: (selector) => {
+    querySelectorAll: (selector: string) => {
       if (selector === 'a') {
         return [
           { innerText: 'Trace', textContent: 'Trace', href: 'http://localhost/trace' },
@@ -41,19 +62,19 @@ async function main() {
       return [];
     },
   };
-  global.location = { href: 'http://localhost/dashboard' };
+  (globalThis as any).location = { href: 'http://localhost/dashboard' };
 
   const observation = await collectAquaUIObservation(createFakePage(), {
     maxTextChars: 120,
     includeScreenshotHash: true,
-  });
+  }) as AquaUIObservation;
   assert(observation.ok === true, 'expected aquaui observation ok');
   assert(observation.mode === 'aquaui', 'expected aquaui mode');
   assert(observation.visibleTextHash?.length === 64, 'expected visible text hash');
   assert(observation.screenshotHash?.length === 64, 'expected screenshot hash');
   assert(observation.domSummary.counts.buttons === 1, 'expected button summary');
 
-  let dbRecordId = null;
+  let dbRecordId: unknown = null;
   let dbSearchCount = null;
   if (liveDb) {
     dbRecordId = await recordAquaUITrace(observation, {
@@ -72,11 +93,11 @@ async function main() {
       limit: 5,
     });
     dbSearchCount = rows.length;
-    assert(rows.some((row) => String(row.id) === String(dbRecordId)), 'expected inserted aquaui trace searchable');
+    assert(rows.some((row: AquaUITraceRow) => String(row.id) === String(dbRecordId)), 'expected inserted aquaui trace searchable');
   }
 
-  delete global.document;
-  delete global.location;
+  delete (globalThis as any).document;
+  delete (globalThis as any).location;
 
   console.log(JSON.stringify({
     ok: true,
@@ -88,9 +109,9 @@ async function main() {
   }, null, 2));
 }
 
-main().catch((error) => {
-  delete global.document;
-  delete global.location;
+main().catch((error: unknown) => {
+  delete (globalThis as any).document;
+  delete (globalThis as any).location;
   console.error(error);
   process.exit(1);
 });

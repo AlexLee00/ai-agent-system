@@ -17,29 +17,42 @@ const REQUIRED_ENV = [
 
 const PLACEHOLDER_PATTERN = /(__SET_|placeholder|changeme|change_me|example|dummy|test-token|smoke-token|smoke-secret)/i;
 
-function hasArg(name) {
+type EnvMap = Record<string, string>;
+
+type HubSecretStore = {
+  telegram?: {
+    group_id?: string;
+    telegram_group_id?: string;
+    chat_id?: string;
+    telegram_chat_id?: string;
+    topic_ids?: Record<string, string>;
+    telegram_topic_ids?: Record<string, string>;
+  };
+};
+
+function hasArg(name: string) {
   return process.argv.includes(name);
 }
 
-function argValue(prefix) {
+function argValue(prefix: string) {
   const match = process.argv.find((arg) => arg.startsWith(`${prefix}=`));
   return match ? match.slice(prefix.length + 1) : '';
 }
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function redact(value) {
+function redact(value: unknown) {
   const text = normalizeText(value);
   if (!text) return '';
   if (text.length <= 8) return '<redacted>';
   return `${text.slice(0, 3)}...${text.slice(-3)}`;
 }
 
-function parseEnvFile(filePath) {
-  const env = {};
+function parseEnvFile(filePath: string): EnvMap {
+  const env: EnvMap = {};
   if (!filePath) return env;
   const content = fs.readFileSync(filePath, 'utf8');
   for (const line of content.split(/\r?\n/)) {
@@ -57,7 +70,7 @@ function parseEnvFile(filePath) {
   return env;
 }
 
-function loadHubSecrets() {
+function loadHubSecrets(): HubSecretStore {
   const storePath = path.resolve(__dirname, '..', 'secrets-store.json');
   try {
     if (!fs.existsSync(storePath)) return {};
@@ -67,7 +80,7 @@ function loadHubSecrets() {
   }
 }
 
-function secretStoreValue(key, store) {
+function secretStoreValue(key: string, store: HubSecretStore) {
   const telegram = store?.telegram || {};
   const topicIds = telegram.topic_ids || telegram.telegram_topic_ids || {};
   if (key === 'TELEGRAM_GROUP_ID') return telegram.group_id || telegram.telegram_group_id || telegram.chat_id || telegram.telegram_chat_id || '';
@@ -79,7 +92,7 @@ function secretStoreValue(key, store) {
   return '';
 }
 
-function launchctlGetenv(key) {
+function launchctlGetenv(key: string) {
   const result = spawnSync('launchctl', ['getenv', key], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -88,7 +101,7 @@ function launchctlGetenv(key) {
   return normalizeText(result.stdout);
 }
 
-function launchctlSetenv(key, value) {
+function launchctlSetenv(key: string, value: string) {
   const result = spawnSync('launchctl', ['setenv', key, value], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -100,11 +113,11 @@ function launchctlSetenv(key, value) {
   };
 }
 
-function allowsShortRuntimeValue(key) {
+function allowsShortRuntimeValue(key: string) {
   return /(TOPIC|CHAT|GROUP_ID|APPROVER_IDS)/i.test(key);
 }
 
-function classifyValue(key, value) {
+function classifyValue(key: string, value: unknown) {
   const text = normalizeText(value);
   if (!text) return { ok: false, reason: 'missing' };
   if (PLACEHOLDER_PATTERN.test(text)) return { ok: false, reason: 'placeholder' };
@@ -182,7 +195,7 @@ async function main() {
   if (!payload.ok) process.exit(1);
 }
 
-main().catch((error) => {
-  console.error(`jay_runtime_env_check_failed: ${error?.message || error}`);
+main().catch((error: unknown) => {
+  console.error(`jay_runtime_env_check_failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
