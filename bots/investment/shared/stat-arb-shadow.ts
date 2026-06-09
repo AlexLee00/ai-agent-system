@@ -1,4 +1,12 @@
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
+type AnyRecord = Record<string, any>;
+type StatArbExchange = 'binance' | 'kis' | 'kis_overseas';
+type PriceBar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
 
 export const DEFAULT_STAT_ARB_PAIRS = {
   binance: [
@@ -17,20 +25,20 @@ export const DEFAULT_STAT_ARB_PAIRS = {
   ],
 };
 
-function finiteNumber(value, fallback = 0) {
+function finiteNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function clamp(value, min = 0, max = 1, fallback = 0) {
+function clamp(value: unknown, min = 0, max = 1, fallback = 0): number {
   return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
-function round(value, digits = 4) {
+function round(value: unknown, digits = 4): number {
   return Number(Number(value || 0).toFixed(digits));
 }
 
-function parseJsonMaybe(value, fallback = {}) {
+function parseJsonMaybe(value: unknown, fallback: unknown = {}): unknown {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
   try {
@@ -40,30 +48,30 @@ function parseJsonMaybe(value, fallback = {}) {
   }
 }
 
-export function normalizeStatArbExchange(value) {
+export function normalizeStatArbExchange(value: unknown): StatArbExchange {
   const raw = String(value || 'binance').trim().toLowerCase();
   if (raw === 'crypto') return 'binance';
   if (raw === 'domestic') return 'kis';
   if (raw === 'overseas') return 'kis_overseas';
-  return VALID_EXCHANGES.has(raw) ? raw : 'binance';
+  return VALID_EXCHANGES.has(raw) ? raw as StatArbExchange : 'binance';
 }
 
-export function marketForStatArbExchange(exchange) {
+export function marketForStatArbExchange(exchange: unknown): string {
   const normalized = normalizeStatArbExchange(exchange);
   if (normalized === 'kis') return 'domestic';
   if (normalized === 'kis_overseas') return 'overseas';
   return 'crypto';
 }
 
-export function defaultStatArbPairs(exchange) {
+export function defaultStatArbPairs(exchange: unknown): string[][] {
   const normalized = normalizeStatArbExchange(exchange);
   return (DEFAULT_STAT_ARB_PAIRS[normalized] || DEFAULT_STAT_ARB_PAIRS.binance)
     .map((pair) => [...pair]);
 }
 
-function normalizeBars(value = []) {
+function normalizeBars(value: unknown = []): PriceBar[] {
   const raw = Array.isArray(value) ? value : [];
-  return raw.map((bar) => {
+  return raw.map((bar: any) => {
     if (Array.isArray(bar)) {
       return {
         close: finiteNumber(bar[4] ?? bar[1], NaN),
@@ -81,23 +89,23 @@ function normalizeBars(value = []) {
   }).filter((bar) => Number.isFinite(bar.close) && bar.close > 0).slice(-180);
 }
 
-function closesFromBars(bars = []) {
+function closesFromBars(bars: unknown = []): number[] {
   return normalizeBars(bars).map((bar) => bar.close);
 }
 
-function mean(values = []) {
+function mean(values: number[] = []): number {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function stdev(values = []) {
+function stdev(values: number[] = []): number {
   if (values.length < 2) return 0;
   const avg = mean(values);
   const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / Math.max(1, values.length - 1);
   return Math.sqrt(variance);
 }
 
-function covariance(a = [], b = []) {
+function covariance(a: number[] = [], b: number[] = []): number {
   const len = Math.min(a.length, b.length);
   if (len < 2) return 0;
   const aa = a.slice(-len);
@@ -107,7 +115,7 @@ function covariance(a = [], b = []) {
   return aa.reduce((sum, value, index) => sum + (value - ma) * (bb[index] - mb), 0) / Math.max(1, len - 1);
 }
 
-function correlation(a = [], b = []) {
+function correlation(a: number[] = [], b: number[] = []): number {
   const len = Math.min(a.length, b.length);
   if (len < 2) return 0;
   const aa = a.slice(-len);
@@ -116,7 +124,7 @@ function correlation(a = [], b = []) {
   return denom > 0 ? covariance(aa, bb) / denom : 0;
 }
 
-function rsi(closes = [], period = 14) {
+function rsi(closes: number[] = [], period = 14): number | null {
   if (closes.length < period + 1) return null;
   const tail = closes.slice(-(period + 1));
   let gains = 0;
@@ -133,27 +141,27 @@ function rsi(closes = [], period = 14) {
   return 100 - (100 / (1 + rs));
 }
 
-function pairSignal(zScore) {
+function pairSignal(zScore: number): string {
   if (zScore >= 2) return 'pair_short_first_long_second';
   if (zScore <= -2) return 'pair_long_first_short_second';
   if (Math.abs(zScore) >= 1.25) return 'pair_watch';
   return 'neutral';
 }
 
-function meanReversionSignal(zScore, rsiValue) {
+function meanReversionSignal(zScore: number, rsiValue: number | null): string {
   if (zScore <= -2 && rsiValue != null && rsiValue <= 35) return 'buy_reversion_watch';
   if (zScore >= 2 && rsiValue != null && rsiValue >= 65) return 'sell_reversion_watch';
   if (Math.abs(zScore) >= 1.5) return 'mean_reversion_watch';
   return 'neutral';
 }
 
-function dataHealthForBars(count, ready = 20, partial = 5) {
+function dataHealthForBars(count: number, ready = 20, partial = 5): string {
   if (count >= ready) return 'ready';
   if (count >= partial) return 'partial';
   return 'insufficient';
 }
 
-export function buildPairsTradingShadow(input = {}, context = {}) {
+export function buildPairsTradingShadow(input: AnyRecord = {}, context: AnyRecord = {}) {
   const exchange = normalizeStatArbExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForStatArbExchange(exchange);
   const symbols = Array.isArray(input.symbols) && input.symbols.length >= 2
@@ -200,7 +208,7 @@ export function buildPairsTradingShadow(input = {}, context = {}) {
   };
 }
 
-export function buildMeanReversionShadow(input = {}, context = {}) {
+export function buildMeanReversionShadow(input: AnyRecord = {}, context: AnyRecord = {}) {
   const exchange = normalizeStatArbExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForStatArbExchange(exchange);
   const symbol = String(input.symbol || input.symbols?.[0] || '').trim();
@@ -243,7 +251,7 @@ export function buildMeanReversionShadow(input = {}, context = {}) {
   };
 }
 
-export function normalizeStatArbShadowRow(row = {}) {
+export function normalizeStatArbShadowRow(row: AnyRecord = {}) {
   const symbols = parseJsonMaybe(row.symbols, row.symbols || []);
   return {
     ok: true,
@@ -259,7 +267,7 @@ export function normalizeStatArbShadowRow(row = {}) {
     dataHealth: row.data_health || row.dataHealth || 'unknown',
     shadowOnly: row.shadow_only !== false,
     evidence: {
-      ...parseJsonMaybe(row.context_evidence, row.evidence || {}),
+      ...parseJsonMaybe(row.context_evidence, row.evidence || {}) as AnyRecord,
       observedAt: row.observed_at || row.observedAt || null,
     },
   };
