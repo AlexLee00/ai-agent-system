@@ -11,6 +11,28 @@ import {
 import { runLunaStatArbShadow } from './runtime-luna-stat-arb-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+type Bar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
+
+type FakeInsert = {
+  sql: string;
+  params: unknown[];
+};
+
+type FakeDeps = {
+  inserts: FakeInsert[];
+  schemaInits: string[];
+  initSchema: () => Promise<{ ok: boolean }>;
+  listActiveEntryTriggers: (args: { exchange?: string }) => Promise<Array<{ symbol: string; trigger_state: string }>>;
+  fetchBars: (symbol: string) => Promise<Bar[]>;
+  query: (sql: string) => Promise<Array<Record<string, unknown>>>;
+  run: (sql: string, params: unknown[]) => Promise<{ rowCount: number }>;
+};
+
 function fixtureBars(start = 100, drift = 1, count = 40) {
   return Array.from({ length: count }, (_, index) => {
     const close = start + index * drift + Math.sin(index / 3) * 2;
@@ -23,9 +45,9 @@ function fixtureBars(start = 100, drift = 1, count = 40) {
   });
 }
 
-function fakeDeps({ existingShadow = false } = {}) {
-  const inserts = [];
-  const schemaInits = [];
+function fakeDeps({ existingShadow = false } = {}): FakeDeps {
+  const inserts: FakeInsert[] = [];
+  const schemaInits: string[] = [];
   return {
     inserts,
     schemaInits,
@@ -40,7 +62,7 @@ function fakeDeps({ existingShadow = false } = {}) {
         { symbol: 'ETH/USDT', trigger_state: 'waiting' },
       ];
     },
-    fetchBars: async (symbol) => {
+    fetchBars: async (symbol: string) => {
       if (symbol.includes('ETH')) return fixtureBars(50, 0.48);
       if (symbol.includes('SOL')) return fixtureBars(20, 0.2);
       if (symbol.includes('000660') || symbol.includes('000270')) return fixtureBars(80, 0.35);
@@ -50,7 +72,7 @@ function fakeDeps({ existingShadow = false } = {}) {
       if (/^[A-Z]{1,5}$/.test(symbol)) return fixtureBars(120, 0.5);
       return [];
     },
-    query: async (sql) => {
+    query: async (sql: string) => {
       if (sql.includes('luna_stat_arb_shadow') && existingShadow) {
         return [{
           strategy_type: 'mean_reversion',
@@ -69,7 +91,7 @@ function fakeDeps({ existingShadow = false } = {}) {
       }
       return [];
     },
-    run: async (sql, params) => {
+    run: async (sql: string, params: unknown[]) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },
@@ -122,8 +144,10 @@ export async function runLunaStatArbSmoke() {
   const planned = await runLunaStatArbShadow({
     apply: false,
     force: false,
+    json: false,
     confirm: '',
     exchanges: ['binance'],
+    symbol: null,
     strategy: 'all',
     limit: 5,
     hours: 24,
@@ -131,6 +155,7 @@ export async function runLunaStatArbSmoke() {
     lookbackDays: 90,
   }, dryDeps);
   assert.equal(planned.status, 'luna_stat_arb_shadow_planned');
+  assert.ok(planned.summary);
   assert.equal(planned.summary.liveMutation, false);
   assert.equal(dryDeps.inserts.length, 0);
   assert.equal(dryDeps.schemaInits.length, 0);
@@ -138,8 +163,10 @@ export async function runLunaStatArbSmoke() {
   const kisPlanned = await runLunaStatArbShadow({
     apply: false,
     force: false,
+    json: false,
     confirm: '',
     exchanges: ['kis'],
+    symbol: null,
     strategy: 'all',
     limit: 5,
     hours: 24,
@@ -147,14 +174,17 @@ export async function runLunaStatArbSmoke() {
     lookbackDays: 90,
   }, fakeDeps());
   assert.equal(kisPlanned.status, 'luna_stat_arb_shadow_planned');
+  assert.ok(kisPlanned.summary);
   assert.equal(kisPlanned.summary.insufficient, 0);
   assert.equal(kisPlanned.rows.some((row) => row?.evidence?.source === 'missing_external_price_history'), false);
 
   const overseasPlanned = await runLunaStatArbShadow({
     apply: false,
     force: false,
+    json: false,
     confirm: '',
     exchanges: ['kis_overseas'],
+    symbol: null,
     strategy: 'all',
     limit: 5,
     hours: 24,
@@ -162,6 +192,7 @@ export async function runLunaStatArbSmoke() {
     lookbackDays: 90,
   }, fakeDeps());
   assert.equal(overseasPlanned.status, 'luna_stat_arb_shadow_planned');
+  assert.ok(overseasPlanned.summary);
   assert.equal(overseasPlanned.summary.insufficient, 0);
   assert.equal(overseasPlanned.rows.some((row) => row?.evidence?.source === 'missing_external_price_history'), false);
 
@@ -169,8 +200,10 @@ export async function runLunaStatArbSmoke() {
   const written = await runLunaStatArbShadow({
     apply: true,
     force: false,
+    json: false,
     confirm: 'luna-stat-arb-shadow',
     exchanges: ['binance'],
+    symbol: null,
     strategy: 'mean_reversion',
     limit: 2,
     hours: 24,
@@ -178,14 +211,16 @@ export async function runLunaStatArbSmoke() {
     lookbackDays: 90,
   }, applyDeps);
   assert.equal(written.status, 'luna_stat_arb_shadow_written');
+  assert.ok(written.summary);
   assert.equal(written.summary.written > 0, true);
   assert.equal(applyDeps.schemaInits.length, 1);
-  assert.equal(JSON.parse(applyDeps.inserts[0].params[1]).length, 1);
+  assert.equal(JSON.parse(String(applyDeps.inserts[0].params[1])).length, 1);
 
   const cachedDeps = fakeDeps({ existingShadow: true });
   const cached = await runLunaStatArbShadow({
     apply: false,
     force: false,
+    json: false,
     confirm: '',
     exchanges: ['binance'],
     strategy: 'mean_reversion',
@@ -196,6 +231,7 @@ export async function runLunaStatArbSmoke() {
     lookbackDays: 90,
   }, cachedDeps);
   assert.equal(cached.status, 'luna_stat_arb_shadow_cached');
+  assert.ok(cached.summary);
   assert.equal(cached.summary.cached, 1);
 
   return {
@@ -215,7 +251,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as (opts: { run: () => Promise<void>; errorPrefix?: string }) => Promise<void>)({
     run: main,
     errorPrefix: 'luna stat arb smoke failed:',
   });
