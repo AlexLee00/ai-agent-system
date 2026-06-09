@@ -8,17 +8,57 @@ const { spawnSync } = require('node:child_process');
 const CONFIRM = 'hub-stage-d-restore-drill';
 const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
 
-function hasFlag(flag) {
+type RestoreStep = {
+  ok: boolean;
+  status: number | null;
+  command: string;
+  stdout: string;
+  stderr: string;
+};
+
+type RestoreResult = {
+  ok: boolean;
+  checkedAt: string;
+  stage: string;
+  task: string;
+  dryRun: boolean;
+  backupDir: string;
+  manifestPath: string | null;
+  smokeDb: string;
+  productionRestore: boolean;
+  applyGate: string;
+  steps: RestoreStep[];
+  error?: string;
+  supportSchemaFile?: string | null;
+  agentSchemaFile?: string | null;
+  routingLogSchemaFile?: string | null;
+  schemaFile?: string | null;
+  skipped?: boolean;
+  skipReason?: string;
+  requiredConfirm?: string;
+};
+
+type ManifestArtifact = {
+  key?: string;
+  path?: string;
+};
+
+type RestoreManifest = {
+  files?: Record<string, string | undefined>;
+  artifacts?: ManifestArtifact[];
+};
+
+function hasFlag(flag: string) {
   return process.argv.includes(flag);
 }
 
-function argValue(name) {
+function argValue(name: string) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
 }
 
-function run(command, args) {
+function run(command: string, args: string[]): RestoreStep {
   const result = spawnSync(command, args, { encoding: 'utf8', timeout: 120_000 });
   return {
     ok: result.status === 0,
@@ -29,11 +69,11 @@ function run(command, args) {
   };
 }
 
-function latestManifest(backupDir) {
+function latestManifest(backupDir: string): string | null {
   if (!fs.existsSync(backupDir)) return null;
   const candidates = fs.readdirSync(backupDir)
-    .map((name) => path.join(backupDir, name, 'manifest.json'))
-    .filter((filePath) => fs.existsSync(filePath))
+    .map((name: string) => path.join(backupDir, name, 'manifest.json'))
+    .filter((filePath: string) => fs.existsSync(filePath))
     .sort();
   return candidates.pop() || null;
 }
@@ -45,7 +85,7 @@ async function main() {
   const manifestPath = argValue('--manifest') || latestManifest(backupDir);
   const smokeDb = `hub_restore_smoke_${new Date().toISOString().replace(/\D/g, '').slice(0, 12)}`;
 
-  const result = {
+  const result: RestoreResult = {
     ok: true,
     checkedAt: new Date().toISOString(),
     stage: 'hub_stage_d',
@@ -66,7 +106,7 @@ async function main() {
     process.exit(apply ? 1 : 0);
   }
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as RestoreManifest;
   const supportSchemaFile = manifest.files?.supportSchema || manifest.artifacts?.find?.((item) => item.key === 'supportSchema')?.path;
   const agentSchemaFile = manifest.files?.agentSchema || manifest.artifacts?.find?.((item) => item.key === 'agentSchema')?.path;
   const routingLogSchemaFile = manifest.files?.routingLogSchema || manifest.artifacts?.find?.((item) => item.key === 'routingLogSchema')?.path;
@@ -104,7 +144,7 @@ async function main() {
   }
 
   result.steps.push(run('createdb', [smokeDb]));
-  if (result.steps.at(-1).ok) {
+  if (result.steps.at(-1)?.ok) {
     const needsLegacyAgentSchema = !agentSchemaFile && supportSchemaFile && fs.existsSync(supportSchemaFile);
     if (needsLegacyAgentSchema) {
       result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-c', 'CREATE SCHEMA IF NOT EXISTS agent;']));
@@ -112,13 +152,13 @@ async function main() {
     if (agentSchemaFile && fs.existsSync(agentSchemaFile)) {
       result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', agentSchemaFile]));
     }
-    if (routingLogSchemaFile && fs.existsSync(routingLogSchemaFile) && result.steps.at(-1).ok) {
+    if (routingLogSchemaFile && fs.existsSync(routingLogSchemaFile) && result.steps.at(-1)?.ok) {
       result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', routingLogSchemaFile]));
     }
     if (supportSchemaFile && fs.existsSync(supportSchemaFile)) {
       result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', supportSchemaFile]));
     }
-    if (result.steps.at(-1).ok) {
+    if (result.steps.at(-1)?.ok) {
       result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', schemaFile]));
     }
   }
