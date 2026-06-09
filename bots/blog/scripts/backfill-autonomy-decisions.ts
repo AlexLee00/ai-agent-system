@@ -7,7 +7,43 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { ensureBlogCoreSchema } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schema.ts'));
 const { decideAutonomy } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
 
-function parseArgs(argv = []) {
+type BackfillArgs = {
+  json: boolean;
+  dryRun: boolean;
+  days: number;
+  limit: number;
+};
+
+type BlogPostRow = {
+  id: string | number;
+  title?: string;
+  category?: string | null;
+  post_type?: string;
+  publish_date?: string;
+  content?: string;
+  html_content?: string;
+  image_urls?: string[];
+  metadata?: unknown;
+  created_at?: string;
+};
+
+type AutonomyDecision = {
+  phase?: number;
+  decision?: string;
+  score?: number;
+  threshold?: number;
+  reasons?: unknown[];
+  senseSummary?: unknown;
+  revenueSummary?: unknown;
+};
+
+type MetadataPayload = {
+  autonomy?: AutonomyDecision;
+  writer_name?: string;
+  filename?: string;
+};
+
+function parseArgs(argv: string[] = []) {
   const args = {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),
@@ -24,17 +60,17 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function safeJson(value, fallback) {
+function safeJson(value: unknown, fallback: MetadataPayload): MetadataPayload {
   if (!value) return fallback;
   if (typeof value === 'object') return value;
   try {
-    return JSON.parse(value);
+    return JSON.parse(String(value));
   } catch {
     return fallback;
   }
 }
 
-function buildPostInput(row) {
+function buildPostInput(row: BlogPostRow) {
   const metadata = safeJson(row.metadata, {});
   const imageUrls = Array.isArray(row.image_urls) ? row.image_urls : [];
   const autonomyFromMetadata = metadata?.autonomy && typeof metadata.autonomy === 'object'
@@ -52,7 +88,7 @@ function buildPostInput(row) {
   return { input, metadata, autonomyFromMetadata };
 }
 
-async function loadCandidates({ days, limit }) {
+async function loadCandidates({ days, limit }: Pick<BackfillArgs, 'days' | 'limit'>) {
   return pgPool.query('blog', `
     SELECT
       p.id,
@@ -80,7 +116,7 @@ async function loadCandidates({ days, limit }) {
   `, [String(days), limit]);
 }
 
-async function insertDecision(row, autonomy, metadata, dryRun = false) {
+async function insertDecision(row: BlogPostRow, autonomy: AutonomyDecision, metadata: MetadataPayload, dryRun = false) {
   const payload = {
     backfilled: true,
     backfill_source: 'backfill-autonomy-decisions',

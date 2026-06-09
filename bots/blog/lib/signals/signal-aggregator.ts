@@ -14,6 +14,33 @@ const googleTrendCollector = require('./google-trend-collector');
 const brandMentionCollector = require('./brand-mention-collector');
 const competitorMonitor = require('./competitor-monitor');
 
+type TrendSignal = {
+  keyword: string;
+  trend_score?: number;
+  growth_rate_week?: number;
+};
+
+type CompetitorSignal = {
+  is_viral?: boolean;
+  competitor_name?: string;
+};
+
+type BrandMentionSignal = {
+  total?: number;
+  positive?: number;
+  neutral?: number;
+  negative?: number;
+  urgent?: number;
+};
+
+type AggregatedSignals = {
+  trends: { rising_keywords: string[] };
+  competitors: { viral_detected: number; top_trending_angles: string[] };
+  brand_mentions: { negative: number; urgent_count: number };
+  ska_revenue_7d: { available: boolean; vs_prev_week_pct: number };
+  internal_performance: { avg_views_last_7d: number };
+};
+
 function isEnabled() {
   return process.env.BLOG_SIGNAL_COLLECTOR_ENABLED === 'true';
 }
@@ -69,7 +96,7 @@ async function fetchInternalPerformance() {
   }
 }
 
-function generateActionHints(signals) {
+function generateActionHints(signals: AggregatedSignals) {
   const hints = [];
 
   if (signals.trends.rising_keywords.length > 0) {
@@ -131,12 +158,12 @@ async function aggregateAllSignals() {
   const revenue = skaRevenue.status === 'fulfilled' ? skaRevenue.value : { available: false, total_krw: 0, vs_prev_week_pct: 0 };
   const internal = internalPerf.status === 'fulfilled' ? internalPerf.value : { posts_last_7d: 0, avg_views_last_7d: 0, top_category: 'unknown' };
 
-  const naverRising = naver.filter((t) => t.growth_rate_week > 30).map((t) => t.keyword);
-  const googleRising = google.filter((t) => t.growth_rate_week > 50).map((t) => t.keyword);
+  const naverRising = (naver as TrendSignal[]).filter((t: TrendSignal) => Number(t.growth_rate_week || 0) > 30).map((t: TrendSignal) => t.keyword);
+  const googleRising = (google as TrendSignal[]).filter((t: TrendSignal) => Number(t.growth_rate_week || 0) > 50).map((t: TrendSignal) => t.keyword);
   const allRising = [...new Set([...naverRising, ...googleRising])];
 
-  const viralComps = competitors.filter((c) => c.is_viral);
-  let benchmarkAngles = [];
+  const viralComps = (competitors as CompetitorSignal[]).filter((c: CompetitorSignal) => c.is_viral);
+  let benchmarkAngles: string[] = [];
   if (competitors.length > 0) {
     try {
       const bench = await competitorMonitor.benchmarkCompetitorContent();
@@ -149,17 +176,17 @@ async function aggregateAllSignals() {
     trends: {
       rising_keywords: allRising,
       declining_keywords: [],
-      naver_top: naver.slice(0, 5).map((t) => ({ keyword: t.keyword, score: t.trend_score, growth: t.growth_rate_week })),
-      google_top: google.slice(0, 5).map((t) => ({ keyword: t.keyword, score: t.trend_score, growth: t.growth_rate_week })),
+      naver_top: (naver as TrendSignal[]).slice(0, 5).map((t: TrendSignal) => ({ keyword: t.keyword, score: t.trend_score, growth: t.growth_rate_week })),
+      google_top: (google as TrendSignal[]).slice(0, 5).map((t: TrendSignal) => ({ keyword: t.keyword, score: t.trend_score, growth: t.growth_rate_week })),
     },
     competitors: {
       total_monitored: competitors.length,
       viral_detected: viralComps.length,
       top_trending_angles: benchmarkAngles,
-      alerts: viralComps.map((c) => `${c.competitor_name}: 바이럴 감지`),
+      alerts: viralComps.map((c: CompetitorSignal) => `${c.competitor_name}: 바이럴 감지`),
     },
     brand_mentions: mentions
-      ? { total_24h: mentions.total || 0, positive: mentions.positive || 0, neutral: mentions.neutral || 0, negative: mentions.negative || 0, urgent_count: mentions.urgent || 0 }
+      ? { total_24h: (mentions as BrandMentionSignal).total || 0, positive: (mentions as BrandMentionSignal).positive || 0, neutral: (mentions as BrandMentionSignal).neutral || 0, negative: (mentions as BrandMentionSignal).negative || 0, urgent_count: (mentions as BrandMentionSignal).urgent || 0 }
       : { total_24h: 0, positive: 0, neutral: 0, negative: 0, urgent_count: 0 },
     ska_revenue_7d: revenue,
     internal_performance: internal,
@@ -174,7 +201,7 @@ async function aggregateAllSignals() {
   return final;
 }
 
-async function saveAggregatedSignals(signals) {
+async function saveAggregatedSignals(signals: AggregatedSignals) {
   try {
     await pgPool.query(
       'blog',
@@ -184,7 +211,7 @@ async function saveAggregatedSignals(signals) {
       [JSON.stringify(signals), signals.competitors.viral_detected > 0 || signals.brand_mentions.urgent_count > 0 ? 'warning' : 'info']
     );
   } catch (e) {
-    console.warn('[신호집계] DB 저장 실패:', e.message);
+    console.warn('[신호집계] DB 저장 실패:', e instanceof Error ? e.message : e);
   }
 }
 

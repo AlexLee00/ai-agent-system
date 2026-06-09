@@ -12,7 +12,33 @@ const {
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/meta-insights.ts'));
 const { ensureMarketingOsSchema } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/marketing-os-schema.ts'));
 
-function parseArgs(argv = []) {
+type ChannelInsight = {
+  channel?: string;
+  source?: string;
+  status?: string;
+  publishedCount?: number;
+  views?: number;
+  comments?: number;
+  likes?: number;
+  engagementRate?: number;
+  metadata?: Record<string, unknown>;
+};
+
+type PersistedChannelInsight = {
+  snapshot_date: string;
+  channel: string;
+  source: string;
+  status: string;
+  published_count: number;
+  views: number;
+  comments: number;
+  likes: number;
+  engagement_rate: number;
+  revenue_signal: number;
+  metadata: Record<string, unknown>;
+};
+
+function parseArgs(argv: string[] = []) {
   return {
     date: readOption(argv, '--date') || null,
     days: Number(readOption(argv, '--days') || 7),
@@ -21,7 +47,7 @@ function parseArgs(argv = []) {
   };
 }
 
-function readOption(argv, name) {
+function readOption(argv: string[], name: string) {
   const idx = argv.indexOf(name);
   if (idx === -1) return '';
   return String(argv[idx + 1] || '').trim();
@@ -63,7 +89,7 @@ async function collectNaverBlogStats(days = 7) {
   };
 }
 
-async function collectSocialExecutionStats(channel, days = 7) {
+async function collectSocialExecutionStats(channel: string, days = 7) {
   const row = await pgPool.get('agent', `
     SELECT
       COUNT(*)::int AS event_count,
@@ -97,7 +123,7 @@ async function collectSocialExecutionStats(channel, days = 7) {
   };
 }
 
-function mergeChannelInsight(metaItem, fallbackItem) {
+function mergeChannelInsight(metaItem: ChannelInsight | null | undefined, fallbackItem: ChannelInsight | null | undefined) {
   const base = metaItem || fallbackItem || {};
   const fallback = fallbackItem || {};
   const merged = {
@@ -125,10 +151,10 @@ function mergeChannelInsight(metaItem, fallbackItem) {
   return merged;
 }
 
-async function upsertChannelPerformance(snapshotDate, item, revenueSignal = 0, dryRun = false) {
+async function upsertChannelPerformance(snapshotDate: string, item: ChannelInsight, revenueSignal = 0, dryRun = false): Promise<PersistedChannelInsight> {
   const payload = {
     snapshot_date: snapshotDate,
-    channel: item.channel,
+    channel: item.channel || 'unknown',
     source: item.source || 'local',
     status: item.status || 'ok',
     published_count: Number(item.publishedCount || 0),
@@ -178,8 +204,8 @@ async function upsertChannelPerformance(snapshotDate, item, revenueSignal = 0, d
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   await ensureBlogCoreSchema();
-  await ensureMarketingOsSchema().catch((error) => {
-    console.warn('[channel-insights] marketing OS schema ensure 실패:', String(error?.message || error));
+  await ensureMarketingOsSchema().catch((error: unknown) => {
+    console.warn('[channel-insights] marketing OS schema ensure 실패:', String(error instanceof Error ? error.message : error));
   });
 
   const snapshotDate = args.date || new Date().toISOString().slice(0, 10);
@@ -201,7 +227,7 @@ async function main() {
   const facebook = mergeChannelInsight(metaInsights?.facebook, facebookFallback);
 
   const items = [naver, instagram, facebook];
-  const persisted = [];
+  const persisted: PersistedChannelInsight[] = [];
   for (const item of items) {
     persisted.push(await upsertChannelPerformance(snapshotDate, item, revenueSignal, args.dryRun));
   }
@@ -234,7 +260,7 @@ async function main() {
   console.log(`[channel-insights] marketing_channel_metrics=${metricsWritten} rows`);
 }
 
-main().catch((error) => {
-  console.error('[channel-insights] 실패:', error?.stack || error?.message || String(error));
+main().catch((error: unknown) => {
+  console.error('[channel-insights] 실패:', error instanceof Error ? error.stack || error.message : String(error));
   process.exit(1);
 });

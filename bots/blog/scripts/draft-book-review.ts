@@ -8,7 +8,30 @@ const { callHubLlm } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/hu
 const { blog: blogSkills } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/index.js'));
 const { writeGeneralPost, GEMS_SYSTEM_PROMPT } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/gems-writer.ts'));
 
-function parseArgs(argv = []) {
+type BookReviewTopic = {
+  title: string;
+  author?: string;
+  publisher?: string;
+  pubDate?: string;
+  isbn?: string;
+  description?: string;
+};
+
+type DraftResult = {
+  title: string;
+  content: string;
+  charCount: number;
+  model: string;
+};
+
+type HubLlmDraftResult = {
+  text?: string;
+  selected_route?: string;
+  model?: string;
+  provider?: string;
+};
+
+function parseArgs(argv: string[] = []) {
   const args = {
     json: argv.includes('--json'),
     topic: '일과 삶을 함께 돌아보게 만드는 책',
@@ -37,16 +60,16 @@ function slugify(value = '') {
     .slice(0, 80);
 }
 
-function withTimeout(promise, timeoutMs, label = 'timeout') {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label = 'timeout'): Promise<T> {
   return Promise.race([
     promise,
-    new Promise((_, reject) => {
+    new Promise<T>((_, reject) => {
       setTimeout(() => reject(new Error(label)), timeoutMs);
     }),
   ]);
 }
 
-function buildFallbackDraft(selected, topic) {
+function buildFallbackDraft(selected: BookReviewTopic, topic: string): DraftResult {
   const title = `${selected.title}, 지금 다시 읽어야 하는 이유`;
   const shortDesc = selected.description
     ? String(selected.description).replace(/\s+/g, ' ').trim().slice(0, 180)
@@ -74,7 +97,7 @@ _THE_END_
   };
 }
 
-async function selectBook(topic, limit = 6) {
+async function selectBook(topic: string, limit = 6) {
   const [catalogBooks, reviewedHistory] = await Promise.all([
     blogSkills.bookReviewBook.loadCatalogBooks(),
     blogSkills.bookReviewBook.loadReviewedBookHistory(),
@@ -93,7 +116,7 @@ async function selectBook(topic, limit = 6) {
       '베스트셀러 소설',
       '삶을 돌아보는 책',
       '일과 사람에 대한 통찰',
-      ...preferredBooks.map((book) => [book.title, book.author].filter(Boolean).join(' ')),
+      ...preferredBooks.map((book: BookReviewTopic) => [book.title, book.author].filter(Boolean).join(' ')),
     ],
     preferredBooks,
   });
@@ -160,7 +183,7 @@ async function main() {
         prompt,
         maxTokens: 2600,
         timeoutMs: 25000,
-      }), 30000, 'fast_draft_timeout');
+      }) as Promise<HubLlmDraftResult>, 30000, 'fast_draft_timeout');
 
       const content = String(result.text || '').trim();
       const title = content.split('\n')[0]?.replace(/^#+\s*/, '').trim() || `${selection.selected.title}, 지금 다시 읽어야 하는 이유`;
@@ -171,7 +194,7 @@ async function main() {
         model: result.selected_route || result.model || result.provider || 'hub',
       };
     } catch (error) {
-      console.warn(`[book-review draft] fast draft fallback 사용: ${error.message}`);
+      console.warn(`[book-review draft] fast draft fallback 사용: ${error instanceof Error ? error.message : error}`);
       draft = buildFallbackDraft(selection.selected, args.topic);
     }
   } else {
@@ -209,7 +232,7 @@ async function main() {
   if (typedPayload.filePath) console.log(`[book-review draft] file=${typedPayload.filePath}`);
 }
 
-main().catch((error) => {
-  console.error('[book-review draft] 실패:', error?.message || error);
+main().catch((error: unknown) => {
+  console.error('[book-review draft] 실패:', error instanceof Error ? error.message : error);
   process.exit(1);
 });
