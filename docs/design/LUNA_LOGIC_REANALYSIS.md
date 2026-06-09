@@ -42,3 +42,25 @@
 ## 5. 다음 단계
 - Phase 1 잔여 딥리드 계속 → 또는 Phase 2(영상) 병행. **마스터 결정.**
 - 영상 12개 = 자막 추출(yt-dlp, 429 가능) 또는 1차 출처 서칭.
+
+---
+## 2.1 의사결정 정책 본체 — 실측 (Phase 1 심화, 2026-06-10)
+**융합** `luna-decision-policy.ts`(184줄): `fuseSignals = Σ(direction×confidence×weight)/Σweight`. 추천 임계 **LONG>0.2 / SHORT<−0.2 / (conflict & |score|<0.3)→HOLD**. sentinel 가중 멀티 0.9/0.7/0.92.
+**가중치** `luna-analyst-weight-policy.ts`: BASE = TA_MTF 0.35·ONCHAIN 0.25·SENTINEL 0.35·SENTIMENT 0.20·NEWS 0.15(합 1.30, 융합서 정규화). 레짐 bias = `1+(clamp(avg,0.7,1.35)−1)×0.35`. 주식은 MARKET_FLOW 추가. 적응 가중=accuracy report.
+**전략 라우팅** `strategy-router.ts`(502줄): 전략군(momentum_rotation/mean_reversion/defensive_rotation/equity_swing) **가산 bias 스코어링** — TA/onchain/flow 신뢰도 + 외부근거(risk-off) + Phase A(shadow 0.25/active 0.5) + 성과 insight(승/패 군 ±0.12~0.14). 매직넘버 0.4·0.08·0.10·0.06·±0.16 산재 → 선택 군이 결정 bias.
+**예측 검증** `predictive-validation-gate.ts`(130줄): advisory(기본). predictiveScore ≥ threshold(0.55) 통과 / ≥0.40 관찰레인 / 미만 차단. 매직 0.55/0.40.
+**의사결정 스택(요약)**: 분석가신호 → fuseSignals(0.2/0.3) → 가중치(base+regime+adaptive) → strategy-router(가산 bias) → fuseDiscoveryScore(discovery/sentiment/mtf/wyckoff/vsa) → getSymbolDecision(약신호게이트→fast-path 룰→LLM→reviewHint delta→route bias) → conf 블렌딩(0.7/0.3) → predictive gate(0.55) → 포트폴리오 LLM → 대표패스/throttle → capital/reflexion/budget.
+
+## 3.1 핵심 문제 종합 (Phase 1 결론 — 의사결정 로직)
+1. **매직넘버 편재**: 임계(0.2·0.3·0.55·0.40)·가중치(0.35·0.25…)·멀티(0.7·0.9·0.92·0.35·±0.16…) — **학습·검증 없이 수작업 튜닝**.
+2. **편향 적층(bias stacking)**: regime bias × strategy-route bias × discovery 블렌딩 × reviewHint delta 가 곱·합으로 누적 → **창발 동작 추론·검증 곤란**. 기여도 불명.
+3. **LLM 과의존**: 최종 결정이 LLM + 다단 폴백. 스코어는 "컨텍스트"로만. 재현·검증 약함.
+4. **조건부 enrichment**: intelligentFlags로 기능 on/off → **로직 표면이 가변**(일관성 불명).
+5. **검증게이트 비차단**: predictive/DSR 등 advisory → 나쁜 신호도 통과 가능(실험 우선 정책의 부작용).
+→ **종합 진단**: 현 로직은 *시간이 쌓인 휴리스틱 + 매직넘버 + 편향 적층 + LLM 의존*의 누적물. **일관·검증된 결정 프레임워크 부재.** 마스터 직감 = 타당.
+→ **최적 재설계 방향(가설, Phase 3에서 구체화)**: (a) 매직넘버 → **데이터/검증 기반 파라미터**(알파팩터 IC·레짐 전이·캘리브레이션) (b) 편향 적층 → **단일 일관 스코어 모델**(검증가능 보상) (c) LLM = 보조(서사·리스크 점검), 결정 코어는 **검증된 수치 모델** (d) advisory→핵심은 **enforce 게이트**(검증 통과분만).
+
+## 0-b. Phase 1 진행 상태 (2026-06-10)
+- ✅ 의사결정 척추·정책 본체 심화 완료(위 2.1/3.1).
+- ⏳ 잔여: 3시장 차이(crypto/domestic/overseas)·레짐 내부(market-regime/hmm)·팩터(korean-factor-model)·`robust backtest selection`(2da4aa794)·luna.ts 1001~1388(실행 배선).
+- ➡️ 결정 로직 그림 확보 → **Phase 2(영상 12개)** 또는 잔여 Phase 1. 마스터 결정.
