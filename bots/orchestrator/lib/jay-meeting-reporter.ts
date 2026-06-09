@@ -9,43 +9,61 @@ const {
 const sentDedupe = new Map();
 const MEETING_PHASES = new Set(['frame', 'plan', 'review', 'test', 'ship', 'reflect', 'final']);
 
-function normalizeText(value, fallback = '') {
+type MeetingPhase = 'frame' | 'plan' | 'review' | 'test' | 'ship' | 'reflect' | 'final';
+
+type MeetingReporterInput = {
+  incidentKey?: string;
+  phase?: string;
+  team?: string;
+  title?: string;
+  summary?: string;
+  dedupeKey?: string;
+};
+
+type TeamProgressInput = {
+  team?: string;
+  incidentKey?: string;
+  status?: string;
+  message?: string;
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function parseBoolean(value, fallback = false) {
+function parseBoolean(value: unknown, fallback = false) {
   const text = normalizeText(value, fallback ? 'true' : 'false').toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
-function warnNonBlocking(scope, error, meta = {}) {
+function warnNonBlocking(scope: string, error: unknown, meta: Record<string, unknown> = {}) {
   const details = Object.entries(meta)
     .filter(([, value]) => value != null && value !== '')
     .map(([key, value]) => `${key}=${String(value).slice(0, 180)}`)
     .join(' ');
   const suffix = details ? ` (${details})` : '';
-  console.warn(`[jay-meeting-reporter] ${scope} failed${suffix}: ${error?.message || error}`);
+  console.warn(`[jay-meeting-reporter] ${scope} failed${suffix}: ${error instanceof Error ? error.message : String(error)}`);
 }
 
 function nowMs() {
   return Date.now();
 }
 
-function trimDedupe(ttlMs) {
+function trimDedupe(ttlMs: number) {
   const threshold = nowMs() - ttlMs;
   for (const [key, ts] of sentDedupe.entries()) {
     if (ts < threshold) sentDedupe.delete(key);
   }
 }
 
-function allowMeetingPhase(phase) {
+function allowMeetingPhase(phase: unknown) {
   const normalized = normalizeText(phase, '').toLowerCase();
   return MEETING_PHASES.has(normalized);
 }
 
-function phaseLabel(phase) {
-  const labels = {
+function phaseLabel(phase: string) {
+  const labels: Record<MeetingPhase, string> = {
     frame: '문제정의',
     plan: '계획',
     review: '팀검토',
@@ -54,16 +72,16 @@ function phaseLabel(phase) {
     reflect: '회고',
     final: '완료',
   };
-  return labels[phase] || phase;
+  return (MEETING_PHASES.has(phase) ? labels[phase as MeetingPhase] : undefined) || phase;
 }
 
-function compactSummary(summary, maxLength = 650) {
+function compactSummary(summary: unknown, maxLength = 650) {
   const text = normalizeText(summary, '');
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 20)).trim()} ... (truncated)`;
 }
 
-function buildMeetingMessage(input) {
+function buildMeetingMessage(input: MeetingReporterInput) {
   const incidentKey = normalizeText(input?.incidentKey, 'unknown_incident');
   const phase = normalizeText(input?.phase, 'plan').toLowerCase();
   const team = normalizeText(input?.team, 'general');
@@ -78,7 +96,7 @@ function buildMeetingMessage(input) {
   return lines.join('\n');
 }
 
-async function publishMeetingSummary(input) {
+async function publishMeetingSummary(input: MeetingReporterInput) {
   if (!parseBoolean(process.env.JAY_3TIER_TELEGRAM, false)) {
     return { ok: true, skipped: true, reason: 'jay_3tier_telegram_disabled' };
   }
@@ -96,7 +114,7 @@ async function publishMeetingSummary(input) {
   const eventType = `telegram_meeting_${phase}`;
   const incidentKey = normalizeText(input?.incidentKey, '');
   if (incidentKey && incidentKey !== 'unknown') {
-    const alreadySent = await hasIncidentEvent({ incidentKey, eventType }).catch((error) => {
+    const alreadySent = await hasIncidentEvent({ incidentKey, eventType }).catch((error: unknown) => {
       warnNonBlocking('persistent_dedupe_check', error, { incidentKey, eventType });
       return false;
     });
@@ -121,12 +139,12 @@ async function publishMeetingSummary(input) {
         phase,
         dedupeKey,
       },
-    }).catch((error) => warnNonBlocking('append_meeting_event', error, { incidentKey, eventType }));
+    }).catch((error: unknown) => warnNonBlocking('append_meeting_event', error, { incidentKey, eventType }));
   }
   return { ok: true, sent: true, dedupeKey, phase };
 }
 
-async function publishTeamProgress(input) {
+async function publishTeamProgress(input: TeamProgressInput) {
   if (!parseBoolean(process.env.JAY_3TIER_TELEGRAM, false)) {
     return { ok: true, skipped: true, reason: 'jay_3tier_telegram_disabled' };
   }

@@ -8,7 +8,26 @@ import {
 } from '../a2a/skills/hybrid-promotion-gate.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function fakeQuery(sql) {
+type HybridPromotionOutput = {
+  ok: boolean;
+  skill: string;
+  shadowMode: boolean;
+  liveMutation: boolean;
+  contractReady: boolean;
+  dataReady: boolean;
+  promotionReady: boolean;
+  broadcastPlanned: boolean;
+  status: string;
+};
+
+type HybridPromotionTaskResult = {
+  id: string;
+  status: string;
+  error?: unknown;
+  output: HybridPromotionOutput;
+};
+
+function fakeQuery(sql: string) {
   if (
     sql.includes('luna_regime_llm_shadow')
     || sql.includes('luna_entry_llm_shadow')
@@ -31,7 +50,7 @@ export async function runLunaHybridPromotionA2ASmoke() {
     id: 'hybrid-promotion-a2a-smoke-1',
     skill: { id: 'hybrid-promotion-gate' },
     params: { broadcast: false, hours: 168 },
-  });
+  }) as HybridPromotionTaskResult;
   assert.equal(result.id, 'hybrid-promotion-a2a-smoke-1');
   assert.equal(result.status, 'completed', JSON.stringify(result.error || result.output, null, 2));
   assert.equal(result.output.ok, true);
@@ -45,7 +64,7 @@ export async function runLunaHybridPromotionA2ASmoke() {
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';
-  const enabled = await createHybridPromotionGateHandler({ queryFn: fakeQuery })({ hours: 168 });
+  const enabled = await createHybridPromotionGateHandler({ queryFn: fakeQuery })({ hours: 168 }) as unknown as HybridPromotionTaskResult;
   assert.equal(enabled.output.broadcastPlanned, true);
   if (previous == null) delete process.env.LUNA_A2A_BROADCAST_ENABLED;
   else process.env.LUNA_A2A_BROADCAST_ENABLED = previous;
@@ -67,7 +86,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid promotion A2A smoke failed:',
   });

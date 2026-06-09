@@ -7,6 +7,15 @@ import { buildStressTestShadow, HISTORICAL_STRESS_SCENARIOS } from '../shared/qu
 import { runLunaMonteCarloStressShadow } from './runtime-luna-monte-carlo-stress-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+type FakeInsert = {
+  sql: string;
+  params: unknown[];
+};
+
+type FakeDepsOptions = {
+  existingShadow?: boolean;
+};
+
 function fixtureBars(start = 100, drift = 0.2, count = 90) {
   return Array.from({ length: count }, (_, index) => {
     const close = start + index * drift + Math.sin(index / 4) * 2;
@@ -19,9 +28,9 @@ function fixtureBars(start = 100, drift = 0.2, count = 90) {
   });
 }
 
-function fakeDeps({ existingShadow = false } = {}) {
-  const inserts = [];
-  const schemaInits = [];
+function fakeDeps({ existingShadow = false }: FakeDepsOptions = {}) {
+  const inserts: FakeInsert[] = [];
+  const schemaInits: string[] = [];
   return {
     inserts,
     schemaInits,
@@ -30,7 +39,7 @@ function fakeDeps({ existingShadow = false } = {}) {
       return { ok: true };
     },
     fetchBars: async () => fixtureBars(),
-    query: async (sql) => {
+    query: async (sql: string) => {
       if (sql.includes('luna_risk_simulation_shadow') && existingShadow) {
         return [{
           analysis_type: 'stress_test',
@@ -55,7 +64,7 @@ function fakeDeps({ existingShadow = false } = {}) {
       }
       return [];
     },
-    run: async (sql, params) => {
+    run: async (sql: string, params: unknown[]) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },
@@ -107,6 +116,7 @@ export async function runLunaStressTestSmoke() {
     horizonDays: 20,
   }, dryDeps);
   assert.equal(planned.status, 'luna_monte_carlo_stress_shadow_planned');
+  assert.ok(planned.summary);
   assert.equal(planned.summary.planned, 2);
   assert.equal(dryDeps.inserts.length, 0);
   assert.equal(dryDeps.schemaInits.length, 0);
@@ -130,6 +140,7 @@ export async function runLunaStressTestSmoke() {
     horizonDays: 20,
   }, applyDeps);
   assert.equal(written.status, 'luna_monte_carlo_stress_shadow_written');
+  assert.ok(written.summary);
   assert.equal(written.summary.written, 1);
   assert.equal(applyDeps.schemaInits.length, 1);
   assert.equal(applyDeps.inserts[0].params[0], 'stress_test');
@@ -152,6 +163,7 @@ export async function runLunaStressTestSmoke() {
     horizonDays: 20,
   }, fakeDeps({ existingShadow: true }));
   assert.equal(cached.status, 'luna_monte_carlo_stress_shadow_cached');
+  assert.ok(cached.summary);
   assert.equal(cached.summary.cached, 1);
 
   return {
@@ -170,7 +182,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna stress test smoke failed:',
   });
