@@ -144,7 +144,95 @@ function scheduleReconnect(schema: string, pool: PgPoolLike): void {
 export function parameterize(sql: string): string {
   if (!sql || !sql.includes('?')) return sql;
   let idx = 0;
-  return sql.replace(/\?/g, () => `$${++idx}`);
+  let out = '';
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+
+    if (ch === "'") {
+      out += ch;
+      for (i += 1; i < sql.length; i += 1) {
+        out += sql[i];
+        if (sql[i] === "'" && sql[i + 1] === "'") {
+          out += sql[i + 1];
+          i += 1;
+          continue;
+        }
+        if (sql[i] === "'") break;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      out += ch;
+      for (i += 1; i < sql.length; i += 1) {
+        out += sql[i];
+        if (sql[i] === '"' && sql[i + 1] === '"') {
+          out += sql[i + 1];
+          i += 1;
+          continue;
+        }
+        if (sql[i] === '"') break;
+      }
+      continue;
+    }
+
+    if (ch === '-' && next === '-') {
+      out += ch + next;
+      i += 1;
+      for (i += 1; i < sql.length; i += 1) {
+        out += sql[i];
+        if (sql[i] === '\n' || sql[i] === '\r') break;
+      }
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      out += ch + next;
+      i += 1;
+      for (i += 1; i < sql.length; i += 1) {
+        out += sql[i];
+        if (sql[i] === '*' && sql[i + 1] === '/') {
+          out += sql[i + 1];
+          i += 1;
+          break;
+        }
+      }
+      continue;
+    }
+
+    if (ch === '$') {
+      const dollarTag = sql.slice(i).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)?.[0];
+      if (dollarTag) {
+        out += dollarTag;
+        i += dollarTag.length - 1;
+        const end = sql.indexOf(dollarTag, i + 1);
+        if (end === -1) continue;
+        out += sql.slice(i + 1, end + dollarTag.length);
+        i = end + dollarTag.length - 1;
+        continue;
+      }
+    }
+
+    if (ch === '?') {
+      const rest = sql.slice(i + 1);
+      const nextNonWs = rest.match(/\S/)?.[0] || '';
+      // PostgreSQL JSONB existence operators (`?`, `?|`, `?&`) are real SQL
+      // operators, not bind placeholders. The Hub PG route passes SQL and params
+      // separately, so converting `metadata ? 'key'` into `metadata $1 'key'`
+      // breaks read-only metrics queries. Keep these operators intact while
+      // preserving SQLite-style `?` placeholder support for existing callers.
+      if (nextNonWs === "'" || nextNonWs === '"' || nextNonWs === '|' || nextNonWs === '&' || nextNonWs === '?') {
+        out += ch;
+      } else {
+        out += `$${++idx}`;
+      }
+      continue;
+    }
+
+    out += ch;
+  }
+  return out;
 }
 
 function getPoolForTarget(schema: string, target: PoolTarget = 'default'): PgPoolLike {
