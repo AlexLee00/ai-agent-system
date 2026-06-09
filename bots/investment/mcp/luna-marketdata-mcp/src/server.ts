@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import {
   binanceSnapshot,
@@ -28,7 +29,39 @@ import {
   unsubscribeTradingViewMarketData,
 } from './tools/tradingview-ws.ts';
 
-const subscriptions = new Map();
+type MarketDataArgs = {
+  market?: string;
+  symbol?: string;
+  timeframe?: string;
+  depth?: number;
+  [key: string]: unknown;
+};
+
+type SubscriptionValue = {
+  key: string;
+  args: MarketDataArgs;
+  subscribedAt: string;
+  mode: string;
+  provider: Record<string, unknown>;
+};
+
+type RpcBody = {
+  id?: unknown;
+  method?: string;
+  params?: {
+    name?: string;
+    arguments?: MarketDataArgs;
+    args?: MarketDataArgs;
+    [key: string]: unknown;
+  } & MarketDataArgs;
+};
+
+type StartServerOptions = {
+  port?: number | string | null;
+  host?: string;
+};
+
+const subscriptions = new Map<string, SubscriptionValue>();
 
 export const MARKETDATA_MCP_TOOLS = [
   {
@@ -53,16 +86,16 @@ export const MARKETDATA_MCP_TOOLS = [
   },
 ];
 
-function json(res, status, payload) {
+function json(res: http.ServerResponse, status: number, payload: unknown) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
 }
 
-function subscriptionKey(args = {}) {
+function subscriptionKey(args: MarketDataArgs = {}) {
   return `${args.market || 'binance'}:${String(args.symbol || 'BTC/USDT').toUpperCase()}:${args.timeframe || '1h'}`;
 }
 
-function buildRegimeFromSnapshot(snapshot = {}) {
+function buildRegimeFromSnapshot(snapshot: Record<string, unknown> = {}) {
   if (!snapshot?.ok) return getMarketRegime(snapshot);
   const change = Number(snapshot.changePct24h || snapshot.change_pct || 0);
   const trend = change > 0.025 ? 'bull' : change < -0.025 ? 'bear' : 'range';
@@ -81,7 +114,7 @@ function buildRegimeFromSnapshot(snapshot = {}) {
   };
 }
 
-export async function callMarketdataTool(name, args = {}) {
+export async function callMarketdataTool(name: string, args: MarketDataArgs = {}): Promise<Record<string, unknown>> {
   if (name === 'subscribe_market_data') {
     const key = subscriptionKey(args);
     const market = normalizeMarket(args.market || 'binance');
@@ -121,18 +154,18 @@ export async function callMarketdataTool(name, args = {}) {
     const snapshot = await callMarketdataTool('get_market_snapshot', args);
     return buildRegimeFromSnapshot(snapshot);
   }
-  if (name === 'get_order_book') return getOrderBook(args);
+  if (name === 'get_order_book') return await getOrderBook(args) as Record<string, unknown>;
   throw new Error(`unknown_tool:${name}`);
 }
 
-async function readBody(req) {
-  const chunks = [];
+async function readBody(req: http.IncomingMessage): Promise<RpcBody> {
+  const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk);
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-async function handleRpc(body) {
+async function handleRpc(body: RpcBody) {
   const id = body?.id ?? null;
   const method = body?.method;
   const params = body?.params || {};
@@ -141,11 +174,11 @@ async function handleRpc(body) {
     return { jsonrpc: '2.0', id, result: { tools: MARKETDATA_MCP_TOOLS } };
   }
   if (method === 'tools/call') {
-    const name = params.name;
+    const name = String(params.name || '');
     const args = params.arguments || params.args || {};
     return { jsonrpc: '2.0', id, result: { content: [{ type: 'json', json: await callMarketdataTool(name, args) }] } };
   }
-  if (MARKETDATA_MCP_TOOLS.some((tool) => tool.name === method)) {
+  if (method && MARKETDATA_MCP_TOOLS.some((tool) => tool.name === method)) {
     return { jsonrpc: '2.0', id, result: await callMarketdataTool(method, params) };
   }
   return { jsonrpc: '2.0', id, error: { code: -32601, message: `method_not_found:${method}` } };
@@ -168,7 +201,7 @@ export function createMarketdataMcpServer() {
       }
       return json(res, 404, { ok: false, error: 'not_found' });
     } catch (error) {
-      return json(res, 500, { ok: false, error: error?.message || String(error) });
+      return json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 }
@@ -181,17 +214,18 @@ export function closeMarketdataMcpSubscriptions() {
   subscriptions.clear();
 }
 
-function argValue(name, fallback = null) {
+function argValue(name: string, fallback: string | number | null = null) {
   const prefix = `${name}=`;
   const found = process.argv.find((arg) => arg.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
 }
 
-export async function startServer({ port = null, host = '127.0.0.1' } = {}) {
+export async function startServer({ port = null, host = '127.0.0.1' }: StartServerOptions = {}) {
   const server = createMarketdataMcpServer();
   const listenPort = Number(port ?? argValue('--port', process.env.LUNA_MARKETDATA_MCP_PORT || 4088));
-  await new Promise((resolve) => server.listen(listenPort, host, resolve));
-  const address = server.address();
+  await new Promise<void>((resolve) => server.listen(listenPort, host, resolve));
+  const address = server.address() as AddressInfo | null;
+  if (!address || typeof address === 'string') throw new Error('marketdata_mcp_listen_address_unavailable');
   return { server, port: address.port, host };
 }
 
@@ -202,7 +236,7 @@ async function main() {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(`luna-marketdata-mcp failed: ${error?.message || error}`);
+    console.error(`luna-marketdata-mcp failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   });
 }
