@@ -17,6 +17,60 @@ const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 const DEFAULT_PREPARING_LEASE_MINUTES = 20;
 const DEFAULT_MAX_ATTEMPTS = 4;
 
+type IdempotencyKeyInput = {
+  campaignId: string;
+  platform: string;
+  variantId: string;
+  scheduledDate?: string;
+};
+
+type MarketingVariant = {
+  variant_id: string;
+  platform: string;
+  [key: string]: unknown;
+};
+
+type EnqueueOptions = {
+  campaignId: string;
+  variants?: MarketingVariant[];
+  dryRun?: boolean;
+};
+
+type QueueJob = {
+  queue_id?: string;
+  variant_id?: string;
+  platform?: string;
+  scheduled_at?: string;
+  status?: string;
+  attempt_count?: number;
+  last_error?: string | null;
+  failure_kind?: string | null;
+  idempotency_key?: string;
+  dry_run?: boolean;
+  inserted?: boolean | string | number;
+  variant?: MarketingVariant | null;
+  [key: string]: unknown;
+};
+
+type ClaimOptions = {
+  dryRun?: boolean;
+  scheduleHorizonHours?: number;
+};
+
+type PublishSuccessOptions = {
+  publishedAt?: string | null;
+};
+
+type PublishFailureOptions = {
+  error?: string;
+  failureKind?: string;
+  block?: boolean;
+};
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err || '');
+}
+
 class QueueUnavailableError extends Error {
   code = 'queue_unavailable';
 
@@ -35,7 +89,7 @@ function buildDeterministicQueueId(idempotencyKey = '') {
  * idempotency_key: campaign_id + platform + variant_hash + scheduled_date
  * Date.now() 단독 사용 금지.
  */
-function buildIdempotencyKey({ campaignId, platform, variantId, scheduledDate }) {
+function buildIdempotencyKey({ campaignId, platform, variantId, scheduledDate }: IdempotencyKeyInput) {
   const dateStr = scheduledDate || kst.today();
   return `${campaignId}__${platform}__${variantId}__${dateStr}`;
 }
@@ -44,9 +98,9 @@ function buildIdempotencyKey({ campaignId, platform, variantId, scheduledDate })
  * 플랫폼별 기본 예약 시각 (KST)
  * Instagram: 18:00, Facebook: 19:00 (기존 launchd 스케줄 기준)
  */
-function getDefaultScheduledAt(platform) {
+function getDefaultScheduledAt(platform: string) {
   const today = kst.today(); // 'YYYY-MM-DD'
-  const timeMap = {
+  const timeMap: Record<string, string> = {
     instagram_reel: '18:00',
     instagram_feed: '18:00',
     instagram_story: '09:00',
@@ -70,9 +124,9 @@ async function enqueueMarketingVariants({
   campaignId,
   variants = [],
   dryRun = false,
-}) {
+}: EnqueueOptions): Promise<QueueJob[]> {
   await ensureMarketingOsSchema();
-  const jobs = [];
+  const jobs: QueueJob[] = [];
   const today = kst.today();
 
   for (const variant of variants) {
@@ -140,7 +194,7 @@ async function enqueueMarketingVariants({
       job.idempotency_key,
       job.dry_run,
     ]);
-    const row = rows?.[0] || null;
+    const row = (rows as QueueJob[])?.[0] || null;
     if (!row) {
       jobs.push({
         ...job,
@@ -167,7 +221,7 @@ async function enqueueMarketingVariants({
   return jobs;
 }
 
-async function hydrateQueueJobVariant(job = null) {
+async function hydrateQueueJobVariant(job: QueueJob | null = null): Promise<QueueJob> {
   if (!job?.variant_id) return { ...(job || {}), variant: null };
   const varRows = await pgPool.query('blog', `
     SELECT v.*, c.brand_axis, c.objective, c.source_signal
@@ -175,7 +229,7 @@ async function hydrateQueueJobVariant(job = null) {
     JOIN blog.marketing_campaigns c ON c.campaign_id = v.campaign_id
     WHERE v.variant_id = $1
   `, [job.variant_id]);
-  const variant = varRows?.[0] || null;
+  const variant = (varRows as MarketingVariant[])?.[0] || null;
   return { ...job, variant };
 }
 
@@ -187,7 +241,7 @@ async function hydrateQueueJobVariant(job = null) {
  * @param {number} [opts.scheduleHorizonHours]
  * @returns {Promise<object|null>}
  */
-async function claimNextPublishJob(platform, { dryRun = false, scheduleHorizonHours = 2 } = {}) {
+async function claimNextPublishJob(platform: string, { dryRun = false, scheduleHorizonHours = 2 }: ClaimOptions = {}) {
   try {
     await ensureMarketingOsSchema();
     const horizonHours = Math.max(0, Number(scheduleHorizonHours) || 0);
@@ -240,12 +294,12 @@ async function claimNextPublishJob(platform, { dryRun = false, scheduleHorizonHo
 
     if (!rows || rows.length === 0) return null;
 
-    const job = rows[0];
+    const job = (rows as QueueJob[])[0];
 
     return hydrateQueueJobVariant(job);
   } catch (err) {
-    console.warn(`[publish-queue] claimNextPublishJob 실패 platform=${platform}:`, err.message);
-    throw new QueueUnavailableError(String(err?.message || err || 'claim_failed'));
+    console.warn(`[publish-queue] claimNextPublishJob 실패 platform=${platform}:`, errorMessage(err));
+    throw new QueueUnavailableError(errorMessage(err) || 'claim_failed');
   }
 }
 
@@ -257,7 +311,7 @@ async function claimNextPublishJob(platform, { dryRun = false, scheduleHorizonHo
  * @param {boolean} [opts.dryRun]
  * @returns {Promise<object|null>}
  */
-async function claimPublishJobByQueueId(queueId, { dryRun = false } = {}) {
+async function claimPublishJobByQueueId(queueId: string, { dryRun = false }: ClaimOptions = {}) {
   if (!queueId) return null;
   try {
     await ensureMarketingOsSchema();
@@ -274,17 +328,17 @@ async function claimPublishJobByQueueId(queueId, { dryRun = false } = {}) {
         status, attempt_count, idempotency_key, dry_run
     `, [queueId, dryRun]);
     if (!rows || rows.length === 0) return null;
-    return hydrateQueueJobVariant(rows[0]);
+    return hydrateQueueJobVariant((rows as QueueJob[])[0]);
   } catch (err) {
-    console.warn(`[publish-queue] claimPublishJobByQueueId 실패 queueId=${queueId}:`, err.message);
-    throw new QueueUnavailableError(String(err?.message || err || 'claim_by_id_failed'));
+    console.warn(`[publish-queue] claimPublishJobByQueueId 실패 queueId=${queueId}:`, errorMessage(err));
+    throw new QueueUnavailableError(errorMessage(err) || 'claim_by_id_failed');
   }
 }
 
 /**
  * 발행 성공 처리
  */
-async function markPublishSuccess(queueId, { publishedAt = null } = {}) {
+async function markPublishSuccess(queueId: string, { publishedAt = null }: PublishSuccessOptions = {}) {
   await ensureMarketingOsSchema();
   await pgPool.query('blog', `
     UPDATE blog.marketing_publish_queue
@@ -303,7 +357,7 @@ async function markPublishSuccess(queueId, { publishedAt = null } = {}) {
  * @param {string} [opts.failureKind]
  * @param {boolean} [opts.block] - true이면 status=blocked (재시도 안 함)
  */
-async function markPublishFailure(queueId, { error = '', failureKind = 'unknown', block = false } = { error: '' }) {
+async function markPublishFailure(queueId: string, { error = '', failureKind = 'unknown', block = false }: PublishFailureOptions = { error: '' }) {
   await ensureMarketingOsSchema();
   const newStatus = block ? 'blocked' : 'failed';
   await pgPool.query('blog', `
@@ -319,7 +373,7 @@ async function markPublishFailure(queueId, { error = '', failureKind = 'unknown'
 /**
  * 오늘 플랫폼별 queued/preparing 건수
  */
-async function getTodayQueuedCount(platform) {
+async function getTodayQueuedCount(platform: string) {
   try {
     await ensureMarketingOsSchema();
     const rows = await pgPool.query('blog', `
@@ -338,7 +392,7 @@ async function getTodayQueuedCount(platform) {
 /**
  * 오늘 플랫폼별 published 건수
  */
-async function getTodayPublishedCount(platform) {
+async function getTodayPublishedCount(platform: string) {
   try {
     await ensureMarketingOsSchema();
     const rows = await pgPool.query('blog', `
