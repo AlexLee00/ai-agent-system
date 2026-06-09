@@ -10,24 +10,64 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
+type RevenueRow = {
+  date?: string;
+  total_revenue_krw?: unknown;
+  reservation_count?: unknown;
+  occupancy_rate?: unknown;
+  entries_count?: unknown;
+};
+
+type RevenueSignal = {
+  date: string | undefined;
+  total_revenue_krw: number;
+  reservation_count: number;
+  occupancy_rate: number;
+  entries_count: number;
+};
+
+type CategoryRevenueRow = {
+  category?: string;
+  avg_uplift_krw?: unknown;
+  post_count?: unknown;
+};
+
+type AttributionPostRow = {
+  post_id?: string;
+  title?: string;
+  url?: string;
+  pub_date?: string;
+  published_at?: string;
+};
+
+type RoiPlatformRow = {
+  post_platform?: string;
+  posts_count?: unknown;
+  total_uplift_krw?: unknown;
+  avg_uplift_krw?: unknown;
+  avg_confidence?: unknown;
+  total_utm_visits?: unknown;
+  total_conversions?: unknown;
+};
+
 function isEnabled() {
   return process.env.BLOG_REVENUE_CORRELATION_ENABLED === 'true';
 }
 
-function addDays(dateStr, days) {
+function addDays(dateStr: string, days: number) {
   const d = new Date(dateStr);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
-function subtractDays(dateStr, days) {
+function subtractDays(dateStr: string, days: number) {
   return addDays(dateStr, -days);
 }
 
 /**
  * 기간별 스카팀 매출 조회 (ska.revenue_daily 스키마)
  */
-async function fetchSkaRevenueByPeriod(startDate, endDate) {
+async function fetchSkaRevenueByPeriod(startDate: string, endDate: string) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT
@@ -40,15 +80,15 @@ async function fetchSkaRevenueByPeriod(startDate, endDate) {
       WHERE date BETWEEN $1 AND $2
       ORDER BY date DESC
     `, [startDate, endDate]);
-    return (rows || []).map((r) => ({
+    return (rows || []).map((r: RevenueRow) => ({
       date: r.date,
       total_revenue_krw: Number(r.total_revenue_krw || 0),
       reservation_count: Number(r.reservation_count || 0),
       occupancy_rate: Number(r.occupancy_rate || 0),
       entries_count: Number(r.entries_count || 0),
     }));
-  } catch (err) {
-    console.warn('[ska-revenue-bridge] revenue_daily 조회 실패:', err.message);
+  } catch (err: unknown) {
+    console.warn('[ska-revenue-bridge] revenue_daily 조회 실패:', err instanceof Error ? err.message : String(err));
     return [];
   }
 }
@@ -56,7 +96,7 @@ async function fetchSkaRevenueByPeriod(startDate, endDate) {
 /**
  * 특정 날짜 이전 N일 평균 매출 (베이스라인)
  */
-async function getBaselineRevenue(referenceDate, lookbackDays = 7) {
+async function getBaselineRevenue(referenceDate: string, lookbackDays = 7) {
   try {
     const start = subtractDays(referenceDate, lookbackDays);
     const rows = await pgPool.query('blog', `
@@ -73,7 +113,7 @@ async function getBaselineRevenue(referenceDate, lookbackDays = 7) {
 /**
  * 포스팅 발행 → 매출 증가 상관관계 계산
  */
-async function correlateBlogPostsToRevenue(postDate, lookAheadDays = 7) {
+async function correlateBlogPostsToRevenue(postDate: string, lookAheadDays = 7) {
   if (!isEnabled()) return null;
   try {
     const postEndDate = addDays(postDate, lookAheadDays);
@@ -84,7 +124,7 @@ async function correlateBlogPostsToRevenue(postDate, lookAheadDays = 7) {
 
     if (signals.length === 0) return null;
 
-    const postPeriodRevenue = signals.reduce((sum, s) => sum + s.total_revenue_krw, 0)
+    const postPeriodRevenue = signals.reduce((sum: number, s: RevenueSignal) => sum + s.total_revenue_krw, 0)
       / Math.max(signals.length, 1);
     const uplift = postPeriodRevenue - baseline;
     const confidence = baseline > 0
@@ -98,8 +138,8 @@ async function correlateBlogPostsToRevenue(postDate, lookAheadDays = 7) {
       uplift_krw: Math.round(uplift),
       attribution_confidence: Number(confidence.toFixed(2)),
     };
-  } catch (err) {
-    console.warn('[ska-revenue-bridge] 상관분석 실패:', err.message);
+  } catch (err: unknown) {
+    console.warn('[ska-revenue-bridge] 상관분석 실패:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -118,7 +158,7 @@ async function getTopRevenueCategories(days = 30) {
       ORDER BY avg_uplift_krw DESC
       LIMIT 5
     `, [days]);
-    return (rows || []).map((r) => ({
+    return (rows || []).map((r: CategoryRevenueRow) => ({
       category: r.category,
       avg_uplift_krw: Number(r.avg_uplift_krw || 0),
       post_count: Number(r.post_count || 0),
@@ -157,8 +197,8 @@ async function updateCategoryRevenuePerformance(days = 30) {
         computed_at = NOW()
     `, [days]);
     console.log('[ska-revenue-bridge] 카테고리별 매출 성과 업데이트 완료');
-  } catch (err) {
-    console.warn('[ska-revenue-bridge] 카테고리 성과 업데이트 실패:', err.message);
+  } catch (err: unknown) {
+    console.warn('[ska-revenue-bridge] 카테고리 성과 업데이트 실패:', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -187,8 +227,10 @@ async function computePendingAttributions(lookAheadDays = 7) {
       LIMIT 30
     `, [lookAheadDays + 1]);
 
-    for (const post of (posts || [])) {
-      const uplift = await correlateBlogPostsToRevenue(post.pub_date, lookAheadDays);
+    for (const post of (posts || []) as AttributionPostRow[]) {
+      const postDate = String(post.pub_date || '').trim();
+      if (!postDate) continue;
+      const uplift = await correlateBlogPostsToRevenue(postDate, lookAheadDays);
       if (!uplift) continue;
       try {
         await pgPool.query('blog', `
@@ -209,8 +251,8 @@ async function computePendingAttributions(lookAheadDays = 7) {
       }
     }
     console.log(`[ska-revenue-bridge] attribution 계산 완료: ${processed}건`);
-  } catch (err) {
-    console.warn('[ska-revenue-bridge] 일괄 attribution 실패:', err.message);
+  } catch (err: unknown) {
+    console.warn('[ska-revenue-bridge] 일괄 attribution 실패:', err instanceof Error ? err.message : String(err));
   }
   return processed;
 }
@@ -248,7 +290,7 @@ async function getRoiSummary(days = 30) {
     return {
       enabled: true,
       period_days: days,
-      by_platform: (rows || []).map((r) => ({
+      by_platform: (rows || []).map((r: RoiPlatformRow) => ({
         platform: r.post_platform,
         posts_count: Number(r.posts_count),
         total_uplift_krw: Math.round(Number(r.total_uplift_krw || 0)),
@@ -257,15 +299,16 @@ async function getRoiSummary(days = 30) {
         utm_visits: Number(r.total_utm_visits || 0),
         conversions: Number(r.total_conversions || 0),
       })),
-      by_category: (byCategoryRows || []).map((r) => ({
+      by_category: (byCategoryRows || []).map((r: CategoryRevenueRow) => ({
         category: r.category,
         avg_uplift_krw: Math.round(Number(r.avg_uplift_krw || 0)),
         post_count: Number(r.post_count || 0),
       })),
     };
-  } catch (err) {
-    console.warn('[ska-revenue-bridge] ROI 요약 실패:', err.message);
-    return { enabled: false, error: err.message };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn('[ska-revenue-bridge] ROI 요약 실패:', message);
+    return { enabled: false, error: message };
   }
 }
 
