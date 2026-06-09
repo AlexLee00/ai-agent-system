@@ -11,8 +11,40 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 
-const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };
+const PLATFORM_LABELS: Record<string, string> = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };
 let _publishLogEnsured = false;
+
+type PublishReport = {
+  platform: string;
+  status: string;
+  title: string;
+  url?: string;
+  error?: string;
+  duration_ms?: number;
+  post_id?: string | number | null;
+  preview_bundle?: string | null;
+  source_mode?: string | null;
+  metadata?: unknown;
+};
+
+type PublishReportOptions = {
+  durationMs?: number;
+  postId?: string | number | null;
+  previewBundle?: string | null;
+  sourceMode?: string | null;
+  metadata?: unknown;
+};
+
+type DailySummaryRow = {
+  platform?: string;
+  status?: string;
+  cnt?: unknown;
+};
+
+type DailySummaryCounts = {
+  success: number;
+  failed: number;
+};
 
 async function ensurePublishLogSchema() {
   if (_publishLogEnsured) return;
@@ -85,7 +117,7 @@ async function ensurePublishLogSchema() {
  * }} PublishReportOptions
  */
 
-async function _saveToDb(platform, status, title, url, error, durationMs, postId, sourceMode, metadata) {
+async function _saveToDb(platform: string, status: string, title: string, url?: string, error?: string, durationMs?: number, postId?: string | number | null, sourceMode?: string | null, metadata?: unknown) {
   try {
     await ensurePublishLogSchema();
     await pgPool.query('blog', `
@@ -102,8 +134,8 @@ async function _saveToDb(platform, status, title, url, error, durationMs, postId
       sourceMode || 'naver_post',
       JSON.stringify(metadata || {}),
     ]);
-  } catch (e) {
-    console.warn('[publish-reporter] DB 저장 실패 (무시):', e.message);
+  } catch (e: unknown) {
+    console.warn('[publish-reporter] DB 저장 실패 (무시):', e instanceof Error ? e.message : String(e));
   }
 }
 
@@ -111,7 +143,7 @@ async function _saveToDb(platform, status, title, url, error, durationMs, postId
  * 통합 발행 보고 (E2E/내부 호출용)
  * @param {PublishReport} report
  */
-async function reportPublish(report) {
+async function reportPublish(report: PublishReport) {
   const {
     platform,
     status,
@@ -182,7 +214,7 @@ async function reportPublish(report) {
  * @param {string} [url]
  * @param {PublishReportOptions} [opts]
  */
-async function reportPublishSuccess(platform, title, url, opts = {}) {
+async function reportPublishSuccess(platform: string, title: string, url?: string, opts: PublishReportOptions = {}) {
   return reportPublish({
     platform,
     status: 'success',
@@ -210,7 +242,7 @@ async function reportPublishSuccess(platform, title, url, opts = {}) {
  * @param {string} error
  * @param {PublishReportOptions} [opts]
  */
-async function reportPublishFailure(platform, title, error, opts = {}) {
+async function reportPublishFailure(platform: string, title: string, error: string, opts: PublishReportOptions = {}) {
   return reportPublish({
     platform,
     status: 'failed',
@@ -249,10 +281,12 @@ async function reportDailySummary(date = null) {
 
     const lines = ['📊 [블로팀] 오늘 발행 요약', `날짜: ${targetDate}`];
     /** @type {Record<string, { success: number, failed: number }>} */
-    const byPlatform = {};
-    for (const r of list) {
-      if (!byPlatform[r.platform]) byPlatform[r.platform] = { success: 0, failed: 0 };
-      byPlatform[r.platform][r.status] = Number(r.cnt);
+    const byPlatform: Record<string, DailySummaryCounts> = {};
+    for (const r of list as DailySummaryRow[]) {
+      const platform = r.platform || 'unknown';
+      const status = r.status === 'success' || r.status === 'failed' ? r.status : 'failed';
+      if (!byPlatform[platform]) byPlatform[platform] = { success: 0, failed: 0 };
+      byPlatform[platform][status] = Number(r.cnt);
     }
     for (const [plat, counts] of /** @type {Array<[string, any]>} */ (Object.entries(byPlatform))) {
       const label = PLATFORM_LABELS[plat] || plat;
@@ -270,8 +304,8 @@ async function reportDailySummary(date = null) {
     }).catch(() => {});
 
     return byPlatform;
-  } catch (e) {
-    console.warn('[publish-reporter] 일일 요약 실패:', e.message);
+  } catch (e: unknown) {
+    console.warn('[publish-reporter] 일일 요약 실패:', e instanceof Error ? e.message : String(e));
     return null;
   }
 }
