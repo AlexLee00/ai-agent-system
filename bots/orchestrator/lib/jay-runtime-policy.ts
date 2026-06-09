@@ -2,12 +2,12 @@
 
 const { getJayOrchestrationConfig } = require('./runtime-config.ts');
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeBoolean(value, fallback = false) {
+function normalizeBoolean(value: unknown, fallback = false): boolean {
   if (value == null || value === '') return fallback;
   const text = String(value).trim().toLowerCase();
   if (['1', 'true', 'yes', 'on', 'enabled'].includes(text)) return true;
@@ -15,7 +15,7 @@ function normalizeBoolean(value, fallback = false) {
   return fallback;
 }
 
-function normalizeNumber(value, fallback) {
+function normalizeNumber(value: unknown, fallback: number): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
 }

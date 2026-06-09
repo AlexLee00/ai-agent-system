@@ -5,7 +5,7 @@ const BLOCKED_SUBAGENT_TOOLS = new Set([
   'delegate_task',
 ]);
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
@@ -14,13 +14,23 @@ function getBlockedSubagentTools() {
   return [...BLOCKED_SUBAGENT_TOOLS];
 }
 
-function validateSubagentSandbox(input) {
+type SubagentSandboxInput = {
+  contextSummary?: unknown;
+  allowedTools?: unknown;
+  parentTools?: unknown;
+  maxConcurrency?: unknown;
+  maxDepth?: unknown;
+  finalSummaryOnly?: boolean;
+  freshContext?: boolean;
+};
+
+function validateSubagentSandbox(input: SubagentSandboxInput) {
   const contextSummary = normalizeText(input.contextSummary);
   const allowedTools = Array.isArray(input.allowedTools)
-    ? input.allowedTools.map((tool) => normalizeText(tool)).filter(Boolean)
+    ? input.allowedTools.map((tool: unknown) => normalizeText(tool)).filter(Boolean)
     : [];
   const parentTools = Array.isArray(input.parentTools)
-    ? input.parentTools.map((tool) => normalizeText(tool)).filter(Boolean)
+    ? input.parentTools.map((tool: unknown) => normalizeText(tool)).filter(Boolean)
     : [];
   const maxConcurrency = Math.max(1, Number(input.maxConcurrency || 1) || 1);
   const maxDepth = Math.max(1, Number(input.maxDepth || 1) || 1);

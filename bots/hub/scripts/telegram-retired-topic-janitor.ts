@@ -17,6 +17,16 @@ const LEGACY_TOPIC_NAME_PATTERNS = [
   /^(general|ska|luna|investment|claude|claude_lead|blog|worker|video|darwin|justin|sigma|meeting|emergency|legal)$/i,
 ];
 
+type TopicActionResult = {
+  ok: boolean;
+  retry_after: number;
+  error: string | null;
+  closed_now?: boolean;
+  already_closed?: boolean;
+  deleted_now?: boolean;
+  already_deleted?: boolean;
+};
+
 function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
 }
@@ -229,7 +239,7 @@ export async function closeRetiredTelegramTopics({
       results.push({ aliases: row.aliases, ok: true, dry_run: true, action: deleteMode ? 'delete' : 'close' });
       continue;
     }
-    let result = deleteMode
+    let result: TopicActionResult = deleteMode
       ? await deleteTopic({ token, chatId, threadId: row.threadId })
       : await closeTopic({ token, chatId, threadId: row.threadId });
     if (!result.ok && result.retry_after > 0) {
@@ -242,10 +252,10 @@ export async function closeRetiredTelegramTopics({
       aliases: row.aliases,
       ok: result.ok,
       action: deleteMode ? 'delete' : 'close',
-      closed_now: result.closed_now,
-      already_closed: result.already_closed,
-      deleted_now: result.deleted_now,
-      already_deleted: result.already_deleted,
+      closed_now: result.closed_now === true,
+      already_closed: result.already_closed === true,
+      deleted_now: result.deleted_now === true,
+      already_deleted: result.already_deleted === true,
       error: result.error,
     });
     await new Promise((resolve) => setTimeout(resolve, 250));

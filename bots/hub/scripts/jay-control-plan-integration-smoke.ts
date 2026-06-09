@@ -12,60 +12,63 @@ async function main() {
   process.env.HUB_BASE_URL = 'http://hub-smoke.local';
   process.env.HUB_CONTROL_CALLBACK_SECRET = 'jay-smoke-callback-secret';
 
-  const calls = [];
+  type FetchCall = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: any;
+  };
+  const calls: FetchCall[] = [];
   global.fetch = (async (url, options) => {
     const headers = Object.fromEntries(
       Object.entries(options?.headers || {}).map(([key, value]) => [String(key).toLowerCase(), String(value)]),
     );
+    const requestUrl = String(url);
     calls.push({
-      url,
+      url: requestUrl,
       method: String(options?.method || 'GET').toUpperCase(),
       headers,
       body: options?.body ? JSON.parse(String(options.body)) : {},
     });
 
     if (String(url).endsWith('/hub/control/plan')) {
-      return {
+      return new Response(JSON.stringify({
         ok: true,
+        run_id: 'run_smoke_1',
+        status: 'draft',
+        plan: {
+          goal: 'smoke',
+          team: 'luna',
+          risk: 'low',
+          requiresApproval: false,
+          dryRun: true,
+          steps: [{ id: 's1', tool: 'hub.health.query', args: {}, sideEffect: 'read_only' }],
+          verify: [],
+          playbook: { phases: [] },
+          metadata: {},
+        },
+        approval: { required: false },
+      }), {
         status: 200,
-        json: async () => ({
-          ok: true,
-          run_id: 'run_smoke_1',
-          status: 'draft',
-          plan: {
-            goal: 'smoke',
-            team: 'luna',
-            risk: 'low',
-            requiresApproval: false,
-            dryRun: true,
-            steps: [{ id: 's1', tool: 'hub.health.query', args: {}, sideEffect: 'read_only' }],
-            verify: [],
-            playbook: { phases: [] },
-            metadata: {},
-          },
-          approval: { required: false },
-        }),
-      };
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     if (String(url).endsWith('/hub/control/execute')) {
-      return {
-        ok: true,
+      return new Response(JSON.stringify({ ok: true, run_id: 'run_smoke_1', status: 'dry_run_completed', result: [] }), {
         status: 200,
-        json: async () => ({ ok: true, run_id: 'run_smoke_1', status: 'dry_run_completed', result: [] }),
-      };
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
     if (String(url).endsWith('/hub/control/callback')) {
-      return {
-        ok: true,
+      return new Response(JSON.stringify({ ok: true, run_id: 'run_smoke_1', status: 'approved' }), {
         status: 200,
-        json: async () => ({ ok: true, run_id: 'run_smoke_1', status: 'approved' }),
-      };
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
-    return {
-      ok: false,
+    return new Response(JSON.stringify({ ok: false, error: 'not_found' }), {
       status: 404,
-      json: async () => ({ ok: false, error: 'not_found' }),
-    };
+      headers: { 'Content-Type': 'application/json' },
+    });
   });
 
   try {
@@ -115,6 +118,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`jay_control_plan_integration_smoke_failed: ${error?.message || error}`);
+  console.error(`jay_control_plan_integration_smoke_failed: ${error instanceof Error ? error.message : error}`);
   process.exit(1);
 });

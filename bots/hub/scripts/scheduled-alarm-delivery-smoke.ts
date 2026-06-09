@@ -7,8 +7,8 @@ const path = require('node:path');
 const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 
 async function assertRetryThenDeliver() {
-  const sleeps = [];
-  const calls = [];
+  const sleeps: number[] = [];
+  const calls: any[] = [];
   const results = [
     { ok: false, status: 429, retryable: true, retryAfterMs: 2500, error: 'rate limit exceeded (200/min)' },
     { ok: true, status: 200 },
@@ -16,13 +16,13 @@ async function assertRetryThenDeliver() {
   const delivery = await deliverScheduledAlarm({ message: 'smoke' }, {
     maxAttempts: 2,
     maxDelayMs: 1000,
-    postAlarm: async (payload) => {
+    postAlarm: async (payload: any) => {
       calls.push(payload);
       const result = results.shift();
       assert(result, 'expected queued postAlarm result');
       return result;
     },
-    sleep: async (ms) => {
+    sleep: async (ms: number) => {
       sleeps.push(ms);
     },
     logger: { warn: () => undefined },
@@ -137,6 +137,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[scheduled-alarm-delivery-smoke] failed:', error.message);
+  console.error('[scheduled-alarm-delivery-smoke] failed:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

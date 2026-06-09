@@ -87,6 +87,7 @@ export async function runLunaHybridFinalClosureSmoke() {
   assert.ok(blocked.blockers.some((item) => item.name === 'protected_6_visible'));
 
   const noExec = await runLunaHybridFinalClosure({
+    apply: false,
     json: true,
     strict: true,
     noExec: true,
@@ -99,12 +100,13 @@ export async function runLunaHybridFinalClosureSmoke() {
       status: 'luna_hybrid_promotion_review_contract_only',
     },
   });
-  assert.equal(noExec.ok, true);
-  assert.equal(noExec.noExec, true);
-  assert.equal(noExec.finalClosureReady, false);
-  assert.equal(noExec.status, 'luna_hybrid_final_closure_contract_only');
+  const noExecReport = noExec as any;
+  assert.equal(noExecReport.ok, true);
+  assert.equal(noExecReport.noExec, true);
+  assert.equal(noExecReport.finalClosureReady, false);
+  assert.equal(noExecReport.status, 'luna_hybrid_final_closure_contract_only');
 
-  const applyBlocked = await runLunaHybridFinalClosure({ apply: true, json: true, noExec: true });
+  const applyBlocked = await runLunaHybridFinalClosure({ apply: true, json: true, strict: false, noDb: false, noExec: true, hours: 168 });
   assert.equal(applyBlocked.ok, false);
   assert.equal(applyBlocked.status, 'luna_hybrid_final_closure_apply_blocked');
   assert.equal(applyBlocked.liveMutation, false);
@@ -114,7 +116,7 @@ export async function runLunaHybridFinalClosureSmoke() {
     ok: true,
     smoke: 'luna-hybrid-final-closure-phase12',
     status: report.status,
-    noExecStatus: noExec.status,
+    noExecStatus: noExecReport.status,
     finalClosureReady: report.finalClosureReady,
     promotionReady: report.promotionReady,
     masterApprovalRequired: report.masterApprovalRequired,
@@ -128,7 +130,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid final closure smoke failed:',
   });

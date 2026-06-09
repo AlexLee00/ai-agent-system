@@ -4,12 +4,12 @@
 
 const { selectRuntimeProfile, PROFILES } = require('../runtime-profiles');
 
-function isCriticalChain(team, agent) {
+function isCriticalChain(team: unknown, agent: unknown) {
   const profile = selectRuntimeProfile(team, agent);
   return profile && profile.critical === true;
 }
 
-function getTimeoutForChain(team, agent) {
+function getTimeoutForChain(team: unknown, agent: unknown) {
   const profile = selectRuntimeProfile(team, agent);
   return (profile && profile.timeout_ms) || 30_000;
 }
