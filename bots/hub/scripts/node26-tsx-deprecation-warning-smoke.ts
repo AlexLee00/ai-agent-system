@@ -1,8 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const hubRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const hubRoot = path.resolve(__dirname, '..');
 const result = spawnSync(
   process.execPath,
   [

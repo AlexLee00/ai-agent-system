@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { buildErrorAlertEnvelope } from '../shared/report.ts';
 
 async function main() {
-  const err = /** @type {any} */ (new Error('Binance MCP bridge failed (market_buy): binance Market is closed.'));
+  const err = new Error('Binance MCP bridge failed (market_buy): binance Market is closed.') as Error & { code?: string };
   err.code = 'binance_mcp_mutating_bridge_failed';
   const captured = buildErrorAlertEnvelope('헤파이스토스 - UTK/USDT BUY', err);
 

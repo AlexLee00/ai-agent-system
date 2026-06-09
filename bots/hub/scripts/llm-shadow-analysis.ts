@@ -10,7 +10,7 @@
  */
 
 import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const telegramSender = require('../../../packages/core/lib/telegram-sender');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 

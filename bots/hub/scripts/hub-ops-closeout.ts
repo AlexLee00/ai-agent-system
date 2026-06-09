@@ -2,7 +2,6 @@
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 type Step = {
   id: string;
@@ -24,7 +23,7 @@ type StepResult = {
   stderr_tail?: string[];
 };
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const scriptDir = __dirname;
 const hubRoot = path.resolve(scriptDir, '..');
 const repoRoot = path.resolve(hubRoot, '..', '..');
 

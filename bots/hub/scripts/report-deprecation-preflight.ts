@@ -13,7 +13,7 @@
 import { createRequire } from 'module';
 import { buildDeprecationMatrix } from './report-deprecation-matrix.ts';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');

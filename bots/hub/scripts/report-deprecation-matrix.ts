@@ -9,7 +9,7 @@
  */
 
 import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const fs = require('fs');
 const path = require('path');
 const os = require('os');

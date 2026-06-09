@@ -5,9 +5,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const scriptDir = __dirname;
 const repoRoot = path.resolve(scriptDir, '..', '..', '..');
 const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
 const outputPath = path.join(os.tmpdir(), `steward-gemini-model-drill-${process.pid}.json`);

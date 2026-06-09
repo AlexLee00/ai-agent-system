@@ -11,6 +11,7 @@ import * as db from '../shared/db.ts';
 
 const require = createRequire(import.meta.url);
 const { parseLlmCallPayload } = require('../../hub/lib/llm/request-schema.ts');
+const dbRun = db.run as (sql: string, params?: unknown[]) => Promise<unknown>;
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
     else process.env.INVESTMENT_LLM_HUB_ENABLED = originalHubEnabled;
     if (originalDirectFallback == null) delete process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
     else process.env.INVESTMENT_LLM_DIRECT_FALLBACK = originalDirectFallback;
-    await db.run(`DELETE FROM investment.llm_routing_log WHERE incident_key = $1`, [incidentKey]).catch(() => null);
+    await dbRun(`DELETE FROM investment.llm_routing_log WHERE incident_key = $1`, [incidentKey]).catch(() => null);
   }
 }
 

@@ -10,7 +10,7 @@ const requestContextPath = path.join(repoRoot, 'bots', 'hub', 'src', 'middleware
 const routeRegistryPath = path.join(repoRoot, 'bots', 'hub', 'src', 'route-registry.ts');
 const llmRoutePath = path.join(repoRoot, 'bots', 'hub', 'lib', 'routes', 'llm.ts');
 
-function read(file) {
+function read(file: string): string {
   return fs.readFileSync(file, 'utf8');
 }
 
