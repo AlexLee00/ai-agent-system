@@ -1,19 +1,33 @@
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
 
-function finiteNumber(value, fallback = 0) {
+type AnyRecord = Record<string, any>;
+type PriceBar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
+type FactorScore = {
+  score: number;
+  raw: any;
+  source: string;
+  available: boolean;
+};
+
+function finiteNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function clamp(value, min = 0, max = 1, fallback = 0) {
+function clamp(value: unknown, min = 0, max = 1, fallback = 0): number {
   return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
-function round(value, digits = 4) {
+function round(value: unknown, digits = 4): number {
   return Number(Number(value || 0).toFixed(digits));
 }
 
-function normalizeExchange(value) {
+function normalizeExchange(value: unknown): string {
   const raw = String(value || 'binance').trim().toLowerCase();
   if (raw === 'crypto') return 'binance';
   if (raw === 'domestic') return 'kis';
@@ -21,14 +35,14 @@ function normalizeExchange(value) {
   return VALID_EXCHANGES.has(raw) ? raw : 'binance';
 }
 
-export function marketForFactorExchange(exchange) {
+export function marketForFactorExchange(exchange: unknown): string {
   const normalized = normalizeExchange(exchange);
   if (normalized === 'kis') return 'domestic';
   if (normalized === 'kis_overseas') return 'overseas';
   return 'crypto';
 }
 
-function parseJsonMaybe(value, fallback = {}) {
+function parseJsonMaybe(value: unknown, fallback: unknown = {}): unknown {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
   try {
@@ -38,7 +52,7 @@ function parseJsonMaybe(value, fallback = {}) {
   }
 }
 
-function normalizeBars(candidate = {}) {
+function normalizeBars(candidate: AnyRecord = {}): PriceBar[] {
   const sources = [
     candidate.bars,
     candidate.ohlcv,
@@ -53,7 +67,7 @@ function normalizeBars(candidate = {}) {
     candidate.factorContext?.bars,
   ];
   const raw = sources.find((item) => Array.isArray(item) && item.length > 0) || [];
-  return raw.map((bar) => {
+  return raw.map((bar: any) => {
     if (Array.isArray(bar)) {
       return {
         close: finiteNumber(bar[4] ?? bar[1], NaN),
@@ -68,11 +82,11 @@ function normalizeBars(candidate = {}) {
       low: finiteNumber(bar.low ?? bar.l ?? bar.close ?? bar.price, NaN),
       volume: finiteNumber(bar.volume ?? bar.v ?? bar.quoteVolume ?? bar.qv, 0),
     };
-  }).filter((bar) => Number.isFinite(bar.close) && bar.close > 0).slice(-120);
+  }).filter((bar: PriceBar) => Number.isFinite(bar.close) && bar.close > 0).slice(-120);
 }
 
-function returnsFromBars(bars = []) {
-  const out = [];
+function returnsFromBars(bars: PriceBar[] = []): number[] {
+  const out: number[] = [];
   for (let i = 1; i < bars.length; i += 1) {
     const prev = finiteNumber(bars[i - 1]?.close, 0);
     const curr = finiteNumber(bars[i]?.close, 0);
@@ -81,14 +95,14 @@ function returnsFromBars(bars = []) {
   return out;
 }
 
-function stdev(values = []) {
+function stdev(values: number[] = []): number {
   if (values.length < 2) return 0;
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length - 1);
   return Math.sqrt(variance);
 }
 
-function scoreMomentum(candidate, bars) {
+function scoreMomentum(candidate: AnyRecord, bars: PriceBar[]): FactorScore {
   if (bars.length >= 5) {
     const first = bars[0].close;
     const last = bars[bars.length - 1].close;
@@ -111,7 +125,7 @@ function scoreMomentum(candidate, bars) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function scoreVolatility(candidate, bars) {
+function scoreVolatility(candidate: AnyRecord, bars: PriceBar[]): FactorScore {
   const returns = returnsFromBars(bars);
   if (returns.length >= 4) {
     const vol = stdev(returns);
@@ -131,7 +145,7 @@ function scoreVolatility(candidate, bars) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function scoreLiquidity(candidate, bars) {
+function scoreLiquidity(candidate: AnyRecord, bars: PriceBar[]): FactorScore {
   const quoteVolume = finiteNumber(
     candidate.quoteVolume ?? candidate.quote_volume ?? candidate.volumeQuote ?? candidate.block_meta?.quoteVolume ?? candidate.trigger_meta?.quoteVolume,
     NaN,
@@ -149,7 +163,7 @@ function scoreLiquidity(candidate, bars) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function scoreDrawdown(_candidate, bars) {
+function scoreDrawdown(_candidate: AnyRecord, bars: PriceBar[]): FactorScore {
   if (bars.length >= 5) {
     let peak = bars[0].close;
     let maxDrawdown = 0;
@@ -163,7 +177,7 @@ function scoreDrawdown(_candidate, bars) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function scoreRelativeStrength(candidate, bars, marketContext = {}) {
+function scoreRelativeStrength(candidate: AnyRecord, bars: PriceBar[], marketContext: AnyRecord = {}): FactorScore {
   const marketReturn = finiteNumber(marketContext.marketReturn ?? marketContext.benchmarkReturn, NaN);
   if (bars.length >= 5 && Number.isFinite(marketReturn)) {
     const ret = (bars[bars.length - 1].close - bars[0].close) / bars[0].close;
@@ -177,7 +191,7 @@ function scoreRelativeStrength(candidate, bars, marketContext = {}) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function scoreValue(candidate) {
+function scoreValue(candidate: AnyRecord): FactorScore {
   const fundamentals = candidate.fundamentals || candidate.block_meta?.fundamentals || candidate.trigger_meta?.fundamentals || {};
   const pe = finiteNumber(fundamentals.pe ?? fundamentals.per ?? fundamentals.trailingPE, NaN);
   const pb = finiteNumber(fundamentals.pb ?? fundamentals.pbr ?? fundamentals.priceToBook, NaN);
@@ -189,7 +203,7 @@ function scoreValue(candidate) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function scoreQuality(candidate) {
+function scoreQuality(candidate: AnyRecord): FactorScore {
   const fundamentals = candidate.fundamentals || candidate.block_meta?.fundamentals || candidate.trigger_meta?.fundamentals || {};
   const roe = finiteNumber(fundamentals.roe ?? fundamentals.returnOnEquity, NaN);
   const margin = finiteNumber(fundamentals.margin ?? fundamentals.operatingMargin ?? fundamentals.netMargin, NaN);
@@ -203,7 +217,7 @@ function scoreQuality(candidate) {
   return { score: 0.5, raw: null, source: 'missing_factor', available: false };
 }
 
-function weightsForMarket(market) {
+function weightsForMarket(market: string): Record<string, number> {
   if (market === 'crypto') {
     return {
       momentum: 0.3,
@@ -223,7 +237,7 @@ function weightsForMarket(market) {
   };
 }
 
-function allocationHint(compositeScore, market) {
+function allocationHint(compositeScore: unknown, market: string): AnyRecord {
   const score = finiteNumber(compositeScore, 0);
   const maxPct = market === 'crypto' ? 0.12 : 0.1;
   if (score >= 0.78) return { suggestedPositionSizePct: maxPct, tier: 'strong_shadow_candidate' };
@@ -232,11 +246,11 @@ function allocationHint(compositeScore, market) {
   return { suggestedPositionSizePct: 0, tier: 'insufficient_factor_score' };
 }
 
-export function buildFactorModelShadow(candidate = {}, context = {}) {
+export function buildFactorModelShadow(candidate: AnyRecord = {}, context: AnyRecord = {}) {
   const exchange = normalizeExchange(candidate.exchange || context.exchange);
   const market = candidate.market || context.market || marketForFactorExchange(exchange);
   const bars = normalizeBars(candidate);
-  const factorScores = {
+  const factorScores: Record<string, FactorScore> = {
     momentum: scoreMomentum(candidate, bars),
     volatility: scoreVolatility(candidate, bars),
     liquidity: scoreLiquidity(candidate, bars),
@@ -283,24 +297,24 @@ export function buildFactorModelShadow(candidate = {}, context = {}) {
   };
 }
 
-export function rankFactorModelShadows(rows = []) {
-  const groups = new Map();
+export function rankFactorModelShadows(rows: AnyRecord[] = []): AnyRecord[] {
+  const groups = new Map<string, AnyRecord[]>();
   for (const row of rows) {
     const key = `${row.market || 'unknown'}:${row.exchange || 'unknown'}`;
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
+    groups.get(key)!.push(row);
   }
   for (const groupRows of groups.values()) {
     groupRows
-      .sort((a, b) => finiteNumber(b.compositeScore, 0) - finiteNumber(a.compositeScore, 0))
-      .forEach((row, index) => {
+      .sort((a: AnyRecord, b: AnyRecord) => finiteNumber(b.compositeScore, 0) - finiteNumber(a.compositeScore, 0))
+      .forEach((row: AnyRecord, index: number) => {
         row.rank = index + 1;
       });
   }
   return rows;
 }
 
-export function normalizeFactorShadowRow(row = {}) {
+export function normalizeFactorShadowRow(row: AnyRecord = {}) {
   return {
     ok: true,
     symbol: row.symbol,
