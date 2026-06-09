@@ -15,11 +15,13 @@ type HybridPromotionGateParams = {
 };
 
 type HybridPromotionGateOptions = {
-  queryFn?: unknown;
+  queryFn?: (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
   hours?: number;
   investmentRoot?: string;
   projectRoot?: string;
 };
+
+type HybridPromotionQueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
 
 function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
@@ -28,7 +30,7 @@ function broadcastEnabled() {
 export function createHybridPromotionGateHandler(options: HybridPromotionGateOptions = {}) {
   return async function hybridPromotionGate(params: HybridPromotionGateParams = {}) {
     const report = await buildLunaHybridPromotionGateReport({
-      queryFn: params.noDb ? null : options.queryFn || defaultQuery,
+      queryFn: params.noDb ? undefined : options.queryFn || (defaultQuery as HybridPromotionQueryFn),
       hours: params.hours || options.hours || 168,
       investmentRoot: options.investmentRoot || params.investmentRoot,
       projectRoot: options.projectRoot || params.projectRoot,

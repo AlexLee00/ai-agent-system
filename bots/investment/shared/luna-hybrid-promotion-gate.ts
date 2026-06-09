@@ -120,7 +120,7 @@ type SecurityCheck = {
   detail: string;
 };
 
-type QueryFn = (sql: string, params: unknown[]) => Promise<unknown> | unknown;
+type QueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
 
 type EvidenceOptions = {
   dataRequired?: boolean;

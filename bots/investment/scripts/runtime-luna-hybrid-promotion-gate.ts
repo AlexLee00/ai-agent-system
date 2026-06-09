@@ -12,10 +12,12 @@ type PromotionGateOptions = {
   hours: number;
 };
 type PromotionGateDeps = {
-  queryFn?: unknown;
+  queryFn?: (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
   investmentRoot?: string;
   projectRoot?: string;
 };
+
+type PromotionGateQueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
 
 function argValue(name: string, fallback: string | number | null = null, argv: string[] = process.argv.slice(2)) {
   const prefix = `--${name}=`;
@@ -50,7 +52,7 @@ export async function runLunaHybridPromotionGate(options: PromotionGateOptions =
     };
   }
 
-  const queryFn = options.noDb ? null : deps.queryFn || defaultQuery;
+  const queryFn = options.noDb ? undefined : deps.queryFn || (defaultQuery as PromotionGateQueryFn);
   return buildLunaHybridPromotionGateReport({
     queryFn,
     dataRequired: !options.noDb,
