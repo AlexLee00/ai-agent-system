@@ -17,13 +17,44 @@ import {
 
 const CONFIRM_TOKEN = 'luna-monte-carlo-stress-shadow';
 
-function argValue(name, fallback = null, argv = process.argv.slice(2)) {
+type AnyRecord = Record<string, any>;
+type PriceBar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
+type RiskOptions = {
+  apply: boolean;
+  force: boolean;
+  json: boolean;
+  confirm: string | null;
+  exchanges: string[];
+  analysis: string;
+  symbol: string | null;
+  symbols: string[];
+  scenarios: string[];
+  limit: number;
+  hours: number;
+  ttlMinutes: number;
+  lookbackDays: number;
+  simulations: number;
+  horizonDays: number;
+};
+type RuntimeDeps = {
+  query?: (sql: string, params?: any[]) => Promise<any[]> | any[];
+  run?: (sql: string, params?: any[]) => Promise<any> | any;
+  initSchema?: () => Promise<any> | any;
+  fetchBars?: (symbol: string, exchange: string, options?: AnyRecord) => Promise<PriceBar[]> | PriceBar[];
+};
+
+function argValue(name: string, fallback: string | number | null = null, argv = process.argv.slice(2)): string | null {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
+  return found ? found.slice(prefix.length) : fallback == null ? null : String(fallback);
 }
 
-function parseList(value, fallback = []) {
+function parseList(value: unknown, fallback: string[] = []): string[] {
   const list = String(value || '')
     .split(',')
     .map((item) => item.trim())
@@ -32,7 +63,7 @@ function parseList(value, fallback = []) {
   return list.length ? list : fallback;
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv = process.argv.slice(2)): RiskOptions {
   const rawExchanges = argValue('exchanges', argValue('exchange', 'binance,kis,kis_overseas', argv), argv);
   const rawScenarios = argValue(
     'scenarios',
@@ -62,19 +93,19 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function freshEnough(row, ttlMinutes, force = false) {
+function freshEnough(row: AnyRecord | null, ttlMinutes: number, force = false): boolean {
   if (force || !row?.observed_at) return false;
   const ageMs = Date.now() - new Date(row.observed_at).getTime();
   return ageMs >= 0 && ageMs < ttlMinutes * 60 * 1000;
 }
 
-export function binanceSymbol(symbol = '') {
+export function binanceSymbol(symbol = ''): string {
   const raw = String(symbol || '').trim();
   const withoutProvider = raw.includes(':') ? raw.split(':').pop() : raw;
   return String(withoutProvider || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
-async function fetchJson(url, timeoutMs = 5000) {
+async function fetchJson(url: string, timeoutMs = 5000): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -86,7 +117,7 @@ async function fetchJson(url, timeoutMs = 5000) {
   }
 }
 
-function normalizePriceBars(rows = []) {
+function normalizePriceBars(rows: AnyRecord[] = []): PriceBar[] {
   return (Array.isArray(rows) ? rows : [])
     .map((row) => ({
       close: Number(row?.close ?? row?.stck_clpr ?? row?.clos ?? row?.price),
@@ -97,7 +128,7 @@ function normalizePriceBars(rows = []) {
     .filter((bar) => Number.isFinite(bar.close) && bar.close > 0);
 }
 
-async function fetchRiskBars(symbol, exchange, { lookbackDays = 180 } = {}) {
+async function fetchRiskBars(symbol: string, exchange: string, { lookbackDays = 180 }: AnyRecord = {}): Promise<PriceBar[]> {
   const limit = Math.max(20, Math.min(720, Number(lookbackDays || 180)));
   if (exchange === 'kis') {
     return normalizePriceBars(await getDomesticDailyPriceBars(symbol, { days: limit }));
@@ -119,14 +150,24 @@ async function fetchRiskBars(symbol, exchange, { lookbackDays = 180 } = {}) {
     : [];
 }
 
-function priceHistorySource(exchange) {
+function priceHistorySource(exchange: string): string {
   if (exchange === 'binance') return 'binance_public_1d_klines';
   if (exchange === 'kis') return 'kis_domestic_daily_price';
   if (exchange === 'kis_overseas') return 'kis_overseas_daily_price';
   return 'unknown_price_history';
 }
 
-async function latestRiskSimulationShadow(queryFn, { analysisType, symbols, exchange, scenario, ttlMinutes, force }) {
+async function latestRiskSimulationShadow(
+  queryFn: NonNullable<RuntimeDeps['query']>,
+  { analysisType, symbols, exchange, scenario, ttlMinutes, force }: {
+    analysisType: string;
+    symbols: string[];
+    exchange: string;
+    scenario: string;
+    ttlMinutes: number;
+    force: boolean;
+  },
+) {
   if (!analysisType || !exchange || !Array.isArray(symbols) || symbols.length === 0) return null;
   const rows = await Promise.resolve(queryFn(
     `SELECT *
@@ -143,13 +184,13 @@ async function latestRiskSimulationShadow(queryFn, { analysisType, symbols, exch
   return freshEnough(row, ttlMinutes, force) ? normalizeRiskSimulationShadowRow(row) : null;
 }
 
-function symbolsForExchange(exchange, options) {
+function symbolsForExchange(exchange: string, options: RiskOptions): string[] {
   if (options.symbol) return [options.symbol];
   if (options.symbols?.length) return options.symbols.slice(0, options.limit);
   return defaultRiskSymbols(exchange).slice(0, options.limit);
 }
 
-async function buildBarsBySymbol(exchange, symbols, options, deps) {
+async function buildBarsBySymbol(exchange: string, symbols: string[], options: RiskOptions, deps: RuntimeDeps): Promise<Record<string, PriceBar[]>> {
   const fetchBars = deps.fetchBars || fetchRiskBars;
   const entries = await Promise.all(symbols.map(async (symbol) => [
     symbol,
@@ -158,7 +199,7 @@ async function buildBarsBySymbol(exchange, symbols, options, deps) {
   return Object.fromEntries(entries);
 }
 
-function normalizedScenarioList(analysisType, scenarios) {
+function normalizedScenarioList(analysisType: string, scenarios: unknown): string[] {
   const canonical = [...new Set((Array.isArray(scenarios) ? scenarios : [])
     .map((scenario) => String(scenario || '').trim().toLowerCase())
     .filter(Boolean))];
@@ -169,11 +210,11 @@ function normalizedScenarioList(analysisType, scenarios) {
   return canonical.filter((scenario) => ['base', 'bull', 'bear', 'sideways', 'black_swan'].includes(scenario));
 }
 
-async function buildRiskSimulationRows(exchange, options, deps) {
-  const queryFn = deps.query || db.query;
+async function buildRiskSimulationRows(exchange: string, options: RiskOptions, deps: RuntimeDeps): Promise<AnyRecord[]> {
+  const queryFn = (deps.query || db.query) as NonNullable<RuntimeDeps['query']>;
   const symbols = symbolsForExchange(exchange, options);
   const barsBySymbol = await buildBarsBySymbol(exchange, symbols, options, deps);
-  const rows = [];
+  const rows: AnyRecord[] = [];
   const analysisTypes = options.analysis === 'all'
     ? ['monte_carlo', 'stress_test']
     : [options.analysis === 'stress' ? 'stress_test' : options.analysis === 'monte' ? 'monte_carlo' : options.analysis];
@@ -193,7 +234,10 @@ async function buildRiskSimulationRows(exchange, options, deps) {
         rows.push({ ...existing, status: 'cached', reason: 'fresh_shadow_exists', written: false });
         continue;
       }
-      const builder = analysisType === 'stress_test' ? buildStressTestShadow : buildMonteCarloShadow;
+      const builder = (analysisType === 'stress_test' ? buildStressTestShadow : buildMonteCarloShadow) as unknown as (
+        input: AnyRecord,
+        options?: AnyRecord,
+      ) => AnyRecord;
       rows.push({
         ...builder({
           symbols,
@@ -212,7 +256,7 @@ async function buildRiskSimulationRows(exchange, options, deps) {
   return rows;
 }
 
-async function insertRiskSimulationShadow(runFn, payload) {
+async function insertRiskSimulationShadow(runFn: NonNullable<RuntimeDeps['run']>, payload: AnyRecord) {
   await Promise.resolve(runFn(
     `INSERT INTO investment.luna_risk_simulation_shadow
        (analysis_type, symbols, exchange, market, scenario, simulations, var_95, var_99, cvar_95, cvar_99,
@@ -240,7 +284,7 @@ async function insertRiskSimulationShadow(runFn, payload) {
   ));
 }
 
-export async function runLunaMonteCarloStressShadow(options = parseArgs(), deps = {}) {
+export async function runLunaMonteCarloStressShadow(options: RiskOptions = parseArgs(), deps: RuntimeDeps = {}) {
   if (process.env.LUNA_MONTE_CARLO_STRESS_SHADOW_ENABLED === 'false') {
     return {
       ok: true,
@@ -251,14 +295,14 @@ export async function runLunaMonteCarloStressShadow(options = parseArgs(), deps 
     };
   }
 
-  const runFn = deps.run || db.run;
+  const runFn = (deps.run || db.run) as NonNullable<RuntimeDeps['run']>;
   const initSchema = deps.initSchema || db.initSchema;
   const canWrite = options.apply && options.confirm === CONFIRM_TOKEN;
   if (canWrite && initSchema) {
     await Promise.resolve(initSchema()).catch(() => null);
   }
 
-  const rows = [];
+  const rows: AnyRecord[] = [];
   for (const exchange of options.exchanges) {
     rows.push(...await buildRiskSimulationRows(exchange, options, deps));
   }
@@ -311,7 +355,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna monte carlo stress shadow error:',
   });
