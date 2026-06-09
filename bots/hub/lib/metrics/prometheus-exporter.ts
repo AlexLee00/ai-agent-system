@@ -5,7 +5,34 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { getProviderStats } = require('../llm/provider-registry');
 
-function gauge(name, labels, value) {
+type ProviderMetricStats = {
+  state?: string;
+  total_calls?: number;
+  total_failures?: number;
+  failure_rate?: number;
+  avg_latency_ms?: number;
+  p99_latency_ms?: number;
+};
+
+type ProviderMetricRow = {
+  provider?: string;
+  total_calls?: unknown;
+  total_failures?: unknown;
+  avg_latency_ms?: unknown;
+};
+
+type CostRow = {
+  caller_team?: string;
+  daily_cost_usd?: unknown;
+};
+
+type MetricsResponse = {
+  set: (name: string, value: string) => void;
+  end: (body: string) => void;
+  json: (body: unknown) => void;
+};
+
+function gauge(name: string, labels: Record<string, string>, value: number) {
   const lblStr = Object.entries(labels).map(([k, v]) => `${k}="${v}"`).join(',');
   return `${name}{${lblStr}} ${value}`;
 }
@@ -41,11 +68,11 @@ async function fetchCostByTeam() {
   }
 }
 
-function mergeProviderStats(runtimeStats, providerRows) {
-  const merged = {};
+function mergeProviderStats(runtimeStats: Record<string, ProviderMetricStats>, providerRows: ProviderMetricRow[]) {
+  const merged: Record<string, ProviderMetricStats> = {};
 
   for (const row of providerRows) {
-    const provider = row.provider;
+    const provider = row.provider || 'unknown';
     const totalCalls = Number(row.total_calls || 0);
     const totalFailures = Number(row.total_failures || 0);
     const failureRate = totalCalls > 0 ? totalFailures / totalCalls : 0;
@@ -69,11 +96,11 @@ function mergeProviderStats(runtimeStats, providerRows) {
   return merged;
 }
 
-async function metricsRoute(_req, res) {
+async function metricsRoute(_req: unknown, res: MetricsResponse) {
   const runtimeStats = getProviderStats();
   const providerRows = await fetchProviderRows();
   const stats = mergeProviderStats(runtimeStats, providerRows);
-  const lines = [];
+  const lines: string[] = [];
 
   lines.push('# HELP llm_circuit_state Circuit Breaker state (0=CLOSED, 1=HALF_OPEN, 2=OPEN)');
   lines.push('# TYPE llm_circuit_state gauge');
@@ -97,7 +124,7 @@ async function metricsRoute(_req, res) {
   const costRows = await fetchCostByTeam();
   lines.push('# HELP llm_daily_cost_usd Daily LLM cost in USD per team');
   lines.push('# TYPE llm_daily_cost_usd gauge');
-  for (const row of costRows) {
+  for (const row of costRows as CostRow[]) {
     lines.push(gauge('llm_daily_cost_usd', { team: row.caller_team || 'unknown' }, Number(row.daily_cost_usd)));
   }
 
@@ -105,13 +132,13 @@ async function metricsRoute(_req, res) {
   res.end(lines.join('\n') + '\n');
 }
 
-async function metricsJsonRoute(_req, res) {
+async function metricsJsonRoute(_req: unknown, res: MetricsResponse) {
   const runtimeStats = getProviderStats();
   const providerRows = await fetchProviderRows();
   const stats = mergeProviderStats(runtimeStats, providerRows);
-  let costByTeam = {};
+  let costByTeam: Record<string, number> = {};
   const costRows = await fetchCostByTeam();
-  for (const row of costRows) {
+  for (const row of costRows as CostRow[]) {
     costByTeam[row.caller_team || 'unknown'] = Number(row.daily_cost_usd);
   }
 
@@ -121,10 +148,10 @@ async function metricsJsonRoute(_req, res) {
     providers: stats,
     daily_cost_by_team: costByTeam,
     summary: {
-      healthy: Object.values(stats).filter(s => s.state === 'CLOSED').length,
-      degraded: Object.values(stats).filter(s => s.state === 'HALF_OPEN').length,
-      down: Object.values(stats).filter(s => s.state === 'OPEN').length,
-      unknown: Object.values(stats).filter(s => s.state === 'UNKNOWN').length,
+      healthy: Object.values(stats).filter((s: ProviderMetricStats) => s.state === 'CLOSED').length,
+      degraded: Object.values(stats).filter((s: ProviderMetricStats) => s.state === 'HALF_OPEN').length,
+      down: Object.values(stats).filter((s: ProviderMetricStats) => s.state === 'OPEN').length,
+      unknown: Object.values(stats).filter((s: ProviderMetricStats) => s.state === 'UNKNOWN').length,
     },
   });
 }
