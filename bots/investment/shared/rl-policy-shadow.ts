@@ -1,19 +1,27 @@
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
+type AnyRecord = Record<string, any>;
+type RlExchange = 'binance' | 'kis' | 'kis_overseas';
+type PriceBar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
 
-function finiteNumber(value, fallback = 0) {
+function finiteNumber(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function clamp(value, min = 0, max = 1, fallback = 0) {
+function clamp(value: unknown, min = 0, max = 1, fallback = 0): number {
   return Math.max(min, Math.min(max, finiteNumber(value, fallback)));
 }
 
-function round(value, digits = 4) {
+function round(value: unknown, digits = 4): number {
   return Number(Number(value || 0).toFixed(digits));
 }
 
-function parseJsonMaybe(value, fallback = {}) {
+function parseJsonMaybe(value: unknown, fallback: unknown = {}): unknown {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
   try {
@@ -23,24 +31,24 @@ function parseJsonMaybe(value, fallback = {}) {
   }
 }
 
-export function normalizeRlExchange(value) {
+export function normalizeRlExchange(value: unknown): RlExchange {
   const raw = String(value || 'binance').trim().toLowerCase();
   if (raw === 'crypto') return 'binance';
   if (raw === 'domestic') return 'kis';
   if (raw === 'overseas') return 'kis_overseas';
-  return VALID_EXCHANGES.has(raw) ? raw : 'binance';
+  return VALID_EXCHANGES.has(raw) ? raw as RlExchange : 'binance';
 }
 
-export function marketForRlExchange(exchange) {
+export function marketForRlExchange(exchange: unknown): string {
   const normalized = normalizeRlExchange(exchange);
   if (normalized === 'kis') return 'domestic';
   if (normalized === 'kis_overseas') return 'overseas';
   return 'crypto';
 }
 
-function normalizeBars(value = []) {
+function normalizeBars(value: unknown = []): PriceBar[] {
   const raw = Array.isArray(value) ? value : [];
-  return raw.map((bar) => {
+  return raw.map((bar: any) => {
     if (Array.isArray(bar)) {
       return {
         close: finiteNumber(bar[4] ?? bar[1], NaN),
@@ -55,11 +63,11 @@ function normalizeBars(value = []) {
       low: finiteNumber(bar.low ?? bar.l ?? bar.close ?? bar.price, NaN),
       volume: finiteNumber(bar.volume ?? bar.v ?? bar.quoteVolume ?? bar.qv, 0),
     };
-  }).filter((bar) => Number.isFinite(bar.close) && bar.close > 0).slice(-240);
+  }).filter((bar: PriceBar) => Number.isFinite(bar.close) && bar.close > 0).slice(-240);
 }
 
-function returnsFromBars(bars = []) {
-  const out = [];
+function returnsFromBars(bars: PriceBar[] = []): number[] {
+  const out: number[] = [];
   for (let i = 1; i < bars.length; i += 1) {
     const prev = finiteNumber(bars[i - 1]?.close, 0);
     const curr = finiteNumber(bars[i]?.close, 0);
@@ -68,19 +76,19 @@ function returnsFromBars(bars = []) {
   return out;
 }
 
-function mean(values = []) {
+function mean(values: number[] = []): number {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function stdev(values = []) {
+function stdev(values: number[] = []): number {
   if (values.length < 2) return 0;
   const avg = mean(values);
   const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / Math.max(1, values.length - 1);
   return Math.sqrt(variance);
 }
 
-function maxDrawdown(bars = []) {
+function maxDrawdown(bars: PriceBar[] = []): number {
   if (!bars.length) return 0;
   let peak = finiteNumber(bars[0].high ?? bars[0].close, bars[0].close);
   let mdd = 0;
@@ -92,7 +100,7 @@ function maxDrawdown(bars = []) {
   return mdd;
 }
 
-function returnOverWindow(bars = [], window = 20) {
+function returnOverWindow(bars: PriceBar[] = [], window = 20): number {
   const tail = bars.slice(-window);
   if (tail.length < 2) return 0;
   const first = finiteNumber(tail[0].close, 0);
@@ -100,7 +108,13 @@ function returnOverWindow(bars = [], window = 20) {
   return first > 0 ? (last - first) / first : 0;
 }
 
-function inferDataHealth({ bars, factorEvidence, statArbEvidence, entryEvidence, regimeEvidence }) {
+function inferDataHealth({ bars, factorEvidence, statArbEvidence, entryEvidence, regimeEvidence }: {
+  bars: PriceBar[];
+  factorEvidence: AnyRecord;
+  statArbEvidence: AnyRecord;
+  entryEvidence: AnyRecord;
+  regimeEvidence: AnyRecord;
+}): string {
   const available = [
     bars.length >= 20,
     Boolean(factorEvidence?.compositeScore ?? factorEvidence?.composite_score),
@@ -113,19 +127,19 @@ function inferDataHealth({ bars, factorEvidence, statArbEvidence, entryEvidence,
   return 'insufficient';
 }
 
-function actionLabel(value) {
+function actionLabel(value: number): string {
   if (value >= 0.1) return 'buy';
   if (value <= -0.1) return 'sell';
   return 'hold';
 }
 
-function modelStatus(context = {}) {
+function modelStatus(context: AnyRecord = {}): string {
   if (context.modelLoaded === true) return 'trained_model_available_shadow';
   if (context.optionalDepsReady === true) return 'ppo_runtime_ready_untrained';
   return 'missing_optional_deps_or_model';
 }
 
-export function buildRlStateVector(input = {}, context = {}) {
+export function buildRlStateVector(input: AnyRecord = {}, context: AnyRecord = {}) {
   const exchange = normalizeRlExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForRlExchange(exchange);
   const bars = normalizeBars(input.bars || input.ohlcv || input.candles || []);
@@ -145,7 +159,7 @@ export function buildRlStateVector(input = {}, context = {}) {
   const unrealizedPnlPct = clamp(portfolio.unrealizedPnlPct ?? portfolio.unrealized_pnl_pct ?? 0, -1, 1, 0);
   const riskBudgetPct = clamp(portfolio.riskBudgetPct ?? portfolio.risk_budget_pct ?? 0.02, 0, 0.25, 0.02);
 
-  const features = {
+  const features: Record<string, number> = {
     momentum5: clamp(0.5 + returnOverWindow(bars, 5) * 6, 0, 1, 0.5),
     momentum20: clamp(0.5 + returnOverWindow(bars, 20) * 4, 0, 1, 0.5),
     volatility20: clamp(stdev(returns) / 0.08, 0, 1, 0),
@@ -177,7 +191,7 @@ export function buildRlStateVector(input = {}, context = {}) {
   };
 }
 
-export function buildRlPolicyShadow(input = {}, context = {}) {
+export function buildRlPolicyShadow(input: AnyRecord = {}, context: AnyRecord = {}) {
   const exchange = normalizeRlExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForRlExchange(exchange);
   const symbol = String(input.symbol || input.symbols?.[0] || '').trim();
@@ -233,7 +247,7 @@ export function buildRlPolicyShadow(input = {}, context = {}) {
   };
 }
 
-export function normalizeRlPolicyShadowRow(row = {}) {
+export function normalizeRlPolicyShadowRow(row: AnyRecord = {}) {
   return {
     ok: true,
     symbol: row.symbol,
@@ -252,7 +266,7 @@ export function normalizeRlPolicyShadowRow(row = {}) {
     evidence: {
       source: 'investment.luna_rl_policy_shadow',
       observedAt: row.observed_at || null,
-      ...parseJsonMaybe(row.context_evidence, {}),
+      ...parseJsonMaybe(row.context_evidence, {}) as AnyRecord,
     },
   };
 }
