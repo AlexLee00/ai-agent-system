@@ -8,11 +8,20 @@ const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'blog');
 const DEV_BASELINE_DIR = path.join(BLOG_ROOT, 'output', 'ops');
 const DEV_BASELINE_PATH = path.join(DEV_BASELINE_DIR, 'dev-baseline.json');
 
-function ensureDir(dirPath) {
+type DevelopmentBaseline = {
+  active: boolean;
+  startedAtIso: string;
+  startedAt: Date;
+  source: string;
+  note: string;
+  path: string;
+};
+
+function ensureDir(dirPath: string): void {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
-function readDevelopmentBaseline() {
+function readDevelopmentBaseline(): DevelopmentBaseline | null {
   try {
     if (!fs.existsSync(DEV_BASELINE_PATH)) return null;
     const payload = JSON.parse(fs.readFileSync(DEV_BASELINE_PATH, 'utf8'));
@@ -57,7 +66,7 @@ function writeDevelopmentBaseline({
   };
 }
 
-function buildSinceClause(columnName = '', baseline = null) {
+function buildSinceClause(columnName = '', baseline: DevelopmentBaseline | null = null) {
   const column = String(columnName || '').trim();
   if (!column || !baseline?.startedAtIso) return '';
   const iso = String(baseline.startedAtIso).replace(/'/g, "''");

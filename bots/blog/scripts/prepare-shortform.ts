@@ -17,22 +17,25 @@ const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const IMAGE_DIR = path.join(BLOG_ROOT, 'output/images');
 const OUTPUT_DIR = path.join(BLOG_ROOT, 'output/shortform');
 
-/**
- * @typedef {{
- *   dryRun: boolean,
- *   json: boolean,
- *   title?: string,
- *   category?: string,
- *   thumb?: string,
- *   blogUrl?: string,
- *   contentFile?: string,
- *   durationSec?: number,
- * }} PrepareShortformArgs
- */
+type PrepareShortformArgs = {
+  dryRun: boolean;
+  json: boolean;
+  title?: string;
+  category?: string;
+  thumb?: string;
+  blogUrl?: string;
+  contentFile?: string;
+  durationSec?: number;
+};
 
-/** @returns {PrepareShortformArgs} */
-function parseArgs(argv = []) {
-  const args = /** @type {PrepareShortformArgs} */ ({
+type ThumbSelection = {
+  path: string | null;
+  score: number;
+  matchType: string;
+};
+
+function parseArgs(argv: string[] = []): PrepareShortformArgs {
+  const args: PrepareShortformArgs = {
     dryRun: false,
     json: false,
     title: undefined,
@@ -41,7 +44,7 @@ function parseArgs(argv = []) {
     blogUrl: undefined,
     contentFile: undefined,
     durationSec: undefined,
-  });
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--dry-run') args.dryRun = true;
@@ -56,19 +59,19 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function readContent(contentFile = '') {
+function readContent(contentFile = ''): string {
   if (!contentFile) return '';
   return fs.readFileSync(path.resolve(contentFile), 'utf8');
 }
 
-function slugify(text = '') {
+function slugify(text = ''): string {
   return String(text)
     .replace(/[^\p{L}\p{N}]+/gu, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 60);
 }
 
-function inferPostType(category = '') {
+function inferPostType(category = ''): string {
   const normalized = String(category || '');
   return /강의$/.test(normalized) ? 'lecture' : 'general';
 }
@@ -83,7 +86,7 @@ async function main() {
   let resolvedThumb = args.thumb
     ? path.resolve(args.thumb)
     : thumbSelection?.path || (!args.title ? findLatestThumbPath() : null);
-  let effectiveThumbSelection = thumbSelection;
+  let effectiveThumbSelection = thumbSelection as ThumbSelection | null;
 
   if (!resolvedThumb && args.title && !args.dryRun) {
     console.log('[숏폼] 매칭 썸네일 없음 — 릴스용 썸네일을 새로 생성합니다');
@@ -146,7 +149,7 @@ async function main() {
   try {
     captionData = await generateInstaCaption(content || title, title, category, strategyBundle.plan);
   } catch (error) {
-    console.warn('[숏폼] 캡션 생성 실패 — 기본 템플릿 사용:', error?.message || error);
+    console.warn('[숏폼] 캡션 생성 실패 — 기본 템플릿 사용:', error instanceof Error ? error.message : error);
     const hashtags = ['#개발자일상', '#IT블로그', '#승호아빠', '#cafe_library', '#shorts', '#reels'];
     captionData = {
       caption: `📝 ${title}\n15~20초 안에 핵심만 정리했어요!`,
@@ -155,7 +158,7 @@ async function main() {
       fullText: `📝 ${title}\n15~20초 안에 핵심만 정리했어요!\n\n${plan.cta}\n\n${hashtags.join(' ')}`
     };
   }
-  const result = {
+  const result: Record<string, any> = {
     ...plan,
     instagram: {
       caption: captionData.caption,
@@ -188,6 +191,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[숏폼] 준비 실패:', error?.message || error);
+  console.error('[숏폼] 준비 실패:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

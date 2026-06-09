@@ -10,14 +10,14 @@ const { diagnoseSympathyUi } = require('../lib/commenter.ts');
 const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
 const NEIGHBOR_SYMPATHY_REPLAY_PATH = path.join(BLOG_OPS_DIR, 'neighbor-sympathy-replay.json');
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   return {
     json: argv.includes('--json'),
     candidateId: readOption(argv, '--candidate-id'),
   };
 }
 
-function readOption(argv = [], flag = '') {
+function readOption(argv: string[] = [], flag = '') {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] || '' : '';
 }

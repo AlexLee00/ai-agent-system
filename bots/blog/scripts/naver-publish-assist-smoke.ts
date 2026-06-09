@@ -20,6 +20,11 @@ const {
   runNaverScheduledPublishAssist,
 } = require('../lib/naver-ui/driver.ts');
 
+type EditorBlock = {
+  type?: string;
+  text?: string;
+};
+
 async function main() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'naver-publish-assist-'));
   const imagePath = path.join(tmpDir, 'cover.png');
@@ -41,13 +46,13 @@ async function main() {
 
   const document = parseNaverEditorDocumentFromFile(htmlPath);
   assert.equal(document.title, '테스트 제목');
-  assert.ok(document.blocks.some((block) => block.type === 'heading' && block.text === '소제목'));
-  assert.ok(document.blocks.some((block) => block.type === 'code' && /console\.log/.test(block.text)));
+  assert.ok(document.blocks.some((block: EditorBlock) => block.type === 'heading' && block.text === '소제목'));
+  assert.ok(document.blocks.some((block: EditorBlock) => block.type === 'code' && /console\.log/.test(String(block.text || ''))));
   assert.deepEqual(document.imagePaths, [imagePath]);
   assert.ok(document.plainText.includes('첫 문단입니다.'));
 
   const blocks = blocksFromHtml('<p>Alpha</p><hr><p>Beta</p>');
-  assert.equal(blocks.filter((block) => block.type === 'paragraph').length, 2);
+  assert.equal(blocks.filter((block: EditorBlock) => block.type === 'paragraph').length, 2);
   assert.ok(buildPlainTextForEditor(blocks).includes('Alpha'));
 
   const now = new Date('2026-05-11T00:00:00.000Z');
