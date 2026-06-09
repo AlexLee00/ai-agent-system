@@ -271,25 +271,15 @@ defmodule Jay.V2.AutonomyController do
   # ────────────────────────────────────────────────────────────────
 
   defp kv_store_available? do
-    with {:ok, _} <-
-           Jay.Core.HubClient.pg_query(
-             "CREATE SCHEMA IF NOT EXISTS agent",
-             "agent"
-           ),
-         {:ok, _} <-
-           Jay.Core.HubClient.pg_query(
-             """
-               CREATE TABLE IF NOT EXISTS agent.kv_store (
-                 key TEXT PRIMARY KEY,
-                 value JSONB NOT NULL,
-                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-               )
-             """,
-             "agent"
-           ) do
-      true
-    else
-      _ -> false
+    case Jay.Core.HubClient.pg_query(
+           "SELECT to_regclass('agent.kv_store')::text AS table_name",
+           "agent"
+         ) do
+      {:ok, %{"rows" => [%{"table_name" => table_name}]}} when is_binary(table_name) ->
+        table_name != ""
+
+      _ ->
+        false
     end
   rescue
     _ -> false
@@ -505,17 +495,11 @@ defmodule Jay.V2.AutonomyController do
     _ -> :ok
   end
 
-  defp save_state_to_hub_kv(%__MODULE__{} = state) do
-    if kv_store_available?() do
-      case Jay.Core.HubClient.pg_query(state_upsert_sql(state), "agent") do
-        {:ok, _body} -> true
-        _ -> false
-      end
-    else
-      false
-    end
-  rescue
-    _ -> false
+  defp save_state_to_hub_kv(%__MODULE__{}) do
+    # /hub/pg/query is intentionally read-only. Older code tried DDL/UPSERT
+    # through Hub first and then fell back to Jay.Core.Repo, which preserved
+    # state but generated noisy "blocked keyword: create" hub errors.
+    false
   end
 
   defp save_state_to_repo_kv(%__MODULE__{} = state) do
