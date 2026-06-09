@@ -4,7 +4,7 @@
  */
 
 import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const telegramSender = require('../../../packages/core/lib/telegram-sender');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';

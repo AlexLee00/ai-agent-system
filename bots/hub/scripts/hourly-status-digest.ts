@@ -9,7 +9,7 @@
  */
 
 import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 const { getLaunchctlStatus } = require('../../../packages/core/lib/health-provider');

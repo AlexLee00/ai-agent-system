@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { PROFILES, LOCAL_LLM_BASE_URL } from '../lib/runtime-profiles';
 
 type RouteIssue = {
@@ -17,7 +16,7 @@ type FileIssue = {
   text: string;
 };
 
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT_DIR = __dirname;
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
 const repoFile = (...parts: string[]) => path.join(PROJECT_ROOT, ...parts);
 
