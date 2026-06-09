@@ -6,7 +6,14 @@ const env = require('../../../packages/core/lib/env');
 
 const STRATEGY_PATH = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy/latest-strategy.json');
 
-function loadLatestStrategy() {
+type BlogStrategyPlan = {
+  executionDirectives?: Record<string, any>;
+  preferredTitlePattern?: unknown;
+  suppressedTitlePattern?: unknown;
+  dailyMixPolicy?: Record<string, any>;
+};
+
+function loadLatestStrategy(): BlogStrategyPlan | null {
   try {
     if (!fs.existsSync(STRATEGY_PATH)) return null;
     const raw = fs.readFileSync(STRATEGY_PATH, 'utf8');
@@ -17,7 +24,7 @@ function loadLatestStrategy() {
   }
 }
 
-function normalizeExecutionDirectives(strategy = null) {
+function normalizeExecutionDirectives(strategy: BlogStrategyPlan | null = null) {
   const directives = strategy?.executionDirectives || {};
   const channelPriority = directives.channelPriority || {};
   const executionTargets = directives.executionTargets || {};
@@ -93,7 +100,7 @@ function normalizeExecutionDirectives(strategy = null) {
   };
 }
 
-function normalizeDailyMixPolicy(strategy = null) {
+function normalizeDailyMixPolicy(strategy: BlogStrategyPlan | null = null) {
   const policy = strategy?.dailyMixPolicy || {};
   return {
     primaryCategory: policy.primaryCategory || null,
@@ -119,14 +126,16 @@ function loadStrategyBundle() {
   };
 }
 
-function resolveExecutionTarget(name = '', strategy = null, fallback = 0) {
+function resolveExecutionTarget(name = '', strategy: BlogStrategyPlan | null = null, fallback = 0) {
   const directives = normalizeExecutionDirectives(strategy);
-  return Number(directives.executionTargets?.[name] || fallback || 0);
+  const executionTargets = directives.executionTargets as Record<string, unknown>;
+  return Number(executionTargets?.[name] || fallback || 0);
 }
 
-function resolveCreativeValue(name = '', strategy = null, fallback = null) {
+function resolveCreativeValue(name = '', strategy: BlogStrategyPlan | null = null, fallback: unknown = null) {
   const directives = normalizeExecutionDirectives(strategy);
-  return directives.creativePolicy?.[name] ?? fallback;
+  const creativePolicy = directives.creativePolicy as Record<string, unknown>;
+  return creativePolicy?.[name] ?? fallback;
 }
 
 module.exports = {

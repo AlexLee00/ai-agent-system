@@ -2,9 +2,22 @@
 
 const richer = require('./richer.ts');
 
-function evaluateSearchResults(episodes = [], posts = [], topic = '') {
+type RagEpisode = {
+  source?: string;
+};
+
+type RagSearchBest = {
+  episodes: unknown[];
+  relatedPosts: unknown[];
+  quality: number;
+  query: string;
+  attempts: number;
+  gaps: string[];
+};
+
+function evaluateSearchResults(episodes: RagEpisode[] = [], posts: unknown[] = [], topic = '') {
   let score = 0;
-  const gaps = [];
+  const gaps: string[] = [];
 
   if (episodes.length >= 3) score += 0.4;
   else gaps.push('에피소드 부족');
@@ -25,7 +38,7 @@ function evaluateSearchResults(episodes = [], posts = [], topic = '') {
   };
 }
 
-function reformulateQuery(topic = '', category = 'general', attempt = 0, gaps = []) {
+function reformulateQuery(topic = '', category = 'general', attempt = 0, gaps: string[] = []) {
   const base = String(topic || '').trim();
   if (!base) return category === 'lecture' ? 'Node.js 실무 장애 해결 사례' : '실무 적용 사례';
 
@@ -35,9 +48,9 @@ function reformulateQuery(topic = '', category = 'general', attempt = 0, gaps = 
   return `${base} 실제 적용`;
 }
 
-async function agenticSearch(topic, category = 'general', maxRetries = 3, currentLectureNum = null) {
+async function agenticSearch(topic: unknown, category = 'general', maxRetries = 3, currentLectureNum: unknown = null) {
   let currentQuery = String(topic || '').trim();
-  let best = {
+  let best: RagSearchBest = {
     episodes: [],
     relatedPosts: [],
     quality: 0,

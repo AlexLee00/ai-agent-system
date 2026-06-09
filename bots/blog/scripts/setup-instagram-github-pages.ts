@@ -7,7 +7,16 @@ const env = require('../../../packages/core/lib/env');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
-function parseArgs(argv = []) {
+type GithubPagesArgs = {
+  json: boolean;
+  dryRun: boolean;
+  owner: string;
+  repo: string;
+  baseUrl: string;
+  prefix: string;
+};
+
+function parseArgs(argv: string[] = []): GithubPagesArgs {
   return {
     json: argv.includes('--json'),
     dryRun: argv.includes('--dry-run'),
@@ -18,7 +27,7 @@ function parseArgs(argv = []) {
   };
 }
 
-function readOption(argv = [], flag = '') {
+function readOption(argv: string[] = [], flag = ''): string {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] || '' : '';
 }
@@ -31,7 +40,7 @@ function loadStore() {
   }
 }
 
-function saveStore(data) {
+function saveStore(data: Record<string, any>): void {
   fs.mkdirSync(path.dirname(STORE_PATH), { recursive: true });
   fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2));
 }
@@ -44,7 +53,7 @@ function parseGitHubRemote(remoteUrl = '') {
   return null;
 }
 
-function inferGitHubPagesBaseUrl(args) {
+function inferGitHubPagesBaseUrl(args: GithubPagesArgs): string {
   if (args.baseUrl) return args.baseUrl.replace(/\/+$/, '');
   const explicitOwner = args.owner || '';
   const explicitRepo = args.repo || '';

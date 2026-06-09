@@ -8,6 +8,7 @@
  */
 
 const https = require('https');
+import type { IncomingMessage } from 'node:http';
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
 const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials.legacy.js');
@@ -151,9 +152,9 @@ async function searchNaverBlogs(query: string, display = 20): Promise<NaverBlogI
           'X-Naver-Client-Id': clientId,
           'X-Naver-Client-Secret': clientSecret,
         },
-      }, (res) => {
+      }, (res: IncomingMessage) => {
         let body = '';
-        res.on('data', (chunk) => body += chunk);
+        res.on('data', (chunk: Buffer | string) => body += chunk);
         res.on('end', () => {
           try { resolve(JSON.parse(body)); }
           catch (e) { reject(e); }
@@ -165,7 +166,7 @@ async function searchNaverBlogs(query: string, display = 20): Promise<NaverBlogI
 
     return Array.isArray(data?.items) ? data.items : [];
   } catch (e) {
-    console.warn('[경쟁사분석] 네이버 블로그 검색 실패:', e.message);
+    console.warn('[경쟁사분석] 네이버 블로그 검색 실패:', e instanceof Error ? e.message : e);
     return [];
   }
 }
@@ -203,7 +204,7 @@ async function getOurBlogKeywords(category: string): Promise<string[]> {
       .slice(0, 30)
       .map(([w]) => w);
   } catch (e) {
-    console.warn('[경쟁사분석] 우리 블로그 키워드 조회 실패:', e.message);
+    console.warn('[경쟁사분석] 우리 블로그 키워드 조회 실패:', e instanceof Error ? e.message : e);
     return [];
   }
 }
@@ -286,7 +287,7 @@ async function saveCompetitorReport(report: CompetitorReport): Promise<void> {
     ]);
   } catch (e) {
     // 테이블 없으면 무시 (마이그레이션 선행 필요)
-    console.warn('[경쟁사분석] DB 저장 실패 (테이블 없을 수 있음):', e.message);
+    console.warn('[경쟁사분석] DB 저장 실패 (테이블 없을 수 있음):', e instanceof Error ? e.message : e);
   }
 }
 
@@ -358,7 +359,7 @@ export async function analyzeCompetitors(category: string): Promise<CompetitorRe
     console.log(`[경쟁사분석] 완료 — 갭 키워드 ${gaps.length}개, 추천 ${recommendations.length}개`);
     return report;
   } catch (e) {
-    console.error('[경쟁사분석] 오류:', e.message);
+    console.error('[경쟁사분석] 오류:', e instanceof Error ? e.message : e);
     return null;
   }
 }

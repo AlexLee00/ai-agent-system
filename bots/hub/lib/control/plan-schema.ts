@@ -1,9 +1,9 @@
 const { z } = require('zod');
 const { getPlaybookPhases } = require('./playbook');
 
-const RISK_LEVELS = ['low', 'medium', 'high', 'critical'];
-const STEP_SIDE_EFFECTS = ['none', 'read_only', 'write', 'external_mutation', 'money_movement'];
-const PLAYBOOK_PHASES = getPlaybookPhases();
+const RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
+const STEP_SIDE_EFFECTS = ['none', 'read_only', 'write', 'external_mutation', 'money_movement'] as const;
+const PLAYBOOK_PHASES = getPlaybookPhases() as [string, ...string[]];
 
 const ControlStepSchema = z.object({
   id: z.string().trim().min(1).max(120),
@@ -44,11 +44,11 @@ const ControlPlanRequestSchema = z.object({
   team: z.string().trim().min(1).max(120).optional(),
   dryRun: z.boolean().optional(),
   context: z.record(z.any()).optional(),
-}).refine((value) => Boolean(value.message || value.goal), {
+}).refine((value: any) => Boolean(value.message || value.goal), {
   message: 'message or goal is required',
 });
 
-function parseControlPlan(input) {
+function parseControlPlan(input: unknown) {
   const parsed = ControlPlanSchema.safeParse(input);
   if (parsed.success) {
     return { ok: true, data: parsed.data };
@@ -63,7 +63,7 @@ function parseControlPlan(input) {
   };
 }
 
-function parseControlPlanRequest(input) {
+function parseControlPlanRequest(input: unknown) {
   const parsed = ControlPlanRequestSchema.safeParse(input ?? {});
   if (parsed.success) {
     return { ok: true, data: parsed.data };
@@ -78,13 +78,13 @@ function parseControlPlanRequest(input) {
   };
 }
 
-function validateMutatingPlanPlaybook(plan) {
+function validateMutatingPlanPlaybook(plan: any) {
   const hasMutatingStep = Array.isArray(plan?.steps)
-    && plan.steps.some((step) => !['none', 'read_only'].includes(String(step?.sideEffect || '')));
+    && plan.steps.some((step: any) => !['none', 'read_only'].includes(String(step?.sideEffect || '')));
   if (!hasMutatingStep) return { ok: true };
 
   const phaseSet = new Set(
-    (plan?.playbook?.phases || []).map((phase) => String(phase?.phase || '').trim()),
+    (plan?.playbook?.phases || []).map((phase: any) => String(phase?.phase || '').trim()),
   );
   const required = ['frame', 'plan', 'review', 'test'];
   const missing = required.filter((phase) => !phaseSet.has(phase));
