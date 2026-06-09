@@ -6,7 +6,40 @@ import {
 } from '../../shared/factor-model-shadow.ts';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
 
-function normalizeExchange(value) {
+type QueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
+
+type FactorParams = {
+  symbol?: string;
+  exchange?: string;
+  market?: string;
+  limit?: number;
+  confidence?: number;
+  predictiveScore?: number;
+  quoteVolume?: number;
+  bars?: unknown[];
+  fundamentals?: Record<string, unknown>;
+  marketContext?: Record<string, unknown>;
+  broadcast?: boolean;
+  candidate?: {
+    symbol?: string;
+    exchange?: string;
+    market?: string;
+    confidence?: number;
+    predictiveScore?: number;
+    quoteVolume?: number;
+    bars?: unknown[];
+    fundamentals?: Record<string, unknown>;
+  };
+};
+
+type LatestFactorOptions = {
+  symbol?: string;
+  exchange?: string | null;
+  market?: string;
+  limit?: number;
+};
+
+function normalizeExchange(value: unknown) {
   const raw = String(value || 'binance').trim().toLowerCase();
   if (raw === 'crypto') return 'binance';
   if (raw === 'domestic') return 'kis';
@@ -18,9 +51,9 @@ function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
 }
 
-async function latestFactorShadowRows(queryFn, { symbol, exchange, market, limit }) {
-  const conds = [];
-  const params = [];
+async function latestFactorShadowRows(queryFn: QueryFn, { symbol, exchange, market, limit }: LatestFactorOptions) {
+  const conds: string[] = [];
+  const params: unknown[] = [];
   if (symbol) {
     params.push(symbol);
     conds.push(`symbol = $${params.length}`);
@@ -45,8 +78,8 @@ async function latestFactorShadowRows(queryFn, { symbol, exchange, market, limit
   return Array.isArray(rows) ? rows : [];
 }
 
-function outputFromRows(rows = [], skillId, params = {}) {
-  const normalized = rows.map(normalizeFactorShadowRow);
+function outputFromRows(rows: unknown[] = [], skillId: string, params: FactorParams = {}) {
+  const normalized = rows.map((row) => normalizeFactorShadowRow(row as Record<string, unknown>));
   return {
     ok: true,
     skill: skillId,
@@ -71,7 +104,7 @@ function outputFromRows(rows = [], skillId, params = {}) {
   };
 }
 
-function outputFromCandidate(params = {}, skillId) {
+function outputFromCandidate(params: FactorParams = {}, skillId: string) {
   const exchange = normalizeExchange(params.exchange || params.candidate?.exchange);
   const candidate = {
     ...(params.candidate || {}),
@@ -114,9 +147,9 @@ function outputFromCandidate(params = {}, skillId) {
   };
 }
 
-export function createFactorModelShadowHandler({ queryFn = defaultQuery, skillId = 'factor-model-shadow' } = {}) {
-  return async function factorModelShadow(params = {}) {
-    const exchange = params.exchange ? normalizeExchange(params.exchange) : null;
+export function createFactorModelShadowHandler({ queryFn = defaultQuery as QueryFn, skillId = 'factor-model-shadow' }: { queryFn?: QueryFn; skillId?: string } = {}) {
+  return async function factorModelShadow(params: FactorParams = {}) {
+    const exchange = params.exchange ? normalizeExchange(params.exchange) : undefined;
     const rows = await latestFactorShadowRows(queryFn, {
       symbol: params?.symbol,
       exchange,
@@ -140,7 +173,7 @@ export function createFactorModelShadowHandler({ queryFn = defaultQuery, skillId
 }
 
 export function registerFactorModelShadowSkill(options = {}) {
-  registerSkillHandler('factor-model-shadow', createFactorModelShadowHandler(options));
+  registerSkillHandler('factor-model-shadow', createFactorModelShadowHandler(options) as any);
 }
 
 export default {
