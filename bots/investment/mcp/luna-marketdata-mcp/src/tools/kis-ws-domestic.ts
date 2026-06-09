@@ -14,29 +14,84 @@ import {
 const KIS_WS_LIVE = 'ws://ops.koreainvestment.com:21000';
 const KIS_WS_MOCK = 'ws://ops.koreainvestment.com:31000';
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_MARKETDATA_REAL_TIMEOUT_MS || 5000);
-const subscriptions = new Map();
+type MarketDataArgs = {
+  symbol?: string;
+  disableReal?: boolean;
+  paper?: boolean;
+  wsUrl?: string;
+  timeoutMs?: number;
+  __approvalRetry?: boolean;
+  forceRefreshApprovalKey?: boolean;
+  [key: string]: unknown;
+};
+type MarketSnapshot = {
+  ok: boolean;
+  source?: string;
+  providerMode?: string;
+  market?: string;
+  symbol?: string;
+  price?: number;
+  volume24h?: number;
+  stale?: boolean;
+  fetchedAt?: string;
+  [key: string]: unknown;
+};
+type WsLike = {
+  addEventListener?: (event: string, handler: (event: any) => void) => void;
+  on?: (event: string, handler: (event: any) => void) => void;
+  send: (payload: string) => void;
+  close?: () => void;
+};
+type SubscriptionEntry = {
+  ws: WsLike;
+  symbol: string;
+  status: string;
+  lastSnapshot: MarketSnapshot | null;
+  openedAt: string;
+};
+type ProbeResult = {
+  ok: boolean;
+  market: string;
+  symbol: string;
+  startedAt: string;
+  approvalKeyIssued: boolean;
+  wsOpened: boolean;
+  subscriptionSent: boolean;
+  subscriptionAccepted: boolean;
+  firstTickReceived: boolean;
+  providerMode: string;
+  messages: string[];
+  error: string | null;
+  status?: string;
+  checkedAt?: string;
+  approvalKeyRetry?: {
+    attempted: boolean;
+    firstError: string;
+  };
+};
+const subscriptions = new Map<string, SubscriptionEntry>();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_CONFIG_PATH = path.resolve(__dirname, '../../../../config.yaml');
 const HUB_SECRETS_PATH = path.resolve(__dirname, '../../../../../hub/secrets-store.json');
 
-function isRealEnabled(args = {}) {
+function isRealEnabled(args: MarketDataArgs = {}) {
   if (args.disableReal === true) return false;
   return process.env.LUNA_MARKETDATA_REAL_WS_ENABLED !== 'false';
 }
 
-function normalizeSymbol(symbol = '005930') {
+function normalizeSymbol(symbol: unknown = '005930') {
   return String(symbol || '005930').trim().toUpperCase();
 }
 
-function fallbackSnapshot(args = {}, reason = 'kis_domestic_realtime_unavailable') {
+function fallbackSnapshot(args: MarketDataArgs = {}, reason: unknown = 'kis_domestic_realtime_unavailable') {
   return simulatedFallbackOrBlock(() => ({
-    ...getMarketSnapshot({ ...args, market: 'kis_domestic', symbol: args.symbol || '005930' }),
+    ...getMarketSnapshot({ ...args, market: 'kis_domestic', symbol: String(args.symbol || '005930') }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'kis_domestic_realtime_unavailable').slice(0, 240),
-  }), { args, market: 'kis_domestic', symbol: args.symbol || '005930', reason, tool: 'get_market_snapshot' });
+  }), { args, market: 'kis_domestic', symbol: String(args.symbol || '005930'), reason: String(reason || ''), tool: 'get_market_snapshot' }) as MarketSnapshot;
 }
 
-function addWsListener(ws, event, handler) {
+function addWsListener(ws: WsLike, event: string, handler: (event: any) => void) {
   if (typeof ws.addEventListener === 'function') {
     ws.addEventListener(event, handler);
     return;
@@ -44,7 +99,7 @@ function addWsListener(ws, event, handler) {
   if (typeof ws.on === 'function') ws.on(event, handler);
 }
 
-function messageText(eventOrRaw) {
+function messageText(eventOrRaw: any): string {
   const raw = eventOrRaw?.data ?? eventOrRaw;
   if (typeof raw === 'string') return raw;
   if (raw instanceof ArrayBuffer) return Buffer.from(raw).toString('utf8');
@@ -52,14 +107,14 @@ function messageText(eventOrRaw) {
   return String(raw || '');
 }
 
-export function redactKisWsDiagnosticMessage(text) {
+export function redactKisWsDiagnosticMessage(text: string) {
   return redactKisInvalidApprovalError(text)
     .replace(/("approval_key"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2')
     .replace(/("key"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2')
     .replace(/("iv"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2');
 }
 
-function readYaml(file, fallback = {}) {
+function readYaml(file: string, fallback: Record<string, any> = {}): any {
   try {
     return yaml.load(fs.readFileSync(file, 'utf8')) || fallback;
   } catch {
@@ -67,7 +122,7 @@ function readYaml(file, fallback = {}) {
   }
 }
 
-function readJson(file, fallback = {}) {
+function readJson(file: string, fallback: Record<string, any> = {}): any {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch {
@@ -93,11 +148,11 @@ async function getKisSecrets() {
   return { appKey, appSecret };
 }
 
-async function getApprovalKey(args = {}) {
+async function getApprovalKey(args: MarketDataArgs = {}) {
   return getKisRealtimeApprovalKey(args);
 }
 
-function parseDomesticCsv(raw, symbol) {
+function parseDomesticCsv(raw: unknown, symbol: string): MarketSnapshot | null {
   const parts = String(raw || '').split('|');
   const trId = parts[1] || '';
   const payload = parts.slice(3).join('|');
@@ -120,7 +175,7 @@ function parseDomesticCsv(raw, symbol) {
   };
 }
 
-async function kisDomesticWsSnapshot(args = {}) {
+async function kisDomesticWsSnapshot(args: MarketDataArgs = {}): Promise<MarketSnapshot | null> {
   if (typeof globalThis.WebSocket !== 'function') throw new Error('native_websocket_unavailable');
   const symbol = normalizeSymbol(args.symbol || '005930');
   const existing = subscriptions.get(symbol);
@@ -128,11 +183,11 @@ async function kisDomesticWsSnapshot(args = {}) {
 
   const approvalKey = await getApprovalKey(args);
   const paper = args.paper === true || process.env.KIS_MODE === 'mock';
-  const ws = new globalThis.WebSocket(args.wsUrl || (paper ? KIS_WS_MOCK : KIS_WS_LIVE));
-  const entry = { ws, symbol, status: 'connecting', lastSnapshot: null, openedAt: new Date().toISOString() };
+  const ws = new globalThis.WebSocket(args.wsUrl || (paper ? KIS_WS_MOCK : KIS_WS_LIVE)) as WsLike;
+  const entry: SubscriptionEntry = { ws, symbol, status: 'connecting', lastSnapshot: null, openedAt: new Date().toISOString() };
   subscriptions.set(symbol, entry);
 
-  await new Promise((resolve, reject) => {
+  await new Promise<MarketSnapshot | void>((resolve, reject) => {
     const timer = setTimeout(() => {
       if (entry.lastSnapshot?.ok) resolve(entry.lastSnapshot);
       else reject(new Error('kis_domestic_ws_snapshot_timeout'));
@@ -168,11 +223,11 @@ async function kisDomesticWsSnapshot(args = {}) {
   return entry.lastSnapshot;
 }
 
-export async function probeKisDomesticRealtime(args = {}) {
+export async function probeKisDomesticRealtime(args: MarketDataArgs = {}): Promise<ProbeResult> {
   const symbol = normalizeSymbol(args.symbol || '005930');
   const startedAt = new Date().toISOString();
   const timeoutMs = Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS));
-  const result = {
+  const result: ProbeResult = {
     ok: false,
     market: 'kis_domestic',
     symbol,
@@ -194,34 +249,35 @@ export async function probeKisDomesticRealtime(args = {}) {
     return { ...result, error: 'native_websocket_unavailable', checkedAt: new Date().toISOString() };
   }
 
-  let ws = null;
+  let ws: WsLike | null = null;
   try {
     const approvalKey = await getApprovalKey(args);
     result.approvalKeyIssued = Boolean(approvalKey);
     const paper = args.paper === true || process.env.KIS_MODE === 'mock';
-    ws = new globalThis.WebSocket(args.wsUrl || (paper ? KIS_WS_MOCK : KIS_WS_LIVE));
+    ws = new globalThis.WebSocket(args.wsUrl || (paper ? KIS_WS_MOCK : KIS_WS_LIVE)) as WsLike;
+    const activeWs = ws;
 
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, timeoutMs);
-      addWsListener(ws, 'open', () => {
+      addWsListener(activeWs, 'open', () => {
         result.wsOpened = true;
         try {
-          ws.send(JSON.stringify({
+          activeWs.send(JSON.stringify({
             header: { approval_key: approvalKey, custtype: 'P', tr_type: '1', 'content-type': 'utf-8' },
             body: { input: { tr_id: 'H0STCNT0', tr_key: symbol } },
           }));
-          ws.send(JSON.stringify({
+          activeWs.send(JSON.stringify({
             header: { approval_key: approvalKey, custtype: 'P', tr_type: '1', 'content-type': 'utf-8' },
             body: { input: { tr_id: 'H0STASP0', tr_key: symbol } },
           }));
           result.subscriptionSent = true;
-        } catch (error) {
+        } catch (error: any) {
           result.error = error?.message || String(error);
           clearTimeout(timer);
           resolve();
         }
       });
-      addWsListener(ws, 'message', (event) => {
+      addWsListener(activeWs, 'message', (event) => {
         const text = messageText(event);
         result.messages.push(redactKisWsDiagnosticMessage(text).slice(0, 240));
         try {
@@ -240,13 +296,13 @@ export async function probeKisDomesticRealtime(args = {}) {
           resolve();
         }
       });
-      addWsListener(ws, 'error', (event) => {
+      addWsListener(activeWs, 'error', (event) => {
         result.error = result.error || event?.message || 'kis_domestic_ws_error';
         clearTimeout(timer);
         resolve();
       });
     });
-  } catch (error) {
+  } catch (error: any) {
     result.error = error?.message || String(error);
   } finally {
     try {
@@ -256,7 +312,7 @@ export async function probeKisDomesticRealtime(args = {}) {
     }
   }
 
-  if (!args.__approvalRetry && isKisInvalidApprovalError(result.error)) {
+  if (!args.__approvalRetry && isKisInvalidApprovalError(result.error || undefined)) {
     clearKisRealtimeApprovalKeyCache();
     const retry = await probeKisDomesticRealtime({
       ...args,
@@ -267,7 +323,7 @@ export async function probeKisDomesticRealtime(args = {}) {
       ...retry,
       approvalKeyRetry: {
         attempted: true,
-        firstError: redactKisInvalidApprovalError(result.error).slice(0, 120),
+        firstError: redactKisInvalidApprovalError(result.error || undefined).slice(0, 120),
       },
       messages: [...result.messages, ...(retry.messages || [])].slice(-8),
     };
@@ -283,9 +339,9 @@ export async function probeKisDomesticRealtime(args = {}) {
   return result;
 }
 
-async function kisDomesticRestSnapshot(args = {}) {
+async function kisDomesticRestSnapshot(args: MarketDataArgs = {}): Promise<MarketSnapshot> {
   const kis = await import('../../../../shared/kis-client.ts');
-  const quote = await kis.getDomesticQuoteSnapshot(normalizeSymbol(args.symbol || '005930'), args.paper);
+  const quote: any = await kis.getDomesticQuoteSnapshot(normalizeSymbol(args.symbol || '005930'), args.paper);
   return {
     ok: true,
     source: 'kis_domestic_rest',
@@ -302,11 +358,11 @@ async function kisDomesticRestSnapshot(args = {}) {
   };
 }
 
-export async function kisDomesticSnapshot(args = {}) {
+export async function kisDomesticSnapshot(args: MarketDataArgs = {}): Promise<MarketSnapshot> {
   if (!isRealEnabled(args)) return fallbackSnapshot(args, 'real_ws_disabled');
   try {
-    return await kisDomesticWsSnapshot(args);
-  } catch (wsError) {
+    return await kisDomesticWsSnapshot(args) || fallbackSnapshot(args, 'kis_domestic_ws_snapshot_empty');
+  } catch (wsError: any) {
     try {
       return await kisDomesticRestSnapshot(args);
     } catch (_) {
@@ -315,12 +371,12 @@ export async function kisDomesticSnapshot(args = {}) {
   }
 }
 
-export async function subscribeKisDomesticMarketData(args = {}) {
+export async function subscribeKisDomesticMarketData(args: MarketDataArgs = {}) {
   const snapshot = await kisDomesticSnapshot(args);
   return { ok: snapshot.ok !== false, subscribed: snapshot.ok !== false, providerMode: snapshot.providerMode, subscription: snapshot };
 }
 
-export function unsubscribeKisDomesticMarketData(args = {}) {
+export function unsubscribeKisDomesticMarketData(args: MarketDataArgs = {}) {
   const symbol = normalizeSymbol(args.symbol || '005930');
   const entry = subscriptions.get(symbol);
   try {
