@@ -342,7 +342,7 @@ function normalizeBeginnerLectureContent(content, title) {
   if (!isAiImplementationLecture) return next;
 
   const beginnerPrep = [
-    '[실습 전 준비]',
+    '[최신 기술 브리핑] 실습 전 준비',
     '이번 강의는 IT를 잘 모르는 분도 따라올 수 있도록 어려운 최신 기술 뉴스보다 실제 화면에서 무엇을 눌러야 하는지에 집중합니다.',
     '',
     '준비물은 두 가지 중 하나면 충분합니다.',
@@ -361,6 +361,9 @@ function normalizeBeginnerLectureContent(content, title) {
   }
 
   return next
+    .replace(/\[두 도구를 아주 쉬운 비유로 이해하기\]/g, '[강의 - 이론] 두 도구를 아주 쉬운 비유로 이해하기')
+    .replace(/\[(그대로 복사해서 넣어볼 첫 프롬프트|결과를 확인하는 방법|오늘 바로 해볼 10분 연습)\]/g, '[실무 - 코드] $1')
+    .replace(/\[질문형 Q&A\]/g, '[AEO FAQ] 질문형 Q&A')
     .replace(/Claude Code는 Claude 유료 플랜\(Pro 이상\)이 있어야 사용할 수 있습니다\./g, 'Claude Code는 계정/플랜과 사용 환경에 따라 접근 방식이 달라질 수 있으니 공식 안내에서 현재 조건을 확인하는 편이 안전합니다.')
     .replace(/ChatGPT Codex도 무료 플랜에서는 사용 횟수 제한이 있고, 고급 기능은 유료입니다\./g, 'ChatGPT Codex도 플랜별 사용량 한도가 다르므로, 현재 계정에서 보이는 한도를 기준으로 실습하면 됩니다.');
 }
@@ -382,6 +385,13 @@ function _contentToHtml(content, title, images = null) {
     'AI 스니펫 요약',
     '이 글에서 배울 수 있는 것',
     '승호아빠 인사말',
+    '핵심 요약',
+    '최신 기술 브리핑',
+    '강의 - 이론',
+    '실무 - 코드',
+    '실무 - 코드 및 아키텍처',
+    'AEO FAQ',
+    '마무리 인사',
     '본론 섹션 1',
     '본론 섹션 2',
     '본론 섹션 3',
@@ -401,6 +411,12 @@ function _contentToHtml(content, title, images = null) {
     if (bracketTitle?.[2]) return bracketTitle[2].trim();
     const map = {
       'AI 스니펫 요약': '핵심 요약',
+      '최신 기술 브리핑': '최신 기술 브리핑',
+      '강의 - 이론': '강의 - 이론',
+      '실무 - 코드': '실무 - 코드',
+      '실무 - 코드 및 아키텍처': '실무 - 코드 및 아키텍처',
+      'AEO FAQ': 'AEO FAQ',
+      '마무리 인사': '마무리 인사',
       '승호아빠 인사말': '시작하며',
       '본론 섹션 1': '문제가 생기는 지점',
       '본론 섹션 2': '놓치기 쉬운 기준',
@@ -428,6 +444,13 @@ function _contentToHtml(content, title, images = null) {
       'AI 스니펫 요약': 'general-summary',
       '이 글에서 배울 수 있는 것': 'general-learning-points',
       '승호아빠 인사말': 'general-greeting',
+      '핵심 요약': 'lecture-summary',
+      '최신 기술 브리핑': 'lecture-tech-briefing',
+      '강의 - 이론': 'lecture-theory',
+      '실무 - 코드': 'lecture-practice',
+      '실무 - 코드 및 아키텍처': 'lecture-practice',
+      'AEO FAQ': 'lecture-faq',
+      '마무리 인사': 'lecture-closing',
       '본론 섹션 1': 'general-body-1',
       '본론 섹션 2': 'general-body-2',
       '본론 섹션 3': 'general-body-3',
@@ -439,7 +462,8 @@ function _contentToHtml(content, title, images = null) {
       '해시태그': 'general-hashtags',
     };
     const markerKey = markerKeyMap[marker];
-    return `<h2 class="section-title">${title}</h2>`;
+    const markerAttr = markerKey ? ` data-marker-key="${markerKey}"` : '';
+    return `<h2 class="section-title"${markerAttr}>${title}</h2>`;
   }
 
   function looksLikeSentenceHeading(value) {

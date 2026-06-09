@@ -290,6 +290,15 @@ function _defaultLectureLearningPointsSection(lectureTitle) {
   ].join('\n');
 }
 
+function _defaultLectureTechBriefingSection(lectureTitle) {
+  return [
+    '[최신 기술 브리핑]',
+    `${lectureTitle}를 다룰 때 가장 먼저 볼 흐름은 도구 이름보다 작업 방식의 변화입니다. 최근 AI 코딩 도구는 단순히 답변을 생성하는 단계에서 벗어나, 파일을 읽고 수정하고 검증 결과까지 함께 확인하는 방향으로 발전하고 있습니다.`,
+    '초보자 입장에서는 이 차이를 어렵게 외울 필요가 없습니다. 화면에 질문을 입력하는 도구인지, 실제 프로젝트 폴더 안에서 명령을 실행하고 결과를 고치는 도구인지부터 구분하면 충분합니다.',
+    '따라서 이번 강의의 브리핑 기준은 최신 기능을 과장하는 것이 아니라, 처음 쓰는 사람이 안전하게 요청하고 결과를 검증하는 절차를 익히는 데 둡니다.',
+  ].join('\n');
+}
+
 function _defaultLectureQuestionSection(lectureTitle) {
   return [
     '[AEO FAQ]',
@@ -312,6 +321,26 @@ function _ensureLectureBriefingFloor(content, lectureTitle) {
       next = `${next.slice(0, markerIndex).trimEnd()}\n\n${_defaultLectureLearningPointsSection(lectureTitle)}\n\n${next.slice(markerIndex).trimStart()}`;
     } else {
       next = `${next}\n\n${_defaultLectureLearningPointsSection(lectureTitle)}`;
+    }
+  }
+
+  if (!next.includes('[최신 기술 브리핑]')) {
+    const theoryIndex = next.indexOf('[강의 - 이론]');
+    const insertAfter = next.indexOf('[승호아빠 인사말]');
+    const section = _defaultLectureTechBriefingSection(lectureTitle);
+    if (theoryIndex >= 0) {
+      next = `${next.slice(0, theoryIndex).trimEnd()}\n\n${section}\n\n${next.slice(theoryIndex).trimStart()}`;
+    } else if (insertAfter >= 0) {
+      const rest = next.slice(insertAfter);
+      const nextSection = /\n\s*\[[^\]\n]+\]\s*(?:\n|$)/.exec(rest.slice(1));
+      if (nextSection) {
+        const splitAt = insertAfter + 1 + nextSection.index;
+        next = `${next.slice(0, splitAt).trimEnd()}\n\n${section}\n\n${next.slice(splitAt).trimStart()}`;
+      } else {
+        next = `${next}\n\n${section}`;
+      }
+    } else {
+      next = `${_defaultLectureTechBriefingSection(lectureTitle)}\n\n${next}`;
     }
   }
 

@@ -28,6 +28,10 @@ const MARKER_ALIASES = {
     '마무리 제언': ['마무리'],
   },
   lecture: {
+    '최신 기술 브리핑': ['실습 전 준비'],
+    '강의 - 이론': ['두 도구를 아주 쉬운 비유로 이해하기', '처음 듣는 용어 풀이'],
+    '실무 - 코드': ['실무 - 코드 및 아키텍처', '그대로 복사해서 넣어볼 첫 프롬프트', '결과를 확인하는 방법', '오늘 바로 해볼 10분 연습', '따라하기 프롬프트 3종'],
+    'AEO FAQ': ['질문형 Q&A'],
     '승호아빠 인사말': ['시작하며'],
     '[함께 읽으면 좋은 글]': ['[마무리 인사 + 함께 읽으면 좋은 글]'],
     '[해시태그]': ['[마무리 인사 + 해시태그]'],
@@ -50,7 +54,17 @@ const MARKER_KEYS = {
     '함께 읽으면 좋은 글': 'general-links',
     '해시태그': 'general-hashtags',
   },
-  lecture: {},
+  lecture: {
+    '핵심 요약': 'lecture-summary',
+    '최신 기술 브리핑': 'lecture-tech-briefing',
+    '강의 - 이론': 'lecture-theory',
+    '실무 - 코드': 'lecture-practice',
+    '실무 - 코드 및 아키텍처': 'lecture-practice',
+    'AEO FAQ': 'lecture-faq',
+    '마무리 인사': 'lecture-closing',
+    '함께 읽으면 좋은 글': 'general-links',
+    '해시태그': 'general-hashtags',
+  },
 };
 
 function countGeneralBodyHeadings(text) {

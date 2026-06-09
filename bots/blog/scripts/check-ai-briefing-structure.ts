@@ -151,7 +151,7 @@ function buildBriefingSignals(content: unknown, type: string, raw = '') {
     hasQuestionFaq: /질문형 Q&A|AEO FAQ|FAQ/.test(text) || hasSection('AEO FAQ') || hasSection('질문형 Q&A'),
     questionFaqCount: countQuestionStyleFaq(text, raw) + (hasSection('AEO FAQ') || hasSection('질문형 Q&A') ? 1 : 0),
     answeredFaqCount: countAnsweredFaqPairs(text, raw),
-    hasConclusionLine: /핵심 메시지|결론 한줄|결론 한 줄/.test(text) || hasSection('마무리 제언') || hasSection('마무리 인사'),
+    hasConclusionLine: /핵심 메시지|결론 한줄|결론 한 줄/.test(text) || hasSection('마무리 제언') || hasSection('마무리 인사') || hasSection('마무리'),
     sectionTitles,
   };
 }
