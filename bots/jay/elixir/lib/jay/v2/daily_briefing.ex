@@ -154,9 +154,30 @@ defmodule Jay.V2.DailyBriefing do
   defp calc_win_rate(nil, _), do: 0
   defp calc_win_rate(wins, total), do: Float.round(wins / total * 100, 1)
 
-  defp format_pnl(nil), do: "N/A"
-  defp format_pnl(pnl) when pnl >= 0, do: "+$#{Float.round(pnl * 1.0, 2)}"
-  defp format_pnl(pnl), do: "-$#{Float.round(abs(pnl) * 1.0, 2)}"
+  defp format_pnl(pnl) do
+    case parse_number(pnl) do
+      nil ->
+        "N/A"
+
+      value when value >= 0 ->
+        "+$#{Float.round(value * 1.0, 2)}"
+
+      value ->
+        "-$#{Float.round(abs(value) * 1.0, 2)}"
+    end
+  end
+
+  defp parse_number(value) when is_number(value), do: value
+
+  defp parse_number(value) when is_binary(value) do
+    case Float.parse(String.trim(value)) do
+      {parsed, rest} when rest in ["", nil] -> parsed
+      {parsed, rest} -> if String.trim(rest) == "", do: parsed, else: nil
+      :error -> nil
+    end
+  end
+
+  defp parse_number(_value), do: nil
 
   defp format_krw(nil), do: "N/A"
   defp format_krw(n) when is_integer(n), do: "#{:erlang.integer_to_binary(n)}원"

@@ -178,6 +178,41 @@ defmodule TeamJay.JayTest do
       briefing = DailyBriefing.generate(data, "2026-04-16")
       assert String.contains?(briefing, "-$")
     end
+
+    test "PnL 문자열/비숫자 입력도 크래시 없이 처리" do
+      numeric =
+        DailyBriefing.generate(
+          %{
+            luna: %{
+              metric_type: :trading_ops,
+              market_regime: "bull",
+              trades_7d: 1,
+              pnl_usdt_7d: "12.34",
+              win_count: 1,
+              live_positions: 0
+            }
+          },
+          "2026-04-16"
+        )
+
+      invalid =
+        DailyBriefing.generate(
+          %{
+            luna: %{
+              metric_type: :trading_ops,
+              market_regime: "bull",
+              trades_7d: 1,
+              pnl_usdt_7d: "unavailable",
+              win_count: 1,
+              live_positions: 0
+            }
+          },
+          "2026-04-16"
+        )
+
+      assert String.contains?(numeric, "+$12.34")
+      assert String.contains?(invalid, "PnL N/A")
+    end
   end
 
   # ────────────────────────────────────────────────────────────────

@@ -43,6 +43,7 @@ defmodule Mix.Tasks.Jay.GrowthCycle.Run do
     Enum.each([:ssl, :postgrex, :ecto, :ecto_sql, :jason, :req], &ensure_started!/1)
     start_repo!()
     start_registry!(Jay.Core.JayBus, :duplicate)
+    start_process!(Jay.V2.AutonomyController)
   end
 
   defp ensure_started!(app) do
@@ -74,6 +75,20 @@ defmodule Mix.Tasks.Jay.GrowthCycle.Run do
           {:ok, _pid} -> :ok
           {:error, {:already_started, _pid}} -> :ok
           {:error, reason} -> Mix.raise("failed to start #{inspect(name)}: #{inspect(reason)}")
+        end
+
+      _pid ->
+        :ok
+    end
+  end
+
+  defp start_process!(module) do
+    case Process.whereis(module) do
+      nil ->
+        case module.start_link([]) do
+          {:ok, _pid} -> :ok
+          {:error, {:already_started, _pid}} -> :ok
+          {:error, reason} -> Mix.raise("failed to start #{inspect(module)}: #{inspect(reason)}")
         end
 
       _pid ->

@@ -153,6 +153,15 @@ defmodule Jay.V2.ModulesTest do
       refute plist =~ "<string>team_jay</string>"
       refute plist =~ "Jay.V2.Commander.daily_growth_cycle()"
       refute plist =~ "mix</string>\n\t\t<string>run</string>"
+
+      task_source =
+        Path.expand(
+          "../../../../../../elixir/team_jay/lib/mix/tasks/jay.growth_cycle.run.ex",
+          __DIR__
+        )
+        |> File.read!()
+
+      assert task_source =~ "start_process!(Jay.V2.AutonomyController)"
     end
 
     test "GrowthCycle records a completed event with briefing length for dashboard seed" do
