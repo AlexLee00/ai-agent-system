@@ -1235,13 +1235,13 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
       llmResp = await callFormatterLlm({ category, systemPrompt, userPrompt: prompt, options });
       lastLlmResponse = llmResp;
     } catch (err) {
-      console.error('[edu-x/formatter] callHubLlm 예외:', err?.message);
+      console.log('[edu-x/formatter] callHubLlm recoverable:', err?.message);
       lastLlmError = err?.message || String(err);
       break;
     }
 
     if (!llmResp?.ok || !llmResp?.text) {
-      console.error('[edu-x/formatter] LLM 응답 실패:', llmResp?.error);
+      console.log('[edu-x/formatter] LLM 응답 recoverable:', llmResp?.error);
       lastLlmError = llmResp?.error || 'empty_llm_response';
       continue;
     }
@@ -1250,7 +1250,7 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
     if (content.length > MAX_CONTENT_LEN) content = content.slice(0, MAX_CONTENT_LEN);
     quality = validateContentQuality(content, category);
     if (quality.ok) break;
-    console.warn(`[edu-x/formatter] 품질 미달 attempt=${attempt + 1}: ${JSON.stringify(quality)}`);
+    console.log(`[edu-x/formatter] 품질 미달 recoverable attempt=${attempt + 1}: ${JSON.stringify(quality)}`);
   }
 
   if (!content || !quality?.ok) {

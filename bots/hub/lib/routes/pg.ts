@@ -34,20 +34,43 @@ function suggestedPgPoolMax(active: number, waiting: number) {
   return Math.min(16, Math.max(current + 1, demand));
 }
 
+function formatSqlForLog(sql: unknown, limit = 500) {
+  const normalized = String(sql || '').trim().replace(/\s+/g, ' ');
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, limit)}…[len=${normalized.length}]`;
+}
+
+function summarizeParamForLog(value: unknown) {
+  if (value == null) return 'null';
+  if (Array.isArray(value)) return `array:${value.length}`;
+  if (value instanceof Date) return 'date';
+  const type = typeof value;
+  if (type === 'string') return `string:${String(value).length}`;
+  if (type === 'number' || type === 'boolean' || type === 'bigint') return type;
+  if (type === 'object') return `object:${Object.keys(value as Record<string, unknown>).length}`;
+  return type;
+}
+
+function summarizeParamsForLog(params: unknown) {
+  if (!Array.isArray(params)) return `non_array:${typeof params}`;
+  return `[${params.map((value) => summarizeParamForLog(value)).join(',')}]`;
+}
+
 export async function pgQueryRoute(req: any, res: any) {
   const started = Date.now();
   const { sql, schema = 'public', params = [] } = req.body || {};
-  const sqlSnippet = String(sql || '').trim().replace(/\s+/g, ' ').slice(0, 160);
+  const sqlSnippet = formatSqlForLog(sql);
+  const paramSummary = summarizeParamsForLog(params);
 
   const schemaCheck = validateSchema(schema);
   if (!schemaCheck.ok) {
-    console.warn(`[hub/pg] rejected schema=${String(schema)} reason=${schemaCheck.reason} sql=${sqlSnippet}`);
+    console.warn(`[hub/pg] rejected schema=${String(schema)} reason=${schemaCheck.reason} params=${paramSummary} sql=${sqlSnippet}`);
     return res.status(400).json({ error: 'query rejected', reason: schemaCheck.reason });
   }
 
   const sqlCheck = validateSql(sql);
   if (!sqlCheck.ok) {
-    console.warn(`[hub/pg] rejected schema=${schemaCheck.schema} reason=${sqlCheck.reason} sql=${sqlSnippet}`);
+    console.warn(`[hub/pg] rejected schema=${schemaCheck.schema} reason=${sqlCheck.reason} params=${paramSummary} sql=${sqlSnippet}`);
     if (String(sqlCheck.reason || '').startsWith('blocked keyword:')) {
       recordHubRuntimeErrorPatternAsync({
         errorType: 'readonly_write_rejected',
@@ -72,7 +95,7 @@ export async function pgQueryRoute(req: any, res: any) {
   }
 
   if (!Array.isArray(params)) {
-    console.warn(`[hub/pg] rejected schema=${schemaCheck.schema} reason=params_must_be_array sql=${sqlSnippet}`);
+    console.warn(`[hub/pg] rejected schema=${schemaCheck.schema} reason=params_must_be_array params=${paramSummary} sql=${sqlSnippet}`);
     return res.status(400).json({ error: 'query rejected', reason: 'params must be an array' });
   }
 
@@ -132,8 +155,9 @@ export async function pgQueryRoute(req: any, res: any) {
       duration_ms: Date.now() - started,
     });
   } catch (error: any) {
+    const errorLocation = error?.position ? ` position=${String(error.position)}` : '';
     console.warn(
-      `[hub/pg] query failed schema=${schemaCheck.schema} reason=${String(error?.message || 'pg_query_failed')} sql=${sqlSnippet}`
+      `[hub/pg] query failed schema=${schemaCheck.schema} reason=${String(error?.message || 'pg_query_failed')}${errorLocation} params=${paramSummary} sql=${sqlSnippet}`
     );
     return res.status(500).json({
       error: 'query failed',
