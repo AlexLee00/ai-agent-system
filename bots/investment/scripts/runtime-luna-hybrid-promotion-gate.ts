@@ -4,13 +4,26 @@ import { query as defaultQuery } from '../shared/db.ts';
 import { buildLunaHybridPromotionGateReport } from '../shared/luna-hybrid-promotion-gate.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function argValue(name, fallback = null, argv = process.argv.slice(2)) {
+type PromotionGateOptions = {
+  apply: boolean;
+  json: boolean;
+  strict: boolean;
+  noDb: boolean;
+  hours: number;
+};
+type PromotionGateDeps = {
+  queryFn?: unknown;
+  investmentRoot?: string;
+  projectRoot?: string;
+};
+
+function argValue(name: string, fallback: string | number | null = null, argv: string[] = process.argv.slice(2)) {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv: string[] = process.argv.slice(2)): PromotionGateOptions {
   return {
     apply: argv.includes('--apply'),
     json: argv.includes('--json'),
@@ -20,7 +33,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-export async function runLunaHybridPromotionGate(options = parseArgs(), deps = {}) {
+export async function runLunaHybridPromotionGate(options: PromotionGateOptions = parseArgs(), deps: PromotionGateDeps = {}) {
   if (options.apply) {
     return {
       ok: false,
@@ -60,11 +73,12 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
-  console.log(`${report.status} contractReady=${report.contractReady === true} dataReady=${report.dataReady === true}`);
+  const typedReport = report as any;
+  console.log(`${typedReport.status} contractReady=${typedReport.contractReady === true} dataReady=${typedReport.dataReady === true}`);
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid promotion gate failed:',
   });

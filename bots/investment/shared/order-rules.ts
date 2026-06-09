@@ -25,26 +25,28 @@ export const MARKET_ORDER_RULES = Object.freeze({
   }),
 });
 
-export function getMarketOrderRule(exchange) {
-  return MARKET_ORDER_RULES[exchange] || null;
+type MarketOrderExchange = keyof typeof MARKET_ORDER_RULES;
+
+export function getMarketOrderRule(exchange: unknown) {
+  return MARKET_ORDER_RULES[exchange as MarketOrderExchange] || null;
 }
 
-export function getMinOrderAmount(exchange) {
+export function getMinOrderAmount(exchange: unknown) {
   return getMarketOrderRule(exchange)?.minOrderAmount ?? null;
 }
 
-export function getMaxOrderAmount(exchange) {
+export function getMaxOrderAmount(exchange: unknown) {
   return getMarketOrderRule(exchange)?.maxOrderAmount ?? null;
 }
 
-export function getMinOrderRatio(exchange) {
+export function getMinOrderRatio(exchange: unknown) {
   return getMarketOrderRule(exchange)?.minOrderRatioOfAvailableFunds ?? 0.05;
 }
 
-export function allowsFractionalQuantity(exchange) {
+export function allowsFractionalQuantity(exchange: unknown) {
   return Boolean(getMarketOrderRule(exchange)?.allowFractional);
 }
 
-export function requiresIntegerQuantity(exchange) {
+export function requiresIntegerQuantity(exchange: unknown) {
   return getMarketOrderRule(exchange)?.quantityMode === 'integer';
 }

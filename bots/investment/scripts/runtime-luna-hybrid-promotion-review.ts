@@ -7,13 +7,26 @@ import {
 } from '../shared/luna-hybrid-promotion-review.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function argValue(name, fallback = null, argv = process.argv.slice(2)) {
+type PromotionReviewOptions = {
+  apply: boolean;
+  json: boolean;
+  strict: boolean;
+  noDb: boolean;
+  hours: number;
+};
+type PromotionReviewDeps = {
+  queryFn?: unknown;
+  investmentRoot?: string;
+  projectRoot?: string;
+};
+
+function argValue(name: string, fallback: string | number | null = null, argv: string[] = process.argv.slice(2)) {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv: string[] = process.argv.slice(2)): PromotionReviewOptions {
   return {
     apply: argv.includes('--apply'),
     json: argv.includes('--json'),
@@ -23,7 +36,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-export async function runLunaHybridPromotionReview(options = parseArgs(), deps = {}) {
+export async function runLunaHybridPromotionReview(options: PromotionReviewOptions = parseArgs(), deps: PromotionReviewDeps = {}) {
   if (options.apply) {
     return {
       ok: false,
@@ -65,11 +78,12 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
-  console.log(`${report.status} readyForMasterReview=${report.readyForMasterReview === true} promotionReady=${report.promotionReady === true}`);
+  const typedReport = report as any;
+  console.log(`${typedReport.status} readyForMasterReview=${typedReport.readyForMasterReview === true} promotionReady=${typedReport.promotionReady === true}`);
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna hybrid promotion review failed:',
   });
