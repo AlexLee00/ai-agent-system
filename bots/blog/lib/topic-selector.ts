@@ -24,9 +24,11 @@ const {
   safeJson,
 } = require('./blog-v3-unified.ts');
 
+type AnyRecord = Record<string, any>;
+
 // DPO 힌트 (lazy load — BLOG_DPO_ENABLED=true일 때만 활성)
-let _dpoCached = null;
-let _experimentPlaybookCached = null;
+let _dpoCached: AnyRecord | null = null;
+let _experimentPlaybookCached: AnyRecord | null = null;
 
 async function _loadDpoHints() {
   if (process.env.BLOG_DPO_ENABLED !== 'true') return { patterns: [], failures: [] };
@@ -46,7 +48,7 @@ async function _loadDpoHints() {
   }
 }
 
-function _applyDpoScore(candidates, patterns, failures) {
+function _applyDpoScore(candidates: AnyRecord[], patterns: AnyRecord[], failures: AnyRecord[]): AnyRecord[] {
   if (patterns.length === 0 && failures.length === 0) return candidates;
   const dpo = require('./self-rewarding/marketing-dpo.ts');
   return candidates.map((c) => ({
@@ -72,7 +74,7 @@ const BANNED_PATTERNS = [
   /에서 막힐 때 가장 먼저 확인할 포인트/,
 ];
 
-const CATEGORY_TOPIC_POOL = {
+const CATEGORY_TOPIC_POOL: AnyRecord = {
   '홈페이지와App': [
     { topic: '회원가입 완료율을 높이는 온보딩 설계', question: '가입 시작 직후 어떤 마찰을 먼저 줄여야 할까', diff: '기능 소개보다 첫 30초 경험에 집중' },
     { topic: '결제 직전 이탈을 줄이는 설계', question: '사람들은 마지막 단계에서 왜 멈출까', diff: '결제 성공률과 설명 UX 관점' },
@@ -113,7 +115,7 @@ const CATEGORY_TOPIC_POOL = {
   '도서리뷰': [],
 };
 
-const CATEGORY_SELECTION_GUIDES = {
+const CATEGORY_SELECTION_GUIDES: AnyRecord = {
   '홈페이지와App': {
     readerProblem: '기능은 있는데 사용자가 어디에서 멈추고 왜 신뢰를 잃는지 설명이 필요한 독자',
     openingAngle: '첫 화면, 탐색, 상태 설명처럼 사용자가 가장 먼저 체감하는 마찰에서 출발',
@@ -187,7 +189,7 @@ const TITLE_FRAMES = [
   { pattern: 'trend', template: '2026년 {topic} 트렌드: 달라진 것과 변하지 않는 것' },
 ];
 
-const CATEGORY_PATTERN_PREFERENCES = {
+const CATEGORY_PATTERN_PREFERENCES: AnyRecord = {
   '홈페이지와App': ['checklist', 'experience'],
   '개발기획과컨설팅': ['checklist', 'warning'],
   '최신IT트렌드': ['trend', 'warning'],
@@ -196,13 +198,18 @@ const CATEGORY_PATTERN_PREFERENCES = {
   '도서리뷰': ['experience', 'checklist'],
 };
 
-function _hasSenseSignal(senseState = null, signalType = '') {
+function _hasSenseSignal(senseState: AnyRecord | null = null, signalType = ''): boolean {
   const signals = Array.isArray(senseState?.signals) ? senseState.signals : [];
-  return signals.some((signal) => String(signal?.type || '') === signalType);
+  return signals.some((signal: AnyRecord) => String(signal?.type || '') === signalType);
 }
 
-function adjustCategoryWeightsBySense(baseWeights = {}, senseState = null, revenueCorrelation = null, attributionWeights = {}) {
-  const next = {
+function adjustCategoryWeightsBySense(
+  baseWeights: AnyRecord = {},
+  senseState: AnyRecord | null = null,
+  revenueCorrelation: AnyRecord | null = null,
+  attributionWeights: AnyRecord = {},
+) {
+  const next: AnyRecord = {
     홈페이지와App: 1,
     개발기획과컨설팅: 1,
     최신IT트렌드: 1,
@@ -243,7 +250,7 @@ function adjustCategoryWeightsBySense(baseWeights = {}, senseState = null, reven
   return next;
 }
 
-function buildMarketingHints(category = '', senseState = null, revenueCorrelation = null) {
+function buildMarketingHints(category = '', senseState: AnyRecord | null = null, revenueCorrelation: AnyRecord | null = null) {
   const adjustedWeights = adjustCategoryWeightsBySense({}, senseState, revenueCorrelation);
   const signals = [];
   const recommendations = [];
@@ -271,11 +278,11 @@ function buildMarketingHints(category = '', senseState = null, revenueCorrelatio
   }
 
   if (Number(revenueCorrelation?.revenueImpactPct || 0) < 0) {
-    signals.push(`최근 마케팅-매출 상관 약세 (${(Number(revenueCorrelation.revenueImpactPct) * 100).toFixed(1)}%)`);
+    signals.push(`최근 마케팅-매출 상관 약세 (${(Number(revenueCorrelation?.revenueImpactPct || 0) * 100).toFixed(1)}%)`);
   }
 
   return {
-    categoryWeight: Number(adjustedWeights[category] || 1),
+    categoryWeight: Number((adjustedWeights as AnyRecord)[category] || 1),
     signalSummary: signals.join(' / ') || '특이 마케팅 신호 없음',
     recommendations,
     ctaHint,
@@ -291,32 +298,32 @@ function _trimNewsHeadline(title = '', maxLength = 34) {
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 1).trim()}…` : cleaned;
 }
 
-function buildNewsTopicPool(category = '', itNews = []) {
-  const items = Array.isArray(itNews) ? itNews.slice(0, 3) : [];
+function buildNewsTopicPool(category = '', itNews: AnyRecord[] = []): AnyRecord[] {
+  const items: AnyRecord[] = Array.isArray(itNews) ? itNews.slice(0, 3) : [];
   if (!items.length) return [];
 
-  const builders = {
-    '최신IT트렌드': (headline) => ({
+  const builders: AnyRecord = {
+    '최신IT트렌드': (headline: string) => ({
       topic: `${headline} 이슈의 실제 의미`,
       question: `${headline} 같은 최근 이슈를 볼 때 지금 먼저 해석해야 할 기준은 무엇일까`,
       diff: '기사 요약보다 최근 이슈가 실무 도입 판단에 주는 영향 중심',
     }),
-    'IT정보와분석': (headline) => ({
+    'IT정보와분석': (headline: string) => ({
       topic: `${headline} 이슈를 숫자보다 먼저 읽는 기준`,
       question: `${headline} 이슈가 커질수록 어떤 신호를 먼저 구분해야 할까`,
       diff: '뉴스 나열보다 최근 이슈의 우선순위 해석 중심',
     }),
-    '개발기획과컨설팅': (headline) => ({
+    '개발기획과컨설팅': (headline: string) => ({
       topic: `${headline} 이후 다시 점검할 실행 기준`,
       question: `${headline} 같은 최근 이슈가 생기면 프로젝트 전제부터 무엇을 다시 봐야 할까`,
       diff: '기술 이슈를 기획과 운영 기준으로 번역하는 관점',
     }),
-    '홈페이지와App': (headline) => ({
+    '홈페이지와App': (headline: string) => ({
       topic: `${headline} 이슈가 UX에 남기는 숙제`,
       question: `${headline} 같은 최근 이슈 뒤에 사용자는 어디에서 더 쉽게 불안해질까`,
       diff: '최근 이슈를 화면 신뢰와 설명 UX 기준으로 연결',
     }),
-    '성장과성공': (headline) => ({
+    '성장과성공': (headline: string) => ({
       topic: `${headline} 이슈가 보여준 판단 습관`,
       question: `${headline} 같은 최근 이슈 앞에서 흔들리지 않으려면 무엇을 기준으로 삼아야 할까`,
       diff: '최근 이슈를 개인의 선택 기준과 루틴 관점으로 연결',
@@ -336,7 +343,7 @@ function buildNewsTopicPool(category = '', itNews = []) {
     }));
 }
 
-function safeReadDir(dirPath) {
+function safeReadDir(dirPath: string): string[] {
   try {
     return fs.readdirSync(dirPath);
   } catch {
@@ -344,7 +351,7 @@ function safeReadDir(dirPath) {
   }
 }
 
-function parseRecentGeneralPost(filename) {
+function parseRecentGeneralPost(filename: string): AnyRecord | null {
   const match = filename.match(/^(\d{4}-\d{2}-\d{2})_general_([^ ]+)\s+(.+)\.html$/);
   if (!match) return null;
   const [, dateString, category, title] = match;
@@ -419,7 +426,7 @@ function withObjectParticle(value = '') {
   return `${text}${hasFinalConsonant(text) ? '을' : '를'}`;
 }
 
-function buildTitle(frame, candidate, index, strategy = null) {
+function buildTitle(frame: string, candidate: AnyRecord, index: number, strategy: AnyRecord | null = null): string {
   const directives = normalizeExecutionDirectives(strategy);
   const titleTone = directives.titlePolicy.tone;
   const countBase = titleTone === 'conversion' ? 3 : titleTone === 'amplify' ? 5 : 4;
@@ -449,7 +456,7 @@ function _loadExperimentPlaybook() {
   }
 }
 
-function _resolveExperimentSelectionHints(strategyPlan = null) {
+function _resolveExperimentSelectionHints(strategyPlan: AnyRecord | null = null): AnyRecord {
   const playbook = _loadExperimentPlaybook();
   const topWinner = playbook?.topWinner || null;
   const titlePatternDimension = playbook?.dimensions?.titlePattern || null;
@@ -475,7 +482,7 @@ function _resolveExperimentSelectionHints(strategyPlan = null) {
   };
 }
 
-function scoreCandidate(candidate, category = '', strategyPlan = null) {
+function scoreCandidate(candidate: AnyRecord, category = '', strategyPlan: AnyRecord | null = null): number {
   let score = 0;
   const guide = getCategorySelectionGuide(category);
   const preferredPatterns = CATEGORY_PATTERN_PREFERENCES[category] || [];
@@ -557,7 +564,7 @@ function scoreCandidate(candidate, category = '', strategyPlan = null) {
   return score;
 }
 
-function getCategorySelectionGuide(category = '') {
+function getCategorySelectionGuide(category = ''): AnyRecord {
   return CATEGORY_SELECTION_GUIDES[category] || {
     readerProblem: `${category} 독자가 지금 먼저 풀고 싶은 실제 문제`,
     openingAngle: `${category}를 개념 설명보다 실전 장면에서 시작`,
@@ -570,7 +577,7 @@ function getCategorySelectionGuide(category = '') {
   };
 }
 
-function enrichTopicSelection(candidate, category, recentTitles = []) {
+function enrichTopicSelection(candidate: AnyRecord, category: string, recentTitles: string[] = []): AnyRecord {
   const guide = getCategorySelectionGuide(category);
   const title = String(candidate?.title || '').trim();
 
@@ -592,11 +599,11 @@ function enrichTopicSelection(candidate, category, recentTitles = []) {
   };
 }
 
-function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = null) {
+function buildStrategyTopicPool(category: string, strategyPlan: AnyRecord | null = null, marketingHints: AnyRecord | null = null): AnyRecord[] {
   if (!strategyPlan) return [];
   const directives = normalizeExecutionDirectives(strategyPlan);
   const channelPriority = directives.channelPriority || {};
-  const strategySeeds = [];
+  const strategySeeds: AnyRecord[] = [];
 
   // keywordBias/focusTags는 제목 주제가 아니라 작성 보조 힌트로만 사용한다.
   // 전략 태그를 주제로 승격하면 "도서리뷰를 성장과성공 실행 기준..." 같은 제목이 생성된다.
@@ -644,8 +651,8 @@ function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = 
   return deduped;
 }
 
-function pickTopicPool(category, strategyPlan = null, marketingHints = null, itNews = []) {
-  const basePool = CATEGORY_TOPIC_POOL[category] || [
+function pickTopicPool(category: string, strategyPlan: AnyRecord | null = null, marketingHints: AnyRecord | null = null, itNews: AnyRecord[] = []): AnyRecord[] {
+  const basePool: AnyRecord[] = CATEGORY_TOPIC_POOL[category] || [
     { topic: `${category}에서 먼저 점검해야 할 기준`, question: `${category} 독자가 가장 먼저 부딪히는 문제는 무엇일까`, diff: '카테고리 독자 관점의 실전 문제 정의' },
     { topic: `${category} 실무 적용 체크리스트`, question: `${category}를 바로 실행으로 옮기려면 무엇부터 확인해야 할까`, diff: '추상적 개념보다 실전 체크리스트 중심' },
     { topic: `${category} 우선순위 재정렬`, question: `${category}에서 지금 가장 늦기 전에 바꿔야 할 것은 무엇일까`, diff: '정보 나열보다 판단 기준 정리' },
@@ -657,25 +664,33 @@ function pickTopicPool(category, strategyPlan = null, marketingHints = null, itN
   ];
 }
 
-function getRecentPosts(category, limit = RECENT_POST_LIMIT) {
+function getRecentPosts(category: string, limit = RECENT_POST_LIMIT): AnyRecord[] {
   return safeReadDir(BLOG_OUTPUT_DIR)
     .map(parseRecentGeneralPost)
-    .filter(Boolean)
-    .filter((post) => !isExcludedReferenceFilename(post.filename))
-    .filter((post) => !isExcludedReferenceTitle(post.title))
-    .filter((post) => post.category === category)
-    .sort((a, b) => String(b.dateString).localeCompare(String(a.dateString)))
+    .filter((post): post is AnyRecord => Boolean(post))
+    .filter((post: any) => !isExcludedReferenceFilename(post.filename))
+    .filter((post: any) => !isExcludedReferenceTitle(post.title))
+    .filter((post: any) => post.category === category)
+    .sort((a: AnyRecord, b: AnyRecord) => String(b.dateString).localeCompare(String(a.dateString)))
     .slice(0, limit);
 }
 
-function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, recentTitleCorpus = null, itNews = []) {
+function selectAndValidateTopic(
+  category: string,
+  recentPosts: AnyRecord[] = [],
+  strategyPlan: AnyRecord | null = null,
+  senseState: AnyRecord | null = null,
+  revenueCorrelation: AnyRecord | null = null,
+  recentTitleCorpus: string[] | null = null,
+  itNews: AnyRecord[] = [],
+): AnyRecord {
   const recentTitles = Array.isArray(recentTitleCorpus) && recentTitleCorpus.length
     ? recentTitleCorpus
     : recentPosts.map((post) => post.title).filter(Boolean);
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
   const topicPool = pickTopicPool(category, strategyPlan, marketingHints, itNews);
 
-  const candidates = [];
+  const candidates: AnyRecord[] = [];
   for (let i = 0; i < topicPool.length; i += 1) {
     for (let j = 0; j < TITLE_FRAMES.length; j += 1) {
       const frame = TITLE_FRAMES[j];
@@ -749,7 +764,7 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
  * @param {string} [category]  - 카테고리 필터 (있으면 일치 확인)
  * @returns {Promise<object|null>}
  */
-async function selectPrePlannedTopic(targetDate, category = null) {
+async function selectPrePlannedTopic(targetDate: string, category: string | null = null): Promise<AnyRecord | null> {
   try {
     const whereCategory = category ? `AND category = $2` : '';
     const params = category ? [targetDate, category] : [targetDate];
@@ -793,7 +808,7 @@ async function selectPrePlannedTopic(targetDate, category = null) {
  * @param {string} [category]  - 카테고리 필터 (생략 시 전체)
  * @returns {Promise<Array|null>}
  */
-async function queryDailyCandidates(targetDate, category = null) {
+async function queryDailyCandidates(targetDate: string, category: string | null = null): Promise<AnyRecord[] | null> {
   try {
     const whereCategory = category ? `AND category = $2` : '';
     const params = category ? [targetDate, category] : [targetDate];
@@ -807,7 +822,7 @@ async function queryDailyCandidates(targetDate, category = null) {
     `;
     const result = await queryOpsDb(sql, 'blog', params);
     if (!result || !result.rows || result.rows.length === 0) return null;
-    return result.rows.map(row => ({
+    return result.rows.map((row: AnyRecord) => ({
       id: row.id,
       category: row.category,
       title: row.title,
@@ -822,7 +837,7 @@ async function queryDailyCandidates(targetDate, category = null) {
   }
 }
 
-async function getRecentPublishedTitles(targetDate, days = 90, limit = 80) {
+async function getRecentPublishedTitles(targetDate: string, days = 90, limit = 80): Promise<string[]> {
   try {
     const result = await queryOpsDb(
       `SELECT title
@@ -835,7 +850,7 @@ async function getRecentPublishedTitles(targetDate, days = 90, limit = 80) {
       'blog',
       [targetDate, String(days), Number(limit)]
     );
-    return (result?.rows || []).map((row) => String(row?.title || '').trim()).filter(Boolean);
+    return (result?.rows || []).map((row: AnyRecord) => String(row?.title || '').trim()).filter(Boolean);
   } catch {
     return [];
   }
@@ -851,11 +866,20 @@ async function getRecentPublishedTitles(targetDate, days = 90, limit = 80) {
  * @param {object} senseState
  * @param {object} revenueCorrelation
  */
-async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, itNews = [], options = {}) {
+async function selectTopicWithCandidateFallback(
+  category: string,
+  targetDate: string,
+  recentPosts: AnyRecord[] = [],
+  strategyPlan: AnyRecord | null = null,
+  senseState: AnyRecord | null = null,
+  revenueCorrelation: AnyRecord | null = null,
+  itNews: AnyRecord[] = [],
+  options: AnyRecord = {},
+): Promise<AnyRecord> {
   const normalizedOptions = Object.assign({ dryRun: false }, options || {});
   const dryRun = normalizedOptions.dryRun === true;
   const recentTitles = mergeRecentTitles(
-    recentPosts.map(post => post.title).filter(Boolean),
+    recentPosts.map((post: AnyRecord) => post.title).filter(Boolean),
     await getRecentPublishedTitles(targetDate)
   );
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
@@ -884,12 +908,12 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   if (dbCandidates && dbCandidates.length > 0) {
     const { patterns, failures } = await _loadDpoHints();
     dbCandidates = _applyDpoScore(dbCandidates, patterns, failures)
-      .sort((a, b) => b.score - a.score);
+      .sort((a: AnyRecord, b: AnyRecord) => b.score - a.score);
   }
 
   if (dbCandidates && dbCandidates.length > 0) {
     // 중복 제목 필터링 후 최고 점수 선택
-    const selected = dbCandidates.find(c => {
+    const selected = dbCandidates.find((c: AnyRecord) => {
       if (!isReaderFriendlyTitle(c.title, category)) return false;
       if (isTooCloseToRecentTitle(c, recentTitles)) return false;
       return true;
@@ -915,8 +939,8 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   if (trendCandidates && trendCandidates.length > 0) {
     const { patterns, failures } = await _loadDpoHints();
     const scored = _applyDpoScore(trendCandidates, patterns, failures)
-      .sort((a, b) => b.score - a.score);
-    const selected = scored.find((c) => {
+      .sort((a: AnyRecord, b: AnyRecord) => b.score - a.score);
+    const selected = scored.find((c: AnyRecord) => {
       if (!isReaderFriendlyTitle(c.title, category)) return false;
       if (isTooCloseToRecentTitle(c, recentTitles)) return false;
       return true;
@@ -940,7 +964,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
             source: selected.source,
             fusionScore: selected.fusionScore,
           },
-          candidates: scored.slice(0, 5).map((c) => ({
+          candidates: scored.slice(0, 5).map((c: AnyRecord) => ({
             trendId: c.trendId,
             title: c.title,
             source: c.source,
@@ -1011,9 +1035,9 @@ const LUNA_ANGLE_TEMPLATES = {
  * 루나 요청 + 오늘 카테고리를 합성해 하이브리드 주제를 만든다.
  * 동기 함수 — DB 호출 없음. 품질 게이트 통과 실패 시 null 반환.
  */
-function synthesizeHybridTopic(category, lunaRequest, recentPosts = [], strategyPlan = null) {
+function synthesizeHybridTopic(category: string, lunaRequest: AnyRecord | null, recentPosts: AnyRecord[] = [], strategyPlan: AnyRecord | null = null): AnyRecord | null {
   if (!lunaRequest) return null;
-  const templates = LUNA_ANGLE_TEMPLATES[category];
+  const templates = (LUNA_ANGLE_TEMPLATES as AnyRecord)[category];
   if (!templates) return null;
 
   const rawRegime = String(lunaRequest?.regime || 'volatile');
@@ -1021,7 +1045,7 @@ function synthesizeHybridTopic(category, lunaRequest, recentPosts = [], strategy
   const template = templates[regime];
   if (!template) return null;
 
-  const recentTitles = recentPosts.map(p => p.title).filter(Boolean);
+  const recentTitles = recentPosts.map((p: AnyRecord) => p.title).filter(Boolean);
 
   const preferredPatterns = CATEGORY_PATTERN_PREFERENCES[category] || [];
   const preferredFrame = TITLE_FRAMES.find(f => preferredPatterns.includes(f.pattern)) || TITLE_FRAMES[0];
@@ -1089,16 +1113,16 @@ async function getPendingLunaRequest() {
  * blog.category_revenue_performance 기반으로 상위 카테고리 부스팅
  * Kill Switch: BLOG_REVENUE_CORRELATION_ENABLED=true 일 때만 반환값 있음
  */
-async function fetchRevenueAttributionWeights() {
+async function fetchRevenueAttributionWeights(): Promise<AnyRecord> {
   if (process.env.BLOG_REVENUE_CORRELATION_ENABLED !== 'true') return {};
   try {
     const bridge = require('./ska-revenue-bridge');
     const topCategories = await bridge.getTopRevenueCategories(30);
     if (!topCategories || topCategories.length === 0) return {};
 
-    const weights = {};
+    const weights: AnyRecord = {};
     // 1위: +2, 2위: +1.5, 3위+: +1 부스팅
-    topCategories.forEach((cat, idx) => {
+    topCategories.forEach((cat: AnyRecord, idx: number) => {
       if (!cat.category || Number(cat.avg_uplift_krw || 0) <= 0) return;
       weights[cat.category] = idx === 0 ? 2 : idx === 1 ? 1.5 : 1;
     });
@@ -1115,7 +1139,7 @@ async function fetchRevenueAttributionWeights() {
  *
  * @returns { categoryBoosts: {카테고리: 가중치}, bestHookByCategory: {카테고리: hook_style} }
  */
-async function fetchDpoHints() {
+async function fetchDpoHints(): Promise<AnyRecord> {
   if (process.env.BLOG_DPO_ENABLED !== 'true') return { categoryBoosts: {}, bestHookByCategory: {} };
   try {
     const dpo = require('./self-rewarding/marketing-dpo');
@@ -1125,7 +1149,7 @@ async function fetchDpoHints() {
     ]);
 
     // 성공 패턴에서 카테고리별 가중치 추출
-    const categoryBoosts = {};
+    const categoryBoosts: AnyRecord = {};
     for (const pattern of successPatterns) {
       if (pattern.pattern_type === 'hook' && pattern.avg_performance > 60) {
         // 성과 높은 후킹 패턴이 많이 사용된 카테고리 부스팅 (추후 category 컬럼 추가 시 확장)
@@ -1133,10 +1157,10 @@ async function fetchDpoHints() {
     }
 
     // 카테고리별 최고 후킹 스타일 조회
-    const bestHookByCategory = {};
+    const bestHookByCategory: AnyRecord = {};
     const categories = ['홈페이지와App', '최신IT트렌드', '개발기획과컨설팅', '자기계발', 'IT정보와분석'];
     await Promise.all(
-      categories.map(async (cat) => {
+      categories.map(async (cat: string) => {
         const hook = await dpo.getBestHookStyleByCategory(cat);
         if (hook) bestHookByCategory[cat] = hook;
       })
@@ -1152,7 +1176,7 @@ async function fetchDpoHints() {
  * blog.trend_topics에서 오늘 수집된 Reddit/Aladin/Naver 트렌드 후보 조회.
  * Blog V3 unified fusion score를 적용한다.
  */
-async function fetchTrendTopicCandidates(targetDate, category = null) {
+async function fetchTrendTopicCandidates(targetDate: string, category: string | null = null): Promise<AnyRecord[] | null> {
   try {
     const categoryFilter = category ? `AND (category = $2 OR category IS NULL)` : '';
     const params = category ? [targetDate, category] : [targetDate];
@@ -1169,7 +1193,7 @@ async function fetchTrendTopicCandidates(targetDate, category = null) {
     );
     if (!rows?.rows?.length) return null;
     return buildTrendTopicFusionClusters(rows.rows)
-      .map((cluster) => {
+      .map((cluster: AnyRecord) => {
         const row = cluster.representative;
         const fusion = cluster.fusion || calculateTrendFusionScore({
           ...row,
@@ -1181,7 +1205,7 @@ async function fetchTrendTopicCandidates(targetDate, category = null) {
         });
         const sourceLabel = SOURCE_LABELS[fusion.source] || row.source;
         const sourceSummary = (cluster.sources || [fusion.source])
-          .map((source) => SOURCE_LABELS[source] || source)
+          .map((source: string) => SOURCE_LABELS[source] || source)
           .join('+');
         return {
           id: row.id,
@@ -1206,7 +1230,7 @@ async function fetchTrendTopicCandidates(targetDate, category = null) {
           },
         };
       })
-      .sort((a, b) => (b.fusionScore || 0) - (a.fusionScore || 0))
+      .sort((a: AnyRecord, b: AnyRecord) => (b.fusionScore || 0) - (a.fusionScore || 0))
       .slice(0, 8);
   } catch {
     return null;
