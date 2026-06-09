@@ -23,11 +23,32 @@ const PROTECTED = new Set([
 ]);
 const CANARY_LABELS = ['ai.hub.llm-tier-probe'];
 
-function hasFlag(flag) {
+type LaunchctlResult = {
+  ok: boolean;
+  status: number | null;
+  output: string;
+};
+
+type SelfHealingResult = {
+  ok: boolean;
+  checkedAt: string;
+  dryRun: boolean;
+  label: string;
+  plan: ReturnType<typeof buildPlan>;
+  applied: LaunchctlResult | null;
+  error?: string;
+  requiredConfirm?: string;
+  allowedLabels?: string[];
+  loaded?: LaunchctlResult;
+  bootstrapCommand?: string;
+  note?: string;
+};
+
+function hasFlag(flag: string) {
   return process.argv.includes(flag);
 }
 
-function argValue(name) {
+function argValue(name: string) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
@@ -55,7 +76,7 @@ function buildPlan() {
   };
 }
 
-function launchctl(args) {
+function launchctl(args: string[]): LaunchctlResult {
   const result = spawnSync('launchctl', args, { encoding: 'utf8', timeout: 15_000 });
   return {
     ok: result.status === 0,
@@ -64,12 +85,12 @@ function launchctl(args) {
   };
 }
 
-function launchctlPrint(label) {
+function launchctlPrint(label: string) {
   const uid = process.getuid ? process.getuid() : Number(spawnSync('id', ['-u'], { encoding: 'utf8' }).stdout.trim());
   return launchctl(['print', `gui/${uid}/${label}`]);
 }
 
-function canaryPlistPath(label) {
+function canaryPlistPath(label: string) {
   return path.join(PROJECT_ROOT, 'bots', 'hub', 'launchd', `${label}.plist`);
 }
 
@@ -79,7 +100,7 @@ async function main() {
   const label = argValue('--label') || CANARY_LABELS[0];
   const plan = buildPlan();
 
-  const result = {
+  const result: SelfHealingResult = {
     ok: true,
     checkedAt: new Date().toISOString(),
     dryRun: !apply,
@@ -132,7 +153,7 @@ async function main() {
   if (!result.ok) process.exit(1);
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error(error);
   process.exit(1);
 });

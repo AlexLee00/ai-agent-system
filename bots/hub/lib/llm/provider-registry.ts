@@ -12,22 +12,29 @@ const {
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
-const stats = new Map();
+type ProviderStats = {
+  totalCalls: number;
+  totalFailures: number;
+  totalLatencyMs: number;
+  recentLatencies: number[];
+};
 
-function _getStats(provider) {
+const stats = new Map<string, ProviderStats>();
+
+function _getStats(provider: string) {
   if (!stats.has(provider)) {
     stats.set(provider, { totalCalls: 0, totalFailures: 0, totalLatencyMs: 0, recentLatencies: [] });
   }
-  return stats.get(provider);
+  return stats.get(provider)!;
 }
 
-function _p99(latencies) {
+function _p99(latencies: number[]) {
   if (!latencies.length) return 0;
   const sorted = [...latencies].sort((a, b) => a - b);
   return sorted[Math.min(Math.floor(sorted.length * 0.99), sorted.length - 1)];
 }
 
-function _flag(name) {
+function _flag(name: string) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
 }
 
@@ -35,11 +42,11 @@ function _alertsEnabled() {
   return _flag('HUB_LLM_PROVIDER_CIRCUIT_ALERTS_ENABLED');
 }
 
-function canCall(provider) {
+function canCall(provider: string) {
   return !isCircuitOpen(provider);
 }
 
-function recordSuccess(provider, latencyMs) {
+function recordSuccess(provider: string, latencyMs: number) {
   const s = _getStats(provider);
   const wasOpen = isCircuitOpen(provider);
   cbSuccess(provider);
@@ -54,7 +61,7 @@ function recordSuccess(provider, latencyMs) {
   }
 }
 
-function recordFailure(provider, reason, latencyMs) {
+function recordFailure(provider: string, reason?: string, latencyMs = 0) {
   const s = _getStats(provider);
   const wasOpen = isCircuitOpen(provider);
   cbFailure(provider);
@@ -71,7 +78,14 @@ function recordFailure(provider, reason, latencyMs) {
 }
 
 function getProviderStats() {
-  const result = {};
+  const result: Record<string, {
+    state: string;
+    total_calls: number;
+    total_failures: number;
+    failure_rate: number;
+    avg_latency_ms: number;
+    p99_latency_ms: number;
+  }> = {};
   for (const [provider, s] of stats) {
     result[provider] = {
       state: isCircuitOpen(provider) ? 'OPEN' : 'CLOSED',
@@ -85,7 +99,7 @@ function getProviderStats() {
   return result;
 }
 
-function _providerResetKeys(provider) {
+function _providerResetKeys(provider: string) {
   const normalized = String(provider || '').trim().toLowerCase();
   if (!normalized) return [];
   const keys = new Set([normalized]);
@@ -98,7 +112,7 @@ function _providerResetKeys(provider) {
   return Array.from(keys);
 }
 
-function resetProviderCircuit(provider) {
+function resetProviderCircuit(provider: string) {
   const reset = _providerResetKeys(provider);
   for (const key of reset) {
     resetCircuit(key);
@@ -114,7 +128,7 @@ function resetAllProviderCircuits() {
   return reset;
 }
 
-async function _logEvent(provider, eventType, reason, latencyMs) {
+async function _logEvent(provider: string, eventType: string, reason: string | null, latencyMs: number) {
   try {
     await pgPool.run(
       'public',
