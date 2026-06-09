@@ -9,6 +9,39 @@
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
+type ColumnRow = {
+  column_name?: string;
+};
+
+type FeedbackPattern = {
+  type: string;
+  count: number;
+  recentSummaries: string[];
+  source: string;
+};
+
+type OperationalPostRow = {
+  title?: string;
+  category?: string;
+  status?: string;
+  post_type?: string;
+  publish_date?: string;
+  created_at?: string;
+  metadata?: Record<string, any>;
+};
+
+type CategoryPerformanceRow = {
+  category?: string;
+  avg_views?: number | string;
+};
+
+type MemoryPattern = {
+  content: string;
+  keywords?: string[];
+  importance?: number;
+  metadata?: Record<string, unknown>;
+};
+
 async function getPostDateColumn() {
   try {
     const rows = await pgPool.query('blog', `
@@ -18,7 +51,7 @@ async function getPostDateColumn() {
         AND table_name = 'posts'
         AND column_name IN ('published_at', 'publish_date', 'created_at')
     `);
-    const names = new Set((rows || []).map((row) => row.column_name));
+    const names = new Set((rows || []).map((row: ColumnRow) => row.column_name));
     if (names.has('published_at')) return 'published_at';
     if (names.has('publish_date')) return 'publish_date';
     return 'created_at';
@@ -46,7 +79,7 @@ const DIFF_ANALYSIS_SYSTEM = `
 /**
  * 수정 diff 분석 + 기록
  */
-async function recordFeedback(postId, originalTitle, modifiedTitle, originalContentHash, modifiedContentHash) {
+async function recordFeedback(postId: string | number, originalTitle: string, modifiedTitle: string, originalContentHash: string, modifiedContentHash: string) {
   try {
     const userPrompt = `
 원본 제목: ${originalTitle}
@@ -78,7 +111,7 @@ async function recordFeedback(postId, originalTitle, modifiedTitle, originalCont
 
     return parsed;
   } catch (err) {
-    console.warn('[feedback-learner] 피드백 기록 실패:', err.message);
+    console.warn('[feedback-learner] 피드백 기록 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -94,7 +127,7 @@ async function aggregateMasterFeedbackPatterns(days = 30) {
       ORDER BY count DESC
     `, [days]);
 
-    return (rows || []).map(r => ({
+    return (rows || []).map((r: { feedback_type?: string; count?: number | string; summaries?: string[] }) => ({
       type: r.feedback_type,
       count: Number(r.count),
       recentSummaries: (r.summaries || []).slice(0, 3),
@@ -150,7 +183,7 @@ async function aggregateOperationalPatterns(days = 30) {
     const autonomyLaneCounts = new Map();
     const summaries = [];
 
-    for (const row of rows) {
+    for (const row of rows as OperationalPostRow[]) {
       const category = String(row.category || '').trim();
       const pattern = detectTitlePatternLocal(row.title || '');
       const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
@@ -188,7 +221,7 @@ async function aggregateOperationalPatterns(days = 30) {
     const topPattern = [...patternCounts.entries()].sort((a, b) => b[1] - a[1])[0];
     const topAlignmentHint = [...alignmentHints.entries()].sort((a, b) => b[1] - a[1])[0];
     const topAutonomyLane = [...autonomyLaneCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-    const patterns = [];
+    const patterns: FeedbackPattern[] = [];
 
     if (topCategory) {
       patterns.push({
@@ -310,14 +343,16 @@ async function loadCategoryPerformanceWeights() {
 
     if (!rows || rows.length === 0) return {};
 
-    const maxViews = Math.max(...rows.map(r => Number(r.avg_views) || 0));
+    const maxViews = Math.max(...rows.map((r: CategoryPerformanceRow) => Number(r.avg_views) || 0));
     if (maxViews === 0) return {};
 
-    const weights = {};
-    for (const row of rows) {
+    const weights: Record<string, number> = {};
+    for (const row of rows as CategoryPerformanceRow[]) {
+      const category = String(row.category || '').trim();
+      if (!category) continue;
       const ratio = (Number(row.avg_views) || 0) / maxViews;
       // 0.8~1.3 범위 가중치 (너무 극단적이지 않게)
-      weights[row.category] = Math.round((0.8 + ratio * 0.5) * 100) / 100;
+      weights[category] = Math.round((0.8 + ratio * 0.5) * 100) / 100;
     }
     return weights;
   } catch {
@@ -329,7 +364,7 @@ async function loadCategoryPerformanceWeights() {
  * 고성과 패턴을 Hub 대도서관(RAG 메모리)에 저장.
  * 주 1회 호출 — "화요일 최신IT트렌드 평균 조회수 +25%" 같은 패턴 저장.
  */
-async function saveHighPerfPatternToMemory(pattern) {
+async function saveHighPerfPatternToMemory(pattern: MemoryPattern) {
   try {
     const env = require('../../../packages/core/lib/env');
     if (!env.HUB_BASE_URL || !env.HUB_AUTH_TOKEN) return null;
@@ -362,7 +397,7 @@ async function saveHighPerfPatternToMemory(pattern) {
  * Hub 대도서관에서 성과 패턴 조회.
  * topic-planner.ts가 "내일 카테고리 선택 근거" 조회 시 사용.
  */
-async function recallPerfPatternFromMemory(query) {
+async function recallPerfPatternFromMemory(query: string) {
   try {
     const env = require('../../../packages/core/lib/env');
     if (!env.HUB_BASE_URL || !env.HUB_AUTH_TOKEN) return [];

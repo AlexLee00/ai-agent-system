@@ -9,20 +9,50 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_CONFIG_PATH = path.resolve(__dirname, '../../../../config.yaml');
 const HUB_SECRETS_PATH = path.resolve(__dirname, '../../../../../hub/secrets-store.json');
 
-const approvalCache = new Map();
-const approvalInflight = new Map();
+type KisSecretConfig = {
+  kis?: {
+    app_key?: string;
+    app_secret?: string;
+  };
+  investment_accounts?: {
+    kis?: {
+      app_key?: string;
+      app_secret?: string;
+    };
+  };
+  config?: {
+    kis?: {
+      app_key?: string;
+      app_secret?: string;
+    };
+  };
+};
 
-function readYaml(file, fallback = {}) {
+type KisApprovalArgs = {
+  paper?: boolean;
+  timeoutMs?: number;
+  forceRefreshApprovalKey?: boolean;
+};
+
+type KisApprovalCacheEntry = {
+  approvalKey: string;
+  issuedAt: number;
+};
+
+const approvalCache = new Map<string, KisApprovalCacheEntry>();
+const approvalInflight = new Map<string, Promise<string>>();
+
+function readYaml(file: string, fallback: KisSecretConfig = {}): KisSecretConfig {
   try {
-    return yaml.load(fs.readFileSync(file, 'utf8')) || fallback;
+    return (yaml.load(fs.readFileSync(file, 'utf8')) || fallback) as KisSecretConfig;
   } catch {
     return fallback;
   }
 }
 
-function readJson(file, fallback = {}) {
+function readJson(file: string, fallback: KisSecretConfig = {}): KisSecretConfig {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as KisSecretConfig;
   } catch {
     return fallback;
   }
@@ -46,7 +76,7 @@ async function getKisSecrets() {
   return { appKey, appSecret };
 }
 
-async function fetchApprovalKey(args = {}) {
+async function fetchApprovalKey(args: KisApprovalArgs = {}) {
   const { appKey, appSecret } = await getKisSecrets();
   if (!appKey || !appSecret) throw new Error('kis_credentials_missing');
   const paper = args.paper === true || process.env.KIS_MODE === 'mock';
@@ -63,7 +93,7 @@ async function fetchApprovalKey(args = {}) {
   return body.approval_key;
 }
 
-export async function getKisRealtimeApprovalKey(args = {}) {
+export async function getKisRealtimeApprovalKey(args: KisApprovalArgs = {}) {
   const paper = args.paper === true || process.env.KIS_MODE === 'mock';
   const key = paper ? 'paper' : 'live';
   const now = Date.now();
@@ -73,7 +103,7 @@ export async function getKisRealtimeApprovalKey(args = {}) {
     return cached.approvalKey;
   }
   if (!forceRefresh && approvalInflight.has(key)) return approvalInflight.get(key);
-  let promise;
+  let promise: Promise<string>;
   promise = fetchApprovalKey(args)
     .then((approvalKey) => {
       if (approvalInflight.get(key) === promise) {

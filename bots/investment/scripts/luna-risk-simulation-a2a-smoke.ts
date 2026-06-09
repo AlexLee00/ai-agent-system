@@ -8,7 +8,22 @@ import {
 } from '../a2a/skills/risk-simulation-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function fakeQuery(sql) {
+type A2ASmokeOutput = {
+  ok?: boolean;
+  skill?: string;
+  analysisType?: string;
+  symbols?: string[];
+  dataHealth?: string;
+  broadcastPlanned?: boolean;
+  market?: string;
+};
+
+type A2ASmokeResult = {
+  status: string;
+  output: A2ASmokeOutput;
+};
+
+function fakeQuery(sql: string) {
   if (sql.includes('luna_risk_simulation_shadow')) {
     return [{
       analysis_type: 'stress_test',
@@ -49,12 +64,13 @@ export async function runLunaRiskSimulationA2ASmoke() {
   });
   assert.equal(result.id, 'risk-sim-a2a-smoke-1');
   assert.equal(result.status, 'completed');
-  assert.equal(result.output.ok, true);
-  assert.equal(result.output.skill, 'risk-simulation-shadow');
-  assert.equal(result.output.analysisType, 'stress_test');
-  assert.equal(result.output.symbols[0], 'BTC/USDT');
-  assert.equal(result.output.dataHealth, 'ready');
-  assert.equal(result.output.broadcastPlanned, false);
+  const output = result.output as A2ASmokeOutput;
+  assert.equal(output.ok, true);
+  assert.equal(output.skill, 'risk-simulation-shadow');
+  assert.equal(output.analysisType, 'stress_test');
+  assert.equal(output.symbols?.[0], 'BTC/USDT');
+  assert.equal(output.dataHealth, 'ready');
+  assert.equal(output.broadcastPlanned, false);
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';
@@ -63,7 +79,7 @@ export async function runLunaRiskSimulationA2ASmoke() {
     symbol: 'BTC/USDT',
     exchange: 'binance',
     scenario: '2022_luna_ftx',
-  });
+  }) as A2ASmokeResult;
   assert.equal(enabled.output.broadcastPlanned, true);
   if (previous == null) delete process.env.LUNA_A2A_BROADCAST_ENABLED;
   else process.env.LUNA_A2A_BROADCAST_ENABLED = previous;
@@ -71,7 +87,7 @@ export async function runLunaRiskSimulationA2ASmoke() {
   const candidateOnly = await createRiskSimulationShadowHandler({
     queryFn: () => [],
     skillId: 'monte-carlo-shadow',
-  })({
+  } as any)({
     analysisType: 'monte_carlo',
     symbols: ['NVDA'],
     exchange: 'kis_overseas',
@@ -79,7 +95,7 @@ export async function runLunaRiskSimulationA2ASmoke() {
       NVDA: Array.from({ length: 90 }, (_, index) => ({ close: 800 + index * 2 })),
     },
     simulations: 200,
-  });
+  }) as A2ASmokeResult;
   assert.equal(candidateOnly.status, 'completed');
   assert.equal(candidateOnly.output.skill, 'monte-carlo-shadow');
   assert.equal(candidateOnly.output.analysisType, 'monte_carlo');
@@ -90,14 +106,14 @@ export async function runLunaRiskSimulationA2ASmoke() {
     queryFn: () => [],
     skillId: 'stress-test-shadow',
     defaultAnalysisType: 'stress_test',
-  })({
+  } as any)({
     symbols: ['BTC/USDT'],
     exchange: 'binance',
     scenario: '2022_luna_ftx',
     barsBySymbol: {
       'BTC/USDT': Array.from({ length: 90 }, (_, index) => ({ close: 100 - index * 0.5 })),
     },
-  });
+  }) as A2ASmokeResult;
   assert.equal(stressAliasCandidateOnly.status, 'completed');
   assert.equal(stressAliasCandidateOnly.output.skill, 'stress-test-shadow');
   assert.equal(stressAliasCandidateOnly.output.analysisType, 'stress_test');
@@ -107,8 +123,8 @@ export async function runLunaRiskSimulationA2ASmoke() {
   return {
     ok: true,
     smoke: 'luna-risk-simulation-a2a-phase8',
-    skill: result.output.skill,
-    broadcastDefault: result.output.broadcastPlanned,
+    skill: output.skill,
+    broadcastDefault: output.broadcastPlanned,
     broadcastEnabled: enabled.output.broadcastPlanned,
     candidateOnly: candidateOnly.output.dataHealth,
     stressAliasDefault: stressAliasCandidateOnly.output.analysisType,
@@ -121,7 +137,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: 'luna risk simulation A2A smoke failed:',
   });

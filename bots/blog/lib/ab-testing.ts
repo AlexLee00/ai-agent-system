@@ -11,11 +11,32 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 
+type AbTestConfig = {
+  platform?: string;
+  variant_a?: unknown;
+  variant_b?: unknown;
+  metric_target?: string;
+  hypothesis?: string;
+  sample_size_target?: number;
+};
+
+type AbTestRow = {
+  test_id?: string;
+  variant_a?: string | Record<string, unknown>;
+  variant_b?: string | Record<string, unknown>;
+  hypothesis?: string;
+  sample_size_target?: number | string;
+  a_count?: number | string;
+  a_score?: number | string;
+  b_count?: number | string;
+  b_score?: number | string;
+};
+
 /**
  * A/B 테스트 생성
  * @param {object} config { platform, variant_a, variant_b, metric_target, hypothesis, sample_size_target }
  */
-async function createAbTest(config) {
+async function createAbTest(config: AbTestConfig) {
   const testId = `ab_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   try {
     await pgPool.query('blog', `
@@ -35,7 +56,7 @@ async function createAbTest(config) {
     console.log(`[ab-testing] 테스트 생성: ${testId}`);
     return { test_id: testId, status: 'running' };
   } catch (err) {
-    console.warn('[ab-testing] 테스트 생성 실패:', err.message);
+    console.warn('[ab-testing] 테스트 생성 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -46,7 +67,7 @@ async function createAbTest(config) {
  * @param {'a'|'b'} variant
  * @param {number} metricValue
  */
-async function recordAbTestResult(testId, variant, metricValue) {
+async function recordAbTestResult(testId: string, variant: 'a' | 'b', metricValue: number) {
   try {
     const col = variant === 'a' ? 'variant_a_score' : 'variant_b_score';
     const countCol = variant === 'a' ? 'variant_a_count' : 'variant_b_count';
@@ -64,7 +85,7 @@ async function recordAbTestResult(testId, variant, metricValue) {
 /**
  * 간이 카이제곱 통계 유의성 (p < 0.05 기준)
  */
-function chiSquareTest(aCount, bCount, aScore, bScore) {
+function chiSquareTest(aCount: number, bCount: number, aScore: number, bScore: number) {
   if (aCount < 5 || bCount < 5) return { significant: false, p_value: null, note: '샘플 부족' };
 
   const aAvg = aScore / aCount;
@@ -90,7 +111,7 @@ function chiSquareTest(aCount, bCount, aScore, bScore) {
 }
 
 // 정규분포 누적분포함수 근사
-function normalCdf(z) {
+function normalCdf(z: number) {
   const t = 1 / (1 + 0.2316419 * Math.abs(z));
   const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
   const pdf = Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
@@ -102,7 +123,7 @@ function normalCdf(z) {
  * A/B 테스트 결과 분석 + Telegram 보고
  * @param {string} testId
  */
-async function analyzeAbTest(testId) {
+async function analyzeAbTest(testId: string) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT test_id, platform, variant_a, variant_b, metric_target, hypothesis,
@@ -114,7 +135,7 @@ async function analyzeAbTest(testId) {
       WHERE test_id = $1
     `, [testId]);
 
-    const test = rows?.[0];
+    const test = rows?.[0] as AbTestRow | undefined;
     if (!test) return null;
 
     const aCount = Number(test.a_count || 0);
@@ -154,7 +175,7 @@ async function analyzeAbTest(testId) {
 
     return { test_id: testId, status: newStatus, stats };
   } catch (err) {
-    console.warn('[ab-testing] 분석 실패:', err.message);
+    console.warn('[ab-testing] 분석 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 }
