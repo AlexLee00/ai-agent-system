@@ -224,11 +224,12 @@ export async function runLunaRlPolicySmoke() {
   assert.equal(dryDeps.schemaInits.length, 0);
   const btcRuntimeRow = planned.rows.find((row) => row.symbol === 'BTC/USDT');
   assert.ok(btcRuntimeRow);
-  assert.equal(btcRuntimeRow.evidence.regimeSource, 'investment.luna_regime_llm_shadow');
-  assert.equal(btcRuntimeRow.evidence.entrySource, 'investment.luna_entry_llm_shadow');
-  assert.equal(btcRuntimeRow.evidence.factorSource, 'investment.luna_factor_model_shadow');
-  assert.equal(btcRuntimeRow.evidence.statArbSource, 'investment.luna_stat_arb_shadow');
-  assert.equal(btcRuntimeRow.evidence.sellSuppressedNoPosition, false);
+  const btcEvidence = btcRuntimeRow.evidence as Record<string, any>;
+  assert.equal(btcEvidence.regimeSource, 'investment.luna_regime_llm_shadow');
+  assert.equal(btcEvidence.entrySource, 'investment.luna_entry_llm_shadow');
+  assert.equal(btcEvidence.factorSource, 'investment.luna_factor_model_shadow');
+  assert.equal(btcEvidence.statArbSource, 'investment.luna_stat_arb_shadow');
+  assert.equal(btcEvidence.sellSuppressedNoPosition, false);
 
   const applyDeps = fakeDeps();
   const written = await runLunaRlPolicyShadow({
