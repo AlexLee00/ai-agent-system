@@ -10,12 +10,14 @@ async function main() {
   const originalEnv = {
     HUB_BASE_URL: process.env.HUB_BASE_URL,
     HUB_AUTH_TOKEN: process.env.HUB_AUTH_TOKEN,
+    HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES: process.env.HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES,
   };
   const originalFetch = global.fetch;
 
   const capturedBodies = [];
   process.env.HUB_BASE_URL = 'http://hub-client-default-model-smoke.local';
   process.env.HUB_AUTH_TOKEN = 'hub-client-default-model-smoke-token';
+  process.env.HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES = '32768';
 
   global.fetch = async (_input, init = {}) => {
     capturedBodies.push(JSON.parse(String(init.body || '{}')));
@@ -54,6 +56,13 @@ async function main() {
       prompt: 'non-blog selector timeout clamp smoke',
       timeoutMs: 600_000,
     });
+    await callHubLlm({
+      callerTeam: 'smoke',
+      agent: 'default',
+      prompt: 'x'.repeat(120_000),
+      systemPrompt: 's'.repeat(40_000),
+      timeoutMs: 10_000,
+    });
 
     assert.equal(capturedBodies[0]?.abstractModel, 'anthropic_haiku', 'missing abstractModel must default to Haiku, not Sonnet');
     assert.equal(capturedBodies[1]?.abstractModel, 'anthropic_haiku', 'unknown abstractModel must downgrade to Haiku');
@@ -61,6 +70,11 @@ async function main() {
     assert.equal(capturedBodies[3]?.timeoutMs, 180_000, 'non-blog LLM calls must stay capped at 180s');
     assert.equal(capturedBodies[4]?.timeoutMs, 600_000, 'blog writer LLM calls must preserve long batch timeout');
     assert.equal(capturedBodies[5]?.timeoutMs, 180_000, 'non-blog calls must not bypass timeout cap with blog writer selector');
+    assert.equal(capturedBodies[6]?.payloadTrimmed, true, 'oversized Hub LLM payload should be trimmed client-side');
+    assert.ok(
+      Buffer.byteLength(JSON.stringify(capturedBodies[6]), 'utf8') <= 32768,
+      'trimmed Hub LLM payload should stay below client payload cap',
+    );
 
     console.log(JSON.stringify({
       ok: true,
@@ -70,6 +84,7 @@ async function main() {
       non_blog_timeout_ms: capturedBodies[3]?.timeoutMs,
       blog_writer_timeout_ms: capturedBodies[4]?.timeoutMs,
       non_blog_blog_selector_timeout_ms: capturedBodies[5]?.timeoutMs,
+      payload_trimmed: capturedBodies[6]?.payloadTrimmed === true,
     }));
   } finally {
     global.fetch = originalFetch;
@@ -77,6 +92,8 @@ async function main() {
     else process.env.HUB_BASE_URL = originalEnv.HUB_BASE_URL;
     if (originalEnv.HUB_AUTH_TOKEN == null) delete process.env.HUB_AUTH_TOKEN;
     else process.env.HUB_AUTH_TOKEN = originalEnv.HUB_AUTH_TOKEN;
+    if (originalEnv.HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES == null) delete process.env.HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES;
+    else process.env.HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES = originalEnv.HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES;
   }
 }
 

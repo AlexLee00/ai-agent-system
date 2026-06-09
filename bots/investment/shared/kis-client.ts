@@ -132,6 +132,7 @@ const __dirname = path.dirname(__filename);
 const KIS_MCP_SERVER_PATH = process.env.KIS_MCP_SERVER_PATH || path.resolve(__dirname, '../scripts/kis-market-mcp-server.py');
 const execFileAsync = promisify(execFile);
 const _kisMcpNonMutatingFailureCooldowns = new Map();
+const _kisMcpNonMutatingResponseCache = new Map();
 const _kisOverseasEmptyQuoteCache = new Map();
 const _kisDedupLogState = new Map();
 
@@ -163,6 +164,78 @@ function logKisDedup(key, message, level = 'warn') {
     state.lastLogAt = now;
   }
   _kisDedupLogState.set(key, state);
+}
+
+function positiveNumberEnv(name, fallback, min = 0, max = Number.MAX_SAFE_INTEGER) {
+  const parsed = Number(process.env[name] || '');
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function stableJson(value) {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+}
+
+function kisMcpCacheTtlMs(action) {
+  const normalized = String(action || '').toLowerCase();
+  if (normalized.includes('balance')) {
+    return positiveNumberEnv('KIS_MCP_BALANCE_CACHE_TTL_MS', 30_000, 0, 10 * 60_000);
+  }
+  if (normalized.includes('quote')) {
+    return positiveNumberEnv('KIS_MCP_QUOTE_CACHE_TTL_MS', 15_000, 0, 5 * 60_000);
+  }
+  return positiveNumberEnv('KIS_MCP_NON_MUTATING_CACHE_TTL_MS', 20_000, 0, 10 * 60_000);
+}
+
+function kisMcpStaleMs(action) {
+  const normalized = String(action || '').toLowerCase();
+  if (normalized.includes('balance')) {
+    return positiveNumberEnv('KIS_MCP_BALANCE_STALE_MS', 5 * 60_000, 0, 60 * 60_000);
+  }
+  return positiveNumberEnv('KIS_MCP_NON_MUTATING_STALE_MS', 2 * 60_000, 0, 60 * 60_000);
+}
+
+function kisMcpCacheKey(action, payload = {}) {
+  return `${String(action || '').trim().toLowerCase()}:${stableJson(payload || {})}`;
+}
+
+function cloneJson(value) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return value;
+  }
+}
+
+function getKisMcpCachedResponse(action, payload, mode = 'fresh') {
+  const key = kisMcpCacheKey(action, payload);
+  const entry = _kisMcpNonMutatingResponseCache.get(key);
+  if (!entry) return null;
+  const now = Date.now();
+  const maxAge = mode === 'fresh' ? kisMcpCacheTtlMs(action) : kisMcpStaleMs(action);
+  if (maxAge <= 0 || now - Number(entry.cachedAt || 0) > maxAge) {
+    if (mode === 'fresh') _kisMcpNonMutatingResponseCache.delete(key);
+    return null;
+  }
+  return cloneJson({
+    ...entry.value,
+    cache: {
+      ...(entry.value?.cache || {}),
+      hit: true,
+      stale: mode !== 'fresh',
+      ageMs: now - Number(entry.cachedAt || 0),
+    },
+  });
+}
+
+function setKisMcpCachedResponse(action, payload, value) {
+  if (kisMcpCacheTtlMs(action) <= 0 && kisMcpStaleMs(action) <= 0) return;
+  _kisMcpNonMutatingResponseCache.set(kisMcpCacheKey(action, payload), {
+    cachedAt: Date.now(),
+    value: cloneJson(value),
+  });
 }
 
 function getCachedOverseasEmptyQuote(symbol, priceCode) {
@@ -344,9 +417,17 @@ async function runKisMcpBridge(action, payload = {}) {
   const normalizedAction = String(action || '').trim().toLowerCase();
   const isMutatingAction = KIS_MCP_MUTATING_ACTIONS.has(normalizedAction);
   const now = Date.now();
+  if (!isMutatingAction) {
+    const cached = getKisMcpCachedResponse(normalizedAction, payload, 'fresh');
+    if (cached) return cached;
+  }
   if (!isMutatingAction && KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS > 0) {
     const cooldownUntil = _kisMcpNonMutatingFailureCooldowns.get(normalizedAction) || 0;
-    if (cooldownUntil > now) return null;
+    if (cooldownUntil > now) {
+      const stale = getKisMcpCachedResponse(normalizedAction, payload, 'stale');
+      if (stale) return stale;
+      return null;
+    }
   }
   try {
     const { stdout } = await execFileAsync(
@@ -387,6 +468,7 @@ async function runKisMcpBridge(action, payload = {}) {
       throw bridgeActionError;
     }
     _kisMcpNonMutatingFailureCooldowns.delete(normalizedAction);
+    if (!isMutatingAction) setKisMcpCachedResponse(normalizedAction, payload, parsed);
     return parsed;
   } catch (error) {
     const parsedError = parseJsonFromMixedStdout(error?.stdout || '');
@@ -423,6 +505,14 @@ async function runKisMcpBridge(action, payload = {}) {
           normalizedAction,
           Date.now() + KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS,
         );
+      }
+      const stale = getKisMcpCachedResponse(normalizedAction, payload, 'stale');
+      if (stale) {
+        logKisDedup(
+          `mcp_stale_cache:${normalizedAction}`,
+          `  ⚠️ [KIS MCP] ${normalizedAction} provider limit → stale cache 사용`,
+        );
+        return stale;
       }
       const throttled = /** @type {any} */ (new Error(
         `KIS provider rate limited (${action}); direct fallback suppressed: ${rawMessage}`,
@@ -1797,3 +1887,11 @@ export async function getOverseasOrderableAmount({
   }
   throw lastError || new Error('kis_overseas_psamount_failed');
 }
+
+export const _testOnlyKisClient = {
+  stableJson,
+  kisMcpCacheKey,
+  setKisMcpCachedResponse,
+  getKisMcpCachedResponse,
+  clearKisMcpResponseCache: () => _kisMcpNonMutatingResponseCache.clear(),
+};

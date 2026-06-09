@@ -77,8 +77,8 @@ function hubErrorHandler(error: HubError, req: HubErrorRequest, res: HubErrorRes
     error?.message || error,
   );
   captureHubError(error, req);
+  const suggestion = status === 413 ? bodyLimitSuggestion(req, status) : null;
   if (status === 413) {
-    const suggestion = bodyLimitSuggestion(req, status);
     recordHubRuntimeErrorPatternAsync({
       errorType: code,
       route: path,
@@ -100,6 +100,7 @@ function hubErrorHandler(error: HubError, req: HubErrorRequest, res: HubErrorRes
     ok: false,
     error: code,
     traceId,
+    ...(suggestion ? { bodyLimit: suggestion } : {}),
   });
 }
 

@@ -32,6 +32,17 @@ let rotationIndex = 0;
 const blacklistedKeys = new Map<string, number>();
 const BLACKLIST_DURATION_MS = 60_000;
 
+function groqAccountPoolEnabled(): boolean {
+  // Groq docs describe rate limits as organization-level, so multiple keys from
+  // the same org should not be assumed to multiply quota. Our currently
+  // provisioned 9 keys were probed on 2026-06-10 with minimal chat requests:
+  // each key reported an independent remaining-requests/tokens bucket, and
+  // A-B-A probes decremented only the key that was used. Keep pool round-robin
+  // enabled by default for this deployment, with HUB_GROQ_ACCOUNT_POOL_ENABLED=false
+  // as the kill switch if future keys share one org bucket.
+  return !['0', 'false', 'no', 'n', 'off'].includes(String(process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED || '').trim().toLowerCase());
+}
+
 function isBlacklisted(apiKey: string, now = Date.now()): boolean {
   const until = blacklistedKeys.get(apiKey) ?? 0;
   if (until <= now) {
@@ -57,6 +68,11 @@ export function pickGroqApiKey(): string | null {
     if (until <= now) blacklistedKeys.delete(k);
   }
 
+  if (!groqAccountPoolEnabled()) {
+    const primary = accounts[0];
+    return primary && !isBlacklisted(primary, now) ? primary : null;
+  }
+
   for (let attempt = 0; attempt < accounts.length; attempt++) {
     const idx = (rotationIndex + attempt) % accounts.length;
     const key = accounts[idx];
@@ -77,6 +93,16 @@ export function blacklistGroqKey(apiKey: string, ms = BLACKLIST_DURATION_MS): vo
 export function getGroqAccountPoolStatus(): { total: number; available: number; cooldown: number } {
   const accounts = loadGroqAccounts();
   const now = Date.now();
+  if (!groqAccountPoolEnabled()) {
+    const primary = accounts[0] || '';
+    const primaryCooldown = primary && isBlacklisted(primary, now) ? 1 : 0;
+    return {
+      total: accounts.length,
+      available: primary && !primaryCooldown ? 1 : 0,
+      cooldown: primaryCooldown,
+    };
+  }
+
   let cooldown = 0;
   for (const key of accounts) {
     if (isBlacklisted(key, now)) cooldown += 1;
@@ -106,3 +132,7 @@ export function _testOnlyResetGroqAccounts(): void {
   blacklistedKeys.clear();
   rotationIndex = 0;
 }
+
+export const _testOnly = {
+  groqAccountPoolEnabled,
+};

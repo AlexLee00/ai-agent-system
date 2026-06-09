@@ -107,6 +107,11 @@ function resolveGroqMaxAttempts(): number {
   const configured = Number(process.env.HUB_GROQ_MAX_KEY_ATTEMPTS || process.env.HUB_GROQ_MAX_KEY_RETRIES || '');
   if (Number.isFinite(configured) && configured > 0) return Math.max(1, Math.min(Math.floor(configured), 25));
   if (process.env.GROQ_API_KEY) return 1;
+  // See secrets-loader.ts for the operational basis: Groq's official limit
+  // model is org-level, but the deployed key set was measured as independent
+  // buckets. Default to trying the configured pool; set
+  // HUB_GROQ_ACCOUNT_POOL_ENABLED=false to force a single primary key.
+  if (['0', 'false', 'no', 'n', 'off'].includes(String(process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED || '').trim().toLowerCase())) return 1;
   return Math.max(1, Math.min(loadGroqAccounts().length || 1, 25));
 }
 

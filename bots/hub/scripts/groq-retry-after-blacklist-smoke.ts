@@ -5,6 +5,7 @@ const { callGroqFallback, _testOnly } = require('../lib/llm/groq-fallback.ts');
 const {
   getGroqAccountPoolStatus,
   resetGroqKeyBlacklistForTests,
+  _testOnly: secretsTestOnly,
   _testOnlySetGroqAccounts,
   _testOnlyResetGroqAccounts,
 } = require('../lib/llm/secrets-loader.ts');
@@ -13,6 +14,7 @@ const ORIGINAL_FETCH = global.fetch;
 const ORIGINAL_GROQ_API_KEY = process.env.GROQ_API_KEY;
 const ORIGINAL_GROQ_SERVICE_TIER = process.env.HUB_GROQ_SERVICE_TIER;
 const ORIGINAL_GROQ_MAX_KEY_ATTEMPTS = process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
+const ORIGINAL_GROQ_ACCOUNT_POOL_ENABLED = process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED;
 
 function readAuthHeader(headers: HeadersInit | undefined): string {
   if (!headers) return '';
@@ -27,6 +29,7 @@ async function main() {
   resetGroqKeyBlacklistForTests();
   process.env.GROQ_API_KEY = 'groq-smoke-key';
   delete process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
+  delete process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED;
 
   assert.equal(_testOnly.parseDurationMs('1m51.455s'), 111455);
   process.env.HUB_GROQ_SERVICE_TIER = 'flex';
@@ -87,6 +90,26 @@ async function main() {
   delete process.env.GROQ_API_KEY;
   delete process.env.HUB_GROQ_SERVICE_TIER;
   _testOnlySetGroqAccounts(['groq-smoke-1', 'groq-smoke-2', 'groq-smoke-3', 'groq-smoke-4', 'groq-smoke-5']);
+  assert.equal(secretsTestOnly.groqAccountPoolEnabled(), true, 'Groq account pool should default to round-robin when multiple keys are configured');
+  assert.deepEqual(getGroqAccountPoolStatus(), { total: 5, available: 5, cooldown: 0 });
+
+  fetchCalls = 0;
+  process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED = 'false';
+  global.fetch = async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({ error: { message: 'Rate limit reached. Please try again in 1s.' } }), {
+      status: 429,
+      headers: { 'retry-after': '1' },
+    });
+  };
+  const singleKey = await callGroqFallback({ prompt: 'single primary key retry-after', model: 'llama-3.1-8b-instant' });
+  assert.equal(singleKey.ok, false);
+  assert.match(String(singleKey.error), /Groq 429/);
+  assert.equal(fetchCalls, 1, 'Groq account pool kill switch should prevent multi-key rotation');
+
+  resetGroqKeyBlacklistForTests();
+  delete process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED;
+  assert.equal(secretsTestOnly.groqAccountPoolEnabled(), true);
   assert.deepEqual(getGroqAccountPoolStatus(), { total: 5, available: 5, cooldown: 0 });
 
   fetchCalls = 0;
@@ -142,6 +165,8 @@ main()
     else process.env.HUB_GROQ_SERVICE_TIER = ORIGINAL_GROQ_SERVICE_TIER;
     if (ORIGINAL_GROQ_MAX_KEY_ATTEMPTS === undefined) delete process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
     else process.env.HUB_GROQ_MAX_KEY_ATTEMPTS = ORIGINAL_GROQ_MAX_KEY_ATTEMPTS;
+    if (ORIGINAL_GROQ_ACCOUNT_POOL_ENABLED === undefined) delete process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED;
+    else process.env.HUB_GROQ_ACCOUNT_POOL_ENABLED = ORIGINAL_GROQ_ACCOUNT_POOL_ENABLED;
     _testOnlyResetGroqAccounts();
     resetGroqKeyBlacklistForTests();
   });

@@ -18,6 +18,7 @@ const {
 const { getOpenAiApiKeyStatus, runOpenAiApiKeyCanary } = require('./providers/openai-public-api');
 const { getOpenAiCodexOauthStatus, runOpenAiCodexOauthCanary } = require('./providers/openai-codex-oauth');
 const { getClaudeCodeCliStatus, runClaudeCodeCliCanary } = require('./providers/claude-code-cli');
+const providerRegistry = require('../llm/provider-registry');
 
 type OAuthProvider = 'openai-api-key' | 'openai-codex-oauth' | 'claude-code-cli';
 type HubRequest = {
@@ -130,6 +131,28 @@ function buildOAuthStatusResponse(provider: OAuthProvider, status: unknown, cana
     },
   };
   return sanitizeOAuthStatusPayload(payload);
+}
+
+function resetLlmCircuitForOAuthProvider(provider: OAuthProvider, reason: string) {
+  const keys = provider === 'openai-codex-oauth'
+    ? ['openai-oauth']
+    : provider === 'claude-code-cli'
+      ? ['claude-code-oauth']
+      : [];
+  const reset: string[] = [];
+  for (const key of keys) {
+    try {
+      const entries = providerRegistry.resetProviderCircuit?.(key) || [];
+      if (Array.isArray(entries)) reset.push(...entries);
+      providerRegistry.recordSuccess?.(key, 1);
+    } catch {
+      // Circuit reset is best-effort; OAuth token storage must not fail because telemetry failed.
+    }
+  }
+  return {
+    reason,
+    reset: Array.from(new Set(reset)),
+  };
 }
 
 async function resolveProviderStatus(provider: OAuthProvider) {
@@ -313,12 +336,14 @@ async function oauthImportLocalRoute(req: HubRequest, res: HubResponse) {
   if (!dryRun) {
     setProviderToken(provider, imported.token, metadata);
   }
+  const circuit = dryRun ? null : resetLlmCircuitForOAuthProvider(provider, 'local_import');
   setProviderCanary(provider, {
     ok: true,
     details: {
       source: imported.source,
       dry_run: dryRun,
       expires_at: imported.token?.expires_at || null,
+      circuit,
     },
   });
 
@@ -330,6 +355,7 @@ async function oauthImportLocalRoute(req: HubRequest, res: HubResponse) {
     source: imported.source,
     token: imported.token,
     metadata,
+    circuit,
   }));
 }
 
@@ -425,11 +451,13 @@ async function oauthCallbackRoute(req: HubRequest, res: HubResponse) {
       exchanged_at: new Date().toISOString(),
     };
     setProviderToken(provider, normalized.token, metadata);
+    const circuit = resetLlmCircuitForOAuthProvider(provider, 'oauth_callback');
     setProviderCanary(provider, {
       ok: true,
       details: {
         source: metadata.source,
         expires_at: normalized.token?.expires_at || null,
+        circuit,
       },
     });
 
@@ -439,6 +467,7 @@ async function oauthCallbackRoute(req: HubRequest, res: HubResponse) {
       stored: true,
       token: normalized.token,
       metadata,
+      circuit,
     }));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -523,11 +552,13 @@ async function oauthRefreshRoute(req: HubRequest, res: HubResponse) {
       refreshed_at: new Date().toISOString(),
     };
     setProviderToken(provider, normalized.token, metadata);
+    const circuit = resetLlmCircuitForOAuthProvider(provider, 'oauth_refresh');
     setProviderCanary(provider, {
       ok: true,
       details: {
         source: metadata.source,
         expires_at: normalized.token?.expires_at || null,
+        circuit,
       },
     });
 
@@ -537,6 +568,7 @@ async function oauthRefreshRoute(req: HubRequest, res: HubResponse) {
       refreshed: true,
       token: normalized.token,
       metadata,
+      circuit,
     }));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

@@ -18,6 +18,8 @@ const {
   callGeminiCodeAssistOAuth,
 } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
+const { readLocalCredentialsForProvider } = require('../oauth/local-credentials');
+const { setProviderCanary, setProviderToken } = require('../oauth/token-store');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
 const rag = require('../../../../packages/core/lib/rag');
 const { resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
@@ -526,6 +528,7 @@ async function _callOpenAiCodexOAuthWithRetry(input: AnyRecord): Promise<LlmResp
     ? _openAiOAuthRetryAttempts()
     : _boundedIntegerValue(input.retryAttempts, DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS, 0, MAX_OPENAI_OAUTH_RETRY_ATTEMPTS);
   const retryErrors: string[] = [];
+  let invalidatedRecoveryAttempted = false;
 
   for (let attempt = 0; ; attempt += 1) {
     const result = await callOpenAiCodexOAuth(input);
@@ -539,6 +542,21 @@ async function _callOpenAiCodexOAuthWithRetry(input: AnyRecord): Promise<LlmResp
     }
 
     const error = String(result.error || 'provider_failed');
+    if (
+      !invalidatedRecoveryAttempted
+      && _openAiOAuthAutoImportOnInvalidated()
+      && _isInvalidatedOpenAiOAuthError(error)
+    ) {
+      invalidatedRecoveryAttempted = true;
+      const recovered = _recoverOpenAiCodexOAuthFromLocal();
+      if (recovered.ok) {
+        retryErrors.push(`${error} -> local_oauth_reimported`);
+        console.warn('[llm/unified] OpenAI OAuth invalidated token 감지 → 로컬 Codex OAuth 자격증명 재수입 후 1회 재시도');
+        continue;
+      }
+      retryErrors.push(`${error} -> local_oauth_reimport_failed:${recovered.error || 'unknown'}`);
+    }
+
     const shouldRetry = attempt < retryAttempts && _isRetryableOpenAiOAuthError(error);
     if (!shouldRetry) {
       return {
@@ -557,6 +575,45 @@ async function _callOpenAiCodexOAuthWithRetry(input: AnyRecord): Promise<LlmResp
 
 function _isRetryableOpenAiOAuthError(error: unknown): boolean {
   return /openai_codex_oauth_timeout_or_abort/i.test(String(error || ''));
+}
+
+function _isInvalidatedOpenAiOAuthError(error: unknown): boolean {
+  return /invalidated oauth token|openai_codex_oauth_call_failed:.*invalidated/i.test(String(error || ''));
+}
+
+function _openAiOAuthAutoImportOnInvalidated(): boolean {
+  return !_flagDisabled('HUB_OPENAI_OAUTH_AUTO_IMPORT_ON_INVALIDATED');
+}
+
+function _recoverOpenAiCodexOAuthFromLocal(): { ok: boolean; source?: string; error?: string } {
+  try {
+    const imported = readLocalCredentialsForProvider('openai-codex-oauth');
+    if (!imported?.ok || !imported.token) {
+      return { ok: false, error: imported?.error || 'local_import_failed' };
+    }
+    const metadata = {
+      ...(imported.metadata || {}),
+      provider: 'openai-codex-oauth',
+      source: imported.source || imported.metadata?.source || 'hub_local_cli_credentials',
+      imported_at: new Date().toISOString(),
+      runtime_enabled: true,
+      recovery_reason: 'invalidated_oauth_token',
+    };
+    setProviderToken('openai-codex-oauth', imported.token, metadata);
+    setProviderCanary('openai-codex-oauth', {
+      ok: true,
+      details: {
+        source: metadata.source,
+        recovered_from: 'invalidated_oauth_token',
+        expires_at: imported.token?.expires_at || null,
+      },
+    });
+    providerRegistry.resetProviderCircuit?.('openai-oauth');
+    providerRegistry.recordSuccess?.('openai-oauth', 1);
+    return { ok: true, source: String(metadata.source || '') };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message || error).slice(0, 240) };
+  }
 }
 
 function _openAiOAuthRetryAttempts(): number {
@@ -1050,6 +1107,8 @@ module.exports = {
     _adhocChainAllowed,
     _callOpenAiCodexOAuthWithRetry,
     _isRetryableOpenAiOAuthError,
+    _isInvalidatedOpenAiOAuthError,
+    _recoverOpenAiCodexOAuthFromLocal,
     _openAiOAuthRetryAttempts,
     _openAiOAuthRetryDelayMs,
     _shouldSuppressFallbackExhaustionAlarm,

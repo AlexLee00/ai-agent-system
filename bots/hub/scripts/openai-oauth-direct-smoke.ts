@@ -71,6 +71,19 @@ async function main() {
     const { callOpenAiCodexOAuth } = require('../lib/llm/oauth-direct.ts') as {
       callOpenAiCodexOAuth: (request: Record<string, unknown>) => Promise<any>;
     };
+    const { _testOnly: unifiedTestOnly } = require('../lib/llm/unified-caller.ts') as {
+      _testOnly: {
+        _isInvalidatedOpenAiOAuthError: (error: unknown) => boolean;
+        _isRetryableOpenAiOAuthError: (error: unknown) => boolean;
+      };
+    };
+    assert.equal(
+      unifiedTestOnly._isInvalidatedOpenAiOAuthError('openai_codex_oauth_call_failed:Encountered invalidated oauth token for user'),
+      true,
+      'unified caller should classify invalidated OpenAI OAuth tokens for local re-import recovery',
+    );
+    assert.equal(unifiedTestOnly._isInvalidatedOpenAiOAuthError('openai_codex_oauth_timeout_or_abort'), false);
+
     const result = await callOpenAiCodexOAuth({
       model: 'gpt-5.4-mini',
       maxTokens: 64,
@@ -120,6 +133,7 @@ async function main() {
       abort_error_normalized: true,
       bad_request_detail_normalized: true,
       public_api_used: false,
+      invalidated_error_classified: true,
     }));
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

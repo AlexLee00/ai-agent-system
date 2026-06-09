@@ -1,5 +1,9 @@
 const env = require('./env.legacy.js');
 const { execFileSync } = require('child_process');
+const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 type CacheEntry = {
   value: any;
@@ -139,6 +143,155 @@ function getSecretsRateLimitTtl(category: string): number {
   }
 }
 
+function boolEnv(name: string, fallback = false): boolean {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
+}
+
+function positiveIntEnv(name: string, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
+  const parsed = Number(process.env[name] || '');
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
+function resolveSharedSecretCacheDir(): string {
+  const configured = String(process.env.HUB_CLIENT_SHARED_SECRET_CACHE_DIR || '').trim();
+  if (configured) return configured.replace(/^~(?=$|\/)/, os.homedir());
+  return path.join(os.homedir(), '.ai-agent-system', 'hub-client-cache');
+}
+
+function sharedSecretCacheEnabled(): boolean {
+  return boolEnv('HUB_CLIENT_SHARED_SECRET_CACHE_ENABLED', true);
+}
+
+function sharedSecretStaleMs(): number {
+  return positiveIntEnv('HUB_CLIENT_SHARED_SECRET_STALE_MS', 10 * 60_000, 0, 24 * 60 * 60_000);
+}
+
+function sharedSecretCachePath(category: string): string {
+  const digest = crypto.createHash('sha256').update(String(category || '')).digest('hex').slice(0, 16);
+  const safe = String(category || 'unknown').replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 48) || 'unknown';
+  return path.join(resolveSharedSecretCacheDir(), `secret-${safe}-${digest}.json`);
+}
+
+function readSharedSecretCache(category: string, mode: 'fresh' | 'stale' = 'fresh'): any | undefined {
+  if (!sharedSecretCacheEnabled()) return undefined;
+  try {
+    const file = sharedSecretCachePath(category);
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const now = Date.now();
+    const expiresAt = Number(parsed?.expiresAt || 0);
+    const cachedAt = Number(parsed?.cachedAt || 0);
+    if (mode === 'fresh' && expiresAt > now) return parsed.data ?? null;
+    if (mode === 'stale' && cachedAt > 0 && now - cachedAt <= sharedSecretStaleMs()) return parsed.data ?? null;
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function writeSharedSecretCache(category: string, data: any, ttlMs: number): void {
+  if (!sharedSecretCacheEnabled()) return;
+  try {
+    const file = sharedSecretCachePath(category);
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const payload = {
+      category,
+      cachedAt: Date.now(),
+      expiresAt: Date.now() + Math.max(0, ttlMs),
+      data,
+    };
+    const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(payload)}\n`, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tmp, file);
+    try { fs.chmodSync(file, 0o600); } catch {}
+  } catch {
+    // Cache write failure must never block secret reads.
+  }
+}
+
+function useSharedSecretCacheFallback(category: string, cacheKey: string, reason: string): any | undefined {
+  const stale = readSharedSecretCache(category, 'stale');
+  if (stale === undefined) return undefined;
+  setCached(cacheKey, stale, Math.min(getSecretsRateLimitTtl(category), 15_000));
+  warnOnce(
+    `hub-secrets:${category}:stale:${reason}`,
+    `[hub-client] ${category}: ${reason} — shared stale cache 사용`,
+    30000,
+  );
+  return stale;
+}
+
+function hubLlmClientPayloadLimitBytes(): number {
+  return positiveIntEnv('HUB_CLIENT_LLM_PAYLOAD_LIMIT_BYTES', 7 * 1024 * 1024, 32 * 1024, 64 * 1024 * 1024);
+}
+
+function truncateTextToUtf8Bytes(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const mid = Math.floor((low + high + 1) / 2);
+    if (Buffer.byteLength(text.slice(0, mid), 'utf8') <= maxBytes) low = mid;
+    else high = mid - 1;
+  }
+  return text.slice(0, low);
+}
+
+function jsonUtf8Bytes(value: any): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
+function prepareHubLlmPayload(payload: any): any {
+  if (boolEnv('HUB_CLIENT_LLM_PAYLOAD_TRUNCATE_ENABLED', true) === false) return payload;
+  const limitBytes = hubLlmClientPayloadLimitBytes();
+  const originalPayloadBytes = jsonUtf8Bytes(payload);
+  if (originalPayloadBytes <= limitBytes) return payload;
+  const systemPrompt = String(payload.systemPrompt || '');
+  const prompt = String(payload.prompt || '');
+  const basePayload = {
+    ...payload,
+    systemPrompt: systemPrompt ? '' : payload.systemPrompt,
+    prompt: '',
+    payloadTrimmed: true,
+    payloadTrimReason: 'client_payload_limit',
+    originalPayloadBytes,
+  };
+  const baseBytes = jsonUtf8Bytes(basePayload);
+  if (baseBytes > limitBytes) {
+    return {
+      ...basePayload,
+      payloadRejected: true,
+      payloadRejectReason: 'client_payload_limit_non_prompt_fields',
+      finalPayloadBytes: baseBytes,
+      payloadLimitBytes: limitBytes,
+    };
+  }
+
+  let budget = Math.max(0, limitBytes - baseBytes - 512);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const systemBudget = systemPrompt ? Math.min(Math.floor(budget * 0.25), Buffer.byteLength(systemPrompt, 'utf8')) : 0;
+    const promptBudget = Math.max(0, budget - systemBudget);
+    const next = {
+      ...basePayload,
+      systemPrompt: systemPrompt ? truncateTextToUtf8Bytes(systemPrompt, systemBudget) : payload.systemPrompt,
+      prompt: truncateTextToUtf8Bytes(prompt, promptBudget),
+    };
+    const finalPayloadBytes = jsonUtf8Bytes(next);
+    if (finalPayloadBytes <= limitBytes) return { ...next, finalPayloadBytes, payloadLimitBytes: limitBytes };
+    budget = Math.max(0, budget - (finalPayloadBytes - limitBytes) - 512);
+  }
+
+  return {
+    ...basePayload,
+    payloadRejected: true,
+    payloadRejectReason: 'client_payload_limit_untrimmable',
+    finalPayloadBytes: jsonUtf8Bytes(basePayload),
+    payloadLimitBytes: limitBytes,
+  };
+}
+
 function warnOnce(key: string, message: string, ttlMs = 30000): void {
   const last = warnCache.get(key) || 0;
   if ((Date.now() - last) < ttlMs) return;
@@ -261,6 +414,11 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
   const cacheKey = getCacheKey('secret', category);
   const cached = getCached(cacheKey);
   if (cached !== undefined) return cached;
+  const sharedFresh = readSharedSecretCache(category, 'fresh');
+  if (sharedFresh !== undefined) {
+    setCached(cacheKey, sharedFresh, Math.min(getSecretsSuccessTtl(category), 15000));
+    return sharedFresh;
+  }
 
   const url = `${env.HUB_BASE_URL}/hub/secrets/${category}`;
   const controller = new AbortController();
@@ -277,6 +435,10 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
 
     if (!res.ok) {
       warnOnce(`hub-secrets:${category}:${res.status}`, `[hub-client] ${category}: HTTP ${res.status}`);
+      if (res.status === 429 || res.status >= 500) {
+        const stale = useSharedSecretCacheFallback(category, cacheKey, `HTTP ${res.status}`);
+        if (stale !== undefined) return stale;
+      }
       if (res.status === 429) setCached(cacheKey, null, getSecretsRateLimitTtl(category));
       if (res.status === 401) setCached(cacheKey, null, 30000);
       return null;
@@ -285,6 +447,7 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
     const json = await res.json() as HubFetchResponse;
     const data = json.data || null;
     setCached(cacheKey, data, getSecretsSuccessTtl(category));
+    writeSharedSecretCache(category, data, getSecretsSuccessTtl(category));
     return data;
   } catch (error) {
     const err = error as Error & { name?: string };
@@ -293,10 +456,13 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promi
       if (json) {
         const data = json.data || null;
         setCached(cacheKey, data, getSecretsSuccessTtl(category));
+        writeSharedSecretCache(category, data, getSecretsSuccessTtl(category));
         return data;
       }
     }
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
+    const stale = useSharedSecretCacheFallback(category, cacheKey, message || 'fetch_failed');
+    if (stale !== undefined) return stale;
     console.warn(`[hub-client] ${category}: ${message}`);
     return null;
   } finally {
@@ -524,6 +690,10 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
     taskType: request.taskType || 'default',
     timeoutMs,
   };
+  const safePayload = prepareHubLlmPayload(payload);
+  if (safePayload?.payloadRejected) {
+    throw new Error(`hub_llm_payload_too_large:${safePayload.payloadRejectReason || 'client_payload_limit'}:${safePayload.finalPayloadBytes || 0}>${safePayload.payloadLimitBytes || 0}`);
+  }
   const url = `${env.HUB_BASE_URL}/hub/llm/call`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs + 1000);
@@ -535,7 +705,7 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(safePayload),
       signal: controller.signal,
     });
 
@@ -563,7 +733,7 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
     };
   } catch (error) {
     if (shouldUseCurlFallback(error, url)) {
-      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, payload, timeoutMs);
+      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, safePayload, timeoutMs);
       if (body?.ok !== false) {
         const text = String(body?.result || body?.text || '').trim();
         if (text) {
