@@ -26,7 +26,61 @@ const COMPETITION_DAYS = Array.isArray(competitionRuntimeConfig.days) && competi
   ? competitionRuntimeConfig.days
   : [1, 3, 5];
 
-let _competitionEngine = null;
+type ExecutionHistoryEntry = {
+  run_date?: unknown;
+  pipeline?: string[];
+  variations?: Record<string, unknown>;
+};
+
+type MarketingPayload = {
+  daily?: {
+    senseState?: {
+      signals?: Array<{ type?: string }>;
+      skaEnvironment?: {
+        exam_score?: number;
+        holiday_flag?: boolean;
+      };
+    };
+    revenueCorrelation?: {
+      revenueImpactPct?: number;
+    };
+  };
+  senseState?: {
+    signals?: Array<{ type?: string }>;
+    skaEnvironment?: {
+      exam_score?: number;
+      holiday_flag?: boolean;
+    };
+  };
+  revenueCorrelation?: {
+    revenueImpactPct?: number;
+  };
+  weather?: {
+    summary?: string;
+  };
+  weatherContext?: string;
+  dryRun?: boolean;
+  [key: string]: unknown;
+};
+
+type SectionVariations = Record<string, unknown> & {
+  greetingStyle?: string;
+  imageCount?: number;
+  marketingContext?: {
+    signalTypes: string[];
+    notes: string[];
+    ctaMode: string;
+  };
+};
+
+type CompetitionEngine = {
+  __loadError?: unknown;
+  startCompetition?: (topic: string, team: string) => Promise<{ groupA: string[]; groupB: string[] }>;
+};
+
+type DirectRunner = (variations: SectionVariations, payload: MarketingPayload & { gemmaRecommendation: string | null }) => Promise<unknown> | unknown;
+
+let _competitionEngine: CompetitionEngine | null = null;
 function _getCompetitionEngine() {
   if (_competitionEngine) return _competitionEngine;
   try {
@@ -37,7 +91,7 @@ function _getCompetitionEngine() {
   return _competitionEngine;
 }
 
-function _shuffle(arr) {
+function _shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -64,11 +118,11 @@ async function _ensureHistoryTable() {
         ON blog.execution_history(run_date DESC, post_type)
     `);
   } catch (e) {
-    console.warn('[마에스트로] execution_history 테이블 확인 실패 (무시):', e.message);
+    console.warn('[마에스트로] execution_history 테이블 확인 실패 (무시):', e instanceof Error ? e.message : String(e));
   }
 }
 
-async function getRecentHistory(postType, days = 7) {
+async function getRecentHistory(postType: string, days = 7): Promise<ExecutionHistoryEntry[]> {
   try {
     const rows = await pgPool.query('blog', `
       SELECT run_date, pipeline, variations
@@ -83,7 +137,7 @@ async function getRecentHistory(postType, days = 7) {
   }
 }
 
-async function saveExecutionHistory(date, postType, pipeline, variations) {
+async function saveExecutionHistory(date: string, postType: string, pipeline: string[], variations: SectionVariations) {
   if (DEV_HUB_READONLY) return;
   try {
     await pgPool.run('blog', `
@@ -91,11 +145,11 @@ async function saveExecutionHistory(date, postType, pipeline, variations) {
       VALUES ($1, $2, $3, $4)
     `, [date, postType, JSON.stringify(pipeline), JSON.stringify(variations)]);
   } catch (e) {
-    console.warn('[마에스트로] 이력 저장 실패 (무시):', e.message);
+    console.warn('[마에스트로] 이력 저장 실패 (무시):', e instanceof Error ? e.message : String(e));
   }
 }
 
-function buildDynamicPipeline(postType, history) {
+function buildDynamicPipeline(postType: string, history: ExecutionHistoryEntry[]) {
   const nodes = [...RESEARCH_NODES, 'rag-experiences', 'related-posts'];
 
   const writeNode = postType === 'lecture' ? 'write-lecture' : 'write-general';
@@ -106,13 +160,11 @@ function buildDynamicPipeline(postType, history) {
   return { pipeline: nodes, variations };
 }
 
-function _buildMarketingContext(payload = {}) {
-  // @ts-ignore JS checkJs default-param inference is too narrow here
+function _buildMarketingContext(payload: MarketingPayload = {}) {
   const senseState = payload?.daily?.senseState || payload?.senseState || null;
-  // @ts-ignore JS checkJs default-param inference is too narrow here
   const revenueCorrelation = payload?.daily?.revenueCorrelation || payload?.revenueCorrelation || null;
-  const signals = Array.isArray(senseState?.signals) ? senseState.signals.map((signal) => String(signal?.type || '')).filter(Boolean) : [];
-  const notes = [];
+  const signals = Array.isArray(senseState?.signals) ? senseState.signals.map((signal: { type?: string }) => String(signal?.type || '')).filter(Boolean) : [];
+  const notes: string[] = [];
   let ctaMode = 'soft';
 
   if (signals.includes('revenue_anomaly') || signals.includes('revenue_decline') || Number(revenueCorrelation?.revenueImpactPct || 0) < 0) {
@@ -138,18 +190,18 @@ function _shouldRunCompetition() {
   return COMPETITION_DAYS.includes(new Date().getDay());
 }
 
-function _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation) {
+function _logMaestroSession(postType: string, sessionId: string, pipeline: string[], variations: SectionVariations, gemmaRecommendation: string | null) {
   console.log(`[마에스트로] ${postType} — 세션: ${sessionId}`);
   console.log(`  노드: ${pipeline.join(' → ')}`);
   console.log(`  인사말: ${variations.greetingStyle}, 이미지: ${variations.imageCount}장`);
   if (gemmaRecommendation) console.log(`  gemma4 추천 반영 후보:\n${gemmaRecommendation}`);
 }
 
-function _buildMaestroResult(sessionId, pipeline, variations, gemmaRecommendation) {
+function _buildMaestroResult(sessionId: string, pipeline: string[], variations: SectionVariations, gemmaRecommendation: string | null) {
   return { sessionId, pipeline, variations, gemmaRecommendation };
 }
 
-async function runCompetition(topic, postType) {
+async function runCompetition(topic: string, postType: string) {
   if (!_shouldRunCompetition()) return null;
 
   console.log(`[경쟁] 그룹 경쟁 시작: ${topic} (${postType})`);
@@ -162,12 +214,12 @@ async function runCompetition(topic, postType) {
     console.log(`[경쟁] 그룹 A: ${competition.groupA.join(',')} / B: ${competition.groupB.join(',')}`);
     return competition;
   } catch (error) {
-    console.error('[경쟁] 시작 실패:', error.message);
+    console.error('[경쟁] 시작 실패:', error instanceof Error ? error.message : String(error));
     return null;
   }
 }
 
-function _buildTopicRecommendationPrompt(postType, historyTopics, weatherContext) {
+function _buildTopicRecommendationPrompt(postType: string, historyTopics: string[], weatherContext: string) {
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
   const today = dayNames[new Date().getDay()];
 
@@ -181,9 +233,10 @@ function _buildTopicRecommendationPrompt(postType, historyTopics, weatherContext
 번호 없이 한 줄씩만 작성하세요.`;
 }
 
-async function _generateTopicRecommendation(postType, history, payload) {
+async function _generateTopicRecommendation(postType: string, history: ExecutionHistoryEntry[], payload: MarketingPayload) {
   const historyTopics = history
     .map((entry) => entry?.variations?.selectedTopic || entry?.variations?.seedTopic || entry?.variations?.theme)
+    .map((entry) => String(entry || ''))
     .filter(Boolean)
     .slice(0, 10);
   const weatherContext = payload?.weather?.summary || payload?.weatherContext || '날씨 정보 없음';
@@ -204,7 +257,7 @@ async function _generateTopicRecommendation(postType, history, payload) {
   return recResult.content.trim();
 }
 
-async function run(postType, directRunner = null, payload = {}) {
+async function run(postType: string, directRunner: DirectRunner | null = null, payload: MarketingPayload = {}) {
   await _ensureHistoryTable();
 
   const sessionId = `${kst.today()}_${postType}_${crypto.randomBytes(4).toString('hex')}`;
@@ -215,14 +268,13 @@ async function run(postType, directRunner = null, payload = {}) {
     gemmaRecommendation = await _generateTopicRecommendation(postType, history, payload);
     if (gemmaRecommendation) console.log(`[마에스트로] gemma4 주제 추천:\n${gemmaRecommendation}`);
   } catch (error) {
-    console.warn(`[maestro] gemma4 추천 생략: ${error.message}`);
+    console.warn(`[maestro] gemma4 추천 생략: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   const { pipeline, variations } = buildDynamicPipeline(postType, history);
   variations.marketingContext = _buildMarketingContext(payload);
   _logMaestroSession(postType, sessionId, pipeline, variations, gemmaRecommendation);
 
-  // @ts-ignore JS checkJs default-param inference is too narrow here
   const dryRun = !!payload.dryRun;
 
   if (!dryRun) {
