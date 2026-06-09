@@ -5,12 +5,40 @@ const {
 const { buildPlaybookTemplate } = require('./playbook');
 const { hasHubControlTool } = require('./tool-registry');
 
-function normalizeText(value, fallback = '') {
+type ControlPlannerInput = {
+  message?: string;
+  goal?: string;
+  team?: string;
+  dryRun?: boolean;
+  context?: Record<string, unknown>;
+};
+
+type ControlPlanStep = {
+  id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  sideEffect?: string;
+  notes?: string;
+};
+
+type ControlPlanLike = {
+  steps?: ControlPlanStep[];
+};
+
+type NormalizedControlPlannerInput = {
+  goal: string;
+  message: string;
+  team: string;
+  dryRun: boolean;
+  context: Record<string, unknown>;
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function inferTeam(inputTeam, message) {
+function inferTeam(inputTeam: unknown, message: string) {
   const direct = normalizeText(inputTeam).toLowerCase();
   if (direct) return direct;
   const lower = message.toLowerCase();
@@ -20,7 +48,7 @@ function inferTeam(inputTeam, message) {
   return 'general';
 }
 
-function inferMutatingIntent(message) {
+function inferMutatingIntent(message: string) {
   const lower = message.toLowerCase();
   return [
     '재시작',
@@ -35,10 +63,10 @@ function inferMutatingIntent(message) {
   ].some((keyword) => lower.includes(keyword));
 }
 
-function buildHeuristicPlan(input) {
+function buildHeuristicPlan(input: NormalizedControlPlannerInput) {
   const mutatingIntent = inferMutatingIntent(input.message);
   const playbook = buildPlaybookTemplate({ goal: input.goal, team: input.team });
-  const steps = [
+  const steps: ControlPlanStep[] = [
     {
       id: 'frame_health',
       tool: 'hub.health.query',
@@ -96,7 +124,7 @@ function buildHeuristicPlan(input) {
   };
 }
 
-function extractJsonObject(text) {
+function extractJsonObject(text: unknown): Record<string, any> | null {
   const trimmed = String(text || '').trim();
   if (!trimmed) return null;
   try {
@@ -125,7 +153,7 @@ function getCallWithFallback() {
   return hubLlm.callWithFallback;
 }
 
-async function tryLlmPlan(input) {
+async function tryLlmPlan(input: NormalizedControlPlannerInput) {
   const callWithFallback = getCallWithFallback();
   const plannerPrompt = [
     'You are Team Jay control planner.',
@@ -169,7 +197,7 @@ async function tryLlmPlan(input) {
   };
 }
 
-function validateToolReferences(plan) {
+function validateToolReferences(plan: ControlPlanLike) {
   const unknown = (plan.steps || [])
     .map((step) => normalizeText(step.tool))
     .filter((tool) => tool && !hasHubControlTool(tool));
@@ -182,7 +210,7 @@ function validateToolReferences(plan) {
   return { ok: true };
 }
 
-async function generateControlPlanDraft(input) {
+async function generateControlPlanDraft(input: ControlPlannerInput) {
   const message = normalizeText(input.message || input.goal);
   const goal = normalizeText(input.goal, message);
   const team = inferTeam(input.team, message);
@@ -200,8 +228,8 @@ async function generateControlPlanDraft(input) {
     try {
       candidate = await tryLlmPlan({ goal, message, team, dryRun, context });
       plannerSource = 'llm';
-    } catch (error) {
-      plannerWarnings.push(`llm_fallback:${error?.message || error}`);
+    } catch (error: unknown) {
+      plannerWarnings.push(`llm_fallback:${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

@@ -3,15 +3,37 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-function isEnabled(value) {
+type HubSecretStore = {
+  telegram?: {
+    group_id?: string;
+    telegram_group_id?: string;
+    chat_id?: string;
+    telegram_chat_id?: string;
+    topic_ids?: Record<string, string>;
+    telegram_topic_ids?: Record<string, string>;
+  };
+};
+
+type RuntimeConfig = Record<string, unknown>;
+
+type StagePlan = {
+  id: number;
+  name: string;
+  ready: boolean;
+  enable: string[];
+  verify: string[];
+  note: string;
+};
+
+function isEnabled(value: unknown) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
-function textEnv(name) {
+function textEnv(name: string) {
   return String(process.env[name] || '').trim();
 }
 
-function launchctlEnv(name) {
+function launchctlEnv(name: string) {
   const result = spawnSync('launchctl', ['getenv', name], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -20,7 +42,7 @@ function launchctlEnv(name) {
   return String(result.stdout || '').trim();
 }
 
-function loadHubSecrets() {
+function loadHubSecrets(): HubSecretStore {
   const storePath = path.resolve(__dirname, '..', 'secrets-store.json');
   try {
     if (!fs.existsSync(storePath)) return {};
@@ -30,7 +52,7 @@ function loadHubSecrets() {
   }
 }
 
-function launchdPlistEnv(name) {
+function launchdPlistEnv(name: string) {
   const plistPath = path.resolve(__dirname, '..', '..', 'orchestrator', 'launchd', 'ai.jay.runtime.plist');
   try {
     if (!fs.existsSync(plistPath)) return '';
@@ -43,7 +65,7 @@ function launchdPlistEnv(name) {
   }
 }
 
-function storeValue(name, store) {
+function storeValue(name: string, store: HubSecretStore) {
   const telegram = store?.telegram || {};
   const topicIds = telegram.topic_ids || telegram.telegram_topic_ids || {};
   if (name === 'TELEGRAM_GROUP_ID') return telegram.group_id || telegram.telegram_group_id || telegram.chat_id || telegram.telegram_chat_id || '';
@@ -55,19 +77,19 @@ function storeValue(name, store) {
   return '';
 }
 
-let _store = null;
-function runtimeValue(name) {
+let _store: HubSecretStore | null = null;
+function runtimeValue(name: string) {
   if (!_store) _store = loadHubSecrets();
   return textEnv(name) || launchctlEnv(name) || String(storeValue(name, _store) || '').trim() || launchdPlistEnv(name);
 }
 
-function runtimeBool(config, key, envName) {
+function runtimeBool(config: RuntimeConfig, key: string, envName: string) {
   const envValue = runtimeValue(envName);
   if (envValue) return isEnabled(envValue);
   return config?.[key] === true;
 }
 
-function stage(input) {
+function stage<T extends StagePlan>(input: T): T {
   return input;
 }
 
@@ -180,7 +202,7 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(`jay_staged_enable_plan_failed: ${error?.message || error}`);
+main().catch((error: unknown) => {
+  console.error(`jay_staged_enable_plan_failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });

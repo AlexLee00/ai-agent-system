@@ -1,13 +1,31 @@
-function assert(condition, message) {
+import type { Server } from 'node:http';
+
+type ExpressLikeApp = {
+  listen: (port: number, host: string, callback: () => void) => Server;
+};
+
+type JsonResponse = {
+  status: number;
+  body: Record<string, any>;
+};
+
+type HubControlToolSummary = {
+  name?: string;
+};
+
+function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
 }
 
-async function withServer(app, fn) {
-  const server = await new Promise((resolve) => {
+async function withServer(app: ExpressLikeApp, fn: (baseUrl: string) => Promise<void>) {
+  const server = await new Promise<Server>((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   try {
     const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('server_address_unavailable');
+    }
     const baseUrl = `http://127.0.0.1:${address.port}`;
     await fn(baseUrl);
   } finally {
@@ -15,8 +33,14 @@ async function withServer(app, fn) {
   }
 }
 
-async function requestJson(baseUrl, token, path, body, extraHeaders = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
+async function requestJson(
+  baseUrl: string,
+  token: string,
+  requestPath: string,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+): Promise<JsonResponse> {
+  const response = await fetch(`${baseUrl}${requestPath}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -64,8 +88,8 @@ async function main() {
     assert(target3 == null, 'expected unsupported callback to return null');
 
     const catalog = listHubControlTools();
-    assert(catalog.some((tool) => tool.name === 'hub.health.query'), 'expected hub.health.query tool');
-    assert(catalog.some((tool) => tool.name === 'repo.command.run'), 'expected repo.command.run tool in registry');
+    assert(catalog.some((tool: HubControlToolSummary) => tool.name === 'hub.health.query'), 'expected hub.health.query tool');
+    assert(catalog.some((tool: HubControlToolSummary) => tool.name === 'repo.command.run'), 'expected repo.command.run tool in registry');
 
     const disabledTool = await callHubControlTool('repo.command.run', { cmd: 'echo hi' }, {});
     assert(disabledTool.ok === false, 'expected mutating tool disabled');
@@ -93,7 +117,7 @@ async function main() {
       isStartupComplete: () => true,
     });
 
-    await withServer(app, async (baseUrl) => {
+    await withServer(app, async (baseUrl: string) => {
       const planResp = await requestJson(baseUrl, smokeToken, '/hub/control/plan', {
         message: '루나팀 상태 점검해줘',
         team: 'luna',
@@ -268,7 +292,7 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[control-plane-smoke] failed:', error?.message || error);
+main().catch((error: unknown) => {
+  console.error('[control-plane-smoke] failed:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
