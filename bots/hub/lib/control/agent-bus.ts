@@ -4,22 +4,106 @@ const AGENT_TABLE = 'agent.hub_agent_bus_agents';
 const MESSAGE_TABLE = 'agent.hub_agent_bus_messages';
 const DB_DISABLED = String(process.env.HUB_CONTROL_STATE_STORE || '').trim().toLowerCase() === 'memory';
 
-const agents = new Map();
-const messages = new Map();
-const incidentDiscussions = new Map();
-let ensurePromise = null;
+type JsonObject = Record<string, unknown>;
 
-function normalizeText(value, fallback = '') {
+type AgentRecord = {
+  agentId: string;
+  roles: string[];
+  tools: string[];
+  registeredAt: string;
+  lastHeartbeatAt: string;
+};
+
+type MessageRecord = {
+  id: string;
+  traceId: string | null;
+  runId: string | null;
+  incidentKey: string | null;
+  from: string;
+  to: string;
+  role: string;
+  phase: string;
+  visibility: string;
+  payload: JsonObject;
+  ackRequired: boolean;
+  createdAt: string;
+  ackedAt: string | null;
+  ackedBy: string | null;
+};
+
+type DiscussionRecord = {
+  incidentKey: string;
+  messageIds: string[];
+  updatedAt: string;
+};
+
+type BusRow = JsonObject & {
+  agent_id?: unknown;
+  roles?: unknown;
+  tools?: unknown;
+  registered_at?: unknown;
+  last_heartbeat_at?: unknown;
+  id?: unknown;
+  trace_id?: unknown;
+  run_id?: unknown;
+  incident_key?: unknown;
+  from_agent?: unknown;
+  to_agent?: unknown;
+  role?: unknown;
+  phase?: unknown;
+  visibility?: unknown;
+  payload?: unknown;
+  ack_required?: unknown;
+  created_at?: unknown;
+  acked_at?: unknown;
+  acked_by?: unknown;
+};
+
+type RegisterAgentInput = {
+  agentId?: string;
+  roles?: unknown;
+  tools?: unknown;
+};
+
+type SendAgentMessageInput = {
+  traceId?: string;
+  runId?: string;
+  incidentKey?: string;
+  from?: string;
+  to?: string;
+  role?: string;
+  phase?: string;
+  visibility?: string;
+  payload?: JsonObject;
+  ackRequired?: boolean;
+};
+
+type AckAgentMessageInput = {
+  messageId?: string;
+  ackedBy?: string;
+};
+
+type AgentStatusInput = {
+  agentId?: string;
+  incidentKey?: string;
+};
+
+const agents = new Map<string, AgentRecord>();
+const messages = new Map<string, MessageRecord>();
+const incidentDiscussions = new Map<string, DiscussionRecord>();
+let ensurePromise: Promise<void> | null = null;
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function normalizeList(value) {
+function normalizeList(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => normalizeText(item)).filter(Boolean);
 }
 
-function parseJsonList(value) {
+function parseJsonList(value: unknown) {
   if (Array.isArray(value)) return value.map((item) => normalizeText(item)).filter(Boolean);
   if (typeof value === 'string') {
     try {
@@ -32,11 +116,11 @@ function parseJsonList(value) {
   return [];
 }
 
-function makeId(prefix) {
+function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function rowToAgent(row) {
+function rowToAgent(row: BusRow | null | undefined): AgentRecord | null {
   if (!row) return null;
   return {
     agentId: normalizeText(row.agent_id),
@@ -47,7 +131,7 @@ function rowToAgent(row) {
   };
 }
 
-function rowToMessage(row) {
+function rowToMessage(row: BusRow | null | undefined): MessageRecord | null {
   if (!row) return null;
   return {
     id: normalizeText(row.id),
@@ -59,7 +143,7 @@ function rowToMessage(row) {
     role: normalizeText(row.role),
     phase: normalizeText(row.phase),
     visibility: normalizeText(row.visibility),
-    payload: row?.payload && typeof row.payload === 'object' ? row.payload : {},
+    payload: row?.payload && typeof row.payload === 'object' ? row.payload as JsonObject : {},
     ackRequired: row.ack_required !== false,
     createdAt: normalizeText(row.created_at),
     ackedAt: normalizeText(row.acked_at, '') || null,
@@ -113,21 +197,21 @@ async function ensureBusTables() {
   return ensurePromise;
 }
 
-async function withDbFallback(dbWork, memoryWork) {
+async function withDbFallback<T>(dbWork: () => Promise<T>, memoryWork: () => Promise<T>): Promise<T> {
   if (DB_DISABLED) return memoryWork();
   try {
     await ensureBusTables();
     return await dbWork();
-  } catch (error) {
-    const message = String(error?.message || error || 'unknown_error');
+  } catch (error: unknown) {
+    const message = String(error instanceof Error ? error.message : error || 'unknown_error');
     console.error(`[hub/agent-bus] db unavailable: ${message}`);
-    const wrapped = new Error(`hub_agent_bus_db_unavailable:${message}`);
+    const wrapped = new Error(`hub_agent_bus_db_unavailable:${message}`) as Error & { code?: string };
     wrapped.code = 'control_state_store_unavailable';
     throw wrapped;
   }
 }
 
-function setMemoryIncidentReference(message) {
+function setMemoryIncidentReference(message: MessageRecord) {
   const incidentKey = normalizeText(message?.incidentKey || '', '') || null;
   if (!incidentKey) return;
   const createdAt = normalizeText(message?.createdAt, new Date().toISOString());
@@ -141,7 +225,7 @@ function setMemoryIncidentReference(message) {
   incidentDiscussions.set(incidentKey, discussion);
 }
 
-async function registerAgent(input) {
+async function registerAgent(input: RegisterAgentInput) {
   const agentId = normalizeText(input.agentId);
   if (!agentId) return { ok: false, error: 'agent_id_required' };
   const now = new Date().toISOString();
@@ -207,7 +291,7 @@ async function listAgents() {
   });
 }
 
-async function sendAgentMessage(input) {
+async function sendAgentMessage(input: SendAgentMessageInput) {
   const from = normalizeText(input.from);
   if (!from) return { ok: false, error: 'from_required' };
   const traceId = normalizeText(input.traceId || '', '') || null;
@@ -284,7 +368,7 @@ async function sendAgentMessage(input) {
   });
 }
 
-async function ackAgentMessage(input) {
+async function ackAgentMessage(input: AckAgentMessageInput) {
   const messageId = normalizeText(input.messageId);
   if (!messageId) return { ok: false, error: 'message_id_required' };
   const ackedBy = normalizeText(input.ackedBy, 'system');
@@ -315,7 +399,7 @@ async function ackAgentMessage(input) {
   });
 }
 
-async function getAgentStatus(input) {
+async function getAgentStatus(input: AgentStatusInput) {
   const agentId = normalizeText(input.agentId);
   const incidentKey = normalizeText(input.incidentKey);
 
@@ -359,7 +443,7 @@ async function getAgentStatus(input) {
         incidentKey,
         discussion: rows.length > 0 ? {
           incidentKey,
-          messageIds: rows.map((row) => normalizeText(row.id)),
+        messageIds: rows.map((row: BusRow) => normalizeText(row.id)),
           updatedAt: normalizeText(rows[rows.length - 1]?.created_at, ''),
         } : null,
         messages: rows.map(rowToMessage).filter(Boolean),
@@ -396,7 +480,7 @@ async function getAgentStatus(input) {
         ok: true,
         incidentKey,
         discussion,
-        messages: discussion.messageIds.map((id) => messages.get(id)).filter(Boolean),
+        messages: discussion.messageIds.map((id: string) => messages.get(id)).filter(Boolean),
         storage: 'memory_fallback',
       };
     }
