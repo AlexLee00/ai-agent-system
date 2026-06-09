@@ -4,7 +4,14 @@ const path = require('path');
 
 const CLIENT_PATH = require.resolve('../../../packages/core/lib/hub-alarm-client.ts');
 
-function assert(condition, message) {
+type FetchCall = {
+  url: string;
+  method: string;
+  headers?: any;
+  body?: any;
+};
+
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -14,7 +21,7 @@ function resetClientModule() {
 
 const RETIRED_GATEWAY_WORD = 'Open' + 'Claw';
 
-function resetEnv(tempWorkspace) {
+function resetEnv(tempWorkspace: string) {
   process.env.HUB_ALARM_RECENT_ALERTS_PATH = path.join(tempWorkspace, 'recent-alerts.json');
   process.env.HUB_BASE_URL = 'http://127.0.0.1:7788';
   process.env.HUB_AUTH_TOKEN = 'smoke-hub-token';
@@ -24,11 +31,11 @@ function resetEnv(tempWorkspace) {
   delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;
 }
 
-async function runSuppressedHubOnlyCase(tempWorkspace) {
+async function runSuppressedHubOnlyCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({ url: normalizedUrl, method: String(init.method || 'GET') });
     if (normalizedUrl.endsWith('/hub/alarm')) {
@@ -60,13 +67,13 @@ async function runSuppressedHubOnlyCase(tempWorkspace) {
   assert(calls[0].url.endsWith('/hub/alarm'), 'expected first call to hub alarm');
 }
 
-async function runRetiredLegacyFallbackIgnoredCase(tempWorkspace) {
+async function runRetiredLegacyFallbackIgnoredCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = 'true';
   process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = 'smoke-hooks-token';
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({
       url: normalizedUrl,
@@ -105,11 +112,11 @@ async function runRetiredLegacyFallbackIgnoredCase(tempWorkspace) {
   assert(calls[0].url.endsWith('/hub/alarm'), 'expected first call to hub alarm');
 }
 
-async function runTelegramSenderCanUseHubDirectCase(tempWorkspace) {
+async function runTelegramSenderCanUseHubDirectCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({
       url: normalizedUrl,
@@ -143,11 +150,11 @@ async function runTelegramSenderCanUseHubDirectCase(tempWorkspace) {
   assert(calls[0].url.endsWith('/hub/alarm'), 'expected telegram-sender path to call hub alarm');
 }
 
-async function runStandardContractFallbackCase(tempWorkspace) {
+async function runStandardContractFallbackCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({
       url: normalizedUrl,
@@ -185,11 +192,11 @@ async function runStandardContractFallbackCase(tempWorkspace) {
   assert(calls[0].body.payload.event_type === calls[0].body.eventType, 'expected payload event_type to match derived eventType');
 }
 
-async function runCriticalContractFallbackCase(tempWorkspace) {
+async function runCriticalContractFallbackCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({
       url: normalizedUrl,
@@ -224,11 +231,11 @@ async function runCriticalContractFallbackCase(tempWorkspace) {
   assert(calls[0].body.actionability === 'needs_human', `expected needs_human actionability, got ${calls[0].body.actionability}`);
 }
 
-async function runExplicitReportContractCase(tempWorkspace) {
+async function runExplicitReportContractCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({
       url: normalizedUrl,
@@ -274,11 +281,11 @@ async function runExplicitReportContractCase(tempWorkspace) {
   assert(calls[0].body.payload.event_type === 'darwin_weekly_research_report', 'expected payload event_type to match explicit eventType');
 }
 
-async function runHubRateLimitMetadataCase(tempWorkspace) {
+async function runHubRateLimitMetadataCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
-  const calls = [];
-  global.fetch = async (url, init = {}) => {
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     calls.push({
       url: normalizedUrl,
