@@ -12,19 +12,27 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-function assert(condition, message) {
+type AnyRecord = Record<string, any>;
+type MockResponse = {
+  statusCode: number;
+  body: AnyRecord;
+  status: (code: number) => MockResponse;
+  json: (payload: AnyRecord) => AnyRecord;
+};
+
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
 function makeRes() {
-  const response = {
+  const response: MockResponse = {
     statusCode: 200,
-    body: null,
-    status(code) {
+    body: {},
+    status(code: number) {
       this.statusCode = code;
       return this;
     },
-    json(payload) {
+    json(payload: AnyRecord) {
       this.body = payload;
       return payload;
     },
@@ -60,7 +68,7 @@ async function main() {
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
   process.env.HUB_ALARM_AUTO_DEV_DIR = autoDevDir;
   process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';
-  global.fetch = async (url) => {
+  global.fetch = async (url: RequestInfo | URL) => {
     if (String(url).includes('api.telegram.org')) {
       sendCount += 1;
       return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), {
@@ -74,7 +82,7 @@ async function main() {
     });
   };
   _testOnly_setAlarmRouteDbMocks({
-    query: async (_schema, sql) => {
+    query: async (_schema: string, sql: string) => {
       if (String(sql).includes(`metadata->>'visibility' = 'digest'`)) {
         return [
           {
@@ -105,7 +113,7 @@ async function main() {
         },
       ];
     },
-    get: async (_schema, sql) => {
+    get: async (_schema: string, sql: string) => {
       if (useClusterDuplicate && String(sql).includes(`metadata->>'cluster_key'`)) {
         return { id: 999, metadata: { cluster_key: 'luna|llm_provider_cooldown|smoke' } };
       }
@@ -137,7 +145,7 @@ async function main() {
     assert(workRes.body.visibility === 'notify', `expected notify visibility, got ${workRes.body.visibility}`);
     assert(workRes.body.delivery_team === 'ops-work', `expected ops-work delivery team, got ${workRes.body.delivery_team}`);
     assert(workRes.body.delivered === true, 'expected work alarm immediate delivery');
-    assert(sendCount === 1, `expected one work telegram send, got ${sendCount}`);
+    assert(Number(sendCount) === 1, `expected one work telegram send, got ${sendCount}`);
 
     const reportReq = {
       body: {
@@ -156,7 +164,7 @@ async function main() {
     assert(reportRes.body.visibility === 'notify', `expected report notify visibility, got ${reportRes.body.visibility}`);
     assert(reportRes.body.delivery_team === 'ops-reports', `expected ops-reports delivery team, got ${reportRes.body.delivery_team}`);
     assert(reportRes.body.delivered === true, 'expected report alarm immediate delivery');
-    assert(sendCount === 2, `expected two telegram sends after report, got ${sendCount}`);
+    assert(Number(sendCount) === 2, `expected two telegram sends after report, got ${sendCount}`);
 
     const errorReq = {
       body: {
@@ -181,8 +189,8 @@ async function main() {
     assert(errorRes.body.delivered === false, 'expected error auto-repair not to notify user directly');
     assert(errorRes.body.auto_repair?.ok === true, 'expected auto_dev repair document to be queued');
     assert(typeof errorRes.body.cluster_key === 'string' && errorRes.body.cluster_key.includes('llm_provider_cooldown'), 'expected provider cooldown cluster key');
-    assert(sendCount === 2, `expected no direct telegram send for auto-repair error, got ${sendCount}`);
-    const autoDevFiles = fs.readdirSync(autoDevDir).filter((file) => file.endsWith('.md'));
+    assert(Number(sendCount) === 2, `expected no direct telegram send for auto-repair error, got ${sendCount}`);
+    const autoDevFiles = fs.readdirSync(autoDevDir).filter((file: string) => file.endsWith('.md'));
     assert(autoDevFiles.length === 1, `expected one auto_dev incident doc, got ${autoDevFiles.length}`);
     const autoDevDoc = fs.readFileSync(path.join(autoDevDir, autoDevFiles[0]), 'utf8');
     assert(autoDevDoc.includes('target_team: claude'), 'expected auto_dev doc to target claude');
@@ -229,7 +237,7 @@ async function main() {
     assert(callbackRes.body.status === 'resolved', `expected resolved callback, got ${callbackRes.body.status}`);
     assert(callbackRes.body.delivery_team === 'ops-error-resolution', `expected ops-error-resolution, got ${callbackRes.body.delivery_team}`);
     assert(callbackRes.body.delivered === true, 'expected callback result delivery');
-    assert(sendCount === 3, `expected callback to send one result notification, got ${sendCount}`);
+    assert(Number(sendCount) === 3, `expected callback to send one result notification, got ${sendCount}`);
 
     const digestReq = {
       body: {
@@ -247,7 +255,7 @@ async function main() {
     assert(digestRes.body.ok === true, 'expected ok=true');
     assert(digestRes.body.visibility === 'digest', `expected digest visibility, got ${digestRes.body.visibility}`);
     assert(digestRes.body.delivered === false, 'expected digest alarm not delivered immediately');
-    assert(sendCount === 3, `expected no additional telegram send for digest, got ${sendCount}`);
+    assert(Number(sendCount) === 3, `expected no additional telegram send for digest, got ${sendCount}`);
 
     const humanReq = {
       body: {
@@ -263,7 +271,7 @@ async function main() {
     await alarmRoute(humanReq, humanRes);
     assert(humanRes.statusCode === 200, `expected 200, got ${humanRes.statusCode}`);
     assert(humanRes.body.delivered === true, 'expected human_action immediate delivery');
-    assert(sendCount === 4, `expected exactly four immediate telegram sends, got ${sendCount}`);
+    assert(Number(sendCount) === 4, `expected exactly four immediate telegram sends, got ${sendCount}`);
 
     const noisyReq = { query: { minutes: '60', limit: '5' } };
     const noisyRes = makeRes();
@@ -302,7 +310,7 @@ async function main() {
     assert(digestDryRunRes.statusCode === 200, `expected digest dry-run 200, got ${digestDryRunRes.statusCode}`);
     assert(digestDryRunRes.body.ok === true, 'expected digest dry-run ok');
     assert(digestDryRunRes.body.teams?.[0]?.dry_run === true, 'expected digest dry-run preview mode');
-    assert(sendCount === sendBeforeDryRun, 'expected digest dry-run to avoid telegram send');
+    assert(Number(sendCount) === sendBeforeDryRun, 'expected digest dry-run to avoid telegram send');
     assert(
       pgRunCount === runBeforeDryRun,
       'expected digest dry-run to avoid delivery state writes',
@@ -322,7 +330,7 @@ async function main() {
     assert(digestFlushRes.body.ok === true, 'expected digest flush ok');
     assert(Array.isArray(digestFlushRes.body.teams), 'expected digest flush team list');
     assert(digestFlushRes.body.teams[0]?.sent === true, 'expected digest flush delivered');
-    assert(sendCount === sendBeforeFlush + 1, `expected digest flush to send exactly one telegram summary, got ${sendCount - sendBeforeFlush}`);
+    assert(Number(sendCount) === sendBeforeFlush + 1, `expected digest flush to send exactly one telegram summary, got ${Number(sendCount) - sendBeforeFlush}`);
 
     console.log('alarm_governor_smoke_ok');
   } finally {
