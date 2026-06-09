@@ -170,11 +170,11 @@ export async function runBestsellerFetch(options: { dryRun?: boolean } = {}): Pr
   inserted: number;
   books: RankedBook[];
 }> {
-  const blogSecrets = await fetchHubSecrets('blog').catch(() => null);
+  const blogSecrets = await fetchHubSecrets('blog', 3000, { silentStatuses: [404] }).catch(() => null);
   const ttbKey = blogSecrets?.ALADIN_TTB_KEY || process.env.ALADIN_TTB_KEY;
 
   if (!ttbKey) {
-    console.error('[베스트셀러] ALADIN_TTB_KEY 없음. secrets-store.json에 설정 필요');
+    console.log('[베스트셀러] ALADIN_TTB_KEY 없음 — 베스트셀러 동기화 skip');
     return { total: 0, filtered: 0, inserted: 0, books: [] };
   }
 
