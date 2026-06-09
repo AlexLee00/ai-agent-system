@@ -1,6 +1,6 @@
 'use strict';
 
-function buildSymphonyValidationPlan(task: { id?: unknown } = {}) {
+function buildSymphonyValidationPlan(task = {}) {
   return {
     mode: 'plan_only',
     taskId: task.id || null,
