@@ -6,12 +6,27 @@ import {
 import { query as defaultQuery } from '../../shared/db.ts';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
 
+type HybridPromotionReviewParams = {
+  noDb?: boolean;
+  hours?: number;
+  investmentRoot?: string;
+  projectRoot?: string;
+  broadcast?: boolean;
+};
+
+type HybridPromotionReviewOptions = {
+  queryFn?: unknown;
+  hours?: number;
+  investmentRoot?: string;
+  projectRoot?: string;
+};
+
 function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
 }
 
-export function createHybridPromotionReviewHandler(options = {}) {
-  return async function hybridPromotionReview(params = {}) {
+export function createHybridPromotionReviewHandler(options: HybridPromotionReviewOptions = {}) {
+  return async function hybridPromotionReview(params: HybridPromotionReviewParams = {}) {
     const report = await buildLunaHybridPromotionReviewReport({
       queryFn: params.noDb ? null : options.queryFn || defaultQuery,
       dataRequired: !params.noDb,
@@ -64,8 +79,8 @@ export function createHybridPromotionReviewHandler(options = {}) {
   };
 }
 
-export function registerHybridPromotionReviewSkill(options = {}) {
-  registerSkillHandler(PHASE11_A2A_SKILL, createHybridPromotionReviewHandler(options));
+export function registerHybridPromotionReviewSkill(options: HybridPromotionReviewOptions = {}) {
+  registerSkillHandler(PHASE11_A2A_SKILL, createHybridPromotionReviewHandler(options) as any);
 }
 
 export default {

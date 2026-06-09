@@ -5,12 +5,28 @@ import {
 } from '../../shared/luna-hybrid-final-closure.ts';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
 
+type HybridFinalClosureParams = {
+  noExec?: boolean;
+  phase11Report?: unknown;
+  bottleneckReport?: unknown;
+  protectedPidStatus?: unknown;
+  investmentRoot?: string;
+  broadcast?: boolean;
+};
+
+type HybridFinalClosureOptions = {
+  phase11Report?: unknown;
+  bottleneckReport?: unknown;
+  protectedPidStatus?: unknown;
+  investmentRoot?: string;
+};
+
 function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
 }
 
-export function createHybridFinalClosureHandler(options = {}) {
-  return async function hybridFinalClosure(params = {}) {
+export function createHybridFinalClosureHandler(options: HybridFinalClosureOptions = {}) {
+  return async function hybridFinalClosure(params: HybridFinalClosureParams = {}) {
     const report = buildLunaHybridFinalClosureReport({
       noExec: params.noExec !== false,
       phase11Report: params.phase11Report || options.phase11Report,
@@ -57,8 +73,8 @@ export function createHybridFinalClosureHandler(options = {}) {
   };
 }
 
-export function registerHybridFinalClosureSkill(options = {}) {
-  registerSkillHandler(PHASE12_A2A_SKILL, createHybridFinalClosureHandler(options));
+export function registerHybridFinalClosureSkill(options: HybridFinalClosureOptions = {}) {
+  registerSkillHandler(PHASE12_A2A_SKILL, createHybridFinalClosureHandler(options) as any);
 }
 
 export default {

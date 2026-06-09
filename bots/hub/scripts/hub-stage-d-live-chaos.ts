@@ -12,23 +12,43 @@ const {
 
 const CONFIRM_1PCT = 'hub-stage-d-live-chaos-1pct';
 
-function hasFlag(flag) {
+type LiveChaosResult = {
+  ok: boolean;
+  checkedAt: string;
+  stage: string;
+  task: string;
+  dryRun: boolean;
+  stateFile: string;
+  currentState: unknown;
+  requested: {
+    percent: number;
+    latencyMs: number;
+    ttlMinutes: number;
+    disable: boolean;
+  };
+  safety: Record<string, unknown>;
+  applyGate: string;
+  error?: string;
+  requiredConfirm?: string;
+};
+
+function hasFlag(flag: string) {
   return process.argv.includes(flag);
 }
 
-function argValue(name) {
+function argValue(name: string) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
 }
 
-function clamp(value, min, max) {
+function clamp(value: unknown, min: number, max: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return min;
   return Math.min(max, Math.max(min, parsed));
 }
 
-function buildState(percent, latencyMs, ttlMinutes) {
+function buildState(percent: number, latencyMs: number, ttlMinutes: number) {
   return {
     enabled: true,
     mode: 'live_canary_latency',
@@ -49,7 +69,7 @@ async function main() {
   const latencyMs = clamp(argValue('--latency-ms') || 500, 0, MAX_SAFE_LATENCY_MS);
   const ttlMinutes = clamp(argValue('--ttl-minutes') || 10, 1, 60);
 
-  const result = {
+  const result: LiveChaosResult = {
     ok: true,
     checkedAt: new Date().toISOString(),
     stage: 'hub_stage_d',

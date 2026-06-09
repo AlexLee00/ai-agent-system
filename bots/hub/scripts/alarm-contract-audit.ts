@@ -11,7 +11,17 @@ const IGNORE_FILES = new Set([
   'packages/core/lib/hub-alarm-client.ts',
 ]);
 
-function hasFlag(name) {
+type AlarmContractFinding = {
+  file: string;
+  line: number;
+  missing: string[];
+  runtime_covered: boolean;
+  explicit_complete: boolean;
+  unsafe: boolean;
+  preview: string;
+};
+
+function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
 }
 
@@ -63,7 +73,7 @@ function findPostAlarmFiles() {
   return findPostAlarmFilesViaGrep();
 }
 
-function isAuditTarget(file) {
+function isAuditTarget(file: string) {
   if (IGNORE_FILES.has(file)) return false;
   if (/(^|\/)(__tests__|docs|context)\//.test(file)) return false;
   if (/(\.md|\.markdown|\.log)$/.test(file)) return false;
@@ -72,7 +82,7 @@ function isAuditTarget(file) {
   return true;
 }
 
-function extractCallSnippet(text, startIndex) {
+function extractCallSnippet(text: string, startIndex: number) {
   let depth = 0;
   let started = false;
   for (let i = startIndex; i < text.length; i += 1) {
@@ -89,19 +99,19 @@ function extractCallSnippet(text, startIndex) {
   return text.slice(startIndex, startIndex + 2400);
 }
 
-function isLikelyCommentedOut(text, startIndex) {
+function isLikelyCommentedOut(text: string, startIndex: number) {
   const lineStart = text.lastIndexOf('\n', startIndex) + 1;
   const prefix = text.slice(lineStart, startIndex);
   return /\/\/|\/\*/.test(prefix) || /^\s*\*/.test(prefix);
 }
 
-function lineNumber(text, index) {
+function lineNumber(text: string, index: number) {
   return text.slice(0, index).split(/\r?\n/).length;
 }
 
-function auditFile(file) {
+function auditFile(file: string): AlarmContractFinding[] {
   const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
-  const rows = [];
+  const rows: AlarmContractFinding[] = [];
   const pattern = /postAlarm\s*\(/g;
   let match;
   while ((match = pattern.exec(text))) {
@@ -134,7 +144,7 @@ export function buildAlarmContractAudit() {
   const files = findPostAlarmFiles().filter(isAuditTarget);
   const calls = files.flatMap(auditFile);
   const findings = calls.filter((row) => row.unsafe);
-  const byMissing = calls.reduce((acc, row) => {
+  const byMissing = calls.reduce((acc: Record<string, number>, row) => {
     for (const key of row.missing) acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
