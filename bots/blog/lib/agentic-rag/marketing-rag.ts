@@ -10,6 +10,36 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
+type MarketingSubquery = {
+  q: string;
+  priority: number;
+};
+
+type MarketingResult = {
+  source: string;
+  title?: string;
+  category?: string;
+  keyword?: string;
+  trend_score?: unknown;
+  growth_rate?: unknown;
+  hook_type?: string;
+  pattern_type?: string;
+  template?: string;
+  platform?: string;
+  relevance: number;
+  snippet: string;
+};
+
+type RagRow = Record<string, unknown>;
+
+type ContentCalendarItem = {
+  day: number;
+  platform: string;
+  topic: string;
+  hook: string;
+  cta: string;
+};
+
 function isEnabled() {
   return process.env.BLOG_MARKETING_RAG_ENABLED === 'true';
 }
@@ -19,8 +49,8 @@ function isEnabled() {
 /**
  * 마케팅 의도를 서브 쿼리로 분해
  */
-function planMarketingQuery(intent) {
-  const subqueries = [];
+function planMarketingQuery(intent: string): MarketingSubquery[] {
+  const subqueries: MarketingSubquery[] = [];
 
   // 비수기/성수기 맥락 감지
   if (/비수기|부진|침체|낮|저조/.test(intent)) {
@@ -55,7 +85,7 @@ function planMarketingQuery(intent) {
 /**
  * 자사 성공 패턴 검색
  */
-async function searchOwnSuccessPatterns(subqueries) {
+async function searchOwnSuccessPatterns(subqueries: MarketingSubquery[]): Promise<MarketingResult[]> {
   try {
     const keywords = subqueries.map((s) => s.q).join(' ').split(' ').slice(0, 5);
     const rows = await pgPool.query('blog', `
@@ -73,10 +103,10 @@ async function searchOwnSuccessPatterns(subqueries) {
       ORDER BY COALESCE(pf.total_views_7d, 0) DESC
       LIMIT 10
     `, []);
-    return (rows || []).map((r) => ({
+    return ((rows || []) as RagRow[]).map((r) => ({
       source: 'own_success',
-      title: r.title,
-      category: r.category,
+      title: String(r.title || ''),
+      category: String(r.category || ''),
       relevance: 0.8,
       snippet: `조회 ${r.views} | 참여율 ${(Number(r.eng_rate) * 100).toFixed(1)}%`,
     }));
@@ -88,7 +118,7 @@ async function searchOwnSuccessPatterns(subqueries) {
 /**
  * DPO 선호 쌍 기반 학습 결과 검색
  */
-async function searchDpoLearnings(subqueries) {
+async function searchDpoLearnings(subqueries: MarketingSubquery[]): Promise<MarketingResult[]> {
   if (process.env.BLOG_DPO_ENABLED !== 'true') return [];
   try {
     const rows = await pgPool.query('blog', `
@@ -103,12 +133,12 @@ async function searchDpoLearnings(subqueries) {
       ORDER BY pair_count DESC
       LIMIT 5
     `, []);
-    return (rows || []).map((r) => ({
+    return ((rows || []) as RagRow[]).map((r) => ({
       source: 'dpo_learning',
-      hook_type: r.best_hook,
-      category: r.category,
+      hook_type: String(r.best_hook || ''),
+      category: String(r.category || ''),
       relevance: 0.9,
-      snippet: r.insight || `${r.category}에서 ${r.best_hook} 스타일 우세 (${r.pair_count}쌍)`,
+      snippet: String(r.insight || `${r.category}에서 ${r.best_hook} 스타일 우세 (${r.pair_count}쌍)`),
     }));
   } catch {
     return [];
@@ -127,9 +157,9 @@ async function searchCompetitorBenchmarks() {
       ORDER BY growth_rate_week DESC
       LIMIT 5
     `, []);
-    return (rows || []).map((r) => ({
+    return ((rows || []) as RagRow[]).map((r) => ({
       source: 'trend_signal',
-      keyword: r.keyword,
+      keyword: String(r.keyword || ''),
       trend_score: r.trend_score,
       growth_rate: r.growth_rate_week,
       relevance: 0.7,
@@ -153,11 +183,11 @@ async function searchSuccessPatternLibrary() {
       ORDER BY avg_performance DESC
       LIMIT 8
     `, []);
-    return (rows || []).map((r) => ({
+    return ((rows || []) as RagRow[]).map((r) => ({
       source: 'success_library',
-      pattern_type: r.pattern_type,
-      template: r.pattern_template,
-      platform: r.platform,
+      pattern_type: String(r.pattern_type || ''),
+      template: String(r.pattern_template || ''),
+      platform: String(r.platform || ''),
       relevance: 0.85,
       snippet: `[${r.platform}] ${r.pattern_template} (성과 ${r.avg_performance})`,
     }));
@@ -169,7 +199,7 @@ async function searchSuccessPatternLibrary() {
 /**
  * 다중 소스 통합 검색
  */
-async function retrieveMarketingKnowledge(subqueries) {
+async function retrieveMarketingKnowledge(subqueries: MarketingSubquery[]): Promise<MarketingResult[]> {
   const [ownPatterns, dpoLearnings, competitorData, successLibrary] = await Promise.allSettled([
     searchOwnSuccessPatterns(subqueries),
     searchDpoLearnings(subqueries),
@@ -177,7 +207,7 @@ async function retrieveMarketingKnowledge(subqueries) {
     searchSuccessPatternLibrary(),
   ]);
 
-  const consolidate = (result) => (result.status === 'fulfilled' ? result.value : []);
+  const consolidate = (result: PromiseSettledResult<MarketingResult[]>) => (result.status === 'fulfilled' ? result.value : []);
 
   return [
     ...consolidate(ownPatterns),
@@ -192,7 +222,7 @@ async function retrieveMarketingKnowledge(subqueries) {
 /**
  * 검색 결과 품질 평가 + 재검색 필요 여부 판단
  */
-function evaluateRetrievalQuality(results, subqueries) {
+function evaluateRetrievalQuality(results: MarketingResult[], subqueries: MarketingSubquery[]) {
   if (!results || results.length === 0) {
     return { needs_retry: true, quality_score: 0, broader_queries: ['마케팅 콘텐츠 전략', '스터디카페 블로그'] };
   }
@@ -217,14 +247,14 @@ function evaluateRetrievalQuality(results, subqueries) {
  * 검색 결과를 마케팅 액션 플랜으로 종합
  * LLM 호출 실패 시 규칙 기반 fallback
  */
-async function synthesizeMarketingResponse(retrieved, intent) {
+async function synthesizeMarketingResponse(retrieved: MarketingResult[], intent: string) {
   // 규칙 기반 합성 (LLM fallback용)
   const topPatterns = retrieved.filter((r) => r.source === 'success_library').slice(0, 3);
   const topPosts = retrieved.filter((r) => r.source === 'own_success').slice(0, 3);
   const dpoInsights = retrieved.filter((r) => r.source === 'dpo_learning').slice(0, 2);
   const trends = retrieved.filter((r) => r.source === 'trend_signal').slice(0, 2);
 
-  const contentCalendar = [];
+  const contentCalendar: ContentCalendarItem[] = [];
   const days = [1, 2, 3, 4, 5];
   const platforms = ['naver', 'instagram', 'facebook', 'naver', 'naver'];
 
@@ -254,7 +284,7 @@ async function synthesizeMarketingResponse(retrieved, intent) {
       selectorKey: 'blog._default',
       maxBudgetUsd: 0.03,
     });
-    const text = (resp?.text || resp || '').trim();
+    const text = String(resp?.text || resp || '').trim();
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
       const llmResult = JSON.parse(match[0]);
@@ -281,7 +311,7 @@ async function synthesizeMarketingResponse(retrieved, intent) {
 /**
  * Marketing RAG 전체 파이프라인 실행
  */
-async function runMarketingRag(intent) {
+async function runMarketingRag(intent: string) {
   if (!isEnabled()) {
     return { skipped: true };
   }
