@@ -49,7 +49,7 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
   ],
 };
-const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|확인 필요|N\/A|다음 슬롯에서 재확인|차트에서 재확인/i;
+const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|N\/A|다음 슬롯에서 재확인|차트에서 재확인|미확인/i;
 
 function isSectionHeadingLine(line) {
   return SECTION_HEADING_EMOJI_RE.test(String(line || '').trim());

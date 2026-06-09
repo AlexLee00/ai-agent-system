@@ -197,6 +197,12 @@ Okay, let's tackle this. The user wants a pre-market brief for the Edu-X platfor
   assert.equal(machineSourcePost.content.includes('근거: 뉴스 RSS, 해석: 주의'), true, 'crypto post should map machine source names to reader-facing labels');
   assert.equal(machineSourcePost.content.includes('ETF/ETP에서 $1B 규모의 자금 유출'), true, 'crypto post should preserve outflow direction and amount in Korean issue summaries');
   assert.equal(validateContentQuality(cryptoPost.content, 'crypto').infoIssues.length, 0, 'crypto post should pass information-density gate');
+  const ordinaryCheckPhrase = cryptoPost.content.replace('거래량이 유지되는지가 중요합니다.', '거래량 확인 필요 구간입니다.');
+  assert.equal(
+    validateContentQuality(ordinaryCheckPhrase, 'crypto').infoIssues.includes('crypto_placeholder_text'),
+    false,
+    'crypto quality gate should not reject ordinary market-check wording as placeholder text',
+  );
   const missingTechnicalPost = await formatPost(
     'crypto',
     '2230',

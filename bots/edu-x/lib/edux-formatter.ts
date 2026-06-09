@@ -76,7 +76,7 @@ const FORBIDDEN_PATTERNS = [
   { key: 'activity', re: /\bactivity\b/i },
   { key: 'likes_or_comments', re: /좋아요|댓글/ },
 ];
-const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|확인 필요|N\/A|다음 슬롯에서 재확인|차트에서 재확인/i;
+const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|N\/A|다음 슬롯에서 재확인|차트에서 재확인|미확인/i;
 const INTERNAL_EQUITY_SOURCE_RE = /^(?:luna|investment|strategy|runtime|worker|ai\.|bot)/i;
 const INTERNAL_EQUITY_EVIDENCE_RE = /strategy-|stop_loss|take_profit|blocked_reason|reconcile|승인형\s*strategy|매수\s*신호|매도\s*신호/i;
 
