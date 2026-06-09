@@ -8,7 +8,21 @@ const env = require('../../../packages/core/lib/env');
 const DRAFT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/drafts');
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 
-function parseArgs(argv = []) {
+type PostType = 'lecture' | 'general';
+
+type RepairArgs = {
+  file: string;
+  latest: boolean;
+  type: string;
+  json: boolean;
+};
+
+type CandidateFile = {
+  fullPath: string;
+  mtimeMs: number;
+};
+
+function parseArgs(argv: string[] = []): RepairArgs {
   const args = {
     file: '',
     latest: argv.includes('--latest'),
@@ -25,7 +39,7 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function safeReadDir(dirPath) {
+function safeReadDir(dirPath: string): string[] {
   try {
     return fs.readdirSync(dirPath);
   } catch {
@@ -33,11 +47,11 @@ function safeReadDir(dirPath) {
   }
 }
 
-function resolveLatestFile(args) {
+function resolveLatestFile(args: RepairArgs): string {
   if (args.file) return path.resolve(args.file);
 
   const dirs = [DRAFT_DIR, OUTPUT_DIR];
-  const candidates = [];
+  const candidates: CandidateFile[] = [];
   const typeFilter = args.type === 'lecture' || args.type === 'general' ? `_${args.type}_` : '';
   for (const dir of dirs) {
     for (const name of safeReadDir(dir)) {
@@ -58,7 +72,7 @@ function resolveLatestFile(args) {
   return candidates[0]?.fullPath || '';
 }
 
-function inferType(filePath, explicitType) {
+function inferType(filePath: string, explicitType: string): PostType {
   if (explicitType === 'lecture' || explicitType === 'general') return explicitType;
   return /_lecture_/i.test(path.basename(filePath || '')) ? 'lecture' : 'general';
 }
@@ -87,7 +101,7 @@ function countAnsweredFaqPairs(html = '') {
   return answered;
 }
 
-function buildLearningPointsHtml(title, type) {
+function buildLearningPointsHtml(title: string, type: PostType) {
   const lines = type === 'lecture'
     ? [
         `${title || '이번 강의'}의 핵심 구조를 실무 관점에서 이해합니다.`,
@@ -106,7 +120,7 @@ function buildLearningPointsHtml(title, type) {
   ].join('\n');
 }
 
-function buildFaqHtml(title, type) {
+function buildFaqHtml(title: string, type: PostType) {
   const sectionTitle = type === 'lecture' ? 'AEO FAQ' : '질문형 Q&A';
   const qa = type === 'lecture'
     ? [
@@ -144,7 +158,7 @@ function buildCafeBrandHtml() {
   ].join('\n');
 }
 
-function buildPersonalVoiceHtml(title, type) {
+function buildPersonalVoiceHtml(title: string, type: PostType) {
   const text = type === 'lecture'
     ? [
         `제가 실제 운영 흐름에 ${title || '이번 강의'}를 대입해보면, 처음에는 단순한 개념처럼 보여도 장애와 복구 관점에서 훨씬 중요하게 다가오는 순간이 분명히 있었습니다.`,
@@ -157,7 +171,7 @@ function buildPersonalVoiceHtml(title, type) {
   return `<p>${text}</p>`;
 }
 
-function ensureLearningPoints(html, title, type) {
+function ensureLearningPoints(html: string, title: string, type: PostType) {
   if (html.includes('<h2 class="section-title">이 글에서 배울 수 있는 것</h2>')) return html;
   const sectionHtml = buildLearningPointsHtml(title, type);
   const anchor = type === 'lecture'
@@ -169,7 +183,7 @@ function ensureLearningPoints(html, title, type) {
   return html;
 }
 
-function ensureFaq(html, title, type) {
+function ensureFaq(html: string, title: string, type: PostType) {
   const faqTitle = type === 'lecture' ? 'AEO FAQ' : '질문형 Q&A';
   const hasSection = html.includes(`<h2 class="section-title">${faqTitle}</h2>`);
   const faqCount = countHtmlFaq(html);
@@ -198,7 +212,7 @@ function ensureFaq(html, title, type) {
   return `${html}\n${faqHtml}`;
 }
 
-function ensurePersonalVoice(html, title, type) {
+function ensurePersonalVoice(html: string, title: string, type: PostType) {
   if (hasPersonalVoice(html) && hasEmotionLine(html)) return html;
   const paragraph = buildPersonalVoiceHtml(title, type);
   const anchor = type === 'lecture'
@@ -212,7 +226,7 @@ function ensurePersonalVoice(html, title, type) {
   return `${html}\n${paragraph}`;
 }
 
-function ensureCafeBrandMention(html, type) {
+function ensureCafeBrandMention(html: string, type: PostType) {
   if (type !== 'general' || hasCafeBrandMention(html)) return html;
 
   const paragraph = buildCafeBrandHtml();
