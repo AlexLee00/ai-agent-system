@@ -1,11 +1,11 @@
 const hubAlarmClient = require('../../../packages/core/lib/hub-alarm-client.ts');
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 
-function withEnv(patch, fn) {
-  const previous = {};
+function withEnv(patch: Record<string, string | null>, fn: () => void): void {
+  const previous: Record<string, string | undefined> = {};
   for (const key of Object.keys(patch)) {
     previous[key] = process.env[key];
     if (patch[key] == null) delete process.env[key];

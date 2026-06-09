@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 import assert from 'node:assert/strict';
 
-function isEnabled(value) {
+function isEnabled(value: unknown): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
@@ -11,12 +11,12 @@ async function main() {
   const originalDedupeTtl = process.env.JAY_MEETING_DEDUPE_TTL_MS;
   const sender = require('../../../packages/core/lib/telegram-sender');
   const originalSendBuffered = sender.sendBuffered;
-  const captured = [];
+  const captured: Array<{ team: string; text: string }> = [];
 
   process.env.JAY_3TIER_TELEGRAM = 'true';
   process.env.JAY_MEETING_DEDUPE_TTL_MS = '60000';
   if (!live) {
-    sender.sendBuffered = async (team, text) => {
+    sender.sendBuffered = async (team: string, text: string) => {
       captured.push({ team, text });
       return true;
     };
@@ -58,6 +58,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`jay_telegram_meeting_dry_run_failed: ${error?.message || error}`);
+  console.error(`jay_telegram_meeting_dry_run_failed: ${error instanceof Error ? error.message : error}`);
   process.exit(1);
 });

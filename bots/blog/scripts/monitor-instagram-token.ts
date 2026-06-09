@@ -14,6 +14,25 @@ const {
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const instagramMonitorMemory = createAgentMemory({ agentId: 'blog.instagram-monitor', team: 'blog' });
 
+type InstagramMonitorPayload = {
+  tokenHealth: {
+    tokenExpiresAt?: string | null;
+    daysLeft?: number | null;
+    critical?: boolean;
+    needsRefresh?: boolean;
+  };
+  host: {
+    mode?: string;
+    ready: boolean;
+    relativePrefix?: string;
+  };
+};
+
+type MonitorArgs = {
+  dryRun: boolean;
+  json: boolean;
+};
+
 /**
  * @typedef {{
  *   tokenHealth: {
@@ -41,7 +60,7 @@ const instagramMonitorMemory = createAgentMemory({ agentId: 'blog.instagram-moni
  * @param {string[]} [argv]
  * @returns {MonitorArgs}
  */
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   return {
     dryRun: argv.includes('--dry-run'),
     json: argv.includes('--json'),
@@ -73,7 +92,7 @@ function buildStatusPayload() {
  * @param {InstagramMonitorPayload} payload
  * @returns {string}
  */
-function buildAlertMessage(payload) {
+function buildAlertMessage(payload: InstagramMonitorPayload) {
   const lines = [
     `토큰 만료일: ${payload.tokenHealth.tokenExpiresAt || '미설정'}`,
     `남은 일수: ${payload.tokenHealth.daysLeft ?? '알 수 없음'}`,
@@ -82,7 +101,7 @@ function buildAlertMessage(payload) {
   return lines.join('\n');
 }
 
-function buildMemoryQuery(payload) {
+function buildMemoryQuery(payload: InstagramMonitorPayload): string {
   return [
     payload?.tokenHealth?.critical ? 'instagram token critical' : 'instagram upload readiness',
     payload?.host?.ready ? 'host-ready' : 'host-missing',
@@ -94,7 +113,7 @@ function buildMemoryQuery(payload) {
  * @param {InstagramMonitorPayload} payload
  * @param {MonitorArgs} options
  */
-async function maybeSendAlert(payload, options) {
+async function maybeSendAlert(payload: InstagramMonitorPayload, options: MonitorArgs) {
   const { tokenHealth, host } = payload;
   const shouldAlert = tokenHealth.critical || !host.ready;
   const alertLevel = tokenHealth.critical ? 3 : 2;
@@ -195,6 +214,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[인스타 모니터] 실패:', error?.message || error);
+  console.error('[인스타 모니터] 실패:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

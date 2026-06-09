@@ -6,20 +6,20 @@ const { getInstagramConfig, buildHostedVideoUrl, verifyPublicMediaUrl } = requir
 const { findLatestReelPath } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
-function parseArgs(argv = []) {
+function parseArgs(argv: string[] = []) {
   return {
     json: argv.includes('--json'),
     video: readOption(argv, '--video'),
   };
 }
 
-function readOption(argv = [], flag = '') {
+function readOption(argv: string[] = [], flag = '') {
   const index = argv.indexOf(flag);
   return index >= 0 ? argv[index + 1] || '' : '';
 }
 
-function buildActions({ config, media, reelPath }) {
-  const actions = [];
+function buildActions({ config, media, reelPath }: { config: any; media: any; reelPath?: string | null }) {
+  const actions: string[] = [];
 
   if (!config.accessToken) actions.push('허브 저장소에 instagram.access_token 등록');
   if (!config.igUserId) actions.push('허브 저장소에 instagram.ig_user_id 등록');
@@ -67,7 +67,7 @@ async function main() {
         ok: false,
         status: 0,
         method: 'build',
-        error: error?.message || String(error),
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -127,6 +127,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[인스타 doctor] 실패:', error?.message || error);
+  console.error('[인스타 doctor] 실패:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

@@ -1,18 +1,18 @@
 #!/usr/bin/env tsx
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-async function safe(label, work) {
+async function safe(label: string, work: () => Promise<unknown>) {
   try {
     return await work();
   } catch (error) {
     return {
       ok: false,
       label,
-      error: normalizeText(error?.message || error, 'unknown_error'),
+      error: normalizeText(error instanceof Error ? error.message : error, 'unknown_error'),
     };
   }
 }
@@ -28,7 +28,7 @@ async function main() {
 
   const incidents = await safe('incidents', async () => {
     await incidentStore.ensureIncidentTables();
-    const entries = {};
+    const entries: Record<string, number> = {};
     for (const status of statuses) {
       // eslint-disable-next-line no-await-in-loop
       const rows = await incidentStore.listIncidentsByStatus([status], 50);
@@ -47,7 +47,7 @@ async function main() {
       ORDER BY count DESC, event_type ASC
       LIMIT 12
     `, []);
-    return rows.map((row) => ({
+    return rows.map((row: { event_type?: unknown; count?: unknown }) => ({
       eventType: normalizeText(row.event_type),
       count: Number(row.count || 0),
     }));
@@ -58,7 +58,7 @@ async function main() {
     const rows = await skillExtractor.listRecentSkills({ limit: 8, days: 30 });
     return {
       count: rows.length,
-      recent: rows.map((row) => ({
+      recent: rows.map((row: { team?: unknown; strategy_key?: unknown; confidence?: unknown; updated_at?: unknown }) => ({
         team: row.team,
         strategyKey: row.strategy_key,
         confidence: Number(row.confidence || 0),
@@ -89,6 +89,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`jay_status_report_failed: ${error?.message || error}`);
+  console.error(`jay_status_report_failed: ${error instanceof Error ? error.message : error}`);
   process.exit(1);
 });
