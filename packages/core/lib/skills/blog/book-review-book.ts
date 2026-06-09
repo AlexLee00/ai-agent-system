@@ -344,17 +344,48 @@ async function updateBookReviewQueueEntry(input = {}) {
 async function updateBookCatalogEntry(input = {}) {
   await ensureBookCatalogTable();
 
-  const isbn = normalizeBookIsbn(input.isbn);
-  const title = String(input.title || '').trim();
-  if (!isbn && !title) {
+  const isbnCandidates = [
+    input.isbn,
+    input.catalogIsbn,
+    ...(Array.isArray(input.candidateIsbns) ? input.candidateIsbns : []),
+  ]
+    .map((value) => normalizeBookIsbn(value))
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+  const titleCandidates = [
+    input.title,
+    input.catalogTitle,
+    ...(Array.isArray(input.candidateTitles) ? input.candidateTitles : []),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value, index, arr) => arr.indexOf(value) === index);
+  if (!isbnCandidates.length && !titleCandidates.length) {
     throw new Error('isbn 또는 title 중 하나는 필요합니다');
   }
 
-  const matchSql = isbn
-    ? 'SELECT id, metadata FROM blog.book_catalog WHERE isbn = ? LIMIT 1'
-    : 'SELECT id, metadata FROM blog.book_catalog WHERE title = ? LIMIT 1';
-  const matchParams = isbn ? [isbn] : [title];
-  const current = await pgPool.get('blog', matchSql, matchParams);
+  let current = null;
+  for (const isbn of isbnCandidates) {
+    current = await pgPool.get('blog', 'SELECT id, metadata FROM blog.book_catalog WHERE isbn = ? LIMIT 1', [isbn]);
+    if (current?.id) break;
+  }
+  for (const title of titleCandidates) {
+    if (current?.id) break;
+    current = await pgPool.get('blog', 'SELECT id, metadata FROM blog.book_catalog WHERE title = ? LIMIT 1', [title]);
+  }
+  if (!current?.id && titleCandidates.length) {
+    const normalizedTitles = new Set(titleCandidates.map((title) => normalizeBookKey(title)).filter(Boolean));
+    const rows = await pgPool.query('blog', `
+      SELECT id, title, metadata
+      FROM blog.book_catalog
+      ORDER BY priority DESC, added_at DESC
+      LIMIT 300
+    `);
+    current = (rows || []).find((row) => {
+      const rowTitle = normalizeBookKey(row?.title);
+      return rowTitle && normalizedTitles.has(rowTitle);
+    }) || null;
+  }
   if (!current?.id) {
     throw new Error('대상 도서를 찾지 못했습니다');
   }

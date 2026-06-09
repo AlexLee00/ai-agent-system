@@ -1813,9 +1813,14 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   });
 
   if (context.category === '도서리뷰' && context.book_info && !options.dryRun) {
+    const catalogCandidate = Array.isArray(context.book_info.verification_candidates)
+      ? context.book_info.verification_candidates.find((candidate) => candidate?.source === 'catalog')
+      : null;
     await blogSkills.bookReviewBook.updateBookCatalogEntry({
       isbn: context.book_info.isbn || null,
       title: context.book_info.title || null,
+      catalogIsbn: catalogCandidate?.isbn || null,
+      catalogTitle: catalogCandidate?.title || null,
       reviewed: true,
     }).catch((error) => {
       console.warn('[블로] book_catalog reviewed 마킹 실패:', error.message);
