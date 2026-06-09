@@ -1868,9 +1868,10 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
         });
         continue;
       }
+      const isCircuitOpen = localCircuit?.isCircuitOpen;
       const allCircuitsOpen = candidateBaseUrls.length > 0
-        && typeof localCircuit.isCircuitOpen === 'function'
-        && candidateBaseUrls.every((baseUrl: string) => localCircuit.isCircuitOpen(baseUrl));
+        && typeof isCircuitOpen === 'function'
+        && candidateBaseUrls.every((baseUrl: string) => isCircuitOpen(baseUrl));
       if (allCircuitsOpen) {
         console.warn(`[llm-fallback] local circuits OPEN → 체인에서 건너뜀 (${candidateBaseUrls.join(', ')})`);
         skippedProviders.push(`local:circuit_open`);
@@ -2056,10 +2057,11 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
     );
   }
   if (lastError && typeof lastError === 'object') {
-    lastError.llmTrace = attemptTrace;
-    lastError.selectorKey = logMeta.selectorKey || null;
-    lastError.agentName = logMeta.agentName || logMeta.bot || null;
-    lastError.team = logMeta.team || null;
+    const enrichedError = lastError as Error & Record<string, unknown>;
+    enrichedError.llmTrace = attemptTrace;
+    enrichedError.selectorKey = logMeta.selectorKey || null;
+    enrichedError.agentName = logMeta.agentName || logMeta.bot || null;
+    enrichedError.team = logMeta.team || null;
   }
   throw lastError;
 }

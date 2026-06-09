@@ -1,6 +1,13 @@
 import type { NextFunction, Request, Response } from 'express';
 
 type RuntimeFlag = () => boolean;
+type HubRequest = Request & {
+  hubRequestContext?: { traceId?: string };
+};
+type HubResponse = Response & {
+  statusCode: number;
+  on: (event: 'finish', listener: () => void) => void;
+};
 
 const HIGH_VOLUME_SUCCESS_PATHS = new Set([
   '/events/publish',
@@ -14,7 +21,7 @@ function positiveIntEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function shouldLogRequest(req: Request, res: Response, ms: number): boolean {
+function shouldLogRequest(req: HubRequest, res: HubResponse, ms: number): boolean {
   if (res.statusCode >= 400) return true;
   if (!HIGH_VOLUME_SUCCESS_PATHS.has(String(req.path || ''))) return true;
   if (ms >= positiveIntEnv('HUB_REQUEST_LOG_SLOW_MS', 100)) return true;
@@ -46,7 +53,7 @@ function pathGuardMiddleware(req: Request, res: Response, next: NextFunction) {
   return next();
 }
 
-function requestLoggingMiddleware(req: Request, res: Response, next: NextFunction) {
+function requestLoggingMiddleware(req: HubRequest, res: HubResponse, next: NextFunction) {
   const started = Date.now();
   res.on('finish', () => {
     const ms = Date.now() - started;

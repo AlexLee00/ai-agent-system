@@ -71,7 +71,14 @@ function getOpenAiCodexBackendBaseUrl() {
   return String(process.env.OPENAI_CODEX_BACKEND_BASE_URL || process.env.OPENAI_CODEX_OAUTH_BACKEND_BASE_URL || 'https://chatgpt.com/backend-api').replace(/\/+$/, '');
 }
 
-function isPublicOpenAiApiCanaryMode(mode) {
+type OpenAiCodexTokenRecord = {
+  access_token?: string;
+  account_id?: string;
+};
+
+type JsonObject = Record<string, unknown>;
+
+function isPublicOpenAiApiCanaryMode(mode: string) {
   return ['api', 'public_api', 'responses', 'chat', 'chat_completions', 'chat-completions'].includes(mode);
 }
 
@@ -81,7 +88,7 @@ function requirePublicOpenAiApiCanary() {
   );
 }
 
-function classifyPublicApiPermissionIssue(message) {
+function classifyPublicApiPermissionIssue(message: unknown) {
   const text = String(message || '').trim();
   if (!text) return null;
   if (/api\.responses\.write/i.test(text)) {
@@ -100,16 +107,17 @@ function classifyPublicApiPermissionIssue(message) {
   return null;
 }
 
-function summarizeWhamUsagePayload(payload) {
+function summarizeWhamUsagePayload(payload: unknown) {
   if (!payload || typeof payload !== 'object') return {};
-  const rateLimit = payload.rate_limit || payload.rateLimit || null;
+  const data = payload as JsonObject;
+  const rateLimit = data.rate_limit || data.rateLimit || null;
   return {
-    ...(payload.plan_type || payload.planType ? { plan_type: String(payload.plan_type || payload.planType) } : {}),
+    ...(data.plan_type || data.planType ? { plan_type: String(data.plan_type || data.planType) } : {}),
     ...(rateLimit && typeof rateLimit === 'object' ? { rate_limit_present: true } : {}),
   };
 }
 
-async function runOpenAiCodexBackendCanary(tokenRecord, source) {
+async function runOpenAiCodexBackendCanary(tokenRecord: OpenAiCodexTokenRecord | null, source: string) {
   const accessToken = String(tokenRecord?.access_token || '').trim();
   const accountId = String(tokenRecord?.account_id || '').trim();
   const baseUrl = getOpenAiCodexBackendBaseUrl();
@@ -117,7 +125,7 @@ async function runOpenAiCodexBackendCanary(tokenRecord, source) {
   const url = `${baseUrl}/${endpoint}`;
 
   try {
-    const headers = {
+    const headers: Record<string, string> = {
       Authorization: `Bearer ${accessToken}`,
       'User-Agent': 'CodexBar',
     };
@@ -129,8 +137,9 @@ async function runOpenAiCodexBackendCanary(tokenRecord, source) {
       signal: AbortSignal.timeout(Number(process.env.OPENAI_CODEX_OAUTH_CANARY_TIMEOUT_MS || process.env.OPENAI_OAUTH_CANARY_TIMEOUT_MS || 15_000)),
     });
     const contentType = String(response.headers.get('content-type') || '');
-    const payload = contentType.includes('json') ? await response.json().catch(() => ({})) : {};
-    const message = String(payload?.error?.message || payload?.message || '').slice(0, 400);
+    const payload = (contentType.includes('json') ? await response.json().catch(() => ({})) : {}) as JsonObject;
+    const errorPayload = payload.error && typeof payload.error === 'object' ? payload.error as JsonObject : {};
+    const message = String(errorPayload.message || payload.message || '').slice(0, 400);
     return {
       ok: response.ok,
       ...(response.ok ? {} : { error: 'chatgpt_backend_canary_failed' }),
@@ -155,7 +164,7 @@ async function runOpenAiCodexBackendCanary(tokenRecord, source) {
         canary_mode: 'chatgpt_backend',
         endpoint,
         account_id_present: Boolean(accountId),
-        message: String(error?.message || error).slice(0, 400),
+        message: String(error instanceof Error ? error.message : error).slice(0, 400),
       },
     };
   }
@@ -209,8 +218,9 @@ async function runOpenAiApiCanary() {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(Number(process.env.OPENAI_OAUTH_CANARY_TIMEOUT_MS || 15_000)),
     });
-    const payload = await response.json().catch(() => ({}));
-    const message = String(payload?.error?.message || payload?.message || '').slice(0, 400);
+    const payload = await response.json().catch(() => ({})) as JsonObject;
+    const errorPayload = payload.error && typeof payload.error === 'object' ? payload.error as JsonObject : {};
+    const message = String(errorPayload.message || payload.message || '').slice(0, 400);
     const permissionIssue = classifyPublicApiPermissionIssue(message);
     return {
       ok: response.ok,
@@ -236,7 +246,7 @@ async function runOpenAiApiCanary() {
         canary_mode: 'public_api',
         endpoint,
         model,
-        message: String(error?.message || error).slice(0, 400),
+        message: String(error instanceof Error ? error.message : error).slice(0, 400),
       },
     };
   }

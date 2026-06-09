@@ -1,7 +1,31 @@
 const { captureHubError } = require('../../lib/sentry-mcp-adapter');
 const { recordHubRuntimeErrorPatternAsync } = require('../../lib/autonomy/runtime-error-learning');
 
-function resolveErrorStatus(error) {
+type HubError = Error & {
+  status?: number | string;
+  statusCode?: number | string;
+  type?: string;
+  code?: string;
+  body?: unknown;
+};
+
+type HubErrorRequest = {
+  hubRequestContext?: { traceId?: string };
+  hubBodyRouteClass?: string;
+  headers?: Record<string, unknown>;
+  originalUrl?: string;
+  path?: string;
+  method?: string;
+};
+
+type HubErrorResponse = {
+  headersSent?: boolean;
+  status: (status: number) => { json: (payload: unknown) => unknown };
+};
+
+type Next = (error?: unknown) => unknown;
+
+function resolveErrorStatus(error: HubError) {
   const status = Number(error?.status || error?.statusCode);
   if (Number.isFinite(status) && status >= 400 && status <= 599) return Math.floor(status);
   if (error?.type === 'entity.too.large') return 413;
@@ -9,7 +33,7 @@ function resolveErrorStatus(error) {
   return 500;
 }
 
-function publicErrorCode(status, error) {
+function publicErrorCode(status: number, error: HubError) {
   if (status === 400 && error instanceof SyntaxError && 'body' in error) return 'invalid_json_body';
   if (status === 413) return 'request_entity_too_large';
   if (status === 414) return 'uri_too_long';
@@ -17,7 +41,7 @@ function publicErrorCode(status, error) {
   return String(error?.code || error?.type || 'request_failed');
 }
 
-function bodyLimitSuggestion(req, status) {
+function bodyLimitSuggestion(req: HubErrorRequest, status: number) {
   if (status !== 413) return null;
   const routeClass = String(req.hubBodyRouteClass || 'default');
   const currentMb = routeClass === 'llm'
@@ -40,7 +64,7 @@ function bodyLimitSuggestion(req, status) {
   };
 }
 
-function hubErrorHandler(error, req, res, next) {
+function hubErrorHandler(error: HubError, req: HubErrorRequest, res: HubErrorResponse, next: Next) {
   if (res.headersSent) return next(error);
   const status = resolveErrorStatus(error);
   const traceId = req.hubRequestContext?.traceId || '-';

@@ -5,11 +5,34 @@ const QUOTA_PROJECT_ENV_NAMES = [
   'GOOGLE_CLOUD_PROJECT',
 ];
 
-function isEnabled(value) {
+function isEnabled(value: unknown) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
-function resolveGeminiQuotaProject(record = null, extra = null) {
+type GeminiQuotaRecord = {
+  metadata?: {
+    quota_project_id?: string;
+    project_id?: string;
+  };
+  token?: {
+    quota_project_id?: string;
+    project_id?: string;
+  };
+} | null;
+
+type GeminiQuotaExtra = {
+  quota_project_id?: string;
+  project_id?: string;
+} | null;
+
+type GeminiQuotaStatusOptions = {
+  provider?: string;
+  configured?: boolean;
+  requiredByTeam?: boolean;
+  requireProject?: boolean;
+};
+
+function resolveGeminiQuotaProject(record: GeminiQuotaRecord = null, extra: GeminiQuotaExtra = null) {
   return String(
     process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
@@ -31,11 +54,11 @@ function geminiCliQuotaProjectRequired(env = process.env) {
     || isEnabled(env.HUB_OAUTH_OPS_REQUIRE_GEMINI_QUOTA_PROJECT);
 }
 
-function geminiDirectQuotaProjectRequired(requiredByTeam) {
+function geminiDirectQuotaProjectRequired(requiredByTeam: boolean) {
   return false;
 }
 
-function geminiQuotaProjectStatus(options) {
+function geminiQuotaProjectStatus(options: GeminiQuotaStatusOptions) {
   const provider = String(options.provider || '').trim();
   const configured = Boolean(options.configured);
   const requiredByTeam = Boolean(options.requiredByTeam);
