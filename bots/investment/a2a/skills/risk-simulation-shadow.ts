@@ -7,20 +7,72 @@ import {
 } from '../../shared/quant/monte-carlo.ts';
 import { buildStressTestShadow } from '../../shared/quant/stress-test.ts';
 import { registerSkillHandler } from '../handlers/task-handler.ts';
+import type { A2ATaskResult } from '../types.ts';
+
+type QueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
+type AnalysisType = 'monte_carlo' | 'stress_test';
+type RiskCandidate = {
+  symbol?: string;
+  symbols?: string[];
+  exchange?: string;
+  barsBySymbol?: Record<string, unknown[]>;
+  bars?: unknown[];
+  returns?: number[];
+  riskLimits?: Record<string, number>;
+};
+type RiskSimulationParams = {
+  symbol?: string;
+  symbols?: string[];
+  exchange?: string | null;
+  market?: string;
+  scenario?: string;
+  limit?: number;
+  broadcast?: boolean;
+  analysisType?: string;
+  analysis?: string;
+  simulations?: number;
+  horizonDays?: number;
+  barsBySymbol?: Record<string, unknown[]>;
+  bars?: unknown[];
+  returns?: number[];
+  riskLimits?: Record<string, number>;
+  candidate?: RiskCandidate;
+};
+type RiskSimulationRowsQuery = {
+  analysisType?: string | null;
+  symbol?: string;
+  exchange?: string | null;
+  market?: string;
+  scenario?: string;
+  limit?: number;
+};
+type RiskSimulationShadow = Omit<ReturnType<typeof buildMonteCarloShadow>, 'evidence'> & {
+  evidence: Record<string, unknown>;
+};
+type RiskSimulationHandlerOptions = {
+  queryFn?: QueryFn;
+  skillId?: string;
+  defaultAnalysisType?: AnalysisType | null;
+};
+type RiskShadowBuilder = (input: Record<string, unknown>, context: Record<string, unknown>) => RiskSimulationShadow;
 
 function broadcastEnabled() {
   return String(process.env.LUNA_A2A_BROADCAST_ENABLED || '').toLowerCase() === 'true';
 }
 
-function normalizeAnalysisType(value) {
+function normalizeAnalysisType(value: unknown): AnalysisType {
   const raw = String(value || 'monte_carlo').toLowerCase();
   if (raw === 'stress' || raw === 'stress_test') return 'stress_test';
   return 'monte_carlo';
 }
 
-async function latestRiskSimulationRows(queryFn, { analysisType, symbol, exchange, market, scenario, limit }) {
-  const conds = [];
-  const params = [];
+function asRiskSimulationParams(params: unknown): RiskSimulationParams {
+  return params && typeof params === 'object' ? (params as RiskSimulationParams) : {};
+}
+
+async function latestRiskSimulationRows(queryFn: QueryFn, { analysisType, symbol, exchange, market, scenario, limit }: RiskSimulationRowsQuery) {
+  const conds: string[] = [];
+  const params: unknown[] = [];
   if (analysisType) {
     params.push(normalizeAnalysisType(analysisType));
     conds.push(`analysis_type = $${params.length}`);
@@ -53,7 +105,7 @@ async function latestRiskSimulationRows(queryFn, { analysisType, symbol, exchang
   return Array.isArray(rows) ? rows : [];
 }
 
-function outputFromShadow(shadow, skillId, params = {}) {
+function outputFromShadow(shadow: RiskSimulationShadow, skillId: string, params: RiskSimulationParams = {}) {
   return {
     ok: Boolean(shadow.ok),
     skill: skillId,
@@ -77,11 +129,11 @@ function outputFromShadow(shadow, skillId, params = {}) {
   };
 }
 
-function outputFromRows(rows = [], skillId, params = {}) {
-  const normalized = rows.map(normalizeRiskSimulationShadowRow);
+function outputFromRows(rows: unknown[] = [], skillId: string, params: RiskSimulationParams = {}) {
+  const normalized = rows.map((row) => normalizeRiskSimulationShadowRow(row as Record<string, unknown>));
   const primary = normalized[0] || {};
   return {
-    ...outputFromShadow(primary, skillId, params),
+    ...outputFromShadow(primary as RiskSimulationShadow, skillId, params),
     rows: normalized.map((row) => ({
       analysisType: row.analysisType,
       symbols: row.symbols,
@@ -99,10 +151,10 @@ function outputFromRows(rows = [], skillId, params = {}) {
   };
 }
 
-function outputFromCandidate(params = {}, skillId, defaultAnalysisType = null) {
+function outputFromCandidate(params: RiskSimulationParams = {}, skillId: string, defaultAnalysisType: AnalysisType | null = null) {
   const exchange = normalizeRiskExchange(params.exchange || params.candidate?.exchange);
   const analysisType = normalizeAnalysisType(params.analysisType || params.analysis || defaultAnalysisType);
-  const builder = analysisType === 'stress_test' ? buildStressTestShadow : buildMonteCarloShadow;
+  const builder = (analysisType === 'stress_test' ? buildStressTestShadow : buildMonteCarloShadow) as RiskShadowBuilder;
   const symbols = params.symbols || params.candidate?.symbols || [params.symbol || params.candidate?.symbol].filter(Boolean);
   const shadow = builder({
     symbols,
@@ -119,11 +171,12 @@ function outputFromCandidate(params = {}, skillId, defaultAnalysisType = null) {
 }
 
 export function createRiskSimulationShadowHandler({
-  queryFn = defaultQuery,
+  queryFn = defaultQuery as QueryFn,
   skillId = 'risk-simulation-shadow',
   defaultAnalysisType = null,
-} = {}) {
-  return async function riskSimulationShadow(params = {}) {
+}: RiskSimulationHandlerOptions = {}) {
+  return async function riskSimulationShadow(rawParams: unknown = {}): Promise<A2ATaskResult> {
+    const params = asRiskSimulationParams(rawParams);
     const exchange = params.exchange ? normalizeRiskExchange(params.exchange) : null;
     const analysisType = params.analysisType || params.analysis || defaultAnalysisType;
     const rows = await latestRiskSimulationRows(queryFn, {
@@ -138,6 +191,7 @@ export function createRiskSimulationShadowHandler({
       ? outputFromRows(rows, skillId, { ...params, exchange })
       : outputFromCandidate({ ...params, exchange: exchange || params?.candidate?.exchange }, skillId, defaultAnalysisType);
     return {
+      id: '',
       status: output.ok ? 'completed' : 'failed',
       output,
       metadata: {
@@ -151,7 +205,7 @@ export function createRiskSimulationShadowHandler({
   };
 }
 
-export function registerRiskSimulationShadowSkills(options = {}) {
+export function registerRiskSimulationShadowSkills(options: RiskSimulationHandlerOptions = {}) {
   registerSkillHandler('risk-simulation-shadow', createRiskSimulationShadowHandler(options));
   registerSkillHandler('monte-carlo-shadow', createRiskSimulationShadowHandler({
     ...options,
