@@ -17,7 +17,30 @@ const { buildPlatformVariants } = require('./platform-variant-builder.ts');
 const { enqueueMarketingVariants } = require('./publish-queue.ts');
 const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
-function normalizeSegment(value, fallback = 'na') {
+type CampaignKeyInput = {
+  brandAxis?: string;
+  objective?: string;
+  strategyVersion?: string;
+  cycleDate?: string;
+};
+
+type ScheduledVariant = {
+  platform?: string;
+  enqueue_status?: string;
+  status?: string;
+};
+
+type ScheduledSummary = Record<string, {
+  total: number;
+  inserted: number;
+  existing: number;
+  queued: number;
+  preparing: number;
+  blocked: number;
+  failed: number;
+}>;
+
+function normalizeSegment(value: unknown, fallback = 'na') {
   const normalized = String(value || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
@@ -25,7 +48,7 @@ function normalizeSegment(value, fallback = 'na') {
   return normalized || fallback;
 }
 
-function stableDigest(input) {
+function stableDigest(input: unknown) {
   return crypto.createHash('sha1').update(String(input || ''), 'utf8').digest('hex').slice(0, 12);
 }
 
@@ -34,7 +57,7 @@ function buildCampaignKey({
   objective = 'awareness',
   strategyVersion = '',
   cycleDate = '',
-} = {}) {
+}: CampaignKeyInput = {}) {
   return [
     normalizeSegment(brandAxis),
     normalizeSegment(objective),
@@ -48,7 +71,7 @@ function buildCampaignId({
   objective = 'awareness',
   strategyVersion = '',
   cycleDate = '',
-} = {}) {
+}: CampaignKeyInput = {}) {
   const datePart = String(cycleDate || kst.today()).replace(/[^0-9]/g, '').slice(0, 8) || '00000000';
   const brandPart = normalizeSegment(brandAxis).slice(0, 16);
   const objectivePart = normalizeSegment(objective).slice(0, 16);
@@ -56,9 +79,8 @@ function buildCampaignId({
   return `camp_${datePart}_${brandPart}_${objectivePart}_${digest}`;
 }
 
-function buildScheduledSummary(scheduled = []) {
-  /** @type {Record<string, {total:number, inserted:number, existing:number, queued:number, preparing:number, blocked:number, failed:number}>} */
-  const summary = {};
+function buildScheduledSummary(scheduled: ScheduledVariant[] = []) {
+  const summary: ScheduledSummary = {};
   for (const item of (scheduled || [])) {
     const platform = String(item?.platform || 'unknown');
     if (!summary[platform]) {

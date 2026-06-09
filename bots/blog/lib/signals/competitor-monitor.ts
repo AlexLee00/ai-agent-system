@@ -22,6 +22,33 @@ const DEFAULT_COMPETITORS = [
   { name: '스터디카페B', category: 'study_cafe', keywords: ['공부 카페', '열람실 카페'] },
 ];
 
+type Competitor = {
+  name: string;
+  category?: string;
+  naver_blog_url?: string;
+  naver_blog_id?: string;
+  instagram_handle?: string;
+  keywords: string[];
+};
+
+type NaverBlogPost = {
+  title?: string;
+  description?: string;
+  postdate?: string;
+};
+
+type CompetitorSnapshot = {
+  competitor_name: string;
+  platform: string;
+  measured_at: string;
+  posts_found: number;
+  top_keywords: string[];
+  top_post_titles: string[];
+  avg_engagement_estimate: number;
+  trending_topics: string[];
+  is_viral: boolean;
+};
+
 /**
  * DB에서 경쟁사 목록 조회 (없으면 기본값)
  */
@@ -38,7 +65,7 @@ async function loadCompetitors() {
        WHERE monitoring_enabled = true`
     );
     if (!rows.rows || rows.rows.length === 0) return DEFAULT_COMPETITORS;
-    return rows.rows.map((r) => ({
+    return rows.rows.map((r: any) => ({
       name: r.name,
       category: r.category,
       naver_blog_url: r.naver_blog_url,
@@ -54,14 +81,13 @@ async function loadCompetitors() {
 /**
  * 네이버 검색 API로 경쟁사 블로그 포스팅 수집
  */
-async function fetchNaverBlogPosts(keywords) {
+async function fetchNaverBlogPosts(keywords: string[]): Promise<NaverBlogPost[]> {
   const clientId = process.env.NAVER_CLIENT_ID || '';
   const clientSecret = process.env.NAVER_CLIENT_SECRET || '';
   if (!clientId || !clientSecret) return [];
 
   const https = require('https');
-  /** @type {{ title?: string, description?: string, postdate?: string }[]} */
-  const allPosts = [];
+  const allPosts: NaverBlogPost[] = [];
 
   for (const kw of keywords.slice(0, 3)) {
     await new Promise((r) => setTimeout(r, 500));
@@ -78,9 +104,9 @@ async function fetchNaverBlogPosts(keywords) {
             'X-Naver-Client-Secret': clientSecret,
           },
         },
-        (res) => {
+        (res: any) => {
           let body = '';
-          res.on('data', (d) => (body += d));
+          res.on('data', (d: Buffer | string) => (body += d));
           res.on('end', () => {
             try {
               const data = JSON.parse(body);
@@ -98,9 +124,8 @@ async function fetchNaverBlogPosts(keywords) {
   return allPosts;
 }
 
-function extractTopKeywords(posts) {
-  /** @type {Record<string, number>} */
-  const freq = {};
+function extractTopKeywords(posts: NaverBlogPost[]) {
+  const freq: Record<string, number> = {};
   const stopwords = new Set([
     '이', '가', '을', '를', '은', '는', '에', '의', '과', '와', '로', '한',
     '하다', '있다', '없다', '되다', '합니다', '있습니다', '됩니다', '것', '수',
@@ -123,7 +148,7 @@ function extractTopKeywords(posts) {
     .map(([w]) => w);
 }
 
-async function snapshotCompetitor(comp) {
+async function snapshotCompetitor(comp: Competitor): Promise<CompetitorSnapshot> {
   const posts = await fetchNaverBlogPosts(comp.keywords);
   const topKeywords = extractTopKeywords(posts);
   const topTitles = posts.slice(0, 5).map((p) => (p.title || '').replace(/<[^>]+>/g, ''));
@@ -149,7 +174,7 @@ async function snapshotCompetitor(comp) {
 /**
  * 이상 신호 감지 (바이럴 경쟁사 목록 반환)
  */
-function detectAnomalies(snapshots) {
+function detectAnomalies(snapshots: CompetitorSnapshot[]) {
   return snapshots
     .filter((s) => s.is_viral)
     .map((s) => ({
@@ -166,7 +191,7 @@ async function monitorCompetitors() {
   if (!isEnabled()) return [];
 
   const competitors = await loadCompetitors();
-  const snapshots = [];
+  const snapshots: CompetitorSnapshot[] = [];
 
   for (const comp of competitors) {
     try {
@@ -177,8 +202,8 @@ async function monitorCompetitors() {
       if (snap.is_viral) {
         console.log(`[경쟁사] ⚡ 바이럴 감지: ${comp.name}`);
       }
-    } catch (e) {
-      console.warn(`[경쟁사] ${comp.name} 수집 실패:`, e.message);
+    } catch (e: unknown) {
+      console.warn(`[경쟁사] ${comp.name} 수집 실패:`, e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -207,8 +232,8 @@ async function monitorCompetitors() {
  */
 async function benchmarkCompetitorContent() {
   const competitors = await loadCompetitors();
-  const allKeywords = [];
-  const allTitles = [];
+  const allKeywords: string[] = [];
+  const allTitles: string[] = [];
 
   for (const comp of competitors) {
     const posts = await fetchNaverBlogPosts(comp.keywords);
@@ -216,8 +241,7 @@ async function benchmarkCompetitorContent() {
     allTitles.push(...posts.slice(0, 5).map((p) => (p.title || '').replace(/<[^>]+>/g, '')));
   }
 
-  /** @type {Record<string, number>} */
-  const kwFreq = {};
+  const kwFreq: Record<string, number> = {};
   for (const kw of allKeywords) {
     kwFreq[kw] = (kwFreq[kw] || 0) + 1;
   }
@@ -235,7 +259,7 @@ async function benchmarkCompetitorContent() {
   };
 }
 
-async function saveSnapshot(snap) {
+async function saveSnapshot(snap: CompetitorSnapshot) {
   try {
     await pgPool.query(
       'blog',
@@ -244,8 +268,8 @@ async function saveSnapshot(snap) {
        VALUES ('competitor', $1, $2, $3, NOW())`,
       [snap.competitor_name, JSON.stringify(snap), snap.is_viral ? 'warning' : 'info']
     );
-  } catch (e) {
-    console.warn('[경쟁사] DB 저장 실패:', e.message);
+  } catch (e: unknown) {
+    console.warn('[경쟁사] DB 저장 실패:', e instanceof Error ? e.message : String(e));
   }
 }
 
