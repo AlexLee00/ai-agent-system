@@ -9,14 +9,26 @@ const CLAUDE_CLI_CREDENTIALS_RELATIVE_PATH = path.join('.claude', '.credentials.
 const CODEX_KEYCHAIN_SERVICE = 'Codex Auth';
 const CLAUDE_CLI_KEYCHAIN_SERVICE = 'Claude Code-credentials';
 
-function resolveUserPath(input) {
-  if (!input) return input;
+type AnyRecord = Record<string, any>;
+type LocalCredentialOptions = {
+  codexHome?: string;
+  homeDir?: string;
+  allowKeychainPrompt?: boolean;
+  allowFileWrite?: boolean;
+  platform?: string;
+  account?: string;
+  execSync?: typeof execSync;
+  execFileSync?: typeof execFileSync;
+};
+
+function resolveUserPath(input: string | undefined | null): string {
+  if (!input) return '';
   if (input === '~') return os.homedir();
   if (input.startsWith('~/')) return path.join(os.homedir(), input.slice(2));
   return input;
 }
 
-function resolveCodexHomePath(codexHome) {
+function resolveCodexHomePath(codexHome?: string): string {
   const configured = codexHome || process.env.CODEX_HOME || '~/.codex';
   const expanded = resolveUserPath(configured);
   try {
@@ -26,11 +38,11 @@ function resolveCodexHomePath(codexHome) {
   }
 }
 
-function resolveClaudeCredentialPath(homeDir) {
+function resolveClaudeCredentialPath(homeDir?: string): string {
   return path.join(resolveUserPath(homeDir || '~'), CLAUDE_CLI_CREDENTIALS_RELATIVE_PATH);
 }
 
-function readJsonFile(filePath) {
+function readJsonFile(filePath: string): AnyRecord | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
@@ -38,7 +50,7 @@ function readJsonFile(filePath) {
   }
 }
 
-function decodeJwtExpiryMs(token) {
+function decodeJwtExpiryMs(token: unknown): number | null {
   const parts = String(token || '').split('.');
   if (parts.length < 2) return null;
   try {
@@ -52,23 +64,23 @@ function decodeJwtExpiryMs(token) {
   return null;
 }
 
-function toIsoTime(ms) {
+function toIsoTime(ms: unknown): string | null {
   if (!Number.isFinite(ms)) return null;
-  return new Date(ms).toISOString();
+  return new Date(Number(ms)).toISOString();
 }
 
-function computeCodexKeychainAccount(codexHome) {
+function computeCodexKeychainAccount(codexHome: string): string {
   return `cli|${crypto.createHash('sha256').update(codexHome).digest('hex').slice(0, 16)}`;
 }
 
-function buildKeychainCommand(service, account) {
+function buildKeychainCommand(service: string, account?: string): string {
   const escapedService = String(service).replace(/"/g, '\\"');
   if (!account) return `security find-generic-password -s "${escapedService}" -w`;
   const escapedAccount = String(account).replace(/"/g, '\\"');
   return `security find-generic-password -s "${escapedService}" -a "${escapedAccount}" -w`;
 }
 
-function readKeychainJson(service, account, options) {
+function readKeychainJson(service: string, account: string | undefined, options: LocalCredentialOptions = {}): AnyRecord | null {
   const platform = options.platform || process.platform;
   if (platform !== 'darwin') return null;
   if (options.allowKeychainPrompt !== true) return null;
@@ -86,7 +98,7 @@ function readKeychainJson(service, account, options) {
   }
 }
 
-function parseCodexAuthRecord(raw, fallbackExpiryMs) {
+function parseCodexAuthRecord(raw: AnyRecord | null, fallbackExpiryMs: number | null): AnyRecord | null {
   const tokens = raw?.tokens;
   const accessToken = tokens?.access_token;
   const refreshToken = tokens?.refresh_token;
@@ -112,7 +124,7 @@ function parseCodexAuthRecord(raw, fallbackExpiryMs) {
   };
 }
 
-function buildCodexAuthRecord(token, previousRaw = {}) {
+function buildCodexAuthRecord(token: AnyRecord, previousRaw: AnyRecord = {}): AnyRecord {
   const accessToken = token?.access_token || token?.accessToken;
   const refreshToken = token?.refresh_token || token?.refreshToken || previousRaw?.tokens?.refresh_token;
   const accountId = token?.account_id || token?.accountId || previousRaw?.tokens?.account_id;
@@ -141,7 +153,7 @@ function buildCodexAuthRecord(token, previousRaw = {}) {
   };
 }
 
-function parseClaudeOauth(rawOauth) {
+function parseClaudeOauth(rawOauth: AnyRecord | null | undefined): AnyRecord | null {
   if (!rawOauth || typeof rawOauth !== 'object') return null;
   const accessToken = rawOauth.accessToken;
   const refreshToken = rawOauth.refreshToken;
@@ -161,7 +173,7 @@ function parseClaudeOauth(rawOauth) {
   };
 }
 
-function buildClaudeKeychainOauth(token, previousOauth = {}) {
+function buildClaudeKeychainOauth(token: AnyRecord, previousOauth: AnyRecord = {}): AnyRecord {
   const accessToken = token?.access_token || token?.accessToken;
   const expiresAtRaw = token?.expires_at || token?.expiresAt;
   const expiresAtMs = typeof expiresAtRaw === 'number'
@@ -194,7 +206,7 @@ function buildClaudeKeychainOauth(token, previousOauth = {}) {
   };
 }
 
-function codexSourceMetadata(source, codexHome, authPath, account) {
+function codexSourceMetadata(source: string, codexHome: string, authPath: string, account: string) {
   return {
     source,
     imported_from: 'hub_local_cli_credentials',
@@ -205,7 +217,7 @@ function codexSourceMetadata(source, codexHome, authPath, account) {
   };
 }
 
-function claudeSourceMetadata(source, credentialPath) {
+function claudeSourceMetadata(source: string, credentialPath: string) {
   return {
     source,
     imported_from: 'hub_local_cli_credentials',
@@ -215,7 +227,7 @@ function claudeSourceMetadata(source, credentialPath) {
   };
 }
 
-function inspectOpenAiCodexLocalSources(options = {}) {
+function inspectOpenAiCodexLocalSources(options: LocalCredentialOptions = {}) {
   const codexHome = resolveCodexHomePath(options.codexHome);
   const authPath = path.join(codexHome, CODEX_CLI_AUTH_FILENAME);
   const keychainAccount = computeCodexKeychainAccount(codexHome);
@@ -229,7 +241,7 @@ function inspectOpenAiCodexLocalSources(options = {}) {
   };
 }
 
-function inspectClaudeCodeLocalSources(options = {}) {
+function inspectClaudeCodeLocalSources(options: LocalCredentialOptions = {}) {
   const credentialPath = resolveClaudeCredentialPath(options.homeDir);
   return {
     credential_path: credentialPath,
@@ -239,7 +251,7 @@ function inspectClaudeCodeLocalSources(options = {}) {
   };
 }
 
-function readOpenAiCodexLocalCredentials(options = {}) {
+function readOpenAiCodexLocalCredentials(options: LocalCredentialOptions = {}) {
   const sources = inspectOpenAiCodexLocalSources(options);
   const keychainRaw = readKeychainJson(CODEX_KEYCHAIN_SERVICE, sources.keychain_account, options);
   const keychainToken = parseCodexAuthRecord(keychainRaw, null);
@@ -279,7 +291,7 @@ function readOpenAiCodexLocalCredentials(options = {}) {
   };
 }
 
-function readClaudeCodeLocalCredentials(options = {}) {
+function readClaudeCodeLocalCredentials(options: LocalCredentialOptions = {}) {
   const sources = inspectClaudeCodeLocalSources(options);
   const keychainRaw = readKeychainJson(CLAUDE_CLI_KEYCHAIN_SERVICE, undefined, options);
   const keychainToken = parseClaudeOauth(keychainRaw?.claudeAiOauth);
@@ -313,7 +325,7 @@ function readClaudeCodeLocalCredentials(options = {}) {
   };
 }
 
-function writeJsonFileAtomic(filePath, payload, mode = 0o600) {
+function writeJsonFileAtomic(filePath: string, payload: AnyRecord, mode = 0o600) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpFile, `${JSON.stringify(payload, null, 2)}\n`, { encoding: 'utf8', mode });
@@ -325,7 +337,7 @@ function writeJsonFileAtomic(filePath, payload, mode = 0o600) {
   }
 }
 
-function writeOpenAiCodexLocalCredentials(token, options = {}) {
+function writeOpenAiCodexLocalCredentials(token: AnyRecord, options: LocalCredentialOptions = {}) {
   if (options.allowFileWrite !== true) {
     return { ok: false, error: 'local_file_write_not_allowed' };
   }
@@ -344,7 +356,7 @@ function writeOpenAiCodexLocalCredentials(token, options = {}) {
       auth_path: authPath,
       codex_home: codexHome,
     };
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       source: 'codex_auth_file',
@@ -353,7 +365,7 @@ function writeOpenAiCodexLocalCredentials(token, options = {}) {
   }
 }
 
-function writeClaudeCodeLocalCredentials(token, options = {}) {
+function writeClaudeCodeLocalCredentials(token: AnyRecord, options: LocalCredentialOptions = {}) {
   if (options.allowFileWrite !== true) {
     return { ok: false, error: 'local_file_write_not_allowed' };
   }
@@ -364,17 +376,18 @@ function writeClaudeCodeLocalCredentials(token, options = {}) {
   if (!normalized.ok) return normalized;
 
   try {
+    const oauth = normalized.oauth as AnyRecord;
     writeJsonFileAtomic(credentialPath, {
       ...previousRaw,
-      claudeAiOauth: normalized.oauth,
+      claudeAiOauth: oauth,
     }, 0o600);
     return {
       ok: true,
       source: 'claude_credentials_file',
       credential_path: credentialPath,
-      expires_at: toIsoTime(normalized.oauth.expiresAt),
+      expires_at: toIsoTime(oauth.expiresAt),
     };
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       source: 'claude_credentials_file',
@@ -383,7 +396,7 @@ function writeClaudeCodeLocalCredentials(token, options = {}) {
   }
 }
 
-function writeClaudeCodeKeychainCredentials(token, options = {}) {
+function writeClaudeCodeKeychainCredentials(token: AnyRecord, options: LocalCredentialOptions = {}) {
   const platform = options.platform || process.platform;
   if (platform !== 'darwin') {
     return { ok: false, error: 'keychain_not_supported' };
@@ -397,9 +410,10 @@ function writeClaudeCodeKeychainCredentials(token, options = {}) {
   if (!normalized.ok) return normalized;
 
   const account = options.account || os.userInfo().username || 'claude-code';
+  const oauth = normalized.oauth as AnyRecord;
   const payload = {
     ...previousRaw,
-    claudeAiOauth: normalized.oauth,
+    claudeAiOauth: oauth,
   };
 
   try {
@@ -423,9 +437,9 @@ function writeClaudeCodeKeychainCredentials(token, options = {}) {
       source: 'claude_keychain',
       keychain_service: CLAUDE_CLI_KEYCHAIN_SERVICE,
       keychain_account: account,
-      expires_at: toIsoTime(normalized.oauth.expiresAt),
+      expires_at: toIsoTime(oauth.expiresAt),
     };
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       source: 'claude_keychain',
@@ -434,7 +448,7 @@ function writeClaudeCodeKeychainCredentials(token, options = {}) {
   }
 }
 
-function readLocalCredentialsForProvider(provider, options = {}) {
+function readLocalCredentialsForProvider(provider: string, options: LocalCredentialOptions = {}) {
   if (provider === 'openai-codex-oauth') return readOpenAiCodexLocalCredentials(options);
   if (provider === 'claude-code-cli') return readClaudeCodeLocalCredentials(options);
   return {
