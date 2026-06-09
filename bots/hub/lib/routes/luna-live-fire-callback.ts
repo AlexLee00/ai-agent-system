@@ -9,25 +9,35 @@ const CALLBACK_SECRET_HEADER = 'x-hub-control-callback-secret';
 const WATCHDOG_CONFIRM = 'rollback-luna-live-fire';
 const WATCHDOG_TIMEOUT_MS = 30_000;
 
-function normalizeText(value, fallback = '') {
+type EnvLike = Record<string, string | undefined>;
+type LunaCallbackRequest = {
+  headers?: Record<string, string | string[] | undefined>;
+  get?: (name: string) => string | undefined;
+  body?: any;
+};
+type LunaCallbackResponse = {
+  status: (code: number) => { json: (payload: unknown) => unknown };
+};
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function parseCsvEnv(name, source = process.env) {
+function parseCsvEnv(name: string, source: EnvLike = process.env) {
   return String(source[name] || '')
     .split(',')
     .map((item) => normalizeText(item))
     .filter(Boolean);
 }
 
-function parseCsvEnvUsernames(name, source = process.env) {
+function parseCsvEnvUsernames(name: string, source: EnvLike = process.env) {
   return parseCsvEnv(name, source)
     .map((item) => item.replace(/^@+/, '').toLowerCase())
     .filter(Boolean);
 }
 
-function getHeaderValue(req, headerName) {
+function getHeaderValue(req: LunaCallbackRequest, headerName: string) {
   const lower = headerName.toLowerCase();
   const candidate = req?.headers?.[lower]
     ?? req?.headers?.[headerName]
@@ -36,14 +46,14 @@ function getHeaderValue(req, headerName) {
   return normalizeText(Array.isArray(candidate) ? candidate[0] : candidate, '');
 }
 
-function safeTimingEqual(expected, actual) {
+function safeTimingEqual(expected: string, actual: string) {
   const expectedBuffer = Buffer.from(expected, 'utf8');
   const actualBuffer = Buffer.from(actual, 'utf8');
   if (expectedBuffer.length !== actualBuffer.length) return false;
   return crypto.timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
-function parseLunaLiveFireCallbackData(callbackData) {
+function parseLunaLiveFireCallbackData(callbackData: unknown) {
   const normalized = normalizeText(callbackData);
   if (!normalized.startsWith(CALLBACK_PREFIX)) return { ok: false, error: 'unsupported_callback_prefix' };
   const action = normalizeText(normalized.slice(CALLBACK_PREFIX.length));
@@ -51,7 +61,7 @@ function parseLunaLiveFireCallbackData(callbackData) {
   return { ok: true, action };
 }
 
-function extractActorContext(req) {
+function extractActorContext(req: LunaCallbackRequest) {
   return {
     actorId: normalizeText(req?.body?.from?.id, ''),
     actorUsername: normalizeText(req?.body?.from?.username, '').replace(/^@+/, '').toLowerCase(),
@@ -59,7 +69,7 @@ function extractActorContext(req) {
   };
 }
 
-function validateLunaLiveFireCallbackEnvelope(req, source = process.env) {
+function validateLunaLiveFireCallbackEnvelope(req: LunaCallbackRequest, source: EnvLike = process.env) {
   const configuredSecret = normalizeText(source.HUB_CONTROL_CALLBACK_SECRET, '');
   if (!configuredSecret) return { ok: false, status: 503, error: 'luna_live_fire_callback_secret_not_configured' };
   const providedSecret = getHeaderValue(req, CALLBACK_SECRET_HEADER);
@@ -129,7 +139,7 @@ function runEmergencyStop(projectRoot = env.PROJECT_ROOT) {
   };
 }
 
-async function lunaLiveFireCallbackRoute(req, res) {
+async function lunaLiveFireCallbackRoute(req: LunaCallbackRequest, res: LunaCallbackResponse) {
   const parsedCallback = parseLunaLiveFireCallbackData(req?.body?.callback_data || req?.body?.callback_query?.data);
   if (!parsedCallback.ok) return res.status(400).json({ ok: false, error: parsedCallback.error });
 

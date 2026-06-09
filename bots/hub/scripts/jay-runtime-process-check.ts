@@ -4,45 +4,45 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-function hasArg(name) {
+function hasArg(name: string) {
   return process.argv.includes(name);
 }
 
-function argValue(prefix, fallback = '') {
+function argValue(prefix: string, fallback = '') {
   const match = process.argv.find((arg) => arg.startsWith(`${prefix}=`));
   return match ? match.slice(prefix.length + 1) : fallback;
 }
 
-function normalizeText(value, fallback = '') {
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function run(command, args) {
+function run(command: string, args: string[]) {
   return spawnSync(command, args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
-function tailFile(filePath, maxLines = 12) {
+function tailFile(filePath: string, maxLines = 12) {
   if (!fs.existsSync(filePath)) return [];
   const text = fs.readFileSync(filePath, 'utf8');
   return text.split(/\r?\n/).filter(Boolean).slice(-maxLines);
 }
 
-function redactLine(line) {
+function redactLine(line: unknown) {
   return String(line || '')
     .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/g, '$1<redacted>')
     .replace(/(token|secret|password|api[_-]?key)=([^&\s]+)/gi, '$1=<redacted>');
 }
 
-function parsePid(printOutput) {
+function parsePid(printOutput: unknown) {
   const match = String(printOutput || '').match(/\bpid\s*=\s*(\d+)/i);
   return match ? Number(match[1]) : null;
 }
 
-function isPidAlive(pid) {
+function isPidAlive(pid: number | null) {
   if (!pid) return false;
   try {
     process.kill(pid, 0);
@@ -52,18 +52,18 @@ function isPidAlive(pid) {
   }
 }
 
-function readProcessCommand(pid) {
+function readProcessCommand(pid: number | null) {
   if (!pid) return null;
   const result = run('ps', ['-p', String(pid), '-o', 'command=']);
   if (Number(result.status) !== 0) return null;
   return redactLine(normalizeText(result.stdout)).slice(0, 600) || null;
 }
 
-function isJayRuntimeCommand(command) {
+function isJayRuntimeCommand(command: unknown) {
   return /(^|\s|\/)jay-runtime\.(ts|js)(\s|$)/.test(String(command || ''));
 }
 
-function collectState(strict) {
+function collectState(strict: boolean) {
   const uid = process.getuid ? process.getuid() : Number(process.env.UID || 0);
   const label = 'ai.jay.runtime';
   const print = run('launchctl', ['print', `gui/${uid}/${label}`]);

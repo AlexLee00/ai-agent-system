@@ -2,17 +2,31 @@
 
 const CLOUD_AI_COMPANION_SERVICE = 'cloudaicompanion.googleapis.com';
 
-function normalizeProjectId(projectId) {
+type JsonObject = Record<string, any>;
+type FetchLike = typeof fetch;
+type GeminiCodeAssistOptions = {
+  projectId?: string;
+  accessToken?: string;
+  fetchImpl?: FetchLike;
+};
+type ServiceUsageError = {
+  kind?: string;
+  status?: number;
+  google_status?: string | null;
+  message?: string;
+};
+
+function normalizeProjectId(projectId: unknown) {
   return String(projectId || '').trim();
 }
 
-function buildServiceUsageUrl(projectId, service = CLOUD_AI_COMPANION_SERVICE) {
+function buildServiceUsageUrl(projectId: unknown, service = CLOUD_AI_COMPANION_SERVICE) {
   const project = normalizeProjectId(projectId);
   if (!project) throw new Error('gemini_codeassist_project_missing');
   return `https://serviceusage.googleapis.com/v1/projects/${encodeURIComponent(project)}/services/${encodeURIComponent(service)}`;
 }
 
-async function parseJsonSafely(response) {
+async function parseJsonSafely(response: Response): Promise<JsonObject | null> {
   try {
     return await response.json();
   } catch {
@@ -20,12 +34,12 @@ async function parseJsonSafely(response) {
   }
 }
 
-function summarizeServiceUsageError(status, body = {}) {
+function summarizeServiceUsageError(status: number, body: JsonObject | null = {}) {
   const error = body?.error || body || {};
   const message = String(error.message || '').slice(0, 500);
   const errorStatus = String(error.status || '').trim();
   const missingPermission = Array.isArray(error.details)
-    ? error.details.some((detail) => String(detail?.reason || detail?.metadata?.permission || '').includes('serviceusage'))
+    ? error.details.some((detail: JsonObject) => String(detail?.reason || detail?.metadata?.permission || '').includes('serviceusage'))
     : false;
   const kind = status === 401
     ? 'auth_required'
@@ -42,7 +56,7 @@ function summarizeServiceUsageError(status, body = {}) {
   };
 }
 
-function buildOperatorAction(error, activationUrl) {
+function buildOperatorAction(error: string | ServiceUsageError | null, activationUrl: string | null) {
   const kind = typeof error === 'string' ? error : String(error?.kind || '').trim();
   const googleStatus = typeof error === 'object' ? String(error?.google_status || '').trim() : '';
   const status = typeof error === 'object' ? Number(error?.status || 0) : 0;
@@ -60,13 +74,13 @@ function buildOperatorAction(error, activationUrl) {
   return `Enable Gemini for Google Cloud API for the quota project: ${activationUrl}`;
 }
 
-function serviceActivationUrl(projectId) {
+function serviceActivationUrl(projectId: unknown) {
   const project = normalizeProjectId(projectId);
   if (!project) return null;
   return `https://console.developers.google.com/apis/api/${CLOUD_AI_COMPANION_SERVICE}/overview?project=${encodeURIComponent(project)}`;
 }
 
-async function checkGeminiCodeAssistServiceStatus(options = {}) {
+async function checkGeminiCodeAssistServiceStatus(options: GeminiCodeAssistOptions = {}) {
   const projectId = normalizeProjectId(options.projectId);
   const accessToken = String(options.accessToken || '').trim();
   const fetchImpl = options.fetchImpl || globalThis.fetch;
