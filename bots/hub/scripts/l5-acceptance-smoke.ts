@@ -1,15 +1,34 @@
 const eventLake = require('../../../packages/core/lib/event-lake');
 
-function assert(condition, message) {
+import type { Server } from 'node:http';
+
+type ExpressLikeApp = {
+  listen: (port: number, host: string, callback: () => void) => Server;
+};
+
+type JsonResponse = {
+  status: number;
+  body: Record<string, any>;
+};
+
+type EventLakeRecord = {
+  eventType?: string;
+  [key: string]: unknown;
+};
+
+function assert(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
 }
 
-async function withServer(app, fn) {
-  const server = await new Promise((resolve) => {
+async function withServer(app: ExpressLikeApp, fn: (baseUrl: string) => Promise<void>) {
+  const server = await new Promise<Server>((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   try {
     const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('server_address_unavailable');
+    }
     const baseUrl = `http://127.0.0.1:${address.port}`;
     await fn(baseUrl);
   } finally {
@@ -17,7 +36,7 @@ async function withServer(app, fn) {
   }
 }
 
-async function requestJson(baseUrl, token, method, route, body) {
+async function requestJson(baseUrl: string, token: string, method: string, route: string, body: unknown): Promise<JsonResponse> {
   const response = await fetch(`${baseUrl}${route}`, {
     method,
     headers: {
@@ -46,19 +65,20 @@ async function main() {
     fetch: global.fetch,
   };
 
-  process.env.HUB_AUTH_TOKEN = 'l5-acceptance-token';
+  const smokeToken = 'l5-acceptance-token';
+  process.env.HUB_AUTH_TOKEN = smokeToken;
   process.env.HUB_CONTROL_PLANNER_FORCE_HEURISTIC = '1';
   process.env['TELEGRAM_' + 'BOT_TOKEN'] = 'l5-acceptance-smoke-fixture';
   process.env.TELEGRAM_GROUP_ID = '-100123456';
   delete process.env.TELEGRAM_CHAT_ID;
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
 
-  const eventLakeRecords = [];
-  const dbWrites = [];
+  const eventLakeRecords: EventLakeRecord[] = [];
+  const dbWrites: string[] = [];
   let eventId = 500;
   let humanImmediateSends = 0;
   eventLake.findRecentDuplicateAlarm = async () => null;
-  eventLake.record = async (payload) => {
+  eventLake.record = async (payload: EventLakeRecord) => {
     eventLakeRecords.push(payload);
     eventId += 1;
     return eventId;
@@ -79,7 +99,7 @@ async function main() {
     if (typeof alarmRoute._testOnly_setAlarmEventLakeMocks === 'function') {
       alarmRoute._testOnly_setAlarmEventLakeMocks({
         findRecentDuplicateAlarm: async () => null,
-        record: async (payload) => {
+        record: async (payload: EventLakeRecord) => {
           eventLakeRecords.push(payload);
           eventId += 1;
           return eventId;
@@ -90,7 +110,7 @@ async function main() {
       alarmRoute._testOnly_setAlarmRouteDbMocks({
         query: async () => [],
         get: async () => null,
-        run: async (_schema, sql) => {
+        run: async (_schema: string, sql: string) => {
           dbWrites.push(String(sql));
           return { rowCount: 1, rows: [] };
         },
@@ -102,13 +122,13 @@ async function main() {
       isStartupComplete: () => true,
     });
 
-    await withServer(app, async (baseUrl) => {
+    await withServer(app, async (baseUrl: string) => {
       const stamp = Date.now();
       const health = await fetch(`${baseUrl}/hub/health`);
       assert(health.status === 200, `expected /hub/health 200, got ${health.status}`);
 
       for (let index = 0; index < 100; index += 1) {
-        const alarmResp = await requestJson(baseUrl, process.env.HUB_AUTH_TOKEN, 'POST', '/hub/alarm', {
+        const alarmResp = await requestJson(baseUrl, smokeToken, 'POST', '/hub/alarm', {
           message: `synthetic warning ${index}`,
           team: 'luna',
           fromBot: 'l5-warning-smoke',
@@ -127,7 +147,7 @@ async function main() {
         `expected no immediate human send for warning flood, got ${humanImmediateSends}`,
       );
 
-      const emergencyResp = await requestJson(baseUrl, process.env.HUB_AUTH_TOKEN, 'POST', '/hub/alarm', {
+      const emergencyResp = await requestJson(baseUrl, smokeToken, 'POST', '/hub/alarm', {
         message: `critical service down ${stamp}`,
         team: 'luna',
         fromBot: 'l5-warning-smoke',
@@ -152,7 +172,7 @@ async function main() {
         'expected l5 smoke to exercise the mocked alarm mirror path',
       );
 
-      const planResp = await requestJson(baseUrl, process.env.HUB_AUTH_TOKEN, 'POST', '/hub/control/plan', {
+      const planResp = await requestJson(baseUrl, smokeToken, 'POST', '/hub/control/plan', {
         message: '루나팀 상태 보고해줘',
         team: 'luna',
         dryRun: true,
@@ -186,7 +206,7 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[l5-acceptance-smoke] failed:', error?.message || error);
+main().catch((error: unknown) => {
+  console.error('[l5-acceptance-smoke] failed:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
