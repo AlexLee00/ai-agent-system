@@ -896,8 +896,8 @@ export async function alarmRoute(req: any, res: any) {
               incident_key: incidentKey,
               cluster_key: clusterKey || null,
               alarm_event_id: eventId,
-              auto_dev_path: autoRepair.path || null,
-              created: autoRepair.created === true,
+              auto_dev_path: autoRepair?.path || null,
+              created: autoRepair?.created === true,
             },
           });
         } catch (error: any) {

@@ -7,9 +7,9 @@ const {
   isExpectedIdleService,
 } = require('../../../../packages/core/lib/service-ownership.js');
 
-export const HUB_CORE_SERVICE_LABELS = getHubCoreServiceLabels();
+export const HUB_CORE_SERVICE_LABELS = getHubCoreServiceLabels() as string[];
 
-const SERVICE_LABELS = getHubServiceLabels();
+const SERVICE_LABELS = getHubServiceLabels() as string[];
 
 type LaunchctlServiceStatus = {
   running: boolean;

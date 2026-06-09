@@ -2,7 +2,13 @@ import { binanceOrderBook } from './binance-ws.ts';
 import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
 import { getOrderBook as getSimulatedOrderBook, normalizeMarket } from './market-snapshot.ts';
 
-export async function getOrderBook(args = {}) {
+type OrderBookArgs = {
+  market?: string;
+  symbol?: string;
+  [key: string]: unknown;
+};
+
+export async function getOrderBook(args: OrderBookArgs = {}) {
   const market = normalizeMarket(args.market || 'binance');
   if (market === 'binance') return binanceOrderBook(args);
   return simulatedFallbackOrBlock(() => ({

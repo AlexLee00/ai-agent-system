@@ -1,13 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import env from '../../../packages/core/lib/env.legacy.js';
-import { resolveHubCallbackTarget } from '../lib/telegram/callback-router';
+import { HUB_PORT, PROJECT_ROOT } from '../../../packages/core/lib/env.ts';
 
-const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const { resolveHubCallbackTarget } = require('../lib/telegram/callback-router.ts') as {
+  resolveHubCallbackTarget: (callbackData: unknown) => { route: string; mode: string } | null;
+};
+
+const STORE_PATH = path.join(PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const OFFSET_FILE = process.env.HUB_TELEGRAM_CALLBACK_OFFSET_FILE
   || path.join(process.env.HUB_RUNTIME_DIR || path.join(os.homedir(), '.ai-agent-system', 'hub'), 'telegram', 'callback-offset.json');
-const HUB_BASE = `http://127.0.0.1:${env.HUB_PORT || 7788}`;
+const HUB_BASE = `http://127.0.0.1:${HUB_PORT || 7788}`;
 const POLL_TIMEOUT_SEC = 30;
 const REQUEST_TIMEOUT_MS = 40_000;
 const RETRY_DELAY_MS = 5_000;
