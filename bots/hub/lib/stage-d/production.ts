@@ -15,6 +15,17 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 const HUB_DIR = path.join(PROJECT_ROOT, 'bots/hub');
 const OUTPUT_PATH = path.join(HUB_DIR, 'output', 'hub-stage-d-production-report.json');
 
+type AnyRecord = Record<string, any>;
+type RequirementInput = {
+  id: string;
+  label: string;
+  required: string;
+  attested: unknown;
+  observedOk: unknown;
+  evidence: unknown;
+  nextAction: string;
+};
+
 const PROTECTED_HUB_LABELS = [
   'ai.hub.resource-api',
   'ai.hub.llm-oauth-monitor',
@@ -34,19 +45,19 @@ const PROTECTED_HUB_LABELS = [
 
 const SELF_HEALING_CANARY_LABELS = ['ai.hub.llm-tier-probe'];
 
-function repoPath(relativePath) {
+function repoPath(relativePath: string): string {
   return path.join(PROJECT_ROOT, relativePath);
 }
 
-function fileExists(relativePath) {
+function fileExists(relativePath: string): boolean {
   return fs.existsSync(repoPath(relativePath));
 }
 
-function readText(relativePath) {
+function readText(relativePath: string): string {
   return fs.readFileSync(repoPath(relativePath), 'utf8');
 }
 
-function readJsonIfExists(relativePath) {
+function readJsonIfExists(relativePath: string): AnyRecord | null {
   if (!fileExists(relativePath)) return null;
   try {
     return JSON.parse(readText(relativePath));
@@ -55,7 +66,7 @@ function readJsonIfExists(relativePath) {
   }
 }
 
-function launchctlPrint(label) {
+function launchctlPrint(label: string): AnyRecord {
   const uid = process.getuid ? process.getuid() : Number(spawnSync('id', ['-u'], { encoding: 'utf8' }).stdout.trim());
   const result = spawnSync('launchctl', ['print', `gui/${uid}/${label}`], {
     encoding: 'utf8',
@@ -69,17 +80,17 @@ function launchctlPrint(label) {
   };
 }
 
-function parseReportTimestamp(report) {
+function parseReportTimestamp(report: AnyRecord | null): number | null {
   const raw = report?.checkedAt || report?.generatedAt || report?.generated_at || report?.generated || null;
   if (!raw) return null;
   const ms = Date.parse(raw);
   return Number.isFinite(ms) ? ms : null;
 }
 
-function buildDependencyReportStatus(report, {
+function buildDependencyReportStatus(report: AnyRecord | null, {
   name,
   maxAgeHours = Number(process.env.HUB_STAGE_D_DEPENDENCY_REPORT_MAX_AGE_HOURS || 24),
-} = {}) {
+}: { name?: string; maxAgeHours?: number } = {}) {
   if (!report) return { ok: false, error: `${name} report not found or parse failed` };
   const timestampMs = parseReportTimestamp(report);
   const ageHours = timestampMs == null ? null : Number(((Date.now() - timestampMs) / 3_600_000).toFixed(2));
@@ -95,13 +106,13 @@ function buildDependencyReportStatus(report, {
   };
 }
 
-function httpGet(port, urlPath) {
+function httpGet(port: number, urlPath: string): Promise<AnyRecord> {
   return new Promise((resolve) => {
     const req = http.request(
       { hostname: '127.0.0.1', port, path: urlPath, method: 'GET', timeout: 5_000 },
-      (res) => {
+      (res: AnyRecord) => {
         let body = '';
-        res.on('data', (c) => { body += c; });
+        res.on('data', (c: Buffer | string) => { body += c; });
         res.on('end', () => resolve({ status: res.statusCode, body }));
       }
     );
@@ -113,7 +124,7 @@ function httpGet(port, urlPath) {
 
 async function checkBlueGreen() {
   const bgStateFile = '/tmp/hub-bg-state.json';
-  let state = { active: 'blue' };
+  let state: AnyRecord = { active: 'blue' };
   try {
     state = JSON.parse(fs.readFileSync(bgStateFile, 'utf8'));
   } catch {}
@@ -264,12 +275,12 @@ function checkSentryIntegration() {
   const handlerSource = fileExists('bots/hub/src/middleware/error-handler.ts')
     ? readText('bots/hub/src/middleware/error-handler.ts')
     : '';
-  let readiness = { ok: adapterExists, mode: 'adapter_missing' };
+  let readiness: AnyRecord = { ok: adapterExists, mode: 'adapter_missing' };
   if (adapterExists) {
     try {
       const adapter = require('../sentry-mcp-adapter');
       readiness = adapter.buildSentryMcpReadiness();
-    } catch (error) {
+    } catch (error: any) {
       readiness = { ok: false, mode: 'adapter_load_failed', error: String(error?.message || error) };
     }
   }
@@ -287,7 +298,7 @@ function checkSentryIntegration() {
 }
 
 function checkExternalGateway() {
-  let selector = { ok: false, error: 'selector_unavailable' };
+  let selector: AnyRecord = { ok: false, error: 'selector_unavailable' };
   try {
     const { resolveHubLlmSelection } = require('../../src/llm-selector');
     selector = resolveHubLlmSelection({
@@ -298,7 +309,7 @@ function checkExternalGateway() {
       requestId: 'hub-stage-d-production-report',
       maxBudgetUsd: 0.05,
     });
-  } catch (error) {
+  } catch (error: any) {
     selector = { ok: false, error: String(error?.message || error) };
   }
 
@@ -344,11 +355,11 @@ async function checkHubUptime() {
   };
 }
 
-function truthyEnv(env, name) {
+function truthyEnv(env: AnyRecord, name: string): boolean {
   return env[name] === 'true';
 }
 
-function buildRequirement({ id, label, required, attested, observedOk, evidence, nextAction }) {
+function buildRequirement({ id, label, required, attested, observedOk, evidence, nextAction }: RequirementInput) {
   const certificationOk = Boolean(attested);
   return {
     id,
@@ -362,7 +373,7 @@ function buildRequirement({ id, label, required, attested, observedOk, evidence,
   };
 }
 
-function buildPromotionEvidence(options = {}) {
+function buildPromotionEvidence(options: AnyRecord = {}) {
   const env = options.env || process.env;
   const stageBReport = options.stageBReport || readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json');
   const l5Report = options.l5Report || readJsonIfExists('bots/hub/output/l5-acceptance-report.json');
@@ -522,7 +533,7 @@ function buildPromotionEvidence(options = {}) {
   };
 }
 
-function buildPromotionGateSummary(promotionEvidence) {
+function buildPromotionGateSummary(promotionEvidence: AnyRecord) {
   const observed = promotionEvidence.observed || {};
   const topLatencyHotspot = Array.isArray(observed.slowRoutes) && observed.slowRoutes.length > 0
     ? observed.slowRoutes[0]
@@ -646,7 +657,7 @@ async function buildHubStageDProductionReport() {
   return report;
 }
 
-async function writeHubStageDReport(report, outputPath = OUTPUT_PATH) {
+async function writeHubStageDReport(report: AnyRecord, outputPath = OUTPUT_PATH): Promise<string> {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
   return outputPath;
