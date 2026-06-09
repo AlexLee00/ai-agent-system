@@ -18,6 +18,37 @@ const {
 const SCHEMA = 'blog';
 const MASTER_USER_ID = 1;
 
+type CurriculumSeries = {
+  series_name?: string;
+};
+
+type CurriculumCandidate = Record<string, unknown>;
+
+type CreateCurriculumProposalInput = {
+  currentSeries?: CurriculumSeries | null;
+  remainingLectures?: number;
+  candidates?: CurriculumCandidate[];
+};
+
+type ConfirmCurriculumProposalInput = {
+  sessionId: number | string;
+  chosenTopic: string;
+  chosenRank?: number;
+  totalLectures?: number;
+};
+
+type RejectCurriculumProposalInput = {
+  sessionId: number | string;
+  manualTopic: string;
+};
+
+type CommitCurriculumProposalInput = {
+  sessionId: number | string;
+  topic: string;
+  lectureCount: number;
+  seriesId: number | string;
+};
+
 async function ensureBlogFeedbackTables() {
   await ensureAiFeedbackTables(pgPool, { schema: SCHEMA });
   await pgPool.run(SCHEMA, `
@@ -32,7 +63,7 @@ async function createCurriculumProposalSession({
   currentSeries,
   remainingLectures,
   candidates,
-}) {
+}: CreateCurriculumProposalInput) {
   await ensureBlogFeedbackTables();
   const proposalId = crypto.randomUUID();
   const session = await createFeedbackSession(pgPool, {
@@ -84,7 +115,7 @@ async function markCurriculumProposalConfirmed({
   chosenTopic,
   chosenRank,
   totalLectures,
-}) {
+}: ConfirmCurriculumProposalInput) {
   await addFeedbackEvent(pgPool, {
     schema: SCHEMA,
     event: {
@@ -117,7 +148,7 @@ async function markCurriculumProposalConfirmed({
 async function markCurriculumProposalRejected({
   sessionId,
   manualTopic,
-}) {
+}: RejectCurriculumProposalInput) {
   await addFeedbackEvent(pgPool, {
     schema: SCHEMA,
     event: {
@@ -150,7 +181,7 @@ async function markCurriculumProposalCommitted({
   topic,
   lectureCount,
   seriesId,
-}) {
+}: CommitCurriculumProposalInput) {
   const acceptedWithoutEdit = shouldMarkAcceptedWithoutEdit(FEEDBACK_STATUSES.COMMITTED, []);
 
   await addFeedbackEvent(pgPool, {

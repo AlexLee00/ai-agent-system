@@ -22,6 +22,43 @@ function isEnabled() {
   return process.env.BLOG_EVOLUTION_CYCLE_ENABLED === 'true';
 }
 
+type ChannelRow = {
+  channel?: string;
+};
+
+type MetricRow = {
+  post_id?: string | number;
+  post_title?: string;
+  score?: number | string;
+};
+
+type CollectStats = {
+  total_signals: number;
+  platform_signals: Record<string, number>;
+  revenue_signals: number;
+  competitor_signals: number;
+};
+
+type AnalyzeStats = {
+  content_market_fit_score: number;
+  revenue_correlation: number;
+  top_performing_posts: unknown[];
+  underperforming_posts: unknown[];
+  aarrr_metrics?: any;
+};
+
+type FeedbackStats = {
+  success_patterns_learned: number;
+};
+
+type CycleResult = {
+  utilize: { posts_published: number };
+  collect: CollectStats;
+  analyze: AnalyzeStats;
+  feedback: FeedbackStats;
+  strategy: { topic_pool_updates: number };
+};
+
 // ─── Phase 1: 활용 (Utilize) ─────────────────────────────────────────────────
 
 async function collectUtilizeStats(lookbackDays = 1) {
@@ -42,7 +79,7 @@ async function collectUtilizeStats(lookbackDays = 1) {
       FROM blog.channel_performance
       WHERE published_at > NOW() - ($1::text || ' days')::interval
     `, [lookbackDays]);
-    const platforms = ['naver', ...((channelRows || []).map((r) => r.channel).filter(Boolean))];
+    const platforms = ['naver', ...((channelRows || []).map((r: ChannelRow) => r.channel).filter(Boolean))];
 
     return {
       posts_published: Number(row.posts_published || 0),
@@ -79,8 +116,9 @@ async function collectAllSignals(days = 7) {
     ]);
 
     /** @type {Record<string, number>} */
-    const platformSignals = {};
-    for (const r of (platformRows || [])) {
+    const platformSignals: Record<string, number> = {};
+    for (const r of (platformRows || []) as Array<{ channel?: string; cnt?: number | string }>) {
+      if (!r.channel) continue;
       platformSignals[r.channel] = Number(r.cnt || 0);
     }
 
@@ -97,7 +135,7 @@ async function collectAllSignals(days = 7) {
 
 // ─── Phase 3: 분석 (Analyze) ─────────────────────────────────────────────────
 
-async function runComprehensiveAnalysis(collectStats) {
+async function runComprehensiveAnalysis(collectStats: CollectStats): Promise<AnalyzeStats> {
   const [cmfResult, aarrResult, roiSummary] = await Promise.all([
     cmf.getAverageCmfScore(30),
     aarrr.calculateAARRR(30),
@@ -122,12 +160,12 @@ async function runComprehensiveAnalysis(collectStats) {
   `).catch(() => []);
 
   return {
-    top_performing_posts: (topPosts || []).map((r) => ({
+    top_performing_posts: (topPosts || []).map((r: MetricRow) => ({
       post_id: r.post_id,
       title: r.post_title,
       score: Number(r.score || 0),
     })),
-    underperforming_posts: (worstPosts || []).map((r) => ({
+    underperforming_posts: (worstPosts || []).map((r: MetricRow) => ({
       post_id: r.post_id,
       title: r.post_title,
       score: Number(r.score || 0),
@@ -142,7 +180,7 @@ async function runComprehensiveAnalysis(collectStats) {
 
 // ─── Phase 4: 피드백 (Feedback) ──────────────────────────────────────────────
 
-async function applyFeedbackLearning(analyzeStats) {
+async function applyFeedbackLearning(analyzeStats: AnalyzeStats): Promise<FeedbackStats & Record<string, unknown>> {
   let patternsLearned = 0;
   try {
     // 고성과 패턴 학습
@@ -168,13 +206,13 @@ async function applyFeedbackLearning(analyzeStats) {
 
 // ─── Phase 5: 전략 (Strategy) ────────────────────────────────────────────────
 
-async function evolveStrategyFromCycle(analyzeStats, feedbackStats) {
+async function evolveStrategyFromCycle(analyzeStats: AnalyzeStats, feedbackStats: FeedbackStats) {
   const { executionDirectives } = loadStrategyBundle();
   const priorityWeights = { primary: 3, secondary: 2, supporting: 1 };
   const channelPriority = executionDirectives?.channelPriority || {};
-  const naverWeight = priorityWeights[channelPriority.naverBlog || 'primary'] || 3;
-  const instagramWeight = priorityWeights[channelPriority.instagram || 'secondary'] || 2;
-  const facebookWeight = priorityWeights[channelPriority.facebook || 'supporting'] || 1;
+  const naverWeight = priorityWeights[(channelPriority.naverBlog || 'primary') as keyof typeof priorityWeights] || 3;
+  const instagramWeight = priorityWeights[(channelPriority.instagram || 'secondary') as keyof typeof priorityWeights] || 2;
+  const facebookWeight = priorityWeights[(channelPriority.facebook || 'supporting') as keyof typeof priorityWeights] || 1;
   const totalWeight = Math.max(1, naverWeight + instagramWeight + facebookWeight);
   const platformAllocation = {
     naver: Number((naverWeight / totalWeight).toFixed(2)),
@@ -208,7 +246,7 @@ async function evolveStrategyFromCycle(analyzeStats, feedbackStats) {
 
 // ─── 사이클 리포트 ────────────────────────────────────────────────────────────
 
-async function sendCycleReport(result) {
+async function sendCycleReport(result: CycleResult) {
   const cmfStr = result.analyze.content_market_fit_score > 0
     ? `CMF: ${result.analyze.content_market_fit_score.toFixed(1)}점`
     : 'CMF 데이터 없음';
@@ -299,7 +337,7 @@ async function runEvolutionCycle() {
       analyze.revenue_correlation || null,
     ]);
   } catch (err) {
-    console.warn('[evolution-cycle] DB 저장 실패:', err.message);
+    console.warn('[evolution-cycle] DB 저장 실패:', err instanceof Error ? err.message : err);
   }
 
   // 사이클 리포트

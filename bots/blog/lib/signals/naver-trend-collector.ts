@@ -12,6 +12,15 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
+type NaverTrendPoint = {
+  period: string;
+  ratio?: number | string;
+};
+
+type NaverTrendData = {
+  results?: Array<{ data?: NaverTrendPoint[] }>;
+};
+
 function isEnabled() {
   return process.env.BLOG_SIGNAL_COLLECTOR_ENABLED === 'true';
 }
@@ -24,7 +33,7 @@ function getNaverClientSecret() {
   return process.env.NAVER_CLIENT_SECRET || '';
 }
 
-function getDateDaysAgo(days) {
+function getDateDaysAgo(days: number) {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
@@ -34,7 +43,7 @@ function getDateDaysAgo(days) {
  * 네이버 데이터랩 검색어 트렌드 조회
  * @param {string[]} keywords 조회할 키워드 목록
  */
-async function fetchNaverTrend(keywords) {
+async function fetchNaverTrend(keywords: string[]) {
   const clientId = getNaverClientId();
   const clientSecret = getNaverClientSecret();
 
@@ -55,7 +64,7 @@ async function fetchNaverTrend(keywords) {
         startDate: getDateDaysAgo(14),
         endDate: getDateDaysAgo(0),
         timeUnit: 'date',
-        keywordGroups: keywords.map((kw) => ({ groupName: kw, keywords: [kw] })),
+        keywordGroups: keywords.map((kw: string) => ({ groupName: kw, keywords: [kw] })),
       }),
     });
 
@@ -66,7 +75,7 @@ async function fetchNaverTrend(keywords) {
 
     return await response.json();
   } catch (err) {
-    console.warn('[naver-trend] 요청 실패:', err.message);
+    console.warn('[naver-trend] 요청 실패:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -74,18 +83,18 @@ async function fetchNaverTrend(keywords) {
 /**
  * 트렌드 데이터 분석 + 성장률 계산
  */
-function analyzeTrend(keyword, datalabData) {
+function analyzeTrend(keyword: string, datalabData: NaverTrendData | null) {
   if (!datalabData?.results?.[0]?.data) {
     return { keyword, trend_score: 0, growth_rate_week: 0, related_keywords: [] };
   }
 
   const data = datalabData.results[0].data;
-  const sorted = data.sort((a, b) => new Date(a.period).getTime() - new Date(b.period).getTime());
+  const sorted = data.sort((a: NaverTrendPoint, b: NaverTrendPoint) => new Date(a.period).getTime() - new Date(b.period).getTime());
   const recent = sorted.slice(-7);
   const previous = sorted.slice(-14, -7);
 
-  const recentAvg = recent.reduce((sum, d) => sum + Number(d.ratio || 0), 0) / Math.max(recent.length, 1);
-  const previousAvg = previous.reduce((sum, d) => sum + Number(d.ratio || 0), 0) / Math.max(previous.length, 1);
+  const recentAvg = recent.reduce((sum: number, d: NaverTrendPoint) => sum + Number(d.ratio || 0), 0) / Math.max(recent.length, 1);
+  const previousAvg = previous.reduce((sum: number, d: NaverTrendPoint) => sum + Number(d.ratio || 0), 0) / Math.max(previous.length, 1);
 
   const growthRate = previousAvg > 0
     ? ((recentAvg - previousAvg) / previousAvg) * 100
@@ -158,7 +167,7 @@ async function detectTrendingTopics() {
       ORDER BY growth_rate_week DESC
       LIMIT 5
     `);
-    return (rows || []).map((r) => r.keyword);
+    return (rows || []).map((r: { keyword?: string }) => r.keyword);
   } catch {
     return [];
   }

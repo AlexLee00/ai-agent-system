@@ -25,6 +25,22 @@ const CATEGORIES = [
   'IT정보와분석',
   '개발기획과컨설팅',
 ];
+type Category = typeof CATEGORIES[number];
+type CuratedIssue = {
+  title: string;
+  description?: string;
+  url?: string;
+  stars?: number;
+  points?: number;
+};
+type CuratedCandidate = {
+  category: Category;
+  title: string;
+  question: string;
+  diff: string;
+  keywords: string[];
+  score: number;
+};
 
 const CATEGORY_KEYWORDS = {
   '자기계발':       ['생산성', '습관', '독서', '시간관리', '집중력', '루틴', '목표'],
@@ -36,7 +52,7 @@ const CATEGORY_KEYWORDS = {
 };
 
 function parseArgs() {
-  const args = { date: null, count: 3, json: false };
+  const args: { date: string | null; count: number; json: boolean } = { date: null, count: 3, json: false };
   for (const arg of process.argv.slice(2)) {
     if (arg.startsWith('--date=')) args.date = arg.split('=')[1];
     else if (arg.startsWith('--count=')) args.count = parseInt(arg.split('=')[1], 10) || 3;
@@ -62,7 +78,7 @@ async function fetchGithubTrending() {
     clearTimeout(timer);
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.items || []).map(r => ({
+    return (data.items || []).map((r: any) => ({
       title: r.full_name,
       description: r.description || '',
       url: r.html_url,
@@ -85,7 +101,7 @@ async function fetchHNTop() {
     const ids = await res.json();
     const top5 = ids.slice(0, 5);
     const stories = await Promise.allSettled(
-      top5.map(id =>
+      top5.map((id: number) =>
         fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`)
           .then(r => r.json())
           .catch(() => null)
@@ -102,17 +118,17 @@ async function fetchHNTop() {
   }
 }
 
-function matchCategory(text) {
+function matchCategory(text: string): Category | null {
   const lower = text.toLowerCase();
-  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some(k => lower.includes(k.toLowerCase()))) return cat;
+  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS) as Array<[Category, string[]]>) {
+    if (keywords.some((k: string) => lower.includes(k.toLowerCase()))) return cat;
   }
   return null;
 }
 
-async function generateCandidatesWithLlm(issues, targetDate, count) {
+async function generateCandidatesWithLlm(issues: CuratedIssue[], targetDate: string, count: number): Promise<CuratedCandidate[]> {
   const issuesSummary = issues.slice(0, 15)
-    .map((i, idx) => `${idx + 1}. ${i.title}`)
+    .map((i: CuratedIssue, idx: number) => `${idx + 1}. ${i.title}`)
     .join('\n');
 
   const prompt = `다음은 오늘 수집된 GitHub 트렌딩 + Hacker News 상위 이슈입니다:
@@ -155,18 +171,18 @@ ${issuesSummary}
     const parsed = JSON.parse(jsonMatch[0]);
     return Array.isArray(parsed) ? parsed.slice(0, CATEGORIES.length) : [];
   } catch (e) {
-    console.warn('[curate] LLM 생성 실패, 폴백 사용:', e.message);
+    console.warn('[curate] LLM 생성 실패, 폴백 사용:', e instanceof Error ? e.message : e);
     return generateFallbackCandidates(targetDate);
   }
 }
 
-function generateFallbackCandidates(targetDate) {
-  return CATEGORIES.map(cat => ({
+function generateFallbackCandidates(targetDate: string): CuratedCandidate[] {
+  return CATEGORIES.map((cat: Category) => ({
     category: cat,
     title: `${cat} 관련 실용 가이드`,
     question: '어떻게 하면 실제 변화를 만들 수 있을까',
     diff: '이론보다 실행 중심',
-    keywords: CATEGORY_KEYWORDS[cat]?.slice(0, 3) || [],
+    keywords: CATEGORY_KEYWORDS[cat as keyof typeof CATEGORY_KEYWORDS]?.slice(0, 3) || [],
     score: 0.5,
   }));
 }
@@ -186,11 +202,12 @@ async function main() {
   ];
 
   // 후보 생성
-  const candidates = await generateCandidatesWithLlm(issues, args.date, args.count);
+  const targetDate = args.date || kst.today();
+  const candidates = await generateCandidatesWithLlm(issues, targetDate, args.count);
 
   const output = {
     ok: true,
-    date: args.date,
+    date: targetDate,
     candidates,
     sources: {
       github: githubItems.status === 'fulfilled' ? githubItems.value.length : 0,
@@ -210,7 +227,7 @@ async function main() {
   return output;
 }
 
-main().catch(e => {
-  console.error('[curate] 오류:', e.message);
+main().catch((e: unknown) => {
+  console.error('[curate] 오류:', e instanceof Error ? e.message : e);
   process.exit(1);
 });
