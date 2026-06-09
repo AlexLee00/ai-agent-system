@@ -8,13 +8,16 @@ const GEMINI_CLI_CREDENTIALS_RELATIVE_PATH = '.gemini/oauth_creds.json';
 const GEMINI_CLI_ENCRYPTED_CREDENTIALS_RELATIVE_PATH = '.gemini/gemini-credentials.json';
 const GEMINI_CLI_KEYCHAIN_SERVICE = 'gemini-cli-oauth';
 const GEMINI_CLI_MAIN_ACCOUNT = 'main-account';
-const GEMINI_CLI_KEYTAR_CANDIDATES = [
+type AnyRecord = Record<string, any>;
+type CredentialReadResult = AnyRecord;
+
+const GEMINI_CLI_KEYTAR_CANDIDATES: string[] = [
   process.env.GEMINI_CLI_KEYTAR_MODULE,
   '/opt/homebrew/lib/node_modules/@google/gemini-cli/node_modules/@github/keytar/lib/keytar.js',
   '/usr/local/lib/node_modules/@google/gemini-cli/node_modules/@github/keytar/lib/keytar.js',
-].filter(Boolean);
+].filter((candidate): candidate is string => Boolean(candidate));
 
-function resolveUserPath(input) {
+function resolveUserPath(input: unknown): string {
   const raw = String(input || '').trim();
   if (!raw) return raw;
   if (raw === '~') return os.homedir();
@@ -30,7 +33,7 @@ function defaultGeminiCliEncryptedCredentialsPath() {
   return path.join(os.homedir(), GEMINI_CLI_ENCRYPTED_CREDENTIALS_RELATIVE_PATH);
 }
 
-function readJsonFile(filePath) {
+function readJsonFile(filePath: string): AnyRecord | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
@@ -38,7 +41,7 @@ function readJsonFile(filePath) {
   }
 }
 
-function ensureOwnerOnlyFileMode(filePath) {
+function ensureOwnerOnlyFileMode(filePath: string) {
   try {
     const currentMode = fs.statSync(filePath).mode & 0o777;
     if ((currentMode & 0o077) !== 0) {
@@ -49,7 +52,7 @@ function ensureOwnerOnlyFileMode(filePath) {
       ok: (nextMode & 0o077) === 0,
       mode: nextMode.toString(8).padStart(3, '0'),
     };
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       mode: null,
@@ -58,7 +61,7 @@ function ensureOwnerOnlyFileMode(filePath) {
   }
 }
 
-function decodeJwtPayload(token) {
+function decodeJwtPayload(token: unknown): AnyRecord | null {
   const parts = String(token || '').split('.');
   if (parts.length < 2) return null;
   try {
@@ -68,18 +71,18 @@ function decodeJwtPayload(token) {
   }
 }
 
-function sha256(value) {
+function sha256(value: unknown): string {
   const raw = String(value || '').trim();
   return raw ? crypto.createHash('sha256').update(raw).digest('hex') : '';
 }
 
-function emailDomain(email) {
+function emailDomain(email: unknown): string {
   const raw = String(email || '').trim().toLowerCase();
   const at = raw.lastIndexOf('@');
   return at >= 0 && at < raw.length - 1 ? raw.slice(at + 1) : '';
 }
 
-function parseExpiresAt(raw) {
+function parseExpiresAt(raw: unknown): string | null {
   if (raw == null || raw === '') return null;
   if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
     const ms = raw > 10_000_000_000 ? raw : raw * 1000;
@@ -94,17 +97,17 @@ function parseExpiresAt(raw) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 }
 
-function normalizeScopes(raw) {
+function normalizeScopes(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String).map((item) => item.trim()).filter(Boolean);
   if (typeof raw === 'string' && raw.trim()) return raw.trim().split(/\s+/);
   return [];
 }
 
-function sanitizeServerName(serverName) {
+function sanitizeServerName(serverName: unknown): string {
   return String(serverName || '').replace(/[^a-zA-Z0-9-_.]/g, '_');
 }
 
-function parseCredentialJson(raw) {
+function parseCredentialJson(raw: unknown): AnyRecord | null {
   if (!raw) return null;
   if (typeof raw === 'object') return raw;
   try {
@@ -114,7 +117,7 @@ function parseCredentialJson(raw) {
   }
 }
 
-function normalizeCredentialPayload(payload, options = {}) {
+function normalizeCredentialPayload(payload: AnyRecord | null, options: AnyRecord = {}): AnyRecord | null {
   if (!payload || typeof payload !== 'object') return null;
   const tokenPayload = payload.token && typeof payload.token === 'object' ? payload.token : {};
   const accessToken = String(
@@ -185,7 +188,7 @@ function normalizeCredentialPayload(payload, options = {}) {
   };
 }
 
-function buildCredentialResult(normalized, options = {}) {
+function buildCredentialResult(normalized: AnyRecord, options: AnyRecord = {}): CredentialReadResult {
   const provider = String(options.provider || process.env.GEMINI_CLI_OAUTH_STORE_PROVIDER || 'gemini-cli-oauth').trim()
     || 'gemini-cli-oauth';
   const fileMode = options.filePath ? ensureOwnerOnlyFileMode(options.filePath) : null;
@@ -219,7 +222,7 @@ function buildCredentialResult(normalized, options = {}) {
   };
 }
 
-function readLegacyGeminiCliCredentials(options = {}) {
+function readLegacyGeminiCliCredentials(options: AnyRecord = {}): CredentialReadResult {
   const filePath = resolveUserPath(
     options.credentialsFile
       || process.env.GEMINI_CLI_OAUTH_CREDS_FILE
@@ -247,7 +250,7 @@ function readLegacyGeminiCliCredentials(options = {}) {
   });
 }
 
-function decryptGeminiCliEncryptedFile(filePath) {
+function decryptGeminiCliEncryptedFile(filePath: string): AnyRecord {
   const encryptedData = fs.readFileSync(filePath, 'utf8').trim();
   const parts = encryptedData.split(':');
   if (parts.length !== 3) {
@@ -262,7 +265,7 @@ function decryptGeminiCliEncryptedFile(filePath) {
   return JSON.parse(decrypted);
 }
 
-function readEncryptedGeminiCliCredentials(options = {}) {
+function readEncryptedGeminiCliCredentials(options: AnyRecord = {}): CredentialReadResult {
   const filePath = resolveUserPath(
     options.encryptedCredentialsFile
       || process.env.GEMINI_CLI_ENCRYPTED_CREDS_FILE
@@ -276,7 +279,7 @@ function readEncryptedGeminiCliCredentials(options = {}) {
   let data;
   try {
     data = decryptGeminiCliEncryptedFile(filePath);
-  } catch (error) {
+  } catch (error: any) {
     return {
       ok: false,
       error: String(error?.message || error).slice(0, 160) || 'gemini_cli_encrypted_credentials_decrypt_failed',
@@ -307,7 +310,7 @@ function readEncryptedGeminiCliCredentials(options = {}) {
   });
 }
 
-function readKeychainGeminiCliCredentials(options = {}) {
+function readKeychainGeminiCliCredentials(options: AnyRecord = {}): CredentialReadResult {
   const service = String(options.keychainService || process.env.GEMINI_CLI_OAUTH_KEYCHAIN_SERVICE || GEMINI_CLI_KEYCHAIN_SERVICE).trim()
     || GEMINI_CLI_KEYCHAIN_SERVICE;
   const account = sanitizeServerName(options.account || process.env.GEMINI_CLI_OAUTH_ACCOUNT || GEMINI_CLI_MAIN_ACCOUNT);
@@ -360,8 +363,8 @@ function readKeychainGeminiCliCredentials(options = {}) {
   return { ok: false, error: 'gemini_cli_keychain_credentials_missing' };
 }
 
-function readGeminiCliCredentials(options = {}) {
-  const attempts = [
+function readGeminiCliCredentials(options: AnyRecord = {}): CredentialReadResult {
+  const attempts: CredentialReadResult[] = [
     readKeychainGeminiCliCredentials(options),
     readEncryptedGeminiCliCredentials(options),
     readLegacyGeminiCliCredentials(options),
@@ -376,7 +379,7 @@ function readGeminiCliCredentials(options = {}) {
   };
 }
 
-function readGeminiCliCredentialsLegacyOnly(options = {}) {
+function readGeminiCliCredentialsLegacyOnly(options: AnyRecord = {}): CredentialReadResult {
   const provider = String(options.provider || process.env.GEMINI_CLI_OAUTH_STORE_PROVIDER || 'gemini-cli-oauth').trim()
     || 'gemini-cli-oauth';
   const filePath = resolveUserPath(
