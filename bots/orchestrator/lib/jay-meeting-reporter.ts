@@ -1,6 +1,5 @@
 'use strict';
 
-const sender = require('../../../packages/core/lib/telegram-sender');
 const {
   appendIncidentEvent,
   hasIncidentEvent,
@@ -8,6 +7,7 @@ const {
 
 const sentDedupe = new Map();
 const MEETING_PHASES = new Set(['frame', 'plan', 'review', 'test', 'ship', 'reflect', 'final']);
+let telegramSenderOverride: any = null;
 
 type MeetingPhase = 'frame' | 'plan' | 'review' | 'test' | 'ship' | 'reflect' | 'final';
 
@@ -44,6 +44,11 @@ function warnNonBlocking(scope: string, error: unknown, meta: Record<string, unk
     .join(' ');
   const suffix = details ? ` (${details})` : '';
   console.warn(`[jay-meeting-reporter] ${scope} failed${suffix}: ${error instanceof Error ? error.message : String(error)}`);
+}
+
+function getTelegramSender() {
+  if (telegramSenderOverride) return telegramSenderOverride;
+  return require('../../../packages/core/lib/telegram-sender');
 }
 
 function nowMs() {
@@ -125,7 +130,7 @@ async function publishMeetingSummary(input: MeetingReporterInput) {
   }
 
   const text = buildMeetingMessage(input);
-  const sent = await sender.sendBuffered('meeting', text);
+  const sent = await getTelegramSender().sendBuffered('meeting', text);
   if (!sent) {
     return { ok: false, error: 'meeting_topic_send_failed', dedupeKey };
   }
@@ -157,7 +162,7 @@ async function publishTeamProgress(input: TeamProgressInput) {
     `incident: ${incidentKey}`,
   ];
   if (message) lines.push(message);
-  const sent = await sender.sendBuffered(team, lines.join('\n'));
+  const sent = await getTelegramSender().sendBuffered(team, lines.join('\n'));
   return sent ? { ok: true, sent: true } : { ok: false, error: 'team_topic_send_failed' };
 }
 
@@ -169,5 +174,8 @@ module.exports = {
     buildMeetingMessage,
     compactSummary,
     MEETING_PHASES,
+    setTelegramSenderForTests(sender: any = null) {
+      telegramSenderOverride = sender || null;
+    },
   },
 };

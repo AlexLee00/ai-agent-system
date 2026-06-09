@@ -3,16 +3,16 @@ import assert from 'node:assert/strict';
 
 async function main() {
   const reporter = require('../../orchestrator/lib/jay-meeting-reporter.ts');
-  const sender = require('../../../packages/core/lib/telegram-sender.ts');
   const originalFlag = process.env.JAY_3TIER_TELEGRAM;
-  const originalSendBuffered = sender.sendBuffered;
   process.env.JAY_3TIER_TELEGRAM = 'true';
 
   const sent: Array<{ team: string; message: string }> = [];
-  sender.sendBuffered = async (team: string, message: string) => {
-    sent.push({ team, message });
-    return true;
-  };
+  reporter._testOnly.setTelegramSenderForTests({
+    sendBuffered: async (team: string, message: string) => {
+      sent.push({ team, message });
+      return true;
+    },
+  });
 
   try {
     const incidentKey = `routing-smoke:${Date.now()}`;
@@ -59,7 +59,7 @@ async function main() {
     assert.equal(lunaMessages.length, 1, 'team topic should receive progress detail');
     console.log('jay_3tier_routing_smoke_ok');
   } finally {
-    sender.sendBuffered = originalSendBuffered;
+    reporter._testOnly.setTelegramSenderForTests(null);
     if (originalFlag == null) delete process.env.JAY_3TIER_TELEGRAM;
     else process.env.JAY_3TIER_TELEGRAM = originalFlag;
   }
