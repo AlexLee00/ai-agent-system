@@ -102,15 +102,72 @@ export const LUNA_HYBRID_PHASE_CONTRACTS = [
   },
 ];
 
+type PhaseContract = (typeof LUNA_HYBRID_PHASE_CONTRACTS)[number];
+
+type PhaseContractStatus = {
+  phase: number;
+  name: string;
+  checkScript: string;
+  runtimeScript: string;
+  a2aSkill: string;
+  ok: boolean;
+  missing: string[];
+};
+
+type SecurityCheck = {
+  name: string;
+  ok: boolean;
+  detail: string;
+};
+
+type QueryFn = (sql: string, params: unknown[]) => Promise<unknown> | unknown;
+
+type EvidenceOptions = {
+  dataRequired?: boolean;
+};
+
+type EvidenceStatus = {
+  phase: number;
+  name: string;
+  table?: string;
+  status: string;
+  count: number | null;
+  latestAt: unknown;
+  ok: boolean;
+  warning?: string | null;
+};
+
+type BuildEvidenceOptions = {
+  queryFn?: QueryFn;
+  hours: number;
+  dataRequired: boolean;
+};
+
+type GateReportOptions = {
+  investmentRoot?: string;
+  projectRoot?: string;
+  hours?: number;
+  dataRequired?: boolean;
+  queryFn?: QueryFn;
+};
+
+type PromotionBlocker = {
+  type: string;
+  phase?: number;
+  name: string;
+  missing?: string[];
+  detail?: string;
+};
+
 function defaultInvestmentRoot() {
   return path.resolve(MODULE_DIR, '..');
 }
 
-function projectRootFromInvestmentRoot(investmentRoot) {
+function projectRootFromInvestmentRoot(investmentRoot: string) {
   return path.resolve(investmentRoot, '../..');
 }
 
-function readText(filePath) {
+function readText(filePath: string) {
   try {
     return fs.readFileSync(filePath, 'utf8');
   } catch {
@@ -118,7 +175,7 @@ function readText(filePath) {
   }
 }
 
-function readJson(filePath, fallback = null) {
+function readJson<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
   } catch {
@@ -126,22 +183,22 @@ function readJson(filePath, fallback = null) {
   }
 }
 
-function packageScripts(investmentRoot) {
-  return readJson(path.join(investmentRoot, 'package.json'), {})?.scripts || {};
+function packageScripts(investmentRoot: string): Record<string, string> {
+  return readJson<{ scripts?: Record<string, string> }>(path.join(investmentRoot, 'package.json'), {})?.scripts || {};
 }
 
-function cardSkillIds(investmentRoot) {
+function cardSkillIds(investmentRoot: string) {
   const card = readJson(path.join(investmentRoot, 'a2a/luna-card.json'), {}) || {};
-  return new Set((card.skills || []).map((skill) => skill?.id).filter(Boolean));
+  return new Set(((card as { skills?: Array<{ id?: string }> }).skills || []).map((skill) => skill?.id).filter(Boolean));
 }
 
-function phaseContractStatus({ investmentRoot, projectRoot }) {
+function phaseContractStatus({ investmentRoot, projectRoot }: { investmentRoot: string; projectRoot: string }): PhaseContractStatus[] {
   const scripts = packageScripts(investmentRoot);
   const skills = cardSkillIds(investmentRoot);
   const preHookText = readText(path.join(projectRoot, '.claude/hooks/scripts/luna-pretooluse-policy-check.sh'));
   const serverText = readText(path.join(investmentRoot, 'a2a/server.ts'));
   return LUNA_HYBRID_PHASE_CONTRACTS.map((phase) => {
-    const missing = [];
+    const missing: string[] = [];
     if (!scripts[phase.checkScript]) missing.push(`package_script:${phase.checkScript}`);
     if (!scripts[phase.runtimeScript]) missing.push(`runtime_script:${phase.runtimeScript}`);
     if (!skills.has(phase.a2aSkill)) missing.push(`a2a_skill:${phase.a2aSkill}`);
@@ -166,7 +223,7 @@ function phaseContractStatus({ investmentRoot, projectRoot }) {
   });
 }
 
-function securityChecks({ projectRoot }) {
+function securityChecks({ projectRoot }: { projectRoot: string }): SecurityCheck[] {
   const preHookText = readText(path.join(projectRoot, '.claude/hooks/scripts/luna-pretooluse-policy-check.sh'));
   return [
     {
@@ -187,7 +244,7 @@ function securityChecks({ projectRoot }) {
   ];
 }
 
-async function queryEvidence(queryFn, phase, hours, options = {}) {
+async function queryEvidence(queryFn: QueryFn | undefined, phase: PhaseContract, hours: number, options: EvidenceOptions = {}): Promise<EvidenceStatus> {
   const dataRequired = options.dataRequired !== false;
   if (!phase.evidence) {
     return {
@@ -223,7 +280,7 @@ async function queryEvidence(queryFn, phase, hours, options = {}) {
   const params = eventType ? [eventType, hours] : [hours];
   try {
     const rows = await Promise.resolve(queryFn(sql, params));
-    const row = Array.isArray(rows) ? rows[0] || {} : rows || {};
+    const row = (Array.isArray(rows) ? rows[0] || {} : rows || {}) as Record<string, unknown>;
     const count = Number(row.count ?? row.rows ?? 0);
     return {
       phase: phase.phase,
@@ -248,15 +305,15 @@ async function queryEvidence(queryFn, phase, hours, options = {}) {
   }
 }
 
-async function buildEvidenceStatus({ queryFn, hours, dataRequired }) {
-  const checks = [];
+async function buildEvidenceStatus({ queryFn, hours, dataRequired }: BuildEvidenceOptions) {
+  const checks: EvidenceStatus[] = [];
   for (const phase of LUNA_HYBRID_PHASE_CONTRACTS) {
     checks.push(await queryEvidence(queryFn, phase, hours, { dataRequired }));
   }
   return checks;
 }
 
-export async function buildLunaHybridPromotionGateReport(options = {}) {
+export async function buildLunaHybridPromotionGateReport(options: GateReportOptions = {}) {
   const investmentRoot = path.resolve(options.investmentRoot || defaultInvestmentRoot());
   const projectRoot = path.resolve(options.projectRoot || projectRootFromInvestmentRoot(investmentRoot));
   const hours = Math.max(1, Number(options.hours || 168));
@@ -270,7 +327,7 @@ export async function buildLunaHybridPromotionGateReport(options = {}) {
   const contractFailures = contractChecks.filter((item) => !item.ok);
   const securityFailures = security.filter((item) => !item.ok);
   const evidenceWarnings = evidenceChecks.filter((item) => !item.ok);
-  const blockers = [
+  const blockers: PromotionBlocker[] = [
     ...contractFailures.map((item) => ({
       type: 'contract',
       phase: item.phase,
