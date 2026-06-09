@@ -10,6 +10,24 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
+type HookStyle = 'unknown' | 'list' | 'why' | 'how' | 'question' | 'comparison' | 'mistake' | 'superlative' | 'statement';
+
+type SourceHook = {
+  title: string;
+  engagement_rate: number;
+  views: number;
+  hook_style: HookStyle;
+  hook_words: string[];
+};
+
+type TransferTemplate = {
+  template: string;
+  base_style: string;
+  confidence: number;
+  source_platform: string;
+  sample_title?: string;
+};
+
 function isEnabled() {
   return process.env.BLOG_DPO_ENABLED === 'true';
 }
@@ -19,7 +37,7 @@ function isEnabled() {
 /**
  * 특정 플랫폼에서 최근 N일 고성과 포스팅의 후킹 패턴 추출
  */
-async function extractSuccessfulHooks(platform, days = 30) {
+async function extractSuccessfulHooks(platform: string, days = 30): Promise<SourceHook[]> {
   try {
     const rows = await pgPool.query('blog', `
       SELECT
@@ -36,12 +54,12 @@ async function extractSuccessfulHooks(platform, days = 30) {
       LIMIT 20
     `, [platform, days]);
 
-    return (rows || []).map((r) => ({
-      title: r.title,
+    return (rows || []).map((r: { title?: string; eng_rate?: number | string; views?: number | string }) => ({
+      title: String(r.title || ''),
       engagement_rate: Number(r.eng_rate || 0),
       views: Number(r.views || 0),
-      hook_style: classifyHookStyle(r.title),
-      hook_words: extractHookWords(r.title),
+      hook_style: classifyHookStyle(String(r.title || '')),
+      hook_words: extractHookWords(String(r.title || '')),
     }));
   } catch {
     return [];
@@ -51,7 +69,7 @@ async function extractSuccessfulHooks(platform, days = 30) {
 /**
  * 제목 후킹 스타일 분류
  */
-function classifyHookStyle(title) {
+function classifyHookStyle(title: string): HookStyle {
   if (!title) return 'unknown';
   if (/\d+가지|\d+개|TOP\s*\d+/i.test(title)) return 'list';
   if (/왜|이유|때문/.test(title)) return 'why';
@@ -66,10 +84,10 @@ function classifyHookStyle(title) {
 /**
  * 제목에서 고성과 후킹 단어 추출
  */
-function extractHookWords(title) {
+function extractHookWords(title: string): string[] {
   if (!title) return [];
   const hookWords = ['방법', '비결', '전략', '이유', '핵심', '실수', '완벽', '최강', '무조건', '즉시', '바로', '진짜', '팁', '노하우', '실전', '가이드'];
-  return hookWords.filter((w) => title.includes(w));
+  return hookWords.filter((w: string) => title.includes(w));
 }
 
 // ─── 플랫폼 간 패턴 변환 ────────────────────────────────────────────────────
@@ -77,8 +95,8 @@ function extractHookWords(title) {
 /**
  * 인스타 후킹 패턴 → 네이버 블로그 제목 템플릿 변환
  */
-function adaptHooksToBlogTitles(igHooks) {
-  const templates = [];
+function adaptHooksToBlogTitles(igHooks: SourceHook[]): TransferTemplate[] {
+  const templates: TransferTemplate[] = [];
 
   for (const hook of igHooks) {
     const style = hook.hook_style;
@@ -119,7 +137,7 @@ function adaptHooksToBlogTitles(igHooks) {
   }
 
   // 중복 스타일 제거 (confidence 높은 것 유지)
-  const seen = new Set();
+  const seen = new Set<string>();
   return templates.filter((t) => {
     if (seen.has(t.base_style)) return false;
     seen.add(t.base_style);
@@ -131,8 +149,8 @@ function adaptHooksToBlogTitles(igHooks) {
  * 인스타 후킹 패턴 → 페이스북 포스트 템플릿 변환
  * (짧고 직접적인 스타일 — 페북은 80~200자 최적)
  */
-function adaptHooksToFacebook(igHooks) {
-  const templates = [];
+function adaptHooksToFacebook(igHooks: SourceHook[]): TransferTemplate[] {
+  const templates: TransferTemplate[] = [];
 
   for (const hook of igHooks) {
     const style = hook.hook_style;
@@ -161,7 +179,7 @@ function adaptHooksToFacebook(igHooks) {
     }
   }
 
-  const seen = new Set();
+  const seen = new Set<string>();
   return templates.filter((t) => {
     if (seen.has(t.base_style)) return false;
     seen.add(t.base_style);
@@ -174,7 +192,7 @@ function adaptHooksToFacebook(igHooks) {
 /**
  * 이전 학습 결과 DB 저장
  */
-async function saveTransferLearning(learnedFrom, appliedTo, templates) {
+async function saveTransferLearning(learnedFrom: string, appliedTo: string, templates: TransferTemplate[]) {
   if (!templates || templates.length === 0) return 0;
 
   let saved = 0;

@@ -3,7 +3,30 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 
-let cachedGenerateGemmaPilotText = undefined;
+type GemmaPilotTextResult = {
+  content?: string;
+};
+
+type GenerateGemmaPilotText = (input: {
+  team: string;
+  purpose: string;
+  bot: string;
+  requestType: string;
+  prompt: string;
+  maxTokens: number;
+  temperature: number;
+  timeoutMs: number;
+}) => Promise<GemmaPilotTextResult>;
+
+type BlogCliInsightInput = {
+  bot: string;
+  requestType: string;
+  title: string;
+  data?: unknown;
+  fallback: string;
+};
+
+let cachedGenerateGemmaPilotText: GenerateGemmaPilotText | null | undefined = undefined;
 
 function loadGenerateGemmaPilotText() {
   if (cachedGenerateGemmaPilotText !== undefined) {
@@ -46,7 +69,7 @@ async function buildBlogCliInsight({
   title,
   data,
   fallback,
-}) {
+}: BlogCliInsightInput) {
   try {
     const generateGemmaPilotText = loadGenerateGemmaPilotText();
     if (typeof generateGemmaPilotText !== 'function') {
@@ -74,7 +97,7 @@ ${JSON.stringify(data || {}, null, 2).slice(0, 1800)}`;
 
     return sanitizeBlogInsightLine(insight?.content || '') || fallback;
   } catch (error) {
-    console.warn(`[${bot}] AI 요약 생략: ${error?.message || error}`);
+    console.warn(`[${bot}] AI 요약 생략: ${error instanceof Error ? error.message : error}`);
     return fallback;
   }
 }

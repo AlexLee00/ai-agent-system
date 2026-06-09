@@ -2,6 +2,15 @@
 
 const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 
+type BlogPost = {
+  title?: string;
+  content?: string;
+  hashtags?: string[];
+  category?: string;
+  naver_url?: string;
+  url?: string;
+};
+
 /**
  * bots/blog/lib/cross-platform-adapter.ts
  * 네이버 블로그 → 인스타그램/페이스북 크로스 플랫폼 변환기
@@ -14,23 +23,23 @@ const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy
  * @param {string} content 블로그 본문
  * @param {number} maxPoints 최대 추출 포인트
  */
-function extractKeyPoints(content, maxPoints = 5) {
+function extractKeyPoints(content: string, maxPoints = 5): string[] {
   if (!content) return [];
 
   // 번호 목록 패턴 추출 (1. 2. 3. / ① ② ③ / - •)
   const numberedItems = content.match(/(?:^|\n)\s*(?:\d+[.)]\s+|[①-⑩]\s+|[-•]\s+)(.+)/gm) || [];
   const points = numberedItems
-    .map((line) => line.replace(/^\s*(?:\d+[.)]\s+|[①-⑩]\s+|[-•]\s+)/, '').trim())
-    .filter((p) => p.length > 10 && p.length < 200)
+    .map((line: string) => line.replace(/^\s*(?:\d+[.)]\s+|[①-⑩]\s+|[-•]\s+)/, '').trim())
+    .filter((p: string) => p.length > 10 && p.length < 200)
     .slice(0, maxPoints);
 
   if (points.length >= 3) return points;
 
   // 문단 첫 문장 추출 (폴백)
-  const sentences = content.split(/\n\n+/).map((para) => {
+  const sentences = content.split(/\n\n+/).map((para: string) => {
     const firstSentence = para.split(/[.!?]/)[0]?.trim();
     return firstSentence && firstSentence.length > 20 ? firstSentence : null;
-  }).filter(Boolean).slice(0, maxPoints);
+  }).filter((sentence: string | null): sentence is string => Boolean(sentence)).slice(0, maxPoints);
 
   return sentences;
 }
@@ -40,7 +49,7 @@ function extractKeyPoints(content, maxPoints = 5) {
  * @param {object} blogPost { title, content, hashtags, category }
  * @param {number} maxChars 최대 글자 수
  */
-function blogToInstagramCaption(blogPost, maxChars = 2200, strategy = null) {
+function blogToInstagramCaption(blogPost: BlogPost, maxChars = 2200, strategy = null) {
   const { title, content, hashtags = [] } = blogPost;
   const plan = strategy || loadStrategyBundle().plan;
   const directives = normalizeExecutionDirectives(plan);
@@ -53,7 +62,7 @@ function blogToInstagramCaption(blogPost, maxChars = 2200, strategy = null) {
   // 핵심 포인트 추출
   const keyPoints = extractKeyPoints(content || '', pointCount);
   const pointsStr = keyPoints.length > 0
-    ? '\n\n' + keyPoints.slice(0, pointCount).map((p, i) => `${i + 1}. ${p}`).join('\n')
+    ? '\n\n' + keyPoints.slice(0, pointCount).map((p: string, i: number) => `${i + 1}. ${p}`).join('\n')
     : '';
 
   // 해시태그 (최대 30개)
@@ -86,7 +95,7 @@ function blogToInstagramCaption(blogPost, maxChars = 2200, strategy = null) {
  * @param {object} blogPost { title, content, url, naver_url }
  * @param {number} maxChars 최대 글자 수
  */
-function blogToFacebookPost(blogPost, maxChars = 200, strategy = null) {
+function blogToFacebookPost(blogPost: BlogPost, maxChars = 200, strategy = null) {
   const { title, content, naver_url, url } = blogPost;
   const plan = strategy || loadStrategyBundle().plan;
   const directives = normalizeExecutionDirectives(plan);
@@ -125,7 +134,7 @@ function blogToFacebookPost(blogPost, maxChars = 200, strategy = null) {
  * 블로그 → 릴스 스크립트 (Hook + Problem + Solution + CTA)
  * 30~60초 분량 (약 150~300자)
  */
-function blogToReelScript(blogPost, strategy = null) {
+function blogToReelScript(blogPost: BlogPost, strategy = null) {
   const { title, content, category } = blogPost;
   const plan = strategy || loadStrategyBundle().plan;
   const directives = normalizeExecutionDirectives(plan);

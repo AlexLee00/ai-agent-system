@@ -16,12 +16,26 @@ const DEFAULT_OPTIMAL_HOURS = {
   facebook: [10, 13, 19],
 };
 
+type Platform = keyof typeof DEFAULT_OPTIMAL_HOURS;
+type HourlyEngagementRow = {
+  hour?: number | string;
+  avg_views?: number | string;
+  avg_engagement?: number | string;
+  post_count?: number | string;
+};
+type WeekdayEngagementRow = {
+  weekday?: number | string;
+  avg_views?: number | string;
+  avg_engagement?: number | string;
+  post_count?: number | string;
+};
+
 /**
  * 플랫폼별 시간대별 engagement 분석
  * @param {string} platform 'naver' | 'instagram' | 'facebook'
  * @param {number} days 분석 기간
  */
-async function analyzeHourlyEngagement(platform, days = 30) {
+async function analyzeHourlyEngagement(platform: Platform, days = 30) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT
@@ -38,7 +52,7 @@ async function analyzeHourlyEngagement(platform, days = 30) {
       ORDER BY avg_engagement DESC
     `, [days]);
 
-    return (rows || []).map((r) => ({
+    return (rows || []).map((r: HourlyEngagementRow) => ({
       hour: Number(r.hour),
       avg_views: Number(Number(r.avg_views || 0).toFixed(1)),
       avg_engagement: Number(Number(r.avg_engagement || 0).toFixed(2)),
@@ -54,7 +68,7 @@ async function analyzeHourlyEngagement(platform, days = 30) {
  * @param {string} platform
  * @param {number} days
  */
-async function analyzeWeekdayEngagement(platform, days = 30) {
+async function analyzeWeekdayEngagement(platform: Platform, days = 30) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT
@@ -72,7 +86,7 @@ async function analyzeWeekdayEngagement(platform, days = 30) {
     `, [days]);
 
     const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
-    return (rows || []).map((r) => ({
+    return (rows || []).map((r: WeekdayEngagementRow) => ({
       weekday: Number(r.weekday),
       weekday_name: WEEKDAY_NAMES[Number(r.weekday)] || '?',
       avg_views: Number(Number(r.avg_views || 0).toFixed(1)),
@@ -89,19 +103,19 @@ async function analyzeWeekdayEngagement(platform, days = 30) {
  * @param {string} platform
  * @returns {{ recommended_hours, recommended_weekdays, confidence }}
  */
-async function optimizePublishTime(platform = 'naver') {
+async function optimizePublishTime(platform: Platform = 'naver') {
   const hourlyData = await analyzeHourlyEngagement(platform, 30);
   const weekdayData = await analyzeWeekdayEngagement(platform, 30);
 
-  const topHours = hourlyData.slice(0, 3).map((h) => h.hour);
-  const topWeekdays = weekdayData.slice(0, 3).map((w) => w.weekday_name);
+  const topHours = hourlyData.slice(0, 3).map((h: { hour: number }) => h.hour);
+  const topWeekdays = weekdayData.slice(0, 3).map((w: { weekday_name: string }) => w.weekday_name);
 
   // 데이터 부족 시 기본값 사용
   const recommendedHours = topHours.length >= 2
     ? topHours
     : (DEFAULT_OPTIMAL_HOURS[platform] || [9, 18]);
 
-  const confidence = Math.min(hourlyData.reduce((sum, h) => sum + h.post_count, 0) / 30, 1.0);
+  const confidence = Math.min(hourlyData.reduce((sum: number, h: { post_count: number }) => sum + h.post_count, 0) / 30, 1.0);
 
   return {
     platform,
