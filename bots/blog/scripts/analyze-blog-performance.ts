@@ -10,15 +10,85 @@ const eventLake = require('../../../packages/core/lib/event-lake');
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const performanceMemory = createAgentMemory({ agentId: 'blog.performance', team: 'blog' });
 
-function parsePositiveInteger(value, fallback) {
+type BlogPerformanceRow = {
+  id?: unknown;
+  title?: string;
+  category?: string;
+  post_type?: string;
+  publish_date?: unknown;
+  metadata?: {
+    writer_name?: string;
+    [key: string]: unknown;
+  };
+  views?: number;
+  likes?: number;
+  comments?: number;
+};
+
+type WriterStats = {
+  name: string;
+  posts: number;
+  totalViews: number;
+  totalLikes: number;
+  totalComments: number;
+  categories: Record<string, number>;
+};
+
+type WriterRanking = {
+  name: string;
+  posts: number;
+  avgViews: number;
+  effectiveViews: number;
+  avgLikes: number;
+  avgComments: number;
+  score: number;
+  topCategory: string | null;
+};
+
+type WriterFeedback = WriterRanking & {
+  relativeScore: number;
+  adjustment: number;
+  taskScore: number;
+  feedbackEligible: boolean;
+  feedbackReason: string;
+};
+
+type CategoryRanking = {
+  category: string;
+  posts: number;
+  avgViews: number;
+  avgLikes: number;
+  avgComments: number;
+};
+
+type CategoryAggregate = {
+  category: string;
+  posts: number;
+  totalViews: number;
+  totalLikes: number;
+  totalComments: number;
+};
+
+type PerformancePayload = {
+  ok: boolean;
+  analyzedPosts: number;
+  writers: number;
+  topWriters: WriterFeedback[];
+  categories: CategoryRanking[];
+  reportSent: boolean;
+  dryRun: boolean;
+  aiSummary?: string;
+};
+
+function parsePositiveInteger(value: unknown, fallback: number) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 const MIN_WRITER_POSTS_FOR_FEEDBACK = parsePositiveInteger(process.env.BLOG_PERFORMANCE_MIN_WRITER_POSTS, 3);
 
-function parseArgs(argv = process.argv.slice(2)) {
-  const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
+function parseArgs(argv: string[] = process.argv.slice(2)) {
+  const get = (name: string) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
   return {
     days: Number(get('days') || 30),
     dryRun: argv.includes('--dry-run'),
@@ -26,22 +96,22 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function round(value, digits = 2) {
+function round(value: unknown, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(Number(value || 0) * factor) / factor;
 }
 
-function deriveEffectiveViews(views, likes, comments) {
+function deriveEffectiveViews(views: unknown, likes: unknown, comments: unknown) {
   const rawViews = Number(views || 0);
   if (rawViews > 0) return rawViews;
   return Number(likes || 0) * 25 + Number(comments || 0) * 40;
 }
 
-function buildMemoryQuery(rows, rankings, categoryRankings) {
+function buildMemoryQuery(rows: BlogPerformanceRow[], rankings: WriterFeedback[], categoryRankings: CategoryRanking[]) {
   return [
     'blog performance feedback',
     `posts-${rows.length}`,
@@ -72,7 +142,7 @@ async function loadPerformanceRows(days = 30) {
   `, [days]);
 }
 
-function resolveWriterName(row) {
+function resolveWriterName(row: BlogPerformanceRow) {
   const explicit = String(row?.metadata?.writer_name || '').trim();
   if (explicit) return explicit;
 
@@ -81,8 +151,8 @@ function resolveWriterName(row) {
   return '';
 }
 
-function aggregateByWriter(rows) {
-  const stats = new Map();
+function aggregateByWriter(rows: BlogPerformanceRow[]): WriterRanking[] {
+  const stats = new Map<string, WriterStats>();
 
   for (const row of rows) {
     const writerName = resolveWriterName(row);
@@ -99,11 +169,13 @@ function aggregateByWriter(rows) {
     }
 
     const item = stats.get(writerName);
+    if (!item) continue;
     item.posts += 1;
     item.totalViews += Number(row.views || 0);
     item.totalLikes += Number(row.likes || 0);
     item.totalComments += Number(row.comments || 0);
-    item.categories[row.category] = (item.categories[row.category] || 0) + 1;
+    const category = String(row.category || 'general');
+    item.categories[category] = (item.categories[category] || 0) + 1;
   }
 
   const rankings = [...stats.values()].map((item) => {
@@ -127,14 +199,15 @@ function aggregateByWriter(rows) {
   return rankings;
 }
 
-function aggregateByCategory(rows) {
-  const stats = new Map();
+function aggregateByCategory(rows: BlogPerformanceRow[]): CategoryRanking[] {
+  const stats = new Map<string, CategoryAggregate>();
   for (const row of rows) {
     const category = String(row.category || 'general');
     if (!stats.has(category)) {
       stats.set(category, { category, posts: 0, totalViews: 0, totalLikes: 0, totalComments: 0 });
     }
     const item = stats.get(category);
+    if (!item) continue;
     item.posts += 1;
     item.totalViews += Number(row.views || 0);
     item.totalLikes += Number(row.likes || 0);
@@ -152,12 +225,12 @@ function aggregateByCategory(rows) {
     .sort((a, b) => b.avgViews - a.avgViews);
 }
 
-async function applyWriterFeedback(rankings, { dryRun = false } = {}) {
+async function applyWriterFeedback(rankings: WriterRanking[], { dryRun = false } = {}): Promise<WriterFeedback[]> {
   if (!rankings.length) return [];
   const eligibleRankings = rankings.filter((item) => item.posts >= MIN_WRITER_POSTS_FOR_FEEDBACK);
   const baselineRows = eligibleRankings.length > 0 ? eligibleRankings : rankings;
   const avgScore = baselineRows.reduce((sum, item) => sum + item.score, 0) / Math.max(1, baselineRows.length);
-  const updates = [];
+  const updates: WriterFeedback[] = [];
 
   for (const writer of rankings) {
     const feedbackEligible = writer.posts >= MIN_WRITER_POSTS_FOR_FEEDBACK;
@@ -186,7 +259,7 @@ async function applyWriterFeedback(rankings, { dryRun = false } = {}) {
   return updates;
 }
 
-async function sendReport(rows, rankings, categoryRankings, { dryRun = false } = {}) {
+async function sendReport(rows: BlogPerformanceRow[], rankings: WriterFeedback[], categoryRankings: CategoryRanking[], { dryRun = false } = {}) {
   const lines = [
     `📊 블로팀 성과 피드백 (${rows.length}건 분석)`,
     '',
@@ -287,7 +360,7 @@ async function main() {
     }).catch(() => {});
   }
 
-  const payload = {
+  const payload: PerformancePayload = {
     ok: true,
     analyzedPosts: rows.length,
     writers: applied.length,
@@ -296,10 +369,7 @@ async function main() {
     reportSent: args.dryRun ? false : reportResult?.ok === true,
     dryRun: args.dryRun,
   };
-  /** @type {any} */
-  const typedPayload = payload;
-  // @ts-ignore payload is intentionally extended with aiSummary at runtime
-  typedPayload.aiSummary = await buildBlogCliInsight({
+  payload.aiSummary = await buildBlogCliInsight({
     bot: 'analyze-blog-performance',
     requestType: 'performance-analysis',
     title: '블로그 성과 분석 결과',
@@ -321,8 +391,7 @@ async function main() {
   }
 
   console.log(`✅ 블로팀 성과 피드백 완료: ${rows.length}건, 작가 ${applied.length}명`);
-  // @ts-ignore payload is intentionally extended with aiSummary at runtime
-  console.log(`🔍 AI: ${typedPayload.aiSummary}`);
+  console.log(`🔍 AI: ${payload.aiSummary}`);
   applied.forEach((item) => {
     console.log(`- ${item.name}: avgViews=${item.avgViews} avgLikes=${item.avgLikes} avgComments=${item.avgComments} adjustment=${item.adjustment > 0 ? '+' : ''}${item.adjustment}`);
   });
