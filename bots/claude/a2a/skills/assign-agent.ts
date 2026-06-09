@@ -11,9 +11,16 @@ import {
   normalizeTicket,
 } from './symphony-common.ts';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const { buildSymphonyWorkspacePlan } = require('../../lib/symphony/workspace-adapter.ts');
 const { buildSymphonyRunnerPlan } = require('../../lib/symphony/runner-adapter.ts');
+
+type AssignPatchPayload = {
+  status: string;
+  assignee: unknown;
+  workspace_id?: unknown;
+  metadata: Record<string, unknown>;
+};
 
 function symphonyTaskFromHubTask(task: Record<string, unknown>, dispatch: Record<string, unknown>): Record<string, unknown> {
   const metadata = asObject(task.metadata);
@@ -49,7 +56,7 @@ export async function runAssignAgent(params: unknown): Promise<A2ATaskResult> {
   const workspace = buildSymphonyWorkspacePlan(symphonyTask);
   const runner = buildSymphonyRunnerPlan(symphonyTask);
   const shouldClaim = p.claim === true;
-  const patchPayload = {
+  const patchPayload: AssignPatchPayload = {
     status: 'in_progress',
     assignee: dispatch.agent,
     metadata: {

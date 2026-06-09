@@ -3,7 +3,7 @@ import { registerSkillHandler } from '../handlers/task-handler.ts';
 import type { A2ATaskResult } from '../types.ts';
 import { buildSafety, completed } from './symphony-common.ts';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const { buildSymphonyValidationPlan } = require('../../lib/symphony/validation-adapter.ts');
 
 function passValue(value: unknown): boolean {

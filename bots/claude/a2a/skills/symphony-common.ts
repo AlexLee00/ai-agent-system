@@ -232,12 +232,19 @@ export function buildDispatchPlan(ticketInput: unknown): Record<string, unknown>
   };
 }
 
+type HubJsonOptions = {
+  method?: string;
+  body?: unknown;
+  hubUrl?: string;
+  timeoutMs?: number;
+};
+
 export async function hubJson(path: string, {
   method = 'GET',
   body = undefined,
   hubUrl = process.env.HUB_URL || 'http://localhost:7788',
   timeoutMs = 2000,
-} = {}): Promise<Record<string, unknown>> {
+}: HubJsonOptions = {}): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

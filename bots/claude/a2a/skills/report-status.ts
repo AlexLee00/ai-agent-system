@@ -18,7 +18,7 @@ export async function runReportStatus(params: unknown): Promise<A2ATaskResult> {
   const toStatus = String(p.status || p.toStatus || '');
   const allowed = fromStatus ? (ALLOWED_TRANSITIONS[fromStatus] || []) : [];
   const transitionAllowed = !fromStatus || allowed.includes(toStatus);
-  const patchPayload = {
+  const patchPayload: Record<string, unknown> = {
     status: toStatus || undefined,
     assignee: p.assignee,
     workspace_id: p.workspace_id || p.workspaceId,
