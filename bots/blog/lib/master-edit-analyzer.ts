@@ -22,6 +22,26 @@ const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'blog');
 
+async function ensureMasterEditAnalysisTable() {
+  await pgPool.query('blog', `
+    CREATE TABLE IF NOT EXISTS blog.master_edit_analysis (
+      id              SERIAL PRIMARY KEY,
+      post_id         INTEGER NOT NULL,
+      analyzed_at     TIMESTAMPTZ DEFAULT NOW(),
+      title_changed   BOOLEAN,
+      title_sim       NUMERIC(4,2),
+      added_ratio     NUMERIC(4,2),
+      removed_ratio   NUMERIC(4,2),
+      change_rate     NUMERIC(4,2),
+      primary_type    TEXT,
+      sub_types       TEXT[],
+      pattern_summary TEXT,
+      preference_rule TEXT,
+      raw_diff        JSONB
+    )
+  `);
+}
+
 // ─────────────────────────── Phase 1: 발행 검출 ──────────────────────────────
 
 /**
@@ -32,13 +52,16 @@ async function detectPublishedDrafts(options = {}) {
   const days = options.days || 2;
   try {
     const cutoff = kst.daysAgoStr(days);
+    await ensureMasterEditAnalysisTable().catch((err) => {
+      console.log('[master-edit-analyzer] 분석 테이블 준비 실패:', err.message);
+    });
     // master_edit_analysis 테이블과 LEFT JOIN으로 미분석 포스팅만 조회
     // 테이블이 없어도 오류 없이 전체 조회로 폴백
     let rows;
     try {
       rows = await pgPool.query(
         'blog',
-        `SELECT p.id, p.title, p.content, p.category, p.type, p.naver_url, p.status, p.publish_date
+        `SELECT p.id, p.title, p.content, p.category, p.post_type AS type, p.naver_url, p.status, p.publish_date
          FROM blog.posts p
          LEFT JOIN blog.master_edit_analysis mea ON mea.post_id = p.id
          WHERE p.status = 'published'
@@ -53,7 +76,7 @@ async function detectPublishedDrafts(options = {}) {
       // master_edit_analysis 테이블 미존재 시 폴백
       rows = await pgPool.query(
         'blog',
-        `SELECT id, title, content, category, type, naver_url, status, publish_date
+        `SELECT id, title, content, category, post_type AS type, naver_url, status, publish_date
          FROM blog.posts
          WHERE status = 'published'
            AND naver_url IS NOT NULL
@@ -191,24 +214,7 @@ async function classifyEditPattern(originalTitle, modifiedTitle, wordDiff) {
  */
 async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern) {
   try {
-    // 테이블 없으면 생성
-    await pgPool.query('blog', `
-      CREATE TABLE IF NOT EXISTS blog.master_edit_analysis (
-        id            SERIAL PRIMARY KEY,
-        post_id       INTEGER NOT NULL,
-        analyzed_at   TIMESTAMPTZ DEFAULT NOW(),
-        title_changed BOOLEAN,
-        title_sim     NUMERIC(4,2),
-        added_ratio   NUMERIC(4,2),
-        removed_ratio NUMERIC(4,2),
-        change_rate   NUMERIC(4,2),
-        primary_type  TEXT,
-        sub_types     TEXT[],
-        pattern_summary TEXT,
-        preference_rule TEXT,
-        raw_diff      JSONB
-      )
-    `);
+    await ensureMasterEditAnalysisTable();
 
     await pgPool.query(
       'blog',
@@ -253,6 +259,7 @@ async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern) {
 async function buildMasterStyleProfile(options = {}) {
   const limit = options.limit || 100;
   try {
+    await ensureMasterEditAnalysisTable();
     const rows = await pgPool.query(
       'blog',
       `SELECT primary_type, preference_rule, title_changed, change_rate
@@ -367,6 +374,7 @@ async function runDailyMasterEditAnalysis(options = {}) {
 }
 
 module.exports = {
+  ensureMasterEditAnalysisTable,
   detectPublishedDrafts,
   computeWordDiff,
   computeTitleDiff,
