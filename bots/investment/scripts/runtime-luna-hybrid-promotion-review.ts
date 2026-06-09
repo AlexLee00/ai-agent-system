@@ -15,10 +15,12 @@ type PromotionReviewOptions = {
   hours: number;
 };
 type PromotionReviewDeps = {
-  queryFn?: unknown;
+  queryFn?: (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
   investmentRoot?: string;
   projectRoot?: string;
 };
+
+type PromotionReviewQueryFn = (sql: string, params?: unknown[]) => Promise<unknown> | unknown;
 
 function argValue(name: string, fallback: string | number | null = null, argv: string[] = process.argv.slice(2)) {
   const prefix = `--${name}=`;
@@ -55,7 +57,7 @@ export async function runLunaHybridPromotionReview(options: PromotionReviewOptio
     };
   }
 
-  const queryFn = options.noDb ? null : deps.queryFn || defaultQuery;
+  const queryFn = options.noDb ? undefined : deps.queryFn || (defaultQuery as PromotionReviewQueryFn);
   return buildLunaHybridPromotionReviewReport({
     queryFn,
     dataRequired: !options.noDb,
