@@ -10,6 +10,28 @@ import {
 import { runLunaRlPolicyShadow } from './runtime-luna-rl-policy-shadow.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+type Bar = {
+  close: number;
+  high: number;
+  low: number;
+  volume: number;
+};
+
+type FakeInsert = {
+  sql: string;
+  params: unknown[];
+};
+
+type FakeDeps = {
+  inserts: FakeInsert[];
+  schemaInits: string[];
+  initSchema: () => Promise<{ ok: boolean }>;
+  listActiveEntryTriggers: (args: { exchange?: string }) => Promise<Array<{ symbol: string; trigger_state: string }>>;
+  fetchBars: (symbol: string) => Promise<Bar[]>;
+  query: (sql: string) => Promise<Array<Record<string, unknown>>>;
+  run: (sql: string, params: unknown[]) => Promise<{ rowCount: number }>;
+};
+
 function fixtureBars(start = 100, drift = 1, count = 40) {
   return Array.from({ length: count }, (_, index) => {
     const close = start + index * drift + Math.sin(index / 4) * 1.5;
@@ -22,9 +44,9 @@ function fixtureBars(start = 100, drift = 1, count = 40) {
   });
 }
 
-function fakeDeps({ existingShadow = false } = {}) {
-  const inserts = [];
-  const schemaInits = [];
+function fakeDeps({ existingShadow = false } = {}): FakeDeps {
+  const inserts: FakeInsert[] = [];
+  const schemaInits: string[] = [];
   return {
     inserts,
     schemaInits,
@@ -36,14 +58,14 @@ function fakeDeps({ existingShadow = false } = {}) {
       if (args.exchange !== 'binance') return [];
       return [{ symbol: 'BTC/USDT', trigger_state: 'armed' }];
     },
-    fetchBars: async (symbol) => {
+    fetchBars: async (symbol: string) => {
       if (symbol.includes('ETH')) return fixtureBars(60, 0.45);
       if (symbol.includes('SOL')) return fixtureBars(30, 0.18);
       if (/^\d{6}$/.test(symbol)) return fixtureBars(100, 0.32);
       if (/^[A-Z]{1,5}$/.test(symbol)) return fixtureBars(150, 0.55);
       return fixtureBars(100, 0.8);
     },
-    query: async (sql) => {
+    query: async (sql: string) => {
       if (sql.includes('luna_rl_policy_shadow') && existingShadow) {
         return [{
           symbol: 'BTC/USDT',
@@ -126,7 +148,7 @@ function fakeDeps({ existingShadow = false } = {}) {
       }
       return [];
     },
-    run: async (sql, params) => {
+    run: async (sql: string, params: unknown[]) => {
       inserts.push({ sql, params });
       return { rowCount: 1 };
     },
@@ -184,6 +206,7 @@ export async function runLunaRlPolicySmoke() {
   const planned = await runLunaRlPolicyShadow({
     apply: false,
     force: false,
+    json: false,
     confirm: '',
     exchanges: ['binance'],
     symbol: null,
@@ -194,11 +217,13 @@ export async function runLunaRlPolicySmoke() {
     maxInferenceCalls: 0,
   }, dryDeps);
   assert.equal(planned.status, 'luna_rl_policy_shadow_planned');
+  assert.ok(planned.summary);
   assert.equal(planned.summary.liveMutation, false);
   assert.equal(planned.summary.externalInferenceCalls, 0);
   assert.equal(dryDeps.inserts.length, 0);
   assert.equal(dryDeps.schemaInits.length, 0);
   const btcRuntimeRow = planned.rows.find((row) => row.symbol === 'BTC/USDT');
+  assert.ok(btcRuntimeRow);
   assert.equal(btcRuntimeRow.evidence.regimeSource, 'investment.luna_regime_llm_shadow');
   assert.equal(btcRuntimeRow.evidence.entrySource, 'investment.luna_entry_llm_shadow');
   assert.equal(btcRuntimeRow.evidence.factorSource, 'investment.luna_factor_model_shadow');
@@ -209,6 +234,7 @@ export async function runLunaRlPolicySmoke() {
   const written = await runLunaRlPolicyShadow({
     apply: true,
     force: false,
+    json: false,
     confirm: 'luna-rl-policy-shadow',
     exchanges: ['binance'],
     symbol: 'BTC/USDT',
@@ -219,14 +245,16 @@ export async function runLunaRlPolicySmoke() {
     maxInferenceCalls: 0,
   }, applyDeps);
   assert.equal(written.status, 'luna_rl_policy_shadow_written');
+  assert.ok(written.summary);
   assert.equal(written.summary.written, 1);
   assert.equal(applyDeps.schemaInits.length, 1);
-  assert.equal(JSON.parse(applyDeps.inserts[0].params[3]).values.length, 12);
+  assert.equal(JSON.parse(String(applyDeps.inserts[0].params[3])).values.length, 12);
 
   const cachedDeps = fakeDeps({ existingShadow: true });
   const cached = await runLunaRlPolicyShadow({
     apply: false,
     force: false,
+    json: false,
     confirm: '',
     exchanges: ['binance'],
     symbol: 'BTC/USDT',
@@ -237,6 +265,7 @@ export async function runLunaRlPolicySmoke() {
     maxInferenceCalls: 0,
   }, cachedDeps);
   assert.equal(cached.status, 'luna_rl_policy_shadow_cached');
+  assert.ok(cached.summary);
   assert.equal(cached.summary.cached, 1);
 
   return {
@@ -255,7 +284,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as (opts: { run: () => Promise<void>; errorPrefix?: string }) => Promise<void>)({
     run: main,
     errorPrefix: 'luna rl policy smoke failed:',
   });
