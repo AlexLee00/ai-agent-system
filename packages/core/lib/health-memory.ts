@@ -2,7 +2,17 @@
 
 const { createAgentMemory } = require('./agent-memory');
 
-function createHealthMemoryHelper(opts = {}) {
+type HealthMemoryOptions = {
+  agentId?: string;
+  team?: string;
+  domain?: string;
+};
+
+type HealthEventKind = 'issue' | 'recovery' | string;
+
+type HealthEventMetadata = Record<string, unknown> | null;
+
+function createHealthMemoryHelper(opts: HealthMemoryOptions = {}) {
   const agentId = String(opts.agentId || '').trim();
   const team = String(opts.team || '').trim();
   const domain = String(opts.domain || '').trim();
@@ -12,7 +22,7 @@ function createHealthMemoryHelper(opts = {}) {
 
   const healthMemory = createAgentMemory({ agentId, team });
 
-  function buildMemoryQuery(key, msg) {
+  function buildMemoryQuery(key: string, msg: string): string {
     const lines = String(msg || '')
       .split('\n')
       .map((line) => String(line || '').trim())
@@ -22,7 +32,13 @@ function createHealthMemoryHelper(opts = {}) {
     return [String(key || ''), headline, detail, domain].filter(Boolean).join(' ');
   }
 
-  async function rememberHealthEvent(key, kind, msg, level = 1, metadata = null) {
+  async function rememberHealthEvent(
+    key: string,
+    kind: HealthEventKind,
+    msg: string,
+    level = 1,
+    metadata: HealthEventMetadata = null,
+  ): Promise<void> {
     try {
       await healthMemory.remember(String(msg || ''), 'episodic', {
         importance: kind === 'issue' ? 0.76 : 0.62,
@@ -43,7 +59,7 @@ function createHealthMemoryHelper(opts = {}) {
     }
   }
 
-  async function buildIssueHints(key, msg) {
+  async function buildIssueHints(key: string, msg: string): Promise<string> {
     const query = buildMemoryQuery(key, msg);
     const episodicHint = await healthMemory.recallCountHint(query, {
       type: 'episodic',

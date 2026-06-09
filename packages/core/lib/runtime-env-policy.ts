@@ -30,11 +30,29 @@ const BLOCKED_KEY_FRAGMENTS = [
   'TOKEN',
 ];
 
-function normalizeEnvKey(key) {
+type RuntimeEnvPatch = Record<string, unknown>;
+
+type RuntimeEnvPolicyOptions = {
+  source?: string;
+};
+
+type BlockedRuntimeEnvKey = {
+  key: string;
+  source: string;
+  reason: 'runtime_env_control_blocked';
+};
+
+type FilteredRuntimeEnvPatch = {
+  env: Record<string, string>;
+  allowed: Record<string, string>;
+  blocked: BlockedRuntimeEnvKey[];
+};
+
+function normalizeEnvKey(key: unknown): string {
   return String(key || '').trim().toUpperCase();
 }
 
-function isBlockedRuntimeEnvKey(key) {
+function isBlockedRuntimeEnvKey(key: unknown): boolean {
   const normalized = normalizeEnvKey(key);
   if (!normalized) return false;
   if (BLOCKED_EXACT.has(normalized)) return true;
@@ -42,10 +60,13 @@ function isBlockedRuntimeEnvKey(key) {
   return BLOCKED_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
-function filterUntrustedEnvPatch(patch = {}, options = {}) {
+function filterUntrustedEnvPatch(
+  patch: RuntimeEnvPatch = {},
+  options: RuntimeEnvPolicyOptions = {},
+): FilteredRuntimeEnvPatch {
   const source = String(options.source || 'untrusted').trim() || 'untrusted';
-  const allowed = {};
-  const blocked = [];
+  const allowed: Record<string, string> = {};
+  const blocked: BlockedRuntimeEnvKey[] = [];
   if (!patch || typeof patch !== 'object') {
     return { env: allowed, allowed, blocked };
   }
@@ -64,7 +85,11 @@ function filterUntrustedEnvPatch(patch = {}, options = {}) {
   return { env: allowed, allowed, blocked };
 }
 
-function mergeTrustedEnvWithUntrustedPatch(baseEnv = process.env, patch = {}, options = {}) {
+function mergeTrustedEnvWithUntrustedPatch(
+  baseEnv: NodeJS.ProcessEnv = process.env,
+  patch: RuntimeEnvPatch = {},
+  options: RuntimeEnvPolicyOptions = {},
+) {
   const filtered = filterUntrustedEnvPatch(patch, options);
   return {
     env: {
@@ -85,4 +110,3 @@ module.exports = {
   mergeTrustedEnvWithUntrustedPatch,
   normalizeEnvKey,
 };
-

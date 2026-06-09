@@ -1,15 +1,17 @@
 'use strict';
 
-function normalizeText(value, fallback = '') {
+type PgRoleMapping = ReturnType<typeof resolvePgRoleMapping>;
+
+function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function isEnabled(value) {
+function isEnabled(value: unknown): boolean {
   return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
-function resolvePgRoleMapping(env = process.env) {
+function resolvePgRoleMapping(env: NodeJS.ProcessEnv = process.env) {
   const pgDirect = isEnabled(env.PG_DIRECT);
   const hubReadonlyConfigured = Boolean(env.HUB_BASE_URL && env.HUB_PG_USER);
   const directUser = normalizeText(env.PG_USER, 'os_user');
@@ -42,8 +44,8 @@ function resolvePgRoleMapping(env = process.env) {
   };
 }
 
-function validatePgRoleMapping(mapping = resolvePgRoleMapping()) {
-  const warnings = [];
+function validatePgRoleMapping(mapping: PgRoleMapping = resolvePgRoleMapping()) {
+  const warnings: string[] = [];
   if (mapping.mode === 'direct_default') {
     warnings.push('hub_readonly_not_configured_using_direct_default');
   }

@@ -1,4 +1,13 @@
-function isSensitiveCredentialKey(rawKey) {
+type RedactableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | RedactableValue[]
+  | { [key: string]: RedactableValue };
+
+function isSensitiveCredentialKey(rawKey: unknown): boolean {
   const key = String(rawKey || '').trim();
   if (!key) return false;
   const lower = key.toLowerCase();
@@ -14,7 +23,7 @@ function isSensitiveCredentialKey(rawKey) {
   return false;
 }
 
-function redactString(value) {
+function redactString(value: unknown): string {
   const text = String(value || '');
   if (!text) return '';
   if (text.length <= 6) return '***';
@@ -23,13 +32,13 @@ function redactString(value) {
   return `${prefix}...${suffix}`;
 }
 
-function redactLeafValue(value) {
+function redactLeafValue(value: RedactableValue): RedactableValue {
   if (typeof value === 'string') return redactString(value);
   if (value == null) return value;
   return '[redacted]';
 }
 
-function redactOAuthSecrets(value, forceRedact = false) {
+function redactOAuthSecrets(value: RedactableValue, forceRedact = false): RedactableValue {
   if (value == null) return value;
   if (Array.isArray(value)) {
     if (forceRedact) return value.map((item) => redactLeafValue(item));
@@ -39,7 +48,7 @@ function redactOAuthSecrets(value, forceRedact = false) {
     return forceRedact ? redactLeafValue(value) : value;
   }
 
-  const output = {};
+  const output: Record<string, RedactableValue> = {};
   for (const [key, raw] of Object.entries(value)) {
     const shouldRedact = forceRedact || isSensitiveCredentialKey(key);
     if (shouldRedact) {
@@ -53,7 +62,7 @@ function redactOAuthSecrets(value, forceRedact = false) {
   return output;
 }
 
-function sanitizeOAuthStatusPayload(payload) {
+function sanitizeOAuthStatusPayload(payload: RedactableValue): RedactableValue {
   if (!payload || typeof payload !== 'object') return payload;
   const cloned = JSON.parse(JSON.stringify(payload));
   return redactOAuthSecrets(cloned, false);

@@ -4,18 +4,23 @@ const { execFile } = require('node:child_process');
 // ─── LLM 동시성 제한 세마포어 (32GB 메모리 가드, Step 4) ─────────────────
 const LLM_MAX_CONCURRENT = Number(process.env.LLM_MAX_CONCURRENT || 2);
 
-function makeSemaphore(max) {
-  let count = 0;
-  const queue = [];
+type Semaphore = {
+  acquire: () => Promise<void>;
+  release: () => void;
+};
 
-  function acquire() {
+function makeSemaphore(max: number): Semaphore {
+  let count = 0;
+  const queue: Array<() => void> = [];
+
+  function acquire(): Promise<void> {
     if (count < max) { count++; return Promise.resolve(); }
     return new Promise<void>((resolve) => {
       queue.push(() => { count++; resolve(); });
     });
   }
 
-  function release() {
+  function release(): void {
     count--;
     const next = queue.shift();
     if (next) next();

@@ -18,24 +18,74 @@ const DEFAULT_TRUSTED_EVENT_TYPES = new Set([
   'response.incomplete',
 ]);
 
-function safeString(value, fallback = '') {
+type SseEvent = Record<string, unknown>;
+
+type SseReadableInput = {
+  body?: ReadableStream<Uint8Array> | null;
+  getReader?: ReadableStream<Uint8Array>['getReader'];
+} | ReadableStream<Uint8Array> | null | undefined;
+
+type SseGuardOptions = {
+  source?: string;
+  maxEventBytes?: number;
+  maxTotalBytes?: number;
+  maxMalformedEvents?: number;
+  trustedTypes?: Iterable<unknown> | null;
+};
+
+type UntrustedEventSummary = {
+  index: number;
+  type: string;
+};
+
+type SseSummary = {
+  source: string;
+  events: number;
+  malformed_fragments: number;
+  oversized_fragments: number;
+  untrusted_events: UntrustedEventSummary[];
+  bytes_read: number;
+};
+
+type SseSummaryInput = {
+  source: string;
+  events: SseEvent[];
+  malformedFragments: number;
+  oversizedFragments: number;
+  untrustedEvents: UntrustedEventSummary[];
+  bytesRead: number;
+};
+
+type ParsedSseEvents = {
+  events: SseEvent[];
+  summary: SseSummary;
+};
+
+function safeString(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function getReadableBody(input) {
+function getReadableBody(input: SseReadableInput): ReadableStream<Uint8Array> | null {
   if (!input) return null;
-  if (input.body && typeof input.body.getReader === 'function') return input.body;
-  if (typeof input.getReader === 'function') return input;
+  if ('body' in input && input.body && typeof input.body.getReader === 'function') return input.body;
+  if ('getReader' in input && typeof input.getReader === 'function') return input as ReadableStream<Uint8Array>;
   return null;
 }
 
-function normalizeTrustedTypes(value) {
+function normalizeTrustedTypes(value: Iterable<unknown> | null | undefined): Set<string> {
   if (!value) return DEFAULT_TRUSTED_EVENT_TYPES;
   return new Set(Array.from(value).map((item) => safeString(item)).filter(Boolean));
 }
 
-function buildSummary({ source, events, malformedFragments, oversizedFragments, untrustedEvents, bytesRead }) {
+function buildSummary({
+  source,
+  events,
+  malformedFragments,
+  oversizedFragments,
+  untrustedEvents,
+  bytesRead,
+}: SseSummaryInput): SseSummary {
   return {
     source,
     events: events.length,
@@ -46,15 +96,15 @@ function buildSummary({ source, events, malformedFragments, oversizedFragments, 
   };
 }
 
-async function parseSseJsonEvents(input, options = {}) {
+async function parseSseJsonEvents(input: SseReadableInput, options: SseGuardOptions = {}): Promise<ParsedSseEvents> {
   const source = safeString(options.source, 'sse');
   const body = getReadableBody(input);
   const maxEventBytes = Math.max(1024, Number(options.maxEventBytes || DEFAULT_MAX_EVENT_BYTES));
   const maxTotalBytes = Math.max(maxEventBytes, Number(options.maxTotalBytes || DEFAULT_MAX_TOTAL_BYTES));
   const maxMalformedEvents = Math.max(1, Number(options.maxMalformedEvents || DEFAULT_MAX_MALFORMED_EVENTS));
   const trustedTypes = normalizeTrustedTypes(options.trustedTypes);
-  const events = [];
-  const untrustedEvents = [];
+  const events: SseEvent[] = [];
+  const untrustedEvents: UntrustedEventSummary[] = [];
   let malformedFragments = 0;
   let oversizedFragments = 0;
   let bytesRead = 0;
@@ -97,7 +147,7 @@ async function parseSseJsonEvents(input, options = {}) {
           .trim();
         if (data && data !== '[DONE]') {
           try {
-            const event = JSON.parse(data);
+            const event = JSON.parse(data) as SseEvent;
             const type = safeString(event?.type, 'unknown');
             if (!trustedTypes.has(type)) {
               untrustedEvents.push({ index: events.length, type });
@@ -127,12 +177,12 @@ async function parseSseJsonEvents(input, options = {}) {
   };
 }
 
-async function readSseJsonEvents(input, options = {}) {
+async function readSseJsonEvents(input: SseReadableInput, options: SseGuardOptions = {}): Promise<SseEvent[]> {
   const parsed = await parseSseJsonEvents(input, options);
   return parsed.events;
 }
 
-function summarizeSseGuard(summary) {
+function summarizeSseGuard(summary: Partial<SseSummary> | null | undefined): string {
   if (!summary || typeof summary !== 'object') return '';
   return [
     `source=${safeString(summary.source, 'sse')}`,
@@ -149,4 +199,3 @@ module.exports = {
   readSseJsonEvents,
   summarizeSseGuard,
 };
-

@@ -7,8 +7,17 @@ const env = require('./env');
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function parseInstagramAuthError(error) {
-  const message = String(error?.message || error || '');
+type InstagramAuthErrorInfo = {
+  code: string;
+  note: string;
+};
+
+function parseInstagramAuthError(error: unknown): InstagramAuthErrorInfo {
+  const message = String(
+    error && typeof error === 'object' && 'message' in error
+      ? error.message
+      : error || '',
+  );
   const lower = message.toLowerCase();
   if (lower.includes('session has expired') || lower.includes('"error_subcode":463')) {
     return {
@@ -49,7 +58,7 @@ function readStoreInstagramConfig() {
   }
 }
 
-function parseExpiry(value) {
+function parseExpiry(value: unknown): number | null {
   if (!value) return null;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const date = new Date(String(value));
