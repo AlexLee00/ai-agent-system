@@ -13,13 +13,40 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 const CONFIRM_TOKEN = 'luna-factor-model-shadow';
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
 
-function argValue(name, fallback = null, argv = process.argv.slice(2)) {
+type AnyRecord = Record<string, any>;
+type FactorOptions = {
+  apply: boolean;
+  force: boolean;
+  json: boolean;
+  confirm: string | null;
+  exchanges: string[];
+  symbol: string | null;
+  limit: number;
+  hours: number;
+  ttlMinutes: number;
+  lookbackDays: number;
+};
+type RuntimeDeps = {
+  query?: (sql: string, params?: any[]) => Promise<any[]> | any[];
+  run?: (sql: string, params?: any[]) => Promise<any> | any;
+  initSchema?: () => Promise<any> | any;
+  fetchMarketFactorContext?: (candidate: AnyRecord, options?: AnyRecord) => Promise<AnyRecord> | AnyRecord;
+  listActiveEntryTriggers?: (options: AnyRecord) => Promise<AnyRecord[]> | AnyRecord[];
+};
+type CandidateOptions = {
+  exchange: string;
+  symbol: string | null;
+  limit: number;
+  hours: number;
+};
+
+function argValue(name: string, fallback: string | number | null = null, argv = process.argv.slice(2)): string | null {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
+  return found ? found.slice(prefix.length) : fallback == null ? null : String(fallback);
 }
 
-function parseList(value, fallback = []) {
+function parseList(value: unknown, fallback: string[] = []): string[] {
   const list = String(value || '')
     .split(',')
     .map((item) => item.trim())
@@ -28,7 +55,7 @@ function parseList(value, fallback = []) {
   return list.length ? list : fallback;
 }
 
-function normalizeExchange(value) {
+function normalizeExchange(value: unknown): string {
   const raw = String(value || 'binance').trim().toLowerCase();
   if (raw === 'crypto') return 'binance';
   if (raw === 'domestic') return 'kis';
@@ -36,7 +63,7 @@ function normalizeExchange(value) {
   return VALID_EXCHANGES.has(raw) ? raw : 'binance';
 }
 
-function parseArgs(argv = process.argv.slice(2)) {
+function parseArgs(argv = process.argv.slice(2)): FactorOptions {
   const rawExchanges = argValue('exchanges', argValue('exchange', 'binance,kis,kis_overseas', argv), argv);
   return {
     apply: argv.includes('--apply'),
@@ -52,13 +79,13 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function freshEnough(row, ttlMinutes, force = false) {
+function freshEnough(row: AnyRecord | null, ttlMinutes: number, force = false): boolean {
   if (force || !row?.observed_at) return false;
   const ageMs = Date.now() - new Date(row.observed_at).getTime();
   return ageMs >= 0 && ageMs < ttlMinutes * 60 * 1000;
 }
 
-function parseObject(value, fallback = {}) {
+function parseObject(value: unknown, fallback: AnyRecord = {}): AnyRecord {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
   try {
@@ -68,11 +95,11 @@ function parseObject(value, fallback = {}) {
   }
 }
 
-function binanceSymbol(symbol = '') {
+function binanceSymbol(symbol = ''): string {
   return String(symbol || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
 
-async function fetchJson(url, timeoutMs = 5000) {
+async function fetchJson(url: string, timeoutMs = 5000): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -84,7 +111,7 @@ async function fetchJson(url, timeoutMs = 5000) {
   }
 }
 
-async function fetchMarketFactorContext(candidate = {}, { lookbackDays = 60 } = {}) {
+async function fetchMarketFactorContext(candidate: AnyRecord = {}, { lookbackDays = 60 }: AnyRecord = {}): Promise<AnyRecord> {
   if (candidate.exchange !== 'binance') return candidate;
   const symbol = binanceSymbol(candidate.symbol);
   if (!symbol) return candidate;
@@ -113,7 +140,10 @@ async function fetchMarketFactorContext(candidate = {}, { lookbackDays = 60 } = 
   };
 }
 
-async function latestFactorShadow(queryFn, { symbol, exchange, ttlMinutes, force }) {
+async function latestFactorShadow(
+  queryFn: NonNullable<RuntimeDeps['query']>,
+  { symbol, exchange, ttlMinutes, force }: { symbol: string; exchange: string; ttlMinutes: number; force: boolean },
+) {
   if (!symbol || !exchange) return null;
   const rows = await Promise.resolve(queryFn(
     `SELECT *
@@ -128,7 +158,7 @@ async function latestFactorShadow(queryFn, { symbol, exchange, ttlMinutes, force
   return freshEnough(row, ttlMinutes, force) ? normalizeFactorShadowRow(row) : null;
 }
 
-async function latestRegime(queryFn, market) {
+async function latestRegime(queryFn: NonNullable<RuntimeDeps['query']>, market: string): Promise<AnyRecord> {
   const rows = await Promise.resolve(queryFn(
     `SELECT market, regime, confidence, indicators, captured_at
        FROM investment.market_regime_snapshots
@@ -147,7 +177,7 @@ async function latestRegime(queryFn, market) {
   } : { market, regime: null, regimeConfidence: null, indicators: {}, capturedAt: null };
 }
 
-function candidateFromTrigger(trigger = {}, exchange = 'binance') {
+function candidateFromTrigger(trigger: AnyRecord = {}, exchange = 'binance'): AnyRecord {
   const triggerContext = parseObject(trigger.trigger_context, trigger.trigger_context || {});
   const triggerMeta = parseObject(trigger.trigger_meta, trigger.trigger_meta || {});
   const blockMeta = parseObject(trigger.block_meta, trigger.block_meta || triggerMeta || {});
@@ -169,8 +199,8 @@ function candidateFromTrigger(trigger = {}, exchange = 'binance') {
   };
 }
 
-async function fetchCandidates({ exchange, symbol, limit, hours }, deps) {
-  const listFn = deps.listActiveEntryTriggers || listActiveEntryTriggers;
+async function fetchCandidates({ exchange, symbol, limit, hours }: CandidateOptions, deps: RuntimeDeps): Promise<AnyRecord[]> {
+  const listFn = (deps.listActiveEntryTriggers || listActiveEntryTriggers) as (options: AnyRecord) => Promise<AnyRecord[]> | AnyRecord[];
   const since = new Date(Date.now() - Math.max(1, Number(hours || 24)) * 60 * 60 * 1000).toISOString();
   const rows = await Promise.resolve(listFn({
     exchange,
@@ -183,7 +213,7 @@ async function fetchCandidates({ exchange, symbol, limit, hours }, deps) {
   return (Array.isArray(rows) ? rows : []).map((row) => candidateFromTrigger(row, exchange));
 }
 
-async function insertFactorShadow(runFn, payload) {
+async function insertFactorShadow(runFn: NonNullable<RuntimeDeps['run']>, payload: AnyRecord) {
   await Promise.resolve(runFn(
     `INSERT INTO investment.luna_factor_model_shadow
        (symbol, exchange, market, factor_scores, composite_score, rank, allocation_hint, data_health, context_evidence, shadow_only)
@@ -203,8 +233,8 @@ async function insertFactorShadow(runFn, payload) {
   ));
 }
 
-async function analyzeExchange(exchange, options, deps, marketContext) {
-  const queryFn = deps.query || db.query;
+async function analyzeExchange(exchange: string, options: FactorOptions, deps: RuntimeDeps, marketContext: AnyRecord): Promise<AnyRecord[]> {
+  const queryFn = (deps.query || db.query) as NonNullable<RuntimeDeps['query']>;
   const marketFactorContextFn = deps.fetchMarketFactorContext || fetchMarketFactorContext;
   const candidates = await fetchCandidates({
     exchange,
@@ -212,7 +242,7 @@ async function analyzeExchange(exchange, options, deps, marketContext) {
     limit: options.limit,
     hours: options.hours,
   }, deps);
-  const rows = [];
+  const rows: AnyRecord[] = [];
   for (const candidate of candidates) {
     const existing = await latestFactorShadow(queryFn, {
       symbol: candidate.symbol,
@@ -244,10 +274,10 @@ async function analyzeExchange(exchange, options, deps, marketContext) {
       written: false,
     });
   }
-  return rankFactorModelShadows(rows);
+  return (rankFactorModelShadows as unknown as (items: AnyRecord[]) => AnyRecord[])(rows);
 }
 
-export async function runLunaFactorModelShadow(options = parseArgs(), deps = {}) {
+export async function runLunaFactorModelShadow(options: FactorOptions = parseArgs(), deps: RuntimeDeps = {}) {
   if (process.env.LUNA_FACTOR_MODEL_SHADOW_ENABLED === 'false') {
     return {
       ok: true,
@@ -258,15 +288,15 @@ export async function runLunaFactorModelShadow(options = parseArgs(), deps = {})
     };
   }
 
-  const queryFn = deps.query || db.query;
-  const runFn = deps.run || db.run;
+  const queryFn = (deps.query || db.query) as NonNullable<RuntimeDeps['query']>;
+  const runFn = (deps.run || db.run) as NonNullable<RuntimeDeps['run']>;
   const initSchema = deps.initSchema || db.initSchema;
   const canWrite = options.apply && options.confirm === CONFIRM_TOKEN;
   if (canWrite && initSchema) {
     await Promise.resolve(initSchema()).catch(() => null);
   }
 
-  const rows = [];
+  const rows: AnyRecord[] = [];
   for (const exchange of options.exchanges) {
     const market = marketForFactorExchange(exchange);
     const regime = await latestRegime(queryFn, market);
@@ -324,7 +354,7 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  await (runCliMain as any)({
     run: main,
     errorPrefix: '❌ luna factor model shadow 오류:',
   });
