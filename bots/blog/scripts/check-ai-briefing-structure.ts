@@ -11,7 +11,25 @@ const {
 const DRAFT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/drafts');
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 
-function parseArgs(argv = []) {
+type BriefingArgs = {
+  json: boolean;
+  strict: boolean;
+  type: string;
+  file: string;
+  latest: boolean;
+};
+
+type CandidateFile = {
+  fullPath: string;
+  mtimeMs: number;
+};
+
+type QualityIssue = {
+  severity?: string;
+  msg?: string;
+};
+
+function parseArgs(argv: string[] = []): BriefingArgs {
   const args = {
     json: argv.includes('--json'),
     strict: argv.includes('--strict'),
@@ -29,7 +47,7 @@ function parseArgs(argv = []) {
   return args;
 }
 
-function safeReadDir(dirPath) {
+function safeReadDir(dirPath: string): string[] {
   try {
     return fs.readdirSync(dirPath);
   } catch {
@@ -37,11 +55,11 @@ function safeReadDir(dirPath) {
   }
 }
 
-function resolveLatestFile(args) {
+function resolveLatestFile(args: BriefingArgs) {
   if (args.file) return path.resolve(args.file);
 
   const dirs = [DRAFT_DIR, OUTPUT_DIR];
-  const candidates = [];
+  const candidates: CandidateFile[] = [];
   const typeFilter = args.type === 'lecture' || args.type === 'general' ? `_${args.type}_` : '';
 
   for (const dir of dirs) {
@@ -63,14 +81,14 @@ function resolveLatestFile(args) {
   return candidates[0]?.fullPath || '';
 }
 
-function inferType(filePath, explicitType) {
+function inferType(filePath: string, explicitType: string) {
   if (explicitType === 'lecture' || explicitType === 'general') return explicitType;
   const base = path.basename(filePath || '');
   if (/_lecture_/i.test(base)) return 'lecture';
   return 'general';
 }
 
-function stripHtml(content) {
+function stripHtml(content: unknown) {
   return String(content || '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -81,13 +99,13 @@ function stripHtml(content) {
     .trim();
 }
 
-function extractHtmlSectionTitles(content) {
+function extractHtmlSectionTitles(content: unknown) {
   return Array.from(String(content || '').matchAll(/<h2[^>]*class="section-title"[^>]*>([^<]+)<\/h2>/gi))
     .map((match) => String(match[1] || '').replace(/&amp;/gi, '&').replace(/&nbsp;/gi, ' ').trim())
     .filter(Boolean);
 }
 
-function loadContent(filePath) {
+function loadContent(filePath: string) {
   const raw = fs.readFileSync(filePath, 'utf8');
   return {
     raw,
@@ -95,13 +113,13 @@ function loadContent(filePath) {
   };
 }
 
-function countQuestionStyleFaq(content, raw = '') {
+function countQuestionStyleFaq(content: unknown, raw = '') {
   const textMatches = String(content || '').match(/(?:^|\n)\s*(?:\*\*)?Q[0-9]*[.):]|(?:^|\n)\s*Q\.\s|(?:^|\n)\s*질문\s*[0-9]*[.):]/gm);
   const rawMatches = String(raw || '').match(/(?:<p[^>]*>\s*(?:<strong>)?)\s*(?:Q[0-9]*[.):]|Q\.\s|질문\s*[0-9]*[.):])/gi);
   return Math.max(textMatches ? textMatches.length : 0, rawMatches ? rawMatches.length : 0);
 }
 
-function countAnsweredFaqPairs(content, raw = '') {
+function countAnsweredFaqPairs(content: unknown, raw = '') {
   const normalized = String(raw || content || '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/p>/gi, '\n')
@@ -121,10 +139,10 @@ function countAnsweredFaqPairs(content, raw = '') {
   return answered;
 }
 
-function buildBriefingSignals(content, type, raw = '') {
+function buildBriefingSignals(content: unknown, type: string, raw = '') {
   const text = String(content || '');
   const sectionTitles = extractHtmlSectionTitles(raw);
-  const hasSection = (label) => text.includes(label) || sectionTitles.includes(label);
+  const hasSection = (label: string) => text.includes(label) || sectionTitles.includes(label);
   return {
     hasSummary: type === 'lecture'
       ? /핵심 요약 3줄|핵심 요약/.test(text) || hasSection('핵심 요약 3줄')
@@ -152,7 +170,7 @@ async function main() {
   const briefing = buildBriefingSignals(content, type, loaded.raw);
   const quality = await checkQualityEnhanced(loaded.raw, type, {});
 
-  const briefingIssues = [];
+  const briefingIssues: string[] = [];
   if (!briefing.hasSummary) briefingIssues.push('summary_missing');
   if (!briefing.hasLearningPoints) briefingIssues.push('learning_points_missing');
   if (!briefing.hasQuestionFaq) briefingIssues.push('question_faq_missing');
@@ -172,7 +190,7 @@ async function main() {
       hashtagCount: quality.hashtagCount,
       aiRisk: quality.aiRisk,
       issueCount: Array.isArray(quality.issues) ? quality.issues.length : 0,
-      issues: (quality.issues || []).map((issue) => ({
+      issues: (quality.issues || []).map((issue: QualityIssue) => ({
         severity: issue.severity,
         msg: issue.msg,
       })),
@@ -196,7 +214,7 @@ async function main() {
   if (args.strict && (!payload.briefingPassed || !payload.quality.passed)) process.exit(2);
 }
 
-main().catch((error) => {
-  console.error('[briefing-check] 실패:', error?.message || error);
+main().catch((error: unknown) => {
+  console.error('[briefing-check] 실패:', error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
