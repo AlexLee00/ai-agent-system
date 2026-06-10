@@ -9,11 +9,11 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present --include-workspace-root=false",
     "build": "npm run build:ts && npm run build:hub-runtime",
     "build:ts": "node scripts/build-ts-phase1.mjs",
     "build:hub-runtime": "node scripts/build-hub-runtime.mjs",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present --include-workspace-root=false",
     "test:blog": "npm --prefix bots/blog run test",
     "test:smoke": "npm --prefix bots/blog run test:smoke",
     "test:unit": "npm --prefix bots/blog run test:unit",
