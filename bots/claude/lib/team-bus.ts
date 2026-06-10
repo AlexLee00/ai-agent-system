@@ -43,6 +43,7 @@ async function markDone(agent) {
     await pgPool.run(SCHEMA, `
       UPDATE agent_state
       SET status = 'idle', current_task = NULL,
+          last_error = NULL,
           last_success_at = to_char(now(), 'YYYY-MM-DD HH24:MI:SS'),
           updated_at      = to_char(now(), 'YYYY-MM-DD HH24:MI:SS')
       WHERE agent = $1

@@ -1540,12 +1540,12 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
     fs.writeFileSync(absolutePath, fixedToWrite, 'utf8');
     const unexpectedAfterWrite = unexpectedMutationLines(
       context.gitStatusShortFn(),
-      context.initialGitStatus || '',
+      beforeFixStatus,
       [fileRel],
       context.refactorScopePrefixes || []
     );
     if (unexpectedAfterWrite.length > 0) {
-      cleanupUnexpectedUntracked(unexpectedAfterWrite, context.initialGitStatus || '', context.refactorScopePrefixes || []);
+      cleanupUnexpectedUntracked(unexpectedAfterWrite, beforeFixStatus, context.refactorScopePrefixes || []);
       restoreFileSnapshot(snapshots, absolutePath);
       return {
         stage: 'active_deferred_unfixable',
