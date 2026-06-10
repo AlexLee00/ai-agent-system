@@ -306,6 +306,12 @@ async function doGroqCall(
       rateLimit,
     } as LLMCallResponse & { rateLimit: Record<string, string> };
   } catch (err) {
+    if (attempt < maxAttempts) {
+      const nextKey = pickGroqApiKey();
+      if (nextKey && nextKey !== apiKey) {
+        return doGroqCall(req, nextKey, attempt + 1, maxAttempts);
+      }
+    }
     return {
       ok: false,
       provider: 'failed',

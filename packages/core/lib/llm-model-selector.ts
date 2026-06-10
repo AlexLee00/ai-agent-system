@@ -454,6 +454,16 @@ function groqFastEntry(template: LLMChainEntry | null | undefined): LLMChainEntr
   };
 }
 
+function groqDeepEntry(template: LLMChainEntry | null | undefined): LLMChainEntry {
+  return {
+    provider: 'groq',
+    model: GROQ_DEEP_MODEL,
+    maxTokens: entryMaxTokens(template, 2048),
+    temperature: template?.temperature ?? 0.1,
+    ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
+  };
+}
+
 function claudeWritingModelForSelector(selectorKey = ''): string {
   return selectorKey === 'blog.pos.writer' || selectorKey === 'blog.gems.writer'
     ? 'claude-code/sonnet'
@@ -478,7 +488,11 @@ function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {
   const selectorKey = String(options.selectorKey || '');
   const maxTokens = entryMaxTokens(entry, Number(options.maxTokens) || 1024);
   if (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy') {
-    return openAiEntry(entry, maxTokens > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL);
+    // Darwin/Sigma are background analysis loops. When Gemini is disabled,
+    // do not funnel their traffic into OpenAI OAuth first; Groq account-pool
+    // round-robin is the intended pressure valve for this deployment, while
+    // OpenAI remains later in the chain as a quality fallback.
+    return maxTokens > 1000 ? groqDeepEntry(entry) : groqFastEntry(entry);
   }
   if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) {
     const candidate = claudeWritingEntry(entry, selectorKey);
@@ -505,6 +519,25 @@ function ensureOpenAiPrimary(chain: LLMChainEntry[], options: SelectorOptions = 
   return dedupeByProviderModel([primary, ...rest]).map((entry) => (
     shouldAvoidPublicOpenAi(entry, options) ? replacementForPublicOpenAi(entry) : entry
   ));
+}
+
+function ensureOpenAiFallback(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  if (chain.some(isOpenAiEntry)) return chain;
+  const template = chain[0];
+  const maxTokens = entryMaxTokens(template, Number(options.maxTokens) || 1024);
+  return [...chain, openAiEntry(template, maxTokens > 1000 ? OPENAI_PERF_MODEL : OPENAI_MINI_MODEL)];
+}
+
+function preferGroqWithOpenAiFallback(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  const withOpenAiFallback = ensureOpenAiFallback(chain, options);
+  const primary = withOpenAiFallback[0];
+  if (!primary || !isOpenAiEntry(primary)) return withOpenAiFallback;
+
+  const existingGroq = withOpenAiFallback.find(isGroqEntry);
+  const maxTokens = entryMaxTokens(primary, Number(options.maxTokens) || 1024);
+  const groqPrimary = existingGroq || (maxTokens > 1000 ? groqDeepEntry(primary) : groqFastEntry(primary));
+  const rest = withOpenAiFallback.filter((entry) => entry !== groqPrimary);
+  return [groqPrimary, ...rest];
 }
 
 function ensureClaudeWritingPrimary(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
@@ -537,8 +570,13 @@ function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: Select
   let optimized = chain.map((entry) => (isGeminiEntry(entry) ? replacementForGemini(entry, options) : entry));
   optimized = optimized.filter((entry) => !isGeminiEntry(entry));
 
-  if (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy') {
+  if (
+    (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy')
+    && parseEnabledFlag(process.env.HUB_DARWIN_SIGMA_OPENAI_PRIMARY) === true
+  ) {
     optimized = dedupeByProvider(ensureOpenAiPrimary(optimized, options));
+  } else if (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy') {
+    optimized = dedupeByProviderModel(preferGroqWithOpenAiFallback(optimized, options));
   }
   if (selectorKey.startsWith('claude.')) optimized = ensureOpenAiPrimary(optimized, options);
   if (CLAUDE_FIRST_WRITING_SELECTOR_KEYS.has(selectorKey)) optimized = ensureClaudeWritingPrimary(optimized, options);

@@ -140,12 +140,12 @@ function main() {
     ...(PROFILES.darwin.synthesis.fallback_routes || []),
   ];
   assert.ok(
-    String(darwinSynthesisRoutes[0] || '').startsWith('openai-oauth/'),
-    'darwin/synthesis runtime profile must start on OpenAI OAuth to avoid Groq pool/cooldown exhaustion',
+    String(darwinSynthesisRoutes[0] || '').startsWith('groq/'),
+    'darwin/synthesis runtime profile must start on Groq account-pool routing to avoid OpenAI OAuth pressure',
   );
   assert.ok(
-    darwinSynthesisRoutes.some((route) => String(route).startsWith('groq/')),
-    'darwin/synthesis runtime profile must keep Groq as a fallback route',
+    darwinSynthesisRoutes.some((route) => String(route).startsWith('openai-oauth/')),
+    'darwin/synthesis runtime profile must keep OpenAI OAuth as a quality fallback route',
   );
 
   const hubSelector = require('../src/llm-selector.ts');

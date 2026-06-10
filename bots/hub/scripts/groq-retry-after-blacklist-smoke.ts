@@ -139,6 +139,23 @@ async function main() {
   assert.equal(pooled.rateLimit['x-ratelimit-remaining-requests'], '999');
   assert.deepEqual(getGroqAccountPoolStatus(), { total: 5, available: 1, cooldown: 4 });
 
+  resetGroqKeyBlacklistForTests();
+  _testOnlySetGroqAccounts(['groq-fetch-1', 'groq-fetch-2', 'groq-fetch-3']);
+  fetchCalls = 0;
+  global.fetch = async () => {
+    fetchCalls += 1;
+    if (fetchCalls < 3) throw new Error('fetch failed');
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'fetch-recovered' } }],
+      usage: { prompt_tokens: 4, completion_tokens: 2 },
+    }), { status: 200 });
+  };
+
+  const fetchRecovered = await callGroqFallback({ prompt: 'fetch retry', model: 'llama-3.1-8b-instant' });
+  assert.equal(fetchRecovered.ok, true);
+  assert.equal(fetchRecovered.result, 'fetch-recovered');
+  assert.equal(fetchCalls, 3, 'transient Groq fetch errors should retry across the configured key pool');
+
   const { _testOnly: unifiedTestOnly } = require('../lib/llm/unified-caller.ts');
   assert.equal(
     unifiedTestOnly._normalizeRoute('groq/llama-4-scout-17b-16e-instruct'),

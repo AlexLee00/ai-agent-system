@@ -70,6 +70,20 @@ for (const key of ['claude._default', 'claude.archer.tech_analysis', 'claude.lea
   assert(!chain.some((entry) => providerOf(entry) === 'claude-code'), `${key} must not use Claude Code after Claude-team OpenAI override`);
 }
 
+for (const { selectorKey, agentName } of [
+  { selectorKey: 'darwin.agent_policy', agentName: 'darwin.planner' },
+  { selectorKey: 'darwin.agent_policy', agentName: 'darwin.evaluator' },
+  { selectorKey: 'darwin.agent_policy', agentName: 'darwin.scanner' },
+  { selectorKey: 'darwin.agent_policy', agentName: 'darwin.synthesis' },
+  { selectorKey: 'sigma.agent_policy', agentName: 'skill.causal' },
+  { selectorKey: 'sigma.agent_policy', agentName: 'mapek.monitor' },
+]) {
+  const chain = chainFor(selectorKey, { agentName });
+  assert.equal(providerOf(chain[0]), 'groq', `${selectorKey}/${agentName} must use Groq primary to avoid OpenAI OAuth pressure`);
+  assert(chain.some((entry) => providerOf(entry) === 'openai-oauth'), `${selectorKey}/${agentName} must retain OpenAI OAuth fallback`);
+  assert(!chain.some(isGemini), `${selectorKey}/${agentName} must not fall back to Gemini`);
+}
+
 for (const key of CLAUDE_FIRST_WRITING_SELECTORS) {
   const chain = chainFor(key);
   assert.equal(providerOf(chain[0]), 'claude-code', `${key} must use Claude first for long-form writing`);
