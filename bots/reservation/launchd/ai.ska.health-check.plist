@@ -14,8 +14,13 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-check.js</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-check.ts</string>
 	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
