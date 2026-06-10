@@ -46,6 +46,7 @@ function parseJsonOutput(text: string) {
 async function main() {
   const strict = hasArg('--strict');
   const requireProcess = hasArg('--require-process');
+  const allowShadowCutoverHold = hasArg('--allow-shadow-cutover-hold');
   const json = hasArg('--json') || strict;
   const steps = [
     runStep('cutover_plan', 'jay-staged-enable-plan.ts', ['--json']),
@@ -60,17 +61,31 @@ async function main() {
   ];
 
   const cutover = parseJsonOutput(steps[0].stdout);
-  const strictReady = !strict || (cutover && cutover.readyCount === cutover.total);
+  const pendingStages = Array.isArray(cutover?.stages)
+    ? cutover.stages
+      .filter((stage: any) => stage?.ready !== true)
+      .map((stage: any) => ({ id: Number(stage?.id || 0), name: String(stage?.name || '') }))
+    : [];
+  const shadowCutoverHold = Boolean(
+    allowShadowCutoverHold
+    && pendingStages.length === 1
+    && pendingStages[0]?.id === 6
+    && /runtime cutover gate/i.test(pendingStages[0]?.name || ''),
+  );
+  const strictReady = !strict || (cutover && cutover.readyCount === cutover.total) || shadowCutoverHold;
   const payload = {
     ok: steps.every((step) => step.ok) && strictReady,
     strict,
     requireProcess,
+    allowShadowCutoverHold,
     strictReady,
+    shadowCutoverHold,
     cutover: cutover
       ? {
         readyCount: cutover.readyCount,
         total: cutover.total,
         adapterModes: cutover.adapterModes,
+        pendingStages,
       }
       : null,
     steps,

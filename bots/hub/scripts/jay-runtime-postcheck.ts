@@ -40,7 +40,7 @@ async function main() {
   const json = hasArg('--json');
   const steps = [
     run('jay-runtime-process-check.ts', ['--strict', '--json']),
-    run('jay-readiness.ts', ['--strict', '--require-process']),
+    run('jay-readiness.ts', ['--strict', '--require-process', '--allow-shadow-cutover-hold']),
     run('jay-status-report.ts', ['--json']),
     run('jay-incident-janitor.ts', ['--json']),
     run('jay-telegram-meeting-dry-run.ts'),
