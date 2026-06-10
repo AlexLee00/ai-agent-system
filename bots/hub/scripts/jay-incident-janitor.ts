@@ -38,6 +38,46 @@ function parseMaxAttempts() {
   return Math.max(1, Math.floor(parsed));
 }
 
+function isTransientDbStartupError(error: unknown) {
+  const anyError = error as any;
+  const message = String(anyError?.message || error || '');
+  const code = String(anyError?.code || '');
+  return code === '57P03'
+    || /the database system is starting up|database system is in recovery mode/i.test(message);
+}
+
+function positiveIntEnv(name: string, fallback: number) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function retryTransientDbStartup<T>(
+  label: string,
+  fn: () => Promise<T>,
+  options: { maxAttempts?: number; delayMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<T> {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || positiveIntEnv('JAY_INCIDENT_JANITOR_DB_RETRIES', 12)));
+  const delayMs = Math.max(0, Number(options.delayMs ?? positiveIntEnv('JAY_INCIDENT_JANITOR_DB_RETRY_MS', 5000)));
+  const sleeper = options.sleep || sleep;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!isTransientDbStartupError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      console.warn(`[jay-incident-janitor] ${label} DB not ready (${attempt}/${maxAttempts}) - retrying in ${delayMs}ms: ${(error as any)?.message || error}`);
+      await sleeper(delayMs);
+    }
+  }
+  return undefined as T;
+}
+
 async function fetchStaleRows(pgPool: PgPoolLike, table: string, statuses: string[], staleMinutes: number) {
   const result = await pgPool.query('agent', `
     SELECT
@@ -60,11 +100,17 @@ async function main() {
   const incidentStore = require('../../orchestrator/lib/jay-incident-store.ts');
   const pgPool = require('../../../packages/core/lib/pg-pool');
   const table = incidentStore._testOnly.INCIDENT_TABLE;
-  await incidentStore.ensureIncidentTables();
+  await retryTransientDbStartup('ensure_incident_tables', () => incidentStore.ensureIncidentTables());
 
   const requeueStatuses = ['planning', 'planned'];
-  const approvalRows = await fetchStaleRows(pgPool, table, ['awaiting_approval'], Math.max(staleMinutes, 24 * 60));
-  const requeueRows = await fetchStaleRows(pgPool, table, requeueStatuses, staleMinutes);
+  const approvalRows = await retryTransientDbStartup(
+    'fetch_awaiting_approval',
+    () => fetchStaleRows(pgPool, table, ['awaiting_approval'], Math.max(staleMinutes, 24 * 60)),
+  );
+  const requeueRows = await retryTransientDbStartup(
+    'fetch_requeue_rows',
+    () => fetchStaleRows(pgPool, table, requeueStatuses, staleMinutes),
+  );
   const requeued: string[] = [];
   const deadLettered: string[] = [];
 
@@ -159,7 +205,16 @@ async function main() {
   console.log(`awaitingApproval: ${payload.stale.awaitingApproval.length}`);
 }
 
-main().catch((error) => {
-  console.error(`jay_incident_janitor_failed: ${error?.message || error}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`jay_incident_janitor_failed: ${error?.message || error}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  _testOnly: {
+    isTransientDbStartupError,
+    retryTransientDbStartup,
+  },
+};
