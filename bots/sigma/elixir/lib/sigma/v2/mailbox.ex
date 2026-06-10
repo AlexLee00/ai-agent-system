@@ -65,6 +65,36 @@ defmodule Sigma.V2.Mailbox do
     _ -> 0
   end
 
+  @doc "장기 pending Directive 요약. 런타임 health가 대기열 정체를 놓치지 않도록 별도 신호로 노출한다."
+  def stale_pending_summary(max_age_hours \\ 24) do
+    hours =
+      max_age_hours
+      |> safe_int(24)
+      |> max(1)
+
+    sql = """
+    SELECT COUNT(*)::int, MIN(enqueued_at)
+    FROM sigma_v2_mailbox
+    WHERE status = 'pending'
+      AND enqueued_at < NOW() - ($1::int * INTERVAL '1 hour')
+    """
+
+    case Jay.Core.Repo.query(sql, [hours]) do
+      {:ok, %{rows: [[count, oldest]]}} ->
+        %{
+          count: count || 0,
+          oldest_enqueued_at: format_timestamp(oldest),
+          max_age_hours: hours,
+          status: if((count || 0) > 0, do: "stale_pending", else: "ok")
+        }
+
+      _ ->
+        %{count: 0, oldest_enqueued_at: nil, max_age_hours: hours, status: "unknown"}
+    end
+  rescue
+    _ -> %{count: 0, oldest_enqueued_at: nil, max_age_hours: safe_int(max_age_hours, 24), status: "unknown"}
+  end
+
   @doc "Tier 3 Directive 승인 실행."
   def execute(directive_id) do
     update_status(directive_id, "approved")
@@ -118,4 +148,20 @@ defmodule Sigma.V2.Mailbox do
   end
 
   defp uuid_param(value), do: value
+
+  defp safe_int(value, _fallback) when is_integer(value), do: value
+
+  defp safe_int(value, fallback) do
+    case Integer.parse(to_string(value || "")) do
+      {parsed, _} -> parsed
+      _ -> fallback
+    end
+  rescue
+    _ -> fallback
+  end
+
+  defp format_timestamp(nil), do: nil
+  defp format_timestamp(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp format_timestamp(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp format_timestamp(value), do: to_string(value)
 end

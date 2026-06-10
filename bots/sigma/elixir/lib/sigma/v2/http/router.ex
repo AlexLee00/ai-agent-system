@@ -20,12 +20,23 @@ defmodule Sigma.V2.HTTP.Router do
   get "/sigma/v2/health" do
     enabled = System.get_env("SIGMA_V2_ENABLED") == "true"
     http_port = System.get_env("SIGMA_HTTP_PORT")
+    stale_pending = Sigma.V2.Mailbox.stale_pending_summary()
+    warnings =
+      if stale_pending.count > 0 do
+        ["sigma_mailbox_stale_pending:#{stale_pending.count}"]
+      else
+        []
+      end
 
     body = %{
       status: "ok",
       enabled: enabled,
       http_port: http_port,
-      mailbox_pending: Sigma.V2.Mailbox.pending_count()
+      mailbox_pending: Sigma.V2.Mailbox.pending_count(),
+      mailbox_health: stale_pending.status,
+      mailbox_stale_pending: stale_pending.count,
+      mailbox_oldest_pending_at: stale_pending.oldest_enqueued_at,
+      warnings: warnings
     }
 
     conn

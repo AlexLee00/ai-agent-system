@@ -55,6 +55,15 @@ defmodule Sigma.V2.Phase2Test do
       items = Sigma.V2.Mailbox.pending_items(limit: 5)
       assert is_list(items)
     end
+
+    test "stale_pending_summary/1은 health용 정체 요약을 반환" do
+      summary = Sigma.V2.Mailbox.stale_pending_summary(24)
+      assert is_map(summary)
+      assert is_integer(summary.count)
+      assert summary.count >= 0
+      assert summary.max_age_hours == 24
+      assert summary.status in ["ok", "stale_pending", "unknown"]
+    end
   end
 
   describe "Sigma.Directive.Executor Tier 3" do
