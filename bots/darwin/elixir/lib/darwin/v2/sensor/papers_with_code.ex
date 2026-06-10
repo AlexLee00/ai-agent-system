@@ -82,46 +82,18 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
            receive_timeout: 20_000,
            headers: [{"User-Agent", "darwin-research-bot/2.0"}]
          ) do
-      {:ok, %{status: 200, body: body}} when is_map(body) ->
-        results =
-          case Map.get(body, "results", []) do
-            list when is_list(list) -> list
-            _ -> []
-          end
-
-        emitted =
-          Enum.reduce(results, 0, fn
-            paper, nacc when is_map(paper) ->
-              paper_id = Map.get(paper, "id", "") |> to_string()
-
-              if already_seen?(table, paper_id) or paper_id == "" do
-                nacc
-              else
-                mark_seen(table, paper_id)
-                nacc + maybe_emit_paper(paper)
-              end
-
-            _paper, nacc ->
-              nacc
-          end)
-
-        total = Map.get(body, "count", 0)
-        fetched = (page - 1) * @page_size + length(results)
-        new_acc = acc + emitted
-
-        if length(results) == @page_size and fetched < total do
-          Process.sleep(1_500)
-          scan_page(page + 1, table, new_acc)
-        else
-          new_acc
-        end
-
       {:ok, %{status: 200, body: body}} ->
-        Logger.warning(
-          "#{@log_prefix} unexpected_body page=#{page} type=#{inspect(body_type(body))}; skip"
-        )
+        case normalize_response_body(body) do
+          {:ok, decoded} ->
+            process_page_body(decoded, page, table, acc)
 
-        acc
+          {:error, _reason} ->
+            Logger.warning(
+              "#{@log_prefix} unexpected_body page=#{page} type=#{inspect(body_type(body))}; skip"
+            )
+
+            acc
+        end
 
       {:ok, %{status: status}} ->
         Logger.warning("#{@log_prefix} HTTP #{status} (page #{page})")
@@ -132,6 +104,53 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
         acc
     end
   end
+
+  defp process_page_body(body, page, table, acc) when is_map(body) do
+    results =
+      case Map.get(body, "results", []) do
+        list when is_list(list) -> list
+        _ -> []
+      end
+
+    emitted =
+      Enum.reduce(results, 0, fn
+        paper, nacc when is_map(paper) ->
+          paper_id = Map.get(paper, "id", "") |> to_string()
+
+          if already_seen?(table, paper_id) or paper_id == "" do
+            nacc
+          else
+            mark_seen(table, paper_id)
+            nacc + maybe_emit_paper(paper)
+          end
+
+        _paper, nacc ->
+          nacc
+      end)
+
+    total = Map.get(body, "count", 0)
+    fetched = (page - 1) * @page_size + length(results)
+    new_acc = acc + emitted
+
+    if length(results) == @page_size and fetched < total do
+      Process.sleep(1_500)
+      scan_page(page + 1, table, new_acc)
+    else
+      new_acc
+    end
+  end
+
+  @doc false
+  def normalize_response_body(body) when is_map(body), do: {:ok, body}
+
+  def normalize_response_body(body) when is_binary(body) do
+    case Jason.decode(body) do
+      {:ok, decoded} when is_map(decoded) -> {:ok, decoded}
+      _ -> {:error, :unexpected_body}
+    end
+  end
+
+  def normalize_response_body(_body), do: {:error, :unexpected_body}
 
   defp maybe_emit_paper(paper) do
     title = Map.get(paper, "title", "")
