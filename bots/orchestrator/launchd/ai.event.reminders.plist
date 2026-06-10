@@ -6,9 +6,11 @@
     <string>ai.event.reminders</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/node</string>
-        <string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/research/event-reminders.js</string>
+        <string>/opt/homebrew/bin/tsx</string>
+        <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/event-reminders.ts</string>
     </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/alexlee/projects/ai-agent-system</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -24,6 +26,8 @@
     <dict>
         <key>NODE_ENV</key>
         <string>production</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>
