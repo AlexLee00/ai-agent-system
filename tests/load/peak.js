@@ -9,6 +9,7 @@ const failRate = new Rate('fail_rate');
 const HUB_URL = __ENV.HUB_URL || 'http://localhost:7788';
 const HUB_TOKEN = __ENV.HUB_AUTH_TOKEN || '';
 const SHORT_MODE = __ENV.SHORT_MODE === 'true';
+const LOAD_TEST_SELECTOR_KEY = 'hub.load_test.fast';
 
 export const options = {
   stages: SHORT_MODE
@@ -38,7 +39,9 @@ export default function () {
     callerTeam: team,
     agent: 'default',
     prompt: '짧게 1문장으로 답해줘: 오늘 날씨 어때?',
-    abstractModel: 'anthropic_sonnet',
+    abstractModel: 'anthropic_haiku',
+    selectorKey: LOAD_TEST_SELECTOR_KEY,
+    taskType: 'load_test',
     cacheEnabled: false,
   });
 

@@ -37,6 +37,7 @@ Thumbs.db
 
 # 테스트 결과
 coverage/
+results/load-*/
 
 # Python 가상환경
 venv/

@@ -1,5 +1,5 @@
-// k6 Chaos Test — local/MLX 중단 상태에서 Circuit Breaker 동작 확인
-// 실행 전: local MLX primary/secondary를 중단하거나 포트를 막기
+// k6 Chaos Test — managed fast selector fallback/circuit 동작 확인
+// 주의: load tests는 Hub 처리량 테스트이므로 slow quality/default route가 아닌 hub.load_test.fast를 사용한다.
 // k6 run --out json=results/chaos.json tests/load/chaos.js
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -12,6 +12,7 @@ const failRate = new Rate('fail_rate');
 
 const HUB_URL = __ENV.HUB_URL || 'http://localhost:7788';
 const HUB_TOKEN = __ENV.HUB_AUTH_TOKEN || '';
+const LOAD_TEST_SELECTOR_KEY = 'hub.load_test.fast';
 
 export const options = {
   stages: [
@@ -35,7 +36,9 @@ export default function () {
       callerTeam: 'blog',
       agent: 'writer',
       prompt: 'Circuit Breaker 테스트: 짧게 답해줘.',
-      abstractModel: 'anthropic_sonnet',
+      abstractModel: 'anthropic_haiku',
+      selectorKey: LOAD_TEST_SELECTOR_KEY,
+      taskType: 'load_test',
       cacheEnabled: false,
     });
   } else if (rand < 0.9) {
@@ -43,7 +46,9 @@ export default function () {
       callerTeam: 'darwin',
       agent: 'research',
       prompt: '로컬 모델 테스트 요청.',
-      abstractModel: 'anthropic_sonnet',
+      abstractModel: 'anthropic_haiku',
+      selectorKey: LOAD_TEST_SELECTOR_KEY,
+      taskType: 'load_test',
       cacheEnabled: false,
     });
   } else {
@@ -51,7 +56,9 @@ export default function () {
       callerTeam: 'luna',
       agent: 'exit_decision',
       prompt: 'ETH/USDT position exit decision: hold or exit?',
-      abstractModel: 'anthropic_sonnet',
+      abstractModel: 'anthropic_haiku',
+      selectorKey: LOAD_TEST_SELECTOR_KEY,
+      taskType: 'load_test',
       cacheEnabled: false,
     });
   }

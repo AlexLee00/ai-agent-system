@@ -11,9 +11,19 @@ const sender = require('../../packages/core/lib/telegram-sender');
 
 const SCENARIOS = ['baseline', 'peak', 'chaos', 'multi-team'];
 
-async function analyzeLoadTest(resultsDir) {
-  const summary = {};
-  const missing = [];
+type LoadScenarioSummary = {
+  total_requests: number;
+  failed_requests: number;
+  fail_rate: number;
+  p50_latency_ms: number;
+  p95_latency_ms: number;
+  p99_latency_ms: number;
+  avg_latency_ms: number;
+};
+
+async function analyzeLoadTest(resultsDir: string) {
+  const summary: Record<string, LoadScenarioSummary> = {};
+  const missing: string[] = [];
 
   for (const scenario of SCENARIOS) {
     const filePath = path.join(resultsDir, `${scenario}.json`);
@@ -23,7 +33,7 @@ async function analyzeLoadTest(resultsDir) {
     }
 
     const lines = fs.readFileSync(filePath, 'utf-8').trim().split('\n');
-    const metrics = {};
+    const metrics: Record<string, number[]> = {};
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
@@ -38,7 +48,7 @@ async function analyzeLoadTest(resultsDir) {
     const failed = metrics['http_req_failed'] || [];
 
     const sorted = [...durations].sort((a, b) => a - b);
-    const p = (pct) => sorted[Math.floor(sorted.length * pct / 100)] || 0;
+    const p = (pct: number) => sorted[Math.floor(sorted.length * pct / 100)] || 0;
 
     const failRate = failed.length > 0 ? (failed.filter(v => v > 0).length / failed.length) : 0;
 

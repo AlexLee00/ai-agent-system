@@ -642,6 +642,14 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 32, temperature: 0 },
       fallbacks: [],
     },
+    // k6 load tests should measure Hub routing/backpressure, not slow quality-model latency.
+    // Keep this selector explicit in tests/load/* so team defaults do not route to OpenAI perf models.
+    'load_test.fast': {
+      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 128, temperature: 0, timeoutMs: 8_000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 128, temperature: 0, timeoutMs: 10_000 },
+      ],
+    },
     _fallback: {
       primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [],
@@ -1673,6 +1681,7 @@ function buildSelectorRegistry(): Record<string, any> {
     'hub.gemini.cli.readiness.live': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.gemini.cli.readiness.live', options),
     'hub.unified.oauth.openai.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.unified.oauth.openai.smoke', options),
     'hub.unified.oauth.gemini.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.unified.oauth.gemini.smoke', options),
+    'hub.load_test.fast': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.load_test.fast', options),
     'elsa._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa._default', options),
     'elsa.chat.answer': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa.chat.answer', options),
     'elsa.chat.card_gen': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa.chat.card_gen', options),

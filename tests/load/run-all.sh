@@ -53,7 +53,7 @@ run_scenario "multi-team" "multi-team.js"
 echo ""
 echo "===== 결과 분석 ====="
 cd "${PROJECT_ROOT}"
-npx ts-node tests/load/analyze-results.ts "${RESULTS_DIR}" || true
+node --disable-warning=DEP0205 --import tsx tests/load/analyze-results.ts "${RESULTS_DIR}" || true
 
 echo ""
 echo "✅ 부하 테스트 완료. 결과: ${RESULTS_DIR}"

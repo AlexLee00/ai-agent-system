@@ -34,6 +34,17 @@ for (const file of [
   assertFile(file);
 }
 
+for (const file of [
+  'tests/load/baseline.js',
+  'tests/load/peak.js',
+  'tests/load/chaos.js',
+  'tests/load/multi-team.js',
+]) {
+  const source = read(file);
+  assert.match(source, /hub\.load_test\.fast/, `${file} must use the managed fast load-test selector`);
+  assert.doesNotMatch(source, /abstractModel:\s*['"]anthropic_sonnet['"]/, `${file} must not route load tests through slow quality defaults`);
+}
+
 assert.match(guide, /tests\/load\/multi-team\.js/, 'load guide must point to the tracked multi-team scenario');
 assert.match(guide, /tests\/load\/run-all\.sh/, 'load guide must point to the tracked runner');
 assert.doesNotMatch(guide, /hub-llm-multiteam\.js/, 'load guide must not reference retired k6 script paths');
@@ -45,4 +56,5 @@ console.log(JSON.stringify({
   ok: true,
   load_runner: 'tests/load/run-all.sh',
   scenarios: ['baseline', 'peak', 'chaos', 'multi-team'],
+  selector_key: 'hub.load_test.fast',
 }));

@@ -32,6 +32,7 @@ export const options = {
 
 const TEAMS = ['luna', 'blog', 'darwin', 'sigma', 'claude', 'ska'];
 const AGENTS = ['default', 'analyst', 'writer', 'research'];
+const LOAD_TEST_SELECTOR_KEY = 'hub.load_test.fast';
 
 export default function () {
   const team = TEAMS[Math.floor(Math.random() * TEAMS.length)];
@@ -41,7 +42,9 @@ export default function () {
     callerTeam: team,
     agent,
     prompt: '2024 Q4 인공지능 트렌드를 3줄로 요약해줘.',
-    abstractModel: 'anthropic_sonnet',
+    abstractModel: 'anthropic_haiku',
+    selectorKey: LOAD_TEST_SELECTOR_KEY,
+    taskType: 'load_test',
     cacheEnabled: false,
   });
 

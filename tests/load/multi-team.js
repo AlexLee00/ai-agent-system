@@ -12,6 +12,7 @@ const lunaFailRate = new Rate('luna_fail_rate');
 const blogFailRate = new Rate('blog_fail_rate');
 const darwinFailRate = new Rate('darwin_fail_rate');
 const overallFailRate = new Rate('overall_fail_rate');
+const LOAD_TEST_SELECTOR_KEY = 'hub.load_test.fast';
 
 export const options = {
   scenarios: {
@@ -83,7 +84,15 @@ export const options = {
 function callHub(team, agent, prompt) {
   return http.post(
     `${HUB_URL}/hub/llm/call`,
-    JSON.stringify({ callerTeam: team, agent, prompt, abstractModel: 'anthropic_sonnet', cacheEnabled: false }),
+    JSON.stringify({
+      callerTeam: team,
+      agent,
+      prompt,
+      abstractModel: 'anthropic_haiku',
+      selectorKey: LOAD_TEST_SELECTOR_KEY,
+      taskType: 'load_test',
+      cacheEnabled: false,
+    }),
     {
       headers: {
         'Content-Type': 'application/json',
