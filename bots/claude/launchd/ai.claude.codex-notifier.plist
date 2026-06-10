@@ -22,7 +22,10 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.claude.codex-notifier.mjs</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/codex-notifier-runner.ts</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
