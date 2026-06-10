@@ -1,6 +1,6 @@
 # 루나 최적 재설계 — 구현 추적 (TRACKER)
 
-> v1.0 (2026-06-13) · 작성: 메티 · SSOT=LUNA_OPTIMAL_REDESIGN.md(**v1.0 확정**) · 입력=LUNA_LOGIC_REANALYSIS.md
+> v1.0 (2026-06-13) · 작성: 메티 · SSOT=LUNA_OPTIMAL_REDESIGN.md(**v1.3**) · 회의실=MEETING_ROOM_DESIGN(v0.7) · 입력=LUNA_LOGIC_REANALYSIS.md
 > **우산 관계**: 본 트래커가 루나 로직 재설계의 상위 추적. 회의실(WS-A~E·G·Q)은 LUNA_MEETING_ROOM_TRACKER 유지(=C11 트랙). 기존 WS 중 재설계와 겹치는 항목은 아래 매핑대로 **본 트래커로 합류**(이중 추적 금지).
 > 원칙: 무중단(PROTECTED·crypto LIVE·스카) · shadow→L4→L5 표준 경로(C15) · 검증 통과분만 승격 · 마스터=게이트.
 
@@ -25,21 +25,25 @@
 - **P0-2** robust selection ON — `backtest-vectorbt.py:676,750` `LUNA_BT_ROBUST_SELECTION_ENABLED=true`(launchd/env) · 코덱스 · 검증: 스모크에서 robust 합의 선택 확인 — 대기
 - **P0-3** point-in-time 실측·기록 — 백테스트 메타에 `universe_asof` 기록 + discovery 선정 시점 로깅(전면 교정은 P2/C7) · 코덱스 · 검증: 메타 필드 존재 — 대기
 - **P0-4** 1-bar shift 감사 — `.shift(1)` 기존재 확인됨(180·209·222), 잔여=체결가(다음 봉 시가?)·비용 반영 감사 보고서 · 코덱스(감사)→메티(판정) — 대기
+- **P0-6 [v1.2]** 제약 경로 감사(코드 변경 없음) — 루나 LLM 에이전트가 자기 제약(runtime-config·env·plist·order_rules)을 런타임 수정 가능한 경로 실측 → 보고서(`docs/codex/P0_6_CONSTRAINT_AUDIT.md`) · 코덱스(감사)→메티(판정) — 대기
 - **P0-5** 매도 후 자본 재평가 훅 — `position-closeout-engine.ts` `finalizeCloseout`(296~)에서 capitalSnapshot 무효화→재계산(capital-manager buyable 재산출) · 코덱스 · 검증: 매도→같은 사이클 buyable 갱신(하드) — 대기
 
 ## P1 — 코어 골격 + 제안 인프라 [shadow]
-- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store` 테이블·governance 통합) — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
+- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store` 테이블·governance 통합·**break-glass 마스터 경로**[v1.3]) — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
 - **P1-2** C1 시장 배치 게이트(3시장 신호 합성→full/reduced/halt, 이력 로깅) — 대기
 - **P1-3** C2 레짐 승격(HMM shadow→core 후보, 확률 벡터+전이 경보) · 의존: P1-1(C15 등록) — 대기
 - **P1-4** C3 전략군 2종(터틀·눌림목) 룰셋 구현+shadow 신호 로깅 · stable-range 파라미터 선정(E-1) — 대기
-- **P1-5** C4 사전 게이트(R:R·E·횡보·유동성) shadow — 대기
+- **P1-5** C4 사전 게이트(R:R·E·횡보·유동성) + **손실빈도 서킷 3종**(perception-first `consecutive_loss_cooldown` 일반화·승격[v1.1/1.3]) shadow — 대기
 - WS-R 알파팩터(→C12)는 P1-4와 병행 가능(기존 CODEX 1번 갱신).
 
 ## P2 — 검증·피드백·포지션
-- C7 permutation 2종+CPCV+point-in-time 전면 교정 · C8 피드백 루프(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가(shadow 비교→C15) · C11 이벤트 트리거 수시회의 · WS-I 리스크 훅.
+- C7 permutation 2종+CPCV+point-in-time 전면 교정 · C8 피드백 루프(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가(shadow 비교→C15)+expected-fire 워치독[v1.2, 삽입점=entry-trigger-engine:534/1030, T9 테이블·보존 30일] · C11 이벤트 트리거 수시회의 · WS-I 리스크 훅.
 
 ## P3 — 자율 완성
 - C9 동적 리밋 · C10 워치리스트 · C12 일원화 · C13 ablation·라우팅 · C14 오토리서치·소스 · C16 add 승격 · Stage B/C · 파라미터 스토어 전면.
+
+## 회의실 연동 구현(재설계발 — MEETING_ROOM_TRACKER와 분담)
+- 수시회의 트리거 ⑥서킷 발동(T10 안건 표준)·⑦silent miss(반복 시) — P2(C11과 함께) · ADR ID=evidence 상호 참조(P1-1 스키마에 반영) · debrief 미발화 행(G6 대조표 생성기에 포함) · 회의 결정 기한 필드+미이행 재상정(워치독 자기적용, P2).
 
 ## 무중단 체크리스트 (MEETING_ROOM_TRACKER와 공통)
 - [ ] PROTECTED launchd 미중지 · crypto LIVE·스카 무중단 · 신규 plist=비-PROTECTED · shadow 우선(LIVE 영향 변경=마스터 게이트) · point-in-time/누수 차단.
