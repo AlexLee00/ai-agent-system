@@ -56,6 +56,9 @@ fi
 echo "🔎 TypeScript strict 검증"
 npm run typecheck:strict
 
+echo "🏗️ daemon 사전 번들 빌드"
+npm run build:daemons
+
 node bots/claude/src/dexter.js --update-checksums || true
 bash scripts/smart-restart.sh
 sleep 15
