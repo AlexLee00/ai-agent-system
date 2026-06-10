@@ -122,9 +122,9 @@ function outputFromShadow(shadow: RlPolicyShadow, skillId: string, params: RlPol
 
 function outputFromRows(rows: unknown[] = [], skillId: string, params: RlPolicyParams = {}): RlPolicyOutput {
   const normalized = rows.map((row) => normalizeRlPolicyShadowRow(row as Record<string, unknown>));
-  const primary = normalized[0] || {};
+  const primary = (normalized[0] || {}) as RlPolicyShadow;
   return {
-    ...outputFromShadow(primary as RlPolicyShadow, skillId, params),
+    ...outputFromShadow(primary, skillId, params),
     rows: normalized.map((row) => ({
       symbol: row.symbol,
       exchange: row.exchange,

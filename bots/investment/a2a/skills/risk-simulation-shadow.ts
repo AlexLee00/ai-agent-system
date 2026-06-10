@@ -131,9 +131,9 @@ function outputFromShadow(shadow: RiskSimulationShadow, skillId: string, params:
 
 function outputFromRows(rows: unknown[] = [], skillId: string, params: RiskSimulationParams = {}) {
   const normalized = rows.map((row) => normalizeRiskSimulationShadowRow(row as Record<string, unknown>));
-  const primary = normalized[0] || {};
+  const primary = (normalized[0] || {}) as RiskSimulationShadow;
   return {
-    ...outputFromShadow(primary as RiskSimulationShadow, skillId, params),
+    ...outputFromShadow(primary, skillId, params),
     rows: normalized.map((row) => ({
       analysisType: row.analysisType,
       symbols: row.symbols,

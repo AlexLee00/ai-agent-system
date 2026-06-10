@@ -110,7 +110,7 @@ function outputFromShadow(shadow: Record<string, any>, skillId: string, params: 
 
 function outputFromRows(rows: unknown[] = [], skillId: string, params: StatArbParams = {}) {
   const normalized = rows.map((row) => normalizeStatArbShadowRow(row as Record<string, unknown>));
-  const primary = normalized[0] || {};
+  const primary = (normalized[0] || {}) as Record<string, any>;
   return {
     ...outputFromShadow(primary, skillId, params),
     rows: normalized.map((row) => ({
