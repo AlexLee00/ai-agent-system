@@ -233,7 +233,7 @@ export async function callViaHub(
   }
 
   if (!hubToken) {
-    recordInvestmentLlmRouteLog({
+    await recordInvestmentLlmRouteLog({
       agentName,
       provider: 'hub',
       ok: false,
@@ -294,7 +294,7 @@ export async function callViaHub(
       console.warn(`[hub-llm] ${agentName} HTTP ${res.status}: ${errText.slice(0, 120)}`);
       // Phase G: HTTP 실패 기록
       recordLLMFailure(agentName, 'hub', userPrompt, 'bad_response', options.market, options.taskType).catch(() => {});
-      recordInvestmentLlmRouteLog({
+      await recordInvestmentLlmRouteLog({
         agentName,
         provider: 'hub',
         ok: false,
@@ -317,7 +317,7 @@ export async function callViaHub(
         : (json.error || '').includes('rate') ? 'rate_limit'
         : 'bad_response';
       recordLLMFailure(agentName, json.provider || 'hub', userPrompt, errorType, options.market, options.taskType).catch(() => {});
-      recordInvestmentLlmRouteLog({
+      await recordInvestmentLlmRouteLog({
         agentName,
         provider: json.provider || 'hub',
         ok: false,
@@ -352,7 +352,7 @@ export async function callViaHub(
     }
 
     console.log(`[hub-llm] ${agentName} ✓ provider=${json.provider} latency=${latencyMs}ms cost=$${costUsd.toFixed(5)}`);
-    recordInvestmentLlmRouteLog({
+    await recordInvestmentLlmRouteLog({
       agentName,
       provider: json.provider || 'hub',
       ok: true,
@@ -371,7 +371,7 @@ export async function callViaHub(
     const latencyMs = Date.now() - t0;
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[hub-llm] ${agentName} 오류: ${msg}`);
-    recordInvestmentLlmRouteLog({
+    await recordInvestmentLlmRouteLog({
       agentName,
       provider: 'hub',
       ok: false,
