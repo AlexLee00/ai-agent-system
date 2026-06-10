@@ -408,6 +408,8 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
   const scope = symbolExit.scope || {};
   const p0Symbols = num(scope.p0Symbols);
   const p1Symbols = num(scope.p1Symbols);
+  const matrix = symbolExit.symbolExitPolicyMatrix || {};
+  const matrixMaterialized = matrix.status === 'materialized' && num(matrix.symbols) >= num(scope.symbols);
   const actions = [];
   const matrixAction = (symbolExit.strategyActions || []).find((item) => item.id === 'symbol_exit_policy_matrix');
   const driftAction = (symbolExit.strategyActions || []).find((item) => item.id === 'current_close_post_exit_label');
@@ -416,14 +418,19 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
   if (p0Symbols > 0 || matrixAction) {
     actions.push(actionItem({
       id: 'symbol_exit_policy_matrix_materialize',
-      priority: p0Symbols > 0 ? P0 : P1,
+      priority: p0Symbols > 0 && !matrixMaterialized ? P0 : P1,
       area: 'symbol_exit_policy',
-      title: 'Materialize symbol-specific exit policies before changing live sell behavior.',
+      title: matrixMaterialized
+        ? 'Wire the materialized symbol-specific exit policy matrix into sell gates.'
+        : 'Materialize symbol-specific exit policies before changing live sell behavior.',
       evidence: {
         status: symbolExit.status || null,
         symbols: scope.symbols ?? null,
         p0Symbols,
         p1Symbols,
+        matrixStatus: matrix.status || null,
+        materializedSymbols: matrix.symbols ?? null,
+        materializedActionableSymbols: matrix.actionableSymbols ?? null,
         byPolicy: matrixAction?.evidence?.byPolicy || null,
         topP0Symbols: (symbolExit.symbolList || [])
           .filter((row) => row.priority === P0)
@@ -434,7 +441,9 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
             missedDuringHoldAvgPct: row.policyMissedDuringHoldAvgPct ?? row.missedDuringHoldAvgPct,
           })),
       },
-      action: 'Feed recommendedExitPolicy into exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates by symbol.',
+      action: matrixMaterialized
+        ? 'Use symbolExitPolicyMatrix from runtime state as the deterministic input for exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates.'
+        : 'Feed recommendedExitPolicy into exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates by symbol.',
       validationCommand: 'npm --prefix bots/investment run -s runtime:luna-symbol-exit-timing-strategy-report -- --json --no-write',
     }));
   }

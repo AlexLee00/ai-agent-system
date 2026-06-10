@@ -4,6 +4,52 @@ const P0 = 'P0';
 const P1 = 'P1';
 const P2 = 'P2';
 
+const EXIT_POLICY_EFFECTS = {
+  peak_reversal_partial_trailing: {
+    exitPatience: 'tighten_on_peak_reversal_tags',
+    partialProfit: 'prefer_partial_lock',
+    trailingStop: 'tighten',
+    nonHardLossRecheck: 'standard',
+  },
+  loss_exit_recheck_before_sell: {
+    exitPatience: 'extend_when_recovery_signals_improve',
+    partialProfit: 'standard',
+    trailingStop: 'standard',
+    nonHardLossRecheck: 'required',
+  },
+  winner_continuation_trailing: {
+    exitPatience: 'extend_winner_if_trend_valid',
+    partialProfit: 'prefer_partial_take_profit',
+    trailingStop: 'loosen_for_continuation',
+    nonHardLossRecheck: 'standard',
+  },
+  entry_downweight_or_probe_only: {
+    exitPatience: 'standard',
+    partialProfit: 'standard',
+    trailingStop: 'standard',
+    nonHardLossRecheck: 'standard',
+    entryBias: 'downweight_or_probe_only',
+  },
+  preserve_current_exit_rule: {
+    exitPatience: 'preserve',
+    partialProfit: 'preserve',
+    trailingStop: 'preserve',
+    nonHardLossRecheck: 'standard',
+  },
+  collect_more_samples_with_exit_labels: {
+    exitPatience: 'observe',
+    partialProfit: 'observe',
+    trailingStop: 'observe',
+    nonHardLossRecheck: 'standard',
+  },
+  review_only_excluded_from_learning: {
+    exitPatience: 'review_only',
+    partialProfit: 'review_only',
+    trailingStop: 'review_only',
+    nonHardLossRecheck: 'standard',
+  },
+};
+
 function num(value, fallback = null) {
   if (value == null || value === '') return fallback;
   const parsed = Number(value);
@@ -37,6 +83,86 @@ function countBy(rows = [], keyFn) {
     counts[key] = (counts[key] || 0) + 1;
   }
   return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+}
+
+function normalizePolicyRow(row = {}, generatedAt = null, source = null) {
+  const policy = row.recommendedExitPolicy || row.policy || 'collect_more_samples_with_exit_labels';
+  return {
+    symbolKey: row.symbolKey || `${row.market}:${row.symbol}`,
+    market: row.market || null,
+    exchange: row.exchange || null,
+    symbol: row.symbol || null,
+    priority: row.priority || P2,
+    policy,
+    rationale: row.rationale || null,
+    effects: EXIT_POLICY_EFFECTS[policy] || EXIT_POLICY_EFFECTS.collect_more_samples_with_exit_labels,
+    learningEligibleTrades: num(row.learningEligibleTrades, 0),
+    policyClosed: num(row.policyClosed, 0),
+    policyMissedDuringHoldAvgPct: row.policyMissedDuringHoldAvgPct ?? row.missedDuringHoldAvgPct ?? null,
+    policyCurrentFromExitAvgPct: row.policyCurrentFromExitAvgPct ?? null,
+    policyTimingCategories: row.policyTimingCategories || {},
+    topTechnicalTags: row.topTechnicalTags || [],
+    generatedAt,
+    source,
+  };
+}
+
+export function normalizeSymbolExitPolicyKey({ market = null, exchange = null, symbol = null } = {}) {
+  const normalizedSymbol = String(symbol || '').trim();
+  if (!normalizedSymbol) return null;
+  const normalizedMarket = String(market || '').trim().toLowerCase()
+    || (exchange === 'binance'
+      ? 'crypto'
+      : exchange === 'kis'
+        ? 'domestic'
+        : exchange === 'kis_overseas'
+          ? 'overseas'
+          : '');
+  if (!normalizedMarket) return null;
+  return `${normalizedMarket}:${normalizedSymbol}`;
+}
+
+export function materializeSymbolExitPolicyMatrix(symbolRows = [], {
+  generatedAt = new Date().toISOString(),
+  source = 'symbol_exit_timing_strategy',
+} = {}) {
+  const rows = (Array.isArray(symbolRows) ? symbolRows : [])
+    .map((row) => normalizePolicyRow(row, generatedAt, source))
+    .filter((row) => row.symbolKey && row.symbolKey !== 'null:null');
+  const actionableRows = rows.filter((row) => row.priority === P0 || row.priority === P1);
+  const bySymbol = Object.fromEntries(rows.map((row) => [row.symbolKey, row]));
+  return {
+    schemaVersion: 1,
+    status: rows.length === 0 ? 'empty' : actionableRows.length > 0 ? 'materialized' : 'observe_only',
+    generatedAt,
+    source,
+    liveTradeImpact: false,
+    decisionOwner: 'deterministic_exit_policy',
+    symbols: rows.length,
+    actionableSymbols: actionableRows.length,
+    p0Symbols: rows.filter((row) => row.priority === P0).length,
+    p1Symbols: rows.filter((row) => row.priority === P1).length,
+    byPolicy: countBy(rows, (row) => row.policy),
+    actionableSymbolKeys: actionableRows.map((row) => row.symbolKey),
+    bySymbol,
+  };
+}
+
+export function resolveSymbolExitPolicy(matrixOrReport = null, input = {}) {
+  if (!matrixOrReport || typeof matrixOrReport !== 'object') return null;
+  const key = normalizeSymbolExitPolicyKey(input);
+  if (!key) return null;
+  const matrix = matrixOrReport.bySymbol
+    ? matrixOrReport
+    : matrixOrReport.symbolExitPolicyMatrix
+      ? matrixOrReport.symbolExitPolicyMatrix
+      : Array.isArray(matrixOrReport.symbolList)
+        ? materializeSymbolExitPolicyMatrix(matrixOrReport.symbolList, {
+          generatedAt: matrixOrReport.generatedAt || null,
+          source: matrixOrReport.source || 'symbol_exit_timing_strategy_report',
+        })
+        : null;
+  return matrix?.bySymbol?.[key] || null;
 }
 
 function topObjectEntries(obj = {}, limit = 5) {
@@ -299,6 +425,7 @@ export function buildLunaSymbolExitTimingStrategyReport({
   const strategyActions = buildStrategyActions(symbolList);
   const p0Count = symbolList.filter((row) => row.priority === P0).length;
   const p1Count = symbolList.filter((row) => row.priority === P1).length;
+  const symbolExitPolicyMatrix = materializeSymbolExitPolicyMatrix(symbolList, { generatedAt, source });
 
   return {
     ok: rawRecords.length > 0,
@@ -318,6 +445,7 @@ export function buildLunaSymbolExitTimingStrategyReport({
     summary,
     allSymbols: symbolList.map((row) => row.symbolKey),
     symbolList,
+    symbolExitPolicyMatrix,
     tradeRows: compactTrades,
     topLateExitAfterPeak: symbolList
       .filter((row) => num(row.timingCategories?.late_exit_after_peak, 0) > 0)
@@ -339,4 +467,9 @@ export function buildLunaSymbolExitTimingStrategyReport({
   };
 }
 
-export default { buildLunaSymbolExitTimingStrategyReport };
+export default {
+  buildLunaSymbolExitTimingStrategyReport,
+  materializeSymbolExitPolicyMatrix,
+  normalizeSymbolExitPolicyKey,
+  resolveSymbolExitPolicy,
+};

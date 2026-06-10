@@ -1,5 +1,6 @@
 // @ts-nocheck
 
+import fs from 'node:fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as db from './db.ts';
@@ -29,10 +30,20 @@ import { recordGuardEvent } from './guard-event-recorder.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
+const SYMBOL_EXIT_POLICY_REPORT_URL = new URL('../output/reports/luna-symbol-exit-timing-strategy-report.json', import.meta.url);
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function loadSymbolExitPolicyReport() {
+  try {
+    if (!fs.existsSync(SYMBOL_EXIT_POLICY_REPORT_URL)) return null;
+    return JSON.parse(fs.readFileSync(SYMBOL_EXIT_POLICY_REPORT_URL, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function toYahooTicker(symbol, exchange) {
@@ -1347,6 +1358,7 @@ export async function reevaluateOpenPositions({
     liveIndicators,
     lifecycleFlags,
   });
+  const symbolExitPolicyMatrix = loadSymbolExitPolicyReport()?.symbolExitPolicyMatrix || null;
 
   for (const position of positions) {
     const effectiveTradeMode = position.trade_mode || 'normal';
@@ -1703,6 +1715,7 @@ export async function reevaluateOpenPositions({
       trailSnapshot: dynamicTrail,
       positionSizingSnapshot: dynamicSizing,
       signalRefreshSnapshot: signalRefreshRow || null,
+      symbolExitPolicyMatrix,
       trigger: {
         source: eventSource,
         attentionType: signalRefreshRow?.attentionType || attentionType,

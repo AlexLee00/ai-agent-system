@@ -64,14 +64,25 @@ export function runPositionRuntimeStateSmoke() {
 
   const policyMatrix = buildRegimeAwarePolicyMatrix({
     exchange: 'binance',
+    symbol: 'BTC/USDT',
     strategyProfile: { setup_type: 'trend_following' },
     pnlPct: -2.5,
     recommendation: 'EXIT',
     regime: { regime: 'trending_bear' },
     analysisSummary: { buy: 0, sell: 3, liveIndicator: { weightedBias: -0.7 } },
     driftContext: { sharpeDrop: 1.8, returnDropPct: 12 },
+    symbolExitPolicyMatrix: {
+      bySymbol: {
+        'crypto:BTC/USDT': {
+          policy: 'peak_reversal_partial_trailing',
+          priority: 'P0',
+          effects: { trailingStop: 'tighten' },
+        },
+      },
+    },
   });
   assert.equal(policyMatrix.riskGate, 'strict_risk_gate');
+  assert.equal(policyMatrix.symbolExitPolicy.policy, 'peak_reversal_partial_trailing');
 
   const evidenceGapBase = buildRegimeAwarePolicyMatrix({
     exchange: 'binance',
@@ -257,6 +268,15 @@ export function runPositionRuntimeStateSmoke() {
       attentionReason: 'sharpe drop',
     },
     previousState: { version: 2, recommendation: 'HOLD' },
+    symbolExitPolicyMatrix: {
+      bySymbol: {
+        'crypto:BTC/USDT': {
+          policy: 'peak_reversal_partial_trailing',
+          priority: 'P0',
+          effects: { trailingStop: 'tighten' },
+        },
+      },
+    },
   });
   assert.equal(runtimeState.version, 3);
   assert.equal(runtimeState.regime.regime, 'trending_bear');
@@ -264,6 +284,7 @@ export function runPositionRuntimeStateSmoke() {
   assert.equal(runtimeState.executionIntent.executionPolicy.autonomy, 'autonomous_allowed');
   assert.equal(runtimeState.validationState.severity, 'critical');
   assert.equal(runtimeState.monitoringPolicy.lane, 'attention_fast_lane');
+  assert.equal(runtimeState.policyMatrix.symbolExitPolicy.policy, 'peak_reversal_partial_trailing');
 
   return {
     ok: true,

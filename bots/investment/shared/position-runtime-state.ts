@@ -2,6 +2,7 @@
 
 import { computeRegimePolicy } from './regime-strategy-policy.ts';
 import { resolvePositionRuntimeCadenceOverride } from './position-runtime-overrides.ts';
+import { resolveSymbolExitPolicy } from './luna-symbol-exit-timing-strategy.ts';
 
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -177,6 +178,7 @@ export function buildRegimeAwareMonitoringPolicy({
 
 export function buildRegimeAwarePolicyMatrix({
   exchange = 'binance',
+  symbol = null,
   strategyProfile = null,
   pnlPct = 0,
   recommendation = 'HOLD',
@@ -186,6 +188,7 @@ export function buildRegimeAwarePolicyMatrix({
   externalEvidenceSummary = null,
   externalEvidenceGapState = null,
   portfolioReflexiveBias = null,
+  symbolExitPolicyMatrix = null,
 } = {}) {
   const market = getPositionRuntimeMarket(exchange);
   const setupType = normalizeString(strategyProfile?.setup_type || strategyProfile?.setupType, 'unknown');
@@ -228,6 +231,11 @@ export function buildRegimeAwarePolicyMatrix({
     pnlPct: safeNumber(pnlPct),
     recommendation,
   };
+  const symbolExitPolicy = resolveSymbolExitPolicy(symbolExitPolicyMatrix, {
+    market,
+    exchange,
+    symbol,
+  });
 
   return {
     market,
@@ -248,6 +256,9 @@ export function buildRegimeAwarePolicyMatrix({
     evidenceGapState: evidenceGap,
     sourceQualityBlocked: policy.sourceQualityBlocked === true,
     sourceQualityReason: policy.sourceQualityReason || null,
+    // Observability-only bridge: this materializes the sell-timing report's
+    // symbol policy into runtime state without changing EXIT/ADJUST decisions.
+    symbolExitPolicy,
     portfolioReflexiveBias: portfolioReflexiveBias || null,
     monitorProfile: policy.monitorProfile,
     lane: policy.lane,
@@ -479,6 +490,7 @@ export function buildPositionRuntimeState({
   previousState = null,
   positionSizingSnapshot = null,
   signalRefreshSnapshot = null,
+  symbolExitPolicyMatrix = null,
 } = {}) {
   const exchange = normalizeString(position?.exchange, null);
   const marketRegime = getPositionRuntimeRegime(regimeSnapshot, exchange);
@@ -497,6 +509,7 @@ export function buildPositionRuntimeState({
   });
   const policyMatrix = buildRegimeAwarePolicyMatrix({
     exchange,
+    symbol: position?.symbol,
     strategyProfile,
     pnlPct: position?.pnlPct ?? position?.latestPnlPct ?? 0,
     recommendation,
@@ -506,6 +519,7 @@ export function buildPositionRuntimeState({
     externalEvidenceSummary,
     externalEvidenceGapState,
     portfolioReflexiveBias,
+    symbolExitPolicyMatrix,
   });
   if (positionSizingSnapshot) {
     policyMatrix.positionSizing = positionSizingSnapshot;

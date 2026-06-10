@@ -2,7 +2,10 @@
 // @ts-nocheck
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { buildLunaSymbolExitTimingStrategyReport } from '../shared/luna-symbol-exit-timing-strategy.ts';
+import {
+  buildLunaSymbolExitTimingStrategyReport,
+  resolveSymbolExitPolicy,
+} from '../shared/luna-symbol-exit-timing-strategy.ts';
 import { buildOptimalExitAnalysisReport } from '../shared/optimal-exit-analysis.ts';
 
 function dayMs(index) {
@@ -92,6 +95,12 @@ export async function runSmoke() {
   assert.ok(report.allSymbols.includes('crypto:PEAK/USDT'));
   assert.ok(report.tradeRows.some((row) => row.currentFromExitPct != null));
   assert.ok(report.symbolList.some((row) => row.recommendedExitPolicy === 'peak_reversal_partial_trailing'));
+  assert.equal(report.symbolExitPolicyMatrix.status, 'materialized');
+  assert.equal(report.symbolExitPolicyMatrix.p0Symbols, 1);
+  assert.equal(
+    resolveSymbolExitPolicy(report, { market: 'crypto', symbol: 'PEAK/USDT' })?.policy,
+    'peak_reversal_partial_trailing',
+  );
   assert.ok(report.strategyActions.some((row) => row.id === 'current_close_post_exit_label'));
 
   return {
