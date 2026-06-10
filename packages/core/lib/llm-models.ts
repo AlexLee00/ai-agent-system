@@ -1,11 +1,29 @@
 // @ts-nocheck
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const CONFIG_PATH = path.join(__dirname, 'llm-models.json');
+function findProjectRoot() {
+  const starts = [
+    process.env.PROJECT_ROOT,
+    process.env.CODEX_PROJECT_ROOT,
+    process.cwd(),
+  ].filter(Boolean) as string[];
+
+  for (const start of starts) {
+    let current = path.resolve(start);
+    while (true) {
+      if (fs.existsSync(path.join(current, 'packages/core/lib/llm-models.json'))) {
+        return current;
+      }
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  return process.cwd();
+}
+
+const CONFIG_PATH = path.join(findProjectRoot(), 'packages/core/lib/llm-models.json');
 let _cache: any = null;
 
 export function loadModels() {

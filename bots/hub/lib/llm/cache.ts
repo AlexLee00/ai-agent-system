@@ -1,10 +1,6 @@
 // @ts-nocheck
 import crypto from 'crypto';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const path = require('path');
-const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
-const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+import * as pgPool from '../../../../packages/core/lib/pg-pool';
 
 function envTtlMs(name: string, fallback: number): number {
   const value = Number(process.env[name] || 0);
