@@ -40,26 +40,8 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
     });
   }
   const body = parsed.data;
-  const normalizedRequest = {
-    ...body,
-    callerTeam: body.callerTeam || context.callerTeam || undefined,
-    agent: body.agent || context.agent || undefined,
-    urgency: body.urgency || context.priority || undefined,
-    requestId: body.requestId || context.traceId || undefined,
-    traceId: context.traceId || undefined,
-  };
-  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
-  if (!targetPolicy.ok) {
-    return res.status(403).json({
-      ok: false,
-      error: {
-        code: targetPolicy.error,
-        message: 'LLM route target is not active',
-        target: targetPolicy.target,
-      },
-      traceId: context.traceId || null,
-    });
-  }
+  const normalizedRequest = normalizeLlmCallRequest(body, context);
+  if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
 
   try {
     const resp = await callWithFallback(normalizedRequest);
@@ -122,18 +104,7 @@ export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
     requestId: body.requestId || context.traceId || undefined,
     traceId: context.traceId || undefined,
   };
-  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
-  if (!targetPolicy.ok) {
-    return res.status(403).json({
-      ok: false,
-      error: {
-        code: targetPolicy.error,
-        message: 'LLM route target is not active',
-        target: targetPolicy.target,
-      },
-      traceId: context.traceId || null,
-    });
-  }
+  if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
 
   const timeoutMs = Math.max(5_000, Math.min(180_000, Number(body.timeoutMs || 45_000) || 45_000));
   const maxTokens = Number(body.maxTokens || 512) || 512;
@@ -281,18 +252,7 @@ export async function llmEmbeddingsRoute(req: RouteReq, res: RouteRes) {
     requestId: body.requestId || context.traceId || undefined,
     traceId: context.traceId || undefined,
   };
-  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
-  if (!targetPolicy.ok) {
-    return res.status(403).json({
-      ok: false,
-      error: {
-        code: targetPolicy.error,
-        message: 'LLM route target is not active',
-        target: targetPolicy.target,
-      },
-      traceId: context.traceId || null,
-    });
-  }
+  if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
 
   const started = Date.now();
   try {
@@ -445,26 +405,8 @@ export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
     });
   }
   const body = parsed.data;
-  const normalizedRequest = {
-    ...body,
-    callerTeam: body.callerTeam || context.callerTeam || undefined,
-    agent: body.agent || context.agent || undefined,
-    urgency: body.urgency || context.priority || undefined,
-    requestId: body.requestId || context.traceId || undefined,
-    traceId: context.traceId || undefined,
-  };
-  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
-  if (!targetPolicy.ok) {
-    return res.status(403).json({
-      ok: false,
-      error: {
-        code: targetPolicy.error,
-        message: 'LLM route target is not active',
-        target: targetPolicy.target,
-      },
-      traceId: context.traceId || null,
-    });
-  }
+  const normalizedRequest = normalizeLlmCallRequest(body, context);
+  if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
   const job = await createLlmJob(normalizedRequest, context, { source: 'api' });
   return res.status(202).json({
     ok: true,
@@ -474,6 +416,51 @@ export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
     statusUrl: `/hub/llm/jobs/${job.id}`,
     resultUrl: `/hub/llm/jobs/${job.id}/result`,
   });
+}
+
+function normalizeLlmCallRequest(
+  body: Record<string, any>,
+  context: { callerTeam?: string; agent?: string; priority?: string; traceId?: string | null },
+) {
+  return {
+    ...body,
+    callerTeam: body.callerTeam || context.callerTeam || undefined,
+    agent: body.agent || context.agent || undefined,
+    urgency: body.urgency || context.priority || undefined,
+    requestId: body.requestId || context.traceId || undefined,
+    traceId: context.traceId || undefined,
+  };
+}
+
+function checkLlmRouteTarget(
+  res: RouteRes,
+  context: { traceId?: string | null },
+  normalizedRequest: Record<string, unknown>,
+) {
+  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
+  if (!targetPolicy.ok) {
+    res.status(403).json({
+      ok: false,
+      error: {
+        code: targetPolicy.error,
+        message: 'LLM route target is not active',
+        target: targetPolicy.target,
+      },
+      traceId: context.traceId || null,
+    });
+    return null;
+  }
+  return targetPolicy;
+}
+
+function rejectIfDirectProviderRoutesDisabled(res: RouteRes): boolean {
+  if (directProviderRoutesEnabled()) return false;
+  res.status(403).json({
+    ok: false,
+    error: 'direct_llm_provider_route_disabled',
+    message: 'Use /hub/llm/call with callerTeam + agent or selectorKey.',
+  });
+  return true;
 }
 
 // GET /hub/llm/jobs — 최근 비동기 LLM job 목록
@@ -517,13 +504,7 @@ export async function llmJobResultRoute(req: RouteReq, res: RouteRes) {
 
 // POST /hub/llm/oauth — Claude Code OAuth 단독 호출
 export async function llmOAuthRoute(req: RouteReq, res: RouteRes) {
-  if (!directProviderRoutesEnabled()) {
-    return res.status(403).json({
-      ok: false,
-      error: 'direct_llm_provider_route_disabled',
-      message: 'Use /hub/llm/call with callerTeam + agent or selectorKey.',
-    });
-  }
+  if (rejectIfDirectProviderRoutesDisabled(res)) return;
   const body = req.body ?? {};
   if (!body.prompt || typeof body.prompt !== 'string') {
     return res.status(400).json({ error: 'prompt (string) required' });
@@ -546,13 +527,7 @@ export async function llmOAuthRoute(req: RouteReq, res: RouteRes) {
 
 // POST /hub/llm/groq — Groq 단독 호출
 export async function llmGroqRoute(req: RouteReq, res: RouteRes) {
-  if (!directProviderRoutesEnabled()) {
-    return res.status(403).json({
-      ok: false,
-      error: 'direct_llm_provider_route_disabled',
-      message: 'Use /hub/llm/call with callerTeam + agent or selectorKey.',
-    });
-  }
+  if (rejectIfDirectProviderRoutesDisabled(res)) return;
   const body = req.body ?? {};
   if (!body.prompt || typeof body.prompt !== 'string') {
     return res.status(400).json({ error: 'prompt (string) required' });
