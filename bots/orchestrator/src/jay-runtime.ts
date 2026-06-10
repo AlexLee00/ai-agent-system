@@ -235,6 +235,41 @@ function warnNonBlocking(scope, error, meta = {}) {
   console.warn(`[jay-runtime] ${scope} failed${suffix}: ${error?.message || error}`);
 }
 
+function isTransientDbStartupError(error) {
+  const message = String(error?.message || error || '');
+  const code = String(error?.code || '');
+  return code === '57P03'
+    || /the database system is starting up|database system is in recovery mode/i.test(message);
+}
+
+function positiveIntEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function retryStartupInit(label, fn, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || positiveIntEnv('JAY_RUNTIME_DB_INIT_RETRIES', 12)));
+  const delayMs = Math.max(0, Number(options.delayMs ?? positiveIntEnv('JAY_RUNTIME_DB_INIT_RETRY_MS', 5000)));
+  const sleeper = options.sleep || sleep;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!isTransientDbStartupError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      console.warn(`[jay-runtime] ${label} DB not ready (${attempt}/${maxAttempts}) — retrying in ${delayMs}ms: ${error?.message || error}`);
+      await sleeper(delayMs);
+    }
+  }
+  return undefined;
+}
+
 function resolveOrchestrationConfig() {
   const runtime = getJayOrchestrationConfig();
   const getBool = (envKey, runtimeKey, fallback = false) => {
@@ -830,17 +865,17 @@ async function main() {
   await flushPendingTelegrams();
   const flags = resolveOrchestrationConfig();
   if (flags.incidentStoreEnabled) {
-    await ensureIncidentTables().catch((error) => {
+    await retryStartupInit('incident_table_init', ensureIncidentTables).catch((error) => {
       throw new Error(`incident_table_init_failed:${error?.message || error}`);
     });
   }
   if (flags.teamBusEnabled && flags.commanderDispatch) {
-    await ensureCommanderDispatchTables().catch((error) => {
+    await retryStartupInit('commander_dispatch_table_init', ensureCommanderDispatchTables).catch((error) => {
       throw new Error(`commander_dispatch_table_init_failed:${error?.message || error}`);
     });
   }
   if (flags.skillExtraction) {
-    await ensureJaySkillMemoryTable().catch((error) => {
+    await retryStartupInit('skill_memory_init', ensureJaySkillMemoryTable).catch((error) => {
       throw new Error(`skill_memory_init_failed:${error?.message || error}`);
     });
   }
@@ -883,6 +918,8 @@ module.exports = {
     recordSymphonyCutoverShadow,
     normalizeTopicTeam,
     splitMessage,
+    isTransientDbStartupError,
+    retryStartupInit,
     isPidAlive,
     readProcessCommand,
     isJayRuntimeCommand,
