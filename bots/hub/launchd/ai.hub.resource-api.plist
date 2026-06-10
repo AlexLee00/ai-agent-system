@@ -34,7 +34,7 @@
     <key>LLM_GROQ_FAST_MODEL</key>
     <string>llama-3.1-8b-instant</string>
     <key>LLM_GROQ_DEEP_MODEL</key>
-    <string>qwen/qwen3-32b</string>
+    <string>llama-3.3-70b-versatile</string>
     <key>LLM_GEMINI_FLASH_MODEL</key>
     <string>gemini-cli-oauth/gemini-2.5-flash</string>
     <key>LLM_GEMINI_FLASH_LITE_MODEL</key>
