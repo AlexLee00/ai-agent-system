@@ -77,6 +77,9 @@ assert.deepEqual(
   ],
 );
 assert.equal(findings.filter((finding) => finding.severity === 'P0').length, 2);
+const openJournalFinding = findings.find((finding) => finding.id === 'open_journal_reconcile_pending');
+assert.equal(openJournalFinding.approvalRequired, true);
+assert.equal(openJournalFinding.writeCommand.includes('--write --confirm-live'), true);
 
 const payload = {
   ok: true,

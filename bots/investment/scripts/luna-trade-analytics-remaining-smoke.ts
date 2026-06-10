@@ -75,7 +75,7 @@ export async function runSmoke() {
     assert.equal(trendGuard.blocked, false, 'weak trend_following must not hard-block learning trades');
     assert.ok(trendGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
     assert.ok(trendGuard.warnings.includes('crypto_trend_following_confirmation_quality_thin'));
-    assert.equal(trendGuard.meta.sizingMultiplier, 0.75);
+    assert.equal(trendGuard.meta.sizingMultiplier, 0.25);
     assert.equal(trendGuard.meta.confirmationQuality.grade, 'missing');
     const trendNoBiasGuard = evaluateTradeDataEntryGuard({
       symbol: 'BTC/USDT',
@@ -89,7 +89,7 @@ export async function runSmoke() {
     });
     assert.equal(trendNoBiasGuard.blocked, false, 'trend_following without positive bias must stay probe-only, not hard-blocked');
     assert.ok(trendNoBiasGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
-    assert.equal(trendNoBiasGuard.meta.sizingMultiplier, 0.75);
+    assert.equal(trendNoBiasGuard.meta.sizingMultiplier, 0.25);
     const trendThinConfirmationGuard = evaluateTradeDataEntryGuard({
       symbol: 'BTC/USDT',
       exchange: 'binance',

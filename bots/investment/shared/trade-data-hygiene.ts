@@ -220,6 +220,9 @@ export function buildTradeDataHygieneFindings({
       count: staleOpenTrades,
       reason: 'open journal rows no longer match the authoritative position table',
       command: 'npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --json --market=crypto',
+      writeCommand: 'npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --write --confirm-live --market=crypto --max-affected-trades=10 --json',
+      approvalRequired: true,
+      approvalReason: 'manual DB journal close/reconcile write; dry-run evidence must be reviewed first',
     });
   }
 
