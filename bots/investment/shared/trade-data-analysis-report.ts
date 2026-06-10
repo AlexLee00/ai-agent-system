@@ -33,6 +33,20 @@ function countMap(rows = [], key = 'name') {
   return Object.fromEntries(rows.map((row) => [row[key] ?? 'unknown', num(row.count)]));
 }
 
+function summarizeBlockedRows(rows = []) {
+  const items = rows || [];
+  const total = items.reduce((sum, row) => sum + num(row.count), 0);
+  const expected = items.reduce((sum, row) => {
+    return sum + (isExpectedPolicyBlockCode(row.reason) ? num(row.count) : 0);
+  }, 0);
+  return {
+    total,
+    expected,
+    unexpected: Math.max(0, total - expected),
+    blockedReasons: items,
+  };
+}
+
 export const TRADE_DATA_REINFORCEMENT_CONTRACT = [
   'signal_failure_recovery',
   'kis_market_hours_guard',
@@ -85,6 +99,28 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
             COUNT(*)::int AS count
        FROM investment.signals
       WHERE LOWER(COALESCE(status, '')) = 'blocked'
+      ${signalLowerBound ? `AND created_at >= ${signalLowerBound}` : ''}
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 20`,
+  );
+  const blockRows24h = await safeQuery(
+    `SELECT COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), 'unknown') AS reason,
+            COUNT(*)::int AS count
+       FROM investment.signals
+      WHERE LOWER(COALESCE(status, '')) = 'blocked'
+        AND created_at >= NOW() - INTERVAL '24 hours'
+      ${signalLowerBound ? `AND created_at >= ${signalLowerBound}` : ''}
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 20`,
+  );
+  const blockRows2h = await safeQuery(
+    `SELECT COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), 'unknown') AS reason,
+            COUNT(*)::int AS count
+       FROM investment.signals
+      WHERE LOWER(COALESCE(status, '')) = 'blocked'
+        AND created_at >= NOW() - INTERVAL '2 hours'
       ${signalLowerBound ? `AND created_at >= ${signalLowerBound}` : ''}
       GROUP BY 1
       ORDER BY count DESC
@@ -202,6 +238,10 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
       byMarketStatus: marketSignalRows,
       failedByExchangeAction: failedRows,
       blockedReasons: blockRows,
+      blockedReasonTrend: {
+        last24h: summarizeBlockedRows(blockRows24h),
+        last2h: summarizeBlockedRows(blockRows2h),
+      },
     },
     trades: {
       byExchangeSide: tradeRows,

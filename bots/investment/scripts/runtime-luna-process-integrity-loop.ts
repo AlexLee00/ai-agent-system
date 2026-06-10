@@ -207,6 +207,19 @@ function buildPolicyBlockCoverage(blockedReasons = []) {
   };
 }
 
+function trendPolicyCoverage(trend = {}) {
+  return {
+    last24h: buildPolicyBlockCoverage(trend.last24h?.blockedReasons || []),
+    last2h: buildPolicyBlockCoverage(trend.last2h?.blockedReasons || []),
+    totals: {
+      last24h: num(trend.last24h?.total, 0),
+      last2h: num(trend.last2h?.total, 0),
+      unexpected24h: num(trend.last24h?.unexpected, 0),
+      unexpected2h: num(trend.last2h?.unexpected, 0),
+    },
+  };
+}
+
 function buildStrategyGuardCoverage(strategies = []) {
   return (strategies || []).map((item) => {
     const key = String(item.name || item.strategy || '').toLowerCase();
@@ -296,11 +309,19 @@ function collectWatchItems({ tradeData = {}, sourceHealth = {} } = {}) {
   const blockedReasons = topItems(tradeData.signals?.blockedReasons || [], 6);
   const remediationPlan = buildPrefilterRemediationPlan(tradeData.signals?.blockedReasons || [], 6);
   const policyCoverage = buildPolicyBlockCoverage(blockedReasons);
+  const recentBlockTrend = tradeData.signals?.blockedReasonTrend || null;
+  const recentPolicyCoverage = recentBlockTrend ? trendPolicyCoverage(recentBlockTrend) : null;
   const rawExecutionRate = num(tradeData.signals?.executionRate, 1);
   const executionRate = tradeData.signals?.policyAdjustedExecutionRate == null
     ? rawExecutionRate
     : num(tradeData.signals?.policyAdjustedExecutionRate, rawExecutionRate);
-  const policyBlocksAbsorbed = policyCoverage.allExpectedPolicyBlocks && executionRate >= 0.9;
+  const noVeryRecentBlocks = recentPolicyCoverage && recentPolicyCoverage.totals.last2h === 0;
+  const onlyExpectedRecentBlocks = recentPolicyCoverage
+    && recentPolicyCoverage.totals.unexpected24h === 0
+    && recentPolicyCoverage.totals.unexpected2h === 0;
+  const recentPressureCooling = Boolean(noVeryRecentBlocks && onlyExpectedRecentBlocks);
+  const policyBlocksAbsorbed = policyCoverage.allExpectedPolicyBlocks
+    && (executionRate >= 0.9 || recentPressureCooling);
   if (blockedReasons.length > 0) {
     watch.push({
       id: 'signal_block_reason_prefilter_review',
@@ -312,6 +333,7 @@ function collectWatchItems({ tradeData = {}, sourceHealth = {} } = {}) {
         blockedReasons,
         remediationPlan,
         policyCoverage,
+        recentPolicyCoverage,
         executionRate,
         rawExecutionRate,
       },
@@ -566,6 +588,41 @@ export async function runLunaProcessIntegrityLoopSmoke() {
   assert.ok(report.nextActions.some((item) => item.includes('runtime:binance-failure-pressure')));
   assert.ok(report.nextActions.some((item) => item.includes('runtime:execution-risk-guard')));
   assert.ok(report.nextActions.some((item) => item.includes('runtime:luna-process-integrity-loop')));
+
+  const cooledPolicyBlocks = buildLunaProcessIntegrityLoopReport({
+    actionBoard: { sourceStatus: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    sourceHealth: { status: 'luna_source_health_guarded', blockers: [], warnings: [] },
+    tradeData: {
+      status: 'ready',
+      signals: {
+        total: 10,
+        executionRate: 0.5,
+        policyAdjustedExecutionRate: 0.85,
+        blockedReasons: [{ reason: 'capital_guard_rejected', count: 4 }],
+        blockedReasonTrend: {
+          last24h: {
+            total: 1,
+            expected: 1,
+            unexpected: 0,
+            blockedReasons: [{ reason: 'capital_guard_rejected', count: 1 }],
+          },
+          last2h: {
+            total: 0,
+            expected: 0,
+            unexpected: 0,
+            blockedReasons: [],
+          },
+        },
+      },
+      hygiene: { status: 'ready', findings: [] },
+      journal: {},
+    },
+  });
+  const cooledSignalWatch = cooledPolicyBlocks.watchItems.find((item) => item.id === 'signal_block_reason_prefilter_review');
+  assert.equal(cooledPolicyBlocks.status, 'process_integrity_advisory');
+  assert.equal(cooledSignalWatch?.severity, 'advisory');
+  assert.equal(cooledSignalWatch?.evidence?.recentPolicyCoverage?.totals?.last2h, 0);
 
   const normalizedBus = normalizeActionBoardAgentBusQueryFailure({
     sourceStatus: 'operational_blocked',

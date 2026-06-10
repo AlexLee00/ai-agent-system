@@ -63,6 +63,11 @@ export async function runSmoke() {
   const report = await buildTradeDataAnalysisReport({ limit: 200 });
   assert.equal(report.ok, true);
   assert.ok(report.signals.total >= 0);
+  assert.ok(report.signals.blockedReasonTrend);
+  assert.ok(report.signals.blockedReasonTrend.last24h.total >= 0);
+  assert.ok(Array.isArray(report.signals.blockedReasonTrend.last24h.blockedReasons));
+  assert.ok(report.signals.blockedReasonTrend.last2h.total >= 0);
+  assert.ok(Array.isArray(report.signals.blockedReasonTrend.last2h.blockedReasons));
   assert.ok(report.posttrade.qualityCoverage);
   assert.ok(report.posttrade.qualityCoverage.coverage >= 0);
   assert.ok(report.hygiene);
