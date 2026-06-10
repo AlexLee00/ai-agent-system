@@ -994,6 +994,31 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
   };
 }
 
+// HARD limit 4 (자금 한도 / 잔고 상태): 기존 CAPITAL_HARD_BLOCKS 의미와 이름은 보존한다.
+// predictive_validation_discard는 자금 한도는 아니지만 hard_gate 모드에서 이미 "discard"로
+// 판정된 후보이므로 notify-only로 흘리지 않고 entry fire를 차단한다.
+const CAPITAL_HARD_BLOCKS = new Set([
+  'no_remaining_position_slots',
+  'buyable_amount_below_required',
+  'balance_status_not_ok',
+  'capital_mode_not_active',
+]);
+
+const ENTRY_TRIGGER_RISK_GATE_HARD_BLOCKS = new Set([
+  ...CAPITAL_HARD_BLOCKS,
+  'predictive_validation_discard',
+]);
+
+function isEntryTriggerRiskGateHardBlock(reason) {
+  return ENTRY_TRIGGER_RISK_GATE_HARD_BLOCKS.has(String(reason || ''));
+}
+
+function resolveEntryTriggerRiskGateBlockReason(reason) {
+  return CAPITAL_HARD_BLOCKS.has(String(reason || ''))
+    ? 'live_risk_gate_capital_hard_block'
+    : 'live_risk_gate_predictive_hard_block';
+}
+
 function isTerminalEntryTriggerLiveRiskGateBlock(riskGate = {}) {
   if (riskGate?.reason !== 'live_confidence_below_min') return false;
   const confidence = finiteNumber(riskGate?.details?.confidence, 0);
@@ -1500,17 +1525,14 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     }
 
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: activeCandidate, trigger: persisted, context, flags });
-    // HARD limit (자금 한도 / 잔고 상태): 절대 보존
-    const CAPITAL_HARD_BLOCKS = new Set([
-      'no_remaining_position_slots', 'buyable_amount_below_required',
-      'balance_status_not_ok', 'capital_mode_not_active',
-    ]);
-    if (!riskGate.ok && CAPITAL_HARD_BLOCKS.has(riskGate.reason)) {
+    if (!riskGate.ok && isEntryTriggerRiskGateHardBlock(riskGate.reason)) {
+      const hardBlockReason = resolveEntryTriggerRiskGateBlockReason(riskGate.reason);
+      const hardBlockLabel = CAPITAL_HARD_BLOCKS.has(String(riskGate.reason || '')) ? 'capital' : 'predictive';
       blocked++;
       await updateEntryTriggerState(persisted.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
-          reason: 'live_risk_gate_capital_hard_block',
+          reason: hardBlockReason,
           riskGateReason: riskGate.reason,
           riskGateDetails: riskGate.details || {},
         },
@@ -1519,7 +1541,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
-        reasoning: `entry_trigger_blocked(capital): ${riskGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
+        reasoning: `entry_trigger_blocked(${hardBlockLabel}): ${riskGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
           ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
@@ -1527,7 +1549,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
             triggerId: persisted.id,
             triggerType,
             state: 'waiting',
-            reason: 'live_risk_gate_capital_hard_block',
+            reason: hardBlockReason,
             riskGateReason: riskGate.reason,
           },
         },
@@ -2087,18 +2109,14 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }
 
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: effectiveCandidate, trigger, context, flags });
-    // HARD limit (자금 한도): 절대 보존
-    const CAPITAL_HARD_BLOCKS_ACTIVE = new Set([
-      'no_remaining_position_slots', 'buyable_amount_below_required',
-      'balance_status_not_ok', 'capital_mode_not_active',
-    ]);
-    if (!riskGate.ok && CAPITAL_HARD_BLOCKS_ACTIVE.has(riskGate.reason)) {
+    if (!riskGate.ok && isEntryTriggerRiskGateHardBlock(riskGate.reason)) {
       readyBlocked++;
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
+      const hardBlockReason = resolveEntryTriggerRiskGateBlockReason(riskGate.reason);
       await updateTriggerState(trigger.id, {
         triggerState: terminalBlock ? 'expired' : 'waiting',
         triggerMetaPatch: {
-          reason: 'live_risk_gate_capital_hard_block',
+          reason: hardBlockReason,
           riskGateReason: riskGate.reason,
           riskGateDetails: riskGate.details || {},
           terminalBlock,
@@ -2110,7 +2128,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         symbol: trigger.symbol,
         state: terminalBlock ? 'expired' : 'waiting',
         fired: false,
-        reason: 'live_risk_gate_capital_hard_block',
+        reason: hardBlockReason,
         riskGateReason: riskGate.reason,
         terminalBlock,
       });
