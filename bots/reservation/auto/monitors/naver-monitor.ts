@@ -28,7 +28,13 @@ const { formatVipBadge } = require('../../lib/vip');
 const { updateAgentState } = require('../../lib/state-bus');
 const { getNaverLaunchOptions, isHeadedMode } = require('../../lib/browser');
 const { getReservationNaverMonitorConfig } = require('../../lib/runtime-config');
-const { getReservationRuntimeDir, getReservationRuntimeFile, getReservationBrowserProfileRoot, ensureDir } = require('../../lib/runtime-paths');
+const {
+  getReservationRuntimeDir,
+  getReservationRuntimeFile,
+  getReservationBrowserProfileRoot,
+  ensureDir,
+  resolveReservationManualScript,
+} = require('../../lib/runtime-paths');
 const {
   chooseCanonicalReservationIdForSlot,
 } = require('../../lib/naver-monitor-helpers');
@@ -110,6 +116,15 @@ function resolveChildRuntime(label: string, sourceRelPath: string) {
     return { command: NODE_BIN, script: daemonPath };
   }
   return { command: TSX_BIN, script: path.join(PROJECT_ROOT, sourceRelPath) };
+}
+
+function resolveReservationChildScript(label: string | null, sourceRelPath: string) {
+  return resolveReservationManualScript({
+    label,
+    sourceRelPath,
+    jsRelPath: sourceRelPath.replace(/\.ts$/, '.js'),
+    projectRoot: PROJECT_ROOT,
+  });
 }
 
 let previousConfirmedList: any[] = [];
@@ -328,20 +343,22 @@ async function scrapeNewestBookingsFromList(page: any, limit = 5) {
 }
 
 function runPickkoCancel(booking: any) {
+  const scriptPath = resolveReservationChildScript(null, 'bots/reservation/manual/reservation/pickko-cancel.ts');
   return naverPickkoRunnerService.runPickkoCancel({
     booking,
-    scriptsDir: __dirname,
-    manualCancelScriptPath: path.join(__dirname, '../../manual/reservation/pickko-cancel.js'),
+    scriptsDir: path.dirname(scriptPath),
+    manualCancelScriptPath: scriptPath,
     onCancelled: () => { dailyStats.cancelled++; },
   });
 }
 
 function runPickko(booking: any, bookingId: any = null) {
+  const scriptPath = resolveReservationChildScript('ai.ska.pickko-accurate', 'bots/reservation/manual/reservation/pickko-accurate.ts');
   return naverPickkoRunnerService.runPickko({
     booking,
     bookingId,
-    scriptsDir: __dirname,
-    accurateScriptPath: path.join(__dirname, '../../manual/reservation/pickko-accurate.js'),
+    scriptsDir: path.dirname(scriptPath),
+    accurateScriptPath: scriptPath,
     maxRetries: MAX_RETRIES,
   });
 }

@@ -10,6 +10,10 @@ function getAiAgentHome() {
     || path.join(os.homedir(), '.ai-agent-system');
 }
 
+function getProjectRoot() {
+  return process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+}
+
 function getAiAgentWorkspace() {
   return process.env.AI_AGENT_WORKSPACE
     || process.env.JAY_WORKSPACE
@@ -45,7 +49,24 @@ function ensureParentDir(filePath) {
   return filePath;
 }
 
+function resolveReservationManualScript({
+  label,
+  sourceRelPath,
+  jsRelPath,
+  projectRoot = getProjectRoot(),
+}) {
+  const daemonPath = label ? path.join(projectRoot, 'dist', 'daemons', `${label}.cjs`) : null;
+  if (daemonPath && fs.existsSync(daemonPath)) return daemonPath;
+
+  const jsPath = jsRelPath ? path.join(projectRoot, jsRelPath) : null;
+  if (jsPath && fs.existsSync(jsPath)) return jsPath;
+
+  const sourcePath = path.join(projectRoot, sourceRelPath);
+  return sourcePath;
+}
+
 module.exports = {
+  getProjectRoot,
   getAiAgentHome,
   getAiAgentWorkspace,
   getReservationRuntimeDir,
@@ -54,4 +75,5 @@ module.exports = {
   getReservationBrowserProfileRoot,
   ensureDir,
   ensureParentDir,
+  resolveReservationManualScript,
 };
