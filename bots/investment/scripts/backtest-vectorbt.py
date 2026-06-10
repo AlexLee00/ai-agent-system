@@ -10,6 +10,7 @@ VectorBT 기반 백테스팅 스캐폴드.
 from __future__ import annotations
 
 import argparse
+import inspect
 import itertools
 import json
 import math
@@ -83,14 +84,27 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
         if ccxt is None:
             raise RuntimeError("ccxt가 설치되지 않았습니다.")
 
-        exchange = ccxt.binance()
+        exchange = ccxt.binance({"enableRateLimit": True})
         since = int(start.timestamp() * 1000)
 
         all_rows = []
         cursor = since
         limit = 1000
         while True:
-            rows = exchange.fetch_ohlcv(symbol, "5m", since=cursor, limit=limit)
+            last_error = None
+            rows = None
+            for attempt in range(2):
+                try:
+                    rows = exchange.fetch_ohlcv(symbol, "5m", since=cursor, limit=limit)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt == 0:
+                        import time
+
+                        time.sleep(1.5)
+            if rows is None:
+                raise last_error
             if not rows:
                 break
             all_rows.extend(rows)
@@ -112,12 +126,25 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
 
     ticker_symbol = map_stock_symbol(symbol)
     history = None
+    used_interval = None
+    primary_interval = str(os.environ.get("LUNA_BT_STOCK_INTERVAL", "1h")).strip() or "1h"
+    intervals = [primary_interval] + (["1d"] if primary_interval != "1d" else [])
 
-    for candidate in ticker_symbol:
-        ticker = yf.Ticker(candidate)
-        trial = ticker.history(start=start.strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h")
-        if trial is not None and not trial.empty:
-            history = trial
+    for interval in intervals:
+        for candidate in ticker_symbol:
+            try:
+                trial = yf.Ticker(candidate).history(
+                    start=start.strftime("%Y-%m-%d"),
+                    end=end.strftime("%Y-%m-%d"),
+                    interval=interval,
+                )
+            except Exception:
+                trial = None
+            if trial is not None and not trial.empty:
+                history = trial
+                used_interval = interval
+                break
+        if history is not None:
             break
 
     if history is None or history.empty:
@@ -137,6 +164,7 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
     )[["timestamp", "open", "high", "low", "close", "volume"]]
     df = df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
     df.attrs["luna_market_calendar"] = "stock"
+    df.attrs["luna_data_interval"] = used_interval
     return df
 
 
@@ -270,8 +298,10 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
     sl_pct = params.get("sl_pct", 0.03)
     entries, exits = build_signal_masks(df, params, deps)
     portfolio_freq = infer_portfolio_freq(df)
+    realistic_costs = bool_env("LUNA_BT_REALISTIC_COSTS", False)
+    slippage_pct = float_env("LUNA_BT_SLIPPAGE_PCT", 0.0005)
 
-    pf = vbt.Portfolio.from_signals(
+    pf_kwargs = dict(
         close=close,
         entries=entries.fillna(False),
         exits=exits.fillna(False),
@@ -281,6 +311,21 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         fees=0.001,
         freq=portfolio_freq,
     )
+    if realistic_costs:
+        from_signals_params = deps.get("_from_signals_params")
+        if from_signals_params is None:
+            try:
+                from_signals_params = set(inspect.signature(vbt.Portfolio.from_signals).parameters)
+            except Exception:
+                from_signals_params = set()
+            deps["_from_signals_params"] = from_signals_params
+        if "slippage" in from_signals_params:
+            pf_kwargs["slippage"] = slippage_pct
+        if "high" in from_signals_params and "low" in from_signals_params and "high" in df.columns and "low" in df.columns:
+            pf_kwargs["high"] = df["high"]
+            pf_kwargs["low"] = df["low"]
+
+    pf = vbt.Portfolio.from_signals(**pf_kwargs)
 
     stats = pf.stats()
 
@@ -315,6 +360,8 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         },
         "oos_returns_skew": oos_returns_skew,
         "oos_returns_kurt": oos_returns_kurt,
+        "costs_model": "realistic" if realistic_costs else "baseline",
+        "data_interval": df.attrs.get("luna_data_interval"),
     }
     if collect_returns:
         try:
@@ -760,6 +807,7 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
     # (var_sharpe = selection bias 측정용, DSR Phase 1b 입력)
     all_trial_sharpes: list[float] = []
     robust_on = bool_env("LUNA_BT_ROBUST_SELECTION_ENABLED", False)
+    pooled_returns_on = bool_env("LUNA_BT_POOLED_RETURNS_SHARPE", False)
     consensus_sig = None
     consensus_fold_coverage = None
 
@@ -794,11 +842,11 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
             )
             n_trials_fold = (is_entry or grid[0]).get("n_grid_trials", len(grid))
             try:
-                oos_raw = run_backtest(test_df, consensus_params, deps)
+                oos_raw = run_backtest(test_df, consensus_params, deps, collect_returns=pooled_returns_on)
             except Exception as exc:
                 fold_raw.append({"fold": fold_index, "error": str(exc)})
                 continue
-            fold_raw.append({
+            fold_entry = {
                 "fold": fold_index,
                 "train_bars": train_end - train_start,
                 "test_bars": len(test_df),
@@ -816,7 +864,10 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
                 # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
                 "oos_returns_skew": oos_raw.get("oos_returns_skew"),
                 "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
-            })
+            }
+            if pooled_returns_on:
+                fold_entry["returns_series_fold"] = oos_raw.get("returns_series") or []
+            fold_raw.append(fold_entry)
     else:
         for fold_index, (train_start, train_end, test_end) in enumerate(windows, start=1):
             train_df = df.iloc[train_start:train_end]
@@ -830,11 +881,11 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
             # grid는 이미 error 제거 후 반환 — 전체 SR 수집 (var_sharpe 계산용)
             all_trial_sharpes.extend(safe_float(r.get("sharpe_ratio"), 0.0) for r in grid)
             try:
-                oos_raw = run_backtest(test_df, best_is["params"], deps)
+                oos_raw = run_backtest(test_df, best_is["params"], deps, collect_returns=pooled_returns_on)
             except Exception as exc:
                 fold_raw.append({"fold": fold_index, "error": str(exc)})
                 continue
-            fold_raw.append({
+            fold_entry = {
                 "fold": fold_index,
                 "train_bars": len(train_df),
                 "test_bars": len(test_df),
@@ -851,7 +902,10 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
                 # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
                 "oos_returns_skew": oos_raw.get("oos_returns_skew"),
                 "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
-            })
+            }
+            if pooled_returns_on:
+                fold_entry["returns_series_fold"] = oos_raw.get("returns_series") or []
+            fold_raw.append(fold_entry)
 
     usable = [f for f in fold_raw if "error" not in f]
     if not usable:
@@ -868,6 +922,25 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
     pooled_pf = sum(f["pf_fold"] * f["trades_fold"] for f in usable) / total_w
     pooled_max_dd = max(f["dd_fold"] for f in usable)
     pooled_return = sum(f["ret_fold"] for f in usable) / len(usable)
+    _wf_params = usable[0].get("params") or {}
+    _wf_pf = _wf_params.get("portfolio_freq", "5min")
+    _wf_market = _wf_params.get("market_calendar", "crypto")
+    wf_ppy = periods_per_year(_wf_pf, _wf_market)
+    if pooled_returns_on:
+        all_oos_returns = []
+        for fold in usable:
+            all_oos_returns.extend(fold.get("returns_series_fold") or [])
+        ret = finite_float_values(all_oos_returns)
+        if len(ret) >= 2:
+            import statistics
+
+            mu = statistics.fmean(ret)
+            sd = statistics.stdev(ret)
+            pooled_sharpe_oos = (mu / sd) * math.sqrt(wf_ppy) if sd > 0 else 0.0
+        else:
+            pooled_sharpe_oos = 0.0
+        # IS는 기존 거래수 가중 평균을 유지한다. 따라서 overfit_gap은
+        # weighted IS - concatenated OOS로 비대칭이지만, OOS 왜곡 제거를 우선한다.
     overfit_gap = pooled_sharpe_is - pooled_sharpe_oos
     # grid trials: max 사용 (더 보수적인 deflation penalty)
     n_trials = max(2, n_trials_max)
@@ -906,23 +979,27 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
         if _np is not None and len(all_trial_sharpes) >= 2
         else None
     )
-    # OOS returns 분포: 거래수 가중 평균 (충분한 fold만 포함)
-    _skew_data = [(f["oos_returns_skew"], f["trades_fold"]) for f in usable if f.get("oos_returns_skew") is not None]
-    _kurt_data = [(f["oos_returns_kurt"], f["trades_fold"]) for f in usable if f.get("oos_returns_kurt") is not None]
-    pooled_oos_skew = (
-        sum(s * w for s, w in _skew_data) / max(1, sum(w for _, w in _skew_data))
-        if _skew_data else None
-    )
-    pooled_oos_kurt = (
-        sum(k * w for k, w in _kurt_data) / max(1, sum(w for _, w in _kurt_data))
-        if _kurt_data else None
-    )
-
-    # Phase 1b: 비연율화 계수 — fold params에 portfolio_freq 저장됨 (run_backtest → IS grid 경유)
-    _wf_params = usable[0].get("params") or {}
-    _wf_pf = _wf_params.get("portfolio_freq", "5min")
-    _wf_market = _wf_params.get("market_calendar", "crypto")
-    wf_ppy = periods_per_year(_wf_pf, _wf_market)
+    # OOS returns 분포: 기본은 기존 거래수 가중 평균, pooled-return Sharpe 경로는 연결 returns 직접 통계.
+    if pooled_returns_on:
+        if _scipy_stats is not None and "ret" in locals() and len(ret) >= 4:
+            _sk = float(_scipy_stats.skew(ret))
+            _kt = float(_scipy_stats.kurtosis(ret, fisher=False))
+            pooled_oos_skew = _sk if math.isfinite(_sk) else None
+            pooled_oos_kurt = _kt if math.isfinite(_kt) else None
+        else:
+            pooled_oos_skew = None
+            pooled_oos_kurt = None
+    else:
+        _skew_data = [(f["oos_returns_skew"], f["trades_fold"]) for f in usable if f.get("oos_returns_skew") is not None]
+        _kurt_data = [(f["oos_returns_kurt"], f["trades_fold"]) for f in usable if f.get("oos_returns_kurt") is not None]
+        pooled_oos_skew = (
+            sum(s * w for s, w in _skew_data) / max(1, sum(w for _, w in _skew_data))
+            if _skew_data else None
+        )
+        pooled_oos_kurt = (
+            sum(k * w for k, w in _kurt_data) / max(1, sum(w for _, w in _kurt_data))
+            if _kurt_data else None
+        )
 
     if oos_status == "insufficient_data":
         wf_dsr = wf_psr = wf_sr0 = wf_sr_oos_unann = None
@@ -977,6 +1054,8 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
         "sr0": wf_sr0 if oos_status != "insufficient_data" else None,
         "sr_oos_unann": wf_sr_oos_unann,
         "periods_per_year": wf_ppy,
+        "costs_model": "realistic" if bool_env("LUNA_BT_REALISTIC_COSTS", False) else "baseline",
+        "data_interval": df.attrs.get("luna_data_interval"),
     }
     if robust_on:
         aggregate.update({

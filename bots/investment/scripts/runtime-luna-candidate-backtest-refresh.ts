@@ -28,6 +28,7 @@ const LUNA_PBO_ENABLED = process.env.LUNA_PBO_ENABLED !== 'false';
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
 const LUNA_META_LABEL_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_META_LABEL_TIMEOUT_MS || 60_000));
 const LUNA_META_LABEL_ENABLED = TRUE_ENV_VALUES.has(String(process.env.LUNA_META_LABEL_ENABLED || 'false').trim().toLowerCase());
+let upsertFailureCount = 0;
 
 const GATE = {
   MIN_SHARPE: 0,
@@ -1050,6 +1051,17 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
   ]);
 }
 
+async function upsertStatusObserved(symbol: string, market: string, payload: any, dryRun = false) {
+  try {
+    await upsertStatus(symbol, market, payload, dryRun);
+  } catch (err) {
+    upsertFailureCount += 1;
+    console.warn(`[backtest-refresh] upsert 실패 ${symbol}: ${String(err?.message || err).slice(0, 160)}`);
+    return null;
+  }
+  return true;
+}
+
 function backtestAuditScore(payload: any = {}) {
   return payload.wouldBlock ? 0 : 1;
 }
@@ -1097,7 +1109,7 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
     rowsByPeriod: {},
     top30Gate: gate,
   };
-  await upsertStatus(symbol, market, payload, dryRun).catch(() => null);
+  await upsertStatusObserved(symbol, market, payload, dryRun);
   await recordPredictiveAudit(symbol, market, payload, dryRun).catch(() => null);
   return {
     symbol,
@@ -1232,7 +1244,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       quality.reasons = [...(quality.reasons || []), `backtest_runtime_budget_partial(periods_processed=${Object.keys(rowsByPeriod).length},periods_requested=${periods.length})`];
     }
     const payload = { fresh: true, ...quality, periods, rowsByPeriod, periodErrors, fallbackUsed };
-    await upsertStatus(symbol, market, payload, dryRun);
+    await upsertStatusObserved(symbol, market, payload, dryRun);
     await recordPredictiveAudit(symbol, market, payload, dryRun);
     return {
       symbol,
@@ -1271,13 +1283,14 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       periods,
       rowsByPeriod: {},
     };
-    await upsertStatus(symbol, market, payload, dryRun).catch(() => null);
+    await upsertStatusObserved(symbol, market, payload, dryRun);
     await recordPredictiveAudit(symbol, market, payload, dryRun).catch(() => null);
     return { symbol, market, skipped: false, gateStatus: 'would_block_error', healthy: false, fresh: false, wouldBlock: true, reasons: [errMsg], error: errMsg };
   }
 }
 
 export async function runCandidateBacktestRefresh(options: any = {}): Promise<any> {
+  upsertFailureCount = 0;
   const dryRun = options.dryRun === true;
   const fixture = options.fixture === true;
   const json = options.json === true;
@@ -1373,6 +1386,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     wouldBlocked,
     skipped,
     elapsedMs: Date.now() - startedAt,
+    upsert_failures: upsertFailureCount,
     candidateBudget: {
       requested: requestedSymbols.length || null,
       discovered: candidates.length,
