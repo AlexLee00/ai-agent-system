@@ -37,7 +37,11 @@ export async function buildPosttradeFeedbackL5Gate({ strict = false } = {}) {
   if (readiness?.ok !== true || (readiness?.blockers || []).length > 0) blockers.push('readiness_blocked');
   if (actionAudit?.ok !== true) blockers.push('feedback_action_audit_missing');
   if (actionStaging?.ok !== true) blockers.push('feedback_action_staging_unavailable');
-  if (strict && Number(actionStaging?.rejectedCount || 0) > 0) blockers.push('feedback_action_staging_rejections_present');
+  // rejectedCount means the staging layer safely discarded non-runtime or unsafe suggestions.
+  // L5 should block only when there are actionable runtime patches waiting for approval/apply.
+  if (strict && (Number(actionStaging?.patchCount || 0) > 0 || actionStaging?.requiresApproval === true)) {
+    blockers.push('feedback_action_staging_pending_approval');
+  }
   if (skillMirror?.ok !== true) blockers.push('skill_mirror_unavailable');
   if (constitution?.ok !== true || Number(constitution.ruleCount || 0) < 8) blockers.push('constitution_missing_or_incomplete');
 
