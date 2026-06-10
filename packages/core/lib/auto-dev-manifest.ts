@@ -119,7 +119,6 @@ function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
   const manifest = loadAutoDevManifest(autoDevDir);
   const current = manifest.entries[normalized] || {};
   manifest.entries[normalized] = {
-    relPath: normalized,
     state: 'inbox',
     createdAt: current.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
