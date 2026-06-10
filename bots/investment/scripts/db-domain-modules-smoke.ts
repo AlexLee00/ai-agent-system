@@ -24,6 +24,7 @@ const checks = [
   ['positions.upsertPosition', typeof positions.upsertPosition === 'function' && typeof facade.upsertPosition === 'function'],
   ['positions.getOpenPositions', typeof positions.getOpenPositions === 'function' && typeof facade.getOpenPositions === 'function'],
   ['llmRouting.where', llmRouting.HUB_DISABLED_SMOKE_ARTIFACT_WHERE.includes('direct_fallback')],
+  ['llmRouting.whereSmokeIncident', llmRouting.HUB_DISABLED_SMOKE_ARTIFACT_WHERE.includes('hub-llm-client-payload-smoke:%')],
   ['llmRouting.list', typeof llmRouting.listHubDisabledSmokeArtifacts === 'function'],
   ['analysis.insertAnalysis', typeof analysis.insertAnalysis === 'function'],
   ['lifecycle.insertLifecycleEvent', typeof lifecycle.insertLifecycleEvent === 'function'],

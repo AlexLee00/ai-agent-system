@@ -13,35 +13,46 @@ async function runSmoke() {
   await db.initSchema();
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-posttrade-skills-'));
   process.env.LUNA_POSTTRADE_SKILL_FILE_MIRROR_ROOT = root;
+  const agentName = `mirror-smoke-agent-${Date.now()}`;
   const patternKey = `crypto:mirror_smoke:bull:long:${Date.now()}`;
-  const upserted = await db.upsertPosttradeSkill({
-    market: 'crypto',
-    skillType: 'success',
-    patternKey,
-    title: `SUCCESS ${patternKey}`,
-    summary: 'mirror smoke skill',
-    invocationCount: 3,
-    successRate: 0.9,
-    winCount: 3,
-    lossCount: 0,
-    sourceTradeIds: [1, 2, 3],
-    metadata: { smoke: true },
-  });
-  assert.ok(upserted?.id, 'skill upserted');
+  try {
+    const upserted = await db.upsertPosttradeSkill({
+      market: 'crypto',
+      agentName,
+      skillType: 'success',
+      patternKey,
+      title: `SUCCESS ${patternKey}`,
+      summary: 'mirror smoke skill',
+      invocationCount: 3,
+      successRate: 0.9,
+      winCount: 3,
+      lossCount: 0,
+      sourceTradeIds: [1, 2, 3],
+      metadata: { smoke: true },
+    });
+    assert.ok(upserted?.id, 'skill upserted');
 
-  const mirrored = await mirrorExistingPosttradeSkills({ market: 'crypto', limit: 20 });
-  const target = mirrored.mirroredFiles.find((file) => String(file).includes('mirror_smoke'));
-  assert.ok(target, 'mirror file returned');
-  assert.equal(fs.existsSync(target), true, 'mirror file exists');
-  const content = fs.readFileSync(target, 'utf8');
-  assert.match(content, /mirror smoke skill/, 'mirror content includes summary');
+    const mirrored = await mirrorExistingPosttradeSkills({ agentName, market: 'crypto', limit: 5 });
+    const target = mirrored.mirroredFiles.find((file) => String(file).includes('mirror_smoke'));
+    assert.ok(target, 'mirror file returned');
+    assert.equal(fs.existsSync(target), true, 'mirror file exists');
+    const content = fs.readFileSync(target, 'utf8');
+    assert.match(content, /mirror smoke skill/, 'mirror content includes summary');
 
-  return {
-    ok: true,
-    root,
-    mirroredCount: mirrored.mirroredFiles.length,
-    target,
-  };
+    return {
+      ok: true,
+      root,
+      mirroredCount: mirrored.mirroredFiles.length,
+      target,
+    };
+  } finally {
+    await db.run(
+      `DELETE FROM investment.luna_posttrade_skills
+        WHERE agent_name = $1 AND pattern_key = $2`,
+      [agentName, patternKey],
+    ).catch(() => null);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 async function main() {
@@ -56,4 +67,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ posttrade-skill-file-mirror-smoke 실패:',
   });
 }
-

@@ -14,6 +14,8 @@ function delay(ms) {
 async function runSmoke() {
   const agentName = `route-recovery-smoke-${Date.now()}`;
   const incidentKey = `route-recovery:${Date.now()}`;
+  const fallbackAgentName = `route-fallback-smoke-${Date.now()}`;
+  const fallbackIncidentKey = `hub-llm-client-payload-smoke:${Date.now()}`;
   const market = `smoke_route_recovery_${Date.now()}`;
   const routeChain = [{ provider: 'openai-oauth', model: 'gpt-5.4-mini' }];
   try {
@@ -63,13 +65,41 @@ async function runSmoke() {
     assert.equal(suggestion.providerLabel, 'failed(openai-oauth)', 'failed provider should retain route provider label');
     assert.equal(report.ok, true, 'resolved route failure should not make route quality fail');
 
+    for (let i = 0; i < 3; i += 1) {
+      await recordInvestmentLlmRouteLog({
+        agentName: fallbackAgentName,
+        provider: 'direct_fallback',
+        ok: true,
+        taskType: 'default',
+        incidentKey: fallbackIncidentKey,
+        fallbackUsed: true,
+        fallbackCount: 1,
+        error: 'hub_disabled',
+      });
+    }
+    const fallbackReport = await buildAgentLlmRouteQualityReport({
+      days: 1,
+      market: 'all',
+      minCalls: 3,
+    });
+    const fallbackSuggestion = fallbackReport.suggestions.find((item) => item.agent === fallbackAgentName);
+    assert.ok(fallbackSuggestion, 'hub-disabled fallback smoke suggestion should be present');
+    assert.equal(
+      fallbackSuggestion.type,
+      'direct_fallback_smoke_artifact',
+      'hub-disabled smoke incidents must not be reported as real direct fallback usage',
+    );
+    assert.equal(fallbackSuggestion.severity, 'low', 'hub-disabled smoke artifacts should be low severity');
+
     return {
       ok: true,
       smoke: 'agent-llm-route-quality-recovery',
       suggestion,
+      fallbackSuggestion,
     };
   } finally {
     await db.run(`DELETE FROM investment.llm_routing_log WHERE incident_key = $1`, [incidentKey]).catch(() => null);
+    await db.run(`DELETE FROM investment.llm_routing_log WHERE incident_key = $1`, [fallbackIncidentKey]).catch(() => null);
   }
 }
 

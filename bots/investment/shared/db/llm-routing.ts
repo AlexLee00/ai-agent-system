@@ -13,7 +13,10 @@ export const HUB_DISABLED_SMOKE_ARTIFACT_WHERE = `
   AND COALESCE(error, '') = 'hub_disabled'
   AND market IS NULL
   AND symbol IS NULL
-  AND incident_key IS NULL
+  AND (
+    incident_key IS NULL
+    OR incident_key LIKE 'hub-llm-client-payload-smoke:%'
+  )
 `;
 
 export async function listHubDisabledSmokeArtifacts({ limit = 50 } = {}) {

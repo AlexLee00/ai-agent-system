@@ -139,7 +139,10 @@ export async function buildAgentLlmRouteQualityReport({
               AND COALESCE(error, '') = 'hub_disabled'
               AND market IS NULL
               AND symbol IS NULL
-              AND incident_key IS NULL
+              AND (
+                incident_key IS NULL
+                OR incident_key LIKE 'hub-llm-client-payload-smoke:%'
+              )
              THEN 1 ELSE 0
            END) AS synthetic_hub_disabled_calls,
        AVG(latency_ms) AS avg_latency_ms,
