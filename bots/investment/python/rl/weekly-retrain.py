@@ -58,6 +58,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--train", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--fixture", action="store_true")
     parser.add_argument("--confirm", default="")
     parser.add_argument("--timesteps", type=int, default=2000)
@@ -70,7 +71,9 @@ def main() -> None:
     py = sys.executable
 
     deps = run_json(["bash", str(rl_dir / "check-deps.sh"), "--json"], project_root)
-    data_cmd = [py, str(rl_dir / "prepare-training-data.py"), "--json", "--write", "--output-dir", str(rl_dir / "data")]
+    data_cmd = [py, str(rl_dir / "prepare-training-data.py"), "--json", "--output-dir", str(rl_dir / "data")]
+    if not args.dry_run:
+        data_cmd.append("--write")
     if args.fixture:
         data_cmd.append("--fixture")
     data = run_json(data_cmd, project_root)
@@ -99,6 +102,7 @@ def main() -> None:
     payload = {
         "ok": bool(deps.get("ok")) and bool(data.get("ok")) and bool(train.get("ok")),
         "shadow_only": True,
+        "dry_run": bool(args.dry_run),
         "deps": deps,
         "data": {
             "source": data.get("source"),

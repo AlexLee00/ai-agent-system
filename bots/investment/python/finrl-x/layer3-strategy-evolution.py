@@ -22,7 +22,7 @@ import random
 import psycopg2
 import psycopg2.extras
 
-PG_DSN = os.environ.get("PG_DSN", "host=localhost port=5432 dbname=jay user=postgres")
+PG_DSN = os.environ.get("PG_DSN", "dbname=jay")
 
 MutationType = Literal["tp_sl_adjust", "confidence_relax", "confidence_tighten", "regime_filter", "timeframe_shift"]
 
@@ -50,24 +50,23 @@ class MutationEvent:
 
 def fetch_underperforming_strategies(conn, market: str, min_trades: int = 3) -> list[StrategyCandidate]:
     """최근 14일 성과 하위 전략 조회"""
+    exchange = "binance" if market == "crypto" else "kis" if market in {"stocks", "overseas"} else market
     with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute("""
             SELECT
                 sp.setup_type,
-                sp.market,
-                AVG(tqe.overall_score) AS avg_score,
+                sp.exchange AS market,
+                AVG(sp.strategy_quality_score) AS avg_score,
                 COUNT(*) AS trade_count
             FROM investment.position_strategy_profiles sp
-            LEFT JOIN investment.trade_quality_evaluations tqe
-                ON tqe.trade_id = sp.position_scope_key
-            WHERE sp.market = %s
+            WHERE sp.exchange = %s
               AND sp.created_at >= NOW() - INTERVAL '14 days'
-            GROUP BY sp.setup_type, sp.market
+            GROUP BY sp.setup_type, sp.exchange
             HAVING COUNT(*) >= %s
-               AND (AVG(tqe.overall_score) < 0.45 OR AVG(tqe.overall_score) IS NULL)
-            ORDER BY AVG(tqe.overall_score) ASC NULLS FIRST
+               AND (AVG(sp.strategy_quality_score) < 0.45 OR AVG(sp.strategy_quality_score) IS NULL)
+            ORDER BY AVG(sp.strategy_quality_score) ASC NULLS FIRST
             LIMIT 10
-        """, (market, min_trades))
+        """, (exchange, min_trades))
         rows = cur.fetchall()
 
     return [

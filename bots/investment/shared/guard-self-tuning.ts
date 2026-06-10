@@ -113,7 +113,7 @@ async function fetchGuardEventSamples(guardName, days = 30, limit = 10) {
 /**
  * LLM 분석 → 임계값 조정 추천
  */
-export async function suggestThresholdAdjustment(guardName, days = 30) {
+export async function suggestThresholdAdjustment(guardName, days = 30, options = {}) {
   const effectiveness = await measureGuardEffectiveness(guardName, days);
   const samples = await fetchGuardEventSamples(guardName, days);
 
@@ -133,7 +133,8 @@ export async function suggestThresholdAdjustment(guardName, days = 30) {
   try {
     const cfg = getPosttradeFeedbackRuntimeConfig();
     const llmEnabled = cfg?.guard_self_tuning?.llm_enabled !== false;
-    if (llmEnabled) {
+    const llmAllowed = options.llm !== false;
+    if (llmEnabled && llmAllowed) {
       const prompt = buildSelfTuningPrompt(guardName, effectiveness, samples);
       const llmResult = await callLLM({
         model: 'local_fast',
@@ -260,7 +261,10 @@ export async function applyThresholdAdjustment(guardName, newThreshold, tuningId
 /**
  * 모든 활성 가드의 효과 측정 + 조정 필요 여부 요약
  */
-export async function runWeeklySelfTuningAnalysis(days = 30) {
+export async function runWeeklySelfTuningAnalysis(days = 30, options = {}) {
+  const dryRun = options.dryRun === true;
+  const writeEnabled = options.write !== false && !dryRun;
+  const llmEnabled = options.llm !== false && !dryRun;
   const guardNames = await query(
     `SELECT DISTINCT guard_name
        FROM investment.guard_events
@@ -270,8 +274,10 @@ export async function runWeeklySelfTuningAnalysis(days = 30) {
 
   const results = [];
   for (const row of (guardNames || [])) {
-    const suggestion = await suggestThresholdAdjustment(row.guard_name, days);
-    await saveThresholdSuggestion(suggestion);
+    const suggestion = await suggestThresholdAdjustment(row.guard_name, days, { llm: llmEnabled });
+    if (writeEnabled) {
+      await saveThresholdSuggestion(suggestion);
+    }
     results.push(suggestion);
   }
 
@@ -279,6 +285,9 @@ export async function runWeeklySelfTuningAnalysis(days = 30) {
   return {
     analyzedGuards: results.length,
     needsActionCount: needsAction.length,
+    writeApplied: writeEnabled,
+    dryRun,
+    llmEnabled,
     results,
     summaryAt: new Date().toISOString(),
   };

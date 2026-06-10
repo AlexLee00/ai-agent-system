@@ -20,7 +20,7 @@ from typing import Any, Optional
 import psycopg2
 import psycopg2.extras
 
-PG_DSN = os.environ.get("PG_DSN", "host=localhost port=5432 dbname=jay user=postgres")
+PG_DSN = os.environ.get("PG_DSN", "dbname=jay")
 
 
 @dataclass

@@ -11,6 +11,7 @@
     <string>--import</string>
     <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-finrl-weekly-training.ts</string>
+    <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
@@ -20,6 +21,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_FINRL_WEEKLY_TRAINING_ENABLED</key>
+    <string>false</string>
   </dict>
   <!-- 매주 일요일 14:00 KST — ppo(10:00)와 4시간 간격, 무거운 RL 동시 실행 방지 -->
   <key>StartCalendarInterval</key>

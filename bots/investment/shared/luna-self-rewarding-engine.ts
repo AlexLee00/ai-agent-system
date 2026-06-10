@@ -186,7 +186,7 @@ export async function buildWeeklyLearningReport(market: string): Promise<WeeklyL
     db.query(`
       SELECT COUNT(*) AS cnt, AVG(overall_score) AS avg_score
       FROM investment.trade_quality_evaluations
-      WHERE created_at >= $1
+      WHERE evaluated_at >= $1
     `, [weekStart.toISOString()]),
 
     db.query(`
@@ -206,15 +206,24 @@ export async function buildWeeklyLearningReport(market: string): Promise<WeeklyL
     `, [weekStart.toISOString()]),
   ]);
 
-  const totalTrades = Number((tradesRes as any).value?.rows[0]?.cnt ?? 0);
-  const avgScore = Number((tradesRes as any).value?.rows[0]?.avg_score ?? 0);
+  const settledRows = (result: PromiseSettledResult<any>) => {
+    if (result.status !== 'fulfilled') return [];
+    const value = result.value;
+    if (Array.isArray(value)) return value;
+    return value?.rows || [];
+  };
+
+  const tradeRows = settledRows(tradesRes as PromiseSettledResult<any>);
+  const totalTrades = Number(tradeRows[0]?.cnt ?? 0);
+  const avgScore = Number(tradeRows[0]?.avg_score ?? 0);
   const avgReward = (avgScore - 0.5) * 2; // 0~1 → -1~1
 
-  const agentRows = (agentsRes as any).value?.rows ?? [];
+  const agentRows = settledRows(agentsRes as PromiseSettledResult<any>);
   const expertAgents = agentRows.filter((r: any) => r.current_level === 'expert').map((r: any) => r.agent_name);
   const noviceAgents = agentRows.filter((r: any) => r.current_level === 'novice').map((r: any) => r.agent_name);
 
-  const topMutation = (mutationRes as any).value?.rows[0]?.event_type ?? null;
+  const mutationRows = settledRows(mutationRes as PromiseSettledResult<any>);
+  const topMutation = mutationRows[0]?.event_type ?? null;
 
   // 학습 속도: expert 비율 + 주간 리워드 성장
   const learningVelocity = Math.min(1,

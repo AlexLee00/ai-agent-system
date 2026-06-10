@@ -7,7 +7,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/guard-self-tuning-weekly.ts</string>
+    <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
@@ -17,6 +21,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_GUARD_SELF_TUNING_WRITE_ENABLED</key>
+    <string>false</string>
   </dict>
   <!-- 매주 일요일 04:00 KST — 새벽 분산(06시 피크 완화) -->
   <key>StartCalendarInterval</key>

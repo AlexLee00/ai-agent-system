@@ -19,8 +19,13 @@ function argValue(name: string, fallback: string | null = null): string | null {
 async function main() {
   const json = process.argv.includes('--json');
   if (maybeSkipForMemory('luna.ppo-retrain', { json })) return;
-  const train = process.argv.includes('--train');
+  const trainRequested = process.argv.includes('--train');
+  const trainingEnabled = process.env.LUNA_PPO_RETRAIN_ENABLED === 'true';
+  const train = trainRequested && trainingEnabled;
   const confirm = argValue('confirm', '') || '';
+  if (trainRequested && !trainingEnabled && !json) {
+    console.log('[luna-ppo] LUNA_PPO_RETRAIN_ENABLED=false — --train 요청을 check-only로 강등');
+  }
   const defaultPython = existsSync('/opt/homebrew/bin/python3') ? '/opt/homebrew/bin/python3' : 'python3';
   const pythonBin = process.env.LUNA_PYTHON_BIN || defaultPython;
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,6 +39,7 @@ async function main() {
     '--timesteps',
     String(Math.max(1, Number(argValue('timesteps', '2000')) || 2000)),
   ];
+  if (!trainingEnabled) args.push('--dry-run');
   if (train) args.push('--train');
   if (confirm) args.push('--confirm', confirm);
   const { stdout, stderr } = await execFileAsync(pythonBin, args, {
@@ -41,6 +47,9 @@ async function main() {
     timeout: 30 * 60 * 1000,
   });
   const result = JSON.parse(stdout || '{}');
+  result.train_requested = trainRequested;
+  result.training_enabled = trainingEnabled;
+  result.training_downgraded_to_check = trainRequested && !trainingEnabled;
   if (stderr && !json) console.warn(stderr);
   if (json) console.log(JSON.stringify(result, null, 2));
   else console.log(`[luna-ppo] status=${result.status || 'check'} trainingStarted=${result.training_started}`);

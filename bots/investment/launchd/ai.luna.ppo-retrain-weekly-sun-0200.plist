@@ -23,6 +23,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_PPO_RETRAIN_ENABLED</key>
+    <string>false</string>
   </dict>
   <!-- 라벨명에 0200 표기 있으나 실제 실행은 일요일 10:00 KST (메모리 분산) -->
   <key>StartCalendarInterval</key>

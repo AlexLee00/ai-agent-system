@@ -11,6 +11,7 @@
     <string>--import</string>
     <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-harness-daily.ts</string>
+    <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
@@ -22,6 +23,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_HARNESS_AUTO_ADJUST_WRITE_ENABLED</key>
+    <string>false</string>
   </dict>
   <!-- 매일 02:15 KST — 새벽 분산(06시 피크 완화, 전일 데이터/shadow 독립이라 시간 유연) -->
   <key>StartCalendarInterval</key>

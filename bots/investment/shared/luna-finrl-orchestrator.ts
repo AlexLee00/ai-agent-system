@@ -24,7 +24,11 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_ROOT = path.resolve(__dirname, '..');
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(INVESTMENT_ROOT, '../..');
-const DEFAULT_PYTHON_BIN = existsSync('/opt/homebrew/bin/python3') ? '/opt/homebrew/bin/python3' : 'python3';
+const DEFAULT_PYTHON_BIN = existsSync('/opt/homebrew/bin/python3.12')
+  ? '/opt/homebrew/bin/python3.12'
+  : existsSync('/opt/homebrew/bin/python3')
+    ? '/opt/homebrew/bin/python3'
+    : 'python3';
 const PYTHON_BIN = process.env.LUNA_PYTHON_BIN || DEFAULT_PYTHON_BIN;
 const FINRL_DIR = path.join(PROJECT_ROOT, 'bots/investment/python/finrl-x');
 
@@ -44,6 +48,8 @@ export interface WeeklyTrainingResult {
   layers: FinRLTrainingResult[];
   totalDurationMs: number;
   overallSuccess: boolean;
+  dryRun?: boolean;
+  writeApplied?: boolean;
   learningReport?: object;
 }
 
@@ -85,22 +91,27 @@ async function runPythonLayer(scriptName: string, args: string[] = []): Promise<
 
 // ─── 전체 학습 파이프라인 ─────────────────────────────────────
 
-export async function runWeeklyFinRLTraining(market: string = 'crypto'): Promise<WeeklyTrainingResult> {
-  console.log(`[FinRL] 주간 학습 시작 — market=${market}`);
+export async function runWeeklyFinRLTraining(market: string = 'crypto', options: { dryRun?: boolean; write?: boolean } = {}): Promise<WeeklyTrainingResult> {
+  const dryRun = options.dryRun === true;
+  const writeApplied = options.write !== false && !dryRun;
+  const prefix = dryRun ? '[FinRL][DRY-RUN]' : '[FinRL]';
+  console.log(`${prefix} 주간 학습 시작 — market=${market}`);
   const start = Date.now();
 
   const layers: FinRLTrainingResult[] = [];
 
   // Layer 3: 전략 진화 (DB 기반 — Python 스크립트)
-  console.log('[FinRL] Layer 3: 전략 진화...');
-  const l3 = await runPythonLayer('layer3-strategy-evolution.py', ['--market', market]);
+  console.log(`${prefix} Layer 3: 전략 진화...`);
+  const l3Args = ['--market', market];
+  if (dryRun) l3Args.push('--dry-run');
+  const l3 = await runPythonLayer('layer3-strategy-evolution.py', l3Args);
   layers.push(l3);
   if (!l3.success) {
-    console.warn('[FinRL] Layer 3 실패 — 계속 진행');
+    console.warn(`${prefix} Layer 3 실패 — 계속 진행`);
   }
 
   // Layer 4: 성과 최적화
-  console.log('[FinRL] Layer 4: 성과 최적화...');
+  console.log(`${prefix} Layer 4: 성과 최적화...`);
   const l4 = await runPythonLayer('layer4-performance-opt.py', ['--market', market]);
   layers.push(l4);
 
@@ -108,19 +119,23 @@ export async function runWeeklyFinRLTraining(market: string = 'crypto'): Promise
   let learningReport;
   try {
     learningReport = await buildWeeklyLearningReport(market);
-    console.log(`[FinRL] 주간 학습 리포트: velocity=${learningReport.learningVelocity}, experts=${learningReport.expertAgents.length}`);
+    console.log(`${prefix} 주간 학습 리포트: velocity=${learningReport.learningVelocity}, experts=${learningReport.expertAgents.length}`);
   } catch (err) {
-    console.warn('[FinRL] 주간 리포트 생성 실패:', err?.message);
+    console.warn(`${prefix} 주간 리포트 생성 실패:`, err?.message);
   }
 
   // 결과 DB 기록
-  await recordTrainingResult(layers, market, learningReport);
+  if (writeApplied) {
+    await recordTrainingResult(layers, market, learningReport);
+  } else {
+    console.log(`${prefix} LUNA_FINRL_WEEKLY_TRAINING_ENABLED=false — training result DB 기록 생략`);
+  }
 
   const overallSuccess = layers.some(l => l.success);
   const totalDurationMs = Date.now() - start;
 
-  console.log(`[FinRL] 완료 — ${totalDurationMs}ms, 성공=${overallSuccess}`);
-  return { market, layers, totalDurationMs, overallSuccess, learningReport };
+  console.log(`${prefix} 완료 — ${totalDurationMs}ms, 성공=${overallSuccess}`);
+  return { market, layers, totalDurationMs, overallSuccess, dryRun, writeApplied, learningReport };
 }
 
 // ─── 실시간 레짐 환경 선택 ────────────────────────────────────

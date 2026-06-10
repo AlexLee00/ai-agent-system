@@ -30,6 +30,9 @@ export interface AutoAdjustmentResult {
   market: string;
   harnessResults: HarnessCheckResult[];
   mutationsCreated: number;
+  mutationsPlanned?: number;
+  writeApplied?: boolean;
+  dryRun?: boolean;
   agentsAdjusted: string[];
   configAdjustments: ConfigAdjustment[];
   summary: string;
@@ -168,13 +171,21 @@ async function collectHarnessResults(market: string): Promise<HarnessCheckResult
 
 // ─── 하네스 실패 → Mutation 자동 생성 ───────────────────────
 
-async function createMutationsFromHarness(results: HarnessCheckResult[]): Promise<number> {
+async function createMutationsFromHarness(results: HarnessCheckResult[], options: { write?: boolean; dryRun?: boolean } = {}): Promise<{ created: number; planned: number }> {
   let created = 0;
+  let planned = 0;
+  const writeEnabled = options.write !== false && options.dryRun !== true;
   const failed = results.filter(r => !r.passed);
 
   for (const result of failed) {
     const mutationType = getMutationType(result);
     if (!mutationType) continue;
+    planned++;
+
+    if (!writeEnabled) {
+      console.log(`[HarnessAdjust][DRY-RUN] mutation 계획: ${mutationType} ← ${result.harnessName}(${result.score.toFixed(2)})`);
+      continue;
+    }
 
     try {
       await db.query(`
@@ -197,7 +208,7 @@ async function createMutationsFromHarness(results: HarnessCheckResult[]): Promis
       // 중복 등 무시
     }
   }
-  return created;
+  return { created, planned };
 }
 
 function getMutationType(result: HarnessCheckResult): string | null {
@@ -273,24 +284,29 @@ function identifyAgentsToAdjust(results: HarnessCheckResult[]): string[] {
 
 // ─── 메인: 일간 하네스 자율 조정 ─────────────────────────────
 
-export async function runHarnessAutoAdjustment(market: string): Promise<AutoAdjustmentResult> {
-  console.log(`[HarnessAdjust] ${market} 시작`);
+export async function runHarnessAutoAdjustment(market: string, options: { write?: boolean; dryRun?: boolean } = {}): Promise<AutoAdjustmentResult> {
+  const dryRun = options.dryRun === true;
+  const writeApplied = options.write !== false && !dryRun;
+  const prefix = dryRun ? '[HarnessAdjust][DRY-RUN]' : '[HarnessAdjust]';
+  console.log(`${prefix} ${market} 시작`);
 
   const harnessResults = await collectHarnessResults(market);
-  console.log(`[HarnessAdjust] ${harnessResults.length}개 하네스 체크 완료`);
+  console.log(`${prefix} ${harnessResults.length}개 하네스 체크 완료`);
 
-  const mutationsCreated = await createMutationsFromHarness(harnessResults);
+  const mutationResult = await createMutationsFromHarness(harnessResults, { dryRun, write: writeApplied });
+  const mutationsCreated = mutationResult.created;
+  const mutationsPlanned = mutationResult.planned;
   const configAdjustments = buildConfigAdjustments(harnessResults);
   const agentsAdjusted = identifyAgentsToAdjust(harnessResults);
 
   const passedCount = harnessResults.filter(r => r.passed).length;
   const summary = [
     `하네스 ${harnessResults.length}개 체크: 통과 ${passedCount}/${harnessResults.length}`,
-    `mutation ${mutationsCreated}건 생성`,
+    writeApplied ? `mutation ${mutationsCreated}건 생성` : `mutation ${mutationsPlanned}건 계획(dry-run)`,
     `조정 대상 에이전트: ${agentsAdjusted.join(', ') || '없음'}`,
     `파라미터 조정 제안: ${configAdjustments.length}건`,
   ].join(' | ');
 
-  console.log(`[HarnessAdjust] ${summary}`);
-  return { market, harnessResults, mutationsCreated, agentsAdjusted, configAdjustments, summary };
+  console.log(`${prefix} ${summary}`);
+  return { market, harnessResults, mutationsCreated, mutationsPlanned, writeApplied, dryRun, agentsAdjusted, configAdjustments, summary };
 }
