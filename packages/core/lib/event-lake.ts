@@ -3,6 +3,18 @@ const { getTraceId } = require('./trace');
 
 const SCHEMA = 'agent';
 const TABLE = `${SCHEMA}.event_lake`;
+const COMMAND_EVENT_TYPES = Object.freeze([
+  'cross_pipeline.command.issued',
+  'cross_pipeline.command.acknowledged',
+  'cross_pipeline.command.completed',
+  'cross_pipeline.command.failed',
+  // Legacy underscore spellings are retained for older rows/tools, but command
+  // queries must stay exact-match so PostgreSQL can use (event_type, created_at).
+  'cross_pipeline.command_issued',
+  'cross_pipeline.command_acknowledged',
+  'cross_pipeline.command_completed',
+  'cross_pipeline.command_failed',
+]);
 
 type EventLakeSeverity = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 type EventLakeInsertRow = { id?: number | string | null };
@@ -335,12 +347,13 @@ export async function recentCommands({
 } = {}) {
   await initSchema();
 
-  const params: Array<string | number> = [Math.max(1, Number(minutes || 0) || 1)];
+  const params: Array<string | number | string[]> = [Math.max(1, Number(minutes || 0) || 1)];
   const conditions = [
     `created_at >= NOW() - ($1::int * INTERVAL '1 minute')`,
-    `(event_type LIKE 'cross_pipeline.command_%' OR event_type LIKE 'cross_pipeline.command.%')`,
   ];
-  let nextParamIndex = 2;
+  params.push([...COMMAND_EVENT_TYPES]);
+  conditions.push(`event_type = ANY($2::text[])`);
+  let nextParamIndex = 3;
 
   if (_text(targetTeam)) {
     params.push(_text(targetTeam));
@@ -553,13 +566,12 @@ async function _findCommandIssuedEvent(commandId: string, minutes = 7 * 24 * 60)
     FROM ${TABLE}
     WHERE created_at >= NOW() - ($1::int * INTERVAL '1 minute')
       AND (
-        event_type = 'cross_pipeline.command_issued'
-        OR event_type = 'cross_pipeline.command.issued'
+        event_type = ANY($2::text[])
       )
-      AND metadata->'command'->>'command_id' = $2
+      AND metadata->'command'->>'command_id' = $3
     ORDER BY created_at DESC
     LIMIT 1
-  `, [Math.max(1, Number(minutes || 0) || 1), _text(commandId)]);
+  `, [Math.max(1, Number(minutes || 0) || 1), [...COMMAND_EVENT_TYPES], _text(commandId)]);
 
   return rows[0] || null;
 }
