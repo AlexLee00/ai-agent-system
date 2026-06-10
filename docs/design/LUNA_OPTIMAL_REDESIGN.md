@@ -119,3 +119,92 @@
 
 ## 6. 다음 작업
 1. 마스터 리뷰 → 설계 승인/수정. 2. P0 CODEX 프롬프트 5건 작성. 3. TRACKER 갱신(회의실 TRACKER와 통합 여부 결정). 4. C1~C4 상세 명세(시장별 신호 정의·파라미터 초기값·스키마).
+
+### C15. 승격 제안 엔진 (Promotion Proposal Engine) [신설 — 마스터 보강 2026-06-12, 기존 hybrid-promotion-gate 일반화]
+> 원칙: **마스터는 데이터를 뒤지지 않는다. 시스템이 분석해서 제안하고, 마스터는 결정만 한다.** 모든 shadow·실험·파라미터 변경은 이 엔진의 관리 대상.
+
+**1) 승격 기준 사전 정의** — 모든 shadow 컴포넌트는 등록 시 기준을 함께 정의(기준 없는 shadow 금지):
+- 최소 표본(예: 신호 30+/거래 30+/기간 2주+) · 우월성(가상 성과 Δ, 예: E +X% 또는 MDD −Y%p) · 통계 신뢰(permutation/p값 또는 DSR) · 무결성(오류율·지연 상한).
+
+**2) 주기 평가 + 즉시 트리거**:
+- 정기: 일일 회의(전술)에서 현황 1줄 요약, 주간 회의(전략)에서 전체 평가.
+- 즉시: 기준 충족 도달 / 성과 악화(중단 기준) / 표본 정체(4주+ 미달) 시 회의 대기 없이 발화.
+
+**3) 자동 제안 3종** (텔레그램 + 회의 안건 자동 등록, 머신리더블 ADR 초안 포함):
+- ✅ **승격 제안서**: 근거 데이터 요약(표본·Δ·p)·리스크·롤백 계획(env 플래그)·권고 Stage. 마스터=승인/보류/거부 **원클릭 수준**.
+- ⛔ **중단·재설계 제안서**: shadow가 LIVE 대비 열등 확정 시.
+- ⏸️ **정체 보고**: 표본 부족 지속 → 실험 설계 변경 제안(기간 연장/기준 완화/폐기).
+
+**4) 사후 검증 루프** (승격 = 끝이 아니라 새 루프 시작):
+- 승격된 컴포넌트는 자동으로 **사후 모니터링 등록**(기대 성과 vs 실성과) → 미달 시 **자동 롤백 제안**(임계 초과 시 회로차단기 즉시 롤백 + 사후 보고).
+
+**5) 재사용**: `luna-hybrid-promotion-gate`·`hybrid-promotion-review` A2A 스킬·rollback_scheduler(24h 자동롤백)·alert-publisher. 신설=컴포넌트 레지스트리(승격 기준·상태·이력 테이블)+제안서 생성기.
+
+## 0-b. 모든 액션의 루프화 원칙 [마스터 보강 — §0 확장]
+> **루나팀의 모든 액션은 [실행 → 측정 → 평가 → 제안/조정 → 실행] 루프를 가진다. 끝나는 액션은 없다.**
+
+| 액션 | 측정 | 평가 | 제안/조정(자동) | 마스터 게이트 |
+|---|---|---|---|---|
+| 거래(G0~G7) | 거래 저널(C8) | E·R:R·레짐별 성과 | 파라미터 스토어 갱신(검증 통과분) | 구조 변경만 |
+| shadow 실험 | 비교 로그 | 승격 기준(C15) | 승격/중단/정체 제안서 | 승격 승인 |
+| 파라미터 | 변경 이력+성과 | 변경 전후 비교 | 롤백/유지 제안 | 임계 초과 변경 |
+| 전략군 | 군별 롤링 E | 부패 감지(E 추세↓) | 비활성화/재튜닝 제안 | 군 추가·제거 |
+| 에이전트 | ablation(C13) | 기여도 | 제거/병합/과업 변경 제안 | 재구성 승인 |
+| 회의 | 결정 ADR | 결정 추적(이행·결과) | 미이행·역효과 결정 재상정 | 회의 자체 |
+| 데이터 소스 | 소스별 신호 기여 | IC·지연·결측 | 추가/교체 제안(M-11) | 신규 소스 |
+- 마스터 위치 = **루프 내부가 아니라 게이트(결정점)**. 제안이 마스터에게 오고, 데이터 수집·분석·요약은 전부 시스템 몫(C15).
+
+### C15-b. Shadow 전수 인벤토리 → 레지스트리 초기 등록 [실측 2026-06-12]
+> 마스터 지시: 모든 shadow를 승격 엔진과 연결. 아래 표 = C15 레지스트리의 **초기 시드**(P1에서 테이블화). 기준은 초안 — 등록 시 확정.
+> 🔑 발견: `posttrade`·`position-lifecycle`은 이미 **shadow → supervised_l4 → autonomous_l5** 3단계 모드 보유 → 이를 C15 **표준 승격 경로**로 채택(전 컴포넌트 통일). phase-a promotion gate(기가동)는 C15의 1호 인스턴스로 일반화.
+
+| # | 컴포넌트 | 현재 모드(실측) | 다음 단계 | 승격 기준 핵심(초안) | 비고 |
+|---|---|---|---|---|---|
+| 1 | phase-a 예측(15min) | shadow(출력 6/10 갱신) | advisory→router bias | 예측 적중률·캘리브레이션 Brier, 표본 200+ | promotion-gate 기가동, C12 합류 |
+| 2 | HMM 레짐 | shadow | **core 승격(C2)** | 레짐별 전략 성과 Δ, 휴리스틱 대비 우월 | 재설계 P1 핵심 |
+| 3 | ML price predictor | env OFF/실험 | shadow 등록 | IC>0 안정, 룩어헤드 무결성(E-2) | C12 일원화 대상 |
+| 4 | fundamental-quant | shadow(6/10) | LLM 보조점수 입력 | 종목 선별 기여(ablation) | C6 블렌드 |
+| 5 | earnings-surprise | shadow(6/9) | 이벤트 트리거 입력 | 이벤트 후 수익 기여 | C11 수시회의·M-6 연동 |
+| 6 | disclosure-event | shadow(6/10) | 워치리스트 알림 | 공시→가격 반응 적중 | M-6 |
+| 7 | korean-factor + factor-model-shadow | shadow(6/9, watchlist_only tier) | C5 스코어 입력 | 팩터 IC, point-in-time 무결성 | LG-01·QuantaAlpha 합류 |
+| 8 | rl-policy-shadow | shadow | 사이징·트리거 미세조정(L4) | 가상 E Δ+, MDD 비악화, 30거래+ | C13, 결정론 코어 위 레이어 |
+| 9 | stat-arb-shadow | shadow | 독립 전략군 후보 | 페어 안정성·E>0, WF permutation p≤5% | C3 전략군 추가 후보(V-D 페어) |
+| 10 | strategy-router phase-A influence | diagnostic(0) | shadow_bias(0.25)→active_bias(0.5) | bias 적용 시 라우팅 성과 Δ | 가중 자체가 승격 경로 내장 |
+| 11 | intelligent-discovery | shadow | advisory→hard_gate | discovery 후보 적중률 | G3 합류 |
+| 12 | dynamic-tpsl-shadow-judge | shadow | C3 청산 룰 보조 | 트레일 대비 개선 Δ | dynamic-trail과 비교 |
+| 13 | entry-llm-shadow-judge | shadow | G6 리뷰어 합류 또는 폐기 | ablation 기여도 | E-3 원칙 적용 |
+| 14 | position-lifecycle | shadow | supervised_l4→autonomous_l5 | 라이프사이클 액션 정확도 | 표준 경로 원형 |
+| 15 | posttrade feedback | shadow | supervised_l4→autonomous_l5 | 피드백 반영 후 E 개선 | C8 합류 |
+| 16 | candidate-backtest entry gate | MODE env(advisory) | enforce(핵심 경로) | DSR≥0.90·30거래(기존 env) | C7 |
+| 17 | DSR/PBO gate | shadow/advisory | enforce | 게이트 차단 정확도(차단분 가상 성과<0) | C7 |
+| 18 | robust backtest selection | **OFF** | ON | 합의 파라미터 OOS 우월(E-1 WF perm) | P0-② 즉시 |
+| 19 | LLM_AUTO_ROUTING (Hub) | shadow 대기(Week2) | active | 과업별 모델 성과 추적 | M-8, Week2 합류 |
+| 20 | shadow-mode 래핑(symbol_decision) | LIVE 병행 로깅 | **신규 스택 Stage A 기반** | — (비교 인프라 자체) | G0~G7 shadow의 골격 재사용 |
+| 21 | vault-shadow(eval/adjustments) | shadow | 파라미터 스토어 입력 | 조정안 사후 검증 통과율 | 시그마 vault 연동(Week2) |
+| 22 | meta-neural-reflexion | shadow | C8 학습 레이어 | reflexion 제안의 채택 후 성과 | 소표본 규율 적용 |
+| 23 | MAPEK | env | 자율 루프 프레임 | — | 0-b 루프화와 정합성 검토 |
+
+**통합 규칙**:
+1. **등록 의무**: 위 23종 + 신규 shadow는 전부 C15 레지스트리 등록(기준 미정의 shadow는 4주 후 자동 "정체 보고" 발화).
+2. **표준 경로**: `shadow → supervised_l4(제안·승인 필요) → autonomous_l5(자율, 사후보고)` — 기존 posttrade/lifecycle 체계 전 컴포넌트 확장. enforce형 게이트(16·17)는 `advisory → enforce` 2단.
+3. **주간 전수 스캔**: 주간 전략회의에서 레지스트리 23종 상태표 자동 생성(표본·진척·제안 대기) → 마스터에게 "결정 대기 N건" 단일 뷰.
+4. **P1 산출물**: 레지스트리 스키마(컴포넌트·모드·기준·표본·이력) + 제안서 생성기 + 일/주간 회의 통합 — CODEX 프롬프트 분리 예정.
+
+### C16. 포지션 런타임 관리자 (G7-b) [마스터 지시 2026-06-12 — 실시간 감시 정밀 분석 + 보유 중 재평가]
+**실측 — "실시간 감시"의 실체 (3계층)**:
+1. `holding-monitor` launchd 2종 = **시간·정책 폴링**(가격 감시 아님): crypto 6h(stale 보유 sweep, 레짐별 soft-cap 일수)·domestic 30min(`domestic_holding_limit_24h` 강제 청산).
+2. `runtime-position-runtime-autopilot`(940줄) = 재평가 오케스트레이션: exitReady/adjustReady 메트릭·cadence autotune·자율 디스패치 게이트·phase6 safety.
+3. **`position-reevaluator`(1,949줄)** = 판단 코어: 캔들 변화율·종가위치(closeLocation)·지표 bias(거래소별 임계)→BUY/SELL/HOLD + `computeDynamicTrail`. + `position-watch`(변화 알림)·protective-order(거래소 보호주문) 별도.
+
+**필요성 판정: ✅ 필요 — 단 역할 재정의**. 근거: 진입 사이클과 보유 관리는 시간 척도가 다름(crypto 24/7·KIS 장중). 보유 중 별도 루프는 옳은 구조. **문제 3건**:
+- (a) 🔴 **전략군 무인식**: 일반 지표 bias로 판단 → 진입 논리(예: 눌림목)와 청산 논리 단절. 테스타 원칙 위반("진입 근거=차트면 탈출도 같은 논리").
+- (b) 시간 기반 강제청산(24h 한도·stale sweep)이 전략군 룰(구조 손절·트레일)과 **충돌 가능** — 추세 타고 있는 포지션을 시간으로 자름.
+- (c) "실시간" 아님(30min~6h 폴링) — 단 **틱 레벨은 불필요**(종가 확인 원칙 V-F/V-I + 보호주문이 틱 방어). 캔들 마감 정렬이 정답.
+
+**개선 설계 (G7-b)**:
+1. **전략군 인식 재평가**: 포지션에 진입 전략군 태그(C3) → **해당 군의 청산·관리 룰로만 평가** — 터틀=10봉 최저 이탈 종가/트레일 전환 · 눌림목=직전저점/75선 붕괴/분할·추적 · 레인지=반대 라인/중심선. reevaluator의 일반 지표 bias는 **보조 신호로 강등**(플래그만).
+2. **캔들 마감 정렬 폴링**: crypto=1h/4h 캔들 마감 직후, KIS=장중 30min+일봉 마감. cadence autotune 재사용(정렬 기준만 변경).
+3. **액션 4종**: `hold`(유지) / `exit`(청산: 룰 충족) / `adjust`(트레일 갱신·부분익절·보호주문 재배치) / **`add`(추가매수, 신설)** — 터틀 피라미딩(추세 진행 +0.5×ATR 간격, 군별 최대 유닛, **총 리스크 한도 내**) + 눌림목 재신호. add는 G4 사전 게이트(R:R·E)+자본 게이트(C9 재평가 훅) 통과 필수.
+4. **시간 정책 재배치**: stale sweep·24h 한도는 **전략군 룰이 우선, 시간은 후순위 안전망**(soft-cap 유지하되 전략군 룰이 활성 관리 중이면 유예). 단 defensive 레짐·halt에서는 시간 정책 강화.
+5. **C15 등록**: "전략군 룰 재평가 vs 기존 지표 bias 재평가"를 shadow 비교(가상 청산 성과 Δ) → 승격 제안.
+- 재사용: reevaluator 1,949줄(골격)·dynamic-trail·protective-order·autopilot cadence·holding-monitor(안전망化). 신설=전략군 태그 스키마+군별 청산 룰 평가기+add 유닛 로직.
