@@ -4,7 +4,7 @@ Fundamentals Expander — KOSPI 전 종목 펀더멘털 자동 확장
 마스터 목표: corp_fundamentals 245건 → 5,000+ 종목
 
 실행: launchd ai.luna.fundamentals-expander-daily.plist
-     또는 python3 fundamentals_expander.py [--limit N] [--batch-size N]
+     또는 python3 fundamentals_expander.py [--limit N] [--batch-size N] [--dry-run]
 """
 
 from __future__ import annotations
@@ -304,8 +304,13 @@ def fetch_fnltt_from_dart(corp_code: str, bsns_year: str, reprt_code: str) -> Op
 
 # ─── 메인 ─────────────────────────────────────────────────────
 
-def expand_fundamentals(limit: int = DEFAULT_DAILY_LIMIT, batch_size: int = DEFAULT_BATCH_SIZE):
-    print(f"[FundamentalsExpander] 시작 — 한도={limit}, 배치={batch_size}")
+def expand_fundamentals(
+    limit: int = DEFAULT_DAILY_LIMIT,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    dry_run: bool = False,
+):
+    mode = "DRY-RUN" if dry_run else "WRITE"
+    print(f"[FundamentalsExpander] 시작 — mode={mode}, 한도={limit}, 배치={batch_size}")
 
     conn = get_db_conn()
     symbols = get_symbols_without_fundamentals(conn, limit)
@@ -324,9 +329,9 @@ def expand_fundamentals(limit: int = DEFAULT_DAILY_LIMIT, batch_size: int = DEFA
         # DB 기반 지표 계산
         calc = calc_fundamentals_from_db(conn, stock_code, bsns_year, reprt_code)
 
-        # DART API로 EPS/BPS 추가 (API 키 있는 경우)
+        # DART API로 EPS/BPS 추가 (API 키 있는 경우). dry-run은 외부 API와 DB 쓰기를 모두 피한다.
         dart_extra = {}
-        if corp_code and OPENDART_API_KEY:
+        if not dry_run and corp_code and OPENDART_API_KEY:
             dart_extra = fetch_fnltt_from_dart(corp_code, bsns_year, reprt_code) or {}
             time.sleep(API_DELAY_SECONDS)
 
@@ -350,6 +355,12 @@ def expand_fundamentals(limit: int = DEFAULT_DAILY_LIMIT, batch_size: int = DEFA
             "revenue_growth": None,
         }
 
+        if dry_run:
+            success += 1
+            if (i + 1) % batch_size == 0:
+                print(f"[FundamentalsExpander][DRY-RUN] 진행: {i+1}/{len(symbols)} (검증 {success}, 실패 {failed})")
+            continue
+
         if upsert_fundamentals(conn, data):
             success += 1
             if (i + 1) % batch_size == 0:
@@ -358,7 +369,8 @@ def expand_fundamentals(limit: int = DEFAULT_DAILY_LIMIT, batch_size: int = DEFA
             failed += 1
 
     conn.close()
-    print(f"[FundamentalsExpander] 완료 — 성공={success}, 실패={failed}")
+    label = "검증" if dry_run else "성공"
+    print(f"[FundamentalsExpander] 완료 — {label}={success}, 실패={failed}, dryRun={dry_run}")
     return success, failed
 
 
@@ -366,12 +378,13 @@ def main():
     parser = argparse.ArgumentParser(description="Luna Fundamentals Expander")
     parser.add_argument("--limit", type=int, default=DEFAULT_DAILY_LIMIT, help="일일 처리 한도")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="배치 크기")
+    parser.add_argument("--dry-run", action="store_true", help="API 호출과 DB UPSERT 없이 대상/계산 경로만 검증")
     args = parser.parse_args()
 
     if should_skip_for_memory():
         sys.exit(0)
 
-    success, failed = expand_fundamentals(limit=args.limit, batch_size=args.batch_size)
+    success, failed = expand_fundamentals(limit=args.limit, batch_size=args.batch_size, dry_run=args.dry_run)
     sys.exit(0 if failed == 0 else 1)
 
 
