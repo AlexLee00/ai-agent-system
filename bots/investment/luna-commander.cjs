@@ -71,6 +71,41 @@ function ensureParentDir(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
+function isTransientDbStartupError(error) {
+  const message = String(error?.message || error || '');
+  const code = String(error?.code || '');
+  return code === '57P03'
+    || /the database system is starting up|database system is in recovery mode/i.test(message);
+}
+
+function positiveIntEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function retryTransientDbStartup(label, fn, options = {}) {
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || positiveIntEnv('LUNA_COMMANDER_DB_RETRIES', 12)));
+  const delayMs = Math.max(0, Number(options.delayMs ?? positiveIntEnv('LUNA_COMMANDER_DB_RETRY_MS', 5000)));
+  const sleeper = options.sleep || sleep;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!isTransientDbStartupError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      console.warn(`[루나] ${label} DB 준비 대기 (${attempt}/${maxAttempts}) - ${delayMs}ms 후 재시도: ${error?.message || error}`);
+      await sleeper(delayMs);
+    }
+  }
+  return undefined;
+}
+
 // ─── 정체성 로더 (LLM 없이 파일 기반) ──────────────────────────────
 let BOT_IDENTITY = {
   name:    '루나 커맨더',
@@ -809,7 +844,7 @@ let _identityCounter = 0;
 async function main() {
   acquireLock();
   loadBotIdentity(); // 시작 시 정체성 로드
-  await ensureIntentTables(pgPool, { schema: INTENT_SCHEMA });
+  await retryTransientDbStartup('ensure_intent_tables', () => ensureIntentTables(pgPool, { schema: INTENT_SCHEMA }));
   console.log(`🌙 ${BOT_NAME} 팀장봇 시작 (PID: ${process.pid})`);
   console.log(`   역할: ${BOT_IDENTITY.role}`);
 
@@ -835,7 +870,16 @@ async function main() {
   }
 }
 
-main().catch(e => {
-  console.error(`[루나] 치명적 오류:`, e);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(e => {
+    console.error(`[루나] 치명적 오류:`, e);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  _testOnly: {
+    isTransientDbStartupError,
+    retryTransientDbStartup,
+  },
+};
