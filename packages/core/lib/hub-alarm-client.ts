@@ -29,6 +29,30 @@ const HUB_ALARM_RATE_LIMIT_RETRY_AFTER_MS = Math.max(
   1000,
   Number(process.env.HUB_ALARM_RATE_LIMIT_RETRY_AFTER_MS || 60_000) || 60_000,
 );
+const HUB_ALARM_MAX_BODY_BYTES = Math.max(
+  16_384,
+  Number(process.env.HUB_ALARM_MAX_BODY_BYTES || 900_000) || 900_000,
+);
+const HUB_ALARM_MAX_MESSAGE_CHARS = Math.max(
+  1_000,
+  Number(process.env.HUB_ALARM_MAX_MESSAGE_CHARS || 20_000) || 20_000,
+);
+const HUB_ALARM_MAX_PAYLOAD_STRING_CHARS = Math.max(
+  500,
+  Number(process.env.HUB_ALARM_MAX_PAYLOAD_STRING_CHARS || 8_000) || 8_000,
+);
+const HUB_ALARM_MAX_PAYLOAD_ARRAY_ITEMS = Math.max(
+  1,
+  Number(process.env.HUB_ALARM_MAX_PAYLOAD_ARRAY_ITEMS || 50) || 50,
+);
+const HUB_ALARM_MAX_PAYLOAD_OBJECT_KEYS = Math.max(
+  1,
+  Number(process.env.HUB_ALARM_MAX_PAYLOAD_OBJECT_KEYS || 80) || 80,
+);
+const HUB_ALARM_MAX_PAYLOAD_DEPTH = Math.max(
+  1,
+  Number(process.env.HUB_ALARM_MAX_PAYLOAD_DEPTH || 4) || 4,
+);
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const TELEGRAM_RETRY_ATTEMPTS = 2;
 const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()
@@ -180,6 +204,114 @@ function _normalizeLegacyAlertLevel(value: unknown): number | null {
 
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _truncateString(value: unknown, maxChars: number): string {
+  const text = value == null ? '' : String(value);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 80))}\n...[hub_alarm_truncated chars=${text.length - maxChars}]`;
+}
+
+function _safeJsonStringify(value: unknown): string {
+  try {
+    const text = JSON.stringify(value);
+    return typeof text === 'string' ? text : JSON.stringify({ value: String(value) });
+  } catch (error) {
+    return JSON.stringify({ unserializable: true, error: (error as Error).message });
+  }
+}
+
+function _jsonByteLength(value: unknown): number {
+  return Buffer.byteLength(_safeJsonStringify(value), 'utf8');
+}
+
+function _sanitizeHubAlarmValue(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
+  if (value == null) return value;
+  if (typeof value === 'string') return _truncateString(value, HUB_ALARM_MAX_PAYLOAD_STRING_CHARS);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'function' || typeof value === 'symbol') return String(value);
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: _truncateString(value.message, HUB_ALARM_MAX_PAYLOAD_STRING_CHARS),
+      stack: _truncateString(value.stack || '', HUB_ALARM_MAX_PAYLOAD_STRING_CHARS),
+    };
+  }
+  if (typeof value !== 'object') return _truncateString(value, HUB_ALARM_MAX_PAYLOAD_STRING_CHARS);
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+  if (depth >= HUB_ALARM_MAX_PAYLOAD_DEPTH) {
+    return {
+      __hub_alarm_truncated: 'max_depth',
+      type: Array.isArray(value) ? 'array' : 'object',
+    };
+  }
+  if (Array.isArray(value)) {
+    const items = value
+      .slice(0, HUB_ALARM_MAX_PAYLOAD_ARRAY_ITEMS)
+      .map((item) => _sanitizeHubAlarmValue(item, depth + 1, seen));
+    if (value.length > HUB_ALARM_MAX_PAYLOAD_ARRAY_ITEMS) {
+      items.push(`[hub_alarm_truncated_items=${value.length - HUB_ALARM_MAX_PAYLOAD_ARRAY_ITEMS}]`);
+    }
+    return items;
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  const next: Record<string, unknown> = {};
+  for (const [key, item] of entries.slice(0, HUB_ALARM_MAX_PAYLOAD_OBJECT_KEYS)) {
+    next[key] = _sanitizeHubAlarmValue(item, depth + 1, seen);
+  }
+  if (entries.length > HUB_ALARM_MAX_PAYLOAD_OBJECT_KEYS) {
+    next.__hub_alarm_truncated_keys = entries.length - HUB_ALARM_MAX_PAYLOAD_OBJECT_KEYS;
+  }
+  return next;
+}
+
+function _fitHubAlarmBody(body: Record<string, unknown>, eventType: string): Record<string, unknown> {
+  const initialBytes = _jsonByteLength(body);
+  if (initialBytes <= HUB_ALARM_MAX_BODY_BYTES) return body;
+
+  let previewChars = Math.max(1_000, Math.min(100_000, Math.floor(HUB_ALARM_MAX_BODY_BYTES / 3)));
+  let next: Record<string, unknown> = {
+    ...body,
+    message: _truncateString(body.message, Math.min(HUB_ALARM_MAX_MESSAGE_CHARS, 4_000)),
+    payload: {
+      event_type: eventType,
+      __hub_alarm_client_truncated: {
+        reason: 'max_body_bytes',
+        original_bytes: initialBytes,
+        max_bytes: HUB_ALARM_MAX_BODY_BYTES,
+      },
+      preview: _truncateString(_safeJsonStringify(body.payload), previewChars),
+    },
+  };
+
+  while (_jsonByteLength(next) > HUB_ALARM_MAX_BODY_BYTES && previewChars > 1_000) {
+    previewChars = Math.max(1_000, Math.floor(previewChars / 2));
+    next = {
+      ...next,
+      payload: {
+        ...(next.payload as Record<string, unknown>),
+        preview: _truncateString(_safeJsonStringify(body.payload), previewChars),
+      },
+    };
+  }
+
+  if (_jsonByteLength(next) > HUB_ALARM_MAX_BODY_BYTES) {
+    next = {
+      ...next,
+      payload: {
+        event_type: eventType,
+        __hub_alarm_client_truncated: {
+          reason: 'max_body_bytes',
+          original_bytes: initialBytes,
+          max_bytes: HUB_ALARM_MAX_BODY_BYTES,
+          preview_omitted: true,
+        },
+      },
+    };
+  }
+  return next;
 }
 
 function _isHubAlarmClientCircuitOpen(): boolean {
@@ -644,6 +776,26 @@ async function _postAlarmViaHub({
   const normalizedDedupeMinutes = Number.isFinite(Number(dedupeMinutes))
     ? Math.max(1, Math.min(1440, Math.trunc(Number(dedupeMinutes))))
     : null;
+  const sanitizedPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (_sanitizeHubAlarmValue(payload) as Record<string, unknown>)
+    : (payload == null ? {} : { value: _sanitizeHubAlarmValue(payload) });
+  const hubAlarmBody = _fitHubAlarmBody({
+    message: _truncateString(message, HUB_ALARM_MAX_MESSAGE_CHARS),
+    team,
+    fromBot,
+    severity: _mapAlertLevelToSeverity(alertLevel),
+    title: title || `${team} alarm`,
+    alarmType: normalizedAlarmType,
+    visibility: normalizedVisibility,
+    actionability: normalizedActionability,
+    incidentKey: normalizedIncidentKey,
+    eventType: normalizedEventType,
+    dedupeMinutes: normalizedDedupeMinutes,
+    payload: {
+      ...sanitizedPayload,
+      event_type: normalizedEventType,
+    },
+  }, normalizedEventType);
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -651,23 +803,7 @@ async function _postAlarmViaHub({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${hubToken}`,
       },
-      body: JSON.stringify({
-        message,
-        team,
-        fromBot,
-        severity: _mapAlertLevelToSeverity(alertLevel),
-        title: title || `${team} alarm`,
-        alarmType: normalizedAlarmType,
-        visibility: normalizedVisibility,
-        actionability: normalizedActionability,
-        incidentKey: normalizedIncidentKey,
-        eventType: normalizedEventType,
-        dedupeMinutes: normalizedDedupeMinutes,
-        payload: {
-          ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}),
-          event_type: normalizedEventType,
-        },
-      }),
+      body: JSON.stringify(hubAlarmBody),
       signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),
     });
     const body = await response.json().catch(() => null);
@@ -913,4 +1049,8 @@ export function readRecentAlertSnapshot(limit = 10): RecentAlertSnapshotRow[] {
 
 export function _testOnly_isHubAlarmDeliveryAccepted(response: { ok: boolean }, body: any): boolean {
   return _isHubAlarmDeliveryAccepted(response as Response, body);
+}
+
+export function _testOnly_fitHubAlarmBody(body: Record<string, unknown>, eventType = 'test_event'): Record<string, unknown> {
+  return _fitHubAlarmBody(body, eventType);
 }

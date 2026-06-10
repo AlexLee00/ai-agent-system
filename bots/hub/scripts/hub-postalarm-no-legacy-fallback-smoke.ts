@@ -27,6 +27,7 @@ function resetEnv(tempWorkspace: string) {
   process.env.HUB_AUTH_TOKEN = 'smoke-hub-token';
   process.env.HUB_ALARM_SKIP_DIRECT = 'false';
   process.env.USE_HUB_SECRETS = 'false';
+  delete process.env.HUB_ALARM_MAX_BODY_BYTES;
   delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;
   delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;
 }
@@ -326,6 +327,55 @@ async function runHubRateLimitMetadataCase(tempWorkspace: string) {
   assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
 }
 
+async function runLargePayloadCappedCase(tempWorkspace: string) {
+  resetEnv(tempWorkspace);
+  process.env.HUB_ALARM_MAX_BODY_BYTES = '12000';
+  resetClientModule();
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      const bytes = Buffer.byteLength(String(init.body || ''), 'utf8');
+      assert(bytes <= 12000, `expected capped hub alarm body <= 12000 bytes, got ${bytes}`);
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          delivered: true,
+          event_id: 127,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw new Error(`unexpected fetch url for large payload cap case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const result = await postAlarm({
+    message: `large payload smoke ${'m'.repeat(50_000)}`,
+    team: 'hub',
+    alertLevel: 3,
+    fromBot: 'large-payload-smoke',
+    payload: {
+      event_type: 'hub_alarm_large_payload_smoke',
+      blob: 'x'.repeat(2_000_000),
+      nested: { detail: 'y'.repeat(100_000) },
+    },
+  });
+
+  assert(result && result.ok === true, 'expected large payload capped alarm to deliver');
+  assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
+  const sent = calls[0].body;
+  assert(sent.eventType === 'hub_alarm_large_payload_smoke', `expected eventType preserved, got ${sent.eventType}`);
+  assert(sent.payload.event_type === 'hub_alarm_large_payload_smoke', 'expected payload event_type preserved');
+  assert(sent.payload.__hub_alarm_client_truncated?.reason === 'max_body_bytes', 'expected truncation metadata');
+  assert(sent.payload.__hub_alarm_client_truncated.original_bytes > 12000, 'expected original byte count in metadata');
+}
+
 async function main() {
   const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-webhook-smoke-'));
   const originalFetch = global.fetch;
@@ -333,6 +383,7 @@ async function main() {
   const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;
   const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;
   const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;
+  const originalHubMaxBodyBytes = process.env.HUB_ALARM_MAX_BODY_BYTES;
 
   try {
     await runSuppressedHubOnlyCase(tempWorkspace);
@@ -342,6 +393,7 @@ async function main() {
     await runCriticalContractFallbackCase(tempWorkspace);
     await runExplicitReportContractCase(tempWorkspace);
     await runHubRateLimitMetadataCase(tempWorkspace);
+    await runLargePayloadCappedCase(tempWorkspace);
     console.log('hub_postalarm_no_legacy_fallback_smoke_ok');
   } finally {
     global.fetch = originalFetch;
@@ -353,6 +405,8 @@ async function main() {
     else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;
     if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;
     else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;
+    if (originalHubMaxBodyBytes == null) delete process.env.HUB_ALARM_MAX_BODY_BYTES;
+    else process.env.HUB_ALARM_MAX_BODY_BYTES = originalHubMaxBodyBytes;
     resetClientModule();
     try {
       fs.rmSync(tempWorkspace, { recursive: true, force: true });
