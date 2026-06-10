@@ -199,11 +199,38 @@ function runDirectPathPersistencePlanSmoke() {
   assert.equal(failed.blockUpdate.code, 'nemesis_error');
   assert.match(failed.blockUpdate.reason, /risk service unavailable/);
 
+  const prefilterBlocked = buildLunaSignalPersistencePlan({
+    ...signalData,
+    strategy_family: 'defensive_rotation',
+    externalEvidence: { evidenceCount: 0 },
+    hasTechnicalPresignal: false,
+  }, {
+    approved: true,
+    adjustedAmount: 88,
+    nemesis_verdict: 'approved',
+  }, null, {
+    exchange: 'binance',
+    market: 'crypto',
+    symbol: signalData.symbol,
+    action: signalData.action,
+    decision: { amount_usdt: 123, confidence: 0.77 },
+    env: {
+      LUNA_SIGNAL_PREFILTER_PERSISTENCE_BLOCK_ENABLED: 'true',
+      LUNA_TRADE_DATA_DERIVED_GUARDS: 'true',
+    },
+  });
+  assert.equal(prefilterBlocked.status, 'blocked');
+  assert.equal(prefilterBlocked.outcome, 'blocked_by_prefilter');
+  assert.equal(prefilterBlocked.blockUpdate.code, 'trade_data_entry_guard_rejected');
+  assert.equal(prefilterBlocked.blockUpdate.meta.execution_blocked_by, 'signal_persistence_prefilter');
+  assert.ok(prefilterBlocked.blockUpdate.meta.prefilter.blockers.includes('crypto_defensive_rotation_without_live_evidence'));
+
   return {
     riskInputAmount: riskInput.amount_usdt,
     approvedStatus: approved.status,
     rejectedStatus: rejected.status,
     failedStatus: failed.status,
+    prefilterBlockedStatus: prefilterBlocked.status,
   };
 }
 

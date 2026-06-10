@@ -8,6 +8,17 @@
 
 import { ACTIONS, SIGNAL_STATUS } from './signal.ts';
 import { buildSignalApprovalUpdate } from './signal-approval.ts';
+import { preFilterSignal } from './signal-pre-filter.ts';
+
+const PREFILTER_BLOCK_ENV = 'LUNA_SIGNAL_PREFILTER_PERSISTENCE_BLOCK_ENABLED';
+
+function boolEnv(name, fallback = false, env = process.env) {
+  const raw = String(env?.[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
+  return fallback;
+}
 
 function normalizeResponsibilityPlan(strategyProfile = null) {
   return strategyProfile?.strategy_context?.responsibilityPlan
@@ -90,6 +101,33 @@ export function buildLunaRiskEvaluationSignal(signalData = {}) {
   };
 }
 
+export function evaluateLunaSignalPersistencePreFilter(signalData = {}, context = {}) {
+  const env = context.env || process.env;
+  if (!boolEnv(PREFILTER_BLOCK_ENV, false, env)) {
+    return { enabled: false, blocked: false, filter: null, blockers: [] };
+  }
+
+  const filter = preFilterSignal({
+    ...signalData,
+    exchange: context.exchange || signalData.exchange,
+    market: context.market || signalData.market,
+    action: context.action || signalData.action,
+  }, {
+    env,
+    minConfidence: 0,
+    deferOnMarketClosed: false,
+  });
+  const tradeDataBlockers = Array.isArray(filter?.tradeDataGuard?.blockers)
+    ? filter.tradeDataGuard.blockers
+    : [];
+  return {
+    enabled: true,
+    blocked: tradeDataBlockers.length > 0,
+    filter,
+    blockers: tradeDataBlockers,
+  };
+}
+
 export function buildLunaSignalPersistencePlan(signalData = {}, riskResult = null, riskError = null, context = {}) {
   const symbol = context.symbol || signalData.symbol || null;
   const action = context.action || signalData.action || null;
@@ -118,6 +156,37 @@ export function buildLunaSignalPersistencePlan(signalData = {}, riskResult = nul
   }
 
   if (riskResult?.approved) {
+    const prefilter = action === ACTIONS.BUY
+      ? evaluateLunaSignalPersistencePreFilter(signalData, context)
+      : { enabled: false, blocked: false, filter: null, blockers: [] };
+    if (prefilter.blocked) {
+      return {
+        status: 'blocked',
+        signalData: { ...signalData },
+        approvalUpdate: null,
+        blockUpdate: {
+          status: 'blocked',
+          reason: `trade-data entry guard blocked: ${prefilter.blockers.join(', ')}`,
+          code: 'trade_data_entry_guard_rejected',
+          meta: {
+            exchange,
+            symbol,
+            action,
+            amount: decision.amount_usdt ?? signalData.amountUsdt ?? null,
+            confidence: decision.confidence ?? signalData.confidence ?? null,
+            execution_blocked_by: 'signal_persistence_prefilter',
+            prefilter: {
+              decision: prefilter.filter?.decision || null,
+              blockers: prefilter.blockers,
+              warnings: prefilter.filter?.warnings || [],
+              tradeDataGuard: prefilter.filter?.tradeDataGuard || null,
+            },
+          },
+        },
+        outcome: 'blocked_by_prefilter',
+      };
+    }
+
     const approvalUpdate = buildSignalApprovalUpdate({
       ...riskResult,
       status: SIGNAL_STATUS.APPROVED,

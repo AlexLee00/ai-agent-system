@@ -5,6 +5,7 @@ import {
   applyExistingPositionStrategyBias,
   buildLunaRiskEvaluationSignal,
   buildLunaSignalPersistencePlan,
+  evaluateLunaSignalPersistencePreFilter,
 } from '../shared/luna-signal-persistence-policy.ts';
 
 const baseSignal = {
@@ -45,6 +46,53 @@ const failed = buildLunaSignalPersistencePlan(baseSignal, null, new Error('nemes
   exchange: 'binance',
   decision: { amount_usdt: 100 },
 });
+const prefilterDefaultOff = evaluateLunaSignalPersistencePreFilter({
+  ...baseSignal,
+  exchange: 'binance',
+  market: 'crypto',
+  strategy_family: 'defensive_rotation',
+  externalEvidence: { evidenceCount: 0 },
+  hasTechnicalPresignal: false,
+}, {
+  env: {},
+  exchange: 'binance',
+  market: 'crypto',
+});
+const prefilterOptIn = evaluateLunaSignalPersistencePreFilter({
+  ...baseSignal,
+  exchange: 'binance',
+  market: 'crypto',
+  strategy_family: 'defensive_rotation',
+  externalEvidence: { evidenceCount: 0 },
+  hasTechnicalPresignal: false,
+}, {
+  env: {
+    LUNA_SIGNAL_PREFILTER_PERSISTENCE_BLOCK_ENABLED: 'true',
+    LUNA_TRADE_DATA_DERIVED_GUARDS: 'true',
+  },
+  exchange: 'binance',
+  market: 'crypto',
+});
+const approvedPrefilterBlocked = buildLunaSignalPersistencePlan({
+  ...baseSignal,
+  exchange: 'binance',
+  market: 'crypto',
+  strategy_family: 'defensive_rotation',
+  externalEvidence: { evidenceCount: 0 },
+  hasTechnicalPresignal: false,
+}, {
+  approved: true,
+  adjustedAmount: 72,
+  nemesis_verdict: 'approved',
+}, null, {
+  exchange: 'binance',
+  market: 'crypto',
+  decision: { amount_usdt: 100, confidence: 0.8 },
+  env: {
+    LUNA_SIGNAL_PREFILTER_PERSISTENCE_BLOCK_ENABLED: 'true',
+    LUNA_TRADE_DATA_DERIVED_GUARDS: 'true',
+  },
+});
 
 if (!biased.applied || biased.signalData.amountUsdt !== 88 || !biased.signalData.existingExecutionPlan) {
   throw new Error(`existing position bias mismatch: ${JSON.stringify(biased)}`);
@@ -61,6 +109,24 @@ if (rejected.outcome !== 'rejected' || rejected.blockUpdate?.code !== 'risk_reje
 if (failed.outcome !== 'failed' || failed.blockUpdate?.code !== 'nemesis_error') {
   throw new Error(`failed persistence mismatch: ${JSON.stringify(failed)}`);
 }
+if (prefilterDefaultOff.enabled !== false || prefilterDefaultOff.blocked !== false) {
+  throw new Error(`prefilter default-off mismatch: ${JSON.stringify(prefilterDefaultOff)}`);
+}
+if (
+  prefilterOptIn.enabled !== true
+  || prefilterOptIn.blocked !== true
+  || !prefilterOptIn.blockers.includes('crypto_defensive_rotation_without_live_evidence')
+) {
+  throw new Error(`prefilter opt-in mismatch: ${JSON.stringify(prefilterOptIn)}`);
+}
+if (
+  approvedPrefilterBlocked.outcome !== 'blocked_by_prefilter'
+  || approvedPrefilterBlocked.status !== 'blocked'
+  || approvedPrefilterBlocked.blockUpdate?.code !== 'trade_data_entry_guard_rejected'
+  || approvedPrefilterBlocked.blockUpdate?.meta?.execution_blocked_by !== 'signal_persistence_prefilter'
+) {
+  throw new Error(`approved prefilter block mismatch: ${JSON.stringify(approvedPrefilterBlocked)}`);
+}
 
 const payload = {
   ok: true,
@@ -69,6 +135,8 @@ const payload = {
   approvedStatus: approved.status,
   rejectedStatus: rejected.status,
   failedStatus: failed.status,
+  prefilterBlockers: prefilterOptIn.blockers,
+  prefilterBlockedStatus: approvedPrefilterBlocked.status,
 };
 
 if (process.argv.includes('--json')) {
