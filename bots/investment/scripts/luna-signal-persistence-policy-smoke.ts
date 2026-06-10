@@ -5,6 +5,7 @@ import {
   applyExistingPositionStrategyBias,
   buildLunaRiskEvaluationSignal,
   buildLunaSignalPersistencePlan,
+  evaluateLunaSignalCapitalPersistencePreflight,
   evaluateLunaSignalPersistencePreFilter,
 } from '../shared/luna-signal-persistence-policy.ts';
 
@@ -94,6 +95,85 @@ const approvedPrefilterBlocked = buildLunaSignalPersistencePlan({
   },
 });
 
+async function runCapitalPreflightCases() {
+  const riskApproved = { approved: true, adjustedAmount: 40 };
+  const off = await evaluateLunaSignalCapitalPersistencePreflight(baseSignal, riskApproved, {
+    env: {},
+    exchange: 'binance',
+    tradeMode: 'validation',
+    deps: {
+      preTradeCheck: async () => {
+        throw new Error('should not run when disabled');
+      },
+    },
+  });
+  if (off.enabled !== false || off.blocked !== false) {
+    throw new Error(`capital preflight default-off mismatch: ${JSON.stringify(off)}`);
+  }
+
+  const normalSkipped = await evaluateLunaSignalCapitalPersistencePreflight(baseSignal, riskApproved, {
+    env: { LUNA_SIGNAL_CAPITAL_PREFLIGHT_PERSISTENCE_BLOCK_ENABLED: 'true' },
+    exchange: 'binance',
+    tradeMode: 'normal',
+    deps: {
+      preTradeCheck: async () => {
+        throw new Error('normal mode should be out of default scope');
+      },
+    },
+  });
+  if (normalSkipped.blocked !== false || normalSkipped.reason !== 'trade_mode_not_in_scope:normal') {
+    throw new Error(`capital preflight normal scope mismatch: ${JSON.stringify(normalSkipped)}`);
+  }
+
+  const blocked = await evaluateLunaSignalCapitalPersistencePreflight(baseSignal, riskApproved, {
+    env: { LUNA_SIGNAL_CAPITAL_PREFLIGHT_PERSISTENCE_BLOCK_ENABLED: 'true' },
+    exchange: 'binance',
+    tradeMode: 'validation',
+    deps: {
+      preTradeCheck: async (_symbol, _action, amount, exchange, tradeMode) => ({
+        allowed: false,
+        reason: 'live_fire_daily_notional_limit: 240.00 > 200',
+        dailyNotional: 200,
+        maxDailyNotional: 200,
+        amount,
+        exchange,
+        tradeMode,
+      }),
+    },
+  });
+  if (
+    blocked.blocked !== true
+    || blocked.blockUpdate?.code !== 'capital_guard_rejected'
+    || blocked.blockUpdate?.meta?.execution_blocked_by !== 'signal_persistence_capital_preflight'
+    || blocked.blockUpdate?.meta?.tradeMode !== 'validation'
+  ) {
+    throw new Error(`capital preflight block mismatch: ${JSON.stringify(blocked)}`);
+  }
+
+  const failOpen = await evaluateLunaSignalCapitalPersistencePreflight(baseSignal, riskApproved, {
+    env: { LUNA_SIGNAL_CAPITAL_PREFLIGHT_PERSISTENCE_BLOCK_ENABLED: 'true' },
+    exchange: 'binance',
+    tradeMode: 'validation',
+    deps: {
+      preTradeCheck: async () => {
+        throw new Error('capital backend unavailable');
+      },
+    },
+  });
+  if (failOpen.blocked !== false || failOpen.check?.error !== 'capital backend unavailable') {
+    throw new Error(`capital preflight fail-open mismatch: ${JSON.stringify(failOpen)}`);
+  }
+
+  return {
+    off: off.reason,
+    normalSkipped: normalSkipped.reason,
+    blockedCode: blocked.blockUpdate.code,
+    failOpenError: failOpen.check.error,
+  };
+}
+
+const capitalPreflight = await runCapitalPreflightCases();
+
 if (!biased.applied || biased.signalData.amountUsdt !== 88 || !biased.signalData.existingExecutionPlan) {
   throw new Error(`existing position bias mismatch: ${JSON.stringify(biased)}`);
 }
@@ -137,6 +217,7 @@ const payload = {
   failedStatus: failed.status,
   prefilterBlockers: prefilterOptIn.blockers,
   prefilterBlockedStatus: approvedPrefilterBlocked.status,
+  capitalPreflight,
 };
 
 if (process.argv.includes('--json')) {

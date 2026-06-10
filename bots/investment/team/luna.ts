@@ -61,6 +61,7 @@ import { recommendStrategy } from './argos.ts';
 import { applyStrategyRouteDecisionBias, buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
 import {
   applyExistingPositionStrategyBias,
+  evaluateLunaSignalCapitalPersistencePreflight,
   buildLunaRiskEvaluationSignal,
   buildLunaSignalPersistencePlan,
 } from '../shared/luna-signal-persistence-policy.ts';
@@ -1241,12 +1242,28 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       riskError = e;
     }
 
-    const persistencePlan = buildLunaSignalPersistencePlan(signalData, riskResult, riskError, {
+    const tradeModeForPersistence = signalData.tradeMode || signalData.trade_mode || dec.trade_mode || dec.tradeMode || (isValidationTradeMode() ? 'validation' : 'normal');
+    const capitalPreflight = await evaluateLunaSignalCapitalPersistencePreflight(signalData, riskResult, {
       exchange,
       symbol: dec.symbol,
       action: dec.action,
+      tradeMode: tradeModeForPersistence,
       decision: dec,
     });
+    const persistencePlan = capitalPreflight.blocked
+      ? {
+          status: 'blocked',
+          signalData: { ...signalData },
+          approvalUpdate: null,
+          blockUpdate: capitalPreflight.blockUpdate,
+          outcome: 'blocked_by_capital_prefilter',
+        }
+      : buildLunaSignalPersistencePlan(signalData, riskResult, riskError, {
+          exchange,
+          symbol: dec.symbol,
+          action: dec.action,
+          decision: dec,
+        });
     const persistedSignal = persistencePlan.signalData;
     const signalInsert = await db.insertSignalIfFresh({
       ...persistedSignal,
@@ -1321,7 +1338,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       continue;
     }
 
-    if (riskResult?.approved) {
+    if (riskResult?.approved && persistencePlan.outcome === 'approved') {
       console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
       approvedCount++;
       results.push({
@@ -1332,6 +1349,9 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         slPrice: riskResult.slPrice ?? null,
         tpslSource: riskResult.tpslSource ?? null,
       });
+    } else if (riskResult?.approved) {
+      console.log(`  🚫 [루나] persistence preflight 차단: ${persistencePlan.blockUpdate?.code || persistencePlan.outcome} — ${persistencePlan.blockUpdate?.reason || 'blocked'}`);
+      rejectedCount++;
     } else {
       console.log(`  🚫 [네메시스] 거부: ${riskResult?.reason || 'risk_rejected'}`);
       rejectedCount++;

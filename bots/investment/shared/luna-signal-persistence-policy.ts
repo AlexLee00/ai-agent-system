@@ -8,9 +8,12 @@
 
 import { ACTIONS, SIGNAL_STATUS } from './signal.ts';
 import { buildSignalApprovalUpdate } from './signal-approval.ts';
+import { preTradeCheck } from './capital-manager.ts';
 import { preFilterSignal } from './signal-pre-filter.ts';
 
 const PREFILTER_BLOCK_ENV = 'LUNA_SIGNAL_PREFILTER_PERSISTENCE_BLOCK_ENABLED';
+const CAPITAL_PREFLIGHT_BLOCK_ENV = 'LUNA_SIGNAL_CAPITAL_PREFLIGHT_PERSISTENCE_BLOCK_ENABLED';
+const CAPITAL_PREFLIGHT_TRADE_MODES_ENV = 'LUNA_SIGNAL_CAPITAL_PREFLIGHT_TRADE_MODES';
 
 function boolEnv(name, fallback = false, env = process.env) {
   const raw = String(env?.[name] ?? '').trim().toLowerCase();
@@ -18,6 +21,24 @@ function boolEnv(name, fallback = false, env = process.env) {
   if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
   if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
   return fallback;
+}
+
+function csvSetEnv(name, fallback = [], env = process.env) {
+  const raw = String(env?.[name] ?? '').trim();
+  const values = raw
+    ? raw.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
+    : fallback;
+  return new Set(values);
+}
+
+function normalizeTradeMode(value = null, fallback = 'normal') {
+  const mode = String(value || '').trim().toLowerCase();
+  return mode || fallback;
+}
+
+function numberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function normalizeResponsibilityPlan(strategyProfile = null) {
@@ -125,6 +146,81 @@ export function evaluateLunaSignalPersistencePreFilter(signalData = {}, context 
     blocked: tradeDataBlockers.length > 0,
     filter,
     blockers: tradeDataBlockers,
+  };
+}
+
+export async function evaluateLunaSignalCapitalPersistencePreflight(signalData = {}, riskResult = null, context = {}) {
+  const env = context.env || process.env;
+  if (!boolEnv(CAPITAL_PREFLIGHT_BLOCK_ENV, false, env)) {
+    return { enabled: false, blocked: false, skipped: true, reason: `${CAPITAL_PREFLIGHT_BLOCK_ENV}=false`, blockUpdate: null, check: null };
+  }
+
+  const action = String(context.action || signalData.action || '').toUpperCase();
+  const exchange = String(context.exchange || signalData.exchange || '').trim().toLowerCase();
+  const symbol = context.symbol || signalData.symbol || null;
+  const tradeMode = normalizeTradeMode(
+    context.tradeMode
+      || context.decision?.trade_mode
+      || context.decision?.tradeMode
+      || signalData.tradeMode
+      || signalData.trade_mode,
+    'normal',
+  );
+  const scopedModes = csvSetEnv(CAPITAL_PREFLIGHT_TRADE_MODES_ENV, ['validation'], env);
+
+  if (action !== ACTIONS.BUY || exchange !== 'binance' || riskResult?.approved !== true) {
+    return { enabled: true, blocked: false, skipped: true, reason: 'not_applicable', blockUpdate: null, check: null };
+  }
+  if (!scopedModes.has('*') && !scopedModes.has(tradeMode)) {
+    return { enabled: true, blocked: false, skipped: true, reason: `trade_mode_not_in_scope:${tradeMode}`, blockUpdate: null, check: null };
+  }
+
+  const amount = numberOrNull(
+    riskResult.adjustedAmount
+      ?? riskResult.adjusted_amount
+      ?? context.decision?.amount_usdt
+      ?? signalData.amountUsdt
+      ?? signalData.amount_usdt,
+  );
+  if (!(amount > 0)) {
+    return { enabled: true, blocked: false, skipped: true, reason: 'amount_unavailable', blockUpdate: null, check: null };
+  }
+
+  const preTradeCheckFn = context.deps?.preTradeCheck || preTradeCheck;
+  const check = await Promise.resolve(preTradeCheckFn(symbol, ACTIONS.BUY, amount, 'binance', tradeMode)).catch((error) => ({
+    allowed: true,
+    error: String(error?.message || error),
+  }));
+  if (check?.allowed !== false) {
+    return { enabled: true, blocked: false, skipped: false, reason: 'capital_preflight_allowed', blockUpdate: null, check };
+  }
+
+  const reason = check.reason || 'pre_trade_check_blocked';
+  const code = check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected';
+  return {
+    enabled: true,
+    blocked: true,
+    skipped: false,
+    reason,
+    check,
+    blockUpdate: {
+      status: 'blocked',
+      reason,
+      code,
+      meta: {
+        exchange: 'binance',
+        symbol,
+        action,
+        amount,
+        tradeMode,
+        circuit: Boolean(check.circuit),
+        circuitType: check.circuitType ?? null,
+        dailyNotional: check.dailyNotional ?? null,
+        maxDailyNotional: check.maxDailyNotional ?? null,
+        execution_blocked_by: 'signal_persistence_capital_preflight',
+        pressureSource: 'pre_trade_check',
+      },
+    },
   };
 }
 
