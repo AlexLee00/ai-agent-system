@@ -110,6 +110,12 @@ async function main() {
     const stale = await scanStaleAutoRepair({ staleMinutes: 60, limit: 5, db });
     assert(stale.rows.length === 1, 'expected one stale auto-repair row');
     assert(stale.message.includes('auto-repair 미해결 감시'), 'expected stale scan message');
+    assert(stale.stale_minutes === 60, `expected explicit stale minutes to be preserved, got ${stale.stale_minutes}`);
+    assert(stale.limit === 5, `expected explicit limit to be preserved, got ${stale.limit}`);
+    const staleDefault = await scanStaleAutoRepair({ db });
+    assert(staleDefault.stale_minutes === 120, `expected default stale minutes=120, got ${staleDefault.stale_minutes}`);
+    assert(staleDefault.limit === 20, `expected default limit=20, got ${staleDefault.limit}`);
+    assert(queryLog.some((sql) => String(sql).includes('FROM agent.hub_alarms')), 'expected stale scan to use hub_alarms state table');
     assert(queryLog.some((sql) => String(sql).includes('NOT EXISTS')), 'expected stale scan to exclude completed repairs');
 
     const proposals = await buildAlarmSuppressionProposals({ minutes: 60, limit: 5, minTotal: 5, db });

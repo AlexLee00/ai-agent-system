@@ -15,6 +15,7 @@ function hasFlag(name: string): boolean {
 }
 
 function normalizeNumber(value: unknown, fallback: number, min: number, max: number): number {
+  if (value == null || String(value).trim() === '') return fallback;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, parsed));
@@ -51,21 +52,20 @@ export async function scanStaleAutoRepair({
       alarm.bot_name,
       alarm.severity,
       alarm.message,
-      alarm.metadata->>'incident_key' AS incident_key,
+      COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint) AS incident_key,
       alarm.metadata->>'auto_dev_path' AS auto_dev_path,
-      alarm.created_at
-    FROM agent.event_lake alarm
-    WHERE alarm.event_type = 'hub_alarm'
-      AND alarm.metadata->>'actionability' = 'auto_repair'
-      AND COALESCE(alarm.metadata->>'status', '') = 'repairing'
-      AND alarm.created_at < NOW() - ($1::int * INTERVAL '1 minute')
+      alarm.received_at AS created_at
+    FROM agent.hub_alarms alarm
+    WHERE COALESCE(alarm.actionability, '') = 'auto_repair'
+      AND COALESCE(alarm.status, '') IN ('repairing', 'correlating')
+      AND alarm.received_at < NOW() - ($1::int * INTERVAL '1 minute')
       AND NOT EXISTS (
         SELECT 1
         FROM agent.event_lake result
         WHERE result.event_type = 'hub_alarm_auto_repair_result'
-          AND result.metadata->>'incident_key' = alarm.metadata->>'incident_key'
+          AND result.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
       )
-    ORDER BY alarm.created_at ASC
+    ORDER BY alarm.received_at ASC
     LIMIT $2
   `, [threshold, rowLimit]);
   return {
