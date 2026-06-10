@@ -76,13 +76,27 @@ async function safeBacktestMetrics() {
                OR gate_status LIKE 'would_block%'
              )
         ),
-        eligible AS (
-          SELECT active.symbol, active.market
+        active_valid AS (
+          SELECT symbol, market
             FROM active
+           WHERE symbol IS NOT NULL
+        ),
+        active_cooldown AS (
+          SELECT active_valid.symbol, active_valid.market
+            FROM active_valid
+            JOIN cooldown USING (symbol, market)
+        ),
+        active_backtest_block AS (
+          SELECT active_valid.symbol, active_valid.market
+            FROM active_valid
+            JOIN backtest_block USING (symbol, market)
+        ),
+        eligible AS (
+          SELECT active_valid.symbol, active_valid.market
+            FROM active_valid
             LEFT JOIN cooldown USING (symbol, market)
             LEFT JOIN backtest_block USING (symbol, market)
-           WHERE active.symbol IS NOT NULL
-             AND cooldown.symbol IS NULL
+           WHERE cooldown.symbol IS NULL
              AND backtest_block.symbol IS NULL
         ),
         backtest AS (
@@ -96,9 +110,10 @@ async function safeBacktestMetrics() {
                COUNT(*) FILTER (WHERE fresh = true)::int AS fresh,
                COUNT(*) FILTER (WHERE healthy = true)::int AS healthy,
                COUNT(*) FILTER (WHERE gate_status = 'pass')::int AS pass,
+               (SELECT COUNT(*)::int FROM active_valid)::int AS active_total,
                (SELECT COUNT(*)::int FROM eligible)::int AS active_candidates,
-               (SELECT COUNT(*)::int FROM cooldown)::int AS cooldown_excluded,
-               (SELECT COUNT(*)::int FROM backtest_block)::int AS backtest_block_excluded
+               (SELECT COUNT(*)::int FROM active_cooldown)::int AS cooldown_excluded,
+               (SELECT COUNT(*)::int FROM active_backtest_block)::int AS backtest_block_excluded
           FROM backtest`,
     ).catch((error) => ({ error: String(error?.message || error) }));
     if (!row?.error) {
@@ -107,6 +122,7 @@ async function safeBacktestMetrics() {
         fresh: Number(row?.fresh || 0),
         healthy: Number(row?.healthy || 0),
         pass: Number(row?.pass || 0),
+        activeTotal: Number(row?.active_total || 0),
         activeCandidates: Number(row?.active_candidates || 0),
         cooldownExcluded: Number(row?.cooldown_excluded || 0),
         backtestBlockExcluded: Number(row?.backtest_block_excluded || 0),
@@ -306,6 +322,7 @@ async function loadDbMetrics() {
     domesticBacktestFreshRows7d: backtest.fresh,
     domesticBacktestHealthyRows7d: backtest.healthy,
     domesticBacktestPassRows7d: backtest.pass,
+    domesticBacktestActiveTotal: backtest.activeTotal,
     domesticBacktestActiveCandidates: backtest.activeCandidates,
     domesticBacktestCooldownExcluded: backtest.cooldownExcluded,
     domesticBacktestBlockExcluded: backtest.backtestBlockExcluded,
@@ -330,6 +347,7 @@ function fixtureMetrics() {
     domesticBacktestFreshRows7d: 28,
     domesticBacktestHealthyRows7d: 24,
     domesticBacktestPassRows7d: 22,
+    domesticBacktestActiveTotal: 30,
     domesticBacktestActiveCandidates: 30,
     domesticBacktestCooldownExcluded: 0,
     domesticBacktestBlockExcluded: 0,
