@@ -3,11 +3,16 @@ import assert from 'node:assert/strict';
 
 const janitor = require('./jay-incident-janitor.ts');
 const {
+  DEFAULT_DB_INIT_RETRIES,
+  DEFAULT_DB_INIT_RETRY_MS,
   isTransientDbStartupError,
   retryTransientDbStartup,
 } = janitor._testOnly;
 
 async function main() {
+  assert.equal(DEFAULT_DB_INIT_RETRIES, 60);
+  assert.equal(DEFAULT_DB_INIT_RETRY_MS, 5000);
+
   assert.equal(isTransientDbStartupError({ code: '57P03', message: 'the database system is starting up' }), true);
   assert.equal(isTransientDbStartupError(new Error('database system is in recovery mode')), true);
   assert.equal(isTransientDbStartupError(new Error('relation does not exist')), false);
