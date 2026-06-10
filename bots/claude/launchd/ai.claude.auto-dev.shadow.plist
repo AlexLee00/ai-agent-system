@@ -21,8 +21,8 @@
 	<string>ai.claude.auto-dev.shadow</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/tsx</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/auto-dev-runner.ts</string>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.claude.auto-dev.mjs</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
