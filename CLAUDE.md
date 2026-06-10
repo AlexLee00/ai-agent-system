@@ -42,7 +42,7 @@ Layer 1: 팀원 봇 (규칙) — 실행·보고
 
 ```
 OPS: Mac Studio M4 Max 36GB (24/7 운영)
-  Hub(:7788), PostgreSQL(:5432), n8n(:5678), MLX(:11434)
+  Hub(:7788), PostgreSQL(:5432), MLX(:11434), Sigma(:4000), Team Jay Dashboard(:7787), Blog API(:3100)
 개발도 OPS에서 직접 (DEV 맥북 에어 은퇴, 2026-06)
 배포: git push → 5분 cron 자동 pull + GitHub Actions CI (self-hosted runner OPS)
 DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
@@ -136,7 +136,7 @@ LLM 아키텍처:
 
 ### 포스트 리붓 운영 메모
 - 재부팅 직후에는 `scripts/post-reboot.sh`를 먼저 실행하고, follow-up 파일(`/tmp/post-reboot-services.txt`, `/tmp/post-reboot-followup.txt`)을 기준으로 복구 상태를 점검한다.
-- 운영 확인 우선순위는 `hub / n8n / mlx / rag` → `luna / blog / ska / claude` 순서로 유지한다.
+- 운영 확인 우선순위는 `hub / mlx / rag / telegram callback` → `luna / blog / ska / claude / sigma` 순서로 유지한다.
 - 예약팀 `today-audit`는 launchd 스케줄을 놓친 재부팅 케이스가 생길 수 있으므로, 필요 시 wrapper 경로 `bots/reservation/auto/monitors/run-today-audit.sh`로 수동 실행해 `/tmp/today-audit.log` 성공 이력을 복구한다.
 
 ### 커밋 규칙

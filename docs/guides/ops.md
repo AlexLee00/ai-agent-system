@@ -42,7 +42,7 @@
 - launchd 서비스 생존 여부
 - HTTP health endpoint 응답 여부
 - 최근 오류 반복 여부
-- critical webhook / n8n 경로 정상 여부
+- Hub alarm / Telegram callback 경로 정상 여부
 - stale 상태 또는 queue 누적 여부
 
 ---
@@ -204,7 +204,6 @@ cd /Users/alexlee/projects/ai-agent-system/bots/claude && npm run dexter:quick
 
 ```bash
 node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/health-report.js --json
-node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js
 ```
 
 참조:
@@ -214,7 +213,6 @@ node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n
 
 ```bash
 node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-report.js --json
-node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipeline-path.js
 ```
 
 참조:
@@ -224,7 +222,7 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 
 ## 5. 대표 launchd / 로그 / 엔드포인트
 
-### Orchestrator / Hub / N8N
+### Orchestrator / Hub / Telegram Callback
 
 - 대표 launchd
   - `ai.orchestrator.mainbot`
@@ -238,9 +236,8 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - `~/Library/Logs/ai-agent-system/mainbot.log`
   - `~/Library/Logs/ai-agent-system/mainbot-error.log`
 
-- critical path와 webhook은 config 기준으로 점검
+- Hub alarm과 Telegram callback은 config 기준으로 점검
   - [bots/orchestrator/config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)
-  - [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js)
 - 제이 모델 정책 확인 순서
   - Hub LLM 라우트/셀렉터 정책: [llm.ts](/Users/alexlee/projects/ai-agent-system/bots/hub/lib/routes/llm.ts)
   - 제이 앱 레벨 모델 정책: [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
@@ -427,9 +424,8 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 4. 부팅 후 자동 점검
    - `ai.agent.post-reboot` launchd가 [post-reboot.sh](/Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh)를 자동 실행한다.
    - 점검 대상은 현재 운영 기준으로 아래를 포함한다.
-     - orchestrator / Hub / n8n
-     - worker web / nextjs / lead / task-runner
-     - investment commander / markets / reporter / argos / alerts / prescreen
+     - Hub resource API / Telegram callback poller / MLX / Team Jay dashboard / Sigma
+     - investment commander / TradingView WS / marketdata MCP / runtime jobs
      - blog node-server / daily / health-check
      - claude commander / dexter / archer / health-dashboard
      - ska monitors
