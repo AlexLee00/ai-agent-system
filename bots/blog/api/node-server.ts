@@ -19,6 +19,7 @@ try {
   process.exit(1);
 }
 
+const http = require('http');
 const pipelineStore = require('../lib/pipeline-store.ts');
 const richer = require('../lib/richer.ts');
 const posWriter = require('../lib/pos-writer.ts');
@@ -47,13 +48,14 @@ function isAddressInUseError(error: any) {
 
 function listenOnce() {
   return new Promise((resolve, reject) => {
-    const server = app.listen(PORT, HOST);
+    const server = http.createServer(app);
     server.once('listening', () => {
       console.log(`[노드서버] 블로그 노드 API 서버 기동 — ${HOST}:${PORT}`);
       console.log(`  헬스체크: http://${HOST}:${PORT}/health`);
       resolve(server);
     });
     server.once('error', reject);
+    server.listen(PORT, HOST);
   });
 }
 

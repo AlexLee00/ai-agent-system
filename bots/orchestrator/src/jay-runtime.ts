@@ -124,6 +124,42 @@ function acquireLock() {
 
 const TG_MAX_LEN = 4096;
 
+function resolveSenderFunction(name) {
+  const candidates = [sender, sender?.default].filter(Boolean);
+  for (const candidate of candidates) {
+    if (typeof candidate?.[name] === 'function') {
+      return { fn: candidate[name], receiver: candidate };
+    }
+  }
+  return null;
+}
+
+async function sendWithOptionsCompat(team, text, options) {
+  const withOptions = resolveSenderFunction('sendWithOptions');
+  if (withOptions) return withOptions.fn.call(withOptions.receiver, team, text, options);
+
+  const buffered = resolveSenderFunction('sendBuffered');
+  if (buffered) return buffered.fn.call(buffered.receiver, team, text);
+
+  const plainSend = resolveSenderFunction('send');
+  if (plainSend) return plainSend.fn.call(plainSend.receiver, team, text);
+
+  throw new Error('telegram_sender_send_unavailable');
+}
+
+async function sendBufferedCompat(team, text) {
+  const buffered = resolveSenderFunction('sendBuffered');
+  if (buffered) return buffered.fn.call(buffered.receiver, team, text);
+
+  const withOptions = resolveSenderFunction('sendWithOptions');
+  if (withOptions) return withOptions.fn.call(withOptions.receiver, team, text);
+
+  const plainSend = resolveSenderFunction('send');
+  if (plainSend) return plainSend.fn.call(plainSend.receiver, team, text);
+
+  throw new Error('telegram_sender_send_unavailable');
+}
+
 function splitMessage(text) {
   if (text.length <= TG_MAX_LEN) return [text];
   const chunks = [];
@@ -161,11 +197,11 @@ async function sendTelegram(input) {
     const chunk = chunks[index];
     const isSingleChunk = chunks.length === 1;
     const ok = isSingleChunk && message.replyMarkup
-      ? await sender.sendWithOptions(topicTeam, chunk, {
+      ? await sendWithOptionsCompat(topicTeam, chunk, {
         replyMarkup: message.replyMarkup,
         disableWebPagePreview: true,
       })
-      : await sender.sendBuffered(topicTeam, chunk);
+      : await sendBufferedCompat(topicTeam, chunk);
     if (!ok) allOk = false;
     if (chunks.length > 1) await new Promise(resolve => setTimeout(resolve, 1100));
   }
