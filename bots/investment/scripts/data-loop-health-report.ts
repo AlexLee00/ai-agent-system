@@ -720,7 +720,7 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const json = process.argv.includes('--json');
   if (maybeSkipForMemory('luna.data-loop-health', { json })) return;
-  console.log(`[DataLoopHealth] ${new Date().toISOString()} 루프 건강 보고 시작`);
+  if (!json) console.log(`[DataLoopHealth] ${new Date().toISOString()} 루프 건강 보고 시작`);
 
   try {
     await initHubConfig().catch(() => null);
@@ -746,31 +746,36 @@ async function main() {
 
   const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall };
 
-  console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
-  console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade} pendingOlder24h=${guardOutcome.pendingOlder24h || 0}`);
-  console.log(`[DataLoopHealth] 피드백: ${feedback.total}건 | reflexion: ${reflexion.total}건`);
-  console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
-  console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
-  console.log(`[DataLoopHealth] launchd env drift: ${(launchd.envDrift ?? []).map((item) => `${item.label}:${item.key}(${item.status})`).join(', ') || 'clear'}`);
-  console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개, residue ignored ${(opsScheduler.residueJobs ?? []).length}개`);
+  if (!json) {
+    console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
+    console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade} pendingOlder24h=${guardOutcome.pendingOlder24h || 0}`);
+    console.log(`[DataLoopHealth] 피드백: ${feedback.total}건 | reflexion: ${reflexion.total}건`);
+    console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
+    console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
+    console.log(`[DataLoopHealth] launchd env drift: ${(launchd.envDrift ?? []).map((item) => `${item.label}:${item.key}(${item.status})`).join(', ') || 'clear'}`);
+    console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개, residue ignored ${(opsScheduler.residueJobs ?? []).length}개`);
+  }
   const tableFreshnessRows = Array.isArray(tableFreshness) ? tableFreshness : [];
   const feedbackLoopStallRows = Array.isArray(feedbackLoopStall) ? feedbackLoopStall : [];
   const criticalTables = tableFreshnessRows.filter((t) =>
     ['missing', 'missing_column'].includes(t.status)
     || (t.status === 'stale' && (t.elapsedHours ?? Number.POSITIVE_INFINITY) > (t.criticalHours ?? 24)),
   );
-  console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
-  console.log(`[DataLoopHealth] position-sync: status=${positionSync?.status ?? '?'} lastRunMinAgo=${positionSync?.lastRunMinAgo ?? '?'} live=${positionSync?.liveCount ?? '?'} paper=${positionSync?.paperCount ?? '?'}`);
+  if (!json) {
+    console.log(`[DataLoopHealth] 테이블 CRITICAL: ${criticalTables.map((t) => `${t.table}(${t.status})`).join(', ') || '없음'}`);
+    console.log(`[DataLoopHealth] position-sync: status=${positionSync?.status ?? '?'} lastRunMinAgo=${positionSync?.lastRunMinAgo ?? '?'} live=${positionSync?.liveCount ?? '?'} paper=${positionSync?.paperCount ?? '?'}`);
+  }
   const stalledFeedback = feedbackLoopStallRows.filter((item) => item.status !== 'ok');
-  console.log(`[DataLoopHealth] feedback-loop stall guard: ${stalledFeedback.map((item) => `${item.table}(${item.status})`).join(', ') || 'clear'}`);
+  if (!json) console.log(`[DataLoopHealth] feedback-loop stall guard: ${stalledFeedback.map((item) => `${item.table}(${item.status})`).join(', ') || 'clear'}`);
 
   const message = buildTelegramMessage(data);
   if (!dryRun) {
     await sendTelegram(message);
-  } else {
+  } else if (!json) {
     console.log('[DataLoopHealth][dry] Telegram 메시지:');
     console.log(message);
   }
+  if (json) console.log(JSON.stringify({ ok: true, dryRun, data, message }, null, 2));
 
   try { await close(); } catch {}
   process.exit(0);
