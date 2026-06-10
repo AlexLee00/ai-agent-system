@@ -66,7 +66,7 @@ const ALL_SERVICES = [
 // 정상 종료 코드
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
-const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+const LATEST_OPS_SNAPSHOT_FILE = new URL('../output/ops/parallel-ops-snapshot.json', import.meta.url).pathname;
 const LATEST_OPS_SNAPSHOT_STALE_HOURS = 24;
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const MCP_HEALTH_CHECK_TIMEOUT_MS = 25_000;

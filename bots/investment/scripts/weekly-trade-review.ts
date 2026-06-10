@@ -29,7 +29,7 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+const LATEST_OPS_SNAPSHOT_FILE = new URL('../output/ops/parallel-ops-snapshot.json', import.meta.url).pathname;
 
 function loadLatestOpsSnapshot() {
   try {

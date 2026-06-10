@@ -221,7 +221,10 @@ bots/claude/reports/archer-*.md
 bots/claude/reports/patches/*.json
 
 # 투자팀 런타임 스냅샷
+bots/investment/output/ops/luna-operating-epoch-reset.json
 bots/investment/output/ops/market-regime-capture.json
+bots/investment/output/ops/parallel-ops-snapshot.json
+bots/investment/output/ops/posttrade-feedback-worker-smoke-heartbeat.json
 bots/investment/python/rl/data/
 bots/investment/python/rl/models/
 

@@ -39,7 +39,7 @@ import {
   runPositionStrategyRemediation,
 } from './runtime-position-strategy-remediation.ts';
 const require = createRequire(import.meta.url);
-const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+const LATEST_OPS_SNAPSHOT_FILE = new URL('../output/ops/parallel-ops-snapshot.json', import.meta.url).pathname;
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 let dailyFeedbackMemory = {
   recallCountHint: async () => '',
