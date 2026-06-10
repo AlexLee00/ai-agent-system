@@ -130,6 +130,7 @@ function unitSmokeScripts(): string[] {
     'hub-strict-ts-island-smoke.ts',
     'hub-resilience-contract-smoke.ts',
     'load-test-guide-contract-smoke.ts',
+    'load-test-skip-chaos-smoke.ts',
     'llm-shared-limiter-smoke.ts',
     'llm-async-jobs-smoke.ts',
     'hub-l5-stability-gate-smoke.ts',

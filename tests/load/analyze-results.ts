@@ -21,13 +21,33 @@ type LoadScenarioSummary = {
   avg_latency_ms: number;
 };
 
-async function analyzeLoadTest(resultsDir: string) {
+function parseSkippedScenarios(values: unknown): Set<string> {
+  const items = Array.isArray(values)
+    ? values
+    : String(values || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+  return new Set(items.map((item) => String(item).trim()).filter((item) => SCENARIOS.includes(item)));
+}
+
+async function analyzeLoadTest(resultsDir: string, options: {
+  skippedScenarios?: string[];
+  persist?: boolean;
+  sendReport?: boolean;
+} = {}) {
   const summary: Record<string, LoadScenarioSummary> = {};
   const missing: string[] = [];
+  const skipped: string[] = [];
+  const skippedScenarios = parseSkippedScenarios(options.skippedScenarios || process.env.LOAD_TEST_SKIPPED_SCENARIOS);
 
   for (const scenario of SCENARIOS) {
     const filePath = path.join(resultsDir, `${scenario}.json`);
     if (!fs.existsSync(filePath)) {
+      if (skippedScenarios.has(scenario)) {
+        skipped.push(scenario);
+        continue;
+      }
       missing.push(scenario);
       continue;
     }
@@ -62,24 +82,26 @@ async function analyzeLoadTest(resultsDir: string) {
       avg_latency_ms: Math.round(durations.reduce((a, b) => a + b, 0) / (durations.length || 1)),
     };
 
-    try {
-      await pgPool.run(
-        'public',
-        `INSERT INTO hub.load_test_results
-         (scenario, total_requests, failed_requests, fail_rate, p95_latency_ms, p99_latency_ms, avg_latency_ms)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [
-          scenario,
-          summary[scenario].total_requests,
-          summary[scenario].failed_requests,
-          summary[scenario].fail_rate,
-          summary[scenario].p95_latency_ms,
-          summary[scenario].p99_latency_ms,
-          summary[scenario].avg_latency_ms,
-        ]
-      );
-    } catch (e) {
-      console.warn(`[load-analyze] DB 저장 실패 (${scenario}):`, e.message);
+    if (options.persist !== false) {
+      try {
+        await pgPool.run(
+          'public',
+          `INSERT INTO hub.load_test_results
+           (scenario, total_requests, failed_requests, fail_rate, p95_latency_ms, p99_latency_ms, avg_latency_ms)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            scenario,
+            summary[scenario].total_requests,
+            summary[scenario].failed_requests,
+            summary[scenario].fail_rate,
+            summary[scenario].p95_latency_ms,
+            summary[scenario].p99_latency_ms,
+            summary[scenario].avg_latency_ms,
+          ]
+        );
+      } catch (e) {
+        console.warn(`[load-analyze] DB 저장 실패 (${scenario}):`, e.message);
+      }
     }
   }
 
@@ -90,26 +112,39 @@ async function analyzeLoadTest(resultsDir: string) {
     lines.push(`  요청: ${s.total_requests}건 / 실패율: ${(s.fail_rate * 100).toFixed(1)}%`);
     lines.push(`  P50: ${s.p50_latency_ms}ms / P95: ${s.p95_latency_ms}ms / P99: ${s.p99_latency_ms}ms`);
   }
+  if (skipped.length) lines.push(`\nℹ️ 건너뜀: ${skipped.join(', ')}`);
   if (missing.length) lines.push(`\n⚠️ 결과 파일 없음: ${missing.join(', ')}`);
 
   const msg = lines.join('\n');
   console.log(msg);
-  try {
-    await sender.send('general', msg);
-  } catch (e) {
-    console.warn('[load-analyze] Telegram 전송 실패:', e.message);
+  if (options.sendReport !== false) {
+    try {
+      await sender.send('general', msg);
+    } catch (e) {
+      console.warn('[load-analyze] Telegram 전송 실패:', e.message);
+    }
   }
 
-  return summary;
+  return { summary, missing, skipped, message: msg };
 }
 
-(async () => {
-  const dir = process.argv[2] || 'results';
-  if (!fs.existsSync(dir)) {
-    console.error(`결과 디렉토리 없음: ${dir}`);
-    process.exit(1);
-  }
-  const result = await analyzeLoadTest(dir);
-  console.log('\n[요약]', JSON.stringify(result, null, 2));
-  process.exit(0);
-})();
+if (require.main === module) {
+  (async () => {
+    const dir = process.argv[2] || 'results';
+    const skipArg = process.argv.find((arg) => arg.startsWith('--skip-scenarios='))?.split('=')[1] || '';
+    if (!fs.existsSync(dir)) {
+      console.error(`결과 디렉토리 없음: ${dir}`);
+      process.exit(1);
+    }
+    const result = await analyzeLoadTest(dir, {
+      skippedScenarios: skipArg ? Array.from(parseSkippedScenarios(skipArg)) : undefined,
+    });
+    console.log('\n[요약]', JSON.stringify(result, null, 2));
+    process.exit(0);
+  })();
+}
+
+module.exports = {
+  analyzeLoadTest,
+  parseSkippedScenarios,
+};

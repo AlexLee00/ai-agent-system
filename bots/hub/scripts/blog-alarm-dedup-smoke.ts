@@ -7,6 +7,7 @@
  */
 
 const { buildAlarmClusterKey } = require('../lib/alarm/cluster.ts');
+const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
 const {
   classifyReason: classifyBlogCriticalReason,
   REASON_DEDUP_WINDOWS,
@@ -172,16 +173,50 @@ async function main() {
     `ALERT_DEDUPE_PATH must end with blog-alert-dedupe.json. got: ${ALERT_DEDUPE_PATH}`,
   );
 
-  // ── 9. Hub smoke는 blog 런타임(commenter.ts)을 직접 로드하면 안 된다 ──
-  // Hub 경계 smoke는 lightweight helper만 검증한다. Puppeteer/DB 의존 런타임 import는 auto_dev에서 실패한다.
+  // ── 9. book_catalog DB startup/recovery는 auto_dev 대상 알람으로 승격하지 않는다 ──
+  // incident: blog:blog-health:blog_health_check:f8c230e0b5ab
   const fs = require('fs');
+  const path = require('path');
+  const healthCheckSource = fs.readFileSync(
+    path.join(__dirname, '../../blog/scripts/health-check.ts'),
+    'utf8',
+  );
+  assert(
+    /function isTransientDatabaseStartupError/.test(healthCheckSource),
+    'blog health-check must classify transient DB startup/recovery errors',
+  );
+  assert(
+    /the database system is starting up/.test(healthCheckSource),
+    'blog health-check must suppress PostgreSQL startup transient for book_catalog',
+  );
+  assert(
+    /bookCatalog\.transient/.test(healthCheckSource),
+    'book_catalog transient failures must be suppressed before issue notification',
+  );
+
+  // ── 10. engagement recovery/info는 auto_dev 대상 error로 승격하지 않는다 ──
+  // incident: blog:blog-health:blog_health_check:7b00b81e8c34
+  const engagementRecovery = classifyAlarmTypeWithConfidence({
+    severity: 'info',
+    eventType: 'blog_health_check',
+    title: '블로그 헬스',
+    message: '✅ [블로그 헬스] engagement 자동화 회복\nengagement failures present but non-UI (2건)',
+    payload: { event_type: 'blog_health_check' },
+  });
+  assert(
+    engagementRecovery.type === 'report',
+    `engagement recovery/info must route as report, got: ${engagementRecovery.type}`,
+  );
+
+  // ── 11. Hub smoke는 blog 런타임(commenter.ts)을 직접 로드하면 안 된다 ──
+  // Hub 경계 smoke는 lightweight helper만 검증한다. Puppeteer/DB 의존 런타임 import는 auto_dev에서 실패한다.
   const source = fs.readFileSync(__filename, 'utf8');
   const forbiddenRelativeImport = ['..', '..', 'blog', 'lib', 'commenter.ts'].join('/');
   const forbiddenRuntimePath = ['blog', 'lib', 'commenter.ts'].join('/');
   assert(!source.includes(forbiddenRelativeImport), `Hub smoke must not import blog runtime module: ${forbiddenRelativeImport}`);
   assert(!source.includes(`require('${forbiddenRuntimePath}`), `Hub smoke must not require blog runtime module: ${forbiddenRuntimePath}`);
 
-  // ── 10. neighbor-commenter 실패 알람은 canonical reason과 안정 cluster로 묶여야 한다 ──
+  // ── 12. neighbor-commenter 실패 알람은 canonical reason과 안정 cluster로 묶여야 한다 ──
   const neighborMsg1 = '이웃 댓글 0건 완료, 댓글 공감 0건 완료, 실패 2건, 스킵 1건 (오늘 댓글 총 5/20, 댓글공감 총 5)';
   const neighborMsg2 = '이웃 댓글 0건 완료, 댓글 공감 0건 완료, 실패 3건, 스킵 2건 (오늘 댓글 총 6/20, 댓글공감 총 6)';
   assert(classifyReason(neighborMsg1) === 'neighbor_commenter_failures', 'neighbor commenter failure reason broken');

@@ -101,9 +101,10 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
     return `${medal} ${r.label} — ${r.ttft}ms`;
   }).join('\n');
   const failed = results.filter(r => !r.ok).length;
+  const skipped = results.length === 0;
 
   let statusLine;
-  if (results.length === 0) {
+  if (skipped) {
     statusLine = '\n\n⚠️ 실행 가능한 모델/인증이 없어 측정을 건너뜀';
   } else if (applied) {
     statusLine = `\n🔄 primary 자동 변경: ${applied}`;
@@ -113,12 +114,24 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
     statusLine = `\n\n✅ 현재 모델(${current})이 가장 빠름`;
   }
 
-  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${statusLine}\n\n❌ 실패: ${failed}개`;
+  const failureLine = skipped ? '' : `\n\n❌ 실패: ${failed}개`;
+  const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${statusLine}${failureLine}`;
   return hubAlarmClient.postAlarm({
     team: 'claude-lead',
     message: text,
     alertLevel: 1,
     fromBot: 'speed-test',
+    alarmType: skipped ? 'report' : undefined,
+    eventType: skipped ? 'speed_test_skipped' : 'speed_test_result',
+    actionability: skipped ? 'none' : undefined,
+    visibility: skipped ? 'digest' : undefined,
+    payload: {
+      event_type: skipped ? 'speed_test_skipped' : 'speed_test_result',
+      skipped,
+      attempted: results.length,
+      failed,
+      reason: skipped ? 'no_runnable_models_or_credentials' : null,
+    },
   });
 }
 

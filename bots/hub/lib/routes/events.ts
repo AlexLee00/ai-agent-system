@@ -1,3 +1,6 @@
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const { collectHealthSnapshot } = require('./health');
 
@@ -5,6 +8,7 @@ const defaultRouteEventLake = {
   record: (...args: any[]) => eventLake.record(...args),
 };
 let routeEventLake = defaultRouteEventLake;
+let spoolDrainInFlight = false;
 
 export function _testOnly_setEventsRouteEventLakeMocks(overrides: Partial<typeof defaultRouteEventLake> = {}) {
   routeEventLake = { ...defaultRouteEventLake, ...overrides };
@@ -22,6 +26,101 @@ function text(value: unknown, fallback = '') {
 function toInt(value: unknown, fallback: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function positiveIntEnv(name: string, fallback: number, min = 1, max = Number.MAX_SAFE_INTEGER): number {
+  const parsed = Number.parseInt(String(process.env[name] || ''), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function runtimeDir(): string {
+  const configured = String(process.env.HUB_RUNTIME_DIR || '').trim();
+  return configured.replace(/^~(?=$|\/)/, os.homedir()) || path.join(os.homedir(), '.ai-agent-system', 'hub');
+}
+
+export function eventsPublishSpoolFile(): string {
+  const configured = String(process.env.HUB_EVENTS_PUBLISH_SPOOL_FILE || '').trim();
+  return configured.replace(/^~(?=$|\/)/, os.homedir()) || path.join(runtimeDir(), 'events-publish-spool.jsonl');
+}
+
+function errorMessage(error: unknown): string {
+  return String((error as Error)?.message || error || 'unknown_error').slice(0, 500);
+}
+
+async function appendSpooledEvent(recordPayload: Record<string, unknown>, error: unknown, spoolFile = eventsPublishSpoolFile()): Promise<void> {
+  const payload = {
+    queuedAt: new Date().toISOString(),
+    reason: errorMessage(error),
+    record: recordPayload,
+  };
+  await fs.promises.mkdir(path.dirname(spoolFile), { recursive: true, mode: 0o700 });
+  await fs.promises.appendFile(spoolFile, `${JSON.stringify(payload)}\n`, { encoding: 'utf8', mode: 0o600 });
+  try { await fs.promises.chmod(spoolFile, 0o600); } catch {}
+}
+
+function parseSpooledLine(line: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(line);
+    if (!parsed?.record || typeof parsed.record !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function appendRemainingSpooledEvents(spoolFile: string, entries: Array<Record<string, unknown>>): Promise<void> {
+  if (!entries.length) return;
+  await fs.promises.mkdir(path.dirname(spoolFile), { recursive: true, mode: 0o700 });
+  const body = entries.map((entry) => `${JSON.stringify(entry)}\n`).join('');
+  await fs.promises.appendFile(spoolFile, body, { encoding: 'utf8', mode: 0o600 });
+  try { await fs.promises.chmod(spoolFile, 0o600); } catch {}
+}
+
+export async function drainEventsPublishSpool(options: { spoolFile?: string; limit?: number } = {}) {
+  if (spoolDrainInFlight) return { ok: true, skipped: true, reason: 'drain_in_flight', drained: 0, remaining: 0 };
+  spoolDrainInFlight = true;
+
+  const spoolFile = options.spoolFile || eventsPublishSpoolFile();
+  const limit = Math.min(
+    Math.max(1, Number(options.limit || 0) || positiveIntEnv('HUB_EVENTS_PUBLISH_SPOOL_DRAIN_LIMIT', 50, 1, 1000)),
+    1000,
+  );
+  const processingFile = `${spoolFile}.${process.pid}.${Date.now()}.processing`;
+
+  try {
+    await fs.promises.rename(spoolFile, processingFile).catch((error: any) => {
+      if (error?.code === 'ENOENT') return;
+      throw error;
+    });
+    if (!fs.existsSync(processingFile)) return { ok: true, drained: 0, remaining: 0 };
+
+    const raw = await fs.promises.readFile(processingFile, 'utf8');
+    const entries = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map(parseSpooledLine).filter(Boolean) as Array<Record<string, unknown>>;
+    let drained = 0;
+    const remaining: Array<Record<string, unknown>> = [];
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (drained >= limit) {
+        remaining.push(entry, ...entries.slice(index + 1));
+        break;
+      }
+      try {
+        await routeEventLake.record(entry.record);
+        drained += 1;
+      } catch (error) {
+        remaining.push({ ...entry, lastDrainError: errorMessage(error), lastDrainAt: new Date().toISOString() }, ...entries.slice(index + 1));
+        break;
+      }
+    }
+
+    await appendRemainingSpooledEvents(spoolFile, remaining);
+    await fs.promises.unlink(processingFile).catch(() => null);
+    return { ok: true, drained, remaining: remaining.length };
+  } finally {
+    spoolDrainInFlight = false;
+  }
 }
 
 function deriveTeam(source: string, topic: string) {
@@ -67,7 +166,7 @@ export async function eventsPublishRoute(req: any, res: any) {
     const topic = text(body.topic || body.eventType || body.event_type, 'general_event');
     const severity = text(body.severity, 'info').toLowerCase();
     const traceId = resolvePublishedEventTraceId(body, req);
-    const id = await routeEventLake.record({
+    const recordPayload = {
       eventType: topic,
       team: text(body.team, deriveTeam(source, topic)),
       botName: source,
@@ -82,7 +181,22 @@ export async function eventsPublishRoute(req: any, res: any) {
         payload: body.payload ?? null,
         timestamp: body.timestamp ?? Date.now(),
       },
-    });
+    };
+    let id: string | number | null = null;
+    try {
+      id = await routeEventLake.record(recordPayload);
+      drainEventsPublishSpool().catch((error) => {
+        console.warn(`[hub/events] publish spool drain failed: ${errorMessage(error)}`);
+      });
+    } catch (error) {
+      try {
+        await appendSpooledEvent(recordPayload, error);
+        console.warn(`[hub/events] event_lake unavailable; publish spooled: ${errorMessage(error)}`);
+        return res.status(202).json({ ok: true, queued: true, id: null, warning: 'event_lake_spooled' });
+      } catch (spoolError) {
+        return res.status(503).json({ ok: false, error: 'event_lake_unavailable', detail: errorMessage(spoolError) });
+      }
+    }
     return res.json({ ok: true, id });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error.message });

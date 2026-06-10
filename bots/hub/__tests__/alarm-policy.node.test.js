@@ -99,6 +99,20 @@ test('downgrades steward daily summary even when legacy event says error', async
   assert.deepEqual(result, { type: 'report', confidence: 0.97 });
 });
 
+test('downgrades speed-test no runnable model skip to report', async () => {
+  const { classifyAlarmTypeWithConfidence, isQuietOperationalSnapshot } = await loadModule();
+  const input = {
+    severity: 'info',
+    eventType: 'speed-test_error',
+    title: 'LLM speed test',
+    message: '⚡ LLM 속도 테스트 결과\n\n⚠️ 실행 가능한 모델/인증이 없어 측정을 건너뜀\n\n❌ 실패: 0개',
+  };
+  const result = classifyAlarmTypeWithConfidence(input);
+
+  assert.deepEqual(result, { type: 'report', confidence: 0.96 });
+  assert.equal(isQuietOperationalSnapshot(input), true);
+});
+
 test('keeps actionable runtime failure as error', async () => {
   const { classifyAlarmTypeWithConfidence } = await loadModule();
   const result = classifyAlarmTypeWithConfidence({

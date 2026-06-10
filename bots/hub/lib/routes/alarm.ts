@@ -1,6 +1,10 @@
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const telegramSender = require('../../../../packages/core/lib/telegram-sender');
-const { classifyAlarmTypeWithConfidence, isExplicitHumanEscalation } = require('../alarm/policy');
+const {
+  classifyAlarmTypeWithConfidence,
+  isExplicitHumanEscalation,
+  isQuietOperationalSnapshot,
+} = require('../alarm/policy');
 const { classifyAlarmWithLLM } = require('../alarm/classify-alarm-llm');
 const { interpretAlarm } = require('../alarm/alarm-interpreter-router');
 const { enrichAlarm } = require('../alarm/alarm-enrichment');
@@ -700,7 +704,8 @@ export async function alarmRoute(req: any, res: any) {
       1,
       Number(req.body?.dedupeMinutes ?? req.body?.cooldownMinutes ?? 5) || 5,
     );
-    let visibility = normalizeVisibility(req.body?.visibility)
+    const requestedVisibility = normalizeVisibility(req.body?.visibility);
+    let visibility = requestedVisibility
       || defaultVisibility({
         severity,
         actionability: normalizeActionability(req.body?.actionability),
@@ -711,6 +716,16 @@ export async function alarmRoute(req: any, res: any) {
       || defaultActionability({ severity, visibility, alarmType, explicitHumanEscalation });
     let status = normalizeStatus(req.body?.status)
       || defaultStatus({ actionability, visibility });
+    if (
+      !requestedVisibility
+      && !explicitHumanEscalation
+      && alarmType === 'report'
+      && actionability === 'none'
+      && isQuietOperationalSnapshot({ eventType, title, message })
+    ) {
+      visibility = 'digest';
+      status = defaultStatus({ actionability, visibility });
+    }
     const dispatchMode = getDispatchMode();
     const incidentKey = normalizeText(req.body?.incidentKey)
       || normalizeText(req.body?.incident_key)

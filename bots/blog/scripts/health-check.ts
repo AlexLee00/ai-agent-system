@@ -64,6 +64,11 @@ const MARKETING_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bo
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
 const doctorPriorityCache = new Map();
 
+function isTransientDatabaseStartupError(error) {
+  const message = String(error?.message || error || '');
+  return /the database system is starting up|database system is in recovery mode|terminating connection due to administrator command/i.test(message);
+}
+
 function buildPreviewBundleForTitle(title = '') {
   try {
     const {
@@ -357,7 +362,12 @@ async function checkBookCatalogHealth() {
       detail: `book_catalog ${row.total_count}권 (canonical ${row.canonical_count}, popular ${row.popular_count})`,
     };
   } catch (e) {
-    return { ok: false, detail: `book_catalog 확인 실패: ${e.message.slice(0, 120)}` };
+    const transient = isTransientDatabaseStartupError(e);
+    return {
+      ok: false,
+      transient,
+      detail: `book_catalog 확인 실패${transient ? ' (일시 DB startup/recovery)' : ''}: ${e.message.slice(0, 120)}`,
+    };
   } finally {
     await pgPool.closeAll().catch(() => {});
   }
@@ -1064,7 +1074,9 @@ async function main() {
   const bookCatalog = await checkBookCatalogHealth();
   const bookCatalogKey = 'book-catalog:db';
   if (!bookCatalog.ok) {
-    if (hsm.canAlert(state, bookCatalogKey)) {
+    if (bookCatalog.transient) {
+      console.warn(`[블로그 헬스체크] 일시 book_catalog 확인 실패 suppress: ${bookCatalog.detail}`);
+    } else if (hsm.canAlert(state, bookCatalogKey)) {
       issues.push({
         key: bookCatalogKey,
         level: 2,
@@ -1183,7 +1195,14 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`[블로그 헬스체크] 예외: ${e.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((e) => {
+    console.error(`[블로그 헬스체크] 예외: ${e.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  isTransientDatabaseStartupError,
+  checkBookCatalogHealth,
+};

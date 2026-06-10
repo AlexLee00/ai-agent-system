@@ -62,6 +62,11 @@ function classifyOperationalSnapshot({
     return { type: 'report', confidence: 0.94 };
   }
 
+  if (/speed[-_]?test/.test(lower)
+    && lower.includes('실행 가능한 모델/인증이 없어 측정을 건너뜀')) {
+    return { type: 'report', confidence: 0.96 };
+  }
+
   if (event === 'blog_weekly_evolution'
     && (lower.includes('weekly-evolution 완료')
       || lower.includes('블로그팀 주간 전략 진화 완료'))) {
@@ -152,6 +157,26 @@ export function classifyAlarmTypeWithConfidence({
   return { type: 'work', confidence: 0.5 };
 }
 
+export function isQuietOperationalSnapshot({
+  eventType,
+  title,
+  message,
+}: {
+  eventType?: unknown;
+  title?: unknown;
+  message?: unknown;
+}): boolean {
+  const event = normalizeText(eventType).toLowerCase();
+  const corpus = [
+    event,
+    normalizeText(title),
+    normalizeText(message),
+  ].join('\n').toLowerCase();
+
+  return /speed[-_]?test/.test(corpus)
+    && corpus.includes('실행 가능한 모델/인증이 없어 측정을 건너뜀');
+}
+
 export function classifyAlarmType({
   requestedType,
   severity,
@@ -195,6 +220,7 @@ const exportedPolicy = {
   ALARM_TYPES,
   classifyAlarmType,
   classifyAlarmTypeWithConfidence,
+  isQuietOperationalSnapshot,
   isExplicitHumanEscalation,
   normalizeAlarmType,
 };

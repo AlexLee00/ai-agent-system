@@ -166,6 +166,31 @@ async function main() {
     assert(reportRes.body.delivered === true, 'expected report alarm immediate delivery');
     assert(Number(sendCount) === 2, `expected two telegram sends after report, got ${sendCount}`);
 
+    const speedSkipReq = {
+      body: {
+        message: [
+          '⚡ LLM 속도 테스트 결과',
+          '',
+          '⚠️ 실행 가능한 모델/인증이 없어 측정을 건너뜀',
+          '',
+          '❌ 실패: 0개',
+        ].join('\n'),
+        team: 'claude-lead',
+        fromBot: 'speed-test',
+        severity: 'info',
+        eventType: 'speed-test_error',
+        incidentKey: `smoke:speed-test-skip:${Date.now()}`,
+        payload: { event_type: 'speed-test_error' },
+      },
+    };
+    const speedSkipRes = makeRes();
+    await alarmRoute(speedSkipReq, speedSkipRes);
+    assert(speedSkipRes.statusCode === 200, `expected speed skip alarm 200, got ${speedSkipRes.statusCode}`);
+    assert(speedSkipRes.body.alarm_type === 'report', `expected speed skip to route as report, got ${speedSkipRes.body.alarm_type}`);
+    assert(speedSkipRes.body.actionability === 'none', `expected speed skip actionability none, got ${speedSkipRes.body.actionability}`);
+    assert(speedSkipRes.body.auto_repair == null, 'speed skip report must not create auto_dev repair document');
+    assert(Number(sendCount) === 2, `expected speed skip to avoid immediate delivery, got ${sendCount}`);
+
     const errorReq = {
       body: {
         message: `provider_cooldown error token=super-secret-token-${stamp}`,

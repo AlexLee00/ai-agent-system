@@ -8,6 +8,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RESULTS_DIR="${PROJECT_ROOT}/results/load-$(date +%Y%m%d-%H%M)"
 HUB_URL="${HUB_URL:-http://localhost:7788}"
 SHORT_MODE="${SHORT_MODE:-false}"
+SKIPPED_SCENARIOS=""
 
 mkdir -p "${RESULTS_DIR}"
 echo "결과 저장 경로: ${RESULTS_DIR}"
@@ -46,6 +47,8 @@ if [[ "$1" != "--skip-chaos" ]]; then
   sleep 30
   run_scenario "chaos" "chaos.js"
   echo "✅ local MLX 임베딩 서버를 다시 시작해주세요"
+else
+  SKIPPED_SCENARIOS="chaos"
 fi
 
 run_scenario "multi-team" "multi-team.js"
@@ -53,7 +56,11 @@ run_scenario "multi-team" "multi-team.js"
 echo ""
 echo "===== 결과 분석 ====="
 cd "${PROJECT_ROOT}"
-node --disable-warning=DEP0205 --import tsx tests/load/analyze-results.ts "${RESULTS_DIR}" || true
+if [[ -n "${SKIPPED_SCENARIOS}" ]]; then
+  node --disable-warning=DEP0205 --import tsx tests/load/analyze-results.ts "${RESULTS_DIR}" "--skip-scenarios=${SKIPPED_SCENARIOS}" || true
+else
+  node --disable-warning=DEP0205 --import tsx tests/load/analyze-results.ts "${RESULTS_DIR}" || true
+fi
 
 echo ""
 echo "✅ 부하 테스트 완료. 결과: ${RESULTS_DIR}"
