@@ -116,6 +116,11 @@ async function main() {
     assert(staleDefault.stale_minutes === 120, `expected default stale minutes=120, got ${staleDefault.stale_minutes}`);
     assert(staleDefault.limit === 20, `expected default limit=20, got ${staleDefault.limit}`);
     assert(queryLog.some((sql) => String(sql).includes('FROM agent.hub_alarms')), 'expected stale scan to use hub_alarms state table');
+    assert(queryLog.some((sql) => String(sql).includes("hub_alarm_auto_repair_enqueued")), 'expected stale scan to require an auto-repair enqueue event');
+    assert(queryLog.some((sql) => String(sql).includes("auto_repair_shadow_skipped")), 'expected stale scan to exclude shadow-skipped repairs');
+    assert(queryLog.some((sql) => String(sql).includes("NOT LIKE 'auto_dev_%'")), 'expected stale scan to exclude auto-dev self-generated stage alarms');
+    assert(queryLog.some((sql) => String(sql).includes('DISTINCT ON (incident_key)')), 'expected stale scan to dedupe duplicate mirror rows by incident');
+    assert(queryLog.some((sql) => String(sql).includes('ORDER BY enqueued_at DESC')), 'expected stale scan to prioritize recently enqueued stale repairs');
     assert(queryLog.some((sql) => String(sql).includes('NOT EXISTS')), 'expected stale scan to exclude completed repairs');
 
     const proposals = await buildAlarmSuppressionProposals({ minutes: 60, limit: 5, minTotal: 5, db });

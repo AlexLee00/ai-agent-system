@@ -46,26 +46,55 @@ export async function scanStaleAutoRepair({
   const threshold = normalizeNumber(staleMinutes, 120, 5, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 20, 1, 100);
   const rows = await db.query('agent', `
+    WITH candidates AS (
+      SELECT
+        alarm.id,
+        alarm.team,
+        alarm.bot_name,
+        alarm.severity,
+        alarm.message,
+        COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint) AS incident_key,
+        enqueued.metadata->>'auto_dev_path' AS auto_dev_path,
+        alarm.received_at AS created_at,
+        enqueued.created_at AS enqueued_at
+      FROM agent.hub_alarms alarm
+      JOIN LATERAL (
+        SELECT event.metadata, event.created_at
+        FROM agent.event_lake event
+        WHERE event.event_type = 'hub_alarm_auto_repair_enqueued'
+          AND event.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
+        ORDER BY event.created_at DESC
+        LIMIT 1
+      ) enqueued ON TRUE
+      WHERE COALESCE(alarm.actionability, '') = 'auto_repair'
+        AND COALESCE(alarm.status, '') IN ('repairing', 'correlating')
+        AND alarm.received_at < NOW() - ($1::int * INTERVAL '1 minute')
+        AND COALESCE(alarm.metadata->>'auto_repair_shadow_skipped', 'false') <> 'true'
+        AND COALESCE(alarm.metadata->>'event_type', '') NOT LIKE 'auto_dev_%'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM agent.event_lake result
+          WHERE result.event_type = 'hub_alarm_auto_repair_result'
+            AND result.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
+            AND result.created_at >= enqueued.created_at
+        )
+    ), latest_by_incident AS (
+      SELECT DISTINCT ON (incident_key) *
+      FROM candidates
+      ORDER BY incident_key, enqueued_at DESC, created_at DESC
+    )
     SELECT
-      alarm.id,
-      alarm.team,
-      alarm.bot_name,
-      alarm.severity,
-      alarm.message,
-      COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint) AS incident_key,
-      alarm.metadata->>'auto_dev_path' AS auto_dev_path,
-      alarm.received_at AS created_at
-    FROM agent.hub_alarms alarm
-    WHERE COALESCE(alarm.actionability, '') = 'auto_repair'
-      AND COALESCE(alarm.status, '') IN ('repairing', 'correlating')
-      AND alarm.received_at < NOW() - ($1::int * INTERVAL '1 minute')
-      AND NOT EXISTS (
-        SELECT 1
-        FROM agent.event_lake result
-        WHERE result.event_type = 'hub_alarm_auto_repair_result'
-          AND result.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
-      )
-    ORDER BY alarm.received_at ASC
+      id,
+      team,
+      bot_name,
+      severity,
+      message,
+      incident_key,
+      auto_dev_path,
+      created_at,
+      enqueued_at
+    FROM latest_by_incident
+    ORDER BY enqueued_at DESC, created_at DESC
     LIMIT $2
   `, [threshold, rowLimit]);
   return {
