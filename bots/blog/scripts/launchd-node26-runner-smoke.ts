@@ -20,6 +20,8 @@ const checkedPlists = [
   'ai.blog.neighbor-commenter.plist',
   'ai.blog.neighbor-sympathy.plist',
   'ai.blog.reddit-trends.plist',
+  'ai.blog.topic-planner.plist',
+  'ai.blog.trend-collector.plist',
   'ai.blog.weekly-evolution.plist',
 ];
 

@@ -8,7 +8,10 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>bots/hub/src/hub-proxy.ts</string>
   </array>
 

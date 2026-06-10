@@ -7,7 +7,10 @@
   <string>ai.hub.monthly-restore-drill</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/tsx</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/hub-stage-d-restore-drill.ts</string>
     <string>--apply</string>
     <string>--confirm=hub-stage-d-restore-drill</string>

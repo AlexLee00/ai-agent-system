@@ -9,6 +9,7 @@ const launchdDir = path.join(repoRoot, 'bots/claude/launchd');
 const checkedPlists = [
   'ai.claude.auto-dev.plist',
   'ai.claude.auto-dev.shadow.plist',
+  'ai.claude.auto-dev-watch.plist',
   'ai.claude.codex-notifier.plist',
   'ai.claude.health-check.plist',
 ];
