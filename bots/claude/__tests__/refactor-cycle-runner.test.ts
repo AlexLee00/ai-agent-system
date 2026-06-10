@@ -8,9 +8,28 @@ const RUNNER_PATH = path.resolve(__dirname, '../scripts/refactor-cycle-runner.ts
 const NODE_CHECK_HOOK_PATH = path.resolve(__dirname, '../hooks/refactor-hooks/node-check-hook.ts');
 const BUILDER_PATH = path.resolve(__dirname, '../src/builder.ts');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
-const ACTIVE_TARGET = 'bots/claude/lib/agent-heartbeat.ts';
+const ACTIVE_TARGET = 'bots/claude/__tests__/fixtures/refactor-cycle-active-target.ts';
+const ACTIVE_TARGET_CONTENT = [
+  '// @ts-nocheck',
+  "'use strict';",
+  '',
+  'export function refactorCycleFixture(input) {',
+  "  return String(input || 'ok');",
+  '}',
+  '',
+].join('\n');
 const AUTOFIX_MARKER = 'const __refactorAutofixFixture = true;';
 const TARGETED_TSC_TMP_DIR = path.join(PROJECT_ROOT, 'packages/core/lib/tmp-refactorer-targeted-typecheck');
+
+function ensureActiveTarget() {
+  const absolute = path.join(PROJECT_ROOT, ACTIVE_TARGET);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, ACTIVE_TARGET_CONTENT, 'utf8');
+}
+
+function cleanupActiveTarget() {
+  ensureActiveTarget();
+}
 
 function targetContent(target = ACTIVE_TARGET) {
   return fs.readFileSync(path.join(PROJECT_ROOT, target), 'utf8');
@@ -264,7 +283,7 @@ async function test_dirty_scope_guard_blocks_target_workspace_dirty() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
   const target = ACTIVE_TARGET;
-  const fullStatus = ' M bots/darwin/lib/implementor.ts\n M bots/claude/lib/agent-heartbeat.ts';
+  const fullStatus = ` M bots/darwin/lib/implementor.ts\n M ${ACTIVE_TARGET}`;
   const result = await runner.runRefactorCycle({
     mode: 'active',
     target,
@@ -275,8 +294,8 @@ async function test_dirty_scope_guard_blocks_target_workspace_dirty() {
     noWriteOutcome: true,
     gitStatusShortFn: () => fullStatus,
     gitStatusScopedFn: (prefixes = []) => {
-      if (prefixes.includes('bots/claude')) return ' M bots/claude/lib/agent-heartbeat.ts';
-      if (prefixes.includes(target)) return ' M bots/claude/lib/agent-heartbeat.ts';
+      if (prefixes.includes('bots/claude')) return ` M ${ACTIVE_TARGET}`;
+      if (prefixes.includes(target)) return ` M ${ACTIVE_TARGET}`;
       return fullStatus;
     },
   });
@@ -285,7 +304,7 @@ async function test_dirty_scope_guard_blocks_target_workspace_dirty() {
   assert.strictEqual(result.reason, 'dirty_worktree_in_scope');
   assert.strictEqual(result.dirtyScope, 'workspace');
   assert.deepStrictEqual(result.scope, ['bots/claude']);
-  assert.match(result.gitStatus, /bots\/claude\/lib\/agent-heartbeat\.ts/);
+  assert.match(result.gitStatus, /bots\/claude\/__tests__\/fixtures\/refactor-cycle-active-target\.ts/);
   console.log('✅ refactor-cycle: workspace scope blocks dirty target workspace');
 }
 
@@ -357,7 +376,7 @@ async function test_shadow_dry_run_analyze_plan_only() {
   const runner = require(RUNNER_PATH);
   const result = await runner.runRefactorCycle({
     mode: 'shadow',
-    target: 'bots/claude/lib/agent-heartbeat.ts',
+    target: ACTIVE_TARGET,
     dryRun: true,
     noMcp: true,
     noHeartbeat: true,
@@ -382,7 +401,7 @@ async function test_plan_includes_sigma_feedback_context() {
   const runner = require(RUNNER_PATH);
   const context = runner.buildCycleContext({
     mode: 'shadow',
-    target: 'bots/claude/lib/agent-heartbeat.ts',
+    target: ACTIVE_TARGET,
     dryRun: true,
   });
   const analysis = runner.analyzeLocalTechDebt(context.target);
@@ -407,7 +426,7 @@ async function test_plan_includes_sigma_feedback_context() {
 async function test_active_verifies_and_restores_without_apply() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
-  const target = 'bots/claude/lib/agent-heartbeat.ts';
+  const target = ACTIVE_TARGET;
   const absoluteTarget = path.join(PROJECT_ROOT, target);
   const before = fs.readFileSync(absoluteTarget, 'utf8');
   const calls = { builder: [], reviewer: [] };
@@ -466,7 +485,7 @@ async function test_active_verifies_and_restores_without_apply() {
 async function test_active_verify_skip_defers_and_restores() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
-  const target = 'bots/claude/lib/agent-heartbeat.ts';
+  const target = ACTIVE_TARGET;
   const absoluteTarget = path.join(PROJECT_ROOT, target);
   const before = fs.readFileSync(absoluteTarget, 'utf8');
   const builderModule = {
@@ -2295,11 +2314,14 @@ async function main() {
   let failed = 0;
   for (const test of tests) {
     try {
+      ensureActiveTarget();
       await test();
       passed += 1;
     } catch (error) {
       console.error(`❌ ${test.name}: ${error.message}`);
       failed += 1;
+    } finally {
+      cleanupActiveTarget();
     }
   }
   console.log(`\n결과: ${passed}/${tests.length} 통과`);

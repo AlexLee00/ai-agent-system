@@ -2,18 +2,21 @@
 
 const HEARTBEAT_PREFIX = 'claude-';
 
-function normalizeAgentName(agentName) {
+type HeartbeatMeta = Record<string, unknown>;
+
+function normalizeAgentName(agentName: unknown): string | null {
   const normalized = String(agentName || '').trim();
   if (!normalized) return null;
   return normalized.startsWith(HEARTBEAT_PREFIX) ? normalized : `${HEARTBEAT_PREFIX}${normalized}`;
 }
 
-function messageFromError(error) {
-  return String(error?.message || error || 'unknown_error').slice(0, 500);
+function messageFromError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || 'unknown_error');
+  return message.slice(0, 500);
 }
 
-function compactMeta(meta = {}) {
-  const result = {};
+function compactMeta(meta: HeartbeatMeta = {}): HeartbeatMeta {
+  const result: HeartbeatMeta = {};
   for (const [key, value] of Object.entries(meta || {})) {
     if (value === undefined) continue;
     result[key] = value;
@@ -21,7 +24,7 @@ function compactMeta(meta = {}) {
   return result;
 }
 
-async function writeClaudeHeartbeat(agentName, status = 'ok', meta = {}) {
+async function writeClaudeHeartbeat(agentName: unknown, status = 'ok', meta: HeartbeatMeta = {}) {
   const normalized = normalizeAgentName(agentName);
   if (!normalized) return { ok: false, skipped: true, reason: 'missing_agent_name' };
   try {
@@ -33,7 +36,7 @@ async function writeClaudeHeartbeat(agentName, status = 'ok', meta = {}) {
   }
 }
 
-function errorHeartbeatMeta(error, meta = {}) {
+function errorHeartbeatMeta(error: unknown, meta: HeartbeatMeta = {}): HeartbeatMeta {
   return compactMeta({
     ...meta,
     message: messageFromError(error),

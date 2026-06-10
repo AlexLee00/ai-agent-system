@@ -47,6 +47,9 @@ const EXCLUDED_DIRS = new Set([
   'coverage',
   'output',
   'archive',
+  // Test fixtures may intentionally contain @ts-nocheck to exercise the
+  // refactorer; production scans should never select those files.
+  '__tests__',
   '.next',
   '.turbo',
   'venv',
