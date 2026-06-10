@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-28T06:11:24.856Z",
+  "checkedAt": "2026-06-10T05:40:44.700Z",
   "stage": "hub_stage_c",
   "status": "stage_c_resilience_ready",
   "goals": {
@@ -179,7 +179,7 @@
           "providerTiers": [
             {
               "provider": "claude-code-oauth",
-              "route": "claude-code/haiku",
+              "route": "claude-code/sonnet",
               "tier": 5,
               "fallbackIndex": 0
             },

@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-28T06:11:24.680Z",
+  "checkedAt": "2026-06-10T05:40:44.551Z",
   "stage": "hub_stage_b",
   "status": "stage_b_operational_ready",
   "goals": {
@@ -48,90 +48,9 @@
     "protectedCount": 14,
     "running": 1,
     "healthy": 14,
-    "attention": 3,
+    "attention": 0,
     "missing": [],
-    "idleExitWarnings": [
-      {
-        "label": "ai.hub.noisy-producer-auto-learn",
-        "exitStatus": "1",
-        "runs": 6,
-        "lastTerminatingSignal": null,
-        "reason": "expected-idle launchd job is loaded but last run exited non-zero",
-        "diagnostic": {
-          "dryRunCommand": "npm --prefix bots/hub run -s alarm:noisy-producer-auto-learn:dry-run",
-          "tailCommand": "tail -n 120 /tmp/hub-noisy-producer-auto-learn.err.log",
-          "errorLog": {
-            "path": "/tmp/hub-noisy-producer-auto-learn.err.log",
-            "exists": true,
-            "sizeBytes": 400,
-            "modifiedAt": "2026-05-25T00:00:05.345Z"
-          },
-          "classification": {
-            "category": "retryable_rate_limit",
-            "retryable": true,
-            "summary": "last non-zero exit was caused by Hub alarm rate limiting; current code path should be verified with dry-run"
-          },
-          "recentStderrTail": [
-            "[noisy-auto-learn] noisy-producers API HTTP 429 — 빈 목록 반환",
-            "[hub-alarm-client] hub alarm failed: rate limit exceeded (200/min)",
-            "[noisy-auto-learn] meeting 발송 실패: rate limit exceeded (200/min)"
-          ],
-          "currentVerification": "dry_run_available"
-        }
-      },
-      {
-        "label": "ai.hub.roundtable-reflection",
-        "exitStatus": "1",
-        "runs": 2,
-        "lastTerminatingSignal": null,
-        "reason": "expected-idle launchd job is loaded but last run exited non-zero",
-        "diagnostic": {
-          "dryRunCommand": "npm --prefix bots/hub run -s alarm:roundtable-reflection:dry-run",
-          "tailCommand": "tail -n 120 /tmp/hub-roundtable-reflection.err.log",
-          "errorLog": {
-            "path": "/tmp/hub-roundtable-reflection.err.log",
-            "exists": false,
-            "sizeBytes": 0,
-            "modifiedAt": null
-          },
-          "classification": {
-            "category": "no_stderr_evidence",
-            "retryable": null,
-            "summary": "stderr log is missing or empty; run the dry-run command for current evidence"
-          },
-          "recentStderrTail": [],
-          "currentVerification": "dry_run_available"
-        }
-      },
-      {
-        "label": "ai.hub.weekly-advisory-digest",
-        "exitStatus": "1",
-        "runs": 5,
-        "lastTerminatingSignal": null,
-        "reason": "expected-idle launchd job is loaded but last run exited non-zero",
-        "diagnostic": {
-          "dryRunCommand": "npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run",
-          "tailCommand": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
-          "errorLog": {
-            "path": "/tmp/hub-weekly-advisory-digest.err.log",
-            "exists": true,
-            "sizeBytes": 335,
-            "modifiedAt": "2026-05-25T02:00:02.340Z"
-          },
-          "classification": {
-            "category": "retryable_rate_limit",
-            "retryable": true,
-            "summary": "last non-zero exit was caused by Hub alarm rate limiting; current code path should be verified with dry-run"
-          },
-          "recentStderrTail": [
-            "(Use `node --trace-deprecation ...` to show where the warning was created)",
-            "[hub-alarm-client] hub alarm failed: rate limit exceeded (200/min)",
-            "[weekly-advisory-digest] 알람 발송 실패: rate limit exceeded (200/min)"
-          ],
-          "currentVerification": "dry_run_available"
-        }
-      }
-    ],
+    "idleExitWarnings": [],
     "labels": [
       {
         "label": "ai.hub.resource-api",
@@ -139,7 +58,7 @@
         "loaded": true,
         "expectedIdle": false,
         "healthy": true,
-        "pid": 46712,
+        "pid": 10636,
         "state": "running",
         "status": "running",
         "lastLaunchctlListStatus": "0",
@@ -147,7 +66,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 6,
+        "runs": 13,
         "checked": true
       },
       {
@@ -164,7 +83,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 604,
+        "runs": 1117,
         "checked": true
       },
       {
@@ -181,7 +100,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 20,
+        "runs": 33,
         "checked": true
       },
       {
@@ -198,7 +117,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 7,
+        "runs": 9,
         "checked": true
       },
       {
@@ -215,7 +134,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 6,
+        "runs": 8,
         "checked": true
       },
       {
@@ -232,7 +151,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 39,
+        "runs": 52,
         "checked": true
       },
       {
@@ -249,7 +168,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 27,
+        "runs": 40,
         "checked": true
       },
       {
@@ -266,7 +185,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 634,
+        "runs": 172,
         "checked": true
       },
       {
@@ -277,13 +196,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "1",
-        "lastLaunchctlListStatus": "1",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
-        "idleExitStatus": "1",
-        "attention": true,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 6,
+        "runs": 8,
         "checked": true
       },
       {
@@ -294,13 +213,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "1",
-        "lastLaunchctlListStatus": "1",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
-        "idleExitStatus": "1",
-        "attention": true,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 2,
+        "runs": 3,
         "checked": true
       },
       {
@@ -317,7 +236,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 28,
+        "runs": 1,
         "checked": true
       },
       {
@@ -334,7 +253,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 640,
+        "runs": 951,
         "checked": true
       },
       {
@@ -351,7 +270,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 5,
+        "runs": 7,
         "checked": true
       },
       {
@@ -362,13 +281,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "1",
-        "lastLaunchctlListStatus": "1",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
-        "idleExitStatus": "1",
-        "attention": true,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 5,
+        "runs": 7,
         "checked": true
       }
     ]
@@ -377,170 +296,181 @@
     "ok": true,
     "skipped": false,
     "hours": 24,
-    "total": 6246,
-    "failures": 7,
-    "failureRatePct": 0.1121,
-    "unresolvedFailures": 2,
-    "operationalTotal": 6246,
-    "operationalFailures": 7,
-    "operationalFailureRatePct": 0.1121,
-    "operationalUnresolvedFailures": 2,
+    "total": 2828,
+    "failures": 10,
+    "failureRatePct": 0.3536,
+    "unresolvedFailures": 9,
+    "operationalTotal": 2827,
+    "operationalFailures": 10,
+    "operationalFailureRatePct": 0.3537,
+    "operationalUnresolvedFailures": 9,
     "diagnosticFailures": 0,
     "diagnosticUnresolvedFailures": 0,
     "byProvider": [
       {
+        "provider": "openai-oauth",
+        "count": 1885,
+        "cost_usd": 0
+      },
+      {
         "provider": "groq",
-        "count": 3369,
-        "cost_usd": 0.8408289099999979
+        "count": 852,
+        "cost_usd": 0.26345980999999985
       },
       {
         "provider": "dedupe",
-        "count": 2721,
+        "count": 77,
         "cost_usd": 0
       },
       {
-        "provider": "openai-oauth",
-        "count": 126,
-        "cost_usd": 0
-      },
-      {
-        "provider": "cache",
-        "count": 14,
+        "provider": "failed",
+        "count": 10,
         "cost_usd": 0
       },
       {
         "provider": "claude-code-oauth",
-        "count": 9,
-        "cost_usd": 0.55243215
-      },
-      {
-        "provider": "failed",
-        "count": 7,
-        "cost_usd": 0
+        "count": 4,
+        "cost_usd": 0.8290247
       }
     ],
     "byBudgetStatus": [
       {
         "budget_guard_status": "allowed",
-        "count": 6232
-      },
-      {
-        "budget_guard_status": "unknown",
-        "count": 14
+        "count": 2828
       }
     ],
     "byTier": [
       {
         "provider_tier": "1",
-        "count": 126
+        "count": 1887
       },
       {
         "provider_tier": "2",
-        "count": 6090
+        "count": 927
       },
       {
         "provider_tier": "5",
-        "count": 9
+        "count": 4
       },
       {
         "provider_tier": "unknown",
-        "count": 21
+        "count": 10
       }
     ],
-    "avgDurationMs": 1736,
-    "maxDurationMs": 126231,
+    "avgDurationMs": 4332,
+    "maxDurationMs": 180858,
     "latencyByProvider": [
       {
         "provider": "claude-code-oauth",
-        "count": 9,
+        "count": 4,
         "failures": 0,
-        "avg_duration_ms": 47893,
-        "max_duration_ms": 90950,
-        "p95_duration_ms": 85353
-      },
-      {
-        "provider": "openai-oauth",
-        "count": 126,
-        "failures": 0,
-        "avg_duration_ms": 8331,
-        "max_duration_ms": 126231,
-        "p95_duration_ms": 27228
-      },
-      {
-        "provider": "dedupe",
-        "count": 2721,
-        "failures": 0,
-        "avg_duration_ms": 2119,
-        "max_duration_ms": 8077,
-        "p95_duration_ms": 3342
-      },
-      {
-        "provider": "groq",
-        "count": 3369,
-        "failures": 0,
-        "avg_duration_ms": 1067,
-        "max_duration_ms": 8078,
-        "p95_duration_ms": 2721
+        "avg_duration_ms": 128835,
+        "max_duration_ms": 160522,
+        "p95_duration_ms": 155680
       },
       {
         "provider": "failed",
-        "count": 7,
-        "failures": 7,
-        "avg_duration_ms": 134,
-        "max_duration_ms": 486,
-        "p95_duration_ms": 476
+        "count": 10,
+        "failures": 10,
+        "avg_duration_ms": 72314,
+        "max_duration_ms": 180858,
+        "p95_duration_ms": 180756
       },
       {
-        "provider": "cache",
-        "count": 14,
+        "provider": "openai-oauth",
+        "count": 1885,
         "failures": 0,
-        "avg_duration_ms": 0,
-        "max_duration_ms": 0,
-        "p95_duration_ms": 0
+        "avg_duration_ms": 5369,
+        "max_duration_ms": 72494,
+        "p95_duration_ms": 16167
+      },
+      {
+        "provider": "groq",
+        "count": 852,
+        "failures": 0,
+        "avg_duration_ms": 1001,
+        "max_duration_ms": 12751,
+        "p95_duration_ms": 2875
+      },
+      {
+        "provider": "dedupe",
+        "count": 77,
+        "failures": 0,
+        "avg_duration_ms": 514,
+        "max_duration_ms": 3769,
+        "p95_duration_ms": 880
       }
     ],
     "slowRoutes": [
       {
         "route": "openai-oauth/gpt-5.4",
         "provider": "openai-oauth",
-        "caller_team": "luna",
-        "agent": "reporter",
-        "abstract_model": "anthropic_opus",
-        "runtime_purpose": "edux_market_post_crypto",
-        "provider_tier": "1",
-        "count": 6,
-        "failures": 0,
-        "avg_duration_ms": 45880,
-        "max_duration_ms": 126231,
-        "p95_duration_ms": 103533
-      },
-      {
-        "route": "openai-oauth/gpt-5.4-mini",
-        "provider": "openai-oauth",
         "caller_team": "darwin",
         "agent": "darwin.planner",
         "abstract_model": "anthropic_sonnet",
         "runtime_purpose": "unknown",
         "provider_tier": "1",
-        "count": 99,
+        "count": 268,
         "failures": 0,
-        "avg_duration_ms": 6211,
-        "max_duration_ms": 22635,
-        "p95_duration_ms": 9655
+        "avg_duration_ms": 14728,
+        "max_duration_ms": 72494,
+        "p95_duration_ms": 23947
       },
       {
-        "route": "groq/qwen/qwen3-32b",
-        "provider": "groq",
-        "caller_team": "luna",
-        "agent": "luna",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "regime_analysis",
-        "provider_tier": "2",
-        "count": 14,
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "claude",
+        "agent": "lead",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "system_issue_triage",
+        "provider_tier": "1",
+        "count": 46,
         "failures": 0,
-        "avg_duration_ms": 3482,
-        "max_duration_ms": 7236,
-        "p95_duration_ms": 7013
+        "avg_duration_ms": 4516,
+        "max_duration_ms": 34399,
+        "p95_duration_ms": 5167
+      },
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "evaluation_scoring",
+        "provider_tier": "1",
+        "count": 1500,
+        "failures": 0,
+        "avg_duration_ms": 3712,
+        "max_duration_ms": 37066,
+        "p95_duration_ms": 6676
+      },
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "blog",
+        "agent": "commenter",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "reply",
+        "provider_tier": "1",
+        "count": 9,
+        "failures": 0,
+        "avg_duration_ms": 3606,
+        "max_duration_ms": 9368,
+        "p95_duration_ms": 7670
+      },
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "claude",
+        "agent": "ai-analyst",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "system_diagnosis",
+        "provider_tier": "1",
+        "count": 7,
+        "failures": 0,
+        "avg_duration_ms": 3566,
+        "max_duration_ms": 4872,
+        "p95_duration_ms": 4517
       },
       {
         "route": "openai-oauth/gpt-5.4",
@@ -550,11 +480,39 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "comment",
         "provider_tier": "1",
-        "count": 7,
+        "count": 28,
         "failures": 0,
-        "avg_duration_ms": 2932,
-        "max_duration_ms": 3556,
-        "p95_duration_ms": 3443
+        "avg_duration_ms": 3489,
+        "max_duration_ms": 8330,
+        "p95_duration_ms": 5536
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "luna",
+        "agent": "luna",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "regime_analysis",
+        "provider_tier": "2",
+        "count": 22,
+        "failures": 0,
+        "avg_duration_ms": 2012,
+        "max_duration_ms": 6639,
+        "p95_duration_ms": 5127
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "luna",
+        "agent": "luna",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "entry_decision_shadow",
+        "provider_tier": "2",
+        "count": 117,
+        "failures": 0,
+        "avg_duration_ms": 1983,
+        "max_duration_ms": 12751,
+        "p95_duration_ms": 4361
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -564,53 +522,11 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "debate_bull",
         "provider_tier": "2",
-        "count": 49,
+        "count": 43,
         "failures": 0,
-        "avg_duration_ms": 2351,
-        "max_duration_ms": 6104,
-        "p95_duration_ms": 4530
-      },
-      {
-        "route": "groq/qwen/qwen3-32b",
-        "provider": "groq",
-        "caller_team": "luna",
-        "agent": "luna.reflexion_coach",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "trade_signal",
-        "provider_tier": "2",
-        "count": 490,
-        "failures": 0,
-        "avg_duration_ms": 2239,
-        "max_duration_ms": 8078,
-        "p95_duration_ms": 3219
-      },
-      {
-        "route": "groq/qwen/qwen3-32b",
-        "provider": "dedupe",
-        "caller_team": "luna",
-        "agent": "luna.reflexion_coach",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "trade_signal",
-        "provider_tier": "2",
-        "count": 2721,
-        "failures": 0,
-        "avg_duration_ms": 2119,
-        "max_duration_ms": 8077,
-        "p95_duration_ms": 3342
-      },
-      {
-        "route": "groq/qwen/qwen3-32b",
-        "provider": "groq",
-        "caller_team": "luna",
-        "agent": "luna",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "entry_decision_shadow",
-        "provider_tier": "2",
-        "count": 386,
-        "failures": 0,
-        "avg_duration_ms": 2071,
-        "max_duration_ms": 5942,
-        "p95_duration_ms": 4209
+        "avg_duration_ms": 1609,
+        "max_duration_ms": 4687,
+        "p95_duration_ms": 3181
       },
       {
         "route": "groq/qwen/qwen3-32b",
@@ -620,123 +536,175 @@
         "abstract_model": "anthropic_haiku",
         "runtime_purpose": "final_decision",
         "provider_tier": "2",
-        "count": 139,
+        "count": 154,
         "failures": 0,
-        "avg_duration_ms": 2040,
-        "max_duration_ms": 5834,
-        "p95_duration_ms": 4120
-      },
-      {
-        "route": "groq/qwen/qwen3-32b",
-        "provider": "groq",
-        "caller_team": "luna",
-        "agent": "nemesis",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "risk_eval",
-        "provider_tier": "2",
-        "count": 15,
-        "failures": 0,
-        "avg_duration_ms": 1761,
-        "max_duration_ms": 3871,
-        "p95_duration_ms": 3061
+        "avg_duration_ms": 1329,
+        "max_duration_ms": 6128,
+        "p95_duration_ms": 3618
       }
     ],
     "recentErrors": [
       {
-        "request_id": "e3448588-e05f-47c0-bfe5-f17e3a641b0b",
+        "request_id": "43567688-5adc-4428-a25e-4309df36031d",
         "provider": "failed",
-        "caller_team": "luna",
-        "agent": "luna",
+        "caller_team": "blog",
+        "agent": "gems",
         "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "entry_decision_shadow",
+        "runtime_purpose": "general_post",
         "error": "fallback_exhausted: provider_circuit_open:openai-oauth",
-        "created_at": "2026-05-28T03:21:25.518Z",
+        "created_at": "2026-06-09T21:36:24.057Z",
         "diagnostic": false,
-        "resolved_by_later_success": true
+        "resolved_by_later_success": false
       },
       {
-        "request_id": "9aa35c7b-b760-40c0-9f8c-e6530b7111a7",
+        "request_id": "e12c2f57-1373-4e2e-9e6e-1481e4dd3bdf",
         "provider": "failed",
-        "caller_team": "luna",
-        "agent": "luna",
+        "caller_team": "blog",
+        "agent": "gems",
         "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "entry_decision_shadow",
-        "error": "fallback_exhausted: openai_codex_oauth_call_failed:HTTP 400",
-        "created_at": "2026-05-28T03:21:25.455Z",
-        "diagnostic": false,
-        "resolved_by_later_success": true
-      },
-      {
-        "request_id": "3fd992e5-41c9-45fd-ac75-cb2daefd3076",
-        "provider": "failed",
-        "caller_team": "luna",
-        "agent": "luna.reflexion_coach",
-        "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "trade_signal",
+        "runtime_purpose": "general_post_chunked:group_a",
         "error": "fallback_exhausted: provider_circuit_open:openai-oauth",
-        "created_at": "2026-05-28T01:21:19.350Z",
+        "created_at": "2026-06-09T21:36:24.032Z",
         "diagnostic": false,
-        "resolved_by_later_success": true
+        "resolved_by_later_success": false
       },
       {
-        "request_id": "c38d6d2d-5440-421a-ace1-f91e866e2365",
+        "request_id": "b9535af9-7069-4aed-bca3-daef91cbd405",
         "provider": "failed",
-        "caller_team": "luna",
-        "agent": "luna.reflexion_coach",
+        "caller_team": "blog",
+        "agent": "gems",
         "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "trade_signal",
-        "error": "fallback_exhausted: provider_circuit_open:openai-oauth",
-        "created_at": "2026-05-28T01:21:19.325Z",
+        "runtime_purpose": "general_post_chunked:group_a",
+        "error": "fallback_exhausted: openai_codex_oauth_call_failed:Encountered invalidated oauth token for user, failing request",
+        "created_at": "2026-06-09T21:36:24.013Z",
         "diagnostic": false,
-        "resolved_by_later_success": true
+        "resolved_by_later_success": false
       },
       {
-        "request_id": "5415c6d3-ab90-4783-804b-6ffe7561fbc1",
+        "request_id": "86f20ae2-4bc3-4de0-8cb9-325e8391758b",
         "provider": "failed",
-        "caller_team": "luna",
-        "agent": "luna.reflexion_coach",
+        "caller_team": "blog",
+        "agent": "gems",
         "abstract_model": "anthropic_haiku",
-        "runtime_purpose": "trade_signal",
-        "error": "fallback_exhausted: openai_codex_oauth_call_failed:HTTP 400",
-        "created_at": "2026-05-28T01:21:19.282Z",
+        "runtime_purpose": "general_post",
+        "error": "fallback_exhausted: openai_codex_oauth_call_failed:Encountered invalidated oauth token for user, failing request",
+        "created_at": "2026-06-09T21:20:26.938Z",
         "diagnostic": false,
-        "resolved_by_later_success": true
+        "resolved_by_later_success": false
       },
       {
-        "request_id": "525fd7d1-a5f5-4626-8f18-c3a894db7c61",
+        "request_id": "927eaa18-fb37-4e8f-9a93-387cc4110116",
+        "provider": "failed",
+        "caller_team": "blog",
+        "agent": "gems",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "general_post_chunked:group_a",
+        "error": "fallback_exhausted: openai_codex_oauth_call_failed:Encountered invalidated oauth token for user, failing request",
+        "created_at": "2026-06-09T21:17:23.922Z",
+        "diagnostic": false,
+        "resolved_by_later_success": false
+      },
+      {
+        "request_id": "2d0cb013-b006-4975-90b2-d23bee07bc0a",
+        "provider": "failed",
+        "caller_team": "blog",
+        "agent": "gems",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "general_post_chunked:group_a",
+        "error": "fallback_exhausted: openai_codex_oauth_call_failed:Encountered invalidated oauth token for user, failing request",
+        "created_at": "2026-06-09T21:14:23.246Z",
+        "diagnostic": false,
+        "resolved_by_later_success": false
+      },
+      {
+        "request_id": "a73e7053-1a41-4b38-ac03-ba3a71e2c873",
         "provider": "failed",
         "caller_team": "darwin",
         "agent": "synthesis",
         "abstract_model": "anthropic_sonnet",
         "runtime_purpose": "proposal_generation",
         "error": "fallback_exhausted: Groq 계정 풀 비어있음 또는 rate-limit cooldown 중",
-        "created_at": "2026-05-27T21:02:11.727Z",
+        "created_at": "2026-06-09T21:02:05.895Z",
         "diagnostic": false,
         "resolved_by_later_success": false
       },
       {
-        "request_id": "28dc6cb6-0ec8-477a-98cc-5bceeff7c165",
+        "request_id": "5e09e9ed-1b26-4743-9348-b2a945909f67",
         "provider": "failed",
         "caller_team": "darwin",
         "agent": "synthesis",
         "abstract_model": "anthropic_sonnet",
         "runtime_purpose": "proposal_generation",
         "error": "fallback_exhausted: Groq 계정 풀 비어있음 또는 rate-limit cooldown 중",
-        "created_at": "2026-05-27T21:02:11.208Z",
+        "created_at": "2026-06-09T21:02:05.384Z",
         "diagnostic": false,
         "resolved_by_later_success": false
+      },
+      {
+        "request_id": "6c8c883e-5bb2-4612-a006-3432c588a8cb",
+        "provider": "failed",
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "paper_evaluation",
+        "error": "fallback_exhausted: Groq 429: {\"error\":{\"message\":\"Rate limit reached for model `llama-3.1-8b-instant` in organization `org_01kjss50k1ear9ffeex1h7qfak` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Used 5246, Requested 1460. Please try again in 7.06s. Need more tokens? Upgrade to Dev Tier today at https://cons",
+        "created_at": "2026-06-09T21:01:40.367Z",
+        "diagnostic": false,
+        "resolved_by_later_success": false
+      },
+      {
+        "request_id": "e862ce7b-b081-42b8-808c-ca27ac59dc88",
+        "provider": "failed",
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "paper_evaluation",
+        "error": "fallback_exhausted: Groq 429: {\"error\":{\"message\":\"Rate limit reached for model `llama-3.1-8b-instant` in organization `org_01kjq00gt7eejtk8vka9p031d4` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Used 5901, Requested 1455. Please try again in 13.56s. Need more tokens? Upgrade to Dev Tier today at https://con",
+        "created_at": "2026-06-09T21:01:36.402Z",
+        "diagnostic": false,
+        "resolved_by_later_success": true
       }
     ],
     "unresolvedOperationalErrors": [
+      {
+        "caller_team": "blog",
+        "agent": "gems",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "general_post_chunked:group_a",
+        "count": 4,
+        "first_seen_at": "2026-06-09T21:14:23.246Z",
+        "last_seen_at": "2026-06-09T21:36:24.032Z",
+        "sample_error": "fallback_exhausted: provider_circuit_open:openai-oauth"
+      },
+      {
+        "caller_team": "blog",
+        "agent": "gems",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "general_post",
+        "count": 2,
+        "first_seen_at": "2026-06-09T21:20:26.938Z",
+        "last_seen_at": "2026-06-09T21:36:24.057Z",
+        "sample_error": "fallback_exhausted: provider_circuit_open:openai-oauth"
+      },
       {
         "caller_team": "darwin",
         "agent": "synthesis",
         "abstract_model": "anthropic_sonnet",
         "runtime_purpose": "proposal_generation",
         "count": 2,
-        "first_seen_at": "2026-05-27T21:02:11.208Z",
-        "last_seen_at": "2026-05-27T21:02:11.727Z",
+        "first_seen_at": "2026-06-09T21:02:05.384Z",
+        "last_seen_at": "2026-06-09T21:02:05.895Z",
         "sample_error": "fallback_exhausted: Groq 계정 풀 비어있음 또는 rate-limit cooldown 중"
+      },
+      {
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "paper_evaluation",
+        "count": 1,
+        "first_seen_at": "2026-06-09T21:01:40.367Z",
+        "last_seen_at": "2026-06-09T21:01:40.367Z",
+        "sample_error": "fallback_exhausted: Groq 429: {\"error\":{\"message\":\"Rate limit reached for model `llama-3.1-8b-instant` in organization `org_01kjss50k1ear9ffeex1h7qfak` service tier `on_demand` on tokens per minute (TPM): Limit 6000, Used 5246, Requested 1460. Please try again in 7.06s. Need more tokens? Upgrade to Dev Tier today at https://cons"
       }
     ],
     "unresolvedDiagnosticErrors": []
@@ -772,7 +740,7 @@
       },
       "blog": {
         "used": 0,
-        "quota": 5
+        "quota": 15
       },
       "ska": {
         "used": 0,
@@ -823,28 +791,26 @@
     "mode": "read_only_by_default",
     "safeReadOnlyActions": [
       {
-        "action": "expected_idle_exit_status_review",
-        "label": "ai.hub.noisy-producer-auto-learn",
-        "reason": "expected-idle Hub launchd job last exited with status 1",
-        "command": "npm --prefix bots/hub run -s alarm:noisy-producer-auto-learn:dry-run",
-        "evidenceCommand": "tail -n 120 /tmp/hub-noisy-producer-auto-learn.err.log",
-        "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
+        "action": "targeted_llm_route_drill",
+        "team": "blog",
+        "agent": "gems",
+        "runtimePurpose": "general_post_chunked:group_a",
+        "count": 4,
+        "reason": "operational unresolved LLM request failures exist for blog/gems",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=blog --agents=gems --primary-only",
+        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=blog --agents=gems --primary-only",
+        "effect": "mock dry-run verifies the current selector route without provider traffic; live verification is evidence collection and still requires an approved runtime window"
       },
       {
-        "action": "expected_idle_exit_status_review",
-        "label": "ai.hub.roundtable-reflection",
-        "reason": "expected-idle Hub launchd job last exited with status 1",
-        "command": "npm --prefix bots/hub run -s alarm:roundtable-reflection:dry-run",
-        "evidenceCommand": "tail -n 120 /tmp/hub-roundtable-reflection.err.log",
-        "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
-      },
-      {
-        "action": "expected_idle_exit_status_review",
-        "label": "ai.hub.weekly-advisory-digest",
-        "reason": "expected-idle Hub launchd job last exited with status 1",
-        "command": "npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run",
-        "evidenceCommand": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
-        "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
+        "action": "targeted_llm_route_drill",
+        "team": "blog",
+        "agent": "gems",
+        "runtimePurpose": "general_post",
+        "count": 2,
+        "reason": "operational unresolved LLM request failures exist for blog/gems",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=blog --agents=gems --primary-only",
+        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=blog --agents=gems --primary-only",
+        "effect": "mock dry-run verifies the current selector route without provider traffic; live verification is evidence collection and still requires an approved runtime window"
       },
       {
         "action": "targeted_llm_route_drill",
@@ -858,28 +824,25 @@
         "effect": "mock dry-run verifies the current selector route without provider traffic; live verification is evidence collection and still requires an approved runtime window"
       },
       {
-        "action": "latency_hotspot_route_drill",
-        "team": "luna",
-        "agent": "reporter",
-        "route": "openai-oauth/gpt-5.4",
-        "runtimePurpose": "edux_market_post_crypto",
-        "count": 6,
-        "avgDurationMs": 45880,
-        "p95DurationMs": 103533,
-        "reason": "slow LLM route hotspot exists for luna/reporter",
-        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=luna --agents=reporter --primary-only",
-        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=luna --agents=reporter --primary-only",
-        "effect": "mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window"
+        "action": "targeted_llm_route_drill",
+        "team": "darwin",
+        "agent": "darwin.evaluator",
+        "runtimePurpose": "paper_evaluation",
+        "count": 1,
+        "reason": "operational unresolved LLM request failures exist for darwin/darwin.evaluator",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=darwin --agents=darwin.evaluator --primary-only",
+        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=darwin --agents=darwin.evaluator --primary-only",
+        "effect": "mock dry-run verifies the current selector route without provider traffic; live verification is evidence collection and still requires an approved runtime window"
       },
       {
         "action": "latency_hotspot_route_drill",
         "team": "darwin",
         "agent": "darwin.planner",
-        "route": "openai-oauth/gpt-5.4-mini",
+        "route": "openai-oauth/gpt-5.4",
         "runtimePurpose": "unknown",
-        "count": 99,
-        "avgDurationMs": 6211,
-        "p95DurationMs": 9655,
+        "count": 268,
+        "avgDurationMs": 14728,
+        "p95DurationMs": 23947,
         "reason": "slow LLM route hotspot exists for darwin/darwin.planner",
         "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=darwin --agents=darwin.planner --primary-only",
         "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=darwin --agents=darwin.planner --primary-only",
@@ -887,51 +850,59 @@
       },
       {
         "action": "latency_hotspot_route_drill",
-        "team": "luna",
-        "agent": "luna",
-        "route": "groq/qwen/qwen3-32b",
-        "runtimePurpose": "regime_analysis",
-        "count": 14,
-        "avgDurationMs": 3482,
-        "p95DurationMs": 7013,
-        "reason": "slow LLM route hotspot exists for luna/luna",
-        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=luna --agents=luna --primary-only",
-        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=luna --agents=luna --primary-only",
+        "team": "claude",
+        "agent": "lead",
+        "route": "openai-oauth/gpt-5.4",
+        "runtimePurpose": "system_issue_triage",
+        "count": 46,
+        "avgDurationMs": 4516,
+        "p95DurationMs": 5167,
+        "reason": "slow LLM route hotspot exists for claude/lead",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=claude --agents=lead --primary-only",
+        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=claude --agents=lead --primary-only",
+        "effect": "mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window"
+      },
+      {
+        "action": "latency_hotspot_route_drill",
+        "team": "darwin",
+        "agent": "darwin.evaluator",
+        "route": "openai-oauth/gpt-5.4",
+        "runtimePurpose": "evaluation_scoring",
+        "count": 1500,
+        "avgDurationMs": 3712,
+        "p95DurationMs": 6676,
+        "reason": "slow LLM route hotspot exists for darwin/darwin.evaluator",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=darwin --agents=darwin.evaluator --primary-only",
+        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=darwin --agents=darwin.evaluator --primary-only",
         "effect": "mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window"
       },
       {
         "action": "latency_hotspot_route_drill",
         "team": "blog",
-        "agent": "neighbor-commenter",
+        "agent": "commenter",
         "route": "openai-oauth/gpt-5.4",
-        "runtimePurpose": "comment",
+        "runtimePurpose": "reply",
+        "count": 9,
+        "avgDurationMs": 3606,
+        "p95DurationMs": 7670,
+        "reason": "slow LLM route hotspot exists for blog/commenter",
+        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=blog --agents=commenter --primary-only",
+        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=blog --agents=commenter --primary-only",
+        "effect": "mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window"
+      },
+      {
+        "action": "latency_hotspot_route_mapping_review",
+        "team": "claude",
+        "agent": "ai-analyst",
+        "route": "openai-oauth/gpt-5.4",
+        "runtimePurpose": "system_diagnosis",
         "count": 7,
-        "avgDurationMs": 2932,
-        "p95DurationMs": 3443,
-        "reason": "slow LLM route hotspot exists for blog/neighbor-commenter",
-        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=blog --agents=neighbor-commenter --primary-only",
-        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=blog --agents=neighbor-commenter --primary-only",
-        "effect": "mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window"
-      },
-      {
-        "action": "latency_hotspot_route_drill",
-        "team": "luna",
-        "agent": "zeus",
-        "route": "groq/qwen/qwen3-32b",
-        "runtimePurpose": "debate_bull",
-        "count": 49,
-        "avgDurationMs": 2351,
-        "p95DurationMs": 4530,
-        "reason": "slow LLM route hotspot exists for luna/zeus",
-        "command": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=luna --agents=zeus --primary-only",
-        "liveCommand": "npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=luna --agents=zeus --primary-only",
-        "effect": "mock dry-run verifies the current selector route and exposes whether the hotspot is historical telemetry or current route drift; live latency evidence requires an approved runtime window"
-      },
-      {
-        "action": "openai_codex_bad_request_guard_verification",
-        "reason": "OpenAI Codex OAuth 400 responses previously opened provider circuits and exhausted fallbacks",
-        "command": "npx tsx bots/hub/scripts/openai-oauth-direct-smoke.ts && npx tsx bots/hub/scripts/provider-circuit-standard-smoke.ts",
-        "effect": "verifies unsupported request parameters are not sent by default and 400 bad requests do not poison provider circuits"
+        "avgDurationMs": 3566,
+        "p95DurationMs": 4517,
+        "reason": "slow LLM route hotspot references an agent that is not in the current selector inventory: claude/ai-analyst",
+        "command": "npm --prefix bots/hub run -s llm:agent-model-inventory-report",
+        "evidenceCommand": "npm --prefix bots/hub run -s team:agent-llm-drill -- --teams=claude --agents=ai-analyst --primary-only",
+        "effect": "read-only inventory review separates historical or external caller labels from current selectable agents; live latency evidence requires a mapped selector target first"
       }
     ],
     "confirmRequiredActions": [],

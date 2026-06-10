@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-28T06:11:24.858Z",
+  "checkedAt": "2026-06-10T05:40:44.703Z",
   "stage": "hub_stage_d",
   "status": "stage_d_code_complete_promotion_evidence_pending",
   "codeComplete": true,
@@ -21,7 +21,7 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-28T06:11:24.680Z",
+      "checkedAt": "2026-06-10T05:40:44.551Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -30,7 +30,7 @@
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-28T06:11:24.856Z",
+      "checkedAt": "2026-06-10T05:40:44.700Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -390,7 +390,7 @@
     },
     "uptime": {
       "ok": true,
-      "uptimeSeconds": 202,
+      "uptimeSeconds": 5341,
       "startupComplete": true,
       "httpStatus": 200
     },
@@ -403,143 +403,135 @@
       "selfHealingTargetMet": false,
       "observed": {
         "source": "read_only_stage_reports",
-        "stageBCheckedAt": "2026-05-28T06:11:24.680Z",
+        "stageBCheckedAt": "2026-06-10T05:40:44.551Z",
         "requestLogHours": 24,
-        "rawTotalRequests": 6246,
-        "rawFailures": 7,
-        "rawUnresolvedFailures": 2,
-        "totalRequests": 6246,
-        "failures": 7,
-        "unresolvedFailures": 2,
+        "rawTotalRequests": 2828,
+        "rawFailures": 10,
+        "rawUnresolvedFailures": 9,
+        "totalRequests": 2827,
+        "failures": 10,
+        "unresolvedFailures": 9,
         "diagnosticFailures": 0,
         "diagnosticUnresolvedFailures": 0,
-        "failureRatePct": 0.1121,
-        "avgDurationMs": 1736,
-        "maxDurationMs": 126231,
+        "failureRatePct": 0.3537,
+        "avgDurationMs": 4332,
+        "maxDurationMs": 180858,
         "latencyByProvider": [
           {
             "provider": "claude-code-oauth",
-            "count": 9,
+            "count": 4,
             "failures": 0,
-            "avg_duration_ms": 47893,
-            "max_duration_ms": 90950,
-            "p95_duration_ms": 85353
-          },
-          {
-            "provider": "openai-oauth",
-            "count": 126,
-            "failures": 0,
-            "avg_duration_ms": 8331,
-            "max_duration_ms": 126231,
-            "p95_duration_ms": 27228
-          },
-          {
-            "provider": "dedupe",
-            "count": 2721,
-            "failures": 0,
-            "avg_duration_ms": 2119,
-            "max_duration_ms": 8077,
-            "p95_duration_ms": 3342
-          },
-          {
-            "provider": "groq",
-            "count": 3369,
-            "failures": 0,
-            "avg_duration_ms": 1067,
-            "max_duration_ms": 8078,
-            "p95_duration_ms": 2721
+            "avg_duration_ms": 128835,
+            "max_duration_ms": 160522,
+            "p95_duration_ms": 155680
           },
           {
             "provider": "failed",
-            "count": 7,
-            "failures": 7,
-            "avg_duration_ms": 134,
-            "max_duration_ms": 486,
-            "p95_duration_ms": 476
+            "count": 10,
+            "failures": 10,
+            "avg_duration_ms": 72314,
+            "max_duration_ms": 180858,
+            "p95_duration_ms": 180756
           },
           {
-            "provider": "cache",
-            "count": 14,
+            "provider": "openai-oauth",
+            "count": 1885,
             "failures": 0,
-            "avg_duration_ms": 0,
-            "max_duration_ms": 0,
-            "p95_duration_ms": 0
+            "avg_duration_ms": 5369,
+            "max_duration_ms": 72494,
+            "p95_duration_ms": 16167
+          },
+          {
+            "provider": "groq",
+            "count": 852,
+            "failures": 0,
+            "avg_duration_ms": 1001,
+            "max_duration_ms": 12751,
+            "p95_duration_ms": 2875
+          },
+          {
+            "provider": "dedupe",
+            "count": 77,
+            "failures": 0,
+            "avg_duration_ms": 514,
+            "max_duration_ms": 3769,
+            "p95_duration_ms": 880
           }
         ],
         "slowRoutes": [
           {
             "route": "openai-oauth/gpt-5.4",
             "provider": "openai-oauth",
-            "caller_team": "luna",
-            "agent": "reporter",
-            "abstract_model": "anthropic_opus",
-            "runtime_purpose": "edux_market_post_crypto",
-            "provider_tier": "1",
-            "count": 6,
-            "failures": 0,
-            "avg_duration_ms": 45880,
-            "max_duration_ms": 126231,
-            "p95_duration_ms": 103533
-          },
-          {
-            "route": "openai-oauth/gpt-5.4-mini",
-            "provider": "openai-oauth",
             "caller_team": "darwin",
             "agent": "darwin.planner",
             "abstract_model": "anthropic_sonnet",
             "runtime_purpose": "unknown",
             "provider_tier": "1",
-            "count": 99,
+            "count": 268,
             "failures": 0,
-            "avg_duration_ms": 6211,
-            "max_duration_ms": 22635,
-            "p95_duration_ms": 9655
+            "avg_duration_ms": 14728,
+            "max_duration_ms": 72494,
+            "p95_duration_ms": 23947
           },
           {
-            "route": "groq/qwen/qwen3-32b",
-            "provider": "groq",
-            "caller_team": "luna",
-            "agent": "luna",
-            "abstract_model": "anthropic_haiku",
-            "runtime_purpose": "regime_analysis",
-            "provider_tier": "2",
-            "count": 14,
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "claude",
+            "agent": "lead",
+            "abstract_model": "anthropic_sonnet",
+            "runtime_purpose": "system_issue_triage",
+            "provider_tier": "1",
+            "count": 46,
             "failures": 0,
-            "avg_duration_ms": 3482,
-            "max_duration_ms": 7236,
-            "p95_duration_ms": 7013
+            "avg_duration_ms": 4516,
+            "max_duration_ms": 34399,
+            "p95_duration_ms": 5167
+          },
+          {
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "darwin",
+            "agent": "darwin.evaluator",
+            "abstract_model": "anthropic_sonnet",
+            "runtime_purpose": "evaluation_scoring",
+            "provider_tier": "1",
+            "count": 1500,
+            "failures": 0,
+            "avg_duration_ms": 3712,
+            "max_duration_ms": 37066,
+            "p95_duration_ms": 6676
           },
           {
             "route": "openai-oauth/gpt-5.4",
             "provider": "openai-oauth",
             "caller_team": "blog",
-            "agent": "neighbor-commenter",
+            "agent": "commenter",
             "abstract_model": "anthropic_haiku",
-            "runtime_purpose": "comment",
+            "runtime_purpose": "reply",
+            "provider_tier": "1",
+            "count": 9,
+            "failures": 0,
+            "avg_duration_ms": 3606,
+            "max_duration_ms": 9368,
+            "p95_duration_ms": 7670
+          },
+          {
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "claude",
+            "agent": "ai-analyst",
+            "abstract_model": "anthropic_haiku",
+            "runtime_purpose": "system_diagnosis",
             "provider_tier": "1",
             "count": 7,
             "failures": 0,
-            "avg_duration_ms": 2932,
-            "max_duration_ms": 3556,
-            "p95_duration_ms": 3443
-          },
-          {
-            "route": "groq/qwen/qwen3-32b",
-            "provider": "groq",
-            "caller_team": "luna",
-            "agent": "zeus",
-            "abstract_model": "anthropic_haiku",
-            "runtime_purpose": "debate_bull",
-            "provider_tier": "2",
-            "count": 49,
-            "failures": 0,
-            "avg_duration_ms": 2351,
-            "max_duration_ms": 6104,
-            "p95_duration_ms": 4530
+            "avg_duration_ms": 3566,
+            "max_duration_ms": 4872,
+            "p95_duration_ms": 4517
           }
         ],
-        "uptimeSeconds": 202,
-        "uptimeDays": 0,
+        "uptimeSeconds": 5341,
+        "uptimeDays": 0.06,
         "l5Status": "l5_acceptance_evidence_ready",
         "l5Ok": true,
         "errorRateObservedOk": false,
@@ -580,8 +572,8 @@
           "observedOk": false,
           "certificationOk": false,
           "evidence": {
-            "uptimeSeconds": 202,
-            "uptimeDays": 0,
+            "uptimeSeconds": 5341,
+            "uptimeDays": 0.06,
             "currentStartupOk": true
           },
           "nextAction": "Accumulate a 7d uptime window from the runtime monitor before attesting."
@@ -595,124 +587,124 @@
           "certificationOk": false,
           "evidence": {
             "requestLogHours": 24,
-            "avgDurationMs": 1736,
-            "maxDurationMs": 126231,
+            "avgDurationMs": 4332,
+            "maxDurationMs": 180858,
             "latencyByProvider": [
               {
                 "provider": "claude-code-oauth",
-                "count": 9,
+                "count": 4,
                 "failures": 0,
-                "avg_duration_ms": 47893,
-                "max_duration_ms": 90950,
-                "p95_duration_ms": 85353
-              },
-              {
-                "provider": "openai-oauth",
-                "count": 126,
-                "failures": 0,
-                "avg_duration_ms": 8331,
-                "max_duration_ms": 126231,
-                "p95_duration_ms": 27228
-              },
-              {
-                "provider": "dedupe",
-                "count": 2721,
-                "failures": 0,
-                "avg_duration_ms": 2119,
-                "max_duration_ms": 8077,
-                "p95_duration_ms": 3342
-              },
-              {
-                "provider": "groq",
-                "count": 3369,
-                "failures": 0,
-                "avg_duration_ms": 1067,
-                "max_duration_ms": 8078,
-                "p95_duration_ms": 2721
+                "avg_duration_ms": 128835,
+                "max_duration_ms": 160522,
+                "p95_duration_ms": 155680
               },
               {
                 "provider": "failed",
-                "count": 7,
-                "failures": 7,
-                "avg_duration_ms": 134,
-                "max_duration_ms": 486,
-                "p95_duration_ms": 476
+                "count": 10,
+                "failures": 10,
+                "avg_duration_ms": 72314,
+                "max_duration_ms": 180858,
+                "p95_duration_ms": 180756
+              },
+              {
+                "provider": "openai-oauth",
+                "count": 1885,
+                "failures": 0,
+                "avg_duration_ms": 5369,
+                "max_duration_ms": 72494,
+                "p95_duration_ms": 16167
+              },
+              {
+                "provider": "groq",
+                "count": 852,
+                "failures": 0,
+                "avg_duration_ms": 1001,
+                "max_duration_ms": 12751,
+                "p95_duration_ms": 2875
+              },
+              {
+                "provider": "dedupe",
+                "count": 77,
+                "failures": 0,
+                "avg_duration_ms": 514,
+                "max_duration_ms": 3769,
+                "p95_duration_ms": 880
               }
             ],
             "slowRoutes": [
               {
                 "route": "openai-oauth/gpt-5.4",
                 "provider": "openai-oauth",
-                "caller_team": "luna",
-                "agent": "reporter",
-                "abstract_model": "anthropic_opus",
-                "runtime_purpose": "edux_market_post_crypto",
-                "provider_tier": "1",
-                "count": 6,
-                "failures": 0,
-                "avg_duration_ms": 45880,
-                "max_duration_ms": 126231,
-                "p95_duration_ms": 103533
-              },
-              {
-                "route": "openai-oauth/gpt-5.4-mini",
-                "provider": "openai-oauth",
                 "caller_team": "darwin",
                 "agent": "darwin.planner",
                 "abstract_model": "anthropic_sonnet",
                 "runtime_purpose": "unknown",
                 "provider_tier": "1",
-                "count": 99,
+                "count": 268,
                 "failures": 0,
-                "avg_duration_ms": 6211,
-                "max_duration_ms": 22635,
-                "p95_duration_ms": 9655
+                "avg_duration_ms": 14728,
+                "max_duration_ms": 72494,
+                "p95_duration_ms": 23947
               },
               {
-                "route": "groq/qwen/qwen3-32b",
-                "provider": "groq",
-                "caller_team": "luna",
-                "agent": "luna",
-                "abstract_model": "anthropic_haiku",
-                "runtime_purpose": "regime_analysis",
-                "provider_tier": "2",
-                "count": 14,
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "claude",
+                "agent": "lead",
+                "abstract_model": "anthropic_sonnet",
+                "runtime_purpose": "system_issue_triage",
+                "provider_tier": "1",
+                "count": 46,
                 "failures": 0,
-                "avg_duration_ms": 3482,
-                "max_duration_ms": 7236,
-                "p95_duration_ms": 7013
+                "avg_duration_ms": 4516,
+                "max_duration_ms": 34399,
+                "p95_duration_ms": 5167
+              },
+              {
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "darwin",
+                "agent": "darwin.evaluator",
+                "abstract_model": "anthropic_sonnet",
+                "runtime_purpose": "evaluation_scoring",
+                "provider_tier": "1",
+                "count": 1500,
+                "failures": 0,
+                "avg_duration_ms": 3712,
+                "max_duration_ms": 37066,
+                "p95_duration_ms": 6676
               },
               {
                 "route": "openai-oauth/gpt-5.4",
                 "provider": "openai-oauth",
                 "caller_team": "blog",
-                "agent": "neighbor-commenter",
+                "agent": "commenter",
                 "abstract_model": "anthropic_haiku",
-                "runtime_purpose": "comment",
+                "runtime_purpose": "reply",
+                "provider_tier": "1",
+                "count": 9,
+                "failures": 0,
+                "avg_duration_ms": 3606,
+                "max_duration_ms": 9368,
+                "p95_duration_ms": 7670
+              },
+              {
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "claude",
+                "agent": "ai-analyst",
+                "abstract_model": "anthropic_haiku",
+                "runtime_purpose": "system_diagnosis",
                 "provider_tier": "1",
                 "count": 7,
                 "failures": 0,
-                "avg_duration_ms": 2932,
-                "max_duration_ms": 3556,
-                "p95_duration_ms": 3443
-              },
-              {
-                "route": "groq/qwen/qwen3-32b",
-                "provider": "groq",
-                "caller_team": "luna",
-                "agent": "zeus",
-                "abstract_model": "anthropic_haiku",
-                "runtime_purpose": "debate_bull",
-                "provider_tier": "2",
-                "count": 49,
-                "failures": 0,
-                "avg_duration_ms": 2351,
-                "max_duration_ms": 6104,
-                "p95_duration_ms": 4530
+                "avg_duration_ms": 3566,
+                "max_duration_ms": 4872,
+                "p95_duration_ms": 4517
               }
             ]
           },
-          "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=45880ms."
+          "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=14728ms."
         },
         {
           "id": "error_rate_lt_0_1",
@@ -723,14 +715,14 @@
           "certificationOk": false,
           "evidence": {
             "requestLogHours": 24,
-            "rawTotalRequests": 6246,
-            "rawFailures": 7,
+            "rawTotalRequests": 2828,
+            "rawFailures": 10,
             "diagnosticFailures": 0,
             "diagnosticUnresolvedFailures": 0,
-            "totalRequests": 6246,
-            "failures": 7,
-            "unresolvedFailures": 2,
-            "failureRatePct": 0.1121
+            "totalRequests": 2827,
+            "failures": 10,
+            "unresolvedFailures": 9,
+            "failureRatePct": 0.3537
           },
           "nextAction": "Keep unresolved failures at zero and retain the observation window before attesting."
         },
@@ -743,7 +735,7 @@
           "certificationOk": false,
           "evidence": {
             "stageBReadOnlyPlanOk": true,
-            "safeReadOnlyActions": 10,
+            "safeReadOnlyActions": 9,
             "confirmRequiredActions": 0
           },
           "nextAction": "Run the approved Stage D self-healing shadow/canary window and retain success-rate evidence before attesting."
@@ -805,20 +797,20 @@
       "self_healing_gt_95"
     ],
     "observedSnapshot": {
-      "totalRequests": 6246,
-      "failureRatePct": 0.1121,
-      "avgDurationMs": 1736,
-      "maxDurationMs": 126231,
-      "uptimeDays": 0,
+      "totalRequests": 2827,
+      "failureRatePct": 0.3537,
+      "avgDurationMs": 4332,
+      "maxDurationMs": 180858,
+      "uptimeDays": 0.06,
       "topLatencyHotspot": {
         "route": "openai-oauth/gpt-5.4",
         "provider": "openai-oauth",
-        "callerTeam": "luna",
-        "agent": "reporter",
-        "runtimePurpose": "edux_market_post_crypto",
-        "avgDurationMs": 45880,
-        "p95DurationMs": 103533,
-        "count": 6
+        "callerTeam": "darwin",
+        "agent": "darwin.planner",
+        "runtimePurpose": "unknown",
+        "avgDurationMs": 14728,
+        "p95DurationMs": 23947,
+        "count": 268
       }
     },
     "nextActions": [
@@ -840,7 +832,7 @@
       {
         "id": "latency_lt_500ms",
         "observedOk": false,
-        "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=45880ms."
+        "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=14728ms."
       },
       {
         "id": "error_rate_lt_0_1",
@@ -858,13 +850,13 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-28T06:11:24.680Z",
+      "checkedAt": "2026-06-10T05:40:44.551Z",
       "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-b-stability-report.json"
     },
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-28T06:11:24.856Z",
+      "checkedAt": "2026-06-10T05:40:44.700Z",
       "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-c-resilience-report.json"
     }
   }

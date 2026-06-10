@@ -133,7 +133,7 @@ async function main() {
   assert(promotionEvidence.remainingForProductionCertified.includes('shadow_7d'), 'Stage D must keep certification gated by attestation');
   assert(promotionEvidence.observedReadyButNotAttested.includes('error_rate_lt_0_1'), 'Stage D must separate observed readiness from attestation');
 
-  const report = await buildHubStageDProductionReport();
+  const report = await buildHubStageDProductionReport({ refreshDependencies: true });
   assert.equal(report.ok, true, `Stage D code gate must pass: ${report.status}`);
   assert.equal(report.codeComplete, true);
   assert.equal(report.productionCertified, false, 'production certification must wait for real 7d/canary evidence');

@@ -25,6 +25,12 @@ type RequirementInput = {
   evidence: unknown;
   nextAction: string;
 };
+type StageDReportOptions = {
+  env?: AnyRecord;
+  refreshDependencies?: boolean;
+  stageBReport?: AnyRecord | null;
+  stageCReport?: AnyRecord | null;
+};
 
 const PROTECTED_HUB_LABELS = [
   'ai.hub.resource-api',
@@ -337,6 +343,23 @@ function checkStageCReport() {
   return buildDependencyReportStatus(report, { name: 'stage_c' });
 }
 
+async function buildFreshDependencyReports(options: StageDReportOptions = {}) {
+  if (!options.refreshDependencies) {
+    return {
+      stageBReport: options.stageBReport || readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json'),
+      stageCReport: options.stageCReport || readJsonIfExists('bots/hub/output/hub-stage-c-resilience-report.json'),
+    };
+  }
+
+  const { buildHubStageBStabilityReport } = require('../stage-b/stability.ts');
+  const { buildHubStageCResilienceReport } = require('../stage-c/resilience');
+  const [stageBReport, stageCReport] = await Promise.all([
+    options.stageBReport || buildHubStageBStabilityReport(),
+    options.stageCReport || buildHubStageCResilienceReport(),
+  ]);
+  return { stageBReport, stageCReport };
+}
+
 async function checkHubUptime() {
   const startup = await httpGet(7788, '/hub/health/startup');
   let uptimeSeconds = 0;
@@ -581,18 +604,22 @@ function buildPromotionGateSummary(promotionEvidence: AnyRecord) {
   };
 }
 
-async function buildHubStageDProductionReport() {
+async function buildHubStageDProductionReport(options: StageDReportOptions = {}) {
   const checkedAt = new Date().toISOString();
-  const [blueGreen, uptime] = await Promise.all([checkBlueGreen(), checkHubUptime()]);
-  const stageB = checkStageBReport();
-  const stageC = checkStageCReport();
+  const [blueGreen, uptime, dependencyReports] = await Promise.all([
+    checkBlueGreen(),
+    checkHubUptime(),
+    buildFreshDependencyReports(options),
+  ]);
+  const { stageBReport, stageCReport } = dependencyReports;
+  const stageB = buildDependencyReportStatus(stageBReport, { name: 'stage_b' });
+  const stageC = buildDependencyReportStatus(stageCReport, { name: 'stage_c' });
   const secretsAutoRotate = checkSecretsAutoRotate();
   const selfHealing = checkSelfHealing();
   const drpActual = checkDrpActual();
   const liveChaos = checkLiveChaos();
   const sentry = checkSentryIntegration();
   const externalGateway = checkExternalGateway();
-  const stageBReport = readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json');
   const promotionEvidence = buildPromotionEvidence({ stageBReport, uptime });
 
   const goals = {
