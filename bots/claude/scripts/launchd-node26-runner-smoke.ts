@@ -19,16 +19,24 @@ function readProgramArguments(plistPath: string): string[] {
   return parsed.ProgramArguments || [];
 }
 
+function readWorkingDirectory(plistPath: string): string | undefined {
+  const raw = execFileSync('plutil', ['-convert', 'json', '-o', '-', plistPath], { encoding: 'utf8' });
+  const parsed = JSON.parse(raw) as { WorkingDirectory?: string };
+  return parsed.WorkingDirectory;
+}
+
 for (const plistName of checkedPlists) {
   const plistPath = path.join(launchdDir, plistName);
   assert.equal(fs.existsSync(plistPath), true, `${plistName} must exist`);
   const args = readProgramArguments(plistPath);
   const entrypoint = args.at(-1);
+  const workingDirectory = readWorkingDirectory(plistPath);
 
   assert.equal(args[0], '/opt/homebrew/bin/node', `${plistName} must run through node`);
   assert.equal(args.includes('--disable-warning=DEP0205'), true, `${plistName} must suppress Node 26 DEP0205 noise`);
   assert.equal(args.includes('--import'), true, `${plistName} must load tsx through node --import`);
   assert.equal(args.includes('tsx'), true, `${plistName} must use the tsx import hook`);
+  assert.equal(workingDirectory, repoRoot, `${plistName} must resolve the tsx package from the repo root`);
   assert.equal(args.includes('/opt/homebrew/bin/tsx'), false, `${plistName} must not run direct tsx`);
   assert.equal(args.some((arg) => arg.endsWith('/node_modules/.bin/tsx')), false, `${plistName} must not run direct local tsx`);
   assert.equal(Boolean(entrypoint && fs.existsSync(entrypoint)), true, `${plistName} entrypoint must exist`);
