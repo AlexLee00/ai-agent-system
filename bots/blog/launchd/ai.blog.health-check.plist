@@ -13,9 +13,14 @@
 	<string>ai.blog.health-check</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-check.ts</string>
 	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>

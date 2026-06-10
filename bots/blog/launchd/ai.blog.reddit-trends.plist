@@ -17,7 +17,10 @@
 	<string>ai.blog.reddit-trends</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-trend-collector.ts</string>
 	</array>
 	<key>RunAtLoad</key>

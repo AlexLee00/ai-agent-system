@@ -5,11 +5,14 @@
   <key>Label</key>
   <string>ai.blog.neighbor-commenter</string>
 
-  <key>ProgramArguments</key>
-  <array>
-    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-neighbor-commenter.ts</string>
-  </array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-neighbor-commenter.ts</string>
+	</array>
 
   <key>StartCalendarInterval</key>
   <array>
