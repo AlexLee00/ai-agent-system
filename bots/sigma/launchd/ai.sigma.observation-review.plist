@@ -43,7 +43,7 @@
     <key>Hour</key>
     <integer>9</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>25</integer>
   </dict>
 
   <key>RunAtLoad</key>
