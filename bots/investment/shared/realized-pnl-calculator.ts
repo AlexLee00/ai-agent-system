@@ -86,6 +86,22 @@ export function aggregateRealizedPnlBySell(realized = []) {
   }));
 }
 
+export function isRealizedPnlPendingSell(trade = {}) {
+  const side = String(trade.side || trade.action || '').toUpperCase();
+  if (side !== 'SELL') return false;
+  return trade.realized_pnl_pct == null || trade.realized_pnl_usdt == null;
+}
+
+export function filterAggregatedRealizedPnlForPendingSells(aggregated = [], trades = []) {
+  const pendingSellIds = new Set(
+    (trades || [])
+      .filter(isRealizedPnlPendingSell)
+      .map((trade) => String(trade.id)),
+  );
+  if (!pendingSellIds.size) return [];
+  return (aggregated || []).filter((item) => pendingSellIds.has(String(item?.sellTradeId)));
+}
+
 // ── DB 레이어 ──────────────────────────────────────────────────────────────────
 
 let ensureRealizedPnlColumnsPromise = null;
@@ -113,7 +129,8 @@ export async function fetchTradesForSymbol(symbol, exchange = null) {
     conds.push(`exchange = $${params.length}`);
   }
   return query(
-    `SELECT id, side, amount, price, total_usdt, exchange, executed_at, paper, trade_mode
+    `SELECT id, side, amount, price, total_usdt, exchange, executed_at, paper, trade_mode,
+            realized_pnl_pct, realized_pnl_usdt, matched_buy_id
        FROM trades
       WHERE ${conds.join(' AND ')}
       ORDER BY executed_at ASC`,
@@ -152,16 +169,17 @@ export async function persistRealizedPnl(sellTradeId, { realizedPnl, realizedPnl
   ).catch(() => null);
 }
 
-// symbol+exchange 단위로 BUY-SELL FIFO 매칭 후 DB에 저장
+// symbol+exchange 단위로 BUY-SELL FIFO 매칭 후, 아직 realized PnL이 비어 있는 SELL만 저장
 export async function computeAndPersistPnlForSymbol(symbol, exchange = null, { dryRun = true } = {}) {
   const trades = await fetchTradesForSymbol(symbol, exchange);
   if (!trades.length) return { ok: true, symbol, exchange, matched: 0, skipped: 0 };
 
   const { realized } = matchFifoRealizedPnl(trades);
   const aggregated = aggregateRealizedPnlBySell(realized);
+  const pendingAggregated = filterAggregatedRealizedPnlForPendingSells(aggregated, trades);
   let matched = 0;
   let skipped = 0;
-  for (const r of aggregated) {
+  for (const r of pendingAggregated) {
     if (!r.ok || !r.sellTradeId) { skipped++; continue; }
     if (!dryRun) {
       await persistRealizedPnl(r.sellTradeId, {
@@ -172,7 +190,17 @@ export async function computeAndPersistPnlForSymbol(symbol, exchange = null, { d
     }
     matched++;
   }
-  return { ok: true, symbol, exchange, matched, skipped, dryRun, realized: aggregated, rawMatches: realized.length };
+  return {
+    ok: true,
+    symbol,
+    exchange,
+    matched,
+    skipped,
+    dryRun,
+    realized: pendingAggregated,
+    rawMatches: realized.length,
+    aggregatedMatches: aggregated.length,
+  };
 }
 
 // 전체 미매칭 SELL 거래 일괄 처리
@@ -203,6 +231,8 @@ export default {
   calculateRealizedPnl,
   matchFifoRealizedPnl,
   aggregateRealizedPnlBySell,
+  isRealizedPnlPendingSell,
+  filterAggregatedRealizedPnlForPendingSells,
   fetchTradesForSymbol,
   fetchDistinctSymbolsWithUnmatchedSells,
   ensureRealizedPnlColumns,

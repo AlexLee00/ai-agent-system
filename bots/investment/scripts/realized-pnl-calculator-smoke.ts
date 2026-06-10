@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import assert from 'node:assert/strict';
-import { calculateRealizedPnl, matchFifoRealizedPnl } from '../shared/realized-pnl-calculator.ts';
+import {
+  calculateRealizedPnl,
+  filterAggregatedRealizedPnlForPendingSells,
+  isRealizedPnlPendingSell,
+  matchFifoRealizedPnl,
+} from '../shared/realized-pnl-calculator.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 export async function runSmoke() {
@@ -21,7 +26,25 @@ export async function runSmoke() {
   assert.equal(fifo.ok, true);
   assert.equal(fifo.realized.length, 2);
   assert.equal(fifo.openLots.length, 1);
-  return { ok: true, pnl, fifo };
+
+  assert.equal(isRealizedPnlPendingSell({ side: 'BUY' }), false);
+  assert.equal(isRealizedPnlPendingSell({ side: 'SELL', realized_pnl_pct: 0.1, realized_pnl_usdt: 2 }), false);
+  assert.equal(isRealizedPnlPendingSell({ side: 'SELL', realized_pnl_pct: null, realized_pnl_usdt: 2 }), true);
+
+  const pendingOnly = filterAggregatedRealizedPnlForPendingSells(
+    [
+      { sellTradeId: 'sell-already-filled', realizedPnl: 1 },
+      { sellTradeId: 'sell-pending', realizedPnl: 2 },
+    ],
+    [
+      { id: 'sell-already-filled', side: 'SELL', realized_pnl_pct: 0.01, realized_pnl_usdt: 1 },
+      { id: 'sell-pending', side: 'SELL', realized_pnl_pct: null, realized_pnl_usdt: null },
+    ],
+  );
+  assert.equal(pendingOnly.length, 1);
+  assert.equal(pendingOnly[0].sellTradeId, 'sell-pending');
+
+  return { ok: true, pnl, fifo, pendingOnly };
 }
 
 async function main() {

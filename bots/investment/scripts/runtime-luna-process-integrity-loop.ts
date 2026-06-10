@@ -181,6 +181,12 @@ const STRATEGY_GUARD_COVERAGE = {
     'crypto_short_term_scalping_ranging_without_confirmation',
     'crypto_ranging_without_reversal_confirmation',
   ],
+  defensive_rotation: [
+    'crypto_defensive_rotation_loss_epoch_probe',
+    'crypto_defensive_rotation_without_live_evidence',
+    'crypto_defensive_rotation_confirmation_quality_thin',
+    'domestic_defensive_rotation_probe_only',
+  ],
 };
 
 function buildPolicyBlockCoverage(blockedReasons = []) {
