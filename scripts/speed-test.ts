@@ -85,6 +85,14 @@ function yellow(s){ return `\x1b[33m${s}\x1b[0m`; }
 function red(s)   { return `\x1b[31m${s}\x1b[0m`; }
 function cyan(s)  { return `\x1b[36m${s}\x1b[0m`; }
 
+function readControlConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(LLM_CONTROL_CONFIG, 'utf-8'));
+  } catch {
+    return { agents: { defaults: { model: { primary: null, fallbacks: [] } } } };
+  }
+}
+
 // ─── Telegram 알림 ────────────────────────────────────────────────────────
 function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   const dateStr = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
@@ -95,7 +103,9 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   const failed = results.filter(r => !r.ok).length;
 
   let statusLine;
-  if (applied) {
+  if (results.length === 0) {
+    statusLine = '\n\n⚠️ 실행 가능한 모델/인증이 없어 측정을 건너뜀';
+  } else if (applied) {
     statusLine = `\n🔄 primary 자동 변경: ${applied}`;
   } else if (recommended && recommended !== current) {
     statusLine = `\n\n📌 현재: ${current}\n💡 추천: ${recommended}\n⚠️ 적용: npx tsx scripts/speed-test.ts --apply`;
@@ -145,9 +155,9 @@ async function main() {
   const ctx = { geminiToken: null, keys: {} };
 
   // Google Gemini OAuth
-  if (models.some(m => m.startsWith('google-gemini-cli/'))) {
+  if (models.some(m => m.startsWith('google-gemini-cli/') || m.startsWith('gemini-cli-oauth/'))) {
     try {
-      process.stdout.write('🔑 google-gemini-cli OAuth 갱신...');
+      process.stdout.write('🔑 Gemini CLI OAuth 갱신...');
       ctx.geminiToken = await refreshGeminiToken();
       log(green(' ✅'));
     } catch (e) {
@@ -188,7 +198,7 @@ async function main() {
   const results = [];
   for (const modelId of models) {
     const provider = modelId.split('/')[0];
-    if (provider === 'google-gemini-cli' && !ctx.geminiToken) continue;
+    if ((provider === 'google-gemini-cli' || provider === 'gemini-cli-oauth') && !ctx.geminiToken) continue;
     if (OPENAI_COMPAT_PROVIDERS.has(provider) && !ctx.keys[provider]) continue;
     const r = await benchmarkModel(modelId, ctx, {
       runs: runsArg,
@@ -229,7 +239,7 @@ async function main() {
   }
   log(dim('─'.repeat(64)));
 
-  const current = JSON.parse(fs.readFileSync(LLM_CONTROL_CONFIG, 'utf-8'))?.agents?.defaults?.model?.primary;
+  const current = readControlConfig()?.agents?.defaults?.model?.primary ?? null;
   log(`\n  현재 primary: ${dim(current)}`);
 
   const fastest = results.find(r => r.ok);
@@ -239,7 +249,7 @@ async function main() {
     if (doApply) {
       appliedModel = applyFastest(fs, results);
       if (appliedModel) {
-        const updated = JSON.parse(fs.readFileSync(LLM_CONTROL_CONFIG, 'utf-8'));
+        const updated = readControlConfig();
         log(`\n✅ Hub LLM control config 업데이트 완료`);
         log(`   primary:   ${appliedModel}`);
         log(`   fallbacks: ${(updated?.agents?.defaults?.model?.fallbacks || []).join(', ')}`);
@@ -292,8 +302,8 @@ async function main() {
   const storageOk = snapshotStatus.latestSaved && snapshotStatus.historySaved;
 
   if (attemptedRuns === 0) {
-    log(red('❌ 속도 테스트 실패: 실행 가능한 모델이 없어 측정 결과가 없습니다.'));
-    return 2;
+    log(yellow('⚠️ 속도 테스트 스킵: 실행 가능한 모델/인증이 없어 측정 결과가 없습니다.'));
+    return storageOk ? 0 : 3;
   }
 
   if (successfulRuns === 0) {
