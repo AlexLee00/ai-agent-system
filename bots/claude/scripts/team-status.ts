@@ -10,9 +10,19 @@
 
 const teamBus = require('../lib/team-bus');
 
+function parseStoredTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (/[zZ]$|[+-]\d\d:?\d\d$/.test(text)) return new Date(text);
+  return new Date(text.replace(' ', 'T'));
+}
+
 function ago(isoStr) {
   if (!isoStr) return '-';
-  const diff = Math.floor((Date.now() - new Date(isoStr + 'Z').getTime()) / 1000);
+  const parsed = parseStoredTime(isoStr);
+  if (!parsed || Number.isNaN(parsed.getTime())) return '-';
+  const diff = Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 1000));
+  if (diff < 5) return '방금 전';
   if (diff < 60)   return `${diff}초 전`;
   if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
@@ -23,7 +33,7 @@ function statusEmoji(status) {
   return status === 'idle' ? '💤' : status === 'running' ? '🔄' : '❌';
 }
 
-function main() {
+async function main() {
   console.log('\n══════════════════════════════════════');
   console.log('  클로드팀 상태 대시보드');
   console.log('══════════════════════════════════════\n');
@@ -31,7 +41,7 @@ function main() {
   // 1. 에이전트 상태
   console.log('▶ 에이전트 상태');
   try {
-    const statuses = teamBus.getAllStatuses();
+    const statuses = await teamBus.getAllStatuses();
     if (statuses.length === 0) {
       console.log('  (데이터 없음)');
     }
@@ -49,7 +59,7 @@ function main() {
   // 2. 미확인 메시지
   console.log('\n▶ 미확인 메시지');
   try {
-    const msgs = teamBus.getMessages();
+    const msgs = await teamBus.getMessages();
     if (msgs.length === 0) {
       console.log('  (없음)');
     } else {
@@ -64,7 +74,7 @@ function main() {
   // 3. 최근 체크 이력 (덱스터)
   console.log('\n▶ 최근 체크 이력 (덱스터)');
   try {
-    const checks = teamBus.getRecentChecks(null, 15);
+    const checks = await teamBus.getRecentChecks(null, 15);
     if (checks.length === 0) {
       console.log('  (없음)');
     } else {
@@ -86,7 +96,7 @@ function main() {
   // 4. 최근 기술 소화 이력 (아처)
   console.log('\n▶ 최근 기술 소화 (아처)');
   try {
-    const digests = teamBus.getRecentDigests(5);
+    const digests = await teamBus.getRecentDigests(5);
     if (digests.length === 0) {
       console.log('  (없음)');
     } else {
@@ -100,6 +110,12 @@ function main() {
   }
 
   console.log('\n══════════════════════════════════════\n');
+
+  await teamBus.close?.();
 }
 
-main();
+main().catch(async (error) => {
+  console.error('team_status_failed:', error?.message || error);
+  await teamBus.close?.().catch(() => {});
+  process.exit(1);
+});

@@ -2,10 +2,10 @@
   "name": "@ai-agent/orchestrator",
   "version": "1.0.0",
   "description": "🤖 오케스트레이터 - 알람 통합 허브, 명령 라우팅, 봇 총괄",
-  "main": "dist/ts-runtime/bots/orchestrator/src/orchestrator.js",
+  "main": "src/orchestrator.ts",
   "type": "commonjs",
   "scripts": {
-    "start": "node dist/ts-runtime/bots/orchestrator/src/orchestrator.js",
+    "start": "node --disable-warning=DEP0205 --import tsx src/orchestrator.ts",
     "migrate": "tsx migrations/002_mainbot.ts",
     "smoke:jay-incident-store": "tsx scripts/jay-incident-store-smoke.ts",
     "smoke:pending-confirms": "tsx scripts/pending-confirms-smoke.ts",

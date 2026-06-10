@@ -16,7 +16,10 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/auto-refresh-instagram-token.ts</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/refresh-instagram-token.ts</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

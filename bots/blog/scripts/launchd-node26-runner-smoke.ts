@@ -17,6 +17,7 @@ const checkedPlists = [
   'ai.blog.facebook-publish.plist',
   'ai.blog.health-check.plist',
   'ai.blog.instagram-publish.plist',
+  'ai.blog.instagram-token-refresh.plist',
   'ai.blog.neighbor-commenter.plist',
   'ai.blog.neighbor-sympathy.plist',
   'ai.blog.reddit-trends.plist',

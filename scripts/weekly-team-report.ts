@@ -2,12 +2,12 @@
 'use strict';
 
 /**
- * scripts/weekly-team-report.js — 현역 팀 KPI 주간 종합 리포트
+ * scripts/weekly-team-report.ts — 현역 팀 KPI 주간 종합 리포트
  *
  * 매주 일요일 09:00 실행 (launchd)
  * 스카팀 / 루나팀 / 클로드팀 / 블로팀 핵심 지표 수집 → 텔레그램 발송 + RAG 저장
  *
- * 실행: node scripts/weekly-team-report.js [--days=7]
+ * 실행: node --disable-warning=DEP0205 --import tsx scripts/weekly-team-report.ts [--days=7] [--dry-run]
  */
 
 const pgPool = require('../packages/core/lib/pg-pool');
@@ -17,6 +17,7 @@ const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');
 const args    = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));
 const DAYS    = daysArg ? parseInt(daysArg.split('=')[1]) : 7;
+const DRY_RUN = args.includes('--dry-run');
 
 // ─── 팀별 KPI 수집 ─────────────────────────────────────────────────
 
@@ -26,18 +27,18 @@ async function collectSkaKPI() {
       pgPool.get('reservation', `
         SELECT
           COUNT(*)                                   AS total_reservations,
-          COUNT(*) FILTER (WHERE source = 'naver')  AS naver_count,
+          COUNT(*)                                   AS naver_count,
           COUNT(*) FILTER (WHERE status = 'cancelled') AS cancel_count,
-          COALESCE(SUM(amount), 0)                   AS total_revenue
+          0                                          AS total_revenue
         FROM reservations
-        WHERE created_at > NOW() - INTERVAL '${DAYS} days'
+        WHERE NULLIF(updated_at, '')::timestamptz > NOW() - INTERVAL '${DAYS} days'
       `),
       pgPool.get('reservation', `
         SELECT
           COUNT(*)                                        AS cnt,
-          COUNT(*) FILTER (WHERE resolved = true)         AS resolved
+          COUNT(*) FILTER (WHERE resolved = 1)            AS resolved
         FROM alerts
-        WHERE created_at > NOW() - INTERVAL '${DAYS} days'
+        WHERE NULLIF(timestamp, '')::timestamptz > NOW() - INTERVAL '${DAYS} days'
       `),
     ]);
 
@@ -62,10 +63,10 @@ async function collectLunaKPI() {
         COUNT(*)                                    AS total_trades,
         COUNT(*) FILTER (WHERE pnl_percent > 0)     AS wins,
         ROUND(AVG(pnl_percent)::numeric, 4)         AS avg_pnl,
-        ROUND(SUM(pnl_usdt)::numeric, 2)            AS total_pnl_usdt
-      FROM trades
+        ROUND(SUM(COALESCE(pnl_net, pnl_amount, 0))::numeric, 2) AS total_pnl_usdt
+      FROM trade_journal
       WHERE status = 'closed'
-        AND created_at > NOW() - INTERVAL '${DAYS} days'
+        AND to_timestamp(COALESCE(exit_time, created_at) / 1000.0) > NOW() - INTERVAL '${DAYS} days'
     `);
     const total = parseInt(row?.total_trades || 0);
     const wins  = parseInt(row?.wins         || 0);
@@ -93,14 +94,14 @@ async function collectClaudeKPI() {
           COUNT(*) FILTER (WHERE event_type LIKE '%error%')    AS errors
         FROM agent_events
         WHERE from_agent = 'dexter'
-          AND created_at > NOW() - INTERVAL '${DAYS} days'
+          AND NULLIF(created_at, '')::timestamptz > NOW() - INTERVAL '${DAYS} days'
       `),
       pgPool.get('reservation', `
         SELECT
           COUNT(*)                               AS total,
-          COUNT(*) FILTER (WHERE success = true) AS ok
+          COUNT(*) FILTER (WHERE success = 1)    AS ok
         FROM doctor_log
-        WHERE created_at > NOW() - INTERVAL '${DAYS} days'
+        WHERE NULLIF(executed_at, '')::timestamptz > NOW() - INTERVAL '${DAYS} days'
       `),
     ]);
 
@@ -156,8 +157,8 @@ async function collectLLMCost() {
         model,
         COUNT(*)                      AS calls,
         ROUND(SUM(cost_usd)::numeric, 4) AS cost
-      FROM llm_logs
-      WHERE created_at > NOW() - INTERVAL '${DAYS} days'
+      FROM llm_usage_log
+      WHERE NULLIF(created_at, '')::timestamptz > NOW() - INTERVAL '${DAYS} days'
       GROUP BY model
       ORDER BY cost DESC
       LIMIT 10
@@ -229,6 +230,11 @@ async function main() {
   const report = buildReport(ska, luna, claude, blog, llm);
   console.log('\n--- 텔레그램 리포트 ---');
   console.log(report);
+
+  if (DRY_RUN) {
+    console.log('\n[dry-run] Hub alarm 발송 및 RAG 저장 생략');
+    return;
+  }
 
   // 텔레그램 발송
   try {

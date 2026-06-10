@@ -9,7 +9,7 @@
     "apps/*"
   ],
   "scripts": {
-    "check": "npm run -s typecheck && npm run -s typecheck:strict",
+    "check": "npm run -s typecheck && npm run -s typecheck:strict && npm run -s check:package-script-paths",
     "dev": "npm run dev --workspaces --if-present --include-workspace-root=false",
     "build": "npm run build:ts && npm run build:hub-runtime && npm run build:daemons",
     "build:ts": "node scripts/build-ts-phase1.mjs",
@@ -24,6 +24,7 @@
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "typecheck:darwin": "bash bots/darwin/scripts/typecheck-darwin-ts.sh",
     "check:skills-mcp-analysis": "node scripts/check-skills-mcp-analysis.js",
+    "check:package-script-paths": "node --disable-warning=DEP0205 --import tsx scripts/package-script-path-smoke.ts",
     "check:team-autonomy-gaps": "node scripts/check-team-autonomy-gaps.js",
     "check:llm-stage-a": "npm --prefix bots/hub run -s check:llm-stage-a",
     "darwin:research-canary": "tsx bots/darwin/scripts/research-scanner-canary.ts --json",
@@ -32,8 +33,8 @@
     "security:post-rewrite-doctor": "tsx scripts/security/post-rewrite-doctor.ts",
     "security:stale-ref-plan": "tsx scripts/security/stale-ref-cleanup-plan.ts",
     "security:stale-ref-cleanup": "tsx scripts/security/stale-ref-cleanup-apply.ts",
-    "weekly-report": "node scripts/weekly-team-report.js",
-    "weekly-report:30": "node scripts/weekly-team-report.js --days=30"
+    "weekly-report": "node --disable-warning=DEP0205 --import tsx scripts/weekly-team-report.ts",
+    "weekly-report:30": "node --disable-warning=DEP0205 --import tsx scripts/weekly-team-report.ts --days=30"
   },
   "engines": {
     "node": ">=18.0.0"

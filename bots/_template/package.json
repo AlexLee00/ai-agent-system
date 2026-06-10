@@ -2,10 +2,10 @@
   "name": "@ai-agent/bot-template",
   "version": "1.0.0",
   "description": "신규 봇 스캐폴딩 — 복사 후 이름/설명 수정",
-  "main": "src/example-cmd.js",
+  "main": "src/example-cmd.ts",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/example-cmd.js"
+    "start": "node --disable-warning=DEP0205 --import tsx src/example-cmd.ts"
   },
   "dependencies": {
     "@ai-agent/core": "*",
