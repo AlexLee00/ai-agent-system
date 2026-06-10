@@ -67,6 +67,22 @@ async function fetchGuardOutcomeStats() {
     stats[k] = Number(r.cnt || 0);
     stats.total += Number(r.cnt || 0);
   }
+  const backlog = await query(
+    `SELECT
+       COUNT(*) FILTER (
+         WHERE outcome IS NULL
+           AND triggered_at < NOW() - INTERVAL '24 hours'
+       ) AS pending_older_24h,
+       COUNT(*) FILTER (
+         WHERE outcome IS NULL
+           AND triggered_at < NOW() - INTERVAL '4 hours'
+       ) AS pending_older_4h
+     FROM investment.guard_events
+     WHERE triggered_at >= NOW() - INTERVAL '7 days'`,
+    [],
+  ).catch(() => [{}]);
+  stats.pendingOlder24h = Number(backlog?.[0]?.pending_older_24h || 0);
+  stats.pendingOlder4h = Number(backlog?.[0]?.pending_older_4h || 0);
   return stats;
 }
 
@@ -523,6 +539,7 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
 function buildTelegramMessage(data) {
   const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall } = data;
   const loopStatus = fullDataLoop ? '🟢 ENABLED' : '🟡 DISABLED (shadow)';
+  const guardOutcomeBacklogCritical = Number(guardOutcome.pendingOlder24h || 0) > 500;
 
   let msg = `📊 *루나 데이터 루프 건강 보고 — ${TODAY}*\n\n`;
   msg += `🔄 LUNA_FULL_DATA_LOOP: ${loopStatus}\n\n`;
@@ -537,6 +554,9 @@ function buildTelegramMessage(data) {
   msg += `  • ❌ failure: ${guardOutcome.failure}\n`;
   msg += `  • ⚪ no_trade: ${guardOutcome.no_trade}\n`;
   msg += `  • ⏳ pending: ${guardOutcome.pending}\n`;
+  if (Number(guardOutcome.pendingOlder24h || 0) > 0) {
+    msg += `  • ${guardOutcomeBacklogCritical ? '🔴' : '⚠️'} pending>24h: ${guardOutcome.pendingOlder24h}건 (eligible>4h ${guardOutcome.pendingOlder4h || 0}건)\n`;
+  }
 
   if (guardOutcome.success + guardOutcome.failure > 0) {
     const successRate = Math.round(100 * guardOutcome.success / (guardOutcome.success + guardOutcome.failure));
@@ -570,7 +590,7 @@ function buildTelegramMessage(data) {
   const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall);
   msg += freshnessSection + '\n';
 
-  const statusEmoji = hasCritical ? '🚨' : '✅';
+  const statusEmoji = hasCritical || guardOutcomeBacklogCritical ? '🚨' : '✅';
   msg += `_${statusEmoji} 데이터 루프: 거래 → 분석 → 피드백 → 학습 → 진화 ♻️_`;
   return msg;
 }
@@ -624,7 +644,7 @@ async function main() {
   const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall };
 
   console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
-  console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade}`);
+  console.log(`[DataLoopHealth] 가드 아웃컴: 총${guardOutcome.total} success=${guardOutcome.success} failure=${guardOutcome.failure} no_trade=${guardOutcome.no_trade} pendingOlder24h=${guardOutcome.pendingOlder24h || 0}`);
   console.log(`[DataLoopHealth] 피드백: ${feedback.total}건 | reflexion: ${reflexion.total}건`);
   console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
   console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);

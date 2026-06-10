@@ -20,8 +20,9 @@ import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
 const MIN_AGE_HOURS = 4;
 const OUTCOME_WINDOW_HOURS = 24;
 const MAX_AGE_DAYS = 30;
-const BATCH_LIMIT = 500;
+const DEFAULT_BATCH_LIMIT = 500;
 const ENABLED_ENV = 'LUNA_GUARD_OUTCOME_TRACKER_ENABLED';
+const BATCH_LIMIT_ENV = 'LUNA_GUARD_OUTCOME_TRACKER_BATCH_LIMIT';
 
 function boolEnv(name, fallback = false, env = process.env) {
   const raw = String(env?.[name] ?? '').trim().toLowerCase();
@@ -29,6 +30,24 @@ function boolEnv(name, fallback = false, env = process.env) {
   if (['1', 'true', 'yes', 'on', 'enabled'].includes(raw)) return true;
   if (['0', 'false', 'no', 'off', 'disabled'].includes(raw)) return false;
   return fallback;
+}
+
+function positiveInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function argValue(name) {
+  const prefix = `${name}=`;
+  const found = process.argv.find((arg) => arg.startsWith(prefix));
+  return found ? found.slice(prefix.length) : null;
+}
+
+function resolveBatchLimit() {
+  return positiveInt(
+    argValue('--limit') ?? process.env[BATCH_LIMIT_ENV],
+    DEFAULT_BATCH_LIMIT,
+  );
 }
 
 async function refreshTradesView() {
@@ -40,17 +59,16 @@ async function refreshTradesView() {
   }
 }
 
-async function loadPendingGuardEvents() {
+async function loadPendingGuardEvents(batchLimit = DEFAULT_BATCH_LIMIT) {
   const rows = await query(
     `SELECT id, guard_name, symbol, exchange, triggered_at
      FROM investment.guard_events
      WHERE outcome IS NULL
-       AND symbol IS NOT NULL
        AND triggered_at < NOW() - INTERVAL '1 hour' * $1
        AND triggered_at > NOW() - INTERVAL '1 day' * $2
      ORDER BY triggered_at ASC
      LIMIT $3`,
-    [MIN_AGE_HOURS, MAX_AGE_DAYS, BATCH_LIMIT],
+    [MIN_AGE_HOURS, MAX_AGE_DAYS, batchLimit],
   ).catch(() => []);
   return rows || [];
 }
@@ -86,17 +104,19 @@ async function main() {
   const enabled = boolEnv(ENABLED_ENV, true);
   const dryRun = process.argv.includes('--dry-run') || !enabled;
   const json = process.argv.includes('--json');
+  const batchLimit = resolveBatchLimit();
   if (maybeSkipForMemory('luna.guard-outcome-tracker', { json })) return;
   console.log(`[GuardOutcome] ${new Date().toISOString()} 아웃컴 측정 시작${dryRun ? ' (dry-run)' : ''}`);
   if (!enabled) {
     console.log(`[GuardOutcome] ${ENABLED_ENV}=false/미설정 — DB 업데이트는 수행하지 않음`);
   }
+  console.log(`[GuardOutcome] batchLimit=${batchLimit}`);
 
   if (enabled && !dryRun) {
     await refreshTradesView();
   }
 
-  const pending = await loadPendingGuardEvents();
+  const pending = await loadPendingGuardEvents(batchLimit);
   console.log(`[GuardOutcome] 처리 대상: ${pending.length}건`);
 
   const stats = { success: 0, failure: 0, no_trade: 0, skipped: 0 };
@@ -135,6 +155,7 @@ async function main() {
       ok: true,
       enabled,
       dryRun,
+      batchLimit,
       pending: pending.length,
       stats,
     }, null, 2));

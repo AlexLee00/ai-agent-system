@@ -17,6 +17,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_GUARD_OUTCOME_TRACKER_BATCH_LIMIT</key>
+    <string>5000</string>
   </dict>
   <!-- 매일 09:00 KST (launchd는 KST 기준, UTC 변환 금지) -->
   <key>StartCalendarInterval</key>
