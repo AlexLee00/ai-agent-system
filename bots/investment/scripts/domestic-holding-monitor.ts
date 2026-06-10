@@ -7,6 +7,7 @@
  *   - KIS 국내장 포지션 중 24h 초과 보유된 손실 포지션을 자동 청산
  *   - launchd로 30분마다 실행 (장중에만 실행)
  *   - exit_reason: 'domestic_holding_limit_24h'
+ *   - LUNA_DOMESTIC_HOLDING_SWEEP_ENABLED=true일 때만 실제 청산
  *
  * 실행:
  *   node bots/investment/scripts/domestic-holding-monitor.ts
@@ -15,16 +16,16 @@
 
 import * as db from '../shared/db.ts';
 import { runCliMain } from '../shared/cli-runtime.ts';
-import { getKisExecutionModeInfo, getKisMarketStatus } from '../shared/secrets.ts';
+import { getKisMarketStatus } from '../shared/secrets.ts';
 import { enforceDomesticHoldingLimit } from '../shared/luna-portfolio-decision-guards.ts';
 import { executeSignal as executeDomesticSignal } from '../team/hanul.ts';
-import { buildSignalAgentPlanPayload } from '../shared/execution-runner-agent-plan.ts';
 
 const MAX_HOLD_HOURS = 24;
+const SWEEP_ENABLED = process.env.LUNA_DOMESTIC_HOLDING_SWEEP_ENABLED === 'true';
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
-    dryRun: argv.includes('--dry-run'),
+    dryRun: argv.includes('--dry-run') || !SWEEP_ENABLED,
     json: argv.includes('--json'),
   };
 }
@@ -57,12 +58,17 @@ async function createDomesticHoldingExitSignal(candidate) {
 
 async function main() {
   const options = parseArgs();
+  const prefix = options.dryRun ? '[국내보유모니터][DRY-RUN]' : '[국내보유모니터]';
+
+  if (options.dryRun && !process.argv.includes('--dry-run')) {
+    console.log(`${prefix} LUNA_DOMESTIC_HOLDING_SWEEP_ENABLED=false — shadow 모드 (실제 청산 없음)`);
+  }
 
   const marketStatus = await getKisMarketStatus().catch(() => ({ isOpen: false, reason: '상태 조회 실패' }));
   if (!marketStatus.isOpen) {
-    const msg = `[국내보유모니터] 장외/휴장 (${marketStatus.reason}) — 스킵`;
+    const msg = `${prefix} 장외/휴장 (${marketStatus.reason}) — 스킵`;
     if (options.json) {
-      console.log(JSON.stringify({ skipped: true, reason: marketStatus.reason }));
+      console.log(JSON.stringify({ skipped: true, reason: marketStatus.reason, dryRun: options.dryRun, sweepEnabled: SWEEP_ENABLED }));
     } else {
       console.log(msg);
     }
@@ -74,9 +80,9 @@ async function main() {
 
   if (candidates.length === 0) {
     if (options.json) {
-      console.log(JSON.stringify({ processed: 0, candidates: [] }));
+      console.log(JSON.stringify({ processed: 0, candidates: [], dryRun: options.dryRun, sweepEnabled: SWEEP_ENABLED }));
     } else {
-      console.log('[국내보유모니터] 24h 초과 포지션 없음');
+      console.log(`${prefix} 24h 초과 포지션 없음`);
     }
     return;
   }
@@ -103,7 +109,7 @@ async function main() {
   }
 
   if (options.json) {
-    console.log(JSON.stringify({ processed: results.length, results }));
+    console.log(JSON.stringify({ processed: results.length, results, dryRun: options.dryRun, sweepEnabled: SWEEP_ENABLED }));
   }
 }
 
