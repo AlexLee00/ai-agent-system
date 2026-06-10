@@ -57,7 +57,18 @@ function assertLaunchdNodeImportTsx(plistName: string): void {
   assert(plist.includes('<string>--import</string>') && plist.includes('<string>tsx</string>'), `${plistName} must load tsx via node --import`);
 }
 
-assertLaunchdNodeImportTsx('ai.hub.resource-api.plist');
+function assertLaunchdNodePrebuiltDaemon(plistName: string, daemonName: string): void {
+  const plistPath = path.join(launchdDir, plistName);
+  const plist = fs.readFileSync(plistPath, 'utf8');
+  const daemonPath = path.join(repoRoot, 'dist', 'daemons', `${daemonName}.mjs`);
+  const buildDaemonsSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'build-daemons.mjs'), 'utf8');
+  assert(plist.includes('<string>/opt/homebrew/bin/node</string>'), `${plistName} must use an absolute Node binary`);
+  assert(plist.includes(`<string>${daemonPath}</string>`), `${plistName} must point at the prebuilt daemon bundle`);
+  assert(!plist.includes(`${daemonName}.cjs`), `${plistName} must not point at stale CJS daemon bundle`);
+  assert(buildDaemonsSource.includes(`label: '${daemonName}'`), `${daemonName} must be included in build-daemons manifest`);
+}
+
+assertLaunchdNodePrebuiltDaemon('ai.hub.resource-api.plist', 'ai.hub.resource-api');
 const resourceApiPlist = fs.readFileSync(path.join(launchdDir, 'ai.hub.resource-api.plist'), 'utf8');
 for (const key of [
   'GEMINI_CLI_OAUTH_PROJECT_ID',
