@@ -140,6 +140,7 @@ function unitSmokeScripts(): string[] {
     'public-api-optional-smoke.ts',
     legacyIsolationScript('claude'),
     'claude-dexter-quickcheck-disk-smoke.ts',
+    'claude-health-service-classification-smoke.ts',
     legacyIsolationScript('investment'),
     legacyIsolationScript('reservation'),
     'llm-control-independence-smoke.ts',
