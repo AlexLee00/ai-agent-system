@@ -17,6 +17,7 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
   @page_size 50
   @min_stars 10
   @log_prefix "[다윈V2 센서:PapersWithCode]"
+  @hf_paper_regex ~r/<h3[^>]*>\s*<a\s+href="\/papers\/([^"]+)"[^>]*>(.*?)<\/a>\s*<\/h3>.*?<p[^>]*class="[^"]*line-clamp-2[^"]*"[^>]*>(.*?)<\/p>/s
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -144,13 +145,64 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
   def normalize_response_body(body) when is_map(body), do: {:ok, body}
 
   def normalize_response_body(body) when is_binary(body) do
-    case Jason.decode(body) do
-      {:ok, decoded} when is_map(decoded) -> {:ok, decoded}
-      _ -> {:error, :unexpected_body}
+    cond do
+      String.contains?(body, "href=\"/papers/") or String.contains?(body, "huggingface.co/papers") ->
+        parse_huggingface_trending_html(body)
+
+      true ->
+        case Jason.decode(body) do
+          {:ok, decoded} when is_map(decoded) -> {:ok, decoded}
+          _ -> {:error, :unexpected_body}
+        end
     end
   end
 
   def normalize_response_body(_body), do: {:error, :unexpected_body}
+
+  defp parse_huggingface_trending_html(html) do
+    results =
+      @hf_paper_regex
+      |> Regex.scan(html)
+      |> Enum.map(fn [_match, paper_id, title, abstract] ->
+        clean_id = clean_html_text(paper_id)
+
+        %{
+          "id" => clean_id,
+          "title" => clean_html_text(title),
+          "abstract" => clean_html_text(abstract),
+          "arxiv_id" => if(Regex.match?(~r/^\d{4}\.\d{4,5}(v\d+)?$/, clean_id), do: clean_id, else: ""),
+          "github_stars" => 0,
+          "tasks" => ["huggingface_trending"],
+          "published" => DateTime.utc_now() |> DateTime.to_iso8601(),
+          "url" => "https://huggingface.co/papers/#{clean_id}",
+          "source" => "huggingface_papers_trending"
+        }
+      end)
+      |> Enum.uniq_by(&Map.get(&1, "id"))
+
+    case results do
+      [] -> {:error, :unexpected_body}
+      _ -> {:ok, %{"count" => length(results), "results" => results}}
+    end
+  end
+
+  defp clean_html_text(value) do
+    value
+    |> to_string()
+    |> String.replace(~r/<[^>]*>/, "")
+    |> html_unescape()
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
+  end
+
+  defp html_unescape(value) do
+    value
+    |> String.replace("&amp;", "&")
+    |> String.replace("&quot;", "\"")
+    |> String.replace("&#39;", "'")
+    |> String.replace("&lt;", "<")
+    |> String.replace("&gt;", ">")
+  end
 
   defp maybe_emit_paper(paper) do
     title = Map.get(paper, "title", "")
@@ -163,10 +215,15 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
     # 필터: stars >= @min_stars OR tasks 있음 (구현된 논문)
     if stars >= @min_stars or tasks != [] do
       url =
-        if arxiv_id && arxiv_id != "" do
-          "https://arxiv.org/abs/#{arxiv_id}"
-        else
-          "https://paperswithcode.com/paper/#{Map.get(paper, "id", "")}"
+        cond do
+          explicit = Map.get(paper, "url") ->
+            explicit
+
+          arxiv_id && arxiv_id != "" ->
+            "https://arxiv.org/abs/#{arxiv_id}"
+
+          true ->
+            "https://paperswithcode.com/paper/#{Map.get(paper, "id", "")}"
         end
 
       published_at =
@@ -179,7 +236,7 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
         title: title,
         url: url,
         abstract: String.slice(abstract, 0, 1000),
-        source: "papers_with_code",
+        source: Map.get(paper, "source", "papers_with_code"),
         published_at: published_at,
         metadata: %{
           github_stars: stars,
