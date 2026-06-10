@@ -30,7 +30,7 @@
 - **P0-5** 매도 후 자본 재평가 훅(✅) — `position-closeout-engine.ts` `finalizeCloseout`(296~)에서 capitalSnapshot 무효화→재계산(capital-manager buyable 재산출) · 코덱스 · 검증: 매도→같은 사이클 buyable 갱신(하드) — ✅ 완료
 
 ## P1 — 코어 골격 + 제안 인프라 [shadow]
-- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store` 테이블·governance 통합·**break-glass 마스터 경로**[v1.3]) — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
+- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store`·governance 통합·break-glass[v1.3]) — **CODEX 작성 완료(2026-06-18): docs/codex/CODEX_LUNA_P1_REGISTRY_PARAMSTORE.md(P1-7 가드 포함)** — 코덱스 실행 대기 — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
 - **P1-2** C1 시장 배치 게이트(3시장 신호 합성→full/reduced/halt, 이력 로깅) — 대기
 - **P1-3** C2 레짐 승격(HMM shadow→core 후보, 확률 벡터+전이 경보) · 의존: P1-1(C15 등록) — 대기
 - **P1-4** C3 전략군 2종(터틀·눌림목) 룰셋 구현+shadow 신호 로깅 · stable-range 파라미터 선정(E-1) — 대기
