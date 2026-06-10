@@ -36,6 +36,22 @@ function unique(items = []) {
   return [...new Set((items || []).filter(Boolean))];
 }
 
+function canonicalLiveFireBlocker(item = '') {
+  let value = String(item || '').trim();
+  if (!value) return null;
+  for (const prefix of ['operational:', 'live_fire:']) {
+    if (value.startsWith(prefix)) value = value.slice(prefix.length);
+  }
+  if (
+    value.startsWith('post_live_fire_attention:')
+    || value.startsWith('live_fire_readiness_blocked:')
+    || value.startsWith('live_fire_gate_blocked')
+  ) {
+    return value;
+  }
+  return null;
+}
+
 function sleep(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -274,8 +290,16 @@ function remediationCommands(plan = []) {
 
 function collectHardBlockers({ actionBoard = {}, sourceHealth = {}, finalGate = {}, tradeData = {} } = {}) {
   const blockers = [];
-  for (const item of actionBoard.hardBlockers || []) blockers.push(`operational:${item}`);
-  for (const item of finalGate.blockers || []) blockers.push(`live_fire:${item}`);
+  const actionBoardHardBlockers = actionBoard.hardBlockers || [];
+  const actionBoardLiveFireBlockers = new Set(
+    actionBoardHardBlockers.map(canonicalLiveFireBlocker).filter(Boolean),
+  );
+  for (const item of actionBoardHardBlockers) blockers.push(`operational:${item}`);
+  for (const item of finalGate.blockers || []) {
+    const liveFireBlocker = canonicalLiveFireBlocker(item);
+    if (liveFireBlocker && actionBoardLiveFireBlockers.has(liveFireBlocker)) continue;
+    blockers.push(`live_fire:${item}`);
+  }
   for (const item of sourceHealth.blockers || []) blockers.push(`source_health:${item}`);
   for (const item of tradeData.hygiene?.findings || []) {
     if (String(item.severity || '').toUpperCase() !== 'P0') continue;
@@ -657,6 +681,23 @@ export async function runLunaProcessIntegrityLoopSmoke() {
   assert.equal(blocked.ok, false);
   assert.equal(blocked.status, 'process_integrity_blocked');
   assert.ok(blocked.hardBlockers.some((item) => item.includes('manual_reconcile')));
+
+  const duplicateLiveFire = buildLunaProcessIntegrityLoopReport({
+    actionBoard: {
+      sourceStatus: 'operational_blocked',
+      hardBlockers: ['live_fire:post_live_fire_attention:1'],
+    },
+    finalGate: {
+      status: 'luna_live_fire_final_gate_blocked',
+      blockers: ['post_live_fire_attention:1'],
+    },
+    sourceHealth: { status: 'luna_source_health_guarded', blockers: [], warnings: [] },
+    tradeData: { hygiene: { findings: [] }, signals: {}, journal: {} },
+  });
+  assert.deepEqual(
+    duplicateLiveFire.hardBlockers.filter((item) => item.includes('post_live_fire_attention')),
+    ['operational:live_fire:post_live_fire_attention:1'],
+  );
 
   const hygieneAdvisory = buildLunaProcessIntegrityLoopReport({
     actionBoard: { sourceStatus: 'operational_clear', hardBlockers: [] },
