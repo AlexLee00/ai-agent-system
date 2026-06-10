@@ -58,6 +58,12 @@ const ALL_SERVICES = [...new Set([
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const CLAUDE_ROOT = path.join(__dirname, '..');
 
+function parseArgs(argv = process.argv.slice(2)) {
+  return {
+    json: argv.includes('--json'),
+  };
+}
+
 function hasRecentDexterReport() {
   try {
     const logPath = path.join(CLAUDE_ROOT, 'dexter.log');
@@ -85,7 +91,9 @@ function isExpectedExit(label, exitCode) {
 // ─── 메인 ───────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`[클로드 헬스체크] 시작 — ${new Date().toISOString()}`);
+  const options = parseArgs();
+  const startedAt = new Date().toISOString();
+  if (!options.json) console.log(`[클로드 헬스체크] 시작 — ${startedAt}`);
 
   let status;
   try {
@@ -98,11 +106,22 @@ async function main() {
   const state    = hsm.loadState();
   const issues   = [];
   const recovers = []; // 회복 알림 (나중에 일괄 발송)
+  const serviceRows = [];
 
   for (const label of ALL_SERVICES) {
     const svc       = status[label];
     const shortName = hsm.shortLabel(label);
     const tag       = hsm.getAlertTag(label); // 클로드팀 서비스 = '[점검] '
+    serviceRows.push({
+      label,
+      shortName,
+      loaded: Boolean(svc?.loaded),
+      running: Boolean(svc?.running),
+      exitCode: svc?.exitCode ?? null,
+      continuous: CONTINUOUS.includes(label),
+      expectedIdle: isExpectedIdleService(label),
+      optional: isOptionalService(label),
+    });
 
     // 1. 미로드 감지
     if (!svc || svc.loaded === false) {
@@ -162,7 +181,7 @@ async function main() {
 
   // 이슈 알림 발송 + 상태 기록
   for (const { key, level, msg } of issues) {
-    console.warn(`[클로드 헬스체크] 이슈: ${msg}`);
+    if (!options.json) console.warn(`[클로드 헬스체크] 이슈: ${msg}`);
     await publishToMainBot({ from_bot: 'claude', event_type: 'health_check', alert_level: level, message: msg });
     hsm.recordAlert(state, key);
   }
@@ -174,7 +193,22 @@ async function main() {
 
   hsm.saveState(state);
 
-  if (issues.length === 0) {
+  if (options.json) {
+    console.log(JSON.stringify({
+      ok: issues.length === 0,
+      startedAt,
+      checkedAt: new Date().toISOString(),
+      total: ALL_SERVICES.length,
+      issues: issues.map(({ key, level, msg }) => ({ key, level, message: msg })),
+      recoveries: recovers.map((item) => ({
+        fromBot: item.from_bot,
+        eventType: item.event_type,
+        alertLevel: item.alert_level,
+        message: item.message,
+      })),
+      services: serviceRows,
+    }, null, 2));
+  } else if (issues.length === 0) {
     console.log(`[클로드 헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);
   }
 }
