@@ -292,7 +292,7 @@ function splitProviderModel(spec = '') {
   return { provider: 'groq', model: text };
 }
 
-async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, temperature = 0.1, timeoutMs = 30000 } = {}) {
+async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, temperature = 0.1, timeoutMs = 30000, symbol = null, market = null, incidentKey = null } = {}) {
   const { provider, model } = splitProviderModel(modelSpec);
 
   const systemPrompt = prompt.find((item) => item.role === 'system')?.content || '';
@@ -304,6 +304,11 @@ async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, 
 
   const hubResult = await callViaHub('chronos', systemPrompt, userPrompt, {
     maxTokens,
+    callerTeam: 'investment',
+    taskType: 'backtest_judgment',
+    market: market || 'binance',
+    symbol,
+    incidentKey,
     urgency: timeoutMs >= 60000 ? 'high' : 'normal',
   });
   if (!hubResult.ok) {
@@ -534,7 +539,14 @@ async function runLayer2(layer1Result, options = {}) {
       { role: 'system', content: '암호화폐 감성 분석가다. 반드시 JSON만 답한다. 형식: {"sentiment":0.65,"reason":"이유"} sentiment는 0~1 범위다.' },
       { role: 'user', content: `symbol=${layer1Result.symbol}, ts=${signal.ts}, RSI=${signal.indicators.rsi?.toFixed?.(2) || 'null'}, MACD_hist=${signal.indicators.macd?.histogram?.toFixed?.(4) || 'null'}, volume_ratio=${signal.indicators.volumeRatio?.toFixed?.(2) || 'null'}, action=${signal.action}` },
     ];
-    const sentiment = await callChronosStructuredModel(layer2Model, prompt, { maxTokens: 180, temperature: 0.1, timeoutMs: 30000 });
+    const sentiment = await callChronosStructuredModel(layer2Model, prompt, {
+      maxTokens: 180,
+      temperature: 0.1,
+      timeoutMs: 30000,
+      symbol: layer1Result.symbol,
+      market: 'binance',
+      incidentKey: `chronos-layer2-backtest:${layer1Result.symbol}`,
+    });
     layer2Signals.push(normalizeLayer2Signal(signal, sentiment));
   }
 
@@ -586,6 +598,9 @@ async function runLayer3(layer2Result, options = {}) {
       maxTokens: 512,
       temperature: 0.1,
       timeoutMs: /deepseek|32b|70b|reason/i.test(layer3Model) ? 180000 : 45000,
+      symbol: layer2Result.symbol,
+      market: 'binance',
+      incidentKey: `chronos-layer3-backtest:${layer2Result.symbol}`,
     });
     finalSignals.push(normalizeLayer3Decision(signal, judge));
   }

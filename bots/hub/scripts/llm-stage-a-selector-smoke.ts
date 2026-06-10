@@ -60,6 +60,32 @@ for (const target of [
   assert.equal(hubSelector.isHubLlmRouteTargetAllowed(target).ok, false);
 }
 
+const chronosBacktestEmbedding = hubSelector.resolveHubLlmSelection({
+  callerTeam: 'investment',
+  agent: 'chronos',
+  selectorKey: 'chronos.backtest',
+  taskType: 'backtest_embedding',
+});
+assert.equal(chronosBacktestEmbedding.ok, true, 'chronos backtest embedding route must be allowed');
+assert.deepEqual(
+  chronosBacktestEmbedding.chain.map((entry: any) => `${entry.provider}/${entry.model}`),
+  ['local-embedding/qwen3-embed-0.6b'],
+  'chronos backtest embedding route must stay local-embedding only',
+);
+
+const chronosBacktestJudgment = hubSelector.resolveHubLlmSelection({
+  callerTeam: 'investment',
+  agent: 'chronos',
+  selectorKey: 'investment.chronos',
+  taskType: 'backtest_judgment',
+});
+assert.equal(chronosBacktestJudgment.ok, true, 'chronos backtest judgment route must be allowed');
+assert.notEqual(
+  chronosBacktestJudgment.chain[0]?.provider,
+  'local-embedding',
+  'chronos backtest judgment route must stay generative and not reuse embedding route',
+);
+
 console.log(JSON.stringify({
   ok: true,
   seed_agents: AGENTS.length,

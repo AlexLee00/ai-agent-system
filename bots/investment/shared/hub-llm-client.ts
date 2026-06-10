@@ -213,6 +213,7 @@ export async function callViaHub(
     symbol?: string;
     market?: string;
     urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
+    callerTeam?: string;
     taskType?: string;
     incidentKey?: string;
     shadowCompare?: string;  // Shadow Mode일 때 직접 호출 결과 (비교용)
@@ -265,6 +266,7 @@ export async function callViaHub(
     symbol: options.symbol,
     market: options.market || process.env.INVESTMENT_MARKET || undefined,
     urgency: options.urgency,
+    callerTeam: options.callerTeam,
     taskType: options.taskType,
     incidentKey: options.incidentKey,
     avoidProviders: hardAvoidProviders,

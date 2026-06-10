@@ -12,7 +12,6 @@ const NON_LLM_TARGETS = new Set([
   'blog.publ',
   'blog.maestro',
   'luna.chronos',
-  'investment.chronos',
   'luna.sweeper',
   'investment.sweeper',
   'jay.steward',
@@ -77,7 +76,19 @@ function nonLlmKeys(input = {}) {
   ].filter((key) => !key.endsWith('.'));
 }
 
+function isChronosBacktestEmbeddingTarget(input = {}) {
+  const selectorKey = normalizeToken(input.selectorKey || '');
+  const taskType = normalizeToken(input.taskType || input.task_type || input.runtimePurpose || input.runtime_purpose || '');
+  const keys = nonLlmKeys(input);
+  const chronosTarget = keys.includes('luna.chronos') || keys.includes('investment.chronos');
+  if (!chronosTarget) return false;
+  const backtestSelector = selectorKey === 'chronos.backtest' || selectorKey === 'investment.chronos.backtest';
+  const embeddingTask = taskType === 'backtest_embedding' || taskType === 'embedding';
+  return backtestSelector && embeddingTask;
+}
+
 function isHubNonLlmTarget(input = {}) {
+  if (isChronosBacktestEmbeddingTarget(input)) return false;
   return nonLlmKeys(input).some((key) => NON_LLM_TARGETS.has(key));
 }
 
@@ -183,7 +194,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
   const team = normalizeToken(req.callerTeam || req.team || 'hub') || 'hub';
   const agent = clean(req.agent || '');
 
-  if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: req.selectorKey })) {
+  if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: req.selectorKey, taskType: req.taskType || req.task_type || req.runtimePurpose || req.runtime_purpose })) {
     return {
       ok: false,
       error: 'llm_non_llm_target_blocked',

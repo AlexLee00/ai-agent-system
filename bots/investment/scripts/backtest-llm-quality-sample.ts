@@ -116,7 +116,7 @@ function splitProviderModel(spec) {
   return { provider: 'local', model: spec };
 }
 
-async function callStructuredModel(spec, prompt, { maxTokens = 256, temperature = 0.1, timeoutMs = 30000 } = {}) {
+async function callStructuredModel(spec, prompt, { maxTokens = 256, temperature = 0.1, timeoutMs = 30000, symbol = null, incidentKey = null } = {}) {
   const startedAt = Date.now();
   const { provider, model } = splitProviderModel(spec);
   try {
@@ -136,6 +136,11 @@ async function callStructuredModel(spec, prompt, { maxTokens = 256, temperature 
     const userPrompt = prompt.find((item) => item.role === 'user')?.content || '';
     const hubResult = await callViaHub('chronos', systemPrompt, userPrompt, {
       maxTokens,
+      callerTeam: 'investment',
+      taskType: 'backtest_judgment',
+      market: 'binance',
+      symbol,
+      incidentKey,
       urgency: timeoutMs >= 60000 ? 'high' : 'normal',
     });
     if (!hubResult.ok) {
@@ -211,6 +216,8 @@ async function evaluateLayer2(symbol, layer1Signals, modelSpecs) {
         maxTokens: 180,
         temperature: 0.1,
         timeoutMs: 30000,
+        symbol,
+        incidentKey: `backtest-llm-quality-sample:${symbol}:layer2`,
       });
       const sentimentScore = normalizeSentimentScore(response.parsed?.sentiment);
       rows.push({
@@ -250,6 +257,8 @@ async function buildLayer3Baseline(symbol, layer1Signals) {
       maxTokens: 180,
       temperature: 0.1,
       timeoutMs: 30000,
+      symbol,
+      incidentKey: `backtest-llm-quality-sample:${symbol}:baseline`,
     });
     const sentimentScore = normalizeSentimentScore(response.parsed?.sentiment);
     if (!response.ok) continue;
@@ -272,6 +281,8 @@ async function evaluateLayer3(symbol, baselineSignals, modelSpecs) {
         maxTokens: 512,
         temperature: 0.1,
         timeoutMs: String(spec).includes('deepseek') ? 180000 : 45000,
+        symbol,
+        incidentKey: `backtest-llm-quality-sample:${symbol}:layer3`,
       });
       rows.push({
         ts: signal.ts,
