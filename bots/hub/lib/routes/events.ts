@@ -95,7 +95,7 @@ export async function drainEventsPublishSpool(options: { spoolFile?: string; lim
     });
     if (!fs.existsSync(processingFile)) return { ok: true, drained: 0, remaining: 0 };
 
-    const raw = await fs.promises.readFile(processingFile, 'utf8');
+    const raw: string = await fs.promises.readFile(processingFile, 'utf8');
     const entries = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map(parseSpooledLine).filter(Boolean) as Array<Record<string, unknown>>;
     let drained = 0;
     const remaining: Array<Record<string, unknown>> = [];
