@@ -217,19 +217,59 @@ function tradeQualityNextAction(id = '', fallbackActions = []) {
   return null;
 }
 
+const TRADE_QUALITY_GUARD_COVERAGE = {
+  trending_bull_entry_quality_gate: {
+    status: 'guarded_observation',
+    guard: 'trade_data_entry_guard',
+    modes: ['sizing_reduction', 'technical_confirmation_required', 'notify_or_hard_block_by_classification'],
+    codes: [
+      'crypto_trending_bull_current_epoch_mtf_required',
+      'crypto_trending_bull_without_mtf_confirmation',
+      'crypto_trending_bull_confirmation_quality_thin',
+    ],
+  },
+  trend_following_quality_review: {
+    status: 'guarded_observation',
+    guard: 'trade_data_entry_guard',
+    modes: ['probe_sizing', 'pullback_or_volume_confirmation_required', 'notify_or_hard_block_by_classification'],
+    codes: [
+      'crypto_trend_following_current_epoch_probe_only',
+      'crypto_trend_following_without_confirmation',
+      'crypto_trend_following_confirmation_quality_thin',
+    ],
+  },
+  early_exit_cluster_review: {
+    status: 'guarded_observation',
+    guard: 'trade_data_entry_guard',
+    modes: ['short_term_sizing_reduction', 'fast_confirmation_required', 'notify_or_hard_block_by_classification'],
+    codes: [
+      'crypto_short_term_scalping_early_exit_loss_pressure',
+      'crypto_short_term_scalping_without_fast_confirmation',
+      'crypto_short_term_scalping_confirmation_quality_thin',
+    ],
+  },
+};
+
 export function buildTradeQualityWatchTasks(tradeData = {}) {
   const nextActions = asArray(tradeData.nextActions);
   return asArray(tradeData.journal?.reinforcementActions)
     .filter((item) => String(item.status || '').toLowerCase() === 'watch')
-    .map((item) => ({
-      type: 'trade_quality_watch',
-      id: item.id || 'unknown_trade_quality_watch',
-      status: item.status || 'watch',
-      safeToApply: false,
-      evidence: item.evidence || {},
-      nextAction: tradeQualityNextAction(item.id, nextActions),
-      nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-trade-data-analysis-report -- --json --no-write',
-    }));
+    .map((item) => {
+      const id = item.id || 'unknown_trade_quality_watch';
+      const guardCoverage = TRADE_QUALITY_GUARD_COVERAGE[id] || null;
+      return {
+        type: 'trade_quality_watch',
+        id,
+        status: item.status || 'watch',
+        actionability: guardCoverage ? 'guarded_observation' : 'operator_review',
+        guarded: Boolean(guardCoverage),
+        guardCoverage,
+        safeToApply: false,
+        evidence: item.evidence || {},
+        nextAction: tradeQualityNextAction(item.id, nextActions),
+        nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-trade-data-analysis-report -- --json --no-write',
+      };
+    });
 }
 
 function buildPendingObservation({ sevenDay = {}, fullIntegration = {}, voyager = {} } = {}) {
@@ -296,6 +336,7 @@ export function buildLunaOperationalClosurePackFromReports({
   const qualityWatchTasks = buildTradeQualityWatchTasks(tradeData);
   const liveFireTasks = buildLiveFireClosureTasks(liveFire);
   const pendingObservation = buildPendingObservation({ sevenDay, fullIntegration, voyager });
+  const unguardedQualityWatchTasks = qualityWatchTasks.filter((item) => item.guarded !== true);
   const hardBlockers = uniq([
     ...asArray(closure.hardBlockers),
     ...manualTasks.map((item) => `manual:${item.symbol}:${item.resolutionClass}`),
@@ -304,7 +345,7 @@ export function buildLunaOperationalClosurePackFromReports({
     ? 'operational_blocked'
     : pendingObservation.length > 0
       ? 'operational_pending'
-      : hygieneTasks.length > 0 || curriculumTasks.length > 0 || qualityWatchTasks.length > 0
+      : hygieneTasks.length > 0 || curriculumTasks.length > 0 || unguardedQualityWatchTasks.length > 0
         ? 'operational_warning'
         : 'operational_clear';
   return {
@@ -317,9 +358,10 @@ export function buildLunaOperationalClosurePackFromReports({
     hygieneTasks,
     curriculumTasks,
     qualityWatchTasks,
+    unguardedQualityWatchTasks,
     acknowledgedHistory,
     pendingObservation,
-    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, qualityWatchTasks, pendingObservation, liveFireTasks, cutover }),
+    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, qualityWatchTasks: unguardedQualityWatchTasks, pendingObservation, liveFireTasks, cutover }),
     evidence: {
       closure: {
         ok: closure.ok === true,
@@ -387,6 +429,8 @@ export function buildLunaOperationalClosurePackFromReports({
         status: tradeData.status || null,
         warnings: asArray(tradeData.warnings),
         watchCount: qualityWatchTasks.length,
+        guardedWatchCount: qualityWatchTasks.filter((item) => item.guarded === true).length,
+        unguardedWatchCount: unguardedQualityWatchTasks.length,
         nextActions: asArray(tradeData.nextActions),
         realizedPnlCoverage: tradeData.trades?.realizedPnlCoverage || null,
         posttradeQualityCoverage: tradeData.posttrade?.qualityCoverage || null,

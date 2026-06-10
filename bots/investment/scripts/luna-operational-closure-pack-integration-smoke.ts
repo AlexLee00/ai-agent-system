@@ -77,9 +77,42 @@ export async function runLunaOperationalClosurePackIntegrationSmoke() {
   assert.equal(pack.hygieneTasks[0].classification.reviewRequired, 5);
   assert.equal(pack.curriculumTasks.length, 1);
   assert.equal(pack.qualityWatchTasks.length, 1);
+  assert.equal(pack.qualityWatchTasks[0].guarded, true);
+  assert.equal(pack.qualityWatchTasks[0].actionability, 'guarded_observation');
   assert.equal(pack.qualityWatchTasks[0].nextAction.includes('trending_bull'), true);
   assert.ok(pack.pendingObservation.some((item) => item.includes('7day')));
-  return { ok: true, pack };
+
+  const guardedOnlyPack = buildLunaOperationalClosurePackFromReports({
+    closure: { ok: true, operationalStatus: 'operational_complete', hardBlockers: [] },
+    reconcile: { blockers: [], summary: { total: 0 } },
+    liveFire: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    sevenDay: { pendingReasons: [] },
+    busHygiene: { ok: true, before: { staleCount: 0, rows: [] }, action: { dryRun: true } },
+    curriculum: { status: 'curriculum_bootstrap_already_seeded', toCreate: 0, dryRun: true },
+    tradeData: {
+      status: 'ready',
+      warnings: [],
+      nextActions: ['tighten trending_bull entries with chart/MTF confirmation or route to validation until current-epoch win rate recovers'],
+      journal: {
+        reinforcementActions: [
+          {
+            id: 'trending_bull_entry_quality_gate',
+            status: 'watch',
+            evidence: { trendingBullLosses: 6 },
+          },
+        ],
+      },
+      trades: { realizedPnlCoverage: { coverage: 1 } },
+      posttrade: { qualityCoverage: { coverage: 1 } },
+    },
+  });
+  assert.equal(guardedOnlyPack.status, 'operational_clear');
+  assert.equal(guardedOnlyPack.ok, true);
+  assert.equal(guardedOnlyPack.qualityWatchTasks.length, 1);
+  assert.equal(guardedOnlyPack.unguardedQualityWatchTasks.length, 0);
+  assert.equal(guardedOnlyPack.evidence.tradeDataQuality.guardedWatchCount, 1);
+  assert.equal(guardedOnlyPack.evidence.tradeDataQuality.unguardedWatchCount, 0);
+  return { ok: true, pack, guardedOnlyPack };
 }
 
 async function main() {
