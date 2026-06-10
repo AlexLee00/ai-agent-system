@@ -55,13 +55,14 @@ async function main() {
   assert.equal(blocks.filter((block: EditorBlock) => block.type === 'paragraph').length, 2);
   assert.ok(buildPlainTextForEditor(blocks).includes('Alpha'));
 
-  const now = new Date('2026-05-11T00:00:00.000Z');
-  const safeScheduledAt = resolveSafeScheduledAt({ now, minDays: 5, hour: 7, minute: 0 });
+  const policyNow = new Date('2026-05-11T00:00:00.000Z');
+  const policyScheduledAt = resolveSafeScheduledAt({ now: policyNow, minDays: 5, hour: 7, minute: 0 });
+  const safeScheduledAt = resolveSafeScheduledAt({ now: new Date(), minDays: 5, hour: 7, minute: 0 });
   const fields = formatKstScheduleFields(safeScheduledAt);
-  assert.equal(fields.date >= '2026-05-16', true);
-  assert.doesNotThrow(() => assertSafeScheduledAt(safeScheduledAt, { now, minDays: 5 }));
+  assert.doesNotThrow(() => assertSafeScheduledAt(policyScheduledAt, { now: policyNow, minDays: 5 }));
+  assert.doesNotThrow(() => assertSafeScheduledAt(safeScheduledAt, { minDays: 5 }));
   assert.throws(
-    () => assertSafeScheduledAt('2026-05-14T00:00:00.000Z', { now, minDays: 5 }),
+    () => assertSafeScheduledAt('2026-05-14T00:00:00.000Z', { now: policyNow, minDays: 5 }),
     /schedule_date_too_soon/,
   );
 
