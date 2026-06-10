@@ -20,6 +20,14 @@
     <string>production</string>
     <key>LUNA_OPS_SCHEDULER_ENABLED</key>
     <string>true</string>
+    <key>LUNA_V2_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_MAPEK_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_VALIDATION_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_PREDICTION_ENABLED</key>
+    <string>true</string>
     <key>LUNA_DISCOVERY_ORCHESTRATOR_ENABLED</key>
     <string>true</string>
     <key>LUNA_DISCOVERY_TOSS</key>

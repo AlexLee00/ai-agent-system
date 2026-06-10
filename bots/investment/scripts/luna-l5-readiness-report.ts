@@ -92,10 +92,10 @@ function installedLaunchAgentPath(label) {
 
 function readLoadedLaunchdEnv(label) {
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
-  if (uid == null) return {};
+  if (uid == null) return { __loaded: false };
   const proc = spawnSync('launchctl', ['print', `gui/${uid}/${label}`], { encoding: 'utf8' });
-  if (proc.status !== 0 || !proc.stdout) return {};
-  const env = {};
+  if (proc.status !== 0 || !proc.stdout) return { __loaded: false };
+  const env = { __loaded: true };
   let inEnvironment = false;
   for (const line of String(proc.stdout).split('\n')) {
     if (/^\s+environment = \{$/.test(line)) {
@@ -121,6 +121,7 @@ function getEnvSnapshot() {
   const repoEnvs = KILL_SWITCH_OWNER_LABELS.map((label) => readPlist(path.join(INVESTMENT_DIR, 'launchd', `${label}.plist`))?.EnvironmentVariables || {});
   const installedEnvs = KILL_SWITCH_OWNER_LABELS.map((label) => readPlist(installedLaunchAgentPath(label))?.EnvironmentVariables || {});
   const loadedEnvs = KILL_SWITCH_OWNER_LABELS.map((label) => readLoadedLaunchdEnv(label));
+  const loadedOwnerPresent = loadedEnvs.some((env) => env.__loaded === true);
 
   const switches = {};
   for (const key of KILL_SWITCHES) {
@@ -138,7 +139,11 @@ function getEnvSnapshot() {
       loadedLaunchd: loadedValue,
       repoPlist: repoValue,
       installedPlist: installedValue,
-      effectiveHint: launchctlValue ?? loadedValue ?? processValue ?? installedValue ?? repoValue ?? null,
+      // When an owner launchd job is currently loaded, the loaded environment is the
+      // authoritative runtime view. Do not let repo/installed plist values mask a
+      // missing loaded key; otherwise editing the source plist could falsely clear
+      // live-fire readiness before the job is reloaded.
+      effectiveHint: launchctlValue ?? loadedValue ?? processValue ?? (loadedOwnerPresent ? null : (installedValue ?? repoValue ?? null)),
       sourceConflict: durableConflict,
       durableConflict,
       processConflict,
