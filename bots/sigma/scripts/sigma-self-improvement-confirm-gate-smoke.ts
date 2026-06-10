@@ -9,6 +9,18 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const sigmaRoot = path.join(repoRoot, 'bots/sigma');
 const tsxBin = path.join(repoRoot, 'node_modules/.bin/tsx');
 
+function parseJsonPayload(output: string) {
+  for (let i = 0; i < output.length; i += 1) {
+    if (output[i] !== '{') continue;
+    try {
+      return JSON.parse(output.slice(i));
+    } catch {
+      // Runtime bootstrap logs can precede the JSON payload; keep scanning.
+    }
+  }
+  throw new Error(`No JSON payload found in command output: ${output.slice(0, 200)}`);
+}
+
 const output = execFileSync(tsxBin, [
   'scripts/runtime-sigma-self-improvement.ts',
   '--apply',
@@ -23,7 +35,7 @@ const output = execFileSync(tsxBin, [
     SIGMA_SELF_IMPROVEMENT_APPLY_MODE: 'supervised',
   },
 });
-const result = JSON.parse(output);
+const result = parseJsonPayload(output);
 assert.equal(result.applyBlocked, 'confirm_required:sigma-self-improvement-apply');
 assert.equal(result.dryRun, true);
 assert.equal(result.appliedSkills.length, 0);
@@ -45,7 +57,7 @@ const dryRunOverrideOutput = execFileSync(tsxBin, [
     SIGMA_SELF_IMPROVEMENT_APPLY_MODE: 'supervised',
   },
 });
-const dryRunOverride = JSON.parse(dryRunOverrideOutput);
+const dryRunOverride = parseJsonPayload(dryRunOverrideOutput);
 assert.equal(dryRunOverride.dryRun, true);
 assert.equal(dryRunOverride.applyBlocked, 'self_improvement_dry_run');
 assert.equal(dryRunOverride.skillCountBefore, dryRunOverride.skillCountAfter);

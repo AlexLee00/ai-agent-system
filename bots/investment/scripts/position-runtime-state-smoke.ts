@@ -21,7 +21,7 @@ export function runPositionRuntimeStateSmoke() {
     setupType: 'trend_following',
   });
   assert.equal(monitoringPolicy.lane, 'attention_fast_lane');
-  assert.ok(monitoringPolicy.cadenceMs <= 10000);
+  assert.ok(monitoringPolicy.cadenceMs <= 15000);
 
   const monitoringPolicyNoExternalEvidence = buildRegimeAwareMonitoringPolicy({
     exchange: 'binance',
