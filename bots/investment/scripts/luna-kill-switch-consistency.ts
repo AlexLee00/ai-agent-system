@@ -44,11 +44,12 @@ export function evaluateKillSwitchConsistency(switches = {}, desired = {}) {
     const values = {
       process: normalize(snapshot.process),
       launchctl: normalize(snapshot.launchctl),
+      loadedLaunchd: normalize(snapshot.loadedLaunchd),
       repoPlist: normalize(snapshot.repoPlist),
       installedPlist: normalize(snapshot.installedPlist),
       effectiveHint: normalize(snapshot.effectiveHint),
     };
-    const durablePresent = [values.launchctl, values.installedPlist, values.repoPlist].filter((value) => value != null);
+    const durablePresent = [values.launchctl, values.loadedLaunchd, values.installedPlist, values.repoPlist].filter((value) => value != null);
     const durableConflict = new Set(durablePresent).size > 1;
     const processConflict = values.process != null && values.effectiveHint != null && values.process !== values.effectiveHint;
     const effectiveMismatch = values.effectiveHint !== desiredValue;
@@ -141,7 +142,7 @@ export async function publishLunaKillSwitchConsistency(report = {}) {
 export async function runLunaKillSwitchConsistencySmoke() {
   const clear = evaluateKillSwitchConsistency({
     LUNA_V2_ENABLED: { effectiveHint: 'true', launchctl: 'true' },
-    LUNA_MAPEK_ENABLED: { effectiveHint: 'true', launchctl: 'true' },
+    LUNA_MAPEK_ENABLED: { effectiveHint: 'true', loadedLaunchd: 'true' },
     LUNA_VALIDATION_ENABLED: { effectiveHint: 'true', launchctl: 'true' },
     LUNA_PREDICTION_ENABLED: { effectiveHint: 'true', launchctl: 'true' },
   });

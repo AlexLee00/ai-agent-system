@@ -11,6 +11,11 @@ import {
   renderLunaLiveFireReadinessGate,
 } from './luna-live-fire-readiness-core.ts';
 
+const RUNTIME_ENV_OWNER_LABELS = [
+  'ai.luna.ops-scheduler',
+  'ai.investment.commander',
+];
+
 function boolArg(name) {
   return process.argv.includes(name);
 }
@@ -25,8 +30,30 @@ function readLaunchctlEnv(name) {
   return proc.status === 0 ? String(proc.stdout || '').trim() : '';
 }
 
+function readLoadedLaunchdEnv(label, name) {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid == null) return '';
+  const proc = spawnSync('launchctl', ['print', `gui/${uid}/${label}`], { encoding: 'utf8' });
+  if (proc.status !== 0 || !proc.stdout) return '';
+  let inEnvironment = false;
+  for (const line of String(proc.stdout).split('\n')) {
+    if (/^\s+environment = \{$/.test(line)) {
+      inEnvironment = true;
+      continue;
+    }
+    if (!inEnvironment) continue;
+    if (/^\s+\}$/.test(line)) break;
+    const match = line.match(/^\s+([A-Za-z_][A-Za-z0-9_]*) => (.*)$/);
+    if (match?.[1] === name) return String(match[2] || '').trim();
+  }
+  return '';
+}
+
 function runtimeEnv(name) {
-  return String(readLaunchctlEnv(name) || process.env[name] || '').trim();
+  const loaded = RUNTIME_ENV_OWNER_LABELS
+    .map((label) => readLoadedLaunchdEnv(label, name))
+    .find((value) => value);
+  return String(readLaunchctlEnv(name) || process.env[name] || loaded || '').trim();
 }
 
 function runtimeEnvTrue(name) {

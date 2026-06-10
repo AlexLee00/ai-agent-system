@@ -29,6 +29,10 @@ const KILL_SWITCHES = [
   'LUNA_VALIDATION_ENABLED',
   'LUNA_PREDICTION_ENABLED',
 ];
+const KILL_SWITCH_OWNER_LABELS = [
+  'ai.luna.ops-scheduler',
+  'ai.investment.commander',
+];
 const EXCHANGES = ['binance', 'kis', 'kis_overseas'];
 const EXCHANGE_REGIME_MARKET = {
   binance: ['binance', 'crypto'],
@@ -86,27 +90,55 @@ function installedLaunchAgentPath(label) {
   return path.join(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
 }
 
+function readLoadedLaunchdEnv(label) {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid == null) return {};
+  const proc = spawnSync('launchctl', ['print', `gui/${uid}/${label}`], { encoding: 'utf8' });
+  if (proc.status !== 0 || !proc.stdout) return {};
+  const env = {};
+  let inEnvironment = false;
+  for (const line of String(proc.stdout).split('\n')) {
+    if (/^\s+environment = \{$/.test(line)) {
+      inEnvironment = true;
+      continue;
+    }
+    if (!inEnvironment) continue;
+    if (/^\s+\}$/.test(line)) break;
+    const match = line.match(/^\s+([A-Za-z_][A-Za-z0-9_]*) => (.*)$/);
+    if (match) env[match[1]] = match[2];
+  }
+  return env;
+}
+
+function firstNonEmpty(values = []) {
+  for (const value of values) {
+    if (value != null && String(value).trim() !== '') return value;
+  }
+  return null;
+}
+
 function getEnvSnapshot() {
-  const repoPlist = readPlist(path.join(INVESTMENT_DIR, 'launchd', 'ai.investment.commander.plist'));
-  const installedPlist = readPlist(installedLaunchAgentPath('ai.investment.commander'));
-  const repoEnv = repoPlist?.EnvironmentVariables || {};
-  const installedEnv = installedPlist?.EnvironmentVariables || {};
+  const repoEnvs = KILL_SWITCH_OWNER_LABELS.map((label) => readPlist(path.join(INVESTMENT_DIR, 'launchd', `${label}.plist`))?.EnvironmentVariables || {});
+  const installedEnvs = KILL_SWITCH_OWNER_LABELS.map((label) => readPlist(installedLaunchAgentPath(label))?.EnvironmentVariables || {});
+  const loadedEnvs = KILL_SWITCH_OWNER_LABELS.map((label) => readLoadedLaunchdEnv(label));
 
   const switches = {};
   for (const key of KILL_SWITCHES) {
     const processValue = process.env[key] ?? null;
     const launchctlValue = launchctlGetenv(key);
-    const repoValue = repoEnv[key] ?? null;
-    const installedValue = installedEnv[key] ?? null;
-    const durableValues = [launchctlValue, installedValue, repoValue].filter((value) => value != null);
+    const loadedValue = firstNonEmpty(loadedEnvs.map((env) => env[key]));
+    const installedValue = firstNonEmpty(installedEnvs.map((env) => env[key]));
+    const repoValue = firstNonEmpty(repoEnvs.map((env) => env[key]));
+    const durableValues = [launchctlValue, loadedValue, installedValue, repoValue].filter((value) => value != null);
     const durableConflict = new Set(durableValues).size > 1;
     const processConflict = launchctlValue != null && processValue != null && launchctlValue !== processValue;
     switches[key] = {
       process: processValue,
       launchctl: launchctlValue,
+      loadedLaunchd: loadedValue,
       repoPlist: repoValue,
       installedPlist: installedValue,
-      effectiveHint: launchctlValue ?? processValue ?? installedValue ?? repoValue ?? null,
+      effectiveHint: launchctlValue ?? loadedValue ?? processValue ?? installedValue ?? repoValue ?? null,
       sourceConflict: durableConflict,
       durableConflict,
       processConflict,
