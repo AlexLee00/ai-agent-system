@@ -109,7 +109,8 @@ defmodule Darwin.V2.Sensor.SemanticScholar do
     case Req.get(url,
            params: params,
            headers: headers,
-           receive_timeout: 20_000
+           receive_timeout: 20_000,
+           retry: false
          ) do
       {:ok, %{status: 200, body: body}} ->
         papers = Map.get(body, "data", []) || []
