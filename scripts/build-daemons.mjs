@@ -8,7 +8,7 @@ const root = process.env.PROJECT_ROOT
 const outdir = path.join(root, 'dist', 'daemons');
 
 const entries = [
-  { label: 'ai.jay.runtime', entry: 'bots/orchestrator/src/jay-runtime.ts' },
+  { label: 'ai.jay.runtime', entry: 'bots/orchestrator/src/jay-runtime.ts', format: 'cjs' },
   { label: 'ai.orchestrator', entry: 'bots/orchestrator/src/orchestrator.ts' },
   { label: 'ai.claude.auto-dev', entry: 'bots/claude/scripts/auto-dev-runner.ts' },
   { label: 'ai.claude.codex-notifier', entry: 'bots/claude/scripts/codex-notifier-runner.ts' },

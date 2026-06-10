@@ -14,11 +14,12 @@ function extractString(plist: string, key: string): string {
 }
 
 function assertLaunchdNodePrebuiltDaemon(plist: string, daemonName: string): void {
-  const daemonPath = repoPath('dist', 'daemons', `${daemonName}.mjs`);
   const buildDaemonsSource = fs.readFileSync(repoPath('scripts', 'build-daemons.mjs'), 'utf8');
+  const daemonEntryPattern = new RegExp(`label:\\s*'${daemonName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'[^\\n}]*format:\\s*'cjs'`, 'm');
+  const extension = daemonEntryPattern.test(buildDaemonsSource) ? '.cjs' : '.mjs';
+  const daemonPath = repoPath('dist', 'daemons', `${daemonName}${extension}`);
   assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/, `${daemonName} should run through node`);
   assert.match(plist, new RegExp(`<string>${daemonPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</string>`), `${daemonName} should point at its prebuilt daemon bundle`);
-  assert.equal(plist.includes(`${daemonName}.cjs`), false, `${daemonName} must not point at stale CJS daemon bundle`);
   assert.equal(buildDaemonsSource.includes(`label: '${daemonName}'`), true, `${daemonName} must be included in build-daemons manifest`);
 }
 

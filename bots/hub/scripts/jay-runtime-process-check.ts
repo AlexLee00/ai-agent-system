@@ -59,8 +59,24 @@ function readProcessCommand(pid: number | null) {
   return redactLine(normalizeText(result.stdout)).slice(0, 600) || null;
 }
 
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+const EXPECTED_DAEMON_PATH = path.join(REPO_ROOT, 'dist', 'daemons', 'ai.jay.runtime.cjs');
+
+function normalizeCommandPath(value: unknown) {
+  return String(value || '').replace(/\\/g, '/');
+}
+
+function classifyJayRuntimeCommand(command: unknown) {
+  const normalized = normalizeCommandPath(command);
+  const expectedDaemon = normalizeCommandPath(EXPECTED_DAEMON_PATH);
+  if (normalized.includes(expectedDaemon)) return 'prebuilt_daemon';
+  if (/(^|\s|\/)bots\/orchestrator\/src\/jay-runtime\.ts(\s|$)/.test(normalized)) return 'source_tsx';
+  if (/(^|\s|\/)jay-runtime\.js(\s|$)/.test(normalized)) return 'legacy_js';
+  return 'unknown';
+}
+
 function isJayRuntimeCommand(command: unknown) {
-  return /(^|\s|\/)jay-runtime\.(ts|js)(\s|$)/.test(String(command || ''));
+  return classifyJayRuntimeCommand(command) !== 'unknown';
 }
 
 function collectState(strict: boolean) {
@@ -76,12 +92,16 @@ function collectState(strict: boolean) {
   const lockPid = fs.existsSync(lockPath) ? Number(normalizeText(fs.readFileSync(lockPath, 'utf8'))) || null : null;
   const lockPidAlive = isPidAlive(lockPid);
   const lockCommand = readProcessCommand(lockPid);
+  const launchdCommand = readProcessCommand(pid);
+  const runtimeCommand = lockCommand || launchdCommand;
+  const commandMode = classifyJayRuntimeCommand(runtimeCommand);
   const lockOwner = !fs.existsSync(lockPath)
     ? 'missing'
     : (!lockPidAlive ? 'stale' : (isJayRuntimeCommand(lockCommand) ? 'jay-runtime' : 'foreign'));
   const lockMatchesLaunchdPid = Boolean(pid && lockPid && pid === lockPid);
   const lockMatchesRuntimeChild = Boolean(loaded && pid && lockPidAlive && lockOwner === 'jay-runtime');
-  const strictOk = Boolean(loaded && pid && (lockMatchesLaunchdPid || lockMatchesRuntimeChild));
+  const prebuiltDaemon = commandMode === 'prebuilt_daemon';
+  const strictOk = Boolean(loaded && pid && (lockMatchesLaunchdPid || lockMatchesRuntimeChild) && prebuiltDaemon);
   const stdoutPath = path.join(os.homedir(), '.ai-agent-system', 'logs', 'jay-runtime.log');
   const stderrPath = path.join(os.homedir(), '.ai-agent-system', 'logs', 'jay-runtime-error.log');
   const stdoutTail = tailFile(stdoutPath).map(redactLine);
@@ -103,6 +123,13 @@ function collectState(strict: boolean) {
       command: lockCommand,
       matchesLaunchdPid: lockMatchesLaunchdPid,
       matchesRuntimeChild: lockMatchesRuntimeChild,
+    },
+    runtime: {
+      expectedDaemonPath: EXPECTED_DAEMON_PATH,
+      command: runtimeCommand,
+      launchdCommand,
+      commandMode,
+      prebuiltDaemon,
     },
     logs: {
       stdoutPath,
@@ -136,6 +163,7 @@ async function main() {
     console.log(`loaded: ${payload.loaded}`);
     console.log(`pid: ${payload.pid || '-'}`);
     console.log(`lock: ${payload.lock.exists ? payload.lock.pid : '-'} owner=${payload.lock.owner} launchd_match=${payload.lock.matchesLaunchdPid} runtime_child=${payload.lock.matchesRuntimeChild}`);
+    console.log(`runtime: ${payload.runtime.commandMode} prebuilt=${payload.runtime.prebuiltDaemon}`);
     if (!payload.loaded && payload.launchctl.error) console.log(`launchctl: ${payload.launchctl.error.split('\n')[0]}`);
   }
 
