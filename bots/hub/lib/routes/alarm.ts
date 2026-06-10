@@ -1060,6 +1060,57 @@ function normalizeAutoRepairStatus(value: unknown): 'resolved' | 'partially_reso
   return 'unresolved_needs_human';
 }
 
+async function updateHubAlarmMirrorForAutoRepairCallback({
+  incidentKey,
+  status,
+  eventId,
+}: {
+  incidentKey: string;
+  status: 'resolved' | 'partially_resolved' | 'unresolved_needs_human';
+  eventId: number | string;
+}): Promise<{ ok: boolean; updated: number; status: string | null; error?: string }> {
+  if (!incidentKey) return { ok: true, updated: 0, status: null };
+  try {
+    if (status === 'resolved' || status === 'partially_resolved') {
+      const mirrorStatus = status === 'resolved' ? 'resolved' : 'verified';
+      const result = await alarmDb.run('agent', `
+        UPDATE agent.hub_alarms
+        SET status = $1,
+            resolved_at = NOW(),
+            metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+              'auto_repair_callback_status', $2::text,
+              'auto_repair_callback_event_id', $3::text,
+              'auto_repair_callback_at', NOW()::text
+            )
+        WHERE (metadata->>'incident_key' = $4 OR fingerprint = $4)
+          AND COALESCE(status, 'new') NOT IN ('resolved', 'suppressed')
+      `, [mirrorStatus, status, String(eventId || ''), incidentKey]);
+      return { ok: true, updated: Number(result?.rowCount || 0), status: mirrorStatus };
+    }
+
+    const result = await alarmDb.run('agent', `
+      UPDATE agent.hub_alarms
+      SET status = 'exhausted',
+          metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+            'auto_repair_callback_status', $1::text,
+            'auto_repair_callback_event_id', $2::text,
+            'auto_repair_callback_at', NOW()::text
+          )
+      WHERE (metadata->>'incident_key' = $3 OR fingerprint = $3)
+        AND COALESCE(status, 'new') IN ('repairing', 'correlating')
+        AND COALESCE(actionability, '') = 'auto_repair'
+    `, [status, String(eventId || ''), incidentKey]);
+    return { ok: true, updated: Number(result?.rowCount || 0), status: 'exhausted' };
+  } catch (error: any) {
+    return {
+      ok: false,
+      updated: 0,
+      status: null,
+      error: error?.message || 'hub_alarm_mirror_update_failed',
+    };
+  }
+}
+
 export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
   try {
     const incidentKey = normalizeText(req.body?.incidentKey || req.body?.incident_key);
@@ -1103,6 +1154,11 @@ export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
         visibility,
       },
     });
+    const mirrorUpdate = await updateHubAlarmMirrorForAutoRepairCallback({
+      incidentKey,
+      status,
+      eventId,
+    });
 
     let delivered = false;
     let deliveryError = '';
@@ -1122,6 +1178,7 @@ export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
       delivery_team: deliveryTeam,
       delivered,
       delivery_error: deliveryError || null,
+      mirror_update: mirrorUpdate,
     });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error?.message || 'auto_repair_callback_failed' });

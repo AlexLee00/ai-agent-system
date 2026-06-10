@@ -55,6 +55,7 @@ async function main() {
   let sendCount = 0;
   let eventId = 100;
   let pgRunCount = 0;
+  const pgRuns: Array<{ sql: string; params: unknown[] }> = [];
   let useClusterDuplicate = false;
   const autoDevDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-alarm-auto-dev-'));
 
@@ -120,8 +121,9 @@ async function main() {
       if (String(sql).includes('COUNT(*)::int AS total')) return { total: 3 };
       return null;
     },
-    run: async () => {
+    run: async (_schema: string, sql: string, params: unknown[] = []) => {
       pgRunCount += 1;
+      pgRuns.push({ sql: String(sql), params });
       return { rowCount: 1, rows: [] };
     },
   });
@@ -262,6 +264,13 @@ async function main() {
     assert(callbackRes.body.status === 'resolved', `expected resolved callback, got ${callbackRes.body.status}`);
     assert(callbackRes.body.delivery_team === 'ops-error-resolution', `expected ops-error-resolution, got ${callbackRes.body.delivery_team}`);
     assert(callbackRes.body.delivered === true, 'expected callback result delivery');
+    assert(callbackRes.body.mirror_update?.ok === true, 'expected callback to update hub alarm mirror');
+    assert(callbackRes.body.mirror_update?.status === 'resolved', `expected mirror status resolved, got ${callbackRes.body.mirror_update?.status}`);
+    assert(callbackRes.body.mirror_update?.updated === 1, `expected one mirror update, got ${callbackRes.body.mirror_update?.updated}`);
+    assert(
+      pgRuns.some((entry) => entry.sql.includes('UPDATE agent.hub_alarms') && entry.sql.includes('auto_repair_callback_status') && entry.params.includes(errorRes.body.incident_key)),
+      'expected auto-repair callback to close matching hub_alarms mirror rows',
+    );
     assert(Number(sendCount) === 3, `expected callback to send one result notification, got ${sendCount}`);
 
     const digestReq = {
