@@ -6,7 +6,10 @@
     <string>ai.event.reminders</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/tsx</string>
+        <string>/opt/homebrew/bin/node</string>
+        <string>--disable-warning=DEP0205</string>
+        <string>--import</string>
+        <string>tsx</string>
         <string>/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/event-reminders.ts</string>
     </array>
     <key>WorkingDirectory</key>

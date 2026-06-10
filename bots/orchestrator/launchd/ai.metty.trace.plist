@@ -17,7 +17,10 @@
 	</dict>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/tsx</string>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/write/metty-trace.ts</string>
 		<string>--json</string>
 	</array>

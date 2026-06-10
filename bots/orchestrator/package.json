@@ -16,7 +16,8 @@
     "smoke:pg-role-mapping": "tsx scripts/pg-role-mapping-smoke.ts",
     "smoke:eventlake-collab-trace": "tsx scripts/eventlake-collab-trace-smoke.ts --json",
     "smoke:readme-seed-stats": "tsx scripts/readme-updater-seed-stats-smoke.ts",
-    "check": "tsx scripts/jay-runtime-policy-smoke.ts && tsx scripts/jay-runtime-db-startup-retry-smoke.ts && tsx scripts/jay-symphony-cutover-shadow-smoke.ts && tsx scripts/pg-role-mapping-smoke.ts && tsx scripts/pending-confirms-smoke.ts && tsx scripts/morning-queue-smoke.ts && tsx scripts/jay-incident-store-smoke.ts && tsx scripts/eventlake-collab-trace-smoke.ts --json && tsx scripts/readme-updater-seed-stats-smoke.ts && tsx scripts/report-aggregator-node-runner-smoke.ts && plutil -lint launchd/ai.metty.trace.plist",
+    "check": "tsx scripts/jay-runtime-policy-smoke.ts && tsx scripts/jay-runtime-db-startup-retry-smoke.ts && tsx scripts/jay-symphony-cutover-shadow-smoke.ts && tsx scripts/pg-role-mapping-smoke.ts && tsx scripts/pending-confirms-smoke.ts && tsx scripts/morning-queue-smoke.ts && tsx scripts/jay-incident-store-smoke.ts && tsx scripts/eventlake-collab-trace-smoke.ts --json && tsx scripts/readme-updater-seed-stats-smoke.ts && tsx scripts/report-aggregator-node-runner-smoke.ts && tsx scripts/launchd-node26-runner-smoke.ts && plutil -lint launchd/ai.metty.trace.plist",
+    "smoke:launchd-node26-runner": "tsx scripts/launchd-node26-runner-smoke.ts",
     "smoke:report-aggregator-node-runner": "tsx scripts/report-aggregator-node-runner-smoke.ts",
     "smoke:jay-orchestration": "tsx scripts/jay-orchestration-smoke.ts"
   },
