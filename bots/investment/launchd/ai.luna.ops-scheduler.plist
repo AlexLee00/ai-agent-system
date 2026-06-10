@@ -128,6 +128,10 @@
     <string>true</string>
     <key>LUNA_BT_WALK_FORWARD_ENABLED</key>
     <string>true</string>
+    <key>LUNA_BT_WF_TRAIN_DAYS</key>
+    <string>45</string>
+    <key>LUNA_BT_WF_TEST_DAYS</key>
+    <string>30</string>
     <key>LUNA_VECTORBT_TIMEOUT_MS</key>
     <string>90000</string>
     <key>ENTRY_PREFLIGHT_SHADOW_ENABLED</key>

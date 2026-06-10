@@ -30,9 +30,9 @@
     <key>LUNA_BT_WF_FOLDS</key>
     <string>5</string>
     <key>LUNA_BT_WF_TRAIN_DAYS</key>
-    <string>90</string>
+    <string>45</string>
     <key>LUNA_BT_WF_TEST_DAYS</key>
-    <string>75</string>
+    <string>30</string>
     <key>LUNA_VECTORBT_TIMEOUT_MS</key>
     <string>90000</string>
     <key>LUNA_DSR_GATE_ENABLED</key>
