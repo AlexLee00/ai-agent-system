@@ -31,12 +31,15 @@ import { reevaluateOpenPositions } from '../shared/position-reevaluator.ts';
 import { recordGuardEventNow } from '../shared/guard-event-recorder.ts';
 import { executeSignal as executeBinanceSignal } from '../team/hephaestos.ts';
 import { executeSignal as executeOverseasSignal } from '../team/hanul.ts';
+import * as fs from 'node:fs';
 
 const CRYPTO_SOFT_CAP_DAYS = Number(process.env.LUNA_CRYPTO_MAX_HOLD_DAYS ?? 14);
 const OVERSEAS_SOFT_CAP_DAYS = Number(process.env.LUNA_OVERSEAS_MAX_HOLD_DAYS ?? 10);
 const REGIME_MAX_AGE_MIN = Number(process.env.LUNA_REGIME_MAX_AGE_MIN ?? 90);
 const HARD_CAP_DAYS = Number(process.env.LUNA_EXIT_HARD_MAX_HOLD_DAYS ?? process.env.LUNA_CRYPTO_HARD_MAX_HOLD_DAYS ?? 60);
 const SWEEP_ENABLED = process.env.LUNA_CRYPTO_STALE_SWEEP_ENABLED === 'true';
+const MONITOR_STATE_URL = new URL('../output/ops/crypto-holding-monitor-state.json', import.meta.url);
+const MONITOR_STATE_DIR_URL = new URL('../output/ops/', import.meta.url);
 
 const REGIME_EXIT_POLICY = {
   trending_bull: {
@@ -238,6 +241,85 @@ function isSellRecommendation(recommendation) {
   return !recommendation || recommendation === 'SELL' || recommendation === 'ADJUST';
 }
 
+function summarizeCandidate(candidate = {}) {
+  return {
+    symbol: candidate.symbol,
+    exchange: candidate.exchange,
+    market: candidate.market,
+    regime: candidate.regime,
+    regimeFresh: candidate.regimeFresh === true,
+    regimeConfidence: Number(candidate.regimeConfidence || 0),
+    regimeCapturedAt: candidate.regimeCapturedAt ?? null,
+    heldDays: Number(Number(candidate.heldDays || 0).toFixed(2)),
+    positionValue: Number(Number(candidate.positionValue || 0).toFixed(4)),
+    tradeMode: candidate.tradeMode ?? 'normal',
+    softCapDays: Number(candidate.softCapDays || 0),
+    hardCapDays: HARD_CAP_DAYS,
+    isHardCap: candidate.isHardCap === true,
+  };
+}
+
+function summarizeResult(result = {}) {
+  return {
+    symbol: result.symbol,
+    heldDays: Number(Number(result.heldDays || 0).toFixed(2)),
+    status: result.status,
+    capType: result.capType ?? null,
+    regime: result.regime ?? null,
+    recommendation: result.recommendation ?? null,
+    revalReason: result.revalReason ?? null,
+    protectedBy: result.protectedBy ?? null,
+    error: result.error ?? null,
+  };
+}
+
+function countBy(items = [], key) {
+  return items.reduce((acc, item) => {
+    const value = String(item?.[key] ?? 'unknown');
+    acc[value] = Number(acc[value] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function buildMonitorStatePayload({ options = parseArgs([]), candidates = [], results = [], status = 'completed' } = {}) {
+  const summarizedCandidates = candidates.map(summarizeCandidate);
+  const summarizedResults = results.map(summarizeResult);
+  return {
+    ok: status !== 'error',
+    generatedAt: new Date().toISOString(),
+    source: 'crypto-holding-monitor',
+    status,
+    sweepEnabled: SWEEP_ENABLED,
+    dryRun: options.dryRun === true,
+    candidateCount: summarizedCandidates.length,
+    processed: summarizedResults.length,
+    counts: {
+      candidatesByMarket: countBy(summarizedCandidates, 'market'),
+      candidatesByRegime: countBy(summarizedCandidates, 'regime'),
+      resultsByStatus: countBy(summarizedResults, 'status'),
+      resultsByCapType: countBy(summarizedResults, 'capType'),
+    },
+    policy: {
+      cryptoSoftCapDays: CRYPTO_SOFT_CAP_DAYS,
+      overseasSoftCapDays: OVERSEAS_SOFT_CAP_DAYS,
+      hardCapDays: HARD_CAP_DAYS,
+      regimeMaxAgeMin: REGIME_MAX_AGE_MIN,
+      regimeExitPolicy: REGIME_EXIT_POLICY,
+    },
+    candidates: summarizedCandidates,
+    results: summarizedResults,
+  };
+}
+
+function writeMonitorState(payload) {
+  try {
+    fs.mkdirSync(MONITOR_STATE_DIR_URL, { recursive: true });
+    fs.writeFileSync(MONITOR_STATE_URL, `${JSON.stringify(payload, null, 2)}\n`);
+  } catch (err) {
+    console.error(`[크립토보유모니터] 상태 파일 기록 실패: ${err?.message || String(err)}`);
+  }
+}
+
 async function recordExitDecision(candidate, decision, details = {}) {
   await recordGuardEventNow({
     guardName: 'regime_dynamic_exit',
@@ -280,9 +362,11 @@ async function main() {
   const candidates = await identifyStaleCandidates();
 
   if (candidates.length === 0) {
+    const state = buildMonitorStatePayload({ options, candidates, results: [], status: 'no_candidates' });
+    writeMonitorState(state);
     const msg = `${prefix} 방치 포지션 없음 (binance≥${CRYPTO_SOFT_CAP_DAYS}일, overseas≥${OVERSEAS_SOFT_CAP_DAYS}일)`;
     if (options.json) {
-      console.log(JSON.stringify({ sweepEnabled: SWEEP_ENABLED, processed: 0, candidates: [] }));
+      console.log(JSON.stringify({ sweepEnabled: SWEEP_ENABLED, processed: 0, candidates: [], state }));
     } else {
       console.log(msg);
     }
@@ -389,8 +473,10 @@ async function main() {
     }
   }
 
+  const state = buildMonitorStatePayload({ options, candidates, results, status: 'completed' });
+  writeMonitorState(state);
   if (options.json) {
-    console.log(JSON.stringify({ sweepEnabled: SWEEP_ENABLED, processed: results.length, results }));
+    console.log(JSON.stringify({ sweepEnabled: SWEEP_ENABLED, processed: results.length, results, state }));
   }
 }
 
@@ -399,4 +485,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { parseArgs, main };
-export const __test = { recordExitDecision };
+export const __test = { recordExitDecision, buildMonitorStatePayload };

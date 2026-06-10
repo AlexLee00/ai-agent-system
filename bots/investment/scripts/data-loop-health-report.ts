@@ -531,7 +531,49 @@ function readFeedbackActionMapperState() {
   }
 }
 
-function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?, feedbackLoopStall?) {
+function readCryptoHoldingMonitorState() {
+  const statePath = new URL('../output/ops/crypto-holding-monitor-state.json', import.meta.url).pathname;
+  try {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const generatedAt = state.generatedAt || state.stateWrittenAt || null;
+    const generatedAtMs = generatedAt ? new Date(generatedAt).getTime() : Number.NaN;
+    const elapsedMin = Number.isFinite(generatedAtMs)
+      ? Math.round((Date.now() - generatedAtMs) / 60000)
+      : Number.POSITIVE_INFINITY;
+    const status = !generatedAt
+      ? 'stale'
+      : elapsedMin > 1440
+        ? 'critical'
+        : elapsedMin > 480
+          ? 'stale'
+          : 'ok';
+    return {
+      ...state,
+      status,
+      monitorStatus: state.status || 'unknown',
+      lastRunMinAgo: elapsedMin,
+      statePath,
+      candidateCount: Number(state.candidateCount || 0),
+      processed: Number(state.processed || 0),
+      dryRun: state.dryRun === true,
+      sweepEnabled: state.sweepEnabled === true,
+    };
+  } catch (err: any) {
+    return {
+      status: 'missing_state',
+      monitorStatus: 'missing_state',
+      lastRunMinAgo: -1,
+      statePath,
+      candidateCount: 0,
+      processed: 0,
+      dryRun: true,
+      sweepEnabled: false,
+      message: err?.message || String(err),
+    };
+  }
+}
+
+function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync?, feedbackLoopStall?, cryptoHoldingMonitor?) {
   const tables: any[] = Array.isArray(tableFreshness) ? tableFreshness : [];
   const feedbackStalls: any[] = Array.isArray(feedbackLoopStall) ? feedbackLoopStall : [];
   const staleJobs: any[] = opsScheduler?.staleJobs ?? [];
@@ -561,6 +603,29 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
       hasCritical = true;
     } else {
       section += `⚠️ WARN: autopilot 로그 없음 (position-sync 상태 불명)\n`;
+      hasWarn = true;
+    }
+  }
+
+  // Crypto/KIS overseas stale holding monitor: dry-run no-candidate runs do not create guard_events,
+  // so the structured state file is the authoritative freshness signal.
+  if (cryptoHoldingMonitor) {
+    if (cryptoHoldingMonitor.status === 'ok') {
+      const mode = cryptoHoldingMonitor.dryRun ? 'dry-run' : 'active';
+      const sweep = cryptoHoldingMonitor.sweepEnabled ? 'sweep=true' : 'sweep=false';
+      if (Number(cryptoHoldingMonitor.candidateCount || 0) === 0) {
+        section += `✅ crypto-holding-monitor: ${mode} 무후보 정상 (${cryptoHoldingMonitor.lastRunMinAgo}분 전, ${sweep})\n`;
+      } else {
+        section += `✅ crypto-holding-monitor: ${mode} 후보 ${cryptoHoldingMonitor.candidateCount}건 / 처리 ${cryptoHoldingMonitor.processed}건 (${cryptoHoldingMonitor.lastRunMinAgo}분 전, ${sweep})\n`;
+      }
+    } else if (cryptoHoldingMonitor.status === 'critical') {
+      section += `🔴 CRITICAL: crypto-holding-monitor state ${cryptoHoldingMonitor.lastRunMinAgo}분 정체 (기대: 480분)\n`;
+      hasCritical = true;
+    } else if (cryptoHoldingMonitor.status === 'stale') {
+      section += `⚠️ WARN: crypto-holding-monitor state ${cryptoHoldingMonitor.lastRunMinAgo}분 정체 (기대: 480분)\n`;
+      hasWarn = true;
+    } else {
+      section += `⚠️ WARN: crypto-holding-monitor state 없음 (${cryptoHoldingMonitor.statePath || 'unknown'})\n`;
       hasWarn = true;
     }
   }
@@ -640,7 +705,7 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
 }
 
 function buildTelegramMessage(data) {
-  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall } = data;
+  const { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall, cryptoHoldingMonitor } = data;
   const loopStatus = fullDataLoop ? '🟢 ENABLED' : '🟡 DISABLED (shadow)';
   const guardOutcomeBacklogCritical = Number(guardOutcome.pendingOlder24h || 0) > 500;
 
@@ -690,7 +755,7 @@ function buildTelegramMessage(data) {
     msg += `  • ${latest.trade_date}: ${Number(latest.avg_progress || 0).toFixed(3)}\n\n`;
   }
 
-  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall);
+  const { section: freshnessSection, hasCritical } = buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall, cryptoHoldingMonitor);
   msg += freshnessSection + '\n';
 
   const statusEmoji = hasCritical || guardOutcomeBacklogCritical ? '🚨' : '✅';
@@ -729,7 +794,7 @@ async function main() {
   const fullDataLoop = !['0', 'false', 'no', 'off', 'disabled']
     .includes(String(process.env.LUNA_FULL_DATA_LOOP_ENABLED ?? 'true').toLowerCase());
 
-  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall] = await Promise.allSettled([
+  const [trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall, cryptoHoldingMonitor] = await Promise.allSettled([
     fetchTradeStats(),
     fetchGuardOutcomeStats(),
     fetchGuardEffectiveness(),
@@ -742,9 +807,10 @@ async function main() {
     fetchTableFreshness(),
     fetchPositionSyncHealth(),
     fetchFeedbackLoopStallGuard(),
+    readCryptoHoldingMonitorState(),
   ]).then((results) => results.map((r) => r.status === 'fulfilled' ? r.value : r.status === 'rejected' ? {} : {}));
 
-  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall };
+  const data = { trades, guardOutcome, guardTop, feedback, reflexion, curriculum, learning, fullDataLoop, launchd, opsScheduler, tableFreshness, positionSync, feedbackLoopStall, cryptoHoldingMonitor };
 
   if (!json) {
     console.log(`[DataLoopHealth] 거래: 24h=${trades.trades24h} 7d=${trades.trades7d}`);
@@ -754,6 +820,7 @@ async function main() {
     console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
     console.log(`[DataLoopHealth] launchd env drift: ${(launchd.envDrift ?? []).map((item) => `${item.label}:${item.key}(${item.status})`).join(', ') || 'clear'}`);
     console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개, residue ignored ${(opsScheduler.residueJobs ?? []).length}개`);
+    console.log(`[DataLoopHealth] crypto-holding-monitor: status=${cryptoHoldingMonitor?.status ?? '?'} monitor=${cryptoHoldingMonitor?.monitorStatus ?? '?'} lastRunMinAgo=${cryptoHoldingMonitor?.lastRunMinAgo ?? '?'} candidates=${cryptoHoldingMonitor?.candidateCount ?? '?'}`);
   }
   const tableFreshnessRows = Array.isArray(tableFreshness) ? tableFreshness : [];
   const feedbackLoopStallRows = Array.isArray(feedbackLoopStall) ? feedbackLoopStall : [];

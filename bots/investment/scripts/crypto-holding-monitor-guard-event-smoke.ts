@@ -20,6 +20,21 @@ const symbol = `SMOKE-EXIT-${Date.now()}/USDT`;
 async function main() {
   delete process.env.LUNA_GUARD_EVENT_RECORDING_DISABLED;
   try {
+    const state = __test.buildMonitorStatePayload({
+      options: { dryRun: true, json: true },
+      candidates: [],
+      results: [],
+      status: 'no_candidates',
+    });
+    assert.equal(state.ok, true);
+    assert.equal(state.source, 'crypto-holding-monitor');
+    assert.equal(state.status, 'no_candidates');
+    assert.equal(state.dryRun, true);
+    assert.equal(state.sweepEnabled, false);
+    assert.equal(state.candidateCount, 0);
+    assert.equal(state.processed, 0);
+    assert.ok(state.policy);
+
     await __test.recordExitDecision({
       symbol,
       exchange: 'binance',
