@@ -43,7 +43,9 @@ export async function runLunaTradesUsdNormalizationSmoke() {
   assert.match(fxRefreshScript, /carry_forward/);
   assert.match(fxRefreshPlist, /ai\.luna\.fx-refresh/);
   assert.match(fxRefreshPlist, /luna-fx-refresh\.ts/);
-  assert.match(fxRefreshPlist, /<integer>6<\/integer>/);
+  assert.match(fxRefreshPlist, /매일 00:00 KST/);
+  assert.match(fxRefreshPlist, /<key>Hour<\/key>\s*<integer>0<\/integer>/);
+  assert.match(fxRefreshPlist, /<key>Minute<\/key>\s*<integer>0<\/integer>/);
 
   assert.match(reportScript, /FROM investment\.v_trades_real_usd/);
   assert.match(reportScript, /query\('investment',/);
