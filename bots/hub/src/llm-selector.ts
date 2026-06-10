@@ -12,6 +12,7 @@ const NON_LLM_TARGETS = new Set([
   'blog.publ',
   'blog.maestro',
   'luna.chronos',
+  'investment.chronos',
   'luna.sweeper',
   'investment.sweeper',
   'jay.steward',
@@ -87,8 +88,17 @@ function isChronosBacktestEmbeddingTarget(input = {}) {
   return backtestSelector && embeddingTask;
 }
 
+function isChronosBacktestJudgmentTarget(input = {}) {
+  const taskType = normalizeToken(input.taskType || input.task_type || input.runtimePurpose || input.runtime_purpose || '');
+  const keys = nonLlmKeys(input);
+  const chronosTarget = keys.includes('luna.chronos') || keys.includes('investment.chronos');
+  if (!chronosTarget) return false;
+  return taskType === 'backtest_judgment';
+}
+
 function isHubNonLlmTarget(input = {}) {
   if (isChronosBacktestEmbeddingTarget(input)) return false;
+  if (isChronosBacktestJudgmentTarget(input)) return false;
   return nonLlmKeys(input).some((key) => NON_LLM_TARGETS.has(key));
 }
 

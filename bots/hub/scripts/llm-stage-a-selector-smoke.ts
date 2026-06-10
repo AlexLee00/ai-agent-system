@@ -86,11 +86,46 @@ assert.notEqual(
   'chronos backtest judgment route must stay generative and not reuse embedding route',
 );
 
+const chronosJudgmentLuna = hubSelector.resolveHubLlmSelection({
+  callerTeam: 'luna',
+  agent: 'chronos',
+  taskType: 'backtest_judgment',
+});
+assert.equal(chronosJudgmentLuna.ok, true, 'luna-team chronos backtest judgment must be allowed');
+assert.notEqual(
+  chronosJudgmentLuna.chain[0]?.provider,
+  'local-embedding',
+  'luna-team chronos backtest judgment must stay generative and not reuse embedding route',
+);
+
+const chronosPlainInvestment = hubSelector.resolveHubLlmSelection({
+  callerTeam: 'investment',
+  agent: 'chronos',
+});
+assert.equal(chronosPlainInvestment.ok, false, 'plain investment.chronos must stay non-LLM blocked');
+assert.equal(chronosPlainInvestment.error, 'llm_non_llm_target_blocked');
+assert.equal(hubSelector.isHubLlmRouteTargetAllowed({
+  callerTeam: 'luna',
+  agent: 'chronos',
+  taskType: 'backtest_judgment',
+}).ok, true, 'luna-team chronos backtest judgment route target must be allowed');
+assert.equal(hubSelector.isHubLlmRouteTargetAllowed({
+  callerTeam: 'investment',
+  agent: 'chronos',
+}).ok, false, 'plain investment.chronos route target must stay non-LLM blocked');
+
 console.log(JSON.stringify({
   ok: true,
   seed_agents: AGENTS.length,
   runtime_managed: runtimeManaged.length,
   non_llm: nonLlmAgents.length,
+  chronos_matrix: {
+    luna_plain_blocked: true,
+    investment_plain_blocked: true,
+    luna_judgment_allowed: chronosJudgmentLuna.ok,
+    investment_judgment_allowed: chronosBacktestJudgment.ok,
+    embedding_provider: chronosBacktestEmbedding.chain[0]?.provider,
+  },
   blog_writer_selector: blogWriter.selectorKey,
   blog_writer_chain: blogWriter.providerTiers,
   hub_runtime_selector: hubRuntime.selectorKey,

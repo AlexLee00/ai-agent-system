@@ -75,6 +75,8 @@ const { storeReservationEvent } = require('../../../../packages/core/lib/reserva
 const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
 const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
+const DAEMON_DIR = path.join(PROJECT_ROOT, 'dist/daemons');
 const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 const WORKSPACE = getReservationRuntimeDir();
 const NAVER_BROWSER_PROFILE_ROOT =
@@ -101,6 +103,14 @@ function resolveNaverUserDataDir(modeSuffix = '') {
 }
 
 const bugReportCache = new Set<string>();
+
+function resolveChildRuntime(label: string, sourceRelPath: string) {
+  const daemonPath = path.join(DAEMON_DIR, `${label}.cjs`);
+  if (fs.existsSync(daemonPath)) {
+    return { command: NODE_BIN, script: daemonPath };
+  }
+  return { command: TSX_BIN, script: path.join(PROJECT_ROOT, sourceRelPath) };
+}
 
 let previousConfirmedList: any[] = [];
 let previousCancelledCount: number | null = null;
@@ -138,8 +148,9 @@ function autoBugReport({
   }
   bugReportCache.add(cacheKey);
 
-  const child = spawn(TSX_BIN, [
-    path.join(PROJECT_ROOT, 'bots/reservation/src/bug-report.ts'),
+  const runtime = resolveChildRuntime('ai.ska.bug-report', 'bots/reservation/src/bug-report.ts');
+  const child = spawn(runtime.command, [
+    runtime.script,
     '--new', '--title', title,
     '--desc', desc,
     '--severity', severity,
@@ -159,10 +170,10 @@ function runStartupPickkoVerification() {
   if (!NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReport) return;
 
   try {
-    const verifyScript = path.join(PROJECT_ROOT, 'bots/reservation/manual/admin/pickko-verify.ts');
+    const runtime = resolveChildRuntime('ai.ska.pickko-verify', 'bots/reservation/manual/admin/pickko-verify.ts');
     log('🔎 [시작 검증] pickko-verify 백그라운드 실행');
-    const child = spawn(TSX_BIN, [verifyScript], {
-      cwd: path.dirname(verifyScript),
+    const child = spawn(runtime.command, [runtime.script], {
+      cwd: path.dirname(runtime.script),
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

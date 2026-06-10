@@ -19,6 +19,10 @@ const entries = [
   { label: 'ai.ska.dashboard', entry: 'bots/reservation/scripts/dashboard-server.ts', protected: true },
   { label: 'ai.ska.preflight', entry: 'bots/reservation/scripts/preflight.ts', format: 'cjs', protected: true },
   { label: 'ai.ska.naver-monitor', entry: 'bots/reservation/auto/monitors/naver-monitor.ts', format: 'cjs', protected: true },
+  { label: 'ai.ska.pickko-verify', entry: 'bots/reservation/manual/admin/pickko-verify.ts', format: 'cjs', protected: true },
+  { label: 'ai.ska.pickko-accurate', entry: 'bots/reservation/manual/reservation/pickko-accurate.ts', format: 'cjs', protected: true },
+  { label: 'ai.ska.pickko-pay-pending', entry: 'bots/reservation/manual/reports/pickko-pay-pending.ts', format: 'cjs', protected: true },
+  { label: 'ai.ska.bug-report', entry: 'bots/reservation/src/bug-report.ts', format: 'cjs', protected: true },
   { label: 'ai.hub.resource-api', entry: 'bots/hub/src/hub.ts', protected: true },
 ];
 

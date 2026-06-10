@@ -9,8 +9,14 @@
 #   4. 로그 → /tmp/pickko-verify.log (최근 500줄 유지)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-NODE="/opt/homebrew/bin/tsx"
-RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/manual/admin/pickko-verify.ts"
+PROJECT_ROOT="${PROJECT_ROOT:-/Users/alexlee/projects/ai-agent-system}"
+export PROJECT_ROOT
+NODE="/opt/homebrew/bin/node"
+RUNTIME_SCRIPT="$PROJECT_ROOT/dist/daemons/ai.ska.pickko-verify.cjs"
+if [ ! -f "$RUNTIME_SCRIPT" ]; then
+  NODE="$PROJECT_ROOT/node_modules/.bin/tsx"
+  RUNTIME_SCRIPT="$PROJECT_ROOT/bots/reservation/manual/admin/pickko-verify.ts"
+fi
 WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-${JAY_WORKSPACE:-$HOME/.ai-agent-system/workspace}}"
 mkdir -p "$WORKSPACE_DIR"
 LOCK_FILE="$WORKSPACE_DIR/pickko-verify.lock"

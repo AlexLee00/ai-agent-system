@@ -7,6 +7,7 @@
 
 const puppeteer = require('puppeteer');
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
@@ -29,6 +30,8 @@ const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = IS_OPS ? 'ops' : 'dev';
 const DRY_RUN = process.argv.includes('--dry-run');
 const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
+const DAEMON_DIR = path.join(PROJECT_ROOT, 'dist/daemons');
 const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 
 type ReservationLike = {
@@ -58,6 +61,14 @@ type PickkoDateResult = {
   entries: Array<{ phoneRaw?: string | null; start?: string | null }>;
   fetchOk: boolean;
 };
+
+function resolveChildRuntime(label: string, sourceRelPath: string) {
+  const daemonPath = path.join(DAEMON_DIR, `${label}.cjs`);
+  if (fs.existsSync(daemonPath)) {
+    return { command: NODE_BIN, script: daemonPath };
+  }
+  return { command: TSX_BIN, script: path.join(PROJECT_ROOT, sourceRelPath) };
+}
 
 function needsVerify(entry: ReservationLike) {
   if (entry.status === 'pending' || entry.status === 'failed') return true;
@@ -195,8 +206,9 @@ async function markCompleted(source: string, id: string, entry: ReservationLike)
 function runPickko(entry: ReservationLike): Promise<number | null> {
   return new Promise((resolve) => {
     const phone = (entry.phoneRaw || entry.phone || '').replace(/\D/g, '');
+    const runtime = resolveChildRuntime('ai.ska.pickko-accurate', 'bots/reservation/manual/reservation/pickko-accurate.ts');
     const args = [
-      path.join(PROJECT_ROOT, 'bots/reservation/manual/reservation/pickko-accurate.ts'),
+      runtime.script,
       `--phone=${phone}`,
       `--date=${entry.date}`,
       `--start=${entry.start}`,
@@ -205,7 +217,7 @@ function runPickko(entry: ReservationLike): Promise<number | null> {
       `--name=${entry.raw?.name || '고객'}`,
     ];
     log(`  🤖 픽코 등록 실행: ${maskPhone(phone)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸`);
-    const child = spawn(TSX_BIN, args, {
+    const child = spawn(runtime.command, args, {
       cwd: path.dirname(args[0]),
       stdio: 'inherit',
     });

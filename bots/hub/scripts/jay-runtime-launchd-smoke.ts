@@ -13,6 +13,15 @@ function extractString(plist: string, key: string): string {
   return match ? match[1] : '';
 }
 
+function assertLaunchdNodePrebuiltDaemon(plist: string, daemonName: string): void {
+  const daemonPath = repoPath('dist', 'daemons', `${daemonName}.mjs`);
+  const buildDaemonsSource = fs.readFileSync(repoPath('scripts', 'build-daemons.mjs'), 'utf8');
+  assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/, `${daemonName} should run through node`);
+  assert.match(plist, new RegExp(`<string>${daemonPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</string>`), `${daemonName} should point at its prebuilt daemon bundle`);
+  assert.equal(plist.includes(`${daemonName}.cjs`), false, `${daemonName} must not point at stale CJS daemon bundle`);
+  assert.equal(buildDaemonsSource.includes(`label: '${daemonName}'`), true, `${daemonName} must be included in build-daemons manifest`);
+}
+
 async function main() {
   const plistPath = repoPath('bots/orchestrator/launchd/ai.jay.runtime.plist');
   const janitorPlistPath = repoPath('bots/orchestrator/launchd/ai.jay.incident-janitor.plist');
@@ -21,10 +30,7 @@ async function main() {
   const plist = fs.readFileSync(plistPath, 'utf8');
   const janitorPlist = fs.readFileSync(janitorPlistPath, 'utf8');
   assert.equal(extractString(plist, 'Label'), 'ai.jay.runtime', 'launchd label should be ai.jay.runtime');
-  assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/, 'Jay runtime should run through node');
-  assert.match(plist, /<string>--disable-warning=DEP0205<\/string>/, 'Jay runtime should suppress Node 26 tsx DEP0205 warnings');
-  assert.match(plist, /<string>--import<\/string>\s*<string>tsx<\/string>/, 'Jay runtime should load tsx through node --import');
-  assert.match(plist, /bots\/orchestrator\/src\/jay-runtime\.ts/, 'plist should run jay-runtime.ts');
+  assertLaunchdNodePrebuiltDaemon(plist, 'ai.jay.runtime');
   assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/, 'Jay runtime should be KeepAlive');
   assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/, 'Jay runtime should start at load');
   assert.equal(extractString(janitorPlist, 'Label'), 'ai.jay.incident-janitor', 'janitor label should be ai.jay.incident-janitor');

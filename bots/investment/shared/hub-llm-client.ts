@@ -27,6 +27,30 @@ const HUB_MAX_TIMEOUT_MS = Math.max(
   Math.min(180_000, Number(process.env.INVESTMENT_LLM_HUB_MAX_TIMEOUT_MS || 180_000) || 180_000),
 );
 
+let observabilityDropCount = 0;
+let lastObservabilityWarnAt = 0;
+const OBSERVABILITY_WARN_INTERVAL_MS = 60_000;
+
+function noteObservabilityDrop(channel: string, err?: unknown): void {
+  try {
+    observabilityDropCount += 1;
+    const now = Date.now();
+    if (now - lastObservabilityWarnAt < OBSERVABILITY_WARN_INTERVAL_MS) return;
+    lastObservabilityWarnAt = now;
+    const msg = err instanceof Error ? err.message : String(err ?? '');
+    console.warn(
+      `[hub-llm-client] observability drop x${observabilityDropCount} ` +
+      `(latest: ${channel}${msg ? ` - ${msg.slice(0, 120)}` : ''})`,
+    );
+  } catch {
+    // 관측 실패 기록은 호출 흐름을 막지 않는다.
+  }
+}
+
+export function getObservabilityDropCount(): number {
+  return observabilityDropCount;
+}
+
 function normalizeHubRequestTimeout(value: unknown): number {
   const raw = Number(value || 0);
   if (!Number.isFinite(raw) || raw <= 0) return HUB_DEFAULT_TIMEOUT_MS - 5_000;
@@ -127,7 +151,8 @@ export async function recordInvestmentLlmRouteLog(entry: {
         entry.matched == null ? null : entry.matched === true,
       ],
     );
-  } catch {
+  } catch (err) {
+    noteObservabilityDrop('route_log', err);
     // 라우팅 로그는 관측 채널이므로 실패해도 LLM 호출 흐름은 막지 않는다.
   }
 }
@@ -243,7 +268,7 @@ export async function callViaHub(
       taskType: options.taskType || null,
       incidentKey: options.incidentKey || null,
       error: 'missing_hub_auth_token',
-    }).catch(() => {});
+    }).catch((err) => noteObservabilityDrop('route_log', err));
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs: 0, error: 'HUB_AUTH_TOKEN 없음' };
   }
 
@@ -293,7 +318,8 @@ export async function callViaHub(
       const errText = await res.text().catch(() => '');
       console.warn(`[hub-llm] ${agentName} HTTP ${res.status}: ${errText.slice(0, 120)}`);
       // Phase G: HTTP 실패 기록
-      recordLLMFailure(agentName, 'hub', userPrompt, 'bad_response', options.market, options.taskType).catch(() => {});
+      recordLLMFailure(agentName, 'hub', userPrompt, 'bad_response', options.market, options.taskType)
+        .catch((err) => noteObservabilityDrop('llm_failure', err));
       await recordInvestmentLlmRouteLog({
         agentName,
         provider: 'hub',
@@ -305,7 +331,7 @@ export async function callViaHub(
         incidentKey: options.incidentKey || null,
         error: `HTTP ${res.status}`,
         routeChain: (payload?.chain as unknown[]) || [],
-      }).catch(() => {});
+      }).catch((err) => noteObservabilityDrop('route_log', err));
       return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: `HTTP ${res.status}` };
     }
 
@@ -316,7 +342,8 @@ export async function callViaHub(
       const errorType = (json.error || '').includes('timeout') ? 'timeout'
         : (json.error || '').includes('rate') ? 'rate_limit'
         : 'bad_response';
-      recordLLMFailure(agentName, json.provider || 'hub', userPrompt, errorType, options.market, options.taskType).catch(() => {});
+      recordLLMFailure(agentName, json.provider || 'hub', userPrompt, errorType, options.market, options.taskType)
+        .catch((err) => noteObservabilityDrop('llm_failure', err));
       await recordInvestmentLlmRouteLog({
         agentName,
         provider: json.provider || 'hub',
@@ -329,7 +356,7 @@ export async function callViaHub(
         fallbackCount: json.fallbackCount || 0,
         error: json.error || 'hub_response_not_ok',
         routeChain: (payload?.chain as unknown[]) || [],
-      }).catch(() => {});
+      }).catch((err) => noteObservabilityDrop('route_log', err));
       return { ok: false, text: '', provider: json.provider || 'hub', costUsd: 0, latencyMs, error: json.error };
     }
 
@@ -364,7 +391,7 @@ export async function callViaHub(
       incidentKey: options.incidentKey || null,
       fallbackCount: json.fallbackCount || 0,
       routeChain: (payload?.chain as unknown[]) || [],
-    }).catch(() => {});
+    }).catch((err) => noteObservabilityDrop('route_log', err));
     return { ok: true, text, provider: json.provider || 'hub', costUsd, latencyMs };
 
   } catch (err: unknown) {
@@ -382,7 +409,7 @@ export async function callViaHub(
       incidentKey: options.incidentKey || null,
       error: msg,
       routeChain: (payload?.chain as unknown[]) || [],
-    }).catch(() => {});
+    }).catch((err) => noteObservabilityDrop('route_log', err));
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: msg };
   }
 }
@@ -414,7 +441,8 @@ function _logShadowComparison(
     );
 
     // DB에 shadow 비교 결과 저장 (비동기, 실패해도 무시)
-    _saveShadowLog(agentName, hubText, directText, matched, meta).catch(() => {});
+    _saveShadowLog(agentName, hubText, directText, matched, meta)
+      .catch((err) => noteObservabilityDrop('shadow_log', err));
   } catch {
     // 비교 실패는 무시
   }
@@ -523,8 +551,9 @@ export async function callLLMWithHub(
       incidentKey: opts.incidentKey || null,
       fallbackUsed: true,
       error: 'hub_disabled',
-    }).catch(() => {});
-    recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+    }).catch((err) => noteObservabilityDrop('route_log', err));
+    recordInvocation(agentName, opts.market ?? 'any')
+      .catch((err) => noteObservabilityDrop('invocation', err));
     return directResult;
   }
 
@@ -539,9 +568,10 @@ export async function callLLMWithHub(
       incidentKey: opts.incidentKey,
       shadowCompare: directResult,
       timeoutMs: opts.timeoutMs,
-    }).catch(() => {});
+    }).catch((err) => noteObservabilityDrop('shadow_hub_call', err));
     // Phase D: invocation 기록 (fire-and-forget)
-    recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+    recordInvocation(agentName, opts.market ?? 'any')
+      .catch((err) => noteObservabilityDrop('invocation', err));
     return directResult;
   }
 
@@ -556,7 +586,8 @@ export async function callLLMWithHub(
   });
   if (hubResult.ok) {
     // Phase D: invocation 기록 (fire-and-forget)
-    recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+    recordInvocation(agentName, opts.market ?? 'any')
+      .catch((err) => noteObservabilityDrop('invocation', err));
     return hubResult.text;
   }
 
@@ -577,8 +608,9 @@ export async function callLLMWithHub(
     fallbackUsed: true,
     fallbackCount: 1,
     error: hubResult.error || 'hub_failed',
-  }).catch(() => {});
+  }).catch((err) => noteObservabilityDrop('route_log', err));
   // Phase D: fallback 경로도 invocation 기록
-  recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+  recordInvocation(agentName, opts.market ?? 'any')
+    .catch((err) => noteObservabilityDrop('invocation', err));
   return fallbackResult;
 }

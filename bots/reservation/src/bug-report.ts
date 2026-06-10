@@ -35,10 +35,11 @@ const { saveJson } = require('../lib/files');
 const { buildReservationCliInsight } = require('../lib/cli-insight');
 const { getReservationRuntimeFile } = require('../lib/runtime-paths');
 
+const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
 const TRACKER_FILE = getReservationRuntimeFile('bug-tracker.json');
 // HANDOFF.md는 workspace 복사본이 아닌 소스 파일을 직접 수정
 // → deploy-context.js가 덮어쓰는 순서 의존성 제거
-const HANDOFF_FILE = path.join(__dirname, '..', 'context', 'HANDOFF.md');
+const HANDOFF_FILE = path.join(PROJECT_ROOT, 'bots/reservation/context/HANDOFF.md');
 
 // ─── 저장소 ────────────────────────────────────────────────────────────
 

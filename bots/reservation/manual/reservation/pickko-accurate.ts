@@ -12,6 +12,7 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
 const { spawn } = require('child_process');
+const fs = require('fs');
 const { transformAndNormalizeData, validateTimeRange } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
@@ -40,12 +41,22 @@ const { createPickkoFinalizationService } = require('../../lib/pickko-finalizati
 const { createPickkoSavePrecheckService } = require('../../lib/pickko-save-precheck-service');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
+const DAEMON_DIR = path.join(PROJECT_ROOT, 'dist/daemons');
 const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 
 type StageError = Error & {
   stageCode?: string;
   code?: string;
 };
+
+function resolveChildRuntime(label: string, sourceRelPath: string) {
+  const daemonPath = path.join(DAEMON_DIR, `${label}.cjs`);
+  if (fs.existsSync(daemonPath)) {
+    return { command: NODE_BIN, script: daemonPath };
+  }
+  return { command: TSX_BIN, script: path.join(PROJECT_ROOT, sourceRelPath) };
+}
 
 function buildStageError(code: string, message: string): StageError {
   const error = new Error(message) as StageError;
@@ -501,8 +512,9 @@ async function main() {
       await releaseLock();
 
       const payPendingResult = await new Promise<{ exitCode: number; success: boolean | null; message: string | null }>((resolve) => {
-        const child = spawn(TSX_BIN, [
-          path.join(PROJECT_ROOT, 'bots/reservation/manual/reports/pickko-pay-pending.ts'),
+        const runtime = resolveChildRuntime('ai.ska.pickko-pay-pending', 'bots/reservation/manual/reports/pickko-pay-pending.ts');
+        const child = spawn(runtime.command, [
+          runtime.script,
           `--phone=${PHONE_NOHYPHEN}`,
           `--date=${DATE}`,
           `--start=${START_TIME}`,
