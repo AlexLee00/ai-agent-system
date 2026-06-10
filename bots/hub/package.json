@@ -9,6 +9,8 @@
     "alarm:digest-worker": "tsx scripts/alarm-digest-worker.ts",
     "alarm:noise-report": "tsx scripts/alarm-noise-report.ts",
     "alarm:stale-auto-repair": "tsx scripts/alarm-auto-repair-stale-scan.ts",
+    "alarm:stale-auto-repair-backfill": "tsx scripts/alarm-auto-repair-stale-backfill.ts",
+    "alarm:stale-auto-repair-backfill:apply": "tsx scripts/alarm-auto-repair-stale-backfill.ts --apply --confirm=hub-stale-auto-repair-backfill",
     "alarm:suppression-proposals": "tsx scripts/alarm-suppression-proposals.ts",
     "alarm:suppression-apply": "tsx scripts/alarm-suppression-proposals.ts --apply",
     "alarm:contract-audit": "tsx scripts/alarm-contract-audit.ts",

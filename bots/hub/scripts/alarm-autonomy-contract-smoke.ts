@@ -6,6 +6,7 @@ const { resolveAlarmDeliveryTeam, formatAutoRepairResultMessage } = require('../
 const { buildAlarmReadinessSnapshot } = require('../lib/alarm/readiness.ts');
 const { buildAlarmNoiseReport } = require('./alarm-noise-report.ts');
 const { scanStaleAutoRepair, _testOnly_annotateRows } = require('./alarm-auto-repair-stale-scan.ts');
+const { APPLY_CONFIRM_TOKEN, _testOnly_buildBackfillPlan, _testOnly_isApplyConfirmed } = require('./alarm-auto-repair-stale-backfill.ts');
 const {
   applyAlarmSuppressionProposals,
   buildAlarmSuppressionProposals,
@@ -149,6 +150,16 @@ async function main() {
     });
     assert(annotatedResolved[0].stale_status === 'resolved_manifest', 'expected completed manifest entry to suppress stale scan');
     assert(annotatedResolved[1].stale_status === 'resolved_current_policy', 'expected current policy downgrade to suppress stale scan');
+    const backfillPlan = _testOnly_buildBackfillPlan([
+      { id: 11, incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
+      { id: 12, incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },
+    ]);
+    assert(backfillPlan[0].mirror_status === 'resolved', 'manifest-resolved stale rows must backfill mirror status to resolved');
+    assert(backfillPlan[0].result_status === 'resolved', 'manifest-resolved stale rows must emit resolved repair result');
+    assert(backfillPlan[1].mirror_status === 'verified', 'policy-resolved stale rows must backfill mirror status to verified');
+    assert(backfillPlan[1].result_status === 'partially_resolved', 'policy-resolved stale rows must emit partial repair result');
+    assert(_testOnly_isApplyConfirmed(APPLY_CONFIRM_TOKEN), 'expected stale backfill apply confirm token to be accepted');
+    assert(!_testOnly_isApplyConfirmed(''), 'expected stale backfill apply without confirm token to be rejected');
     const lowConfidencePolicy = _testOnly_annotateRows([{
       team: 'unknown',
       bot_name: 'unknown',
