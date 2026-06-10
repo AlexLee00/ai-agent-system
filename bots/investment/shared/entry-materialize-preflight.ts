@@ -20,6 +20,8 @@ import { getInvestmentTradeMode } from './secrets.ts';
 
 const PRIMARY_ENABLED_ENV = 'ENTRY_PREFLIGHT_SHADOW_ENABLED';
 const LEGACY_ENABLED_ENV = 'LUNA_ENTRY_PREFLIGHT_SHADOW_ENABLED';
+const ACTIVE_BLOCK_ENV = 'ENTRY_PREFLIGHT_MATERIALIZE_BLOCK_ENABLED';
+const LEGACY_ACTIVE_BLOCK_ENV = 'LUNA_ENTRY_PREFLIGHT_MATERIALIZE_BLOCK_ENABLED';
 const DEFAULT_TRADE_MODE = 'normal';
 
 function boolEnv(name, fallback = false, env = process.env) {
@@ -99,6 +101,10 @@ function buildResult(decision, reason, checks = {}) {
 
 export function isEntryPreflightShadowEnabled(env = process.env) {
   return boolEnv(PRIMARY_ENABLED_ENV, false, env) || boolEnv(LEGACY_ENABLED_ENV, false, env);
+}
+
+export function isEntryPreflightMaterializeBlockEnabled(env = process.env) {
+  return boolEnv(ACTIVE_BLOCK_ENV, false, env) || boolEnv(LEGACY_ACTIVE_BLOCK_ENV, false, env);
 }
 
 export async function ensureEntryPreflightShadowTable() {
@@ -344,7 +350,9 @@ export async function runEntryMaterializePreflightShadow({
   env = process.env,
   deps = {},
 } = {}) {
-  if (!isEntryPreflightShadowEnabled(env)) {
+  const shadowEnabled = isEntryPreflightShadowEnabled(env);
+  const activeBlockEnabled = isEntryPreflightMaterializeBlockEnabled(env);
+  if (!shadowEnabled && !activeBlockEnabled) {
     return { enabled: false, reason: 'ENTRY_PREFLIGHT_SHADOW_ENABLED=false' };
   }
   const tradeMode = resolveTriggerTradeMode(trigger, DEFAULT_TRADE_MODE);
@@ -358,7 +366,7 @@ export async function runEntryMaterializePreflightShadow({
     env,
     deps,
   });
-  const shadowRow = deps.record === false
+  const shadowRow = !shadowEnabled || deps.record === false
     ? null
     : await recordEntryPreflightShadow({
       trigger,
@@ -371,6 +379,8 @@ export async function runEntryMaterializePreflightShadow({
     }));
   return {
     enabled: true,
+    shadowEnabled,
+    activeBlockEnabled,
     shadowId: shadowRow && !shadowRow.error ? shadowRow.id : null,
     error: shadowRow?.error || null,
     preflight,
@@ -479,6 +489,7 @@ export async function loadEntryPreflightShadowReport({ days = 14, limit = 50 } =
 
 export default {
   isEntryPreflightShadowEnabled,
+  isEntryPreflightMaterializeBlockEnabled,
   evaluateEntryMaterializePreflight,
   runEntryMaterializePreflightShadow,
   attachEntryPreflightShadowSignal,

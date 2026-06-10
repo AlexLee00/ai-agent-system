@@ -1039,6 +1039,66 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(materializedMeta[0].meta.entryTrigger.strategy.quality, 'watch');
       assert.equal(materializedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'approved_signal_inserted');
 
+      const preflightBlockedPayloads = [];
+      const preflightBlockedUpdates = [];
+      const preflightBlockedResult = await materializeFiredEntryTriggerSignals({
+        exchange: 'binance',
+        result: {
+          allowLiveFire: true,
+          results: [{ triggerId: 'fake-trigger-preflight-block', symbol: 'FAKE/USDT', fired: true }],
+        },
+        riskContext: { capitalSnapshot },
+        events: [{ symbol: 'FAKE/USDT', price: 101, targetPrice: 101 }],
+        deps: {
+          binanceTopVolumeUniverse,
+          tradeDataHygieneBuilder: readyTradeDataHygieneBuilder,
+          triggerFetcher: async () => ({
+            id: 'fake-trigger-preflight-block',
+            symbol: 'FAKE/USDT',
+            exchange: 'binance',
+            setup_type: 'mean_reversion',
+            trigger_type: 'pullback_to_support',
+            trigger_state: 'fired',
+            confidence: 0.73,
+            trigger_context: {
+              strategyRoute: {
+                selectedFamily: 'mean_reversion',
+                setupType: 'pullback_to_support',
+                quality: 'watch',
+                readinessScore: 0.66,
+                hasTechnicalPresignal: true,
+              },
+            },
+            trigger_meta: {},
+          }),
+          duplicateFinder: async () => null,
+          entryPreflightShadowRunner: async () => ({
+            enabled: true,
+            activeBlockEnabled: true,
+            preflight: {
+              decision: 'skip_existing_position',
+              reason: '동일 LIVE 포지션 보유 중 — 추가매수 차단',
+              wouldDefer: true,
+            },
+          }),
+          signalInserter: async (payload) => {
+            preflightBlockedPayloads.push(payload);
+            return 'should-not-insert';
+          },
+          blockMetaMerger: async () => null,
+          triggerUpdater: async (id, patch) => {
+            preflightBlockedUpdates.push({ id, patch });
+          },
+        },
+      });
+      assert.equal(preflightBlockedResult.materialized, 0);
+      assert.equal(preflightBlockedResult.skipped, 1);
+      assert.equal(preflightBlockedPayloads.length, 0, 'active entry preflight block must stop signal insert');
+      assert.equal(preflightBlockedResult.items[0].reason, 'entry_preflight_materialize_blocked');
+      const preflightBlockUpdate = preflightBlockedUpdates.find((item) => item.patch?.triggerMetaPatch?.materializeStatus === 'blocked_by_entry_preflight');
+      assert.ok(preflightBlockUpdate, 'active entry preflight block must write blocked materialize status');
+      assert.equal(preflightBlockUpdate.patch.triggerMetaPatch.entryPreflight.decision, 'skip_existing_position');
+
       const hygieneAdvisoryPayloads = [];
       const hygieneAdvisoryUpdates = [];
       const hygieneAdvisoryResult = await materializeFiredEntryTriggerSignals({

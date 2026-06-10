@@ -32,6 +32,18 @@ async function run() {
   assert.equal(off.enabled, false);
   assert.equal(off.reason, 'ENTRY_PREFLIGHT_SHADOW_ENABLED=false');
 
+  const activeOnly = await runEntryMaterializePreflightShadow({
+    trigger,
+    exchange: 'binance',
+    amountUsdt: 50,
+    env: { ENTRY_PREFLIGHT_MATERIALIZE_BLOCK_ENABLED: 'true' },
+    deps: { ...baseDeps(), record: false },
+  });
+  assert.equal(activeOnly.enabled, true);
+  assert.equal(activeOnly.shadowEnabled, false);
+  assert.equal(activeOnly.activeBlockEnabled, true);
+  assert.equal(activeOnly.preflight.decision, 'allow');
+
   const capital = await evaluateEntryMaterializePreflight({
     trigger,
     exchange: 'binance',
@@ -91,6 +103,7 @@ async function run() {
     ok: true,
     cases: {
       off: off.reason,
+      activeOnly: activeOnly.preflight.decision,
       capital: capital.decision,
       reentry: reentry.decision,
       minOrder: minOrder.decision,

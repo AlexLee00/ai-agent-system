@@ -34,6 +34,7 @@ import {
 } from './runtime-luna-trade-data-hygiene.ts';
 import {
   attachEntryPreflightShadowSignal,
+  isEntryPreflightMaterializeBlockEnabled,
   runEntryMaterializePreflightShadow,
 } from '../shared/entry-materialize-preflight.ts';
 
@@ -63,6 +64,8 @@ const LAUNCHCTL_ENV_KEYS = [
   'LUNA_ENTRY_TRIGGER_TRADE_DATA_HYGIENE_GATE',
   'ENTRY_PREFLIGHT_SHADOW_ENABLED',
   'LUNA_ENTRY_PREFLIGHT_SHADOW_ENABLED',
+  'ENTRY_PREFLIGHT_MATERIALIZE_BLOCK_ENABLED',
+  'LUNA_ENTRY_PREFLIGHT_MATERIALIZE_BLOCK_ENABLED',
 ];
 
 function hydrateEntryTriggerEnvFromLaunchctl() {
@@ -698,6 +701,7 @@ export async function materializeFiredEntryTriggerSignals({
   result = {},
   riskContext = {},
   events = [],
+  env = process.env,
   deps = {},
 } = {}) {
   if (!materializeSignalsEnabled()) {
@@ -892,11 +896,42 @@ export async function materializeFiredEntryTriggerSignals({
       rawAmountUsdt,
       notifyMultiplier,
       event,
+      env,
     })).catch((error) => ({
       enabled: true,
       error: String(error?.message || error),
       preflight: { decision: 'shadow_error', reason: String(error?.message || error), wouldDefer: false },
     }));
+    const preflightMaterializeBlockEnabled = entryPreflightShadow?.activeBlockEnabled === true
+      || isEntryPreflightMaterializeBlockEnabled(env);
+    if (preflightMaterializeBlockEnabled && entryPreflightShadow?.preflight?.wouldDefer === true) {
+      skipped += 1;
+      await Promise.resolve(triggerUpdater(trigger.id, {
+        triggerState: 'fired',
+        triggerMetaPatch: {
+          materializeStatus: 'blocked_by_entry_preflight',
+          entryPreflight: {
+            decision: entryPreflightShadow.preflight.decision || null,
+            reason: entryPreflightShadow.preflight.reason || entryPreflightShadow.error || null,
+            activeBlockEnabled: true,
+            shadowId: entryPreflightShadow.shadowId || null,
+          },
+          materializeBlockedAt: new Date().toISOString(),
+        },
+      })).catch(() => null);
+      items.push({
+        triggerId: trigger.id,
+        symbol,
+        status: 'skipped',
+        reason: 'entry_preflight_materialize_blocked',
+        entryPreflight: {
+          decision: entryPreflightShadow.preflight.decision || null,
+          reason: entryPreflightShadow.preflight.reason || entryPreflightShadow.error || null,
+          shadowId: entryPreflightShadow.shadowId || null,
+        },
+      });
+      continue;
+    }
     const signalId = await signalInserter({
       symbol,
       action: 'BUY',
