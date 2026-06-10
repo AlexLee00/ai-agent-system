@@ -92,5 +92,25 @@ defmodule Darwin.V2.LLM.SelectorTest do
       # 실제 호출 없이 함수 export만 확인
       assert function_exported?(Darwin.V2.LLM.Selector, :call_with_fallback, 3)
     end
+
+    test "공용 selector 문자열 성공 응답을 레거시 response map으로 정규화" do
+      assert Darwin.V2.LLM.Selector.normalize_legacy_response({:ok, "hello"}) ==
+               {:ok, %{response: "hello"}}
+    end
+
+    test "response/content map 응답도 레거시 response atom key를 보장" do
+      assert {:ok, %{response: "ok"}} =
+               Darwin.V2.LLM.Selector.normalize_legacy_response({:ok, %{"response" => "ok"}})
+
+      assert {:ok, %{response: "ok"}} =
+               Darwin.V2.LLM.Selector.normalize_legacy_response({:ok, %{content: "ok"}})
+
+      assert {:ok, %{response: "ok"}} =
+               Darwin.V2.LLM.Selector.normalize_legacy_response({:ok, %{"content" => "ok"}})
+    end
+
+    test "error 응답은 변경하지 않는다" do
+      assert Darwin.V2.LLM.Selector.normalize_legacy_response({:error, :boom}) == {:error, :boom}
+    end
   end
 end
