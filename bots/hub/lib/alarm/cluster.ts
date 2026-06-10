@@ -79,7 +79,3 @@ export function buildAlarmClusterKey({
   const digest = crypto.createHash('sha1').update(signatureSource).digest('hex').slice(0, 12);
   return [normalizedTeam || 'general', family, digest].join('|');
 }
-
-module.exports = {
-  buildAlarmClusterKey,
-};

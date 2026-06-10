@@ -97,10 +97,3 @@ export function formatAutoRepairResultMessage({
   }
   return lines.join('\n');
 }
-
-module.exports = {
-  formatAlarmNotification,
-  formatAutoRepairResultMessage,
-  resolveAlarmDeliveryTeam,
-};
-

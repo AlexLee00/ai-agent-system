@@ -58,5 +58,3 @@ export async function enrichAlarm({
     return null;
   }
 }
-
-module.exports = { enrichAlarm };

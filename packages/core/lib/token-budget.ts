@@ -487,16 +487,3 @@ function hashText(value: string): string | null {
   if (!value) return null;
   return crypto.createHash('sha256').update(value).digest('hex');
 }
-
-module.exports = {
-  applyTokenBudgetToFallbackChain,
-  applyTokenBudgetToRequest,
-  ensureTokenBudgetUsageSchema,
-  estimateCostUsd,
-  estimateTokens,
-  getTokenBudgetUsageSummary,
-  inferTokenBudgetProfile,
-  listTokenBudgetProfiles,
-  recordTokenBudgetUsage,
-  resolveTokenBudget,
-};

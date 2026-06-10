@@ -184,8 +184,3 @@ export function recordHubRuntimeErrorPatternAsync(input: RuntimeErrorLearningInp
     console.warn('[runtime-error-learning] record failed:', error instanceof Error ? error.message : String(error));
   });
 }
-
-module.exports = {
-  recordHubRuntimeErrorPattern,
-  recordHubRuntimeErrorPatternAsync,
-};

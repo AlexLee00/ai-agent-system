@@ -176,11 +176,3 @@ export function findMatchingAlarmSuppressionRule(input: RuleMatchInput): AlarmSu
   }
   return null;
 }
-
-module.exports = {
-  alarmSuppressionRulesPath,
-  findMatchingAlarmSuppressionRule,
-  loadAlarmSuppressionRules,
-  saveAlarmSuppressionRules,
-  upsertAlarmSuppressionRules,
-};

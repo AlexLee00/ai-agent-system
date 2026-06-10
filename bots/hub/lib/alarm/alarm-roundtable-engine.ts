@@ -566,5 +566,3 @@ JSON으로만 응답하세요:
 export function getDailyRoundtableCount(): number {
   return dailyCount;
 }
-
-module.exports = { runRoundtable, shouldTriggerRoundtable, getDailyRoundtableCount };

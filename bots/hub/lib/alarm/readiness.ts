@@ -134,7 +134,3 @@ export function buildAlarmReadinessSnapshot() {
     },
   };
 }
-
-module.exports = {
-  buildAlarmReadinessSnapshot,
-};

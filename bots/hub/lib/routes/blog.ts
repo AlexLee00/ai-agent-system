@@ -137,8 +137,3 @@ export async function blogTopicCandidatesRoute(req: any, res: any) {
     return res.status(500).json({ ok: false, error: 'topic_candidates_save_failed' });
   }
 }
-
-module.exports = {
-  blogTopicCandidatesRoute,
-  normalizeCandidate,
-};

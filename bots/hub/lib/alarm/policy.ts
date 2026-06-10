@@ -200,7 +200,3 @@ const exportedPolicy = {
 };
 
 export default exportedPolicy;
-
-if (typeof module !== 'undefined') {
-  module.exports = exportedPolicy;
-}

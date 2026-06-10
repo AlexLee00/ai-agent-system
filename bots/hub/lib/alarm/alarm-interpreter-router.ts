@@ -121,5 +121,3 @@ export async function interpretAlarm({
 export function getDailyInterpreterCount(): number {
   return dailyCount;
 }
-
-module.exports = { interpretAlarm, getDailyInterpreterCount };

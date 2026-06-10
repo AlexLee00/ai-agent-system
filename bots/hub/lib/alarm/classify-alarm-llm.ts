@@ -13,7 +13,7 @@ function isEnabled(): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
 }
 
-function isCriticalTypeEnabled(): boolean {
+export function isCriticalTypeEnabled(): boolean {
   const raw = String(process.env.HUB_ALARM_CRITICAL_TYPE_ENABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
 }
@@ -93,5 +93,3 @@ export async function classifyAlarmWithLLM({
 export function getDailyClassifierCount(): number {
   return dailyCount;
 }
-
-module.exports = { classifyAlarmWithLLM, getDailyClassifierCount, isCriticalTypeEnabled };

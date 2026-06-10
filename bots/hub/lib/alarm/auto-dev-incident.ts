@@ -233,9 +233,3 @@ export async function ensureAlarmAutoDevDocument(input: {
   upsertAutoDevManifestEntry(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_create' });
   return { ok: true, created: true, path: relPath };
 }
-
-module.exports = {
-  buildAlarmAutoDevDocument,
-  buildAlarmAutoDevDocumentWithConsensus,
-  ensureAlarmAutoDevDocument,
-};
