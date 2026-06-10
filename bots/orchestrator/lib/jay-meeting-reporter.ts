@@ -51,6 +51,30 @@ function getTelegramSender() {
   return require('../../../packages/core/lib/telegram-sender');
 }
 
+function resolveSenderFunction(sender: any, name: string) {
+  const candidates = [sender, sender?.default].filter(Boolean);
+  for (const candidate of candidates) {
+    if (typeof candidate?.[name] === 'function') {
+      return { fn: candidate[name], receiver: candidate };
+    }
+  }
+  return null;
+}
+
+async function sendBufferedCompat(team: string, message: string) {
+  const sender = getTelegramSender();
+  const buffered = resolveSenderFunction(sender, 'sendBuffered');
+  if (buffered) return buffered.fn.call(buffered.receiver, team, message);
+
+  const withOptions = resolveSenderFunction(sender, 'sendWithOptions');
+  if (withOptions) return withOptions.fn.call(withOptions.receiver, team, message);
+
+  const plainSend = resolveSenderFunction(sender, 'send');
+  if (plainSend) return plainSend.fn.call(plainSend.receiver, team, message);
+
+  throw new Error('telegram_sender_send_unavailable');
+}
+
 function nowMs() {
   return Date.now();
 }
@@ -130,7 +154,7 @@ async function publishMeetingSummary(input: MeetingReporterInput) {
   }
 
   const text = buildMeetingMessage(input);
-  const sent = await getTelegramSender().sendBuffered('meeting', text);
+  const sent = await sendBufferedCompat('meeting', text);
   if (!sent) {
     return { ok: false, error: 'meeting_topic_send_failed', dedupeKey };
   }
@@ -162,7 +186,7 @@ async function publishTeamProgress(input: TeamProgressInput) {
     `incident: ${incidentKey}`,
   ];
   if (message) lines.push(message);
-  const sent = await getTelegramSender().sendBuffered(team, lines.join('\n'));
+  const sent = await sendBufferedCompat(team, lines.join('\n'));
   return sent ? { ok: true, sent: true } : { ok: false, error: 'team_topic_send_failed' };
 }
 
@@ -174,6 +198,7 @@ module.exports = {
     buildMeetingMessage,
     compactSummary,
     MEETING_PHASES,
+    sendBufferedCompat,
     setTelegramSenderForTests(sender: any = null) {
       telegramSenderOverride = sender || null;
     },

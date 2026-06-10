@@ -57,6 +57,35 @@ async function main() {
     assert.match(meetingMessages[0].message, /Jay 회의/, 'meeting card should use compact Korean card format');
     assert.match(meetingMessages[1].message, /팀검토/, 'review phase should have readable phase label');
     assert.equal(lunaMessages.length, 1, 'team topic should receive progress detail');
+
+    const sendOnlyMessages: Array<{ team: string; message: string }> = [];
+    reporter._testOnly.setTelegramSenderForTests({
+      send: async (team: string, message: string) => {
+        sendOnlyMessages.push({ team, message });
+        return true;
+      },
+    });
+
+    const sendOnlyIncidentKey = `routing-smoke-send-only:${Date.now()}`;
+    const sendOnlyMeeting = await reporter.publishMeetingSummary({
+      incidentKey: sendOnlyIncidentKey,
+      phase: 'frame',
+      team: 'luna',
+      title: 'send only fallback check',
+      summary: 'sender exposes send only',
+      dedupeKey: `${sendOnlyIncidentKey}:frame`,
+    });
+    assert.equal(sendOnlyMeeting?.ok, true, 'meeting reporter should fall back to sender.send');
+
+    const sendOnlyProgress = await reporter.publishTeamProgress({
+      incidentKey: sendOnlyIncidentKey,
+      team: 'luna',
+      status: 'running',
+      message: 'send only progress',
+    });
+    assert.equal(sendOnlyProgress?.ok, true, 'team progress should fall back to sender.send');
+    assert.equal(sendOnlyMessages.length, 2, 'send-only fallback should publish meeting and progress');
+
     console.log('jay_3tier_routing_smoke_ok');
   } finally {
     reporter._testOnly.setTelegramSenderForTests(null);
