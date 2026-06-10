@@ -8,11 +8,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/dashboard-server.js</string>
+    <string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.dashboard.mjs</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/reservation</string>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
 
   <key>EnvironmentVariables</key>
   <dict>

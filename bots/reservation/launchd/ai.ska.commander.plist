@@ -22,7 +22,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/src/ska.js</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.commander.mjs</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -33,6 +33,6 @@
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>
-	<string>/Users/alexlee/projects/ai-agent-system/bots/reservation</string>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
 </dict>
 </plist>

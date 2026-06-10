@@ -8,7 +8,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/mcp/luna-marketdata-mcp/src/server.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.luna.marketdata-mcp.mjs</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -35,6 +35,6 @@
   <key>StandardErrorPath</key>
   <string>/tmp/ai.luna.marketdata-mcp.err.log</string>
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
 </dict>
 </plist>

@@ -7,13 +7,10 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>--disable-warning=DEP0205</string>
-    <string>--import</string>
-    <string>tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/crypto-holding-monitor.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.luna.crypto-holding-monitor-6h.mjs</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>

@@ -54,10 +54,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/bin/node</string>
-		<string>--disable-warning=DEP0205</string>
-		<string>--import</string>
-		<string>tsx</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/jay-runtime.ts</string>
+		<string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.jay.runtime.mjs</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -68,6 +65,6 @@
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>
-	<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator</string>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
 </dict>
 </plist>
