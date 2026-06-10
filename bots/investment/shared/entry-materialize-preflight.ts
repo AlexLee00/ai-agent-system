@@ -99,6 +99,49 @@ function buildResult(decision, reason, checks = {}) {
   };
 }
 
+function boolLike(value, fallback = true) {
+  if (value === true || value === false) return value;
+  const text = String(value ?? '').trim().toLowerCase();
+  if (['true', '1', 'yes', 'on', 'allowed'].includes(text)) return true;
+  if (['false', '0', 'no', 'off', 'blocked'].includes(text)) return false;
+  return fallback;
+}
+
+export function normalizeEntryMaterializePreflightDecision(preflight = {}) {
+  if (!preflight || typeof preflight !== 'object') return preflight;
+  const checks = preflight.checks || {};
+  const normalAllowed = boolLike(checks.preTradeCheck?.allowed, true);
+  const validationAllowed = boolLike(checks.validationFallback?.validationAllowed, false);
+  const decision = String(preflight.decision || '');
+
+  // Defensive normalization: active materialize-block uses wouldDefer.
+  // If the normal capital pre-trade check rejected and validation fallback did
+  // not clear, an "allow" decision would recreate executor-stage capital
+  // rejects. Keep this guard in code so future sessions can see why report
+  // effective_preflight_decision and runtime behavior must stay aligned.
+  if (decision === 'allow' && normalAllowed === false && validationAllowed !== true) {
+    return {
+      ...preflight,
+      decision: 'defer_capital_guard',
+      reason: checks.preTradeCheck?.reason || preflight.reason || 'pre_trade_check_blocked',
+      wouldDefer: true,
+      checks: {
+        ...checks,
+        normalizedDecision: {
+          from: decision,
+          to: 'defer_capital_guard',
+          reason: 'pre_trade_check_rejected_without_validation_fallback',
+        },
+      },
+    };
+  }
+
+  if (decision && decision !== 'allow' && preflight.wouldDefer !== true) {
+    return { ...preflight, wouldDefer: true };
+  }
+  return preflight;
+}
+
 export function isEntryPreflightShadowEnabled(env = process.env) {
   return boolEnv(PRIMARY_ENABLED_ENV, false, env) || boolEnv(LEGACY_ENABLED_ENV, false, env);
 }
@@ -356,7 +399,7 @@ export async function runEntryMaterializePreflightShadow({
     return { enabled: false, reason: 'ENTRY_PREFLIGHT_SHADOW_ENABLED=false' };
   }
   const tradeMode = resolveTriggerTradeMode(trigger, DEFAULT_TRADE_MODE);
-  const preflight = await evaluateEntryMaterializePreflight({
+  const preflight = normalizeEntryMaterializePreflightDecision(await evaluateEntryMaterializePreflight({
     trigger,
     exchange,
     amountUsdt,
@@ -365,7 +408,7 @@ export async function runEntryMaterializePreflightShadow({
     event,
     env,
     deps,
-  });
+  }));
   const shadowRow = !shadowEnabled || deps.record === false
     ? null
     : await recordEntryPreflightShadow({
@@ -491,6 +534,7 @@ export default {
   isEntryPreflightShadowEnabled,
   isEntryPreflightMaterializeBlockEnabled,
   evaluateEntryMaterializePreflight,
+  normalizeEntryMaterializePreflightDecision,
   runEntryMaterializePreflightShadow,
   attachEntryPreflightShadowSignal,
   loadEntryPreflightShadowReport,

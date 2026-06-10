@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {
   evaluateEntryMaterializePreflight,
+  normalizeEntryMaterializePreflightDecision,
   runEntryMaterializePreflightShadow,
 } from '../shared/entry-materialize-preflight.ts';
 
@@ -91,6 +92,41 @@ async function run() {
   assert.equal(dailyLimit.decision, 'defer_capital_guard');
   assert.equal(dailyLimit.wouldDefer, true);
 
+  const normalizedInconsistentAllow = normalizeEntryMaterializePreflightDecision({
+    decision: 'allow',
+    reason: 'preflight_pass',
+    wouldDefer: false,
+    checks: {
+      preTradeCheck: {
+        allowed: false,
+        reason: 'live_fire_daily_notional_limit: 250.00 > 200',
+      },
+      validationFallback: {
+        validationAllowed: false,
+      },
+    },
+  });
+  assert.equal(normalizedInconsistentAllow.decision, 'defer_capital_guard');
+  assert.equal(normalizedInconsistentAllow.wouldDefer, true);
+  assert.equal(normalizedInconsistentAllow.checks.normalizedDecision.to, 'defer_capital_guard');
+
+  const validationFallbackAllow = normalizeEntryMaterializePreflightDecision({
+    decision: 'allow',
+    reason: 'preflight_pass',
+    wouldDefer: false,
+    checks: {
+      preTradeCheck: {
+        allowed: false,
+        reason: 'live_fire_daily_notional_limit: 250.00 > 200',
+      },
+      validationFallback: {
+        validationAllowed: true,
+      },
+    },
+  });
+  assert.equal(validationFallbackAllow.decision, 'allow');
+  assert.equal(validationFallbackAllow.wouldDefer, false);
+
   const allow = await evaluateEntryMaterializePreflight({
     trigger,
     exchange: 'binance',
@@ -108,6 +144,8 @@ async function run() {
       reentry: reentry.decision,
       minOrder: minOrder.decision,
       dailyLimit: dailyLimit.decision,
+      normalizedInconsistentAllow: normalizedInconsistentAllow.decision,
+      validationFallbackAllow: validationFallbackAllow.decision,
       allow: allow.decision,
     },
   }, null, 2));
