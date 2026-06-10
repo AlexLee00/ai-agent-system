@@ -19,6 +19,9 @@ const OPERATIONALLY_QUIET_CLAUDE_AGENTS = {
   'claude-archer': {
     launchdLabel: 'ai.claude.archer',
     reason: 'on-demand intelligence agent',
+    // CalendarInterval jobs can be loaded and healthy before their first run,
+    // so "not running" with no finite exit code is not a heartbeat failure.
+    allowIdle: true,
   },
   'claude-guardian': {
     launchdLabel: 'ai.claude.guardian',

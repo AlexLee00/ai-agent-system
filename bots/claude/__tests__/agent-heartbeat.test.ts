@@ -5,19 +5,20 @@ const Module = require('module');
 const path = require('path');
 
 const HEARTBEAT_PATH = path.resolve(__dirname, '../lib/agent-heartbeat.ts');
+const HEARTBEAT_CHECK_PATH = path.resolve(__dirname, '../lib/checks/heartbeat-check.ts');
 
-async function withMocks(mocks, fn) {
+async function withMocks(mocks, fn, targetPath = HEARTBEAT_PATH) {
   const original = Module._load;
   Module._load = function patchedLoad(request, parent, isMain) {
     if (request in mocks) return mocks[request];
     return original.call(this, request, parent, isMain);
   };
   try {
-    delete require.cache[HEARTBEAT_PATH];
-    return await fn(require(HEARTBEAT_PATH));
+    delete require.cache[targetPath];
+    return await fn(require(targetPath));
   } finally {
     Module._load = original;
-    delete require.cache[HEARTBEAT_PATH];
+    delete require.cache[targetPath];
   }
 }
 
@@ -69,6 +70,30 @@ async function test_error_meta_masks_shape() {
   console.log('✅ agent-heartbeat: builds compact error meta');
 }
 
+async function test_archer_calendar_job_idle_is_softened() {
+  await withMocks({
+    '../../../../packages/core/lib/agent-heartbeats': {
+      listHeartbeats: async () => [{
+        agent_name: 'claude-archer',
+        last_heartbeat: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        status: 'ok',
+      }],
+    },
+    '../../../../packages/core/lib/pg-pool': {},
+    'child_process': {
+      execSync: () => 'state = not running\nlast exit code = (never exited)\n',
+    },
+    '../../../../packages/core/lib/env': { LAUNCHD_AVAILABLE: true },
+    '../../../../packages/core/lib/service-ownership.js': { getServiceOwnership: () => null },
+  }, async heartbeatCheck => {
+    const result = await heartbeatCheck.run();
+    assert.strictEqual(result.status, 'ok');
+    assert.match(result.items[0].detail, /operationally quiet/);
+    assert.match(result.items[0].detail, /ai\.claude\.archer not running/);
+  }, HEARTBEAT_CHECK_PATH);
+  console.log('✅ heartbeat-check: softens idle archer calendar job');
+}
+
 async function main() {
   console.log('=== Agent Heartbeat 테스트 시작 ===\n');
   const tests = [
@@ -76,6 +101,7 @@ async function main() {
     test_writes_best_effort_success,
     test_swallows_write_failure,
     test_error_meta_masks_shape,
+    test_archer_calendar_job_idle_is_softened,
   ];
   let passed = 0;
   let failed = 0;
