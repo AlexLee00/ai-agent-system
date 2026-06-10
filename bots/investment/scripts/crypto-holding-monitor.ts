@@ -28,7 +28,7 @@
 import * as db from '../shared/db.ts';
 import { runCliMain } from '../shared/cli-runtime.ts';
 import { reevaluateOpenPositions } from '../shared/position-reevaluator.ts';
-import { recordGuardEvent } from '../shared/guard-event-recorder.ts';
+import { recordGuardEventNow } from '../shared/guard-event-recorder.ts';
 import { executeSignal as executeBinanceSignal } from '../team/hephaestos.ts';
 import { executeSignal as executeOverseasSignal } from '../team/hanul.ts';
 
@@ -238,8 +238,8 @@ function isSellRecommendation(recommendation) {
   return !recommendation || recommendation === 'SELL' || recommendation === 'ADJUST';
 }
 
-function recordExitDecision(candidate, decision, details = {}) {
-  recordGuardEvent({
+async function recordExitDecision(candidate, decision, details = {}) {
+  await recordGuardEventNow({
     guardName: 'regime_dynamic_exit',
     symbol: candidate.symbol,
     exchange: candidate.exchange,
@@ -314,7 +314,7 @@ async function main() {
           results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'error', capType: 'hard', error: err.message });
         }
       } else {
-        recordExitDecision(candidate, 'WOULD_EXIT_HARD_CAP', { dryRun: true, reason: reasoning, executionOrigin });
+        await recordExitDecision(candidate, 'WOULD_EXIT_HARD_CAP', { dryRun: true, reason: reasoning, executionOrigin });
         results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'dry_run', capType: 'hard' });
       }
       continue;
@@ -332,7 +332,7 @@ async function main() {
     if (timeOnlyBlocked) {
       const holdReason = `추세장 보유 연장: ${candidate.symbol} ${dayStr}일 ≥ ${candidate.softCapDays}일이나 재평가=${recommendation ?? 'null'}로 시간 단독 청산 차단`;
       console.log(`${prefix} ${candidate.symbol} ${dayStr}일 regime=trending_bull → 시간 단독 청산 금지 (${revalReason})`);
-      recordExitDecision(candidate, 'HOLD_TRENDING_WINNER_TIME_ONLY_BLOCKED', {
+      await recordExitDecision(candidate, 'HOLD_TRENDING_WINNER_TIME_ONLY_BLOCKED', {
         dryRun: options.dryRun,
         recommendation,
         revalReason,
@@ -366,7 +366,7 @@ async function main() {
           results.push({ symbol: candidate.symbol, heldDays: candidate.heldDays, status: 'error', capType: 'soft', error: err.message });
         }
       } else {
-        recordExitDecision(candidate, 'WOULD_EXIT_SOFT_CAP', {
+        await recordExitDecision(candidate, 'WOULD_EXIT_SOFT_CAP', {
           dryRun: true,
           recommendation,
           revalReason,
@@ -378,7 +378,7 @@ async function main() {
     } else {
       // HOLD — 보유 연장, guard_events에 사유 기록
       console.log(`${prefix} ${candidate.symbol} ${dayStr}일 soft cap regime=${candidate.regime}, 재평가=${recommendation} → 보유 연장 (${revalReason})`);
-      recordExitDecision(candidate, 'HOLD_EXTENDED', {
+      await recordExitDecision(candidate, 'HOLD_EXTENDED', {
         dryRun: options.dryRun,
         recommendation,
         revalReason,
@@ -399,3 +399,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { parseArgs, main };
+export const __test = { recordExitDecision };

@@ -71,6 +71,15 @@ export function isGuardEventRecordingDisabled(env = process.env): boolean {
 }
 
 /**
+ * 가드 이벤트를 즉시 기록한다.
+ * CLI 종료 직전처럼 fire-and-forget 기록이 process.exit()에 의해 유실될 수 있는 경로에서 사용한다.
+ */
+export async function recordGuardEventNow(input: GuardEventInput): Promise<void> {
+  if (isGuardEventRecordingDisabled()) return;
+  await insertGuardEvent(input);
+}
+
+/**
  * 가드 이벤트를 비동기(fire-and-forget)로 기록한다.
  * 동기 가드 함수에서 호출 시 실행 흐름을 차단하지 않는다.
  * 실패해도 절대 throw하지 않는다.
@@ -95,4 +104,4 @@ export function recordGuardEvents(
   });
 }
 
-export default { isGuardEventRecordingDisabled, recordGuardEvent, recordGuardEvents };
+export default { isGuardEventRecordingDisabled, recordGuardEvent, recordGuardEventNow, recordGuardEvents };
