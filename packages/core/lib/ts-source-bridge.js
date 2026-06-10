@@ -82,10 +82,15 @@ function loadTsSourceFile(sourcePath) {
   bridgeCache.set(sourcePath, compiled);
   const compiledRequire = Module.createRequire(sourcePath);
   compiled.require = (request) => {
+    const isRelative = String(request || '').startsWith('.');
+    if (isRelative && /\.ts$/i.test(String(request || ''))) {
+      const nestedSourcePath = resolveRelativeTsImport(sourcePath, request);
+      if (nestedSourcePath) return loadTsSourceFile(nestedSourcePath);
+    }
+
     try {
       return compiledRequire(request);
     } catch (error) {
-      const isRelative = String(request || '').startsWith('.');
       if (!isRelative || error?.code !== 'MODULE_NOT_FOUND') throw error;
 
       const nestedSourcePath = resolveRelativeTsImport(sourcePath, request);
