@@ -233,7 +233,7 @@ function checkZombies(items) {
 // ppid=1 고아 Node.js 프로세스 감지 (launchd 외 비정상 고아)
 function checkOrphanProcesses(items) {
   try {
-    const out = execSync('ps -eo pid,ppid,etime,args | awk \'$2==1 && /node/ {print}\'',
+    const out = execSync('ps -eo pid,ppid,etime,args | awk \'$2==1 { n=split($4,a,"/"); exe=a[n]; if (exe=="node" || exe=="tsx") print }\'',
       { encoding: 'utf8', timeout: 5000 }).trim();
     if (!out) {
       items.push({ label: '고아 Node 프로세스 (ppid=1)', status: 'ok', detail: '없음' });
