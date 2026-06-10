@@ -26,6 +26,22 @@ const require = createRequire(import.meta.url);
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys.js');
 
 const TODAY = new Date().toISOString().split('T')[0];
+const CRITICAL_LAUNCHD_ENV_KEYS_BY_LABEL: Record<string, string[]> = {
+  'ai.luna.ops-scheduler': [
+    'LUNA_V2_ENABLED',
+    'LUNA_MAPEK_ENABLED',
+    'LUNA_VALIDATION_ENABLED',
+    'LUNA_PREDICTION_ENABLED',
+    'LUNA_BT_ROBUST_SELECTION_ENABLED',
+    'LUNA_BT_WALK_FORWARD_ENABLED',
+    'LUNA_VECTORBT_TIMEOUT_MS',
+  ],
+  'ai.luna.candidate-backtest-refresh': [
+    'LUNA_BT_ROBUST_SELECTION_ENABLED',
+    'LUNA_BT_WALK_FORWARD_ENABLED',
+    'LUNA_VECTORBT_TIMEOUT_MS',
+  ],
+};
 
 async function fetchTradeStats() {
   const row24h = await query(
@@ -219,16 +235,59 @@ async function fetchLearningProgress() {
   return rows || [];
 }
 
+function decodePlistValue(value = '') {
+  return String(value)
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function extractPlistStringMap(plist = '') {
+  const map: Record<string, string> = {};
+  for (const match of plist.matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) {
+    map[decodePlistValue(match[1])] = decodePlistValue(match[2]);
+  }
+  return map;
+}
+
+function extractPlistEnvironment(plist = '') {
+  const envBlock = plist.match(/<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1] || '';
+  return extractPlistStringMap(envBlock);
+}
+
+function readLoadedLaunchdEnvironment(label: string) {
+  const uid = process.getuid?.() || Number(spawnSync('id', ['-u'], { encoding: 'utf8' }).stdout || 0);
+  const result = spawnSync('launchctl', ['print', `gui/${uid}/${label}`], { encoding: 'utf8', timeout: 5000 });
+  if (result.status !== 0 || !result.stdout) return {};
+  const env: Record<string, string> = {};
+  for (const line of result.stdout.split('\n')) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=>\s*(.*?)\s*$/);
+    if (match) env[match[1]] = match[2];
+  }
+  return env;
+}
+
+function installedLaunchAgentPath(label: string) {
+  return `${process.env.HOME || '/Users/alexlee'}/Library/LaunchAgents/${label}.plist`;
+}
+
 async function fetchLaunchdHealth() {
   try {
     const launchdDir = new URL('../launchd', import.meta.url).pathname;
     const plistFiles = fs.readdirSync(launchdDir).filter((f) => f.endsWith('.plist'));
 
     const definedLabels: string[] = [];
+    const repoEnvsByLabel: Record<string, Record<string, string>> = {};
     for (const file of plistFiles) {
       const content = fs.readFileSync(`${launchdDir}/${file}`, 'utf8');
       const match = content.match(/<key>Label<\/key>\s*<string>(.*?)<\/string>/);
-      if (match) definedLabels.push(match[1].trim());
+      if (match) {
+        const label = match[1].trim();
+        definedLabels.push(label);
+        repoEnvsByLabel[label] = extractPlistEnvironment(content);
+      }
     }
 
     const result = spawnSync('launchctl', ['list'], { encoding: 'utf8', timeout: 5000 });
@@ -241,14 +300,51 @@ async function fetchLaunchdHealth() {
     }
 
     const unregistered = definedLabels.filter((l) => !registeredLabels.has(l));
+    const envDrift: {
+      label: string;
+      key: string;
+      repoValue: string | null;
+      installedValue: string | null;
+      loadedValue: string | null;
+      installedPath: string;
+      status: string;
+    }[] = [];
+
+    for (const [label, keys] of Object.entries(CRITICAL_LAUNCHD_ENV_KEYS_BY_LABEL)) {
+      const repoEnv = repoEnvsByLabel[label] || {};
+      const installedPath = installedLaunchAgentPath(label);
+      const installedPlist = fs.existsSync(installedPath) ? fs.readFileSync(installedPath, 'utf8') : '';
+      const installedEnv = installedPlist ? extractPlistEnvironment(installedPlist) : {};
+      const loadedEnv = readLoadedLaunchdEnvironment(label);
+      for (const key of keys) {
+        const repoValue = repoEnv[key] ?? null;
+        if (repoValue == null) continue;
+        const installedValue = installedEnv[key] ?? null;
+        const loadedValue = loadedEnv[key] ?? null;
+        const installedMatches = installedValue === repoValue;
+        const loadedMatches = loadedValue === repoValue;
+        if (installedMatches && loadedMatches) continue;
+        envDrift.push({
+          label,
+          key,
+          repoValue,
+          installedValue,
+          loadedValue,
+          installedPath,
+          status: !installedPlist ? 'installed_plist_missing' : !installedMatches ? 'installed_env_mismatch' : 'loaded_env_mismatch',
+        });
+      }
+    }
+
     return {
       defined: definedLabels.length,
       registered: definedLabels.length - unregistered.length,
       unregistered,
+      envDrift,
     };
   } catch (err) {
     console.error('[DataLoopHealth] launchd 점검 실패:', err);
-    return { defined: 0, registered: 0, unregistered: [] };
+    return { defined: 0, registered: 0, unregistered: [], envDrift: [] };
   }
 }
 
@@ -441,6 +537,7 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
   const staleJobs: any[] = opsScheduler?.staleJobs ?? [];
   const residueJobs: any[] = opsScheduler?.residueJobs ?? [];
   const unregistered: string[] = launchd?.unregistered ?? [];
+  const envDrift: any[] = launchd?.envDrift ?? [];
   const ldDefined: number = launchd?.defined ?? 0;
   const ldRegistered: number = launchd?.registered ?? 0;
 
@@ -526,6 +623,12 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
       section += `  • \`${l}\`\n`;
     }
     hasWarn = true;
+  }
+
+  // Launchd env drift: repo source and installed/loaded launchd must agree on critical safety/data-loop flags.
+  for (const drift of envDrift) {
+    section += `🔴 CRITICAL: launchd env drift \`${drift.label}\` ${drift.key} repo=${drift.repoValue ?? 'unset'} installed=${drift.installedValue ?? 'unset'} loaded=${drift.loadedValue ?? 'unset'} (${drift.status || 'mismatch'})\n`;
+    hasCritical = true;
   }
 
   if (!hasCritical && !hasWarn) {
@@ -648,6 +751,7 @@ async function main() {
   console.log(`[DataLoopHealth] 피드백: ${feedback.total}건 | reflexion: ${reflexion.total}건`);
   console.log(`[DataLoopHealth] LUNA_FULL_DATA_LOOP: ${fullDataLoop}`);
   console.log(`[DataLoopHealth] launchd: ${launchd.registered ?? '?'}/${launchd.defined ?? '?'} 등록, 미등록 ${(launchd.unregistered ?? []).length}개`);
+  console.log(`[DataLoopHealth] launchd env drift: ${(launchd.envDrift ?? []).map((item) => `${item.label}:${item.key}(${item.status})`).join(', ') || 'clear'}`);
   console.log(`[DataLoopHealth] ops stale jobs: ${(opsScheduler.staleJobs ?? []).length}개, residue ignored ${(opsScheduler.residueJobs ?? []).length}개`);
   const tableFreshnessRows = Array.isArray(tableFreshness) ? tableFreshness : [];
   const feedbackLoopStallRows = Array.isArray(feedbackLoopStall) ? feedbackLoopStall : [];
