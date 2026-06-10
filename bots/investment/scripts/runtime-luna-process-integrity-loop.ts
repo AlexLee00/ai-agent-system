@@ -312,6 +312,76 @@ function collectHardBlockers({ actionBoard = {}, sourceHealth = {}, finalGate = 
   return [...new Set(blockers)];
 }
 
+function collectHardBlockerEvidence(hardBlockers = [], {
+  actionBoard = {},
+  sourceHealth = {},
+  finalGate = {},
+  tradeData = {},
+} = {}) {
+  const hygieneFindings = tradeData.hygiene?.findings || [];
+  return (hardBlockers || []).map((blocker) => {
+    const text = String(blocker || '');
+    if (text.startsWith('trade_data_hygiene:')) {
+      const id = text.slice('trade_data_hygiene:'.length);
+      const finding = hygieneFindings.find((item) => String(item.id || item.code || item.reason || '') === id) || {};
+      return {
+        blocker: text,
+        source: 'trade_data_hygiene',
+        id,
+        severity: finding.severity || null,
+        count: finding.count ?? null,
+        reason: finding.reason || null,
+        command: finding.command || null,
+        writeCommand: finding.writeCommand || null,
+        approvalRequired: finding.approvalRequired === true,
+        approvalReason: finding.approvalReason || null,
+        openJournal: id === 'open_journal_reconcile_pending'
+          ? {
+              status: tradeData.hygiene?.openJournal?.status || null,
+              summary: tradeData.hygiene?.openJournal?.summary || null,
+              scopes: (tradeData.hygiene?.openJournal?.scopes || []).slice(0, 5),
+            }
+          : null,
+      };
+    }
+    if (text.startsWith('operational:')) {
+      const raw = text.slice('operational:'.length);
+      return {
+        blocker: text,
+        source: 'operational_action_board',
+        rawBlocker: raw,
+        sourceStatus: actionBoard.sourceStatus || null,
+        nextActions: actionBoard.nextActions || [],
+        liveFireStatus: raw.includes('live_fire') ? finalGate.status || null : null,
+        liveFireOperatingSummary: raw.includes('live_fire') ? finalGate.operatingSummary || null : null,
+      };
+    }
+    if (text.startsWith('live_fire:')) {
+      const raw = text.slice('live_fire:'.length);
+      return {
+        blocker: text,
+        source: 'live_fire_final_gate',
+        rawBlocker: raw,
+        status: finalGate.status || null,
+        operatingSummary: finalGate.operatingSummary || null,
+        nextCommands: finalGate.nextCommands || [],
+      };
+    }
+    if (text.startsWith('source_health:')) {
+      return {
+        blocker: text,
+        source: 'source_health',
+        status: sourceHealth.status || null,
+        warnings: sourceHealth.warnings || [],
+      };
+    }
+    return {
+      blocker: text,
+      source: 'process_integrity',
+    };
+  });
+}
+
 function collectWatchItems({ tradeData = {}, sourceHealth = {} } = {}) {
   const watch = [];
   const advisoryHygieneFindings = (tradeData.hygiene?.findings || [])
@@ -454,6 +524,7 @@ export function buildLunaProcessIntegrityLoopReport({
   generatedAt = new Date().toISOString(),
 } = {}) {
   const hardBlockers = collectHardBlockers({ actionBoard, tradeData, sourceHealth, finalGate });
+  const hardBlockerEvidence = collectHardBlockerEvidence(hardBlockers, { actionBoard, tradeData, sourceHealth, finalGate });
   const watchItems = collectWatchItems({ tradeData, sourceHealth });
   const actionableWatchItems = watchItems.filter((item) => item.severity !== 'advisory');
   const warnings = collectWarnings({ actionBoard });
@@ -472,6 +543,7 @@ export function buildLunaProcessIntegrityLoopReport({
     readOnly: true,
     liveTradeImpact: false,
     hardBlockers,
+    hardBlockerEvidence,
     warnings,
     watchItems,
     prefilterRemediationPlan,
@@ -698,6 +770,37 @@ export async function runLunaProcessIntegrityLoopSmoke() {
     duplicateLiveFire.hardBlockers.filter((item) => item.includes('post_live_fire_attention')),
     ['operational:live_fire:post_live_fire_attention:1'],
   );
+
+  const hygieneBlocked = buildLunaProcessIntegrityLoopReport({
+    actionBoard: { sourceStatus: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    sourceHealth: { status: 'luna_source_health_guarded', blockers: [], warnings: [] },
+    tradeData: {
+      status: 'needs_attention',
+      signals: { total: 0, blockedReasons: [] },
+      hygiene: {
+        status: 'needs_attention',
+        findings: [{
+          id: 'open_journal_reconcile_pending',
+          severity: 'P0',
+          count: 1,
+          command: 'npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --json --market=crypto',
+          writeCommand: 'npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --write --confirm-live --market=crypto --json',
+          approvalRequired: true,
+        }],
+        openJournal: {
+          status: 'needs_attention',
+          summary: { affectedTradeCount: 1 },
+          scopes: [{ symbol: 'PEPE/USDT', openTradeIds: ['TRD-1'] }],
+        },
+      },
+      journal: {},
+    },
+  });
+  const openJournalEvidence = hygieneBlocked.hardBlockerEvidence.find((item) => item.id === 'open_journal_reconcile_pending');
+  assert.equal(openJournalEvidence?.approvalRequired, true);
+  assert.ok(openJournalEvidence?.writeCommand?.includes('--write --confirm-live'));
+  assert.equal(openJournalEvidence?.openJournal?.summary?.affectedTradeCount, 1);
 
   const hygieneAdvisory = buildLunaProcessIntegrityLoopReport({
     actionBoard: { sourceStatus: 'operational_clear', hardBlockers: [] },
