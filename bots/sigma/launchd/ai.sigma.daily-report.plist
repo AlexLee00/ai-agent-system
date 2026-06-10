@@ -25,7 +25,7 @@
     <key>SIGMA_TELEGRAM_ENHANCED</key>
     <string>true</string>
     <key>SIGMA_HTTP_PORT</key>
-    <string>4010</string>
+    <string>4000</string>
     <key>HUB_BASE_URL</key>
     <string>http://localhost:7788</string>
   </dict>

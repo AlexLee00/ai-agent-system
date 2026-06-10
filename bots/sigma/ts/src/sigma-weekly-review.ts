@@ -21,9 +21,15 @@ const PROJECT_ROOT = path.resolve(
 const { query } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));
 
-const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || '4010';
+const CANONICAL_SIGMA_HTTP_PORT = '4000';
+const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || CANONICAL_SIGMA_HTTP_PORT;
 const SIGMA_V2_ENDPOINT =
   process.env.SIGMA_V2_ENDPOINT || `http://127.0.0.1:${SIGMA_HTTP_PORT}/sigma/v2`;
+function sigmaEndpointCandidates(): string[] {
+  if (process.env.SIGMA_V2_ENDPOINT) return [process.env.SIGMA_V2_ENDPOINT];
+  const canonical = `http://127.0.0.1:${CANONICAL_SIGMA_HTTP_PORT}/sigma/v2`;
+  return SIGMA_V2_ENDPOINT === canonical ? [SIGMA_V2_ENDPOINT] : [SIGMA_V2_ENDPOINT, canonical];
+}
 const FAILURE_OUTCOMES = ['failure', 'failed', 'rejected', 'error', 'blocked'];
 const SUCCESS_ISSUED_STATUSES = ['ok'];
 
@@ -151,16 +157,18 @@ function formatReport(stats: any): string {
 }
 
 async function sendViaTelegramElixir(msg: string): Promise<void> {
-  try {
-    const res = await fetch(`${SIGMA_V2_ENDPOINT}/telegram/general`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: msg }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (res.ok) return;
-  } catch {
-    // fallback
+  for (const endpoint of sigmaEndpointCandidates()) {
+    try {
+      const res = await fetch(`${endpoint}/telegram/general`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: msg }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (res.ok) return;
+    } catch {
+      // Try the next endpoint before Hub fallback.
+    }
   }
 
   await hubAlarm.postAlarm({

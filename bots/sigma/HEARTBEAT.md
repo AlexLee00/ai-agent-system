@@ -6,7 +6,7 @@
 
 ```bash
 # Elixir v2 HTTP 라우터 (Phase 5 추가)
-curl http://localhost:4010/sigma/v2/health
+curl http://localhost:4000/sigma/v2/health
 # 기대 응답: {"status":"ok","enabled":true|false,"last_run":"..."}
 
 # TS v1 (Phase 5 이전 호환)
