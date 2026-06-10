@@ -6,7 +6,7 @@
   <string>ai.luna.meta-model-retrain-weekly-sun-1530</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/python3</string>
+    <string>/opt/homebrew/bin/python3.12</string>
     <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/meta-model-retrain.py</string>
     <string>--json</string>
   </array>
