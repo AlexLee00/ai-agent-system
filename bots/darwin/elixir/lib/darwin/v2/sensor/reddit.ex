@@ -82,11 +82,16 @@ defmodule Darwin.V2.Sensor.Reddit do
     emitted =
       @subreddits
       |> Enum.with_index()
-      |> Enum.reduce(0, fn {subreddit, idx}, acc ->
+      |> Enum.reduce_while(0, fn {subreddit, idx}, acc ->
         # 첫 번째 외에는 rate limit 간격 적용
         if idx > 0, do: Process.sleep(@rate_limit_ms)
-        acc + scan_subreddit(subreddit, state.table)
+
+        case scan_subreddit(subreddit, state.table) do
+          {:ok, count} -> {:cont, acc + count}
+          :blocked -> {:halt, acc}
+        end
       end)
+
     Logger.info("#{@log_prefix} 스캔 완료 — 신규 #{emitted}건 발행")
     %{state | emitted: state.emitted + emitted}
   end
@@ -113,18 +118,23 @@ defmodule Darwin.V2.Sensor.Reddit do
             acc + emitted
           end
         end)
+        |> then(&{:ok, &1})
 
       {:ok, %{status: 429}} ->
         Logger.warning("#{@log_prefix} r/#{subreddit} 속도 제한 (429) — 건너뜀")
-        0
+        {:ok, 0}
+
+      {:ok, %{status: 403}} ->
+        Logger.warning("#{@log_prefix} r/#{subreddit} HTTP 403 — public JSON 차단, 이번 scan의 남은 subreddit 건너뜀")
+        :blocked
 
       {:ok, %{status: status}} ->
         Logger.warning("#{@log_prefix} r/#{subreddit} HTTP #{status}")
-        0
+        {:ok, 0}
 
       {:error, reason} ->
         Logger.error("#{@log_prefix} r/#{subreddit} 요청 실패: #{inspect(reason)}")
-        0
+        {:ok, 0}
     end
   end
 

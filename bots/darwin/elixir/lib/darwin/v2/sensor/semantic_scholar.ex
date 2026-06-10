@@ -82,10 +82,15 @@ defmodule Darwin.V2.Sensor.SemanticScholar do
 
   defp do_scan(state) do
     expire_old_entries(state.table)
-    emitted = Enum.reduce(@domain_queries, 0, fn query, acc ->
+    emitted = Enum.reduce_while(@domain_queries, 0, fn query, acc ->
       Process.sleep(1_000)
-      acc + scan_query(query, state.table)
+
+      case scan_query(query, state.table) do
+        {:ok, count} -> {:cont, acc + count}
+        :rate_limited -> {:halt, acc}
+      end
     end)
+
     Logger.info("#{@log_prefix} 스캔 완료 — 신규 #{emitted}건 발행")
     %{state | emitted: state.emitted + emitted}
   end
@@ -117,19 +122,20 @@ defmodule Darwin.V2.Sensor.SemanticScholar do
             nacc + maybe_emit_paper(paper)
           end
         end)
+        |> then(&{:ok, &1})
 
       {:ok, %{status: 429}} ->
-        # Rate limit: API 키 없이 초과 시
-        Logger.warning("#{@log_prefix} Rate limit (429) — 쿼리 '#{String.slice(query, 0, 40)}' 건너뜀")
-        0
+        # Rate limit: API 키 없이 초과 시 같은 scan에서 남은 쿼리도 대부분 실패한다.
+        Logger.warning("#{@log_prefix} Rate limit (429) — 쿼리 '#{String.slice(query, 0, 40)}' 이후 남은 쿼리 건너뜀")
+        :rate_limited
 
       {:ok, %{status: status}} ->
         Logger.warning("#{@log_prefix} HTTP #{status} 쿼리='#{String.slice(query, 0, 40)}'")
-        0
+        {:ok, 0}
 
       {:error, reason} ->
         Logger.error("#{@log_prefix} 요청 실패: #{inspect(reason)}")
-        0
+        {:ok, 0}
     end
   end
 
