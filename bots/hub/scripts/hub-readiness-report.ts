@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -36,9 +37,39 @@ function readLaunchctlEnv(name: string): string {
   return String(result.stdout || '').trim();
 }
 
-function runtimeSecretSource(name: string): string | null {
+function readPlistEnv(file: string): Record<string, unknown> | null {
+  if (!fs.existsSync(file)) return null;
+  const result = spawnSync('plutil', ['-convert', 'json', '-o', '-', file], {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (Number(result.status ?? 1) !== 0) return null;
+  try {
+    const parsed = JSON.parse(String(result.stdout || '{}'));
+    const env = parsed?.EnvironmentVariables;
+    return env && typeof env === 'object' && !Array.isArray(env) ? env : null;
+  } catch {
+    return null;
+  }
+}
+
+function installedLaunchAgentSecretSource(name: string, labels: string[]): string | null {
+  const launchAgentsDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
+  for (const label of labels) {
+    const file = path.join(launchAgentsDir, label);
+    const value = readPlistEnv(file)?.[name];
+    if (hasUsableSecret(typeof value === 'string' ? value : String(value || ''))) {
+      return `installed:${label}:${name}`;
+    }
+  }
+  return null;
+}
+
+function runtimeSecretSource(name: string, installedLabels: string[] = []): string | null {
   const launchctlValue = readLaunchctlEnv(name);
   if (hasUsableSecret(launchctlValue)) return `launchctl:${name}`;
+  const installedSource = installedLaunchAgentSecretSource(name, installedLabels);
+  if (installedSource) return installedSource;
   if (hasUsableSecret(process.env[name])) return `process.env:${name}`;
   return null;
 }
@@ -128,8 +159,14 @@ function hubSecretsCheck(): Check {
 }
 
 function runtimeSecretCheck(): Check {
-  const callbackSecretSource = runtimeSecretSource('HUB_CONTROL_CALLBACK_SECRET');
-  const hubAuthSource = runtimeSecretSource('HUB_AUTH_TOKEN');
+  const callbackSecretSource = runtimeSecretSource('HUB_CONTROL_CALLBACK_SECRET', [
+    'ai.hub.resource-api.plist',
+    'ai.telegram.callback-poller.plist',
+  ]);
+  const hubAuthSource = runtimeSecretSource('HUB_AUTH_TOKEN', [
+    'ai.telegram.callback-poller.plist',
+    'ai.hub.alarm-stale-auto-repair.plist',
+  ]);
   const allowProcessEnv = isEnabledFlag(process.env.HUB_LAUNCHD_SMOKE_ALLOW_PROCESS_ENV);
   return {
     name: 'runtime_secret_presence',
