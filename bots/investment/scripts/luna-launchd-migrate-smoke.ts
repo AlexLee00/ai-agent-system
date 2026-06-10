@@ -29,6 +29,44 @@ export async function runLaunchdMigrateSmoke() {
   assert.ok(plan.feedbackLoopLabels.includes('ai.luna.feedback-action-mapper-daily-0830'));
   assert.equal(plan.orphanReconcile.find((item) => item.label === orphanLabel)?.action, 'reconcile_orphan');
   assert.equal(plan.steps.length >= 5, true);
+  const envDriftPlan = buildLaunchdMigrationPlan({
+    visibleLabels: ['ai.luna.ops-scheduler'],
+    installedLabels: ['ai.luna.ops-scheduler'],
+    repoEnvByLabel: {
+      'ai.luna.ops-scheduler': {
+        LUNA_V2_ENABLED: 'true',
+        LUNA_MAPEK_ENABLED: 'true',
+      },
+      'ai.luna.candidate-backtest-refresh': {
+        LUNA_BT_ROBUST_SELECTION_ENABLED: 'true',
+        LUNA_BT_WALK_FORWARD_ENABLED: 'true',
+        LUNA_VECTORBT_TIMEOUT_MS: '90000',
+      },
+    },
+    installedEnvByLabel: {
+      'ai.luna.ops-scheduler': {
+        LUNA_BT_ROBUST_SELECTION_ENABLED: 'true',
+      },
+      'ai.luna.candidate-backtest-refresh': {
+        LUNA_BT_ROBUST_SELECTION_ENABLED: 'true',
+        LUNA_BT_WALK_FORWARD_ENABLED: 'true',
+        LUNA_VECTORBT_TIMEOUT_MS: '90000',
+      },
+    },
+    loadedEnvByLabel: {
+      'ai.luna.ops-scheduler': {
+        LUNA_BT_ROBUST_SELECTION_ENABLED: 'true',
+      },
+      'ai.luna.candidate-backtest-refresh': {
+        LUNA_BT_ROBUST_SELECTION_ENABLED: 'true',
+        LUNA_BT_WALK_FORWARD_ENABLED: 'true',
+        LUNA_VECTORBT_TIMEOUT_MS: '90000',
+      },
+    },
+  });
+  assert.equal(envDriftPlan.envDrift.length, 2);
+  assert.equal(envDriftPlan.envDrift.find((item) => item.key === 'LUNA_V2_ENABLED')?.status, 'installed_env_mismatch');
+  assert.match(envDriftPlan.envDrift[0]?.installCommand || '', /ai\.luna\.ops-scheduler\.plist/);
   const confirmBlocked = await executeLaunchdMigration({
     apply: true,
     visibleLabels: ['ai.luna.marketdata-mcp', 'ai.luna.binance-ws'],

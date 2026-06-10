@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -36,6 +36,23 @@ const FEEDBACK_LOOP_LABELS = [
   'ai.luna.meta-reflexion-daily-0800',
   'ai.luna.feedback-action-mapper-daily-0830',
 ];
+
+const CRITICAL_ENV_KEYS_BY_LABEL = {
+  'ai.luna.ops-scheduler': [
+    'LUNA_V2_ENABLED',
+    'LUNA_MAPEK_ENABLED',
+    'LUNA_VALIDATION_ENABLED',
+    'LUNA_PREDICTION_ENABLED',
+    'LUNA_BT_ROBUST_SELECTION_ENABLED',
+    'LUNA_BT_WALK_FORWARD_ENABLED',
+    'LUNA_VECTORBT_TIMEOUT_MS',
+  ],
+  'ai.luna.candidate-backtest-refresh': [
+    'LUNA_BT_ROBUST_SELECTION_ENABLED',
+    'LUNA_BT_WALK_FORWARD_ENABLED',
+    'LUNA_VECTORBT_TIMEOUT_MS',
+  ],
+};
 
 const PROTECTED_LABELS = new Set([
   'ai.luna.marketdata-mcp',
@@ -182,9 +199,88 @@ function userLaunchAgentPlistPath(label) {
   return resolve(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
 }
 
+function decodePlistValue(value = '') {
+  return String(value)
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function extractPlistStringMap(plist = '') {
+  const map = {};
+  for (const match of String(plist).matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) {
+    map[decodePlistValue(match[1])] = decodePlistValue(match[2]);
+  }
+  return map;
+}
+
+function extractPlistEnvironment(plist = '') {
+  const envBlock = String(plist).match(/<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1] || '';
+  return extractPlistStringMap(envBlock);
+}
+
+function readPlistEnvironment(plistPath) {
+  if (!existsSync(plistPath)) return null;
+  return extractPlistEnvironment(readFileSync(plistPath, 'utf8'));
+}
+
+function readLoadedLaunchdEnvironment(label, { loadedEnvByLabel = null } = {}) {
+  if (loadedEnvByLabel && loadedEnvByLabel[label]) return loadedEnvByLabel[label];
+  const result = runLaunchctl(['print', `${launchdDomain()}/${label}`], { timeout: 5000 });
+  if (!result.ok || !result.stdout) return {};
+  const env = {};
+  for (const line of String(result.stdout).split('\n')) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=>\s*(.*?)\s*$/);
+    if (match) env[match[1]] = match[2];
+  }
+  return env;
+}
+
 function installedPlistExists(label, { installedLabels = null } = {}) {
   if (Array.isArray(installedLabels)) return installedLabels.includes(label);
   return existsSync(userLaunchAgentPlistPath(label));
+}
+
+function buildLaunchdEnvDriftPlan({ repoEnvByLabel = null, installedEnvByLabel = null, loadedEnvByLabel = null } = {}) {
+  const plans = [];
+  for (const [label, keys] of Object.entries(CRITICAL_ENV_KEYS_BY_LABEL)) {
+    const sourcePath = plistPathForLabel(label);
+    const installedPath = userLaunchAgentPlistPath(label);
+    const repoEnv = repoEnvByLabel?.[label] || readPlistEnvironment(sourcePath) || {};
+    const installedEnv = installedEnvByLabel?.[label] || readPlistEnvironment(installedPath) || {};
+    const loadedEnv = readLoadedLaunchdEnvironment(label, { loadedEnvByLabel });
+
+    for (const key of keys) {
+      const repoValue = repoEnv[key] ?? null;
+      if (repoValue == null) continue;
+      const installedValue = installedEnv[key] ?? null;
+      const loadedValue = loadedEnv[key] ?? null;
+      const installedMatches = installedValue === repoValue;
+      const loadedMatches = loadedValue === repoValue;
+      if (installedMatches && loadedMatches) continue;
+      plans.push({
+        label,
+        key,
+        repoValue,
+        installedValue,
+        loadedValue,
+        status: !existsSync(installedPath) && !installedEnvByLabel?.[label]
+          ? 'installed_plist_missing'
+          : !installedMatches
+            ? 'installed_env_mismatch'
+            : 'loaded_env_mismatch',
+        sourcePath,
+        installedPath,
+        protected: PROTECTED_LABELS.has(label),
+        action: 'sync_installed_plist_then_reload',
+        installCommand: `cp ${sourcePath} ${installedPath}`,
+        reloadCommand: `launchctl bootout ${launchdDomain()}/${label}; launchctl bootstrap ${launchdDomain()} ${installedPath}`,
+      });
+    }
+  }
+  return plans;
 }
 
 function buildOrphanReconcilePlan(label, { visible, installedLabels = null } = {}) {
@@ -318,7 +414,13 @@ async function verifyGroupHealth(group, { visibleLabels = null } = {}) {
   };
 }
 
-export function buildLaunchdMigrationPlan({ visibleLabels = null, installedLabels = null } = {}) {
+export function buildLaunchdMigrationPlan({
+  visibleLabels = null,
+  installedLabels = null,
+  repoEnvByLabel = null,
+  installedEnvByLabel = null,
+  loadedEnvByLabel = null,
+} = {}) {
   const visible = getVisibleLabels({ visibleLabels });
   const retire = RETIRE_GROUPS.flatMap((group) => group.labels.map((label) => {
     const bootout = buildBootoutCommand(label);
@@ -343,6 +445,7 @@ export function buildLaunchdMigrationPlan({ visibleLabels = null, installedLabel
     protectedLabels: Array.from(PROTECTED_LABELS),
     feedbackLoopLabels: FEEDBACK_LOOP_LABELS,
     orphanReconcile: buildOrphanReconcilePlans({ visibleLabels, installedLabels }),
+    envDrift: buildLaunchdEnvDriftPlan({ repoEnvByLabel, installedEnvByLabel, loadedEnvByLabel }),
     retireCandidates: retire.filter((item) => item.action === 'retire_candidate'),
     visibleRetireCandidates: retire.filter((item) => item.action === 'retire_candidate' && item.visible),
     protectedViolations,
@@ -457,8 +560,17 @@ export async function executeLaunchdMigration({
   skipValidationWait = false,
   visibleLabels = null,
   installedLabels = null,
+  repoEnvByLabel = null,
+  installedEnvByLabel = null,
+  loadedEnvByLabel = null,
 } = {}) {
-  const plan = buildLaunchdMigrationPlan({ visibleLabels, installedLabels });
+  const plan = buildLaunchdMigrationPlan({
+    visibleLabels,
+    installedLabels,
+    repoEnvByLabel,
+    installedEnvByLabel,
+    loadedEnvByLabel,
+  });
   if (!plan.ok) {
     return {
       ok: false,
