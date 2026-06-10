@@ -21,10 +21,11 @@ LOG_FILE="/tmp/naver-ops-mode.log"
 SKA_RUNTIME_HOME="${SKA_RUNTIME_HOME:-$HOME/.ska}"
 NAVER_BROWSER_PROFILE_ROOT="${NAVER_BROWSER_PROFILE_ROOT:-$SKA_RUNTIME_HOME/browser-profiles}"
 NAVER_PROFILE="$NAVER_BROWSER_PROFILE_ROOT/naver-monitor"
-NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/naver-monitor.ts"
+NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.naver-monitor.mjs"
+PREFLIGHT_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.preflight.mjs"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
-NODE_BIN="/opt/homebrew/bin/tsx"
-[ ! -x "$NODE_BIN" ] && NODE_BIN=$(which tsx)
+NODE_BIN="/opt/homebrew/bin/node"
+[ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)
 : "${NAVER_MONITOR_DURATION_MS:=3600000}"
 
 log() {
@@ -124,7 +125,7 @@ log "━━━ [1중 체크] 통과 ━━━━━━━━━━━━━━�
 # ================================================================
 log "━━━ [2중 체크] Node.js 프리플라이트 ━━━━━━━━━━━━━━━━━━━━━━━"
 
-MODE=ops "$NODE_BIN" "/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/preflight.ts" 2>&1 | tee -a "$LOG_FILE"
+MODE=ops "$NODE_BIN" "$PREFLIGHT_SCRIPT" 2>&1 | tee -a "$LOG_FILE"
 PREFLIGHT_EXIT=${PIPESTATUS[0]}
 
 if [ $PREFLIGHT_EXIT -ne 0 ]; then
@@ -138,7 +139,7 @@ log "━━━ [2중 체크] 통과 ━━━━━━━━━━━━━━�
 # ================================================================
 log "━━━ [3중 체크] API 연결성 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-MODE=ops "$NODE_BIN" "/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/preflight.ts" --conn 2>&1 | tee -a "$LOG_FILE"
+MODE=ops "$NODE_BIN" "$PREFLIGHT_SCRIPT" --conn 2>&1 | tee -a "$LOG_FILE"
 CONN_EXIT=${PIPESTATUS[0]}
 
 if [ $CONN_EXIT -ne 0 ]; then

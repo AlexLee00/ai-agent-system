@@ -25,11 +25,9 @@
 	<string>ai.ska.naver-monitor</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.naver-monitor.mjs</string>
+		<string>/bin/bash</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/monitors/start-ops.sh</string>
 	</array>
-	<key>WorkingDirectory</key>
-	<string>/Users/alexlee/projects/ai-agent-system</string>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
