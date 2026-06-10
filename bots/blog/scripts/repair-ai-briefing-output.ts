@@ -120,6 +120,20 @@ function buildLearningPointsHtml(title: string, type: PostType) {
   ].join('\n');
 }
 
+function buildLectureTechBriefingHtml() {
+  return [
+    '<h2 class="section-title" data-marker-key="lecture-tech-briefing">실습 전 준비</h2>',
+    '<p>이번 강의는 최신 도구 이름을 외우는 것보다, 실제 화면에서 무엇을 요청하고 어떤 결과를 확인해야 하는지에 집중합니다.</p>',
+    '<p>준비물은 ChatGPT에서 Codex를 열어볼 수 있는 환경 또는 Claude Code를 실행할 수 있는 터미널 환경 중 하나면 충분합니다. 아직 설정이 끝나지 않았다면 오늘은 프롬프트를 복사해 넣고 결과를 비교하는 흐름부터 익혀도 됩니다.</p>',
+    '<p>검증할 때는 AI가 만든 답을 그대로 믿지 말고, 화면에 나온 결과와 에러 문구를 다시 확인하는 습관을 함께 가져가는 것이 좋습니다.</p>',
+    buildLectureTechBriefingDepthHtml(),
+  ].join('\n');
+}
+
+function buildLectureTechBriefingDepthHtml() {
+  return '<p>추가로 비교할 때는 같은 프롬프트를 두 도구에 넣고, 응답 속도보다 파일을 어디에 만들었는지, 수정 요청을 어떻게 이어가는지, 내가 직접 확인할 수 있는 결과가 무엇인지 기록합니다. 이 기록이 있어야 다음 강의에서 단순한 느낌이 아니라 실제 사용 기준으로 도구를 고를 수 있습니다.</p>';
+}
+
 function buildFaqHtml(title: string, type: PostType) {
   const sectionTitle = type === 'lecture' ? 'AEO FAQ' : '질문형 Q&A';
   const qa = type === 'lecture'
@@ -138,6 +152,39 @@ function buildFaqHtml(title: string, type: PostType) {
     `<h2 class="section-title">${sectionTitle}</h2>`,
     ...qa.flatMap(([q, a]) => [`<p>${q}</p>`, `<p>${a}</p>`]),
   ].join('\n');
+}
+
+function ensureLectureTechBriefing(html: string, type: PostType) {
+  if (type !== 'lecture') return html;
+  if (
+    html.includes('data-marker-key="lecture-tech-briefing"')
+    || html.includes('<h2 class="section-title">최신 기술 브리핑</h2>')
+    || html.includes('<h2 class="section-title">실습 전 준비</h2>')
+  ) {
+    if (html.length >= 9000 || html.includes('실제 사용 기준으로 도구를 고를 수 있습니다')) return html;
+    const depthHtml = buildLectureTechBriefingDepthHtml();
+    const anchors = [
+      '<h2 class="section-title">두 도구를 아주 쉬운 비유로 이해하기</h2>',
+      '<h2 class="section-title">강의 - 이론</h2>',
+      '<h2 class="section-title">그대로 복사해서 넣어볼 첫 프롬프트</h2>',
+    ];
+    const anchor = anchors.find((candidate) => html.includes(candidate));
+    if (anchor) return html.replace(anchor, `${depthHtml}\n<br>\n${anchor}`);
+    return html;
+  }
+
+  const sectionHtml = buildLectureTechBriefingHtml();
+  const anchors = [
+    '<h2 class="section-title">두 도구를 아주 쉬운 비유로 이해하기</h2>',
+    '<h2 class="section-title">강의 - 이론</h2>',
+    '<h2 class="section-title">그대로 복사해서 넣어볼 첫 프롬프트</h2>',
+  ];
+  const anchor = anchors.find((candidate) => html.includes(candidate));
+  if (anchor) return html.replace(anchor, `${sectionHtml}\n<br>\n${anchor}`);
+
+  const fallbackAnchor = '<h2 class="section-title">질문형 Q&A</h2>';
+  if (html.includes(fallbackAnchor)) return html.replace(fallbackAnchor, `${sectionHtml}\n<br>\n${fallbackAnchor}`);
+  return `${html}\n${sectionHtml}`;
 }
 
 function hasPersonalVoice(html = '') {
@@ -185,7 +232,9 @@ function ensureLearningPoints(html: string, title: string, type: PostType) {
 
 function ensureFaq(html: string, title: string, type: PostType) {
   const faqTitle = type === 'lecture' ? 'AEO FAQ' : '질문형 Q&A';
-  const hasSection = html.includes(`<h2 class="section-title">${faqTitle}</h2>`);
+  const hasSection = type === 'lecture'
+    ? html.includes('<h2 class="section-title">AEO FAQ</h2>') || html.includes('<h2 class="section-title">질문형 Q&A</h2>')
+    : html.includes(`<h2 class="section-title">${faqTitle}</h2>`);
   const faqCount = countHtmlFaq(html);
   const answeredFaqCount = countAnsweredFaqPairs(html);
   if (hasSection && faqCount >= 3 && answeredFaqCount >= 3) return html;
@@ -215,11 +264,12 @@ function ensureFaq(html: string, title: string, type: PostType) {
 function ensurePersonalVoice(html: string, title: string, type: PostType) {
   if (hasPersonalVoice(html) && hasEmotionLine(html)) return html;
   const paragraph = buildPersonalVoiceHtml(title, type);
-  const anchor = type === 'lecture'
-    ? '<h2 class="section-title">마무리 인사</h2>'
-    : '<h2 class="section-title">마무리 제언</h2>';
+  const anchors = type === 'lecture'
+    ? ['<h2 class="section-title">마무리 인사</h2>', '<h2 class="section-title">마무리</h2>']
+    : ['<h2 class="section-title">마무리 제언</h2>', '<h2 class="section-title">마무리</h2>'];
+  const anchor = anchors.find((candidate) => html.includes(candidate));
 
-  if (html.includes(anchor)) {
+  if (anchor) {
     return html.replace(anchor, `${paragraph}\n<br>\n${anchor}`);
   }
 
@@ -258,6 +308,7 @@ function main() {
 
   let next = html;
   next = ensureLearningPoints(next, title, type);
+  next = ensureLectureTechBriefing(next, type);
   next = ensureFaq(next, title, type);
   next = ensureCafeBrandMention(next, type);
   next = ensurePersonalVoice(next, title, type);

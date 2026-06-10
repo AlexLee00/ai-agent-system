@@ -67,18 +67,38 @@ const MARKER_KEYS = {
   },
 };
 
+function extractSectionTitle(matchValue) {
+  return String(matchValue || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&amp;/gi, '&')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function countGeneralBodyHeadings(text) {
   const h2Matches = Array.from(String(text || '').matchAll(/<h2[^>]*class=["'][^"']*section-title[^"']*["'][^>]*>\s*([\s\S]*?)\s*<\/h2>/gi));
+  const headingTitles = h2Matches.map((match) => extractSectionTitle(match[1])).filter(Boolean);
+  const prefaceTitles = new Set([
+    '핵심 요약',
+    'AI 스니펫 요약',
+    '이 글에서 배울 수 있는 것',
+    '시작하며',
+    '승호아빠 인사말',
+  ]);
   const terminalTitles = new Set([
+    '생각을 정리하기 좋은 환경',
     '당신의 루틴에 맞는 공간 찾기',
     '질문형 Q&A',
+    '마무리',
     '마무리 제언',
     '함께 읽으면 좋은 글',
     '해시태그',
   ]);
+
   let count = 0;
-  for (const match of h2Matches) {
-    const title = String(match[1] || '').replace(/<[^>]*>/g, '').trim();
+  for (const title of headingTitles) {
+    if (prefaceTitles.has(title)) continue;
     if (terminalTitles.has(title)) break;
     count += 1;
   }
@@ -88,8 +108,9 @@ function countGeneralBodyHeadings(text) {
 function hasSectionMarker(content, type, marker) {
   const text = String(content || '');
   if (text.includes(marker)) return true;
-  if (type === 'general' && marker === '본론 섹션 2' && countGeneralBodyHeadings(text) >= 1) return true;
-  if (type === 'general' && marker === '본론 섹션 3' && countGeneralBodyHeadings(text) >= 2) return true;
+  if (type === 'general' && marker === '본론 섹션 1' && countGeneralBodyHeadings(text) >= 1) return true;
+  if (type === 'general' && marker === '본론 섹션 2' && countGeneralBodyHeadings(text) >= 2) return true;
+  if (type === 'general' && marker === '본론 섹션 3' && countGeneralBodyHeadings(text) >= 3) return true;
   const normalizedMarker = String(marker || '').replace(/^\[|\]$/g, '').trim();
   if (normalizedMarker) {
     const headingPattern = new RegExp(`<h2[^>]*class="section-title"[^>]*>\\s*${normalizedMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<\\/h2>`, 'i');

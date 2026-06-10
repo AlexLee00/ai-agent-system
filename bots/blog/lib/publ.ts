@@ -355,9 +355,18 @@ function normalizeBeginnerLectureContent(content, title) {
     '- AI가 만든 결과를 그대로 믿지 말고 화면에 나온 결과를 직접 확인합니다.',
     '- 에러 문구가 나오면 그 문구 전체를 다시 AI에게 붙여넣습니다.',
     '- 오늘은 코드를 완벽히 이해하는 것보다 “요청하고, 결과를 보고, 다시 수정 요청하는 흐름”을 익히는 데 집중합니다.',
+    '',
+    '추가로 비교할 때는 같은 프롬프트를 두 도구에 넣고, 응답 속도보다 “파일을 어디에 만들었는지”, “수정 요청을 어떻게 이어가는지”, “내가 직접 확인할 수 있는 결과가 무엇인지”를 기록합니다. 이 기록이 있어야 다음 강의에서 단순한 느낌이 아니라 실제 사용 기준으로 도구를 고를 수 있습니다.',
   ].join('\n');
   if (/\[최신 기술 브리핑\]/.test(next)) {
     next = replaceSectionBlock(next, '최신 기술 브리핑', beginnerPrep);
+  } else {
+    const insertBefore = /\[(?:강의 - 이론\]\s*)?두 도구를 아주 쉬운 비유로 이해하기\]/.exec(next)
+      || /\[강의 - 이론\]/.exec(next)
+      || /\[실무 - 코드\]/.exec(next);
+    if (insertBefore?.index != null) {
+      next = `${next.slice(0, insertBefore.index).trimEnd()}\n\n${beginnerPrep}\n\n${next.slice(insertBefore.index).trimStart()}`;
+    }
   }
 
   return next

@@ -131,6 +131,74 @@ async function main() {
     'unsupported cafe discount/event claims should be blocked'
   );
 
+  const renderedGeneralSections = [
+    '<html><body>',
+    '<h1 class="post-title">[IT정보와분석] 개발자 계정 탈취 뉴스, 무엇을 먼저 봐야 하나</h1>',
+    '<h2 class="section-title">핵심 요약</h2>',
+    '<p>오늘 기준으로 계정 보안 흐름을 차분히 정리합니다.</p>',
+    '<h2 class="section-title">이 글에서 배울 수 있는 것</h2>',
+    '<p>- 개발자 계정 탈취 이슈를 실무 관점으로 해석합니다.</p>',
+    '<h2 class="section-title">시작하며</h2>',
+    '<p>저도 실제 운영 점검을 하다 보면, 계정 보안은 작게 보여도 가장 인상적으로 리스크가 커지는 지점이라고 느낍니다.</p>',
+    '<h2 class="section-title">개발자 계정 탈취는 왜 단순 로그인 문제가 아닌가</h2>',
+    `<p>${'운영 권한과 배포 키가 연결된 계정은 작은 침해가 전체 서비스 신뢰 문제로 번질 수 있습니다. '.repeat(24)}</p>`,
+    '<h2 class="section-title">오픈소스 도구와 자동화가 공격 경로가 되는 방식</h2>',
+    `<p>${'자동화 토큰과 저장소 권한은 편리하지만, 회수 기준이 없으면 침해 후 복구 비용이 커집니다. '.repeat(24)}</p>`,
+    '<h2 class="section-title">실무자가 오늘 바로 점검할 체크리스트</h2>',
+    `<p>${'권한 범위, 토큰 만료, 관리자 승인 흐름을 나누어 점검하면 우선순위가 분명해집니다. '.repeat(24)}</p>`,
+    '<h2 class="section-title">질문형 Q&A</h2>',
+    '<p>Q. 가장 먼저 확인할 것은 무엇인가요?</p><p>A. 관리자 권한과 배포 토큰 보관 위치입니다.</p>',
+    '<p>Q. 자동화 도구는 위험한가요?</p><p>A. 도구보다 권한 범위와 회수 절차가 핵심입니다.</p>',
+    '<p>Q. 오늘 바로 할 수 있는 일은 무엇인가요?</p><p>A. 오래된 토큰과 미사용 계정을 정리하는 것입니다.</p>',
+    '<h2 class="section-title">생각을 정리하기 좋은 환경</h2>',
+    '<p>커피랑도서관 분당서현점처럼 조용한 공간에서 보안 점검 목록을 차분히 정리해보는 것도 좋습니다.</p>',
+    '<h2 class="section-title">마무리</h2>',
+    '<p>핵심 메시지: 계정 보안은 로그인 문제가 아니라 운영 신뢰 문제입니다.</p>',
+    '<h2 class="section-title">해시태그</h2>',
+    '<p>#보안 #개발자보안 #계정탈취 #GitHub #오픈소스 #자동화 #토큰관리 #권한관리 #IT정보 #보안점검 #운영관리 #개발팀 #리스크관리 #분당서현 #커피랑도서관</p>',
+    '</body></html>',
+  ].join('\n');
+  const renderedGeneralQuality = await checkQuality(renderedGeneralSections, 'general');
+  for (const marker of ['본론 섹션 1', '본론 섹션 2', '본론 섹션 3']) {
+    assert(
+      !renderedGeneralQuality.issues.some((issue: QualityIssue) => String(issue.msg).includes(`필수 섹션 누락: "${marker}"`)),
+      `rendered general body headings should satisfy ${marker}`
+    );
+  }
+
+  const renderedLectureTechBriefing = [
+    '<html><body>',
+    '<h1 class="post-title">[실전 AI 구현 입문 2강] Codex와 Claude Code 비교</h1>',
+    '<h2 class="section-title">핵심 요약</h2>',
+    '<p>오늘 기준으로 초급자가 따라갈 수 있는 실습 흐름을 정리합니다.</p>',
+    '<h2 class="section-title">이 글에서 배울 수 있는 것</h2>',
+    '<p>- AI 코딩 도구를 비교하는 기준을 이해합니다.</p>',
+    '<h2 class="section-title">시작하며</h2>',
+    '<p>제가 처음 이런 도구를 비교했을 때도, 설치보다 결과 확인 습관이 더 인상적으로 중요했습니다.</p>',
+    '<h2 class="section-title" data-marker-key="lecture-tech-briefing">실습 전 준비</h2>',
+    `<p>${'계정 상태와 실행 환경을 먼저 확인하고, 프롬프트를 넣은 뒤 결과를 검증하는 순서로 접근합니다. '.repeat(20)}</p>`,
+    '<h2 class="section-title">두 도구를 아주 쉬운 비유로 이해하기</h2>',
+    `<p>${'Codex는 프로젝트 맥락에서 변경을 제안하고 Claude Code는 터미널 흐름에서 실행을 돕는 식으로 비교할 수 있습니다. '.repeat(20)}</p>`,
+    '<h2 class="section-title">그대로 복사해서 넣어볼 첫 프롬프트</h2>',
+    `<p>${'작은 파일 하나를 대상으로 설명, 수정, 검증을 요청하면 차이를 안전하게 볼 수 있습니다. '.repeat(20)}</p>`,
+    '<h2 class="section-title">질문형 Q&A</h2>',
+    '<p>Q. 무엇부터 하면 되나요?</p><p>A. 작은 예제로 결과를 확인하는 것부터 시작합니다.</p>',
+    '<p>Q. 둘 중 하나만 쓰면 되나요?</p><p>A. 목적에 맞게 하나만 써도 충분하고, 나중에 비교하면 됩니다.</p>',
+    '<p>Q. 결과를 그대로 믿어도 되나요?</p><p>A. 실행 결과와 테스트를 확인해야 합니다.</p>',
+    '<h2 class="section-title">마무리</h2>',
+    '<p>핵심 메시지: 도구 비교보다 검증 습관이 먼저입니다.</p>',
+    '<h2 class="section-title">함께 읽으면 좋은 글</h2>',
+    '<p>• 실전 AI 구현 입문 1강</p>',
+    '<h2 class="section-title">해시태그</h2>',
+    '<p>#AI코딩 #Codex #ClaudeCode #실습 #프롬프트 #개발입문 #업무자동화 #검증 #테스트 #코딩도구 #생성AI #초보개발 #터미널 #프로젝트 #커피랑도서관</p>',
+    '</body></html>',
+  ].join('\n');
+  const renderedLectureQuality = await checkQuality(renderedLectureTechBriefing, 'lecture');
+  assert(
+    !renderedLectureQuality.issues.some((issue: QualityIssue) => String(issue.msg).includes('필수 섹션 누락: "최신 기술 브리핑"')),
+    'lecture tech briefing marker key should satisfy required tech briefing section'
+  );
+
   console.log(JSON.stringify({ ok: true, repairedLength: repaired.length }, null, 2));
 }
 

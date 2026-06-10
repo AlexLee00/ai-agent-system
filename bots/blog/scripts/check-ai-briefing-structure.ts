@@ -146,7 +146,7 @@ function buildBriefingSignals(content: unknown, type: string, raw = '') {
   return {
     hasSummary: type === 'lecture'
       ? /핵심 요약 3줄|핵심 요약/.test(text) || hasSection('핵심 요약 3줄')
-      : /AI 스니펫 요약|핵심 요약 3줄/.test(text) || hasSection('AI 스니펫 요약'),
+      : /AI 스니펫 요약|핵심 요약 3줄|핵심 요약/.test(text) || hasSection('AI 스니펫 요약') || hasSection('핵심 요약'),
     hasLearningPoints: /이 글에서 배울 수 있는 것/.test(text) || hasSection('이 글에서 배울 수 있는 것'),
     hasQuestionFaq: /질문형 Q&A|AEO FAQ|FAQ/.test(text) || hasSection('AEO FAQ') || hasSection('질문형 Q&A'),
     questionFaqCount: countQuestionStyleFaq(text, raw) + (hasSection('AEO FAQ') || hasSection('질문형 Q&A') ? 1 : 0),
