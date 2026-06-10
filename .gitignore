@@ -23,6 +23,7 @@ naver-profile/
 !mix.lock
 output/metty-trace-state.json
 bots/investment/output/luna-analysis-prediction-phase-a-shadow-15min.json
+bots/investment/output/luna-analysis-prediction-phase-a-promotion-gate.json
 
 # OS
 .DS_Store
