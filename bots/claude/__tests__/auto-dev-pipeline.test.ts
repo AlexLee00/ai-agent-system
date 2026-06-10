@@ -293,6 +293,30 @@ async function test_listAutoDevDocuments_respects_manifest_states() {
   console.log('✅ auto-dev: manifest states gate document pickup');
 }
 
+async function test_empty_auto_dev_inbox_marks_agent_done() {
+  const tmpRoot = makeTempRoot();
+  fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
+  const markDoneCalls = [];
+  const { mocks } = makeMocks(tmpRoot, {
+    './team-bus': {
+      setStatus: async () => {},
+      markDone: async (...args) => markDoneCalls.push(args),
+      markError: async () => {},
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.runAutoDevPipeline({ once: true, test: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.count, 0);
+    assert.strictEqual(markDoneCalls.length, 1);
+    assert.deepStrictEqual(markDoneCalls[0], ['auto-dev']);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: empty inbox marks agent done');
+}
+
 async function test_completed_history_prevents_archived_missing_requeue() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -2624,6 +2648,7 @@ async function main() {
     test_js_bridge_loads_pipeline_status_snapshot,
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_listAutoDevDocuments_respects_manifest_states,
+    test_empty_auto_dev_inbox_marks_agent_done,
     test_completed_history_prevents_archived_missing_requeue,
     test_archived_missing_without_completed_history_requeues,
     test_auto_dev_watch_passes_state_file_to_manifest_sync,

@@ -3837,6 +3837,7 @@ async function runAutoDevPipelineCore(options = {}) {
   const docs = listAutoDevDocuments();
   const results = [];
   try {
+    if (docs.length === 0) await markAgentDone();
     const runOptions = { ...options, runtimeConfig };
     for (const doc of docs) {
       results.push(await processAutoDevDocument(doc, runOptions));
