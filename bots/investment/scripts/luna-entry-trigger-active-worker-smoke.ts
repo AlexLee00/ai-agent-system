@@ -968,6 +968,10 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         blockers: [],
         generatedAt: new Date().toISOString(),
       });
+      const noRecordEntryPreflightDeps = {
+        entryPreflightShadowRunner: async () => ({ enabled: false, reason: 'smoke_no_record' }),
+        entryPreflightShadowAttacher: async () => null,
+      };
       const materializeResult = await materializeFiredEntryTriggerSignals({
         exchange: 'binance',
         result: {
@@ -977,6 +981,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: 'FAKE/USDT', price: 101, targetPrice: 101 }],
         deps: {
+          ...noRecordEntryPreflightDeps,
           binanceTopVolumeUniverse,
           tradeDataHygieneBuilder: readyTradeDataHygieneBuilder,
           triggerFetcher: async () => ({
@@ -1045,6 +1050,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: 'FAKE/USDT', price: 101, targetPrice: 101 }],
         deps: {
+          ...noRecordEntryPreflightDeps,
           binanceTopVolumeUniverse,
           tradeDataHygieneBuilder: async () => ({
             ok: false,
@@ -1105,6 +1111,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: 'FAKE/USDT', price: 101, targetPrice: 101 }],
         deps: {
+          ...noRecordEntryPreflightDeps,
           binanceTopVolumeUniverse,
           tradeDataHygieneBuilder: async () => ({
             ok: false,
@@ -1166,6 +1173,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: 'RLUSD/USDT', price: 1, targetPrice: 1 }],
         deps: {
+          ...noRecordEntryPreflightDeps,
           binanceTopVolumeUniverse,
           tradeDataHygieneBuilder: readyTradeDataHygieneBuilder,
           triggerFetcher: async () => ({
@@ -1215,6 +1223,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: trendingBullNoMtfSymbol, price: 10, targetPrice: 10 }],
         deps: {
+          ...noRecordEntryPreflightDeps,
           binanceTopVolumeUniverse,
           tradeDataHygieneBuilder: readyTradeDataHygieneBuilder,
           triggerFetcher: async () => ({
@@ -1293,6 +1302,14 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         [qualityBlockedSymbol, qualityHardGateSymbol],
       ).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
+      await db.run(
+        `DELETE FROM entry_preflight_shadow
+          WHERE trigger_id LIKE 'fake-trigger%'
+             OR symbol IN ('FAKE/USDT', 'RLUSD/USDT')
+             OR symbol LIKE 'TRENDNOMTF%'
+             OR materialized_signal_id LIKE 'fake-signal%'
+             OR materialized_signal_id = 'should-not-insert'`,
+      ).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
       if (openSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [openSignalId]).catch(() => {});
       if (smokeOriginSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [smokeOriginSignalId]).catch(() => {});

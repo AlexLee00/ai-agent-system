@@ -2,6 +2,7 @@
 
 > 버전 v0.4 (2026-06-08) · 작성: 메티 · 상태: **알파팩터(WS-R) 선행 → 회의실 Phase 1** · SSOT=LUNA_MEETING_ROOM_DESIGN.md(§20) · 성장=LUNA_GROWTH_REINFORCEMENT.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md
 > 항목: 작업 / 담당(코덱스·메티·마스터) / 상태 / 검증(문법·소프트·하드) / 의존성 / 연결 CODEX
+> **⚠️ 우산 참조(2026-06-13)**: 루나 로직 재설계는 `LUNA_OPTIMAL_REDESIGN_TRACKER.md`가 상위 추적. WS-R/J/K/F/N/O/L/H는 그쪽으로 **합류**(이중 추적 금지) — 본 트래커는 **회의실(WS-A~E·G·Q)+WS-I/M/P 전용**.
 > 원칙: 부품 재사용 우선(오케스트레이터만 신규) · PROTECTED/LIVE 무중단 · advisory 게이트(차단 X)
 
 ## Phase 요약
@@ -45,7 +46,9 @@
 - G3 휴장일 버튼 비활성+팝업 — 코덱스 · 의존: G2
 - G4 폴백 plist `ai.luna.meeting-room-daily-fallback`(hour=6, 거래일, 세션 없으면 시작) — 코덱스(메티 검토) · **비-PROTECTED**
 - G5 폴백 plist `ai.luna.meeting-room-weekly-fallback`(weekday=0, hour=7, ISO주 세션 없으면) — 코덱스
-- 일정: **이번 주=버튼 수동, 다음 주=폴백 정례화**
+- G6 [v0.6 신설] 국내 장후 debrief: plist `ai.luna.meeting-room-domestic-debrief`(16:00 국내 거래일) + **plan vs actual 대조표 생성기** + debrief-note(토론 0R·자율) — 코덱스 · 의존: G2 · 검증: 대조표 생성(하드)
+- G7 [v0.6 신설] 미국 장전 점검: plist `ai.luna.meeting-room-us-premarket`(22:00 미 거래일) + `isUsTradingDay` 헬퍼(NYSE 캘린더·서머타임) — 코덱스 · 검증: 거래일 판정 단위테스트
+- 일정: **이번 주=버튼 수동, 다음 주=폴백 정례화** · 장후/미장전=자율 모드 기본(§23.4)
 
 ### WS-F. 게이트 · 검증 [Phase 2]
 - F1 CPCV(purge+embargo·multi-path) **신규** — 코덱스 · 검증: 합성데이터 단위테스트
@@ -96,7 +99,7 @@
 - 단일변수 실험원장(신규) + ADR 메타로그(JSONB 이벤트 스토어 재사용) + scorer 목표대비(calcSelfReward 확장) + reflexion→skill 갱신(posttrade-skill-extractor 확장).
 - 의존: B-18 검증 게이트(darwin proof-r apply 전제).
 
-### WS-M. 스킬 [Phase 2] (B-02·B-03·B-17)
+### WS-M. 스킬 [grill=**Phase 1 승격**(자율 회의 전제, §23.5) · 나머지 Phase 2] (B-02·B-03·B-17)
 - glossary/grill skill 신규(`skills/luna/` 패턴 재사용·agentskills.io 포터블) + self-evolving 연결 + 전략 템플릿(선택).
 
 ### WS-N. 수급 활성화 [Phase 2] (B-19)

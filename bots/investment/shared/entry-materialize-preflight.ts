@@ -244,6 +244,9 @@ export async function evaluateEntryMaterializePreflight({
       ];
     }
   }
+  if (normalCheck?.allowed === false && effectiveTradeMode === tradeMode) {
+    return buildResult('defer_capital_guard', normalCheck.reason || 'pre_trade_check_blocked', checks);
+  }
 
   const currentPrice = num(trigger.target_price ?? event?.price ?? event?.lastPrice ?? event?.currentPrice, 0);
   const slPrice = num(trigger.stop_loss ?? trigger.stopLoss, 0);
@@ -376,6 +379,33 @@ export async function runEntryMaterializePreflightShadow({
 
 export async function loadEntryPreflightShadowReport({ days = 14, limit = 50 } = {}) {
   await ensureEntryPreflightShadowTable();
+  const operationalShadowFilter = `
+    NOT (
+      COALESCE(eps.trigger_id, '') LIKE 'fake-trigger%'
+      OR COALESCE(eps.symbol, '') IN ('FAKE/USDT', 'RLUSD/USDT')
+      OR COALESCE(eps.symbol, '') LIKE 'TRENDNOMTF%'
+      OR COALESCE(eps.materialized_signal_id, '') LIKE 'fake-signal%'
+      OR COALESCE(eps.materialized_signal_id, '') = 'should-not-insert'
+    )
+  `;
+  const effectivePredictedBlockSql = `
+    (
+      preflight_decision <> 'allow'
+      OR (
+        COALESCE(preflight_checks #>> '{preTradeCheck,allowed}', 'true') = 'false'
+        AND COALESCE(preflight_checks #>> '{validationFallback,validationAllowed}', 'false') <> 'true'
+      )
+    )
+  `;
+  const effectiveDecisionSql = `
+    CASE
+      WHEN preflight_decision = 'allow'
+       AND COALESCE(preflight_checks #>> '{preTradeCheck,allowed}', 'true') = 'false'
+       AND COALESCE(preflight_checks #>> '{validationFallback,validationAllowed}', 'false') <> 'true'
+      THEN 'defer_capital_guard'
+      ELSE preflight_decision
+    END
+  `;
   const summaryRows = await query(
     `WITH shadow AS (
        SELECT eps.*,
@@ -385,14 +415,15 @@ export async function loadEntryPreflightShadowReport({ days = 14, limit = 50 } =
          FROM entry_preflight_shadow eps
          LEFT JOIN signals s ON s.id = eps.materialized_signal_id
         WHERE eps.created_at >= now() - ($1 * INTERVAL '1 day')
+          AND ${operationalShadowFilter}
      ),
      classified AS (
        SELECT *,
-              (preflight_decision <> 'allow') AS predicted_block,
+              ${effectivePredictedBlockSql} AS predicted_block,
               (current_executor_status = 'blocked') AS actual_block,
               CASE
                 WHEN materialized_signal_id IS NULL THEN NULL
-                WHEN (preflight_decision <> 'allow') = (current_executor_status = 'blocked') THEN true
+                WHEN ${effectivePredictedBlockSql} = (current_executor_status = 'blocked') THEN true
                 ELSE false
               END AS computed_agreement
          FROM shadow
@@ -410,9 +441,10 @@ export async function loadEntryPreflightShadowReport({ days = 14, limit = 50 } =
     [Math.max(1, num(days, 14))],
   );
   const byDecision = await query(
-    `SELECT preflight_decision, COUNT(*)::int AS count
-       FROM entry_preflight_shadow
-      WHERE created_at >= now() - ($1 * INTERVAL '1 day')
+    `SELECT ${effectiveDecisionSql} AS preflight_decision, COUNT(*)::int AS count
+       FROM entry_preflight_shadow eps
+      WHERE eps.created_at >= now() - ($1 * INTERVAL '1 day')
+        AND ${operationalShadowFilter}
       GROUP BY 1
       ORDER BY count DESC, preflight_decision`,
     [Math.max(1, num(days, 14))],
@@ -420,17 +452,19 @@ export async function loadEntryPreflightShadowReport({ days = 14, limit = 50 } =
   const recent = await query(
     `SELECT eps.id, eps.trigger_id, eps.symbol, eps.exchange, eps.trade_mode,
             eps.preflight_decision, eps.preflight_reason, eps.materialized_signal_id,
+            ${effectiveDecisionSql} AS effective_preflight_decision,
             s.status AS executor_status, s.block_code AS executor_block_code,
             s.block_reason AS executor_block_reason,
             CASE
               WHEN eps.materialized_signal_id IS NULL THEN NULL
-              WHEN (eps.preflight_decision <> 'allow') = (s.status = 'blocked') THEN true
+              WHEN ${effectivePredictedBlockSql} = (s.status = 'blocked') THEN true
               ELSE false
             END AS agreement,
             eps.created_at
        FROM entry_preflight_shadow eps
        LEFT JOIN signals s ON s.id = eps.materialized_signal_id
       WHERE eps.created_at >= now() - ($1 * INTERVAL '1 day')
+        AND ${operationalShadowFilter}
       ORDER BY eps.created_at DESC
       LIMIT $2`,
     [Math.max(1, num(days, 14)), Math.max(1, num(limit, 50))],

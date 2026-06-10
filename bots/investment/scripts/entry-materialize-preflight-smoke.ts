@@ -65,6 +65,20 @@ async function run() {
   });
   assert.equal(minOrder.decision, 'defer_min_order');
 
+  const dailyLimit = await evaluateEntryMaterializePreflight({
+    trigger,
+    exchange: 'binance',
+    amountUsdt: 50,
+    deps: baseDeps({
+      preTradeCheck: async () => ({
+        allowed: false,
+        reason: 'live_fire_daily_notional_limit: 250.00 > 200',
+      }),
+    }),
+  });
+  assert.equal(dailyLimit.decision, 'defer_capital_guard');
+  assert.equal(dailyLimit.wouldDefer, true);
+
   const allow = await evaluateEntryMaterializePreflight({
     trigger,
     exchange: 'binance',
@@ -80,6 +94,7 @@ async function run() {
       capital: capital.decision,
       reentry: reentry.decision,
       minOrder: minOrder.decision,
+      dailyLimit: dailyLimit.decision,
       allow: allow.decision,
     },
   }, null, 2));
