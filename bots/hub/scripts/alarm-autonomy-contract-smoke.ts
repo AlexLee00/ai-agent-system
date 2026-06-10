@@ -146,6 +146,8 @@ async function main() {
     const readiness = buildAlarmReadinessSnapshot();
     assert(readiness.class_topics.ready === true, 'expected class topic readiness with env topic ids');
     assert(readiness.monitors.scripts.suppression_proposals === true, 'expected suppression proposal script readiness');
+    assert(readiness.monitors.runtime_launchd?.stale_auto_repair?.label === 'ai.hub.alarm-stale-auto-repair', 'expected stale auto-repair runtime launchd readiness');
+    assert(Array.isArray(readiness.monitors.operational_missing), 'expected operational monitor readiness gaps to be explicit');
 
     console.log('alarm_autonomy_contract_smoke_ok');
   } finally {

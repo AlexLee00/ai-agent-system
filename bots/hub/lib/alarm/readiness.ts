@@ -1,5 +1,7 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const env = require('../../../../packages/core/lib/env');
 
 const REQUIRED_CLASS_TOPICS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
@@ -53,6 +55,63 @@ function loadSecretStore() {
   } catch {
     return {};
   }
+}
+
+function readLaunchctlValue(name: string): string {
+  try {
+    return String(execFileSync('launchctl', ['getenv', name], { encoding: 'utf8' }) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function isLaunchdLoaded(label: string): boolean {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid == null) return false;
+  try {
+    execFileSync('launchctl', ['print', `gui/${uid}/${label}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readPlistEnv(filePath: string): Record<string, unknown> {
+  try {
+    if (!fs.existsSync(filePath)) return {};
+    const raw = execFileSync('plutil', ['-convert', 'json', '-o', '-', filePath], { encoding: 'utf8' });
+    const parsed = JSON.parse(raw);
+    const plistEnv = parsed?.EnvironmentVariables;
+    return plistEnv && typeof plistEnv === 'object' && !Array.isArray(plistEnv) ? plistEnv : {};
+  } catch {
+    return {};
+  }
+}
+
+function resolveRuntimeSecret(candidates: Array<{ source: string; value: unknown }>): { ready: boolean; source: string | null } {
+  for (const candidate of candidates) {
+    if (isUsable(candidate.value)) return { ready: true, source: candidate.source };
+  }
+  return { ready: false, source: null };
+}
+
+function buildLaunchdRuntimeStatus(label: string, requiredEnvKeys: string[]) {
+  const installedPath = path.join(os.homedir(), 'Library', 'LaunchAgents', `${label}.plist`);
+  const installedEnv = readPlistEnv(installedPath);
+  const envStatus = Object.fromEntries(requiredEnvKeys.map((key) => {
+    const resolved = resolveRuntimeSecret([
+      { source: `installed:${installedPath}`, value: installedEnv[key] },
+      { source: `launchctl:${key}`, value: readLaunchctlValue(key) },
+    ]);
+    return [key, resolved];
+  }));
+  return {
+    label,
+    installed: fs.existsSync(installedPath),
+    loaded: isLaunchdLoaded(label),
+    installed_path: installedPath,
+    required_env: envStatus,
+  };
 }
 
 function collectTopicSources() {
@@ -110,10 +169,21 @@ export function buildAlarmReadinessSnapshot() {
     noise_report: fs.existsSync(path.join(env.PROJECT_ROOT, 'bots', 'hub', 'launchd', 'ai.hub.alarm-noise-report.plist')),
     stale_auto_repair: fs.existsSync(path.join(env.PROJECT_ROOT, 'bots', 'hub', 'launchd', 'ai.hub.alarm-stale-auto-repair.plist')),
   };
+  const runtimeLaunchd = {
+    stale_auto_repair: buildLaunchdRuntimeStatus('ai.hub.alarm-stale-auto-repair', ['HUB_AUTH_TOKEN']),
+  };
   const missingMonitors = Object.entries({ ...monitorScripts, ...launchd })
     .filter(([, ok]) => !ok)
     .map(([key]) => key);
-  const ok = (!classTopicsEnabled || missingClassTopics.length === 0) && legacyTopicKeys.length === 0 && missingMonitors.length === 0;
+  const operationalMissing = [
+    runtimeLaunchd.stale_auto_repair.installed ? null : 'stale_auto_repair_installed_launchagent',
+    runtimeLaunchd.stale_auto_repair.loaded ? null : 'stale_auto_repair_loaded_launchagent',
+    runtimeLaunchd.stale_auto_repair.required_env.HUB_AUTH_TOKEN.ready ? null : 'stale_auto_repair_hub_auth_token',
+  ].filter(Boolean);
+  const ok = (!classTopicsEnabled || missingClassTopics.length === 0)
+    && legacyTopicKeys.length === 0
+    && missingMonitors.length === 0
+    && operationalMissing.length === 0;
 
   return {
     ok,
@@ -130,7 +200,9 @@ export function buildAlarmReadinessSnapshot() {
     monitors: {
       scripts: monitorScripts,
       launchd,
+      runtime_launchd: runtimeLaunchd,
       missing: missingMonitors,
+      operational_missing: operationalMissing,
     },
   };
 }
