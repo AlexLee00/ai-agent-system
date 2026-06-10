@@ -3,17 +3,20 @@
 /**
  * data-source-coherence-check.ts
  *
- * Cross-checks the four trade state sources before analysis:
- *   1. trades net position
- *   2. positions amount
- *   3. open trade_journal
- *   4. exchange balance snapshot (optional, read-only)
+ * Cross-checks trade state sources before analysis.
+ *
+ * Current live/open state is derived from positions + open trade_journal.
+ * investment.trades is an execution ledger and may retain legacy unmatched
+ * historical net amounts; Binance free balance is also dust/free-only and does
+ * not include locked TP/SL inventory. Those two are reported as advisories, not
+ * as live open-state blockers.
  */
 
 import { query, run } from '../shared/db/core.ts';
 import { getBinanceBalanceSnapshot } from '../shared/binance-client.ts';
 
 const EPSILON = 1e-12;
+const POSITION_REL_TOLERANCE = 0.005;
 
 function argValue(name: string, fallback = null) {
   const prefix = `--${name}=`;
@@ -40,6 +43,14 @@ function normalizeSymbol(symbol = '') {
 function displayState(value: number | null | undefined, label: string) {
   const n = Number(value || 0);
   return Math.abs(n) > EPSILON ? `${label}(amount=${n})` : '없음';
+}
+
+function amountsClose(a: number | null | undefined, b: number | null | undefined) {
+  const left = Math.abs(Number(a || 0));
+  const right = Math.abs(Number(b || 0));
+  const diff = Math.abs(left - right);
+  const scale = Math.max(left, right, 1);
+  return diff <= Math.max(EPSILON, scale * POSITION_REL_TOLERANCE);
 }
 
 async function fetchTradesNet(exchange: string) {
@@ -131,7 +142,7 @@ function indexBalances(rows: any[]) {
   return map;
 }
 
-function buildMismatches({ trades, positions, journals, balances }) {
+function buildCoherence({ trades, positions, journals, balances }) {
   const tradeMap = indexBySymbol(trades, 'net_amount');
   const positionMap = indexBySymbol(positions, 'amount');
   const journalMap = indexBySymbol(journals, 'open_amount');
@@ -143,34 +154,65 @@ function buildMismatches({ trades, positions, journals, balances }) {
     ...balanceMap.keys(),
   ]);
 
-  const mismatches = [];
+  const openStateMismatches = [];
+  const legacyTradeLedgerResidues = [];
+  const exchangeFreeDust = [];
   for (const symbol of keys) {
     const t = tradeMap.get(symbol);
     const p = positionMap.get(symbol);
     const j = journalMap.get(symbol);
     const b = balanceMap.get(symbol);
-    const flags = [
-      Math.abs(Number(t?.amount || 0)) > EPSILON,
-      Math.abs(Number(p?.amount || 0)) > EPSILON,
-      Math.abs(Number(j?.amount || 0)) > EPSILON,
-      Number(b?.amount || 0) > EPSILON,
-    ];
-    if (new Set(flags).size <= 1) continue;
-    mismatches.push({
+
+    const tradeActive = Math.abs(Number(t?.amount || 0)) > EPSILON;
+    const positionActive = Math.abs(Number(p?.amount || 0)) > EPSILON;
+    const journalActive = Math.abs(Number(j?.amount || 0)) > EPSILON;
+    const balanceActive = Number(b?.amount || 0) > EPSILON;
+
+    const row = {
       symbol,
       trades: t || null,
       positions: p || null,
       journal: j || null,
       balance: b || null,
-      stateCount: flags.filter(Boolean).length,
-    });
+      stateCount: [tradeActive, positionActive, journalActive, balanceActive].filter(Boolean).length,
+    };
+
+    if (positionActive !== journalActive || (positionActive && journalActive && !amountsClose(p?.amount, j?.amount))) {
+      openStateMismatches.push(row);
+      continue;
+    }
+
+    if (tradeActive && (!positionActive || !amountsClose(t?.amount, p?.amount))) {
+      legacyTradeLedgerResidues.push(row);
+      continue;
+    }
+
+    if (balanceActive && !positionActive && !journalActive) {
+      exchangeFreeDust.push(row);
+    }
   }
-  return mismatches.sort((a, b) => b.stateCount - a.stateCount || a.symbol.localeCompare(b.symbol));
+
+  const sortRows = (rows) => rows.sort((a, b) => b.stateCount - a.stateCount || a.symbol.localeCompare(b.symbol));
+  return {
+    openStateMismatches: sortRows(openStateMismatches),
+    legacyTradeLedgerResidues: sortRows(legacyTradeLedgerResidues),
+    exchangeFreeDust: sortRows(exchangeFreeDust),
+  };
 }
 
-async function recordSummary({ exchange, includeBalance, counts, mismatches, noWrite }) {
+function rowToAmounts(row) {
+  return {
+    symbol: row.symbol,
+    tradesAmount: Number(row.trades?.amount || 0),
+    positionsAmount: Number(row.positions?.amount || 0),
+    journalAmount: Number(row.journal?.amount || 0),
+    balanceAmount: Number(row.balance?.amount || 0),
+  };
+}
+
+async function recordSummary({ exchange, includeBalance, counts, openStateMismatches, legacyTradeLedgerResidues, exchangeFreeDust, noWrite }) {
   if (noWrite) return;
-  const severity = mismatches.length > 0 ? 'warning' : 'info';
+  const severity = openStateMismatches.length > 0 ? 'warning' : 'info';
   await run(
     `INSERT INTO investment.guard_events
        (guard_name, exchange, market, reason, severity, guard_metadata)
@@ -179,43 +221,50 @@ async function recordSummary({ exchange, includeBalance, counts, mismatches, noW
       'data_source_coherence_check',
       exchange,
       exchange === 'binance' ? 'crypto' : exchange,
-      mismatches.length > 0 ? `source_mismatch_detected:${mismatches.length}` : 'source_coherence_clear',
+      openStateMismatches.length > 0
+        ? `open_state_mismatch_detected:${openStateMismatches.length}`
+        : 'source_coherence_clear',
       severity,
       JSON.stringify({
         includeBalance,
         counts,
-        mismatchCount: mismatches.length,
-        topMismatches: mismatches.slice(0, 20).map((row) => ({
-          symbol: row.symbol,
-          tradesAmount: Number(row.trades?.amount || 0),
-          positionsAmount: Number(row.positions?.amount || 0),
-          journalAmount: Number(row.journal?.amount || 0),
-          balanceAmount: Number(row.balance?.amount || 0),
-        })),
+        mismatchCount: openStateMismatches.length,
+        legacyTradeLedgerResidueCount: legacyTradeLedgerResidues.length,
+        exchangeFreeDustCount: exchangeFreeDust.length,
+        topMismatches: openStateMismatches.slice(0, 20).map(rowToAmounts),
+        topLegacyTradeLedgerResidues: legacyTradeLedgerResidues.slice(0, 20).map(rowToAmounts),
+        topExchangeFreeDust: exchangeFreeDust.slice(0, 20).map(rowToAmounts),
       }),
     ],
   ).catch(() => null);
 }
 
-function printText({ exchange, includeBalance, trades, positions, journals, balances, mismatches }) {
+function printRows(title: string, rows: any[]) {
+  if (rows.length <= 0) return;
+  console.log(`\n${title}:`);
+  for (const row of rows.slice(0, 10)) {
+    console.log(
+      `  ${row.symbol}: trades=${displayState(row.trades?.amount, '열림')} `
+      + `positions=${displayState(row.positions?.amount, '있음')} `
+      + `journal=${displayState(row.journal?.amount, 'open')} `
+      + `거래소=${displayState(row.balance?.amount, 'free')}`,
+    );
+  }
+}
+
+function printText({ exchange, includeBalance, trades, positions, journals, balances, openStateMismatches, legacyTradeLedgerResidues, exchangeFreeDust }) {
   console.log(`[정합성 체크 ${exchange}]`);
-  console.log(`trades 순포지션 열림:    ${trades.length} 종목`);
+  console.log(`trades 순포지션 잔여:    ${trades.length} 종목 (legacy ledger advisory)`);
   console.log(`positions amount>0:        ${positions.length} 종목`);
   console.log(`trade_journal open:        ${journals.length} 종목`);
   if (includeBalance) console.log(`거래소 free 양수:         ${balances.length} 자산`);
-  console.log(`불일치 종목:              ${mismatches.length} 종목`);
+  console.log(`open-state 불일치:        ${openStateMismatches.length} 종목`);
+  console.log(`legacy trades 잔여:       ${legacyTradeLedgerResidues.length} 종목`);
+  if (includeBalance) console.log(`거래소 free dust:         ${exchangeFreeDust.length} 종목`);
 
-  if (mismatches.length > 0) {
-    console.log('\n불일치 종목 top10 (각 소스별 상태):');
-    for (const row of mismatches.slice(0, 10)) {
-      console.log(
-        `  ${row.symbol}: trades=${displayState(row.trades?.amount, '열림')} `
-        + `positions=${displayState(row.positions?.amount, '있음')} `
-        + `journal=${displayState(row.journal?.amount, 'open')} `
-        + `거래소=${displayState(row.balance?.amount, 'free')}`,
-      );
-    }
-  }
+  printRows('open-state 불일치 top10 (positions vs open journal)', openStateMismatches);
+  printRows('legacy trades 잔여 top10 (advisory)', legacyTradeLedgerResidues);
+  if (includeBalance) printRows('거래소 free dust top10 (advisory)', exchangeFreeDust);
 }
 
 async function main() {
@@ -230,7 +279,7 @@ async function main() {
     fetchOpenJournals(exchange),
     fetchExchangeBalances(exchange, includeBalance),
   ]);
-  const mismatches = buildMismatches({ trades, positions, journals, balances });
+  const { openStateMismatches, legacyTradeLedgerResidues, exchangeFreeDust } = buildCoherence({ trades, positions, journals, balances });
   const counts = {
     tradesNetOpen: trades.length,
     positionsOpen: positions.length,
@@ -238,7 +287,7 @@ async function main() {
     exchangePositiveBalances: balances.length,
   };
 
-  await recordSummary({ exchange, includeBalance, counts, mismatches, noWrite });
+  await recordSummary({ exchange, includeBalance, counts, openStateMismatches, legacyTradeLedgerResidues, exchangeFreeDust, noWrite });
 
   const result = {
     ok: true,
@@ -246,20 +295,28 @@ async function main() {
     exchange,
     includeBalance,
     counts,
-    mismatchCount: mismatches.length,
-    mismatches: mismatches.slice(0, 50).map((row) => ({
-      symbol: row.symbol,
-      tradesAmount: Number(row.trades?.amount || 0),
-      positionsAmount: Number(row.positions?.amount || 0),
-      journalAmount: Number(row.journal?.amount || 0),
-      balanceAmount: Number(row.balance?.amount || 0),
-    })),
+    mismatchCount: openStateMismatches.length,
+    legacyTradeLedgerResidueCount: legacyTradeLedgerResidues.length,
+    exchangeFreeDustCount: exchangeFreeDust.length,
+    mismatches: openStateMismatches.slice(0, 50).map(rowToAmounts),
+    legacyTradeLedgerResidues: legacyTradeLedgerResidues.slice(0, 50).map(rowToAmounts),
+    exchangeFreeDust: exchangeFreeDust.slice(0, 50).map(rowToAmounts),
   };
 
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    printText({ exchange, includeBalance, trades, positions, journals, balances, mismatches });
+    printText({
+      exchange,
+      includeBalance,
+      trades,
+      positions,
+      journals,
+      balances,
+      openStateMismatches,
+      legacyTradeLedgerResidues,
+      exchangeFreeDust,
+    });
   }
 }
 
