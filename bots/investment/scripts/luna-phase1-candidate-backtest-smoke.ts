@@ -32,6 +32,8 @@ assert.equal(result.writeMode, 'dry-run');
 assert.equal(result.total, 2);
 assert.ok(result.passed >= 1, 'fixture must include at least one passing candidate');
 assert.ok(result.wouldBlocked >= 1, 'fixture must include at least one would-block candidate');
+assert.ok(result.results.every((item) => item.universeAsOf), 'fixture backtest results should carry universe as-of metadata');
+assert.ok(result.results.every((item) => item.universeSource === 'seed'), 'fixture backtest results should carry normalized universe source metadata');
 if (beforeStatus != null && afterStatus != null) assert.equal(afterStatus, beforeStatus, 'dry-run must not write candidate status rows');
 if (beforeAudit != null && afterAudit != null) assert.equal(afterAudit, beforeAudit, 'dry-run must not write predictive audit rows');
 
@@ -77,7 +79,17 @@ const requestedOutsideUniverseResult = await runCandidateBacktestRefresh({
 assert.equal(requestedOutsideUniverseResult.total, 1, 'explicit requested symbol should run even when absent from active candidate selection');
 assert.equal(requestedOutsideUniverseResult.results[0].symbol, '071200', 'requested symbol should be preserved');
 assert.equal(requestedOutsideUniverseResult.results[0].market, 'domestic', 'requested symbol should use requested market');
+assert.equal(requestedOutsideUniverseResult.results[0].universeSource, 'watchlist', 'requested symbol override should be tagged as watchlist universe source');
 assert.equal(requestedOutsideUniverseResult.candidateBudget.selectedBeforeBudget, 1, 'requested symbol override should count as selected candidate');
+
+assert.equal(candidateBacktestTest.inferUniverseSource({ source: 'luna_market_candidate_seed_refresh' }), 'seed', 'candidate seed refresh source should normalize to seed');
+assert.equal(candidateBacktestTest.inferUniverseSource({ source: 'coingecko_discovery' }), 'discovery', 'generic discovery source should normalize to discovery');
+assert.equal(candidateBacktestTest.inferUniverseSource({ source: 'requested_symbol_override' }), 'watchlist', 'requested override source should normalize to watchlist');
+assert.deepEqual(
+  candidateBacktestTest.buildUniverseMetadata({ source: 'coingecko_discovery', discoveredAt: '2026-06-10T00:00:00Z' }, '2026-06-11T00:00:00.000Z'),
+  { universeAsOf: '2026-06-10T00:00:00.000Z', universeSource: 'discovery' },
+  'universe metadata should preserve point-in-time discovery timestamp',
+);
 
 const syntheticOhlcv = Array.from({ length: 80 }, (_, index) => {
   const close = 100 + index * 0.25 + Math.sin(index / 5) * 1.5;
@@ -262,12 +274,19 @@ assert.ok(lowSampleQuality.reasons.some((reason) => reason.startsWith('backtest_
 
 const vectorbtSource = readFileSync(new URL('./backtest-vectorbt.py', import.meta.url), 'utf8');
 const backtestRefreshSource = readFileSync(new URL('./runtime-luna-candidate-backtest-refresh.ts', import.meta.url), 'utf8');
+const candidateRefreshPlist = readFileSync(new URL('../launchd/ai.luna.candidate-backtest-refresh.plist', import.meta.url), 'utf8');
+const opsSchedulerPlist = readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
 assert.match(vectorbtSource, /ema_trend_pullback/, 'vectorbt grid should include trend-following strategy family');
 assert.match(vectorbtSource, /breakout_momentum/, 'vectorbt grid should include breakout strategy family');
 assert.match(vectorbtSource, /bollinger_mean_reversion/, 'vectorbt grid should include mean-reversion strategy family');
 assert.match(vectorbtSource, /robust_rank_score/, 'vectorbt grid should rank by robust score, not raw Sharpe only');
+assert.match(vectorbtSource, /--universe-asof/, 'vectorbt should accept universe as-of metadata');
+assert.match(vectorbtSource, /universe_source/, 'vectorbt should emit universe source metadata');
 assert.match(vectorbtSource, /infer_portfolio_freq/, 'vectorbt backtest should infer portfolio frequency from OHLCV interval');
 assert.match(vectorbtSource, /freq=portfolio_freq/, 'vectorbt backtest should not hard-code 5min frequency for stock data');
+assert.match(candidateRefreshPlist, /LUNA_BT_ROBUST_SELECTION_ENABLED/, 'candidate backtest launchd should enable robust selection');
+assert.match(candidateRefreshPlist, /<string>true<\/string>/, 'candidate backtest robust selection env should be true');
+assert.match(opsSchedulerPlist, /LUNA_BT_ROBUST_SELECTION_ENABLED/, 'ops scheduler launchd should carry robust selection env');
 assert.match(backtestRefreshSource, /deadlineAt/, 'backtest refresh should enforce runtime budgets inside candidate periods');
 assert.match(backtestRefreshSource, /backtest_runtime_budget_partial/, 'partial runtime-budget backtests should not be allowed to pass silently');
 assert.match(backtestRefreshSource, /ohlcv_fallback_timeout/, 'OHLCV fallback should be bounded by the remaining runtime budget');
@@ -297,6 +316,15 @@ const payload = {
   runtimeBudgetPartialGuard: true,
   fallbackRuntimeBudgetGuard: true,
   marketRoundRobinScheduling: true,
+  robustSelectionEvidence: {
+    vectorbtRobustRankScore: /robust_rank_score/.test(vectorbtSource),
+    candidateRefreshEnv: /LUNA_BT_ROBUST_SELECTION_ENABLED/.test(candidateRefreshPlist),
+    opsSchedulerEnv: /LUNA_BT_ROBUST_SELECTION_ENABLED/.test(opsSchedulerPlist),
+  },
+  pointInTimeMetadata: {
+    resultUniverseAsOfPresent: result.results.every((item) => item.universeAsOf),
+    resultUniverseSource: [...new Set(result.results.map((item) => item.universeSource))],
+  },
   candidateBudget: {
     maxSymbolsCapWorks: cappedResult.candidateBudget.selected === 1,
     runtimeBudgetStopWorks: runtimeBudgetResult.candidateBudget.budgetStopped === true,

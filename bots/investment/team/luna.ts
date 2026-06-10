@@ -274,25 +274,44 @@ async function loadAdaptiveAnalystWeights(exchange = 'binance', marketRegime = n
   }
 }
 
+const REVIEW_HINT_MIN_TRADES = 30;
+const REVIEW_HINT_WIN_RATE_BOOST_DELTA = 0.025;
+const REVIEW_HINT_LOW_WIN_RATE_DELTA = -0.04;
+const REVIEW_HINT_NEGATIVE_AVG_PNL_DELTA = -0.025;
+
+export function buildReviewConfidenceHint(insight) {
+  if (!insight || Number(insight.closedTrades || 0) < REVIEW_HINT_MIN_TRADES) {
+    return { insight, delta: 0, notes: [] };
+  }
+
+  let delta = 0;
+  const notes = [];
+  if (insight.winRate != null && insight.winRate >= 0.65) {
+    delta += REVIEW_HINT_WIN_RATE_BOOST_DELTA;
+    notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
+  } else if (insight.winRate != null && insight.winRate < 0.4) {
+    delta += REVIEW_HINT_LOW_WIN_RATE_DELTA;
+    notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
+  }
+  if (insight.avgPnlPercent != null && insight.avgPnlPercent < 0) {
+    delta += REVIEW_HINT_NEGATIVE_AVG_PNL_DELTA;
+    notes.push(`평균 실현손익 ${insight.avgPnlPercent.toFixed(2)}%`);
+  }
+  return { insight, delta, notes };
+}
+
+export const __test = {
+  buildReviewConfidenceHint,
+  REVIEW_HINT_MIN_TRADES,
+  REVIEW_HINT_WIN_RATE_BOOST_DELTA,
+  REVIEW_HINT_LOW_WIN_RATE_DELTA,
+  REVIEW_HINT_NEGATIVE_AVG_PNL_DELTA,
+};
+
 async function loadReviewConfidenceHint(symbol, exchange) {
   try {
     const insight = await journalDb.getTradeReviewInsight(symbol, exchange, 60);
-    if (!insight || insight.closedTrades < 3) return { insight, delta: 0, notes: [] };
-
-    let delta = 0;
-    const notes = [];
-    if (insight.winRate != null && insight.winRate >= 0.65) {
-      delta += 0.05;
-      notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
-    } else if (insight.winRate != null && insight.winRate < 0.4) {
-      delta -= 0.08;
-      notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
-    }
-    if (insight.avgPnlPercent != null && insight.avgPnlPercent < 0) {
-      delta -= 0.05;
-      notes.push(`평균 실현손익 ${insight.avgPnlPercent.toFixed(2)}%`);
-    }
-    return { insight, delta, notes };
+    return buildReviewConfidenceHint(insight);
   } catch (err) {
     console.warn('[luna] review confidence hint 실패 (무시):', err.message);
     return { insight: null, delta: 0, notes: [] };

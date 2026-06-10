@@ -116,6 +116,14 @@ async function main() {
     const staleDefault = await scanStaleAutoRepair({ db });
     assert(staleDefault.stale_minutes === 120, `expected default stale minutes=120, got ${staleDefault.stale_minutes}`);
     assert(staleDefault.limit === 20, `expected default limit=20, got ${staleDefault.limit}`);
+    const completedArchiveDir = path.join(tempRoot, 'codex-completed');
+    fs.mkdirSync(completedArchiveDir, { recursive: true });
+    fs.writeFileSync(path.join(completedArchiveDir, '2026-06-10__replayed__ALARM_INCIDENT_blog_archive_sample.md'), [
+      '---',
+      'incident_key: blog:blog-health:archive-sample',
+      '---',
+      '# completed archive sample',
+    ].join('\n'), 'utf8');
     const annotatedResolved = _testOnly_annotateRows([
       {
         team: 'blog',
@@ -137,6 +145,26 @@ async function main() {
         incident_key: 'general:steward:steward_error:sample',
         auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_general_policy_sample.md',
       },
+      {
+        team: 'blog',
+        bot_name: 'blog-health',
+        severity: 'error',
+        title: 'blog alarm',
+        message: 'old repair has completed archive document',
+        event_type: 'blog_health_error',
+        incident_key: 'blog:blog-health:archive-sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_archive_sample.md',
+      },
+      {
+        team: 'blog',
+        bot_name: 'blog-commenter',
+        severity: 'error',
+        title: 'blog alarm',
+        message: 'transient reply failure archived as operational noise',
+        event_type: 'blog-commenter_error',
+        incident_key: 'blog:blog-commenter:operational-noise-sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_operational_noise_sample.md',
+      },
     ], {
       manifest: {
         entries: {
@@ -145,11 +173,20 @@ async function main() {
             state: 'archived_missing',
             reason: 'resolved_recovery_info_routed_report',
           },
+          'docs/auto_dev/ALARM_INCIDENT_blog_operational_noise_sample.md': {
+            relPath: 'docs/auto_dev/ALARM_INCIDENT_blog_operational_noise_sample.md',
+            state: 'archived_missing',
+            reason: 'operational_noise_archived',
+          },
         },
       },
+      archiveDir: completedArchiveDir,
     });
     assert(annotatedResolved[0].stale_status === 'resolved_manifest', 'expected completed manifest entry to suppress stale scan');
     assert(annotatedResolved[1].stale_status === 'resolved_current_policy', 'expected current policy downgrade to suppress stale scan');
+    assert(annotatedResolved[2].stale_status === 'resolved_manifest', 'expected completed archive document to suppress stale scan');
+    assert(annotatedResolved[2].stale_resolution_reason === 'completed_archive_document_matches_incident', 'expected archive evidence reason');
+    assert(annotatedResolved[3].stale_status === 'resolved_manifest', 'expected operational-noise manifest reason to suppress stale scan');
     const backfillPlan = _testOnly_buildBackfillPlan([
       { id: 11, incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
       { id: 12, incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },
@@ -171,6 +208,28 @@ async function main() {
       auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_unknown_policy_sample.md',
     }], { manifest: { entries: {} } });
     assert(lowConfidencePolicy[0].stale_status === 'active', 'expected low-confidence default work classification to stay active');
+    const unresolvedPatchFollowup = _testOnly_annotateRows([{
+      team: 'blog',
+      bot_name: 'blog-health',
+      severity: 'error',
+      title: 'blog alarm',
+      message: 'still broken',
+      event_type: 'blog_error',
+      incident_key: 'blog:sample:unpatched',
+      auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_unpatched_sample.md',
+    }], {
+      manifest: {
+        entries: {
+          'docs/auto_dev/ALARM_INCIDENT_blog_unpatched_sample.md': {
+            relPath: 'docs/auto_dev/ALARM_INCIDENT_blog_unpatched_sample.md',
+            state: 'archived_missing',
+            reason: 'not_patched_requires_followup',
+          },
+        },
+      },
+      archiveDir: path.join(tempRoot, 'missing-archive-dir'),
+    });
+    assert(unresolvedPatchFollowup[0].stale_status === 'active', 'expected unresolved patch follow-up reason to stay active');
     assert(queryLog.some((sql) => String(sql).includes('FROM agent.hub_alarms')), 'expected stale scan to use hub_alarms state table');
     assert(queryLog.some((sql) => String(sql).includes("hub_alarm_auto_repair_enqueued")), 'expected stale scan to require an auto-repair enqueue event');
     assert(queryLog.some((sql) => String(sql).includes("auto_repair_shadow_skipped")), 'expected stale scan to exclude shadow-skipped repairs');

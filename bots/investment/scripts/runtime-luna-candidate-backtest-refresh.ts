@@ -236,12 +236,48 @@ function normalizeMarket(value: any = 'all') {
   return ['crypto', 'domestic', 'overseas', 'all'].includes(raw) ? raw : 'all';
 }
 
+function normalizeIsoString(value: any, fallback: string | null = null): string | null {
+  if (value == null || String(value).trim() === '') return fallback;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : fallback;
+}
+
+function inferUniverseSource(candidate: any = null): 'seed' | 'discovery' | 'watchlist' | null {
+  const source = String(candidate?.source || candidate?.universeSource || '').trim().toLowerCase();
+  if (!source) return null;
+  if (source.includes('seed')) return 'seed';
+  if (source.includes('watchlist') || source.includes('requested_symbol_override')) return 'watchlist';
+  return 'discovery';
+}
+
+function buildUniverseMetadata(candidate: any = null, fallbackAsOf: string | null = null) {
+  return {
+    universeAsOf: normalizeIsoString(
+      candidate?.discoveredAt
+      ?? candidate?.discovered_at
+      ?? candidate?.updatedAt
+      ?? candidate?.updated_at,
+      fallbackAsOf,
+    ),
+    universeSource: inferUniverseSource(candidate),
+  };
+}
+
+function mapDiscoveryCandidate(row: any = {}) {
+  return {
+    symbol: row.symbol,
+    market: row.market,
+    source: row.source ?? null,
+    discoveredAt: row.discovered_at ?? row.discoveredAt ?? row.updated_at ?? row.updatedAt ?? null,
+  };
+}
+
 async function getActiveCandidatesByMarket({ limit = 100, market = 'all' } = {}) {
   const normalizedMarket = normalizeMarket(market);
   const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 100) / 3));
   if (normalizedMarket !== 'all') {
     return getDiscoveryActiveCandidates(normalizedMarket, limit)
-      .then((rows) => rows.map((row) => ({ symbol: row.symbol, market: row.market })))
+      .then((rows) => rows.map(mapDiscoveryCandidate))
       .catch(() => []);
   }
   const rows = await Promise.all([
@@ -249,7 +285,7 @@ async function getActiveCandidatesByMarket({ limit = 100, market = 'all' } = {})
     getDiscoveryActiveCandidates('domestic', perMarketLimit).catch(() => []),
     getDiscoveryActiveCandidates('overseas', perMarketLimit).catch(() => []),
   ]);
-  return rows.flat().slice(0, limit).map((row) => ({ symbol: row.symbol, market: row.market }));
+  return rows.flat().slice(0, limit).map(mapDiscoveryCandidate);
 }
 
 async function getBacktestStatus(symbol: string, market: string) {
@@ -977,6 +1013,8 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       ohlcvTimeoutMs: OHLCV_TIMEOUT_MS,
       vectorbtEnabled: VECTORBT_ENABLED,
       vectorbtTimeoutMs: VECTORBT_TIMEOUT_MS,
+      universeAsOf: payload.universeAsOf ?? null,
+      universeSource: payload.universeSource ?? null,
       qualityGate: GATE,
       qualityRows: payload.qualityRows || [],
       qualityRowSelection: payload.qualityRowSelection || null,
@@ -1083,7 +1121,14 @@ async function recordPredictiveAudit(symbol: string, market: string, payload: an
     payload.reasons?.join(',') || null,
     JSON.stringify({ backtest: { fresh: payload.fresh, healthy: payload.healthy, sharpe: payload.sharpe } }),
     JSON.stringify([]),
-    JSON.stringify({ symbol, market, gateStatus: payload.gateStatus, shadowMode: SHADOW_MODE }),
+    JSON.stringify({
+      symbol,
+      market,
+      gateStatus: payload.gateStatus,
+      shadowMode: SHADOW_MODE,
+      universeAsOf: payload.universeAsOf ?? null,
+      universeSource: payload.universeSource ?? null,
+    }),
   ]).catch(() => null);
 }
 
@@ -1108,6 +1153,8 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
     periods: [],
     rowsByPeriod: {},
     top30Gate: gate,
+    universeAsOf: candidate.universeAsOf ?? null,
+    universeSource: candidate.universeSource ?? null,
   };
   await upsertStatusObserved(symbol, market, payload, dryRun);
   await recordPredictiveAudit(symbol, market, payload, dryRun).catch(() => null);
@@ -1123,12 +1170,14 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
     binanceTop30Rank: gate.rank,
     inBinanceTop30Universe: false,
     top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+    universeAsOf: payload.universeAsOf,
+    universeSource: payload.universeSource,
     error: null,
   };
 }
 
 async function refreshCandidate(symbol: string, market: string, periods: number[], options: any = {}) {
-  const { dryRun = false, fixture = false, force = false, deadlineAt = null } = options;
+  const { dryRun = false, fixture = false, force = false, deadlineAt = null, universeAsOf = null, universeSource = null } = options;
   const existing = await getBacktestStatus(symbol, market);
   const existingHealthy = existing?.healthy === true || String(existing?.healthy).toLowerCase() === 'true';
   const existingWouldBlock = existing?.would_block === true || String(existing?.would_block).toLowerCase() === 'true';
@@ -1144,6 +1193,8 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       fresh: true,
       wouldBlock: existingWouldBlock,
       reasons: parseJsonArray(existing.block_reasons),
+      universeAsOf,
+      universeSource,
       error: null,
     };
   }
@@ -1167,7 +1218,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       let rows = fixture
         ? fixtureRows(symbol)
         : VECTORBT_ENABLED
-          ? runVectorBtGrid(symbol, days, { timeoutMs: vectorbtTimeoutMs })
+          ? runVectorBtGrid(symbol, days, { timeoutMs: vectorbtTimeoutMs, universeAsOf, universeSource })
           : { status: 'skipped', message: 'vectorbt_disabled' };
       if (!Array.isArray(rows)) {
         periodErrors[String(days)] = rows?.message || rows?.error || 'vectorbt_no_rows';
@@ -1202,7 +1253,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       }
       // PBO 분리 산출: usable trades 통과 + PBO 활성 시만 호출 (fallback 경로 제외)
       if (pboEligibleThisPeriod && LUNA_PBO_ENABLED && Array.isArray(rows)) {
-        const pboRaw = runVectorBtPbo(symbol, days, { timeoutMs: LUNA_PBO_TIMEOUT_MS });
+        const pboRaw = runVectorBtPbo(symbol, days, { timeoutMs: LUNA_PBO_TIMEOUT_MS, universeAsOf, universeSource });
         if (Array.isArray(pboRaw) && pboRaw.length > 0) {
           const src = pboRaw[0];
           const pboFields: any = {};
@@ -1217,7 +1268,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       }
       // Meta-label Stage 1: usable trades 통과 + 명시 활성화 시만 호출 (fallback 경로 제외)
       if (metaLabelEligibleThisPeriod && LUNA_META_LABEL_ENABLED && Array.isArray(rows)) {
-        const metaRaw = runVectorBtMetaLabels(symbol, days, { timeoutMs: LUNA_META_LABEL_TIMEOUT_MS });
+        const metaRaw = runVectorBtMetaLabels(symbol, days, { timeoutMs: LUNA_META_LABEL_TIMEOUT_MS, universeAsOf, universeSource });
         if (Array.isArray(metaRaw) && metaRaw.length > 0) {
           const src = metaRaw[0];
           const metaFields: any = {};
@@ -1243,7 +1294,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       quality.gateStatus = 'would_block_unstable_backtest';
       quality.reasons = [...(quality.reasons || []), `backtest_runtime_budget_partial(periods_processed=${Object.keys(rowsByPeriod).length},periods_requested=${periods.length})`];
     }
-    const payload = { fresh: true, ...quality, periods, rowsByPeriod, periodErrors, fallbackUsed };
+    const payload = { fresh: true, ...quality, periods, rowsByPeriod, periodErrors, fallbackUsed, universeAsOf, universeSource };
     await upsertStatusObserved(symbol, market, payload, dryRun);
     await recordPredictiveAudit(symbol, market, payload, dryRun);
     return {
@@ -1267,6 +1318,8 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       metaLabelPosRate: quality.metaLabelPosRate ?? null,
       metaLabelNTrades: quality.metaLabelNTrades ?? null,
       metaLabelMethod: quality.metaLabelMethod ?? null,
+      universeAsOf,
+      universeSource,
       error: null,
     };
   } catch (error) {
@@ -1282,10 +1335,12 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       reasons: [errMsg],
       periods,
       rowsByPeriod: {},
+      universeAsOf,
+      universeSource,
     };
     await upsertStatusObserved(symbol, market, payload, dryRun);
     await recordPredictiveAudit(symbol, market, payload, dryRun).catch(() => null);
-    return { symbol, market, skipped: false, gateStatus: 'would_block_error', healthy: false, fresh: false, wouldBlock: true, reasons: [errMsg], error: errMsg };
+    return { symbol, market, skipped: false, gateStatus: 'would_block_error', healthy: false, fresh: false, wouldBlock: true, reasons: [errMsg], universeAsOf, universeSource, error: errMsg };
   }
 }
 
@@ -1309,7 +1364,10 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   }
 
   const candidates = fixture
-    ? [{ symbol: 'BTC/USDT', market: 'crypto' }, { symbol: 'NEG/USDT', market: 'crypto' }]
+    ? [
+      { symbol: 'BTC/USDT', market: 'crypto', source: 'fixture_seed', discoveredAt: new Date(startedAt).toISOString() },
+      { symbol: 'NEG/USDT', market: 'crypto', source: 'fixture_seed', discoveredAt: new Date(startedAt).toISOString() },
+    ]
     : await getActiveCandidatesByMarket({ limit, market });
   const binanceTopVolumeUniverse = fixture
     ? buildFixtureBinanceTopVolumeUniverse()
@@ -1330,8 +1388,17 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const budgetedCandidates = maxSymbols == null
     ? scheduledCandidates
     : scheduledCandidates.slice(0, maxSymbols);
+  const batchUniverseAsOf = new Date(startedAt).toISOString();
 
   if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${budgetedCandidates.length}/${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
+  if (!json && budgetedCandidates.length > 0) {
+    const sourceCounts = budgetedCandidates.reduce((acc, candidate) => {
+      const source = inferUniverseSource(candidate) || 'unknown';
+      acc[source] = (acc[source] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`[luna-backtest-refresh] universe selection asOf=${batchUniverseAsOf} criterion=candidate_universe_score_priority sources=${JSON.stringify(sourceCounts)}`);
+  }
 
   const results = [];
   let budgetStopped = false;
@@ -1340,7 +1407,9 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     if (progress) console.error(`[luna-backtest-refresh] ${message}`);
   };
   for (let index = 0; index < budgetedCandidates.length; index += 1) {
-    const { symbol, market } = budgetedCandidates[index];
+    const candidate = budgetedCandidates[index];
+    const { symbol, market } = candidate;
+    const universeMetadata = buildUniverseMetadata(candidate, batchUniverseAsOf);
     const elapsedMs = Date.now() - startedAt;
     if (maxRuntimeMs != null && elapsedMs >= maxRuntimeMs) {
       budgetStopped = true;
@@ -1351,13 +1420,13 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     emitProgress(`start ${index + 1}/${budgetedCandidates.length} symbol=${symbol} market=${market} elapsedMs=${elapsedMs}`);
     const top30Gate = evaluateTop30GateForCandidate({ symbol, market }, binanceTopVolumeUniverse);
     if (top30Gate.blocked) {
-      results.push(await recordTop30BacktestBlock({ symbol, market }, top30Gate, dryRun));
+      results.push(await recordTop30BacktestBlock({ symbol, market, ...universeMetadata }, top30Gate, dryRun));
       emitProgress(`blocked-top30 symbol=${symbol} rank=${top30Gate.rank ?? 'n/a'}`);
       continue;
     }
     const deadlineAt = maxRuntimeMs == null ? null : startedAt + maxRuntimeMs;
     const candidatePeriods = periodsForMarket(market, periods);
-    const result = await refreshCandidate(symbol, market, candidatePeriods, { dryRun, fixture, force, deadlineAt });
+    const result = await refreshCandidate(symbol, market, candidatePeriods, { dryRun, fixture, force, deadlineAt, ...universeMetadata });
     result.binanceTop30Rank = top30Gate.rank;
     result.inBinanceTop30Universe = normalizeMarket(market) === 'crypto' ? top30Gate.ok === true : null;
     results.push(result);
@@ -1416,6 +1485,8 @@ export const __test = {
   interleaveCandidatesByMarket,
   rowsHaveUsableTrades,
   selectBestQualityRows,
+  inferUniverseSource,
+  buildUniverseMetadata,
 };
 
 export { evaluateCandidateBacktestStatus };

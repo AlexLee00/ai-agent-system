@@ -1540,6 +1540,33 @@ def sanitize_json_value(value):
     return value
 
 
+ALLOWED_UNIVERSE_SOURCES = {"seed", "discovery", "watchlist"}
+
+
+def normalize_universe_source(value):
+    raw = str(value or "").strip().lower()
+    return raw if raw in ALLOWED_UNIVERSE_SOURCES else None
+
+
+def universe_metadata(args) -> dict:
+    return {
+        "universe_asof": str(args.universe_asof).strip() if getattr(args, "universe_asof", None) else None,
+        "universe_source": normalize_universe_source(getattr(args, "universe_source", None)),
+    }
+
+
+def attach_universe_metadata(result, args):
+    meta = universe_metadata(args)
+    if isinstance(result, list):
+        return [
+            {**item, **meta} if isinstance(item, dict) else item
+            for item in result
+        ]
+    if isinstance(result, dict):
+        return {**result, **meta}
+    return result
+
+
 def emit_missing_dependency_error(missing: list[str], as_json: bool):
     payload = {
         "status": "dependency_missing",
@@ -1566,6 +1593,8 @@ def main():
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--tp", type=float, default=0.06)
     parser.add_argument("--sl", type=float, default=0.03)
+    parser.add_argument("--universe-asof", default=None)
+    parser.add_argument("--universe-source", default=None)
     args = parser.parse_args()
 
     if args.dry_test_meta_labels:
@@ -1637,12 +1666,14 @@ def main():
         else:
             result = run_backtest(df, {"tp_pct": args.tp, "sl_pct": args.sl}, deps)
     except Exception as exc:
-        payload = {"status": "error", "message": str(exc)}
+        payload = {"status": "error", "message": str(exc), **universe_metadata(args)}
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             print(f"ERROR: {exc}")
         return 1
+
+    result = attach_universe_metadata(result, args)
 
     if args.json:
         print(json.dumps(sanitize_json_value(result), ensure_ascii=False, indent=2))

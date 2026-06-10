@@ -10,7 +10,8 @@ const { loadAutoDevManifest } = require('../../../packages/core/lib/auto-dev-man
 const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
 
 const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
-const RESOLVED_MANIFEST_REASON_RE = /(completed|resolved|replayed|manual|verified|current_code|recovered|cleanup|skip|skipped|routed_report|missing_document|stale_resolved_live_check)/i;
+const DEFAULT_COMPLETED_ARCHIVE_DIR = path.join(env.PROJECT_ROOT, 'docs', 'archive', 'codex-completed');
+const RESOLVED_MANIFEST_REASON_RE = /(completed|resolved|replayed|manual|verified|current_code|current_code_patched|recovered|cleanup|skip|skipped|routed_report|routed_to_digest|missing_document|stale_resolved_live_check|stale_or_recovered|dedupe_patched|operational_noise)/i;
 const CURRENT_POLICY_RESOLUTION_MIN_CONFIDENCE = 0.8;
 
 function argValue(name: string, fallback = ''): string {
@@ -62,13 +63,56 @@ function findManifestEntry(manifest: Record<string, any>, relPath: unknown): Rec
 
 function manifestResolvedReason(entry: Record<string, any> | null): string {
   if (!entry) return '';
-  return String(
-    entry.reason
-      || entry.resolvedReason
-      || entry.implementationStatus
-      || entry.implementation_status
-      || ''
-  ).trim();
+  return [
+    entry.reason,
+    entry.resolvedReason,
+    entry.implementationStatus,
+    entry.implementation_status,
+    entry.note,
+  ].map((item) => String(item || '').trim()).filter(Boolean).join(' ');
+}
+
+function listArchiveCandidates(relPath: unknown, archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR): string[] {
+  const normalized = normalizeRelPath(relPath);
+  const basename = path.basename(normalized).replace(/\.md$/i, '');
+  if (!basename) return [];
+  try {
+    return fs.readdirSync(archiveDir)
+      .filter((name: string) => name.endsWith('.md') && name.includes(basename))
+      .sort()
+      .map((name: string) => normalizeRelPath(path.relative(env.PROJECT_ROOT, path.join(archiveDir, name))));
+  } catch {
+    return [];
+  }
+}
+
+function archiveDocumentMatches(row: Record<string, any>, relPath: string): boolean {
+  const incidentKey = normalizeRelPath(row.incident_key);
+  if (!incidentKey) return false;
+  try {
+    const text = fs.readFileSync(path.join(env.PROJECT_ROOT, relPath), 'utf8');
+    return text.includes(`incident_key: ${incidentKey}`)
+      || text.includes(`incident_key: ${JSON.stringify(incidentKey).slice(1, -1)}`)
+      || text.includes(incidentKey);
+  } catch {
+    return false;
+  }
+}
+
+function resolveByCompletedArchive(
+  row: Record<string, any>,
+  archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
+): Record<string, any> | null {
+  const candidates = listArchiveCandidates(row.auto_dev_path, archiveDir);
+  const matchedPath = candidates.find((candidate) => archiveDocumentMatches(row, candidate));
+  if (!matchedPath) return null;
+  return {
+    stale_status: 'resolved_manifest',
+    stale_resolution_reason: 'completed_archive_document_matches_incident',
+    archived_path: matchedPath,
+    archive_exists: true,
+    inbox_exists: repoFileExists(row.auto_dev_path),
+  };
 }
 
 function resolveByManifest(row: Record<string, any>, manifest: Record<string, any>): Record<string, any> | null {
@@ -127,12 +171,17 @@ function resolveByCurrentPolicy(row: Record<string, any>): Record<string, any> |
 
 function annotateRows(rows: Array<Record<string, any>>, {
   manifest = loadManifest(),
+  archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
 }: {
   manifest?: Record<string, any>;
+  archiveDir?: string;
 } = {}) {
   return rows.map((row) => {
     const manifestResolution = resolveByManifest(row, manifest);
     if (manifestResolution) return { ...row, ...manifestResolution };
+
+    const archiveResolution = resolveByCompletedArchive(row, archiveDir);
+    if (archiveResolution) return { ...row, ...archiveResolution };
 
     const policyResolution = resolveByCurrentPolicy(row);
     if (policyResolution) return { ...row, ...policyResolution };
@@ -166,11 +215,13 @@ export async function scanStaleAutoRepair({
   limit = 20,
   db = pgPool,
   manifest,
+  archiveDir,
 }: {
   staleMinutes?: number;
   limit?: number;
   db?: { query: (...args: any[]) => Promise<Array<Record<string, any>>> };
   manifest?: Record<string, any>;
+  archiveDir?: string;
 } = {}) {
   const threshold = normalizeNumber(staleMinutes, 120, 5, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 20, 1, 100);
@@ -230,7 +281,7 @@ export async function scanStaleAutoRepair({
     ORDER BY enqueued_at DESC, created_at DESC
     LIMIT $2
   `, [threshold, rowLimit]);
-  const annotatedRows = annotateRows(rows, { manifest });
+  const annotatedRows = annotateRows(rows, { manifest, archiveDir });
   const activeRows = annotatedRows.filter((row) => row.stale_status === 'active');
   const resolvedRows = annotatedRows.filter((row) => row.stale_status !== 'active');
   return {

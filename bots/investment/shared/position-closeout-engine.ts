@@ -20,6 +20,7 @@ import {
   recordPhase6ReviewCreated,
   recordPhase6ReviewCompleted,
 } from './lifecycle-contract.ts';
+import { invalidateCapitalSnapshot } from './capital-manager.ts';
 
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
@@ -97,6 +98,20 @@ function hasPositiveExecutionFill(executeResult: Record<string, unknown> | null 
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0;
   });
+}
+
+function hasPartialExecutionFill(executeResult: Record<string, unknown> | null = null, status: string | null = null) {
+  const normalizedStatus = String(status || normalizeExecutionStatus(executeResult) || '').toLowerCase();
+  if (normalizedStatus.includes('partial')) return true;
+  if (normalizeBoolean(executeResult?.partial) === true) return true;
+  if (normalizeBoolean(executeResult?.partiallyFilled) === true) return true;
+  const fillRatio = safeNumber(
+    executeResult?.fillRatio
+    ?? executeResult?.filledRatio
+    ?? executeResult?.filled_ratio,
+    null,
+  );
+  return fillRatio != null && fillRatio > 0 && fillRatio < 1;
 }
 
 function hasExplicitExecutionFailure(executeResult: Record<string, unknown> | null = null, status: string | null = null) {
@@ -245,6 +260,7 @@ export interface CloseoutResult {
   executedRatio?: number | null;
   executedNotional?: number | null;
   pnlRealized?: number | null;
+  capitalSnapshotInvalidated?: boolean | null;
   error?: string | null;
 }
 
@@ -325,7 +341,8 @@ export async function finalizeCloseout(
     || executeResult?.notional,
     null,
   ) || null;
-  const pnlRealized = safeNumber(executeResult?.pnlRealized, null) || null;
+  const parsedPnlRealized = safeNumber(executeResult?.pnlRealized, null);
+  const pnlRealized = parsedPnlRealized == null ? null : parsedPnlRealized;
   const executedRatio = executeResult?.executedRatio != null
     ? safeNumber(executeResult.executedRatio)
     : (plannedRatio != null ? safeNumber(plannedRatio) : null);
@@ -395,6 +412,21 @@ export async function finalizeCloseout(
     }
   }
 
+  let capitalSnapshotInvalidated: boolean | null = null;
+  if (
+    success
+    && pnlRealized != null
+    && !hasPartialExecutionFill(executeResult, executionStatus)
+  ) {
+    try {
+      invalidateCapitalSnapshot(`closeout_sell_success:${exchange}:${symbol}:${tradeMode}`);
+      capitalSnapshotInvalidated = true;
+    } catch (invalidationError) {
+      capitalSnapshotInvalidated = false;
+      console.warn('[position-closeout] capital snapshot invalidation failed:', invalidationError?.message || invalidationError);
+    }
+  }
+
   return {
     ok: success,
     signalId,
@@ -405,6 +437,7 @@ export async function finalizeCloseout(
     executedRatio,
     executedNotional,
     pnlRealized,
+    capitalSnapshotInvalidated,
     error: failureReason,
   };
 }
