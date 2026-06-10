@@ -120,6 +120,16 @@ export function safeJournalPnlPercent({
 
 let _initPromise = null;
 
+export function shouldLogJournalSchemaInit({
+  argv = process.argv,
+  env = process.env,
+} = {}) {
+  if (env.LUNA_SCHEMA_INIT_LOGS === 'false') return false;
+  // Keep --json stdout reserved for the JSON payload emitted by the caller.
+  if (Array.isArray(argv) && argv.includes('--json')) return false;
+  return true;
+}
+
 function ensureInit() {
   if (!_initPromise) {
     _initPromise = initJournalSchema().catch(err => {
@@ -517,7 +527,7 @@ export async function initJournalSchema() {
     console.warn('[trade-journal] JSONB 마이그레이션 실패 (계속 진행):', err.message);
   });
 
-  console.log('✅ 매매일지 스키마 초기화 완료');
+  if (shouldLogJournalSchemaInit()) console.log('✅ 매매일지 스키마 초기화 완료');
 }
 
 // ─── trade_id 생성 ────────────────────────────────────────────────────

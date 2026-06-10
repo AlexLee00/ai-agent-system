@@ -9,6 +9,18 @@
 
 export const INVESTMENT_SCHEMA_BOOTSTRAP_FAMILY = 'bootstrap';
 
+export function shouldLogInvestmentSchemaBootstrap({
+  log = true,
+  argv = process.argv,
+  env = process.env,
+} = {}) {
+  if (!log) return false;
+  if (env.LUNA_SCHEMA_INIT_LOGS === 'false') return false;
+  // Health/report CLIs rely on stdout being parseable JSON when --json is set.
+  if (Array.isArray(argv) && argv.includes('--json')) return false;
+  return true;
+}
+
 export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   await run(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -1493,11 +1505,12 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
     }
   } catch { /* 무시 */ }
 
-  if (log) console.log(`✅ DB 스키마 초기화 완료 (investment 스키마)`);
+  if (shouldLogInvestmentSchemaBootstrap({ log })) console.log(`✅ DB 스키마 초기화 완료 (investment 스키마)`);
 
 }
 
 export default {
   INVESTMENT_SCHEMA_BOOTSTRAP_FAMILY,
+  shouldLogInvestmentSchemaBootstrap,
   runInvestmentSchemaBootstrap,
 };
