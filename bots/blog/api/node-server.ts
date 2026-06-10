@@ -46,6 +46,39 @@ function isAddressInUseError(error: any) {
   return error?.code === 'EADDRINUSE' && Number(error?.port) === Number(PORT);
 }
 
+function existingNodeServerHealthy() {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        hostname: HOST,
+        port: Number(PORT),
+        path: '/health',
+        method: 'GET',
+        timeout: Number(process.env.BLOG_NODE_SERVER_HEALTH_TIMEOUT_MS || 1000),
+      },
+      (res: any) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(body || '{}');
+            resolve(res.statusCode >= 200 && res.statusCode < 300 && parsed?.ok === true);
+          } catch {
+            resolve(false);
+          }
+        });
+      },
+    );
+    req.once('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.once('error', () => resolve(false));
+    req.end();
+  });
+}
+
 function listenOnce() {
   return new Promise((resolve, reject) => {
     const server = http.createServer(app);
@@ -65,6 +98,12 @@ async function listenWithPortRetry() {
       return await listenOnce();
     } catch (error: any) {
       if (!isAddressInUseError(error)) throw error;
+      if (await existingNodeServerHealthy()) {
+        console.warn(
+          `[노드서버] ${HOST}:${PORT} 기존 node-server health 응답 확인 — 중복 기동을 종료합니다.`,
+        );
+        process.exit(0);
+      }
       if (attempt >= LISTEN_MAX_RETRIES) {
         console.warn(
           `[노드서버] ${HOST}:${PORT} 이미 사용 중 — 기존 node-server가 응답 중이면 중복 기동을 종료합니다.`,
