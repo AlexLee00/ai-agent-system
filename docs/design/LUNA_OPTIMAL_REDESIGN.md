@@ -1,6 +1,6 @@
 # 루나 최적 재설계 설계서 (Phase 3)
 
-> 작성: 메티 · 2026-06-12 · 상태: **v0.3** — v0.2 + 운영 타임라인·전체 시뮬레이션 보강(§7). 회의실 정합=MEETING_ROOM_DESIGN v0.6(§21–23)
+> 작성: 메티 · 2026-06-12 · 상태: **v1.0 설계 확정(2026-06-14 마스터 승인)** — 확정 6건=§7. 회의실=MEETING_ROOM_DESIGN v0.6. 구현=LUNA_OPTIMAL_REDESIGN_TRACKER
 > 입력: LUNA_LOGIC_REANALYSIS.md(Phase 1 진단·신규 12영상 6원칙·B-01~20 재배치·M-1~M-11·외부자료 E-1~3/QuantaAlpha 등·루틴 비전)
 > 원칙: 비용 무시·최적 성능(마스터 지시). 무중단(PROTECTED launchd·크립토 LIVE·스카 실매출). 3시장(국내·해외·crypto) 공통 + 시장별 변형.
 
@@ -194,6 +194,19 @@
 5. **C15 등록**: "전략군 룰 재평가 vs 기존 지표 bias 재평가"를 shadow 비교(가상 청산 성과 Δ) → 승격 제안.
 - 재사용: reevaluator 1,949줄(골격)·dynamic-trail·protective-order·autopilot cadence·holding-monitor(안전망化). 신설=전략군 태그 스키마+군별 청산 룰 평가기+add 유닛 로직.
 
+### C17. 파라미터 스토어 [최종 리뷰 보강 — "동적 제어의 실체" 정식 설계]
+> 전 문서에서 11회 전제된 핵심 인프라의 실체 정의. 🔑 **기존 자산 3종 통합·확장**(신설 최소): `runtime-parameter-governance.ts`(203줄 — 키별 거버넌스 티어 escalate/immutable 기존재) + `runtime-config-suggestions`·`runtime-luna-dynamic-policy-operator`(제안·운영 기존재) + `luna_regime_weight_snapshots`(DB 이력 스냅샷 패턴).
+- **스키마(신설 1테이블)**: `investment.luna_parameter_store` — `key · value(jsonb) · scope(market/strategy_family/global) · tier(auto|approve|immutable — governance 티어 매핑) · effective_from(T1 적용 시점) · evidence(검증 ID: 백테스트/permutation/C15 제안서 참조) · changed_by(system|meeting|master) · prev_value` + 이력 추적(append-only).
+- **적용 메커니즘**: 읽기=사이클 시작 시 1회 로드(T1: 진행 중 사이클 불변, 경계급만 즉시 reload 신호) · 쓰기=①C7 검증 통과 자동(tier=auto) ②회의 ADR(tier=approve, 마스터) ③C15 승격. env/runtime_config는 **폴백+부트스트랩**(스토어 미존재 키는 env 기본값).
+- **거버넌스**: 기존 governance 티어 재사용 — auto(레짐 멀티·게이트 임계 등 검증 갱신 가능) / approve(리밋·전략군 추가 등) / immutable(회로차단기·order_rules — 기존 'immutable' 선언 유지).
+- **C15 연동**: 파라미터 변경도 0-b 루프(변경→성과 추적→롤백/유지 제안). 구현=P1-1과 동일 CODEX(레지스트리와 한 몸).
+
+### 보강 메모 [최종 리뷰 — 소갭 4건 확정]
+- **G6 초기값**: LLM 리뷰어 감점 캡 = 최종 스코어의 **−20%**(예: 10점 만점 중 −2), 보조점수 블렌드 가중 = **0.2**(결정론 0.8) — 모두 파라미터 스토어(tier=auto), Stage A 데이터로 보정.
+- **G3 A단(discovery) 전략군 프리필터**: 기존 discovery 재사용하되 **전략군별 근접 후보 프리필터 추가**(터틀=20봉 고점 3% 이내 · 눌림목=정배열+5선 거리 · 레인지=박스 형성 — 룰 80% 충족=워치리스트 C10 등록). discovery 자체 교체 아님.
+- **Stage A 비교 대시보드 = 신설 UI 없음**: 일일 debrief(§23.2)에 "신구 스택 비교" 1섹션(일치율·가상 E Δ) + 주간 회의 표. :7787 위젯은 P3 선택.
+- **C16 폴링 = 기존 holding-monitor 병행**(plist 교체 아님): 기존 2종(6h/30min) 유지(안전망) + 캔들 정렬 폴링 신규 plist 추가(비-PROTECTED).
+
 ## 4. 마이그레이션 경로 (무중단 — 하이브리드 Phase 패턴 재사용)
 - **Stage A(병행)**: 신규 스택을 **shadow 모드**로 병행 가동(기존 LLM 스택이 LIVE 유지) — 모든 G0~G7 산출을 로깅만. 비교 대시보드(일치율·가상 성과).
 - **Stage B(부분 승격)**: 검증 통과 컴포넌트부터 개별 승격(게이트→사이징→전략군 순). 시장별 단계(KIS 먼저=손실 시장, crypto LIVE는 마지막).
@@ -206,13 +219,8 @@
 - **P2(검증·피드백·포지션)**: C7 permutation·CPCV + C8 피드백 루프 + C5 스코어 융합 + **C16 전략군 인식 재평가**(C3 태그 의존 — shadow 비교로 C15 등록).
 - **P3(자율 완성)**: C9~C14 + C16 add 액션 승격 + Stage B/C 승격 + 완전자율 루프(파라미터 스토어 전면).
 
-## 6. 다음 작업 (2026-06-13 갱신 — 최종 리뷰·TRACKER 완료)
-1. ✅ 최종 리뷰 완료: P0 5건 소스 실측(파일·줄 특정 — TRACKER 참조) · 설계 클레임 검증.
-2. ✅ TRACKER: `LUNA_OPTIMAL_REDESIGN_TRACKER.md` 신설(기존 WS 매핑·P0~P3 분해) · MEETING_ROOM_TRACKER 상호 참조.
-3. **다음: 마스터 최종 승인 → P0 CODEX 프롬프트(`docs/codex/CODEX_LUNA_P0_BATCH.md`) 작성 → 코덱스 실행 → 메티 검증.**
-4. 이후: P1-1(C15 레지스트리) CODEX → C1~C4.
 
-## 7. 운영 타임라인 + 전체 시뮬레이션 보강 [v0.3 — 루나팀 하루 워크스루 결과]
+## 6. 운영 타임라인 + 전체 시뮬레이션 보강 [v0.3 — 루나팀 하루 워크스루 결과]
 > 시뮬레이션: 평일 1일(KIS 장중·crypto 24/7·미국장 야간) + 주말(주간회의) 운영을 마스터 루틴 비전(§0) 위에서 워크스루. 도출 갭 7건(T1~T7) → 보강.
 
 **하루 표준 타임라인(KST)**:
@@ -233,3 +241,13 @@
 - **T5 피드백 루프 주기**: C8 통계 갱신=일일(장 마감 후) · 가설 생성→C7 검증 제출=주간 · 파라미터 자동 갱신=검증 통과 시점(T1 규칙 적용).
 - **T6 워치리스트 장중 충족**: 진입조건 충족 → Stage A=shadow 기록+알림만 / Stage B+=G4 통과 시 자동 진입(**마스터 사전 위임 범위 내** — 위임 범위는 회의 결정·파라미터 스토어).
 - **T7 시장별 게이트 독립+전이**: 3시장 G0는 독립 산출하되 전이 신호(미국→한국·crypto) 포함(C1 정의대로). 미국장 진행 중 새벽 회의는 "마감 전 스냅샷" 기준임을 morning-note에 명시(데이터 시점 정직성).
+
+## 7. 확정 사항 + 다음 작업 (2026-06-14 마스터 승인 — 설계 확정)
+**마스터 확인 6건 → 권고안 일괄 승인(확정)**:
+- ① G0 임계 초기값 = full>70 / reduced 40–70(사이징 60%) / halt<40 — Stage A 데이터로 보정(파라미터 스토어 tier=auto).
+- ② C3 룰셋 초기값 = 터틀 20/10·2×ATR(20) · 테스타 5/25/75 · R:R≥2 — stable-range 백테스트로 확정.
+- ③ C9 동적 리밋 = 기본 15 × 레짐 × E부호 × 배치율, **상한 캡 30**(현행 2배).
+- ④ P0-1 교정 = closedTrades 3→**30** 상향 + **델타 절반**(점진 — 완전 비활성 아님).
+- ⑤ Stage A 목표 = **4주 · 전략군별 신호 30+ · 가상 E가 LIVE 대비 우월** — C15 등록 시 기준으로 확정.
+- ⑥ C13 분석가 ablation = **P3 유지**(데이터 누적 후).
+**다음 작업**: 1. P0 CODEX(`docs/codex/CODEX_LUNA_P0_BATCH.md`) 작성 → 코덱스 실행 → 메티 독립 검증 → 마스터 커밋. 2. P1-1(C15 레지스트리+C17 파라미터 스토어) CODEX. 3. C1~C4 CODEX.

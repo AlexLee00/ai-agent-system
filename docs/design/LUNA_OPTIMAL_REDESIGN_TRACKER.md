@@ -1,6 +1,6 @@
 # 루나 최적 재설계 — 구현 추적 (TRACKER)
 
-> v1.0 (2026-06-13) · 작성: 메티 · SSOT=LUNA_OPTIMAL_REDESIGN.md(v0.2) · 입력=LUNA_LOGIC_REANALYSIS.md
+> v1.0 (2026-06-13) · 작성: 메티 · SSOT=LUNA_OPTIMAL_REDESIGN.md(**v1.0 확정**) · 입력=LUNA_LOGIC_REANALYSIS.md
 > **우산 관계**: 본 트래커가 루나 로직 재설계의 상위 추적. 회의실(WS-A~E·G·Q)은 LUNA_MEETING_ROOM_TRACKER 유지(=C11 트랙). 기존 WS 중 재설계와 겹치는 항목은 아래 매핑대로 **본 트래커로 합류**(이중 추적 금지).
 > 원칙: 무중단(PROTECTED·crypto LIVE·스카) · shadow→L4→L5 표준 경로(C15) · 검증 통과분만 승격 · 마스터=게이트.
 
@@ -20,14 +20,15 @@
 | WS-A~E·G·Q 회의실 | C11 | **MEETING_ROOM_TRACKER에서 계속**(이벤트 트리거만 본 트래커 P2) |
 
 ## P0 — 즉시·저위험 (실측 완료 2026-06-13, 개별 CODEX)
-- **P0-1** reviewHint 소표본 교정 — `team/luna.ts:276` `closedTrades<3`→30 상향+델타 축소 · 코덱스 · 검증: 단위(경계값)+기존 흐름 무변 — 상태: CODEX 작성 대기
+> 설계 확정(2026-06-14): G0=70/40·60% / C3 초기값 승인 / 리밋 상한 30 / Stage A=4주·30신호·E우월 / ablation=P3.
+- **P0-1** reviewHint 소표본 교정 — `team/luna.ts:276` `closedTrades<3`→30 상향+**델타 절반**(확정 ④) · 코덱스 · 검증: 단위(경계값)+기존 흐름 무변 — 상태: CODEX 작성 대기
 - **P0-2** robust selection ON — `backtest-vectorbt.py:676,750` `LUNA_BT_ROBUST_SELECTION_ENABLED=true`(launchd/env) · 코덱스 · 검증: 스모크에서 robust 합의 선택 확인 — 대기
 - **P0-3** point-in-time 실측·기록 — 백테스트 메타에 `universe_asof` 기록 + discovery 선정 시점 로깅(전면 교정은 P2/C7) · 코덱스 · 검증: 메타 필드 존재 — 대기
 - **P0-4** 1-bar shift 감사 — `.shift(1)` 기존재 확인됨(180·209·222), 잔여=체결가(다음 봉 시가?)·비용 반영 감사 보고서 · 코덱스(감사)→메티(판정) — 대기
 - **P0-5** 매도 후 자본 재평가 훅 — `position-closeout-engine.ts` `finalizeCloseout`(296~)에서 capitalSnapshot 무효화→재계산(capital-manager buyable 재산출) · 코덱스 · 검증: 매도→같은 사이클 buyable 갱신(하드) — 대기
 
 ## P1 — 코어 골격 + 제안 인프라 [shadow]
-- **P1-1** C15 레지스트리+제안서 생성기 — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
+- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store` 테이블·governance 통합) — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
 - **P1-2** C1 시장 배치 게이트(3시장 신호 합성→full/reduced/halt, 이력 로깅) — 대기
 - **P1-3** C2 레짐 승격(HMM shadow→core 후보, 확률 벡터+전이 경보) · 의존: P1-1(C15 등록) — 대기
 - **P1-4** C3 전략군 2종(터틀·눌림목) 룰셋 구현+shadow 신호 로깅 · stable-range 파라미터 선정(E-1) — 대기
