@@ -106,6 +106,61 @@ const hardStopWithRecovery = applyExitPlanGuard({
 });
 assert.equal(hardStopWithRecovery.allowed, true);
 
+const lossRecheckAgentPlan = {
+  deterministicExitPolicy: {
+    symbolExitPolicy: {
+      policy: 'loss_exit_recheck_before_sell',
+      priority: 'P1',
+      effects: {
+        nonHardLossRecheck: 'required',
+      },
+    },
+  },
+};
+
+const symbolPolicyLossRecheck = applyExitPlanGuard({
+  ...guardedCandidate,
+  heldHours: 4,
+  pnlPct: -2.4,
+  reasonCode: 'bearish_loss_consensus',
+  agentPlan: lossRecheckAgentPlan,
+  strategyProfile: {
+    exitPlan: {
+      minHoldHours: 0,
+      mildLossGracePct: -5,
+    },
+  },
+});
+assert.equal(symbolPolicyLossRecheck.allowed, false);
+assert.match(symbolPolicyLossRecheck.reason, /symbol exit policy requires non-hard loss recheck/);
+
+const symbolPolicyStackedBearishExit = applyExitPlanGuard({
+  ...guardedCandidate,
+  heldHours: 4,
+  pnlPct: -2.4,
+  reasonCode: 'bearish_loss_consensus',
+  agentPlan: lossRecheckAgentPlan,
+  strategyProfile: {
+    exitPlan: {
+      minHoldHours: 0,
+    },
+    positionRuntimeState: {
+      marketState: {
+        liveIndicator: {
+          compositeSignal: 'SELL',
+          weightedBias: -0.5,
+          timeframes: [
+            { interval: '1h', signal: 'SELL' },
+            { interval: '4h', signal: 'SELL' },
+          ],
+        },
+        analysisCounts: { buy: 0, hold: 0, sell: 3 },
+      },
+    },
+  },
+});
+assert.equal(symbolPolicyStackedBearishExit.allowed, true);
+
 const hardPreflight = await getExecutionPreflight({
   ...guardedCandidate,
   reasonCode: 'stop_loss_threshold',
@@ -120,5 +175,6 @@ console.log(JSON.stringify({
   guarded: guardedPreflight.code,
   earlyLossExit: earlyLossExit.level,
   recoveryGuardedExit: recoveryGuardedExit.level,
+  symbolPolicyLossRecheck: symbolPolicyLossRecheck.level,
   hardExit: hardPreflight.code,
 }, null, 2));

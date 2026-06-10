@@ -426,6 +426,15 @@ export function buildLunaSymbolExitTimingStrategyReport({
   const p0Count = symbolList.filter((row) => row.priority === P0).length;
   const p1Count = symbolList.filter((row) => row.priority === P1).length;
   const symbolExitPolicyMatrix = materializeSymbolExitPolicyMatrix(symbolList, { generatedAt, source });
+  const runtimeGateIntegration = {
+    status: symbolExitPolicyMatrix.status === 'materialized'
+      ? 'wired_to_runtime_runner_args'
+      : 'waiting_for_materialized_matrix',
+    deterministicExitPolicy: symbolExitPolicyMatrix.status === 'materialized',
+    runnerAgentPlan: symbolExitPolicyMatrix.status === 'materialized',
+    partialAdjustRatioBias: symbolExitPolicyMatrix.status === 'materialized',
+    strategyExitNonHardLossRecheck: symbolExitPolicyMatrix.status === 'materialized',
+  };
 
   return {
     ok: rawRecords.length > 0,
@@ -446,6 +455,7 @@ export function buildLunaSymbolExitTimingStrategyReport({
     allSymbols: symbolList.map((row) => row.symbolKey),
     symbolList,
     symbolExitPolicyMatrix,
+    runtimeGateIntegration,
     tradeRows: compactTrades,
     topLateExitAfterPeak: symbolList
       .filter((row) => num(row.timingCategories?.late_exit_after_peak, 0) > 0)

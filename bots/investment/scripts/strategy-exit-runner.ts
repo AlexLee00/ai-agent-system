@@ -183,6 +183,21 @@ function buildExitRecoverySignalState(candidate = {}) {
   };
 }
 
+function getSymbolExitPolicyFromAgentPlan(agentPlan = null) {
+  return agentPlan?.deterministicExitPolicy?.symbolExitPolicy
+    || agentPlan?.symbolExitPolicy
+    || null;
+}
+
+function shouldRequireSymbolPolicyLossRecheck(candidate = {}, recoveryState = {}, { hardReason = false } = {}) {
+  if (hardReason) return false;
+  if (safeNumber(candidate?.pnlPct, 0) >= 0) return false;
+  const symbolExitPolicy = getSymbolExitPolicyFromAgentPlan(candidate?.agentPlan);
+  const effects = symbolExitPolicy?.effects || {};
+  return String(effects?.nonHardLossRecheck || '').trim() === 'required'
+    && recoveryState?.stackedBearish !== true;
+}
+
 function shouldDeferLossExitForRecovery(candidate = {}, recoveryState = {}, { hardReason = false } = {}) {
   const pnlPct = safeNumber(candidate?.pnlPct, 0);
   const heldHours = safeNumber(candidate?.heldHours, 0);
@@ -217,6 +232,15 @@ export function applyExitPlanGuard(candidate) {
   const familyFeedback = normalizeFamilyPerformanceFeedback(candidate?.strategyProfile?.familyPerformanceFeedback);
   const hardReason = isHardExitReason(candidate?.reasonCode);
   const recoveryState = buildExitRecoverySignalState(candidate);
+  if (shouldRequireSymbolPolicyLossRecheck(candidate, recoveryState, { hardReason })) {
+    return {
+      allowed: false,
+      level: 'guarded',
+      reason: `symbol exit policy requires non-hard loss recheck (${candidate?.agentPlan?.deterministicExitPolicy?.symbolExitPolicy?.policy || 'unknown'}, ${formatPct(candidate.pnlPct)}%, bearishFrames ${recoveryState.bearishFrames})`,
+      recoveryState,
+      symbolExitPolicy: getSymbolExitPolicyFromAgentPlan(candidate?.agentPlan),
+    };
+  }
   if (shouldDeferLossExitForRecovery(candidate, recoveryState, { hardReason })) {
     return {
       allowed: false,

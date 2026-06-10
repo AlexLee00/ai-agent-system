@@ -192,6 +192,13 @@ function buildSmokeInputs() {
       },
       bySymbol: {},
     },
+    runtimeGateIntegration: {
+      status: 'wired_to_runtime_runner_args',
+      deterministicExitPolicy: true,
+      runnerAgentPlan: true,
+      partialAdjustRatioBias: true,
+      strategyExitNonHardLossRecheck: true,
+    },
     symbolList: [
       {
         symbolKey: 'crypto:PEAK/USDT',

@@ -107,6 +107,34 @@ function getFamilyPerformanceFeedback(strategyProfile = null) {
   return feedback && typeof feedback === 'object' ? feedback : {};
 }
 
+function getSymbolExitPolicyFromAgentPlan(agentPlan = null) {
+  return agentPlan?.deterministicExitPolicy?.symbolExitPolicy
+    || agentPlan?.symbolExitPolicy
+    || null;
+}
+
+function tuneRatioBySymbolExitPolicy(ratio, symbolExitPolicy = null) {
+  let adjusted = Number(ratio);
+  if (!Number.isFinite(adjusted) || adjusted <= 0) return ratio;
+  const policy = String(symbolExitPolicy?.policy || '').trim();
+  const effects = symbolExitPolicy?.effects || {};
+  const partialProfit = String(effects?.partialProfit || '').trim();
+  const trailingStop = String(effects?.trailingStop || '').trim();
+
+  if (policy === 'peak_reversal_partial_trailing' || partialProfit === 'prefer_partial_lock') {
+    adjusted = Math.max(adjusted, 0.5);
+  } else if (partialProfit === 'prefer_partial_take_profit') {
+    adjusted = Math.max(adjusted, 0.4);
+  }
+  if (trailingStop === 'loosen_for_continuation') {
+    adjusted = Math.min(adjusted, 0.25);
+  }
+  if (String(symbolExitPolicy?.priority || '').trim() === 'P0' && trailingStop === 'tighten') {
+    adjusted = Math.max(adjusted, 0.45);
+  }
+  return normalizeRatio(adjusted) ?? ratio;
+}
+
 function tuneRatioByStrategyContext(ratio, reasonCode, strategyProfile = null) {
   const responsibilityPlan = getResponsibilityPlan(strategyProfile);
   const executionPlan = getExecutionPlan(strategyProfile);
@@ -144,9 +172,15 @@ function tuneRatioByStrategyContext(ratio, reasonCode, strategyProfile = null) {
   return normalizeRatio(adjusted) ?? ratio;
 }
 
-function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
+export function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null, agentPlan = null) {
   const exitPlanRatio = getExitPlanRatio(strategyProfile?.exit_plan || strategyProfile?.exitPlan, reasonCode);
-  if (exitPlanRatio != null) return tuneRatioByStrategyContext(exitPlanRatio, reasonCode, strategyProfile);
+  const symbolExitPolicy = getSymbolExitPolicyFromAgentPlan(agentPlan);
+  if (exitPlanRatio != null) {
+    return tuneRatioBySymbolExitPolicy(
+      tuneRatioByStrategyContext(exitPlanRatio, reasonCode, strategyProfile),
+      symbolExitPolicy,
+    );
+  }
   const base = getDefaultPartialExitRatio(reasonCode);
   const setupType = normalizeSetupType(strategyProfile?.setup_type);
   let ratio = base;
@@ -172,7 +206,10 @@ function getStrategyAwarePartialExitRatio(reasonCode, strategyProfile = null) {
       break;
   }
 
-  return tuneRatioByStrategyContext(ratio, reasonCode, strategyProfile);
+  return tuneRatioBySymbolExitPolicy(
+    tuneRatioByStrategyContext(ratio, reasonCode, strategyProfile),
+    symbolExitPolicy,
+  );
 }
 
 function normalizeRatio(value) {
@@ -198,7 +235,10 @@ function buildFamilyFeedbackIncidentSuffix(strategyProfile = null) {
 }
 
 function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
-  const ratio = normalizeRatio(overrideRatio) ?? getStrategyAwarePartialExitRatio(row.reasonCode, strategyProfile);
+  const agentPlan = row?.runtimeState?.agentPlan
+    || strategyProfile?.strategy_state?.positionRuntimeState?.agentPlan
+    || null;
+  const ratio = normalizeRatio(overrideRatio) ?? getStrategyAwarePartialExitRatio(row.reasonCode, strategyProfile, agentPlan);
   const positionAmount = Number(row?.positionSnapshot?.amount || 0);
   const avgPrice = Number(row?.positionSnapshot?.avgPrice || 0);
   const estimatedNotional = positionAmount * avgPrice;
@@ -249,9 +289,7 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     executionIntent: row.executionIntent
       || strategyProfileSnapshot?.positionRuntimeState?.executionIntent
       || null,
-    agentPlan: row?.runtimeState?.agentPlan
-      || strategyProfileSnapshot?.positionRuntimeState?.agentPlan
-      || null,
+    agentPlan,
     strategyProfile: strategyProfileSnapshot,
   };
 }

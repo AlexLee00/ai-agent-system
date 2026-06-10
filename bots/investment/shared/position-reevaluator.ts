@@ -1716,6 +1716,9 @@ export async function reevaluateOpenPositions({
       positionSizingSnapshot: dynamicSizing,
       signalRefreshSnapshot: signalRefreshRow || null,
       symbolExitPolicyMatrix,
+      agentPlan: {
+        monitor: monitorAgentPlan,
+      },
       trigger: {
         source: eventSource,
         attentionType: signalRefreshRow?.attentionType || attentionType,
@@ -1724,9 +1727,6 @@ export async function reevaluateOpenPositions({
       },
       previousState: previousRuntimeState,
     });
-    runtimeState.agentPlan = {
-      monitor: monitorAgentPlan,
-    };
     runtimeState.entryEvidenceCarryover = entryEvidenceCarryover;
     runtimeState.technicalChangeReview = technicalExitChangeReview.review;
     if (strategyProfile?.id) {

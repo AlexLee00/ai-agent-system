@@ -97,6 +97,9 @@ export async function runSmoke() {
   assert.ok(report.symbolList.some((row) => row.recommendedExitPolicy === 'peak_reversal_partial_trailing'));
   assert.equal(report.symbolExitPolicyMatrix.status, 'materialized');
   assert.equal(report.symbolExitPolicyMatrix.p0Symbols, 1);
+  assert.equal(report.runtimeGateIntegration.status, 'wired_to_runtime_runner_args');
+  assert.equal(report.runtimeGateIntegration.partialAdjustRatioBias, true);
+  assert.equal(report.runtimeGateIntegration.strategyExitNonHardLossRecheck, true);
   assert.equal(
     resolveSymbolExitPolicy(report, { market: 'crypto', symbol: 'PEAK/USDT' })?.policy,
     'peak_reversal_partial_trailing',

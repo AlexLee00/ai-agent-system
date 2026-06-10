@@ -32,6 +32,50 @@ function cloneObject(value, fallback = {}) {
     : { ...fallback };
 }
 
+function mergePlainObjects(...values) {
+  const merged = {};
+  for (const value of values) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(merged, value);
+    }
+  }
+  return merged;
+}
+
+function serializeAgentPlan(agentPlan = null) {
+  if (!agentPlan || typeof agentPlan !== 'object' || Array.isArray(agentPlan)) return null;
+  try {
+    return JSON.stringify(agentPlan);
+  } catch {
+    return null;
+  }
+}
+
+function buildDeterministicExitPolicyPlan(policyMatrix = null) {
+  const symbolExitPolicy = policyMatrix?.symbolExitPolicy || null;
+  if (!symbolExitPolicy) return null;
+  return {
+    source: 'symbol_exit_policy_matrix',
+    status: 'wired_to_runtime_runner_args',
+    symbolExitPolicy,
+    gateHints: {
+      exitPatience: symbolExitPolicy.effects?.exitPatience || null,
+      partialProfit: symbolExitPolicy.effects?.partialProfit || null,
+      trailingStop: symbolExitPolicy.effects?.trailingStop || null,
+      nonHardLossRecheck: symbolExitPolicy.effects?.nonHardLossRecheck || null,
+    },
+  };
+}
+
+function buildRuntimeAgentPlan(baseAgentPlan = null, policyMatrix = null) {
+  const deterministicExitPolicy = buildDeterministicExitPolicyPlan(policyMatrix);
+  const merged = mergePlainObjects(
+    baseAgentPlan,
+    deterministicExitPolicy ? { deterministicExitPolicy } : null,
+  );
+  return Object.keys(merged).length > 0 ? merged : null;
+}
+
 function resolveEvidenceGapState(externalEvidenceGapState = null) {
   const gap = externalEvidenceGapState && typeof externalEvidenceGapState === 'object'
     ? externalEvidenceGapState
@@ -315,6 +359,7 @@ export function buildExecutionIntent({
   validationState = null,
   positionSizingSnapshot = null,
   trigger = null,
+  agentPlan = null,
 } = {}) {
   const exchange = normalizeString(position?.exchange, null);
   const tradeMode = normalizeString(position?.trade_mode || position?.tradeMode, 'normal');
@@ -348,6 +393,7 @@ export function buildExecutionIntent({
   const riskGate = normalizeString(responsibilityPlan?.riskMission, policyMatrix?.riskGate || 'execution_safeguard');
   const isHardExit = recommendation === 'EXIT' && String(reasonCode || '') === 'stop_loss_threshold';
   const triggerSource = normalizeString(trigger?.source, 'runtime_loop');
+  const serializedAgentPlan = serializeAgentPlan(agentPlan);
 
   let runner = null;
   let command = null;
@@ -380,6 +426,7 @@ export function buildExecutionIntent({
       confirm: 'position-runtime-autopilot',
       'run-context': 'position-runtime-autopilot',
       json: true,
+      ...(serializedAgentPlan ? { 'agent-plan-json': serializedAgentPlan } : {}),
     };
     executionPolicy = {
       autonomy: isHardExit ? 'hard_exit_required' : 'autonomous_allowed',
@@ -408,6 +455,7 @@ export function buildExecutionIntent({
       confirm: 'position-runtime-autopilot',
       'run-context': 'position-runtime-autopilot',
       json: true,
+      ...(serializedAgentPlan ? { 'agent-plan-json': serializedAgentPlan } : {}),
     };
     executionPolicy = {
       autonomy: 'autonomous_allowed',
@@ -452,6 +500,7 @@ export function buildExecutionIntent({
     manualExecuteCommand,
     autonomousExecuteCommand,
     runnerArgs,
+    agentPlan: agentPlan || null,
     executionPolicy,
     executionScope: symbol && exchange
       ? `${brokerAccountId || 'broker_unknown'}:${exchange}:${symbol}:${tradeMode}:${positionId || 'position_unknown'}:${action}`
@@ -491,6 +540,7 @@ export function buildPositionRuntimeState({
   positionSizingSnapshot = null,
   signalRefreshSnapshot = null,
   symbolExitPolicyMatrix = null,
+  agentPlan = null,
 } = {}) {
   const exchange = normalizeString(position?.exchange, null);
   const marketRegime = getPositionRuntimeRegime(regimeSnapshot, exchange);
@@ -532,6 +582,7 @@ export function buildPositionRuntimeState({
       qualityAdjustment: signalRefreshSnapshot.qualityAdjustment || null,
     };
   }
+  const runtimeAgentPlan = buildRuntimeAgentPlan(agentPlan, policyMatrix);
   const validationState = buildOnlineValidationState({
     latestBacktest,
     driftContext,
@@ -550,6 +601,7 @@ export function buildPositionRuntimeState({
     validationState,
     positionSizingSnapshot,
     trigger,
+    agentPlan: runtimeAgentPlan,
   });
 
   const previous = cloneObject(previousState);
@@ -575,6 +627,7 @@ export function buildPositionRuntimeState({
     policyMatrix,
     validationState,
     executionIntent,
+    agentPlan: runtimeAgentPlan,
     marketState: {
       latestPnlPct: safeNumber(position?.pnlPct ?? position?.latestPnlPct, 0),
       amount: safeNumber(position?.amount, 0),

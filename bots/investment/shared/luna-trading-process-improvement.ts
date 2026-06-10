@@ -429,6 +429,7 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
   const p1Symbols = num(scope.p1Symbols);
   const matrix = symbolExit.symbolExitPolicyMatrix || {};
   const matrixMaterialized = matrix.status === 'materialized' && num(matrix.symbols) >= num(scope.symbols);
+  const runtimeGateWired = symbolExit.runtimeGateIntegration?.status === 'wired_to_runtime_runner_args';
   const actions = [];
   const matrixAction = (symbolExit.strategyActions || []).find((item) => item.id === 'symbol_exit_policy_matrix');
   const driftAction = (symbolExit.strategyActions || []).find((item) => item.id === 'current_close_post_exit_label');
@@ -437,9 +438,11 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
   if (p0Symbols > 0 || matrixAction) {
     actions.push(actionItem({
       id: 'symbol_exit_policy_matrix_materialize',
-      priority: p0Symbols > 0 && !matrixMaterialized ? P0 : P1,
+      priority: p0Symbols > 0 && !matrixMaterialized ? P0 : runtimeGateWired ? P2 : P1,
       area: 'symbol_exit_policy',
-      title: matrixMaterialized
+      title: runtimeGateWired
+        ? 'Monitor symbol-specific exit policy runtime gate outcomes.'
+        : matrixMaterialized
         ? 'Wire the materialized symbol-specific exit policy matrix into sell gates.'
         : 'Materialize symbol-specific exit policies before changing live sell behavior.',
       evidence: {
@@ -448,6 +451,7 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
         p0Symbols,
         p1Symbols,
         matrixStatus: matrix.status || null,
+        runtimeGateIntegration: symbolExit.runtimeGateIntegration || null,
         materializedSymbols: matrix.symbols ?? null,
         materializedActionableSymbols: matrix.actionableSymbols ?? null,
         byPolicy: matrixAction?.evidence?.byPolicy || null,
@@ -461,7 +465,9 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
           })),
       },
       action: matrixMaterialized
-        ? 'Use symbolExitPolicyMatrix from runtime state as the deterministic input for exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates.'
+        ? runtimeGateWired
+          ? 'Measure partial-adjust ratio, non-hard loss recheck, and runner agent-plan outcomes by symbol policy before promoting further automation.'
+          : 'Use symbolExitPolicyMatrix from runtime state as the deterministic input for exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates.'
         : 'Feed recommendedExitPolicy into exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates by symbol.',
       validationCommand: 'npm --prefix bots/investment run -s runtime:luna-symbol-exit-timing-strategy-report -- --json --no-write',
     }));
@@ -482,11 +488,18 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
   if (peakAction) {
     actions.push(actionItem({
       id: 'peak_tag_partial_exit_gate',
-      priority: P1,
+      priority: runtimeGateWired ? P2 : P1,
       area: 'symbol_exit_policy',
-      title: 'Convert peak/reversal tags into partial-exit gates.',
-      evidence: peakAction.evidence || {},
-      action: peakAction.action,
+      title: runtimeGateWired
+        ? 'Monitor peak/reversal partial-exit gate outcomes.'
+        : 'Convert peak/reversal tags into partial-exit gates.',
+      evidence: {
+        ...(peakAction.evidence || {}),
+        runtimeGateIntegration: symbolExit.runtimeGateIntegration || null,
+      },
+      action: runtimeGateWired
+        ? 'Compare peak-tag partial-adjust candidates against realized post-adjust drift before tightening live parameters.'
+        : peakAction.action,
       validationCommand: 'npm --prefix bots/investment run -s smoke:luna-symbol-exit-timing-strategy',
     }));
   }
@@ -507,6 +520,7 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
         symbolKey: row.symbolKey,
         currentFromExitAvgPct: row.policyCurrentFromExitAvgPct,
       })),
+      runtimeGateIntegration: symbolExit.runtimeGateIntegration || null,
     },
     actions,
   };
@@ -520,6 +534,8 @@ function buildAgenticOperatingModelPillar({ tradeData = {}, optimalExit = {}, sy
   const deterministicExitInputsMaterialized = symbolExit.symbolExitPolicyMatrix?.status === 'materialized'
     && exitSummary.exitLabelCoverage?.status === 'materialized'
     && exitSummary.peakReversalRisk?.status === 'materialized';
+  const deterministicExitGatesWired = deterministicExitInputsMaterialized
+    && symbolExit.runtimeGateIntegration?.status === 'wired_to_runtime_runner_args';
   const signalFailureRate = tradeData.signals?.failureRate ?? null;
   const currentEpochWinRate = tradeData.journal?.tpSl?.set?.winRate ?? null;
   const closedTrades = num(tradeData.journal?.summary?.closed);
@@ -528,9 +544,11 @@ function buildAgenticOperatingModelPillar({ tradeData = {}, optimalExit = {}, sy
   if (p0ExitSymbols > 0 || num(optimalExit.learningEligibleSummary?.missedDuringHoldAvgPct) >= 3) {
     actions.push(actionItem({
       id: 'deterministic_exit_policy_before_llm_override',
-      priority: deterministicExitInputsMaterialized ? P1 : P0,
+      priority: deterministicExitGatesWired ? P2 : deterministicExitInputsMaterialized ? P1 : P0,
       area: 'agentic_operating_model',
-      title: deterministicExitInputsMaterialized
+      title: deterministicExitGatesWired
+        ? 'Monitor deterministic exit policy gates before any LLM critique.'
+        : deterministicExitInputsMaterialized
         ? 'Keep materialized deterministic exit policy inputs ahead of any LLM critique.'
         : 'Keep sell timing controlled by deterministic policy labels before any LLM override.',
       evidence: {
@@ -539,8 +557,11 @@ function buildAgenticOperatingModelPillar({ tradeData = {}, optimalExit = {}, sy
         symbolExitPolicyMatrixStatus: symbolExit.symbolExitPolicyMatrix?.status || null,
         exitLabelCoverageStatus: exitSummary.exitLabelCoverage?.status || null,
         peakReversalRiskStatus: exitSummary.peakReversalRisk?.status || null,
+        runtimeGateIntegrationStatus: symbolExit.runtimeGateIntegration?.status || null,
       },
-      action: deterministicExitInputsMaterialized
+      action: deterministicExitGatesWired
+        ? 'Measure deterministic exit policy gate outcomes first; LLM remains critic/explainer only and must not override symbol policy, exitLabels, or peakReversalRisk.'
+        : deterministicExitInputsMaterialized
         ? 'Use LLM only as critic/explainer; keep symbolExitPolicyMatrix, exitLabels, and peakReversalRisk as the deterministic sell-timing inputs.'
         : 'Use LLM only as critic/explainer for candidate sell plans; require symbol policy, peak tags, and post-exit drift labels to approve timing changes.',
       validationCommand: 'npm --prefix bots/investment run -s check:luna-trading-process-improvement',

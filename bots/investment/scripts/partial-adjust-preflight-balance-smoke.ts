@@ -2,7 +2,10 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { buildCryptoPartialAdjustPreflight } from './partial-adjust-runner.ts';
+import {
+  buildCryptoPartialAdjustPreflight,
+  getStrategyAwarePartialExitRatio,
+} from './partial-adjust-runner.ts';
 
 const locked = await buildCryptoPartialAdjustPreflight({
   symbol: 'API3/USDT',
@@ -36,9 +39,47 @@ const clear = await buildCryptoPartialAdjustPreflight({
 assert.equal(clear.ok, true);
 assert.equal(clear.code, 'partial_adjust_crypto_preflight_clear');
 
+const peakPolicyRatio = getStrategyAwarePartialExitRatio(
+  'trend_following_trail',
+  { setup_type: 'trend_following' },
+  {
+    deterministicExitPolicy: {
+      symbolExitPolicy: {
+        policy: 'peak_reversal_partial_trailing',
+        priority: 'P0',
+        effects: {
+          partialProfit: 'prefer_partial_lock',
+          trailingStop: 'tighten',
+        },
+      },
+    },
+  },
+);
+assert.equal(peakPolicyRatio, 0.5);
+
+const continuationPolicyRatio = getStrategyAwarePartialExitRatio(
+  'profit_lock_candidate',
+  { setup_type: 'trend_following' },
+  {
+    deterministicExitPolicy: {
+      symbolExitPolicy: {
+        policy: 'winner_continuation_trailing',
+        priority: 'P1',
+        effects: {
+          partialProfit: 'prefer_partial_take_profit',
+          trailingStop: 'loosen_for_continuation',
+        },
+      },
+    },
+  },
+);
+assert.equal(continuationPolicyRatio, 0.25);
+
 console.log(JSON.stringify({
   ok: true,
   smoke: 'partial-adjust-preflight-balance',
   locked: locked.code,
   clear: clear.code,
+  peakPolicyRatio,
+  continuationPolicyRatio,
 }, null, 2));

@@ -285,6 +285,9 @@ export function runPositionRuntimeStateSmoke() {
   assert.equal(runtimeState.validationState.severity, 'critical');
   assert.equal(runtimeState.monitoringPolicy.lane, 'attention_fast_lane');
   assert.equal(runtimeState.policyMatrix.symbolExitPolicy.policy, 'peak_reversal_partial_trailing');
+  assert.equal(runtimeState.agentPlan.deterministicExitPolicy.status, 'wired_to_runtime_runner_args');
+  assert.equal(runtimeState.executionIntent.agentPlan.deterministicExitPolicy.symbolExitPolicy.policy, 'peak_reversal_partial_trailing');
+  assert.match(runtimeState.executionIntent.runnerArgs['agent-plan-json'], /peak_reversal_partial_trailing/);
 
   return {
     ok: true,

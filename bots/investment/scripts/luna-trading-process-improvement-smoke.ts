@@ -25,8 +25,9 @@ export async function runSmoke() {
   assert.ok(findRoadmap(report, 'prefilter_capital_guard_rejected'));
   assert.equal(findRoadmap(report, 'exit_dual_horizon_labels')?.priority, 'P1');
   assert.equal(findRoadmap(report, 'exit_peak_reversal_probability')?.priority, 'P1');
-  assert.equal(findRoadmap(report, 'symbol_exit_policy_matrix_materialize')?.priority, 'P1');
-  assert.equal(findRoadmap(report, 'deterministic_exit_policy_before_llm_override')?.priority, 'P1');
+  assert.equal(findRoadmap(report, 'symbol_exit_policy_matrix_materialize')?.priority, 'P2');
+  assert.equal(findRoadmap(report, 'peak_tag_partial_exit_gate')?.priority, 'P2');
+  assert.equal(findRoadmap(report, 'deterministic_exit_policy_before_llm_override')?.priority, 'P2');
   assert.equal(findRoadmap(report, 'strategy_bias_promotion_ready_shadow')?.liveMutation, false);
   assert.equal(report.summary.symbolExitPolicyStatus, 'watch');
   assert.equal(report.summary.agenticOperatingModelStatus, 'watch');
@@ -39,8 +40,9 @@ export async function runSmoke() {
   assert.equal(summary.p0.length, 0);
   assert.ok(summary.p1.includes('exit_dual_horizon_labels'));
   assert.ok(summary.p1.includes('exit_peak_reversal_probability'));
-  assert.ok(summary.p1.includes('symbol_exit_policy_matrix_materialize'));
-  assert.ok(summary.p1.includes('deterministic_exit_policy_before_llm_override'));
+  assert.ok(summary.p2.includes('symbol_exit_policy_matrix_materialize'));
+  assert.ok(summary.p2.includes('peak_tag_partial_exit_gate'));
+  assert.ok(summary.p2.includes('deterministic_exit_policy_before_llm_override'));
   assert.ok(summary.p1.includes('strategy_bias_promotion_ready_shadow'));
   return {
     ok: true,
