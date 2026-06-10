@@ -1,13 +1,15 @@
 // @ts-nocheck
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const kst = require('../../../../packages/core/lib/kst');
 const env = require('../../../../packages/core/lib/env');
 const hub = require('../../../../packages/core/lib/hub-client');
 
 const ROOT = env.PROJECT_ROOT;
+const NODE_BIN = process.env.NODE_BIN || '/opt/homebrew/bin/node';
+const TSX_LOADER = 'tsx';
 
 const REPORT_JOBS = [
   {
@@ -32,8 +34,17 @@ const REPORT_JOBS = [
   },
 ];
 
+function buildLocalNodeArgs(args) {
+  return [
+    '--disable-warning=DEP0205',
+    '--import',
+    TSX_LOADER,
+    ...args,
+  ];
+}
+
 function runLocalNode(args) {
-  return execSync(`/opt/homebrew/bin/tsx ${args.map((arg) => JSON.stringify(arg)).join(' ')}`, {
+  return execFileSync(NODE_BIN, buildLocalNodeArgs(args), {
     cwd: ROOT,
     stdio: 'pipe',
     encoding: 'utf8',
@@ -154,4 +165,4 @@ function formatDailyReport(collected) {
   return lines.join('\n');
 }
 
-module.exports = { collectAll, formatDailyReport };
+module.exports = { buildLocalNodeArgs, collectAll, formatDailyReport };
