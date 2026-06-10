@@ -19,14 +19,15 @@
 | WS-M 스킬 · WS-P 비용 | 직교 | 병행 유지 |
 | WS-A~E·G·Q 회의실 | C11 | **MEETING_ROOM_TRACKER에서 계속**(이벤트 트리거만 본 트래커 P2) |
 
-## P0 — 즉시·저위험 (실측 완료 2026-06-13, 개별 CODEX)
+## P0 — ✅ 전체 완료 (구현=코덱스, 검증=메티 2026-06-17, 커밋 687ece025)
+> 메티 독립 검증: tsc 0 · review-hint PASS · closeout 24/24 재실행 · 코드 스팟(상수·invalidation 가드) · 감사 보고서 2건 판정. 잔여: 타입 전용 3파일(a2a/skills/*-shadow.ts) 미커밋 — 마스터 커밋 대상.
 > 설계 확정(2026-06-14): G0=70/40·60% / C3 초기값 승인 / 리밋 상한 30 / Stage A=4주·30신호·E우월 / ablation=P3.
-- **P0-1** reviewHint 소표본 교정 — `team/luna.ts:276` `closedTrades<3`→30 상향+**델타 절반**(확정 ④) · 코덱스 · 검증: 단위(경계값)+기존 흐름 무변 — 상태: CODEX 작성 대기
-- **P0-2** robust selection ON — `backtest-vectorbt.py:676,750` `LUNA_BT_ROBUST_SELECTION_ENABLED=true`(launchd/env) · 코덱스 · 검증: 스모크에서 robust 합의 선택 확인 — 대기
-- **P0-3** point-in-time 실측·기록 — 백테스트 메타에 `universe_asof` 기록 + discovery 선정 시점 로깅(전면 교정은 P2/C7) · 코덱스 · 검증: 메타 필드 존재 — 대기
-- **P0-4** 1-bar shift 감사 — `.shift(1)` 기존재 확인됨(180·209·222), 잔여=체결가(다음 봉 시가?)·비용 반영 감사 보고서 · 코덱스(감사)→메티(판정) — 대기
-- **P0-6 [v1.2]** 제약 경로 감사(코드 변경 없음) — 루나 LLM 에이전트가 자기 제약(runtime-config·env·plist·order_rules)을 런타임 수정 가능한 경로 실측 → 보고서(`docs/codex/P0_6_CONSTRAINT_AUDIT.md`) · 코덱스(감사)→메티(판정) — 대기
-- **P0-5** 매도 후 자본 재평가 훅 — `position-closeout-engine.ts` `finalizeCloseout`(296~)에서 capitalSnapshot 무효화→재계산(capital-manager buyable 재산출) · 코덱스 · 검증: 매도→같은 사이클 buyable 갱신(하드) — 대기
+- **P0-1** reviewHint 소표본 교정 — `team/luna.ts:276` `closedTrades<3`→30 상향+**델타 절반**(확정 ④) · 코덱스 · 검증: 단위(경계값)+기존 흐름 무변 — ✅ 완료(2026-06-17 메티 검증: 상수 4종·스모크 PASS 재실행)
+- **P0-2** robust selection ON — `backtest-vectorbt.py:676,750` `LUNA_BT_ROBUST_SELECTION_ENABLED=true`(launchd/env) · 코덱스 · 검증: 스모크에서 robust 합의 선택 확인 — ✅ 완료
+- **P0-3** point-in-time 실측·기록 — 백테스트 메타에 `universe_asof` 기록 + discovery 선정 시점 로깅(전면 교정은 P2/C7) · 코덱스 · 검증: 메타 필드 존재 — ✅ 완료
+- **P0-4** 1-bar shift 감사 — `.shift(1)` 기존재 확인됨(180·209·222), 잔여=체결가(다음 봉 시가?)·비용 반영 감사 보고서 · 코덱스(감사)→메티(판정) — ✅ 완료
+- **P0-6 [v1.2]** 제약 경로 감사(코드 변경 없음) — 루나 LLM 에이전트가 자기 제약(runtime-config·env·plist·order_rules)을 런타임 수정 가능한 경로 실측 → 보고서(`docs/codex/P0_6_CONSTRAINT_AUDIT.md`) · 코덱스(감사)→메티(판정) — ✅ 완료
+- **P0-5** 매도 후 자본 재평가 훅(✅) — `position-closeout-engine.ts` `finalizeCloseout`(296~)에서 capitalSnapshot 무효화→재계산(capital-manager buyable 재산출) · 코덱스 · 검증: 매도→같은 사이클 buyable 갱신(하드) — ✅ 완료
 
 ## P1 — 코어 골격 + 제안 인프라 [shadow]
 - **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store` 테이블·governance 통합·**break-glass 마스터 경로**[v1.3]) — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
@@ -34,7 +35,9 @@
 - **P1-3** C2 레짐 승격(HMM shadow→core 후보, 확률 벡터+전이 경보) · 의존: P1-1(C15 등록) — 대기
 - **P1-4** C3 전략군 2종(터틀·눌림목) 룰셋 구현+shadow 신호 로깅 · stable-range 파라미터 선정(E-1) — 대기
 - **P1-5** C4 사전 게이트(R:R·E·횡보·유동성) + **손실빈도 서킷 3종**(perception-first `consecutive_loss_cooldown` 일반화·승격[v1.1/1.3]) shadow — 대기
-- WS-R 알파팩터(→C12)는 P1-4와 병행 가능(기존 CODEX 1번 갱신).
+- **P1-6 [P0-4 후속]** next-bar 실행 shadow — `LUNA_BT_NEXT_BAR_EXECUTION_ENABLED=false` 기본, ON 시 신호 1봉 시프트+마지막 봉 진입 배제+현행 close 모델과 비교 스모크. 잔존: rsi_macd_reversal 현재봉 지표·close 직접 체결(P0_4_LOOKAHEAD_AUDIT 참조) — 대기
+- **P1-7 [P0-6 후속]** 제약 가드 경량 구현 — ①order_rules/paper_mode=block 유지 스모크 ②자율 커맨드 러너 allowlist(launchctl setenv·plist 편집·apply-runtime-config --force 차단) ③--force=마스터 런북 전용 명문화. C17 격리는 이 2건으로 1차 충족(P0-6 판정: 기존 방어 양호 — Object.freeze·confirm token·approved row·allow-list clamp 확인) — 대기
+- WS-R 알파팩터(→C12)는 P1-4와 병행 가능(기존 CODEX 1번 갱신 완료 2026-06-17).
 
 ## P2 — 검증·피드백·포지션
 - C7 permutation 2종+CPCV+point-in-time 전면 교정 · C8 피드백 루프(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가(shadow 비교→C15)+expected-fire 워치독[v1.2, 삽입점=entry-trigger-engine:534/1030, T9 테이블·보존 30일] · C11 이벤트 트리거 수시회의 · WS-I 리스크 훅.
