@@ -11,6 +11,46 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
 
+AUTO_COMMIT_EXCLUDE_PATHSPECS=(
+  ':(glob,exclude)bots/**/output/**'
+  ':(glob,exclude)output/**'
+  ':(glob,exclude)dist/**'
+  ':(glob,exclude)coverage/**'
+  ':(glob,exclude)docs/codex/**'
+  ':(glob,exclude)docs/auto_dev/**'
+  ':(glob,exclude)docs/strategy/**'
+  ':(glob,exclude)bots/sigma/docs/codex/**'
+  ':(glob,exclude).claude/**'
+  ':(glob,exclude)tmp/**'
+  ':(glob,exclude)docs/archive/**'
+)
+
+AUTO_COMMIT_GENERATED_PATHSPECS=(
+  ':(glob)bots/**/output/**'
+  ':(glob)output/**'
+  ':(glob)dist/**'
+  ':(glob)coverage/**'
+  ':(glob)docs/codex/**'
+  ':(glob)docs/auto_dev/**'
+  ':(glob)docs/strategy/**'
+  ':(glob)bots/sigma/docs/codex/**'
+  ':(glob).claude/**'
+  ':(glob)tmp/**'
+  ':(glob)docs/archive/**'
+)
+
+unstage_generated_or_ignored() {
+  git restore --staged -- "${AUTO_COMMIT_GENERATED_PATHSPECS[@]}" 2>/dev/null || true
+
+  local ignored_file
+  ignored_file="$(mktemp)"
+  git ls-files -c -i --exclude-standard -z > "$ignored_file" 2>/dev/null || true
+  if [ -s "$ignored_file" ]; then
+    git restore --staged --pathspec-from-file="$ignored_file" --pathspec-file-nul 2>/dev/null || true
+  fi
+  rm -f "$ignored_file"
+}
+
 cd "$REPO_DIR" || { log "ERROR: 디렉토리 이동 실패 - $REPO_DIR"; exit 1; }
 
 REFACTORER_LOCK_FILE="$REPO_DIR/.refactorer-active.lock"
@@ -26,7 +66,7 @@ if [ -f "$REFACTORER_LOCK_FILE" ]; then
 fi
 
 # 변경사항 확인
-if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+if [ -z "$(git status --porcelain -- . "${AUTO_COMMIT_EXCLUDE_PATHSPECS[@]}")" ]; then
   log "변경사항 없음. 스킵."
   exit 0
 fi
@@ -34,10 +74,16 @@ fi
 log "변경사항 감지됨. 커밋 시작."
 
 # 변경된 파일 목록 수집 (커밋 메시지용)
-CHANGED=$(git status --short | awk '{print $2}' | head -10 | tr '\n' ', ' | sed 's/,$//')
+CHANGED=$(git status --short -- . "${AUTO_COMMIT_EXCLUDE_PATHSPECS[@]}" | awk '{print $2}' | head -10 | tr '\n' ', ' | sed 's/,$//')
 
-# 스테이징
-git add -A
+# 스테이징 — 런타임 산출물/초안/ignored tracked 파일은 자동 커밋에서 제외
+git add -A -- . "${AUTO_COMMIT_EXCLUDE_PATHSPECS[@]}"
+unstage_generated_or_ignored
+
+if git diff --cached --quiet; then
+  log "커밋 대상 없음(자동생성/ignored 파일만 변경). 스킵."
+  exit 0
+fi
 
 # 커밋 메시지 생성
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
