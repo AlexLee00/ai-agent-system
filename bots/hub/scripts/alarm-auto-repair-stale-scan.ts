@@ -3,6 +3,15 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const fs = require('fs');
+const path = require('path');
+const env = require('../../../packages/core/lib/env');
+const { loadAutoDevManifest } = require('../../../packages/core/lib/auto-dev-manifest.ts');
+const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
+
+const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
+const RESOLVED_MANIFEST_REASON_RE = /(completed|resolved|replayed|manual|verified|current_code|recovered|cleanup|skip|skipped|routed_report|missing_document|stale_resolved_live_check)/i;
+const CURRENT_POLICY_RESOLUTION_MIN_CONFIDENCE = 0.8;
 
 function argValue(name: string, fallback = ''): string {
   const prefix = `--${name}=`;
@@ -21,12 +30,130 @@ function normalizeNumber(value: unknown, fallback: number, min: number, max: num
   return Math.min(max, Math.max(min, parsed));
 }
 
-function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: number): string {
+function normalizeRelPath(value: unknown): string {
+  return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '').trim();
+}
+
+function repoFileExists(relPath: unknown): boolean {
+  const normalized = normalizeRelPath(relPath);
+  if (!normalized) return false;
+  return fs.existsSync(path.join(env.PROJECT_ROOT, normalized));
+}
+
+function loadManifest(autoDevDir = DEFAULT_AUTO_DEV_DIR): Record<string, any> {
+  try {
+    return loadAutoDevManifest(autoDevDir);
+  } catch {
+    return { version: 1, updatedAt: null, entries: {} };
+  }
+}
+
+function findManifestEntry(manifest: Record<string, any>, relPath: unknown): Record<string, any> | null {
+  const normalized = normalizeRelPath(relPath);
+  if (!normalized) return null;
+  const entries = manifest?.entries && typeof manifest.entries === 'object' ? manifest.entries : {};
+  if (entries[normalized]) return entries[normalized];
+  return Object.values(entries).find((entry: any) => {
+    return entry
+      && typeof entry === 'object'
+      && (normalizeRelPath(entry.relPath) === normalized || normalizeRelPath(entry.archivedPath) === normalized);
+  }) as Record<string, any> | null || null;
+}
+
+function manifestResolvedReason(entry: Record<string, any> | null): string {
+  if (!entry) return '';
+  return String(
+    entry.reason
+      || entry.resolvedReason
+      || entry.implementationStatus
+      || entry.implementation_status
+      || ''
+  ).trim();
+}
+
+function resolveByManifest(row: Record<string, any>, manifest: Record<string, any>): Record<string, any> | null {
+  const entry = findManifestEntry(manifest, row.auto_dev_path);
+  if (!entry) return null;
+
+  const state = String(entry.state || '').trim();
+  const reason = manifestResolvedReason(entry);
+  const archiveExists = repoFileExists(entry.archivedPath);
+  const inboxExists = repoFileExists(row.auto_dev_path);
+  const reasonResolved = RESOLVED_MANIFEST_REASON_RE.test(reason);
+
+  if (state === 'archived' && (archiveExists || reasonResolved)) {
+    return {
+      stale_status: 'resolved_manifest',
+      stale_resolution_reason: archiveExists ? 'manifest_archived_file_exists' : `manifest_archived:${reason || 'no_inbox'}`,
+      manifest_state: state,
+      manifest_reason: reason || null,
+      archived_path: normalizeRelPath(entry.archivedPath) || null,
+      archive_exists: archiveExists,
+      inbox_exists: inboxExists,
+    };
+  }
+
+  if (state === 'archived_missing' && !inboxExists && reasonResolved) {
+    return {
+      stale_status: 'resolved_manifest',
+      stale_resolution_reason: `manifest_archived_missing:${reason}`,
+      manifest_state: state,
+      manifest_reason: reason,
+      archived_path: normalizeRelPath(entry.archivedPath) || null,
+      archive_exists: archiveExists,
+      inbox_exists: inboxExists,
+    };
+  }
+
+  return null;
+}
+
+function resolveByCurrentPolicy(row: Record<string, any>): Record<string, any> | null {
+  const result = classifyAlarmTypeWithConfidence({
+    severity: row.severity,
+    eventType: row.event_type,
+    title: row.title,
+    message: row.message,
+  });
+  if (result.type === 'error' || result.type === 'critical') return null;
+  if (Number(result.confidence || 0) < CURRENT_POLICY_RESOLUTION_MIN_CONFIDENCE) return null;
+  return {
+    stale_status: 'resolved_current_policy',
+    stale_resolution_reason: `current_policy:${result.type}`,
+    current_policy_type: result.type,
+    current_policy_confidence: result.confidence,
+  };
+}
+
+function annotateRows(rows: Array<Record<string, any>>, {
+  manifest = loadManifest(),
+}: {
+  manifest?: Record<string, any>;
+} = {}) {
+  return rows.map((row) => {
+    const manifestResolution = resolveByManifest(row, manifest);
+    if (manifestResolution) return { ...row, ...manifestResolution };
+
+    const policyResolution = resolveByCurrentPolicy(row);
+    if (policyResolution) return { ...row, ...policyResolution };
+
+    return {
+      ...row,
+      stale_status: 'active',
+      stale_resolution_reason: null,
+    };
+  });
+}
+
+function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: number, resolvedRows: Array<Record<string, any>> = []): string {
   const lines = [
     '🚨 [hub] auto-repair 미해결 감시',
     `기준: ${staleMinutes}분 이상 처리 결과 없음`,
     `대상: ${rows.length}건`,
   ];
+  if (resolvedRows.length > 0) {
+    lines.push(`제외: ${resolvedRows.length}건 (manifest/current policy로 처리 완료 판정)`);
+  }
   for (const row of rows.slice(0, 8)) {
     lines.push(`- ${row.team}/${row.bot_name}: ${row.incident_key} (${row.created_at})`);
   }
@@ -38,10 +165,12 @@ export async function scanStaleAutoRepair({
   staleMinutes = 120,
   limit = 20,
   db = pgPool,
+  manifest,
 }: {
   staleMinutes?: number;
   limit?: number;
   db?: { query: (...args: any[]) => Promise<Array<Record<string, any>>> };
+  manifest?: Record<string, any>;
 } = {}) {
   const threshold = normalizeNumber(staleMinutes, 120, 5, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 20, 1, 100);
@@ -52,7 +181,9 @@ export async function scanStaleAutoRepair({
         alarm.team,
         alarm.bot_name,
         alarm.severity,
+        alarm.title,
         alarm.message,
+        COALESCE(alarm.metadata->>'event_type', '') AS event_type,
         COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint) AS incident_key,
         enqueued.metadata->>'auto_dev_path' AS auto_dev_path,
         alarm.received_at AS created_at,
@@ -88,7 +219,9 @@ export async function scanStaleAutoRepair({
       team,
       bot_name,
       severity,
+      title,
       message,
+      event_type,
       incident_key,
       auto_dev_path,
       created_at,
@@ -97,12 +230,17 @@ export async function scanStaleAutoRepair({
     ORDER BY enqueued_at DESC, created_at DESC
     LIMIT $2
   `, [threshold, rowLimit]);
+  const annotatedRows = annotateRows(rows, { manifest });
+  const activeRows = annotatedRows.filter((row) => row.stale_status === 'active');
+  const resolvedRows = annotatedRows.filter((row) => row.stale_status !== 'active');
   return {
     ok: true,
     stale_minutes: threshold,
     limit: rowLimit,
-    rows,
-    message: formatStaleReport(rows, threshold),
+    rows: activeRows,
+    resolved_rows: resolvedRows,
+    total_candidates: rows.length,
+    message: formatStaleReport(activeRows, threshold, resolvedRows),
   };
 }
 
@@ -146,4 +284,5 @@ if (require.main === module) {
 
 module.exports = {
   scanStaleAutoRepair,
+  _testOnly_annotateRows: annotateRows,
 };

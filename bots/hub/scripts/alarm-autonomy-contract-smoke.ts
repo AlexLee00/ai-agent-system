@@ -5,7 +5,7 @@ const { buildAlarmClusterKey } = require('../lib/alarm/cluster.ts');
 const { resolveAlarmDeliveryTeam, formatAutoRepairResultMessage } = require('../lib/alarm/templates.ts');
 const { buildAlarmReadinessSnapshot } = require('../lib/alarm/readiness.ts');
 const { buildAlarmNoiseReport } = require('./alarm-noise-report.ts');
-const { scanStaleAutoRepair } = require('./alarm-auto-repair-stale-scan.ts');
+const { scanStaleAutoRepair, _testOnly_annotateRows } = require('./alarm-auto-repair-stale-scan.ts');
 const {
   applyAlarmSuppressionProposals,
   buildAlarmSuppressionProposals,
@@ -115,6 +115,51 @@ async function main() {
     const staleDefault = await scanStaleAutoRepair({ db });
     assert(staleDefault.stale_minutes === 120, `expected default stale minutes=120, got ${staleDefault.stale_minutes}`);
     assert(staleDefault.limit === 20, `expected default limit=20, got ${staleDefault.limit}`);
+    const annotatedResolved = _testOnly_annotateRows([
+      {
+        team: 'blog',
+        bot_name: 'blog-health',
+        severity: 'info',
+        title: 'blog alarm',
+        message: '✅ [블로그 헬스] engagement 자동화 회복',
+        event_type: 'blog_health_check',
+        incident_key: 'blog:blog-health:sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_manifest_sample.md',
+      },
+      {
+        team: 'general',
+        bot_name: 'steward',
+        severity: 'info',
+        title: 'general alarm',
+        message: '📋 스튜어드 일일 요약 (2026-06-07)\n\n⚠️ git 위생: 의심 파일 1건',
+        event_type: 'steward_error',
+        incident_key: 'general:steward:steward_error:sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_general_policy_sample.md',
+      },
+    ], {
+      manifest: {
+        entries: {
+          'docs/auto_dev/ALARM_INCIDENT_blog_manifest_sample.md': {
+            relPath: 'docs/auto_dev/ALARM_INCIDENT_blog_manifest_sample.md',
+            state: 'archived_missing',
+            reason: 'resolved_recovery_info_routed_report',
+          },
+        },
+      },
+    });
+    assert(annotatedResolved[0].stale_status === 'resolved_manifest', 'expected completed manifest entry to suppress stale scan');
+    assert(annotatedResolved[1].stale_status === 'resolved_current_policy', 'expected current policy downgrade to suppress stale scan');
+    const lowConfidencePolicy = _testOnly_annotateRows([{
+      team: 'unknown',
+      bot_name: 'unknown',
+      severity: 'info',
+      title: 'unclassified alarm',
+      message: 'needs review',
+      event_type: 'misc',
+      incident_key: 'unknown:sample',
+      auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_unknown_policy_sample.md',
+    }], { manifest: { entries: {} } });
+    assert(lowConfidencePolicy[0].stale_status === 'active', 'expected low-confidence default work classification to stay active');
     assert(queryLog.some((sql) => String(sql).includes('FROM agent.hub_alarms')), 'expected stale scan to use hub_alarms state table');
     assert(queryLog.some((sql) => String(sql).includes("hub_alarm_auto_repair_enqueued")), 'expected stale scan to require an auto-repair enqueue event');
     assert(queryLog.some((sql) => String(sql).includes("auto_repair_shadow_skipped")), 'expected stale scan to exclude shadow-skipped repairs');
