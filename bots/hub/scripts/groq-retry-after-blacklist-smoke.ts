@@ -142,11 +142,11 @@ async function main() {
   const { _testOnly: unifiedTestOnly } = require('../lib/llm/unified-caller.ts');
   assert.equal(
     unifiedTestOnly._normalizeRoute('groq/llama-4-scout-17b-16e-instruct'),
-    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+    'groq/llama-3.1-8b-instant',
   );
   assert.equal(
     unifiedTestOnly._normalizeRoute('groq/meta-llama/llama-4-scout-17b-16e-instruct'),
-    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+    'groq/llama-3.1-8b-instant',
   );
 
   console.log(JSON.stringify({ ok: true, retry_after_ms: first.retryAfterMs, pooled_fetch_calls: fetchCalls }));

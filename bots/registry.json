@@ -135,7 +135,7 @@
       "status": "ops",
       "contextPath": "bots/reservation/context",
       "model": {
-        "primary": "groq/llama-4-scout-17b-16e-instruct",
+        "primary": "groq/llama-3.1-8b-instant",
         "fallbacks": [
           "openai/gpt-4o-mini"
         ]
@@ -174,7 +174,7 @@
       "contextPath": "bots/ska/context",
       "runtime": "python3.12",
       "model": {
-        "primary": "groq/llama-4-scout-17b-16e-instruct",
+        "primary": "groq/llama-3.1-8b-instant",
         "fallbacks": [
           "openai/gpt-4o-mini"
         ]
@@ -237,8 +237,8 @@
       "contextPath": "bots/investment",
       "runtime": "node ESM (type:module)",
       "model": {
-        "paper": "groq/llama-4-scout-17b-16e-instruct (무료)",
-        "live_llm_agents": "groq/llama-4-scout-17b-16e-instruct",
+        "paper": "groq/llama-3.1-8b-instant (무료)",
+        "live_llm_agents": "groq/llama-3.1-8b-instant",
         "live_orchestrator": "anthropic/claude-haiku-4-5-20251001"
       },
       "subBots": {

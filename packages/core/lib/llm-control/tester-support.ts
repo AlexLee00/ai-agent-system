@@ -52,7 +52,6 @@ const SPEED_TEST_MODEL_CATALOG = {
   groq: new Set([
     'groq/llama-3.1-8b-instant',
     'groq/llama-3.3-70b-versatile',
-    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
     'groq/qwen/qwen3-32b',
     'groq/openai/gpt-oss-20b',
   ]),

@@ -167,7 +167,7 @@ class DexterMode {
     }
 
     const body = JSON.stringify({
-      model:       'meta-llama/llama-4-scout-17b-16e-instruct',
+      model:       'llama-3.1-8b-instant',
       max_tokens:  120,
       temperature: 0.1,
       messages: [

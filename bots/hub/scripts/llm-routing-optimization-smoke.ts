@@ -46,9 +46,14 @@ function chainFor(key: string, extra: Record<string, unknown> = {}): any[] {
 
 const selectorKeys = selector.listLLMSelectorKeys();
 const unexpectedGeminiRoutes: string[] = [];
+const staleGroqRoutes: string[] = [];
 for (const key of selectorKeys) {
   const chain = chainFor(key);
   const hasGemini = chain.some(isGemini);
+  const staleGroqModels = chain
+    .filter((entry) => /llama-4-scout-17b-16e-instruct/.test(String(entry?.model || '')))
+    .map((entry) => `${entry.provider}/${entry.model}`);
+  if (staleGroqModels.length > 0) staleGroqRoutes.push(`${key}:${staleGroqModels.join('|')}`);
   if (GEMINI_DIAGNOSTIC_SELECTORS.has(key)) {
     assert(hasGemini, `${key} must remain available for explicit Gemini diagnostics`);
   } else if (hasGemini) {
@@ -56,6 +61,7 @@ for (const key of selectorKeys) {
   }
 }
 assert.equal(unexpectedGeminiRoutes.length, 0, `non-diagnostic selectors must not route to Gemini: ${unexpectedGeminiRoutes.join(', ')}`);
+assert.equal(staleGroqRoutes.length, 0, `selectors must not route to stale Groq Scout model: ${staleGroqRoutes.join(', ')}`);
 
 for (const key of ['claude._default', 'claude.archer.tech_analysis', 'claude.lead.system_issue_triage', 'claude.dexter.ai_analyst']) {
   const chain = chainFor(key);

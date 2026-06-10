@@ -789,10 +789,11 @@ function _normalizeRoute(route: string, abstractModel = 'anthropic_haiku'): stri
 
   const staleGroqRoutes = new Set([
     'groq/llama-4-scout-17b-16e-instruct',
+    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
   ]);
 
   if (staleGroqRoutes.has(route)) {
-    const replacement = 'groq/meta-llama/llama-4-scout-17b-16e-instruct';
+    const replacement = 'groq/llama-3.1-8b-instant';
     console.warn(`[llm/unified] stale groq route 정규화: ${route} -> ${replacement}`);
     return replacement;
   }

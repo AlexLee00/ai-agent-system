@@ -465,10 +465,10 @@ const DEFAULT_RUNTIME_CONFIG = {
       useSharedFallbackEngine: true,
       openaiPerfModel: getDefaultOpenAiPerfModel(),
       openaiMiniModel: getDefaultOpenAiMiniModel(),
-      groqScoutModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      groqScoutModel: 'llama-3.1-8b-instant',
       groqCompetitionModels: [
         'openai/gpt-oss-20b',
-        'meta-llama/llama-4-scout-17b-16e-instruct',
+        'llama-3.1-8b-instant',
       ],
       anthropicModel: 'claude-haiku-4-5-20251001',
       agentRoutes: {

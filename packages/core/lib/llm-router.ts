@@ -10,7 +10,7 @@ type SelectOptions = {
 type TeamRequestMap = Record<string, Record<string, Complexity>>;
 
 const MODEL_MAP: Record<Complexity, string> = {
-  simple: 'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+  simple: 'groq/llama-3.1-8b-instant',
   medium: 'openai-oauth/gpt-5.4-mini',
   complex: 'openai-oauth/gpt-5.4',
   deep: 'openai-oauth/gpt-5.4',

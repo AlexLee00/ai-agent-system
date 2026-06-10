@@ -50,7 +50,7 @@ const OPENAI_MINI_MODEL = configuredModel('LLM_OPENAI_MINI_MODEL', 'gpt-5.4-mini
 const OPENAI_OPUS_MODEL = configuredModel('LLM_OPENAI_OPUS_MODEL', 'gpt-5.5', ['openai-oauth', 'openai']);
 const GROQ_FAST_MODEL = configuredModel('LLM_GROQ_FAST_MODEL', 'llama-3.1-8b-instant', ['groq']);
 const GROQ_DEEP_MODEL = configuredModel('LLM_GROQ_DEEP_MODEL', 'qwen/qwen3-32b', ['groq']);
-const GROQ_SCOUT_MODEL = configuredModel('LLM_GROQ_SCOUT_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct', ['groq']);
+const GROQ_SCOUT_MODEL = configuredModel('LLM_GROQ_SCOUT_MODEL', GROQ_FAST_MODEL, ['groq']);
 const GEMINI_CLI_FLASH_LITE_MODEL = configuredModel(
   'LLM_GEMINI_FLASH_LITE_MODEL',
   'gemini-2.5-flash-lite',
@@ -786,14 +786,14 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     'commenter.reply': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 600, temperature: 0.4, timeoutMs: 22000 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.55, timeoutMs: 15000 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 600, temperature: 0.55, timeoutMs: 15000 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 600, temperature: 0.45, timeoutMs: 14000 },
       ],
     },
     'commenter.neighbor': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 700, temperature: 0.45, timeoutMs: 22000 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.6, timeoutMs: 15000 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 700, temperature: 0.6, timeoutMs: 15000 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.5, timeoutMs: 14000 },
       ],
     },
@@ -1090,14 +1090,14 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
     'commenter.reply': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 600, temperature: 0.4, timeoutMs: 22_000 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.55, timeoutMs: 15_000 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 600, temperature: 0.55, timeoutMs: 15_000 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 600, temperature: 0.45, timeoutMs: 14_000 },
       ],
     },
     'commenter.neighbor': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 700, temperature: 0.45, timeoutMs: 22_000 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.6, timeoutMs: 15_000 },
+        { provider: 'groq', model: GROQ_SCOUT_MODEL, maxTokens: 700, temperature: 0.6, timeoutMs: 15_000 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.5, timeoutMs: 14_000 },
       ],
     },

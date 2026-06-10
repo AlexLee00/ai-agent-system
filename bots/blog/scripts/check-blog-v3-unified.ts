@@ -47,6 +47,19 @@ function auditHubLlmRoutes() {
   };
 }
 
+function collectGroqModels(value, pathParts = [], out = []) {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectGroqModels(item, pathParts.concat(index), out));
+    return out;
+  }
+  if (!value || typeof value !== 'object') return out;
+  if (value.provider === 'groq' && value.model) {
+    out.push({ path: pathParts.join('.'), model: String(value.model) });
+  }
+  Object.entries(value).forEach(([key, item]) => collectGroqModels(item, pathParts.concat(key), out));
+  return out;
+}
+
 async function main() {
   const json = process.argv.includes('--json');
   const {
@@ -118,6 +131,13 @@ async function main() {
   assert.equal(routeAudit.ok, true, `Blog direct LLM routes remain: ${JSON.stringify(routeAudit)}`);
 
   const config = JSON.parse(read('config.json'));
+  const staleGroqModels = collectGroqModels(config)
+    .filter((entry) => /llama-4-scout-17b-16e-instruct/.test(entry.model));
+  assert.deepEqual(
+    staleGroqModels,
+    [],
+    `Blog config must not route to stale Groq llama-4-scout model: ${JSON.stringify(staleGroqModels)}`,
+  );
   const registry = config.runtime_config?.blogV3AgentRegistry || config.blogV3AgentRegistry || config.blog?.blogV3AgentRegistry;
   assert.equal(registry?.hubGatewayRequired, true, 'Blog V3 registry must require Hub Gateway');
   assert.deepEqual(registry?.nonLlmAgents, ['publ', 'maestro'], 'publ/maestro must be non-LLM');

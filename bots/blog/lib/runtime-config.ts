@@ -184,24 +184,24 @@ const DEFAULTS = {
     'blog.social.summarize': {
       chain: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'blog.social.caption': {
       chain: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'blog.star.summarize': {
       chain: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'blog.star.caption': {
       chain: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       ],
     },
@@ -220,14 +220,14 @@ const DEFAULTS = {
     'blog.commenter.reply': {
       chain: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 600, temperature: 0.4, timeoutMs: 22000 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.55, timeoutMs: 15000 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 600, temperature: 0.55, timeoutMs: 15000 },
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 600, temperature: 0.45, timeoutMs: 14000 },
       ],
     },
     'blog.commenter.neighbor': {
       chain: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 700, temperature: 0.45, timeoutMs: 22000 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.6, timeoutMs: 15000 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 700, temperature: 0.6, timeoutMs: 15000 },
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.5, timeoutMs: 14000 },
       ],
     },
