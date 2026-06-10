@@ -21,10 +21,16 @@ async function main() {
   const plist = fs.readFileSync(plistPath, 'utf8');
   const janitorPlist = fs.readFileSync(janitorPlistPath, 'utf8');
   assert.equal(extractString(plist, 'Label'), 'ai.jay.runtime', 'launchd label should be ai.jay.runtime');
+  assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/, 'Jay runtime should run through node');
+  assert.match(plist, /<string>--disable-warning=DEP0205<\/string>/, 'Jay runtime should suppress Node 26 tsx DEP0205 warnings');
+  assert.match(plist, /<string>--import<\/string>\s*<string>tsx<\/string>/, 'Jay runtime should load tsx through node --import');
   assert.match(plist, /bots\/orchestrator\/src\/jay-runtime\.ts/, 'plist should run jay-runtime.ts');
   assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/, 'Jay runtime should be KeepAlive');
   assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/, 'Jay runtime should start at load');
   assert.equal(extractString(janitorPlist, 'Label'), 'ai.jay.incident-janitor', 'janitor label should be ai.jay.incident-janitor');
+  assert.match(janitorPlist, /<string>\/opt\/homebrew\/bin\/node<\/string>/, 'Janitor should run through node');
+  assert.match(janitorPlist, /<string>--disable-warning=DEP0205<\/string>/, 'Janitor should suppress Node 26 tsx DEP0205 warnings');
+  assert.match(janitorPlist, /<string>--import<\/string>\s*<string>tsx<\/string>/, 'Janitor should load tsx through node --import');
   assert.match(janitorPlist, /jay-incident-janitor\.ts/, 'janitor should run jay-incident-janitor.ts');
   assert.match(janitorPlist, /<string>--apply<\/string>/, 'janitor should apply stale queue repair');
   assert.match(janitorPlist, /<key>StartInterval<\/key>\s*<integer>900<\/integer>/, 'janitor should run every 15 minutes');

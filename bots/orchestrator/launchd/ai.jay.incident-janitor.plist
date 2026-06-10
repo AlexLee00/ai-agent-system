@@ -21,7 +21,10 @@
 	<string>ai.jay.incident-janitor</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/tsx</string>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/jay-incident-janitor.ts</string>
 		<string>--apply</string>
 	</array>
