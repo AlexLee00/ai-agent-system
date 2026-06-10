@@ -1,19 +1,19 @@
 {
   "ok": true,
-  "generated_at": "2026-06-10T04:44:36.752Z",
+  "generated_at": "2026-06-10T11:05:39.691Z",
   "hours": 168,
-  "stats_source": "hub_http",
+  "stats_source": "db_fallback",
   "totals": {
-    "total_calls": 54368,
-    "oauth_calls": 50223,
-    "oauth_share_pct": 92.38,
+    "total_calls": 54601,
+    "oauth_calls": 50630,
+    "oauth_share_pct": 92.73,
     "failed_calls": 16,
     "failed_rate_pct": 0.03,
-    "reported_cost_usd": 15.718974,
+    "reported_cost_usd": 15.585288,
     "oauth_reported_cost_usd": 13.198955,
     "claude_code_reported_cost_usd": 13.198955,
-    "claude_code_runtime_cost_share_pct": 83.97,
-    "non_oauth_reported_cost_usd": 2.520019,
+    "claude_code_runtime_cost_share_pct": 84.69,
+    "non_oauth_reported_cost_usd": 2.386333,
     "anthropic_provider_calls": 0
   },
   "providers": {
@@ -30,13 +30,13 @@
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 50147,
-      "success_count": 50147,
+      "calls": 50554,
+      "success_count": 50554,
       "failed_count": 0,
-      "avg_duration_ms": 5044,
+      "avg_duration_ms": 5029,
       "max_duration_ms": 146595,
       "total_cost_usd": 0,
-      "share_pct": 92.24,
+      "share_pct": 92.59,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
@@ -63,13 +63,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 4013,
-      "success_count": 4013,
+      "calls": 3839,
+      "success_count": 3839,
       "failed_count": 0,
-      "avg_duration_ms": 1735,
+      "avg_duration_ms": 1706,
       "max_duration_ms": 40258,
-      "total_cost_usd": 2.520019,
-      "share_pct": 7.38,
+      "total_cost_usd": 2.386333,
+      "share_pct": 7.03,
       "success_rate_pct": 100
     },
     "failed": {
@@ -192,6 +192,7 @@
     "reported_cost_accounting_only": true
   },
   "warnings": [
+    "hub_http_stats_unavailable_used_db_fallback:fetch failed",
     "runtime_reported_cost_is_accounting_or_cli_imputed_cost_not_oauth4_billing_gate",
     "runtime_claude_code_reported_cost_share_high_reduce_sonnet_primary_routes",
     "non_oauth_runtime_cost_observed_groq_or_other_fallback_usage"
