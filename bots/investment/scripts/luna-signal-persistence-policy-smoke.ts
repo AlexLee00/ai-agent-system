@@ -5,6 +5,7 @@ import {
   applyExistingPositionStrategyBias,
   buildLunaRiskEvaluationSignal,
   buildLunaSignalPersistencePlan,
+  buildLunaSignalPersistencePlanWithCapitalPreflight,
   evaluateLunaSignalCapitalPersistencePreflight,
   evaluateLunaSignalPersistencePreFilter,
 } from '../shared/luna-signal-persistence-policy.ts';
@@ -164,11 +165,28 @@ async function runCapitalPreflightCases() {
     throw new Error(`capital preflight fail-open mismatch: ${JSON.stringify(failOpen)}`);
   }
 
+  const wrapperBlocked = await buildLunaSignalPersistencePlanWithCapitalPreflight(baseSignal, riskApproved, null, {
+    env: { LUNA_SIGNAL_CAPITAL_PREFLIGHT_PERSISTENCE_BLOCK_ENABLED: 'true' },
+    exchange: 'binance',
+    tradeMode: 'validation',
+    decision: { amount_usdt: 100, confidence: 0.8 },
+    deps: {
+      preTradeCheck: async () => ({
+        allowed: false,
+        reason: 'live_fire_daily_notional_limit: 240.00 > 200',
+      }),
+    },
+  });
+  if (wrapperBlocked.outcome !== 'blocked_by_capital_prefilter' || wrapperBlocked.status !== 'blocked') {
+    throw new Error(`capital preflight wrapper mismatch: ${JSON.stringify(wrapperBlocked)}`);
+  }
+
   return {
     off: off.reason,
     normalSkipped: normalSkipped.reason,
     blockedCode: blocked.blockUpdate.code,
     failOpenError: failOpen.check.error,
+    wrapperStatus: wrapperBlocked.status,
   };
 }
 

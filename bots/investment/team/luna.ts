@@ -61,9 +61,9 @@ import { recommendStrategy } from './argos.ts';
 import { applyStrategyRouteDecisionBias, buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
 import {
   applyExistingPositionStrategyBias,
-  evaluateLunaSignalCapitalPersistencePreflight,
   buildLunaRiskEvaluationSignal,
   buildLunaSignalPersistencePlan,
+  buildLunaSignalPersistencePlanWithCapitalPreflight,
 } from '../shared/luna-signal-persistence-policy.ts';
 import {
   applyDiscoveryHardCap,
@@ -1242,28 +1242,13 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       riskError = e;
     }
 
-    const tradeModeForPersistence = signalData.tradeMode || signalData.trade_mode || dec.trade_mode || dec.tradeMode || (isValidationTradeMode() ? 'validation' : 'normal');
-    const capitalPreflight = await evaluateLunaSignalCapitalPersistencePreflight(signalData, riskResult, {
+    const persistencePlan = await buildLunaSignalPersistencePlanWithCapitalPreflight(signalData, riskResult, riskError, {
       exchange,
       symbol: dec.symbol,
       action: dec.action,
-      tradeMode: tradeModeForPersistence,
+      tradeMode: signalData.tradeMode || signalData.trade_mode || dec.trade_mode || dec.tradeMode || (isValidationTradeMode() ? 'validation' : 'normal'),
       decision: dec,
     });
-    const persistencePlan = capitalPreflight.blocked
-      ? {
-          status: 'blocked',
-          signalData: { ...signalData },
-          approvalUpdate: null,
-          blockUpdate: capitalPreflight.blockUpdate,
-          outcome: 'blocked_by_capital_prefilter',
-        }
-      : buildLunaSignalPersistencePlan(signalData, riskResult, riskError, {
-          exchange,
-          symbol: dec.symbol,
-          action: dec.action,
-          decision: dec,
-        });
     const persistedSignal = persistencePlan.signalData;
     const signalInsert = await db.insertSignalIfFresh({
       ...persistedSignal,

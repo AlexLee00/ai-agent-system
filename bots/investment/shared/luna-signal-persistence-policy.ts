@@ -224,6 +224,20 @@ export async function evaluateLunaSignalCapitalPersistencePreflight(signalData =
   };
 }
 
+export async function buildLunaSignalPersistencePlanWithCapitalPreflight(signalData = {}, riskResult = null, riskError = null, context = {}) {
+  const capitalPreflight = await evaluateLunaSignalCapitalPersistencePreflight(signalData, riskResult, context);
+  if (capitalPreflight.blocked) {
+    return {
+      status: 'blocked',
+      signalData: { ...signalData },
+      approvalUpdate: null,
+      blockUpdate: capitalPreflight.blockUpdate,
+      outcome: 'blocked_by_capital_prefilter',
+    };
+  }
+  return buildLunaSignalPersistencePlan(signalData, riskResult, riskError, context);
+}
+
 export function buildLunaSignalPersistencePlan(signalData = {}, riskResult = null, riskError = null, context = {}) {
   const symbol = context.symbol || signalData.symbol || null;
   const action = context.action || signalData.action || null;
