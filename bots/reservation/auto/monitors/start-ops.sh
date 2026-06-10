@@ -12,6 +12,8 @@
 
 cd "$(dirname "$0")"
 
+PROJECT_ROOT="${PROJECT_ROOT:-/Users/alexlee/projects/ai-agent-system}"
+export PROJECT_ROOT
 BOT_DIR="$(cd ../.. && pwd)"
 WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-${JAY_WORKSPACE:-$HOME/.ai-agent-system/workspace}}"
 mkdir -p "$WORKSPACE_DIR"
@@ -21,8 +23,8 @@ LOG_FILE="/tmp/naver-ops-mode.log"
 SKA_RUNTIME_HOME="${SKA_RUNTIME_HOME:-$HOME/.ska}"
 NAVER_BROWSER_PROFILE_ROOT="${NAVER_BROWSER_PROFILE_ROOT:-$SKA_RUNTIME_HOME/browser-profiles}"
 NAVER_PROFILE="$NAVER_BROWSER_PROFILE_ROOT/naver-monitor"
-NAVER_MONITOR_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.naver-monitor.mjs"
-PREFLIGHT_SCRIPT="/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.ska.preflight.mjs"
+NAVER_MONITOR_SCRIPT="$PROJECT_ROOT/dist/daemons/ai.ska.naver-monitor.cjs"
+PREFLIGHT_SCRIPT="$PROJECT_ROOT/dist/daemons/ai.ska.preflight.cjs"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
 NODE_BIN="/opt/homebrew/bin/node"
 [ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)

@@ -28,6 +28,8 @@ const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 const MODE = IS_OPS ? 'ops' : 'dev';
 const DRY_RUN = process.argv.includes('--dry-run');
+const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 
 type ReservationLike = {
   id: string;
@@ -194,10 +196,7 @@ function runPickko(entry: ReservationLike): Promise<number | null> {
   return new Promise((resolve) => {
     const phone = (entry.phoneRaw || entry.phone || '').replace(/\D/g, '');
     const args = [
-      path.join(
-        __dirname,
-        '../../../../bots/reservation/manual/reservation/pickko-accurate.ts',
-      ),
+      path.join(PROJECT_ROOT, 'bots/reservation/manual/reservation/pickko-accurate.ts'),
       `--phone=${phone}`,
       `--date=${entry.date}`,
       `--start=${entry.start}`,
@@ -206,7 +205,7 @@ function runPickko(entry: ReservationLike): Promise<number | null> {
       `--name=${entry.raw?.name || '고객'}`,
     ];
     log(`  🤖 픽코 등록 실행: ${maskPhone(phone)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸`);
-    const child = spawn('/opt/homebrew/bin/tsx', args, {
+    const child = spawn(TSX_BIN, args, {
       cwd: path.dirname(args[0]),
       stdio: 'inherit',
     });

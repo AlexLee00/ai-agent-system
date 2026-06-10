@@ -17,8 +17,8 @@ const entries = [
   { label: 'ai.luna.crypto-holding-monitor-6h', entry: 'bots/investment/scripts/crypto-holding-monitor.ts', format: 'esm' },
   { label: 'ai.ska.commander', entry: 'bots/reservation/src/ska.ts', protected: true },
   { label: 'ai.ska.dashboard', entry: 'bots/reservation/scripts/dashboard-server.ts', protected: true },
-  { label: 'ai.ska.preflight', entry: 'bots/reservation/scripts/preflight.ts', protected: true },
-  { label: 'ai.ska.naver-monitor', entry: 'bots/reservation/auto/monitors/naver-monitor.ts', protected: true },
+  { label: 'ai.ska.preflight', entry: 'bots/reservation/scripts/preflight.ts', format: 'cjs', protected: true },
+  { label: 'ai.ska.naver-monitor', entry: 'bots/reservation/auto/monitors/naver-monitor.ts', format: 'cjs', protected: true },
   { label: 'ai.hub.resource-api', entry: 'bots/hub/src/hub.ts', protected: true },
 ];
 

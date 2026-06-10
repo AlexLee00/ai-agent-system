@@ -74,6 +74,8 @@ const rag = require('../../../../packages/core/lib/rag-safe');
 const { storeReservationEvent } = require('../../../../packages/core/lib/reservation-rag');
 const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
+const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 const WORKSPACE = getReservationRuntimeDir();
 const NAVER_BROWSER_PROFILE_ROOT =
   process.env.NAVER_BROWSER_PROFILE_ROOT || getReservationBrowserProfileRoot();
@@ -136,8 +138,8 @@ function autoBugReport({
   }
   bugReportCache.add(cacheKey);
 
-  const child = spawn('/opt/homebrew/bin/tsx', [
-    path.join(__dirname, '../../../../bots/reservation/src/bug-report.ts'),
+  const child = spawn(TSX_BIN, [
+    path.join(PROJECT_ROOT, 'bots/reservation/src/bug-report.ts'),
     '--new', '--title', title,
     '--desc', desc,
     '--severity', severity,
@@ -157,9 +159,9 @@ function runStartupPickkoVerification() {
   if (!NAVER_MONITOR_RUNTIME.verifyBeforeUnresolvedReport) return;
 
   try {
-    const verifyScript = path.join(__dirname, '../../manual/admin/pickko-verify.ts');
+    const verifyScript = path.join(PROJECT_ROOT, 'bots/reservation/manual/admin/pickko-verify.ts');
     log('🔎 [시작 검증] pickko-verify 백그라운드 실행');
-    const child = spawn('/opt/homebrew/bin/tsx', [verifyScript], {
+    const child = spawn(TSX_BIN, [verifyScript], {
       cwd: path.dirname(verifyScript),
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],

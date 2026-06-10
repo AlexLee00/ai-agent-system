@@ -39,6 +39,8 @@ const { createPickkoRoomSlotService } = require('../../lib/pickko-room-slot-serv
 const { createPickkoFinalizationService } = require('../../lib/pickko-finalization-service');
 const { createPickkoSavePrecheckService } = require('../../lib/pickko-save-precheck-service');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
+const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
+const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 
 type StageError = Error & {
   stageCode?: string;
@@ -499,8 +501,8 @@ async function main() {
       await releaseLock();
 
       const payPendingResult = await new Promise<{ exitCode: number; success: boolean | null; message: string | null }>((resolve) => {
-        const child = spawn('/opt/homebrew/bin/tsx', [
-          path.join(__dirname, '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts'),
+        const child = spawn(TSX_BIN, [
+          path.join(PROJECT_ROOT, 'bots/reservation/manual/reports/pickko-pay-pending.ts'),
           `--phone=${PHONE_NOHYPHEN}`,
           `--date=${DATE}`,
           `--start=${START_TIME}`,
