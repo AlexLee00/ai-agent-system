@@ -7,6 +7,7 @@ import { preFilterSignal } from '../shared/signal-pre-filter.ts';
 import { resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
 import { ensureRealizedPnlColumns } from '../shared/realized-pnl-calculator.ts';
 import { buildTradeDataAnalysisReport, TRADE_DATA_REINFORCEMENT_CONTRACT } from '../shared/trade-data-analysis-report.ts';
+import { isLearningPnlValidRow } from '../shared/trade-journal-learning-guard.ts';
 import { close } from '../shared/db/core.ts';
 
 export async function runSmoke() {
@@ -39,6 +40,10 @@ export async function runSmoke() {
   const expectedSellNoop = resolveExpectedSellNoopStatus({ action: 'SELL', code: 'missing_position' });
   assert.equal(expectedSellNoop.status, 'skipped_below_min');
   assert.equal(expectedSellNoop.classification, 'no_position_noop');
+  assert.equal(isLearningPnlValidRow({ pnl_amount: 1, exit_reason: 'take_profit' }), true);
+  assert.equal(isLearningPnlValidRow({ pnl_amount: null, exit_reason: 'take_profit' }), false);
+  assert.equal(isLearningPnlValidRow({ pnl_amount: 1, exit_reason: 'journal_reconciled_with_fill' }), false);
+  assert.equal(isLearningPnlValidRow({ pnlAmount: 1, exitReason: 'sweeper_manual_dust_wallet_sync' }), false);
 
   const weakSymbol = preFilterSignal({ symbol: 'KITE/USDT', exchange: 'binance', action: 'BUY', confidence: 0.9 });
   assert.equal(weakSymbol.ok, true);

@@ -8,6 +8,7 @@ import {
   summarizeRowsByOperatingEpoch,
 } from './luna-operating-epoch.ts';
 import { deriveTradeJournalNumericId } from './posttrade-trade-journal-adapter.ts';
+import { isLearningPnlValidRow } from './trade-journal-learning-guard.ts';
 import { buildTradeDataHygieneReport, isExpectedPolicyBlockCode } from './trade-data-hygiene.ts';
 
 function rowsOf(result) {
@@ -141,6 +142,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const closedJournalTradeIds = [...new Set(
     journalRows
       .filter((row) => String(row.status || '').toLowerCase() === 'closed' || row.exit_time != null)
+      .filter((row) => isLearningPnlValidRow(row))
       .map((row) => deriveTradeJournalNumericId(row))
       .filter((id) => Number.isSafeInteger(id)),
   )];

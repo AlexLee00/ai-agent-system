@@ -17,9 +17,22 @@ export function learningPnlValidSql(alias = 'tj') {
   ].join('\n  AND ');
 }
 
+export function isLearningPnlValidRow(row = {}) {
+  const pnlAmount = row?.pnl_amount ?? row?.pnlAmount;
+  if (pnlAmount == null) return false;
+  const exitReason = String(row?.exit_reason ?? row?.exitReason ?? '').trim();
+  return ![
+    'journal_reconciled',
+    'sweeper_manual_dust',
+    'orphan_cleanup',
+    'broker_no_balance_cleanup',
+  ].some((prefix) => exitReason.startsWith(prefix));
+}
+
 export const LEARNING_PNL_VALID = learningPnlValidSql('tj');
 
 export default {
   LEARNING_PNL_VALID,
+  isLearningPnlValidRow,
   learningPnlValidSql,
 };
