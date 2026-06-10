@@ -4,11 +4,14 @@
 <dict>
   <key>Label</key>
   <string>ai.hub.incident-summary</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/homebrew/bin/tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/incident-summary.ts</string>
-  </array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/incident-summary.ts</string>
+	</array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system</string>
   <key>EnvironmentVariables</key>

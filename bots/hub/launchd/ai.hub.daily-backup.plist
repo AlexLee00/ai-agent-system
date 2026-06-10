@@ -5,12 +5,15 @@
 <dict>
   <key>Label</key>
   <string>ai.hub.daily-backup</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/homebrew/bin/tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/hub-stage-d-daily-backup.ts</string>
-    <string>--json</string>
-  </array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/hub-stage-d-daily-backup.ts</string>
+		<string>--json</string>
+	</array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system</string>
   <key>EnvironmentVariables</key>
