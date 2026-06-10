@@ -87,9 +87,12 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const DEFAULT_DB_INIT_RETRIES = 60;
+const DEFAULT_DB_INIT_RETRY_MS = 5000;
+
 async function retryTransientDbStartup(label, fn, options = {}) {
-  const maxAttempts = Math.max(1, Number(options.maxAttempts || positiveIntEnv('LUNA_COMMANDER_DB_RETRIES', 12)));
-  const delayMs = Math.max(0, Number(options.delayMs ?? positiveIntEnv('LUNA_COMMANDER_DB_RETRY_MS', 5000)));
+  const maxAttempts = Math.max(1, Number(options.maxAttempts || positiveIntEnv('LUNA_COMMANDER_DB_RETRIES', DEFAULT_DB_INIT_RETRIES)));
+  const delayMs = Math.max(0, Number(options.delayMs ?? positiveIntEnv('LUNA_COMMANDER_DB_RETRY_MS', DEFAULT_DB_INIT_RETRY_MS)));
   const sleeper = options.sleep || sleep;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -881,5 +884,7 @@ module.exports = {
   _testOnly: {
     isTransientDbStartupError,
     retryTransientDbStartup,
+    DEFAULT_DB_INIT_RETRIES,
+    DEFAULT_DB_INIT_RETRY_MS,
   },
 };
