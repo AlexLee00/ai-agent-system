@@ -104,6 +104,15 @@ function topObjectEntries(obj = {}, limit = 8) {
     .slice(0, limit);
 }
 
+function blockedTrendTotals(trend = {}) {
+  return {
+    last24h: num(trend.last24h?.total),
+    last2h: num(trend.last2h?.total),
+    unexpected24h: num(trend.last24h?.unexpected),
+    unexpected2h: num(trend.last2h?.unexpected),
+  };
+}
+
 function actionItem({ id, priority, area, title, evidence = {}, action, validationCommand }) {
   return {
     id,
@@ -166,6 +175,15 @@ function buildEntryPrefilterPillar(tradeData = {}) {
   const blockedReasons = topItems(signals.blockedReasons || [], 8);
   const rawExecutionRate = signals.executionRate ?? null;
   const policyAdjustedExecutionRate = signals.policyAdjustedExecutionRate ?? rawExecutionRate;
+  const recentTrend = signals.blockedReasonTrend || null;
+  const recentTrendTotals = recentTrend ? blockedTrendTotals(recentTrend) : null;
+  const recentExpectedOnly = Boolean(
+    recentTrendTotals
+    && recentTrendTotals.unexpected24h === 0
+    && recentTrendTotals.unexpected2h === 0,
+  );
+  const noVeryRecentBlocks = Boolean(recentTrendTotals && recentTrendTotals.last2h === 0);
+  const recentPressureCooling = recentExpectedOnly && noVeryRecentBlocks;
   const actions = blockedReasons.map((item) => {
     const reason = String(item.reason || item.block_code || item.code || 'unknown');
     const policy = PREFILTER_ACTIONS[reason] || {
@@ -184,10 +202,12 @@ function buildEntryPrefilterPillar(tradeData = {}) {
     });
   });
 
-  const needsWatch = blockedReasons.length > 0 || (policyAdjustedExecutionRate != null && num(policyAdjustedExecutionRate) < 0.9);
+  const needsWatch = !recentPressureCooling
+    && (blockedReasons.length > 0 || (policyAdjustedExecutionRate != null && num(policyAdjustedExecutionRate) < 0.9));
+  const hasAdvisoryBacklog = blockedReasons.length > 0 || recentPressureCooling;
   return {
     id: 'entry_prefilter',
-    status: needsWatch ? 'watch' : 'ready',
+    status: needsWatch ? 'watch' : hasAdvisoryBacklog ? 'advisory' : 'ready',
     evidence: {
       totalSignals: signals.total ?? null,
       rawExecutionRate,
@@ -195,6 +215,9 @@ function buildEntryPrefilterPillar(tradeData = {}) {
       policyBlockedSignals: signals.policyBlockedSignals ?? null,
       executionCandidateSignals: signals.executionCandidateSignals ?? null,
       blockedReasons,
+      blockedReasonTrend: recentTrend,
+      recentTrendTotals,
+      recentPressureCooling,
     },
     actions,
   };
