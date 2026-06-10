@@ -16,6 +16,8 @@
 
 import { query, run } from '../shared/db/core.ts';
 import { maybeSkipForMemory } from '../shared/memory-pressure-guard.ts';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const MIN_AGE_HOURS = 4;
 const OUTCOME_WINDOW_HOURS = 24;
@@ -48,6 +50,10 @@ function resolveBatchLimit() {
     argValue('--limit') ?? process.env[BATCH_LIMIT_ENV],
     DEFAULT_BATCH_LIMIT,
   );
+}
+
+function isCliMain() {
+  return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
 }
 
 async function refreshTradesView() {
@@ -160,10 +166,23 @@ async function main() {
       stats,
     }, null, 2));
   }
-  process.exit(0);
+  return { ok: true, enabled, dryRun, batchLimit, pending: pending.length, stats };
 }
 
-main().catch((err) => {
-  console.error('[GuardOutcome] 실패:', err);
-  process.exit(1);
-});
+if (isCliMain()) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('[GuardOutcome] 실패:', err);
+      process.exit(1);
+    });
+}
+
+export {
+  boolEnv,
+  isCliMain,
+  loadPendingGuardEvents,
+  main,
+  positiveInt,
+  resolveBatchLimit,
+};
