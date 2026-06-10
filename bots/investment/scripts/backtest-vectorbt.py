@@ -288,7 +288,7 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
     returns_series = None
     try:
         returns_series = pf.returns().fillna(0)
-        ret_arr = returns_series.dropna().values
+        ret_arr = finite_float_values(returns_series.dropna().values)
         if _scipy_stats is not None and len(ret_arr) >= 4:
             _sk = float(_scipy_stats.skew(ret_arr))
             _kt = float(_scipy_stats.kurtosis(ret_arr, fisher=False))
@@ -340,6 +340,18 @@ def safe_float(value, fallback: float = 0.0) -> float:
         return out if math.isfinite(out) else fallback
     except Exception:
         return fallback
+
+
+def finite_float_values(values) -> list[float]:
+    out: list[float] = []
+    for value in values or []:
+        try:
+            number = float(value)
+        except Exception:
+            continue
+        if math.isfinite(number):
+            out.append(number)
+    return out
 
 
 def robust_rank_score(item: dict) -> float:
@@ -580,7 +592,7 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
     raw_sharpe_oos = safe_float(oos_result.get("sharpe_ratio"))
 
     # var_sharpe: trial SR 분산 (selection bias 측정, DSR Phase 1b 입력)
-    _ts = trial_sharpes or []
+    _ts = finite_float_values(trial_sharpes or [])
     var_sharpe = (
         float(_np.var(_ts, ddof=1))
         if _np is not None and len(_ts) >= 2
