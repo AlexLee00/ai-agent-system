@@ -34,6 +34,22 @@ async function main() {
     assert.equal(state.candidateCount, 0);
     assert.equal(state.processed, 0);
     assert.ok(state.policy);
+    assert.equal(state.positionAgeDiagnostics.mismatchCount, 0);
+
+    const mismatchState = __test.buildMonitorStatePayload({
+      options: { dryRun: true, json: true },
+      candidates: [],
+      results: [],
+      status: 'no_candidates',
+      ageDiagnostics: {
+        warningGapDays: 7,
+        mismatchCount: 1,
+        maxGapDays: 42.1,
+        rows: [{ symbol: 'PEPE/USDT', rawTradeHeldDays: 42.3, monitorHeldDays: 0.2, ageGapDays: 42.1 }],
+      },
+    });
+    assert.equal(mismatchState.positionAgeDiagnostics.mismatchCount, 1);
+    assert.equal(mismatchState.positionAgeDiagnostics.rows[0].symbol, 'PEPE/USDT');
 
     await __test.recordExitDecision({
       symbol,

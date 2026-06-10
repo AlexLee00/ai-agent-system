@@ -557,6 +557,10 @@ function readCryptoHoldingMonitorState() {
       processed: Number(state.processed || 0),
       dryRun: state.dryRun === true,
       sweepEnabled: state.sweepEnabled === true,
+      ageDiagnosticsStatus: state.positionAgeDiagnostics?.status || 'ok',
+      ageDiagnosticsError: state.positionAgeDiagnostics?.error || null,
+      ageMismatchCount: Number(state.positionAgeDiagnostics?.mismatchCount || 0),
+      ageMismatchRows: Array.isArray(state.positionAgeDiagnostics?.rows) ? state.positionAgeDiagnostics.rows : [],
     };
   } catch (err: any) {
     return {
@@ -568,6 +572,10 @@ function readCryptoHoldingMonitorState() {
       processed: 0,
       dryRun: true,
       sweepEnabled: false,
+      ageDiagnosticsStatus: 'unknown',
+      ageDiagnosticsError: null,
+      ageMismatchCount: 0,
+      ageMismatchRows: [],
       message: err?.message || String(err),
     };
   }
@@ -617,6 +625,17 @@ function buildFreshnessSection(launchd, opsScheduler, tableFreshness, positionSy
         section += `✅ crypto-holding-monitor: ${mode} 무후보 정상 (${cryptoHoldingMonitor.lastRunMinAgo}분 전, ${sweep})\n`;
       } else {
         section += `✅ crypto-holding-monitor: ${mode} 후보 ${cryptoHoldingMonitor.candidateCount}건 / 처리 ${cryptoHoldingMonitor.processed}건 (${cryptoHoldingMonitor.lastRunMinAgo}분 전, ${sweep})\n`;
+      }
+      if (Number(cryptoHoldingMonitor.ageMismatchCount || 0) > 0) {
+        const sample = cryptoHoldingMonitor.ageMismatchRows?.[0];
+        const sampleText = sample
+          ? ` 예: ${sample.symbol} raw=${sample.rawTradeHeldDays}d monitor=${sample.monitorHeldDays}d gap=${sample.ageGapDays}d`
+          : '';
+        section += `⚠️ WARN: crypto-holding-monitor age mismatch ${cryptoHoldingMonitor.ageMismatchCount}건.${sampleText}\n`;
+        hasWarn = true;
+      } else if (cryptoHoldingMonitor.ageDiagnosticsStatus === 'error') {
+        section += `⚠️ WARN: crypto-holding-monitor age diagnostics error: ${String(cryptoHoldingMonitor.ageDiagnosticsError || 'unknown').slice(0, 120)}\n`;
+        hasWarn = true;
       }
     } else if (cryptoHoldingMonitor.status === 'critical') {
       section += `🔴 CRITICAL: crypto-holding-monitor state ${cryptoHoldingMonitor.lastRunMinAgo}분 정체 (기대: 480분)\n`;

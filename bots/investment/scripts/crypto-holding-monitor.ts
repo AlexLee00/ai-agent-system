@@ -37,6 +37,7 @@ const CRYPTO_SOFT_CAP_DAYS = Number(process.env.LUNA_CRYPTO_MAX_HOLD_DAYS ?? 14)
 const OVERSEAS_SOFT_CAP_DAYS = Number(process.env.LUNA_OVERSEAS_MAX_HOLD_DAYS ?? 10);
 const REGIME_MAX_AGE_MIN = Number(process.env.LUNA_REGIME_MAX_AGE_MIN ?? 90);
 const HARD_CAP_DAYS = Number(process.env.LUNA_EXIT_HARD_MAX_HOLD_DAYS ?? process.env.LUNA_CRYPTO_HARD_MAX_HOLD_DAYS ?? 60);
+const AGE_MISMATCH_WARN_DAYS = Number(process.env.LUNA_HOLDING_AGE_MISMATCH_WARN_DAYS ?? 7);
 const SWEEP_ENABLED = process.env.LUNA_CRYPTO_STALE_SWEEP_ENABLED === 'true';
 const MONITOR_STATE_URL = new URL('../output/ops/crypto-holding-monitor-state.json', import.meta.url);
 const MONITOR_STATE_DIR_URL = new URL('../output/ops/', import.meta.url);
@@ -79,6 +80,19 @@ function parseArgs(argv = process.argv.slice(2)) {
 function calcHeldDays(entryTimeMs) {
   if (!entryTimeMs) return 0;
   return (Date.now() - Number(entryTimeMs)) / 86400000;
+}
+
+function toEpochMs(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return value.getTime();
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundDays(value) {
+  return Number(Number(value || 0).toFixed(2));
 }
 
 function calcPositionValue(pos) {
@@ -129,6 +143,133 @@ async function loadRegimeByMarket() {
   return Object.fromEntries(entries);
 }
 
+async function loadPositionAgeDiagnostics(positions = []) {
+  const scoped = positions
+    .filter((pos) => pos?.symbol && pos?.exchange)
+    .map((pos) => ({
+      symbol: String(pos.symbol),
+      exchange: String(pos.exchange),
+      paper: pos.paper === true,
+      tradeMode: String(pos.trade_mode || 'normal'),
+      monitorEntryTime: toEpochMs(pos.entry_time),
+    }));
+
+  if (scoped.length === 0) {
+    return {
+      status: 'ok',
+      warningGapDays: AGE_MISMATCH_WARN_DAYS,
+      mismatchCount: 0,
+      maxGapDays: 0,
+      rows: [],
+    };
+  }
+
+  const params = [];
+  const tuples = scoped.map((item) => {
+    params.push(item.symbol, item.exchange, item.paper, item.tradeMode, item.monitorEntryTime);
+    const base = params.length - 4;
+    return `($${base}::text, $${base + 1}::text, $${base + 2}::boolean, $${base + 3}::text, $${base + 4}::bigint)`;
+  }).join(', ');
+
+  let queryError = null;
+  const rows = await db.query(
+    `WITH input(symbol, exchange, paper, position_trade_mode, monitor_entry_time) AS (
+       VALUES ${tuples}
+     ),
+     trade_stats AS (
+       SELECT i.symbol, i.exchange, i.paper,
+              MIN(t.executed_at) FILTER (WHERE t.side = 'buy') AS first_buy_at,
+              MAX(t.executed_at) FILTER (WHERE t.side = 'buy') AS last_buy_at,
+              COUNT(*) FILTER (WHERE t.side = 'buy') AS buy_count,
+              COUNT(*) FILTER (WHERE t.side IN ('sell','liquidate')) AS sell_count
+         FROM input i
+         LEFT JOIN investment.trades t
+           ON t.symbol = i.symbol
+          AND t.exchange = i.exchange
+          AND COALESCE(t.paper, false) = i.paper
+        GROUP BY i.symbol, i.exchange, i.paper
+     ),
+     journal_stats AS (
+       SELECT i.symbol, i.exchange, i.paper,
+              MIN(tj.entry_time) AS open_journal_entry_time,
+              ARRAY_REMOVE(ARRAY_AGG(DISTINCT COALESCE(tj.trade_mode, 'normal')) FILTER (WHERE tj.status = 'open'), NULL) AS open_journal_trade_modes
+         FROM input i
+         LEFT JOIN investment.trade_journal tj
+           ON tj.symbol = i.symbol
+          AND tj.exchange = i.exchange
+          AND tj.is_paper = i.paper
+          AND tj.status = 'open'
+        GROUP BY i.symbol, i.exchange, i.paper
+     )
+     SELECT i.symbol, i.exchange, i.paper, i.position_trade_mode, i.monitor_entry_time,
+            ts.first_buy_at, ts.last_buy_at, ts.buy_count, ts.sell_count,
+            js.open_journal_entry_time, js.open_journal_trade_modes
+       FROM input i
+       LEFT JOIN trade_stats ts USING (symbol, exchange, paper)
+       LEFT JOIN journal_stats js USING (symbol, exchange, paper)
+      ORDER BY i.symbol`,
+    params,
+  ).catch((err) => {
+    queryError = err?.message || String(err);
+    return [];
+  });
+
+  if (queryError) {
+    return {
+      status: 'error',
+      error: queryError,
+      warningGapDays: AGE_MISMATCH_WARN_DAYS,
+      mismatchCount: 0,
+      maxGapDays: 0,
+      rows: [],
+    };
+  }
+
+  const diagnostics = [];
+  for (const row of rows || []) {
+    const monitorEntryMs = toEpochMs(row.monitor_entry_time);
+    const firstBuyMs = toEpochMs(row.first_buy_at);
+    if (!monitorEntryMs || !firstBuyMs) continue;
+
+    const rawHeldDays = (Date.now() - firstBuyMs) / 86400000;
+    const monitorHeldDays = (Date.now() - monitorEntryMs) / 86400000;
+    const ageGapDays = Math.max(0, (monitorEntryMs - firstBuyMs) / 86400000);
+    const openModes = Array.isArray(row.open_journal_trade_modes)
+      ? row.open_journal_trade_modes.map((mode) => String(mode))
+      : [];
+    const tradeModeMismatch = openModes.length > 0 && !openModes.includes(String(row.position_trade_mode || 'normal'));
+    const isMismatch = ageGapDays >= AGE_MISMATCH_WARN_DAYS || tradeModeMismatch;
+
+    if (!isMismatch) continue;
+
+    diagnostics.push({
+      symbol: row.symbol,
+      exchange: row.exchange,
+      paper: row.paper === true,
+      positionTradeMode: row.position_trade_mode || 'normal',
+      openJournalTradeModes: openModes,
+      monitorHeldDays: roundDays(monitorHeldDays),
+      rawTradeHeldDays: roundDays(rawHeldDays),
+      ageGapDays: roundDays(ageGapDays),
+      buyCount: Number(row.buy_count || 0),
+      sellCount: Number(row.sell_count || 0),
+      firstBuyAt: row.first_buy_at ? new Date(row.first_buy_at).toISOString() : null,
+      monitorEntryAt: monitorEntryMs ? new Date(monitorEntryMs).toISOString() : null,
+      reason: tradeModeMismatch ? 'open_journal_trade_mode_mismatch' : 'raw_trade_age_exceeds_monitor_age',
+    });
+  }
+
+  diagnostics.sort((a, b) => Number(b.ageGapDays || 0) - Number(a.ageGapDays || 0));
+
+  return {
+    status: 'ok',
+    warningGapDays: AGE_MISMATCH_WARN_DAYS,
+    mismatchCount: diagnostics.length,
+    maxGapDays: diagnostics.length > 0 ? Number(diagnostics[0].ageGapDays || 0) : 0,
+    rows: diagnostics.slice(0, 20),
+  };
+}
+
 function resolveRegimePolicy(snapshot) {
   const fresh = isFreshRegime(snapshot);
   const regime = fresh ? normalizeRegime(snapshot?.regime) : 'unknown';
@@ -158,6 +299,7 @@ async function identifyStaleCandidates() {
   ];
 
   const regimeByMarket = await loadRegimeByMarket();
+  const ageDiagnostics = await loadPositionAgeDiagnostics(allPositions);
   const candidates = [];
   for (const pos of allPositions) {
     const heldDays = calcHeldDays(pos.entry_time);
@@ -187,7 +329,7 @@ async function identifyStaleCandidates() {
     }
   }
 
-  return candidates;
+  return { candidates, ageDiagnostics };
 }
 
 async function createStaleExitSignal(candidate, reasoning, executionOrigin = 'stale_holding_sweep') {
@@ -281,7 +423,7 @@ function countBy(items = [], key) {
   }, {});
 }
 
-function buildMonitorStatePayload({ options = parseArgs([]), candidates = [], results = [], status = 'completed' } = {}) {
+function buildMonitorStatePayload({ options = parseArgs([]), candidates = [], results = [], status = 'completed', ageDiagnostics = null } = {}) {
   const summarizedCandidates = candidates.map(summarizeCandidate);
   const summarizedResults = results.map(summarizeResult);
   return {
@@ -305,6 +447,13 @@ function buildMonitorStatePayload({ options = parseArgs([]), candidates = [], re
       hardCapDays: HARD_CAP_DAYS,
       regimeMaxAgeMin: REGIME_MAX_AGE_MIN,
       regimeExitPolicy: REGIME_EXIT_POLICY,
+    },
+    positionAgeDiagnostics: ageDiagnostics || {
+      status: 'ok',
+      warningGapDays: AGE_MISMATCH_WARN_DAYS,
+      mismatchCount: 0,
+      maxGapDays: 0,
+      rows: [],
     },
     candidates: summarizedCandidates,
     results: summarizedResults,
@@ -359,10 +508,10 @@ async function main() {
     console.log(`${prefix} LUNA_CRYPTO_STALE_SWEEP_ENABLED=false — shadow 모드 (실제 청산 없음)`);
   }
 
-  const candidates = await identifyStaleCandidates();
+  const { candidates, ageDiagnostics } = await identifyStaleCandidates();
 
   if (candidates.length === 0) {
-    const state = buildMonitorStatePayload({ options, candidates, results: [], status: 'no_candidates' });
+    const state = buildMonitorStatePayload({ options, candidates, results: [], status: 'no_candidates', ageDiagnostics });
     writeMonitorState(state);
     const msg = `${prefix} 방치 포지션 없음 (binance≥${CRYPTO_SOFT_CAP_DAYS}일, overseas≥${OVERSEAS_SOFT_CAP_DAYS}일)`;
     if (options.json) {
@@ -473,7 +622,7 @@ async function main() {
     }
   }
 
-  const state = buildMonitorStatePayload({ options, candidates, results, status: 'completed' });
+  const state = buildMonitorStatePayload({ options, candidates, results, status: 'completed', ageDiagnostics });
   writeMonitorState(state);
   if (options.json) {
     console.log(JSON.stringify({ sweepEnabled: SWEEP_ENABLED, processed: results.length, results, state }));
@@ -485,4 +634,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export { parseArgs, main };
-export const __test = { recordExitDecision, buildMonitorStatePayload };
+export const __test = { recordExitDecision, buildMonitorStatePayload, loadPositionAgeDiagnostics };
