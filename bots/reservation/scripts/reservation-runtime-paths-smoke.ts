@@ -36,6 +36,17 @@ function main() {
       'JS bridge should be used when daemon is absent',
     );
 
+    assert.equal(
+      resolveReservationManualScript({
+        label: 'ai.ska.pickko-accurate',
+        sourceRelPath: 'manual/reservation/pickko-accurate.ts',
+        jsRelPath: 'manual/reservation/pickko-accurate.js',
+        projectRoot: tmpRoot,
+      }),
+      jsPath,
+      'legacy manual/* inputs should normalize under bots/reservation/',
+    );
+
     touch(daemonPath);
     assert.equal(
       resolveReservationManualScript({

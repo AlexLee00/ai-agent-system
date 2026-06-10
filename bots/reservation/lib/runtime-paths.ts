@@ -49,6 +49,13 @@ function ensureParentDir(filePath) {
   return filePath;
 }
 
+function normalizeReservationRelPath(relPath) {
+  if (!relPath || path.isAbsolute(relPath)) return relPath;
+  if (relPath.startsWith('bots/reservation/')) return relPath;
+  if (/^(auto|lib|manual|scripts|src)\//.test(relPath)) return path.join('bots/reservation', relPath);
+  return relPath;
+}
+
 function resolveReservationManualScript({
   label,
   sourceRelPath,
@@ -58,10 +65,12 @@ function resolveReservationManualScript({
   const daemonPath = label ? path.join(projectRoot, 'dist', 'daemons', `${label}.cjs`) : null;
   if (daemonPath && fs.existsSync(daemonPath)) return daemonPath;
 
-  const jsPath = jsRelPath ? path.join(projectRoot, jsRelPath) : null;
+  const normalizedJsRelPath = normalizeReservationRelPath(jsRelPath);
+  const jsPath = normalizedJsRelPath ? path.join(projectRoot, normalizedJsRelPath) : null;
   if (jsPath && fs.existsSync(jsPath)) return jsPath;
 
-  const sourcePath = path.join(projectRoot, sourceRelPath);
+  const normalizedSourceRelPath = normalizeReservationRelPath(sourceRelPath);
+  const sourcePath = path.join(projectRoot, normalizedSourceRelPath);
   return sourcePath;
 }
 
@@ -75,5 +84,6 @@ module.exports = {
   getReservationBrowserProfileRoot,
   ensureDir,
   ensureParentDir,
+  normalizeReservationRelPath,
   resolveReservationManualScript,
 };
