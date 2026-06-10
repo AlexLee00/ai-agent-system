@@ -237,6 +237,120 @@ function findBestBar(bars = []) {
   }, null);
 }
 
+function findFirstBarIndexAtOrAfter(bars = [], time = null) {
+  const threshold = number(time, null);
+  if (threshold == null) return -1;
+  return bars.findIndex((bar) => number(bar.time, 0) >= threshold - 24 * 60 * 60 * 1000);
+}
+
+function forwardWindowLabel({ bars = [], startTime = null, entryPrice = null, actualPnlPct = null, horizonDays = 5 } = {}) {
+  const startIndex = findFirstBarIndexAtOrAfter(bars, startTime);
+  if (startIndex < 0 || !(entryPrice > 0)) {
+    return {
+      horizonDays,
+      status: 'insufficient_forward_bars',
+      maxCloseDate: null,
+      maxClosePnlPct: null,
+      driftFromActualPct: null,
+      bars: 0,
+    };
+  }
+  const window = bars.slice(startIndex, startIndex + Math.max(1, Number(horizonDays || 1)));
+  const best = findBestBar(window);
+  const maxClosePnlPct = best ? round(pct(entryPrice, best.close)) : null;
+  return {
+    horizonDays,
+    status: best ? 'materialized' : 'insufficient_forward_bars',
+    maxCloseDate: best?.date || null,
+    maxClose: round(best?.close),
+    maxClosePnlPct,
+    driftFromActualPct: maxClosePnlPct != null && actualPnlPct != null
+      ? round(maxClosePnlPct - actualPnlPct)
+      : null,
+    bars: window.length,
+  };
+}
+
+function buildDualHorizonExitLabels({
+  closed = false,
+  entryPrice = null,
+  exitTime = null,
+  exitDay = null,
+  exitPrice = null,
+  actualPnlPct = null,
+  bestDuringHold = null,
+  bestDuringHoldPnlPct = null,
+  bestToNow = null,
+  bestToNowPnlPct = null,
+  timingCategory = null,
+  bars = [],
+} = {}) {
+  const forward = {
+    '5d': closed ? forwardWindowLabel({ bars, startTime: exitTime, entryPrice, actualPnlPct, horizonDays: 5 }) : null,
+    '10d': closed ? forwardWindowLabel({ bars, startTime: exitTime, entryPrice, actualPnlPct, horizonDays: 10 }) : null,
+    '20d': closed ? forwardWindowLabel({ bars, startTime: exitTime, entryPrice, actualPnlPct, horizonDays: 20 }) : null,
+  };
+  return {
+    schemaVersion: 1,
+    status: closed ? 'materialized' : 'open_position_observe',
+    actualExit: closed
+      ? {
+        date: exitDay,
+        price: round(exitPrice),
+        pnlPct: round(actualPnlPct),
+      }
+      : null,
+    bestWithinHold: {
+      date: bestDuringHold?.date || null,
+      price: round(bestDuringHold?.close),
+      pnlPct: round(bestDuringHoldPnlPct),
+      missedVsActualPct: round(number(bestDuringHoldPnlPct, actualPnlPct) - number(actualPnlPct, 0)),
+    },
+    bestToNow: {
+      date: bestToNow?.date || null,
+      price: round(bestToNow?.close),
+      pnlPct: round(bestToNowPnlPct),
+      missedVsActualPct: round(number(bestToNowPnlPct, actualPnlPct) - number(actualPnlPct, 0)),
+    },
+    forward,
+    timingCategory,
+    targets: {
+      lateExitAfterPeak: timingCategory === 'late_exit_after_peak',
+      earlyLossRecoveredLater: timingCategory === 'early_loss_exit_recovered_later',
+      earlyProfitLeftUpside: timingCategory === 'early_profit_exit_left_upside',
+      nearOptimal: timingCategory === 'near_optimal_within_hold',
+    },
+  };
+}
+
+function buildPeakReversalRiskLabel(snapshot = {}, tags = []) {
+  const tagSet = new Set(tags || []);
+  const contributions = [];
+  const add = (tag, weight) => {
+    if (tagSet.has(tag)) contributions.push({ tag, weight });
+  };
+  add('next5d_drawdown_over_5pct', 0.35);
+  add('next_day_drop_over_2pct', 0.2);
+  add('local_7d_peak', 0.14);
+  add('upper_bollinger_band', 0.1);
+  add('sma20_extension_6pct', 0.08);
+  add('rsi_overbought', 0.08);
+  add('macd_cooling', 0.07);
+  add('volume_spike', 0.05);
+  const score = Math.min(0.95, 0.05 + contributions.reduce((sum, item) => sum + item.weight, 0));
+  return {
+    schemaVersion: 1,
+    status: snapshot?.date ? 'materialized' : 'insufficient_peak_snapshot',
+    score: snapshot?.date ? round(score, 4) : null,
+    bucket: !snapshot?.date ? 'unknown' : score >= 0.7 ? 'high' : score >= 0.4 ? 'medium' : 'low',
+    snapshotDate: snapshot?.date || null,
+    tags,
+    contributions,
+    forwardDrawdown5dPct: snapshot?.next5dDrawdownPct ?? null,
+    next1dPct: snapshot?.next1dPct ?? null,
+  };
+}
+
 function classifyTiming({ closed, actualPnlPct, bestDuringHoldPnlPct, bestToNowPnlPct, bestDuringHoldDate, exitDay }) {
   if (!closed) return 'open_position_observe';
   const actual = number(actualPnlPct, 0);
@@ -289,6 +403,21 @@ function analyzeOneTrade(row = {}, barsInput = []) {
     bestDuringHoldDate: bestDuringHold?.date,
     exitDay,
   });
+  const exitLabels = buildDualHorizonExitLabels({
+    closed,
+    entryPrice,
+    exitTime,
+    exitDay,
+    exitPrice,
+    actualPnlPct: actualPnl,
+    bestDuringHold,
+    bestDuringHoldPnlPct,
+    bestToNow,
+    bestToNowPnlPct,
+    timingCategory,
+    bars,
+  });
+  const peakReversalRisk = buildPeakReversalRiskLabel(bestToNowTechnical || {}, bestToNowTags);
 
   return {
     tradeId: row.trade_id || row.tradeId || String(row.id || ''),
@@ -325,6 +454,8 @@ function analyzeOneTrade(row = {}, barsInput = []) {
     missedDuringHoldClosePct: round(number(bestDuringHoldPnlPct, actualPnl) - number(actualPnl, 0)),
     missedToNowClosePct: round(number(bestToNowPnlPct, actualPnl) - number(actualPnl, 0)),
     timingCategory,
+    exitLabels,
+    peakReversalRisk,
     bestDuringHoldTechnical: bestDuringTechnical ? { ...bestDuringTechnical, tags: bestDuringTags } : null,
     bestToNowTechnical: bestToNowTechnical ? { ...bestToNowTechnical, tags: bestToNowTags } : null,
     bestToNowReason: reasonFromTags(bestToNowTags),
@@ -351,6 +482,22 @@ function createSummary() {
     p90MissedToNowPct: null,
     timingCategories: {},
     optimalReasonTags: {},
+    exitLabelCoverage: {
+      status: 'empty',
+      dualHorizonLabels: 0,
+      forward5dLabels: 0,
+      forward10dLabels: 0,
+      forward20dLabels: 0,
+      peakDrawdownLabels: 0,
+    },
+    peakReversalRisk: {
+      status: 'empty',
+      scored: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+      avgScore: null,
+    },
   };
 }
 
@@ -377,6 +524,7 @@ function summarize(records = []) {
   const bestNow = [];
   const missedHold = [];
   const missedNow = [];
+  const peakScores = [];
   let wins = 0;
   for (const record of records) {
     summary.total += 1;
@@ -392,6 +540,17 @@ function summarize(records = []) {
     if (Number.isFinite(record.bestToNowClosePnlPct)) bestNow.push(record.bestToNowClosePnlPct);
     if (Number.isFinite(record.missedDuringHoldClosePct)) missedHold.push(record.missedDuringHoldClosePct);
     if (Number.isFinite(record.missedToNowClosePct)) missedNow.push(record.missedToNowClosePct);
+    if (record.exitLabels?.status === 'materialized') summary.exitLabelCoverage.dualHorizonLabels += 1;
+    if (record.exitLabels?.forward?.['5d']?.status === 'materialized') summary.exitLabelCoverage.forward5dLabels += 1;
+    if (record.exitLabels?.forward?.['10d']?.status === 'materialized') summary.exitLabelCoverage.forward10dLabels += 1;
+    if (record.exitLabels?.forward?.['20d']?.status === 'materialized') summary.exitLabelCoverage.forward20dLabels += 1;
+    if (record.peakReversalRisk?.forwardDrawdown5dPct != null) summary.exitLabelCoverage.peakDrawdownLabels += 1;
+    if (record.peakReversalRisk?.score != null) {
+      peakScores.push(record.peakReversalRisk.score);
+      summary.peakReversalRisk.scored += 1;
+      const bucket = record.peakReversalRisk.bucket || 'low';
+      summary.peakReversalRisk[bucket] = (summary.peakReversalRisk[bucket] || 0) + 1;
+    }
     summary.timingCategories[record.timingCategory] = (summary.timingCategories[record.timingCategory] || 0) + 1;
     for (const tag of record.bestToNowTechnical?.tags || []) {
       summary.optimalReasonTags[tag] = (summary.optimalReasonTags[tag] || 0) + 1;
@@ -409,6 +568,16 @@ function summarize(records = []) {
   summary.missedDuringHoldMedianPct = round(median(missedHold));
   summary.missedToNowMedianPct = round(median(missedNow));
   summary.p90MissedToNowPct = round(percentile(missedNow, 0.9));
+  summary.exitLabelCoverage.status = summary.exitLabelCoverage.dualHorizonLabels > 0
+    ? 'materialized'
+    : 'empty';
+  summary.exitLabelCoverage.coverage = summary.total > 0
+    ? round(summary.exitLabelCoverage.dualHorizonLabels / summary.total, 4)
+    : 0;
+  summary.peakReversalRisk.status = summary.peakReversalRisk.scored > 0
+    ? 'materialized'
+    : 'empty';
+  summary.peakReversalRisk.avgScore = round(mean(peakScores));
   summary.optimalReasonTags = Object.fromEntries(
     Object.entries(summary.optimalReasonTags).sort((a, b) => b[1] - a[1]),
   );
@@ -431,18 +600,26 @@ function groupSummaries(records = [], keyFn) {
 }
 
 function buildRecommendations(summary = createSummary()) {
+  const labelsMaterialized = summary.exitLabelCoverage?.status === 'materialized';
+  const peakRiskMaterialized = summary.peakReversalRisk?.status === 'materialized';
   return [
     {
       id: 'dual_horizon_exit_labeling',
-      priority: 'P0',
+      priority: labelsMaterialized ? 'P1' : 'P0',
       finding: `missedDuringHoldAvgPct=${summary.missedDuringHoldAvgPct}, missedToNowAvgPct=${summary.missedToNowAvgPct}`,
-      action: 'Train separate labels for actual exit, best within hold, forward 5/10/20d max return, and peak drawdown.',
+      action: labelsMaterialized
+        ? 'Wire materialized actual/best/forward exit labels into exit patience, partial profit, and trailing decisions.'
+        : 'Train separate labels for actual exit, best within hold, forward 5/10/20d max return, and peak drawdown.',
+      evidence: { exitLabelCoverage: summary.exitLabelCoverage },
     },
     {
       id: 'peak_reversal_probability_head',
-      priority: 'P0',
+      priority: peakRiskMaterialized ? 'P1' : 'P0',
       finding: `topTags=${JSON.stringify(Object.fromEntries(Object.entries(summary.optimalReasonTags || {}).slice(0, 5)))}`,
-      action: 'Add a peak/reversal probability head using RSI, Bollinger position, SMA20 extension, volume spike, MACD cooling, and forward drawdown labels.',
+      action: peakRiskMaterialized
+        ? 'Wire materialized peakReversalRisk labels into partial-profit and trailing-stop sell gates.'
+        : 'Add a peak/reversal probability head using RSI, Bollinger position, SMA20 extension, volume spike, MACD cooling, and forward drawdown labels.',
+      evidence: { peakReversalRisk: summary.peakReversalRisk },
     },
     {
       id: 'early_exit_recovery_gate',

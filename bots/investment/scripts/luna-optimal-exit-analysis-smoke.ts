@@ -53,9 +53,15 @@ export async function runSmoke() {
   assert.equal(report.summary.timingCategories.late_exit_after_peak, 1);
   assert.equal(report.topMissedDuringHold[0].bestDuringHoldCloseDate, '2026-02-05');
   assert.equal(report.topMissedDuringHold[0].bestDuringHoldClosePnlPct, 120);
+  assert.equal(report.topMissedDuringHold[0].exitLabels.status, 'materialized');
+  assert.equal(report.topMissedDuringHold[0].exitLabels.forward['5d'].status, 'materialized');
+  assert.equal(report.topMissedDuringHold[0].peakReversalRisk.status, 'materialized');
+  assert.equal(report.summary.exitLabelCoverage.status, 'materialized');
+  assert.equal(report.summary.peakReversalRisk.status, 'materialized');
   assert.ok(report.summary.optimalReasonTags.upper_bollinger_band >= 1);
   assert.ok(report.summary.optimalReasonTags.next5d_drawdown_over_5pct >= 1);
-  assert.ok(report.recommendations.some((item) => item.id === 'peak_reversal_probability_head'));
+  assert.equal(report.recommendations.find((item) => item.id === 'peak_reversal_probability_head')?.priority, 'P1');
+  assert.equal(report.recommendations.find((item) => item.id === 'dual_horizon_exit_labeling')?.priority, 'P1');
 
   const runtime = await runOptimalExitAnalysis({ smoke: true, noWrite: true, json: true, limit: 100, concurrency: 1 });
   assert.equal(runtime.ok, true);

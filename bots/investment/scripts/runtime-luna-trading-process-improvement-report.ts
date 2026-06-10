@@ -151,6 +151,23 @@ function buildSmokeInputs() {
         volume_spike: 121,
         macd_cooling: 48,
       },
+      exitLabelCoverage: {
+        status: 'materialized',
+        dualHorizonLabels: 320,
+        forward5dLabels: 320,
+        forward10dLabels: 320,
+        forward20dLabels: 320,
+        peakDrawdownLabels: 318,
+        coverage: 1,
+      },
+      peakReversalRisk: {
+        status: 'materialized',
+        scored: 320,
+        high: 240,
+        medium: 60,
+        low: 20,
+        avgScore: 0.78,
+      },
     },
   };
   const symbolExit = {
@@ -162,6 +179,18 @@ function buildSmokeInputs() {
       symbols: 3,
       p0Symbols: 1,
       p1Symbols: 1,
+    },
+    symbolExitPolicyMatrix: {
+      status: 'materialized',
+      symbols: 3,
+      actionableSymbols: 2,
+      p0Symbols: 1,
+      p1Symbols: 1,
+      byPolicy: {
+        peak_reversal_partial_trailing: 1,
+        loss_exit_recheck_before_sell: 1,
+      },
+      bySymbol: {},
     },
     symbolList: [
       {

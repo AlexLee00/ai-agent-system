@@ -13,7 +13,7 @@ function findRoadmap(report, id) {
 export async function runSmoke() {
   const report = await runTradingProcessImprovementReport({ smoke: true, noWrite: true, json: true });
   assert.equal(report.ok, true);
-  assert.equal(report.status, 'process_improvement_required');
+  assert.equal(report.status, 'process_improvement_watch');
   assert.equal(report.readOnly, true);
   assert.equal(report.liveTradeImpact, false);
   assert.ok(findRoadmap(report, 'exit_dual_horizon_labels'));
@@ -23,19 +23,24 @@ export async function runSmoke() {
   assert.ok(findRoadmap(report, 'deterministic_exit_policy_before_llm_override'));
   assert.ok(findRoadmap(report, 'strategy_bias_promotion_ready_shadow'));
   assert.ok(findRoadmap(report, 'prefilter_capital_guard_rejected'));
-  assert.equal(findRoadmap(report, 'exit_dual_horizon_labels')?.priority, 'P0');
-  assert.equal(findRoadmap(report, 'symbol_exit_policy_matrix_materialize')?.priority, 'P0');
+  assert.equal(findRoadmap(report, 'exit_dual_horizon_labels')?.priority, 'P1');
+  assert.equal(findRoadmap(report, 'exit_peak_reversal_probability')?.priority, 'P1');
+  assert.equal(findRoadmap(report, 'symbol_exit_policy_matrix_materialize')?.priority, 'P1');
+  assert.equal(findRoadmap(report, 'deterministic_exit_policy_before_llm_override')?.priority, 'P1');
   assert.equal(findRoadmap(report, 'strategy_bias_promotion_ready_shadow')?.liveMutation, false);
-  assert.equal(report.summary.symbolExitPolicyStatus, 'priority');
-  assert.equal(report.summary.agenticOperatingModelStatus, 'priority');
+  assert.equal(report.summary.symbolExitPolicyStatus, 'watch');
+  assert.equal(report.summary.agenticOperatingModelStatus, 'watch');
   assert.ok(report.executionLoop.some((item) => item.stage === 'simulate'));
   assert.ok(report.nextCommands.some((item) => item.includes('runtime:luna-optimal-exit-analysis')));
   assert.ok(report.nextCommands.some((item) => item.includes('runtime:luna-symbol-exit-timing-strategy-report')));
   assert.ok(report.nextCommands.some((item) => item.includes('smoke:luna-trading-process-improvement')));
 
   const summary = summarizeLunaTradingProcessImprovement(report);
-  assert.ok(summary.p0.includes('exit_dual_horizon_labels'));
-  assert.ok(summary.p0.includes('deterministic_exit_policy_before_llm_override'));
+  assert.equal(summary.p0.length, 0);
+  assert.ok(summary.p1.includes('exit_dual_horizon_labels'));
+  assert.ok(summary.p1.includes('exit_peak_reversal_probability'));
+  assert.ok(summary.p1.includes('symbol_exit_policy_matrix_materialize'));
+  assert.ok(summary.p1.includes('deterministic_exit_policy_before_llm_override'));
   assert.ok(summary.p1.includes('strategy_bias_promotion_ready_shadow'));
   return {
     ok: true,

@@ -278,25 +278,44 @@ function buildExitTimingPillar(tradeData = {}, optimalExit = {}) {
   const earlyLossCount = num(earlyExit.losses);
   const missedDuringHoldAvgPct = summary.missedDuringHoldAvgPct ?? null;
   const missedToNowAvgPct = summary.missedToNowAvgPct ?? null;
+  const exitLabelsMaterialized = summary.exitLabelCoverage?.status === 'materialized';
+  const peakRiskMaterialized = summary.peakReversalRisk?.status === 'materialized';
   const actions = [];
 
   if (optimalExit.status === 'ready' && (num(missedDuringHoldAvgPct) >= 3 || lateExitCount > 0 || earlyRecoveredCount > 0)) {
     actions.push(actionItem({
       id: 'exit_dual_horizon_labels',
-      priority: P0,
+      priority: exitLabelsMaterialized ? P1 : P0,
       area: 'exit_timing',
-      title: 'Train exit labels across actual, best-within-hold, and forward-return horizons.',
-      evidence: { missedDuringHoldAvgPct, missedToNowAvgPct, lateExitCount, earlyRecoveredCount },
-      action: 'Add dual-horizon exit labels and use them as inputs for exit patience, partial profit, and trailing decisions.',
+      title: exitLabelsMaterialized
+        ? 'Wire materialized dual-horizon exit labels into sell timing gates.'
+        : 'Train exit labels across actual, best-within-hold, and forward-return horizons.',
+      evidence: {
+        missedDuringHoldAvgPct,
+        missedToNowAvgPct,
+        lateExitCount,
+        earlyRecoveredCount,
+        exitLabelCoverage: summary.exitLabelCoverage || null,
+      },
+      action: exitLabelsMaterialized
+        ? 'Use exitLabels.actualExit/bestWithinHold/forward horizons as deterministic inputs for exit patience, partial profit, and trailing decisions.'
+        : 'Add dual-horizon exit labels and use them as inputs for exit patience, partial profit, and trailing decisions.',
       validationCommand: 'npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write',
     }));
     actions.push(actionItem({
       id: 'exit_peak_reversal_probability',
-      priority: P0,
+      priority: peakRiskMaterialized ? P1 : P0,
       area: 'exit_timing',
-      title: 'Add peak/reversal probability head for sell timing.',
-      evidence: { topOptimalReasonTags: topObjectEntries(tags, 6) },
-      action: 'Use RSI overbought, Bollinger position, SMA20 extension, volume spike, MACD cooling, local peak, and forward drawdown tags to estimate reversal risk.',
+      title: peakRiskMaterialized
+        ? 'Wire materialized peak/reversal risk labels into sell timing gates.'
+        : 'Add peak/reversal probability head for sell timing.',
+      evidence: {
+        topOptimalReasonTags: topObjectEntries(tags, 6),
+        peakReversalRisk: summary.peakReversalRisk || null,
+      },
+      action: peakRiskMaterialized
+        ? 'Use peakReversalRisk score/bucket as deterministic input for partial-profit and trailing-stop sell gates.'
+        : 'Use RSI overbought, Bollinger position, SMA20 extension, volume spike, MACD cooling, local peak, and forward drawdown tags to estimate reversal risk.',
       validationCommand: 'npm --prefix bots/investment run -s smoke:luna-optimal-exit-analysis',
     }));
   }
@@ -495,6 +514,12 @@ function buildSymbolExitPolicyPillar(symbolExit = {}) {
 
 function buildAgenticOperatingModelPillar({ tradeData = {}, optimalExit = {}, symbolExit = {} } = {}) {
   const p0ExitSymbols = num(symbolExit.scope?.p0Symbols);
+  const exitSummary = optimalExit.learningEligibleSummary?.total > 0
+    ? optimalExit.learningEligibleSummary
+    : optimalExit.summary || {};
+  const deterministicExitInputsMaterialized = symbolExit.symbolExitPolicyMatrix?.status === 'materialized'
+    && exitSummary.exitLabelCoverage?.status === 'materialized'
+    && exitSummary.peakReversalRisk?.status === 'materialized';
   const signalFailureRate = tradeData.signals?.failureRate ?? null;
   const currentEpochWinRate = tradeData.journal?.tpSl?.set?.winRate ?? null;
   const closedTrades = num(tradeData.journal?.summary?.closed);
@@ -503,14 +528,21 @@ function buildAgenticOperatingModelPillar({ tradeData = {}, optimalExit = {}, sy
   if (p0ExitSymbols > 0 || num(optimalExit.learningEligibleSummary?.missedDuringHoldAvgPct) >= 3) {
     actions.push(actionItem({
       id: 'deterministic_exit_policy_before_llm_override',
-      priority: P0,
+      priority: deterministicExitInputsMaterialized ? P1 : P0,
       area: 'agentic_operating_model',
-      title: 'Keep sell timing controlled by deterministic policy labels before any LLM override.',
+      title: deterministicExitInputsMaterialized
+        ? 'Keep materialized deterministic exit policy inputs ahead of any LLM critique.'
+        : 'Keep sell timing controlled by deterministic policy labels before any LLM override.',
       evidence: {
         p0ExitSymbols,
         missedDuringHoldAvgPct: optimalExit.learningEligibleSummary?.missedDuringHoldAvgPct ?? optimalExit.summary?.missedDuringHoldAvgPct ?? null,
+        symbolExitPolicyMatrixStatus: symbolExit.symbolExitPolicyMatrix?.status || null,
+        exitLabelCoverageStatus: exitSummary.exitLabelCoverage?.status || null,
+        peakReversalRiskStatus: exitSummary.peakReversalRisk?.status || null,
       },
-      action: 'Use LLM only as critic/explainer for candidate sell plans; require symbol policy, peak tags, and post-exit drift labels to approve timing changes.',
+      action: deterministicExitInputsMaterialized
+        ? 'Use LLM only as critic/explainer; keep symbolExitPolicyMatrix, exitLabels, and peakReversalRisk as the deterministic sell-timing inputs.'
+        : 'Use LLM only as critic/explainer for candidate sell plans; require symbol policy, peak tags, and post-exit drift labels to approve timing changes.',
       validationCommand: 'npm --prefix bots/investment run -s check:luna-trading-process-improvement',
     }));
   }
