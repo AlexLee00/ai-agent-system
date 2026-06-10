@@ -60,6 +60,10 @@ function normalizeToken(value) {
   return clean(value).toLowerCase();
 }
 
+function normalizeTaskTypeInput(input = {}) {
+  return normalizeToken(input.taskType || input.task_type || input.runtimePurpose || input.runtime_purpose || '');
+}
+
 function canonicalTeam(team) {
   const normalized = normalizeToken(team);
   if (normalized === 'luna') return 'investment';
@@ -79,7 +83,7 @@ function nonLlmKeys(input = {}) {
 
 function isChronosBacktestEmbeddingTarget(input = {}) {
   const selectorKey = normalizeToken(input.selectorKey || '');
-  const taskType = normalizeToken(input.taskType || input.task_type || input.runtimePurpose || input.runtime_purpose || '');
+  const taskType = normalizeTaskTypeInput(input);
   const keys = nonLlmKeys(input);
   const chronosTarget = keys.includes('luna.chronos') || keys.includes('investment.chronos');
   if (!chronosTarget) return false;
@@ -89,7 +93,7 @@ function isChronosBacktestEmbeddingTarget(input = {}) {
 }
 
 function isChronosBacktestJudgmentTarget(input = {}) {
-  const taskType = normalizeToken(input.taskType || input.task_type || input.runtimePurpose || input.runtime_purpose || '');
+  const taskType = normalizeTaskTypeInput(input);
   const keys = nonLlmKeys(input);
   const chronosTarget = keys.includes('luna.chronos') || keys.includes('investment.chronos');
   if (!chronosTarget) return false;
@@ -204,7 +208,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
   const team = normalizeToken(req.callerTeam || req.team || 'hub') || 'hub';
   const agent = clean(req.agent || '');
 
-  if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: req.selectorKey, taskType: req.taskType || req.task_type || req.runtimePurpose || req.runtime_purpose })) {
+  if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: req.selectorKey, taskType: normalizeTaskTypeInput(req) })) {
     return {
       ok: false,
       error: 'llm_non_llm_target_blocked',

@@ -81,6 +81,11 @@ export function normalizeHubUrgency(value: unknown): HubUrgency {
   return 'normal';
 }
 
+// 기본값 'luna'는 의도된 설계다. Hub runtime-profiles는 canonical 변환 없이
+// raw team 키('luna')로 프로필을 조회하므로(selectRuntimeProfile), 기본값을
+// 'investment'로 바꾸면 Luna 런타임 프로필 매칭이 깨져 라우팅이 변경된다.
+// 게이트 측 표기 위험은 chronos 조건부 우회(taskType 기반)로 이미 해소됨.
+// 변경이 필요하면 INVESTMENT_LLM_HUB_TEAM env로 운영 레벨에서 오버라이드할 것.
 export function getHubCallerTeam(): string {
   return String(process.env.INVESTMENT_LLM_HUB_TEAM || 'luna').trim() || 'luna';
 }
