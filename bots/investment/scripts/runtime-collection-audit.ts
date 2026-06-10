@@ -162,6 +162,46 @@ export function applyCollectionUniverseCompletenessGate({
   };
 }
 
+export function applyCollectionIdleGate({
+  quality = null,
+  source = 'unknown',
+  latestStatus = null,
+  screeningUniverseCount = 0,
+  maintenanceUniverseCount = 0,
+  maintenanceProfiledCount = 0,
+  collectWarnings = [],
+} = {}) {
+  const current = quality || { status: 'unknown', readinessScore: 0 };
+  if (current.status !== 'unknown') return { quality: current, source };
+  if (source !== 'missing_meta') return { quality: current, source };
+
+  const noUniverse =
+    Number(screeningUniverseCount || 0) === 0
+    && Number(maintenanceUniverseCount || 0) === 0
+    && Number(maintenanceProfiledCount || 0) === 0;
+  const warnings = Array.isArray(collectWarnings) ? collectWarnings : [];
+
+  if (String(latestStatus || '') === 'completed' && noUniverse && warnings.length === 0) {
+    return {
+      quality: {
+        status: 'idle',
+        reasons: ['no_active_universe'],
+        collectMode: 'idle_no_universe',
+        readinessScore: 1,
+        observed: true,
+        universeGate: {
+          screeningUniverseCount: Number(screeningUniverseCount || 0),
+          maintenanceUniverseCount: Number(maintenanceUniverseCount || 0),
+          maintenanceProfiledCount: Number(maintenanceProfiledCount || 0),
+        },
+      },
+      source: 'idle_no_universe',
+    };
+  }
+
+  return { quality: current, source };
+}
+
 export function buildCollectionAuditRemediation({
   market = 'unknown',
   quality = null,
@@ -186,6 +226,16 @@ export function buildCollectionAuditRemediation({
     return {
       status: 'none',
       reason: 'collection_ready',
+      commands: {
+        audit: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit -- --json',
+      },
+    };
+  }
+
+  if (status === 'idle') {
+    return {
+      status: 'none',
+      reason: reasons.join(', ') || 'collection_idle',
       commands: {
         audit: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:collection-audit -- --json',
       },
@@ -277,6 +327,17 @@ async function auditMarket(market, hours = 24) {
     maintenanceUniverseCount,
     maintenanceProfiledCount,
   });
+  const idleGate = applyCollectionIdleGate({
+    quality: effectiveQuality,
+    source: qualityInference.source,
+    latestStatus: latestRun?.status || null,
+    screeningUniverseCount,
+    maintenanceUniverseCount,
+    maintenanceProfiledCount,
+    collectWarnings,
+  });
+  const finalQuality = idleGate.quality;
+  const finalQualitySource = idleGate.source;
 
   const audit = {
     market,
@@ -292,8 +353,8 @@ async function auditMarket(market, hours = 24) {
       || (maintenanceUniverse.dustSymbols || []).length
       || 0,
     ),
-    collectQuality: effectiveQuality,
-    collectQualitySource: qualityInference.source,
+    collectQuality: finalQuality,
+    collectQualitySource: finalQualitySource,
     collectWarnings,
     nodeCoverage,
     screeningSessionId: latestScreeningRun?.session_id || null,
@@ -329,16 +390,17 @@ async function auditMarket(market, hours = 24) {
         },
       ),
       marketIntelligenceNormalize: stageStatus(
-        Boolean(effectiveQuality && effectiveQuality.status && effectiveQuality.status !== 'unknown'),
-        { quality: effectiveQuality?.status || 'unknown' },
+        Boolean(finalQuality && finalQuality.status && finalQuality.status !== 'unknown'),
+        { quality: finalQuality?.status || 'unknown' },
       ),
       collectQualityGate: stageStatus(
-        Boolean(effectiveQuality && effectiveQuality.status),
-        effectiveQuality || null,
+        Boolean(finalQuality && finalQuality.status),
+        finalQuality || null,
       ),
       decisionHandoff: stageStatus(
         Boolean(
-          qualityInference.source === 'observed_node_coverage'
+          finalQualitySource === 'observed_node_coverage'
+          || finalQualitySource === 'idle_no_universe'
           ||
           latestScreeningRun?.meta?.collect_quality
           || latestScreeningRun?.meta?.collect_metrics?.collectQuality
@@ -348,7 +410,8 @@ async function auditMarket(market, hours = 24) {
           || latestRun?.meta?.collect_metrics?.collectQuality,
         ),
         (
-          qualityInference.source === 'observed_node_coverage'
+          finalQualitySource === 'observed_node_coverage'
+          || finalQualitySource === 'idle_no_universe'
           ||
           latestScreeningRun?.meta?.collect_quality
           || latestScreeningRun?.meta?.collect_metrics?.collectQuality
@@ -356,13 +419,19 @@ async function auditMarket(market, hours = 24) {
           || latestMaintenanceRun?.meta?.collect_metrics?.collectQuality
           || latestRun?.meta?.collect_quality
           || latestRun?.meta?.collect_metrics?.collectQuality
-        ) ? (qualityInference.source === 'observed_node_coverage' ? 'observed node coverage fallback' : 'pipeline meta persisted') : 'collect meta 없음',
+        ) ? (
+          finalQualitySource === 'observed_node_coverage'
+            ? 'observed node coverage fallback'
+            : finalQualitySource === 'idle_no_universe'
+              ? 'idle/no active universe classified'
+              : 'pipeline meta persisted'
+        ) : 'collect meta 없음',
       ),
     },
   };
   audit.remediation = buildCollectionAuditRemediation({
     market,
-    quality: effectiveQuality,
+    quality: finalQuality,
     screeningUniverseCount: audit.screeningUniverseCount,
     maintenanceUniverseCount: audit.maintenanceUniverseCount,
     maintenanceProfiledCount: audit.maintenanceProfiledCount,
@@ -386,6 +455,7 @@ export async function runCollectionAudit({ markets = MARKETS, hours = 24 } = {})
   const qualityInsufficient = marketsAudit.filter((item) => item.collectQuality?.status === 'insufficient').length;
   const qualityDegraded = marketsAudit.filter((item) => item.collectQuality?.status === 'degraded').length;
   const qualityReady = marketsAudit.filter((item) => item.collectQuality?.status === 'ready').length;
+  const qualityIdle = marketsAudit.filter((item) => item.collectQuality?.status === 'idle').length;
 
   return {
     status: qualityInsufficient > 0
@@ -400,6 +470,7 @@ export async function runCollectionAudit({ markets = MARKETS, hours = 24 } = {})
       withRecentRuns: marketsAudit.filter((item) => item.latestSessionId).length,
       maintenanceEnabled: marketsAudit.filter((item) => item.stages.maintenanceCollect.implemented).length,
       qualityReady,
+      qualityIdle,
       qualityDegraded,
       qualityInsufficient,
     },

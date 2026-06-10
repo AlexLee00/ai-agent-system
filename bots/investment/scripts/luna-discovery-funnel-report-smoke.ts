@@ -109,6 +109,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       hours: 1,
       market: 'crypto',
       historyFile,
+      discoveryUniverseOptions: { enforceBinanceTopVolumeUniverse: false },
     });
     const crypto = report.markets.find((item) => item.market === 'crypto');
     assert.equal(report.ok, true);
@@ -154,6 +155,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       hours: 1,
       market: 'crypto',
       historyFile: idleHistoryWithActiveTriggerFile,
+      discoveryUniverseOptions: { enforceBinanceTopVolumeUniverse: false },
     });
     assert.equal(
       idleWithActiveTrigger.recommendations.includes('dispatch_idle_no_candidates_in_window'),
@@ -178,6 +180,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       hours: 1,
       market: 'crypto',
       historyFile: idleHistoryWithCandidateOnlyFile,
+      discoveryUniverseOptions: { enforceBinanceTopVolumeUniverse: false },
     });
     const candidateOnlyCrypto = idleWithCandidateOnly.markets.find((item) => item.market === 'crypto');
     assert.ok(candidateOnlyCrypto.candidateUniverse.activeCount >= 1, 'candidate-only fixture should still expose an active universe');

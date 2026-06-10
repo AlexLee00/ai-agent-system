@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  applyCollectionIdleGate,
   applyCollectionUniverseCompletenessGate,
   buildCollectionAuditRemediation,
   inferObservedCollectQuality,
@@ -72,6 +73,41 @@ const missing = inferObservedCollectQuality({
 });
 assert.equal(missing.source, 'missing_meta');
 assert.equal(missing.quality.status, 'unknown');
+
+const idleNoUniverse = applyCollectionIdleGate({
+  quality: missing.quality,
+  source: missing.source,
+  latestStatus: 'completed',
+  screeningUniverseCount: 0,
+  maintenanceUniverseCount: 0,
+  maintenanceProfiledCount: 0,
+  collectWarnings: [],
+});
+assert.equal(idleNoUniverse.source, 'idle_no_universe');
+assert.equal(idleNoUniverse.quality.status, 'idle');
+assert.equal(
+  buildCollectionAuditRemediation({
+    market: 'kis',
+    quality: idleNoUniverse.quality,
+    screeningUniverseCount: 0,
+    maintenanceUniverseCount: 0,
+    maintenanceProfiledCount: 0,
+    collectQualitySource: idleNoUniverse.source,
+  }).status,
+  'none',
+);
+
+const missingWithUniverse = applyCollectionIdleGate({
+  quality: missing.quality,
+  source: missing.source,
+  latestStatus: 'completed',
+  screeningUniverseCount: 1,
+  maintenanceUniverseCount: 0,
+  maintenanceProfiledCount: 0,
+  collectWarnings: [],
+});
+assert.equal(missingWithUniverse.source, 'missing_meta');
+assert.equal(missingWithUniverse.quality.status, 'unknown');
 
 assert.deepEqual(
   buildPerSymbolCollectBatches('kis', ['L02', 'L03', 'L04']),

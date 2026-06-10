@@ -909,6 +909,7 @@ async function buildMarketFunnel(market, {
   hours,
   analysisHours = DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS,
   candidateLimit = DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT,
+  discoveryUniverseOptions = {},
 }) {
   const now = new Date();
   const exchange = MARKET_EXCHANGES[market];
@@ -1043,6 +1044,7 @@ async function buildMarketFunnel(market, {
     fallbackSymbols: [],
     preferCandidates: true,
     limit: effectiveCandidateLimit,
+    ...discoveryUniverseOptions,
   }).catch(() => null);
   const executionCandidates = Array.isArray(executionUniverse?.symbols) && executionUniverse.symbols.length > 0
     ? executionUniverse.symbols.map((symbol) => ({ symbol }))
@@ -1424,6 +1426,7 @@ export async function buildLunaDiscoveryFunnelReport({
   market = 'all',
   candidateLimit = DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT,
   historyFile = DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
+  discoveryUniverseOptions = {},
 } = {}) {
   await db.initSchema();
   await ensureCandidateUniverseTable();
@@ -1435,6 +1438,7 @@ export async function buildLunaDiscoveryFunnelReport({
     hours,
     analysisHours: effectiveAnalysisHours,
     candidateLimit: effectiveCandidateLimit,
+    discoveryUniverseOptions,
   })));
   const autopilot = buildAutopilotFunnel({ historyFile, hours });
   const allBottlenecks = marketReports.flatMap((item) => item.bottlenecks.map((code) => `${item.market}:${code}`));
