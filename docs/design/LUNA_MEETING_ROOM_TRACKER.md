@@ -1,6 +1,8 @@
 # 루나 투자회의 — 구현 추적 (TRACKER)
 
-> 버전 v0.4 (2026-06-08) · 작성: 메티 · 상태: **알파팩터(WS-R) 선행 → 회의실 Phase 1** · SSOT=LUNA_MEETING_ROOM_DESIGN.md(§20) · 성장=LUNA_GROWTH_REINFORCEMENT.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md
+> 버전 v0.5 (2026-06-12) · 작성: 메티 · SSOT=LUNA_MEETING_ROOM_DESIGN.md(**v0.8**)
+> 상태: **MR-A ✅**(백엔드·FSM·plan-note·ADR — WS-B/C/E 상당) · **MR-B ✅ 가동**(웹 7791 — WS-D/Q 상당) · **다음=MR-C**(정례화·텔레그램 원클릭·grill skill — WS-G+U2)
+> **구현 진행의 SSOT는 `LUNA_OPTIMAL_REDESIGN_TRACKER.md` 종합 현황** — 본 트래커는 회의실 WS 정의·범위 참조용(이중 갱신 금지). 첫 공식 회의: 세션 #1·ADR 9건(2026-06-11).
 > 항목: 작업 / 담당(코덱스·메티·마스터) / 상태 / 검증(문법·소프트·하드) / 의존성 / 연결 CODEX
 > **⚠️ 우산 참조(2026-06-13)**: 루나 로직 재설계는 `LUNA_OPTIMAL_REDESIGN_TRACKER.md`가 상위 추적. WS-R/J/K/F/N/O/L/H는 그쪽으로 **합류**(이중 추적 금지) — 본 트래커는 **회의실(WS-A~E·G·Q)+WS-I/M/P 전용**.
 > 원칙: 부품 재사용 우선(오케스트레이터만 신규) · PROTECTED/LIVE 무중단 · advisory 게이트(차단 X)
