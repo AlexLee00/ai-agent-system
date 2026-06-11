@@ -20,6 +20,8 @@
 		<string>--import</string>
 		<string>tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-registry-evaluator.ts</string>
+		<string>--apply</string>
+		<string>--confirm=luna-registry-evaluator-shadow</string>
 		<string>--json</string>
 	</array>
 	<key>RunAtLoad</key>
