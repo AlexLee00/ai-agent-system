@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'assert/strict';
+import * as db from '../shared/db.ts';
 import {
   getParameter,
   listParameterHistory,
@@ -13,57 +14,29 @@ import { attachSampleCounts, evaluateRegistryRows } from './runtime-luna-registr
 import { evaluateLunaAutonomousCommand } from '../shared/luna-autonomous-command-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function createFakeParameterStoreDeps() {
-  const rows = [];
-  let nextId = 1;
-  const normalizeEffectiveAt = (value: any) => new Date(value || 0).getTime();
-  const selectRows = (key: string, scope: string, effectiveAt?: any) => rows
-    .filter((row) => row.key === key && row.scope === scope)
-    .filter((row) => effectiveAt == null || normalizeEffectiveAt(row.effective_from) <= normalizeEffectiveAt(effectiveAt))
-    .sort((a, b) => (
-      normalizeEffectiveAt(b.effective_from) - normalizeEffectiveAt(a.effective_from)
-      || normalizeEffectiveAt(b.created_at) - normalizeEffectiveAt(a.created_at)
-      || b.id - a.id
-    ));
-  return {
-    rows,
-    queryFn: async (_sql: string, params: any[] = []) => {
-      const [key, scope, effectiveAt] = params;
-      return selectRows(key, scope, effectiveAt);
-    },
-    runFn: async (_sql: string, params: any[] = []) => {
-      const [
-        key,
-        value,
-        scope,
-        tier,
-        effectiveFrom,
-        evidence,
-        changedBy,
-        prevValue,
-      ] = params;
-      const now = new Date().toISOString();
-      const row = {
-        id: nextId++,
-        key,
-        value: JSON.parse(value),
-        scope,
-        tier,
-        effective_from: effectiveFrom || now,
-        evidence,
-        changed_by: changedBy,
-        prev_value: prevValue == null ? null : JSON.parse(prevValue),
-        created_at: now,
-      };
-      rows.push(row);
-      return { rows: [row] };
-    },
-  };
+const ROLLBACK_SENTINEL = 'luna_registry_paramstore_smoke_rollback';
+
+async function withSmokeRollback(work: any) {
+  let output;
+  try {
+    await db.withTransaction(async (tx: any) => {
+      output = await work({
+        queryFn: tx.query,
+        runFn: tx.run,
+      });
+      throw new Error(ROLLBACK_SENTINEL);
+    });
+  } catch (error) {
+    if (error?.message !== ROLLBACK_SENTINEL) throw error;
+    return output;
+  } finally {
+    reloadParameters();
+  }
+  throw new Error('luna_registry_paramstore_smoke_expected_rollback');
 }
 
 async function main() {
   const stamp = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const fakeStore = createFakeParameterStoreDeps();
   const envKey = `LUNA_PARAM_SMOKE_MISSING_${stamp.replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}`;
   process.env[envKey] = '{"fallback":true}';
   const missingKey = `smoke.missing.${stamp}`;
@@ -76,37 +49,48 @@ async function main() {
   assert.deepEqual(envFallback.value, { fallback: true });
   assert.equal(envFallback.source, 'env');
 
-  const autoKey = `smoke.auto.${stamp}`;
-  await setParameter({ key: autoKey, value: { pass: true }, evidence: 'smoke', changedBy: 'system' }, fakeStore);
-  const autoValue = await getParameter(autoKey, 'global', { bypassCache: true, queryFn: fakeStore.queryFn });
-  assert.deepEqual(autoValue.value, { pass: true });
+  const transactionalResult = await withSmokeRollback(async (storeDeps: any) => {
+    const autoKey = `smoke.auto.${stamp}`;
+    await setParameter({ key: autoKey, value: { pass: true }, evidence: 'smoke', changedBy: 'system' }, storeDeps);
+    const autoValue = await getParameter(autoKey, 'global', { bypassCache: true, queryFn: storeDeps.queryFn });
+    assert.deepEqual(autoValue.value, { pass: true });
 
-  await assert.rejects(
-    () => setParameter({ key: 'order_rules', value: { mutable: true }, changedBy: 'master' }, fakeStore),
-    /luna_parameter_immutable:order_rules/
+    await assert.rejects(
+      () => setParameter({ key: 'order_rules', value: { mutable: true }, changedBy: 'master' }, storeDeps),
+      /luna_parameter_immutable:order_rules/
+    );
+    await assert.rejects(
+      () => setParameter({ key: 'capital_management.max_daily_loss_pct', value: 0.04, changedBy: 'system' }, storeDeps),
+      /luna_parameter_approval_required/
+    );
+
+    const historyKey = `smoke.history.${stamp}`;
+    await setParameter({ key: historyKey, value: 1, evidence: 'smoke-1', changedBy: 'system' }, storeDeps);
+    await setParameter({ key: historyKey, value: 2, evidence: 'smoke-2', changedBy: 'system' }, storeDeps);
+    const history = await listParameterHistory(historyKey, 'global', { queryFn: storeDeps.queryFn });
+    assert.equal(history.length, 2);
+    assert.equal(history[0].value, 2);
+
+    const futureKey = `smoke.future.${stamp}`;
+    await setParameter({
+      key: futureKey,
+      value: 'future',
+      evidence: 'smoke-future',
+      changedBy: 'system',
+      effectiveFrom: new Date(Date.now() + 86_400_000).toISOString(),
+    }, storeDeps);
+    const futureNow = await getParameter(futureKey, 'global', { bypassCache: true, queryFn: storeDeps.queryFn });
+    assert.equal(futureNow, null);
+    return { historyRows: history.length };
+  });
+
+  const rolledBackRows = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM luna_parameter_store
+      WHERE key IN ($1, $2, $3)`,
+    [`smoke.auto.${stamp}`, `smoke.history.${stamp}`, `smoke.future.${stamp}`]
   );
-  await assert.rejects(
-    () => setParameter({ key: 'capital_management.max_daily_loss_pct', value: 0.04, changedBy: 'system' }, fakeStore),
-    /luna_parameter_approval_required/
-  );
-
-  const historyKey = `smoke.history.${stamp}`;
-  await setParameter({ key: historyKey, value: 1, evidence: 'smoke-1', changedBy: 'system' }, fakeStore);
-  await setParameter({ key: historyKey, value: 2, evidence: 'smoke-2', changedBy: 'system' }, fakeStore);
-  const history = await listParameterHistory(historyKey, 'global', { queryFn: fakeStore.queryFn });
-  assert.equal(history.length, 2);
-  assert.equal(history[0].value, 2);
-
-  const futureKey = `smoke.future.${stamp}`;
-  await setParameter({
-    key: futureKey,
-    value: 'future',
-    evidence: 'smoke-future',
-    changedBy: 'system',
-    effectiveFrom: new Date(Date.now() + 86_400_000).toISOString(),
-  }, fakeStore);
-  const futureNow = await getParameter(futureKey, 'global', { bypassCache: true, queryFn: fakeStore.queryFn });
-  assert.equal(futureNow, null);
+  assert.equal(Number(rolledBackRows?.[0]?.count || 0), 0);
 
   assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 23);
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
@@ -164,8 +148,9 @@ async function main() {
       autoSetGet: true,
       immutableRejected: true,
       approveSystemRejected: true,
-      historyRows: history.length,
+      historyRows: transactionalResult.historyRows,
       futureExcluded: true,
+      rollbackVerified: true,
     },
     registry: {
       seedCount: seedDryRun.seeded,
