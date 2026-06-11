@@ -72,7 +72,14 @@ function createMemoryStore() {
       const decision = decisions.find((row) => String(row.id) === String(id));
       if (!decision) throw Object.assign(new Error('decision not found'), { statusCode: 404, code: 'decision_not_found' });
       if (decision.status !== 'pending_master') {
-        throw Object.assign(new Error(`decision ${decision.status}`), { statusCode: 409, code: 'decision_not_pending' });
+        return {
+          ok: true,
+          action,
+          logicalStatus: decision.status,
+          idempotent: true,
+          decision,
+          auditMinuteSeq: null,
+        };
       }
       if (action === 'confirm') decision.status = 'confirmed';
       if (action === 'defer') decision.status = 'deferred';
@@ -191,7 +198,8 @@ async function main() {
       headers: jsonHeaders(),
       body: JSON.stringify({ action: 'confirm' }),
     });
-    assert.equal(doubleConfirm.status, 409);
+    assert.equal(doubleConfirm.status, 200);
+    assert.equal(doubleConfirm.payload.idempotent, true);
 
     const defer = await request(baseUrl, '/api/decisions/12', {
       method: 'POST',

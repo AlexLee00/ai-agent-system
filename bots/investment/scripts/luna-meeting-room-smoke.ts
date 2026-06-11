@@ -7,9 +7,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { loadInvestmentSkills } from '../shared/skill-registry.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
 import { buildMeetingPlanNote, buildMarketSegments } from '../services/meeting-room/server/adapters/stack-adapter.ts';
-import { runMeetingSession } from '../services/meeting-room/server/orchestrator/meeting-session.ts';
+import {
+  buildMeetingAgendasForType,
+  buildMeetingDecisionInlineKeyboard,
+  runMeetingSession,
+} from '../services/meeting-room/server/orchestrator/meeting-session.ts';
+import { applyMeetingDecisionAction } from '../services/meeting-room/server/meeting-decision-actions.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = path.resolve(INVESTMENT_ROOT, '../..');
@@ -54,6 +60,33 @@ function fixturePlanNote() {
     ],
     positions: [{ symbol: 'BTC/USDT', exchange: 'binance', amount: 0.1 }],
     calibration: [{ market: 'crypto', label: 'volatile', brier_hmm: 0.12, brier_fallback: 0.19 }],
+    debrief: {
+      dateKst: '2026-06-11',
+      morningSession: { id: 1, summary: 'morning fixture' },
+      degraded: false,
+      strategySignals: [
+        { id: 1, market: 'domestic', symbol: '005930', family: 'testah', signal_type: 'entry' },
+        { id: 2, market: 'domestic', symbol: '000660', family: 'turtle', signal_type: 'entry' },
+      ],
+      preflights: [{ strategy_signal_id: 1, decision: 'pass' }],
+      activeCircuits: [],
+      gateTransitions: [{ market: 'domestic', samples: 3, deployment_states: 2, deployments: ['reduced', 'full'] }],
+      regimeTransitions: [{ market: 'domestic', samples: 3, regime_states: 1, regimes: ['bull'] }],
+      kisTrades: [{ symbol: '005930', pnl_percent: 1.2 }],
+      unspokenEntries: [{ id: 2, symbol: '000660', family: 'turtle', reason: 'shadow_stage_virtual_tracking' }],
+      errors: [],
+    },
+    weekly: {
+      asOfKst: '2026-06-11',
+      signals: [{ market: 'crypto', family: 'turtle', signal_type: 'entry', count: 4 }],
+      preflight: [{ market: 'crypto', decision: 'pass', count: 2 }],
+      circuit: [{ market: 'crypto', level: 'symbol', circuit: 'stoploss_guard', locked: true, count: 1 }],
+      brier: [{ market: 'crypto', samples: 3, avg_brier_hmm: 0.12 }],
+      registry: [{ status: 'stalled', count: 2 }],
+      adr: [{ status: 'pending_master', count: 3 }],
+      overdueAdr: [{ id: 99, agenda_key: 'weekly:test', due_at: '2026-06-10T00:00:00Z' }],
+      errors: [],
+    },
     readOnly: true,
     shadowOnly: true,
     briefMarkdown: [
@@ -207,6 +240,77 @@ async function main() {
   assert.equal(costGuardResult.llmCalls, 1);
   assert.ok(costGuardResult.minutes.some((row) => row.role === 'system' && String(row.content).includes('cost_guard_skipped')));
 
+  const debriefResult = await runMeetingSession({
+    type: 'domestic_debrief',
+    dryRun: true,
+    noLlm: true,
+    planNote: { ...fixturePlanNote(), type: 'domestic_debrief' },
+    outputPath: outputPath('smoke-debrief'),
+  });
+  assert.equal(debriefResult.ok, true);
+  assert.equal(debriefResult.agendas[0].kind, 'domestic_debrief');
+  assert.ok(debriefResult.minutes.some((row) => row.role === 'data' && String(row.content).includes('G6 대조표')));
+  assert.ok(debriefResult.minutes.some((row) => String(row.content).includes('미발화 행=1')));
+
+  const degradedDebrief = await runMeetingSession({
+    type: 'domestic_debrief',
+    dryRun: true,
+    noLlm: true,
+    planNote: {
+      ...fixturePlanNote(),
+      type: 'domestic_debrief',
+      debrief: { degraded: true, degradeReason: 'same_day_morning_session_missing', unspokenEntries: [] },
+    },
+    outputPath: outputPath('smoke-debrief-degraded'),
+  });
+  assert.ok(degradedDebrief.minutes.some((row) => String(row.content).includes('same_day_morning_session_missing')));
+
+  const premarketResult = await runMeetingSession({
+    type: 'us_premarket',
+    dryRun: true,
+    noLlm: false,
+    planNote: { ...fixturePlanNote(), type: 'us_premarket' },
+    outputPath: outputPath('smoke-premarket'),
+  }, {
+    callViaHub: async () => ({ ok: true, text: 'fixture analysis', provider: 'fixture' }),
+  });
+  assert.equal(premarketResult.agendas.length <= 2, true);
+  assert.equal(premarketResult.llmCalls <= 2, true);
+
+  const weeklyResult = await runMeetingSession({
+    type: 'weekly',
+    dryRun: true,
+    noLlm: true,
+    planNote: { ...fixturePlanNote(), type: 'weekly' },
+    outputPath: outputPath('smoke-weekly'),
+  });
+  assert.equal(weeklyResult.agendas[0].kind, 'weekly_review');
+  assert.ok(weeklyResult.minutes.some((row) => String(row.content).includes('overdue=1')));
+
+  const skillNames = loadInvestmentSkills().filter((skill) => skill.owner === 'luna').map((skill) => skill.name);
+  assert.ok(skillNames.includes('grill-me'));
+  assert.ok(skillNames.includes('grill-with-docs'));
+
+  const injectedSkillResult = await runMeetingSession({
+    type: 'morning',
+    dryRun: true,
+    noLlm: true,
+    planNote: fixturePlanNote(),
+    outputPath: outputPath('smoke-skill-grill'),
+  }, {
+    executeInvestmentSkill: async () => ({ ok: true, text: '1. 반대\n2. 무효화\n3. 질문\n4. 긴급성\n5. 과거 결과' }),
+  });
+  assert.equal(injectedSkillResult.minutes.some((row) => row.role === 'grill' && row.meta?.fallback === false), true);
+
+  const keyboard = buildMeetingDecisionInlineKeyboard(Array.from({ length: 10 }, (_, index) => ({ id: index + 1 })));
+  assert.equal(keyboard.length, 9);
+  for (const row of keyboard) {
+    for (const button of row) assert.equal(Buffer.byteLength(button.callback_data, 'utf8') <= 64, true);
+  }
+
+  const debriefAgendas = buildMeetingAgendasForType('domestic_debrief', { ...fixturePlanNote(), type: 'domestic_debrief' });
+  assert.equal(debriefAgendas.length, 1);
+
   const dryRunRows = await withRollback(async (tx: any) => {
     const before = await countMeetingRows(tx.query);
     await runMeetingSession({
@@ -226,12 +330,37 @@ async function main() {
       noLlm: true,
       planNote: fixturePlanNote(),
       outputPath: outputPath('smoke-apply-rollback'),
-    }, { queryFn: tx.query, runFn: tx.run });
+    }, { queryFn: tx.query, runFn: tx.run, postAlarm: async () => ({ ok: true, fixture: true }) });
     const appliedRows = await countMeetingRows(tx.query);
     assert.equal(Number(applied.session.id) > 0, true);
+    assert.equal(applied.telegram.attempted, true);
+    assert.equal(applied.telegram.ok, true);
     assert.equal(appliedRows.sessions, before.sessions + 1);
     assert.ok(appliedRows.minutes > before.minutes);
     assert.ok(appliedRows.decisions > before.decisions);
+
+    const decisionId = applied.decisions[0].id;
+    const confirmed = await applyMeetingDecisionAction({
+      id: decisionId,
+      action: 'confirm',
+      note: 'telegram fixture',
+      changedVia: 'telegram',
+      actor: { actorId: '123', actorUsername: 'master' },
+      callback: { data: `luna_meeting:${decisionId}:confirm` },
+    }, { withTransactionFn: async (fn: any) => fn(tx) });
+    assert.equal(confirmed.ok, true);
+    assert.equal(confirmed.logicalStatus, 'confirmed');
+    const idempotent = await applyMeetingDecisionAction({
+      id: decisionId,
+      action: 'confirm',
+      changedVia: 'telegram',
+    }, { withTransactionFn: async (fn: any) => fn(tx) });
+    assert.equal(idempotent.idempotent, true);
+    const auditRows = await tx.query(
+      `SELECT meta FROM luna_meeting_minutes WHERE session_id = $1 AND meta->>'changed_via' = 'telegram'`,
+      [applied.session.id],
+    );
+    assert.equal(auditRows.length >= 1, true);
     return { before, after, appliedRows };
   });
 
@@ -255,6 +384,10 @@ async function main() {
       applyRollbackRows: dryRunRows.appliedRows,
       registrySeedCount: seedDryRun.seeded,
       costGuard: true,
+      debrief: true,
+      premarket: true,
+      weekly: true,
+      telegramDecisionAction: true,
     },
   };
 }

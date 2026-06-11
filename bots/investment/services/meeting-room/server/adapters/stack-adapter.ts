@@ -48,6 +48,10 @@ function kstDateParts(now = new Date()) {
   return { date: `${obj.year}-${obj.month}-${obj.day}`, weekday: obj.weekday };
 }
 
+function kstDateKey(now = new Date()) {
+  return kstDateParts(now).date;
+}
+
 function isWeekendKst(now = new Date()) {
   return ['Sat', 'Sun'].includes(kstDateParts(now).weekday);
 }
@@ -96,6 +100,186 @@ function latestByMarketRows(rows = [], marketKey = 'market') {
   return Array.from(byMarket.values());
 }
 
+function cleanRows(rows: any[] = []) {
+  return (rows || []).filter((row) => !row.__error);
+}
+
+function firstError(rows: any[] = []) {
+  return (rows || []).find((row) => row.__error)?.__error || null;
+}
+
+async function buildDomesticDebrief(queryFn: any, now: Date) {
+  const dateKst = kstDateKey(now);
+  const morningRows = await safeQuery(queryFn,
+    `SELECT id, type, started_at, summary, segments
+       FROM luna_meeting_sessions
+      WHERE type = 'morning'
+        AND (started_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      ORDER BY started_at DESC
+      LIMIT 1`,
+    [dateKst]);
+  const signalRows = await safeQuery(queryFn,
+    `SELECT id, market, symbol, family, signal_type, candle_ts, price, rr, created_at
+       FROM luna_strategy_signals
+      WHERE market = 'domestic'
+        AND (created_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    [dateKst]);
+  const preflightRows = await safeQuery(queryFn,
+    `SELECT strategy_signal_id, market, symbol, family, decision, gates, evaluated_at
+       FROM luna_entry_preflight_log
+      WHERE market = 'domestic'
+        AND (evaluated_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      ORDER BY evaluated_at DESC
+      LIMIT 200`,
+    [dateKst]);
+  const circuitRows = await safeQuery(queryFn,
+    `SELECT market, symbol, side, level, circuit, reason, lock_until, evaluated_at
+       FROM luna_circuit_locks
+      WHERE market = 'domestic'
+        AND locked IS TRUE
+        AND shadow_only IS TRUE
+        AND (lock_until IS NULL OR lock_until > NOW())
+        AND (evaluated_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      ORDER BY evaluated_at DESC
+      LIMIT 100`,
+    [dateKst]);
+  const gateRows = await safeQuery(queryFn,
+    `SELECT market, COUNT(*)::int AS samples, COUNT(DISTINCT deployment)::int AS deployment_states,
+            ARRAY_AGG(DISTINCT deployment) AS deployments
+       FROM luna_market_gate_history
+      WHERE market = 'domestic'
+        AND (computed_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      GROUP BY market`,
+    [dateKst]);
+  const regimeRows = await safeQuery(queryFn,
+    `SELECT market, COUNT(*)::int AS samples, COUNT(DISTINCT current_regime)::int AS regime_states,
+            ARRAY_AGG(DISTINCT current_regime) AS regimes
+       FROM hmm_regime_log
+      WHERE symbol = '__market__'
+        AND market = 'domestic'
+        AND (created_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      GROUP BY market`,
+    [dateKst]);
+  const tradeRows = await safeQuery(queryFn,
+    `SELECT symbol, market, execution_origin, exit_reason, pnl_net, pnl_percent, entry_time, exit_time
+       FROM trade_journal
+      WHERE market = 'domestic'
+        AND (
+          (entry_time IS NOT NULL AND (entry_time AT TIME ZONE 'Asia/Seoul')::date = $1::date)
+          OR (exit_time IS NOT NULL AND (exit_time AT TIME ZONE 'Asia/Seoul')::date = $1::date)
+        )
+      ORDER BY COALESCE(exit_time, entry_time) DESC
+      LIMIT 100`,
+    [dateKst]);
+
+  const signals = cleanRows(signalRows).map((row) => ({ ...row }));
+  const preflights = cleanRows(preflightRows).map((row) => ({ ...row, gates: safeJson(row.gates) }));
+  const trackedSignalIds = new Set(preflights.map((row) => Number(row.strategy_signal_id)).filter(Boolean));
+  const unspokenEntries = signals
+    .filter((row) => row.signal_type === 'entry' && !trackedSignalIds.has(Number(row.id)))
+    .map((row) => ({
+      id: row.id,
+      symbol: row.symbol,
+      family: row.family,
+      reason: 'shadow_stage_virtual_tracking',
+    }));
+
+  return {
+    dateKst,
+    morningSession: cleanRows(morningRows)[0] || null,
+    degraded: cleanRows(morningRows).length === 0,
+    degradeReason: cleanRows(morningRows).length === 0 ? 'same_day_morning_session_missing' : null,
+    strategySignals: signals,
+    preflights,
+    activeCircuits: cleanRows(circuitRows),
+    gateTransitions: cleanRows(gateRows),
+    regimeTransitions: cleanRows(regimeRows),
+    kisTrades: cleanRows(tradeRows),
+    unspokenEntries,
+    errors: [
+      firstError(morningRows),
+      firstError(signalRows),
+      firstError(preflightRows),
+      firstError(circuitRows),
+      firstError(gateRows),
+      firstError(regimeRows),
+      firstError(tradeRows),
+    ].filter(Boolean),
+  };
+}
+
+async function buildWeeklyStats(queryFn: any, now: Date) {
+  const asOfKst = kstDateKey(now);
+  const signalRows = await safeQuery(queryFn,
+    `SELECT market, family, signal_type, COUNT(*)::int AS count
+       FROM luna_strategy_signals
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY market, family, signal_type
+      ORDER BY market, family, signal_type`);
+  const preflightRows = await safeQuery(queryFn,
+    `SELECT market, decision, COUNT(*)::int AS count
+       FROM luna_entry_preflight_log
+      WHERE evaluated_at >= NOW() - INTERVAL '7 days'
+      GROUP BY market, decision
+      ORDER BY market, decision`);
+  const circuitRows = await safeQuery(queryFn,
+    `SELECT market, level, circuit, locked, COUNT(*)::int AS count
+       FROM luna_circuit_locks
+      WHERE evaluated_at >= NOW() - INTERVAL '7 days'
+      GROUP BY market, level, circuit, locked
+      ORDER BY market, level, circuit`);
+  const brierRows = await safeQuery(queryFn,
+    `SELECT market, COUNT(*)::int AS samples,
+            ROUND(AVG(brier_hmm)::numeric, 6) AS avg_brier_hmm,
+            ROUND(AVG(brier_fallback)::numeric, 6) AS avg_brier_fallback
+       FROM luna_regime_calibration
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY market
+      ORDER BY market`);
+  const registryRows = await safeQuery(queryFn,
+    `SELECT status, COUNT(*)::int AS count
+       FROM luna_component_registry
+      WHERE status IN ('stalled', 'proposed', 'active')
+      GROUP BY status
+      ORDER BY status`);
+  const adrRows = await safeQuery(queryFn,
+    `SELECT status, COUNT(*)::int AS count
+       FROM luna_meeting_decisions
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+         OR (due_at IS NOT NULL AND due_at < NOW() AND status = 'pending_master')
+      GROUP BY status
+      ORDER BY status`);
+  const overdueRows = await safeQuery(queryFn,
+    `SELECT id, session_id, agenda_key, decision, due_at
+       FROM luna_meeting_decisions
+      WHERE status = 'pending_master'
+        AND due_at IS NOT NULL
+        AND due_at < NOW()
+      ORDER BY due_at ASC
+      LIMIT 50`);
+  return {
+    asOfKst,
+    signals: cleanRows(signalRows),
+    preflight: cleanRows(preflightRows),
+    circuit: cleanRows(circuitRows),
+    brier: cleanRows(brierRows),
+    registry: cleanRows(registryRows),
+    adr: cleanRows(adrRows),
+    overdueAdr: cleanRows(overdueRows),
+    errors: [
+      firstError(signalRows),
+      firstError(preflightRows),
+      firstError(circuitRows),
+      firstError(brierRows),
+      firstError(registryRows),
+      firstError(adrRows),
+      firstError(overdueRows),
+    ].filter(Boolean),
+  };
+}
+
 export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
   const type = normalizeMeetingType(options.type || 'morning');
   const now = new Date(options.now || Date.now());
@@ -142,6 +326,8 @@ export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
     `SELECT DISTINCT ON (market) market, as_of_date, brier_hmm, brier_fallback, label, probs, created_at
        FROM luna_regime_calibration
       ORDER BY market, as_of_date DESC`);
+  const debrief = type === 'domestic_debrief' ? await buildDomesticDebrief(queryFn, now) : null;
+  const weekly = type === 'weekly' ? await buildWeeklyStats(queryFn, now) : null;
 
   const proposalFile = readJson(options.proposalPath || REGISTRY_PROPOSALS_PATH, { proposals: [], notifyNow: [], deferred: [] }) || {};
   const registryPending = (registryRows || [])
@@ -189,6 +375,8 @@ export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
     pendingDecisions,
     positions,
     calibration,
+    debrief,
+    weekly,
     readOnly: true,
     shadowOnly: true,
   };

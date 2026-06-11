@@ -14,6 +14,9 @@ function resolveHubCallbackTarget(callbackData: unknown): { route: string; mode:
   if (normalized.startsWith('luna_live_fire:')) {
     return { route: '/hub/luna/live-fire/callback', mode: 'luna_live_fire' };
   }
+  if (normalized.startsWith('luna_meeting:')) {
+    return { route: '/hub/luna/meeting-callback', mode: 'luna_meeting' };
+  }
   return null;
 }
 

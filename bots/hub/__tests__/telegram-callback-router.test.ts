@@ -11,6 +11,10 @@ describe('telegram callback router', () => {
       route: '/hub/darwin/callback',
       mode: 'darwin_compat',
     });
+    expect(resolveHubCallbackTarget('luna_meeting:42:confirm')).toEqual({
+      route: '/hub/luna/meeting-callback',
+      mode: 'luna_meeting',
+    });
     expect(resolveHubCallbackTarget('unknown_action')).toBeNull();
   });
 });

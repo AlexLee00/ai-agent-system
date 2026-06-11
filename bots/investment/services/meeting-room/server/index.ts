@@ -11,6 +11,7 @@ import { callViaHub } from '../../../shared/hub-llm-client.ts';
 import { isDirectExecution } from '../../../shared/cli-runtime.ts';
 import { buildMeetingPlanNote, buildMarketSegments } from './adapters/stack-adapter.ts';
 import { runMeetingSession } from './orchestrator/meeting-session.ts';
+import { applyMeetingDecisionAction } from './meeting-decision-actions.ts';
 import { normalizeChair, normalizeMeetingType } from '../config/meeting.config.ts';
 
 const SERVICE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -238,78 +239,13 @@ function validateMeetingStart(type, now = new Date()) {
 
 async function updateDecision(id, action, note, deps) {
   if (deps.meetingStore?.updateDecision) return deps.meetingStore.updateDecision(id, action, note);
-  return deps.withTransactionFn(async (tx) => {
-    const rows = await tx.query(
-      `SELECT id, session_id, agenda_key, status, evidence
-         FROM luna_meeting_decisions
-        WHERE id = $1
-        FOR UPDATE`,
-      [id],
-    );
-    const decision = rows?.[0];
-    if (!decision) throw new HttpError(404, 'decision_not_found', `decision ${id} not found`);
-    if (decision.status !== 'pending_master') {
-      throw new HttpError(409, 'decision_not_pending', `decision ${id} is ${decision.status}`);
-    }
-
-    const stamp = nowIso();
-    const audit = {
-      mr_b: {
-        action,
-        note: String(note || '').slice(0, 1000),
-        at: stamp,
-        advisoryOnly: true,
-      },
-    };
-
-    let updatedRows;
-    if (action === 'confirm') {
-      updatedRows = await tx.query(
-        `UPDATE luna_meeting_decisions
-            SET status = 'confirmed',
-                evidence = evidence || $2::jsonb
-          WHERE id = $1
-          RETURNING id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at`,
-        [id, JSON.stringify(audit)],
-      );
-    } else {
-      updatedRows = await tx.query(
-        `UPDATE luna_meeting_decisions
-            SET status = 'deferred',
-                due_at = COALESCE(due_at, NOW()) + INTERVAL '24 hours',
-                evidence = evidence || $2::jsonb
-          WHERE id = $1
-          RETURNING id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at`,
-        [id, JSON.stringify(audit)],
-      );
-    }
-
-    const seqRows = await tx.query(
-      `SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq
-         FROM luna_meeting_minutes
-        WHERE session_id = $1`,
-      [decision.session_id],
-    );
-    const nextSeq = Number(seqRows?.[0]?.next_seq || 1);
-    await tx.run(
-      `INSERT INTO luna_meeting_minutes (session_id, seq, agenda_key, speaker, role, content, meta)
-       VALUES ($1,$2,$3,'meeting-room-web','system',$4,$5::jsonb)`,
-      [
-        decision.session_id,
-        nextSeq,
-        decision.agenda_key,
-        `MR-B ${action}: ${note || 'no note'}`,
-        JSON.stringify({ state: `decision_${action}`, decisionId: id, advisoryOnly: true }),
-      ],
-    );
-
-    return {
-      ok: true,
-      action,
-      logicalStatus: action === 'defer' ? 'deferred' : 'confirmed',
-      decision: normalizeDecision(updatedRows?.[0]),
-      auditMinuteSeq: nextSeq,
-    };
+  return applyMeetingDecisionAction({
+    id,
+    action,
+    note,
+    changedVia: 'web',
+  }, {
+    withTransactionFn: deps.withTransactionFn,
   });
 }
 
