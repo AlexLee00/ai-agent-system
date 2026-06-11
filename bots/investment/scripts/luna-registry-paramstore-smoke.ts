@@ -92,9 +92,9 @@ async function main() {
   );
   assert.equal(Number(rolledBackRows?.[0]?.count || 0), 0);
 
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 23);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 24);
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(seedDryRun.seeded, 23);
+  assert.equal(seedDryRun.seeded, 24);
   const sampleAttached = await attachSampleCounts([
     { component: 'rl-policy-shadow', sample_count: 0 },
   ], {

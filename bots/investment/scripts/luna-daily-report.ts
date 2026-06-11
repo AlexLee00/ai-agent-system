@@ -16,6 +16,7 @@
  */
 
 import { createRequire } from 'module';
+import { formatMarketGateDailyLine } from '../shared/luna-market-deployment-gate.ts';
 const require = createRequire(import.meta.url);
 
 const path = require('path');
@@ -73,15 +74,38 @@ async function fetchDpoScore7d() {
   }
 }
 
+function rowsFromQueryResult(result: any) {
+  return Array.isArray(result) ? result : (result?.rows || []);
+}
+
+async function fetchMarketGateLine() {
+  try {
+    const result = await query(
+      `SELECT DISTINCT ON (market)
+         market,
+         score,
+         deployment,
+         signals->>'effectiveDeployment' AS "effectiveDeployment",
+         computed_at
+       FROM investment.luna_market_gate_history
+       ORDER BY market, computed_at DESC`
+    );
+    return formatMarketGateDailyLine(rowsFromQueryResult(result));
+  } catch {
+    return '게이트: 데이터 없음';
+  }
+}
+
 // ─── 리포트 빌드 ──────────────────────────────────────────────────
 
-function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number) {
+function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number, marketGateLine = '게이트: 데이터 없음') {
   const pnlSign = pnl.avg_pnl >= 0 ? '+' : '';
   return `📊 [루나] ${market} 일일 리포트 (${today()})
 ━━━━━━━━━━━━━━━━━━━
 거래 수:  ${pnl.trades}건
 평균 PnL: ${pnlSign}${(pnl.avg_pnl * 100).toFixed(2)}%
 누적 PnL: ${pnlSign}${(pnl.total_pnl * 100).toFixed(2)}%
+${marketGateLine}
 ━━━━━━━━━━━━━━━━━━━
 LLM 비용(24h): $${llmCost.toFixed(4)}
 DPO 점수(7d):  ${dpoScore.toFixed(3)}`;
@@ -98,11 +122,11 @@ const MARKET_CHANNEL: Record<string, string> = {
 async function main() {
   console.log(`[luna-daily-report] 시작 (dry-run=${DRY_RUN})`);
 
-  const [llmCost, dpoScore] = await Promise.all([fetchLlmCost24h(), fetchDpoScore7d()]);
+  const [llmCost, dpoScore, marketGateLine] = await Promise.all([fetchLlmCost24h(), fetchDpoScore7d(), fetchMarketGateLine()]);
 
   for (const market of ['crypto', 'domestic', 'overseas']) {
     const pnl    = await fetchPnl24h(market);
-    const report = buildReport(market, pnl, llmCost, dpoScore);
+    const report = buildReport(market, pnl, llmCost, dpoScore, marketGateLine);
 
     console.log(`\n${report}`);
 
