@@ -203,7 +203,8 @@ function main(): void {
     const chain = selector.selectLLMChain(key, { ...selectorOptions, agentName: 'commander' });
     assert(chain.length > 0, `${key} chain must be non-empty`);
     assert.equal(chain[0]?.provider, 'openai-oauth', `${key} commander primary should avoid Groq pool exhaustion`);
-    assert.ok(chain.some((entry: any) => entry.provider === 'groq'), `${key} commander must keep Groq as bounded fallback`);
+    assert.ok(chain.some((entry: any) => entry.provider === 'local'), `${key} commander must keep local fallback`);
+    assert.equal(chain.some((entry: any) => entry.provider === 'groq'), false, `${key} commander must not spend Groq tokens on default fallback`);
   }
 
   const darwinEvaluatorChain = selector.selectLLMChain('darwin.agent_policy', {
@@ -212,13 +213,13 @@ function main(): void {
   });
   assert.deepEqual(
     darwinEvaluatorChain.map((entry: any) => entry.provider),
-    ['openai-oauth', 'groq'],
-    'darwin.evaluator must use OpenAI primary while retaining fast Groq fallback',
+    ['openai-oauth', 'local'],
+    'darwin.evaluator must use OpenAI primary while retaining local fallback',
   );
   assert.equal(
     darwinEvaluatorChain[1]?.model,
-    'llama-3.1-8b-instant',
-    'darwin.evaluator Groq fallback must avoid qwen/qwen3-32b capacity hotspots',
+    'qwen2.5-7b',
+    'darwin.evaluator fallback must avoid Groq rate-limit hotspots',
   );
 
   const darwinQueryPlannerChain = selector.selectLLMChain('darwin.agent_policy', {
@@ -227,13 +228,13 @@ function main(): void {
   });
   assert.deepEqual(
     darwinQueryPlannerChain.map((entry: any) => entry.provider),
-    ['openai-oauth', 'groq'],
-    'darwin.rag.query_planner must not depend on gemini-cli-oauth as a single route',
+    ['openai-oauth', 'local'],
+    'darwin.rag.query_planner must not depend on gemini-cli-oauth or Groq as fallback',
   );
   assert.equal(
     darwinQueryPlannerChain[1]?.model,
-    'llama-3.1-8b-instant',
-    'darwin.rag.query_planner Groq fallback must avoid qwen/qwen3-32b capacity hotspots',
+    'qwen2.5-7b',
+    'darwin.rag.query_planner fallback must avoid Groq rate-limit hotspots',
   );
 
   const darwinSynthesisChain = selector.selectLLMChain('darwin.agent_policy', {
@@ -242,13 +243,13 @@ function main(): void {
   });
   assert.deepEqual(
     darwinSynthesisChain.map((entry: any) => entry.provider),
-    ['openai-oauth', 'groq'],
-    'darwin.rag.synthesizer must use OpenAI primary and keep Groq fallback',
+    ['openai-oauth', 'local'],
+    'darwin.rag.synthesizer must use OpenAI primary and keep local fallback',
   );
   assert.equal(
     darwinSynthesisChain[1]?.model,
-    'llama-3.1-8b-instant',
-    'darwin.rag.synthesizer Groq fallback must avoid qwen/qwen3-32b capacity hotspots',
+    'qwen2.5-7b',
+    'darwin.rag.synthesizer fallback must avoid Groq rate-limit hotspots',
   );
 
   const { PROFILES } = require('../lib/runtime-profiles.ts');
@@ -261,8 +262,13 @@ function main(): void {
     'darwin/synthesis runtime profile must use OpenAI primary, not Groq/Gemini routing',
   );
   assert.ok(
+    darwinSynthesisRuntimeRoutes.some((route) => String(route).startsWith('local/qwen2.5-7b')),
+    'darwin/synthesis runtime profile must keep local fallback',
+  );
+  assert.equal(
     darwinSynthesisRuntimeRoutes.some((route) => String(route).startsWith('groq/')),
-    'darwin/synthesis runtime profile must keep Groq as bounded fallback',
+    false,
+    'darwin/synthesis runtime profile must not spend Groq tokens on default fallback',
   );
 
   const total = Object.values(providerCounts).reduce((acc, value) => acc + value, 0);

@@ -484,6 +484,16 @@ function localEmbeddingEntry(): LLMChainEntry {
   return { provider: 'local-embedding', model: LOCAL_EMBED_MODEL, maxTokens: 0, temperature: 0 };
 }
 
+function localFastEntry(template: LLMChainEntry | null | undefined): LLMChainEntry {
+  return {
+    provider: 'local',
+    model: 'qwen2.5-7b',
+    maxTokens: Math.min(entryMaxTokens(template, 1024), 1024),
+    temperature: template?.temperature ?? 0.1,
+    ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
+  };
+}
+
 function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
   const selectorKey = String(options.selectorKey || '');
   const maxTokens = entryMaxTokens(entry, Number(options.maxTokens) || 1024);
@@ -520,11 +530,19 @@ function ensureOpenAiPrimary(chain: LLMChainEntry[], options: SelectorOptions = 
   ));
 }
 
-function ensureOpenAiPrimaryWithBoundedGroqFallback(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+function ensureOpenAiPrimaryWithBoundedFallback(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
   const openAiPrimary = ensureOpenAiPrimary(chain, options);
-  const bounded = openAiPrimary.map((entry) => (isGroqEntry(entry) ? groqFastEntry(entry) : entry));
-  if (!bounded.some(isGroqEntry)) {
-    bounded.push(groqFastEntry(bounded[0] || chain[0]));
+  if (parseEnabledFlag(process.env.HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED) === true) {
+    const bounded = openAiPrimary.map((entry) => (isGroqEntry(entry) ? groqFastEntry(entry) : entry));
+    if (!bounded.some(isGroqEntry)) {
+      bounded.push(groqFastEntry(bounded[0] || chain[0]));
+    }
+    return dedupeByProvider(bounded);
+  }
+
+  const bounded = openAiPrimary.filter((entry) => !isGroqEntry(entry));
+  if (!bounded.some((entry) => providerOfEntry(entry) === 'local')) {
+    bounded.push(localFastEntry(bounded[0] || chain[0]));
   }
   return dedupeByProvider(bounded);
 }
@@ -582,7 +600,7 @@ function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: Select
     (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy')
     && parseEnabledFlag(process.env.HUB_DARWIN_SIGMA_GROQ_PRIMARY) !== true
   ) {
-    optimized = ensureOpenAiPrimaryWithBoundedGroqFallback(optimized, options);
+    optimized = ensureOpenAiPrimaryWithBoundedFallback(optimized, options);
   } else if (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy') {
     optimized = dedupeByProviderModel(preferGroqWithOpenAiFallback(optimized, options));
   }

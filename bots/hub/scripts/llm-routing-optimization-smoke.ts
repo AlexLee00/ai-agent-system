@@ -80,7 +80,8 @@ for (const { selectorKey, agentName } of [
 ]) {
   const chain = chainFor(selectorKey, { agentName });
   assert.equal(providerOf(chain[0]), 'openai-oauth', `${selectorKey}/${agentName} must use OpenAI primary to avoid Groq pool exhaustion`);
-  assert(chain.some((entry) => providerOf(entry) === 'groq'), `${selectorKey}/${agentName} must retain Groq as a bounded fallback`);
+  assert(chain.some((entry) => providerOf(entry) === 'local'), `${selectorKey}/${agentName} must retain local fallback when OpenAI is unavailable`);
+  assert(!chain.some((entry) => providerOf(entry) === 'groq'), `${selectorKey}/${agentName} must not spend Groq tokens on default fallback`);
   assert(!chain.some(isGemini), `${selectorKey}/${agentName} must not fall back to Gemini`);
 }
 
