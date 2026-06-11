@@ -108,6 +108,67 @@ function candleTs(bar: any) {
   return new Date(bar?.timestamp || Date.now()).toISOString();
 }
 
+function parseBarTime(value: any) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null;
+  if (typeof value === 'number') {
+    const ms = value > 1_000_000_000_000 ? value : value * 1000;
+    const date = new Date(ms);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && String(value).trim().match(/^\d+$/)) {
+    const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+    const date = new Date(ms);
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function kstParts(date: Date) {
+  const shifted = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+  };
+}
+
+function compareKstDate(a: Date, b: Date) {
+  const ap = kstParts(a);
+  const bp = kstParts(b);
+  const av = ap.year * 10_000 + ap.month * 100 + ap.day;
+  const bv = bp.year * 10_000 + bp.month * 100 + bp.day;
+  return av === bv ? 0 : av < bv ? -1 : 1;
+}
+
+export function isCompletedDailyBar(bar: any, market = 'crypto', now = new Date()) {
+  const ts = parseBarTime(bar?.timestamp || bar?.candle_ts || bar?.time);
+  const nowDate = parseBarTime(now) || new Date();
+  if (!ts || !Number.isFinite(nowDate.getTime())) return false;
+  const normalizedMarket = normalizePhaseAMarket(market);
+  if (normalizedMarket === 'crypto') {
+    return nowDate.getTime() >= ts.getTime() + 24 * 60 * 60 * 1000;
+  }
+
+  const dayCompare = compareKstDate(ts, nowDate);
+  if (dayCompare < 0) return true;
+  if (dayCompare > 0) return false;
+  const parts = kstParts(nowDate);
+  return parts.hour > 15 || (parts.hour === 15 && parts.minute >= 30);
+}
+
+export function dropIncompleteLastBar(barsInput = [], market = 'crypto', now = new Date()) {
+  const bars = normalizeBars(barsInput);
+  if (bars.length === 0) return bars;
+  const last = bars[bars.length - 1];
+  if (isCompletedDailyBar(last, market, now)) return bars;
+  return bars.slice(0, -1);
+}
+
 function rollingMax(values: number[], endExclusive: number, lookback: number) {
   const start = Math.max(0, endExclusive - lookback);
   const window = values.slice(start, endExclusive).filter(Number.isFinite);
@@ -457,7 +518,7 @@ export async function evaluateStrategyFamiliesForSymbol(input: any = {}, deps: a
         lookbackDays: input.lookbackDays || LUNA_STRATEGY_DEFAULTS.lookbackDays,
         getOhlcv: input.getOhlcv,
       });
-  const bars = normalizeBars(marketData.bars || []);
+  const bars = dropIncompleteLastBar(marketData.bars || [], market, input.now || input.currentTime || new Date());
   if (bars.length === 0) {
     return [{
       market,
@@ -638,6 +699,9 @@ export async function insertStrategyFamilySignals(signals = [], runFn = db.run) 
 
 export const _testOnly = {
   normalizeBars,
+  parseBarTime,
+  isCompletedDailyBar,
+  dropIncompleteLastBar,
   smaAt,
   rollingMax,
   rollingMin,
@@ -649,6 +713,7 @@ export const _testOnly = {
 export default {
   evaluateTurtleBreakout,
   evaluateTestahPullback,
+  dropIncompleteLastBar,
   evaluateStrategyFamiliesForSymbol,
   computeStrategyFamilySignals,
   insertStrategyFamilySignals,

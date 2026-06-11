@@ -128,6 +128,8 @@ async function main() {
       gates,
       regimes: [],
       strategySignals: [],
+      preflightEvaluations: [],
+      circuitLocks: [],
       writeOutput: false,
     }, { runFn: tx.run, queryFn: tx.query });
     const rowsInTx = await tx.query(

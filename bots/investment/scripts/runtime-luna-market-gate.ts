@@ -20,6 +20,16 @@ import {
   insertStrategyFamilySignals,
   summarizeStrategyFamilySignals,
 } from '../shared/luna-strategy-families.ts';
+import {
+  evaluateEntryPreflightsForSignals,
+  insertEntryPreflightLogs,
+  summarizeEntryPreflightEvaluations,
+} from '../shared/luna-entry-preflight-gate.ts';
+import {
+  evaluateLossCircuits,
+  insertCircuitLocks,
+  summarizeCircuitLocks,
+} from '../shared/luna-loss-circuit.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -72,9 +82,13 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   let gates = Array.isArray(options.gates) ? options.gates : [];
   let regimes = Array.isArray(options.regimes) ? options.regimes : [];
   let strategySignals = Array.isArray(options.strategySignals) ? options.strategySignals : [];
+  let preflightEvaluations = Array.isArray(options.preflightEvaluations) ? options.preflightEvaluations : [];
+  let circuitLocks = Array.isArray(options.circuitLocks) ? options.circuitLocks : [];
   let gateError = null;
   let regimeError = null;
   let strategyError = null;
+  let preflightError = null;
+  let circuitError = null;
 
   if (!Array.isArray(options.gates)) {
     try {
@@ -118,9 +132,39 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     }
   }
 
+  if (!Array.isArray(options.preflightEvaluations)) {
+    try {
+      const evaluatePreflights = deps.evaluateEntryPreflightsForSignals || evaluateEntryPreflightsForSignals;
+      preflightEvaluations = await evaluatePreflights(strategySignals, {
+        ...options,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+      }, deps);
+    } catch (error) {
+      preflightError = error?.message || String(error);
+      preflightEvaluations = [];
+    }
+  }
+
+  if (!Array.isArray(options.circuitLocks)) {
+    try {
+      const evaluateCircuits = deps.evaluateLossCircuits || evaluateLossCircuits;
+      const circuitResult = await evaluateCircuits({
+        ...options,
+        signals: strategySignals,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+      }, deps);
+      circuitLocks = circuitResult.locks || [];
+    } catch (error) {
+      circuitError = error?.message || String(error);
+      circuitLocks = [];
+    }
+  }
+
   const inserted = [];
   const regimeInserted = [];
   const strategyInserted = [];
+  const preflightInserted = [];
+  const circuitInserted = [];
 
   if (writeHistory) {
     for (const gate of gates) {
@@ -137,6 +181,28 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     } catch (error) {
       strategyError = error?.message || String(error);
     }
+    try {
+      const idBySignalKey = new Map();
+      strategySignals.forEach((signal, index) => {
+        const key = `${signal.market}:${signal.symbol}:${signal.family}:${signal.candleTs}:${signal.signalType}`;
+        idBySignalKey.set(key, strategyInserted[index] || null);
+      });
+      const enrichedPreflights = preflightEvaluations.map((row) => {
+        if (row.strategySignalId != null) return row;
+        const key = `${row.market}:${row.symbol}:${row.family}:${row.candleTs}:entry`;
+        return { ...row, strategySignalId: idBySignalKey.get(key) || null };
+      });
+      const result = await insertEntryPreflightLogs(enrichedPreflights, deps.runFn || db.run);
+      preflightInserted.push(...result);
+    } catch (error) {
+      preflightError = error?.message || String(error);
+    }
+    try {
+      const result = await insertCircuitLocks(circuitLocks, deps.runFn || db.run);
+      circuitInserted.push(...result);
+    } catch (error) {
+      circuitError = error?.message || String(error);
+    }
   }
 
   const regimeAlerts = regimes.length > 0
@@ -150,24 +216,33 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const gateLine = formatMarketGateDailyLine(gates);
   const regimeLine = formatRegimeDailyLine(regimes);
   const strategyLine = summarizeStrategyFamilySignals(strategySignals);
+  const preflightSummary = summarizeEntryPreflightEvaluations(preflightEvaluations);
+  const circuitSummary = summarizeCircuitLocks(circuitLocks);
+  const preflightCircuitLine = `${preflightSummary.line} / ${circuitSummary.line}`;
 
   const payload = {
-    ok: gateError == null || regimeError == null || strategyError == null,
+    ok: gateError == null || regimeError == null || strategyError == null || preflightError == null || circuitError == null,
     dryRun,
     writeHistory,
     writeOutput,
     inserted,
     regimeInserted,
     strategyInserted,
+    preflightInserted,
+    circuitInserted,
     computedAt: new Date().toISOString(),
-    summary: [gateLine, regimeLine, strategyLine].join('\n'),
+    summary: [gateLine, regimeLine, strategyLine, preflightCircuitLine].join('\n'),
     gateError,
     regimeError,
     strategyError,
+    preflightError,
+    circuitError,
     regimeAlerts,
     gates,
     regimes,
     strategySignals,
+    preflightEvaluations,
+    circuitLocks,
     shadowOnly: true,
     liveMutation: false,
     protectedPidMutation: false,

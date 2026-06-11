@@ -39,7 +39,7 @@
 - **P1-2** ✅ **C1 시장 배치 게이트**(2026-06-11, 메티 검증·마스터 적용): 3시장 합성(결측 내성 재정규화·C17 첫 소비·T7 전이 0.2)·이력 테이블·레지스트리 24종. 가용성 실측: US 2/4(기간구조·put-call 미구성)·KR 4/4·crypto 4/5(도미넌스 미구성). 신호 품질 메모: `us_benchmark_trend` 이산 매핑(bearish→0)=C15 캘리브레이션 대상 · 미구성 3신호=C14 소스 후보.
 - **P1-3** ✅ **C2 레짐 승격**(2026-06-11, 코덱스 구현·마스터 적용): `luna-regime-engine` shadow 파사드(detectHMMRegime 우선·getMarketRegime 폴백 0.55)·시장 sentinel(`__market__`)·전이 경보 U5 위생·Brier HMM vs fallback 캘리브레이션·G0 market-gate runner 독립 통합·일일 리포트 1줄. migration 적용 완료(`luna_regime_calibration`, `hmm_regime_log.source/transition_alert`)·레지스트리 25종. 경미 후속: summary 괄호값=confidence→dominant 확률 표기 변경(다음 사이클 1줄). 관찰: 확률 시점 변동성=Brier 판정 영역.
 - **P1-4** ✅ **C3 전략군 룰셋**(2026-06-11, 메티 검증·마스터 적용): 터틀(20/10·2ATR·SMA200·종가 돌파)+테스타(5/25/75 정배열·재돌파)·rr 사전 산출(rr<1 무효)·G1 레짐 스냅샷+matched 플래그·signals 테이블(UNIQUE 멱등)·러너 G0→G1→G2/G3 3단계·레지스트리 27종·c3 파라미터 시드 11건. 실데이터 검증: HOME/USDT 테스타 entry rr=4.18 matched=false(bear 레짐 정확 동작). 백테스트 정합 표=P1-4b 입력(P1_4_BACKTEST_ALIGNMENT.md). P1-3 후속(dominant 확률 표기) 반영 완료.
-- **P1-5** C4 사전 게이트(R:R·E·횡보·유동성)+손실빈도 서킷 3종(perception-first 일반화) — 대기
+- **P1-5** ✅ **C4 사전 게이트+서킷 3종 shadow**(2026-06-11, 코덱스 구현·검증): P1-4 미완성 봉 평가 차단(완성 일봉 기준)·4게이트(rr/E/횡보/유동성)·StoplossGuard형 3레벨+심볼 쿨다운+저수익 잠금·러너 4단계 독립 통합·레지스트리 29종. migration은 dry-run 검증 완료, 실적용=마스터. 실데이터 dry-run: 전략군 entry 0→preflight 0, circuit shadow lock 20, LIVE 불변.
 - **P1-6** [P0-4 후속] next-bar 실행 shadow(`LUNA_BT_NEXT_BAR_EXECUTION_ENABLED` 기본 false·비교 스모크) — 대기
 - **P1-7** ✅ 제약 가드(P1-1 포함): block 단언 스모크+`luna-autonomous-command-policy.ts`. 자율 러너 적용 지점=메티 검토 후.
 - WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능.

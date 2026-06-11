@@ -138,6 +138,7 @@ async function main() {
     symbol: 'AAPL',
     bars: turtleEntryBars(),
     regime: bearRegime,
+    now: '2026-12-31T00:00:00Z',
     params: {
       turtle: { entryLookback: 20, exitLookback: 10, atrPeriod: 20, atrMult: 2, maFilter: 200 },
       testah: { maFast: 5, maMid: 25, maSlow: 75, pullbackWindow: 5 },
@@ -174,6 +175,8 @@ async function main() {
     computeStrategyFamilySignals: async () => {
       throw new Error('fixture_strategy_down');
     },
+    evaluateEntryPreflightsForSignals: async () => [],
+    evaluateLossCircuits: async () => ({ locks: [] }),
   });
   assert.equal(gateFailure.strategyError, 'fixture_strategy_down');
   assert.equal(gateFailure.gates.length, 1);
@@ -183,8 +186,8 @@ async function main() {
   assert.equal(line, '전략군: 신호 2건(터틀 1·테스타 1)');
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 27);
-  assert.equal(seedDryRun.seeded, 27);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 29);
+  assert.equal(seedDryRun.seeded, 29);
   assert.equal(seedDryRun.components.includes('strategy-family-turtle'), true);
   assert.equal(seedDryRun.components.includes('strategy-family-testah'), true);
 
