@@ -42,6 +42,8 @@
 - **P1-5** ✅ **C4 프리플라이트+서킷 3종**(2026-06-11, 메티 검증·마스터 적용): 🔴P1-4 미완성봉 결함 수정(`dropIncompleteLastBar` — 2회 연속 동일 결과 재현)·4게이트(rr/E 30거래 규율/횡보/유동성 결측내성)·서킷 3레벨(trade_journal 소스 — 실데이터 잠금 20건: 저수익 15+쿨다운 5)·러너 5단계 완성·테이블 2종·c4 시드 9건·레지스트리 29종. 약신호 게이트 실측: luna.ts binance 0.22/0.03·기타 0.32/0.08(대체 비교=후속).
 - **P1-6** ✅ **next-bar 백테스트 shadow**(2026-06-11, 메티 검증·적용): 플래그 기본 OFF(회귀 diff 0 확정)·마스크 1봉 시프트 단일 지점·next_open 체결(시그니처 검사)·비교 스모크(수익 -0.04p·MDD -0.10p — 체결 지연 영향 첫 정량화)·레지스트리 30종(advisory). P0-4 잔존 ①②③ 해소.
 - **P1-7** ✅ 제약 가드(P1-1 포함): block 단언 스모크+`luna-autonomous-command-policy.ts`. 자율 러너 적용 지점=메티 검토 후.
+- **P1-OPS** ✅ **운영 보정 3건**(2026-06-11, 메티 실측 재현 검증): 레짐 시장당 1행(66배 과다 해소)·캘리브레이션 registry-evaluator 피기백(--skip-calibration·fail-open)·서킷 중복 억제(활성 동일 잠금 skip). 다음 일일 --apply 주기부터 Brier 실적재.
+- **MR-A(회의실 Phase1 분할 A)** — **CODEX 작성 완료(2026-06-11): docs/codex/CODEX_LUNA_MEETING_ROOM_A.md**(백엔드+FSM+회의록 DB 3종+stack-adapter=P1 스택 합성 plan-note+grill 내장+CLI 완주·LLM 비용 가드·--no-llm) — 코덱스 실행 대기. 분할: MR-B(웹 2화면)·MR-C(정례화·텔레그램·grill skill)
 - WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능.
 
 ## P2 — 검증·피드백·포지션
