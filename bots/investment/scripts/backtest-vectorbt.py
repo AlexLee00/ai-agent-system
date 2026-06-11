@@ -287,6 +287,27 @@ def infer_portfolio_freq(df) -> str:
     return "1d"
 
 
+def from_signals_param_names(vbt, deps: dict) -> set:
+    from_signals_params = deps.get("_from_signals_params")
+    if from_signals_params is None:
+        try:
+            from_signals_params = set(inspect.signature(vbt.Portfolio.from_signals).parameters)
+        except Exception:
+            from_signals_params = set()
+        deps["_from_signals_params"] = from_signals_params
+    return from_signals_params
+
+
+def apply_next_bar_signal_masks(entries, exits):
+    next_entries = entries.fillna(False).shift(1, fill_value=False).fillna(False)
+    next_exits = exits.fillna(False).shift(1, fill_value=False).fillna(False)
+    if len(next_entries) > 0:
+        next_entries.iloc[-1] = False
+    if len(next_exits) > 0:
+        next_exits.iloc[-1] = False
+    return next_entries, next_exits
+
+
 def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, collect_meta_labels: bool = False):
     vbt = deps["vbt"]
     pd = deps["pd"]
@@ -299,7 +320,15 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
     entries, exits = build_signal_masks(df, params, deps)
     portfolio_freq = infer_portfolio_freq(df)
     realistic_costs = bool_env("LUNA_BT_REALISTIC_COSTS", False)
+    next_bar_execution = bool_env("LUNA_BT_NEXT_BAR_EXECUTION_ENABLED", False)
     slippage_pct = float_env("LUNA_BT_SLIPPAGE_PCT", 0.0005)
+    from_signals_params = None
+
+    execution_model = "same_bar_close"
+    execution_price_model = "close"
+    if next_bar_execution:
+        entries, exits = apply_next_bar_signal_masks(entries, exits)
+        execution_model = "next_bar"
 
     pf_kwargs = dict(
         close=close,
@@ -311,14 +340,16 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         fees=0.001,
         freq=portfolio_freq,
     )
+    if next_bar_execution:
+        from_signals_params = from_signals_param_names(vbt, deps)
+        if "price" in from_signals_params and "open" in df.columns:
+            pf_kwargs["price"] = df["open"]
+            execution_price_model = "next_open"
+        else:
+            execution_price_model = "next_close"
     if realistic_costs:
-        from_signals_params = deps.get("_from_signals_params")
         if from_signals_params is None:
-            try:
-                from_signals_params = set(inspect.signature(vbt.Portfolio.from_signals).parameters)
-            except Exception:
-                from_signals_params = set()
-            deps["_from_signals_params"] = from_signals_params
+            from_signals_params = from_signals_param_names(vbt, deps)
         if "slippage" in from_signals_params:
             pf_kwargs["slippage"] = slippage_pct
         if "high" in from_signals_params and "low" in from_signals_params and "high" in df.columns and "low" in df.columns:
@@ -362,6 +393,8 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         "oos_returns_kurt": oos_returns_kurt,
         "costs_model": "realistic" if realistic_costs else "baseline",
         "data_interval": df.attrs.get("luna_data_interval"),
+        "execution_model": execution_model,
+        "execution_price_model": execution_price_model,
     }
     if collect_returns:
         try:
@@ -712,6 +745,8 @@ def aggregate_oos_result(oos_result: dict, best_is: dict, n_grid_trials: int, n_
         "sr0": sr0,
         "sr_oos_unann": sr_oos_unann if (total_trades_oos >= min_oos_trades and n_obs >= min_oos_bars) else None,
         "periods_per_year": ppy,
+        "execution_model": oos_result.get("execution_model"),
+        "execution_price_model": oos_result.get("execution_price_model"),
     }
     if extra:
         payload.update(extra)
@@ -864,6 +899,8 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
                 # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
                 "oos_returns_skew": oos_raw.get("oos_returns_skew"),
                 "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
+                "execution_model": oos_raw.get("execution_model"),
+                "execution_price_model": oos_raw.get("execution_price_model"),
             }
             if pooled_returns_on:
                 fold_entry["returns_series_fold"] = oos_raw.get("returns_series") or []
@@ -902,6 +939,8 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
                 # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
                 "oos_returns_skew": oos_raw.get("oos_returns_skew"),
                 "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
+                "execution_model": oos_raw.get("execution_model"),
+                "execution_price_model": oos_raw.get("execution_price_model"),
             }
             if pooled_returns_on:
                 fold_entry["returns_series_fold"] = oos_raw.get("returns_series") or []
@@ -1056,6 +1095,8 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
         "periods_per_year": wf_ppy,
         "costs_model": "realistic" if bool_env("LUNA_BT_REALISTIC_COSTS", False) else "baseline",
         "data_interval": df.attrs.get("luna_data_interval"),
+        "execution_model": usable[0].get("execution_model"),
+        "execution_price_model": usable[0].get("execution_price_model"),
     }
     if robust_on:
         aggregate.update({

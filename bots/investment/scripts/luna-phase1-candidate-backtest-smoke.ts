@@ -284,6 +284,10 @@ assert.match(vectorbtSource, /--universe-asof/, 'vectorbt should accept universe
 assert.match(vectorbtSource, /universe_source/, 'vectorbt should emit universe source metadata');
 assert.match(vectorbtSource, /infer_portfolio_freq/, 'vectorbt backtest should infer portfolio frequency from OHLCV interval');
 assert.match(vectorbtSource, /freq=portfolio_freq/, 'vectorbt backtest should not hard-code 5min frequency for stock data');
+assert.match(vectorbtSource, /LUNA_BT_NEXT_BAR_EXECUTION_ENABLED/, 'vectorbt backtest should expose next-bar execution shadow flag');
+assert.match(vectorbtSource, /apply_next_bar_signal_masks/, 'vectorbt backtest should shift signal masks through a single next-bar helper');
+assert.match(vectorbtSource, /execution_model/, 'vectorbt backtest should emit execution model metadata');
+assert.match(vectorbtSource, /execution_price_model/, 'vectorbt backtest should emit execution price model metadata');
 assert.match(candidateRefreshPlist, /LUNA_BT_ROBUST_SELECTION_ENABLED/, 'candidate backtest launchd should enable robust selection');
 assert.match(candidateRefreshPlist, /<string>true<\/string>/, 'candidate backtest robust selection env should be true');
 assert.match(opsSchedulerPlist, /LUNA_BT_ROBUST_SELECTION_ENABLED/, 'ops scheduler launchd should carry robust selection env');
@@ -320,6 +324,12 @@ const payload = {
     vectorbtRobustRankScore: /robust_rank_score/.test(vectorbtSource),
     candidateRefreshEnv: /LUNA_BT_ROBUST_SELECTION_ENABLED/.test(candidateRefreshPlist),
     opsSchedulerEnv: /LUNA_BT_ROBUST_SELECTION_ENABLED/.test(opsSchedulerPlist),
+  },
+  nextBarEvidence: {
+    flagPresent: /LUNA_BT_NEXT_BAR_EXECUTION_ENABLED/.test(vectorbtSource),
+    helperPresent: /apply_next_bar_signal_masks/.test(vectorbtSource),
+    executionModelMetadata: /execution_model/.test(vectorbtSource),
+    executionPriceMetadata: /execution_price_model/.test(vectorbtSource),
   },
   pointInTimeMetadata: {
     resultUniverseAsOfPresent: result.results.every((item) => item.universeAsOf),

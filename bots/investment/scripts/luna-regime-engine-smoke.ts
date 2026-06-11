@@ -205,8 +205,8 @@ async function main() {
   assert.ok(dbResult.calibrationRows >= 1);
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 29);
-  assert.equal(seedDryRun.seeded, 29);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 30);
+  assert.equal(seedDryRun.seeded, 30);
   assert.equal(seedDryRun.components.includes('regime-engine-hmm'), true);
 
   return {
