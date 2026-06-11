@@ -26,6 +26,7 @@ export const LUNA_COMPONENT_REGISTRY_SEED = Object.freeze([
   { component: 'llm-auto-routing-hub', currentMode: 'shadow_pending', targetMode: 'active', criteria: { metrics: ['task_model_performance_tracking'] }, notes: 'M-8 Week2' },
   { component: 'shadow-mode-symbol-decision-wrapper', currentMode: 'live_parallel_logging', targetMode: 'stage_a_foundation', criteria: { infrastructure: true }, notes: 'G0-G7 shadow scaffold' },
   { component: 'market-deployment-gate', currentMode: 'shadow', targetMode: 'supervised_l4', criteria: { durationWeeks: 4, compareAgainst: 'gate_off_virtual', metrics: ['halt_reduced_avoidance_delta'], placeholder: true }, notes: 'P1-2 C1 market deployment gate shadow history' },
+  { component: 'regime-engine-hmm', currentMode: 'shadow', targetMode: 'core_c2', criteria: { durationWeeks: 4, metrics: ['brier_hmm_lt_fallback', 'transition_alert_precision'], placeholder: true }, notes: 'P1-3 C2 HMM regime engine shadow facade and calibration' },
   { component: 'vault-shadow-eval-adjustments', currentMode: 'shadow', targetMode: 'parameter_store_input', criteria: { metrics: ['adjustment_post_validation_pass_rate'] }, notes: 'Sigma vault' },
   { component: 'meta-neural-reflexion', currentMode: 'shadow', targetMode: 'c8_learning_layer', criteria: { metrics: ['accepted_reflexion_outcome'] }, notes: 'small sample discipline' },
   { component: 'mapek', currentMode: 'env', targetMode: 'autonomous_loop_frame', criteria: { placeholder: true }, notes: '0-b loop fit review' },

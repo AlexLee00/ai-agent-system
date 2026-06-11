@@ -126,6 +126,7 @@ async function main() {
     })).map((gate) => ({ ...gate, computedAt: dbStamp }));
     const result = await runLunaMarketGate({
       gates,
+      regimes: [],
       writeOutput: false,
     }, { runFn: tx.run, queryFn: tx.query });
     const rowsInTx = await tx.query(

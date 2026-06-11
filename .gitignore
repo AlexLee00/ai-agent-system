@@ -229,6 +229,7 @@ bots/investment/output/ops/luna-operating-epoch-reset.json
 bots/investment/output/ops/market-regime-capture.json
 bots/investment/output/ops/parallel-ops-snapshot.json
 bots/investment/output/ops/posttrade-feedback-worker-smoke-heartbeat.json
+bots/investment/output/luna-regime-alerts.json
 bots/investment/python/rl/data/
 bots/investment/python/rl/models/
 

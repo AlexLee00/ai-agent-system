@@ -7,7 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildLunaAnalysisPredictionPhaseA } from '../shared/luna-analysis-prediction-phase-a.ts';
 import { buildStrategyRoute, applyStrategyRouteDecisionBias } from '../shared/strategy-router.ts';
-import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
+import {
+  DEFAULT_PHASE_A_SYMBOLS_BY_MARKET,
+  exchangeForPhaseAMarket,
+  fetchPhaseABars,
+  normalizePhaseABars,
+  normalizePhaseAMarket,
+  normalizePhaseASymbol,
+} from '../shared/luna-phase-a-market-data.ts';
 import { query as dbQuery, run as dbRun } from '../shared/db.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -15,18 +22,6 @@ const INVESTMENT_ROOT = resolve(__dirname, '..');
 const DEFAULT_OUTPUT = resolve(INVESTMENT_ROOT, 'output/luna-analysis-prediction-phase-a-report.json');
 const MIGRATION = resolve(INVESTMENT_ROOT, 'migrations/20260525000001_luna_analysis_prediction_phase_a_logs.sql');
 export const PHASE_A_SHADOW_LOG_CONFIRM = 'luna-analysis-prediction-phase-a-shadow-log';
-
-const DEFAULT_SYMBOLS_BY_MARKET = Object.freeze({
-  domestic: ['005930', '000660', '005380'],
-  overseas: ['AAPL', 'NVDA', 'MSFT'],
-  crypto: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT'],
-});
-
-const MARKET_TO_EXCHANGE = Object.freeze({
-  domestic: 'kis',
-  overseas: 'kis_overseas',
-  crypto: 'binance',
-});
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
@@ -47,85 +42,10 @@ function parseList(value, fallback = []) {
   return items.length ? items : fallback;
 }
 
-function normalizeMarket(value = 'domestic') {
-  const text = String(value || 'domestic').trim().toLowerCase();
-  if (['crypto', 'binance'].includes(text)) return 'crypto';
-  if (['overseas', 'us', 'usa', 'kis_overseas'].includes(text)) return 'overseas';
-  return 'domestic';
-}
-
-function exchangeForMarket(market = 'domestic') {
-  return MARKET_TO_EXCHANGE[normalizeMarket(market)] || 'kis';
-}
-
-function normalizeSymbol(symbol = '', market = 'domestic') {
-  const raw = String(symbol || '').trim();
-  if (!raw) return raw;
-  return normalizeMarket(market) === 'crypto' ? raw.toUpperCase().replace('-', '/') : raw.toUpperCase();
-}
-
-function daysAgoIso(days = 120) {
-  const date = new Date(Date.now() - Math.max(1, Number(days || 120)) * 24 * 60 * 60 * 1000);
-  return date.toISOString().slice(0, 10);
-}
-
-function normalizeBars(rows = []) {
-  return (Array.isArray(rows) ? rows : [])
-    .map((row) => {
-      if (Array.isArray(row)) {
-        return {
-          timestamp: Number(row[0] || 0),
-          open: Number(row[1]),
-          high: Number(row[2]),
-          low: Number(row[3]),
-          close: Number(row[4]),
-          volume: Number(row[5] || 0),
-        };
-      }
-      return {
-        timestamp: Number(row?.timestamp || row?.candle_ts || row?.time || 0),
-        open: Number(row?.open ?? row?.o ?? row?.close),
-        high: Number(row?.high ?? row?.h ?? row?.close),
-        low: Number(row?.low ?? row?.l ?? row?.close),
-        close: Number(row?.close ?? row?.c ?? row?.price),
-        volume: Number(row?.volume ?? row?.v ?? 0),
-      };
-    })
-    .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
-    .sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
-}
-
-async function fetchPhaseABars({
-  symbol,
-  market = 'domestic',
-  timeframe = '1d',
-  lookbackDays = 120,
-  getOhlcv = getOHLCV,
-} = {}) {
-  const normalizedMarket = normalizeMarket(market);
-  const normalizedSymbol = normalizeSymbol(symbol, normalizedMarket);
-  if (!normalizedSymbol) return { bars: [], source: 'missing_symbol', error: null };
-  try {
-    const rows = await Promise.resolve(getOhlcv(
-      normalizedSymbol,
-      String(timeframe || '1d'),
-      daysAgoIso(lookbackDays),
-      null,
-      exchangeForMarket(normalizedMarket),
-    ));
-    return {
-      bars: normalizeBars(rows),
-      source: `${exchangeForMarket(normalizedMarket)}_${String(timeframe || '1d')}_ohlcv`,
-      error: null,
-    };
-  } catch (error) {
-    return {
-      bars: [],
-      source: `${exchangeForMarket(normalizedMarket)}_${String(timeframe || '1d')}_ohlcv_failed`,
-      error: error?.message || String(error),
-    };
-  }
-}
+const normalizeMarket = normalizePhaseAMarket;
+const exchangeForMarket = exchangeForPhaseAMarket;
+const normalizeSymbol = normalizePhaseASymbol;
+const normalizeBars = normalizePhaseABars;
 
 async function resolvePhaseASymbols(options = {}) {
   const market = normalizeMarket(options.market || 'domestic');
@@ -139,7 +59,7 @@ async function resolvePhaseASymbols(options = {}) {
   }
 
   const queryFn = options.query || dbQuery;
-  const fallback = (DEFAULT_SYMBOLS_BY_MARKET[market] || DEFAULT_SYMBOLS_BY_MARKET.domestic).slice(0, limit);
+  const fallback = (DEFAULT_PHASE_A_SYMBOLS_BY_MARKET[market] || DEFAULT_PHASE_A_SYMBOLS_BY_MARKET.domestic).slice(0, limit);
   try {
     const rows = await Promise.resolve(queryFn(
       `SELECT symbol
@@ -294,7 +214,7 @@ export async function runLunaAnalysisPredictionPhaseA(options = {}) {
             market,
             timeframe,
             lookbackDays,
-            getOhlcv: options.getOhlcv || getOHLCV,
+            getOhlcv: options.getOhlcv,
           });
   const bars = marketData.bars || [];
   const phaseA = buildLunaAnalysisPredictionPhaseA({

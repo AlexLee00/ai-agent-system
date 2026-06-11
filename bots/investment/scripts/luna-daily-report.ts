@@ -17,6 +17,7 @@
 
 import { createRequire } from 'module';
 import { formatMarketGateDailyLine } from '../shared/luna-market-deployment-gate.ts';
+import { LUNA_REGIME_MARKET_SYMBOL, formatRegimeDailyLine } from '../shared/luna-regime-engine.ts';
 const require = createRequire(import.meta.url);
 
 const path = require('path');
@@ -96,9 +97,29 @@ async function fetchMarketGateLine() {
   }
 }
 
+async function fetchRegimeLine() {
+  try {
+    const result = await query(
+      `SELECT DISTINCT ON (market)
+         market,
+         current_regime AS dominant,
+         confidence,
+         source,
+         created_at
+       FROM investment.hmm_regime_log
+       WHERE symbol = $1
+       ORDER BY market, created_at DESC`,
+      [LUNA_REGIME_MARKET_SYMBOL]
+    );
+    return formatRegimeDailyLine(rowsFromQueryResult(result));
+  } catch {
+    return '레짐: 데이터 없음';
+  }
+}
+
 // ─── 리포트 빌드 ──────────────────────────────────────────────────
 
-function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number, marketGateLine = '게이트: 데이터 없음') {
+function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number, marketGateLine = '게이트: 데이터 없음', regimeLine = '레짐: 데이터 없음') {
   const pnlSign = pnl.avg_pnl >= 0 ? '+' : '';
   return `📊 [루나] ${market} 일일 리포트 (${today()})
 ━━━━━━━━━━━━━━━━━━━
@@ -106,6 +127,7 @@ function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number
 평균 PnL: ${pnlSign}${(pnl.avg_pnl * 100).toFixed(2)}%
 누적 PnL: ${pnlSign}${(pnl.total_pnl * 100).toFixed(2)}%
 ${marketGateLine}
+${regimeLine}
 ━━━━━━━━━━━━━━━━━━━
 LLM 비용(24h): $${llmCost.toFixed(4)}
 DPO 점수(7d):  ${dpoScore.toFixed(3)}`;
@@ -122,11 +144,16 @@ const MARKET_CHANNEL: Record<string, string> = {
 async function main() {
   console.log(`[luna-daily-report] 시작 (dry-run=${DRY_RUN})`);
 
-  const [llmCost, dpoScore, marketGateLine] = await Promise.all([fetchLlmCost24h(), fetchDpoScore7d(), fetchMarketGateLine()]);
+  const [llmCost, dpoScore, marketGateLine, regimeLine] = await Promise.all([
+    fetchLlmCost24h(),
+    fetchDpoScore7d(),
+    fetchMarketGateLine(),
+    fetchRegimeLine(),
+  ]);
 
   for (const market of ['crypto', 'domestic', 'overseas']) {
     const pnl    = await fetchPnl24h(market);
-    const report = buildReport(market, pnl, llmCost, dpoScore, marketGateLine);
+    const report = buildReport(market, pnl, llmCost, dpoScore, marketGateLine, regimeLine);
 
     console.log(`\n${report}`);
 

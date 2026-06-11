@@ -9,6 +9,12 @@ import {
   computeAllMarketDeploymentGates,
   formatMarketGateDailyLine,
 } from '../shared/luna-market-deployment-gate.ts';
+import {
+  computeAllRegimeStates,
+  formatRegimeDailyLine,
+  insertRegimeStateHistory,
+  processRegimeAlerts,
+} from '../shared/luna-regime-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,28 +64,76 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const dryRun = options.dryRun === true;
   const writeHistory = options.writeHistory !== false && !dryRun;
   const writeOutput = options.writeOutput !== false && !dryRun;
-  const gates = options.gates || await computeAllMarketDeploymentGates({
-    ...options,
-    queryFn: deps.queryFn || options.queryFn || db.query,
-  });
+  let gates = Array.isArray(options.gates) ? options.gates : [];
+  let regimes = Array.isArray(options.regimes) ? options.regimes : [];
+  let gateError = null;
+  let regimeError = null;
+
+  if (!Array.isArray(options.gates)) {
+    try {
+      const computeGates = deps.computeAllMarketDeploymentGates || computeAllMarketDeploymentGates;
+      gates = await computeGates({
+        ...options,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+      });
+    } catch (error) {
+      gateError = error?.message || String(error);
+      gates = [];
+    }
+  }
+
+  if (!Array.isArray(options.regimes)) {
+    try {
+      const computeRegimes = deps.computeAllRegimeStates || computeAllRegimeStates;
+      regimes = await computeRegimes({
+        ...options,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+      }, deps);
+    } catch (error) {
+      regimeError = error?.message || String(error);
+      regimes = [];
+    }
+  }
+
   const inserted = [];
+  const regimeInserted = [];
 
   if (writeHistory) {
     for (const gate of gates) {
       const result = await insertMarketGateHistory(gate, deps.runFn || db.run);
       inserted.push(result?.rows?.[0]?.id || null);
     }
+    for (const regime of regimes) {
+      const result = await insertRegimeStateHistory(regime, deps.runFn || db.run);
+      regimeInserted.push(result?.rows?.[0]?.id || null);
+    }
   }
 
+  const regimeAlerts = regimes.length > 0
+    ? await processRegimeAlerts(regimes, {
+        ...options,
+        writeOutput,
+        publish: options.publishRegimeAlerts !== false && !dryRun,
+        alertOutputPath: options.alertOutputPath,
+      }, deps)
+    : null;
+  const gateLine = formatMarketGateDailyLine(gates);
+  const regimeLine = formatRegimeDailyLine(regimes);
+
   const payload = {
-    ok: true,
+    ok: gateError == null || regimeError == null,
     dryRun,
     writeHistory,
     writeOutput,
     inserted,
+    regimeInserted,
     computedAt: new Date().toISOString(),
-    summary: formatMarketGateDailyLine(gates),
+    summary: [gateLine, regimeLine].join('\n'),
+    gateError,
+    regimeError,
+    regimeAlerts,
     gates,
+    regimes,
     shadowOnly: true,
     liveMutation: false,
     protectedPidMutation: false,
