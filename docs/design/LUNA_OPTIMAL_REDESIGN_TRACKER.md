@@ -6,8 +6,8 @@
 > 원칙: 무중단(PROTECTED·crypto LIVE·스카) · shadow→L4→L5 표준 경로(C15) · 검증 통과분만 승격 · 마스터=게이트.
 
 ## 📊 종합 현황 (2026-06-11)
-- **P0: 6/6 ✅**(커밋 687ece025) · **P1: 4/7 ✅**(P1-1·2·3·7) · 다음=**P1-4(C3 전략군 — 재설계의 심장)**
-- **가동 자산**: DB 4종(`luna_parameter_store` append-only·seed 7 / `luna_component_registry` **25종 active** / `luna_market_gate_history` / `luna_regime_calibration`) · 모듈 4종(parameter-store·market-deployment-gate·registry-evaluator·command-policy) · 스모크 4종(전부 ROLLBACK 위생)
+- **P0: 6/6 ✅**(커밋 687ece025) · **P1: 5/7 ✅**(P1-1·2·3·4·7) · 다음=**P1-5(C4 사전 게이트+서킷)**
+- **가동 자산**: DB 5종(`luna_parameter_store` append-only·seed 7 / `luna_component_registry` **27종 active** / `luna_market_gate_history` / `luna_regime_calibration` / `luna_strategy_signals`) · 모듈 6종(parameter-store·market-deployment-gate·registry-evaluator·regime-engine·strategy-families·command-policy) · 스모크 5종(전부 ROLLBACK 위생)
 - **🟢 C15 루프 실가동(2026-06-11)**: plist 2건 등록·kickstart 완료 — `ai.luna.market-gate-30min`(게이트+레짐 30분 적재, DB 이력 확인) · `ai.luna.registry-evaluator-daily`(**--apply 모드** — 25종 last_evaluated_at 갱신 확인). 일일 평가→기준 충족 시 텔레그램 제안(상한 2) 자동.
 - **감사 산출물**: P0_4_LOOKAHEAD_AUDIT(잔존 4건→P1-6) · P0_6_CONSTRAINT_AUDIT(방어 양호→P1-7 완료 근거)
 
@@ -38,7 +38,7 @@
 - **P1-1** ✅ **C15 레지스트리+C17 파라미터 스토어**(2026-06-11, 메티 검증): 테이블 2종(registry 23 시드·param seed 7·append-only 트리거)·스토어(immutable 강제·env 폴백·T1 캐시)·평가기(readyForPromotion·제안 3종·텔레그램 상한 2·일일 리포트 1줄)·스모크 ROLLBACK 위생(누적 0 재현). 잔여 메모: `shadow_unvalidated_passthrough` 태그 구분=평가기 정밀화 시 확인.
 - **P1-2** ✅ **C1 시장 배치 게이트**(2026-06-11, 메티 검증·마스터 적용): 3시장 합성(결측 내성 재정규화·C17 첫 소비·T7 전이 0.2)·이력 테이블·레지스트리 24종. 가용성 실측: US 2/4(기간구조·put-call 미구성)·KR 4/4·crypto 4/5(도미넌스 미구성). 신호 품질 메모: `us_benchmark_trend` 이산 매핑(bearish→0)=C15 캘리브레이션 대상 · 미구성 3신호=C14 소스 후보.
 - **P1-3** ✅ **C2 레짐 승격**(2026-06-11, 코덱스 구현·마스터 적용): `luna-regime-engine` shadow 파사드(detectHMMRegime 우선·getMarketRegime 폴백 0.55)·시장 sentinel(`__market__`)·전이 경보 U5 위생·Brier HMM vs fallback 캘리브레이션·G0 market-gate runner 독립 통합·일일 리포트 1줄. migration 적용 완료(`luna_regime_calibration`, `hmm_regime_log.source/transition_alert`)·레지스트리 25종. 경미 후속: summary 괄호값=confidence→dominant 확률 표기 변경(다음 사이클 1줄). 관찰: 확률 시점 변동성=Brier 판정 영역.
-- **P1-4** ✅ **C3 전략군 2종 shadow**(2026-06-11, 코덱스 구현·검증): 터틀 20/10/2ATR/200MA·테스타 5/25/75 결정론 룰셋, 종가 확인·rr 산출·G1 스냅샷·`luna_strategy_signals` UNIQUE 멱등·G0/G1/G2 runner 독립 통합·일일 리포트 1줄·백테스트 정합 보고. migration은 dry-run 검증 완료, 실적용=마스터. stable-range 백테스트=P1-4b 후속.
+- **P1-4** ✅ **C3 전략군 룰셋**(2026-06-11, 메티 검증·마스터 적용): 터틀(20/10·2ATR·SMA200·종가 돌파)+테스타(5/25/75 정배열·재돌파)·rr 사전 산출(rr<1 무효)·G1 레짐 스냅샷+matched 플래그·signals 테이블(UNIQUE 멱등)·러너 G0→G1→G2/G3 3단계·레지스트리 27종·c3 파라미터 시드 11건. 실데이터 검증: HOME/USDT 테스타 entry rr=4.18 matched=false(bear 레짐 정확 동작). 백테스트 정합 표=P1-4b 입력(P1_4_BACKTEST_ALIGNMENT.md). P1-3 후속(dominant 확률 표기) 반영 완료.
 - **P1-5** C4 사전 게이트(R:R·E·횡보·유동성)+손실빈도 서킷 3종(perception-first 일반화) — 대기
 - **P1-6** [P0-4 후속] next-bar 실행 shadow(`LUNA_BT_NEXT_BAR_EXECUTION_ENABLED` 기본 false·비교 스모크) — 대기
 - **P1-7** ✅ 제약 가드(P1-1 포함): block 단언 스모크+`luna-autonomous-command-policy.ts`. 자율 러너 적용 지점=메티 검토 후.
