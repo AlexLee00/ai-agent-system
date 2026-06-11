@@ -1,6 +1,6 @@
 # 루나 투자회의 + 펀더멘털 리서치 — 설계 (SSOT)
 
-> 버전 v0.7 (2026-06-16) · 작성: 메티 · 상태: 실험판 + 성장 통합 + **재설계 정합(§21)·사용 시뮬레이션(§22)·3시장 회의 체계(§23)·v1.2~1.3 정합(§24)** · 보강=LUNA_BOOST_DESIGN.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md · 성장=LUNA_GROWTH_REINFORCEMENT.md
+> 버전 v0.8 (2026-06-11) · 작성: 메티 · 상태: 실험판 + 성장 통합 + **재설계 정합(§21)·사용 시뮬레이션(§22)·3시장 회의 체계(§23)·v1.2~1.3 정합(§24)** · 보강=LUNA_BOOST_DESIGN.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md · 성장=LUNA_GROWTH_REINFORCEMENT.md
 > 전제: 단일 사용자 · 개발 중 · paper 단계. **실험 우선 · 성능 비중(완전 교체 비용 무시) · 가드 최소("게이트를 치우고 계측을 깐다")**.
 > 상위 자산 재사용: `bots/investment`(루나팀). 회의실=신규 오케스트레이터만, 분석/실행/리스크/메모리/졸업은 기존 부품 재사용.
 
@@ -110,7 +110,7 @@
 
 ## 17. 3대 구현 결정 [마스터 확정]
 1. **paper 주문 = 별도 paper 원장(DB)**. LIVE(마스터 다이얼) 시에만 `l31`+kis-client. (l31엔 paper 플래그 없음.)
-2. **Hub 연결 = meeting-room 독립 loopback 서버(index.ts) + Hub `hub-proxy` 프록시**(route-registry 마운트 아님). 웹+WS 분리.
+2. **[v0.8 보정] 회의실 = 자체 HTTP 서버(node http, port 7791, 127.0.0.1 바인딩)** — 실측: `hub-proxy.ts`=Blue-Green 라우터(7780, 범용 프록시 아님)·:7787=Elixir(beam.smp) 서빙 → Hub 경유 폐기, 독립 서버 확정(원안의 loopback 방향 유지). 1차 통신=REST+3초 폴링(WS=후속). 웹=React UMD+htm **빌드리스**(레포에 빌드 체인 부재 실측 — vite 도입 회피, 기존 dashboard-html 정적 패턴과 정합). :7787 상호 링크 유지.
 3. **이종 모델 = 불(zeus)=Claude / 베어(athena)=OpenAI(현행)**. zeus.yaml `llm_routing.primary`를 claude로 변경.
 
 ## 18. 리스크 · 미해결

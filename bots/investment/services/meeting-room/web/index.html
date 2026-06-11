@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://unpkg.com; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:;">
+  <title>Luna Meeting Room</title>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+  <style>
+    :root {
+      --ink: #17211a;
+      --muted: #64705f;
+      --line: rgba(23, 33, 26, 0.14);
+      --paper: rgba(255, 252, 241, 0.86);
+      --panel: rgba(247, 242, 222, 0.76);
+      --sage: #486d4a;
+      --amber: #bc7a22;
+      --red: #9c4238;
+      --blue: #365f7a;
+      --shadow: 0 24px 70px rgba(51, 62, 38, 0.18);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Avenir Next", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      background:
+        radial-gradient(circle at 10% 10%, rgba(188, 122, 34, 0.24), transparent 30%),
+        radial-gradient(circle at 85% 12%, rgba(54, 95, 122, 0.22), transparent 26%),
+        linear-gradient(135deg, #f8f0dc 0%, #e5ecd9 52%, #dce8e7 100%);
+      min-height: 100vh;
+    }
+    button, input, select, textarea { font: inherit; }
+    button {
+      border: 0;
+      border-radius: 999px;
+      background: var(--ink);
+      color: #fffaf0;
+      padding: 10px 16px;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(23, 33, 26, 0.18);
+    }
+    button.secondary { background: rgba(23, 33, 26, 0.08); color: var(--ink); box-shadow: none; }
+    button.warn { background: var(--amber); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.55);
+      color: var(--ink);
+      padding: 10px 12px;
+    }
+    textarea { min-height: 120px; resize: vertical; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      font-family: "SF Mono", "Menlo", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .shell { padding: 28px; }
+    .hero {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+    .hero h1 {
+      margin: 0;
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: clamp(34px, 5vw, 62px);
+      letter-spacing: -0.05em;
+    }
+    .hero p { margin: 8px 0 0; color: var(--muted); max-width: 760px; }
+    .topline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.58);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tabs button { background: rgba(255,255,255,0.48); color: var(--ink); box-shadow: none; border: 1px solid var(--line); }
+    .tabs button.active { background: var(--ink); color: #fffaf0; }
+    .grid {
+      display: grid;
+      grid-template-columns: 280px minmax(360px, 1fr) 360px;
+      gap: 16px;
+    }
+    .ask-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+    .card {
+      background: var(--paper);
+      border: 1px solid rgba(255, 255, 255, 0.52);
+      border-radius: 26px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card h2 {
+      margin: 0;
+      padding: 18px 18px 10px;
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--muted);
+    }
+    .card-body { padding: 16px 18px 20px; }
+    .list { display: grid; gap: 10px; }
+    .meeting-item, .decision-card, .minute {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.42);
+    }
+    .meeting-item.active { border-color: var(--sage); background: rgba(224, 239, 207, 0.68); }
+    .meeting-title { font-weight: 700; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .minute { border-left: 5px solid var(--muted); }
+    .minute.data { border-left-color: var(--blue); }
+    .minute.analysis { border-left-color: var(--sage); }
+    .minute.grill { border-left-color: var(--amber); }
+    .minute.decision { border-left-color: var(--red); }
+    .catchup {
+      display: grid;
+      gap: 8px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(72, 109, 74, 0.13);
+      margin-bottom: 12px;
+    }
+    .form-row { display: grid; gap: 8px; margin-bottom: 12px; }
+    .inline { display: flex; gap: 8px; align-items: center; }
+    .inline > * { flex: 1; }
+    .check { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
+    .check input { width: auto; }
+    .error { color: var(--red); }
+    .answer {
+      border-radius: 22px;
+      padding: 16px;
+      background: rgba(23, 33, 26, 0.08);
+      min-height: 180px;
+    }
+    @media (max-width: 1080px) {
+      .grid, .ask-grid { grid-template-columns: 1fr; }
+      .hero { align-items: start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS investment.luna_meeting_decisions (
   agenda_key TEXT NOT NULL,
   decision   TEXT NOT NULL,
   grade      TEXT NOT NULL CHECK (grade IN ('a_rule', 'b_boundary', 'c_master')),
-  status     TEXT NOT NULL DEFAULT 'advisory' CHECK (status IN ('advisory', 'pending_master', 'confirmed')),
+  status     TEXT NOT NULL DEFAULT 'advisory' CHECK (status IN ('advisory', 'pending_master', 'confirmed', 'deferred')),
   due_at     TIMESTAMPTZ,
   evidence   JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
