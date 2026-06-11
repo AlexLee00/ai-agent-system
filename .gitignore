@@ -103,7 +103,7 @@ bots/investment/output/luna-kis-domestic-universe-cache.json
 bots/investment/output/luna-kis-overseas-universe-cache.json
 bots/investment/output/luna-registry-proposals.json
 bots/investment/output/luna-market-gate.json
-bots/investment/output/meeting-room/*.md
+bots/investment/output/meeting-room/
 bots/investment/output/reports/luna-final-closure-wave1-report.json
 bots/investment/output/reports/luna-7day-natural-checkpoint-*.json
 bots/investment/output/guardrails/

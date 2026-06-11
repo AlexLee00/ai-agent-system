@@ -3,15 +3,59 @@
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runMeetingSession } from '../services/meeting-room/server/orchestrator/meeting-session.ts';
+import {
+  isValidMeetingChair,
+  isValidMeetingType,
+  VALID_MEETING_CHAIRS,
+  VALID_MEETING_TYPES,
+} from '../services/meeting-room/config/meeting.config.ts';
+import { regenerateMeetingMinutesMarkdown } from '../services/meeting-room/server/minutes.ts';
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
 }
 
-function argValue(name: string, fallback: any = null) {
+function argValueFromArgv(argv: string[], name: string, fallback: any = null) {
   const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
+  const inline = argv.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const flagIndex = argv.indexOf(`--${name}`);
+  if (flagIndex >= 0) {
+    const next = argv[flagIndex + 1];
+    if (next && !next.startsWith('--')) return next;
+    return fallback;
+  }
+  return fallback;
+}
+
+function assertValidCliType(type: string) {
+  if (!isValidMeetingType(type)) {
+    throw new Error(`invalid meeting --type=${type}; expected one of ${VALID_MEETING_TYPES.join(',')}`);
+  }
+  return type;
+}
+
+function assertValidCliChair(chair: string) {
+  if (!isValidMeetingChair(chair)) {
+    throw new Error(`invalid meeting --chair=${chair}; expected one of ${VALID_MEETING_CHAIRS.join(',')}`);
+  }
+  return chair;
+}
+
+export function parseMeetingRoomCliArgs(argv: string[] = process.argv) {
+  const type = assertValidCliType(argValueFromArgv(argv, 'type', 'morning'));
+  const chair = assertValidCliChair(argValueFromArgv(argv, 'chair', 'luna'));
+  const regenerate = argValueFromArgv(argv, 'regenerate', null);
+  return {
+    type,
+    chair,
+    dryRun: argv.includes('--dry-run') || !argv.includes('--apply'),
+    apply: argv.includes('--apply'),
+    noLlm: argv.includes('--no-llm'),
+    outputPath: argValueFromArgv(argv, 'output', null),
+    regenerate,
+    forceInsufficientGrill: argv.includes('--force-insufficient-grill'),
+  };
 }
 
 function summarize(result: any) {
@@ -29,14 +73,24 @@ function summarize(result: any) {
 }
 
 export async function runRuntimeLunaMeetingRoom(options: any = {}) {
+  const cli = options.cliArgs || parseMeetingRoomCliArgs(process.argv);
+  const regenerate = options.regenerate ?? options.regenerateSessionId ?? cli.regenerate;
+  if (regenerate != null) {
+    return regenerateMeetingMinutesMarkdown(regenerate, {
+      queryFn: options.queryFn || options.deps?.queryFn,
+      outputPath: options.outputPath || cli.outputPath,
+      outputDir: options.outputDir,
+      preserveExisting: false,
+    });
+  }
   return runMeetingSession({
-    type: options.type || argValue('type', 'morning'),
-    chair: options.chair || argValue('chair', 'luna'),
-    dryRun: options.dryRun ?? (hasFlag('dry-run') || !hasFlag('apply')),
-    apply: options.apply ?? hasFlag('apply'),
-    noLlm: options.noLlm ?? hasFlag('no-llm'),
-    outputPath: options.outputPath || argValue('output', null),
-    forceInsufficientGrill: options.forceInsufficientGrill ?? hasFlag('force-insufficient-grill'),
+    type: options.type || cli.type,
+    chair: options.chair || cli.chair,
+    dryRun: options.dryRun ?? cli.dryRun,
+    apply: options.apply ?? cli.apply,
+    noLlm: options.noLlm ?? cli.noLlm,
+    outputPath: options.outputPath || cli.outputPath,
+    forceInsufficientGrill: options.forceInsufficientGrill ?? cli.forceInsufficientGrill,
   }, options.deps || {});
 }
 
@@ -52,5 +106,6 @@ if (isDirectExecution(import.meta.url)) {
 }
 
 export default {
+  parseMeetingRoomCliArgs,
   runRuntimeLunaMeetingRoom,
 };

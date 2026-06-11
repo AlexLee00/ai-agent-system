@@ -3,6 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { MEETING_ROOM_DEFAULTS } from '../config/meeting.config.ts';
+import * as db from '../../../shared/db.ts';
 
 function safeText(value: any) {
   return String(value ?? '').trim();
@@ -16,6 +17,12 @@ function roleLabel(role: string) {
     decision: '결정',
     system: '시스템',
   }[role] || role;
+}
+
+function toIsoString(value: any) {
+  if (!value) return value;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
 }
 
 export function renderMeetingMinutesMarkdown(result: any = {}) {
@@ -61,18 +68,149 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
   return `${lines.join('\n')}\n`;
 }
 
-export async function writeMeetingMinutesMarkdown(result: any = {}, outputPath?: string | null) {
+function meetingDate(result: any = {}) {
   const session = result.session || {};
-  const date = String(result.startedAt || session.startedAt || new Date().toISOString()).slice(0, 10);
-  const type = session.type || result.type || 'morning';
-  const target = path.resolve(outputPath || path.join(MEETING_ROOM_DEFAULTS.outputDir, `${date}-${type}.md`));
+  return String(result.startedAt || session.startedAt || session.started_at || new Date().toISOString()).slice(0, 10);
+}
+
+function meetingType(result: any = {}) {
+  const session = result.session || {};
+  return String(session.type || result.type || 'morning');
+}
+
+function applyRevisionPath(basePath: string) {
+  if (!fs.existsSync(basePath)) return basePath;
+  const parsed = path.parse(basePath);
+  for (let revision = 2; revision < 1000; revision += 1) {
+    const candidate = path.join(parsed.dir, `${parsed.name}-r${revision}${parsed.ext}`);
+    if (!fs.existsSync(candidate)) return candidate;
+  }
+  throw new Error(`meeting_minutes_revision_exhausted: ${basePath}`);
+}
+
+export function resolveMeetingMinutesMarkdownPath(result: any = {}, outputPath?: string | null, options: any = {}) {
+  if (outputPath) return path.resolve(outputPath);
+  const outputDir = path.resolve(options.outputDir || MEETING_ROOM_DEFAULTS.outputDir);
+  const date = meetingDate(result);
+  const type = meetingType(result);
+  const isDryRun = result.dryRun === true;
+  const baseName = `${date}-${type}${isDryRun ? '-dryrun' : ''}.md`;
+  const basePath = path.join(outputDir, baseName);
+  if (isDryRun) return basePath;
+  if (options.preserveExisting === false) return basePath;
+  return applyRevisionPath(basePath);
+}
+
+function normalizeSession(row: any = {}) {
+  return {
+    id: row.id,
+    type: row.type,
+    status: row.status,
+    chair: row.chair,
+    segments: row.segments || [],
+    startedAt: toIsoString(row.started_at || row.startedAt),
+    closedAt: toIsoString(row.closed_at || row.closedAt),
+    summary: row.summary || '',
+  };
+}
+
+function normalizeMinute(row: any = {}) {
+  return {
+    id: row.id,
+    sessionId: row.session_id || row.sessionId,
+    seq: row.seq,
+    agendaKey: row.agenda_key || row.agendaKey,
+    speaker: row.speaker,
+    role: row.role,
+    content: row.content,
+    meta: row.meta || {},
+    createdAt: toIsoString(row.created_at || row.createdAt),
+  };
+}
+
+function normalizeDecision(row: any = {}) {
+  return {
+    id: row.id,
+    sessionId: row.session_id || row.sessionId,
+    agendaKey: row.agenda_key || row.agendaKey,
+    decision: row.decision,
+    grade: row.grade,
+    status: row.status,
+    dueAt: toIsoString(row.due_at || row.dueAt),
+    evidence: row.evidence || {},
+    createdAt: toIsoString(row.created_at || row.createdAt),
+  };
+}
+
+export async function loadMeetingMinutesResult(sessionId: any, options: any = {}) {
+  const queryFn = options.queryFn || db.query;
+  const sessionRows = await queryFn(
+    `SELECT id, type, status, chair, segments, started_at, closed_at, summary
+       FROM luna_meeting_sessions
+      WHERE id = $1`,
+    [sessionId],
+  );
+  const session = normalizeSession(sessionRows?.[0]);
+  if (!session.id) throw new Error(`luna_meeting_session_not_found: ${sessionId}`);
+  const minuteRows = await queryFn(
+    `SELECT id, session_id, seq, agenda_key, speaker, role, content, meta, created_at
+       FROM luna_meeting_minutes
+      WHERE session_id = $1
+      ORDER BY seq ASC`,
+    [session.id],
+  );
+  const decisionRows = await queryFn(
+    `SELECT id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at
+       FROM luna_meeting_decisions
+      WHERE session_id = $1
+      ORDER BY created_at ASC, id ASC`,
+    [session.id],
+  );
+  return {
+    ok: true,
+    type: session.type,
+    dryRun: false,
+    apply: true,
+    startedAt: session.startedAt,
+    closedAt: session.closedAt,
+    session,
+    planNote: {
+      briefMarkdown: [
+        `DB 기준 회의록 재생성: session #${session.id}`,
+        `summary: ${session.summary || 'n/a'}`,
+        `segments: ${JSON.stringify(session.segments || [])}`,
+      ].join('\n'),
+    },
+    minutes: minuteRows.map(normalizeMinute),
+    decisions: decisionRows.map(normalizeDecision),
+    llmCalls: minuteRows.filter((row: any) => row.role === 'analysis' && row.meta?.skipped !== true).length,
+    skippedLlmCalls: minuteRows.filter((row: any) => row.meta?.skipped === true).length,
+    shadowOnly: true,
+    regenerated: true,
+  };
+}
+
+export async function writeMeetingMinutesMarkdown(result: any = {}, outputPath?: string | null, options: any = {}) {
+  const target = resolveMeetingMinutesMarkdownPath(result, outputPath, options);
   const markdown = renderMeetingMinutesMarkdown(result);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, markdown);
   return { path: target, markdown };
 }
 
+export async function regenerateMeetingMinutesMarkdown(sessionId: any, options: any = {}) {
+  const result = await loadMeetingMinutesResult(sessionId, options);
+  const written = await writeMeetingMinutesMarkdown(result, options.outputPath || null, {
+    outputDir: options.outputDir,
+    preserveExisting: options.preserveExisting ?? false,
+  });
+  return { ...result, markdownPath: written.path, markdown: written.markdown };
+}
+
 export default {
   renderMeetingMinutesMarkdown,
+  resolveMeetingMinutesMarkdownPath,
+  loadMeetingMinutesResult,
   writeMeetingMinutesMarkdown,
+  regenerateMeetingMinutesMarkdown,
 };

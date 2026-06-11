@@ -23,16 +23,27 @@ export const MEETING_ROOM_DEFAULTS = Object.freeze({
   ]),
 });
 
+export const VALID_MEETING_TYPES = Object.freeze(['morning', 'domestic_debrief', 'us_premarket', 'weekly', 'adhoc']);
+export const VALID_MEETING_CHAIRS = Object.freeze(['luna', 'master']);
+
+export function isValidMeetingType(value: any) {
+  return VALID_MEETING_TYPES.includes(String(value || '').trim());
+}
+
+export function isValidMeetingChair(value: any) {
+  return VALID_MEETING_CHAIRS.includes(String(value || '').trim());
+}
+
 export function normalizeMeetingType(value: any = MEETING_ROOM_DEFAULTS.type) {
   const raw = String(value || MEETING_ROOM_DEFAULTS.type).trim();
-  return ['morning', 'domestic_debrief', 'us_premarket', 'weekly', 'adhoc'].includes(raw)
+  return isValidMeetingType(raw)
     ? raw
     : MEETING_ROOM_DEFAULTS.type;
 }
 
 export function normalizeChair(value: any = MEETING_ROOM_DEFAULTS.chair) {
   const raw = String(value || MEETING_ROOM_DEFAULTS.chair).trim();
-  return raw === 'master' ? 'master' : 'luna';
+  return isValidMeetingChair(raw) ? raw : MEETING_ROOM_DEFAULTS.chair;
 }
 
 export function meetingRoomConfig(overrides: any = {}) {
@@ -49,7 +60,11 @@ export function meetingRoomConfig(overrides: any = {}) {
 
 export default {
   MEETING_ROOM_DEFAULTS,
+  VALID_MEETING_TYPES,
+  VALID_MEETING_CHAIRS,
   meetingRoomConfig,
+  isValidMeetingType,
+  isValidMeetingChair,
   normalizeMeetingType,
   normalizeChair,
 };

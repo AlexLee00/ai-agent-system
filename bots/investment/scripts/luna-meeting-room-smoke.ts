@@ -9,6 +9,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadInvestmentSkills } from '../shared/skill-registry.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
+import { parseMeetingRoomCliArgs } from './runtime-luna-meeting-room.ts';
 import { buildMeetingPlanNote, buildMarketSegments } from '../services/meeting-room/server/adapters/stack-adapter.ts';
 import {
   buildMeetingAgendasForType,
@@ -16,6 +17,10 @@ import {
   runMeetingSession,
 } from '../services/meeting-room/server/orchestrator/meeting-session.ts';
 import { applyMeetingDecisionAction } from '../services/meeting-room/server/meeting-decision-actions.ts';
+import {
+  regenerateMeetingMinutesMarkdown,
+  writeMeetingMinutesMarkdown,
+} from '../services/meeting-room/server/minutes.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO_ROOT = path.resolve(INVESTMENT_ROOT, '../..');
@@ -26,6 +31,12 @@ const ROLLBACK_SENTINEL = 'luna_meeting_room_smoke_rollback';
 function outputPath(name: string) {
   fs.mkdirSync(SMOKE_OUTPUT_DIR, { recursive: true });
   return path.join(SMOKE_OUTPUT_DIR, `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}.md`);
+}
+
+function tempOutputDir(name: string) {
+  const dir = path.join(SMOKE_OUTPUT_DIR, `${name}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 function fixturePlanNote() {
@@ -170,6 +181,37 @@ async function countMeetingRows(queryFn: any) {
 }
 
 async function main() {
+  const cliEquals = parseMeetingRoomCliArgs(['node', 'runtime', '--type=weekly', '--chair=master', '--output=/tmp/luna-weekly.md', '--apply']);
+  const cliSpace = parseMeetingRoomCliArgs(['node', 'runtime', '--type', 'weekly', '--chair', 'master', '--output', '/tmp/luna-weekly.md', '--apply']);
+  assert.deepEqual(cliSpace, cliEquals);
+  assert.throws(
+    () => parseMeetingRoomCliArgs(['node', 'runtime', '--type', 'bad_type']),
+    /invalid meeting --type=bad_type/,
+  );
+
+  const filePolicyDir = tempOutputDir('smoke-file-policy');
+  const officialPath = path.join(filePolicyDir, '2026-06-11-morning.md');
+  fs.writeFileSync(officialPath, 'official meeting minutes\n');
+  const filePolicyResult = {
+    ok: true,
+    type: 'morning',
+    dryRun: true,
+    startedAt: '2026-06-11T00:00:00.000Z',
+    session: { id: 'dry-run', type: 'morning', status: 'closed', chair: 'luna', startedAt: '2026-06-11T00:00:00.000Z' },
+    planNote: { briefMarkdown: 'fixture' },
+    minutes: [],
+    decisions: [],
+    llmCalls: 0,
+    skippedLlmCalls: 0,
+  };
+  const dryRunWritten = await writeMeetingMinutesMarkdown(filePolicyResult, null, { outputDir: filePolicyDir });
+  assert.equal(path.basename(dryRunWritten.path), '2026-06-11-morning-dryrun.md');
+  assert.equal(fs.readFileSync(officialPath, 'utf8'), 'official meeting minutes\n');
+  const applyWrittenR2 = await writeMeetingMinutesMarkdown({ ...filePolicyResult, dryRun: false, apply: true }, null, { outputDir: filePolicyDir });
+  const applyWrittenR3 = await writeMeetingMinutesMarkdown({ ...filePolicyResult, dryRun: false, apply: true }, null, { outputDir: filePolicyDir });
+  assert.equal(path.basename(applyWrittenR2.path), '2026-06-11-morning-r2.md');
+  assert.equal(path.basename(applyWrittenR3.path), '2026-06-11-morning-r3.md');
+
   const plan = await buildMeetingPlanNote({
     type: 'morning',
     now: '2026-06-11T00:00:00.000Z',
@@ -361,6 +403,21 @@ async function main() {
       [applied.session.id],
     );
     assert.equal(auditRows.length >= 1, true);
+
+    const regenerateDir = tempOutputDir('smoke-regenerate');
+    const regenerated = await regenerateMeetingMinutesMarkdown(applied.session.id, {
+      queryFn: tx.query,
+      outputDir: regenerateDir,
+    });
+    const dbMinuteRows = await tx.query(
+      `SELECT COUNT(*)::int AS count FROM luna_meeting_minutes WHERE session_id = $1`,
+      [applied.session.id],
+    );
+    assert.equal(regenerated.ok, true);
+    assert.equal(regenerated.minutes.length, Number(dbMinuteRows?.[0]?.count || 0));
+    assert.equal(path.basename(regenerated.markdownPath), `${String(applied.startedAt).slice(0, 10)}-morning.md`);
+    assert.ok(regenerated.markdown.includes(`session #${applied.session.id}`));
+    assert.ok(regenerated.markdown.includes('## Minutes'));
     return { before, after, appliedRows };
   });
 
@@ -388,6 +445,9 @@ async function main() {
       premarket: true,
       weekly: true,
       telegramDecisionAction: true,
+      cliArgParsing: true,
+      markdownFilePolicy: true,
+      regenerateMarkdown: true,
     },
   };
 }
