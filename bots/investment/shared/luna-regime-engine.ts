@@ -233,6 +233,7 @@ async function fallbackRegimeState(market: string, options: any = {}, deps: any 
 export async function computeRegimeState(market: any = 'crypto', options: any = {}, deps: any = {}) {
   const normalizedMarket = normalizeMarket(market);
   const computedAt = new Date(options.now || Date.now()).toISOString();
+  const persistHistory = options.persist !== false && options.persistHistory !== false;
   const params = options.params || await loadRegimeEngineParameters(options, deps);
   const marketData = Array.isArray(options.bars)
     ? { bars: options.bars, source: options.marketDataSource || 'provided_bars', error: null }
@@ -265,6 +266,7 @@ export async function computeRegimeState(market: any = 'crypto', options: any = 
         source: 'hmm',
         reason: hmm.status || 'hmm_regime_shadow_ready',
         computedAt,
+        persistHistory,
         marketData: {
           source: marketData.source,
           bars: bars.length,
@@ -283,6 +285,7 @@ export async function computeRegimeState(market: any = 'crypto', options: any = 
     const previousRows = await loadPreviousRegimeRows(normalizedMarket, params, options, deps);
     state.transitionAlert = buildTransitionAlert(state, previousRows, params);
   }
+  state.persistHistory = persistHistory;
   return state;
 }
 
@@ -309,6 +312,9 @@ export async function ensureRegimeCalibrationSchema(runFn = db.run) {
 }
 
 export async function insertRegimeStateHistory(state: any, runFn = db.run) {
+  if (state?.persist === false || state?.persistHistory === false) {
+    return { rows: [], skipped: true, reason: 'persist_disabled' };
+  }
   await ensureRegimeEngineHistorySchema(runFn);
   return runFn(
     `INSERT INTO hmm_regime_log

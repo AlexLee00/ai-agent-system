@@ -335,12 +335,56 @@ export async function insertCircuitLock(row: any, runFn = db.run) {
   );
 }
 
-export async function insertCircuitLocks(rows = [], runFn = db.run) {
+export async function hasActiveDuplicateCircuitLock(row: any, queryFn = db.query, options: any = {}) {
+  if (row?.locked !== true) return false;
+  const evaluatedAt = new Date(row.evaluatedAt || options.now || Date.now()).toISOString();
+  try {
+    const rows = await queryFn(
+      `SELECT id
+         FROM luna_circuit_locks
+        WHERE market = $1
+          AND symbol IS NOT DISTINCT FROM $2
+          AND side IS NOT DISTINCT FROM $3
+          AND level = $4
+          AND circuit = $5
+          AND reason IS NOT DISTINCT FROM $6
+          AND locked IS TRUE
+          AND shadow_only IS TRUE
+          AND (lock_until IS NULL OR lock_until > $7)
+        ORDER BY evaluated_at DESC
+        LIMIT 1`,
+      [
+        normalizePhaseAMarket(row.market),
+        row.symbol || null,
+        row.side || null,
+        row.level,
+        row.circuit,
+        row.reason || null,
+        evaluatedAt,
+      ],
+    );
+    return rows?.length > 0;
+  } catch {
+    // Duplicate suppression is best-effort; schema/search-path issues must not block shadow writes.
+    return false;
+  }
+}
+
+export async function insertCircuitLocks(rows = [], runFn = db.run, options: any = {}) {
   const inserted = [];
+  let skippedDuplicates = 0;
+  const skipActiveDuplicates = options.skipActiveDuplicates === true;
+  const queryFn = options.queryFn || db.query;
   for (const row of rows || []) {
+    if (skipActiveDuplicates && await hasActiveDuplicateCircuitLock(row, queryFn, options)) {
+      skippedDuplicates += 1;
+      inserted.push(null);
+      continue;
+    }
     const result = await insertCircuitLock(row, runFn);
     inserted.push(result?.rows?.[0]?.id || null);
   }
+  inserted.skippedDuplicates = skippedDuplicates;
   return inserted;
 }
 
@@ -357,6 +401,7 @@ export const _testOnly = {
   buildStoplossGuardLocks,
   buildCooldownLocks,
   buildLowProfitLocks,
+  hasActiveDuplicateCircuitLock,
 };
 
 export default {

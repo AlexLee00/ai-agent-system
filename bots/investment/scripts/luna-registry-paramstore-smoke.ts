@@ -10,7 +10,7 @@ import {
   setParameter,
 } from '../shared/luna-parameter-store.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
-import { attachSampleCounts, evaluateRegistryRows } from './runtime-luna-registry-evaluator.ts';
+import { attachSampleCounts, evaluateRegistryRows, runLunaRegistryEvaluator } from './runtime-luna-registry-evaluator.ts';
 import { evaluateLunaAutonomousCommand } from '../shared/luna-autonomous-command-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -138,6 +138,45 @@ async function main() {
   assert.ok(evaluation.proposals.some((item) => item.type === 'stalled_report'));
   assert.ok(evaluation.proposals.some((item) => item.type === 'promotion_proposal'));
 
+  let calibrationCalled = 0;
+  const evaluatorWithCalibration = await runLunaRegistryEvaluator({
+    dryRun: true,
+    rows: [],
+  }, {
+    runLunaRegimeCalibration: async (options: any) => {
+      calibrationCalled += 1;
+      assert.equal(options.dryRun, true);
+      assert.equal(options.write, false);
+      return { ok: true, dryRun: true, write: false, rows: [{ market: 'crypto' }], inserted: [] };
+    },
+  });
+  assert.equal(calibrationCalled, 1);
+  assert.equal(evaluatorWithCalibration.calibration.ok, true);
+  assert.equal(evaluatorWithCalibration.calibration.rows, 1);
+
+  const evaluatorSkipCalibration = await runLunaRegistryEvaluator({
+    dryRun: true,
+    rows: [],
+    skipCalibration: true,
+  }, {
+    runLunaRegimeCalibration: async () => {
+      throw new Error('should_not_run');
+    },
+  });
+  assert.equal(evaluatorSkipCalibration.calibration.skipped, true);
+
+  const evaluatorCalibrationFailure = await runLunaRegistryEvaluator({
+    dryRun: true,
+    rows: [{ component: 'fixture', sample_count: 0, status: 'active', registered_at: new Date().toISOString() }],
+  }, {
+    runLunaRegimeCalibration: async () => {
+      throw new Error('fixture_calibration_down');
+    },
+  });
+  assert.equal(evaluatorCalibrationFailure.calibration.ok, false);
+  assert.equal(evaluatorCalibrationFailure.calibration.error, 'fixture_calibration_down');
+  assert.equal(evaluatorCalibrationFailure.ok, true);
+
   assert.equal(evaluateLunaAutonomousCommand('launchctl setenv TEST true').blocked, true);
 
   return {
@@ -157,6 +196,9 @@ async function main() {
       proposals: evaluation.proposals.length,
       notifyNow: evaluation.notifyNow.length,
       deferred: evaluation.deferred.length,
+      calibrationPiggyback: true,
+      calibrationSkip: true,
+      calibrationFailOpen: true,
     },
   };
 }

@@ -119,9 +119,13 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   if (!Array.isArray(options.strategySignals)) {
     try {
       const computeStrategies = deps.computeStrategyFamilySignals || computeStrategyFamilySignals;
+      const regimeByMarket = new Map((regimes || []).map((state) => [state.market, state]));
       const strategyResult = await computeStrategies({
         ...options,
         regimes,
+        // Strategy-family snapshots must reuse the market-level regime state.
+        // Otherwise a large watchlist can recompute per symbol and distort regime operational logs.
+        regimeByMarket,
         queryFn: deps.queryFn || options.queryFn || db.query,
       }, deps);
       strategySignals = strategyResult.signals || [];
@@ -165,6 +169,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const strategyInserted = [];
   const preflightInserted = [];
   const circuitInserted = [];
+  let circuitSkippedDuplicates = 0;
 
   if (writeHistory) {
     for (const gate of gates) {
@@ -198,8 +203,13 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
       preflightError = error?.message || String(error);
     }
     try {
-      const result = await insertCircuitLocks(circuitLocks, deps.runFn || db.run);
+      const result = await insertCircuitLocks(circuitLocks, deps.runFn || db.run, {
+        skipActiveDuplicates: true,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+        now: options.now,
+      });
       circuitInserted.push(...result);
+      circuitSkippedDuplicates = Number(result?.skippedDuplicates || 0);
     } catch (error) {
       circuitError = error?.message || String(error);
     }
@@ -218,7 +228,8 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const strategyLine = summarizeStrategyFamilySignals(strategySignals);
   const preflightSummary = summarizeEntryPreflightEvaluations(preflightEvaluations);
   const circuitSummary = summarizeCircuitLocks(circuitLocks);
-  const preflightCircuitLine = `${preflightSummary.line} / ${circuitSummary.line}`;
+  const circuitDuplicateSuffix = circuitSkippedDuplicates > 0 ? `·중복스킵 ${circuitSkippedDuplicates}` : '';
+  const preflightCircuitLine = `${preflightSummary.line} / ${circuitSummary.line}${circuitDuplicateSuffix}`;
 
   const payload = {
     ok: gateError == null || regimeError == null || strategyError == null || preflightError == null || circuitError == null,
@@ -230,6 +241,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     strategyInserted,
     preflightInserted,
     circuitInserted,
+    circuitSkippedDuplicates,
     computedAt: new Date().toISOString(),
     summary: [gateLine, regimeLine, strategyLine, preflightCircuitLine].join('\n'),
     gateError,

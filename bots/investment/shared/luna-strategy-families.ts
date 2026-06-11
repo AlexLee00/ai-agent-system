@@ -535,6 +535,7 @@ export async function evaluateStrategyFamiliesForSymbol(input: any = {}, deps: a
     bars,
     previousRows: input.previousRegimeRows || [],
     evaluateTransitionAlert: false,
+    persist: false,
   }, deps);
   return [
     attachRegimeToSignal(evaluateTurtleBreakout(bars, {
@@ -618,7 +619,13 @@ export async function computeStrategyFamilySignals(options: any = {}, deps: any 
   const universe = await buildStrategyFamilyUniverse(options, deps);
   const signals = [];
   const errors = [];
-  const regimesByMarket = new Map((options.regimes || []).map((state) => [normalizePhaseAMarket(state.market), state]));
+  const providedRegimeMap = options.regimeByMarket instanceof Map
+    ? options.regimeByMarket
+    : new Map(Object.entries(options.regimeByMarket || {}));
+  const regimesByMarket = new Map([
+    ...(options.regimes || []).map((state) => [normalizePhaseAMarket(state.market), state]),
+    ...Array.from(providedRegimeMap.entries()).map(([market, state]) => [normalizePhaseAMarket(market), state]),
+  ]);
   for (const item of universe) {
     try {
       const results = await evaluateStrategyFamiliesForSymbol({

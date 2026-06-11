@@ -76,6 +76,16 @@ async function main() {
   const probabilitySum = Object.values(hmmState.probabilities).reduce((sum, value) => sum + Number(value), 0);
   assert.ok(Math.abs(probabilitySum - 1) < 0.00001);
 
+  const nonPersistentState = await computeRegimeState('crypto', {
+    bars: fixtureBars(),
+    previousRows: [],
+    persist: false,
+  }, {
+    detectHMMRegime: hmmStub('bull', { bull: 0.7, bear: 0.1, sideways: 0.1, volatile: 0.1 }),
+  });
+  assert.equal(nonPersistentState.persistHistory, false);
+  assert.equal((await insertRegimeStateHistory(nonPersistentState)).skipped, true);
+
   const fallbackState = await computeRegimeState('crypto', {
     bars: [],
     fetchBars: false,
@@ -182,6 +192,36 @@ async function main() {
       metadata: { smoke: true },
     });
     await insertRegimeCalibration(calibration, tx.run);
+    const beforeRunner = await tx.query(
+      `SELECT COUNT(*)::int AS count
+         FROM hmm_regime_log
+        WHERE symbol = '__market__'`,
+    );
+    const runnerStates = ['domestic', 'overseas', 'crypto'].map((market) => ({
+      ...state,
+      market,
+      transitionAlert: null,
+      persistHistory: true,
+    }));
+    await runLunaMarketGate({
+      dryRun: false,
+      writeOutput: false,
+      gates: [],
+      regimes: runnerStates,
+      strategySignals: [],
+      preflightEvaluations: [],
+      circuitLocks: [],
+      publishRegimeAlerts: false,
+    }, {
+      runFn: tx.run,
+      queryFn: tx.query,
+      publishAlert: async () => true,
+    });
+    const afterRunner = await tx.query(
+      `SELECT COUNT(*)::int AS count
+         FROM hmm_regime_log
+        WHERE symbol = '__market__'`,
+    );
     const logs = await tx.query(
       `SELECT COUNT(*)::int AS count
          FROM hmm_regime_log
@@ -199,10 +239,16 @@ async function main() {
     );
     assert.ok(Number(logs?.[0]?.count || 0) >= 1);
     assert.ok(Number(rows?.[0]?.count || 0) >= 1);
-    return { historyRows: Number(logs?.[0]?.count || 0), calibrationRows: Number(rows?.[0]?.count || 0) };
+    assert.equal(Number(afterRunner?.[0]?.count || 0) - Number(beforeRunner?.[0]?.count || 0), 3);
+    return {
+      historyRows: Number(logs?.[0]?.count || 0),
+      calibrationRows: Number(rows?.[0]?.count || 0),
+      marketGateRegimeRows: 3,
+    };
   });
   assert.ok(dbResult.historyRows >= 1);
   assert.ok(dbResult.calibrationRows >= 1);
+  assert.equal(dbResult.marketGateRegimeRows, 3);
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 30);
@@ -215,6 +261,7 @@ async function main() {
     scenarios: {
       hmmProbabilitySum: Number(probabilitySum.toFixed(6)),
       fallbackSource: fallbackState.source,
+      nonPersistentInsertSkipped: true,
       transitionAlert: changed.transitionAlert?.type,
       stableAlert: stable.transitionAlert,
       cooldown: cooldown.suppressed[0]?.suppressedReason,
@@ -223,6 +270,7 @@ async function main() {
       labels: ['bull', 'bear', 'sideways', 'latest_day_bear'],
       alertPublishFailSafe: alertFailure.alerts[0]?.publishError,
       marketGateIndependentFailure: gateFailure.gateError,
+      marketGateRegimeRows: dbResult.marketGateRegimeRows,
       dbRollback: true,
       registrySeedCount: seedDryRun.seeded,
     },

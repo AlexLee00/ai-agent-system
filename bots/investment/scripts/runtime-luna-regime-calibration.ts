@@ -17,7 +17,7 @@ import {
   labelRealizedRegimeFromBars,
 } from '../shared/luna-regime-engine.ts';
 
-const CONFIRM_TOKEN = 'luna-regime-calibration-shadow';
+export const LUNA_REGIME_CALIBRATION_CONFIRM = 'luna-regime-calibration-shadow';
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
@@ -66,7 +66,7 @@ function asOfDateFromBars(bars = []) {
 export async function runLunaRegimeCalibration(options: any = {}, deps: any = {}) {
   const markets = parseMarkets(options.markets);
   const dryRun = options.dryRun !== false;
-  const write = options.write === true && options.confirm === CONFIRM_TOKEN && !dryRun;
+  const write = options.write === true && options.confirm === LUNA_REGIME_CALIBRATION_CONFIRM && !dryRun;
   const queryFn = deps.queryFn || db.query;
   const runFn = deps.runFn || db.run;
   if (write) await ensureRegimeCalibrationSchema(runFn);

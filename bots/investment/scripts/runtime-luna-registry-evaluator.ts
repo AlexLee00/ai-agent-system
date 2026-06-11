@@ -7,6 +7,10 @@ import { fileURLToPath } from 'url';
 import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import {
+  LUNA_REGIME_CALIBRATION_CONFIRM,
+  runLunaRegimeCalibration,
+} from './runtime-luna-regime-calibration.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
@@ -209,6 +213,37 @@ async function publishProposals(proposals: any[] = [], deps: any = {}) {
   return results;
 }
 
+async function runCalibrationBeforeEvaluation(options: any = {}, deps: any = {}) {
+  if (options.skipCalibration === true) {
+    return { ok: true, skipped: true, reason: 'skip_calibration_flag' };
+  }
+  try {
+    const runner = deps.runLunaRegimeCalibration || runLunaRegimeCalibration;
+    const dryRun = options.dryRun === true || options.apply !== true;
+    const result = await runner({
+      dryRun,
+      write: options.apply === true && !dryRun,
+      confirm: options.apply === true && !dryRun ? LUNA_REGIME_CALIBRATION_CONFIRM : null,
+      markets: options.calibrationMarkets,
+      now: options.now,
+    }, deps);
+    return {
+      ok: result?.ok !== false,
+      skipped: false,
+      dryRun: result?.dryRun,
+      write: result?.write,
+      rows: Array.isArray(result?.rows) ? result.rows.length : 0,
+      inserted: Array.isArray(result?.inserted) ? result.inserted : [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      error: error?.message || String(error),
+    };
+  }
+}
+
 export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -217,6 +252,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
     throw new Error(`runtime-luna-registry-evaluator requires --confirm=${LUNA_REGISTRY_EVALUATOR_CONFIRM}`);
   }
 
+  const calibration = await runCalibrationBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const rows = options.rows || await loadRegistryRows(deps.queryFn || db.query);
   const rowsWithSamples = await attachSampleCounts(rows, options, deps);
   const result = evaluateRegistryRows(rowsWithSamples, {
@@ -236,6 +272,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
     ...result,
     dryRun,
     apply,
+    calibration,
     outputPath,
     notificationsAttempted: notifications.length,
     liveMutation: false,
@@ -251,6 +288,8 @@ if (isDirectExecution(import.meta.url)) {
       apply: hasFlag('apply'),
       confirm: argValue('confirm', ''),
       proposalLimit: Number(argValue('proposal-limit', DEFAULT_PROPOSAL_LIMIT)),
+      skipCalibration: hasFlag('skip-calibration'),
+      calibrationMarkets: argValue('calibration-markets'),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: '❌ runtime-luna-registry-evaluator 실패:',

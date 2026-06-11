@@ -317,6 +317,20 @@ async function dbRollbackScenario(preflightResult: any, lock: any) {
   const txResult = await withRollback(async (tx: any) => {
     const preflightRows = await insertEntryPreflightLogs([{ ...preflightResult, evaluatedAt: stamp }], tx.run);
     const lockRows = await insertCircuitLocks([{ ...lock, evaluatedAt: stamp }], tx.run);
+    const duplicateRows = await insertCircuitLocks([{ ...lock, evaluatedAt: stamp }], tx.run, {
+      skipActiveDuplicates: true,
+      queryFn: tx.query,
+      now: stamp,
+    });
+    const newSymbolRows = await insertCircuitLocks([{
+      ...lock,
+      symbol: `${lock.symbol || 'BTC/USDT'}-SMOKE`,
+      evaluatedAt: stamp,
+    }], tx.run, {
+      skipActiveDuplicates: true,
+      queryFn: tx.query,
+      now: stamp,
+    });
     const preflightCount = await tx.query(
       `SELECT COUNT(*)::int AS count FROM luna_entry_preflight_log WHERE evaluated_at = $1`,
       [stamp],
@@ -326,11 +340,17 @@ async function dbRollbackScenario(preflightResult: any, lock: any) {
       [stamp],
     );
     assert.equal(Number(preflightCount?.[0]?.count || 0), 1);
-    assert.equal(Number(circuitCount?.[0]?.count || 0), 1);
-    return { preflightRows, lockRows };
+    assert.equal(Number(circuitCount?.[0]?.count || 0), 2);
+    assert.equal(lockRows.filter(Boolean).length, 1);
+    assert.equal(duplicateRows.filter(Boolean).length, 0);
+    assert.equal(duplicateRows.skippedDuplicates, 1);
+    assert.equal(newSymbolRows.filter(Boolean).length, 1);
+    return { preflightRows, lockRows, duplicateRows, newSymbolRows };
   });
   assert.equal(txResult.preflightRows.length, 1);
   assert.equal(txResult.lockRows.length, 1);
+  assert.equal(txResult.duplicateRows.skippedDuplicates, 1);
+  assert.equal(txResult.newSymbolRows.filter(Boolean).length, 1);
   const afterPreflight = await db.query(
     `SELECT COUNT(*)::int AS count FROM luna_entry_preflight_log WHERE evaluated_at = $1`,
     [stamp],
@@ -403,6 +423,7 @@ async function main() {
       dbRollback,
       runnerIndependentFailure,
       registrySeedCount: seedDryRun.seeded,
+      circuitDuplicateSuppression: true,
       weakSignalGateLocation: 'bots/investment/team/luna.ts: binance 0.22/0.03, non-binance 0.32/0.08',
       tradeHistorySource: 'investment.trade_journal',
     },
