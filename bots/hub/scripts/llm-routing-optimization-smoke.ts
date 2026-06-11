@@ -79,8 +79,8 @@ for (const { selectorKey, agentName } of [
   { selectorKey: 'sigma.agent_policy', agentName: 'mapek.monitor' },
 ]) {
   const chain = chainFor(selectorKey, { agentName });
-  assert.equal(providerOf(chain[0]), 'groq', `${selectorKey}/${agentName} must use Groq primary to avoid OpenAI OAuth pressure`);
-  assert(chain.some((entry) => providerOf(entry) === 'openai-oauth'), `${selectorKey}/${agentName} must retain OpenAI OAuth fallback`);
+  assert.equal(providerOf(chain[0]), 'openai-oauth', `${selectorKey}/${agentName} must use OpenAI primary to avoid Groq pool exhaustion`);
+  assert(chain.some((entry) => providerOf(entry) === 'groq'), `${selectorKey}/${agentName} must retain Groq as a bounded fallback`);
   assert(!chain.some(isGemini), `${selectorKey}/${agentName} must not fall back to Gemini`);
 }
 
