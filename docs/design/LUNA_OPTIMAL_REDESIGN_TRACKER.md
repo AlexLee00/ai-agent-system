@@ -30,13 +30,13 @@
 - **P0-5** 매도 후 자본 재평가 훅(✅) — `position-closeout-engine.ts` `finalizeCloseout`(296~)에서 capitalSnapshot 무효화→재계산(capital-manager buyable 재산출) · 코덱스 · 검증: 매도→같은 사이클 buyable 갱신(하드) — ✅ 완료
 
 ## P1 — 코어 골격 + 제안 인프라 [shadow]
-- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store`·governance 통합·break-glass[v1.3]) — **CODEX 작성 완료(2026-06-18): docs/codex/CODEX_LUNA_P1_REGISTRY_PARAMSTORE.md(P1-7 가드 포함)** — 코덱스 실행 대기 — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
+- **P1-1** C15 레지스트리+제안서 생성기+**C17 파라미터 스토어**(`luna_parameter_store`·governance 통합·break-glass[v1.3]) — ✅ **완료(2026-06-11 Codex 검증)**: 테이블 2종 적용(registry 23 active·param seed 7·append-only 트리거)·스토어 모듈(immutable 강제·env 폴백)·평가기(readyForPromotion 게이트)·가드 스모크·command-policy. 경미 후속: 메티 독립 검증 — shadow 23종 시드 등록(C15-b 표), 표준 경로(shadow→L4→L5), 일/주간 회의 통합, 텔레그램 제안 3종 · 재사용: hybrid-promotion-gate·rollback_scheduler — 대기
 - **P1-2** C1 시장 배치 게이트(3시장 신호 합성→full/reduced/halt, 이력 로깅) — 대기
 - **P1-3** C2 레짐 승격(HMM shadow→core 후보, 확률 벡터+전이 경보) · 의존: P1-1(C15 등록) — 대기
 - **P1-4** C3 전략군 2종(터틀·눌림목) 룰셋 구현+shadow 신호 로깅 · stable-range 파라미터 선정(E-1) — 대기
 - **P1-5** C4 사전 게이트(R:R·E·횡보·유동성) + **손실빈도 서킷 3종**(perception-first `consecutive_loss_cooldown` 일반화·승격[v1.1/1.3]) shadow — 대기
 - **P1-6 [P0-4 후속]** next-bar 실행 shadow — `LUNA_BT_NEXT_BAR_EXECUTION_ENABLED=false` 기본, ON 시 신호 1봉 시프트+마지막 봉 진입 배제+현행 close 모델과 비교 스모크. 잔존: rsi_macd_reversal 현재봉 지표·close 직접 체결(P0_4_LOOKAHEAD_AUDIT 참조) — 대기
-- **P1-7 [P0-6 후속]** 제약 가드 경량 구현 — ①order_rules/paper_mode=block 유지 스모크 ②자율 커맨드 러너 allowlist(launchctl setenv·plist 편집·apply-runtime-config --force 차단) ③--force=마스터 런북 전용 명문화. C17 격리는 이 2건으로 1차 충족(P0-6 판정: 기존 방어 양호 — Object.freeze·confirm token·approved row·allow-list clamp 확인) — 대기
+- **P1-7 [P0-6 후속]** 제약 가드 — ✅ 완료(P1-1에 포함: block 스모크+luna-autonomous-command-policy.ts, 적용 지점은 메티 검토 후) · 원명세: ①order_rules/paper_mode=block 유지 스모크 ②자율 커맨드 러너 allowlist(launchctl setenv·plist 편집·apply-runtime-config --force 차단) ③--force=마스터 런북 전용 명문화. C17 격리는 이 2건으로 1차 충족(P0-6 판정: 기존 방어 양호 — Object.freeze·confirm token·approved row·allow-list clamp 확인) — 대기
 - WS-R 알파팩터(→C12)는 P1-4와 병행 가능(기존 CODEX 1번 갱신 완료 2026-06-17).
 
 ## P2 — 검증·피드백·포지션
