@@ -6,8 +6,8 @@
 > 원칙: 무중단(PROTECTED·crypto LIVE·스카) · shadow→L4→L5 표준 경로(C15) · 검증 통과분만 승격 · 마스터=게이트.
 
 ## 📊 종합 현황 (2026-06-11)
-- **P0: 6/6 ✅**(커밋 687ece025) · **P1: 7/7 코드 구현 ✅**(P1-6 registry live seed 대기) · 다음=**P2 설계**
-- **가동 자산**: DB 7종(`luna_parameter_store` append-only·seed 7 / `luna_component_registry` **30종 active** / `luna_market_gate_history` / `luna_regime_calibration` / `luna_strategy_signals` / `luna_entry_preflight_log` / `luna_circuit_locks`) · 모듈 6종(parameter-store·market-deployment-gate·registry-evaluator·regime-engine·strategy-families·command-policy) · 스모크 5종(전부 ROLLBACK 위생)
+- **P0: 6/6 ✅**(커밋 687ece025) · **P1: 7/7 코드 구현 ✅**(P1-6 registry live seed 완료, MR-A 적용 완료) · 다음=**P2 설계**
+- **가동 자산**: DB 10종(`luna_parameter_store` append-only·seed 7 / `luna_component_registry` **31종 active** / `luna_market_gate_history` / `luna_regime_calibration` / `luna_strategy_signals` / `luna_entry_preflight_log` / `luna_circuit_locks` / `luna_meeting_sessions` / `luna_meeting_minutes` / `luna_meeting_decisions`) · 모듈 7종(parameter-store·market-deployment-gate·registry-evaluator·regime-engine·strategy-families·command-policy·meeting-room) · 스모크 6종(전부 ROLLBACK 위생)
 - **🟢 C15 루프 실가동(2026-06-11)**: plist 2건 등록·kickstart 완료 — `ai.luna.market-gate-30min`(게이트+레짐 30분 적재, DB 이력 확인) · `ai.luna.registry-evaluator-daily`(**--apply 모드** — 25종 last_evaluated_at 갱신 확인). 일일 평가→기준 충족 시 텔레그램 제안(상한 2) 자동.
 - **감사 산출물**: P0_4_LOOKAHEAD_AUDIT(잔존 4건→P1-6) · P0_6_CONSTRAINT_AUDIT(방어 양호→P1-7 완료 근거)
 
@@ -43,7 +43,7 @@
 - **P1-6** ✅ **next-bar 백테스트 shadow**(2026-06-11, 메티 검증·적용): 플래그 기본 OFF(회귀 diff 0 확정)·마스크 1봉 시프트 단일 지점·next_open 체결(시그니처 검사)·비교 스모크(수익 -0.04p·MDD -0.10p — 체결 지연 영향 첫 정량화)·레지스트리 30종(advisory). P0-4 잔존 ①②③ 해소.
 - **P1-7** ✅ 제약 가드(P1-1 포함): block 단언 스모크+`luna-autonomous-command-policy.ts`. 자율 러너 적용 지점=메티 검토 후.
 - **P1-OPS** ✅ **운영 보정 3건**(2026-06-11, 메티 실측 재현 검증): 레짐 시장당 1행(66배 과다 해소)·캘리브레이션 registry-evaluator 피기백(--skip-calibration·fail-open)·서킷 중복 억제(활성 동일 잠금 skip). 다음 일일 --apply 주기부터 Brier 실적재.
-- **MR-A(회의실 Phase1 분할 A)** — **CODEX 작성 완료(2026-06-11): docs/codex/CODEX_LUNA_MEETING_ROOM_A.md**(백엔드+FSM+회의록 DB 3종+stack-adapter=P1 스택 합성 plan-note+grill 내장+CLI 완주·LLM 비용 가드·--no-llm) — 코덱스 실행 대기. 분할: MR-B(웹 2화면)·MR-C(정례화·텔레그램·grill skill)
+- **MR-A** ✅ **회의실 백엔드+FSM+회의록**(2026-06-11, 메티 검증·마스터 적용): 테이블 3종(sessions·minutes·decisions[ADR grade·due_at])·stack-adapter(P1 스택 6종→plan-note·U9 5분 브리프)·FSM(안건 자동 생성: 세그먼트3+C15 대기4+서킷1)·grill 5문(불충분=c_master 강등)·LLM 비용 가드(6회 상한 실측)·--no-llm 폴백·CLI 완주(회의록 610줄 2종 정독 합격)·레지스트리 31종. 🌟C15 결정 대기→회의 안건 자동 등재(루프 연결). 경미 메모: 서킷 활성 필터 정밀화·LLM 발언 번역투(MR-B/C). 다음: MR-B(웹 2화면)·MR-C(정례화·텔레그램·grill skill)
 - WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능.
 
 ## P2 — 검증·피드백·포지션
