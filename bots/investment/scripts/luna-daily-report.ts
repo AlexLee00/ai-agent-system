@@ -103,6 +103,7 @@ async function fetchRegimeLine() {
       `SELECT DISTINCT ON (market)
          market,
          current_regime AS dominant,
+         regime_probabilities,
          confidence,
          source,
          created_at
@@ -117,9 +118,33 @@ async function fetchRegimeLine() {
   }
 }
 
+async function fetchStrategyFamilyLine() {
+  try {
+    const result = await query(
+      `SELECT family, signal_type, COUNT(*)::int AS count
+         FROM investment.luna_strategy_signals
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+        GROUP BY family, signal_type
+        ORDER BY family, signal_type`
+    );
+    const rows = rowsFromQueryResult(result);
+    if (!rows.length) return '전략군: 데이터 없음';
+    const total = rows.reduce((sum: number, row: any) => sum + Number(row.count || 0), 0);
+    const turtle = rows
+      .filter((row: any) => row.family === 'turtle_breakout')
+      .reduce((sum: number, row: any) => sum + Number(row.count || 0), 0);
+    const testah = rows
+      .filter((row: any) => row.family === 'testah_pullback')
+      .reduce((sum: number, row: any) => sum + Number(row.count || 0), 0);
+    return `전략군: 신호 ${total}건(터틀 ${turtle}·테스타 ${testah})`;
+  } catch {
+    return '전략군: 데이터 없음';
+  }
+}
+
 // ─── 리포트 빌드 ──────────────────────────────────────────────────
 
-function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number, marketGateLine = '게이트: 데이터 없음', regimeLine = '레짐: 데이터 없음') {
+function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number, marketGateLine = '게이트: 데이터 없음', regimeLine = '레짐: 데이터 없음', strategyLine = '전략군: 데이터 없음') {
   const pnlSign = pnl.avg_pnl >= 0 ? '+' : '';
   return `📊 [루나] ${market} 일일 리포트 (${today()})
 ━━━━━━━━━━━━━━━━━━━
@@ -128,6 +153,7 @@ function buildReport(market: string, pnl: any, llmCost: number, dpoScore: number
 누적 PnL: ${pnlSign}${(pnl.total_pnl * 100).toFixed(2)}%
 ${marketGateLine}
 ${regimeLine}
+${strategyLine}
 ━━━━━━━━━━━━━━━━━━━
 LLM 비용(24h): $${llmCost.toFixed(4)}
 DPO 점수(7d):  ${dpoScore.toFixed(3)}`;
@@ -144,16 +170,17 @@ const MARKET_CHANNEL: Record<string, string> = {
 async function main() {
   console.log(`[luna-daily-report] 시작 (dry-run=${DRY_RUN})`);
 
-  const [llmCost, dpoScore, marketGateLine, regimeLine] = await Promise.all([
+  const [llmCost, dpoScore, marketGateLine, regimeLine, strategyLine] = await Promise.all([
     fetchLlmCost24h(),
     fetchDpoScore7d(),
     fetchMarketGateLine(),
     fetchRegimeLine(),
+    fetchStrategyFamilyLine(),
   ]);
 
   for (const market of ['crypto', 'domestic', 'overseas']) {
     const pnl    = await fetchPnl24h(market);
-    const report = buildReport(market, pnl, llmCost, dpoScore, marketGateLine, regimeLine);
+    const report = buildReport(market, pnl, llmCost, dpoScore, marketGateLine, regimeLine, strategyLine);
 
     console.log(`\n${report}`);
 

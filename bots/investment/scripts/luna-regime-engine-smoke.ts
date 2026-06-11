@@ -145,7 +145,7 @@ async function main() {
   assert.equal(alertFailure.publishedCount, 0);
   assert.equal(alertFailure.alerts[0]?.publishError, 'fixture_alert_down');
 
-  const gateFailure = await runLunaMarketGate({ dryRun: true, writeOutput: false }, {
+  const gateFailure = await runLunaMarketGate({ dryRun: true, writeOutput: false, strategySignals: [] }, {
     computeAllMarketDeploymentGates: async () => {
       throw new Error('fixture_gate_down');
     },
@@ -199,8 +199,8 @@ async function main() {
   assert.ok(dbResult.calibrationRows >= 1);
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 25);
-  assert.equal(seedDryRun.seeded, 25);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 27);
+  assert.equal(seedDryRun.seeded, 27);
   assert.equal(seedDryRun.components.includes('regime-engine-hmm'), true);
 
   return {

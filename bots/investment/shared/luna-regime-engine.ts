@@ -512,7 +512,10 @@ export function formatRegimeDailyLine(rows = []) {
     const row = byMarket.get(market);
     if (!row) return `${label} 없음`;
     const dominant = row.dominant || row.current_regime || row.currentRegime || 'unknown';
-    const confidence = row.confidence == null ? 'n/a' : round(row.confidence, 2);
+    const probabilities = row.probabilities || row.regime_probabilities || row.regimeProbabilities || {};
+    const dominantProbability = probabilities?.[dominant];
+    const displayProbability = dominantProbability == null ? row.confidence : dominantProbability;
+    const confidence = displayProbability == null ? 'n/a' : round(displayProbability, 2);
     const source = row.source ? `/${row.source}` : '';
     return `${label} ${dominant}(${confidence}${source})`;
   });

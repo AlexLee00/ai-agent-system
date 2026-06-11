@@ -15,6 +15,11 @@ import {
   insertRegimeStateHistory,
   processRegimeAlerts,
 } from '../shared/luna-regime-engine.ts';
+import {
+  computeStrategyFamilySignals,
+  insertStrategyFamilySignals,
+  summarizeStrategyFamilySignals,
+} from '../shared/luna-strategy-families.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -66,8 +71,10 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const writeOutput = options.writeOutput !== false && !dryRun;
   let gates = Array.isArray(options.gates) ? options.gates : [];
   let regimes = Array.isArray(options.regimes) ? options.regimes : [];
+  let strategySignals = Array.isArray(options.strategySignals) ? options.strategySignals : [];
   let gateError = null;
   let regimeError = null;
+  let strategyError = null;
 
   if (!Array.isArray(options.gates)) {
     try {
@@ -95,8 +102,25 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     }
   }
 
+  if (!Array.isArray(options.strategySignals)) {
+    try {
+      const computeStrategies = deps.computeStrategyFamilySignals || computeStrategyFamilySignals;
+      const strategyResult = await computeStrategies({
+        ...options,
+        regimes,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+      }, deps);
+      strategySignals = strategyResult.signals || [];
+      if (strategyResult.errors?.length) strategyError = strategyResult.errors;
+    } catch (error) {
+      strategyError = error?.message || String(error);
+      strategySignals = [];
+    }
+  }
+
   const inserted = [];
   const regimeInserted = [];
+  const strategyInserted = [];
 
   if (writeHistory) {
     for (const gate of gates) {
@@ -106,6 +130,12 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     for (const regime of regimes) {
       const result = await insertRegimeStateHistory(regime, deps.runFn || db.run);
       regimeInserted.push(result?.rows?.[0]?.id || null);
+    }
+    try {
+      const result = await insertStrategyFamilySignals(strategySignals, deps.runFn || db.run);
+      strategyInserted.push(...result);
+    } catch (error) {
+      strategyError = error?.message || String(error);
     }
   }
 
@@ -119,21 +149,25 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     : null;
   const gateLine = formatMarketGateDailyLine(gates);
   const regimeLine = formatRegimeDailyLine(regimes);
+  const strategyLine = summarizeStrategyFamilySignals(strategySignals);
 
   const payload = {
-    ok: gateError == null || regimeError == null,
+    ok: gateError == null || regimeError == null || strategyError == null,
     dryRun,
     writeHistory,
     writeOutput,
     inserted,
     regimeInserted,
+    strategyInserted,
     computedAt: new Date().toISOString(),
-    summary: [gateLine, regimeLine].join('\n'),
+    summary: [gateLine, regimeLine, strategyLine].join('\n'),
     gateError,
     regimeError,
+    strategyError,
     regimeAlerts,
     gates,
     regimes,
+    strategySignals,
     shadowOnly: true,
     liveMutation: false,
     protectedPidMutation: false,

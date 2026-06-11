@@ -127,6 +127,7 @@ async function main() {
     const result = await runLunaMarketGate({
       gates,
       regimes: [],
+      strategySignals: [],
       writeOutput: false,
     }, { runFn: tx.run, queryFn: tx.query });
     const rowsInTx = await tx.query(
