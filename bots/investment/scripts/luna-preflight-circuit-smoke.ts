@@ -408,8 +408,8 @@ async function main() {
   const dbRollback = await dbRollbackScenario(preflightForDb, circuitForDb);
   const runnerIndependentFailure = await runnerIndependenceScenario();
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 30);
-  assert.equal(seedDryRun.seeded, 30);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 31);
+  assert.equal(seedDryRun.seeded, 31);
   assert.equal(seedDryRun.components.includes('entry-preflight-gate'), true);
   assert.equal(seedDryRun.components.includes('loss-circuit'), true);
 
