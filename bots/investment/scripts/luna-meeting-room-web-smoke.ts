@@ -121,7 +121,10 @@ function createMemoryStore() {
       startedAt: '2026-06-11T00:00:00.000Z',
       closedAt: '2026-06-11T00:05:00.000Z',
       summary: 'fixture meeting',
-      segments: [],
+      segments: [
+        { market: 'domestic', label: '국내 장전 계획', active: false, skipped: true, reason: 'weekend' },
+        { market: 'crypto', label: 'crypto 24h 점검', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
     },
   ];
   const minutes = [
@@ -1027,9 +1030,16 @@ async function main() {
 
     const meetings = await request(baseUrl, '/api/meetings');
     assert.equal(meetings.payload.meetings.length, 1);
+    const storedCryptoSegment = meetings.payload.meetings[0].segments.find((row) => row.market === 'crypto');
+    assert.equal(storedCryptoSegment.label, '암호화폐 24시간 점검');
+    assert.equal(storedCryptoSegment.reasonLabel, '24시간 운영');
+    assert.equal(storedCryptoSegment.marketLabel, '암호화폐');
+    assert.equal(JSON.stringify(meetings.payload.meetings[0].segments).includes('crypto 24h 점검'), false);
     assert.ok(Array.isArray(meetings.payload.segments));
     assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.skipped, true);
     assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.reason, 'weekend');
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.reasonLabel, '주말');
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'crypto')?.label, '암호화폐 24시간 점검');
 
     const detail = await request(baseUrl, '/api/meetings/1');
     assert.equal(detail.payload.minutes.length, 5);

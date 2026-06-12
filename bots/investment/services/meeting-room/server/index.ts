@@ -148,13 +148,33 @@ function normalizeSessionSummary(summary, type) {
     .replace(/^회의\s+완료:/, `${label} 완료:`);
 }
 
+function normalizeSegmentLabel(segment = {}) {
+  const raw = String(segment.label || '').trim();
+  if (/^crypto\s*24h\s*점검$/iu.test(raw) || raw === 'crypto_24h') return '암호화폐 24시간 점검';
+  if (raw) return raw;
+  return {
+    domestic: '국내 장전 계획',
+    overseas: '미국 장후 평가',
+    crypto: '암호화폐 24시간 점검',
+  }[String(segment.market || '')] || '시장 세그먼트';
+}
+
+function normalizeSegmentForApi(segment = {}) {
+  return {
+    ...segment,
+    label: normalizeSegmentLabel(segment),
+    marketLabel: transitionMarketLabel(segment.market),
+    reasonLabel: meetingSegmentReasonLabel(segment),
+  };
+}
+
 function normalizeSession(row = {}) {
   return {
     id: row.id,
     type: row.type,
     status: row.status,
     chair: row.chair,
-    segments: safeJson(row.segments, []),
+    segments: safeJson(row.segments, []).map(normalizeSegmentForApi),
     startedAt: row.started_at || row.startedAt,
     closedAt: row.closed_at || row.closedAt,
     summary: normalizeSessionSummary(row.summary, row.type),
@@ -962,7 +982,10 @@ function getDeps(deps = {}) {
 }
 
 async function listMeetings(limit, deps) {
-  if (deps.meetingStore?.listMeetings) return deps.meetingStore.listMeetings(limit);
+  if (deps.meetingStore?.listMeetings) {
+    const rows = await deps.meetingStore.listMeetings(limit);
+    return rows.map(normalizeSession);
+  }
   const rows = await deps.queryFn(
     `SELECT id, type, status, chair, segments, started_at, closed_at, summary
        FROM luna_meeting_sessions
@@ -1487,7 +1510,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
         activeRuns: Array.from(activeRuns.values())
           .filter((run) => run.status === 'running')
           .map((run) => ({ ...run, promise: undefined })),
-        segments: deps.buildMarketSegmentsFn(new Date()),
+        segments: deps.buildMarketSegmentsFn(new Date()).map(normalizeSegmentForApi),
       });
     }
 
