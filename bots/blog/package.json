@@ -64,6 +64,7 @@
     "mark-published": "node scripts/mark-published-url.ts",
     "backfill:naver-urls": "node scripts/backfill-naver-published-urls.ts",
     "backfill:naver-urls:auto": "node scripts/backfill-naver-published-urls.ts --write --min-confidence=0.9 --json",
+    "collect:final-content": "../../node_modules/.bin/tsx scripts/collect-final-content.ts --json",
     "naver:publish-assist": "node scripts/run-naver-publish-assist.ts",
     "check:naver-publish-assist": "node --check lib/naver-ui/html-to-editor-blocks.ts && node --check lib/naver-ui/scheduled-publish-policy.ts && node --check lib/naver-ui/driver.ts && node --check scripts/run-naver-publish-assist.ts && ../../node_modules/.bin/tsx -e \"import('./lib/naver-ui/scheduled-review-store.ts').then(()=>console.log('scheduled-review-store import ok'))\" && ../../node_modules/.bin/tsx scripts/naver-publish-assist-smoke.ts --json",
     "smoke:blog-v3-unified": "../../node_modules/.bin/tsx scripts/check-blog-v3-unified.ts --json",
@@ -72,6 +73,7 @@
     "runtime:blog-v3-shadow-evidence": "../../node_modules/.bin/tsx scripts/runtime-blog-v3-shadow-evidence.ts",
     "check:blog-v3-unified": "../../node_modules/.bin/tsx scripts/check-blog-v3-unified.ts --json && ../../node_modules/.bin/tsx scripts/blog-naver-mcp-smoke.ts --json && python3 python/reddit_trend_analyzer.py --fixture --dry-run --json --max-llm-calls=0 >/dev/null && python3 -m py_compile python/reddit_trend_analyzer.py && plutil -lint launchd/ai.blog.reddit-trends.plist launchd/ai.blog.bestseller-sync.plist launchd/ai.blog.crank-tracker.plist",
     "smoke:blo-b1-curriculum": "../../node_modules/.bin/tsx scripts/blo-b1-curriculum-smoke.ts",
+    "smoke:final-content-diff": "../../node_modules/.bin/tsx scripts/final-content-diff-smoke.ts",
     "seed-curriculum": "node scripts/seed-curriculum.ts",
     "seed-curriculum:dry": "node scripts/seed-curriculum.ts --dry-run"
   },

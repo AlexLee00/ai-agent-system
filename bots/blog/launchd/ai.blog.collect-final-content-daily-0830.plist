@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.blog.collect-final-content-daily-0830</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/collect-final-content.ts</string>
+		<string>--json</string>
+		<string>--write</string>
+		<string>--days=3</string>
+		<string>--limit=20</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/collect-final-content.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/collect-final-content.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>8</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog</string>
+</dict>
+</plist>

@@ -196,3 +196,46 @@ auto-dev WorkingDirectory worktree 분리(클로드팀 설정 변경)는 즉시 
 블로 트랙 복귀: ① vault-context 임계 0.55 보정(1줄 — 익일 06:00 연계 블록 활성 조건, 당일 중 권고)
 ② CODEX-B2b(발행본 vs 최종본 diff, 익일 08:30 재파싱) ③ 익일 02:00 vault-feed 첫 자동 증분 관찰.
 이력: 2026-06-13 main 정렬 검증 (메티)
+
+## M. 임계 보정 + TS-B5-L 사전 재현 합격 — B2 완전 가동 준비 (2026-06-13)
+
+- 마스터 보정: DEFAULT_MIN_SIMILARITY 0.65 -> 0.55 (커밋 28dc020fc — main에서 auto-commit 정상 작동의
+  첫 실증이기도 함).
+- **메티 정정(자기수정)**: 직전 "vault-context 경유 0건"의 주원인은 임계가 아니라 **메티 테스트 호출의
+  인자 오류** — 빌더 시그니처는 lectureTitle/curriculumKeywords/seriesName인데 title/keywords로 호출해
+  질의가 "6강" 두 글자로 빌드됐던 것. vault-context는 처음부터 정상, 마스터 스모크(promptHasVaultBlock:
+  true)가 정확했음. 임계 하향도 유효한 보정(0.653~0.658 항목이 0.65에선 탈락 — 연계 풍부화).
+- 올바른 인자 재현: 질의 "에이전트 입문 6강 Codex 설치 따라하기 ..." -> **results 4** (2강 sim 0.671 등)
+  + '[지난 강의 연계]' 블록 생성 ✓.
+- 다음 자연 검증: 익일 02:00 vault-feed 첫 자동 증분 + **06:00 6강 발행 본문에 연계 블록 등장**(TS-B5-L 최종).
+이력: 2026-06-13 임계 보정 검증+정정 (메티)
+
+## N. 상태 스냅샷 + CODEX-B2b 작성 (2026-06-13 07시, 메티)
+
+- 자연 검증 일정 정리: 5강(06:08)은 연계 블록 없이 발행 — **예상대로**(발행 시점 루트가 codex 브랜치,
+  B2 주입 코드 부재). vault 8,147(04:03 backfill). **첫 자동 증분 = 6/14 02:00, TS-B5-L = 6/14 06:00 6강.**
+- CODEX-B2b 작성: docs/codex/CODEX_BLO_B2B_FINAL_CONTENT_DIFF_2026-06-13.md — §1 master_feedback 생성
+  (feedback-learner 휴면 원인 = 테이블 마이그레이션 누락, 코드 465줄은 완성 상태) / §2 collect-final-content
+  (익일 08:30, naver_url 재파싱, diff 시 master_feedback+vault(type=master_edit) 적재, 무변경 마킹) /
+  §3 소비는 기존 weekly-evolution 경로 확인만 / §4 TS-B9 / §5 안전(읽기 전용, 발행 흐름 독립).
+- 병행 일정: 6/14(일) GATE-H 48h + GATE-R 판정 / 6/15(월) 16:00 Edu-X kis-1600 TS-EXL1.
+이력: 2026-06-13 B2b 프롬프트 (메티)
+
+## O. CODEX-B2b 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | 신규 4(migration 024/collect-final-content/smoke/plist 0830) + package.json — 정합 |
+| 스키마 정합 | **master_feedback 컬럼이 feedback-learner INSERT 7컬럼과 1:1 일치**(코드 역추출 정확) + 멱등 + final_content_checks ledger 신설 |
+| feedback-learner | 비수정 ✓ (테이블 생성만으로 부활하는 설계 준수) |
+| 스모크 | smoke:final-content-diff ok:true 8건 (독립 재실행) |
+| dry-run | migration 미적용 감지(final_content_checks_missing) + 무해 동작 — 게이트 정상 |
+| write 게이트 | 기본 dryRun, --write만 해제 ✓ |
+
+### 마스터 적용 절차
+1. DDL: psql -d jay -f bots/blog/migrations/024-final-content-diff.sql
+2. plist 등록: ai.blog.collect-final-content-daily-0830 (bootstrap)
+3. 커밋
+4. 이후 첫 라이브: 6/14 08:30 잡이 6/13 발행분(5강+일반) 재파싱 -> 마스터가 블로그에서 수정한 부분이
+   있으면 master_feedback 첫 데이터 생성 (TS-B9-L 메티 확인)
+이력: 2026-06-13 B2b 검증 합격 (메티)
