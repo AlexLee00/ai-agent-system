@@ -426,6 +426,10 @@ async function main() {
     assert.ok(appJs.text.includes("'시간 확인 필요'"));
     assert.equal(appJs.text.includes("return String(value);"), false);
     assert.ok(appJs.text.includes('aria-label="로컬 바인딩 127.0.0.1 포트 7791"'));
+    assert.ok(html.text.includes('.dashboard-link'));
+    assert.ok(html.text.includes('text-transform: none;'));
+    assert.ok(html.text.includes('letter-spacing: normal;'));
+    assert.ok(appJs.text.includes('className="pill dashboard-link"'));
     assert.ok(appJs.text.includes('aria-label="TeamJay Dashboard 7787 새 창으로 열기"'));
     assert.ok(appJs.text.includes('target="_blank"'));
     assert.ok(appJs.text.includes('rel="noopener noreferrer"'));

@@ -535,7 +535,7 @@ function Header({ token, setToken, tab, setTab }) {
       </div>
       ${'\n'}
       <a
-        className="pill"
+        className="pill dashboard-link"
         href="http://127.0.0.1:7787"
         target="_blank"
         rel="noopener noreferrer"
