@@ -2,9 +2,18 @@
 // @ts-nocheck
 
 import assert from 'assert/strict';
+import fs from 'fs';
 import { _testOnly, startMeetingRoomWebServer } from '../services/meeting-room/server/index.ts';
 import { loadMeetingMinutesResult, renderMeetingMinutesMarkdown } from '../services/meeting-room/server/minutes.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+
+const MEETING_LAUNCHD_PLISTS = [
+  'ai.luna.meeting-morning-0500.plist',
+  'ai.luna.meeting-debrief-1600.plist',
+  'ai.luna.meeting-premarket-2200.plist',
+  'ai.luna.meeting-weekly-sun-0600.plist',
+  'ai.luna.meeting-room-web.plist',
+];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -27,6 +36,15 @@ async function request(baseUrl, path, options = {}) {
     payload = { raw: text };
   }
   return { status: res.status, ok: res.ok, payload, text, headers: res.headers };
+}
+
+function assertMeetingLaunchdLogPaths() {
+  for (const fileName of MEETING_LAUNCHD_PLISTS) {
+    const plistPath = new URL(`../launchd/${fileName}`, import.meta.url);
+    const content = fs.readFileSync(plistPath, 'utf8');
+    assert.equal(content.includes('/tmp/logs/luna-meeting'), false, `${fileName} should not use volatile nested /tmp meeting logs`);
+    assert.ok(content.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting'), `${fileName} should use persistent meeting logs`);
+  }
 }
 
 function createMemoryStore() {
@@ -250,6 +268,7 @@ async function waitForRun(baseUrl, runId, expectedStatus = 'completed') {
 }
 
 async function main() {
+  assertMeetingLaunchdLogPaths();
   const store = createMemoryStore();
   const runSessionOptions = [];
   let releaseRun;
@@ -1408,6 +1427,7 @@ async function main() {
       startDuplicateGuard: true,
       startReentryGuard: true,
       completedRunSwitchesToSessionDetail: true,
+      meetingLaunchdPersistentLogs: true,
       failedRunShowsError: true,
       confirmAuditAndIdempotency: true,
       decisionActionReentryGuard: true,

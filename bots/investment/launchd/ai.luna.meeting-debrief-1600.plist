@@ -36,9 +36,9 @@
   <key>KeepAlive</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>/tmp/logs/luna-meeting-debrief/out.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/luna-meeting-debrief.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/logs/luna-meeting-debrief/err.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/luna-meeting-debrief-error.log</string>
   <key>TimeOut</key>
   <integer>900</integer>
 </dict>

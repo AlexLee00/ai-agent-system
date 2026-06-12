@@ -48,7 +48,7 @@
 ## E. 정례 연동 (🔁 자동 회의 사이클 — 토 05:00 첫 사이클부터)
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
-| W-50 | 자동 회의 반영 | 정례 회의 후 접속 | 목록에 새 세션·캐치업 갱신·새 pending 카드 | [자동] run 완료 후 새 세션 반영+[수동] 🔁 정례 launchd |
+| W-50 | 자동 회의 반영 | 정례 회의 후 접속 | 목록에 새 세션·캐치업 갱신·새 pending 카드 | [자동]+[수동] ✅2026-06-12 launchd/API/브라우저 |
 | W-51 | 텔레그램↔웹 동기 | 텔레그램 버튼으로 confirm 후 웹 확인 | 카드 상태 일치+감사 행 changed_via=telegram | [자동] callback/action smoke+[수동] 🔁 첫 실버튼 |
 | W-52 | 주말 경량판 | 토/일 morning 회의록 | 국내·미국 "스킵(주말)"·암호화폐만 실안건 | [자동] weekend dry-run+[수동] 🔁 실제 주말 |
 | W-53 | regenerate 일치 | `--regenerate=<id>` md vs 웹 타임라인 | 내용 동일(DB 단일 소스) | [자동]+[수동] ✅2026-06-12 #117 counts+표시정규화 일치 |
@@ -222,6 +222,7 @@
 - **2026-06-12 루프 166**: W-20/W-21/W-24 최신 회의 렌더 품질 재스캔 → 최신 회의 #117의 `/api/meetings/117` 텍스트와 실제 브라우저 DOM을 동시에 검사했다. raw JSON/object array, markdown heading/bold/table 원문, `pending_master/c_master/changed_via/agendaKey/provider/rule_based/noLLM route`, DB/jsonb/raw 토큰, 반복 boilerplate 모두 hit 0건이었다. 회의록 8행·결정 1건·목록 최신 선택이 정상이며, console warn/error 0·horizontal overflow 0으로 추가 수정 없음.
 - **2026-06-12 루프 167**: W-53 regenerate 표시 일치 재점검 → `/api/meetings/117`와 웹 DOM은 정규화됐지만 `--regenerate=117 --json` markdown은 DB 원문을 직접 렌더해 `gate_transitions=[...]`, `segments:[...]`, raw ADR 상태 토큰과 LLM boilerplate가 남는 문제를 확인. regenerate 로더가 웹 API의 `normalizeLegacyMinuteContent`를 재사용하게 하고, plan-note 세그먼트 JSON 덤프를 한국어 요약으로 교체했다. 실제 #117 regenerate 결과 raw pattern 0건, minutes=8·decisions=1 일치. 서비스 재시작 후 브라우저에서도 최신 #117 타임라인·회의록 8행·raw pattern 0건·console warn/error 0·overflow 0을 확인했다.
 - **2026-06-12 루프 168**: W-32 실제 LLM 응답 렌더 점검 → `sophia` 실제 Hub/Groq 질의에서 API payload가 `selectorKey/fallbacks/route` 내부 라우팅 객체를 포함하고, LLM이 `중단/감소/최대/완전한 상태`처럼 `halt/reduced/full` 상태값을 번역하는 문제를 확인. `/api/agents/ask` 응답에서 route 객체를 제거하고, agent answer도 타임라인과 같은 표시 정규화를 적용하도록 보강했다. 실제 API 재검증은 provider=groq, route 없음, raw/internal/status 번역 금지 패턴 0건. 브라우저 UI에서도 Sophia 응답이 `응답 방식 groq · 상태 성공`으로 표시되고 console warn/error 0·overflow 0을 확인했다.
+- **2026-06-12 루프 169**: W-50 정례 launchd/API/브라우저 실상태 점검 → `meeting-morning/debrief/premarket/weekly` 4종과 웹 plist가 로드되어 있고 최신 회의 #117 `domestic_debrief`가 `/api/meetings`, 캐치업, 브라우저 목록에 정상 반영됨을 확인했다. 다만 repo plist의 로그 경로가 `/tmp/logs/luna-meeting-*/out.log`처럼 재부팅·부모 디렉터리 누락에 취약해, 즉시 부모 디렉터리를 생성하고 repo plist 5종을 `/Users/alexlee/.ai-agent-system/logs/luna-meeting-*.log` 영구 경로로 보정했다. `check:luna-meeting-room-web`에 `meetingLaunchdPersistentLogs` 계약을 추가했고, MR-C smoke의 debrief 기대값도 내부 reason code 대신 `동일 날짜 아침 회의 없음` 표시 기준으로 맞췄다.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

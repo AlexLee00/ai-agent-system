@@ -29,8 +29,8 @@
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/logs/luna-meeting-room-web/out.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/luna-meeting-room-web.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/logs/luna-meeting-room-web/err.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/luna-meeting-room-web-error.log</string>
 </dict>
 </plist>

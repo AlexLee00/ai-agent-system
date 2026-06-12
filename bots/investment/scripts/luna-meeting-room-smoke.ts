@@ -280,9 +280,11 @@ async function main() {
   const pendingDataMinute = noLlmResult.minutes.find((row) => row.role === 'data' && row.agendaKey === 'decision:market-deployment-gate');
   assert.ok(pendingDataMinute);
   assert.equal(/[{}]/.test(pendingDataMinute.content), false);
-  assert.ok(pendingDataMinute.content.includes('컴포넌트=market-deployment-gate'));
+  assert.ok(pendingDataMinute.content.includes('컴포넌트=C1 시장 배치 게이트'));
   assert.ok(pendingDataMinute.content.includes('표본=0건'));
-  assert.ok(pendingDataMinute.content.includes('Brier: HMM<폴백'));
+  assert.ok(pendingDataMinute.content.includes('Brier: HMM이 폴백보다 낮음'));
+  assert.equal(pendingDataMinute.content.includes('컴포넌트=market-deployment-gate'), false);
+  assert.equal(pendingDataMinute.content.includes('Brier: HMM<폴백'), false);
   assert.equal(pendingDataMinute.meta?.evidence?.component, 'market-deployment-gate');
   const circuitDataMinute = noLlmResult.minutes.find((row) => row.role === 'data' && row.agendaKey === 'alerts:circuit-locks');
   assert.ok(circuitDataMinute);
@@ -354,7 +356,8 @@ async function main() {
     },
     outputPath: outputPath('smoke-debrief-degraded'),
   });
-  assert.ok(degradedDebrief.minutes.some((row) => String(row.content).includes('same_day_morning_session_missing')));
+  assert.ok(degradedDebrief.minutes.some((row) => String(row.content).includes('동일 날짜 아침 회의 없음')));
+  assert.equal(degradedDebrief.minutes.some((row) => String(row.content).includes('same_day_morning_session_missing')), false);
 
   const premarketResult = await runMeetingSession({
     type: 'us_premarket',
