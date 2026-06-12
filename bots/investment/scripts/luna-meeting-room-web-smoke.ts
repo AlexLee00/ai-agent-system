@@ -110,11 +110,13 @@ function createMemoryStore() {
         'G0 게이트: 국내: 중단(32), 해외: 중단(33), 암호화폐: 감소(55), 미국: 전체(72)',
         '국내 시장은 현재 중단 상태(32점)입니다.',
         '암호화폐 시장은 감소(55점)로, 하락 레짐을 유지하고 있습니다.',
+        '해외 시장은 현재 halt 상태이며, 이는 저평가 상태를 나타냅니다.',
         "G0 게이트: 해외 시장은 현재 '할당' 상태이며, 점수는 32.51입니다.",
         '현재 국내, 해외, 암호화폐 세그먼트 모두 중단 상태입니다.',
         'BTC 실현 볼륨 프로ksi: 65.38 (점유율 상승)',
         '* BTC 실현 볼륨 프로끼가 상승하고 있습니다.',
         '* **전략군 24시간**: 0건(입장 없음)',
+        '현재는 입장한 거래가 없습니다.',
         '* 전략군은 현재 입장하지 않았으며, 전략군의 입장을 고려할 필요가 있습니다.',
         'C15 결정: 중단 제안은 한국어 라벨로 유지합니다.',
         '',
@@ -330,7 +332,12 @@ async function main() {
     assert.ok(appJs.text.includes('role="list" aria-label="타임라인 역할 색상 범례"'));
     assert.ok(appJs.text.includes('aria-label=${`${label} 역할 색상`}'));
     assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 minute · ${minute.agendaKey ||'));
-    assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="U1 캐치업 요약"'));
+    assert.ok(appJs.text.includes('const catchupLines = loading'));
+    assert.ok(appJs.text.includes("catchup?.length ? catchup : ['회의를 선택하면 U1 캐치업이 표시됩니다.']"));
+    assert.ok(appJs.text.includes("const catchupLabel = `U1 캐치업 요약: ${catchupLines.join(' / ')}`"));
+    assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label=${catchupLabel}'));
+    assert.ok(appJs.text.includes('role="list" aria-label=${`U1 캐치업 ${catchupLines.length}줄 요약`}'));
+    assert.ok(appJs.text.includes('className="catchup-line" role="listitem"'));
     assert.ok(appJs.text.includes('className="error" role="alert" aria-live="assertive"'));
     assert.ok(appJs.text.includes('className="notice" role="status" aria-live="polite"'));
     assert.ok(appJs.text.includes('회의 상세를 불러오는 중입니다.'));
@@ -403,6 +410,7 @@ async function main() {
     assert.ok(html.text.includes('.ask-helper'));
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
+    assert.ok(html.text.includes('.catchup [role="list"]'));
     assert.ok(html.text.includes('.meeting-list-row .meeting-item'));
     assert.ok(html.text.includes('.due.unknown'));
     assert.ok(appJs.text.includes("run.status === 'running'"));
@@ -441,11 +449,15 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('세그먼트 모두 halt 상태'));
     assert.ok(detail.payload.minutes[4].content.includes('BTC 실현 볼륨 프록시'));
     assert.ok(detail.payload.minutes[4].content.includes('진입 없음'));
+    assert.ok(detail.payload.minutes[4].content.includes('현재는 진입한 거래가 없습니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('이는 배치 halt 상태를 나타냅니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군은 현재 진입하지 않았으며'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군 진입을 고려'));
     assert.equal(detail.payload.minutes[4].content.includes("'할당' 상태"), false);
     assert.equal(detail.payload.minutes[4].content.includes('프로ksi'), false);
     assert.equal(detail.payload.minutes[4].content.includes('프로끼'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('저평가 상태'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('입장한 거래'), false);
     assert.equal(detail.payload.minutes[4].content.includes('입장하지'), false);
     assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const catchup = await request(baseUrl, '/api/catchup/1');
@@ -584,6 +596,7 @@ async function main() {
       deferAudit: true,
       deferLeavesPendingQueue: true,
       catchupConfirmedDeferredPendingCounts: true,
+      catchupLinesA11y: true,
       askRateLimit: true,
       askSafetyNotice: true,
       askFormKoreanLabels: true,
@@ -632,6 +645,8 @@ async function main() {
       adrRolePresentation: true,
       repetitiveLlmMinuteCompacted: true,
       canonicalStatusTokensPreserved: true,
+      legacyEntryTradeTermNormalized: true,
+      legacyHaltValuationTermNormalized: true,
     },
   };
 }

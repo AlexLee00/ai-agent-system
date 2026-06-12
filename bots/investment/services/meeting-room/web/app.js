@@ -415,6 +415,10 @@ function StartMeeting({ token, segments, onStarted, setError }) {
 
 function Timeline({ detail, catchup, loading }) {
   const minutes = detail?.minutes || [];
+  const catchupLines = loading
+    ? ['회의 상세를 불러오는 중입니다.']
+    : (catchup?.length ? catchup : ['회의를 선택하면 U1 캐치업이 표시됩니다.']);
+  const catchupLabel = `U1 캐치업 요약: ${catchupLines.join(' / ')}`;
   const roleLegend = [
     ['system', '시스템'],
     ['data', '데이터'],
@@ -427,8 +431,10 @@ function Timeline({ detail, catchup, loading }) {
     <div className="card" role="region" aria-label="회의 타임라인">
       <h2>타임라인</h2>
       <div className="card-body">
-        <div className="catchup" role="status" aria-live="polite" aria-label="U1 캐치업 요약">
-          ${loading ? html`<div>회의 상세를 불러오는 중입니다.</div>` : (catchup || ['회의를 선택하면 U1 캐치업이 표시됩니다.']).map((line) => html`<div>${line}</div>`)}
+        <div className="catchup" role="status" aria-live="polite" aria-label=${catchupLabel}>
+          <div role="list" aria-label=${`U1 캐치업 ${catchupLines.length}줄 요약`}>
+            ${catchupLines.map((line) => html`<div className="catchup-line" role="listitem">${line}</div>`)}
+          </div>
         </div>
         <div className="role-legend" role="list" aria-label="타임라인 역할 색상 범례">
           ${roleLegend.map(([role, label]) => html`

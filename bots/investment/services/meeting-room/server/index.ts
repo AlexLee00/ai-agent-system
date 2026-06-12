@@ -217,9 +217,11 @@ function normalizeLegacyKoreanLlmNoise(content) {
   return String(content ?? '')
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
+    .replace(/저평가\s+상태/g, '배치 halt 상태')
     .replace(/(\*{0,2}전략군\s+24시간\*{0,2}\s*:\s*0건\s*\()입장(\s*(?:없음|0)\))/g, '$1진입$2')
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*0\)/g, '전략군 24시간: 0건(진입 0)')
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*없음\)/g, '전략군 24시간: 0건(진입 없음)')
+    .replace(/입장한\s+거래/g, '진입한 거래')
     .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
     .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려');
 }
