@@ -1093,6 +1093,13 @@ async function main() {
     assert.equal(premarketActiveSegmentPercent.includes('중단 상태로'), false);
     assert.equal(premarketActiveSegmentPercent.includes('감소 상태로'), false);
     assert.equal(premarketActiveSegmentPercent.includes('%의 활성 세그먼트'), false);
+    const premarketGenericConclusion = _testOnly.normalizeLegacyMinuteContent(
+      '현재 상황을 종합하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있으며, 미국 시장과 암호화폐 시장은 reduced 상태를 유지하고 있습니다. 따라서, 현 시점에서 추가적인 조치가 필요합니다.\n\n결과적으로, 현 시점에서 추가적인 조치가 필요하며, 국내 시장의 halt 상태를 유지하고 미국 시장과 암호화폐 시장의 reduced 상태를 지속적으로 모니터링하는 것이 필요합니다.',
+    );
+    assert.ok(premarketGenericConclusion.includes('후속 조치는 마스터 확인 후 기록합니다.'));
+    assert.equal((premarketGenericConclusion.match(/후속 조치는 마스터 확인 후 기록합니다/g) || []).length, 1);
+    assert.equal(premarketGenericConclusion.includes('결과적으로'), false);
+    assert.equal((premarketGenericConclusion.match(/현 시점에서 추가적인 조치/g) || []).length, 0);
     const premarketEntryTerm = _testOnly.normalizeLegacyMinuteContent(
       '게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.\n전략군 24시간 동안 1건의 입장(Entry 0)이 발생하였으며, 현재 14건의 활성 서킷이 유지되고 있습니다.',
     );
