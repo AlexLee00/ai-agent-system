@@ -47,16 +47,37 @@ const AGENT_LABELS = Object.freeze({
   reporter: 'Reporter',
 });
 
+const TOKEN_STORAGE_KEY = 'lunaMeetingRoomToken';
 const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';
 const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';
 
 function useToken() {
-  const [token, setToken] = useState(() => localStorage.getItem('lunaMeetingRoomToken') || '');
+  const [token, setToken] = useState(() => readLocalValue(TOKEN_STORAGE_KEY, ''));
   function update(value) {
     setToken(value);
-    localStorage.setItem('lunaMeetingRoomToken', value);
+    writeLocalValue(TOKEN_STORAGE_KEY, value);
   }
   return [token, update];
+}
+
+function readLocalValue(key, fallback = '') {
+  try {
+    if (typeof localStorage === 'undefined') return fallback;
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalValue(key, value) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const nextValue = String(value || '');
+    if (nextValue) localStorage.setItem(key, nextValue);
+    else localStorage.removeItem(key);
+  } catch {
+    // Storage can be disabled in hardened browser contexts. The UI still works without token persistence.
+  }
 }
 
 function readSessionValue(key, fallback = '') {
@@ -739,6 +760,8 @@ function DailyRoom({ token }) {
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const baseRequestSeq = useRef(0);
+  const detailRequestSeq = useRef(0);
   const hasRunningRun = activeRuns.some((run) => run.status === 'running');
   const pollingIntervalMs = hasRunningRun ? 3000 : 30000;
   const pollingLabel = hasRunningRun
@@ -746,30 +769,38 @@ function DailyRoom({ token }) {
     : '폴링: 대기 · 30초마다 갱신';
 
   function clearDailyRoomData() {
+    baseRequestSeq.current += 1;
+    detailRequestSeq.current += 1;
     setMeetings([]);
     setActiveRuns([]);
     setSegments([]);
     setPending([]);
     setSelectedId(null);
     setDetail(null);
+    setDetailLoading(false);
     setCatchup([]);
+    setNotice('');
   }
 
-  async function refreshBase() {
+  async function refreshBase(options = {}) {
+    const selectDefault = options.selectDefault === true;
+    const requestId = baseRequestSeq.current + 1;
+    baseRequestSeq.current = requestId;
     try {
       const list = await api(token, '/api/meetings');
+      const pendingPayload = await api(token, '/api/decisions/pending');
+      if (baseRequestSeq.current !== requestId) return;
       setMeetings(list.meetings || []);
       setActiveRuns(list.activeRuns || []);
       setSegments(list.segments || []);
-      const pendingPayload = await api(token, '/api/decisions/pending');
       setPending(pendingPayload.decisions || []);
       setError('');
-      if (!selectedId && (list.activeRuns?.[0] || list.meetings?.[0])) {
+      if ((selectDefault || !selectedId) && (list.activeRuns?.[0] || list.meetings?.[0])) {
         const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
         setSelectedId(nextId);
-        await refreshSelected(nextId);
       }
     } catch (error) {
+      if (baseRequestSeq.current !== requestId) return;
       clearDailyRoomData();
       throw error;
     }
@@ -777,13 +808,15 @@ function DailyRoom({ token }) {
 
   async function refreshSelected(id = selectedId) {
     if (!id) return;
+    const requestId = detailRequestSeq.current + 1;
+    detailRequestSeq.current = requestId;
     setDetailLoading(true);
     try {
       const payload = await api(token, `/api/meetings/${id}`);
+      if (detailRequestSeq.current !== requestId) return;
       if (payload.run) {
         if (payload.run.status === 'completed' && payload.run.sessionId) {
           setSelectedId(payload.run.sessionId);
-          await refreshSelected(payload.run.sessionId);
           return;
         }
         setDetail({ session: payload.run, minutes: [], decisions: [] });
@@ -796,26 +829,30 @@ function DailyRoom({ token }) {
         setError('');
         return;
       }
-      setDetail(payload);
       const catchupPayload = await api(token, `/api/catchup/${id}`);
+      if (detailRequestSeq.current !== requestId) return;
+      setDetail(payload);
       setCatchup(catchupPayload.lines || []);
       setError('');
     } catch (error) {
+      if (detailRequestSeq.current !== requestId) return;
       setDetail(null);
       setCatchup(['회의 상세를 불러오지 못했습니다.']);
       throw error;
     } finally {
-      setDetailLoading(false);
+      if (detailRequestSeq.current === requestId) setDetailLoading(false);
     }
   }
 
   useEffect(() => {
-    refreshBase().catch((error) => setError(error.message));
+    clearDailyRoomData();
+    refreshBase({ selectDefault: true }).catch((error) => setError(error.message));
   }, [token]);
 
   useEffect(() => {
+    if (!selectedId) return;
     refreshSelected().catch((error) => setError(error.message));
-  }, [selectedId, token]);
+  }, [selectedId]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -847,13 +884,21 @@ function AskRoom({ token }) {
   const [error, setError] = useState('');
   const askRequestSeq = useRef(0);
   const askInFlightRef = useRef(false);
-  function resetAskStateForInputChange() {
-    askRequestSeq.current += 1;
-    askInFlightRef.current = false;
+  function clearAskResponseState() {
     setError('');
     setAnswer(null);
     setBusy(false);
   }
+  function resetAskStateForInputChange() {
+    askRequestSeq.current += 1;
+    askInFlightRef.current = false;
+    clearAskResponseState();
+  }
+  useEffect(() => {
+    askRequestSeq.current += 1;
+    askInFlightRef.current = false;
+    clearAskResponseState();
+  }, [token]);
   function updateAgent(value) {
     const nextAgent = normalizeAgentName(value);
     setAgent(nextAgent);

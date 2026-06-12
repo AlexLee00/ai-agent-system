@@ -324,6 +324,13 @@ async function main() {
     assert.ok(appJs.text.includes('target="_blank"'));
     assert.ok(appJs.text.includes('rel="noopener noreferrer"'));
     assert.equal(appJs.text.includes('rel="noreferrer"'), false);
+    assert.ok(appJs.text.includes("const TOKEN_STORAGE_KEY = 'lunaMeetingRoomToken';"));
+    assert.ok(appJs.text.includes('function readLocalValue(key, fallback ='));
+    assert.ok(appJs.text.includes('function writeLocalValue(key, value)'));
+    assert.ok(appJs.text.includes("useState(() => readLocalValue(TOKEN_STORAGE_KEY, ''))"));
+    assert.ok(appJs.text.includes('writeLocalValue(TOKEN_STORAGE_KEY, value);'));
+    assert.equal(appJs.text.includes("localStorage.getItem('lunaMeetingRoomToken')"), false);
+    assert.equal(appJs.text.includes("localStorage.setItem('lunaMeetingRoomToken', value)"), false);
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰'));
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
@@ -458,9 +465,25 @@ async function main() {
     assert.ok(appJs.text.includes('회의실 서버에 연결할 수 없습니다'));
     assert.ok(appJs.text.includes("setError('');"));
     assert.ok(appJs.text.includes("payload.run.status === 'completed'"));
-    assert.ok(appJs.text.includes('await refreshSelected(payload.run.sessionId)'));
+    assert.equal(appJs.text.includes('await refreshSelected(payload.run.sessionId)'), false);
+    assert.equal(appJs.text.includes('await refreshSelected(nextId)'), false);
+    assert.ok(appJs.text.includes('async function refreshBase(options = {})'));
+    assert.ok(appJs.text.includes('const selectDefault = options.selectDefault === true;'));
+    assert.ok(appJs.text.includes('if ((selectDefault || !selectedId) && (list.activeRuns?.[0] || list.meetings?.[0]))'));
     assert.ok(appJs.text.includes('function clearDailyRoomData'));
     assert.ok(appJs.text.includes('clearDailyRoomData();'));
+    assert.ok(appJs.text.includes('refreshBase({ selectDefault: true }).catch((error) => setError(error.message));'));
+    assert.ok(appJs.text.includes('if (!selectedId) return;'));
+    assert.ok(appJs.text.includes('}, [selectedId]);'));
+    assert.equal(appJs.text.includes('}, [selectedId, token]);'), false);
+    assert.ok(appJs.text.includes('setDetailLoading(false);'));
+    assert.ok(appJs.text.includes("setNotice('');"));
+    assert.ok(appJs.text.includes('const baseRequestSeq = useRef(0);'));
+    assert.ok(appJs.text.includes('const detailRequestSeq = useRef(0);'));
+    assert.ok(appJs.text.includes('if (baseRequestSeq.current !== requestId) return;'));
+    assert.ok(appJs.text.includes('if (detailRequestSeq.current !== requestId) return;'));
+    assert.ok(appJs.text.includes('const catchupPayload = await api(token, `/api/catchup/${id}`);\n      if (detailRequestSeq.current !== requestId) return;\n      setDetail(payload);'));
+    assert.ok(appJs.text.includes('if (detailRequestSeq.current === requestId) setDetailLoading(false);'));
     assert.ok(appJs.text.includes('회의 상세를 불러오지 못했습니다.'));
     assert.ok(appJs.text.includes("payload.run.status === 'failed'"));
     assert.ok(appJs.text.includes('오류: ${payload.run.error ||'));
@@ -573,6 +596,9 @@ async function main() {
     assert.ok(appJs.text.includes('function updateQuestion'));
     assert.ok(appJs.text.includes('const askRequestSeq = useRef(0);'));
     assert.ok(appJs.text.includes('const askInFlightRef = useRef(false);'));
+    assert.ok(appJs.text.includes('function clearAskResponseState()'));
+    assert.ok(appJs.text.includes('clearAskResponseState();'));
+    assert.ok(appJs.text.includes('}, [token]);'));
     assert.ok(appJs.text.includes('askInFlightRef.current = false;'));
     assert.ok(appJs.text.includes('if (askInFlightRef.current || !question.trim()) return;'));
     assert.ok(appJs.text.includes('askInFlightRef.current = true;'));
@@ -1048,6 +1074,7 @@ async function main() {
       askClearsStaleAnswerOnSubmit: true,
       askClearsStaleAnswerOnInputChange: true,
       askIgnoresStaleAsyncResponse: true,
+      askClearsStateOnTokenChange: true,
       askReentryAndEmptyQuestionGuard: true,
       askInputClearsStaleError: true,
       askAnswerLiveRegion: true,
@@ -1059,7 +1086,9 @@ async function main() {
       pollingStatusVisible: true,
       pollingStatusKoreanLabel: true,
       tokenAuth: true,
+      tokenStorageFailOpen: true,
       headerTokenA11y: true,
+      dailyRoomTokenChangeClearsStaleData: true,
       tablistSemantics: true,
       tabPanelAriaControlsTargets: true,
       tabKeyboardNavigation: true,
@@ -1109,6 +1138,8 @@ async function main() {
       decisionStatusRawTokenHidden: true,
       serverRecoveryClearsError: true,
       authFailureClearsCachedData: true,
+      dailyRoomResetClearsLoadingAndNotice: true,
+      dailyRoomIgnoresStaleAsyncRefresh: true,
       dueBadges: true,
       dueBadgeA11y: true,
       dueFallbackKoreanLabel: true,
