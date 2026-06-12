@@ -1100,6 +1100,18 @@ async function main() {
     assert.equal((premarketGenericConclusion.match(/후속 조치는 마스터 확인 후 기록합니다/g) || []).length, 1);
     assert.equal(premarketGenericConclusion.includes('결과적으로'), false);
     assert.equal((premarketGenericConclusion.match(/현 시점에서 추가적인 조치/g) || []).length, 0);
+    const premarketEventSummary = _testOnly.normalizeLegacyMinuteContent(
+      '4. 국내 시장의 전략은 현재 상승 추세를 보이고 있으며, 0.38의 강도에 해당합니다.\n5. 미국 시장의 전략은 현재 중립적인 상태이며, 0.\n6. 암호화폐 시장의 전략은 현재 하락 추세를 보이고 있으며, 0.\n7. 전략군 24시간 동안 1건의 이벤트가 발생했습니다.\n8. 현재 활성 서킷은 14건이며, 결정 대기 중인 이벤트는 5건입니다.\n\n따라서, 현재 미국 보유/예정 이벤트의 진행 상황은 국내 시장의 halt 상태, 미국 시장의 reduced 상태, 암호화폐 시장의 reduced 상태, 국내 시장의 전략이 상승 추세, 미국 시장의 전략이 중립적, 암호화폐 시장의 전략이 하락 추세, 전략군 24시간 동안 1건의 이벤트가 발생, 활성 서킷 14건, 결정 대기 중인 이벤트 5건입니다.',
+    );
+    assert.ok(premarketEventSummary.includes('국내 레짐은 상승(0.38)입니다.'));
+    assert.ok(premarketEventSummary.includes('미국 레짐은 수평입니다.'));
+    assert.ok(premarketEventSummary.includes('암호화폐 레짐은 하락입니다.'));
+    assert.ok(premarketEventSummary.includes('전략군 24시간 신호 1건입니다.'));
+    assert.ok(premarketEventSummary.includes('결정 대기: 상단 캐치업 기준입니다.'));
+    assert.ok(premarketEventSummary.includes('요약은 위 게이트·레짐·전략·서킷 항목 기준입니다.'));
+    assert.equal(premarketEventSummary.includes('시장의 전략'), false);
+    assert.equal(premarketEventSummary.includes('이벤트가 발생'), false);
+    assert.equal(premarketEventSummary.includes('결정 대기 중인 이벤트'), false);
     const premarketEntryTerm = _testOnly.normalizeLegacyMinuteContent(
       '게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.\n전략군 24시간 동안 1건의 입장(Entry 0)이 발생하였으며, 현재 14건의 활성 서킷이 유지되고 있습니다.',
     );
