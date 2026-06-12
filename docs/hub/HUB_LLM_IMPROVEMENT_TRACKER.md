@@ -96,3 +96,8 @@ H6 상태: 프롬프트 -> **검증** (커밋+launchd 등록은 마스터, GATE-
    후 재조정 시 1줄 반영.
 
 이력 추가: 2026-06-12 H6 메티 독립 검증 통과(TS-G1~G6 + evidence 재현) + §9.3 보정 + 인시던트 기록 (메티)
+
+이력 추가: 2026-06-12 CODEX-H v2 갱신 (메티) — 6/11 인시던트 커밋 3건(50330d116/374cbc170/2655e18af)
+분석 반영: local 폭증 직접 원인 = 2655e18af(groq 폴백 중단+local 폴백 도입) 확인,
+HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED env 정합 방침(기본 true=groq 폴백, false=openai 단독, local 경로 삭제),
+LEGACY/현행 프로필 테이블 두 벌 식별(교체 대상=현행 ~1008행, LEGACY ~623행 비변경), 라인 재확정.

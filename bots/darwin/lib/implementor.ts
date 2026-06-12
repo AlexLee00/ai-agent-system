@@ -470,6 +470,7 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
       callerTeam: 'darwin',
       agent: 'synthesis',
       taskType: 'auto_implementation',
+      runtimePurpose: 'auto_implementation',
       abstractModel: 'anthropic_sonnet',
       systemPrompt: `당신은 팀 제이의 프로토타입 개발자(edison)입니다.
 연구 제안을 실제 Node.js 코드로 구현하세요.

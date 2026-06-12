@@ -79,6 +79,7 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
       agent: 'darwin.evaluator',
       selectorKey: 'darwin.agent_policy',
       taskType: 'paper_evaluation',
+      runtimePurpose: 'paper_evaluation',
       abstractModel: 'anthropic_haiku',
       systemPrompt: SYSTEM_PROMPT,
       prompt: `제목: ${paper.title}\n초록: ${paper.summary}`,
@@ -92,6 +93,7 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
       result = await callHubLlm({
         ...request,
         taskType: 'paper_evaluation_retry',
+        runtimePurpose: 'paper_evaluation_retry',
         prompt: `${request.prompt}\n\n형식 재강조:\n요약: 한 줄\n적합성: 숫자 하나\n이유: 한 줄`,
       });
       parsed = parseEvaluationText(String(result?.text || ''));

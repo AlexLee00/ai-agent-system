@@ -21,6 +21,19 @@ const DEFAULT_PORT = 7791;
 const MAX_BODY_BYTES = 1_000_000;
 const ASK_LIMIT_PER_MINUTE = 2;
 const ASK_LIMIT_PER_DAY = 20;
+const STATIC_SECURITY_HEADERS = Object.freeze({
+  'cache-control': 'no-store',
+  'content-security-policy': "default-src 'self' https://unpkg.com; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+});
+const JSON_SECURITY_HEADERS = Object.freeze({
+  'cache-control': 'no-store',
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+});
 const AGENT_DISPLAY_LABELS = Object.freeze({
   luna: 'Luna',
   nemesis: 'Nemesis',
@@ -68,18 +81,19 @@ function safeJson(value, fallback = {}) {
   }
 }
 
-function jsonResponse(res, statusCode, payload) {
+function jsonResponse(res, statusCode, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload, null, 2);
   res.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(body),
-    'cache-control': 'no-store',
+    ...JSON_SECURITY_HEADERS,
+    ...extraHeaders,
   });
   res.end(body);
 }
 
-function methodNotAllowed(res) {
-  jsonResponse(res, 405, { ok: false, error: 'method_not_allowed', message: '지원하지 않는 요청 방식입니다.' });
+function methodNotAllowed(res, allow = 'GET, HEAD') {
+  jsonResponse(res, 405, { ok: false, error: 'method_not_allowed', message: '지원하지 않는 요청 방식입니다.' }, { allow });
 }
 
 function readBody(req) {
@@ -702,6 +716,18 @@ function isNumericMeetingId(id) {
   return /^\d+$/.test(String(id ?? ''));
 }
 
+function allowedMethodsForApiPath(pathname, parts) {
+  if (pathname === '/api/health') return 'GET';
+  if (pathname === '/api/meetings') return 'GET';
+  if (pathname === '/api/meetings/start') return 'POST';
+  if (parts[0] === 'api' && parts[1] === 'meetings' && parts[2]) return 'GET';
+  if (parts[0] === 'api' && parts[1] === 'catchup' && parts[2]) return 'GET';
+  if (pathname === '/api/decisions/pending') return 'GET';
+  if (parts[0] === 'api' && parts[1] === 'decisions' && parts[2]) return 'POST';
+  if (pathname === '/api/agents/ask') return 'POST';
+  return null;
+}
+
 async function getMeeting(id, deps) {
   if (deps.meetingStore?.getMeeting) {
     const stored = await deps.meetingStore.getMeeting(id);
@@ -946,7 +972,7 @@ function serveStatic(req, res) {
   res.writeHead(200, {
     'content-type': contentType(target),
     'content-length': stat.size,
-    'x-content-type-options': 'nosniff',
+    ...STATIC_SECURITY_HEADERS,
   });
   if (req.method === 'HEAD') return res.end();
   fs.createReadStream(target).pipe(res);
@@ -992,6 +1018,10 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
           .map((run) => ({ ...run, promise: undefined })),
         segments: deps.buildMarketSegmentsFn(new Date()),
       });
+    }
+
+    if (parsed.pathname === '/api/meetings/start' && req.method !== 'POST') {
+      return methodNotAllowed(res, 'POST');
     }
 
     if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'meetings' && parts[2]) {
@@ -1068,6 +1098,9 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       const body = await readBody(req);
       return jsonResponse(res, 200, await askAgent(body, deps, askLimiter));
     }
+
+    const allowed = allowedMethodsForApiPath(parsed.pathname, parts);
+    if (allowed) return methodNotAllowed(res, allowed);
 
     jsonResponse(res, 404, { ok: false, error: 'not_found', message: '요청한 회의실 리소스를 찾을 수 없습니다.' });
   }

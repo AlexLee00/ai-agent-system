@@ -428,10 +428,20 @@ function isExplicitGeminiDiagnosticSelector(selectorKey: string): boolean {
 function isBacktestSelector(selectorKey: string, options: SelectorOptions = {}): boolean {
   const key = String(selectorKey || '').trim();
   const agentName = String(options.agentName || '').trim().toLowerCase();
-  const taskType = String((options as any).taskType || (options as any).runtimePurpose || '').trim().toLowerCase();
+  const taskType = normalizeTaskTypeInput(options);
   return key === 'chronos.backtest'
     || key === 'investment.chronos.backtest'
     || (key === 'investment.agent_policy' && agentName === 'chronos' && taskType === 'backtest_embedding');
+}
+
+function normalizeTaskTypeInput(options: SelectorOptions = {}): string {
+  return String(
+    (options as any).taskType
+    || (options as any).task_type
+    || (options as any).runtimePurpose
+    || (options as any).runtime_purpose
+    || '',
+  ).trim().toLowerCase();
 }
 
 function openAiEntry(template: LLMChainEntry | null | undefined, model: string): LLMChainEntry {
@@ -484,16 +494,6 @@ function localEmbeddingEntry(): LLMChainEntry {
   return { provider: 'local-embedding', model: LOCAL_EMBED_MODEL, maxTokens: 0, temperature: 0 };
 }
 
-function localFastEntry(template: LLMChainEntry | null | undefined): LLMChainEntry {
-  return {
-    provider: 'local',
-    model: 'qwen2.5-7b',
-    maxTokens: Math.min(entryMaxTokens(template, 1024), 1024),
-    temperature: template?.temperature ?? 0.1,
-    ...(template?.timeoutMs ? { timeoutMs: template.timeoutMs } : {}),
-  };
-}
-
 function replacementForGemini(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
   const selectorKey = String(options.selectorKey || '');
   const maxTokens = entryMaxTokens(entry, Number(options.maxTokens) || 1024);
@@ -532,7 +532,7 @@ function ensureOpenAiPrimary(chain: LLMChainEntry[], options: SelectorOptions = 
 
 function ensureOpenAiPrimaryWithBoundedFallback(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
   const openAiPrimary = ensureOpenAiPrimary(chain, options);
-  if (parseEnabledFlag(process.env.HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED) === true) {
+  if (parseEnabledFlag(process.env.HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED) !== false) {
     const bounded = openAiPrimary.map((entry) => (isGroqEntry(entry) ? groqFastEntry(entry) : entry));
     if (!bounded.some(isGroqEntry)) {
       bounded.push(groqFastEntry(bounded[0] || chain[0]));
@@ -540,11 +540,7 @@ function ensureOpenAiPrimaryWithBoundedFallback(chain: LLMChainEntry[], options:
     return dedupeByProvider(bounded);
   }
 
-  const bounded = openAiPrimary.filter((entry) => !isGroqEntry(entry));
-  if (!bounded.some((entry) => providerOfEntry(entry) === 'local')) {
-    bounded.push(localFastEntry(bounded[0] || chain[0]));
-  }
-  return dedupeByProvider(bounded);
+  return dedupeByProvider(openAiPrimary.filter((entry) => !isGroqEntry(entry)));
 }
 
 function ensureOpenAiFallback(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
@@ -611,12 +607,20 @@ function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: Select
   return optimized.length > 0 ? optimized : [openAiEntry(chain[0], OPENAI_MINI_MODEL)];
 }
 
+function applyLocalBacktestOnlyGuard(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  if (parseEnabledFlag(process.env.HUB_LLM_LOCAL_BACKTEST_ONLY) === false) return chain;
+  const taskType = normalizeTaskTypeInput(options);
+  if (taskType.startsWith('backtest')) return chain;
+  return chain.filter((entry) => providerOfEntry(entry) !== 'local');
+}
+
 function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
-  const guarded = dedupeByProviderModel(chain.map((entry) => {
+  const providerGuarded = chain.map((entry) => {
     if (shouldAvoidClaudeCode(entry, options)) return replacementForClaudeCode(entry, options);
     if (shouldAvoidPublicOpenAi(entry, options)) return replacementForPublicOpenAi(entry);
     return entry;
-  }));
+  });
+  const guarded = dedupeByProviderModel(applyLocalBacktestOnlyGuard(providerGuarded, options));
   return applySelectorOptimizationPolicy(guarded, options);
 }
 
@@ -1006,20 +1010,28 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     'alarm.interpreter.work': {
-      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 160, temperature: 0.1 },
-      fallbacks: [],
+      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 160, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 160, temperature: 0.1 },
+      ],
     },
     'alarm.interpreter.report': {
-      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 220, temperature: 0.1 },
-      fallbacks: [],
+      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 220, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 220, temperature: 0.1 },
+      ],
     },
     'alarm.interpreter.error': {
-      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 320, temperature: 0.1 },
-      fallbacks: [],
+      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 320, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 320, temperature: 0.1 },
+      ],
     },
     'alarm.interpreter.critical': {
-      primary: { provider: 'local', model: 'qwen2.5-7b', maxTokens: 320, temperature: 0.1 },
-      fallbacks: [],
+      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 320, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 320, temperature: 0.1 },
+      ],
     },
     'roundtable.jay': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 500, temperature: 0.2 },
@@ -1878,34 +1890,34 @@ function buildSelectorRegistry(): Record<string, any> {
       const { agentName } = options;
       const DARWIN_ROUTES: Record<string, { route: string; fallback: string[] }> = {
         'darwin.scanner':              { route: 'openai_mini', fallback: ['groq_scout'] },
-        'darwin.evaluator':            { route: 'gemini_flash_lite', fallback: ['openai_mini', 'groq_scout'] },
-        'darwin.planner':              { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
+        'darwin.evaluator':            { route: 'openai_mini', fallback: ['groq_scout'] },
+        'darwin.planner':              { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.edison':               { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'darwin.verifier':             { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'darwin.commander':            { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
-        'darwin.reflexion':            { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
-        'darwin.espl':                 { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
-        'darwin.self_rag':             { route: 'anthropic_haiku', fallback: [] },
-        'darwin.self_rewarding_judge': { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
+        'darwin.reflexion':            { route: 'openai_mini', fallback: ['groq_scout'] },
+        'darwin.espl':                 { route: 'openai_mini', fallback: ['groq_scout'] },
+        'darwin.self_rag':             { route: 'openai_mini', fallback: ['groq_scout'] },
+        'darwin.self_rewarding_judge': { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.rag.query_planner':    { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.rag.synthesizer':      { route: 'openai_mini', fallback: ['groq_scout'] },
-        'darwin.synthesis':            { route: 'openai_mini', fallback: ['groq_scout'] },
-        research:                      { route: 'gemini_flash_lite', fallback: ['openai_mini', 'groq_scout'] },
-        synthesis:                     { route: 'openai_mini', fallback: ['groq_scout'] },
+        'darwin.synthesis':            { route: 'openai_perf', fallback: ['groq_scout'] },
+        research:                      { route: 'openai_mini', fallback: ['groq_scout'] },
+        synthesis:                     { route: 'openai_perf', fallback: ['groq_scout'] },
         commander:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
-        evaluator:                     { route: 'gemini_flash_lite', fallback: ['openai_mini', 'groq_scout'] },
-        planner:                       { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
-        implementor:                   { route: 'qwen_deep', fallback: ['gemini_flash', 'openai_mini'] },
+        evaluator:                     { route: 'openai_mini', fallback: ['groq_scout'] },
+        planner:                       { route: 'openai_mini', fallback: ['groq_scout'] },
+        implementor:                   { route: 'openai_perf', fallback: ['groq_scout'] },
         verifier:                      { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        applier:                       { route: 'anthropic_haiku', fallback: [] },
-        learner:                       { route: 'anthropic_haiku', fallback: [] },
+        applier:                       { route: 'openai_mini', fallback: ['groq_scout'] },
+        learner:                       { route: 'openai_mini', fallback: ['groq_scout'] },
         scanner:                       { route: 'openai_mini', fallback: ['groq_scout'] },
-        reflexion:                     { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
-        'self_rag.retrieve':           { route: 'anthropic_haiku', fallback: [] },
-        'self_rag.relevance':          { route: 'anthropic_haiku', fallback: [] },
-        'espl.crossover':              { route: 'gemini_flash', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
-        'espl.mutation':               { route: 'anthropic_haiku', fallback: [] },
-        'principle.critique':          { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
+        reflexion:                     { route: 'openai_mini', fallback: ['groq_scout'] },
+        'self_rag.retrieve':           { route: 'openai_mini', fallback: ['groq_scout'] },
+        'self_rag.relevance':          { route: 'openai_mini', fallback: ['groq_scout'] },
+        'espl.crossover':              { route: 'openai_mini', fallback: ['groq_scout'] },
+        'espl.mutation':               { route: 'openai_mini', fallback: ['groq_scout'] },
+        'principle.critique':          { route: 'openai_perf', fallback: ['groq_scout'] },
       };
       const key = String(agentName || 'commander');
       const entry = DARWIN_ROUTES[key] || { route: 'anthropic_haiku', fallback: [] };

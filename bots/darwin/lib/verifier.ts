@@ -284,6 +284,7 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
       callerTeam: 'darwin',
       agent: 'review',
       taskType: 'auto_verification',
+      runtimePurpose: 'auto_verification',
       abstractModel: 'anthropic_sonnet',
       systemPrompt: `당신은 팀 제이의 연구 검증자(proof-r)입니다.
 다윈 자동 구현 결과를 검증하세요.

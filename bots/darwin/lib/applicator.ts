@@ -128,6 +128,7 @@ async function generateProposal(paper: Partial<ResearchPaper>): Promise<string> 
     callerTeam: 'darwin',
     agent: 'synthesis',
     taskType: 'proposal_generation',
+    runtimePurpose: 'proposal_generation',
     abstractModel: 'anthropic_sonnet',
     systemPrompt: `당신은 팀 제이의 기술 적용 전문가(graft)입니다.
 ${TEAM_CONTEXT}
@@ -159,6 +160,7 @@ async function generatePrototype(paper: Partial<ResearchPaper>, proposal: string
     callerTeam: 'darwin',
     agent: 'synthesis',
     taskType: 'prototype_generation',
+    runtimePurpose: 'prototype_generation',
     abstractModel: 'anthropic_sonnet',
     systemPrompt: `당신은 팀 제이의 프로토타입 개발자(edison)입니다.
 ${TEAM_CONTEXT}

@@ -33,7 +33,7 @@
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
 | W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(자문 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타·새 질의 시 이전 응답 제거·입력 변경 시 이전 오류 제거, rule-based/noLLM 응답도 내부 라우팅 토큰 없이 한국어 표시, Hub 실패 원문은 숨기고 한국어 안내 표시) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta/stale/noLLM/실패 안내+[수동] ✅UI 기본 상태·noLLM 브라우저 |
-| W-31 | 비용 가드 | 분당 2회 초과→429 안내(분 경과 후 재시도 가능) | [자동] API |
+| W-31 | 비용 가드 | 분당 2회 초과→429 안내(분 경과 후 재시도 가능) | [자동] API+[수동] ✅2026-06-12 브라우저 |
 | W-32 | 응답 마크다운 | LLM 응답의 마크다운도 W-20과 동일 렌더 | [자동] fixture+[수동] 실호출 보류 |
 
 ## D. 통신·보안·내성
@@ -41,7 +41,7 @@
 |---|---|---|---|
 | W-40 | 폴링 주기 | open 세션 시 3초·idle 30초, 현재 모드가 화면에 표시됨 | [자동] cadence 계약+폴링 상태 배지+[수동] 네트워크 탭 |
 | W-41 | 서버 다운/API 오류 내성 | 서버 중지 또는 잘못된 API 요청 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거·404/400/405류 오류는 내부 토큰 대신 한국어 안내 표시 | [자동] 복구시 에러 clear+stale 제거+친화 API 오류+[수동] ✅2026-06-12 실제 API |
-| W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님) | [자동] smoke |
+| W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님), 정적/API 응답에 기본 보안·캐시 헤더 적용 | [자동] smoke+[수동] ✅2026-06-12 lsof/headers |
 | W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200, 로컬 무인증 모드에서는 토큰 입력/삭제 후 화면 복구 | [자동]+[수동] ✅2026-06-12 무인증 복구 |
 | W-44 | 모바일 반응형/키보드 | 창 폭 축소·Tab 이동 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기·명시적 `focus-visible` 링·320px/390px horizontal overflow 없음 | [자동] focus ring+1컬럼 계약+[수동] ✅390px/320px 확인 |
 
@@ -215,6 +215,11 @@
 - **2026-06-12 루프 159**: W-44/W-30 모바일 부작용 재검증 → 직전 newline 경계 보강이 320px/390px 모바일 레이아웃을 깨지 않는지 실제 브라우저에서 확인했다. 320px 일일 회의실은 body overflow 0, control 높이 40px 이상(체크박스는 label 터치 영역으로 보호), bad pattern 0건, console warn/error 0건이었다. 390px 에이전트 질의 패널은 `aria-labelledby=meeting-ask-form-title`, 응답 live region 유지, `@멘션 질의\n에이전트...\n질문...\n응답...` 줄 단위 추출, bad pattern 0건, overflow 0건으로 추가 수정 없음.
 - **2026-06-12 루프 160**: W-41/W-43 토큰 오류·복구 흐름 점검 → 현재 실제 서비스는 `MEETING_ROOM_TOKEN` 미설정 무인증 모드라 무토큰/잘못된 토큰 모두 `/api/health=200`으로 확인되어 401은 fixture 스모크 커버로 유지했다. 브라우저에서 잘못된 토큰을 입력해도 회의 목록 2건·캐치업·에러 없음 상태가 유지되고, 키보드 방식으로 토큰을 비우면 input/localStorage 모두 0으로 복구되며 회의 목록·캐치업 정상, console warn/error 0, overflow 0을 확인했다.
 - **2026-06-12 루프 161**: W-41 실제 API 오류 내성 재점검 → `GET /api/meetings/start`가 동적 회의 ID 라우트로 들어가 DB bigint 변환 오류 `22P02`를 500으로 노출하는 문제를 확인. active run ID가 아닌 회의 상세/catchup ID는 숫자만 DB 조회하도록 방어해 `/api/meetings/start`와 `/api/catchup/start`가 `404 meeting_not_found · 회의 start를 찾을 수 없습니다.`로 응답하게 수정하고 스모크에 회귀 케이스를 추가했다. 재시작 후 실제 API와 브라우저 기본 화면 모두 정상, console warn/error 0, overflow 0.
+- **2026-06-12 루프 162**: W-41 method mismatch 내성 보강 → 실제 API에서 `POST /api/health`, `GET /api/agents/ask`, `GET /api/decisions/1` 같은 잘못된 method가 한국어 404로 fail-safe 처리되는 것은 확인했지만, 정적 파일 경로의 405 계약과 달라 디버깅 신호가 약했다. 알려진 API 경로는 method mismatch 시 `405 method_not_allowed · 지원하지 않는 요청 방식입니다.`와 `Allow` header를 반환하도록 보강하고, 존재하지 않는 회의 ID는 `404 meeting_not_found`로 유지하도록 스모크를 추가했다.
+- **2026-06-12 루프 163**: W-31 에이전트 질의 비용 가드 실제 브라우저 검증 → Aria 비용 없는 규칙 기반 경로로 같은 질문을 3회 제출했다. 1~2회는 `응답 방식 규칙 기반 · 상태 성공`으로 표시되고 `noLLM route/provider/rule_based` 같은 내부 토큰은 노출되지 않았다. 3회째는 `분당 질의 한도에 도달했습니다. 1분 후 다시 시도하세요.` alert로 전환되며 이전 응답은 제거되고, console warn/error 0건이었다.
+- **2026-06-12 루프 164**: W-30 비용 가드 이후 입력 복구 브라우저 검증 → W-31 alert가 떠 있는 상태에서 질문을 수정하자 stale alert가 즉시 사라지고, 응답 영역은 `아직 응답 없음`, 전송 버튼은 활성 상태로 복구됐다. `ask_rate_limited/provider/rule_based/noLLM route` 같은 내부 토큰은 DOM에 없고, horizontal overflow 0·console warn/error 0건을 확인했다.
+- **2026-06-12 루프 165**: W-42 응답 헤더·바인딩 점검 → 실제 `lsof`에서 `127.0.0.1:7791` 단독 LISTEN을 확인했다. 정적 200 응답에는 `nosniff`만 있고 캐시/프레임/권한 헤더가 부족하며, API/오류 JSON에는 `nosniff`가 없어 정적·API 공통 보안 신호가 불일치했다. 정적 리소스에 `no-store`, HTTP CSP, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`를 추가하고 JSON 응답에도 `nosniff/no-referrer/no-store`를 적용해 스모크 계약으로 고정했다.
+- **2026-06-12 루프 166**: W-20/W-21/W-24 최신 회의 렌더 품질 재스캔 → 최신 회의 #117의 `/api/meetings/117` 텍스트와 실제 브라우저 DOM을 동시에 검사했다. raw JSON/object array, markdown heading/bold/table 원문, `pending_master/c_master/changed_via/agendaKey/provider/rule_based/noLLM route`, DB/jsonb/raw 토큰, 반복 boilerplate 모두 hit 0건이었다. 회의록 8행·결정 1건·목록 최신 선택이 정상이며, console warn/error 0·horizontal overflow 0으로 추가 수정 없음.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

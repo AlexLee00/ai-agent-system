@@ -562,6 +562,7 @@ async function executeSkillCreation(task: ResearchTask): Promise<SkillCreationRe
       callerTeam: 'darwin',
       agent: 'synthesis',
       taskType: 'skill_creation',
+      runtimePurpose: 'skill_creation',
       abstractModel: 'anthropic_sonnet',
       systemPrompt: `당신은 팀 제이의 스킬 개발자입니다.
 GitHub/논문에서 발견한 패턴을 Node.js 스킬 모듈로 구현하세요.

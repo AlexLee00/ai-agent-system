@@ -55,6 +55,34 @@ const CLAUDE_CODE_BUDGET_FLOORS_USD = {
 };
 
 const inFlightDedupe = new Map<string, Promise<LlmResponse>>();
+const rateLimitCooldownUntil: Record<string, number> = {};
+
+function _rateLimitCooldownEnabled(): boolean {
+  return String(process.env.HUB_LLM_RATELIMIT_COOLDOWN_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+}
+
+function _rateLimitCooldownMinMs(): number {
+  const configured = Number(process.env.HUB_LLM_RATELIMIT_COOLDOWN_MIN_MS || 30_000);
+  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 30_000;
+}
+
+function _normalizeProviderName(provider: unknown): string {
+  return String(provider || '').trim().toLowerCase();
+}
+
+function isRateLimitCoolingDown(provider: string): boolean {
+  const normalized = _normalizeProviderName(provider);
+  if (!normalized || !_rateLimitCooldownEnabled()) return false;
+  return Date.now() < (rateLimitCooldownUntil[normalized] || 0);
+}
+
+function noteRateLimitCooldown(provider: string, retryAfterMs?: number): void {
+  const normalized = _normalizeProviderName(provider);
+  if (!normalized || !_rateLimitCooldownEnabled()) return;
+  const configured = Number(retryAfterMs);
+  const ms = Math.max(Number.isFinite(configured) && configured > 0 ? configured : 0, _rateLimitCooldownMinMs());
+  rateLimitCooldownUntil[normalized] = Math.max(rateLimitCooldownUntil[normalized] || 0, Date.now() + ms);
+}
 
 let _groqModelCache: AnyRecord | undefined;
 function _groqModel(): AnyRecord {
@@ -277,13 +305,15 @@ function _applySelectorAvoidProviders(req: LlmRequest, selectorChain: AnyRecord)
 async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord, team: string): Promise<LlmResponse> {
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(selectorChain.chain || [], tokenBudget);
+  const cooldownPlan = _rateLimitCooldownPlan(budgetedChain, req.abstractModel);
   const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
   const attempts: AnyRecord[] = [];
 
-  for (const entry of budgetedChain) {
+  for (const entry of cooldownPlan.chain) {
     const route = _chainEntryToRoute(entry);
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
-    const result = await _callRoute(route, req, entry.timeoutMs || chainTimeout, entry);
+    const chainEntry = _withCooldownOverride(entry, cooldownPlan.ignoreCooldown);
+    const result = await _callRoute(route, req, entry.timeoutMs || chainTimeout, chainEntry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
       const success = {
@@ -348,12 +378,14 @@ async function _callWithProfileChain(req: LlmRequest, profile: AnyRecord, team: 
 
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(chain, tokenBudget);
+  const cooldownPlan = _rateLimitCooldownPlan(budgetedChain, req.abstractModel);
   const chainTimeout = Math.min(profile.timeout_ms || req.timeoutMs || 30_000, tokenBudget.perAttemptTimeoutMs || 30_000);
   const attempts: AnyRecord[] = [];
 
-  for (const route of budgetedChain) {
+  for (const route of cooldownPlan.chain) {
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
-    const result = await _callRoute(route, req, route.timeoutMs || chainTimeout, route);
+    const chainEntry = _withCooldownOverride(route, cooldownPlan.ignoreCooldown);
+    const result = await _callRoute(route, req, route.timeoutMs || chainTimeout, chainEntry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
       const success = {
@@ -420,6 +452,10 @@ async function _callRoute(route: unknown, req: LlmRequest, timeoutMs: unknown, c
     return { ok: false, provider: 'failed', error: 'gemini_provider_disabled', durationMs: 0 };
   }
 
+  if (!chainEntry?._ignoreRateLimitCooldown && isRateLimitCoolingDown(provider)) {
+    return { ok: false, provider: 'failed', error: `provider_rate_limit_cooling_down:${provider}`, durationMs: 0 };
+  }
+
   if (_providerCircuitEnabled(provider) && !providerRegistry.canCall(circuitKey)) {
     return {
       ok: false,
@@ -431,6 +467,9 @@ async function _callRoute(route: unknown, req: LlmRequest, timeoutMs: unknown, c
 
   const result = await _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry);
   const latencyMs = Number(result.durationMs || 0) || (Date.now() - started);
+  if (!result.ok && _isProviderRateLimitError(provider, result.error)) {
+    noteRateLimitCooldown(provider, result.retryAfterMs);
+  }
   if (_providerCircuitEnabled(provider)) {
     if (result.ok) {
       providerRegistry.recordSuccess(circuitKey, latencyMs);
@@ -689,17 +728,19 @@ function _providerCircuitKey(provider: string, normalizedRoute: unknown): string
   return provider;
 }
 
+function _isProviderRateLimitError(provider: string, error: unknown): boolean {
+  const message = String(error || '');
+  return provider === 'groq' && (
+    /Groq 429/i.test(message)
+    || /rate[-_\s]?limit/i.test(message)
+    || /rate-limited/i.test(message)
+    || /계정 풀 비어있음|cooldown/i.test(message)
+  );
+}
+
 function _shouldRecordProviderCircuitFailure(provider: string, error: unknown): boolean {
   const message = String(error || '');
-  if (
-    provider === 'groq'
-    && (
-      /Groq 429/i.test(message)
-      || /rate[-_\s]?limit/i.test(message)
-      || /rate-limited/i.test(message)
-      || /계정 풀 비어있음|cooldown/i.test(message)
-    )
-  ) {
+  if (_isProviderRateLimitError(provider, error)) {
     return false;
   }
   if (
@@ -710,6 +751,28 @@ function _shouldRecordProviderCircuitFailure(provider: string, error: unknown): 
     return false;
   }
   return true;
+}
+
+function _routeForCooldown(entry: unknown, abstractModel?: unknown): string {
+  if (typeof entry === 'string') return _normalizeRoute(entry, abstractModel);
+  return _normalizeRoute(_chainEntryToRoute(entry as RouteEntry), abstractModel);
+}
+
+function _rateLimitCooldownPlan<T>(chain: T[], abstractModel?: unknown): { chain: T[]; ignoreCooldown: boolean } {
+  if (!Array.isArray(chain) || chain.length === 0) return { chain: [], ignoreCooldown: false };
+  const available = chain.filter((entry) => {
+    const provider = _routeToProvider(_routeForCooldown(entry, abstractModel));
+    return !isRateLimitCoolingDown(provider);
+  });
+  return available.length > 0
+    ? { chain: available, ignoreCooldown: false }
+    : { chain: [chain[chain.length - 1]], ignoreCooldown: true };
+}
+
+function _withCooldownOverride(entry: unknown, ignoreCooldown: boolean): RouteEntry {
+  if (!ignoreCooldown) return entry as RouteEntry;
+  if (entry && typeof entry === 'object') return { ...(entry as AnyRecord), _ignoreRateLimitCooldown: true };
+  return { _ignoreRateLimitCooldown: true };
 }
 
 function _chainEntryToRoute(entry: RouteEntry): string {
@@ -1097,6 +1160,8 @@ module.exports = {
   callWithFallback,
   resolveClaudeCodeTimeoutMs,
   resolveClaudeCodeMaxBudgetUsd,
+  isRateLimitCoolingDown,
+  noteRateLimitCooldown,
   _testOnly: {
     _inflightDedupeKey,
     _runWithInflightDedupe,
@@ -1114,6 +1179,14 @@ module.exports = {
     _openAiOAuthRetryDelayMs,
     _shouldSuppressFallbackExhaustionAlarm,
     _safeFallbackForSelectorExhaustion,
+    _isProviderRateLimitError,
     _shouldRecordProviderCircuitFailure,
+    _rateLimitCooldownPlan,
+    _rateLimitCooldownUntil: rateLimitCooldownUntil,
+    _clearRateLimitCooldowns: () => {
+      for (const key of Object.keys(rateLimitCooldownUntil)) delete rateLimitCooldownUntil[key];
+    },
+    isRateLimitCoolingDown,
+    noteRateLimitCooldown,
   },
 };

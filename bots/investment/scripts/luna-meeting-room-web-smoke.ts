@@ -26,7 +26,7 @@ async function request(baseUrl, path, options = {}) {
   } catch {
     payload = { raw: text };
   }
-  return { status: res.status, ok: res.ok, payload, text };
+  return { status: res.status, ok: res.ok, payload, text, headers: res.headers };
 }
 
 function createMemoryStore() {
@@ -294,6 +294,12 @@ async function main() {
 
     const html = await request(baseUrl, '/');
     assert.equal(html.status, 200);
+    assert.equal(html.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(html.headers.get('cache-control'), 'no-store');
+    assert.equal(html.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(html.headers.get('x-frame-options'), 'DENY');
+    assert.ok(html.headers.get('permissions-policy')?.includes('camera=()'));
+    assert.ok(html.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
     assert.ok(html.text.includes('Luna Meeting Room'));
     assert.ok(html.text.includes(':focus-visible'));
     assert.ok(html.text.includes('outline-offset: 3px'));
@@ -309,6 +315,8 @@ async function main() {
     assert.ok(html.text.includes('overflow-wrap: anywhere'));
     const appJs = await request(baseUrl, '/app.js');
     assert.equal(appJs.status, 200);
+    assert.equal(appJs.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(appJs.headers.get('cache-control'), 'no-store');
     assert.equal(appJs.text.includes('dangerouslySetInnerHTML'), false);
     assert.equal(appJs.text.includes('innerHTML'), false);
     assert.ok(appJs.text.includes('const { useEffect, useMemo, useRef, useState } = React;'));
@@ -1119,13 +1127,26 @@ async function main() {
     const missingMeeting = await request(baseUrl, '/api/meetings/999999');
     assert.equal(missingMeeting.status, 404);
     assert.equal(missingMeeting.payload.message, '회의 999999를 찾을 수 없습니다.');
-    const invalidMeetingId = await request(baseUrl, '/api/meetings/start');
+    const wrongStartMethod = await request(baseUrl, '/api/meetings/start');
+    assert.equal(wrongStartMethod.status, 405);
+    assert.equal(wrongStartMethod.payload.message, '지원하지 않는 요청 방식입니다.');
+    assert.equal(wrongStartMethod.payload.error, 'method_not_allowed');
+    assert.equal(wrongStartMethod.headers.get('allow'), 'POST');
+    assert.equal(wrongStartMethod.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(wrongStartMethod.headers.get('referrer-policy'), 'no-referrer');
+    const invalidMeetingId = await request(baseUrl, '/api/meetings/not-a-meeting-id');
     assert.equal(invalidMeetingId.status, 404);
-    assert.equal(invalidMeetingId.payload.message, '회의 start를 찾을 수 없습니다.');
+    assert.equal(invalidMeetingId.payload.message, '회의 not-a-meeting-id를 찾을 수 없습니다.');
     assert.equal(invalidMeetingId.payload.error, 'meeting_not_found');
     const invalidCatchupId = await request(baseUrl, '/api/catchup/start');
     assert.equal(invalidCatchupId.status, 404);
     assert.equal(invalidCatchupId.payload.message, '회의 start를 찾을 수 없습니다.');
+    const wrongDecisionMethod = await request(baseUrl, '/api/decisions/11');
+    assert.equal(wrongDecisionMethod.status, 405);
+    assert.equal(wrongDecisionMethod.payload.message, '지원하지 않는 요청 방식입니다.');
+    const wrongAskMethod = await request(baseUrl, '/api/agents/ask');
+    assert.equal(wrongAskMethod.status, 405);
+    assert.equal(wrongAskMethod.payload.message, '지원하지 않는 요청 방식입니다.');
 
     const emptyQuestion = await request(baseUrl, '/api/agents/ask', {
       method: 'POST',
