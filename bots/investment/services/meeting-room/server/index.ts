@@ -143,12 +143,12 @@ function componentLabel(key) {
 
 function legacyMetricLabel(key) {
   return {
-    brier_hmm_lt_fallback: 'Brier: HMM<폴백',
+    brier_hmm_lt_fallback: 'Brier: HMM이 폴백보다 낮음',
     transition_alert_precision: '전이 경보 정밀도',
     halt_reduced_avoidance_delta: 'halt/reduced 회피 개선폭',
     nextbar_return_delta: 'next-bar 수익률 차이',
     nextbar_trade_count_delta: 'next-bar 거래 수 차이',
-    placeholder: 'placeholder 기준',
+    placeholder: '임시 기준',
     durationWeeks: '관찰 주수',
     compareAgainst: '비교 기준',
     grillCoverage: '그릴 커버리지',
@@ -209,7 +209,7 @@ function legacyPendingDecisionSummary(row = {}) {
     `C15 결정 대기: 컴포넌트=${component}`,
     `유형=${legacyDecisionTypeLabel(row.type, row.status)}, 상태=${legacyComponentStateLabel(row.status || 'n/a')}, 모드=${legacyComponentStateLabel(current)}→${legacyComponentStateLabel(target)}`,
     `표본=${sampleCount}건, 기준=${legacyCriteriaSummary(criteria)}`,
-    `판정=${criteria.placeholder === true ? '미충족: placeholder 기준' : '평가 대기'}`,
+    `판정=${criteria.placeholder === true ? '미충족: 임시 기준' : '평가 대기'}`,
     `제안 요지=${recommendation}`,
   ].join('\n');
 }
@@ -242,6 +242,46 @@ function balancedJsonAt(text, startIndex) {
   return null;
 }
 
+function balancedJsonArrayAt(text, startIndex) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = startIndex; index < text.length; index += 1) {
+    const ch = text[index];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString && ch === '\\') {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '[') depth += 1;
+    if (ch === ']') {
+      depth -= 1;
+      if (depth === 0) return text.slice(startIndex, index + 1);
+    }
+  }
+  return null;
+}
+
+function summarizeLegacyCircuitLocks(rows = []) {
+  const locks = Array.isArray(rows) ? rows : [];
+  const lowProfit = locks.filter((row) => row?.circuit === 'low_profit_symbol' || row?.reason === 'cumulative_r_below_zero');
+  const cooldown = locks.filter((row) => String(row?.circuit || row?.reason || '').includes('cooldown'));
+  const symbols = [...new Set(locks.map((row) => row?.symbol).filter(Boolean))].slice(0, 5);
+  return [
+    `활성 서킷: ${locks.length}건(저수익 ${lowProfit.length}·쿨다운 ${cooldown.length})`,
+    symbols.length ? `대표 심볼=${symbols.join(', ')}` : '',
+    '상세 evidence는 원문 DB 회의록에 보존',
+  ].filter(Boolean).join('\n');
+}
+
 function normalizeLegacyMinuteContent(content) {
   const trimmed = String(content ?? '').trim().toLowerCase();
   if (trimmed === 'open') return '회의 시작';
@@ -250,7 +290,26 @@ function normalizeLegacyMinuteContent(content) {
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: 과거 발언의 중복 서킷 숫자 숨김(최신 데이터 기준)',
   );
-  const readable = normalizeLegacyKoreanLlmNoise(text);
+  let compactCircuitText = text;
+  const circuitIndex = compactCircuitText.indexOf('활성 서킷');
+  const arrayStart = circuitIndex >= 0 ? compactCircuitText.indexOf('[', circuitIndex) : -1;
+  if (arrayStart >= 0) {
+    const jsonText = balancedJsonArrayAt(compactCircuitText, arrayStart);
+    const replaceStart = compactCircuitText.lastIndexOf('활성 서킷', arrayStart);
+    const start = replaceStart >= 0 ? replaceStart : circuitIndex;
+    if (jsonText) {
+      try {
+        compactCircuitText = `${compactCircuitText.slice(0, start)}${summarizeLegacyCircuitLocks(JSON.parse(jsonText))}${compactCircuitText.slice(arrayStart + jsonText.length)}`.trim();
+      } catch {
+        compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 JSON 숨김(원문 DB 회의록 보존)`;
+      }
+    } else {
+      const tailIndex = compactCircuitText.indexOf('실거래/파라미터', arrayStart);
+      const tail = tailIndex >= 0 ? `\n${compactCircuitText.slice(tailIndex)}` : '';
+      compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 JSON 숨김(원문 DB 회의록 보존)${tail}`.trim();
+    }
+  }
+  const readable = normalizeLegacyKoreanLlmNoise(compactCircuitText);
   const canonical = normalizeCanonicalStatusTokens(readable);
   const compacted = compactRepetitiveReportContent(canonical);
   const marker = 'C15 결정 대기 항목';
@@ -287,20 +346,41 @@ function normalizeLegacyKoreanLlmNoise(content) {
   return String(content ?? '')
     .replace(/\bregime-engine-hmm\b/g, 'C15 레짐 엔진 HMM')
     .replace(/\bmarket-deployment-gate\b/g, 'C1 시장 배치 게이트')
+    .replace(/\bmapek\b/g, 'C15 MAPEK')
     .replace(/\bmeeting-room-orchestrator\b/g, '회의실 오케스트레이터')
     .replace(/\bbacktest-nextbar-execution\b/g, 'Next-bar 백테스트 실행')
     .replace(/\bcircuit-locks\b/g, '서킷 잠금 알림')
     .replace(/\bcrypto\s+24h\s+점검/gi, '암호화폐 24시간 점검')
     .replace(/\bcrypto\s+24시간/gi, '암호화폐 24시간')
     .replace(/\bcrypto\s+요약/gi, '암호화폐 요약')
+    .replace(/\bcrypto\s+시장/gi, '암호화폐 시장')
     .replace(/\bcrypto(?=\s*[:：])/gi, '암호화폐')
+    .replace(/\badvisory\b/g, '자문')
+    .replace(/\bplan-note와\s+shadow stack\b/g, '회의 데이터 요약과 섀도 스택')
+    .replace(/\bplan-note\b/g, '회의 데이터 요약')
+    .replace(/\bshadow stack\b/g, '섀도 스택')
+    .replace(/\bregistry evidence\b/g, '레지스트리 근거')
+    .replace(/cost_guard_skipped:\s*max calls\s*(\d+)\s*reached/gi, '비용 가드: 최대 호출 $1회 도달로 발언 생략')
+    .replace(/\bmax calls\b/gi, '최대 호출')
+    .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
+    .replace(/해외/g, '미국')
+    .replace(/레짐=bull/g, '레짐=상승')
+    .replace(/레짐=bear/g, '레짐=하락')
+    .replace(/레짐=sideways/g, '레짐=수평')
+    .replace(/레짐=volatile/g, '레짐=변동')
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
+    .replace(/출처=hmm/g, '출처=HMM')
     .replace(/상태=active/g, '상태=활성')
     .replace(/상태=unknown/g, '상태=미정')
     .replace(/모드=unknown→unknown/g, '모드=미정→미정')
-    .replace(/placeholder 기준=true/g, 'placeholder 기준=예')
-    .replace(/placeholder 기준=false/g, 'placeholder 기준=아니오')
+    .replace(/placeholder 기준=true/g, '임시 기준=예')
+    .replace(/placeholder 기준=false/g, '임시 기준=아니오')
+    .replace(/placeholder 기준=예/g, '임시 기준=예')
+    .replace(/placeholder 기준=아니오/g, '임시 기준=아니오')
+    .replace(/미충족:\s*placeholder 기준/g, '미충족: 임시 기준')
+    .replace(/Brier:\s*HMM<폴백/g, 'Brier: HMM이 폴백보다 낮음')
+    .replace(/\bsame_bar_close\b/g, '동일봉 종가')
     .replace(/그릴 커버리지=true/g, '그릴 커버리지=예')
     .replace(/그릴 커버리지=false/g, '그릴 커버리지=아니오')
     .replace(/결정 추적=true/g, '결정 추적=예')
@@ -353,7 +433,7 @@ function compactRepetitiveReportContent(content) {
   if (!removed) return text;
   return [
     kept.join('\n\n').trim(),
-    `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 DB minute에 보존됩니다.`,
+    `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 DB 회의록에 보존됩니다.`,
   ].filter(Boolean).join('\n\n');
 }
 

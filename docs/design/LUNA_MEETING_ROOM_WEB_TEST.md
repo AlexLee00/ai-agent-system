@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(자문/섀도 전용)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환+회의 목록 상태/타입은 한국어 라벨(완료/아침 통합 회의 등) | [자동] header/tab/status/type a11y+[수동] ✅2026-06-12 브라우저 |
 | W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달, 보조기술에서 줄 단위로 구분 가능, 최신 상태·안건·회의록 수·자문 상태는 한국어 라벨 | [자동] catchup API+live region/list a11y+status/agenda label+[수동] ✅2026-06-12 표시 |
-| W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·회의록별 aria-label·인프라 speaker와 데이터 메타 key는 한국어 라벨 | [자동] ADR 클래스+timeline a11y+role/speaker/meta label+[수동] ✅브라우저 |
+| W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·회의록별 aria-label·인프라 speaker와 데이터 메타 key/레짐 값은 한국어 라벨 | [자동] ADR 클래스+timeline a11y+role/speaker/meta/regime label+[수동] ✅브라우저 |
 | W-04 | 회의 시작(정상) | 타입 선택→시작 | 진행 상태 폴링→완료 후 실제 세션 타임라인으로 전환, 시작 컨트롤/목록 선택 상태 aria 제공, 회의 목록 region/list 구조 유지, 실행 실패 시 오류 원인 표시 | [자동] start API+completed/failed run 전환+a11y |
 | W-05 | 회의 시작(중복) | open 세션 중 재시작 | 409 + 사용자 메시지(중복 안내) | [자동] 409+친화 메시지 문자열 |
 | W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단, 활성 세그먼트는 사용자 표시/aria에서 `활성`, 사유 코드는 `주말/휴장일/장 마감` 라벨로 표시 | [자동]+[수동] ✅fixture 브라우저 |
@@ -24,10 +24,10 @@
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
 | W-20 | 마크다운 4종 | `**볼드**`·`###`·`- 리스트`·`\|표\|`가 서식 렌더(원문 기호 노출 없음), 좁은 폭 표 cell 래핑 | [자동] smoke+table wrap guard+[수동] 🔁 |
-| W-21 | JSON 덤프 부재 | 발언 content에 `{...}` 원문 없음(C15 대기·서킷 안건 한국어 요약) | [자동] legacy API 정규화+브라우저 ✅ |
+| W-21 | JSON 덤프 부재 | 발언 content에 `{...}`/`[...]` 원문 없음(C15 대기·서킷 안건 한국어 요약) | [자동] legacy API 정규화+브라우저 ✅ |
 | W-22 | 서킷 distinct | "활성 잠금 N건"이 고유 잠금 수(DB distinct 쿼리와 일치) | [자동] smoke+[수동] ✅2026-06-12 세션 #1 서킷=3건 |
 | W-23 | XSS 회귀 | `<script>` 포함 텍스트가 문자 그대로(미실행)·innerHTML 0 | [자동] smoke |
-| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음·status 값 halt/reduced/full 원문 유지·entry/프록시/진입 용어 표시 보정·halt를 가치판단으로 오해하지 않음·과거 발언의 결정 대기 숫자/ADR 내부 토큰이 현재값처럼 보이지 않음 | [자동] 반복 표시 축약+status/용어 복원+진입/게이트 용어+과거 발언 숫자/ADR 라벨 보정+[수동] 🔁 다음 실회의 |
+| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음·status 값 halt/reduced/full 원문 유지·entry/프록시/진입 용어 표시 보정·halt를 가치판단으로 오해하지 않음·과거 발언의 결정 대기 숫자/ADR/컴포넌트 키/영문 advisory·minute·내부 근거·비용 가드·C15 기준 토큰이 현재값처럼 보이지 않음 | [자동] 반복 표시 축약+status/용어 복원+진입/게이트 용어+과거 발언 숫자/ADR/컴포넌트/advisory/minute/근거/비용가드/C15 기준 라벨 보정+[수동] 🔁 다음 실회의 |
 
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -128,6 +128,10 @@
 - **2026-06-12 루프 72**: W-12 evidence 접힘 DOM 점검 → 실제 브라우저에서 접힌 `details`의 `<pre>`는 CSS로 숨겨졌지만 DOM/브라우저 보조 추출에는 JSON text가 남아 내부 evidence가 노출될 수 있음을 확인. `EvidenceDetails`를 추가해 펼친 상태에서만 JSON `<pre>`를 렌더링하고 스모크 `collapsedEvidenceDoesNotRenderJsonDom` 추가.
 - **2026-06-12 루프 73**: W-03/W-11 희귀 fallback 문구 점검 → 코드상 빈 시간·기한 누락·정상 due·빈 타임라인에서 `n/a`, `due n/a`, `due ...`, `minute`가 사용자-facing으로 노출될 수 있음을 확인. fallback을 `시간 없음`, `기한 확인 필요`, `정상 ...`, `회의록`으로 정규화하고 스모크 `timelineMinuteTermLocalized`, `dueFallbackKoreanLabel` 추가.
 - **2026-06-12 루프 74**: W-01/W-02/W-03 시장 라벨 점검 → 실제 세그먼트/캐치업/타임라인에 `crypto`, `crypto 24h 점검`, `Crypto 24시간`이 사용자-facing으로 남을 수 있음을 확인. 표시 계층에서는 `암호화폐`, `암호화폐 24시간 점검`으로 정규화하고 raw key는 title/evidence에만 보존하도록 스모크 `cryptoMarketLabelLocalized` 추가.
+- **2026-06-12 루프 75**: W-21/W-24 실회의 표시 품질 재점검 → 실제 타임라인/결정 카드에 `mapek`, `advisory`, `DB minute`, 활성 서킷 JSON 배열이 사용자-facing으로 남는 것을 확인. 신규 회의 생성 문구와 legacy 표시 정규화 양쪽에서 `C15 MAPEK`, `자문`, `DB 회의록`, 서킷 요약문으로 변환하고 스모크 `legacyCircuitJsonMinuteSummarized`, `legacyAdvisoryTermLocalized`, `legacyMapekComponentLocalized`, `legacyDbMinuteTermLocalized` 추가.
+- **2026-06-12 루프 76**: W-02/W-03 시장·레짐 라벨 일관성 점검 → 실제 데이터 minute와 legacy 분석 발언에 `레짐=bull/bear/sideways`, `출처=hmm`, `해외 시장`이 남아 한국어 운영 UI와 불일치. 표시 계층과 신규 회의 생성 문구에서 `상승/하락/수평`, `출처=HMM`, `미국 시장`으로 정규화하고 스모크 `legacyRegimeValuesLocalized`, `legacyOverseasMarketLocalized` 추가.
+- **2026-06-12 루프 77**: W-24 내부 근거/비용 가드 토큰 재감사 → 실제 그릴·분석 발언에 `plan-note`, `shadow stack`, `registry evidence`, `cost_guard_skipped`, `max calls`, `crypto 시장`이 남아 운영 화면 문장 품질을 낮춤. 표시 계층과 신규 회의 생성 문구에서 `회의 데이터 요약`, `섀도 스택`, `레지스트리 근거`, `비용 가드: 최대 호출 N회 도달`, `암호화폐 시장`으로 정규화하고 스모크 `legacyInternalEvidenceTermsLocalized`, `legacyCostGuardTermsLocalized` 추가.
+- **2026-06-12 루프 78**: W-24 C15 기준 토큰 점검 → 실제 C15 데이터 minute에 `placeholder 기준`, `same_bar_close`, `HMM<폴백`이 남아 운영자가 의미를 즉시 해석하기 어려움. 표시 계층과 신규 회의 생성 문구에서 `임시 기준`, `동일봉 종가`, `Brier: HMM이 폴백보다 낮음`으로 정규화하고 스모크에서 raw 기준 토큰 재노출을 차단.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

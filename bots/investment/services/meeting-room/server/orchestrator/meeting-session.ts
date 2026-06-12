@@ -22,25 +22,39 @@ function compact(value: any, max = 1600) {
 }
 
 const METRIC_LABELS = Object.freeze({
-  brier_hmm_lt_fallback: 'Brier: HMM<폴백',
+  brier_hmm_lt_fallback: 'Brier: HMM이 폴백보다 낮음',
   transition_alert_precision: '전이 경보 정밀도',
   halt_reduced_avoidance_delta: 'halt/reduced 회피 개선폭',
   nextbar_return_delta: 'next-bar 수익률 차이',
   nextbar_trade_count_delta: 'next-bar 거래 수 차이',
-  grillCoverage: 'grill 커버리지',
+  grillCoverage: '그릴 커버리지',
   decisionTracking: '결정 추적',
   completedMeetings: '완료 회의 수',
   readyForPromotion: '승격 준비',
   haltRecommended: '중단 권고',
   minTrades: '최소 거래 수',
-  placeholder: 'placeholder 기준',
+  placeholder: '임시 기준',
   durationWeeks: '관찰 주수',
   compareAgainst: '비교 기준',
+});
+
+const COMPONENT_LABELS = Object.freeze({
+  'regime-engine-hmm': 'C15 레짐 엔진 HMM',
+  'market-deployment-gate': 'C1 시장 배치 게이트',
+  mapek: 'C15 MAPEK',
+  'meeting-room-orchestrator': '회의실 오케스트레이터',
+  'backtest-nextbar-execution': 'Next-bar 백테스트 실행',
+  'circuit-locks': '서킷 잠금 알림',
 });
 
 function safeText(value: any, fallback = 'n/a') {
   const text = String(value ?? '').trim();
   return text || fallback;
+}
+
+function componentLabel(value: any) {
+  const raw = safeText(value, 'unknown-component');
+  return COMPONENT_LABELS[raw] || raw;
 }
 
 function humanProposalType(value: any, status: any = null) {
@@ -75,14 +89,15 @@ function criteriaSummary(criteria: any = {}) {
 function criteriaState(criteria: any = {}) {
   if (criteria.haltRecommended === true) return '중단 조건 충족';
   if (criteria.readyForPromotion === true) return '승격 조건 일부 충족';
-  if (criteria.placeholder === true) return '미충족: placeholder 기준';
+  if (criteria.placeholder === true) return '미충족: 임시 기준';
   return '평가 대기';
 }
 
 function formatModeTransition(row: any = {}) {
   const current = row.currentMode || row.current_mode || row.mode || 'unknown';
   const target = row.targetMode || row.target_mode || row.target || 'unknown';
-  return `${current}→${target}`;
+  const label = (value: any) => ({ unknown: '미정', active: '활성', stalled: '정체', proposed: '제안' }[String(value)] || String(value));
+  return `${label(current)}→${label(target)}`;
 }
 
 function sampleCountForDecision(row: any = {}) {
@@ -93,8 +108,17 @@ function criteriaForDecision(row: any = {}) {
   return row.criteria || row.promotion_criteria || row.evidence?.criteria || {};
 }
 
+function regimeLabel(value: any) {
+  return {
+    bull: '상승',
+    bear: '하락',
+    sideways: '수평',
+    volatile: '변동',
+  }[String(value || '')] || safeText(value, '없음');
+}
+
 function summarizePendingDecision(row: any = {}) {
-  const component = safeText(row.component || row.agenda_key || row.type, 'unknown-component');
+  const component = componentLabel(row.component || row.agenda_key || row.type);
   const criteria = criteriaForDecision(row);
   const type = humanProposalType(row.type, row.status);
   const sampleCount = sampleCountForDecision(row);
@@ -156,10 +180,11 @@ export function buildMorningMeetingAgendas(planNote: any = {}) {
   }
   for (const decision of (planNote.pendingDecisions || []).slice(0, 8)) {
     const component = decision.component || decision.agenda_key || decision.type || 'pending';
+    const componentTitle = componentLabel(component);
     agendas.push({
       key: `decision:${component}`,
       kind: 'pending_decision',
-      title: `C15 결정 대기: ${component}`,
+      title: `C15 결정 대기: ${componentTitle}`,
       market: 'any',
       evidence: decision,
       defaultGrade: 'c_master',
@@ -269,7 +294,7 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
     return [
       `${agenda.title}: ${segment.skipped ? `스킵(${segment.reason})` : '진행'}`,
       `게이트=${gate ? `${gate.deployment} score=${Number(gate.score ?? 0).toFixed(1)}` : '없음'}`,
-      `레짐=${regime ? `${regime.current_regime || regime.dominant} source=${regime.source || 'n/a'}` : '없음'}`,
+      `레짐=${regime ? `${regimeLabel(regime.current_regime || regime.dominant)} source=${regime.source ? String(regime.source).toUpperCase() : '없음'}` : '없음'}`,
       `전략신호=${signalCount}건, 서킷=${circuitCount}건`,
     ].join('\n');
   }
@@ -315,20 +340,20 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
 function deterministicAnalysis(agenda: any, planNote: any, agent = 'luna') {
   return [
     `[${agent}] ${agenda.title}`,
-    '계산된 plan-note 지표만 사용한 advisory 분석입니다.',
+    '계산된 회의 데이터 요약만 사용한 자문 분석입니다.',
     dataBriefForAgenda(agenda, planNote),
     '실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.',
   ].join('\n');
 }
 
 function deterministicGrill(agenda: any, insufficient = false) {
-  const suffix = insufficient ? '근거 부족: 마스터 확인 필요.' : '근거: plan-note와 shadow stack.';
+  const suffix = insufficient ? '근거 부족: 마스터 확인 필요.' : '근거: 회의 데이터 요약과 섀도 스택.';
   return [
     `1. 최강 반대 논거: 표본과 최근 상태가 불충분하면 결정을 보류해야 한다. ${suffix}`,
-    `2. 무효화 데이터: 최신 gate/regime/signal/circuit이 반대로 바뀌면 무효다. ${suffix}`,
+    `2. 무효화 데이터: 최신 게이트/레짐/신호/서킷이 반대로 바뀌면 무효다. ${suffix}`,
     `3. 마스터 질문: 이 결정을 오늘 적용해야 하는가, 아니면 관찰만 충분한가? ${suffix}`,
     `4. 긴급성: 경계급이 아니면 즉시 실행보다 기록과 추적이 우선이다. ${suffix}`,
-    `5. 과거 결과: 동유형 ADR/registry evidence를 확인해야 한다. ${suffix}`,
+    `5. 과거 결과: 동유형 ADR/레지스트리 근거를 확인해야 한다. ${suffix}`,
   ].join('\n');
 }
 
@@ -346,8 +371,8 @@ function draftDecision(agenda: any, grillContent: string, options: any = {}) {
   return {
     agendaKey: agenda.key,
     decision: insufficient
-      ? `${agenda.title}: advisory 기록 후 마스터 확인 대기`
-      : `${agenda.title}: shadow/advisory 상태로 관찰 지속`,
+      ? `${agenda.title}: 자문 기록 후 마스터 확인 대기`
+      : `${agenda.title}: 섀도/자문 상태로 관찰 지속`,
     grade,
     status,
     dueAt,
