@@ -52,6 +52,14 @@ function makeFakePool(rows) {
       if (text.includes('to_regclass')) {
         return { rows: [{ regclass: params[0] }] };
       }
+      if (text.includes('information_schema.columns')) {
+        return {
+          rows: [
+            { column_name: 'final_title' },
+            { column_name: 'final_content_text' }
+          ]
+        };
+      }
       if (text.includes('FROM blog.posts')) {
         state.candidateSelectCount += 1;
         state.lastCandidateSql = text;
@@ -66,9 +74,11 @@ function makeFakePool(rows) {
           changed: params[3],
           originalContentHash: params[4],
           finalContentHash: params[5],
-          diffSummary: params[6],
-          vaultFilePath: params[7],
-          metadata: JSON.parse(params[8] || '{}')
+          finalTitle: params[6],
+          finalContentText: params[7],
+          diffSummary: params[8],
+          vaultFilePath: params[9],
+          metadata: JSON.parse(params[10] || '{}')
         };
         state.ledgerWrites.push(row);
         state.completed.set(row.postId, row.status);

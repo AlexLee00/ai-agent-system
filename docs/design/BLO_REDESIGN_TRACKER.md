@@ -291,3 +291,63 @@ auto-dev WorkingDirectory worktree 분리(클로드팀 설정 변경)는 즉시 
 - 메티 확인 예정: 11:05 이후 로그(bots/blog/naver-url-backfill.log)+posts URL 채움 -> 사슬 가동 검증.
 - 전체 타임라인: 오늘 11:05 URL 재개 -> 내일 02:00 증분 / 06:00 6강 연계(TS-B5-L) / 06:00+ analyzer
   첫 분석 / 08:30 B2b 첫 후보(master_feedback 첫 데이터) — 보편 성장 루프 전 구간 첫 완주 예정.
+
+### Q-2. backfill 과거 실행 흔적 (2026-06-13 08:18, 메티)
+- 로그 실측: bots/blog/naver-url-backfill.log 마지막 수정 **6/10 11:05**(176KB, 정상 완료 JSON)
+  — 과거에 11:05 잡이 가동 중이었고 6/10 실행을 끝으로 plist 언로드/소실(원인 미궁, 재등록 완료로 실익
+  낮아 종결). "마지막 URL 공급 6/9 발행분"과 정확히 정합.
+- GATE-R 08:18 기준: 195건 / false 10(어제 진단분 그대로, 신규 0 — 청정 유지).
+- 다음 세션: B2b<->analyzer 통합 설계(analyzer 386줄 정독) + 11:05 backfill 결과 확인.
+
+## R. analyzer 정독 + 통합 설계 확정 -> CODEX-B2c (2026-06-13, 메티)
+
+- **결정적 발견**: runDailyMasterEditAnalysis가 post.content vs post.content **자기 비교 스텁**
+  (주석 자백: "실제 네이버 발행본과 비교하려면 naver-url-backfill 활용 필요") — 분석 체인은 완성,
+  diff 원료만 미구현. **B2b가 정확히 그 빠진 조각 = 중복 아닌 운명적 보완.**
+- 분업 확정: 수집=B2b(유일 네이버 접점) / 분석·스타일=analyzer / 이벤트=master_feedback / 통계=master_edit_analysis.
+- CODEX_BLO_B2C_ANALYZER_INTEGRATION_2026-06-13.md: §1 B2b 실본 보존(migration 025) §2 스텁 해소(최소 diff,
+  skip 경로 회귀 0) §3 시간 사슬(11:05->08:30->익일 06:00 days:2 커버) §4 TS-B10c §5 안전.
+- 다음: 코덱스 전달 -> 검증 -> 적용. 병행 확인: 오늘 11:05 backfill 결과.
+이력: 2026-06-13 통합 설계 (메티)
+
+## S. B2c 구현 — final_content_checks 저장본 기반 analyzer 통합 (2026-06-13, 코덱스)
+
+- migration 025 추가: `blog.final_content_checks.final_title/final_content_text` 컬럼을 `ADD COLUMN IF NOT EXISTS`로 확장하고,
+  변경 실본 분석 후보 인덱스를 추가.
+- `collect-final-content` 보강: 변경 감지 포스트만 정규화된 최종 제목/본문을 ledger upsert payload에 포함하고,
+  dry-run JSON에는 본문 전체 대신 길이/hash 중심 정보만 노출.
+- `master-edit-analyzer` 보강: `final_content_checks.changed=true`, `status='changed'`, `final_content_text IS NOT NULL`,
+  미분석 row만 후보로 읽어 초안 vs 네이버 최종 저장본 diff를 수행. 무변경/실본 없음/fetch_failed row는 정상 skip.
+- 신규 스모크 `smoke:master-edit-analyzer-integration` 추가: collector 저장 payload, analyzer diff 저장, skip 경로,
+  `masterStyleHint` guide 생성 경로를 mock DB로 검증.
+
+검증:
+- `node --check`: `collect-final-content.ts`, `final-content-diff-smoke.ts`, `master-edit-analyzer.ts`,
+  `master-edit-analyzer-integration-smoke.ts` 통과.
+- `smoke:final-content-diff` 통과.
+- `smoke:master-edit-analyzer-integration` 통과.
+- `test:daily-dry` 통과.
+- `smoke:blog-v3-unified` 통과.
+
+남은 마스터 적용:
+1. DDL: `psql -d jay -f bots/blog/migrations/025-final-content-text-for-analyzer.sql`
+2. 다음 `collect:final-content --write` 이후 `master-edit-analyzer`가 저장 실본을 소비하는지 운영 로그 확인.
+3. launchd/live 실행/commit/push는 별도 승인 시 수행.
+
+이력: 2026-06-13 B2c 구현·검증 (코덱스)
+
+## T. CODEX-B2c 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 스텁 제거 | post.content 자기 비교 0건 — JOIN(final_content_text 비공백 조건) + computeWordDiff(original, modified) 실본 주입 정확 |
+| 범위 준수 | blo.ts 비수정 / 네이버 추가 fetch 없음(B2b 저장본만 소비) / 분석 함수군 비수정 |
+| migration 025 | ADD COLUMN IF NOT EXISTS x2 + INDEX IF NOT EXISTS — 멱등 |
+| 스모크 | TS-B10c ok 6 + TS-B9 회귀 ok 8 (독립 재실행) |
+
+### 마스터 적용 절차
+1. DDL: psql -d jay -f bots/blog/migrations/025-final-content-text-for-analyzer.sql
+2. 커밋 (코덱스 §S + 메티 §R·T 포함)
+3. 자연 검증 사슬(TS-B10c-L): 오늘 11:05 backfill(URL) -> 내일 08:30 B2b --write(실본 보존) ->
+   모레 06:00 daily에서 analyzer 첫 실분석(master_edit_analysis 첫 데이터+masterStyleHint) — 메티 확인.
+이력: 2026-06-13 B2c 검증 합격 (메티)

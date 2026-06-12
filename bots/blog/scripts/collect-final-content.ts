@@ -426,6 +426,20 @@ async function tableExists(pool, qualifiedName) {
   return Boolean(rows && rows[0] && rows[0].regclass);
 }
 
+async function tableHasColumns(pool, schemaName, tableName, columnNames) {
+  const expected = Array.from(new Set(columnNames.filter(Boolean)));
+  if (expected.length === 0) return true;
+  const rows = await poolQuery(pool, 'public', `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = $1
+      AND table_name = $2
+      AND column_name = ANY($3::text[])
+  `, [schemaName, tableName, expected]);
+  const found = new Set((rows || []).map((row) => row.column_name));
+  return expected.every((columnName) => found.has(columnName));
+}
+
 async function selectFinalContentCandidates(pool, options = {}) {
   const limit = Math.max(1, Math.min(Number(options.limit || DEFAULT_LIMIT), 100));
   const days = Math.max(1, Math.min(Number(options.days || DEFAULT_DAYS), 30));
@@ -486,18 +500,22 @@ async function upsertFinalContentCheck(pool, row) {
       changed,
       original_content_hash,
       final_content_hash,
+      final_title,
+      final_content_text,
       diff_summary,
       vault_file_path,
       checked_at,
       metadata
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9::jsonb)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11::jsonb)
     ON CONFLICT (post_id) DO UPDATE SET
       naver_url = EXCLUDED.naver_url,
       status = EXCLUDED.status,
       changed = EXCLUDED.changed,
       original_content_hash = EXCLUDED.original_content_hash,
       final_content_hash = EXCLUDED.final_content_hash,
+      final_title = EXCLUDED.final_title,
+      final_content_text = EXCLUDED.final_content_text,
       diff_summary = EXCLUDED.diff_summary,
       vault_file_path = EXCLUDED.vault_file_path,
       checked_at = EXCLUDED.checked_at,
@@ -509,6 +527,8 @@ async function upsertFinalContentCheck(pool, row) {
     row.changed,
     row.originalContentHash || null,
     row.finalContentHash || null,
+    row.finalTitle || null,
+    row.finalContentText || null,
     row.diffSummary || null,
     row.vaultFilePath || null,
     metadata
@@ -601,11 +621,14 @@ async function processFinalContentCandidate(post, options = {}, deps = {}) {
     changed: true,
     originalContentHash: diff.originalContentHash,
     finalContentHash: diff.finalContentHash,
+    finalTitle,
+    finalContentText: finalContent,
     diffSummary: diff.diffSummary,
     vaultFilePath: vaultEntry.filePath,
     metadata: {
       originalTitle,
       finalTitle,
+      finalContentLength: finalContent.length,
       metrics: diff.metrics,
       addedSamples: diff.addedSamples,
       removedSamples: diff.removedSamples
@@ -621,10 +644,14 @@ async function processFinalContentCandidate(post, options = {}, deps = {}) {
 async function ensureWriteTables(pool) {
   const masterFeedbackExists = await tableExists(pool, 'blog.master_feedback');
   const finalChecksExists = await tableExists(pool, 'blog.final_content_checks');
+  const finalContentColumnsReady = finalChecksExists
+    ? await tableHasColumns(pool, 'blog', 'final_content_checks', ['final_title', 'final_content_text'])
+    : false;
   return {
-    ok: masterFeedbackExists && finalChecksExists,
+    ok: masterFeedbackExists && finalChecksExists && finalContentColumnsReady,
     masterFeedbackExists,
-    finalChecksExists
+    finalChecksExists,
+    finalContentColumnsReady
   };
 }
 
@@ -671,7 +698,8 @@ async function persistFinalContentResult(pool, result, deps = {}) {
 }
 
 function publicResult(result) {
-  const { _writePayload, ...rest } = result;
+  const { _writePayload, finalContentText, ...rest } = result;
+  if (finalContentText) rest.finalContentLength = finalContentText.length;
   return rest;
 }
 
@@ -767,6 +795,7 @@ module.exports = {
     decodeHtmlEntities,
     extractNaverPostFromPayload,
     tableExists,
+    tableHasColumns,
     ensureWriteTables,
     persistFinalContentResult
   }

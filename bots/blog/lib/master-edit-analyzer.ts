@@ -22,8 +22,49 @@ const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'blog');
 
-async function ensureMasterEditAnalysisTable() {
-  await pgPool.query('blog', `
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number.parseInt(dec, 10)));
+}
+
+function stripHtmlToText(html) {
+  return decodeHtmlEntities(String(html || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/section|\/article)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, ' '));
+}
+
+function normalizeAnalyzerText(value) {
+  return String(value || '')
+    .replace(/\r/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function normalizeAnalyzerTitle(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function buildOriginalDraftContent(post) {
+  const content = normalizeAnalyzerText(post && post.content);
+  if (content) return content;
+  return normalizeAnalyzerText(stripHtmlToText(post && post.html_content));
+}
+
+async function ensureMasterEditAnalysisTable(pool = pgPool) {
+  await pool.query('blog', `
     CREATE TABLE IF NOT EXISTS blog.master_edit_analysis (
       id              SERIAL PRIMARY KEY,
       post_id         INTEGER NOT NULL,
@@ -50,42 +91,41 @@ async function ensureMasterEditAnalysisTable() {
  */
 async function detectPublishedDrafts(options = {}) {
   const days = options.days || 2;
+  const pool = options.pgPool || pgPool;
   try {
     const cutoff = kst.daysAgoStr(days);
-    await ensureMasterEditAnalysisTable().catch((err) => {
+    await ensureMasterEditAnalysisTable(pool).catch((err) => {
       console.log('[master-edit-analyzer] 분석 테이블 준비 실패:', err.message);
     });
-    // master_edit_analysis 테이블과 LEFT JOIN으로 미분석 포스팅만 조회
-    // 테이블이 없어도 오류 없이 전체 조회로 폴백
-    let rows;
-    try {
-      rows = await pgPool.query(
-        'blog',
-        `SELECT p.id, p.title, p.content, p.category, p.post_type AS type, p.naver_url, p.status, p.publish_date
-         FROM blog.posts p
-         LEFT JOIN blog.master_edit_analysis mea ON mea.post_id = p.id
-         WHERE p.status = 'published'
-           AND p.naver_url IS NOT NULL
-           AND DATE(p.publish_date) >= $1
-           AND mea.id IS NULL
-         ORDER BY p.publish_date DESC
-         LIMIT 20`,
-        [cutoff],
-      );
-    } catch {
-      // master_edit_analysis 테이블 미존재 시 폴백
-      rows = await pgPool.query(
-        'blog',
-        `SELECT id, title, content, category, post_type AS type, naver_url, status, publish_date
-         FROM blog.posts
-         WHERE status = 'published'
-           AND naver_url IS NOT NULL
-           AND DATE(publish_date) >= $1
-         ORDER BY publish_date DESC
-         LIMIT 10`,
-        [cutoff],
-      );
-    }
+    const rows = await pool.query(
+      'blog',
+      `SELECT
+         p.id,
+         p.title,
+         p.content,
+         p.html_content,
+         p.category,
+         p.post_type AS type,
+         p.naver_url,
+         p.status,
+         p.publish_date,
+         fcc.final_title,
+         fcc.final_content_text,
+         fcc.checked_at AS final_checked_at
+       FROM blog.posts p
+       JOIN blog.final_content_checks fcc ON fcc.post_id = p.id
+       LEFT JOIN blog.master_edit_analysis mea ON mea.post_id = p.id
+       WHERE p.status = 'published'
+         AND COALESCE(p.naver_url, '') <> ''
+         AND fcc.changed = TRUE
+         AND fcc.status = 'changed'
+         AND COALESCE(fcc.final_content_text, '') <> ''
+         AND DATE(COALESCE(fcc.checked_at, p.publish_date::timestamptz)) >= $1
+         AND mea.id IS NULL
+       ORDER BY COALESCE(fcc.checked_at, p.publish_date::timestamptz) DESC, p.id DESC
+       LIMIT 20`,
+      [cutoff],
+    );
     return rows || [];
   } catch (err) {
     console.log('[master-edit-analyzer] 발행 초안 탐색 실패:', err.message);
@@ -212,11 +252,12 @@ async function classifyEditPattern(originalTitle, modifiedTitle, wordDiff) {
  * Diff 분석 결과를 DB에 저장
  * 테이블: blog.master_edit_analysis (없으면 자동 생성 시도)
  */
-async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern) {
+async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern, options = {}) {
+  const pool = options.pgPool || pgPool;
   try {
-    await ensureMasterEditAnalysisTable();
+    await ensureMasterEditAnalysisTable(pool);
 
-    await pgPool.query(
+    await pool.query(
       'blog',
       `INSERT INTO blog.master_edit_analysis
          (post_id, title_changed, title_sim, added_ratio, removed_ratio, change_rate,
@@ -238,7 +279,7 @@ async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern) {
     );
 
     // posts 테이블에 analyzed 플래그 설정
-    await pgPool.query(
+    await pool.query(
       'blog',
       `UPDATE blog.posts SET analyzed_master_edit = TRUE WHERE id = $1`,
       [postId],
@@ -258,9 +299,10 @@ async function saveDiffAnalysis(postId, titleDiff, wordDiff, editPattern) {
  */
 async function buildMasterStyleProfile(options = {}) {
   const limit = options.limit || 100;
+  const pool = options.pgPool || pgPool;
   try {
-    await ensureMasterEditAnalysisTable();
-    const rows = await pgPool.query(
+    await ensureMasterEditAnalysisTable(pool);
+    const rows = await pool.query(
       'blog',
       `SELECT primary_type, preference_rule, title_changed, change_rate
        FROM blog.master_edit_analysis
@@ -354,15 +396,21 @@ async function runDailyMasterEditAnalysis(options = {}) {
   let skipped  = 0;
 
   for (const post of publishedPosts) {
-    // 발행본 내용 가져오기 (DB에 저장된 draft 내용 활용)
-    // 실제 네이버 발행본과 비교하려면 naver-url-backfill 활용 필요
-    // 현재는 DB 내 수정 기록과 비교 (master_feedback 테이블 활용)
     try {
-      const titleDiff  = computeTitleDiff(post.title, post.title);
-      const wordDiff   = computeWordDiff(post.content || '', post.content || '');
-      const editPattern = await classifyEditPattern(post.title, post.title, wordDiff);
+      const originalTitle = normalizeAnalyzerTitle(post.title);
+      const modifiedTitle = normalizeAnalyzerTitle(post.final_title) || originalTitle;
+      const originalContent = buildOriginalDraftContent(post);
+      const modifiedContent = normalizeAnalyzerText(post.final_content_text);
+      if (!originalContent || !modifiedContent) {
+        skipped++;
+        continue;
+      }
+      const titleDiff  = computeTitleDiff(originalTitle, modifiedTitle);
+      const wordDiff   = computeWordDiff(originalContent, modifiedContent);
+      const classifier = options.classifyEditPattern || classifyEditPattern;
+      const editPattern = await classifier(originalTitle, modifiedTitle, wordDiff);
 
-      await saveDiffAnalysis(post.id, titleDiff, wordDiff, editPattern);
+      await saveDiffAnalysis(post.id, titleDiff, wordDiff, editPattern, options);
       analyzed++;
     } catch {
       skipped++;
@@ -383,4 +431,11 @@ module.exports = {
   buildMasterStyleProfile,
   formatStyleProfileForPrompt,
   runDailyMasterEditAnalysis,
+  _testOnly: {
+    decodeHtmlEntities,
+    stripHtmlToText,
+    normalizeAnalyzerText,
+    normalizeAnalyzerTitle,
+    buildOriginalDraftContent
+  },
 };
