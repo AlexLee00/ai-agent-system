@@ -1154,7 +1154,7 @@ async function main() {
     assert.equal(minuteMetaText.includes('score_between_thresholds'), false);
     assert.equal(minuteMetaText.includes('source_not_available_yet'), false);
     assert.equal(minuteMetaText.includes('not_configured'), false);
-    assert.ok(detail.payload.minutes[1].content.includes('활성 서킷: 최신 데이터 영역 기준으로 봅니다'));
+    assert.ok(detail.payload.minutes[1].content.includes('활성 서킷은 최신 데이터 영역 기준입니다'));
     assert.equal(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'), false);
     assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
     assert.equal(detail.payload.minutes[1].content.includes('distinct'), false);
@@ -1306,6 +1306,22 @@ async function main() {
     assert.ok(deterministicAnalysisWording.includes('실거래와 파라미터 변경은 이 화면에서 적용하지 않습니다.'));
     assert.equal(deterministicAnalysisWording.includes('계산된 회의 데이터 요약만 사용한 자문 분석입니다'), false);
     assert.equal(deterministicAnalysisWording.includes('실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다'), false);
+    const advisoryActionWording = _testOnly.normalizeLegacyMinuteContent(
+      '따라서, 국내 장전 계획을 **재개** 하거나 **확대** 하기 위한 조치를 취해야 할 것입니다.\n미국 장후 평가에 대한 다음 조치는 다음과 같습니다.\n따라서, 추가적인 분석과 조치가 필요합니다.',
+    );
+    assert.ok(advisoryActionWording.includes('실행 조치를 제안하지 않고, 관찰 결과를 마스터 확인 대상으로 유지합니다.'));
+    assert.ok(advisoryActionWording.includes('미국 장후 평가의 추가 확인 항목입니다.'));
+    assert.ok(advisoryActionWording.includes('조치는 별도 마스터 확인 후 다룹니다.'));
+    assert.equal(/재개|확대|조치를 취해야/.test(advisoryActionWording), false);
+    const llmDisplayPolish = _testOnly.normalizeLegacyMinuteContent(
+      '미국 장후 평가에 대한 주요입니다.\n국내 시장의 전략군은 2건의 진입 0건만이 24시간 동안 활성화되어 있습니다.\n활성 서킷: 최신 데이터 영역 기준으로 봅니다. 으로, 활동이 일부 저조합니다.\n24시간 전략군은 2건의 거래로, 활동이 일부 저조합니다.\n결정 대기 중인 거래는 5건으로, 활동이 일부 저조합니다.',
+    );
+    assert.ok(llmDisplayPolish.includes('미국 장후 평가의 주요 결과입니다.'));
+    assert.ok(llmDisplayPolish.includes('국내 시장의 전략군은 24시간 기준 진입 0건입니다.'));
+    assert.ok(llmDisplayPolish.includes('활성 서킷은 최신 데이터 영역 기준입니다.'));
+    assert.ok(llmDisplayPolish.includes('24시간 전략군 신호는 2건입니다.'));
+    assert.ok(llmDisplayPolish.includes('C15 검토 대기는 5건입니다.'));
+    assert.equal(/주요입니다|진입 0건만이|기준으로 봅니다\. 으로|결정 대기 중인 거래/.test(llmDisplayPolish), false);
     const duplicatedDeterministicTitle = _testOnly.normalizeLegacyMinuteContent(
       '미국 프리마켓 게이트/레짐\n회의 데이터만 근거로 작성한 자문입니다.\n미국 프리마켓 게이트/레짐\n게이트/레짐/포지션/예정 이벤트를 읽기 전용으로 점검합니다.',
     );
@@ -1471,7 +1487,7 @@ async function main() {
     const compactGatePunctuationMinute = _testOnly.normalizeLegacyMinuteContent(
       '활성 서킷: 최신 데이터 영역 기준으로 확인하세요이며, 결정 대기 중인 서킷은 5건입니다.국내에서는 강세 상태에 있습니다.',
     );
-    assert.ok(compactGatePunctuationMinute.includes('활성 서킷: 최신 데이터 영역 기준으로 봅니다. 결정 대기: 상단 캐치업 기준입니다. 국내에서는 상승 상태'));
+    assert.ok(compactGatePunctuationMinute.includes('활성 서킷은 최신 데이터 영역 기준입니다. 결정 대기: 상단 캐치업 기준입니다. 국내에서는 상승 상태'));
     assert.equal(compactGatePunctuationMinute.includes('봅니다이며'), false);
     assert.equal(compactGatePunctuationMinute.includes('기준입니다.국내'), false);
     assert.equal(

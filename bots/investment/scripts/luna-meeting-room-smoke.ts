@@ -41,6 +41,18 @@ function tempOutputDir(name: string) {
   return dir;
 }
 
+function kstDateKey(value: any) {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 function fixturePlanNote() {
   return {
     ok: true,
@@ -244,6 +256,17 @@ async function main() {
   const applyWrittenR3 = await writeMeetingMinutesMarkdown({ ...filePolicyResult, dryRun: false, apply: true }, null, { outputDir: filePolicyDir });
   assert.equal(path.basename(applyWrittenR2.path), '2026-06-11-morning-r2.md');
   assert.equal(path.basename(applyWrittenR3.path), '2026-06-11-morning-r3.md');
+  const kstMorningResult = {
+    ...filePolicyResult,
+    dryRun: false,
+    startedAt: '2026-06-12T20:00:05.000Z',
+    session: {
+      ...filePolicyResult.session,
+      startedAt: '2026-06-12T20:00:05.000Z',
+    },
+  };
+  const kstMorningWritten = await writeMeetingMinutesMarkdown(kstMorningResult, null, { outputDir: filePolicyDir });
+  assert.equal(path.basename(kstMorningWritten.path), '2026-06-13-morning.md');
 
   const plan = await buildMeetingPlanNote({
     type: 'morning',
@@ -516,7 +539,7 @@ async function main() {
     );
     assert.equal(regenerated.ok, true);
     assert.equal(regenerated.minutes.length, Number(dbMinuteRows?.[0]?.count || 0));
-    assert.equal(path.basename(regenerated.markdownPath), `${String(applied.startedAt).slice(0, 10)}-morning.md`);
+    assert.equal(path.basename(regenerated.markdownPath), `${kstDateKey(applied.startedAt)}-morning.md`);
     assert.ok(regenerated.markdown.startsWith('# Luna Meeting Room — 아침 통합 회의'));
     assert.equal(regenerated.markdown.includes('# Luna Meeting Room — morning'), false);
     assert.ok(regenerated.markdown.includes('- 상태: 완료'));

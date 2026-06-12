@@ -95,6 +95,19 @@ function formatMeetingTime(value: any) {
   });
 }
 
+function formatMeetingDateKey(value: any) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 function decisionGradeLabel(value: any) {
   return {
     a_rule: 'A 자동 규칙',
@@ -217,7 +230,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
 
 function meetingDate(result: any = {}) {
   const session = result.session || {};
-  return String(result.startedAt || session.startedAt || session.started_at || new Date().toISOString()).slice(0, 10);
+  return formatMeetingDateKey(result.startedAt || session.startedAt || session.started_at || Date.now());
 }
 
 function meetingType(result: any = {}) {
