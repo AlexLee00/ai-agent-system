@@ -107,6 +107,12 @@ function createMemoryStore() {
       content: [
         '국내 장전 계획에 대한 분석 결과입니다.',
         '',
+        'G0 게이트: 국내: 중단(32), 해외: 중단(33), 암호화폐: 감소(55), 미국: 전체(72)',
+        '국내 시장은 현재 중단 상태(32점)입니다.',
+        '암호화폐 시장은 감소(55점)로, 하락 레짐을 유지하고 있습니다.',
+        "G0 게이트: 해외 시장은 현재 '할당' 상태이며, 점수는 32.51입니다.",
+        'C15 결정: 중단 제안은 한국어 라벨로 유지합니다.',
+        '',
         '이러한 결과를 기반으로, 최종 결론은 다음과 같습니다.',
         '',
         '- 국내 시장은 주의가 필요합니다.',
@@ -261,15 +267,23 @@ async function main() {
     assert.ok(appJs.text.includes('markdown-table'));
     assert.ok(appJs.text.includes('회의 상세를 불러오는 중입니다.'));
     assert.ok(appJs.text.includes('이미 진행 중인 같은 타입 회의가 있습니다'));
+    assert.ok(appJs.text.includes('이미 처리된 결정입니다. 최신 상태로 갱신했습니다.'));
     assert.ok(appJs.text.includes('분당 질의 한도에 도달했습니다'));
     assert.ok(appJs.text.includes('회의실 서버에 연결할 수 없습니다'));
     assert.ok(appJs.text.includes("setError('');"));
+    assert.ok(appJs.text.includes("payload.run.status === 'completed'"));
+    assert.ok(appJs.text.includes('await refreshSelected(payload.run.sessionId)'));
     assert.ok(appJs.text.includes('function dueState'));
     assert.ok(appJs.text.includes('function minuteClassName'));
     assert.ok(appJs.text.includes('function SegmentStatus'));
     assert.ok(appJs.text.includes('segment-pill'));
     assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
     assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
+    assert.ok(appJs.text.includes('근거 JSON 보기'));
+    assert.ok(appJs.text.includes('LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
+    assert.ok(html.text.includes('.notice'));
+    assert.ok(appJs.text.includes("run.status === 'running'"));
+    assert.ok(appJs.text.includes('hasOpen ? 3000 : 30000'));
     assert.ok(appJs.text.includes("' adr'"));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
@@ -295,6 +309,14 @@ async function main() {
     assert.ok(detail.payload.minutes[2].content.includes('Brier: HMM<폴백'));
     assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 1);
     assert.ok(detail.payload.minutes[4].content.includes('반복 결론 문단'));
+    assert.ok(detail.payload.minutes[4].content.includes('국내: halt(32)'));
+    assert.ok(detail.payload.minutes[4].content.includes('암호화폐: reduced(55)'));
+    assert.ok(detail.payload.minutes[4].content.includes('미국: full(72)'));
+    assert.ok(detail.payload.minutes[4].content.includes('halt 상태(32점)'));
+    assert.ok(detail.payload.minutes[4].content.includes('암호화폐 시장은 reduced(55점)'));
+    assert.ok(detail.payload.minutes[4].content.includes('해외 시장은 현재 halt 상태'));
+    assert.equal(detail.payload.minutes[4].content.includes("'할당' 상태"), false);
+    assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
     assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
@@ -346,7 +368,18 @@ async function main() {
     releaseRun();
     const completedRun = await waitForRun(baseUrl, start.payload.run.id);
     assert.equal(completedRun.status, 'completed');
+    assert.equal(completedRun.sessionId, 2);
     assert.equal(runSessionOptions[0]?.noLlm, true);
+    const meetingsAfterRun = await request(baseUrl, '/api/meetings');
+    assert.equal(meetingsAfterRun.payload.activeRuns.length, 0);
+    assert.equal(meetingsAfterRun.payload.meetings[0].id, 2);
+    const completedRunDetail = await request(baseUrl, `/api/meetings/${start.payload.run.id}`);
+    assert.equal(completedRunDetail.payload.run.status, 'completed');
+    assert.equal(completedRunDetail.payload.run.sessionId, 2);
+    const completedMeetingDetail = await request(baseUrl, '/api/meetings/2');
+    assert.equal(completedMeetingDetail.payload.minutes.length, 1);
+    const completedMeetingCatchup = await request(baseUrl, '/api/catchup/2');
+    assert.ok(completedMeetingCatchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 0건'));
 
     const ask1 = await request(baseUrl, '/api/agents/ask', {
       method: 'POST',
@@ -388,11 +421,15 @@ async function main() {
       apiListDetailCatchup: true,
       pendingDueOrder: true,
       startDuplicateGuard: true,
+      completedRunSwitchesToSessionDetail: true,
       confirmAuditAndIdempotency: true,
+      idempotentDecisionNotice: true,
       deferAudit: true,
       deferLeavesPendingQueue: true,
       catchupConfirmedDeferredPendingCounts: true,
       askRateLimit: true,
+      askSafetyNotice: true,
+      pollingCadenceConfigured: true,
       tokenAuth: true,
       localhostBinding: true,
       staticServingAndXssBaseline: true,
@@ -404,10 +441,12 @@ async function main() {
       friendlyUiErrors: true,
       closedSegmentReasonVisible: true,
       llmToggleDefaultNoCost: true,
+      evidenceDisclosureKoreanLabel: true,
       serverRecoveryClearsError: true,
       dueBadges: true,
       adrRolePresentation: true,
       repetitiveLlmMinuteCompacted: true,
+      canonicalStatusTokensPreserved: true,
     },
   };
 }

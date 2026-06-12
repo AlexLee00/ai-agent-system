@@ -245,6 +245,24 @@ async function main() {
   assert.equal(weekendSegments.find((row) => row.market === 'overseas')?.skipped, true);
   assert.equal(weekendSegments.find((row) => row.market === 'crypto')?.active, true);
 
+  const weekendPlanNote = { ...fixturePlanNote(), segments: weekendSegments };
+  const weekendMorningResult = await runMeetingSession({
+    type: 'morning',
+    dryRun: true,
+    noLlm: true,
+    planNote: weekendPlanNote,
+    outputPath: outputPath('smoke-weekend-morning'),
+  });
+  const weekendMarketData = Object.fromEntries(
+    weekendMorningResult.minutes
+      .filter((row) => row.role === 'data' && String(row.agendaKey || '').startsWith('market:'))
+      .map((row) => [row.agendaKey, row.content]),
+  );
+  assert.ok(weekendMarketData['market:domestic'].includes('스킵(weekend)'));
+  assert.ok(weekendMarketData['market:overseas'].includes('스킵(weekend)'));
+  assert.ok(weekendMarketData['market:crypto'].includes('진행'));
+  assert.equal(weekendMorningResult.decisions.filter((row) => String(row.agendaKey || '').startsWith('market:crypto')).length, 1);
+
   const noLlmResult = await runMeetingSession({
     type: 'morning',
     dryRun: true,
@@ -467,6 +485,7 @@ async function main() {
       grillQuestions: noLlmResult.minutes.filter((row) => row.role === 'grill').length,
       cMasterDowngrade: noLlmResult.decisions.length,
       noLlmComplete: true,
+      weekendLightweight: true,
       llmFailOpen: true,
       dryRunDbRows: dryRunRows.after,
       applyRollbackRows: dryRunRows.appliedRows,

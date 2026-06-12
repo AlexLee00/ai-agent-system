@@ -180,7 +180,8 @@ function normalizeLegacyMinuteContent(content) {
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: legacy 중복 집계 값 숨김(최신 데이터 minute의 distinct 집계 확인)',
   );
-  const compacted = compactRepetitiveReportContent(text);
+  const canonical = normalizeCanonicalStatusTokens(text);
+  const compacted = compactRepetitiveReportContent(canonical);
   const marker = 'C15 결정 대기 항목';
   const markerIndex = compacted.indexOf(marker);
   if (markerIndex < 0) return compacted;
@@ -194,6 +195,20 @@ function normalizeLegacyMinuteContent(content) {
   } catch {
     return compacted;
   }
+}
+
+function normalizeCanonicalStatusTokens(content) {
+  return String(content ?? '').split('\n').map((line) => {
+    const isGateLine = /(?:G0\s*)?게이트|gate/i.test(line);
+    const isMarketStatusLine = /시장.*상태/.test(line);
+    const isMarketScoreLine = /시장.*(?:중단|감소|전체)\s*\(\d+(?:\.\d+)?점?\)/.test(line);
+    if (!isGateLine && !isMarketStatusLine && !isMarketScoreLine) return line;
+    return line
+      .replace(/['"“”‘’]할당['"“”‘’]\s*상태/g, 'halt 상태')
+      .replace(/중단(?=\s*(?:\(|상태|$))/g, 'halt')
+      .replace(/감소(?=\s*(?:\(|상태|$))/g, 'reduced')
+      .replace(/전체(?=\s*(?:\(|상태|$))/g, 'full');
+  }).join('\n');
 }
 
 function compactRepetitiveReportContent(content) {
@@ -548,7 +563,9 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       return jsonResponse(res, 200, {
         ok: true,
         meetings,
-        activeRuns: Array.from(activeRuns.values()).map((run) => ({ ...run, promise: undefined })),
+        activeRuns: Array.from(activeRuns.values())
+          .filter((run) => run.status === 'running')
+          .map((run) => ({ ...run, promise: undefined })),
         segments: deps.buildMarketSegmentsFn(new Date()),
       });
     }
@@ -679,6 +696,7 @@ export default {
 
 export const _testOnly = {
   compactRepetitiveReportContent,
+  normalizeCanonicalStatusTokens,
   normalizeLegacyMinuteContent,
   normalizeMinute,
 };

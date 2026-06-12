@@ -328,18 +328,22 @@ function Timeline({ detail, catchup, loading }) {
   `;
 }
 
-function DecisionCard({ token, decision, onUpdated, setError }) {
+function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState('');
   const due = dueState(decision.dueAt);
   async function act(action) {
     setBusy(action);
     setError('');
+    setNotice('');
     try {
-      await api(token, `/api/decisions/${decision.id}`, {
+      const result = await api(token, `/api/decisions/${decision.id}`, {
         method: 'POST',
         body: JSON.stringify({ action, note }),
       });
+      if (result.idempotent === true) {
+        setNotice('이미 처리된 결정입니다. 최신 상태로 갱신했습니다.');
+      }
       setNote('');
       onUpdated();
     } catch (error) {
@@ -353,7 +357,7 @@ function DecisionCard({ token, decision, onUpdated, setError }) {
       <div className="meeting-title">#${decision.id} · ${decision.agendaKey}</div>
       <div className="meta">${decision.grade}/${decision.status} · <span className=${due.className}>${due.label}</span></div>
       <${MarkdownLite} text=${decision.decision} />
-      <details><summary>evidence</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
+      <details><summary>근거 JSON 보기</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
       <div className="form-row" style=${{ marginTop: '10px' }}>
         <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 note" />
         <div className="inline">
@@ -365,12 +369,12 @@ function DecisionCard({ token, decision, onUpdated, setError }) {
   `;
 }
 
-function Decisions({ token, decisions, onUpdated, setError }) {
+function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   return html`
     <div className="card">
       <h2>결정 대기함</h2>
       <div className="card-body list">
-        ${decisions.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} />`)}
+        ${decisions.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
         ${decisions.length === 0 ? html`<div className="meta">pending_master 결정 없음</div>` : null}
       </div>
     </div>
@@ -387,6 +391,7 @@ function DailyRoom({ token }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   async function refreshBase() {
     const list = await api(token, '/api/meetings');
@@ -409,6 +414,11 @@ function DailyRoom({ token }) {
     try {
       const payload = await api(token, `/api/meetings/${id}`);
       if (payload.run) {
+        if (payload.run.status === 'completed' && payload.run.sessionId) {
+          setSelectedId(payload.run.sessionId);
+          await refreshSelected(payload.run.sessionId);
+          return;
+        }
         setDetail({ session: payload.run, minutes: [], decisions: [] });
         setCatchup([`실행 상태: ${payload.run.status}`, `세션: ${payload.run.sessionId || '생성 중'}`, `완료: ${payload.run.completedAt || '대기'}`]);
         setError('');
@@ -441,13 +451,14 @@ function DailyRoom({ token }) {
 
   return html`
     ${error ? html`<p className="error">${error}</p>` : null}
+    ${notice ? html`<p className="notice">${notice}</p>` : null}
     <div className="grid">
       <div>
         <${StartMeeting} token=${token} segments=${segments} onStarted=${(run) => { setSelectedId(run.id); refreshBase(); }} setError=${setError} />
         <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
       </div>
       <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />
-      <${Decisions} token=${token} decisions=${pending} onUpdated=${() => { refreshBase(); refreshSelected(); }} setError=${setError} />
+      <${Decisions} token=${token} decisions=${pending} onUpdated=${() => { refreshBase(); refreshSelected(); }} setError=${setError} setNotice=${setNotice} />
     </div>
   `;
 }
@@ -487,6 +498,9 @@ function AskRoom({ token }) {
           <div className="form-row">
             <label className="meta">question</label>
             <textarea value=${question} onChange=${(event) => setQuestion(event.target.value)} placeholder="회의실 컨텍스트 기반 advisory 질문" />
+          </div>
+          <div className="ask-safety-note">
+            advisory only · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
           <button onClick=${ask} disabled=${busy || !question.trim()}>${busy ? '질의 중' : '질의 보내기'}</button>
         </div>
