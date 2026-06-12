@@ -153,6 +153,50 @@
     }
     .card-body { padding: 16px 18px 20px; }
     .list { display: grid; gap: 10px; }
+    .segment-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .segment-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 11px;
+      font-weight: 800;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.48);
+    }
+    .segment-pill.active {
+      color: #315f34;
+      border-color: rgba(72, 109, 74, 0.32);
+      background: rgba(224, 239, 207, 0.55);
+    }
+    .segment-pill.closed {
+      color: #8f1d1d;
+      border-color: rgba(201, 68, 68, 0.35);
+      background: rgba(255, 110, 110, 0.16);
+    }
+    .llm-mode {
+      width: fit-content;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid var(--line);
+    }
+    .llm-mode.disabled {
+      color: #315f34;
+      border-color: rgba(72, 109, 74, 0.32);
+      background: rgba(224, 239, 207, 0.58);
+    }
+    .llm-mode.enabled {
+      color: #7c4f00;
+      border-color: rgba(196, 127, 20, 0.35);
+      background: rgba(255, 199, 92, 0.22);
+    }
     .meeting-item, .decision-card, .minute {
       border: 1px solid var(--line);
       border-radius: 18px;

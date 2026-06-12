@@ -196,6 +196,26 @@ function meetingTypesForSegments(segments = []) {
   ];
 }
 
+function marketLabel(market) {
+  return { domestic: '국내', overseas: '미국', crypto: 'crypto' }[market] || market || 'unknown';
+}
+
+function SegmentStatus({ segments }) {
+  if (!segments?.length) return html`<div className="meta">세그먼트 상태 로딩 중</div>`;
+  return html`
+    <div className="segment-status" aria-label="시장 세그먼트 상태">
+      ${segments.map((segment) => html`
+        <span
+          className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
+          title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segment.reason || '사유 없음'}` : `${marketLabel(segment.market)} active`}
+        >
+          ${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segment.reason || '사유 없음'})` : 'active'}
+        </span>
+      `)}
+    </div>
+  `;
+}
+
 function Header({ token, setToken, tab, setTab }) {
   return html`
     <div className="hero">
@@ -273,7 +293,11 @@ function StartMeeting({ token, segments, onStarted, setError }) {
         </select>
         <button onClick=${start} disabled=${busy}>${busy ? '시작 중' : '회의 시작'}</button>
       </div>
+      <${SegmentStatus} segments=${segments} />
       <label className="check"><input type="checkbox" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
+      <div className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`}>
+        현재 모드: ${useLlm ? 'LLM 발언 사용 · 비용 가드 적용' : '결정론 발언 · LLM 비용 0'}
+      </div>
     </div>
   `;
 }
@@ -371,6 +395,7 @@ function DailyRoom({ token }) {
     setSegments(list.segments || []);
     const pendingPayload = await api(token, '/api/decisions/pending');
     setPending(pendingPayload.decisions || []);
+    setError('');
     if (!selectedId && (list.activeRuns?.[0] || list.meetings?.[0])) {
       const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
       setSelectedId(nextId);
@@ -386,11 +411,13 @@ function DailyRoom({ token }) {
       if (payload.run) {
         setDetail({ session: payload.run, minutes: [], decisions: [] });
         setCatchup([`실행 상태: ${payload.run.status}`, `세션: ${payload.run.sessionId || '생성 중'}`, `완료: ${payload.run.completedAt || '대기'}`]);
+        setError('');
         return;
       }
       setDetail(payload);
       const catchupPayload = await api(token, `/api/catchup/${id}`);
       setCatchup(catchupPayload.lines || []);
+      setError('');
     } finally {
       setDetailLoading(false);
     }

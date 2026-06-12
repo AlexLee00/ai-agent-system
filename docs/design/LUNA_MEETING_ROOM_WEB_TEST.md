@@ -8,14 +8,14 @@
 | ID | 시나리오 | 절차 | 기대 결과 | 커버 |
 |---|---|---|---|---|
 | W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크 | [수동] ✅2026-06-12 브라우저 |
-| W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 결정됨 n·대기 m·마스터 액션 필요 | [자동] catchup API+[수동] ✅2026-06-12 표시 |
+| W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요 | [자동] catchup API+[수동] ✅2026-06-12 표시 |
 | W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·seq 순서 | [자동] ADR 클래스+[수동] role 전반 |
 | W-04 | 회의 시작(정상) | 타입 선택→시작 | 진행 상태 폴링→완료 후 타임라인 갱신 | [자동] start API |
 | W-05 | 회의 시작(중복) | open 세션 중 재시작 | 409 + 사용자 메시지(중복 안내) | [자동] 409+친화 메시지 문자열 |
-| W-06 | 휴장 비활성 | 주말에 debrief 선택 | 버튼 비활성+사유 툴팁 | [수동] 🔁주말 |
-| W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 | [수동] |
-| W-08 | 결정 confirm | 카드에서 confirm(+note) | status=confirmed·카드 이동/배지·minutes 감사 행 | [자동] API+[수동] UI 반영 |
-| W-09 | 결정 defer | defer | status=deferred 동일 검증 | [자동] |
+| W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁 | [자동]+[수동] ✅fixture 브라우저 |
+| W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시 | [자동] 기본 noLlm payload+[수동] 토글 표시 |
+| W-08 | 결정 confirm | 카드에서 confirm(+note) | status=confirmed·카드 이동/배지·minutes 감사 행 | [자동] API+[수동] ✅fixture 브라우저 |
+| W-09 | 결정 defer | defer | status=deferred 동일 검증 | [자동]+[수동] ✅fixture 브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+[수동] 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분) | [자동] dueState+[수동] ✅2026-06-12 |
 | W-12 | evidence 펼침 | evidence 클릭 | JSON `<pre>` 표시(이건 의도 — 머신리더블 보존) | [수동] |
@@ -27,7 +27,7 @@
 | W-21 | JSON 덤프 부재 | 발언 content에 `{...}` 원문 없음(C15 대기·서킷 안건 한국어 요약) | [자동] legacy API 정규화+브라우저 ✅ |
 | W-22 | 서킷 distinct | "활성 잠금 N건"이 고유 잠금 수(DB distinct 쿼리와 일치) | [자동] smoke+[수동] 🔁 |
 | W-23 | XSS 회귀 | `<script>` 포함 텍스트가 문자 그대로(미실행)·innerHTML 0 | [자동] smoke |
-| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음(FIX3 프롬프트 보강 효과) | [수동] 🔁 — 다음 회의가 첫 확인 |
+| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음(FIX3 프롬프트 보강 효과) | [자동] 반복 표시 축약+[수동] 🔁 다음 실회의 |
 
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -40,7 +40,7 @@
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
 | W-40 | 폴링 주기 | open 세션 시 3초·idle 30초(네트워크 탭 확인) | [수동] |
-| W-41 | 서버 다운 내성 | 서버 중지 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복 | [수동] |
+| W-41 | 서버 다운 내성 | 서버 중지 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복 | [자동] 복구시 에러 clear+[수동] fixture |
 | W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님) | [자동] smoke |
 | W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200 | [자동] |
 | W-44 | 모바일 반응형 | 창 폭 축소 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기 | [수동] ✅390px 확인 |
@@ -57,6 +57,11 @@
 - **2026-06-12 루프 1**: 브라우저에서 기존 회의 #1 선택 시 legacy C15 JSON 덤프와 과거 서킷 57건 표기가 노출됨 → API 표시 레이어에서 C15 raw JSON을 한국어 요약으로 정규화하고 legacy 중복 집계 숫자를 숨김. `check:luna-meeting-room-web`에 `legacyRawJsonMinuteNormalized`, `legacyCircuitCountMasked` 추가.
 - **2026-06-12 루프 2**: 첫 로드 UX와 due/에러 메시지 점검 → 최신 회의 자동 선택 직후 상세 fetch, 상세 로딩 상태, due 임박/경과 배지, 409/429/서버연결 실패 친화 메시지 추가. 브라우저 390px 모바일 확인: 1컬럼·overflow 없음·버튼 높이 42px 이상.
 - **2026-06-12 루프 3**: ADR minute가 일반 decision과 구분되지 않는 표시 위험 보강 → speaker/role이 `adr`인 minute는 `ADR` 라벨과 별도 보더/배경을 사용하도록 하고 스모크에 `adrRolePresentation` 추가.
+- **2026-06-12 루프 4**: 실제 #1 회의에서 sophia 발언의 반복 결론 문단 확인 → 향후 LLM 프롬프트에 반복 결론/필러 금지를 추가하고, 기존 minute 표시 계층에서 반복 결론 블록을 축약하는 스모크 `repetitiveLlmMinuteCompacted` 추가.
+- **2026-06-12 루프 5**: in-memory 브라우저 fixture로 confirm/defer UI 흐름 검증 → 카드 제거·감사 minute·pending 비움은 정상이나 catchup이 deferred를 숨겨 `결정됨 1건`만 표시하던 문제 발견. 요약을 `확정/보류/대기`로 분리하고 스모크 `catchupConfirmedDeferredPendingCounts` 추가.
+- **2026-06-12 루프 6**: W-41 관점에서 서버 장애 후 복구 경로 점검 → 네트워크 에러 메시지는 존재하지만 성공 refresh 후 오류 배너가 남을 수 있어 `refreshBase/refreshSelected` 성공 시 `setError('')`를 호출하도록 보강. 스모크 `serverRecoveryClearsError` 추가.
+- **2026-06-12 루프 7**: W-06 휴장 UX 점검 → disabled `<option>`만으로는 사유 발견성이 낮아 시작 폼에 시장 세그먼트 상태 배지를 추가. fixture에서 국내 `weekend` 비활성 사유가 배지/tooltip/disabled option으로 보이는지 검증하고 스모크 `closedSegmentReasonVisible` 추가.
+- **2026-06-12 루프 8**: W-07 LLM 토글 비용 인지성 보강 → 체크박스 아래에 `결정론 발언 · LLM 비용 0`/`LLM 발언 사용 · 비용 가드 적용` 현재 모드 배지를 추가하고, start payload 기본값이 `noLlm=true`인지 스모크 `llmToggleDefaultNoCost`로 검증.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

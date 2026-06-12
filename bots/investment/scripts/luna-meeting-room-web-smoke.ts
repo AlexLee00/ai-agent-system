@@ -97,13 +97,34 @@ function createMemoryStore() {
       meta: { fixture: 'adr' },
       createdAt: '2026-06-11T00:00:03.000Z',
     },
+    {
+      id: 5,
+      sessionId: 1,
+      seq: 5,
+      agendaKey: 'market:domestic',
+      speaker: 'sophia',
+      role: 'analysis',
+      content: [
+        '국내 장전 계획에 대한 분석 결과입니다.',
+        '',
+        '이러한 결과를 기반으로, 최종 결론은 다음과 같습니다.',
+        '',
+        '- 국내 시장은 주의가 필요합니다.',
+        '',
+        '이러한 결과를 기반으로, Luna 회의에서는 최종 결론을 다음과 같이 제시할 수 있습니다.',
+        '',
+        '- 국내 장전 계획은 주의가 필요합니다.',
+      ].join('\n'),
+      meta: { fixture: 'repetition' },
+      createdAt: '2026-06-11T00:00:04.000Z',
+    },
   ];
   const decisions = [
     { id: 11, sessionId: 1, agendaKey: 'market:crypto', decision: 'crypto **점검** pending\n- confirm 필요', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
     { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'domestic 점검 pending', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
   ];
   let nextSessionId = 2;
-  let nextMinuteId = 5;
+  let nextMinuteId = 6;
 
   return {
     listMeetings: async () => sessions.slice().sort((a, b) => b.id - a.id),
@@ -190,6 +211,7 @@ async function waitForRun(baseUrl, runId) {
 
 async function main() {
   const store = createMemoryStore();
+  const runSessionOptions = [];
   let releaseRun;
   const runGate = new Promise((resolve) => { releaseRun = resolve; });
   const deps = {
@@ -199,7 +221,13 @@ async function main() {
       briefMarkdown: '# fixture plan-note\n- advisory only',
       segments: [],
     }),
-    runMeetingSessionFn: async () => {
+    buildMarketSegmentsFn: () => [
+      { market: 'domestic', skipped: true, reason: 'weekend' },
+      { market: 'overseas', skipped: false, reason: null },
+      { market: 'crypto', skipped: false, reason: null },
+    ],
+    runMeetingSessionFn: async (options) => {
+      runSessionOptions.push(options);
       await runGate;
       const id = store.addCompletedMeeting();
       return { ok: true, session: { id }, minutes: [{ seq: 1 }], decisions: [], markdownPath: '/tmp/fixture.md' };
@@ -235,8 +263,13 @@ async function main() {
     assert.ok(appJs.text.includes('이미 진행 중인 같은 타입 회의가 있습니다'));
     assert.ok(appJs.text.includes('분당 질의 한도에 도달했습니다'));
     assert.ok(appJs.text.includes('회의실 서버에 연결할 수 없습니다'));
+    assert.ok(appJs.text.includes("setError('');"));
     assert.ok(appJs.text.includes('function dueState'));
     assert.ok(appJs.text.includes('function minuteClassName'));
+    assert.ok(appJs.text.includes('function SegmentStatus'));
+    assert.ok(appJs.text.includes('segment-pill'));
+    assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
+    assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
     assert.ok(appJs.text.includes("' adr'"));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
@@ -247,9 +280,11 @@ async function main() {
     const meetings = await request(baseUrl, '/api/meetings');
     assert.equal(meetings.payload.meetings.length, 1);
     assert.ok(Array.isArray(meetings.payload.segments));
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.skipped, true);
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.reason, 'weekend');
 
     const detail = await request(baseUrl, '/api/meetings/1');
-    assert.equal(detail.payload.minutes.length, 4);
+    assert.equal(detail.payload.minutes.length, 5);
     assert.ok(detail.payload.minutes[1].content.includes('**BTC**'));
     assert.ok(detail.payload.minutes[1].content.includes('| 항목 | 값 |'));
     assert.ok(detail.payload.minutes[1].content.includes('<script>alert(1)</script>'));
@@ -258,8 +293,11 @@ async function main() {
     assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
     assert.ok(detail.payload.minutes[2].content.includes('컴포넌트=regime-engine-hmm'));
     assert.ok(detail.payload.minutes[2].content.includes('Brier: HMM<폴백'));
+    assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 1);
+    assert.ok(detail.payload.minutes[4].content.includes('반복 결론 문단'));
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
+    assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
 
     const pending = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
@@ -289,6 +327,9 @@ async function main() {
     assert.equal(defer.payload.decision.status, 'deferred');
     const pendingAfterDefer = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pendingAfterDefer.payload.decisions.map((row) => row.id), []);
+    const catchupAfterDefer = await request(baseUrl, '/api/catchup/1');
+    assert.ok(catchupAfterDefer.payload.lines[0].includes('확정 1건, 보류 1건, 대기 0건'));
+    assert.ok(catchupAfterDefer.payload.lines[1].includes('마스터 액션 필요: 없음'));
 
     const start = await request(baseUrl, '/api/meetings/start', {
       method: 'POST',
@@ -305,6 +346,7 @@ async function main() {
     releaseRun();
     const completedRun = await waitForRun(baseUrl, start.payload.run.id);
     assert.equal(completedRun.status, 'completed');
+    assert.equal(runSessionOptions[0]?.noLlm, true);
 
     const ask1 = await request(baseUrl, '/api/agents/ask', {
       method: 'POST',
@@ -349,6 +391,7 @@ async function main() {
       confirmAuditAndIdempotency: true,
       deferAudit: true,
       deferLeavesPendingQueue: true,
+      catchupConfirmedDeferredPendingCounts: true,
       askRateLimit: true,
       tokenAuth: true,
       localhostBinding: true,
@@ -359,8 +402,12 @@ async function main() {
       legacyRawJsonMinuteNormalized: true,
       legacyCircuitCountMasked: true,
       friendlyUiErrors: true,
+      closedSegmentReasonVisible: true,
+      llmToggleDefaultNoCost: true,
+      serverRecoveryClearsError: true,
       dueBadges: true,
       adrRolePresentation: true,
+      repetitiveLlmMinuteCompacted: true,
     },
   };
 }

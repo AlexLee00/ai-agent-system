@@ -379,7 +379,7 @@ async function callAnalysisLLM(agenda: any, planNote: any, agent: string, contex
   try {
     const result = await (deps.callViaHub || callViaHub)(
       agent,
-        'You are a Luna meeting-room research analyst. Use only the provided computed metrics. Reply in natural Korean reporting style. Keep score/status values unchanged; do not translate halt/reduced/full. Do not quote raw JSON or code blocks; express numbers in prose.',
+        'You are a Luna meeting-room research analyst. Use only the provided computed metrics. Reply in natural Korean reporting style. Keep score/status values unchanged; do not translate halt/reduced/full. Do not quote raw JSON or code blocks; express numbers in prose. Avoid greetings, filler transitions, repeated conclusions, and repeated bullet groups. Prefer one concise finding list plus one final action sentence.',
       [
         `안건: ${agenda.title}`,
         'Plan-note excerpt:',

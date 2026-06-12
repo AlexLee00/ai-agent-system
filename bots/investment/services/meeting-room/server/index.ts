@@ -180,19 +180,51 @@ function normalizeLegacyMinuteContent(content) {
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: legacy 중복 집계 값 숨김(최신 데이터 minute의 distinct 집계 확인)',
   );
+  const compacted = compactRepetitiveReportContent(text);
   const marker = 'C15 결정 대기 항목';
-  const markerIndex = text.indexOf(marker);
-  if (markerIndex < 0) return text;
-  const jsonStart = text.indexOf('{', markerIndex);
-  if (jsonStart < 0) return text;
-  const jsonText = balancedJsonAt(text, jsonStart);
-  if (!jsonText) return text;
+  const markerIndex = compacted.indexOf(marker);
+  if (markerIndex < 0) return compacted;
+  const jsonStart = compacted.indexOf('{', markerIndex);
+  if (jsonStart < 0) return compacted;
+  const jsonText = balancedJsonAt(compacted, jsonStart);
+  if (!jsonText) return compacted;
   try {
     const summary = legacyPendingDecisionSummary(JSON.parse(jsonText));
-    return `${text.slice(0, markerIndex)}${summary}${text.slice(jsonStart + jsonText.length)}`.trim();
+    return `${compacted.slice(0, markerIndex)}${summary}${compacted.slice(jsonStart + jsonText.length)}`.trim();
   } catch {
-    return text;
+    return compacted;
   }
+}
+
+function compactRepetitiveReportContent(content) {
+  const text = String(content ?? '');
+  const phrase = '이러한 결과를 기반으로';
+  if ((text.match(new RegExp(phrase, 'g')) || []).length < 2) return text;
+  const paragraphs = text.split(/\n{2,}/);
+  const kept = [];
+  let seenPhrase = false;
+  let removed = 0;
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index];
+    if (paragraph.includes(phrase)) {
+      if (seenPhrase) {
+        removed += 1;
+        const next = paragraphs[index + 1] || '';
+        if (/^\s*-\s+/.test(next)) {
+          index += 1;
+          removed += 1;
+        }
+        continue;
+      }
+      seenPhrase = true;
+    }
+    kept.push(paragraph);
+  }
+  if (!removed) return text;
+  return [
+    kept.join('\n\n').trim(),
+    `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 DB minute에 보존됩니다.`,
+  ].filter(Boolean).join('\n\n');
 }
 
 function normalizeMinute(row = {}) {
@@ -230,6 +262,7 @@ function getDeps(deps = {}) {
     withTransactionFn: deps.withTransactionFn || db.withTransaction,
     runMeetingSessionFn: deps.runMeetingSessionFn || runMeetingSession,
     buildMeetingPlanNoteFn: deps.buildMeetingPlanNoteFn || buildMeetingPlanNote,
+    buildMarketSegmentsFn: deps.buildMarketSegmentsFn || buildMarketSegments,
     resolveAgentLLMRouteFn: deps.resolveAgentLLMRouteFn || resolveAgentLLMRoute,
     callViaHubFn: deps.callViaHubFn || callViaHub,
     meetingStore: deps.meetingStore || null,
@@ -320,17 +353,18 @@ async function hasOpenMeetingType(type, deps) {
 function buildCatchupFromDetail(detail) {
   const decisions = detail.decisions || [];
   const confirmed = decisions.filter((row) => row.status === 'confirmed');
+  const deferred = decisions.filter((row) => row.status === 'deferred');
   const pending = decisions.filter((row) => row.status === 'pending_master');
   const next = pending.slice(0, 3).map((row) => `${row.agendaKey}: ${row.decision}`).join(' / ') || '없음';
   return [
-    `결정됨 ${confirmed.length}건, 대기 중 ${pending.length}건`,
+    `확정 ${confirmed.length}건, 보류 ${deferred.length}건, 대기 ${pending.length}건`,
     `마스터 액션 필요: ${next}`,
     `회의 ${detail.session?.id || 'n/a'} · minutes ${(detail.minutes || []).length}행 · 최신 상태 ${detail.session?.status || 'n/a'}`,
   ];
 }
 
-function validateMeetingStart(type, now = new Date()) {
-  const segments = buildMarketSegments(now);
+function validateMeetingStart(type, now = new Date(), deps = {}) {
+  const segments = (deps.buildMarketSegmentsFn || buildMarketSegments)(now);
   const domestic = segments.find((row) => row.market === 'domestic');
   const overseas = segments.find((row) => row.market === 'overseas');
   if (type === 'domestic_debrief' && domestic?.skipped) {
@@ -403,7 +437,7 @@ async function askAgent(body, deps, limiter) {
   try {
     const result = await deps.callViaHubFn(
       agent,
-      'You are a Luna meeting-room agent. Answer in Korean. Use only the provided meeting context. Advisory only.',
+      'You are a Luna meeting-room agent. Answer in Korean. Use only the provided meeting context. Advisory only. Keep the response concise, avoid greetings and repeated conclusions, and do not translate status values such as halt/reduced/full.',
       [
         `Question: ${question}`,
         '',
@@ -515,7 +549,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
         ok: true,
         meetings,
         activeRuns: Array.from(activeRuns.values()).map((run) => ({ ...run, promise: undefined })),
-        segments: buildMarketSegments(new Date()),
+        segments: deps.buildMarketSegmentsFn(new Date()),
       });
     }
 
@@ -543,7 +577,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       const body = await readBody(req);
       const type = normalizeMeetingType(body.type || 'morning');
       const chair = normalizeChair(body.chair || 'luna');
-      validateMeetingStart(type, new Date());
+      validateMeetingStart(type, new Date(), deps);
       if (activeTypes.has(type) || await hasOpenMeetingType(type, deps)) {
         throw new HttpError(409, 'meeting_already_open', `meeting type ${type} is already open`);
       }
@@ -644,6 +678,7 @@ export default {
 };
 
 export const _testOnly = {
+  compactRepetitiveReportContent,
   normalizeLegacyMinuteContent,
   normalizeMinute,
 };
