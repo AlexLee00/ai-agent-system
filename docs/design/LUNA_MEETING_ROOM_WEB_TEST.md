@@ -151,6 +151,11 @@
 - **2026-06-12 루프 95**: W-30/W-24 실 LLM 응답 표시 점검 → 직접 Luna 질의 응답에서 `plan-note`, `domestic/overseas/crypto`가 사용자-facing으로 반환되는 것을 확인. 회의록 표시 정규화 함수를 에이전트 질의 응답에도 적용하고, 시장 key 단독 표현을 `국내/미국/암호화폐`로 정규화하는 스모크를 추가.
 - **2026-06-12 루프 96**: W-30/W-24 실 LLM 응답 문장 품질 재점검 → 시장 key를 단순 치환하면 `domestic과/overseas는`이 `국내과/미국는`으로 깨지고, LLM이 `halt/reduced`를 `정지/감소한 상태`로 번역할 수 있음을 확인. 시장 key+한국어 조사 조합을 별도 매핑하고 `게이트가 정지/감소한 상태`는 `halt/reduced 상태`로 복원하는 스모크를 추가.
 - **2026-06-12 루프 97**: W-03/W-02 fallback 안전성 점검 → 알 수 없는 timeline role이 들어오면 `roleName`이 raw role을 그대로 표시하고, `minuteClassName`이 DB role 값을 CSS class에 그대로 붙일 수 있음을 확인. 화면 fallback은 `역할 미상`, CSS class는 허용 role 외 `system`으로 제한하고, 서버 catchup/summary label fallback도 raw status/agenda/component/metric/agent 대신 generic 라벨로 고정.
+- **2026-06-12 루프 98**: W-24 실회의 LLM 표시 품질 재점검 → 실제 화면의 C15 분석 발언에 `국내 bull, 미국 sideways, 암호화폐 bear`, 리스트형 `중단(32)/감소(55)`, `회의 데이터 요약를`, `미국가`가 남는 것을 확인. 표시 API에서 괄호 없는 레짐 값과 이어지는 게이트 점수 줄, 조사 오류를 정규화하고 브라우저에서 금지 문구 0건 및 `레짐은 국내 상승, 미국 수평, 암호화폐 하락 상태입니다.` 표시를 확인.
+- **2026-06-12 루프 99**: W-30 에이전트 질의 접근성 재점검 → 브라우저 테스트 중 visible label `에이전트`/`질문`으로 컨트롤을 직접 찾을 수 없고 별도 descriptive `aria-label`만 접근성 이름으로 쓰이는 것을 확인. form control의 접근성 이름을 화면 label과 일치시키고 세부 설명은 title/placeholder/describedby로 분리했으며, 브라우저에서 `에이전트` combobox 1개·`질문` textbox 1개 탐색을 확인.
+- **2026-06-12 루프 100**: W-04 시작 폼 접근성 재점검 → 일일 회의실의 회의 타입 select 화면 라벨이 `회의 시작`이라 실제 시작 버튼과 의미가 겹치고, 접근성 이름은 별도 `시작할 회의 타입`으로 분리되어 있음을 확인. visible label을 `회의 타입`으로 정리하고 설명은 title로 분리했으며, 브라우저에서 `회의 타입` combobox 1개·기존 `시작할 회의 타입` aria-name 0건을 확인.
+- **2026-06-12 루프 101**: W-30 응답 live region 텍스트 흐름 점검 → 에이전트 응답 영역에서 메타 줄과 본문이 텍스트/보조기술 기준으로 `상태 성공[Hephaestos]`처럼 붙어 읽힐 수 있음을 확인. 응답 메타 끝에 `응답:` 구분자를 추가하고 본문을 `answer-content` 컨테이너로 분리했으며, 서빙 중인 `/app.js`에서 새 구분자 반영과 구 메타-only 패턴 제거를 확인.
+- **2026-06-12 루프 102**: W-43 토큰 입력 접근성 재점검 → 헤더 토큰 입력도 화면 라벨 `접근 토큰 (MEETING_ROOM_TOKEN)`과 별도 `회의실 접근 토큰` aria-name으로 분리되어 있고 설명 연결이 없음을 확인. visible label은 `접근 토큰`으로 맞추고 `MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠` 도움말을 `aria-describedby`로 연결했으며, 브라우저에서 `접근 토큰` textbox 1개·기존 aria-name 0건·password 유지 확인.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

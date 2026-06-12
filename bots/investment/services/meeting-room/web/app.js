@@ -400,16 +400,17 @@ function Header({ token, setToken, tab, setTab }) {
         <p>회의록, 결정 대기함, 에이전트 질의를 한 화면에서 다룹니다. 이 UI는 기록과 승인 보조만 수행하며 거래·파라미터를 변경하지 않습니다.</p>
       </div>
       <div style=${{ minWidth: '260px' }}>
-        <label className="meta" htmlFor="meeting-room-token">접근 토큰 (MEETING_ROOM_TOKEN)</label>
+        <label className="meta" htmlFor="meeting-room-token">접근 토큰</label>
         <input
           id="meeting-room-token"
           type="password"
           autoComplete="off"
-          aria-label="회의실 접근 토큰"
+          aria-describedby="meeting-room-token-help"
           value=${token}
           onChange=${(event) => setToken(event.target.value)}
           placeholder="로컬 무인증이면 비워둠"
         />
+        <div id="meeting-room-token-help" className="meta">MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠</div>
       </div>
     </div>
     <div className="tabs">
@@ -513,9 +514,9 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   }
   return html`
     <div className="form-row">
-      <label className="meta" htmlFor="meeting-type-select">회의 시작</label>
+      <label className="meta" htmlFor="meeting-type-select">회의 타입</label>
       <div className="inline">
-        <select id="meeting-type-select" aria-label="시작할 회의 타입" aria-describedby="meeting-segment-status" value=${type} onChange=${(event) => setType(event.target.value)}>
+        <select id="meeting-type-select" title="시작할 회의 타입" aria-describedby="meeting-segment-status" value=${type} onChange=${(event) => setType(event.target.value)}>
           ${types.map((item) => html`
             <option
               value=${item.value}
@@ -816,7 +817,7 @@ function AskRoom({ token }) {
         <div className="card-body">
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
-            <select id="meeting-agent-select" aria-label="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
+            <select id="meeting-agent-select" title="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
               ${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}
             </select>
           </div>
@@ -824,7 +825,6 @@ function AskRoom({ token }) {
             <label className="meta" htmlFor="meeting-agent-question">질문</label>
             <textarea
               id="meeting-agent-question"
-              aria-label="회의실 컨텍스트 기반 자문 질문"
               aria-describedby="ask-helper ask-safety-note"
               value=${question}
               onChange=${(event) => updateQuestion(event.target.value)}
@@ -848,8 +848,8 @@ function AskRoom({ token }) {
         <div className="card-body">
           <div className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답">
             ${busy ? html`<div className="meta">질의 중 · 에이전트 응답을 기다리는 중입니다.</div>` : answer ? html`
-              <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 제공자 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)}</div>
-              <${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} />
+              <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 제공자 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>
+              <div className="answer-content"><${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} /></div>
             ` : html`<div className="meta">아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.</div>`}
           </div>
         </div>

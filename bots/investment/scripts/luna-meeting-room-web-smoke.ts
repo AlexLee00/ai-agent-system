@@ -138,6 +138,8 @@ function createMemoryStore() {
         '* 결정 대기는 5건 남아있다.',
         '5. 결정 대기는 5건이 대기 중입니다.',
         'C2 레짐 : 국내, 미국, 암호화폐 세그먼트의 레짐은 각각 bull(0.41), sideways(0.47), bear(0.74) 상태입니다.',
+        '레짐은 국내 bull, 미국 sideways, 암호화폐 bear 상태입니다.',
+        '회의 데이터 요약를 기준으로 미국가 수평 상태입니다.',
         '비교 기준=gate_off_virtual',
         'halt_reduced_avoidance_delta: 비교 데이터가 없습니다.',
         '[aria] C15 결정 대기 점검',
@@ -318,10 +320,13 @@ async function main() {
     assert.equal(appJs.text.includes("return String(value);"), false);
     assert.ok(appJs.text.includes('aria-label="로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="TeamJay Dashboard 7787 새 창으로 열기"'));
-    assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰 (MEETING_ROOM_TOKEN)'));
+    assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰'));
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
-    assert.ok(appJs.text.includes('aria-label="회의실 접근 토큰"'));
+    assert.ok(appJs.text.includes('aria-describedby="meeting-room-token-help"'));
+    assert.ok(appJs.text.includes('id="meeting-room-token-help"'));
+    assert.ok(appJs.text.includes('MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠'));
+    assert.equal(appJs.text.includes('aria-label="회의실 접근 토큰"'), false);
     assert.ok(appJs.text.includes('className="tabs"'));
     assert.ok(appJs.text.includes('className="tab-switcher" role="tablist" aria-label="회의실 화면 전환"'));
     assert.ok(appJs.text.includes('id="meeting-tab-daily"'));
@@ -383,8 +388,9 @@ async function main() {
     assert.ok(appJs.text.includes('role="region" aria-label="회의 목록"'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}'));
     assert.ok(appJs.text.includes('className="meeting-list-row" role="listitem"'));
-    assert.ok(appJs.text.includes('htmlFor="meeting-type-select">회의 시작'));
-    assert.ok(appJs.text.includes('aria-label="시작할 회의 타입"'));
+    assert.ok(appJs.text.includes('htmlFor="meeting-type-select">회의 타입'));
+    assert.ok(appJs.text.includes('title="시작할 회의 타입"'));
+    assert.equal(appJs.text.includes('aria-label="시작할 회의 타입"'), false);
     assert.ok(appJs.text.includes('aria-describedby="meeting-segment-status"'));
     assert.ok(appJs.text.includes('id="meeting-segment-status"'));
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="시장 세그먼트 상태"'));
@@ -502,8 +508,9 @@ async function main() {
     assert.ok(appJs.text.includes('${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}'));
     assert.equal(appJs.text.includes("['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map"), false);
     assert.ok(appJs.text.includes('<option value=${name}>${agentLabel(name)}</option>'));
-    assert.ok(appJs.text.includes('aria-label="질의 대상 에이전트"'));
-    assert.ok(appJs.text.includes('aria-label="회의실 컨텍스트 기반 자문 질문"'));
+    assert.ok(appJs.text.includes('title="질의 대상 에이전트"'));
+    assert.equal(appJs.text.includes('aria-label="질의 대상 에이전트"'), false);
+    assert.equal(appJs.text.includes('aria-label="회의실 컨텍스트 기반 자문 질문"'), false);
     assert.ok(appJs.text.includes('aria-describedby="ask-helper ask-safety-note"'));
     assert.ok(appJs.text.includes('function updateAgent'));
     assert.ok(appJs.text.includes('function updateQuestion'));
@@ -518,6 +525,8 @@ async function main() {
     assert.ok(appJs.text.includes('setAnswer(null);'));
     assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답"'));
     assert.ok(appJs.text.includes('질의 중 · 에이전트 응답을 기다리는 중입니다.'));
+    assert.ok(appJs.text.includes('상태 ${answerStatusLabel(answer.ok)} · 응답:'));
+    assert.ok(appJs.text.includes('className="answer-content"'));
     assert.ok(appJs.text.includes('function answerStatusLabel'));
     assert.ok(appJs.text.includes('function providerLabel'));
     assert.ok(appJs.text.includes("return value === 'n/a' ? '확인 필요' : value;"));
@@ -630,12 +639,19 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('비용 가드: 최대 호출 6회 도달로 발언 생략'));
     assert.ok(detail.payload.minutes[4].content.includes('암호화폐 시장은 현재 하락세에 있다.'));
     assert.ok(detail.payload.minutes[4].content.includes('레짐은 각각 상승(0.41), 수평(0.47), 하락(0.74) 상태입니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('레짐은 국내 상승, 미국 수평, 암호화폐 하락 상태입니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약을 기준으로 미국이 수평 상태입니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('비교 기준=게이트 비활성 가상 비교'));
     assert.ok(detail.payload.minutes[4].content.includes('halt/reduced 회피 개선폭: 비교 데이터가 없습니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('[Aria] C15 결정 대기 점검'));
     assert.equal(detail.payload.minutes[4].content.includes('bull(0.41)'), false);
     assert.equal(detail.payload.minutes[4].content.includes('sideways(0.47)'), false);
     assert.equal(detail.payload.minutes[4].content.includes('bear(0.74)'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('국내 bull'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('미국 sideways'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('암호화폐 bear'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('회의 데이터 요약를'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('미국가'), false);
     assert.equal(detail.payload.minutes[4].content.includes('gate_off_virtual'), false);
     assert.equal(detail.payload.minutes[4].content.includes('halt_reduced_avoidance_delta'), false);
     assert.equal(detail.payload.minutes[4].content.includes('[aria]'), false);
