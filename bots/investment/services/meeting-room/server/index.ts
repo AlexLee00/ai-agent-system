@@ -605,6 +605,7 @@ function agentDisplayLabel(value) {
 
 function normalizeLegacyKoreanLlmNoise(content) {
   return String(content ?? '')
+    .replace(/^안녕하세요\.\s*/gm, '')
     .replace(/\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b/g, (_match, iso) => formatKstTimestampFromIso(iso))
     .replace(/\bregime-engine-hmm\b/g, 'C15 레짐 엔진 HMM')
     .replace(/\bmarket-deployment-gate\b/g, 'C1 시장 배치 게이트')
@@ -731,6 +732,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/활성 서킷:\s*최신 데이터 영역 기준으로 확인하세요/g, '활성 서킷: 최신 데이터 영역 기준으로 봅니다')
     .replace(/결정 대기:\s*상단 캐치업 기준으로 확인하세요/g, '결정 대기: 상단 캐치업 기준입니다')
     .replace(/전략군\s+24시간\s+동안\s+0건의\s+거래가\s+발생했습니다\.?/g, '전략군 24시간 신호 0건입니다.')
+    .replace(/전략군\s+24시간\s+동안\s+거래가\s+발생하지\s+않았습니다\.?/g, '전략군 24시간 신호 0건입니다.')
+    .replace(/(\*{0,2}전략군\s+24시간\*{0,2}\s*[:：]\s*)0건의\s+거래가\s+발생했습니다\.?/g, '$1신호 0건입니다.')
     .replace(/전략군\s+24시간\s+동안\s+(\d+)건의\s+이벤트가\s+발생했습니다\.?/g, '전략군 24시간 신호 $1건입니다.')
     .replace(/전략군\s+24시간\s+동안\s+(\d+)건의\s+입장\s*\(Entry\s*(\d+)\)\s*이 발생(?:하였으며|했습니다)?/gi, '전략군 24시간 신호 $1건(진입 $2건)입니다')
     .replace(/입니다,\s*현재/g, '입니다. 현재')
@@ -770,8 +773,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/결정 대기 중인 이벤트(?:는|가)\s*\d+건입니다\.?/g, '결정 대기: 상단 캐치업 기준입니다.')
     .replace(/따라서,\s*현재\s+[^.。!?\n]*?진행 상황은\s+[^.。!?\n]*?입니다\.?/g, '요약은 위 게이트·레짐·전략·서킷 항목 기준입니다.')
     .replace(/따라서\s*최종 결정을 내릴 수 있도록 하십시오\.?/g, '후속 조치는 마스터 확인 후 기록합니다.')
+    .replace(/이러한 정보를 참고하여\s*[^.。!?\n]*?최종 결정을 내릴 수 있습니다\.?/g, '후속 조치는 마스터 확인 후 기록합니다.')
     .replace(/따라서,\s*현 시점에서 추가적인 조치가 필요합니다\.?/g, '후속 조치는 마스터 확인 후 기록합니다.')
     .replace(/결과적으로,\s*현 시점에서 추가적인 조치가 필요하며,\s*[^.。!?\n]*?(?:필요합니다|권장됩니다)\.?/g, '')
+    .replace(/(활성 서킷:\s*최신 데이터 영역 기준으로 봅니다)\.\s*이 있습니다\.?/g, '$1.')
     .replace(/후속 조치는 마스터 확인 후 기록합니다\.\s*(?:\n+)?후속 조치는 마스터 확인 후 기록합니다\./g, '후속 조치는 마스터 확인 후 기록합니다.')
     .replace(/(확인하세요|기준입니다|봅니다)이며/g, '$1. ')
     .replace(/(확인하세요|기준입니다|봅니다)\.\s*,\s*/g, '$1. ')

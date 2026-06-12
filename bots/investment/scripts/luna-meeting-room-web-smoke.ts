@@ -1179,13 +1179,18 @@ async function main() {
     assert.equal(detail.payload.minutes[4].content.includes('분석 결과는 다음과 같이 요약'), false);
     assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const debriefAnalysisMinute = _testOnly.normalizeLegacyMinuteContent([
+      '안녕하세요. 현재 C15 결정 대기 상황입니다.',
       '"암호화폐에서는 62건의 샘플을 기반으로 \'줄인\' 상태에 있습니다."',
       '국내에서는 강세 상태에 있지만, 미국에서는 중립 상태이며, 암호화폐에서는 약세 상태에 있습니다.',
       '미국와 암호화폐에 대한 분석 결과를 고려하십시오.',
       '전략군 24시간 동안 0건의 거래가 발생했습니다.',
+      '전략군 24시간 동안 거래가 발생하지 않았습니다.',
+      '**전략군 24시간** : 0건의 거래가 발생했습니다.',
       '결정 대기 중인 서킷은 5건입니다.',
       '결과적으로, 국내 마감 G6 대조표의 분석 결과는 다음과 같이 요약할 수 있습니다.',
       '따라서, 국내 마감 G6 대조표에 대한 다음 조치를 취해야 합니다: 국내 마감 G6 대조표에 대한 추가 분석을 수행하고, 미국과 암호화폐에 대한 분석 결과를 고려하여 최종 결정을 내릴 수 있도록 하십시오.',
+      '활성 서킷: 최신 데이터 영역 기준으로 봅니다. 이 있습니다.',
+      '이러한 정보를 참고하여 C15 결정 대기의 최종 결정을 내릴 수 있습니다.',
     ].join('\n'));
     assert.ok(debriefAnalysisMinute.includes('reduced 상태'));
     assert.ok(debriefAnalysisMinute.includes('국내에서는 상승 상태'));
@@ -1193,7 +1198,9 @@ async function main() {
     assert.ok(debriefAnalysisMinute.includes('암호화폐에서는 하락 상태'));
     assert.ok(debriefAnalysisMinute.includes('미국과 암호화폐'));
     assert.ok(debriefAnalysisMinute.includes('전략군 24시간 신호 0건입니다.'));
+    assert.ok(debriefAnalysisMinute.includes('**전략군 24시간** : 신호 0건입니다.'));
     assert.ok(debriefAnalysisMinute.includes('결정 대기: 상단 캐치업 기준입니다'));
+    assert.equal(debriefAnalysisMinute.includes('안녕하세요'), false);
     assert.equal(debriefAnalysisMinute.includes('결정 대기: 상단 캐치업 기준으로 확인하세요'), false);
     assert.equal(debriefAnalysisMinute.includes('과거 발언 숫자 숨김'), false);
     assert.equal(debriefAnalysisMinute.includes('줄인'), false);
@@ -1202,8 +1209,10 @@ async function main() {
     assert.equal(debriefAnalysisMinute.includes('약세 상태'), false);
     assert.equal(debriefAnalysisMinute.includes('미국와'), false);
     assert.equal(debriefAnalysisMinute.includes('0건의 거래가 발생'), false);
+    assert.equal(debriefAnalysisMinute.includes('거래가 발생하지 않았'), false);
     assert.equal(debriefAnalysisMinute.includes('서킷은 5건'), false);
     assert.ok(debriefAnalysisMinute.includes('후속 조치는 마스터 확인 후 기록합니다.'));
+    assert.equal(debriefAnalysisMinute.includes('이 있습니다'), false);
     assert.equal(debriefAnalysisMinute.includes('결과적으로'), false);
     assert.equal(debriefAnalysisMinute.includes('확인하세요. ,'), false);
     assert.equal(debriefAnalysisMinute.includes('봅니다이며'), false);
@@ -1211,6 +1220,7 @@ async function main() {
     assert.equal(debriefAnalysisMinute.includes('분석 결과는 다음과 같이 요약'), false);
     assert.equal(debriefAnalysisMinute.includes('다음 조치를 취해야'), false);
     assert.equal(debriefAnalysisMinute.includes('최종 결정을 내릴 수 있도록'), false);
+    assert.equal(debriefAnalysisMinute.includes('최종 결정을 내릴 수 있습니다'), false);
     const inlineDebriefAnalysisMinute = _testOnly.normalizeLegacyMinuteContent(
       '결정 대기 중인 서킷은 5건입니다. 결과적으로, 국내 마감 G6 대조표의 분석 결과는 다음과 같이 요약할 수 있습니다. 국내에서는 강세 상태에 있습니다. 따라서, 국내 마감 G6 대조표에 대한 다음 조치를 취해야 합니다: 국내 마감 G6 대조표에 대한 추가 분석을 수행하고, 최종 결정을 내릴 수 있도록 하십시오.',
     );
