@@ -1270,8 +1270,11 @@ function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
 
 function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
+  const hasScheduleCue = /(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text);
+  const hasRunCue = /(수동|시작|실행|됐|되|가능|언제|스킵|skip)/u.test(text);
+  if (hasScheduleCue && hasRunCue) return 'schedule';
   if (/(미장\s*전|미국\s*프리마켓|프리마켓|us\s*premarket|premarket)/u.test(text)) return 'premarket';
-  if (/(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text)) return 'schedule';
+  if (hasScheduleCue) return 'schedule';
   const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
   const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
   if (hasTelegramContext && hasTelegramSyncContext) return 'telegram';
@@ -1387,7 +1390,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '운영 일정: 주말 morning 경량판은 국내·미국을 주말로 스킵하고, 암호화폐 24시간 운영 안건을 중심으로 확인합니다.',
       options.scheduleStatus || buildScheduleExecutionStatus([], options.now || new Date()),
-      `현재 화면 기준: ${segmentText}.`,
+      `현재 수동 실행 화면 기준: ${segmentText}.`,
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
