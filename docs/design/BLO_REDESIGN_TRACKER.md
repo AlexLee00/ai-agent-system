@@ -239,3 +239,25 @@ auto-dev WorkingDirectory worktree 분리(클로드팀 설정 변경)는 즉시 
 4. 이후 첫 라이브: 6/14 08:30 잡이 6/13 발행분(5강+일반) 재파싱 -> 마스터가 블로그에서 수정한 부분이
    있으면 master_feedback 첫 데이터 생성 (TS-B9-L 메티 확인)
 이력: 2026-06-13 B2b 검증 합격 (메티)
+
+## P. B2b 적용 검증 + 중대 발견 2건 (2026-06-13, 메티)
+
+적용 검증: master_feedback/final_content_checks 생성 ✓ / plist 로드 ✓ / dry-run warnings 해소 ✓ / 후보 0.
+
+### 발견 1 — naver_url 공급 중단 (6/10~)
+- 채움 주체 = publ.ts 855행(SET status='published', naver_url=$2) + mark-published-url.ts(markPublished).
+- 169/250 채움, **마지막 6/9** — 6/10부터 전부 status='ready'+URL 없음. B2b 후보 선정의 전제가 비어 있음.
+- 원인 미규명(다음 세션): 6/9~10 사이 무엇이 바뀌었나(운영 절차? launchd? publ 트리거?).
+
+### 발견 2 — master-edit-analyzer.ts (386줄) 기존재, 메티 선결 조사 누락
+- 헤더: "마스터 발행 diff 분석 + 스타일 학습 / Phase 1: 발행 검출(naver-url-backfill + RSS 매칭) /
+  Phase 2: Diff 분석(초안 vs 발행본)" — **B2-4와 동일 요구의 기존 구현**. RSS 매칭 URL 자동 발견까지 포함 가능성.
+- 메티 자기수정: B2b 선결 조사에서 feedback-learner만 확인하고 이 자산을 놓침 — B2b(collect-final-content)와
+  중복/보완 관계 정밀 분석 필요. naver-ui/scheduled-review-store(예약 리뷰 스토어)도 관련 자산.
+
+### 다음 세션 진입점
+1. master-edit-analyzer 정밀 분석: 동작 여부(launchd?), RSS URL 발견 실효성, B2b와 통합/대체 결정
+2. naver_url 6/10 중단 원인 규명 -> 공급 재개(이게 B2b/B2-4 가동의 선결 조건)
+3. 6/14 자연 검증: 02:00 vault-feed 증분 / 06:00 6강 연계 블록(TS-B5-L) / 08:30 첫 diff 수집(후보는 URL 재개 후)
+4. 6/14 GATE-H 48h + GATE-R 판정 / 6/15 16:00 Edu-X TS-EXL1
+이력: 2026-06-13 B2b 적용+발견 2건 (메티)

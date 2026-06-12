@@ -491,3 +491,53 @@ R 시리즈 누적: shadow 실전 포착 3건(R2b agent 경로 / R2c 교차 팀 
 
 운영 레버 요약: HUB_LLM_POLICY_ENGINE_MODE=shadow / 쿨다운 ON / local=backtest 전용 / 콜드스타트 재시도 ON.
 이력: 2026-06-13 종합 스냅샷 (메티)
+
+## AF. GATE-R false 10건 발생 — 2클래스 진단 (2026-06-13 07:50, 메티)
+
+기준점(01:38:56) 이후 188건 중 false 10 — 06:00~06:30 사이 첫 관측 키들에서 발생(신규 회귀 아님,
+R2 검증 창에 없던 미커버 클래스의 첫 등장).
+
+| 클래스 | 건수 | 내용 | 성격 |
+|---|---|---|---|
+| blog.pos.writer / blog.gems.writer | 8 | 모델·프로바이더·순서 완전 동일, **maxTokens(8000 vs 16000)·temperature(0.72 vs 0.82)만 상이** | 파라미터-only — 레거시 동적 파라미터 조정 vs 정책 테이블 정적 스냅샷. 모델 선택은 정합 |
+| investment.reporter | 2 | old: gpt-5.4 우선(qwen, 5.4-mini 폴백) / new: **5.4-mini 우선**(llama-70b, 5.4 폴백) | 실질 정책 차이 — R2e 보정 후보(env 오버라이드 or codegen 시점차 규명 필요) |
+
+판정 영향: 6/14 GATE-R "false 0" 기준을 그대로 두면 파라미터-only 클래스가 영구 false — 비교 기준
+결정 필요: (a) 모델/프로바이더/순서 일치 = match(파라미터 관용) vs (b) 레거시 동적 파라미터 로직을
+정책에 반영. 메티 권고: 1차 (a)로 분류 분리(파라미터 mismatch는 별도 카운트), R3 전 (b) 검토.
+다음: reporter 클래스 원천 규명 -> R2e 설계 -> 마스터 승인.
+이력: 2026-06-13 false 2클래스 진단 (메티)
+
+## AG. R2d 회귀 확정 — 브랜치 사고 추가 피해 (2026-06-13 08시, 메티)
+
+### 전모
+- R2d 커밋 b5a8536e7(6파일: 토큰 테이블 1703줄 변경+엔진 해석+codegen+selector)이
+  **codex/hub-r2d-env-model-tokens 브랜치에 고립** — 어제 main ff(luna 브랜치 42커밋)와 별개의 제3
+  브랜치라 정렬에서 누락. main의 정책 파일들은 R2c(3d737504f)/R2 초기(03d6f0593)로 회귀.
+- R2d 토큰 10종에 @OPENAI_PERF_MODEL/@OPENAI_MINI_MODEL 포함 — **reporter false 2건 = 회귀의 직접 증거**
+  (디스크 테이블이 리터럴 박제 상태).
+- 운영 미묘점: hub PID 25275는 01:38(R2d 워킹트리)에 기동 — 메모리엔 R2d 생존 가능,
+  **디스크는 회귀 상태라 다음 재기동 시 R2d 완전 소실 위험.**
+
+### 수습안 (마스터)
+1. main에서 git cherry-pick b5a8536e7 (충돌 시 코덱스 codegen 재실행 대안)
+2. cherry-pick 후 hub 재기동 불요(메모리·디스크 일치 회복) — 단 회수 확인 후 판단
+3. **codex/* 브랜치 5개 전수 점검**: main 미포함 커밋 잔존 여부 — 사고 수습의 완결 조건
+   (git log main..codex/<branch> --oneline 각각)
+
+### reporter 클래스 후속
+회수 후 shadow 자연 관찰로 토큰 해석 정상화 여부 판별 -> 잔존 시 R2e(스냅샷 서열 차이) 설계.
+blog 파라미터-only 클래스는 §AF 권고(비교 분류 분리)대로 별도 — R2d 회수와 무관하게 유효.
+이력: 2026-06-13 R2d 회귀 진단 (메티)
+
+## AH. R2d 회수 + 브랜치 전수 점검 완결 (2026-06-13, 마스터/메티)
+
+- cherry-pick b5a8536e7 -> 28a21be76 (충돌 0). 메티 복원 확인: **토큰 10종 실재** + engine/codegen 복원.
+- 마스터 검증: smoke:llm-policy-engine + codegen --check --env-from-launchd 통과
+  (env 없는 check는 changed=true가 R2d 설계상 정상).
+- codex 브랜치 5개 전수 점검(마스터): 잔존 고립 = 30c58747f(트래커 §AB~AD 문서) 1건뿐
+  -> 메티가 main 트래커의 §AA/AE 사이에 원문 병합(본 커밋)으로 해소. **수습 완결.**
+- 후속: reporter 클래스는 R2d 복원 후 shadow 자연 관찰로 판별(다음 reporter 트래픽에서 match 기대,
+  잔존 시 R2e). blog 파라미터-only 분류 분리는 6/14 판정 기준에 반영.
+- 마스터 액션: push(ahead 1 + 트래커 커밋).
+이력: 2026-06-13 수습 완결 (메티)
