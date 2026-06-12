@@ -69,6 +69,7 @@ function assertNoUserVisibleRawLeaks(text, context) {
     ['DB/raw marker', /\b(jsonb|raw DB|원문 DB|DB 원문|gate_transitions=|regime_transitions=|segments:\s*\[|errors=\[)\b/],
     ['internal C15 pending prefix', /C15 결정 대기:/],
     ['legacy LLM boilerplate', /이러한 결과를 기반으로|최종 결론|최종 결정을 내릴 수 있도록/],
+    ['market gate score as active segment percent', /%의 활성 세그먼트가 유지되고 있습니다/],
   ];
   for (const [label, pattern] of checks) {
     assert.equal(pattern.test(text), false, `${context} should not expose ${label}`);
@@ -1084,6 +1085,14 @@ async function main() {
     assert.equal(premarketTranslatedStatus.includes('미국 국내 시장'), false);
     assert.equal(premarketTranslatedStatus.includes('진행이 감소된 상태'), false);
     assert.equal(premarketTranslatedStatus.includes('개의 이벤트가 진행 중입니다'), false);
+    const premarketActiveSegmentPercent = _testOnly.normalizeLegacyMinuteContent(
+      '국내 시장은 현재 중단 상태로, 33%의 활성 세그먼트가 유지되고 있습니다.\n미국 시장은 현재 감소 상태로, 47%의 활성 세그먼트가 유지되고 있습니다.',
+    );
+    assert.ok(premarketActiveSegmentPercent.includes('국내 시장은 현재 halt 상태이며, 점수는 33점입니다.'));
+    assert.ok(premarketActiveSegmentPercent.includes('미국 시장은 현재 reduced 상태이며, 점수는 47점입니다.'));
+    assert.equal(premarketActiveSegmentPercent.includes('중단 상태로'), false);
+    assert.equal(premarketActiveSegmentPercent.includes('감소 상태로'), false);
+    assert.equal(premarketActiveSegmentPercent.includes('%의 활성 세그먼트'), false);
     const premarketEntryTerm = _testOnly.normalizeLegacyMinuteContent(
       '게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.\n전략군 24시간 동안 1건의 입장(Entry 0)이 발생하였으며, 현재 14건의 활성 서킷이 유지되고 있습니다.',
     );

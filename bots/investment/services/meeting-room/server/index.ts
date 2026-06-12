@@ -576,6 +576,14 @@ function normalizeCanonicalStatusTokens(content) {
   }).join('\n');
 }
 
+function canonicalDeploymentStatusToken(value) {
+  const raw = String(value || '').trim();
+  if (/^(?:중단|정지|할당|halt)$/i.test(raw)) return 'halt';
+  if (/^(?:감소|줄인|reduced)$/i.test(raw)) return 'reduced';
+  if (/^(?:전체|최대|full)$/i.test(raw)) return 'full';
+  return raw || '미정';
+}
+
 function formatKstTimestampFromIso(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -730,6 +738,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/입장\s*\(Entry\s*0\)/gi, '진입(entry 0건)')
     .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
     .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려')
+    .replace(
+      /((?:국내|미국|암호화폐) 시장은 현재 )(중단|감소|전체|최대|halt|reduced|full) 상태(?:로|이며),\s*(\d+(?:\.\d+)?)%의 활성 세그먼트가 유지되고 있습니다\.?/gi,
+      (_match, prefix, status, score) => `${prefix}${canonicalDeploymentStatusToken(status)} 상태이며, 점수는 ${score}점입니다.`,
+    )
     .replace(/(\d+(?:\.\d+)?)개의 이벤트가 진행 중입니다/g, '점수는 $1점입니다')
     .replace(/(확인하세요|기준입니다|봅니다)이며/g, '$1. ')
     .replace(/확인하세요\s+결과적으로,/g, '확인하세요. ')
