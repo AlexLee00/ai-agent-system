@@ -204,7 +204,8 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     lines.push('- 결정 없음');
   } else {
     for (const row of decisions) {
-      const dueLabel = safeText(row.dueAt || row.due_at) || '기한 미정';
+      const dueValue = row.dueAt || row.due_at;
+      const dueLabel = dueValue ? formatMeetingTime(dueValue) : '기한 미정';
       const decisionText = safeText(row.decision) || '결정 내용 없음';
       lines.push(`- [${decisionGradeLabel(row.grade)}/${decisionStatusLabel(row.status)}] ${agendaLabel(row.agendaKey || row.agenda_key)}: ${decisionText} (기한: ${dueLabel})`);
     }

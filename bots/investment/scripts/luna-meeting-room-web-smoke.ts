@@ -1546,6 +1546,8 @@ async function main() {
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
     assert.equal(regeneratedMarkdown.includes('debrief:g6-plan-vs-actual'), false);
     assert.ok(regeneratedMarkdown.includes('C 마스터 확인/마스터 액션 대기'));
+    assert.ok(regeneratedMarkdown.includes('기한: 2026. 6. 12.'));
+    assert.equal(regeneratedMarkdown.includes('기한: 2026-'), false);
     assert.equal(regeneratedMarkdown.includes('c_master/pending_master'), false);
     const regeneratedFromDb = await loadMeetingMinutesResult(117, {
       queryFn: async (sql) => {
