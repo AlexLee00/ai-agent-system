@@ -261,3 +261,33 @@ auto-dev WorkingDirectory worktree 분리(클로드팀 설정 변경)는 즉시 
 3. 6/14 자연 검증: 02:00 vault-feed 증분 / 06:00 6강 연계 블록(TS-B5-L) / 08:30 첫 diff 수집(후보는 URL 재개 후)
 4. 6/14 GATE-H 48h + GATE-R 판정 / 6/15 16:00 Edu-X TS-EXL1
 이력: 2026-06-13 B2b 적용+발견 2건 (메티)
+
+## Q. 블로 2건 규명 — URL 공급 단절 + 내장 B2-4의 실체 (2026-06-13, 메티)
+
+### naver_url 6/10 중단 원인 확정
+- 공급 시스템 완비: naver-url-backfill(lib+스크립트+telemetry+**plist까지 repo에 존재**, 제목 매칭
+  confidence 0.9 자동 백필) — 그러나 **launchd 미등록**(로드 0, ~/LaunchAgents 부재).
+- 해석: 6/9까지의 URL 169건은 일괄/수동 실행의 산물, 자동화는 만들어졌으나 등록 누락 상태.
+  "6/10에 뭔가 멈춘 것"이 아니라 "마지막 일괄 실행 이후 아무도 안 돈 것".
+
+### master-edit-analyzer 실체 (386줄)
+- **B2-4 풀 사이클이 daily에 이미 내장**: blo.ts 2450~2484 — runDailyMasterEditAnalysis(days:2) +
+  buildMasterStyleProfile(limit:30) -> masterStyleHint **프롬프트 주입**까지.
+- 그러나 detectPublishedDrafts가 naver_url 있는 published만 소비 -> URL 단절로 **분석 실적 0**
+  (master_edit_analysis 테이블 미생성 = ensure조차 미도달).
+
+### 통합 그림 + 액션
+- 사슬: [공급] url-backfill(미등록) -> [전환] publ published -> [수집] B2b collect-final-content(어제 구축)
+  + [분석·학습] analyzer & feedback-learner — **공급 1개가 막혀 전 사슬 휴면.**
+- 즉시 액션(마스터): **ai.blog.naver-url-backfill plist 등록** -> URL 공급 재개 -> 내일 08:30 B2b 후보
+  발생 + analyzer 자연 가동.
+- 다음 세션: analyzer 전체 정독 -> B2b(수집)와 analyzer(분석)의 중복/분업 통합 설계
+  (안: 수집=B2b 일원화, 분석·스타일=analyzer, 기록=master_feedback+master_edit_analysis 정리).
+이력: 2026-06-13 블로 2건 규명 (메티)
+
+### Q-1. naver-url-backfill plist 등록 완료 (2026-06-13 08:16, 마스터/메티 확인)
+- 등록·로드 1 확인, 스케줄 매일 11:05(--write --min-confidence=0.9), 즉시 실행 안 함.
+- **오늘 11:05 첫 자동 실행** -> 6/10~12 발행분(네이버 기등록 글) 제목 매칭 -> published+URL 재개 기대.
+- 메티 확인 예정: 11:05 이후 로그(bots/blog/naver-url-backfill.log)+posts URL 채움 -> 사슬 가동 검증.
+- 전체 타임라인: 오늘 11:05 URL 재개 -> 내일 02:00 증분 / 06:00 6강 연계(TS-B5-L) / 06:00+ analyzer
+  첫 분석 / 08:30 B2b 첫 후보(master_feedback 첫 데이터) — 보편 성장 루프 전 구간 첫 완주 예정.
