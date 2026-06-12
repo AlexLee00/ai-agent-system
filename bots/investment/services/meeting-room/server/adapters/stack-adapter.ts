@@ -61,6 +61,8 @@ export function buildMarketSegments(now = new Date()) {
   const overseas = evaluateKisMarketHours({ market: 'overseas', now });
   const domesticWeekend = isWeekendKst(now);
   const usWeekend = ['Sat', 'Sun'].includes(String(overseas.marketDateStr ? new Date(`${overseas.marketDateStr}T12:00:00-05:00`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' }) : ''));
+  const usWeekendLightweight = domesticWeekend && !overseas.isOpen;
+  const usSkipped = usWeekend || usWeekendLightweight || overseas.reasonCode === 'holiday';
   return [
     {
       market: 'domestic',
@@ -73,9 +75,9 @@ export function buildMarketSegments(now = new Date()) {
     {
       market: 'overseas',
       label: '미국 장후 평가',
-      active: !usWeekend && overseas.reasonCode !== 'holiday',
-      skipped: usWeekend || overseas.reasonCode === 'holiday',
-      reason: usWeekend ? 'weekend' : overseas.reasonCode,
+      active: !usSkipped,
+      skipped: usSkipped,
+      reason: usWeekend || usWeekendLightweight ? 'weekend' : overseas.reasonCode,
       marketHours: overseas,
     },
     {

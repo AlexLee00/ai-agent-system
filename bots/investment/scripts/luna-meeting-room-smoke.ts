@@ -264,6 +264,13 @@ async function main() {
   assert.equal(weekendSegments.find((row) => row.market === 'domestic')?.skipped, true);
   assert.equal(weekendSegments.find((row) => row.market === 'overseas')?.skipped, true);
   assert.equal(weekendSegments.find((row) => row.market === 'crypto')?.active, true);
+  const saturdayUsOpenSegments = buildMarketSegments(new Date('2026-06-12T15:17:00.000Z'));
+  assert.equal(saturdayUsOpenSegments.find((row) => row.market === 'overseas')?.active, true);
+  const saturdayMorningScheduleSegments = buildMarketSegments(new Date('2026-06-12T20:00:00.000Z'));
+  assert.equal(saturdayMorningScheduleSegments.find((row) => row.market === 'domestic')?.reason, 'weekend');
+  assert.equal(saturdayMorningScheduleSegments.find((row) => row.market === 'overseas')?.reason, 'weekend');
+  assert.equal(saturdayMorningScheduleSegments.find((row) => row.market === 'overseas')?.skipped, true);
+  assert.equal(saturdayMorningScheduleSegments.find((row) => row.market === 'crypto')?.active, true);
 
   const weekendPlanNote = { ...fixturePlanNote(), segments: weekendSegments };
   const weekendMorningResult = await runMeetingSession({
@@ -550,6 +557,7 @@ async function main() {
       cMasterDowngrade: noLlmResult.decisions.length,
       noLlmComplete: true,
       weekendLightweight: true,
+      weekendMorningScheduleBoundary: true,
       llmFailOpen: true,
       dryRunDbRows: dryRunRows.after,
       applyRollbackRows: dryRunRows.appliedRows,
