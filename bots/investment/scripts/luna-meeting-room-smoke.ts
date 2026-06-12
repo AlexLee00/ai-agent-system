@@ -446,6 +446,7 @@ async function main() {
     const after = await countMeetingRows(tx.query);
     assert.deepEqual(after, before);
 
+    let sentTelegramInput: any = null;
     const applied = await runMeetingSession({
       type: 'morning',
       dryRun: false,
@@ -453,11 +454,28 @@ async function main() {
       noLlm: true,
       planNote: fixturePlanNote(),
       outputPath: outputPath('smoke-apply-rollback'),
-    }, { queryFn: tx.query, runFn: tx.run, postAlarm: async () => ({ ok: true, fixture: true }) });
+    }, {
+      queryFn: tx.query,
+      runFn: tx.run,
+      postAlarm: async (input: any) => {
+        sentTelegramInput = input;
+        return { ok: true, fixture: true };
+      },
+    });
     const appliedRows = await countMeetingRows(tx.query);
     assert.equal(Number(applied.session.id) > 0, true);
     assert.equal(applied.telegram.attempted, true);
     assert.equal(applied.telegram.ok, true);
+    assert.ok(sentTelegramInput);
+    assert.ok(sentTelegramInput.message.includes('Luna 회의 완료: 아침 통합 회의'));
+    assert.ok(sentTelegramInput.message.includes('마스터 액션 대기:'));
+    assert.ok(sentTelegramInput.message.includes('회의 #'));
+    assert.ok(sentTelegramInput.message.includes('회의록'));
+    assert.equal(sentTelegramInput.message.includes('pending_master'), false);
+    assert.equal(sentTelegramInput.message.includes('session='), false);
+    assert.equal(sentTelegramInput.message.includes('minutes='), false);
+    assert.equal(sentTelegramInput.message.includes('morning'), false);
+    assert.ok(Array.isArray(sentTelegramInput.inlineKeyboard));
     assert.equal(appliedRows.sessions, before.sessions + 1);
     assert.ok(appliedRows.minutes > before.minutes);
     assert.ok(appliedRows.decisions > before.decisions);

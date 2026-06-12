@@ -569,9 +569,12 @@ export function buildMeetingDecisionInlineKeyboard(decisions: any[] = []) {
 function buildTelegramMessage(result: any, pending: any[]) {
   const webUrl = process.env.MEETING_ROOM_PUBLIC_URL || process.env.MEETING_ROOM_URL || 'http://127.0.0.1:7791';
   const hidden = Math.max(0, pending.length - 9);
+  const sessionId = result.session?.id || '확인 필요';
+  const minuteCount = result.minutes?.length || 0;
   return [
-    `Luna 회의 ${result.type} 완료: pending_master ${pending.length}건`,
-    `session=${result.session?.id || 'n/a'} minutes=${result.minutes?.length || 0}`,
+    `Luna 회의 완료: ${meetingTypeLabel(result.type)}`,
+    `마스터 액션 대기: ${pending.length}건`,
+    `회의 #${sessionId} · 회의록 ${minuteCount}행`,
     hidden > 0 ? `버튼은 상위 9건만 표시, 추가 ${hidden}건은 웹에서 처리` : '',
     `웹: ${webUrl}`,
   ].filter(Boolean).join('\n');
