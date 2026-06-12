@@ -11,65 +11,11 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
+const { isBlogMarketingEnabled } = require('../marketing-enabled.ts');
 
 function isEnabled() {
-  return process.env.BLOG_DPO_ENABLED === 'true';
+  return isBlogMarketingEnabled() && process.env.BLOG_DPO_ENABLED === 'true';
 }
-
-type MarketingPost = {
-  id?: unknown;
-  title?: string;
-  category?: string;
-  persona?: string;
-  content_length?: number;
-  views_7d?: number;
-  engagement_rate?: number;
-  revenue_attributed_krw?: number;
-  score?: number;
-};
-
-type DpoPair = {
-  post_a_id: string;
-  post_b_id: string;
-  metric_winner: string;
-  metric_type: string;
-  features: {
-    title_a?: string;
-    title_b?: string;
-    hook_type_a?: string;
-    hook_type_b?: string;
-    length_a?: number;
-    length_b?: number;
-    category?: string;
-    persona_a?: string;
-    persona_b?: string;
-    score_a?: number;
-    score_b?: number;
-  };
-};
-
-type PairReasoning = Record<string, unknown>;
-
-type FailureTaxonomyBucket = {
-  post_ids: string[];
-  count: number;
-};
-
-type PatternRow = {
-  pattern_type?: string;
-  pattern_template?: string;
-  avg_performance?: number;
-};
-
-type FailureRow = {
-  failure_category?: string;
-  frequency_count?: number;
-};
-
-type DpoCandidate = {
-  topic?: string;
-  title?: string;
-};
 
 // ─── 데이터 조회 ──────────────────────────────────────────────────────────────
 
@@ -113,7 +59,7 @@ async function fetchPostsWithMetrics(periodDays = 30) {
  * 포스팅 성과 종합 점수 계산 (0~100)
  * views_7d: 40%, engagement_rate: 40%, revenue_attributed: 20%
  */
-function calcPostScore(post: MarketingPost) {
+function calcPostScore(post) {
   const viewScore = Math.min(Number(post.views_7d || 0) / 1000, 1) * 40;
   const engScore = Math.min(Number(post.engagement_rate || 0) * 100, 1) * 40;
   const revScore = Math.min(Number(post.revenue_attributed_krw || 0) / 100000, 1) * 20;
@@ -123,7 +69,7 @@ function calcPostScore(post: MarketingPost) {
 /**
  * 포스팅 제목에서 후킹 스타일 분류
  */
-function classifyHookStyle(title: unknown) {
+function classifyHookStyle(title) {
   if (!title) return 'unknown';
   const text = String(title);
   if (/\d+가지|\d+개|TOP\s*\d+/i.test(text)) return 'list';
@@ -144,17 +90,17 @@ async function buildPreferencePairs(periodDays = 30) {
   const posts = await fetchPostsWithMetrics(periodDays);
   if (posts.length < 4) return [];
 
-  const scored = posts.map((p: MarketingPost) => ({ ...p, score: calcPostScore(p) }));
+  const scored = posts.map((p) => ({ ...p, score: calcPostScore(p) }));
 
   // 카테고리별 그룹
-  const byCategory: Record<string, Array<MarketingPost & { score: number }>> = {};
+  const byCategory = {};
   for (const post of scored) {
     const cat = post.category || 'uncategorized';
     if (!byCategory[cat]) byCategory[cat] = [];
     byCategory[cat].push(post);
   }
 
-  const pairs: DpoPair[] = [];
+  const pairs = [];
   for (const [, catPosts] of /** @type {Array<[string, any[]]>} */ (Object.entries(byCategory))) {
     // @ts-ignore Object.entries over dynamic buckets still narrows to unknown in checkJs
     if (catPosts.length < 2) continue;
@@ -204,7 +150,7 @@ async function buildPreferencePairs(periodDays = 30) {
  * LLM으로 성공/실패 포스팅 쌍의 원인 분석
  * 실제 LLM 호출 실패 시 규칙 기반 fallback
  */
-async function analyzePairWithLlm(preferred: MarketingPost, rejected: MarketingPost): Promise<PairReasoning> {
+async function analyzePairWithLlm(preferred, rejected) {
   try {
     const { callBlogFast } = require('../blog-llm-gateway.ts');
     const prompt = `마케팅 포스팅 A(성공) vs B(실패) 비교 분석.
@@ -243,7 +189,7 @@ JSON만 응답:
 /**
  * DPO 선호 쌍 DB 저장 + 성공 패턴 라이브러리 업데이트
  */
-async function saveDpoPairs(pairs: DpoPair[], reasonings?: PairReasoning[]) {
+async function saveDpoPairs(pairs, reasonings) {
   if (!pairs.length) return 0;
 
   let saved = 0;
@@ -290,8 +236,8 @@ async function saveDpoPairs(pairs: DpoPair[], reasonings?: PairReasoning[]) {
 /**
  * 실패 Taxonomy 업데이트
  */
-async function updateFailureTaxonomy(pairs: DpoPair[]) {
-  const failureMap: Record<string, FailureTaxonomyBucket> = {};
+async function updateFailureTaxonomy(pairs) {
+  const failureMap = {};
 
   for (const pair of pairs) {
     const hookB = pair.features?.hook_type_b || 'unknown';
@@ -371,7 +317,7 @@ async function fetchFailureTaxonomy(limit = 10) {
 /**
  * 카테고리별 최고 성과 후킹 스타일 반환 (DPO 힌트)
  */
-async function getBestHookStyleByCategory(category: string) {
+async function getBestHookStyleByCategory(category) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT features->>'hook_type_a' AS hook_type, AVG((features->>'score_a')::numeric) AS avg_score, COUNT(*) AS cnt
@@ -396,7 +342,12 @@ async function getBestHookStyleByCategory(category: string) {
 async function runDpoLearningCycle(periodDays = 30) {
   if (!isEnabled()) {
     console.log('[marketing-dpo] Kill Switch off — 스킵');
-    return { pairs_built: 0, pairs_saved: 0, skipped: true };
+    return {
+      pairs_built: 0,
+      pairs_saved: 0,
+      skipped: true,
+      reason: isBlogMarketingEnabled() ? 'blog_dpo_disabled' : 'blog_marketing_disabled',
+    };
   }
 
   console.log('[marketing-dpo] DPO 학습 사이클 시작');
@@ -457,7 +408,7 @@ async function runDpoLearningCycle(periodDays = 30) {
  * @param failureTaxonomy - fetchFailureTaxonomy() 결과
  * @returns 0~100 DPO 점수 (높을수록 성공 패턴과 일치)
  */
-function calculateDpoScore(candidate: DpoCandidate, successPatterns: PatternRow[], failureTaxonomy: FailureRow[]) {
+function calculateDpoScore(candidate, successPatterns, failureTaxonomy) {
   let score = 50; // 기본 점수
 
   if (!candidate?.topic && !candidate?.title) return score;

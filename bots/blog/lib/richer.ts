@@ -21,6 +21,7 @@ const env = require('../../../packages/core/lib/env');
 const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials.legacy.js');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
 const { isExcludedReferencePost } = require('./reference-exclusions.ts');
+const { buildAgentIntroSearchKeywords } = require('./agent-intro-curriculum.ts');
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
 const BLOG_BROWSER_RUNTIME_DIR = env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
@@ -296,6 +297,36 @@ async function fetchNodejsUpdates() {
   }
 }
 
+async function fetchCurriculumRelatedUpdates(lecture = {}, limit = 2) {
+  const keywords = buildAgentIntroSearchKeywords(lecture);
+  const loweredKeywords = keywords.map((item) => String(item || '').toLowerCase()).filter(Boolean);
+  if (!loweredKeywords.length) return [];
+
+  try {
+    const stories = await fetchITNews(Math.max(8, Number(limit || 2) * 4));
+    const matched = [];
+    for (const story of stories || []) {
+      const haystack = `${story.title || ''} ${story.url || ''}`.toLowerCase();
+      const matchedKeywords = loweredKeywords.filter((keyword) => haystack.includes(keyword));
+      const isAgentToolNews = matchedKeywords.length > 0
+        || /\b(codex|claude|agent|openai|anthropic)\b/i.test(haystack);
+      if (!isAgentToolNews) continue;
+      matched.push({
+        title: story.title,
+        url: story.url,
+        score: story.score || 0,
+        source: 'hacker_news',
+        matchedKeywords,
+      });
+      if (matched.length >= Number(limit || 2)) break;
+    }
+    return matched;
+  } catch (e) {
+    console.warn('[리처] 커리큘럼 최신정보 수집 실패:', e.message);
+    return [];
+  }
+}
+
 async function fetchWeather() {
   try {
     const apiKey = process.env.OPENWEATHERMAP_API_KEY;
@@ -446,6 +477,9 @@ async function searchRelatedPosts(topic, currentLectureNum = null) {
 }
 
 function _buildPopularPatternQueries(category = 'general') {
+  if (category === 'agent_intro') {
+    return ['blog_success 에이전트 입문강의', 'blog_success AI 에이전트', 'blog_success lecture'];
+  }
   if (category === 'lecture') {
     return ['blog_success Node.js강의', 'blog_success lecture'];
   }
@@ -488,6 +522,7 @@ module.exports = {
   research,
   fetchITNews,
   fetchNodejsUpdates,
+  fetchCurriculumRelatedUpdates,
   fetchWeather,
   extractNaverBlogStats,
   fetchNaverBlogStats,

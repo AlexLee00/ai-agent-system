@@ -31,6 +31,7 @@ describe('marketing-dpo', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.BLOG_MARKETING_ENABLED;
     delete process.env.BLOG_DPO_ENABLED;
   });
 
@@ -39,6 +40,7 @@ describe('marketing-dpo', () => {
   });
 
   test('isEnabled() — BLOG_DPO_ENABLED=true 시 true', () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     expect(dpo.isEnabled()).toBe(true);
   });
@@ -205,6 +207,7 @@ describe('marketing-dpo', () => {
   });
 
   test('runDpoLearningCycle — 포스팅 없으면 pairs_built=0', async () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     pgPool.query.mockResolvedValue([]);
     const result = await dpo.runDpoLearningCycle(30);

@@ -8,6 +8,7 @@ const {
   getLectureTitle,
   getNextGeneralCategory,
 } = require('./category-rotation.ts');
+const { AGENT_INTRO_SERIES_NAME, isAgentIntroLecture } = require('./agent-intro-curriculum.ts');
 const { ensureBlogCoreSchema } = require('./schema.ts');
 const GENERAL_CATEGORIES = [
   '자기계발', '도서리뷰', '성장과성공', '홈페이지와App',
@@ -109,8 +110,8 @@ async function _getActiveLecturePlan() {
 function _lectureCategoryForSeries(seriesName) {
   const normalized = String(seriesName || '').trim();
   if (!normalized || normalized === 'nodejs_120') return 'Node.js강의';
-  if (/실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(normalized)) {
-    return '실전 AI 구현 입문강의';
+  if (isAgentIntroLecture(normalized, '')) {
+    return `${AGENT_INTRO_SERIES_NAME}강의`;
   }
   return `${normalized}강의`;
 }

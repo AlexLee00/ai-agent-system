@@ -20,6 +20,7 @@ const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/c
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
+const { isAgentIntroLecture } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agent-intro-curriculum.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
@@ -113,9 +114,8 @@ const BLOG_SKILL_BUNDLE = buildBlogSkillBundle([
 function _buildLectureSeriesGuidance(researchData = {}, lectureTitle = '') {
   const displayName = String(researchData.lectureSeriesDisplayName || '').trim();
   const seriesName = String(researchData.lectureSeriesName || '').trim();
-  const source = `${displayName} ${seriesName} ${lectureTitle || ''}`;
-  const isAiImplementation = /실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(source);
-  if (!isAiImplementation) {
+  const isAgentIntro = isAgentIntroLecture(`${displayName} ${seriesName}`, lectureTitle);
+  if (!isAgentIntro) {
     const nodejsUpdates = researchData.nodejs_updates || [];
     return {
       briefingTitle: '최신 Node.js 정보',
@@ -131,13 +131,20 @@ function _buildLectureSeriesGuidance(researchData = {}, lectureTitle = '') {
     };
   }
 
+  const curriculumUpdates = Array.isArray(researchData.curriculum_updates)
+    ? researchData.curriculum_updates
+    : [];
+  const weeklyNews = curriculumUpdates.length > 0
+    ? curriculumUpdates.slice(0, 2).map((u) => `- ${u.title}${u.url ? ` (${u.url})` : ''}`).join('\n')
+    : '';
   return {
     briefingTitle: '최신 AI 코딩 에이전트 정보',
     briefingContent: [
+      weeklyNews ? `[이번 주 소식 후보]\n${weeklyNews}` : '',
       '- ChatGPT Codex와 Claude Code의 실제 사용 흐름, 장단점, 초보자 실습 관점을 중심으로 설명하라.',
       '- 검증되지 않은 가격, 기능 출시일, 프로모션, 특정 할인 정보는 만들지 말라.',
       '- 코딩을 모르는 일반인도 따라 할 수 있도록 도구 선택보다 작업 분해와 검증 절차를 우선하라.',
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
     briefingRequirement: 'AI 코딩 에이전트 활용 흐름 + 실습 준비 + 안전한 검증 관점 상세 설명',
     codeRule: '코드 예시는 복사해 따라 할 수 있는 HTML, JavaScript, shell 명령, 체크리스트 수준으로 제한하라.',
     codeFallbackRule: '검증되지 않은 SDK/API를 만들지 말고, 불확실하면 의사코드보다 체크리스트와 파일 구조 예시로 설명하라.',
@@ -150,15 +157,14 @@ function _buildLectureSeriesGuidance(researchData = {}, lectureTitle = '') {
 function _isAiImplementationLecture(researchData = {}, lectureTitle = '') {
   const displayName = String(researchData.lectureSeriesDisplayName || '').trim();
   const seriesName = String(researchData.lectureSeriesName || '').trim();
-  const source = `${displayName} ${seriesName} ${lectureTitle || ''}`;
-  return /실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(source);
+  return isAgentIntroLecture(`${displayName} ${seriesName}`, lectureTitle);
 }
 
 function _buildLectureGeoRules(researchData = {}, lectureTitle = '') {
   if (!_isAiImplementationLecture(researchData, lectureTitle)) return GEO_RULES;
 
   return `
-[GEO(Generative Engine Optimization) 규칙 — 실전 AI 구현 입문용]
+  [GEO(Generative Engine Optimization) 규칙 — 에이전트 입문용]
 AI 검색엔진(네이버 AI, ChatGPT 등)이 이 글을 쉬운 입문 자료로 인용할 수 있도록:
 1. 글 최상단 [핵심 요약 3줄] — IT를 잘 모르는 독자가 바로 이해할 수 있는 150자 요약
 2. FAQ 질문은 실제 초보자가 검색할 법한 문장으로 작성 (예: "ChatGPT Codex에 처음 무엇을 입력하면 되나요?")
@@ -299,6 +305,37 @@ function _defaultLectureTechBriefingSection(lectureTitle) {
   ].join('\n');
 }
 
+function _buildWeeklyNewsSection(researchData = {}) {
+  const updates = Array.isArray(researchData.curriculum_updates)
+    ? researchData.curriculum_updates
+    : [];
+  const lines = updates
+    .slice(0, 2)
+    .map((item) => {
+      const title = String(item?.title || '').trim();
+      if (!title) return '';
+      const source = String(item?.source || '').trim();
+      const url = String(item?.url || '').trim();
+      return `- ${title}${source ? ` (${source})` : ''}${url ? ` — ${url}` : ''}`;
+    })
+    .filter(Boolean);
+  if (!lines.length) return '';
+  return ['[이번 주 소식]', ...lines].join('\n');
+}
+
+function _ensureWeeklyNewsSection(content, researchData = {}) {
+  let next = String(content || '').trim();
+  if (!next || next.includes('[이번 주 소식]')) return next;
+  const section = _buildWeeklyNewsSection(researchData);
+  if (!section) return next;
+
+  const briefingIndex = next.indexOf('[최신 기술 브리핑]');
+  if (briefingIndex >= 0) {
+    return `${next.slice(0, briefingIndex).trimEnd()}\n\n${section}\n\n${next.slice(briefingIndex).trimStart()}`.trim();
+  }
+  return `${section}\n\n${next}`.trim();
+}
+
 function _defaultLectureQuestionSection(lectureTitle) {
   return [
     '[AEO FAQ]',
@@ -410,6 +447,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
 
   const weatherContext = weatherToContext(weather);
   const seriesGuidance = _buildLectureSeriesGuidance(researchData, lectureTitle);
+  const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
   const geoRules = _buildLectureGeoRules(researchData, lectureTitle);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
 
@@ -473,6 +511,7 @@ ${weatherContext}
 
 [${seriesGuidance.briefingTitle} (브리핑에 활용)]
 ${seriesGuidance.briefingContent}
+${weeklyNewsSection ? `\n[이번 주 소식 자료]\n${weeklyNewsSection}\n위 자료가 있을 때만 본문에 [이번 주 소식] 섹션을 만들고, 없으면 억지로 만들지 말라.` : ''}
 
 [최신 IT 뉴스 (인사말에 활용)]
 ${itNews.slice(0, 3).map(n => `- ${n.title}`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
@@ -581,6 +620,7 @@ ${_buildVariationBlock(sectionVariation)}
   // _THE_END_ 마커 제거
   content = content.replace(/_THE_END_/g, '').trim();
   content = _ensureLectureBriefingFloor(content, lectureTitle);
+  content = _ensureWeeklyNewsSection(content, researchData);
 
   const result  = {
     content,
@@ -725,6 +765,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
   const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
+  const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
 
   const experienceBlock = realExperiences.length > 0
@@ -754,6 +795,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 [오늘 날씨] ${weatherContext}
 [최신 IT 뉴스] ${itNews.slice(0, 3).map(n => n.title).join(' / ') || '최신 IT 트렌드 자체 지식'}
 ${seriesGuidance.chunkBriefingLine}
+${weeklyNewsSection ? `[이번 주 소식 자료]\n${weeklyNewsSection}\n본문에 [이번 주 소식] 섹션을 만들고, 위 자료 1~2건만 반영하라.\n` : ''}
 ${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${popularPatternBlock}
 ${LECTURE_AI_BRIEFING_ORDER}
@@ -887,7 +929,8 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
 
   console.log(`[포스] 분할생성 완료: 총 ${result.charCount}자 (${((Date.now() - startTime) / 1000).toFixed(1)}초)`);
 
-  const content = _ensureLectureBriefingFloor(String(result.content || '').trim(), lectureTitle);
+  let content = _ensureLectureBriefingFloor(String(result.content || '').trim(), lectureTitle);
+  content = _ensureWeeklyNewsSection(content, researchData);
 
   return {
     content,
@@ -901,4 +944,9 @@ module.exports = {
   writeLecturePostChunked,
   repairLecturePostDraft,
   POS_SYSTEM_PROMPT,
+  _testOnly: {
+    _buildLectureSeriesGuidance,
+    _buildWeeklyNewsSection,
+    _ensureWeeklyNewsSection,
+  },
 };

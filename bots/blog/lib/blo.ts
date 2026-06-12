@@ -27,6 +27,7 @@ const {
   getNextGeneralCategory,
   advanceLectureNumber,
   isSeriesComplete,
+  getLectureInfo,
   getLectureTitle,
   getNextLectureNumber,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/category-rotation.ts'));
@@ -97,6 +98,15 @@ const {
   reportImageDiagnosis,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen-doctor.ts'));
 const { buildDailyReportContract }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/report-contract.ts'));
+const {
+  AGENT_INTRO_SERIES_NAME,
+  isAgentIntroLecture,
+  buildAgentIntroSearchKeywords,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agent-intro-curriculum.ts'));
+const {
+  isBlogMarketingEnabled,
+  buildMarketingDisabledResult,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-enabled.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -117,6 +127,7 @@ const COMPETITION_ENABLED                           = competitionRuntimeConfig.e
 const COMPETITION_DAYS                              = Array.isArray(competitionRuntimeConfig.days) && competitionRuntimeConfig.days.length
   ? competitionRuntimeConfig.days
   : [1, 3, 5];
+const BLOG_MARKETING_ENABLED                        = isBlogMarketingEnabled();
 // 소셜미디어 마스터 스위치 — 기본 false (BLOG_SOCIAL_MEDIA_ENABLED=true 로 명시적 활성화 필요)
 const SOCIAL_MEDIA_ENABLED                          = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 // 이미지 생성 스위치 — 기본 false (BLOG_IMAGE_GEN_ENABLED=true 로 명시적 활성화 필요)
@@ -868,7 +879,7 @@ function _hasLectureSection(content, sectionTitle) {
 
 function _buildLectureHashtagLine(lectureTitle = '') {
   const normalizedTitle = String(lectureTitle || '');
-  const isAiImplementationSeries = /실전\s*AI\s*구현|Codex|Claude\s*Code/i.test(normalizedTitle);
+  const isAiImplementationSeries = isAgentIntroLecture('', normalizedTitle);
   const tokens = String(lectureTitle || '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
@@ -878,7 +889,8 @@ function _buildLectureHashtagLine(lectureTitle = '') {
   const aiTags = [
     '#ChatGPTCodex',
     '#ClaudeCode',
-    '#실전AI구현입문',
+    '#에이전트입문',
+    '#AI에이전트입문',
     '#AI코딩',
     '#AI코딩에이전트',
     '#챗GPT활용',
@@ -911,8 +923,8 @@ function _buildLectureHashtagLine(lectureTitle = '') {
 
 function _lectureDisplayNameForSeries(seriesName = '', lectureTitle = '') {
   const source = `${seriesName || ''} ${lectureTitle || ''}`;
-  if (/실전\s*AI\s*구현|Codex|Claude\s*Code|ChatGPT\s*Codex/i.test(source)) {
-    return '실전 AI 구현 입문';
+  if (isAgentIntroLecture(seriesName, lectureTitle)) {
+    return AGENT_INTRO_SERIES_NAME;
   }
   if (!String(seriesName || '').trim() || String(seriesName).trim() === 'nodejs_120') {
     return 'Node.js';
@@ -930,6 +942,8 @@ function _normalizeLecturePostTitle(context = {}) {
   const prefix = number > 0 ? `[${displayName} ${number}강]` : `[${displayName}]`;
   let title = String(context.lectureTitle || '').trim() || `제${number || 1}강`;
   title = title.replace(/^\s*\[Node\.?js\s*\d+강\]\s*/i, '').trim();
+  title = title.replace(/^\s*\[실전\s*AI\s*구현\s*입문\s*\d+강\]\s*/i, '').trim();
+  title = title.replace(/^\s*\[에이전트\s*입문\s*\d+강\]\s*/i, '').trim();
 
   const escapedDisplay = displayName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
   const displayPrefixPattern = new RegExp(`^\\s*\\[${escapedDisplay}\\s*${number || '\\d+'}강\\]\\s*`, 'i');
@@ -1392,7 +1406,10 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   const { number, seriesName } = preloaded.number
     ? preloaded
     : await getNextLectureNumber();
+  const lectureInfo = preloaded.lectureInfo
+    || (await getLectureInfo(number, seriesName).catch(() => null));
   const lectureTitle = preloaded.lectureTitle
+    || lectureInfo?.title
     || (await getLectureTitle(number, seriesName)) || `제${number}강`;
 
   console.log(`\n[포스] ${number}강: ${lectureTitle}`);
@@ -1406,11 +1423,34 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   const preparedResearch = { ...researchData };
   preparedResearch.lectureSeriesName = seriesName;
   preparedResearch.lectureSeriesDisplayName = _lectureDisplayNameForSeries(seriesName, lectureTitle);
-  if (researchData.lecturePopularPatterns?.length) {
+  preparedResearch.curriculum = {
+    seriesName,
+    lectureNumber: number,
+    title: lectureTitle,
+    section: lectureInfo?.section || null,
+    keywords: Array.isArray(lectureInfo?.keywords) ? lectureInfo.keywords : [],
+  };
+  const agentIntroLecture = isAgentIntroLecture(seriesName, lectureTitle);
+  if (agentIntroLecture) {
+    preparedResearch.curriculumKeywords = buildAgentIntroSearchKeywords({
+      title: lectureTitle,
+      keywords: preparedResearch.curriculum.keywords,
+    });
+    preparedResearch.curriculum_updates = await richer.fetchCurriculumRelatedUpdates({
+      title: lectureTitle,
+      keywords: preparedResearch.curriculum.keywords,
+    }).catch((error) => {
+      console.warn('[블로] 커리큘럼 최신정보 수집 실패 (무시):', error.message);
+      return [];
+    });
+  }
+  if (agentIntroLecture) {
+    preparedResearch.popularPatterns = await richer.searchPopularPatterns('agent_intro').catch(() => []);
+  } else if (researchData.lecturePopularPatterns?.length) {
     preparedResearch.popularPatterns = researchData.lecturePopularPatterns;
   }
-  const strategyPlan = loadLatestStrategy() || {};
-  const experimentPlaybook = readExperimentPlaybook() || null;
+  const strategyPlan = BLOG_MARKETING_ENABLED ? (loadLatestStrategy() || {}) : {};
+  const experimentPlaybook = BLOG_MARKETING_ENABLED ? (readExperimentPlaybook() || null) : null;
   const experimentDimensionKey = experimentPlaybook?.topWinner?.dimension === 'title_pattern'
     ? 'titlePattern'
     : experimentPlaybook?.topWinner?.dimension === 'autonomy_lane'
@@ -1448,7 +1488,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook = category === '도서리뷰';
-  const strategyPlan = loadLatestStrategy();
+  const strategyPlan = BLOG_MARKETING_ENABLED ? loadLatestStrategy() : null;
 
   console.log(`\n[젬스] 일반 포스팅: ${category}`);
   const writeReq = createMessage('task_request', 'blog-blo', 'blog-gems', {
@@ -1936,17 +1976,23 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     };
   }
 
-  const [senseState, revenueCorrelation, attributionCategoryWeights] = await Promise.all([
-    senseDailyState().catch((error) => {
-      console.warn('[블로] sense-engine 실패 (무시):', error.message);
-      return null;
-    }),
-    analyzeMarketingToRevenue(14).catch((error) => {
-      console.warn('[블로] revenue-correlation 실패 (무시):', error.message);
-      return null;
-    }),
-    fetchRevenueAttributionWeights().catch(() => ({})),
-  ]);
+  const [senseState, revenueCorrelation, attributionCategoryWeights] = BLOG_MARKETING_ENABLED
+    ? await Promise.all([
+      senseDailyState().catch((error) => {
+        console.warn('[블로] sense-engine 실패 (무시):', error.message);
+        return null;
+      }),
+      analyzeMarketingToRevenue(14).catch((error) => {
+        console.warn('[블로] revenue-correlation 실패 (무시):', error.message);
+        return null;
+      }),
+      fetchRevenueAttributionWeights().catch(() => ({})),
+    ])
+    : [
+      buildMarketingDisabledResult('sense-engine'),
+      buildMarketingDisabledResult('marketing-revenue-correlation'),
+      {},
+    ];
 
   const researchData = await collectAllResearch('general', false);
 
@@ -1975,7 +2021,7 @@ function _buildPhase1FastLectureResult(lectureCtx, options = {}) {
   return {
     type: 'lecture',
     number: lectureCtx.number,
-    title: `[Phase1 Fast Dry-Run] ${lectureCtx.lectureTitle}`,
+    title: `[Phase1 Fast Dry-Run] ${_normalizeLecturePostTitle(lectureCtx)}`,
     charCount: 0,
     quality: true,
     aiRisk: {

@@ -1,99 +1,58 @@
-# 블로팀 — Claude/Codex 운영 컨텍스트
+# 블로팀 운영 컨텍스트
 
-## 목적 (V2 개편 후 — 2026-05-12)
-- **블로그 포스팅 + 댓글/공감에 집중** (인스타/페북/이미지 분리!)
-- 주제 다양화, 페르소나 작가 분리, RAG 강화, 댓글/조회수 자동화
-- Reddit 트렌드 + 알라딘 베스트셀러 기반 토픽 선정
-- "사람처럼 작성" Humanize Layer 적용
+## 비전
+- 블로팀은 **스스로 성장하는 포스팅 작가 에이전트**다.
+- 목표는 매일 안정적으로 글을 만들고, 실제 반응을 회수해 다음 글의 주제·구성·검증 품질을 개선하는 것이다.
+- 현재 우선순위는 네이버 블로그 본문 품질, 댓글·공감 루프, Edu-X 연계이며 소셜 확장은 보류한다.
 
-## 소셜미디어 분리 (2026-05-12 G영역 — 완료!)
-- **인스타그램/페이스북/이미지 생성 = OFF** (기본 비활성)
-- 소스 파일 이동 완료 (2026-05-13 Codex Week1 구현):
-  - 인스타: `bots/social-media/instagram/lib/` (star, insta-crosspost, instagram-story, instagram-token-automation)
-  - 페북: `bots/social-media/facebook/lib/` (facebook-publisher)
-  - 이미지: `bots/social-media/image-gen/lib/` (img-gen, img-gen-doctor)
-  - 숏폼: `bots/social-media/shortform/lib/` (shortform-files, shortform-planner, shortform-renderer)
-- **ON 방법**: 환경변수 `BLOG_SOCIAL_MEDIA_ENABLED=true` (인스타/페북) / `BLOG_IMAGE_GEN_ENABLED=true` (이미지)
-- launchd 비활성화됨: ai.blog.instagram-publish, ai.blog.facebook-publish, ai.blog.instagram-token-refresh
+## 활동 3축
+- 포스팅: `blo.ts`가 매일 06:00 KST 강의 1편 + 일반 1편을 생성한다.
+- 댓글·공감: `commenter`, `neighbor-commenter`, `neighbor-sympathy`가 반응 회수와 관계 형성을 담당한다.
+- Edu-X: 교육형 콘텐츠와 시장/학습 슬롯은 별도 Edu-X 런타임과 리포트 기준을 따른다.
 
-## 현재 운영 상태
-- 소셜미디어 분리 완료 (BLOG_SOCIAL_MEDIA_ENABLED=false 기본)
-- Draw Things 전환 완료
-- ComfyUI 운영 기본 경로 해제
-- 블로그 자동 작업 launchd 반영 완료
-- 댓글, 공감, 조회수 수집 경로 실운영 검증 완료
-- 텔레그램 카운트 분리 반영 완료
+## 성장 루프
+- 관찰: 성과, 댓글, 검색 반응, 운영 실패를 수집한다.
+- 판단: 품질 게이트와 dry-run/smoke 결과로 다음 행동을 고른다.
+- 작성: POS/GEMS 작가가 주제별 글을 만들고, 품질 보정 1회를 수행한다.
+- 회수: 발행 후 조회·댓글·공감·운영 리포트를 다시 저장한다.
+- 학습: 성공/실패 패턴은 다음 주제 선정과 프롬프트에 반영하되, 현재 마케팅 자동 확장은 기본 off다.
 
-## 핵심 결정 사항
-- Draw Things 전용 운영 (SOCIAL_MEDIA_ENABLED=true 시에만 활성)
-- 32GB 환경에서는 양자화 모델 우선
-- 썸네일 1장 중심
-- 인스타 카드보다 숏폼 릴스 우선 (단, 현재 OFF)
-- Qwen Image 한글 고품질 운영은 상위 메모리 환경 이후 검토
+## 에이전트 입문 48강
+- 현재 강의 시리즈의 운영명은 `에이전트 입문`이다.
+- 기존 발행 1~4강은 이력 보존 대상이며, 새 발행본 제목으로 되돌리거나 수정하지 않는다.
+- 5~48강은 `docs/design/BLO_AGENT_WRITER_REDESIGN_2026-06.md` §8 목차를 따른다.
+- 신규 강의 제목 프리픽스는 `[에이전트 입문 N강] ...` 형식이다.
+- 강의 본문 기본 형식은 `오늘 배울 것 1줄 -> 따라하기 -> 꿀팁 박스 -> 자주 묻는 질문 -> 다음 강 예고` 방향을 따른다.
+- 최신정보는 Node.js 릴리스 고정이 아니라 당일 강의의 `curriculum.keywords`와 `claude code`, `codex`, `AI 에이전트` 키워드로 찾는다.
+- 관련 최신정보가 없으면 `이번 주 소식` 코너는 만들지 않는다.
 
-## 실패한 접근
-- 128GB 기준 모델 추천을 그대로 적용
-  - 32GB 환경에서는 OOM 위험이 큼
-  - 양자화 모델 우선 원칙 유지
-- `.legacy.js` 기준만 보고 상태를 판단
-  - 현재는 `.ts`가 진실 원본인 경우가 많음
-  - 블로그팀 변경 판단은 `.ts` 우선
-- 이미 수정된 P1/P2를 미수정으로 재판단
-  - 마스터 문서와 실파일을 함께 확인해야 함
-
-## 팀 구조
-- 블로/마에스트로: 전체 오케스트레이션
-- 포스/POS 작가: 실전형 글 생성
-- 젬스/GEMS 작가: 대체 페르소나/변형 톤
-- 리처: RAG, 내부 링크, 보강
-- 퍼블: 발행, 중복 방지, 발행 후 처리
-- 이미지: Draw Things 기반 이미지 생성
-- commenter: 답글, 이웃 댓글, 공감, 조회수 수집
+## 소셜·마케팅 상태
+- 인스타그램/페이스북 자동 발행 launchd 트리거는 repo에서 제거 대상이다.
+- `bots/social-media` 코드는 삭제하지 않는다. MCP·이미지·숏폼·소셜 모듈은 차후 확장용으로 보존한다.
+- 실제 `~/Library/LaunchAgents` bootout/delete는 마스터가 수행한다.
+- `BLOG_SOCIAL_MEDIA_ENABLED` 기본값은 false다.
+- `BLOG_IMAGE_GEN_ENABLED` 기본값은 false다.
+- `BLOG_MARKETING_ENABLED` 기본값은 false다.
+- 2026년 4월 Phase 1~7 자율 마케팅 로드맵은 공식 보류 상태다.
 
 ## 핵심 파일
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/blo.ts`
-- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/maestro.ts`
+- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/pos-writer.ts`
+- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/gems-writer.ts`
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/richer.ts`
-- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/publ.ts`
-- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/img-gen.ts`
+- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/curriculum-planner.ts`
+- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/category-rotation.ts`
+- `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/schedule.ts`
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/commenter.ts`
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/lib/runtime-config.ts`
-- `/Users/alexlee/projects/ai-agent-system/bots/blog/config.json`
 
-## 이미지 운영
-- 공급자: Draw Things
-- 기본 주소: `http://127.0.0.1:7860`
-- 런타임 환경값:
-  - `BLOG_IMAGE_PROVIDER=drawthings`
-  - `BLOG_IMAGE_BASE_URL=http://127.0.0.1:7860`
-- Draw Things 앱이 켜져 있어야 API도 살아 있음
-- 로그인 시 자동 실행되도록 운영 반영됨
-
-## 댓글/공감/조회수 운영
-- 답글: `ai.blog.commenter`
-- 이웃 댓글: `ai.blog.neighbor-commenter`
-- 공감 전용: `ai.blog.neighbor-sympathy`
-- 조회수 수집: `ai.blog.collect-views`
-
-### 집계 규칙
-- `reply`: 답글
-- `neighbor_comment`: 이웃 댓글
-- `neighbor_sympathy`: 공감 전용
-- `neighbor_comment_sympathy`: 댓글 진행 중 함께 눌린 공감
-- 댓글과 공감은 각각 별도 카운트
-- 댓글 중 같이 눌린 공감도 별도 카운트
-
-### 최근 안정화 내용
-- 이웃 댓글 후보별 타임아웃 추가
-- DB pool `allowExitOnIdle` 반영
-- 댓글/공감 액션 중복 기록 방지
-- 텔레그램 알림 카운트 분리
-
-## TS 전환 원칙
-- `__dirname` 상대경로에 의존하지 않음
-- `env.PROJECT_ROOT` 기준 절대 경로 사용
-- 블로그 루트는 보통 다음으로 계산:
-  - `path.join(env.PROJECT_ROOT, 'bots', 'blog')`
+## 실행 원칙
+- 실제 게시, launchd 등록/해제, secret 변경, DB migration 적용은 명시 승인 없이는 하지 않는다.
+- 운영 반영 전에는 dry-run/smoke로 검증한다.
+- 소비 경로는 `blo.ts -> curriculum-planner.ts/category-rotation.ts -> blog.curriculum` 흐름을 유지한다.
+- daily 2편 흐름을 끊지 않는다.
+- `.ts` 파일이 진실 원본인 경우가 많으므로 변경 판단은 `.ts` 우선이다.
+- 기존 사용자 변경이나 운영 로그는 임의로 되돌리지 않는다.
 
 ## launchd 운영 파일
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/launchd/ai.blog.daily.plist`
@@ -103,81 +62,15 @@
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/launchd/ai.blog.neighbor-sympathy.plist`
 - `/Users/alexlee/projects/ai-agent-system/bots/blog/launchd/ai.blog.collect-views.plist`
 
-## 데이터/로그 확인 포인트
-- 댓글 로그:
-  - `/tmp/blog-commenter.log`
-  - `/tmp/blog-commenter.err.log`
-- 이웃 댓글 로그:
-  - `/Users/alexlee/projects/ai-agent-system/bots/blog/neighbor-commenter.log`
-- 공감 로그:
-  - `/Users/alexlee/projects/ai-agent-system/bots/blog/neighbor-sympathy.log`
-- 일간 로그:
-  - `/Users/alexlee/projects/ai-agent-system/bots/blog/blog-daily.log`
-- 액션/후보 상태는 DB 테이블에서 함께 확인
-
 ## 문서 우선순위
-- 마스터 계획:
-  - `/Users/alexlee/projects/ai-agent-system/docs/codex/CODEX_BLOG_MASTER.md`
-- 이미지 리디자인:
-  - `/Users/alexlee/projects/ai-agent-system/docs/codex/CODEX_BLOG_IMAGE_REDESIGN.md`
-- ECC 적용 가이드:
-  - `/Users/alexlee/projects/ai-agent-system/docs/strategy/ECC_APPLICATION_GUIDE.md`
-- 최종 핸드오프:
-  - `/Users/alexlee/projects/ai-agent-system/docs/OPUS_FINAL_HANDOFF.md`
+- `/Users/alexlee/projects/ai-agent-system/docs/design/BLO_AGENT_WRITER_REDESIGN_2026-06.md`
+- `/Users/alexlee/projects/ai-agent-system/docs/design/BLO_REDESIGN_TRACKER.md`
+- `/Users/alexlee/projects/ai-agent-system/docs/codex/CODEX_BLO_B1_CURRICULUM_2026-06-13.md`
+- `/Users/alexlee/projects/ai-agent-system/docs/codex/CODEX_BLOG_MASTER.md`
 
-## 아직 대기 중인 큰 작업
-- Phase 1~7 순차 구현
-- Phase 9:
-  - `ffmpeg` 설치
-  - Meta Developer 등록
-- `.claude/hooks/hooks.json` 실제 훅 동작 연결
-- 세션 저장/학습 자동화 체계 강화
-
-## 다음 세션 시작 체크리스트
-- Draw Things 앱 실행 여부 확인
-- `http://127.0.0.1:7860` 응답 확인
-- 블로그 launchd 상태 확인
-- 댓글/공감/조회수 최근 로그 확인
-- 마스터 문서의 완료/대기 상태 재확인
-
-## 변경 작업 원칙
-- 블로그팀 판단은 `.ts` 원본 우선
-- launchd 변경 후 실제 로드 상태 확인
-- 수동 테스트 결과와 운영 스케줄 결과를 분리해서 기록
-- 댓글/공감 카운트는 액션 로그와 후보 상태를 함께 확인
-
-## 참고
-- 이 문서는 블로그팀 로컬 운영 기준 요약이다
-- 세부 구현과 단계 계획은 마스터 문서를 우선한다
-
-
-## 자율 마케팅 시스템 — 신규 모듈 (2026.04.13 추가)
-
-### 피드백 루프 아키텍처
-```
-SENSE → PLAN → ACT → OBSERVE → LEARN → (반복)
-```
-
-### 신규 파일
-- `lib/sense-engine.ts` — 스카팀 매출 + 트렌드 + 채널 상태 감지
-- `lib/autonomy-gate.ts` — 자동 게시 vs 마스터 검토 판단 (Phase별 임계값)
-- `lib/feedback-learner.ts` — 마스터 수정 diff → LLM 분석 → 선호 패턴 학습
-- `lib/autonomy-tracker.ts` — Phase 추적 (1→2→3), 정확도 4주 연속 기준
-- `lib/marketing-revenue-correlation.ts` — 마케팅→스카팀 매출 상관분석
-
-### 신규 스킬
-- `skills/marketing-ops-playbook/SKILL.md` — 자율 마케팅 운영 가이드
-
-### DB 마이그레이션
-- `migrations/008-marketing-metrics.sql` — channel_performance 테이블, 어그로 컬럼
-- `migrations/009-feedback-autonomy-revenue.sql` — master_feedback, autonomy_log, revenue_correlation
-
-### Phase 전환 규칙
-- Phase 1→2: accuracy >= 0.80, 4주 연속
-- Phase 2→3: accuracy >= 0.95, 4주 연속
-- Phase 역전환: accuracy < 0.60 → Phase -1
-
-### 스카팀 데이터 접근
-- `pgPool.query('ska', ...)` — revenue_daily, environment_factors 조회
-- 마케팅 활동일 vs 비활동일 매출 비교
-- 환경 변수(공휴일/날씨/시험) 보정
+## 다음 작업 대기
+- B2: 대도서관·피드백 루프.
+- B3: 본문 형식 전면 리디자인.
+- B4: 댓글 동적 대응과 댓글/공감 성장 루프.
+- B5: 루나 패턴+gate.
+- B6: Edu-X 성장 루프.

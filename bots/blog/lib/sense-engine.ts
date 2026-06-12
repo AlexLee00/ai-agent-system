@@ -12,30 +12,9 @@
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { loadLatestStrategy } = require('./strategy-loader.ts');
+const { isBlogMarketingEnabled, buildMarketingDisabledResult, logMarketingDisabled } = require('./marketing-enabled.ts');
 
-type ColumnRow = {
-  column_name?: string;
-};
-
-type SkaRevenueRow = {
-  actual_revenue?: unknown;
-  occupancy_rate?: unknown;
-  entries_count?: unknown;
-  total_reservations?: unknown;
-};
-
-type BlogPerformanceRow = {
-  title?: string;
-  views?: unknown;
-};
-
-type SenseSignal = {
-  type: string;
-  message: string;
-  priority: string;
-};
-
-async function getTableColumns(dbName: string, schemaName: string, tableName: string) {
+async function getTableColumns(dbName, schemaName, tableName) {
   try {
     const rows = await pgPool.query(dbName, `
       SELECT column_name
@@ -43,7 +22,7 @@ async function getTableColumns(dbName: string, schemaName: string, tableName: st
       WHERE table_schema = $1
         AND table_name = $2
     `, [schemaName, tableName]);
-    return new Set((rows || []).map((row: ColumnRow) => row.column_name));
+    return new Set((rows || []).map((row) => row.column_name));
   } catch {
     return new Set();
   }
@@ -75,9 +54,9 @@ async function getSkaRevenue(days = 7) {
     if (!rows || rows.length === 0) return null;
 
     const latest = rows[0];
-    const revenues = rows.map((r: SkaRevenueRow) => Number(r.actual_revenue || 0)).filter((v: number) => v > 0);
+    const revenues = rows.map((r) => Number(r.actual_revenue || 0)).filter((v) => v > 0);
     const avg7d = revenues.length > 0
-      ? revenues.reduce((a: number, b: number) => a + b, 0) / revenues.length
+      ? revenues.reduce((a, b) => a + b, 0) / revenues.length
       : 0;
 
     return {
@@ -94,7 +73,7 @@ async function getSkaRevenue(days = 7) {
         : 'unknown',
       rows,
     };
-  } catch (err: unknown) {
+  } catch (err) {
     console.warn('[sense-engine] 스카팀 매출 조회 실패:', err instanceof Error ? err.message : String(err));
     return null;
   }
@@ -141,10 +120,10 @@ async function getRecentBlogPerformance(days = 7) {
       ORDER BY ${publishedExpr} DESC
     `, [days]);
 
-    const totalViews = rows.reduce((sum: number, r: BlogPerformanceRow) => sum + (Number(r.views) || 0), 0);
+    const totalViews = rows.reduce((sum, r) => sum + (Number(r.views) || 0), 0);
     const avgViews = rows.length > 0 ? totalViews / rows.length : 0;
-    const best = rows.reduce((a: BlogPerformanceRow, b: BlogPerformanceRow) => (Number(a.views) || 0) > (Number(b.views) || 0) ? a : b, rows[0]);
-    const worst = rows.reduce((a: BlogPerformanceRow, b: BlogPerformanceRow) => (Number(a.views) || 0) < (Number(b.views) || 0) ? a : b, rows[0]);
+    const best = rows.reduce((a, b) => (Number(a.views) || 0) > (Number(b.views) || 0) ? a : b, rows[0]);
+    const worst = rows.reduce((a, b) => (Number(a.views) || 0) < (Number(b.views) || 0) ? a : b, rows[0]);
 
     return {
       count: rows.length,
@@ -163,6 +142,19 @@ async function getRecentBlogPerformance(days = 7) {
  * 일일 SENSE 실행 — 전체 리소스 상태 파악
  */
 async function senseDailyState() {
+  if (!isBlogMarketingEnabled()) {
+    logMarketingDisabled('sense-engine');
+    return {
+      ...buildMarketingDisabledResult('sense-engine'),
+      sensedAt: new Date().toISOString(),
+      skaRevenue: null,
+      skaEnvironment: null,
+      blogPerformance: null,
+      currentStrategy: null,
+      signals: [],
+    };
+  }
+
   const [skaRevenue, skaEnv, blogPerf, strategy] = await Promise.all([
     getSkaRevenue(7),
     getSkaEnvironment(),
@@ -176,7 +168,7 @@ async function senseDailyState() {
     skaEnvironment: skaEnv,
     blogPerformance: blogPerf,
     currentStrategy: strategy,
-    signals: [] as SenseSignal[],
+    signals: [],
   };
 
   // 신호 생성

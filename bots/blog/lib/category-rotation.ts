@@ -125,16 +125,22 @@ async function isSeriesComplete() {
   }
 }
 
-async function getLectureTitle(number: number, seriesName = 'nodejs_120') {
+async function getLectureInfo(number, seriesName = 'nodejs_120') {
   try {
     const row = await pgPool.get('blog', `
-      SELECT title FROM blog.curriculum
+      SELECT title, section, keywords, difficulty, status, published_post_id
+      FROM blog.curriculum
       WHERE series_name = $1 AND lecture_number = $2
     `, [seriesName, number]);
-    return row?.title || null;
+    return row || null;
   } catch {
     return null;
   }
+}
+
+async function getLectureTitle(number, seriesName = 'nodejs_120') {
+  const row = await getLectureInfo(number, seriesName);
+  return row?.title || null;
 }
 
 module.exports = {
@@ -145,5 +151,6 @@ module.exports = {
   advanceLectureNumber,
   resetLectureNumber,
   isSeriesComplete,
+  getLectureInfo,
   getLectureTitle,
 };

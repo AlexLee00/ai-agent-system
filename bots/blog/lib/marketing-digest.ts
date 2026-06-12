@@ -11,6 +11,7 @@ const env = require('../../../packages/core/lib/env');
 const { detectTitlePattern } = require('./performance-diagnostician.ts');
 const { getNextGeneralCategory } = require('./category-rotation.ts');
 const { getRecentPosts, selectAndValidateTopic } = require('./topic-selector.ts');
+const { isBlogMarketingEnabled, buildMarketingDisabledResult, logMarketingDisabled } = require('./marketing-enabled.ts');
 
 const STRATEGY_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output/strategy');
 const LATEST_STRATEGY_PATH = path.join(STRATEGY_DIR, 'latest-strategy.json');
@@ -954,6 +955,26 @@ function buildRuntimeNarrative({ health, senseSummary, revenueCorrelation, auton
 }
 
 async function buildMarketingDigest(options = {}) {
+  if (!isBlogMarketingEnabled()) {
+    logMarketingDisabled('marketing-digest');
+    return {
+      ...buildMarketingDisabledResult('marketing-digest'),
+      health: { status: 'skipped', reason: 'BLOG_MARKETING_ENABLED != true' },
+      senseSummary: { signalCount: 0, topSignal: null, revenueTrend: 'disabled' },
+      revenueCorrelation: null,
+      diagnosis: null,
+      autonomySummary: null,
+      snapshotTrend: null,
+      channelPerformance: null,
+      socialPublishSources: null,
+      strategy: null,
+      strategyAdoption: null,
+      nextGeneralPreview: null,
+      recommendations: [],
+      runtimeNarrative: 'BLOG_MARKETING_ENABLED가 true가 아니어서 마케팅 digest를 실행하지 않았습니다.',
+    };
+  }
+
   const revenueWindow = Number(options.revenueWindow || 14);
   const diagnosisWindow = Number(options.diagnosisWindow || 7);
   const autonomyWindow = Number(options.autonomyWindow || 14);

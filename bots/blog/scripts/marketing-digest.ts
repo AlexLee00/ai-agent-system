@@ -7,6 +7,7 @@ const path = require('path');
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const { writeMarketingDigestTelemetry } = require('../lib/marketing-digest-telemetry.ts');
+const { isBlogMarketingEnabled } = require('../lib/marketing-enabled.ts');
 
 const json = process.argv.includes('--json');
 
@@ -87,22 +88,28 @@ function buildMarketingDigestFallback(digest = {}) {
 
 async function main() {
   const digest = await buildMarketingDigest();
-  digest.aiSummary = await buildBlogCliInsight({
-    bot: 'marketing-digest',
-    requestType: 'marketing-digest',
-    title: '블로그 마케팅 digest 요약',
-    data: {
-      health: digest?.health,
-      senseSummary: digest?.senseSummary,
-      revenueCorrelation: digest?.revenueCorrelation,
-      diagnosis: digest?.diagnosis,
-      channelPerformance: digest?.channelPerformance,
-      autonomySummary: digest?.autonomySummary,
-      nextGeneralPreview: digest?.nextGeneralPreview,
-    },
-    fallback: buildMarketingDigestFallback(digest),
-  });
-  writeMarketingDigestTelemetry(digest);
+  if (isBlogMarketingEnabled()) {
+    digest.aiSummary = await buildBlogCliInsight({
+      bot: 'marketing-digest',
+      requestType: 'marketing-digest',
+      title: '블로그 마케팅 digest 요약',
+      data: {
+        health: digest?.health,
+        senseSummary: digest?.senseSummary,
+        revenueCorrelation: digest?.revenueCorrelation,
+        diagnosis: digest?.diagnosis,
+        channelPerformance: digest?.channelPerformance,
+        autonomySummary: digest?.autonomySummary,
+        nextGeneralPreview: digest?.nextGeneralPreview,
+      },
+      fallback: buildMarketingDigestFallback(digest),
+    });
+  } else {
+    digest.aiSummary = 'BLOG_MARKETING_ENABLED가 true가 아니어서 마케팅 digest를 실행하지 않았습니다.';
+  }
+  if (isBlogMarketingEnabled()) {
+    writeMarketingDigestTelemetry(digest);
+  }
   if (json) {
     console.log(JSON.stringify(digest, null, 2));
     return;

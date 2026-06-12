@@ -36,6 +36,7 @@ describe('marketing-dpo', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.BLOG_MARKETING_ENABLED;
     delete process.env.BLOG_DPO_ENABLED;
   });
 
@@ -44,6 +45,7 @@ describe('marketing-dpo', () => {
   });
 
   test('isEnabled() — true when set', () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     expect(dpo.isEnabled()).toBe(true);
   });
@@ -96,6 +98,7 @@ describe('marketing-dpo', () => {
   });
 
   test('buildPreferencePairs — 데이터 부족 시 빈 배열', async () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     pgPool.query.mockResolvedValue([{ id: '1', title: '제목', category: 'IT', persona: 'POS', views_7d: 100, engagement_rate: 0.01, revenue_attributed_krw: 0, content_length: 1200 }]);
     const pairs = await dpo.buildPreferencePairs(30);

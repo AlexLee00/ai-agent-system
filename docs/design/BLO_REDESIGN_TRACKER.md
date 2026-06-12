@@ -56,3 +56,25 @@
   off 가드(MCP·코드 보존) / §5 CLAUDE.md 재작성+잔재 / §6 TS-B1~B3 / §7 안전(B3/B4 선행 구현 금지).
 - 다음: 코덱스 전달 -> 구현 -> 메티 독립 검증 -> 마스터 DDL+plist+커밋.
 이력: 2026-06-13 CODEX-B1 작성 (메티)
+
+## F. CODEX-B1 메티 독립 검증 (2026-06-13) — 합격 (경미 누락 1건)
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | blog 일대 정합 (plist 3 삭제, 가드 주입 모듈들, CLAUDE.md) |
+| 마이그레이션 023 | 멱등 / status CHECK에 archived 확장 / 시리즈 리네임 / **blog.posts 참조 0**(발행본 보존) / DELETE 없음 |
+| 스모크 | smoke:blo-b1-curriculum ok:true 4건 + daily-dry 2편 구조 (독립 재실행) |
+| 마케팅 off | marketing:digest -> skipped:true, reason=blog_marketing_disabled |
+| 잔재 정리 | blog.db 제거 / bots/social-media 코드 보존 |
+| CLAUDE.md | 비전·활동 3축·보류 명문화 확인 |
+| **경미 누락** | repo에 ai.blog.instagram-token-refresh.plist 잔존 (token-health만 삭제) — 마스터 git rm 1개 추가 |
+
+### 마스터 적용 절차
+1. DDL: /opt/homebrew/opt/postgresql@17/bin/psql -d jay -f bots/blog/migrations/023-agent-intro-curriculum.sql
+2. LaunchAgents bootout+삭제: ai.blog.instagram-publish / facebook-publish / instagram-token-health
+   (+ instagram-token-refresh 로드돼 있으면 함께)
+3. repo 잔존 1개: git rm bots/blog/launchd/ai.blog.instagram-token-refresh.plist
+4. 커밋
+주의: TS-B1의 "planner 5강 선택" 실검증은 DDL 적용 후 가능(현 스모크는 fixture) — 적용 후 메티가
+커리큘럼 DB 직접 쿼리+dry-run으로 라이브 확인(TS-B1-L), 최종 자연 검증은 익일 06:00 daily(5강 발행).
+이력: 2026-06-13 CODEX-B1 독립 검증 합격 (메티)
