@@ -9,6 +9,9 @@ REFACTORER_LOCK_MAX_AGE_SECONDS="${REFACTORER_LOCK_MAX_AGE_SECONDS:-600}"
 
 cd "$PROJECT_ROOT"
 
+. "$PROJECT_ROOT/scripts/lib/branch-guard.sh"
+branch_guard_require_ops_main "$PROJECT_ROOT"
+
 if [ -f "$REFACTORER_LOCK_FILE" ]; then
   LOCK_MTIME="$(stat -f %m "$REFACTORER_LOCK_FILE" 2>/dev/null || stat -c %Y "$REFACTORER_LOCK_FILE" 2>/dev/null || echo 0)"
   NOW="$(date +%s)"

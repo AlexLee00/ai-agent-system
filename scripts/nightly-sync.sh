@@ -6,6 +6,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_FILE="/tmp/nightly-sync.log"
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
+. "$ROOT/scripts/lib/branch-guard.sh"
+branch_guard_require_ops_main "$ROOT"
+
 # launchd에서는 PATH가 제한될 수 있어 Homebrew Node를 우선 사용한다.
 NODE_BIN="${NODE_BIN:-/opt/homebrew/bin/node}"
 if [ ! -x "$NODE_BIN" ]; then

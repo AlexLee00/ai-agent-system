@@ -7,6 +7,9 @@ LOG_FILE="$LOG_DIR/auto-commit.log"
 
 mkdir -p "$LOG_DIR"
 
+. "$REPO_DIR/scripts/lib/branch-guard.sh"
+branch_guard_require_ops_main "$REPO_DIR"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
 }
