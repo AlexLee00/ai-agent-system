@@ -307,11 +307,12 @@ async function main() {
     assert.equal(appJs.status, 200);
     assert.equal(appJs.text.includes('dangerouslySetInnerHTML'), false);
     assert.equal(appJs.text.includes('innerHTML'), false);
+    assert.ok(appJs.text.includes('const { useEffect, useMemo, useRef, useState } = React;'));
     assert.ok(appJs.text.includes('function renderMarkdownLite'));
     assert.ok(appJs.text.includes('function MarkdownLite'));
     assert.ok(appJs.text.includes('renderInlineMarkdown'));
     assert.ok(appJs.text.includes('markdown-table'));
-    assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태"'));
+    assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
     assert.equal(appJs.text.includes('advisory / shadow only'), false);
@@ -399,6 +400,14 @@ async function main() {
     assert.equal(appJs.text.includes('advisory/shadow 회의로 시작합니다.'), false);
     assert.ok(appJs.text.includes('selectedTypeDisabled'));
     assert.ok(appJs.text.includes('startDisabled'));
+    assert.ok(appJs.text.includes('const startInFlightRef = useRef(false);'));
+    assert.ok(appJs.text.includes('if (startInFlightRef.current || selectedTypeDisabled) return;'));
+    assert.ok(appJs.text.includes('startInFlightRef.current = true;'));
+    assert.ok(appJs.text.includes('startInFlightRef.current = false;'));
+    assert.ok(appJs.text.includes('const startButtonLabel = selectedTypeDisabled'));
+    assert.ok(appJs.text.includes('? `${selectedType?.label || type} 시작 중`'));
+    assert.ok(appJs.text.includes('aria-label=${startButtonLabel}'));
+    assert.ok(appJs.text.includes('aria-busy=${busy}'));
     assert.ok(appJs.text.includes('선택한 회의 타입은 현재 비활성입니다'));
     assert.ok(appJs.text.includes('시작 불가, 사유'));
     assert.ok(appJs.text.includes('id="meeting-llm-toggle"'));
@@ -477,10 +486,18 @@ async function main() {
     assert.ok(appJs.text.includes('마스터 액션 대기 결정 없음'));
     assert.equal(appJs.text.includes('pending_master 결정 ${decisions.length}건'), false);
     assert.ok(appJs.text.includes('감사 메모'));
+    assert.ok(appJs.text.includes('const actionInFlightRef = useRef(false);'));
+    assert.ok(appJs.text.includes('if (actionInFlightRef.current) return;'));
+    assert.ok(appJs.text.includes('actionInFlightRef.current = true;'));
+    assert.ok(appJs.text.includes('actionInFlightRef.current = false;'));
     assert.ok(appJs.text.includes("busy === 'confirm' ? '확정 중' : '확정'"));
     assert.ok(appJs.text.includes("busy === 'defer' ? '보류 중' : '보류'"));
     assert.ok(appJs.text.includes('결정 #${decision.id} 확정'));
     assert.ok(appJs.text.includes('결정 #${decision.id} 보류'));
+    assert.ok(appJs.text.includes('결정 #${decision.id} 확정 처리 중'));
+    assert.ok(appJs.text.includes('결정 #${decision.id} 보류 처리 중'));
+    assert.ok(appJs.text.includes("aria-busy=${busy === 'confirm'}"));
+    assert.ok(appJs.text.includes("aria-busy=${busy === 'defer'}"));
     assert.ok(appJs.text.includes('결정 #${decision.id} 감사 메모'));
     assert.ok(appJs.text.includes('결정 #${decision.id} 근거 JSON 보기'));
     assert.ok(appJs.text.includes('role="listitem"'));
@@ -514,8 +531,26 @@ async function main() {
     assert.ok(appJs.text.includes('aria-describedby="ask-helper ask-safety-note"'));
     assert.ok(appJs.text.includes('function updateAgent'));
     assert.ok(appJs.text.includes('function updateQuestion'));
+    assert.ok(appJs.text.includes('const askRequestSeq = useRef(0);'));
+    assert.ok(appJs.text.includes('const askInFlightRef = useRef(false);'));
+    assert.ok(appJs.text.includes('askInFlightRef.current = false;'));
+    assert.ok(appJs.text.includes('if (askInFlightRef.current || !question.trim()) return;'));
+    assert.ok(appJs.text.includes('askInFlightRef.current = true;'));
+    assert.ok(appJs.text.includes('function resetAskStateForInputChange()'));
+    assert.ok(appJs.text.includes('askRequestSeq.current += 1;'));
     assert.ok(appJs.text.includes('updateAgent(event.target.value)'));
     assert.ok(appJs.text.includes('updateQuestion(event.target.value)'));
+    assert.ok(appJs.text.includes('function updateAgent(value)'));
+    assert.ok(appJs.text.includes('function updateQuestion(value)'));
+    assert.ok((appJs.text.match(/resetAskStateForInputChange\(\);/g) || []).length >= 2);
+    assert.ok((appJs.text.match(/setAnswer\(null\);/g) || []).length >= 2);
+    assert.ok(appJs.text.includes('const requestId = askRequestSeq.current + 1;'));
+    assert.ok(appJs.text.includes('const requestAgent = agent;'));
+    assert.ok(appJs.text.includes('const requestQuestion = question;'));
+    assert.ok(appJs.text.includes('if (askRequestSeq.current === requestId)'));
+    assert.ok(appJs.text.includes('setAnswer(nextAnswer);'));
+    assert.ok(appJs.text.includes('setError(error.message);'));
+    assert.ok(appJs.text.includes('setBusy(false);'));
     assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
@@ -530,7 +565,8 @@ async function main() {
     assert.ok(appJs.text.includes('function answerStatusLabel'));
     assert.ok(appJs.text.includes('function providerLabel'));
     assert.ok(appJs.text.includes("return value === 'n/a' ? '확인 필요' : value;"));
-    assert.ok(appJs.text.includes('aria-label=${`${agentLabel(agent)}에게 자문 질문 보내기`}'));
+    assert.ok(appJs.text.includes('aria-label=${busy ? `${agentLabel(agent)}에게 자문 질문 진행 중` : `${agentLabel(agent)}에게 자문 질문 보내기`}'));
+    assert.ok(appJs.text.includes('aria-busy=${busy}'));
     assert.equal(appJs.text.includes('aria-label=${`${agent}에게 자문 질문 보내기`}'), false);
     assert.ok(appJs.text.includes('에이전트 ${agentLabel(answer.agent || agent)} · 제공자 ${providerLabel(answer.provider || answer.route?.provider)}'));
     assert.equal(appJs.text.includes("|| 'n/a'} · 상태"), false);
@@ -946,9 +982,11 @@ async function main() {
       mobileOneColumnContract: true,
       pendingDueOrder: true,
       startDuplicateGuard: true,
+      startReentryGuard: true,
       completedRunSwitchesToSessionDetail: true,
       failedRunShowsError: true,
       confirmAuditAndIdempotency: true,
+      decisionActionReentryGuard: true,
       idempotentDecisionNotice: true,
       deferAudit: true,
       deferLeavesPendingQueue: true,
@@ -962,6 +1000,9 @@ async function main() {
       askFormKoreanLabels: true,
       askInputGuidance: true,
       askClearsStaleAnswerOnSubmit: true,
+      askClearsStaleAnswerOnInputChange: true,
+      askIgnoresStaleAsyncResponse: true,
+      askReentryAndEmptyQuestionGuard: true,
       askInputClearsStaleError: true,
       askAnswerLiveRegion: true,
       askBusyStatus: true,

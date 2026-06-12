@@ -1,5 +1,5 @@
 const html = htm.bind(React.createElement);
-const { useEffect, useMemo, useState } = React;
+const { useEffect, useMemo, useRef, useState } = React;
 
 const AGENT_OPTIONS = Object.freeze([
   'luna',
@@ -391,7 +391,7 @@ function Header({ token, setToken, tab, setTab }) {
   return html`
     <div className="hero">
       <div>
-        <div className="topline" role="status" aria-label="회의실 실행 상태">
+        <div className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791">
           <span className="pill" aria-label="회의실 버전 MR-B">MR-B</span>
           <span className="pill" aria-label="자문 및 섀도 전용">자문 / 섀도 전용</span>
           <span className="pill" aria-label="로컬 바인딩 127.0.0.1 포트 7791">127.0.0.1:7791</span>
@@ -493,11 +493,18 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   const [type, setType] = useState('morning');
   const [useLlm, setUseLlm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const startInFlightRef = useRef(false);
   const selectedType = types.find((item) => item.value === type) || types[0];
   const selectedTypeDisabled = selectedType?.disabled === true;
   const startDisabled = busy || selectedTypeDisabled;
+  const startButtonLabel = selectedTypeDisabled
+    ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}`
+    : busy
+      ? `${selectedType?.label || type} 시작 중`
+      : `${selectedType?.label || type} 시작`;
   async function start() {
-    if (selectedTypeDisabled) return;
+    if (startInFlightRef.current || selectedTypeDisabled) return;
+    startInFlightRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -509,6 +516,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
     } catch (error) {
       setError(error.message);
     } finally {
+      startInFlightRef.current = false;
       setBusy(false);
     }
   }
@@ -527,7 +535,8 @@ function StartMeeting({ token, segments, onStarted, setError }) {
           `)}
         </select>
         <button
-          aria-label=${selectedTypeDisabled ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type} 시작`}
+          aria-label=${startButtonLabel}
+          aria-busy=${busy}
           title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type}를 자문/섀도 회의로 시작합니다.`}
           onClick=${start}
           disabled=${startDisabled}
@@ -611,8 +620,11 @@ function EvidenceDetails({ decision }) {
 function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState('');
+  const actionInFlightRef = useRef(false);
   const due = dueState(decision.dueAt);
   async function act(action) {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     setBusy(action);
     setError('');
     setNotice('');
@@ -629,6 +641,7 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
     } catch (error) {
       setError(error.message);
     } finally {
+      actionInFlightRef.current = false;
       setBusy('');
     }
   }
@@ -649,8 +662,8 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
       <div className="form-row" style=${{ marginTop: '10px' }}>
         <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 메모" aria-label=${`결정 #${decision.id} 감사 메모`} />
         <div className="inline">
-          <button aria-label=${`결정 #${decision.id} 확정`} onClick=${() => act('confirm')} disabled=${Boolean(busy)}>${busy === 'confirm' ? '확정 중' : '확정'}</button>
-          <button aria-label=${`결정 #${decision.id} 보류`} className="warn" onClick=${() => act('defer')} disabled=${Boolean(busy)}>${busy === 'defer' ? '보류 중' : '보류'}</button>
+          <button aria-label=${busy === 'confirm' ? `결정 #${decision.id} 확정 처리 중` : `결정 #${decision.id} 확정`} aria-busy=${busy === 'confirm'} onClick=${() => act('confirm')} disabled=${Boolean(busy)}>${busy === 'confirm' ? '확정 중' : '확정'}</button>
+          <button aria-label=${busy === 'defer' ? `결정 #${decision.id} 보류 처리 중` : `결정 #${decision.id} 보류`} aria-busy=${busy === 'defer'} className="warn" onClick=${() => act('defer')} disabled=${Boolean(busy)}>${busy === 'defer' ? '보류 중' : '보류'}</button>
         </div>
       </div>
     </article>
@@ -786,27 +799,50 @@ function AskRoom({ token }) {
   const [answer, setAnswer] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const askRequestSeq = useRef(0);
+  const askInFlightRef = useRef(false);
+  function resetAskStateForInputChange() {
+    askRequestSeq.current += 1;
+    askInFlightRef.current = false;
+    setError('');
+    setAnswer(null);
+    setBusy(false);
+  }
   function updateAgent(value) {
     setAgent(value);
-    setError('');
+    resetAskStateForInputChange();
   }
   function updateQuestion(value) {
     setQuestion(value);
-    setError('');
+    resetAskStateForInputChange();
   }
   async function ask() {
+    if (askInFlightRef.current || !question.trim()) return;
+    const requestId = askRequestSeq.current + 1;
+    askRequestSeq.current = requestId;
+    askInFlightRef.current = true;
+    const requestAgent = agent;
+    const requestQuestion = question;
     setBusy(true);
     setError('');
     setAnswer(null);
     try {
-      setAnswer(await api(token, '/api/agents/ask', {
+      const nextAnswer = await api(token, '/api/agents/ask', {
         method: 'POST',
-        body: JSON.stringify({ agent, question }),
-      }));
+        body: JSON.stringify({ agent: requestAgent, question: requestQuestion }),
+      });
+      if (askRequestSeq.current === requestId) {
+        setAnswer(nextAnswer);
+      }
     } catch (error) {
-      setError(error.message);
+      if (askRequestSeq.current === requestId) {
+        setError(error.message);
+      }
     } finally {
-      setBusy(false);
+      if (askRequestSeq.current === requestId) {
+        askInFlightRef.current = false;
+        setBusy(false);
+      }
     }
   }
   return html`
@@ -836,7 +872,8 @@ function AskRoom({ token }) {
             자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
           <button
-            aria-label=${`${agentLabel(agent)}에게 자문 질문 보내기`}
+            aria-label=${busy ? `${agentLabel(agent)}에게 자문 질문 진행 중` : `${agentLabel(agent)}에게 자문 질문 보내기`}
+            aria-busy=${busy}
             title=${question.trim() ? '선택한 에이전트에게 자문 질문을 보냅니다.' : '질문을 입력하면 활성화됩니다.'}
             onClick=${ask}
             disabled=${busy || !question.trim()}
