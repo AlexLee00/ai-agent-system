@@ -338,6 +338,9 @@ function renderMarkdownTable(lines, keyPrefix) {
 function renderMarkdownLite(text) {
   const lines = String(text ?? '').split(/\r?\n/);
   const blocks = [];
+  function pushBlock(node) {
+    blocks.push(node, '\n');
+  }
   let index = 0;
   while (index < lines.length) {
     const line = lines[index];
@@ -345,16 +348,16 @@ function renderMarkdownLite(text) {
     if (isTableLine(line)) {
       const tableLines = [];
       while (index < lines.length && isTableLine(lines[index])) tableLines.push(lines[index++]);
-      blocks.push(renderMarkdownTable(tableLines, key));
+      pushBlock(renderMarkdownTable(tableLines, key));
       continue;
     }
     if (line.startsWith('#### ')) {
-      blocks.push(html`<h4 key=${key}>${renderInlineMarkdown(line.slice(5), key)}</h4>`);
+      pushBlock(html`<h4 key=${key}>${renderInlineMarkdown(line.slice(5), key)}</h4>`);
       index += 1;
       continue;
     }
     if (line.startsWith('### ')) {
-      blocks.push(html`<h3 key=${key}>${renderInlineMarkdown(line.slice(4), key)}</h3>`);
+      pushBlock(html`<h3 key=${key}>${renderInlineMarkdown(line.slice(4), key)}</h3>`);
       index += 1;
       continue;
     }
@@ -362,13 +365,13 @@ function renderMarkdownLite(text) {
       const items = [];
       while (index < lines.length && lines[index].startsWith('- ')) {
         const itemKey = `md-li-${index}`;
-        items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`);
+          items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`);
         index += 1;
       }
-      blocks.push(html`<ul key=${key}>${items}</ul>`);
+      pushBlock(html`<ul key=${key}>${items}</ul>`);
       continue;
     }
-    blocks.push(line === ''
+    pushBlock(line === ''
       ? html`<br key=${key} />`
       : html`<div className="markdown-line" key=${key}>${renderInlineMarkdown(line, key)}</div>`);
     index += 1;
@@ -552,6 +555,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
               onClick=${() => setSelectedId(run.id)}
             >
               <div className="meeting-title" title=${`회의 타입: ${meetingTypeLabel(run.type)} · 상태: ${meetingStatusLabel(run.status)}`} data-raw-type=${run.type || 'n/a'} data-raw-status=${run.status || 'n/a'}>${meetingTypeLabel(run.type)} · ${meetingStatusLabel(run.status)}</div>
+              ${'\n'}
               <div className="meta">${formatTime(run.startedAt)} · 실행 작업</div>
             </button>
           </div>
@@ -565,6 +569,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
               onClick=${() => setSelectedId(meeting.id)}
             >
               <div className="meeting-title" title=${`회의 타입: ${meetingTypeLabel(meeting.type)}`} data-raw-type=${meeting.type || 'n/a'}>#${meeting.id} · ${meetingTypeLabel(meeting.type)}</div>
+              ${'\n'}
               <div className="meta" title=${`상태: ${meetingStatusLabel(meeting.status)}`} data-raw-status=${meeting.status || 'n/a'}>${meetingStatusLabel(meeting.status)} · ${formatTime(meeting.startedAt)}</div>
             </button>
           </div>
@@ -666,7 +671,7 @@ function Timeline({ detail, catchup, loading }) {
       <div className="card-body">
         <div className="catchup" role="status" aria-live="polite" aria-label=${catchupLabel}>
           <div role="list" aria-label=${`U1 캐치업 ${catchupLines.length}줄 요약`}>
-            ${catchupLines.map((line) => html`<div className="catchup-line" role="listitem">${line}</div>`)}
+            ${catchupLines.map((line) => html`<div className="catchup-line" role="listitem">${line}</div>${'\n'}`)}
           </div>
         </div>
         <div className="role-legend" role="list" aria-label="타임라인 역할 색상 범례">
@@ -689,7 +694,9 @@ function Timeline({ detail, catchup, loading }) {
                 data-raw-agenda=${minute.agendaKey || 'session'}
                 data-raw-speaker=${minute.speaker || 'unknown'}
               >${minute.seq}. ${agendaLabel(minute.agendaKey || 'session')} — ${roleName(minute.role, minute)} / ${speakerLabel(minute.speaker)}</div>
+              ${'\n'}
               <div className="meta">${formatTime(minute.createdAt)}</div>
+              ${'\n'}
               <${MarkdownLite} text=${minute.content} />
             </article>
           `)}
@@ -1009,6 +1016,7 @@ function AskRoom({ token }) {
     <div className="ask-grid">
       <div className="card">
         <h2 id="meeting-ask-form-title">@멘션 질의</h2>
+        ${'\n'}
         <form className="card-body" aria-labelledby="meeting-ask-form-title" onSubmit=${submitAsk}>
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
@@ -1031,6 +1039,7 @@ function AskRoom({ token }) {
           <div id="ask-safety-note" className="ask-safety-note">
             자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
+          ${'\n'}
           <button
             type="submit"
             aria-label=${busy ? `${agentLabel(agent)}에게 자문 질문 진행 중` : `${agentLabel(agent)}에게 자문 질문 보내기`}
@@ -1042,10 +1051,12 @@ function AskRoom({ token }) {
       </div>
       <div className="card">
         <h2>응답</h2>
+        ${'\n'}
         <div className="card-body">
           <div className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답">
             ${busy ? html`<div className="meta">질의 중 · 에이전트 응답을 기다리는 중입니다.</div>` : answer ? html`
               <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>
+              ${'\n'}
               <div className="answer-content"><${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} /></div>
             ` : html`<div className="meta">${emptyAnswerText}</div>`}
           </div>

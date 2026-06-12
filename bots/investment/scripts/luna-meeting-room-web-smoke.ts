@@ -314,6 +314,8 @@ async function main() {
     assert.ok(appJs.text.includes('const { useEffect, useMemo, useRef, useState } = React;'));
     assert.ok(appJs.text.includes('function renderMarkdownLite'));
     assert.ok(appJs.text.includes('function MarkdownLite'));
+    assert.ok(appJs.text.includes("function pushBlock(node)"));
+    assert.ok(appJs.text.includes("blocks.push(node, '\\n');"));
     assert.ok(appJs.text.includes('renderInlineMarkdown'));
     assert.ok(appJs.text.includes('markdown-table'));
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791"'));
@@ -467,6 +469,10 @@ async function main() {
     assert.ok(appJs.text.includes('role="list" aria-label="타임라인 역할 색상 범례"'));
     assert.ok(appJs.text.includes('aria-label=${`${label} 역할 색상`}'));
     assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 회의록 · ${agendaLabel(minute.agendaKey ||'));
+    assert.ok(appJs.text.includes("${'\\n'}\n              <div className=\"meta\">${formatTime(minute.createdAt)}</div>"));
+    assert.ok(appJs.text.includes("<div className=\"meta\">${formatTime(minute.createdAt)}</div>\n              ${'\\n'}"));
+    assert.ok(appJs.text.includes('<div className="meta">${formatTime(minute.createdAt)}</div>'));
+    assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content} />'));
     assert.ok(appJs.text.includes('선택된 회의의 회의록이 없습니다.'));
     assert.equal(appJs.text.includes('선택된 회의의 minute가 없습니다.'), false);
     assert.ok(appJs.text.includes('speakerLabel(minute.speaker)}'));
@@ -482,6 +488,9 @@ async function main() {
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label=${catchupLabel}'));
     assert.ok(appJs.text.includes('role="list" aria-label=${`U1 캐치업 ${catchupLines.length}줄 요약`}'));
     assert.ok(appJs.text.includes('className="catchup-line" role="listitem"'));
+    assert.ok(appJs.text.includes('<div className="catchup-line" role="listitem">${line}</div>${'));
+    assert.ok(appJs.text.includes('<div className="meeting-title" title=${`회의 타입: ${meetingTypeLabel(meeting.type)}`'));
+    assert.ok(appJs.text.includes('<div className="meeting-title" title=${`회의 타입: ${meetingTypeLabel(run.type)} · 상태: ${meetingStatusLabel(run.status)}`'));
     assert.ok(appJs.text.includes('className="error" role="alert" aria-live="assertive"'));
     assert.ok(appJs.text.includes('className="notice" role="status" aria-live="polite"'));
     assert.ok(appJs.text.includes('회의 상세를 불러오는 중입니다.'));
@@ -677,6 +686,12 @@ async function main() {
     assert.ok(appJs.text.includes('질의 보내기를 누르거나 Ctrl/⌘+Enter로 전송할 수 있습니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.'));
     assert.ok(appJs.text.includes('Ctrl/⌘+Enter도 사용할 수 있습니다.'));
+    assert.ok(appJs.text.includes('<h2 id="meeting-ask-form-title">@멘션 질의</h2>'));
+    assert.ok(appJs.text.includes(`<h2 id="meeting-ask-form-title">@멘션 질의</h2>
+        \${'\\n'}
+        <form className="card-body"`));
+    assert.ok(appJs.text.includes('<div id="ask-safety-note" className="ask-safety-note">'));
+    assert.ok(appJs.text.includes('자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'));
@@ -687,6 +702,14 @@ async function main() {
     assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답"'));
     assert.ok(appJs.text.includes('질의 중 · 에이전트 응답을 기다리는 중입니다.'));
     assert.ok(appJs.text.includes('상태 ${answerStatusLabel(answer.ok)} · 응답:'));
+    assert.ok(appJs.text.includes('<h2>응답</h2>'));
+    assert.ok(appJs.text.includes(`<h2>응답</h2>
+        \${'\\n'}
+        <div className="card-body">`));
+    assert.ok(appJs.text.includes('<div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>'));
+    assert.ok(appJs.text.includes(`상태 \${answerStatusLabel(answer.ok)} · 응답: </div>
+              \${'\\n'}
+              <div className="answer-content">`));
     assert.ok(appJs.text.includes('className="answer-content"'));
     assert.ok(appJs.text.includes('function answerStatusLabel'));
     assert.ok(appJs.text.includes('function providerLabel'));
@@ -915,6 +938,8 @@ async function main() {
     assert.equal(detail.payload.minutes[4].content.includes('결정 대기는 5건 남아있다'), false);
     assert.equal(detail.payload.minutes[4].content.includes('결정 대기는 5건이 대기 중'), false);
     assert.equal(detail.payload.minutes[4].content.includes('확인하세요. ,'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('봅니다이며'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('기준입니다.국내'), false);
     assert.equal(detail.payload.minutes[4].content.includes('분석 결과는 다음과 같이 요약'), false);
     assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const debriefAnalysisMinute = _testOnly.normalizeLegacyMinuteContent([
@@ -945,6 +970,8 @@ async function main() {
     assert.ok(debriefAnalysisMinute.includes('후속 조치는 마스터 확인 후 기록합니다.'));
     assert.equal(debriefAnalysisMinute.includes('결과적으로'), false);
     assert.equal(debriefAnalysisMinute.includes('확인하세요. ,'), false);
+    assert.equal(debriefAnalysisMinute.includes('봅니다이며'), false);
+    assert.equal(debriefAnalysisMinute.includes('기준입니다.국내'), false);
     assert.equal(debriefAnalysisMinute.includes('분석 결과는 다음과 같이 요약'), false);
     assert.equal(debriefAnalysisMinute.includes('다음 조치를 취해야'), false);
     assert.equal(debriefAnalysisMinute.includes('최종 결정을 내릴 수 있도록'), false);
@@ -954,6 +981,12 @@ async function main() {
     assert.ok(inlineDebriefAnalysisMinute.includes('결정 대기: 상단 캐치업 기준입니다. 국내에서는 상승 상태'));
     assert.equal(inlineDebriefAnalysisMinute.includes('확인하세요.국내'), false);
     assert.equal(inlineDebriefAnalysisMinute.includes('분석 결과는 다음과 같이 요약'), false);
+    const compactGatePunctuationMinute = _testOnly.normalizeLegacyMinuteContent(
+      '활성 서킷: 최신 데이터 영역 기준으로 확인하세요이며, 결정 대기 중인 서킷은 5건입니다.국내에서는 강세 상태에 있습니다.',
+    );
+    assert.ok(compactGatePunctuationMinute.includes('활성 서킷: 최신 데이터 영역 기준으로 봅니다. 결정 대기: 상단 캐치업 기준입니다. 국내에서는 상승 상태'));
+    assert.equal(compactGatePunctuationMinute.includes('봅니다이며'), false);
+    assert.equal(compactGatePunctuationMinute.includes('기준입니다.국내'), false);
     assert.equal(
       _testOnly.normalizeLegacyMinuteContent('국내 마감 G6 대조표에 대한 분석 결과입니다.'),
       '국내 마감 G6 대조표 분석입니다.',
