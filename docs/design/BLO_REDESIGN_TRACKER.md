@@ -78,3 +78,60 @@
 주의: TS-B1의 "planner 5강 선택" 실검증은 DDL 적용 후 가능(현 스모크는 fixture) — 적용 후 메티가
 커리큘럼 DB 직접 쿼리+dry-run으로 라이브 확인(TS-B1-L), 최종 자연 검증은 익일 06:00 daily(5강 발행).
 이력: 2026-06-13 CODEX-B1 독립 검증 합격 (메티)
+
+## G. B1 적용 + TS-B1-L 라이브 검증 (2026-06-13) — 합격 / B1 종결
+
+| 검증 | 결과 |
+|---|---|
+| 재편 | '에이전트 입문' pending 48 + archived 72 = 120 (총량 보존, 삭제 0) / 시리즈 active 48 |
+| 다음 강의 결정 | **메커니즘 확정**: blog.category_rotation(rotation_type=lecture_series)의 current_index+1이
+  유일한 진실 (curriculum.status/posts와 무관). 현재 4/'에이전트 입문' -> **익일 06:00 = 5강 "Claude Code 설치 따라하기"** |
+| 추적 노트 | 1~4강 pending+posts 미연결은 기존 시스템 동작(rotation이 포인터라 무해 — 메티 1강 중복 오경보,
+  rotation 미인지 상태의 추적이었음. 코덱스가 마이그레이션에서 rotation 갱신까지 정확 처리) |
+| 소셜 | launchd 로드 0 / repo plist 0 / 코드·MCP 보존 |
+| 적용 | DDL 023 + LaunchAgents 4종 정리 + 커밋 297351171 (마스터) |
+
+선택적 개선(백로그): curriculum 1~4강 published 마킹+posts 연결 — 동작 무관하나 데이터 정합 차원.
+다음: **익일 06:00 daily 자연 검증**(5강 발행 + "이번 주 소식" 코너) -> B1 완전 종결.
+이어서 W1~2: CODEX-B2(시그마 대도서관 + 적재 3종 + RAG 주입).
+이력: 2026-06-13 TS-B1-L 합격, B1 종결 (메티)
+
+## H. CODEX-B2 프롬프트 작성 (2026-06-13, 메티)
+
+- 선결 실측(재활용 원칙의 승리): **대도서관 = sigma.vault_entries 기존재** (vault-manager 멱등 INSERT+
+  임베딩+감사 / vault-search 코사인 검색 / luna·claude vault-feed 모범 패턴 188줄). **신규 테이블 0.**
+- 적재 소스 실측: posts 124 / comments 165 / comment_actions 5,613.
+- 프롬프트: docs/codex/CODEX_BLO_B2_VAULT_FEED_2026-06-13.md — §1 blog vault-feed(F1 본문 청크/
+  F2 댓글 PII 마스킹/F3 인기패턴 인터페이스만, backfill+증분+dry-run) / §2 강의 RAG 주입(vault-context
+  래퍼, 폴백 무해, 킬스위치) / §3 TS-B4~B5 / §4 안전(vault 코어 비수정, B2-4는 B2b 별도).
+- 다음: 코덱스 전달 -> 검증 -> 마스터 backfill+plist -> 익일 강의 연계 블록 자연 검증(TS-B5-L).
+이력: 2026-06-13 CODEX-B2 작성 (메티)
+
+### H-1. CODEX-B2 구현 메모 (2026-06-13, 코덱스)
+
+- 구현 시점 read-only 실측: blog.posts 248 / blog.comments 165 / blog.comment_actions 5,613 / sigma.vault_entries(source='blo') 0.
+- 산출물: `runtime-sigma-blog-vault-feed.ts`(dry-run 기본, --write+--no-dry-run만 적재), `vault-context.ts`(source='blo' 검색 래퍼), TS-B4~B5 smoke, 02:00 launchd plist.
+- 안전: 신규 테이블 0, vault-manager/vault-search 비수정, 일반 포스팅/라이브 발행 경로 비변경, launchctl 등록 없음.
+- 마스터 액션 후보: smoke 통과 후 `npm --prefix bots/sigma run -s blog:vault-feed -- --backfill --limit-per-source=10000`로 dry-run 확인, 이후 승인 시 `--write --no-dry-run` backfill 및 plist 등록.
+
+## I. CODEX-B2 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | 신규 4(blog-vault-feed/vault-context/smoke/plist) + 수정 4(blo/pos-writer/sigma pkg/트래커) 정합 |
+| 비수정 보증 | vault-manager / vault-search / luna·claude 피드 diff 0 (git diff --stat 무출력) |
+| backfill dry-run | 독립 재실행 ok:true, 소스별 limit 정확(posts 20/comments 20/actions 20 -> 후보 136, 청크 분할 포함) |
+| 스모크 | smoke:blog-vault-feed ok:true 3건 (독립 재실행) |
+| RAG 주입 | 강의 경로만(pos-writer '[지난 강의 연계]') / 킬스위치 기본 true / withTimeout 폴백(250~10,000ms bounded) / 빈 결과 시 블록 생략 |
+| PII | 시그마 공용 redactPii 재사용 + redactBlogPii 확장(blog_url 등) — luna 패턴 정합 |
+| 멱등 | filePath 결정론적(library/blo/post/{id}/chunk-NNN-{hash} 등) — ON CONFLICT 기반 |
+| 정정 | blog.posts 실측 248 (메티 사전 124는 시점/조건 차 — 코덱스 §H-1 실측이 정확) |
+
+### 마스터 적용 절차
+1. (선택) 전량 dry-run: npm --prefix bots/sigma run -s blog:vault-feed -- --backfill --limit-per-source=10000
+2. 실적재 승인 시: 동일 명령 + --write --no-dry-run
+3. plist 등록: ai.sigma.blog-vault-feed-daily-0200 (bootstrap gui/$UID)
+4. 커밋
+적재 후 메티 검증(TS-B4-L/B5-L): vault_entries source='blo' 분포 + vault-search 질의 정답 재현 +
+익일 06:00 강의에서 '[지난 강의 연계]' 블록 자연 검증.
+이력: 2026-06-13 CODEX-B2 독립 검증 합격 (메티)
