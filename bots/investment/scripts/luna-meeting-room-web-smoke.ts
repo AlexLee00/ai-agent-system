@@ -2139,14 +2139,29 @@ async function main() {
     assert.ok(scheduleOpsAsk.payload.text.includes('05:00 정례 실패 확인 순서:'));
     assert.ok(scheduleOpsAsk.payload.text.includes('새 아침 통합 회의가 생성됐는지 확인'));
     assert.ok(scheduleOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.luna.meeting-morning-0500 명령'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('PID - 또는 not running은 calendar job이 실행 시간 사이에 대기 중이라는 뜻일 수 있으므로 단독으로 실패로 보지 않습니다.'));
     assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning.log'));
     assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning-error.log'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('첫 실행 전에는 로그 파일이 없거나 0바이트일 수 있습니다.'));
     assert.ok(scheduleOpsAsk.payload.text.includes('정례 실행 상태:'));
     assert.ok(scheduleOpsAsk.payload.text.includes('secret이나 토큰 값을 붙여 공유하지 말고'));
     assert.equal(scheduleOpsAsk.payload.text.includes('`launchctl print'), false);
     assert.equal(scheduleOpsAsk.payload.text.includes('`/Users/alexlee/.ai-agent-system/logs'), false);
     assert.equal(scheduleOpsAsk.payload.text.includes('HUB_AUTH_TOKEN'), false);
     assert.equal(scheduleOpsAsk.payload.text.includes('Bearer'), false);
+    scheduleOpsHubCalled = false;
+    const launchdPidAsk = await request(scheduleOpsBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: 'launchctl list에서 ai.luna.meeting-morning-0500 PID가 - 로 나오는데 죽은 거야?' }),
+    });
+    assert.equal(launchdPidAsk.status, 200);
+    assert.equal(launchdPidAsk.payload.provider, 'rule_based');
+    assert.equal(launchdPidAsk.payload.skipped, true);
+    assert.equal(scheduleOpsHubCalled, false);
+    assert.ok(launchdPidAsk.payload.text.includes('PID - 또는 not running은 calendar job이 실행 시간 사이에 대기 중이라는 뜻'));
+    assert.ok(launchdPidAsk.payload.text.includes('단독으로 실패로 보지 않습니다'));
+    assert.equal(launchdPidAsk.payload.text.includes('프로세스가 실행되지 않은 상태 또는 종료된 상태일 수 있습니다'), false);
   } finally {
     await closeServer(scheduleOpsStarted.server);
   }

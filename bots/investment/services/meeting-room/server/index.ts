@@ -1425,8 +1425,11 @@ function inferAskIntent(question) {
     if (hasScheduleCue || /(05:00|5:00|오전\s*5|실행)/u.test(text)) return 'telegram_schedule';
     return 'telegram';
   }
+  const hasLaunchdCue = /(launchctl|launchd|plist|pid|not\s*running|프로세스|상주|로드|bootstrap|calendar|runs|last\s*exit|서비스|service)/u.test(text);
+  const hasMeetingJobCue = /(ai\.luna\.meeting|meeting-|회의|정례|아침|morning|장후|미장|premarket|weekly)/u.test(text);
   const hasScheduleOpsCue = /(실패|오류|에러|누락|안\s*됐|안\s*됨|안\s*되|로그|log|진단|고장)/u.test(text)
     || (/(어디서|무엇을\s*보|뭘\s*보)/u.test(text) && /(확인|보)/u.test(text));
+  if (hasLaunchdCue && hasMeetingJobCue) return 'schedule_ops';
   if (hasScheduleCue && hasScheduleOpsCue) return 'schedule_ops';
   if (hasScheduleCue && hasRunCue) return 'schedule';
   const hasMeetingFreshnessCue = /(최신|최근|마지막|어제|오늘|새\s*회의|새로운\s*회의)/u.test(text)
@@ -1507,7 +1510,7 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
     return '주말 아침 통합 회의 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 수동 기록과 정례 기록은 시작 시각과 로그로 구분하세요.';
   }
   if (intent === 'schedule_ops') {
-    return '05:00 이후 새 아침 통합 회의가 없으면 회의 목록, launchd 상태, stdout/stderr 로그를 순서대로 확인하세요.';
+    return 'PID - 자체는 calendar job 대기 상태일 수 있습니다. 05:00 이후에도 새 아침 통합 회의가 없으면 runs, last exit code, stdout/stderr 로그를 순서대로 확인하세요.';
   }
   if (intent === 'telegram') {
     return '텔레그램 버튼 처리 후 웹 결정 대기함과 감사 행을 확인하세요. 첫 실제 앱 버튼은 아직 정례 관찰 대상으로 남겨 두는 것이 안전합니다.';
@@ -1627,8 +1630,9 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '05:00 정례 실패 확인 순서:',
       '1. 회의실 목록/API에서 오늘 05:00 이후 새 아침 통합 회의가 생성됐는지 확인합니다.',
       '2. launchd 상태는 launchctl print gui/$(id -u)/ai.luna.meeting-morning-0500 명령에서 runs, last exit code, calendar trigger를 봅니다.',
-      '3. 실행 로그는 /Users/alexlee/.ai-agent-system/logs/luna-meeting-morning.log 와 /Users/alexlee/.ai-agent-system/logs/luna-meeting-morning-error.log 를 확인합니다.',
-      '4. 로그에 secret이나 토큰 값을 붙여 공유하지 말고, 오류 요약과 회의 ID 생성 여부만 남깁니다.',
+      '3. PID - 또는 not running은 calendar job이 실행 시간 사이에 대기 중이라는 뜻일 수 있으므로 단독으로 실패로 보지 않습니다.',
+      '4. 실행 로그는 /Users/alexlee/.ai-agent-system/logs/luna-meeting-morning.log 와 /Users/alexlee/.ai-agent-system/logs/luna-meeting-morning-error.log 를 확인합니다. 첫 실행 전에는 로그 파일이 없거나 0바이트일 수 있습니다.',
+      '5. 로그에 secret이나 토큰 값을 붙여 공유하지 말고, 오류 요약과 회의 ID 생성 여부만 남깁니다.',
       options.scheduleStatus || buildScheduleExecutionStatus([], options.now || new Date()),
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
