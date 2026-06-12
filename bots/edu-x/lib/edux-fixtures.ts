@@ -67,10 +67,20 @@ function kisFixture() {
         { time: '09:30', event: '반도체 수출 지표 확인' },
         { time: '10:00', event: '기관 수급 변화 점검' },
       ],
+      previousWatchPoints: [
+        '반도체 대형주 외국인 수급 지속 여부',
+        '2차전지 낙폭 과대 종목의 오후 회복 여부',
+        '원/달러 1,360원대 안착 여부',
+      ],
     },
     evidenceItems: [
       { sourceName: 'luna-domestic', evidenceSummary: '반도체 대형주 중심으로 외국인 순매수 재개 조짐', signalDirection: 'positive' },
       { sourceName: 'luna-domestic', evidenceSummary: '2차전지는 가격 부담과 환율 영향으로 선별 접근 필요', signalDirection: 'neutral' },
+    ],
+    previousWatchPoints: [
+      '반도체 대형주 외국인 수급 지속 여부',
+      '2차전지 낙폭 과대 종목의 오후 회복 여부',
+      '원/달러 1,360원대 안착 여부',
     ],
   };
 }
@@ -82,8 +92,11 @@ function overseasFixture() {
       sp500_change: 0.5,
       nasdaq_index: 20580,
       nasdaq_change: 0.8,
+      dow_index: 43120,
+      dow_change: 0.2,
       dxy: 101.2,
       vix: 14.9,
+      us10y: 4.31,
       mag7: [
         { symbol: 'NVDA', price: 142, change_1d: 2.1 },
         { symbol: 'MSFT', price: 513, change_1d: 0.8 },
@@ -99,18 +112,28 @@ function overseasFixture() {
         nasdaq: [20220, 20310, 20390, 20440, 20490, 20580],
       },
       top_etfs: [
-        { symbol: 'QQQ', market_cap: 280 },
-        { symbol: 'XLK', market_cap: 85 },
-        { symbol: 'XLE', market_cap: 42 },
+        { symbol: 'QQQ', market_cap: 280, change_1d: 0.9 },
+        { symbol: 'XLK', market_cap: 85, change_1d: 1.1 },
+        { symbol: 'XLE', market_cap: 42, change_1d: -0.4 },
       ],
       earnings: [
         { date: '오늘', symbol: 'NVDA', eps_est: '1.10' },
         { date: '내일', symbol: 'ADBE', eps_est: '4.75' },
       ],
+      previousWatchPoints: [
+        'Mag7 동조와 Nasdaq 상대 강도',
+        '10년물 금리 4.3%대 유지 여부',
+        'DXY 안정과 원/달러 장전 압력',
+      ],
     },
     evidenceItems: [
       { sourceName: 'luna-overseas', evidenceSummary: 'AI 인프라 관련 대형주가 지수 상승을 견인', signalDirection: 'positive' },
       { sourceName: 'luna-overseas', evidenceSummary: 'VIX 안정 구간이나 금리 이벤트 전 변동성 확대 가능성 존재', signalDirection: 'neutral' },
+    ],
+    previousWatchPoints: [
+      'Mag7 동조와 Nasdaq 상대 강도',
+      '10년물 금리 4.3%대 유지 여부',
+      'DXY 안정과 원/달러 장전 압력',
     ],
   };
 }

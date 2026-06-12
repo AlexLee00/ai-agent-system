@@ -59,25 +59,41 @@ async function withCleanFormatterEnv(fn) {
 async function check(category, slot) {
   const fixture = getFixturePayload(category);
   const result = await formatPost(category, slot, fixture.marketData, fixture.evidenceItems, fixture.technicalData || {}, { fixture: true });
-  const quality = validateContentQuality(result.content, category);
+  const quality = validateContentQuality(result.content, category, slot);
   assert.equal(quality.ok, true, `${category} formatter quality failed: ${JSON.stringify(quality)}`);
   assert.equal(result.content.includes('[이미지'), false, `${category} still contains image placeholder`);
   assert.equal(hasPublicMarketBriefDisclaimer(result.content), true, `${category} should include the required public disclaimer`);
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(result.content), false, `${category} should not render legacy section numbers`);
-  assert.equal(result.content.includes('🤖 인공지능 추천안'), true, `${category} should include AI recommendation block`);
+  if (slot === '1600' || slot === '0630') {
+    assert.equal(result.content.includes('🤖 인공지능 추천안'), false, `${category}:${slot} close slot should use close-review contract instead of AI recommendation block`);
+  } else {
+    assert.equal(result.content.includes('🤖 인공지능 추천안'), true, `${category} should include AI recommendation block`);
+  }
   assert.equal(/N\/A|데이터 없음/.test(result.content), false, `${category} should not expose N/A placeholders`);
   const html = formatContentForEduXWeb(result.content);
-  assert.equal(html.includes('<h3>⚡'), true, `${category} html conversion missing first card block`);
+  if (slot === '1600' || slot === '0630') {
+    assert.equal(html.includes('<h3>■'), true, `${category}:${slot} html conversion missing close block`);
+    assert.equal(result.content.includes('💡 왜 중요한가:'), true, `${category}:${slot} should include why-it-matters line`);
+    assert.equal(/다음:/.test(result.content), true, `${category}:${slot} should include next-slot preview`);
+  } else {
+    assert.equal(html.includes('<h3>⚡'), true, `${category} html conversion missing first card block`);
+  }
   assert.equal(html.includes('<p>&nbsp;</p>\n<h3>'), true, `${category} html conversion should add visible spacing between section blocks`);
   assert.equal(html.includes('<p>'), true, `${category} html conversion missing paragraph block`);
   assert.equal(html.includes('**'), false, `${category} html conversion should strip markdown bold markers`);
-  if (category === 'kis') {
+  if (category === 'kis' && slot === '0900') {
     assert.equal(/BTC\/USDT|비트코인|Fear & Greed|암호화폐 커뮤니티/.test(result.content), false, 'kis fallback should not contain crypto-specific sections');
     assert.equal(/국내주식|코스피|외국인|오늘 볼 섹터/.test(result.content), true, 'kis fallback should contain domestic card sections');
   }
-  if (category === 'overseas') {
+  if (category === 'kis' && slot === '1600') {
+    assert.equal(/09:00 예고 vs 실제|마감 확정치|내일 관찰 포인트/.test(result.content), true, 'kis close fallback should contain close-review sections');
+  }
+  if (category === 'overseas' && slot === '2200') {
     assert.equal(/BTC\/USDT|비트코인|Fear & Greed|암호화폐 커뮤니티/.test(result.content), false, 'overseas fallback should not contain crypto-specific sections');
     assert.equal(/해외주식|S&P500|Magnificent 7|지수·리스크 지도/.test(result.content), true, 'overseas fallback should contain overseas card sections');
+  }
+  if (category === 'overseas' && slot === '0630') {
+    assert.equal(/3대 지수 종가|Mag7 마감|한국 시장 시사점|한국장 관찰 포인트/.test(result.content), true, 'overseas close fallback should contain close-review sections');
   }
   return { category, slot, contentLen: quality.contentLen, sectionCount: quality.sectionCount };
 }
@@ -115,11 +131,13 @@ Okay, let's tackle this. The user wants a pre-market brief for the Edu-X platfor
   assert.equal(leakedQuality.forbidden.includes('reasoning_tag'), true, 'quality gate should report reasoning_tag');
   assert.equal(leakedQuality.forbidden.includes('required_disclaimer_missing'), true, 'quality gate should report missing required disclaimer');
 
-  const results = [
-    await check('crypto', '0600'),
-    await check('kis', '0900'),
-    await check('overseas', '2200'),
-  ];
+	  const results = [
+	    await check('crypto', '0600'),
+	    await check('kis', '0900'),
+	    await check('kis', '1600'),
+	    await check('overseas', '0630'),
+	    await check('overseas', '2200'),
+	  ];
   const cryptoTitle = buildCryptoTitle('1400', { btc_price: 90000, btc_change_24h: 1.2 });
   assert.equal(/유럽|아시아|미국/.test(cryptoTitle), false, `crypto title includes unnatural region label: ${cryptoTitle}`);
   assert.equal(buildCryptoTitle('1400', { btc_symbol: 'BTCUSDT', btc_price: 90000 }).includes('BTC/USDT'), true, 'crypto title should display BTC/USDT');

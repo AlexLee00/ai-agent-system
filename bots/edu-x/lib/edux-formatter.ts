@@ -42,8 +42,15 @@ const DEFAULT_LLM_MINI_FALLBACK_TIMEOUT_MS = 15000;
 const DEFAULT_LLM_FALLBACK_MAX_TOKENS = 2048;
 const MAX_CONTENT_LEN = 19500;
 const TARGET_MIN_LEN = 0;
+const EDUX_FORMAT_RULES = [
+  '섹션 사이 빈 줄은 정확히 1개만 사용합니다.',
+  '섹션 제목 다음 줄에는 바로 내용을 씁니다.',
+  '핵심 이슈에는 "💡 왜 중요한가: ..." 1줄을 포함합니다.',
+  '본문 끝에는 다음 슬롯 예고 1줄을 포함합니다.',
+  `마지막 면책 문구는 반드시 그대로 포함합니다: "${PUBLIC_MARKET_BRIEF_DISCLAIMER}"`,
+].join('\n- ');
 const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
-const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+/u;
+const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+|■\s*)/u;
 const REQUIRED_SECTION_COUNT = 10;
 const REQUIRED_SECTIONS_BY_CATEGORY = {
   crypto: [
@@ -70,6 +77,22 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'ai_recommendation', prefix: '🤖', keywords: ['인공지능', '추천'] },
     { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
   ],
+  kis_close: [
+    { key: 'close_index', prefix: '■', keywords: ['마감', '확정치'] },
+    { key: 'flow_close', prefix: '■', keywords: ['수급', '확정'] },
+    { key: 'sector_winners_losers', prefix: '■', keywords: ['섹터', '승자', '패자'] },
+    { key: 'plan_vs_actual', prefix: '■', keywords: ['09:00', '예고', '실제'] },
+    { key: 'why_it_matters', prefix: '■', keywords: ['핵심', '이슈'] },
+    { key: 'tomorrow_watch', prefix: '■', keywords: ['내일', '관찰'] },
+  ],
+  overseas_close: [
+    { key: 'close_index', prefix: '■', keywords: ['3대', '지수', '종가'] },
+    { key: 'mag7_close', prefix: '■', keywords: ['Mag7'] },
+    { key: 'macro_sector_close', prefix: '■', keywords: ['섹터', '금리', '달러'] },
+    { key: 'headline_review', prefix: '■', keywords: ['헤드라인', '회고'] },
+    { key: 'korea_implications', prefix: '■', keywords: ['한국', '시사점'] },
+    { key: 'korea_watch', prefix: '■', keywords: ['한국장', '관찰'] },
+  ],
 };
 const FORBIDDEN_PATTERNS = [
   { key: 'notion', re: /notion/i },
@@ -87,6 +110,17 @@ function isSectionHeadingLine(line) {
 function stripLegacySectionNumber(line) {
   const text = String(line || '');
   return isSectionHeadingLine(text) ? text.replace(LEGACY_SECTION_MARKERS_RE, '') : text;
+}
+
+function normalizeSectionSpacing(content) {
+  return String(content || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+$/g, ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(^|\n)((?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+|■\s*)[^\n]+)\n{2,}/gu, '$1$2\n')
+    .trim();
 }
 
 function normalizeSectionHeadingNumbers(content) {
@@ -118,10 +152,17 @@ function headingMatchesRule(heading, rule) {
   return (rule.keywords || []).some((keyword) => text.includes(String(keyword).toLowerCase()));
 }
 
-function resolveSectionValidation(content, category) {
+function sectionContractKey(category, slot = null) {
+  if (category === 'kis' && String(slot || '') === '1600') return 'kis_close';
+  if (category === 'overseas' && String(slot || '') === '0630') return 'overseas_close';
+  return category;
+}
+
+function resolveSectionValidation(content, category, slot = null) {
   const headings = extractSectionHeadings(content);
-  const categoryKeys = category && REQUIRED_SECTIONS_BY_CATEGORY[category]
-    ? [category]
+  const contractKey = sectionContractKey(category, slot);
+  const categoryKeys = contractKey && REQUIRED_SECTIONS_BY_CATEGORY[contractKey]
+    ? [contractKey]
     : Object.keys(REQUIRED_SECTIONS_BY_CATEGORY);
   const candidates = categoryKeys.map((key) => {
     const rules = REQUIRED_SECTIONS_BY_CATEGORY[key];
@@ -133,8 +174,9 @@ function resolveSectionValidation(content, category) {
   return candidates.sort((a, b) => a.missingSections.length - b.missingSections.length)[0];
 }
 
-function requiredSectionCountFor(category) {
-  return REQUIRED_SECTIONS_BY_CATEGORY[category]?.length || REQUIRED_SECTION_COUNT;
+function requiredSectionCountFor(category, slot = null) {
+  const contractKey = sectionContractKey(category, slot);
+  return REQUIRED_SECTIONS_BY_CATEGORY[contractKey]?.length || REQUIRED_SECTION_COUNT;
 }
 
 function validateCryptoInformationDensity(text) {
@@ -567,6 +609,21 @@ function displayOr(text, fallback) {
   return !text || text === '미확인' || text === '수집 대기' ? fallback : text;
 }
 
+function normalizeWatchPoints(items = [], fallback = []) {
+  const source = Array.isArray(items) && items.length ? items : fallback;
+  return source
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function watchPointLines(items = [], fallback = []) {
+  const rows = normalizeWatchPoints(items, fallback);
+  return rows.length
+    ? rows.map((item, index) => `${index + 1}. ${item}`).join('\n')
+    : '1. 오전 관찰 포인트 기록이 없어 지수·수급·섹터 결과만 보수적으로 대조합니다.';
+}
+
 function readerValue(text, fallback) {
   const value = String(text || '').trim();
   if (!value || /N\/A|수집 대기|데이터 없음|미확인/i.test(value)) return fallback;
@@ -608,7 +665,20 @@ function buildCryptoTitle(slot, marketData) {
   return `${mm}/${dd} ${btcSymbol} 시황 카드 | ${btcPrice}${btcChange}`;
 }
 
-function buildKisTitle(marketData) {
+function nextSlotPreview(category, slot) {
+  const key = `${category}:${slot}`;
+  return {
+    'crypto:0600': '☀️ 다음: 06:30 미국증시 마감 요약',
+    'overseas:0630': '➡️ 다음: 09:00 국내증시 장전 브리핑',
+    'kis:0900': '🪙 다음: 14:00 크립토 오후 브리핑',
+    'crypto:1400': '📊 다음: 16:00 국내증시 마감 요약',
+    'kis:1600': '🇺🇸 다음: 22:00 미국증시 장전 브리핑',
+    'overseas:2200': '🪙 다음: 22:30 크립토 심야 브리핑',
+    'crypto:2230': '🌅 다음: 내일 06:00 크립토 오전 브리핑',
+  }[key] || '다음 슬롯에서 주요 변화를 다시 점검합니다.';
+}
+
+function buildKisTitle(marketData, slot = '0900') {
   const kospi = marketData?.kospi_index ? `코스피 ${Number(marketData.kospi_index).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}` : '코스피';
   const kospiChange = marketData?.kospi_change != null
     ? ` ${marketData.kospi_change > 0 ? '+' : ''}${Number(marketData.kospi_change).toFixed(1)}%`
@@ -616,10 +686,11 @@ function buildKisTitle(marketData) {
   const now = kst.now ? kst.now() : new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
+  if (String(slot) === '1600') return `${mm}/${dd} 국내증시 마감 요약 | ${kospi}${kospiChange}`;
   return `${mm}/${dd} 국내주식 시황 카드 | ${kospi}${kospiChange}`;
 }
 
-function buildOverseasTitle(marketData) {
+function buildOverseasTitle(marketData, slot = '2200') {
   const sp500 = marketData?.sp500_index ? `S&P500 ${Number(marketData.sp500_index).toLocaleString('en-US', { maximumFractionDigits: 0 })}` : 'S&P500';
   const sp500Change = marketData?.sp500_change != null
     ? ` ${marketData.sp500_change > 0 ? '+' : ''}${Number(marketData.sp500_change).toFixed(1)}%`
@@ -627,6 +698,7 @@ function buildOverseasTitle(marketData) {
   const now = kst.now ? kst.now() : new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
+  if (String(slot) === '0630') return `${mm}/${dd} 미국증시 마감 요약 | ${sp500}${sp500Change}`;
   return `${mm}/${dd} 해외주식 시황 카드 | ${sp500}${sp500Change}`;
 }
 
@@ -637,6 +709,8 @@ function buildCryptoSystemPrompt() {
 BTC/USDT 가격·기술·리스크 정보, 암호화폐 커뮤니티 이슈, 루나팀 자동매매 정보를 바탕으로 교육적이고 균형 잡힌 일일 브리핑을 작성합니다.
 
 규칙:
+- 공통 포맷 규칙:
+- ${EDUX_FORMAT_RULES}
 - 분량은 자연스럽게 작성하고, 같은 말을 반복해 글자수를 채우지 말 것
 - Edu-X 커뮤니티에 맞게 짧고 구체적인 6블록 시황 카드로 작성할 것
 - 투자 권유 절대 금지 (교육 목적만)
@@ -657,6 +731,8 @@ function buildKisSystemPrompt() {
 KIS WebSocket 데이터와 네이버 뉴스를 바탕으로 장 시작 전 브리핑을 작성합니다.
 
 규칙:
+- 공통 포맷 규칙:
+- ${EDUX_FORMAT_RULES}
 - 분량은 자연스럽게 작성하고, 같은 말을 반복해 글자수를 채우지 말 것
 - Edu-X 커뮤니티에 맞게 짧고 구체적인 6블록 시황 카드로 작성할 것
 - 외인/기관 동향은 수치 중심으로 객관 서술
@@ -675,6 +751,8 @@ function buildOverseasSystemPrompt() {
 루나팀 해외주식 데이터와 Reuters/Bloomberg 뉴스를 바탕으로 NY 개장 전 브리핑을 작성합니다.
 
 규칙:
+- 공통 포맷 규칙:
+- ${EDUX_FORMAT_RULES}
 - 분량은 자연스럽게 작성하고, 같은 말을 반복해 글자수를 채우지 말 것
 - Edu-X 커뮤니티에 맞게 짧고 구체적인 6블록 시황 카드로 작성할 것
 - 첫 화면에 S&P500/Nasdaq, VIX/DXY, Magnificent 7 핵심 흐름이 보이게 할 것
@@ -685,6 +763,36 @@ function buildOverseasSystemPrompt() {
 - 투자 권유 절대 금지
 - <think>, 내부 추론, 작성 계획, 프롬프트 해설은 절대 출력하지 말 것
 - 마지막 면책 문구는 반드시 이 문장 그대로 포함할 것: "${PUBLIC_MARKET_BRIEF_DISCLAIMER}"
+- Notion, activity 카테고리, 좋아요/댓글 지표는 언급하지 말 것`;
+}
+
+function buildKisCloseSystemPrompt() {
+  return `당신은 Edu-X 금융교육 플랫폼의 국내증시 마감 리포터입니다.
+장 종료 이후 확정 수치와 오전 브리핑 관찰 포인트를 대조해 교육용 마감 요약을 작성합니다.
+
+규칙:
+- 공통 포맷 규칙:
+- ${EDUX_FORMAT_RULES}
+- 마감판에서는 잠정/추정 표현을 쓰지 말고 확인된 수치와 보수적 해석만 사용합니다.
+- 09:00 예고와 실제 결과를 반드시 대조하되 적중/빗나감 모두 교육적으로 설명합니다.
+- 섹션 제목은 아래 6개 "■" 블록만 사용합니다.
+- 투자 권유, 매수/매도 지시, 내부 자동매매 성과 표현은 절대 금지합니다.
+- <think>, 내부 추론, 작성 계획, 프롬프트 해설은 절대 출력하지 말 것
+- Notion, activity 카테고리, 좋아요/댓글 지표는 언급하지 말 것`;
+}
+
+function buildOverseasCloseSystemPrompt() {
+  return `당신은 Edu-X 금융교육 플랫폼의 미국증시 마감 리포터입니다.
+미국 정규장 종료 이후 지수, Mag7, 금리·달러 흐름을 한국 투자자 관점의 교육용 요약으로 정리합니다.
+
+규칙:
+- 공통 포맷 규칙:
+- ${EDUX_FORMAT_RULES}
+- 06:30 KST 고정 마감 요약이며 DST 계산 설명은 쓰지 않습니다.
+- 한국 시장 시사점과 09:00 국내 장전 브리핑으로 이어지는 관찰 포인트를 반드시 포함합니다.
+- 섹션 제목은 아래 6개 "■" 블록만 사용합니다.
+- 투자 권유, 매수/매도 지시, 내부 자동매매 성과 표현은 절대 금지합니다.
+- <think>, 내부 추론, 작성 계획, 프롬프트 해설은 절대 출력하지 말 것
 - Notion, activity 카테고리, 좋아요/댓글 지표는 언급하지 말 것`;
 }
 
@@ -821,6 +929,56 @@ ${(marketData?.events || []).slice(0, 4).map((e) => `- ${e.time || ''}: ${e.even
 N/A, 데이터 없음 같은 placeholder 없이 중복 문장 없이 자연스럽게 작성하세요.`;
 }
 
+function buildKisCloseUserPrompt(marketData, evidenceItems, contextData = {}) {
+  const now = kst.now ? kst.now() : new Date();
+  const watchPoints = watchPointLines(contextData.previousWatchPoints || marketData?.previousWatchPoints, [
+    '반도체 대형주와 외국인 수급 동조 여부',
+    '2차전지 반등 시도와 거래대금 회복 여부',
+    '원/달러 1,350원 부근에서 외국인 수급 둔화 여부',
+  ]);
+  const topIssues = buildEquityIssueRows(evidenceItems, 'kis', [
+    '반도체·HBM 이슈가 코스피 대형주와 외국인 수급의 핵심 변수로 남았습니다.',
+    '2차전지·바이오는 개별 재료와 거래대금 반응으로 선별해야 합니다.',
+    '환율과 선물 수급은 내일 장 초반 변동성의 핵심 확인 지표입니다.',
+  ]).join('\n');
+  const sectors = (marketData?.sectors || [])
+    .filter((item) => hasNumericValue(item.change_1d ?? item.change))
+    .slice(0, 6)
+    .map((item) => `- ${item.name}: ${formatPercentOrUnknown(item.change_1d ?? item.change)}`)
+    .join('\n');
+
+  return `현재 시각: ${now.toLocaleString('ko-KR')} KST (국내증시 마감 요약 16:00)
+
+마감 확정치:
+- 코스피: ${marketData?.kospi_index || '확정치 확인 중'} (${marketData?.kospi_change != null ? (marketData.kospi_change > 0 ? '+' : '') + Number(marketData.kospi_change).toFixed(1) + '%' : '등락률 확인 중'})
+- 코스닥: ${marketData?.kosdaq_index || '확정치 확인 중'} (${marketData?.kosdaq_change != null ? (marketData.kosdaq_change > 0 ? '+' : '') + Number(marketData.kosdaq_change).toFixed(1) + '%' : '등락률 확인 중'})
+- 원/달러: ${marketData?.usd_krw ? `${marketData.usd_krw}원` : '확정치 확인 중'}
+
+수급:
+- 외국인 순매수: ${formatKrwNetBuy(marketData?.foreign_net_buy)}
+- 기관 순매수: ${formatKrwNetBuy(marketData?.institution_net_buy)}
+
+섹터 후보:
+${sectors || '- 반도체/2차전지/바이오/금융 등 주요 섹터의 등락률을 확정치 중심으로 정리'}
+
+09:00 관찰 포인트:
+${watchPoints}
+
+이슈 후보:
+${topIssues}
+
+아래 6개 블록 구조로 국내증시 마감 요약을 작성해주세요:
+
+■ 마감 확정치
+■ 수급 (확정)
+■ 섹터 승자/패자
+■ 09:00 예고 vs 실제
+■ 오늘의 핵심 이슈
+■ 내일 관찰 포인트
+
+각 블록은 짧고 구체적으로 작성하고, "💡 왜 중요한가:" 1줄과 "${nextSlotPreview('kis', '1600')}" 예고를 포함하세요.`;
+}
+
 function buildOverseasUserPrompt(marketData, evidenceItems) {
   const now = kst.now ? kst.now() : new Date();
 
@@ -864,13 +1022,72 @@ ${(marketData?.earnings || []).slice(0, 4).map((e) => `- ${e.date} ${e.symbol}: 
 N/A, 데이터 없음 같은 placeholder 없이 중복 문장 없이 자연스럽게 작성하세요.`;
 }
 
+function buildOverseasCloseUserPrompt(marketData, evidenceItems, contextData = {}) {
+  const now = kst.now ? kst.now() : new Date();
+  const watchPoints = watchPointLines(contextData.previousWatchPoints || marketData?.previousWatchPoints, [
+    'Mag7 동조와 Nasdaq 상대 강도',
+    '미 10년물/DXY 안정 여부',
+    '한국 반도체·성장주로 이어질 수급 온도',
+  ]);
+  const topIssues = buildEquityIssueRows(evidenceItems, 'overseas', [
+    'AI 인프라·반도체 대형주 이슈가 Nasdaq과 Magnificent 7 방향성 변수로 남았습니다.',
+    '금리·달러 흐름은 성장주 밸류에이션 부담을 판단하는 보조 지표입니다.',
+    '실적·가이던스 이벤트는 한국장 관련 섹터 기대에도 영향을 줄 수 있습니다.',
+  ]).join('\n');
+  const mag7 = (marketData?.mag7 || [])
+    .slice(0, 7)
+    .map((s) => `- ${s.symbol}: ${s.price ? '$' + Number(s.price).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '가격 확인 중'} (${s.change_1d != null ? (s.change_1d > 0 ? '+' : '') + Number(s.change_1d).toFixed(1) + '%' : '등락률 확인 중'})`)
+    .join('\n');
+  const sectors = (marketData?.top_etfs || marketData?.sector_performance || [])
+    .slice(0, 5)
+    .map((s) => `- ${s.symbol || s.name}: ${s.change_1d != null ? formatPercentOrUnknown(s.change_1d) : (s.price ? '$' + Number(s.price).toLocaleString('en-US', { maximumFractionDigits: 2 }) : '흐름 확인')}`)
+    .join('\n');
+
+  return `현재 시각: ${now.toLocaleString('ko-KR')} KST (미국증시 마감 요약 06:30)
+
+3대 지수:
+- S&P500: ${marketData?.sp500_index || '종가 확인 중'} (${marketData?.sp500_change != null ? (marketData.sp500_change > 0 ? '+' : '') + Number(marketData.sp500_change).toFixed(1) + '%' : '등락률 확인 중'})
+- Nasdaq: ${marketData?.nasdaq_index || '종가 확인 중'} (${marketData?.nasdaq_change != null ? (marketData.nasdaq_change > 0 ? '+' : '') + Number(marketData.nasdaq_change).toFixed(1) + '%' : '등락률 확인 중'})
+- Dow: ${marketData?.dow_index || '종가 확인 중'} (${marketData?.dow_change != null ? (marketData.dow_change > 0 ? '+' : '') + Number(marketData.dow_change).toFixed(1) + '%' : '등락률 확인 중'})
+
+Mag7:
+${mag7 || '- NVDA/MSFT/AAPL/AMZN/META/GOOGL/TSLA 종가 등락률 확인'}
+
+섹터·금리·달러:
+- DXY: ${marketData?.dxy || '확인 중'}
+- VIX: ${marketData?.vix || '확인 중'}
+- 미 10년물: ${marketData?.us10y != null ? `${marketData.us10y}%` : '확인 중'}
+${sectors || '- QQQ/XLK/XLE 등 주요 ETF 흐름 확인'}
+
+22:00 관찰 포인트:
+${watchPoints}
+
+헤드라인 후보:
+${topIssues}
+
+아래 6개 블록 구조로 미국증시 마감 요약을 작성해주세요:
+
+■ 3대 지수 종가
+■ Mag7 마감
+■ 섹터·금리·달러
+■ 헤드라인 회고
+■ 한국 시장 시사점
+■ 오늘 한국장 관찰 포인트
+
+각 블록은 짧고 구체적으로 작성하고, "💡 왜 중요한가:" 1줄과 "${nextSlotPreview('overseas', '0630')}" 예고를 포함하세요.`;
+}
+
 // ─── 품질 게이트/폴백 ─────────────────────────────────────────────
 
-function validateContentQuality(content, category = null) {
+function validateContentQuality(content, category = null, slot = null) {
   const text = String(content || '');
-  const sectionValidation = resolveSectionValidation(text, category);
+  const sectionValidation = resolveSectionValidation(text, category, slot);
   const sectionCount = sectionValidation.headings.length;
-  const requiredSectionCount = requiredSectionCountFor(sectionValidation.category);
+  const requiredSectionCount = requiredSectionCountFor(sectionValidation.category, slot);
+  const exactSectionCountRequired = ['kis_close', 'overseas_close'].includes(sectionValidation.category);
+  const sectionCountOk = exactSectionCountRequired
+    ? sectionCount === requiredSectionCount
+    : sectionCount >= requiredSectionCount;
   const infoIssues = sectionValidation.category === 'crypto' ? validateCryptoInformationDensity(text) : [];
   const forbidden = [
     ...FORBIDDEN_PATTERNS.filter((item) => item.re.test(text)).map((item) => item.key),
@@ -878,12 +1095,12 @@ function validateContentQuality(content, category = null) {
     ...(hasPublicMarketBriefDisclaimer(text) ? [] : ['required_disclaimer_missing']),
   ];
   return {
-    ok: text.length >= TARGET_MIN_LEN && sectionCount >= requiredSectionCount && sectionValidation.missingSections.length === 0 && infoIssues.length === 0 && forbidden.length === 0,
+    ok: text.length >= TARGET_MIN_LEN && sectionCountOk && sectionValidation.missingSections.length === 0 && infoIssues.length === 0 && forbidden.length === 0,
     contentLen: text.length,
     sectionCount,
     category: sectionValidation.category,
     missingSections: [
-      ...(sectionCount >= requiredSectionCount ? [] : [`section_count:${sectionCount}/${requiredSectionCount}`]),
+      ...(sectionCountOk ? [] : [exactSectionCountRequired ? `section_count_exact:${sectionCount}/${requiredSectionCount}` : `section_count:${sectionCount}/${requiredSectionCount}`]),
       ...sectionValidation.missingSections,
     ],
     infoIssues,
@@ -992,6 +1209,7 @@ function buildCryptoFallbackContent(slot, marketData = {}, evidenceItems = {}, t
 
 🌐 커뮤니티·뉴스 이슈 Top 3
 ${issueRows.join('\n')}
+💡 왜 중요한가: 이슈는 가격을 단정하는 근거가 아니라 거래량과 변동성이 어디서 커지는지 확인하는 지도입니다.
 
 🤖 인공지능 추천안
 - 우선 관찰: ${btcSymbol}가 ${support} 위에서 버티고 ${resistance}에 재도전하는지 먼저 봅니다.
@@ -1002,6 +1220,7 @@ ${issueRows.join('\n')}
 ⚠️ 오늘 체크포인트 + 면책
 ${scheduleRows || `- ${btcSymbol} ${support} 지지 유지 여부\n- ${btcSymbol} ${resistance} 회복 여부`}
 - 루나팀 자동화는 내부 개발/테스트 중인 보조 수집 시스템이며, 공개 글의 판단 근거는 ${btcSymbol} 가격·기술 지표·커뮤니티 이슈입니다.
+- ${nextSlotPreview('crypto', slot)}
 - 본 글은 Edu-X 커뮤니티용 자동 작성 교육 콘텐츠이며 투자 권유가 아닙니다. 실제 투자 판단과 책임은 독자에게 있습니다.
 #EduX #BTC #Bitcoin #BTC_USDT #시장브리핑`;
 
@@ -1064,6 +1283,7 @@ ${sectorWatch || '1. 반도체·HBM: 코스피 대형주와 외국인 수급 동
 
 🌐 커뮤니티·뉴스 이슈 Top 3
 ${issueRows.join('\n')}
+💡 왜 중요한가: 공개 이슈가 실제 지수 방향으로 이어지려면 외국인·기관 수급과 주도 섹터 거래대금이 함께 확인되어야 합니다.
 이슈는 방향을 단정하는 재료가 아니라 개장 후 어느 섹터에 돈이 붙는지 확인하기 위한 관찰 목록입니다.
 
 🤖 인공지능 추천안
@@ -1075,8 +1295,67 @@ ${issueRows.join('\n')}
 ⚠️ 오늘 체크포인트 + 면책
 ${events || '- 09:00 KST: 시초가 갭과 장초반 거래대금 확인\n- 09:30 KST: 외국인·기관 순매수 방향 확인'}
 - 루나팀 자동화는 국내주식 데이터 수집과 브리핑 보조를 위한 개발·테스트 중인 내부 시스템입니다.
+- ${nextSlotPreview('kis', '0900')}
 - 본 글은 Edu-X 커뮤니티용 자동 작성 교육 콘텐츠이며 투자 권유가 아닙니다. 실제 투자 판단과 책임은 독자에게 있습니다.
 #EduX #국내주식 #코스피 #코스닥 #장전시황`;
+}
+
+function buildKisCloseFallbackContent(marketData = {}, evidenceItems = {}, contextData = {}) {
+  const kospi = displayOr(formatPointValue(marketData?.kospi_index), '코스피 확정치 확인 중');
+  const kosdaq = displayOr(formatPointValue(marketData?.kosdaq_index), '코스닥 확정치 확인 중');
+  const kospiChange = displayOr(formatPercentOrUnknown(marketData?.kospi_change), '등락률 확인 중');
+  const kosdaqChange = displayOr(formatPercentOrUnknown(marketData?.kosdaq_change), '등락률 확인 중');
+  const usdKrw = hasValue(marketData?.usd_krw) ? `${Number(marketData.usd_krw).toLocaleString('ko-KR')}원` : '환율 확정치 확인 중';
+  const foreignFlow = displayOr(formatKrwNetBuy(marketData?.foreign_net_buy), '외국인 수급 확정치 확인 중');
+  const institutionFlow = displayOr(formatKrwNetBuy(marketData?.institution_net_buy), '기관 수급 확정치 확인 중');
+  const sectors = (marketData?.sectors || [])
+    .filter((item) => hasNumericValue(item.change_1d ?? item.change))
+    .slice()
+    .sort((a, b) => Number(b.change_1d ?? b.change ?? 0) - Number(a.change_1d ?? a.change ?? 0));
+  const winners = sectors.slice(0, 3).map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`).join(' · ') || '반도체 · 금융 · 바이오 흐름 확인';
+  const losers = sectors.slice(-3).reverse().map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`).join(' · ') || '2차전지 · 게임 등 약세 섹터 확인';
+  const watchPoints = normalizeWatchPoints(contextData.previousWatchPoints || marketData?.previousWatchPoints, [
+    '반도체 대형주와 외국인 수급 동조 여부',
+    '2차전지 반등 시도와 거래대금 회복 여부',
+    '원/달러 1,350원 부근에서 외국인 수급 둔화 여부',
+  ]);
+  const issueRows = buildEquityIssueRows(evidenceItems, 'kis', [
+    '반도체·HBM 이슈가 코스피 대형주와 외국인 수급의 핵심 변수로 남았습니다.',
+    '2차전지·바이오는 개별 재료와 거래대금 반응으로 선별해야 합니다.',
+    '환율과 선물 수급은 내일 장 초반 변동성의 핵심 확인 지표입니다.',
+  ]);
+  const primaryIssue = issueRows[0]?.replace(/^\d+\.\s*/, '') || '반도체와 환율 흐름이 내일 국내장 핵심 변수입니다.';
+
+  return `■ 마감 확정치
+코스피 ${kospi} (${kospiChange})
+코스닥 ${kosdaq} (${kosdaqChange})
+원/달러 ${usdKrw}
+
+■ 수급 (확정)
+외국인 ${foreignFlow}
+기관 ${institutionFlow}
+→ 수급이 지수 방향과 같은지, 아니면 섹터 순환매만 만든 것인지가 오늘 해석의 핵심입니다.
+
+■ 섹터 승자/패자
+🔼 ${winners}
+🔽 ${losers}
+
+■ 09:00 예고 vs 실제
+- 확인: "${watchPoints[0] || '오전 관찰 포인트'}" → 마감 수급과 섹터 등락으로 재점검
+${watchPoints[1] ? `- 주의: "${watchPoints[1]}" → 거래대금과 종가 위치로 보수적 확인` : '- 주의: 추가 오전 포인트는 마감 확정치로 재검증'}
+
+■ 오늘의 핵심 이슈
+${primaryIssue}
+💡 왜 중요한가: 오늘 움직임의 원인을 내일 장 초반 수급 지속성으로 검증할 수 있기 때문입니다.
+
+■ 내일 관찰 포인트
+- 외국인 순매수 지속 여부
+- 주도 섹터 거래대금 유지
+- 환율과 미국 선물의 장전 방향
+
+${nextSlotPreview('kis', '1600')}
+- ${PUBLIC_MARKET_BRIEF_DISCLAIMER}
+#EduX #국내주식 #코스피 #코스닥 #마감요약`;
 }
 
 function buildOverseasFallbackContent(marketData = {}, evidenceItems = {}) {
@@ -1136,6 +1415,7 @@ ${etfs || '- QQQ: 기술주 위험 선호 확인\n- XLK: 대형 기술주 동조
 
 🌐 커뮤니티·뉴스 이슈 Top 3
 ${issueRows.join('\n')}
+💡 왜 중요한가: 해외 헤드라인은 지수보다 Mag7·섹터 ETF·금리 반응이 함께 움직일 때 시장 영향력이 커집니다.
 해외 이슈는 지수와 섹터에 어떤 경로로 반영되는지 확인해야 합니다. 헤드라인만으로 방향을 단정하지 않습니다.
 
 🤖 인공지능 추천안
@@ -1147,15 +1427,92 @@ ${issueRows.join('\n')}
 ⚠️ 오늘 체크포인트 + 면책
 ${earnings || '- NY 개장 전 선물 방향 확인\n- 정규장 초반 Magnificent 7 동조 여부 확인'}
 - 루나팀 자동화는 해외주식 데이터 수집과 브리핑 보조를 위한 개발·테스트 중인 내부 시스템입니다.
+- ${nextSlotPreview('overseas', '2200')}
 - 본 글은 Edu-X 커뮤니티용 자동 작성 교육 콘텐츠이며 투자 권유가 아닙니다. 실제 투자 판단과 책임은 독자에게 있습니다.
 #EduX #해외주식 #미국증시 #SP500 #Nasdaq`;
 }
 
+function buildOverseasCloseFallbackContent(marketData = {}, evidenceItems = {}, contextData = {}) {
+  const sp500 = displayOr(formatPointValue(marketData?.sp500_index), 'S&P500 종가 확인 중');
+  const nasdaq = displayOr(formatPointValue(marketData?.nasdaq_index), 'Nasdaq 종가 확인 중');
+  const dow = displayOr(formatPointValue(marketData?.dow_index), 'Dow 종가 확인 중');
+  const sp500Change = displayOr(formatPercentOrUnknown(marketData?.sp500_change), '등락률 확인 중');
+  const nasdaqChange = displayOr(formatPercentOrUnknown(marketData?.nasdaq_change), '등락률 확인 중');
+  const dowChange = displayOr(formatPercentOrUnknown(marketData?.dow_change), '등락률 확인 중');
+  const vix = hasValue(marketData?.vix) ? String(marketData.vix) : '확인 중';
+  const dxy = hasValue(marketData?.dxy) ? String(marketData.dxy) : '확인 중';
+  const us10y = hasValue(marketData?.us10y) ? `${marketData.us10y}%` : '확인 중';
+  const mag7Rows = (marketData?.mag7 || [])
+    .slice(0, 7)
+    .map((item) => `${item.symbol} ${displayOr(formatPercentOrUnknown(item.change_1d), '등락률 확인')}`)
+    .join(' · ') || 'NVDA · MSFT · AAPL · AMZN · META · GOOGL · TSLA 흐름 확인';
+  const sectors = (marketData?.top_etfs || marketData?.sector_performance || [])
+    .slice(0, 4)
+    .map((item) => `${item.symbol || item.name} ${item.change_1d != null ? formatPercentOrUnknown(item.change_1d) : '흐름 확인'}`)
+    .join(' · ') || 'QQQ · XLK · XLE 섹터 ETF 흐름 확인';
+  const watchPoints = normalizeWatchPoints(contextData.previousWatchPoints || marketData?.previousWatchPoints, [
+    'Mag7 동조와 Nasdaq 상대 강도',
+    '미 10년물/DXY 안정 여부',
+    '한국 반도체·성장주로 이어질 수급 온도',
+  ]);
+  const issueRows = buildEquityIssueRows(evidenceItems, 'overseas', [
+    'AI 인프라·반도체 대형주 이슈가 Nasdaq과 Magnificent 7 방향성 변수로 남았습니다.',
+    '금리·달러 흐름은 성장주 밸류에이션 부담을 판단하는 보조 지표입니다.',
+    '실적·가이던스 이벤트는 한국장 관련 섹터 기대에도 영향을 줄 수 있습니다.',
+  ]);
+  const primaryIssue = issueRows[0]?.replace(/^\d+\.\s*/, '') || 'Mag7과 금리 흐름이 한국장 성장주 체감에 영향을 줄 수 있습니다.';
+
+  return `■ 3대 지수 종가
+S&P500 ${sp500} (${sp500Change})
+Nasdaq ${nasdaq} (${nasdaqChange})
+Dow ${dow} (${dowChange})
+
+■ Mag7 마감
+${mag7Rows}
+→ 지수 방향보다 대형 기술주 동조 여부가 오늘 장세의 체감 온도를 설명합니다.
+
+■ 섹터·금리·달러
+섹터/ETF: ${sectors}
+미 10년물 ${us10y} · DXY ${dxy} · VIX ${vix}
+
+■ 헤드라인 회고
+${primaryIssue}
+💡 왜 중요한가: 미국 장 마감 원인이 2시간 30분 뒤 국내 장전 수급 기대에 바로 연결되기 때문입니다.
+
+■ 한국 시장 시사점
+${watchPoints[0] || 'Mag7 동조와 Nasdaq 상대 강도'}를 국내 반도체·성장주 장전 기대와 연결해 봅니다.
+금리·달러가 안정되면 성장주 부담은 낮아지고, 반대로 DXY·금리 상승은 환율과 외국인 수급 부담으로 이어질 수 있습니다.
+
+■ 오늘 한국장 관찰 포인트
+- 반도체 대형주 시초가 갭과 외국인 수급
+- 환율과 미국 선물 방향
+- 전일 약세 섹터의 반등 지속성
+
+${nextSlotPreview('overseas', '0630')}
+- ${PUBLIC_MARKET_BRIEF_DISCLAIMER}
+#EduX #해외주식 #미국증시 #마감요약 #한국장`;
+}
+
 function buildFallbackContent(category, slot, marketData = {}, evidenceItems = {}, technicalData = {}) {
   if (category === 'crypto') return buildCryptoFallbackContent(slot, marketData, evidenceItems, technicalData);
+  if (category === 'kis' && String(slot) === '1600') return buildKisCloseFallbackContent(marketData, evidenceItems, technicalData);
   if (category === 'kis') return buildKisFallbackContent(marketData, evidenceItems);
+  if (category === 'overseas' && String(slot) === '0630') return buildOverseasCloseFallbackContent(marketData, evidenceItems, technicalData);
   if (category === 'overseas') return buildOverseasFallbackContent(marketData, evidenceItems);
   return buildCryptoFallbackContent(slot, marketData, evidenceItems, technicalData);
+}
+
+function buildRepairPrompt(category, slot, userPrompt) {
+  if (category === 'crypto') {
+    return `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 순번 없이 이모지로 시작하는 6개 블록을 모두 포함하고, BTC/USDT 현재가·지지·저항·상승/하락 시나리오·무효화 조건·커뮤니티/뉴스 이슈·인공지능 추천안을 구체적으로 작성하세요. N/A/수집 대기/데이터 없음과 Notion/activity/좋아요/댓글 언급은 제외하세요.`;
+  }
+  if (category === 'kis' && String(slot) === '1600') {
+    return `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 아래 6개 ■ 섹션 제목만 사용하세요: ■ 마감 확정치, ■ 수급 (확정), ■ 섹터 승자/패자, ■ 09:00 예고 vs 실제, ■ 오늘의 핵심 이슈, ■ 내일 관찰 포인트. 이모지 섹션 제목과 인공지능 추천안 섹션은 넣지 말고, "💡 왜 중요한가:" 1줄과 다음 슬롯 예고, 공통 면책 문구를 포함하세요.`;
+  }
+  if (category === 'overseas' && String(slot) === '0630') {
+    return `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 아래 6개 ■ 섹션 제목만 사용하세요: ■ 3대 지수 종가, ■ Mag7 마감, ■ 섹터·금리·달러, ■ 헤드라인 회고, ■ 한국 시장 시사점, ■ 오늘 한국장 관찰 포인트. 이모지 섹션 제목과 인공지능 추천안 섹션은 넣지 말고, "💡 왜 중요한가:" 1줄과 다음 슬롯 예고, 공통 면책 문구를 포함하세요.`;
+  }
+  return `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 순번 없이 이모지로 시작하는 6개 블록을 모두 포함하고, 중복 문장 없이 지수·수급·섹터·커뮤니티/뉴스 이슈·인공지능 추천안을 구체적으로 작성하며, Notion/activity/좋아요/댓글 언급은 제외하세요.`;
 }
 
 async function callFormatterLlm({ category, systemPrompt, userPrompt, options = {} }) {
@@ -1195,27 +1552,35 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
     systemPrompt = buildCryptoSystemPrompt();
     userPrompt = buildCryptoUserPrompt(slot, marketData, evidenceItems, technicalData);
     title = buildCryptoTitle(slot, marketData);
+  } else if (category === 'kis' && String(slot) === '1600') {
+    systemPrompt = buildKisCloseSystemPrompt();
+    userPrompt = buildKisCloseUserPrompt(marketData, evidenceItems, technicalData);
+    title = buildKisTitle(marketData, slot);
   } else if (category === 'kis') {
     systemPrompt = buildKisSystemPrompt();
     userPrompt = buildKisUserPrompt(marketData, evidenceItems);
-    title = buildKisTitle(marketData);
+    title = buildKisTitle(marketData, slot);
+  } else if (category === 'overseas' && String(slot) === '0630') {
+    systemPrompt = buildOverseasCloseSystemPrompt();
+    userPrompt = buildOverseasCloseUserPrompt(marketData, evidenceItems, technicalData);
+    title = buildOverseasTitle(marketData, slot);
   } else if (category === 'overseas') {
     systemPrompt = buildOverseasSystemPrompt();
     userPrompt = buildOverseasUserPrompt(marketData, evidenceItems);
-    title = buildOverseasTitle(marketData);
+    title = buildOverseasTitle(marketData, slot);
   } else {
     console.error('[edu-x/formatter] 알 수 없는 category:', category);
     return null;
   }
 
   if (options.fixture || process.env.EDUX_FORMATTER_FIXTURE === 'true') {
-    const content = normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData));
+    const content = normalizeSectionSpacing(normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData)));
     return { title, content, source: 'fixture_fallback' };
   }
 
   const llmConfig = resolveFormatterLlmConfig(category, options);
   if (llmConfig.mode !== 'llm') {
-    const content = normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData));
+    const content = normalizeSectionSpacing(normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData)));
     return { title, content, source: `${category}_deterministic`, formatterMode: llmConfig.mode };
   }
 
@@ -1229,9 +1594,7 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
     try {
       const prompt = attempt === 0
         ? userPrompt
-        : category === 'crypto'
-          ? `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 순번 없이 이모지로 시작하는 6개 블록을 모두 포함하고, BTC/USDT 현재가·지지·저항·상승/하락 시나리오·무효화 조건·커뮤니티/뉴스 이슈·인공지능 추천안을 구체적으로 작성하세요. N/A/수집 대기/데이터 없음과 Notion/activity/좋아요/댓글 언급은 제외하세요.`
-          : `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 순번 없이 이모지로 시작하는 6개 블록을 모두 포함하고, 중복 문장 없이 지수·수급·섹터·커뮤니티/뉴스 이슈·인공지능 추천안을 구체적으로 작성하며, Notion/activity/좋아요/댓글 언급은 제외하세요.`;
+        : buildRepairPrompt(category, slot, userPrompt);
       llmResp = await callFormatterLlm({ category, systemPrompt, userPrompt: prompt, options });
       lastLlmResponse = llmResp;
     } catch (err) {
@@ -1246,17 +1609,17 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
       continue;
     }
 
-    content = normalizeSectionHeadingNumbers(llmResp.text);
+    content = normalizeSectionSpacing(normalizeSectionHeadingNumbers(llmResp.text));
     if (content.length > MAX_CONTENT_LEN) content = content.slice(0, MAX_CONTENT_LEN);
-    quality = validateContentQuality(content, category);
+    quality = validateContentQuality(content, category, slot);
     if (quality.ok) break;
     console.log(`[edu-x/formatter] 품질 미달 recoverable attempt=${attempt + 1}: ${JSON.stringify(quality)}`);
   }
 
   if (!content || !quality?.ok) {
     source = 'fallback_after_quality_gate';
-    content = normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData));
-    quality = validateContentQuality(content, category);
+    content = normalizeSectionSpacing(normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData)));
+    quality = validateContentQuality(content, category, slot);
   }
 
   return {
@@ -1290,4 +1653,8 @@ module.exports = {
   resolveFormatterMode,
   resolveFormatterLlmConfig,
   resolveFormatterPolicyOverride,
+  normalizeSectionSpacing,
+  nextSlotPreview,
+  buildKisCloseSystemPrompt,
+  buildOverseasCloseSystemPrompt,
 };

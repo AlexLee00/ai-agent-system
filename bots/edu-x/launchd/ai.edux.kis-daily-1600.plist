@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.edux.kis-daily-1600</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/edu-x/scripts/runtime-edux-kis-daily.ts</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>EDUX_DRY_RUN</key>
+    <string>true</string>
+    <key>EDUX_FORCE_SLOT</key>
+    <string>1600</string>
+    <key>EDUX_FORMATTER_ABSTRACT_MODEL</key>
+    <string>anthropic_opus</string>
+    <key>EDUX_FORMATTER_MODE</key>
+    <string>llm</string>
+    <key>EDUX_FORMATTER_SELECTOR_KEY</key>
+    <string>investment.reporter</string>
+    <key>EDUX_IMAGE_ATTACHMENTS_ENABLED</key>
+    <string>false</string>
+    <key>EDUX_LIVE_PUBLISH_APPROVED</key>
+    <string>false</string>
+    <key>EDUX_PROMOTION_GATE_PASSED</key>
+    <string>false</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>16</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>TimeOut</key>
+  <integer>600</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/edu-x/kis-daily-1600.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/edu-x/kis-daily-1600.err.log</string>
+</dict>
+</plist>

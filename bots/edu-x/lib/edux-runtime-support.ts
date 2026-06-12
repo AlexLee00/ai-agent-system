@@ -21,7 +21,7 @@ const MIN_CONTENT_LEN = 0;
 const MIN_IMAGES_PER_POST = 0;
 const SECTION_BLOCK_SPACER_HTML = '<p>&nbsp;</p>';
 const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
-const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+/u;
+const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+|■\s*)/u;
 const REQUIRED_SECTION_COUNT = 10;
 const REQUIRED_SECTIONS_BY_CATEGORY = {
   crypto: [
@@ -47,6 +47,22 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'community_news', prefix: '🌐', keywords: ['커뮤니티', '뉴스', '이슈'] },
     { key: 'ai_recommendation', prefix: '🤖', keywords: ['인공지능', '추천'] },
     { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
+  ],
+  kis_close: [
+    { key: 'close_index', prefix: '■', keywords: ['마감', '확정치'] },
+    { key: 'flow_close', prefix: '■', keywords: ['수급', '확정'] },
+    { key: 'sector_winners_losers', prefix: '■', keywords: ['섹터', '승자', '패자'] },
+    { key: 'plan_vs_actual', prefix: '■', keywords: ['09:00', '예고', '실제'] },
+    { key: 'why_it_matters', prefix: '■', keywords: ['핵심', '이슈'] },
+    { key: 'tomorrow_watch', prefix: '■', keywords: ['내일', '관찰'] },
+  ],
+  overseas_close: [
+    { key: 'close_index', prefix: '■', keywords: ['3대', '지수', '종가'] },
+    { key: 'mag7_close', prefix: '■', keywords: ['Mag7'] },
+    { key: 'macro_sector_close', prefix: '■', keywords: ['섹터', '금리', '달러'] },
+    { key: 'headline_review', prefix: '■', keywords: ['헤드라인', '회고'] },
+    { key: 'korea_implications', prefix: '■', keywords: ['한국', '시사점'] },
+    { key: 'korea_watch', prefix: '■', keywords: ['한국장', '관찰'] },
   ],
 };
 const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|N\/A|다음 슬롯에서 재확인|차트에서 재확인|미확인/i;
@@ -81,10 +97,17 @@ function headingMatchesRule(heading, rule) {
   return (rule.keywords || []).some((keyword) => text.includes(String(keyword).toLowerCase()));
 }
 
-function resolveSectionValidation(content, category) {
+function sectionContractKey(category, slot = null) {
+  if (category === 'kis' && String(slot || '') === '1600') return 'kis_close';
+  if (category === 'overseas' && String(slot || '') === '0630') return 'overseas_close';
+  return category;
+}
+
+function resolveSectionValidation(content, category, slot = null) {
   const headings = extractSectionHeadings(content);
-  const categoryKeys = category && REQUIRED_SECTIONS_BY_CATEGORY[category]
-    ? [category]
+  const contractKey = sectionContractKey(category, slot);
+  const categoryKeys = contractKey && REQUIRED_SECTIONS_BY_CATEGORY[contractKey]
+    ? [contractKey]
     : Object.keys(REQUIRED_SECTIONS_BY_CATEGORY);
   const candidates = categoryKeys.map((key) => {
     const rules = REQUIRED_SECTIONS_BY_CATEGORY[key];
@@ -96,8 +119,9 @@ function resolveSectionValidation(content, category) {
   return candidates.sort((a, b) => a.missingSections.length - b.missingSections.length)[0];
 }
 
-function requiredSectionCountFor(category) {
-  return REQUIRED_SECTIONS_BY_CATEGORY[category]?.length || REQUIRED_SECTION_COUNT;
+function requiredSectionCountFor(category, slot = null) {
+  const contractKey = sectionContractKey(category, slot);
+  return REQUIRED_SECTIONS_BY_CATEGORY[contractKey]?.length || REQUIRED_SECTION_COUNT;
 }
 
 function validateCryptoInformationDensity(text) {
@@ -338,11 +362,15 @@ async function insertPublishLog(pgModule, record) {
   }
 }
 
-function validatePostQuality({ content, imagePaths = [], imageUrls = [], category = null }) {
+function validatePostQuality({ content, imagePaths = [], imageUrls = [], category = null, slot = null }) {
   const text = String(content || '');
-  const sectionValidation = resolveSectionValidation(text, category);
+  const sectionValidation = resolveSectionValidation(text, category, slot);
   const sectionCount = sectionValidation.headings.length;
-  const requiredSectionCount = requiredSectionCountFor(sectionValidation.category);
+  const requiredSectionCount = requiredSectionCountFor(sectionValidation.category, slot);
+  const exactSectionCountRequired = ['kis_close', 'overseas_close'].includes(sectionValidation.category);
+  const sectionCountOk = exactSectionCountRequired
+    ? sectionCount === requiredSectionCount
+    : sectionCount >= requiredSectionCount;
   const infoIssues = sectionValidation.category === 'crypto' ? validateCryptoInformationDensity(text) : [];
   const forbidden = [];
   if (/\bactivity\b/i.test(text) || /카테고리\s*:\s*activity/i.test(text)) forbidden.push('activity');
@@ -352,13 +380,13 @@ function validatePostQuality({ content, imagePaths = [], imageUrls = [], categor
   if (!hasPublicMarketBriefDisclaimer(text)) forbidden.push('required_disclaimer_missing');
   const imageCount = Math.max(imagePaths.length, imageUrls.length);
   return {
-    ok: text.length >= MIN_CONTENT_LEN && sectionCount >= requiredSectionCount && sectionValidation.missingSections.length === 0 && infoIssues.length === 0 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
+    ok: text.length >= MIN_CONTENT_LEN && sectionCountOk && sectionValidation.missingSections.length === 0 && infoIssues.length === 0 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
     contentLen: text.length,
     sectionCount,
     imageCount,
     category: sectionValidation.category,
     missingSections: [
-      ...(sectionCount >= requiredSectionCount ? [] : [`section_count:${sectionCount}/${requiredSectionCount}`]),
+      ...(sectionCountOk ? [] : [exactSectionCountRequired ? `section_count_exact:${sectionCount}/${requiredSectionCount}` : `section_count:${sectionCount}/${requiredSectionCount}`]),
       ...sectionValidation.missingSections,
     ],
     infoIssues,

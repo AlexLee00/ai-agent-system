@@ -5,7 +5,7 @@
 /**
  * edux-promotion-gate.ts — Dry-run → 실 발행 승격 게이트
  *
- * 검증 항목 (5/5 모두 통과해야 실 발행 가능):
+ * 검증 항목 (7/7 모두 통과해야 실 발행 가능):
  *   ① 7일 검증 실행 누적 건수 (35건+)
  *      - dry_run과 실제 API 성공([TEST] one-off 포함)을 모두 인정한다.
  *      - 단, fixture / 본문 없음 / 이미지 첨부 / post_id 없는 success는 제외한다.
@@ -47,6 +47,19 @@ try {
 } catch { launchdDoctor = null; }
 
 const GATE_REPORT_PATH = PROMOTION_GATE_REPORT;
+const EDUX_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'edu-x');
+const LAUNCHD_DIR = path.join(EDUX_ROOT, 'launchd');
+const EDUX_PACKAGE_JSON = path.join(EDUX_ROOT, 'package.json');
+const EDUX_MIGRATION_MARKET_CLOSE = path.join(EDUX_ROOT, 'migrations', '20260613000001_edux_market_close_slots.sql');
+
+function readText(filePath) {
+  try { return fs.readFileSync(filePath, 'utf8'); } catch { return ''; }
+}
+
+function fileIncludes(filePath, markers) {
+  const text = readText(filePath);
+  return markers.every((marker) => text.includes(marker));
+}
 
 function launchdSummary() {
   if (!launchdDoctor?.buildReport) return { ok: false, reason: 'launchd_doctor_unavailable' };
@@ -190,6 +203,82 @@ async function check5_NoRateLimit() {
   }
 }
 
+async function check6_MarketCloseContract() {
+  const kisRuntime = path.join(EDUX_ROOT, 'scripts', 'runtime-edux-kis-daily.ts');
+  const overseasRuntime = path.join(EDUX_ROOT, 'scripts', 'runtime-edux-overseas-daily.ts');
+  const formatter = path.join(EDUX_ROOT, 'lib', 'edux-formatter.ts');
+  const packageJson = readText(EDUX_PACKAGE_JSON);
+  const requiredFiles = [
+    path.join(LAUNCHD_DIR, 'ai.edux.kis-daily-1600.plist'),
+    path.join(LAUNCHD_DIR, 'ai.edux.overseas-daily-0630.plist'),
+    EDUX_MIGRATION_MARKET_CLOSE,
+  ];
+  const missing = requiredFiles.filter((filePath) => !fs.existsSync(filePath)).map((filePath) => path.relative(EDUX_ROOT, filePath));
+  const issues = [
+    ...missing.map((name) => `missing:${name}`),
+    fileIncludes(kisRuntime, ['1600', 'EDUX_FORCE_SLOT', 'skipped_holiday']) ? null : 'kis_runtime_slot_support_missing',
+    fileIncludes(overseasRuntime, ['0630', 'EDUX_FORCE_SLOT', 'skipped_holiday']) ? null : 'overseas_runtime_slot_support_missing',
+    fileIncludes(formatter, [
+      'buildKisCloseSystemPrompt',
+      'buildOverseasCloseSystemPrompt',
+      'buildKisCloseFallbackContent',
+      'buildOverseasCloseFallbackContent',
+      'normalizeSectionSpacing',
+    ]) ? null : 'formatter_close_contract_missing',
+    packageJson.includes('"smoke:market-close"') ? null : 'smoke_market_close_script_missing',
+  ].filter(Boolean);
+  return {
+    ok: issues.length === 0,
+    reason: issues.length ? `마감 슬롯 contract 미달: ${issues.join(', ')}` : '마감 슬롯 contract 준비 완료',
+    value: issues.length,
+    required: 0,
+  };
+}
+
+async function check7_MarketCloseEvidence() {
+  if (!pgPool) return { ok: false, reason: 'pgPool 없음', value: 0, required: 'kis:1600>=5, overseas:0630>=5, fail=0' };
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+    const result = await dbQuery(pgPool, `
+      SELECT
+        category,
+        schedule_slot,
+        COUNT(*) FILTER (
+          WHERE status IN ('dry_run', 'success')
+            AND COALESCE((metadata->>'fixture')::boolean, false) IS NOT TRUE
+            AND COALESCE((metadata->>'contentLen')::int, 0) > 0
+            AND COALESCE(jsonb_array_length(COALESCE(image_urls, '[]'::jsonb)), 0) = 0
+        ) AS valid_cnt,
+        COUNT(*) FILTER (
+          WHERE status = 'fail'
+            AND COALESCE((metadata->>'fixture')::boolean, false) IS NOT TRUE
+        ) AS fail_cnt
+      FROM edux_publish_log
+      WHERE created_at >= $1
+        AND (
+          (category = 'kis' AND schedule_slot = '1600')
+          OR (category = 'overseas' AND schedule_slot = '0630')
+        )
+      GROUP BY category, schedule_slot
+    `, [sevenDaysAgo], 'public');
+    const rows = result?.rows || [];
+    const byKey = new Map(rows.map((row) => [`${row.category}:${row.schedule_slot}`, row]));
+    const kis = byKey.get('kis:1600') || {};
+    const overseas = byKey.get('overseas:0630') || {};
+    const kisValid = Number(kis.valid_cnt || 0);
+    const overseasValid = Number(overseas.valid_cnt || 0);
+    const failCnt = Number(kis.fail_cnt || 0) + Number(overseas.fail_cnt || 0);
+    return {
+      ok: kisValid >= 5 && overseasValid >= 5 && failCnt === 0,
+      reason: `마감 슬롯 7일 evidence: kis:1600 ${kisValid}/5, overseas:0630 ${overseasValid}/5, fail ${failCnt}`,
+      value: { kis1600: kisValid, overseas0630: overseasValid, fail: failCnt },
+      required: { kis1600: 5, overseas0630: 5, fail: 0 },
+    };
+  } catch (err) {
+    return { ok: false, reason: `조회 실패: ${err?.message}`, value: 0, required: 'kis:1600>=5, overseas:0630>=5, fail=0' };
+  }
+}
+
 // ─── 보고서 생성 ──────────────────────────────────────────────────
 
 async function generateReport(options = {}) {
@@ -199,6 +288,8 @@ async function generateReport(options = {}) {
     { ok: true, reason: 'fixture: 이미지 미첨부 정책 준수', value: 0, required: 0 },
     { ok: true, reason: 'fixture: 24h 내 dry-run 성공 기록', value: true, required: true },
     { ok: true, reason: 'fixture: 429 위반 0건', value: 0, required: 0 },
+    { ok: true, reason: 'fixture: 마감 슬롯 contract 준비 완료', value: 0, required: 0 },
+    { ok: true, reason: 'fixture: 마감 슬롯 7일 evidence 충족', value: { kis1600: 5, overseas0630: 5, fail: 0 }, required: { kis1600: 5, overseas0630: 5, fail: 0 } },
   ];
 
   const checks = options.fixture
@@ -209,6 +300,8 @@ async function generateReport(options = {}) {
         check3_ImageAttachmentPolicy(),
         check4_JwtHealth(),
         check5_NoRateLimit(),
+        check6_MarketCloseContract(),
+        check7_MarketCloseEvidence(),
       ]).then((results) => results.map((r, i) => ({
     index: i + 1,
     ...(r.status === 'fulfilled' ? r.value : { ok: false, reason: String(r.reason) }),
@@ -220,10 +313,12 @@ async function generateReport(options = {}) {
     '이미지 미첨부 정책 준수',
     'JWT 갱신 정상 (24h)',
     'Rate Limit 위반 0건',
+    '마감 슬롯 contract',
+    '마감 슬롯 7일 evidence',
   ];
 
   const passed = checks.filter((c) => c.ok).length;
-  const allPass = passed === 5;
+  const allPass = passed === checks.length;
   const launchd = options.fixture ? null : launchdSummary();
 
   const now = kst.now ? kst.now() : new Date();
@@ -231,9 +326,9 @@ async function generateReport(options = {}) {
     generatedAt: now.toISOString(),
     mode: options.fixture ? 'fixture' : 'live-db-readonly',
     fixture: Boolean(options.fixture),
-    summary: `${passed}/5 통과`,
+    summary: `${passed}/${checks.length} 통과`,
     allPass,
-    promotion: allPass ? 'PASS — 마스터 승인 후 실 발행 가능' : `HOLD — ${5 - passed}개 항목 미달`,
+    promotion: allPass ? 'PASS — 마스터 승인 후 실 발행 가능' : `HOLD — ${checks.length - passed}개 항목 미달`,
     diagnostics: {
       launchd,
     },

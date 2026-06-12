@@ -17,7 +17,7 @@ function normalizeNewlines(value = '') {
 
 function firstPublicSectionIndex(text = '') {
   const match = String(text || '').match(
-    /(?:^|\n)\s*(?:⚡|📌|📈|🌐|🤖|⚠️?|👀|💎|📰|🧭|₿|💸|🗓️?)\s+/u,
+    /(?:^|\n)\s*(?:(?:⚡|📌|📈|🌐|🤖|⚠️?|👀|💎|📰|🧭|₿|💸|🗓️?)\s+|■\s*)/u,
   );
   return match ? (match.index || 0) + (match[0].startsWith('\n') ? 1 : 0) : -1;
 }
@@ -43,7 +43,7 @@ function sanitizePublicPostContent(content = '') {
     if (text === before) break;
   }
   return text
-    .replace(/^\s*(?:Okay,?\s*)?let['’]s tackle this\.?[\s\S]*?(?=\n\s*(?:⚡|📌|📈|🌐|🤖|⚠️?|👀|💎)\s+)/iu, '')
+    .replace(/^\s*(?:Okay,?\s*)?let['’]s tackle this\.?[\s\S]*?(?=\n\s*(?:(?:⚡|📌|📈|🌐|🤖|⚠️?|👀|💎)\s+|■\s*))/iu, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

@@ -17,7 +17,7 @@ async function main() {
   assert.equal(report.allPass, true);
   assert.equal(report.mode, 'fixture');
   assert.equal(report.fixture, true);
-  assert.equal(report.checks.length, 5);
+  assert.equal(report.checks.length, 7);
 
   const originalEnv = {
     EDUX_DRY_RUN: process.env.EDUX_DRY_RUN,

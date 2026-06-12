@@ -16,7 +16,7 @@ const {
 
 const EDUX_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'edu-x');
 
-function runScript(script, args = []) {
+function runScript(script, args = [], extraEnv = {}) {
   const stdout = execFileSync(process.execPath, [path.join(EDUX_ROOT, 'scripts', script), '--fixture', '--dry-run', '--json', ...args], {
     cwd: EDUX_ROOT,
     encoding: 'utf8',
@@ -27,6 +27,7 @@ function runScript(script, args = []) {
       EDUX_FORMATTER_FIXTURE: 'true',
       EDUX_DISABLE_TRADINGVIEW_READONLY: 'true',
       EDUX_DISABLE_TELEGRAM: 'true',
+      ...extraEnv,
     },
     maxBuffer: 1024 * 1024 * 8,
   });
@@ -36,7 +37,7 @@ function runScript(script, args = []) {
     result.artifact?.mdPath?.includes('/output/dry-run/fixture/'),
     `${script} fixture dry-run must not overwrite production artifacts: ${result.artifact?.mdPath}`,
   );
-  return stdout;
+  return { stdout, result };
 }
 
 function main() {
@@ -87,9 +88,11 @@ function main() {
   runScript('runtime-edux-crypto-daily.ts', ['--slot=0600']);
   runScript('runtime-edux-crypto-daily.ts', ['--slot=1400']);
   runScript('runtime-edux-crypto-daily.ts', ['--slot=2230']);
-  runScript('runtime-edux-kis-daily.ts');
-  runScript('runtime-edux-overseas-daily.ts');
-  console.log(JSON.stringify({ ok: true, slots: ['0600', '0900', '1400', '2200', '2230'] }, null, 2));
+  runScript('runtime-edux-kis-daily.ts', ['--slot=0900']);
+  runScript('runtime-edux-kis-daily.ts', ['--slot=1600'], { EDUX_TEST_NOW: '2026-06-12T07:00:00.000Z' });
+  runScript('runtime-edux-overseas-daily.ts', ['--slot=2200']);
+  runScript('runtime-edux-overseas-daily.ts', ['--slot=0630'], { EDUX_TEST_NOW: '2026-06-12T21:30:00.000Z' });
+  console.log(JSON.stringify({ ok: true, slots: ['0600', '0630', '0900', '1400', '1600', '2200', '2230'] }, null, 2));
 }
 
 if (require.main === module) {

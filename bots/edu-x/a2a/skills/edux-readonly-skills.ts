@@ -39,7 +39,7 @@ function eduxDryRunSlot(params = {}) {
       : 'runtime-edux-crypto-daily.ts';
   const args = ['--dry-run', '--json'];
   if (params.fixture) args.push('--fixture');
-  if (category === 'crypto') args.push(`--slot=${slot}`);
+  args.push(`--slot=${slot}`);
   return runNodeScript(script, args);
 }
 

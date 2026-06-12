@@ -31,7 +31,7 @@
     {
       "id": "edux-promotion-report",
       "name": "Edu-X 승격 게이트 보고서",
-      "description": "7일 dry-run 35건, 본문 생성 로그, 이미지 미첨부 정책, JWT health, 429 기준을 보고서로 산출한다.",
+      "description": "7일 dry-run 35건, 마감 슬롯 evidence, 본문 생성 로그, 이미지 미첨부 정책, JWT health, 429 기준을 보고서로 산출한다.",
       "tags": ["edux", "promotion", "gate", "readonly"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]

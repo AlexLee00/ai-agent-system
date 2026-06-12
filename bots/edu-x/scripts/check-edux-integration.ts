@@ -45,6 +45,7 @@ function main() {
   run('smoke:formatter', process.execPath, [path.join(EDUX_ROOT, 'scripts', 'smoke-edux-formatter.ts')]);
   run('smoke:image', process.execPath, [path.join(EDUX_ROOT, 'scripts', 'smoke-edux-image.ts')]);
   run('smoke:runtime-fixture', process.execPath, [path.join(EDUX_ROOT, 'scripts', 'smoke-edux-runtime-fixture.ts')]);
+  run('smoke:market-close', process.execPath, [path.join(EDUX_ROOT, 'scripts', 'smoke-edux-market-close.ts')]);
   run('smoke:promotion-gate', process.execPath, [path.join(EDUX_ROOT, 'scripts', 'smoke-edux-promotion-gate.ts')]);
   console.log('[edu-x/check] ok');
 }

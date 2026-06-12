@@ -5,7 +5,7 @@
 /**
  * edux-launchd-doctor.ts
  *
- * Audits and optionally bootstraps/reloads the five Edu-X LaunchAgents.
+ * Audits and optionally bootstraps/reloads the seven Edu-X LaunchAgents.
  * Dry-run apply only loads missing agents after every plist proves safe
  * dry-run flags. Live apply requires an explicit live confirm token and a
  * non-fixture PASS promotion gate report before reloading ai.edux.* agents.
@@ -25,7 +25,7 @@ const PROMOTION_GATE_REPORT = path.join(OUTPUT_DIR, 'edux-promotion-gate.json');
 const DRY_RUN_CONFIRM_TOKEN = 'edux-launchd-dry-run';
 const LIVE_CONFIRM_TOKEN = 'edux-launchd-live';
 const LABEL_PREFIX = 'ai.edux.';
-const EXPECTED_COUNT = 5;
+const EXPECTED_COUNT = 7;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {
@@ -323,7 +323,7 @@ function buildReport(args) {
     nextStep: ok
       ? [mode === 'live'
           ? 'Edu-X live LaunchAgents are loaded. Scheduled posts will publish when slot jobs run.'
-          : 'Edu-X dry-run LaunchAgents are loaded. Continue dry-run accumulation until promotion gate reaches 5/5.']
+          : 'Edu-X dry-run LaunchAgents are loaded. Continue dry-run accumulation until promotion gate reaches 7/7.']
       : [
           applyRejected && !applyModeExplicit ? 'Apply requires an explicit --dry-run or --live mode.' : null,
           applyRejected && applyModeExplicit && args.confirm !== expectedConfirm ? `Re-run with --confirm=${expectedConfirm} to apply after blockers are clear.` : null,
