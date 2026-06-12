@@ -180,7 +180,8 @@ function normalizeLegacyMinuteContent(content) {
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: legacy 중복 집계 값 숨김(최신 데이터 minute의 distinct 집계 확인)',
   );
-  const canonical = normalizeCanonicalStatusTokens(text);
+  const readable = normalizeLegacyKoreanLlmNoise(text);
+  const canonical = normalizeCanonicalStatusTokens(readable);
   const compacted = compactRepetitiveReportContent(canonical);
   const marker = 'C15 결정 대기 항목';
   const markerIndex = compacted.indexOf(marker);
@@ -202,13 +203,25 @@ function normalizeCanonicalStatusTokens(content) {
     const isGateLine = /(?:G0\s*)?게이트|gate/i.test(line);
     const isMarketStatusLine = /시장.*상태/.test(line);
     const isMarketScoreLine = /시장.*(?:중단|감소|전체)\s*\(\d+(?:\.\d+)?점?\)/.test(line);
-    if (!isGateLine && !isMarketStatusLine && !isMarketScoreLine) return line;
+    const isAllMarketStatusSummary = /(?:국내|해외|미국|암호화폐|crypto).*(?:모두|각각).*(?:중단|감소|전체)\s*상태/.test(line);
+    if (!isGateLine && !isMarketStatusLine && !isMarketScoreLine && !isAllMarketStatusSummary) return line;
     return line
       .replace(/['"“”‘’]할당['"“”‘’]\s*상태/g, 'halt 상태')
       .replace(/중단(?=\s*(?:\(|상태|$))/g, 'halt')
       .replace(/감소(?=\s*(?:\(|상태|$))/g, 'reduced')
       .replace(/전체(?=\s*(?:\(|상태|$))/g, 'full');
   }).join('\n');
+}
+
+function normalizeLegacyKoreanLlmNoise(content) {
+  return String(content ?? '')
+    .replace(/프로\s*k?si/gi, '프록시')
+    .replace(/프로끼/g, '프록시')
+    .replace(/(\*{0,2}전략군\s+24시간\*{0,2}\s*:\s*0건\s*\()입장(\s*(?:없음|0)\))/g, '$1진입$2')
+    .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*0\)/g, '전략군 24시간: 0건(진입 0)')
+    .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*없음\)/g, '전략군 24시간: 0건(진입 없음)')
+    .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
+    .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려');
 }
 
 function compactRepetitiveReportContent(content) {

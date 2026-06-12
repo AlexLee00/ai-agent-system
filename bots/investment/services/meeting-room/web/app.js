@@ -80,6 +80,22 @@ function dueState(value, now = new Date()) {
   return { className: 'due normal', label: `due ${formatTime(value)}` };
 }
 
+function decisionGradeLabel(value) {
+  return {
+    a_rule: 'A 룰 승인 후보',
+    b_boundary: 'B 경계 검토',
+    c_master: 'C 마스터 확인',
+  }[value] || '등급 미분류';
+}
+
+function decisionStatusLabel(value) {
+  return {
+    pending_master: '마스터 액션 대기',
+    confirmed: '확정됨',
+    deferred: '보류됨',
+  }[value] || '상태 미분류';
+}
+
 function renderInlineMarkdown(text, keyPrefix = 'inline') {
   const source = String(text ?? '');
   const nodes = [];
@@ -229,13 +245,21 @@ function Header({ token, setToken, tab, setTab }) {
         <p>회의록, 결정 대기함, 에이전트 질의를 한 화면에서 다룹니다. 이 UI는 기록과 승인 보조만 수행하며 거래·파라미터를 변경하지 않습니다.</p>
       </div>
       <div style=${{ minWidth: '260px' }}>
-        <label className="meta">MEETING_ROOM_TOKEN</label>
-        <input value=${token} onChange=${(event) => setToken(event.target.value)} placeholder="로컬 무인증이면 비워둠" />
+        <label className="meta" htmlFor="meeting-room-token">접근 토큰 (MEETING_ROOM_TOKEN)</label>
+        <input
+          id="meeting-room-token"
+          type="password"
+          autoComplete="off"
+          aria-label="회의실 접근 토큰"
+          value=${token}
+          onChange=${(event) => setToken(event.target.value)}
+          placeholder="로컬 무인증이면 비워둠"
+        />
       </div>
     </div>
     <div className="tabs">
-      <button className=${tab === 'daily' ? 'active' : ''} onClick=${() => setTab('daily')}>일일 회의실</button>
-      <button className=${tab === 'ask' ? 'active' : ''} onClick=${() => setTab('ask')}>에이전트 질의</button>
+      <button className=${tab === 'daily' ? 'active' : ''} aria-pressed=${tab === 'daily'} onClick=${() => setTab('daily')}>일일 회의실</button>
+      <button className=${tab === 'ask' ? 'active' : ''} aria-pressed=${tab === 'ask'} onClick=${() => setTab('ask')}>에이전트 질의</button>
       <a className="pill" href="http://127.0.0.1:7787" target="_blank" rel="noreferrer">TeamJay Dashboard :7787</a>
     </div>
   `;
@@ -247,13 +271,23 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
       <h2>회의 목록</h2>
       <div className="card-body list">
         ${activeRuns.map((run) => html`
-          <button className=${`meeting-item ${selectedId === run.id ? 'active' : ''}`} onClick=${() => setSelectedId(run.id)}>
+          <button
+            className=${`meeting-item ${selectedId === run.id ? 'active' : ''}`}
+            aria-pressed=${selectedId === run.id}
+            aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}
+            onClick=${() => setSelectedId(run.id)}
+          >
             <div className="meeting-title">${run.type} · ${run.status}</div>
             <div className="meta">${formatTime(run.startedAt)} · run</div>
           </button>
         `)}
         ${meetings.map((meeting) => html`
-          <button className=${`meeting-item ${String(selectedId) === String(meeting.id) ? 'active' : ''}`} onClick=${() => setSelectedId(meeting.id)}>
+          <button
+            className=${`meeting-item ${String(selectedId) === String(meeting.id) ? 'active' : ''}`}
+            aria-pressed=${String(selectedId) === String(meeting.id)}
+            aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}
+            onClick=${() => setSelectedId(meeting.id)}
+          >
             <div className="meeting-title">#${meeting.id} · ${meeting.type}</div>
             <div className="meta">${meeting.status} · ${formatTime(meeting.startedAt)}</div>
           </button>
@@ -286,16 +320,21 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   }
   return html`
     <div className="form-row">
-      <label className="meta">회의 시작</label>
+      <label className="meta" htmlFor="meeting-type-select">회의 시작</label>
       <div className="inline">
-        <select value=${type} onChange=${(event) => setType(event.target.value)}>
+        <select id="meeting-type-select" aria-label="시작할 회의 타입" value=${type} onChange=${(event) => setType(event.target.value)}>
           ${types.map((item) => html`<option value=${item.value} disabled=${item.disabled}>${item.label}</option>`)}
         </select>
-        <button onClick=${start} disabled=${busy}>${busy ? '시작 중' : '회의 시작'}</button>
+        <button
+          aria-label=${`${types.find((item) => item.value === type)?.label || type} 시작`}
+          title=${`${types.find((item) => item.value === type)?.label || type}를 advisory/shadow 회의로 시작합니다.`}
+          onClick=${start}
+          disabled=${busy}
+        >${busy ? '시작 중' : '회의 시작'}</button>
       </div>
       <${SegmentStatus} segments=${segments} />
-      <label className="check"><input type="checkbox" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
-      <div className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`}>
+      <label className="check" htmlFor="meeting-llm-toggle"><input id="meeting-llm-toggle" type="checkbox" aria-describedby="meeting-llm-mode" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
+      <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`}>
         현재 모드: ${useLlm ? 'LLM 발언 사용 · 비용 가드 적용' : '결정론 발언 · LLM 비용 0'}
       </div>
     </div>
@@ -305,16 +344,19 @@ function StartMeeting({ token, segments, onStarted, setError }) {
 function Timeline({ detail, catchup, loading }) {
   const minutes = detail?.minutes || [];
   return html`
-    <div className="card">
+    <div className="card" role="region" aria-label="회의 타임라인">
       <h2>타임라인</h2>
       <div className="card-body">
-        <div className="catchup">
+        <div className="catchup" role="status" aria-live="polite" aria-label="U1 캐치업 요약">
           ${loading ? html`<div>회의 상세를 불러오는 중입니다.</div>` : (catchup || ['회의를 선택하면 U1 캐치업이 표시됩니다.']).map((line) => html`<div>${line}</div>`)}
         </div>
         <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
         <div className="list" style=${{ marginTop: '14px' }}>
           ${minutes.map((minute) => html`
-            <article className=${minuteClassName(minute)}>
+            <article
+              className=${minuteClassName(minute)}
+              aria-label=${`${minute.seq}번 minute · ${minute.agendaKey || 'session'} · ${roleName(minute.role, minute)} · ${minute.speaker || 'unknown'}`}
+            >
               <div className="meeting-title">${minute.seq}. ${minute.agendaKey} — ${roleName(minute.role, minute)} / ${minute.speaker}</div>
               <div className="meta">${formatTime(minute.createdAt)}</div>
               <${MarkdownLite} text=${minute.content} />
@@ -353,16 +395,24 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
     }
   }
   return html`
-    <article className="decision-card">
+    <article
+      className="decision-card"
+      role="listitem"
+      aria-label=${`결정 #${decision.id} · ${decision.agendaKey || 'unknown'} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
+    >
       <div className="meeting-title">#${decision.id} · ${decision.agendaKey}</div>
-      <div className="meta">${decision.grade}/${decision.status} · <span className=${due.className}>${due.label}</span></div>
+      <div className="meta decision-state">
+        <span>${decisionGradeLabel(decision.grade)} (${decision.grade})</span>
+        <span>${decisionStatusLabel(decision.status)} (${decision.status})</span>
+        <span className=${due.className}>${due.label}</span>
+      </div>
       <${MarkdownLite} text=${decision.decision} />
-      <details><summary>근거 JSON 보기</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
+      <details><summary aria-label=${`결정 #${decision.id} 근거 JSON 보기`}>근거 JSON 보기</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
       <div className="form-row" style=${{ marginTop: '10px' }}>
-        <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 note" />
+        <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 메모" aria-label=${`결정 #${decision.id} 감사 메모`} />
         <div className="inline">
-          <button onClick=${() => act('confirm')} disabled=${Boolean(busy)}>${busy === 'confirm' ? '확인 중' : 'confirm'}</button>
-          <button className="warn" onClick=${() => act('defer')} disabled=${Boolean(busy)}>${busy === 'defer' ? '보류 중' : 'defer'}</button>
+          <button aria-label=${`결정 #${decision.id} 확정`} onClick=${() => act('confirm')} disabled=${Boolean(busy)}>${busy === 'confirm' ? '확정 중' : '확정'}</button>
+          <button aria-label=${`결정 #${decision.id} 보류`} className="warn" onClick=${() => act('defer')} disabled=${Boolean(busy)}>${busy === 'defer' ? '보류 중' : '보류'}</button>
         </div>
       </div>
     </article>
@@ -371,9 +421,9 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
 
 function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   return html`
-    <div className="card">
+    <div className="card" role="region" aria-label="결정 대기함">
       <h2>결정 대기함</h2>
-      <div className="card-body list">
+      <div className="card-body list" role="list" aria-live="polite" aria-label=${`pending_master 결정 ${decisions.length}건`}>
         ${decisions.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
         ${decisions.length === 0 ? html`<div className="meta">pending_master 결정 없음</div>` : null}
       </div>
@@ -450,8 +500,8 @@ function DailyRoom({ token }) {
   }, [activeRuns.map((run) => run.id + run.status).join(','), selectedId, token]);
 
   return html`
-    ${error ? html`<p className="error">${error}</p>` : null}
-    ${notice ? html`<p className="notice">${notice}</p>` : null}
+    ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
+    ${notice ? html`<p className="notice" role="status" aria-live="polite">${notice}</p>` : null}
     <div className="grid">
       <div>
         <${StartMeeting} token=${token} segments=${segments} onStarted=${(run) => { setSelectedId(run.id); refreshBase(); }} setError=${setError} />
@@ -484,25 +534,38 @@ function AskRoom({ token }) {
     }
   }
   return html`
-    ${error ? html`<p className="error">${error}</p>` : null}
+    ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     <div className="ask-grid">
       <div className="card">
         <h2>@멘션 질의</h2>
         <div className="card-body">
           <div className="form-row">
-            <label className="meta">agent</label>
-            <select value=${agent} onChange=${(event) => setAgent(event.target.value)}>
+            <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
+            <select id="meeting-agent-select" aria-label="질의 대상 에이전트" value=${agent} onChange=${(event) => setAgent(event.target.value)}>
               ${['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map((name) => html`<option value=${name}>${name}</option>`)}
             </select>
           </div>
           <div className="form-row">
-            <label className="meta">question</label>
-            <textarea value=${question} onChange=${(event) => setQuestion(event.target.value)} placeholder="회의실 컨텍스트 기반 advisory 질문" />
+            <label className="meta" htmlFor="meeting-agent-question">질문</label>
+            <textarea
+              id="meeting-agent-question"
+              aria-label="회의실 컨텍스트 기반 advisory 질문"
+              aria-describedby="ask-helper ask-safety-note"
+              value=${question}
+              onChange=${(event) => setQuestion(event.target.value)}
+              placeholder="회의실 컨텍스트 기반 advisory 질문"
+            />
+            <div id="ask-helper" className="ask-helper">질문을 입력하면 전송 버튼이 활성화됩니다.</div>
           </div>
-          <div className="ask-safety-note">
+          <div id="ask-safety-note" className="ask-safety-note">
             advisory only · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
-          <button onClick=${ask} disabled=${busy || !question.trim()}>${busy ? '질의 중' : '질의 보내기'}</button>
+          <button
+            aria-label=${`${agent}에게 advisory 질문 보내기`}
+            title=${question.trim() ? '선택한 에이전트에게 advisory 질문을 보냅니다.' : '질문을 입력하면 활성화됩니다.'}
+            onClick=${ask}
+            disabled=${busy || !question.trim()}
+          >${busy ? '질의 중' : '질의 보내기'}</button>
         </div>
       </div>
       <div className="card">
@@ -512,7 +575,7 @@ function AskRoom({ token }) {
             ${answer ? html`
               <div className="meta">${answer.agent} · ${answer.provider || answer.route?.provider || 'n/a'} · ok=${String(answer.ok)}</div>
               <${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} />
-            ` : html`<div className="meta">아직 응답 없음</div>`}
+            ` : html`<div className="meta">아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.</div>`}
           </div>
         </div>
       </div>
