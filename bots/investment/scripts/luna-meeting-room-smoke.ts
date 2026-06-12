@@ -499,6 +499,19 @@ async function main() {
     assert.ok(emptyMarkdown.includes('회의 데이터 요약 없음'));
     assert.ok(emptyMarkdown.includes('- 회의록 없음'));
     assert.equal(emptyMarkdown.includes('plan-note 없음'), false);
+    const partialMarkdown = renderMeetingMinutesMarkdown({
+      session: { id: 1000, type: 'morning', status: 'closed' },
+      planNote: { briefMarkdown: '요약' },
+      minutes: [{ content: '' }],
+      decisions: [{}],
+      dryRun: false,
+    });
+    assert.ok(partialMarkdown.includes('### 회의록. 안건 — 기록 / 시스템'));
+    assert.ok(partialMarkdown.includes('내용 없음'));
+    assert.ok(partialMarkdown.includes('결정 내용 없음 (기한: 기한 미정)'));
+    assert.equal(partialMarkdown.includes('undefined'), false);
+    assert.equal(partialMarkdown.includes('n/a'), false);
+    assert.equal(partialMarkdown.includes('due:'), false);
     return { before, after, appliedRows };
   });
 

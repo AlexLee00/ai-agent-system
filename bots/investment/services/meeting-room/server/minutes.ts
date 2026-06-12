@@ -20,14 +20,15 @@ async function loadDisplayNormalizer() {
   return displayNormalizerPromise;
 }
 
-function roleLabel(role: string) {
+function roleLabel(role: any) {
+  const normalized = String(role || '');
   return {
     data: '데이터',
     analysis: '분석',
     grill: '그릴',
     decision: '결정',
     system: '시스템',
-  }[role] || role;
+  }[normalized] || normalized || '기록';
 }
 
 function agendaLabel(key: any) {
@@ -149,9 +150,12 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     lines.push('');
   } else {
     for (const row of minutes) {
-      lines.push(`### ${row.seq}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${row.speaker}`);
+      const seqLabel = safeText(row.seq) || '회의록';
+      const speakerLabel = safeText(row.speaker) || '시스템';
+      const content = safeText(row.content) || '내용 없음';
+      lines.push(`### ${seqLabel}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${speakerLabel}`);
       lines.push('');
-      lines.push(safeText(row.content));
+      lines.push(content);
       lines.push('');
     }
   }
@@ -161,7 +165,9 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     lines.push('- 결정 없음');
   } else {
     for (const row of decisions) {
-      lines.push(`- [${decisionGradeLabel(row.grade)}/${decisionStatusLabel(row.status)}] ${agendaLabel(row.agendaKey || row.agenda_key)}: ${safeText(row.decision)} (due: ${row.dueAt || row.due_at || 'n/a'})`);
+      const dueLabel = safeText(row.dueAt || row.due_at) || '기한 미정';
+      const decisionText = safeText(row.decision) || '결정 내용 없음';
+      lines.push(`- [${decisionGradeLabel(row.grade)}/${decisionStatusLabel(row.status)}] ${agendaLabel(row.agendaKey || row.agenda_key)}: ${decisionText} (기한: ${dueLabel})`);
     }
   }
   lines.push('');
@@ -279,7 +285,7 @@ export async function loadMeetingMinutesResult(sessionId: any, options: any = {}
     planNote: {
       briefMarkdown: [
         `DB 기준 회의록 재생성: 회의 #${session.id}`,
-        `요약: ${session.summary || 'n/a'}`,
+        `요약: ${session.summary || '요약 없음'}`,
         segmentSummaryForMarkdown(session.segments),
       ].join('\n'),
     },

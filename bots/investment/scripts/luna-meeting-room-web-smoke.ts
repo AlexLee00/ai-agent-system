@@ -1367,6 +1367,19 @@ async function main() {
     assert.ok(emptyRegeneratedMarkdown.includes('회의 데이터 요약 없음'));
     assert.ok(emptyRegeneratedMarkdown.includes('- 회의록 없음'));
     assert.equal(emptyRegeneratedMarkdown.includes('plan-note 없음'), false);
+    const partialRegeneratedMarkdown = renderMeetingMinutesMarkdown({
+      session: { id: 1000, type: 'morning', status: 'closed' },
+      planNote: { briefMarkdown: '요약' },
+      minutes: [{ content: '' }],
+      decisions: [{}],
+      dryRun: false,
+    });
+    assert.ok(partialRegeneratedMarkdown.includes('### 회의록. 안건 — 기록 / 시스템'));
+    assert.ok(partialRegeneratedMarkdown.includes('내용 없음'));
+    assert.ok(partialRegeneratedMarkdown.includes('결정 내용 없음 (기한: 기한 미정)'));
+    assert.equal(partialRegeneratedMarkdown.includes('undefined'), false);
+    assert.equal(partialRegeneratedMarkdown.includes('n/a'), false);
+    assert.equal(partialRegeneratedMarkdown.includes('due:'), false);
     assert.equal(regeneratedMarkdown.includes('MR-A output is advisory/shadow only'), false);
     assert.ok(regeneratedMarkdown.includes('MR-A 산출물은 자문/섀도 전용입니다.'));
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
@@ -1970,6 +1983,7 @@ async function main() {
       regeneratedMarkdownPlanNoteLocalized: true,
       regeneratedMarkdownSectionLabelsLocalized: true,
       regeneratedMarkdownEmptyFallbackLocalized: true,
+      regeneratedMarkdownMissingFieldsLocalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
