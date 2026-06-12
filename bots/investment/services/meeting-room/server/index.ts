@@ -1069,6 +1069,8 @@ function minuteMetaStateLabel(state) {
     analysis: '분석',
     grill: '그릴',
     decision_draft: '결정 초안',
+    decision_confirm: '결정 확정',
+    decision_defer: '결정 보류',
     decision: '결정',
     adr: 'ADR 기록',
     close: '회의 종료',
@@ -1077,8 +1079,23 @@ function minuteMetaStateLabel(state) {
   }[String(state || '').toLowerCase()] || String(state || '상태 미상');
 }
 
+function changedViaLabel(value) {
+  return {
+    web: '웹',
+    telegram: '텔레그램',
+    api: 'API',
+  }[String(value || '').toLowerCase()] || '경로 미상';
+}
+
 function compactMinuteMetaEvidence(evidence) {
   const parsed = safeJson(evidence);
+  if (Array.isArray(parsed)) {
+    const summary = summarizeLegacyCircuitLocks(parsed).split('\n').filter(Boolean);
+    if (!summary.includes('상세 근거는 감사 로그에 보존')) summary.push('상세 근거는 감사 로그에 보존');
+    return {
+      summary,
+    };
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
   const excerpt = parsed.evidenceExcerpt && typeof parsed.evidenceExcerpt === 'object' && !Array.isArray(parsed.evidenceExcerpt)
     ? parsed.evidenceExcerpt
@@ -1104,6 +1121,23 @@ function normalizeMinuteMeta(meta) {
   if (typeof normalized.summary === 'string') normalized.summary = normalizeSessionSummary(normalized.summary);
   if (normalized.evidence && typeof normalized.evidence === 'object') {
     normalized.evidence = compactMinuteMetaEvidence(normalized.evidence);
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'changed_via')) {
+    normalized.changedVia = changedViaLabel(normalized.changed_via);
+    delete normalized.changed_via;
+  }
+  if (normalized.actor && typeof normalized.actor === 'object') {
+    normalized.actor = Object.keys(normalized.actor).length ? { role: '마스터 승인자' } : {};
+  }
+  if (normalized.callback && typeof normalized.callback === 'object') {
+    const data = String(normalized.callback.data || '');
+    normalized.callback = {
+      source: '텔레그램 버튼',
+      action: data.endsWith(':defer') ? '보류' : data.endsWith(':confirm') ? '확정' : '처리',
+    };
+  }
+  if (normalized.advisoryOnly === true) {
+    normalized.advisoryOnly = '자문 전용';
   }
   return normalized;
 }

@@ -202,7 +202,14 @@ function createMemoryStore() {
         '}',
         'C15 결정 대기: mapek: advisory 기록 후 마스터 확인 대기',
       ].join('\n'),
-      meta: { legacyFixture: true },
+      meta: {
+        legacyFixture: true,
+        state: 'data_brief',
+        evidence: [
+          { market: 'crypto', symbol: 'RENDER/USDT', circuit: 'low_profit_symbol', reason: 'cumulative_r_below_zero' },
+          { market: 'crypto', symbol: 'SOL/USDT', circuit: 'symbol_cooldown', reason: 'cooldown' },
+        ],
+      },
       createdAt: '2026-06-11T00:00:02.000Z',
     },
     {
@@ -213,7 +220,17 @@ function createMemoryStore() {
       speaker: 'adr',
       role: 'decision',
       content: 'ADR recorded: c_master/pending_master',
-      meta: { fixture: 'adr', grade: 'c_master', status: 'pending_master', summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 2회' },
+      meta: {
+        fixture: 'adr',
+        grade: 'c_master',
+        status: 'pending_master',
+        summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 2회',
+        state: 'decision_confirm',
+        changed_via: 'telegram',
+        callback: { data: 'luna_meeting:11:confirm', callback_query_id: 'raw-callback-id' },
+        actor: { chatId: '665606590', actorId: '665606590', actorUsername: 'alexlee' },
+        advisoryOnly: true,
+      },
       createdAt: '2026-06-11T00:00:03.000Z',
     },
     {
@@ -1166,13 +1183,31 @@ async function main() {
     assert.equal(detail.payload.minutes[2].content.includes('next-bar 수익률 차이'), false);
     assert.equal(detail.payload.minutes[2].content.includes('HMM<폴백'), false);
     assert.equal(detail.payload.minutes[2].content.includes('grillCoverage='), false);
+    assert.equal(detail.payload.minutes[2].meta.state, '데이터 브리프');
+    assert.deepEqual(detail.payload.minutes[2].meta.evidence.summary, [
+      '활성 서킷: 2건(저수익 1·쿨다운 1)',
+      '대표 심볼=RENDER/USDT, SOL/USDT',
+      '상세 근거는 감사 로그에 보존',
+    ]);
+    assert.equal(JSON.stringify(detail.payload.minutes[2].meta).includes('low_profit_symbol'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[2].meta).includes('cumulative_r_below_zero'), false);
     assert.ok(detail.payload.minutes[3].content.includes('ADR 기록: C 마스터 확인 / 마스터 액션 대기'));
     assert.equal(detail.payload.minutes[3].content.includes('ADR recorded: c_master/pending_master'), false);
     assert.equal(detail.payload.minutes[3].meta.grade, 'C 마스터 확인');
+    assert.equal(detail.payload.minutes[3].meta.state, '결정 확정');
     assert.equal(detail.payload.minutes[3].meta.status, '마스터 액션 대기');
     assert.equal(detail.payload.minutes[3].meta.summary, '미장 전 회의 완료: 안건 2건, ADR 2건, LLM 2회');
+    assert.deepEqual(detail.payload.minutes[3].meta.actor, { role: '마스터 승인자' });
+    assert.deepEqual(detail.payload.minutes[3].meta.callback, { source: '텔레그램 버튼', action: '확정' });
+    assert.equal(detail.payload.minutes[3].meta.changedVia, '텔레그램');
+    assert.equal(detail.payload.minutes[3].meta.advisoryOnly, '자문 전용');
     assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('c_master'), false);
     assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('pending_master'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('changed_via'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('callback_query_id'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('665606590'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('alexlee'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('luna_meeting:'), false);
     assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('us_premarket 회의 완료'), false);
     assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 0);
     assert.equal((detail.payload.minutes[4].content.match(/최종 결론/g) || []).length, 0);
