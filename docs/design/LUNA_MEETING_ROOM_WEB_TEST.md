@@ -15,7 +15,7 @@
 | W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단, 활성 세그먼트는 사용자 표시/aria에서 `활성`, 사유 코드는 `주말/휴장일/장 마감` 라벨로 표시 | [자동]+[수동] ✅fixture 브라우저 |
 | W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시·토글 상태 변경 live region 전달 | [자동] 기본 noLlm payload+mode live region+[수동] ✅토글 표시 |
 | W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
-| W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅fixture 브라우저 |
+| W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅2026-06-12 실브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] ✅2026-06-12 웹→API 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label, due 누락/정상 fallback도 한국어 라벨 | [자동] dueState+a11y+[수동] ✅2026-06-12 |
 | W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | 닫힌 상태에서는 JSON DOM/레이아웃/스크롤을 만들지 않고, 펼치면 JSON `<pre>` 표시(머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout/dom guard+[수동] ✅390px 펼침 |
@@ -226,6 +226,7 @@
 - **2026-06-12 루프 170**: W-40 폴링 주기 실브라우저 검증 → 실제 UI에서 아침 회의를 1회 시작해 running 상태를 만들었다. 시작 직후 실행 중 카드가 선택되고 `폴링: 실행 중 회의 감지 · 3초마다 갱신`이 표시됐으며, 완료 후 #119 아침 통합 회의 세션으로 자동 전환되고 `폴링: 대기 · 30초마다 갱신`으로 복귀했다. 10초 관찰 동안 console warn/error 0건으로 추가 코드 수정 없음.
 - **2026-06-12 루프 171**: W-20/W-21/W-24 최신 #119 렌더 재스캔 → 실제 시작 경로로 생성한 #119 아침 통합 회의의 API/브라우저 DOM을 검사했다. 회의록 raw JSON, 내부 상태 토큰, DB 구현 용어, status 번역 오류, 반복 boilerplate는 없었지만 에이전트 질의 빈 응답 placeholder에 `확인하세요.` 지시형 문구가 남아 전체 DOM 금지 패턴에 걸렸다. 빈 응답 문구를 `아직 응답 없음 · 응답은 이 영역에 표시됩니다.`로 중립화하고, 재시작 후 #119 전체 DOM hit 0건·old placeholder 0건·console warn/error 0건·overflow 0건을 확인했다.
 - **2026-06-12 루프 172**: W-10 웹→API 교차 멱등 실검증 → 최신 #119의 결정 #707을 웹에서 확정해 pending 큐에서 제거되고 캐치업이 `확정 1건, 대기 8건`으로 갱신됨을 확인했다. 이후 같은 #707을 API로 재확정하자 `{ idempotent:true, status:already_confirmed }`와 `pendingHas707=false`가 반환되어 상태 불변을 확인했다. 동시에 감사 minute가 `meeting decision confirm via web: no note` 영어 원문으로 노출될 수 있는 문제를 발견해 신규 저장 문구를 `결정 확정 처리 · 경로=웹 · 메모 없음`으로 바꾸고, 기존 저장분도 표시 정규화로 한국어 렌더되게 보정했다. 재시작 후 브라우저 DOM에서 영어 감사 문구 0건, 한국어 감사 문구 1건, console warn/error 0건.
+- **2026-06-12 루프 173**: W-09 보류 실브라우저 검증 → 최신 #119의 결정 #708 보류 버튼을 실제 클릭하자 최초에는 서버 오류 안내가 표시됐고, API 직접 재현에서 `luna_meeting_decisions_status_check`가 `deferred`를 허용하지 않아 500이 나는 것을 확인했다. 레포에는 `20260612000001_luna_meeting_room_deferred_status.sql` 보정 migration이 이미 있었지만 운영 DB 적용이 누락된 상태였으므로 해당 migration을 적용했다. 재시도 후 #708은 `status=deferred`, due는 +24h, pending 큐 제거, 캐치업은 `확정 1건, 보류 1건, 대기 7건`, 감사 minute는 `결정 보류 처리 · 경로=웹 · 메모 없음`으로 기록됐다. 브라우저 DOM은 영어 감사 문구 0건, console warn/error 0건, horizontal overflow 0건.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안
