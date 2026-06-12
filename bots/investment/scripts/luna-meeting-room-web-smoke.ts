@@ -143,7 +143,7 @@ function createMemoryStore() {
   ];
   const decisions = [
     { id: 11, sessionId: 1, agendaKey: 'decision:regime-engine-hmm', decision: 'regime-engine-hmm: crypto **점검** pending\n- confirm 필요', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
-    { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'domestic 점검 pending', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
+    { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'advisory 기록 후 마스터 확인 대기', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
   ];
   let nextSessionId = 2;
   let nextMinuteId = 6;
@@ -384,8 +384,14 @@ async function main() {
     assert.ok(appJs.text.includes('function decisionStatusLabel'));
     assert.ok(appJs.text.includes('function minuteClassName'));
     assert.ok(appJs.text.includes('function SegmentStatus'));
+    assert.ok(appJs.text.includes('function segmentReasonLabel'));
+    assert.ok(appJs.text.includes("weekend: '주말'"));
+    assert.ok(appJs.text.includes('reasonLabel'));
     assert.ok(appJs.text.includes('segment-pill'));
     assert.ok(appJs.text.includes('세그먼트 상태 로딩 중'));
+    assert.ok(appJs.text.includes('`${marketLabel(segment.market)} 활성`'));
+    assert.ok(appJs.text.includes(": '활성'"));
+    assert.equal(appJs.text.includes('`${marketLabel(segment.market)} active`'), false);
     assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
     assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
     assert.ok(appJs.text.includes('근거 JSON 보기'));
@@ -469,7 +475,9 @@ async function main() {
     assert.equal(detail.payload.minutes[1].content.includes('score='), false);
     assert.equal(detail.payload.minutes[1].content.includes('source='), false);
     assert.equal(detail.payload.minutes[1].content.includes('활성 서킷: 57건'), false);
-    assert.ok(detail.payload.minutes[1].content.includes('legacy 중복 집계 값 숨김'));
+    assert.ok(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'));
+    assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
+    assert.equal(detail.payload.minutes[1].content.includes('distinct'), false);
     assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
     assert.ok(detail.payload.minutes[2].content.includes('컴포넌트=C15 레짐 엔진 HMM'));
     assert.equal(detail.payload.minutes[2].content.includes('regime-engine-hmm'), false);
@@ -503,7 +511,9 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('이는 배치 halt 상태를 나타냅니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군은 현재 진입하지 않았으며'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군 진입을 고려'));
-    assert.ok(detail.payload.minutes[4].content.includes('결정 대기: legacy 발언 값 숨김'));
+    assert.ok(detail.payload.minutes[4].content.includes('결정 대기: 과거 발언 숫자 숨김'));
+    assert.equal(detail.payload.minutes[4].content.includes('legacy'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('최신 데이터 minute'), false);
     assert.equal(detail.payload.minutes[4].content.includes("'할당' 상태"), false);
     assert.equal(detail.payload.minutes[4].content.includes('프로ksi'), false);
     assert.equal(detail.payload.minutes[4].content.includes('프로끼'), false);
@@ -518,11 +528,14 @@ async function main() {
     assert.equal(catchup.payload.lines.length, 3);
     assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
     assert.ok(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM:'));
-    assert.ok(catchup.payload.lines[1].includes('국내 장전 계획: domestic 점검 pending'));
+    assert.ok(catchup.payload.lines[1].includes('국내 장전 계획: 자문 기록 후 마스터 확인 대기'));
+    assert.equal(catchup.payload.lines[1].includes('advisory 기록'), false);
     assert.equal(catchup.payload.lines[1].includes('market:crypto'), false);
     assert.equal(catchup.payload.lines[1].includes('market:domestic'), false);
     assert.equal(catchup.payload.lines[1].includes('regime-engine-hmm'), false);
+    assert.ok(catchup.payload.lines[2].includes('회의록 5행'));
     assert.ok(catchup.payload.lines[2].includes('최신 상태 완료'));
+    assert.equal(catchup.payload.lines[2].includes('minutes'), false);
     assert.equal(catchup.payload.lines[2].includes('최신 상태 closed'), false);
 
     const pending = await request(baseUrl, '/api/decisions/pending');
@@ -661,6 +674,7 @@ async function main() {
       deferLeavesPendingQueue: true,
       catchupConfirmedDeferredPendingCounts: true,
       catchupLinesA11y: true,
+      catchupInternalTermsLocalized: true,
       askRateLimit: true,
       askSafetyNotice: true,
       askFormKoreanLabels: true,
@@ -696,6 +710,8 @@ async function main() {
       friendlyUiErrors: true,
       closedSegmentReasonVisible: true,
       closedSegmentReasonA11y: true,
+      activeSegmentStatusKoreanLabel: true,
+      segmentReasonKoreanLabel: true,
       llmToggleDefaultNoCost: true,
       llmModeLiveRegion: true,
       evidenceDisclosureKoreanLabel: true,

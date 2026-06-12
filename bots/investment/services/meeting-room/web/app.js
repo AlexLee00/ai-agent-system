@@ -251,13 +251,25 @@ function MarkdownLite({ text }) {
   }
 }
 
+function segmentReasonLabel(reason) {
+  return {
+    weekend: '주말',
+    holiday: '휴장일',
+    market_closed: '장 마감',
+    closed: '비활성',
+    disabled: '비활성',
+  }[String(reason || '')] || reason || '사유 없음';
+}
+
 function meetingTypesForSegments(segments = []) {
   const domestic = segments.find((row) => row.market === 'domestic');
   const overseas = segments.find((row) => row.market === 'overseas');
+  const domesticReason = segmentReasonLabel(domestic?.reason);
+  const overseasReason = segmentReasonLabel(overseas?.reason);
   return [
     { value: 'morning', label: '아침 통합 회의', disabled: false },
-    { value: 'domestic_debrief', label: `국내 장후 회의${domestic?.skipped ? ` (${domestic.reason})` : ''}`, disabled: domestic?.skipped === true, reason: domestic?.reason },
-    { value: 'us_premarket', label: `미장 전 회의${overseas?.skipped ? ` (${overseas.reason})` : ''}`, disabled: overseas?.skipped === true, reason: overseas?.reason },
+    { value: 'domestic_debrief', label: `국내 장후 회의${domestic?.skipped ? ` (${domesticReason})` : ''}`, disabled: domestic?.skipped === true, reason: domestic?.reason, reasonLabel: domesticReason },
+    { value: 'us_premarket', label: `미장 전 회의${overseas?.skipped ? ` (${overseasReason})` : ''}`, disabled: overseas?.skipped === true, reason: overseas?.reason, reasonLabel: overseasReason },
     { value: 'weekly', label: '주간 회의', disabled: false },
     { value: 'adhoc', label: '임시 회의', disabled: false },
   ];
@@ -274,10 +286,10 @@ function SegmentStatus({ segments }) {
       ${segments.map((segment) => html`
         <span
           className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
-          title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segment.reason || '사유 없음'}` : `${marketLabel(segment.market)} active`}
-          aria-label=${segment.skipped ? `${marketLabel(segment.market)} 비활성, 사유 ${segment.reason || '사유 없음'}` : `${marketLabel(segment.market)} active`}
+          title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 활성`}
+          aria-label=${segment.skipped ? `${marketLabel(segment.market)} 비활성, 사유 ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 활성`}
         >
-          ${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segment.reason || '사유 없음'})` : 'active'}
+          ${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segmentReasonLabel(segment.reason)})` : '활성'}
         </span>
       `)}
     </div>
@@ -436,19 +448,19 @@ function StartMeeting({ token, segments, onStarted, setError }) {
             <option
               value=${item.value}
               disabled=${item.disabled}
-              title=${item.disabled ? `${item.label} 비활성: ${item.reason || '사유 없음'}` : item.label}
-              aria-label=${item.disabled ? `${item.label} 비활성, 사유 ${item.reason || '사유 없음'}` : item.label}
+              title=${item.disabled ? `${item.label} 비활성: ${item.reasonLabel || segmentReasonLabel(item.reason)}` : item.label}
+              aria-label=${item.disabled ? `${item.label} 비활성, 사유 ${item.reasonLabel || segmentReasonLabel(item.reason)}` : item.label}
             >${item.label}</option>
           `)}
         </select>
         <button
-          aria-label=${selectedTypeDisabled ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reason || '비활성'}` : `${selectedType?.label || type} 시작`}
-          title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reason || '사유 없음'}` : `${selectedType?.label || type}를 advisory/shadow 회의로 시작합니다.`}
+          aria-label=${selectedTypeDisabled ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type} 시작`}
+          title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type}를 advisory/shadow 회의로 시작합니다.`}
           onClick=${start}
           disabled=${startDisabled}
         >${busy ? '시작 중' : '회의 시작'}</button>
       </div>
-      ${selectedTypeDisabled ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 비활성입니다: ${selectedType?.reason || '사유 없음'}</div>` : null}
+      ${selectedTypeDisabled ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 비활성입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}</div>` : null}
       <${SegmentStatus} segments=${segments} />
       <label className="check" htmlFor="meeting-llm-toggle"><input id="meeting-llm-toggle" type="checkbox" aria-describedby="meeting-llm-mode" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
       <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`} role="status" aria-live="polite" aria-label="LLM 발언 모드">

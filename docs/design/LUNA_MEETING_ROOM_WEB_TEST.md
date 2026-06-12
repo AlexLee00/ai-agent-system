@@ -8,11 +8,11 @@
 | ID | 시나리오 | 절차 | 기대 결과 | 커버 |
 |---|---|---|---|---|
 | W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환+회의 목록 상태/타입은 한국어 라벨(완료/아침 통합 회의 등) | [자동] header/tab/status/type a11y+[수동] ✅2026-06-12 브라우저 |
-| W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달, 보조기술에서 줄 단위로 구분 가능, 최신 상태와 안건은 한국어 라벨 | [자동] catchup API+live region/list a11y+status/agenda label+[수동] ✅2026-06-12 표시 |
+| W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달, 보조기술에서 줄 단위로 구분 가능, 최신 상태·안건·회의록 수·자문 상태는 한국어 라벨 | [자동] catchup API+live region/list a11y+status/agenda label+[수동] ✅2026-06-12 표시 |
 | W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·minute별 aria-label·인프라 speaker와 데이터 메타 key는 한국어 라벨 | [자동] ADR 클래스+timeline a11y+role/speaker/meta label+[수동] ✅브라우저 |
 | W-04 | 회의 시작(정상) | 타입 선택→시작 | 진행 상태 폴링→완료 후 실제 세션 타임라인으로 전환, 시작 컨트롤/목록 선택 상태 aria 제공, 회의 목록 region/list 구조 유지, 실행 실패 시 오류 원인 표시 | [자동] start API+completed/failed run 전환+a11y |
 | W-05 | 회의 시작(중복) | open 세션 중 재시작 | 409 + 사용자 메시지(중복 안내) | [자동] 409+친화 메시지 문자열 |
-| W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단 | [자동]+[수동] ✅fixture 브라우저 |
+| W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단, 활성 세그먼트는 사용자 표시/aria에서 `활성`, 사유 코드는 `주말/휴장일/장 마감` 라벨로 표시 | [자동]+[수동] ✅fixture 브라우저 |
 | W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시·토글 상태 변경 live region 전달 | [자동] 기본 noLlm payload+mode live region+[수동] ✅토글 표시 |
 | W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅fixture 브라우저 |
@@ -27,7 +27,7 @@
 | W-21 | JSON 덤프 부재 | 발언 content에 `{...}` 원문 없음(C15 대기·서킷 안건 한국어 요약) | [자동] legacy API 정규화+브라우저 ✅ |
 | W-22 | 서킷 distinct | "활성 잠금 N건"이 고유 잠금 수(DB distinct 쿼리와 일치) | [자동] smoke+[수동] ✅2026-06-12 세션 #1 서킷=3건 |
 | W-23 | XSS 회귀 | `<script>` 포함 텍스트가 문자 그대로(미실행)·innerHTML 0 | [자동] smoke |
-| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음·status 값 halt/reduced/full 원문 유지·entry/프록시/진입 용어 표시 보정·halt를 가치판단으로 오해하지 않음·legacy 발언의 과거 결정 대기 숫자/ADR 내부 토큰이 현재값처럼 보이지 않음 | [자동] 반복 표시 축약+status/용어 복원+진입/게이트 용어+legacy pending 숫자/ADR 라벨 보정+[수동] 🔁 다음 실회의 |
+| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음·status 값 halt/reduced/full 원문 유지·entry/프록시/진입 용어 표시 보정·halt를 가치판단으로 오해하지 않음·과거 발언의 결정 대기 숫자/ADR 내부 토큰이 현재값처럼 보이지 않음 | [자동] 반복 표시 축약+status/용어 복원+진입/게이트 용어+과거 발언 숫자/ADR 라벨 보정+[수동] 🔁 다음 실회의 |
 
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -119,6 +119,10 @@
 - **2026-06-12 루프 63**: W-03 데이터 minute 메타 표현 점검 → 실제 데이터 minute에 `score=`, `source=`, C15 기준의 `compareAgainst/grillCoverage/decisionTracking/completedMeetings` 같은 영문 key가 노출되어 운영 해석성이 낮음. canonical 값(halt/reduced/bull/bear/HMM)은 유지하고 key만 `점수`, `출처`, `비교 기준`, `그릴 커버리지`, `결정 추적`, `완료 회의 수`로 정규화. 스모크 `dataMinuteMetaKeysLocalized` 추가.
 - **2026-06-12 루프 64**: W-03 C15 상태값 표현 점검 → 실제 C15 데이터 minute에 `상태=active`, `모드=unknown→unknown`, `placeholder 기준=true`가 남아 있어 내부 상태값처럼 보임. 표시 계층에서 `상태=활성`, `모드=미정→미정`, `placeholder 기준=예`로 정규화하고 boolean scalar는 `예/아니오`로 표시. 스모크 `c15StateValuesLocalized` 추가.
 - **2026-06-12 루프 65**: W-03/W-08 C15 컴포넌트 키 표현 점검 → 실제 타임라인·결정 본문·aria에 `regime-engine-hmm`, `market-deployment-gate`, `backtest-nextbar-execution`, `meeting-room-orchestrator` 같은 내부 component id가 남아 운영자가 즉시 해석하기 어려움. API 표시 계층에서 `C15 레짐 엔진 HMM`, `C1 시장 배치 게이트`, `Next-bar 백테스트 실행`, `회의실 오케스트레이터`로 정규화하고 DB 원문은 보존. 스모크 `c15ComponentKeysLocalized` 추가.
+- **2026-06-12 루프 66**: W-24 표시 보정 문구 품질 점검 → 실제 화면에 `legacy`, `minute`, `distinct` 같은 구현 용어가 반복 노출되어 운영 UI 문장으로 부자연스러움. 서킷/결정 대기 마스킹 문구를 `과거 발언의 중복 서킷 숫자 숨김(최신 데이터 기준)`, `결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)`으로 변경하고 스모크에서 사용자 표시 문구 내 `legacy/distinct/최신 데이터 minute` 재노출을 차단.
+- **2026-06-12 루프 67**: W-06 세그먼트 상태 배지 문구 점검 → 실제 상단 세그먼트 배지와 aria/title에 `국내 · active`, `국내 active`가 남아 한국어 운영 UI와 불일치. CSS class는 유지하되 사용자 표시·title·aria는 `국내 · 활성`, `국내 활성`으로 정규화하고 스모크 `activeSegmentStatusKoreanLabel` 추가.
+- **2026-06-12 루프 68**: W-06 비활성 사유 코드 표현 점검 → 주말/휴장 fixture에서 `weekend` 같은 원문 reason 코드가 select option·세그먼트 배지·시작 불가 안내에 그대로 표시될 수 있는 구조를 확인. `segmentReasonLabel`을 추가해 `weekend→주말`, `holiday→휴장일`, `market_closed→장 마감`으로 사용자 표시/aria/title을 정규화하고 스모크 `segmentReasonKoreanLabel` 추가.
+- **2026-06-12 루프 69**: W-02 U1 캐치업 내부 용어 점검 → 실제 캐치업 3번째 줄에 `minutes 56행`, 마스터 액션 줄에 `advisory 기록`이 남아 한국어 운영 UI와 불일치. API 표시 계층에서 `회의록 N행`, `자문 기록`으로 정규화하고 스모크 `catchupInternalTermsLocalized` 추가.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

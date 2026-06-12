@@ -248,7 +248,7 @@ function normalizeLegacyMinuteContent(content) {
   if (trimmed === 'closed') return '회의 종료';
   const text = String(content ?? '').replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
-    '활성 서킷: legacy 중복 집계 값 숨김(최신 데이터 minute의 distinct 집계 확인)',
+    '활성 서킷: 과거 발언의 중복 서킷 숫자 숨김(최신 데이터 기준)',
   );
   const readable = normalizeLegacyKoreanLlmNoise(text);
   const canonical = normalizeCanonicalStatusTokens(readable);
@@ -301,14 +301,15 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/그릴 커버리지=false/g, '그릴 커버리지=아니오')
     .replace(/결정 추적=true/g, '결정 추적=예')
     .replace(/결정 추적=false/g, '결정 추적=아니오')
+    .replace(/\badvisory\s+기록/g, '자문 기록')
     .replace(/ADR recorded:\s*c_master\/pending_master/g, 'ADR 기록: C 마스터 확인 / 마스터 액션 대기')
     .replace(
       /\*{0,2}결정 대기\*{0,2}\s*[:：]\s*(?:현재\s*)?\d+(?:개|건)(?:의\s*결정이\s*대기\s*중(?:입니다)?\.?|(?:\s*남아있다\.?)?)?/g,
-      '결정 대기: legacy 발언 값 숨김(상단 U1 캐치업 기준)',
+      '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
     )
     .replace(
       /결정 대기[는가]?\s*\d+건(?:이)?\s*(?:대기\s*중(?:입니다)?|남아있다)\.?/g,
-      '결정 대기: legacy 발언 값 숨김(상단 U1 캐치업 기준)',
+      '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
     )
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
@@ -486,7 +487,7 @@ function buildCatchupFromDetail(detail) {
   return [
     `확정 ${confirmed.length}건, 보류 ${deferred.length}건, 대기 ${pending.length}건`,
     `마스터 액션 필요: ${next}`,
-    `회의 ${detail.session?.id || 'n/a'} · minutes ${(detail.minutes || []).length}행 · 최신 상태 ${sessionStatusLabel(detail.session?.status)}`,
+    `회의 ${detail.session?.id || 'n/a'} · 회의록 ${(detail.minutes || []).length}행 · 최신 상태 ${sessionStatusLabel(detail.session?.status)}`,
   ];
 }
 
