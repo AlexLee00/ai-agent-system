@@ -210,7 +210,7 @@ Hub에 그대로 이식 가능한 패턴임을 확인했다.
 ### 9.3 게이트 정의 (evidence 판정 기준)
 | Gate ID | 대상 | 계약 | 증거 기준 (기본 168h, §D 베이스라인 대비) |
 |---|---|---|---|
-| GATE-H | CODEX-H 적용 후 안정 (TS-L2 자동화) | TS-1~16 스모크 통과 + env 2종 존재 | darwin 실패<=9 AND 실패평균<30s AND local 일반 호출=0 AND unknown purpose 감소 |
+| GATE-H | CODEX-H 적용 후 안정 (TS-L2 자동화) | TS-1~16 스모크 통과 + env 2종 존재 | darwin 실패<=9 AND 실패평균<30s AND local 일반 호출=0 AND darwin 전체 unknown purpose 비율<5% (주: 2026-06-12 보정 — §D의 44건은 실패-중-unknown이므로 evidence(전체 기준)와 지표 상이. H1-c 태깅 적용 시 0 수렴) |
 | GATE-H3 | H3 동적예산 섀도->활성 | H3 flag(shadow) 존재 + 섀도 로그 스키마 | 섀도 표본>=1000 AND 산출timeout<실제소요 비율<1% AND blog 장문 회귀 0 |
 
 ### 9.4 로드맵 통합 (§7 갱신 해석)

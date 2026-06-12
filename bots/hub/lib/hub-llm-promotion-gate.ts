@@ -78,9 +78,9 @@ type GateEvaluation = {
 };
 
 const DEFAULT_HOURS = 168;
-const DARWIN_UNKNOWN_PURPOSE_BASELINE = 44;
 const GATE_H_DARWIN_FAILURE_THRESHOLD = 9;
 const GATE_H_DARWIN_FAILED_AVG_DURATION_MS = 30_000;
+const GATE_H_DARWIN_UNKNOWN_PURPOSE_RATIO_THRESHOLD = 0.05;
 const GATE_H3_SHADOW_SAMPLE_THRESHOLD = 1_000;
 const GATE_H3_TIMEOUT_UNDER_ACTUAL_RATIO_THRESHOLD = 0.01;
 
@@ -376,6 +376,9 @@ async function buildGateHEvidenceChecks(options: HubLlmPromotionGateOptions & { 
       )::int AS local_general_calls,
       count(*) FILTER (
         WHERE lower(coalesce(caller_team, '')) = 'darwin'
+      )::int AS darwin_total_count,
+      count(*) FILTER (
+        WHERE lower(coalesce(caller_team, '')) = 'darwin'
           AND lower(coalesce(runtime_purpose, 'unknown')) = 'unknown'
       )::int AS darwin_unknown_purpose_count
     FROM public.llm_routing_log
@@ -385,7 +388,9 @@ async function buildGateHEvidenceChecks(options: HubLlmPromotionGateOptions & { 
   const darwinFailureCount = toNumber(row.darwin_failure_count);
   const darwinFailedAvgDurationMs = toNumber(row.darwin_failed_avg_duration_ms);
   const localGeneralCalls = toNumber(row.local_general_calls);
+  const darwinTotalCount = toNumber(row.darwin_total_count);
   const darwinUnknownPurposeCount = toNumber(row.darwin_unknown_purpose_count);
+  const darwinUnknownPurposeRatio = darwinTotalCount > 0 ? darwinUnknownPurposeCount / darwinTotalCount : 0;
 
   return [
     {
@@ -417,12 +422,16 @@ async function buildGateHEvidenceChecks(options: HubLlmPromotionGateOptions & { 
     },
     {
       gate: 'GATE-H',
-      name: 'darwin_unknown_purpose_count',
-      ok: darwinUnknownPurposeCount < DARWIN_UNKNOWN_PURPOSE_BASELINE,
+      name: 'darwin_unknown_purpose_ratio',
+      ok: darwinUnknownPurposeRatio < GATE_H_DARWIN_UNKNOWN_PURPOSE_RATIO_THRESHOLD,
       type: 'evidence',
-      detail: 'Darwin unknown runtime purpose count must be reduced from the baseline.',
-      observed: darwinUnknownPurposeCount,
-      threshold: `<${DARWIN_UNKNOWN_PURPOSE_BASELINE}`,
+      detail: 'Darwin unknown runtime purpose ratio must stay below the corrected whole-Darwin threshold.',
+      observed: {
+        ratio: darwinUnknownPurposeRatio,
+        count: darwinUnknownPurposeCount,
+        total: darwinTotalCount,
+      },
+      threshold: `<${GATE_H_DARWIN_UNKNOWN_PURPOSE_RATIO_THRESHOLD}`,
     },
   ];
 }

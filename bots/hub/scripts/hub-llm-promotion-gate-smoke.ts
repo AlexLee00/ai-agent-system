@@ -50,6 +50,7 @@ function gateHEvidenceQuery(overrides: Record<string, unknown> = {}): HubLlmProm
     darwin_failure_count: 2,
     darwin_failed_avg_duration_ms: 12_000,
     local_general_calls: 0,
+    darwin_total_count: 100,
     darwin_unknown_purpose_count: 3,
     ...overrides,
   };
