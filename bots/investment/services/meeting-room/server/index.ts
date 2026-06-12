@@ -180,21 +180,32 @@ function agendaLabel(key) {
   }[String(key || '')] || '안건';
 }
 
+function stripDecisionDisplayPrefix(decision, agendaKey, label) {
+  let text = String(decision || '').trim();
+  text = text.replace(/^C15 결정 대기:\s*/u, '').trim();
+  const redundantByAgenda = {
+    'premarket:overseas-gate-regime': ['미국 프리마켓 게이트/레짐'],
+    'premarket:overseas-watch': ['미국 보유/예정 이벤트 점검'],
+  }[String(agendaKey || '')] || [];
+  for (const prefix of [label, ...redundantByAgenda].filter(Boolean)) {
+    if (prefix !== '안건' && text.startsWith(`${prefix}:`)) {
+      text = text.slice(prefix.length + 1).trim();
+    }
+  }
+  return text;
+}
+
 function pendingDecisionCatchupLabel(row = {}) {
-  const label = agendaLabel(row.agendaKey);
-  let decision = String(row.decision || '').trim();
-  decision = decision.replace(/^C15 결정 대기:\s*/u, '').trim();
-  if (decision.startsWith(`${label}:`)) decision = decision.slice(label.length + 1).trim();
+  const agendaKey = row.agendaKey || row.agenda_key;
+  const label = agendaLabel(agendaKey);
+  const decision = stripDecisionDisplayPrefix(row.decision, agendaKey, label);
   return `${label}: ${decision || '마스터 확인 대기'}`;
 }
 
 function normalizeDecisionDisplayText(row = {}) {
-  const label = agendaLabel(row.agenda_key || row.agendaKey);
-  let decision = normalizeLegacyMinuteContent(row.decision);
-  decision = decision.replace(/^C15 결정 대기:\s*/u, '').trim();
-  if (label && label !== '안건' && decision.startsWith(`${label}:`)) {
-    decision = decision.slice(label.length + 1).trim();
-  }
+  const agendaKey = row.agenda_key || row.agendaKey;
+  const label = agendaLabel(agendaKey);
+  const decision = stripDecisionDisplayPrefix(normalizeLegacyMinuteContent(row.decision), agendaKey, label);
   return decision || '마스터 확인 대기';
 }
 
@@ -904,7 +915,11 @@ function normalizeLegacyBoilerplateHeadings(content) {
 
 function normalizeMinute(row = {}) {
   const content = normalizeLegacyMinuteContent(row.content);
-  const visibleContent = dedupeDeterministicAnalysisTitle(stripRedundantMinuteAgentPrefix(content, row.speaker));
+  let visibleContent = dedupeDeterministicAnalysisTitle(stripRedundantMinuteAgentPrefix(content, row.speaker));
+  if (String(row.role || '').toLowerCase() === 'decision') {
+    const agendaKey = row.agenda_key || row.agendaKey;
+    visibleContent = stripDecisionDisplayPrefix(visibleContent, agendaKey, agendaLabel(agendaKey));
+  }
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,

@@ -1514,6 +1514,66 @@ async function main() {
     assert.equal(pending.payload.decisions[0].decision.includes('regime-engine-hmm'), false);
     assert.equal(detail.payload.decisions[0].decision, '자문 기록 후 마스터 확인 대기');
 
+    const premarketPrefixDecisions = [
+      { id: 31, sessionId: 31, agendaKey: 'premarket:overseas-gate-regime', decision: '미국 프리마켓 게이트/레짐: 자문 기록 후 마스터 확인 대기', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:04.000Z' },
+      { id: 32, sessionId: 31, agendaKey: 'premarket:overseas-watch', decision: '미국 보유/예정 이벤트 점검: 자문 기록 후 마스터 확인 대기', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:05.000Z' },
+    ];
+    const premarketPrefixStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+      ...deps,
+      meetingStore: {
+        listMeetings: async () => [{
+          id: 31,
+          type: 'us_premarket',
+          status: 'closed',
+          chair: 'luna',
+          startedAt: '2026-06-11T00:00:00.000Z',
+          closedAt: '2026-06-11T00:05:00.000Z',
+          summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 0회',
+          segments: [],
+        }],
+        getMeeting: async () => ({
+          ok: true,
+          session: {
+            id: 31,
+            type: 'us_premarket',
+            status: 'closed',
+            chair: 'luna',
+            startedAt: '2026-06-11T00:00:00.000Z',
+            closedAt: '2026-06-11T00:05:00.000Z',
+            summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 0회',
+            segments: [],
+          },
+          minutes: [
+            { id: 31, sessionId: 31, seq: 1, agendaKey: 'premarket:overseas-gate-regime', speaker: 'luna', role: 'decision', content: '미국 프리마켓 게이트/레짐: 자문 기록 후 마스터 확인 대기', meta: {}, createdAt: '2026-06-11T00:00:04.000Z' },
+            { id: 32, sessionId: 31, seq: 2, agendaKey: 'premarket:overseas-watch', speaker: 'luna', role: 'decision', content: '미국 보유/예정 이벤트 점검: 자문 기록 후 마스터 확인 대기', meta: {}, createdAt: '2026-06-11T00:00:05.000Z' },
+          ],
+          decisions: premarketPrefixDecisions,
+        }),
+        listPendingDecisions: async () => premarketPrefixDecisions,
+      },
+    });
+    const premarketPrefixBase = `http://127.0.0.1:${premarketPrefixStarted.server.address().port}`;
+    try {
+      const premarketCatchup = await request(premarketPrefixBase, '/api/catchup/31');
+      const premarketPending = await request(premarketPrefixBase, '/api/decisions/pending');
+      const premarketDetail = await request(premarketPrefixBase, '/api/meetings/31');
+      const premarketCatchupText = premarketCatchup.payload.lines.join(' / ');
+      assert.ok(premarketCatchupText.includes('미장 전 게이트·레짐 점검: 자문 기록 후 마스터 확인 대기'));
+      assert.ok(premarketCatchupText.includes('미장 전 감시 목록 점검: 자문 기록 후 마스터 확인 대기'));
+      assert.equal(premarketCatchupText.includes('미장 전 게이트·레짐 점검: 미국 프리마켓 게이트/레짐:'), false);
+      assert.equal(premarketCatchupText.includes('미장 전 감시 목록 점검: 미국 보유/예정 이벤트 점검:'), false);
+      assert.deepEqual(premarketPending.payload.decisions.map((row) => row.decision), [
+        '자문 기록 후 마스터 확인 대기',
+        '자문 기록 후 마스터 확인 대기',
+      ]);
+      assert.deepEqual(premarketDetail.payload.minutes.map((row) => row.content), [
+        '자문 기록 후 마스터 확인 대기',
+        '자문 기록 후 마스터 확인 대기',
+      ]);
+    } finally {
+      await closeServer(premarketPrefixStarted.server);
+    }
+
     const invalidDecisionAction = await request(baseUrl, '/api/decisions/11', {
       method: 'POST',
       headers: jsonHeaders(),
@@ -2054,6 +2114,7 @@ async function main() {
       catchupConfirmedDeferredPendingCounts: true,
       catchupLinesA11y: true,
       catchupInternalTermsLocalized: true,
+      catchupPremarketDecisionPrefixDeduped: true,
       cryptoMarketLabelLocalized: true,
       askRateLimit: true,
       askSafetyNotice: true,
