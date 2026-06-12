@@ -137,11 +137,11 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     `- LLM 호출: ${result.llmCalls || 0}회`,
     `- LLM 생략: ${result.skippedLlmCalls || 0}회`,
     '',
-    '## Plan Note',
+    '## 회의 데이터 요약',
     '',
     safeText(result.planNote?.briefMarkdown || 'plan-note 없음'),
     '',
-    '## Minutes',
+    '## 회의록',
     '',
   ];
   for (const row of minutes) {
@@ -150,7 +150,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     lines.push(safeText(row.content));
     lines.push('');
   }
-  lines.push('## ADR');
+  lines.push('## 결정 기록(ADR)');
   lines.push('');
   if (decisions.length === 0) {
     lines.push('- 결정 없음');

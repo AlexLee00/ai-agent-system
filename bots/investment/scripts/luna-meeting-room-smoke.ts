@@ -483,7 +483,12 @@ async function main() {
     assert.equal(regenerated.markdown.includes(`session #${applied.session.id}`), false);
     assert.ok(regenerated.markdown.includes('요약: 아침 통합 회의 완료:'));
     assert.equal(regenerated.markdown.includes('summary: 아침 통합 회의 완료:'), false);
-    assert.ok(regenerated.markdown.includes('## Minutes'));
+    assert.ok(regenerated.markdown.includes('## 회의 데이터 요약'));
+    assert.ok(regenerated.markdown.includes('## 회의록'));
+    assert.ok(regenerated.markdown.includes('## 결정 기록(ADR)'));
+    assert.equal(regenerated.markdown.includes('## Plan Note'), false);
+    assert.equal(regenerated.markdown.includes('## Minutes'), false);
+    assert.equal(regenerated.markdown.includes('## ADR'), false);
     return { before, after, appliedRows };
   });
 

@@ -1352,6 +1352,12 @@ async function main() {
     assert.equal(regeneratedMarkdown.includes('- status:'), false);
     assert.equal(regeneratedMarkdown.includes('- dry_run:'), false);
     assert.equal(regeneratedMarkdown.includes('- llm_calls:'), false);
+    assert.ok(regeneratedMarkdown.includes('## 회의 데이터 요약'));
+    assert.ok(regeneratedMarkdown.includes('## 회의록'));
+    assert.ok(regeneratedMarkdown.includes('## 결정 기록(ADR)'));
+    assert.equal(regeneratedMarkdown.includes('## Plan Note'), false);
+    assert.equal(regeneratedMarkdown.includes('## Minutes'), false);
+    assert.equal(regeneratedMarkdown.includes('## ADR'), false);
     assert.equal(regeneratedMarkdown.includes('MR-A output is advisory/shadow only'), false);
     assert.ok(regeneratedMarkdown.includes('MR-A 산출물은 자문/섀도 전용입니다.'));
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
@@ -1953,6 +1959,7 @@ async function main() {
       regeneratedMarkdownTypeLocalized: true,
       regeneratedMarkdownMetadataLocalized: true,
       regeneratedMarkdownPlanNoteLocalized: true,
+      regeneratedMarkdownSectionLabelsLocalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
