@@ -1837,6 +1837,7 @@ async function main() {
     assert.equal(scheduleHubCalled, false);
     assert.ok(scheduleAsk.payload.text.includes('주말 morning 경량판은 국내·미국을 주말로 스킵'));
     assert.ok(scheduleAsk.payload.text.includes('암호화폐 24시간 운영 안건'));
+    assert.ok(scheduleAsk.payload.text.includes('정례 실행 상태:'));
     assert.ok(scheduleAsk.payload.text.includes('현재 화면 기준: 국내 비활성(주말)'));
     assert.ok(scheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
     assert.ok(scheduleAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
@@ -1844,6 +1845,38 @@ async function main() {
   } finally {
     await closeServer(scheduleStarted.server);
   }
+
+  const latestPreviousMorning = [{
+    id: 119,
+    type: 'morning',
+    status: 'closed',
+    startedAt: '2026-06-12T11:15:44.000Z',
+  }];
+  const beforeWeekendSchedule = _testOnly.buildScheduleExecutionStatus(
+    latestPreviousMorning,
+    new Date('2026-06-12T16:09:00.000Z'),
+  );
+  assert.ok(beforeWeekendSchedule.includes('오늘 05:00 KST 전이라 아직 실행 전입니다.'));
+  assert.ok(beforeWeekendSchedule.includes('최신 아침 통합 회의: #119'));
+  assert.equal(beforeWeekendSchedule.includes('morning 회의'), false);
+
+  const missingAfterWeekendSchedule = _testOnly.buildScheduleExecutionStatus(
+    latestPreviousMorning,
+    new Date('2026-06-12T21:30:00.000Z'),
+  );
+  assert.ok(missingAfterWeekendSchedule.includes('오늘 05:00 KST가 지났지만 오늘 아침 통합 회의 기록은 아직 없습니다.'));
+
+  const completedWeekendSchedule = _testOnly.buildScheduleExecutionStatus(
+    [{
+      id: 201,
+      type: 'morning',
+      status: 'closed',
+      startedAt: '2026-06-12T20:05:00.000Z',
+    }, ...latestPreviousMorning],
+    new Date('2026-06-12T21:30:00.000Z'),
+  );
+  assert.ok(completedWeekendSchedule.includes('오늘 아침 통합 회의 #201'));
+  assert.ok(completedWeekendSchedule.includes('완료 상태로 기록됐습니다.'));
 
   let premarketHubCalled = false;
   let premarketPlanNoteType = null;
@@ -1924,6 +1957,17 @@ async function main() {
     assert.equal(telegramAsk.payload.text.includes('callback_query'), false);
     assert.equal(telegramAsk.payload.text.includes('changed_via'), false);
     assert.equal(telegramAsk.payload.text.includes('route'), false);
+
+    telegramHubCalled = false;
+    const genericSyncAsk = await request(telegramBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '웹 폴링 동기화 상태만 설명해줘' }),
+    });
+    assert.equal(genericSyncAsk.status, 200);
+    assert.equal(genericSyncAsk.payload.provider, 'fixture');
+    assert.equal(genericSyncAsk.payload.skipped, undefined);
+    assert.equal(telegramHubCalled, true);
   } finally {
     await closeServer(telegramStarted.server);
   }

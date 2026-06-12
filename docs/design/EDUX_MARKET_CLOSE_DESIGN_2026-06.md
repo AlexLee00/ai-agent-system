@@ -323,3 +323,10 @@ Fear & Greed 73 (탐욕 유지)
 샘플 artifact: bots/edu-x/output/dry-run/fixture/20260613-1600-kis.md
 적용 절차: 커밋 -> migration 적용 -> plist 2개 bootstrap -> 첫 실사이클(월 16:00 kis / 화 06:30 overseas) TS-EXL1.
 이력: 2026-06-13 독립 검증 합격 (메티)
+
+### 8.1 적용 이력 (2026-06-13, 마스터)
+- migration 적용(CHECK 7슬롯) + plist 2개 bootstrap — doctor 7/7 loaded, failures 0.
+- 신규 2슬롯은 **dry-run 모드 가동** (EDUX_DRY_RUN=true, LIVE_PUBLISH_APPROVED=false, GATE_PASSED=false).
+- 다음: 첫 dry-run 사이클(월 6/15 16:00 kis — 화 6/16 06:30 overseas, 월 아침은 주말 직후 skip 예상)
+  -> 산출물 메티 TS-EXL1 품질 확인 -> 마스터 live 승인(EDUX_DRY_RUN=false + LIVE_PUBLISH_APPROVED=true)
+  -> 게이트 evidence(7일 5건+fail 0) 누적 -> 7슬롯 사이클 완성.

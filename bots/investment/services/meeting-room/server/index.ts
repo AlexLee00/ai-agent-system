@@ -1213,11 +1213,68 @@ function summarizeRuleBasedSegmentStates(planNote = {}) {
     .filter(Boolean);
 }
 
+function kstPartsForMeetingStatus(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(now));
+  const get = (type) => parts.find((part) => part.type === type)?.value || '';
+  const hour = Number(get('hour'));
+  const minute = Number(get('minute'));
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    weekday: get('weekday'),
+    minutesOfDay: (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0),
+  };
+}
+
+function kstDateKeyFromTimestamp(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
+  const rows = Array.isArray(meetings) ? meetings : [];
+  const { date, minutesOfDay } = kstPartsForMeetingStatus(now);
+  const morningRows = rows
+    .filter((row = {}) => String(row.type || '').toLowerCase() === 'morning')
+    .sort((a = {}, b = {}) => new Date(b.startedAt || b.started_at || 0) - new Date(a.startedAt || a.started_at || 0));
+  const todayMorning = morningRows.find((row = {}) => kstDateKeyFromTimestamp(row.startedAt || row.started_at) === date);
+  const latestMorning = todayMorning || morningRows[0];
+  const prefix = '정례 실행 상태:';
+  const latestText = latestMorning
+    ? `최신 ${meetingTypeLabel('morning')}: #${latestMorning.id} ${formatKstTimestampFromIso(latestMorning.startedAt || latestMorning.started_at)} ${sessionStatusLabel(latestMorning.status)}.`
+    : `최신 ${meetingTypeLabel('morning')} 기록은 아직 없습니다.`;
+  if (todayMorning) {
+    return `${prefix} 오늘 ${meetingTypeLabel('morning')} #${todayMorning.id}가 ${formatKstTimestampFromIso(todayMorning.startedAt || todayMorning.started_at)}에 ${sessionStatusLabel(todayMorning.status)} 상태로 기록됐습니다. ${latestText}`;
+  }
+  if (minutesOfDay < 5 * 60) {
+    return `${prefix} 오늘 05:00 KST 전이라 아직 실행 전입니다. ${latestText}`;
+  }
+  return `${prefix} 오늘 05:00 KST가 지났지만 오늘 ${meetingTypeLabel('morning')} 기록은 아직 없습니다. 운영 로그를 확인하세요. ${latestText}`;
+}
+
 function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
   if (/(미장\s*전|미국\s*프리마켓|프리마켓|us\s*premarket|premarket)/u.test(text)) return 'premarket';
   if (/(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text)) return 'schedule';
-  if (/(텔레그램|telegram|앱\s*버튼|버튼.*(확정|보류|승인)|확정.*웹|보류.*웹|웹.*(동기|갱신|반영)|동기화|callback|콜백|poller|폴러)/u.test(text)) return 'telegram';
+  const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
+  const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
+  if (hasTelegramContext && hasTelegramSyncContext) return 'telegram';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
   if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
@@ -1304,7 +1361,15 @@ async function safeListPendingDecisions(deps) {
   }
 }
 
-function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPendingDecisions = []) {
+async function safeListMeetings(limit, deps) {
+  try {
+    return await listMeetings(limit, deps);
+  } catch {
+    return [];
+  }
+}
+
+function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPendingDecisions = [], options = {}) {
   const intent = inferAskIntent(question);
   const globalPendingCount = Array.isArray(globalPendingDecisions) ? globalPendingDecisions.length : 0;
   const registryPendingCount = Array.isArray(planNote.pendingDecisions) ? planNote.pendingDecisions.length : 0;
@@ -1321,6 +1386,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     return [
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '운영 일정: 주말 morning 경량판은 국내·미국을 주말로 스킵하고, 암호화폐 24시간 운영 안건을 중심으로 확인합니다.',
+      options.scheduleStatus || buildScheduleExecutionStatus([], options.now || new Date()),
       `현재 화면 기준: ${segmentText}.`,
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
@@ -1385,13 +1451,15 @@ async function askAgent(body, deps, limiter) {
     queryFn: deps.queryFn,
   });
   const globalPendingDecisions = await safeListPendingDecisions(deps);
+  const scheduleMeetings = intent === 'schedule' ? await safeListMeetings(20, deps) : [];
+  const scheduleStatus = intent === 'schedule' ? buildScheduleExecutionStatus(scheduleMeetings, new Date()) : null;
   if (intent === 'schedule' || intent === 'premarket' || intent === 'telegram') {
     return {
       ok: true,
       skipped: true,
       agent,
       provider: 'rule_based',
-      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions),
+      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions, { scheduleStatus }),
     };
   }
   const route = deps.resolveAgentLLMRouteFn(agent, 'any', 'meeting_room');
@@ -1402,7 +1470,7 @@ async function askAgent(body, deps, limiter) {
       skipped: true,
       agent,
       provider: 'rule_based',
-      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions),
+      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions, { scheduleStatus }),
     };
   }
 
@@ -1669,6 +1737,7 @@ export {
 export const _testOnly = {
   agendaLabel,
   agentDisplayLabel,
+  buildScheduleExecutionStatus,
   componentLabel,
   compactRepetitiveReportContent,
   legacyMetricLabel,
