@@ -211,13 +211,13 @@ async function closeServer(server) {
   await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 }
 
-async function waitForRun(baseUrl, runId) {
+async function waitForRun(baseUrl, runId, expectedStatus = 'completed') {
   for (let i = 0; i < 20; i += 1) {
     const res = await request(baseUrl, `/api/meetings/${runId}`);
-    if (res.payload?.run?.status === 'completed') return res.payload.run;
+    if (res.payload?.run?.status === expectedStatus) return res.payload.run;
     await sleep(25);
   }
-  throw new Error(`run ${runId} did not complete`);
+  throw new Error(`run ${runId} did not reach ${expectedStatus}`);
 }
 
 async function main() {
@@ -308,6 +308,9 @@ async function main() {
     assert.ok(appJs.text.includes("aria-pressed=${tab === 'ask'}"));
     assert.ok(appJs.text.includes('aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}'));
     assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}'));
+    assert.ok(appJs.text.includes('role="region" aria-label="회의 목록"'));
+    assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}'));
+    assert.ok(appJs.text.includes('className="meeting-list-row" role="listitem"'));
     assert.ok(appJs.text.includes('htmlFor="meeting-type-select">회의 시작'));
     assert.ok(appJs.text.includes('aria-label="시작할 회의 타입"'));
     assert.ok(appJs.text.includes('aria-describedby="meeting-segment-status"'));
@@ -315,6 +318,10 @@ async function main() {
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="시장 세그먼트 상태"'));
     assert.ok(appJs.text.includes('비활성, 사유'));
     assert.ok(appJs.text.includes('advisory/shadow 회의로 시작합니다.'));
+    assert.ok(appJs.text.includes('selectedTypeDisabled'));
+    assert.ok(appJs.text.includes('startDisabled'));
+    assert.ok(appJs.text.includes('선택한 회의 타입은 현재 비활성입니다'));
+    assert.ok(appJs.text.includes('시작 불가, 사유'));
     assert.ok(appJs.text.includes('id="meeting-llm-toggle"'));
     assert.ok(appJs.text.includes('aria-describedby="meeting-llm-mode"'));
     assert.ok(appJs.text.includes('id="meeting-llm-mode"'));
@@ -334,6 +341,12 @@ async function main() {
     assert.ok(appJs.text.includes("setError('');"));
     assert.ok(appJs.text.includes("payload.run.status === 'completed'"));
     assert.ok(appJs.text.includes('await refreshSelected(payload.run.sessionId)'));
+    assert.ok(appJs.text.includes('function clearDailyRoomData'));
+    assert.ok(appJs.text.includes('clearDailyRoomData();'));
+    assert.ok(appJs.text.includes('회의 상세를 불러오지 못했습니다.'));
+    assert.ok(appJs.text.includes("payload.run.status === 'failed'"));
+    assert.ok(appJs.text.includes('오류: ${payload.run.error ||'));
+    assert.ok(appJs.text.includes('원인 미상'));
     assert.ok(appJs.text.includes('function dueState'));
     assert.ok(appJs.text.includes('기한 임박:'));
     assert.ok(appJs.text.includes('기한 경과:'));
@@ -350,6 +363,11 @@ async function main() {
     assert.ok(appJs.text.includes('근거 JSON 보기'));
     assert.ok(appJs.text.includes('C 마스터 확인'));
     assert.ok(appJs.text.includes('마스터 액션 대기'));
+    assert.ok(appJs.text.includes('원문 등급:'));
+    assert.ok(appJs.text.includes('원문 상태:'));
+    assert.ok(appJs.text.includes('마스터 액션 대기 결정 ${decisions.length}건'));
+    assert.ok(appJs.text.includes('마스터 액션 대기 결정 없음'));
+    assert.equal(appJs.text.includes('pending_master 결정 ${decisions.length}건'), false);
     assert.ok(appJs.text.includes('감사 메모'));
     assert.ok(appJs.text.includes("busy === 'confirm' ? '확정 중' : '확정'"));
     assert.ok(appJs.text.includes("busy === 'defer' ? '보류 중' : '보류'"));
@@ -360,17 +378,22 @@ async function main() {
     assert.ok(appJs.text.includes('role="listitem"'));
     assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${decision.agendaKey ||'));
     assert.ok(appJs.text.includes('role="region" aria-label="결정 대기함"'));
-    assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`pending_master 결정 ${decisions.length}건`}'));
+    assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisions.length}건`}'));
     assert.ok(appJs.text.includes('LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-select">에이전트'));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-question">질문'));
     assert.ok(appJs.text.includes('aria-label="질의 대상 에이전트"'));
     assert.ok(appJs.text.includes('aria-label="회의실 컨텍스트 기반 advisory 질문"'));
     assert.ok(appJs.text.includes('aria-describedby="ask-helper ask-safety-note"'));
+    assert.ok(appJs.text.includes('function updateAgent'));
+    assert.ok(appJs.text.includes('function updateQuestion'));
+    assert.ok(appJs.text.includes('updateAgent(event.target.value)'));
+    assert.ok(appJs.text.includes('updateQuestion(event.target.value)'));
     assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 advisory 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
+    assert.ok(appJs.text.includes('setAnswer(null);'));
     assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답"'));
     assert.ok(appJs.text.includes('질의 중 · 에이전트 응답을 기다리는 중입니다.'));
     assert.ok(appJs.text.includes('function answerStatusLabel'));
@@ -380,6 +403,7 @@ async function main() {
     assert.ok(html.text.includes('.ask-helper'));
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
+    assert.ok(html.text.includes('.meeting-list-row .meeting-item'));
     assert.ok(html.text.includes('.due.unknown'));
     assert.ok(appJs.text.includes("run.status === 'running'"));
     assert.ok(appJs.text.includes('hasOpen ? 3000 : 30000'));
@@ -510,6 +534,29 @@ async function main() {
     await closeServer(started.server);
   }
 
+  const failedStore = createMemoryStore();
+  const failedStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: failedStore,
+    runMeetingSessionFn: async () => {
+      throw new Error('fixture run failed');
+    },
+  });
+  const failedBase = `http://127.0.0.1:${failedStarted.server.address().port}`;
+  try {
+    const failedStart = await request(failedBase, '/api/meetings/start', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ type: 'morning', noLlm: true }),
+    });
+    assert.equal(failedStart.status, 202);
+    const failedRun = await waitForRun(failedBase, failedStart.payload.run.id, 'failed');
+    assert.equal(failedRun.status, 'failed');
+    assert.ok(failedRun.error.includes('fixture run failed'));
+  } finally {
+    await closeServer(failedStarted.server);
+  }
+
   const authStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1', token: 'fixture-token' }, deps);
   const authBase = `http://127.0.0.1:${authStarted.server.address().port}`;
   try {
@@ -531,6 +578,7 @@ async function main() {
       pendingDueOrder: true,
       startDuplicateGuard: true,
       completedRunSwitchesToSessionDetail: true,
+      failedRunShowsError: true,
       confirmAuditAndIdempotency: true,
       idempotentDecisionNotice: true,
       deferAudit: true,
@@ -540,6 +588,8 @@ async function main() {
       askSafetyNotice: true,
       askFormKoreanLabels: true,
       askInputGuidance: true,
+      askClearsStaleAnswerOnSubmit: true,
+      askInputClearsStaleError: true,
       askAnswerLiveRegion: true,
       askBusyStatus: true,
       askResponseMetadataLabels: true,
@@ -550,7 +600,9 @@ async function main() {
       tabKeyboardNavigation: true,
       tabPressedState: true,
       startMeetingA11y: true,
+      startClosedSegmentUiGuard: true,
       meetingListPressedState: true,
+      meetingListRegionA11y: true,
       timelineArticleA11y: true,
       timelineRoleLegend: true,
       dynamicRegionA11y: true,
@@ -572,7 +624,9 @@ async function main() {
       decisionActionKoreanLabels: true,
       decisionControlsAccessibleNames: true,
       decisionRegionA11y: true,
+      decisionStatusRawTokenHidden: true,
       serverRecoveryClearsError: true,
+      authFailureClearsCachedData: true,
       dueBadges: true,
       dueBadgeA11y: true,
       adrRolePresentation: true,

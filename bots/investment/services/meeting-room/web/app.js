@@ -321,31 +321,36 @@ function Header({ token, setToken, tab, setTab }) {
 }
 
 function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
+  const totalCount = meetings.length + activeRuns.length;
   return html`
-    <div className="card">
+    <div className="card" role="region" aria-label="회의 목록">
       <h2>회의 목록</h2>
-      <div className="card-body list">
+      <div className="card-body list" role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}>
         ${activeRuns.map((run) => html`
-          <button
-            className=${`meeting-item ${selectedId === run.id ? 'active' : ''}`}
-            aria-pressed=${selectedId === run.id}
-            aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}
-            onClick=${() => setSelectedId(run.id)}
-          >
-            <div className="meeting-title">${run.type} · ${run.status}</div>
-            <div className="meta">${formatTime(run.startedAt)} · run</div>
-          </button>
+          <div className="meeting-list-row" role="listitem">
+            <button
+              className=${`meeting-item ${selectedId === run.id ? 'active' : ''}`}
+              aria-pressed=${selectedId === run.id}
+              aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}
+              onClick=${() => setSelectedId(run.id)}
+            >
+              <div className="meeting-title">${run.type} · ${run.status}</div>
+              <div className="meta">${formatTime(run.startedAt)} · run</div>
+            </button>
+          </div>
         `)}
         ${meetings.map((meeting) => html`
-          <button
-            className=${`meeting-item ${String(selectedId) === String(meeting.id) ? 'active' : ''}`}
-            aria-pressed=${String(selectedId) === String(meeting.id)}
-            aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}
-            onClick=${() => setSelectedId(meeting.id)}
-          >
-            <div className="meeting-title">#${meeting.id} · ${meeting.type}</div>
-            <div className="meta">${meeting.status} · ${formatTime(meeting.startedAt)}</div>
-          </button>
+          <div className="meeting-list-row" role="listitem">
+            <button
+              className=${`meeting-item ${String(selectedId) === String(meeting.id) ? 'active' : ''}`}
+              aria-pressed=${String(selectedId) === String(meeting.id)}
+              aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}
+              onClick=${() => setSelectedId(meeting.id)}
+            >
+              <div className="meeting-title">#${meeting.id} · ${meeting.type}</div>
+              <div className="meta">${meeting.status} · ${formatTime(meeting.startedAt)}</div>
+            </button>
+          </div>
         `)}
         ${meetings.length === 0 && activeRuns.length === 0 ? html`<div className="meta">회의 기록 없음</div>` : null}
       </div>
@@ -358,7 +363,11 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   const [type, setType] = useState('morning');
   const [useLlm, setUseLlm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const selectedType = types.find((item) => item.value === type) || types[0];
+  const selectedTypeDisabled = selectedType?.disabled === true;
+  const startDisabled = busy || selectedTypeDisabled;
   async function start() {
+    if (selectedTypeDisabled) return;
     setBusy(true);
     setError('');
     try {
@@ -388,12 +397,13 @@ function StartMeeting({ token, segments, onStarted, setError }) {
           `)}
         </select>
         <button
-          aria-label=${`${types.find((item) => item.value === type)?.label || type} 시작`}
-          title=${`${types.find((item) => item.value === type)?.label || type}를 advisory/shadow 회의로 시작합니다.`}
+          aria-label=${selectedTypeDisabled ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reason || '비활성'}` : `${selectedType?.label || type} 시작`}
+          title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reason || '사유 없음'}` : `${selectedType?.label || type}를 advisory/shadow 회의로 시작합니다.`}
           onClick=${start}
-          disabled=${busy}
+          disabled=${startDisabled}
         >${busy ? '시작 중' : '회의 시작'}</button>
       </div>
+      ${selectedTypeDisabled ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 비활성입니다: ${selectedType?.reason || '사유 없음'}</div>` : null}
       <${SegmentStatus} segments=${segments} />
       <label className="check" htmlFor="meeting-llm-toggle"><input id="meeting-llm-toggle" type="checkbox" aria-describedby="meeting-llm-mode" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
       <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`} role="status" aria-live="polite" aria-label="LLM 발언 모드">
@@ -479,8 +489,8 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
     >
       <div className="meeting-title">#${decision.id} · ${decision.agendaKey}</div>
       <div className="meta decision-state">
-        <span>${decisionGradeLabel(decision.grade)} (${decision.grade})</span>
-        <span>${decisionStatusLabel(decision.status)} (${decision.status})</span>
+        <span title=${`원문 등급: ${decision.grade || 'n/a'}`}>${decisionGradeLabel(decision.grade)}</span>
+        <span title=${`원문 상태: ${decision.status || 'n/a'}`}>${decisionStatusLabel(decision.status)}</span>
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
       <${MarkdownLite} text=${decision.decision} />
@@ -500,9 +510,9 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   return html`
     <div className="card" role="region" aria-label="결정 대기함">
       <h2>결정 대기함</h2>
-      <div className="card-body list" role="list" aria-live="polite" aria-label=${`pending_master 결정 ${decisions.length}건`}>
+      <div className="card-body list" role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisions.length}건`}>
         ${decisions.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
-        ${decisions.length === 0 ? html`<div className="meta">pending_master 결정 없음</div>` : null}
+        ${decisions.length === 0 ? html`<div className="meta">마스터 액션 대기 결정 없음</div>` : null}
       </div>
     </div>
   `;
@@ -520,18 +530,33 @@ function DailyRoom({ token }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  function clearDailyRoomData() {
+    setMeetings([]);
+    setActiveRuns([]);
+    setSegments([]);
+    setPending([]);
+    setSelectedId(null);
+    setDetail(null);
+    setCatchup([]);
+  }
+
   async function refreshBase() {
-    const list = await api(token, '/api/meetings');
-    setMeetings(list.meetings || []);
-    setActiveRuns(list.activeRuns || []);
-    setSegments(list.segments || []);
-    const pendingPayload = await api(token, '/api/decisions/pending');
-    setPending(pendingPayload.decisions || []);
-    setError('');
-    if (!selectedId && (list.activeRuns?.[0] || list.meetings?.[0])) {
-      const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
-      setSelectedId(nextId);
-      await refreshSelected(nextId);
+    try {
+      const list = await api(token, '/api/meetings');
+      setMeetings(list.meetings || []);
+      setActiveRuns(list.activeRuns || []);
+      setSegments(list.segments || []);
+      const pendingPayload = await api(token, '/api/decisions/pending');
+      setPending(pendingPayload.decisions || []);
+      setError('');
+      if (!selectedId && (list.activeRuns?.[0] || list.meetings?.[0])) {
+        const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
+        setSelectedId(nextId);
+        await refreshSelected(nextId);
+      }
+    } catch (error) {
+      clearDailyRoomData();
+      throw error;
     }
   }
 
@@ -547,7 +572,12 @@ function DailyRoom({ token }) {
           return;
         }
         setDetail({ session: payload.run, minutes: [], decisions: [] });
-        setCatchup([`실행 상태: ${payload.run.status}`, `세션: ${payload.run.sessionId || '생성 중'}`, `완료: ${payload.run.completedAt || '대기'}`]);
+        setCatchup([
+          `실행 상태: ${payload.run.status}`,
+          `세션: ${payload.run.sessionId || '생성 중'}`,
+          `완료: ${payload.run.completedAt || '대기'}`,
+          ...(payload.run.status === 'failed' ? [`오류: ${payload.run.error || '원인 미상'}`] : []),
+        ]);
         setError('');
         return;
       }
@@ -555,6 +585,10 @@ function DailyRoom({ token }) {
       const catchupPayload = await api(token, `/api/catchup/${id}`);
       setCatchup(catchupPayload.lines || []);
       setError('');
+    } catch (error) {
+      setDetail(null);
+      setCatchup(['회의 상세를 불러오지 못했습니다.']);
+      throw error;
     } finally {
       setDetailLoading(false);
     }
@@ -596,9 +630,18 @@ function AskRoom({ token }) {
   const [answer, setAnswer] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  function updateAgent(value) {
+    setAgent(value);
+    setError('');
+  }
+  function updateQuestion(value) {
+    setQuestion(value);
+    setError('');
+  }
   async function ask() {
     setBusy(true);
     setError('');
+    setAnswer(null);
     try {
       setAnswer(await api(token, '/api/agents/ask', {
         method: 'POST',
@@ -618,7 +661,7 @@ function AskRoom({ token }) {
         <div className="card-body">
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
-            <select id="meeting-agent-select" aria-label="질의 대상 에이전트" value=${agent} onChange=${(event) => setAgent(event.target.value)}>
+            <select id="meeting-agent-select" aria-label="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
               ${['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map((name) => html`<option value=${name}>${name}</option>`)}
             </select>
           </div>
@@ -629,7 +672,7 @@ function AskRoom({ token }) {
               aria-label="회의실 컨텍스트 기반 advisory 질문"
               aria-describedby="ask-helper ask-safety-note"
               value=${question}
-              onChange=${(event) => setQuestion(event.target.value)}
+              onChange=${(event) => updateQuestion(event.target.value)}
               placeholder="회의실 컨텍스트 기반 advisory 질문"
             />
             <div id="ask-helper" className="ask-helper">질문을 입력하면 전송 버튼이 활성화됩니다.</div>
