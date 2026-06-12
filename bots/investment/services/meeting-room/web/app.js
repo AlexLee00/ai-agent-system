@@ -406,12 +406,12 @@ function meetingTypesForSegments(segments = []) {
   const segmentRows = safeArray(segments);
   const domestic = segmentRows.find((row) => row.market === 'domestic');
   const overseas = segmentRows.find((row) => row.market === 'overseas');
-  const domesticReason = segmentReasonLabel(domestic?.reason);
-  const overseasReason = segmentReasonLabel(overseas?.reason);
+  const domesticReason = domestic?.reasonLabel || segmentReasonLabel(domestic?.reason);
+  const overseasReason = overseas?.reasonLabel || segmentReasonLabel(overseas?.reason);
   return [
     { value: 'morning', label: '아침 통합 회의', disabled: false },
-    { value: 'domestic_debrief', label: `국내 장후 회의${domestic?.skipped ? ` (${domesticReason})` : ''}`, disabled: domestic?.skipped === true, reason: domestic?.reason, reasonLabel: domesticReason },
-    { value: 'us_premarket', label: `미장 전 회의${overseas?.skipped ? ` (${overseasReason})` : ''}`, disabled: overseas?.skipped === true, reason: overseas?.reason, reasonLabel: overseasReason },
+    { value: 'domestic_debrief', label: `국내 장후 회의${domestic?.skipped ? ` (${domesticReason})` : ''}`, disabled: domestic?.skipped === true, reasonLabel: domesticReason },
+    { value: 'us_premarket', label: `미장 전 회의${overseas?.skipped ? ` (${overseasReason})` : ''}`, disabled: overseas?.skipped === true, reasonLabel: overseasReason },
     { value: 'weekly', label: '주간 회의', disabled: false },
     { value: 'adhoc', label: '임시 회의', disabled: false },
   ];
@@ -422,23 +422,24 @@ function marketLabel(market) {
 }
 
 function marketHoursStateLabel(segment = {}) {
-  const state = String(segment.marketHours?.state || '');
-  const reason = String(segment.marketHours?.reasonCode || segment.reason || '');
+  if (segment.marketStateLabel) return segment.marketStateLabel;
+  const state = String(segment.marketState || segment.marketHours?.state || '');
+  const reason = String(segment.reason || '');
   if (segment.market === 'crypto' || state === 'always_open') return '24시간 운영';
   if (state === 'open') return '장중';
   if (state === 'closed') return '장 마감';
   if (state === 'preopen') return '개장 전';
-  return segmentReasonLabel(reason);
+  return segment.reasonLabel || segmentReasonLabel(reason);
 }
 
 function segmentStatusText(segment = {}) {
   return segment.skipped
-    ? `${marketLabel(segment.market)} 비활성, 사유 ${segmentReasonLabel(segment.reason)}`
+    ? `${marketLabel(segment.market)} 비활성, 사유 ${segment.reasonLabel || segmentReasonLabel(segment.reason)}`
     : `${marketLabel(segment.market)} 회의 대상, 시장 상태 ${marketHoursStateLabel(segment)}`;
 }
 
 function segmentStatusVisibleText(segment = {}) {
-  return `${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segmentReasonLabel(segment.reason)})` : `회의 대상(${marketHoursStateLabel(segment)})`}`;
+  return `${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segment.reasonLabel || segmentReasonLabel(segment.reason)})` : `회의 대상(${marketHoursStateLabel(segment)})`}`;
 }
 
 function SegmentStatus({ segments }) {
@@ -450,7 +451,7 @@ function SegmentStatus({ segments }) {
       <span
         key=${`segment-${segment.market || index}`}
         className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
-        title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 회의 대상: ${marketHoursStateLabel(segment)}`}
+        title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segment.reasonLabel || segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 회의 대상: ${marketHoursStateLabel(segment)}`}
         aria-label=${segmentStatusText(segment)}
       >
         ${segmentStatusVisibleText(segment)}

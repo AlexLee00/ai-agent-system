@@ -1055,12 +1055,26 @@ async function main() {
     assert.equal(storedCryptoSegment.label, '암호화폐 24시간 점검');
     assert.equal(storedCryptoSegment.reasonLabel, '24시간 운영');
     assert.equal(storedCryptoSegment.marketLabel, '암호화폐');
-    assert.equal(JSON.stringify(meetings.payload.meetings[0].segments).includes('crypto 24h 점검'), false);
+    const storedSegmentText = JSON.stringify(meetings.payload.meetings[0].segments);
+    assert.equal(storedSegmentText.includes('crypto 24h 점검'), false);
+    assert.equal(storedSegmentText.includes('crypto_24h'), false);
+    assert.equal(storedSegmentText.includes('kis_market_closed'), false);
+    assert.equal(storedSegmentText.includes('reasonCode'), false);
+    assert.equal(storedSegmentText.includes('nextAction'), false);
+    assert.equal(storedSegmentText.includes('marketHours'), false);
+    assert.equal(storedSegmentText.includes('always_open'), false);
     assert.ok(Array.isArray(meetings.payload.segments));
     assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.skipped, true);
-    assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.reason, 'weekend');
     assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.reasonLabel, '주말');
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.marketState, 'inactive');
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'domestic')?.marketStateLabel, '주말');
     assert.equal(meetings.payload.segments.find((row) => row.market === 'crypto')?.label, '암호화폐 24시간 점검');
+    assert.equal(meetings.payload.segments.find((row) => row.market === 'crypto')?.marketState, 'continuous');
+    const currentSegmentText = JSON.stringify(meetings.payload.segments);
+    assert.equal(currentSegmentText.includes('crypto_24h'), false);
+    assert.equal(currentSegmentText.includes('always_open'), false);
+    assert.equal(currentSegmentText.includes('reasonCode'), false);
+    assert.equal(currentSegmentText.includes('marketHours'), false);
 
     const detail = await request(baseUrl, '/api/meetings/1');
     assert.equal(detail.payload.minutes.length, 5);
@@ -2725,6 +2739,7 @@ async function main() {
       segmentReasonKoreanLabel: true,
       segmentReasonRuntimeCodesLocalized: true,
       segmentReasonUnknownCodeHidden: true,
+      segmentApiPayloadCompacted: true,
       segmentStatusTextSeparated: true,
       llmToggleDefaultNoCost: true,
       llmModeLiveRegion: true,

@@ -179,11 +179,36 @@ function normalizeSegmentLabel(segment = {}) {
 }
 
 function normalizeSegmentForApi(segment = {}) {
+  const skipped = segment.skipped === true;
+  const reasonLabel = meetingSegmentReasonLabel(segment);
+  const rawState = String(segment.marketHours?.state || '').trim();
+  const marketState = skipped
+    ? 'inactive'
+    : segment.market === 'crypto' || rawState === 'always_open'
+      ? 'continuous'
+      : rawState === 'open' || segment.marketHours?.isOpen === true
+        ? 'open'
+        : rawState === 'closed'
+          ? 'closed'
+          : rawState === 'preopen'
+            ? 'preopen'
+            : 'unknown';
   return {
-    ...segment,
+    market: segment.market || null,
+    active: segment.active === true,
+    skipped,
     label: normalizeSegmentLabel(segment),
     marketLabel: transitionMarketLabel(segment.market),
-    reasonLabel: meetingSegmentReasonLabel(segment),
+    reasonLabel,
+    marketState,
+    marketStateLabel: {
+      inactive: reasonLabel,
+      continuous: '24시간 운영',
+      open: '장중',
+      closed: '장 마감',
+      preopen: '개장 전',
+      unknown: reasonLabel,
+    }[marketState],
   };
 }
 
