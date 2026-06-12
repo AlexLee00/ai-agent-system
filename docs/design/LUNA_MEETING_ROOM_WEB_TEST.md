@@ -297,6 +297,7 @@
 - **2026-06-13 루프 241**: W-51 Telegram 버튼 메시지 사전 점검 → 실제 앱 버튼 클릭은 아직 남았지만 전송 payload 생성부를 확인하니 `pending_master`, `session=`, `minutes=`, `morning/us_premarket` 같은 내부 상태·타입명이 Telegram 알림 본문에 노출될 수 있었다. 알림 문구를 `Luna 회의 완료: 아침 통합 회의`, `마스터 액션 대기`, `회의 #... · 회의록 ...행`으로 한국어화하고, smoke가 `postAlarm` payload를 직접 캡처해 내부 토큰 재노출 0건과 inline keyboard 유지 여부를 검증하도록 보강했다. 실 Telegram 앱 버튼/poller 이벤트는 첫 실사용에서 계속 확인한다.
 - **2026-06-13 루프 242**: W-30/W-51 Telegram 알림 질의 재점검 → 실제 브라우저에서 `텔레그램 버튼 알림에는 어떤 문구가 가고, 웹 결정 대기함도 바로 갱신돼?`를 질의하자 동기화와 첫 실사용 caveat는 맞았지만, 질문의 알림 문구 자체를 설명하지 않았다. Telegram 의도 응답에 `알림 본문: Luna 회의 완료: 회의 타입 / 마스터 액션 대기: N건 / 회의 #... · 회의록 ...행 / 웹 링크`와 `확정·보류 버튼 상위 9건` 설명을 추가하고, smoke에 알림 문구 안내와 내부 token 미노출을 고정했다.
 - **2026-06-13 루프 243**: W-01/W-24 상세 API 데이터 재점검 → DB 원문 summary는 raw type을 보존하지만 `/api/meetings` 목록은 한국어로 보정됨을 확인했다. 반면 `/api/meetings/143` 상세 응답의 `minutes[].meta.status/summary`에는 `pending_master`, `us_premarket 회의 완료`가 남아 API 소비자·보조 도구가 내부 상태명을 볼 수 있었다. `normalizeMinute`에서 meta.status를 `마스터 액션 대기`로, meta.summary를 회의 타입 라벨 기반 한국어 summary로 정규화하고 smoke에 raw meta 재노출 금지를 추가했다. `decisions.status`는 액션 API용 기계 상태라 유지한다.
+- **2026-06-13 루프 244**: W-01 상단 실행 상태 표기 재점검 → 실제 화면은 정례 meeting plist와 Telegram callback 보강이 적용된 MR-C 운영 범위인데, 헤더 배지가 여전히 `MR-B`로 표시되어 현재 기능 범위를 과소 설명했다. 상단 상태 배지와 aria-label을 `MR-C`, `정례 및 텔레그램 승인 보조 포함`으로 갱신하고 smoke 계약을 MR-C 기준으로 조정했다.
 - **남은 위험**: 실제 Telegram 앱 버튼/poller 이벤트, 실제 주말 정례 회의, 장시간 운영 후 누적 UX는 정례 사이클에서 계속 검증.
 
 ## 운영 루틴 제안

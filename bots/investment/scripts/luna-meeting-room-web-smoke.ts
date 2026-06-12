@@ -427,7 +427,7 @@ async function main() {
     assert.ok(appJs.text.includes("items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`, '\\n');"));
     assert.ok(appJs.text.includes('renderInlineMarkdown'));
     assert.ok(appJs.text.includes('markdown-table'));
-    assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791"'));
+    assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-C, 자문 및 섀도 전용, 정례 및 텔레그램 승인 보조 포함, 로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
     const meetingSessionSource = fs.readFileSync(new URL('../services/meeting-room/server/orchestrator/meeting-session.ts', import.meta.url), 'utf8');
@@ -437,7 +437,7 @@ async function main() {
     assert.ok(meetingSessionSource.includes('function meetingTypeLabel'));
     assert.ok(meetingSessionSource.includes('`${meetingTypeLabel(type)} 완료: 안건 ${agendas.length}건'));
     assert.equal(meetingSessionSource.includes('`${type} 회의 완료: 안건 ${agendas.length}건'), false);
-    assert.ok(appJs.text.includes("MR-B ·${' '}"));
+    assert.ok(appJs.text.includes("MR-C ·${' '}"));
     assert.ok(appJs.text.includes("자문 / 섀도 전용 ·${' '}"));
     assert.ok(appJs.text.includes(`<h1>Luna Meeting Room</h1>
         \${'\\n'}

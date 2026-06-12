@@ -488,9 +488,9 @@ function Header({ token, setToken, tab, setTab }) {
   return html`
     <div className="hero">
       <div>
-        <div className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791">
-          <span className="pill" aria-label="회의실 버전 MR-B">
-            MR-B ·${' '}
+        <div className="topline" role="status" aria-label="회의실 실행 상태: MR-C, 자문 및 섀도 전용, 정례 및 텔레그램 승인 보조 포함, 로컬 바인딩 127.0.0.1 포트 7791">
+          <span className="pill" aria-label="회의실 버전 MR-C">
+            MR-C ·${' '}
           </span>
           <span className="pill" aria-label="자문 및 섀도 전용">
             자문 / 섀도 전용 ·${' '}
