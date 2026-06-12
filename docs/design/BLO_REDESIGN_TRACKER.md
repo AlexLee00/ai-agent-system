@@ -182,3 +182,17 @@
 auto-dev WorkingDirectory worktree 분리(클로드팀 설정 변경)는 즉시 진행하지 않고 **별도 검토 항목**으로
 보류. 가드 3종이 1차 방어를 담당하므로 긴급도 하락 — 루트 main 고정 후 운영하며 클로드팀 B7 사이클과
 함께 재검토. 전환 시퀀스는 ①cron 주석화 ②dirty 정리 ③main ff ④루트 main 고정 ⑥수동 deploy로 진행.
+
+## L. 루트 main 정렬 완료 — 인프라 사고 트랙 종결 (2026-06-13, 마스터/메티)
+
+마스터 시퀀스: dirty 커밋(d5d39b326) -> main 전환 -> ff 42커밋(역방향 0, 손실 0) -> push -> 후속 1건
+(aad0253d4) push -> crontab 제거.
+메티 정렬 후 검증(전부 합격): 루트 main + clean + origin/main 차이 0 / B2·가드 핵심 파일 main 존재 /
+가드 main 통과(TS-G2 라이브) / crontab 부재.
+
+체계 요약: 루트 = main 전용(가드 3종 자동 보호) / 배포 = 수동 bash scripts/deploy.sh / worktree 분리 =
+별도 검토(§K-1) / 사고 원인~재발 방지 전 과정 §J~L.
+
+블로 트랙 복귀: ① vault-context 임계 0.55 보정(1줄 — 익일 06:00 연계 블록 활성 조건, 당일 중 권고)
+② CODEX-B2b(발행본 vs 최종본 diff, 익일 08:30 재파싱) ③ 익일 02:00 vault-feed 첫 자동 증분 관찰.
+이력: 2026-06-13 main 정렬 검증 (메티)

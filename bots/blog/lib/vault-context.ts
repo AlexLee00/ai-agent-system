@@ -6,7 +6,7 @@ const { pathToFileURL } = require('url');
 const env = require('../../../packages/core/lib/env');
 
 const DEFAULT_TOP_K = 4;
-const DEFAULT_MIN_SIMILARITY = 0.65;
+const DEFAULT_MIN_SIMILARITY = 0.55;
 const DEFAULT_TIMEOUT_MS = 2500;
 
 function isVaultContextEnabled() {
