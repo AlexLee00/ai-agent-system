@@ -412,6 +412,9 @@ async function main() {
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
     assert.ok(appJs.text.includes("MR-B ·${' '}"));
     assert.ok(appJs.text.includes("자문 / 섀도 전용 ·${' '}"));
+    assert.ok(appJs.text.includes(`<h1>Luna Meeting Room</h1>
+        \${'\\n'}
+        <p>회의록, 결정 대기함, 에이전트 질의를 한 화면에서 다룹니다.`));
     assert.equal(appJs.text.includes('className="pill-separator"'), false);
     assert.equal(appJs.text.includes('pill-inline-separator'), false);
     assert.ok(appJs.text.includes('className="token-box"'));
@@ -433,9 +436,15 @@ async function main() {
     assert.equal(appJs.text.includes("localStorage.getItem('lunaMeetingRoomToken')"), false);
     assert.equal(appJs.text.includes("localStorage.setItem('lunaMeetingRoomToken', value)"), false);
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰'));
+    assert.ok(appJs.text.includes(`<label className="meta" htmlFor="meeting-room-token">접근 토큰</label>
+        \${'\\n'}`));
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
     assert.ok(appJs.text.includes('aria-describedby="meeting-room-token-help"'));
+    assert.ok(appJs.text.includes(`<div id="meeting-room-token-help" className="meta">MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠</div>
+      </div>
+    </div>
+    \${'\\n'}`));
     assert.ok(appJs.text.includes('id="meeting-room-token-help"'));
     assert.ok(appJs.text.includes('MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠'));
     assert.equal(appJs.text.includes('aria-label="회의실 접근 토큰"'), false);
@@ -446,6 +455,19 @@ async function main() {
     assert.ok(appJs.text.includes('role="tab"'));
     assert.ok(appJs.text.includes("aria-selected=${tab === 'daily'}"));
     assert.ok(appJs.text.includes("aria-selected=${tab === 'ask'}"));
+    assert.ok(appJs.text.includes(`>일일 회의실</button>
+        \${'\\n'}
+        <button
+          id="meeting-tab-ask"`));
+    assert.ok(appJs.text.includes(`<div className="tab-switcher" role="tablist" aria-label="회의실 화면 전환">`));
+    assert.ok(appJs.text.includes('<${Header} token=${token} setToken=${setToken} tab=${tab} setTab=${setTab} />'));
+    assert.ok(appJs.text.includes(`\${'\\n'}
+      <section
+        id="meeting-panel-daily"`));
+    assert.ok(appJs.text.includes(`</section>
+      \${'\\n'}
+      <section
+        id="meeting-panel-ask"`));
     assert.ok(appJs.text.includes('aria-controls="meeting-panel-daily"'));
     assert.ok(appJs.text.includes('aria-controls="meeting-panel-ask"'));
     assert.ok(appJs.text.includes('role="tabpanel"'));
@@ -504,7 +526,7 @@ async function main() {
     assert.ok(appJs.text.includes('data-raw-type=${meeting.type ||'));
     assert.ok(appJs.text.includes('data-raw-status=${meeting.status ||'));
     assert.ok(appJs.text.includes('title=${`안건: ${agendaLabel(minute.agendaKey ||'));
-    assert.ok(appJs.text.includes('title=${`안건: ${agendaLabel(decision.agendaKey)}`'));
+    assert.ok(appJs.text.includes('title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`'));
     assert.ok(appJs.text.includes('data-raw-agenda=${minute.agendaKey ||'));
     assert.ok(appJs.text.includes('data-raw-agenda=${decision.agendaKey ||'));
     assert.equal(appJs.text.includes('title=${`원문 안건:'), false);
@@ -674,10 +696,16 @@ async function main() {
     assert.ok(appJs.text.includes('const decisionRows = safeArray(decisions);'));
     assert.ok(appJs.text.includes('전체 결정 대기함'));
     assert.ok(appJs.text.includes('전체 회의 기준 · 선택 회의 캐치업과 별도'));
+    assert.ok(appJs.text.includes(`<h2>전체 결정 대기함</h2>
+      \${'\\n'}`));
+    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도</div>
+      \${'\\n'}`));
     assert.ok(appJs.text.includes('role="region" aria-label="전체 회의 결정 대기함"'));
     assert.ok(appJs.text.includes('aria-describedby="decision-scope-note"'));
     assert.ok(appJs.text.includes('전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건'));
     assert.ok(appJs.text.includes('전체 회의 기준 마스터 액션 대기 결정 없음'));
+    assert.ok(appJs.text.includes('decisionRows.flatMap((decision, index)'));
+    assert.ok(appJs.text.includes("index < decisionRows.length - 1 ? '\\n' : ''"));
     assert.equal(appJs.text.includes('role="region" aria-label="결정 대기함"'), false);
     assert.equal(appJs.text.includes('pending_master 결정 ${decisions.length}건'), false);
     assert.ok(appJs.text.includes('감사 메모'));
@@ -695,6 +723,14 @@ async function main() {
     assert.ok(appJs.text.includes("aria-busy=${busy === 'defer'}"));
     assert.ok(appJs.text.includes('결정 #${decision.id} 감사 메모'));
     assert.ok(appJs.text.includes('결정 #${decision.id} 근거 JSON 보기'));
+    assert.ok(appJs.text.includes('title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`'));
+    assert.ok(appJs.text.includes('>결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}</div>'));
+    assert.equal(appJs.text.includes('>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>'), false);
+    assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision} />'));
+    assert.ok(appJs.text.includes('<${EvidenceDetails} decision=${decision} />'));
+    assert.ok(appJs.text.includes(`<button aria-label=\${busy === 'confirm' ? \`결정 #\${decision.id} 확정 처리 중\` : \`결정 #\${decision.id} 확정\`} aria-busy=\${busy === 'confirm'} onClick=\${() => act('confirm')} disabled=\${Boolean(busy)}>\${busy === 'confirm' ? '확정 중' : '확정'}</button>
+          \${'\\n'}
+          <button aria-label=\${busy === 'defer' ? \`결정 #\${decision.id} 보류 처리 중\` : \`결정 #\${decision.id} 보류\`}`));
     assert.ok(appJs.text.includes('role="listitem"'));
     assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}'));

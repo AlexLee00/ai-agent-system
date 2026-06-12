@@ -486,11 +486,15 @@ function Header({ token, setToken, tab, setTab }) {
           </span>
           <span className="pill" aria-label="로컬 바인딩 127.0.0.1 포트 7791">127.0.0.1:7791</span>
         </div>
+        ${'\n'}
         <h1>Luna Meeting Room</h1>
+        ${'\n'}
         <p>회의록, 결정 대기함, 에이전트 질의를 한 화면에서 다룹니다. 이 UI는 기록과 승인 보조만 수행하며 거래·파라미터를 변경하지 않습니다.</p>
       </div>
+      ${'\n'}
       <div className="token-box">
         <label className="meta" htmlFor="meeting-room-token">접근 토큰</label>
+        ${'\n'}
         <input
           id="meeting-room-token"
           type="password"
@@ -500,9 +504,11 @@ function Header({ token, setToken, tab, setTab }) {
           onChange=${(event) => setToken(event.target.value)}
           placeholder="로컬 무인증이면 비워둠"
         />
+        ${'\n'}
         <div id="meeting-room-token-help" className="meta">MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠</div>
       </div>
     </div>
+    ${'\n'}
     <div className="tabs">
       <div className="tab-switcher" role="tablist" aria-label="회의실 화면 전환">
         <button
@@ -515,6 +521,7 @@ function Header({ token, setToken, tab, setTab }) {
           onClick=${() => selectTab('daily')}
           onKeyDown=${handleTabKeyDown}
         >일일 회의실</button>
+        ${'\n'}
         <button
           id="meeting-tab-ask"
           role="tab"
@@ -526,6 +533,7 @@ function Header({ token, setToken, tab, setTab }) {
           onKeyDown=${handleTabKeyDown}
         >에이전트 질의</button>
       </div>
+      ${'\n'}
       <a
         className="pill"
         href="http://127.0.0.1:7787"
@@ -763,7 +771,8 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
       role="listitem"
       aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
     >
-      <div className="meeting-title" title=${`안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
+      <div className="meeting-title" title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
+      ${'\n'}
       <div
         className="meta decision-state"
         role="group"
@@ -775,12 +784,17 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
         <span aria-hidden="true"> · </span>
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
+      ${'\n'}
       <${MarkdownLite} text=${decision.decision} />
+      ${'\n'}
       <${EvidenceDetails} decision=${decision} />
+      ${'\n'}
       <div className="form-row" style=${{ marginTop: '10px' }}>
         <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 메모" aria-label=${`결정 #${decision.id} 감사 메모`} />
+        ${'\n'}
         <div className="inline">
           <button aria-label=${busy === 'confirm' ? `결정 #${decision.id} 확정 처리 중` : `결정 #${decision.id} 확정`} aria-busy=${busy === 'confirm'} onClick=${() => act('confirm')} disabled=${Boolean(busy)}>${busy === 'confirm' ? '확정 중' : '확정'}</button>
+          ${'\n'}
           <button aria-label=${busy === 'defer' ? `결정 #${decision.id} 보류 처리 중` : `결정 #${decision.id} 보류`} aria-busy=${busy === 'defer'} className="warn" onClick=${() => act('defer')} disabled=${Boolean(busy)}>${busy === 'defer' ? '보류 중' : '보류'}</button>
         </div>
       </div>
@@ -793,9 +807,14 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   return html`
     <div className="card" role="region" aria-label="전체 회의 결정 대기함">
       <h2>전체 결정 대기함</h2>
+      ${'\n'}
       <div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도</div>
+      ${'\n'}
       <div className="card-body list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}>
-        ${decisionRows.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
+        ${decisionRows.flatMap((decision, index) => [
+          html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`,
+          index < decisionRows.length - 1 ? '\n' : '',
+        ])}
         ${decisionRows.length === 0 ? html`<div className="meta">전체 회의 기준 마스터 액션 대기 결정 없음</div>` : null}
       </div>
     </div>
@@ -1093,6 +1112,7 @@ function App() {
   return html`
     <main className="shell">
       <${Header} token=${token} setToken=${setToken} tab=${tab} setTab=${setTab} />
+      ${'\n'}
       <section
         id="meeting-panel-daily"
         role="tabpanel"
@@ -1101,6 +1121,7 @@ function App() {
       >
         ${tab === 'daily' ? html`<${DailyRoom} token=${token} />` : null}
       </section>
+      ${'\n'}
       <section
         id="meeting-panel-ask"
         role="tabpanel"
