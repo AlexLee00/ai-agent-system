@@ -11,7 +11,7 @@ function useToken() {
 }
 
 function formatTime(value) {
-  if (!value) return 'n/a';
+  if (!value) return '시간 없음';
   try {
     return new Date(value).toLocaleString('ko-KR', { hour12: false });
   } catch {
@@ -44,7 +44,7 @@ function agendaLabel(key) {
     session: '세션',
     'market:domestic': '국내 장전 계획',
     'market:overseas': '미국 장후 평가',
-    'market:crypto': 'crypto 24h 점검',
+    'market:crypto': '암호화폐 24시간 점검',
     'decision:regime-engine-hmm': 'C15 레짐 엔진 HMM',
     'decision:market-deployment-gate': 'C1 시장 배치 게이트',
     'decision:mapek': 'C15 MAPEK',
@@ -116,13 +116,13 @@ function minuteClassName(minute = {}) {
 }
 
 function dueState(value, now = new Date()) {
-  if (!value) return { className: 'due unknown', label: 'due n/a', title: '기한 확인 필요: due 값 없음' };
+  if (!value) return { className: 'due unknown', label: '기한 확인 필요', title: '기한 확인 필요: 값 없음' };
   const due = new Date(value);
-  if (Number.isNaN(due.getTime())) return { className: 'due unknown', label: `due ${String(value)}`, title: `기한 확인 필요: ${String(value)}` };
+  if (Number.isNaN(due.getTime())) return { className: 'due unknown', label: '기한 확인 필요', title: `기한 확인 필요: ${String(value)}` };
   const deltaMs = due.getTime() - now.getTime();
   if (deltaMs < 0) return { className: 'due overdue', label: `경과 ${formatTime(value)}`, title: `기한 경과: ${formatTime(value)}` };
   if (deltaMs <= 24 * 60 * 60 * 1000) return { className: 'due soon', label: `임박 ${formatTime(value)}`, title: `기한 임박: ${formatTime(value)}` };
-  return { className: 'due normal', label: `due ${formatTime(value)}`, title: `기한 정상: ${formatTime(value)}` };
+  return { className: 'due normal', label: `정상 ${formatTime(value)}`, title: `기한 정상: ${formatTime(value)}` };
 }
 
 function decisionGradeLabel(value) {
@@ -276,7 +276,7 @@ function meetingTypesForSegments(segments = []) {
 }
 
 function marketLabel(market) {
-  return { domestic: '국내', overseas: '미국', crypto: 'crypto' }[market] || market || 'unknown';
+  return { domestic: '국내', overseas: '미국', crypto: '암호화폐' }[market] || market || 'unknown';
 }
 
 function SegmentStatus({ segments }) {
@@ -321,7 +321,7 @@ function Header({ token, setToken, tab, setTab }) {
       <div>
         <div className="topline" role="status" aria-label="회의실 실행 상태">
           <span className="pill" aria-label="회의실 버전 MR-B">MR-B</span>
-          <span className="pill" aria-label="자문 및 섀도 전용">advisory / shadow only</span>
+          <span className="pill" aria-label="자문 및 섀도 전용">자문 / 섀도 전용</span>
           <span className="pill" aria-label="로컬 바인딩 127.0.0.1 포트 7791">127.0.0.1:7791</span>
         </div>
         <h1>Luna Meeting Room</h1>
@@ -455,7 +455,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
         </select>
         <button
           aria-label=${selectedTypeDisabled ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type} 시작`}
-          title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type}를 advisory/shadow 회의로 시작합니다.`}
+          title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type}를 자문/섀도 회의로 시작합니다.`}
           onClick=${start}
           disabled=${startDisabled}
         >${busy ? '시작 중' : '회의 시작'}</button>
@@ -505,7 +505,7 @@ function Timeline({ detail, catchup, loading }) {
           ${minutes.map((minute) => html`
             <article
               className=${minuteClassName(minute)}
-              aria-label=${`${minute.seq}번 minute · ${agendaLabel(minute.agendaKey || 'session')} · ${roleName(minute.role, minute)} · ${speakerLabel(minute.speaker)}`}
+              aria-label=${`${minute.seq}번 회의록 · ${agendaLabel(minute.agendaKey || 'session')} · ${roleName(minute.role, minute)} · ${speakerLabel(minute.speaker)}`}
             >
               <div
                 className="meeting-title"
@@ -516,10 +516,20 @@ function Timeline({ detail, catchup, loading }) {
             </article>
           `)}
           ${loading ? html`<div className="meta">상세 로딩 중...</div>` : null}
-          ${!loading && minutes.length === 0 ? html`<div className="meta">선택된 회의의 minute가 없습니다.</div>` : null}
+          ${!loading && minutes.length === 0 ? html`<div className="meta">선택된 회의의 회의록이 없습니다.</div>` : null}
         </div>
       </div>
     </div>
+  `;
+}
+
+function EvidenceDetails({ decision }) {
+  const [open, setOpen] = useState(false);
+  return html`
+    <details onToggle=${(event) => setOpen(event.currentTarget.open)}>
+      <summary aria-label=${`결정 #${decision.id} 근거 JSON 보기`}>근거 JSON 보기</summary>
+      ${open ? html`<pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre>` : null}
+    </details>
   `;
 }
 
@@ -560,7 +570,7 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
       <${MarkdownLite} text=${decision.decision} />
-      <details><summary aria-label=${`결정 #${decision.id} 근거 JSON 보기`}>근거 JSON 보기</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
+      <${EvidenceDetails} decision=${decision} />
       <div className="form-row" style=${{ marginTop: '10px' }}>
         <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 메모" aria-label=${`결정 #${decision.id} 감사 메모`} />
         <div className="inline">
@@ -740,20 +750,20 @@ function AskRoom({ token }) {
             <label className="meta" htmlFor="meeting-agent-question">질문</label>
             <textarea
               id="meeting-agent-question"
-              aria-label="회의실 컨텍스트 기반 advisory 질문"
+              aria-label="회의실 컨텍스트 기반 자문 질문"
               aria-describedby="ask-helper ask-safety-note"
               value=${question}
               onChange=${(event) => updateQuestion(event.target.value)}
-              placeholder="회의실 컨텍스트 기반 advisory 질문"
+              placeholder="회의실 컨텍스트 기반 자문 질문"
             />
             <div id="ask-helper" className="ask-helper">질문을 입력하면 전송 버튼이 활성화됩니다.</div>
           </div>
           <div id="ask-safety-note" className="ask-safety-note">
-            advisory only · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
+            자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
           <button
-            aria-label=${`${agent}에게 advisory 질문 보내기`}
-            title=${question.trim() ? '선택한 에이전트에게 advisory 질문을 보냅니다.' : '질문을 입력하면 활성화됩니다.'}
+            aria-label=${`${agent}에게 자문 질문 보내기`}
+            title=${question.trim() ? '선택한 에이전트에게 자문 질문을 보냅니다.' : '질문을 입력하면 활성화됩니다.'}
             onClick=${ask}
             disabled=${busy || !question.trim()}
           >${busy ? '질의 중' : '질의 보내기'}</button>

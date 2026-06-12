@@ -113,7 +113,7 @@ function agendaLabel(key) {
     session: '세션',
     'market:domestic': '국내 장전 계획',
     'market:overseas': '미국 장후 평가',
-    'market:crypto': 'crypto 24h 점검',
+    'market:crypto': '암호화폐 24시간 점검',
     'decision:regime-engine-hmm': 'C15 레짐 엔진 HMM',
     'decision:market-deployment-gate': 'C1 시장 배치 게이트',
     'decision:mapek': 'C15 MAPEK',
@@ -290,6 +290,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bmeeting-room-orchestrator\b/g, '회의실 오케스트레이터')
     .replace(/\bbacktest-nextbar-execution\b/g, 'Next-bar 백테스트 실행')
     .replace(/\bcircuit-locks\b/g, '서킷 잠금 알림')
+    .replace(/\bcrypto\s+24h\s+점검/gi, '암호화폐 24시간 점검')
+    .replace(/\bcrypto\s+24시간/gi, '암호화폐 24시간')
+    .replace(/\bcrypto\s+요약/gi, '암호화폐 요약')
+    .replace(/\bcrypto(?=\s*[:：])/gi, '암호화폐')
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
     .replace(/상태=active/g, '상태=활성')

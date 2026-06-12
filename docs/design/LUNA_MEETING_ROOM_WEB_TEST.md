@@ -7,9 +7,9 @@
 ## A. 화면① 일일 회의실
 | ID | 시나리오 | 절차 | 기대 결과 | 커버 |
 |---|---|---|---|---|
-| W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환+회의 목록 상태/타입은 한국어 라벨(완료/아침 통합 회의 등) | [자동] header/tab/status/type a11y+[수동] ✅2026-06-12 브라우저 |
+| W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(자문/섀도 전용)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환+회의 목록 상태/타입은 한국어 라벨(완료/아침 통합 회의 등) | [자동] header/tab/status/type a11y+[수동] ✅2026-06-12 브라우저 |
 | W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달, 보조기술에서 줄 단위로 구분 가능, 최신 상태·안건·회의록 수·자문 상태는 한국어 라벨 | [자동] catchup API+live region/list a11y+status/agenda label+[수동] ✅2026-06-12 표시 |
-| W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·minute별 aria-label·인프라 speaker와 데이터 메타 key는 한국어 라벨 | [자동] ADR 클래스+timeline a11y+role/speaker/meta label+[수동] ✅브라우저 |
+| W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·회의록별 aria-label·인프라 speaker와 데이터 메타 key는 한국어 라벨 | [자동] ADR 클래스+timeline a11y+role/speaker/meta label+[수동] ✅브라우저 |
 | W-04 | 회의 시작(정상) | 타입 선택→시작 | 진행 상태 폴링→완료 후 실제 세션 타임라인으로 전환, 시작 컨트롤/목록 선택 상태 aria 제공, 회의 목록 region/list 구조 유지, 실행 실패 시 오류 원인 표시 | [자동] start API+completed/failed run 전환+a11y |
 | W-05 | 회의 시작(중복) | open 세션 중 재시작 | 409 + 사용자 메시지(중복 안내) | [자동] 409+친화 메시지 문자열 |
 | W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단, 활성 세그먼트는 사용자 표시/aria에서 `활성`, 사유 코드는 `주말/휴장일/장 마감` 라벨로 표시 | [자동]+[수동] ✅fixture 브라우저 |
@@ -17,8 +17,8 @@
 | W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅fixture 브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] 교차 |
-| W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label | [자동] dueState+a11y+[수동] ✅2026-06-12 |
-| W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | 닫힌 상태에서는 JSON이 레이아웃/스크롤을 만들지 않고, 펼치면 JSON `<pre>` 표시(머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout guard+[수동] ✅390px 펼침 |
+| W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label, due 누락/정상 fallback도 한국어 라벨 | [자동] dueState+a11y+[수동] ✅2026-06-12 |
+| W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | 닫힌 상태에서는 JSON DOM/레이아웃/스크롤을 만들지 않고, 펼치면 JSON `<pre>` 표시(머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout/dom guard+[수동] ✅390px 펼침 |
 
 ## B. 렌더 품질 (FIX2~4 회귀 — 🔁 매 회의 후 1회 점검)
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -32,7 +32,7 @@
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
-| W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(advisory 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타·새 질의 시 이전 응답 제거·입력 변경 시 이전 오류 제거) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta/stale 제거+[수동] ✅UI 기본 상태·실호출 보류 |
+| W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(자문 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타·새 질의 시 이전 응답 제거·입력 변경 시 이전 오류 제거) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta/stale 제거+[수동] ✅UI 기본 상태·실호출 보류 |
 | W-31 | 비용 가드 | 분당 2회 초과→429 안내(분 경과 후 재시도 가능) | [자동] API |
 | W-32 | 응답 마크다운 | LLM 응답의 마크다운도 W-20과 동일 렌더 | [자동] fixture+[수동] 실호출 보류 |
 
@@ -50,7 +50,7 @@
 |---|---|---|---|
 | W-50 | 자동 회의 반영 | 정례 회의 후 접속 | 목록에 새 세션·캐치업 갱신·새 pending 카드 | [자동] run 완료 후 새 세션 반영+[수동] 🔁 정례 launchd |
 | W-51 | 텔레그램↔웹 동기 | 텔레그램 버튼으로 confirm 후 웹 확인 | 카드 상태 일치+감사 행 changed_via=telegram | [자동] callback/action smoke+[수동] 🔁 첫 실버튼 |
-| W-52 | 주말 경량판 | 토/일 morning 회의록 | 국내·미국 "스킵(주말)"·crypto만 실안건 | [자동] weekend dry-run+[수동] 🔁 실제 주말 |
+| W-52 | 주말 경량판 | 토/일 morning 회의록 | 국내·미국 "스킵(주말)"·암호화폐만 실안건 | [자동] weekend dry-run+[수동] 🔁 실제 주말 |
 | W-53 | regenerate 일치 | `--regenerate=<id>` md vs 웹 타임라인 | 내용 동일(DB 단일 소스) | [수동] ✅2026-06-12 세션 #1 counts 일치 |
 
 ## 루프 피드백 로그
@@ -123,6 +123,11 @@
 - **2026-06-12 루프 67**: W-06 세그먼트 상태 배지 문구 점검 → 실제 상단 세그먼트 배지와 aria/title에 `국내 · active`, `국내 active`가 남아 한국어 운영 UI와 불일치. CSS class는 유지하되 사용자 표시·title·aria는 `국내 · 활성`, `국내 활성`으로 정규화하고 스모크 `activeSegmentStatusKoreanLabel` 추가.
 - **2026-06-12 루프 68**: W-06 비활성 사유 코드 표현 점검 → 주말/휴장 fixture에서 `weekend` 같은 원문 reason 코드가 select option·세그먼트 배지·시작 불가 안내에 그대로 표시될 수 있는 구조를 확인. `segmentReasonLabel`을 추가해 `weekend→주말`, `holiday→휴장일`, `market_closed→장 마감`으로 사용자 표시/aria/title을 정규화하고 스모크 `segmentReasonKoreanLabel` 추가.
 - **2026-06-12 루프 69**: W-02 U1 캐치업 내부 용어 점검 → 실제 캐치업 3번째 줄에 `minutes 56행`, 마스터 액션 줄에 `advisory 기록`이 남아 한국어 운영 UI와 불일치. API 표시 계층에서 `회의록 N행`, `자문 기록`으로 정규화하고 스모크 `catchupInternalTermsLocalized` 추가.
+- **2026-06-12 루프 70**: W-30 에이전트 질의 기본 상태 재점검 → 실제 브라우저 DOM의 textarea aria/placeholder, 전송 버튼 aria/title, 안전 안내에 `advisory 질문`, `advisory only`가 남아 한국어 운영 UI와 불일치. 사용자 표시와 접근성 라벨을 `자문 질문`, `자문 전용`으로 정규화하고 스모크 `askAdvisoryTermKoreanLabel`로 재발 차단.
+- **2026-06-12 루프 71**: W-01/W-04 헤더·시작 title 문구 점검 → W-30 확인 중 상단 배지에 `advisory / shadow only`, 회의 시작 버튼 title에 `advisory/shadow 회의`가 남아 있는 것을 확인. 표시/접근성 문구를 `자문 / 섀도 전용`, `자문/섀도 회의`로 정규화하고 스모크에서 원문 재노출을 차단.
+- **2026-06-12 루프 72**: W-12 evidence 접힘 DOM 점검 → 실제 브라우저에서 접힌 `details`의 `<pre>`는 CSS로 숨겨졌지만 DOM/브라우저 보조 추출에는 JSON text가 남아 내부 evidence가 노출될 수 있음을 확인. `EvidenceDetails`를 추가해 펼친 상태에서만 JSON `<pre>`를 렌더링하고 스모크 `collapsedEvidenceDoesNotRenderJsonDom` 추가.
+- **2026-06-12 루프 73**: W-03/W-11 희귀 fallback 문구 점검 → 코드상 빈 시간·기한 누락·정상 due·빈 타임라인에서 `n/a`, `due n/a`, `due ...`, `minute`가 사용자-facing으로 노출될 수 있음을 확인. fallback을 `시간 없음`, `기한 확인 필요`, `정상 ...`, `회의록`으로 정규화하고 스모크 `timelineMinuteTermLocalized`, `dueFallbackKoreanLabel` 추가.
+- **2026-06-12 루프 74**: W-01/W-02/W-03 시장 라벨 점검 → 실제 세그먼트/캐치업/타임라인에 `crypto`, `crypto 24h 점검`, `Crypto 24시간`이 사용자-facing으로 남을 수 있음을 확인. 표시 계층에서는 `암호화폐`, `암호화폐 24시간 점검`으로 정규화하고 raw key는 title/evidence에만 보존하도록 스모크 `cryptoMarketLabelLocalized` 추가.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

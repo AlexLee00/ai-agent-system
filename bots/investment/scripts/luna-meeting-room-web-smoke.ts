@@ -240,7 +240,7 @@ async function main() {
     meetingStore: store,
     buildMeetingPlanNoteFn: async () => ({
       ok: true,
-      briefMarkdown: '# fixture plan-note\n- advisory only',
+      briefMarkdown: '# fixture plan-note\n- 자문 전용',
       segments: [],
     }),
     buildMarketSegmentsFn: () => [
@@ -290,6 +290,8 @@ async function main() {
     assert.ok(appJs.text.includes('markdown-table'));
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
+    assert.ok(appJs.text.includes('자문 / 섀도 전용'));
+    assert.equal(appJs.text.includes('advisory / shadow only'), false);
     assert.ok(appJs.text.includes('aria-label="로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="TeamJay Dashboard 7787 새 창으로 열기"'));
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰 (MEETING_ROOM_TOKEN)'));
@@ -321,6 +323,10 @@ async function main() {
     assert.ok(appJs.text.includes('function meetingTypeLabel'));
     assert.ok(appJs.text.includes('function agendaLabel'));
     assert.ok(appJs.text.includes('function speakerLabel'));
+    assert.ok(appJs.text.includes("'market:crypto': '암호화폐 24시간 점검'"));
+    assert.equal(appJs.text.includes("'market:crypto': 'crypto 24h 점검'"), false);
+    assert.ok(appJs.text.includes("crypto: '암호화폐'"));
+    assert.equal(appJs.text.includes("crypto: 'crypto'"), false);
     assert.ok(appJs.text.includes('aria-label=${`회의 #${meeting.id} ${meetingTypeLabel(meeting.type)} ${meetingStatusLabel(meeting.status)} 선택`}'));
     assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}'));
     assert.ok(appJs.text.includes('title=${`원문 상태: ${meeting.status ||'));
@@ -336,7 +342,8 @@ async function main() {
     assert.ok(appJs.text.includes('id="meeting-segment-status"'));
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="시장 세그먼트 상태"'));
     assert.ok(appJs.text.includes('비활성, 사유'));
-    assert.ok(appJs.text.includes('advisory/shadow 회의로 시작합니다.'));
+    assert.ok(appJs.text.includes('자문/섀도 회의로 시작합니다.'));
+    assert.equal(appJs.text.includes('advisory/shadow 회의로 시작합니다.'), false);
     assert.ok(appJs.text.includes('selectedTypeDisabled'));
     assert.ok(appJs.text.includes('startDisabled'));
     assert.ok(appJs.text.includes('선택한 회의 타입은 현재 비활성입니다'));
@@ -348,7 +355,9 @@ async function main() {
     assert.ok(appJs.text.includes('role="region" aria-label="회의 타임라인"'));
     assert.ok(appJs.text.includes('role="list" aria-label="타임라인 역할 색상 범례"'));
     assert.ok(appJs.text.includes('aria-label=${`${label} 역할 색상`}'));
-    assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 minute · ${agendaLabel(minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 회의록 · ${agendaLabel(minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('선택된 회의의 회의록이 없습니다.'));
+    assert.equal(appJs.text.includes('선택된 회의의 minute가 없습니다.'), false);
     assert.ok(appJs.text.includes('speakerLabel(minute.speaker)}'));
     assert.ok(appJs.text.includes('원문 speaker: ${minute.speaker ||'));
     assert.ok(appJs.text.includes("'stack-adapter': '데이터 어댑터'"));
@@ -413,11 +422,11 @@ async function main() {
     assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}'));
     assert.ok(appJs.text.includes('role="region" aria-label="결정 대기함"'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisions.length}건`}'));
-    assert.ok(appJs.text.includes('LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
+    assert.ok(appJs.text.includes('자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-select">에이전트'));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-question">질문'));
     assert.ok(appJs.text.includes('aria-label="질의 대상 에이전트"'));
-    assert.ok(appJs.text.includes('aria-label="회의실 컨텍스트 기반 advisory 질문"'));
+    assert.ok(appJs.text.includes('aria-label="회의실 컨텍스트 기반 자문 질문"'));
     assert.ok(appJs.text.includes('aria-describedby="ask-helper ask-safety-note"'));
     assert.ok(appJs.text.includes('function updateAgent'));
     assert.ok(appJs.text.includes('function updateQuestion'));
@@ -425,8 +434,10 @@ async function main() {
     assert.ok(appJs.text.includes('updateQuestion(event.target.value)'));
     assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
-    assert.ok(appJs.text.includes('선택한 에이전트에게 advisory 질문을 보냅니다.'));
+    assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
+    assert.ok(appJs.text.includes('function EvidenceDetails'));
+    assert.ok(appJs.text.includes('open ? html`<pre>'));
     assert.ok(appJs.text.includes('setAnswer(null);'));
     assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답"'));
     assert.ok(appJs.text.includes('질의 중 · 에이전트 응답을 기다리는 중입니다.'));
@@ -434,6 +445,8 @@ async function main() {
     assert.ok(appJs.text.includes('에이전트 ${answer.agent || agent} · 제공자 ${answer.provider || answer.route?.provider ||'));
     assert.ok(appJs.text.includes('상태 ${answerStatusLabel(answer.ok)}'));
     assert.equal(appJs.text.includes('ok=${String(answer.ok)}'), false);
+    assert.equal(appJs.text.includes('advisory only'), false);
+    assert.equal(appJs.text.includes('advisory 질문'), false);
     assert.ok(html.text.includes('.ask-helper'));
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
@@ -445,6 +458,10 @@ async function main() {
     assert.ok(html.text.includes('.grid, .ask-grid { grid-template-columns: 1fr; }'));
     assert.ok(html.text.includes('.meeting-list-row .meeting-item'));
     assert.ok(html.text.includes('.due.unknown'));
+    assert.ok(appJs.text.includes("label: '기한 확인 필요'"));
+    assert.ok(appJs.text.includes('label: `정상 ${formatTime(value)}`'));
+    assert.equal(appJs.text.includes("label: 'due n/a'"), false);
+    assert.equal(appJs.text.includes('label: `due ${formatTime(value)}`'), false);
     assert.ok(appJs.text.includes("run.status === 'running'"));
     assert.ok(appJs.text.includes('const pollingIntervalMs = hasRunningRun ? 3000 : 30000'));
     assert.ok(appJs.text.includes('폴링: 실행 중 회의 감지 · 3초마다 갱신'));
@@ -468,12 +485,14 @@ async function main() {
     assert.equal(detail.payload.minutes.length, 5);
     assert.equal(detail.payload.minutes[0].content, '회의 시작');
     assert.ok(detail.payload.minutes[1].content.includes('**BTC**'));
+    assert.ok(detail.payload.minutes[1].content.includes('암호화폐 요약'));
     assert.ok(detail.payload.minutes[1].content.includes('| 항목 | 값 |'));
     assert.ok(detail.payload.minutes[1].content.includes('<script>alert(1)</script>'));
     assert.ok(detail.payload.minutes[1].content.includes('게이트=reduced 점수=55.3'));
     assert.ok(detail.payload.minutes[1].content.includes('레짐=bear 출처=hmm'));
     assert.equal(detail.payload.minutes[1].content.includes('score='), false);
     assert.equal(detail.payload.minutes[1].content.includes('source='), false);
+    assert.equal(detail.payload.minutes[1].content.includes('crypto 요약'), false);
     assert.equal(detail.payload.minutes[1].content.includes('활성 서킷: 57건'), false);
     assert.ok(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'));
     assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
@@ -526,13 +545,15 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
+    const catchupText = catchup.payload.lines.join(' / ');
     assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
     assert.ok(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM:'));
     assert.ok(catchup.payload.lines[1].includes('국내 장전 계획: 자문 기록 후 마스터 확인 대기'));
-    assert.equal(catchup.payload.lines[1].includes('advisory 기록'), false);
-    assert.equal(catchup.payload.lines[1].includes('market:crypto'), false);
-    assert.equal(catchup.payload.lines[1].includes('market:domestic'), false);
-    assert.equal(catchup.payload.lines[1].includes('regime-engine-hmm'), false);
+    assert.equal(catchupText.includes('advisory 기록'), false);
+    assert.equal(catchupText.includes('crypto 24h 점검'), false);
+    assert.equal(catchupText.includes('market:crypto'), false);
+    assert.equal(catchupText.includes('market:domestic'), false);
+    assert.equal(catchupText.includes('regime-engine-hmm'), false);
     assert.ok(catchup.payload.lines[2].includes('회의록 5행'));
     assert.ok(catchup.payload.lines[2].includes('최신 상태 완료'));
     assert.equal(catchup.payload.lines[2].includes('minutes'), false);
@@ -675,8 +696,10 @@ async function main() {
       catchupConfirmedDeferredPendingCounts: true,
       catchupLinesA11y: true,
       catchupInternalTermsLocalized: true,
+      cryptoMarketLabelLocalized: true,
       askRateLimit: true,
       askSafetyNotice: true,
+      askAdvisoryTermKoreanLabel: true,
       askFormKoreanLabels: true,
       askInputGuidance: true,
       askClearsStaleAnswerOnSubmit: true,
@@ -697,6 +720,7 @@ async function main() {
       meetingListPressedState: true,
       meetingListRegionA11y: true,
       timelineArticleA11y: true,
+      timelineMinuteTermLocalized: true,
       timelineRoleLegend: true,
       dynamicRegionA11y: true,
       localhostBinding: true,
@@ -717,6 +741,7 @@ async function main() {
       evidenceDisclosureKoreanLabel: true,
       evidencePreMobileOverflowGuard: true,
       collapsedEvidenceDoesNotCreateScrollSpace: true,
+      collapsedEvidenceDoesNotRenderJsonDom: true,
       decisionActionKoreanLabels: true,
       decisionControlsAccessibleNames: true,
       decisionRegionA11y: true,
@@ -725,6 +750,7 @@ async function main() {
       authFailureClearsCachedData: true,
       dueBadges: true,
       dueBadgeA11y: true,
+      dueFallbackKoreanLabel: true,
       adrRolePresentation: true,
       repetitiveLlmMinuteCompacted: true,
       canonicalStatusTokensPreserved: true,
