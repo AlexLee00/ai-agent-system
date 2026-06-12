@@ -52,6 +52,24 @@ const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';
 const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';
 const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';
 const MEETING_START_MALFORMED_MESSAGE = '회의 시작 응답이 올바르지 않습니다. 잠시 후 다시 시도하세요.';
+const ASK_SUGGESTION_BUILDERS = Object.freeze([
+  {
+    label: '점수/건수 구분',
+    build: (meetingRef) => `${meetingRef} 회의의 게이트 숫자는 거래 수야, 아니면 G0 게이트 점수야?`,
+  },
+  {
+    label: '대기함 숫자 차이',
+    build: (meetingRef) => `전체 결정 대기함과 ${meetingRef} 캐치업의 대기 숫자가 왜 달라?`,
+  },
+  {
+    label: '버튼 안전 범위',
+    build: () => '웹/텔레그램 확정 버튼을 누르면 실제 주문이나 파라미터가 바로 적용돼?',
+  },
+  {
+    label: '웹 장애 진단',
+    build: () => '회의실 웹이 안 뜨면 어떤 launchd와 로그를 확인해야 해?',
+  },
+]);
 
 function useToken() {
   const [token, setToken] = useState(() => readLocalValue(TOKEN_STORAGE_KEY, ''));
@@ -1022,6 +1040,11 @@ function AskRoom({ token }) {
     writeSessionValue(ASK_QUESTION_STORAGE_KEY, value);
     resetAskStateForInputChange();
   }
+  function applySuggestedQuestion(builder) {
+    const selectedMeetingId = readSessionValue(SELECTED_MEETING_STORAGE_KEY, '');
+    const meetingRef = selectedMeetingId ? `#${selectedMeetingId}` : '선택 회의';
+    updateQuestion(builder(meetingRef));
+  }
   async function ask() {
     if (askInFlightRef.current || !question.trim()) return;
     const requestId = askRequestSeq.current + 1;
@@ -1097,6 +1120,21 @@ function AskRoom({ token }) {
             />
             ${'\n'}
             <div id="ask-helper" className="ask-helper">${askHelperText}</div>
+          </div>
+          ${'\n'}
+          <div className="ask-suggestions" aria-label="추천 질문">
+            <div className="meta">추천 질문 · 클릭하면 질문 초안이 채워집니다</div>
+            ${'\n'}
+            <div className="ask-suggestion-list">
+              ${ASK_SUGGESTION_BUILDERS.map((item) => html`
+                <button
+                  type="button"
+                  className="secondary ask-suggestion"
+                  onClick=${() => applySuggestedQuestion(item.build)}
+                  title="추천 질문을 입력칸에 채웁니다"
+                >${item.label}</button>
+              `)}
+            </div>
           </div>
           ${'\n'}
           <div id="ask-safety-note" className="ask-safety-note">

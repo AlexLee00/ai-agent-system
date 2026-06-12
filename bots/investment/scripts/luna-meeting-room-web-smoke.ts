@@ -924,6 +924,21 @@ async function main() {
     assert.ok(appJs.text.includes('const hasQuestionDraft = Boolean(question.trim());'));
     assert.ok(appJs.text.includes('const askHelperText = hasQuestionDraft'));
     assert.ok(appJs.text.includes('const emptyAnswerText = hasQuestionDraft'));
+    assert.ok(appJs.text.includes('const ASK_SUGGESTION_BUILDERS = Object.freeze(['));
+    assert.ok(appJs.text.includes('function applySuggestedQuestion(builder)'));
+    assert.ok(appJs.text.includes("const meetingRef = selectedMeetingId ? `#${selectedMeetingId}` : '선택 회의';"));
+    assert.ok(appJs.text.includes('updateQuestion(builder(meetingRef));'));
+    assert.ok(appJs.text.includes('추천 질문 · 클릭하면 질문 초안이 채워집니다'));
+    assert.ok(appJs.text.includes('점수/건수 구분'));
+    assert.ok(appJs.text.includes('대기함 숫자 차이'));
+    assert.ok(appJs.text.includes('버튼 안전 범위'));
+    assert.ok(appJs.text.includes('웹 장애 진단'));
+    assert.ok(appJs.text.includes('${meetingRef} 회의의 게이트 숫자는 거래 수야, 아니면 G0 게이트 점수야?'));
+    assert.ok(appJs.text.includes('전체 결정 대기함과 ${meetingRef} 캐치업의 대기 숫자가 왜 달라?'));
+    assert.ok(appJs.text.includes('className="secondary ask-suggestion"'));
+    assert.ok(html.text.includes('<link rel="icon" href="data:image/svg+xml,'));
+    assert.ok(html.text.includes('.ask-suggestions'));
+    assert.ok(html.text.includes('button.ask-suggestion'));
     assert.ok(appJs.text.includes('질의 보내기를 누르거나 Ctrl/⌘+Enter로 전송할 수 있습니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.'));
     assert.ok(appJs.text.includes('Ctrl/⌘+Enter도 사용할 수 있습니다.'));
@@ -1380,6 +1395,29 @@ async function main() {
     assert.equal(premarketEntryTerm.includes('읽기 전용로'), false);
     assert.equal(premarketEntryTerm.includes('입장(Entry 0)'), false);
     assert.equal(premarketEntryTerm.includes('입니다, 현재'), false);
+    const liveMeetingPolish = _testOnly.normalizeLegacyMinuteContent([
+      '현재 C15 결정 대기 상태에서 Next-bar 백테스트를 실행할 계획입니다. 백테스트 결과를 분석한 결과는 다음과 같습니다.',
+      '전략군 24시간 내에 2건의 entry가 발생하였으며, 전략군 24시간 동안 2건의 입장 기록이 있습니다.',
+      '- 국내 가치: 상승(0.38)',
+      '- 미국 가치: 수평(0.47)',
+      '- 크립토 가치: 하락(0.74)',
+      'G0 게이트는 국내에서 중지 상태이며, 미국과 크립토에서는 reduced 상태입니다.',
+      '미국 시장의 VIX 기간 구조와 옵션 매매 비율은 현재 unavailable 상태입니다.',
+      '최장 잠금 만료=Sat Jun 13 2026 13:58:57 GMT+0900 (Korean Standard Time)',
+      'C15 결정 대기 상태를 유지하기로 결정했습니다.',
+    ].join('\n'));
+    assert.ok(liveMeetingPolish.includes('실행 여부를 검토하는 항목입니다.'));
+    assert.ok(liveMeetingPolish.includes('백테스트 결과를 분석했습니다.'));
+    assert.ok(liveMeetingPolish.includes('전략군 24시간 내에 2건의 진입이 발생하였으며'));
+    assert.ok(liveMeetingPolish.includes('전략군 24시간 동안 2건의 진입 기록이 있습니다.'));
+    assert.ok(liveMeetingPolish.includes('- 국내 레짐: 상승(0.38)'));
+    assert.ok(liveMeetingPolish.includes('- 미국 레짐: 수평(0.47)'));
+    assert.ok(liveMeetingPolish.includes('- 암호화폐 레짐: 하락(0.74)'));
+    assert.ok(liveMeetingPolish.includes('G0 게이트는 국내에서 halt 상태이며, 미국과 암호화폐에서는 reduced 상태입니다.'));
+    assert.ok(liveMeetingPolish.includes('현재 미수집 상태입니다.'));
+    assert.ok(liveMeetingPolish.includes('최장 잠금 만료=2026. 6. 13.'));
+    assert.ok(liveMeetingPolish.includes('C15 검토 상태를 유지하는 자문입니다.'));
+    assert.equal(/분석한입니다|결과는 다음과 같습니다|실행할 계획입니다|\bentry\b|입장 기록|가치|크립토|중지 상태|unavailable|Korean Standard Time|C15 결정 대기 상태를 유지하기로 결정/.test(liveMeetingPolish), false);
     const truncatedRegimeSentence = _testOnly.normalizeLegacyMinuteContent(
       'C2 레짐에 따르면, 국내 시장은 상승 추세를 유지하고 있으며, 0.38의 점수가 기록되고 있습니다. 미국 시장은 중립적인 추세를 유지하고 있으며, 0. 암호화폐 시장은 하락 추세를 유지하고 있으며, 0.',
     );
@@ -1676,6 +1714,34 @@ async function main() {
     assert.equal(catchup.payload.lines[2].includes('n/a'), false);
     assert.equal(catchup.payload.lines[2].includes('minutes'), false);
     assert.equal(catchup.payload.lines[2].includes('최신 상태 closed'), false);
+    const catchupOverflowStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+      meetingStore: {
+        getMeeting: async () => ({
+          ok: true,
+          session: { id: 77, type: 'morning', status: 'closed', chair: 'luna', segments: [], startedAt: '2026-06-13T00:00:00.000Z', closedAt: '2026-06-13T00:01:00.000Z', summary: 'fixture' },
+          minutes: [{ id: 7701, sessionId: 77, seq: 1, agendaKey: 'session', speaker: 'system', role: 'system', content: 'fixture', meta: {}, createdAt: '2026-06-13T00:00:00.000Z' }],
+          decisions: [
+            { id: 7701, sessionId: 77, agendaKey: 'market:domestic', decision: '국내 확인 대기', grade: 'c_master', status: 'pending_master', evidence: {}, createdAt: '2026-06-13T00:00:01.000Z' },
+            { id: 7702, sessionId: 77, agendaKey: 'market:overseas', decision: '미국 확인 대기', grade: 'c_master', status: 'pending_master', evidence: {}, createdAt: '2026-06-13T00:00:02.000Z' },
+            { id: 7703, sessionId: 77, agendaKey: 'market:crypto', decision: '암호화폐 확인 대기', grade: 'c_master', status: 'pending_master', evidence: {}, createdAt: '2026-06-13T00:00:03.000Z' },
+            { id: 7704, sessionId: 77, agendaKey: 'decision:mapek', decision: 'MAPEK 확인 대기', grade: 'c_master', status: 'pending_master', evidence: {}, createdAt: '2026-06-13T00:00:04.000Z' },
+          ],
+        }),
+      },
+    });
+    try {
+      const catchupOverflowAddress = catchupOverflowStarted.server.address();
+      const catchupOverflowBaseUrl = `http://127.0.0.1:${catchupOverflowAddress.port}`;
+      const catchupOverflow = await request(catchupOverflowBaseUrl, '/api/catchup/77');
+      assert.ok(catchupOverflow.payload.lines[0].includes('대기 4건'));
+      assert.ok(catchupOverflow.payload.lines[1].includes('국내 장전 계획: 국내 확인 대기'));
+      assert.ok(catchupOverflow.payload.lines[1].includes('미국 장후 평가: 미국 확인 대기'));
+      assert.ok(catchupOverflow.payload.lines[1].includes('암호화폐 24시간 점검: 암호화폐 확인 대기'));
+      assert.ok(catchupOverflow.payload.lines[1].includes('외 1건'));
+      assert.equal(catchupOverflow.payload.lines[1].includes('MAPEK 확인 대기'), false);
+    } finally {
+      await closeServer(catchupOverflowStarted.server);
+    }
     assertNoUserVisibleRawLeaks(
       userVisibleMeetingApiText(detail.payload, catchup.payload.lines),
       'meeting detail/catchup user-visible API text',
@@ -2090,6 +2156,7 @@ async function main() {
     assert.equal(decisionScopeHubCalled, false);
     assert.ok(decisionScopeAsk.payload.text.includes('전체 결정 대기함 16건'));
     assert.ok(decisionScopeAsk.payload.text.includes('선택 회의 #7 미장 전 회의 캐치업 대기 2건'));
+    assert.ok(decisionScopeAsk.payload.text.includes('별도 집계'));
     assert.ok(decisionScopeAsk.payload.text.includes('오른쪽 전체 결정 대기함은 회의 전체 범위'));
     assert.ok(decisionScopeAsk.payload.text.includes('상단 U1 캐치업은 현재 선택한 회의 범위'));
     assert.equal(decisionScopeAsk.payload.text.includes('pending_master'), false);
@@ -3005,14 +3072,18 @@ async function main() {
       body: JSON.stringify({ agent: 'aria', selectedMeetingId: '1', question: '#1 회의의 33/44/55는 거래 수야, 아니면 G0 게이트 점수야?' }),
     });
     assert.equal(metricMeaningAsk.status, 200);
+    assert.equal(metricMeaningAsk.payload.agent, 'aria');
     assert.equal(metricMeaningAsk.payload.provider, 'rule_based');
     assert.equal(metricMeaningAsk.payload.skipped, true);
     assert.equal(metricMeaningHubCalled, false);
+    assert.ok(metricMeaningAsk.payload.text.includes('Aria 자문: 비용 없는 규칙 기반 자문입니다.'));
+    assert.equal(metricMeaningAsk.payload.text.includes('Luna 자문:'), false);
     assert.ok(metricMeaningAsk.payload.text.includes('거래 수가 아니라 G0 시장 게이트 점수입니다.'));
+    assert.ok(metricMeaningAsk.payload.text.includes('선택 회의 #1 아침 통합 회의의 게이트 숫자'));
     assert.ok(metricMeaningAsk.payload.text.includes('reduced 55.3점(화면 반올림 55점)'));
     assert.ok(metricMeaningAsk.payload.text.includes('전략신호=N건, 서킷=N건, 결정 대기=N건'));
     assert.equal((metricMeaningAsk.payload.text.match(/55\.3점/g) || []).length, 1);
-    assert.equal(/진행 중인 거래|개의 거래|건의 거래|거래 55개|should not call hub/.test(metricMeaningAsk.payload.text), false);
+    assert.equal(/진행 중인 거래|개의 거래|건의 거래|55개 거래|거래 55개|33\/44\/55 같은 숫자|should not call hub/.test(metricMeaningAsk.payload.text), false);
   } finally {
     await closeServer(metricMeaningStarted.server);
   }

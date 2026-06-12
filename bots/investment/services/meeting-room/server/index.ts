@@ -722,6 +722,7 @@ function normalizeCanonicalStatusTokens(content) {
     if (!isGateLine && !isMarketStatusLine && !isMarketScoreLine && !isAllMarketStatusSummary && !isMarketDeploymentLine) return line;
     return line
       .replace(/['"“”‘’]할당['"“”‘’]\s*상태/g, 'halt 상태')
+      .replace(/중지(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'halt')
       .replace(/중단(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'halt')
       .replace(/감소(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'reduced')
       .replace(/전체(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'full')
@@ -750,6 +751,10 @@ function formatKstTimestampFromIso(value) {
     second: '2-digit',
     hour12: false,
   }).format(date);
+}
+
+function formatKstTimestampFromDateLike(value) {
+  return formatKstTimestampFromIso(value);
 }
 
 function agentDisplayLabel(value) {
@@ -782,6 +787,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bcrypto\s+요약/gi, '암호화폐 요약')
     .replace(/\bcrypto\s+시장/gi, '암호화폐 시장')
     .replace(/\bcrypto(?=\s*[:：])/gi, '암호화폐')
+    .replace(/크립토/g, '암호화폐')
     .replace(/\bdomestic과/g, '국내와')
     .replace(/\bdomestic은/g, '국내는')
     .replace(/\bdomestic는/g, '국내는')
@@ -808,6 +814,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/(?:^|\n)segments:\s*\[[^\n]*\]\s*/g, '\n세그먼트: 상단 요약 기준입니다\n')
     .replace(/\bshadow stack\b/g, '섀도 스택')
     .replace(/\bread-only\b/g, '읽기 전용')
+    .replace(/\bunavailable\b/gi, '미수집')
+    .replace(/\branging\b/gi, '수평')
     .replace(/읽기\s+전용로/g, '읽기 전용으로')
     .replace(/\bregistry evidence\b/g, '레지스트리 근거')
     .replace(/\bgate_off_virtual\b/g, '게이트 비활성 가상 비교')
@@ -821,6 +829,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/미국가/g, '미국이')
     .replace(/미국는/g, '미국은')
     .replace(/미국와/g, '미국과')
+    .replace(/분석한입니다/g, '분석했습니다')
+    .replace(/를\s+실행할\s+계획입니다/g, ' 실행 여부를 검토하는 항목입니다')
+    .replace(/실행할\s+계획입니다/g, '실행 여부를 검토하는 항목입니다')
+    .replace(/C15 결정 대기 상태를 유지하기로 결정했습니다\.?/g, 'C15 검토 상태를 유지하는 자문입니다.')
     .replace(/강세\s+상태/g, '상승 상태')
     .replace(/중립\s+상태/g, '수평 상태')
     .replace(/약세\s+상태/g, '하락 상태')
@@ -867,6 +879,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/([^.\n。!?]+?)에 대한 현재 상황은 다음과 같습니다\./g, '$1 현황입니다.')
     .replace(/([^.\n。!?]+?)\s+결과는 다음과 같습니다\./g, '$1입니다.')
     .replace(/([^.\n。!?]+?)에 대한 주요입니다\./g, '$1의 주요 결과입니다.')
+    .replace(/분석한입니다/g, '분석했습니다')
     .replace(/현재 상황을 종합하면,\s*/g, '요약하면, ')
     .replace(/([^.\n]*?)에 대한 다음 조치는 다음과 같습니다\./g, '$1의 추가 확인 항목입니다.')
     .replace(/따라서,\s*[^.\n]*(?:\*{0,2}재개\*{0,2}|\*{0,2}확대\*{0,2}|적용|실행)[^.\n]*조치[^.\n]*\./g, '따라서 이 회의에서는 실행 조치를 제안하지 않고, 관찰 결과를 마스터 확인 대상으로 유지합니다.')
@@ -939,6 +952,19 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/(국내|미국|암호화폐) 시장의 전략군은 \d+건의 진입 0건만이 24시간 동안 활성화되어 있습니다\.?/g, '$1 시장의 전략군은 24시간 기준 진입 0건입니다.')
     .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
     .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려')
+    .replace(/입장\s+기록/g, '진입 기록')
+    .replace(/\bentry가/gi, '진입이')
+    .replace(/\bentry는/gi, '진입은')
+    .replace(/\bentry를/gi, '진입을')
+    .replace(/\bentry로/gi, '진입으로')
+    .replace(/\bentry와/gi, '진입과')
+    .replace(/\bentry\b/gi, '진입')
+    .replace(/(국내|미국|암호화폐)\s+가치/g, '$1 레짐')
+    .replace(/\bLT\s+fallback\b/gi, '폴백 대비')
+    .replace(
+      /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}\s+\d{2}:\d{2}:\d{2}\s+GMT[+-]\d{4}\s+\([^)]+\)/g,
+      (match) => formatKstTimestampFromDateLike(match),
+    )
     .replace(
       /((?:국내|미국|암호화폐) 시장은 현재 )(중단|감소|전체|최대|halt|reduced|full) 상태(?:로|이며),\s*(\d+(?:\.\d+)?)%의 활성 세그먼트가 유지되고 있습니다\.?/gi,
       (_match, prefix, status, score) => `${prefix}${canonicalDeploymentStatusToken(status)} 상태이며, 점수는 ${score}점입니다.`,
@@ -1323,7 +1349,11 @@ function buildCatchupFromDetail(detail) {
   const confirmed = decisions.filter((row) => row.status === 'confirmed');
   const deferred = decisions.filter((row) => row.status === 'deferred');
   const pending = decisions.filter((row) => row.status === 'pending_master');
-  const next = pending.slice(0, 3).map(pendingDecisionCatchupLabel).join(' / ') || '없음';
+  const pendingPreview = pending.slice(0, 3).map(pendingDecisionCatchupLabel).join(' / ');
+  const hiddenPendingCount = Math.max(0, pending.length - 3);
+  const next = pendingPreview
+    ? `${pendingPreview}${hiddenPendingCount ? ` / 외 ${hiddenPendingCount}건` : ''}`
+    : '없음';
   const sessionLabel = detail.session?.id ? `회의 ${detail.session.id}` : '회의 정보 없음';
   return [
     `확정 ${confirmed.length}건, 보류 ${deferred.length}건, 대기 ${pending.length}건`,
@@ -1689,8 +1719,8 @@ function buildDecisionScopeStatus(globalPendingDecisions = [], detail = null) {
     ? `선택 회의 #${session.id} ${meetingTypeLabel(session.type)}`
     : '선택 회의';
   const difference = globalPendingCount === selectedPendingCount
-    ? '두 숫자가 같으면 현재 선택 회의의 대기 결정이 전체 대기함과 같은 범위로 보이는 상태입니다.'
-    : '두 숫자가 다른 이유는 전체 대기함은 모든 회의의 미처리 결정을 세고, 캐치업은 선택 회의 하나의 결정만 세기 때문입니다.';
+    ? '두 숫자가 같으면 현재 선택 회의의 대기 결정이 전체 대기함과 같은 범위로 보이는 상태입니다. 그래도 화면에서는 전체 대기함과 선택 회의 캐치업을 별도 집계로 유지합니다.'
+    : '두 숫자가 다른 이유는 전체 대기함은 모든 회의의 미처리 결정을 세고, 캐치업은 선택 회의 하나의 결정만 세는 별도 집계이기 때문입니다.';
   return [
     `결정 범위: 전체 결정 대기함 ${globalPendingCount}건 / ${sessionLabel} 캐치업 대기 ${selectedPendingCount}건.`,
     difference,
@@ -1749,10 +1779,10 @@ function buildMetricMeaningStatus(detail = null) {
     ? scores.map((row) => `${row.agendaLabel}: ${row.deployment} ${Number(row.score).toFixed(1)}점(화면 반올림 ${Math.round(row.score)}점)`).join(' / ')
     : '선택 회의 데이터 minute에서 게이트 점수를 찾지 못했습니다.';
   return [
-    `정확한 해석: ${sessionText}의 33/44/61 같은 숫자는 거래 수가 아니라 G0 시장 게이트 점수입니다.`,
+    `정확한 해석: ${sessionText}의 게이트 숫자는 거래 수가 아니라 G0 시장 게이트 점수입니다.`,
     `선택 회의 데이터: ${scoreText}.`,
     '거래·신호 개수는 별도 필드로 표시됩니다. 예: 전략신호=N건, 서킷=N건, 결정 대기=N건.',
-    '따라서 33개 거래, 44개 거래, 61개 거래처럼 읽으면 안 됩니다.',
+    '따라서 해당 숫자를 거래 건수로 읽으면 안 됩니다.',
   ].join('\n');
 }
 
