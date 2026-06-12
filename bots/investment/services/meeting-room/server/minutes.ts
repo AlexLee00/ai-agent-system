@@ -85,6 +85,16 @@ function toIsoString(value: any) {
   return String(value);
 }
 
+function formatMeetingTime(value: any) {
+  if (!value) return '시간 확인 필요';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '시간 확인 필요';
+  return date.toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour12: false,
+  });
+}
+
 function decisionGradeLabel(value: any) {
   return {
     a_rule: 'A 자동 규칙',
@@ -160,9 +170,9 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     '',
     `- 회의 ID: ${session.id || 'dry-run'}`,
     `- 상태: ${sessionStatusLabel(session.status || 'closed')}`,
-    `- 의장: ${safeText(session.chair || 'luna')}`,
-    `- 시작: ${session.startedAt || session.started_at || result.startedAt || ''}`,
-    `- 종료: ${session.closedAt || session.closed_at || result.closedAt || ''}`,
+    `- 의장: ${speakerLabel(session.chair || 'luna')}`,
+    `- 시작: ${formatMeetingTime(session.startedAt || session.started_at || result.startedAt)}`,
+    `- 종료: ${formatMeetingTime(session.closedAt || session.closed_at || result.closedAt)}`,
     `- 드라이런: ${result.dryRun === true ? '예' : '아니오'}`,
     `- LLM 호출: ${result.llmCalls || 0}회`,
     `- LLM 생략: ${result.skippedLlmCalls || 0}회`,

@@ -1493,8 +1493,12 @@ async function main() {
     assert.ok(regeneratedMarkdown.startsWith('# Luna Meeting Room — 국내 장후 회의'));
     assert.equal(regeneratedMarkdown.includes('# Luna Meeting Room — domestic_debrief'), false);
     assert.ok(regeneratedMarkdown.includes('- 상태: 완료'));
+    assert.ok(regeneratedMarkdown.includes('- 의장: Luna'));
+    assert.equal(regeneratedMarkdown.includes('- 의장: luna'), false);
     assert.ok(regeneratedMarkdown.includes('- 드라이런: 아니오'));
     assert.ok(regeneratedMarkdown.includes('- LLM 호출: 0회'));
+    assert.equal(regeneratedMarkdown.includes('- 시작: 2026-'), false);
+    assert.equal(regeneratedMarkdown.includes('- 종료: 2026-'), false);
     assert.equal(regeneratedMarkdown.includes('- status:'), false);
     assert.equal(regeneratedMarkdown.includes('- dry_run:'), false);
     assert.equal(regeneratedMarkdown.includes('- llm_calls:'), false);
@@ -1527,6 +1531,8 @@ async function main() {
       dryRun: false,
     });
     assert.ok(partialRegeneratedMarkdown.includes('### 회의록. 안건 — 기록 / 시스템'));
+    assert.ok(partialRegeneratedMarkdown.includes('- 시작: 시간 확인 필요'));
+    assert.ok(partialRegeneratedMarkdown.includes('- 종료: 시간 확인 필요'));
     assert.ok(partialRegeneratedMarkdown.includes('내용 없음'));
     assert.ok(partialRegeneratedMarkdown.includes('결정 내용 없음 (기한: 기한 미정)'));
     assert.equal(partialRegeneratedMarkdown.includes('undefined'), false);
