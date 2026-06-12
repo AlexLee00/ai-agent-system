@@ -158,3 +158,22 @@
 ### B1 자연 검증 (동일 일자)
 06:08 "[에이전트 입문 5강] Claude Code 설치 따라하기" 발행(2편, 실패 0) — rotation 예측 적중, B1 완전 종결.
 이력: 2026-06-13 사고 복구+TS-B4-L 완결 (메티)
+
+## K. CODEX-INFRA-GUARD 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 가드 lib 의미론 | realpath(심링크 해소) 경로 비교 + 비main 판정 / 별도 worktree 비발동(경로 불일치) / detached HEAD 안전 처리 / 발동 시 명시 로그+exit 0 |
+| 적용 위치 | 3 스크립트 모두 진입 직후(9~13행) — auto-commit(주범)/nightly-sync/deploy |
+| TS-G3 재현 | auto-commit·deploy 실행 -> skip 로그 정확 + exit 0 + **HEAD 불변** (메티 독립) |
+| 우회 env | BRANCH_GUARD_DISABLED=true -> 가드 통과 |
+| 노트 | ① realpath 실패 시 fail-open — ops_root 고정 경로라 실질 위험 0 (기록만) ② 가드 커밋 77628698b 기존재(자기보고의 "커밋은 마스터 액션"과 상이 — 푸시 여부만 확인 필요) |
+
+### 남은 마스터 전환 시퀀스 (딥 검토 §D 확정)
+① crontab 주석화(deploy 5분) ② dirty 정리(luna 미커밋) ③ main ff 정렬(origin/main..HEAD=39, 역방향 0 — 손실 0)
+④ 루트 main 고정(이후 가드가 자동 보호) ⑤ auto-dev WorkingDirectory worktree 분리(클로드팀 설정 — 별도 작업)
+⑥ 이후 배포는 수동 bash scripts/deploy.sh
+
+배경 히스토리(마스터 질문 확인): deploy cron = 2026-04-08 TS Phase 1b 빌드 파이프라인으로 도입(스테일
+데몬 오류 해소 목적, DEV+OPS 2머신 전제) -> 2026-06 OPS 단일 전환으로 pull 수요 소멸 -> 비활성 결정.
+이력: 2026-06-13 INFRA-GUARD 검증 합격 (메티)
