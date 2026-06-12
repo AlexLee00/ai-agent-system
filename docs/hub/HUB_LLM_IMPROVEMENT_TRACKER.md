@@ -285,3 +285,19 @@ S-1 종결: 설계 -> 프롬프트 -> 구현 -> 독립검증 -> 적용 -> **TS-S
 상태: R1 **설계** (마스터 승인 대기 — 결정 3건: 설계 승인 / 정책 저장소 TS모듈 권고 / 롤아웃 레버 MODE 권고).
 승인 시 다음: CODEX-R1 프롬프트(스냅샷 스크립트만, 엔진은 R2).
 이력: 2026-06-12 R1 설계서 작성 (메티)
+
+## S. CODEX-R1 (스냅샷) 메티 독립 검증 (2026-06-12) — 합격
+
+| TS | 검증 | 결과 |
+|---|---|---|
+| 변경 범위 | 스크립트(신규)+package.json+snapshots/ — selector 본체 비접촉 | PASS |
+| 매트릭스 충실성 | 408 variants = (89키 + darwin 29 + sigma 18) x 3 taskType(default/judgment/embedding) — §4 명세 산수 완벽. envBaseline/selectorVersion 메타 포함 | PASS |
+| TS-R1-2 (oauth4 고정) | hub.alarm.interpreter.error = [groq/320, openai-oauth/320] — 라이브 현행 값 (LEGACY claude-code/400 아님) | PASS |
+| TS-R1-1 (결정성) | 메티 재실행 -> 기존 파일과 diff: added/removed/modified 전부 0 (generatedAt 제외 비교 동시 증명) | PASS |
+| TS-R1-3 (변화 감지) | 변조 사본 diff -> changed=true (positive 케이스 메티 직접 생성) | PASS |
+| 스모크 | 독립 재실행 에러 없음, selectorVersion=v3.0_oauth_4 기록 | PASS |
+
+R1 종결: 설계 -> 구현 -> 검증. **R2 기준선(스냅샷) 확보** — docs/hub/snapshots/llm-chain-snapshot-2026-06-12.json.
+다음: R2(정책 테이블 기계 생성 + 엔진 + shadow 비교 + GATE-R) — 마스터 결정 2건 대기:
+정책 저장소(TS 모듈 권고) / 롤아웃 레버(MODE=team:csv 권고). 승인 시 CODEX-R2 프롬프트 작성.
+이력: 2026-06-12 CODEX-R1 독립 검증 합격 + R1 종결 (메티)

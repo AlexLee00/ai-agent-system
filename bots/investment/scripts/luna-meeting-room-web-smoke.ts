@@ -1447,8 +1447,12 @@ async function main() {
     assert.equal(ask1.payload.text.includes('정지 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태로'), false);
-    assert.ok(ask2.payload.text.includes('[Aria] 비용 없는 규칙 기반 응답입니다.'));
-    assert.ok(ask2.payload.text.includes('질문을 확인했습니다'));
+    assert.ok(ask2.payload.text.includes('[Aria] 비용 없는 규칙 기반 자문입니다.'));
+    assert.ok(ask2.payload.text.includes('기술 관점 우선 확인:'));
+    assert.ok(ask2.payload.text.includes('즉시 눈에 띄는 경보 없음'));
+    assert.equal(ask2.payload.text.includes('전역 결정 대기 2건'), false);
+    assert.ok(ask2.payload.text.includes('권장 다음 행동:'));
+    assert.equal(ask2.payload.text.includes('질문을 확인했습니다'), false);
     assert.equal(ask2.payload.text.includes('질문은 기록만 합니다'), false);
     assert.equal(ask2.payload.text.includes('LLM 비활성'), false);
     assert.equal(ask2.payload.text.includes('noLLM route'), false);
@@ -1477,8 +1481,12 @@ async function main() {
       body: JSON.stringify({ agent: 'hephaestos', question: '체결 관점 요약' }),
     });
     assert.equal(noLlmAsk.status, 200);
-    assert.ok(noLlmAsk.payload.text.includes('[Hephaestos] 비용 없는 규칙 기반 응답입니다.'));
-    assert.ok(noLlmAsk.payload.text.includes('질문을 확인했습니다'));
+    assert.ok(noLlmAsk.payload.text.includes('[Hephaestos] 비용 없는 규칙 기반 자문입니다.'));
+    assert.ok(noLlmAsk.payload.text.includes('체결 관점 우선 확인:'));
+    assert.ok(noLlmAsk.payload.text.includes('즉시 눈에 띄는 경보 없음'));
+    assert.equal(noLlmAsk.payload.text.includes('전역 결정 대기 2건'), false);
+    assert.ok(noLlmAsk.payload.text.includes('권장 다음 행동:'));
+    assert.equal(noLlmAsk.payload.text.includes('질문을 확인했습니다'), false);
     assert.equal(noLlmAsk.payload.text.includes('질문은 기록만 합니다'), false);
     assert.equal(noLlmAsk.payload.text.includes('LLM 비활성'), false);
     assert.equal(noLlmAsk.payload.text.includes('[hephaestos]'), false);
@@ -1487,6 +1495,56 @@ async function main() {
     assert.equal(noLlmAsk.payload.route, undefined);
   } finally {
     await closeServer(expandedNoLlmStarted.server);
+  }
+
+  const pendingAwareStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: createMemoryStore(),
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# fixture plan-note',
+      pendingDecisions: [{ component: 'regime-engine-hmm' }],
+      gates: [
+        { market: 'domestic', deployment: 'halt', score: 33 },
+        { market: 'overseas', deployment: 'reduced', score: 47 },
+      ],
+      regimes: [{ market: 'domestic', current_regime: 'bear' }],
+      strategySignals: [{ signal_type: 'entry' }],
+      circuitLocks: [{ circuit: 'low_profit_symbol' }],
+    }),
+    resolveAgentLLMRouteFn: () => ({
+      primary: 'investment.aria',
+      selectorKey: 'investment.aria',
+      fallbacks: [],
+      noLLM: true,
+    }),
+  });
+  const pendingAwareBase = `http://127.0.0.1:${pendingAwareStarted.server.address().port}`;
+  try {
+    const pendingAwareAsk = await request(pendingAwareBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'aria', question: '현재 결정 대기함 핵심' }),
+    });
+    assert.equal(pendingAwareAsk.status, 200);
+    assert.ok(pendingAwareAsk.payload.text.includes('[Aria] 비용 없는 규칙 기반 자문입니다.'));
+    assert.ok(pendingAwareAsk.payload.text.includes('전역 결정 대기 2건'));
+    assert.ok(pendingAwareAsk.payload.text.includes('권장 다음 행동:'));
+    assert.equal(pendingAwareAsk.payload.text.includes('질문을 확인했습니다'), false);
+    assert.equal(pendingAwareAsk.payload.text.includes('noLLM route'), false);
+    assert.equal(pendingAwareAsk.payload.provider, 'rule_based');
+    const gateIntentAsk = await request(pendingAwareBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'aria', question: '시장 게이트 기준으로 먼저 볼 것은?' }),
+    });
+    assert.equal(gateIntentAsk.status, 200);
+    assert.ok(gateIntentAsk.payload.text.includes('기술 관점 우선 확인: 시장 게이트 국내 halt 33점 · 미국 reduced 47점'));
+    assert.ok(gateIntentAsk.payload.text.includes('전역 결정 대기 2건'));
+    assert.ok(gateIntentAsk.payload.text.includes('먼저 halt/reduced 시장의 근거'));
+    assert.equal(gateIntentAsk.payload.text.includes('질문을 확인했습니다'), false);
+  } finally {
+    await closeServer(pendingAwareStarted.server);
   }
 
   const askFailureStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {

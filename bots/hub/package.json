@@ -88,6 +88,7 @@
     "launchd:node26-smoke": "node --disable-warning=DEP0205 --import tsx scripts/launchd-node26-runner-smoke.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "smoke:local-cold-start-retry": "tsx scripts/local-cold-start-retry-smoke.ts",
+    "smoke:llm-chain-snapshot": "tsx scripts/llm-chain-snapshot.ts --smoke",
     "llm:investment-selector-keys-smoke": "tsx scripts/investment-selector-explicit-keys-smoke.ts",
     "llm:oauth4-balance-smoke": "tsx scripts/llm-oauth-4-balance-smoke.ts",
     "llm:oauth4-rollout-launchd-smoke": "tsx scripts/llm-oauth4-rollout-launchd-smoke.ts",

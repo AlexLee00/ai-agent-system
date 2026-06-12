@@ -956,6 +956,143 @@ function agentAskFailureMessage() {
   return '에이전트 응답 생성에 실패했습니다. 잠시 후 다시 시도하세요.';
 }
 
+function deploymentLabel(value) {
+  const raw = String(value || '').trim();
+  return raw || '정보 없음';
+}
+
+function summarizeRuleBasedGates(planNote = {}) {
+  return (Array.isArray(planNote.gates) ? planNote.gates : [])
+    .slice(0, 3)
+    .map((row = {}) => {
+      const score = Number.isFinite(Number(row.score)) ? ` ${Number(row.score).toFixed(0)}점` : '';
+      return `${transitionMarketLabel(row.market)} ${deploymentLabel(row.deployment)}${score}`;
+    })
+    .filter(Boolean);
+}
+
+function summarizeRuleBasedRegimes(planNote = {}) {
+  return (Array.isArray(planNote.regimes) ? planNote.regimes : [])
+    .slice(0, 3)
+    .map((row = {}) => {
+      const dominant = row.current_regime || row.dominant;
+      return `${transitionMarketLabel(row.market)} ${transitionRegimeLabel(dominant)}`;
+    })
+    .filter(Boolean);
+}
+
+function summarizeRuleBasedSegments(planNote = {}) {
+  return (Array.isArray(planNote.segments) ? planNote.segments : [])
+    .filter((segment = {}) => segment.skipped || segment.active === false)
+    .slice(0, 3)
+    .map((segment = {}) => `${transitionMarketLabel(segment.market)} 비활성`);
+}
+
+function inferAskIntent(question) {
+  const text = String(question || '').toLowerCase();
+  if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
+  if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
+  if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
+  if (/(전략|신호|signal|entry|진입)/u.test(text)) return 'strategy';
+  if (/(결정|대기함|pending|confirm|defer|승인|보류)/u.test(text)) return 'decision';
+  return 'general';
+}
+
+function orderRuleBasedPriorities(items, intent) {
+  const orderByIntent = {
+    gate: ['gate', 'regime', 'globalPending', 'circuit', 'registryPending', 'strategy', 'segment'],
+    regime: ['regime', 'gate', 'circuit', 'globalPending', 'registryPending', 'strategy', 'segment'],
+    circuit: ['circuit', 'globalPending', 'gate', 'regime', 'registryPending', 'strategy', 'segment'],
+    strategy: ['strategy', 'regime', 'gate', 'globalPending', 'circuit', 'registryPending', 'segment'],
+    decision: ['globalPending', 'registryPending', 'circuit', 'gate', 'regime', 'strategy', 'segment'],
+    general: ['globalPending', 'registryPending', 'circuit', 'gate', 'regime', 'strategy', 'segment'],
+  }[intent] || ['globalPending', 'registryPending', 'circuit', 'gate', 'regime', 'strategy', 'segment'];
+  const weight = new Map(orderByIntent.map((key, index) => [key, index]));
+  return [...items].sort((a, b) => (weight.get(a.key) ?? 99) - (weight.get(b.key) ?? 99));
+}
+
+function ruleBasedActionForIntent(intent, hasBlockingContext) {
+  if (intent === 'gate') {
+    return hasBlockingContext
+      ? '먼저 halt/reduced 시장의 근거와 관련 pending 결정을 대조하고, full 전환 전까지 신규 적용은 보수적으로 보세요.'
+      : '시장 게이트가 바뀔 때까지 관찰을 유지하고, full/reduced/halt 전이가 생기면 다시 점검하세요.';
+  }
+  if (intent === 'regime') {
+    return hasBlockingContext
+      ? '레짐 전이와 시장 게이트가 같은 방향인지 확인하고, 충돌하면 신규 적용보다 관찰을 우선하세요.'
+      : '레짐 확률 변화가 누적될 때까지 관찰하고, dominant 변경 시 다시 판단하세요.';
+  }
+  if (intent === 'circuit') {
+    return hasBlockingContext
+      ? '활성 서킷의 symbol·reason·lock_until을 먼저 확인하고, 잠금 해제 전 신규 적용을 보류하세요.'
+      : '활성 서킷이 없으면 다음 회의까지 관찰을 유지하세요.';
+  }
+  if (intent === 'strategy') {
+    return hasBlockingContext
+      ? '전략 entry 신호는 레짐·게이트·서킷과 함께 확인하고, 충돌하는 신호는 관찰 대상으로만 두세요.'
+      : '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
+  }
+  return hasBlockingContext
+    ? '먼저 대기 결정의 근거 JSON과 활성 서킷 근거를 확인하고, 신규 적용보다 관찰 지속 여부를 결정하세요.'
+    : '현재는 새 조치보다 다음 회의까지 관찰을 유지하고, 게이트·레짐 변화가 생기면 재질의하세요.';
+}
+
+function renderPendingDecisionContext(decisions = []) {
+  const rows = Array.isArray(decisions) ? decisions : [];
+  if (!rows.length) return '- 전역 결정 대기함: 0건';
+  const examples = rows.slice(0, 5).map((row = {}) => {
+    const label = agendaLabel(row.agendaKey);
+    const decision = normalizeLegacyMinuteContent(row.decision || '').replace(/\s+/g, ' ').slice(0, 90);
+    return `  - 결정 #${row.id} ${label}: ${decision || '마스터 확인 대기'}`;
+  });
+  const suffix = rows.length > examples.length ? `  - 외 ${rows.length - examples.length}건` : '';
+  return [`- 전역 결정 대기함: ${rows.length}건`, ...examples, suffix].filter(Boolean).join('\n');
+}
+
+async function safeListPendingDecisions(deps) {
+  try {
+    return await listPendingDecisions(deps);
+  } catch {
+    return [];
+  }
+}
+
+function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPendingDecisions = []) {
+  const intent = inferAskIntent(question);
+  const globalPendingCount = Array.isArray(globalPendingDecisions) ? globalPendingDecisions.length : 0;
+  const registryPendingCount = Array.isArray(planNote.pendingDecisions) ? planNote.pendingDecisions.length : 0;
+  const lockCount = Array.isArray(planNote.circuitLocks) ? planNote.circuitLocks.length : 0;
+  const signals = Array.isArray(planNote.strategySignals) ? planNote.strategySignals : [];
+  const entryCount = signals.filter((row = {}) => row.signal_type === 'entry' || row.signalType === 'entry').length;
+  const gates = summarizeRuleBasedGates(planNote);
+  const regimes = summarizeRuleBasedRegimes(planNote);
+  const inactiveSegments = summarizeRuleBasedSegments(planNote);
+  const focus = {
+    aria: '기술 관점',
+    hephaestos: '체결 관점',
+    budget: '자금 관점',
+    sentinel: '위험 관점',
+    luna: '운영 총괄 관점',
+  }[agent] || '회의실 관점';
+  const priorities = orderRuleBasedPriorities([
+    globalPendingCount > 0 ? { key: 'globalPending', text: `전역 결정 대기 ${globalPendingCount}건` } : null,
+    registryPendingCount > 0 ? { key: 'registryPending', text: `C15 검토 대기 ${registryPendingCount}건` } : null,
+    lockCount > 0 ? { key: 'circuit', text: `활성 서킷 ${lockCount}건` } : null,
+    gates.length ? { key: 'gate', text: `시장 게이트 ${gates.join(' · ')}` } : null,
+    regimes.length ? { key: 'regime', text: `레짐 ${regimes.join(' · ')}` } : null,
+    entryCount > 0 ? { key: 'strategy', text: `최근 전략 entry ${entryCount}건` } : null,
+    inactiveSegments.length ? { key: 'segment', text: `비활성 세그먼트 ${inactiveSegments.join(' · ')}` } : null,
+  ].filter(Boolean), intent).map((item) => item.text);
+  const topPriority = priorities.length ? priorities.slice(0, 3).join(' / ') : '즉시 눈에 띄는 경보 없음';
+  const action = ruleBasedActionForIntent(intent, globalPendingCount > 0 || registryPendingCount > 0 || lockCount > 0);
+  return [
+    `[${agentDisplayLabel(agent)}] 비용 없는 규칙 기반 자문입니다.`,
+    `${focus} 우선 확인: ${topPriority}.`,
+    `권장 다음 행동: ${action}`,
+    `질문 요지: ${String(question || '').slice(0, 160)}`,
+  ].join('\n');
+}
+
 function normalizeAskAgentName(value) {
   const agent = String(value || 'luna').trim().toLowerCase();
   if (Object.prototype.hasOwnProperty.call(AGENT_DISPLAY_LABELS, agent)) return agent;
@@ -973,13 +1110,15 @@ async function askAgent(body, deps, limiter) {
     type: 'morning',
     queryFn: deps.queryFn,
   });
+  const globalPendingDecisions = await safeListPendingDecisions(deps);
+  const globalPendingContext = renderPendingDecisionContext(globalPendingDecisions);
   if (route?.noLLM) {
     return {
       ok: true,
       skipped: true,
       agent,
       provider: 'rule_based',
-      text: `[${agentDisplayLabel(agent)}] 비용 없는 규칙 기반 응답입니다. 질문을 확인했습니다: ${question}`,
+      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions),
     };
   }
 
@@ -989,6 +1128,8 @@ async function askAgent(body, deps, limiter) {
       'You are a Luna meeting-room agent. Answer in Korean. Use only the provided meeting context. Advisory only. Keep the response concise, avoid greetings and repeated conclusions, and do not translate status values such as halt/reduced/full.',
       [
         `Question: ${question}`,
+        '',
+        globalPendingContext,
         '',
         'Meeting context:',
         planNote.briefMarkdown || 'plan-note unavailable',
