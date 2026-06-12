@@ -291,11 +291,9 @@ function writePolicyShadowLog(record, deps = {}) {
   ]));
 }
 
-function selectChainWithShadow(selectorKey, options = {}, deps = {}) {
-  const selectLLMChain = deps.selectLLMChain || coreSelector.selectLLMChain;
-  const oldChain = selectLLMChain(selectorKey, options);
+function shadowCompareChain(selectorKey, options = {}, oldChain = [], deps = {}) {
   const parsedMode = parsePolicyEngineMode(deps.mode ?? process.env.HUB_LLM_POLICY_ENGINE_MODE);
-  if (parsedMode.mode !== 'shadow') return oldChain;
+  if (parsedMode.mode !== 'shadow') return null;
 
   try {
     const policyEngine = loadPolicyEngine(deps);
@@ -311,16 +309,24 @@ function selectChainWithShadow(selectorKey, options = {}, deps = {}) {
       newChain: newNormalized,
     }, deps).catch((error) => notePolicyShadowDrop(error, deps));
     if (Array.isArray(deps.shadowPromises)) deps.shadowPromises.push(writePromise);
+    return writePromise;
   } catch (error) {
     notePolicyShadowDrop(error, deps);
+    return null;
   }
+}
 
+function selectChainWithShadow(selectorKey, options = {}, deps = {}) {
+  const selectLLMChain = deps.selectLLMChain || coreSelector.selectLLMChain;
+  const oldChain = selectLLMChain(selectorKey, options);
+  shadowCompareChain(selectorKey, options, oldChain, deps);
   return oldChain;
 }
 
 function resolveHubLlmSelection(req = {}, options = {}) {
   const team = normalizeToken(req.callerTeam || req.team || 'hub') || 'hub';
   const agent = clean(req.agent || '');
+  const shadowDeps = options.shadowDeps || options.policyShadowDeps || {};
 
   if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: req.selectorKey, taskType: normalizeTaskTypeInput(req) })) {
     return {
@@ -354,7 +360,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
       team,
       callerTeam: team,
       agentName: req.agent || req.agentName,
-    }));
+    }), shadowDeps);
     return selectionResult({
       selectorKey,
       runtimeProfile: null,
@@ -375,6 +381,8 @@ function resolveHubLlmSelection(req = {}, options = {}) {
         providerTiers: [],
       };
     }
+    // Adhoc chains are intentionally excluded from policy-engine shadow comparison:
+    // they are caller-supplied arbitrary chains, not selector policy output.
     return selectionResult({
       selectorKey: 'hub.adhoc.chain',
       runtimeProfile: null,
@@ -388,6 +396,12 @@ function resolveHubLlmSelection(req = {}, options = {}) {
   if (agent) {
     const described = coreSelector.describeAgentModel(team, agent);
     if (described?.selected && Array.isArray(described.chain) && described.chain.length > 0) {
+      shadowCompareChain(described.selectorKey, selectorOptionsFromRequest(req, {
+        team,
+        callerTeam: team,
+        agentName: agent,
+        agent,
+      }), described.chain, shadowDeps);
       return selectionResult({
         selectorKey: described.selectorKey,
         runtimeProfile: null,
@@ -408,7 +422,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
       team,
       callerTeam: team,
       ...(profile.selector_options || {}),
-    }));
+    }), shadowDeps);
     return selectionResult({
       selectorKey: String(profile.selector_key),
       runtimeProfile: `${team}.${purpose}`,
@@ -423,7 +437,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
     const chain = selectChainWithShadow('hub._default', selectorOptionsFromRequest(req, {
       team,
       callerTeam: team,
-    }));
+    }), shadowDeps);
     return selectionResult({
       selectorKey: 'hub._default',
       runtimeProfile: 'hub.default',
@@ -473,5 +487,6 @@ module.exports = {
   providerTier,
   resolveHubLlmSelection,
   routeLabel,
+  shadowCompareChain,
   selectChainWithShadow,
 };

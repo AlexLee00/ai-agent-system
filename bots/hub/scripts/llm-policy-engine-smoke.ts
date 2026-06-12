@@ -21,7 +21,7 @@ import {
 } from './runtime-hub-llm-promotion-gate.ts';
 
 const require = createRequire(import.meta.url);
-const { selectChainWithShadow } = require('../src/llm-selector.ts');
+const { resolveHubLlmSelection, selectChainWithShadow } = require('../src/llm-selector.ts');
 const results = [];
 
 async function record(id, name, fn) {
@@ -187,6 +187,69 @@ async function main() {
   assert.equal(blocked.exitCode, 2);
   assert.equal(blocked.report.status, 'hub_llm_promotion_gate_apply_blocked');
   return `pending=${pending.status} ready=${ready.status} applyExit=${blocked.exitCode}`;
+  });
+
+  await record('TS-R2-6', 'agent_registry path emits policy shadow comparison with agent context', async () => {
+  const offWrites = [];
+  let offEngineCalls = 0;
+  const offResult = resolveHubLlmSelection({
+    callerTeam: 'darwin',
+    agent: 'darwin.planner',
+  }, {
+    shadowDeps: {
+      mode: 'off',
+      policyEngine: {
+        resolvePolicyChain() {
+          offEngineCalls += 1;
+          return [];
+        },
+      },
+      queryFn: async () => {
+        offWrites.push(true);
+        return { rowCount: 1 };
+      },
+    },
+  });
+  assert.equal(offResult.source, 'agent_registry');
+  assert.equal(offEngineCalls, 0);
+  assert.equal(offWrites.length, 0);
+
+  const writes = [];
+  const engineContexts = [];
+  const shadowPromises = [];
+  const result = resolveHubLlmSelection({
+    callerTeam: 'darwin',
+    agent: 'darwin.planner',
+  }, {
+    shadowDeps: {
+      mode: 'shadow',
+      shadowPromises,
+      policyEngine: {
+        resolvePolicyChain(ctx) {
+          engineContexts.push(ctx);
+          return resolvePolicyChain(ctx);
+        },
+      },
+      queryFn: async (sql, params) => {
+        writes.push({ sql, params });
+        return { rowCount: 1 };
+      },
+    },
+  });
+  assert.equal(result.source, 'agent_registry');
+  await Promise.all(shadowPromises);
+  assert.equal(engineContexts.length, 1);
+  assert.equal(engineContexts[0].selectorKey, 'darwin.agent_policy');
+  assert.equal(engineContexts[0].agent, 'darwin.planner');
+  assert.equal(engineContexts[0].agentName, 'darwin.planner');
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].sql, /INSERT INTO hub\.llm_policy_shadow_log/);
+  assert.equal(writes[0].params[0], 'darwin.agent_policy');
+  assert.equal(writes[0].params[2], true);
+  const ctx = JSON.parse(writes[0].params[1]);
+  assert.equal(ctx.agent, 'darwin.planner');
+  assert.equal(ctx.agentName, 'darwin.planner');
+  return `source=${result.source} match=${writes[0].params[2]} agent=${ctx.agent}`;
   });
 
   const failed = results.filter((result) => !result.pass);
