@@ -1983,8 +1983,9 @@ async function main() {
     assert.equal(scheduleAsk.payload.provider, 'rule_based');
     assert.equal(scheduleAsk.payload.skipped, true);
     assert.equal(scheduleHubCalled, false);
-    assert.ok(scheduleAsk.payload.text.includes('주말 morning 경량판은 국내·미국을 주말로 스킵'));
-    assert.ok(scheduleAsk.payload.text.includes('암호화폐 24시간 운영 안건'));
+    assert.ok(scheduleAsk.payload.text.includes('정례 05:00 주말 morning은 국내·미국을 주말로 스킵'));
+    assert.ok(scheduleAsk.payload.text.includes('수동 시작은 현재 화면의 세그먼트 상태를 기준'));
+    assert.ok(scheduleAsk.payload.text.includes('현재 회의 대상 세그먼트가 안건으로 포함'));
     assert.ok(scheduleAsk.payload.text.includes('정례 실행 상태:'));
     assert.ok(scheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
     assert.ok(scheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
@@ -1998,12 +1999,49 @@ async function main() {
     assert.equal(mixedScheduleAsk.status, 200);
     assert.equal(mixedScheduleAsk.payload.provider, 'rule_based');
     assert.equal(scheduleHubCalled, false);
-    assert.ok(mixedScheduleAsk.payload.text.includes('운영 일정:'));
+    assert.ok(mixedScheduleAsk.payload.text.includes('운영 기준:'));
     assert.ok(mixedScheduleAsk.payload.text.includes('정례 실행 상태:'));
     assert.ok(mixedScheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
     assert.equal(mixedScheduleAsk.payload.text.includes('운영 총괄 관점 우선 확인:'), false);
   } finally {
     await closeServer(scheduleStarted.server);
+  }
+
+  let morningManualHubCalled = false;
+  const morningManualStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# morning manual fixture',
+      segments: [
+        { market: 'domestic', active: false, skipped: true, reason: 'weekend' },
+        { market: 'overseas', active: true, skipped: false, reason: 'kis_market_open' },
+        { market: 'crypto', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
+    }),
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      morningManualHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '아침 통합 회의 안건에는 전역 결정 대기함의 5건이 포함됩니다.' };
+    },
+  });
+  const morningManualBase = `http://127.0.0.1:${morningManualStarted.server.address().port}`;
+  try {
+    const morningManualScheduleAsk = await request(morningManualBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '지금 아침 통합 회의를 수동 시작하면 어떤 안건이 포함돼?' }),
+    });
+    assert.equal(morningManualScheduleAsk.status, 200);
+    assert.equal(morningManualScheduleAsk.payload.provider, 'rule_based');
+    assert.equal(morningManualHubCalled, false);
+    assert.ok(morningManualScheduleAsk.payload.text.includes('수동 시작 범위: 현재 회의 대상 세그먼트가 안건으로 포함'));
+    assert.ok(morningManualScheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
+    assert.ok(morningManualScheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
+    assert.ok(morningManualScheduleAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
+    assert.equal(morningManualScheduleAsk.payload.text.includes('전역 결정 대기함의 5건'), false);
+  } finally {
+    await closeServer(morningManualStarted.server);
   }
 
   const latestPreviousMorning = [{
