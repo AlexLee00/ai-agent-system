@@ -240,7 +240,7 @@ function createMemoryStore() {
     },
   ];
   const decisions = [
-    { id: 11, sessionId: 1, agendaKey: 'decision:regime-engine-hmm', decision: 'regime-engine-hmm: crypto **점검** pending\n- confirm 필요', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
+    { id: 11, sessionId: 1, agendaKey: 'decision:regime-engine-hmm', decision: 'C15 결정 대기: C15 레짐 엔진 HMM: advisory 기록 후 마스터 확인 대기', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
     { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'advisory 기록 후 마스터 확인 대기', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
   ];
   let nextSessionId = 2;
@@ -1277,8 +1277,11 @@ async function main() {
 
     const pending = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
-    assert.ok(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM'));
+    assert.equal(pending.payload.decisions[0].decision, '자문 기록 후 마스터 확인 대기');
+    assert.equal(pending.payload.decisions[0].decision.includes('C15 결정 대기:'), false);
+    assert.equal(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM:'), false);
     assert.equal(pending.payload.decisions[0].decision.includes('regime-engine-hmm'), false);
+    assert.equal(detail.payload.decisions[0].decision, '자문 기록 후 마스터 확인 대기');
 
     const invalidDecisionAction = await request(baseUrl, '/api/decisions/11', {
       method: 'POST',

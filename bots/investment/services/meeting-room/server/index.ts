@@ -172,6 +172,16 @@ function pendingDecisionCatchupLabel(row = {}) {
   return `${label}: ${decision || '마스터 확인 대기'}`;
 }
 
+function normalizeDecisionDisplayText(row = {}) {
+  const label = agendaLabel(row.agenda_key || row.agendaKey);
+  let decision = normalizeLegacyMinuteContent(row.decision);
+  decision = decision.replace(/^C15 결정 대기:\s*/u, '').trim();
+  if (label && label !== '안건' && decision.startsWith(`${label}:`)) {
+    decision = decision.slice(label.length + 1).trim();
+  }
+  return decision || '마스터 확인 대기';
+}
+
 function componentLabel(key) {
   return {
     'regime-engine-hmm': 'C15 레짐 엔진 HMM',
@@ -763,7 +773,7 @@ function normalizeDecision(row = {}) {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
     agendaKey: row.agenda_key || row.agendaKey,
-    decision: normalizeLegacyMinuteContent(row.decision),
+    decision: normalizeDecisionDisplayText(row),
     grade: row.grade,
     status: row.status,
     dueAt: row.due_at || row.dueAt,
