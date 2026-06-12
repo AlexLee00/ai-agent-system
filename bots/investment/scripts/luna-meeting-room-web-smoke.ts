@@ -1346,6 +1346,14 @@ async function main() {
     });
     assert.ok(regeneratedMarkdown.startsWith('# Luna Meeting Room — 국내 장후 회의'));
     assert.equal(regeneratedMarkdown.includes('# Luna Meeting Room — domestic_debrief'), false);
+    assert.ok(regeneratedMarkdown.includes('- 상태: 완료'));
+    assert.ok(regeneratedMarkdown.includes('- 드라이런: 아니오'));
+    assert.ok(regeneratedMarkdown.includes('- LLM 호출: 0회'));
+    assert.equal(regeneratedMarkdown.includes('- status:'), false);
+    assert.equal(regeneratedMarkdown.includes('- dry_run:'), false);
+    assert.equal(regeneratedMarkdown.includes('- llm_calls:'), false);
+    assert.equal(regeneratedMarkdown.includes('MR-A output is advisory/shadow only'), false);
+    assert.ok(regeneratedMarkdown.includes('MR-A 산출물은 자문/섀도 전용입니다.'));
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
     assert.equal(regeneratedMarkdown.includes('debrief:g6-plan-vs-actual'), false);
     assert.ok(regeneratedMarkdown.includes('C 마스터 확인/마스터 액션 대기'));
@@ -1940,6 +1948,7 @@ async function main() {
       deterministicAnalysisTitleDeduped: true,
       sessionSummaryTypeLocalized: true,
       regeneratedMarkdownTypeLocalized: true,
+      regeneratedMarkdownMetadataLocalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,

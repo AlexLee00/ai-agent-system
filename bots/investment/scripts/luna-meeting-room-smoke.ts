@@ -474,6 +474,11 @@ async function main() {
     assert.equal(path.basename(regenerated.markdownPath), `${String(applied.startedAt).slice(0, 10)}-morning.md`);
     assert.ok(regenerated.markdown.startsWith('# Luna Meeting Room — 아침 통합 회의'));
     assert.equal(regenerated.markdown.includes('# Luna Meeting Room — morning'), false);
+    assert.ok(regenerated.markdown.includes('- 상태: 완료'));
+    assert.ok(regenerated.markdown.includes('- 드라이런: 아니오'));
+    assert.equal(regenerated.markdown.includes('- status:'), false);
+    assert.equal(regenerated.markdown.includes('- dry_run:'), false);
+    assert.equal(regenerated.markdown.includes('MR-A output is advisory/shadow only'), false);
     assert.ok(regenerated.markdown.includes(`session #${applied.session.id}`));
     assert.ok(regenerated.markdown.includes('## Minutes'));
     return { before, after, appliedRows };

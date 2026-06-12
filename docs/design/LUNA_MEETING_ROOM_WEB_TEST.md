@@ -265,6 +265,7 @@
 - **2026-06-12 루프 209**: W-24 deterministic analysis 제목 중복 재점검 → 최신 #143 Aria 분석 minute에서 본문 안에 `미국 프리마켓 게이트/레짐`과 `미국 보유/예정 이벤트 점검`이 각각 2회 반복되어 카드 헤더·본문 제목·data brief 제목이 겹치는 문제를 확인했다. deterministic analysis 생성부의 선행 `agenda.title` 줄을 제거해 data brief 제목만 남기고, 스모크에 `deterministicAnalysisTitleDeduped` 계약을 추가했다.
 - **2026-06-12 루프 210**: W-01/W-50 API 표시 데이터 재점검 → 브라우저 화면은 `미장 전 회의`로 정상 표시됐지만 `/api/meetings`의 session summary에는 `us_premarket 회의 완료`처럼 내부 회의 타입 key가 그대로 남아 API 소비자·보조 도구 기준 한국어 타입 라벨 계약과 어긋나는 것을 확인했다. 신규 회의 생성 summary를 `meetingTypeLabel(type)` 기반으로 저장하고, 기존 저장 summary도 API 정규화에서 `미장 전 회의 완료` 등으로 보정하도록 스모크에 `sessionSummaryTypeLocalized` 계약을 추가했다.
 - **2026-06-12 루프 211**: W-53 regenerate markdown 일치 재점검 → `runtime-luna-meeting-room --regenerate=143 --json` 산출 markdown의 제목과 plan-note summary가 `Luna Meeting Room — us_premarket`, `summary: us_premarket 회의 완료...`로 남아 웹/API의 한국어 타입 라벨과 불일치하는 것을 확인했다. markdown 렌더러에도 회의 타입 라벨/summary 정규화를 적용해 제목은 `미장 전 회의`, summary는 `미장 전 회의 완료...`로 맞추고, MR-A/MR-B smoke에 regenerate type localization 계약을 추가했다.
+- **2026-06-12 루프 212**: W-53 regenerate markdown metadata 재점검 → markdown 제목은 보정됐지만 metadata block이 `status: closed`, `dry_run`, `llm_calls`, 영어 advisory footer처럼 내부 필드명 중심으로 남아 웹 회의록의 한국어 표시 계약과 불일치했다. markdown metadata를 `상태/드라이런/LLM 호출/LLM 생략` 한국어 라벨과 `완료/예/아니오` 값으로 렌더하고, footer도 `MR-A 산출물은 자문/섀도 전용입니다...`로 보정해 스모크에 `regeneratedMarkdownMetadataLocalized` 계약을 추가했다.
 - **남은 위험**: 실제 Telegram 앱 버튼/poller 이벤트, 실제 주말 정례 회의, 장시간 운영 후 누적 UX는 정례 사이클에서 계속 검증.
 
 ## 운영 루틴 제안

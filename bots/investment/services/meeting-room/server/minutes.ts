@@ -72,6 +72,16 @@ function decisionStatusLabel(value: any) {
   }[String(value || '')] || String(value || '상태 미정');
 }
 
+function sessionStatusLabel(value: any) {
+  return {
+    open: '진행 중',
+    running: '실행 중',
+    completed: '완료',
+    closed: '완료',
+    failed: '실패',
+  }[String(value || '').toLowerCase()] || '상태 미상';
+}
+
 function meetingTypeLabel(type: any) {
   return {
     morning: '아침 통합 회의',
@@ -118,14 +128,14 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
   const lines = [
     `# Luna Meeting Room — ${meetingTypeLabel(type)}`,
     '',
-    `- session: ${session.id || 'dry-run'}`,
-    `- status: ${session.status || 'closed'}`,
-    `- chair: ${session.chair || 'luna'}`,
-    `- started_at: ${session.startedAt || session.started_at || result.startedAt || ''}`,
-    `- closed_at: ${session.closedAt || session.closed_at || result.closedAt || ''}`,
-    `- dry_run: ${result.dryRun === true}`,
-    `- llm_calls: ${result.llmCalls || 0}`,
-    `- skipped_llm_calls: ${result.skippedLlmCalls || 0}`,
+    `- 회의 ID: ${session.id || 'dry-run'}`,
+    `- 상태: ${sessionStatusLabel(session.status || 'closed')}`,
+    `- 의장: ${safeText(session.chair || 'luna')}`,
+    `- 시작: ${session.startedAt || session.started_at || result.startedAt || ''}`,
+    `- 종료: ${session.closedAt || session.closed_at || result.closedAt || ''}`,
+    `- 드라이런: ${result.dryRun === true ? '예' : '아니오'}`,
+    `- LLM 호출: ${result.llmCalls || 0}회`,
+    `- LLM 생략: ${result.skippedLlmCalls || 0}회`,
     '',
     '## Plan Note',
     '',
@@ -150,7 +160,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     }
   }
   lines.push('');
-  lines.push('> MR-A output is advisory/shadow only. No trading, launchd, or parameter mutation was performed.');
+  lines.push('> MR-A 산출물은 자문/섀도 전용입니다. 거래, launchd, 파라미터 변경은 수행하지 않았습니다.');
   return `${lines.join('\n')}\n`;
 }
 
