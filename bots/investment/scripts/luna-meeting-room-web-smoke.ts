@@ -412,6 +412,8 @@ async function main() {
     assert.equal(appJs.text.includes('dangerouslySetInnerHTML'), false);
     assert.equal(appJs.text.includes('innerHTML'), false);
     assert.ok(appJs.text.includes('const { useEffect, useMemo, useRef, useState } = React;'));
+    assert.ok(appJs.text.includes("const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';"));
+    assert.ok(appJs.text.includes('selectedMeetingId: requestSelectedMeetingId'));
     assert.ok(appJs.text.includes('function renderMarkdownLite'));
     assert.ok(appJs.text.includes('function MarkdownLite'));
     assert.ok(appJs.text.includes("function pushBlock(node)"));
@@ -1804,6 +1806,83 @@ async function main() {
     assert.equal(noLlmAsk.payload.route, undefined);
   } finally {
     await closeServer(expandedNoLlmStarted.server);
+  }
+
+  let decisionScopeHubCalled = false;
+  const decisionScopeStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: {
+      listMeetings: async () => [{
+        id: 7,
+        type: 'us_premarket',
+        status: 'closed',
+        chair: 'luna',
+        startedAt: '2026-06-12T13:00:03.000Z',
+        closedAt: '2026-06-12T13:00:04.000Z',
+        summary: 'fixture',
+        segments: [],
+      }],
+      getMeeting: async () => ({
+        ok: true,
+        session: {
+          id: 7,
+          type: 'us_premarket',
+          status: 'closed',
+          chair: 'luna',
+          startedAt: '2026-06-12T13:00:03.000Z',
+          closedAt: '2026-06-12T13:00:04.000Z',
+          summary: 'fixture',
+          segments: [],
+        },
+        minutes: [],
+        decisions: [
+          { id: 701, status: 'pending_master', decision: '대기 1', agendaKey: 'premarket:overseas-gate-regime' },
+          { id: 702, status: 'pending_master', decision: '대기 2', agendaKey: 'premarket:overseas-watch' },
+          { id: 703, status: 'confirmed', decision: '확정', agendaKey: 'session' },
+        ],
+      }),
+      listPendingDecisions: async () => Array.from({ length: 16 }, (_unused, index) => ({
+        id: 800 + index,
+        sessionId: index < 2 ? 7 : 1,
+        agendaKey: 'market:domestic',
+        decision: '자문 기록 후 마스터 확인 대기',
+        grade: 'c_master',
+        status: 'pending_master',
+        dueAt: '2026-06-12T00:00:00.000Z',
+        evidence: {},
+        createdAt: '2026-06-11T00:00:00.000Z',
+      })),
+    },
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      decisionScopeHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '선택 회의 캐치업의 결정 대기는 5건입니다.' };
+    },
+  });
+  const decisionScopeBase = `http://127.0.0.1:${decisionScopeStarted.server.address().port}`;
+  try {
+    const decisionScopeAsk = await request(decisionScopeBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        agent: 'luna',
+        question: '전체 결정 대기함과 선택 회의 캐치업의 대기 숫자가 왜 달라?',
+        selectedMeetingId: 7,
+      }),
+    });
+    assert.equal(decisionScopeAsk.status, 200);
+    assert.equal(decisionScopeAsk.payload.provider, 'rule_based');
+    assert.equal(decisionScopeAsk.payload.skipped, true);
+    assert.equal(decisionScopeHubCalled, false);
+    assert.ok(decisionScopeAsk.payload.text.includes('전체 결정 대기함 16건'));
+    assert.ok(decisionScopeAsk.payload.text.includes('선택 회의 #7 미장 전 회의 캐치업 대기 2건'));
+    assert.ok(decisionScopeAsk.payload.text.includes('오른쪽 전체 결정 대기함은 회의 전체 범위'));
+    assert.ok(decisionScopeAsk.payload.text.includes('상단 U1 캐치업은 현재 선택한 회의 범위'));
+    assert.equal(decisionScopeAsk.payload.text.includes('pending_master'), false);
+    assert.equal(decisionScopeAsk.payload.text.includes('c_master'), false);
+    assert.equal(decisionScopeAsk.payload.text.includes('5건'), false);
+  } finally {
+    await closeServer(decisionScopeStarted.server);
   }
 
   let scheduleHubCalled = false;

@@ -1278,6 +1278,8 @@ function inferAskIntent(question) {
   const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
   const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
   if (hasTelegramContext && hasTelegramSyncContext) return 'telegram';
+  const hasDecisionScopeCue = /(캐치업|숫자|건수|왜|차이|다른|달라)/u.test(text) || (/(전체)/u.test(text) && /(선택)/u.test(text));
+  if (hasDecisionScopeCue && /(결정|대기함|대기|pending|캐치업)/u.test(text)) return 'decision_scope';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
   if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
@@ -1372,6 +1374,33 @@ async function safeListMeetings(limit, deps) {
   }
 }
 
+async function safeGetMeetingDetail(id, deps) {
+  try {
+    if (!isNumericMeetingId(id)) return null;
+    return await getMeeting(id, deps);
+  } catch {
+    return null;
+  }
+}
+
+function buildDecisionScopeStatus(globalPendingDecisions = [], detail = null) {
+  const globalPendingCount = Array.isArray(globalPendingDecisions) ? globalPendingDecisions.length : 0;
+  const decisions = Array.isArray(detail?.decisions) ? detail.decisions : [];
+  const selectedPendingCount = decisions.filter((row = {}) => row.status === 'pending_master').length;
+  const session = detail?.session || {};
+  const sessionLabel = session?.id
+    ? `선택 회의 #${session.id} ${meetingTypeLabel(session.type)}`
+    : '선택 회의';
+  const difference = globalPendingCount === selectedPendingCount
+    ? '두 숫자가 같으면 현재 선택 회의의 대기 결정이 전체 대기함과 같은 범위로 보이는 상태입니다.'
+    : '두 숫자가 다른 이유는 전체 대기함은 모든 회의의 미처리 결정을 세고, 캐치업은 선택 회의 하나의 결정만 세기 때문입니다.';
+  return [
+    `결정 범위: 전체 결정 대기함 ${globalPendingCount}건 / ${sessionLabel} 캐치업 대기 ${selectedPendingCount}건.`,
+    difference,
+    '화면 해석: 오른쪽 전체 결정 대기함은 회의 전체 범위이고, 상단 U1 캐치업은 현재 선택한 회의 범위입니다.',
+  ].join('\n');
+}
+
 function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPendingDecisions = [], options = {}) {
   const intent = inferAskIntent(question);
   const globalPendingCount = Array.isArray(globalPendingDecisions) ? globalPendingDecisions.length : 0;
@@ -1402,6 +1431,14 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
       '검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
+  if (intent === 'decision_scope') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      options.decisionScopeStatus || buildDecisionScopeStatus(globalPendingDecisions, options.selectedMeetingDetail),
+      '권장 다음 행동: 전체 정리는 오른쪽 대기함을 기준으로 보고, 선택 회의 맥락은 U1 캐치업과 타임라인을 함께 확인하세요.',
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
@@ -1456,13 +1493,25 @@ async function askAgent(body, deps, limiter) {
   const globalPendingDecisions = await safeListPendingDecisions(deps);
   const scheduleMeetings = intent === 'schedule' ? await safeListMeetings(20, deps) : [];
   const scheduleStatus = intent === 'schedule' ? buildScheduleExecutionStatus(scheduleMeetings, new Date()) : null;
-  if (intent === 'schedule' || intent === 'premarket' || intent === 'telegram') {
+  const meetingRowsForScope = intent === 'decision_scope' ? await safeListMeetings(20, deps) : [];
+  const selectedMeetingId = isNumericMeetingId(body.selectedMeetingId)
+    ? body.selectedMeetingId
+    : meetingRowsForScope[0]?.id;
+  const selectedMeetingDetail = intent === 'decision_scope' ? await safeGetMeetingDetail(selectedMeetingId, deps) : null;
+  const decisionScopeStatus = intent === 'decision_scope'
+    ? buildDecisionScopeStatus(globalPendingDecisions, selectedMeetingDetail)
+    : null;
+  if (intent === 'schedule' || intent === 'premarket' || intent === 'telegram' || intent === 'decision_scope') {
     return {
       ok: true,
       skipped: true,
       agent,
       provider: 'rule_based',
-      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions, { scheduleStatus }),
+      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions, {
+        scheduleStatus,
+        selectedMeetingDetail,
+        decisionScopeStatus,
+      }),
     };
   }
   const route = deps.resolveAgentLLMRouteFn(agent, 'any', 'meeting_room');
@@ -1473,7 +1522,11 @@ async function askAgent(body, deps, limiter) {
       skipped: true,
       agent,
       provider: 'rule_based',
-      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions, { scheduleStatus }),
+      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions, {
+        scheduleStatus,
+        selectedMeetingDetail,
+        decisionScopeStatus,
+      }),
     };
   }
 
@@ -1741,6 +1794,7 @@ export const _testOnly = {
   agendaLabel,
   agentDisplayLabel,
   buildScheduleExecutionStatus,
+  buildDecisionScopeStatus,
   componentLabel,
   compactRepetitiveReportContent,
   legacyMetricLabel,

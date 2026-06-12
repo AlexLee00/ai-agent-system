@@ -50,6 +50,7 @@ const AGENT_LABELS = Object.freeze({
 const TOKEN_STORAGE_KEY = 'lunaMeetingRoomToken';
 const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';
 const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';
+const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';
 const MEETING_START_MALFORMED_MESSAGE = '회의 시작 응답이 올바르지 않습니다. 잠시 후 다시 시도하세요.';
 
 function useToken() {
@@ -933,6 +934,7 @@ function DailyRoom({ token }) {
 
   useEffect(() => {
     if (!selectedId) return;
+    writeSessionValue(SELECTED_MEETING_STORAGE_KEY, selectedId);
     refreshSelected().catch((error) => setError(error.message));
   }, [selectedId]);
 
@@ -1016,13 +1018,14 @@ function AskRoom({ token }) {
     askInFlightRef.current = true;
     const requestAgent = agent;
     const requestQuestion = question;
+    const requestSelectedMeetingId = readSessionValue(SELECTED_MEETING_STORAGE_KEY, '');
     setBusy(true);
     setError('');
     setAnswer(null);
     try {
       const nextAnswer = await api(token, '/api/agents/ask', {
         method: 'POST',
-        body: JSON.stringify({ agent: requestAgent, question: requestQuestion }),
+        body: JSON.stringify({ agent: requestAgent, question: requestQuestion, selectedMeetingId: requestSelectedMeetingId }),
       });
       if (askRequestSeq.current === requestId) {
         setAnswer(nextAnswer);
