@@ -19,6 +19,25 @@ function formatTime(value) {
   }
 }
 
+function friendlyApiError(status, code, fallback) {
+  return {
+    unauthorized: '토큰이 없거나 올바르지 않습니다. MEETING_ROOM_TOKEN을 확인하세요.',
+    meeting_already_open: '이미 진행 중인 같은 타입 회의가 있습니다. 완료 후 다시 시도하세요.',
+    segment_closed: '해당 시장 세그먼트가 휴장/비활성 상태라 회의를 시작할 수 없습니다.',
+    ask_rate_limited_minute: '분당 질의 한도에 도달했습니다. 잠시 후 다시 시도하세요.',
+    ask_rate_limited_day: '일일 질의 한도에 도달했습니다. 다음 운영일에 다시 시도하세요.',
+    body_too_large: '요청 본문이 너무 큽니다. 질문이나 메모를 줄여 주세요.',
+    invalid_json: '요청 형식이 올바르지 않습니다.',
+  }[code] || (status >= 500 ? '회의실 서버 오류가 발생했습니다. 잠시 후 다시 시도하세요.' : fallback || `HTTP ${status}`);
+}
+
+function normalizeApiError(error) {
+  if (error?.status) return error;
+  const normalized = new Error('회의실 서버에 연결할 수 없습니다. 서버 상태를 확인한 뒤 다시 시도하세요.');
+  normalized.cause = error;
+  return normalized;
+}
+
 function api(token, path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -26,17 +45,39 @@ function api(token, path, options = {}) {
   return fetch(path, { ...options, headers }).then(async (res) => {
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const error = new Error(payload.message || payload.error || `HTTP ${res.status}`);
+      const error = new Error(friendlyApiError(res.status, payload.error, payload.message || payload.error || `HTTP ${res.status}`));
       error.status = res.status;
       error.payload = payload;
+      error.code = payload.error || null;
       throw error;
     }
     return payload;
+  }).catch((error) => {
+    throw normalizeApiError(error);
   });
 }
 
-function roleName(role) {
+function isAdrMinute(minute = {}) {
+  return String(minute.speaker || '').toLowerCase() === 'adr' || String(minute.role || '').toLowerCase() === 'adr';
+}
+
+function roleName(role, minute = {}) {
+  if (isAdrMinute(minute)) return 'ADR';
   return { data: '데이터', analysis: '분석', grill: '그릴', decision: '결정', system: '시스템' }[role] || role;
+}
+
+function minuteClassName(minute = {}) {
+  return `minute ${minute.role || 'system'}${isAdrMinute(minute) ? ' adr' : ''}`;
+}
+
+function dueState(value, now = new Date()) {
+  if (!value) return { className: 'due unknown', label: 'due n/a' };
+  const due = new Date(value);
+  if (Number.isNaN(due.getTime())) return { className: 'due unknown', label: `due ${String(value)}` };
+  const deltaMs = due.getTime() - now.getTime();
+  if (deltaMs < 0) return { className: 'due overdue', label: `경과 ${formatTime(value)}` };
+  if (deltaMs <= 24 * 60 * 60 * 1000) return { className: 'due soon', label: `임박 ${formatTime(value)}` };
+  return { className: 'due normal', label: `due ${formatTime(value)}` };
 }
 
 function renderInlineMarkdown(text, keyPrefix = 'inline') {
@@ -237,25 +278,26 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   `;
 }
 
-function Timeline({ detail, catchup }) {
+function Timeline({ detail, catchup, loading }) {
   const minutes = detail?.minutes || [];
   return html`
     <div className="card">
       <h2>타임라인</h2>
       <div className="card-body">
         <div className="catchup">
-          ${(catchup || ['회의를 선택하면 U1 캐치업이 표시됩니다.']).map((line) => html`<div>${line}</div>`)}
+          ${loading ? html`<div>회의 상세를 불러오는 중입니다.</div>` : (catchup || ['회의를 선택하면 U1 캐치업이 표시됩니다.']).map((line) => html`<div>${line}</div>`)}
         </div>
         <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
         <div className="list" style=${{ marginTop: '14px' }}>
           ${minutes.map((minute) => html`
-            <article className=${`minute ${minute.role}`}>
-              <div className="meeting-title">${minute.seq}. ${minute.agendaKey} — ${roleName(minute.role)} / ${minute.speaker}</div>
+            <article className=${minuteClassName(minute)}>
+              <div className="meeting-title">${minute.seq}. ${minute.agendaKey} — ${roleName(minute.role, minute)} / ${minute.speaker}</div>
               <div className="meta">${formatTime(minute.createdAt)}</div>
               <${MarkdownLite} text=${minute.content} />
             </article>
           `)}
-          ${minutes.length === 0 ? html`<div className="meta">선택된 회의의 minute가 없습니다.</div>` : null}
+          ${loading ? html`<div className="meta">상세 로딩 중...</div>` : null}
+          ${!loading && minutes.length === 0 ? html`<div className="meta">선택된 회의의 minute가 없습니다.</div>` : null}
         </div>
       </div>
     </div>
@@ -265,6 +307,7 @@ function Timeline({ detail, catchup }) {
 function DecisionCard({ token, decision, onUpdated, setError }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState('');
+  const due = dueState(decision.dueAt);
   async function act(action) {
     setBusy(action);
     setError('');
@@ -284,7 +327,7 @@ function DecisionCard({ token, decision, onUpdated, setError }) {
   return html`
     <article className="decision-card">
       <div className="meeting-title">#${decision.id} · ${decision.agendaKey}</div>
-      <div className="meta">${decision.grade}/${decision.status} · due ${formatTime(decision.dueAt)}</div>
+      <div className="meta">${decision.grade}/${decision.status} · <span className=${due.className}>${due.label}</span></div>
       <${MarkdownLite} text=${decision.decision} />
       <details><summary>evidence</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
       <div className="form-row" style=${{ marginTop: '10px' }}>
@@ -317,6 +360,7 @@ function DailyRoom({ token }) {
   const [pending, setPending] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
 
@@ -328,21 +372,28 @@ function DailyRoom({ token }) {
     const pendingPayload = await api(token, '/api/decisions/pending');
     setPending(pendingPayload.decisions || []);
     if (!selectedId && (list.activeRuns?.[0] || list.meetings?.[0])) {
-      setSelectedId((list.activeRuns?.[0] || list.meetings?.[0]).id);
+      const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
+      setSelectedId(nextId);
+      await refreshSelected(nextId);
     }
   }
 
   async function refreshSelected(id = selectedId) {
     if (!id) return;
-    const payload = await api(token, `/api/meetings/${id}`);
-    if (payload.run) {
-      setDetail({ session: payload.run, minutes: [], decisions: [] });
-      setCatchup([`실행 상태: ${payload.run.status}`, `세션: ${payload.run.sessionId || '생성 중'}`, `완료: ${payload.run.completedAt || '대기'}`]);
-      return;
+    setDetailLoading(true);
+    try {
+      const payload = await api(token, `/api/meetings/${id}`);
+      if (payload.run) {
+        setDetail({ session: payload.run, minutes: [], decisions: [] });
+        setCatchup([`실행 상태: ${payload.run.status}`, `세션: ${payload.run.sessionId || '생성 중'}`, `완료: ${payload.run.completedAt || '대기'}`]);
+        return;
+      }
+      setDetail(payload);
+      const catchupPayload = await api(token, `/api/catchup/${id}`);
+      setCatchup(catchupPayload.lines || []);
+    } finally {
+      setDetailLoading(false);
     }
-    setDetail(payload);
-    const catchupPayload = await api(token, `/api/catchup/${id}`);
-    setCatchup(catchupPayload.lines || []);
   }
 
   useEffect(() => {
@@ -368,7 +419,7 @@ function DailyRoom({ token }) {
         <${StartMeeting} token=${token} segments=${segments} onStarted=${(run) => { setSelectedId(run.id); refreshBase(); }} setError=${setError} />
         <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
       </div>
-      <${Timeline} detail=${detail} catchup=${catchup} />
+      <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />
       <${Decisions} token=${token} decisions=${pending} onUpdated=${() => { refreshBase(); refreshSelected(); }} setError=${setError} />
     </div>
   `;

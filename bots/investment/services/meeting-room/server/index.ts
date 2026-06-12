@@ -98,6 +98,103 @@ function normalizeSession(row = {}) {
   };
 }
 
+function legacyMetricLabel(key) {
+  return {
+    brier_hmm_lt_fallback: 'Brier: HMM<폴백',
+    transition_alert_precision: '전이 경보 정밀도',
+    halt_reduced_avoidance_delta: 'halt/reduced 회피 개선폭',
+    nextbar_return_delta: 'next-bar 수익률 차이',
+    nextbar_trade_count_delta: 'next-bar 거래 수 차이',
+    placeholder: 'placeholder 기준',
+    durationWeeks: '관찰 주수',
+  }[key] || key;
+}
+
+function legacyDecisionTypeLabel(value, status) {
+  const raw = String(value || status || '').trim();
+  return {
+    promotion_proposal: '승격 제안',
+    halt_proposal: '중단 제안',
+    stalled_report: '정체 보고',
+    registry_review: '승격 검토',
+    active: '승격 검토',
+    stalled: '정체 보고',
+    proposed: '승격 검토',
+  }[raw] || raw || '검토';
+}
+
+function legacyCriteriaSummary(criteria = {}) {
+  const metrics = Array.isArray(criteria.metrics) ? criteria.metrics : [];
+  const scalar = Object.keys(criteria || {})
+    .filter((key) => key !== 'metrics')
+    .map((key) => `${legacyMetricLabel(key)}=${String(criteria[key])}`);
+  return [...metrics.map(legacyMetricLabel), ...scalar].join(', ') || '명시 기준 없음';
+}
+
+function legacyPendingDecisionSummary(row = {}) {
+  const component = row.component || row.agenda_key || row.type || 'unknown-component';
+  const current = row.currentMode || row.current_mode || row.mode || 'unknown';
+  const target = row.targetMode || row.target_mode || row.target || 'unknown';
+  const sampleCount = Number(row.sampleCount ?? row.sample_count ?? row.evidence?.sampleCount ?? 0);
+  const criteria = row.criteria || row.promotion_criteria || row.evidence?.criteria || {};
+  const recommendation = row.recommendation || row.summary || row.notes || '후속 판단 대기';
+  return [
+    `C15 결정 대기: 컴포넌트=${component}`,
+    `유형=${legacyDecisionTypeLabel(row.type, row.status)}, 상태=${row.status || 'n/a'}, 모드=${current}→${target}`,
+    `표본=${sampleCount}건, 기준=${legacyCriteriaSummary(criteria)}`,
+    `판정=${criteria.placeholder === true ? '미충족: placeholder 기준' : '평가 대기'}`,
+    `제안 요지=${recommendation}`,
+  ].join('\n');
+}
+
+function balancedJsonAt(text, startIndex) {
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let index = startIndex; index < text.length; index += 1) {
+    const ch = text[index];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString && ch === '\\') {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') depth += 1;
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(startIndex, index + 1);
+    }
+  }
+  return null;
+}
+
+function normalizeLegacyMinuteContent(content) {
+  const text = String(content ?? '').replace(
+    /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
+    '활성 서킷: legacy 중복 집계 값 숨김(최신 데이터 minute의 distinct 집계 확인)',
+  );
+  const marker = 'C15 결정 대기 항목';
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return text;
+  const jsonStart = text.indexOf('{', markerIndex);
+  if (jsonStart < 0) return text;
+  const jsonText = balancedJsonAt(text, jsonStart);
+  if (!jsonText) return text;
+  try {
+    const summary = legacyPendingDecisionSummary(JSON.parse(jsonText));
+    return `${text.slice(0, markerIndex)}${summary}${text.slice(jsonStart + jsonText.length)}`.trim();
+  } catch {
+    return text;
+  }
+}
+
 function normalizeMinute(row = {}) {
   return {
     id: row.id,
@@ -106,7 +203,7 @@ function normalizeMinute(row = {}) {
     agendaKey: row.agenda_key || row.agendaKey,
     speaker: row.speaker,
     role: row.role,
-    content: row.content,
+    content: normalizeLegacyMinuteContent(row.content),
     meta: safeJson(row.meta),
     createdAt: row.created_at || row.createdAt,
   };
@@ -152,7 +249,15 @@ async function listMeetings(limit, deps) {
 }
 
 async function getMeeting(id, deps) {
-  if (deps.meetingStore?.getMeeting) return deps.meetingStore.getMeeting(id);
+  if (deps.meetingStore?.getMeeting) {
+    const stored = await deps.meetingStore.getMeeting(id);
+    return {
+      ...stored,
+      session: normalizeSession(stored.session || {}),
+      minutes: (stored.minutes || []).map(normalizeMinute),
+      decisions: (stored.decisions || []).map(normalizeDecision),
+    };
+  }
   const sessionRows = await deps.queryFn(
     `SELECT id, type, status, chair, segments, started_at, closed_at, summary
        FROM luna_meeting_sessions
@@ -536,4 +641,9 @@ if (isDirectExecution(import.meta.url)) {
 export default {
   createMeetingRoomWebServer,
   startMeetingRoomWebServer,
+};
+
+export const _testOnly = {
+  normalizeLegacyMinuteContent,
+  normalizeMinute,
 };

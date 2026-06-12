@@ -56,10 +56,46 @@ function createMemoryStore() {
         '| 항목 | 값 |',
         '| --- | --- |',
         '| risk | reduced |',
+        '5. **활성 서킷**: 57건',
         '<script>alert(1)</script>',
       ].join('\n'),
       meta: {},
       createdAt: '2026-06-11T00:00:01.000Z',
+    },
+    {
+      id: 3,
+      sessionId: 1,
+      seq: 3,
+      agendaKey: 'decision:regime-engine-hmm',
+      speaker: 'stack-adapter',
+      role: 'data',
+      content: [
+        'C15 결정 대기 항목',
+        '{',
+        '  "type": "registry_review",',
+        '  "component": "regime-engine-hmm",',
+        '  "status": "active",',
+        '  "sampleCount": 0,',
+        '  "criteria": {',
+        '    "metrics": ["brier_hmm_lt_fallback", "transition_alert_precision"],',
+        '    "placeholder": true,',
+        '    "durationWeeks": 4',
+        '  }',
+        '}',
+      ].join('\n'),
+      meta: { legacyFixture: true },
+      createdAt: '2026-06-11T00:00:02.000Z',
+    },
+    {
+      id: 4,
+      sessionId: 1,
+      seq: 4,
+      agendaKey: 'decision:adr',
+      speaker: 'adr',
+      role: 'decision',
+      content: 'ADR recorded: c_master/pending_master',
+      meta: { fixture: 'adr' },
+      createdAt: '2026-06-11T00:00:03.000Z',
     },
   ];
   const decisions = [
@@ -67,7 +103,7 @@ function createMemoryStore() {
     { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'domestic 점검 pending', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
   ];
   let nextSessionId = 2;
-  let nextMinuteId = 3;
+  let nextMinuteId = 5;
 
   return {
     listMeetings: async () => sessions.slice().sort((a, b) => b.id - a.id),
@@ -185,6 +221,8 @@ async function main() {
     const html = await request(baseUrl, '/');
     assert.equal(html.status, 200);
     assert.ok(html.text.includes('Luna Meeting Room'));
+    assert.ok(html.text.includes('.due.overdue'));
+    assert.ok(html.text.includes('.minute.adr'));
     const appJs = await request(baseUrl, '/app.js');
     assert.equal(appJs.status, 200);
     assert.equal(appJs.text.includes('dangerouslySetInnerHTML'), false);
@@ -193,6 +231,13 @@ async function main() {
     assert.ok(appJs.text.includes('function MarkdownLite'));
     assert.ok(appJs.text.includes('renderInlineMarkdown'));
     assert.ok(appJs.text.includes('markdown-table'));
+    assert.ok(appJs.text.includes('회의 상세를 불러오는 중입니다.'));
+    assert.ok(appJs.text.includes('이미 진행 중인 같은 타입 회의가 있습니다'));
+    assert.ok(appJs.text.includes('분당 질의 한도에 도달했습니다'));
+    assert.ok(appJs.text.includes('회의실 서버에 연결할 수 없습니다'));
+    assert.ok(appJs.text.includes('function dueState'));
+    assert.ok(appJs.text.includes('function minuteClassName'));
+    assert.ok(appJs.text.includes("' adr'"));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${answer.text || answer.error ||'));
@@ -204,10 +249,15 @@ async function main() {
     assert.ok(Array.isArray(meetings.payload.segments));
 
     const detail = await request(baseUrl, '/api/meetings/1');
-    assert.equal(detail.payload.minutes.length, 2);
+    assert.equal(detail.payload.minutes.length, 4);
     assert.ok(detail.payload.minutes[1].content.includes('**BTC**'));
     assert.ok(detail.payload.minutes[1].content.includes('| 항목 | 값 |'));
     assert.ok(detail.payload.minutes[1].content.includes('<script>alert(1)</script>'));
+    assert.equal(detail.payload.minutes[1].content.includes('활성 서킷: 57건'), false);
+    assert.ok(detail.payload.minutes[1].content.includes('legacy 중복 집계 값 숨김'));
+    assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
+    assert.ok(detail.payload.minutes[2].content.includes('컴포넌트=regime-engine-hmm'));
+    assert.ok(detail.payload.minutes[2].content.includes('Brier: HMM<폴백'));
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
 
@@ -306,6 +356,11 @@ async function main() {
       staticPathEscapeBlocked: true,
       markdownLiteBoldHeadingListTable: true,
       markdownLiteNoInnerHtml: true,
+      legacyRawJsonMinuteNormalized: true,
+      legacyCircuitCountMasked: true,
+      friendlyUiErrors: true,
+      dueBadges: true,
+      adrRolePresentation: true,
     },
   };
 }
