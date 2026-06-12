@@ -483,7 +483,7 @@ function Header({ token, setToken, tab, setTab }) {
         <h1>Luna Meeting Room</h1>
         <p>회의록, 결정 대기함, 에이전트 질의를 한 화면에서 다룹니다. 이 UI는 기록과 승인 보조만 수행하며 거래·파라미터를 변경하지 않습니다.</p>
       </div>
-      <div style=${{ minWidth: '260px' }}>
+      <div className="token-box">
         <label className="meta" htmlFor="meeting-room-token">접근 토큰</label>
         <input
           id="meeting-room-token"
@@ -994,6 +994,13 @@ function AskRoom({ token }) {
       ask();
     }
   }
+  const hasQuestionDraft = Boolean(question.trim());
+  const askHelperText = hasQuestionDraft
+    ? '질의 보내기를 누르거나 Ctrl/⌘+Enter로 전송할 수 있습니다.'
+    : '질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.';
+  const emptyAnswerText = hasQuestionDraft
+    ? '아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'
+    : '아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.';
   return html`
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     <div className="ask-grid">
@@ -1016,7 +1023,7 @@ function AskRoom({ token }) {
               onKeyDown=${handleQuestionKeyDown}
               placeholder="회의실 컨텍스트 기반 자문 질문"
             />
-            <div id="ask-helper" className="ask-helper">질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.</div>
+            <div id="ask-helper" className="ask-helper">${askHelperText}</div>
           </div>
           <div id="ask-safety-note" className="ask-safety-note">
             자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
@@ -1037,7 +1044,7 @@ function AskRoom({ token }) {
             ${busy ? html`<div className="meta">질의 중 · 에이전트 응답을 기다리는 중입니다.</div>` : answer ? html`
               <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 제공자 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>
               <div className="answer-content"><${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} /></div>
-            ` : html`<div className="meta">아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.</div>`}
+            ` : html`<div className="meta">${emptyAnswerText}</div>`}
           </div>
         </div>
       </div>

@@ -147,7 +147,7 @@ function summarizeRegimeTransitions(rows: any[] = []) {
 
 function summarizeMeetingErrors(errors: any[] = []) {
   const items = Array.isArray(errors) ? errors : [];
-  return items.length ? `오류: ${items.length}건 · 상세는 minute meta/원문 DB 회의록에 보존` : '';
+  return items.length ? `오류: ${items.length}건 · 상세는 감사 로그에 보존` : '';
 }
 
 function debriefReasonLabel(value: any) {

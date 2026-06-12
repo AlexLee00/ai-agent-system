@@ -302,6 +302,8 @@ async function main() {
     assert.ok(html.text.includes('.role-legend'));
     assert.ok(html.text.includes('.role-dot.data'));
     assert.equal(html.text.includes('.pill-inline-separator'), false);
+    assert.ok(html.text.includes('.token-box { min-width: 260px; }'));
+    assert.ok(html.text.includes('.token-box { min-width: 0; width: 100%; max-width: 100%; }'));
     assert.ok(html.text.includes('overflow-x: auto'));
     assert.ok(html.text.includes('table-layout: fixed'));
     assert.ok(html.text.includes('overflow-wrap: anywhere'));
@@ -321,6 +323,8 @@ async function main() {
     assert.ok(appJs.text.includes("자문 / 섀도 전용 ·${' '}"));
     assert.equal(appJs.text.includes('className="pill-separator"'), false);
     assert.equal(appJs.text.includes('pill-inline-separator'), false);
+    assert.ok(appJs.text.includes('className="token-box"'));
+    assert.equal(appJs.text.includes("minWidth: '260px'"), false);
     assert.equal(appJs.text.includes('advisory / shadow only'), false);
     assert.ok(appJs.text.includes("Number.isNaN(date.getTime())"));
     assert.ok(appJs.text.includes("'시간 확인 필요'"));
@@ -667,10 +671,15 @@ async function main() {
     assert.ok(appJs.text.includes('setAnswer(nextAnswer);'));
     assert.ok(appJs.text.includes('setError(error.message);'));
     assert.ok(appJs.text.includes('setBusy(false);'));
+    assert.ok(appJs.text.includes('const hasQuestionDraft = Boolean(question.trim());'));
+    assert.ok(appJs.text.includes('const askHelperText = hasQuestionDraft'));
+    assert.ok(appJs.text.includes('const emptyAnswerText = hasQuestionDraft'));
+    assert.ok(appJs.text.includes('질의 보내기를 누르거나 Ctrl/⌘+Enter로 전송할 수 있습니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.'));
     assert.ok(appJs.text.includes('Ctrl/⌘+Enter도 사용할 수 있습니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
+    assert.ok(appJs.text.includes('아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
     assert.ok(appJs.text.includes('function EvidenceDetails'));
     assert.ok(appJs.text.includes('open ? html`<pre>'));
@@ -722,7 +731,8 @@ async function main() {
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${answer.text || answer.error ||'));
     const truncatedCircuit = _testOnly.normalizeLegacyMinuteContent('활성 서킷 [ { "market": "crypto", "symbol": "RENDER/USDT", "circuit": "low_profit_symbol" }, ...[truncated]\n실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.');
-    assert.ok(truncatedCircuit.includes('활성 서킷: 상세 근거는 원문 DB 회의록에 보존'));
+    assert.ok(truncatedCircuit.includes('활성 서킷: 상세 근거는 감사 로그에 보존'));
+    assert.equal(truncatedCircuit.includes('원문 DB'), false);
     assert.equal(truncatedCircuit.includes('JSON 숨김'), false);
     assert.ok(truncatedCircuit.includes('실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.'));
     assert.equal(truncatedCircuit.includes('"market"'), false);
@@ -760,7 +770,8 @@ async function main() {
     assert.ok(debriefDataMinute.includes('레짐 전이: 국내 32표본 · 레짐 1종(상승)'));
     assert.ok(debriefDataMinute.includes('KIS 체결=0건'));
     assert.ok(debriefDataMinute.includes('미발화 행=0건'));
-    assert.ok(debriefDataMinute.includes('오류: 1건 · 상세는 원문 DB 회의록에 보존'));
+    assert.ok(debriefDataMinute.includes('오류: 1건 · 상세는 감사 로그에 보존'));
+    assert.equal(debriefDataMinute.includes('원문 DB'), false);
     assert.equal(debriefDataMinute.includes('degraded=true'), false);
     assert.equal(debriefDataMinute.includes('reason=same_day_morning_session_missing'), false);
     assert.equal(debriefDataMinute.includes('morning 회의'), false);
@@ -829,7 +840,8 @@ async function main() {
     assert.equal(detail.payload.minutes[3].content.includes('ADR recorded: c_master/pending_master'), false);
     assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 1);
     assert.ok(detail.payload.minutes[4].content.includes('반복 결론 문단'));
-    assert.ok(detail.payload.minutes[4].content.includes('원문은 DB 회의록에 보존됩니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('원문은 감사 로그에 보존됩니다.'));
+    assert.equal(detail.payload.minutes[4].content.includes('원문은 DB 회의록에 보존됩니다.'), false);
     assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약과 섀도 스택'));
     assert.equal(detail.payload.minutes[4].content.includes('회의 데이터 요약와'), false);
     assert.ok(detail.payload.minutes[4].content.includes('최신 게이트/레짐/신호/서킷이 반대로 바뀌면 무효다.'));
@@ -900,6 +912,8 @@ async function main() {
     assert.equal(detail.payload.minutes[4].content.includes('현재 5개의 결정이 대기 중'), false);
     assert.equal(detail.payload.minutes[4].content.includes('결정 대기는 5건 남아있다'), false);
     assert.equal(detail.payload.minutes[4].content.includes('결정 대기는 5건이 대기 중'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('확인하세요. ,'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('분석 결과는 다음과 같이 요약'), false);
     assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const debriefAnalysisMinute = _testOnly.normalizeLegacyMinuteContent([
       '"암호화폐에서는 62건의 샘플을 기반으로 \'줄인\' 상태에 있습니다."',
@@ -927,8 +941,20 @@ async function main() {
     assert.equal(debriefAnalysisMinute.includes('서킷은 5건'), false);
     assert.ok(debriefAnalysisMinute.includes('후속 조치는 마스터 확인 후 기록합니다.'));
     assert.equal(debriefAnalysisMinute.includes('결과적으로'), false);
+    assert.equal(debriefAnalysisMinute.includes('확인하세요. ,'), false);
+    assert.equal(debriefAnalysisMinute.includes('분석 결과는 다음과 같이 요약'), false);
     assert.equal(debriefAnalysisMinute.includes('다음 조치를 취해야'), false);
     assert.equal(debriefAnalysisMinute.includes('최종 결정을 내릴 수 있도록'), false);
+    const inlineDebriefAnalysisMinute = _testOnly.normalizeLegacyMinuteContent(
+      '결정 대기 중인 서킷은 5건입니다. 결과적으로, 국내 마감 G6 대조표의 분석 결과는 다음과 같이 요약할 수 있습니다. 국내에서는 강세 상태에 있습니다. 따라서, 국내 마감 G6 대조표에 대한 다음 조치를 취해야 합니다: 국내 마감 G6 대조표에 대한 추가 분석을 수행하고, 최종 결정을 내릴 수 있도록 하십시오.',
+    );
+    assert.ok(inlineDebriefAnalysisMinute.includes('결정 대기: 상단 캐치업 기준으로 확인하세요. 국내에서는 상승 상태'));
+    assert.equal(inlineDebriefAnalysisMinute.includes('확인하세요.국내'), false);
+    assert.equal(inlineDebriefAnalysisMinute.includes('분석 결과는 다음과 같이 요약'), false);
+    assert.equal(
+      _testOnly.normalizeLegacyMinuteContent('국내 마감 G6 대조표에 대한 분석 결과입니다.'),
+      '국내 마감 G6 대조표 분석입니다.',
+    );
     const regeneratedMarkdown = renderMeetingMinutesMarkdown({
       session: { id: 117, type: 'domestic_debrief', status: 'closed', chair: 'luna' },
       minutes: [{ seq: 1, agendaKey: 'debrief:g6-plan-vs-actual', role: 'data', speaker: 'stack-adapter', content: 'G6 대조표' }],

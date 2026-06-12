@@ -311,7 +311,7 @@ function summarizeLegacyCircuitLocks(rows = []) {
   return [
     `활성 서킷: ${locks.length}건(저수익 ${lowProfit.length}·쿨다운 ${cooldown.length})`,
     symbols.length ? `대표 심볼=${symbols.join(', ')}` : '',
-    '상세 근거는 원문 DB 회의록에 보존',
+    '상세 근거는 감사 로그에 보존',
   ].filter(Boolean).join('\n');
 }
 
@@ -327,7 +327,7 @@ function summarizeTransitionRows(field, rows = []) {
   const items = Array.isArray(rows) ? rows : [];
   if (field === 'errors') {
     return items.length
-      ? `오류: ${items.length}건 · 상세는 원문 DB 회의록에 보존`
+      ? `오류: ${items.length}건 · 상세는 감사 로그에 보존`
       : '오류: 없음';
   }
   if (!items.length) return field === 'gate_transitions' ? '게이트 전이: 없음' : '레짐 전이: 없음';
@@ -367,8 +367,8 @@ function replaceCompactArrayField(content, field) {
       searchFrom = fieldIndex + summary.length;
     } catch {
       const fallback = field === 'errors'
-        ? '오류: 상세는 원문 DB 회의록에 보존'
-        : `${field === 'gate_transitions' ? '게이트 전이' : '레짐 전이'}: 상세는 원문 DB 회의록에 보존`;
+        ? '오류: 상세는 감사 로그에 보존'
+        : `${field === 'gate_transitions' ? '게이트 전이' : '레짐 전이'}: 상세는 감사 로그에 보존`;
       next = `${next.slice(0, fieldIndex)}${fallback}${next.slice(arrayStart + jsonText.length)}`;
       searchFrom = fieldIndex + fallback.length;
     }
@@ -410,12 +410,12 @@ function normalizeLegacyMinuteContent(content) {
       try {
         compactCircuitText = `${compactCircuitText.slice(0, start)}${summarizeLegacyCircuitLocks(JSON.parse(jsonText))}${compactCircuitText.slice(arrayStart + jsonText.length)}`.trim();
       } catch {
-        compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 근거는 원문 DB 회의록에 보존`;
+        compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 근거는 감사 로그에 보존`;
       }
     } else {
       const tailIndex = compactCircuitText.indexOf('실거래/파라미터', arrayStart);
       const tail = tailIndex >= 0 ? `\n${compactCircuitText.slice(tailIndex)}` : '';
-      compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 근거는 원문 DB 회의록에 보존${tail}`.trim();
+      compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 근거는 감사 로그에 보존${tail}`.trim();
     }
   }
   const readable = normalizeLegacyKoreanLlmNoise(compactCircuitText);
@@ -589,14 +589,18 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려')
     .replace(/확인하세요이며/g, '확인하세요. ')
     .replace(/확인하세요\s+결과적으로,/g, '확인하세요. ')
+    .replace(/확인하세요\.\s*,\s*/g, '확인하세요. ')
+    .replace(/확인하세요\.(?=[가-힣A-Za-z0-9])/g, '확인하세요. ')
+    .replace(/([^.\n。!?]+?)에 대한 분석 결과입니다\./g, '$1 분석입니다.')
     .replace(
-      /결과적으로,\s*([^。.!?]*?분석 결과는 다음과 같이 요약할 수 있습니다\.\s*)?/g,
+      /(?:결과적으로,\s*)?[^。.!?\n]*?분석 결과는 다음과 같이 요약할 수 있습니다\.\s*/g,
       '',
     )
     .replace(
       /따라서,\s*[^.。!?]*?다음 조치를 취해야 합니다:\s*[^.。!?]*?(?:추가 분석을 수행하고,\s*)?[^.。!?]*?최종 결정을 내릴 수 있도록 하십시오\.?/g,
       '후속 조치는 마스터 확인 후 기록합니다.',
-    );
+    )
+    .replace(/확인하세요\.(?=[가-힣A-Za-z0-9])/g, '확인하세요. ');
 }
 
 function compactRepetitiveReportContent(content) {
@@ -626,7 +630,7 @@ function compactRepetitiveReportContent(content) {
   if (!removed) return text;
   return [
     kept.join('\n\n').trim(),
-    `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 DB 회의록에 보존됩니다.`,
+    `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 감사 로그에 보존됩니다.`,
   ].filter(Boolean).join('\n\n');
 }
 

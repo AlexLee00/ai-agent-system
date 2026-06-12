@@ -140,6 +140,7 @@
       letter-spacing: -0.05em;
     }
     .hero p { margin: 8px 0 0; color: var(--muted); max-width: 760px; }
+    .token-box { min-width: 260px; }
     .topline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .pill {
       display: inline-flex;
@@ -375,6 +376,7 @@
     @media (max-width: 1080px) {
       .grid, .ask-grid { grid-template-columns: 1fr; }
       .hero { align-items: start; flex-direction: column; }
+      .token-box { min-width: 0; width: 100%; max-width: 100%; }
     }
   </style>
 </head>
