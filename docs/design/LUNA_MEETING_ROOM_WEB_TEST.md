@@ -201,6 +201,12 @@
 - **2026-06-12 루프 145**: W-03/W-21 데이터 minute 내부 용어 재감사 → 최신 회의 데이터 minute에 `상세는 원문 DB 회의록에 보존`이 노출되어 사용자 화면에 저장소 구현 세부가 드러나는 것을 확인. 기존/신규 회의 표시 문구를 `상세는 감사 로그에 보존`으로 통일하고 스모크에서 `원문 DB` 재노출을 차단했다.
 - **2026-06-12 루프 146**: W-44 모바일 에이전트 질의 탭 재감사 → 320px에서 페이지 전체 overflow는 없었지만 헤더 `.hero` 내부 scrollWidth가 clientWidth보다 커지는 신호를 확인. 토큰 입력 박스의 inline `minWidth:260px`를 `.token-box` 클래스로 이동하고 모바일에서는 `min-width:0;width:100%;max-width:100%`로 풀어 내부 overflow 여지를 제거했다.
 - **2026-06-12 루프 147**: W-30 에이전트 질의 초안 복원 UX 점검 → 세션에 질문 초안이 복원되어 전송 버튼이 이미 활성화된 상태에서도 helper가 `질문을 입력하면 전송 버튼이 활성화됩니다`라고 안내해 현재 상태와 맞지 않음을 확인. 초안이 있으면 `질의 보내기를 누르거나 Ctrl/⌘+Enter` 안내와 `질의 보내기를 눌러 응답 확인` placeholder를 표시하도록 조건부 문구를 추가했다.
+- **2026-06-12 루프 148**: W-30 실제 rule-based 질의 제출 점검 → Aria 비용 없는 경로 제출은 성공했지만 응답 메타가 `제공자 확인 필요`, 본문이 `LLM 비활성 경로`로 표시되어 내부 라우팅 상태처럼 보이는 문제를 확인. noLLM 응답에 `provider=rule_based`를 내려주고 웹 메타를 `응답 방식 규칙 기반`으로 표시하며 본문은 `비용 없는 규칙 기반 응답`으로 정리했다.
+- **2026-06-12 루프 149**: W-31 분당 질의 한도 브라우저 점검 → Aria 질의 3회 제출 시 세 번째 요청은 429 안내가 뜨고 이전 성공 응답은 지워지는 것을 확인. 다만 메시지가 `잠시 후`로만 표시되어 재시도 시점이 모호했으므로 `1분 후 다시 시도하세요`로 서버/API fallback/스모크 기대값을 통일했다.
+- **2026-06-12 루프 150**: W-01/W-44 화면 전환 키보드 브라우저 점검 → 실제 탭에서 `ArrowRight/ArrowLeft/Home/End`를 눌러 선택 탭, roving `tabIndex`, 표시 패널 `hidden` 상태가 함께 전환되는지 확인했다. 결과는 정상이며 console warn/error 0, horizontal overflow 0으로 추가 수정 없이 증거만 보강했다.
+- **2026-06-12 루프 151**: W-12 모바일 evidence 펼침 재검증 → 390px viewport에서 닫힌 evidence는 `<pre>` DOM을 만들지 않고, 첫 `근거 JSON 보기`를 펼치면 `<pre>`가 생성되며 `max-width:100%`, `overflow-x:auto`로 containment됨을 확인. body overflow 0, overflow offender 0, console warn/error 0으로 추가 수정 없음.
+- **2026-06-12 루프 152**: W-21/W-24 전체 DOM 내부 토큰 재스캔 → raw key/noLLM/DB 원문 토큰은 없었지만 분석 문장에 `확인하세요.` 지시형 표현이 반복되어 회의록 문체가 기계적으로 보이는 잔여 문제를 확인. `활성 서킷: 최신 데이터 영역 기준으로 봅니다`, `결정 대기: 상단 캐치업 기준입니다`로 표시 정규화하고 스모크 기대값을 갱신했다.
+- **2026-06-12 루프 153**: W-08/W-09/W-11 결정 대기 카드 브라우저 점검 → 전체 결정 대기함 region, 카드 상태 줄, due badge, `근거 JSON 보기/확정/보류` 버튼 aria가 한국어 라벨로 표시되고 `pending_master`, `c_master`, `confirm`, `defer`, `agendaKey`, `decision_id`, `due_at`, `changed_via`, `market:domestic`, `decision:` raw 토큰은 사용자 DOM에 없음을 확인. console warn/error 0, horizontal overflow 0으로 추가 수정 없이 증거만 보강했다.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

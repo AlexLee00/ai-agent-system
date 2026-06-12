@@ -149,7 +149,10 @@ function agentLabel(agent) {
 
 function providerLabel(provider) {
   const value = provider || '확인 필요';
-  return value === 'n/a' ? '확인 필요' : value;
+  const normalized = String(value).toLowerCase();
+  if (normalized === 'n/a' || normalized === 'none') return '확인 필요';
+  if (normalized === 'rule_based' || normalized === 'rule-based' || normalized === 'deterministic') return '규칙 기반';
+  return value;
 }
 
 function agendaLabel(key) {
@@ -186,7 +189,7 @@ function friendlyApiError(status, code, fallback) {
     unauthorized: '토큰이 없거나 올바르지 않습니다. MEETING_ROOM_TOKEN을 확인하세요.',
     meeting_already_open: '이미 진행 중인 같은 타입 회의가 있습니다. 완료 후 다시 시도하세요.',
     segment_closed: '해당 시장 세그먼트가 휴장/비활성 상태라 회의를 시작할 수 없습니다.',
-    ask_rate_limited_minute: '분당 질의 한도에 도달했습니다. 잠시 후 다시 시도하세요.',
+    ask_rate_limited_minute: '분당 질의 한도에 도달했습니다. 1분 후 다시 시도하세요.',
     ask_rate_limited_day: '일일 질의 한도에 도달했습니다. 다음 운영일에 다시 시도하세요.',
     body_too_large: '요청 본문이 너무 큽니다. 질문이나 메모를 줄여 주세요.',
     invalid_json: '요청 형식이 올바르지 않습니다.',
@@ -1042,7 +1045,7 @@ function AskRoom({ token }) {
         <div className="card-body">
           <div className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답">
             ${busy ? html`<div className="meta">질의 중 · 에이전트 응답을 기다리는 중입니다.</div>` : answer ? html`
-              <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 제공자 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>
+              <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>
               <div className="answer-content"><${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} /></div>
             ` : html`<div className="meta">${emptyAnswerText}</div>`}
           </div>

@@ -397,7 +397,7 @@ function normalizeLegacyMinuteContent(content) {
   if (trimmed === 'close') return '회의 종료';
   const text = normalizeCompactMeetingArrays(content).replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
-    '활성 서킷: 최신 데이터 영역 기준으로 확인하세요',
+    '활성 서킷: 최신 데이터 영역 기준으로 봅니다',
   );
   let compactCircuitText = text;
   const circuitIndex = compactCircuitText.indexOf('활성 서킷');
@@ -567,16 +567,18 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/ADR recorded:\s*c_master\/pending_master/g, 'ADR 기록: C 마스터 확인 / 마스터 액션 대기')
     .replace(
       /\*{0,2}결정 대기\*{0,2}\s*[:：]\s*(?:현재\s*)?\d+(?:개|건)(?:의\s*결정이\s*대기\s*중(?:입니다)?\.?|(?:\s*남아있다\.?)?)?/g,
-      '결정 대기: 상단 캐치업 기준으로 확인하세요',
+      '결정 대기: 상단 캐치업 기준입니다',
     )
     .replace(
       /결정 대기[는가]?\s*\d+건(?:이)?\s*(?:대기\s*중(?:입니다)?|남아있다)\.?/g,
-      '결정 대기: 상단 캐치업 기준으로 확인하세요',
+      '결정 대기: 상단 캐치업 기준입니다',
     )
     .replace(
       /결정 대기\s*중인\s*서킷은\s*\d+건(?:입니다)?\.?/g,
-      '결정 대기: 상단 캐치업 기준으로 확인하세요',
+      '결정 대기: 상단 캐치업 기준입니다',
     )
+    .replace(/활성 서킷:\s*최신 데이터 영역 기준으로 확인하세요/g, '활성 서킷: 최신 데이터 영역 기준으로 봅니다')
+    .replace(/결정 대기:\s*상단 캐치업 기준으로 확인하세요/g, '결정 대기: 상단 캐치업 기준입니다')
     .replace(/전략군\s+24시간\s+동안\s+0건의\s+거래가\s+발생했습니다\.?/g, '전략군 24시간 신호 0건입니다.')
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
@@ -591,6 +593,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/확인하세요\s+결과적으로,/g, '확인하세요. ')
     .replace(/확인하세요\.\s*,\s*/g, '확인하세요. ')
     .replace(/확인하세요\.(?=[가-힣A-Za-z0-9])/g, '확인하세요. ')
+    .replace(/기준입니다(?=\s+[가-힣A-Za-z0-9])/g, '기준입니다.')
+    .replace(/봅니다(?=\s+[가-힣A-Za-z0-9])/g, '봅니다.')
+    .replace(/기준입니다\.(?=[가-힣A-Za-z0-9])/g, '기준입니다. ')
+    .replace(/봅니다\.(?=[가-힣A-Za-z0-9])/g, '봅니다. ')
     .replace(/([^.\n。!?]+?)에 대한 분석 결과입니다\./g, '$1 분석입니다.')
     .replace(
       /(?:결과적으로,\s*)?[^。.!?\n]*?분석 결과는 다음과 같이 요약할 수 있습니다\.\s*/g,
@@ -600,7 +606,9 @@ function normalizeLegacyKoreanLlmNoise(content) {
       /따라서,\s*[^.。!?]*?다음 조치를 취해야 합니다:\s*[^.。!?]*?(?:추가 분석을 수행하고,\s*)?[^.。!?]*?최종 결정을 내릴 수 있도록 하십시오\.?/g,
       '후속 조치는 마스터 확인 후 기록합니다.',
     )
-    .replace(/확인하세요\.(?=[가-힣A-Za-z0-9])/g, '확인하세요. ');
+    .replace(/확인하세요\.(?=[가-힣A-Za-z0-9])/g, '확인하세요. ')
+    .replace(/기준입니다\.(?=[가-힣A-Za-z0-9])/g, '기준입니다. ')
+    .replace(/봅니다\.(?=[가-힣A-Za-z0-9])/g, '봅니다. ');
 }
 
 function compactRepetitiveReportContent(content) {
@@ -814,7 +822,7 @@ function checkAskRateLimit(limiter, now = new Date()) {
     limiter.dayCount = 0;
   }
   if (limiter.minuteCount >= ASK_LIMIT_PER_MINUTE) {
-    throw new HttpError(429, 'ask_rate_limited_minute', '분당 질의 한도에 도달했습니다. 잠시 후 다시 시도하세요.');
+    throw new HttpError(429, 'ask_rate_limited_minute', '분당 질의 한도에 도달했습니다. 1분 후 다시 시도하세요.');
   }
   if (limiter.dayCount >= ASK_LIMIT_PER_DAY) {
     throw new HttpError(429, 'ask_rate_limited_day', '일일 질의 한도에 도달했습니다. 다음 운영일에 다시 시도하세요.');
@@ -849,8 +857,9 @@ async function askAgent(body, deps, limiter) {
       ok: true,
       skipped: true,
       agent,
+      provider: 'rule_based',
       route,
-      text: `[${agentDisplayLabel(agent)}] LLM 비활성 경로입니다. 비용 없이 질문을 확인했습니다: ${question}`,
+      text: `[${agentDisplayLabel(agent)}] 비용 없는 규칙 기반 응답입니다. 질문을 확인했습니다: ${question}`,
     };
   }
 
