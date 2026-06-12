@@ -1150,6 +1150,27 @@ function summarizeRuleBasedSegments(planNote = {}) {
     .map((segment = {}) => `${transitionMarketLabel(segment.market)} 비활성`);
 }
 
+function meetingSegmentReasonLabel(segment = {}) {
+  const reason = String(segment.reason || segment.marketHours?.reasonCode || '').trim();
+  return {
+    weekend: '주말',
+    holiday: '휴장일',
+    kis_market_closed: '장 마감',
+    kis_market_open: '장중',
+    crypto_24h: '24시간 운영',
+  }[reason] || (segment.marketHours?.isOpen === true ? '장중' : '상태 확인 필요');
+}
+
+function summarizeRuleBasedSegmentStates(planNote = {}) {
+  return (Array.isArray(planNote.segments) ? planNote.segments : [])
+    .slice(0, 3)
+    .map((segment = {}) => {
+      const status = segment.skipped || segment.active === false ? '비활성' : '회의 대상';
+      return `${transitionMarketLabel(segment.market)} ${status}(${meetingSegmentReasonLabel(segment)})`;
+    })
+    .filter(Boolean);
+}
+
 function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
   if (/(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text)) return 'schedule';
@@ -1242,7 +1263,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
   const regimes = summarizeRuleBasedRegimes(planNote);
   const inactiveSegments = summarizeRuleBasedSegments(planNote);
   if (intent === 'schedule') {
-    const segmentText = inactiveSegments.length ? inactiveSegments.join(' · ') : '비활성 세그먼트 없음';
+    const segmentText = summarizeRuleBasedSegmentStates(planNote).join(' · ') || '세그먼트 정보 없음';
     return [
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '운영 일정: 주말 morning 경량판은 국내·미국을 주말로 스킵하고, 암호화폐 24시간 운영 안건을 중심으로 확인합니다.',

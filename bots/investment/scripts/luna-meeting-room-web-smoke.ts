@@ -1730,6 +1730,15 @@ async function main() {
   let scheduleHubCalled = false;
   const scheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# schedule fixture',
+      segments: [
+        { market: 'domestic', active: false, skipped: true, reason: 'weekend' },
+        { market: 'overseas', active: true, skipped: false, reason: 'kis_market_open' },
+        { market: 'crypto', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
+    }),
     resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
     callViaHubFn: async () => {
       scheduleHubCalled = true;
@@ -1749,6 +1758,9 @@ async function main() {
     assert.equal(scheduleHubCalled, false);
     assert.ok(scheduleAsk.payload.text.includes('주말 morning 경량판은 국내·미국을 주말로 스킵'));
     assert.ok(scheduleAsk.payload.text.includes('암호화폐 24시간 운영 안건'));
+    assert.ok(scheduleAsk.payload.text.includes('현재 화면 기준: 국내 비활성(주말)'));
+    assert.ok(scheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
+    assert.ok(scheduleAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
     assert.equal(scheduleAsk.payload.text.includes('海外'), false);
   } finally {
     await closeServer(scheduleStarted.server);
