@@ -1048,6 +1048,8 @@ async function main() {
 
     const meetings = await request(baseUrl, '/api/meetings');
     assert.equal(meetings.payload.meetings.length, 1);
+    assert.equal(meetings.payload.meetings[0].typeLabel, '아침 통합 회의');
+    assert.equal(meetings.payload.meetings[0].statusLabel, '완료');
     assert.ok(meetings.payload.scheduleStatus.includes('정례 실행 상태:'));
     assert.ok(meetings.payload.scheduleStatus.includes('최신 아침 통합 회의: #1'));
     assert.ok(meetings.payload.scheduleStatus.includes('최신 전체 회의: #1 아침 통합 회의'));
@@ -1077,7 +1079,10 @@ async function main() {
     assert.equal(currentSegmentText.includes('marketHours'), false);
 
     const detail = await request(baseUrl, '/api/meetings/1');
+    assert.equal(detail.payload.session.typeLabel, '아침 통합 회의');
+    assert.equal(detail.payload.session.statusLabel, '완료');
     assert.equal(detail.payload.minutes.length, 5);
+    assert.equal(detail.payload.minutes[0].agendaLabel, '세션');
     assert.equal(detail.payload.minutes[0].content, '회의 시작');
     assert.ok(detail.payload.minutes[1].content.includes('**BTC**'));
     assert.ok(detail.payload.minutes[1].content.includes('암호화폐 요약'));
@@ -1564,6 +1569,10 @@ async function main() {
 
     const pending = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
+    assert.equal(pending.payload.decisions[0].agendaLabel, 'C15 레짐 엔진 HMM');
+    assert.equal(pending.payload.decisions[0].gradeLabel, 'C 마스터 확인');
+    assert.equal(pending.payload.decisions[0].statusLabel, '마스터 액션 대기');
+    assert.equal(pending.payload.decisions[0].sessionTypeLabel, '아침 통합 회의');
     assert.equal(pending.payload.decisions[0].decision, '자문 기록 후 마스터 확인 대기');
     assert.equal(pending.payload.decisions[0].decision.includes('C15 결정 대기:'), false);
     assert.equal(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM:'), false);
@@ -2706,6 +2715,7 @@ async function main() {
       tokenAuth: true,
       tokenStorageFailOpen: true,
       headerTokenA11y: true,
+      apiDisplayLabels: true,
       dailyRoomTokenChangeClearsStaleData: true,
       tablistSemantics: true,
       tabPanelAriaControlsTargets: true,

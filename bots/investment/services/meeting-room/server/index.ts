@@ -216,7 +216,9 @@ function normalizeSession(row = {}) {
   return {
     id: row.id,
     type: row.type,
+    typeLabel: meetingTypeLabel(row.type),
     status: row.status,
+    statusLabel: sessionStatusLabel(row.status),
     chair: row.chair,
     segments: safeJson(row.segments, []).map(normalizeSegmentForApi),
     startedAt: row.started_at || row.startedAt,
@@ -1051,6 +1053,7 @@ function normalizeMinute(row = {}) {
     sessionId: row.session_id || row.sessionId,
     seq: row.seq,
     agendaKey: row.agenda_key || row.agendaKey,
+    agendaLabel: agendaLabel(row.agenda_key || row.agendaKey),
     speaker: row.speaker,
     role: row.role,
     content: visibleContent,
@@ -1073,12 +1076,25 @@ function normalizeDecision(row = {}) {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
     agendaKey: row.agenda_key || row.agendaKey,
+    agendaLabel: agendaLabel(row.agenda_key || row.agendaKey),
     decision: normalizeDecisionDisplayText(row),
     grade: row.grade,
+    gradeLabel: decisionGradeLabel(row.grade),
     status: row.status,
+    statusLabel: decisionStatusLabel(row.status),
     dueAt: row.due_at || row.dueAt,
     evidence: compactDecisionEvidence(row.evidence, row),
     createdAt: row.created_at || row.createdAt,
+  };
+}
+
+function normalizePendingDecision(row = {}) {
+  const sessionType = row.session_type || row.sessionType;
+  return {
+    ...normalizeDecision(row),
+    sessionType,
+    sessionTypeLabel: meetingTypeLabel(sessionType),
+    sessionStartedAt: row.session_started_at || row.sessionStartedAt,
   };
 }
 
@@ -1171,7 +1187,21 @@ async function getMeeting(id, deps) {
 
 async function listPendingDecisions(deps) {
   if (deps.meetingStore?.listPendingDecisions) {
-    return (await deps.meetingStore.listPendingDecisions()).map(normalizeDecision);
+    const decisions = await deps.meetingStore.listPendingDecisions();
+    let sessionsById = new Map();
+    if (decisions.some((row) => !(row.session_type || row.sessionType)) && deps.meetingStore?.listMeetings) {
+      const sessions = await deps.meetingStore.listMeetings(500);
+      sessionsById = new Map(sessions.map((row) => [String(row.id), row]));
+    }
+    return decisions.map((row) => {
+      const session = sessionsById.get(String(row.session_id || row.sessionId));
+      if (!session) return normalizePendingDecision(row);
+      return normalizePendingDecision({
+        ...row,
+        sessionType: row.session_type || row.sessionType || session.type,
+        sessionStartedAt: row.session_started_at || row.sessionStartedAt || session.started_at || session.startedAt,
+      });
+    });
   }
   const rows = await deps.queryFn(
     `SELECT d.id, d.session_id, d.agenda_key, d.decision, d.grade, d.status, d.due_at, d.evidence, d.created_at,
@@ -1182,11 +1212,7 @@ async function listPendingDecisions(deps) {
       ORDER BY d.due_at ASC NULLS LAST, d.created_at DESC
       LIMIT 100`,
   );
-  return rows.map((row) => ({
-    ...normalizeDecision(row),
-    sessionType: row.session_type,
-    sessionStartedAt: row.session_started_at,
-  }));
+  return rows.map(normalizePendingDecision);
 }
 
 async function hasOpenMeetingType(type, deps) {
