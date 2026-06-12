@@ -166,9 +166,10 @@ function agendaLabel(key) {
 
 function pendingDecisionCatchupLabel(row = {}) {
   const label = agendaLabel(row.agendaKey);
-  const decision = String(row.decision || '').trim();
-  const duplicatePrefix = decision.startsWith(`${label}:`) ? decision.slice(label.length + 1).trim() : decision;
-  return `${label}: ${duplicatePrefix || '마스터 확인 대기'}`;
+  let decision = String(row.decision || '').trim();
+  decision = decision.replace(/^C15 결정 대기:\s*/u, '').trim();
+  if (decision.startsWith(`${label}:`)) decision = decision.slice(label.length + 1).trim();
+  return `${label}: ${decision || '마스터 확인 대기'}`;
 }
 
 function componentLabel(key) {
@@ -462,7 +463,7 @@ function normalizeLegacyMinuteContent(content) {
   }
   const readable = normalizeLegacyKoreanLlmNoise(compactCircuitText);
   const canonical = normalizeCanonicalStatusTokens(readable);
-  const compacted = compactRepetitiveReportContent(canonical);
+  const compacted = normalizeLegacyBoilerplateHeadings(compactRepetitiveReportContent(canonical));
   const marker = 'C15 결정 대기 항목';
   const markerIndex = compacted.indexOf(marker);
   if (markerIndex < 0) return compacted;
@@ -692,6 +693,13 @@ function compactRepetitiveReportContent(content) {
     kept.join('\n\n').trim(),
     `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 감사 로그에 보존됩니다.`,
   ].filter(Boolean).join('\n\n');
+}
+
+function normalizeLegacyBoilerplateHeadings(content) {
+  return String(content ?? '')
+    .replace(/이러한 결과를 기반으로,\s*최종 결론은 다음과 같습니다\.?/g, '요약 결론입니다.')
+    .replace(/이러한 결과를 기반으로,\s*([^.\n]*?)에 대한 최종 결론은 다음과 같습니다\.?/g, '$1 요약 결론입니다.')
+    .replace(/이러한 결과를 기반으로,\s*Luna 회의에서는 최종 결론을 다음과 같이 제시할 수 있습니다\.?/g, '요약 결론입니다.');
 }
 
 function normalizeMinute(row = {}) {

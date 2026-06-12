@@ -38,6 +38,28 @@ async function request(baseUrl, path, options = {}) {
   return { status: res.status, ok: res.ok, payload, text, headers: res.headers };
 }
 
+function userVisibleMeetingApiText(payload = {}, extraLines = []) {
+  return [
+    ...(payload.minutes || []).map((row) => row.content),
+    ...(payload.decisions || []).map((row) => row.decision),
+    ...extraLines,
+  ].filter(Boolean).join('\n');
+}
+
+function assertNoUserVisibleRawLeaks(text, context) {
+  const checks = [
+    ['raw JSON object', /\{\s*"[a-zA-Z0-9_]+":/],
+    ['raw JSON array', /\[\s*\{\s*"[a-zA-Z0-9_]+":/],
+    ['internal status token', /\b(pending_master|c_master|changed_via|agendaKey|decision_id|due_at|provider|rule_based|noLLM route)\b/],
+    ['component id', /\b(regime-engine-hmm|market-deployment-gate|meeting-room-orchestrator|backtest-nextbar-execution)\b/],
+    ['DB/raw marker', /\b(jsonb|raw DB|원문 DB|DB 원문|gate_transitions=|regime_transitions=|segments:\s*\[|errors=\[)\b/],
+    ['legacy LLM boilerplate', /이러한 결과를 기반으로|최종 결론|최종 결정을 내릴 수 있도록/],
+  ];
+  for (const [label, pattern] of checks) {
+    assert.equal(pattern.test(text), false, `${context} should not expose ${label}`);
+  }
+}
+
 function assertMeetingLaunchdLogPaths() {
   for (const fileName of MEETING_LAUNCHD_PLISTS) {
     const plistPath = new URL(`../launchd/${fileName}`, import.meta.url);
@@ -918,7 +940,9 @@ async function main() {
     assert.equal(detail.payload.minutes[2].content.includes('grillCoverage='), false);
     assert.ok(detail.payload.minutes[3].content.includes('ADR 기록: C 마스터 확인 / 마스터 액션 대기'));
     assert.equal(detail.payload.minutes[3].content.includes('ADR recorded: c_master/pending_master'), false);
-    assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 1);
+    assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 0);
+    assert.equal((detail.payload.minutes[4].content.match(/최종 결론/g) || []).length, 0);
+    assert.ok(detail.payload.minutes[4].content.includes('요약 결론입니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('반복 결론 문단'));
     assert.ok(detail.payload.minutes[4].content.includes('원문은 감사 로그에 보존됩니다.'));
     assert.equal(detail.payload.minutes[4].content.includes('원문은 DB 회의록에 보존됩니다.'), false);
@@ -1150,6 +1174,8 @@ async function main() {
     assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
     assert.ok(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM:'));
     assert.ok(catchup.payload.lines[1].includes('국내 장전 계획: 자문 기록 후 마스터 확인 대기'));
+    assert.equal(catchup.payload.lines[1].includes('C15 결정 대기:'), false);
+    assert.equal(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM: C15 레짐 엔진 HMM'), false);
     assert.equal(catchupText.includes('advisory 기록'), false);
     assert.equal(catchupText.includes('crypto 24h 점검'), false);
     assert.equal(catchupText.includes('market:crypto'), false);
@@ -1160,6 +1186,10 @@ async function main() {
     assert.equal(catchup.payload.lines[2].includes('n/a'), false);
     assert.equal(catchup.payload.lines[2].includes('minutes'), false);
     assert.equal(catchup.payload.lines[2].includes('최신 상태 closed'), false);
+    assertNoUserVisibleRawLeaks(
+      userVisibleMeetingApiText(detail.payload, catchup.payload.lines),
+      'meeting detail/catchup user-visible API text',
+    );
 
     const pending = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
@@ -1203,6 +1233,10 @@ async function main() {
     assert.ok(catchupAfterDefer.payload.lines[0].includes('확정 1건, 보류 1건, 대기 0건'));
     assert.ok(catchupAfterDefer.payload.lines[1].includes('마스터 액션 필요: 없음'));
 
+    const meetingsBeforeRun = await request(baseUrl, '/api/meetings');
+    assert.equal(meetingsBeforeRun.payload.activeRuns.length, 0);
+    const meetingIdsBeforeRun = meetingsBeforeRun.payload.meetings.map((row) => Number(row.id));
+
     const start = await request(baseUrl, '/api/meetings/start', {
       method: 'POST',
       headers: jsonHeaders(),
@@ -1223,7 +1257,13 @@ async function main() {
     assert.equal(runSessionOptions[0]?.noLlm, true);
     const meetingsAfterRun = await request(baseUrl, '/api/meetings');
     assert.equal(meetingsAfterRun.payload.activeRuns.length, 0);
+    assert.equal(meetingsAfterRun.payload.meetings.length, meetingsBeforeRun.payload.meetings.length + 1);
     assert.equal(meetingsAfterRun.payload.meetings[0].id, 2);
+    assert.equal(Number(meetingsAfterRun.payload.meetings[0].id), completedRun.sessionId);
+    assert.deepEqual(
+      meetingsAfterRun.payload.meetings.slice(1).map((row) => Number(row.id)),
+      meetingIdsBeforeRun,
+    );
     const completedRunDetail = await request(baseUrl, `/api/meetings/${start.payload.run.id}`);
     assert.equal(completedRunDetail.payload.run.status, 'completed');
     assert.equal(completedRunDetail.payload.run.sessionId, 2);
@@ -1437,6 +1477,7 @@ async function main() {
       startDuplicateGuard: true,
       startReentryGuard: true,
       completedRunSwitchesToSessionDetail: true,
+      completedRunIncreasesMeetingListCount: true,
       meetingLaunchdPersistentLogs: true,
       failedRunShowsError: true,
       confirmAuditAndIdempotency: true,
@@ -1494,6 +1535,7 @@ async function main() {
       markdownTableMobileWrapGuard: true,
       markdownLiteNoInnerHtml: true,
       legacyRawJsonMinuteNormalized: true,
+      userVisibleApiRawLeakGuard: true,
       legacyCircuitJsonMinuteSummarized: true,
       legacyCircuitCountMasked: true,
       legacyAdvisoryTermLocalized: true,

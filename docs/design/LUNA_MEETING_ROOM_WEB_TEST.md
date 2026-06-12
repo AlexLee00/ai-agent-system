@@ -14,7 +14,7 @@
 | W-05 | 회의 시작(중복) | open 세션 중 재시작 | 409 + 사용자 메시지(중복 안내) | [자동] 409+친화 메시지 문자열 |
 | W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단, 활성 세그먼트는 사용자 표시/aria에서 `활성`, 사유 코드는 `주말/휴장일/장 마감` 라벨로 표시 | [자동]+[수동] ✅fixture 브라우저 |
 | W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시·토글 상태 변경 live region 전달 | [자동] 기본 noLlm payload+mode live region+[수동] ✅토글 표시 |
-| W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
+| W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅2026-06-12 실브라우저+메모 |
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅2026-06-12 실브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] ✅2026-06-12 웹→API 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label, due 누락/정상 fallback도 한국어 라벨 | [자동] dueState+a11y+[수동] ✅2026-06-12 |
@@ -49,7 +49,7 @@
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
 | W-50 | 자동 회의 반영 | 정례 회의 후 접속 | 목록에 새 세션·캐치업 갱신·새 pending 카드 | [자동]+[수동] ✅2026-06-12 launchd/API/브라우저 |
-| W-51 | 텔레그램↔웹 동기 | 텔레그램 버튼으로 confirm 후 웹 확인 | 카드 상태 일치+감사 행 changed_via=telegram | [자동] callback/action smoke+[수동] 🔁 첫 실버튼 |
+| W-51 | 텔레그램↔웹 동기 | 텔레그램 버튼으로 confirm/defer 후 웹 확인 | 카드 상태 일치+감사 행 changed_via=telegram | [자동] callback/action smoke+[수동] ✅2026-06-12 Hub callback route confirm/defer / 🔁 첫 앱 버튼 |
 | W-52 | 주말 경량판 | 토/일 morning 회의록 | 국내·미국 "스킵(주말)"·암호화폐만 실안건 | [자동] weekend dry-run+[수동] 🔁 실제 주말 |
 | W-53 | regenerate 일치 | `--regenerate=<id>` md vs 웹 타임라인 | 내용 동일(DB 단일 소스) | [자동]+[수동] ✅2026-06-12 #117 counts+표시정규화 일치 |
 
@@ -227,9 +227,16 @@
 - **2026-06-12 루프 171**: W-20/W-21/W-24 최신 #119 렌더 재스캔 → 실제 시작 경로로 생성한 #119 아침 통합 회의의 API/브라우저 DOM을 검사했다. 회의록 raw JSON, 내부 상태 토큰, DB 구현 용어, status 번역 오류, 반복 boilerplate는 없었지만 에이전트 질의 빈 응답 placeholder에 `확인하세요.` 지시형 문구가 남아 전체 DOM 금지 패턴에 걸렸다. 빈 응답 문구를 `아직 응답 없음 · 응답은 이 영역에 표시됩니다.`로 중립화하고, 재시작 후 #119 전체 DOM hit 0건·old placeholder 0건·console warn/error 0건·overflow 0건을 확인했다.
 - **2026-06-12 루프 172**: W-10 웹→API 교차 멱등 실검증 → 최신 #119의 결정 #707을 웹에서 확정해 pending 큐에서 제거되고 캐치업이 `확정 1건, 대기 8건`으로 갱신됨을 확인했다. 이후 같은 #707을 API로 재확정하자 `{ idempotent:true, status:already_confirmed }`와 `pendingHas707=false`가 반환되어 상태 불변을 확인했다. 동시에 감사 minute가 `meeting decision confirm via web: no note` 영어 원문으로 노출될 수 있는 문제를 발견해 신규 저장 문구를 `결정 확정 처리 · 경로=웹 · 메모 없음`으로 바꾸고, 기존 저장분도 표시 정규화로 한국어 렌더되게 보정했다. 재시작 후 브라우저 DOM에서 영어 감사 문구 0건, 한국어 감사 문구 1건, console warn/error 0건.
 - **2026-06-12 루프 173**: W-09 보류 실브라우저 검증 → 최신 #119의 결정 #708 보류 버튼을 실제 클릭하자 최초에는 서버 오류 안내가 표시됐고, API 직접 재현에서 `luna_meeting_decisions_status_check`가 `deferred`를 허용하지 않아 500이 나는 것을 확인했다. 레포에는 `20260612000001_luna_meeting_room_deferred_status.sql` 보정 migration이 이미 있었지만 운영 DB 적용이 누락된 상태였으므로 해당 migration을 적용했다. 재시도 후 #708은 `status=deferred`, due는 +24h, pending 큐 제거, 캐치업은 `확정 1건, 보류 1건, 대기 7건`, 감사 minute는 `결정 보류 처리 · 경로=웹 · 메모 없음`으로 기록됐다. 브라우저 DOM은 영어 감사 문구 0건, console warn/error 0건, horizontal overflow 0건.
-- **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
+- **2026-06-12 루프 174**: W-51 텔레그램 callback route↔웹 동기 실검증 → 운영 Hub callback route에 `luna_meeting:709:confirm`을 실제 HTTP로 전달하자 처음에는 Hub Bearer 인증 및 callback approver allowlist 누락으로 진입하지 못했다. `HUB_CONTROL_APPROVER_IDS`와 `HUB_CONTROL_APPROVAL_CHAT_ID`를 런타임 env와 설치본 plist에 명시하고 Hub를 재시작한 뒤 재시도하자 200 `meeting_decision_confirmed`가 반환됐다. 이어 `luna_meeting:710:defer`도 같은 route로 전달해 200 `meeting_decision_deferred`와 due +24h를 확인했다. #119의 #709는 `confirmed`, #710은 `deferred`, evidence는 모두 `mr_c`, 감사 minute는 각각 `결정 확정 처리 · 경로=텔레그램 · 메모=telegram confirm`, `결정 보류 처리 · 경로=텔레그램 · 메모=telegram defer`로 기록됐다. 캐치업은 최종 `확정 2건, 보류 2건, 대기 5건`이며, 브라우저는 reload 없이 polling으로 #709/#710 카드를 제거하고 텔레그램 감사 행을 표시했다. 영어 감사 문구 0건·console warn/error 0건·overflow 0건. 실제 Telegram 앱 버튼 클릭은 외부 채널 이벤트라 첫 실사용 시 한 번 더 확인한다.
+- **2026-06-12 루프 175**: W-08 메모 포함 확정 실브라우저 검증 → 최신 #119의 결정 #711에 감사 메모 `W-08 실브라우저 확정 메모`를 입력하고 웹 확정 버튼을 클릭했다. #711은 `status=confirmed`, pending 큐에서 제거, 캐치업은 `확정 3건, 보류 2건, 대기 4건`, 감사 minute는 `결정 확정 처리 · 경로=웹 · 메모=W-08 실브라우저 확정 메모`로 저장됐다. 브라우저 DOM에서도 #711 카드가 제거되고 감사 행이 표시됐으며, 영어 감사 문구 0건·console warn/error 0건·overflow 0건이었다.
+- **2026-06-12 루프 176**: W-51 Hub callback 운영 정합성 보강 → 루프 174에서 확인한 callback approver allowlist는 active Hub plist에만 반영되어 있었고, blue/green 전환 시 `ai.hub.resource-api-green`이 같은 `luna_meeting` callback 검증을 통과하지 못할 수 있었다. active/green Hub plist 양쪽에 `HUB_CONTROL_APPROVER_IDS`, `HUB_CONTROL_APPROVAL_CHAT_ID` placeholder를 맞춰 repo 템플릿을 정렬했다. `check:luna-meeting-room-web`, `check:luna-meeting-room-c`, 투자봇 tsc, active/green/installed plist lint, diff check 모두 통과했다.
+- **2026-06-12 루프 177**: W-02 U1 캐치업 간결성 실브라우저 점검 → #119 캐치업 2번째 줄이 `C15 레짐 엔진 HMM: C15 결정 대기: C15 레짐 엔진 HMM...`처럼 컴포넌트 라벨과 결정 제목을 중복 표시해 마스터 액션 요약이 길어지는 문제를 확인했다. DB 결정문은 보존하고 `/api/catchup` 표시 계층에서 `C15 결정 대기:` prefix와 중복 컴포넌트 prefix만 제거했다. 서비스 재시작 후 API/브라우저 모두 `C15 레짐 엔진 HMM: 자문 기록 후 마스터 확인 대기 / C1 시장 배치 게이트: ... / C15 MAPEK: ...`로 표시되며, 중복 prefix 0건·console warn/error 0건·overflow 0건을 확인했다. `check:luna-meeting-room-web`에 catchup 중복 prefix 회귀 단언을 추가했다.
+- **2026-06-12 루프 178**: W-24 legacy LLM boilerplate 실브라우저 재스캔 → 최신 #119/#117은 clean이었지만 legacy #1 타임라인에 `이러한 결과를 기반으로, 최종 결론은 다음과 같습니다.`가 첫 결론 헤딩으로 남아 있었다. 반복 결론 축약은 유지하되 표시 계층에서 legacy 결론 헤딩을 `요약 결론입니다.`로 바꿔 지시형/보고서형 boilerplate를 숨겼다. 재시작 후 #1 DOM에서 `이러한 결과를 기반으로`, `최종 결론`, `최종 결정을 내릴 수 있도록` 0건, `요약 결론입니다.`와 반복 축약 안내 존재, console warn/error 0건·overflow 0건을 확인했다. `check:luna-meeting-room-web`도 해당 문구 0건을 단언한다.
+- **2026-06-12 루프 179**: W-21 JSON 덤프 부재 자동화 강화 → 기존 스모크는 개별 fixture 문구 중심이라 새 회의의 사용자 표시 필드 전체(`minute.content`, `decision.decision`, `catchup.lines`)에 raw JSON/object array, 내부 status token, component id, DB/raw marker, legacy boilerplate가 재노출되는지 한 번에 잡는 정규식 가드가 부족했다. `check:luna-meeting-room-web`에 `userVisibleApiRawLeakGuard`를 추가했고, 실서비스 #119/#117/#1 API 표시 필드와 브라우저 DOM을 같은 패턴으로 재스캔해 hit 0건·console warn/error 0건·overflow 0건을 확인했다.
+- **2026-06-12 루프 180**: W-50 정례/시작 후 목록 증가 자동화 강화 → 기존 스모크는 완료 run이 세션 상세로 전환되는지는 확인했지만, 회의 목록 건수가 정확히 1 증가하고 새 세션이 최상단에 오며 기존 목록 순서가 보존되는지는 별도 단언하지 않았다. in-memory 회의 시작 smoke에 시작 전 목록 ID 배열, 완료 후 목록 길이 `+1`, 최상단 `sessionId`, 기존 ID 보존 단언을 추가했다. 실서비스 API는 activeRuns 0, 회의 #119/#117/#1 3건이며 정례 launchd 4종과 웹 launchd가 로드되어 있다. 브라우저 목록도 #119/#117/#1 3건, 실행 중 카드 0건, 선택 #119, console warn/error 0건·overflow 0건을 확인했다.
+- **남은 위험**: 실제 Telegram 앱 버튼/poller 이벤트, 실제 주말 정례 회의, 장시간 운영 후 누적 UX는 정례 사이클에서 계속 검증.
 
 ## 운영 루틴 제안
 - **매 회의 후(특히 첫 주)**: W-20·21·22·24·50 — 5분 체크. 헤드리스 캡처 보조: `Chrome --headless --screenshot=/tmp/mr.png --virtual-time-budget=10000 http://127.0.0.1:7791/`
 - **주 1회**: D 섹션 전체 + W-10 교차 멱등.
-- **자동화 후보(우선순위)**: ①W-21 JSON 부재(API 정규식 — 스모크 1케이스 추가) ②W-50(정례 후 세션 수 증가 단언) ③W-24(금지 패턴 정규식: 동일 문장 3연속).
+- **자동화 후보(우선순위)**: ①W-24(금지 패턴 정규식: 동일 문장 3연속) ②W-51(실제 Telegram 앱 버튼/poller 이벤트 관찰) ③W-52(실제 주말 정례 회의 관찰).
