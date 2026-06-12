@@ -1278,10 +1278,17 @@ async function main() {
     const truncatedRegimeSentence = _testOnly.normalizeLegacyMinuteContent(
       'C2 레짐에 따르면, 국내 시장은 상승 추세를 유지하고 있으며, 0.38의 점수가 기록되고 있습니다. 미국 시장은 중립적인 추세를 유지하고 있으며, 0. 암호화폐 시장은 하락 추세를 유지하고 있으며, 0.',
     );
+    assert.ok(truncatedRegimeSentence.includes('레짐 기준으로, 국내 시장은 상승 레짐입니다.'));
     assert.ok(truncatedRegimeSentence.includes('국내 시장은 상승 레짐입니다.'));
     assert.ok(truncatedRegimeSentence.includes('미국 시장은 수평 레짐입니다.'));
     assert.ok(truncatedRegimeSentence.includes('암호화폐 시장은 하락 레짐입니다.'));
+    assert.equal(truncatedRegimeSentence.includes('C2 레짐'), false);
     assert.equal(truncatedRegimeSentence.includes('0. 암호화폐'), false);
+    const premarketResultIntro = _testOnly.normalizeLegacyMinuteContent(
+      '미국 보유/예정 이벤트 점검 결과는 다음과 같습니다.\n\n1. 국내 시장은 현재 halt 상태이며, 점수는 33점입니다.',
+    );
+    assert.ok(premarketResultIntro.startsWith('미국 보유/예정 이벤트 점검입니다.'));
+    assert.equal(premarketResultIntro.includes('결과는 다음과 같습니다'), false);
     assert.equal(detail.payload.minutes[4].content.includes('DB minute'), false);
     assert.equal(detail.payload.minutes[4].content.includes('plan-note'), false);
     assert.equal(detail.payload.minutes[4].content.includes('shadow stack'), false);
