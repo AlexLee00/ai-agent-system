@@ -156,6 +156,8 @@
     "shadow:activation-smoke": "tsx scripts/shadow-mode-activation-smoke.ts",
     "shadow:week2-summary": "tsx scripts/week2-shadow-summary-report.ts",
     "promotion:llm-auto-routing": "tsx scripts/llm-auto-routing-promotion-evaluation.ts",
+    "runtime:hub-llm-promotion-gate": "tsx scripts/runtime-hub-llm-promotion-gate.ts",
+    "smoke:hub-llm-promotion-gate": "tsx scripts/hub-llm-promotion-gate-smoke.ts",
     "promotion:permission-tier": "tsx scripts/permission-tier-promotion-evaluation.ts",
     "week4:integration-smoke": "tsx scripts/week4-integration-smoke.ts",
     "hub:migrate:sigma-vault": "PG_DIRECT=true tsx -e \"const {Pool}=require('pg');const fs=require('fs');const pool=new Pool({connectionString:process.env.DATABASE_URL||'postgresql://localhost:5432/jay'});pool.query(fs.readFileSync('migrations/20260603000001_sigma_vault_entries.sql','utf8')).then(()=>{console.log('sigma vault migration ok');pool.end();process.exit(0)}).catch(e=>{console.error(e.message);process.exit(1)})\"",
