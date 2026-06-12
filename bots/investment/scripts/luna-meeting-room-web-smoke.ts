@@ -1480,7 +1480,11 @@ async function main() {
     );
     const regeneratedMarkdown = renderMeetingMinutesMarkdown({
       session: { id: 117, type: 'domestic_debrief', status: 'closed', chair: 'luna' },
-      minutes: [{ seq: 1, agendaKey: 'debrief:g6-plan-vs-actual', role: 'data', speaker: 'stack-adapter', content: 'G6 대조표' }],
+      minutes: [
+        { seq: 1, agendaKey: 'debrief:g6-plan-vs-actual', role: 'data', speaker: 'stack-adapter', content: 'G6 대조표' },
+        { seq: 2, agendaKey: 'debrief:g6-plan-vs-actual', role: 'analysis', speaker: 'aria', content: '분석' },
+        { seq: 3, agendaKey: 'debrief:g6-plan-vs-actual', role: 'decision', speaker: 'adr', content: 'ADR' },
+      ],
       decisions: [{ grade: 'c_master', status: 'pending_master', agendaKey: 'debrief:g6-plan-vs-actual', decision: '확인 대기', dueAt: '2026-06-12T00:00:00.000Z' }],
       dryRun: false,
       llmCalls: 0,
@@ -1497,6 +1501,12 @@ async function main() {
     assert.ok(regeneratedMarkdown.includes('## 회의 데이터 요약'));
     assert.ok(regeneratedMarkdown.includes('## 회의록'));
     assert.ok(regeneratedMarkdown.includes('## 결정 기록(ADR)'));
+    assert.ok(regeneratedMarkdown.includes('### 1. 국내 마감 G6 대조표 — 데이터 / 데이터 어댑터'));
+    assert.ok(regeneratedMarkdown.includes('### 2. 국내 마감 G6 대조표 — 분석 / Aria'));
+    assert.ok(regeneratedMarkdown.includes('### 3. 국내 마감 G6 대조표 — 결정 / ADR 기록기'));
+    assert.equal(regeneratedMarkdown.includes(' / stack-adapter'), false);
+    assert.equal(regeneratedMarkdown.includes(' / aria'), false);
+    assert.equal(regeneratedMarkdown.includes(' / adr'), false);
     assert.equal(regeneratedMarkdown.includes('## Plan Note'), false);
     assert.equal(regeneratedMarkdown.includes('## Minutes'), false);
     assert.equal(regeneratedMarkdown.includes('## ADR'), false);

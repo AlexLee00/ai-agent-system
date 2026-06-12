@@ -31,6 +31,35 @@ function roleLabel(role: any) {
   }[normalized] || normalized || '기록';
 }
 
+function speakerLabel(speaker: any) {
+  const value = String(speaker || '').toLowerCase();
+  return {
+    system: '시스템',
+    'stack-adapter': '데이터 어댑터',
+    adr: 'ADR 기록기',
+    luna: 'Luna',
+    nemesis: 'Nemesis',
+    aria: 'Aria',
+    sophia: 'Sophia',
+    argos: 'Argos',
+    hermes: 'Hermes',
+    oracle: 'Oracle',
+    chronos: 'Chronos',
+    zeus: 'Zeus',
+    athena: 'Athena',
+    sentinel: 'Sentinel',
+    'adaptive-risk': 'Adaptive Risk',
+    hephaestos: 'Hephaestos',
+    hanul: 'Hanul',
+    budget: 'Budget',
+    scout: 'Scout',
+    kairos: 'Kairos',
+    'stock-flow': 'Stock Flow',
+    sweeper: 'Sweeper',
+    reporter: 'Reporter',
+  }[value] || safeText(speaker) || '시스템';
+}
+
 function agendaLabel(key: any) {
   return {
     session: '세션',
@@ -151,9 +180,9 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
   } else {
     for (const row of minutes) {
       const seqLabel = safeText(row.seq) || '회의록';
-      const speakerLabel = safeText(row.speaker) || '시스템';
+      const speaker = speakerLabel(row.speaker);
       const content = safeText(row.content) || '내용 없음';
-      lines.push(`### ${seqLabel}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${speakerLabel}`);
+      lines.push(`### ${seqLabel}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${speaker}`);
       lines.push('');
       lines.push(content);
       lines.push('');
