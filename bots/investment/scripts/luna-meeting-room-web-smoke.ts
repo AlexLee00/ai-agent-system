@@ -321,6 +321,9 @@ async function main() {
     assert.equal(appJs.text.includes("return String(value);"), false);
     assert.ok(appJs.text.includes('aria-label="로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="TeamJay Dashboard 7787 새 창으로 열기"'));
+    assert.ok(appJs.text.includes('target="_blank"'));
+    assert.ok(appJs.text.includes('rel="noopener noreferrer"'));
+    assert.equal(appJs.text.includes('rel="noreferrer"'), false);
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰'));
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
@@ -338,7 +341,15 @@ async function main() {
     assert.ok(appJs.text.includes('aria-controls="meeting-panel-daily"'));
     assert.ok(appJs.text.includes('aria-controls="meeting-panel-ask"'));
     assert.ok(appJs.text.includes('role="tabpanel"'));
-    assert.ok(appJs.text.includes("aria-labelledby=${tab === 'daily' ? 'meeting-tab-daily' : 'meeting-tab-ask'}"));
+    assert.ok(appJs.text.includes('id="meeting-panel-daily"'));
+    assert.ok(appJs.text.includes('aria-labelledby="meeting-tab-daily"'));
+    assert.ok(appJs.text.includes("hidden=${tab !== 'daily'}"));
+    assert.ok(appJs.text.includes('id="meeting-panel-ask"'));
+    assert.ok(appJs.text.includes('aria-labelledby="meeting-tab-ask"'));
+    assert.ok(appJs.text.includes("hidden=${tab !== 'ask'}"));
+    assert.ok(appJs.text.includes('<${AskRoom} token=${token} />'));
+    assert.equal(appJs.text.includes("tab === 'ask' ? html`<${AskRoom} token=${token} />` : null"), false);
+    assert.equal(appJs.text.includes("id=${tab === 'daily' ? 'meeting-panel-daily' : 'meeting-panel-ask'}"), false);
     assert.ok(appJs.text.includes('function handleTabKeyDown'));
     assert.ok(appJs.text.includes('ArrowRight'));
     assert.ok(appJs.text.includes('ArrowLeft'));
@@ -347,8 +358,8 @@ async function main() {
     assert.ok(appJs.text.includes("tabIndex=${tab === 'daily' ? 0 : -1}"));
     assert.ok(appJs.text.includes("tabIndex=${tab === 'ask' ? 0 : -1}"));
     assert.ok(html.text.includes('.tab-switcher'));
-    assert.ok(appJs.text.includes("aria-pressed=${tab === 'daily'}"));
-    assert.ok(appJs.text.includes("aria-pressed=${tab === 'ask'}"));
+    assert.equal(appJs.text.includes("aria-pressed=${tab === 'daily'}"), false);
+    assert.equal(appJs.text.includes("aria-pressed=${tab === 'ask'}"), false);
     assert.ok(appJs.text.includes('function meetingStatusLabel'));
     assert.ok(appJs.text.includes('function meetingTypeLabel'));
     assert.ok(appJs.text.includes('function agendaLabel'));
@@ -465,7 +476,19 @@ async function main() {
     assert.ok(appJs.text.includes('minuteRoleClass(minute)'));
     assert.ok(appJs.text.includes('function SegmentStatus'));
     assert.ok(appJs.text.includes('function segmentReasonLabel'));
+    assert.ok(appJs.text.includes("const value = String(reason || '');"));
+    assert.ok(appJs.text.includes("if (!value) return '사유 없음';"));
     assert.ok(appJs.text.includes("weekend: '주말'"));
+    assert.ok(appJs.text.includes("kis_market_closed: '장 마감'"));
+    assert.ok(appJs.text.includes("crypto_24h: '24시간 운영'"));
+    assert.ok(appJs.text.includes("}[value] || '사유 확인 필요';"));
+    assert.equal(appJs.text.includes("} || reason || '사유 없음';"), false);
+    assert.ok(appJs.text.includes('function segmentStatusText(segment = {})'));
+    assert.ok(appJs.text.includes('function segmentStatusVisibleText(segment = {})'));
+    assert.ok(appJs.text.includes("const summary = segments.map(segmentStatusText).join(' / ');"));
+    assert.ok(appJs.text.includes("const pills = segments.flatMap((segment, index) => ["));
+    assert.ok(appJs.text.includes("aria-label=${`시장 세그먼트 상태: ${summary}`}"));
+    assert.ok(appJs.text.includes("index < segments.length - 1 ? ' ' : ''"));
     assert.ok(appJs.text.includes('reasonLabel'));
     assert.ok(appJs.text.includes('segment-pill'));
     assert.ok(appJs.text.includes('세그먼트 상태 로딩 중'));
@@ -522,6 +545,11 @@ async function main() {
     assert.ok(appJs.text.includes("'stock-flow': 'Stock Flow'"));
     assert.ok(appJs.text.includes("sweeper: 'Sweeper'"));
     assert.ok(appJs.text.includes("reporter: 'Reporter'"));
+    assert.ok(appJs.text.includes("const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';"));
+    assert.ok(appJs.text.includes("const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';"));
+    assert.ok(appJs.text.includes('function readSessionValue(key, fallback ='));
+    assert.ok(appJs.text.includes('function writeSessionValue(key, value)'));
+    assert.ok(appJs.text.includes('function normalizeAgentName(value)'));
     assert.ok(appJs.text.includes('${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}'));
     assert.equal(appJs.text.includes("['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map"), false);
     assert.ok(appJs.text.includes('<option value=${name}>${agentLabel(name)}</option>'));
@@ -529,6 +557,18 @@ async function main() {
     assert.equal(appJs.text.includes('aria-label="질의 대상 에이전트"'), false);
     assert.equal(appJs.text.includes('aria-label="회의실 컨텍스트 기반 자문 질문"'), false);
     assert.ok(appJs.text.includes('aria-describedby="ask-helper ask-safety-note"'));
+    assert.ok(appJs.text.includes("useState(() => normalizeAgentName(readSessionValue(ASK_AGENT_STORAGE_KEY, 'luna')))"));
+    assert.ok(appJs.text.includes("useState(() => readSessionValue(ASK_QUESTION_STORAGE_KEY, ''))"));
+    assert.ok(appJs.text.includes('writeSessionValue(ASK_AGENT_STORAGE_KEY, nextAgent);'));
+    assert.ok(appJs.text.includes('writeSessionValue(ASK_QUESTION_STORAGE_KEY, value);'));
+    assert.ok(appJs.text.includes('function submitAsk(event)'));
+    assert.ok(appJs.text.includes('event?.preventDefault?.();'));
+    assert.ok(appJs.text.includes('function handleQuestionKeyDown(event)'));
+    assert.ok(appJs.text.includes("if ((event.metaKey || event.ctrlKey) && event.key === 'Enter')"));
+    assert.ok(appJs.text.includes('onKeyDown=${handleQuestionKeyDown}'));
+    assert.ok(appJs.text.includes('<h2 id="meeting-ask-form-title">@멘션 질의</h2>'));
+    assert.ok(appJs.text.includes('<form className="card-body" aria-labelledby="meeting-ask-form-title" onSubmit=${submitAsk}>'));
+    assert.ok(appJs.text.includes('type="submit"'));
     assert.ok(appJs.text.includes('function updateAgent'));
     assert.ok(appJs.text.includes('function updateQuestion'));
     assert.ok(appJs.text.includes('const askRequestSeq = useRef(0);'));
@@ -551,7 +591,8 @@ async function main() {
     assert.ok(appJs.text.includes('setAnswer(nextAnswer);'));
     assert.ok(appJs.text.includes('setError(error.message);'));
     assert.ok(appJs.text.includes('setBusy(false);'));
-    assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다.'));
+    assert.ok(appJs.text.includes('질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.'));
+    assert.ok(appJs.text.includes('Ctrl/⌘+Enter도 사용할 수 있습니다.'));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
@@ -978,6 +1019,7 @@ async function main() {
     scenarios: {
       apiListDetailCatchup: true,
       headerStatusAndDashboardA11y: true,
+      dashboardNewTabNoopener: true,
       keyboardFocusVisible: true,
       mobileOneColumnContract: true,
       pendingDueOrder: true,
@@ -999,6 +1041,10 @@ async function main() {
       askAdvisoryTermKoreanLabel: true,
       askFormKoreanLabels: true,
       askInputGuidance: true,
+      askKeyboardSubmitShortcut: true,
+      askFormLandmarkLabel: true,
+      askStatePreservedAcrossTabSwitch: true,
+      askDraftRestoresAfterReload: true,
       askClearsStaleAnswerOnSubmit: true,
       askClearsStaleAnswerOnInputChange: true,
       askIgnoresStaleAsyncResponse: true,
@@ -1015,8 +1061,9 @@ async function main() {
       tokenAuth: true,
       headerTokenA11y: true,
       tablistSemantics: true,
+      tabPanelAriaControlsTargets: true,
       tabKeyboardNavigation: true,
-      tabPressedState: true,
+      tabSelectedStateOnly: true,
       startMeetingA11y: true,
       startClosedSegmentUiGuard: true,
       meetingListPressedState: true,
@@ -1047,6 +1094,9 @@ async function main() {
       closedSegmentReasonA11y: true,
       activeSegmentStatusKoreanLabel: true,
       segmentReasonKoreanLabel: true,
+      segmentReasonRuntimeCodesLocalized: true,
+      segmentReasonUnknownCodeHidden: true,
+      segmentStatusTextSeparated: true,
       llmToggleDefaultNoCost: true,
       llmModeLiveRegion: true,
       evidenceDisclosureKoreanLabel: true,

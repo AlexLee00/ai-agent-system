@@ -47,6 +47,9 @@ const AGENT_LABELS = Object.freeze({
   reporter: 'Reporter',
 });
 
+const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';
+const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';
+
 function useToken() {
   const [token, setToken] = useState(() => localStorage.getItem('lunaMeetingRoomToken') || '');
   function update(value) {
@@ -54,6 +57,31 @@ function useToken() {
     localStorage.setItem('lunaMeetingRoomToken', value);
   }
   return [token, update];
+}
+
+function readSessionValue(key, fallback = '') {
+  try {
+    if (typeof sessionStorage === 'undefined') return fallback;
+    return sessionStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSessionValue(key, value) {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    const nextValue = String(value || '');
+    if (nextValue) sessionStorage.setItem(key, nextValue);
+    else sessionStorage.removeItem(key);
+  } catch {
+    // Storage can be disabled in hardened browser contexts. The UI still works without draft restore.
+  }
+}
+
+function normalizeAgentName(value) {
+  const normalized = String(value || '').toLowerCase();
+  return AGENT_OPTIONS.includes(normalized) ? normalized : 'luna';
 }
 
 function formatTime(value) {
@@ -324,13 +352,17 @@ function MarkdownLite({ text }) {
 }
 
 function segmentReasonLabel(reason) {
+  const value = String(reason || '');
+  if (!value) return '사유 없음';
   return {
     weekend: '주말',
     holiday: '휴장일',
     market_closed: '장 마감',
+    kis_market_closed: '장 마감',
+    crypto_24h: '24시간 운영',
     closed: '비활성',
     disabled: '비활성',
-  }[String(reason || '')] || reason || '사유 없음';
+  }[value] || '사유 확인 필요';
 }
 
 function meetingTypesForSegments(segments = []) {
@@ -351,19 +383,35 @@ function marketLabel(market) {
   return { domestic: '국내', overseas: '미국', crypto: '암호화폐' }[market] || '시장 미상';
 }
 
+function segmentStatusText(segment = {}) {
+  return segment.skipped
+    ? `${marketLabel(segment.market)} 비활성, 사유 ${segmentReasonLabel(segment.reason)}`
+    : `${marketLabel(segment.market)} 활성`;
+}
+
+function segmentStatusVisibleText(segment = {}) {
+  return `${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segmentReasonLabel(segment.reason)})` : '활성'}`;
+}
+
 function SegmentStatus({ segments }) {
   if (!segments?.length) return html`<div id="meeting-segment-status" className="meta" role="status" aria-live="polite" aria-label="시장 세그먼트 상태">세그먼트 상태 로딩 중</div>`;
+  const summary = segments.map(segmentStatusText).join(' / ');
+  const pills = segments.flatMap((segment, index) => [
+    html`
+      <span
+        key=${`segment-${segment.market || index}`}
+        className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
+        title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 활성`}
+        aria-label=${segmentStatusText(segment)}
+      >
+        ${segmentStatusVisibleText(segment)}
+      </span>
+    `,
+    index < segments.length - 1 ? ' ' : '',
+  ]);
   return html`
-    <div id="meeting-segment-status" className="segment-status" role="status" aria-live="polite" aria-label="시장 세그먼트 상태">
-      ${segments.map((segment) => html`
-        <span
-          className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
-          title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 활성`}
-          aria-label=${segment.skipped ? `${marketLabel(segment.market)} 비활성, 사유 ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 활성`}
-        >
-          ${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segmentReasonLabel(segment.reason)})` : '활성'}
-        </span>
-      `)}
+    <div id="meeting-segment-status" className="segment-status" role="status" aria-live="polite" aria-label=${`시장 세그먼트 상태: ${summary}`}>
+      ${pills}
     </div>
   `;
 }
@@ -420,7 +468,6 @@ function Header({ token, setToken, tab, setTab }) {
           role="tab"
           className=${tab === 'daily' ? 'active' : ''}
           aria-selected=${tab === 'daily'}
-          aria-pressed=${tab === 'daily'}
           aria-controls="meeting-panel-daily"
           tabIndex=${tab === 'daily' ? 0 : -1}
           onClick=${() => selectTab('daily')}
@@ -431,7 +478,6 @@ function Header({ token, setToken, tab, setTab }) {
           role="tab"
           className=${tab === 'ask' ? 'active' : ''}
           aria-selected=${tab === 'ask'}
-          aria-pressed=${tab === 'ask'}
           aria-controls="meeting-panel-ask"
           tabIndex=${tab === 'ask' ? 0 : -1}
           onClick=${() => selectTab('ask')}
@@ -442,7 +488,7 @@ function Header({ token, setToken, tab, setTab }) {
         className="pill"
         href="http://127.0.0.1:7787"
         target="_blank"
-        rel="noreferrer"
+        rel="noopener noreferrer"
         aria-label="TeamJay Dashboard 7787 새 창으로 열기"
         title="TeamJay Dashboard 7787 새 창으로 열기"
       >TeamJay Dashboard :7787</a>
@@ -794,8 +840,8 @@ function DailyRoom({ token }) {
 }
 
 function AskRoom({ token }) {
-  const [agent, setAgent] = useState('luna');
-  const [question, setQuestion] = useState('');
+  const [agent, setAgent] = useState(() => normalizeAgentName(readSessionValue(ASK_AGENT_STORAGE_KEY, 'luna')));
+  const [question, setQuestion] = useState(() => readSessionValue(ASK_QUESTION_STORAGE_KEY, ''));
   const [answer, setAnswer] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -809,11 +855,14 @@ function AskRoom({ token }) {
     setBusy(false);
   }
   function updateAgent(value) {
-    setAgent(value);
+    const nextAgent = normalizeAgentName(value);
+    setAgent(nextAgent);
+    writeSessionValue(ASK_AGENT_STORAGE_KEY, nextAgent);
     resetAskStateForInputChange();
   }
   function updateQuestion(value) {
     setQuestion(value);
+    writeSessionValue(ASK_QUESTION_STORAGE_KEY, value);
     resetAskStateForInputChange();
   }
   async function ask() {
@@ -845,12 +894,22 @@ function AskRoom({ token }) {
       }
     }
   }
+  function submitAsk(event) {
+    event?.preventDefault?.();
+    ask();
+  }
+  function handleQuestionKeyDown(event) {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      ask();
+    }
+  }
   return html`
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     <div className="ask-grid">
       <div className="card">
-        <h2>@멘션 질의</h2>
-        <div className="card-body">
+        <h2 id="meeting-ask-form-title">@멘션 질의</h2>
+        <form className="card-body" aria-labelledby="meeting-ask-form-title" onSubmit=${submitAsk}>
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
             <select id="meeting-agent-select" title="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
@@ -864,21 +923,22 @@ function AskRoom({ token }) {
               aria-describedby="ask-helper ask-safety-note"
               value=${question}
               onChange=${(event) => updateQuestion(event.target.value)}
+              onKeyDown=${handleQuestionKeyDown}
               placeholder="회의실 컨텍스트 기반 자문 질문"
             />
-            <div id="ask-helper" className="ask-helper">질문을 입력하면 전송 버튼이 활성화됩니다.</div>
+            <div id="ask-helper" className="ask-helper">질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.</div>
           </div>
           <div id="ask-safety-note" className="ask-safety-note">
             자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
           <button
+            type="submit"
             aria-label=${busy ? `${agentLabel(agent)}에게 자문 질문 진행 중` : `${agentLabel(agent)}에게 자문 질문 보내기`}
             aria-busy=${busy}
-            title=${question.trim() ? '선택한 에이전트에게 자문 질문을 보냅니다.' : '질문을 입력하면 활성화됩니다.'}
-            onClick=${ask}
+            title=${question.trim() ? '선택한 에이전트에게 자문 질문을 보냅니다. Ctrl/⌘+Enter도 사용할 수 있습니다.' : '질문을 입력하면 활성화됩니다.'}
             disabled=${busy || !question.trim()}
           >${busy ? '질의 중' : '질의 보내기'}</button>
-        </div>
+        </form>
       </div>
       <div className="card">
         <h2>응답</h2>
@@ -902,11 +962,20 @@ function App() {
     <main className="shell">
       <${Header} token=${token} setToken=${setToken} tab=${tab} setTab=${setTab} />
       <section
-        id=${tab === 'daily' ? 'meeting-panel-daily' : 'meeting-panel-ask'}
+        id="meeting-panel-daily"
         role="tabpanel"
-        aria-labelledby=${tab === 'daily' ? 'meeting-tab-daily' : 'meeting-tab-ask'}
+        aria-labelledby="meeting-tab-daily"
+        hidden=${tab !== 'daily'}
       >
-        ${tab === 'daily' ? html`<${DailyRoom} token=${token} />` : html`<${AskRoom} token=${token} />`}
+        ${tab === 'daily' ? html`<${DailyRoom} token=${token} />` : null}
+      </section>
+      <section
+        id="meeting-panel-ask"
+        role="tabpanel"
+        aria-labelledby="meeting-tab-ask"
+        hidden=${tab !== 'ask'}
+      >
+        <${AskRoom} token=${token} />
       </section>
     </main>
   `;

@@ -162,6 +162,16 @@
 - **2026-06-12 루프 106**: W-30 에이전트 질의 비동기 경합 점검 → 질의 요청 중 에이전트/질문이 바뀌면 늦게 도착한 이전 응답이나 오류가 새 입력의 결과처럼 표시될 수 있는 구조를 확인. `useRef` 요청 순번을 추가해 입력 변경 시 현재 요청을 무효화하고, 최신 요청 ID와 일치할 때만 응답/오류/busy 해제를 반영하도록 보강.
 - **2026-06-12 루프 107**: W-04/W-08/W-09/W-30 액션 재진입 점검 → 버튼 disabled가 렌더링되기 전 중복 클릭이나 프로그램 호출로 회의 시작·결정 처리·에이전트 질의가 중복 발화될 수 있는 핸들러 구조를 확인. `start/act/ask` 내부에 busy/빈 질문 가드를 추가해 UI disabled와 별개로 요청 중복을 차단.
 - **2026-06-12 루프 108**: W-04/W-08/W-09/W-30 초고속 중복 클릭 재점검 → state 기반 `busy` 가드는 같은 렌더 안의 연속 이벤트에서 오래된 값으로 중복 API 호출을 허용할 수 있음을 확인. `startInFlightRef/actionInFlightRef/askInFlightRef`를 추가해 네트워크 호출 전 ref로 중복 발화를 차단하고, 입력 변경 시 stale 질의만 무효화하도록 보강.
+- **2026-06-12 루프 109**: W-30/W-44 에이전트 질의 키보드 제출 흐름 점검 → 질의 영역이 `<form>`이 아니고 전송 버튼도 submit 타입이 아니라 키보드 사용자는 버튼까지 이동해야만 제출할 수 있음을 확인. 질의 영역을 form으로 전환하고 `Ctrl/⌘+Enter` 단축 제출, submit 버튼 타입, 안내 문구를 추가했으며 스모크 `askKeyboardSubmitShortcut`으로 회귀를 차단.
+- **2026-06-12 루프 110**: W-30 에이전트 질의 form landmark 점검 → form 전환 후에도 form 자체에 접근성 이름이 없어 보조기술 landmark 탐색에서 `@멘션 질의` 영역을 즉시 식별하기 어려움을 확인. `h2`에 id를 부여하고 form `aria-labelledby`로 연결했으며 스모크 `askFormLandmarkLabel`을 추가.
+- **2026-06-12 루프 111**: W-01 탭/패널 aria 참조 무결성 점검 → 비활성 탭의 `aria-controls="meeting-panel-ask"`가 아직 DOM에 없는 패널을 가리켜 보조기술 참조가 끊기는 것을 확인. 두 tabpanel을 항상 DOM에 두고 비활성 패널은 `hidden`으로 처리해 `aria-controls` 대상이 항상 존재하도록 보강했으며 스모크 `tabPanelAriaControlsTargets`를 추가.
+- **2026-06-12 루프 112**: W-06 세그먼트 reason 코드 점검 → `/api/meetings`가 `kis_market_closed`, `crypto_24h` 같은 runtime reason code를 내려주며, 향후 비활성 경로로 표시되면 raw 코드가 사용자에게 노출될 수 있음을 확인. `kis_market_closed→장 마감`, `crypto_24h→24시간 운영` 매핑을 추가하고 스모크 `segmentReasonRuntimeCodesLocalized`로 고정.
+- **2026-06-12 루프 113**: W-01 새 창 링크 보안 속성 점검 → TeamJay Dashboard 링크가 `target="_blank"`인데 `rel="noreferrer"`만 명시되어 있어 opener 차단 의도가 코드상 명확하지 않음을 브라우저 DOM에서 확인. `rel="noopener noreferrer"`로 보강하고 스모크 `dashboardNewTabNoopener`를 추가.
+- **2026-06-12 루프 114**: W-30 탭 전환 상태 보존 점검 → 브라우저에서 일일 탭 상태의 `#meeting-panel-ask` 내부 form이 언마운트되어 입력 중 질문/응답이 탭 전환으로 사라질 수 있음을 확인. 폴링 부작용이 있는 `DailyRoom`은 활성 탭에서만 mount하되, `AskRoom`은 hidden 패널 안에 항상 mount해 질의 초안과 응답 상태를 보존하도록 보강하고 스모크 `askStatePreservedAcrossTabSwitch`를 추가.
+- **2026-06-12 루프 115**: W-01 탭 선택 상태 의미론 점검 → 브라우저 DOM에서 `role="tab"` 버튼이 `aria-selected`와 `aria-pressed`를 동시에 노출해 탭 선택과 토글 버튼 상태가 중복 전달될 수 있음을 확인. 탭에는 `aria-selected`만 남기고, 실제 토글/선택 버튼인 회의 목록의 `aria-pressed`는 유지했으며 스모크 `tabSelectedStateOnly`로 회귀를 차단.
+- **2026-06-12 루프 116**: W-06 세그먼트 reason fallback 점검 → `segmentReasonLabel`의 미등록 reason fallback이 원문 코드를 그대로 반환해 새 런타임 reason code가 추가되면 사용자 화면에 raw 코드가 노출될 수 있음을 확인. 빈 값은 `사유 없음`, 미등록 코드는 `사유 확인 필요`로 고정하고 스모크 `segmentReasonUnknownCodeHidden`을 추가.
+- **2026-06-12 루프 117**: W-06 세그먼트 상태 텍스트 흐름 점검 → 브라우저에서 세그먼트 status의 `textContent`가 `국내 · 활성미국 · 활성암호화폐 · 활성`처럼 span 사이 공백 없이 붙어 추출되는 것을 확인. 전체 status에는 `시장 세그먼트 상태: 국내 활성 / 미국 활성 / 암호화폐 활성` 요약 aria-label을 부여하고, span 사이 실제 공백 텍스트를 추가했으며 스모크 `segmentStatusTextSeparated`를 추가.
+- **2026-06-12 루프 118**: W-30 에이전트 질의 초안 복원성 점검 → 브라우저 입력 API는 가상 클립보드 제약으로 직접 타이핑 검증이 막혔지만, 소스상 질의 에이전트/질문이 React state에만 있고 저장소 복원 경로가 없어 새로고침 시 작성 중 질문이 사라지는 구조를 확인. `sessionStorage`에 에이전트 선택과 질문 초안을 저장·복원하도록 보강하고, 저장소 비활성 환경에서는 기존 동작으로 fail-open하도록 처리했으며 스모크 `askDraftRestoresAfterReload`를 추가.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안
