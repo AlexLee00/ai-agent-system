@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'assert/strict';
+import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -202,6 +203,24 @@ async function main() {
     () => parseMeetingRoomCliArgs(['node', 'runtime', '--type', 'bad_type']),
     /invalid meeting --type=bad_type/,
   );
+  const cliJson = spawnSync(
+    process.execPath,
+    [
+      path.join(INVESTMENT_ROOT, 'scripts', 'runtime-luna-meeting-room.ts'),
+      '--type',
+      'morning',
+      '--dry-run',
+      '--no-llm',
+      '--json',
+    ],
+    { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 },
+  );
+  assert.equal(cliJson.status, 0, cliJson.stderr || cliJson.stdout.slice(0, 1000));
+  assert.equal(cliJson.stderr, '');
+  const cliJsonPayload = JSON.parse(cliJson.stdout);
+  assert.equal(cliJsonPayload.ok, true);
+  assert.equal(cliJsonPayload.type, 'morning');
+  assert.equal(cliJsonPayload.dryRun, true);
 
   const filePolicyDir = tempOutputDir('smoke-file-policy');
   const officialPath = path.join(filePolicyDir, '2026-06-11-morning.md');
@@ -543,6 +562,7 @@ async function main() {
       cliArgParsing: true,
       markdownFilePolicy: true,
       regenerateMarkdown: true,
+      cliJsonStdout: true,
       pendingDecisionDataBriefNoRawJson: true,
       circuitLockDataBriefSummary: true,
       circuitLockDistinctSummary: true,

@@ -72,6 +72,15 @@ function summarize(result: any) {
   ].join('\n');
 }
 
+function writeStdout(text: string) {
+  return new Promise<void>((resolve, reject) => {
+    process.stdout.write(text, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
 export async function runRuntimeLunaMeetingRoom(options: any = {}) {
   const cli = options.cliArgs || parseMeetingRoomCliArgs(process.argv);
   const regenerate = options.regenerate ?? options.regenerateSessionId ?? cli.regenerate;
@@ -98,8 +107,8 @@ if (isDirectExecution(import.meta.url)) {
   await runCliMain({
     run: () => runRuntimeLunaMeetingRoom(),
     onSuccess: async (result) => {
-      if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));
-      else console.log(summarize(result));
+      if (hasFlag('json')) await writeStdout(`${JSON.stringify(result, null, 2)}\n`);
+      else await writeStdout(`${summarize(result)}\n`);
     },
     errorPrefix: '❌ luna-meeting-room 실패:',
   });
