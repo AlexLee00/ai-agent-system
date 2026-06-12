@@ -1275,6 +1275,9 @@ function inferAskIntent(question) {
   if (hasScheduleCue && hasRunCue) return 'schedule';
   const hasStartButtonCue = /(회의\s*시작|시작\s*버튼)/u.test(text) && /(활성|비활성|눌러|누르|가능|돼|되|안전)/u.test(text);
   if (hasStartButtonCue) return 'schedule';
+  const hasMeetingAvailabilityCue = /(회의\s*대상|회의\s*타입|회의\s*종류|선택\s*가능|선택\s*불가|활성|비활성)/u.test(text)
+    && /(왜|주말|토요일|일요일|수동|정례|시작|실행|가능|돼|되)/u.test(text);
+  if (hasMeetingAvailabilityCue) return 'schedule';
   const hasDisabledMeetingTypeCue = /(국내\s*장후|장후\s*회의|회의\s*타입|회의\s*종류)/u.test(text) && /(비활성|disabled|왜|안\s*돼|안\s*되|선택\s*불가)/u.test(text);
   if (hasDisabledMeetingTypeCue) return 'schedule';
   const hasMorningMeetingCue = /(아침\s*통합|morning)/u.test(text);

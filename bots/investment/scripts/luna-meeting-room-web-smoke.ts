@@ -2007,6 +2007,44 @@ async function main() {
     await closeServer(scheduleStarted.server);
   }
 
+  let meetingTargetScheduleHubCalled = false;
+  const meetingTargetScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# meeting target schedule fixture',
+      segments: [
+        { market: 'domestic', active: false, skipped: true, reason: 'weekend' },
+        { market: 'overseas', active: true, skipped: false, reason: 'kis_market_open' },
+        { market: 'crypto', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
+    }),
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      meetingTargetScheduleHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '미장 전 회의 분석만 확인하세요.' };
+    },
+  });
+  const meetingTargetScheduleBase = `http://127.0.0.1:${meetingTargetScheduleStarted.server.address().port}`;
+  try {
+    const meetingTargetScheduleAsk = await request(meetingTargetScheduleBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '토요일인데 왜 미장 전 회의는 회의 대상이야?' }),
+    });
+    assert.equal(meetingTargetScheduleAsk.status, 200);
+    assert.equal(meetingTargetScheduleAsk.payload.provider, 'rule_based');
+    assert.equal(meetingTargetScheduleHubCalled, false);
+    assert.ok(meetingTargetScheduleAsk.payload.text.includes('운영 기준:'));
+    assert.ok(meetingTargetScheduleAsk.payload.text.includes('수동 시작은 현재 화면의 세그먼트 상태를 기준'));
+    assert.ok(meetingTargetScheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
+    assert.ok(meetingTargetScheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
+    assert.ok(meetingTargetScheduleAsk.payload.text.includes('거래·파라미터는 변경하지 않습니다.'));
+    assert.equal(meetingTargetScheduleAsk.payload.text.includes('운영 총괄 관점 우선 확인:'), false);
+  } finally {
+    await closeServer(meetingTargetScheduleStarted.server);
+  }
+
   let morningManualHubCalled = false;
   const morningManualStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
