@@ -191,7 +191,7 @@ function createMemoryStore() {
       speaker: 'adr',
       role: 'decision',
       content: 'ADR recorded: c_master/pending_master',
-      meta: { fixture: 'adr' },
+      meta: { fixture: 'adr', status: 'pending_master', summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 2회' },
       createdAt: '2026-06-11T00:00:03.000Z',
     },
     {
@@ -1109,6 +1109,10 @@ async function main() {
     assert.equal(detail.payload.minutes[2].content.includes('grillCoverage='), false);
     assert.ok(detail.payload.minutes[3].content.includes('ADR 기록: C 마스터 확인 / 마스터 액션 대기'));
     assert.equal(detail.payload.minutes[3].content.includes('ADR recorded: c_master/pending_master'), false);
+    assert.equal(detail.payload.minutes[3].meta.status, '마스터 액션 대기');
+    assert.equal(detail.payload.minutes[3].meta.summary, '미장 전 회의 완료: 안건 2건, ADR 2건, LLM 2회');
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('pending_master'), false);
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('us_premarket 회의 완료'), false);
     assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 0);
     assert.equal((detail.payload.minutes[4].content.match(/최종 결론/g) || []).length, 0);
     assert.ok(detail.payload.minutes[4].content.includes('요약 결론입니다.'));

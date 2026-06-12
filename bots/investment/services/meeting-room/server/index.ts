@@ -130,6 +130,15 @@ function sessionStatusLabel(status) {
   }[String(status || '').toLowerCase()] || '상태 미상';
 }
 
+function decisionStatusLabel(status) {
+  return {
+    pending_master: '마스터 액션 대기',
+    confirmed: '확정됨',
+    deferred: '보류됨',
+    superseded: '대체됨',
+  }[String(status || '').toLowerCase()] || String(status || '상태 미상');
+}
+
 function meetingTypeLabel(type) {
   return {
     morning: '아침 통합 회의',
@@ -142,9 +151,11 @@ function meetingTypeLabel(type) {
 }
 
 function normalizeSessionSummary(summary, type) {
+  const rawType = String(summary || '').match(/^(morning|domestic_debrief|us_premarket|weekly|adhoc|ad_hoc)\s+회의\s+완료:/i)?.[1];
   const label = meetingTypeLabel(type);
+  const inferredLabel = meetingTypeLabel(type || rawType);
   return String(summary || '')
-    .replace(/^(morning|domestic_debrief|us_premarket|weekly|adhoc|ad_hoc)\s+회의\s+완료:/i, `${label} 완료:`)
+    .replace(/^(morning|domestic_debrief|us_premarket|weekly|adhoc|ad_hoc)\s+회의\s+완료:/i, `${inferredLabel} 완료:`)
     .replace(/^회의\s+완료:/, `${label} 완료:`);
 }
 
@@ -948,9 +959,18 @@ function normalizeMinute(row = {}) {
     speaker: row.speaker,
     role: row.role,
     content: visibleContent,
-    meta: safeJson(row.meta),
+    meta: normalizeMinuteMeta(row.meta),
     createdAt: row.created_at || row.createdAt,
   };
+}
+
+function normalizeMinuteMeta(meta) {
+  const parsed = safeJson(meta);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+  const normalized = { ...parsed };
+  if (typeof normalized.status === 'string') normalized.status = decisionStatusLabel(normalized.status);
+  if (typeof normalized.summary === 'string') normalized.summary = normalizeSessionSummary(normalized.summary);
+  return normalized;
 }
 
 function normalizeDecision(row = {}) {
