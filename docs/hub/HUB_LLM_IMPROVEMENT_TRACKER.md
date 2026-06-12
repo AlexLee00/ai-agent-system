@@ -212,3 +212,20 @@ LEGACY/현행 프로필 테이블 두 벌 식별(교체 대상=현행 ~1008행, 
 
 S-1 상태: 설계 -> **프롬프트**.
 이력: 2026-06-12 저녁 세션 시작 점검 + CODEX-S1 프롬프트 (메티)
+
+## O. CODEX-S1 메티 독립 검증 (2026-06-12) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | local-ollama.ts + 신규 스모크 + package.json (luna callback 3파일은 별도 스트림 비접촉) |
+| env 3종 | HUB_LLM_LOCAL_TIMEOUT_MS(30s)/COLD_START_TIMEOUT_MS(180s)/COLD_RETRY_ENABLED(킬스위치) — 8-10행 명세 일치 |
+| 재시도 로직 | shouldRetryColdStart: 킬스위치 + failureReason==timeout만 + 명시 timeout이 DEFAULT 이하일 때만 — 명세 일치. connection refused류 즉시 실패 유지 |
+| 회로 의미 | 1차 timeout 미기록 -> 재시도 성공=recordSuccess만(무손상) / 최종 실패=recordFailure 1회 / 미발동 실패=즉시 기록 — THRESHOLD 3 의미 보존 |
+| TS-S1-1~5 | 스모크 독립 재실행 ok:true 전부 PASS (S1-5 HALF_OPEN -> cold retry 성공 -> CLOSED 복귀 포함) |
+| 비접촉 4영역 | circuit-breaker / local-llm-client / unified-caller / local-embedding diff 없음 |
+| provider:failed 의심 | 기존 관행 확인(HEAD~1 동일) + unified-caller가 체인 기준 기록 — 무해. R 시리즈 코드위생 후보로만 기록 |
+| 커밋 | 자동커밋 447f09758 "Improve Hub local cold start..."가 이미 처리 |
+
+남은 단계: **마스터 ai.hub.resource-api 재기동** -> 메티 TS-SL1 라이브(qwen idle 언로드 확인 -> backtest judgment 1건 -> 성공 + 회로 OPEN 전이 없음 + coldStartRetried 텔레메트리 확인).
+S-1 상태: 프롬프트 -> **검증** (적용 대기).
+이력: 2026-06-12 CODEX-S1 독립 검증 합격 (메티)
