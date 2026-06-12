@@ -1217,6 +1217,7 @@ function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
   if (/(미장\s*전|미국\s*프리마켓|프리마켓|us\s*premarket|premarket)/u.test(text)) return 'premarket';
   if (/(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text)) return 'schedule';
+  if (/(텔레그램|telegram|앱\s*버튼|버튼.*(확정|보류|승인)|확정.*웹|보류.*웹|웹.*(동기|갱신|반영)|동기화|callback|콜백|poller|폴러)/u.test(text)) return 'telegram';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
   if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
@@ -1275,6 +1276,9 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
   if (intent === 'schedule') {
     return '주말 morning 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 국내·미국은 주말 스킵으로 기록되는지 보세요.';
   }
+  if (intent === 'telegram') {
+    return '텔레그램 버튼 처리 후 웹 결정 대기함과 감사 행을 확인하세요. 첫 실제 앱 버튼은 아직 정례 관찰 대상으로 남겨 두는 것이 안전합니다.';
+  }
   return hasBlockingContext
     ? '먼저 대기 결정의 근거 상세와 활성 서킷 근거를 확인하고, 신규 적용보다 관찰 지속 여부를 결정하세요.'
     : '현재는 새 조치보다 다음 회의까지 관찰을 유지하고, 게이트·레짐 변화가 생기면 재질의하세요.';
@@ -1318,6 +1322,16 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '운영 일정: 주말 morning 경량판은 국내·미국을 주말로 스킵하고, 암호화폐 24시간 운영 안건을 중심으로 확인합니다.',
       `현재 화면 기준: ${segmentText}.`,
+      `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
+  if (intent === 'telegram') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '동기화 경로: 텔레그램 확정/보류 버튼은 회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로를 사용합니다.',
+      '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
+      '검증 상태: 자동 검증과 운영 HTTP 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
@@ -1371,7 +1385,7 @@ async function askAgent(body, deps, limiter) {
     queryFn: deps.queryFn,
   });
   const globalPendingDecisions = await safeListPendingDecisions(deps);
-  if (intent === 'schedule' || intent === 'premarket') {
+  if (intent === 'schedule' || intent === 'premarket' || intent === 'telegram') {
     return {
       ok: true,
       skipped: true,

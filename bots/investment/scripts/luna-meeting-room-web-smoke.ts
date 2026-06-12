@@ -1894,6 +1894,38 @@ async function main() {
     await closeServer(premarketStarted.server);
   }
 
+  let telegramHubCalled = false;
+  const telegramStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      telegramHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '텔레그램 버튼으로 확정하면 웹도 바로 갱신됩니다.' };
+    },
+  });
+  const telegramBase = `http://127.0.0.1:${telegramStarted.server.address().port}`;
+  try {
+    const telegramAsk = await request(telegramBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '텔레그램 버튼으로 확정하면 웹 결정 대기함도 바로 갱신돼?' }),
+    });
+    assert.equal(telegramAsk.status, 200);
+    assert.equal(telegramAsk.payload.provider, 'rule_based');
+    assert.equal(telegramAsk.payload.skipped, true);
+    assert.equal(telegramHubCalled, false);
+    assert.ok(telegramAsk.payload.text.includes('회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로'));
+    assert.ok(telegramAsk.payload.text.includes('폴링 또는 새로고침으로 갱신'));
+    assert.ok(telegramAsk.payload.text.includes('실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인'));
+    assert.equal(telegramAsk.payload.text.includes('Hub callback'), false);
+    assert.equal(telegramAsk.payload.text.includes('callback_data'), false);
+    assert.equal(telegramAsk.payload.text.includes('callback_query'), false);
+    assert.equal(telegramAsk.payload.text.includes('changed_via'), false);
+    assert.equal(telegramAsk.payload.text.includes('route'), false);
+  } finally {
+    await closeServer(telegramStarted.server);
+  }
+
   const pendingAwareStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
     meetingStore: createMemoryStore(),
@@ -2156,6 +2188,7 @@ async function main() {
       askNoLlmRouteLocalized: true,
       askWeekendScheduleRuleBased: true,
       askPremarketMeetingRuleBased: true,
+      askTelegramSyncRuleBased: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,
