@@ -615,7 +615,17 @@ async function main() {
     assert.ok(appJs.text.includes('setPending(safeArray(pendingPayload.decisions));'));
     assert.ok(appJs.text.includes('자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-select">에이전트'));
+    assert.ok(appJs.text.includes(`htmlFor="meeting-agent-select">에이전트</label>
+            \${'\\n'}
+            <select id="meeting-agent-select"`));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-question">질문'));
+    assert.ok(appJs.text.includes(`htmlFor="meeting-agent-question">질문</label>
+            \${'\\n'}
+            <textarea`));
+    assert.ok(appJs.text.includes(`placeholder="회의실 컨텍스트 기반 자문 질문"
+            />
+            \${'\\n'}
+            <div id="ask-helper" className="ask-helper">`));
     assert.ok(appJs.text.includes('function agentLabel'));
     assert.ok(appJs.text.includes('const AGENT_OPTIONS = Object.freeze(['));
     assert.ok(appJs.text.includes("luna: 'Luna'"));
@@ -636,7 +646,7 @@ async function main() {
     assert.ok(appJs.text.includes('function readSessionValue(key, fallback ='));
     assert.ok(appJs.text.includes('function writeSessionValue(key, value)'));
     assert.ok(appJs.text.includes('function normalizeAgentName(value)'));
-    assert.ok(appJs.text.includes('${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}'));
+    assert.ok(appJs.text.includes('${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>${'));
     assert.equal(appJs.text.includes("['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map"), false);
     assert.ok(appJs.text.includes('<option value=${name}>${agentLabel(name)}</option>'));
     assert.ok(appJs.text.includes('title="질의 대상 에이전트"'));
@@ -691,7 +701,14 @@ async function main() {
         \${'\\n'}
         <form className="card-body"`));
     assert.ok(appJs.text.includes('<div id="ask-safety-note" className="ask-safety-note">'));
+    assert.ok(appJs.text.includes(`</div>
+          \${'\\n'}
+          <div id="ask-safety-note" className="ask-safety-note">`));
     assert.ok(appJs.text.includes('자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
+    assert.ok(appJs.text.includes(`</form>
+      </div>
+      \${'\\n'}
+      <div className="card">`));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'));

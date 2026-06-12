@@ -1020,12 +1020,15 @@ function AskRoom({ token }) {
         <form className="card-body" aria-labelledby="meeting-ask-form-title" onSubmit=${submitAsk}>
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
+            ${'\n'}
             <select id="meeting-agent-select" title="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
-              ${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}
+              ${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>${'\n'}`)}
             </select>
           </div>
+          ${'\n'}
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-question">질문</label>
+            ${'\n'}
             <textarea
               id="meeting-agent-question"
               aria-describedby="ask-helper ask-safety-note"
@@ -1034,8 +1037,10 @@ function AskRoom({ token }) {
               onKeyDown=${handleQuestionKeyDown}
               placeholder="회의실 컨텍스트 기반 자문 질문"
             />
+            ${'\n'}
             <div id="ask-helper" className="ask-helper">${askHelperText}</div>
           </div>
+          ${'\n'}
           <div id="ask-safety-note" className="ask-safety-note">
             자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
@@ -1049,6 +1054,7 @@ function AskRoom({ token }) {
           >${busy ? '질의 중' : '질의 보내기'}</button>
         </form>
       </div>
+      ${'\n'}
       <div className="card">
         <h2>응답</h2>
         ${'\n'}
