@@ -229,3 +229,59 @@ S-1 상태: 설계 -> **프롬프트**.
 남은 단계: **마스터 ai.hub.resource-api 재기동** -> 메티 TS-SL1 라이브(qwen idle 언로드 확인 -> backtest judgment 1건 -> 성공 + 회로 OPEN 전이 없음 + coldStartRetried 텔레메트리 확인).
 S-1 상태: 프롬프트 -> **검증** (적용 대기).
 이력: 2026-06-12 CODEX-S1 독립 검증 합격 (메티)
+
+## P. TS-SL1 라이브 검증 (2026-06-12, hub PID 37536 재기동 후) — PASS
+
+| 검증 | 방법 | 결과 |
+|---|---|---|
+| 콜드스타트 성공 | qwen 언로드 확인(mlx RSS~0) -> callLocalOllama 직접 호출(동일 모듈) | ok=true, 10.5s(콜드 로드 포함), 1차 성공(30s 상향 효과) |
+| 회로 무손상 | 호출 후 isCircuitOpen | false — OPEN 전이 없음 |
+| 재시도 경로 | 라이브는 핫 상태라 미발동(585ms 1차 성공) — mock 스모크 TS-S1-1/2/5로 검증 완료 | 충분 |
+
+### GATE-H 조기 신호 (--hours=6, 참고용)
+- darwin failure / failed_avg blocker **소멸** — CODEX-H 적용 효과 즉시 확인.
+- 잔여 2건: local_general 1건 + darwin unknown 2/5 — **18:59-19:01 클러스터** (darwin launchd weekly라
+  자연 트래픽 아님, 시험 트래픽 추정). 현 코드 darwin 체인에 local 부재는 TS-L1+스모크로 증명됨.
+  **6/14 --hours=48 선행 판정에서 재확인** — 19:01 이후 재발 시 가드 구멍으로 격상 조사.
+
+S-1 종결: 설계 -> 프롬프트 -> 구현 -> 독립검증 -> 적용 -> **TS-SL1 PASS**. 콜드스타트 고착 루프 해소.
+다음: 6/14 GATE-H 선행 판정 / ~6/18 정식 ready / R1 정책엔진 설계(승인 시) / S-2+S-3는 GATE-H ready 후.
+이력: 2026-06-12 TS-SL1 PASS + S-1 종결 (메티)
+
+## Q. 세션 마감 (2026-06-12 밤) — 다음 세션 진입점: R1 정책엔진 설계
+
+### 이번 세션 완결 사항
+- CODEX-S1 독립 검증 합격 + 적용 + **TS-SL1 라이브 PASS** -> S-1(콜드스타트 고착) 종결
+- GATE-H 조기 신호: darwin failure/avg blocker 소멸 (CODEX-H 효과 확인)
+- 커밋: 자동커밋이 코드(447f09758)+문서(3db280380) 처리 — 잔여는 트래커 §P/§Q뿐
+
+### 다음 세션 1순위: R1 정책엔진 설계 (마스터 승인됨)
+- 산출물: docs/hub/HUB_LLM_POLICY_ENGINE_DESIGN_2026-06.md + 전수 스냅샷 스크립트
+- 입력 자료: §J 분산 정량(selector 2,211줄 / 후처리 함수 12+ / HUB_* env 7 / selectorVersion 분기 19 / 프로필 테이블 2벌(LEGACY 623행, 현행 1008행)) + CODEX-H로 정리된 darwin 체인(목표 구조 1호 사례)
+- 설계 범위: ① 선언 정책 스키마(team x agent x taskType -> chain/cap/timeout/flags)
+  ② 단일 파이프라인(resolvePolicy -> buildChain -> applyGlobalGuards(쿨다운/local가드/disabled) -> budget -> execute)
+  ③ 현행 전수 스냅샷(전 팀 x 용도 체인 해석 덤프 — R2 shadow diff=0의 기준선)
+  ④ GATE-R 정의(H6 게이트에 1종 추가) ⑤ R3 팀 전환 순서/킬스위치
+- 원칙: 기존 인프라 재활용(runtime-profiles/token-budget/unified-caller 골격 유지), 빅뱅 금지
+
+### 일정 항목
+- 6/14: GATE-H --hours=48 선행 판정 (19:01 local 1건/unknown 클러스터 재확인 포함)
+- ~6/18: GATE-H 정식 ready 예상 -> CODEX-S2(알람 outbox)+S3(풀 가시성) 착수
+- 루나 트랙 대기: robust 벌크 재백테스트 + CODEX-BT-A/B 코덱스 전달
+
+이력: 2026-06-12 세션 마감 — Hub 트랙 P/H/H6/S1 완결, R1 설계 승인 (메티)
+
+## R. R1 정책엔진 설계 완료 (2026-06-12 밤 세션)
+
+- 설계서: docs/hub/HUB_LLM_POLICY_ENGINE_DESIGN_2026-06.md (§1~9)
+- 신규 실측: 정책 표면 **89 selectorKey x 12팀** + agent 내부 차원(SIGMA_ROUTES 1863행 신규 식별) +
+  A/B 퍼센트 롤아웃 메커니즘 기존재(LLM_TEAM_SELECTOR_AB_PERCENT) + 후처리 암묵 순서 8단계 명문화.
+- **스냅샷 함정 확정**: describeLLMSelector 기본=LEGACY 해석 (alarm.error: default=claude-code/400 vs
+  oauth4=groq/320=라이브 현행) -> 전 스냅샷 oauth4 명시 고정 (TS-R1-2로 회귀 방지).
+- 스냅샷 도구 = 기존 listLLMSelectorKeys + describeLLMSelector 재사용 (신규 해석 로직 금지).
+- 전환: R2 shadow(MODE env, GATE-R diff=0) -> R3 팀 단위 -> R4 소거(분기 19->0, 후처리 12->가드 4, env 7->2~3).
+- 테스트 원천: 설계서 §7 TS-R1-1~TS-R4-1.
+
+상태: R1 **설계** (마스터 승인 대기 — 결정 3건: 설계 승인 / 정책 저장소 TS모듈 권고 / 롤아웃 레버 MODE 권고).
+승인 시 다음: CODEX-R1 프롬프트(스냅샷 스크립트만, 엔진은 R2).
+이력: 2026-06-12 R1 설계서 작성 (메티)
