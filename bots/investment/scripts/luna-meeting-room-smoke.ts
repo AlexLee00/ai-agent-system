@@ -19,6 +19,7 @@ import {
 import { applyMeetingDecisionAction } from '../services/meeting-room/server/meeting-decision-actions.ts';
 import {
   regenerateMeetingMinutesMarkdown,
+  renderMeetingMinutesMarkdown,
   writeMeetingMinutesMarkdown,
 } from '../services/meeting-room/server/minutes.ts';
 
@@ -489,6 +490,15 @@ async function main() {
     assert.equal(regenerated.markdown.includes('## Plan Note'), false);
     assert.equal(regenerated.markdown.includes('## Minutes'), false);
     assert.equal(regenerated.markdown.includes('## ADR'), false);
+    const emptyMarkdown = renderMeetingMinutesMarkdown({
+      session: { id: 999, type: 'morning', status: 'closed' },
+      minutes: [],
+      decisions: [],
+      dryRun: true,
+    });
+    assert.ok(emptyMarkdown.includes('회의 데이터 요약 없음'));
+    assert.ok(emptyMarkdown.includes('- 회의록 없음'));
+    assert.equal(emptyMarkdown.includes('plan-note 없음'), false);
     return { before, after, appliedRows };
   });
 

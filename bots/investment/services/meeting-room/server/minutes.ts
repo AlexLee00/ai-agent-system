@@ -139,16 +139,21 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     '',
     '## 회의 데이터 요약',
     '',
-    safeText(result.planNote?.briefMarkdown || 'plan-note 없음'),
+    safeText(result.planNote?.briefMarkdown || '회의 데이터 요약 없음'),
     '',
     '## 회의록',
     '',
   ];
-  for (const row of minutes) {
-    lines.push(`### ${row.seq}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${row.speaker}`);
+  if (minutes.length === 0) {
+    lines.push('- 회의록 없음');
     lines.push('');
-    lines.push(safeText(row.content));
-    lines.push('');
+  } else {
+    for (const row of minutes) {
+      lines.push(`### ${row.seq}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${row.speaker}`);
+      lines.push('');
+      lines.push(safeText(row.content));
+      lines.push('');
+    }
   }
   lines.push('## 결정 기록(ADR)');
   lines.push('');
