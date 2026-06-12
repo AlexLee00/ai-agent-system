@@ -1885,6 +1885,75 @@ async function main() {
     await closeServer(decisionScopeStarted.server);
   }
 
+  let decisionDueHubCalled = false;
+  const decisionDueTodayKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const decisionDueYesterdayKst = new Date(Date.now() + 9 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const decisionDueIso = (dateKey: string, time: string) => new Date(`${dateKey}T${time}+09:00`).toISOString();
+  const decisionDueRows = [
+    ...Array.from({ length: 9 }, (_unused, index) => ({
+      id: 900 + index,
+      sessionId: 1,
+      sessionType: 'morning',
+      agendaKey: index === 0 ? 'market:domestic' : 'decision:regime-engine-hmm',
+      decision: '자문 기록 후 마스터 확인 대기',
+      grade: 'c_master',
+      status: 'pending_master',
+      dueAt: decisionDueIso(decisionDueYesterdayKst, '23:43:59.419'),
+      evidence: {},
+      createdAt: '2026-06-11T00:00:00.000Z',
+    })),
+    ...Array.from({ length: 7 }, (_unused, index) => ({
+      id: 950 + index,
+      sessionId: 7,
+      sessionType: 'us_premarket',
+      agendaKey: index === 0 ? 'premarket:overseas-gate-regime' : 'premarket:overseas-watch',
+      decision: '자문 기록 후 마스터 확인 대기',
+      grade: 'c_master',
+      status: 'pending_master',
+      dueAt: decisionDueIso(decisionDueTodayKst, '16:00:03.783'),
+      evidence: {},
+      createdAt: '2026-06-12T00:00:00.000Z',
+    })),
+  ];
+  const decisionDueStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: {
+      listMeetings: async () => [],
+      getMeeting: async () => ({ ok: true, session: {}, minutes: [], decisions: [] }),
+      listPendingDecisions: async () => decisionDueRows,
+    },
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      decisionDueHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '오늘 처리할 마스터 결정은 5건입니다.' };
+    },
+  });
+  const decisionDueBase = `http://127.0.0.1:${decisionDueStarted.server.address().port}`;
+  try {
+    const decisionDueAsk = await request(decisionDueBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        agent: 'luna',
+        question: '오늘 처리해야 할 마스터 결정은 몇 건이고 뭐부터 봐야 해?',
+      }),
+    });
+    assert.equal(decisionDueAsk.status, 200);
+    assert.equal(decisionDueAsk.payload.provider, 'rule_based');
+    assert.equal(decisionDueAsk.payload.skipped, true);
+    assert.equal(decisionDueHubCalled, false);
+    assert.ok(decisionDueAsk.payload.text.includes('전체 대기 16건'));
+    assert.ok(decisionDueAsk.payload.text.includes('기한 경과 9건'));
+    assert.ok(decisionDueAsk.payload.text.includes('오늘 기한 7건'));
+    assert.ok(decisionDueAsk.payload.text.includes('우선 확인: 회의 #1 국내 장전 계획'));
+    assert.ok(decisionDueAsk.payload.text.includes('기한 경과 항목을 먼저'));
+    assert.equal(decisionDueAsk.payload.text.includes('pending_master'), false);
+    assert.equal(decisionDueAsk.payload.text.includes('c_master'), false);
+    assert.equal(decisionDueAsk.payload.text.includes('오늘 처리할 마스터 결정은 5건'), false);
+  } finally {
+    await closeServer(decisionDueStarted.server);
+  }
+
   let scheduleHubCalled = false;
   const scheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,

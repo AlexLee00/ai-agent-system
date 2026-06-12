@@ -1280,6 +1280,7 @@ function inferAskIntent(question) {
   if (hasTelegramContext && hasTelegramSyncContext) return 'telegram';
   const hasDecisionScopeCue = /(캐치업|숫자|건수|왜|차이|다른|달라)/u.test(text) || (/(전체)/u.test(text) && /(선택)/u.test(text));
   if (hasDecisionScopeCue && /(결정|대기함|대기|pending|캐치업)/u.test(text)) return 'decision_scope';
+  if (/(처리|기한|마감|먼저|우선|몇\s*건|뭐부터|무엇부터)/u.test(text) && /(결정|마스터|대기|pending)/u.test(text)) return 'decision_due';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
   if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
@@ -1401,6 +1402,28 @@ function buildDecisionScopeStatus(globalPendingDecisions = [], detail = null) {
   ].join('\n');
 }
 
+function buildDecisionDueStatus(globalPendingDecisions = [], now = new Date()) {
+  const rows = Array.isArray(globalPendingDecisions) ? globalPendingDecisions : [];
+  const today = kstPartsForMeetingStatus(now).date;
+  const withDueDate = rows.map((row = {}) => ({
+    ...row,
+    dueDateKst: kstDateKeyFromTimestamp(row.dueAt || row.due_at),
+  }));
+  const overdueCount = withDueDate.filter((row = {}) => row.dueDateKst && row.dueDateKst < today).length;
+  const todayCount = withDueDate.filter((row = {}) => row.dueDateKst === today).length;
+  const noDueCount = withDueDate.filter((row = {}) => !row.dueDateKst).length;
+  const priority = rows.slice(0, 3).map((row = {}) => {
+    const dueText = row.dueAt || row.due_at ? formatKstTimestampFromIso(row.dueAt || row.due_at) : '기한 미정';
+    const session = row.sessionId || row.session_id ? `회의 #${row.sessionId || row.session_id}` : meetingTypeLabel(row.sessionType || row.session_type);
+    return `${session} ${agendaLabel(row.agendaKey || row.agenda_key)}(${dueText})`;
+  });
+  return [
+    `마스터 결정 현황: 전체 대기 ${rows.length}건, 기한 경과 ${overdueCount}건, 오늘 기한 ${todayCount}건${noDueCount ? `, 기한 미정 ${noDueCount}건` : ''}.`,
+    `우선 확인: ${priority.length ? priority.join(' / ') : '대기 결정 없음'}.`,
+    '처리 기준: 기한 경과 항목을 먼저 보고, 같은 기한이면 화면의 위쪽 순서대로 근거와 타임라인을 확인하세요.',
+  ].join('\n');
+}
+
 function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPendingDecisions = [], options = {}) {
   const intent = inferAskIntent(question);
   const globalPendingCount = Array.isArray(globalPendingDecisions) ? globalPendingDecisions.length : 0;
@@ -1439,6 +1462,14 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       options.decisionScopeStatus || buildDecisionScopeStatus(globalPendingDecisions, options.selectedMeetingDetail),
       '권장 다음 행동: 전체 정리는 오른쪽 대기함을 기준으로 보고, 선택 회의 맥락은 U1 캐치업과 타임라인을 함께 확인하세요.',
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
+  if (intent === 'decision_due') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      options.decisionDueStatus || buildDecisionDueStatus(globalPendingDecisions, options.now || new Date()),
+      '권장 다음 행동: 확정/보류 전에 해당 결정 카드의 근거 상세와 선택 회의 타임라인을 함께 대조하세요.',
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
@@ -1501,7 +1532,10 @@ async function askAgent(body, deps, limiter) {
   const decisionScopeStatus = intent === 'decision_scope'
     ? buildDecisionScopeStatus(globalPendingDecisions, selectedMeetingDetail)
     : null;
-  if (intent === 'schedule' || intent === 'premarket' || intent === 'telegram' || intent === 'decision_scope') {
+  const decisionDueStatus = intent === 'decision_due'
+    ? buildDecisionDueStatus(globalPendingDecisions, new Date())
+    : null;
+  if (intent === 'schedule' || intent === 'premarket' || intent === 'telegram' || intent === 'decision_scope' || intent === 'decision_due') {
     return {
       ok: true,
       skipped: true,
@@ -1511,6 +1545,7 @@ async function askAgent(body, deps, limiter) {
         scheduleStatus,
         selectedMeetingDetail,
         decisionScopeStatus,
+        decisionDueStatus,
       }),
     };
   }
@@ -1526,6 +1561,7 @@ async function askAgent(body, deps, limiter) {
         scheduleStatus,
         selectedMeetingDetail,
         decisionScopeStatus,
+        decisionDueStatus,
       }),
     };
   }
@@ -1795,6 +1831,7 @@ export const _testOnly = {
   agentDisplayLabel,
   buildScheduleExecutionStatus,
   buildDecisionScopeStatus,
+  buildDecisionDueStatus,
   componentLabel,
   compactRepetitiveReportContent,
   legacyMetricLabel,
