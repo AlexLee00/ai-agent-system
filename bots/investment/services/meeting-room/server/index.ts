@@ -98,6 +98,49 @@ function normalizeSession(row = {}) {
   };
 }
 
+function sessionStatusLabel(status) {
+  return {
+    open: '진행 중',
+    running: '실행 중',
+    completed: '완료',
+    closed: '완료',
+    failed: '실패',
+  }[String(status || '').toLowerCase()] || status || '상태 미상';
+}
+
+function agendaLabel(key) {
+  return {
+    session: '세션',
+    'market:domestic': '국내 장전 계획',
+    'market:overseas': '미국 장후 평가',
+    'market:crypto': 'crypto 24h 점검',
+    'decision:regime-engine-hmm': 'C15 레짐 엔진 HMM',
+    'decision:market-deployment-gate': 'C1 시장 배치 게이트',
+    'decision:mapek': 'C15 MAPEK',
+    'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
+    'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
+    'alerts:circuit-locks': '서킷 잠금 알림',
+  }[String(key || '')] || key || '안건';
+}
+
+function pendingDecisionCatchupLabel(row = {}) {
+  const label = agendaLabel(row.agendaKey);
+  const decision = String(row.decision || '').trim();
+  const duplicatePrefix = decision.startsWith(`${label}:`) ? decision.slice(label.length + 1).trim() : decision;
+  return `${label}: ${duplicatePrefix || '마스터 확인 대기'}`;
+}
+
+function componentLabel(key) {
+  return {
+    'regime-engine-hmm': 'C15 레짐 엔진 HMM',
+    'market-deployment-gate': 'C1 시장 배치 게이트',
+    mapek: 'C15 MAPEK',
+    'meeting-room-orchestrator': '회의실 오케스트레이터',
+    'backtest-nextbar-execution': 'Next-bar 백테스트 실행',
+    'circuit-locks': '서킷 잠금 알림',
+  }[String(key || '')] || key || '컴포넌트 미상';
+}
+
 function legacyMetricLabel(key) {
   return {
     brier_hmm_lt_fallback: 'Brier: HMM<폴백',
@@ -107,6 +150,10 @@ function legacyMetricLabel(key) {
     nextbar_trade_count_delta: 'next-bar 거래 수 차이',
     placeholder: 'placeholder 기준',
     durationWeeks: '관찰 주수',
+    compareAgainst: '비교 기준',
+    grillCoverage: '그릴 커버리지',
+    decisionTracking: '결정 추적',
+    completedMeetings: '완료 회의 수',
   }[key] || key;
 }
 
@@ -123,16 +170,36 @@ function legacyDecisionTypeLabel(value, status) {
   }[raw] || raw || '검토';
 }
 
+function legacyComponentStateLabel(value) {
+  const raw = String(value || '').trim();
+  return {
+    active: '활성',
+    stalled: '정체',
+    proposed: '제안',
+    pending: '대기',
+    unknown: '미정',
+    'n/a': '정보 없음',
+  }[raw] || raw || '정보 없음';
+}
+
+function legacyCriteriaValueLabel(value) {
+  if (value === true) return '예';
+  if (value === false) return '아니오';
+  if (value == null) return '정보 없음';
+  if (String(value) === 'unknown') return '미정';
+  return String(value);
+}
+
 function legacyCriteriaSummary(criteria = {}) {
   const metrics = Array.isArray(criteria.metrics) ? criteria.metrics : [];
   const scalar = Object.keys(criteria || {})
     .filter((key) => key !== 'metrics')
-    .map((key) => `${legacyMetricLabel(key)}=${String(criteria[key])}`);
+    .map((key) => `${legacyMetricLabel(key)}=${legacyCriteriaValueLabel(criteria[key])}`);
   return [...metrics.map(legacyMetricLabel), ...scalar].join(', ') || '명시 기준 없음';
 }
 
 function legacyPendingDecisionSummary(row = {}) {
-  const component = row.component || row.agenda_key || row.type || 'unknown-component';
+  const component = componentLabel(row.component || row.agenda_key || row.type || 'unknown-component');
   const current = row.currentMode || row.current_mode || row.mode || 'unknown';
   const target = row.targetMode || row.target_mode || row.target || 'unknown';
   const sampleCount = Number(row.sampleCount ?? row.sample_count ?? row.evidence?.sampleCount ?? 0);
@@ -140,7 +207,7 @@ function legacyPendingDecisionSummary(row = {}) {
   const recommendation = row.recommendation || row.summary || row.notes || '후속 판단 대기';
   return [
     `C15 결정 대기: 컴포넌트=${component}`,
-    `유형=${legacyDecisionTypeLabel(row.type, row.status)}, 상태=${row.status || 'n/a'}, 모드=${current}→${target}`,
+    `유형=${legacyDecisionTypeLabel(row.type, row.status)}, 상태=${legacyComponentStateLabel(row.status || 'n/a')}, 모드=${legacyComponentStateLabel(current)}→${legacyComponentStateLabel(target)}`,
     `표본=${sampleCount}건, 기준=${legacyCriteriaSummary(criteria)}`,
     `판정=${criteria.placeholder === true ? '미충족: placeholder 기준' : '평가 대기'}`,
     `제안 요지=${recommendation}`,
@@ -176,6 +243,9 @@ function balancedJsonAt(text, startIndex) {
 }
 
 function normalizeLegacyMinuteContent(content) {
+  const trimmed = String(content ?? '').trim().toLowerCase();
+  if (trimmed === 'open') return '회의 시작';
+  if (trimmed === 'closed') return '회의 종료';
   const text = String(content ?? '').replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: legacy 중복 집계 값 숨김(최신 데이터 minute의 distinct 집계 확인)',
@@ -215,6 +285,31 @@ function normalizeCanonicalStatusTokens(content) {
 
 function normalizeLegacyKoreanLlmNoise(content) {
   return String(content ?? '')
+    .replace(/\bregime-engine-hmm\b/g, 'C15 레짐 엔진 HMM')
+    .replace(/\bmarket-deployment-gate\b/g, 'C1 시장 배치 게이트')
+    .replace(/\bmeeting-room-orchestrator\b/g, '회의실 오케스트레이터')
+    .replace(/\bbacktest-nextbar-execution\b/g, 'Next-bar 백테스트 실행')
+    .replace(/\bcircuit-locks\b/g, '서킷 잠금 알림')
+    .replace(/\bscore=/g, '점수=')
+    .replace(/\bsource=/g, '출처=')
+    .replace(/상태=active/g, '상태=활성')
+    .replace(/상태=unknown/g, '상태=미정')
+    .replace(/모드=unknown→unknown/g, '모드=미정→미정')
+    .replace(/placeholder 기준=true/g, 'placeholder 기준=예')
+    .replace(/placeholder 기준=false/g, 'placeholder 기준=아니오')
+    .replace(/그릴 커버리지=true/g, '그릴 커버리지=예')
+    .replace(/그릴 커버리지=false/g, '그릴 커버리지=아니오')
+    .replace(/결정 추적=true/g, '결정 추적=예')
+    .replace(/결정 추적=false/g, '결정 추적=아니오')
+    .replace(/ADR recorded:\s*c_master\/pending_master/g, 'ADR 기록: C 마스터 확인 / 마스터 액션 대기')
+    .replace(
+      /\*{0,2}결정 대기\*{0,2}\s*[:：]\s*(?:현재\s*)?\d+(?:개|건)(?:의\s*결정이\s*대기\s*중(?:입니다)?\.?|(?:\s*남아있다\.?)?)?/g,
+      '결정 대기: legacy 발언 값 숨김(상단 U1 캐치업 기준)',
+    )
+    .replace(
+      /결정 대기[는가]?\s*\d+건(?:이)?\s*(?:대기\s*중(?:입니다)?|남아있다)\.?/g,
+      '결정 대기: legacy 발언 값 숨김(상단 U1 캐치업 기준)',
+    )
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
     .replace(/저평가\s+상태/g, '배치 halt 상태')
@@ -276,7 +371,7 @@ function normalizeDecision(row = {}) {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
     agendaKey: row.agenda_key || row.agendaKey,
-    decision: row.decision,
+    decision: normalizeLegacyMinuteContent(row.decision),
     grade: row.grade,
     status: row.status,
     dueAt: row.due_at || row.dueAt,
@@ -351,7 +446,9 @@ async function getMeeting(id, deps) {
 }
 
 async function listPendingDecisions(deps) {
-  if (deps.meetingStore?.listPendingDecisions) return deps.meetingStore.listPendingDecisions();
+  if (deps.meetingStore?.listPendingDecisions) {
+    return (await deps.meetingStore.listPendingDecisions()).map(normalizeDecision);
+  }
   const rows = await deps.queryFn(
     `SELECT d.id, d.session_id, d.agenda_key, d.decision, d.grade, d.status, d.due_at, d.evidence, d.created_at,
             s.type AS session_type, s.started_at AS session_started_at
@@ -385,11 +482,11 @@ function buildCatchupFromDetail(detail) {
   const confirmed = decisions.filter((row) => row.status === 'confirmed');
   const deferred = decisions.filter((row) => row.status === 'deferred');
   const pending = decisions.filter((row) => row.status === 'pending_master');
-  const next = pending.slice(0, 3).map((row) => `${row.agendaKey}: ${row.decision}`).join(' / ') || '없음';
+  const next = pending.slice(0, 3).map(pendingDecisionCatchupLabel).join(' / ') || '없음';
   return [
     `확정 ${confirmed.length}건, 보류 ${deferred.length}건, 대기 ${pending.length}건`,
     `마스터 액션 필요: ${next}`,
-    `회의 ${detail.session?.id || 'n/a'} · minutes ${(detail.minutes || []).length}행 · 최신 상태 ${detail.session?.status || 'n/a'}`,
+    `회의 ${detail.session?.id || 'n/a'} · minutes ${(detail.minutes || []).length}행 · 최신 상태 ${sessionStatusLabel(detail.session?.status)}`,
   ];
 }
 

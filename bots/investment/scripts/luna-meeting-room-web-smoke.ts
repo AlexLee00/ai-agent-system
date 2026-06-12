@@ -56,6 +56,8 @@ function createMemoryStore() {
         '| 항목 | 값 |',
         '| --- | --- |',
         '| risk | reduced |',
+        '게이트=reduced score=55.3',
+        '레짐=bear source=hmm',
         '5. **활성 서킷**: 57건',
         '<script>alert(1)</script>',
       ].join('\n'),
@@ -79,7 +81,11 @@ function createMemoryStore() {
         '  "criteria": {',
         '    "metrics": ["brier_hmm_lt_fallback", "transition_alert_precision"],',
         '    "placeholder": true,',
-        '    "durationWeeks": 4',
+        '    "durationWeeks": 4,',
+        '    "compareAgainst": "same_bar_close",',
+        '    "grillCoverage": true,',
+        '    "decisionTracking": true,',
+        '    "completedMeetings": 10',
         '  }',
         '}',
       ].join('\n'),
@@ -116,8 +122,11 @@ function createMemoryStore() {
         'BTC 실현 볼륨 프로ksi: 65.38 (점유율 상승)',
         '* BTC 실현 볼륨 프로끼가 상승하고 있습니다.',
         '* **전략군 24시간**: 0건(입장 없음)',
+        '5. 결정 대기: 현재 5개의 결정이 대기 중입니다.',
         '현재는 입장한 거래가 없습니다.',
         '* 전략군은 현재 입장하지 않았으며, 전략군의 입장을 고려할 필요가 있습니다.',
+        '* 결정 대기는 5건 남아있다.',
+        '5. 결정 대기는 5건이 대기 중입니다.',
         'C15 결정: 중단 제안은 한국어 라벨로 유지합니다.',
         '',
         '이러한 결과를 기반으로, 최종 결론은 다음과 같습니다.',
@@ -133,7 +142,7 @@ function createMemoryStore() {
     },
   ];
   const decisions = [
-    { id: 11, sessionId: 1, agendaKey: 'market:crypto', decision: 'crypto **점검** pending\n- confirm 필요', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
+    { id: 11, sessionId: 1, agendaKey: 'decision:regime-engine-hmm', decision: 'regime-engine-hmm: crypto **점검** pending\n- confirm 필요', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
     { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'domestic 점검 pending', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
   ];
   let nextSessionId = 2;
@@ -308,8 +317,16 @@ async function main() {
     assert.ok(html.text.includes('.tab-switcher'));
     assert.ok(appJs.text.includes("aria-pressed=${tab === 'daily'}"));
     assert.ok(appJs.text.includes("aria-pressed=${tab === 'ask'}"));
-    assert.ok(appJs.text.includes('aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}'));
-    assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}'));
+    assert.ok(appJs.text.includes('function meetingStatusLabel'));
+    assert.ok(appJs.text.includes('function meetingTypeLabel'));
+    assert.ok(appJs.text.includes('function agendaLabel'));
+    assert.ok(appJs.text.includes('function speakerLabel'));
+    assert.ok(appJs.text.includes('aria-label=${`회의 #${meeting.id} ${meetingTypeLabel(meeting.type)} ${meetingStatusLabel(meeting.status)} 선택`}'));
+    assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}'));
+    assert.ok(appJs.text.includes('title=${`원문 상태: ${meeting.status ||'));
+    assert.ok(appJs.text.includes('title=${`원문 타입: ${meeting.type ||'));
+    assert.ok(appJs.text.includes('title=${`원문 안건: ${minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('title=${`원문 안건: ${decision.agendaKey ||'));
     assert.ok(appJs.text.includes('role="region" aria-label="회의 목록"'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}'));
     assert.ok(appJs.text.includes('className="meeting-list-row" role="listitem"'));
@@ -331,7 +348,11 @@ async function main() {
     assert.ok(appJs.text.includes('role="region" aria-label="회의 타임라인"'));
     assert.ok(appJs.text.includes('role="list" aria-label="타임라인 역할 색상 범례"'));
     assert.ok(appJs.text.includes('aria-label=${`${label} 역할 색상`}'));
-    assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 minute · ${minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 minute · ${agendaLabel(minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('speakerLabel(minute.speaker)}'));
+    assert.ok(appJs.text.includes('원문 speaker: ${minute.speaker ||'));
+    assert.ok(appJs.text.includes("'stack-adapter': '데이터 어댑터'"));
+    assert.ok(appJs.text.includes("adr: 'ADR 기록기'"));
     assert.ok(appJs.text.includes('const catchupLines = loading'));
     assert.ok(appJs.text.includes("catchup?.length ? catchup : ['회의를 선택하면 U1 캐치업이 표시됩니다.']"));
     assert.ok(appJs.text.includes("const catchupLabel = `U1 캐치업 요약: ${catchupLines.join(' / ')}`"));
@@ -383,7 +404,7 @@ async function main() {
     assert.ok(appJs.text.includes('결정 #${decision.id} 감사 메모'));
     assert.ok(appJs.text.includes('결정 #${decision.id} 근거 JSON 보기'));
     assert.ok(appJs.text.includes('role="listitem"'));
-    assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${decision.agendaKey ||'));
+    assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}'));
     assert.ok(appJs.text.includes('role="region" aria-label="결정 대기함"'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisions.length}건`}'));
     assert.ok(appJs.text.includes('LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도'));
@@ -439,14 +460,34 @@ async function main() {
 
     const detail = await request(baseUrl, '/api/meetings/1');
     assert.equal(detail.payload.minutes.length, 5);
+    assert.equal(detail.payload.minutes[0].content, '회의 시작');
     assert.ok(detail.payload.minutes[1].content.includes('**BTC**'));
     assert.ok(detail.payload.minutes[1].content.includes('| 항목 | 값 |'));
     assert.ok(detail.payload.minutes[1].content.includes('<script>alert(1)</script>'));
+    assert.ok(detail.payload.minutes[1].content.includes('게이트=reduced 점수=55.3'));
+    assert.ok(detail.payload.minutes[1].content.includes('레짐=bear 출처=hmm'));
+    assert.equal(detail.payload.minutes[1].content.includes('score='), false);
+    assert.equal(detail.payload.minutes[1].content.includes('source='), false);
     assert.equal(detail.payload.minutes[1].content.includes('활성 서킷: 57건'), false);
     assert.ok(detail.payload.minutes[1].content.includes('legacy 중복 집계 값 숨김'));
     assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
-    assert.ok(detail.payload.minutes[2].content.includes('컴포넌트=regime-engine-hmm'));
+    assert.ok(detail.payload.minutes[2].content.includes('컴포넌트=C15 레짐 엔진 HMM'));
+    assert.equal(detail.payload.minutes[2].content.includes('regime-engine-hmm'), false);
+    assert.ok(detail.payload.minutes[2].content.includes('상태=활성'));
+    assert.ok(detail.payload.minutes[2].content.includes('모드=미정→미정'));
     assert.ok(detail.payload.minutes[2].content.includes('Brier: HMM<폴백'));
+    assert.ok(detail.payload.minutes[2].content.includes('비교 기준=same_bar_close'));
+    assert.ok(detail.payload.minutes[2].content.includes('그릴 커버리지=예'));
+    assert.ok(detail.payload.minutes[2].content.includes('결정 추적=예'));
+    assert.ok(detail.payload.minutes[2].content.includes('완료 회의 수=10'));
+    assert.ok(detail.payload.minutes[2].content.includes('placeholder 기준=예'));
+    assert.equal(detail.payload.minutes[2].content.includes('상태=active'), false);
+    assert.equal(detail.payload.minutes[2].content.includes('unknown→unknown'), false);
+    assert.equal(detail.payload.minutes[2].content.includes('placeholder 기준=true'), false);
+    assert.equal(detail.payload.minutes[2].content.includes('compareAgainst='), false);
+    assert.equal(detail.payload.minutes[2].content.includes('grillCoverage='), false);
+    assert.ok(detail.payload.minutes[3].content.includes('ADR 기록: C 마스터 확인 / 마스터 액션 대기'));
+    assert.equal(detail.payload.minutes[3].content.includes('ADR recorded: c_master/pending_master'), false);
     assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 1);
     assert.ok(detail.payload.minutes[4].content.includes('반복 결론 문단'));
     assert.ok(detail.payload.minutes[4].content.includes('국내: halt(32)'));
@@ -462,19 +503,32 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('이는 배치 halt 상태를 나타냅니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군은 현재 진입하지 않았으며'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군 진입을 고려'));
+    assert.ok(detail.payload.minutes[4].content.includes('결정 대기: legacy 발언 값 숨김'));
     assert.equal(detail.payload.minutes[4].content.includes("'할당' 상태"), false);
     assert.equal(detail.payload.minutes[4].content.includes('프로ksi'), false);
     assert.equal(detail.payload.minutes[4].content.includes('프로끼'), false);
     assert.equal(detail.payload.minutes[4].content.includes('저평가 상태'), false);
     assert.equal(detail.payload.minutes[4].content.includes('입장한 거래'), false);
     assert.equal(detail.payload.minutes[4].content.includes('입장하지'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('현재 5개의 결정이 대기 중'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('결정 대기는 5건 남아있다'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('결정 대기는 5건이 대기 중'), false);
     assert.ok(detail.payload.minutes[4].content.includes('중단 제안은 한국어 라벨로 유지'));
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
     assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
+    assert.ok(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM:'));
+    assert.ok(catchup.payload.lines[1].includes('국내 장전 계획: domestic 점검 pending'));
+    assert.equal(catchup.payload.lines[1].includes('market:crypto'), false);
+    assert.equal(catchup.payload.lines[1].includes('market:domestic'), false);
+    assert.equal(catchup.payload.lines[1].includes('regime-engine-hmm'), false);
+    assert.ok(catchup.payload.lines[2].includes('최신 상태 완료'));
+    assert.equal(catchup.payload.lines[2].includes('최신 상태 closed'), false);
 
     const pending = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
+    assert.ok(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM'));
+    assert.equal(pending.payload.decisions[0].decision.includes('regime-engine-hmm'), false);
 
     const confirm = await request(baseUrl, '/api/decisions/11', {
       method: 'POST',
@@ -660,6 +714,14 @@ async function main() {
       canonicalStatusTokensPreserved: true,
       legacyEntryTradeTermNormalized: true,
       legacyHaltValuationTermNormalized: true,
+      legacyPendingCountMasked: true,
+      legacyAdrStatusLabelNormalized: true,
+      meetingStatusKoreanLabel: true,
+      internalAgendaKeysHidden: true,
+      timelineSpeakerLabelsNormalized: true,
+      dataMinuteMetaKeysLocalized: true,
+      c15StateValuesLocalized: true,
+      c15ComponentKeysLocalized: true,
     },
   };
 }

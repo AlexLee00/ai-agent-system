@@ -19,6 +19,51 @@ function formatTime(value) {
   }
 }
 
+function meetingStatusLabel(status) {
+  return {
+    open: '진행 중',
+    running: '실행 중',
+    completed: '완료',
+    closed: '완료',
+    failed: '실패',
+  }[String(status || '').toLowerCase()] || status || '상태 미상';
+}
+
+function meetingTypeLabel(type) {
+  return {
+    morning: '아침 통합 회의',
+    domestic_debrief: '국내 장후 회의',
+    us_premarket: '미장 전 회의',
+    weekly: '주간 회의',
+    ad_hoc: '임시 회의',
+  }[String(type || '').toLowerCase()] || type || '회의';
+}
+
+function agendaLabel(key) {
+  return {
+    session: '세션',
+    'market:domestic': '국내 장전 계획',
+    'market:overseas': '미국 장후 평가',
+    'market:crypto': 'crypto 24h 점검',
+    'decision:regime-engine-hmm': 'C15 레짐 엔진 HMM',
+    'decision:market-deployment-gate': 'C1 시장 배치 게이트',
+    'decision:mapek': 'C15 MAPEK',
+    'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
+    'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
+    'alerts:circuit-locks': '서킷 잠금 알림',
+  }[String(key || '')] || key || '안건';
+}
+
+function speakerLabel(speaker) {
+  const value = String(speaker || '').toLowerCase();
+  return {
+    system: '시스템',
+    'stack-adapter': '데이터 어댑터',
+    adr: 'ADR 기록기',
+    unknown: '알 수 없음',
+  }[value] || speaker || '알 수 없음';
+}
+
 function friendlyApiError(status, code, fallback) {
   return {
     unauthorized: '토큰이 없거나 올바르지 않습니다. MEETING_ROOM_TOKEN을 확인하세요.',
@@ -331,11 +376,11 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
             <button
               className=${`meeting-item ${selectedId === run.id ? 'active' : ''}`}
               aria-pressed=${selectedId === run.id}
-              aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}
+              aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}
               onClick=${() => setSelectedId(run.id)}
             >
-              <div className="meeting-title">${run.type} · ${run.status}</div>
-              <div className="meta">${formatTime(run.startedAt)} · run</div>
+              <div className="meeting-title" title=${`원문 타입: ${run.type || 'n/a'}`}>${meetingTypeLabel(run.type)} · ${meetingStatusLabel(run.status)}</div>
+              <div className="meta">${formatTime(run.startedAt)} · 실행 작업</div>
             </button>
           </div>
         `)}
@@ -344,11 +389,11 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
             <button
               className=${`meeting-item ${String(selectedId) === String(meeting.id) ? 'active' : ''}`}
               aria-pressed=${String(selectedId) === String(meeting.id)}
-              aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}
+              aria-label=${`회의 #${meeting.id} ${meetingTypeLabel(meeting.type)} ${meetingStatusLabel(meeting.status)} 선택`}
               onClick=${() => setSelectedId(meeting.id)}
             >
-              <div className="meeting-title">#${meeting.id} · ${meeting.type}</div>
-              <div className="meta">${meeting.status} · ${formatTime(meeting.startedAt)}</div>
+              <div className="meeting-title" title=${`원문 타입: ${meeting.type || 'n/a'}`}>#${meeting.id} · ${meetingTypeLabel(meeting.type)}</div>
+              <div className="meta" title=${`원문 상태: ${meeting.status || 'n/a'}`}>${meetingStatusLabel(meeting.status)} · ${formatTime(meeting.startedAt)}</div>
             </button>
           </div>
         `)}
@@ -448,9 +493,12 @@ function Timeline({ detail, catchup, loading }) {
           ${minutes.map((minute) => html`
             <article
               className=${minuteClassName(minute)}
-              aria-label=${`${minute.seq}번 minute · ${minute.agendaKey || 'session'} · ${roleName(minute.role, minute)} · ${minute.speaker || 'unknown'}`}
+              aria-label=${`${minute.seq}번 minute · ${agendaLabel(minute.agendaKey || 'session')} · ${roleName(minute.role, minute)} · ${speakerLabel(minute.speaker)}`}
             >
-              <div className="meeting-title">${minute.seq}. ${minute.agendaKey} — ${roleName(minute.role, minute)} / ${minute.speaker}</div>
+              <div
+                className="meeting-title"
+                title=${`원문 안건: ${minute.agendaKey || 'session'} · 원문 speaker: ${minute.speaker || 'unknown'}`}
+              >${minute.seq}. ${agendaLabel(minute.agendaKey || 'session')} — ${roleName(minute.role, minute)} / ${speakerLabel(minute.speaker)}</div>
               <div className="meta">${formatTime(minute.createdAt)}</div>
               <${MarkdownLite} text=${minute.content} />
             </article>
@@ -491,9 +539,9 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
     <article
       className="decision-card"
       role="listitem"
-      aria-label=${`결정 #${decision.id} · ${decision.agendaKey || 'unknown'} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
+      aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
     >
-      <div className="meeting-title">#${decision.id} · ${decision.agendaKey}</div>
+      <div className="meeting-title" title=${`원문 안건: ${decision.agendaKey || 'unknown'}`}>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
       <div className="meta decision-state">
         <span title=${`원문 등급: ${decision.grade || 'n/a'}`}>${decisionGradeLabel(decision.grade)}</span>
         <span title=${`원문 상태: ${decision.status || 'n/a'}`}>${decisionStatusLabel(decision.status)}</span>

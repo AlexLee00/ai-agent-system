@@ -7,14 +7,14 @@
 ## A. 화면① 일일 회의실
 | ID | 시나리오 | 절차 | 기대 결과 | 커버 |
 |---|---|---|---|---|
-| W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환 | [자동] header/tab a11y+[수동] ✅2026-06-12 브라우저 |
-| W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달, 보조기술에서 줄 단위로 구분 가능 | [자동] catchup API+live region/list a11y+[수동] ✅2026-06-12 표시 |
-| W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·minute별 aria-label | [자동] ADR 클래스+timeline a11y+role legend+[수동] ✅브라우저 |
+| W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환+회의 목록 상태/타입은 한국어 라벨(완료/아침 통합 회의 등) | [자동] header/tab/status/type a11y+[수동] ✅2026-06-12 브라우저 |
+| W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달, 보조기술에서 줄 단위로 구분 가능, 최신 상태와 안건은 한국어 라벨 | [자동] catchup API+live region/list a11y+status/agenda label+[수동] ✅2026-06-12 표시 |
+| W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·minute별 aria-label·인프라 speaker와 데이터 메타 key는 한국어 라벨 | [자동] ADR 클래스+timeline a11y+role/speaker/meta label+[수동] ✅브라우저 |
 | W-04 | 회의 시작(정상) | 타입 선택→시작 | 진행 상태 폴링→완료 후 실제 세션 타임라인으로 전환, 시작 컨트롤/목록 선택 상태 aria 제공, 회의 목록 region/list 구조 유지, 실행 실패 시 오류 원인 표시 | [자동] start API+completed/failed run 전환+a11y |
 | W-05 | 회의 시작(중복) | open 세션 중 재시작 | 409 + 사용자 메시지(중복 안내) | [자동] 409+친화 메시지 문자열 |
 | W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단 | [자동]+[수동] ✅fixture 브라우저 |
 | W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시·토글 상태 변경 live region 전달 | [자동] 기본 noLlm payload+mode live region+[수동] ✅토글 표시 |
-| W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
+| W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅fixture 브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label | [자동] dueState+a11y+[수동] ✅2026-06-12 |
@@ -27,7 +27,7 @@
 | W-21 | JSON 덤프 부재 | 발언 content에 `{...}` 원문 없음(C15 대기·서킷 안건 한국어 요약) | [자동] legacy API 정규화+브라우저 ✅ |
 | W-22 | 서킷 distinct | "활성 잠금 N건"이 고유 잠금 수(DB distinct 쿼리와 일치) | [자동] smoke+[수동] ✅2026-06-12 세션 #1 서킷=3건 |
 | W-23 | XSS 회귀 | `<script>` 포함 텍스트가 문자 그대로(미실행)·innerHTML 0 | [자동] smoke |
-| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음·status 값 halt/reduced/full 원문 유지·entry/프록시/진입 용어 표시 보정·halt를 가치판단으로 오해하지 않음 | [자동] 반복 표시 축약+status/용어 복원+진입/게이트 용어 보정+[수동] 🔁 다음 실회의 |
+| W-24 | LLM 발언 품질 | 번역투("하트")·동일 문단 반복 없음·status 값 halt/reduced/full 원문 유지·entry/프록시/진입 용어 표시 보정·halt를 가치판단으로 오해하지 않음·legacy 발언의 과거 결정 대기 숫자/ADR 내부 토큰이 현재값처럼 보이지 않음 | [자동] 반복 표시 축약+status/용어 복원+진입/게이트 용어+legacy pending 숫자/ADR 라벨 보정+[수동] 🔁 다음 실회의 |
 
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -111,6 +111,14 @@
 - **2026-06-12 루프 55**: W-40 폴링 주기 운영 가시성 점검 → 기존 구현은 running 3초/idle 30초 계약은 있었지만 화면에서 현재 폴링 모드를 알 수 없었음. 일일 회의실 상단에 `회의실 폴링 상태` live 배지를 추가해 idle이면 `30초마다 갱신`, 실행 중 회의가 있으면 `3초마다 갱신`을 표시하도록 보강. 스모크 `pollingStatusVisible` 추가.
 - **2026-06-12 루프 56**: W-40 폴링 배지 문구 품질 점검 → 실제 브라우저 확인 결과 새 배지가 `idle` 영어를 포함해 한국어 운영 UI 흐름과 맞지 않았음. 표시 문구를 `폴링: 대기 · 30초마다 갱신`으로 바꾸고, 스모크 `pollingStatusKoreanLabel`로 `폴링: idle` 재발을 차단.
 - **2026-06-12 루프 57**: W-12 evidence 접힘 레이아웃 점검 → 결정 카드의 `details`는 닫힌 상태지만 내부 JSON `<pre>`가 계산상 큰 높이를 유지해 페이지 스크롤 높이를 불필요하게 키우는 것을 브라우저에서 확인. `details:not([open]) > :not(summary)`를 명시적으로 숨겨 닫힌 evidence가 스크롤 공간을 만들지 않도록 보강. 스모크 `collapsedEvidenceDoesNotCreateScrollSpace` 추가.
+- **2026-06-12 루프 58**: W-24 legacy LLM 데이터 품질 점검 → 실제 타임라인 발언 안의 `결정 대기: 5건`이 현재 U1 캐치업 `대기 9건`과 충돌해 과거 숫자가 현재 상태처럼 보일 수 있음을 브라우저에서 확인. 표시 정규화에 `결정 대기: legacy 발언 값 숨김(상단 U1 캐치업 기준)`을 추가하고 스모크 `legacyPendingCountMasked`로 재발을 차단.
+- **2026-06-12 루프 59**: W-24 legacy 타임라인 잔여 토큰 재점검 → C15 분석 minute의 문장형 `결정 대기는 5건이 대기 중입니다`와 ADR minute의 `ADR recorded: c_master/pending_master`가 여전히 현재값/내부 토큰처럼 보이는 것을 브라우저에서 확인. pending 문장 패턴을 추가 마스킹하고 ADR 표시는 `ADR 기록: C 마스터 확인 / 마스터 액션 대기`로 정규화. 스모크 `legacyAdrStatusLabelNormalized` 추가.
+- **2026-06-12 루프 60**: W-01/W-02 회의 상태 표시 점검 → 실제 화면의 회의 목록, 캐치업, 첫 system minute에 `closed/open` 원문 상태가 그대로 보여 한국어 운영 UI와 불일치. 웹 목록은 `완료/진행 중/실패` 라벨로 표시하고 원문은 title에만 보존, 캐치업은 `최신 상태 완료`, system minute `open`은 `회의 시작`으로 정규화. 스모크 `meetingStatusKoreanLabel` 추가.
+- **2026-06-12 루프 61**: W-01/W-02/W-08 내부 key 노출 점검 → 실제 화면의 회의 목록 `morning`, 캐치업/타임라인/결정 카드 `market:domestic` 등 내부 agenda/type key가 사용자 표시와 aria에 그대로 노출됨. 웹 표시에는 `아침 통합 회의`, `국내 장전 계획`, `C15 레짐 엔진 HMM` 등 한국어 라벨을 쓰고 원문 key는 title에만 보존. 캐치업 API도 `market:*` 접두어 대신 안건 라벨을 사용하도록 보강. 스모크 `internalAgendaKeysHidden` 추가.
+- **2026-06-12 루프 62**: W-03 에이전트/시스템 활동 주체 표시 점검 → 실제 타임라인에 `stack-adapter`, `system`, `adr`, fallback `unknown`이 speaker로 그대로 표시되어 운영자가 인프라 actor를 즉시 해석하기 어려움. 웹 표시와 aria는 `데이터 어댑터`, `시스템`, `ADR 기록기`, `알 수 없음`으로 정규화하고 원문 speaker는 title에 보존. 스모크 `timelineSpeakerLabelsNormalized` 추가.
+- **2026-06-12 루프 63**: W-03 데이터 minute 메타 표현 점검 → 실제 데이터 minute에 `score=`, `source=`, C15 기준의 `compareAgainst/grillCoverage/decisionTracking/completedMeetings` 같은 영문 key가 노출되어 운영 해석성이 낮음. canonical 값(halt/reduced/bull/bear/HMM)은 유지하고 key만 `점수`, `출처`, `비교 기준`, `그릴 커버리지`, `결정 추적`, `완료 회의 수`로 정규화. 스모크 `dataMinuteMetaKeysLocalized` 추가.
+- **2026-06-12 루프 64**: W-03 C15 상태값 표현 점검 → 실제 C15 데이터 minute에 `상태=active`, `모드=unknown→unknown`, `placeholder 기준=true`가 남아 있어 내부 상태값처럼 보임. 표시 계층에서 `상태=활성`, `모드=미정→미정`, `placeholder 기준=예`로 정규화하고 boolean scalar는 `예/아니오`로 표시. 스모크 `c15StateValuesLocalized` 추가.
+- **2026-06-12 루프 65**: W-03/W-08 C15 컴포넌트 키 표현 점검 → 실제 타임라인·결정 본문·aria에 `regime-engine-hmm`, `market-deployment-gate`, `backtest-nextbar-execution`, `meeting-room-orchestrator` 같은 내부 component id가 남아 운영자가 즉시 해석하기 어려움. API 표시 계층에서 `C15 레짐 엔진 HMM`, `C1 시장 배치 게이트`, `Next-bar 백테스트 실행`, `회의실 오케스트레이터`로 정규화하고 DB 원문은 보존. 스모크 `c15ComponentKeysLocalized` 추가.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안
