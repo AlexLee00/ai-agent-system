@@ -410,7 +410,7 @@ function summarizePremarketEvidence(evidence = {}) {
     lines.push(`전략 신호=${strategySignals.length}건(entry ${entryCount}건), 활성 서킷=${circuitLocks.length}건, 보유 포지션=${positions.length}건${positionSymbols.length ? `(${positionSymbols.join(', ')})` : ''}`);
   }
   if (lines.length === 1) lines.push('세부 항목 없음');
-  lines.push('상세 JSON은 감사 로그에 보존');
+  lines.push('상세 근거는 감사 기록에 보존');
   return lines.join('\n');
 }
 
@@ -422,13 +422,13 @@ function replacePremarketEvidenceJson(content) {
     const jsonStart = next.indexOf('{', searchFrom);
     if (jsonStart < 0) break;
     const jsonText = balancedJsonAt(next, jsonStart);
-    let summary = '증거 요약\n상세 JSON은 감사 로그에 보존';
+    let summary = '증거 요약\n상세 근거는 감사 기록에 보존';
     let replaceEnd = next.length;
     if (jsonText) {
       try {
         summary = summarizePremarketEvidence(JSON.parse(jsonText));
       } catch {
-        summary = '증거 요약\n상세 JSON은 감사 로그에 보존';
+        summary = '증거 요약\n상세 근거는 감사 기록에 보존';
       }
       replaceEnd = jsonStart + jsonText.length;
     } else {
@@ -811,7 +811,7 @@ function compactRepetitiveReportContent(content) {
   if (!removed) return text;
   return [
     kept.join('\n\n').trim(),
-    `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 감사 로그에 보존됩니다.`,
+    `반복 결론 문단 ${removed}개는 요약 표시했습니다.`,
   ].filter(Boolean).join('\n\n');
 }
 
@@ -853,7 +853,7 @@ function compactRepeatedSentences(content, minCount = 3) {
   if (!removed) return text;
   return [
     compacted.trim(),
-    `[표시 보정] 반복 문장 ${removed}개를 축약했습니다. 원문은 감사 로그에 보존됩니다.`,
+    `반복 문장 ${removed}개는 요약 표시했습니다.`,
   ].filter(Boolean).join('\n\n');
 }
 

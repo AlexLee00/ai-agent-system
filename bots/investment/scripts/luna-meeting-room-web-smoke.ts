@@ -1040,7 +1040,9 @@ async function main() {
     assert.equal((detail.payload.minutes[4].content.match(/최종 결론/g) || []).length, 0);
     assert.ok(detail.payload.minutes[4].content.includes('요약 결론입니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('반복 결론 문단'));
-    assert.ok(detail.payload.minutes[4].content.includes('원문은 감사 로그에 보존됩니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('요약 표시했습니다.'));
+    assert.equal(detail.payload.minutes[4].content.includes('[표시 보정]'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('원문은 감사 로그에 보존됩니다.'), false);
     assert.equal(detail.payload.minutes[4].content.includes('원문은 DB 회의록에 보존됩니다.'), false);
     assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약과 섀도 스택'));
     assert.equal(detail.payload.minutes[4].content.includes('회의 데이터 요약와'), false);
@@ -1117,6 +1119,7 @@ async function main() {
     );
     assert.ok(premarketEntryTerm.includes('읽기 전용으로 점검합니다.'));
     assert.ok(premarketEntryTerm.includes('전략군 24시간 신호 1건(진입 0건)입니다'));
+    assert.equal(premarketEntryTerm.includes('상세 JSON'), false);
     assert.equal(premarketEntryTerm.includes('읽기 전용로'), false);
     assert.equal(premarketEntryTerm.includes('입장(Entry 0)'), false);
     assert.equal(premarketEntryTerm.includes('입니다, 현재'), false);
