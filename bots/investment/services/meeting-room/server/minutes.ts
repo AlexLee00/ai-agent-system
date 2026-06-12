@@ -210,7 +210,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     }
   }
   lines.push('');
-  lines.push('> MR-A 산출물은 자문/섀도 전용입니다. 거래, launchd, 파라미터 변경은 수행하지 않았습니다.');
+  lines.push('> MR-C 회의실 산출물은 자문/섀도 전용입니다. 거래, 파라미터, 운영 설정은 변경하지 않습니다.');
   return `${lines.join('\n')}\n`;
 }
 

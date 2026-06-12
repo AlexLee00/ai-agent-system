@@ -1539,7 +1539,10 @@ async function main() {
     assert.equal(partialRegeneratedMarkdown.includes('n/a'), false);
     assert.equal(partialRegeneratedMarkdown.includes('due:'), false);
     assert.equal(regeneratedMarkdown.includes('MR-A output is advisory/shadow only'), false);
-    assert.ok(regeneratedMarkdown.includes('MR-A 산출물은 자문/섀도 전용입니다.'));
+    assert.equal(regeneratedMarkdown.includes('MR-A 산출물'), false);
+    assert.equal(regeneratedMarkdown.includes('launchd'), false);
+    assert.ok(regeneratedMarkdown.includes('MR-C 회의실 산출물은 자문/섀도 전용입니다.'));
+    assert.ok(regeneratedMarkdown.includes('거래, 파라미터, 운영 설정은 변경하지 않습니다.'));
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
     assert.equal(regeneratedMarkdown.includes('debrief:g6-plan-vs-actual'), false);
     assert.ok(regeneratedMarkdown.includes('C 마스터 확인/마스터 액션 대기'));
