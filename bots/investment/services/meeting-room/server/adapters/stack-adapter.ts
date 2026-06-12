@@ -80,7 +80,7 @@ export function buildMarketSegments(now = new Date()) {
     },
     {
       market: 'crypto',
-      label: 'crypto 24h 점검',
+      label: '암호화폐 24시간 점검',
       active: true,
       skipped: false,
       reason: 'crypto_24h',

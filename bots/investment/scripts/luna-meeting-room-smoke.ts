@@ -47,7 +47,7 @@ function fixturePlanNote() {
     segments: [
       { market: 'domestic', label: '국내 장전 계획', active: true, skipped: false, reason: 'market_open' },
       { market: 'overseas', label: '미국 장후 평가', active: false, skipped: true, reason: 'weekend' },
-      { market: 'crypto', label: 'crypto 24h 점검', active: true, skipped: false, reason: 'crypto_24h' },
+      { market: 'crypto', label: '암호화폐 24시간 점검', active: true, skipped: false, reason: 'crypto_24h' },
     ],
     gates: [
       { market: 'domestic', score: 55, deployment: 'reduced', signals: { effectiveDeployment: 'reduced' } },
