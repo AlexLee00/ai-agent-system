@@ -21,6 +21,29 @@ const DEFAULT_PORT = 7791;
 const MAX_BODY_BYTES = 1_000_000;
 const ASK_LIMIT_PER_MINUTE = 2;
 const ASK_LIMIT_PER_DAY = 20;
+const AGENT_DISPLAY_LABELS = Object.freeze({
+  luna: 'Luna',
+  nemesis: 'Nemesis',
+  aria: 'Aria',
+  sophia: 'Sophia',
+  argos: 'Argos',
+  hermes: 'Hermes',
+  oracle: 'Oracle',
+  chronos: 'Chronos',
+  zeus: 'Zeus',
+  athena: 'Athena',
+  sentinel: 'Sentinel',
+  'adaptive-risk': 'Adaptive Risk',
+  hephaestos: 'Hephaestos',
+  hanul: 'Hanul',
+  budget: 'Budget',
+  scout: 'Scout',
+  kairos: 'Kairos',
+  'stock-flow': 'Stock Flow',
+  sweeper: 'Sweeper',
+  reporter: 'Reporter',
+});
+const AGENT_BRACKET_PATTERN = /\[(luna|nemesis|aria|sophia|argos|hermes|oracle|chronos|zeus|athena|sentinel|adaptive-risk|hephaestos|hanul|budget|scout|kairos|stock-flow|sweeper|reporter)\]/gi;
 
 class HttpError extends Error {
   constructor(statusCode, code, message, details = null) {
@@ -105,7 +128,7 @@ function sessionStatusLabel(status) {
     completed: '완료',
     closed: '완료',
     failed: '실패',
-  }[String(status || '').toLowerCase()] || status || '상태 미상';
+  }[String(status || '').toLowerCase()] || '상태 미상';
 }
 
 function agendaLabel(key) {
@@ -120,7 +143,7 @@ function agendaLabel(key) {
     'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
     'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
     'alerts:circuit-locks': '서킷 잠금 알림',
-  }[String(key || '')] || key || '안건';
+  }[String(key || '')] || '안건';
 }
 
 function pendingDecisionCatchupLabel(row = {}) {
@@ -133,12 +156,18 @@ function pendingDecisionCatchupLabel(row = {}) {
 function componentLabel(key) {
   return {
     'regime-engine-hmm': 'C15 레짐 엔진 HMM',
+    'C15 레짐 엔진 HMM': 'C15 레짐 엔진 HMM',
     'market-deployment-gate': 'C1 시장 배치 게이트',
+    'C1 시장 배치 게이트': 'C1 시장 배치 게이트',
     mapek: 'C15 MAPEK',
+    'C15 MAPEK': 'C15 MAPEK',
     'meeting-room-orchestrator': '회의실 오케스트레이터',
+    '회의실 오케스트레이터': '회의실 오케스트레이터',
     'backtest-nextbar-execution': 'Next-bar 백테스트 실행',
+    'Next-bar 백테스트 실행': 'Next-bar 백테스트 실행',
     'circuit-locks': '서킷 잠금 알림',
-  }[String(key || '')] || key || '컴포넌트 미상';
+    '서킷 잠금 알림': '서킷 잠금 알림',
+  }[String(key || '')] || '컴포넌트 미상';
 }
 
 function legacyMetricLabel(key) {
@@ -154,7 +183,7 @@ function legacyMetricLabel(key) {
     grillCoverage: '그릴 커버리지',
     decisionTracking: '결정 추적',
     completedMeetings: '완료 회의 수',
-  }[key] || key;
+  }[key] || '지표';
 }
 
 function legacyDecisionTypeLabel(value, status) {
@@ -359,16 +388,7 @@ function formatKstTimestampFromIso(value) {
 }
 
 function agentDisplayLabel(value) {
-  return {
-    aria: 'Aria',
-    luna: 'Luna',
-    sophia: 'Sophia',
-    argos: 'Argos',
-    hermes: 'Hermes',
-    oracle: 'Oracle',
-    zeus: 'Zeus',
-    athena: 'Athena',
-  }[String(value || '').toLowerCase()] || value;
+  return AGENT_DISPLAY_LABELS[String(value || '').toLowerCase()] || '에이전트 미상';
 }
 
 function normalizeLegacyKoreanLlmNoise(content) {
@@ -385,9 +405,28 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bcrypto\s+요약/gi, '암호화폐 요약')
     .replace(/\bcrypto\s+시장/gi, '암호화폐 시장')
     .replace(/\bcrypto(?=\s*[:：])/gi, '암호화폐')
+    .replace(/\bdomestic과/g, '국내와')
+    .replace(/\bdomestic은/g, '국내는')
+    .replace(/\bdomestic는/g, '국내는')
+    .replace(/\bdomestic이/g, '국내가')
+    .replace(/\bdomestic가/g, '국내가')
+    .replace(/\boverseas과/g, '미국과')
+    .replace(/\boverseas은/g, '미국은')
+    .replace(/\boverseas는/g, '미국은')
+    .replace(/\boverseas이/g, '미국이')
+    .replace(/\boverseas가/g, '미국이')
+    .replace(/\bcrypto과/g, '암호화폐와')
+    .replace(/\bcrypto은/g, '암호화폐는')
+    .replace(/\bcrypto는/g, '암호화폐는')
+    .replace(/\bcrypto이/g, '암호화폐가')
+    .replace(/\bcrypto가/g, '암호화폐가')
+    .replace(/\bdomestic\b/g, '국내')
+    .replace(/\boverseas\b/g, '미국')
+    .replace(/\bcrypto\b/g, '암호화폐')
     .replace(/\badvisory\b/g, '자문')
     .replace(/\bplan-note와\s+shadow stack\b/g, '회의 데이터 요약과 섀도 스택')
     .replace(/\bplan-note\b/g, '회의 데이터 요약')
+    .replace(/회의\s+회의 데이터 요약/g, '회의 데이터 요약')
     .replace(/\bshadow stack\b/g, '섀도 스택')
     .replace(/\bregistry evidence\b/g, '레지스트리 근거')
     .replace(/\bgate_off_virtual\b/g, '게이트 비활성 가상 비교')
@@ -396,6 +435,14 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bmax calls\b/gi, '최대 호출')
     .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
     .replace(/해외/g, '미국')
+    .replace(/게이트가\s*정지\s*상태/g, '게이트가 halt 상태')
+    .replace(/게이트가\s*감소(?:한)?\s*상태/g, '게이트가 reduced 상태')
+    .replace(/정지\s*상태로\s*halt/gi, 'halt 상태로')
+    .replace(/정지\s*상태\s*halt/gi, 'halt 상태')
+    .replace(/정지\s*상태/g, 'halt 상태')
+    .replace(/감소(?:한)?\s*상태로\s*reduced/gi, 'reduced 상태로')
+    .replace(/감소(?:한)?\s*상태\s*reduced/gi, 'reduced 상태')
+    .replace(/감소(?:한)?\s*상태/g, 'reduced 상태')
     .replace(/레짐=bull/g, '레짐=상승')
     .replace(/레짐=bear/g, '레짐=하락')
     .replace(/레짐=sideways/g, '레짐=수평')
@@ -404,7 +451,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bbear\(([^)]+)\)/g, '하락($1)')
     .replace(/\bsideways\(([^)]+)\)/g, '수평($1)')
     .replace(/\bvolatile\(([^)]+)\)/g, '변동($1)')
-    .replace(/\[(aria|luna|sophia|argos|hermes|oracle|zeus|athena)\]/gi, (_match, agent) => `[${agentDisplayLabel(agent)}]`)
+    .replace(AGENT_BRACKET_PATTERN, (_match, agent) => `[${agentDisplayLabel(agent)}]`)
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
     .replace(/출처=hmm/g, '출처=HMM')
@@ -654,10 +701,10 @@ function checkAskRateLimit(limiter, now = new Date()) {
     limiter.dayCount = 0;
   }
   if (limiter.minuteCount >= ASK_LIMIT_PER_MINUTE) {
-    throw new HttpError(429, 'ask_rate_limited_minute', 'agent ask minute limit exceeded');
+    throw new HttpError(429, 'ask_rate_limited_minute', '분당 질의 한도에 도달했습니다. 잠시 후 다시 시도하세요.');
   }
   if (limiter.dayCount >= ASK_LIMIT_PER_DAY) {
-    throw new HttpError(429, 'ask_rate_limited_day', 'agent ask daily limit exceeded');
+    throw new HttpError(429, 'ask_rate_limited_day', '일일 질의 한도에 도달했습니다. 다음 운영일에 다시 시도하세요.');
   }
   limiter.minuteCount += 1;
   limiter.dayCount += 1;
@@ -667,8 +714,14 @@ function agentAskFailureMessage() {
   return '에이전트 응답 생성에 실패했습니다. 잠시 후 다시 시도하세요.';
 }
 
+function normalizeAskAgentName(value) {
+  const agent = String(value || 'luna').trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(AGENT_DISPLAY_LABELS, agent)) return agent;
+  throw new HttpError(400, 'invalid_agent', '지원하지 않는 에이전트입니다. 목록에서 에이전트를 선택하세요.');
+}
+
 async function askAgent(body, deps, limiter) {
-  const agent = String(body.agent || 'luna').trim();
+  const agent = normalizeAskAgentName(body.agent);
   const question = String(body.question || '').trim();
   if (!question) throw new HttpError(400, 'question_required', '질문을 입력하세요.');
   checkAskRateLimit(limiter);
@@ -712,7 +765,7 @@ async function askAgent(body, deps, limiter) {
       agent,
       route,
       provider: result?.provider || null,
-      text: result?.text || '',
+      text: normalizeLegacyKoreanLlmNoise(result?.text || ''),
       error: result?.error || null,
     };
   } catch (error) {
@@ -935,8 +988,13 @@ export default {
 };
 
 export const _testOnly = {
+  agendaLabel,
+  agentDisplayLabel,
+  componentLabel,
   compactRepetitiveReportContent,
+  legacyMetricLabel,
   normalizeCanonicalStatusTokens,
   normalizeLegacyMinuteContent,
   normalizeMinute,
+  sessionStatusLabel,
 };

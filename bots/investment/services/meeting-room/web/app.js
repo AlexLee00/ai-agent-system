@@ -1,6 +1,52 @@
 const html = htm.bind(React.createElement);
 const { useEffect, useMemo, useState } = React;
 
+const AGENT_OPTIONS = Object.freeze([
+  'luna',
+  'nemesis',
+  'aria',
+  'sophia',
+  'argos',
+  'hermes',
+  'oracle',
+  'chronos',
+  'zeus',
+  'athena',
+  'sentinel',
+  'adaptive-risk',
+  'hephaestos',
+  'hanul',
+  'budget',
+  'scout',
+  'kairos',
+  'stock-flow',
+  'sweeper',
+  'reporter',
+]);
+
+const AGENT_LABELS = Object.freeze({
+  luna: 'Luna',
+  nemesis: 'Nemesis',
+  aria: 'Aria',
+  sophia: 'Sophia',
+  argos: 'Argos',
+  hermes: 'Hermes',
+  oracle: 'Oracle',
+  chronos: 'Chronos',
+  zeus: 'Zeus',
+  athena: 'Athena',
+  sentinel: 'Sentinel',
+  'adaptive-risk': 'Adaptive Risk',
+  hephaestos: 'Hephaestos',
+  hanul: 'Hanul',
+  budget: 'Budget',
+  scout: 'Scout',
+  kairos: 'Kairos',
+  'stock-flow': 'Stock Flow',
+  sweeper: 'Sweeper',
+  reporter: 'Reporter',
+});
+
 function useToken() {
   const [token, setToken] = useState(() => localStorage.getItem('lunaMeetingRoomToken') || '');
   function update(value) {
@@ -44,28 +90,7 @@ function meetingTypeLabel(type) {
 }
 
 function agentLabel(agent) {
-  return {
-    luna: 'Luna',
-    nemesis: 'Nemesis',
-    aria: 'Aria',
-    sophia: 'Sophia',
-    argos: 'Argos',
-    hermes: 'Hermes',
-    oracle: 'Oracle',
-    chronos: 'Chronos',
-    zeus: 'Zeus',
-    athena: 'Athena',
-    sentinel: 'Sentinel',
-    'adaptive-risk': 'Adaptive Risk',
-    hephaestos: 'Hephaestos',
-    hanul: 'Hanul',
-    budget: 'Budget',
-    scout: 'Scout',
-    kairos: 'Kairos',
-    'stock-flow': 'Stock Flow',
-    sweeper: 'Sweeper',
-    reporter: 'Reporter',
-  }[String(agent || '').toLowerCase()] || '에이전트 미상';
+  return AGENT_LABELS[String(agent || '').toLowerCase()] || '에이전트 미상';
 }
 
 function providerLabel(provider) {
@@ -107,6 +132,7 @@ function friendlyApiError(status, code, fallback) {
     ask_rate_limited_day: '일일 질의 한도에 도달했습니다. 다음 운영일에 다시 시도하세요.',
     body_too_large: '요청 본문이 너무 큽니다. 질문이나 메모를 줄여 주세요.',
     invalid_json: '요청 형식이 올바르지 않습니다.',
+    invalid_agent: '지원하지 않는 에이전트입니다. 목록에서 에이전트를 선택하세요.',
     question_required: '질문을 입력하세요.',
     invalid_action: '지원하지 않는 결정 처리 요청입니다.',
     method_not_allowed: '지원하지 않는 요청 방식입니다.',
@@ -147,11 +173,18 @@ function isAdrMinute(minute = {}) {
 
 function roleName(role, minute = {}) {
   if (isAdrMinute(minute)) return 'ADR';
-  return { data: '데이터', analysis: '분석', grill: '그릴', decision: '결정', system: '시스템' }[role] || role;
+  const value = String(role || '').toLowerCase();
+  return { data: '데이터', analysis: '분석', grill: '그릴', decision: '결정', system: '시스템' }[value] || '역할 미상';
+}
+
+function minuteRoleClass(minute = {}) {
+  if (isAdrMinute(minute)) return 'adr';
+  const value = String(minute.role || 'system').toLowerCase();
+  return ['data', 'analysis', 'grill', 'decision', 'system'].includes(value) ? value : 'system';
 }
 
 function minuteClassName(minute = {}) {
-  return `minute ${minute.role || 'system'}${isAdrMinute(minute) ? ' adr' : ''}`;
+  return `minute ${minuteRoleClass(minute)}${isAdrMinute(minute) ? ' adr' : ''}`;
 }
 
 function dueState(value, now = new Date()) {
@@ -784,7 +817,7 @@ function AskRoom({ token }) {
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
             <select id="meeting-agent-select" aria-label="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
-              ${['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}
+              ${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}
             </select>
           </div>
           <div className="form-row">

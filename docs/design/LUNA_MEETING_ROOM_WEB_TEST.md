@@ -146,6 +146,11 @@
 - **2026-06-12 루프 90**: W-02/W-03 시간 표시 fallback 점검 → 브라우저 `new Date('bad').toLocaleString('ko-KR')`가 `Invalid Date`를 반환해, DB의 비정상 timestamp가 회의 목록·타임라인·실행 상태에 그대로 노출될 수 있음을 확인. `formatTime`에서 invalid timestamp를 `시간 확인 필요`로 고정하고 스모크에 `Invalid Date` 재노출 방지 계약 추가.
 - **2026-06-12 루프 91**: W-03/W-30 에이전트 활동 주체 라벨 점검 → 웹 `agentLabel`이 선택지 8종만 매핑해 Nemesis/Chronos/Sentinel/Hephaestos/Hanul/Budget 등 실제 투자 에이전트가 타임라인 speaker나 응답 메타에 오면 `에이전트 미상`으로 축약될 수 있음을 확인. 라우팅의 known agent 전체를 사용자 라벨로 확장하고 스모크 계약 추가.
 - **2026-06-12 루프 92**: W-02 U1 캐치업 fallback 점검 → 세션 정보가 없는 run/error 형태에서 캐치업 3번째 줄이 `회의 n/a`로 표시될 수 있음을 확인. `회의 정보 없음` fallback으로 보정하고 스모크에서 캐치업 `n/a` 재노출을 차단.
+- **2026-06-12 루프 93**: W-30 에이전트 활동 범위 점검 → 서버 라우팅은 20개 투자 에이전트를 지원하지만 질의 화면 select와 서버 응답 라벨 정규화는 8개만 커버해 Nemesis/Chronos/Hephaestos/Hanul/Budget 등에게 직접 질의할 수 없고 확장 noLLM 응답이 `[hephaestos]`처럼 raw로 보일 수 있음을 확인. `AGENT_OPTIONS/AGENT_LABELS`를 전체 라우팅 목록으로 상수화하고 Hephaestos noLLM 응답 스모크를 추가.
+- **2026-06-12 루프 94**: W-30/W-31 직접 API 경계 점검 → `/api/agents/ask`가 UI 선택지 밖의 `unknown-agent`도 받아 `investment._default` LLM 호출로 fallback하고, 분당 rate-limit 직접 응답 메시지가 영어로 내려오는 것을 확인. known agent 검증을 라우팅 전에 추가해 미지원 agent는 400 `invalid_agent` 한국어 안내로 차단하고, rate-limit 메시지도 직접 API/웹 모두 한국어로 통일.
+- **2026-06-12 루프 95**: W-30/W-24 실 LLM 응답 표시 점검 → 직접 Luna 질의 응답에서 `plan-note`, `domestic/overseas/crypto`가 사용자-facing으로 반환되는 것을 확인. 회의록 표시 정규화 함수를 에이전트 질의 응답에도 적용하고, 시장 key 단독 표현을 `국내/미국/암호화폐`로 정규화하는 스모크를 추가.
+- **2026-06-12 루프 96**: W-30/W-24 실 LLM 응답 문장 품질 재점검 → 시장 key를 단순 치환하면 `domestic과/overseas는`이 `국내과/미국는`으로 깨지고, LLM이 `halt/reduced`를 `정지/감소한 상태`로 번역할 수 있음을 확인. 시장 key+한국어 조사 조합을 별도 매핑하고 `게이트가 정지/감소한 상태`는 `halt/reduced 상태`로 복원하는 스모크를 추가.
+- **2026-06-12 루프 97**: W-03/W-02 fallback 안전성 점검 → 알 수 없는 timeline role이 들어오면 `roleName`이 raw role을 그대로 표시하고, `minuteClassName`이 DB role 값을 CSS class에 그대로 붙일 수 있음을 확인. 화면 fallback은 `역할 미상`, CSS class는 허용 role 외 `system`으로 제한하고, 서버 catchup/summary label fallback도 raw status/agenda/component/metric/agent 대신 generic 라벨로 고정.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

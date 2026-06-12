@@ -272,7 +272,11 @@ async function main() {
     resolveAgentLLMRouteFn: (agent) => (agent === 'aria'
       ? { primary: 'investment.aria', selectorKey: 'investment.aria', fallbacks: [], noLLM: true }
       : { provider: 'fixture', model: 'fixture-model' }),
-    callViaHubFn: async () => ({ ok: true, provider: 'fixture', text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |' }),
+    callViaHubFn: async () => ({
+      ok: true,
+      provider: 'fixture',
+      text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |\n회의 plan-note 기준 세그먼트는 domestic과 overseas는 활성이고 crypto는 대기입니다. 게이트가 정지 상태이고 게이트가 감소한 상태입니다. 감소한 상태로 reduced 표시도 있습니다.',
+    }),
   };
 
   const started = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, deps);
@@ -343,6 +347,11 @@ async function main() {
     assert.ok(appJs.text.includes('function meetingTypeLabel'));
     assert.ok(appJs.text.includes('function agendaLabel'));
     assert.ok(appJs.text.includes('function speakerLabel'));
+    assert.ok(appJs.text.includes('function roleName'));
+    assert.ok(appJs.text.includes("|| '역할 미상';"));
+    assert.equal(appJs.text.includes("|| role;"), false);
+    assert.ok(appJs.text.includes('function minuteRoleClass'));
+    assert.ok(appJs.text.includes("['data', 'analysis', 'grill', 'decision', 'system'].includes(value) ? value : 'system'"));
     assert.ok(appJs.text.includes("adhoc: '임시 회의'"));
     assert.ok(appJs.text.includes("ad_hoc: '임시 회의'"));
     assert.ok(appJs.text.includes("|| '상태 미상';"));
@@ -418,6 +427,8 @@ async function main() {
     assert.ok(appJs.text.includes('지원하지 않는 요청 방식입니다.'));
     assert.ok(appJs.text.includes('회의를 찾을 수 없습니다. 목록을 새로고침하세요.'));
     assert.ok(appJs.text.includes('요청한 회의실 리소스를 찾을 수 없습니다.'));
+    assert.ok(appJs.text.includes('invalid_agent:'));
+    assert.ok(appJs.text.includes('지원하지 않는 에이전트입니다. 목록에서 에이전트를 선택하세요.'));
     assert.ok(appJs.text.includes('회의실 서버에 연결할 수 없습니다'));
     assert.ok(appJs.text.includes("setError('');"));
     assert.ok(appJs.text.includes("payload.run.status === 'completed'"));
@@ -436,6 +447,7 @@ async function main() {
     assert.ok(appJs.text.includes('function decisionGradeLabel'));
     assert.ok(appJs.text.includes('function decisionStatusLabel'));
     assert.ok(appJs.text.includes('function minuteClassName'));
+    assert.ok(appJs.text.includes('minuteRoleClass(minute)'));
     assert.ok(appJs.text.includes('function SegmentStatus'));
     assert.ok(appJs.text.includes('function segmentReasonLabel'));
     assert.ok(appJs.text.includes("weekend: '주말'"));
@@ -473,6 +485,7 @@ async function main() {
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-select">에이전트'));
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-question">질문'));
     assert.ok(appJs.text.includes('function agentLabel'));
+    assert.ok(appJs.text.includes('const AGENT_OPTIONS = Object.freeze(['));
     assert.ok(appJs.text.includes("luna: 'Luna'"));
     assert.ok(appJs.text.includes("nemesis: 'Nemesis'"));
     assert.ok(appJs.text.includes("chronos: 'Chronos'"));
@@ -480,8 +493,14 @@ async function main() {
     assert.ok(appJs.text.includes("'adaptive-risk': 'Adaptive Risk'"));
     assert.ok(appJs.text.includes("hephaestos: 'Hephaestos'"));
     assert.ok(appJs.text.includes("hanul: 'Hanul'"));
+    assert.ok(appJs.text.includes("budget: 'Budget'"));
+    assert.ok(appJs.text.includes("scout: 'Scout'"));
+    assert.ok(appJs.text.includes("kairos: 'Kairos'"));
     assert.ok(appJs.text.includes("'stock-flow': 'Stock Flow'"));
+    assert.ok(appJs.text.includes("sweeper: 'Sweeper'"));
     assert.ok(appJs.text.includes("reporter: 'Reporter'"));
+    assert.ok(appJs.text.includes('${AGENT_OPTIONS.map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}'));
+    assert.equal(appJs.text.includes("['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map"), false);
     assert.ok(appJs.text.includes('<option value=${name}>${agentLabel(name)}</option>'));
     assert.ok(appJs.text.includes('aria-label="질의 대상 에이전트"'));
     assert.ok(appJs.text.includes('aria-label="회의실 컨텍스트 기반 자문 질문"'));
@@ -634,6 +653,11 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('암호화폐: reduced(55)'));
     assert.ok(detail.payload.minutes[4].content.includes('미국: full(72)'));
     assert.ok(detail.payload.minutes[4].content.includes('halt 상태(32점)'));
+    assert.equal(_testOnly.sessionStatusLabel('raw_status'), '상태 미상');
+    assert.equal(_testOnly.agendaLabel('decision:raw_component'), '안건');
+    assert.equal(_testOnly.componentLabel('raw-component'), '컴포넌트 미상');
+    assert.equal(_testOnly.legacyMetricLabel('raw_metric_key'), '지표');
+    assert.equal(_testOnly.agentDisplayLabel('raw-agent'), '에이전트 미상');
     assert.ok(detail.payload.minutes[4].content.includes('암호화폐 시장은 reduced(55점)'));
     assert.ok(detail.payload.minutes[4].content.includes('미국 시장은 현재 halt 상태'));
     assert.ok(detail.payload.minutes[4].content.includes('세그먼트 모두 halt 상태'));
@@ -765,6 +789,15 @@ async function main() {
     assert.equal(invalidJson.status, 400);
     assert.equal(invalidJson.payload.message, '요청 형식이 올바르지 않습니다.');
 
+    const invalidAgent = await request(baseUrl, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'unknown-agent', question: '테스트' }),
+    });
+    assert.equal(invalidAgent.status, 400);
+    assert.equal(invalidAgent.payload.error, 'invalid_agent');
+    assert.equal(invalidAgent.payload.message, '지원하지 않는 에이전트입니다. 목록에서 에이전트를 선택하세요.');
+
     const ask1 = await request(baseUrl, '/api/agents/ask', {
       method: 'POST',
       headers: jsonHeaders(),
@@ -782,11 +815,51 @@ async function main() {
     });
     assert.equal(ask1.status, 200);
     assert.equal(ask2.status, 200);
+    assert.ok(ask1.payload.text.includes('회의 데이터 요약'));
+    assert.equal(ask1.payload.text.includes('회의 회의 데이터 요약'), false);
+    assert.ok(ask1.payload.text.includes('국내와 미국은'));
+    assert.ok(ask1.payload.text.includes('암호화폐는'));
+    assert.ok(ask1.payload.text.includes('게이트가 halt 상태'));
+    assert.ok(ask1.payload.text.includes('게이트가 reduced 상태'));
+    assert.equal(ask1.payload.text.includes('plan-note'), false);
+    assert.equal(ask1.payload.text.includes('domestic'), false);
+    assert.equal(ask1.payload.text.includes('overseas'), false);
+    assert.equal(ask1.payload.text.includes('crypto'), false);
+    assert.equal(ask1.payload.text.includes('국내과'), false);
+    assert.equal(ask1.payload.text.includes('미국는'), false);
+    assert.equal(ask1.payload.text.includes('정지 상태'), false);
+    assert.equal(ask1.payload.text.includes('감소한 상태'), false);
+    assert.equal(ask1.payload.text.includes('감소한 상태로'), false);
     assert.ok(ask2.payload.text.includes('[Aria] LLM 비활성 경로입니다.'));
     assert.equal(ask2.payload.text.includes('noLLM route'), false);
     assert.equal(ask3.status, 429);
+    assert.equal(ask3.payload.message, '분당 질의 한도에 도달했습니다. 잠시 후 다시 시도하세요.');
   } finally {
     await closeServer(started.server);
+  }
+
+  const expandedNoLlmStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: (agent) => ({
+      primary: `investment.${agent}`,
+      selectorKey: `investment.${agent}`,
+      fallbacks: [],
+      noLLM: true,
+    }),
+  });
+  const expandedNoLlmBase = `http://127.0.0.1:${expandedNoLlmStarted.server.address().port}`;
+  try {
+    const noLlmAsk = await request(expandedNoLlmBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'hephaestos', question: '체결 관점 요약' }),
+    });
+    assert.equal(noLlmAsk.status, 200);
+    assert.ok(noLlmAsk.payload.text.includes('[Hephaestos] LLM 비활성 경로입니다.'));
+    assert.equal(noLlmAsk.payload.text.includes('[hephaestos]'), false);
+    assert.equal(noLlmAsk.payload.text.includes('noLLM route'), false);
+  } finally {
+    await closeServer(expandedNoLlmStarted.server);
   }
 
   const askFailureStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
