@@ -1603,6 +1603,8 @@ async function main() {
     assert.equal(pendingAwareAsk.status, 200);
     assert.ok(pendingAwareAsk.payload.text.includes('[Aria] 비용 없는 규칙 기반 자문입니다.'));
     assert.ok(pendingAwareAsk.payload.text.includes('전역 결정 대기 2건'));
+    assert.ok(pendingAwareAsk.payload.text.includes('근거 상세와 활성 서킷 근거'));
+    assert.equal(pendingAwareAsk.payload.text.includes('근거 JSON과 활성 서킷 근거'), false);
     assert.ok(pendingAwareAsk.payload.text.includes('권장 다음 행동:'));
     assert.equal(pendingAwareAsk.payload.text.includes('질문을 확인했습니다'), false);
     assert.equal(pendingAwareAsk.payload.text.includes('noLLM route'), false);

@@ -1154,7 +1154,7 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
       : '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
   }
   return hasBlockingContext
-    ? '먼저 대기 결정의 근거 JSON과 활성 서킷 근거를 확인하고, 신규 적용보다 관찰 지속 여부를 결정하세요.'
+    ? '먼저 대기 결정의 근거 상세와 활성 서킷 근거를 확인하고, 신규 적용보다 관찰 지속 여부를 결정하세요.'
     : '현재는 새 조치보다 다음 회의까지 관찰을 유지하고, 게이트·레짐 변화가 생기면 재질의하세요.';
 }
 
