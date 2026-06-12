@@ -10,7 +10,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { loadInvestmentSkills } from '../shared/skill-registry.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
-import { parseMeetingRoomCliArgs } from './runtime-luna-meeting-room.ts';
+import { parseMeetingRoomCliArgs, summarizeMeetingRoomResult } from './runtime-luna-meeting-room.ts';
 import { buildMeetingPlanNote, buildMarketSegments } from '../services/meeting-room/server/adapters/stack-adapter.ts';
 import {
   buildMeetingAgendasForType,
@@ -489,6 +489,9 @@ async function main() {
     assert.equal(Number(applied.session.id) > 0, true);
     assert.equal(applied.telegram.attempted, true);
     assert.equal(applied.telegram.ok, true);
+    const appliedSummary = summarizeMeetingRoomResult(applied);
+    assert.match(appliedSummary, /- telegram: attempted=true ok=true sent=1 pending=\d+/);
+    assert.equal(appliedSummary.includes('pending_master'), false);
     assert.ok(sentTelegramInput);
     assert.ok(sentTelegramInput.message.includes('Luna 회의 완료: 아침 통합 회의'));
     assert.ok(sentTelegramInput.message.includes('마스터 액션 대기:'));

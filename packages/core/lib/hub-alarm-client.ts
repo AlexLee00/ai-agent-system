@@ -881,17 +881,19 @@ function _recordRecentAlertSnapshot({
   alertLevel,
   fromBot,
   payload,
+  eventType,
 }: {
   message: string;
   team: string;
   alertLevel: number;
   fromBot: string;
   payload: unknown;
+  eventType?: string;
 }): void {
   _writeRecentAlertSnapshot({
     from_bot: fromBot,
     team,
-    event_type: _extractEventType(message, payload),
+    event_type: eventType || _extractEventType(message, payload),
     alert_level: alertLevel,
     message,
     status: 'sent',
@@ -996,7 +998,14 @@ export async function postAlarm({
       inlineKeyboard,
     });
     if (inlineResult?.ok) {
-      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
+      _recordRecentAlertSnapshot({
+        message: safeMessage,
+        team: requestedTeam,
+        alertLevel,
+        fromBot: safeFromBot,
+        payload,
+        eventType: normalizedEventTypeInput,
+      });
     }
     return inlineResult;
   }

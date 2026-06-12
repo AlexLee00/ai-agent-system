@@ -58,7 +58,8 @@ export function parseMeetingRoomCliArgs(argv: string[] = process.argv) {
   };
 }
 
-function summarize(result: any) {
+export function summarizeMeetingRoomResult(result: any) {
+  const telegram = result.telegram || {};
   return [
     `Luna Meeting Room ${result.type || 'morning'} 완료`,
     `- dry_run: ${result.dryRun === true}`,
@@ -66,6 +67,7 @@ function summarize(result: any) {
     `- session: ${result.session?.id || 'dry-run'}`,
     `- minutes: ${result.minutes?.length || 0}`,
     `- decisions: ${result.decisions?.length || 0}`,
+    `- telegram: attempted=${telegram.attempted === true} ok=${telegram.ok === true} sent=${telegram.sentCount || 0} pending=${telegram.pendingCount || 0}${telegram.error ? ` error=${telegram.error}` : ''}`,
     `- llm_calls: ${result.llmCalls || 0}`,
     `- skipped_llm_calls: ${result.skippedLlmCalls || 0}`,
     `- markdown: ${result.markdownPath || 'n/a'}`,
@@ -108,7 +110,7 @@ if (isDirectExecution(import.meta.url)) {
     run: () => runRuntimeLunaMeetingRoom(),
     onSuccess: async (result) => {
       if (hasFlag('json')) await writeStdout(`${JSON.stringify(result, null, 2)}\n`);
-      else await writeStdout(`${summarize(result)}\n`);
+      else await writeStdout(`${summarizeMeetingRoomResult(result)}\n`);
     },
     errorPrefix: '❌ luna-meeting-room 실패:',
   });
@@ -117,4 +119,5 @@ if (isDirectExecution(import.meta.url)) {
 export default {
   parseMeetingRoomCliArgs,
   runRuntimeLunaMeetingRoom,
+  summarizeMeetingRoomResult,
 };
