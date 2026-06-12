@@ -2079,6 +2079,18 @@ async function main() {
     assert.ok(startButtonAsk.payload.text.includes('미국 회의 대상(장중)'));
     assert.ok(startButtonAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
     assert.equal(startButtonAsk.payload.text.includes('전역 결정 대기함 16건을 먼저 처리'), false);
+    const disabledDomesticAsk = await request(startButtonBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '국내 장후 회의가 왜 비활성이지?' }),
+    });
+    assert.equal(disabledDomesticAsk.status, 200);
+    assert.equal(disabledDomesticAsk.payload.provider, 'rule_based');
+    assert.equal(startButtonHubCalled, false);
+    assert.ok(disabledDomesticAsk.payload.text.includes('비활성 표시 해석: 괄호 사유가 붙은 회의 타입은 현재 직접 시작할 수 없고'));
+    assert.ok(disabledDomesticAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
+    assert.equal(disabledDomesticAsk.payload.text.includes('G0 게이트'), false);
+    assert.equal(disabledDomesticAsk.payload.text.includes('halt(33)'), false);
   } finally {
     await closeServer(startButtonStarted.server);
   }

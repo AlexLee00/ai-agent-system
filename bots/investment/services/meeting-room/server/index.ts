@@ -1275,6 +1275,8 @@ function inferAskIntent(question) {
   if (hasScheduleCue && hasRunCue) return 'schedule';
   const hasStartButtonCue = /(회의\s*시작|시작\s*버튼)/u.test(text) && /(활성|비활성|눌러|누르|가능|돼|되|안전)/u.test(text);
   if (hasStartButtonCue) return 'schedule';
+  const hasDisabledMeetingTypeCue = /(국내\s*장후|장후\s*회의|회의\s*타입|회의\s*종류)/u.test(text) && /(비활성|disabled|왜|안\s*돼|안\s*되|선택\s*불가)/u.test(text);
+  if (hasDisabledMeetingTypeCue) return 'schedule';
   const hasMorningMeetingCue = /(아침\s*통합|morning)/u.test(text);
   const hasManualAgendaCue = /(수동|시작|실행|안건|포함|어떤|뭐가|무엇이)/u.test(text);
   if (hasMorningMeetingCue && hasManualAgendaCue) return 'schedule';
@@ -1447,6 +1449,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '운영 기준: 정례 05:00 주말 morning은 국내·미국을 주말로 스킵하고, 수동 시작은 현재 화면의 세그먼트 상태를 기준으로 기록합니다.',
       '수동 시작 범위: 현재 회의 대상 세그먼트가 안건으로 포함되고, 비활성 세그먼트는 스킵으로 기록됩니다.',
+      '비활성 표시 해석: 괄호 사유가 붙은 회의 타입은 현재 직접 시작할 수 없고, 해당 시장은 스킵 또는 관찰 상태로 기록됩니다.',
       '수동 시작 의미: 회의록과 ADR을 새로 남기는 동작이며 거래·파라미터는 변경하지 않습니다.',
       options.scheduleStatus || buildScheduleExecutionStatus([], options.now || new Date()),
       `현재 수동 실행 화면 기준: ${segmentText}.`,
