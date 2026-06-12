@@ -7,7 +7,7 @@
 ## A. 화면① 일일 회의실
 | ID | 시나리오 | 절차 | 기대 결과 | 커버 |
 |---|---|---|---|---|
-| W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크와 상태/새창 aria | [자동] header a11y+[수동] ✅2026-06-12 브라우저 |
+| W-01 | 초기 로드 | 접속 | 3컬럼(목록·타임라인·결정 대기함)+상단 배지(ADVISORY/SHADOW)+:7787 링크와 상태/새창 aria+화면 전환 tablist/tabpanel+방향키/Home/End 전환 | [자동] header/tab a11y+[수동] ✅2026-06-12 브라우저 |
 | W-02 | U1 캐치업 | 회의 선택 | 상단 3줄: 확정 n·보류 m·대기 k·마스터 액션 필요, 동적 갱신은 live region으로 전달 | [자동] catchup API+live region+[수동] ✅2026-06-12 표시 |
 | W-03 | 타임라인 role 구분 | 회의 선택 | 시스템/데이터/분석/그릴/결정/ADR 색 보더·범례·seq 순서·minute별 aria-label | [자동] ADR 클래스+timeline a11y+role legend+[수동] ✅브라우저 |
 | W-04 | 회의 시작(정상) | 타입 선택→시작 | 진행 상태 폴링→완료 후 실제 세션 타임라인으로 전환, 시작 컨트롤/목록 선택 상태 aria 제공 | [자동] start API+completed run 전환+a11y |
@@ -17,7 +17,7 @@
 | W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label | [자동]+[수동] ✅fixture 브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] 교차 |
-| W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분) | [자동] dueState+[수동] ✅2026-06-12 |
+| W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label | [자동] dueState+a11y+[수동] ✅2026-06-12 |
 | W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | JSON `<pre>` 표시(이건 의도 — 머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+[수동] ✅390px 펼침 |
 
 ## B. 렌더 품질 (FIX2~4 회귀 — 🔁 매 회의 후 1회 점검)
@@ -32,7 +32,7 @@
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
-| W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(advisory 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region) | [자동] 안전 안내/라벨/입력 안내/live region+[수동] ✅UI 기본 상태·실호출 보류 |
+| W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(advisory 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta+[수동] ✅UI 기본 상태·실호출 보류 |
 | W-31 | 비용 가드 | 분당 2회 초과→429 안내(분 경과 후 재시도 가능) | [자동] API |
 | W-32 | 응답 마크다운 | LLM 응답의 마크다운도 W-20과 동일 렌더 | [자동] fixture+[수동] 실호출 보류 |
 
@@ -43,7 +43,7 @@
 | W-41 | 서버 다운 내성 | 서버 중지 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복 | [자동] 복구시 에러 clear+[수동] fixture |
 | W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님) | [자동] smoke |
 | W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200 | [자동] |
-| W-44 | 모바일 반응형 | 창 폭 축소 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기 | [수동] ✅390px 확인 |
+| W-44 | 모바일 반응형/키보드 | 창 폭 축소·Tab 이동 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기·명시적 `focus-visible` 링 | [자동] focus ring+[수동] ✅390px 확인 |
 
 ## E. 정례 연동 (🔁 자동 회의 사이클 — 토 05:00 첫 사이클부터)
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -90,6 +90,13 @@
 - **2026-06-12 루프 34**: W-20 마크다운 표 모바일 내성 점검 → 현재 실회의에는 표가 없어 overflow 재현은 없었지만, 표 CSS가 `overflow:hidden` 중심이고 cell 단위 긴 토큰 래핑 방어가 없어 향후 긴 심볼/URL/JSON 키가 들어오면 좁은 폭에서 레이아웃을 밀 수 있음. `.markdown-table`에 `max-width:100%; table-layout:fixed`, cell에 `overflow-wrap:anywhere; word-break:break-word`를 추가. 스모크 `markdownTableMobileWrapGuard` 추가.
 - **2026-06-12 루프 35**: W-01 초기 로드 헤더 접근성 점검 → 상단 MR-B/advisory/shadow/localhost pill은 의미 있는 상태지만 role/aria가 없고, TeamJay Dashboard 링크는 새 창으로 열리는데 목적/새창 안내가 없음. topline을 `role=status aria-label=회의실 실행 상태`로 묶고 pill별 aria-label, Dashboard 링크 aria/title을 추가. 브라우저에서 `TeamJay Dashboard 7787 새 창으로 열기` 및 로컬 바인딩 aria 반영 확인. 스모크 `headerStatusAndDashboardA11y` 추가.
 - **2026-06-12 루프 36**: W-03 타임라인 역할 구분 점검 → minute별 border-left 색상과 aria-label은 존재하지만 색상 의미를 설명하는 범례가 없어 시각적 role 구분을 즉시 해석하기 어려움. 타임라인 상단에 `타임라인 역할 색상 범례` list를 추가하고 시스템/데이터/분석/그릴/결정/ADR dot+label을 표시. 브라우저에서 role legend와 기존 minute별 보더/aria-label 유지 확인. 스모크 `timelineRoleLegend` 추가.
+- **2026-06-12 루프 37**: W-11 due 배지 접근성 점검 → 실제 브라우저에서 `due soon` 배지는 보이지만 `title`/`aria-label`이 없어 임박·경과·확인 필요 의미가 색상과 짧은 텍스트에만 의존함을 확인. `dueState`가 `기한 임박/경과/정상/확인 필요` 설명을 반환하게 하고 배지에 `title`과 `aria-label`을 부여. `unknown` 상태 CSS와 스모크 `dueBadgeA11y` 추가.
+- **2026-06-12 루프 38**: W-44 키보드 내비게이션 점검 → 현재 전역 스타일에는 명시적 `focus-visible` 계약이 없어 브라우저/OS 기본 포커스 표시에 의존함. 버튼·입력·select·textarea·링크·summary에 3px outline과 보조 box-shadow를 추가해 키보드 사용자가 현재 위치를 안정적으로 식별하도록 보강. 스모크 `keyboardFocusVisible` 추가.
+- **2026-06-12 루프 39**: W-30 에이전트 질의 진행 상태 점검 → 버튼은 `질의 중`으로 바뀌지만 응답 영역에 `aria-busy`가 없어 비동기 Hub/LLM 호출 대기 상태 전달이 약하고, 이전 응답이 남아 있으면 새 질의 진행 상태가 모호할 수 있음. 응답 live region에 `aria-busy=${busy}`를 추가하고 busy 중에는 `질의 중 · 에이전트 응답을 기다리는 중입니다.` 문구를 표시하도록 보강. 스모크 `askBusyStatus` 추가.
+- **2026-06-12 루프 40**: W-30 에이전트 응답 메타 표시 점검 → 응답 카드 메타가 `ok=true` 같은 내부 필드를 그대로 노출해 운영자가 성공/실패 상태를 빠르게 읽기 어렵고 한국어 UI 흐름과도 맞지 않음. `에이전트 luna · 제공자 fixture · 상태 성공/실패/확인 필요` 형태로 표시를 바꾸고 원시 `ok=` 노출을 제거. 스모크 `askResponseMetadataLabels` 추가.
+- **2026-06-12 루프 41**: W-01/W-30 화면 전환 semantics 점검 → 실제 브라우저에서 `일일 회의실/에이전트 질의`는 탭처럼 동작하지만 `tablist/tab/tabpanel` role, `aria-selected`, `aria-controls`가 없어 보조기술에는 일반 버튼 2개로만 전달됨. 기존 `aria-pressed`는 유지하면서 `role=tablist`, 각 버튼 `role=tab`, 활성 패널 `role=tabpanel aria-labelledby`를 추가. 스모크 `tablistSemantics` 추가.
+- **2026-06-12 루프 42**: W-01 화면 전환 ARIA 구조 재점검 → 루프 41의 `tablist`가 Dashboard 링크까지 포함해 탭 목록 내부에 비-tab 링크가 들어가는 구조적 문제가 확인됨. 시각 행은 유지하되 `.tab-switcher`만 `role=tablist`로 분리하고 Dashboard 링크는 형제 요소로 이동. 브라우저에서 tablist 직계/하위 탭 2개와 Dashboard 링크 분리 확인.
+- **2026-06-12 루프 43**: W-01 화면 전환 키보드 조작 점검 → `tablist` semantics는 있으나 방향키/Home/End 처리와 roving `tabIndex`가 없어 키보드 사용자는 두 탭을 일반 버튼처럼 순차 탐색해야 함. 선택 탭만 `tabIndex=0`, 비선택 탭은 `-1`로 두고 ArrowLeft/ArrowRight/ArrowUp/ArrowDown/Home/End로 탭과 패널을 전환하도록 보강. 스모크 `tabKeyboardNavigation` 추가.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

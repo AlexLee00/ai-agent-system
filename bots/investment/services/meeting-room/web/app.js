@@ -71,13 +71,13 @@ function minuteClassName(minute = {}) {
 }
 
 function dueState(value, now = new Date()) {
-  if (!value) return { className: 'due unknown', label: 'due n/a' };
+  if (!value) return { className: 'due unknown', label: 'due n/a', title: '기한 확인 필요: due 값 없음' };
   const due = new Date(value);
-  if (Number.isNaN(due.getTime())) return { className: 'due unknown', label: `due ${String(value)}` };
+  if (Number.isNaN(due.getTime())) return { className: 'due unknown', label: `due ${String(value)}`, title: `기한 확인 필요: ${String(value)}` };
   const deltaMs = due.getTime() - now.getTime();
-  if (deltaMs < 0) return { className: 'due overdue', label: `경과 ${formatTime(value)}` };
-  if (deltaMs <= 24 * 60 * 60 * 1000) return { className: 'due soon', label: `임박 ${formatTime(value)}` };
-  return { className: 'due normal', label: `due ${formatTime(value)}` };
+  if (deltaMs < 0) return { className: 'due overdue', label: `경과 ${formatTime(value)}`, title: `기한 경과: ${formatTime(value)}` };
+  if (deltaMs <= 24 * 60 * 60 * 1000) return { className: 'due soon', label: `임박 ${formatTime(value)}`, title: `기한 임박: ${formatTime(value)}` };
+  return { className: 'due normal', label: `due ${formatTime(value)}`, title: `기한 정상: ${formatTime(value)}` };
 }
 
 function decisionGradeLabel(value) {
@@ -94,6 +94,12 @@ function decisionStatusLabel(value) {
     confirmed: '확정됨',
     deferred: '보류됨',
   }[value] || '상태 미분류';
+}
+
+function answerStatusLabel(ok) {
+  if (ok === true) return '성공';
+  if (ok === false) return '실패';
+  return '확인 필요';
 }
 
 function renderInlineMarkdown(text, keyPrefix = 'inline') {
@@ -234,6 +240,25 @@ function SegmentStatus({ segments }) {
 }
 
 function Header({ token, setToken, tab, setTab }) {
+  function selectTab(nextTab) {
+    setTab(nextTab);
+    requestAnimationFrame(() => {
+      document.getElementById(nextTab === 'daily' ? 'meeting-tab-daily' : 'meeting-tab-ask')?.focus();
+    });
+  }
+  function handleTabKeyDown(event) {
+    const nextTab = {
+      ArrowLeft: tab === 'daily' ? 'ask' : 'daily',
+      ArrowUp: tab === 'daily' ? 'ask' : 'daily',
+      ArrowRight: tab === 'daily' ? 'ask' : 'daily',
+      ArrowDown: tab === 'daily' ? 'ask' : 'daily',
+      Home: 'daily',
+      End: 'ask',
+    }[event.key];
+    if (!nextTab) return;
+    event.preventDefault();
+    selectTab(nextTab);
+  }
   return html`
     <div className="hero">
       <div>
@@ -259,8 +284,30 @@ function Header({ token, setToken, tab, setTab }) {
       </div>
     </div>
     <div className="tabs">
-      <button className=${tab === 'daily' ? 'active' : ''} aria-pressed=${tab === 'daily'} onClick=${() => setTab('daily')}>일일 회의실</button>
-      <button className=${tab === 'ask' ? 'active' : ''} aria-pressed=${tab === 'ask'} onClick=${() => setTab('ask')}>에이전트 질의</button>
+      <div className="tab-switcher" role="tablist" aria-label="회의실 화면 전환">
+        <button
+          id="meeting-tab-daily"
+          role="tab"
+          className=${tab === 'daily' ? 'active' : ''}
+          aria-selected=${tab === 'daily'}
+          aria-pressed=${tab === 'daily'}
+          aria-controls="meeting-panel-daily"
+          tabIndex=${tab === 'daily' ? 0 : -1}
+          onClick=${() => selectTab('daily')}
+          onKeyDown=${handleTabKeyDown}
+        >일일 회의실</button>
+        <button
+          id="meeting-tab-ask"
+          role="tab"
+          className=${tab === 'ask' ? 'active' : ''}
+          aria-selected=${tab === 'ask'}
+          aria-pressed=${tab === 'ask'}
+          aria-controls="meeting-panel-ask"
+          tabIndex=${tab === 'ask' ? 0 : -1}
+          onClick=${() => selectTab('ask')}
+          onKeyDown=${handleTabKeyDown}
+        >에이전트 질의</button>
+      </div>
       <a
         className="pill"
         href="http://127.0.0.1:7787"
@@ -434,7 +481,7 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
       <div className="meta decision-state">
         <span>${decisionGradeLabel(decision.grade)} (${decision.grade})</span>
         <span>${decisionStatusLabel(decision.status)} (${decision.status})</span>
-        <span className=${due.className}>${due.label}</span>
+        <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
       <${MarkdownLite} text=${decision.decision} />
       <details><summary aria-label=${`결정 #${decision.id} 근거 JSON 보기`}>근거 JSON 보기</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
@@ -601,9 +648,9 @@ function AskRoom({ token }) {
       <div className="card">
         <h2>응답</h2>
         <div className="card-body">
-          <div className="answer" role="status" aria-live="polite" aria-label="에이전트 질의 응답">
-            ${answer ? html`
-              <div className="meta">${answer.agent} · ${answer.provider || answer.route?.provider || 'n/a'} · ok=${String(answer.ok)}</div>
+          <div className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답">
+            ${busy ? html`<div className="meta">질의 중 · 에이전트 응답을 기다리는 중입니다.</div>` : answer ? html`
+              <div className="meta">에이전트 ${answer.agent || agent} · 제공자 ${answer.provider || answer.route?.provider || 'n/a'} · 상태 ${answerStatusLabel(answer.ok)}</div>
               <${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} />
             ` : html`<div className="meta">아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.</div>`}
           </div>
@@ -619,7 +666,13 @@ function App() {
   return html`
     <main className="shell">
       <${Header} token=${token} setToken=${setToken} tab=${tab} setTab=${setTab} />
-      ${tab === 'daily' ? html`<${DailyRoom} token=${token} />` : html`<${AskRoom} token=${token} />`}
+      <section
+        id=${tab === 'daily' ? 'meeting-panel-daily' : 'meeting-panel-ask'}
+        role="tabpanel"
+        aria-labelledby=${tab === 'daily' ? 'meeting-tab-daily' : 'meeting-tab-ask'}
+      >
+        ${tab === 'daily' ? html`<${DailyRoom} token=${token} />` : html`<${AskRoom} token=${token} />`}
+      </section>
     </main>
   `;
 }

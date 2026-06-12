@@ -260,6 +260,8 @@ async function main() {
     const html = await request(baseUrl, '/');
     assert.equal(html.status, 200);
     assert.ok(html.text.includes('Luna Meeting Room'));
+    assert.ok(html.text.includes(':focus-visible'));
+    assert.ok(html.text.includes('outline-offset: 3px'));
     assert.ok(html.text.includes('.due.overdue'));
     assert.ok(html.text.includes('.minute.adr'));
     assert.ok(html.text.includes('.role-legend'));
@@ -283,6 +285,25 @@ async function main() {
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
     assert.ok(appJs.text.includes('aria-label="회의실 접근 토큰"'));
+    assert.ok(appJs.text.includes('className="tabs"'));
+    assert.ok(appJs.text.includes('className="tab-switcher" role="tablist" aria-label="회의실 화면 전환"'));
+    assert.ok(appJs.text.includes('id="meeting-tab-daily"'));
+    assert.ok(appJs.text.includes('id="meeting-tab-ask"'));
+    assert.ok(appJs.text.includes('role="tab"'));
+    assert.ok(appJs.text.includes("aria-selected=${tab === 'daily'}"));
+    assert.ok(appJs.text.includes("aria-selected=${tab === 'ask'}"));
+    assert.ok(appJs.text.includes('aria-controls="meeting-panel-daily"'));
+    assert.ok(appJs.text.includes('aria-controls="meeting-panel-ask"'));
+    assert.ok(appJs.text.includes('role="tabpanel"'));
+    assert.ok(appJs.text.includes("aria-labelledby=${tab === 'daily' ? 'meeting-tab-daily' : 'meeting-tab-ask'}"));
+    assert.ok(appJs.text.includes('function handleTabKeyDown'));
+    assert.ok(appJs.text.includes('ArrowRight'));
+    assert.ok(appJs.text.includes('ArrowLeft'));
+    assert.ok(appJs.text.includes("Home: 'daily'"));
+    assert.ok(appJs.text.includes("End: 'ask'"));
+    assert.ok(appJs.text.includes("tabIndex=${tab === 'daily' ? 0 : -1}"));
+    assert.ok(appJs.text.includes("tabIndex=${tab === 'ask' ? 0 : -1}"));
+    assert.ok(html.text.includes('.tab-switcher'));
     assert.ok(appJs.text.includes("aria-pressed=${tab === 'daily'}"));
     assert.ok(appJs.text.includes("aria-pressed=${tab === 'ask'}"));
     assert.ok(appJs.text.includes('aria-label=${`회의 #${meeting.id} ${meeting.type} ${meeting.status} 선택`}'));
@@ -314,6 +335,10 @@ async function main() {
     assert.ok(appJs.text.includes("payload.run.status === 'completed'"));
     assert.ok(appJs.text.includes('await refreshSelected(payload.run.sessionId)'));
     assert.ok(appJs.text.includes('function dueState'));
+    assert.ok(appJs.text.includes('기한 임박:'));
+    assert.ok(appJs.text.includes('기한 경과:'));
+    assert.ok(appJs.text.includes('기한 확인 필요:'));
+    assert.ok(appJs.text.includes('title=${due.title} aria-label=${due.title}'));
     assert.ok(appJs.text.includes('function decisionGradeLabel'));
     assert.ok(appJs.text.includes('function decisionStatusLabel'));
     assert.ok(appJs.text.includes('function minuteClassName'));
@@ -346,10 +371,16 @@ async function main() {
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 advisory 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
-    assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-label="에이전트 질의 응답"'));
+    assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답"'));
+    assert.ok(appJs.text.includes('질의 중 · 에이전트 응답을 기다리는 중입니다.'));
+    assert.ok(appJs.text.includes('function answerStatusLabel'));
+    assert.ok(appJs.text.includes('에이전트 ${answer.agent || agent} · 제공자 ${answer.provider || answer.route?.provider ||'));
+    assert.ok(appJs.text.includes('상태 ${answerStatusLabel(answer.ok)}'));
+    assert.equal(appJs.text.includes('ok=${String(answer.ok)}'), false);
     assert.ok(html.text.includes('.ask-helper'));
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
+    assert.ok(html.text.includes('.due.unknown'));
     assert.ok(appJs.text.includes("run.status === 'running'"));
     assert.ok(appJs.text.includes('hasOpen ? 3000 : 30000'));
     assert.ok(appJs.text.includes("' adr'"));
@@ -496,6 +527,7 @@ async function main() {
     scenarios: {
       apiListDetailCatchup: true,
       headerStatusAndDashboardA11y: true,
+      keyboardFocusVisible: true,
       pendingDueOrder: true,
       startDuplicateGuard: true,
       completedRunSwitchesToSessionDetail: true,
@@ -509,9 +541,13 @@ async function main() {
       askFormKoreanLabels: true,
       askInputGuidance: true,
       askAnswerLiveRegion: true,
+      askBusyStatus: true,
+      askResponseMetadataLabels: true,
       pollingCadenceConfigured: true,
       tokenAuth: true,
       headerTokenA11y: true,
+      tablistSemantics: true,
+      tabKeyboardNavigation: true,
       tabPressedState: true,
       startMeetingA11y: true,
       meetingListPressedState: true,
@@ -538,6 +574,7 @@ async function main() {
       decisionRegionA11y: true,
       serverRecoveryClearsError: true,
       dueBadges: true,
+      dueBadgeA11y: true,
       adrRolePresentation: true,
       repetitiveLlmMinuteCompacted: true,
       canonicalStatusTokensPreserved: true,

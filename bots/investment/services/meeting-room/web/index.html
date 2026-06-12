@@ -45,6 +45,16 @@
     button.secondary { background: rgba(23, 33, 26, 0.08); color: var(--ink); box-shadow: none; }
     button.warn { background: var(--amber); }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible,
+    a:focus-visible,
+    summary:focus-visible {
+      outline: 3px solid rgba(54, 95, 122, 0.92);
+      outline-offset: 3px;
+      box-shadow: 0 0 0 6px rgba(54, 95, 122, 0.16);
+    }
     input, select, textarea {
       width: 100%;
       border: 1px solid var(--line);
@@ -133,7 +143,8 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
-    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .tab-switcher { display: flex; gap: 8px; flex-wrap: wrap; }
     .tabs button { background: rgba(255,255,255,0.48); color: var(--ink); box-shadow: none; border: 1px solid var(--line); }
     .tabs button.active { background: var(--ink); color: #fffaf0; }
     .grid {
@@ -242,6 +253,11 @@
       color: #7c4f00;
       border-color: rgba(196, 127, 20, 0.35);
       background: rgba(255, 199, 92, 0.2);
+    }
+    .due.unknown {
+      color: var(--red);
+      border-color: rgba(156, 66, 56, 0.26);
+      background: rgba(156, 66, 56, 0.1);
     }
     .due.overdue {
       color: #8f1d1d;
