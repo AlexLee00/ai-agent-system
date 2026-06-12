@@ -1133,6 +1133,7 @@ async function main() {
       '결정 보류 처리 · 경로=텔레그램 · 메모=need more data',
     );
     assert.equal(_testOnly.normalizeLegacyMinuteContent('MR-B confirm: no note'), '결정 확정 처리 · 경로=웹 · 메모 없음');
+    assert.equal(_testOnly.normalizeLegacyMinuteContent('주말 회의는 海外와 crypto 시장만 확인합니다.'), '주말 회의는 미국과 암호화폐 시장만 확인합니다.');
     const premarketTranslatedStatus = _testOnly.normalizeLegacyMinuteContent(
       '미국 국내 시장은 현재 halt 상태이며, 33개의 이벤트가 진행 중입니다.\n미국 시장은 현재 진행이 감소된 상태이며, 47개의 이벤트가 진행 중입니다.',
     );
@@ -1726,6 +1727,33 @@ async function main() {
     await closeServer(expandedNoLlmStarted.server);
   }
 
+  let scheduleHubCalled = false;
+  const scheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      scheduleHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '주말 회의는 海外와 암호화폐 시장만 확인합니다.' };
+    },
+  });
+  const scheduleBase = `http://127.0.0.1:${scheduleStarted.server.address().port}`;
+  try {
+    const scheduleAsk = await request(scheduleBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '주말 회의는 어떤 시장만 확인해?' }),
+    });
+    assert.equal(scheduleAsk.status, 200);
+    assert.equal(scheduleAsk.payload.provider, 'rule_based');
+    assert.equal(scheduleAsk.payload.skipped, true);
+    assert.equal(scheduleHubCalled, false);
+    assert.ok(scheduleAsk.payload.text.includes('주말 morning 경량판은 국내·미국을 주말로 스킵'));
+    assert.ok(scheduleAsk.payload.text.includes('암호화폐 24시간 운영 안건'));
+    assert.equal(scheduleAsk.payload.text.includes('海外'), false);
+  } finally {
+    await closeServer(scheduleStarted.server);
+  }
+
   const pendingAwareStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
     meetingStore: createMemoryStore(),
@@ -1985,6 +2013,7 @@ async function main() {
       regeneratedMarkdownEmptyFallbackLocalized: true,
       regeneratedMarkdownMissingFieldsLocalized: true,
       askNoLlmRouteLocalized: true,
+      askWeekendScheduleRuleBased: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,

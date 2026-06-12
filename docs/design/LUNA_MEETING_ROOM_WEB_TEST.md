@@ -270,6 +270,7 @@
 - **2026-06-12 루프 214**: W-53 regenerate markdown 섹션 라벨 재점검 → 제목·metadata·plan-note는 한국어화됐지만 본문 섹션 제목이 `## Plan Note`, `## Minutes`, `## ADR`로 남아 웹 타임라인의 한국어 역할/안건 라벨과 불일치했다. regenerate markdown 섹션을 `회의 데이터 요약`, `회의록`, `결정 기록(ADR)`로 보정하고, MR-A/MR-B smoke에 `regeneratedMarkdownSectionLabelsLocalized` 계약을 추가했다.
 - **2026-06-12 루프 215**: W-53 regenerate markdown fallback 재점검 → 실데이터 화면은 raw 타입/metadata 노출 없이 정상이었지만, plan-note가 없는 회의/드라이런 markdown을 렌더하면 `plan-note 없음` 내부 용어가 그대로 노출되고 회의록 0건 섹션이 빈 블록으로 끝났다. fallback을 `회의 데이터 요약 없음`, `회의록 없음`으로 보정하고 MR-A/MR-B smoke에 `regeneratedMarkdownEmptyFallbackLocalized` 계약을 추가했다.
 - **2026-06-12 루프 216**: W-53 regenerate markdown 결측 필드 내성 재점검 → 실제 화면은 정상이나 부분 DB/테스트 fixture처럼 seq·role·speaker·due가 비어 있는 회의록을 markdown으로 렌더하면 `undefined`, `n/a`, `due:`가 사용자 산출물에 노출됐다. 누락 minute는 `회의록/기록/시스템/내용 없음`, 누락 ADR 기한은 `기한 미정`으로 보정하고 MR-A/MR-B smoke에 `regeneratedMarkdownMissingFieldsLocalized` 계약을 추가했다.
+- **2026-06-13 루프 217**: W-52/W-30 실제 주말 질의 재점검 → 00:04 KST라 05:00 주말 morning 정례 전인 것은 정상이었고, 브라우저에서 국내 장후 회의는 `주말` disabled·국내 세그먼트는 `비활성(주말)`로 표시됐다. 다만 에이전트 질의 `주말 회의는 어떤 시장만 확인해?`가 Groq LLM 경로를 타면서 `海外` 혼합 문자와 부정확한 범위 답변을 냈다. `주말/정례/스케줄` 의도는 LLM 호출 없이 규칙 기반으로 고정해 `국내·미국 주말 스킵 + 암호화폐 24시간 운영`을 답하게 하고, `海外` 표시 정규화 및 `askWeekendScheduleRuleBased` smoke 계약을 추가했다.
 - **남은 위험**: 실제 Telegram 앱 버튼/poller 이벤트, 실제 주말 정례 회의, 장시간 운영 후 누적 UX는 정례 사이클에서 계속 검증.
 
 ## 운영 루틴 제안

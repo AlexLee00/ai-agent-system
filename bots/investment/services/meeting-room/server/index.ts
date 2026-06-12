@@ -681,6 +681,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/cost_guard_skipped:\s*max calls\s*(\d+)\s*reached/gi, '비용 가드: 최대 호출 $1회 도달로 발언 생략')
     .replace(/\bmax calls\b/gi, '최대 호출')
     .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
+    .replace(/海外/g, '미국')
     .replace(/해외/g, '미국')
     .replace(/미국\s+국내\s+시장/g, '국내 시장')
     .replace(/미국가/g, '미국이')
@@ -1151,6 +1152,7 @@ function summarizeRuleBasedSegments(planNote = {}) {
 
 function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
+  if (/(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text)) return 'schedule';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
   if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
@@ -1166,6 +1168,7 @@ function orderRuleBasedPriorities(items, intent) {
     circuit: ['circuit', 'globalPending', 'gate', 'regime', 'registryPending', 'strategy', 'segment'],
     strategy: ['strategy', 'regime', 'gate', 'globalPending', 'circuit', 'registryPending', 'segment'],
     decision: ['globalPending', 'registryPending', 'circuit', 'gate', 'regime', 'strategy', 'segment'],
+    schedule: ['segment', 'gate', 'regime', 'globalPending', 'registryPending', 'circuit', 'strategy'],
     general: ['globalPending', 'registryPending', 'circuit', 'gate', 'regime', 'strategy', 'segment'],
   }[intent] || ['globalPending', 'registryPending', 'circuit', 'gate', 'regime', 'strategy', 'segment'];
   const weight = new Map(orderByIntent.map((key, index) => [key, index]));
@@ -1198,6 +1201,9 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
     return hasBlockingContext
       ? '전략 entry 신호는 레짐·게이트·서킷과 함께 확인하고, 충돌하는 신호는 관찰 대상으로만 두세요.'
       : '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
+  }
+  if (intent === 'schedule') {
+    return '주말 morning 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 국내·미국은 주말 스킵으로 기록되는지 보세요.';
   }
   return hasBlockingContext
     ? '먼저 대기 결정의 근거 상세와 활성 서킷 근거를 확인하고, 신규 적용보다 관찰 지속 여부를 결정하세요.'
@@ -1235,6 +1241,16 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
   const gates = summarizeRuleBasedGates(planNote);
   const regimes = summarizeRuleBasedRegimes(planNote);
   const inactiveSegments = summarizeRuleBasedSegments(planNote);
+  if (intent === 'schedule') {
+    const segmentText = inactiveSegments.length ? inactiveSegments.join(' · ') : '비활성 세그먼트 없음';
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '운영 일정: 주말 morning 경량판은 국내·미국을 주말로 스킵하고, 암호화폐 24시간 운영 안건을 중심으로 확인합니다.',
+      `현재 화면 기준: ${segmentText}.`,
+      `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
   const focus = {
     aria: '기술 관점',
     hephaestos: '체결 관점',
@@ -1276,12 +1292,22 @@ async function askAgent(body, deps, limiter) {
   if (!question) throw new HttpError(400, 'question_required', '질문을 입력하세요.');
   checkAskRateLimit(limiter);
 
-  const route = deps.resolveAgentLLMRouteFn(agent, 'any', 'meeting_room');
+  const intent = inferAskIntent(question);
   const planNote = await deps.buildMeetingPlanNoteFn({
     type: 'morning',
     queryFn: deps.queryFn,
   });
   const globalPendingDecisions = await safeListPendingDecisions(deps);
+  if (intent === 'schedule') {
+    return {
+      ok: true,
+      skipped: true,
+      agent,
+      provider: 'rule_based',
+      text: buildRuleBasedAgentAnswer(agent, question, planNote, globalPendingDecisions),
+    };
+  }
+  const route = deps.resolveAgentLLMRouteFn(agent, 'any', 'meeting_room');
   const globalPendingContext = renderPendingDecisionContext(globalPendingDecisions);
   if (route?.noLLM) {
     return {
