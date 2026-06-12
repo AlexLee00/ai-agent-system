@@ -1250,6 +1250,8 @@ function kstDateKeyFromTimestamp(value) {
 function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
   const rows = Array.isArray(meetings) ? meetings : [];
   const { date, minutesOfDay } = kstPartsForMeetingStatus(now);
+  const latestOverall = [...rows]
+    .sort((a = {}, b = {}) => new Date(b.startedAt || b.started_at || 0) - new Date(a.startedAt || a.started_at || 0))[0];
   const morningRows = rows
     .filter((row = {}) => String(row.type || '').toLowerCase() === 'morning')
     .sort((a = {}, b = {}) => new Date(b.startedAt || b.started_at || 0) - new Date(a.startedAt || a.started_at || 0));
@@ -1259,13 +1261,16 @@ function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
   const latestText = latestMorning
     ? `최신 ${meetingTypeLabel('morning')}: #${latestMorning.id} ${formatKstTimestampFromIso(latestMorning.startedAt || latestMorning.started_at)} ${sessionStatusLabel(latestMorning.status)}.`
     : `최신 ${meetingTypeLabel('morning')} 기록은 아직 없습니다.`;
+  const latestOverallText = latestOverall
+    ? `최신 전체 회의: #${latestOverall.id} ${meetingTypeLabel(latestOverall.type)} ${formatKstTimestampFromIso(latestOverall.startedAt || latestOverall.started_at)} ${sessionStatusLabel(latestOverall.status)}.`
+    : '최신 전체 회의 기록은 아직 없습니다.';
   if (todayMorning) {
-    return `${prefix} 오늘 ${meetingTypeLabel('morning')} #${todayMorning.id}가 ${formatKstTimestampFromIso(todayMorning.startedAt || todayMorning.started_at)}에 ${sessionStatusLabel(todayMorning.status)} 상태로 기록됐습니다. ${latestText}`;
+    return `${prefix} 오늘 ${meetingTypeLabel('morning')} #${todayMorning.id}가 ${formatKstTimestampFromIso(todayMorning.startedAt || todayMorning.started_at)}에 ${sessionStatusLabel(todayMorning.status)} 상태로 기록됐습니다. ${latestText} ${latestOverallText}`;
   }
   if (minutesOfDay < 5 * 60) {
-    return `${prefix} 오늘 05:00 KST 전이라 아직 실행 전입니다. ${latestText}`;
+    return `${prefix} 오늘 05:00 KST 전이라 아직 실행 전입니다. ${latestText} ${latestOverallText}`;
   }
-  return `${prefix} 오늘 05:00 KST가 지났지만 오늘 ${meetingTypeLabel('morning')} 기록은 아직 없습니다. 운영 로그를 확인하세요. ${latestText}`;
+  return `${prefix} 오늘 05:00 KST가 지났지만 오늘 ${meetingTypeLabel('morning')} 기록은 아직 없습니다. 운영 로그를 확인하세요. ${latestText} ${latestOverallText}`;
 }
 
 function inferAskIntent(question) {
@@ -1273,6 +1278,9 @@ function inferAskIntent(question) {
   const hasScheduleCue = /(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text);
   const hasRunCue = /(수동|시작|실행|됐|되|가능|언제|스킵|skip)/u.test(text);
   if (hasScheduleCue && hasRunCue) return 'schedule';
+  const hasMeetingFreshnessCue = /(최신|최근|마지막|어제|오늘|새\s*회의|새로운\s*회의)/u.test(text)
+    && /(회의|정례|목록|왜|아직|실행|생겼|안\s*생|없)/u.test(text);
+  if (hasMeetingFreshnessCue) return 'schedule';
   const hasStartButtonCue = /(회의\s*시작|시작\s*버튼)/u.test(text) && /(활성|비활성|눌러|누르|가능|돼|되|안전)/u.test(text);
   if (hasStartButtonCue) return 'schedule';
   const hasMeetingAvailabilityCue = /(회의\s*대상|회의\s*타입|회의\s*종류|선택\s*가능|선택\s*불가|활성|비활성)/u.test(text)

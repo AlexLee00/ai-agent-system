@@ -2045,6 +2045,50 @@ async function main() {
     await closeServer(meetingTargetScheduleStarted.server);
   }
 
+  let meetingFreshnessHubCalled = false;
+  const meetingFreshnessStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: {
+      ...store,
+      listMeetings: async () => [
+        { id: 143, type: 'us_premarket', status: 'closed', startedAt: '2026-06-12T13:00:03.000Z', summary: '미장 전 회의 완료' },
+        { id: 119, type: 'morning', status: 'closed', startedAt: '2026-06-12T11:15:44.000Z', summary: '아침 통합 회의 완료' },
+      ],
+    },
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# meeting freshness fixture',
+      segments: [
+        { market: 'domestic', active: false, skipped: true, reason: 'weekend' },
+        { market: 'overseas', active: true, skipped: false, reason: 'kis_market_open' },
+        { market: 'crypto', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
+    }),
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      meetingFreshnessHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '미장 전 회의 분석만 확인하세요.' };
+    },
+  });
+  const meetingFreshnessBase = `http://127.0.0.1:${meetingFreshnessStarted.server.address().port}`;
+  try {
+    const meetingFreshnessAsk = await request(meetingFreshnessBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '최신 회의가 왜 어제 미장 전 회의야?' }),
+    });
+    assert.equal(meetingFreshnessAsk.status, 200);
+    assert.equal(meetingFreshnessAsk.payload.provider, 'rule_based');
+    assert.equal(meetingFreshnessHubCalled, false);
+    assert.ok(meetingFreshnessAsk.payload.text.includes('정례 실행 상태:'));
+    assert.ok(meetingFreshnessAsk.payload.text.includes('최신 아침 통합 회의: #119'));
+    assert.ok(meetingFreshnessAsk.payload.text.includes('최신 전체 회의: #143 미장 전 회의'));
+    assert.ok(meetingFreshnessAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
+    assert.equal(meetingFreshnessAsk.payload.text.includes('운영 총괄 관점 우선 확인:'), false);
+  } finally {
+    await closeServer(meetingFreshnessStarted.server);
+  }
+
   let morningManualHubCalled = false;
   const morningManualStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
