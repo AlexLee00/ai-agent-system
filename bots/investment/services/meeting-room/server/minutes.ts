@@ -72,6 +72,24 @@ function decisionStatusLabel(value: any) {
   }[String(value || '')] || String(value || '상태 미정');
 }
 
+function meetingTypeLabel(type: any) {
+  return {
+    morning: '아침 통합 회의',
+    domestic_debrief: '국내 장후 회의',
+    us_premarket: '미장 전 회의',
+    weekly: '주간 회의',
+    adhoc: '임시 회의',
+    ad_hoc: '임시 회의',
+  }[String(type || '').toLowerCase()] || '회의';
+}
+
+function normalizeSessionSummary(summary: any, type: any) {
+  const label = meetingTypeLabel(type);
+  return String(summary || '')
+    .replace(/^(morning|domestic_debrief|us_premarket|weekly|adhoc|ad_hoc)\s+회의\s+완료:/i, `${label} 완료:`)
+    .replace(/^회의\s+완료:/, `${label} 완료:`);
+}
+
 function segmentSummaryForMarkdown(segments: any[] = []) {
   const rows = Array.isArray(segments) ? segments : [];
   if (rows.length === 0) return '세그먼트: 정보 없음';
@@ -96,8 +114,9 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
   const session = result.session || {};
   const decisions = result.decisions || [];
   const minutes = result.minutes || [];
+  const type = session.type || result.type || 'morning';
   const lines = [
-    `# Luna Meeting Room — ${session.type || result.type || 'morning'}`,
+    `# Luna Meeting Room — ${meetingTypeLabel(type)}`,
     '',
     `- session: ${session.id || 'dry-run'}`,
     `- status: ${session.status || 'closed'}`,
@@ -177,7 +196,7 @@ function normalizeSession(row: any = {}) {
     segments: row.segments || [],
     startedAt: toIsoString(row.started_at || row.startedAt),
     closedAt: toIsoString(row.closed_at || row.closedAt),
-    summary: row.summary || '',
+    summary: normalizeSessionSummary(row.summary, row.type),
   };
 }
 

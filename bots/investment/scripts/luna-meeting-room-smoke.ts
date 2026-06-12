@@ -472,6 +472,8 @@ async function main() {
     assert.equal(regenerated.ok, true);
     assert.equal(regenerated.minutes.length, Number(dbMinuteRows?.[0]?.count || 0));
     assert.equal(path.basename(regenerated.markdownPath), `${String(applied.startedAt).slice(0, 10)}-morning.md`);
+    assert.ok(regenerated.markdown.startsWith('# Luna Meeting Room — 아침 통합 회의'));
+    assert.equal(regenerated.markdown.includes('# Luna Meeting Room — morning'), false);
     assert.ok(regenerated.markdown.includes(`session #${applied.session.id}`));
     assert.ok(regenerated.markdown.includes('## Minutes'));
     return { before, after, appliedRows };

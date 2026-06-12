@@ -1344,6 +1344,8 @@ async function main() {
       llmCalls: 0,
       skippedLlmCalls: 0,
     });
+    assert.ok(regeneratedMarkdown.startsWith('# Luna Meeting Room — 국내 장후 회의'));
+    assert.equal(regeneratedMarkdown.includes('# Luna Meeting Room — domestic_debrief'), false);
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
     assert.equal(regeneratedMarkdown.includes('debrief:g6-plan-vs-actual'), false);
     assert.ok(regeneratedMarkdown.includes('C 마스터 확인/마스터 액션 대기'));
@@ -1359,7 +1361,7 @@ async function main() {
             segments: [{ market: 'domestic', active: false, reason: 'kis_market_closed' }],
             started_at: '2026-06-12T00:00:00.000Z',
             closed_at: '2026-06-12T00:05:00.000Z',
-            summary: 'fixture regenerate',
+            summary: 'domestic_debrief 회의 완료: 안건 1건, ADR 1건, LLM 0회',
           }];
         }
         if (sql.includes('FROM luna_meeting_minutes')) {
@@ -1413,6 +1415,9 @@ async function main() {
     });
     const regeneratedFromDbMarkdown = renderMeetingMinutesMarkdown(regeneratedFromDb);
     const regeneratedLeakText = `${regeneratedFromDb.planNote.briefMarkdown}\n${regeneratedFromDbMarkdown}`;
+    assert.ok(regeneratedLeakText.includes('summary: 국내 장후 회의 완료: 안건 1건, ADR 1건, LLM 0회'));
+    assert.equal(regeneratedLeakText.includes('summary: domestic_debrief 회의 완료:'), false);
+    assert.equal(regeneratedFromDbMarkdown.includes('# Luna Meeting Room — domestic_debrief'), false);
     assert.ok(regeneratedLeakText.includes('세그먼트: 국내 비활성(장 마감)'));
     assert.ok(regeneratedLeakText.includes('국내 마감 G6 대조표'));
     assert.ok(regeneratedLeakText.includes('C 마스터 확인/마스터 액션 대기'));
@@ -1934,6 +1939,7 @@ async function main() {
       agentPrefixDisplayNormalized: true,
       deterministicAnalysisTitleDeduped: true,
       sessionSummaryTypeLocalized: true,
+      regeneratedMarkdownTypeLocalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
