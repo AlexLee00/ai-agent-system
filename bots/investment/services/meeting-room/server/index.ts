@@ -1331,7 +1331,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '동기화 경로: 텔레그램 확정/보류 버튼은 회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로를 사용합니다.',
       '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
-      '검증 상태: 자동 검증과 운영 HTTP 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
+      '검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');

@@ -1916,8 +1916,10 @@ async function main() {
     assert.equal(telegramHubCalled, false);
     assert.ok(telegramAsk.payload.text.includes('회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로'));
     assert.ok(telegramAsk.payload.text.includes('폴링 또는 새로고침으로 갱신'));
+    assert.ok(telegramAsk.payload.text.includes('자동 검증과 운영 경로 검증은 통과'));
     assert.ok(telegramAsk.payload.text.includes('실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인'));
     assert.equal(telegramAsk.payload.text.includes('Hub callback'), false);
+    assert.equal(telegramAsk.payload.text.includes('HTTP 검증'), false);
     assert.equal(telegramAsk.payload.text.includes('callback_data'), false);
     assert.equal(telegramAsk.payload.text.includes('callback_query'), false);
     assert.equal(telegramAsk.payload.text.includes('changed_via'), false);
