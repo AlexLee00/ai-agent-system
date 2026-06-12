@@ -420,14 +420,24 @@ function marketLabel(market) {
   return { domestic: '국내', overseas: '미국', crypto: '암호화폐' }[market] || '시장 미상';
 }
 
+function marketHoursStateLabel(segment = {}) {
+  const state = String(segment.marketHours?.state || '');
+  const reason = String(segment.marketHours?.reasonCode || segment.reason || '');
+  if (segment.market === 'crypto' || state === 'always_open') return '24시간 운영';
+  if (state === 'open') return '장중';
+  if (state === 'closed') return '장 마감';
+  if (state === 'preopen') return '개장 전';
+  return segmentReasonLabel(reason);
+}
+
 function segmentStatusText(segment = {}) {
   return segment.skipped
     ? `${marketLabel(segment.market)} 비활성, 사유 ${segmentReasonLabel(segment.reason)}`
-    : `${marketLabel(segment.market)} 활성`;
+    : `${marketLabel(segment.market)} 회의 대상, 시장 상태 ${marketHoursStateLabel(segment)}`;
 }
 
 function segmentStatusVisibleText(segment = {}) {
-  return `${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segmentReasonLabel(segment.reason)})` : '활성'}`;
+  return `${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segmentReasonLabel(segment.reason)})` : `회의 대상(${marketHoursStateLabel(segment)})`}`;
 }
 
 function SegmentStatus({ segments }) {
@@ -439,7 +449,7 @@ function SegmentStatus({ segments }) {
       <span
         key=${`segment-${segment.market || index}`}
         className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
-        title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 활성`}
+        title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segmentReasonLabel(segment.reason)}` : `${marketLabel(segment.market)} 회의 대상: ${marketHoursStateLabel(segment)}`}
         aria-label=${segmentStatusText(segment)}
       >
         ${segmentStatusVisibleText(segment)}

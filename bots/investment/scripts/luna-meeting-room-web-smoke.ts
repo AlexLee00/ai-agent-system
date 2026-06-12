@@ -666,6 +666,7 @@ async function main() {
     assert.ok(appJs.text.includes('minuteRoleClass(minute)'));
     assert.ok(appJs.text.includes('function SegmentStatus'));
     assert.ok(appJs.text.includes('function segmentReasonLabel'));
+    assert.ok(appJs.text.includes('function marketHoursStateLabel'));
     assert.ok(appJs.text.includes("const value = String(reason || '');"));
     assert.ok(appJs.text.includes("if (!value) return '사유 없음';"));
     assert.ok(appJs.text.includes("weekend: '주말'"));
@@ -683,8 +684,15 @@ async function main() {
     assert.ok(appJs.text.includes('reasonLabel'));
     assert.ok(appJs.text.includes('segment-pill'));
     assert.ok(appJs.text.includes('세그먼트 상태 로딩 중'));
-    assert.ok(appJs.text.includes('`${marketLabel(segment.market)} 활성`'));
-    assert.ok(appJs.text.includes(": '활성'"));
+    assert.ok(appJs.text.includes("state === 'open'"));
+    assert.ok(appJs.text.includes("'장중'"));
+    assert.ok(appJs.text.includes("'장 마감'"));
+    assert.ok(appJs.text.includes("'개장 전'"));
+    assert.ok(appJs.text.includes("'24시간 운영'"));
+    assert.ok(appJs.text.includes('`${marketLabel(segment.market)} 회의 대상, 시장 상태 ${marketHoursStateLabel(segment)}`'));
+    assert.ok(appJs.text.includes('`회의 대상(${marketHoursStateLabel(segment)})`'));
+    assert.equal(appJs.text.includes('`${marketLabel(segment.market)} 활성`'), false);
+    assert.equal(appJs.text.includes(": '활성'"), false);
     assert.equal(appJs.text.includes('`${marketLabel(segment.market)} active`'), false);
     assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
     assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
