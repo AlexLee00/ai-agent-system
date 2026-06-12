@@ -67,6 +67,7 @@ function assertNoUserVisibleRawLeaks(text, context) {
     ['internal status token', /\b(pending_master|c_master|changed_via|agendaKey|decision_id|due_at|provider|rule_based|noLLM route)\b/],
     ['component id', /\b(regime-engine-hmm|market-deployment-gate|meeting-room-orchestrator|backtest-nextbar-execution)\b/],
     ['DB/raw marker', /\b(jsonb|raw DB|원문 DB|DB 원문|gate_transitions=|regime_transitions=|segments:\s*\[|errors=\[)\b/],
+    ['internal C15 pending prefix', /C15 결정 대기:/],
     ['legacy LLM boilerplate', /이러한 결과를 기반으로|최종 결론|최종 결정을 내릴 수 있도록/],
   ];
   for (const [label, pattern] of checks) {
@@ -915,6 +916,22 @@ async function main() {
     assert.ok(truncatedCircuit.includes('실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.'));
     assert.equal(truncatedCircuit.includes('"market"'), false);
     assert.equal(truncatedCircuit.includes('low_profit_symbol'), false);
+    const premarketDataMinute = _testOnly.normalizeLegacyMinuteContent([
+      '미국 프리마켓 게이트/레짐',
+      '게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.',
+      '{',
+      '  "gate": { "market": "overseas", "score": "47.07", "deployment": "reduced", "signals": { "signals": [{ "available": true }, { "available": false }] } },',
+      '  "regime": { "market": "overseas", "current_regime": "sideways", "confidence": 0.47, "source": "hmm" },',
+      '  "positions": [{ "symbol": "AAPL" }]',
+      '}',
+    ].join('\n'));
+    assert.ok(premarketDataMinute.includes('증거 요약'));
+    assert.ok(premarketDataMinute.includes('게이트=미국 reduced 47.1점 · 신호 1/2개 사용'));
+    assert.ok(premarketDataMinute.includes('레짐=미국 수평(0.47) · 출처=HMM'));
+    assert.ok(premarketDataMinute.includes('보유 포지션=1건(AAPL)'));
+    assert.equal(premarketDataMinute.includes('"gate"'), false);
+    assert.equal(premarketDataMinute.includes('"strategySignals"'), false);
+    assert.equal(premarketDataMinute.includes('read-only'), false);
     const debriefDataMinute = _testOnly.normalizeLegacyMinuteContent([
       'G6 대조표 날짜=2026-06-12 degraded=true',
       'morning=없음 reason=same_day_morning_session_missing',
@@ -992,7 +1009,8 @@ async function main() {
     assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
     assert.equal(detail.payload.minutes[1].content.includes('distinct'), false);
     assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
-    assert.ok(detail.payload.minutes[2].content.includes('컴포넌트=C15 레짐 엔진 HMM'));
+    assert.ok(detail.payload.minutes[2].content.includes('C15 검토: 컴포넌트=C15 레짐 엔진 HMM'));
+    assert.equal(detail.payload.minutes[2].content.includes('C15 결정 대기:'), false);
     assert.equal(detail.payload.minutes[2].content.includes('regime-engine-hmm'), false);
     assert.ok(detail.payload.minutes[2].content.includes('상태=활성'));
     assert.ok(detail.payload.minutes[2].content.includes('모드=미정→미정'));
@@ -1003,7 +1021,8 @@ async function main() {
     assert.ok(detail.payload.minutes[2].content.includes('완료 회의 수=10'));
     assert.ok(detail.payload.minutes[2].content.includes('임시 기준=예'));
     assert.ok(detail.payload.minutes[2].content.includes('미충족: 임시 기준'));
-    assert.ok(detail.payload.minutes[2].content.includes('C15 결정 대기: C15 MAPEK: 자문 기록 후 마스터 확인 대기'));
+    assert.ok(detail.payload.minutes[2].content.includes('C15 MAPEK: 자문 기록 후 마스터 확인 대기'));
+    assert.equal(detail.payload.minutes[2].content.includes('C15 결정 대기: C15 MAPEK'), false);
     assert.equal(detail.payload.minutes[2].content.includes('상태=active'), false);
     assert.equal(detail.payload.minutes[2].content.includes('mapek: advisory'), false);
     assert.equal(detail.payload.minutes[2].content.includes('unknown→unknown'), false);
@@ -1033,7 +1052,8 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약을 기준으로 미국이 수평 상태입니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('비교 기준=게이트 비활성 가상 비교'));
     assert.ok(detail.payload.minutes[4].content.includes('halt/reduced 회피 개선폭: 비교 데이터가 없습니다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('[Aria] C15 결정 대기 점검'));
+    assert.ok(detail.payload.minutes[4].content.includes('[Aria] C15 검토 점검'));
+    assert.equal(detail.payload.minutes[4].content.includes('C15 결정 대기:'), false);
     assert.equal(detail.payload.minutes[4].content.includes('bull(0.41)'), false);
     assert.equal(detail.payload.minutes[4].content.includes('sideways(0.47)'), false);
     assert.equal(detail.payload.minutes[4].content.includes('bear(0.74)'), false);
@@ -1056,6 +1076,29 @@ async function main() {
       '결정 보류 처리 · 경로=텔레그램 · 메모=need more data',
     );
     assert.equal(_testOnly.normalizeLegacyMinuteContent('MR-B confirm: no note'), '결정 확정 처리 · 경로=웹 · 메모 없음');
+    const premarketTranslatedStatus = _testOnly.normalizeLegacyMinuteContent(
+      '미국 국내 시장은 현재 halt 상태이며, 33개의 이벤트가 진행 중입니다.\n미국 시장은 현재 진행이 감소된 상태이며, 47개의 이벤트가 진행 중입니다.',
+    );
+    assert.ok(premarketTranslatedStatus.includes('국내 시장은 현재 halt 상태이며, 점수는 33점입니다.'));
+    assert.ok(premarketTranslatedStatus.includes('미국 시장은 현재 reduced 상태이며, 점수는 47점입니다.'));
+    assert.equal(premarketTranslatedStatus.includes('미국 국내 시장'), false);
+    assert.equal(premarketTranslatedStatus.includes('진행이 감소된 상태'), false);
+    assert.equal(premarketTranslatedStatus.includes('개의 이벤트가 진행 중입니다'), false);
+    const premarketEntryTerm = _testOnly.normalizeLegacyMinuteContent(
+      '게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.\n전략군 24시간 동안 1건의 입장(Entry 0)이 발생하였으며, 현재 14건의 활성 서킷이 유지되고 있습니다.',
+    );
+    assert.ok(premarketEntryTerm.includes('읽기 전용으로 점검합니다.'));
+    assert.ok(premarketEntryTerm.includes('전략군 24시간 신호 1건(entry 0건)입니다'));
+    assert.equal(premarketEntryTerm.includes('읽기 전용로'), false);
+    assert.equal(premarketEntryTerm.includes('입장(Entry 0)'), false);
+    assert.equal(premarketEntryTerm.includes('입니다, 현재'), false);
+    const truncatedRegimeSentence = _testOnly.normalizeLegacyMinuteContent(
+      'C2 레짐에 따르면, 국내 시장은 상승 추세를 유지하고 있으며, 0.38의 점수가 기록되고 있습니다. 미국 시장은 중립적인 추세를 유지하고 있으며, 0. 암호화폐 시장은 하락 추세를 유지하고 있으며, 0.',
+    );
+    assert.ok(truncatedRegimeSentence.includes('국내 시장은 상승 레짐입니다.'));
+    assert.ok(truncatedRegimeSentence.includes('미국 시장은 수평 레짐입니다.'));
+    assert.ok(truncatedRegimeSentence.includes('암호화폐 시장은 하락 레짐입니다.'));
+    assert.equal(truncatedRegimeSentence.includes('0. 암호화폐'), false);
     assert.equal(detail.payload.minutes[4].content.includes('DB minute'), false);
     assert.equal(detail.payload.minutes[4].content.includes('plan-note'), false);
     assert.equal(detail.payload.minutes[4].content.includes('shadow stack'), false);

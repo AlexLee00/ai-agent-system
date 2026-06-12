@@ -264,12 +264,22 @@ function legacyPendingDecisionSummary(row = {}) {
   const criteria = row.criteria || row.promotion_criteria || row.evidence?.criteria || {};
   const recommendation = row.recommendation || row.summary || row.notes || '후속 판단 대기';
   return [
-    `C15 결정 대기: 컴포넌트=${component}`,
+    `C15 검토: 컴포넌트=${component}`,
     `유형=${legacyDecisionTypeLabel(row.type, row.status)}, 상태=${legacyComponentStateLabel(row.status || 'n/a')}, 모드=${legacyComponentStateLabel(current)}→${legacyComponentStateLabel(target)}`,
     `표본=${sampleCount}건, 기준=${legacyCriteriaSummary(criteria)}`,
     `판정=${criteria.placeholder === true ? '미충족: 임시 기준' : '평가 대기'}`,
     `제안 요지=${recommendation}`,
   ].join('\n');
+}
+
+function normalizeC15PendingLabelNoise(content) {
+  return String(content ?? '')
+    .replace(/^(\[[^\]\n]+\]\s*)C15 결정 대기:\s*([^:\n]+)$/gm, '$1$2 검토')
+    .replace(/^C15 결정 대기:\s*([^:\n]+):\s*/gm, '$1: ')
+    .replace(/^C15 결정 대기:\s*컴포넌트=/gm, 'C15 검토: 컴포넌트=')
+    .replace(/^C15 결정 대기 항목$/gm, 'C15 검토 항목')
+    .replace(/^(\[[^\]\n]+\]\s*)C15 결정 대기\s+점검/gm, '$1C15 검토 점검')
+    .replace(/^C15 결정 대기:\s*/gm, 'C15 검토: ');
 }
 
 function balancedJsonAt(text, startIndex) {
@@ -373,6 +383,66 @@ function summarizeTransitionRows(field, rows = []) {
   return `${label}: ${summaries.join(' / ')}${suffix}`;
 }
 
+function summarizePremarketEvidence(evidence = {}) {
+  const lines = ['증거 요약'];
+  const gate = evidence.gate || null;
+  const regime = evidence.regime || null;
+  const positions = Array.isArray(evidence.positions) ? evidence.positions : [];
+  const strategySignals = Array.isArray(evidence.strategySignals) ? evidence.strategySignals : [];
+  const circuitLocks = Array.isArray(evidence.circuitLocks) ? evidence.circuitLocks : [];
+  if (gate) {
+    const market = transitionMarketLabel(gate.market || 'overseas');
+    const score = gate.score == null ? '점수 미상' : `${Number(gate.score).toFixed(1)}점`;
+    const signalRows = Array.isArray(gate.signals?.signals) ? gate.signals.signals : [];
+    const available = signalRows.filter((row) => row?.available !== false).length;
+    lines.push(`게이트=${market} ${gate.deployment || '미정'} ${score}${signalRows.length ? ` · 신호 ${available}/${signalRows.length}개 사용` : ''}`);
+  }
+  if (regime) {
+    const market = transitionMarketLabel(regime.market || 'overseas');
+    const regimeValue = transitionRegimeLabel(regime.current_regime || regime.dominant);
+    const probability = regime.dominant_probability ?? regime.confidence ?? null;
+    const probabilityText = probability == null || Number.isNaN(Number(probability)) ? '' : `(${Number(probability).toFixed(2)})`;
+    lines.push(`레짐=${market} ${regimeValue}${probabilityText} · 출처=${regime.source ? String(regime.source).toUpperCase() : '미상'}`);
+  }
+  if (strategySignals.length || circuitLocks.length || positions.length) {
+    const entryCount = strategySignals.filter((row) => row?.signal_type === 'entry' || row?.signalType === 'entry').length;
+    const positionSymbols = positions.map((row) => row?.symbol).filter(Boolean).slice(0, 5);
+    lines.push(`전략 신호=${strategySignals.length}건(entry ${entryCount}건), 활성 서킷=${circuitLocks.length}건, 보유 포지션=${positions.length}건${positionSymbols.length ? `(${positionSymbols.join(', ')})` : ''}`);
+  }
+  if (lines.length === 1) lines.push('세부 항목 없음');
+  lines.push('상세 JSON은 감사 로그에 보존');
+  return lines.join('\n');
+}
+
+function replacePremarketEvidenceJson(content) {
+  let next = String(content ?? '');
+  if (!/(미국 프리마켓 게이트\/레짐|미국 보유\/예정 이벤트 점검)/.test(next)) return next;
+  let searchFrom = 0;
+  while (searchFrom < next.length) {
+    const jsonStart = next.indexOf('{', searchFrom);
+    if (jsonStart < 0) break;
+    const jsonText = balancedJsonAt(next, jsonStart);
+    let summary = '증거 요약\n상세 JSON은 감사 로그에 보존';
+    let replaceEnd = next.length;
+    if (jsonText) {
+      try {
+        summary = summarizePremarketEvidence(JSON.parse(jsonText));
+      } catch {
+        summary = '증거 요약\n상세 JSON은 감사 로그에 보존';
+      }
+      replaceEnd = jsonStart + jsonText.length;
+    } else {
+      const tailIndex = next.indexOf('\n실거래/파라미터', jsonStart);
+      const truncatedIndex = next.indexOf('...[truncated]', jsonStart);
+      if (tailIndex >= 0) replaceEnd = tailIndex;
+      else if (truncatedIndex >= 0) replaceEnd = truncatedIndex + '...[truncated]'.length;
+    }
+    next = `${next.slice(0, jsonStart)}${summary}${next.slice(replaceEnd)}`;
+    searchFrom = jsonStart + summary.length;
+  }
+  return next;
+}
+
 function replaceCompactArrayField(content, field) {
   let next = String(content ?? '');
   let searchFrom = 0;
@@ -448,7 +518,7 @@ function normalizeLegacyMinuteContent(content) {
   if (trimmed === 'closed') return '회의 종료';
   if (trimmed === 'close') return '회의 종료';
   const auditNormalized = normalizeLegacyDecisionAuditContent(content);
-  const text = normalizeCompactMeetingArrays(auditNormalized).replace(
+  const text = normalizeCompactMeetingArrays(replacePremarketEvidenceJson(auditNormalized)).replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: 최신 데이터 영역 기준으로 봅니다',
   );
@@ -476,16 +546,16 @@ function normalizeLegacyMinuteContent(content) {
   const compacted = compactRepeatedSentences(normalizeLegacyBoilerplateHeadings(compactRepetitiveReportContent(canonical)));
   const marker = 'C15 결정 대기 항목';
   const markerIndex = compacted.indexOf(marker);
-  if (markerIndex < 0) return compacted;
+  if (markerIndex < 0) return normalizeC15PendingLabelNoise(compacted);
   const jsonStart = compacted.indexOf('{', markerIndex);
-  if (jsonStart < 0) return compacted;
+  if (jsonStart < 0) return normalizeC15PendingLabelNoise(compacted);
   const jsonText = balancedJsonAt(compacted, jsonStart);
-  if (!jsonText) return compacted;
+  if (!jsonText) return normalizeC15PendingLabelNoise(compacted);
   try {
     const summary = legacyPendingDecisionSummary(JSON.parse(jsonText));
-    return `${compacted.slice(0, markerIndex)}${summary}${compacted.slice(jsonStart + jsonText.length)}`.trim();
+    return normalizeC15PendingLabelNoise(`${compacted.slice(0, markerIndex)}${summary}${compacted.slice(jsonStart + jsonText.length)}`.trim());
   } catch {
-    return compacted;
+    return normalizeC15PendingLabelNoise(compacted);
   }
 }
 
@@ -564,6 +634,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/회의 데이터 요약를/g, '회의 데이터 요약을')
     .replace(/(?:^|\n)segments:\s*\[[^\n]*\]\s*/g, '\n세그먼트: 상단 요약 기준입니다\n')
     .replace(/\bshadow stack\b/g, '섀도 스택')
+    .replace(/\bread-only\b/g, '읽기 전용')
+    .replace(/읽기\s+전용로/g, '읽기 전용으로')
     .replace(/\bregistry evidence\b/g, '레지스트리 근거')
     .replace(/\bgate_off_virtual\b/g, '게이트 비활성 가상 비교')
     .replace(/\bhalt_reduced_avoidance_delta\b/g, 'halt/reduced 회피 개선폭')
@@ -571,6 +643,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bmax calls\b/gi, '최대 호출')
     .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
     .replace(/해외/g, '미국')
+    .replace(/미국\s+국내\s+시장/g, '국내 시장')
     .replace(/미국가/g, '미국이')
     .replace(/미국는/g, '미국은')
     .replace(/미국와/g, '미국과')
@@ -580,6 +653,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/['"“”‘’]줄인['"“”‘’]\s*상태/g, 'reduced 상태')
     .replace(/줄인\s+상태/g, 'reduced 상태')
     .replace(/진행이\s*중단된\s*상태/g, 'halt 상태')
+    .replace(/진행이\s*감소된\s*상태/g, 'reduced 상태')
     .replace(/중단된\s*상태/g, 'halt 상태')
     .replace(/완전한\s*상태/g, 'full 상태')
     .replace(/중단(?=\s*\(\d)/g, 'halt')
@@ -597,6 +671,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/레짐=bear/g, '레짐=하락')
     .replace(/레짐=sideways/g, '레짐=수평')
     .replace(/레짐=volatile/g, '레짐=변동')
+    .replace(/국내 시장은 상승 추세를 유지하고 있으며,\s*\d+(?:\.\d+)?의 점수가 기록되고 있습니다\.?/g, '국내 시장은 상승 레짐입니다.')
+    .replace(/미국 시장은 중립적인 추세를 유지하고 있으며,\s*0\.\s*암호화폐 시장은 하락 추세를 유지하고 있으며,\s*0\.?/g, '미국 시장은 수평 레짐입니다. 암호화폐 시장은 하락 레짐입니다.')
+    .replace(/미국 시장은 중립적인 추세를 유지하고 있으며,\s*\d+(?:\.\d+)?의 점수가 기록되고 있습니다\.?/g, '미국 시장은 수평 레짐입니다.')
+    .replace(/암호화폐 시장은 하락 추세를 유지하고 있으며,\s*\d+(?:\.\d+)?의 점수가 기록되고 있습니다\.?/g, '암호화폐 시장은 하락 레짐입니다.')
     .replace(/\bbull\(([^)]+)\)/g, '상승($1)')
     .replace(/\bbear\(([^)]+)\)/g, '하락($1)')
     .replace(/\bsideways\(([^)]+)\)/g, '수평($1)')
@@ -640,6 +718,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/활성 서킷:\s*최신 데이터 영역 기준으로 확인하세요/g, '활성 서킷: 최신 데이터 영역 기준으로 봅니다')
     .replace(/결정 대기:\s*상단 캐치업 기준으로 확인하세요/g, '결정 대기: 상단 캐치업 기준입니다')
     .replace(/전략군\s+24시간\s+동안\s+0건의\s+거래가\s+발생했습니다\.?/g, '전략군 24시간 신호 0건입니다.')
+    .replace(/전략군\s+24시간\s+동안\s+(\d+)건의\s+입장\s*\(Entry\s*(\d+)\)\s*이 발생(?:하였으며|했습니다)?/gi, '전략군 24시간 신호 $1건(entry $2건)입니다')
+    .replace(/입니다,\s*현재/g, '입니다. 현재')
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
     .replace(/저평가\s+상태/g, '배치 halt 상태')
@@ -647,8 +727,10 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*0\)/g, '전략군 24시간: 0건(진입 0)')
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*없음\)/g, '전략군 24시간: 0건(진입 없음)')
     .replace(/입장한\s+거래/g, '진입한 거래')
+    .replace(/입장\s*\(Entry\s*0\)/gi, '진입(entry 0건)')
     .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
     .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려')
+    .replace(/(\d+(?:\.\d+)?)개의 이벤트가 진행 중입니다/g, '점수는 $1점입니다')
     .replace(/(확인하세요|기준입니다|봅니다)이며/g, '$1. ')
     .replace(/확인하세요\s+결과적으로,/g, '확인하세요. ')
     .replace(/(확인하세요|기준입니다|봅니다)\.\s*,\s*/g, '$1. ')

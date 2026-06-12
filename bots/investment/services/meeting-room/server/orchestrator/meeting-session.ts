@@ -156,6 +156,31 @@ function summarizeRegimeTransitions(rows: any[] = []) {
   }).join(' / ')}${items.length > 6 ? ` 외 ${items.length - 6}건` : ''}`;
 }
 
+function summarizeUsPremarketEvidence(evidence: any = {}) {
+  const lines = ['게이트/레짐/포지션/예정 이벤트를 읽기 전용으로 점검합니다.'];
+  const gate = evidence.gate || null;
+  const regime = evidence.regime || null;
+  const positions = Array.isArray(evidence.positions) ? evidence.positions : [];
+  const strategySignals = Array.isArray(evidence.strategySignals) ? evidence.strategySignals : [];
+  const circuitLocks = Array.isArray(evidence.circuitLocks) ? evidence.circuitLocks : [];
+  if (gate) {
+    const score = gate.score == null ? '점수 미상' : `${Number(gate.score).toFixed(1)}점`;
+    const signalRows = Array.isArray(gate.signals?.signals) ? gate.signals.signals : [];
+    const available = signalRows.filter((row: any) => row?.available !== false).length;
+    lines.push(`게이트=${gate.deployment || '미정'} ${score}${signalRows.length ? ` · 신호 ${available}/${signalRows.length}개 사용` : ''}`);
+  }
+  if (regime) {
+    const probability = regime.dominant_probability ?? regime.confidence ?? null;
+    const probabilityText = probability == null || Number.isNaN(Number(probability)) ? '' : `(${Number(probability).toFixed(2)})`;
+    lines.push(`레짐=${regimeLabel(regime.current_regime || regime.dominant)}${probabilityText} · 출처=${regime.source ? String(regime.source).toUpperCase() : '미상'}`);
+  }
+  const entryCount = strategySignals.filter((row: any) => row?.signal_type === 'entry' || row?.signalType === 'entry').length;
+  const positionSymbols = positions.map((row: any) => row?.symbol).filter(Boolean).slice(0, 5);
+  lines.push(`전략 신호=${strategySignals.length}건(entry ${entryCount}건), 활성 서킷=${circuitLocks.length}건, 보유 포지션=${positions.length}건${positionSymbols.length ? `(${positionSymbols.join(', ')})` : ''}`);
+  lines.push('상세 JSON은 감사 로그에 보존');
+  return lines.join('\n');
+}
+
 function summarizeMeetingErrors(errors: any[] = []) {
   const items = Array.isArray(errors) ? errors : [];
   return items.length ? `오류: ${items.length}건 · 상세는 감사 로그에 보존` : '';
@@ -175,7 +200,7 @@ function summarizePendingDecision(row: any = {}) {
   const sampleCount = sampleCountForDecision(row);
   const recommendation = row.recommendation || row.summary || row.notes || '후속 판단 대기';
   return [
-    `C15 결정 대기: 컴포넌트=${component}`,
+    `C15 검토: 컴포넌트=${component}`,
     `유형=${type}, 상태=${safeText(row.status, 'n/a')}, 모드=${formatModeTransition(row)}`,
     `표본=${sampleCount}건, 기준=${criteriaSummary(criteria)}`,
     `판정=${criteriaState(criteria)}`,
@@ -368,8 +393,7 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
   if (agenda.kind === 'us_premarket') {
     return [
       `${agenda.title}`,
-      `게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.`,
-      compact(agenda.evidence || {}, 1200),
+      summarizeUsPremarketEvidence(agenda.evidence || {}),
     ].join('\n');
   }
   if (agenda.kind === 'weekly_review') {
