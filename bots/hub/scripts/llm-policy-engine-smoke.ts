@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import {
   applyProviderRuntimeGuards,
+  selectLLMChain,
 } from '../../../packages/core/lib/llm-model-selector.ts';
 import {
   buildEngineDiff,
@@ -49,7 +50,7 @@ function gateREvidenceQuery({ total = 50, mismatches = 0 } = {}) {
 async function main() {
   await record('TS-R2-1', 'engine full-surface diff is zero', () => {
   const engineDiff = buildEngineDiff();
-  assert.equal(engineDiff.total, 408);
+  assert.equal(engineDiff.total, 544);
   assert.equal(engineDiff.mismatched, 0);
   return `total=${engineDiff.total} mismatched=${engineDiff.mismatched}`;
   });
@@ -250,6 +251,33 @@ async function main() {
   assert.equal(ctx.agent, 'darwin.planner');
   assert.equal(ctx.agentName, 'darwin.planner');
   return `source=${result.source} match=${writes[0].params[2]} agent=${ctx.agent}`;
+  });
+
+  await record('TS-R2-7', 'cross-team selector aliases use selector-key team for policy matching', () => {
+  const aliases = ['oracle', 'hermes', 'luna'];
+  const evidence = [];
+  for (const agent of aliases) {
+    const selectorKey = `investment.${agent}`;
+    const oldChain = normalizePolicyEngineChain(selectLLMChain(selectorKey, {
+      selectorVersion: 'v3.0_oauth_4',
+      rolloutPercent: 100,
+      team: 'luna',
+      callerTeam: 'luna',
+      agentName: agent,
+      agent,
+    }));
+    assert(oldChain.length > 0, `${selectorKey} old selector chain should be non-empty`);
+    const newChain = resolvePolicyChain({
+      team: 'luna',
+      callerTeam: 'luna',
+      selectorKey,
+      agentName: agent,
+      agent,
+    });
+    assert.deepEqual(newChain, oldChain);
+    evidence.push(`${selectorKey}:${oldChain.length}`);
+  }
+  return evidence.join(',');
   });
 
   const failed = results.filter((result) => !result.pass);

@@ -22,6 +22,7 @@ const SNAPSHOT_SOURCE = 'packages/core/lib/llm-model-selector.ts';
 const FIXED_SMOKE_TIMESTAMP = '2026-06-12T00:00:00.000Z';
 const SELECTOR_VERSION = 'v3.0_oauth_4';
 const ROLLOUT_PERCENT = 100;
+const CROSS_TEAM_PROBE_TEAM = 'crossteam-probe';
 
 function snapshotDateString(date, timeZone) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -378,9 +379,10 @@ function diffLlmChainSnapshots(oldSnapshot, newSnapshot) {
 
 function buildEngineRow(row) {
   const policyEngine = require('../../../packages/core/lib/llm-policy-engine.ts');
+  const team = row.engineTeam || teamFromSelectorKey(row.key);
   const chain = normalizeChain(policyEngine.resolvePolicyChain({
-    team: teamFromSelectorKey(row.key),
-    callerTeam: teamFromSelectorKey(row.key),
+    team,
+    callerTeam: team,
     selectorKey: row.key,
     agentName: row.agentName || null,
     agent: row.agentName || null,
@@ -393,6 +395,7 @@ function buildEngineRow(row) {
     key: row.key,
     variant: row.variant,
     agentName: row.agentName || null,
+    team,
     taskType: row.taskType || null,
     runtimePurpose: row.runtimePurpose || null,
     kind: chain.length > 0 ? 'chain' : 'none',
@@ -403,9 +406,24 @@ function buildEngineRow(row) {
   };
 }
 
+function buildCrossTeamEngineRows(rows) {
+  return rows
+    .filter((row) => row.variant === 'default')
+    .map((row) => ({
+      ...row,
+      variant: 'cross_team',
+      engineTeam: CROSS_TEAM_PROBE_TEAM,
+    }));
+}
+
+function buildEngineDiffRows(baseline) {
+  const rows = Array.isArray(baseline?.variants) ? baseline.variants : [];
+  return [...rows, ...buildCrossTeamEngineRows(rows)];
+}
+
 function buildEngineDiff(baseline = loadJsonFile(DEFAULT_BASELINE_PATH)) {
   const mismatches = [];
-  const rows = Array.isArray(baseline?.variants) ? baseline.variants : [];
+  const rows = buildEngineDiffRows(baseline);
   for (const expected of rows) {
     const actual = buildEngineRow(expected);
     const expectedChain = normalizeChain(expected.chain);
@@ -415,6 +433,7 @@ function buildEngineDiff(baseline = loadJsonFile(DEFAULT_BASELINE_PATH)) {
         key: expected.key,
         variant: expected.variant,
         agentName: expected.agentName || null,
+        team: actual.team || null,
         taskType: expected.taskType || null,
         runtimePurpose: expected.runtimePurpose || null,
         expectedChain,

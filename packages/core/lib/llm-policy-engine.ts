@@ -47,7 +47,8 @@ function teamFromSelectorKey(selectorKey: string): string {
 
 function normalizeContext(ctx: PolicyEngineContext = {}) {
   const selectorKey = clean(ctx.selectorKey);
-  const team = normalizeToken(ctx.team || ctx.callerTeam || teamFromSelectorKey(selectorKey));
+  const selectorTeam = teamFromSelectorKey(selectorKey);
+  const team = normalizeToken(selectorTeam || ctx.team || ctx.callerTeam);
   const agent = clean(ctx.agentName || ctx.agent);
   const taskType = normalizeToken(ctx.taskType || ctx.task_type || ctx.runtimePurpose || ctx.runtime_purpose);
   return {
