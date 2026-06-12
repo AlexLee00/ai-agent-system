@@ -1312,8 +1312,22 @@ function buildKisCloseFallbackContent(marketData = {}, evidenceItems = {}, conte
     .filter((item) => hasNumericValue(item.change_1d ?? item.change))
     .slice()
     .sort((a, b) => Number(b.change_1d ?? b.change ?? 0) - Number(a.change_1d ?? a.change ?? 0));
-  const winners = sectors.slice(0, 3).map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`).join(' · ') || '반도체 · 금융 · 바이오 흐름 확인';
-  const losers = sectors.slice(-3).reverse().map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`).join(' · ') || '2차전지 · 게임 등 약세 섹터 확인';
+  const positiveSectors = sectors.filter((item) => Number(item.change_1d ?? item.change ?? 0) > 0);
+  const negativeSectors = sectors.filter((item) => Number(item.change_1d ?? item.change ?? 0) < 0);
+  const relativeLaggards = sectors
+    .filter((item) => Number(item.change_1d ?? item.change ?? 0) >= 0)
+    .slice(-2)
+    .reverse();
+  const winners = positiveSectors
+    .slice(0, 3)
+    .map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`)
+    .join(' · ') || '뚜렷한 강세 섹터는 제한적입니다';
+  const losers = negativeSectors
+    .slice()
+    .sort((a, b) => Number(a.change_1d ?? a.change ?? 0) - Number(b.change_1d ?? b.change ?? 0))
+    .slice(0, 3)
+    .map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`)
+    .join(' · ') || `뚜렷한 하락 섹터는 제한적, 상대 부진: ${relativeLaggards.map((item) => `${item.name} ${formatPercentOrUnknown(item.change_1d ?? item.change)}`).join(' · ') || '장중 재확인'}`;
   const watchPoints = normalizeWatchPoints(contextData.previousWatchPoints || marketData?.previousWatchPoints, [
     '반도체 대형주와 외국인 수급 동조 여부',
     '2차전지 반등 시도와 거래대금 회복 여부',
@@ -1330,28 +1344,34 @@ function buildKisCloseFallbackContent(marketData = {}, evidenceItems = {}, conte
 코스피 ${kospi} (${kospiChange})
 코스닥 ${kosdaq} (${kosdaqChange})
 원/달러 ${usdKrw}
+→ 지수는 상승/하락 자체보다 종가가 장중 고점권인지, 수급이 같은 방향으로 붙었는지를 함께 봐야 합니다.
 
 ■ 수급 (확정)
 외국인 ${foreignFlow}
 기관 ${institutionFlow}
 → 수급이 지수 방향과 같은지, 아니면 섹터 순환매만 만든 것인지가 오늘 해석의 핵심입니다.
+→ 외국인과 기관이 엇갈리면 내일 장 초반에는 시가 갭보다 30분 뒤 거래대금 유지 여부를 우선 확인합니다.
 
 ■ 섹터 승자/패자
 🔼 ${winners}
 🔽 ${losers}
+→ 승자는 추세 지속 후보, 패자는 반등 확인 후보로만 분리합니다. 상승 섹터를 약세로 오해하지 않도록 등락률 부호를 함께 확인합니다.
 
 ■ 09:00 예고 vs 실제
 - 확인: "${watchPoints[0] || '오전 관찰 포인트'}" → 마감 수급과 섹터 등락으로 재점검
 ${watchPoints[1] ? `- 주의: "${watchPoints[1]}" → 거래대금과 종가 위치로 보수적 확인` : '- 주의: 추가 오전 포인트는 마감 확정치로 재검증'}
+${watchPoints[2] ? `- 보조: "${watchPoints[2]}" → 환율·선물 방향과 함께 내일 장전 재확인` : '- 보조: 환율·선물 방향은 내일 장전 브리핑에서 다시 확인'}
 
 ■ 오늘의 핵심 이슈
 ${primaryIssue}
 💡 왜 중요한가: 오늘 움직임의 원인을 내일 장 초반 수급 지속성으로 검증할 수 있기 때문입니다.
+오늘의 핵심 이슈는 매수·매도 신호가 아니라 내일 첫 30분 동안 어느 데이터가 확인되어야 하는지를 정리하는 기준점입니다.
 
 ■ 내일 관찰 포인트
 - 외국인 순매수 지속 여부
 - 주도 섹터 거래대금 유지
 - 환율과 미국 선물의 장전 방향
+- 오늘 강세 섹터가 시초가 이후에도 상대 강도를 유지하는지
 
 ${nextSlotPreview('kis', '1600')}
 - ${PUBLIC_MARKET_BRIEF_DISCLAIMER}
@@ -1466,14 +1486,17 @@ function buildOverseasCloseFallbackContent(marketData = {}, evidenceItems = {}, 
 S&P500 ${sp500} (${sp500Change})
 Nasdaq ${nasdaq} (${nasdaqChange})
 Dow ${dow} (${dowChange})
+→ 3대 지수가 같은 방향이면 시장 전반의 위험 선호로 보고, Nasdaq만 강하면 성장주·반도체 쪽 편중 흐름으로 따로 해석합니다.
 
 ■ Mag7 마감
 ${mag7Rows}
 → 지수 방향보다 대형 기술주 동조 여부가 오늘 장세의 체감 온도를 설명합니다.
+→ Mag7이 넓게 동조하면 한국 반도체·AI 인프라 관련 섹터의 장전 기대가 커질 수 있습니다.
 
 ■ 섹터·금리·달러
 섹터/ETF: ${sectors}
 미 10년물 ${us10y} · DXY ${dxy} · VIX ${vix}
+→ 금리와 달러가 동시에 오르면 성장주 부담, 둘 다 안정되면 위험자산 선호 회복으로 해석합니다.
 
 ■ 헤드라인 회고
 ${primaryIssue}
@@ -1487,6 +1510,7 @@ ${watchPoints[0] || 'Mag7 동조와 Nasdaq 상대 강도'}를 국내 반도체·
 - 반도체 대형주 시초가 갭과 외국인 수급
 - 환율과 미국 선물 방향
 - 전일 약세 섹터의 반등 지속성
+- 미국 마감 강도가 장전 선물에서도 유지되는지
 
 ${nextSlotPreview('overseas', '0630')}
 - ${PUBLIC_MARKET_BRIEF_DISCLAIMER}

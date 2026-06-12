@@ -24,6 +24,7 @@
     "smoke:formatter": "node scripts/smoke-edux-formatter.ts",
     "smoke:image": "node scripts/smoke-edux-image.ts",
     "smoke:market-close": "node scripts/smoke-edux-market-close.ts",
+    "smoke:seven-slot-quality": "node scripts/smoke-edux-seven-slot-quality.ts",
     "smoke:runtime-fixture": "node scripts/smoke-edux-runtime-fixture.ts",
     "smoke:promotion-gate": "node scripts/smoke-edux-promotion-gate.ts"
   },

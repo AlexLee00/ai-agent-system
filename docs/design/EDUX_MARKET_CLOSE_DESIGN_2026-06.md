@@ -306,3 +306,20 @@ Fear & Greed 73 (탐욕 유지)
 노트: 슬롯별 정체성 — 0600 밤사이 회고 / 1400 아시아 세션·김프 / 2230 미국 세션 분수령 /
 0900 장전(전일 종가+밤사이 환경) / 2200 NY 장전(선물·프리마켓). 기존 안전 규칙(투자권유 금지·
 단정 금지·루나 1줄·면책·용어 병기)은 전부 보존 — 코드에서 한 글자도 변경 금지.
+
+## 8. CODEX-EDUX-CLOSE 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 기존 안전 규칙 | 삭제/변경 0줄 (diff 검사) — "한 글자도 변경 금지" 준수 |
+| EDUX_FORMAT_RULES | 5개 시스템 프롬프트 주입 확인 + content-safety는 ■ 인식 추가만 |
+| 스모크 | market-close ok + promotion-gate 7/7 (독립 재실행) |
+| 휴장 가드 | **라이브 실증** — 토요일 dry-run이 skipped_holiday: weekend로 정확 스킵 |
+| 간격 기계 검사 (kis 1600 dry-run) | 섹션 6 / 제목 뒤 빈 줄 0 / 연속 빈 줄 0 / 섹션 앞 일관 — §7.1 완벽 준수 |
+| 콘텐츠 | plan-vs-actual·💡·시리즈 예고·면책·해시태그 전부 확인 |
+| migration | 멱등 CHECK 7슬롯 확장 — live 적재 전 적용 필수 |
+| 경미 노트 | TS-EX-6/7 스모크 누락(기능은 존재: normalizeSectionSpacing/nextSlotPreview — 메티 기계 검사로 보충). 후속 보강 권고 |
+
+샘플 artifact: bots/edu-x/output/dry-run/fixture/20260613-1600-kis.md
+적용 절차: 커밋 -> migration 적용 -> plist 2개 bootstrap -> 첫 실사이클(월 16:00 kis / 화 06:30 overseas) TS-EXL1.
+이력: 2026-06-13 독립 검증 합격 (메티)
