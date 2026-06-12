@@ -2058,11 +2058,13 @@ async function main() {
     assert.equal(scheduleOpsHubCalled, false);
     assert.ok(scheduleOpsAsk.payload.text.includes('05:00 정례 실패 확인 순서:'));
     assert.ok(scheduleOpsAsk.payload.text.includes('새 아침 통합 회의가 생성됐는지 확인'));
-    assert.ok(scheduleOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.luna.meeting-morning-0500'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.luna.meeting-morning-0500 명령'));
     assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning.log'));
     assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning-error.log'));
     assert.ok(scheduleOpsAsk.payload.text.includes('정례 실행 상태:'));
     assert.ok(scheduleOpsAsk.payload.text.includes('secret이나 토큰 값을 붙여 공유하지 말고'));
+    assert.equal(scheduleOpsAsk.payload.text.includes('`launchctl print'), false);
+    assert.equal(scheduleOpsAsk.payload.text.includes('`/Users/alexlee/.ai-agent-system/logs'), false);
     assert.equal(scheduleOpsAsk.payload.text.includes('HUB_AUTH_TOKEN'), false);
     assert.equal(scheduleOpsAsk.payload.text.includes('Bearer'), false);
   } finally {
