@@ -836,6 +836,7 @@ function DailyRoom({ token }) {
   const [meetings, setMeetings] = useState([]);
   const [activeRuns, setActiveRuns] = useState([]);
   const [segments, setSegments] = useState([]);
+  const [scheduleStatus, setScheduleStatus] = useState('');
   const [pending, setPending] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -857,6 +858,7 @@ function DailyRoom({ token }) {
     setMeetings([]);
     setActiveRuns([]);
     setSegments([]);
+    setScheduleStatus('');
     setPending([]);
     setSelectedId(null);
     setDetail(null);
@@ -876,6 +878,7 @@ function DailyRoom({ token }) {
       setMeetings(safeArray(list.meetings));
       setActiveRuns(safeArray(list.activeRuns));
       setSegments(safeArray(list.segments));
+      setScheduleStatus(String(list.scheduleStatus || ''));
       setPending(safeArray(pendingPayload.decisions));
       setError('');
       if ((selectDefault || !selectedId) && (list.activeRuns?.[0] || list.meetings?.[0])) {
@@ -962,6 +965,8 @@ function DailyRoom({ token }) {
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     ${notice ? html`<p className="notice" role="status" aria-live="polite">${notice}</p>` : null}
     <div className="polling-status" role="status" aria-live="polite" aria-label=${`회의실 폴링 상태: ${pollingLabel}`}>${pollingLabel}</div>
+    ${'\n'}
+    ${scheduleStatus ? html`<div className="schedule-status" role="status" aria-live="polite" aria-label=${scheduleStatus}>${scheduleStatus}</div>` : null}
     ${'\n'}
     <div className="grid">
       <div>

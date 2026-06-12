@@ -399,6 +399,8 @@ async function main() {
     assert.ok(html.text.includes('.minute.adr'));
     assert.ok(html.text.includes('.role-legend'));
     assert.ok(html.text.includes('.role-dot.data'));
+    assert.ok(html.text.includes('.schedule-status'));
+    assert.ok(html.text.includes('rgba(54, 95, 122, 0.08)'));
     assert.equal(html.text.includes('.pill-inline-separator'), false);
     assert.ok(html.text.includes('.token-box { min-width: 260px; }'));
     assert.ok(html.text.includes('.token-box { min-width: 0; width: 100%; max-width: 100%; }'));
@@ -414,6 +416,10 @@ async function main() {
     assert.ok(appJs.text.includes('const { useEffect, useMemo, useRef, useState } = React;'));
     assert.ok(appJs.text.includes("const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';"));
     assert.ok(appJs.text.includes('selectedMeetingId: requestSelectedMeetingId'));
+    assert.ok(appJs.text.includes('const [scheduleStatus, setScheduleStatus] = useState'));
+    assert.ok(appJs.text.includes('setScheduleStatus(String(list.scheduleStatus ||'));
+    assert.ok(appJs.text.includes('className="schedule-status" role="status"'));
+    assert.ok(appJs.text.includes('aria-label=${scheduleStatus}'));
     assert.ok(appJs.text.includes('function renderMarkdownLite'));
     assert.ok(appJs.text.includes('function MarkdownLite'));
     assert.ok(appJs.text.includes("function pushBlock(node)"));
@@ -1032,6 +1038,9 @@ async function main() {
 
     const meetings = await request(baseUrl, '/api/meetings');
     assert.equal(meetings.payload.meetings.length, 1);
+    assert.ok(meetings.payload.scheduleStatus.includes('정례 실행 상태:'));
+    assert.ok(meetings.payload.scheduleStatus.includes('최신 아침 통합 회의: #1'));
+    assert.ok(meetings.payload.scheduleStatus.includes('최신 전체 회의: #1 아침 통합 회의'));
     const storedCryptoSegment = meetings.payload.meetings[0].segments.find((row) => row.market === 'crypto');
     assert.equal(storedCryptoSegment.label, '암호화폐 24시간 점검');
     assert.equal(storedCryptoSegment.reasonLabel, '24시간 운영');

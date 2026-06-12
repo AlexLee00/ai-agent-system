@@ -1706,6 +1706,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
           .filter((run) => run.status === 'running')
           .map((run) => ({ ...run, promise: undefined })),
         segments: deps.buildMarketSegmentsFn(new Date()).map(normalizeSegmentForApi),
+        scheduleStatus: buildScheduleExecutionStatus(meetings, new Date()),
       });
     }
 
