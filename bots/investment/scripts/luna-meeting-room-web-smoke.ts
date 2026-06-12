@@ -2513,6 +2513,7 @@ async function main() {
     assert.equal(telegramHubCalled, false);
     assert.ok(telegramAsk.payload.text.includes('알림 본문: Luna 회의 완료: 회의 타입 / 마스터 액션 대기: N건'));
     assert.ok(telegramAsk.payload.text.includes('버튼 구성: 확정·보류 버튼은 대기 결정 상위 9건까지'));
+    assert.ok(telegramAsk.payload.text.includes('상위 9건 기준: 웹 전체 결정 대기함 표시 순서와 동일하게 기한이 빠른 항목을 먼저 보고, 기한이 없으면 최근 생성 항목을 먼저 봅니다.'));
     assert.ok(telegramAsk.payload.text.includes('회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로'));
     assert.ok(telegramAsk.payload.text.includes('폴링 또는 새로고침으로 갱신'));
     assert.ok(telegramAsk.payload.text.includes('자동 검증과 운영 경로 검증은 통과'));
