@@ -4,16 +4,17 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const selector = require('../../../packages/core/lib/llm-model-selector.ts');
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
 const SELECTOR_SOURCE_PATH = path.join(PROJECT_ROOT, 'packages', 'core', 'lib', 'llm-model-selector.ts');
 const SNAPSHOT_DIR = path.join(PROJECT_ROOT, 'docs', 'hub', 'snapshots');
+const DEFAULT_LAUNCHD_PLIST_PATH = path.join(PROJECT_ROOT, 'bots', 'hub', 'launchd', 'ai.hub.resource-api.plist');
 const SNAPSHOT_TIME_ZONE = process.env.HUB_LLM_CHAIN_SNAPSHOT_TIME_ZONE || 'Asia/Seoul';
 const SNAPSHOT_DATE = process.env.HUB_LLM_CHAIN_SNAPSHOT_DATE || snapshotDateString(new Date(), SNAPSHOT_TIME_ZONE);
 const DEFAULT_OUTPUT_PATH = path.join(SNAPSHOT_DIR, `llm-chain-snapshot-${SNAPSHOT_DATE}.json`);
@@ -23,6 +24,12 @@ const FIXED_SMOKE_TIMESTAMP = '2026-06-12T00:00:00.000Z';
 const SELECTOR_VERSION = 'v3.0_oauth_4';
 const ROLLOUT_PERCENT = 100;
 const CROSS_TEAM_PROBE_TEAM = 'crossteam-probe';
+let selectorModule = null;
+
+function getSelector() {
+  if (!selectorModule) selectorModule = require('../../../packages/core/lib/llm-model-selector.ts');
+  return selectorModule;
+}
 
 function snapshotDateString(date, timeZone) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -70,6 +77,16 @@ const ENV_BASELINE_KEYS = Object.freeze([
   'HUB_DARWIN_SIGMA_GROQ_PRIMARY',
   'HUB_LLM_LOCAL_BACKTEST_ONLY',
   'HUB_ALLOW_PLANNED_LLM_ROUTES',
+  'LLM_OPENAI_PERF_MODEL',
+  'LLM_OPENAI_MINI_MODEL',
+  'LLM_OPENAI_OPUS_MODEL',
+  'LLM_GROQ_FAST_MODEL',
+  'LLM_GROQ_DEEP_MODEL',
+  'LLM_GROQ_SCOUT_MODEL',
+  'LLM_GEMINI_FLASH_LITE_MODEL',
+  'LLM_GEMINI_FLASH_MODEL',
+  'LLM_GEMINI_PRO_MODEL',
+  'LLM_LOCAL_EMBED_MODEL',
 ]);
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -78,8 +95,10 @@ function parseArgs(argv = process.argv.slice(2)) {
     smoke: false,
     engine: false,
     noWrite: false,
+    envFromLaunchd: false,
     outPath: DEFAULT_OUTPUT_PATH,
     diffPath: null,
+    launchdPlistPath: DEFAULT_LAUNCHD_PLIST_PATH,
     help: false,
   };
 
@@ -89,11 +108,14 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--smoke') args.smoke = true;
     else if (arg === '--engine') args.engine = true;
     else if (arg === '--no-write') args.noWrite = true;
+    else if (arg === '--env-from-launchd') args.envFromLaunchd = true;
     else if (arg === '--help' || arg === '-h') args.help = true;
     else if (arg === '--out') args.outPath = path.resolve(argv[++index] || '');
     else if (arg.startsWith('--out=')) args.outPath = path.resolve(arg.slice('--out='.length));
     else if (arg === '--diff') args.diffPath = path.resolve(argv[++index] || '');
     else if (arg.startsWith('--diff=')) args.diffPath = path.resolve(arg.slice('--diff='.length));
+    else if (arg === '--launchd-plist') args.launchdPlistPath = path.resolve(argv[++index] || '');
+    else if (arg.startsWith('--launchd-plist=')) args.launchdPlistPath = path.resolve(arg.slice('--launchd-plist='.length));
     else throw new Error(`unknown argument: ${arg}`);
   }
 
@@ -102,10 +124,39 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 function usage() {
   return [
-    'Usage: tsx scripts/llm-chain-snapshot.ts [--json] [--no-write] [--out <path>] [--diff <old.json>] [--engine] [--smoke]',
+    'Usage: tsx scripts/llm-chain-snapshot.ts [--json] [--no-write] [--out <path>] [--diff <old.json>] [--engine] [--env-from-launchd] [--smoke]',
     '',
     'Builds a deterministic Hub LLM selector chain snapshot for the OAuth4 selector version.',
   ].join('\n');
+}
+
+function readLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
+  const raw = execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plistPath], {
+    encoding: 'utf8',
+  });
+  const parsed = JSON.parse(raw);
+  return parsed?.EnvironmentVariables && typeof parsed.EnvironmentVariables === 'object'
+    ? parsed.EnvironmentVariables
+    : {};
+}
+
+function applyLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
+  const env = readLaunchdEnvironment(plistPath);
+  const injected = [];
+  const preserved = [];
+  for (const [key, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
+    if (process.env[key] !== undefined) {
+      preserved.push(key);
+      continue;
+    }
+    process.env[key] = String(value);
+    injected.push(key);
+  }
+  return {
+    path: path.relative(PROJECT_ROOT, plistPath),
+    injected,
+    preserved,
+  };
 }
 
 function sortedObject(value) {
@@ -228,7 +279,7 @@ function describeSnapshotRow(key, spec) {
   }
 
   try {
-    const description = selector.describeLLMSelector(key, options);
+    const description = getSelector().describeLLMSelector(key, options);
     const chain = normalizeChain(description?.chain);
     return {
       key,
@@ -278,7 +329,7 @@ function specsForSelectorKey(key, routeKeys) {
 function buildLlmChainSnapshot(options = {}) {
   const generatedAt = options.generatedAt || new Date().toISOString();
   const routeKeys = options.routeKeys || extractAgentRouteKeys();
-  const selectorKeys = selector.listLLMSelectorKeys().slice().sort((a, b) => a.localeCompare(b));
+  const selectorKeys = getSelector().listLLMSelectorKeys().slice().sort((a, b) => a.localeCompare(b));
   const variants = [];
   const errors = [];
 
@@ -470,7 +521,7 @@ function runSmoke() {
   const results = [];
   const first = buildLlmChainSnapshot({ generatedAt: FIXED_SMOKE_TIMESTAMP });
   const second = buildLlmChainSnapshot({ generatedAt: FIXED_SMOKE_TIMESTAMP });
-  const selectorKeys = selector.listLLMSelectorKeys();
+  const selectorKeys = getSelector().listLLMSelectorKeys();
 
   assertSmokeResult(results, 'TS-R1-1', 'selector key coverage and deterministic output', () => {
     assert.equal(first.counts.selectorKeys, selectorKeys.length);
@@ -540,6 +591,7 @@ function runSmoke() {
 
 async function runCli(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
+  const launchdEnv = args.envFromLaunchd ? applyLaunchdEnvironment(args.launchdPlistPath) : null;
   if (args.help) {
     console.log(usage());
     return 0;
@@ -552,13 +604,19 @@ async function runCli(argv = process.argv.slice(2)) {
   }
 
   if (args.engine) {
-    const baseline = loadJsonFile(DEFAULT_BASELINE_PATH);
+    // R2d: env-backed model-token diff must compare the engine against the old selector in the same Hub runtime env.
+    const baseline = args.envFromLaunchd
+      ? buildLlmChainSnapshot({ generatedAt: FIXED_SMOKE_TIMESTAMP })
+      : loadJsonFile(DEFAULT_BASELINE_PATH);
     const engineDiff = buildEngineDiff(baseline);
     const output = {
       ok: engineDiff.mismatched === 0,
       generatedAt: new Date().toISOString(),
       selectorVersion: SELECTOR_VERSION,
       baselinePath: path.relative(PROJECT_ROOT, DEFAULT_BASELINE_PATH),
+      baselineSource: args.envFromLaunchd ? 'current_selector_with_launchd_env' : 'snapshot_file',
+      envFromLaunchd: args.envFromLaunchd,
+      launchdEnv,
       engineDiff,
     };
     if (args.json) {

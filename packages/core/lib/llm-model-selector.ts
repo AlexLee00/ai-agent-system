@@ -35,6 +35,15 @@ type LlmRouteTarget = {
   blockReason: string | null;
 };
 
+export type LlmConfiguredModelConstant = {
+  name: string;
+  token: string;
+  envName: string;
+  value: string;
+  fallback: string;
+  providerPrefixes: string[];
+};
+
 function configuredModel(name: string, fallback: string, providerPrefixes: string[] = []): string {
   const raw = String(process.env[name] || fallback || '').trim();
   if (!raw) return fallback;
@@ -67,6 +76,113 @@ const GEMINI_CLI_PRO_MODEL = configuredModel(
   ['gemini-cli-oauth', 'gemini-oauth', 'gemini'],
 );
 const LOCAL_EMBED_MODEL = configuredModel('LLM_LOCAL_EMBED_MODEL', 'qwen3-embed-0.6b', ['local-embedding', 'local']);
+
+export {
+  OPENAI_PERF_MODEL,
+  OPENAI_MINI_MODEL,
+  OPENAI_OPUS_MODEL,
+  GROQ_FAST_MODEL,
+  GROQ_DEEP_MODEL,
+  GROQ_SCOUT_MODEL,
+  GEMINI_CLI_FLASH_LITE_MODEL,
+  GEMINI_CLI_FLASH_MODEL,
+  GEMINI_CLI_PRO_MODEL,
+  LOCAL_EMBED_MODEL,
+};
+
+export const LLM_CONFIGURED_MODEL_CONSTANTS: ReadonlyArray<LlmConfiguredModelConstant> = Object.freeze([
+  {
+    name: 'OPENAI_PERF_MODEL',
+    token: '@OPENAI_PERF_MODEL',
+    envName: 'LLM_OPENAI_PERF_MODEL',
+    value: OPENAI_PERF_MODEL,
+    fallback: 'gpt-5.4',
+    providerPrefixes: ['openai-oauth', 'openai'],
+  },
+  {
+    name: 'OPENAI_MINI_MODEL',
+    token: '@OPENAI_MINI_MODEL',
+    envName: 'LLM_OPENAI_MINI_MODEL',
+    value: OPENAI_MINI_MODEL,
+    fallback: 'gpt-5.4-mini',
+    providerPrefixes: ['openai-oauth', 'openai'],
+  },
+  {
+    name: 'OPENAI_OPUS_MODEL',
+    token: '@OPENAI_OPUS_MODEL',
+    envName: 'LLM_OPENAI_OPUS_MODEL',
+    value: OPENAI_OPUS_MODEL,
+    fallback: 'gpt-5.5',
+    providerPrefixes: ['openai-oauth', 'openai'],
+  },
+  {
+    name: 'GROQ_FAST_MODEL',
+    token: '@GROQ_FAST_MODEL',
+    envName: 'LLM_GROQ_FAST_MODEL',
+    value: GROQ_FAST_MODEL,
+    fallback: 'llama-3.1-8b-instant',
+    providerPrefixes: ['groq'],
+  },
+  {
+    name: 'GROQ_DEEP_MODEL',
+    token: '@GROQ_DEEP_MODEL',
+    envName: 'LLM_GROQ_DEEP_MODEL',
+    value: GROQ_DEEP_MODEL,
+    fallback: 'qwen/qwen3-32b',
+    providerPrefixes: ['groq'],
+  },
+  {
+    name: 'GROQ_SCOUT_MODEL',
+    token: '@GROQ_SCOUT_MODEL',
+    envName: 'LLM_GROQ_SCOUT_MODEL',
+    value: GROQ_SCOUT_MODEL,
+    fallback: GROQ_FAST_MODEL,
+    providerPrefixes: ['groq'],
+  },
+  {
+    name: 'GEMINI_CLI_FLASH_LITE_MODEL',
+    token: '@GEMINI_CLI_FLASH_LITE_MODEL',
+    envName: 'LLM_GEMINI_FLASH_LITE_MODEL',
+    value: GEMINI_CLI_FLASH_LITE_MODEL,
+    fallback: 'gemini-2.5-flash-lite',
+    providerPrefixes: ['gemini-cli-oauth', 'gemini-oauth', 'gemini'],
+  },
+  {
+    name: 'GEMINI_CLI_FLASH_MODEL',
+    token: '@GEMINI_CLI_FLASH_MODEL',
+    envName: 'LLM_GEMINI_FLASH_MODEL',
+    value: GEMINI_CLI_FLASH_MODEL,
+    fallback: 'gemini-2.5-flash',
+    providerPrefixes: ['gemini-cli-oauth', 'gemini-oauth', 'gemini'],
+  },
+  {
+    name: 'GEMINI_CLI_PRO_MODEL',
+    token: '@GEMINI_CLI_PRO_MODEL',
+    envName: 'LLM_GEMINI_PRO_MODEL',
+    value: GEMINI_CLI_PRO_MODEL,
+    fallback: 'gemini-2.5-pro',
+    providerPrefixes: ['gemini-cli-oauth', 'gemini-oauth', 'gemini'],
+  },
+  {
+    name: 'LOCAL_EMBED_MODEL',
+    token: '@LOCAL_EMBED_MODEL',
+    envName: 'LLM_LOCAL_EMBED_MODEL',
+    value: LOCAL_EMBED_MODEL,
+    fallback: 'qwen3-embed-0.6b',
+    providerPrefixes: ['local-embedding', 'local'],
+  },
+]);
+
+export const LLM_CONFIGURED_MODEL_TOKEN_VALUES: Record<string, string> = Object.freeze(
+  Object.fromEntries(LLM_CONFIGURED_MODEL_CONSTANTS.map((constant) => [constant.token, constant.value])),
+);
+
+export function resolveConfiguredModelToken(token: string): string | null {
+  const normalized = String(token || '').trim();
+  const key = normalized.startsWith('@') ? normalized : `@${normalized}`;
+  return LLM_CONFIGURED_MODEL_TOKEN_VALUES[key] || null;
+}
+
 const TEAM_SELECTOR_VERSION_LEGACY = 'v2_legacy';
 const TEAM_SELECTOR_VERSION_OAUTH4 = 'v3_oauth_4';
 

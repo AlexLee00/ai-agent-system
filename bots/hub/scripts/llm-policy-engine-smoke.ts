@@ -2,7 +2,10 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import {
   applyProviderRuntimeGuards,
   selectLLMChain,
@@ -23,6 +26,8 @@ import {
 
 const require = createRequire(import.meta.url);
 const { resolveHubLlmSelection, selectChainWithShadow } = require('../src/llm-selector.ts');
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..', '..', '..');
 const results = [];
 
 async function record(id, name, fn) {
@@ -47,12 +52,26 @@ function gateREvidenceQuery({ total = 50, mismatches = 0 } = {}) {
   };
 }
 
+function runNodeJson(code, env = {}) {
+  const output = execFileSync(process.execPath, ['--import', 'tsx', '-e', code], {
+    cwd: PROJECT_ROOT,
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+  });
+  return JSON.parse(output);
+}
+
 async function main() {
   await record('TS-R2-1', 'engine full-surface diff is zero', () => {
-  const engineDiff = buildEngineDiff();
-  assert.equal(engineDiff.total, 544);
-  assert.equal(engineDiff.mismatched, 0);
-  return `total=${engineDiff.total} mismatched=${engineDiff.mismatched}`;
+  const report = runNodeJson(`
+    const { runCli } = require('./bots/hub/scripts/llm-chain-snapshot.ts');
+    runCli(['--engine', '--json', '--env-from-launchd']).then((code) => {
+      process.exitCode = code;
+    });
+  `);
+  assert.equal(report.engineDiff.total, 544);
+  assert.equal(report.engineDiff.mismatched, 0);
+  return `total=${report.engineDiff.total} mismatched=${report.engineDiff.mismatched} envFromLaunchd=${report.envFromLaunchd}`;
   });
 
   await record('TS-R2-2', 'MODE=off does not call policy engine', () => {
@@ -278,6 +297,58 @@ async function main() {
     evidence.push(`${selectorKey}:${oldChain.length}`);
   }
   return evidence.join(',');
+  });
+
+  await record('TS-R2-8', 'env-dependent model token resolves old and new chains identically', () => {
+  const report = runNodeJson(`
+    const { selectLLMChain } = require('./packages/core/lib/llm-model-selector.ts');
+    const { normalizePolicyEngineChain, resolvePolicyChain } = require('./packages/core/lib/llm-policy-engine.ts');
+    const ctx = {
+      selectorKey: 'investment.luna',
+      team: 'investment',
+      callerTeam: 'investment',
+      agentName: 'luna',
+      agent: 'luna',
+      selectorVersion: 'v3.0_oauth_4',
+      rolloutPercent: 100,
+    };
+    const oldChain = normalizePolicyEngineChain(selectLLMChain(ctx.selectorKey, ctx));
+    const newChain = resolvePolicyChain(ctx);
+    console.log(JSON.stringify({ oldChain, newChain }));
+  `, {
+    LLM_GROQ_DEEP_MODEL: 'fixture-r2d-groq-deep-model',
+    LLM_TEAM_SELECTOR_VERSION: 'v3.0_oauth_4',
+    LLM_TEAM_SELECTOR_AB_PERCENT: '100',
+    LLM_TEAM_SELECTOR_VERSION_PCT: '100',
+  });
+  assert.deepEqual(report.newChain, report.oldChain);
+  assert.equal(report.oldChain[0]?.model, 'fixture-r2d-groq-deep-model');
+  return `selector=investment.luna model=${report.oldChain[0]?.model}`;
+  });
+
+  await record('TS-R2-9', 'shared default model tokens preserve scout-specific env overrides', () => {
+  const report = runNodeJson(`
+    const { selectLLMChain } = require('./packages/core/lib/llm-model-selector.ts');
+    const { normalizePolicyEngineChain, resolvePolicyChain } = require('./packages/core/lib/llm-policy-engine.ts');
+    const ctx = {
+      selectorKey: 'blog.commenter.reply',
+      team: 'blog',
+      callerTeam: 'blog',
+      selectorVersion: 'v3.0_oauth_4',
+      rolloutPercent: 100,
+    };
+    const oldChain = normalizePolicyEngineChain(selectLLMChain(ctx.selectorKey, ctx));
+    const newChain = resolvePolicyChain(ctx);
+    console.log(JSON.stringify({ oldChain, newChain }));
+  `, {
+    LLM_GROQ_SCOUT_MODEL: 'fixture-r2d-groq-scout-model',
+    LLM_TEAM_SELECTOR_VERSION: 'v3.0_oauth_4',
+    LLM_TEAM_SELECTOR_AB_PERCENT: '100',
+    LLM_TEAM_SELECTOR_VERSION_PCT: '100',
+  });
+  assert.deepEqual(report.newChain, report.oldChain);
+  assert.equal(report.oldChain[1]?.model, 'fixture-r2d-groq-scout-model');
+  return `selector=blog.commenter.reply model=${report.oldChain[1]?.model}`;
   });
 
   const failed = results.filter((result) => !result.pass);

@@ -3,24 +3,40 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
+const require = createRequire(import.meta.url);
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
 const DEFAULT_SNAPSHOT_PATH = path.join(PROJECT_ROOT, 'docs', 'hub', 'snapshots', 'llm-chain-snapshot-2026-06-12.json');
 const DEFAULT_OUTPUT_PATH = path.join(PROJECT_ROOT, 'packages', 'core', 'lib', 'llm-policy-table.ts');
+const DEFAULT_LAUNCHD_PLIST_PATH = path.join(PROJECT_ROOT, 'bots', 'hub', 'launchd', 'ai.hub.resource-api.plist');
+
+let selectorModule = null;
+
+function getSelectorModule() {
+  if (!selectorModule) selectorModule = require('../../../packages/core/lib/llm-model-selector.ts');
+  return selectorModule;
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {
     check: false,
     json: false,
+    envFromLaunchd: false,
     snapshotPath: DEFAULT_SNAPSHOT_PATH,
     outputPath: DEFAULT_OUTPUT_PATH,
+    launchdPlistPath: DEFAULT_LAUNCHD_PLIST_PATH,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--check') args.check = true;
     else if (arg === '--json') args.json = true;
+    else if (arg === '--env-from-launchd') args.envFromLaunchd = true;
+    else if (arg === '--launchd-plist') args.launchdPlistPath = path.resolve(argv[++index] || '');
+    else if (arg.startsWith('--launchd-plist=')) args.launchdPlistPath = path.resolve(arg.slice('--launchd-plist='.length));
     else if (arg === '--snapshot') args.snapshotPath = path.resolve(argv[++index] || '');
     else if (arg.startsWith('--snapshot=')) args.snapshotPath = path.resolve(arg.slice('--snapshot='.length));
     else if (arg === '--out') args.outputPath = path.resolve(argv[++index] || '');
@@ -28,6 +44,35 @@ function parseArgs(argv = process.argv.slice(2)) {
     else throw new Error(`unknown argument: ${arg}`);
   }
   return args;
+}
+
+function readLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
+  const raw = execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plistPath], {
+    encoding: 'utf8',
+  });
+  const parsed = JSON.parse(raw);
+  return parsed?.EnvironmentVariables && typeof parsed.EnvironmentVariables === 'object'
+    ? parsed.EnvironmentVariables
+    : {};
+}
+
+function applyLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
+  const env = readLaunchdEnvironment(plistPath);
+  const injected = [];
+  const preserved = [];
+  for (const [key, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
+    if (process.env[key] !== undefined) {
+      preserved.push(key);
+      continue;
+    }
+    process.env[key] = String(value);
+    injected.push(key);
+  }
+  return {
+    path: path.relative(PROJECT_ROOT, plistPath),
+    injected,
+    preserved,
+  };
 }
 
 function clean(value) {
@@ -45,10 +90,165 @@ function teamFromSelectorKey(selectorKey) {
   return clean(selectorKey).split('.')[0] || '*';
 }
 
-function normalizeChainEntry(entry = {}) {
+function providerMatchesConstant(provider, constant) {
+  const normalizedProvider = clean(provider);
+  const prefixes = Array.isArray(constant?.providerPrefixes) ? constant.providerPrefixes.map(clean).filter(Boolean) : [];
+  return prefixes.length === 0 || prefixes.includes(normalizedProvider);
+}
+
+function buildModelTokenIndex() {
+  const constants = (getSelectorModule().LLM_CONFIGURED_MODEL_CONSTANTS || [])
+    .map((constant) => ({
+      name: clean(constant.name),
+      token: clean(constant.token),
+      envName: clean(constant.envName),
+      value: clean(constant.value),
+      fallback: clean(constant.fallback),
+      providerPrefixes: Array.isArray(constant.providerPrefixes) ? constant.providerPrefixes.map(clean).filter(Boolean) : [],
+    }))
+    .filter((constant) => constant.name && constant.token);
+  const buckets = new Map();
+  for (const constant of constants) {
+    // Tokenize snapshot defaults, not unrelated literals that merely equal a LaunchAgent override today.
+    const modelCandidates = [constant.fallback];
+    if (constant.value === constant.fallback) modelCandidates.push(constant.value);
+    for (const model of Array.from(new Set(modelCandidates.filter(Boolean)))) {
+      for (const provider of constant.providerPrefixes.length > 0 ? constant.providerPrefixes : ['*']) {
+        const key = `${provider}\u0000${model}`;
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(constant);
+      }
+    }
+  }
+
+  const lookup = new Map();
+  const warnings = [];
+  for (const [key, candidates] of buckets.entries()) {
+    const sorted = candidates.slice().sort((a, b) => a.name.localeCompare(b.name));
+    const names = Array.from(new Set(sorted.map((candidate) => candidate.name)));
+    if (names.length > 1) {
+      const [provider, model] = key.split('\u0000');
+      warnings.push(`model token conflict provider=${provider} model=${model} candidates=${names.join(',')} resolved_by_source_probe=true`);
+      continue;
+    }
+    lookup.set(key, sorted[0]);
+  }
+
+  return {
+    constants,
+    lookup,
+    warnings,
+  };
+}
+
+function snapshotRowIdentity(row) {
+  return [
+    clean(row.key),
+    clean(row.agentName),
+    clean(row.variant),
+    clean(row.taskType),
+    clean(row.runtimePurpose),
+  ].join('\u0000');
+}
+
+function chainEntrySourceKey(row, index) {
+  return `${snapshotRowIdentity(row)}\u0000${index}`;
+}
+
+function runModelTokenProbe(constant, constants) {
+  const marker = `__R2D_MODEL_TOKEN_${constant.name}__`;
+  const env = { ...process.env };
+  for (const candidate of constants) {
+    env[candidate.envName] = candidate.fallback || '';
+  }
+  env[constant.envName] = marker;
+
+  const output = execFileSync(process.execPath, ['--import', 'tsx', '-e', `
+    const { buildLlmChainSnapshot } = require('./bots/hub/scripts/llm-chain-snapshot.ts');
+    const snapshot = buildLlmChainSnapshot({ generatedAt: '2026-06-12T00:00:00.000Z' });
+    const marker = ${JSON.stringify(marker)};
+    const hits = [];
+    function clean(value) { return String(value || '').trim(); }
+    function rowIdentity(row) {
+      return [
+        clean(row.key),
+        clean(row.agentName),
+        clean(row.variant),
+        clean(row.taskType),
+        clean(row.runtimePurpose),
+      ].join('\\u0000');
+    }
+    for (const row of snapshot.variants || []) {
+      (row.chain || []).forEach((entry, index) => {
+        if (entry && entry.model === marker) hits.push({ id: rowIdentity(row), index, provider: clean(entry.provider) });
+      });
+    }
+    console.log(JSON.stringify(hits));
+  `], {
+    cwd: PROJECT_ROOT,
+    env,
+    encoding: 'utf8',
+  });
+  return JSON.parse(output);
+}
+
+function buildModelTokenSourceIndex(constants, warnings) {
+  const sourceTokens = new Map();
+  const conflicts = [];
+  for (const constant of constants) {
+    const hits = runModelTokenProbe(constant, constants);
+    for (const hit of hits) {
+      const key = `${hit.id}\u0000${hit.index}`;
+      if (sourceTokens.has(key) && sourceTokens.get(key).token !== constant.token) {
+        conflicts.push(`${key}:${sourceTokens.get(key).token}->${constant.token}`);
+        continue;
+      }
+      sourceTokens.set(key, {
+        token: constant.token,
+        provider: clean(hit.provider),
+      });
+    }
+  }
+  if (conflicts.length > 0) {
+    warnings.push(`model source token conflicts=${conflicts.slice(0, 10).join(',')}${conflicts.length > 10 ? `...(+${conflicts.length - 10})` : ''}`);
+  }
+  return sourceTokens;
+}
+
+function createCodegenContext() {
+  const tokenIndex = buildModelTokenIndex();
+  return {
+    ...tokenIndex,
+    sourceTokens: buildModelTokenSourceIndex(tokenIndex.constants, tokenIndex.warnings),
+    tokenizedEntryCount: 0,
+    tokenCounts: {},
+  };
+}
+
+function tokenizeModel(provider, model, context, sourceKey = null) {
+  const normalizedProvider = clean(provider);
+  const normalizedModel = clean(model);
+  if (!normalizedModel || !context) return normalizedModel;
+  const sourceToken = sourceKey ? context.sourceTokens.get(sourceKey) : null;
+  if (sourceToken && (!sourceToken.provider || sourceToken.provider === normalizedProvider)) {
+    context.tokenizedEntryCount += 1;
+    context.tokenCounts[sourceToken.token] = (context.tokenCounts[sourceToken.token] || 0) + 1;
+    return sourceToken.token;
+  }
+  const direct = context.lookup.get(`${normalizedProvider}\u0000${normalizedModel}`);
+  const wildcard = context.lookup.get(`*\u0000${normalizedModel}`);
+  const constant = direct || wildcard;
+  if (!constant || !providerMatchesConstant(normalizedProvider, constant)) return normalizedModel;
+  context.tokenizedEntryCount += 1;
+  context.tokenCounts[constant.token] = (context.tokenCounts[constant.token] || 0) + 1;
+  return constant.token;
+}
+
+function normalizeChainEntry(entry = {}, context = null, sourceKey = null) {
+  const provider = clean(entry.provider);
   const row = {
-    provider: clean(entry.provider),
-    model: clean(entry.model),
+    provider,
+    model: tokenizeModel(provider, entry.model, context, sourceKey),
   };
   const maxTokens = Number(entry.maxTokens);
   const temperature = Number(entry.temperature);
@@ -59,7 +259,7 @@ function normalizeChainEntry(entry = {}) {
   return row;
 }
 
-function ruleFromSnapshotRow(row) {
+function ruleFromSnapshotRow(row, context) {
   const selectorKey = clean(row.key);
   const agent = clean(row.agentName);
   const taskType = clean(row.taskType || row.runtimePurpose);
@@ -73,7 +273,9 @@ function ruleFromSnapshotRow(row) {
   return {
     id: [selectorKey, agent || 'default', variant].map(slug).join('__'),
     match,
-    chain: (Array.isArray(row.chain) ? row.chain : []).map(normalizeChainEntry),
+    chain: (Array.isArray(row.chain) ? row.chain : []).map((entry, index) => (
+      normalizeChainEntry(entry, context, chainEntrySourceKey(row, index))
+    )),
   };
 }
 
@@ -98,15 +300,25 @@ function stableStringify(value) {
 }
 
 function buildPolicyTableSource(snapshot, snapshotPath = DEFAULT_SNAPSHOT_PATH) {
+  const context = createCodegenContext();
   const rules = (Array.isArray(snapshot?.variants) ? snapshot.variants : [])
     .filter((row) => !row.error)
-    .map(ruleFromSnapshotRow)
+    .map((row) => ruleFromSnapshotRow(row, context))
     .sort(sortRule);
   const generatedFrom = path.relative(PROJECT_ROOT, snapshotPath);
-  return [
+  const configuredModelConstants = context.constants.map((constant) => ({
+    name: constant.name,
+    token: constant.token,
+    envName: constant.envName,
+    value: constant.value,
+    fallback: constant.fallback,
+    providerPrefixes: constant.providerPrefixes,
+  }));
+  const source = [
     '// @ts-nocheck',
     '// Generated by bots/hub/scripts/llm-policy-table-codegen.ts.',
     '// Do not edit by hand; update the R1 snapshot or codegen and regenerate.',
+    '// Operational note: run codegen/static diff with --env-from-launchd so env-backed model tokens match Hub runtime.',
     '',
     'export type PolicyChainEntry = string | {',
     '  provider: string;',
@@ -127,35 +339,54 @@ function buildPolicyTableSource(snapshot, snapshotPath = DEFAULT_SNAPSHOT_PATH) 
     `export const LLM_POLICY_TABLE_GENERATED_AT = ${JSON.stringify(snapshot?.generatedAt || null)};`,
     `export const LLM_POLICY_TABLE_SELECTOR_VERSION = ${JSON.stringify(snapshot?.selectorVersion || null)};`,
     `export const LLM_POLICY_TABLE_RULE_COUNT = ${rules.length};`,
+    `export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = ${context.tokenizedEntryCount};`,
+    `export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNTS: Record<string, number> = ${stableStringify(context.tokenCounts).trim()};`,
+    `export const LLM_POLICY_TABLE_CONFIGURED_MODEL_CONSTANTS = ${stableStringify(configuredModelConstants).trim()};`,
     '',
     `export const LLM_POLICY_RULES: PolicyRule[] = ${stableStringify(rules).trim()};`,
     '',
   ].join('\n');
+  return {
+    source,
+    rules,
+    tokenizedEntryCount: context.tokenizedEntryCount,
+    tokenCounts: context.tokenCounts,
+    configuredModelConstants,
+    warnings: context.warnings,
+  };
 }
 
-function buildReport(args, changed, ruleCount) {
+function buildReport(args, changed, codegen, launchdEnv = null) {
   return {
     ok: !args.check || !changed,
     changed,
     check: args.check,
+    envFromLaunchd: args.envFromLaunchd,
+    launchdEnv,
     snapshotPath: path.relative(PROJECT_ROOT, args.snapshotPath),
     outputPath: path.relative(PROJECT_ROOT, args.outputPath),
-    ruleCount,
+    ruleCount: codegen.rules.length,
+    tokenizedEntryCount: codegen.tokenizedEntryCount,
+    tokenCounts: codegen.tokenCounts,
+    configuredModelConstants: codegen.configuredModelConstants,
+    warnings: codegen.warnings,
   };
 }
 
 async function main() {
   const args = parseArgs();
+  // R2d: generated policy tables must be built against the same LaunchAgent env as Hub runtime.
+  const launchdEnv = args.envFromLaunchd ? applyLaunchdEnvironment(args.launchdPlistPath) : null;
   const snapshot = JSON.parse(fs.readFileSync(args.snapshotPath, 'utf8'));
-  const source = buildPolicyTableSource(snapshot, args.snapshotPath);
+  const codegen = buildPolicyTableSource(snapshot, args.snapshotPath);
+  const source = codegen.source;
   const current = fs.existsSync(args.outputPath) ? fs.readFileSync(args.outputPath, 'utf8') : '';
   const changed = current !== source;
-  const ruleCount = (source.match(/"id":/g) || []).length;
-  const report = buildReport(args, changed, ruleCount);
+  const report = buildReport(args, changed, codegen, launchdEnv);
 
   if (args.check) {
     if (args.json) console.log(JSON.stringify(report, null, 2));
-    else console.log(`[llm-policy-table-codegen] check changed=${changed} rules=${ruleCount}`);
+    else console.log(`[llm-policy-table-codegen] check changed=${changed} rules=${report.ruleCount} tokenized=${report.tokenizedEntryCount}`);
     process.exitCode = changed ? 1 : 0;
     return;
   }
@@ -163,7 +394,10 @@ async function main() {
   fs.mkdirSync(path.dirname(args.outputPath), { recursive: true });
   fs.writeFileSync(args.outputPath, source);
   if (args.json) console.log(JSON.stringify(report, null, 2));
-  else console.log(`[llm-policy-table-codegen] wrote ${path.relative(PROJECT_ROOT, args.outputPath)} rules=${ruleCount}`);
+  else {
+    for (const warning of codegen.warnings) console.warn(`[llm-policy-table-codegen] warning: ${warning}`);
+    console.log(`[llm-policy-table-codegen] wrote ${path.relative(PROJECT_ROOT, args.outputPath)} rules=${report.ruleCount} tokenized=${report.tokenizedEntryCount}`);
+  }
 }
 
 main().catch((error) => {
