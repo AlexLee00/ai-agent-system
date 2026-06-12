@@ -50,6 +50,7 @@ const AGENT_LABELS = Object.freeze({
 const TOKEN_STORAGE_KEY = 'lunaMeetingRoomToken';
 const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';
 const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';
+const MEETING_START_MALFORMED_MESSAGE = '회의 시작 응답이 올바르지 않습니다. 잠시 후 다시 시도하세요.';
 
 function useToken() {
   const [token, setToken] = useState(() => readLocalValue(TOKEN_STORAGE_KEY, ''));
@@ -78,6 +79,10 @@ function writeLocalValue(key, value) {
   } catch {
     // Storage can be disabled in hardened browser contexts. The UI still works without token persistence.
   }
+}
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function readSessionValue(key, fallback = '') {
@@ -387,8 +392,9 @@ function segmentReasonLabel(reason) {
 }
 
 function meetingTypesForSegments(segments = []) {
-  const domestic = segments.find((row) => row.market === 'domestic');
-  const overseas = segments.find((row) => row.market === 'overseas');
+  const segmentRows = safeArray(segments);
+  const domestic = segmentRows.find((row) => row.market === 'domestic');
+  const overseas = segmentRows.find((row) => row.market === 'overseas');
   const domesticReason = segmentReasonLabel(domestic?.reason);
   const overseasReason = segmentReasonLabel(overseas?.reason);
   return [
@@ -415,9 +421,10 @@ function segmentStatusVisibleText(segment = {}) {
 }
 
 function SegmentStatus({ segments }) {
-  if (!segments?.length) return html`<div id="meeting-segment-status" className="meta" role="status" aria-live="polite" aria-label="시장 세그먼트 상태">세그먼트 상태 로딩 중</div>`;
-  const summary = segments.map(segmentStatusText).join(' / ');
-  const pills = segments.flatMap((segment, index) => [
+  const segmentRows = safeArray(segments);
+  if (!segmentRows.length) return html`<div id="meeting-segment-status" className="meta" role="status" aria-live="polite" aria-label="시장 세그먼트 상태">세그먼트 상태 로딩 중</div>`;
+  const summary = segmentRows.map(segmentStatusText).join(' / ');
+  const pills = segmentRows.flatMap((segment, index) => [
     html`
       <span
         key=${`segment-${segment.market || index}`}
@@ -428,7 +435,7 @@ function SegmentStatus({ segments }) {
         ${segmentStatusVisibleText(segment)}
       </span>
     `,
-    index < segments.length - 1 ? ' ' : '',
+    index < segmentRows.length - 1 ? ' ' : '',
   ]);
   return html`
     <div id="meeting-segment-status" className="segment-status" role="status" aria-live="polite" aria-label=${`시장 세그먼트 상태: ${summary}`}>
@@ -518,16 +525,18 @@ function Header({ token, setToken, tab, setTab }) {
 }
 
 function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
-  const totalCount = meetings.length + activeRuns.length;
+  const meetingRows = safeArray(meetings);
+  const activeRunRows = safeArray(activeRuns);
+  const totalCount = meetingRows.length + activeRunRows.length;
   return html`
     <div className="card" role="region" aria-label="회의 목록">
       <h2>회의 목록</h2>
       <div className="card-body list" role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}>
-        ${activeRuns.map((run) => html`
+        ${activeRunRows.map((run) => html`
           <div className="meeting-list-row" role="listitem">
             <button
-              className=${`meeting-item ${selectedId === run.id ? 'active' : ''}`}
-              aria-pressed=${selectedId === run.id}
+              className=${`meeting-item ${String(selectedId) === String(run.id) ? 'active' : ''}`}
+              aria-pressed=${String(selectedId) === String(run.id)}
               aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}
               onClick=${() => setSelectedId(run.id)}
             >
@@ -536,7 +545,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
             </button>
           </div>
         `)}
-        ${meetings.map((meeting) => html`
+        ${meetingRows.map((meeting) => html`
           <div className="meeting-list-row" role="listitem">
             <button
               className=${`meeting-item ${String(selectedId) === String(meeting.id) ? 'active' : ''}`}
@@ -549,7 +558,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
             </button>
           </div>
         `)}
-        ${meetings.length === 0 && activeRuns.length === 0 ? html`<div className="meta">회의 기록 없음</div>` : null}
+        ${meetingRows.length === 0 && activeRunRows.length === 0 ? html`<div className="meta">회의 기록 없음</div>` : null}
       </div>
     </div>
   `;
@@ -561,16 +570,21 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   const [useLlm, setUseLlm] = useState(false);
   const [busy, setBusy] = useState(false);
   const startInFlightRef = useRef(false);
+  const segmentsReady = safeArray(segments).length > 0;
   const selectedType = types.find((item) => item.value === type) || types[0];
   const selectedTypeDisabled = selectedType?.disabled === true;
-  const startDisabled = busy || selectedTypeDisabled;
-  const startButtonLabel = selectedTypeDisabled
-    ? `${selectedType?.label || type} 시작 불가, 사유 ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}`
+  const startBlocked = !segmentsReady || selectedTypeDisabled;
+  const startBlockReason = !segmentsReady
+    ? '세그먼트 상태 확인 중'
+    : (selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason));
+  const startDisabled = busy || startBlocked;
+  const startButtonLabel = startBlocked
+    ? `${selectedType?.label || type} 시작 불가, 사유 ${startBlockReason}`
     : busy
       ? `${selectedType?.label || type} 시작 중`
       : `${selectedType?.label || type} 시작`;
   async function start() {
-    if (startInFlightRef.current || selectedTypeDisabled) return;
+    if (startInFlightRef.current || startBlocked) return;
     startInFlightRef.current = true;
     setBusy(true);
     setError('');
@@ -579,6 +593,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
         method: 'POST',
         body: JSON.stringify({ type, noLlm: !useLlm }),
       });
+      if (payload?.run?.id == null) throw new Error(MEETING_START_MALFORMED_MESSAGE);
       onStarted(payload.run);
     } catch (error) {
       setError(error.message);
@@ -604,12 +619,12 @@ function StartMeeting({ token, segments, onStarted, setError }) {
         <button
           aria-label=${startButtonLabel}
           aria-busy=${busy}
-          title=${selectedTypeDisabled ? `${selectedType?.label || type}는 현재 비활성 상태입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}` : `${selectedType?.label || type}를 자문/섀도 회의로 시작합니다.`}
+          title=${startBlocked ? `${selectedType?.label || type}는 현재 시작할 수 없습니다: ${startBlockReason}` : `${selectedType?.label || type}를 자문/섀도 회의로 시작합니다.`}
           onClick=${start}
           disabled=${startDisabled}
         >${busy ? '시작 중' : '회의 시작'}</button>
       </div>
-      ${selectedTypeDisabled ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 비활성입니다: ${selectedType?.reasonLabel || segmentReasonLabel(selectedType?.reason)}</div>` : null}
+      ${startBlocked ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 시작할 수 없습니다: ${startBlockReason}</div>` : null}
       <${SegmentStatus} segments=${segments} />
       <label className="check" htmlFor="meeting-llm-toggle"><input id="meeting-llm-toggle" type="checkbox" aria-describedby="meeting-llm-mode" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
       <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`} role="status" aria-live="polite" aria-label="LLM 발언 모드">
@@ -620,10 +635,11 @@ function StartMeeting({ token, segments, onStarted, setError }) {
 }
 
 function Timeline({ detail, catchup, loading }) {
-  const minutes = detail?.minutes || [];
+  const minutes = safeArray(detail?.minutes);
+  const catchupList = safeArray(catchup);
   const catchupLines = loading
     ? ['회의 상세를 불러오는 중입니다.']
-    : (catchup?.length ? catchup : ['회의를 선택하면 U1 캐치업이 표시됩니다.']);
+    : (catchupList.length ? catchupList : ['회의를 선택하면 U1 캐치업이 표시됩니다.']);
   const catchupLabel = `U1 캐치업 요약: ${catchupLines.join(' / ')}`;
   const roleLegend = [
     ['system', '시스템'],
@@ -738,12 +754,13 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
 }
 
 function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
+  const decisionRows = safeArray(decisions);
   return html`
     <div className="card" role="region" aria-label="결정 대기함">
       <h2>결정 대기함</h2>
-      <div className="card-body list" role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisions.length}건`}>
-        ${decisions.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
-        ${decisions.length === 0 ? html`<div className="meta">마스터 액션 대기 결정 없음</div>` : null}
+      <div className="card-body list" role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisionRows.length}건`}>
+        ${decisionRows.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
+        ${decisionRows.length === 0 ? html`<div className="meta">마스터 액션 대기 결정 없음</div>` : null}
       </div>
     </div>
   `;
@@ -790,10 +807,10 @@ function DailyRoom({ token }) {
       const list = await api(token, '/api/meetings');
       const pendingPayload = await api(token, '/api/decisions/pending');
       if (baseRequestSeq.current !== requestId) return;
-      setMeetings(list.meetings || []);
-      setActiveRuns(list.activeRuns || []);
-      setSegments(list.segments || []);
-      setPending(pendingPayload.decisions || []);
+      setMeetings(safeArray(list.meetings));
+      setActiveRuns(safeArray(list.activeRuns));
+      setSegments(safeArray(list.segments));
+      setPending(safeArray(pendingPayload.decisions));
       setError('');
       if ((selectDefault || !selectedId) && (list.activeRuns?.[0] || list.meetings?.[0])) {
         const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
@@ -859,19 +876,32 @@ function DailyRoom({ token }) {
       refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
     }, pollingIntervalMs);
     return () => clearInterval(interval);
-  }, [activeRuns.map((run) => run.id + run.status).join(','), selectedId, token, pollingIntervalMs]);
+  }, [activeRuns.map((run) => `${run.id}:${run.status}`).join(','), selectedId, token, pollingIntervalMs]);
+
+  function handleMeetingStarted(run) {
+    if (run?.id == null) {
+      setError(MEETING_START_MALFORMED_MESSAGE);
+      return;
+    }
+    setSelectedId(run.id);
+    refreshBase().catch((error) => setError(error.message));
+  }
+
+  function refreshAfterDecisionUpdate() {
+    refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
+  }
 
   return html`
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     ${notice ? html`<p className="notice" role="status" aria-live="polite">${notice}</p>` : null}
-    <div className="polling-status" role="status" aria-live="polite" aria-label="회의실 폴링 상태">${pollingLabel}</div>
+    <div className="polling-status" role="status" aria-live="polite" aria-label=${`회의실 폴링 상태: ${pollingLabel}`}>${pollingLabel}</div>
     <div className="grid">
       <div>
-        <${StartMeeting} token=${token} segments=${segments} onStarted=${(run) => { setSelectedId(run.id); refreshBase(); }} setError=${setError} />
+        <${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />
         <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
       </div>
       <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />
-      <${Decisions} token=${token} decisions=${pending} onUpdated=${() => { refreshBase(); refreshSelected(); }} setError=${setError} setNotice=${setNotice} />
+      <${Decisions} token=${token} decisions=${pending} onUpdated=${refreshAfterDecisionUpdate} setError=${setError} setNotice=${setNotice} />
     </div>
   `;
 }
