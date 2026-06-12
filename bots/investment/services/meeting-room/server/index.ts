@@ -455,13 +455,15 @@ function normalizeCanonicalStatusTokens(content) {
     const isGateLine = /(?:G0\s*)?게이트|gate/i.test(line);
     const isMarketStatusLine = /시장.*상태/.test(line);
     const isMarketScoreLine = /시장.*(?:중단|감소|전체)\s*\(\d+(?:\.\d+)?점?\)/.test(line);
-    const isAllMarketStatusSummary = /(?:국내|해외|미국|암호화폐|crypto).*(?:모두|각각).*(?:중단|감소|전체)\s*상태/.test(line);
-    if (!isGateLine && !isMarketStatusLine && !isMarketScoreLine && !isAllMarketStatusSummary) return line;
+    const isAllMarketStatusSummary = /(?:국내|해외|미국|암호화폐|crypto).*(?:모두|각각).*(?:중단|감소|전체|halt|reduced|full)\s*상태/.test(line);
+    const isMarketDeploymentLine = /(?:국내|해외|미국|암호화폐|crypto).*(?:중단|감소|전체|최대|halt|reduced|full)\s*상태/.test(line);
+    if (!isGateLine && !isMarketStatusLine && !isMarketScoreLine && !isAllMarketStatusSummary && !isMarketDeploymentLine) return line;
     return line
       .replace(/['"“”‘’]할당['"“”‘’]\s*상태/g, 'halt 상태')
-      .replace(/중단(?=\s*(?:\(|상태|$))/g, 'halt')
-      .replace(/감소(?=\s*(?:\(|상태|$))/g, 'reduced')
-      .replace(/전체(?=\s*(?:\(|상태|$))/g, 'full');
+      .replace(/중단(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'halt')
+      .replace(/감소(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'reduced')
+      .replace(/전체(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'full')
+      .replace(/최대(?=\s*(?:,|，|\/|·|및|와|과|\(|상태|$))/g, 'full');
   }).join('\n');
 }
 
@@ -521,6 +523,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bplan-note\b/g, '회의 데이터 요약')
     .replace(/회의\s+회의 데이터 요약/g, '회의 데이터 요약')
     .replace(/회의 데이터 요약를/g, '회의 데이터 요약을')
+    .replace(/(?:^|\n)segments:\s*\[[^\n]*\]\s*/g, '\n세그먼트: 상단 요약 기준입니다\n')
     .replace(/\bshadow stack\b/g, '섀도 스택')
     .replace(/\bregistry evidence\b/g, '레지스트리 근거')
     .replace(/\bgate_off_virtual\b/g, '게이트 비활성 가상 비교')
@@ -530,12 +533,16 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
     .replace(/해외/g, '미국')
     .replace(/미국가/g, '미국이')
+    .replace(/미국는/g, '미국은')
     .replace(/미국와/g, '미국과')
     .replace(/강세\s+상태/g, '상승 상태')
     .replace(/중립\s+상태/g, '수평 상태')
     .replace(/약세\s+상태/g, '하락 상태')
     .replace(/['"“”‘’]줄인['"“”‘’]\s*상태/g, 'reduced 상태')
     .replace(/줄인\s+상태/g, 'reduced 상태')
+    .replace(/진행이\s*중단된\s*상태/g, 'halt 상태')
+    .replace(/중단된\s*상태/g, 'halt 상태')
+    .replace(/완전한\s*상태/g, 'full 상태')
     .replace(/중단(?=\s*\(\d)/g, 'halt')
     .replace(/감소(?=\s*\(\d)/g, 'reduced')
     .replace(/전체(?=\s*\(\d)/g, 'full')
@@ -621,6 +628,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
       /따라서,\s*[^.。!?]*?다음 조치를 취해야 합니다:\s*[^.。!?]*?(?:추가 분석을 수행하고,\s*)?[^.。!?]*?최종 결정을 내릴 수 있도록 하십시오\.?/g,
       '후속 조치는 마스터 확인 후 기록합니다.',
     )
+    .replace(/따라서\s*최종 결정을 내릴 수 있도록 하십시오\.?/g, '후속 조치는 마스터 확인 후 기록합니다.')
     .replace(/(확인하세요|기준입니다|봅니다)이며/g, '$1. ')
     .replace(/(확인하세요|기준입니다|봅니다)\.\s*,\s*/g, '$1. ')
     .replace(/(기준입니다|봅니다)(?=[가-힣A-Za-z0-9])/g, '$1. ')
@@ -893,7 +901,6 @@ async function askAgent(body, deps, limiter) {
       skipped: true,
       agent,
       provider: 'rule_based',
-      route,
       text: `[${agentDisplayLabel(agent)}] 비용 없는 규칙 기반 응답입니다. 질문을 확인했습니다: ${question}`,
     };
   }
@@ -920,16 +927,14 @@ async function askAgent(body, deps, limiter) {
     return {
       ok: result?.ok === true,
       agent,
-      route,
       provider: result?.provider || null,
-      text: normalizeLegacyKoreanLlmNoise(result?.text || ''),
+      text: normalizeLegacyMinuteContent(result?.text || ''),
       error: result?.error || null,
     };
   } catch (error) {
     return {
       ok: false,
       agent,
-      route,
       text: '',
       error: agentAskFailureMessage(),
       errorCode: 'agent_ask_failed',
@@ -1149,6 +1154,12 @@ if (isDirectExecution(import.meta.url)) {
 export default {
   createMeetingRoomWebServer,
   startMeetingRoomWebServer,
+};
+
+export {
+  normalizeDecision,
+  normalizeLegacyMinuteContent,
+  normalizeMinute,
 };
 
 export const _testOnly = {

@@ -34,7 +34,7 @@
 |---|---|---|---|
 | W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(자문 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타·새 질의 시 이전 응답 제거·입력 변경 시 이전 오류 제거, rule-based/noLLM 응답도 내부 라우팅 토큰 없이 한국어 표시, Hub 실패 원문은 숨기고 한국어 안내 표시) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta/stale/noLLM/실패 안내+[수동] ✅UI 기본 상태·noLLM 브라우저 |
 | W-31 | 비용 가드 | 분당 2회 초과→429 안내(분 경과 후 재시도 가능) | [자동] API+[수동] ✅2026-06-12 브라우저 |
-| W-32 | 응답 마크다운 | LLM 응답의 마크다운도 W-20과 동일 렌더 | [자동] fixture+[수동] 실호출 보류 |
+| W-32 | 응답 마크다운 | LLM 응답의 마크다운도 W-20과 동일 렌더 | [자동]+[수동] ✅2026-06-12 groq 실호출 |
 
 ## D. 통신·보안·내성
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -51,7 +51,7 @@
 | W-50 | 자동 회의 반영 | 정례 회의 후 접속 | 목록에 새 세션·캐치업 갱신·새 pending 카드 | [자동] run 완료 후 새 세션 반영+[수동] 🔁 정례 launchd |
 | W-51 | 텔레그램↔웹 동기 | 텔레그램 버튼으로 confirm 후 웹 확인 | 카드 상태 일치+감사 행 changed_via=telegram | [자동] callback/action smoke+[수동] 🔁 첫 실버튼 |
 | W-52 | 주말 경량판 | 토/일 morning 회의록 | 국내·미국 "스킵(주말)"·암호화폐만 실안건 | [자동] weekend dry-run+[수동] 🔁 실제 주말 |
-| W-53 | regenerate 일치 | `--regenerate=<id>` md vs 웹 타임라인 | 내용 동일(DB 단일 소스) | [수동] ✅2026-06-12 세션 #1 counts 일치 |
+| W-53 | regenerate 일치 | `--regenerate=<id>` md vs 웹 타임라인 | 내용 동일(DB 단일 소스) | [자동]+[수동] ✅2026-06-12 #117 counts+표시정규화 일치 |
 
 ## 루프 피드백 로그
 - **2026-06-12 루프 1**: 브라우저에서 기존 회의 #1 선택 시 legacy C15 JSON 덤프와 과거 서킷 57건 표기가 노출됨 → API 표시 레이어에서 C15 raw JSON을 한국어 요약으로 정규화하고 legacy 중복 집계 숫자를 숨김. `check:luna-meeting-room-web`에 `legacyRawJsonMinuteNormalized`, `legacyCircuitCountMasked` 추가.
@@ -220,6 +220,8 @@
 - **2026-06-12 루프 164**: W-30 비용 가드 이후 입력 복구 브라우저 검증 → W-31 alert가 떠 있는 상태에서 질문을 수정하자 stale alert가 즉시 사라지고, 응답 영역은 `아직 응답 없음`, 전송 버튼은 활성 상태로 복구됐다. `ask_rate_limited/provider/rule_based/noLLM route` 같은 내부 토큰은 DOM에 없고, horizontal overflow 0·console warn/error 0건을 확인했다.
 - **2026-06-12 루프 165**: W-42 응답 헤더·바인딩 점검 → 실제 `lsof`에서 `127.0.0.1:7791` 단독 LISTEN을 확인했다. 정적 200 응답에는 `nosniff`만 있고 캐시/프레임/권한 헤더가 부족하며, API/오류 JSON에는 `nosniff`가 없어 정적·API 공통 보안 신호가 불일치했다. 정적 리소스에 `no-store`, HTTP CSP, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`를 추가하고 JSON 응답에도 `nosniff/no-referrer/no-store`를 적용해 스모크 계약으로 고정했다.
 - **2026-06-12 루프 166**: W-20/W-21/W-24 최신 회의 렌더 품질 재스캔 → 최신 회의 #117의 `/api/meetings/117` 텍스트와 실제 브라우저 DOM을 동시에 검사했다. raw JSON/object array, markdown heading/bold/table 원문, `pending_master/c_master/changed_via/agendaKey/provider/rule_based/noLLM route`, DB/jsonb/raw 토큰, 반복 boilerplate 모두 hit 0건이었다. 회의록 8행·결정 1건·목록 최신 선택이 정상이며, console warn/error 0·horizontal overflow 0으로 추가 수정 없음.
+- **2026-06-12 루프 167**: W-53 regenerate 표시 일치 재점검 → `/api/meetings/117`와 웹 DOM은 정규화됐지만 `--regenerate=117 --json` markdown은 DB 원문을 직접 렌더해 `gate_transitions=[...]`, `segments:[...]`, raw ADR 상태 토큰과 LLM boilerplate가 남는 문제를 확인. regenerate 로더가 웹 API의 `normalizeLegacyMinuteContent`를 재사용하게 하고, plan-note 세그먼트 JSON 덤프를 한국어 요약으로 교체했다. 실제 #117 regenerate 결과 raw pattern 0건, minutes=8·decisions=1 일치. 서비스 재시작 후 브라우저에서도 최신 #117 타임라인·회의록 8행·raw pattern 0건·console warn/error 0·overflow 0을 확인했다.
+- **2026-06-12 루프 168**: W-32 실제 LLM 응답 렌더 점검 → `sophia` 실제 Hub/Groq 질의에서 API payload가 `selectorKey/fallbacks/route` 내부 라우팅 객체를 포함하고, LLM이 `중단/감소/최대/완전한 상태`처럼 `halt/reduced/full` 상태값을 번역하는 문제를 확인. `/api/agents/ask` 응답에서 route 객체를 제거하고, agent answer도 타임라인과 같은 표시 정규화를 적용하도록 보강했다. 실제 API 재검증은 provider=groq, route 없음, raw/internal/status 번역 금지 패턴 0건. 브라우저 UI에서도 Sophia 응답이 `응답 방식 groq · 상태 성공`으로 표시되고 console warn/error 0·overflow 0을 확인했다.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

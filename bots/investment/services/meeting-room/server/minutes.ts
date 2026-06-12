@@ -9,6 +9,17 @@ function safeText(value: any) {
   return String(value ?? '').trim();
 }
 
+let displayNormalizerPromise: Promise<(value: any) => string> | null = null;
+
+async function loadDisplayNormalizer() {
+  if (!displayNormalizerPromise) {
+    displayNormalizerPromise = import('./index.ts')
+      .then((mod: any) => mod.normalizeLegacyMinuteContent || mod._testOnly?.normalizeLegacyMinuteContent || safeText)
+      .catch(() => safeText);
+  }
+  return displayNormalizerPromise;
+}
+
 function roleLabel(role: string) {
   return {
     data: '데이터',
@@ -42,6 +53,43 @@ function toIsoString(value: any) {
   if (!value) return value;
   if (value instanceof Date) return value.toISOString();
   return String(value);
+}
+
+function decisionGradeLabel(value: any) {
+  return {
+    a_rule: 'A 자동 규칙',
+    b_boundary: 'B 경계 검토',
+    c_master: 'C 마스터 확인',
+  }[String(value || '')] || String(value || '등급 미정');
+}
+
+function decisionStatusLabel(value: any) {
+  return {
+    pending_master: '마스터 액션 대기',
+    confirmed: '확정',
+    deferred: '보류',
+    superseded: '대체됨',
+  }[String(value || '')] || String(value || '상태 미정');
+}
+
+function segmentSummaryForMarkdown(segments: any[] = []) {
+  const rows = Array.isArray(segments) ? segments : [];
+  if (rows.length === 0) return '세그먼트: 정보 없음';
+  const marketLabel: any = { domestic: '국내', overseas: '미국', crypto: '암호화폐' };
+  const reasonLabel: any = {
+    crypto_24h: '24시간 운영',
+    holiday: '휴장',
+    kis_market_closed: '장 마감',
+    market_closed: '장 마감',
+    weekend: '주말',
+  };
+  const parts = rows.map((row: any) => {
+    const market = marketLabel[row?.market] || '시장 미상';
+    const active = row?.active === true || row?.skipped === false;
+    const reason = reasonLabel[row?.reason] || (row?.reason ? '사유 확인 필요' : '정상');
+    return `${market} ${active ? '활성' : '비활성'}(${reason})`;
+  });
+  return `세그먼트: ${parts.join(' / ')}`;
 }
 
 export function renderMeetingMinutesMarkdown(result: any = {}) {
@@ -79,7 +127,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     lines.push('- 결정 없음');
   } else {
     for (const row of decisions) {
-      lines.push(`- [${row.grade}/${row.status}] ${agendaLabel(row.agendaKey || row.agenda_key)}: ${safeText(row.decision)} (due: ${row.dueAt || row.due_at || 'n/a'})`);
+      lines.push(`- [${decisionGradeLabel(row.grade)}/${decisionStatusLabel(row.status)}] ${agendaLabel(row.agendaKey || row.agenda_key)}: ${safeText(row.decision)} (due: ${row.dueAt || row.due_at || 'n/a'})`);
     }
   }
   lines.push('');
@@ -133,7 +181,7 @@ function normalizeSession(row: any = {}) {
   };
 }
 
-function normalizeMinute(row: any = {}) {
+function normalizeMinute(row: any = {}, contentNormalizer = safeText) {
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
@@ -141,18 +189,18 @@ function normalizeMinute(row: any = {}) {
     agendaKey: row.agenda_key || row.agendaKey,
     speaker: row.speaker,
     role: row.role,
-    content: row.content,
+    content: contentNormalizer(row.content),
     meta: row.meta || {},
     createdAt: toIsoString(row.created_at || row.createdAt),
   };
 }
 
-function normalizeDecision(row: any = {}) {
+function normalizeDecision(row: any = {}, contentNormalizer = safeText) {
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
     agendaKey: row.agenda_key || row.agendaKey,
-    decision: row.decision,
+    decision: contentNormalizer(row.decision),
     grade: row.grade,
     status: row.status,
     dueAt: toIsoString(row.due_at || row.dueAt),
@@ -185,6 +233,7 @@ export async function loadMeetingMinutesResult(sessionId: any, options: any = {}
       ORDER BY created_at ASC, id ASC`,
     [session.id],
   );
+  const normalizeContent = await loadDisplayNormalizer();
   return {
     ok: true,
     type: session.type,
@@ -197,11 +246,11 @@ export async function loadMeetingMinutesResult(sessionId: any, options: any = {}
       briefMarkdown: [
         `DB 기준 회의록 재생성: session #${session.id}`,
         `summary: ${session.summary || 'n/a'}`,
-        `segments: ${JSON.stringify(session.segments || [])}`,
+        segmentSummaryForMarkdown(session.segments),
       ].join('\n'),
     },
-    minutes: minuteRows.map(normalizeMinute),
-    decisions: decisionRows.map(normalizeDecision),
+    minutes: minuteRows.map((row: any) => normalizeMinute(row, normalizeContent)),
+    decisions: decisionRows.map((row: any) => normalizeDecision(row, normalizeContent)),
     llmCalls: minuteRows.filter((row: any) => row.role === 'analysis' && row.meta?.skipped !== true).length,
     skippedLlmCalls: minuteRows.filter((row: any) => row.meta?.skipped === true).length,
     shadowOnly: true,

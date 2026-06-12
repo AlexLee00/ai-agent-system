@@ -101,3 +101,42 @@ H6 상태: 프롬프트 -> **검증** (커밋+launchd 등록은 마스터, GATE-
 분석 반영: local 폭증 직접 원인 = 2655e18af(groq 폴백 중단+local 폴백 도입) 확인,
 HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED env 정합 방침(기본 true=groq 폴백, false=openai 단독, local 경로 삭제),
 LEGACY/현행 프로필 테이블 두 벌 식별(교체 대상=현행 ~1008행, LEGACY ~623행 비변경), 라인 재확정.
+
+## I. CODEX-H 메티 독립 검증 (2026-06-12) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | 보고 일치 (darwin 5 + hub 4 + core 1; meeting-room dirty 비접촉) |
+| H1-a 쿨다운 | 함수 2종 + 455(시도 직전 스킵, _ignoreRateLimitCooldown로 마지막 1개 시도) + 471(기록) + 765(체인 필터) + export(1163, H6 marker) |
+| H1-b/H2-a 체인 | localFastEntry 완전 제거, env 기본 true=groq 폴백/false=openai 단독, DARWIN_ROUTES gemini/qwen_deep 0건, anthropic 보존. 직접 해석: darwin.planner=[openai-oauth -> groq] |
+| H2-b 알람 | 현행(1012행)=groq 160 primary+폴백 신설, LEGACY(635행)=원래 groq 200 비변경 |
+| H2-c 가드 | local 정확일치 비교(local-embedding 자동 보존), normalizeTaskTypeInput 재사용, env false=현행 복귀 |
+| TS-1~16 | 스모크에 구조화 내장(codex_h_reliability_ts) — 메티 독립 재실행 15+1건 전부 PASS |
+| GATE-H | shadow_ready_data_pending — **contract blocker 0 (marker 3개 해소)**, evidence 4건은 6/11 과거 데이터 (정상) |
+| 제한 | node --check는 .ts 타입 구문으로 불가 -> tsx 로드 대체 (레포 관행상 합리) |
+
+§F 갱신: TS-1~4/5~8/9~10/11~14/15/16 — 코덱스 자가 PASS, 메티 독립 PASS(06-12). TS-L1/L2 대기.
+
+## J. 전환 전략 재수립 (2026-06-12 — CODEX-H 검증 완료 기준)
+
+### 즉시 (마스터)
+1. 커밋 + `ai.hub.resource-api` 재기동. **plist env 추가 불필요** — 코드 기본값이 목표 상태
+   (쿨다운 ON / 가드 ON / groq 폴백 ON). 킬스위치 3종만 인지: HUB_LLM_RATELIMIT_COOLDOWN_ENABLED=false,
+   HUB_LLM_LOCAL_BACKTEST_ONLY=false, HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED=false.
+2. TS-L1 (메티): 재기동 직후 darwin 1사이클 attempted에 local 부재 + 알람 해석 정상.
+3. GATE-H evidence: 168h 창에 6/11 인시던트 포함 -> **6/18경 자동 ready 예상**.
+   조기 확인: 적용 +48h에 `--hours=48` 게이트로 선행 판정 (메티), 정식 판정은 168h 기본.
+
+### R 시리즈 (정책 엔진 — 분산 해소)
+| Phase | 내용 | 상태/시점 | 게이트 |
+|---|---|---|---|
+| R0 | CODEX-H (darwin 체인이 목표 구조 1호 사례) | **검증 완료 — 적용 대기** | TS-L1 -> GATE-H |
+| R1 | 정책 스키마 설계 + 현행 전수 스냅샷(전 팀×용도 체인 덤프 = 회귀 기준) | 적용 직후 착수 (메티 설계서) | 마스터 승인 |
+| R2 | 정책 엔진 구현 + shadow 비교(신구 diff=0) | R1 승인 후 CODEX-R | GATE-R 신설(H6 패턴) |
+| R3 | 팀 단위 점진 전환: darwin/sigma -> hub -> blog -> luna/claude | GATE-R ready 후 | 팀별 evidence |
+| R4 | 레거시 소거: 프로필 테이블 2벌->1, selectorVersion 19분기->0, HUB_* env 7->2~3 | R3 완료 후 | 회귀 스모크 |
+
+목표 효과: llm-model-selector.ts 2,211줄 -> 엔진 ~300줄 + 선언 정책 데이터.
+신규 정책 = 데이터 1행. 인시던트 대응 = env 신설이 아니라 정책 행 수정.
+
+이력 추가: 2026-06-12 CODEX-H 독립 검증 합격(TS-1~16) + GATE-H contract 통과 + 전환 전략 재수립(§J) (메티)

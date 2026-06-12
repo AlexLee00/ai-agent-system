@@ -3,7 +3,7 @@
 
 import assert from 'assert/strict';
 import { _testOnly, startMeetingRoomWebServer } from '../services/meeting-room/server/index.ts';
-import { renderMeetingMinutesMarkdown } from '../services/meeting-room/server/minutes.ts';
+import { loadMeetingMinutesResult, renderMeetingMinutesMarkdown } from '../services/meeting-room/server/minutes.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function sleep(ms) {
@@ -278,7 +278,7 @@ async function main() {
     callViaHubFn: async () => ({
       ok: true,
       provider: 'fixture',
-      text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |\n회의 plan-note 기준 세그먼트는 domestic과 overseas는 활성이고 crypto는 대기입니다. 게이트가 정지 상태이고 게이트가 감소한 상태입니다. 감소한 상태로 reduced 표시도 있습니다.',
+      text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |\n회의 plan-note 기준 세그먼트는 domestic과 overseas는 활성이고 crypto는 대기입니다. 게이트가 정지 상태이고 게이트가 감소한 상태입니다. 감소한 상태로 reduced 표시도 있습니다. 국내(33%), 미국(47%), 암호화폐(61%) 시장은 각각 중단, 감소, reduced 상태이며, 미국는 수평 상태입니다. 국내는 진행이 중단된 상태입니다. 국내는 중단 상태, 미국은 reduced 상태, 암호화폐는 최대 상태입니다. 암호화폐는 완전한 상태입니다.',
     }),
   };
 
@@ -731,7 +731,7 @@ async function main() {
     assert.ok(appJs.text.includes(`<h2>응답</h2>
         \${'\\n'}
         <div className="card-body">`));
-    assert.ok(appJs.text.includes('<div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>'));
+    assert.ok(appJs.text.includes('<div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider)} · 상태 ${answerStatusLabel(answer.ok)} · 응답: </div>'));
     assert.ok(appJs.text.includes(`상태 \${answerStatusLabel(answer.ok)} · 응답: </div>
               \${'\\n'}
               <div className="answer-content">`));
@@ -742,8 +742,9 @@ async function main() {
     assert.ok(appJs.text.includes('aria-label=${busy ? `${agentLabel(agent)}에게 자문 질문 진행 중` : `${agentLabel(agent)}에게 자문 질문 보내기`}'));
     assert.ok(appJs.text.includes('aria-busy=${busy}'));
     assert.equal(appJs.text.includes('aria-label=${`${agent}에게 자문 질문 보내기`}'), false);
-    assert.ok(appJs.text.includes('에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider || answer.route?.provider)}'));
+    assert.ok(appJs.text.includes('에이전트 ${agentLabel(answer.agent || agent)} · 응답 방식 ${providerLabel(answer.provider)}'));
     assert.equal(appJs.text.includes("|| 'n/a'} · 상태"), false);
+    assert.equal(appJs.text.includes('answer.route'), false);
     assert.equal(appJs.text.includes('제공자 ${providerLabel(answer.provider || answer.route?.provider)}'), false);
     assert.ok(appJs.text.includes('상태 ${answerStatusLabel(answer.ok)}'));
     assert.equal(appJs.text.includes('ok=${String(answer.ok)}'), false);
@@ -1036,6 +1037,84 @@ async function main() {
     });
     assert.ok(regeneratedMarkdown.includes('국내 마감 G6 대조표'));
     assert.equal(regeneratedMarkdown.includes('debrief:g6-plan-vs-actual'), false);
+    assert.ok(regeneratedMarkdown.includes('C 마스터 확인/마스터 액션 대기'));
+    assert.equal(regeneratedMarkdown.includes('c_master/pending_master'), false);
+    const regeneratedFromDb = await loadMeetingMinutesResult(117, {
+      queryFn: async (sql) => {
+        if (sql.includes('FROM luna_meeting_sessions')) {
+          return [{
+            id: 117,
+            type: 'domestic_debrief',
+            status: 'closed',
+            chair: 'luna',
+            segments: [{ market: 'domestic', active: false, reason: 'kis_market_closed' }],
+            started_at: '2026-06-12T00:00:00.000Z',
+            closed_at: '2026-06-12T00:05:00.000Z',
+            summary: 'fixture regenerate',
+          }];
+        }
+        if (sql.includes('FROM luna_meeting_minutes')) {
+          return [
+            {
+              id: 1171,
+              session_id: 117,
+              seq: 1,
+              agenda_key: 'debrief:g6-plan-vs-actual',
+              speaker: 'stack-adapter',
+              role: 'data',
+              content: [
+                'gate_transitions=[{"market":"domestic","status":"halt"}]',
+                'regime_transitions=[{"market":"domestic","dominant":"bull"}]',
+                'errors=[]',
+                'segments: [{"market":"domestic","active":false}]',
+                '분석 결과는 다음과 같이 요약할 수 있습니다.',
+                '따라서 최종 결정을 내릴 수 있도록 하십시오.',
+              ].join('\n'),
+              meta: {},
+              created_at: '2026-06-12T00:00:01.000Z',
+            },
+            {
+              id: 1172,
+              session_id: 117,
+              seq: 2,
+              agenda_key: 'debrief:g6-plan-vs-actual',
+              speaker: 'adr',
+              role: 'decision',
+              content: 'ADR recorded: c_master/pending_master',
+              meta: {},
+              created_at: '2026-06-12T00:00:02.000Z',
+            },
+          ];
+        }
+        if (sql.includes('FROM luna_meeting_decisions')) {
+          return [{
+            id: 1173,
+            session_id: 117,
+            agenda_key: 'debrief:g6-plan-vs-actual',
+            decision: 'ADR recorded: c_master/pending_master',
+            grade: 'c_master',
+            status: 'pending_master',
+            due_at: '2026-06-13T00:00:00.000Z',
+            evidence: {},
+            created_at: '2026-06-12T00:00:03.000Z',
+          }];
+        }
+        return [];
+      },
+    });
+    const regeneratedFromDbMarkdown = renderMeetingMinutesMarkdown(regeneratedFromDb);
+    const regeneratedLeakText = `${regeneratedFromDb.planNote.briefMarkdown}\n${regeneratedFromDbMarkdown}`;
+    assert.ok(regeneratedLeakText.includes('세그먼트: 국내 비활성(장 마감)'));
+    assert.ok(regeneratedLeakText.includes('국내 마감 G6 대조표'));
+    assert.ok(regeneratedLeakText.includes('C 마스터 확인/마스터 액션 대기'));
+    assert.equal(regeneratedLeakText.includes('segments: [{'), false);
+    assert.equal(regeneratedLeakText.includes('gate_transitions=['), false);
+    assert.equal(regeneratedLeakText.includes('regime_transitions=['), false);
+    assert.equal(regeneratedLeakText.includes('errors=[]'), false);
+    assert.equal(regeneratedLeakText.includes('"market":"domestic"'), false);
+    assert.equal(regeneratedLeakText.includes('분석 결과는 다음과 같이 요약'), false);
+    assert.equal(regeneratedLeakText.includes('최종 결정을 내릴 수 있도록'), false);
+    assert.equal(regeneratedLeakText.includes('ADR recorded: c_master/pending_master'), false);
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
     const catchupText = catchup.payload.lines.join(' / ');
@@ -1196,12 +1275,22 @@ async function main() {
     assert.ok(ask1.payload.text.includes('암호화폐는'));
     assert.ok(ask1.payload.text.includes('게이트가 halt 상태'));
     assert.ok(ask1.payload.text.includes('게이트가 reduced 상태'));
+    assert.ok(ask1.payload.text.includes('각각 halt, reduced, reduced 상태'));
+    assert.ok(ask1.payload.text.includes('국내는 halt 상태'));
+    assert.ok(ask1.payload.text.includes('암호화폐는 full 상태'));
+    assert.equal(ask1.payload.text.includes('중단, 감소'), false);
+    assert.equal(ask1.payload.text.includes('진행이 중단된 상태'), false);
+    assert.equal(ask1.payload.text.includes('중단된 상태'), false);
+    assert.equal(ask1.payload.text.includes('중단 상태'), false);
+    assert.equal(ask1.payload.text.includes('최대 상태'), false);
+    assert.equal(ask1.payload.text.includes('완전한 상태'), false);
+    assert.equal(ask1.payload.text.includes('미국는'), false);
+    assert.equal(ask1.payload.route, undefined);
     assert.equal(ask1.payload.text.includes('plan-note'), false);
     assert.equal(ask1.payload.text.includes('domestic'), false);
     assert.equal(ask1.payload.text.includes('overseas'), false);
     assert.equal(ask1.payload.text.includes('crypto'), false);
     assert.equal(ask1.payload.text.includes('국내과'), false);
-    assert.equal(ask1.payload.text.includes('미국는'), false);
     assert.equal(ask1.payload.text.includes('정지 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태로'), false);
@@ -1211,6 +1300,7 @@ async function main() {
     assert.equal(ask2.payload.text.includes('LLM 비활성'), false);
     assert.equal(ask2.payload.text.includes('noLLM route'), false);
     assert.equal(ask2.payload.provider, 'rule_based');
+    assert.equal(ask2.payload.route, undefined);
     assert.equal(ask3.status, 429);
     assert.equal(ask3.payload.message, '분당 질의 한도에 도달했습니다. 1분 후 다시 시도하세요.');
   } finally {
@@ -1241,6 +1331,7 @@ async function main() {
     assert.equal(noLlmAsk.payload.text.includes('[hephaestos]'), false);
     assert.equal(noLlmAsk.payload.text.includes('noLLM route'), false);
     assert.equal(noLlmAsk.payload.provider, 'rule_based');
+    assert.equal(noLlmAsk.payload.route, undefined);
   } finally {
     await closeServer(expandedNoLlmStarted.server);
   }
@@ -1264,6 +1355,7 @@ async function main() {
     assert.equal(failedAsk.payload.error, '에이전트 응답 생성에 실패했습니다. 잠시 후 다시 시도하세요.');
     assert.equal(failedAsk.payload.error.includes('provider=openai'), false);
     assert.equal(failedAsk.payload.errorCode, 'agent_ask_failed');
+    assert.equal(failedAsk.payload.route, undefined);
   } finally {
     await closeServer(askFailureStarted.server);
   }
