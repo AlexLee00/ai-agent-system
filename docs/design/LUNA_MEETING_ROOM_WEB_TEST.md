@@ -133,7 +133,10 @@
 - **2026-06-12 루프 77**: W-24 내부 근거/비용 가드 토큰 재감사 → 실제 그릴·분석 발언에 `plan-note`, `shadow stack`, `registry evidence`, `cost_guard_skipped`, `max calls`, `crypto 시장`이 남아 운영 화면 문장 품질을 낮춤. 표시 계층과 신규 회의 생성 문구에서 `회의 데이터 요약`, `섀도 스택`, `레지스트리 근거`, `비용 가드: 최대 호출 N회 도달`, `암호화폐 시장`으로 정규화하고 스모크 `legacyInternalEvidenceTermsLocalized`, `legacyCostGuardTermsLocalized` 추가.
 - **2026-06-12 루프 78**: W-24 C15 기준 토큰 점검 → 실제 C15 데이터 minute에 `placeholder 기준`, `same_bar_close`, `HMM<폴백`이 남아 운영자가 의미를 즉시 해석하기 어려움. 표시 계층과 신규 회의 생성 문구에서 `임시 기준`, `동일봉 종가`, `Brier: HMM이 폴백보다 낮음`으로 정규화하고 스모크에서 raw 기준 토큰 재노출을 차단.
 - **2026-06-12 루프 79**: W-21/W-24 잔여 표시 문구 재점검 → 실제 타임라인에 `활성 서킷: 상세 JSON 숨김`과 `next-bar` 소문자 기준 라벨이 남아 운영 화면 문장 품질과 표기 일관성을 낮춤. 표시 계층에서 `상세 근거는 원문 DB 회의록에 보존`, `Next-bar 수익률 차이/거래 수 차이`로 정규화하고 스모크에 raw 문구 재노출 차단을 추가.
-- **2026-06-12 루프 80**: W-03/W-08 hover·접근성 속성 점검 → 본문/aria는 한국어로 정규화됐지만 minute/decision title에 `원문 안건: decision:mapek` 같은 내부 ID가 hover 문구로 남는 것을 확인. title은 `안건: C15 MAPEK · 발언자: ...`처럼 사용자 라벨로 바꾸고 원문 ID는 `data-raw-*` 속성에만 보존하도록 보강.
+- **2026-06-12 루프 80**: W-01/W-03/W-08 hover·접근성 속성 점검 → 본문/aria는 한국어로 정규화됐지만 회의 목록·minute·decision title에 `원문 타입: morning`, `원문 안건: decision:mapek`, `원문 상태: pending_master` 같은 내부 토큰이 hover 문구로 남는 것을 확인. title은 `회의 타입: 아침 통합 회의`, `안건: C15 MAPEK · 발언자: ...`, `상태: 마스터 액션 대기`처럼 사용자 라벨로 바꾸고 원문 값은 `data-raw-*` 속성에만 보존하도록 보강.
+- **2026-06-12 루프 81**: W-30 에이전트 질의 화면 점검 → 에이전트 선택지와 버튼 aria가 `luna/aria` 소문자 내부 value를 그대로 표시하고, 응답 메타 fallback이 `제공자 n/a`로 보일 수 있는 구조를 확인. 내부 value는 유지하되 사용자 표시/aria는 `Luna/Aria/...` 라벨을 사용하고 제공자 미상은 `확인 필요`로 표시하도록 보강.
+- **2026-06-12 루프 82**: W-03/W-24 전체 화면 영문 토큰 스캔 → 실제 타임라인에 `bull(0.41)`, `sideways(0.47)`, `bear(0.74)`, `gate_off_virtual`, `halt_reduced_avoidance_delta`, ISO timestamp, 단독 `close`, `[aria]`가 남아 있는 것을 확인. 표시 계층에서 레짐 값·비교 기준·지표 키·시간·에이전트명·종료 상태를 사용자 라벨로 정규화하고 스모크 회귀 케이스를 추가.
+- **2026-06-12 루프 83**: W-44 모바일 터치 타깃 점검 → 390px/320px viewport에서 horizontal overflow는 0건이었지만 Dashboard 링크와 `근거 JSON 보기` summary가 32px/22px 높이로 작게 측정됨. `.pill`, `summary`, LLM 체크 라벨의 최소 hit area를 40px로 보강하고 checkbox 시각 크기를 20px로 조정.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

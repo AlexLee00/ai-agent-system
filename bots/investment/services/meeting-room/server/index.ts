@@ -286,6 +286,7 @@ function normalizeLegacyMinuteContent(content) {
   const trimmed = String(content ?? '').trim().toLowerCase();
   if (trimmed === 'open') return '회의 시작';
   if (trimmed === 'closed') return '회의 종료';
+  if (trimmed === 'close') return '회의 종료';
   const text = String(content ?? '').replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: 과거 발언의 중복 서킷 숫자 숨김(최신 데이터 기준)',
@@ -342,8 +343,37 @@ function normalizeCanonicalStatusTokens(content) {
   }).join('\n');
 }
 
+function formatKstTimestampFromIso(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+function agentDisplayLabel(value) {
+  return {
+    aria: 'Aria',
+    luna: 'Luna',
+    sophia: 'Sophia',
+    argos: 'Argos',
+    hermes: 'Hermes',
+    oracle: 'Oracle',
+    zeus: 'Zeus',
+    athena: 'Athena',
+  }[String(value || '').toLowerCase()] || value;
+}
+
 function normalizeLegacyKoreanLlmNoise(content) {
   return String(content ?? '')
+    .replace(/\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b/g, (_match, iso) => formatKstTimestampFromIso(iso))
     .replace(/\bregime-engine-hmm\b/g, 'C15 레짐 엔진 HMM')
     .replace(/\bmarket-deployment-gate\b/g, 'C1 시장 배치 게이트')
     .replace(/\bmapek\b/g, 'C15 MAPEK')
@@ -360,6 +390,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bplan-note\b/g, '회의 데이터 요약')
     .replace(/\bshadow stack\b/g, '섀도 스택')
     .replace(/\bregistry evidence\b/g, '레지스트리 근거')
+    .replace(/\bgate_off_virtual\b/g, '게이트 비활성 가상 비교')
+    .replace(/\bhalt_reduced_avoidance_delta\b/g, 'halt/reduced 회피 개선폭')
     .replace(/cost_guard_skipped:\s*max calls\s*(\d+)\s*reached/gi, '비용 가드: 최대 호출 $1회 도달로 발언 생략')
     .replace(/\bmax calls\b/gi, '최대 호출')
     .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
@@ -368,6 +400,11 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/레짐=bear/g, '레짐=하락')
     .replace(/레짐=sideways/g, '레짐=수평')
     .replace(/레짐=volatile/g, '레짐=변동')
+    .replace(/\bbull\(([^)]+)\)/g, '상승($1)')
+    .replace(/\bbear\(([^)]+)\)/g, '하락($1)')
+    .replace(/\bsideways\(([^)]+)\)/g, '수평($1)')
+    .replace(/\bvolatile\(([^)]+)\)/g, '변동($1)')
+    .replace(/\[(aria|luna|sophia|argos|hermes|oracle|zeus|athena)\]/gi, (_match, agent) => `[${agentDisplayLabel(agent)}]`)
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
     .replace(/출처=hmm/g, '출처=HMM')

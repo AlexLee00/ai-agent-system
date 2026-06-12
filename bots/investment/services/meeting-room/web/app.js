@@ -39,6 +39,24 @@ function meetingTypeLabel(type) {
   }[String(type || '').toLowerCase()] || type || '회의';
 }
 
+function agentLabel(agent) {
+  return {
+    luna: 'Luna',
+    aria: 'Aria',
+    sophia: 'Sophia',
+    argos: 'Argos',
+    hermes: 'Hermes',
+    oracle: 'Oracle',
+    zeus: 'Zeus',
+    athena: 'Athena',
+  }[String(agent || '').toLowerCase()] || agent || '에이전트';
+}
+
+function providerLabel(provider) {
+  const value = provider || '확인 필요';
+  return value === 'n/a' ? '확인 필요' : value;
+}
+
 function agendaLabel(key) {
   return {
     session: '세션',
@@ -61,7 +79,7 @@ function speakerLabel(speaker) {
     'stack-adapter': '데이터 어댑터',
     adr: 'ADR 기록기',
     unknown: '알 수 없음',
-  }[value] || speaker || '알 수 없음';
+  }[value] || agentLabel(speaker);
 }
 
 function friendlyApiError(status, code, fallback) {
@@ -391,7 +409,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
               aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}
               onClick=${() => setSelectedId(run.id)}
             >
-              <div className="meeting-title" title=${`원문 타입: ${run.type || 'n/a'}`}>${meetingTypeLabel(run.type)} · ${meetingStatusLabel(run.status)}</div>
+              <div className="meeting-title" title=${`회의 타입: ${meetingTypeLabel(run.type)} · 상태: ${meetingStatusLabel(run.status)}`} data-raw-type=${run.type || 'n/a'} data-raw-status=${run.status || 'n/a'}>${meetingTypeLabel(run.type)} · ${meetingStatusLabel(run.status)}</div>
               <div className="meta">${formatTime(run.startedAt)} · 실행 작업</div>
             </button>
           </div>
@@ -404,8 +422,8 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
               aria-label=${`회의 #${meeting.id} ${meetingTypeLabel(meeting.type)} ${meetingStatusLabel(meeting.status)} 선택`}
               onClick=${() => setSelectedId(meeting.id)}
             >
-              <div className="meeting-title" title=${`원문 타입: ${meeting.type || 'n/a'}`}>#${meeting.id} · ${meetingTypeLabel(meeting.type)}</div>
-              <div className="meta" title=${`원문 상태: ${meeting.status || 'n/a'}`}>${meetingStatusLabel(meeting.status)} · ${formatTime(meeting.startedAt)}</div>
+              <div className="meeting-title" title=${`회의 타입: ${meetingTypeLabel(meeting.type)}`} data-raw-type=${meeting.type || 'n/a'}>#${meeting.id} · ${meetingTypeLabel(meeting.type)}</div>
+              <div className="meta" title=${`상태: ${meetingStatusLabel(meeting.status)}`} data-raw-status=${meeting.status || 'n/a'}>${meetingStatusLabel(meeting.status)} · ${formatTime(meeting.startedAt)}</div>
             </button>
           </div>
         `)}
@@ -567,8 +585,8 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
     >
       <div className="meeting-title" title=${`안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
       <div className="meta decision-state">
-        <span title=${`원문 등급: ${decision.grade || 'n/a'}`}>${decisionGradeLabel(decision.grade)}</span>
-        <span title=${`원문 상태: ${decision.status || 'n/a'}`}>${decisionStatusLabel(decision.status)}</span>
+        <span title=${`등급: ${decisionGradeLabel(decision.grade)}`} data-raw-grade=${decision.grade || 'n/a'}>${decisionGradeLabel(decision.grade)}</span>
+        <span title=${`상태: ${decisionStatusLabel(decision.status)}`} data-raw-status=${decision.status || 'n/a'}>${decisionStatusLabel(decision.status)}</span>
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
       <${MarkdownLite} text=${decision.decision} />
@@ -745,7 +763,7 @@ function AskRoom({ token }) {
           <div className="form-row">
             <label className="meta" htmlFor="meeting-agent-select">에이전트</label>
             <select id="meeting-agent-select" aria-label="질의 대상 에이전트" value=${agent} onChange=${(event) => updateAgent(event.target.value)}>
-              ${['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map((name) => html`<option value=${name}>${name}</option>`)}
+              ${['luna', 'aria', 'sophia', 'argos', 'hermes', 'oracle', 'zeus', 'athena'].map((name) => html`<option value=${name}>${agentLabel(name)}</option>`)}
             </select>
           </div>
           <div className="form-row">
@@ -764,7 +782,7 @@ function AskRoom({ token }) {
             자문 전용 · LLM 호출 비용 가능 · 분당 2회 / 일 20회 한도
           </div>
           <button
-            aria-label=${`${agent}에게 자문 질문 보내기`}
+            aria-label=${`${agentLabel(agent)}에게 자문 질문 보내기`}
             title=${question.trim() ? '선택한 에이전트에게 자문 질문을 보냅니다.' : '질문을 입력하면 활성화됩니다.'}
             onClick=${ask}
             disabled=${busy || !question.trim()}
@@ -776,7 +794,7 @@ function AskRoom({ token }) {
         <div className="card-body">
           <div className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답">
             ${busy ? html`<div className="meta">질의 중 · 에이전트 응답을 기다리는 중입니다.</div>` : answer ? html`
-              <div className="meta">에이전트 ${answer.agent || agent} · 제공자 ${answer.provider || answer.route?.provider || 'n/a'} · 상태 ${answerStatusLabel(answer.ok)}</div>
+              <div className="meta">에이전트 ${agentLabel(answer.agent || agent)} · 제공자 ${providerLabel(answer.provider || answer.route?.provider)} · 상태 ${answerStatusLabel(answer.ok)}</div>
               <${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} />
             ` : html`<div className="meta">아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.</div>`}
           </div>

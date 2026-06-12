@@ -77,6 +77,14 @@
     details:not([open]) > :not(summary) {
       display: none;
     }
+    summary {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      cursor: pointer;
+    }
     .markdown-lite {
       white-space: normal;
       word-break: break-word;
@@ -143,6 +151,7 @@
       border: 1px solid var(--line);
       color: var(--muted);
       font-size: 12px;
+      min-height: 40px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
@@ -346,8 +355,8 @@
     .form-row { display: grid; gap: 8px; margin-bottom: 12px; }
     .inline { display: flex; gap: 8px; align-items: center; }
     .inline > * { flex: 1; }
-    .check { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; }
-    .check input { width: auto; }
+    .check { display: flex; gap: 8px; align-items: center; min-height: 40px; color: var(--muted); font-size: 13px; cursor: pointer; }
+    .check input { width: 20px; height: 20px; flex: 0 0 20px; }
     .error { color: var(--red); }
     .notice {
       color: #315f34;
