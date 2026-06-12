@@ -1548,6 +1548,45 @@ async function main() {
     assert.equal(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM:'), false);
     assert.equal(pending.payload.decisions[0].decision.includes('regime-engine-hmm'), false);
     assert.equal(detail.payload.decisions[0].decision, '자문 기록 후 마스터 확인 대기');
+    const compactDecision = _testOnly.compactDecisionEvidence({
+      title: 'raw title',
+      agendaKind: 'market:domestic',
+      shadowOnly: true,
+      grillInsufficient: true,
+      evidenceExcerpt: {
+        gate: {
+          market: 'domestic',
+          deployment: 'reduced',
+          score: 44.4,
+          signals: { signals: [{ available: true, raw: { secretShape: 'hidden' } }, { available: false, error: 'provider raw error' }] },
+        },
+        regime: { market: 'crypto', current_regime: 'bear', dominant_probability: 0.72 },
+        strategySignals: [{ signal_type: 'entry', details: { rawRule: 'hidden' } }],
+        circuitLocks: [{ symbol: 'BTC/USDT', circuit: 'low_profit_symbol', reason: 'cumulative_r_below_zero' }],
+        pendingDecisions: [{ status: 'pending_master', grade: 'c_master' }],
+        errors: [{ detail: 'internal provider error' }],
+      },
+    }, {
+      agendaKey: 'market:domestic',
+      decision: 'advisory 기록 후 마스터 확인 대기',
+      grade: 'c_master',
+      status: 'pending_master',
+    });
+    const compactDecisionText = JSON.stringify(compactDecision);
+    assert.ok(compactDecisionText.includes('국내 장전 계획'));
+    assert.ok(compactDecisionText.includes('마스터 액션 대기'));
+    assert.ok(compactDecisionText.includes('상세 근거는 감사 로그에 보존'));
+    assert.equal(compactDecisionText.includes('agendaKind'), false);
+    assert.equal(compactDecisionText.includes('secretShape'), false);
+    assert.equal(compactDecisionText.includes('provider raw error'), false);
+    assert.equal(compactDecisionText.includes('low_profit_symbol'), false);
+    assert.equal(compactDecisionText.includes('cumulative_r_below_zero'), false);
+    assert.equal(compactDecisionText.includes('pending_master'), false);
+    assert.equal(compactDecisionText.includes('c_master'), false);
+    assert.equal(Buffer.byteLength(compactDecisionText) < 1600, true);
+    const pendingEvidenceText = JSON.stringify(pending.payload.decisions.map((row) => row.evidence));
+    assert.equal(pendingEvidenceText.includes('pending_master'), false);
+    assert.equal(pendingEvidenceText.includes('c_master'), false);
 
     const premarketPrefixDecisions = [
       { id: 31, sessionId: 31, agendaKey: 'premarket:overseas-gate-regime', decision: '미국 프리마켓 게이트/레짐: 자문 기록 후 마스터 확인 대기', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:04.000Z' },
@@ -2690,6 +2729,7 @@ async function main() {
       llmToggleDefaultNoCost: true,
       llmModeLiveRegion: true,
       evidenceDisclosureKoreanLabel: true,
+      decisionEvidencePayloadCompacted: true,
       evidencePreMobileOverflowGuard: true,
       collapsedEvidenceDoesNotCreateScrollSpace: true,
       collapsedEvidenceDoesNotRenderJsonDom: true,

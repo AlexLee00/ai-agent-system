@@ -139,6 +139,14 @@ function decisionStatusLabel(status) {
   }[String(status || '').toLowerCase()] || String(status || '상태 미상');
 }
 
+function decisionGradeLabel(grade) {
+  return {
+    a_rule: 'A 룰 승인 후보',
+    b_boundary: 'B 경계 검토',
+    c_master: 'C 마스터 확인',
+  }[String(grade || '').toLowerCase()] || '등급 미분류';
+}
+
 function meetingTypeLabel(type) {
   return {
     morning: '아침 통합 회의',
@@ -471,6 +479,65 @@ function summarizePremarketEvidence(evidence = {}) {
   if (lines.length === 1) lines.push('세부 항목 없음');
   lines.push('상세 근거는 감사 기록에 보존');
   return lines.join('\n');
+}
+
+function summarizeDecisionEvidenceExcerpt(excerpt = {}) {
+  const lines = [];
+  const gate = excerpt.gate || null;
+  const regime = excerpt.regime || null;
+  const positions = Array.isArray(excerpt.positions) ? excerpt.positions : [];
+  const strategySignals = Array.isArray(excerpt.strategySignals) ? excerpt.strategySignals : [];
+  const circuitLocks = Array.isArray(excerpt.circuitLocks) ? excerpt.circuitLocks : [];
+  const errors = Array.isArray(excerpt.errors) ? excerpt.errors : [];
+  const pendingDecisions = Array.isArray(excerpt.pendingDecisions) ? excerpt.pendingDecisions : [];
+  if (gate) {
+    const market = transitionMarketLabel(gate.market);
+    const deployment = gate.deployment ? String(gate.deployment) : '상태 미상';
+    const score = gate.score == null || Number.isNaN(Number(gate.score)) ? '' : ` · ${Number(gate.score).toFixed(1)}점`;
+    const signalRows = Array.isArray(gate.signals?.signals) ? gate.signals.signals : [];
+    const available = signalRows.filter((row) => row?.available !== false).length;
+    lines.push(`게이트: ${market} ${deployment}${score}${signalRows.length ? ` · 사용 신호 ${available}/${signalRows.length}` : ''}`);
+  }
+  if (regime) {
+    const market = transitionMarketLabel(regime.market);
+    const dominant = transitionRegimeLabel(regime.current_regime || regime.dominant);
+    const probability = regime.dominant_probability ?? regime.confidence ?? null;
+    const probabilityText = probability == null || Number.isNaN(Number(probability)) ? '' : `(${Number(probability).toFixed(2)})`;
+    lines.push(`레짐: ${market} ${dominant}${probabilityText}`);
+  }
+  if (strategySignals.length) {
+    const entryCount = strategySignals.filter((row) => row?.signal_type === 'entry' || row?.signalType === 'entry').length;
+    lines.push(`전략 신호: ${strategySignals.length}건(진입 ${entryCount}건)`);
+  }
+  if (circuitLocks.length) {
+    const symbols = [...new Set(circuitLocks.map((row) => row?.symbol).filter(Boolean))].slice(0, 5);
+    lines.push(`활성 서킷: ${circuitLocks.length}건${symbols.length ? ` · 대표 ${symbols.join(', ')}` : ''}`);
+  }
+  if (positions.length) lines.push(`보유 포지션: ${positions.length}건`);
+  if (pendingDecisions.length) lines.push(`관련 결정 대기: ${pendingDecisions.length}건`);
+  if (errors.length) lines.push(`수집 오류: ${errors.length}건 · 상세는 감사 로그에 보존`);
+  if (!lines.length) lines.push('구조화 근거 요약 없음');
+  return lines;
+}
+
+function compactDecisionEvidence(evidence, row = {}) {
+  const parsed = safeJson(evidence);
+  const source = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  const excerpt = source.evidenceExcerpt && typeof source.evidenceExcerpt === 'object' && !Array.isArray(source.evidenceExcerpt)
+    ? source.evidenceExcerpt
+    : {};
+  return {
+    agenda: agendaLabel(row.agenda_key || row.agendaKey),
+    decision: normalizeDecisionDisplayText(row),
+    grade: decisionGradeLabel(row.grade),
+    status: decisionStatusLabel(row.status),
+    shadowOnly: source.shadowOnly === true ? '섀도 전용' : '표시용 요약',
+    grill: source.grillInsufficient === true ? '근거 부족: 마스터 확인 필요' : '그릴 근거 부족 표시 없음',
+    summary: [
+      ...summarizeDecisionEvidenceExcerpt(excerpt),
+      '상세 근거는 감사 로그에 보존',
+    ],
+  };
 }
 
 function replacePremarketEvidenceJson(content) {
@@ -982,7 +1049,7 @@ function normalizeDecision(row = {}) {
     grade: row.grade,
     status: row.status,
     dueAt: row.due_at || row.dueAt,
-    evidence: safeJson(row.evidence),
+    evidence: compactDecisionEvidence(row.evidence, row),
     createdAt: row.created_at || row.createdAt,
   };
 }
@@ -1897,7 +1964,10 @@ export const _testOnly = {
   buildDecisionScopeStatus,
   buildDecisionDueStatus,
   componentLabel,
+  compactDecisionEvidence,
   compactRepetitiveReportContent,
+  decisionGradeLabel,
+  decisionStatusLabel,
   legacyMetricLabel,
   normalizeCanonicalStatusTokens,
   dedupeDeterministicAnalysisTitle,
