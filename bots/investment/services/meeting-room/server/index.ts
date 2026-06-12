@@ -611,8 +611,12 @@ function stripRedundantMinuteAgentPrefix(content, speaker) {
   return String(content ?? '').replace(new RegExp(`^(?:\\[${escaped}\\]\\s*|${escaped}\\s+자문:\\s*)`, 'i'), '').trimStart();
 }
 
+function dedupeDeterministicAnalysisTitle(content) {
+  return String(content ?? '').replace(/^([^\n]{3,120})\n(회의 데이터만 근거로 작성한 자문입니다\.)\n\1(?=\n)/gm, '$2\n$1');
+}
+
 function normalizeLegacyKoreanLlmNoise(content) {
-  return String(content ?? '')
+  return dedupeDeterministicAnalysisTitle(content)
     .replace(/^안녕하세요\.\s*/gm, '')
     .replace(/\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\b/g, (_match, iso) => formatKstTimestampFromIso(iso))
     .replace(/\bregime-engine-hmm\b/g, 'C15 레짐 엔진 HMM')
@@ -711,6 +715,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/실거래\/파라미터 변경 제안은 기록만 하며 적용하지 않습니다\.?/g, '실거래와 파라미터 변경은 이 화면에서 적용하지 않습니다.')
     .replace(new RegExp(`(^|\\n)${AGENT_BRACKET_PATTERN.source}\\s*`, 'gi'), (_match, lead, agent) => `${lead}${agentDisplayLabel(agent)} 자문: `)
     .replace(AGENT_BRACKET_PATTERN, (_match, agent) => agentDisplayLabel(agent))
+    .replace(/^([^\n]{3,120})\n(회의 데이터만 근거로 작성한 자문입니다\.)\n\1(?=\n)/gm, '$2\n$1')
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
     .replace(/출처=hmm/g, '출처=HMM')
@@ -882,6 +887,7 @@ function normalizeLegacyBoilerplateHeadings(content) {
 
 function normalizeMinute(row = {}) {
   const content = normalizeLegacyMinuteContent(row.content);
+  const visibleContent = dedupeDeterministicAnalysisTitle(stripRedundantMinuteAgentPrefix(content, row.speaker));
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
@@ -889,7 +895,7 @@ function normalizeMinute(row = {}) {
     agendaKey: row.agenda_key || row.agendaKey,
     speaker: row.speaker,
     role: row.role,
-    content: stripRedundantMinuteAgentPrefix(content, row.speaker),
+    content: visibleContent,
     meta: safeJson(row.meta),
     createdAt: row.created_at || row.createdAt,
   };
@@ -1535,6 +1541,7 @@ export const _testOnly = {
   compactRepetitiveReportContent,
   legacyMetricLabel,
   normalizeCanonicalStatusTokens,
+  dedupeDeterministicAnalysisTitle,
   normalizeLegacyMinuteContent,
   normalizeMinute,
   sessionStatusLabel,

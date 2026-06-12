@@ -413,6 +413,10 @@ async function main() {
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
+    const meetingSessionSource = fs.readFileSync(new URL('../services/meeting-room/server/orchestrator/meeting-session.ts', import.meta.url), 'utf8');
+    assert.ok(meetingSessionSource.includes('function deterministicAnalysis'));
+    assert.ok(meetingSessionSource.includes("'회의 데이터만 근거로 작성한 자문입니다.'"));
+    assert.equal(meetingSessionSource.includes("return [\n    agenda.title,\n    '회의 데이터만 근거로 작성한 자문입니다.'"), false);
     assert.ok(appJs.text.includes("MR-B ·${' '}"));
     assert.ok(appJs.text.includes("자문 / 섀도 전용 ·${' '}"));
     assert.ok(appJs.text.includes(`<h1>Luna Meeting Room</h1>
@@ -1146,6 +1150,24 @@ async function main() {
     assert.ok(deterministicAnalysisWording.includes('실거래와 파라미터 변경은 이 화면에서 적용하지 않습니다.'));
     assert.equal(deterministicAnalysisWording.includes('계산된 회의 데이터 요약만 사용한 자문 분석입니다'), false);
     assert.equal(deterministicAnalysisWording.includes('실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다'), false);
+    const duplicatedDeterministicTitle = _testOnly.normalizeLegacyMinuteContent(
+      '미국 프리마켓 게이트/레짐\n회의 데이터만 근거로 작성한 자문입니다.\n미국 프리마켓 게이트/레짐\n게이트/레짐/포지션/예정 이벤트를 읽기 전용으로 점검합니다.',
+    );
+    assert.equal((duplicatedDeterministicTitle.match(/미국 프리마켓 게이트\/레짐/g) || []).length, 1);
+    assert.ok(duplicatedDeterministicTitle.startsWith('회의 데이터만 근거로 작성한 자문입니다.'));
+    const duplicatedDeterministicTitleWithAgent = _testOnly.normalizeMinute({
+      id: 1,
+      session_id: 1,
+      seq: 1,
+      agenda_key: 'us_premarket',
+      speaker: 'aria',
+      role: 'analysis',
+      content: '[aria] 미국 프리마켓 게이트/레짐\n회의 데이터만 근거로 작성한 자문입니다.\n미국 프리마켓 게이트/레짐\n게이트/레짐/포지션/예정 이벤트를 읽기 전용으로 점검합니다.',
+      meta: {},
+      created_at: '2026-06-12T00:00:00.000Z',
+    });
+    assert.equal((duplicatedDeterministicTitleWithAgent.content.match(/미국 프리마켓 게이트\/레짐/g) || []).length, 1);
+    assert.equal(/Aria 자문:|\[Aria\]|\[aria\]/.test(duplicatedDeterministicTitleWithAgent.content), false);
     const premarketGenericConclusion = _testOnly.normalizeLegacyMinuteContent(
       '현재 상황을 종합하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있으며, 미국 시장과 암호화폐 시장은 reduced 상태를 유지하고 있습니다. 따라서, 현 시점에서 추가적인 조치가 필요합니다.\n\n결과적으로, 현 시점에서 추가적인 조치가 필요하며, 국내 시장의 halt 상태를 유지하고 미국 시장과 암호화폐 시장의 reduced 상태를 지속적으로 모니터링하는 것이 필요합니다.',
     );
@@ -1889,6 +1911,7 @@ async function main() {
       askBusyStatus: true,
       askResponseMetadataLabels: true,
       agentPrefixDisplayNormalized: true,
+      deterministicAnalysisTitleDeduped: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,

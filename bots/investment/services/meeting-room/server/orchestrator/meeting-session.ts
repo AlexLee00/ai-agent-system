@@ -414,7 +414,6 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
 
 function deterministicAnalysis(agenda: any, planNote: any, agent = 'luna') {
   return [
-    agenda.title,
     '회의 데이터만 근거로 작성한 자문입니다.',
     dataBriefForAgenda(agenda, planNote),
     '실거래와 파라미터 변경은 이 화면에서 적용하지 않습니다.',
