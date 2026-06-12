@@ -107,6 +107,7 @@ const {
   isBlogMarketingEnabled,
   buildMarketingDisabledResult,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-enabled.ts'));
+const { getVaultLectureContext }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/vault-context.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -1444,6 +1445,15 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
       return [];
     });
   }
+  preparedResearch.vaultLectureContext = await getVaultLectureContext({
+    lectureTitle,
+    lectureNumber: number,
+    seriesName,
+    curriculumKeywords: preparedResearch.curriculumKeywords || preparedResearch.curriculum.keywords,
+  }).catch((error) => {
+    console.warn('[블로] 대도서관 강의 맥락 검색 실패 (무시):', error.message);
+    return { block: '', warning: error.message };
+  });
   if (agentIntroLecture) {
     preparedResearch.popularPatterns = await richer.searchPopularPatterns('agent_intro').catch(() => []);
   } else if (researchData.lecturePopularPatterns?.length) {

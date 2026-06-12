@@ -323,6 +323,14 @@ function _buildWeeklyNewsSection(researchData = {}) {
   return ['[이번 주 소식]', ...lines].join('\n');
 }
 
+function _buildVaultLectureContextBlock(researchData = {}) {
+  const rawBlock = String(researchData?.vaultLectureContext?.block || researchData?.vaultLectureContextBlock || '').trim();
+  if (!rawBlock) return '';
+  return rawBlock.includes('[지난 강의 연계]')
+    ? rawBlock
+    : `[지난 강의 연계]\n${rawBlock}`;
+}
+
 function _ensureWeeklyNewsSection(content, researchData = {}) {
   let next = String(content || '').trim();
   if (!next || next.includes('[이번 주 소식]')) return next;
@@ -448,6 +456,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const weatherContext = weatherToContext(weather);
   const seriesGuidance = _buildLectureSeriesGuidance(researchData, lectureTitle);
   const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
+  const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);
   const geoRules = _buildLectureGeoRules(researchData, lectureTitle);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
 
@@ -512,6 +521,7 @@ ${weatherContext}
 [${seriesGuidance.briefingTitle} (브리핑에 활용)]
 ${seriesGuidance.briefingContent}
 ${weeklyNewsSection ? `\n[이번 주 소식 자료]\n${weeklyNewsSection}\n위 자료가 있을 때만 본문에 [이번 주 소식] 섹션을 만들고, 없으면 억지로 만들지 말라.` : ''}
+${vaultLectureContextBlock ? `\n${vaultLectureContextBlock}\n위 자료는 과거 발행 맥락 연결에만 사용하고, 새 사실처럼 과장하지 말라.` : ''}
 
 [최신 IT 뉴스 (인사말에 활용)]
 ${itNews.slice(0, 3).map(n => `- ${n.title}`).join('\n') || '- 최신 IT 트렌드를 자체 지식으로 언급하라'}
@@ -766,6 +776,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const model           = 'hub:blog.pos.writer';
   const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
   const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
+  const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
 
   const experienceBlock = realExperiences.length > 0
@@ -796,6 +807,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 [최신 IT 뉴스] ${itNews.slice(0, 3).map(n => n.title).join(' / ') || '최신 IT 트렌드 자체 지식'}
 ${seriesGuidance.chunkBriefingLine}
 ${weeklyNewsSection ? `[이번 주 소식 자료]\n${weeklyNewsSection}\n본문에 [이번 주 소식] 섹션을 만들고, 위 자료 1~2건만 반영하라.\n` : ''}
+${vaultLectureContextBlock ? `${vaultLectureContextBlock}\n과거 발행 맥락과 자연스럽게 연결하되, 없는 링크나 수치를 만들지 말라.\n` : ''}
 ${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${popularPatternBlock}
 ${LECTURE_AI_BRIEFING_ORDER}
@@ -948,5 +960,6 @@ module.exports = {
     _buildLectureSeriesGuidance,
     _buildWeeklyNewsSection,
     _ensureWeeklyNewsSection,
+    _buildVaultLectureContextBlock,
   },
 };
