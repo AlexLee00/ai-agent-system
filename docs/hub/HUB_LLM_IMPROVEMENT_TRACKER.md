@@ -438,3 +438,42 @@ R1(스냅샷 89키x408) -> R2(엔진+테이블+shadow+GATE-R, 정적 544/0) -> R
   (라우팅 현행/쿨다운/콜드스타트/정책엔진 shadow/게이트 3종/운영 노트: env 변경은 bootout+bootstrap).
 - 참고: docs/guides/llm.md는 외부 LLM API 참조 문서(다른 용도)라 비대상 판정.
 이력: 2026-06-12 연결 가이드 2종 갱신 (메티)
+
+## AB. 세션 시작 점검 — shadow 3번째 실전 포착 (2026-06-13, 메티)
+
+- GATE-R 누적: 113건 중 mismatch 40 — 분해: (a) 22시대 빈 체인 14건 = R2c 이전 프로세스 잔재(종결),
+  (b) 23시 이후 25건 = **신규 클래스: groq 모델 불일치** (old llama-3.3-70b vs new qwen3-32b).
+- 원인 확정(재현 3단 + env 실측): hub plist `LLM_GROQ_DEEP_MODEL=llama-3.3-70b-versatile` 오버라이드.
+  codegen이 env 없는 셸에서 기본값 qwen을 **박제** -> 정적 diff는 동일 셸이라 통과, 라이브만 갈라짐.
+  **환경 차이 = 정책 차이** 구조 결함. (agent_registry/selectorVersion/taskType 가설은 재현으로 기각.)
+- 조치: CODEX_HUB_R2D_ENV_MODEL_TOKENS_2026-06-13.md — env 의존 상수 export + codegen 값->토큰 역매핑 +
+  엔진 런타임 해석 + --env-from-launchd 래퍼 + TS-R2-8.
+- GATE-R evidence는 R2d 적용 후 누적분으로 판정 (기존 40건은 시간 창 만료).
+이력: 2026-06-13 R2d 분석·프롬프트 (메티)
+
+## AC. CODEX-R2d 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | 6파일 보고 정합 / selector 삭제 줄은 전부 const->export 전환(로직 0) |
+| 테이블 토큰화 | 토큰 10종(@GROQ_DEEP/@OPENAI_MINI 등), 813 entry. qwen 잔존 1건은 토큰 해석 실패 시 폴백 메타데이터(정당) |
+| **결정적 재현** | 라이브 env(LLM_GROQ_DEEP_MODEL=llama-70b)에서 구 selectLLMChain = 신 resolvePolicyChain **완전 일치** — 25건 클래스 해소 |
+| TS-R2-1~8 | 독립 재실행 ok, 8종 전부 |
+| --engine | env 미정합/정합 양쪽 544 / mismatched 0 |
+
+남은 단계: 마스터 재기동(kickstart -k 충분 — env 변경 없음, 코드 반영) -> TS-RL1 4차
+(luna 자연 트래픽 match=true 전환 + 신규 mismatch 0 확인) -> GATE-R evidence 청정 누적 -> ready 시 R3.
+이력: 2026-06-13 CODEX-R2d 독립 검증 합격 (메티)
+
+## AD. TS-RL1 4차 (R2d 적용, hub PID 25275, 2026-06-13 01:40) — PASS / R2d 종결
+
+| 판별 | 결과 |
+|---|---|
+| 타임라인 | hub 시작 01:38:56 / f(qwen) 마지막 01:38:27(재기동 29초 전 구 프로세스 잔여) / 이후 f **0건** |
+| 모의 재현 (luna x final_decision) | match=**t**, old=new=llama-3.3-70b — 이전 25건 클래스 라이브 해소 |
+| health | /hub/health/live 200 (root 404는 라우트 부재 — 정상) |
+
+R 시리즈 누적: shadow 실전 포착 3건(R2b agent 경로 / R2c 교차 팀 alias / R2d env 박제) 전부 종결.
+다음: GATE-R evidence 청정 누적(자연 트래픽) — 6/14 GATE-H 48h 판정 시 GATE-R 동시 점검
+(기준: 01:38:56 이후 >=50건 + match=false 0건) -> ready 시 R3 (MODE=team:darwin,sigma).
+이력: 2026-06-13 TS-RL1 4차 PASS, R2d 종결 (메티)
