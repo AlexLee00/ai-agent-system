@@ -898,6 +898,9 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/활성 서킷:\s*최신 데이터 영역 기준으로 봅니다\.?/g, '활성 서킷은 최신 데이터 영역 기준입니다.')
     .replace(/활성 서킷은 최신 데이터 영역 기준입니다\.\s*이 있습니다\.?/g, '활성 서킷은 최신 데이터 영역 기준입니다.')
     .replace(/(국내|미국|암호화폐) 시장의 전략군은 \d+건의 진입 0건만이 24시간 동안 활성화되어 있습니다\.?/g, '$1 시장의 전략군은 24시간 기준 진입 0건입니다.')
+    .replace(/(국내|미국|암호화폐) 시장은 현재 진행 중인 거래가 (\d+(?:\.\d+)?)(?:개|건)로,\s*활동이 저조합니다\.?/g, '$1 시장의 G0 게이트 점수는 $2점입니다.')
+    .replace(/(국내|미국|암호화폐) 시장은 (\d+(?:\.\d+)?)(?:개|건)의 거래로,\s*활동이 일부 저조합니다\.?/g, '$1 시장의 G0 게이트 점수는 $2점입니다.')
+    .replace(/활성 서킷은 최신 데이터 영역 기준입니다\.\s*활동이 일부 저조합니다\.?/g, '활성 서킷은 최신 데이터 영역 기준입니다.')
     .replace(/24시간 전략군은 (\d+)건의 거래로,\s*활동이 일부 저조합니다\.?/g, '24시간 전략군 신호는 $1건입니다.')
     .replace(/결정 대기 중인 거래는 (\d+)건으로,\s*활동이 일부 저조합니다\.?/g, 'C15 검토 대기는 $1건입니다.')
     .replace(/\badvisory\s+기록/g, '자문 기록')
@@ -965,9 +968,13 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/이러한 정보를 참고하여\s*[^.。!?\n]*?최종 결정을 내릴 수 있습니다\.?/g, '후속 조치는 마스터 확인 후 기록합니다.')
     .replace(/따라서,\s*현 시점에서 추가적인 조치가 필요합니다\.?/g, '후속 조치는 마스터 확인 후 기록합니다.')
     .replace(/결과적으로,\s*현 시점에서 추가적인 조치가 필요하며,\s*[^.。!?\n]*?(?:필요합니다|권장됩니다)\.?/g, '')
+    .replace(/\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*(?:오전|오후)?\s*회의 데이터 요약을 검토한 결과,?\s*/g, '회의 데이터 요약을 검토한 결과, ')
+    .replace(/결과적으로,\s*/g, '')
     .replace(/(활성 서킷은 최신 데이터 영역 기준입니다|활성 서킷:\s*최신 데이터 영역 기준으로 봅니다)\.\s*이 있습니다\.?/g, '$1.')
     .replace(/활성 서킷은 최신 데이터 영역 기준입니다\.\s*으로,?\s*/g, '활성 서킷은 최신 데이터 영역 기준입니다. ')
     .replace(/후속 조치는 마스터 확인 후 기록합니다\.\s*(?:\n+)?후속 조치는 마스터 확인 후 기록합니다\./g, '후속 조치는 마스터 확인 후 기록합니다.')
+    .replace(/활성 서킷은 최신 데이터 영역 기준입니다\.\s*활동이 일부 저조합니다\.?/g, '활성 서킷은 최신 데이터 영역 기준입니다.')
+    .replace(/(국내|미국|암호화폐) 시장은 현재 ([가-힣]+) 추세를 보이고 있으며,\s*활동이 일부 저조합니다\.?/g, '$1 시장은 현재 $2 추세입니다.')
     .replace(/(확인하세요|기준입니다|봅니다)이며/g, '$1. ')
     .replace(/(확인하세요|기준입니다|봅니다)\.\s*,\s*/g, '$1. ')
     .replace(/(기준입니다|봅니다)(?=[가-힣A-Za-z0-9])/g, '$1. ')
@@ -1543,6 +1550,9 @@ function inferAskIntent(question) {
   if (hasMorningMeetingCue && hasManualAgendaCue) return 'schedule';
   if (/(미장\s*전|미국\s*프리마켓|프리마켓|us\s*premarket|premarket)/u.test(text)) return 'premarket';
   if (hasScheduleCue) return 'schedule';
+  const hasMetricMeaningCue = /(점수|score|g0|게이트|33|44|61)/u.test(text)
+    && /(거래\s*수|거래수|거래|이벤트\s*수|수량|개|건|점수|무슨\s*뜻|의미|뜻)/u.test(text);
+  if (hasMetricMeaningCue) return 'metric_meaning';
   const hasDecisionScopeCue = /(캐치업|숫자|건수|왜|차이|다른|달라)/u.test(text) || (/(전체)/u.test(text) && /(선택)/u.test(text));
   if (hasDecisionScopeCue && /(결정|대기함|대기|pending|캐치업)/u.test(text)) return 'decision_scope';
   if (/(처리|기한|마감|먼저|우선|몇\s*건|뭐부터|무엇부터)/u.test(text) && /(결정|마스터|대기|pending)/u.test(text)) return 'decision_due';
@@ -1707,6 +1717,42 @@ function buildDecisionDueStatus(globalPendingDecisions = [], now = new Date()) {
     `마스터 결정 현황: 전체 대기 ${rows.length}건, 기한 경과 ${overdueCount}건, 오늘 기한 ${todayCount}건${noDueCount ? `, 기한 미정 ${noDueCount}건` : ''}.`,
     `우선 확인: ${priority.length ? priority.join(' / ') : '대기 결정 없음'}.`,
     '처리 기준: 기한 경과 항목을 먼저 보고, 같은 기한이면 화면의 위쪽 순서대로 근거와 타임라인을 확인하세요.',
+  ].join('\n');
+}
+
+function extractMeetingGateScores(detail = null) {
+  const minutes = Array.isArray(detail?.minutes) ? detail.minutes : [];
+  const seen = new Set();
+  const scores = [];
+  for (const row of minutes) {
+    const content = String(row.content || '');
+    const match = content.match(/게이트=([a-z_]+)\s+점수=(\d+(?:\.\d+)?)/i);
+    if (!match) continue;
+    const item = {
+      agendaLabel: row.agendaLabel || agendaLabel(row.agendaKey || row.agenda_key),
+      deployment: match[1],
+      score: Number(match[2]),
+    };
+    const dedupeKey = `${item.agendaLabel}:${item.deployment}:${item.score.toFixed(1)}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    scores.push(item);
+  }
+  return scores;
+}
+
+function buildMetricMeaningStatus(detail = null) {
+  const session = detail?.session || {};
+  const scores = extractMeetingGateScores(detail);
+  const sessionText = session.id ? `선택 회의 #${session.id} ${meetingTypeLabel(session.type)}` : '선택 회의';
+  const scoreText = scores.length
+    ? scores.map((row) => `${row.agendaLabel}: ${row.deployment} ${Number(row.score).toFixed(1)}점(화면 반올림 ${Math.round(row.score)}점)`).join(' / ')
+    : '선택 회의 데이터 minute에서 게이트 점수를 찾지 못했습니다.';
+  return [
+    `정확한 해석: ${sessionText}의 33/44/61 같은 숫자는 거래 수가 아니라 G0 시장 게이트 점수입니다.`,
+    `선택 회의 데이터: ${scoreText}.`,
+    '거래·신호 개수는 별도 필드로 표시됩니다. 예: 전략신호=N건, 서킷=N건, 결정 대기=N건.',
+    '따라서 33개 거래, 44개 거래, 61개 거래처럼 읽으면 안 됩니다.',
   ].join('\n');
 }
 
@@ -1879,6 +1925,14 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
+  if (intent === 'metric_meaning') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      options.metricMeaningStatus || buildMetricMeaningStatus(options.selectedMeetingDetail),
+      '권장 다음 행동: 화면에서 숫자를 볼 때 점수와 건수를 구분하고, 건수 판단은 전략신호/서킷/결정 대기 항목만 기준으로 보세요.',
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
   const focus = {
     aria: '기술 관점',
     hephaestos: '체결 관점',
@@ -1931,18 +1985,22 @@ async function askAgent(body, deps, limiter) {
   const scheduleIntents = new Set(['schedule', 'schedule_ops', 'telegram_schedule']);
   const scheduleMeetings = scheduleIntents.has(intent) ? await safeListMeetings(20, deps) : [];
   const scheduleStatus = scheduleIntents.has(intent) ? buildScheduleExecutionStatus(scheduleMeetings, new Date()) : null;
-  const meetingRowsForScope = intent === 'decision_scope' ? await safeListMeetings(20, deps) : [];
+  const needsSelectedMeetingDetail = intent === 'decision_scope' || intent === 'metric_meaning';
+  const meetingRowsForScope = needsSelectedMeetingDetail ? await safeListMeetings(20, deps) : [];
   const selectedMeetingId = isNumericMeetingId(body.selectedMeetingId)
     ? body.selectedMeetingId
     : meetingRowsForScope[0]?.id;
-  const selectedMeetingDetail = intent === 'decision_scope' ? await safeGetMeetingDetail(selectedMeetingId, deps) : null;
+  const selectedMeetingDetail = needsSelectedMeetingDetail ? await safeGetMeetingDetail(selectedMeetingId, deps) : null;
   const decisionScopeStatus = intent === 'decision_scope'
     ? buildDecisionScopeStatus(globalPendingDecisions, selectedMeetingDetail)
+    : null;
+  const metricMeaningStatus = intent === 'metric_meaning'
+    ? buildMetricMeaningStatus(selectedMeetingDetail)
     : null;
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'web_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_ops' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_lookup' || intent === 'decision_action_safety') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'web_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_ops' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_lookup' || intent === 'decision_action_safety' || intent === 'metric_meaning') {
     return {
       ok: true,
       skipped: true,
@@ -1953,6 +2011,7 @@ async function askAgent(body, deps, limiter) {
         selectedMeetingDetail,
         decisionScopeStatus,
         decisionDueStatus,
+        metricMeaningStatus,
       }),
     };
   }
@@ -1969,6 +2028,7 @@ async function askAgent(body, deps, limiter) {
         selectedMeetingDetail,
         decisionScopeStatus,
         decisionDueStatus,
+        metricMeaningStatus,
       }),
     };
   }

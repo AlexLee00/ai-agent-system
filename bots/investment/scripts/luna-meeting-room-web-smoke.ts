@@ -1322,6 +1322,16 @@ async function main() {
     assert.ok(llmDisplayPolish.includes('24시간 전략군 신호는 2건입니다.'));
     assert.ok(llmDisplayPolish.includes('C15 검토 대기는 5건입니다.'));
     assert.equal(/주요입니다|진입 0건만이|기준으로 봅니다\. 으로|결정 대기 중인 거래/.test(llmDisplayPolish), false);
+    const gateScoreNotTradeCount = _testOnly.normalizeLegacyMinuteContent(
+      '2026년 6월 12일 오전 회의 데이터 요약을 검토한 결과, 현재 회의실 오케스트레이터의 상태가 활성 상태입니다.\n국내 시장은 현재 진행 중인 거래가 33개로, 활동이 저조합니다.\n미국 시장은 44개의 거래로, 활동이 일부 저조합니다.\n암호화폐 시장은 61개의 거래로, 활동이 일부 저조합니다.\n활성 서킷은 최신 데이터 영역 기준입니다. 활동이 일부 저조합니다.\n결과적으로, 관찰 결과를 마스터 확인 대상으로 유지합니다.',
+    );
+    assert.ok(gateScoreNotTradeCount.includes('회의 데이터 요약을 검토한 결과'));
+    assert.ok(gateScoreNotTradeCount.includes('국내 시장의 G0 게이트 점수는 33점입니다.'));
+    assert.ok(gateScoreNotTradeCount.includes('미국 시장의 G0 게이트 점수는 44점입니다.'));
+    assert.ok(gateScoreNotTradeCount.includes('암호화폐 시장의 G0 게이트 점수는 61점입니다.'));
+    assert.ok(gateScoreNotTradeCount.includes('활성 서킷은 최신 데이터 영역 기준입니다.'));
+    assert.ok(gateScoreNotTradeCount.includes('관찰 결과를 마스터 확인 대상으로 유지합니다.'));
+    assert.equal(/진행 중인 거래|개의 거래|건의 거래|활동이 일부 저조합니다|결과적으로|2026년 6월 12일/.test(gateScoreNotTradeCount), false);
     const duplicatedDeterministicTitle = _testOnly.normalizeLegacyMinuteContent(
       '미국 프리마켓 게이트/레짐\n회의 데이터만 근거로 작성한 자문입니다.\n미국 프리마켓 게이트/레짐\n게이트/레짐/포지션/예정 이벤트를 읽기 전용으로 점검합니다.',
     );
@@ -2977,6 +2987,36 @@ async function main() {
     await closeServer(pendingAwareStarted.server);
   }
 
+  let metricMeaningHubCalled = false;
+  const metricMeaningStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: createMemoryStore(),
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      metricMeaningHubCalled = true;
+      return { ok: true, text: 'should not call hub' };
+    },
+  });
+  try {
+    const metricMeaningBase = `http://127.0.0.1:${metricMeaningStarted.server.address().port}`;
+    const metricMeaningAsk = await request(metricMeaningBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'aria', selectedMeetingId: '1', question: '#1 회의의 33/44/55는 거래 수야, 아니면 G0 게이트 점수야?' }),
+    });
+    assert.equal(metricMeaningAsk.status, 200);
+    assert.equal(metricMeaningAsk.payload.provider, 'rule_based');
+    assert.equal(metricMeaningAsk.payload.skipped, true);
+    assert.equal(metricMeaningHubCalled, false);
+    assert.ok(metricMeaningAsk.payload.text.includes('거래 수가 아니라 G0 시장 게이트 점수입니다.'));
+    assert.ok(metricMeaningAsk.payload.text.includes('reduced 55.3점(화면 반올림 55점)'));
+    assert.ok(metricMeaningAsk.payload.text.includes('전략신호=N건, 서킷=N건, 결정 대기=N건'));
+    assert.equal((metricMeaningAsk.payload.text.match(/55\.3점/g) || []).length, 1);
+    assert.equal(/진행 중인 거래|개의 거래|건의 거래|거래 55개|should not call hub/.test(metricMeaningAsk.payload.text), false);
+  } finally {
+    await closeServer(metricMeaningStarted.server);
+  }
+
   const circuitIntentStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
     meetingStore: {
@@ -3129,6 +3169,7 @@ async function main() {
       askTelegramOpsDiagnostics: true,
       askTelegramScheduleCombinedRuleBased: true,
       askSecretSafetyRuleBased: true,
+      askMetricMeaningRuleBased: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,
