@@ -21,6 +21,118 @@ function compact(value: any, max = 1600) {
   return text.length > max ? `${text.slice(0, max)}\n...[truncated]` : text;
 }
 
+const METRIC_LABELS = Object.freeze({
+  brier_hmm_lt_fallback: 'Brier: HMM<폴백',
+  transition_alert_precision: '전이 경보 정밀도',
+  halt_reduced_avoidance_delta: 'halt/reduced 회피 개선폭',
+  nextbar_return_delta: 'next-bar 수익률 차이',
+  nextbar_trade_count_delta: 'next-bar 거래 수 차이',
+  grillCoverage: 'grill 커버리지',
+  decisionTracking: '결정 추적',
+  completedMeetings: '완료 회의 수',
+  readyForPromotion: '승격 준비',
+  haltRecommended: '중단 권고',
+  minTrades: '최소 거래 수',
+  placeholder: 'placeholder 기준',
+  durationWeeks: '관찰 주수',
+  compareAgainst: '비교 기준',
+});
+
+function safeText(value: any, fallback = 'n/a') {
+  const text = String(value ?? '').trim();
+  return text || fallback;
+}
+
+function humanProposalType(value: any, status: any = null) {
+  const raw = String(value || status || '').trim();
+  return {
+    promotion_proposal: '승격 제안',
+    halt_proposal: '중단 제안',
+    stalled_report: '정체 보고',
+    registry_review: '승격 검토',
+    proposed: '승격 검토',
+    stalled: '정체 보고',
+    active: '승격 검토',
+  }[raw] || safeText(raw, '검토');
+}
+
+function metricLabel(key: string) {
+  return METRIC_LABELS[key] || key;
+}
+
+function criteriaSummary(criteria: any = {}) {
+  const metrics = Array.isArray(criteria.metrics) ? criteria.metrics : [];
+  const keyLabels = Object.keys(criteria || {})
+    .filter((key) => !['metrics'].includes(key))
+    .map((key) => `${metricLabel(key)}=${String(criteria[key])}`);
+  const labels = [
+    ...metrics.map(metricLabel),
+    ...keyLabels,
+  ];
+  return labels.length ? labels.join(', ') : '명시 기준 없음';
+}
+
+function criteriaState(criteria: any = {}) {
+  if (criteria.haltRecommended === true) return '중단 조건 충족';
+  if (criteria.readyForPromotion === true) return '승격 조건 일부 충족';
+  if (criteria.placeholder === true) return '미충족: placeholder 기준';
+  return '평가 대기';
+}
+
+function formatModeTransition(row: any = {}) {
+  const current = row.currentMode || row.current_mode || row.mode || 'unknown';
+  const target = row.targetMode || row.target_mode || row.target || 'unknown';
+  return `${current}→${target}`;
+}
+
+function sampleCountForDecision(row: any = {}) {
+  return Number(row.sampleCount ?? row.sample_count ?? row.evidence?.sampleCount ?? 0);
+}
+
+function criteriaForDecision(row: any = {}) {
+  return row.criteria || row.promotion_criteria || row.evidence?.criteria || {};
+}
+
+function summarizePendingDecision(row: any = {}) {
+  const component = safeText(row.component || row.agenda_key || row.type, 'unknown-component');
+  const criteria = criteriaForDecision(row);
+  const type = humanProposalType(row.type, row.status);
+  const sampleCount = sampleCountForDecision(row);
+  const recommendation = row.recommendation || row.summary || row.notes || '후속 판단 대기';
+  return [
+    `C15 결정 대기: 컴포넌트=${component}`,
+    `유형=${type}, 상태=${safeText(row.status, 'n/a')}, 모드=${formatModeTransition(row)}`,
+    `표본=${sampleCount}건, 기준=${criteriaSummary(criteria)}`,
+    `판정=${criteriaState(criteria)}`,
+    `제안 요지=${safeText(recommendation, '후속 판단 대기')}`,
+  ].join('\n');
+}
+
+function summarizeCircuitLocks(rows: any[] = []) {
+  const byKey = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = [
+      row.market || 'unknown',
+      row.symbol || '__market__',
+      row.circuit || 'unknown',
+    ].join('\u0001');
+    if (!byKey.has(key)) byKey.set(key, row);
+  }
+  const locks = Array.from(byKey.values());
+  const lowProfit = locks.filter((row) => row.circuit === 'low_profit_symbol' || row.reason === 'cumulative_r_below_zero');
+  const cooldown = locks.filter((row) => String(row.circuit || row.reason || '').includes('cooldown'));
+  const lowProfitSymbols = [...new Set(lowProfit.map((row) => row.symbol).filter(Boolean))].slice(0, 5);
+  const maxLockUntil = locks
+    .map((row) => row.lock_until || row.lockUntil)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || 'n/a';
+  return [
+    `활성 잠금 ${locks.length}건(저수익 ${lowProfit.length}·쿨다운 ${cooldown.length})${lowProfitSymbols.length ? ` — 저수익 심볼 ${lowProfitSymbols.join(', ')}` : ''}`,
+    `최장 잠금 만료=${maxLockUntil}`,
+  ].join('\n');
+}
+
 function agendaKeyForSegment(segment: any) {
   return `market:${segment.market}`;
 }
@@ -161,9 +273,9 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
       `전략신호=${signalCount}건, 서킷=${circuitCount}건`,
     ].join('\n');
   }
-  if (agenda.kind === 'pending_decision') return `C15 결정 대기 항목\n${compact(agenda.evidence, 900)}`;
+  if (agenda.kind === 'pending_decision') return summarizePendingDecision(agenda.evidence || {});
   if (agenda.kind === 'transition_alert') return `레짐 전이 경보\n${compact(agenda.evidence, 900)}`;
-  if (agenda.kind === 'circuit_locks') return `활성 서킷\n${compact(agenda.evidence, 900)}`;
+  if (agenda.kind === 'circuit_locks') return summarizeCircuitLocks(agenda.evidence || []);
   if (agenda.kind === 'domestic_debrief') {
     const evidence = agenda.evidence || {};
     return [
@@ -267,7 +379,7 @@ async function callAnalysisLLM(agenda: any, planNote: any, agent: string, contex
   try {
     const result = await (deps.callViaHub || callViaHub)(
       agent,
-        'You are a Luna meeting-room research analyst. Use only the provided computed metrics. Reply in natural Korean reporting style. Keep score/status values unchanged; do not translate halt/reduced/full.',
+        'You are a Luna meeting-room research analyst. Use only the provided computed metrics. Reply in natural Korean reporting style. Keep score/status values unchanged; do not translate halt/reduced/full. Do not quote raw JSON or code blocks; express numbers in prose.',
       [
         `안건: ${agenda.title}`,
         'Plan-note excerpt:',
@@ -479,7 +591,14 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
 
   for (const agenda of agendas) {
     const dataBrief = dataBriefForAgenda(agenda, planNote);
-    minutes.push({ seq: seq++, agendaKey: agenda.key, speaker: 'stack-adapter', role: 'data', content: dataBrief, meta: { state: 'data_brief', kind: agenda.kind } });
+    minutes.push({
+      seq: seq++,
+      agendaKey: agenda.key,
+      speaker: 'stack-adapter',
+      role: 'data',
+      content: dataBrief,
+      meta: { state: 'data_brief', kind: agenda.kind, evidence: agenda.evidence || null },
+    });
 
     for (const agent of (config.analysisAgents || []).slice(0, 2)) {
       const analysis = await callAnalysisLLM(agenda, planNote, agent, context, deps);

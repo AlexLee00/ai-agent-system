@@ -65,9 +65,22 @@ function fixturePlanNote() {
     ],
     circuitLocks: [
       { market: 'crypto', symbol: 'BTC/USDT', side: 'long', level: 'symbol', circuit: 'stoploss_guard', reason: '4_stoploss_like_events' },
+      { market: 'crypto', symbol: 'ETH/USDT', side: 'long', level: 'symbol', circuit: 'low_profit_symbol', reason: 'cumulative_r_below_zero', lock_until: '2026-06-12T00:00:00.000Z' },
+      { market: 'crypto', symbol: 'ETH/USDT', side: 'long', level: 'symbol', circuit: 'low_profit_symbol', reason: 'cumulative_r_below_zero', lock_until: '2026-06-12T00:00:00.000Z' },
+      { market: 'crypto', symbol: 'ETH/USDT', side: 'long', level: 'symbol', circuit: 'low_profit_symbol', reason: 'cumulative_r_below_zero', lock_until: '2026-06-12T00:00:00.000Z' },
+      { market: 'crypto', symbol: 'SOL/USDT', side: 'long', level: 'symbol', circuit: 'symbol_cooldown', reason: 'symbol_cooldown_candles', lock_until: '2026-06-11T12:00:00.000Z' },
     ],
     pendingDecisions: [
-      { type: 'stalled_report', component: 'market-deployment-gate', status: 'stalled', sampleCount: 0 },
+      {
+        type: 'stalled_report',
+        component: 'market-deployment-gate',
+        status: 'stalled',
+        currentMode: 'shadow',
+        targetMode: 'supervised_l4',
+        sampleCount: 0,
+        criteria: { metrics: ['brier_hmm_lt_fallback'], placeholder: true, durationWeeks: 4 },
+        recommendation: 'review_or_refine_shadow_design',
+      },
     ],
     positions: [{ symbol: 'BTC/USDT', exchange: 'binance', amount: 0.1 }],
     calibration: [{ market: 'crypto', label: 'volatile', brier_hmm: 0.12, brier_fallback: 0.19 }],
@@ -223,7 +236,9 @@ async function main() {
   assert.equal(plan.gates.length, 3);
   assert.equal(plan.regimes.length, 3);
   assert.equal(plan.strategySignals.length, 2);
+  assert.equal(plan.circuitLocks.length, 3);
   assert.ok(plan.briefMarkdown.includes('G0 게이트'));
+  assert.ok(plan.briefMarkdown.includes('활성 서킷: 3건'));
 
   const weekendSegments = buildMarketSegments(new Date('2026-06-13T18:00:00.000Z'));
   assert.equal(weekendSegments.find((row) => row.market === 'domestic')?.skipped, true);
@@ -244,6 +259,22 @@ async function main() {
   assert.deepEqual(noLlmResult.minutes.map((row) => row.seq), noLlmResult.minutes.map((_, index) => index + 1));
   assert.equal(noLlmResult.minutes.filter((row) => row.role === 'grill').length, noLlmResult.agendas.length);
   assert.ok(noLlmResult.decisions.every((row) => row.grade === 'c_master' && row.status === 'pending_master' && row.dueAt));
+  const pendingDataMinute = noLlmResult.minutes.find((row) => row.role === 'data' && row.agendaKey === 'decision:market-deployment-gate');
+  assert.ok(pendingDataMinute);
+  assert.equal(/[{}]/.test(pendingDataMinute.content), false);
+  assert.ok(pendingDataMinute.content.includes('컴포넌트=market-deployment-gate'));
+  assert.ok(pendingDataMinute.content.includes('표본=0건'));
+  assert.ok(pendingDataMinute.content.includes('Brier: HMM<폴백'));
+  assert.equal(pendingDataMinute.meta?.evidence?.component, 'market-deployment-gate');
+  const circuitDataMinute = noLlmResult.minutes.find((row) => row.role === 'data' && row.agendaKey === 'alerts:circuit-locks');
+  assert.ok(circuitDataMinute);
+  assert.equal(/[{}]/.test(circuitDataMinute.content), false);
+  assert.ok(circuitDataMinute.content.includes('활성 잠금 3건(저수익 1·쿨다운 1)'));
+  assert.ok(circuitDataMinute.content.includes('저수익 심볼 ETH/USDT'));
+  assert.equal(Array.isArray(circuitDataMinute.meta?.evidence), true);
+  assert.equal(circuitDataMinute.meta?.evidence?.length, 5);
+  const pendingDecision = noLlmResult.decisions.find((row) => row.agendaKey === 'decision:market-deployment-gate');
+  assert.equal(pendingDecision?.evidence?.evidenceExcerpt?.component, 'market-deployment-gate');
 
   const dryRunNoWriteLlm = await runMeetingSession({
     type: 'morning',
@@ -448,6 +479,10 @@ async function main() {
       cliArgParsing: true,
       markdownFilePolicy: true,
       regenerateMarkdown: true,
+      pendingDecisionDataBriefNoRawJson: true,
+      circuitLockDataBriefSummary: true,
+      circuitLockDistinctSummary: true,
+      dataBriefRawEvidencePreserved: true,
     },
   };
 }

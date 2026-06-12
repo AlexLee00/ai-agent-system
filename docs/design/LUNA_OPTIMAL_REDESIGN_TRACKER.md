@@ -7,6 +7,7 @@
 
 ## 📊 종합 현황 (2026-06-11)
 - **P0: 6/6 ✅**(커밋 687ece025) · **P1: 7/7 ✅** · **MR-A ✅** · **MR-B ✅ 가동**(2026-06-12 메티 검증·launchd `ai.luna.meeting-room-web`@127.0.0.1:7791 — 빌드리스 2화면·결정 대기함·캐치업·@멘션 가드) · 다음=완료 — **🏛️ 회의실 3분할 완주(2026-06-12)**: MR-A(두뇌)+MR-B(웹 7791)+MR-C(정례 4종 launchd 등록·텔레그램 원클릭[Hub route 활성]·grill skill 2종·G6 debrief·CLI 위생 FIX) → 다음=**갈림길: ALPHA_FACTOR vs P2**
+- **MR-FIX 2~4** ✅ **회의실 표시 품질 3종**(2026-06-12, 메티 검증·웹 재기동): ②마크다운 경량 렌더(innerHTML 무사용·XSS 회귀 검증) ③C15 대기·서킷 안건 JSON 덤프→한국어 요약(원본=meta/evidence 보존) ④서킷 활성 집계 행수→distinct(54→18건 정확화 — 전 표시처 통일). 마스터 브라우저 점검에서 발견·당일 종결.
 - **가동 자산**: DB 10종(`luna_parameter_store` append-only·seed 7 / `luna_component_registry` **31종 active** / `luna_market_gate_history` / `luna_regime_calibration` / `luna_strategy_signals` / `luna_entry_preflight_log` / `luna_circuit_locks` / `luna_meeting_sessions` / `luna_meeting_minutes` / `luna_meeting_decisions`) · 모듈 7종(parameter-store·market-deployment-gate·registry-evaluator·regime-engine·strategy-families·command-policy·meeting-room) · 스모크 6종(전부 ROLLBACK 위생)
 - **🏛️ 첫 공식 회의 기록(2026-06-11 --apply)**: 세션 #1(morning·chair=luna)·minutes 56·**ADR 9건 pending_master(due 6-12)** — 시장 3+C15 대기 5+서킷 1. 회의실이 자기 승격 안건 자체 상정(0-b 자기 적용). 마스터 결정 대기함 운영 시작 — **창구: 웹 가동 중(http://127.0.0.1:7791)** + 회의록 md, 텔레그램=MR-C.
 - **🟢 C15 루프 실가동(2026-06-11)**: plist 2건 등록·kickstart 완료 — `ai.luna.market-gate-30min`(게이트+레짐 30분 적재, DB 이력 확인) · `ai.luna.registry-evaluator-daily`(**--apply 모드** — 25종 last_evaluated_at 갱신 확인). 일일 평가→기준 충족 시 텔레그램 제안(상한 2) 자동.

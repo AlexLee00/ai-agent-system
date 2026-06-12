@@ -389,7 +389,18 @@ export async function insertCircuitLocks(rows = [], runFn = db.run, options: any
 }
 
 export function summarizeCircuitLocks(rows = []) {
-  const locked = (rows || []).filter((row) => row.locked === true).length;
+  const seen = new Set();
+  const locked = (rows || []).filter((row) => {
+    if (row.locked !== true) return false;
+    const key = [
+      row.market || 'unknown',
+      row.symbol || '__market__',
+      row.circuit || 'unknown',
+    ].join('\u0001');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).length;
   return { locked, line: `서킷: 잠금 ${locked}` };
 }
 

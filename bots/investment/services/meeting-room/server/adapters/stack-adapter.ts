@@ -108,6 +108,27 @@ function firstError(rows: any[] = []) {
   return (rows || []).find((row) => row.__error)?.__error || null;
 }
 
+function circuitLockDistinctKey(row: any = {}) {
+  return [
+    row.market || 'unknown',
+    row.symbol || '__market__',
+    row.circuit || 'unknown',
+  ].join('\u0001');
+}
+
+export function distinctCircuitLocks(rows: any[] = []) {
+  const byKey = new Map();
+  for (const row of rows || []) {
+    if (!row || row.__error) continue;
+    const key = circuitLockDistinctKey(row);
+    const previous = byKey.get(key);
+    const currentTs = Date.parse(String(row.evaluated_at || row.evaluatedAt || '')) || 0;
+    const previousTs = previous ? Date.parse(String(previous.evaluated_at || previous.evaluatedAt || '')) || 0 : -1;
+    if (!previous || currentTs >= previousTs) byKey.set(key, row);
+  }
+  return Array.from(byKey.values());
+}
+
 async function buildDomesticDebrief(queryFn: any, now: Date) {
   const dateKst = kstDateKey(now);
   const morningRows = await safeQuery(queryFn,
@@ -135,15 +156,15 @@ async function buildDomesticDebrief(queryFn: any, now: Date) {
       LIMIT 200`,
     [dateKst]);
   const circuitRows = await safeQuery(queryFn,
-    `SELECT market, symbol, side, level, circuit, reason, lock_until, evaluated_at
+    `SELECT DISTINCT ON (market, COALESCE(symbol, '__market__'), circuit)
+            market, symbol, side, level, circuit, reason, lock_until, evaluated_at
        FROM luna_circuit_locks
       WHERE market = 'domestic'
         AND locked IS TRUE
         AND shadow_only IS TRUE
         AND (lock_until IS NULL OR lock_until > NOW())
         AND (evaluated_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
-      ORDER BY evaluated_at DESC
-      LIMIT 100`,
+      ORDER BY market, COALESCE(symbol, '__market__'), circuit, evaluated_at DESC`,
     [dateKst]);
   const gateRows = await safeQuery(queryFn,
     `SELECT market, COUNT(*)::int AS samples, COUNT(DISTINCT deployment)::int AS deployment_states,
@@ -193,7 +214,7 @@ async function buildDomesticDebrief(queryFn: any, now: Date) {
     degradeReason: cleanRows(morningRows).length === 0 ? 'same_day_morning_session_missing' : null,
     strategySignals: signals,
     preflights,
-    activeCircuits: cleanRows(circuitRows),
+    activeCircuits: distinctCircuitLocks(cleanRows(circuitRows)),
     gateTransitions: cleanRows(gateRows),
     regimeTransitions: cleanRows(regimeRows),
     kisTrades: cleanRows(tradeRows),
@@ -225,7 +246,7 @@ async function buildWeeklyStats(queryFn: any, now: Date) {
       GROUP BY market, decision
       ORDER BY market, decision`);
   const circuitRows = await safeQuery(queryFn,
-    `SELECT market, level, circuit, locked, COUNT(*)::int AS count
+    `SELECT market, level, circuit, locked, COUNT(DISTINCT COALESCE(symbol, '__market__'))::int AS count
        FROM luna_circuit_locks
       WHERE evaluated_at >= NOW() - INTERVAL '7 days'
       GROUP BY market, level, circuit, locked
@@ -303,13 +324,13 @@ export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
       ORDER BY created_at DESC
       LIMIT 200`);
   const circuitRows = await safeQuery(queryFn,
-    `SELECT market, symbol, side, level, circuit, reason, evidence, lock_until, evaluated_at
+    `SELECT DISTINCT ON (market, COALESCE(symbol, '__market__'), circuit)
+            market, symbol, side, level, circuit, reason, evidence, lock_until, evaluated_at
        FROM luna_circuit_locks
       WHERE locked IS TRUE
         AND shadow_only IS TRUE
         AND (lock_until IS NULL OR lock_until > NOW())
-      ORDER BY evaluated_at DESC
-      LIMIT 100`);
+      ORDER BY market, COALESCE(symbol, '__market__'), circuit, evaluated_at DESC`);
   const registryRows = await safeQuery(queryFn,
     `SELECT component, current_mode, target_mode, status, sample_count, promotion_criteria, last_evaluated_at, registered_at, notes
        FROM luna_component_registry
@@ -356,7 +377,7 @@ export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
     regime: safeJson(row.regime),
     details: safeJson(row.details),
   }));
-  const circuitLocks = (circuitRows || []).filter((row) => !row.__error).map((row) => ({
+  const circuitLocks = distinctCircuitLocks(circuitRows).map((row) => ({
     ...row,
     evidence: safeJson(row.evidence),
   }));

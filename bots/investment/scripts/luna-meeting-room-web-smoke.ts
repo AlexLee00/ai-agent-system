@@ -43,10 +43,27 @@ function createMemoryStore() {
   ];
   const minutes = [
     { id: 1, sessionId: 1, seq: 1, agendaKey: 'session', speaker: 'system', role: 'system', content: 'open', meta: {}, createdAt: '2026-06-11T00:00:00.000Z' },
-    { id: 2, sessionId: 1, seq: 2, agendaKey: 'market:crypto', speaker: 'stack-adapter', role: 'data', content: '<script>alert(1)</script>', meta: {}, createdAt: '2026-06-11T00:00:01.000Z' },
+    {
+      id: 2,
+      sessionId: 1,
+      seq: 2,
+      agendaKey: 'market:crypto',
+      speaker: 'stack-adapter',
+      role: 'data',
+      content: [
+        '### crypto 요약',
+        '- **BTC** 점검',
+        '| 항목 | 값 |',
+        '| --- | --- |',
+        '| risk | reduced |',
+        '<script>alert(1)</script>',
+      ].join('\n'),
+      meta: {},
+      createdAt: '2026-06-11T00:00:01.000Z',
+    },
   ];
   const decisions = [
-    { id: 11, sessionId: 1, agendaKey: 'market:crypto', decision: 'crypto 점검 pending', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
+    { id: 11, sessionId: 1, agendaKey: 'market:crypto', decision: 'crypto **점검** pending\n- confirm 필요', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-12T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:02.000Z' },
     { id: 12, sessionId: 1, agendaKey: 'market:domestic', decision: 'domestic 점검 pending', grade: 'c_master', status: 'pending_master', dueAt: '2026-06-13T00:00:00.000Z', evidence: { fixture: true }, createdAt: '2026-06-11T00:00:03.000Z' },
   ];
   let nextSessionId = 2;
@@ -152,7 +169,7 @@ async function main() {
       return { ok: true, session: { id }, minutes: [{ seq: 1 }], decisions: [], markdownPath: '/tmp/fixture.md' };
     },
     resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
-    callViaHubFn: async () => ({ ok: true, provider: 'fixture', text: 'fixture answer' }),
+    callViaHubFn: async () => ({ ok: true, provider: 'fixture', text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |' }),
   };
 
   const started = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, deps);
@@ -171,6 +188,14 @@ async function main() {
     const appJs = await request(baseUrl, '/app.js');
     assert.equal(appJs.status, 200);
     assert.equal(appJs.text.includes('dangerouslySetInnerHTML'), false);
+    assert.equal(appJs.text.includes('innerHTML'), false);
+    assert.ok(appJs.text.includes('function renderMarkdownLite'));
+    assert.ok(appJs.text.includes('function MarkdownLite'));
+    assert.ok(appJs.text.includes('renderInlineMarkdown'));
+    assert.ok(appJs.text.includes('markdown-table'));
+    assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
+    assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
+    assert.ok(appJs.text.includes('<${MarkdownLite} text=${answer.text || answer.error ||'));
     const escapedStaticPath = await request(baseUrl, '/%2e%2e%2fserver/index.ts');
     assert.equal(escapedStaticPath.status, 403);
 
@@ -180,6 +205,9 @@ async function main() {
 
     const detail = await request(baseUrl, '/api/meetings/1');
     assert.equal(detail.payload.minutes.length, 2);
+    assert.ok(detail.payload.minutes[1].content.includes('**BTC**'));
+    assert.ok(detail.payload.minutes[1].content.includes('| 항목 | 값 |'));
+    assert.ok(detail.payload.minutes[1].content.includes('<script>alert(1)</script>'));
     const catchup = await request(baseUrl, '/api/catchup/1');
     assert.equal(catchup.payload.lines.length, 3);
 
@@ -276,6 +304,8 @@ async function main() {
       localhostBinding: true,
       staticServingAndXssBaseline: true,
       staticPathEscapeBlocked: true,
+      markdownLiteBoldHeadingListTable: true,
+      markdownLiteNoInnerHtml: true,
     },
   };
 }

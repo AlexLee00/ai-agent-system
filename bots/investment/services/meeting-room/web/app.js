@@ -39,6 +39,110 @@ function roleName(role) {
   return { data: '데이터', analysis: '분석', grill: '그릴', decision: '결정', system: '시스템' }[role] || role;
 }
 
+function renderInlineMarkdown(text, keyPrefix = 'inline') {
+  const source = String(text ?? '');
+  const nodes = [];
+  let cursor = 0;
+  let index = 0;
+  const boldPattern = /\*\*([^*]+)\*\*/g;
+  for (const match of source.matchAll(boldPattern)) {
+    if (match.index > cursor) nodes.push(source.slice(cursor, match.index));
+    nodes.push(html`<b key=${`${keyPrefix}-b-${index++}`}>${match[1]}</b>`);
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < source.length) nodes.push(source.slice(cursor));
+  return nodes.length ? nodes : [source];
+}
+
+function isTableLine(line) {
+  return /^\s*\|.*\|\s*$/.test(String(line || '')) && splitTableRow(line).length > 1;
+}
+
+function isTableSeparator(cells = []) {
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(String(cell || '').trim()));
+}
+
+function splitTableRow(line) {
+  return String(line || '')
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+function renderMarkdownTable(lines, keyPrefix) {
+  const rows = lines.map(splitTableRow);
+  const hasHeader = rows.length > 1 && isTableSeparator(rows[1]);
+  const header = hasHeader ? rows[0] : null;
+  const body = hasHeader ? rows.slice(2) : rows.filter((row) => !isTableSeparator(row));
+  return html`
+    <table className="markdown-table" key=${`${keyPrefix}-table`}>
+      ${header ? html`
+        <thead>
+          <tr>${header.map((cell, index) => html`<th key=${`${keyPrefix}-th-${index}`}>${renderInlineMarkdown(cell, `${keyPrefix}-th-${index}`)}</th>`)}</tr>
+        </thead>
+      ` : null}
+      <tbody>
+        ${body.map((row, rowIndex) => html`
+          <tr key=${`${keyPrefix}-tr-${rowIndex}`}>
+            ${row.map((cell, cellIndex) => html`<td key=${`${keyPrefix}-td-${rowIndex}-${cellIndex}`}>${renderInlineMarkdown(cell, `${keyPrefix}-td-${rowIndex}-${cellIndex}`)}</td>`)}
+          </tr>
+        `)}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderMarkdownLite(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const blocks = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    const key = `md-${index}`;
+    if (isTableLine(line)) {
+      const tableLines = [];
+      while (index < lines.length && isTableLine(lines[index])) tableLines.push(lines[index++]);
+      blocks.push(renderMarkdownTable(tableLines, key));
+      continue;
+    }
+    if (line.startsWith('#### ')) {
+      blocks.push(html`<h4 key=${key}>${renderInlineMarkdown(line.slice(5), key)}</h4>`);
+      index += 1;
+      continue;
+    }
+    if (line.startsWith('### ')) {
+      blocks.push(html`<h3 key=${key}>${renderInlineMarkdown(line.slice(4), key)}</h3>`);
+      index += 1;
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      const items = [];
+      while (index < lines.length && lines[index].startsWith('- ')) {
+        const itemKey = `md-li-${index}`;
+        items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`);
+        index += 1;
+      }
+      blocks.push(html`<ul key=${key}>${items}</ul>`);
+      continue;
+    }
+    blocks.push(line === ''
+      ? html`<br key=${key} />`
+      : html`<div className="markdown-line" key=${key}>${renderInlineMarkdown(line, key)}</div>`);
+    index += 1;
+  }
+  return html`<div className="markdown-lite">${blocks}</div>`;
+}
+
+function MarkdownLite({ text }) {
+  try {
+    return renderMarkdownLite(text);
+  } catch (error) {
+    return html`<pre>${String(text ?? '')}</pre>`;
+  }
+}
+
 function meetingTypesForSegments(segments = []) {
   const domestic = segments.find((row) => row.market === 'domestic');
   const overseas = segments.find((row) => row.market === 'overseas');
@@ -142,13 +246,13 @@ function Timeline({ detail, catchup }) {
         <div className="catchup">
           ${(catchup || ['회의를 선택하면 U1 캐치업이 표시됩니다.']).map((line) => html`<div>${line}</div>`)}
         </div>
-        <pre>${detail?.planNote?.briefMarkdown || ''}</pre>
+        <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
         <div className="list" style=${{ marginTop: '14px' }}>
           ${minutes.map((minute) => html`
             <article className=${`minute ${minute.role}`}>
               <div className="meeting-title">${minute.seq}. ${minute.agendaKey} — ${roleName(minute.role)} / ${minute.speaker}</div>
               <div className="meta">${formatTime(minute.createdAt)}</div>
-              <pre>${minute.content}</pre>
+              <${MarkdownLite} text=${minute.content} />
             </article>
           `)}
           ${minutes.length === 0 ? html`<div className="meta">선택된 회의의 minute가 없습니다.</div>` : null}
@@ -181,7 +285,7 @@ function DecisionCard({ token, decision, onUpdated, setError }) {
     <article className="decision-card">
       <div className="meeting-title">#${decision.id} · ${decision.agendaKey}</div>
       <div className="meta">${decision.grade}/${decision.status} · due ${formatTime(decision.dueAt)}</div>
-      <p>${decision.decision}</p>
+      <${MarkdownLite} text=${decision.decision} />
       <details><summary>evidence</summary><pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre></details>
       <div className="form-row" style=${{ marginTop: '10px' }}>
         <input value=${note} onChange=${(event) => setNote(event.target.value)} placeholder="감사 note" />
@@ -315,7 +419,7 @@ function AskRoom({ token }) {
           <div className="answer">
             ${answer ? html`
               <div className="meta">${answer.agent} · ${answer.provider || answer.route?.provider || 'n/a'} · ok=${String(answer.ok)}</div>
-              <pre>${answer.text || answer.error || '응답 없음'}</pre>
+              <${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} />
             ` : html`<div className="meta">아직 응답 없음</div>`}
           </div>
         </div>
