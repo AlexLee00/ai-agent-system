@@ -365,7 +365,7 @@ function renderMarkdownLite(text) {
       const items = [];
       while (index < lines.length && lines[index].startsWith('- ')) {
         const itemKey = `md-li-${index}`;
-          items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`);
+        items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`, '\n');
         index += 1;
       }
       pushBlock(html`<ul key=${key}>${items}</ul>`);

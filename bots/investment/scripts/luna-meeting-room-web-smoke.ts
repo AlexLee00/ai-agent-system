@@ -407,6 +407,7 @@ async function main() {
     assert.ok(appJs.text.includes('function MarkdownLite'));
     assert.ok(appJs.text.includes("function pushBlock(node)"));
     assert.ok(appJs.text.includes("blocks.push(node, '\\n');"));
+    assert.ok(appJs.text.includes("items.push(html`<li key=${itemKey}>${renderInlineMarkdown(lines[index].slice(2), itemKey)}</li>`, '\\n');"));
     assert.ok(appJs.text.includes('renderInlineMarkdown'));
     assert.ok(appJs.text.includes('markdown-table'));
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791"'));
@@ -1894,6 +1895,7 @@ async function main() {
       staticServingAndXssBaseline: true,
       staticPathEscapeBlocked: true,
       markdownLiteBoldHeadingListTable: true,
+      markdownListTextBoundary: true,
       markdownTableMobileWrapGuard: true,
       markdownLiteNoInnerHtml: true,
       legacyRawJsonMinuteNormalized: true,
