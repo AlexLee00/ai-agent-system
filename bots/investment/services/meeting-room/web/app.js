@@ -205,8 +205,8 @@ function meetingTypesForSegments(segments = []) {
   const overseas = segments.find((row) => row.market === 'overseas');
   return [
     { value: 'morning', label: '아침 통합 회의', disabled: false },
-    { value: 'domestic_debrief', label: `국내 장후 회의${domestic?.skipped ? ` (${domestic.reason})` : ''}`, disabled: domestic?.skipped === true },
-    { value: 'us_premarket', label: `미장 전 회의${overseas?.skipped ? ` (${overseas.reason})` : ''}`, disabled: overseas?.skipped === true },
+    { value: 'domestic_debrief', label: `국내 장후 회의${domestic?.skipped ? ` (${domestic.reason})` : ''}`, disabled: domestic?.skipped === true, reason: domestic?.reason },
+    { value: 'us_premarket', label: `미장 전 회의${overseas?.skipped ? ` (${overseas.reason})` : ''}`, disabled: overseas?.skipped === true, reason: overseas?.reason },
     { value: 'weekly', label: '주간 회의', disabled: false },
     { value: 'adhoc', label: '임시 회의', disabled: false },
   ];
@@ -217,13 +217,14 @@ function marketLabel(market) {
 }
 
 function SegmentStatus({ segments }) {
-  if (!segments?.length) return html`<div className="meta">세그먼트 상태 로딩 중</div>`;
+  if (!segments?.length) return html`<div id="meeting-segment-status" className="meta" role="status" aria-live="polite" aria-label="시장 세그먼트 상태">세그먼트 상태 로딩 중</div>`;
   return html`
-    <div className="segment-status" aria-label="시장 세그먼트 상태">
+    <div id="meeting-segment-status" className="segment-status" role="status" aria-live="polite" aria-label="시장 세그먼트 상태">
       ${segments.map((segment) => html`
         <span
           className=${`segment-pill ${segment.skipped ? 'closed' : 'active'}`}
           title=${segment.skipped ? `${marketLabel(segment.market)} 비활성: ${segment.reason || '사유 없음'}` : `${marketLabel(segment.market)} active`}
+          aria-label=${segment.skipped ? `${marketLabel(segment.market)} 비활성, 사유 ${segment.reason || '사유 없음'}` : `${marketLabel(segment.market)} active`}
         >
           ${marketLabel(segment.market)} · ${segment.skipped ? `비활성(${segment.reason || '사유 없음'})` : 'active'}
         </span>
@@ -236,10 +237,10 @@ function Header({ token, setToken, tab, setTab }) {
   return html`
     <div className="hero">
       <div>
-        <div className="topline">
-          <span className="pill">MR-B</span>
-          <span className="pill">advisory / shadow only</span>
-          <span className="pill">127.0.0.1:7791</span>
+        <div className="topline" role="status" aria-label="회의실 실행 상태">
+          <span className="pill" aria-label="회의실 버전 MR-B">MR-B</span>
+          <span className="pill" aria-label="자문 및 섀도 전용">advisory / shadow only</span>
+          <span className="pill" aria-label="로컬 바인딩 127.0.0.1 포트 7791">127.0.0.1:7791</span>
         </div>
         <h1>Luna Meeting Room</h1>
         <p>회의록, 결정 대기함, 에이전트 질의를 한 화면에서 다룹니다. 이 UI는 기록과 승인 보조만 수행하며 거래·파라미터를 변경하지 않습니다.</p>
@@ -260,7 +261,14 @@ function Header({ token, setToken, tab, setTab }) {
     <div className="tabs">
       <button className=${tab === 'daily' ? 'active' : ''} aria-pressed=${tab === 'daily'} onClick=${() => setTab('daily')}>일일 회의실</button>
       <button className=${tab === 'ask' ? 'active' : ''} aria-pressed=${tab === 'ask'} onClick=${() => setTab('ask')}>에이전트 질의</button>
-      <a className="pill" href="http://127.0.0.1:7787" target="_blank" rel="noreferrer">TeamJay Dashboard :7787</a>
+      <a
+        className="pill"
+        href="http://127.0.0.1:7787"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="TeamJay Dashboard 7787 새 창으로 열기"
+        title="TeamJay Dashboard 7787 새 창으로 열기"
+      >TeamJay Dashboard :7787</a>
     </div>
   `;
 }
@@ -322,8 +330,15 @@ function StartMeeting({ token, segments, onStarted, setError }) {
     <div className="form-row">
       <label className="meta" htmlFor="meeting-type-select">회의 시작</label>
       <div className="inline">
-        <select id="meeting-type-select" aria-label="시작할 회의 타입" value=${type} onChange=${(event) => setType(event.target.value)}>
-          ${types.map((item) => html`<option value=${item.value} disabled=${item.disabled}>${item.label}</option>`)}
+        <select id="meeting-type-select" aria-label="시작할 회의 타입" aria-describedby="meeting-segment-status" value=${type} onChange=${(event) => setType(event.target.value)}>
+          ${types.map((item) => html`
+            <option
+              value=${item.value}
+              disabled=${item.disabled}
+              title=${item.disabled ? `${item.label} 비활성: ${item.reason || '사유 없음'}` : item.label}
+              aria-label=${item.disabled ? `${item.label} 비활성, 사유 ${item.reason || '사유 없음'}` : item.label}
+            >${item.label}</option>
+          `)}
         </select>
         <button
           aria-label=${`${types.find((item) => item.value === type)?.label || type} 시작`}
@@ -334,7 +349,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
       </div>
       <${SegmentStatus} segments=${segments} />
       <label className="check" htmlFor="meeting-llm-toggle"><input id="meeting-llm-toggle" type="checkbox" aria-describedby="meeting-llm-mode" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
-      <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`}>
+      <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`} role="status" aria-live="polite" aria-label="LLM 발언 모드">
         현재 모드: ${useLlm ? 'LLM 발언 사용 · 비용 가드 적용' : '결정론 발언 · LLM 비용 0'}
       </div>
     </div>
@@ -343,12 +358,27 @@ function StartMeeting({ token, segments, onStarted, setError }) {
 
 function Timeline({ detail, catchup, loading }) {
   const minutes = detail?.minutes || [];
+  const roleLegend = [
+    ['system', '시스템'],
+    ['data', '데이터'],
+    ['analysis', '분석'],
+    ['grill', '그릴'],
+    ['decision', '결정'],
+    ['adr', 'ADR'],
+  ];
   return html`
     <div className="card" role="region" aria-label="회의 타임라인">
       <h2>타임라인</h2>
       <div className="card-body">
         <div className="catchup" role="status" aria-live="polite" aria-label="U1 캐치업 요약">
           ${loading ? html`<div>회의 상세를 불러오는 중입니다.</div>` : (catchup || ['회의를 선택하면 U1 캐치업이 표시됩니다.']).map((line) => html`<div>${line}</div>`)}
+        </div>
+        <div className="role-legend" role="list" aria-label="타임라인 역할 색상 범례">
+          ${roleLegend.map(([role, label]) => html`
+            <span className="role-chip" role="listitem" aria-label=${`${label} 역할 색상`}>
+              <span className=${`role-dot ${role}`} aria-hidden="true"></span>${label}
+            </span>
+          `)}
         </div>
         <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
         <div className="list" style=${{ marginTop: '14px' }}>
@@ -571,7 +601,7 @@ function AskRoom({ token }) {
       <div className="card">
         <h2>응답</h2>
         <div className="card-body">
-          <div className="answer">
+          <div className="answer" role="status" aria-live="polite" aria-label="에이전트 질의 응답">
             ${answer ? html`
               <div className="meta">${answer.agent} · ${answer.provider || answer.route?.provider || 'n/a'} · ok=${String(answer.ok)}</div>
               <${MarkdownLite} text=${answer.text || answer.error || '응답 없음'} />

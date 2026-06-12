@@ -262,6 +262,11 @@ async function main() {
     assert.ok(html.text.includes('Luna Meeting Room'));
     assert.ok(html.text.includes('.due.overdue'));
     assert.ok(html.text.includes('.minute.adr'));
+    assert.ok(html.text.includes('.role-legend'));
+    assert.ok(html.text.includes('.role-dot.data'));
+    assert.ok(html.text.includes('overflow-x: auto'));
+    assert.ok(html.text.includes('table-layout: fixed'));
+    assert.ok(html.text.includes('overflow-wrap: anywhere'));
     const appJs = await request(baseUrl, '/app.js');
     assert.equal(appJs.status, 200);
     assert.equal(appJs.text.includes('dangerouslySetInnerHTML'), false);
@@ -270,6 +275,10 @@ async function main() {
     assert.ok(appJs.text.includes('function MarkdownLite'));
     assert.ok(appJs.text.includes('renderInlineMarkdown'));
     assert.ok(appJs.text.includes('markdown-table'));
+    assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태"'));
+    assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
+    assert.ok(appJs.text.includes('aria-label="로컬 바인딩 127.0.0.1 포트 7791"'));
+    assert.ok(appJs.text.includes('aria-label="TeamJay Dashboard 7787 새 창으로 열기"'));
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰 (MEETING_ROOM_TOKEN)'));
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
@@ -280,10 +289,18 @@ async function main() {
     assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${run.type} ${run.status} 선택`}'));
     assert.ok(appJs.text.includes('htmlFor="meeting-type-select">회의 시작'));
     assert.ok(appJs.text.includes('aria-label="시작할 회의 타입"'));
+    assert.ok(appJs.text.includes('aria-describedby="meeting-segment-status"'));
+    assert.ok(appJs.text.includes('id="meeting-segment-status"'));
+    assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="시장 세그먼트 상태"'));
+    assert.ok(appJs.text.includes('비활성, 사유'));
     assert.ok(appJs.text.includes('advisory/shadow 회의로 시작합니다.'));
     assert.ok(appJs.text.includes('id="meeting-llm-toggle"'));
     assert.ok(appJs.text.includes('aria-describedby="meeting-llm-mode"'));
+    assert.ok(appJs.text.includes('id="meeting-llm-mode"'));
+    assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="LLM 발언 모드"'));
     assert.ok(appJs.text.includes('role="region" aria-label="회의 타임라인"'));
+    assert.ok(appJs.text.includes('role="list" aria-label="타임라인 역할 색상 범례"'));
+    assert.ok(appJs.text.includes('aria-label=${`${label} 역할 색상`}'));
     assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 minute · ${minute.agendaKey ||'));
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="U1 캐치업 요약"'));
     assert.ok(appJs.text.includes('className="error" role="alert" aria-live="assertive"'));
@@ -302,6 +319,7 @@ async function main() {
     assert.ok(appJs.text.includes('function minuteClassName'));
     assert.ok(appJs.text.includes('function SegmentStatus'));
     assert.ok(appJs.text.includes('segment-pill'));
+    assert.ok(appJs.text.includes('세그먼트 상태 로딩 중'));
     assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
     assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
     assert.ok(appJs.text.includes('근거 JSON 보기'));
@@ -328,6 +346,7 @@ async function main() {
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 advisory 질문을 보냅니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
+    assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-label="에이전트 질의 응답"'));
     assert.ok(html.text.includes('.ask-helper'));
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
@@ -476,6 +495,7 @@ async function main() {
     smoke: 'luna-meeting-room-web',
     scenarios: {
       apiListDetailCatchup: true,
+      headerStatusAndDashboardA11y: true,
       pendingDueOrder: true,
       startDuplicateGuard: true,
       completedRunSwitchesToSessionDetail: true,
@@ -488,6 +508,7 @@ async function main() {
       askSafetyNotice: true,
       askFormKoreanLabels: true,
       askInputGuidance: true,
+      askAnswerLiveRegion: true,
       pollingCadenceConfigured: true,
       tokenAuth: true,
       headerTokenA11y: true,
@@ -495,18 +516,23 @@ async function main() {
       startMeetingA11y: true,
       meetingListPressedState: true,
       timelineArticleA11y: true,
+      timelineRoleLegend: true,
       dynamicRegionA11y: true,
       localhostBinding: true,
       staticServingAndXssBaseline: true,
       staticPathEscapeBlocked: true,
       markdownLiteBoldHeadingListTable: true,
+      markdownTableMobileWrapGuard: true,
       markdownLiteNoInnerHtml: true,
       legacyRawJsonMinuteNormalized: true,
       legacyCircuitCountMasked: true,
       friendlyUiErrors: true,
       closedSegmentReasonVisible: true,
+      closedSegmentReasonA11y: true,
       llmToggleDefaultNoCost: true,
+      llmModeLiveRegion: true,
       evidenceDisclosureKoreanLabel: true,
+      evidencePreMobileOverflowGuard: true,
       decisionActionKoreanLabels: true,
       decisionControlsAccessibleNames: true,
       decisionRegionA11y: true,
