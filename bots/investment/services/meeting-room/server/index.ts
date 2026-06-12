@@ -698,6 +698,10 @@ async function listMeetings(limit, deps) {
   return rows.map(normalizeSession);
 }
 
+function isNumericMeetingId(id) {
+  return /^\d+$/.test(String(id ?? ''));
+}
+
 async function getMeeting(id, deps) {
   if (deps.meetingStore?.getMeeting) {
     const stored = await deps.meetingStore.getMeeting(id);
@@ -707,6 +711,9 @@ async function getMeeting(id, deps) {
       minutes: (stored.minutes || []).map(normalizeMinute),
       decisions: (stored.decisions || []).map(normalizeDecision),
     };
+  }
+  if (!isNumericMeetingId(id)) {
+    throw new HttpError(404, 'meeting_not_found', `회의 ${id}를 찾을 수 없습니다.`);
   }
   const sessionRows = await deps.queryFn(
     `SELECT id, type, status, chair, segments, started_at, closed_at, summary

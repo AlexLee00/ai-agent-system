@@ -445,7 +445,7 @@ function SegmentStatus({ segments }) {
         ${segmentStatusVisibleText(segment)}
       </span>
     `,
-    index < segmentRows.length - 1 ? ' ' : '',
+    index < segmentRows.length - 1 ? '\n' : '',
   ]);
   return html`
     <div id="meeting-segment-status" className="segment-status" role="status" aria-live="polite" aria-label=${`시장 세그먼트 상태: ${summary}`}>
@@ -545,6 +545,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
   return html`
     <div className="card" role="region" aria-label="회의 목록">
       <h2>회의 목록</h2>
+      ${'\n'}
       <div className="card-body list" role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}>
         ${activeRunRows.map((run) => html`
           <div className="meeting-list-row" role="listitem">
@@ -559,6 +560,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
               <div className="meta">${formatTime(run.startedAt)} · 실행 작업</div>
             </button>
           </div>
+          ${'\n'}
         `)}
         ${meetingRows.map((meeting) => html`
           <div className="meeting-list-row" role="listitem">
@@ -573,6 +575,7 @@ function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
               <div className="meta" title=${`상태: ${meetingStatusLabel(meeting.status)}`} data-raw-status=${meeting.status || 'n/a'}>${meetingStatusLabel(meeting.status)} · ${formatTime(meeting.startedAt)}</div>
             </button>
           </div>
+          ${'\n'}
         `)}
         ${meetingRows.length === 0 && activeRunRows.length === 0 ? html`<div className="meta">회의 기록 없음</div>` : null}
       </div>
@@ -621,6 +624,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   return html`
     <div className="form-row">
       <label className="meta" htmlFor="meeting-type-select">회의 타입</label>
+      ${'\n'}
       <div className="inline">
         <select id="meeting-type-select" title="시작할 회의 타입" aria-describedby="meeting-segment-status" value=${type} onChange=${(event) => setType(event.target.value)}>
           ${types.map((item) => html`
@@ -630,8 +634,10 @@ function StartMeeting({ token, segments, onStarted, setError }) {
               title=${item.disabled ? `${item.label} 비활성: ${item.reasonLabel || segmentReasonLabel(item.reason)}` : item.label}
               aria-label=${item.disabled ? `${item.label} 비활성, 사유 ${item.reasonLabel || segmentReasonLabel(item.reason)}` : item.label}
             >${item.label}</option>
+            ${'\n'}
           `)}
         </select>
+        ${'\n'}
         <button
           aria-label=${startButtonLabel}
           aria-busy=${busy}
@@ -640,9 +646,12 @@ function StartMeeting({ token, segments, onStarted, setError }) {
           disabled=${startDisabled}
         >${busy ? '시작 중' : '회의 시작'}</button>
       </div>
+      ${'\n'}
       ${startBlocked ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 시작할 수 없습니다: ${startBlockReason}</div>` : null}
       <${SegmentStatus} segments=${segments} />
+      ${'\n'}
       <label className="check" htmlFor="meeting-llm-toggle"><input id="meeting-llm-toggle" type="checkbox" aria-describedby="meeting-llm-mode" checked=${useLlm} onChange=${(event) => setUseLlm(event.target.checked)} /> LLM 발언 사용(비용 가드 적용)</label>
+      ${'\n'}
       <div id="meeting-llm-mode" className=${`llm-mode ${useLlm ? 'enabled' : 'disabled'}`} role="status" aria-live="polite" aria-label="LLM 발언 모드">
         현재 모드: ${useLlm ? 'LLM 발언 사용 · 비용 가드 적용' : '결정론 발언 · LLM 비용 0'}
       </div>
@@ -668,6 +677,7 @@ function Timeline({ detail, catchup, loading }) {
   return html`
     <div className="card" role="region" aria-label="회의 타임라인">
       <h2>타임라인</h2>
+      ${'\n'}
       <div className="card-body">
         <div className="catchup" role="status" aria-live="polite" aria-label=${catchupLabel}>
           <div role="list" aria-label=${`U1 캐치업 ${catchupLines.length}줄 요약`}>
@@ -679,6 +689,7 @@ function Timeline({ detail, catchup, loading }) {
             <span className="role-chip" role="listitem" aria-label=${`${label} 역할 색상`}>
               <span className=${`role-dot ${role}`} aria-hidden="true"></span>${label}
             </span>
+            ${'\n'}
           `)}
         </div>
         <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
@@ -920,12 +931,16 @@ function DailyRoom({ token }) {
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     ${notice ? html`<p className="notice" role="status" aria-live="polite">${notice}</p>` : null}
     <div className="polling-status" role="status" aria-live="polite" aria-label=${`회의실 폴링 상태: ${pollingLabel}`}>${pollingLabel}</div>
+    ${'\n'}
     <div className="grid">
       <div>
         <${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />
+        ${'\n'}
         <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
       </div>
+      ${'\n'}
       <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />
+      ${'\n'}
       <${Decisions} token=${token} decisions=${pending} onUpdated=${refreshAfterDecisionUpdate} setError=${setError} setNotice=${setNotice} />
     </div>
   `;

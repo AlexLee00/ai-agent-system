@@ -40,9 +40,9 @@
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
 | W-40 | 폴링 주기 | open 세션 시 3초·idle 30초, 현재 모드가 화면에 표시됨 | [자동] cadence 계약+폴링 상태 배지+[수동] 네트워크 탭 |
-| W-41 | 서버 다운/API 오류 내성 | 서버 중지 또는 잘못된 API 요청 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거·404/400/405류 오류는 내부 토큰 대신 한국어 안내 표시 | [자동] 복구시 에러 clear+stale 제거+친화 API 오류+[수동] fixture |
+| W-41 | 서버 다운/API 오류 내성 | 서버 중지 또는 잘못된 API 요청 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거·404/400/405류 오류는 내부 토큰 대신 한국어 안내 표시 | [자동] 복구시 에러 clear+stale 제거+친화 API 오류+[수동] ✅2026-06-12 실제 API |
 | W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님) | [자동] smoke |
-| W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200 | [자동] |
+| W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200, 로컬 무인증 모드에서는 토큰 입력/삭제 후 화면 복구 | [자동]+[수동] ✅2026-06-12 무인증 복구 |
 | W-44 | 모바일 반응형/키보드 | 창 폭 축소·Tab 이동 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기·명시적 `focus-visible` 링·320px/390px horizontal overflow 없음 | [자동] focus ring+1컬럼 계약+[수동] ✅390px/320px 확인 |
 
 ## E. 정례 연동 (🔁 자동 회의 사이클 — 토 05:00 첫 사이클부터)
@@ -211,6 +211,10 @@
 - **2026-06-12 루프 155**: W-50 정례 회의 반영 브라우저 점검 → launchd 정례 회의 4종 등록 상태와 DB/API 최신 회의가 #117 `domestic_debrief`로 일치함을 확인했고, 웹 목록·U1 캐치업도 #117 국내 장후 회의를 최신 선택 세션으로 표시했다. 기능은 정상이었지만 DOM `textContent`에서 `회의완료`, `대기 1건마스터`처럼 블록 텍스트가 붙을 수 있어 회의 목록 title/meta와 캐치업 listitem 사이 newline text를 추가했다. 재시작 후 `대기 1건\n마스터 액션 필요`, `국내 장후 회의\n완료` 경계 확인, console warn/error 0건, overflow 0건.
 - **2026-06-12 루프 156**: W-20/W-21/W-24 최신 회의 타임라인 렌더 스캔 → #117 타임라인과 결정 대기함을 실제 브라우저에서 스캔해 raw JSON, 마크다운 원문, 내부 상태/시장 토큰, boilerplate 문장, DB 구현 용어가 없는 것을 확인했다. 추가로 article title/time/content가 DOM `textContent` 기준 `Sophia2026`, `시스템2026`처럼 붙는 경계를 발견해 타임라인 회의록 header와 timestamp/content 사이 newline text를 추가했다. 재시작 후 각 article이 `발언자\n시간\n본문` 형태로 추출되고 bad pattern 0건, console warn/error 0건, overflow 0건 확인.
 - **2026-06-12 루프 157**: W-30/W-32 에이전트 질의 화면 textContent 재감사 → 실제 질의 탭은 기능·raw 토큰 측면에서 정상이었지만, 전체 패널 추출 기준 `한도질의 보내기`, `응답아직`, `Reporter질문`, `알려줘.질의`처럼 form/control/answer 경계가 붙을 수 있음을 확인. 질의 heading/form, label/control, textarea/helper, helper/safety, safety/button, form/response card, response heading/body, answer meta/content 사이 newline text를 추가하고 option text에도 경계 공백을 보강했다. 재시작 후 에이전트 목록·질문·helper·safety·버튼·응답이 줄 단위로 추출되고 bad pattern 0건, console warn/error 0건, overflow 0건 확인.
+- **2026-06-12 루프 158**: W-01/W-03/W-40 일일 회의실 textContent 경계 재감사 → 폴링 배지·회의 시작 폼·세그먼트 pill·회의 목록·타임라인 범례가 기능상 정상이어도 복사/보조 추출 기준으로 `폴링...회의 타입`, `회의 목록#117`, `시스템데이터분석...`처럼 붙는 문제를 확인. 각 섹션/컨트롤/행/범례 사이 newline text를 추가하고 스모크에 경계 계약을 고정했다. 재시작 후 실제 브라우저에서 `폴링\n회의 타입`, `회의 목록\n#117`, `시스템\n데이터\n분석...`으로 추출되며 bad pattern 0건, console warn/error 0건, overflow 0건 확인.
+- **2026-06-12 루프 159**: W-44/W-30 모바일 부작용 재검증 → 직전 newline 경계 보강이 320px/390px 모바일 레이아웃을 깨지 않는지 실제 브라우저에서 확인했다. 320px 일일 회의실은 body overflow 0, control 높이 40px 이상(체크박스는 label 터치 영역으로 보호), bad pattern 0건, console warn/error 0건이었다. 390px 에이전트 질의 패널은 `aria-labelledby=meeting-ask-form-title`, 응답 live region 유지, `@멘션 질의\n에이전트...\n질문...\n응답...` 줄 단위 추출, bad pattern 0건, overflow 0건으로 추가 수정 없음.
+- **2026-06-12 루프 160**: W-41/W-43 토큰 오류·복구 흐름 점검 → 현재 실제 서비스는 `MEETING_ROOM_TOKEN` 미설정 무인증 모드라 무토큰/잘못된 토큰 모두 `/api/health=200`으로 확인되어 401은 fixture 스모크 커버로 유지했다. 브라우저에서 잘못된 토큰을 입력해도 회의 목록 2건·캐치업·에러 없음 상태가 유지되고, 키보드 방식으로 토큰을 비우면 input/localStorage 모두 0으로 복구되며 회의 목록·캐치업 정상, console warn/error 0, overflow 0을 확인했다.
+- **2026-06-12 루프 161**: W-41 실제 API 오류 내성 재점검 → `GET /api/meetings/start`가 동적 회의 ID 라우트로 들어가 DB bigint 변환 오류 `22P02`를 500으로 노출하는 문제를 확인. active run ID가 아닌 회의 상세/catchup ID는 숫자만 DB 조회하도록 방어해 `/api/meetings/start`와 `/api/catchup/start`가 `404 meeting_not_found · 회의 start를 찾을 수 없습니다.`로 응답하게 수정하고 스모크에 회귀 케이스를 추가했다. 재시작 후 실제 API와 브라우저 기본 화면 모두 정상, console warn/error 0, overflow 0.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

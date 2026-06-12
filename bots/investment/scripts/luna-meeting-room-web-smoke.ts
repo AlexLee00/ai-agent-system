@@ -562,7 +562,7 @@ async function main() {
     assert.ok(appJs.text.includes("const pills = segmentRows.flatMap((segment, index) => ["));
     assert.ok(appJs.text.includes("aria-label=${`시장 세그먼트 상태: ${summary}`}"));
     assert.ok(appJs.text.includes('const segmentRows = safeArray(segments);'));
-    assert.ok(appJs.text.includes("index < segmentRows.length - 1 ? ' ' : ''"));
+    assert.ok(appJs.text.includes("index < segmentRows.length - 1 ? '\\n' : ''"));
     assert.ok(appJs.text.includes('reasonLabel'));
     assert.ok(appJs.text.includes('segment-pill'));
     assert.ok(appJs.text.includes('세그먼트 상태 로딩 중'));
@@ -766,7 +766,17 @@ async function main() {
     assert.ok(appJs.text.includes('폴링: 대기 · 30초마다 갱신'));
     assert.equal(appJs.text.includes('폴링: idle'), false);
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label=${`회의실 폴링 상태: ${pollingLabel}`}'));
+    assert.ok(appJs.text.includes('>${pollingLabel}</div>\n    ${\'\\n\'}'));
     assert.equal(appJs.text.includes('aria-label="회의실 폴링 상태"'), false);
+    assert.ok(appJs.text.includes('<label className="meta" htmlFor="meeting-type-select">회의 타입</label>\n      ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('</select>\n        ${\'\\n\'}'));
+    assert.ok(appJs.text.includes("index < segmentRows.length - 1 ? '\\n' : ''"));
+    assert.ok(appJs.text.includes('<${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />\n        ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />\n      ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('<h2>회의 목록</h2>\n      ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('</div>\n          ${\'\\n\'}\n        `)}'));
+    assert.ok(appJs.text.includes('<span className="role-chip" role="listitem"'));
+    assert.ok(appJs.text.includes('</span>\n            ${\'\\n\'}'));
     assert.ok(appJs.text.includes("' adr'"));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
@@ -1109,6 +1119,13 @@ async function main() {
     const missingMeeting = await request(baseUrl, '/api/meetings/999999');
     assert.equal(missingMeeting.status, 404);
     assert.equal(missingMeeting.payload.message, '회의 999999를 찾을 수 없습니다.');
+    const invalidMeetingId = await request(baseUrl, '/api/meetings/start');
+    assert.equal(invalidMeetingId.status, 404);
+    assert.equal(invalidMeetingId.payload.message, '회의 start를 찾을 수 없습니다.');
+    assert.equal(invalidMeetingId.payload.error, 'meeting_not_found');
+    const invalidCatchupId = await request(baseUrl, '/api/catchup/start');
+    assert.equal(invalidCatchupId.status, 404);
+    assert.equal(invalidCatchupId.payload.message, '회의 start를 찾을 수 없습니다.');
 
     const emptyQuestion = await request(baseUrl, '/api/agents/ask', {
       method: 'POST',
