@@ -74,6 +74,9 @@
       font-size: 12px;
       line-height: 1.55;
     }
+    details:not([open]) > :not(summary) {
+      display: none;
+    }
     .markdown-lite {
       white-space: normal;
       word-break: break-word;
@@ -153,6 +156,18 @@
       gap: 16px;
     }
     .ask-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+    .polling-status {
+      display: inline-flex;
+      align-items: center;
+      margin: 0 0 12px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.52);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
     .card {
       background: var(--paper);
       border: 1px solid rgba(255, 255, 255, 0.52);

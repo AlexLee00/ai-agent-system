@@ -535,6 +535,11 @@ function DailyRoom({ token }) {
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const hasRunningRun = activeRuns.some((run) => run.status === 'running');
+  const pollingIntervalMs = hasRunningRun ? 3000 : 30000;
+  const pollingLabel = hasRunningRun
+    ? '폴링: 실행 중 회의 감지 · 3초마다 갱신'
+    : '폴링: 대기 · 30초마다 갱신';
 
   function clearDailyRoomData() {
     setMeetings([]);
@@ -609,16 +614,16 @@ function DailyRoom({ token }) {
   }, [selectedId, token]);
 
   useEffect(() => {
-    const hasOpen = activeRuns.some((run) => run.status === 'running');
     const interval = setInterval(() => {
       refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
-    }, hasOpen ? 3000 : 30000);
+    }, pollingIntervalMs);
     return () => clearInterval(interval);
-  }, [activeRuns.map((run) => run.id + run.status).join(','), selectedId, token]);
+  }, [activeRuns.map((run) => run.id + run.status).join(','), selectedId, token, pollingIntervalMs]);
 
   return html`
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
     ${notice ? html`<p className="notice" role="status" aria-live="polite">${notice}</p>` : null}
+    <div className="polling-status" role="status" aria-live="polite" aria-label="회의실 폴링 상태">${pollingLabel}</div>
     <div className="grid">
       <div>
         <${StartMeeting} token=${token} segments=${segments} onStarted=${(run) => { setSelectedId(run.id); refreshBase(); }} setError=${setError} />

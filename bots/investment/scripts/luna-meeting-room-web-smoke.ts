@@ -411,10 +411,19 @@ async function main() {
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
     assert.ok(html.text.includes('.catchup [role="list"]'));
+    assert.ok(html.text.includes('.polling-status'));
+    assert.ok(html.text.includes('details:not([open]) > :not(summary)'));
+    assert.ok(html.text.includes('display: none;'));
+    assert.ok(html.text.includes('@media (max-width: 1080px)'));
+    assert.ok(html.text.includes('.grid, .ask-grid { grid-template-columns: 1fr; }'));
     assert.ok(html.text.includes('.meeting-list-row .meeting-item'));
     assert.ok(html.text.includes('.due.unknown'));
     assert.ok(appJs.text.includes("run.status === 'running'"));
-    assert.ok(appJs.text.includes('hasOpen ? 3000 : 30000'));
+    assert.ok(appJs.text.includes('const pollingIntervalMs = hasRunningRun ? 3000 : 30000'));
+    assert.ok(appJs.text.includes('폴링: 실행 중 회의 감지 · 3초마다 갱신'));
+    assert.ok(appJs.text.includes('폴링: 대기 · 30초마다 갱신'));
+    assert.equal(appJs.text.includes('폴링: idle'), false);
+    assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="회의실 폴링 상태"'));
     assert.ok(appJs.text.includes("' adr'"));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
@@ -587,6 +596,7 @@ async function main() {
       apiListDetailCatchup: true,
       headerStatusAndDashboardA11y: true,
       keyboardFocusVisible: true,
+      mobileOneColumnContract: true,
       pendingDueOrder: true,
       startDuplicateGuard: true,
       completedRunSwitchesToSessionDetail: true,
@@ -607,6 +617,8 @@ async function main() {
       askBusyStatus: true,
       askResponseMetadataLabels: true,
       pollingCadenceConfigured: true,
+      pollingStatusVisible: true,
+      pollingStatusKoreanLabel: true,
       tokenAuth: true,
       headerTokenA11y: true,
       tablistSemantics: true,
@@ -634,6 +646,7 @@ async function main() {
       llmModeLiveRegion: true,
       evidenceDisclosureKoreanLabel: true,
       evidencePreMobileOverflowGuard: true,
+      collapsedEvidenceDoesNotCreateScrollSpace: true,
       decisionActionKoreanLabels: true,
       decisionControlsAccessibleNames: true,
       decisionRegionA11y: true,

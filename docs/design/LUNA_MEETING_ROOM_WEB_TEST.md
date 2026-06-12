@@ -18,7 +18,7 @@
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅fixture 브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label | [자동] dueState+a11y+[수동] ✅2026-06-12 |
-| W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | JSON `<pre>` 표시(이건 의도 — 머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+[수동] ✅390px 펼침 |
+| W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | 닫힌 상태에서는 JSON이 레이아웃/스크롤을 만들지 않고, 펼치면 JSON `<pre>` 표시(머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout guard+[수동] ✅390px 펼침 |
 
 ## B. 렌더 품질 (FIX2~4 회귀 — 🔁 매 회의 후 1회 점검)
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -39,11 +39,11 @@
 ## D. 통신·보안·내성
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
-| W-40 | 폴링 주기 | open 세션 시 3초·idle 30초(네트워크 탭 확인) | [자동] cadence 계약+[수동] 네트워크 탭 |
+| W-40 | 폴링 주기 | open 세션 시 3초·idle 30초, 현재 모드가 화면에 표시됨 | [자동] cadence 계약+폴링 상태 배지+[수동] 네트워크 탭 |
 | W-41 | 서버 다운 내성 | 서버 중지 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거 | [자동] 복구시 에러 clear+stale 제거+[수동] fixture |
 | W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님) | [자동] smoke |
 | W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200 | [자동] |
-| W-44 | 모바일 반응형/키보드 | 창 폭 축소·Tab 이동 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기·명시적 `focus-visible` 링 | [자동] focus ring+[수동] ✅390px 확인 |
+| W-44 | 모바일 반응형/키보드 | 창 폭 축소·Tab 이동 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기·명시적 `focus-visible` 링·320px/390px horizontal overflow 없음 | [자동] focus ring+1컬럼 계약+[수동] ✅390px/320px 확인 |
 
 ## E. 정례 연동 (🔁 자동 회의 사이클 — 토 05:00 첫 사이클부터)
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -107,6 +107,10 @@
 - **2026-06-12 루프 51**: W-02 U1 캐치업 전달 품질 점검 → 실제 브라우저에서 캐치업 3줄은 시각적으로 분리되지만 live region의 접근성 텍스트는 줄 구분 없이 이어질 수 있음. 캐치업 영역에 `U1 캐치업 N줄 요약` list/listitem 구조와 `/` 구분 aria-label을 추가하고, 빈 catchup 배열도 기본 안내 문구를 표시하도록 보강. 스모크 `catchupLinesA11y` 추가.
 - **2026-06-12 루프 52**: W-24 LLM 발언 용어 품질 재점검 → 실제 타임라인에 `입장한 거래` 표현이 남아 있어 이전 `진입` 용어 보정 범위가 부족함. 표시 정규화에 `입장한 거래 → 진입한 거래`를 추가해 DB 원문은 보존하고 웹/API 응답만 보정. 스모크 `legacyEntryTradeTermNormalized` 추가.
 - **2026-06-12 루프 53**: W-24 LLM 게이트 해석 품질 점검 → 실제 해외 분석 minute에서 `halt 상태`를 `저평가 상태`로 설명해 배치 게이트를 가치판단으로 오해할 수 있음. 표시 정규화에 `저평가 상태 → 배치 halt 상태`를 추가해 원문은 보존하고 웹/API 표시만 보정. 스모크 `legacyHaltValuationTermNormalized` 추가.
+- **2026-06-12 루프 54**: W-44 모바일 반응형 재점검 → 실제 브라우저에서 390px/320px 각각 일일 회의실과 에이전트 질의 화면을 측정했고 `scrollWidth == clientWidth`, overflow offender 0건을 확인. 자동 스모크에는 `@media (max-width: 1080px)`와 `.grid, .ask-grid { grid-template-columns: 1fr; }` 계약을 `mobileOneColumnContract`로 고정.
+- **2026-06-12 루프 55**: W-40 폴링 주기 운영 가시성 점검 → 기존 구현은 running 3초/idle 30초 계약은 있었지만 화면에서 현재 폴링 모드를 알 수 없었음. 일일 회의실 상단에 `회의실 폴링 상태` live 배지를 추가해 idle이면 `30초마다 갱신`, 실행 중 회의가 있으면 `3초마다 갱신`을 표시하도록 보강. 스모크 `pollingStatusVisible` 추가.
+- **2026-06-12 루프 56**: W-40 폴링 배지 문구 품질 점검 → 실제 브라우저 확인 결과 새 배지가 `idle` 영어를 포함해 한국어 운영 UI 흐름과 맞지 않았음. 표시 문구를 `폴링: 대기 · 30초마다 갱신`으로 바꾸고, 스모크 `pollingStatusKoreanLabel`로 `폴링: idle` 재발을 차단.
+- **2026-06-12 루프 57**: W-12 evidence 접힘 레이아웃 점검 → 결정 카드의 `details`는 닫힌 상태지만 내부 JSON `<pre>`가 계산상 큰 높이를 유지해 페이지 스크롤 높이를 불필요하게 키우는 것을 브라우저에서 확인. `details:not([open]) > :not(summary)`를 명시적으로 숨겨 닫힌 evidence가 스크롤 공간을 만들지 않도록 보강. 스모크 `collapsedEvidenceDoesNotCreateScrollSpace` 추가.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안
