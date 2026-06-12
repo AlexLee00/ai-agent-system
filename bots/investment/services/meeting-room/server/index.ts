@@ -1409,7 +1409,8 @@ function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
     return `${prefix} 오늘 ${meetingTypeLabel('morning')} #${todayMorning.id}가 ${formatKstTimestampFromIso(todayMorning.startedAt || todayMorning.started_at)}에 ${sessionStatusLabel(todayMorning.status)} 상태로 기록됐습니다. ${latestText} ${latestOverallText}`;
   }
   if (minutesOfDay < 5 * 60) {
-    return `${prefix} 오늘 05:00 KST 전이라 아직 실행 전입니다. ${latestText} ${latestOverallText}`;
+    const remainingMinutes = (5 * 60) - minutesOfDay;
+    return `${prefix} 오늘 05:00 KST 전이라 아직 실행 전입니다. 05:00까지 약 ${remainingMinutes}분 남았습니다. 05:05 KST 이후 회의 목록과 로그를 다시 확인하세요. ${latestText} ${latestOverallText}`;
   }
   return `${prefix} 오늘 05:00 KST가 지났지만 오늘 ${meetingTypeLabel('morning')} 기록은 아직 없습니다. 운영 로그를 확인하세요. ${latestText} ${latestOverallText}`;
 }

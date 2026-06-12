@@ -475,12 +475,13 @@ async function main() {
     assert.ok(appJs.text.includes('type="password"'));
     assert.ok(appJs.text.includes('autoComplete="off"'));
     assert.ok(appJs.text.includes('aria-describedby="meeting-room-token-help"'));
-    assert.ok(appJs.text.includes(`<div id="meeting-room-token-help" className="meta">MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠</div>
+    assert.ok(appJs.text.includes(`<div id="meeting-room-token-help" className="meta">접근 토큰이 설정된 환경에서만 입력 · 로컬 무인증이면 비워둠</div>
       </div>
     </div>
     \${'\\n'}`));
     assert.ok(appJs.text.includes('id="meeting-room-token-help"'));
-    assert.ok(appJs.text.includes('MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠'));
+    assert.ok(appJs.text.includes('접근 토큰이 설정된 환경에서만 입력 · 로컬 무인증이면 비워둠'));
+    assert.equal(appJs.text.includes('MEETING_ROOM_TOKEN 설정 시 입력'), false);
     assert.equal(appJs.text.includes('aria-label="회의실 접근 토큰"'), false);
     assert.ok(appJs.text.includes('className="tabs"'));
     assert.ok(appJs.text.includes('className="tab-switcher" role="tablist" aria-label="회의실 화면 전환"'));
@@ -2373,9 +2374,11 @@ async function main() {
   }];
   const beforeWeekendSchedule = _testOnly.buildScheduleExecutionStatus(
     latestPreviousMorning,
-    new Date('2026-06-12T16:09:00.000Z'),
+    new Date('2026-06-12T19:01:00.000Z'),
   );
   assert.ok(beforeWeekendSchedule.includes('오늘 05:00 KST 전이라 아직 실행 전입니다.'));
+  assert.ok(beforeWeekendSchedule.includes('05:00까지 약 59분 남았습니다.'));
+  assert.ok(beforeWeekendSchedule.includes('05:05 KST 이후 회의 목록과 로그를 다시 확인하세요.'));
   assert.ok(beforeWeekendSchedule.includes('최신 아침 통합 회의: #119'));
   assert.equal(beforeWeekendSchedule.includes('morning 회의'), false);
 

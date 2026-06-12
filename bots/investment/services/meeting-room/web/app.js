@@ -517,7 +517,7 @@ function Header({ token, setToken, tab, setTab }) {
           placeholder="로컬 무인증이면 비워둠"
         />
         ${'\n'}
-        <div id="meeting-room-token-help" className="meta">MEETING_ROOM_TOKEN 설정 시 입력 · 로컬 무인증이면 비워둠</div>
+        <div id="meeting-room-token-help" className="meta">접근 토큰이 설정된 환경에서만 입력 · 로컬 무인증이면 비워둠</div>
       </div>
     </div>
     ${'\n'}
