@@ -1099,12 +1099,21 @@ async function main() {
     assert.equal(premarketActiveSegmentPercent.includes('중단 상태로'), false);
     assert.equal(premarketActiveSegmentPercent.includes('감소 상태로'), false);
     assert.equal(premarketActiveSegmentPercent.includes('%의 활성 세그먼트'), false);
+    const premarketSituationIntro = _testOnly.normalizeLegacyMinuteContent(
+      '미국 프리마켓 게이트/레짐에 대한 현재 상황은 다음과 같습니다.\n\n현재 상황을 종합하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있습니다.',
+    );
+    assert.ok(premarketSituationIntro.includes('미국 프리마켓 게이트/레짐 현황입니다.'));
+    assert.ok(premarketSituationIntro.includes('요약하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있습니다.'));
+    assert.equal(premarketSituationIntro.includes('현재 상황은 다음과 같습니다'), false);
+    assert.equal(premarketSituationIntro.includes('현재 상황을 종합하면'), false);
     const premarketGenericConclusion = _testOnly.normalizeLegacyMinuteContent(
       '현재 상황을 종합하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있으며, 미국 시장과 암호화폐 시장은 reduced 상태를 유지하고 있습니다. 따라서, 현 시점에서 추가적인 조치가 필요합니다.\n\n결과적으로, 현 시점에서 추가적인 조치가 필요하며, 국내 시장의 halt 상태를 유지하고 미국 시장과 암호화폐 시장의 reduced 상태를 지속적으로 모니터링하는 것이 필요합니다.',
     );
+    assert.ok(premarketGenericConclusion.includes('요약하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있으며'));
     assert.ok(premarketGenericConclusion.includes('후속 조치는 마스터 확인 후 기록합니다.'));
     assert.equal((premarketGenericConclusion.match(/후속 조치는 마스터 확인 후 기록합니다/g) || []).length, 1);
     assert.equal(premarketGenericConclusion.includes('결과적으로'), false);
+    assert.equal(premarketGenericConclusion.includes('현재 상황을 종합하면'), false);
     assert.equal((premarketGenericConclusion.match(/현 시점에서 추가적인 조치/g) || []).length, 0);
     const premarketEventSummary = _testOnly.normalizeLegacyMinuteContent(
       '4. 국내 시장의 전략은 현재 상승 추세를 보이고 있으며, 0.38의 강도에 해당합니다.\n5. 미국 시장의 전략은 현재 중립적인 상태이며, 0.\n6. 암호화폐 시장의 전략은 현재 하락 추세를 보이고 있으며, 0.\n7. 전략군 24시간 동안 1건의 이벤트가 발생했습니다.\n8. 현재 활성 서킷은 14건이며, 결정 대기 중인 이벤트는 5건입니다.\n\n따라서, 현재 미국 보유/예정 이벤트의 진행 상황은 국내 시장의 halt 상태, 미국 시장의 reduced 상태, 암호화폐 시장의 reduced 상태, 국내 시장의 전략이 상승 추세, 미국 시장의 전략이 중립적, 암호화폐 시장의 전략이 하락 추세, 전략군 24시간 동안 1건의 이벤트가 발생, 활성 서킷 14건, 결정 대기 중인 이벤트 5건입니다.',

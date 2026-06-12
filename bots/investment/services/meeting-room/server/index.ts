@@ -697,6 +697,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/(국내|미국|암호화폐)\s+bear\b/g, '$1 하락')
     .replace(/(국내|미국|암호화폐)\s+sideways\b/g, '$1 수평')
     .replace(/(국내|미국|암호화폐)\s+volatile\b/g, '$1 변동')
+    .replace(/([^.\n。!?]+?)에 대한 현재 상황은 다음과 같습니다\./g, '$1 현황입니다.')
+    .replace(/현재 상황을 종합하면,\s*/g, '요약하면, ')
     .replace(AGENT_BRACKET_PATTERN, (_match, agent) => `[${agentDisplayLabel(agent)}]`)
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
