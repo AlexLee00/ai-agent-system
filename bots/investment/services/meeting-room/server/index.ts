@@ -30,9 +30,7 @@ const STATIC_SECURITY_HEADERS = Object.freeze({
   'x-frame-options': 'DENY',
 });
 const JSON_SECURITY_HEADERS = Object.freeze({
-  'cache-control': 'no-store',
-  'referrer-policy': 'no-referrer',
-  'x-content-type-options': 'nosniff',
+  ...STATIC_SECURITY_HEADERS,
 });
 const AGENT_DISPLAY_LABELS = Object.freeze({
   luna: 'Luna',

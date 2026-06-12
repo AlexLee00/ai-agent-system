@@ -374,6 +374,12 @@ async function main() {
     const health = await request(baseUrl, '/api/health');
     assert.equal(health.status, 200);
     assert.equal(health.payload.shadowOnly, true);
+    assert.equal(health.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(health.headers.get('cache-control'), 'no-store');
+    assert.equal(health.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(health.headers.get('x-frame-options'), 'DENY');
+    assert.ok(health.headers.get('permissions-policy')?.includes('camera=()'));
+    assert.ok(health.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
 
     const html = await request(baseUrl, '/');
     assert.equal(html.status, 200);
@@ -1594,6 +1600,9 @@ async function main() {
     assert.equal(wrongStartMethod.headers.get('allow'), 'POST');
     assert.equal(wrongStartMethod.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(wrongStartMethod.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(wrongStartMethod.headers.get('x-frame-options'), 'DENY');
+    assert.ok(wrongStartMethod.headers.get('permissions-policy')?.includes('camera=()'));
+    assert.ok(wrongStartMethod.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
     const invalidMeetingId = await request(baseUrl, '/api/meetings/not-a-meeting-id');
     assert.equal(invalidMeetingId.status, 404);
     assert.equal(invalidMeetingId.payload.message, '회의 not-a-meeting-id를 찾을 수 없습니다.');
