@@ -608,7 +608,7 @@ function stripRedundantMinuteAgentPrefix(content, speaker) {
   const label = agentDisplayLabel(speaker);
   if (!label || label === '에이전트 미상') return String(content ?? '');
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return String(content ?? '').replace(new RegExp(`^\\[${escaped}\\]\\s*`, 'i'), '').trimStart();
+  return String(content ?? '').replace(new RegExp(`^(?:\\[${escaped}\\]\\s*|${escaped}\\s+자문:\\s*)`, 'i'), '').trimStart();
 }
 
 function normalizeLegacyKoreanLlmNoise(content) {

@@ -1071,6 +1071,20 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('halt/reduced 회피 개선폭: 비교 데이터가 없습니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('C15 검토 점검'));
     assert.equal(detail.payload.minutes[4].content.includes('[Aria]'), false);
+    const sameSpeakerPrefixMinute = _testOnly.normalizeMinute({
+      id: 99,
+      sessionId: 1,
+      seq: 99,
+      agendaKey: 'agent:aria',
+      speaker: 'aria',
+      role: 'analysis',
+      content: '[aria] C15 결정 대기 점검',
+      meta: {},
+      createdAt: '2026-06-11T00:00:04.000Z',
+    });
+    assert.ok(sameSpeakerPrefixMinute.content.includes('C15 검토 점검'));
+    assert.equal(sameSpeakerPrefixMinute.content.includes('Aria 자문:'), false);
+    assert.equal(sameSpeakerPrefixMinute.content.includes('[Aria]'), false);
     assert.equal(detail.payload.minutes[4].content.includes('C15 결정 대기:'), false);
     assert.equal(detail.payload.minutes[4].content.includes('bull(0.41)'), false);
     assert.equal(detail.payload.minutes[4].content.includes('sideways(0.47)'), false);
