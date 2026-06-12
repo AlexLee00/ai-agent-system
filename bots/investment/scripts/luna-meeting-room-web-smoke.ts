@@ -167,7 +167,7 @@ function createMemoryStore() {
     listMeetings: async () => sessions.slice().sort((a, b) => b.id - a.id),
     getMeeting: async (id) => {
       const session = sessions.find((row) => String(row.id) === String(id));
-      if (!session) throw Object.assign(new Error('meeting not found'), { statusCode: 404, code: 'meeting_not_found' });
+      if (!session) throw Object.assign(new Error(`회의 ${id}를 찾을 수 없습니다.`), { statusCode: 404, code: 'meeting_not_found' });
       return {
         ok: true,
         session,
@@ -269,7 +269,9 @@ async function main() {
       const id = store.addCompletedMeeting();
       return { ok: true, session: { id }, minutes: [{ seq: 1 }], decisions: [], markdownPath: '/tmp/fixture.md' };
     },
-    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    resolveAgentLLMRouteFn: (agent) => (agent === 'aria'
+      ? { primary: 'investment.aria', selectorKey: 'investment.aria', fallbacks: [], noLLM: true }
+      : { provider: 'fixture', model: 'fixture-model' }),
     callViaHubFn: async () => ({ ok: true, provider: 'fixture', text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |' }),
   };
 
@@ -307,6 +309,9 @@ async function main() {
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
     assert.equal(appJs.text.includes('advisory / shadow only'), false);
+    assert.ok(appJs.text.includes("Number.isNaN(date.getTime())"));
+    assert.ok(appJs.text.includes("'시간 확인 필요'"));
+    assert.equal(appJs.text.includes("return String(value);"), false);
     assert.ok(appJs.text.includes('aria-label="로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="TeamJay Dashboard 7787 새 창으로 열기"'));
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰 (MEETING_ROOM_TOKEN)'));
@@ -338,10 +343,22 @@ async function main() {
     assert.ok(appJs.text.includes('function meetingTypeLabel'));
     assert.ok(appJs.text.includes('function agendaLabel'));
     assert.ok(appJs.text.includes('function speakerLabel'));
+    assert.ok(appJs.text.includes("adhoc: '임시 회의'"));
+    assert.ok(appJs.text.includes("ad_hoc: '임시 회의'"));
+    assert.ok(appJs.text.includes("|| '상태 미상';"));
+    assert.equal(appJs.text.includes("|| status || '상태 미상'"), false);
+    assert.ok(appJs.text.includes("|| '회의';"));
+    assert.equal(appJs.text.includes("|| type || '회의'"), false);
+    assert.ok(appJs.text.includes("|| '안건';"));
+    assert.equal(appJs.text.includes("|| key || '안건'"), false);
+    assert.ok(appJs.text.includes("|| '에이전트 미상';"));
+    assert.equal(appJs.text.includes("|| agent || '에이전트'"), false);
     assert.ok(appJs.text.includes("'market:crypto': '암호화폐 24시간 점검'"));
     assert.equal(appJs.text.includes("'market:crypto': 'crypto 24h 점검'"), false);
     assert.ok(appJs.text.includes("crypto: '암호화폐'"));
+    assert.ok(appJs.text.includes("|| '시장 미상';"));
     assert.equal(appJs.text.includes("crypto: 'crypto'"), false);
+    assert.equal(appJs.text.includes("|| market || 'unknown'"), false);
     assert.ok(appJs.text.includes('aria-label=${`회의 #${meeting.id} ${meetingTypeLabel(meeting.type)} ${meetingStatusLabel(meeting.status)} 선택`}'));
     assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}'));
     assert.ok(appJs.text.includes('title=${`회의 타입: ${meetingTypeLabel(meeting.type)}`'));
@@ -396,6 +413,11 @@ async function main() {
     assert.ok(appJs.text.includes('이미 진행 중인 같은 타입 회의가 있습니다'));
     assert.ok(appJs.text.includes('이미 처리된 결정입니다. 최신 상태로 갱신했습니다.'));
     assert.ok(appJs.text.includes('분당 질의 한도에 도달했습니다'));
+    assert.ok(appJs.text.includes('질문을 입력하세요.'));
+    assert.ok(appJs.text.includes('지원하지 않는 결정 처리 요청입니다.'));
+    assert.ok(appJs.text.includes('지원하지 않는 요청 방식입니다.'));
+    assert.ok(appJs.text.includes('회의를 찾을 수 없습니다. 목록을 새로고침하세요.'));
+    assert.ok(appJs.text.includes('요청한 회의실 리소스를 찾을 수 없습니다.'));
     assert.ok(appJs.text.includes('회의실 서버에 연결할 수 없습니다'));
     assert.ok(appJs.text.includes("setError('');"));
     assert.ok(appJs.text.includes("payload.run.status === 'completed'"));
@@ -452,6 +474,14 @@ async function main() {
     assert.ok(appJs.text.includes('htmlFor="meeting-agent-question">질문'));
     assert.ok(appJs.text.includes('function agentLabel'));
     assert.ok(appJs.text.includes("luna: 'Luna'"));
+    assert.ok(appJs.text.includes("nemesis: 'Nemesis'"));
+    assert.ok(appJs.text.includes("chronos: 'Chronos'"));
+    assert.ok(appJs.text.includes("sentinel: 'Sentinel'"));
+    assert.ok(appJs.text.includes("'adaptive-risk': 'Adaptive Risk'"));
+    assert.ok(appJs.text.includes("hephaestos: 'Hephaestos'"));
+    assert.ok(appJs.text.includes("hanul: 'Hanul'"));
+    assert.ok(appJs.text.includes("'stock-flow': 'Stock Flow'"));
+    assert.ok(appJs.text.includes("reporter: 'Reporter'"));
     assert.ok(appJs.text.includes('<option value=${name}>${agentLabel(name)}</option>'));
     assert.ok(appJs.text.includes('aria-label="질의 대상 에이전트"'));
     assert.ok(appJs.text.includes('aria-label="회의실 컨텍스트 기반 자문 질문"'));
@@ -640,6 +670,7 @@ async function main() {
     assert.equal(catchupText.includes('regime-engine-hmm'), false);
     assert.ok(catchup.payload.lines[2].includes('회의록 5행'));
     assert.ok(catchup.payload.lines[2].includes('최신 상태 완료'));
+    assert.equal(catchup.payload.lines[2].includes('n/a'), false);
     assert.equal(catchup.payload.lines[2].includes('minutes'), false);
     assert.equal(catchup.payload.lines[2].includes('최신 상태 closed'), false);
 
@@ -647,6 +678,14 @@ async function main() {
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
     assert.ok(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM'));
     assert.equal(pending.payload.decisions[0].decision.includes('regime-engine-hmm'), false);
+
+    const invalidDecisionAction = await request(baseUrl, '/api/decisions/11', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ action: 'approve' }),
+    });
+    assert.equal(invalidDecisionAction.status, 400);
+    assert.equal(invalidDecisionAction.payload.message, '지원하지 않는 결정 처리 요청입니다.');
 
     const confirm = await request(baseUrl, '/api/decisions/11', {
       method: 'POST',
@@ -689,6 +728,7 @@ async function main() {
       body: JSON.stringify({ type: 'morning', noLlm: true }),
     });
     assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.payload.message, '이미 진행 중인 같은 타입 회의가 있습니다.');
     releaseRun();
     const completedRun = await waitForRun(baseUrl, start.payload.run.id);
     assert.equal(completedRun.status, 'completed');
@@ -704,6 +744,26 @@ async function main() {
     assert.equal(completedMeetingDetail.payload.minutes.length, 1);
     const completedMeetingCatchup = await request(baseUrl, '/api/catchup/2');
     assert.ok(completedMeetingCatchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 0건'));
+
+    const missingMeeting = await request(baseUrl, '/api/meetings/999999');
+    assert.equal(missingMeeting.status, 404);
+    assert.equal(missingMeeting.payload.message, '회의 999999를 찾을 수 없습니다.');
+
+    const emptyQuestion = await request(baseUrl, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '' }),
+    });
+    assert.equal(emptyQuestion.status, 400);
+    assert.equal(emptyQuestion.payload.message, '질문을 입력하세요.');
+
+    const invalidJson = await request(baseUrl, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: '{',
+    });
+    assert.equal(invalidJson.status, 400);
+    assert.equal(invalidJson.payload.message, '요청 형식이 올바르지 않습니다.');
 
     const ask1 = await request(baseUrl, '/api/agents/ask', {
       method: 'POST',
@@ -722,9 +782,34 @@ async function main() {
     });
     assert.equal(ask1.status, 200);
     assert.equal(ask2.status, 200);
+    assert.ok(ask2.payload.text.includes('[Aria] LLM 비활성 경로입니다.'));
+    assert.equal(ask2.payload.text.includes('noLLM route'), false);
     assert.equal(ask3.status, 429);
   } finally {
     await closeServer(started.server);
+  }
+
+  const askFailureStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      throw new Error('fixture hub internal stack provider=openai model=x');
+    },
+  });
+  const askFailureBase = `http://127.0.0.1:${askFailureStarted.server.address().port}`;
+  try {
+    const failedAsk = await request(askFailureBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '실패 안내 점검' }),
+    });
+    assert.equal(failedAsk.status, 200);
+    assert.equal(failedAsk.payload.ok, false);
+    assert.equal(failedAsk.payload.error, '에이전트 응답 생성에 실패했습니다. 잠시 후 다시 시도하세요.');
+    assert.equal(failedAsk.payload.error.includes('provider=openai'), false);
+    assert.equal(failedAsk.payload.errorCode, 'agent_ask_failed');
+  } finally {
+    await closeServer(askFailureStarted.server);
   }
 
   const failedStore = createMemoryStore();
@@ -755,6 +840,7 @@ async function main() {
   try {
     const unauthorized = await request(authBase, '/api/health');
     assert.equal(unauthorized.status, 401);
+    assert.equal(unauthorized.payload.message, '토큰이 없거나 올바르지 않습니다.');
     const authorized = await request(authBase, '/api/health', { headers: { authorization: 'Bearer fixture-token' } });
     assert.equal(authorized.status, 200);
   } finally {
@@ -791,6 +877,8 @@ async function main() {
       askAnswerLiveRegion: true,
       askBusyStatus: true,
       askResponseMetadataLabels: true,
+      askNoLlmRouteLocalized: true,
+      askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,
       pollingStatusKoreanLabel: true,
@@ -824,6 +912,7 @@ async function main() {
       legacyInternalEvidenceTermsLocalized: true,
       legacyCostGuardTermsLocalized: true,
       friendlyUiErrors: true,
+      friendlyApiFallbackErrors: true,
       closedSegmentReasonVisible: true,
       closedSegmentReasonA11y: true,
       activeSegmentStatusKoreanLabel: true,

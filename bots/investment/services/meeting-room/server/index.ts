@@ -56,7 +56,7 @@ function jsonResponse(res, statusCode, payload) {
 }
 
 function methodNotAllowed(res) {
-  jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' });
+  jsonResponse(res, 405, { ok: false, error: 'method_not_allowed', message: '지원하지 않는 요청 방식입니다.' });
 }
 
 function readBody(req) {
@@ -66,7 +66,7 @@ function readBody(req) {
     req.on('data', (chunk) => {
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
-        reject(new HttpError(413, 'body_too_large', 'request body too large'));
+        reject(new HttpError(413, 'body_too_large', '요청 본문이 너무 큽니다. 질문이나 메모를 줄여 주세요.'));
         req.destroy();
         return;
       }
@@ -78,7 +78,7 @@ function readBody(req) {
       try {
         resolve(JSON.parse(raw));
       } catch {
-        reject(new HttpError(400, 'invalid_json', 'request body must be valid JSON'));
+        reject(new HttpError(400, 'invalid_json', '요청 형식이 올바르지 않습니다.'));
       }
     });
     req.on('error', reject);
@@ -544,7 +544,7 @@ async function getMeeting(id, deps) {
       WHERE id = $1`,
     [id],
   );
-  if (!sessionRows?.[0]) throw new HttpError(404, 'meeting_not_found', `meeting ${id} not found`);
+  if (!sessionRows?.[0]) throw new HttpError(404, 'meeting_not_found', `회의 ${id}를 찾을 수 없습니다.`);
   const minuteRows = await deps.queryFn(
     `SELECT id, session_id, seq, agenda_key, speaker, role, content, meta, created_at
        FROM luna_meeting_minutes
@@ -605,10 +605,11 @@ function buildCatchupFromDetail(detail) {
   const deferred = decisions.filter((row) => row.status === 'deferred');
   const pending = decisions.filter((row) => row.status === 'pending_master');
   const next = pending.slice(0, 3).map(pendingDecisionCatchupLabel).join(' / ') || '없음';
+  const sessionLabel = detail.session?.id ? `회의 ${detail.session.id}` : '회의 정보 없음';
   return [
     `확정 ${confirmed.length}건, 보류 ${deferred.length}건, 대기 ${pending.length}건`,
     `마스터 액션 필요: ${next}`,
-    `회의 ${detail.session?.id || 'n/a'} · 회의록 ${(detail.minutes || []).length}행 · 최신 상태 ${sessionStatusLabel(detail.session?.status)}`,
+    `${sessionLabel} · 회의록 ${(detail.minutes || []).length}행 · 최신 상태 ${sessionStatusLabel(detail.session?.status)}`,
   ];
 }
 
@@ -617,10 +618,10 @@ function validateMeetingStart(type, now = new Date(), deps = {}) {
   const domestic = segments.find((row) => row.market === 'domestic');
   const overseas = segments.find((row) => row.market === 'overseas');
   if (type === 'domestic_debrief' && domestic?.skipped) {
-    throw new HttpError(409, 'segment_closed', 'domestic segment is closed', { segment: domestic });
+    throw new HttpError(409, 'segment_closed', '국내 시장 세그먼트가 휴장/비활성 상태입니다.', { segment: domestic });
   }
   if (type === 'us_premarket' && overseas?.skipped) {
-    throw new HttpError(409, 'segment_closed', 'overseas segment is closed', { segment: overseas });
+    throw new HttpError(409, 'segment_closed', '미국 시장 세그먼트가 휴장/비활성 상태입니다.', { segment: overseas });
   }
   return segments;
 }
@@ -662,10 +663,14 @@ function checkAskRateLimit(limiter, now = new Date()) {
   limiter.dayCount += 1;
 }
 
+function agentAskFailureMessage() {
+  return '에이전트 응답 생성에 실패했습니다. 잠시 후 다시 시도하세요.';
+}
+
 async function askAgent(body, deps, limiter) {
   const agent = String(body.agent || 'luna').trim();
   const question = String(body.question || '').trim();
-  if (!question) throw new HttpError(400, 'question_required', 'question is required');
+  if (!question) throw new HttpError(400, 'question_required', '질문을 입력하세요.');
   checkAskRateLimit(limiter);
 
   const route = deps.resolveAgentLLMRouteFn(agent, 'any', 'meeting_room');
@@ -679,7 +684,7 @@ async function askAgent(body, deps, limiter) {
       skipped: true,
       agent,
       route,
-      text: `[${agent}] noLLM route. 질문은 기록만 합니다: ${question}`,
+      text: `[${agentDisplayLabel(agent)}] LLM 비활성 경로입니다. 질문은 기록만 합니다: ${question}`,
     };
   }
 
@@ -716,7 +721,8 @@ async function askAgent(body, deps, limiter) {
       agent,
       route,
       text: '',
-      error: error?.message || String(error),
+      error: agentAskFailureMessage(),
+      errorCode: 'agent_ask_failed',
     };
   }
 }
@@ -746,11 +752,11 @@ function serveStatic(req, res) {
   try {
     stat = fs.statSync(target);
   } catch {
-    jsonResponse(res, 404, { ok: false, error: 'not_found' });
+    jsonResponse(res, 404, { ok: false, error: 'not_found', message: '요청한 회의실 리소스를 찾을 수 없습니다.' });
     return;
   }
   if (!stat.isFile()) {
-    jsonResponse(res, 404, { ok: false, error: 'not_found' });
+    jsonResponse(res, 404, { ok: false, error: 'not_found', message: '요청한 회의실 리소스를 찾을 수 없습니다.' });
     return;
   }
   res.writeHead(200, {
@@ -766,7 +772,7 @@ function assertAuthorized(req, token) {
   if (!token) return;
   const expected = `Bearer ${token}`;
   if (req.headers.authorization !== expected) {
-    throw new HttpError(401, 'unauthorized', 'missing or invalid bearer token');
+    throw new HttpError(401, 'unauthorized', '토큰이 없거나 올바르지 않습니다.');
   }
 }
 
@@ -830,7 +836,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       const chair = normalizeChair(body.chair || 'luna');
       validateMeetingStart(type, new Date(), deps);
       if (activeTypes.has(type) || await hasOpenMeetingType(type, deps)) {
-        throw new HttpError(409, 'meeting_already_open', `meeting type ${type} is already open`);
+        throw new HttpError(409, 'meeting_already_open', '이미 진행 중인 같은 타입 회의가 있습니다.');
       }
       const runId = `run_${Date.now()}_${Math.random().toString(16).slice(2)}`;
       const run = { id: runId, type, chair, status: 'running', startedAt: nowIso(), shadowOnly: true };
@@ -869,7 +875,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       const body = await readBody(req);
       const action = String(body.action || '').trim();
       if (!['confirm', 'defer'].includes(action)) {
-        throw new HttpError(400, 'invalid_action', 'action must be confirm or defer');
+        throw new HttpError(400, 'invalid_action', '지원하지 않는 결정 처리 요청입니다.');
       }
       return jsonResponse(res, 200, await updateDecision(parts[2], action, body.note || '', deps));
     }
@@ -879,7 +885,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       return jsonResponse(res, 200, await askAgent(body, deps, askLimiter));
     }
 
-    jsonResponse(res, 404, { ok: false, error: 'not_found' });
+    jsonResponse(res, 404, { ok: false, error: 'not_found', message: '요청한 회의실 리소스를 찾을 수 없습니다.' });
   }
 
   const server = http.createServer(async (req, res) => {

@@ -32,7 +32,7 @@
 ## C. 화면② 에이전트 질의
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
-| W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(자문 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타·새 질의 시 이전 응답 제거·입력 변경 시 이전 오류 제거) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta/stale 제거+[수동] ✅UI 기본 상태·실호출 보류 |
+| W-30 | @멘션 질의 | 에이전트 선택+질문→응답 스레드(자문 라벨·provider 표기·호출 비용/한도 안내·한국어 필드 라벨·입력 전후 버튼 안내·응답 live region·질의 중 aria-busy·한국어 응답 메타·새 질의 시 이전 응답 제거·입력 변경 시 이전 오류 제거, rule-based/noLLM 응답도 내부 라우팅 토큰 없이 한국어 표시, Hub 실패 원문은 숨기고 한국어 안내 표시) | [자동] 안전 안내/라벨/입력 안내/live/busy/meta/stale/noLLM/실패 안내+[수동] ✅UI 기본 상태·noLLM 브라우저 |
 | W-31 | 비용 가드 | 분당 2회 초과→429 안내(분 경과 후 재시도 가능) | [자동] API |
 | W-32 | 응답 마크다운 | LLM 응답의 마크다운도 W-20과 동일 렌더 | [자동] fixture+[수동] 실호출 보류 |
 
@@ -40,7 +40,7 @@
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
 | W-40 | 폴링 주기 | open 세션 시 3초·idle 30초, 현재 모드가 화면에 표시됨 | [자동] cadence 계약+폴링 상태 배지+[수동] 네트워크 탭 |
-| W-41 | 서버 다운 내성 | 서버 중지 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거 | [자동] 복구시 에러 clear+stale 제거+[수동] fixture |
+| W-41 | 서버 다운/API 오류 내성 | 서버 중지 또는 잘못된 API 요청 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거·404/400/405류 오류는 내부 토큰 대신 한국어 안내 표시 | [자동] 복구시 에러 clear+stale 제거+친화 API 오류+[수동] fixture |
 | W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님) | [자동] smoke |
 | W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200 | [자동] |
 | W-44 | 모바일 반응형/키보드 | 창 폭 축소·Tab 이동 | 1컬럼 전환(grid 1fr)·버튼 탭 가능 크기·명시적 `focus-visible` 링·320px/390px horizontal overflow 없음 | [자동] focus ring+1컬럼 계약+[수동] ✅390px/320px 확인 |
@@ -137,6 +137,15 @@
 - **2026-06-12 루프 81**: W-30 에이전트 질의 화면 점검 → 에이전트 선택지와 버튼 aria가 `luna/aria` 소문자 내부 value를 그대로 표시하고, 응답 메타 fallback이 `제공자 n/a`로 보일 수 있는 구조를 확인. 내부 value는 유지하되 사용자 표시/aria는 `Luna/Aria/...` 라벨을 사용하고 제공자 미상은 `확인 필요`로 표시하도록 보강.
 - **2026-06-12 루프 82**: W-03/W-24 전체 화면 영문 토큰 스캔 → 실제 타임라인에 `bull(0.41)`, `sideways(0.47)`, `bear(0.74)`, `gate_off_virtual`, `halt_reduced_avoidance_delta`, ISO timestamp, 단독 `close`, `[aria]`가 남아 있는 것을 확인. 표시 계층에서 레짐 값·비교 기준·지표 키·시간·에이전트명·종료 상태를 사용자 라벨로 정규화하고 스모크 회귀 케이스를 추가.
 - **2026-06-12 루프 83**: W-44 모바일 터치 타깃 점검 → 390px/320px viewport에서 horizontal overflow는 0건이었지만 Dashboard 링크와 `근거 JSON 보기` summary가 32px/22px 높이로 작게 측정됨. `.pill`, `summary`, LLM 체크 라벨의 최소 hit area를 40px로 보강하고 checkbox 시각 크기를 20px로 조정.
+- **2026-06-12 루프 84**: W-30 rule-based 에이전트 질의 경로 점검 → `aria`는 비용 없는 noLLM route를 타지만 API 응답 본문에 `[aria] noLLM route` 내부 토큰이 그대로 노출될 수 있음을 확인. 서버 응답을 `[Aria] LLM 비활성 경로입니다...`로 정규화하고, live API와 브라우저 UI에서 `noLLM route` 미노출·`제공자 확인 필요` 표시를 확인. 스모크 `askNoLlmRouteLocalized` 추가.
+- **2026-06-12 루프 85**: W-30 Hub/LLM 실패 경로 점검 → 에이전트 질의 fail-open 응답이 내부 provider/model/stack 오류 문자열을 그대로 화면에 노출할 수 있는 구조를 확인. 서버 응답은 `에이전트 응답 생성에 실패했습니다. 잠시 후 다시 시도하세요.`로 고정하고 원문 오류 토큰은 숨기도록 보강. 스모크 `askFailureFriendlyError` 추가.
+- **2026-06-12 루프 86**: W-41/API 오류 내성 점검 → `question_required`, `invalid_action`, `meeting_not_found`, `not_found`, `method_not_allowed` 같은 4xx 경로가 영어 내부 메시지 또는 코드 그대로 표시될 수 있음을 확인. 서버 메시지와 웹 `friendlyApiError` 매핑을 한국어로 보강하고 스모크 `friendlyApiFallbackErrors` 추가.
+- **2026-06-12 루프 87**: W-41 직접 API 오류 메시지 재점검 → 웹 매핑은 한국어라도 직접 API 응답의 `invalid_json`, `unauthorized`, `meeting_already_open`, `segment_closed`, `body_too_large` 메시지가 영어로 남을 수 있음을 확인. 서버 `HttpError` 메시지를 한국어로 통일하고, 중복 회의/invalid JSON/인증 실패 API 응답을 스모크에서 직접 검증.
+- **2026-06-12 루프 88**: W-01/W-02/W-30 fallback 라벨 점검 → 알 수 없는 회의 상태·타입·안건·시장·에이전트 값이 들어오면 raw key가 사용자-facing 텍스트에 그대로 표시될 수 있음을 확인. 원문은 `data-raw-*`에 보존하고 화면 fallback은 `상태 미상/회의/안건/시장 미상/에이전트 미상`으로 고정.
+- **2026-06-12 루프 89**: W-04 회의 타입 매핑 점검 → CLI/서버 유효 타입은 `adhoc`인데 웹 표시 함수는 `ad_hoc`만 임시 회의로 매핑해, 실행/목록 표시에서 ad-hoc 회의가 일반 `회의`로 축약될 수 있음을 확인. `adhoc`과 `ad_hoc`을 모두 `임시 회의`로 매핑하고 스모크 계약 추가.
+- **2026-06-12 루프 90**: W-02/W-03 시간 표시 fallback 점검 → 브라우저 `new Date('bad').toLocaleString('ko-KR')`가 `Invalid Date`를 반환해, DB의 비정상 timestamp가 회의 목록·타임라인·실행 상태에 그대로 노출될 수 있음을 확인. `formatTime`에서 invalid timestamp를 `시간 확인 필요`로 고정하고 스모크에 `Invalid Date` 재노출 방지 계약 추가.
+- **2026-06-12 루프 91**: W-03/W-30 에이전트 활동 주체 라벨 점검 → 웹 `agentLabel`이 선택지 8종만 매핑해 Nemesis/Chronos/Sentinel/Hephaestos/Hanul/Budget 등 실제 투자 에이전트가 타임라인 speaker나 응답 메타에 오면 `에이전트 미상`으로 축약될 수 있음을 확인. 라우팅의 known agent 전체를 사용자 라벨로 확장하고 스모크 계약 추가.
+- **2026-06-12 루프 92**: W-02 U1 캐치업 fallback 점검 → 세션 정보가 없는 run/error 형태에서 캐치업 3번째 줄이 `회의 n/a`로 표시될 수 있음을 확인. `회의 정보 없음` fallback으로 보정하고 스모크에서 캐치업 `n/a` 재노출을 차단.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

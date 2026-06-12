@@ -13,9 +13,12 @@ function useToken() {
 function formatTime(value) {
   if (!value) return '시간 없음';
   try {
-    return new Date(value).toLocaleString('ko-KR', { hour12: false });
+    const date = new Date(value);
+    return Number.isNaN(date.getTime())
+      ? '시간 확인 필요'
+      : date.toLocaleString('ko-KR', { hour12: false });
   } catch {
-    return String(value);
+    return '시간 확인 필요';
   }
 }
 
@@ -26,7 +29,7 @@ function meetingStatusLabel(status) {
     completed: '완료',
     closed: '완료',
     failed: '실패',
-  }[String(status || '').toLowerCase()] || status || '상태 미상';
+  }[String(status || '').toLowerCase()] || '상태 미상';
 }
 
 function meetingTypeLabel(type) {
@@ -35,21 +38,34 @@ function meetingTypeLabel(type) {
     domestic_debrief: '국내 장후 회의',
     us_premarket: '미장 전 회의',
     weekly: '주간 회의',
+    adhoc: '임시 회의',
     ad_hoc: '임시 회의',
-  }[String(type || '').toLowerCase()] || type || '회의';
+  }[String(type || '').toLowerCase()] || '회의';
 }
 
 function agentLabel(agent) {
   return {
     luna: 'Luna',
+    nemesis: 'Nemesis',
     aria: 'Aria',
     sophia: 'Sophia',
     argos: 'Argos',
     hermes: 'Hermes',
     oracle: 'Oracle',
+    chronos: 'Chronos',
     zeus: 'Zeus',
     athena: 'Athena',
-  }[String(agent || '').toLowerCase()] || agent || '에이전트';
+    sentinel: 'Sentinel',
+    'adaptive-risk': 'Adaptive Risk',
+    hephaestos: 'Hephaestos',
+    hanul: 'Hanul',
+    budget: 'Budget',
+    scout: 'Scout',
+    kairos: 'Kairos',
+    'stock-flow': 'Stock Flow',
+    sweeper: 'Sweeper',
+    reporter: 'Reporter',
+  }[String(agent || '').toLowerCase()] || '에이전트 미상';
 }
 
 function providerLabel(provider) {
@@ -69,7 +85,7 @@ function agendaLabel(key) {
     'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
     'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
     'alerts:circuit-locks': '서킷 잠금 알림',
-  }[String(key || '')] || key || '안건';
+  }[String(key || '')] || '안건';
 }
 
 function speakerLabel(speaker) {
@@ -91,6 +107,11 @@ function friendlyApiError(status, code, fallback) {
     ask_rate_limited_day: '일일 질의 한도에 도달했습니다. 다음 운영일에 다시 시도하세요.',
     body_too_large: '요청 본문이 너무 큽니다. 질문이나 메모를 줄여 주세요.',
     invalid_json: '요청 형식이 올바르지 않습니다.',
+    question_required: '질문을 입력하세요.',
+    invalid_action: '지원하지 않는 결정 처리 요청입니다.',
+    method_not_allowed: '지원하지 않는 요청 방식입니다.',
+    meeting_not_found: '회의를 찾을 수 없습니다. 목록을 새로고침하세요.',
+    not_found: '요청한 회의실 리소스를 찾을 수 없습니다.',
   }[code] || (status >= 500 ? '회의실 서버 오류가 발생했습니다. 잠시 후 다시 시도하세요.' : fallback || `HTTP ${status}`);
 }
 
@@ -294,7 +315,7 @@ function meetingTypesForSegments(segments = []) {
 }
 
 function marketLabel(market) {
-  return { domestic: '국내', overseas: '미국', crypto: '암호화폐' }[market] || market || 'unknown';
+  return { domestic: '국내', overseas: '미국', crypto: '암호화폐' }[market] || '시장 미상';
 }
 
 function SegmentStatus({ segments }) {
