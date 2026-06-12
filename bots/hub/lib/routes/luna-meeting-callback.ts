@@ -1,9 +1,11 @@
+const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const env = require('../../../../packages/core/lib/env.legacy.js');
 const { validateLunaLiveFireCallbackEnvelope } = require('./luna-live-fire-callback.ts');
 
 const CALLBACK_PREFIX = 'luna_meeting:';
+const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
 function normalizeText(value, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
@@ -26,6 +28,45 @@ function callbackDataFromReq(req) {
   return req?.body?.callback_data || req?.body?.callback_query?.data;
 }
 
+function callbackQueryIdFromReq(req) {
+  return normalizeText(req?.body?.callback_query_id || req?.body?.callback_query?.id, '');
+}
+
+function readTelegramToken() {
+  try {
+    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
+    return store?.telegram?.bot_token
+      || store?.reservation?.telegram_bot_token
+      || process.env.TELEGRAM_BOT_TOKEN
+      || '';
+  } catch {
+    return process.env.TELEGRAM_BOT_TOKEN || '';
+  }
+}
+
+async function answerMeetingCallbackQuery(callbackQueryId, text, options = {}) {
+  const normalizedCallbackQueryId = normalizeText(callbackQueryId, '');
+  const botToken = normalizeText(options.botToken, '') || readTelegramToken();
+  if (!normalizedCallbackQueryId || !botToken) return { ok: false, skipped: true, reason: 'missing_callback_query_or_token' };
+  const fetchFn = options.fetchFn || fetch;
+  try {
+    const res = await fetchFn(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callback_query_id: normalizedCallbackQueryId,
+        text: String(text || '').slice(0, 180),
+        show_alert: false,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const body = await res.json().catch(() => null);
+    return { ok: res.ok && body?.ok === true, status: res.status, body };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
 async function loadMeetingDecisionActions(projectRoot = env.PROJECT_ROOT) {
   const modulePath = path.join(
     projectRoot,
@@ -42,9 +83,13 @@ async function loadMeetingDecisionActions(projectRoot = env.PROJECT_ROOT) {
 async function lunaMeetingCallbackRoute(req, res) {
   const parsedCallback = parseLunaMeetingCallbackData(callbackDataFromReq(req));
   if (!parsedCallback.ok) return res.status(400).json({ ok: false, error: parsedCallback.error });
+  const callbackQueryId = callbackQueryIdFromReq(req);
 
   const envelope = validateLunaLiveFireCallbackEnvelope(req);
-  if (!envelope.ok) return res.status(envelope.status).json({ ok: false, error: envelope.error });
+  if (!envelope.ok) {
+    await answerMeetingCallbackQuery(callbackQueryId, '회의실 버튼 처리 권한을 확인할 수 없습니다.');
+    return res.status(envelope.status).json({ ok: false, error: envelope.error });
+  }
 
   try {
     const { applyMeetingDecisionAction } = await loadMeetingDecisionActions();
@@ -56,10 +101,14 @@ async function lunaMeetingCallbackRoute(req, res) {
       actor: envelope.actor,
       callback: {
         data: parsedCallback.callbackData,
-        callback_query_id: normalizeText(req?.body?.callback_query_id, ''),
+        callback_query_id: callbackQueryId,
       },
     });
     const actionText = parsedCallback.action === 'confirm' ? '확정됨' : '보류됨';
+    const callbackAnswer = await answerMeetingCallbackQuery(
+      callbackQueryId,
+      result.idempotent ? `이미 처리됨: ${actionText}` : actionText,
+    );
     return res.status(200).json({
       ok: true,
       status: result.idempotent ? `already_${result.logicalStatus}` : `meeting_decision_${result.logicalStatus}`,
@@ -68,9 +117,11 @@ async function lunaMeetingCallbackRoute(req, res) {
         : `${actionText}: ${result.decision?.agendaKey || parsedCallback.decisionId}`,
       action: parsedCallback.action,
       actor: envelope.actor,
+      callbackAnswer,
       result,
     });
   } catch (error) {
+    await answerMeetingCallbackQuery(callbackQueryId, '회의실 버튼 처리에 실패했습니다.');
     const status = Number(error?.statusCode || 500);
     return res.status(status).json({
       ok: false,
@@ -83,6 +134,7 @@ async function lunaMeetingCallbackRoute(req, res) {
 module.exports = {
   CALLBACK_PREFIX,
   parseLunaMeetingCallbackData,
+  answerMeetingCallbackQuery,
   loadMeetingDecisionActions,
   lunaMeetingCallbackRoute,
 };

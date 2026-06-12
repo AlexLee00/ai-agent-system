@@ -62,10 +62,15 @@ function parseLunaLiveFireCallbackData(callbackData: unknown) {
 }
 
 function extractActorContext(req: LunaCallbackRequest) {
+  const callbackQuery = req?.body?.callback_query || {};
+  const flatFrom = req?.body?.from || {};
+  const flatMessage = req?.body?.message || {};
+  const from = flatFrom?.id || flatFrom?.username ? flatFrom : (callbackQuery?.from || {});
+  const message = flatMessage?.chat || flatMessage?.message_thread_id ? flatMessage : (callbackQuery?.message || {});
   return {
-    actorId: normalizeText(req?.body?.from?.id, ''),
-    actorUsername: normalizeText(req?.body?.from?.username, '').replace(/^@+/, '').toLowerCase(),
-    chatId: normalizeText(req?.body?.message?.chat?.id, ''),
+    actorId: normalizeText(from?.id, ''),
+    actorUsername: normalizeText(from?.username, '').replace(/^@+/, '').toLowerCase(),
+    chatId: normalizeText(message?.chat?.id, ''),
   };
 }
 

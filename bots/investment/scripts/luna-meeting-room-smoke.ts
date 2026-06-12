@@ -258,8 +258,10 @@ async function main() {
       .filter((row) => row.role === 'data' && String(row.agendaKey || '').startsWith('market:'))
       .map((row) => [row.agendaKey, row.content]),
   );
-  assert.ok(weekendMarketData['market:domestic'].includes('스킵(weekend)'));
-  assert.ok(weekendMarketData['market:overseas'].includes('스킵(weekend)'));
+  assert.ok(weekendMarketData['market:domestic'].includes('스킵(주말)'));
+  assert.ok(weekendMarketData['market:overseas'].includes('스킵(주말)'));
+  assert.equal(weekendMarketData['market:domestic'].includes('스킵(weekend)'), false);
+  assert.equal(weekendMarketData['market:overseas'].includes('스킵(weekend)'), false);
   assert.ok(weekendMarketData['market:crypto'].includes('진행'));
   assert.equal(weekendMorningResult.decisions.filter((row) => String(row.agendaKey || '').startsWith('market:crypto')).length, 1);
 

@@ -463,7 +463,7 @@ function normalizeLegacyMinuteContent(content) {
   }
   const readable = normalizeLegacyKoreanLlmNoise(compactCircuitText);
   const canonical = normalizeCanonicalStatusTokens(readable);
-  const compacted = normalizeLegacyBoilerplateHeadings(compactRepetitiveReportContent(canonical));
+  const compacted = compactRepeatedSentences(normalizeLegacyBoilerplateHeadings(compactRepetitiveReportContent(canonical)));
   const marker = 'C15 결정 대기 항목';
   const markerIndex = compacted.indexOf(marker);
   if (markerIndex < 0) return compacted;
@@ -692,6 +692,48 @@ function compactRepetitiveReportContent(content) {
   return [
     kept.join('\n\n').trim(),
     `[표시 보정] 반복 결론 문단 ${removed}개를 축약했습니다. 원문은 감사 로그에 보존됩니다.`,
+  ].filter(Boolean).join('\n\n');
+}
+
+function compactRepeatedSentences(content, minCount = 3) {
+  const text = String(content ?? '');
+  const sentencePattern = /[^.!?。！？\n]+[.!?。！？]+|[^.!?。！？\n]+(?=\n|$)/gu;
+  const sentences = text.match(sentencePattern) || [];
+  const counts = new Map();
+  for (const rawSentence of sentences) {
+    const sentence = rawSentence
+      .replace(/^[\s>*\-•\d.)]+/u, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (sentence.length < 12) continue;
+    counts.set(sentence, (counts.get(sentence) || 0) + 1);
+  }
+  const repeated = Array.from(counts.entries()).filter(([, count]) => count >= minCount);
+  if (!repeated.length) return text;
+
+  let compacted = text;
+  let removed = 0;
+  for (const [sentence, count] of repeated) {
+    let seen = false;
+    compacted = compacted.replace(sentencePattern, (rawSentence) => {
+      const normalized = rawSentence
+        .replace(/^[\s>*\-•\d.)]+/u, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (normalized !== sentence) return rawSentence;
+      if (!seen) {
+        seen = true;
+        return rawSentence;
+      }
+      removed += 1;
+      return '';
+    });
+    if (count > 1) compacted = compacted.replace(/\n{3,}/g, '\n\n');
+  }
+  if (!removed) return text;
+  return [
+    compacted.trim(),
+    `[표시 보정] 반복 문장 ${removed}개를 축약했습니다. 원문은 감사 로그에 보존됩니다.`,
   ].filter(Boolean).join('\n\n');
 }
 

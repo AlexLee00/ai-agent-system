@@ -152,3 +152,63 @@ LEGACY/현행 프로필 테이블 두 벌 식별(교체 대상=현행 ~1008행, 
 
 남은 단계: GATE-H --hours=48 선행 판정(~6/14, 메티) -> 정식 168h ready(~6/18) -> R1 설계 착수.
 이력: 2026-06-12 TS-L1 PASS 기록 (메티)
+
+## L. S 시리즈 신설 (2026-06-12 — Hub 전체 시스템 안정성, 설계서: HUB_SYSTEM_STABILITY_DESIGN_2026-06.md)
+
+| ID | 내용 | 상태 | 비고 |
+|---|---|---|---|
+| S-1 | local 회로 x on-demand 콜드스타트 충돌 보정 | 설계 (**긴급**) | OPEN 고착 실측 — backtest 경로 차단 위험 |
+| S-2 | 알람 발송 outbox + 실패 카운터 | 설계 | alarm-client timeout 실측 |
+| S-3 | pgPool 가시성/한도 (/hub/health 노출) | 설계 | |
+| S-4 | 재기동 감사 + .plist.bak 6개 정리 | 설계 | SIGTERM 주체 불명 2회 |
+| S-5 | GATE-S (Hub 자체 건강 게이트, H6 확장) | 설계 | stage-b 리포트 -> 판정 자동화 |
+| S-6 | 무중단 재기동 | 보류 (비조치 결정) | |
+
+통합 로드맵: 설계서 §5 — S1(긴급) -> GATE-H ready -> S2/S3 -> H3 -> R1~R4 -> S4/S5.
+이력: 2026-06-12 Hub 전체 정밀 분석(25,715줄 인벤토리 + 실측 + 외부 검증 LiteLLM★50k/TensorZero★11k) -> S 시리즈 설계 + 통합 로드맵 재설계 (메티)
+
+## M. 문서 정합 갱신 + 세션 마감 (2026-06-12)
+
+### 갱신 내역
+1. 테스트 시나리오: S 시리즈 TS-S1-1~TS-SL2 신설 — 원천=HUB_SYSTEM_STABILITY_DESIGN §7
+   (H 시리즈 TS-1~16 원천은 RELIABILITY §8 유지 — 문서별 원천 분리, 이중 기재 금지)
+2. 로드맵 단일 원천화: 통합 로드맵 = STABILITY §5 (RELIABILITY §10에 이관 공지)
+3. §F 확장: 아래 TS-S 행 추가
+
+### §F 추가분 — S 시리즈 통과 현황
+| TS | 영역 | 코덱스 자가 | 메티 독립 | 라이브 |
+|---|---|---|---|---|
+| TS-S1-1~5 | S-1 콜드스타트 회로 | - | - | - |
+| TS-S2-1~3 | S-2 알람 outbox | - | - | - |
+| TS-S3-1~2 | S-3 풀 가시성 | - | - | - |
+| TS-S4-1 | S-4 재기동 감사 | - | - | - |
+| TS-S5-1~3 | S-5 GATE-S | - | - | - |
+| TS-SL1/SL2 | 라이브 | n/a | - | - |
+
+### 다음 세션 진입점 (세션 마감 합의)
+1. git status — 오늘 산출물 커밋 확인 (CODEX-H 코드 + 문서 4종: STABILITY 설계서/RELIABILITY §9·10/트래커/CODEX-H6 파일들)
+2. **CODEX-S1 프롬프트 작성** (TS-S1-1~5 기준, local-circuit 코드 위치 분석 포함) — 새 세션 1순위
+3. 6/14: GATE-H --hours=48 선행 판정 / 6/18: 정식 ready 예상
+4. 대기: R1 정책엔진 설계(병행 가능), 루나 robust 벌크 재백테스트 + CODEX-BT-A/B 전달
+
+이력: 2026-06-12 TS-S 시나리오 신설 + 로드맵 단일 원천화 + 세션 마감 (메티)
+
+## N. 세션 시작 점검 + CODEX-S1 프롬프트 (2026-06-12 저녁 세션)
+
+### 시작 점검
+- hub PID 22837 연속 가동(재기동 없음), RSS 132MB 안정. CODEX-H 코드 커밋 확인(512b92fe7).
+- 직전 문서 산출물(STABILITY 설계서 등)은 미커밋 — 마스터 커밋 대기.
+- plist 변경 출처 판명: HUB_CONTROL_APPROVER_IDS/APPROVAL_CHAT_ID env 템플릿 추가(control 승인 작업, 무해).
+  green plist는 5/31부터 존재 = **blue-green 전환 메커니즘 기존재** -> S-4 SIGTERM 주체의 유력 단서로 기록.
+
+### CODEX-S1 프롬프트 작성 완료
+- 파일: docs/codex/CODEX_HUB_S1_LOCAL_COLD_START_2026-06-12.md
+- 사전 분석 확정: local-ollama.ts DEFAULT 15s < 콜드 로드(핫 평균도 18.6s) + 회로 THRESHOLD 3/OPEN 30s
+  + HALF_OPEN probe 동일 15s 실패 = 고착 루프.
+- 설계: **2단 타임아웃 재시도** (1차 30s -> timeout 시 1회 재시도 180s, timeout 사유에만, 재시도 성공=회로 무손상).
+  env 3종(TIMEOUT/COLD_START_TIMEOUT/COLD_RETRY_ENABLED 킬스위치). circuit-breaker/local-llm-client/
+  local-embedding/unified-caller **4개 비접촉** — 변경 최소화.
+- 검증 기준: STABILITY §7 TS-S1-1~5 + 신규 스모크(local-cold-start-retry-smoke) + 라이브 TS-SL1.
+
+S-1 상태: 설계 -> **프롬프트**.
+이력: 2026-06-12 저녁 세션 시작 점검 + CODEX-S1 프롬프트 (메티)

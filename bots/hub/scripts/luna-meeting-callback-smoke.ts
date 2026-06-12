@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const { resolveHubCallbackTarget } = require('../lib/telegram/callback-router.ts');
 const {
   parseLunaMeetingCallbackData,
+  answerMeetingCallbackQuery,
 } = require('../lib/routes/luna-meeting-callback.ts');
 const {
   validateLunaLiveFireCallbackEnvelope,
@@ -18,12 +19,21 @@ function makeReq({
   username = 'master',
   chatId = '-1001',
   data = 'luna_meeting:42:confirm',
+  nested = false,
 } = {}) {
+  const callbackQuery = {
+    id: 'fixture-callback-nested',
+    data,
+    from: { id: actorId, username },
+    message: { chat: { id: chatId }, message_thread_id: 44 },
+  };
   return {
     headers: {
       'x-hub-control-callback-secret': secret,
     },
-    body: {
+    body: nested ? {
+      callback_query: callbackQuery,
+    } : {
       callback_data: data,
       callback_query_id: 'fixture-callback',
       from: { id: actorId, username },
@@ -57,13 +67,37 @@ async function main() {
   };
   const valid = validateLunaLiveFireCallbackEnvelope(makeReq(), env);
   assert.equal(valid.ok, true);
+  const nestedValid = validateLunaLiveFireCallbackEnvelope(makeReq({ nested: true }), env);
+  assert.equal(nestedValid.ok, true);
+  assert.equal(nestedValid.actor.actorId, '123');
+  assert.equal(nestedValid.actor.chatId, '-1001');
   assert.equal(validateLunaLiveFireCallbackEnvelope(makeReq({ actorId: '999' }), env).ok, false);
+  assert.equal(validateLunaLiveFireCallbackEnvelope(makeReq({ actorId: '999', nested: true }), env).ok, false);
   assert.equal(validateLunaLiveFireCallbackEnvelope(makeReq({ secret: 'wrong-secret' }), env).ok, false);
+
+  const answerCalls = [];
+  const answerResult = await answerMeetingCallbackQuery('fixture-callback-nested', '확정됨'.repeat(80), {
+    botToken: 'fixture-token',
+    fetchFn: async (url, options) => {
+      answerCalls.push({ url, options, body: JSON.parse(options.body) });
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    },
+  });
+  assert.equal(answerResult.ok, true);
+  assert.equal(answerCalls.length, 1);
+  assert.ok(String(answerCalls[0].url).includes('/answerCallbackQuery'));
+  assert.equal(answerCalls[0].body.callback_query_id, 'fixture-callback-nested');
+  assert.equal(answerCalls[0].body.show_alert, false);
+  assert.equal(answerCalls[0].body.text.length <= 180, true);
+  const skippedAnswer = await answerMeetingCallbackQuery('', '확정됨', { botToken: 'fixture-token' });
+  assert.equal(skippedAnswer.skipped, true);
 
   console.log(JSON.stringify({
     ok: true,
     smoke: 'luna-meeting-callback',
     target,
+    nestedPayload: true,
+    callbackAnswer: true,
   }, null, 2));
 }
 

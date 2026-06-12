@@ -46,6 +46,20 @@ function userVisibleMeetingApiText(payload = {}, extraLines = []) {
   ].filter(Boolean).join('\n');
 }
 
+function userVisibleMeetingApiBlocks(payload = {}, extraLines = []) {
+  return [
+    ...(payload.minutes || []).map((row) => ({
+      label: `minute:${row.seq || row.id || 'unknown'}`,
+      text: row.content,
+    })),
+    ...(payload.decisions || []).map((row) => ({
+      label: `decision:${row.id || 'unknown'}`,
+      text: row.decision,
+    })),
+    ...(extraLines.length ? [{ label: 'catchup', text: extraLines.join('\n') }] : []),
+  ].filter((block) => block.text);
+}
+
 function assertNoUserVisibleRawLeaks(text, context) {
   const checks = [
     ['raw JSON object', /\{\s*"[a-zA-Z0-9_]+":/],
@@ -57,6 +71,32 @@ function assertNoUserVisibleRawLeaks(text, context) {
   ];
   for (const [label, pattern] of checks) {
     assert.equal(pattern.test(text), false, `${context} should not expose ${label}`);
+  }
+}
+
+function repeatedSentenceHits(text, minCount = 3) {
+  const sentences = String(text ?? '')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .match(/[^.!?。！？\n]+[.!?。！？]+|[^.!?。！？\n]+(?=\n|$)/gu) || [];
+  const counts = new Map();
+  for (const rawSentence of sentences) {
+    const sentence = rawSentence
+      .replace(/^[\s>*\-•\d.)]+/u, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (sentence.length < 12) continue;
+    counts.set(sentence, (counts.get(sentence) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, count]) => count >= minCount)
+    .map(([sentence, count]) => ({ sentence, count }));
+}
+
+function assertNoRepeatedSentenceRunsInBlocks(blocks, context) {
+  for (const block of blocks) {
+    const hits = repeatedSentenceHits(block.text);
+    assert.deepEqual(hits, [], `${context} ${block.label} should not repeat the same sentence 3+ times`);
   }
 }
 
@@ -1190,6 +1230,14 @@ async function main() {
       userVisibleMeetingApiText(detail.payload, catchup.payload.lines),
       'meeting detail/catchup user-visible API text',
     );
+    assert.deepEqual(
+      repeatedSentenceHits('동일 문장 반복을 잡습니다. 동일 문장 반복을 잡습니다. 동일 문장 반복을 잡습니다.'),
+      [{ sentence: '동일 문장 반복을 잡습니다.', count: 3 }],
+    );
+    assertNoRepeatedSentenceRunsInBlocks(
+      userVisibleMeetingApiBlocks(detail.payload, catchup.payload.lines),
+      'meeting detail/catchup user-visible API text',
+    );
 
     const pending = await request(baseUrl, '/api/decisions/pending');
     assert.deepEqual(pending.payload.decisions.map((row) => row.id), [11, 12]);
@@ -1536,6 +1584,7 @@ async function main() {
       markdownLiteNoInnerHtml: true,
       legacyRawJsonMinuteNormalized: true,
       userVisibleApiRawLeakGuard: true,
+      userVisibleRepeatedSentenceGuard: true,
       legacyCircuitJsonMinuteSummarized: true,
       legacyCircuitCountMasked: true,
       legacyAdvisoryTermLocalized: true,

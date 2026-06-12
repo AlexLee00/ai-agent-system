@@ -125,6 +125,17 @@ function marketLabel(value: any) {
   }[String(value || '')] || '시장 미상';
 }
 
+function segmentReasonLabel(value: any) {
+  return {
+    weekend: '주말',
+    holiday: '휴장일',
+    market_closed: '장 마감',
+    kis_market_closed: '장 마감',
+    crypto_24h: '24시간 운영',
+    market_open: '정상 운영',
+  }[String(value || '')] || (value ? '사유 확인 필요' : '사유 없음');
+}
+
 function summarizeGateTransitions(rows: any[] = []) {
   const items = Array.isArray(rows) ? rows : [];
   if (!items.length) return '게이트 전이: 없음';
@@ -332,7 +343,7 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
     const signalCount = agenda.evidence?.strategySignals?.length || 0;
     const circuitCount = agenda.evidence?.circuitLocks?.length || 0;
     return [
-      `${agenda.title}: ${segment.skipped ? `스킵(${segment.reason})` : '진행'}`,
+      `${agenda.title}: ${segment.skipped ? `스킵(${segmentReasonLabel(segment.reason)})` : '진행'}`,
       `게이트=${gate ? `${gate.deployment} score=${Number(gate.score ?? 0).toFixed(1)}` : '없음'}`,
       `레짐=${regime ? `${regimeLabel(regime.current_regime || regime.dominant)} source=${regime.source ? String(regime.source).toUpperCase() : '없음'}` : '없음'}`,
       `전략신호=${signalCount}건, 서킷=${circuitCount}건`,
