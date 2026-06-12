@@ -301,3 +301,45 @@ R1 종결: 설계 -> 구현 -> 검증. **R2 기준선(스냅샷) 확보** — do
 다음: R2(정책 테이블 기계 생성 + 엔진 + shadow 비교 + GATE-R) — 마스터 결정 2건 대기:
 정책 저장소(TS 모듈 권고) / 롤아웃 레버(MODE=team:csv 권고). 승인 시 CODEX-R2 프롬프트 작성.
 이력: 2026-06-12 CODEX-R1 독립 검증 합격 + R1 종결 (메티)
+
+## T. 마스터 권고안 승인 + CODEX-R2 프롬프트 (2026-06-12)
+
+- 승인: 정책 저장소=TS const 모듈 / 롤아웃 레버=MODE=team:csv (R2는 off|shadow만).
+- 프롬프트: docs/codex/CODEX_HUB_R2_POLICY_ENGINE_2026-06-12.md — 핵심 원칙 "충실 복제, diff=0이 전부"
+  (개선·압축 금지, 불일치 시 정책 테이블을 고치고 구를 진실로). 정책 테이블은 스냅샷 codegen(수동 작성 금지).
+  shadow 훅=llm-selector.ts selectLLMChain 3곳 헬퍼 치환, 신규 DDL 1(hub.llm_policy_shadow_log, 적용은 마스터).
+  GATE-R 추가(기존 게이트 타입 확장). 검증=TS-R2-1~5 + 라이브 TS-RL1.
+- R 상태: R1 종결 -> **R2 프롬프트** (코덱스 전달 대기).
+이력: 2026-06-12 CODEX-R2 프롬프트 작성 (메티)
+
+## U. CODEX-R2 메티 독립 검증 (2026-06-12) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 변경 범위 | 신규 5(엔진/테이블/codegen/스모크/DDL) + 수정 7 — 보고 정합 |
+| core selector 변경 | **export 키워드 추가 2함수뿐(diff 6줄, 로직 0)** — 명세(로직 수정 금지) 정확 준수 |
+| shadow 훅 | parsePolicyEngineMode 기본 'off' + selectChainWithShadow 3곳 치환(353/404/423) |
+| TS-R2-1 (--engine 전수 diff) | 메티 독립 재실행: **total 408 / mismatched 0** — 신구 완전 동일 |
+| TS-R2-1~5 스모크 | 독립 재실행 ok:true 전부 PASS |
+| codegen 멱등 | --check exit 0, changed:false, ruleCount 408 |
+| GATE-R | --apply exit 2 + apply_blocked + promotionReady:false (H6 패턴 상속), --no-db=contract_only |
+| 게이트 스모크 회귀 | GATE-R 포함 ok:true, 기존 GATE-H/H3 비변경 |
+| DDL | hub.llm_policy_shadow_log — 명세 일치, IF NOT EXISTS 멱등, 인덱스(created_at, match) |
+
+### 마스터 적용 절차 (R2 활성 = shadow 개시)
+1. 커밋 (자동커밋 처리 가능)
+2. DDL 적용: psql -d jay -f bots/hub/migrations/20260612000001_hub_llm_policy_shadow_log.sql
+   -> [완료됨 2026-06-12 — 메티 도구 사고로 조기 실행, 아래 인시던트 노트 참조]
+3. plist env 추가 HUB_LLM_POLICY_ENGINE_MODE=shadow + ai.hub.resource-api 재기동
+4. 메티 TS-RL1: 모의 호출 -> shadow_log match=true 기록 + 라이브 무영향 확인
+5. 이후 GATE-R evidence(>=50건, match=false 0건) 자동 누적 -> ready 신호 시 R3
+
+R 상태: R2 **검증** (적용 대기). 이력: 2026-06-12 CODEX-R2 독립 검증 합격 (메티)
+
+### 인시던트 노트 (메티 자기보고, 2026-06-12)
+- 사고: 트래커 기록용 zsh 명령줄(python3 -c) 문자열 내 백틱이 zsh 명령 치환으로 해석되어
+  DDL psql 명령이 **의도치 않게 실제 실행**됨. 결과: hub.llm_policy_shadow_log 조기 생성.
+- 영향: 없음 — IF NOT EXISTS 멱등 DDL(비파괴), 행 0, 마스터가 적용 예정이던 동일 파일.
+  단 "DB 변경은 마스터" 절차 위반에 해당하므로 투명하게 기록.
+- 재발 방지(메티 운영 수칙 갱신): 문서 텍스트 쓰기는 python REPL stdin 경유만 사용.
+  zsh 명령줄 인라인 문자열(python3 -c, echo, heredoc)에 백틱/특수문자 포함 금지.

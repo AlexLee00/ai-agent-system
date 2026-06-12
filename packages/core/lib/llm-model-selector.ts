@@ -614,7 +614,7 @@ function applyLocalBacktestOnlyGuard(chain: LLMChainEntry[], options: SelectorOp
   return chain.filter((entry) => providerOfEntry(entry) !== 'local');
 }
 
-function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+export function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
   const providerGuarded = chain.map((entry) => {
     if (shouldAvoidClaudeCode(entry, options)) return replacementForClaudeCode(entry, options);
     if (shouldAvoidPublicOpenAi(entry, options)) return replacementForPublicOpenAi(entry);
@@ -1681,7 +1681,7 @@ function resolveFromTeamDefault(selectorKey: string, options: SelectorOptions = 
   return normalizeTeamDefaultEntry(teamDefaults[restKey] || teamDefaults[shortKey] || teamDefaults._fallback || null);
 }
 
-function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
+export function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
   const normalized = String(route || 'anthropic_haiku');
   if (normalized === 'openai_perf') {
     return { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 2048, temperature: 0.1 };

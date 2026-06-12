@@ -208,6 +208,116 @@ function selectionResult(base, chain) {
   };
 }
 
+function parsePolicyEngineMode(raw = process.env.HUB_LLM_POLICY_ENGINE_MODE || 'off') {
+  const normalized = normalizeToken(raw || 'off');
+  if (normalized === 'shadow') return { mode: 'shadow', teams: [] };
+  if (normalized.startsWith('team:')) {
+    return {
+      mode: 'team',
+      teams: normalized.slice('team:'.length).split(',').map((item) => item.trim()).filter(Boolean),
+    };
+  }
+  return { mode: 'off', teams: [] };
+}
+
+function normalizeShadowChain(chain = []) {
+  return (Array.isArray(chain) ? chain : []).map((entry = {}) => {
+    const row = {
+      provider: clean(entry.provider),
+      model: clean(entry.model),
+    };
+    const maxTokens = Number(entry.maxTokens);
+    const temperature = Number(entry.temperature);
+    const timeoutMs = Number(entry.timeoutMs);
+    if (Number.isFinite(maxTokens)) row.maxTokens = maxTokens;
+    if (Number.isFinite(temperature)) row.temperature = temperature;
+    if (Number.isFinite(timeoutMs)) row.timeoutMs = timeoutMs;
+    return row;
+  });
+}
+
+function shadowChainsMatch(oldChain, newChain) {
+  return JSON.stringify(normalizeShadowChain(oldChain)) === JSON.stringify(normalizeShadowChain(newChain));
+}
+
+function loadPolicyEngine(deps = {}) {
+  return deps.policyEngine || require('../../../packages/core/lib/llm-policy-engine');
+}
+
+function policyShadowContext(selectorKey, options = {}) {
+  const team = normalizeToken(options.team || options.callerTeam || String(selectorKey || '').split('.')[0]);
+  const agentName = clean(options.agentName || options.agent || '');
+  const taskType = normalizeToken(options.taskType || options.task_type || options.runtimePurpose || options.runtime_purpose || '');
+  return {
+    selectorKey: clean(selectorKey),
+    team,
+    callerTeam: team,
+    agentName: agentName || null,
+    agent: agentName || null,
+    taskType: taskType || null,
+    task_type: taskType || null,
+    runtimePurpose: taskType || null,
+    runtime_purpose: taskType || null,
+    rolloutKey: options.rolloutKey || null,
+    traceId: options.traceId || null,
+    incidentKey: options.incidentKey || null,
+  };
+}
+
+function notePolicyShadowDrop(error, deps = {}) {
+  if (typeof deps.onDrop === 'function') {
+    deps.onDrop(error);
+    return;
+  }
+  if (process.env.HUB_LLM_POLICY_ENGINE_SHADOW_DEBUG === 'true') {
+    console.warn(`[hub-llm-policy-shadow] dropped: ${error?.message || error}`);
+  }
+}
+
+function writePolicyShadowLog(record, deps = {}) {
+  const queryFn = deps.queryFn || ((sql, params) => {
+    const pgPool = deps.pgPool || require('../../../packages/core/lib/pg-pool');
+    return pgPool.query('public', sql, params);
+  });
+  return Promise.resolve(queryFn(`
+    INSERT INTO hub.llm_policy_shadow_log (selector_key, ctx, match, old_chain, new_chain)
+    VALUES ($1, $2::jsonb, $3, $4::jsonb, $5::jsonb)
+  `, [
+    record.selectorKey,
+    JSON.stringify(record.ctx),
+    record.match,
+    JSON.stringify(record.oldChain),
+    JSON.stringify(record.newChain),
+  ]));
+}
+
+function selectChainWithShadow(selectorKey, options = {}, deps = {}) {
+  const selectLLMChain = deps.selectLLMChain || coreSelector.selectLLMChain;
+  const oldChain = selectLLMChain(selectorKey, options);
+  const parsedMode = parsePolicyEngineMode(deps.mode ?? process.env.HUB_LLM_POLICY_ENGINE_MODE);
+  if (parsedMode.mode !== 'shadow') return oldChain;
+
+  try {
+    const policyEngine = loadPolicyEngine(deps);
+    const ctx = policyShadowContext(selectorKey, options);
+    const newChain = policyEngine.resolvePolicyChain(ctx);
+    const oldNormalized = normalizeShadowChain(oldChain);
+    const newNormalized = normalizeShadowChain(newChain);
+    const writePromise = writePolicyShadowLog({
+      selectorKey,
+      ctx,
+      match: shadowChainsMatch(oldNormalized, newNormalized),
+      oldChain: oldNormalized,
+      newChain: newNormalized,
+    }, deps).catch((error) => notePolicyShadowDrop(error, deps));
+    if (Array.isArray(deps.shadowPromises)) deps.shadowPromises.push(writePromise);
+  } catch (error) {
+    notePolicyShadowDrop(error, deps);
+  }
+
+  return oldChain;
+}
+
 function resolveHubLlmSelection(req = {}, options = {}) {
   const team = normalizeToken(req.callerTeam || req.team || 'hub') || 'hub';
   const agent = clean(req.agent || '');
@@ -240,7 +350,11 @@ function resolveHubLlmSelection(req = {}, options = {}) {
 
   if (req.selectorKey) {
     const selectorKey = String(req.selectorKey);
-    const chain = coreSelector.selectLLMChain(selectorKey, selectorOptionsFromRequest(req));
+    const chain = selectChainWithShadow(selectorKey, selectorOptionsFromRequest(req, {
+      team,
+      callerTeam: team,
+      agentName: req.agent || req.agentName,
+    }));
     return selectionResult({
       selectorKey,
       runtimeProfile: null,
@@ -287,10 +401,12 @@ function resolveHubLlmSelection(req = {}, options = {}) {
 
   const { profile, purpose } = resolveRuntimeProfile(req, team);
   if (profile?.selector_key) {
-    const chain = coreSelector.selectLLMChain(String(profile.selector_key), selectorOptionsFromRequest(req, {
+    const chain = selectChainWithShadow(String(profile.selector_key), selectorOptionsFromRequest(req, {
       maxTokens: req.maxTokens ?? profile.max_tokens,
       temperature: req.temperature ?? profile.temperature,
       agentName: profile.selector_agent || agent,
+      team,
+      callerTeam: team,
       ...(profile.selector_options || {}),
     }));
     return selectionResult({
@@ -304,7 +420,10 @@ function resolveHubLlmSelection(req = {}, options = {}) {
   }
 
   if (!req.selectorKey && !agent) {
-    const chain = coreSelector.selectLLMChain('hub._default', selectorOptionsFromRequest(req));
+    const chain = selectChainWithShadow('hub._default', selectorOptionsFromRequest(req, {
+      team,
+      callerTeam: team,
+    }));
     return selectionResult({
       selectorKey: 'hub._default',
       runtimeProfile: 'hub.default',
@@ -354,4 +473,5 @@ module.exports = {
   providerTier,
   resolveHubLlmSelection,
   routeLabel,
+  selectChainWithShadow,
 };

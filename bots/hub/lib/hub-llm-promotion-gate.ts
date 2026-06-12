@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type HubLlmPromotionGateId = 'GATE-H' | 'GATE-H3';
+export type HubLlmPromotionGateId = 'GATE-H' | 'GATE-H3' | 'GATE-R';
 export type HubLlmPromotionGateSelector = HubLlmPromotionGateId | 'all';
 export type HubLlmPromotionGateStatus =
   | 'blocked'
@@ -66,6 +66,7 @@ export type HubLlmPromotionGateReport = {
 type HubLlmPromotionGateContract = {
   requiredScripts: string[];
   requiredSourceMarkers: string[];
+  requiredFiles?: string[];
   requiredSchemaColumns?: Array<{ schema: string; table: string; columns: string[] }>;
 };
 
@@ -83,6 +84,7 @@ const GATE_H_DARWIN_FAILED_AVG_DURATION_MS = 30_000;
 const GATE_H_DARWIN_UNKNOWN_PURPOSE_RATIO_THRESHOLD = 0.05;
 const GATE_H3_SHADOW_SAMPLE_THRESHOLD = 1_000;
 const GATE_H3_TIMEOUT_UNDER_ACTUAL_RATIO_THRESHOLD = 0.01;
+const GATE_R_SHADOW_SAMPLE_THRESHOLD = 50;
 
 export const HUB_LLM_GATE_CONTRACTS: Record<HubLlmPromotionGateId, HubLlmPromotionGateContract> = {
   'GATE-H': {
@@ -119,6 +121,24 @@ export const HUB_LLM_GATE_CONTRACTS: Record<HubLlmPromotionGateId, HubLlmPromoti
       },
     ],
   },
+  'GATE-R': {
+    requiredScripts: [
+      'smoke:llm-policy-engine',
+    ],
+    requiredSourceMarkers: [
+      'LLM_POLICY_RULES',
+      'resolvePolicyChain',
+      'HUB_LLM_POLICY_ENGINE_MODE',
+    ],
+    requiredFiles: [
+      'packages/core/lib/llm-policy-table.ts',
+      'packages/core/lib/llm-policy-engine.ts',
+      'bots/hub/scripts/llm-policy-table-codegen.ts',
+      'bots/hub/scripts/llm-chain-snapshot.ts',
+      'docs/hub/snapshots/llm-chain-snapshot-2026-06-12.json',
+      'bots/hub/migrations/20260612000001_hub_llm_policy_shadow_log.sql',
+    ],
+  },
 };
 
 export function buildHubLlmPromotionApplyBlockedReport(options: Partial<HubLlmPromotionGateOptions> = {}): HubLlmPromotionGateReport {
@@ -135,7 +155,7 @@ export function buildHubLlmPromotionApplyBlockedReport(options: Partial<HubLlmPr
     ok: false,
     status: 'hub_llm_promotion_gate_apply_blocked',
     selectedGate,
-    gates: { 'GATE-H': 'blocked', 'GATE-H3': 'blocked' },
+    gates: { 'GATE-H': 'blocked', 'GATE-H3': 'blocked', 'GATE-R': 'blocked' },
     hours,
     generatedAt,
     shadowMode: true,
@@ -155,7 +175,7 @@ export async function buildHubLlmPromotionGateReport(options: HubLlmPromotionGat
   const hours = normalizeHours(options.hours);
   const selectedGate = normalizeGate(options.gate);
   const generatedAt = (options.now || new Date()).toISOString();
-  const gateIds = selectedGate === 'all' ? (['GATE-H', 'GATE-H3'] as HubLlmPromotionGateId[]) : [selectedGate];
+  const gateIds = selectedGate === 'all' ? (['GATE-H', 'GATE-H3', 'GATE-R'] as HubLlmPromotionGateId[]) : [selectedGate];
 
   const evaluated: Partial<Record<HubLlmPromotionGateId, GateEvaluation>> = {};
   for (const gate of gateIds) {
@@ -165,6 +185,7 @@ export async function buildHubLlmPromotionGateReport(options: HubLlmPromotionGat
   const gates: Record<HubLlmPromotionGateId, HubLlmPromotionGateStatus> = {
     'GATE-H': evaluated['GATE-H']?.status || 'blocked',
     'GATE-H3': evaluated['GATE-H3']?.status || 'blocked',
+    'GATE-R': evaluated['GATE-R']?.status || 'blocked',
   };
   const contractChecks = gateIds.flatMap((gate) => evaluated[gate]?.contractChecks || []);
   const evidenceChecks = gateIds.flatMap((gate) => evaluated[gate]?.evidenceChecks || []);
@@ -282,9 +303,22 @@ async function buildContractChecks(gate: HubLlmPromotionGateId, options: HubLlmP
     observed: sourceCorpus.includes(marker) ? 'present' : 'missing',
     threshold: 'present',
   }));
+  const fileChecks = (contracts.requiredFiles || []).map((relativeFile) => {
+    const absolutePath = path.join(repoRoot, relativeFile);
+    const ok = fs.existsSync(absolutePath);
+    return {
+      gate,
+      name: `file:${relativeFile}`,
+      ok,
+      type: 'contract' as const,
+      detail: ok ? 'Required file is present.' : 'Required file is missing.',
+      observed: ok ? 'present' : 'missing',
+      threshold: 'present',
+    };
+  });
   const schemaChecks = await buildSchemaContractChecks(gate, contracts, options);
 
-  return [...scriptChecks, ...markerChecks, ...schemaChecks];
+  return [...scriptChecks, ...markerChecks, ...fileChecks, ...schemaChecks];
 }
 
 async function buildSchemaContractChecks(
@@ -341,9 +375,9 @@ async function buildSchemaContractChecks(
 
 async function buildEvidenceChecks(gate: HubLlmPromotionGateId, options: HubLlmPromotionGateOptions & { hours: number }): Promise<HubLlmPromotionGateCheck[]> {
   try {
-    return gate === 'GATE-H'
-      ? await buildGateHEvidenceChecks(options)
-      : await buildGateH3EvidenceChecks(options);
+    if (gate === 'GATE-H') return await buildGateHEvidenceChecks(options);
+    if (gate === 'GATE-H3') return await buildGateH3EvidenceChecks(options);
+    return await buildGateREvidenceChecks(options);
   } catch (error) {
     return [{
       gate,
@@ -355,6 +389,41 @@ async function buildEvidenceChecks(gate: HubLlmPromotionGateId, options: HubLlmP
       threshold: 'query succeeds',
     }];
   }
+}
+
+async function buildGateREvidenceChecks(options: HubLlmPromotionGateOptions & { hours: number }): Promise<HubLlmPromotionGateCheck[]> {
+  const rows = normalizeRows(await options.queryFn?.(`
+    /* hub_llm_gate:gate_r_evidence */
+    SELECT
+      count(*)::int AS shadow_total_count,
+      count(*) FILTER (WHERE match IS FALSE)::int AS shadow_mismatch_count
+    FROM hub.llm_policy_shadow_log
+    WHERE created_at >= now() - ($1::int * interval '1 hour')
+  `, [options.hours]));
+  const row = rows[0] || {};
+  const shadowTotalCount = toNumber(row.shadow_total_count);
+  const shadowMismatchCount = toNumber(row.shadow_mismatch_count);
+
+  return [
+    {
+      gate: 'GATE-R',
+      name: 'shadow_total_count',
+      ok: shadowTotalCount >= GATE_R_SHADOW_SAMPLE_THRESHOLD,
+      type: 'evidence',
+      detail: 'Policy-engine shadow samples must reach the required observation volume.',
+      observed: shadowTotalCount,
+      threshold: `>=${GATE_R_SHADOW_SAMPLE_THRESHOLD}`,
+    },
+    {
+      gate: 'GATE-R',
+      name: 'shadow_mismatch_count',
+      ok: shadowMismatchCount === 0,
+      type: 'evidence',
+      detail: 'Policy-engine shadow chain mismatches must be zero.',
+      observed: shadowMismatchCount,
+      threshold: 0,
+    },
+  ];
 }
 
 async function buildGateHEvidenceChecks(options: HubLlmPromotionGateOptions & { hours: number }): Promise<HubLlmPromotionGateCheck[]> {
@@ -512,6 +581,7 @@ function mergeContract(gate: HubLlmPromotionGateId, override?: Partial<HubLlmPro
   return {
     requiredScripts: override?.requiredScripts ?? base.requiredScripts,
     requiredSourceMarkers: override?.requiredSourceMarkers ?? base.requiredSourceMarkers,
+    requiredFiles: override?.requiredFiles ?? base.requiredFiles,
     requiredSchemaColumns: override?.requiredSchemaColumns ?? base.requiredSchemaColumns,
   };
 }
@@ -603,7 +673,7 @@ function normalizeHours(hours: unknown): number {
 }
 
 function normalizeGate(gate: unknown): HubLlmPromotionGateSelector {
-  if (gate === 'GATE-H' || gate === 'GATE-H3' || gate === 'all') return gate;
+  if (gate === 'GATE-H' || gate === 'GATE-H3' || gate === 'GATE-R' || gate === 'all') return gate;
   return 'GATE-H';
 }
 

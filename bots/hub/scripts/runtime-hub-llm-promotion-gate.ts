@@ -28,7 +28,7 @@ type RuntimeDeps = {
 };
 
 const DEFAULT_HOURS = 168;
-const VALID_GATES = new Set(['GATE-H', 'GATE-H3', 'all']);
+const VALID_GATES = new Set(['GATE-H', 'GATE-H3', 'GATE-R', 'all']);
 
 export function parseHubLlmPromotionGateArgs(argv = process.argv.slice(2)): RuntimeArgs {
   let hours = DEFAULT_HOURS;
@@ -118,15 +118,15 @@ function buildInvalidGateReport(args: RuntimeArgs): HubLlmPromotionGateReport {
     gate: 'all' as const,
     type: 'contract' as const,
     name: 'invalid_gate',
-    detail: `Invalid gate '${args.invalidGate}'. Expected GATE-H, GATE-H3, or all.`,
+    detail: `Invalid gate '${args.invalidGate}'. Expected GATE-H, GATE-H3, GATE-R, or all.`,
     observed: args.invalidGate,
-    threshold: ['GATE-H', 'GATE-H3', 'all'],
+    threshold: ['GATE-H', 'GATE-H3', 'GATE-R', 'all'],
   };
   return {
     ok: false,
     status: 'blocked',
     selectedGate: args.gate,
-    gates: { 'GATE-H': 'blocked', 'GATE-H3': 'blocked' },
+    gates: { 'GATE-H': 'blocked', 'GATE-H3': 'blocked', 'GATE-R': 'blocked' },
     hours: args.hours,
     generatedAt: new Date().toISOString(),
     shadowMode: true,
@@ -169,7 +169,7 @@ if (require.main === module) {
       ok: false,
       status: 'blocked',
       selectedGate: 'GATE-H',
-      gates: { 'GATE-H': 'blocked', 'GATE-H3': 'blocked' },
+      gates: { 'GATE-H': 'blocked', 'GATE-H3': 'blocked', 'GATE-R': 'blocked' },
       hours: DEFAULT_HOURS,
       generatedAt: new Date().toISOString(),
       shadowMode: true,

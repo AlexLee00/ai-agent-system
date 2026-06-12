@@ -17,6 +17,7 @@ const SNAPSHOT_DIR = path.join(PROJECT_ROOT, 'docs', 'hub', 'snapshots');
 const SNAPSHOT_TIME_ZONE = process.env.HUB_LLM_CHAIN_SNAPSHOT_TIME_ZONE || 'Asia/Seoul';
 const SNAPSHOT_DATE = process.env.HUB_LLM_CHAIN_SNAPSHOT_DATE || snapshotDateString(new Date(), SNAPSHOT_TIME_ZONE);
 const DEFAULT_OUTPUT_PATH = path.join(SNAPSHOT_DIR, `llm-chain-snapshot-${SNAPSHOT_DATE}.json`);
+const DEFAULT_BASELINE_PATH = path.join(SNAPSHOT_DIR, 'llm-chain-snapshot-2026-06-12.json');
 const SNAPSHOT_SOURCE = 'packages/core/lib/llm-model-selector.ts';
 const FIXED_SMOKE_TIMESTAMP = '2026-06-12T00:00:00.000Z';
 const SELECTOR_VERSION = 'v3.0_oauth_4';
@@ -74,6 +75,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const args = {
     json: false,
     smoke: false,
+    engine: false,
     noWrite: false,
     outPath: DEFAULT_OUTPUT_PATH,
     diffPath: null,
@@ -84,6 +86,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     const arg = argv[index];
     if (arg === '--json') args.json = true;
     else if (arg === '--smoke') args.smoke = true;
+    else if (arg === '--engine') args.engine = true;
     else if (arg === '--no-write') args.noWrite = true;
     else if (arg === '--help' || arg === '-h') args.help = true;
     else if (arg === '--out') args.outPath = path.resolve(argv[++index] || '');
@@ -98,7 +101,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 
 function usage() {
   return [
-    'Usage: tsx scripts/llm-chain-snapshot.ts [--json] [--no-write] [--out <path>] [--diff <old.json>] [--smoke]',
+    'Usage: tsx scripts/llm-chain-snapshot.ts [--json] [--no-write] [--out <path>] [--diff <old.json>] [--engine] [--smoke]',
     '',
     'Builds a deterministic Hub LLM selector chain snapshot for the OAuth4 selector version.',
   ].join('\n');
@@ -373,6 +376,59 @@ function diffLlmChainSnapshots(oldSnapshot, newSnapshot) {
   };
 }
 
+function buildEngineRow(row) {
+  const policyEngine = require('../../../packages/core/lib/llm-policy-engine.ts');
+  const chain = normalizeChain(policyEngine.resolvePolicyChain({
+    team: teamFromSelectorKey(row.key),
+    callerTeam: teamFromSelectorKey(row.key),
+    selectorKey: row.key,
+    agentName: row.agentName || null,
+    agent: row.agentName || null,
+    taskType: row.taskType || null,
+    task_type: row.taskType || null,
+    runtimePurpose: row.runtimePurpose || row.taskType || null,
+    runtime_purpose: row.runtimePurpose || row.taskType || null,
+  }));
+  return {
+    key: row.key,
+    variant: row.variant,
+    agentName: row.agentName || null,
+    taskType: row.taskType || null,
+    runtimePurpose: row.runtimePurpose || null,
+    kind: chain.length > 0 ? 'chain' : 'none',
+    primary: chain[0] || null,
+    fallbacks: chain.slice(1),
+    chain,
+    error: null,
+  };
+}
+
+function buildEngineDiff(baseline = loadJsonFile(DEFAULT_BASELINE_PATH)) {
+  const mismatches = [];
+  const rows = Array.isArray(baseline?.variants) ? baseline.variants : [];
+  for (const expected of rows) {
+    const actual = buildEngineRow(expected);
+    const expectedChain = normalizeChain(expected.chain);
+    const actualChain = normalizeChain(actual.chain);
+    if (stableStringify(expectedChain) !== stableStringify(actualChain)) {
+      mismatches.push({
+        key: expected.key,
+        variant: expected.variant,
+        agentName: expected.agentName || null,
+        taskType: expected.taskType || null,
+        runtimePurpose: expected.runtimePurpose || null,
+        expectedChain,
+        actualChain,
+      });
+    }
+  }
+  return {
+    total: rows.length,
+    mismatched: mismatches.length,
+    mismatches,
+  };
+}
+
 function writeJsonFile(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, stableStringify(value));
@@ -476,6 +532,25 @@ async function runCli(argv = process.argv.slice(2)) {
     return report.ok ? 0 : 1;
   }
 
+  if (args.engine) {
+    const baseline = loadJsonFile(DEFAULT_BASELINE_PATH);
+    const engineDiff = buildEngineDiff(baseline);
+    const output = {
+      ok: engineDiff.mismatched === 0,
+      generatedAt: new Date().toISOString(),
+      selectorVersion: SELECTOR_VERSION,
+      baselinePath: path.relative(PROJECT_ROOT, DEFAULT_BASELINE_PATH),
+      engineDiff,
+    };
+    if (args.json) {
+      console.log(stableStringify(output));
+    } else {
+      console.log(`[llm-chain-snapshot:engine] total=${engineDiff.total} mismatched=${engineDiff.mismatched}`);
+      if (engineDiff.mismatched > 0) console.log(stableStringify(engineDiff.mismatches.slice(0, 10)));
+    }
+    return engineDiff.mismatched === 0 ? 0 : 1;
+  }
+
   const snapshot = buildLlmChainSnapshot();
   let output = snapshot;
   let exitCode = 0;
@@ -518,6 +593,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 export {
   buildLlmChainSnapshot,
+  buildEngineDiff,
   diffLlmChainSnapshots,
   extractAgentRouteKeys,
   runCli,

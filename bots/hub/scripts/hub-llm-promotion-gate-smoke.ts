@@ -86,6 +86,15 @@ function gateH3EvidenceQuery(): HubLlmPromotionGateQueryFn {
   };
 }
 
+function gateREvidenceQuery({ total = 50, mismatches = 0 }: { total?: number; mismatches?: number } = {}): HubLlmPromotionGateQueryFn {
+  return async (sql: string) => {
+    if (sql.includes('hub_llm_gate:gate_r_evidence')) {
+      return [{ shadow_total_count: total, shadow_mismatch_count: mismatches }];
+    }
+    throw new Error(`unexpected query in GATE-R smoke: ${sql.slice(0, 80)}`);
+  };
+}
+
 async function record(id: string, name: string, fn: () => Promise<string> | string): Promise<void> {
   try {
     const evidence = await fn();
@@ -176,6 +185,21 @@ async function main(): Promise<void> {
     assert.equal(report.promotionReady, false);
     assert.equal(report.metrics['GATE-H3']?.blog_longform_regression_count, 0);
     return `status=${report.status} blogLongformRegression=${report.metrics['GATE-H3']?.blog_longform_regression_count}`;
+  });
+
+  await record('TS-G7', 'GATE-R contract and evidence reach master-review candidate', async () => {
+    const report = await buildHubLlmPromotionGateReport({
+      gate: 'GATE-R',
+      hours: 168,
+      queryFn: gateREvidenceQuery(),
+    });
+    reports.push(report);
+    assert.equal(report.status, 'ready_for_master_review');
+    assert.equal(report.ok, true);
+    assert.equal(report.promotionReady, false);
+    assert.equal(report.metrics['GATE-R']?.shadow_total_count, 50);
+    assert.equal(report.metrics['GATE-R']?.shadow_mismatch_count, 0);
+    return `status=${report.status} total=${report.metrics['GATE-R']?.shadow_total_count}`;
   });
 
   const failed = results.filter((result) => !result.pass);
