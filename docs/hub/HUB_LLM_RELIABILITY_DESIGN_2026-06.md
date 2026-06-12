@@ -62,22 +62,23 @@
 
 **H1-b. darwin 체인 단일화 + 출력 cap**
 - 문제: F3 이중 체인(40 vs 15 실측). DARWIN_ROUTES의 groq 폴백과 bounded의 local 폴백이 경합.
-- 설계: darwin/sigma 최종 체인을 명시 단일화 — openai(perf|mini) -> groq_scout(쿨다운 게이트 하) 순.
-  local은 H2에서 제거. planner/evaluator류 maxTokens 2048->1024 (groq 토큰 소비 절감 = 429 빈도 절감).
-- F1 주석의 학습(groq-primary 금지)은 유지 — groq은 폴백 위치만.
+- 수정된 결정(2026-06-12): darwin/sigma 최종 체인은 기본 `openai(perf|mini) -> local/qwen2.5-7b`.
+  Groq fallback은 반복 429/풀고갈로 인해 기본 차단하고, `HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED=true`에서만 opt-in.
+  planner/evaluator류 cap/timeout 조정은 H3 동적 예산에서 별도 처리.
+- F1 주석의 학습(groq-primary 금지)은 유지 — Groq는 기본 체인에서 제외한다.
 
 **H1-c. darwin purpose 태깅**: 호출부 runtime_purpose 전달 보강 (unknown 44 제거; audit 가능화).
 
 ### H2 — local(qwen2.5-7b) 백테스팅 전용화 (마스터 명시 제약)
 
-**H2-a. 폴백에서 local 제거**: F2의 localFastEntry push 삭제.
-  ⚠️ 결정 포인트 1: 제거 후 darwin 안전망 = (안1) groq_scout 폴백(H1-a 쿨다운과 결합) — 권장 / (안2) openai 단독 fail-fast.
+**H2-a. darwin/sigma Groq fallback 기본 차단**: 반복 429/풀고갈 알람을 줄이기 위해 darwin/sigma 체인의 Groq fallback을 기본 비활성화한다.
+  local fallback은 운영 안전망으로 유지하고, Groq 재도입은 명시 env opt-in과 관측 게이트를 요구한다.
 **H2-b. 알람 해석기 4종 (F5) 교체**: local primary -> groq_scout primary + openai_mini 폴백.
   현재 **폴백 없음** = local 죽으면 알람 해석 사망(운영 리스크) — 교체와 동시에 폴백 신설. 알람은 실시간성 중요 -> groq(0.86s)가 적합.
 **H2-c. 전역 가드**: applyProviderRuntimeGuards 확장 — taskType이 `backtest_*`가 아니면 provider 'local' 엔트리를 체인에서 제거.
   local-embedding은 별도 provider로 **유지**(pgvector/chronos embedding 경로 무관).
-- 효과: qwen on-demand 로드 빈도 감소(메모리 4.9GB 보호), darwin/알람 지연 개선(18.6s -> 1-5s).
-- env: `HUB_LLM_LOCAL_BACKTEST_ONLY` (기본 true 제안).
+- 효과: Groq 풀고갈이 darwin/sigma 기본 경로를 소진시키는 현상을 차단한다. qwen on-demand 로드 빈도와 지연은 H3/H4 관측으로 별도 최적화한다.
+- env: `HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED` (기본 false), `HUB_LLM_LOCAL_BACKTEST_ONLY`는 전역 local 가드 실험 시 별도 사용.
 
 ### H3 — 동적 timeout / 출력 예산 (2차)
 
@@ -104,12 +105,115 @@ llm_token_budget_usage + routing_log 기반: 최근 1h provider 실패율/timeou
 
 ## 5. 검증 지표 (적용 후 7일)
 - darwin 실패 51 -> 한 자릿수 / 실패까지 평균 97s -> <30s
-- provider='local' 일반 호출 0건 (backtest_*만 허용) / mlx qwen 로드 빈도 감소 (grep mlx-server.log)
+- darwin/sigma 기본 체인에서 provider='groq' 0건 / local fallback 성공률과 mlx qwen 로드 빈도 관측
 - groq 풀고갈 시 폴백 latency: 즉시 스킵으로 단축 (attempted_providers에서 groq 부재 확인)
 - 알람 해석 폴백 동작: local 중단 시에도 성공
 
 ## 6. 리스크 / 마스터 결정 포인트
-1. (결정 1) H2-a 후 darwin 안전망: groq_scout 재도입(권장, 쿨다운 게이트) vs openai 단독.
+1. (결정 1) H2-a 후 darwin 안전망: 기본은 openai -> local fallback. Groq fallback은 env opt-in으로만 재도입.
 2. (결정 2) H1-a 쿨다운 기본 on/off — 보수적이면 shadow(로그만) 1주 후 활성.
 3. 알람 해석기 provider 교체로 호출당 미세 비용 발생(현 local $0) — 빈도 낮아 영향 미미.
 4. H3는 판정 아닌 운영 변경이나 장문(blog) timeout 보장 회귀 주의 — claude-code base 150s 보존.
+
+---
+
+## 7. 확정 로드맵 (2026-06-11 마스터 결정 반영)
+
+결정1 = 2026-06-12 갱신: H2-a 이후 darwin/sigma 안전망은 기본 openai-oauth -> local/qwen2.5-7b.
+Groq fallback은 `HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED=true`에서만 opt-in.
+결정2 = 즉시 활성: H1-a 쿨다운은 기본 ON (env 킬스위치로 즉시 복귀 가능).
+
+| Phase | 내용 | 산출물 | 게이트(통과 기준) | 담당 |
+|---|---|---|---|---|
+| 0 | CODEX-H 프롬프트 (H1-a/b/c + H2-a/b/c + H5) | docs/codex/CODEX_HUB_H_RELIABILITY_2026-06-11.md | 메티 작성 완료 | 메티 |
+| 1 | CODEX-H 구현 | selector/unified-caller/스모크 diff | 코덱스 자가검증 통과 | 코덱스 |
+| 2 | 메티 독립 검증 | 스모크 재실행 + flag OFF 동일성 + 가드/쿨다운 직접 호출 | §5 사전 기준(스모크 레벨) 전부 통과 | 메티 |
+| 3 | 마스터 적용 | 커밋 + ai.hub.resource-api 재기동 | 라이브 darwin 1사이클 정상 + 알람 해석 정상 | 마스터 |
+| 4 | 7일 관측 | 트래커 §D 베이스라인 대비 측정 | darwin 실패 한 자릿수 / 실패평균 <30s / darwin·sigma Groq 기본 호출 0건 / qwen 로드 빈도 관측 | 메티 |
+| 5 | CODEX-H3 (동적 예산, 섀도 1주 -> 활성) | token-budget 산출기 + 섀도 로그 | 캘리브레이션 오차 검토 + blog 장문 회귀 없음 | 메티->코덱스 |
+| 6 | H4 피드백 루프 설계서 | 별도 설계 문서 | 마스터 승인 | 메티 |
+
+롤백 계획: Phase 3 이후 이상 시 env로 즉시 복귀 — HUB_LLM_RATELIMIT_COOLDOWN_ENABLED=false,
+HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED=true 또는 HUB_LLM_LOCAL_BACKTEST_ONLY=false (단 alarm.interpreter 교체는 selector 코드이므로
+이상 시 git revert + 재기동).
+
+---
+
+## 8. 테스트 시나리오 (정식 원천 — CODEX-H 검증 기준)
+
+형식: Given(전제) / When(행위) / Then(기대). 코덱스는 자가검증에서, 메티는 독립 검증에서
+동일 TS-ID로 결과를 보고한다. 추적: TRACKER §F.
+
+### H1-a 쿨다운 (unified-caller 단위)
+| ID | Given | When | Then |
+|---|---|---|---|
+| TS-1 | groq 응답=풀고갈/429 | noteRateLimitCooldown 기록 직후 체인 재실행 | groq 사전 스킵, attempted_providers에 groq 부재 |
+| TS-2 | Retry-After=120s 제공 / 미제공 | 쿨다운 기록 | 120s 적용 / 최소 30s 적용 |
+| TS-3 | 체인의 모든 provider가 쿨다운 중 | 체인 실행 | 마지막 엔트리 1개는 시도 (완전 불능 방지) |
+| TS-4 | HUB_LLM_RATELIMIT_COOLDOWN_ENABLED=false | 풀고갈 후 재실행 | 쿨다운 무시 — 현행 동일 동작 |
+
+### H1-b / H2-a darwin·sigma 체인 (selector 해석)
+| ID | Given | When | Then |
+|---|---|---|---|
+| TS-5 | darwin.planner 요청 | 체인 해석 | primary=openai-oauth, fallback=local/qwen2.5-7b, groq·gemini 부재 |
+| TS-6 | planner/evaluator/scanner | 체인 해석 | H3 전에는 기존 cap 유지, H3 적용 후 taskType별 cap/timeout 산출 |
+| TS-7 | edison/verifier/commander | 체인 해석 | anthropic 계열 비변경 (before와 동일) |
+| TS-8 | sigma.agent_policy 요청 | 체인 해석 | darwin과 동일하게 groq 기본 부재, local fallback 허용 |
+
+### H2-b 알람 해석기
+| ID | Given | When | Then |
+|---|---|---|---|
+| TS-9 | alarm.interpreter.{work,report,error,critical} | 체인 해석 | primary=groq + 폴백>=1(openai), maxTokens 기존값 유지 |
+| TS-10 | alarm.classifier | 체인 해석 | 비변경 (before와 동일) |
+
+### H2-c local 가드
+| ID | Given | When | Then |
+|---|---|---|---|
+| TS-11 | taskType 없음(일반 요청) | 체인 해석 | provider 'local' 엔트리 부재 |
+| TS-12 | taskType=backtest_judgment | 체인 해석 | local 엔트리 허용(체인에 있던 경우 유지) |
+| TS-13 | chronos backtest embedding 요청 | 체인 해석 | local-embedding 유지 (기존 chronos 매트릭스 embedding_provider=local-embedding 그대로) |
+| TS-14 | HUB_LLM_LOCAL_BACKTEST_ONLY=false | 일반 요청 해석 | 가드 비활성 — local 잔존 허용(현행 동일) |
+
+### H1-c / 회귀
+| ID | Given | When | Then |
+|---|---|---|---|
+| TS-15 | darwin planner 호출부 | 페이로드 검사(grep/스모크) | runtimePurpose(또는 taskType) 존재 |
+| TS-16 | 기존 스모크 일체 | 재실행 | chronos 매트릭스 5케이스·payload·direct-provider guard 전부 무변경 통과 |
+
+### 라이브 단계 (코덱스 범위 밖 — Phase 3/4, 메티·마스터)
+| ID | 시점 | 기준 |
+|---|---|---|
+| TS-L1 | 재기동 직후 | darwin 1사이클 attempted_providers에 groq 부재 + local fallback 또는 openai 성공 + 알람 해석 정상 |
+| TS-L2 | 7일 후 | TRACKER §D 베이스라인 대비: darwin 실패 한 자릿수, 실패평균<30s, darwin·sigma groq 기본 호출 0건, qwen 로드 빈도 관측 |
+
+---
+
+## 9. H6 — Hub LLM Promotion Gate (루나 자동승급 패턴 이식, 2026-06-11 추가)
+
+배경: 마스터는 shadow 항목의 승급(활성 전환)을 항목별로 수동 점검할 수 없다. 루나팀의
+검증된 자동승급 메커니즘(`luna-hybrid-promotion-gate.ts` + runtime, Phase10)을 분석한 결과
+Hub에 그대로 이식 가능한 패턴임을 확인했다.
+
+### 9.1 루나 패턴 분석 (원본: bots/investment/shared/luna-hybrid-promotion-gate.ts)
+| 요소 | 메커니즘 | Hub 이식 |
+|---|---|---|
+| 계약(Contract) | 컴포넌트별 5요소 명세(checkScript/runtime/skill/hook/evidence 테이블) — 체크리스트가 코드 | H 항목별: env flag 존재 + TS 스모크 통과 + 코드 마커 |
+| 증거(Evidence) | 최근 168h DB에 shadow 데이터 실존 쿼리 — "실제로 돌고 있다" 증명 | public.llm_routing_log 지표 쿼리 (§9.3) |
+| 상태 머신 | blocked -> contract_only -> shadow_ready_data_pending -> **ready_for_master_review** | 동일 명명 채택 |
+| 안전 핵심 | `promotionReady: false` 하드코딩 + `--apply` 영구 차단 — 자동검증+후보제시까지만, 승급 실행은 마스터 | 동일 (env 전환은 마스터만) |
+
+### 9.2 H6 구성
+- `bots/hub/lib/hub-llm-promotion-gate.ts` — buildHubLlmPromotionGateReport(contract+evidence+상태)
+- `bots/hub/scripts/runtime-hub-llm-promotion-gate.ts` — CLI(--json/--strict/--hours/--gate=<id>), `--apply` 영구 차단
+- ready_for_master_review 도달 시 기존 알람 채널로 통지 -> 마스터는 env 1개 전환만 수행
+
+### 9.3 게이트 정의 (evidence 판정 기준)
+| Gate ID | 대상 | 계약 | 증거 기준 (기본 168h, §D 베이스라인 대비) |
+|---|---|---|---|
+| GATE-H | CODEX-H 적용 후 안정 (TS-L2 자동화) | TS-1~16 스모크 통과 + env 2종 존재 | darwin 실패<=9 AND 실패평균<30s AND local 일반 호출=0 AND unknown purpose 감소 |
+| GATE-H3 | H3 동적예산 섀도->활성 | H3 flag(shadow) 존재 + 섀도 로그 스키마 | 섀도 표본>=1000 AND 산출timeout<실제소요 비율<1% AND blog 장문 회귀 0 |
+
+### 9.4 로드맵 통합 (§7 갱신 해석)
+- Phase 4(7일 관측)의 수동 측정 -> **GATE-H 자동 판정**으로 대체. 메티는 게이트 리포트 검증만.
+- Phase 5(H3 섀도->활성)의 전환 판단 -> **GATE-H3 ready 신호** 기반.
+- 실행 주기: launchd 일 1회(마스터 등록) 또는 메티 세션 시 수동 1회.
