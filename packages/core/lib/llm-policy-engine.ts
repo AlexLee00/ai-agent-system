@@ -2,6 +2,7 @@
 
 import {
   applyProviderRuntimeGuards,
+  resolveConfiguredModelToken,
   routeEntryFromAbstractRoute,
 } from './llm-model-selector.ts';
 import {
@@ -32,6 +33,7 @@ type LLMChainEntry = {
 };
 
 const OAUTH4_SELECTOR_VERSION = 'v3_oauth_4';
+const warnedModelTokens = new Set<string>();
 
 function clean(value: unknown): string {
   return String(value || '').trim();
@@ -94,12 +96,28 @@ function cloneEntry(entry: LLMChainEntry): LLMChainEntry {
   return JSON.parse(JSON.stringify(entry));
 }
 
+function resolvePolicyModel(model: string): string | null {
+  const normalized = clean(model);
+  if (!normalized.startsWith('@')) return normalized;
+  const resolved = resolveConfiguredModelToken(normalized);
+  if (resolved) return resolved;
+  if (!warnedModelTokens.has(normalized)) {
+    warnedModelTokens.add(normalized);
+    console.warn(`[llm-policy-engine] unknown configured model token skipped: ${normalized}`);
+  }
+  return null;
+}
+
 function buildChainEntry(entry: PolicyChainEntry): LLMChainEntry | null {
   if (typeof entry === 'string') {
     return routeEntryFromAbstractRoute(entry, OAUTH4_SELECTOR_VERSION);
   }
   if (!entry || typeof entry !== 'object') return null;
-  return cloneEntry(entry as LLMChainEntry);
+  const cloned = cloneEntry(entry as LLMChainEntry);
+  const model = resolvePolicyModel(cloned.model);
+  if (!model) return null;
+  cloned.model = model;
+  return cloned;
 }
 
 function buildChain(entries: PolicyChainEntry[] = []): LLMChainEntry[] {
