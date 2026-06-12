@@ -428,3 +428,13 @@ R1(스냅샷 89키x408) -> R2(엔진+테이블+shadow+GATE-R, 정적 544/0) -> R
 4. 루나 트랙 대기: robust 벌크 재백테스트 + CODEX-BT-A/B
 
 이력: 2026-06-12 TS-RL1 3차 PASS + R2 트랙 종결 (메티)
+
+## AA. 연결 가이드 문서 갱신 (2026-06-12)
+
+- 외부: EXTERNAL_LLM_INTEGRATION_GUIDE.md — §0 기준일 06-12 + 신규 정책 4항(쿨다운/local backtest 전용/
+  콜드스타트 자동 재시도/policy shadow 무영향) + §10 에러 표에 `llm_selector_chain_required`
+  (selectorKey 팀 prefix 필수 — 라이브 검증 중 실제 겪은 함정) 추가.
+- 내부: LLM_HUB_ARCHITECTURE.md — 기준일 04-19 -> 06-12, 신규 섹션 "2026-06 신뢰성·정책 계층"
+  (라우팅 현행/쿨다운/콜드스타트/정책엔진 shadow/게이트 3종/운영 노트: env 변경은 bootout+bootstrap).
+- 참고: docs/guides/llm.md는 외부 LLM API 참조 문서(다른 용도)라 비대상 판정.
+이력: 2026-06-12 연결 가이드 2종 갱신 (메티)

@@ -1,6 +1,6 @@
 # Team Jay LLM Hub 아키텍처
 
-> 최종 업데이트: 2026-04-19 / LLM Routing Hardening Phase 1~5 완료
+> 최종 업데이트: 2026-06-12 / Hardening Phase 1~5 + 신뢰성(H)·안정성(S)·정책엔진(R) 시리즈 반영
 
 ---
 
@@ -129,3 +129,40 @@
 | Week 2 | Circuit Breaker 실전 차단 확인 (Ollama 수동 중단 테스트) |
 | Week 3 | Luna critical chain 검증 (exit_decision → local 미경유 확인) |
 | Week 4 | /hub/metrics Grafana 연결, 주간 부하 테스트 자동화 |
+
+
+## 2026-06 신뢰성·정책 계층 (H/S/R 시리즈 — 2026-06-12)
+
+기존 Hardening(Circuit Breaker/Provider Registry) 위에 추가된 계층. 상세 설계는 각 설계서가 원천이며
+본 섹션은 연결 관점 요약이다.
+
+### 라우팅 정책 현행 (2026-06-12)
+- darwin/sigma 표준 체인: `openai-oauth(mini|perf) -> groq_scout` (local·gemini 제거,
+  `HUB_DARWIN_SIGMA_GROQ_FALLBACK_ENABLED` 기본 true / false=openai 단독). edison/verifier/commander는 anthropic 계열 유지.
+- 알람 해석기 4종(work/report/error/critical): `groq primary + openai-oauth 폴백` (구 local 단일점 폐지).
+- local(qwen2.5-7b)은 `backtest_*` taskType 전용 (`HUB_LLM_LOCAL_BACKTEST_ONLY`, 전 팀 전역 가드).
+  local-embedding은 별개 provider로 영향 없음.
+- 정책 표면 전수 스냅샷: `docs/hub/snapshots/` + `npm run llm:policy-table-codegen` / `--engine` diff.
+
+### 신뢰성 계층 (실행층)
+- **Provider rate-limit 쿨다운** (unified-caller): 429/풀 고갈 provider를 최소 30s 사전 스킵.
+  전 체인 쿨다운 시 마지막 1개는 시도(완전 불능 방지). env `HUB_LLM_RATELIMIT_COOLDOWN_ENABLED|_MIN_MS`.
+- **Local 콜드스타트 2단 타임아웃** (local-ollama): 1차 30s -> timeout 시 1회 재시도 180s.
+  재시도 성공은 회로 무손상. env `HUB_LLM_LOCAL_TIMEOUT_MS|_COLD_START_TIMEOUT_MS|_COLD_RETRY_ENABLED`.
+
+### 정책 엔진 (R 시리즈, shadow 가동 중)
+- `HUB_LLM_POLICY_ENGINE_MODE=off|shadow|team:<csv>(R3)` — 현재 shadow: 신구 체인 비교를
+  `hub.llm_policy_shadow_log`에 기록, 라이브 동작 영향 0.
+- 구성: `packages/core/lib/llm-policy-table.ts`(codegen 산출) + `llm-policy-engine.ts`.
+  매칭 team은 selectorKey 접두사 기준(키가 정책을 결정 — 교차 팀 alias 안전).
+
+### 자동 승급 게이트 (H6 패턴)
+- `npm --prefix bots/hub run -s runtime:hub-llm-promotion-gate -- --json --gate=GATE-H|GATE-H3|GATE-R`
+- 상태머신 blocked -> contract_only -> shadow_ready_data_pending -> ready_for_master_review.
+  `--apply` 영구 차단 — 승급 실행은 마스터 env 전환만.
+
+### 운영 노트
+- plist env **변경** 반영은 `kickstart -k`로 불충분 — `bootout` 후 `bootstrap`으로 job definition 재로드 필요.
+  (env 변경 없는 코드 재기동은 kickstart 충분.)
+- 추적: docs/hub/HUB_LLM_IMPROVEMENT_TRACKER.md / 설계서: HUB_LLM_RELIABILITY_DESIGN_2026-06.md,
+  HUB_SYSTEM_STABILITY_DESIGN_2026-06.md, HUB_LLM_POLICY_ENGINE_DESIGN_2026-06.md

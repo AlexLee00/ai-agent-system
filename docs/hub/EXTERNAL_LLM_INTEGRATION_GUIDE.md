@@ -4,7 +4,7 @@
 
 ## 0. 현재 운영 기준
 
-2026-05-27 기준 운영 Hub 연결 상태는 다음 정책을 따른다.
+2026-06-12 기준 운영 Hub 연결 상태는 다음 정책을 따른다. (H/S/R 시리즈 신뢰성 개선 반영)
 
 - LaunchAgent: `ai.hub.resource-api`
 - 기본 URL: `http://localhost:7788`
@@ -12,6 +12,10 @@
 - Gemini 정책: `HUB_LLM_GEMINI_DISABLED=true`
 - Gemini 직접 호출/토큰 refresh 점검: Gemini off 상태에서는 skip
 - Direct provider endpoint: 기본 차단, 외부 프로젝트 사용 금지
+- Provider rate-limit 쿨다운: 기본 ON — 429/풀 고갈 provider는 최소 30초 사전 스킵 후 폴백 진행 (`HUB_LLM_RATELIMIT_COOLDOWN_ENABLED`)
+- Local 모델(qwen2.5-7b): `taskType`이 `backtest_*`인 호출에만 체인 포함 (`HUB_LLM_LOCAL_BACKTEST_ONLY=true` 기본). 그 외 호출에서 local 응답을 기대하지 말 것
+- Local 콜드스타트: on-demand 언로드 상태 첫 호출은 자동 재시도(최대 180s)로 처리 — 호출측 추가 조치 불필요
+- 정책 엔진: `HUB_LLM_POLICY_ENGINE_MODE=shadow` 가동 중 — 외부 호출 동작에 영향 없음(비교 기록만)
 - 표준 검증: `gateway-contract`, guide smoke, agent-level LLM drill
 
 현재 운영 상태와 문서 일치 여부는 아래 명령으로 확인한다. 토큰 값은 출력하지 않는다.
@@ -353,6 +357,7 @@ def call_hub_llm(prompt: str, *, task_type: str = "external_llm_call") -> dict:
 | `403 llm_non_llm_target_blocked` | non-LLM 역할 호출 | 코드 버그로 보고, 재시도 금지 |
 | `403 llm_route_target_not_active` 계열 | 미등록/비활성 target | Hub registry 등록 요청 |
 | `400 invalid_llm_call_payload` | payload 스키마 오류 | 요청 생성 코드 수정 |
+| `ok=false`, `llm_selector_chain_required` | selectorKey 미매칭 (주원인: **팀 prefix 누락** — `alarm.interpreter.work`가 아니라 `hub.alarm.interpreter.work`) | selectorKey를 팀 prefix 포함 정식 키로 수정 |
 | `429` | rate/admission 제한 | `Retry-After` 기반 backoff |
 | `503` | Hub 준비 안 됨 또는 shutdown | exponential backoff |
 | `ok=false`, `gemini_provider_disabled` | Gemini 비활성 상태에서 Gemini-only 경로 요청 | selectorKey 또는 Hub registry를 OpenAI/Groq/Claude/Local 포함 경로로 수정 |
