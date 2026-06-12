@@ -1664,6 +1664,15 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     ].join('\n');
   }
   if (intent === 'telegram') {
+    const asksDeferredReappearance = /(보류|defer)/u.test(String(question || ''))
+      && /(다시|다음|재알림|재\s*확인|또|오는|와|보여|확인)/u.test(String(question || ''));
+    const deferReappearanceLines = asksDeferredReappearance
+      ? [
+        '보류 처리 기준: 보류한 기존 결정은 현재 대기함과 다음 텔레그램 버튼 목록에서 제거됩니다.',
+        '재알림 기준: 같은 결정이 자동으로 다시 오지는 않습니다. 다음 회의가 같은 안건으로 새 마스터 확인 결정을 만들 때만 새 카드와 버튼이 생깁니다.',
+        '다시 확인 위치: 원래 회의를 선택하면 U1 캐치업의 보류 수와 타임라인 감사 행에서 확인합니다.',
+      ]
+      : [];
     return [
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
       '알림 본문: Luna 회의 완료: 회의 타입 / 마스터 액션 대기: N건 / 회의 #... · 회의록 ...행 / 웹 링크 순서로 표시됩니다.',
@@ -1672,6 +1681,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '동기화 경로: 텔레그램 확정/보류 버튼은 회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로를 사용합니다.',
       '안전 경계: 텔레그램 버튼은 회의실 결정 상태와 감사 행만 바꾸며, 실제 주문·거래·파라미터·런타임 설정을 변경하지 않습니다.',
       '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
+      ...deferReappearanceLines,
       '검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,

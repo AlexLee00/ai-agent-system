@@ -2539,6 +2539,38 @@ async function main() {
     await closeServer(telegramStarted.server);
   }
 
+  let telegramDeferHubCalled = false;
+  const telegramDeferStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      telegramDeferHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '보류하면 다음 회의 때 다시 버튼이 갑니다.' };
+    },
+  });
+  const telegramDeferBase = `http://127.0.0.1:${telegramDeferStarted.server.address().port}`;
+  try {
+    const telegramDeferAsk = await request(telegramDeferBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '보류 버튼 누르면 다음 회의 때 다시 텔레그램으로 버튼이 와?' }),
+    });
+    assert.equal(telegramDeferAsk.status, 200);
+    assert.equal(telegramDeferAsk.payload.provider, 'rule_based');
+    assert.equal(telegramDeferAsk.payload.skipped, true);
+    assert.equal(telegramDeferHubCalled, false);
+    assert.ok(telegramDeferAsk.payload.text.includes('보류한 기존 결정은 현재 대기함과 다음 텔레그램 버튼 목록에서 제거됩니다.'));
+    assert.ok(telegramDeferAsk.payload.text.includes('같은 결정이 자동으로 다시 오지는 않습니다.'));
+    assert.ok(telegramDeferAsk.payload.text.includes('다음 회의가 같은 안건으로 새 마스터 확인 결정을 만들 때만 새 카드와 버튼이 생깁니다.'));
+    assert.ok(telegramDeferAsk.payload.text.includes('원래 회의를 선택하면 U1 캐치업의 보류 수와 타임라인 감사 행에서 확인합니다.'));
+    assert.equal(telegramDeferAsk.payload.text.includes('보류하면 다음 회의 때 다시 버튼이 갑니다'), false);
+    assert.equal(telegramDeferAsk.payload.text.includes('pending_master'), false);
+    assert.equal(telegramDeferAsk.payload.text.includes('deferred'), false);
+    assert.equal(telegramDeferAsk.payload.text.includes('callback_data'), false);
+  } finally {
+    await closeServer(telegramDeferStarted.server);
+  }
+
   let telegramScheduleHubCalled = false;
   const telegramScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
