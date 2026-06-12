@@ -273,8 +273,8 @@ export async function loadMeetingMinutesResult(sessionId: any, options: any = {}
     session,
     planNote: {
       briefMarkdown: [
-        `DB 기준 회의록 재생성: session #${session.id}`,
-        `summary: ${session.summary || 'n/a'}`,
+        `DB 기준 회의록 재생성: 회의 #${session.id}`,
+        `요약: ${session.summary || 'n/a'}`,
         segmentSummaryForMarkdown(session.segments),
       ].join('\n'),
     },

@@ -479,7 +479,10 @@ async function main() {
     assert.equal(regenerated.markdown.includes('- status:'), false);
     assert.equal(regenerated.markdown.includes('- dry_run:'), false);
     assert.equal(regenerated.markdown.includes('MR-A output is advisory/shadow only'), false);
-    assert.ok(regenerated.markdown.includes(`session #${applied.session.id}`));
+    assert.ok(regenerated.markdown.includes(`회의 #${applied.session.id}`));
+    assert.equal(regenerated.markdown.includes(`session #${applied.session.id}`), false);
+    assert.ok(regenerated.markdown.includes('요약: 아침 통합 회의 완료:'));
+    assert.equal(regenerated.markdown.includes('summary: 아침 통합 회의 완료:'), false);
     assert.ok(regenerated.markdown.includes('## Minutes'));
     return { before, after, appliedRows };
   });

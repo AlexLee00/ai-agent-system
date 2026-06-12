@@ -1423,7 +1423,10 @@ async function main() {
     });
     const regeneratedFromDbMarkdown = renderMeetingMinutesMarkdown(regeneratedFromDb);
     const regeneratedLeakText = `${regeneratedFromDb.planNote.briefMarkdown}\n${regeneratedFromDbMarkdown}`;
-    assert.ok(regeneratedLeakText.includes('summary: 국내 장후 회의 완료: 안건 1건, ADR 1건, LLM 0회'));
+    assert.ok(regeneratedLeakText.includes('DB 기준 회의록 재생성: 회의 #117'));
+    assert.ok(regeneratedLeakText.includes('요약: 국내 장후 회의 완료: 안건 1건, ADR 1건, LLM 0회'));
+    assert.equal(regeneratedLeakText.includes('DB 기준 회의록 재생성: session #117'), false);
+    assert.equal(regeneratedLeakText.includes('summary: 국내 장후 회의 완료:'), false);
     assert.equal(regeneratedLeakText.includes('summary: domestic_debrief 회의 완료:'), false);
     assert.equal(regeneratedFromDbMarkdown.includes('# Luna Meeting Room — domestic_debrief'), false);
     assert.ok(regeneratedLeakText.includes('세그먼트: 국내 비활성(장 마감)'));
@@ -1949,6 +1952,7 @@ async function main() {
       sessionSummaryTypeLocalized: true,
       regeneratedMarkdownTypeLocalized: true,
       regeneratedMarkdownMetadataLocalized: true,
+      regeneratedMarkdownPlanNoteLocalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
