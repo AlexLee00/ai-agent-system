@@ -1106,6 +1106,14 @@ async function main() {
     assert.ok(premarketSituationIntro.includes('요약하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있습니다.'));
     assert.equal(premarketSituationIntro.includes('현재 상황은 다음과 같습니다'), false);
     assert.equal(premarketSituationIntro.includes('현재 상황을 종합하면'), false);
+    const pendingScopeAndCircuitMinute = _testOnly.normalizeLegacyMinuteContent(
+      '전략군 24시간 신호 1건(진입 0건)입니다. 현재 14건의 활성 서킷이 유지되고 있습니다. 결정 대기 중인 건은 5건입니다.',
+    );
+    assert.ok(pendingScopeAndCircuitMinute.includes('활성 서킷 14건이 유지되고 있습니다.'));
+    assert.ok(pendingScopeAndCircuitMinute.includes('C15 검토 대기 5건입니다.'));
+    assert.equal(pendingScopeAndCircuitMinute.includes('입니다, 활성 서킷'), false);
+    assert.equal(pendingScopeAndCircuitMinute.includes('현재 14건의 활성 서킷'), false);
+    assert.equal(pendingScopeAndCircuitMinute.includes('결정 대기 중인 건은'), false);
     const premarketGenericConclusion = _testOnly.normalizeLegacyMinuteContent(
       '현재 상황을 종합하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있으며, 미국 시장과 암호화폐 시장은 reduced 상태를 유지하고 있습니다. 따라서, 현 시점에서 추가적인 조치가 필요합니다.\n\n결과적으로, 현 시점에서 추가적인 조치가 필요하며, 국내 시장의 halt 상태를 유지하고 미국 시장과 암호화폐 시장의 reduced 상태를 지속적으로 모니터링하는 것이 필요합니다.',
     );
