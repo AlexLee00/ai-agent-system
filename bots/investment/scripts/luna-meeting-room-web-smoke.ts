@@ -2075,7 +2075,8 @@ async function main() {
     assert.equal(scheduleAsk.payload.provider, 'rule_based');
     assert.equal(scheduleAsk.payload.skipped, true);
     assert.equal(scheduleHubCalled, false);
-    assert.ok(scheduleAsk.payload.text.includes('정례 05:00 주말 morning은 국내·미국을 주말로 스킵'));
+    assert.ok(scheduleAsk.payload.text.includes('정례 05:00 주말 아침 통합 회의는 국내·미국을 주말로 스킵'));
+    assert.equal(scheduleAsk.payload.text.includes('주말 morning'), false);
     assert.ok(scheduleAsk.payload.text.includes('수동 시작은 현재 화면의 세그먼트 상태를 기준'));
     assert.ok(scheduleAsk.payload.text.includes('현재 회의 대상 세그먼트가 안건으로 포함'));
     assert.ok(scheduleAsk.payload.text.includes('정례 실행 상태:'));
@@ -2445,6 +2446,36 @@ async function main() {
     await closeServer(telegramStarted.server);
   }
 
+  let telegramScheduleHubCalled = false;
+  const telegramScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      telegramScheduleHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '복합 질문 fixture' };
+    },
+  });
+  const telegramScheduleBase = `http://127.0.0.1:${telegramScheduleStarted.server.address().port}`;
+  try {
+    const telegramScheduleAsk = await request(telegramScheduleBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '실제 텔레그램 앱 버튼 클릭과 주말 05:00 정례 회의는 검증 완료야? 아직 남은 확인은 뭐야?' }),
+    });
+    assert.equal(telegramScheduleAsk.status, 200);
+    assert.equal(telegramScheduleAsk.payload.provider, 'rule_based');
+    assert.equal(telegramScheduleAsk.payload.skipped, true);
+    assert.equal(telegramScheduleHubCalled, false);
+    assert.ok(telegramScheduleAsk.payload.text.includes('실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인'));
+    assert.ok(telegramScheduleAsk.payload.text.includes('정례 실행 상태:'));
+    assert.ok(telegramScheduleAsk.payload.text.includes('주말 05:00 정례 기준: 아침 통합 회의는 국내·미국을 주말로 스킵'));
+    assert.ok(telegramScheduleAsk.payload.text.includes('남은 확인: 1. 실제 Telegram 앱에서 버튼을 눌러'));
+    assert.equal(telegramScheduleAsk.payload.text.includes('주말 morning'), false);
+    assert.equal(telegramScheduleAsk.payload.text.includes('Hub callback'), false);
+  } finally {
+    await closeServer(telegramScheduleStarted.server);
+  }
+
   const pendingAwareStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
     meetingStore: createMemoryStore(),
@@ -2708,6 +2739,7 @@ async function main() {
       askWeekendScheduleRuleBased: true,
       askPremarketMeetingRuleBased: true,
       askTelegramSyncRuleBased: true,
+      askTelegramScheduleCombinedRuleBased: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,

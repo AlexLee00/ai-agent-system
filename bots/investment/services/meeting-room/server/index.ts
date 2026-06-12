@@ -1418,6 +1418,13 @@ function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
   const hasScheduleCue = /(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text);
   const hasRunCue = /(수동|시작|실행|됐|되|가능|언제|스킵|skip)/u.test(text);
+  const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
+  const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
+  const hasTelegramStatusContext = /(검증|완료|남은|확인|클릭|실사용|첫\s*실사용)/u.test(text);
+  if (hasTelegramContext && (hasTelegramSyncContext || hasTelegramStatusContext)) {
+    if (hasScheduleCue || /(05:00|5:00|오전\s*5|실행)/u.test(text)) return 'telegram_schedule';
+    return 'telegram';
+  }
   const hasScheduleOpsCue = /(실패|오류|에러|누락|안\s*됐|안\s*됨|안\s*되|로그|log|진단|고장)/u.test(text)
     || (/(어디서|무엇을\s*보|뭘\s*보)/u.test(text) && /(확인|보)/u.test(text));
   if (hasScheduleCue && hasScheduleOpsCue) return 'schedule_ops';
@@ -1437,9 +1444,6 @@ function inferAskIntent(question) {
   if (hasMorningMeetingCue && hasManualAgendaCue) return 'schedule';
   if (/(미장\s*전|미국\s*프리마켓|프리마켓|us\s*premarket|premarket)/u.test(text)) return 'premarket';
   if (hasScheduleCue) return 'schedule';
-  const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
-  const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
-  if (hasTelegramContext && hasTelegramSyncContext) return 'telegram';
   const hasDecisionScopeCue = /(캐치업|숫자|건수|왜|차이|다른|달라)/u.test(text) || (/(전체)/u.test(text) && /(선택)/u.test(text));
   if (hasDecisionScopeCue && /(결정|대기함|대기|pending|캐치업)/u.test(text)) return 'decision_scope';
   if (/(처리|기한|마감|먼저|우선|몇\s*건|뭐부터|무엇부터)/u.test(text) && /(결정|마스터|대기|pending)/u.test(text)) return 'decision_due';
@@ -1500,7 +1504,7 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
       : '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
   }
   if (intent === 'schedule') {
-    return '주말 morning 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 국내·미국은 주말 스킵으로 기록되는지 보세요.';
+    return '주말 아침 통합 회의 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 국내·미국은 주말 스킵으로 기록되는지 보세요.';
   }
   if (intent === 'schedule_ops') {
     return '05:00 이후 새 아침 통합 회의가 없으면 회의 목록, launchd 상태, stdout/stderr 로그를 순서대로 확인하세요.';
@@ -1606,7 +1610,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     const segmentText = summarizeRuleBasedSegmentStates(planNote).join(' · ') || '세그먼트 정보 없음';
     return [
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
-      '운영 기준: 정례 05:00 주말 morning은 국내·미국을 주말로 스킵하고, 수동 시작은 현재 화면의 세그먼트 상태를 기준으로 기록합니다.',
+      '운영 기준: 정례 05:00 주말 아침 통합 회의는 국내·미국을 주말로 스킵하고, 수동 시작은 현재 화면의 세그먼트 상태를 기준으로 기록합니다.',
       '수동 시작 범위: 현재 회의 대상 세그먼트가 안건으로 포함되고, 비활성 세그먼트는 스킵으로 기록됩니다.',
       '비활성 표시 해석: 괄호 사유가 붙은 회의 타입은 현재 직접 시작할 수 없고, 해당 시장은 스킵 또는 관찰 상태로 기록됩니다.',
       '수동 시작 의미: 회의록과 ADR을 새로 남기는 동작이며 거래·파라미터는 변경하지 않습니다.',
@@ -1638,6 +1642,19 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
       '검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
+  if (intent === 'telegram_schedule') {
+    const segmentText = summarizeRuleBasedSegmentStates(planNote).join(' · ') || '세그먼트 정보 없음';
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      'Telegram 검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
+      '웹 반영 기준: Telegram 확정/보류 버튼 처리 후 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거됩니다.',
+      options.scheduleStatus || buildScheduleExecutionStatus([], options.now || new Date()),
+      `주말 05:00 정례 기준: 아침 통합 회의는 국내·미국을 주말로 스킵하고, 암호화폐 24시간 점검만 실안건으로 남기는지 확인합니다.`,
+      `현재 수동 실행 화면 기준: ${segmentText}.`,
+      '남은 확인: 1. 실제 Telegram 앱에서 버튼을 눌러 감사 행과 웹 대기함 갱신을 확인합니다. 2. 05:00 이후 새 아침 통합 회의가 목록에 생기고 주말 스킵 기록이 맞는지 확인합니다.',
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
@@ -1706,8 +1723,9 @@ async function askAgent(body, deps, limiter) {
     queryFn: deps.queryFn,
   });
   const globalPendingDecisions = await safeListPendingDecisions(deps);
-  const scheduleMeetings = intent === 'schedule' || intent === 'schedule_ops' ? await safeListMeetings(20, deps) : [];
-  const scheduleStatus = intent === 'schedule' || intent === 'schedule_ops' ? buildScheduleExecutionStatus(scheduleMeetings, new Date()) : null;
+  const scheduleIntents = new Set(['schedule', 'schedule_ops', 'telegram_schedule']);
+  const scheduleMeetings = scheduleIntents.has(intent) ? await safeListMeetings(20, deps) : [];
+  const scheduleStatus = scheduleIntents.has(intent) ? buildScheduleExecutionStatus(scheduleMeetings, new Date()) : null;
   const meetingRowsForScope = intent === 'decision_scope' ? await safeListMeetings(20, deps) : [];
   const selectedMeetingId = isNumericMeetingId(body.selectedMeetingId)
     ? body.selectedMeetingId
@@ -1719,7 +1737,7 @@ async function askAgent(body, deps, limiter) {
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'decision_scope' || intent === 'decision_due') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'decision_scope' || intent === 'decision_due') {
     return {
       ok: true,
       skipped: true,
