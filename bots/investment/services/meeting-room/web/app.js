@@ -825,7 +825,7 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
     <div className="card" role="region" aria-label="전체 회의 결정 대기함">
       <h2>전체 결정 대기함</h2>
       ${'\n'}
-      <div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도</div>
+      <div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도 · 정렬: 기한 빠른 순 · 기한 없으면 최근 생성 순</div>
       ${'\n'}
       <div className="card-body list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}>
         ${decisionRows.flatMap((decision, index) => [

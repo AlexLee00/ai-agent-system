@@ -762,10 +762,10 @@ async function main() {
     assert.equal(appJs.text.includes('title=${`원문 상태:'), false);
     assert.ok(appJs.text.includes('const decisionRows = safeArray(decisions);'));
     assert.ok(appJs.text.includes('전체 결정 대기함'));
-    assert.ok(appJs.text.includes('전체 회의 기준 · 선택 회의 캐치업과 별도'));
+    assert.ok(appJs.text.includes('전체 회의 기준 · 선택 회의 캐치업과 별도 · 정렬: 기한 빠른 순 · 기한 없으면 최근 생성 순'));
     assert.ok(appJs.text.includes(`<h2>전체 결정 대기함</h2>
       \${'\\n'}`));
-    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도</div>
+    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도 · 정렬: 기한 빠른 순 · 기한 없으면 최근 생성 순</div>
       \${'\\n'}`));
     assert.ok(appJs.text.includes('role="region" aria-label="전체 회의 결정 대기함"'));
     assert.ok(appJs.text.includes('aria-describedby="decision-scope-note"'));
