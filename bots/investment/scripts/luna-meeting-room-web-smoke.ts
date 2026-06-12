@@ -430,6 +430,9 @@ async function main() {
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-C, 자문 및 섀도 전용, 정례 및 텔레그램 승인 보조 포함, 로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
+    const webTestDoc = fs.readFileSync(new URL('../../../docs/design/LUNA_MEETING_ROOM_WEB_TEST.md', import.meta.url), 'utf8');
+    assert.ok(webTestDoc.includes('대상: MR-C 웹(정례 회의·Telegram 승인 보조 포함)'));
+    assert.equal(webTestDoc.includes('대상: MR-B 웹 + FIX2~4 반영분'), false);
     const meetingSessionSource = fs.readFileSync(new URL('../services/meeting-room/server/orchestrator/meeting-session.ts', import.meta.url), 'utf8');
     assert.ok(meetingSessionSource.includes('function deterministicAnalysis'));
     assert.ok(meetingSessionSource.includes("'회의 데이터만 근거로 작성한 자문입니다.'"));
