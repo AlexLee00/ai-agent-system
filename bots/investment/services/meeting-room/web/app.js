@@ -645,7 +645,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
       <label className="meta" htmlFor="meeting-type-select">회의 타입</label>
       ${'\n'}
       <div className="inline">
-        <select id="meeting-type-select" title="시작할 회의 타입" aria-describedby="meeting-segment-status" value=${type} onChange=${(event) => setType(event.target.value)}>
+        <select id="meeting-type-select" title="시작할 회의 타입" aria-describedby="meeting-manual-start-note meeting-segment-status" value=${type} onChange=${(event) => setType(event.target.value)}>
           ${types.map((item) => html`
             <option
               value=${item.value}
@@ -660,10 +660,15 @@ function StartMeeting({ token, segments, onStarted, setError }) {
         <button
           aria-label=${startButtonLabel}
           aria-busy=${busy}
+          aria-describedby="meeting-manual-start-note meeting-segment-status"
           title=${startBlocked ? `${selectedType?.label || type}는 현재 시작할 수 없습니다: ${startBlockReason}` : `${selectedType?.label || type}를 자문/섀도 회의로 시작합니다.`}
           onClick=${start}
           disabled=${startDisabled}
         >${busy ? '시작 중' : '회의 시작'}</button>
+      </div>
+      ${'\n'}
+      <div id="meeting-manual-start-note" className="manual-start-note" role="note">
+        수동 시작은 정례 05:00 실행이 아니라 현재 화면의 세그먼트 상태 기준으로 회의록과 ADR만 새로 남깁니다.
       </div>
       ${'\n'}
       ${startBlocked ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 시작할 수 없습니다: ${startBlockReason}</div>` : null}

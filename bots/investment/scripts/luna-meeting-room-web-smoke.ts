@@ -595,8 +595,13 @@ async function main() {
     assert.ok(appJs.text.includes('htmlFor="meeting-type-select">회의 타입'));
     assert.ok(appJs.text.includes('title="시작할 회의 타입"'));
     assert.equal(appJs.text.includes('aria-label="시작할 회의 타입"'), false);
-    assert.ok(appJs.text.includes('aria-describedby="meeting-segment-status"'));
+    assert.ok(appJs.text.includes('aria-describedby="meeting-manual-start-note meeting-segment-status"'));
     assert.ok(appJs.text.includes('id="meeting-segment-status"'));
+    assert.ok(appJs.text.includes('id="meeting-manual-start-note"'));
+    assert.ok(appJs.text.includes('className="manual-start-note" role="note"'));
+    assert.ok(appJs.text.includes('수동 시작은 정례 05:00 실행이 아니라 현재 화면의 세그먼트 상태 기준'));
+    assert.ok(appJs.text.includes('회의록과 ADR만 새로 남깁니다.'));
+    assert.equal(appJs.text.includes('aria-describedby="meeting-segment-status" value=${type}'), false);
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="시장 세그먼트 상태"'));
     assert.ok(appJs.text.includes('비활성, 사유'));
     assert.ok(appJs.text.includes('자문/섀도 회의로 시작합니다.'));
@@ -936,6 +941,8 @@ async function main() {
     assert.ok(html.text.includes('min-height: 40px;'));
     assert.ok(html.text.includes('.check { display: flex; gap: 8px; align-items: center; min-height: 40px;'));
     assert.ok(html.text.includes('.check input { width: 20px; height: 20px;'));
+    assert.ok(html.text.includes('.manual-start-note'));
+    assert.ok(html.text.includes('font-weight: 700;'));
     assert.ok(html.text.includes('@media (max-width: 1080px)'));
     assert.ok(html.text.includes('.grid, .ask-grid { grid-template-columns: 1fr; }'));
     assert.ok(html.text.includes('.meeting-list-row .meeting-item'));
