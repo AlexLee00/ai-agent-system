@@ -1775,6 +1775,55 @@ async function main() {
     await closeServer(scheduleStarted.server);
   }
 
+  let premarketHubCalled = false;
+  let premarketPlanNoteType = null;
+  const premarketStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    buildMeetingPlanNoteFn: async ({ type }) => {
+      premarketPlanNoteType = type;
+      return {
+        ok: true,
+        briefMarkdown: '# premarket fixture',
+        gates: [
+          { market: 'overseas', deployment: 'reduced', score: 47 },
+          { market: 'crypto', deployment: 'full', score: 72 },
+        ],
+        regimes: [{ market: 'overseas', current_regime: 'sideways' }],
+        strategySignals: [{ signal_type: 'exit' }],
+        circuitLocks: [{ circuit: 'low_profit_symbol', symbol: 'AAPL' }],
+        segments: [{ market: 'overseas', active: true, skipped: false, reason: 'kis_market_open' }],
+      };
+    },
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      premarketHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '전역 결정 대기함만 확인하세요.' };
+    },
+  });
+  const premarketBase = `http://127.0.0.1:${premarketStarted.server.address().port}`;
+  try {
+    const premarketAsk = await request(premarketBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '미장 전 회의 기준으로 지금 무엇을 확인해야 해?' }),
+    });
+    assert.equal(premarketAsk.status, 200);
+    assert.equal(premarketAsk.payload.provider, 'rule_based');
+    assert.equal(premarketAsk.payload.skipped, true);
+    assert.equal(premarketHubCalled, false);
+    assert.equal(premarketPlanNoteType, 'us_premarket');
+    assert.ok(premarketAsk.payload.text.includes('운영 총괄 관점 우선 확인: 시장 게이트 미국 reduced 47점 · 암호화폐 full 72점'));
+    assert.ok(premarketAsk.payload.text.includes('레짐 미국 수평'));
+    assert.ok(premarketAsk.payload.text.includes('최근 전략 신호 1건(진입 0건)'));
+    assert.ok(premarketAsk.payload.text.includes('활성 서킷 1건'));
+    assert.ok(premarketAsk.payload.text.includes('미장 전 회의는 미국 게이트·레짐을 먼저 보고'));
+    assert.equal(premarketAsk.payload.text.includes('전역 결정 대기함만 확인'), false);
+    assert.equal(premarketAsk.payload.text.includes('us_premarket'), false);
+    assert.equal(premarketAsk.payload.text.includes('route'), false);
+  } finally {
+    await closeServer(premarketStarted.server);
+  }
+
   const pendingAwareStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
     meetingStore: createMemoryStore(),
@@ -2035,6 +2084,7 @@ async function main() {
       regeneratedMarkdownMissingFieldsLocalized: true,
       askNoLlmRouteLocalized: true,
       askWeekendScheduleRuleBased: true,
+      askPremarketMeetingRuleBased: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,

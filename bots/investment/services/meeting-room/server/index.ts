@@ -1121,8 +1121,14 @@ function deploymentLabel(value) {
   return raw || '정보 없음';
 }
 
-function summarizeRuleBasedGates(planNote = {}) {
-  return (Array.isArray(planNote.gates) ? planNote.gates : [])
+function orderRowsByMarket(rows = [], marketOrder = null) {
+  if (!Array.isArray(marketOrder) || !marketOrder.length) return rows;
+  const weight = new Map(marketOrder.map((market, index) => [market, index]));
+  return [...rows].sort((a = {}, b = {}) => (weight.get(a.market) ?? 99) - (weight.get(b.market) ?? 99));
+}
+
+function summarizeRuleBasedGates(planNote = {}, marketOrder = null) {
+  return orderRowsByMarket(Array.isArray(planNote.gates) ? planNote.gates : [], marketOrder)
     .slice(0, 3)
     .map((row = {}) => {
       const score = Number.isFinite(Number(row.score)) ? ` ${Number(row.score).toFixed(0)}점` : '';
@@ -1131,8 +1137,8 @@ function summarizeRuleBasedGates(planNote = {}) {
     .filter(Boolean);
 }
 
-function summarizeRuleBasedRegimes(planNote = {}) {
-  return (Array.isArray(planNote.regimes) ? planNote.regimes : [])
+function summarizeRuleBasedRegimes(planNote = {}, marketOrder = null) {
+  return orderRowsByMarket(Array.isArray(planNote.regimes) ? planNote.regimes : [], marketOrder)
     .slice(0, 3)
     .map((row = {}) => {
       const dominant = row.current_regime || row.dominant;
@@ -1171,6 +1177,7 @@ function summarizeRuleBasedSegmentStates(planNote = {}) {
 
 function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
+  if (/(미장\s*전|미국\s*프리마켓|프리마켓|us\s*premarket|premarket)/u.test(text)) return 'premarket';
   if (/(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text)) return 'schedule';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
@@ -1182,6 +1189,7 @@ function inferAskIntent(question) {
 
 function orderRuleBasedPriorities(items, intent) {
   const orderByIntent = {
+    premarket: ['gate', 'regime', 'strategy', 'circuit', 'globalPending', 'registryPending', 'segment'],
     gate: ['gate', 'regime', 'globalPending', 'circuit', 'registryPending', 'strategy', 'segment'],
     regime: ['regime', 'gate', 'circuit', 'globalPending', 'registryPending', 'strategy', 'segment'],
     circuit: ['circuit', 'globalPending', 'gate', 'regime', 'registryPending', 'strategy', 'segment'],
@@ -1195,6 +1203,11 @@ function orderRuleBasedPriorities(items, intent) {
 }
 
 function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
+  if (intent === 'premarket') {
+    return hasBlockingContext
+      ? '미장 전 회의는 미국 게이트·레짐을 먼저 보고, 전략 신호와 서킷 잠금이 충돌하면 적용보다 관찰을 우선하세요.'
+      : '미장 전 회의는 미국 게이트·레짐 변화와 전략 신호 유무를 확인하고, 변화가 없으면 관찰을 유지하세요.';
+  }
   if (intent === 'gate') {
     return hasBlockingContext
       ? '먼저 halt/reduced 시장의 근거와 관련 pending 결정을 대조하고, full 전환 전까지 신규 적용은 보수적으로 보세요.'
@@ -1257,8 +1270,9 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
   const signals = Array.isArray(planNote.strategySignals) ? planNote.strategySignals : [];
   const entryCount = signals.filter((row = {}) => row.signal_type === 'entry' || row.signalType === 'entry').length;
   const strategySignalCount = signals.length;
-  const gates = summarizeRuleBasedGates(planNote);
-  const regimes = summarizeRuleBasedRegimes(planNote);
+  const marketOrder = intent === 'premarket' ? ['overseas', 'domestic', 'crypto'] : null;
+  const gates = summarizeRuleBasedGates(planNote, marketOrder);
+  const regimes = summarizeRuleBasedRegimes(planNote, marketOrder);
   const inactiveSegments = summarizeRuleBasedSegments(planNote);
   if (intent === 'schedule') {
     const segmentText = summarizeRuleBasedSegmentStates(planNote).join(' · ') || '세그먼트 정보 없음';
@@ -1286,7 +1300,8 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     (intent === 'strategy' || strategySignalCount > 0) ? { key: 'strategy', text: `최근 전략 신호 ${strategySignalCount}건(진입 ${entryCount}건)` } : null,
     inactiveSegments.length ? { key: 'segment', text: `비활성 세그먼트 ${inactiveSegments.join(' · ')}` } : null,
   ].filter(Boolean), intent).map((item) => item.text);
-  const topPriority = priorities.length ? priorities.slice(0, 3).join(' / ') : '즉시 눈에 띄는 경보 없음';
+  const priorityLimit = intent === 'premarket' ? 4 : 3;
+  const topPriority = priorities.length ? priorities.slice(0, priorityLimit).join(' / ') : '즉시 눈에 띄는 경보 없음';
   const action = ruleBasedActionForIntent(intent, globalPendingCount > 0 || registryPendingCount > 0 || lockCount > 0, {
     entryCount,
     strategySignalCount,
@@ -1312,12 +1327,13 @@ async function askAgent(body, deps, limiter) {
   checkAskRateLimit(limiter);
 
   const intent = inferAskIntent(question);
+  const planNoteType = intent === 'premarket' ? 'us_premarket' : 'morning';
   const planNote = await deps.buildMeetingPlanNoteFn({
-    type: 'morning',
+    type: planNoteType,
     queryFn: deps.queryFn,
   });
   const globalPendingDecisions = await safeListPendingDecisions(deps);
-  if (intent === 'schedule') {
+  if (intent === 'schedule' || intent === 'premarket') {
     return {
       ok: true,
       skipped: true,
