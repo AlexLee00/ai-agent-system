@@ -15,10 +15,10 @@
 | W-06 | 휴장 비활성 | 주말에 debrief 선택 | 비활성 선택지+세그먼트 상태 배지+사유 툴팁+select와 상태 설명 연결+선택 타입 비활성 시 시작 버튼 차단, 진행 대상 세그먼트는 사용자 표시/aria에서 `회의 대상(장중/장 마감/24시간 운영)`처럼 회의 대상 여부와 시장 상태를 분리 표시, 사유 코드는 `주말/휴장일/장 마감` 라벨로 표시 | [자동]+[수동] ✅fixture 브라우저 |
 | W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시·토글 상태 변경 live region 전달 | [자동] 기본 noLlm payload+mode live region+[수동] ✅토글 표시 |
 | W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅2026-06-12 실브라우저+메모 |
-| W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅2026-06-12 실브라우저 |
+| W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 화면에 노출하지 않고 API/DB 감사 데이터에만 보존 | [자동]+[수동] ✅2026-06-12 실브라우저 |
 | W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] ✅2026-06-12 웹→API 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label, due 누락/정상 fallback도 한국어 라벨 | [자동] dueState+a11y+[수동] ✅2026-06-12 |
-| W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | 닫힌 상태에서는 JSON DOM/레이아웃/스크롤을 만들지 않고, 펼치면 JSON `<pre>` 표시(머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout/dom guard+[수동] ✅390px 펼침 |
+| W-12 | 근거 펼침 | `근거 요약 보기` 클릭 | 닫힌 상태에서는 근거 DOM/레이아웃/스크롤을 만들지 않고, 펼치면 JSON 원문이 아니라 한국어 근거 요약 리스트만 표시, 모바일 overflow 없음, 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout/dom guard+[수동] ✅390px 펼침 |
 
 ## B. 렌더 품질 (FIX2~4 회귀 — 🔁 매 회의 후 1회 점검)
 | ID | 시나리오 | 기대 결과 | 커버 |
@@ -347,6 +347,9 @@
 - **2026-06-13 루프 291**: W-31/W-41 질의 rate-limit 실제 UI/API 재점검 → headless Chrome에서 에이전트 질의를 연속 제출해 3번째 요청이 429가 되는 상황을 만들었다. 화면에는 `분당 질의 한도에 도달했습니다. 1분 후 다시 시도하세요.` 한국어 오류가 표시되고 응답 영역은 stale 답변 대신 placeholder로 복귀했으며 `ask_rate_limited_minute`, `pending_master`, `c_master`, secret hit 0건, body overflow 0건이었다. API도 429 JSON에 `message` 한국어 안내를 포함했다. 브라우저 console의 429 resource error는 rate-limit 시나리오의 예상 네트워크 상태로 기록한다.
 - **2026-06-13 루프 292**: W-01/W-02/W-03/W-44 다중 회의 DOM 회귀 스캔 → #154/#143/#119/#117/#1을 desktop과 320px 모바일에서 순차 선택해 타임라인, 캐치업, aria-label/title/data 속성까지 스캔했다. 모든 회의에서 `pending_master`, `c_master`, `market:*`, `us_premarket`, `changed_via`, C15/서킷 raw token, secret, `unavailable`, `entry`, JS Date 문자열 hit 0건, console warn/error 0건, 4xx response 0건, horizontal overflow 0건이었다. 캐치업 생략 수(`외 N건`)도 #154/#119/#1에서 정상 표시됐다.
 - **2026-06-13 루프 293**: W-41/W-42 오류 응답·보안 헤더 재점검 → missing static, path traversal, POST `/api/health`, malformed JSON ask, 빈 질문, invalid agent 요청을 실제 서비스에 보냈다. 400/404/405 응답은 모두 한국어 사용자 메시지와 `no-store`, `nosniff`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`을 유지했고, stack/SyntaxError/secret/raw token 노출은 0건이었다.
+- **2026-06-13 루프 294**: W-24 최신 #154 in-app 브라우저 재검증 → 데이터 minute는 `레짐=상승`으로 정규화되어 있었지만 분석 발언에 `C2 레짐은 **bull** 상태`와 `**장전 중단** 상태`가 남아 레짐/배치 상태가 사용자 문장에 어색하게 노출되는 것을 확인했다. 표시 정규화에 강조 마크다운 포함 `bull/bear/sideways/volatile 상태 → 상승/하락/수평/변동 레짐`, `장전 중단 상태 → halt 상태`를 추가하고 smoke fixture에 실제 문장형을 고정했다. 운영 #154 DOM 재검증 결과 raw 레짐/배치 상태 토큰 hit 0건이고 `상승 레짐`, `레짐=상승`, `halt 상태` 표시가 유지됐다. console warn/error 0건, 4xx response 0건, overflow 0건이었다.
+- **2026-06-13 루프 295**: W-43 인증 모드 브라우저 재점검 → 운영 서비스는 무인증 모드라 별도 임시 토큰 서버를 띄우고 headless Chrome으로 무토큰 → 잘못된 토큰 → 정상 토큰 입력 흐름을 검증했다. 정상 토큰 입력 후 회의 목록은 복구됐고 토큰 값은 body text에 노출되지 않았지만, 첫 401 이후 토큰 입력 전까지 base/detail/polling 요청이 반복되어 console 401 resource error가 29건 쌓였다. 클라이언트가 401을 받은 토큰 값을 기억하고 같은 토큰으로는 polling/detail/base fetch를 멈추도록 보정했고, API 적용 토큰은 450ms debounce 후 반영해 부분 입력 토큰 재요청을 막았다. 재검증 결과 401은 무토큰 1회·잘못된 토큰 1회 총 2건으로 감소했고 정상 토큰 입력 후 회의 목록 5건이 복구됐다. 폴링 상태는 `접근 토큰 입력 대기`로 표시되며 로컬 무인증 모드의 자동 로딩은 유지한다.
+- **2026-06-13 루프 296**: W-12 근거 펼침 UX 재정의 → 마스터 피드백으로 `근거 JSON 보기`를 펼치면 원문 JSON이 그대로 보이는 문제가 확인됐다. UI는 운영자가 읽는 화면이므로 `근거 요약 보기`로 바꾸고, 펼침 영역은 `agenda/decision/grade/status/grill/summary/shadowOnly` 기반 한국어 리스트만 렌더링하도록 수정했다. 원문 evidence는 API/DB 감사 데이터에만 남기고 화면 DOM에는 `JSON.stringify(decision.evidence)`와 `<pre>` 원문 JSON을 렌더링하지 않는다. 이어 결정 카드의 `data-raw-grade/status`에 남던 `c_master/pending_master`도 제거해 DOM 속성 기준 raw 상태 토큰 노출을 막았다. 운영 브라우저에서 결정 #1을 실제 클릭한 결과 `근거 요약 보기`, 요약 리스트 1건, `<pre>` 0건, raw 상태 토큰 속성 0건, overflow 0건을 확인했다.
 - **남은 위험**: 실제 Telegram 앱 버튼/poller 이벤트와 장시간 운영 후 누적 UX는 정례 사이클에서 계속 검증.
 
 ## 운영 루틴 제안

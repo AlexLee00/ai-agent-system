@@ -80,6 +80,15 @@ function useToken() {
   return [token, update];
 }
 
+function useDebouncedValue(value, delayMs = 450) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 function readLocalValue(key, fallback = '') {
   try {
     if (typeof localStorage === 'undefined') return fallback;
@@ -764,10 +773,25 @@ function Timeline({ detail, catchup, loading }) {
 
 function EvidenceDetails({ decision }) {
   const [open, setOpen] = useState(false);
+  const evidence = decision.evidence || {};
+  const summaryLines = [
+    evidence.agenda ? `안건: ${evidence.agenda}` : null,
+    evidence.decision ? `결정: ${evidence.decision}` : null,
+    evidence.grade || evidence.status ? `상태: ${[evidence.grade, evidence.status].filter(Boolean).join(' · ')}` : null,
+    evidence.grill ? `그릴: ${evidence.grill}` : null,
+    ...(Array.isArray(evidence.summary) ? evidence.summary : []),
+    evidence.shadowOnly ? `범위: ${evidence.shadowOnly}` : null,
+  ].filter(Boolean);
   return html`
     <details onToggle=${(event) => setOpen(event.currentTarget.open)}>
-      <summary aria-label=${`결정 #${decision.id} 근거 JSON 보기`}>근거 JSON 보기</summary>
-      ${open ? html`<pre>${JSON.stringify(decision.evidence || {}, null, 2)}</pre>` : null}
+      <summary aria-label=${`결정 #${decision.id} 근거 요약 보기`}>근거 요약 보기</summary>
+      ${open ? html`
+        <div className="evidence-summary" role="list" aria-label=${`결정 #${decision.id} 근거 요약`}>
+          ${(summaryLines.length ? summaryLines : ['근거 요약 없음']).map((line) => html`
+            <div role="listitem">${line}</div>
+          `)}
+        </div>
+      ` : null}
     </details>
   `;
 }
@@ -813,9 +837,9 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
         role="group"
         aria-label=${`결정 #${decision.id} 상태 요약: 등급 ${decisionGradeLabel(decision.grade)} · 상태 ${decisionStatusLabel(decision.status)} · 기한 ${due.label}`}
       >
-        <span title=${`등급: ${decisionGradeLabel(decision.grade)}`} data-raw-grade=${decision.grade || 'n/a'}>${decisionGradeLabel(decision.grade)}</span>
+        <span title=${`등급: ${decisionGradeLabel(decision.grade)}`}>${decisionGradeLabel(decision.grade)}</span>
         <span aria-hidden="true"> · </span>
-        <span title=${`상태: ${decisionStatusLabel(decision.status)}`} data-raw-status=${decision.status || 'n/a'}>${decisionStatusLabel(decision.status)}</span>
+        <span title=${`상태: ${decisionStatusLabel(decision.status)}`}>${decisionStatusLabel(decision.status)}</span>
         <span aria-hidden="true"> · </span>
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
@@ -868,11 +892,16 @@ function DailyRoom({ token }) {
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [authRequired, setAuthRequired] = useState(false);
+  const [blockedAuthToken, setBlockedAuthToken] = useState(null);
   const baseRequestSeq = useRef(0);
   const detailRequestSeq = useRef(0);
   const hasRunningRun = activeRuns.some((run) => run.status === 'running');
-  const pollingIntervalMs = hasRunningRun ? 3000 : 30000;
-  const pollingLabel = hasRunningRun
+  const authRequestBlocked = authRequired && String(token || '') === String(blockedAuthToken ?? '');
+  const pollingIntervalMs = authRequestBlocked ? 0 : (hasRunningRun ? 3000 : 30000);
+  const pollingLabel = authRequestBlocked
+    ? '폴링: 접근 토큰 입력 대기'
+    : hasRunningRun
     ? '폴링: 실행 중 회의 감지 · 3초마다 갱신'
     : '폴링: 대기 · 30초마다 갱신';
 
@@ -892,6 +921,7 @@ function DailyRoom({ token }) {
   }
 
   async function refreshBase(options = {}) {
+    if (authRequestBlocked) return;
     const selectDefault = options.selectDefault === true;
     const requestId = baseRequestSeq.current + 1;
     baseRequestSeq.current = requestId;
@@ -904,6 +934,8 @@ function DailyRoom({ token }) {
       setSegments(safeArray(list.segments));
       setScheduleStatus(String(list.scheduleStatus || ''));
       setPending(safeArray(pendingPayload.decisions));
+      setAuthRequired(false);
+      setBlockedAuthToken(null);
       setError('');
       if ((selectDefault || !selectedId) && (list.activeRuns?.[0] || list.meetings?.[0])) {
         const nextId = (list.activeRuns?.[0] || list.meetings?.[0]).id;
@@ -911,12 +943,17 @@ function DailyRoom({ token }) {
       }
     } catch (error) {
       if (baseRequestSeq.current !== requestId) return;
+      if (error?.status === 401) {
+        setAuthRequired(true);
+        setBlockedAuthToken(String(token || ''));
+      }
       clearDailyRoomData();
       throw error;
     }
   }
 
   async function refreshSelected(id = selectedId) {
+    if (authRequestBlocked) return;
     if (!id) return;
     const requestId = detailRequestSeq.current + 1;
     detailRequestSeq.current = requestId;
@@ -956,8 +993,12 @@ function DailyRoom({ token }) {
 
   useEffect(() => {
     clearDailyRoomData();
+    if (authRequestBlocked) {
+      setError('토큰이 없거나 올바르지 않습니다.');
+      return;
+    }
     refreshBase({ selectDefault: true }).catch((error) => setError(error.message));
-  }, [token]);
+  }, [token, authRequestBlocked]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -966,11 +1007,12 @@ function DailyRoom({ token }) {
   }, [selectedId]);
 
   useEffect(() => {
+    if (authRequestBlocked) return;
     const interval = setInterval(() => {
       refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
     }, pollingIntervalMs);
     return () => clearInterval(interval);
-  }, [activeRuns.map((run) => `${run.id}:${run.status}`).join(','), selectedId, token, pollingIntervalMs]);
+  }, [activeRuns.map((run) => `${run.id}:${run.status}`).join(','), selectedId, token, pollingIntervalMs, authRequestBlocked]);
 
   function handleMeetingStarted(run) {
     if (run?.id == null) {
@@ -1170,6 +1212,7 @@ function AskRoom({ token }) {
 
 function App() {
   const [token, setToken] = useToken();
+  const apiToken = useDebouncedValue(token);
   const [tab, setTab] = useState('daily');
   return html`
     <main className="shell">
@@ -1181,7 +1224,7 @@ function App() {
         aria-labelledby="meeting-tab-daily"
         hidden=${tab !== 'daily'}
       >
-        ${tab === 'daily' ? html`<${DailyRoom} token=${token} />` : null}
+        ${tab === 'daily' ? html`<${DailyRoom} token=${apiToken} />` : null}
       </section>
       ${'\n'}
       <section
@@ -1190,7 +1233,7 @@ function App() {
         aria-labelledby="meeting-tab-ask"
         hidden=${tab !== 'ask'}
       >
-        <${AskRoom} token=${token} />
+        <${AskRoom} token=${apiToken} />
       </section>
     </main>
   `;

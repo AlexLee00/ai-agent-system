@@ -506,6 +506,16 @@ async function main() {
     assert.ok(appJs.text.includes('function writeLocalValue(key, value)'));
     assert.ok(appJs.text.includes("useState(() => readLocalValue(TOKEN_STORAGE_KEY, ''))"));
     assert.ok(appJs.text.includes('writeLocalValue(TOKEN_STORAGE_KEY, value);'));
+    assert.ok(appJs.text.includes('function useDebouncedValue(value, delayMs = 450)'));
+    assert.ok(appJs.text.includes('const apiToken = useDebouncedValue(token);'));
+    assert.ok(appJs.text.includes('<${DailyRoom} token=${apiToken} />'));
+    assert.ok(appJs.text.includes('<${AskRoom} token=${apiToken} />'));
+    assert.ok(appJs.text.includes('const [authRequired, setAuthRequired] = useState(false);'));
+    assert.ok(appJs.text.includes('const [blockedAuthToken, setBlockedAuthToken] = useState(null);'));
+    assert.ok(appJs.text.includes("const authRequestBlocked = authRequired && String(token || '') === String(blockedAuthToken ?? '');"));
+    assert.ok(appJs.text.includes("? '폴링: 접근 토큰 입력 대기'"));
+    assert.ok(appJs.text.includes('if (authRequestBlocked) return;'));
+    assert.ok(appJs.text.includes('setBlockedAuthToken(String(token || \'\'));'));
     assert.equal(appJs.text.includes("localStorage.getItem('lunaMeetingRoomToken')"), false);
     assert.equal(appJs.text.includes("localStorage.setItem('lunaMeetingRoomToken', value)"), false);
     assert.ok(appJs.text.includes('htmlFor="meeting-room-token">접근 토큰'));
@@ -551,7 +561,7 @@ async function main() {
     assert.ok(appJs.text.includes('id="meeting-panel-ask"'));
     assert.ok(appJs.text.includes('aria-labelledby="meeting-tab-ask"'));
     assert.ok(appJs.text.includes("hidden=${tab !== 'ask'}"));
-    assert.ok(appJs.text.includes('<${AskRoom} token=${token} />'));
+    assert.ok(appJs.text.includes('<${AskRoom} token=${apiToken} />'));
     assert.equal(appJs.text.includes("tab === 'ask' ? html`<${AskRoom} token=${token} />` : null"), false);
     assert.equal(appJs.text.includes("id=${tab === 'daily' ? 'meeting-panel-daily' : 'meeting-panel-ask'}"), false);
     assert.ok(appJs.text.includes('function handleTabKeyDown'));
@@ -788,12 +798,14 @@ async function main() {
     assert.equal(appJs.text.includes('`${marketLabel(segment.market)} active`'), false);
     assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
     assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
-    assert.ok(appJs.text.includes('근거 JSON 보기'));
+    assert.ok(appJs.text.includes('근거 요약 보기'));
+    assert.equal(appJs.text.includes('근거 JSON 보기'), false);
     assert.ok(appJs.text.includes('C 마스터 확인'));
     assert.ok(appJs.text.includes('마스터 액션 대기'));
     assert.ok(appJs.text.includes('title=${`등급: ${decisionGradeLabel(decision.grade)}`'));
     assert.ok(appJs.text.includes('title=${`상태: ${decisionStatusLabel(decision.status)}`'));
-    assert.ok(appJs.text.includes('data-raw-grade=${decision.grade ||'));
+    assert.equal(appJs.text.includes('data-raw-grade=${decision.grade ||'), false);
+    assert.equal(appJs.text.includes('data-raw-status=${decision.status ||'), false);
     assert.ok(appJs.text.includes('role="group"'));
     assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} 상태 요약: 등급 ${decisionGradeLabel(decision.grade)} · 상태 ${decisionStatusLabel(decision.status)} · 기한 ${due.label}`}'));
     assert.ok(appJs.text.includes('<span aria-hidden="true"> · </span>'));
@@ -828,7 +840,10 @@ async function main() {
     assert.ok(appJs.text.includes("aria-busy=${busy === 'confirm'}"));
     assert.ok(appJs.text.includes("aria-busy=${busy === 'defer'}"));
     assert.ok(appJs.text.includes('결정 #${decision.id} 감사 메모'));
-    assert.ok(appJs.text.includes('결정 #${decision.id} 근거 JSON 보기'));
+    assert.ok(appJs.text.includes('결정 #${decision.id} 근거 요약 보기'));
+    assert.ok(appJs.text.includes('className="evidence-summary" role="list"'));
+    assert.ok(appJs.text.includes("...(Array.isArray(evidence.summary) ? evidence.summary : [])"));
+    assert.equal(appJs.text.includes('JSON.stringify(decision.evidence'), false);
     assert.ok(appJs.text.includes('title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`'));
     assert.ok(appJs.text.includes('>결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}</div>'));
     assert.equal(appJs.text.includes('>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>'), false);
@@ -961,7 +976,7 @@ async function main() {
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
     assert.equal(appJs.text.includes('아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'), false);
     assert.ok(appJs.text.includes('function EvidenceDetails'));
-    assert.ok(appJs.text.includes('open ? html`<pre>'));
+    assert.equal(appJs.text.includes('open ? html`<pre>'), false);
     assert.ok(appJs.text.includes('setAnswer(null);'));
     assert.ok(appJs.text.includes('className="answer" role="status" aria-live="polite" aria-busy=${busy} aria-label="에이전트 질의 응답"'));
     assert.ok(appJs.text.includes('질의 중 · 에이전트 응답을 기다리는 중입니다.'));
@@ -1011,7 +1026,9 @@ async function main() {
     assert.equal(appJs.text.includes("label: 'due n/a'"), false);
     assert.equal(appJs.text.includes('label: `due ${formatTime(value)}`'), false);
     assert.ok(appJs.text.includes("run.status === 'running'"));
-    assert.ok(appJs.text.includes('const pollingIntervalMs = hasRunningRun ? 3000 : 30000'));
+    assert.ok(appJs.text.includes('const authRequestBlocked = authRequired && String(token ||'));
+    assert.ok(appJs.text.includes('const pollingIntervalMs = authRequestBlocked ? 0 : (hasRunningRun ? 3000 : 30000)'));
+    assert.ok(appJs.text.includes('폴링: 접근 토큰 입력 대기'));
     assert.ok(appJs.text.includes('폴링: 실행 중 회의 감지 · 3초마다 갱신'));
     assert.ok(appJs.text.includes('폴링: 대기 · 30초마다 갱신'));
     assert.equal(appJs.text.includes('폴링: idle'), false);
@@ -1407,6 +1424,8 @@ async function main() {
       '미국 시장의 VIX 기간 구조와 옵션 매매 비율은 현재 unavailable 상태입니다.',
       '최장 잠금 만료=Sat Jun 13 2026 13:58:57 GMT+0900 (Korean Standard Time)',
       'C15 결정 대기 상태를 유지하기로 결정했습니다.',
+      '국내 장전 계획은 현재 **장전 중단** 상태에 있습니다.',
+      '국내 시장의 C2 레짐은 **bull** 상태이며, 미국 시장의 C2 레짐은 **sideways** 상태이고, 암호화폐 시장의 C2 레짐은 **bear** 상태입니다.',
     ].join('\n'));
     assert.ok(liveMeetingPolish.includes('실행 여부를 검토하는 항목입니다.'));
     assert.ok(liveMeetingPolish.includes('백테스트 결과를 분석했습니다.'));
@@ -1419,7 +1438,11 @@ async function main() {
     assert.ok(liveMeetingPolish.includes('현재 미수집 상태입니다.'));
     assert.ok(liveMeetingPolish.includes('최장 잠금 만료=2026. 6. 13.'));
     assert.ok(liveMeetingPolish.includes('C15 검토 상태를 유지하는 자문입니다.'));
-    assert.equal(/분석한입니다|결과는 다음과 같습니다|실행할 계획입니다|\bentry\b|입장 기록|가치|크립토|중지 상태|unavailable|Korean Standard Time|C15 결정 대기 상태를 유지하기로 결정/.test(liveMeetingPolish), false);
+    assert.ok(liveMeetingPolish.includes('국내 장전 계획은 현재 halt 상태에 있습니다.'));
+    assert.ok(liveMeetingPolish.includes('국내 시장의 C2 레짐은 상승 레짐이며'));
+    assert.ok(liveMeetingPolish.includes('미국 시장의 C2 레짐은 수평 레짐이고'));
+    assert.ok(liveMeetingPolish.includes('암호화폐 시장의 C2 레짐은 하락 레짐입니다.'));
+    assert.equal(/분석한입니다|결과는 다음과 같습니다|실행할 계획입니다|\bentry\b|입장 기록|가치|크립토|중지 상태|장전 중단 상태|unavailable|Korean Standard Time|C15 결정 대기 상태를 유지하기로 결정|\*{0,2}\bbull\b\*{0,2}\s+상태|\*{0,2}\bbear\b\*{0,2}\s+상태|\*{0,2}\bsideways\b\*{0,2}\s+상태|\*{0,2}\bvolatile\b\*{0,2}\s+상태/.test(liveMeetingPolish), false);
     const c15CriterionPolish = _testOnly.normalizeLegacyMinuteContent('표본=0건, 기준=임시 기준=true, 관찰 주수=4');
     assert.ok(c15CriterionPolish.includes('기준=임시 기준=예, 관찰 주수=4'));
     assert.equal(c15CriterionPolish.includes('임시 기준=true'), false);
@@ -3297,6 +3320,7 @@ async function main() {
       pollingStatusKoreanLabel: true,
       tokenAuth: true,
       tokenStorageFailOpen: true,
+      authPollingStopsUntilTokenChange: true,
       headerTokenA11y: true,
       apiDisplayLabels: true,
       dailyRoomTokenChangeClearsStaleData: true,

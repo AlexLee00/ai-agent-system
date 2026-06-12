@@ -135,3 +135,26 @@
 적재 후 메티 검증(TS-B4-L/B5-L): vault_entries source='blo' 분포 + vault-search 질의 정답 재현 +
 익일 06:00 강의에서 '[지난 강의 연계]' 블록 자연 검증.
 이력: 2026-06-13 CODEX-B2 독립 검증 합격 (메티)
+
+## J. 브랜치 분기 사고 + B2 복원 + TS-B4-L 완결 (2026-06-13, 메티/마스터)
+
+### 사고 전모
+- 외부 자동 작업이 루트 워크트리를 codex/luna-meeting-room-ops-diagnostics로 전환+16커밋 -> B2 커밋
+  (505093449)이 codex/design-trackers-mr-c에 고립, 워킹트리에서 B2 코드 소실(DB 적재 8,147은 무사).
+- 복구: 마스터 cherry-pick -> a836460cb (파일 겹침 0, B2 코드+트래커 §H~I 복원 — 메티 확인).
+- 운영 기준 진단(마스터): deploy.sh는 origin/main 기준이나 루트가 codex 브랜치+dirty라 **배포 sync 차단
+  반복 중**. auto-commit.sh / nightly-sync.sh에 브랜치 guard 부재 = 재발 구조.
+- 방침(마스터): 루트 = main 전용 OPS checkout 고정 / Codex·auto-dev는 별도 worktree / 스크립트 3종에
+  main branch guard -> CODEX-INFRA-GUARD 프롬프트로 진행.
+
+### TS-B4-L 완결 (적재+검색 검증)
+| 항목 | 결과 |
+|---|---|
+| 적재 | source='blo' 8,147 / embedded 100% / distinct file_path=cnt(중복 0) / plist 로드 1 |
+| 검색 정답 | vault-search 직접: "Claude Code 설치 따라하기" -> 상위 = 2강(Codex vs Claude Code) sim 0.655/0.648, source=blo — **적재·임베딩·검색 전부 정상** |
+| 발견 | vault-context 경유 results 0 — DEFAULT_MIN_SIMILARITY=0.65가 현 데이터 최고 유사도(0.65 경계)보다 타이트 + 빌드 질의 조합으로 미달. 버그 아님, **임계 보정 필요** |
+| 권고 | minSimilarity 기본 0.55~0.60 하향(1줄) — 미보정 시 TS-B5-L(연계 블록 자연 검증) 불발 예상 |
+
+### B1 자연 검증 (동일 일자)
+06:08 "[에이전트 입문 5강] Claude Code 설치 따라하기" 발행(2편, 실패 0) — rotation 예측 적중, B1 완전 종결.
+이력: 2026-06-13 사고 복구+TS-B4-L 완결 (메티)
