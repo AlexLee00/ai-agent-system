@@ -669,7 +669,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
       </div>
       ${'\n'}
       <div id="meeting-manual-start-note" className="manual-start-note" role="note">
-        수동 시작은 정례 05:00 실행이 아니라 현재 화면의 세그먼트 상태 기준으로 회의록과 ADR만 새로 남깁니다.
+        수동 시작은 정례 05:00 실행이 아니라 현재 화면의 세그먼트 상태 기준으로 회의록과 ADR만 새로 남깁니다. 05:00 전 아침 통합 회의를 수동 시작하면 같은 날짜 기록이 먼저 생길 수 있으므로 정례 실행 확인은 시작 시각과 로그를 함께 봅니다.
       </div>
       ${'\n'}
       ${startBlocked ? html`<div className="meta" role="status" aria-live="polite">선택한 회의 타입은 현재 시작할 수 없습니다: ${startBlockReason}</div>` : null}

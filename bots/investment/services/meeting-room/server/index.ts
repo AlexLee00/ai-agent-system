@@ -1504,7 +1504,7 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
       : '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
   }
   if (intent === 'schedule') {
-    return '주말 아침 통합 회의 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 국내·미국은 주말 스킵으로 기록되는지 보세요.';
+    return '주말 아침 통합 회의 정례 실행 후 목록에 새 주말 회의가 생겼는지 확인하고, 수동 기록과 정례 기록은 시작 시각과 로그로 구분하세요.';
   }
   if (intent === 'schedule_ops') {
     return '05:00 이후 새 아침 통합 회의가 없으면 회의 목록, launchd 상태, stdout/stderr 로그를 순서대로 확인하세요.';
@@ -1614,6 +1614,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '수동 시작 범위: 현재 회의 대상 세그먼트가 안건으로 포함되고, 비활성 세그먼트는 스킵으로 기록됩니다.',
       '비활성 표시 해석: 괄호 사유가 붙은 회의 타입은 현재 직접 시작할 수 없고, 해당 시장은 스킵 또는 관찰 상태로 기록됩니다.',
       '수동 시작 의미: 회의록과 ADR을 새로 남기는 동작이며 거래·파라미터는 변경하지 않습니다.',
+      '중복 확인 기준: 05:00 전 아침 통합 회의를 수동 시작하면 같은 날짜 아침 통합 회의 기록이 먼저 생길 수 있으므로, 정례 실행 여부는 회의 시작 시각과 정례 실행 로그를 함께 봅니다.',
       options.scheduleStatus || buildScheduleExecutionStatus([], options.now || new Date()),
       `현재 수동 실행 화면 기준: ${segmentText}.`,
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,

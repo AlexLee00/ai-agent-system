@@ -603,6 +603,7 @@ async function main() {
     assert.ok(appJs.text.includes('id="meeting-manual-start-note"'));
     assert.ok(appJs.text.includes('className="manual-start-note" role="note"'));
     assert.ok(appJs.text.includes('수동 시작은 정례 05:00 실행이 아니라 현재 화면의 세그먼트 상태 기준'));
+    assert.ok(appJs.text.includes('05:00 전 아침 통합 회의를 수동 시작하면 같은 날짜 기록이 먼저 생길 수 있으므로'));
     assert.ok(appJs.text.includes('회의록과 ADR만 새로 남깁니다.'));
     assert.equal(appJs.text.includes('aria-describedby="meeting-segment-status" value=${type}'), false);
     assert.ok(appJs.text.includes('role="status" aria-live="polite" aria-label="시장 세그먼트 상태"'));
@@ -2079,6 +2080,8 @@ async function main() {
     assert.equal(scheduleAsk.payload.text.includes('주말 morning'), false);
     assert.ok(scheduleAsk.payload.text.includes('수동 시작은 현재 화면의 세그먼트 상태를 기준'));
     assert.ok(scheduleAsk.payload.text.includes('현재 회의 대상 세그먼트가 안건으로 포함'));
+    assert.ok(scheduleAsk.payload.text.includes('중복 확인 기준: 05:00 전 아침 통합 회의를 수동 시작하면 같은 날짜 아침 통합 회의 기록이 먼저 생길 수 있으므로'));
+    assert.ok(scheduleAsk.payload.text.includes('정례 실행 여부는 회의 시작 시각과 정례 실행 로그를 함께 봅니다'));
     assert.ok(scheduleAsk.payload.text.includes('정례 실행 상태:'));
     assert.ok(scheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
     assert.ok(scheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
@@ -2260,6 +2263,7 @@ async function main() {
     assert.equal(morningManualHubCalled, false);
     assert.ok(morningManualScheduleAsk.payload.text.includes('수동 시작 범위: 현재 회의 대상 세그먼트가 안건으로 포함'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('수동 시작 의미: 회의록과 ADR을 새로 남기는 동작'));
+    assert.ok(morningManualScheduleAsk.payload.text.includes('같은 날짜 아침 통합 회의 기록이 먼저 생길 수 있으므로'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
