@@ -1422,6 +1422,9 @@ function inferAskIntent(question) {
   if (hasSecretCue && hasShareCue) return 'secret_safety';
   const hasScheduleCue = /(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text);
   const hasRunCue = /(수동|시작|실행|됐|되|가능|언제|스킵|skip)/u.test(text);
+  const hasDecisionActionCue = /(결정|대기함|확정|보류|승인|confirm|defer|버튼|button)/u.test(text);
+  const hasDecisionSideEffectCue = /(주문|거래|실거래|live|라이브|파라미터|parameter|설정|config|적용|변경|바뀌|나가|실행)/u.test(text);
+  if (hasDecisionActionCue && hasDecisionSideEffectCue) return 'decision_action_safety';
   const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
   const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
   const hasTelegramStatusContext = /(검증|완료|남은|확인|클릭|실사용|첫\s*실사용)/u.test(text);
@@ -1521,6 +1524,9 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
   }
   if (intent === 'telegram') {
     return '텔레그램 버튼 처리 후 웹 결정 대기함과 감사 행을 확인하세요. 첫 실제 앱 버튼은 아직 정례 관찰 대상으로 남겨 두는 것이 안전합니다.';
+  }
+  if (intent === 'decision_action_safety') {
+    return '확정/보류는 회의실 감사 상태만 바꾸며, 거래·주문·파라미터 적용은 별도 마스터 실행 경로에서만 다룹니다.';
   }
   return hasBlockingContext
     ? '먼저 대기 결정의 근거 상세와 활성 서킷 근거를 확인하고, 신규 적용보다 관찰 지속 여부를 결정하세요.'
@@ -1663,8 +1669,20 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '알림 본문: Luna 회의 완료: 회의 타입 / 마스터 액션 대기: N건 / 회의 #... · 회의록 ...행 / 웹 링크 순서로 표시됩니다.',
       '버튼 구성: 확정·보류 버튼은 대기 결정 상위 9건까지 붙고, 초과분은 웹에서 처리하도록 안내합니다.',
       '동기화 경로: 텔레그램 확정/보류 버튼은 회의실 승인 경로를 거쳐 웹과 같은 결정 처리 경로를 사용합니다.',
+      '안전 경계: 텔레그램 버튼은 회의실 결정 상태와 감사 행만 바꾸며, 실제 주문·거래·파라미터·런타임 설정을 변경하지 않습니다.',
       '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
       '검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
+      `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
+  if (intent === 'decision_action_safety') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '안전 경계: 웹 확정/보류와 텔레그램 확정/보류는 회의실 결정 상태와 감사 minute만 갱신합니다.',
+      '변경하지 않는 것: 실제 주문, 거래 실행, 포지션, 파라미터 스토어, runtime config, launchd/plist 설정은 이 버튼으로 바뀌지 않습니다.',
+      '적용 경로: 파라미터나 운영 설정 변경은 별도 마스터 승인·별도 실행 명령·별도 로그로만 처리합니다.',
+      '확인 방법: 처리 후 웹 결정 대기함에서 카드 제거/상태 변경과 타임라인 감사 행만 확인하세요.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
@@ -1761,7 +1779,7 @@ async function askAgent(body, deps, limiter) {
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_action_safety') {
     return {
       ok: true,
       skipped: true,

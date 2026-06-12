@@ -2198,6 +2198,45 @@ async function main() {
     await closeServer(secretSafetyStarted.server);
   }
 
+  let decisionActionSafetyHubCalled = false;
+  const decisionActionSafetyStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      decisionActionSafetyHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '확정하면 파라미터가 적용됩니다.' };
+    },
+  });
+  const decisionActionSafetyBase = `http://127.0.0.1:${decisionActionSafetyStarted.server.address().port}`;
+  try {
+    const webDecisionActionAsk = await request(decisionActionSafetyBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '웹에서 결정 확정 버튼을 누르면 파라미터가 바로 적용돼?' }),
+    });
+    assert.equal(webDecisionActionAsk.status, 200);
+    assert.equal(webDecisionActionAsk.payload.provider, 'rule_based');
+    assert.equal(webDecisionActionAsk.payload.skipped, true);
+    assert.equal(decisionActionSafetyHubCalled, false);
+    assert.ok(webDecisionActionAsk.payload.text.includes('회의실 결정 상태와 감사 minute만 갱신합니다.'));
+    assert.ok(webDecisionActionAsk.payload.text.includes('실제 주문, 거래 실행, 포지션, 파라미터 스토어, runtime config, launchd/plist 설정은 이 버튼으로 바뀌지 않습니다.'));
+    assert.equal(webDecisionActionAsk.payload.text.includes('확정하면 파라미터가 적용됩니다'), false);
+
+    const telegramDecisionActionAsk = await request(decisionActionSafetyBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '텔레그램 확정 버튼을 누르면 실제 주문이나 설정 변경이 나가?' }),
+    });
+    assert.equal(telegramDecisionActionAsk.status, 200);
+    assert.equal(telegramDecisionActionAsk.payload.provider, 'rule_based');
+    assert.equal(telegramDecisionActionAsk.payload.skipped, true);
+    assert.equal(decisionActionSafetyHubCalled, false);
+    assert.ok(telegramDecisionActionAsk.payload.text.includes('회의실 결정 상태와 감사 minute만 갱신합니다.'));
+    assert.ok(telegramDecisionActionAsk.payload.text.includes('실제 주문, 거래 실행, 포지션, 파라미터 스토어, runtime config, launchd/plist 설정은 이 버튼으로 바뀌지 않습니다.'));
+  } finally {
+    await closeServer(decisionActionSafetyStarted.server);
+  }
+
   let meetingTargetScheduleHubCalled = false;
   const meetingTargetScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
