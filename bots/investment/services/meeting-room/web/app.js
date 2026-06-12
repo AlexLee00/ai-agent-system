@@ -472,10 +472,12 @@ function Header({ token, setToken, tab, setTab }) {
     <div className="hero">
       <div>
         <div className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791">
-          <span className="pill" aria-label="회의실 버전 MR-B">MR-B</span>
-          <span aria-hidden="true" className="pill-separator"> · </span>
-          <span className="pill" aria-label="자문 및 섀도 전용">자문 / 섀도 전용</span>
-          <span aria-hidden="true" className="pill-separator"> · </span>
+          <span className="pill" aria-label="회의실 버전 MR-B">
+            MR-B ·${' '}
+          </span>
+          <span className="pill" aria-label="자문 및 섀도 전용">
+            자문 / 섀도 전용 ·${' '}
+          </span>
           <span className="pill" aria-label="로컬 바인딩 127.0.0.1 포트 7791">127.0.0.1:7791</span>
         </div>
         <h1>Luna Meeting Room</h1>

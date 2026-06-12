@@ -301,6 +301,7 @@ async function main() {
     assert.ok(html.text.includes('.minute.adr'));
     assert.ok(html.text.includes('.role-legend'));
     assert.ok(html.text.includes('.role-dot.data'));
+    assert.equal(html.text.includes('.pill-inline-separator'), false);
     assert.ok(html.text.includes('overflow-x: auto'));
     assert.ok(html.text.includes('table-layout: fixed'));
     assert.ok(html.text.includes('overflow-wrap: anywhere'));
@@ -316,7 +317,10 @@ async function main() {
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
-    assert.ok(appJs.text.includes('<span aria-hidden="true" className="pill-separator"> · </span>'));
+    assert.ok(appJs.text.includes("MR-B ·${' '}"));
+    assert.ok(appJs.text.includes("자문 / 섀도 전용 ·${' '}"));
+    assert.equal(appJs.text.includes('className="pill-separator"'), false);
+    assert.equal(appJs.text.includes('pill-inline-separator'), false);
     assert.equal(appJs.text.includes('advisory / shadow only'), false);
     assert.ok(appJs.text.includes("Number.isNaN(date.getTime())"));
     assert.ok(appJs.text.includes("'시간 확인 필요'"));
@@ -794,7 +798,8 @@ async function main() {
     assert.ok(detail.payload.minutes[1].content.includes('대표 심볼=RENDER/USDT, SOL/USDT'));
     assert.equal(detail.payload.minutes[1].content.includes('"market":"crypto"'), false);
     assert.equal(detail.payload.minutes[1].content.includes('low_profit_symbol'), false);
-    assert.ok(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'));
+    assert.ok(detail.payload.minutes[1].content.includes('활성 서킷: 최신 데이터 영역 기준으로 확인하세요'));
+    assert.equal(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'), false);
     assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
     assert.equal(detail.payload.minutes[1].content.includes('distinct'), false);
     assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
@@ -880,7 +885,9 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('이는 배치 halt 상태를 나타냅니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군은 현재 진입하지 않았으며'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군 진입을 고려'));
-    assert.ok(detail.payload.minutes[4].content.includes('결정 대기: 과거 발언 숫자 숨김'));
+    assert.ok(detail.payload.minutes[4].content.includes('결정 대기: 상단 캐치업 기준으로 확인하세요'));
+    assert.equal(detail.payload.minutes[4].content.includes('과거 발언 숫자 숨김'), false);
+    assert.equal(detail.payload.minutes[4].content.includes('상단 U1 캐치업 기준'), false);
     assert.equal(detail.payload.minutes[4].content.includes('legacy'), false);
     assert.equal(detail.payload.minutes[4].content.includes('최신 데이터 minute'), false);
     assert.equal(detail.payload.minutes[4].content.includes("'할당' 상태"), false);
@@ -900,6 +907,8 @@ async function main() {
       '미국와 암호화폐에 대한 분석 결과를 고려하십시오.',
       '전략군 24시간 동안 0건의 거래가 발생했습니다.',
       '결정 대기 중인 서킷은 5건입니다.',
+      '결과적으로, 국내 마감 G6 대조표의 분석 결과는 다음과 같이 요약할 수 있습니다.',
+      '따라서, 국내 마감 G6 대조표에 대한 다음 조치를 취해야 합니다: 국내 마감 G6 대조표에 대한 추가 분석을 수행하고, 미국과 암호화폐에 대한 분석 결과를 고려하여 최종 결정을 내릴 수 있도록 하십시오.',
     ].join('\n'));
     assert.ok(debriefAnalysisMinute.includes('reduced 상태'));
     assert.ok(debriefAnalysisMinute.includes('국내에서는 상승 상태'));
@@ -907,7 +916,8 @@ async function main() {
     assert.ok(debriefAnalysisMinute.includes('암호화폐에서는 하락 상태'));
     assert.ok(debriefAnalysisMinute.includes('미국과 암호화폐'));
     assert.ok(debriefAnalysisMinute.includes('전략군 24시간 신호 0건입니다.'));
-    assert.ok(debriefAnalysisMinute.includes('결정 대기: 과거 발언 숫자 숨김'));
+    assert.ok(debriefAnalysisMinute.includes('결정 대기: 상단 캐치업 기준으로 확인하세요'));
+    assert.equal(debriefAnalysisMinute.includes('과거 발언 숫자 숨김'), false);
     assert.equal(debriefAnalysisMinute.includes('줄인'), false);
     assert.equal(debriefAnalysisMinute.includes('강세 상태'), false);
     assert.equal(debriefAnalysisMinute.includes('중립 상태'), false);
@@ -915,6 +925,10 @@ async function main() {
     assert.equal(debriefAnalysisMinute.includes('미국와'), false);
     assert.equal(debriefAnalysisMinute.includes('0건의 거래가 발생'), false);
     assert.equal(debriefAnalysisMinute.includes('서킷은 5건'), false);
+    assert.ok(debriefAnalysisMinute.includes('후속 조치는 마스터 확인 후 기록합니다.'));
+    assert.equal(debriefAnalysisMinute.includes('결과적으로'), false);
+    assert.equal(debriefAnalysisMinute.includes('다음 조치를 취해야'), false);
+    assert.equal(debriefAnalysisMinute.includes('최종 결정을 내릴 수 있도록'), false);
     const regeneratedMarkdown = renderMeetingMinutesMarkdown({
       session: { id: 117, type: 'domestic_debrief', status: 'closed', chair: 'luna' },
       minutes: [{ seq: 1, agendaKey: 'debrief:g6-plan-vs-actual', role: 'data', speaker: 'stack-adapter', content: 'G6 대조표' }],
@@ -1075,6 +1089,8 @@ async function main() {
     assert.equal(ask1.payload.text.includes('감소한 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태로'), false);
     assert.ok(ask2.payload.text.includes('[Aria] LLM 비활성 경로입니다.'));
+    assert.ok(ask2.payload.text.includes('비용 없이 질문을 확인했습니다'));
+    assert.equal(ask2.payload.text.includes('질문은 기록만 합니다'), false);
     assert.equal(ask2.payload.text.includes('noLLM route'), false);
     assert.equal(ask3.status, 429);
     assert.equal(ask3.payload.message, '분당 질의 한도에 도달했습니다. 잠시 후 다시 시도하세요.');
@@ -1100,6 +1116,8 @@ async function main() {
     });
     assert.equal(noLlmAsk.status, 200);
     assert.ok(noLlmAsk.payload.text.includes('[Hephaestos] LLM 비활성 경로입니다.'));
+    assert.ok(noLlmAsk.payload.text.includes('비용 없이 질문을 확인했습니다'));
+    assert.equal(noLlmAsk.payload.text.includes('질문은 기록만 합니다'), false);
     assert.equal(noLlmAsk.payload.text.includes('[hephaestos]'), false);
     assert.equal(noLlmAsk.payload.text.includes('noLLM route'), false);
   } finally {

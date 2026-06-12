@@ -397,7 +397,7 @@ function normalizeLegacyMinuteContent(content) {
   if (trimmed === 'close') return '회의 종료';
   const text = normalizeCompactMeetingArrays(content).replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
-    '활성 서킷: 과거 발언의 중복 서킷 숫자 숨김(최신 데이터 기준)',
+    '활성 서킷: 최신 데이터 영역 기준으로 확인하세요',
   );
   let compactCircuitText = text;
   const circuitIndex = compactCircuitText.indexOf('활성 서킷');
@@ -567,15 +567,15 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/ADR recorded:\s*c_master\/pending_master/g, 'ADR 기록: C 마스터 확인 / 마스터 액션 대기')
     .replace(
       /\*{0,2}결정 대기\*{0,2}\s*[:：]\s*(?:현재\s*)?\d+(?:개|건)(?:의\s*결정이\s*대기\s*중(?:입니다)?\.?|(?:\s*남아있다\.?)?)?/g,
-      '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
+      '결정 대기: 상단 캐치업 기준으로 확인하세요',
     )
     .replace(
       /결정 대기[는가]?\s*\d+건(?:이)?\s*(?:대기\s*중(?:입니다)?|남아있다)\.?/g,
-      '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
+      '결정 대기: 상단 캐치업 기준으로 확인하세요',
     )
     .replace(
       /결정 대기\s*중인\s*서킷은\s*\d+건(?:입니다)?\.?/g,
-      '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
+      '결정 대기: 상단 캐치업 기준으로 확인하세요',
     )
     .replace(/전략군\s+24시간\s+동안\s+0건의\s+거래가\s+발생했습니다\.?/g, '전략군 24시간 신호 0건입니다.')
     .replace(/프로\s*k?si/gi, '프록시')
@@ -586,7 +586,17 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*없음\)/g, '전략군 24시간: 0건(진입 없음)')
     .replace(/입장한\s+거래/g, '진입한 거래')
     .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
-    .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려');
+    .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려')
+    .replace(/확인하세요이며/g, '확인하세요. ')
+    .replace(/확인하세요\s+결과적으로,/g, '확인하세요. ')
+    .replace(
+      /결과적으로,\s*([^。.!?]*?분석 결과는 다음과 같이 요약할 수 있습니다\.\s*)?/g,
+      '',
+    )
+    .replace(
+      /따라서,\s*[^.。!?]*?다음 조치를 취해야 합니다:\s*[^.。!?]*?(?:추가 분석을 수행하고,\s*)?[^.。!?]*?최종 결정을 내릴 수 있도록 하십시오\.?/g,
+      '후속 조치는 마스터 확인 후 기록합니다.',
+    );
 }
 
 function compactRepetitiveReportContent(content) {
@@ -836,7 +846,7 @@ async function askAgent(body, deps, limiter) {
       skipped: true,
       agent,
       route,
-      text: `[${agentDisplayLabel(agent)}] LLM 비활성 경로입니다. 질문은 기록만 합니다: ${question}`,
+      text: `[${agentDisplayLabel(agent)}] LLM 비활성 경로입니다. 비용 없이 질문을 확인했습니다: ${question}`,
     };
   }
 
