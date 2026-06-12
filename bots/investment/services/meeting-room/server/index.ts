@@ -404,12 +404,40 @@ function normalizeCompactMeetingArrays(content) {
     .replace(/미발화 행=(\d+):\s*\[\]/g, '미발화 행=$1건');
 }
 
+function legacyDecisionAuditActionLabel(action) {
+  return String(action || '').toLowerCase() === 'defer' ? '보류' : '확정';
+}
+
+function legacyDecisionAuditViaLabel(via) {
+  return {
+    telegram: '텔레그램',
+    web: '웹',
+  }[String(via || '').trim().toLowerCase()] || String(via || '웹');
+}
+
+function legacyDecisionAuditNoteLabel(note) {
+  const trimmed = String(note || '').trim();
+  if (!trimmed || trimmed.toLowerCase() === 'no note') return '메모 없음';
+  return `메모=${trimmed}`;
+}
+
+function normalizeLegacyDecisionAuditContent(content) {
+  return String(content ?? '')
+    .replace(/^meeting decision\s+(confirm|defer)\s+via\s+([^:]+):\s*(.*)$/i, (_match, action, via, note) => (
+      `결정 ${legacyDecisionAuditActionLabel(action)} 처리 · 경로=${legacyDecisionAuditViaLabel(via)} · ${legacyDecisionAuditNoteLabel(note)}`
+    ))
+    .replace(/^MR-B\s+(confirm|defer):\s*(.*)$/i, (_match, action, note) => (
+      `결정 ${legacyDecisionAuditActionLabel(action)} 처리 · 경로=웹 · ${legacyDecisionAuditNoteLabel(note)}`
+    ));
+}
+
 function normalizeLegacyMinuteContent(content) {
   const trimmed = String(content ?? '').trim().toLowerCase();
   if (trimmed === 'open') return '회의 시작';
   if (trimmed === 'closed') return '회의 종료';
   if (trimmed === 'close') return '회의 종료';
-  const text = normalizeCompactMeetingArrays(content).replace(
+  const auditNormalized = normalizeLegacyDecisionAuditContent(content);
+  const text = normalizeCompactMeetingArrays(auditNormalized).replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: 최신 데이터 영역 기준으로 봅니다',
   );

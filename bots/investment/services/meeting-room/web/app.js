@@ -1024,7 +1024,7 @@ function AskRoom({ token }) {
     ? '질의 보내기를 누르거나 Ctrl/⌘+Enter로 전송할 수 있습니다.'
     : '질문을 입력하면 전송 버튼이 활성화됩니다. Ctrl/⌘+Enter로도 전송할 수 있습니다.';
   const emptyAnswerText = hasQuestionDraft
-    ? '아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'
+    ? '아직 응답 없음 · 응답은 이 영역에 표시됩니다.'
     : '아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.';
   return html`
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}

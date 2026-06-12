@@ -24,6 +24,22 @@ function httpError(statusCode: number, code: string, message: string, details: a
   return error;
 }
 
+function decisionActionLabel(action: string) {
+  return action === 'defer' ? '보류' : '확정';
+}
+
+function changedViaLabel(changedVia: string) {
+  return {
+    telegram: '텔레그램',
+    web: '웹',
+  }[String(changedVia || '').trim()] || String(changedVia || '웹');
+}
+
+function decisionAuditContent(action: string, changedVia: string, note: string) {
+  const noteText = String(note || '').trim();
+  return `결정 ${decisionActionLabel(action)} 처리 · 경로=${changedViaLabel(changedVia)} · ${noteText ? `메모=${noteText}` : '메모 없음'}`;
+}
+
 export function normalizeMeetingDecision(row: any = {}) {
   return {
     id: row.id,
@@ -121,7 +137,7 @@ export async function applyMeetingDecisionAction(input: any = {}, deps: any = {}
         nextSeq,
         decision.agenda_key,
         changedVia === 'telegram' ? 'meeting-room-telegram' : 'meeting-room-web',
-        `meeting decision ${action} via ${changedVia}: ${note || 'no note'}`,
+        decisionAuditContent(action, changedVia, note),
         JSON.stringify({
           state: `decision_${action}`,
           decisionId: id,

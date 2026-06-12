@@ -224,7 +224,7 @@ function createMemoryStore() {
         agendaKey: decision.agendaKey,
         speaker: 'meeting-room-web',
         role: 'system',
-        content: `MR-B ${action}: ${note || 'no note'}`,
+        content: `결정 ${action === 'defer' ? '보류' : '확정'} 처리 · 경로=웹 · ${note ? `메모=${note}` : '메모 없음'}`,
         meta: { state: `decision_${action}`, decisionId: id },
         createdAt: new Date().toISOString(),
       });
@@ -738,8 +738,9 @@ async function main() {
       <div className="card">`));
     assert.ok(appJs.text.includes('질문을 입력하면 활성화됩니다.'));
     assert.ok(appJs.text.includes('선택한 에이전트에게 자문 질문을 보냅니다.'));
-    assert.ok(appJs.text.includes('아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'));
+    assert.ok(appJs.text.includes('아직 응답 없음 · 응답은 이 영역에 표시됩니다.'));
     assert.ok(appJs.text.includes('아직 응답 없음 · 질문을 입력한 뒤 질의 보내기를 누르세요.'));
+    assert.equal(appJs.text.includes('아직 응답 없음 · 질의 보내기를 눌러 응답을 확인하세요.'), false);
     assert.ok(appJs.text.includes('function EvidenceDetails'));
     assert.ok(appJs.text.includes('open ? html`<pre>'));
     assert.ok(appJs.text.includes('setAnswer(null);'));
@@ -946,6 +947,15 @@ async function main() {
     assert.equal(detail.payload.minutes[4].content.includes('[aria]'), false);
     assert.equal(detail.payload.minutes[4].content.includes('T14:43:59'), false);
     assert.equal(_testOnly.normalizeLegacyMinuteContent('close'), '회의 종료');
+    assert.equal(
+      _testOnly.normalizeLegacyMinuteContent('meeting decision confirm via web: no note'),
+      '결정 확정 처리 · 경로=웹 · 메모 없음',
+    );
+    assert.equal(
+      _testOnly.normalizeLegacyMinuteContent('meeting decision defer via telegram: need more data'),
+      '결정 보류 처리 · 경로=텔레그램 · 메모=need more data',
+    );
+    assert.equal(_testOnly.normalizeLegacyMinuteContent('MR-B confirm: no note'), '결정 확정 처리 · 경로=웹 · 메모 없음');
     assert.equal(detail.payload.minutes[4].content.includes('DB minute'), false);
     assert.equal(detail.payload.minutes[4].content.includes('plan-note'), false);
     assert.equal(detail.payload.minutes[4].content.includes('shadow stack'), false);

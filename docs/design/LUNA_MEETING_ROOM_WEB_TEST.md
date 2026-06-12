@@ -16,7 +16,7 @@
 | W-07 | LLM 토글 | "LLM 발언 사용" 해제→시작 | --no-llm 경로(발언=결정론)·비용 0 + 현재 모드 명시·토글 상태 변경 live region 전달 | [자동] 기본 noLlm payload+mode live region+[수동] ✅토글 표시 |
 | W-08 | 결정 confirm | 카드에서 확정(+감사 메모) | status=confirmed·카드 이동/배지·minutes 감사 행, 결정 대기함 live region 갱신, 사용자 화면은 한국어 상태/안건 라벨 우선 | [자동] API+pending region+[수동] ✅fixture 브라우저 |
 | W-09 | 결정 defer | 보류 | status=deferred 동일 검증, 결정 카드별 aria-label, 내부 상태 토큰은 title/evidence로만 보존 | [자동]+[수동] ✅fixture 브라우저 |
-| W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] 교차 |
+| W-10 | 이중 처리 멱등 | 같은 결정 재confirm(웹+텔레그램 교차 포함) | "이미 처리됨" 안내·상태 불변 | [자동] API+웹 notice+[수동] ✅2026-06-12 웹→API 교차 |
 | W-11 | due 표시 | due 임박/경과 결정 | 배지 강조(경과=시각 구분)+기한 상태 title/aria-label, due 누락/정상 fallback도 한국어 라벨 | [자동] dueState+a11y+[수동] ✅2026-06-12 |
 | W-12 | evidence 펼침 | `근거 JSON 보기` 클릭 | 닫힌 상태에서는 JSON DOM/레이아웃/스크롤을 만들지 않고, 펼치면 JSON `<pre>` 표시(머신리더블 보존), 모바일 overflow 없음(`pre` horizontal containment), 컨트롤별 결정 ID aria-label | [자동] 라벨/accessibility+overflow guard+collapsed layout/dom guard+[수동] ✅390px 펼침 |
 
@@ -39,7 +39,7 @@
 ## D. 통신·보안·내성
 | ID | 시나리오 | 기대 결과 | 커버 |
 |---|---|---|---|
-| W-40 | 폴링 주기 | open 세션 시 3초·idle 30초, 현재 모드가 화면에 표시됨 | [자동] cadence 계약+폴링 상태 배지+[수동] 네트워크 탭 |
+| W-40 | 폴링 주기 | open 세션 시 3초·idle 30초, 현재 모드가 화면에 표시됨 | [자동] cadence 계약+폴링 상태 배지+[수동] ✅2026-06-12 실브라우저 |
 | W-41 | 서버 다운/API 오류 내성 | 서버 중지 또는 잘못된 API 요청 상태에서 조작 | 에러 안내(빈 화면/무한 로딩 금지)·재기동 후 자동 회복·실패 시 오래된 회의/결정 데이터 제거·404/400/405류 오류는 내부 토큰 대신 한국어 안내 표시 | [자동] 복구시 에러 clear+stale 제거+친화 API 오류+[수동] ✅2026-06-12 실제 API |
 | W-42 | 바인딩 | `lsof -i :7791` → 127.0.0.1 한정(0.0.0.0 아님), 정적/API 응답에 기본 보안·캐시 헤더 적용 | [자동] smoke+[수동] ✅2026-06-12 lsof/headers |
 | W-43 | 토큰 | MEETING_ROOM_TOKEN 설정 시 무토큰 401·정상 토큰 200, 로컬 무인증 모드에서는 토큰 입력/삭제 후 화면 복구 | [자동]+[수동] ✅2026-06-12 무인증 복구 |
@@ -223,6 +223,9 @@
 - **2026-06-12 루프 167**: W-53 regenerate 표시 일치 재점검 → `/api/meetings/117`와 웹 DOM은 정규화됐지만 `--regenerate=117 --json` markdown은 DB 원문을 직접 렌더해 `gate_transitions=[...]`, `segments:[...]`, raw ADR 상태 토큰과 LLM boilerplate가 남는 문제를 확인. regenerate 로더가 웹 API의 `normalizeLegacyMinuteContent`를 재사용하게 하고, plan-note 세그먼트 JSON 덤프를 한국어 요약으로 교체했다. 실제 #117 regenerate 결과 raw pattern 0건, minutes=8·decisions=1 일치. 서비스 재시작 후 브라우저에서도 최신 #117 타임라인·회의록 8행·raw pattern 0건·console warn/error 0·overflow 0을 확인했다.
 - **2026-06-12 루프 168**: W-32 실제 LLM 응답 렌더 점검 → `sophia` 실제 Hub/Groq 질의에서 API payload가 `selectorKey/fallbacks/route` 내부 라우팅 객체를 포함하고, LLM이 `중단/감소/최대/완전한 상태`처럼 `halt/reduced/full` 상태값을 번역하는 문제를 확인. `/api/agents/ask` 응답에서 route 객체를 제거하고, agent answer도 타임라인과 같은 표시 정규화를 적용하도록 보강했다. 실제 API 재검증은 provider=groq, route 없음, raw/internal/status 번역 금지 패턴 0건. 브라우저 UI에서도 Sophia 응답이 `응답 방식 groq · 상태 성공`으로 표시되고 console warn/error 0·overflow 0을 확인했다.
 - **2026-06-12 루프 169**: W-50 정례 launchd/API/브라우저 실상태 점검 → `meeting-morning/debrief/premarket/weekly` 4종과 웹 plist가 로드되어 있고 최신 회의 #117 `domestic_debrief`가 `/api/meetings`, 캐치업, 브라우저 목록에 정상 반영됨을 확인했다. 다만 repo plist의 로그 경로가 `/tmp/logs/luna-meeting-*/out.log`처럼 재부팅·부모 디렉터리 누락에 취약해, 즉시 부모 디렉터리를 생성하고 repo plist 5종을 `/Users/alexlee/.ai-agent-system/logs/luna-meeting-*.log` 영구 경로로 보정했다. `check:luna-meeting-room-web`에 `meetingLaunchdPersistentLogs` 계약을 추가했고, MR-C smoke의 debrief 기대값도 내부 reason code 대신 `동일 날짜 아침 회의 없음` 표시 기준으로 맞췄다.
+- **2026-06-12 루프 170**: W-40 폴링 주기 실브라우저 검증 → 실제 UI에서 아침 회의를 1회 시작해 running 상태를 만들었다. 시작 직후 실행 중 카드가 선택되고 `폴링: 실행 중 회의 감지 · 3초마다 갱신`이 표시됐으며, 완료 후 #119 아침 통합 회의 세션으로 자동 전환되고 `폴링: 대기 · 30초마다 갱신`으로 복귀했다. 10초 관찰 동안 console warn/error 0건으로 추가 코드 수정 없음.
+- **2026-06-12 루프 171**: W-20/W-21/W-24 최신 #119 렌더 재스캔 → 실제 시작 경로로 생성한 #119 아침 통합 회의의 API/브라우저 DOM을 검사했다. 회의록 raw JSON, 내부 상태 토큰, DB 구현 용어, status 번역 오류, 반복 boilerplate는 없었지만 에이전트 질의 빈 응답 placeholder에 `확인하세요.` 지시형 문구가 남아 전체 DOM 금지 패턴에 걸렸다. 빈 응답 문구를 `아직 응답 없음 · 응답은 이 영역에 표시됩니다.`로 중립화하고, 재시작 후 #119 전체 DOM hit 0건·old placeholder 0건·console warn/error 0건·overflow 0건을 확인했다.
+- **2026-06-12 루프 172**: W-10 웹→API 교차 멱등 실검증 → 최신 #119의 결정 #707을 웹에서 확정해 pending 큐에서 제거되고 캐치업이 `확정 1건, 대기 8건`으로 갱신됨을 확인했다. 이후 같은 #707을 API로 재확정하자 `{ idempotent:true, status:already_confirmed }`와 `pendingHas707=false`가 반환되어 상태 불변을 확인했다. 동시에 감사 minute가 `meeting decision confirm via web: no note` 영어 원문으로 노출될 수 있는 문제를 발견해 신규 저장 문구를 `결정 확정 처리 · 경로=웹 · 메모 없음`으로 바꾸고, 기존 저장분도 표시 정규화로 한국어 렌더되게 보정했다. 재시작 후 브라우저 DOM에서 영어 감사 문구 0건, 한국어 감사 문구 1건, console warn/error 0건.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안

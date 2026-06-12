@@ -451,10 +451,12 @@ async function main() {
     }, { withTransactionFn: async (fn: any) => fn(tx) });
     assert.equal(idempotent.idempotent, true);
     const auditRows = await tx.query(
-      `SELECT meta FROM luna_meeting_minutes WHERE session_id = $1 AND meta->>'changed_via' = 'telegram'`,
+      `SELECT content, meta FROM luna_meeting_minutes WHERE session_id = $1 AND meta->>'changed_via' = 'telegram'`,
       [applied.session.id],
     );
     assert.equal(auditRows.length >= 1, true);
+    assert.ok(auditRows.some((row: any) => String(row.content).includes('결정 확정 처리 · 경로=텔레그램 · 메모=telegram fixture')));
+    assert.equal(auditRows.some((row: any) => String(row.content).includes('meeting decision')), false);
 
     const regenerateDir = tempOutputDir('smoke-regenerate');
     const regenerated = await regenerateMeetingMinutesMarkdown(applied.session.id, {
