@@ -2023,6 +2023,52 @@ async function main() {
     await closeServer(scheduleStarted.server);
   }
 
+  let scheduleOpsHubCalled = false;
+  const scheduleOpsStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# schedule ops fixture',
+      segments: [
+        { market: 'domestic', active: false, skipped: true, reason: 'weekend' },
+        { market: 'overseas', active: false, skipped: true, reason: 'weekend' },
+        { market: 'crypto', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
+    }),
+    meetingStore: {
+      ...deps.meetingStore,
+      listMeetings: async () => [],
+    },
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      scheduleOpsHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '정례 실패는 담당자에게 문의하세요.' };
+    },
+  });
+  const scheduleOpsBase = `http://127.0.0.1:${scheduleOpsStarted.server.address().port}`;
+  try {
+    const scheduleOpsAsk = await request(scheduleOpsBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '05:00 정례 회의가 실패하면 어디서 확인하고 무엇을 보면 돼?' }),
+    });
+    assert.equal(scheduleOpsAsk.status, 200);
+    assert.equal(scheduleOpsAsk.payload.provider, 'rule_based');
+    assert.equal(scheduleOpsAsk.payload.skipped, true);
+    assert.equal(scheduleOpsHubCalled, false);
+    assert.ok(scheduleOpsAsk.payload.text.includes('05:00 정례 실패 확인 순서:'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('새 아침 통합 회의가 생성됐는지 확인'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.luna.meeting-morning-0500'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning.log'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning-error.log'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('정례 실행 상태:'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('secret이나 토큰 값을 붙여 공유하지 말고'));
+    assert.equal(scheduleOpsAsk.payload.text.includes('HUB_AUTH_TOKEN'), false);
+    assert.equal(scheduleOpsAsk.payload.text.includes('Bearer'), false);
+  } finally {
+    await closeServer(scheduleOpsStarted.server);
+  }
+
   let meetingTargetScheduleHubCalled = false;
   const meetingTargetScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
