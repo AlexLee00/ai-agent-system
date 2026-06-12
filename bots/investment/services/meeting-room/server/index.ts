@@ -1457,6 +1457,7 @@ function inferAskIntent(question) {
   const hasDecisionScopeCue = /(캐치업|숫자|건수|왜|차이|다른|달라)/u.test(text) || (/(전체)/u.test(text) && /(선택)/u.test(text));
   if (hasDecisionScopeCue && /(결정|대기함|대기|pending|캐치업)/u.test(text)) return 'decision_scope';
   if (/(처리|기한|마감|먼저|우선|몇\s*건|뭐부터|무엇부터)/u.test(text) && /(결정|마스터|대기|pending)/u.test(text)) return 'decision_due';
+  if (/(보류|defer|deferred)/u.test(text) && /(어디서|다시|확인|찾|보여|남아|기록|캐치업|타임라인)/u.test(text)) return 'decision_deferred';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
   if (/(서킷|잠금|lock|circuit|쿨다운|cooldown)/u.test(text)) return 'circuit';
@@ -1727,6 +1728,16 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
+  if (intent === 'decision_deferred') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '보류한 결정 확인 위치: 전체 결정 대기함에서는 제거되며, 원래 회의를 선택하면 U1 캐치업의 보류 수와 타임라인 감사 행에서 확인합니다.',
+      '재등장 기준: 같은 기존 결정이 자동으로 다시 대기함에 올라오지는 않습니다. 다음 회의가 같은 안건으로 새 마스터 확인 결정을 만들 때만 새 카드가 생깁니다.',
+      '처리 의미: 보류는 회의실 감사 상태만 바꾸며 실제 주문·포지션·파라미터·런타임 설정은 변경하지 않습니다.',
+      '권장 다음 행동: 원래 회의를 선택해 캐치업의 보류 수와 감사 행을 확인하고, 새 판단이 필요하면 다음 회의의 새 결정 카드를 기준으로 처리하세요.',
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
   const focus = {
     aria: '기술 관점',
     hephaestos: '체결 관점',
@@ -1790,7 +1801,7 @@ async function askAgent(body, deps, limiter) {
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_action_safety') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_safety') {
     return {
       ok: true,
       skipped: true,

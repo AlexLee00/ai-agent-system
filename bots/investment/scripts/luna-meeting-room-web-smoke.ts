@@ -2571,6 +2571,37 @@ async function main() {
     await closeServer(telegramDeferStarted.server);
   }
 
+  let deferredLookupHubCalled = false;
+  const deferredLookupStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      deferredLookupHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '보류한 결정은 전체 대기함에 계속 남습니다.' };
+    },
+  });
+  const deferredLookupBase = `http://127.0.0.1:${deferredLookupStarted.server.address().port}`;
+  try {
+    const deferredLookupAsk = await request(deferredLookupBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '보류한 결정은 어디서 다시 확인해?' }),
+    });
+    assert.equal(deferredLookupAsk.status, 200);
+    assert.equal(deferredLookupAsk.payload.provider, 'rule_based');
+    assert.equal(deferredLookupAsk.payload.skipped, true);
+    assert.equal(deferredLookupHubCalled, false);
+    assert.ok(deferredLookupAsk.payload.text.includes('전체 결정 대기함에서는 제거되며'));
+    assert.ok(deferredLookupAsk.payload.text.includes('원래 회의를 선택하면 U1 캐치업의 보류 수와 타임라인 감사 행에서 확인합니다.'));
+    assert.ok(deferredLookupAsk.payload.text.includes('같은 기존 결정이 자동으로 다시 대기함에 올라오지는 않습니다.'));
+    assert.ok(deferredLookupAsk.payload.text.includes('회의실 감사 상태만 바꾸며 실제 주문·포지션·파라미터·런타임 설정은 변경하지 않습니다.'));
+    assert.equal(deferredLookupAsk.payload.text.includes('전체 대기함에 계속 남습니다'), false);
+    assert.equal(deferredLookupAsk.payload.text.includes('pending_master'), false);
+    assert.equal(deferredLookupAsk.payload.text.includes('deferred'), false);
+  } finally {
+    await closeServer(deferredLookupStarted.server);
+  }
+
   let telegramScheduleHubCalled = false;
   const telegramScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
