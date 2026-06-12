@@ -1193,6 +1193,8 @@ async function main() {
     assert.equal(detail.payload.minutes[2].content.includes('unknown→unknown'), false);
     assert.equal(detail.payload.minutes[2].content.includes('placeholder 기준=true'), false);
     assert.equal(detail.payload.minutes[2].content.includes('placeholder 기준'), false);
+    assert.equal(detail.payload.minutes[2].content.includes('임시 기준=true'), false);
+    assert.equal(detail.payload.minutes[2].content.includes('임시 기준=false'), false);
     assert.equal(detail.payload.minutes[2].content.includes('compareAgainst='), false);
     assert.equal(detail.payload.minutes[2].content.includes('same_bar_close'), false);
     assert.equal(detail.payload.minutes[2].content.includes('next-bar 수익률 차이'), false);
@@ -1418,6 +1420,9 @@ async function main() {
     assert.ok(liveMeetingPolish.includes('최장 잠금 만료=2026. 6. 13.'));
     assert.ok(liveMeetingPolish.includes('C15 검토 상태를 유지하는 자문입니다.'));
     assert.equal(/분석한입니다|결과는 다음과 같습니다|실행할 계획입니다|\bentry\b|입장 기록|가치|크립토|중지 상태|unavailable|Korean Standard Time|C15 결정 대기 상태를 유지하기로 결정/.test(liveMeetingPolish), false);
+    const c15CriterionPolish = _testOnly.normalizeLegacyMinuteContent('표본=0건, 기준=임시 기준=true, 관찰 주수=4');
+    assert.ok(c15CriterionPolish.includes('기준=임시 기준=예, 관찰 주수=4'));
+    assert.equal(c15CriterionPolish.includes('임시 기준=true'), false);
     const truncatedRegimeSentence = _testOnly.normalizeLegacyMinuteContent(
       'C2 레짐에 따르면, 국내 시장은 상승 추세를 유지하고 있으며, 0.38의 점수가 기록되고 있습니다. 미국 시장은 중립적인 추세를 유지하고 있으며, 0. 암호화폐 시장은 하락 추세를 유지하고 있으며, 0.',
     );
@@ -2231,8 +2236,53 @@ async function main() {
     assert.equal(decisionDueAsk.payload.text.includes('pending_master'), false);
     assert.equal(decisionDueAsk.payload.text.includes('c_master'), false);
     assert.equal(decisionDueAsk.payload.text.includes('오늘 처리할 마스터 결정은 5건'), false);
+    const decisionCountAsk = await request(decisionDueBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        agent: 'sophia',
+        question: '결정 대기 중인 항목은 몇 건이야?',
+      }),
+    });
+    assert.equal(decisionCountAsk.status, 200);
+    assert.equal(decisionCountAsk.payload.provider, 'rule_based');
+    assert.equal(decisionCountAsk.payload.skipped, true);
+    assert.equal(decisionDueHubCalled, false);
+    assert.ok(decisionCountAsk.payload.text.includes('전체 대기 16건'));
+    assert.equal(decisionCountAsk.payload.text.includes('결정 대기 중인 항목은 5건'), false);
   } finally {
     await closeServer(decisionDueStarted.server);
+  }
+
+  let pendingPromptText = '';
+  const pendingPromptStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: {
+      ...createMemoryStore(),
+      listPendingDecisions: async () => decisionDueRows,
+    },
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async (_agent, _system, prompt) => {
+      pendingPromptText = String(prompt || '');
+      return { ok: true, provider: 'fixture', text: '회의실 상태 요약 fixture' };
+    },
+  });
+  try {
+    const pendingPromptBase = `http://127.0.0.1:${pendingPromptStarted.server.address().port}`;
+    const pendingPromptAsk = await request(pendingPromptBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '회의실 상태를 요약해줘' }),
+    });
+    assert.equal(pendingPromptAsk.status, 200);
+    assert.equal(pendingPromptAsk.payload.provider, 'fixture');
+    assert.ok(pendingPromptText.includes('Count rule: use "전역 결정 대기함 총건수" as the total.'));
+    assert.ok(pendingPromptText.includes('전역 결정 대기함 총건수: 16건'));
+    assert.ok(pendingPromptText.includes('아래 목록은 상위 5건 예시이며 총건수가 아닙니다.'));
+    assert.ok(pendingPromptText.includes('예시 외 남은 결정 11건'));
+    assert.equal(pendingPromptText.includes('- 전역 결정 대기함: 16건'), false);
+  } finally {
+    await closeServer(pendingPromptStarted.server);
   }
 
   let scheduleHubCalled = false;

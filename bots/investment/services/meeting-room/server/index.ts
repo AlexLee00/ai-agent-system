@@ -900,6 +900,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/placeholder 기준=false/g, '임시 기준=아니오')
     .replace(/placeholder 기준=예/g, '임시 기준=예')
     .replace(/placeholder 기준=아니오/g, '임시 기준=아니오')
+    .replace(/임시 기준=true/g, '임시 기준=예')
+    .replace(/임시 기준=false/g, '임시 기준=아니오')
     .replace(/미충족:\s*placeholder 기준/g, '미충족: 임시 기준')
     .replace(/Brier:\s*HMM<폴백/g, 'Brier: HMM이 폴백보다 낮음')
     .replace(/\bsame_bar_close\b/g, '동일봉 종가')
@@ -1675,14 +1677,19 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
 
 function renderPendingDecisionContext(decisions = []) {
   const rows = Array.isArray(decisions) ? decisions : [];
-  if (!rows.length) return '- 전역 결정 대기함: 0건';
+  if (!rows.length) return '- 전역 결정 대기함 총건수: 0건';
   const examples = rows.slice(0, 5).map((row = {}) => {
     const label = agendaLabel(row.agendaKey);
     const decision = normalizeLegacyMinuteContent(row.decision || '').replace(/\s+/g, ' ').slice(0, 90);
-    return `  - 결정 #${row.id} ${label}: ${decision || '마스터 확인 대기'}`;
+    return `  - 예시 결정 #${row.id} ${label}: ${decision || '마스터 확인 대기'}`;
   });
-  const suffix = rows.length > examples.length ? `  - 외 ${rows.length - examples.length}건` : '';
-  return [`- 전역 결정 대기함: ${rows.length}건`, ...examples, suffix].filter(Boolean).join('\n');
+  const suffix = rows.length > examples.length ? `  - 예시 외 남은 결정 ${rows.length - examples.length}건` : '';
+  return [
+    `- 전역 결정 대기함 총건수: ${rows.length}건`,
+    `- 아래 목록은 상위 ${examples.length}건 예시이며 총건수가 아닙니다.`,
+    ...examples,
+    suffix,
+  ].filter(Boolean).join('\n');
 }
 
 async function safeListPendingDecisions(deps) {
@@ -2069,6 +2076,8 @@ async function askAgent(body, deps, limiter) {
       'You are a Luna meeting-room agent. Answer in Korean. Use only the provided meeting context. Advisory only. Keep the response concise, avoid greetings and repeated conclusions, and do not translate status values such as halt/reduced/full.',
       [
         `Question: ${question}`,
+        '',
+        'Count rule: use "전역 결정 대기함 총건수" as the total. Do not describe the example row count as the total pending count.',
         '',
         globalPendingContext,
         '',
