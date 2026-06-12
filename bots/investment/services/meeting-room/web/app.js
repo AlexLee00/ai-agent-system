@@ -164,6 +164,10 @@ function agendaLabel(key) {
     'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
     'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
     'alerts:circuit-locks': '서킷 잠금 알림',
+    'debrief:g6-plan-vs-actual': '국내 마감 G6 대조표',
+    'premarket:overseas-gate-regime': '미장 전 게이트·레짐 점검',
+    'premarket:overseas-watch': '미장 전 감시 목록 점검',
+    'weekly:shadow-stack-review': '주간 섀도 스택 리뷰',
   }[String(key || '')] || '안건';
 }
 
@@ -469,7 +473,9 @@ function Header({ token, setToken, tab, setTab }) {
       <div>
         <div className="topline" role="status" aria-label="회의실 실행 상태: MR-B, 자문 및 섀도 전용, 로컬 바인딩 127.0.0.1 포트 7791">
           <span className="pill" aria-label="회의실 버전 MR-B">MR-B</span>
+          <span aria-hidden="true" className="pill-separator"> · </span>
           <span className="pill" aria-label="자문 및 섀도 전용">자문 / 섀도 전용</span>
+          <span aria-hidden="true" className="pill-separator"> · </span>
           <span className="pill" aria-label="로컬 바인딩 127.0.0.1 포트 7791">127.0.0.1:7791</span>
         </div>
         <h1>Luna Meeting Room</h1>
@@ -735,9 +741,15 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
       aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
     >
       <div className="meeting-title" title=${`안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
-      <div className="meta decision-state">
+      <div
+        className="meta decision-state"
+        role="group"
+        aria-label=${`결정 #${decision.id} 상태 요약: 등급 ${decisionGradeLabel(decision.grade)} · 상태 ${decisionStatusLabel(decision.status)} · 기한 ${due.label}`}
+      >
         <span title=${`등급: ${decisionGradeLabel(decision.grade)}`} data-raw-grade=${decision.grade || 'n/a'}>${decisionGradeLabel(decision.grade)}</span>
+        <span aria-hidden="true"> · </span>
         <span title=${`상태: ${decisionStatusLabel(decision.status)}`} data-raw-status=${decision.status || 'n/a'}>${decisionStatusLabel(decision.status)}</span>
+        <span aria-hidden="true"> · </span>
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
       </div>
       <${MarkdownLite} text=${decision.decision} />
@@ -756,11 +768,12 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
 function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   const decisionRows = safeArray(decisions);
   return html`
-    <div className="card" role="region" aria-label="결정 대기함">
-      <h2>결정 대기함</h2>
-      <div className="card-body list" role="list" aria-live="polite" aria-label=${`마스터 액션 대기 결정 ${decisionRows.length}건`}>
+    <div className="card" role="region" aria-label="전체 회의 결정 대기함">
+      <h2>전체 결정 대기함</h2>
+      <div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도</div>
+      <div className="card-body list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}>
         ${decisionRows.map((decision) => html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`)}
-        ${decisionRows.length === 0 ? html`<div className="meta">마스터 액션 대기 결정 없음</div>` : null}
+        ${decisionRows.length === 0 ? html`<div className="meta">전체 회의 기준 마스터 액션 대기 결정 없음</div>` : null}
       </div>
     </div>
   `;

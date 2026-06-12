@@ -143,6 +143,10 @@ function agendaLabel(key) {
     'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
     'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
     'alerts:circuit-locks': '서킷 잠금 알림',
+    'debrief:g6-plan-vs-actual': '국내 마감 G6 대조표',
+    'premarket:overseas-gate-regime': '미장 전 게이트·레짐 점검',
+    'premarket:overseas-watch': '미장 전 감시 목록 점검',
+    'weekly:shadow-stack-review': '주간 섀도 스택 리뷰',
   }[String(key || '')] || '안건';
 }
 
@@ -311,12 +315,87 @@ function summarizeLegacyCircuitLocks(rows = []) {
   ].filter(Boolean).join('\n');
 }
 
+function transitionMarketLabel(value) {
+  return { domestic: '국내', overseas: '미국', crypto: '암호화폐' }[String(value || '')] || '시장 미상';
+}
+
+function transitionRegimeLabel(value) {
+  return { bull: '상승', bear: '하락', sideways: '수평', volatile: '변동' }[String(value || '')] || String(value || '미정');
+}
+
+function summarizeTransitionRows(field, rows = []) {
+  const items = Array.isArray(rows) ? rows : [];
+  if (field === 'errors') {
+    return items.length
+      ? `오류: ${items.length}건 · 상세는 원문 DB 회의록에 보존`
+      : '오류: 없음';
+  }
+  if (!items.length) return field === 'gate_transitions' ? '게이트 전이: 없음' : '레짐 전이: 없음';
+  const summaries = items.slice(0, 6).map((row = {}) => {
+    const market = transitionMarketLabel(row.market);
+    const samples = Number(row.samples ?? row.sample_count ?? 0);
+    if (field === 'gate_transitions') {
+      const deployments = Array.isArray(row.deployments) ? row.deployments.join(', ') : String(row.deployment || '미정');
+      const states = Number(row.deployment_states ?? row.states ?? 0);
+      return `${market} ${samples}표본 · 배치상태 ${states || deployments.split(',').filter(Boolean).length}종(${deployments})`;
+    }
+    const regimes = Array.isArray(row.regimes) ? row.regimes.map(transitionRegimeLabel).join(', ') : transitionRegimeLabel(row.regime || row.current_regime);
+    const states = Number(row.regime_states ?? row.states ?? 0);
+    return `${market} ${samples}표본 · 레짐 ${states || regimes.split(',').filter(Boolean).length}종(${regimes})`;
+  });
+  const label = field === 'gate_transitions' ? '게이트 전이' : '레짐 전이';
+  const suffix = items.length > summaries.length ? ` 외 ${items.length - summaries.length}건` : '';
+  return `${label}: ${summaries.join(' / ')}${suffix}`;
+}
+
+function replaceCompactArrayField(content, field) {
+  let next = String(content ?? '');
+  let searchFrom = 0;
+  while (searchFrom < next.length) {
+    const fieldIndex = next.indexOf(`${field}=`, searchFrom);
+    if (fieldIndex < 0) break;
+    const arrayStart = next.indexOf('[', fieldIndex);
+    if (arrayStart < 0) break;
+    const jsonText = balancedJsonArrayAt(next, arrayStart);
+    if (!jsonText) {
+      searchFrom = arrayStart + 1;
+      continue;
+    }
+    try {
+      const summary = summarizeTransitionRows(field, JSON.parse(jsonText));
+      next = `${next.slice(0, fieldIndex)}${summary}${next.slice(arrayStart + jsonText.length)}`;
+      searchFrom = fieldIndex + summary.length;
+    } catch {
+      const fallback = field === 'errors'
+        ? '오류: 상세는 원문 DB 회의록에 보존'
+        : `${field === 'gate_transitions' ? '게이트 전이' : '레짐 전이'}: 상세는 원문 DB 회의록에 보존`;
+      next = `${next.slice(0, fieldIndex)}${fallback}${next.slice(arrayStart + jsonText.length)}`;
+      searchFrom = fieldIndex + fallback.length;
+    }
+  }
+  return next;
+}
+
+function normalizeCompactMeetingArrays(content) {
+  return ['gate_transitions', 'regime_transitions', 'errors'].reduce(
+    (text, field) => replaceCompactArrayField(text, field),
+    String(content ?? ''),
+  )
+    .replace(/G6 대조표 날짜=([^\s]+)\s+degraded=true/g, 'G6 대조표 날짜=$1 · 데이터 보강 필요')
+    .replace(/G6 대조표 날짜=([^\s]+)\s+degraded=false/g, 'G6 대조표 날짜=$1 · 정상')
+    .replace(/morning=([^\s]+)\s+reason=same_day_morning_session_missing/g, '아침 회의=$1 · 사유=동일 날짜 아침 회의 없음')
+    .replace(/morning=([^\s]+)\s+reason=ok/g, '아침 회의=$1 · 사유=정상')
+    .replace(/signals=(\d+),\s*preflight=(\d+),\s*active_circuit=(\d+)/g, '전략 신호=$1건, 프리플라이트=$2건, 활성 서킷=$3건')
+    .replace(/kis_trades=(\d+)/g, 'KIS 체결=$1건')
+    .replace(/미발화 행=(\d+):\s*\[\]/g, '미발화 행=$1건');
+}
+
 function normalizeLegacyMinuteContent(content) {
   const trimmed = String(content ?? '').trim().toLowerCase();
   if (trimmed === 'open') return '회의 시작';
   if (trimmed === 'closed') return '회의 종료';
   if (trimmed === 'close') return '회의 종료';
-  const text = String(content ?? '').replace(
+  const text = normalizeCompactMeetingArrays(content).replace(
     /\*{0,2}활성 서킷\*{0,2}\s*(?::|은)\s*(?:현재\s*)?\d+(?:개|건)?(?:의 서킷이 활성화되어 있습니다\.|입니다\.)?/g,
     '활성 서킷: 과거 발언의 중복 서킷 숫자 숨김(최신 데이터 기준)',
   );
@@ -437,6 +516,12 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/\bgate\/regime\/signal\/circuit\b/g, '게이트/레짐/신호/서킷')
     .replace(/해외/g, '미국')
     .replace(/미국가/g, '미국이')
+    .replace(/미국와/g, '미국과')
+    .replace(/강세\s+상태/g, '상승 상태')
+    .replace(/중립\s+상태/g, '수평 상태')
+    .replace(/약세\s+상태/g, '하락 상태')
+    .replace(/['"“”‘’]줄인['"“”‘’]\s*상태/g, 'reduced 상태')
+    .replace(/줄인\s+상태/g, 'reduced 상태')
     .replace(/중단(?=\s*\(\d)/g, 'halt')
     .replace(/감소(?=\s*\(\d)/g, 'reduced')
     .replace(/전체(?=\s*\(\d)/g, 'full')
@@ -488,6 +573,11 @@ function normalizeLegacyKoreanLlmNoise(content) {
       /결정 대기[는가]?\s*\d+건(?:이)?\s*(?:대기\s*중(?:입니다)?|남아있다)\.?/g,
       '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
     )
+    .replace(
+      /결정 대기\s*중인\s*서킷은\s*\d+건(?:입니다)?\.?/g,
+      '결정 대기: 과거 발언 숫자 숨김(상단 U1 캐치업 기준)',
+    )
+    .replace(/전략군\s+24시간\s+동안\s+0건의\s+거래가\s+발생했습니다\.?/g, '전략군 24시간 신호 0건입니다.')
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
     .replace(/저평가\s+상태/g, '배치 halt 상태')

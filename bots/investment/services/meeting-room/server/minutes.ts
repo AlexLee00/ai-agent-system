@@ -19,6 +19,25 @@ function roleLabel(role: string) {
   }[role] || role;
 }
 
+function agendaLabel(key: any) {
+  return {
+    session: '세션',
+    'market:domestic': '국내 장전 계획',
+    'market:overseas': '미국 장후 평가',
+    'market:crypto': '암호화폐 24시간 점검',
+    'decision:regime-engine-hmm': 'C15 레짐 엔진 HMM',
+    'decision:market-deployment-gate': 'C1 시장 배치 게이트',
+    'decision:mapek': 'C15 MAPEK',
+    'decision:meeting-room-orchestrator': '회의실 오케스트레이터',
+    'decision:backtest-nextbar-execution': 'Next-bar 백테스트 실행',
+    'alerts:circuit-locks': '서킷 잠금 알림',
+    'debrief:g6-plan-vs-actual': '국내 마감 G6 대조표',
+    'premarket:overseas-gate-regime': '미장 전 게이트·레짐 점검',
+    'premarket:overseas-watch': '미장 전 감시 목록 점검',
+    'weekly:shadow-stack-review': '주간 섀도 스택 리뷰',
+  }[String(key || '')] || '안건';
+}
+
 function toIsoString(value: any) {
   if (!value) return value;
   if (value instanceof Date) return value.toISOString();
@@ -49,7 +68,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     '',
   ];
   for (const row of minutes) {
-    lines.push(`### ${row.seq}. ${row.agendaKey || row.agenda_key} — ${roleLabel(row.role)} / ${row.speaker}`);
+    lines.push(`### ${row.seq}. ${agendaLabel(row.agendaKey || row.agenda_key)} — ${roleLabel(row.role)} / ${row.speaker}`);
     lines.push('');
     lines.push(safeText(row.content));
     lines.push('');
@@ -60,7 +79,7 @@ export function renderMeetingMinutesMarkdown(result: any = {}) {
     lines.push('- 결정 없음');
   } else {
     for (const row of decisions) {
-      lines.push(`- [${row.grade}/${row.status}] ${row.agendaKey || row.agenda_key}: ${safeText(row.decision)} (due: ${row.dueAt || row.due_at || 'n/a'})`);
+      lines.push(`- [${row.grade}/${row.status}] ${agendaLabel(row.agendaKey || row.agenda_key)}: ${safeText(row.decision)} (due: ${row.dueAt || row.due_at || 'n/a'})`);
     }
   }
   lines.push('');

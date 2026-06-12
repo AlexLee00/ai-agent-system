@@ -117,6 +117,46 @@ function regimeLabel(value: any) {
   }[String(value || '')] || safeText(value, '없음');
 }
 
+function marketLabel(value: any) {
+  return {
+    domestic: '국내',
+    overseas: '미국',
+    crypto: '암호화폐',
+  }[String(value || '')] || '시장 미상';
+}
+
+function summarizeGateTransitions(rows: any[] = []) {
+  const items = Array.isArray(rows) ? rows : [];
+  if (!items.length) return '게이트 전이: 없음';
+  return `게이트 전이: ${items.slice(0, 6).map((row: any = {}) => {
+    const deployments = Array.isArray(row.deployments) ? row.deployments.join(', ') : safeText(row.deployment, '미정');
+    const states = Number(row.deployment_states ?? row.states ?? 0) || deployments.split(',').filter(Boolean).length;
+    return `${marketLabel(row.market)} ${Number(row.samples ?? 0)}표본 · 배치상태 ${states}종(${deployments})`;
+  }).join(' / ')}${items.length > 6 ? ` 외 ${items.length - 6}건` : ''}`;
+}
+
+function summarizeRegimeTransitions(rows: any[] = []) {
+  const items = Array.isArray(rows) ? rows : [];
+  if (!items.length) return '레짐 전이: 없음';
+  return `레짐 전이: ${items.slice(0, 6).map((row: any = {}) => {
+    const regimes = Array.isArray(row.regimes) ? row.regimes.map(regimeLabel).join(', ') : regimeLabel(row.regime || row.current_regime);
+    const states = Number(row.regime_states ?? row.states ?? 0) || regimes.split(',').filter(Boolean).length;
+    return `${marketLabel(row.market)} ${Number(row.samples ?? 0)}표본 · 레짐 ${states}종(${regimes})`;
+  }).join(' / ')}${items.length > 6 ? ` 외 ${items.length - 6}건` : ''}`;
+}
+
+function summarizeMeetingErrors(errors: any[] = []) {
+  const items = Array.isArray(errors) ? errors : [];
+  return items.length ? `오류: ${items.length}건 · 상세는 minute meta/원문 DB 회의록에 보존` : '';
+}
+
+function debriefReasonLabel(value: any) {
+  return {
+    ok: '정상',
+    same_day_morning_session_missing: '동일 날짜 아침 회의 없음',
+  }[String(value || '')] || safeText(value, '확인 필요');
+}
+
 function summarizePendingDecision(row: any = {}) {
   const component = componentLabel(row.component || row.agenda_key || row.type);
   const criteria = criteriaForDecision(row);
@@ -304,14 +344,14 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
   if (agenda.kind === 'domestic_debrief') {
     const evidence = agenda.evidence || {};
     return [
-      `G6 대조표 날짜=${evidence.dateKst || 'n/a'} degraded=${evidence.degraded === true}`,
-      `morning=${evidence.morningSession?.id || '없음'} reason=${evidence.degradeReason || 'ok'}`,
-      `signals=${evidence.strategySignals?.length || 0}, preflight=${evidence.preflights?.length || 0}, active_circuit=${evidence.activeCircuits?.length || 0}`,
-      `gate_transitions=${compact(evidence.gateTransitions || [], 500)}`,
-      `regime_transitions=${compact(evidence.regimeTransitions || [], 500)}`,
-      `kis_trades=${evidence.kisTrades?.length || 0}`,
-      `미발화 행=${evidence.unspokenEntries?.length || 0}: ${compact((evidence.unspokenEntries || []).slice(0, 10), 600)}`,
-      evidence.errors?.length ? `errors=${compact(evidence.errors, 500)}` : '',
+      `G6 대조표 날짜=${evidence.dateKst || 'n/a'} · ${evidence.degraded === true ? '데이터 보강 필요' : '정상'}`,
+      `아침 회의=${evidence.morningSession?.id || '없음'} · 사유=${debriefReasonLabel(evidence.degradeReason || 'ok')}`,
+      `전략 신호=${evidence.strategySignals?.length || 0}건, 프리플라이트=${evidence.preflights?.length || 0}건, 활성 서킷=${evidence.activeCircuits?.length || 0}건`,
+      summarizeGateTransitions(evidence.gateTransitions || []),
+      summarizeRegimeTransitions(evidence.regimeTransitions || []),
+      `KIS 체결=${evidence.kisTrades?.length || 0}건`,
+      `미발화 행=${evidence.unspokenEntries?.length || 0}건`,
+      summarizeMeetingErrors(evidence.errors || []),
     ].filter(Boolean).join('\n');
   }
   if (agenda.kind === 'us_premarket') {
@@ -331,7 +371,7 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
       `brier=${compact(evidence.brier || [], 700)}`,
       `registry=${compact(evidence.registry || [], 500)}`,
       `ADR=${compact(evidence.adr || [], 500)} overdue=${evidence.overdueAdr?.length || 0}`,
-      evidence.errors?.length ? `errors=${compact(evidence.errors, 500)}` : '',
+      summarizeMeetingErrors(evidence.errors || []),
     ].filter(Boolean).join('\n');
   }
   return planNote.briefMarkdown || 'plan-note 없음';
