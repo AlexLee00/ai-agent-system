@@ -14,6 +14,7 @@ const HUB_BASE = `http://127.0.0.1:${HUB_PORT || 7788}`;
 const POLL_TIMEOUT_SEC = 30;
 const REQUEST_TIMEOUT_MS = 40_000;
 const RETRY_DELAY_MS = 5_000;
+const POLL_HEARTBEAT_MS = 5 * 60_000;
 
 type CallbackQuery = {
   id: string;
@@ -38,6 +39,20 @@ type TelegramUpdate = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function logInfo(message: string): void {
+  console.log(`[poller] ${new Date().toISOString()} ${message}`);
+}
+
+function logWarn(message: string): void {
+  console.warn(`[poller] ${new Date().toISOString()} ${message}`);
+}
+
+function logError(message: string, error?: unknown): void {
+  const err = error as Error & { cause?: { code?: string; message?: string } };
+  const cause = err?.cause?.code || err?.cause?.message;
+  console.error(`[poller] ${new Date().toISOString()} ${message}${cause ? ` cause=${cause}` : ''}`);
 }
 
 function readSecrets(): Record<string, Record<string, string>> {
@@ -127,7 +142,7 @@ async function ensurePollingAvailable(botToken: string): Promise<void> {
 
   const shouldDelete = String(process.env.TELEGRAM_CALLBACK_POLLER_DELETE_WEBHOOK || '') === '1';
   if (shouldDelete) {
-    console.warn(`[poller] 기존 webhook 감지 -> 삭제 진행: ${webhook.url}`);
+    logWarn(`기존 webhook 감지 -> 삭제 진행: ${webhook.url}`);
     await deleteWebhook(botToken);
     return;
   }
@@ -157,7 +172,7 @@ async function forwardCallback(callbackQuery: CallbackQuery): Promise<unknown> {
   const callbackData = String(callbackQuery?.data || '');
   const target = resolveHubCallbackTarget(callbackData);
   if (!target) {
-    console.log(`[poller] 스킵 (미지원 callback): ${callbackData}`);
+    logInfo(`스킵 (미지원 callback): ${callbackData}`);
     return { skipped: true };
   }
 
@@ -171,7 +186,7 @@ async function forwardCallback(callbackQuery: CallbackQuery): Promise<unknown> {
     headers['x-hub-control-callback-secret'] = callbackSecret;
   }
 
-  console.log(`[poller] 콜백 전달(${target.mode}): ${callbackData}`);
+  logInfo(`콜백 전달(${target.mode}): ${callbackData}`);
   const res = await fetch(`${HUB_BASE}${target.route}`, {
     method: 'POST',
     headers,
@@ -184,7 +199,7 @@ async function forwardCallback(callbackQuery: CallbackQuery): Promise<unknown> {
     signal: AbortSignal.timeout(30_000),
   });
   const body = await res.json().catch(() => null);
-  console.log(`[poller] 결과: ${JSON.stringify(body || { status: res.status })}`);
+  logInfo(`결과: ${JSON.stringify(body || { status: res.status })}`);
   if (!res.ok) {
     throw new Error(`Hub callback HTTP ${res.status}`);
   }
@@ -229,7 +244,7 @@ async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> 
   }
 
   const chatId = String(message?.chat?.id || '').trim();
-  console.log(`[poller] 마스터 메시지 전달(chat=${chatId}, message=${message.message_id || 'unknown'})`);
+  logInfo(`마스터 메시지 전달(chat=${chatId}, message=${message.message_id || 'unknown'})`);
   const res = await fetch(`${HUB_BASE}/hub/v2/autonomy/intervention`, {
     method: 'POST',
     headers,
@@ -248,7 +263,7 @@ async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> 
     signal: AbortSignal.timeout(30_000),
   });
   const body = await res.json().catch(() => null);
-  console.log(`[poller] 마스터 메시지 결과: ${JSON.stringify(body || { status: res.status })}`);
+  logInfo(`마스터 메시지 결과: ${JSON.stringify(body || { status: res.status })}`);
   if (!res.ok) {
     throw new Error(`Hub autonomy intervention HTTP ${res.status}`);
   }
@@ -264,11 +279,17 @@ async function pollLoop(): Promise<void> {
   await ensurePollingAvailable(botToken);
 
   let offset = readOffset();
-  console.log(`[poller] 시작 (offset=${offset})`);
+  logInfo(`시작 (offset=${offset})`);
+  let lastHeartbeatAt = 0;
 
   while (true) {
     try {
       const updates = await getUpdates(botToken, offset);
+      const now = Date.now();
+      if (updates.length > 0 || now - lastHeartbeatAt >= POLL_HEARTBEAT_MS) {
+        logInfo(`poll ok (updates=${updates.length}, offset=${offset})`);
+        lastHeartbeatAt = now;
+      }
       for (const update of updates) {
         if (update.callback_query) {
           await forwardCallback(update.callback_query);
@@ -281,7 +302,7 @@ async function pollLoop(): Promise<void> {
       }
     } catch (error) {
       const err = error as Error;
-      console.error(`[poller] 에러: ${err.message}`);
+      logError(`에러: ${err.message}`, err);
       await sleep(RETRY_DELAY_MS);
     }
   }
@@ -289,6 +310,6 @@ async function pollLoop(): Promise<void> {
 
 pollLoop().catch((error) => {
   const err = error as Error;
-  console.error(err.stack || err.message);
+  logError(err.stack || err.message, err);
   process.exit(1);
 });

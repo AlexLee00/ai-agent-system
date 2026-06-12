@@ -1428,11 +1428,16 @@ function inferAskIntent(question) {
   const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
   const hasTelegramSyncContext = /(버튼|확정|보류|승인|웹|동기|동기화|갱신|반영|callback|콜백|poller|폴러|연동)/u.test(text);
   const hasTelegramStatusContext = /(검증|완료|남은|확인|클릭|실사용|첫\s*실사용)/u.test(text);
+  const hasTelegramOpsContext = /(안\s*먹|안\s*됨|안\s*되|실패|오류|에러|장애|로그|log|라우트|route|서버|poller|폴러|callback|콜백|어디|진단|확인)/u.test(text);
   if (hasTelegramContext && (hasTelegramSyncContext || hasTelegramStatusContext)) {
     if (hasScheduleCue || /(05:00|5:00|오전\s*5|실행)/u.test(text)) return 'telegram_schedule';
+    if (hasTelegramOpsContext) return 'telegram_ops';
     return 'telegram';
   }
   const hasLaunchdCue = /(launchctl|launchd|plist|pid|not\s*running|프로세스|상주|로드|bootstrap|calendar|runs|last\s*exit|서비스|service)/u.test(text);
+  const hasMeetingWebCue = /(meeting-room-web|luna-meeting-room-web|회의실\s*웹|웹\s*서버|웹이|웹\s*화면|브라우저|7791|127\.0\.0\.1:7791)/u.test(text);
+  const hasMeetingWebOpsCue = hasLaunchdCue || /(안\s*뜨|접속|포트|port|로그|log|서버|장애|다운|상태|health|curl|lsof)/u.test(text);
+  if (hasMeetingWebCue && hasMeetingWebOpsCue) return 'web_ops';
   const hasMeetingJobCue = /(ai\.luna\.meeting|meeting-|회의|정례|아침|morning|장후|미장|premarket|weekly)/u.test(text);
   const hasScheduleOpsCue = /(실패|오류|에러|누락|안\s*됐|안\s*됨|안\s*되|로그|log|진단|고장)/u.test(text)
     || (/(어디서|무엇을\s*보|뭘\s*보)/u.test(text) && /(확인|보)/u.test(text));
@@ -1524,11 +1529,17 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
   if (intent === 'schedule_ops') {
     return 'PID - 자체는 calendar job 대기 상태일 수 있습니다. 05:00 이후에도 새 아침 통합 회의가 없으면 runs, last exit code, stdout/stderr 로그를 순서대로 확인하세요.';
   }
+  if (intent === 'web_ops') {
+    return '웹이 뜨지 않으면 먼저 health 응답과 포트 리슨 상태를 확인하고, launchd runs/last exit code와 웹 stdout/stderr 로그를 순서대로 보세요.';
+  }
   if (intent === 'secret_safety') {
     return '토큰과 secret 값은 공유하지 말고, 마스킹한 오류 요약과 회의 ID, 실행 시각, exit code만 남기세요.';
   }
   if (intent === 'telegram') {
     return '텔레그램 버튼 처리 후 웹 결정 대기함과 감사 행을 확인하세요. 첫 실제 앱 버튼은 아직 정례 관찰 대상으로 남겨 두는 것이 안전합니다.';
+  }
+  if (intent === 'telegram_ops') {
+    return '텔레그램 버튼이 반응하지 않으면 callback poller, Hub route, 회의실 결정 상태를 순서대로 확인하세요.';
   }
   if (intent === 'decision_action_safety') {
     return '확정/보류는 회의실 감사 상태만 바꾸며, 거래·주문·파라미터 적용은 별도 마스터 실행 경로에서만 다룹니다.';
@@ -1657,6 +1668,21 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
+  if (intent === 'web_ops') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '회의실 웹 장애 확인 순서:',
+      '1. 브라우저 또는 curl로 http://127.0.0.1:7791/api/health 응답을 확인합니다.',
+      '2. 포트 리슨은 lsof -nP -iTCP:7791 -sTCP:LISTEN 결과가 127.0.0.1:7791인지 봅니다.',
+      '3. launchd 상태는 launchctl print gui/$(id -u)/ai.luna.meeting-room-web 명령에서 state, runs, last exit code를 확인합니다.',
+      '4. 실행 로그는 /Users/alexlee/.ai-agent-system/logs/luna-meeting-room-web.log 와 /Users/alexlee/.ai-agent-system/logs/luna-meeting-room-web-error.log 를 확인합니다.',
+      '5. plist 경로·환경변수·로그 경로를 바꾼 뒤에는 kickstart만으로는 새 설정이 반영되지 않을 수 있습니다. 설치본 plist를 다시 복사한 뒤 bootout 후 bootstrap 또는 load로 재등록하고, 그 다음 실행 상태를 확인합니다.',
+      '6. launchctl print 전체 출력은 공유하지 않습니다. environment 블록은 토큰·secret이 섞일 수 있으므로 삭제하고, label/state/runs/last exit code/stdout·stderr 경로만 남깁니다.',
+      '7. 웹 job은 상주 서비스라 정상 상태에서는 state=running이고, calendar job처럼 PID - 대기를 정상으로 해석하지 않습니다.',
+      `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
   if (intent === 'secret_safety') {
     return [
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
@@ -1688,6 +1714,22 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       '웹 반영: 결정 대기함은 폴링 또는 새로고침으로 갱신되고, 처리된 카드는 제거되며 감사 행에는 텔레그램 경로가 남습니다.',
       ...deferReappearanceLines,
       '검증 상태: 자동 검증과 운영 경로 검증은 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
+      `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
+  if (intent === 'telegram_ops') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '텔레그램 버튼 장애 확인 순서:',
+      '1. poller 상태는 launchctl print gui/$(id -u)/ai.telegram.callback-poller 명령에서 state, runs, last exit code를 확인합니다.',
+      '2. poller 로그는 /tmp/telegram-callback-poller.log 와 /tmp/telegram-callback-poller.err 를 확인합니다.',
+      '3. Hub 수신 상태는 launchctl print gui/$(id -u)/ai.hub.resource-api 명령과 bots/hub/hub.log, bots/hub/hub.err.log 를 확인합니다.',
+      '4. 회의실 callback route는 POST /hub/luna/meeting-callback 입니다. callback data prefix는 luna_meeting: 입니다.',
+      '5. poller 로그는 ISO 시각과 poll ok heartbeat를 기준으로 현재성부터 확인합니다. 오래된 fetch failed 잔여 로그만 보고 현재 장애로 단정하지 않습니다.',
+      '6. 처리 성공 후 웹에서는 해당 결정 카드가 제거되고, 원래 회의 타임라인에는 텔레그램 경로 감사 행이 남아야 합니다.',
+      '7. 토큰, callback secret, actor id 원문은 공유하지 말고 state/runs/last exit code/오류 요약만 남깁니다.',
+      '검증 상태: 자동 검증과 운영 route smoke는 통과했지만, 실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인해야 합니다.',
       `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
@@ -1816,7 +1858,7 @@ async function askAgent(body, deps, limiter) {
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_lookup' || intent === 'decision_action_safety') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'web_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_ops' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_lookup' || intent === 'decision_action_safety') {
     return {
       ok: true,
       skipped: true,

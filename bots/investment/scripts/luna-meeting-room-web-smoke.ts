@@ -2170,6 +2170,43 @@ async function main() {
     await closeServer(scheduleOpsStarted.server);
   }
 
+  let webOpsHubCalled = false;
+  const webOpsStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      webOpsHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '웹 장애는 정례 회의 로그만 보면 됩니다.' };
+    },
+  });
+  const webOpsBase = `http://127.0.0.1:${webOpsStarted.server.address().port}`;
+  try {
+    const webOpsAsk = await request(webOpsBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '회의실 웹이 안 뜨면 웹 서버 로그는 어디서 봐? launchctl 상태는 뭘 확인해야 해?' }),
+    });
+    assert.equal(webOpsAsk.status, 200);
+    assert.equal(webOpsAsk.payload.provider, 'rule_based');
+    assert.equal(webOpsAsk.payload.skipped, true);
+    assert.equal(webOpsHubCalled, false);
+    assert.ok(webOpsAsk.payload.text.includes('회의실 웹 장애 확인 순서:'));
+    assert.ok(webOpsAsk.payload.text.includes('http://127.0.0.1:7791/api/health'));
+    assert.ok(webOpsAsk.payload.text.includes('lsof -nP -iTCP:7791 -sTCP:LISTEN'));
+    assert.ok(webOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.luna.meeting-room-web 명령'));
+    assert.ok(webOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-room-web.log'));
+    assert.ok(webOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-room-web-error.log'));
+    assert.ok(webOpsAsk.payload.text.includes('kickstart만으로는 새 설정이 반영되지 않을 수 있습니다.'));
+    assert.ok(webOpsAsk.payload.text.includes('bootout 후 bootstrap 또는 load로 재등록'));
+    assert.ok(webOpsAsk.payload.text.includes('state=running'));
+    assert.ok(webOpsAsk.payload.text.includes('calendar job처럼 PID - 대기를 정상으로 해석하지 않습니다.'));
+    assert.equal(webOpsAsk.payload.text.includes('ai.luna.meeting-morning-0500'), false);
+    assert.equal(webOpsAsk.payload.text.includes('luna-meeting-morning.log'), false);
+    assert.equal(webOpsAsk.payload.text.includes('/tmp/logs'), false);
+  } finally {
+    await closeServer(webOpsStarted.server);
+  }
+
   let secretSafetyHubCalled = false;
   const secretSafetyStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
@@ -2537,6 +2574,46 @@ async function main() {
     assert.equal(telegramHubCalled, true);
   } finally {
     await closeServer(telegramStarted.server);
+  }
+
+  let telegramOpsHubCalled = false;
+  const telegramOpsStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      telegramOpsHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '텔레그램 장애는 웹 폴링만 확인하면 됩니다.' };
+    },
+  });
+  const telegramOpsBase = `http://127.0.0.1:${telegramOpsStarted.server.address().port}`;
+  try {
+    const telegramOpsAsk = await request(telegramOpsBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '텔레그램 버튼이 안 먹으면 어디 로그와 어떤 라우트를 확인해야 해?' }),
+    });
+    assert.equal(telegramOpsAsk.status, 200);
+    assert.equal(telegramOpsAsk.payload.provider, 'rule_based');
+    assert.equal(telegramOpsAsk.payload.skipped, true);
+    assert.equal(telegramOpsHubCalled, false);
+    assert.ok(telegramOpsAsk.payload.text.includes('텔레그램 버튼 장애 확인 순서:'));
+    assert.ok(telegramOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.telegram.callback-poller 명령'));
+    assert.ok(telegramOpsAsk.payload.text.includes('/tmp/telegram-callback-poller.log'));
+    assert.ok(telegramOpsAsk.payload.text.includes('/tmp/telegram-callback-poller.err'));
+    assert.ok(telegramOpsAsk.payload.text.includes('launchctl print gui/$(id -u)/ai.hub.resource-api 명령'));
+    assert.ok(telegramOpsAsk.payload.text.includes('bots/hub/hub.log'));
+    assert.ok(telegramOpsAsk.payload.text.includes('bots/hub/hub.err.log'));
+    assert.ok(telegramOpsAsk.payload.text.includes('POST /hub/luna/meeting-callback'));
+    assert.ok(telegramOpsAsk.payload.text.includes('callback data prefix는 luna_meeting:'));
+    assert.ok(telegramOpsAsk.payload.text.includes('ISO 시각과 poll ok heartbeat를 기준으로 현재성부터 확인'));
+    assert.ok(telegramOpsAsk.payload.text.includes('오래된 fetch failed 잔여 로그만 보고 현재 장애로 단정하지 않습니다.'));
+    assert.ok(telegramOpsAsk.payload.text.includes('실제 Telegram 앱 버튼 클릭은 첫 실사용 시 한 번 더 확인'));
+    assert.equal(telegramOpsAsk.payload.text.includes('callback secret'), true);
+    assert.equal(telegramOpsAsk.payload.text.includes('HUB_CONTROL_CALLBACK_SECRET'), false);
+    assert.equal(telegramOpsAsk.payload.text.includes('TELEGRAM_BOT_TOKEN'), false);
+    assert.equal(telegramOpsAsk.payload.text.includes('Bearer'), false);
+  } finally {
+    await closeServer(telegramOpsStarted.server);
   }
 
   let telegramDeferHubCalled = false;
@@ -2909,6 +2986,7 @@ async function main() {
       cryptoMarketLabelLocalized: true,
       askRateLimit: true,
       askSafetyNotice: true,
+      askWebOpsDiagnostics: true,
       askAdvisoryTermKoreanLabel: true,
       askFormKoreanLabels: true,
       askInputGuidance: true,
@@ -2938,6 +3016,7 @@ async function main() {
       askWeekendScheduleRuleBased: true,
       askPremarketMeetingRuleBased: true,
       askTelegramSyncRuleBased: true,
+      askTelegramOpsDiagnostics: true,
       askTelegramScheduleCombinedRuleBased: true,
       askSecretSafetyRuleBased: true,
       askFailureFriendlyError: true,
