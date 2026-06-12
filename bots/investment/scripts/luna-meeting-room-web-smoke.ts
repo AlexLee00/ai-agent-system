@@ -341,8 +341,11 @@ async function main() {
     assert.ok(appJs.text.includes('aria-label=${`실행 중 회의 ${meetingTypeLabel(run.type)} ${meetingStatusLabel(run.status)} 선택`}'));
     assert.ok(appJs.text.includes('title=${`원문 상태: ${meeting.status ||'));
     assert.ok(appJs.text.includes('title=${`원문 타입: ${meeting.type ||'));
-    assert.ok(appJs.text.includes('title=${`원문 안건: ${minute.agendaKey ||'));
-    assert.ok(appJs.text.includes('title=${`원문 안건: ${decision.agendaKey ||'));
+    assert.ok(appJs.text.includes('title=${`안건: ${agendaLabel(minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('title=${`안건: ${agendaLabel(decision.agendaKey)}`'));
+    assert.ok(appJs.text.includes('data-raw-agenda=${minute.agendaKey ||'));
+    assert.ok(appJs.text.includes('data-raw-agenda=${decision.agendaKey ||'));
+    assert.equal(appJs.text.includes('title=${`원문 안건:'), false);
     assert.ok(appJs.text.includes('role="region" aria-label="회의 목록"'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-label=${`회의 목록 ${totalCount}건`}'));
     assert.ok(appJs.text.includes('className="meeting-list-row" role="listitem"'));
@@ -483,7 +486,8 @@ async function main() {
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${answer.text || answer.error ||'));
     const truncatedCircuit = _testOnly.normalizeLegacyMinuteContent('활성 서킷 [ { "market": "crypto", "symbol": "RENDER/USDT", "circuit": "low_profit_symbol" }, ...[truncated]\n실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.');
-    assert.ok(truncatedCircuit.includes('활성 서킷: 상세 JSON 숨김'));
+    assert.ok(truncatedCircuit.includes('활성 서킷: 상세 근거는 원문 DB 회의록에 보존'));
+    assert.equal(truncatedCircuit.includes('JSON 숨김'), false);
     assert.ok(truncatedCircuit.includes('실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.'));
     assert.equal(truncatedCircuit.includes('"market"'), false);
     assert.equal(truncatedCircuit.includes('low_profit_symbol'), false);
@@ -538,6 +542,7 @@ async function main() {
     assert.equal(detail.payload.minutes[2].content.includes('placeholder 기준'), false);
     assert.equal(detail.payload.minutes[2].content.includes('compareAgainst='), false);
     assert.equal(detail.payload.minutes[2].content.includes('same_bar_close'), false);
+    assert.equal(detail.payload.minutes[2].content.includes('next-bar 수익률 차이'), false);
     assert.equal(detail.payload.minutes[2].content.includes('HMM<폴백'), false);
     assert.equal(detail.payload.minutes[2].content.includes('grillCoverage='), false);
     assert.ok(detail.payload.minutes[3].content.includes('ADR 기록: C 마스터 확인 / 마스터 액션 대기'));

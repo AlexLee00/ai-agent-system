@@ -146,8 +146,8 @@ function legacyMetricLabel(key) {
     brier_hmm_lt_fallback: 'Brier: HMM이 폴백보다 낮음',
     transition_alert_precision: '전이 경보 정밀도',
     halt_reduced_avoidance_delta: 'halt/reduced 회피 개선폭',
-    nextbar_return_delta: 'next-bar 수익률 차이',
-    nextbar_trade_count_delta: 'next-bar 거래 수 차이',
+    nextbar_return_delta: 'Next-bar 수익률 차이',
+    nextbar_trade_count_delta: 'Next-bar 거래 수 차이',
     placeholder: '임시 기준',
     durationWeeks: '관찰 주수',
     compareAgainst: '비교 기준',
@@ -278,7 +278,7 @@ function summarizeLegacyCircuitLocks(rows = []) {
   return [
     `활성 서킷: ${locks.length}건(저수익 ${lowProfit.length}·쿨다운 ${cooldown.length})`,
     symbols.length ? `대표 심볼=${symbols.join(', ')}` : '',
-    '상세 evidence는 원문 DB 회의록에 보존',
+    '상세 근거는 원문 DB 회의록에 보존',
   ].filter(Boolean).join('\n');
 }
 
@@ -301,12 +301,12 @@ function normalizeLegacyMinuteContent(content) {
       try {
         compactCircuitText = `${compactCircuitText.slice(0, start)}${summarizeLegacyCircuitLocks(JSON.parse(jsonText))}${compactCircuitText.slice(arrayStart + jsonText.length)}`.trim();
       } catch {
-        compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 JSON 숨김(원문 DB 회의록 보존)`;
+        compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 근거는 원문 DB 회의록에 보존`;
       }
     } else {
       const tailIndex = compactCircuitText.indexOf('실거래/파라미터', arrayStart);
       const tail = tailIndex >= 0 ? `\n${compactCircuitText.slice(tailIndex)}` : '';
-      compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 JSON 숨김(원문 DB 회의록 보존)${tail}`.trim();
+      compactCircuitText = `${compactCircuitText.slice(0, start)}활성 서킷: 상세 근거는 원문 DB 회의록에 보존${tail}`.trim();
     }
   }
   const readable = normalizeLegacyKoreanLlmNoise(compactCircuitText);

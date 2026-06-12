@@ -509,7 +509,9 @@ function Timeline({ detail, catchup, loading }) {
             >
               <div
                 className="meeting-title"
-                title=${`원문 안건: ${minute.agendaKey || 'session'} · 원문 speaker: ${minute.speaker || 'unknown'}`}
+                title=${`안건: ${agendaLabel(minute.agendaKey || 'session')} · 발언자: ${speakerLabel(minute.speaker)}`}
+                data-raw-agenda=${minute.agendaKey || 'session'}
+                data-raw-speaker=${minute.speaker || 'unknown'}
               >${minute.seq}. ${agendaLabel(minute.agendaKey || 'session')} — ${roleName(minute.role, minute)} / ${speakerLabel(minute.speaker)}</div>
               <div className="meta">${formatTime(minute.createdAt)}</div>
               <${MarkdownLite} text=${minute.content} />
@@ -563,7 +565,7 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
       role="listitem"
       aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
     >
-      <div className="meeting-title" title=${`원문 안건: ${decision.agendaKey || 'unknown'}`}>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
+      <div className="meeting-title" title=${`안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
       <div className="meta decision-state">
         <span title=${`원문 등급: ${decision.grade || 'n/a'}`}>${decisionGradeLabel(decision.grade)}</span>
         <span title=${`원문 상태: ${decision.status || 'n/a'}`}>${decisionStatusLabel(decision.status)}</span>

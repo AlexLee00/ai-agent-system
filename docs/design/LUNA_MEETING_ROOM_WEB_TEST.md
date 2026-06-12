@@ -132,6 +132,8 @@
 - **2026-06-12 루프 76**: W-02/W-03 시장·레짐 라벨 일관성 점검 → 실제 데이터 minute와 legacy 분석 발언에 `레짐=bull/bear/sideways`, `출처=hmm`, `해외 시장`이 남아 한국어 운영 UI와 불일치. 표시 계층과 신규 회의 생성 문구에서 `상승/하락/수평`, `출처=HMM`, `미국 시장`으로 정규화하고 스모크 `legacyRegimeValuesLocalized`, `legacyOverseasMarketLocalized` 추가.
 - **2026-06-12 루프 77**: W-24 내부 근거/비용 가드 토큰 재감사 → 실제 그릴·분석 발언에 `plan-note`, `shadow stack`, `registry evidence`, `cost_guard_skipped`, `max calls`, `crypto 시장`이 남아 운영 화면 문장 품질을 낮춤. 표시 계층과 신규 회의 생성 문구에서 `회의 데이터 요약`, `섀도 스택`, `레지스트리 근거`, `비용 가드: 최대 호출 N회 도달`, `암호화폐 시장`으로 정규화하고 스모크 `legacyInternalEvidenceTermsLocalized`, `legacyCostGuardTermsLocalized` 추가.
 - **2026-06-12 루프 78**: W-24 C15 기준 토큰 점검 → 실제 C15 데이터 minute에 `placeholder 기준`, `same_bar_close`, `HMM<폴백`이 남아 운영자가 의미를 즉시 해석하기 어려움. 표시 계층과 신규 회의 생성 문구에서 `임시 기준`, `동일봉 종가`, `Brier: HMM이 폴백보다 낮음`으로 정규화하고 스모크에서 raw 기준 토큰 재노출을 차단.
+- **2026-06-12 루프 79**: W-21/W-24 잔여 표시 문구 재점검 → 실제 타임라인에 `활성 서킷: 상세 JSON 숨김`과 `next-bar` 소문자 기준 라벨이 남아 운영 화면 문장 품질과 표기 일관성을 낮춤. 표시 계층에서 `상세 근거는 원문 DB 회의록에 보존`, `Next-bar 수익률 차이/거래 수 차이`로 정규화하고 스모크에 raw 문구 재노출 차단을 추가.
+- **2026-06-12 루프 80**: W-03/W-08 hover·접근성 속성 점검 → 본문/aria는 한국어로 정규화됐지만 minute/decision title에 `원문 안건: decision:mapek` 같은 내부 ID가 hover 문구로 남는 것을 확인. title은 `안건: C15 MAPEK · 발언자: ...`처럼 사용자 라벨로 바꾸고 원문 ID는 `data-raw-*` 속성에만 보존하도록 보강.
 - **남은 위험**: 실 DB write가 필요한 confirm/defer UI, 실 LLM 호출 품질, 텔레그램↔웹 동기, 정례 회의 반영은 운영 부작용 가능성이 있어 별도 승인/정례 사이클에서 검증.
 
 ## 운영 루틴 제안
