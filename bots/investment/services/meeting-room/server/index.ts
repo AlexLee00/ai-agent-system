@@ -1416,6 +1416,9 @@ function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
 
 function inferAskIntent(question) {
   const text = String(question || '').toLowerCase();
+  const hasSecretCue = /(secret|token|토큰|시크릿|비밀|credential|credentials|api[_-]?key|키|bearer|hub_auth_token|meeting_room_token|텔레그램.*토큰|telegram.*token)/u.test(text);
+  const hasShareCue = /(공유|붙여|보내|전달|올려|업로드|노출|보여|복사|로그|출력|print|마스킹|가려|제거|redact|mask)/u.test(text);
+  if (hasSecretCue && hasShareCue) return 'secret_safety';
   const hasScheduleCue = /(주말|토요일|일요일|weekend|정례|자동\s*회의|스케줄|일정)/u.test(text);
   const hasRunCue = /(수동|시작|실행|됐|되|가능|언제|스킵|skip)/u.test(text);
   const hasTelegramContext = /(텔레그램|telegram|앱\s*버튼)/u.test(text);
@@ -1511,6 +1514,9 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
   }
   if (intent === 'schedule_ops') {
     return 'PID - 자체는 calendar job 대기 상태일 수 있습니다. 05:00 이후에도 새 아침 통합 회의가 없으면 runs, last exit code, stdout/stderr 로그를 순서대로 확인하세요.';
+  }
+  if (intent === 'secret_safety') {
+    return '토큰과 secret 값은 공유하지 말고, 마스킹한 오류 요약과 회의 ID, 실행 시각, exit code만 남기세요.';
   }
   if (intent === 'telegram') {
     return '텔레그램 버튼 처리 후 웹 결정 대기함과 감사 행을 확인하세요. 첫 실제 앱 버튼은 아직 정례 관찰 대상으로 남겨 두는 것이 안전합니다.';
@@ -1638,6 +1644,17 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
+  if (intent === 'secret_safety') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '공유 금지: HUB_AUTH_TOKEN, MEETING_ROOM_TOKEN, Telegram 토큰, Bearer 값, API key, credential 원문은 그대로 붙여 공유하지 않습니다.',
+      '마스킹 기준: 값 전체를 제거하거나 앞뒤 2~4자만 남기고 나머지는 ***로 가립니다.',
+      '공유 가능 범위: 회의 ID, 실행 시각, label, runs, last exit code, 에러 요약, 재현 명령에서 secret 값을 제거한 형태만 남깁니다.',
+      '로그 처리: launchctl print 또는 stdout/stderr를 공유할 때는 environment 블록의 토큰/secret 라인을 삭제한 뒤 첨부합니다.',
+      `권장 다음 행동: ${ruleBasedActionForIntent(intent, false)}`,
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
   if (intent === 'telegram') {
     return [
       `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
@@ -1742,7 +1759,7 @@ async function askAgent(body, deps, limiter) {
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'decision_scope' || intent === 'decision_due') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due') {
     return {
       ok: true,
       skipped: true,

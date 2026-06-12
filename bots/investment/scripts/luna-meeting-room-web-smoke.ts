@@ -2166,6 +2166,34 @@ async function main() {
     await closeServer(scheduleOpsStarted.server);
   }
 
+  let secretSafetyHubCalled = false;
+  const secretSafetyStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      secretSafetyHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '토큰은 그대로 공유해도 됩니다.' };
+    },
+  });
+  const secretSafetyBase = `http://127.0.0.1:${secretSafetyStarted.server.address().port}`;
+  try {
+    const secretSafetyAsk = await request(secretSafetyBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'aria', question: 'launchctl print 출력에 HUB_AUTH_TOKEN 값이 보이는데 그대로 붙여서 공유해도 돼?' }),
+    });
+    assert.equal(secretSafetyAsk.status, 200);
+    assert.equal(secretSafetyAsk.payload.provider, 'rule_based');
+    assert.equal(secretSafetyAsk.payload.skipped, true);
+    assert.equal(secretSafetyHubCalled, false);
+    assert.ok(secretSafetyAsk.payload.text.includes('공유 금지: HUB_AUTH_TOKEN, MEETING_ROOM_TOKEN, Telegram 토큰'));
+    assert.ok(secretSafetyAsk.payload.text.includes('앞뒤 2~4자만 남기고 나머지는 ***로 가립니다'));
+    assert.ok(secretSafetyAsk.payload.text.includes('environment 블록의 토큰/secret 라인을 삭제'));
+    assert.equal(secretSafetyAsk.payload.text.includes('토큰은 그대로 공유해도 됩니다'), false);
+  } finally {
+    await closeServer(secretSafetyStarted.server);
+  }
+
   let meetingTargetScheduleHubCalled = false;
   const meetingTargetScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,
@@ -2759,6 +2787,7 @@ async function main() {
       askPremarketMeetingRuleBased: true,
       askTelegramSyncRuleBased: true,
       askTelegramScheduleCombinedRuleBased: true,
+      askSecretSafetyRuleBased: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,
       pollingStatusVisible: true,
