@@ -47,6 +47,17 @@ const COMPONENT_LABELS = Object.freeze({
   'circuit-locks': '서킷 잠금 알림',
 });
 
+function meetingTypeLabel(type: any) {
+  return {
+    morning: '아침 통합 회의',
+    domestic_debrief: '국내 장후 회의',
+    us_premarket: '미장 전 회의',
+    weekly: '주간 회의',
+    adhoc: '임시 회의',
+    ad_hoc: '임시 회의',
+  }[String(type || '').toLowerCase()] || '회의';
+}
+
 function safeText(value: any, fallback = 'n/a') {
   const text = String(value ?? '').trim();
   return text || fallback;
@@ -750,7 +761,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
   }
 
   const closedAt = iso(options.closedAt || Date.now());
-  const summary = `${type} 회의 완료: 안건 ${agendas.length}건, ADR ${decisions.length}건, LLM ${context.llmCalls}회`;
+  const summary = `${meetingTypeLabel(type)} 완료: 안건 ${agendas.length}건, ADR ${decisions.length}건, LLM ${context.llmCalls}회`;
   minutes.push({ seq: seq++, agendaKey: 'session', speaker: 'system', role: 'system', content: 'close', meta: { state: 'close', summary } });
   const result = {
     ok: true,

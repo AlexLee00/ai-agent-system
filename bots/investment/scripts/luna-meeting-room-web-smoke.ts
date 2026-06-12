@@ -417,6 +417,9 @@ async function main() {
     assert.ok(meetingSessionSource.includes('function deterministicAnalysis'));
     assert.ok(meetingSessionSource.includes("'회의 데이터만 근거로 작성한 자문입니다.'"));
     assert.equal(meetingSessionSource.includes("return [\n    agenda.title,\n    '회의 데이터만 근거로 작성한 자문입니다.'"), false);
+    assert.ok(meetingSessionSource.includes('function meetingTypeLabel'));
+    assert.ok(meetingSessionSource.includes('`${meetingTypeLabel(type)} 완료: 안건 ${agendas.length}건'));
+    assert.equal(meetingSessionSource.includes('`${type} 회의 완료: 안건 ${agendas.length}건'), false);
     assert.ok(appJs.text.includes("MR-B ·${' '}"));
     assert.ok(appJs.text.includes("자문 / 섀도 전용 ·${' '}"));
     assert.ok(appJs.text.includes(`<h1>Luna Meeting Room</h1>
@@ -516,6 +519,24 @@ async function main() {
     assert.equal(appJs.text.includes("|| status || '상태 미상'"), false);
     assert.ok(appJs.text.includes("|| '회의';"));
     assert.equal(appJs.text.includes("|| type || '회의'"), false);
+    assert.equal(
+      _testOnly.normalizeSession({
+        id: 143,
+        type: 'us_premarket',
+        status: 'closed',
+        summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 2회',
+      }).summary,
+      '미장 전 회의 완료: 안건 2건, ADR 2건, LLM 2회',
+    );
+    assert.equal(
+      _testOnly.normalizeSession({
+        id: 117,
+        type: 'domestic_debrief',
+        status: 'closed',
+        summary: 'domestic_debrief 회의 완료: 안건 1건, ADR 1건, LLM 0회',
+      }).summary,
+      '국내 장후 회의 완료: 안건 1건, ADR 1건, LLM 0회',
+    );
     assert.ok(appJs.text.includes("|| '안건';"));
     assert.equal(appJs.text.includes("|| key || '안건'"), false);
     assert.ok(appJs.text.includes("|| '에이전트 미상';"));
@@ -1912,6 +1933,7 @@ async function main() {
       askResponseMetadataLabels: true,
       agentPrefixDisplayNormalized: true,
       deterministicAnalysisTitleDeduped: true,
+      sessionSummaryTypeLocalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,

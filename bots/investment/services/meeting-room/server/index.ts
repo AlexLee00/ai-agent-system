@@ -122,6 +122,34 @@ function readBody(req) {
   });
 }
 
+function sessionStatusLabel(status) {
+  return {
+    open: '진행 중',
+    running: '실행 중',
+    completed: '완료',
+    closed: '완료',
+    failed: '실패',
+  }[String(status || '').toLowerCase()] || '상태 미상';
+}
+
+function meetingTypeLabel(type) {
+  return {
+    morning: '아침 통합 회의',
+    domestic_debrief: '국내 장후 회의',
+    us_premarket: '미장 전 회의',
+    weekly: '주간 회의',
+    adhoc: '임시 회의',
+    ad_hoc: '임시 회의',
+  }[String(type || '').toLowerCase()] || '회의';
+}
+
+function normalizeSessionSummary(summary, type) {
+  const label = meetingTypeLabel(type);
+  return String(summary || '')
+    .replace(/^(morning|domestic_debrief|us_premarket|weekly|adhoc|ad_hoc)\s+회의\s+완료:/i, `${label} 완료:`)
+    .replace(/^회의\s+완료:/, `${label} 완료:`);
+}
+
 function normalizeSession(row = {}) {
   return {
     id: row.id,
@@ -131,18 +159,8 @@ function normalizeSession(row = {}) {
     segments: safeJson(row.segments, []),
     startedAt: row.started_at || row.startedAt,
     closedAt: row.closed_at || row.closedAt,
-    summary: row.summary || '',
+    summary: normalizeSessionSummary(row.summary, row.type),
   };
-}
-
-function sessionStatusLabel(status) {
-  return {
-    open: '진행 중',
-    running: '실행 중',
-    completed: '완료',
-    closed: '완료',
-    failed: '실패',
-  }[String(status || '').toLowerCase()] || '상태 미상';
 }
 
 function agendaLabel(key) {
@@ -1532,6 +1550,7 @@ export {
   normalizeDecision,
   normalizeLegacyMinuteContent,
   normalizeMinute,
+  normalizeSession,
 };
 
 export const _testOnly = {
@@ -1544,5 +1563,7 @@ export const _testOnly = {
   dedupeDeterministicAnalysisTitle,
   normalizeLegacyMinuteContent,
   normalizeMinute,
+  normalizeSession,
+  normalizeSessionSummary,
   sessionStatusLabel,
 };
