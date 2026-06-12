@@ -438,3 +438,17 @@ R1(스냅샷 89키x408) -> R2(엔진+테이블+shadow+GATE-R, 정적 544/0) -> R
   (라우팅 현행/쿨다운/콜드스타트/정책엔진 shadow/게이트 3종/운영 노트: env 변경은 bootout+bootstrap).
 - 참고: docs/guides/llm.md는 외부 LLM API 참조 문서(다른 용도)라 비대상 판정.
 이력: 2026-06-12 연결 가이드 2종 갱신 (메티)
+
+## AE. R 시리즈 종결 — 종합 상태 스냅샷 (2026-06-13)
+
+| 트랙 | 상태 |
+|---|---|
+| R1 스냅샷 | 종결 — 89키 x 408 variants, oauth4 고정 |
+| R2 정책 엔진+shadow+GATE-R | 적용·가동 (MODE=shadow) |
+| R2b/c/d 보정 3건 | 종결 — agent 경로 / 교차 팀 alias / env 박제 (shadow 실전 포착 3건 전부 해소) |
+| 정적 diff | --engine 544/0 (env 정합 포함), codegen 토큰 10종 813 entry |
+| GATE-R evidence | 기준점 2026-06-13 01:38:56 — 청정 누적 중 (02:11 기준 12건 false 0) |
+| 다음 | 6/14 GATE-H --hours=48 선행 판정 + GATE-R 동시 점검(>=50건 false 0) -> ready 시 R3(team:darwin,sigma) -> ~6/18 GATE-H 정식 -> S-2(알람 outbox)+S-3(풀 가시성) -> R4 레거시 소거 |
+
+운영 레버 요약: HUB_LLM_POLICY_ENGINE_MODE=shadow / 쿨다운 ON / local=backtest 전용 / 콜드스타트 재시도 ON.
+이력: 2026-06-13 종합 스냅샷 (메티)
