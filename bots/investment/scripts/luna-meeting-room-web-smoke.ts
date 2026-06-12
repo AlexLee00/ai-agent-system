@@ -2145,6 +2145,9 @@ async function main() {
     assert.ok(scheduleOpsAsk.payload.text.includes('/Users/alexlee/.ai-agent-system/logs/luna-meeting-morning-error.log'));
     assert.ok(scheduleOpsAsk.payload.text.includes('첫 실행 전에는 로그 파일이 없거나 0바이트일 수 있습니다.'));
     assert.ok(scheduleOpsAsk.payload.text.includes('정례 실행 상태:'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('launchctl print 전체 출력은 공유하지 않습니다.'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('inherited/default/environment 블록은 토큰·secret이 섞일 수 있으므로 삭제'));
+    assert.ok(scheduleOpsAsk.payload.text.includes('label/state/runs/last exit code/calendar trigger만 남깁니다.'));
     assert.ok(scheduleOpsAsk.payload.text.includes('secret이나 토큰 값을 붙여 공유하지 말고'));
     assert.equal(scheduleOpsAsk.payload.text.includes('`launchctl print'), false);
     assert.equal(scheduleOpsAsk.payload.text.includes('`/Users/alexlee/.ai-agent-system/logs'), false);
