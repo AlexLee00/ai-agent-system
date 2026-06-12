@@ -732,7 +732,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/결정 대기:\s*상단 캐치업 기준으로 확인하세요/g, '결정 대기: 상단 캐치업 기준입니다')
     .replace(/전략군\s+24시간\s+동안\s+0건의\s+거래가\s+발생했습니다\.?/g, '전략군 24시간 신호 0건입니다.')
     .replace(/전략군\s+24시간\s+동안\s+(\d+)건의\s+이벤트가\s+발생했습니다\.?/g, '전략군 24시간 신호 $1건입니다.')
-    .replace(/전략군\s+24시간\s+동안\s+(\d+)건의\s+입장\s*\(Entry\s*(\d+)\)\s*이 발생(?:하였으며|했습니다)?/gi, '전략군 24시간 신호 $1건(entry $2건)입니다')
+    .replace(/전략군\s+24시간\s+동안\s+(\d+)건의\s+입장\s*\(Entry\s*(\d+)\)\s*이 발생(?:하였으며|했습니다)?/gi, '전략군 24시간 신호 $1건(진입 $2건)입니다')
     .replace(/입니다,\s*현재/g, '입니다. 현재')
     .replace(/프로\s*k?si/gi, '프록시')
     .replace(/프로끼/g, '프록시')
@@ -741,7 +741,7 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*0\)/g, '전략군 24시간: 0건(진입 0)')
     .replace(/전략군\s+24시간:\s*0건\s*\(입장\s*없음\)/g, '전략군 24시간: 0건(진입 없음)')
     .replace(/입장한\s+거래/g, '진입한 거래')
-    .replace(/입장\s*\(Entry\s*0\)/gi, '진입(entry 0건)')
+    .replace(/입장\s*\(Entry\s*0\)/gi, '진입 0건')
     .replace(/전략군은 현재 입장하지 않았으며/g, '전략군은 현재 진입하지 않았으며')
     .replace(/전략군의 입장을 고려/g, '전략군 진입을 고려')
     .replace(
@@ -1139,7 +1139,7 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
   }
   if (intent === 'circuit') {
     return hasBlockingContext
-      ? '활성 서킷의 symbol·reason·lock_until을 먼저 확인하고, 잠금 해제 전 신규 적용을 보류하세요.'
+      ? '활성 서킷의 심볼·사유·잠금 해제 시각을 먼저 확인하고, 잠금 해제 전 신규 적용을 보류하세요.'
       : '활성 서킷이 없으면 다음 회의까지 관찰을 유지하세요.';
   }
   if (intent === 'strategy') {
@@ -1147,7 +1147,7 @@ function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
       return '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
     }
     if (Number(context.entryCount || 0) === 0) {
-      return '최근 전략 신호 중 entry가 없으므로 신규 진입보다 exit/invalidate/관찰 신호인지 먼저 확인하세요.';
+      return '최근 전략 신호 중 진입이 없으므로 신규 진입보다 청산·무효화·관찰 신호인지 먼저 확인하세요.';
     }
     return hasBlockingContext
       ? '전략 entry 신호는 레짐·게이트·서킷과 함께 확인하고, 충돌하는 신호는 관찰 대상으로만 두세요.'
@@ -1202,7 +1202,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     lockCount > 0 ? { key: 'circuit', text: `활성 서킷 ${lockCount}건` } : null,
     gates.length ? { key: 'gate', text: `시장 게이트 ${gates.join(' · ')}` } : null,
     regimes.length ? { key: 'regime', text: `레짐 ${regimes.join(' · ')}` } : null,
-    (intent === 'strategy' || strategySignalCount > 0) ? { key: 'strategy', text: `최근 전략 신호 ${strategySignalCount}건(entry ${entryCount}건)` } : null,
+    (intent === 'strategy' || strategySignalCount > 0) ? { key: 'strategy', text: `최근 전략 신호 ${strategySignalCount}건(진입 ${entryCount}건)` } : null,
     inactiveSegments.length ? { key: 'segment', text: `비활성 세그먼트 ${inactiveSegments.join(' · ')}` } : null,
   ].filter(Boolean), intent).map((item) => item.text);
   const topPriority = priorities.length ? priorities.slice(0, 3).join(' / ') : '즉시 눈에 띄는 경보 없음';

@@ -1116,7 +1116,7 @@ async function main() {
       '게이트/레짐/포지션/예정 이벤트를 read-only로 점검합니다.\n전략군 24시간 동안 1건의 입장(Entry 0)이 발생하였으며, 현재 14건의 활성 서킷이 유지되고 있습니다.',
     );
     assert.ok(premarketEntryTerm.includes('읽기 전용으로 점검합니다.'));
-    assert.ok(premarketEntryTerm.includes('전략군 24시간 신호 1건(entry 0건)입니다'));
+    assert.ok(premarketEntryTerm.includes('전략군 24시간 신호 1건(진입 0건)입니다'));
     assert.equal(premarketEntryTerm.includes('읽기 전용로'), false);
     assert.equal(premarketEntryTerm.includes('입장(Entry 0)'), false);
     assert.equal(premarketEntryTerm.includes('입니다, 현재'), false);
@@ -1644,7 +1644,7 @@ async function main() {
         body: JSON.stringify({ agent: 'aria', question: '전략 신호 관점에서 유의할 것은?' }),
       });
       assert.equal(noStrategyAsk.status, 200);
-      assert.ok(noStrategyAsk.payload.text.includes('기술 관점 우선 확인: 최근 전략 신호 0건(entry 0건)'));
+      assert.ok(noStrategyAsk.payload.text.includes('기술 관점 우선 확인: 최근 전략 신호 0건(진입 0건)'));
       assert.ok(noStrategyAsk.payload.text.includes('전략 신호가 부족하면'));
     } finally {
       await closeServer(noStrategySignalStarted.server);
@@ -1674,13 +1674,47 @@ async function main() {
         body: JSON.stringify({ agent: 'aria', question: '전략 신호 관점에서 유의할 것은?' }),
       });
       assert.equal(nonEntryStrategyAsk.status, 200);
-      assert.ok(nonEntryStrategyAsk.payload.text.includes('기술 관점 우선 확인: 최근 전략 신호 1건(entry 0건)'));
-      assert.ok(nonEntryStrategyAsk.payload.text.includes('최근 전략 신호 중 entry가 없으므로 신규 진입보다 exit/invalidate/관찰 신호인지 먼저 확인하세요.'));
+      assert.ok(nonEntryStrategyAsk.payload.text.includes('기술 관점 우선 확인: 최근 전략 신호 1건(진입 0건)'));
+      assert.ok(nonEntryStrategyAsk.payload.text.includes('최근 전략 신호 중 진입이 없으므로 신규 진입보다 청산·무효화·관찰 신호인지 먼저 확인하세요.'));
+      assert.equal(nonEntryStrategyAsk.payload.text.includes('entry가 없으므로'), false);
+      assert.equal(nonEntryStrategyAsk.payload.text.includes('exit/invalidate'), false);
     } finally {
       await closeServer(nonEntryStrategyStarted.server);
     }
   } finally {
     await closeServer(pendingAwareStarted.server);
+  }
+
+  const circuitIntentStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    meetingStore: {
+      ...createMemoryStore(),
+      listPendingDecisions: async () => [],
+    },
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# fixture plan-note',
+      pendingDecisions: [],
+      gates: [{ market: 'domestic', deployment: 'halt', score: 33 }],
+      regimes: [],
+      strategySignals: [],
+      circuitLocks: [{ circuit: 'low_profit_symbol', symbol: 'BTC/USDT' }],
+    }),
+    resolveAgentLLMRouteFn: () => ({ noLLM: true }),
+  });
+  try {
+    const circuitIntentBase = `http://127.0.0.1:${circuitIntentStarted.server.address().port}`;
+    const circuitIntentAsk = await request(circuitIntentBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'aria', question: '서킷 잠금 관점에서 먼저 볼 항목은?' }),
+    });
+    assert.equal(circuitIntentAsk.status, 200);
+    assert.ok(circuitIntentAsk.payload.text.includes('기술 관점 우선 확인: 활성 서킷 1건'));
+    assert.ok(circuitIntentAsk.payload.text.includes('활성 서킷의 심볼·사유·잠금 해제 시각을 먼저 확인'));
+    assert.equal(circuitIntentAsk.payload.text.includes('symbol·reason·lock_until'), false);
+  } finally {
+    await closeServer(circuitIntentStarted.server);
   }
 
   const askFailureStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
