@@ -151,7 +151,29 @@ function createMemoryStore() {
         ']',
         '<script>alert(1)</script>',
       ].join('\n'),
-      meta: {},
+      meta: {
+        kind: 'us_premarket',
+        state: 'data_brief',
+        evidence: {
+          gate: {
+            market: 'overseas',
+            deployment: 'reduced',
+            score: 47.07,
+            signals: {
+              reason: 'score_between_thresholds',
+              signals: [
+                { name: 'vix_level', source: 'yahoo:^VIX', available: true },
+                { name: 'put_call_ratio', source: 'not_configured', error: 'source_not_available_yet', available: false },
+              ],
+            },
+          },
+          regime: {
+            market: 'overseas',
+            current_regime: 'sideways',
+            confidence: 0.4746,
+          },
+        },
+      },
       createdAt: '2026-06-11T00:00:01.000Z',
     },
     {
@@ -191,7 +213,7 @@ function createMemoryStore() {
       speaker: 'adr',
       role: 'decision',
       content: 'ADR recorded: c_master/pending_master',
-      meta: { fixture: 'adr', status: 'pending_master', summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 2회' },
+      meta: { fixture: 'adr', grade: 'c_master', status: 'pending_master', summary: 'us_premarket 회의 완료: 안건 2건, ADR 2건, LLM 2회' },
       createdAt: '2026-06-11T00:00:03.000Z',
     },
     {
@@ -1102,6 +1124,19 @@ async function main() {
     assert.ok(detail.payload.minutes[1].content.includes('대표 심볼=RENDER/USDT, SOL/USDT'));
     assert.equal(detail.payload.minutes[1].content.includes('"market":"crypto"'), false);
     assert.equal(detail.payload.minutes[1].content.includes('low_profit_symbol'), false);
+    assert.equal(detail.payload.minutes[1].meta.kind, '미장 전 회의');
+    assert.equal(detail.payload.minutes[1].meta.state, '데이터 브리프');
+    assert.deepEqual(detail.payload.minutes[1].meta.evidence.summary, [
+      '게이트: 미국 reduced · 47.1점 · 사용 신호 1/2',
+      '레짐: 미국 수평(0.47)',
+      '상세 근거는 감사 로그에 보존',
+    ]);
+    const minuteMetaText = JSON.stringify(detail.payload.minutes[1].meta);
+    assert.equal(minuteMetaText.includes('us_premarket'), false);
+    assert.equal(minuteMetaText.includes('data_brief'), false);
+    assert.equal(minuteMetaText.includes('score_between_thresholds'), false);
+    assert.equal(minuteMetaText.includes('source_not_available_yet'), false);
+    assert.equal(minuteMetaText.includes('not_configured'), false);
     assert.ok(detail.payload.minutes[1].content.includes('활성 서킷: 최신 데이터 영역 기준으로 봅니다'));
     assert.equal(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'), false);
     assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
@@ -1133,8 +1168,10 @@ async function main() {
     assert.equal(detail.payload.minutes[2].content.includes('grillCoverage='), false);
     assert.ok(detail.payload.minutes[3].content.includes('ADR 기록: C 마스터 확인 / 마스터 액션 대기'));
     assert.equal(detail.payload.minutes[3].content.includes('ADR recorded: c_master/pending_master'), false);
+    assert.equal(detail.payload.minutes[3].meta.grade, 'C 마스터 확인');
     assert.equal(detail.payload.minutes[3].meta.status, '마스터 액션 대기');
     assert.equal(detail.payload.minutes[3].meta.summary, '미장 전 회의 완료: 안건 2건, ADR 2건, LLM 2회');
+    assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('c_master'), false);
     assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('pending_master'), false);
     assert.equal(JSON.stringify(detail.payload.minutes[3].meta).includes('us_premarket 회의 완료'), false);
     assert.equal((detail.payload.minutes[4].content.match(/이러한 결과를 기반으로/g) || []).length, 0);

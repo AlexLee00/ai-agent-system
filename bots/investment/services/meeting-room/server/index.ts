@@ -1062,12 +1062,49 @@ function normalizeMinute(row = {}) {
   };
 }
 
+function minuteMetaStateLabel(state) {
+  return {
+    open: '회의 시작',
+    data_brief: '데이터 브리프',
+    analysis: '분석',
+    grill: '그릴',
+    decision_draft: '결정 초안',
+    decision: '결정',
+    adr: 'ADR 기록',
+    close: '회의 종료',
+    closed: '회의 종료',
+    completed: '완료',
+  }[String(state || '').toLowerCase()] || String(state || '상태 미상');
+}
+
+function compactMinuteMetaEvidence(evidence) {
+  const parsed = safeJson(evidence);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
+  const excerpt = parsed.evidenceExcerpt && typeof parsed.evidenceExcerpt === 'object' && !Array.isArray(parsed.evidenceExcerpt)
+    ? parsed.evidenceExcerpt
+    : parsed;
+  const summary = summarizeDecisionEvidenceExcerpt(excerpt);
+  return {
+    ...(parsed.title ? { title: String(parsed.title) } : {}),
+    ...(parsed.shadowOnly === true ? { shadowOnly: '섀도 전용' } : {}),
+    summary: [...summary, '상세 근거는 감사 로그에 보존'],
+  };
+}
+
 function normalizeMinuteMeta(meta) {
   const parsed = safeJson(meta);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
   const normalized = { ...parsed };
+  if (typeof normalized.type === 'string') normalized.type = meetingTypeLabel(normalized.type);
+  if (typeof normalized.kind === 'string') normalized.kind = meetingTypeLabel(normalized.kind);
+  if (typeof normalized.agendaKind === 'string') normalized.agendaKind = meetingTypeLabel(normalized.agendaKind);
+  if (typeof normalized.state === 'string') normalized.state = minuteMetaStateLabel(normalized.state);
   if (typeof normalized.status === 'string') normalized.status = decisionStatusLabel(normalized.status);
+  if (typeof normalized.grade === 'string') normalized.grade = decisionGradeLabel(normalized.grade);
   if (typeof normalized.summary === 'string') normalized.summary = normalizeSessionSummary(normalized.summary);
+  if (normalized.evidence && typeof normalized.evidence === 'object') {
+    normalized.evidence = compactMinuteMetaEvidence(normalized.evidence);
+  }
   return normalized;
 }
 
