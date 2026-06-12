@@ -1011,7 +1011,7 @@ function orderRuleBasedPriorities(items, intent) {
   return [...items].sort((a, b) => (weight.get(a.key) ?? 99) - (weight.get(b.key) ?? 99));
 }
 
-function ruleBasedActionForIntent(intent, hasBlockingContext) {
+function ruleBasedActionForIntent(intent, hasBlockingContext, context = {}) {
   if (intent === 'gate') {
     return hasBlockingContext
       ? '먼저 halt/reduced 시장의 근거와 관련 pending 결정을 대조하고, full 전환 전까지 신규 적용은 보수적으로 보세요.'
@@ -1028,6 +1028,12 @@ function ruleBasedActionForIntent(intent, hasBlockingContext) {
       : '활성 서킷이 없으면 다음 회의까지 관찰을 유지하세요.';
   }
   if (intent === 'strategy') {
+    if (Number(context.strategySignalCount || 0) === 0) {
+      return '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
+    }
+    if (Number(context.entryCount || 0) === 0) {
+      return '최근 전략 신호 중 entry가 없으므로 신규 진입보다 exit/invalidate/관찰 신호인지 먼저 확인하세요.';
+    }
     return hasBlockingContext
       ? '전략 entry 신호는 레짐·게이트·서킷과 함께 확인하고, 충돌하는 신호는 관찰 대상으로만 두세요.'
       : '전략 신호가 부족하면 새 조치보다 데이터 축적을 우선하세요.';
@@ -1064,6 +1070,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
   const lockCount = Array.isArray(planNote.circuitLocks) ? planNote.circuitLocks.length : 0;
   const signals = Array.isArray(planNote.strategySignals) ? planNote.strategySignals : [];
   const entryCount = signals.filter((row = {}) => row.signal_type === 'entry' || row.signalType === 'entry').length;
+  const strategySignalCount = signals.length;
   const gates = summarizeRuleBasedGates(planNote);
   const regimes = summarizeRuleBasedRegimes(planNote);
   const inactiveSegments = summarizeRuleBasedSegments(planNote);
@@ -1080,11 +1087,14 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     lockCount > 0 ? { key: 'circuit', text: `활성 서킷 ${lockCount}건` } : null,
     gates.length ? { key: 'gate', text: `시장 게이트 ${gates.join(' · ')}` } : null,
     regimes.length ? { key: 'regime', text: `레짐 ${regimes.join(' · ')}` } : null,
-    entryCount > 0 ? { key: 'strategy', text: `최근 전략 entry ${entryCount}건` } : null,
+    (intent === 'strategy' || strategySignalCount > 0) ? { key: 'strategy', text: `최근 전략 신호 ${strategySignalCount}건(entry ${entryCount}건)` } : null,
     inactiveSegments.length ? { key: 'segment', text: `비활성 세그먼트 ${inactiveSegments.join(' · ')}` } : null,
   ].filter(Boolean), intent).map((item) => item.text);
   const topPriority = priorities.length ? priorities.slice(0, 3).join(' / ') : '즉시 눈에 띄는 경보 없음';
-  const action = ruleBasedActionForIntent(intent, globalPendingCount > 0 || registryPendingCount > 0 || lockCount > 0);
+  const action = ruleBasedActionForIntent(intent, globalPendingCount > 0 || registryPendingCount > 0 || lockCount > 0, {
+    entryCount,
+    strategySignalCount,
+  });
   return [
     `[${agentDisplayLabel(agent)}] 비용 없는 규칙 기반 자문입니다.`,
     `${focus} 우선 확인: ${topPriority}.`,

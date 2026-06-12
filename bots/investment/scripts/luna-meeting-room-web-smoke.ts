@@ -1543,6 +1543,66 @@ async function main() {
     assert.ok(gateIntentAsk.payload.text.includes('전역 결정 대기 2건'));
     assert.ok(gateIntentAsk.payload.text.includes('먼저 halt/reduced 시장의 근거'));
     assert.equal(gateIntentAsk.payload.text.includes('질문을 확인했습니다'), false);
+    const noStrategySignalStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+      ...deps,
+      meetingStore: {
+        ...createMemoryStore(),
+        listPendingDecisions: async () => [],
+      },
+      buildMeetingPlanNoteFn: async () => ({
+        ok: true,
+        briefMarkdown: '# fixture plan-note',
+        pendingDecisions: [],
+        gates: [{ market: 'domestic', deployment: 'halt', score: 33 }],
+        regimes: [{ market: 'domestic', current_regime: 'bear' }],
+        strategySignals: [],
+        circuitLocks: [],
+      }),
+      resolveAgentLLMRouteFn: () => ({ noLLM: true }),
+    });
+    try {
+      const noStrategyBase = `http://127.0.0.1:${noStrategySignalStarted.server.address().port}`;
+      const noStrategyAsk = await request(noStrategyBase, '/api/agents/ask', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ agent: 'aria', question: '전략 신호 관점에서 유의할 것은?' }),
+      });
+      assert.equal(noStrategyAsk.status, 200);
+      assert.ok(noStrategyAsk.payload.text.includes('기술 관점 우선 확인: 최근 전략 신호 0건(entry 0건)'));
+      assert.ok(noStrategyAsk.payload.text.includes('전략 신호가 부족하면'));
+    } finally {
+      await closeServer(noStrategySignalStarted.server);
+    }
+    const nonEntryStrategyStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+      ...deps,
+      meetingStore: {
+        ...createMemoryStore(),
+        listPendingDecisions: async () => [],
+      },
+      buildMeetingPlanNoteFn: async () => ({
+        ok: true,
+        briefMarkdown: '# fixture plan-note',
+        pendingDecisions: [],
+        gates: [{ market: 'domestic', deployment: 'halt', score: 33 }],
+        regimes: [{ market: 'domestic', current_regime: 'bear' }],
+        strategySignals: [{ signal_type: 'exit' }],
+        circuitLocks: [],
+      }),
+      resolveAgentLLMRouteFn: () => ({ noLLM: true }),
+    });
+    try {
+      const nonEntryStrategyBase = `http://127.0.0.1:${nonEntryStrategyStarted.server.address().port}`;
+      const nonEntryStrategyAsk = await request(nonEntryStrategyBase, '/api/agents/ask', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({ agent: 'aria', question: '전략 신호 관점에서 유의할 것은?' }),
+      });
+      assert.equal(nonEntryStrategyAsk.status, 200);
+      assert.ok(nonEntryStrategyAsk.payload.text.includes('기술 관점 우선 확인: 최근 전략 신호 1건(entry 0건)'));
+      assert.ok(nonEntryStrategyAsk.payload.text.includes('최근 전략 신호 중 entry가 없으므로 신규 진입보다 exit/invalidate/관찰 신호인지 먼저 확인하세요.'));
+    } finally {
+      await closeServer(nonEntryStrategyStarted.server);
+    }
   } finally {
     await closeServer(pendingAwareStarted.server);
   }
