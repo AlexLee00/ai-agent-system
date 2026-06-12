@@ -1069,7 +1069,8 @@ async function main() {
     assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약을 기준으로 미국이 수평 상태입니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('비교 기준=게이트 비활성 가상 비교'));
     assert.ok(detail.payload.minutes[4].content.includes('halt/reduced 회피 개선폭: 비교 데이터가 없습니다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('[Aria] C15 검토 점검'));
+    assert.ok(detail.payload.minutes[4].content.includes('C15 검토 점검'));
+    assert.equal(detail.payload.minutes[4].content.includes('[Aria]'), false);
     assert.equal(detail.payload.minutes[4].content.includes('C15 결정 대기:'), false);
     assert.equal(detail.payload.minutes[4].content.includes('bull(0.41)'), false);
     assert.equal(detail.payload.minutes[4].content.includes('sideways(0.47)'), false);
@@ -1572,7 +1573,8 @@ async function main() {
     assert.equal(ask1.payload.text.includes('정지 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태'), false);
     assert.equal(ask1.payload.text.includes('감소한 상태로'), false);
-    assert.ok(ask2.payload.text.includes('[Aria] 비용 없는 규칙 기반 자문입니다.'));
+    assert.ok(ask2.payload.text.includes('Aria 자문: 비용 없는 규칙 기반 자문입니다.'));
+    assert.equal(ask2.payload.text.includes('[Aria]'), false);
     assert.ok(ask2.payload.text.includes('기술 관점 우선 확인:'));
     assert.ok(ask2.payload.text.includes('즉시 눈에 띄는 경보 없음'));
     assert.equal(ask2.payload.text.includes('전역 결정 대기 2건'), false);
@@ -1606,7 +1608,8 @@ async function main() {
       body: JSON.stringify({ agent: 'hephaestos', question: '체결 관점 요약' }),
     });
     assert.equal(noLlmAsk.status, 200);
-    assert.ok(noLlmAsk.payload.text.includes('[Hephaestos] 비용 없는 규칙 기반 자문입니다.'));
+    assert.ok(noLlmAsk.payload.text.includes('Hephaestos 자문: 비용 없는 규칙 기반 자문입니다.'));
+    assert.equal(noLlmAsk.payload.text.includes('[Hephaestos]'), false);
     assert.ok(noLlmAsk.payload.text.includes('체결 관점 우선 확인:'));
     assert.ok(noLlmAsk.payload.text.includes('즉시 눈에 띄는 경보 없음'));
     assert.equal(noLlmAsk.payload.text.includes('전역 결정 대기 2건'), false);
@@ -1652,7 +1655,8 @@ async function main() {
       body: JSON.stringify({ agent: 'aria', question: '현재 결정 대기함 핵심' }),
     });
     assert.equal(pendingAwareAsk.status, 200);
-    assert.ok(pendingAwareAsk.payload.text.includes('[Aria] 비용 없는 규칙 기반 자문입니다.'));
+    assert.ok(pendingAwareAsk.payload.text.includes('Aria 자문: 비용 없는 규칙 기반 자문입니다.'));
+    assert.equal(pendingAwareAsk.payload.text.includes('[Aria]'), false);
     assert.ok(pendingAwareAsk.payload.text.includes('전역 결정 대기 2건'));
     assert.ok(pendingAwareAsk.payload.text.includes('근거 상세와 활성 서킷 근거'));
     assert.equal(pendingAwareAsk.payload.text.includes('근거 JSON과 활성 서킷 근거'), false);
@@ -1870,6 +1874,7 @@ async function main() {
       askAnswerLiveRegion: true,
       askBusyStatus: true,
       askResponseMetadataLabels: true,
+      agentPrefixDisplayNormalized: true,
       askNoLlmRouteLocalized: true,
       askFailureFriendlyError: true,
       pollingCadenceConfigured: true,

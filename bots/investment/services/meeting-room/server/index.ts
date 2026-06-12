@@ -279,6 +279,7 @@ function normalizeC15PendingLabelNoise(content) {
     .replace(/^C15 결정 대기:\s*컴포넌트=/gm, 'C15 검토: 컴포넌트=')
     .replace(/^C15 결정 대기 항목$/gm, 'C15 검토 항목')
     .replace(/^(\[[^\]\n]+\]\s*)C15 결정 대기\s+점검/gm, '$1C15 검토 점검')
+    .replace(/\bC15 결정 대기\s+점검/g, 'C15 검토 점검')
     .replace(/^C15 결정 대기:\s*/gm, 'C15 검토: ');
 }
 
@@ -603,6 +604,13 @@ function agentDisplayLabel(value) {
   return AGENT_DISPLAY_LABELS[String(value || '').toLowerCase()] || '에이전트 미상';
 }
 
+function stripRedundantMinuteAgentPrefix(content, speaker) {
+  const label = agentDisplayLabel(speaker);
+  if (!label || label === '에이전트 미상') return String(content ?? '');
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return String(content ?? '').replace(new RegExp(`^\\[${escaped}\\]\\s*`, 'i'), '').trimStart();
+}
+
 function normalizeLegacyKoreanLlmNoise(content) {
   return String(content ?? '')
     .replace(/^안녕하세요\.\s*/gm, '')
@@ -701,7 +709,8 @@ function normalizeLegacyKoreanLlmNoise(content) {
     .replace(/현재 상황을 종합하면,\s*/g, '요약하면, ')
     .replace(/계산된 회의 데이터 요약만 사용한 자문 분석입니다\.?/g, '회의 데이터만 근거로 작성한 자문입니다.')
     .replace(/실거래\/파라미터 변경 제안은 기록만 하며 적용하지 않습니다\.?/g, '실거래와 파라미터 변경은 이 화면에서 적용하지 않습니다.')
-    .replace(AGENT_BRACKET_PATTERN, (_match, agent) => `[${agentDisplayLabel(agent)}]`)
+    .replace(new RegExp(`(^|\\n)${AGENT_BRACKET_PATTERN.source}\\s*`, 'gi'), (_match, lead, agent) => `${lead}${agentDisplayLabel(agent)} 자문: `)
+    .replace(AGENT_BRACKET_PATTERN, (_match, agent) => agentDisplayLabel(agent))
     .replace(/\bscore=/g, '점수=')
     .replace(/\bsource=/g, '출처=')
     .replace(/출처=hmm/g, '출처=HMM')
@@ -872,6 +881,7 @@ function normalizeLegacyBoilerplateHeadings(content) {
 }
 
 function normalizeMinute(row = {}) {
+  const content = normalizeLegacyMinuteContent(row.content);
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
@@ -879,7 +889,7 @@ function normalizeMinute(row = {}) {
     agendaKey: row.agenda_key || row.agendaKey,
     speaker: row.speaker,
     role: row.role,
-    content: normalizeLegacyMinuteContent(row.content),
+    content: stripRedundantMinuteAgentPrefix(content, row.speaker),
     meta: safeJson(row.meta),
     createdAt: row.created_at || row.createdAt,
   };
@@ -1223,7 +1233,7 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
     strategySignalCount,
   });
   return [
-    `[${agentDisplayLabel(agent)}] 비용 없는 규칙 기반 자문입니다.`,
+    `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
     `${focus} 우선 확인: ${topPriority}.`,
     `권장 다음 행동: ${action}`,
     `질문 요지: ${String(question || '').slice(0, 160)}`,
