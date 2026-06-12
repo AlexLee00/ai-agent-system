@@ -2036,12 +2036,51 @@ async function main() {
     assert.equal(morningManualScheduleAsk.payload.provider, 'rule_based');
     assert.equal(morningManualHubCalled, false);
     assert.ok(morningManualScheduleAsk.payload.text.includes('수동 시작 범위: 현재 회의 대상 세그먼트가 안건으로 포함'));
+    assert.ok(morningManualScheduleAsk.payload.text.includes('수동 시작 의미: 회의록과 ADR을 새로 남기는 동작'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('미국 회의 대상(장중)'));
     assert.ok(morningManualScheduleAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
     assert.equal(morningManualScheduleAsk.payload.text.includes('전역 결정 대기함의 5건'), false);
   } finally {
     await closeServer(morningManualStarted.server);
+  }
+
+  let startButtonHubCalled = false;
+  const startButtonStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    buildMeetingPlanNoteFn: async () => ({
+      ok: true,
+      briefMarkdown: '# start button fixture',
+      segments: [
+        { market: 'domestic', active: false, skipped: true, reason: 'weekend' },
+        { market: 'overseas', active: true, skipped: false, reason: 'kis_market_open' },
+        { market: 'crypto', active: true, skipped: false, reason: 'crypto_24h' },
+      ],
+    }),
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      startButtonHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '전역 결정 대기함 16건을 먼저 처리하세요.' };
+    },
+  });
+  const startButtonBase = `http://127.0.0.1:${startButtonStarted.server.address().port}`;
+  try {
+    const startButtonAsk = await request(startButtonBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '회의 시작 버튼이 활성인데 지금 눌러도 돼?' }),
+    });
+    assert.equal(startButtonAsk.status, 200);
+    assert.equal(startButtonAsk.payload.provider, 'rule_based');
+    assert.equal(startButtonHubCalled, false);
+    assert.ok(startButtonAsk.payload.text.includes('수동 시작 의미: 회의록과 ADR을 새로 남기는 동작'));
+    assert.ok(startButtonAsk.payload.text.includes('거래·파라미터는 변경하지 않습니다'));
+    assert.ok(startButtonAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
+    assert.ok(startButtonAsk.payload.text.includes('미국 회의 대상(장중)'));
+    assert.ok(startButtonAsk.payload.text.includes('암호화폐 회의 대상(24시간 운영)'));
+    assert.equal(startButtonAsk.payload.text.includes('전역 결정 대기함 16건을 먼저 처리'), false);
+  } finally {
+    await closeServer(startButtonStarted.server);
   }
 
   const latestPreviousMorning = [{
