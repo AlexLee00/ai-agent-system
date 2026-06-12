@@ -2602,6 +2602,49 @@ async function main() {
     await closeServer(deferredLookupStarted.server);
   }
 
+  let decisionActionLookupHubCalled = false;
+  const decisionActionLookupStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
+    ...deps,
+    resolveAgentLLMRouteFn: () => ({ provider: 'fixture', model: 'fixture-model' }),
+    callViaHubFn: async () => {
+      decisionActionLookupHubCalled = true;
+      return { ok: true, provider: 'fixture', text: '확정한 결정은 전역 결정 대기함에서 다시 확인할 수 있습니다.' };
+    },
+  });
+  const decisionActionLookupBase = `http://127.0.0.1:${decisionActionLookupStarted.server.address().port}`;
+  try {
+    const confirmedLookupAsk = await request(decisionActionLookupBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '확정한 결정은 어디서 다시 확인해?' }),
+    });
+    assert.equal(confirmedLookupAsk.status, 200);
+    assert.equal(confirmedLookupAsk.payload.provider, 'rule_based');
+    assert.equal(confirmedLookupAsk.payload.skipped, true);
+    assert.equal(decisionActionLookupHubCalled, false);
+    assert.ok(confirmedLookupAsk.payload.text.includes('전체 결정 대기함은 미처리 결정만 보여주므로 확정·보류한 결정은 여기서 제거됩니다.'));
+    assert.ok(confirmedLookupAsk.payload.text.includes('원래 회의를 선택하면 U1 캐치업의 확정/보류 수와 타임라인 감사 행에서 확인합니다.'));
+    assert.ok(confirmedLookupAsk.payload.text.includes('확정은 캐치업의 확정 수로, 보류는 캐치업의 보류 수로 집계됩니다.'));
+    assert.ok(confirmedLookupAsk.payload.text.includes('실제 주문·포지션·파라미터·런타임 설정은 변경하지 않습니다.'));
+    assert.equal(confirmedLookupAsk.payload.text.includes('전역 결정 대기함에서 다시 확인'), false);
+    assert.equal(confirmedLookupAsk.payload.text.includes('confirmed'), false);
+    assert.equal(confirmedLookupAsk.payload.text.includes('deferred'), false);
+
+    const actionHistoryAsk = await request(decisionActionLookupBase, '/api/agents/ask', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ agent: 'luna', question: '확정/보류 처리 내역은 어디서 볼 수 있어?' }),
+    });
+    assert.equal(actionHistoryAsk.status, 200);
+    assert.equal(actionHistoryAsk.payload.provider, 'rule_based');
+    assert.equal(actionHistoryAsk.payload.skipped, true);
+    assert.ok(actionHistoryAsk.payload.text.includes('원래 회의를 선택하면 U1 캐치업의 확정/보류 수와 타임라인 감사 행에서 확인합니다.'));
+    assert.equal(actionHistoryAsk.payload.text.includes('pending_master'), false);
+    assert.equal(actionHistoryAsk.payload.text.includes('c_master'), false);
+  } finally {
+    await closeServer(decisionActionLookupStarted.server);
+  }
+
   let telegramScheduleHubCalled = false;
   const telegramScheduleStarted = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, {
     ...deps,

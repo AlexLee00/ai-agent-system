@@ -1457,6 +1457,10 @@ function inferAskIntent(question) {
   const hasDecisionScopeCue = /(캐치업|숫자|건수|왜|차이|다른|달라)/u.test(text) || (/(전체)/u.test(text) && /(선택)/u.test(text));
   if (hasDecisionScopeCue && /(결정|대기함|대기|pending|캐치업)/u.test(text)) return 'decision_scope';
   if (/(처리|기한|마감|먼저|우선|몇\s*건|뭐부터|무엇부터)/u.test(text) && /(결정|마스터|대기|pending)/u.test(text)) return 'decision_due';
+  if (
+    (/(확정|confirm|confirmed)/u.test(text) || (/(처리\s*내역|내역)/u.test(text) && /(확정|confirm|confirmed|보류|defer|deferred)/u.test(text)))
+    && /(처리\s*내역|내역|어디서|다시|확인|찾|보여|남아|기록|캐치업|타임라인)/u.test(text)
+  ) return 'decision_action_lookup';
   if (/(보류|defer|deferred)/u.test(text) && /(어디서|다시|확인|찾|보여|남아|기록|캐치업|타임라인)/u.test(text)) return 'decision_deferred';
   if (/(시장\s*게이트|게이트|market gate|deployment)/u.test(text)) return 'gate';
   if (/(레짐|regime|hmm|전이)/u.test(text)) return 'regime';
@@ -1738,6 +1742,17 @@ function buildRuleBasedAgentAnswer(agent, question, planNote = {}, globalPending
       `질문 요지: ${String(question || '').slice(0, 160)}`,
     ].join('\n');
   }
+  if (intent === 'decision_action_lookup') {
+    return [
+      `${agentDisplayLabel(agent)} 자문: 비용 없는 규칙 기반 자문입니다.`,
+      '처리 완료 결정 확인 위치: 전체 결정 대기함은 미처리 결정만 보여주므로 확정·보류한 결정은 여기서 제거됩니다.',
+      '다시 확인 위치: 원래 회의를 선택하면 U1 캐치업의 확정/보류 수와 타임라인 감사 행에서 확인합니다.',
+      '상태 해석: 확정은 캐치업의 확정 수로, 보류는 캐치업의 보류 수로 집계됩니다.',
+      '처리 의미: 확정/보류는 회의실 감사 상태만 바꾸며 실제 주문·포지션·파라미터·런타임 설정은 변경하지 않습니다.',
+      '권장 다음 행동: 처리된 결정의 맥락이 필요하면 원래 회의 타임라인에서 해당 감사 행과 직전 결정 행을 함께 확인하세요.',
+      `질문 요지: ${String(question || '').slice(0, 160)}`,
+    ].join('\n');
+  }
   const focus = {
     aria: '기술 관점',
     hephaestos: '체결 관점',
@@ -1801,7 +1816,7 @@ async function askAgent(body, deps, limiter) {
   const decisionDueStatus = intent === 'decision_due'
     ? buildDecisionDueStatus(globalPendingDecisions, new Date())
     : null;
-  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_safety') {
+  if (intent === 'schedule' || intent === 'schedule_ops' || intent === 'premarket' || intent === 'telegram' || intent === 'telegram_schedule' || intent === 'secret_safety' || intent === 'decision_scope' || intent === 'decision_due' || intent === 'decision_deferred' || intent === 'decision_action_lookup' || intent === 'decision_action_safety') {
     return {
       ok: true,
       skipped: true,
