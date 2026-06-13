@@ -4,6 +4,8 @@
 const path = require('path');
 const { pathToFileURL } = require('url');
 const env = require('../../../packages/core/lib/env');
+const pgPool = require('../../../packages/core/lib/pg-pool');
+const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 
 const DEFAULT_TOP_K = 4;
 const DEFAULT_MIN_SIMILARITY = 0.55;
@@ -63,6 +65,108 @@ function buildVaultLectureBlock(results = []) {
     '아래는 시그마 대도서관에서 찾은 과거 블로그 맥락이다. 이미 발행된 내용과 자연스럽게 연결하되, 사실로 확인되지 않은 링크나 수치는 만들지 말라.',
     ...rows,
   ].join('\n');
+}
+
+function normalizeLectureNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function buildVaultRelatedQuery(input = {}) {
+  const keywords = Array.isArray(input.curriculumKeywords)
+    ? input.curriculumKeywords
+    : [];
+  const parts = [
+    input.seriesName,
+    input.currentLectureNum ? `${input.currentLectureNum}강` : '',
+    input.topic,
+    input.postType,
+    ...keywords,
+  ]
+    .map((item) => normalizeText(item))
+    .filter(Boolean);
+  return [...new Set(parts)].join(' ');
+}
+
+function buildVaultRelatedPosts(results = [], input = {}) {
+  const currentLectureNum = normalizeLectureNumber(input.currentLectureNum);
+  const seen = new Set();
+  return (results || [])
+    .map((item) => {
+      const meta = item.meta || {};
+      const lectureNumber = normalizeLectureNumber(
+        meta.lecture_number || meta.lectureNumber || meta.number
+      );
+      const title = truncate(item.title || meta.title || '관련 포스팅', 72);
+      const summary = truncate(item.contentPreview || meta.summary || '', 140);
+      return {
+        title,
+        summary,
+        meta,
+        lectureNumber,
+        source: 'vault',
+        similarity: Number(item.similarity || 0),
+      };
+    })
+    .filter((item) => item.title && item.summary)
+    .filter((item) => !currentLectureNum || !item.lectureNumber || item.lectureNumber < currentLectureNum)
+    .filter((item) => {
+      const key = `${item.title}|${item.summary}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 3);
+}
+
+function extractVaultPostFilename(result = {}) {
+  const meta = result.meta || {};
+  return normalizeText(meta.filename || meta.fileName || meta.file_path || meta.filePath || '');
+}
+
+function extractVaultPostId(result = {}) {
+  const meta = result.meta || {};
+  const numeric = Number(meta.post_id || meta.postId || meta.blog_post_id || meta.blogPostId);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+async function filterPublishedVaultBlogResults(results = []) {
+  const rows = Array.isArray(results) ? results : [];
+  if (!rows.length) return [];
+
+  const filenames = [...new Set(rows.map(extractVaultPostFilename).filter(Boolean))];
+  const postIds = [...new Set(rows.map(extractVaultPostId).filter(Boolean))];
+  if (!filenames.length && !postIds.length) return [];
+
+  const publishedRows = await pgPool.query('blog', `
+    SELECT id, title, metadata->>'filename' AS filename, metadata
+    FROM blog.posts
+    WHERE status = 'published'
+      AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
+      AND (
+        id = ANY($1::int[])
+        OR metadata->>'filename' = ANY($2::text[])
+      )
+  `, [postIds, filenames]);
+  const publishedList = Array.isArray(publishedRows) ? publishedRows : (publishedRows?.rows || []);
+  const publishedIds = new Set(
+    publishedList
+      .filter((row) => !isExcludedReferencePost(row))
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  );
+  const publishedFilenames = new Set(
+    publishedList
+      .filter((row) => !isExcludedReferencePost(row))
+      .map((row) => normalizeText(row.filename))
+      .filter(Boolean)
+  );
+
+  return rows.filter((row) => {
+    const postId = extractVaultPostId(row);
+    const filename = extractVaultPostFilename(row);
+    return (postId && publishedIds.has(postId)) || (filename && publishedFilenames.has(filename));
+  });
 }
 
 async function loadSearchVault(deps = {}) {
@@ -126,11 +230,58 @@ async function getVaultLectureContext(input = {}, deps = {}) {
   }
 }
 
+async function getVaultRelatedPosts(input = {}, deps = {}) {
+  if (!isVaultContextEnabled()) {
+    return { enabled: false, ok: true, query: '', relatedPosts: [], results: [], warning: 'disabled' };
+  }
+
+  const query = buildVaultRelatedQuery(input);
+  if (!query) {
+    return { enabled: true, ok: true, query: '', relatedPosts: [], results: [], warning: 'query_empty' };
+  }
+
+  const topK = Math.floor(boundedNumber(input.topK, DEFAULT_TOP_K + 2, 1, 10));
+  const minSimilarity = boundedNumber(input.minSimilarity, 0.45, -1, 1);
+  const timeoutMs = Math.floor(boundedNumber(input.timeoutMs, DEFAULT_TIMEOUT_MS, 250, 10_000));
+
+  try {
+    const searchVault = await loadSearchVault(deps);
+    const report = await withTimeout(searchVault(query, {
+      topK,
+      sourceKinds: ['blo'],
+      minSimilarity,
+    }), timeoutMs);
+    const results = Array.isArray(report?.results) ? report.results : [];
+    const publishedResults = await filterPublishedVaultBlogResults(results);
+    return {
+      enabled: true,
+      ok: report?.ok !== false,
+      query,
+      relatedPosts: buildVaultRelatedPosts(publishedResults, input),
+      results: publishedResults,
+      warning: report?.warning || null,
+    };
+  } catch (error) {
+    return {
+      enabled: true,
+      ok: false,
+      query,
+      relatedPosts: [],
+      results: [],
+      warning: error?.message || String(error),
+    };
+  }
+}
+
 module.exports = {
   getVaultLectureContext,
+  getVaultRelatedPosts,
   _testOnly: {
     isVaultContextEnabled,
     buildVaultLectureQuery,
     buildVaultLectureBlock,
+    buildVaultRelatedQuery,
+    buildVaultRelatedPosts,
+    filterPublishedVaultBlogResults,
   },
 };

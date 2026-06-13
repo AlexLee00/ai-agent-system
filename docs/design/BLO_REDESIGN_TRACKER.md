@@ -351,3 +351,45 @@ auto-dev WorkingDirectory worktree 분리(클로드팀 설정 변경)는 즉시 
 3. 자연 검증 사슬(TS-B10c-L): 오늘 11:05 backfill(URL) -> 내일 08:30 B2b --write(실본 보존) ->
    모레 06:00 daily에서 analyzer 첫 실분석(master_edit_analysis 첫 데이터+masterStyleHint) — 메티 확인.
 이력: 2026-06-13 B2c 검증 합격 (메티)
+
+### T-1. DDL 025 적용 + B2c 종결 (2026-06-13, 마스터/메티)
+- 적용 확인: final_title/final_content_text 컬럼 + changed_text 인덱스 실존(메티 DB 직접 쿼리).
+- write 게이트 해제: dry-run ok + warnings [] (025 컬럼 검사 통과).
+- 커밋 c192ec4fb 포함 확인. **B2 트랙(B2 적재·주입 / B2b 수집 / B2c 통합) 코드·DB·launchd 전부 완성** —
+  남은 것은 자연 검증 사슬: 오늘 11:05 backfill -> 내일 08:30 B2b 첫 write -> 모레 06:00 analyzer 첫 실분석.
+
+## U. B5-0 작성 액션 로직 재검토 1차 보고 (2026-06-13, 메티)
+
+- 보고서: docs/design/BLO_B5_0_ACTION_LOGIC_REVIEW_2026-06.md — 플로우 맵(골격 건전) + 발견 4건:
+  **F1 인스타 크로스포스트 잔존(가드 부재)** / **F2 RAG 이중화(agenticSearch + vault-context)** /
+  F3 reel 죽은 경로 / F4(긍정) B2·B2c 주입 정위치.
+- 권고: CODEX-B5a 정리 묶음(B3 이후). 2차 정독 대상: runLecturePost 내부·maestro 경계·gems 경로.
+- 병행: 11:05 backfill 결과 확인 대기(현 08:58). GATE-R 209건 신규 false 0 청정.
+이력: 2026-06-13 B5-0 1차 (메티)
+
+### U-1. B5-0 마스터 결정 (2026-06-13)
+F1(크로스포스트)·F3(reel 경로) **제거 확정** / F2 RAG **통합 확정**(vault 일원화 방향, 관리 단순화) /
+F4 유지. 다음 세션: CODEX-B5a 프롬프트(제거+통합) 작성 -> 이후 B3(형식 리디자인, 외부 서칭).
+
+## V. CODEX-B5a 프롬프트 작성 (2026-06-13, 메티)
+
+- 선결 실측: agenticSearch = agentic-rag.ts(richer.searchRealExperiences+searchRelatedPosts 래퍼).
+  searchRelatedPosts가 vault '지난 강의 연계'와 목적 중복 확정 -> vault 일원화.
+- CODEX_BLO_B5A_CLEANUP_RAG_UNIFY_2026-06-13.md: §1 F1·F3 제거(social-media 보존) §2 RAG 일원화
+  (relatedPosts->vault 교체, realExperiences는 직접 호출 유지+vault 적재 백로그) §3 TS-B5a §4 안전.
+- 다음: 코덱스 전달 -> 검증 -> 적용. 이후 B3(형식 리디자인).
+이력: 2026-06-13 B5a 프롬프트 (메티)
+
+### V-1. CODEX-B5a 구현 결과 (2026-06-13, 코덱스)
+
+- F1/F3 제거: `bots/blog/lib/blo.ts` 작성 완료 후 인스타 콘텐츠 생성·크로스포스트 실행·결과 필드 제거.
+  `bots/social-media` 코드와 MCP 자산은 보존.
+- F2 통합: `agentic-rag.ts` 래퍼 삭제. 작성 경로는 `richer.searchRealExperiences` 직접 호출 +
+  `vault-context.getVaultRelatedPosts` 기반 relatedPosts로 일원화. `richer.searchRealExperiences`의 blog RAG 중복 조회 제거.
+- 노드 API 정렬: `/api/blog/node/related-posts`도 vault-context 기반 응답으로 전환.
+- 검증: `blo.ts` 내 `crosspost|instaContent|reel` grep 0, agenticSearch 코드 소비자 0.
+  `node --check`(blo/richer/vault-context), vault relatedPosts 실조회 3건, `test:daily-dry`,
+  `smoke:blo-b1-curriculum`, `smoke:final-content-diff`, `smoke:master-edit-analyzer-integration` 통과.
+  강의 dry-run RAG 로그에서 `source=vault+real-experience`, episodes 4, posts 3 확인.
+- 참고: 전체 강의 dry-run 작성 호출은 LLM 응답 대기 150초 초과로 검증 목적 달성 후 중단. 발행/DB write 없음.
+이력: 2026-06-13 B5a 구현 (코덱스)

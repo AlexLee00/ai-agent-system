@@ -22,6 +22,7 @@ try {
 const http = require('http');
 const pipelineStore = require('../lib/pipeline-store.ts');
 const richer = require('../lib/richer.ts');
+const { getVaultRelatedPosts } = require('../lib/vault-context.ts');
 const posWriter = require('../lib/pos-writer.ts');
 const gemsWriter = require('../lib/gems-writer.ts');
 const { checkQualityEnhanced } = require('../lib/quality-checker.ts');
@@ -229,12 +230,19 @@ app.post('/api/blog/node/rag-experiences', async (req: any, res: any) => {
 });
 
 app.post('/api/blog/node/related-posts', async (req: any, res: any) => {
-  const { sessionId, topic, lectureNumber } = req.body;
+  const { sessionId, topic, lectureNumber, postType, seriesName, curriculumKeywords } = req.body;
   if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId 필수' });
   try {
-    const result = await richer.searchRelatedPosts(topic || '', lectureNumber || null);
+    const vaultResult = await getVaultRelatedPosts({
+      topic: topic || '',
+      currentLectureNum: lectureNumber || null,
+      postType: postType || 'general',
+      seriesName: seriesName || null,
+      curriculumKeywords: Array.isArray(curriculumKeywords) ? curriculumKeywords : [],
+    });
+    const result = vaultResult.relatedPosts || [];
     await pipelineStore.storeNodeResult(sessionId, 'related-posts', 'research', result);
-    res.json({ ok: true, result });
+    res.json({ ok: true, result, source: 'vault', query: vaultResult.query || '' });
   } catch (e: any) {
     console.error('[노드서버] /related-posts 오류:', e.message);
     res.status(500).json({ ok: false, error: e.message });

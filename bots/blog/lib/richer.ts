@@ -20,7 +20,6 @@ const rag = require('../../../packages/core/lib/rag-safe');
 const env = require('../../../packages/core/lib/env');
 const { resolveNaverCredentials } = require('../../../packages/core/lib/news-credentials.legacy.js');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
-const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 const { buildAgentIntroSearchKeywords } = require('./agent-intro-curriculum.ts');
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
@@ -30,28 +29,6 @@ const NAVER_MONITOR_WS_FILES = [
   path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-monitor-ws.txt'),
   path.join(BLOG_BROWSER_RUNTIME_DIR, 'reservation', 'naver-monitor-ws.txt'),
 ].filter(Boolean);
-
-async function filterPublishedBlogHits(hits) {
-  if (!hits?.length) return [];
-  const filenames = hits
-    .map((hit) => String(hit?.metadata?.filename || '').trim())
-    .filter(Boolean);
-  if (!filenames.length) return [];
-  const rows = await pgPool.query('blog', `
-    SELECT id, title, metadata->>'filename' AS filename, metadata
-    FROM blog.posts
-    WHERE status = 'published'
-      AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
-      AND metadata->>'filename' = ANY($1::text[])
-  `, [filenames]);
-  const publishedSet = new Set(
-    rows
-      .filter((row) => !isExcludedReferencePost(row))
-      .map((row) => String(row.filename || '').trim())
-      .filter(Boolean),
-  );
-  return hits.filter((hit) => publishedSet.has(String(hit?.metadata?.filename || '').trim()));
-}
 
 function httpsGet(url, timeout = 10000) {
   return new Promise((resolve, reject) => {
@@ -425,55 +402,14 @@ async function searchRealExperiences(topic, postType = 'lecture') {
       }
     }
 
-    const blogHits = await filterPublishedBlogHits(
-      await rag.search('blog', topic, { limit: 1, threshold: 0.6 })
-    );
-    if (blogHits?.length) {
-      episodes.push({
-        source: 'blog',
-        type: '과거 포스팅 연결점',
-        content: blogHits[0].content?.slice(0, 200),
-      });
-    }
+    // 과거 블로그 연결은 sigma.vault_entries 기반 vault-context가 담당한다.
+    // 여기서는 기술/운영 경험만 유지해 작성 단계의 RAG 출처를 분리한다.
   } catch (e) {
     console.warn('[리처] RAG 실전 사례 검색 실패:', e.message);
   }
 
   console.log(`[리처] 실전 에피소드 ${episodes.length}건 발견`);
   return episodes;
-}
-
-async function searchRelatedPosts(topic, currentLectureNum = null) {
-  try {
-    if (!DEV_HUB_READONLY) {
-      await rag.initSchema();
-    }
-    const hits = await filterPublishedBlogHits(
-      await rag.search('blog', topic, { limit: 5, threshold: 0.5 })
-    );
-    if (!hits?.length) return [];
-
-    let filtered = hits
-      .filter((h) => h.content && !h.content.includes(topic.slice(0, 15)))
-      .slice(0, 5)
-      .map((h) => ({
-        title: h.content?.match(/\[.*?\]\s*(.*)/)?.[1]?.slice(0, 60) || '관련 포스팅',
-        summary: h.content?.slice(0, 120),
-        meta: h.metadata,
-        lectureNumber: h.metadata?.lecture_number ? Number(h.metadata.lecture_number) : null,
-      }));
-
-    if (currentLectureNum) {
-      filtered = filtered.filter((p) =>
-        !p.lectureNumber || p.lectureNumber < currentLectureNum
-      );
-    }
-
-    return filtered.slice(0, 3);
-  } catch (e) {
-    console.warn('[리처] 관련 포스팅 검색 실패:', e.message);
-    return [];
-  }
 }
 
 function _buildPopularPatternQueries(category = 'general') {
@@ -528,6 +464,5 @@ module.exports = {
   fetchNaverBlogStats,
   searchNaverBlogByTitle,
   searchRealExperiences,
-  searchRelatedPosts,
   searchPopularPatterns,
 };

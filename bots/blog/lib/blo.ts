@@ -19,7 +19,6 @@ const env                                           = require('../../../packages
 const kst                                           = require('../../../packages/core/lib/kst');
 const maestro                                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/maestro.ts'));
 const { generatePostImages }                        = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen.ts'));
-const { createInstaContent }                        = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/star.ts'));
 const { getConfig }                                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/daily-config.ts'));
 const {
   GENERAL_CATEGORIES,
@@ -56,7 +55,6 @@ const {
 const { runTopicPlanner }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/scripts/topic-planner.ts'));
 const { checkInvestmentContent }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/investment-guard.ts'));
 const { isExcludedReferencePost }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
-const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.ts'));
 const { getWriterPersona }                          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-personas.ts'));
 const { pickEditorPersona }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/editor-personas.ts'));
 const { loadLatestStrategy }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
@@ -90,8 +88,6 @@ const {
   repairTerminalQualityArtifacts,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
-const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/insta-crosspost.ts'));
-const { hasRemainingPublishQuota }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/platform-orchestrator.ts'));
 const {
   diagnoseImageGeneration,
   reportImageGenFailure,
@@ -107,7 +103,10 @@ const {
   isBlogMarketingEnabled,
   buildMarketingDisabledResult,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-enabled.ts'));
-const { getVaultLectureContext }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/vault-context.ts'));
+const {
+  getVaultLectureContext,
+  getVaultRelatedPosts,
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/vault-context.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -129,13 +128,8 @@ const COMPETITION_DAYS                              = Array.isArray(competitionR
   ? competitionRuntimeConfig.days
   : [1, 3, 5];
 const BLOG_MARKETING_ENABLED                        = isBlogMarketingEnabled();
-// 소셜미디어 마스터 스위치 — 기본 false (BLOG_SOCIAL_MEDIA_ENABLED=true 로 명시적 활성화 필요)
-const SOCIAL_MEDIA_ENABLED                          = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 // 이미지 생성 스위치 — 기본 false (BLOG_IMAGE_GEN_ENABLED=true 로 명시적 활성화 필요)
 const IMAGE_GEN_ENABLED                             = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
-if (!SOCIAL_MEDIA_ENABLED) {
-  console.log('[블로] 소셜미디어 OFF (BLOG_SOCIAL_MEDIA_ENABLED != true) — 인스타/이미지 생성 비활성');
-}
 // Humanize Layer — 기본 false (BLOG_HUMANIZE_ENABLED=true 로 명시적 활성화)
 const HUMANIZE_ENABLED                              = process.env.BLOG_HUMANIZE_ENABLED === 'true';
 
@@ -1249,22 +1243,6 @@ function _createLocalDraftRunner({
   };
 }
 
-async function _createInstaContentSafe(content, title, category, label, options = {}) {
-  if (process.env.BLOG_INSTA_ENABLED === 'false') return null;
-  const strategy = options.strategy || loadLatestStrategy();
-  const directives = normalizeExecutionDirectives(strategy);
-  const instagramPriority = directives.channelPriority.instagram;
-  const dynamicCardCount = instagramPriority === 'primary' ? 5 : instagramPriority === 'secondary' ? 4 : 3;
-  const instaContent = await createInstaContent(content, title, category, dynamicCardCount, { ...options, strategy }).catch(e => {
-    console.warn(`[소셜] ${label} 생성 실패 (무시):`, e.message);
-    return null;
-  });
-  if (instaContent) {
-    console.log(`[소셜] ${label} 완료: 릴스 ${instaContent.reel ? '1개' : '0개'} + 해시태그 ${instaContent.hashtags?.length}개`);
-  }
-  return instaContent;
-}
-
 async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, options = {}) {
   if (options.dryRun) {
     console.log(`[블로][dry-run] 발행 생략: ${postData?.title || 'untitled'}`);
@@ -1663,30 +1641,10 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     advance: advanceLectureNumber,
   });
 
-  const instaContent = (options.dryRun || !SOCIAL_MEDIA_ENABLED)
-    ? null
-    : await _createInstaContentSafe(
-      post.content,
-      postTitle,
-      lectureCategory,
-      '강의 인스타',
-      { thumbPath: null }
-    );
-
-  const instagramQuotaAvailable = options.dryRun ? true : await hasRemainingPublishQuota('instagram').catch(() => true);
-  const instaCrosspost = instaContent?.reel?.outputPath && instagramQuotaAvailable
-    ? await crosspostToInstagram(instaContent, postTitle, published.postId, !!options.dryRun).catch(e => {
-      console.warn('[크로스포스트] 강의 처리 중 예외:', e.message);
-      return { ok: false, error: e.message };
-    })
-    : (instaContent?.reel?.outputPath ? { ok: false, skipped: true, reason: 'instagram_strategy_quota_reached' } : null);
-
   return {
     type:           'lecture',
     number:         context.number,
     title:          context.lectureTitle,
-    instaContent:   instaContent || null,
-    instaCrosspost: instaCrosspost || null,
     charCount:      post.charCount,
     quality:        quality.passed,
     aiRisk:         quality.aiRisk,
@@ -1751,16 +1709,6 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
       console.log('[이미지] 일반 포스팅은 이미지 없이 발행 계속 진행');
       return null;
     });
-
-  const instaContent = (options.dryRun || !SOCIAL_MEDIA_ENABLED)
-    ? null
-    : await _createInstaContentSafe(
-      post.content,
-      genTitle,
-      context.category,
-      '인스타',
-      { thumbPath: images?.thumb?.filepath || null }
-    );
 
   const autonomy = await _decideAutonomyForPost({
     title: genTitle,
@@ -1892,14 +1840,6 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     advance: advanceGeneralCategory,
   });
 
-  const instagramQuotaAvailable = options.dryRun ? true : await hasRemainingPublishQuota('instagram').catch(() => true);
-  const instaCrosspost = instaContent?.reel?.outputPath && instagramQuotaAvailable
-    ? await crosspostToInstagram(instaContent, genTitle, published.postId, !!options.dryRun).catch(e => {
-      console.warn('[크로스포스트] 일반 처리 중 예외:', e.message);
-      return { ok: false, error: e.message };
-    })
-    : (instaContent?.reel?.outputPath ? { ok: false, skipped: true, reason: 'instagram_strategy_quota_reached' } : null);
-
   return {
     type:           'general',
     category:       context.category,
@@ -1909,8 +1849,6 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     aiRisk:         quality.aiRisk,
     filename:       published.filename,
     postId:         published.postId,
-    instaContent:   instaContent || null,
-    instaCrosspost: instaCrosspost || null,
     dryRun:         !!options.dryRun,
   };
 }
@@ -2368,6 +2306,59 @@ function _applyRagContext(researchData, ragContext) {
   researchData.realExperiences = ragContext.episodes;
   researchData.relatedPosts = ragContext.relatedPosts;
   researchData.ragQuality = ragContext.quality;
+  researchData.ragContext = {
+    source: ragContext.source,
+    query: ragContext.query,
+    warnings: ragContext.warnings,
+  };
+}
+
+function _scoreUnifiedRagContext(episodes = [], relatedPosts = [], topic = '', warnings = []) {
+  let score = 0;
+  if (episodes.length >= 3) score += 0.4;
+  else if (episodes.length > 0) score += 0.2;
+  if (relatedPosts.length >= 2) score += 0.35;
+  else if (relatedPosts.length > 0) score += 0.18;
+  if (String(topic || '').trim().length >= 4) score += 0.15;
+  if (!warnings.length) score += 0.1;
+  return Number(Math.min(1, score).toFixed(2));
+}
+
+async function _buildUnifiedRagContext({
+  topic,
+  postType = 'general',
+  currentLectureNum = null,
+  seriesName = null,
+  curriculumKeywords = [],
+} = {}) {
+  const safeTopic = String(topic || '').trim();
+  const [episodes, vaultRelated] = await Promise.all([
+    richer.searchRealExperiences(safeTopic, postType),
+    getVaultRelatedPosts({
+      topic: safeTopic,
+      postType,
+      currentLectureNum,
+      seriesName,
+      curriculumKeywords,
+    }).catch((error) => ({
+      ok: false,
+      query: safeTopic,
+      relatedPosts: [],
+      warning: error?.message || String(error),
+    })),
+  ]);
+  const relatedPosts = Array.isArray(vaultRelated?.relatedPosts) ? vaultRelated.relatedPosts : [];
+  const warnings = [vaultRelated?.warning].filter(Boolean);
+  const quality = _scoreUnifiedRagContext(episodes, relatedPosts, safeTopic, warnings);
+  console.log(`[블로/RAG] source=vault+real-experience query="${vaultRelated?.query || safeTopic}" quality=${quality.toFixed(2)} episodes=${episodes.length} posts=${relatedPosts.length}`);
+  return {
+    source: 'vault+real-experience',
+    query: vaultRelated?.query || safeTopic,
+    episodes,
+    relatedPosts,
+    quality,
+    warnings,
+  };
 }
 
 async function _runLectureStage(daily, traceCtx, options = {}) {
@@ -2385,7 +2376,13 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
       }
 
       const { number, seriesName, lectureTitle } = lectureCtx;
-      const ragContext = await agenticSearch(lectureTitle, 'lecture', 3, number);
+      const ragContext = await _buildUnifiedRagContext({
+        topic: lectureTitle,
+        postType: 'lecture',
+        currentLectureNum: number,
+        seriesName,
+        curriculumKeywords: Array.isArray(lectureCtx?.lectureInfo?.keywords) ? lectureCtx.lectureInfo.keywords : [],
+      });
       _applyRagContext(researchData, ragContext);
 
       if (lectureSchedule?.id && !options.dryRun) await updateScheduleStatus(lectureSchedule.id, 'writing');
@@ -2422,7 +2419,10 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
 
   const { category, scheduleId, bookInfo } = generalCtx;
   try {
-    const ragContext = await agenticSearch(category, 'general', 3);
+    const ragContext = await _buildUnifiedRagContext({
+      topic: generalCtx.topicHint || category,
+      postType: 'general',
+    });
     _applyRagContext(researchData, ragContext);
 
     if (scheduleId && !options.dryRun) await updateScheduleStatus(scheduleId, 'writing');
