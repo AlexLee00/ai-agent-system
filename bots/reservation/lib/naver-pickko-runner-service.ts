@@ -81,6 +81,11 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
     return `cancel_done|${phoneRaw}|${booking.date}|${booking.start}|${booking.end || ''}|${booking.room || ''}`;
   }
 
+  function buildCancelBlockedKey(booking: Record<string, any>) {
+    const phoneRaw = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+    return `cancel_blocked|${phoneRaw}|${booking.date}|${booking.start}|${booking.end || ''}|${booking.room || ''}`;
+  }
+
   function runPickkoCancel({
     booking,
     scriptsDir,
@@ -102,6 +107,13 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
         return;
       }
 
+      const blockedKey = buildCancelBlockedKey(booking);
+      if (await isCancelledKey(blockedKey)) {
+        log(`ℹ️ [취소 차단 알림 스킵] 이미 수동확인 대기 알림 발송됨 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
+        resolve(PICKKO_CANCEL_BLOCKED_CODE);
+        return;
+      }
+
       if (booking.bookingId) {
         const currentEntry = await getReservation(String(booking.bookingId)).catch(() => null);
         if (currentEntry && (currentEntry.status === 'cancelled' || ['time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus))) {
@@ -115,6 +127,24 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
 
       if (process.env.PICKKO_CANCEL_MUTATION_ENABLE !== '1') {
         log(`🛡️ [픽코 취소 차단] PICKKO_CANCEL_MUTATION_ENABLE!=1 — 실제 취소 실행 안 함: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
+        await addCancelledKey(blockedKey).catch(() => {});
+        await Promise.resolve(sendAlert({
+          type: 'error',
+          title: '🛡️ 픽코 자동 취소 차단',
+          phone: booking.phone,
+          date: booking.date,
+          start: booking.start,
+          time: `${booking.start}~${booking.end}`,
+          room: booking.room,
+          reason: 'PICKKO_CANCEL_MUTATION_ENABLE!=1',
+          action: '네이버 취소 감지는 됐지만 픽코 실제 취소는 차단되어 수동 확인이 필요합니다.',
+        }));
+        await Promise.resolve(publishReservationAlert({
+          from_bot: 'andy',
+          event_type: 'alert',
+          alert_level: 2,
+          message: `🛡️ [스카] 네이버 취소 감지 후 픽코 자동 취소 차단\n고객: ${maskPhone(phoneRawForKey)}\n일시: ${booking.date} ${booking.start}~${booking.end}\n룸: ${booking.room || '-'}\n조치: 수동 확인 후 픽코 취소 필요`,
+        }));
         resolve(PICKKO_CANCEL_BLOCKED_CODE);
         return;
       }

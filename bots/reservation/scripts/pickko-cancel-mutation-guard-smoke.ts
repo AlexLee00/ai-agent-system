@@ -12,19 +12,22 @@ async function main() {
   delete process.env.PICKKO_CANCEL_MUTATION_ENABLE;
 
   const logs = [];
+  const alerts = [];
+  const published = [];
+  const cancelledKeys = new Set();
   let spawnCount = 0;
 
   const service = createNaverPickkoRunnerService({
-    isCancelledKey: async () => false,
+    isCancelledKey: async (key) => cancelledKeys.has(key),
     getReservation: async () => null,
     markSeen: async () => {},
     resolveAlertsByBooking: async () => {},
     updateBookingState: async () => {},
     updateReservation: async () => {},
-    addCancelledKey: async () => {},
-    sendAlert: async () => {},
+    addCancelledKey: async (key) => { cancelledKeys.add(key); },
+    sendAlert: async (payload) => { alerts.push(payload); },
     ragSaveReservation: async () => {},
-    publishReservationAlert: async () => {},
+    publishReservationAlert: async (payload) => { published.push(payload); },
     autoBugReport: () => {},
     transformAndNormalizeData: (booking) => booking,
     verifyRecoverablePickkoFailure: async () => false,
@@ -44,14 +47,20 @@ async function main() {
     },
   });
 
+  const booking = {
+    phone: '01012345678',
+    date: '2026-06-21',
+    start: '15:00',
+    end: '18:00',
+    room: 'A1',
+  };
   const result = await service.runPickkoCancel({
-    booking: {
-      phone: '01012345678',
-      date: '2026-06-21',
-      start: '15:00',
-      end: '18:00',
-      room: 'A1',
-    },
+    booking,
+    scriptsDir: __dirname,
+    manualCancelScriptPath: '/tmp/pickko-cancel.js',
+  });
+  const secondResult = await service.runPickkoCancel({
+    booking,
     scriptsDir: __dirname,
     manualCancelScriptPath: '/tmp/pickko-cancel.js',
   });
@@ -60,8 +69,14 @@ async function main() {
   else process.env.PICKKO_CANCEL_MUTATION_ENABLE = previous;
 
   assert.strictEqual(result, PICKKO_CANCEL_BLOCKED_CODE);
+  assert.strictEqual(secondResult, PICKKO_CANCEL_BLOCKED_CODE);
   assert.strictEqual(spawnCount, 0);
   assert.ok(logs.some((line) => line.includes('픽코 취소 차단')));
+  assert.ok(logs.some((line) => line.includes('취소 차단 알림 스킵')));
+  assert.strictEqual(alerts.length, 1);
+  assert.strictEqual(published.length, 1);
+  assert.ok(cancelledKeys.has('cancel_blocked|01012345678|2026-06-21|15:00|18:00|A1'));
+  assert.equal(cancelledKeys.has('cancel_done|01012345678|2026-06-21|15:00|18:00|A1'), false);
 
   console.log('✅ pickko cancel mutation guard smoke ok');
 }

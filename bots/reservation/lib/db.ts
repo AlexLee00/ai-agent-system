@@ -1199,7 +1199,14 @@ async function removeMigration(version) {
 
 async function getFuturePickkoRegistered(fromDate) {
   const rows = await pgPool.query(SCHEMA,
-    "SELECT * FROM reservations WHERE date >= $1 AND status='completed' AND seen_only=0 AND (pickko_status IS NULL OR pickko_status NOT IN ('cancelled','manual','manual_retry','manual_pending','time_elapsed'))",
+    `
+      SELECT *
+      FROM reservations
+      WHERE date >= $1
+        AND status = 'completed'
+        AND seen_only = 0
+        AND COALESCE(pickko_status, 'paid') IN ('paid', 'manual', 'manual_retry', 'verified')
+    `,
     [fromDate]);
   return rows.map(_decryptRow);
 }
