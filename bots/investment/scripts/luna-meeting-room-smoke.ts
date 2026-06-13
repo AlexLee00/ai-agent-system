@@ -314,6 +314,44 @@ async function main() {
   assert.equal(weekendMarketData['market:overseas'].includes('스킵(weekend)'), false);
   assert.ok(weekendMarketData['market:crypto'].includes('진행'));
   assert.equal(weekendMorningResult.decisions.filter((row) => String(row.agendaKey || '').startsWith('market:crypto')).length, 1);
+  const weekendAnalysisReasons = (agendaKey) => [...new Set(
+    weekendMorningResult.minutes
+      .filter((row) => row.meta?.state === 'analysis' && row.agendaKey === agendaKey)
+      .map((row) => row.meta?.reason),
+  )];
+  assert.deepEqual(weekendAnalysisReasons('market:domestic'), ['segment_skipped']);
+  assert.deepEqual(weekendAnalysisReasons('market:overseas'), ['segment_skipped']);
+  assert.deepEqual(weekendAnalysisReasons('market:crypto'), ['no_llm']);
+  const weekendGrills = Object.fromEntries(
+    weekendMorningResult.minutes
+      .filter((row) => row.role === 'grill')
+      .map((row) => [row.agendaKey, String(row.content)]),
+  );
+  assert.ok(weekendGrills['market:crypto'].includes('근거: 게이트 reduced 44.0점 · 레짐 변동'));
+  assert.ok(weekendGrills['alerts:circuit-locks'].includes('활성 잠금'));
+  assert.ok(weekendGrills['decision:market-deployment-gate'].includes('컴포넌트 C1 시장 배치 게이트'));
+  assert.ok(weekendGrills['decision:market-deployment-gate'].includes('표본이 충족되거나 기준 판정이 바뀌면'));
+  assert.ok(new Set(Object.values(weekendGrills)).size > 1);
+  const weekendLlmResult = await runMeetingSession({
+    type: 'morning',
+    dryRun: true,
+    noLlm: false,
+    planNote: { ...fixturePlanNote(), segments: weekendSegments },
+    config: { maxLlmCallsPerMeeting: 6, analysisAgents: ['sophia', 'aria'] },
+    outputPath: outputPath('smoke-weekend-llm-budget'),
+  }, {
+    callViaHub: async () => ({ ok: true, text: 'fixture analysis', provider: 'fixture' }),
+  });
+  const weekendLlmReasons = (agendaKey) => [...new Set(
+    weekendLlmResult.minutes
+      .filter((row) => row.meta?.state === 'analysis' && row.agendaKey === agendaKey)
+      .map((row) => row.meta?.reason),
+  )];
+  assert.deepEqual(weekendLlmReasons('market:domestic'), ['segment_skipped']);
+  assert.ok(weekendLlmReasons('market:crypto').includes(null));
+  assert.equal(weekendLlmReasons('market:crypto').includes('cost_guard_skipped'), false);
+  assert.ok(weekendLlmReasons('decision:market-deployment-gate').includes(null));
+  assert.equal(weekendLlmReasons('decision:market-deployment-gate').includes('cost_guard_skipped'), false);
 
   const noLlmResult = await runMeetingSession({
     type: 'morning',

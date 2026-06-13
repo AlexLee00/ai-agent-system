@@ -431,11 +431,43 @@ function deterministicAnalysis(agenda: any, planNote: any, agent = 'luna') {
   ].join('\n');
 }
 
+function grillEvidenceFocus(agenda: any) {
+  const evidence = agenda.evidence || {};
+  if (agenda.kind === 'market_segment') {
+    const gate = evidence.gate;
+    const regime = evidence.regime;
+    const gateText = gate ? `${gate.deployment} ${Number(gate.score ?? 0).toFixed(1)}점` : '없음';
+    const regimeText = regime ? regimeLabel(regime.current_regime || regime.dominant) : '없음';
+    return `게이트 ${gateText} · 레짐 ${regimeText} · 전략신호 ${evidence.strategySignals?.length || 0}건 · 서킷 ${evidence.circuitLocks?.length || 0}건`;
+  }
+  if (agenda.kind === 'pending_decision') {
+    const component = componentLabel(evidence.component || evidence.agenda_key || evidence.type);
+    return `컴포넌트 ${component} · 표본 ${sampleCountForDecision(evidence)}건 · 판정 ${criteriaState(criteriaForDecision(evidence))}`;
+  }
+  if (agenda.kind === 'circuit_locks') {
+    return summarizeCircuitLocks(Array.isArray(evidence) ? evidence : []).split('\n')[0];
+  }
+  if (agenda.kind === 'transition_alert') {
+    const items = Array.isArray(evidence) ? evidence : [];
+    const markets = [...new Set(items.map((row: any) => marketLabel(row.market)))].slice(0, 3);
+    return `레짐 전이 경보 ${items.length}건${markets.length ? `(${markets.join(', ')})` : ''}`;
+  }
+  if (agenda.kind === 'domestic_debrief') {
+    return `G6 대조표 ${evidence.degraded === true ? '데이터 보강 필요' : '정상'} · 전략신호 ${evidence.strategySignals?.length || 0}건 · 활성 서킷 ${evidence.activeCircuits?.length || 0}건`;
+  }
+  return null;
+}
+
 function deterministicGrill(agenda: any, insufficient = false) {
   const suffix = insufficient ? '근거 부족: 마스터 확인 필요.' : '근거: 회의 데이터 요약과 섀도 스택.';
+  const focus = insufficient ? null : grillEvidenceFocus(agenda);
+  const focusSuffix = focus ? `근거: ${focus}.` : suffix;
+  const invalidation = agenda.kind === 'pending_decision'
+    ? '표본이 충족되거나 기준 판정이 바뀌면 재검토가 필요하다.'
+    : '최신 게이트/레짐/신호/서킷이 반대로 바뀌면 무효다.';
   return [
-    `1. 최강 반대 논거: 표본과 최근 상태가 불충분하면 결정을 보류해야 한다. ${suffix}`,
-    `2. 무효화 데이터: 최신 게이트/레짐/신호/서킷이 반대로 바뀌면 무효다. ${suffix}`,
+    `1. 최강 반대 논거: 표본과 최근 상태가 불충분하면 결정을 보류해야 한다. ${focusSuffix}`,
+    `2. 무효화 데이터: ${invalidation} ${suffix}`,
     `3. 마스터 질문: 이 결정을 오늘 적용해야 하는가, 아니면 관찰만 충분한가? ${suffix}`,
     `4. 긴급성: 경계급이 아니면 즉시 실행보다 기록과 추적이 우선이다. ${suffix}`,
     `5. 과거 결과: 동유형 ADR/레지스트리 근거를 확인해야 한다. ${suffix}`,
@@ -472,6 +504,10 @@ function draftDecision(agenda: any, grillContent: string, options: any = {}) {
 }
 
 async function callAnalysisLLM(agenda: any, planNote: any, agent: string, context: any, deps: any = {}) {
+  if (agenda.kind === 'market_segment' && agenda.segment?.skipped === true) {
+    context.skippedLlmCalls += 1;
+    return { text: deterministicAnalysis(agenda, planNote, agent), skipped: true, reason: 'segment_skipped' };
+  }
   const route = (deps.resolveAgentLLMRoute || resolveAgentLLMRoute)(agent, agenda.market || 'any', agent === 'aria' ? 'technical_analysis' : 'sentiment');
   if (context.noLlm || route.noLLM) {
     context.skippedLlmCalls += 1;
