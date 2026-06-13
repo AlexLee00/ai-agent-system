@@ -647,6 +647,27 @@ function isNonActionableReservationBookingAlert(analysis = {}) {
   );
 }
 
+function isNonActionableReservationCancelBlockedAlert(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_reservation_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  return (
+    /source_bot:\s*andy|from_bot:\s*andy|reservation:andy:alert/.test(combined)
+    && combined.includes('픽코 자동 취소 차단')
+    && combined.includes('PICKKO_CANCEL_MUTATION_ENABLE!=1')
+    && combined.includes('수동 확인')
+  );
+}
+
 function isNonActionableOpsEmergencyTelegramAlert(analysis = {}) {
   const metadata = analysis?.metadata || {};
   if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
@@ -820,6 +841,18 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'non_actionable_alarm_snapshot',
       reason: 'reservation booking detection snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableReservationCancelBlockedAlert(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'reservation cancel mutation blocked manual-ops snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,

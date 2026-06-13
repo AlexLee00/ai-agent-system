@@ -537,6 +537,55 @@ async function test_reservation_booking_alert_is_skipped() {
   console.log('✅ auto-dev: reservation booking alerts are skipped');
 }
 
+async function test_reservation_cancel_blocked_alert_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_reservation_cancel_blocked.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: reservation alarm',
+        '',
+        '## Incident',
+        '- from_bot: andy',
+        '- incident_key: reservation:andy:alert:sample5678',
+        '',
+        '## Error Message',
+        '```text',
+        '🛡️ 픽코 자동 취소 차단',
+        '──────────',
+        '📞 번호: 010-3274-7970',
+        '📅 날짜: 2026-06-14',
+        '⏰ 시간: 11:00~12:00',
+        '🏛️ 룸: A1',
+        'ℹ️ 사유: PICKKO_CANCEL_MUTATION_ENABLE!=1',
+        '──────────',
+        '✅ 조치: 네이버 취소 감지는 됐지만 픽코 실제 취소는 차단되어 수동 확인이 필요합니다.',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'reservation',
+        source_bot: 'andy',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: reservation cancel-blocked alerts are skipped');
+}
+
 async function test_ops_emergency_telegram_snapshot_is_skipped() {
   for (const [name, finalError] of [
     ['provider-circuit', 'provider_circuit_open:openai-oauth'],
@@ -2656,6 +2705,7 @@ async function main() {
     test_missing_auto_dev_document_after_listing_is_skipped,
     test_success_only_blog_engagement_alarm_is_skipped,
     test_reservation_booking_alert_is_skipped,
+    test_reservation_cancel_blocked_alert_is_skipped,
     test_ops_emergency_telegram_snapshot_is_skipped,
     test_investment_position_watch_alert_is_skipped,
     test_claude_health_snapshot_is_skipped,
