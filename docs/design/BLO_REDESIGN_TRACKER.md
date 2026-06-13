@@ -393,3 +393,51 @@ F4 유지. 다음 세션: CODEX-B5a 프롬프트(제거+통합) 작성 -> 이후
   강의 dry-run RAG 로그에서 `source=vault+real-experience`, episodes 4, posts 3 확인.
 - 참고: 전체 강의 dry-run 작성 호출은 LLM 응답 대기 150초 초과로 검증 목적 달성 후 중단. 발행/DB write 없음.
 이력: 2026-06-13 B5a 구현 (코덱스)
+
+## W. CODEX-B5a 메티 독립 검증 (2026-06-13) — 합격
+
+| 항목 | 결과 |
+|---|---|
+| 제거 완전성 | blo.ts crosspost/instaContent/reel 0 + agenticSearch/agentic-rag 참조 0 + agentic-rag.ts 삭제 + social-media 보존 |
+| RAG 일원화 | blo.ts 2336~: searchRealExperiences 직접 + getVaultRelatedPosts 병행(폴백 무해) — 명세 §2 정확. node-server /related-posts도 vault 전환(코덱스 추가 발견·처리) |
+| relatedPosts 0건 규명 | minSim 0.45 + **filterPublishedVaultBlogResults(published만 추천 — 합리적)** — 현재 매칭 상위가 ready 상태라 탈락. **11:05 backfill published 전환 시 자연 해소**(코드 정상, 데이터 상태) |
+| 콜드스타트 노트 | 임베딩 on_demand 첫 호출 시 ok:false 폴백 가능(발행 비차단 설계 그대로 — 무해) |
+| 회귀 | B1 ok4 + B10c ok6 (메티) + daily-dry/final-content-diff (코덱스) |
+
+마스터 액션: 커밋. 라이브 자연 검증: 내일 06:00 daily(vault 기반 ragContext + 연계 블록 TS-B5-L).
+이력: 2026-06-13 B5a 검증 합격 (메티)
+
+## X. B3 패턴 연구 + 형식 규칙 초안 (2026-06-13, 메티)
+
+- 근거: crank 745행 대조 — **실경험·구체 사례(74) vs 일반 정보 요약(44), 30점 격차**가 핵심 신호.
+  views 상위 제목(체크리스트/구체 결과형) + 검증된 기술 블로그 패턴(레딧 API 차단 — 자체+지식 기반).
+- 산출: docs/design/BLO_B3_FORMAT_RESEARCH_2026-06.md — R1~R6 규칙 초안 + 제목 예문 후보 +
+  구현 방향(규칙 상수+후처리 이중 보장, Edu-X 방식).
+- 대기: 마스터 확정 3건(규칙/예문/길이) -> CODEX-B3.
+이력: 2026-06-13 B3 연구 (메티)
+
+## Y. CODEX-B3 구현 — 형식 규칙 프롬프트+품질 게이트 연결 (2026-06-13, 코덱스)
+
+- 공통 규칙 모듈 추가: `BLOG_FORMAT_RULES`와 `checkBlogFormatRules()`로 R1~R6를 기계 검사화.
+  제목 추상어, 도입 3줄, 소제목 3~5개, 단락 3문장, 실경험, 마무리 요약/행동, 강의 다음 강 예고를 warning으로 판정.
+- writer 연결: `pos-writer` 강의 경로는 기존 8,000자+ 계약을 유지하면서 B3 지시를 주입.
+  `gems-writer` 일반 경로는 B3 전환 대상이라 3,000자 최소 / 3,600자대 목표로 direct·chunked·repair·sectionRatio를 정렬.
+- quality 연결: `checkQualityEnhanced()`가 B3 warning을 `formatRules`에 포함하고,
+  형식 위반은 발행 차단이 아니라 `autoRewriteRecommended=true`로 보정 루프에 넘김.
+- 운영 설정: `runtime-config` 기본값과 `bots/blog/config.json`의 `generation.gemsMinChars`, `sectionRatio.general`을 3,000자대 기준으로 조정.
+- 신규 스모크: `smoke:blo-b3-format-rules` 추가. 추상어 제목, 구체 제목, 도입 3줄, 실경험 누락,
+  긴 단락, 일반 3,000자 통과, 강의 8,000자 유지, warning 기반 autoRewrite를 검증.
+
+검증:
+- `node --check`: `blog-format-rules`, `quality-checker`, `gems-writer`, `pos-writer`, `runtime-config`,
+  `blo-b3-format-rules-smoke` 통과.
+- `section-ratio.ts`는 기존 TS type 선언 때문에 `node --check` 직접 실행 불가. `node --import tsx` import 검증 통과.
+- `bots/blog/config.json` JSON parse 통과.
+- `smoke:blo-b3-format-rules`, `smoke:blo-b1-curriculum`, `test:daily-dry`, `smoke:blog-v3-unified`,
+  `smoke:final-content-diff`, `smoke:master-edit-analyzer-integration` 통과.
+
+남은 후속:
+- 인기 패턴 외부 수집 -> vault `popular_pattern` 적재는 후속 B3b/B2 확장으로 분리.
+- 실제 다음 일반 포스트에서 3,000자대 본문, B3 warning/autoRewrite 빈도, 크랭크 점수 변화를 자연 검증.
+
+이력: 2026-06-13 B3 구현·검증 (코덱스)

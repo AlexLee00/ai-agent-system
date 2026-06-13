@@ -41,18 +41,18 @@ const POS_BASE_CHARS: SectionCharMap = {
 };
 
 const GEMS_BASE_CHARS: SectionCharMap = {
-  summary: 150,
-  greeting: 400,
-  trend: 1000,
-  insight_1: 500,
-  body_1: 2000,
-  insight_2: 500,
-  body_2: 2000,
-  insight_3: 500,
-  cafe: 400,
-  insight_4: 300,
-  faq: 700,
-  closing: 350,
+  summary: 120,
+  greeting: 250,
+  trend: 320,
+  insight_1: 160,
+  body_1: 620,
+  insight_2: 160,
+  body_2: 620,
+  insight_3: 160,
+  cafe: 300,
+  insight_4: 120,
+  faq: 300,
+  closing: 220,
 };
 
 const STAR_BASE_CHARS: SectionCharMap = {
@@ -63,7 +63,7 @@ const STAR_BASE_CHARS: SectionCharMap = {
   caption: 200,
 };
 
-const BONUS_BASE: Record<BotType, number> = { pos: 500, gems: 500, star: 250 };
+const BONUS_BASE: Record<BotType, number> = { pos: 500, gems: 180, star: 250 };
 
 const SECTION_LABELS: Record<string, string> = {
   summary: '[핵심 요약 3줄]',

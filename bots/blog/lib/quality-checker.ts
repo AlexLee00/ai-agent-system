@@ -8,9 +8,19 @@
 const https = require('https');
 const builtinModules = new Set(require('module').builtinModules || []);
 const { detectTitlePattern } = require('./performance-diagnostician.ts');
+const {
+  BLOG_FORMAT_RULES,
+  checkBlogFormatRules,
+} = require('./blog-format-rules.ts');
 
-const MIN_CHARS = { lecture: 8000, general: 6000 };
-const GOAL_CHARS = { lecture: 9000, general: 8000 };
+const MIN_CHARS = {
+  lecture: BLOG_FORMAT_RULES.lecture.minChars,
+  general: BLOG_FORMAT_RULES.general.minChars,
+};
+const GOAL_CHARS = {
+  lecture: BLOG_FORMAT_RULES.lecture.goalChars,
+  general: BLOG_FORMAT_RULES.general.goalChars,
+};
 const AI_RISK_REWRITE_THRESHOLD = 70;
 
 const REQUIRED_SECTION_MARKERS = {
@@ -553,6 +563,12 @@ function packageExists(pkg) {
 async function checkQualityEnhanced(content, type, options = {}) {
   const quality = checkQuality(content, type);
   const issues = [...quality.issues];
+  const formatRules = options.skipBlogFormatRules
+    ? { ok: true, autoRewriteRecommended: false, issues: [] }
+    : checkBlogFormatRules(content, type, options);
+  for (const issue of formatRules.issues || []) {
+    issues.push(issue);
+  }
 
   if (type === 'lecture' && options.lectureNumber && options.expectedLectureTitle) {
     const titleLine = String(content || '')
@@ -637,7 +653,11 @@ async function checkQualityEnhanced(content, type, options = {}) {
     issues,
     passed: !issues.some((issue) => issue.severity === 'error'),
     packageChecks: packages,
-    autoRewriteRecommended: quality.aiRisk?.riskScore >= AI_RISK_REWRITE_THRESHOLD,
+    formatRules,
+    autoRewriteRecommended: Boolean(
+      quality.aiRisk?.riskScore >= AI_RISK_REWRITE_THRESHOLD
+      || formatRules.autoRewriteRecommended
+    ),
   };
 }
 
@@ -908,6 +928,8 @@ module.exports = {
   repairTerminalQualityArtifacts,
   repairUnsupportedStatisticalClaims,
   runCriticLoop,
+  checkBlogFormatRules,
+  BLOG_FORMAT_RULES,
   MIN_CHARS,
   GOAL_CHARS,
   REQUIRED_SECTION_MARKERS,

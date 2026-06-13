@@ -8,7 +8,7 @@ const kst = require('../../../packages/core/lib/kst');
  * gems-writer.js (젬스 GEMS) — 일반 포스팅 작성
  *
  * IT 전략 컨설턴트 페르소나
- * 필수 6,000자 이상 (목표 6,500~7,000자)
+ * 필수 3,000자 이상 (목표 3,600자대)
  * 모델: Hub LLM Gateway (OpenAI/Groq/Claude fallback)
  */
 
@@ -23,6 +23,7 @@ const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/c
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
 const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
+const { BLOG_FORMAT_RULES, buildBlogFormatInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-format-rules.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
@@ -889,16 +890,16 @@ const GENERAL_SECTION_MARKERS = [
 ];
 
 const GENERAL_SECTION_TARGETS = {
-  'AI 스니펫 요약': 120,
-  '이 글에서 배울 수 있는 것': 120,
-  '승호아빠 인사말': 280,
-  '본론 섹션 1': 1400,
-  '본론 섹션 2': 1400,
-  '본론 섹션 3': 1400,
-  '이번 주 IT 뉴스 분석': 450,
-  '스터디카페 홍보 섹션': 520,
-  '질문형 Q&A': 450,
-  '마무리 제언': 320,
+  'AI 스니펫 요약': 100,
+  '이 글에서 배울 수 있는 것': 90,
+  '승호아빠 인사말': 220,
+  '본론 섹션 1': 520,
+  '본론 섹션 2': 520,
+  '본론 섹션 3': 520,
+  '이번 주 IT 뉴스 분석': 280,
+  '스터디카페 홍보 섹션': 260,
+  '질문형 Q&A': 260,
+  '마무리 제언': 200,
   '함께 읽으면 좋은 글': 120,
   '해시태그': 80,
 };
@@ -1357,6 +1358,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('gems', bonusInsights);
   const charInstruction = buildCharCountInstruction(sectionPlan.charCounts, 'gems', bonusInsights);
+  const generalFormatInstruction = buildBlogFormatInstruction('general');
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -1399,6 +1401,7 @@ ${AI_AGENT_CONTEXT}
 ${CAFE_FACT_GUARDRAILS}
 ${GEO_RULES}
 ${AI_BRIEFING_RULES}
+${generalFormatInstruction}
 ${GENERAL_AI_BRIEFING_ORDER}
 ${GENERAL_AI_BRIEFING_CHECKLIST}
 ${_buildCategoryBriefingGuide(category)}
@@ -1447,23 +1450,24 @@ ${topicHint
 글 첫 번째 줄에 제목을 [${category}] 형식으로 시작하라.
 
 ★★★ 글자수 요구사항 (반드시 준수) ★★★
-전체 최소 6,000자 이상 (목표 6,500~7,000자, 한국어 기준). 각 섹션별 최소 글자수:
-- [AI 스니펫 요약]: 150자
+전체 최소 3,000자 이상 (목표 3,600자대, 한국어 기준). 반복 설명보다 구체 예시와 실행 밀도를 우선하라. 각 섹션별 최소 글자수:
+- [AI 스니펫 요약]: 120자
 - [이 글에서 배울 수 있는 것]: 목차 3~5개
-- [승호아빠 인사말]: 300자
-- [본론 섹션 1]: 1,500자 (주제 도입 + 번호 리스트 상세 설명)
-- [본론 섹션 2]: 1,500자 (핵심 분석 + 불릿 리스트 상세 설명)
-- [본론 섹션 3]: 1,500자 (실천 전략 3가지 번호 리스트 + 각 전략 300자 이상)${IT_NEWS_CATEGORIES.includes(category) ? '\n- [이번 주 IT 뉴스 분석]: 500자 (관련 뉴스 2~3개 선별 분석)' : ''}
-- [스터디카페 홍보 섹션]: 600자
-- [마무리 제언]: 400자
+- [승호아빠 인사말]: 220자, 도입 3줄 구조 포함
+- [본론 섹션 1]: 550자 (문제 정의 + 번호 리스트)
+- [본론 섹션 2]: 550자 (핵심 분석 + 불릿 리스트)
+- [본론 섹션 3]: 550자 (실천 전략 3가지 + 실경험/예시)
+${IT_NEWS_CATEGORIES.includes(category) ? '- [이번 주 IT 뉴스 분석]: 300자 (관련 뉴스 1~2개 선별 분석)\n' : ''}- [스터디카페 홍보 섹션]: 280자
+- [질문형 Q&A]: 280자
+- [마무리 제언]: 220자, 3줄 요약 + 지금 할 행동 1개
 - [함께 읽으면 좋은 글]: 관련 포스팅 3개
 - [해시태그]: 27개 이상
 각 섹션을 생략하거나 줄이면 안 된다. 모든 섹션을 빠짐없이 충분히 작성하라.
 ${_buildVariationBlock(sectionVariation)}
 [출력 규칙]
 - 독자가 이 글 하나로 해당 주제를 완전히 이해할 수 있도록 포괄적으로(comprehensively) 작성하라.
-- 각 본론 섹션을 깊이 있고 상세하게(in-depth and detailed) 서술하라.
-- 절대 요약하거나 축약하지 말라. 모든 주장에 근거와 사례를 제시하라.
+- 각 본론 섹션은 길게 늘리지 말고 문제 → 예시 → 행동 순서로 압축하라.
+- 추상적 요약으로 끝내지 말고 모든 주장에 근거와 사례를 제시하라.
 - 반드시 모든 섹션을 작성하고 _THE_END_ 로 마무리하라.
   `.trim();
 
@@ -1490,7 +1494,7 @@ ${_buildVariationBlock(sectionVariation)}
     }).catch(() => {});
   }
 
-  const MIN_CHARS_GENERAL = Number(generationRuntimeConfig.gemsMinChars || 7000);
+  const MIN_CHARS_GENERAL = Number(generationRuntimeConfig.gemsMinChars || BLOG_FORMAT_RULES.general.minChars);
 
   // ── Continue 이어쓰기: 글자수 부족 시 2차 호출 (_THE_END_ 여부 무관) ──
   if (content.length < MIN_CHARS_GENERAL) {
@@ -1635,6 +1639,7 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
     ? '\n' + _buildNewsAnalysisBlock(researchData.it_news || [], category) + '\n'
     : '';
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
+  const generalFormatInstruction = buildBlogFormatInstruction('general');
 
   const repairPrompt = `
 다음은 이미 작성된 일반 포스팅 초안이다.
@@ -1643,6 +1648,7 @@ async function repairGeneralPostDraft(category, researchData, draft, quality, se
 [카테고리] ${category}
 [오늘 날씨 맥락] ${weatherContext}
 ${bookReviewBlock}${newsAnalysisBlock}
+${generalFormatInstruction}
 [선택된 주제 방향]
 ${selectedTopicDirection || '기존 초안의 제목과 중심 문제의식을 그대로 유지'}
 [품질 이슈]
@@ -1708,7 +1714,7 @@ ${content}
     category,
     weatherContext,
     relatedPosts: researchData.relatedPosts || [],
-    minChars: Number(generationRuntimeConfig.gemsMinChars || 7000),
+    minChars: Number(generationRuntimeConfig.gemsMinChars || BLOG_FORMAT_RULES.general.minChars),
   });
   repaired = _enforceGeneralTitleAlignment(repaired, category, researchData);
   const firstLine = repaired.split('\n').find(line => line.trim().length > 0) || '';
@@ -1758,6 +1764,7 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
+  const generalFormatInstruction = buildBlogFormatInstruction('general');
 
   const weatherContext = weatherToContext(weather, { detailed: false });
 
@@ -1798,6 +1805,7 @@ ${GEMS_PERSONA_GUIDE ? `[참조 페르소나]\n${GEMS_PERSONA_GUIDE}\n` : ''}
 [발행일] ${today}
 [오늘 날씨] ${weatherContext}
 ${CAFE_FACT_GUARDRAILS}
+${generalFormatInstruction}
 [최신 IT 뉴스] ${newsBlock}
 ${bookReviewBlock}${experienceBlock}
 ${recentThemeBlock}
@@ -1819,7 +1827,7 @@ ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''
   const chunks = [
     {
       id:       'group_a',
-      minChars: 2200,
+      minChars: 900,
       prompt: `${baseCtx}
 
 카테고리 "${category}"에 맞는 주제를 선정하여 아래 섹션을 작성하라.
@@ -1834,42 +1842,42 @@ ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''
 5. [승호아빠 인사말] — 날씨/시사 반영, 친근한 인사, 300자
    - 블로그 주인 화자로 작성하고, "젬스입니다", "AI입니다", "작성 도우미입니다" 같은 자기 정체 소개를 절대 넣지 말 것
 6. ━━━━━━━━━━━━━━━━━━━━━
-7. [본론 섹션 1] — 주제 도입 + 번호 리스트 상세 설명, 1,400자 이상
+7. [본론 섹션 1] — 주제 도입 + 번호 리스트 상세 설명, 520자 이상
 
-글자수 요구: 전체 2,200자 이상. 본론 섹션 1은 최소 1,500자.
+글자수 요구: 전체 900자 이상. 본론 섹션 1은 최소 520자.
 ${_buildVariationBlock(sectionVariation)}`,
     },
     {
       id:       'group_b',
-      minChars: 3000,
+      minChars: 1100,
       prompt: `${baseCtx}
 
 카테고리 "${category}" 포스팅의 중반부를 작성하라.
 이전 섹션([승호아빠 인사말], [본론 섹션 1])에 이어서 자연스럽게 연결하라.
 
 작성할 섹션 (모두 포함, 생략 금지):
-1. [본론 섹션 2] — 핵심 분석 + 불릿 리스트 상세 설명, 1,350자 이상
+1. [본론 섹션 2] — 핵심 분석 + 불릿 리스트 상세 설명, 520자 이상
 2. ━━━━━━━━━━━━━━━━━━━━━
-3. [본론 섹션 3] — 실천 전략 3가지 (번호 리스트, 각 전략 280자 이상), 1,350자 이상
+3. [본론 섹션 3] — 실천 전략 3가지, 직접 해본 결과/실수/수치 중 1개 포함, 520자 이상
 
-글자수 요구: 전체 3,000자 이상. 각 섹션 최소 1,450자.`,
+글자수 요구: 전체 1,100자 이상. 각 섹션 최소 520자.`,
     },
     {
       id:       'group_c',
-      minChars: 1900,
+      minChars: 850,
       prompt: `${baseCtx}
 카테고리 "${category}" 포스팅의 마무리 섹션을 작성하라.
 앞서 작성된 3개의 본론 섹션에 이어 자연스럽게 마무리하라.
 날씨 맥락(${weatherContext})을 스터디카페 섹션에 자연스럽게 포함하라.
 
 작성할 섹션 (모두 포함, 생략 금지):
-1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 분당서현점 자연 연결, 세스코 에어는 공기질 관리 기능으로만 설명, 불릿 리스트, 600자 이상
+1. [스터디카페 홍보 섹션] — 작업 메모리/인지 부하 → 커피랑도서관 분당서현점 자연 연결, 세스코 에어는 공기질 관리 기능으로만 설명, 불릿 리스트, 260자 이상
 2. ━━━━━━━━━━━━━━━━━━━━━
-3. [질문형 Q&A] — 실제 검색형 질문 3개 이상, 450자 이상
+3. [질문형 Q&A] — 실제 검색형 질문 3개 이상, 260자 이상
 4. ━━━━━━━━━━━━━━━━━━━━━
-5. [마무리 제언] — 명언형 인용 + 결론 한줄 + 감사 인사 + 좋아요/댓글 독려, 400자 이상
+5. [마무리 제언] — 3줄 요약 + 지금 할 행동 1개 + 감사 인사 + 좋아요/댓글 독려, 220자 이상
 
-글자수 요구: 전체 1,900자 이상. 스터디카페 섹션 최소 700자, 질문형 Q&A 최소 500자.`,
+글자수 요구: 전체 850자 이상. 스터디카페 섹션 최소 260자, 질문형 Q&A 최소 260자.`,
     },
     {
       id:       'group_d',
@@ -1908,7 +1916,7 @@ ${linkingBlock}
     category,
     weatherContext,
     relatedPosts,
-    minChars: Number(generationRuntimeConfig.gemsMinChars || 7000),
+    minChars: Number(generationRuntimeConfig.gemsMinChars || BLOG_FORMAT_RULES.general.minChars),
   });
   content = _enforceGeneralTitleAlignment(content, category, researchData);
   content = _ensureBookReviewIdentity(content, category, researchData);
