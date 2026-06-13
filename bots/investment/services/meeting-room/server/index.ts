@@ -13,6 +13,7 @@ import { buildMeetingPlanNote, buildMarketSegments } from './adapters/stack-adap
 import { runMeetingSession } from './orchestrator/meeting-session.ts';
 import { applyMeetingDecisionAction } from './meeting-decision-actions.ts';
 import { normalizeChair, normalizeMeetingType } from '../config/meeting.config.ts';
+import { applyMeetingGlossary, buildDecisionPlainFields } from './glossary.ts';
 
 const SERVICE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_ROOT = path.join(SERVICE_ROOT, 'web');
@@ -265,14 +266,14 @@ function pendingDecisionCatchupLabel(row = {}) {
   const agendaKey = row.agendaKey || row.agenda_key;
   const label = agendaLabel(agendaKey);
   const decision = stripDecisionDisplayPrefix(row.decision, agendaKey, label);
-  return `${label}: ${decision || '마스터 확인 대기'}`;
+  return applyMeetingGlossary(`${label}: ${decision || '마스터 확인 대기'}`);
 }
 
 function normalizeDecisionDisplayText(row = {}) {
   const agendaKey = row.agenda_key || row.agendaKey;
   const label = agendaLabel(agendaKey);
   const decision = stripDecisionDisplayPrefix(normalizeLegacyMinuteContent(row.decision), agendaKey, label);
-  return decision || '마스터 확인 대기';
+  return applyMeetingGlossary(decision || '마스터 확인 대기');
 }
 
 function componentLabel(key) {
@@ -553,6 +554,13 @@ function compactDecisionEvidence(evidence, row = {}) {
   const excerpt = source.evidenceExcerpt && typeof source.evidenceExcerpt === 'object' && !Array.isArray(source.evidenceExcerpt)
     ? source.evidenceExcerpt
     : {};
+  const reappeared = Array.isArray(source.mr_ux_1?.reappeared) ? source.mr_ux_1.reappeared : [];
+  const ux = buildDecisionPlainFields({
+    agendaKey: row.agenda_key || row.agendaKey,
+    title: source.title || agendaLabel(row.agenda_key || row.agendaKey),
+    decision: normalizeDecisionDisplayText(row),
+    evidence: source,
+  });
   return {
     agenda: agendaLabel(row.agenda_key || row.agendaKey),
     decision: normalizeDecisionDisplayText(row),
@@ -560,6 +568,8 @@ function compactDecisionEvidence(evidence, row = {}) {
     status: decisionStatusLabel(row.status),
     shadowOnly: source.shadowOnly === true ? '섀도 전용' : '표시용 요약',
     grill: source.grillInsufficient === true ? '근거 부족: 마스터 확인 필요' : '그릴 근거 부족 표시 없음',
+    ux,
+    reappearedCount: reappeared.length,
     summary: [
       ...summarizeDecisionEvidenceExcerpt(excerpt),
       '상세 근거는 감사 로그에 보존',
@@ -1101,6 +1111,7 @@ function normalizeMinute(row = {}) {
     const agendaKey = row.agenda_key || row.agendaKey;
     visibleContent = stripDecisionDisplayPrefix(visibleContent, agendaKey, agendaLabel(agendaKey));
   }
+  visibleContent = applyMeetingGlossary(visibleContent);
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
@@ -1196,18 +1207,31 @@ function normalizeMinuteMeta(meta) {
 }
 
 function normalizeDecision(row = {}) {
+  const evidence = compactDecisionEvidence(row.evidence, row);
+  const ux = evidence.ux || buildDecisionPlainFields({
+    agendaKey: row.agenda_key || row.agendaKey,
+    decision: normalizeDecisionDisplayText(row),
+    evidence: safeJson(row.evidence),
+  });
   return {
     id: row.id,
     sessionId: row.session_id || row.sessionId,
     agendaKey: row.agenda_key || row.agendaKey,
     agendaLabel: agendaLabel(row.agenda_key || row.agendaKey),
     decision: normalizeDecisionDisplayText(row),
+    question: ux.question,
+    contextPlain: ux.context_plain,
+    ifConfirm: ux.if_confirm,
+    ifDefer: ux.if_defer,
+    safetyLabel: ux.safety_label,
+    professionalSummary: ux.professional_summary,
+    reappearedCount: evidence.reappearedCount || 0,
     grade: row.grade,
     gradeLabel: decisionGradeLabel(row.grade),
     status: row.status,
     statusLabel: decisionStatusLabel(row.status),
     dueAt: row.due_at || row.dueAt,
-    evidence: compactDecisionEvidence(row.evidence, row),
+    evidence,
     createdAt: row.created_at || row.createdAt,
   };
 }
@@ -1534,13 +1558,13 @@ function buildScheduleExecutionStatus(meetings = [], now = new Date()) {
     ? `최신 전체 회의: #${latestOverall.id} ${meetingTypeLabel(latestOverall.type)} ${formatKstTimestampFromIso(latestOverall.startedAt || latestOverall.started_at)} ${sessionStatusLabel(latestOverall.status)}.`
     : '최신 전체 회의 기록은 아직 없습니다.';
   if (todayMorning) {
-    return `${prefix} 오늘 ${meetingTypeLabel('morning')} #${todayMorning.id}가 ${formatKstTimestampFromIso(todayMorning.startedAt || todayMorning.started_at)}에 ${sessionStatusLabel(todayMorning.status)} 상태로 기록됐습니다. ${latestText} ${latestOverallText}`;
+    return `${prefix} 오늘 05:00 ${meetingTypeLabel('morning')} 완료 · 최신 회의 #${latestOverall?.id || todayMorning.id} ${meetingTypeLabel(latestOverall?.type || 'morning')} · 다음 정례 실행은 스케줄 기준으로 확인합니다.`;
   }
   if (minutesOfDay < 5 * 60) {
     const remainingMinutes = (5 * 60) - minutesOfDay;
-    return `${prefix} 오늘 05:00 KST 전이라 아직 실행 전입니다. 05:00까지 약 ${remainingMinutes}분 남았습니다. 05:05 KST 이후 회의 목록과 로그를 다시 확인하세요. ${latestText} ${latestOverallText}`;
+    return `${prefix} 오늘 05:00 KST 전 · 약 ${remainingMinutes}분 후 아침 회의 예정 · 최신 기록 ${latestMorning ? `#${latestMorning.id}` : '없음'}.`;
   }
-  return `${prefix} 오늘 05:00 KST가 지났지만 오늘 ${meetingTypeLabel('morning')} 기록은 아직 없습니다. 운영 로그를 확인하세요. ${latestText} ${latestOverallText}`;
+  return `${prefix} 오늘 05:00 KST 이후 아침 회의 기록 없음 · 운영 로그 확인 필요 · 최신 기록 ${latestMorning ? `#${latestMorning.id}` : '없음'}.`;
 }
 
 function inferAskIntent(question) {
@@ -1768,7 +1792,7 @@ function extractMeetingGateScores(detail = null) {
   const scores = [];
   for (const row of minutes) {
     const content = String(row.content || '');
-    const match = content.match(/게이트=([a-z_]+)\s+점수=(\d+(?:\.\d+)?)/i);
+    const match = content.match(/게이트=([^\n]+?)\s+점수=(\d+(?:\.\d+)?)/i);
     if (!match) continue;
     const item = {
       agendaLabel: row.agendaLabel || agendaLabel(row.agendaKey || row.agenda_key),

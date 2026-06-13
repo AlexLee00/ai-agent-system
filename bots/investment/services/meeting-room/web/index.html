@@ -405,6 +405,87 @@
       padding: 4px 8px;
       background: rgba(23, 33, 26, 0.07);
     }
+    .decision-question {
+      font-size: 16px;
+      font-weight: 850;
+      line-height: 1.35;
+      letter-spacing: -0.02em;
+      overflow-wrap: anywhere;
+    }
+    .decision-context,
+    .decision-effects {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+    .decision-effects {
+      border-radius: 14px;
+      padding: 10px;
+      background: rgba(72, 109, 74, 0.1);
+      border: 1px solid rgba(72, 109, 74, 0.18);
+    }
+    .safety-label,
+    .reappeared-badge {
+      display: inline-flex;
+      width: fit-content;
+      max-width: 100%;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 850;
+      overflow-wrap: anywhere;
+    }
+    .safety-label {
+      margin-top: 10px;
+      color: #315f34;
+      background: rgba(224, 239, 207, 0.66);
+      border: 1px solid rgba(72, 109, 74, 0.32);
+    }
+    .reappeared-badge {
+      color: #7c4f00;
+      background: rgba(255, 199, 92, 0.2);
+      border: 1px solid rgba(196, 127, 20, 0.35);
+    }
+    .decision-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin: 8px 0 12px;
+    }
+    .timeline-groups {
+      gap: 12px;
+    }
+    .timeline-group {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.35);
+      padding: 8px;
+    }
+    .timeline-group > summary {
+      display: grid;
+      gap: 4px;
+      width: 100%;
+      align-items: start;
+      overflow-wrap: anywhere;
+    }
+    .timeline-group-title {
+      font-weight: 850;
+      color: var(--ink);
+    }
+    .timeline-group-summary {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .timeline-group-body {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+    }
     .form-row { display: grid; gap: 8px; margin-bottom: 12px; }
     .inline { display: flex; gap: 8px; align-items: center; }
     .inline > * { flex: 1; }

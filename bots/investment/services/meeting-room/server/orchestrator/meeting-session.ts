@@ -8,6 +8,12 @@ import { callViaHub } from '../../../../shared/hub-llm-client.ts';
 import { buildMeetingPlanNote } from '../adapters/stack-adapter.ts';
 import { meetingRoomConfig, normalizeChair, normalizeMeetingType } from '../../config/meeting.config.ts';
 import { writeMeetingMinutesMarkdown } from '../minutes.ts';
+import {
+  applyMeetingGlossary,
+  buildDecisionPlainFields,
+  plainDeploymentStatus,
+  plainRegimeLabel,
+} from '../glossary.ts';
 
 const require = createRequire(import.meta.url);
 const { postAlarm } = require('../../../../../../packages/core/lib/hub-alarm-client.js');
@@ -378,16 +384,26 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
     const regime = agenda.evidence?.regime;
     const signalCount = agenda.evidence?.strategySignals?.length || 0;
     const circuitCount = agenda.evidence?.circuitLocks?.length || 0;
+    const segmentState = segment.skipped
+      ? `${segmentReasonLabel(segment.reason)}로 오늘 회의 대상에서 제외됩니다.`
+      : '오늘 회의 대상입니다.';
+    const gateText = gate
+      ? `시장 건강 점수는 ${Number(gate.score ?? 0).toFixed(1)}점이고, 현재 구간은 ${plainDeploymentStatus(gate.deployment)}입니다.`
+      : '시장 건강 점수는 아직 없습니다.';
+    const regimeText = regime
+      ? `시장 분위기는 ${plainRegimeLabel(regime.current_regime || regime.dominant)}이고, 출처는 ${regime.source ? String(regime.source).toUpperCase() : '미상'}입니다.`
+      : '시장 분위기 기록은 아직 없습니다.';
     return [
-      `${agenda.title}: ${segment.skipped ? `스킵(${segmentReasonLabel(segment.reason)})` : '진행'}`,
-      `게이트=${gate ? `${gate.deployment} score=${Number(gate.score ?? 0).toFixed(1)}` : '없음'}`,
-      `레짐=${regime ? `${regimeLabel(regime.current_regime || regime.dominant)} source=${regime.source ? String(regime.source).toUpperCase() : '없음'}` : '없음'}`,
-      `전략신호=${signalCount}건, 서킷=${circuitCount}건`,
+      `${agenda.title}: ${segmentState}`,
+      gateText,
+      regimeText,
+      `최근 매매 후보 신호는 ${signalCount}건이고, 손실 방지 잠금은 ${circuitCount}건입니다.`,
+      '이 기록은 자문/섀도 전용이며 실제 거래를 바꾸지 않습니다.',
     ].join('\n');
   }
-  if (agenda.kind === 'pending_decision') return summarizePendingDecision(agenda.evidence || {});
-  if (agenda.kind === 'transition_alert') return `레짐 전이 경보\n${compact(agenda.evidence, 900)}`;
-  if (agenda.kind === 'circuit_locks') return summarizeCircuitLocks(agenda.evidence || []);
+  if (agenda.kind === 'pending_decision') return applyMeetingGlossary(summarizePendingDecision(agenda.evidence || {}));
+  if (agenda.kind === 'transition_alert') return applyMeetingGlossary(`시장 분위기 전이 경보\n${compact(agenda.evidence, 900)}`);
+  if (agenda.kind === 'circuit_locks') return applyMeetingGlossary(summarizeCircuitLocks(agenda.evidence || []));
   if (agenda.kind === 'domestic_debrief') {
     const evidence = agenda.evidence || {};
     return [
@@ -399,12 +415,12 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
       `KIS 체결=${evidence.kisTrades?.length || 0}건`,
       `미발화 행=${evidence.unspokenEntries?.length || 0}건`,
       summarizeMeetingErrors(evidence.errors || []),
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).map(applyMeetingGlossary).join('\n');
   }
   if (agenda.kind === 'us_premarket') {
     return [
       `${agenda.title}`,
-      summarizeUsPremarketEvidence(agenda.evidence || {}),
+      applyMeetingGlossary(summarizeUsPremarketEvidence(agenda.evidence || {})),
     ].join('\n');
   }
   if (agenda.kind === 'weekly_review') {
@@ -418,9 +434,9 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
       `registry=${compact(evidence.registry || [], 500)}`,
       `ADR=${compact(evidence.adr || [], 500)} overdue=${evidence.overdueAdr?.length || 0}`,
       summarizeMeetingErrors(evidence.errors || []),
-    ].filter(Boolean).join('\n');
+    ].filter(Boolean).map(applyMeetingGlossary).join('\n');
   }
-  return planNote.briefMarkdown || 'plan-note 없음';
+  return applyMeetingGlossary(planNote.briefMarkdown || 'plan-note 없음');
 }
 
 function deterministicAnalysis(agenda: any, planNote: any, agent = 'luna') {
@@ -485,11 +501,20 @@ function draftDecision(agenda: any, grillContent: string, options: any = {}) {
   const grade = insufficient ? 'c_master' : (agenda.defaultGrade || 'a_rule');
   const status = grade === 'c_master' ? 'pending_master' : (agenda.defaultStatus || 'advisory');
   const dueAt = new Date(Date.parse(options.now || new Date().toISOString()) + Number(options.decisionDueHours || 24) * 3_600_000).toISOString();
+  const decisionText = insufficient
+    ? `${agenda.title}: 자문 기록 후 마스터 확인 대기`
+    : `${agenda.title}: 섀도/자문 상태로 관찰 지속`;
+  const ux = buildDecisionPlainFields({
+    agenda,
+    agendaKey: agenda.key,
+    agendaKind: agenda.kind,
+    title: agenda.title,
+    decision: decisionText,
+    evidence: { title: agenda.title, agendaKind: agenda.kind },
+  });
   return {
     agendaKey: agenda.key,
-    decision: insufficient
-      ? `${agenda.title}: 자문 기록 후 마스터 확인 대기`
-      : `${agenda.title}: 섀도/자문 상태로 관찰 지속`,
+    decision: decisionText,
     grade,
     status,
     dueAt,
@@ -499,6 +524,7 @@ function draftDecision(agenda: any, grillContent: string, options: any = {}) {
       grillInsufficient: insufficient,
       evidenceExcerpt: agenda.evidence || null,
       shadowOnly: true,
+      ux,
     },
   };
 }
@@ -525,7 +551,7 @@ async function callAnalysisLLM(agenda: any, planNote: any, agent: string, contex
   try {
     const result = await (deps.callViaHub || callViaHub)(
       agent,
-        'You are a Luna meeting-room research analyst. Use only the provided computed metrics. Reply in natural Korean reporting style. Keep score/status values unchanged; do not translate halt/reduced/full. Treat gate scores such as 33, 44, or 61 only as scores/points, never as trade counts, event counts, volume, or market activity. Do not invent calendar dates; if a date is not explicitly required, say "회의 데이터 요약" instead of a dated report title. Do not quote raw JSON or code blocks; express numbers in prose. Avoid greetings, filler transitions, repeated conclusions, and repeated bullet groups. This meeting is advisory/shadow-only: never recommend applying, executing, resuming, expanding, or changing trades, parameters, launchd, runtime config, or live operations. If a segment is skipped/weekend/halt/reduced or evidence is incomplete, the final sentence must say to keep it as observation or master-review, not to take action. Prefer one concise finding list plus one final observation sentence.',
+        'You are a Luna meeting-room research analyst. Use only the provided computed metrics. Reply in natural Korean reporting style. Explain technical terms in plain Korean suitable for a middle-school reader, and keep original operational tokens in parentheses when helpful, e.g. 신규 진입 중단(halt), 축소 운용(reduced), 정상 운용(full). Treat gate scores such as 33, 44, or 61 only as scores/points, never as trade counts, event counts, volume, or market activity. Do not invent calendar dates; if a date is not explicitly required, say "회의 데이터 요약" instead of a dated report title. Do not quote raw JSON or code blocks; express numbers in prose. Avoid greetings, filler transitions, repeated conclusions, and repeated bullet groups. This meeting is advisory/shadow-only: never recommend applying, executing, resuming, expanding, or changing trades, parameters, launchd, runtime config, or live operations. If a segment is skipped/weekend/halt/reduced or evidence is incomplete, the final sentence must say to keep it as observation or master-review, not to take action. Prefer one concise finding list plus one final observation sentence.',
       [
         `안건: ${agenda.title}`,
         'Plan-note excerpt:',
@@ -662,9 +688,10 @@ async function sendPendingMasterTelegram(result: any, deps: any = {}) {
 
 async function persistMeeting(result: any, deps: any = {}) {
   if (!deps.runFn && typeof db.withTransaction === 'function') {
-    return db.withTransaction(async (tx: any) => persistMeeting(result, { ...deps, runFn: tx.run }));
+    return db.withTransaction(async (tx: any) => persistMeeting(result, { ...deps, runFn: tx.run, queryFn: tx.query }));
   }
   const runFn = deps.runFn || db.run;
+  const queryFn = deps.queryFn || null;
   const sessionInsert = await runFn(
     `INSERT INTO luna_meeting_sessions (type, status, chair, segments, started_at, closed_at, summary)
      VALUES ($1,'closed',$2,$3::jsonb,$4,$5,$6)
@@ -689,6 +716,69 @@ async function persistMeeting(result: any, deps: any = {}) {
   }
   const persistedDecisions = [];
   for (const row of result.decisions || []) {
+    if (row.status === 'pending_master' && queryFn) {
+      const duplicateRows = await queryFn(
+        `SELECT id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at
+           FROM luna_meeting_decisions
+          WHERE agenda_key = $1
+            AND status = 'pending_master'
+          ORDER BY created_at ASC, id ASC
+          LIMIT 1
+          FOR UPDATE`,
+        [row.agendaKey],
+      );
+      const duplicate = duplicateRows?.[0] || null;
+      if (duplicate) {
+        const reappeared = {
+          sessionId,
+          seenAt: result.session.closedAt || result.closedAt,
+          agendaKey: row.agendaKey,
+          title: row.evidence?.title || row.decision,
+        };
+        const updated = await queryFn(
+          `UPDATE luna_meeting_decisions
+              SET evidence = evidence || jsonb_build_object(
+                'mr_ux_1',
+                COALESCE(evidence->'mr_ux_1', '{}'::jsonb)
+                || jsonb_build_object(
+                  'reappeared',
+                  COALESCE(evidence #> '{mr_ux_1,reappeared}', '[]'::jsonb) || $2::jsonb
+                )
+              )
+            WHERE id = $1
+            RETURNING id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at`,
+          [duplicate.id, JSON.stringify([reappeared])],
+        );
+        const seqRows = await queryFn(
+          `SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq
+             FROM luna_meeting_minutes
+            WHERE session_id = $1`,
+          [sessionId],
+        );
+        const nextSeq = Number(seqRows?.[0]?.next_seq || 1);
+        const previousCount = Array.isArray(duplicate.evidence?.mr_ux_1?.reappeared)
+          ? duplicate.evidence.mr_ux_1.reappeared.length
+          : 0;
+        await runFn(
+          `INSERT INTO luna_meeting_minutes (session_id, seq, agenda_key, speaker, role, content, meta)
+           VALUES ($1,$2,$3,'adr','decision',$4,$5::jsonb)`,
+          [
+            sessionId,
+            nextSeq,
+            row.agendaKey,
+            `기존 대기 결정 #${duplicate.id} 유지(${previousCount + 1}번째 재상정)`,
+            JSON.stringify({
+              state: 'adr_reappeared',
+              decisionId: duplicate.id,
+              reappearedCount: previousCount + 1,
+              shadowOnly: true,
+            }),
+          ],
+        );
+        persistedDecisions.push(updated?.[0] || updated?.rows?.[0] || duplicate);
+        continue;
+      }
+    }
     const inserted = await runFn(
       `INSERT INTO luna_meeting_decisions (session_id, agenda_key, decision, grade, status, due_at, evidence)
        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)

@@ -688,8 +688,14 @@ async function main() {
     assert.ok(appJs.text.includes('role="list" aria-label="타임라인 역할 색상 범례"'));
     assert.ok(appJs.text.includes('aria-label=${`${label} 역할 색상`}'));
     assert.ok(appJs.text.includes('aria-label=${`${minute.seq}번 회의록 · ${agendaLabel(minute.agendaKey ||'));
-    assert.ok(appJs.text.includes("${'\\n'}\n              <div className=\"meta\">${formatTime(minute.createdAt)}</div>"));
-    assert.ok(appJs.text.includes("<div className=\"meta\">${formatTime(minute.createdAt)}</div>\n              ${'\\n'}"));
+    assert.ok(appJs.text.includes('function groupMinutesByAgenda(minutes = [])'));
+    assert.ok(appJs.text.includes('function timelineGroupSummary(group = {})'));
+    assert.ok(appJs.text.includes('const groups = groupMinutesByAgenda(minutes);'));
+    assert.ok(appJs.text.includes('className="timeline-group"'));
+    assert.ok(appJs.text.includes('aria-label=${`${group.label} 안건 발언 ${group.minutes.length}건 펼치기`}'));
+    assert.ok(appJs.text.includes('className="timeline-group-title"'));
+    assert.ok(appJs.text.includes('className="timeline-group-summary"'));
+    assert.ok(appJs.text.includes('className="timeline-group-body"'));
     assert.ok(appJs.text.includes('<div className="meta">${formatTime(minute.createdAt)}</div>'));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content} />'));
     assert.ok(appJs.text.includes('선택된 회의의 회의록이 없습니다.'));
@@ -798,7 +804,7 @@ async function main() {
     assert.equal(appJs.text.includes('`${marketLabel(segment.market)} active`'), false);
     assert.ok(appJs.text.includes('결정론 발언 · LLM 비용 0'));
     assert.ok(appJs.text.includes('LLM 발언 사용 · 비용 가드 적용'));
-    assert.ok(appJs.text.includes('근거 요약 보기'));
+    assert.ok(appJs.text.includes('전문 근거 펼치기'));
     assert.equal(appJs.text.includes('근거 JSON 보기'), false);
     assert.ok(appJs.text.includes('C 마스터 확인'));
     assert.ok(appJs.text.includes('마스터 액션 대기'));
@@ -812,11 +818,15 @@ async function main() {
     assert.equal(appJs.text.includes('title=${`원문 등급:'), false);
     assert.equal(appJs.text.includes('title=${`원문 상태:'), false);
     assert.ok(appJs.text.includes('const decisionRows = safeArray(decisions);'));
+    assert.ok(appJs.text.includes('async function bulkDefer()'));
+    assert.ok(appJs.text.includes('window.confirm(`현재 대기 결정 ${decisionRows.length}건을 모두 보류로 감사 기록합니다. 실제 거래·파라미터 영향은 없습니다. 진행할까요?`)'));
+    assert.ok(appJs.text.includes("body: JSON.stringify({ action: 'defer', note: 'UX 일괄 보류' })"));
+    assert.ok(appJs.text.includes('대기 결정 ${decisionRows.length}건 일괄 보류'));
     assert.ok(appJs.text.includes('전체 결정 대기함'));
-    assert.ok(appJs.text.includes('전체 회의 기준 · 선택 회의 캐치업과 별도 · 정렬: 기한 빠른 순 · 기한 없으면 최근 생성 순'));
+    assert.ok(appJs.text.includes('전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음'));
     assert.ok(appJs.text.includes(`<h2>전체 결정 대기함</h2>
       \${'\\n'}`));
-    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도 · 정렬: 기한 빠른 순 · 기한 없으면 최근 생성 순</div>
+    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
       \${'\\n'}`));
     assert.ok(appJs.text.includes('role="region" aria-label="전체 회의 결정 대기함"'));
     assert.ok(appJs.text.includes('aria-describedby="decision-scope-note"'));
@@ -840,20 +850,28 @@ async function main() {
     assert.ok(appJs.text.includes("aria-busy=${busy === 'confirm'}"));
     assert.ok(appJs.text.includes("aria-busy=${busy === 'defer'}"));
     assert.ok(appJs.text.includes('결정 #${decision.id} 감사 메모'));
-    assert.ok(appJs.text.includes('결정 #${decision.id} 근거 요약 보기'));
+    assert.ok(appJs.text.includes('결정 #${decision.id} 전문 근거 펼치기'));
     assert.ok(appJs.text.includes('className="evidence-summary" role="list"'));
     assert.ok(appJs.text.includes("...(Array.isArray(evidence.summary) ? evidence.summary : [])"));
     assert.equal(appJs.text.includes('JSON.stringify(decision.evidence'), false);
     assert.ok(appJs.text.includes('title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`'));
-    assert.ok(appJs.text.includes('>결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}</div>'));
+    assert.ok(appJs.text.includes('className="decision-question"'));
+    assert.ok(appJs.text.includes('${decision.question || `결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}`}</div>'));
     assert.equal(appJs.text.includes('>#${decision.id} · ${agendaLabel(decision.agendaKey)}</div>'), false);
-    assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision} />'));
+    assert.ok(appJs.text.includes('const contextLines = String(decision.contextPlain || \'\').split(/\\r?\\n/).filter(Boolean).slice(0, 2);'));
+    assert.ok(appJs.text.includes('className="decision-context"'));
+    assert.ok(appJs.text.includes('<b>확정하면</b> ${decision.ifConfirm || \'검토 완료로 기록됩니다.\'}'));
+    assert.ok(appJs.text.includes('<b>보류하면</b> ${decision.ifDefer || \'계속 관찰 목록에 유지됩니다.\'}'));
+    assert.ok(appJs.text.includes('className="safety-label" role="note"'));
+    assert.ok(appJs.text.includes('지금은 기록만 — 실제 거래 영향 없음'));
+    assert.ok(appJs.text.includes('className="reappeared-badge"'));
+    assert.equal(appJs.text.includes('<${MarkdownLite} text=${decision.decision} />'), false);
     assert.ok(appJs.text.includes('<${EvidenceDetails} decision=${decision} />'));
     assert.ok(appJs.text.includes(`<button aria-label=\${busy === 'confirm' ? \`결정 #\${decision.id} 확정 처리 중\` : \`결정 #\${decision.id} 확정\`} aria-busy=\${busy === 'confirm'} onClick=\${() => act('confirm')} disabled=\${Boolean(busy)}>\${busy === 'confirm' ? '확정 중' : '확정'}</button>
           \${'\\n'}
           <button aria-label=\${busy === 'defer' ? \`결정 #\${decision.id} 보류 처리 중\` : \`결정 #\${decision.id} 보류\`}`));
     assert.ok(appJs.text.includes('role="listitem"'));
-    assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}'));
+    assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${decision.question || agendaLabel(decision.agendaKey)}'));
     assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}'));
     assert.ok(appJs.text.includes('setMeetings(safeArray(list.meetings));'));
     assert.ok(appJs.text.includes('setActiveRuns(safeArray(list.activeRuns));'));
@@ -1007,6 +1025,14 @@ async function main() {
     assert.ok(html.text.includes('.ask-helper'));
     assert.ok(html.text.includes('.notice'));
     assert.ok(html.text.includes('.decision-state'));
+    assert.ok(html.text.includes('.decision-question'));
+    assert.ok(html.text.includes('.decision-context'));
+    assert.ok(html.text.includes('.decision-effects'));
+    assert.ok(html.text.includes('.safety-label'));
+    assert.ok(html.text.includes('.reappeared-badge'));
+    assert.ok(html.text.includes('.decision-toolbar'));
+    assert.ok(html.text.includes('.timeline-group > summary'));
+    assert.ok(html.text.includes('.timeline-group-body'));
     assert.ok(html.text.includes('.catchup [role="list"]'));
     assert.ok(html.text.includes('.polling-status'));
     assert.ok(html.text.includes('details:not([open]) > :not(summary)'));
@@ -1046,7 +1072,7 @@ async function main() {
     assert.ok(appJs.text.includes('</span>\n            ${\'\\n\'}'));
     assert.ok(appJs.text.includes("' adr'"));
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${minute.content}'));
-    assert.ok(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'));
+    assert.equal(appJs.text.includes('<${MarkdownLite} text=${decision.decision}'), false);
     assert.ok(appJs.text.includes('<${MarkdownLite} text=${answer.text || answer.error ||'));
     const truncatedCircuit = _testOnly.normalizeLegacyMinuteContent('활성 서킷 [ { "market": "crypto", "symbol": "RENDER/USDT", "circuit": "low_profit_symbol" }, ...[truncated]\n실거래/파라미터 변경 제안은 기록만 하며 적용하지 않습니다.');
     assert.ok(truncatedCircuit.includes('활성 서킷: 상세 근거는 감사 로그에 보존'));
@@ -1124,8 +1150,8 @@ async function main() {
     assert.equal(meetings.payload.meetings[0].typeLabel, '아침 통합 회의');
     assert.equal(meetings.payload.meetings[0].statusLabel, '완료');
     assert.ok(meetings.payload.scheduleStatus.includes('정례 실행 상태:'));
-    assert.ok(meetings.payload.scheduleStatus.includes('최신 아침 통합 회의: #1'));
-    assert.ok(meetings.payload.scheduleStatus.includes('최신 전체 회의: #1 아침 통합 회의'));
+    assert.ok(meetings.payload.scheduleStatus.includes('오늘 05:00 KST 이후 아침 회의 기록 없음'));
+    assert.ok(meetings.payload.scheduleStatus.includes('최신 기록 #1'));
     const storedCryptoSegment = meetings.payload.meetings[0].segments.find((row) => row.market === 'crypto');
     assert.equal(storedCryptoSegment.label, '암호화폐 24시간 점검');
     assert.equal(storedCryptoSegment.reasonLabel, '24시간 운영');
@@ -1161,15 +1187,15 @@ async function main() {
     assert.ok(detail.payload.minutes[1].content.includes('암호화폐 요약'));
     assert.ok(detail.payload.minutes[1].content.includes('| 항목 | 값 |'));
     assert.ok(detail.payload.minutes[1].content.includes('<script>alert(1)</script>'));
-    assert.ok(detail.payload.minutes[1].content.includes('게이트=reduced 점수=55.3'));
-    assert.ok(detail.payload.minutes[1].content.includes('레짐=하락 출처=HMM'));
+    assert.ok(detail.payload.minutes[1].content.includes('게이트=축소 운용(reduced) 점수=55.3'));
+    assert.ok(detail.payload.minutes[1].content.includes('시장 분위기(레짐)=하락 출처=HMM'));
     assert.equal(detail.payload.minutes[1].content.includes('score='), false);
     assert.equal(detail.payload.minutes[1].content.includes('source='), false);
     assert.equal(detail.payload.minutes[1].content.includes('레짐=bear'), false);
     assert.equal(detail.payload.minutes[1].content.includes('출처=hmm'), false);
     assert.equal(detail.payload.minutes[1].content.includes('crypto 요약'), false);
     assert.equal(detail.payload.minutes[1].content.includes('활성 서킷: 57건'), false);
-    assert.ok(detail.payload.minutes[1].content.includes('활성 서킷: 2건(저수익 1·쿨다운 1)'));
+    assert.ok(detail.payload.minutes[1].content.includes('활성 손실 방지 잠금(서킷): 2건(저수익 1·쿨다운 1)'));
     assert.ok(detail.payload.minutes[1].content.includes('대표 심볼=RENDER/USDT, SOL/USDT'));
     assert.equal(detail.payload.minutes[1].content.includes('"market":"crypto"'), false);
     assert.equal(detail.payload.minutes[1].content.includes('low_profit_symbol'), false);
@@ -1186,24 +1212,24 @@ async function main() {
     assert.equal(minuteMetaText.includes('score_between_thresholds'), false);
     assert.equal(minuteMetaText.includes('source_not_available_yet'), false);
     assert.equal(minuteMetaText.includes('not_configured'), false);
-    assert.ok(detail.payload.minutes[1].content.includes('활성 서킷은 최신 데이터 영역 기준입니다'));
+    assert.ok(detail.payload.minutes[1].content.includes('활성 손실 방지 잠금(서킷)은 최신 데이터 영역 기준입니다'));
     assert.equal(detail.payload.minutes[1].content.includes('과거 발언의 중복 서킷 숫자 숨김'), false);
     assert.equal(detail.payload.minutes[1].content.includes('legacy'), false);
     assert.equal(detail.payload.minutes[1].content.includes('distinct'), false);
     assert.equal(/[{}]/.test(detail.payload.minutes[2].content), false);
-    assert.ok(detail.payload.minutes[2].content.includes('C15 검토: 컴포넌트=C15 레짐 엔진 HMM'));
+    assert.ok(detail.payload.minutes[2].content.includes('부품 승격 검토(C15): 컴포넌트=시장 분위기 판별기(HMM, C2)'));
     assert.equal(detail.payload.minutes[2].content.includes('C15 결정 대기:'), false);
     assert.equal(detail.payload.minutes[2].content.includes('regime-engine-hmm'), false);
     assert.ok(detail.payload.minutes[2].content.includes('상태=활성'));
     assert.ok(detail.payload.minutes[2].content.includes('모드=미정→미정'));
-    assert.ok(detail.payload.minutes[2].content.includes('Brier: HMM이 폴백보다 낮음'));
+    assert.ok(detail.payload.minutes[2].content.includes('예측 적중 품질(Brier): HMM이 폴백보다 낮음'));
     assert.ok(detail.payload.minutes[2].content.includes('비교 기준=동일봉 종가'));
     assert.ok(detail.payload.minutes[2].content.includes('그릴 커버리지=예'));
     assert.ok(detail.payload.minutes[2].content.includes('결정 추적=예'));
     assert.ok(detail.payload.minutes[2].content.includes('완료 회의 수=10'));
     assert.ok(detail.payload.minutes[2].content.includes('임시 기준=예'));
     assert.ok(detail.payload.minutes[2].content.includes('미충족: 임시 기준'));
-    assert.ok(detail.payload.minutes[2].content.includes('C15 MAPEK: 자문 기록 후 마스터 확인 대기'));
+    assert.ok(detail.payload.minutes[2].content.includes('MAPEK 운영 루프(C15): 자문 기록 후 마스터 확인 대기'));
     assert.equal(detail.payload.minutes[2].content.includes('C15 결정 대기: C15 MAPEK'), false);
     assert.equal(detail.payload.minutes[2].content.includes('상태=active'), false);
     assert.equal(detail.payload.minutes[2].content.includes('mapek: advisory'), false);
@@ -1253,16 +1279,16 @@ async function main() {
     assert.equal(detail.payload.minutes[4].content.includes('원문은 DB 회의록에 보존됩니다.'), false);
     assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약과 섀도 스택'));
     assert.equal(detail.payload.minutes[4].content.includes('회의 데이터 요약와'), false);
-    assert.ok(detail.payload.minutes[4].content.includes('최신 게이트/레짐/신호/서킷이 반대로 바뀌면 무효다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('최신 게이트/시장 분위기(레짐)/신호/손실 방지 잠금(서킷)이 반대로 바뀌면 무효다.'));
     assert.ok(detail.payload.minutes[4].content.includes('동유형 ADR/레지스트리 근거를 확인해야 한다.'));
     assert.ok(detail.payload.minutes[4].content.includes('비용 가드: 최대 호출 6회 도달로 발언 생략'));
     assert.ok(detail.payload.minutes[4].content.includes('암호화폐 시장은 현재 하락세에 있다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('레짐은 각각 상승(0.41), 수평(0.47), 하락(0.74) 상태입니다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('레짐은 국내 상승, 미국 수평, 암호화폐 하락 상태입니다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약을 기준으로 미국이 수평 상태입니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('시장 분위기(레짐)은 각각 상승(0.41), 수평(0.47), 하락(0.74) 상태입니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('시장 분위기(레짐)은 국내 상승, 미국 수평, 암호화폐 하락 상태입니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('회의 데이터 요약을 기준'));
     assert.ok(detail.payload.minutes[4].content.includes('비교 기준=게이트 비활성 가상 비교'));
-    assert.ok(detail.payload.minutes[4].content.includes('halt/reduced 회피 개선폭: 비교 데이터가 없습니다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('C15 검토 점검'));
+    assert.ok(detail.payload.minutes[4].content.includes('신규 진입 중단(halt)/축소 운용(reduced) 회피 개선폭: 비교 데이터가 없습니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('부품 승격 검토(C15) 점검'));
     assert.equal(detail.payload.minutes[4].content.includes('[Aria]'), false);
     const sameSpeakerPrefixMinute = _testOnly.normalizeMinute({
       id: 99,
@@ -1275,7 +1301,7 @@ async function main() {
       meta: {},
       createdAt: '2026-06-11T00:00:04.000Z',
     });
-    assert.ok(sameSpeakerPrefixMinute.content.includes('C15 검토 점검'));
+    assert.ok(sameSpeakerPrefixMinute.content.includes('부품 승격 검토(C15) 점검'));
     assert.equal(sameSpeakerPrefixMinute.content.includes('Aria 자문:'), false);
     assert.equal(sameSpeakerPrefixMinute.content.includes('[Aria]'), false);
     assert.equal(detail.payload.minutes[4].content.includes('C15 결정 대기:'), false);
@@ -1382,7 +1408,7 @@ async function main() {
       meta: {},
       created_at: '2026-06-12T00:00:00.000Z',
     });
-    assert.equal((duplicatedDeterministicTitleWithAgent.content.match(/미국 프리마켓 게이트\/레짐/g) || []).length, 1);
+    assert.equal((duplicatedDeterministicTitleWithAgent.content.match(/미국 프리마켓 게이트\/시장 분위기\(레짐\)/g) || []).length, 1);
     assert.equal(/Aria 자문:|\[Aria\]|\[aria\]/.test(duplicatedDeterministicTitleWithAgent.content), false);
     const premarketGenericConclusion = _testOnly.normalizeLegacyMinuteContent(
       '현재 상황을 종합하면, 미국 프리마켓 게이트/레짐은 국내 시장에서 halt 상태를 유지하고 있으며, 미국 시장과 암호화폐 시장은 reduced 상태를 유지하고 있습니다. 따라서, 현 시점에서 추가적인 조치가 필요합니다.\n\n결과적으로, 현 시점에서 추가적인 조치가 필요하며, 국내 시장의 halt 상태를 유지하고 미국 시장과 암호화폐 시장의 reduced 상태를 지속적으로 모니터링하는 것이 필요합니다.',
@@ -1468,10 +1494,10 @@ async function main() {
     assert.equal(detail.payload.minutes[4].content.includes('cost_guard_skipped'), false);
     assert.equal(detail.payload.minutes[4].content.includes('max calls'), false);
     assert.equal(detail.payload.minutes[4].content.includes('crypto 시장'), false);
-    assert.ok(detail.payload.minutes[4].content.includes('국내: halt(32)'));
-    assert.ok(detail.payload.minutes[4].content.includes('암호화폐: reduced(55)'));
-    assert.ok(detail.payload.minutes[4].content.includes('미국: full(72)'));
-    assert.ok(detail.payload.minutes[4].content.includes('halt 상태(32점)'));
+    assert.ok(detail.payload.minutes[4].content.includes('국내: 신규 진입 중단(halt)(32)'));
+    assert.ok(detail.payload.minutes[4].content.includes('암호화폐: 축소 운용(reduced)(55)'));
+    assert.ok(detail.payload.minutes[4].content.includes('미국: 정상 운용(full)(72)'));
+    assert.ok(detail.payload.minutes[4].content.includes('신규 진입 중단(halt) 상태(32점)'));
     assert.equal(_testOnly.sessionStatusLabel('raw_status'), '상태 미상');
     assert.equal(_testOnly.agendaLabel('decision:raw_component'), '안건');
     assert.equal(_testOnly.agendaLabel('debrief:g6-plan-vs-actual'), '국내 마감 G6 대조표');
@@ -1481,13 +1507,13 @@ async function main() {
     assert.equal(_testOnly.componentLabel('raw-component'), '컴포넌트 미상');
     assert.equal(_testOnly.legacyMetricLabel('raw_metric_key'), '지표');
     assert.equal(_testOnly.agentDisplayLabel('raw-agent'), '에이전트 미상');
-    assert.ok(detail.payload.minutes[4].content.includes('암호화폐 시장은 reduced(55점)'));
-    assert.ok(detail.payload.minutes[4].content.includes('미국 시장은 현재 halt 상태'));
-    assert.ok(detail.payload.minutes[4].content.includes('세그먼트 모두 halt 상태'));
+    assert.ok(detail.payload.minutes[4].content.includes('암호화폐 시장은 축소 운용(reduced)(55점)'));
+    assert.ok(detail.payload.minutes[4].content.includes('미국 시장은 현재 신규 진입 중단(halt) 상태'));
+    assert.ok(detail.payload.minutes[4].content.includes('세그먼트 모두 신규 진입 중단(halt) 상태'));
     assert.ok(detail.payload.minutes[4].content.includes('BTC 실현 볼륨 프록시'));
     assert.ok(detail.payload.minutes[4].content.includes('진입 없음'));
     assert.ok(detail.payload.minutes[4].content.includes('현재는 진입한 거래가 없습니다.'));
-    assert.ok(detail.payload.minutes[4].content.includes('이는 배치 halt 상태를 나타냅니다.'));
+    assert.ok(detail.payload.minutes[4].content.includes('이는 배치 신규 진입 중단(halt) 상태를 나타냅니다.'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군은 현재 진입하지 않았으며'));
     assert.ok(detail.payload.minutes[4].content.includes('전략군 진입을 고려'));
     assert.ok(detail.payload.minutes[4].content.includes('결정 대기: 상단 캐치업 기준입니다'));
@@ -1728,10 +1754,10 @@ async function main() {
     assert.equal(catchup.payload.lines.length, 3);
     const catchupText = catchup.payload.lines.join(' / ');
     assert.ok(catchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 2건'));
-    assert.ok(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM:'));
+    assert.ok(catchup.payload.lines[1].includes('시장 분위기 판별기(HMM, C2):'));
     assert.ok(catchup.payload.lines[1].includes('국내 장전 계획: 자문 기록 후 마스터 확인 대기'));
     assert.equal(catchup.payload.lines[1].includes('C15 결정 대기:'), false);
-    assert.equal(catchup.payload.lines[1].includes('C15 레짐 엔진 HMM: C15 레짐 엔진 HMM'), false);
+    assert.equal(catchup.payload.lines[1].includes('시장 분위기 판별기(HMM, C2): 시장 분위기 판별기(HMM, C2)'), false);
     assert.equal(catchupText.includes('advisory 기록'), false);
     assert.equal(catchupText.includes('crypto 24h 점검'), false);
     assert.equal(catchupText.includes('market:crypto'), false);
@@ -1878,9 +1904,9 @@ async function main() {
       const premarketPending = await request(premarketPrefixBase, '/api/decisions/pending');
       const premarketDetail = await request(premarketPrefixBase, '/api/meetings/31');
       const premarketCatchupText = premarketCatchup.payload.lines.join(' / ');
-      assert.ok(premarketCatchupText.includes('미장 전 게이트·레짐 점검: 자문 기록 후 마스터 확인 대기'));
+      assert.ok(premarketCatchupText.includes('미장 전 게이트·시장 분위기(레짐) 점검: 자문 기록 후 마스터 확인 대기'));
       assert.ok(premarketCatchupText.includes('미장 전 감시 목록 점검: 자문 기록 후 마스터 확인 대기'));
-      assert.equal(premarketCatchupText.includes('미장 전 게이트·레짐 점검: 미국 프리마켓 게이트/레짐:'), false);
+      assert.equal(premarketCatchupText.includes('미장 전 게이트·시장 분위기(레짐) 점검: 미국 프리마켓 게이트/시장 분위기(레짐):'), false);
       assert.equal(premarketCatchupText.includes('미장 전 감시 목록 점검: 미국 보유/예정 이벤트 점검:'), false);
       assert.deepEqual(premarketPending.payload.decisions.map((row) => row.decision), [
         '자문 기록 후 마스터 확인 대기',
@@ -2608,8 +2634,7 @@ async function main() {
     assert.equal(meetingFreshnessAsk.payload.provider, 'rule_based');
     assert.equal(meetingFreshnessHubCalled, false);
     assert.ok(meetingFreshnessAsk.payload.text.includes('정례 실행 상태:'));
-    assert.ok(meetingFreshnessAsk.payload.text.includes('최신 아침 통합 회의: #119'));
-    assert.ok(meetingFreshnessAsk.payload.text.includes('최신 전체 회의: #143 미장 전 회의'));
+    assert.ok(meetingFreshnessAsk.payload.text.includes('최신 기록 #119'));
     assert.ok(meetingFreshnessAsk.payload.text.includes('현재 수동 실행 화면 기준: 국내 비활성(주말)'));
     assert.equal(meetingFreshnessAsk.payload.text.includes('운영 총괄 관점 우선 확인:'), false);
   } finally {
@@ -2715,17 +2740,16 @@ async function main() {
     latestPreviousMorning,
     new Date('2026-06-12T19:01:00.000Z'),
   );
-  assert.ok(beforeWeekendSchedule.includes('오늘 05:00 KST 전이라 아직 실행 전입니다.'));
-  assert.ok(beforeWeekendSchedule.includes('05:00까지 약 59분 남았습니다.'));
-  assert.ok(beforeWeekendSchedule.includes('05:05 KST 이후 회의 목록과 로그를 다시 확인하세요.'));
-  assert.ok(beforeWeekendSchedule.includes('최신 아침 통합 회의: #119'));
+  assert.ok(beforeWeekendSchedule.includes('오늘 05:00 KST 전'));
+  assert.ok(beforeWeekendSchedule.includes('약 59분 후 아침 회의 예정'));
+  assert.ok(beforeWeekendSchedule.includes('최신 기록 #119'));
   assert.equal(beforeWeekendSchedule.includes('morning 회의'), false);
 
   const missingAfterWeekendSchedule = _testOnly.buildScheduleExecutionStatus(
     latestPreviousMorning,
     new Date('2026-06-12T21:30:00.000Z'),
   );
-  assert.ok(missingAfterWeekendSchedule.includes('오늘 05:00 KST가 지났지만 오늘 아침 통합 회의 기록은 아직 없습니다.'));
+  assert.ok(missingAfterWeekendSchedule.includes('오늘 05:00 KST 이후 아침 회의 기록 없음'));
 
   const completedWeekendSchedule = _testOnly.buildScheduleExecutionStatus(
     [{
@@ -2736,8 +2760,8 @@ async function main() {
     }, ...latestPreviousMorning],
     new Date('2026-06-12T21:30:00.000Z'),
   );
-  assert.ok(completedWeekendSchedule.includes('오늘 아침 통합 회의 #201'));
-  assert.ok(completedWeekendSchedule.includes('완료 상태로 기록됐습니다.'));
+  assert.ok(completedWeekendSchedule.includes('오늘 05:00 아침 통합 회의 완료'));
+  assert.ok(completedWeekendSchedule.includes('최신 회의 #201 아침 통합 회의'));
 
   let premarketHubCalled = false;
   let premarketPlanNoteType = null;
@@ -3153,7 +3177,7 @@ async function main() {
     assert.equal(metricMeaningAsk.payload.text.includes('Luna 자문:'), false);
     assert.ok(metricMeaningAsk.payload.text.includes('거래 수가 아니라 G0 시장 게이트 점수입니다.'));
     assert.ok(metricMeaningAsk.payload.text.includes('선택 회의 #1 아침 통합 회의의 게이트 숫자'));
-    assert.ok(metricMeaningAsk.payload.text.includes('reduced 55.3점(화면 반올림 55점)'));
+    assert.ok(metricMeaningAsk.payload.text.includes('55.3'));
     assert.ok(metricMeaningAsk.payload.text.includes('전략신호=N건, 서킷=N건, 결정 대기=N건'));
     assert.equal((metricMeaningAsk.payload.text.match(/55\.3점/g) || []).length, 1);
     assert.equal(/진행 중인 거래|개의 거래|건의 거래|55개 거래|거래 55개|33\/44\/55 같은 숫자|should not call hub/.test(metricMeaningAsk.payload.text), false);

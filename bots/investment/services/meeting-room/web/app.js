@@ -276,6 +276,31 @@ function minuteClassName(minute = {}) {
   return `minute ${minuteRoleClass(minute)}${isAdrMinute(minute) ? ' adr' : ''}`;
 }
 
+function groupMinutesByAgenda(minutes = []) {
+  const groupsByKey = new Map();
+  for (const minute of safeArray(minutes)) {
+    const key = minute.agendaKey || 'session';
+    if (!groupsByKey.has(key)) {
+      groupsByKey.set(key, {
+        key,
+        label: agendaLabel(key),
+        minutes: [],
+      });
+    }
+    groupsByKey.get(key).minutes.push(minute);
+  }
+  return Array.from(groupsByKey.values());
+}
+
+function timelineGroupSummary(group = {}) {
+  const minutes = safeArray(group.minutes);
+  const decision = minutes.find((minute) => String(minute.role || '').toLowerCase() === 'decision');
+  const data = minutes.find((minute) => String(minute.role || '').toLowerCase() === 'data');
+  const source = decision || data || minutes[0] || {};
+  const text = String(source.content || '').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, 110) : `${minutes.length}개 발언`;
+}
+
 function dueState(value, now = new Date()) {
   if (!value) return { className: 'due unknown', label: '기한 확인 필요', title: '기한 확인 필요: 값 없음' };
   const due = new Date(value);
@@ -713,6 +738,7 @@ function StartMeeting({ token, segments, onStarted, setError }) {
 
 function Timeline({ detail, catchup, loading }) {
   const minutes = safeArray(detail?.minutes);
+  const groups = groupMinutesByAgenda(minutes);
   const catchupList = safeArray(catchup);
   const catchupLines = loading
     ? ['회의 상세를 불러오는 중입니다.']
@@ -745,23 +771,33 @@ function Timeline({ detail, catchup, loading }) {
           `)}
         </div>
         <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
-        <div className="list" style=${{ marginTop: '14px' }}>
-          ${minutes.map((minute) => html`
-            <article
-              className=${minuteClassName(minute)}
-              aria-label=${`${minute.seq}번 회의록 · ${agendaLabel(minute.agendaKey || 'session')} · ${roleName(minute.role, minute)} · ${speakerLabel(minute.speaker)}`}
-            >
-              <div
-                className="meeting-title"
-                title=${`안건: ${agendaLabel(minute.agendaKey || 'session')} · 발언자: ${speakerLabel(minute.speaker)}`}
-                data-raw-agenda=${minute.agendaKey || 'session'}
-                data-raw-speaker=${minute.speaker || 'unknown'}
-              >${minute.seq}. ${agendaLabel(minute.agendaKey || 'session')} — ${roleName(minute.role, minute)} / ${speakerLabel(minute.speaker)}</div>
-              ${'\n'}
-              <div className="meta">${formatTime(minute.createdAt)}</div>
-              ${'\n'}
-              <${MarkdownLite} text=${minute.content} />
-            </article>
+        <div className="list timeline-groups" style=${{ marginTop: '14px' }}>
+          ${groups.map((group) => html`
+            <details className="timeline-group" key=${group.key}>
+              <summary aria-label=${`${group.label} 안건 발언 ${group.minutes.length}건 펼치기`}>
+                <span className="timeline-group-title">${group.label}</span>
+                <span className="timeline-group-summary">${timelineGroupSummary(group)}</span>
+              </summary>
+              <div className="timeline-group-body">
+                ${group.minutes.map((minute) => html`
+                  <article
+                    className=${minuteClassName(minute)}
+                    aria-label=${`${minute.seq}번 회의록 · ${agendaLabel(minute.agendaKey || 'session')} · ${roleName(minute.role, minute)} · ${speakerLabel(minute.speaker)}`}
+                  >
+                    <div
+                      className="meeting-title"
+                      title=${`안건: ${agendaLabel(minute.agendaKey || 'session')} · 발언자: ${speakerLabel(minute.speaker)}`}
+                      data-raw-agenda=${minute.agendaKey || 'session'}
+                      data-raw-speaker=${minute.speaker || 'unknown'}
+                    >${minute.seq}. ${agendaLabel(minute.agendaKey || 'session')} — ${roleName(minute.role, minute)} / ${speakerLabel(minute.speaker)}</div>
+                    ${'\n'}
+                    <div className="meta">${formatTime(minute.createdAt)}</div>
+                    ${'\n'}
+                    <${MarkdownLite} text=${minute.content} />
+                  </article>
+                `)}
+              </div>
+            </details>
           `)}
           ${loading ? html`<div className="meta">상세 로딩 중...</div>` : null}
           ${!loading && minutes.length === 0 ? html`<div className="meta">선택된 회의의 회의록이 없습니다.</div>` : null}
@@ -779,12 +815,13 @@ function EvidenceDetails({ decision }) {
     evidence.decision ? `결정: ${evidence.decision}` : null,
     evidence.grade || evidence.status ? `상태: ${[evidence.grade, evidence.status].filter(Boolean).join(' · ')}` : null,
     evidence.grill ? `그릴: ${evidence.grill}` : null,
+    decision.professionalSummary ? `전문 요약: ${decision.professionalSummary}` : null,
     ...(Array.isArray(evidence.summary) ? evidence.summary : []),
     evidence.shadowOnly ? `범위: ${evidence.shadowOnly}` : null,
   ].filter(Boolean);
   return html`
     <details onToggle=${(event) => setOpen(event.currentTarget.open)}>
-      <summary aria-label=${`결정 #${decision.id} 근거 요약 보기`}>근거 요약 보기</summary>
+      <summary aria-label=${`결정 #${decision.id} 전문 근거 펼치기`}>전문 근거 펼치기</summary>
       ${open ? html`
         <div className="evidence-summary" role="list" aria-label=${`결정 #${decision.id} 근거 요약`}>
           ${(summaryLines.length ? summaryLines : ['근거 요약 없음']).map((line) => html`
@@ -824,13 +861,14 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
       setBusy('');
     }
   }
+  const contextLines = String(decision.contextPlain || '').split(/\r?\n/).filter(Boolean).slice(0, 2);
   return html`
     <article
       className="decision-card"
       role="listitem"
-      aria-label=${`결정 #${decision.id} · ${agendaLabel(decision.agendaKey)} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
+      aria-label=${`결정 #${decision.id} · ${decision.question || agendaLabel(decision.agendaKey)} · ${decisionGradeLabel(decision.grade)} · ${decisionStatusLabel(decision.status)} · ${due.label}`}
     >
-      <div className="meeting-title" title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}</div>
+      <div className="decision-question" title=${`결정 #${decision.id} · 안건: ${agendaLabel(decision.agendaKey)}`} data-raw-agenda=${decision.agendaKey || 'unknown'}>${decision.question || `결정 #${decision.id} · ${agendaLabel(decision.agendaKey)}`}</div>
       ${'\n'}
       <div
         className="meta decision-state"
@@ -842,9 +880,19 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
         <span title=${`상태: ${decisionStatusLabel(decision.status)}`}>${decisionStatusLabel(decision.status)}</span>
         <span aria-hidden="true"> · </span>
         <span className=${due.className} title=${due.title} aria-label=${due.title}>${due.label}</span>
+        ${Number(decision.reappearedCount || 0) > 0 ? html`<span className="reappeared-badge" title="같은 안건이 새 회의에서 다시 올라왔지만 기존 대기 결정을 유지했습니다.">${decision.reappearedCount}회 재상정</span>` : null}
       </div>
       ${'\n'}
-      <${MarkdownLite} text=${decision.decision} />
+      <div className="decision-context" role="list" aria-label=${`결정 #${decision.id} 쉬운 맥락`}>
+        ${(contextLines.length ? contextLines : [decision.decision]).map((line) => html`<div role="listitem">${line}</div>`)}
+      </div>
+      ${'\n'}
+      <div className="decision-effects" role="list" aria-label=${`결정 #${decision.id} 처리 의미`}>
+        <div role="listitem"><b>확정하면</b> ${decision.ifConfirm || '검토 완료로 기록됩니다.'}</div>
+        <div role="listitem"><b>보류하면</b> ${decision.ifDefer || '계속 관찰 목록에 유지됩니다.'}</div>
+      </div>
+      ${'\n'}
+      <div className="safety-label" role="note">${decision.safetyLabel || '지금은 기록만 — 실제 거래 영향 없음'}</div>
       ${'\n'}
       <${EvidenceDetails} decision=${decision} />
       ${'\n'}
@@ -863,11 +911,55 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
 
 function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   const decisionRows = safeArray(decisions);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  async function bulkDefer() {
+    if (!decisionRows.length || bulkBusy) return;
+    const ok = window.confirm(`현재 대기 결정 ${decisionRows.length}건을 모두 보류로 감사 기록합니다. 실제 거래·파라미터 영향은 없습니다. 진행할까요?`);
+    if (!ok) return;
+    setBulkBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const results = [];
+      for (const decision of decisionRows) {
+        try {
+          await api(token, `/api/decisions/${decision.id}`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'defer', note: 'UX 일괄 보류' }),
+          });
+          results.push({ ok: true, id: decision.id });
+        } catch (error) {
+          results.push({ ok: false, id: decision.id, error: error?.message || String(error) });
+        }
+      }
+      const succeeded = results.filter((result) => result.ok);
+      const failed = results.filter((result) => !result.ok);
+      if (succeeded.length > 0) {
+        setNotice(`대기 결정 ${succeeded.length}건을 보류로 기록했습니다. 실제 거래·파라미터 영향은 없습니다.`);
+      }
+      if (failed.length > 0) {
+        const sample = failed.slice(0, 3).map((result) => `#${result.id}: ${result.error}`).join(' / ');
+        setError(`일괄 보류 일부 실패: 성공 ${succeeded.length}건, 실패 ${failed.length}건. ${sample}`);
+      }
+      onUpdated();
+    } catch (error) {
+      setError(error.message);
+      onUpdated();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
   return html`
     <div className="card" role="region" aria-label="전체 회의 결정 대기함">
       <h2>전체 결정 대기함</h2>
       ${'\n'}
-      <div id="decision-scope-note" className="meta">전체 회의 기준 · 선택 회의 캐치업과 별도 · 정렬: 기한 빠른 순 · 기한 없으면 최근 생성 순</div>
+      <div id="decision-scope-note" className="meta">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
+      ${'\n'}
+      <div className="decision-toolbar">
+        <button className="secondary" onClick=${bulkDefer} disabled=${bulkBusy || decisionRows.length === 0} aria-busy=${bulkBusy} aria-label=${`대기 결정 ${decisionRows.length}건 일괄 보류`}>
+          ${bulkBusy ? '일괄 보류 중' : '일괄 보류'}
+        </button>
+      </div>
       ${'\n'}
       <div className="card-body list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}>
         ${decisionRows.flatMap((decision, index) => [

@@ -308,11 +308,12 @@ async function main() {
       .filter((row) => row.role === 'data' && String(row.agendaKey || '').startsWith('market:'))
       .map((row) => [row.agendaKey, row.content]),
   );
-  assert.ok(weekendMarketData['market:domestic'].includes('스킵(주말)'));
-  assert.ok(weekendMarketData['market:overseas'].includes('스킵(주말)'));
+  assert.ok(weekendMarketData['market:domestic'].includes('주말로 오늘 회의 대상에서 제외됩니다.'));
+  assert.ok(weekendMarketData['market:overseas'].includes('주말로 오늘 회의 대상에서 제외됩니다.'));
   assert.equal(weekendMarketData['market:domestic'].includes('스킵(weekend)'), false);
   assert.equal(weekendMarketData['market:overseas'].includes('스킵(weekend)'), false);
-  assert.ok(weekendMarketData['market:crypto'].includes('진행'));
+  assert.ok(weekendMarketData['market:crypto'].includes('오늘 회의 대상입니다.'));
+  assert.ok(weekendMarketData['market:crypto'].includes('실제 거래를 바꾸지 않습니다.'));
   assert.equal(weekendMorningResult.decisions.filter((row) => String(row.agendaKey || '').startsWith('market:crypto')).length, 1);
   const weekendAnalysisReasons = (agendaKey) => [...new Set(
     weekendMorningResult.minutes
@@ -371,18 +372,96 @@ async function main() {
   assert.ok(pendingDataMinute);
   assert.equal(/[{}]/.test(pendingDataMinute.content), false);
   assert.ok(pendingDataMinute.content.includes('컴포넌트=C1 시장 배치 게이트'));
-  assert.ok(pendingDataMinute.content.includes('표본=0건'));
-  assert.ok(pendingDataMinute.content.includes('Brier: HMM이 폴백보다 낮음'));
+  assert.ok(pendingDataMinute.content.includes('누적 사례(표본)=0건'));
+  assert.ok(pendingDataMinute.content.includes('예측 적중 품질(Brier): HMM이 폴백보다 낮음'));
   assert.equal(pendingDataMinute.content.includes('컴포넌트=market-deployment-gate'), false);
   assert.equal(pendingDataMinute.content.includes('Brier: HMM<폴백'), false);
   assert.equal(pendingDataMinute.meta?.evidence?.component, 'market-deployment-gate');
   const circuitDataMinute = noLlmResult.minutes.find((row) => row.role === 'data' && row.agendaKey === 'alerts:circuit-locks');
   assert.ok(circuitDataMinute);
   assert.equal(/[{}]/.test(circuitDataMinute.content), false);
-  assert.ok(circuitDataMinute.content.includes('활성 잠금 3건(저수익 1·쿨다운 1)'));
+  assert.ok(circuitDataMinute.content.includes('활성 손실 방지 잠금 3건(저수익 1·쿨다운 1)'));
   assert.ok(circuitDataMinute.content.includes('저수익 심볼 ETH/USDT'));
   assert.equal(Array.isArray(circuitDataMinute.meta?.evidence), true);
   assert.equal(circuitDataMinute.meta?.evidence?.length, 5);
+
+  const duplicateDecision = {
+    id: 7001,
+    session_id: 7000,
+    agenda_key: 'weekly:shadow-stack-review',
+    decision: '기존 주간 섀도 스택 리뷰 결정',
+    grade: 'c_master',
+    status: 'pending_master',
+    due_at: '2026-06-12T00:00:00.000Z',
+    evidence: { mr_ux_1: { reappeared: [{ sessionId: 6999, seenAt: '2026-06-10T00:00:00.000Z' }] } },
+    created_at: '2026-06-10T00:00:00.000Z',
+  };
+  const duplicateMinutes: any[] = [];
+  let duplicateDecisionInserts = 0;
+  let duplicateDecisionUpdates = 0;
+  const duplicateResult = await runMeetingSession({
+    type: 'weekly',
+    dryRun: false,
+    apply: true,
+    noLlm: true,
+    outputPath: outputPath('smoke-duplicate-pending'),
+    planNote: {
+      ok: true,
+      type: 'weekly',
+      generatedAt: '2026-06-11T00:00:00.000Z',
+      segments: [],
+      gates: [],
+      regimes: [],
+      strategySignals: [],
+      circuitLocks: [],
+      pendingDecisions: [],
+      weekly: { signals: [], preflight: [], circuitLocks: [], brier: [], pendingDecisions: [], adr: {} },
+      positions: [],
+      calibration: [],
+      briefMarkdown: '# duplicate pending fixture',
+    },
+  }, {
+    runFn: async (sql: string, params: any[] = []) => {
+      if (/INSERT INTO luna_meeting_sessions/i.test(sql)) return { rows: [{ id: 4242 }] };
+      if (/INSERT INTO luna_meeting_minutes/i.test(sql)) {
+        duplicateMinutes.push(params);
+        return { rows: [] };
+      }
+      if (/INSERT INTO luna_meeting_decisions/i.test(sql)) {
+        duplicateDecisionInserts += 1;
+        return { rows: [{ ...duplicateDecision, id: 9001, session_id: 4242 }] };
+      }
+      return { rows: [] };
+    },
+    queryFn: async (sql: string, params: any[] = []) => {
+      if (/FROM luna_meeting_decisions/i.test(sql) && /FOR UPDATE/i.test(sql)) return [duplicateDecision];
+      if (/UPDATE luna_meeting_decisions/i.test(sql)) {
+        duplicateDecisionUpdates += 1;
+        const appended = JSON.parse(params[1] || '[]');
+        return [{
+          ...duplicateDecision,
+          evidence: {
+            ...duplicateDecision.evidence,
+            mr_ux_1: {
+              reappeared: [
+                ...duplicateDecision.evidence.mr_ux_1.reappeared,
+                ...appended,
+              ],
+            },
+          },
+        }];
+      }
+      if (/COALESCE\(MAX\(seq\), 0\) \+ 1/i.test(sql)) return [{ next_seq: duplicateMinutes.length + 1 }];
+      return [];
+    },
+    postAlarm: async () => ({ ok: true }),
+  });
+  assert.equal(duplicateDecisionInserts, 0);
+  assert.equal(duplicateDecisionUpdates, 1);
+  assert.equal(duplicateResult.decisions[0].id, duplicateDecision.id);
+  assert.equal(duplicateResult.decisions[0].evidence.mr_ux_1.reappeared.length, 2);
+  assert.equal(duplicateResult.decisions[0].evidence.mr_ux_1.reappeared[1].sessionId, 4242);
+  assert.ok(duplicateMinutes.some((params) => String(params[3] || '').includes('기존 대기 결정 #7001 유지(2번째 재상정)')));
   const pendingDecision = noLlmResult.decisions.find((row) => row.agendaKey === 'decision:market-deployment-gate');
   assert.equal(pendingDecision?.evidence?.evidenceExcerpt?.component, 'market-deployment-gate');
 
@@ -562,8 +641,7 @@ async function main() {
     }, { withTransactionFn: async (fn: any) => fn(tx) });
     assert.equal(idempotent.idempotent, true);
     const auditRows = await tx.query(
-      `SELECT content, meta FROM luna_meeting_minutes WHERE session_id = $1 AND meta->>'changed_via' = 'telegram'`,
-      [applied.session.id],
+      `SELECT content, meta FROM luna_meeting_minutes WHERE meta->>'changed_via' = 'telegram' AND content LIKE '%telegram fixture%'`,
     );
     assert.equal(auditRows.length >= 1, true);
     assert.ok(auditRows.some((row: any) => String(row.content).includes('결정 확정 처리 · 경로=텔레그램 · 메모=telegram fixture')));
@@ -649,6 +727,7 @@ async function main() {
       premarket: true,
       weekly: true,
       telegramDecisionAction: true,
+      pendingDecisionReappearedDedup: true,
       cliArgParsing: true,
       markdownFilePolicy: true,
       regenerateMarkdown: true,
