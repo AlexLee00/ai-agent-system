@@ -1405,6 +1405,50 @@ function saveState(state) {
   saveJson(STATE_FILE, state);
 }
 
+function resolveJobDocumentPath(job = {}) {
+  const relPath = toSafeString(job.relPath || '');
+  if (!relPath) return null;
+  return path.isAbsolute(relPath) ? relPath : path.join(ROOT, relPath);
+}
+
+function reconcileMissingRunningJobs(state = loadState()) {
+  const jobs = state.jobs || {};
+  let changed = false;
+  for (const [id, job] of Object.entries(jobs)) {
+    if (!job || job.status !== 'running') continue;
+    const relPath = toSafeString(job.relPath || '');
+    if (!relPath.startsWith('docs/auto_dev/')) continue;
+    if (!isTimestampStale(job.updatedAt, DEFAULT_RUNNING_STALE_MS)) continue;
+    const filePath = resolveJobDocumentPath(job);
+    if (filePath && fs.existsSync(filePath)) continue;
+
+    const now = nowIso();
+    const events = Array.isArray(job.events) ? job.events.slice() : [];
+    events.push({
+      at: now,
+      type: 'stale_missing_document_reconciled',
+      previousStage: job.stage || null,
+      previousUpdatedAt: job.updatedAt || null,
+    });
+    jobs[id] = {
+      ...job,
+      status: 'skipped',
+      stage: 'missing_document_after_listing',
+      reason: 'missing_document_after_listing',
+      updatedAt: now,
+      events,
+    };
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
+      archivedAt: now,
+      archivedBy: 'auto-dev-pipeline',
+      reason: 'missing_document_after_listing',
+    });
+    changed = true;
+  }
+  if (changed) saveState(state);
+  return { state, changed };
+}
+
 function listAutoDevDocuments() {
   ensureDir(AUTO_DEV_DIR);
   const manifestOptions = { autoDevStateFile: STATE_FILE };
@@ -3868,6 +3912,7 @@ async function runAutoDevPipelineCore(options = {}) {
   const stopGlobalHeartbeat = startLockHeartbeat(globalLock);
 
   const docs = listAutoDevDocuments();
+  reconcileMissingRunningJobs();
   const results = [];
   try {
     if (docs.length === 0) await markAgentDone();
@@ -3964,7 +4009,7 @@ function listDirectoryEntriesSafe(dir, predicate = null) {
 
 function getAutoDevStatusSnapshot(options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
-  const state = loadState();
+  const { state } = reconcileMissingRunningJobs(loadState());
   const jobs = Object.values(state.jobs || {});
   const docs = listAutoDevDocuments();
   const worktrees = listDirectoryEntriesSafe(AUTO_DEV_WORKTREE_DIR);

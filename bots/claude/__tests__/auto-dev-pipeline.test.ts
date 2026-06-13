@@ -227,6 +227,58 @@ async function test_js_bridge_loads_pipeline_status_snapshot() {
   console.log('✅ auto-dev: js bridge loads status snapshot');
 }
 
+async function test_status_snapshot_reconciles_stale_missing_running_jobs() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_missing_running.md';
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: '2026-06-13T00:00:00.000Z',
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'claimed',
+        createdAt: '2026-06-13T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+  fs.writeFileSync(statePath, JSON.stringify({
+    jobs: {
+      staleMissing: {
+        id: 'staleMissing',
+        relPath,
+        status: 'running',
+        stage: 'implementation',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const snapshot = pipeline.getAutoDevStatusSnapshot({ profile: 'supervised_l4' });
+    assert.strictEqual(snapshot.counts.pendingDocs, 0);
+    assert.strictEqual(snapshot.counts.runningJobs, 0);
+    assert.strictEqual(snapshot.state.jobs.staleMissing.status, 'skipped');
+    assert.strictEqual(snapshot.state.jobs.staleMissing.stage, 'missing_document_after_listing');
+    assert.ok(
+      snapshot.state.jobs.staleMissing.events.some(event => event.type === 'stale_missing_document_reconciled'),
+      'stale missing running job should record a reconciliation event'
+    );
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'archived_missing');
+    assert.strictEqual(manifest.entries[relPath].reason, 'missing_document_after_listing');
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_RUNNING_STALE_MS: '1',
+    CLAUDE_AUTO_DEV_STATE_FILE: statePath,
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: status snapshot reconciles stale missing running jobs');
+}
+
 async function test_listAutoDevDocuments_uses_auto_dev_only() {
   const tmpRoot = makeTempRoot();
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
@@ -2695,6 +2747,7 @@ async function main() {
   const tests = [
     test_stages_define_required_lifecycle,
     test_js_bridge_loads_pipeline_status_snapshot,
+    test_status_snapshot_reconciles_stale_missing_running_jobs,
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_listAutoDevDocuments_respects_manifest_states,
     test_empty_auto_dev_inbox_marks_agent_done,
