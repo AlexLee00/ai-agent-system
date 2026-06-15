@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { A2ATask, A2ATaskResult } from '../types.ts';
 
 const SKILL_HANDLERS: Record<string, (params: unknown) => Promise<A2ATaskResult>> = {};

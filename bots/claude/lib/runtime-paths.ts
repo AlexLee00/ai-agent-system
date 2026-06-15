@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const path = require('path');
@@ -17,10 +16,16 @@ function logsDir() {
   return env.AI_AGENT_LOGS || process.env.AI_AGENT_LOGS || path.join(aiAgentHome(), 'logs');
 }
 
+/**
+ * @param {...string} parts
+ */
 function workspacePath(...parts) {
   return path.join(workspaceDir(), ...parts);
 }
 
+/**
+ * @param {...string} parts
+ */
 function logPath(...parts) {
   return path.join(logsDir(), ...parts);
 }

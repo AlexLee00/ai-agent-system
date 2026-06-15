@@ -261,6 +261,36 @@ async function test_protected_descendants_are_excluded_from_analysis() {
   console.log('✅ refactor-cycle: protected descendants are excluded from analysis');
 }
 
+async function test_active_candidates_skip_non_production_fixtures() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const analysis = {
+    candidates: [
+      {
+        file: 'bots/claude/__tests__/fixtures/refactor-cycle-active-target.ts',
+        lines: 8,
+        refactorType: 'ts_nocheck',
+      },
+      {
+        file: 'bots/claude/lib/symphony/workspace-adapter.ts',
+        lines: 30,
+        refactorType: 'ts_nocheck',
+      },
+    ],
+  };
+
+  const production = runner.selectActiveCandidates(analysis, 'ts_nocheck', 1, new Set());
+  assert.deepStrictEqual(production.map((item) => item.file), ['bots/claude/lib/symphony/workspace-adapter.ts']);
+  assert.strictEqual(runner.isNonProductionRefactorCandidate('bots/claude/__tests__/fixtures/refactor-cycle-active-target.ts'), true);
+
+  const testHarness = runner.selectActiveCandidates(analysis, 'ts_nocheck', 1, new Set(), {
+    allowNonProductionCandidates: true,
+  });
+  assert.deepStrictEqual(testHarness.map((item) => item.file), ['bots/claude/__tests__/fixtures/refactor-cycle-active-target.ts']);
+
+  console.log('✅ refactor-cycle: active production candidates skip test fixtures');
+}
+
 async function test_dirty_scope_helpers() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -291,6 +321,7 @@ async function test_dirty_scope_guard_ignores_other_workspace_dirty() {
     noVaultFeedback: true,
     noHeartbeat: true,
     noWriteOutcome: true,
+    allowNonProductionCandidatesForTest: true,
     builderModule,
     reviewerModule,
     gitStatusShortFn: () => fullStatus,
@@ -655,6 +686,26 @@ async function test_apply_on_commits_ready_file_and_keeps_change() {
     cleanupRefactorArtifacts(result);
   }
   console.log('✅ refactor-cycle: apply on commits ready file and keeps the verified mutation');
+}
+
+async function test_origin_contains_checks_current_branch_when_main_is_stale() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const calls = [];
+  const ok = runner.defaultOriginContainsCommit('pushed-sha', (args) => {
+    calls.push(args);
+    const key = args.join(' ');
+    if (key === 'rev-parse --abbrev-ref HEAD') return 'codex/refactor-test\n';
+    if (key === 'rev-parse --abbrev-ref --symbolic-full-name @{u}') return 'origin/codex/refactor-test\n';
+    if (key === 'fetch origin') throw new Error('transient fetch failure');
+    if (key === 'merge-base --is-ancestor pushed-sha origin/main') throw new Error('main stale');
+    if (key === 'merge-base --is-ancestor pushed-sha origin/codex/refactor-test') return '';
+    throw new Error(`unexpected git call: ${key}`);
+  });
+  assert.strictEqual(ok, true);
+  assert.ok(calls.some((args) => args.join(' ') === 'fetch origin'));
+  assert.ok(calls.some((args) => args.join(' ') === 'merge-base --is-ancestor pushed-sha origin/codex/refactor-test'));
+  console.log('✅ refactor-cycle: push verification accepts current upstream branch when main is stale');
 }
 
 async function test_default_commit_file_is_path_scoped() {
@@ -2285,6 +2336,7 @@ async function main() {
     test_cycle_stamp_uses_kst,
     test_protected_target_guard,
     test_protected_descendants_are_excluded_from_analysis,
+    test_active_candidates_skip_non_production_fixtures,
     test_dirty_scope_helpers,
     test_dirty_scope_guard_ignores_other_workspace_dirty,
     test_dirty_scope_guard_blocks_target_workspace_dirty,
@@ -2296,6 +2348,7 @@ async function main() {
     test_active_verify_skip_defers_and_restores,
     test_apply_off_does_not_commit_and_restores,
     test_apply_on_commits_ready_file_and_keeps_change,
+    test_origin_contains_checks_current_branch_when_main_is_stale,
     test_default_commit_file_is_path_scoped,
     test_apply_on_verify_fail_does_not_commit_and_restores,
     test_apply_on_dry_run_does_not_commit_and_restores,

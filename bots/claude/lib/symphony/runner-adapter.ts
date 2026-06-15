@@ -1,12 +1,22 @@
-// @ts-nocheck
 'use strict';
 
 const pipeline = require('../auto-dev-pipeline');
 
-function buildSymphonyRunnerPlan(task = {}, {
+/**
+ * @typedef {{ id?: unknown }} SymphonyTask
+ * @typedef {{ runtimeConfig?: unknown, allowClaudeCodeEmergency?: boolean }} RunnerPlanOptions
+ */
+
+/**
+ * @param {SymphonyTask} [task]
+ * @param {RunnerPlanOptions} [options]
+ */
+function buildSymphonyRunnerPlan(task, {
   runtimeConfig = null,
   allowClaudeCodeEmergency = false,
 } = {}) {
+  /** @type {SymphonyTask} */
+  const normalizedTask = task || {};
   const runtime = runtimeConfig || pipeline.resolveAutoDevRuntimeConfig({ dryRun: true });
   const modelMeta = pipeline._testOnly_buildImplementationModelMeta(runtime);
   const usesClaudeCode = modelMeta.provider === 'claude-code' || modelMeta.runner === 'claude';
@@ -14,7 +24,7 @@ function buildSymphonyRunnerPlan(task = {}, {
 
   return {
     mode: 'plan_only',
-    taskId: task.id || null,
+    taskId: normalizedTask.id || null,
     provider: modelMeta.provider,
     model: modelMeta.model,
     cliModelArg: modelMeta.cliModelArg,

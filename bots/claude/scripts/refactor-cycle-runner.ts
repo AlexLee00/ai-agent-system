@@ -69,6 +69,12 @@ const PROTECTED_TARGET_FRAGMENTS = [
   '/.git/',
 ];
 
+const NON_PRODUCTION_CANDIDATE_FRAGMENTS = [
+  '/__tests__/',
+  '/fixtures/',
+  '/tmp-refactor-',
+];
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -193,6 +199,11 @@ function isProtectedTarget(relativePath = '') {
   const normalized = String(relativePath || '').replace(/\\/g, '/');
   const withSlash = normalized.endsWith('/') ? normalized : `${normalized}/`;
   return PROTECTED_TARGET_FRAGMENTS.some((fragment) => normalized.includes(fragment) || withSlash.includes(fragment));
+}
+
+function isNonProductionRefactorCandidate(relativePath = '') {
+  const normalized = `/${String(relativePath || '').replace(/\\/g, '/')}`;
+  return NON_PRODUCTION_CANDIDATE_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
 function safeRead(filePath, limit = 2_000_000) {
@@ -574,15 +585,17 @@ function selectCandidate(analysis, requestedType = DEFAULT_REFACTOR_TYPE) {
     };
 }
 
-function selectActiveCandidates(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set()) {
+function selectActiveCandidates(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set(), options = {}) {
   const candidates = Array.isArray(analysis?.candidates) ? analysis.candidates : [];
   const preferred = candidates.filter((candidate) => candidate.refactorType === requestedType);
   const ordered = [...preferred, ...candidates.filter((candidate) => candidate.refactorType !== requestedType)];
+  const allowNonProductionCandidates = Boolean(options.allowNonProductionCandidates);
   const selected = [];
   for (const candidate of ordered) {
     if (!candidate?.file || selected.some((item) => item.file === candidate.file)) continue;
     if (avoidedFiles.has(candidate.file)) continue;
     if (isProtectedTarget(candidate.file)) continue;
+    if (!allowNonProductionCandidates && isNonProductionRefactorCandidate(candidate.file)) continue;
     selected.push(candidate);
     if (selected.length >= maxFiles) break;
   }
@@ -913,13 +926,33 @@ function defaultPushHead(gitFn = runGit) {
 
 function defaultOriginContainsCommit(sha, gitFn = runGit) {
   if (!sha) return false;
+  const refs = new Set(['origin/main']);
   try {
-    gitFn(['fetch', 'origin', 'main']);
-    gitFn(['merge-base', '--is-ancestor', sha, 'origin/main']);
-    return true;
+    const branch = String(gitFn(['rev-parse', '--abbrev-ref', 'HEAD']) || '').trim();
+    if (branch && branch !== 'HEAD') refs.add(`origin/${branch}`);
   } catch {
-    return false;
+    // Keep default origin/main fallback.
   }
+  try {
+    const upstream = String(gitFn(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']) || '').trim();
+    if (upstream) refs.add(upstream);
+  } catch {
+    // A branch may not have an upstream; this is not a verification failure.
+  }
+  try {
+    gitFn(['fetch', 'origin']);
+  } catch {
+    // Fetch can fail transiently after a successful push; still check local remote refs.
+  }
+  for (const ref of refs) {
+    try {
+      gitFn(['merge-base', '--is-ancestor', sha, ref]);
+      return true;
+    } catch {
+      // Try the next plausible remote ref.
+    }
+  }
+  return false;
 }
 
 function defaultRollbackToHead(head, relFile = null, gitFn = runGit) {
@@ -2051,6 +2084,7 @@ function buildCycleContext(options = {}) {
     noHeartbeat: Boolean(options.noHeartbeat),
     noWriteOutcome: Boolean(options.noWriteOutcome),
     allowDirtyWorktreeForTest: Boolean(options.allowDirtyWorktreeForTest),
+    allowNonProductionCandidatesForTest: Boolean(options.allowNonProductionCandidatesForTest),
     dirtyScope,
     refactorScopePrefixes: scopePrefixes,
     gitStatusShortFn: options.gitStatusShortFn || gitStatusShort,
@@ -2162,7 +2196,9 @@ async function runRefactorCycle(options = {}) {
       });
       context.vaultFeedback = vaultFeedback;
       const avoidedFiles = deriveAvoidedFilesFromFeedback(vaultFeedback, context.avoidThreshold);
-      const candidates = selectActiveCandidates(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles);
+      const candidates = selectActiveCandidates(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles, {
+        allowNonProductionCandidates: context.allowNonProductionCandidatesForTest || context.allowDirtyWorktreeForTest,
+      });
       if (candidates.length === 0) {
         const result = {
           ok: false,
@@ -2359,16 +2395,19 @@ module.exports = {
   cycleStamp,
   deriveFilePriorErrors,
   isProtectedTarget,
+  isNonProductionRefactorCandidate,
   normalizeCycleMode,
   parseArgs,
   planStep,
   resolveTarget,
   runRefactorCycle,
   selectCandidate,
+  selectActiveCandidates,
   fetchRefactorVaultFeedback,
   cleanupUnexpectedUntracked,
   captureStrictBaseline,
   defaultCommitFile,
+  defaultOriginContainsCommit,
   defaultStrictCheck,
   acquireRefactorLock,
   releaseRefactorLock,
