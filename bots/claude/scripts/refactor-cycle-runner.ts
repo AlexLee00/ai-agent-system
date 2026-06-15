@@ -582,13 +582,84 @@ function addNodeExecutableImplicitAnyJsdoc(currentContent, builderError = '') {
   };
 }
 
+function ts18046UnknownVariables(errorText) {
+  const variables = new Set();
+  const text = String(errorText || '');
+  const patterns = [
+    /TS18046:[^\n]*'([^']+)'\s+is of type 'unknown'/gi,
+    /TS18046:[^\n]*"([^"]+)"\s+is of type "unknown"/gi,
+  ];
+  for (const pattern of patterns) {
+    let match = pattern.exec(text);
+    while (match) {
+      if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(match[1])) variables.add(match[1]);
+      match = pattern.exec(text);
+    }
+  }
+  return variables;
+}
+
+function addNodeExecutableUnknownGuard(currentContent, builderError = '') {
+  const unknownVariables = ts18046UnknownVariables(builderError);
+  if (unknownVariables.size === 0) return { ok: false, fixedContent: null, error: 'no_ts18046_variables' };
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  let fixedContent = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line))
+    .join('\n');
+  let changed = hadTsNocheck;
+  let guarded = false;
+
+  for (const variable of unknownVariables) {
+    const messageAccess = new RegExp(`\\b${variable}\\.message\\b`, 'g');
+    if (!messageAccess.test(fixedContent)) continue;
+    fixedContent = fixedContent.replace(
+      messageAccess,
+      `(${variable} && ${variable}.message ? ${variable}.message : String(${variable}))`
+    );
+    changed = true;
+    guarded = true;
+  }
+
+  if (!changed || !guarded) return { ok: false, fixedContent: null, error: 'no_local_unknown_guard_change' };
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-unknown-guard-ts18046',
+    provider: 'local',
+  };
+}
+
+function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
+  let fixedContent = String(currentContent || '');
+  const models = [];
+  const jsdocFix = addNodeExecutableImplicitAnyJsdoc(fixedContent, builderError);
+  if (jsdocFix.ok === true) {
+    fixedContent = jsdocFix.fixedContent;
+    models.push(jsdocFix.model);
+  }
+  const unknownGuardFix = addNodeExecutableUnknownGuard(fixedContent, builderError);
+  if (unknownGuardFix.ok === true) {
+    fixedContent = unknownGuardFix.fixedContent;
+    models.push(unknownGuardFix.model);
+  }
+  if (models.length === 0) return { ok: false, fixedContent: null, error: 'no_local_type_fix' };
+  return {
+    ok: true,
+    fixedContent,
+    model: models.join('+'),
+    provider: 'local',
+  };
+}
+
 async function attemptTypeFix(context, { fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }) {
   try {
     if (lineCount(currentContent) > AUTOFIX_FILE_MAX_LINES || byteLength(currentContent) > AUTOFIX_FILE_MAX_BYTES) {
       return { ok: false, fixedContent: null, error: 'too_large' };
     }
     if (isNodeExecutableFile(fileRel, currentContent)) {
-      const localFix = addNodeExecutableImplicitAnyJsdoc(currentContent, builderError);
+      const localFix = attemptNodeExecutableLocalTypeFix(currentContent, builderError);
       if (localFix.ok === true) return localFix;
     }
     const token = String(process.env.HUB_AUTH_TOKEN || '').trim();
@@ -2485,6 +2556,8 @@ module.exports = {
   buildPlanContent,
   cycleStamp,
   addNodeExecutableImplicitAnyJsdoc,
+  addNodeExecutableUnknownGuard,
+  attemptNodeExecutableLocalTypeFix,
   deriveFilePriorErrors,
   isProtectedTarget,
   isNonProductionRefactorCandidate,

@@ -2263,6 +2263,43 @@ async function test_node_executable_ts7006_uses_local_jsdoc_fix() {
   console.log('✅ refactor-cycle: node executable TS7006 uses local JSDoc fix');
 }
 
+async function test_node_executable_ts18046_uses_local_unknown_guard() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    "'use strict';",
+    '// @ts-nocheck',
+    'async function main() {',
+    '  try {',
+    '    await Promise.resolve();',
+    '  } catch (e) {',
+    "    console.error('fatal', e.message);",
+    '  }',
+    '}',
+    '',
+    'main();',
+    '',
+  ].join('\n');
+  const fix = runner.attemptNodeExecutableLocalTypeFix(
+    currentContent,
+    "script.ts(7,28): error TS18046: 'e' is of type 'unknown'."
+  );
+  assert.strictEqual(fix.ok, true);
+  assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
+  assert.match(fix.fixedContent, /e && e\.message \? e\.message : String\(e\)/);
+  assert.doesNotMatch(fix.fixedContent, /e:\s*any|as\s+any/);
+
+  resetTargetedTypecheckTmp();
+  const target = writeTmpTsFile('node-unknown-local-fix.ts', fix.fixedContent);
+  try {
+    const nodeCheck = runner.runNodeCheckForFile(target);
+    assert.strictEqual(nodeCheck.pass, true);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ refactor-cycle: node executable TS18046 uses local unknown guard');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -2427,6 +2464,7 @@ async function main() {
     test_active_node_check_failure_defers_before_apply,
     test_autofix_prompt_for_node_executable_requires_jsdoc,
     test_node_executable_ts7006_uses_local_jsdoc_fix,
+    test_node_executable_ts18046_uses_local_unknown_guard,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

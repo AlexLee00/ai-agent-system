@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -36,7 +35,7 @@ async function main() {
   try {
     await mainLoop();
   } catch (e) {
-    console.error('[codex-notifier] Fatal:', e.message);
+    console.error('[codex-notifier] Fatal:', (e && e.message ? e.message : String(e)));
     process.exit(1);
   }
 }
