@@ -557,10 +557,13 @@ function addNodeExecutableImplicitAnyJsdoc(currentContent, builderError = '') {
       || line.match(/^(\s*)(?:async\s+)?function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\(([^)]*)\)/);
     if (match) {
       const indent = match[1] || '';
-      const params = String(match[2] || '')
+      const allParams = String(match[2] || '')
         .split(',')
         .map(normalizeFunctionParamName)
-        .filter((param) => param && implicitAnyParams.has(param));
+        .filter(Boolean);
+      const params = allParams.some((param) => implicitAnyParams.has(param))
+        ? allParams
+        : [];
       const alreadyDocumented = /\*\/$/.test(previousNonEmptyLine(output, output.length));
       if (params.length > 0 && !alreadyDocumented) {
         output.push(...jsdocForParams(indent, params));
@@ -728,10 +731,10 @@ function addNodeExecutableObjectValuesGuard(currentContent, builderError = '') {
     .join('\n');
   let changed = hadTsNocheck;
   fixedContent = fixedContent.replace(
-    /(\bconst\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)Object\.values\(([^;\n]+)\);/g,
-    (match, prefix, expression) => {
+    /^(\s*)(const\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)Object\.values\(([^;\n]+)\);/gm,
+    (_match, indent, declaration, expression) => {
       changed = true;
-      return `${prefix}JSON.parse(JSON.stringify(Object.values(${expression})));`;
+      return `${indent}/** @type {any[]} */\n${indent}${declaration}JSON.parse(JSON.stringify(Object.values(${expression})));`;
     }
   );
   if (!changed || fixedContent === String(currentContent || '')) {
