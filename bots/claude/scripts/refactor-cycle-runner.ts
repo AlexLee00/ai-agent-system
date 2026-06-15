@@ -496,10 +496,100 @@ function buildFixerPrompt({ fileRel, currentContent, builderError, reviewerFindi
   ].join('\n');
 }
 
+function ts7006ImplicitAnyParameters(errorText) {
+  const params = new Set();
+  const text = String(errorText || '');
+  const patterns = [
+    /TS7006:[^\n]*Parameter\s+'([^']+)'\s+implicitly has an 'any' type/gi,
+    /TS7006:[^\n]*Parameter\s+"([^"]+)"\s+implicitly has an "any" type/gi,
+  ];
+  for (const pattern of patterns) {
+    let match = pattern.exec(text);
+    while (match) {
+      if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(match[1])) params.add(match[1]);
+      match = pattern.exec(text);
+    }
+  }
+  return params;
+}
+
+function normalizeFunctionParamName(param) {
+  const cleaned = String(param || '')
+    .trim()
+    .replace(/^\.\.\./, '')
+    .replace(/\s*=.*$/, '')
+    .trim();
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(cleaned)) return null;
+  return cleaned;
+}
+
+function previousNonEmptyLine(lines, index) {
+  for (let cursor = index - 1; cursor >= 0; cursor--) {
+    const line = String(lines[cursor] || '').trim();
+    if (line) return line;
+  }
+  return '';
+}
+
+function jsdocForParams(indent, params) {
+  return [
+    `${indent}/**`,
+    ...params.map((param) => `${indent} * @param {any} ${param}`),
+    `${indent} */`,
+  ];
+}
+
+function addNodeExecutableImplicitAnyJsdoc(currentContent, builderError = '') {
+  const implicitAnyParams = ts7006ImplicitAnyParameters(builderError);
+  if (implicitAnyParams.size === 0) return { ok: false, fixedContent: null, error: 'no_ts7006_parameters' };
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  const lines = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line));
+  const output = [];
+  let changed = hadTsNocheck;
+  let coveredImplicitAnyFunction = false;
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const match = line.match(/^(\s*)(?:(?:module\.)?exports(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?\s*=\s*)?(?:async\s+)?function(?:\s+[A-Za-z_$][A-Za-z0-9_$]*)?\s*\(([^)]*)\)/)
+      || line.match(/^(\s*)(?:async\s+)?function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\(([^)]*)\)/);
+    if (match) {
+      const indent = match[1] || '';
+      const params = String(match[2] || '')
+        .split(',')
+        .map(normalizeFunctionParamName)
+        .filter((param) => param && implicitAnyParams.has(param));
+      const alreadyDocumented = /\*\/$/.test(previousNonEmptyLine(output, output.length));
+      if (params.length > 0 && !alreadyDocumented) {
+        output.push(...jsdocForParams(indent, params));
+        changed = true;
+        coveredImplicitAnyFunction = true;
+      } else if (params.length > 0 && alreadyDocumented) {
+        coveredImplicitAnyFunction = true;
+      }
+    }
+    output.push(line);
+  }
+
+  if (!changed || !coveredImplicitAnyFunction) return { ok: false, fixedContent: null, error: 'no_local_jsdoc_change' };
+  return {
+    ok: true,
+    fixedContent: output.join('\n'),
+    model: 'local-jsdoc-ts7006',
+    provider: 'local',
+  };
+}
+
 async function attemptTypeFix(context, { fileRel, currentContent, builderError, reviewerFindings, priorErrors, attempt }) {
   try {
     if (lineCount(currentContent) > AUTOFIX_FILE_MAX_LINES || byteLength(currentContent) > AUTOFIX_FILE_MAX_BYTES) {
       return { ok: false, fixedContent: null, error: 'too_large' };
+    }
+    if (isNodeExecutableFile(fileRel, currentContent)) {
+      const localFix = addNodeExecutableImplicitAnyJsdoc(currentContent, builderError);
+      if (localFix.ok === true) return localFix;
     }
     const token = String(process.env.HUB_AUTH_TOKEN || '').trim();
     if (!token) return { ok: false, fixedContent: null, error: 'missing_hub_auth_token' };
@@ -2394,6 +2484,7 @@ module.exports = {
   buildFixerPrompt,
   buildPlanContent,
   cycleStamp,
+  addNodeExecutableImplicitAnyJsdoc,
   deriveFilePriorErrors,
   isProtectedTarget,
   isNonProductionRefactorCandidate,
@@ -2409,6 +2500,7 @@ module.exports = {
   captureStrictBaseline,
   defaultCommitFile,
   defaultOriginContainsCommit,
+  runNodeCheckForFile,
   defaultStrictCheck,
   acquireRefactorLock,
   releaseRefactorLock,

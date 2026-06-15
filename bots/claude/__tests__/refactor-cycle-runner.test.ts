@@ -2224,6 +2224,45 @@ async function test_autofix_prompt_for_node_executable_requires_jsdoc() {
   console.log('✅ refactor-cycle: node executable autofix prompt requires JSDoc');
 }
 
+async function test_node_executable_ts7006_uses_local_jsdoc_fix() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    "'use strict';",
+    '// @ts-nocheck',
+    'exports.up = function(db) {',
+    '  db.exec("SELECT 1");',
+    '};',
+    '',
+    'exports.down = function(db) {',
+    '  db.exec("SELECT 0");',
+    '};',
+    '',
+  ].join('\n');
+  const fix = runner.addNodeExecutableImplicitAnyJsdoc(
+    currentContent,
+    "migration.ts(3,23): error TS7006: Parameter 'db' implicitly has an 'any' type."
+  );
+  assert.strictEqual(fix.ok, true);
+  assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
+  assert.match(fix.fixedContent, /@param \{any\} db/);
+  assert.match(fix.fixedContent, /exports\.up = function\(db\)/);
+  assert.match(fix.fixedContent, /exports\.down = function\(db\)/);
+  assert.doesNotMatch(fix.fixedContent, /db:\s*any|as\s+any/);
+
+  resetTargetedTypecheckTmp();
+  const target = writeTmpTsFile('node-jsdoc-local-fix.ts', fix.fixedContent);
+  try {
+    const nodeCheck = runner.runNodeCheckForFile
+      ? runner.runNodeCheckForFile(target)
+      : { pass: true };
+    assert.strictEqual(nodeCheck.pass, true);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ refactor-cycle: node executable TS7006 uses local JSDoc fix');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -2387,6 +2426,7 @@ async function main() {
     test_node_check_hook_passes_and_fails_raw_node_syntax,
     test_active_node_check_failure_defers_before_apply,
     test_autofix_prompt_for_node_executable_requires_jsdoc,
+    test_node_executable_ts7006_uses_local_jsdoc_fix,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -12,6 +11,9 @@
 exports.version = 4;
 exports.name = 'agent_heartbeats';
 
+/**
+ * @param {any} db
+ */
 exports.up = function(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_heartbeats (
@@ -31,6 +33,9 @@ exports.up = function(db) {
   }
 };
 
+/**
+ * @param {any} db
+ */
 exports.down = function(db) {
   db.exec(`DROP TABLE IF EXISTS agent_heartbeats;`);
   try {
