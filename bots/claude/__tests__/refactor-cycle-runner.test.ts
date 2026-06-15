@@ -291,6 +291,32 @@ async function test_active_candidates_skip_non_production_fixtures() {
   console.log('✅ refactor-cycle: active production candidates skip test fixtures');
 }
 
+async function test_active_candidates_validate_current_ts_nocheck_state() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const analysis = {
+    candidates: [
+      {
+        file: 'bots/claude/hooks/refactor-hooks/type-check-hook.ts',
+        lines: 51,
+        refactorType: 'ts_nocheck',
+      },
+      {
+        file: ACTIVE_TARGET,
+        lines: 8,
+        refactorType: 'ts_nocheck',
+      },
+    ],
+  };
+
+  const selected = runner.selectActiveCandidates(analysis, 'ts_nocheck', 1, new Set(), {
+    allowNonProductionCandidates: true,
+    validateCurrentState: true,
+  });
+  assert.deepStrictEqual(selected.map((item) => item.file), [ACTIVE_TARGET]);
+  console.log('✅ refactor-cycle: active candidates skip stale ts-nocheck analysis rows');
+}
+
 async function test_dirty_scope_helpers() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2413,6 +2439,7 @@ async function main() {
     test_protected_target_guard,
     test_protected_descendants_are_excluded_from_analysis,
     test_active_candidates_skip_non_production_fixtures,
+    test_active_candidates_validate_current_ts_nocheck_state,
     test_dirty_scope_helpers,
     test_dirty_scope_guard_ignores_other_workspace_dirty,
     test_dirty_scope_guard_blocks_target_workspace_dirty,

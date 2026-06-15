@@ -747,17 +747,28 @@ function selectCandidate(analysis, requestedType = DEFAULT_REFACTOR_TYPE) {
     };
 }
 
+function candidateMatchesCurrentRefactorState(candidate, requestedType = DEFAULT_REFACTOR_TYPE) {
+  const refactorType = String(candidate?.refactorType || requestedType || '');
+  if (refactorType !== 'ts_nocheck') return true;
+  const absolutePath = candidateAbsolutePath(candidate);
+  if (!absolutePath || !fs.existsSync(absolutePath)) return false;
+  const content = fs.readFileSync(absolutePath, 'utf8');
+  return /^\s*\/\/\s*@ts-nocheck\s*$/m.test(content);
+}
+
 function selectActiveCandidates(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set(), options = {}) {
   const candidates = Array.isArray(analysis?.candidates) ? analysis.candidates : [];
   const preferred = candidates.filter((candidate) => candidate.refactorType === requestedType);
   const ordered = [...preferred, ...candidates.filter((candidate) => candidate.refactorType !== requestedType)];
   const allowNonProductionCandidates = Boolean(options.allowNonProductionCandidates);
+  const validateCurrentState = Boolean(options.validateCurrentState);
   const selected = [];
   for (const candidate of ordered) {
     if (!candidate?.file || selected.some((item) => item.file === candidate.file)) continue;
     if (avoidedFiles.has(candidate.file)) continue;
     if (isProtectedTarget(candidate.file)) continue;
     if (!allowNonProductionCandidates && isNonProductionRefactorCandidate(candidate.file)) continue;
+    if (validateCurrentState && !candidateMatchesCurrentRefactorState(candidate, requestedType)) continue;
     selected.push(candidate);
     if (selected.length >= maxFiles) break;
   }
@@ -2360,6 +2371,7 @@ async function runRefactorCycle(options = {}) {
       const avoidedFiles = deriveAvoidedFilesFromFeedback(vaultFeedback, context.avoidThreshold);
       const candidates = selectActiveCandidates(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles, {
         allowNonProductionCandidates: context.allowNonProductionCandidatesForTest || context.allowDirtyWorktreeForTest,
+        validateCurrentState: true,
       });
       if (candidates.length === 0) {
         const result = {
