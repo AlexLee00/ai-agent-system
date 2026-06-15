@@ -717,7 +717,9 @@ function addNodeExecutableUnknownPropertyGuard(currentContent, builderError = ''
 
 function addNodeExecutableObjectValuesGuard(currentContent, builderError = '') {
   const unknownProperties = ts2339UnknownProperties(builderError);
-  if (unknownProperties.size === 0) return { ok: false, fixedContent: null, error: 'no_ts2339_unknown_properties' };
+  if (unknownProperties.size === 0 && !hasTs7053IndexError(builderError)) {
+    return { ok: false, fixedContent: null, error: 'no_ts2339_unknown_properties' };
+  }
 
   const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
   let fixedContent = String(currentContent || '')
@@ -766,6 +768,35 @@ function addNodeExecutableRecordIndexJsdoc(currentContent, builderError = '') {
   }
   if (indexedObjects.size === 0) {
     return { ok: false, fixedContent: null, error: 'no_indexed_objects' };
+  }
+
+  let fixedText = textWithoutTsNocheck;
+  for (const objectName of indexedObjects) {
+    const escaped = objectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const countPattern = new RegExp(
+      `\\b${escaped}\\s*\\[\\s*([^\\]\\n]+?)\\s*\\]\\s*=\\s*\\(\\s*${escaped}\\s*\\[\\s*\\1\\s*\\]\\s*\\|\\|\\s*0\\s*\\)\\s*\\+\\s*1\\s*;`,
+      'g'
+    );
+    fixedText = fixedText.replace(countPattern, (_match, keyExpression) => {
+      const key = String(keyExpression || '').trim();
+      return `${objectName}.set(${key}, (${objectName}.get(${key}) || 0) + 1);`;
+    });
+    fixedText = fixedText.replace(
+      new RegExp(`^(\\s*)const\\s+${escaped}\\s*=\\s*\\{\\s*\\};\\s*$`, 'gm'),
+      `$1const ${objectName} = new Map();`
+    );
+    fixedText = fixedText.replace(
+      new RegExp(`\\breturn\\s+${escaped}\\s*;`, 'g'),
+      `return Object.fromEntries(${objectName}.entries());`
+    );
+  }
+  if (fixedText !== textWithoutTsNocheck) {
+    return {
+      ok: true,
+      fixedContent: fixedText,
+      model: 'local-record-index-ts7053',
+      provider: 'local',
+    };
   }
 
   const output = [];

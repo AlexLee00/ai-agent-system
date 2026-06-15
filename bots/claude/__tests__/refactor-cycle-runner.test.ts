@@ -2484,7 +2484,7 @@ async function test_node_executable_ts2339_object_values_uses_local_guard() {
   console.log('✅ refactor-cycle: node executable TS2339 Object.values uses local guard');
 }
 
-async function test_node_executable_ts7053_record_index_uses_local_jsdoc() {
+async function test_node_executable_ts7053_record_index_uses_local_map() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
   const currentContent = [
@@ -2513,8 +2513,9 @@ async function test_node_executable_ts7053_record_index_uses_local_jsdoc() {
   assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
   assert.match(fix.fixedContent, /@param \{any\} items/);
   assert.match(fix.fixedContent, /@param \{any\} selector/);
-  assert.match(fix.fixedContent, /@type \{Record<string, any>\}/);
-  assert.match(fix.fixedContent, /const counts = \{\};/);
+  assert.match(fix.fixedContent, /const counts = new Map\(\);/);
+  assert.match(fix.fixedContent, /counts\.set\(key, \(counts\.get\(key\) \|\| 0\) \+ 1\);/);
+  assert.match(fix.fixedContent, /return Object\.fromEntries\(counts\.entries\(\)\);/);
   assert.doesNotMatch(fix.fixedContent, /counts:\s*Record|as\s+Record/);
 
   resetTargetedTypecheckTmp();
@@ -2528,7 +2529,7 @@ async function test_node_executable_ts7053_record_index_uses_local_jsdoc() {
   } finally {
     cleanupTargetedTypecheckTmp();
   }
-  console.log('✅ refactor-cycle: node executable TS7053 record index uses local JSDoc');
+  console.log('✅ refactor-cycle: node executable TS7053 record index uses local Map rewrite');
 }
 
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
@@ -2701,7 +2702,7 @@ async function main() {
     test_node_executable_ts2339_empty_object_message_uses_local_guard,
     test_node_executable_ts2339_uses_local_unknown_property_guard,
     test_node_executable_ts2339_object_values_uses_local_guard,
-    test_node_executable_ts7053_record_index_uses_local_jsdoc,
+    test_node_executable_ts7053_record_index_uses_local_map,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,
