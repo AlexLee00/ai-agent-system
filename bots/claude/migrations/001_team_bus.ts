@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -15,7 +14,10 @@
 exports.version = 1;
 exports.name    = 'team_bus';
 
-exports.up = function(db) {
+/**
+ * @param {any} db
+ */
+exports.up = function(db = { exec: console.log, prepare: (sql = '') => ({ run: console.log }) }) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version    INTEGER PRIMARY KEY,
@@ -75,7 +77,10 @@ exports.up = function(db) {
   ).run(exports.version, exports.name);
 };
 
-exports.down = function(db) {
+/**
+ * @param {any} db
+ */
+exports.down = function(db = { exec: console.log, prepare: (sql = '') => ({ run: console.log }) }) {
   db.exec(`
     DROP TABLE IF EXISTS check_history;
     DROP TABLE IF EXISTS tech_digest;
