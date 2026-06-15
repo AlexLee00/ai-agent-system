@@ -2008,6 +2008,28 @@ async function writeRefactorHeartbeat(context, status, meta = {}) {
   });
 }
 
+function isSafeDeferredCycleResult(result) {
+  if (!result || result.mode !== 'active') return false;
+  if (result.reason === 'no_active_candidates') return true;
+
+  const active = result.active;
+  if (!active || active.applied) return false;
+  if (active.worktreeRestored !== true) return false;
+
+  const stage = String(active.stage || '');
+  return stage === 'active_deferred' || stage === 'active_deferred_unfixable';
+}
+
+function heartbeatStatusForCycleResult(result) {
+  if (result?.ok) return 'ok';
+  if (isSafeDeferredCycleResult(result)) return 'warn';
+  return 'error';
+}
+
+function exitCodeForCycleResult(result) {
+  return result?.ok || isSafeDeferredCycleResult(result) ? 0 : 1;
+}
+
 function buildCycleContext(options = {}) {
   const mode = normalizeCycleMode(options.mode);
   const target = resolveTarget(options.target || DEFAULT_TARGET);
@@ -2170,7 +2192,7 @@ async function runRefactorCycle(options = {}) {
           ],
         };
         result.outcome = await recordRefactorOutcome(context, result);
-        result.heartbeat = await writeRefactorHeartbeat(context, 'error', { stage: 'active_deferred', reason: result.reason });
+        result.heartbeat = await writeRefactorHeartbeat(context, heartbeatStatusForCycleResult(result), { stage: 'active_deferred', reason: result.reason });
         return result;
       }
 
@@ -2230,7 +2252,7 @@ async function runRefactorCycle(options = {}) {
         ],
       };
       result.outcome = await recordRefactorOutcome(context, result);
-      result.heartbeat = await writeRefactorHeartbeat(context, active.ok ? 'ok' : 'error', {
+      result.heartbeat = await writeRefactorHeartbeat(context, heartbeatStatusForCycleResult(result), {
         stage: active.ok ? 'active_complete' : 'active_deferred',
         changedFiles: active.changedFiles,
         patchPath: artifacts.patchRelPath || null,
@@ -2318,7 +2340,7 @@ async function main() {
     console.log(`[refactor-cycle] ${result.ok ? 'ok' : 'failed'} mode=${result.mode || 'unknown'} reason=${result.reason || 'n/a'}`);
     console.log(text);
   }
-  process.exit(result.ok ? 0 : 1);
+  process.exit(exitCodeForCycleResult(result));
 }
 
 if (require.main === module) {
@@ -2353,6 +2375,8 @@ module.exports = {
   gitStatusScoped,
   isNodeExecutableContent,
   isNodeExecutableFile,
+  exitCodeForCycleResult,
+  heartbeatStatusForCycleResult,
   applyEnabled,
   applyPushEnabled,
   applyStrictGateEnabled,

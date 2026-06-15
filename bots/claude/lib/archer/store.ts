@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -16,6 +15,9 @@ function load() {
   }
 }
 
+/**
+ * @param {Record<string, unknown>} data
+ */
 function save(data) {
   try {
     fs.writeFileSync(cfg.OUTPUT.cacheFile, JSON.stringify({

@@ -199,6 +199,37 @@ async function test_mode_defaults_off() {
   console.log('✅ refactor-cycle: mode defaults and normalization are safe');
 }
 
+async function test_safe_deferred_cycle_uses_soft_operational_status() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+
+  const safeDeferred = {
+    ok: false,
+    mode: 'active',
+    active: {
+      applied: false,
+      worktreeRestored: true,
+      stage: 'active_deferred',
+    },
+  };
+  assert.strictEqual(runner.heartbeatStatusForCycleResult(safeDeferred), 'warn');
+  assert.strictEqual(runner.exitCodeForCycleResult(safeDeferred), 0);
+
+  const unsafeDeferred = {
+    ok: false,
+    mode: 'active',
+    active: {
+      applied: false,
+      worktreeRestored: false,
+      stage: 'active_deferred',
+    },
+  };
+  assert.strictEqual(runner.heartbeatStatusForCycleResult(unsafeDeferred), 'error');
+  assert.strictEqual(runner.exitCodeForCycleResult(unsafeDeferred), 1);
+
+  console.log('✅ refactor-cycle: safe deferred cycles avoid operational heartbeat failure');
+}
+
 async function test_cycle_stamp_uses_kst() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2250,6 +2281,7 @@ async function main() {
   console.log('=== Refactor Cycle Runner 테스트 시작 ===\n');
   const tests = [
     test_mode_defaults_off,
+    test_safe_deferred_cycle_uses_soft_operational_status,
     test_cycle_stamp_uses_kst,
     test_protected_target_guard,
     test_protected_descendants_are_excluded_from_analysis,
