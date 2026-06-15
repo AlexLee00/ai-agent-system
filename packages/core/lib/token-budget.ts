@@ -162,6 +162,16 @@ const PROFILES: Record<string, TokenBudgetProfile> = {
     perAttemptTimeoutMs: 60_000,
     fallbackAttempts: 3,
   },
+  code_refactor: {
+    name: 'code_refactor',
+    maxInputTokens: 64_000,
+    maxOutputTokens: 8_192,
+    maxTotalTokens: 80_000,
+    maxCostUsd: 0.25,
+    timeoutMs: 180_000,
+    perAttemptTimeoutMs: 90_000,
+    fallbackAttempts: 2,
+  },
   blog_section_generation: {
     name: 'blog_section_generation',
     maxInputTokens: 48_000,
@@ -208,6 +218,7 @@ export function inferTokenBudgetProfile(request: TokenBudgetRequest = {}): strin
   if (selectorKey.startsWith('hub.alarm.') || taskType.includes('alarm_interpreter') || taskType.includes('alarm')) return 'hub_alarm_interpreter';
   if (selectorKey.includes('oauth') || agent.includes('oauth') || taskType.includes('oauth')) return 'oauth_monitor';
   if (team === 'darwin' || selectorKey.startsWith('darwin.') || taskType.includes('research')) return 'darwin_research';
+  if (selectorKey.includes('refactorer') || taskType.includes('code_refactor') || agent.includes('refactorer')) return 'code_refactor';
   if (taskType.includes('triage') || taskType.includes('classif')) return 'fast_triage';
   return 'default';
 }

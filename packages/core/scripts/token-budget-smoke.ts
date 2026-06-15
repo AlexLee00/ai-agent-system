@@ -49,6 +49,28 @@ async function main() {
     throw new Error(`unexpected alarm profile: ${alarmBudget.profileName}`);
   }
 
+  const refactorBudget = resolveTokenBudget({
+    callerTeam: 'claude',
+    agent: 'refactorer',
+    selectorKey: 'claude.refactorer.code_refactor',
+    taskType: 'code_refactor',
+    provider: 'claude-code-oauth',
+    model: 'sonnet',
+    prompt: 'Fix TypeScript type errors exposed by removing ts-nocheck. '.repeat(1200),
+    systemPrompt: 'Return only the complete revised file content.',
+    maxTokens: 8192,
+    timeoutMs: 180_000,
+  });
+  if (!refactorBudget.ok) {
+    throw new Error(`refactor budget should pass: ${refactorBudget.reason}`);
+  }
+  if (refactorBudget.profileName !== 'code_refactor') {
+    throw new Error(`unexpected refactor profile: ${refactorBudget.profileName}`);
+  }
+  if (refactorBudget.maxOutputTokens !== 8192) {
+    throw new Error(`refactor output cap mismatch: ${refactorBudget.maxOutputTokens}`);
+  }
+
   const capped = applyTokenBudgetToFallbackChain([
     { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 20_000, timeoutMs: 999_000 },
     { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 20_000, timeoutMs: 999_000 },
@@ -110,6 +132,11 @@ async function main() {
       maxOutputTokens: alarmBudget.maxOutputTokens,
       fallbackAttempts: alarmBudget.fallbackAttempts,
       cappedRoutes: capped.length,
+    },
+    refactor: {
+      profile: refactorBudget.profileName,
+      maxOutputTokens: refactorBudget.maxOutputTokens,
+      budgetCostUsd: refactorBudget.budgetCostUsd,
     },
     liveRecordId,
   }, null, 2));
