@@ -589,6 +589,7 @@ function implicitAnyDefaultForParam(param) {
   const name = String(param || '').trim();
   if (/^(items|entries|jobs|missing|active|historical)$/i.test(name)) return '[]';
   if (/^selector$/i.test(name)) return 'JSON.stringify';
+  if (/^db$/i.test(name)) return "{ exec: console.log, prepare: (sql = '') => ({ run: console.log }) }";
   if (/^(root|relPath|file|fileRel|path|id|state|stage|status|reason)$/i.test(name)) return "''";
   return null;
 }
