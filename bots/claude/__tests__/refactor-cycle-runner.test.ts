@@ -2484,6 +2484,53 @@ async function test_node_executable_ts2339_object_values_uses_local_guard() {
   console.log('✅ refactor-cycle: node executable TS2339 Object.values uses local guard');
 }
 
+async function test_node_executable_ts7053_record_index_uses_local_jsdoc() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    "'use strict';",
+    '// @ts-nocheck',
+    'function countBy(items, selector) {',
+    '  const counts = {};',
+    '  for (const item of items || []) {',
+    "    const key = selector(item) || 'unknown';",
+    '    counts[key] = (counts[key] || 0) + 1;',
+    '  }',
+    '  return counts;',
+    '}',
+    'module.exports = { countBy };',
+    '',
+  ].join('\n');
+  const fix = runner.attemptNodeExecutableLocalTypeFix(
+    currentContent,
+    [
+      "state-store.ts(3,18): error TS7006: Parameter 'items' implicitly has an 'any' type.",
+      "state-store.ts(3,25): error TS7006: Parameter 'selector' implicitly has an 'any' type.",
+      "state-store.ts(7,5): error TS7053: Element implicitly has an 'any' type because expression of type 'any' can't be used to index type '{}'.",
+    ].join('\n')
+  );
+  assert.strictEqual(fix.ok, true);
+  assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
+  assert.match(fix.fixedContent, /@param \{any\} items/);
+  assert.match(fix.fixedContent, /@param \{any\} selector/);
+  assert.match(fix.fixedContent, /@type \{Record<string, any>\}/);
+  assert.match(fix.fixedContent, /const counts = \{\};/);
+  assert.doesNotMatch(fix.fixedContent, /counts:\s*Record|as\s+Record/);
+
+  resetTargetedTypecheckTmp();
+  const target = writeTmpTsFile('node-record-index-local-fix.ts', fix.fixedContent);
+  try {
+    const nodeCheck = runner.runNodeCheckForFile(target);
+    assert.strictEqual(nodeCheck.pass, true);
+    const builder = requireBuilder();
+    const result = await builder.runTargetedTypeCheck([target], { files: [target], force: true, test: true });
+    assert.strictEqual(result.pass, true);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ refactor-cycle: node executable TS7053 record index uses local JSDoc');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -2654,6 +2701,7 @@ async function main() {
     test_node_executable_ts2339_empty_object_message_uses_local_guard,
     test_node_executable_ts2339_uses_local_unknown_property_guard,
     test_node_executable_ts2339_object_values_uses_local_guard,
+    test_node_executable_ts7053_record_index_uses_local_jsdoc,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

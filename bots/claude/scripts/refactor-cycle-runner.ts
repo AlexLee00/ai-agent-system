@@ -743,6 +743,57 @@ function addNodeExecutableObjectValuesGuard(currentContent, builderError = '') {
   };
 }
 
+function hasTs7053IndexError(errorText) {
+  return /TS7053:[^\n]*Element implicitly has an 'any' type/i.test(String(errorText || ''));
+}
+
+function addNodeExecutableRecordIndexJsdoc(currentContent, builderError = '') {
+  if (!hasTs7053IndexError(builderError)) {
+    return { ok: false, fixedContent: null, error: 'no_ts7053_index_error' };
+  }
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  const lines = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line));
+  const textWithoutTsNocheck = lines.join('\n');
+  const indexedObjects = new Set();
+  const indexPattern = /\b([A-Za-z_$][A-Za-z0-9_$]*)\s*\[[^\]\n]+\]/g;
+  let indexMatch = indexPattern.exec(textWithoutTsNocheck);
+  while (indexMatch) {
+    indexedObjects.add(indexMatch[1]);
+    indexMatch = indexPattern.exec(textWithoutTsNocheck);
+  }
+  if (indexedObjects.size === 0) {
+    return { ok: false, fixedContent: null, error: 'no_indexed_objects' };
+  }
+
+  const output = [];
+  let changed = hadTsNocheck;
+  for (const line of lines) {
+    const match = line.match(/^(\s*)const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\{\s*\};\s*$/);
+    if (match && indexedObjects.has(match[2])) {
+      const previous = previousNonEmptyLine(output, output.length);
+      if (!/@type\s+\{Record<string,\s*any>\}/.test(previous)) {
+        output.push(`${match[1]}/** @type {Record<string, any>} */`);
+        changed = true;
+      }
+    }
+    output.push(line);
+  }
+
+  const fixedContent = output.join('\n');
+  if (!changed || fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_record_index_jsdoc_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-record-index-ts7053',
+    provider: 'local',
+  };
+}
+
 function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   let fixedContent = String(currentContent || '');
   const models = [];
@@ -765,6 +816,11 @@ function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   if (objectValuesFix.ok === true) {
     fixedContent = objectValuesFix.fixedContent;
     models.push(objectValuesFix.model);
+  }
+  const recordIndexFix = addNodeExecutableRecordIndexJsdoc(fixedContent, builderError);
+  if (recordIndexFix.ok === true) {
+    fixedContent = recordIndexFix.fixedContent;
+    models.push(recordIndexFix.model);
   }
   if (models.length === 0) return { ok: false, fixedContent: null, error: 'no_local_type_fix' };
   return {
