@@ -585,6 +585,53 @@ function addNodeExecutableImplicitAnyJsdoc(currentContent, builderError = '') {
   };
 }
 
+function implicitAnyDefaultForParam(param) {
+  const name = String(param || '').trim();
+  if (/^(items|entries|jobs|missing|active|historical)$/i.test(name)) return '[]';
+  if (/^selector$/i.test(name)) return 'JSON.stringify';
+  if (/^(root|relPath|file|fileRel|path|id|state|stage|status|reason)$/i.test(name)) return "''";
+  return null;
+}
+
+function addNodeExecutableImplicitAnyDefaults(currentContent, builderError = '') {
+  const implicitAnyParams = ts7006ImplicitAnyParameters(builderError);
+  if (implicitAnyParams.size === 0) return { ok: false, fixedContent: null, error: 'no_ts7006_parameters' };
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  const lines = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line));
+  let changed = hadTsNocheck;
+  const fixedLines = lines.map((line) => line.replace(
+    /^(\s*(?:(?:module\.)?exports(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?\s*=\s*)?(?:async\s+)?function(?:\s+[A-Za-z_$][A-Za-z0-9_$]*)?\s*)\(([^)]*)\)/,
+    (match, prefix, rawParams) => {
+      const rawParamList = String(rawParams || '').split(',');
+      const normalizedParams = rawParamList.map((param) => normalizeFunctionParamName(param.trim())).filter(Boolean);
+      const shouldRewriteFunction = normalizedParams.some((param) => implicitAnyParams.has(param));
+      const params = rawParamList.map((param) => {
+        const trimmed = param.trim();
+        const normalized = normalizeFunctionParamName(trimmed);
+        if (!normalized || !shouldRewriteFunction || /=/.test(trimmed)) return trimmed;
+        const defaultValue = implicitAnyDefaultForParam(normalized);
+        if (!defaultValue) return trimmed;
+        changed = true;
+        return `${normalized} = ${defaultValue}`;
+      });
+      return `${prefix}(${params.join(', ')})`;
+    }
+  ));
+  const fixedContent = fixedLines.join('\n');
+  if (!changed || fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_implicit_any_default_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-implicit-any-defaults-ts7006',
+    provider: 'local',
+  };
+}
+
 function ts18046UnknownVariables(errorText) {
   const variables = new Set();
   const text = String(errorText || '');
@@ -748,6 +795,44 @@ function addNodeExecutableObjectValuesGuard(currentContent, builderError = '') {
   };
 }
 
+function addNodeExecutableFilterLoopRewrite(currentContent, builderError = '') {
+  if (ts7006ImplicitAnyParameters(builderError).size === 0) {
+    return { ok: false, fixedContent: null, error: 'no_ts7006_parameters' };
+  }
+  const lines = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line));
+  const output = [];
+  let changed = /@ts-nocheck/.test(String(currentContent || ''));
+  for (const line of lines) {
+    const match = line.match(/^(\s*)const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*([A-Za-z_$][A-Za-z0-9_$.]*)\.filter\(\(([A-Za-z_$][A-Za-z0-9_$]*)\)\s*=>\s*(.+)\);\s*$/);
+    if (match) {
+      const indent = match[1] || '';
+      const outName = match[2];
+      const sourceName = match[3];
+      const itemName = match[4];
+      const condition = match[5];
+      output.push(`${indent}const ${outName} = [];`);
+      output.push(`${indent}for (const ${itemName} of ${sourceName} || []) {`);
+      output.push(`${indent}  if (${condition}) ${outName}.push(${itemName});`);
+      output.push(`${indent}}`);
+      changed = true;
+      continue;
+    }
+    output.push(line);
+  }
+  const fixedContent = output.join('\n');
+  if (!changed || fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_filter_loop_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-filter-loop-ts7006',
+    provider: 'local',
+  };
+}
+
 function hasTs7053IndexError(errorText) {
   return /TS7053:[^\n]*Element implicitly has an 'any' type/i.test(String(errorText || ''));
 }
@@ -831,6 +916,11 @@ function addNodeExecutableRecordIndexJsdoc(currentContent, builderError = '') {
 function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   let fixedContent = String(currentContent || '');
   const models = [];
+  const defaultsFix = addNodeExecutableImplicitAnyDefaults(fixedContent, builderError);
+  if (defaultsFix.ok === true) {
+    fixedContent = defaultsFix.fixedContent;
+    models.push(defaultsFix.model);
+  }
   const jsdocFix = addNodeExecutableImplicitAnyJsdoc(fixedContent, builderError);
   if (jsdocFix.ok === true) {
     fixedContent = jsdocFix.fixedContent;
@@ -850,6 +940,11 @@ function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   if (objectValuesFix.ok === true) {
     fixedContent = objectValuesFix.fixedContent;
     models.push(objectValuesFix.model);
+  }
+  const filterLoopFix = addNodeExecutableFilterLoopRewrite(fixedContent, builderError);
+  if (filterLoopFix.ok === true) {
+    fixedContent = filterLoopFix.fixedContent;
+    models.push(filterLoopFix.model);
   }
   const recordIndexFix = addNodeExecutableRecordIndexJsdoc(fixedContent, builderError);
   if (recordIndexFix.ok === true) {
