@@ -2326,6 +2326,33 @@ async function test_node_executable_ts18046_uses_local_unknown_guard() {
   console.log('✅ refactor-cycle: node executable TS18046 uses local unknown guard');
 }
 
+async function test_node_executable_ts2339_empty_object_message_uses_local_guard() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    "'use strict';",
+    '// @ts-nocheck',
+    'function run() {',
+    '  try {',
+    '    throw new Error("boom");',
+    '  } catch (e) {',
+    "    console.error('fatal', e.message);",
+    '  }',
+    '}',
+    'module.exports = { run };',
+    '',
+  ].join('\n');
+  const fix = runner.attemptNodeExecutableLocalTypeFix(
+    currentContent,
+    "script.ts(7,30): error TS2339: Property 'message' does not exist on type '{}'."
+  );
+  assert.strictEqual(fix.ok, true);
+  assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
+  assert.match(fix.fixedContent, /e && e\.message \? e\.message : String\(e\)/);
+  assert.doesNotMatch(fix.fixedContent, /e:\s*any|as\s+any/);
+  console.log('✅ refactor-cycle: node executable TS2339 empty-object message uses local guard');
+}
+
 async function test_node_executable_ts2339_uses_local_unknown_property_guard() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2540,6 +2567,7 @@ async function main() {
     test_autofix_prompt_for_node_executable_requires_jsdoc,
     test_node_executable_ts7006_uses_local_jsdoc_fix,
     test_node_executable_ts18046_uses_local_unknown_guard,
+    test_node_executable_ts2339_empty_object_message_uses_local_guard,
     test_node_executable_ts2339_uses_local_unknown_property_guard,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,

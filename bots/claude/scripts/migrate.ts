@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -25,9 +24,11 @@ function main() {
   db.pragma('journal_mode = WAL');
 
   // 마이그레이션 파일 수집
-  const files = fs.readdirSync(MIGRATIONS_DIR)
-    .filter(f => f.endsWith('.js'))
-    .sort();
+  const files = [];
+  for (const file of fs.readdirSync(MIGRATIONS_DIR)) {
+    if (file.endsWith('.js')) files.push(file);
+  }
+  files.sort();
 
   if (files.length === 0) {
     console.log('마이그레이션 파일 없음.');
@@ -38,9 +39,10 @@ function main() {
   // schema_migrations 테이블이 없으면 첫 마이그레이션이 생성함
   let appliedVersions = new Set();
   try {
-    appliedVersions = new Set(
-      db.prepare(`SELECT version FROM schema_migrations`).all().map(r => r.version)
-    );
+    const rows = JSON.parse(JSON.stringify(db.prepare(`SELECT version FROM schema_migrations`).all()));
+    const versions = [];
+    for (const row of rows) versions.push(row.version);
+    appliedVersions = new Set(versions);
   } catch { /* 테이블 아직 없음 — 정상 */ }
 
   let applied = 0;
@@ -60,7 +62,7 @@ function main() {
       console.log(`  ✅ v${version} ${name} 완료`);
       applied++;
     } catch (e) {
-      console.error(`  ❌ v${version} ${name} 실패: ${e.message}`);
+      console.error(`  ❌ v${version} ${name} 실패: ${e && e.message ? e.message : String(e)}`);
       db.close();
       process.exit(1);
     }

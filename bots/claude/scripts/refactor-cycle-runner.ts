@@ -599,8 +599,25 @@ function ts18046UnknownVariables(errorText) {
   return variables;
 }
 
+function ts2339ObjectMessageVariables(content, errorText) {
+  if (!/TS2339:[^\n]*Property\s+'message'\s+does not exist on type '\{\}'/i.test(String(errorText || ''))) {
+    return new Set();
+  }
+  const variables = new Set();
+  const pattern = /\b([A-Za-z_$][A-Za-z0-9_$]*)\.message\b/g;
+  let match = pattern.exec(String(content || ''));
+  while (match) {
+    variables.add(match[1]);
+    match = pattern.exec(String(content || ''));
+  }
+  return variables;
+}
+
 function addNodeExecutableUnknownGuard(currentContent, builderError = '') {
   const unknownVariables = ts18046UnknownVariables(builderError);
+  for (const variable of ts2339ObjectMessageVariables(currentContent, builderError)) {
+    unknownVariables.add(variable);
+  }
   if (unknownVariables.size === 0) return { ok: false, fixedContent: null, error: 'no_ts18046_variables' };
 
   const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
