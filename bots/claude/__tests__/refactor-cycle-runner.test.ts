@@ -314,7 +314,43 @@ async function test_active_candidates_validate_current_ts_nocheck_state() {
     validateCurrentState: true,
   });
   assert.deepStrictEqual(selected.map((item) => item.file), [ACTIVE_TARGET]);
+  const detailed = runner.selectActiveCandidatesDetailed(analysis, 'ts_nocheck', 1, new Set(), {
+    allowNonProductionCandidates: true,
+    validateCurrentState: true,
+  });
+  assert.deepStrictEqual(detailed.selected.map((item) => item.file), [ACTIVE_TARGET]);
+  assert.strictEqual(detailed.diagnostics.staleSkipped, 1);
+  assert.strictEqual(detailed.diagnostics.skippedByReason.current_state_mismatch, 1);
   console.log('✅ refactor-cycle: active candidates skip stale ts-nocheck analysis rows');
+}
+
+async function test_active_candidates_skip_ts_extension_import_until_gate_supports_it() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const targetDir = 'bots/claude/__tests__/tmp-refactor-ts-extension-import';
+  const absDir = path.join(PROJECT_ROOT, targetDir);
+  const target = `${targetDir}/server.ts`;
+  fs.rmSync(absDir, { recursive: true, force: true });
+  fs.mkdirSync(absDir, { recursive: true });
+  fs.writeFileSync(path.join(PROJECT_ROOT, target), [
+    '// @ts-nocheck',
+    "import { run } from './handler.ts';",
+    'run();',
+    '',
+  ].join('\n'), 'utf8');
+  try {
+    const detailed = runner.selectActiveCandidatesDetailed({
+      candidates: [{ file: target, lines: 3, refactorType: 'ts_nocheck' }],
+    }, 'ts_nocheck', 1, new Set(), {
+      allowNonProductionCandidates: true,
+      validateCurrentState: true,
+    });
+    assert.deepStrictEqual(detailed.selected, []);
+    assert.strictEqual(detailed.diagnostics.skippedByReason.unsupported_ts_extension_import, 1);
+  } finally {
+    fs.rmSync(absDir, { recursive: true, force: true });
+  }
+  console.log('✅ refactor-cycle: active candidates skip .ts extension imports until targeted gate supports them');
 }
 
 async function test_dirty_scope_helpers() {
@@ -646,6 +682,8 @@ async function test_apply_off_does_not_commit_and_restores() {
     assert.deepStrictEqual(commits, []);
     assert.strictEqual(result.steps.find((step) => step.id === 'refactor').status, 'complete_restored');
     assert.strictEqual(result.steps.find((step) => step.id === 'commit').status, 'ready_for_review_apply_disabled');
+    assert.strictEqual(result.active.operational.success, false);
+    assert.strictEqual(result.active.operational.outcomeClass, 'verified_not_applied');
     assert.strictEqual(targetContent(target), before);
   } finally {
     fs.writeFileSync(path.join(PROJECT_ROOT, target), before, 'utf8');
@@ -697,6 +735,12 @@ async function test_apply_on_commits_ready_file_and_keeps_change() {
     });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.active.applied, true);
+    assert.strictEqual(result.active.operational.success, true);
+    assert.strictEqual(result.active.operational.outcomeClass, 'operational_success');
+    assert.deepStrictEqual(result.active.operational.commits, ['fake-sha-apply']);
+    assert.deepStrictEqual(result.active.operational.originVerifiedCommits, ['fake-sha-apply']);
+    assert.strictEqual(result.active.candidateDiagnostics.selected, 1);
+    assert.strictEqual(result.plan.candidateDiagnostics.selected, 1);
     assert.deepStrictEqual(result.active.applyResults, [{ file: target, applied: true, commit: 'fake-sha-apply', pushed: true, originContains: true }]);
     assert.strictEqual(commits.length, 1);
     assert.strictEqual(pushes.length, 1);
@@ -2401,6 +2445,45 @@ async function test_node_executable_ts2339_uses_local_unknown_property_guard() {
   console.log('✅ refactor-cycle: node executable TS2339 uses local unknown property guard');
 }
 
+async function test_node_executable_ts2339_object_values_uses_local_guard() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    "'use strict';",
+    '// @ts-nocheck',
+    'function summarize(manifest) {',
+    '  const entries = Object.values(manifest.entries || {});',
+    "  const active = entries.filter((entry) => String(entry.state || '') === 'active');",
+    '  return active.map((entry) => ({ relPath: entry.relPath, state: entry.state }));',
+    '}',
+    'module.exports = { summarize };',
+    '',
+  ].join('\n');
+  const fix = runner.attemptNodeExecutableLocalTypeFix(
+    currentContent,
+    [
+      "state-store.ts(5,62): error TS2339: Property 'state' does not exist on type 'unknown'.",
+      "state-store.ts(6,50): error TS2339: Property 'relPath' does not exist on type 'unknown'.",
+    ].join('\n')
+  );
+  assert.strictEqual(fix.ok, true);
+  assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
+  assert.match(fix.fixedContent, /const entries = JSON\.parse\(JSON\.stringify\(Object\.values\(manifest\.entries \|\| \{\}\)\)\)/);
+
+  resetTargetedTypecheckTmp();
+  const target = writeTmpTsFile('node-object-values-local-fix.ts', fix.fixedContent);
+  try {
+    const nodeCheck = runner.runNodeCheckForFile(target);
+    assert.strictEqual(nodeCheck.pass, true);
+    const builder = requireBuilder();
+    const result = await builder.runTargetedTypeCheck([target], { files: [target], force: true, test: true });
+    assert.strictEqual(result.pass, true);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ refactor-cycle: node executable TS2339 Object.values uses local guard');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -2515,6 +2598,7 @@ async function main() {
     test_protected_descendants_are_excluded_from_analysis,
     test_active_candidates_skip_non_production_fixtures,
     test_active_candidates_validate_current_ts_nocheck_state,
+    test_active_candidates_skip_ts_extension_import_until_gate_supports_it,
     test_dirty_scope_helpers,
     test_dirty_scope_guard_ignores_other_workspace_dirty,
     test_dirty_scope_guard_blocks_target_workspace_dirty,
@@ -2569,6 +2653,7 @@ async function main() {
     test_node_executable_ts18046_uses_local_unknown_guard,
     test_node_executable_ts2339_empty_object_message_uses_local_guard,
     test_node_executable_ts2339_uses_local_unknown_property_guard,
+    test_node_executable_ts2339_object_values_uses_local_guard,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

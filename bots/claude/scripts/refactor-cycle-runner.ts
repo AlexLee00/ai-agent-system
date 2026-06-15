@@ -715,6 +715,34 @@ function addNodeExecutableUnknownPropertyGuard(currentContent, builderError = ''
   };
 }
 
+function addNodeExecutableObjectValuesGuard(currentContent, builderError = '') {
+  const unknownProperties = ts2339UnknownProperties(builderError);
+  if (unknownProperties.size === 0) return { ok: false, fixedContent: null, error: 'no_ts2339_unknown_properties' };
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  let fixedContent = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line))
+    .join('\n');
+  let changed = hadTsNocheck;
+  fixedContent = fixedContent.replace(
+    /(\bconst\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*)Object\.values\(([^;\n]+)\);/g,
+    (match, prefix, expression) => {
+      changed = true;
+      return `${prefix}JSON.parse(JSON.stringify(Object.values(${expression})));`;
+    }
+  );
+  if (!changed || fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_object_values_guard_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-object-values-ts2339',
+    provider: 'local',
+  };
+}
+
 function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   let fixedContent = String(currentContent || '');
   const models = [];
@@ -732,6 +760,11 @@ function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   if (unknownPropertyFix.ok === true) {
     fixedContent = unknownPropertyFix.fixedContent;
     models.push(unknownPropertyFix.model);
+  }
+  const objectValuesFix = addNodeExecutableObjectValuesGuard(fixedContent, builderError);
+  if (objectValuesFix.ok === true) {
+    fixedContent = objectValuesFix.fixedContent;
+    models.push(objectValuesFix.model);
   }
   if (models.length === 0) return { ok: false, fixedContent: null, error: 'no_local_type_fix' };
   return {
@@ -836,32 +869,90 @@ function selectCandidate(analysis, requestedType = DEFAULT_REFACTOR_TYPE) {
     };
 }
 
-function candidateMatchesCurrentRefactorState(candidate, requestedType = DEFAULT_REFACTOR_TYPE) {
-  const refactorType = String(candidate?.refactorType || requestedType || '');
-  if (refactorType !== 'ts_nocheck') return true;
-  const absolutePath = candidateAbsolutePath(candidate);
-  if (!absolutePath || !fs.existsSync(absolutePath)) return false;
-  const content = fs.readFileSync(absolutePath, 'utf8');
-  return /^\s*\/\/\s*@ts-nocheck\s*$/m.test(content);
+function tsExtensionImportUnsupportedForTargetedTsc(content) {
+  return /^\s*import\s+.+?\s+from\s+['"][^'"]+\.ts['"]/m.test(String(content || ''));
 }
 
-function selectActiveCandidates(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set(), options = {}) {
+function candidateCurrentRefactorState(candidate, requestedType = DEFAULT_REFACTOR_TYPE) {
+  const refactorType = String(candidate?.refactorType || requestedType || '');
+  if (refactorType !== 'ts_nocheck') return { matches: true, reason: null };
+  const absolutePath = candidateAbsolutePath(candidate);
+  if (!absolutePath || !fs.existsSync(absolutePath)) return { matches: false, reason: 'candidate_missing' };
+  const content = fs.readFileSync(absolutePath, 'utf8');
+  if (!/^\s*\/\/\s*@ts-nocheck\s*$/m.test(content)) return { matches: false, reason: 'current_state_mismatch' };
+  if (tsExtensionImportUnsupportedForTargetedTsc(content)) return { matches: false, reason: 'unsupported_ts_extension_import' };
+  return { matches: true, reason: null };
+}
+
+function candidateMatchesCurrentRefactorState(candidate, requestedType = DEFAULT_REFACTOR_TYPE) {
+  return candidateCurrentRefactorState(candidate, requestedType).matches;
+}
+
+function selectActiveCandidatesDetailed(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set(), options = {}) {
   const candidates = Array.isArray(analysis?.candidates) ? analysis.candidates : [];
   const preferred = candidates.filter((candidate) => candidate.refactorType === requestedType);
   const ordered = [...preferred, ...candidates.filter((candidate) => candidate.refactorType !== requestedType)];
   const allowNonProductionCandidates = Boolean(options.allowNonProductionCandidates);
   const validateCurrentState = Boolean(options.validateCurrentState);
   const selected = [];
+  const skipped = [];
+  const skip = (candidate, reason) => {
+    skipped.push({
+      file: candidate?.file || null,
+      refactorType: candidate?.refactorType || null,
+      reason,
+    });
+  };
   for (const candidate of ordered) {
-    if (!candidate?.file || selected.some((item) => item.file === candidate.file)) continue;
-    if (avoidedFiles.has(candidate.file)) continue;
-    if (isProtectedTarget(candidate.file)) continue;
-    if (!allowNonProductionCandidates && isNonProductionRefactorCandidate(candidate.file)) continue;
-    if (validateCurrentState && !candidateMatchesCurrentRefactorState(candidate, requestedType)) continue;
+    if (!candidate?.file) {
+      skip(candidate, 'missing_file');
+      continue;
+    }
+    if (selected.some((item) => item.file === candidate.file)) {
+      skip(candidate, 'duplicate');
+      continue;
+    }
+    if (avoidedFiles.has(candidate.file)) {
+      skip(candidate, 'sigma_feedback_avoided');
+      continue;
+    }
+    if (isProtectedTarget(candidate.file)) {
+      skip(candidate, 'protected_target');
+      continue;
+    }
+    if (!allowNonProductionCandidates && isNonProductionRefactorCandidate(candidate.file)) {
+      skip(candidate, 'non_production_candidate');
+      continue;
+    }
+    if (validateCurrentState) {
+      const state = candidateCurrentRefactorState(candidate, requestedType);
+      if (!state.matches) {
+        skip(candidate, state.reason || 'current_state_mismatch');
+        continue;
+      }
+    }
     selected.push(candidate);
     if (selected.length >= maxFiles) break;
   }
-  return selected;
+  const skippedByReason = skipped.reduce((acc, item) => {
+    acc[item.reason] = Number(acc[item.reason] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    selected,
+    skipped,
+    diagnostics: {
+      total: ordered.length,
+      selected: selected.length,
+      skipped: skipped.length,
+      skippedByReason,
+      staleSkipped: Number(skippedByReason.current_state_mismatch || 0),
+    },
+  };
+}
+
+function selectActiveCandidates(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set(), options = {}) {
+  return selectActiveCandidatesDetailed(analysis, requestedType, maxFiles, avoidedFiles, options).selected;
 }
 
 function deriveAvoidedFilesFromFeedback(feedback, threshold = 2) {
@@ -1561,6 +1652,43 @@ function activeCommitStepStatus(active) {
   return active?.ok ? 'ready_for_review_apply_disabled' : 'not_ready';
 }
 
+function activeOperationalStatus(active, options = {}) {
+  const applyResults = Array.isArray(active?.applyResults) ? active.applyResults : [];
+  const appliedResults = applyResults.filter((item) => item?.applied === true);
+  const commits = appliedResults.map((item) => item.commit).filter(Boolean);
+  const pushedCommits = appliedResults.filter((item) => item.pushed === true).map((item) => item.commit).filter(Boolean);
+  const originVerifiedCommits = appliedResults
+    .filter((item) => item.originContains === true)
+    .map((item) => item.commit)
+    .filter(Boolean);
+  const pushRequired = options.pushRequired !== false;
+  const applied = appliedResults.length > 0;
+  const pushedOk = !pushRequired || appliedResults.every((item) => item.pushed === true);
+  const originOk = !pushRequired || appliedResults.every((item) => item.originContains === true);
+  const success = Boolean(applied && pushedOk && originOk);
+  const hasReady = Array.isArray(active?.results) && active.results.some(isReadyResult);
+  const hasApplyFailure = applyResults.some((item) => item?.applied === false);
+  const outcomeClass = success
+    ? 'operational_success'
+    : hasApplyFailure
+      ? 'apply_failed'
+      : hasReady
+        ? 'verified_not_applied'
+        : 'deferred';
+  return {
+    success,
+    outcomeClass,
+    applied,
+    pushRequired,
+    commitCount: commits.length,
+    pushedCount: pushedCommits.length,
+    originVerifiedCount: originVerifiedCommits.length,
+    commits,
+    pushedCommits,
+    originVerifiedCommits,
+  };
+}
+
 function resolveVerifierModules(context) {
   return {
     builder: context.builderModule || require('../src/builder'),
@@ -1651,6 +1779,10 @@ function formatErrorSummary({ stage, candidate, verify, error }) {
 function buildActiveDocumentContent(context, analysis, active) {
   const summary = analysis?.summary || {};
   const feedback = active.vaultFeedback || {};
+  const operational = active.operational || activeOperationalStatus(active, {
+    pushRequired: Boolean(context.applyPushEnabled),
+  });
+  const candidateDiagnostics = active.candidateDiagnostics || {};
   const successful = active.results.filter(isReadyResult);
   const autofixed = active.results.filter((item) => item.stage === 'active_autofixed_ready_for_commit');
   const unfixable = active.results.filter((item) => item.stage === 'active_deferred_unfixable');
@@ -1683,6 +1815,11 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- total_ts_files: ${summary.totalTsFiles ?? 'unknown'}`,
     `- ts_nocheck_count: ${summary.tsNocheckCount ?? 'unknown'}`,
     `- ts_nocheck_ratio: ${summary.tsNocheckRatio ?? 'unknown'}`,
+    `- candidate_total: ${candidateDiagnostics.total ?? 'unknown'}`,
+    `- candidate_selected: ${candidateDiagnostics.selected ?? 'unknown'}`,
+    `- candidate_skipped: ${candidateDiagnostics.skipped ?? 'unknown'}`,
+    `- stale_candidate_skipped: ${candidateDiagnostics.staleSkipped ?? 0}`,
+    `- candidate_skip_reasons: ${JSON.stringify(candidateDiagnostics.skippedByReason || {})}`,
     '',
     '## Sigma Feedback',
     `- status: ${feedback.ok ? 'ready' : feedback.skipped ? 'skipped' : 'unavailable'}`,
@@ -1701,6 +1838,10 @@ function buildActiveDocumentContent(context, analysis, active) {
     `- changed_files: ${changedFiles.length ? changedFiles.join(', ') : 'none'}`,
     `- applied: ${active.applied === true}`,
     `- apply_commits: ${(active.applyResults || []).filter((item) => item.applied).map((item) => item.commit).filter(Boolean).join(', ') || 'none'}`,
+    `- operational_success: ${operational.success === true}`,
+    `- outcome_class: ${operational.outcomeClass || 'unknown'}`,
+    `- pushed_commits: ${(operational.pushedCommits || []).join(', ') || 'none'}`,
+    `- origin_verified_commits: ${(operational.originVerifiedCommits || []).join(', ') || 'none'}`,
     `- patch_path: ${active.patchRelPath || 'none'}`,
     `- worktree_restored: ${active.worktreeRestored === true}`,
     `- final_git_status: ${active.finalGitStatus || 'unknown'}`,
@@ -1728,6 +1869,10 @@ function buildActiveDocumentContent(context, analysis, active) {
       `- reviewer_skipped: ${item.verify?.reviewerSkipped ?? false}`,
       `- autofix_attempts: ${item.autofixAttempts || 0}`,
       item.model ? `- autofix_model: ${item.model}` : null,
+      item.applied !== undefined ? `- applied: ${item.applied === true}` : null,
+      item.commit ? `- commit: ${item.commit}` : null,
+      item.pushed !== undefined ? `- pushed: ${item.pushed === true}` : null,
+      item.originContains !== undefined && item.originContains !== null ? `- origin_contains: ${item.originContains === true}` : null,
       item.errorSummary ? `- error_summary: ${item.errorSummary}` : null,
       '',
     ].filter(Boolean).join('\n')),
@@ -1961,7 +2106,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
   };
 }
 
-async function runActiveRefactor(context, analysis, candidates) {
+async function runActiveRefactor(context, analysis, candidates, candidateDiagnostics = null) {
   const targetFiles = candidates.map(candidateAbsolutePath).filter(Boolean);
   const snapshots = snapshotFiles(targetFiles);
   const results = [];
@@ -2179,6 +2324,9 @@ async function runActiveRefactor(context, analysis, candidates) {
     const allReadyAutofixed = readyResults.length > 0
       && readyResults.every((item) => item.stage === 'active_autofixed_ready_for_commit');
     const totalFixAttempts = results.reduce((sum, item) => sum + Number(item.autofixAttempts || 0), 0);
+    const operational = activeOperationalStatus({ results, applyResults }, {
+      pushRequired: Boolean(context.applyPushEnabled),
+    });
     return {
       ok: hasReady,
       stage: hasReady
@@ -2190,6 +2338,8 @@ async function runActiveRefactor(context, analysis, candidates) {
       results,
       applied,
       applyResults,
+      operational,
+      candidateDiagnostics,
       totalFixAttempts,
       autofixedCount: results.filter((item) => item.stage === 'active_autofixed_ready_for_commit').length,
       strictAutofixedCount: results.filter((item) => item.strictAutofixed === true).length,
@@ -2212,6 +2362,9 @@ async function recordRefactorOutcome(context, result) {
     ? result.plan.candidates.map((candidate) => candidate?.file).filter(Boolean)
     : [result.plan?.candidate?.file].filter(Boolean);
   const verifyResults = Array.isArray(active?.results) ? active.results : [];
+  const operational = isActive
+    ? activeOperationalStatus(active, { pushRequired: Boolean(context.applyPushEnabled) })
+    : null;
   const firstErrorSummary = verifyResults.find((item) => item.errorSummary)?.errorSummary || null;
   const testPass = isActive
     ? verifyResults.some(isReadyResult)
@@ -2248,7 +2401,9 @@ async function recordRefactorOutcome(context, result) {
     source: 'claude-refactorer',
     candidateFiles,
     changedFiles,
+    candidateDiagnostics: active?.candidateDiagnostics || result.plan?.candidateDiagnostics || null,
     errorSummary: firstErrorSummary,
+    operational,
     autofix: autofixMeta,
     apply: isActive ? {
       enabled: Boolean(context.applyEnabled),
@@ -2275,8 +2430,10 @@ async function recordRefactorOutcome(context, result) {
       stage,
       candidateFiles,
       changedFiles,
+      candidateDiagnostics: active?.candidateDiagnostics || null,
       builderPass: verifyResults.length ? verifyResults.every((item) => item.verify?.builderPass !== false) : null,
       reviewerFindings: verifyResults.reduce((sum, item) => sum + Number(item.verify?.reviewerHigh || 0), 0),
+      operational,
       apply: isActive ? {
         enabled: Boolean(context.applyEnabled),
         applied: Boolean(active?.applied),
@@ -2458,10 +2615,11 @@ async function runRefactorCycle(options = {}) {
       });
       context.vaultFeedback = vaultFeedback;
       const avoidedFiles = deriveAvoidedFilesFromFeedback(vaultFeedback, context.avoidThreshold);
-      const candidates = selectActiveCandidates(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles, {
+      const candidateSelection = selectActiveCandidatesDetailed(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles, {
         allowNonProductionCandidates: context.allowNonProductionCandidatesForTest || context.allowDirtyWorktreeForTest,
         validateCurrentState: true,
       });
+      const candidates = candidateSelection.selected;
       if (candidates.length === 0) {
         const result = {
           ok: false,
@@ -2478,6 +2636,7 @@ async function runRefactorCycle(options = {}) {
             wrote: false,
             candidate: null,
             candidates: [],
+            candidateDiagnostics: candidateSelection.diagnostics,
             vaultFeedback,
           },
           steps: [
@@ -2512,7 +2671,7 @@ async function runRefactorCycle(options = {}) {
         }
       }
 
-      const active = await runActiveRefactor(context, analysis, candidates);
+      const active = await runActiveRefactor(context, analysis, candidates, candidateSelection.diagnostics);
       active.vaultFeedback = vaultFeedback;
       active.finalGitStatus = context.gitStatusShortFn();
       active.finalScopedStatus = context.gitStatusScopedFn(context.refactorScopePrefixes || []);
@@ -2538,6 +2697,7 @@ async function runRefactorCycle(options = {}) {
           wrote: Boolean(artifacts.wrote),
           candidate: candidates[0],
           candidates,
+          candidateDiagnostics: candidateSelection.diagnostics,
           vaultFeedback,
         },
         steps: [
@@ -2669,6 +2829,7 @@ module.exports = {
   runRefactorCycle,
   selectCandidate,
   selectActiveCandidates,
+  selectActiveCandidatesDetailed,
   fetchRefactorVaultFeedback,
   cleanupUnexpectedUntracked,
   captureStrictBaseline,
