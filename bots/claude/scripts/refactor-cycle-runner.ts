@@ -513,6 +513,18 @@ function ts7006ImplicitAnyParameters(errorText) {
   return params;
 }
 
+function ts7031BindingElements(errorText) {
+  const params = new Set();
+  const text = String(errorText || '');
+  const pattern = /TS7031:[^\n]*Binding element\s+'([^']+)'\s+implicitly has an 'any' type/gi;
+  let match = pattern.exec(text);
+  while (match) {
+    if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(match[1])) params.add(match[1]);
+    match = pattern.exec(text);
+  }
+  return params;
+}
+
 function normalizeFunctionParamName(param) {
   const cleaned = String(param || '')
     .trim()
@@ -590,7 +602,9 @@ function implicitAnyDefaultForParam(param) {
   if (/^(items|entries|jobs|missing|active|historical)$/i.test(name)) return '[]';
   if (/^selector$/i.test(name)) return 'JSON.stringify';
   if (/^db$/i.test(name)) return "{ exec: console.log, prepare: (sql = '') => ({ run: console.log }) }";
+  if (/^data$/i.test(name)) return '{ bugs: [] }';
   if (/^(root|relPath|file|fileRel|path|id|state|stage|status|reason)$/i.test(name)) return "''";
+  if (/^filePath$/i.test(name)) return "''";
   return null;
 }
 
@@ -629,6 +643,42 @@ function addNodeExecutableImplicitAnyDefaults(currentContent, builderError = '')
     ok: true,
     fixedContent,
     model: 'local-implicit-any-defaults-ts7006',
+    provider: 'local',
+  };
+}
+
+function addNodeExecutableDestructuredParamDefaults(currentContent, builderError = '') {
+  const bindingElements = ts7031BindingElements(builderError);
+  if (bindingElements.size === 0) return { ok: false, fixedContent: null, error: 'no_ts7031_binding_elements' };
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  let fixedContent = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line))
+    .join('\n');
+  let changed = hadTsNocheck;
+  fixedContent = fixedContent.replace(
+    /(\b(?:async\s+)?function\s+[A-Za-z_$][A-Za-z0-9_$]*\s*)\(\s*\{([^}]*)\}\s*(=\s*\{\s*\})?\s*\)/g,
+    (_match, prefix, rawFields, existingDefault) => {
+      const fields = String(rawFields || '').split(',').map((field) => {
+        const trimmed = field.trim();
+        if (!trimmed) return trimmed;
+        const name = normalizeFunctionParamName(trimmed);
+        if (!name || !bindingElements.has(name) || /=/.test(trimmed)) return trimmed;
+        changed = true;
+        return `${name} = ''`;
+      });
+      if (!existingDefault) changed = true;
+      return `${prefix}({ ${fields.join(', ')} } = {})`;
+    }
+  );
+  if (!changed || fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_destructured_default_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-destructured-defaults-ts7031',
     provider: 'local',
   };
 }
@@ -834,6 +884,40 @@ function addNodeExecutableFilterLoopRewrite(currentContent, builderError = '') {
   };
 }
 
+function addNodeExecutableArrowParamDefaults(currentContent, builderError = '') {
+  const implicitAnyParams = ts7006ImplicitAnyParameters(builderError);
+  if (implicitAnyParams.size === 0) return { ok: false, fixedContent: null, error: 'no_ts7006_parameters' };
+
+  const defaults = {
+    b: "{ id: '', title: '', status: '' }",
+    bug: "{ id: '', title: '', status: '' }",
+    entry: "{ id: '', title: '', status: '', relPath: '', state: '', reason: '' }",
+    job: "{ id: '', relPath: '', status: '', stage: '', updatedAt: '', error: '', lastError: '' }",
+  };
+  let fixedContent = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line))
+    .join('\n');
+  let changed = /@ts-nocheck/.test(String(currentContent || ''));
+  for (const [param, defaultValue] of Object.entries(defaults)) {
+    if (!implicitAnyParams.has(param)) continue;
+    const pattern = new RegExp(`(?<![A-Za-z0-9_$])${param}\\s*=>`, 'g');
+    fixedContent = fixedContent.replace(pattern, () => {
+      changed = true;
+      return `(${param} = ${defaultValue}) =>`;
+    });
+  }
+  if (!changed || fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_arrow_default_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-arrow-defaults-ts7006',
+    provider: 'local',
+  };
+}
+
 function hasTs7053IndexError(errorText) {
   return /TS7053:[^\n]*Element implicitly has an 'any' type/i.test(String(errorText || ''));
 }
@@ -927,6 +1011,11 @@ function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
     fixedContent = jsdocFix.fixedContent;
     models.push(jsdocFix.model);
   }
+  const destructuredDefaultsFix = addNodeExecutableDestructuredParamDefaults(fixedContent, builderError);
+  if (destructuredDefaultsFix.ok === true) {
+    fixedContent = destructuredDefaultsFix.fixedContent;
+    models.push(destructuredDefaultsFix.model);
+  }
   const unknownGuardFix = addNodeExecutableUnknownGuard(fixedContent, builderError);
   if (unknownGuardFix.ok === true) {
     fixedContent = unknownGuardFix.fixedContent;
@@ -946,6 +1035,11 @@ function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   if (filterLoopFix.ok === true) {
     fixedContent = filterLoopFix.fixedContent;
     models.push(filterLoopFix.model);
+  }
+  const arrowDefaultsFix = addNodeExecutableArrowParamDefaults(fixedContent, builderError);
+  if (arrowDefaultsFix.ok === true) {
+    fixedContent = arrowDefaultsFix.fixedContent;
+    models.push(arrowDefaultsFix.model);
   }
   const recordIndexFix = addNodeExecutableRecordIndexJsdoc(fixedContent, builderError);
   if (recordIndexFix.ok === true) {
