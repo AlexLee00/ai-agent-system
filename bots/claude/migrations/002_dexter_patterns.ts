@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -12,6 +11,9 @@
 exports.version = 3;
 exports.name    = 'dexter_patterns';
 
+/**
+ * @param {any} db
+ */
 exports.up = function(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS dexter_error_log (
