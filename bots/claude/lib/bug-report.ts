@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 /**
@@ -17,12 +16,19 @@ const runtimePaths = require('./runtime-paths.js');
 const TRACKER_PATH = runtimePaths.workspacePath('bug-tracker.json');
 const DEXTER_LOG   = path.join(os.homedir(), 'projects', 'ai-agent-system', 'bots', 'claude', 'dexter-issues.json');
 
-function loadTracker(filePath) {
+/**
+ * @param {any} filePath
+ */
+function loadTracker(filePath = '') {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); }
   catch { return { bugs: [] }; }
 }
 
-function saveTracker(filePath, data) {
+/**
+ * @param {any} filePath
+ * @param {any} data
+ */
+function saveTracker(filePath = '', data = { bugs: [] }) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
@@ -35,7 +41,7 @@ function generateId(prefix = 'DXT') {
  * @param {{ title: string, detail: string, source: string, severity: 'high'|'medium'|'low' }} opts
  * @returns {Promise<string>} 생성된 버그 ID
  */
-async function register({ title, detail, source = 'dexter', severity = 'medium' }) {
+async function register({ title = '', detail = '', source = 'dexter', severity = 'medium' } = {}) {
   const id        = generateId();
   const timestamp = new Date().toISOString();
 
@@ -55,7 +61,7 @@ async function register({ title, detail, source = 'dexter', severity = 'medium' 
   if (!dexterLog.bugs) dexterLog.bugs = [];
 
   // 중복 체크 (같은 제목의 open 버그가 있으면 스킵)
-  const dup = dexterLog.bugs.find(b => b.title === title && b.status === 'open');
+  const dup = dexterLog.bugs.find((b = { id: '', title: '', status: '' }) => b.title === title && b.status === 'open');
   if (dup) return dup.id;
 
   dexterLog.bugs.push(entry);
@@ -65,7 +71,7 @@ async function register({ title, detail, source = 'dexter', severity = 'medium' 
   if (fs.existsSync(TRACKER_PATH)) {
     const tracker = loadTracker(TRACKER_PATH);
     if (!tracker.bugs) tracker.bugs = [];
-    const dupGlobal = tracker.bugs.find(b => b.title === title && b.status !== 'resolved');
+    const dupGlobal = tracker.bugs.find((b = { id: '', title: '', status: '' }) => b.title === title && b.status !== 'resolved');
     if (!dupGlobal) {
       tracker.bugs.push({ ...entry, tags: ['dexter', 'auto-detected'] });
       saveTracker(TRACKER_PATH, tracker);
@@ -80,15 +86,15 @@ async function register({ title, detail, source = 'dexter', severity = 'medium' 
  */
 function listOpen() {
   const data = loadTracker(DEXTER_LOG);
-  return (data.bugs || []).filter(b => b.status === 'open');
+  return (data.bugs || []).filter((b = { id: '', title: '', status: '' }) => b.status === 'open');
 }
 
 /**
  * 이슈 해결 처리
  */
-function resolve(id) {
+function resolve(id = '') {
   const data = loadTracker(DEXTER_LOG);
-  const bug  = data.bugs?.find(b => b.id === id);
+  const bug  = data.bugs?.find((b = { id: '', title: '', status: '' }) => b.id === id);
   if (bug) {
     bug.status    = 'resolved';
     bug.updatedAt = new Date().toISOString();
