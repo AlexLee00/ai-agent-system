@@ -18,7 +18,7 @@ const { delay, log } = require('../../lib/utils');
 const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
 const { parseArgs } = require('../../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
-const { loginToPickko } = require('../../lib/pickko');
+const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const {
   acquirePickkoLock,
@@ -203,6 +203,7 @@ const pickkoMemberSelectionService = createPickkoMemberSelectionService({
   sendErrorNotification,
   buildStageError,
   registerNewMember,
+  findExistingMember: (page, phone) => findPickkoMember(page, phone, delay, { select: true }),
 });
 const pickkoRoomSlotService = createPickkoRoomSlotService({
   delay,

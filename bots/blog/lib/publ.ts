@@ -335,11 +335,48 @@ function normalizeOfficialToolAccessText(content) {
     );
 }
 
+function normalizeAgentIntroToolIdentityText(content, title) {
+  const titleText = String(title || content || '').trim();
+  const isAgentIntro = /에이전트\s*입문|실전\s*AI\s*구현|ChatGPT\s*Codex|Claude\s*Code|Codex/i.test(titleText);
+  if (!isAgentIntro) return String(content || '');
+
+  let next = String(content || '')
+    .replace(/Codex는\s*(?:<strong>)?Claude\s*Code\(클로드\s*코드\)(?:<\/strong>)?입니다\.?/gi, 'Codex는 OpenAI/ChatGPT 쪽 코딩 도구이고, Claude Code는 Anthropic/Claude 쪽 코딩 도구입니다.')
+    .replace(/이\s*강의에서\s*말하는\s*Codex는\s*(?:<strong>)?Claude\s*Code\(클로드\s*코드\)(?:<\/strong>)?입니다\.?/gi, '이 강의에서 말하는 Codex는 OpenAI/ChatGPT 쪽 코딩 도구입니다. Claude Code는 Anthropic/Claude 쪽 코딩 도구로, 지난 강의에서 비교 대상으로 다뤘습니다.')
+    .replace(/이번\s*글에서는\s*Codex를\s*(?:<strong>)?Claude\s*Code\s*설치\s*흐름(?:<\/strong>)?으로\s*이해하시면\s*됩니다\.?/gi, '이번 글에서는 Codex를 OpenAI/ChatGPT 쪽 코딩 도구 설치 흐름으로 이해하시면 됩니다.')
+    .replace(/팀\s*내에서도\s*이\s*도구를\s*['‘]코덱스['’]라고\s*줄여\s*부르다\s*보니,\s*강의\s*제목도\s*그대로\s*Codex로\s*표기했습니다\.?/gi, '이 글에서는 제품명을 정확히 구분하겠습니다. Codex는 OpenAI 쪽 도구이고, Claude Code는 Anthropic 쪽 도구입니다.')
+    .replace(/Anthropic\(앤스로픽,\s*Claude를\s*만드는\s*회사\)이\s*개발한\s*AI\s*코딩\s*도우미로,/gi, 'OpenAI가 제공하는 ChatGPT 계열의 AI 코딩 도우미로,')
+    .replace(/Codex\s*설치\s*따라하기와\s*Claude\s*Code\s*설치\s*따라하기는\s*같은\s*뜻으로\s*봐도\s*되나요\?/gi, 'Codex 설치 따라하기와 Claude Code 설치 따라하기는 같은 뜻인가요?')
+    .replace(/네,\s*이\s*글에서는\s*Codex를\s*Claude\s*Code\s*설치\s*흐름으로\s*이해하시면\s*됩니다\.?/gi, '아니요. Codex는 OpenAI/ChatGPT 쪽 도구이고, Claude Code는 Anthropic/Claude 쪽 도구입니다. 이번 글은 Codex 설치 흐름만 다룹니다.')
+    .replace(/이\s*글의\s*실제\s*설치\s*명령은\s*`?@anthropic-ai\/claude-code`?\s*기준으로\s*보시면\s*됩니다\.?/gi, '이 글의 실제 설치/실행 확인은 Codex 기준으로 보시면 됩니다.');
+
+  if (/Codex\s*설치|코덱스\s*설치/i.test(titleText)) {
+    next = next
+      .replace(/Claude\s*Code를\s*설치하려면/gi, 'Codex를 사용하려면')
+      .replace(/Anthropic\s*계정\s*로그인\s*준비/gi, 'OpenAI 또는 ChatGPT 계정 로그인 준비')
+      .replace(/Anthropic\s*관련\s*계정/gi, 'OpenAI 또는 ChatGPT 계정')
+      .replace(/Claude\s*Code\s*안에서/gi, 'Codex 대화창 또는 Codex 실행 환경에서')
+      .replace(/Claude\s*Code\s*대화창에\s*붙여넣기/gi, 'Codex 대화창에 붙여넣기')
+      .replace(/Claude\s*Code가\s*인식되는지/gi, 'Codex가 인식되는지')
+      .replace(/Claude\s*Code\s*버전/gi, 'Codex 버전')
+      .replace(/Claude\s*Code\s*같은\s*도구/gi, 'Codex 같은 도구')
+      .replace(/Node\.js\(노드제이에스,\s*컴퓨터에서\s*자바스크립트\s*코드를\s*실행할\s*수\s*있게\s*해주는\s*환경\)가\s*설치되어\s*있어야\s*합니다\.?/gi, 'Codex를 ChatGPT 안에서만 써 볼 경우에는 별도 설치가 필요 없을 수 있고, CLI 또는 npm 기반 설치 경로를 선택할 때만 Node.js(노드제이에스, 컴퓨터에서 자바스크립트 코드를 실행할 수 있게 해주는 환경)가 필요할 수 있습니다.')
+      .replace(/설치\s*명령을\s*실행하려면\s*Node\.js와\s*npm\(엔피엠,\s*Node\.js와\s*함께\s*쓰는\s*설치\s*도구\)이\s*먼저\s*있어야\s*합니다\.?/gi, 'CLI 또는 npm 설치 경로를 선택했다면 Node.js와 npm(엔피엠, Node.js와 함께 쓰는 설치 도구)이 필요할 수 있습니다.')
+      .replace(/@anthropic-ai\/claude-code/g, 'Codex 공식 설치 안내')
+      .replace(/\bclaude\s+--version\b/g, 'codex --version')
+      .replace(/\bclaude\s+--help\b/g, 'codex --help')
+      .replace(/\bclaude\b/g, 'codex');
+  }
+
+  return next;
+}
+
 function normalizeBeginnerLectureContent(content, title) {
   let next = normalizeOfficialToolAccessText(content);
   const titleText = String(title || next).trim();
-  const isAiImplementationLecture = /실전\s*AI\s*구현|ChatGPT\s*Codex|Claude\s*Code/i.test(titleText);
+  const isAiImplementationLecture = /에이전트\s*입문|실전\s*AI\s*구현|ChatGPT\s*Codex|Claude\s*Code|Codex/i.test(titleText);
   if (!isAiImplementationLecture) return next;
+  next = normalizeAgentIntroToolIdentityText(next, titleText);
 
   const beginnerPrep = [
     '[최신 기술 브리핑] 실습 전 준비',
@@ -370,6 +407,7 @@ function normalizeBeginnerLectureContent(content, title) {
   }
 
   return next
+    .replace(/\[Codex와 Claude Code 제품 구분\]/g, '[강의 - 이론] Codex와 Claude Code 제품 구분')
     .replace(/\[두 도구를 아주 쉬운 비유로 이해하기\]/g, '[강의 - 이론] 두 도구를 아주 쉬운 비유로 이해하기')
     .replace(/\[(그대로 복사해서 넣어볼 첫 프롬프트|결과를 확인하는 방법|오늘 바로 해볼 10분 연습)\]/g, '[실무 - 코드] $1')
     .replace(/\[질문형 Q&A\]/g, '[AEO FAQ] 질문형 Q&A')
@@ -380,6 +418,7 @@ function normalizeBeginnerLectureContent(content, title) {
 function normalizePostContentForPublish(content, postType, title) {
   let next = trimTerminalOverflowContent(content);
   next = normalizeOfficialToolAccessText(next);
+  next = normalizeAgentIntroToolIdentityText(next, title);
   if (postType === 'lecture') {
     next = normalizeBeginnerLectureContent(next, title);
   }
@@ -1087,4 +1126,8 @@ module.exports = {
   normalizeTitleKey,
   trimTerminalOverflowContent,
   replaceInternalLinkPlaceholders,
+  _testOnly: {
+    normalizePostContentForPublish,
+    normalizeAgentIntroToolIdentityText,
+  },
 };

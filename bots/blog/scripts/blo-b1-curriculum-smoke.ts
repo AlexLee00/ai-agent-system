@@ -16,6 +16,7 @@ const {
 } = require(path.join(BLOG_ROOT, 'lib/agent-intro-curriculum.ts'));
 const { isBlogMarketingEnabled } = require(path.join(BLOG_ROOT, 'lib/marketing-enabled.ts'));
 const { _testOnly: posWriterTestOnly } = require(path.join(BLOG_ROOT, 'lib/pos-writer.ts'));
+const { _testOnly: publTestOnly } = require(path.join(BLOG_ROOT, 'lib/publ.ts'));
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -177,11 +178,26 @@ async function runTsB2() {
   assert(!/\bnode(?:\.js|js)?\b/i.test(agentPatternBlock), '에이전트 입문 인기 패턴 쿼리에 Node 하드코딩 존재');
   assert(collectorSource.includes('fetchNodejsUpdates()'), '일반 포스팅 research collector의 기존 Node 업데이트 경로가 제거됨');
 
+  const normalizedCodexLesson = publTestOnly.normalizePostContentForPublish([
+    '[강의 - 이론]',
+    '이 강의에서 말하는 Codex는 Claude Code(클로드 코드)입니다.',
+    'Anthropic(앤스로픽, Claude를 만드는 회사)이 개발한 AI 코딩 도우미로,',
+    '이번 글에서는 Codex를 Claude Code 설치 흐름으로 이해하시면 됩니다.',
+    '이 글의 실제 설치 명령은 @anthropic-ai/claude-code 기준으로 보시면 됩니다.',
+    'claude --version',
+  ].join('\n'), 'lecture', '[에이전트 입문 6강] Codex 설치 따라하기');
+
+  assert(normalizedCodexLesson.includes('Codex는 OpenAI/ChatGPT 쪽 코딩 도구'), 'Codex 도구 소유자 정규화 실패');
+  assert(normalizedCodexLesson.includes('Claude Code는 Anthropic/Claude 쪽 코딩 도구'), 'Claude Code 도구 소유자 정규화 실패');
+  assert(!/Codex는\s*Claude\s*Code/i.test(normalizedCodexLesson), 'Codex=Claude Code 오분류 잔존');
+  assert(!normalizedCodexLesson.includes('@anthropic-ai/claude-code'), 'Codex 강의에 Claude Code 설치 패키지 잔존');
+
   return {
     keywords,
     nodeHardcodingInAgentIntroKeywords: /\bnode(?:\.js|js)?\b/i.test(keywordText),
     nodeHardcodingInAgentIntroPatternQuery: /\bnode(?:\.js|js)?\b/i.test(agentPatternBlock),
     generalCollectorUnchanged: collectorSource.includes('fetchNodejsUpdates()'),
+    codexIdentityNormalized: true,
   };
 }
 

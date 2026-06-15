@@ -32,6 +32,12 @@ type PickkoMemberLookupResult = {
   found: boolean;
   mbNo: string | null;
   name: string | null;
+  selected?: boolean;
+  selectedPhone?: string | null;
+};
+
+type PickkoMemberLookupOptions = {
+  select?: boolean;
 };
 
 async function loginToPickko(page: any, id: string, pw: string, delayFn?: (ms: number) => Promise<unknown>) {
@@ -349,6 +355,7 @@ async function findPickkoMember(
   page: any,
   phone: string,
   d?: (ms: number) => Promise<unknown>,
+  options: PickkoMemberLookupOptions = {},
 ): Promise<PickkoMemberLookupResult> {
   const wait = d || delay;
 
@@ -400,7 +407,7 @@ async function findPickkoMember(
 
   // 모달에서 mb_no, mb_name 추출
   // a.mb_select의 부모 li[mb_no]에 속성으로 저장됨
-  const result: PickkoMemberLookupResult = await page.evaluate(() => {
+  const result: PickkoMemberLookupResult = await page.evaluate((shouldSelect: boolean) => {
     const selectEl = document.querySelector('a.mb_select');
     if (!selectEl) return { found: false, mbNo: null, name: null };
 
@@ -415,12 +422,35 @@ async function findPickkoMember(
       if (m) mbNo = m[1];
     }
 
-    return { found: true, mbNo, name };
-  });
+    if (shouldSelect) {
+      (selectEl as HTMLElement).click();
+    }
 
-  // 모달 닫기
-  try { await page.keyboard.press('Escape'); } catch (_e: unknown) {}
-  await wait(300);
+    return { found: true, mbNo, name, selected: shouldSelect };
+  }, Boolean(options.select));
+
+  if (options.select && result.found) {
+    await wait(1500);
+    const selectedInfo = await page.evaluate(() => {
+      const mbInfo = document.querySelector('span#mb_info');
+      if (!mbInfo) return null;
+      const text = (mbInfo.textContent || '').trim();
+      const match = text.match(/(.+?)\((.+?)\)/);
+      if (!match) return null;
+      return {
+        name: match[1].trim(),
+        phone: match[2].trim().replace(/-/g, ''),
+      };
+    });
+    if (selectedInfo) {
+      result.name = selectedInfo.name || result.name;
+      result.selectedPhone = selectedInfo.phone || null;
+    }
+  } else {
+    // 모달 닫기
+    try { await page.keyboard.press('Escape'); } catch (_e: unknown) {}
+    await wait(300);
+  }
 
   return result;
 }

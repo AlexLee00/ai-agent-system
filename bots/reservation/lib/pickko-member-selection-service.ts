@@ -6,6 +6,10 @@ type PickkoMemberSelectionDeps = {
   sendErrorNotification: (message: string, context?: Record<string, unknown>) => Promise<unknown>;
   buildStageError: (code: string, message: string) => Error;
   registerNewMember: (page: any, phone: string, customerName: string, reservationDate: string) => Promise<unknown>;
+  findExistingMember?: (
+    page: any,
+    phone: string,
+  ) => Promise<{ found: boolean; mbNo?: string | null; name?: string | null; selectedPhone?: string | null }>;
 };
 
 export function createPickkoMemberSelectionService({
@@ -16,6 +20,7 @@ export function createPickkoMemberSelectionService({
   sendErrorNotification,
   buildStageError,
   registerNewMember,
+  findExistingMember,
 }: PickkoMemberSelectionDeps) {
   function formatPhoneForComparison(phone: string) {
     if (!phone || phone.length !== 11) return phone;
@@ -95,6 +100,35 @@ export function createPickkoMemberSelectionService({
     }
 
     if (!hasMember && retryCount === 0) {
+      if (findExistingMember) {
+        log(`⚠️ 회원 선택 모달 검색 실패(${phoneNoHyphen}) → 기존 회원 직접 조회/선택 fallback`);
+        try {
+          const existingMember = await findExistingMember(page, phoneNoHyphen);
+          if (existingMember?.found) {
+            const selectedPhone = String(existingMember.selectedPhone || '').replace(/-/g, '');
+            if (!selectedPhone) {
+              throw buildStageError(
+                'MEMBER_FALLBACK_SELECTION_UNVERIFIED',
+                `기존 회원 fallback 선택 검증 실패: 선택된 회원정보 없음 (${phoneNoHyphen})`,
+              );
+            }
+            if (selectedPhone !== phoneNoHyphen) {
+              const failMsg = `❌ 기존 회원 fallback 전화번호 불일치 (${phoneNoHyphen} != ${selectedPhone})`;
+              log(failMsg);
+              throw buildStageError('MEMBER_FALLBACK_PHONE_MISMATCH', failMsg);
+            }
+            log(`✅ 기존 회원 fallback 선택 완료: ${maskName(existingMember.name || customerName)}(${maskPhone(selectedPhone)})`);
+            return { name: existingMember.name || customerName, phone: selectedPhone };
+          }
+        } catch (error) {
+          if (error instanceof Error && (error as { stageCode?: string }).stageCode === 'MEMBER_FALLBACK_PHONE_MISMATCH') {
+            throw error;
+          }
+          const message = error instanceof Error ? error.message : String(error);
+          log(`⚠️ 기존 회원 fallback 실패: ${message}`);
+        }
+      }
+
       log(`⚠️ 픽코 미등록 고객(${phoneNoHyphen}) → 신규 회원 자동 등록 시작`);
       await page.keyboard.press('Escape');
       await delay(500);

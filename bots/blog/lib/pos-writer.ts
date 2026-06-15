@@ -161,6 +161,38 @@ function _isAiImplementationLecture(researchData = {}, lectureTitle = '') {
   return isAgentIntroLecture(`${displayName} ${seriesName}`, lectureTitle);
 }
 
+function _buildAgentIntroToolFactRules(lectureNumber, lectureTitle) {
+  const title = String(lectureTitle || '').trim();
+  const number = Number(lectureNumber || 0);
+  const isCodexInstall = number === 6 || /Codex\s*설치|코덱스\s*설치/i.test(title);
+  const isClaudeInstall = number === 5 || /Claude\s*Code\s*설치|클로드\s*코드\s*설치/i.test(title);
+
+  const lines = [
+    '[에이전트 입문 도구 사실 고정 규칙 — 반드시 우선 적용]',
+    '- Codex는 OpenAI/ChatGPT 쪽 코딩 도구다.',
+    '- Claude Code는 Anthropic/Claude 쪽 코딩 도구다.',
+    '- Codex를 Claude Code라고 쓰거나, Claude Code를 Codex라고 쓰지 말라.',
+    '- Codex를 Anthropic 도구라고 설명하지 말고, Claude Code를 OpenAI 도구라고 설명하지 말라.',
+  ];
+
+  if (isCodexInstall) {
+    lines.push(
+      '- 이번 강의의 설치 대상은 Codex다. Claude Code는 지난 5강 비교 대상으로만 언급하라.',
+      '- 설치/실행 예시는 Codex 기준으로 작성하고, @anthropic-ai/claude-code, claude --version, claude --help 명령을 Codex 설치 절차로 제시하지 말라.',
+      '- 계정/인증 설명은 OpenAI 또는 ChatGPT 계정 기준으로 작성하라. Anthropic 계정 준비를 Codex 설치 조건으로 쓰지 말라.',
+      '- Node.js/npm을 Codex의 무조건 필수 준비물처럼 단정하지 말라. CLI/npm 경로를 선택한 경우에만 필요할 수 있다고 설명하라.',
+    );
+  } else if (isClaudeInstall) {
+    lines.push(
+      '- 이번 강의의 설치 대상은 Claude Code다. Codex는 OpenAI 쪽 비교 대상으로만 언급하라.',
+      '- 설치/실행 예시는 Claude Code 기준으로 작성하고, Codex 명령을 Claude Code 설치 절차로 제시하지 말라.',
+      '- 계정/인증 설명은 Claude 또는 Anthropic 계정/사용 환경 기준으로 작성하라.',
+    );
+  }
+
+  return lines.join('\n');
+}
+
 function _buildLectureGeoRules(researchData = {}, lectureTitle = '') {
   if (!_isAiImplementationLecture(researchData, lectureTitle)) return GEO_RULES;
 
@@ -175,11 +207,12 @@ AI 검색엔진(네이버 AI, ChatGPT 등)이 이 글을 쉬운 입문 자료로
 `.trim();
 }
 
-function _buildBeginnerLectureRules(researchData = {}, lectureTitle = '') {
+function _buildBeginnerLectureRules(researchData = {}, lectureTitle = '', lectureNumber = 0) {
   if (!_isAiImplementationLecture(researchData, lectureTitle)) return '';
 
   return `
 [완전 일반인 대상 강의 규칙 — 반드시 우선 적용]
+${_buildAgentIntroToolFactRules(lectureNumber || researchData.lectureNumber, lectureTitle)}
 - 독자는 코딩 경험이 거의 없고, IT 용어에 익숙하지 않은 일반인으로 가정하라.
 - 어려운 용어는 처음 등장할 때마다 괄호로 풀어라. 예: "터미널(컴퓨터에 명령을 입력하는 창)".
 - 전문가용 기술서 톤, 아키텍처 과시, 불필요한 코드 장문 설명을 피하라.
@@ -415,6 +448,7 @@ function _buildLectureTopicDirection(lectureNumber, lectureTitle) {
     `3. ${title}를 운영 단계로 가져갈 때 가장 자주 놓치는 부분은 무엇인가`,
     `마무리 방향: ${title}를 개념 설명으로 끝내지 말고, 다음 강의와 연결되는 실무 적용 포인트로 정리`,
     '제목과 본문은 위 강의 방향에서 벗어나지 말고, 특히 첫 요약과 이론 섹션에서 대표 질문을 바로 다뤄라.',
+    isAgentIntroLecture('', title) ? _buildAgentIntroToolFactRules(lectureNumber, title) : '',
   ].join('\n');
 }
 
@@ -459,7 +493,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
   const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);
   const geoRules = _buildLectureGeoRules(researchData, lectureTitle);
-  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
+  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle, lectureNumber);
   const lectureFormatInstruction = buildBlogFormatInstruction('lecture');
 
   // 실전 에피소드 블록
@@ -675,7 +709,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
 
   const weatherContext = weatherToContext(researchData.weather || {});
   const lectureDirection = _buildLectureTopicDirection(lectureNumber, lectureTitle);
-  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
+  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle, lectureNumber);
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
@@ -780,7 +814,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
   const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
   const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);
-  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle);
+  const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle, lectureNumber);
   const lectureFormatInstruction = buildBlogFormatInstruction('lecture');
 
   const experienceBlock = realExperiences.length > 0
