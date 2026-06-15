@@ -631,6 +631,73 @@ function addNodeExecutableUnknownGuard(currentContent, builderError = '') {
   };
 }
 
+function ts2339UnknownProperties(errorText) {
+  const properties = new Set();
+  const text = String(errorText || '');
+  const pattern = /TS2339:[^\n]*Property\s+'([^']+)'\s+does not exist on type 'unknown'/gi;
+  let match = pattern.exec(text);
+  while (match) {
+    if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(match[1])) properties.add(match[1]);
+    match = pattern.exec(text);
+  }
+  return properties;
+}
+
+function addNodeExecutableUnknownPropertyGuard(currentContent, builderError = '') {
+  const unknownProperties = ts2339UnknownProperties(builderError);
+  if (unknownProperties.size === 0) return { ok: false, fixedContent: null, error: 'no_ts2339_unknown_properties' };
+
+  const hadTsNocheck = /@ts-nocheck/.test(String(currentContent || ''));
+  const lines = String(currentContent || '')
+    .split(/\r?\n/)
+    .filter((line) => !/@ts-nocheck/.test(line));
+  const textWithoutTsNocheck = lines.join('\n');
+  const unknownVariables = new Set();
+  for (const property of unknownProperties) {
+    const accessPattern = new RegExp(`\\b([A-Za-z_$][A-Za-z0-9_$]*)\\.${property}\\b`, 'g');
+    let match = accessPattern.exec(textWithoutTsNocheck);
+    while (match) {
+      unknownVariables.add(match[1]);
+      match = accessPattern.exec(textWithoutTsNocheck);
+    }
+  }
+  if (unknownVariables.size === 0) return { ok: false, fixedContent: null, error: 'no_unknown_property_variable' };
+
+  const output = [];
+  let guarded = false;
+  for (const line of lines) {
+    let rewritten = false;
+    for (const variable of unknownVariables) {
+      const entriesPattern = new RegExp(`^(\\s*)for\\s*\\(\\s*const\\s*\\[\\s*([A-Za-z_$][A-Za-z0-9_$]*)\\s*,\\s*${variable}\\s*\\]\\s+of\\s+Object\\.entries\\((.+)\\)\\s*\\)\\s*\\{\\s*$`);
+      const match = line.match(entriesPattern);
+      if (!match) continue;
+      const indent = match[1] || '';
+      const keyName = match[2];
+      const expression = match[3].trim();
+      const entriesName = `${variable}Entries`;
+      output.push(`${indent}const ${entriesName} = JSON.parse(JSON.stringify(${expression} || {}));`);
+      output.push(`${indent}for (const ${keyName} of Object.keys(${entriesName})) {`);
+      output.push(`${indent}  const ${variable} = ${entriesName}[${keyName}];`);
+      guarded = true;
+      rewritten = true;
+      break;
+    }
+    if (!rewritten) output.push(line);
+  }
+  if (!guarded) return { ok: false, fixedContent: null, error: 'no_local_unknown_property_guard_change' };
+
+  const fixedContent = output.join('\n');
+  if (!hadTsNocheck && fixedContent === String(currentContent || '')) {
+    return { ok: false, fixedContent: null, error: 'no_local_unknown_property_guard_change' };
+  }
+  return {
+    ok: true,
+    fixedContent,
+    model: 'local-unknown-property-ts2339',
+    provider: 'local',
+  };
+}
+
 function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   let fixedContent = String(currentContent || '');
   const models = [];
@@ -643,6 +710,11 @@ function attemptNodeExecutableLocalTypeFix(currentContent, builderError = '') {
   if (unknownGuardFix.ok === true) {
     fixedContent = unknownGuardFix.fixedContent;
     models.push(unknownGuardFix.model);
+  }
+  const unknownPropertyFix = addNodeExecutableUnknownPropertyGuard(fixedContent, builderError);
+  if (unknownPropertyFix.ok === true) {
+    fixedContent = unknownPropertyFix.fixedContent;
+    models.push(unknownPropertyFix.model);
   }
   if (models.length === 0) return { ok: false, fixedContent: null, error: 'no_local_type_fix' };
   return {

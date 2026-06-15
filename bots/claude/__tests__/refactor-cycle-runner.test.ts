@@ -2326,6 +2326,54 @@ async function test_node_executable_ts18046_uses_local_unknown_guard() {
   console.log('✅ refactor-cycle: node executable TS18046 uses local unknown guard');
 }
 
+async function test_node_executable_ts2339_uses_local_unknown_property_guard() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const currentContent = [
+    "'use strict';",
+    '// @ts-nocheck',
+    'function run(data) {',
+    '  const items = [];',
+    '  for (const [name, info] of Object.entries(data.resources)) {',
+    '    items.push({',
+    "      status: info.status || 'ok',",
+    '      label: `Hub ${name}`,',
+    "      detail: info.detail || `${info.latency_ms || '?'}ms`,",
+    '    });',
+    '  }',
+    '  return items;',
+    '}',
+    'module.exports = { run };',
+    '',
+  ].join('\n');
+  const fix = runner.attemptNodeExecutableLocalTypeFix(
+    currentContent,
+    [
+      "hub.ts(7,20): error TS2339: Property 'status' does not exist on type 'unknown'.",
+      "hub.ts(9,20): error TS2339: Property 'detail' does not exist on type 'unknown'.",
+      "hub.ts(9,38): error TS2339: Property 'latency_ms' does not exist on type 'unknown'.",
+    ].join('\n')
+  );
+  assert.strictEqual(fix.ok, true);
+  assert.doesNotMatch(fix.fixedContent, /@ts-nocheck/);
+  assert.match(fix.fixedContent, /const infoEntries = JSON\.parse\(JSON\.stringify\(data\.resources \|\| \{\}\)\)/);
+  assert.match(fix.fixedContent, /for \(const name of Object\.keys\(infoEntries\)\)/);
+  assert.match(fix.fixedContent, /const info = infoEntries\[name\]/);
+  assert.match(fix.fixedContent, /info\.status/);
+  assert.match(fix.fixedContent, /info\.detail/);
+  assert.match(fix.fixedContent, /info\.latency_ms/);
+
+  resetTargetedTypecheckTmp();
+  const target = writeTmpTsFile('node-unknown-property-local-fix.ts', fix.fixedContent);
+  try {
+    const nodeCheck = runner.runNodeCheckForFile(target);
+    assert.strictEqual(nodeCheck.pass, true);
+  } finally {
+    cleanupTargetedTypecheckTmp();
+  }
+  console.log('✅ refactor-cycle: node executable TS2339 uses local unknown property guard');
+}
+
 async function test_targeted_typecheck_finds_nearest_tsconfig() {
   const builder = requireBuilder();
   const claudeConfig = path.relative(PROJECT_ROOT, builder.findNearestTsconfig('bots/claude/src/builder.ts')).replace(/\\/g, '/');
@@ -2492,6 +2540,7 @@ async function main() {
     test_autofix_prompt_for_node_executable_requires_jsdoc,
     test_node_executable_ts7006_uses_local_jsdoc_fix,
     test_node_executable_ts18046_uses_local_unknown_guard,
+    test_node_executable_ts2339_uses_local_unknown_property_guard,
     test_targeted_typecheck_finds_nearest_tsconfig,
     test_targeted_typecheck_empty_input_skips,
     test_targeted_typecheck_clean_and_error_files,

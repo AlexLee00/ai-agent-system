@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const { checkHttp, fetchJson } = require('../../../../packages/core/lib/health-provider');
@@ -27,7 +26,9 @@ async function run() {
   if (healthy) {
     const data = await fetchJson(HUB_HEALTH_URL, HUB_TIMEOUT_MS);
     if (data?.resources) {
-      for (const [name, info] of Object.entries(data.resources)) {
+      const infoEntries = JSON.parse(JSON.stringify(data.resources || {}));
+      for (const name of Object.keys(infoEntries)) {
+        const info = infoEntries[name];
         items.push({
           status: info.status || 'ok',
           label: `Hub → ${name}`,
