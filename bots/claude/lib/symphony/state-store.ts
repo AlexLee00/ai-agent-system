@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use strict';
 
 const fs = require('fs');
@@ -10,16 +9,24 @@ const {
 
 const ACTIVE_STATES = new Set(['inbox', 'claimed', 'active']);
 
-function countBy(items, selector) {
-  const counts = {};
+/**
+ * @param {any} items
+ * @param {any} selector
+ */
+function countBy(items = [], selector = JSON.stringify) {
+  const counts = new Map();
   for (const item of items || []) {
     const key = selector(item) || 'unknown';
-    counts[key] = (counts[key] || 0) + 1;
+    counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return counts;
+  return Object.fromEntries(counts.entries());
 }
 
-function pathExists(root, relPath) {
+/**
+ * @param {any} root
+ * @param {any} relPath
+ */
+function pathExists(root = '', relPath = '') {
   try {
     return fs.existsSync(path.join(root, relPath));
   } catch {
@@ -32,9 +39,16 @@ function summarizeManifest({
   root = path.resolve(autoDevDir, '..', '..'),
 } = {}) {
   const manifest = loadAutoDevManifest(autoDevDir);
-  const entries = Object.values(manifest.entries || {});
-  const active = entries.filter((entry) => ACTIVE_STATES.has(String(entry.state || '')));
-  const missingActive = active.filter((entry) => !pathExists(root, entry.relPath));
+  /** @type {any[]} */
+  const entries = JSON.parse(JSON.stringify(Object.values(manifest.entries || {})));
+  const active = [];
+  for (const entry of entries || []) {
+    if (ACTIVE_STATES.has(String(entry.state || ''))) active.push(entry);
+  }
+  const missingActive = [];
+  for (const entry of active || []) {
+    if (!pathExists(root, entry.relPath)) missingActive.push(entry);
+  }
   return {
     updatedAt: manifest.updatedAt || null,
     total: entries.length,
@@ -52,11 +66,24 @@ function summarizeManifest({
 function summarizeRuntimeState({
   state = pipeline.loadState(),
 } = {}) {
-  const jobs = Object.values(state.jobs || {});
-  const missing = jobs.filter((job) => /ENOENT|no such file/i.test(String(job.error || job.lastError || '')));
-  const historical = jobs.filter((job) => ['failed', 'blocked', 'completed'].includes(String(job.status || '')));
-  const activeMissing = missing.filter((job) => !['failed', 'blocked', 'completed'].includes(String(job.status || '')));
-  const historicalMissing = missing.filter((job) => ['failed', 'blocked', 'completed'].includes(String(job.status || '')));
+  /** @type {any[]} */
+  const jobs = JSON.parse(JSON.stringify(Object.values(state.jobs || {})));
+  const missing = [];
+  for (const job of jobs || []) {
+    if (/ENOENT|no such file/i.test(String(job.error || job.lastError || ''))) missing.push(job);
+  }
+  const historical = [];
+  for (const job of jobs || []) {
+    if (['failed', 'blocked', 'completed'].includes(String(job.status || ''))) historical.push(job);
+  }
+  const activeMissing = [];
+  for (const job of missing || []) {
+    if (!['failed', 'blocked', 'completed'].includes(String(job.status || ''))) activeMissing.push(job);
+  }
+  const historicalMissing = [];
+  for (const job of missing || []) {
+    if (['failed', 'blocked', 'completed'].includes(String(job.status || ''))) historicalMissing.push(job);
+  }
   return {
     updatedAt: state.updatedAt || null,
     total: jobs.length,
