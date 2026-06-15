@@ -110,6 +110,30 @@ const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - DB: PostgreSQL + pgvector (RAG)
 - 인프라: Mac Studio M4 Max (OPS) + MacBook Air M3 (DEV)`;
 
+const DARWIN_APPLICATOR_DEFAULT_TIMEOUT_MS = 120_000;
+const DARWIN_APPLICATOR_MIN_TIMEOUT_MS = 30_000;
+const DARWIN_APPLICATOR_MAX_TIMEOUT_MS = 180_000;
+const DARWIN_LLM_SELECTOR_KEY = 'darwin.agent_policy';
+const DARWIN_TOKEN_BUDGET_PROFILE = 'darwin_research';
+
+function readApplicatorTimeoutMs(envName: string, fallbackMs: number): number {
+  const raw = Number.parseInt(String(process.env[envName] || ''), 10);
+  if (!Number.isFinite(raw) || raw <= 0) return fallbackMs;
+  return Math.min(Math.max(raw, DARWIN_APPLICATOR_MIN_TIMEOUT_MS), DARWIN_APPLICATOR_MAX_TIMEOUT_MS);
+}
+
+// The Hub may need a slow primary attempt plus a fast Groq fallback. Keeping the
+// client timeout aligned with the Darwin budget prevents "Hub succeeded, caller
+// already aborted" proposal gaps.
+const DARWIN_PROPOSAL_TIMEOUT_MS = readApplicatorTimeoutMs(
+  'DARWIN_APPLICATOR_PROPOSAL_TIMEOUT_MS',
+  DARWIN_APPLICATOR_DEFAULT_TIMEOUT_MS,
+);
+const DARWIN_PROTOTYPE_TIMEOUT_MS = readApplicatorTimeoutMs(
+  'DARWIN_APPLICATOR_PROTOTYPE_TIMEOUT_MS',
+  DARWIN_APPLICATOR_DEFAULT_TIMEOUT_MS,
+);
+
 function toErrorMessage(err: unknown): string {
   return typeof err === 'object' && err !== null && 'message' in err
     ? String((err as { message?: unknown }).message || 'unknown error')
@@ -126,7 +150,9 @@ function stripReasoningBlocks(text: unknown): string {
 async function generateProposal(paper: Partial<ResearchPaper>): Promise<string> {
   const result = await callHubLlm({
     callerTeam: 'darwin',
-    agent: 'synthesis',
+    agent: 'darwin.synthesis',
+    selectorKey: DARWIN_LLM_SELECTOR_KEY,
+    tokenBudgetProfile: DARWIN_TOKEN_BUDGET_PROFILE,
     taskType: 'proposal_generation',
     runtimePurpose: 'proposal_generation',
     abstractModel: 'anthropic_sonnet',
@@ -150,7 +176,7 @@ ${TEAM_CONTEXT}
 ## GitHub 소스 분석 (${paper.github.owner}/${paper.github.repo})
 ⭐ ${paper.github.stars} | 📝 ${paper.github.language} | 📂 ${paper.github.files}파일
 ${paper.github.summary}` : ''}`,
-    timeoutMs: 12_000,
+    timeoutMs: DARWIN_PROPOSAL_TIMEOUT_MS,
   });
   return stripReasoningBlocks(result.text);
 }
@@ -158,7 +184,9 @@ ${paper.github.summary}` : ''}`,
 async function generatePrototype(paper: Partial<ResearchPaper>, proposal: string): Promise<string> {
   const result = await callHubLlm({
     callerTeam: 'darwin',
-    agent: 'synthesis',
+    agent: 'darwin.edison',
+    selectorKey: DARWIN_LLM_SELECTOR_KEY,
+    tokenBudgetProfile: DARWIN_TOKEN_BUDGET_PROFILE,
     taskType: 'prototype_generation',
     runtimePurpose: 'prototype_generation',
     abstractModel: 'anthropic_sonnet',
@@ -171,7 +199,7 @@ Node.js (ES5, require) 스타일로 작성.
 실제 외부 API 호출은 하지 말고, 구조와 로직만 작성하세요.
 주석으로 "여기서 실제 API 호출" 표시.`,
     prompt: `논문: ${paper.title}\n적용 방안:\n${proposal}`,
-    timeoutMs: 15_000,
+    timeoutMs: DARWIN_PROTOTYPE_TIMEOUT_MS,
   });
   return stripReasoningBlocks(result.text);
 }
@@ -359,4 +387,8 @@ module.exports = {
   generatePrototype,
   verifyPrototype,
   _testOnly_stripReasoningBlocks: stripReasoningBlocks,
+  _testOnly_applicatorTimeouts: {
+    proposal: DARWIN_PROPOSAL_TIMEOUT_MS,
+    prototype: DARWIN_PROTOTYPE_TIMEOUT_MS,
+  },
 };
