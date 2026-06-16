@@ -970,12 +970,14 @@ function DecisionCard({ token, decision, onUpdated, setError, setNotice }) {
 
 function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   const decisionRows = safeArray(decisions);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  async function bulkDefer() {
+  const [bulkBusy, setBulkBusy] = useState('');
+  async function bulkApply(action) {
     if (!decisionRows.length || bulkBusy) return;
-    const ok = window.confirm(`현재 대기 결정 ${decisionRows.length}건을 모두 보류로 감사 기록합니다. 실제 거래·파라미터 영향은 없습니다. 진행할까요?`);
+    const isConfirm = action === 'confirm';
+    const actionLabel = isConfirm ? '확정' : '보류';
+    const ok = window.confirm(`현재 대기 결정 ${decisionRows.length}건을 모두 ${actionLabel}으로 감사 기록합니다. 실제 거래·파라미터 영향은 없습니다. 진행할까요?`);
     if (!ok) return;
-    setBulkBusy(true);
+    setBulkBusy(action);
     setError('');
     setNotice('');
     try {
@@ -984,7 +986,7 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
         try {
           await api(token, `/api/decisions/${decision.id}`, {
             method: 'POST',
-            body: JSON.stringify({ action: 'defer', note: 'UX 일괄 보류' }),
+            body: JSON.stringify({ action, note: isConfirm ? 'UX 일괄 확정' : 'UX 일괄 보류' }),
           });
           results.push({ ok: true, id: decision.id });
         } catch (error) {
@@ -994,18 +996,18 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
       const succeeded = results.filter((result) => result.ok);
       const failed = results.filter((result) => !result.ok);
       if (succeeded.length > 0) {
-        setNotice(`대기 결정 ${succeeded.length}건을 보류로 기록했습니다. 실제 거래·파라미터 영향은 없습니다.`);
+        setNotice(`대기 결정 ${succeeded.length}건을 ${actionLabel}으로 기록했습니다. 실제 거래·파라미터 영향은 없습니다.`);
       }
       if (failed.length > 0) {
         const sample = failed.slice(0, 3).map((result) => `#${result.id}: ${result.error}`).join(' / ');
-        setError(`일괄 보류 일부 실패: 성공 ${succeeded.length}건, 실패 ${failed.length}건. ${sample}`);
+        setError(`일괄 ${actionLabel} 일부 실패: 성공 ${succeeded.length}건, 실패 ${failed.length}건. ${sample}`);
       }
       onUpdated();
     } catch (error) {
       setError(error.message);
       onUpdated();
     } finally {
-      setBulkBusy(false);
+      setBulkBusy('');
     }
   }
   return html`
@@ -1017,8 +1019,12 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
           <div id="decision-scope-note" className="meta decision-scope-note">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
           ${'\n'}
           <div className="decision-toolbar">
-            <button className="secondary" onClick=${bulkDefer} disabled=${bulkBusy || decisionRows.length === 0} aria-busy=${bulkBusy} aria-label=${`대기 결정 ${decisionRows.length}건 일괄 보류`}>
-              ${bulkBusy ? '일괄 보류 중' : '일괄 보류'}
+            <button onClick=${() => bulkApply('confirm')} disabled=${Boolean(bulkBusy) || decisionRows.length === 0} aria-busy=${bulkBusy === 'confirm'} aria-label=${`대기 결정 ${decisionRows.length}건 일괄 확정`}>
+              ${bulkBusy === 'confirm' ? '일괄 확정 중' : '일괄 확정'}
+            </button>
+            ${'\n'}
+            <button className="warn" onClick=${() => bulkApply('defer')} disabled=${Boolean(bulkBusy) || decisionRows.length === 0} aria-busy=${bulkBusy === 'defer'} aria-label=${`대기 결정 ${decisionRows.length}건 일괄 보류`}>
+              ${bulkBusy === 'defer' ? '일괄 보류 중' : '일괄 보류'}
             </button>
           </div>
         </div>

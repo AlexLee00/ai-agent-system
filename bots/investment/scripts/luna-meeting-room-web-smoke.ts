@@ -818,9 +818,14 @@ async function main() {
     assert.equal(appJs.text.includes('title=${`원문 등급:'), false);
     assert.equal(appJs.text.includes('title=${`원문 상태:'), false);
     assert.ok(appJs.text.includes('const decisionRows = safeArray(decisions);'));
-    assert.ok(appJs.text.includes('async function bulkDefer()'));
-    assert.ok(appJs.text.includes('window.confirm(`현재 대기 결정 ${decisionRows.length}건을 모두 보류로 감사 기록합니다. 실제 거래·파라미터 영향은 없습니다. 진행할까요?`)'));
-    assert.ok(appJs.text.includes("body: JSON.stringify({ action: 'defer', note: 'UX 일괄 보류' })"));
+    assert.ok(appJs.text.includes('async function bulkApply(action)'));
+    assert.ok(appJs.text.includes("const isConfirm = action === 'confirm';"));
+    assert.ok(appJs.text.includes("const actionLabel = isConfirm ? '확정' : '보류';"));
+    assert.ok(appJs.text.includes('window.confirm(`현재 대기 결정 ${decisionRows.length}건을 모두 ${actionLabel}으로 감사 기록합니다. 실제 거래·파라미터 영향은 없습니다. 진행할까요?`)'));
+    assert.ok(appJs.text.includes("body: JSON.stringify({ action, note: isConfirm ? 'UX 일괄 확정' : 'UX 일괄 보류' })"));
+    assert.ok(appJs.text.includes("onClick=${() => bulkApply('confirm')}"));
+    assert.ok(appJs.text.includes("onClick=${() => bulkApply('defer')}"));
+    assert.ok(appJs.text.includes('대기 결정 ${decisionRows.length}건 일괄 확정'));
     assert.ok(appJs.text.includes('대기 결정 ${decisionRows.length}건 일괄 보류'));
     assert.ok(appJs.text.includes('전체 결정 대기함'));
     assert.ok(appJs.text.includes('전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음'));
@@ -1034,8 +1039,10 @@ async function main() {
     assert.ok(html.text.includes('.reappeared-badge'));
     assert.ok(html.text.includes('.decision-panel-body'));
     assert.ok(html.text.includes('.decision-header'));
+    assert.ok(html.text.includes('flex-direction: column;'));
     assert.ok(html.text.includes('.decision-scope-note'));
     assert.ok(html.text.includes('.decision-toolbar'));
+    assert.ok(html.text.includes('width: 100%;'));
     assert.ok(html.text.includes('.meeting-lifecycle'));
     assert.ok(html.text.includes('.lifecycle-steps'));
     assert.ok(html.text.includes('.lifecycle-step.complete'));
