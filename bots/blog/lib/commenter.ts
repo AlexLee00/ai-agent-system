@@ -468,6 +468,148 @@ async function ensureSchema() {
   `);
   await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_neighbor_comments_status ON ${NEIGHBOR_TABLE}(status, created_at DESC)`);
   await pgPool.run('blog', `CREATE INDEX IF NOT EXISTS idx_neighbor_comments_blog ON ${NEIGHBOR_TABLE}(target_blog_id, created_at DESC)`);
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.success_pattern_library (
+      id BIGSERIAL PRIMARY KEY,
+      pattern_type TEXT NOT NULL,
+      pattern_template TEXT,
+      platform TEXT,
+      category TEXT,
+      avg_performance NUMERIC(6,2) DEFAULT 0,
+      usage_count INTEGER DEFAULT 0,
+      first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ,
+      active BOOLEAN DEFAULT true
+    )
+  `);
+  await pgPool.run('blog', `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_blog_patterns_uq
+      ON blog.success_pattern_library(pattern_type, COALESCE(pattern_template, ''), COALESCE(platform, ''))
+  `);
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.failure_taxonomy (
+      id BIGSERIAL PRIMARY KEY,
+      failure_category TEXT NOT NULL,
+      example_post_ids TEXT[],
+      typical_characteristics JSONB,
+      avoidance_hint TEXT,
+      platform TEXT,
+      frequency_count INTEGER DEFAULT 1,
+      last_seen_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pgPool.run('blog', `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_blog_failure_taxonomy_uq
+      ON blog.failure_taxonomy(failure_category)
+  `);
+}
+
+function normalizeEngagementToken(value, fallback = 'unknown') {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return normalized || fallback;
+}
+
+function buildEngagementPatternTemplate(actionType, payload = {}) {
+  const meta = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
+  const tone = normalizeEngagementToken(meta.tone || meta.reason || meta.sourceType || meta.targetBlogName || '', '');
+  const lengthBucket = (() => {
+    const len = String(payload.commentText || '').trim().length;
+    if (!len) return 'no_text';
+    if (len < 60) return 'short';
+    if (len <= 140) return 'balanced';
+    return 'long';
+  })();
+  return [normalizeEngagementToken(actionType), tone || 'default', lengthBucket].join(':');
+}
+
+function buildEngagementSuccessScore(actionType, payload = {}) {
+  const textLength = String(payload.commentText || '').trim().length;
+  const base = String(actionType || '').includes('sympathy') ? 64 : 72;
+  const lengthBonus = textLength >= 55 && textLength <= 180 ? 8 : 0;
+  return Math.min(100, base + lengthBonus);
+}
+
+async function recordEngagementLearningFromAction(actionType, payload = {}) {
+  const normalizedAction = normalizeEngagementToken(actionType);
+  const meta = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
+  if (payload.success !== false) {
+    const template = buildEngagementPatternTemplate(actionType, payload);
+    const score = buildEngagementSuccessScore(actionType, payload);
+    await pgPool.query('blog', `
+      INSERT INTO blog.success_pattern_library
+        (pattern_type, pattern_template, platform, category, avg_performance, usage_count, first_seen_at, last_used_at)
+      VALUES ($1, $2, 'naver', 'engagement', $3, 1, NOW(), NOW())
+      ON CONFLICT (pattern_type, COALESCE(pattern_template, ''), COALESCE(platform, ''))
+      DO UPDATE SET
+        usage_count = blog.success_pattern_library.usage_count + 1,
+        avg_performance = (blog.success_pattern_library.avg_performance + $3) / 2,
+        last_used_at = NOW(),
+        active = true
+    `, [`engagement_${normalizedAction}`, template, score]);
+    return;
+  }
+
+  const errorCode = normalizeEngagementToken(meta.error || meta.reason || 'comment_action_failed');
+  const category = `engagement_${normalizedAction}_${errorCode}`;
+  await pgPool.query('blog', `
+    INSERT INTO blog.failure_taxonomy
+      (failure_category, typical_characteristics, avoidance_hint, platform, frequency_count, last_seen_at)
+    VALUES ($1, $2::jsonb, $3, 'naver', 1, NOW())
+    ON CONFLICT (failure_category)
+    DO UPDATE SET
+      frequency_count = blog.failure_taxonomy.frequency_count + 1,
+      typical_characteristics = EXCLUDED.typical_characteristics,
+      avoidance_hint = EXCLUDED.avoidance_hint,
+      last_seen_at = NOW()
+  `, [
+    category,
+    stringifyJsonbPayload({
+      actionType,
+      error: meta.error || meta.reason || null,
+      sourceType: meta.sourceType || null,
+      phase: meta.phase || null,
+    }),
+    `engagement ${actionType}에서 ${meta.error || meta.reason || '반복 실패'} 패턴을 피하고, 같은 대상/화면 조건은 재검증 후 실행한다.`,
+  ]);
+}
+
+async function fetchEngagementLearningHints(actionType, limit = 3) {
+  const patternType = `engagement_${normalizeEngagementToken(actionType)}`;
+  const [successRows, failureRows] = await Promise.all([
+    pgPool.query('blog', `
+      SELECT pattern_template, avg_performance, usage_count
+      FROM blog.success_pattern_library
+      WHERE pattern_type = $1
+        AND platform = 'naver'
+        AND active = true
+      ORDER BY avg_performance DESC, usage_count DESC, last_used_at DESC NULLS LAST
+      LIMIT $2
+    `, [patternType, Math.max(1, Number(limit || 3))]).catch(() => []),
+    pgPool.query('blog', `
+      SELECT failure_category, avoidance_hint, frequency_count
+      FROM blog.failure_taxonomy
+      WHERE failure_category LIKE $1
+      ORDER BY frequency_count DESC, last_seen_at DESC NULLS LAST
+      LIMIT $2
+    `, [`engagement_${normalizeEngagementToken(actionType)}_%`, Math.max(1, Number(limit || 3))]).catch(() => []),
+  ]);
+
+  const success = (successRows || [])
+    .map((row, index) => `${index + 1}. 성공 패턴 ${row.pattern_template} (score=${Number(row.avg_performance || 0).toFixed(1)}, n=${row.usage_count || 0})`)
+    .join('\n');
+  const failures = (failureRows || [])
+    .map((row, index) => `${index + 1}. 피할 패턴 ${row.failure_category}: ${row.avoidance_hint || '동일 실패 반복 방지'}`)
+    .join('\n');
+  if (!success && !failures) return '';
+  return [
+    '[댓글/공감 학습 힌트]',
+    success ? `성공:\n${success}` : '',
+    failures ? `실패 회피:\n${failures}` : '',
+  ].filter(Boolean).join('\n');
 }
 
 async function recordCommentAction(actionType, payload = {}) {
@@ -503,6 +645,9 @@ async function recordCommentAction(actionType, payload = {}) {
     payload.success !== false,
     stringifyJsonbPayload(payload.meta || {}),
   ]);
+  await recordEngagementLearningFromAction(actionType, payload).catch((error) => {
+    console.warn('[commenter] engagement learning record failed:', error instanceof Error ? error.message : String(error));
+  });
   if (payload.success === false) {
     const errorCode = String(payload?.meta?.error || 'comment_action_failed').trim() || 'comment_action_failed';
     const subtype = String(actionType || 'unknown').trim() || 'unknown';
@@ -1005,6 +1150,51 @@ async function getPendingNeighborComments(limit = 20) {
     ORDER BY created_at ASC
     LIMIT $1
   `, [limit]);
+}
+
+function getNeighborPriorInteractionCount(candidate) {
+  const meta = candidate?.meta && typeof candidate.meta === 'object' ? candidate.meta : {};
+  const raw = candidate?.priorInteractionCount
+    ?? candidate?.prior_interaction_count
+    ?? candidate?.priorNeighborInteractionCount
+    ?? meta.priorInteractionCount
+    ?? meta.priorNeighborInteractionCount
+    ?? 0;
+  const count = Number(raw || 0);
+  return Number.isFinite(count) ? Math.max(0, count) : 0;
+}
+
+function isFirstNeighborVisitCandidate(candidate) {
+  return String(candidate?.source_type || '') === 'commenter_network'
+    && getNeighborPriorInteractionCount(candidate) <= 0;
+}
+
+async function getNeighborTargetInteractionStats(targetBlogId, currentCandidateId = null) {
+  const normalizedBlogId = String(targetBlogId || '').trim();
+  if (!normalizedBlogId) {
+    return { priorSuccessCount: 0 };
+  }
+
+  const row = await pgPool.get('blog', `
+    SELECT COUNT(*)::int AS prior_success_count
+    FROM (
+      SELECT id::text
+      FROM ${NEIGHBOR_TABLE}
+      WHERE target_blog_id = $1
+        AND status = 'posted'
+        AND ($2::int IS NULL OR id <> $2::int)
+      UNION ALL
+      SELECT id::text
+      FROM ${ACTION_TABLE}
+      WHERE action_type = 'neighbor_comment'
+        AND success = true
+        AND target_blog = $1
+    ) hits
+  `, [normalizedBlogId, currentCandidateId || null]);
+
+  return {
+    priorSuccessCount: Math.max(0, Number(row?.prior_success_count || 0)),
+  };
 }
 
 async function updateNeighborCommentStatus(id, status, options = {}) {
@@ -1648,6 +1838,7 @@ async function getPostSummary(postUrl, { testMode = false } = {}) {
 }
 
 async function generateReply(postTitle, postSummary, commentText) {
+  const learningHints = await fetchEngagementLearningHints('reply');
   const systemPrompt = [
     '너는 IT 블로그 운영자다.',
     '네이버 블로그 댓글에 사람이 직접 쓴 것처럼 자연스럽고 따뜻한 한국어 답글을 JSON으로만 작성한다.',
@@ -1666,6 +1857,7 @@ async function generateReply(postTitle, postSummary, commentText) {
     `[글 제목] ${postTitle || ''}`,
     `[글 요약] ${postSummary || ''}`,
     `[댓글] ${commentText || ''}`,
+    learningHints,
     '',
     '규칙:',
     '- 45~120자',
@@ -2538,7 +2730,12 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
 }
 
 async function generateNeighborComment(postTitle, postSummary, candidate, extraGuidance = '') {
-  const isNonNeighborVisit = String(candidate?.source_type || '') === 'commenter_network';
+  const isFirstVisit = isFirstNeighborVisitCandidate(candidate);
+  const hasPriorInteraction = getNeighborPriorInteractionCount(candidate) > 0;
+  const targetBlogName = candidate.targetBlogName || candidate.target_blog_name || candidate.targetBlogId || candidate.target_blog_id || '';
+  const effectivePostTitle = postTitle || candidate.postTitle || candidate.post_title || '';
+  const sourceType = candidate.sourceType || candidate.source_type || '';
+  const learningHints = await fetchEngagementLearningHints('neighbor_comment');
 
   const systemPrompt = [
     '너는 네이버 블로그 운영자다.',
@@ -2547,16 +2744,21 @@ async function generateNeighborComment(postTitle, postSummary, candidate, extraG
     '본문의 구체 포인트를 1개 이상 언급해야 한다.',
     '서로이웃처럼 따뜻하고 자연스러운 톤을 유지한다.',
     '기본 원칙은 비질문형 댓글이다. 특별한 이유가 없으면 물음표를 쓰지 않는다.',
-    isNonNeighborVisit
+    isFirstVisit
       ? '이웃이 아닌 블로그에 처음 방문한 상황이므로 첫 문장은 가벼운 방문 인사로 시작하되, 바로 본문 이야기로 자연스럽게 넘어간다.'
-      : '이미 이웃 새글을 보고 온 흐름처럼 자연스럽게 본문 이야기부터 시작한다.',
+      : '이미 글을 봤거나 댓글을 남긴 적이 있는 흐름처럼 자연스럽게 본문 이야기부터 시작한다.',
+    hasPriorInteraction
+      ? '"처음 들렀는데", "처음 방문", "처음 와봤는데"처럼 첫 방문을 암시하는 표현은 절대 쓰지 않는다.'
+      : '',
   ].join(' ');
   const userPrompt = [
-    `[대상 블로그] ${candidate.targetBlogName || candidate.targetBlogId || ''}`,
-    `[포스트 제목] ${postTitle || candidate.postTitle || ''}`,
+    `[대상 블로그] ${targetBlogName}`,
+    `[포스트 제목] ${effectivePostTitle}`,
     `[포스트 요약] ${postSummary || ''}`,
-    `[유입 경로] ${candidate.sourceType === 'buddy_feed' ? '이웃 새글' : '우리 글 댓글 작성자'} `,
-    `[방문 성격] ${isNonNeighborVisit ? '비이웃 첫 방문' : '이웃 새글 방문'}`,
+    `[유입 경로] ${sourceType === 'buddy_feed' ? '이웃 새글' : '우리 글 댓글 작성자'} `,
+    `[방문 성격] ${isFirstVisit ? '비이웃 첫 방문' : hasPriorInteraction ? '댓글 이력 있는 재방문' : '이웃 새글 방문'}`,
+    hasPriorInteraction ? `[과거 댓글 이력] 이 대상 블로그에는 이미 댓글 성공 이력이 ${getNeighborPriorInteractionCount(candidate)}건 있으므로 첫 방문처럼 말하지 않는다.` : '',
+    learningHints,
     '',
     '규칙:',
     '- 2~4문장',
@@ -2565,9 +2767,10 @@ async function generateNeighborComment(postTitle, postSummary, candidate, extraG
     '- "소통해요", "자주 들를게요", "잘 보고 갑니다" 같은 상투 표현 금지',
     '- 질문형 문장 금지',
     '- 홍보/링크 유도/구매 유도 금지',
-    isNonNeighborVisit
+    isFirstVisit
       ? '- 첫 문장은 "처음 들렀는데" 또는 "방문해보니"처럼 가벼운 방문 인사를 담되, 과하게 친한 척하지 않기'
       : '- 첫 문장부터 본문 포인트로 바로 들어가기',
+    hasPriorInteraction ? '- "처음", "첫 방문", "처음 들렀" 등 첫 방문 표현 금지' : '',
     extraGuidance ? `- 추가 지시: ${extraGuidance}` : '',
     '',
     'JSON만 응답: {"comment":"댓글 내용","tone":"친근형|공감형|관찰형"}',
@@ -2644,8 +2847,12 @@ function validateNeighborCommentWithCandidate(comment, summary, candidate, confi
   if (!base.ok) return base;
 
   const normalized = normalizeText(comment);
-  const isNonNeighborVisit = String(candidate?.source_type || '') === 'commenter_network';
-  if (isNonNeighborVisit && !/처음 들렀|방문해보니|처음 방문했는데|들렀는데/.test(normalized)) {
+  const isFirstVisit = isFirstNeighborVisitCandidate(candidate);
+  const hasPriorInteraction = getNeighborPriorInteractionCount(candidate) > 0;
+  if (hasPriorInteraction && /처음\s*(?:들렀|방문|와봤|왔)|첫\s*방문|들렀는데|방문해보니/.test(normalized)) {
+    return { ok: false, reason: 'first_visit_phrase_on_repeat_target' };
+  }
+  if (isFirstVisit && !/처음 들렀|방문해보니|처음 방문했는데|들렀는데/.test(normalized)) {
     return { ok: false, reason: 'missing_first_visit_greeting' };
   }
 
@@ -5845,60 +6052,71 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
 
 async function processNeighborComment(candidate, { testMode = false } = {}) {
   const config = getNeighborCommenterConfig();
+  const interactionStats = await getNeighborTargetInteractionStats(candidate.target_blog_id, candidate.id).catch(() => ({ priorSuccessCount: 0 }));
+  const effectiveCandidate = {
+    ...candidate,
+    priorInteractionCount: interactionStats.priorSuccessCount,
+    priorNeighborInteractionCount: interactionStats.priorSuccessCount,
+    meta: {
+      ...(candidate.meta && typeof candidate.meta === 'object' ? candidate.meta : {}),
+      priorNeighborInteractionCount: interactionStats.priorSuccessCount,
+    },
+  };
   traceCommenter('neighborComment:start', {
-    candidateId: candidate.id,
-    postUrl: candidate.post_url,
-    sourceType: candidate.source_type || null,
+    candidateId: effectiveCandidate.id,
+    postUrl: effectiveCandidate.post_url,
+    sourceType: effectiveCandidate.source_type || null,
+    priorNeighborInteractionCount: interactionStats.priorSuccessCount,
     timeoutMs: config.processTimeoutMs,
   });
-  const postInfo = await getPostSummary(candidate.post_url, { testMode });
+  const postInfo = await getPostSummary(effectiveCandidate.post_url, { testMode });
   traceCommenter('neighborComment:summary-ready', {
-    candidateId: candidate.id,
+    candidateId: effectiveCandidate.id,
     summaryLength: String(postInfo.summary || '').length,
   });
-  let generated = await generateNeighborComment(postInfo.title || candidate.post_title, postInfo.summary, candidate);
-  let validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
+  let generated = await generateNeighborComment(postInfo.title || effectiveCandidate.post_title, postInfo.summary, effectiveCandidate);
+  let validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, effectiveCandidate);
 
   if (!validation.ok && validation.reason === 'missing_specific_point') {
     generated = await generateNeighborComment(
-      postInfo.title || candidate.post_title,
+      postInfo.title || effectiveCandidate.post_title,
       postInfo.summary,
-      candidate,
-      buildNeighborSpecificityGuidance(postInfo.title || candidate.post_title, postInfo.summary),
+      effectiveCandidate,
+      buildNeighborSpecificityGuidance(postInfo.title || effectiveCandidate.post_title, postInfo.summary),
     );
-    validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, candidate);
+    validation = validateNeighborCommentWithCandidate(generated.comment, postInfo.summary, effectiveCandidate);
   }
 
   if (!validation.ok) {
     traceCommenter('neighborComment:validation-failed', {
-      candidateId: candidate.id,
+      candidateId: effectiveCandidate.id,
       reason: validation.reason,
     });
-    await updateNeighborCommentStatus(candidate.id, 'skipped', {
+    await updateNeighborCommentStatus(effectiveCandidate.id, 'skipped', {
       commentText: generated.comment,
       errorMessage: validation.reason,
-      meta: { phase: 'validate', tone: generated.tone || null },
+      meta: { phase: 'validate', tone: generated.tone || null, priorNeighborInteractionCount: interactionStats.priorSuccessCount },
     });
     return { ok: false, skipped: true, reason: validation.reason };
   }
 
   traceCommenter('neighborComment:posting', {
-    candidateId: candidate.id,
+    candidateId: effectiveCandidate.id,
     commentLength: String(generated.comment || '').length,
   });
-  const posted = await postComment(candidate.post_url, generated.comment, {
+  const posted = await postComment(effectiveCandidate.post_url, generated.comment, {
     testMode,
     withSympathy: true,
     operationTimeoutMs: testMode ? Math.min(config.processTimeoutMs, 45000) : config.processTimeoutMs,
   });
 
-  await updateNeighborCommentStatus(candidate.id, 'posted', {
+  await updateNeighborCommentStatus(effectiveCandidate.id, 'posted', {
     commentText: generated.comment,
-    meta: { tone: generated.tone || null, sourceType: candidate.source_type || null },
+    meta: { tone: generated.tone || null, sourceType: effectiveCandidate.source_type || null, priorNeighborInteractionCount: interactionStats.priorSuccessCount },
   });
-  await _recordNeighborCommentSuccess(candidate, generated, posted);
+  await _recordNeighborCommentSuccess(effectiveCandidate, generated, posted);
   traceCommenter('neighborComment:posted', {
-    candidateId: candidate.id,
+    candidateId: effectiveCandidate.id,
     sympathyOk: posted?.sympathy?.ok === true,
   });
   return { ok: true, comment: generated.comment, sympathy: posted?.sympathy || null };
@@ -6190,6 +6408,7 @@ module.exports = {
   assessInboundComment,
   validateNeighborComment,
   validateNeighborCommentWithCandidate,
+  fetchEngagementLearningHints,
   getPostSummary,
   clickSympathy,
   diagnoseSympathyUi,

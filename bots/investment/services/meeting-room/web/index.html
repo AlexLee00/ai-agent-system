@@ -392,6 +392,61 @@
       display: grid;
       gap: 8px;
     }
+    .meeting-lifecycle {
+      display: grid;
+      gap: 10px;
+      margin: 0 0 12px;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(54, 95, 122, 0.18);
+      background: rgba(54, 95, 122, 0.08);
+    }
+    .lifecycle-steps {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .lifecycle-step {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.46);
+    }
+    .lifecycle-step.complete {
+      border-color: rgba(72, 109, 74, 0.32);
+      background: rgba(224, 239, 207, 0.55);
+    }
+    .lifecycle-step.failed {
+      border-color: rgba(156, 66, 56, 0.32);
+      background: rgba(156, 66, 56, 0.1);
+    }
+    .lifecycle-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .lifecycle-value {
+      font-size: 13px;
+      font-weight: 850;
+      overflow-wrap: anywhere;
+    }
+    .lifecycle-feedback,
+    .lifecycle-impact {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+    .lifecycle-impact {
+      color: var(--muted);
+      font-size: 12px;
+    }
     .decision-state {
       display: flex;
       flex-wrap: wrap;
@@ -451,10 +506,30 @@
       background: rgba(255, 199, 92, 0.2);
       border: 1px solid rgba(196, 127, 20, 0.35);
     }
+    .decision-panel-body {
+      padding-top: 12px;
+    }
+    .decision-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.35);
+    }
+    .decision-scope-note {
+      margin-top: 0;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
     .decision-toolbar {
       display: flex;
       justify-content: flex-end;
-      margin: 8px 0 12px;
+      margin: 0;
+      flex: 0 0 auto;
     }
     .timeline-groups {
       gap: 12px;
@@ -510,6 +585,16 @@
       .grid, .ask-grid { grid-template-columns: 1fr; }
       .hero { align-items: start; flex-direction: column; }
       .token-box { min-width: 0; width: 100%; max-width: 100%; }
+      .decision-header {
+        align-items: stretch;
+        flex-direction: column;
+      }
+      .decision-toolbar {
+        justify-content: flex-start;
+      }
+      .lifecycle-steps {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>

@@ -301,6 +301,63 @@ function timelineGroupSummary(group = {}) {
   return text ? text.slice(0, 110) : `${minutes.length}개 발언`;
 }
 
+function decisionStatusCounts(decisions = []) {
+  const rows = safeArray(decisions);
+  return {
+    confirmed: rows.filter((row) => row.status === 'confirmed').length,
+    deferred: rows.filter((row) => row.status === 'deferred').length,
+    pending: rows.filter((row) => row.status === 'pending_master').length,
+  };
+}
+
+function meetingLifecycleFeedback(detail, loading = false) {
+  if (loading) return '회의 상태를 확인하는 중입니다.';
+  const session = detail?.session || {};
+  if (!session.id) return '회의를 선택하면 시작, 종료, 반영 상태가 여기에 표시됩니다.';
+  const status = String(session.status || '').toLowerCase();
+  const counts = decisionStatusCounts(detail?.decisions);
+  if (status === 'failed') return `회의가 실패했습니다. 회의록 ${safeArray(detail?.minutes).length}행까지 저장됐고, 오류는 타임라인에서 확인합니다.`;
+  if (status === 'running' || status === 'open') return '회의가 진행 중입니다. 종료되면 회의록, ADR, 결정 대기함 반영 결과가 자동으로 갱신됩니다.';
+  if (status === 'closed' || status === 'completed' || session.closedAt || session.completedAt) {
+    if (counts.pending > 0) {
+      return `회의 종료 후 회의록과 ADR 반영이 완료됐습니다. 남은 마스터 액션 ${counts.pending}건은 오른쪽 결정 대기함에서 확정 또는 보류로 감사 기록합니다. 실제 거래·파라미터 변경은 없습니다.`;
+    }
+    return `회의 종료 후 회의록과 ADR 반영이 완료됐습니다. 확정 ${counts.confirmed}건, 보류 ${counts.deferred}건이며 남은 마스터 액션은 없습니다.`;
+  }
+  return '회의 상태를 확인했습니다. 종료 반영 결과가 없으면 타임라인과 캐치업을 함께 확인합니다.';
+}
+
+function MeetingLifecycle({ detail, loading }) {
+  const session = detail?.session || {};
+  const status = String(session.status || '').toLowerCase();
+  const startedAt = session.startedAt || session.started_at;
+  const closedAt = session.closedAt || session.closed_at || session.completedAt || session.completed_at;
+  const hasSession = Boolean(session.id);
+  const isClosed = status === 'closed' || status === 'completed' || Boolean(closedAt);
+  const isFailed = status === 'failed';
+  const counts = decisionStatusCounts(detail?.decisions);
+  return html`
+    <section className="meeting-lifecycle" role="status" aria-live="polite" aria-label="회의 시작과 종료 반영 상태">
+      <div className="lifecycle-steps" role="list" aria-label="회의 진행 단계">
+        <div className=${`lifecycle-step ${hasSession ? 'complete' : 'pending'}`} role="listitem">
+          <span className="lifecycle-label">회의 시작</span>
+          <span className="lifecycle-value">${startedAt ? formatTime(startedAt) : (loading ? '확인 중' : '선택 대기')}</span>
+        </div>
+        <div className=${`lifecycle-step ${isClosed ? 'complete' : isFailed ? 'failed' : 'pending'}`} role="listitem">
+          <span className="lifecycle-label">회의 종료</span>
+          <span className="lifecycle-value">${closedAt ? formatTime(closedAt) : isFailed ? '실패' : hasSession ? '진행/대기' : '선택 대기'}</span>
+        </div>
+      </div>
+      ${'\n'}
+      <div className="lifecycle-feedback">${meetingLifecycleFeedback(detail, loading)}</div>
+      ${'\n'}
+      <div className="lifecycle-impact" aria-label=${`반영 요약: 확정 ${counts.confirmed}건, 보류 ${counts.deferred}건, 대기 ${counts.pending}건`}>
+        반영 요약 · 확정 ${counts.confirmed}건 · 보류 ${counts.deferred}건 · 대기 ${counts.pending}건 · 실제 거래 영향 없음
+      </div>
+    </section>
+  `;
+}
+
 function dueState(value, now = new Date()) {
   if (!value) return { className: 'due unknown', label: '기한 확인 필요', title: '기한 확인 필요: 값 없음' };
   const due = new Date(value);
@@ -757,6 +814,8 @@ function Timeline({ detail, catchup, loading }) {
       <h2>타임라인</h2>
       ${'\n'}
       <div className="card-body">
+        <${MeetingLifecycle} detail=${detail} loading=${loading} />
+        ${'\n'}
         <div className="catchup" role="status" aria-live="polite" aria-label=${catchupLabel}>
           <div role="list" aria-label=${`U1 캐치업 ${catchupLines.length}줄 요약`}>
             ${catchupLines.map((line) => html`<div className="catchup-line" role="listitem">${line}</div>${'\n'}`)}
@@ -953,20 +1012,24 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
     <div className="card" role="region" aria-label="전체 회의 결정 대기함">
       <h2>전체 결정 대기함</h2>
       ${'\n'}
-      <div id="decision-scope-note" className="meta">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
-      ${'\n'}
-      <div className="decision-toolbar">
-        <button className="secondary" onClick=${bulkDefer} disabled=${bulkBusy || decisionRows.length === 0} aria-busy=${bulkBusy} aria-label=${`대기 결정 ${decisionRows.length}건 일괄 보류`}>
-          ${bulkBusy ? '일괄 보류 중' : '일괄 보류'}
-        </button>
-      </div>
-      ${'\n'}
-      <div className="card-body list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}>
-        ${decisionRows.flatMap((decision, index) => [
-          html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`,
-          index < decisionRows.length - 1 ? '\n' : '',
-        ])}
-        ${decisionRows.length === 0 ? html`<div className="meta">전체 회의 기준 마스터 액션 대기 결정 없음</div>` : null}
+      <div className="card-body decision-panel-body">
+        <div className="decision-header">
+          <div id="decision-scope-note" className="meta decision-scope-note">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
+          ${'\n'}
+          <div className="decision-toolbar">
+            <button className="secondary" onClick=${bulkDefer} disabled=${bulkBusy || decisionRows.length === 0} aria-busy=${bulkBusy} aria-label=${`대기 결정 ${decisionRows.length}건 일괄 보류`}>
+              ${bulkBusy ? '일괄 보류 중' : '일괄 보류'}
+            </button>
+          </div>
+        </div>
+        ${'\n'}
+        <div className="list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}>
+          ${decisionRows.flatMap((decision, index) => [
+            html`<${DecisionCard} key=${decision.id} token=${token} decision=${decision} onUpdated=${onUpdated} setError=${setError} setNotice=${setNotice} />`,
+            index < decisionRows.length - 1 ? '\n' : '',
+          ])}
+          ${decisionRows.length === 0 ? html`<div className="meta">전체 회의 기준 마스터 액션 대기 결정 없음</div>` : null}
+        </div>
       </div>
     </div>
   `;

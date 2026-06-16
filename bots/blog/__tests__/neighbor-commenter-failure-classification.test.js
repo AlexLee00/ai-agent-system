@@ -5,6 +5,7 @@ const {
   isRecoverableNeighborCommentFailure,
   shouldDeferRecoverableReplyRequeue,
   isTransientBrowserNavigationError,
+  validateNeighborCommentWithCandidate,
 } = require('../lib/commenter.ts');
 
 describe('neighbor commenter failure classification', () => {
@@ -24,6 +25,33 @@ describe('neighbor commenter failure classification', () => {
   test('keeps non-transient validation failures as hard failures', () => {
     expect(isRecoverableNeighborCommentFailure(new Error('neighbor_comment_validation_failed'))).toBe(false);
     expect(isTransientBrowserNavigationError(new Error('permission denied'))).toBe(false);
+  });
+
+  test('rejects first-visit phrasing when target has prior neighbor comment history', () => {
+    const candidate = {
+      source_type: 'commenter_network',
+      priorNeighborInteractionCount: 2,
+    };
+    const summary = '돌곶이역점 본죽 신짬뽕죽으로 속을 달랜 후기';
+
+    const invalid = validateNeighborCommentWithCandidate(
+      '처음 들렀는데 돌곶이역점 본죽 신짬뽕죽 흐름이 현실감 있어서 바로 읽게 됐네요. 점심이 안 내려가던 장면까지 자연스럽게 이어졌습니다.',
+      summary,
+      candidate,
+    );
+    const valid = validateNeighborCommentWithCandidate(
+      '돌곶이역점 본죽으로 신짬뽕죽을 고른 흐름이 현실감 있어서 바로 읽게 됐네요. 퇴근길에 속을 달랜 장면도 자연스럽게 와닿았습니다.',
+      summary,
+      candidate,
+    );
+
+    expect(invalid).toEqual({ ok: false, reason: 'first_visit_phrase_on_repeat_target' });
+    expect(valid).toEqual({ ok: true });
+    expect(validateNeighborCommentWithCandidate(
+      '방문해보니 돌곶이역점 본죽 신짬뽕죽 이야기가 현실감 있게 이어져서 바로 읽게 됐네요. 속을 달랜 흐름까지 구체적이었습니다.',
+      summary,
+      candidate,
+    )).toEqual({ ok: false, reason: 'first_visit_phrase_on_repeat_target' });
   });
 });
 

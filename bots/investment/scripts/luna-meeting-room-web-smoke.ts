@@ -826,8 +826,10 @@ async function main() {
     assert.ok(appJs.text.includes('전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음'));
     assert.ok(appJs.text.includes(`<h2>전체 결정 대기함</h2>
       \${'\\n'}`));
-    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
-      \${'\\n'}`));
+    assert.ok(appJs.text.includes('<div className="card-body decision-panel-body">'));
+    assert.ok(appJs.text.includes('<div className="decision-header">'));
+    assert.ok(appJs.text.includes(`<div id="decision-scope-note" className="meta decision-scope-note">전체 회의 기준 · 기한 빠른 순 · 실제 거래 영향 없음</div>
+          \${'\\n'}`));
     assert.ok(appJs.text.includes('role="region" aria-label="전체 회의 결정 대기함"'));
     assert.ok(appJs.text.includes('aria-describedby="decision-scope-note"'));
     assert.ok(appJs.text.includes('전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건'));
@@ -872,7 +874,7 @@ async function main() {
           <button aria-label=\${busy === 'defer' ? \`결정 #\${decision.id} 보류 처리 중\` : \`결정 #\${decision.id} 보류\`}`));
     assert.ok(appJs.text.includes('role="listitem"'));
     assert.ok(appJs.text.includes('aria-label=${`결정 #${decision.id} · ${decision.question || agendaLabel(decision.agendaKey)}'));
-    assert.ok(appJs.text.includes('role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}'));
+    assert.ok(appJs.text.includes('className="list" role="list" aria-live="polite" aria-describedby="decision-scope-note" aria-label=${`전체 회의 기준 마스터 액션 대기 결정 ${decisionRows.length}건`}'));
     assert.ok(appJs.text.includes('setMeetings(safeArray(list.meetings));'));
     assert.ok(appJs.text.includes('setActiveRuns(safeArray(list.activeRuns));'));
     assert.ok(appJs.text.includes('setSegments(safeArray(list.segments));'));
@@ -1030,7 +1032,14 @@ async function main() {
     assert.ok(html.text.includes('.decision-effects'));
     assert.ok(html.text.includes('.safety-label'));
     assert.ok(html.text.includes('.reappeared-badge'));
+    assert.ok(html.text.includes('.decision-panel-body'));
+    assert.ok(html.text.includes('.decision-header'));
+    assert.ok(html.text.includes('.decision-scope-note'));
     assert.ok(html.text.includes('.decision-toolbar'));
+    assert.ok(html.text.includes('.meeting-lifecycle'));
+    assert.ok(html.text.includes('.lifecycle-steps'));
+    assert.ok(html.text.includes('.lifecycle-step.complete'));
+    assert.ok(html.text.includes('.lifecycle-feedback'));
     assert.ok(html.text.includes('.timeline-group > summary'));
     assert.ok(html.text.includes('.timeline-group-body'));
     assert.ok(html.text.includes('.catchup [role="list"]'));
@@ -1066,6 +1075,12 @@ async function main() {
     assert.ok(appJs.text.includes("index < segmentRows.length - 1 ? '\\n' : ''"));
     assert.ok(appJs.text.includes('<${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />\n        ${\'\\n\'}'));
     assert.ok(appJs.text.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />\n      ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('function MeetingLifecycle({ detail, loading })'));
+    assert.ok(appJs.text.includes('회의 시작</span>'));
+    assert.ok(appJs.text.includes('회의 종료</span>'));
+    assert.ok(appJs.text.includes('회의 종료 후 회의록과 ADR 반영이 완료됐습니다.'));
+    assert.ok(appJs.text.includes('실제 거래·파라미터 변경은 없습니다.'));
+    assert.ok(appJs.text.includes('<${MeetingLifecycle} detail=${detail} loading=${loading} />'));
     assert.ok(appJs.text.includes('<h2>회의 목록</h2>\n      ${\'\\n\'}'));
     assert.ok(appJs.text.includes('</div>\n          ${\'\\n\'}\n        `)}'));
     assert.ok(appJs.text.includes('<span className="role-chip" role="listitem"'));
