@@ -58,9 +58,9 @@
 > 설계 SSOT: `docs/design/LUNA_TOSS_INTEGRATION_DESIGN.md`(v0.1) · 상위=C18 · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)
 - **설계 ✅**(2026-06-13, 메티): 토스 공식 가이드 정밀 분석(OAuth2·6 카테고리·sandbox 부재 확인) + 기존 KIS/secrets/MCP/A2A 실측 → C18 브로커 추상화 신설 + 기존 7컴포넌트 보강 설계.
 - **TOSS-A** ✅ (2026-06-13, 메티 직접 실접속 검증): 시크릿 매핑(toss_*·maskSecret)·읽기 전용 클라이언트(OAuth2 토큰 50분 캐싱·시세/캔들/캘린더/환율/투자유의/계좌)·secret-doctor(값 미노출). **🔌 토스 API 첫 실접속 성공**: 토큰 발급 OK(만료 24h)·시세 권한 OK·계좌 발견(마스킹됨, BROKERAGE). 정적: 하드코딩 0·실행 메서드 0·canTrade=false.
-- **TOSS-B**(대기): BrokerAdapter + Toss/Kis 어댑터 + MCP 토스 도구 4종.
-- **TOSS-C**(대기): 투자유의 종목 게이트 + C1/C4 교차검증 + 백테스트 비용 보정.
-- **TOSS-D**(대기): A2A 스킬 2종·훅·잔고 소스 + S0/S1 paper-mirror + C15 승급 기준.
+- **TOSS-B** ✅ (2026-06-13, 메티 검증): BrokerAdapter 추상화·Toss/KIS 읽기 어댑터·라우터(**단기=KIS/중장기=토스** — 마스터 전략)·MCP 토스 도구 4종. 어댑터 경유 실시세 확인(삼성전자 336,000). canTrade=false·assertExecutable throw.
+- **TOSS-C** ✅ (2026-06-13, 메티 검증): 투자유의 종목 게이트(404 정정·유니버스 순회·fail-open)·C4 토스 사전검증 교차검증(account 있으면 recorded)·백테스트 비용 보정(플래그 OFF diff 0). 5종목 순회 실조회 확인.
+- **TOSS-D** ✅ (2026-06-13, 메티 검증): 계좌 헤더(accountSeq 자동 환원 — 공식 가이드 `X-Tossinvest-Account:1`)·잔고 소스·A2A 스킬 2종·훅·**S0/S1 paper-mirror**(사전검증 실호출+placed:false)·promotion-stage(기본 s0)·테이블 luna_toss_paper_mirror_log·레지스트리 37종. 잔고·매수가능금액 실호출 성공·placeOrder disabled(실주문 물리 차단).
 - **TOSS-E**(보류): S2 micro-live — 마스터 S1 검증 후 명시 승인 시에만.
 - 핵심 시너지: ①C4 프리플라이트 외부 진실 검증 ②투자유의 종목 자동 배제 ③국내 수수료 무료→백테스트 비용 보정 ④sandbox 부재→shadow 자동승급 설계 결정적.
 
