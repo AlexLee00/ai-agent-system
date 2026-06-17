@@ -35,7 +35,8 @@ export async function runSmoke() {
       method: 'POST',
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     });
-    assert.equal(list.body.result.tools.length, 5);
+    assert.equal(list.body.result.tools.length, 9);
+    assert.ok(list.body.result.tools.some((tool) => tool.name === 'get_toss_price'));
 
     const snapshot = await requestJson(`${baseUrl}/rpc`, {
       method: 'POST',
@@ -74,6 +75,19 @@ export async function runSmoke() {
     });
     assert.equal(book.body.result.bids.length, 3);
     assert.equal(book.body.result.asks.length, 3);
+
+    const tossPrice = await requestJson(`${baseUrl}/rpc`, {
+      method: 'POST',
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'get_toss_price', arguments: { symbol: '005930', market: 'domestic' } },
+      }),
+    });
+    const tossJson = tossPrice.body.result.content[0].json;
+    assert.equal(tossJson.source, 'toss_openapi');
+    assert.equal(tossJson.advisoryOnly, true);
 
     return { ok: true, health: health.body, tools: list.body.result.tools.map((tool) => tool.name), snapshot: snapshotJson };
   });

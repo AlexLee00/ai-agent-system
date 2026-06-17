@@ -57,7 +57,7 @@
 ## TOSS — 토스증권 Open API 통합 (2026-06-13 설계, 마스터 지시)
 > 설계 SSOT: `docs/design/LUNA_TOSS_INTEGRATION_DESIGN.md`(v0.1) · 상위=C18 · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)
 - **설계 ✅**(2026-06-13, 메티): 토스 공식 가이드 정밀 분석(OAuth2·6 카테고리·sandbox 부재 확인) + 기존 KIS/secrets/MCP/A2A 실측 → C18 브로커 추상화 신설 + 기존 7컴포넌트 보강 설계.
-- **TOSS-A**(대기): 시크릿(secret-store.md·secrets 확장·toss-secret-doctor 마스터 입력) + 토스 클라이언트 읽기 전용(OAuth·시세·캘린더·환율). **선결: 마스터 토스 앱에서 Open API 신청·Client ID/Secret 발급**.
+- **TOSS-A** ✅ (2026-06-13, 메티 직접 실접속 검증): 시크릿 매핑(toss_*·maskSecret)·읽기 전용 클라이언트(OAuth2 토큰 50분 캐싱·시세/캔들/캘린더/환율/투자유의/계좌)·secret-doctor(값 미노출). **🔌 토스 API 첫 실접속 성공**: 토큰 발급 OK(만료 24h)·시세 권한 OK·계좌 발견(마스킹됨, BROKERAGE). 정적: 하드코딩 0·실행 메서드 0·canTrade=false.
 - **TOSS-B**(대기): BrokerAdapter + Toss/Kis 어댑터 + MCP 토스 도구 4종.
 - **TOSS-C**(대기): 투자유의 종목 게이트 + C1/C4 교차검증 + 백테스트 비용 보정.
 - **TOSS-D**(대기): A2A 스킬 2종·훅·잔고 소스 + S0/S1 paper-mirror + C15 승급 기준.

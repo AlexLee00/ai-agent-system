@@ -650,6 +650,8 @@
     "kis:doctor": "node scripts/kis-credential-doctor.ts --json",
     "check:kis-config": "node --check scripts/setup-kis-local-secrets.ts && node --check scripts/kis-credential-doctor.ts && node --check scripts/kis-local-config-smoke.ts && node scripts/kis-local-config-smoke.ts --json && node scripts/kis-credential-doctor.ts --json",
     "check:luna-toss-a": "node --check shared/secrets.ts && node --check shared/brokers/toss-client.ts && node --check scripts/toss-secret-doctor.ts && node --check scripts/toss-client-smoke.ts && node scripts/toss-client-smoke.ts --json",
+    "smoke:luna-toss-b": "node scripts/toss-broker-smoke.ts --json",
+    "check:luna-toss-b": "node --check shared/brokers/broker-adapter.ts && node --check shared/brokers/toss-adapter.ts && node --check shared/brokers/kis-adapter.ts && node --check shared/brokers/broker-router.ts && node --check mcp/luna-marketdata-mcp/src/server.ts && node --check mcp/luna-marketdata-mcp/src/tools/toss-price.ts && node --check mcp/luna-marketdata-mcp/src/tools/toss-candles.ts && node --check mcp/luna-marketdata-mcp/src/tools/toss-securities-warning.ts && node --check mcp/luna-marketdata-mcp/src/tools/toss-calendar.ts && node --check scripts/luna-marketdata-mcp-smoke.ts && node --check scripts/toss-broker-smoke.ts && node scripts/toss-broker-smoke.ts --json && node scripts/luna-marketdata-mcp-smoke.ts --json",
     "kis-mcp:doctor": "python3 scripts/kis-market-mcp-server.py --doctor --json",
     "kis-mcp:test": "python3 scripts/kis-market-mcp-server.py --test --json",
     "kis-mcp:test:paper": "python3 scripts/kis-market-mcp-server.py --test --paper --json",

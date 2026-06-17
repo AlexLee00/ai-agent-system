@@ -22,6 +22,10 @@ import {
 } from './tools/kis-ws-overseas.ts';
 import { getMarketRegime, getMarketSnapshot, normalizeMarket } from './tools/market-snapshot.ts';
 import { getOrderBook } from './tools/order-book.ts';
+import { getTossCandles } from './tools/toss-candles.ts';
+import { getTossMarketCalendar } from './tools/toss-calendar.ts';
+import { getTossPrice } from './tools/toss-price.ts';
+import { getTossSecuritiesWarning } from './tools/toss-securities-warning.ts';
 import {
   closeTradingViewSubscriptions,
   subscribeTradingViewMarketData,
@@ -83,6 +87,22 @@ export const MARKETDATA_MCP_TOOLS = [
   {
     name: 'get_order_book',
     description: 'Return a deterministic order-book snapshot for a market/symbol.',
+  },
+  {
+    name: 'get_toss_price',
+    description: 'Return a read-only Toss Open API quote for a domestic/overseas symbol.',
+  },
+  {
+    name: 'get_toss_candles',
+    description: 'Return read-only Toss Open API candles for a domestic/overseas symbol.',
+  },
+  {
+    name: 'get_toss_securities_warning',
+    description: 'Return read-only Toss Open API securities warning metadata for a symbol.',
+  },
+  {
+    name: 'get_toss_calendar',
+    description: 'Return read-only Toss Open API market calendar metadata.',
   },
 ];
 
@@ -155,6 +175,10 @@ export async function callMarketdataTool(name: string, args: MarketDataArgs = {}
     return buildRegimeFromSnapshot(snapshot);
   }
   if (name === 'get_order_book') return await getOrderBook(args) as Record<string, unknown>;
+  if (name === 'get_toss_price') return await getTossPrice(args) as Record<string, unknown>;
+  if (name === 'get_toss_candles') return await getTossCandles(args) as Record<string, unknown>;
+  if (name === 'get_toss_securities_warning') return await getTossSecuritiesWarning(args) as Record<string, unknown>;
+  if (name === 'get_toss_calendar') return await getTossMarketCalendar(args) as Record<string, unknown>;
   throw new Error(`unknown_tool:${name}`);
 }
 
