@@ -207,6 +207,11 @@
 - **[v1.2] 제약 집행 분리(Constraint Enforcement Isolation)**: immutable tier(회로차단기·order_rules·주문/일일 한도)는 "선언"이 아닌 **물리 강제** — LLM 에이전트(루나 런타임·코덱스)의 쓰기 권한 밖 배치: ①DB role 분리(immutable 키는 별도 role만 UPDATE 가능) ②설정 파일 무결성 검증(해시 대조, 변조 시 보수 디폴트+경보) ③제약 검사는 주문 경로 인라인(LLM이 우회 불가한 위치). 근거: V-O 실사고 — "LLM이 리스크 제약 서비스를 재배포해 우회". **선행 작업: 루나 에이전트가 자기 제약(runtime-config·env·plist)을 런타임 수정 가능한 경로 실측 감사**(P0-6). **[메티 스팟체크] governance `order_rules:'immutable'`은 선언만(125행) — 쓰기 차단 코드 미발견(P0-6에서 정밀 확정)**.
 - **[v1.2 시뮬 2차] break-glass(마스터 수동 오버라이드)**: 물리 강제가 **마스터까지 막으면 안 됨** — 마스터 전용 경로(별도 DB role + CLI 스크립트, 전 사용 감사 로그+텔레그램 통지) 보장. 긴급 상황(서킷 오발동·시장 이상)에서 마스터가 즉시 해제·조정 가능해야 완전자율의 안전판이 성립.
 
+### C18. 브로커 추상화 + 토스증권 통합 [신설 — 2026-06-13, 마스터 지시]
+- 토스증권 Open API(OAuth2·6 카테고리) 통합. **BrokerAdapter 추상화**(KIS·토스·Binance 단일 인터페이스)·토스 데이터 소스 우선(신뢰도·이용자 多)·**투자유의 종목 게이트**·**C4 프리플라이트 외부 진실 교차검증**(buying-power/sellable/commission)·시크릿 마스터 전용 입력(secret-store.md).
+- **LIVE = shadow→자동승급**: S0 shadow→S1 paper-mirror(사전검증 실호출+주문 미발행)→S2 micro-live(1주, 마스터 명시 승인)→S3 scaled. 토스 sandbox 부재 → shadow 검증 결정적. C15 표준 경로 재사용.
+- 상세 설계: **`docs/design/LUNA_TOSS_INTEGRATION_DESIGN.md`**(v0.1) — C18-1~4 + 기존 C1/C3/C4/C7/C14/C16 보강 + 구현 분할 TOSS-A~E.
+
 ### 보강 메모 [최종 리뷰 — 소갭 4건 확정]
 - **G6 초기값**: LLM 리뷰어 감점 캡 = 최종 스코어의 **−20%**(예: 10점 만점 중 −2), 보조점수 블렌드 가중 = **0.2**(결정론 0.8) — 모두 파라미터 스토어(tier=auto), Stage A 데이터로 보정.
 - **G3 A단(discovery) 전략군 프리필터**: 기존 discovery 재사용하되 **전략군별 근접 후보 프리필터 추가**(터틀=20봉 고점 3% 이내 · 눌림목=정배열+5선 거리 · 레인지=박스 형성 — 룰 80% 충족=워치리스트 C10 등록). discovery 자체 교체 아님.

@@ -46,10 +46,23 @@
 - **P1-7** ✅ 제약 가드(P1-1 포함): block 단언 스모크+`luna-autonomous-command-policy.ts`. 자율 러너 적용 지점=메티 검토 후.
 - **P1-OPS** ✅ **운영 보정 3건**(2026-06-11, 메티 실측 재현 검증): 레짐 시장당 1행(66배 과다 해소)·캘리브레이션 registry-evaluator 피기백(--skip-calibration·fail-open)·서킷 중복 억제(활성 동일 잠금 skip). 다음 일일 --apply 주기부터 Brier 실적재.
 - **MR-A** ✅ **회의실 백엔드+FSM+회의록**(2026-06-11, 메티 검증·마스터 적용): 테이블 3종(sessions·minutes·decisions[ADR grade·due_at])·stack-adapter(P1 스택 6종→plan-note·U9 5분 브리프)·FSM(안건 자동 생성: 세그먼트3+C15 대기4+서킷1)·grill 5문(불충분=c_master 강등)·LLM 비용 가드(6회 상한 실측)·--no-llm 폴백·CLI 완주(회의록 610줄 2종 정독 합격)·레지스트리 31종. 🌟C15 결정 대기→회의 안건 자동 등재(루프 연결). 경미 메모: 서킷 활성 필터 정밀화·LLM 발언 번역투(MR-B/C). 다음: MR-B(웹 2화면)·MR-C(정례화·텔레그램·grill skill)
-- WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능.
+- **MR-C** ✅ **정례화+텔레그램 원클릭+grill skill**(2026-06-12): 정례 4종 launchd(morning 05:00·debrief 16:00 평일·premarket 22:00·weekly 일 06:00)·텔레그램 원클릭(`luna_meeting:<id>:confirm|defer`·Hub route 활성)·grill skill 2종·G6 debrief 대조표. CLI 위생 FIX(type 파싱·dry-run 분리·--regenerate).
+- **MR-주말보정** ✅ (2026-06-13, f52d5e93b): 주말 스킵 안건 LLM 생략(segment_skipped·호출 상한 미소모)·안건 인지형 결정론 그릴(grillEvidenceFocus). 정례 자동 가동 확인(토 05:00 세션 154).
+- **MR-UX 개편 1차** ✅ (2026-06-13, 메티 검증·실화면 합격): 질문형 결정 카드(question/ifConfirm/ifDefer/safetyLabel)·글로서리 평이화 레이어(halt→신규 진입 중단 등 원어 병기)·안건별 접힘 타임라인·ADR 중복 억제(reappearedCount·일괄 보류)·SCENARIO.md. 마스터 피드백 4건 해소. 경미: 웹 서버 인자 파서 등호 전용(1줄 후보).
+- WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능 / **다음 갈림길: ALPHA_FACTOR vs P2**.
 
 ## P2 — 검증·피드백·포지션
 - C7 permutation 2종+CPCV+point-in-time 전면 · C8 피드백(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가+expected-fire 워치독(삽입점=entry-trigger-engine:534/1030·T9 테이블 30일) · C11 이벤트 수시회의 · WS-I 리스크 훅.
+
+## TOSS — 토스증권 Open API 통합 (2026-06-13 설계, 마스터 지시)
+> 설계 SSOT: `docs/design/LUNA_TOSS_INTEGRATION_DESIGN.md`(v0.1) · 상위=C18 · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)
+- **설계 ✅**(2026-06-13, 메티): 토스 공식 가이드 정밀 분석(OAuth2·6 카테고리·sandbox 부재 확인) + 기존 KIS/secrets/MCP/A2A 실측 → C18 브로커 추상화 신설 + 기존 7컴포넌트 보강 설계.
+- **TOSS-A**(대기): 시크릿(secret-store.md·secrets 확장·toss-secret-doctor 마스터 입력) + 토스 클라이언트 읽기 전용(OAuth·시세·캘린더·환율). **선결: 마스터 토스 앱에서 Open API 신청·Client ID/Secret 발급**.
+- **TOSS-B**(대기): BrokerAdapter + Toss/Kis 어댑터 + MCP 토스 도구 4종.
+- **TOSS-C**(대기): 투자유의 종목 게이트 + C1/C4 교차검증 + 백테스트 비용 보정.
+- **TOSS-D**(대기): A2A 스킬 2종·훅·잔고 소스 + S0/S1 paper-mirror + C15 승급 기준.
+- **TOSS-E**(보류): S2 micro-live — 마스터 S1 검증 후 명시 승인 시에만.
+- 핵심 시너지: ①C4 프리플라이트 외부 진실 검증 ②투자유의 종목 자동 배제 ③국내 수수료 무료→백테스트 비용 보정 ④sandbox 부재→shadow 자동승급 설계 결정적.
 
 ## P3 — 자율 완성
 - C9 동적 리밋 · C10 워치리스트 · C12 일원화 · C13 ablation·라우팅 · C14 오토리서치·소스 · C16 add 승격 · Stage B/C · 파라미터 스토어 전면 소비 전환.

@@ -33,6 +33,29 @@ function warnOnce(key, message) {
   console.warn(message);
 }
 
+export function maskSecret(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  if (raw.length <= 4) return '*'.repeat(raw.length);
+  return `${raw.slice(0, 2)}***${raw.slice(-2)}`;
+}
+
+function normalizeTossMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'shadow' || normalized === 'live') return normalized;
+  return 'shadow';
+}
+
+function applyTossSafetyWarnings(secrets) {
+  if (secrets?.toss_live_trading === true) {
+    warnOnce(
+      'toss-live-trading-shadow-warning',
+      '⚠️ [secrets] toss_live_trading=true 감지 — TOSS-A는 읽기 전용이며 승급 강제 가드는 후속 단계에서 적용됩니다',
+    );
+  }
+  return secrets;
+}
+
 function ensureSecretFileMode(filePath, label) {
   try {
     const stat = statSync(filePath);
@@ -165,6 +188,13 @@ async function initHubSecretsOnce() {
         : (typeof localConfig.kis?.paper_trading === 'boolean' ? localConfig.kis.paper_trading : undefined),
       kis_symbols:          c.kis?.symbols || [],
       kis_overseas_symbols: c.kis?.overseas_symbols || [],
+      toss_api_key:         c.toss?.api_key || '',
+      toss_secret_key:      c.toss?.secret_key || '',
+      toss_mode:            normalizeTossMode(c.toss?.mode),
+      toss_live_trading:    c.toss?.live_trading === true,
+      toss_account_domestic: c.toss?.account_domestic || '',
+      toss_account_overseas: c.toss?.account_overseas || '',
+      toss_horizon:         c.toss?.horizon || 'mid_long',
       screening_domestic_core: c.screening?.domestic?.core || [],
       screening_overseas_core: c.screening?.overseas?.core || [],
       screening_crypto_core:   c.screening?.crypto?.core || [],
@@ -193,6 +223,7 @@ async function initHubSecretsOnce() {
       investment_trade_mode: normalizeInvestmentTradeMode(c.investment_trade_mode) || 'normal',
       paper_mode: c.paper_mode !== false,
     });
+    applyTossSafetyWarnings(_secrets);
     _hubInitDone = true;
     _hubInitFailedAt = 0;
     return true;
@@ -231,6 +262,14 @@ export function loadSecrets() {
       kis_paper_trading: typeof c.kis?.paper_trading === 'boolean' ? c.kis.paper_trading : undefined,
       kis_symbols:          c.kis?.symbols          || [],  // 아르고스 동적 선정
       kis_overseas_symbols: c.kis?.overseas_symbols || [],  // 아르고스 동적 선정
+      // 토스증권 Open API (TOSS-A: 읽기 전용)
+      toss_api_key:         c.toss?.api_key || '',
+      toss_secret_key:      c.toss?.secret_key || '',
+      toss_mode:            normalizeTossMode(c.toss?.mode),
+      toss_live_trading:    c.toss?.live_trading === true,
+      toss_account_domestic: c.toss?.account_domestic || '',
+      toss_account_overseas: c.toss?.account_overseas || '',
+      toss_horizon:         c.toss?.horizon || 'mid_long',
       screening_domestic_core: c.screening?.domestic?.core || [],
       screening_overseas_core: c.screening?.overseas?.core || [],
       screening_crypto_core: c.screening?.crypto?.core || [],
@@ -262,6 +301,7 @@ export function loadSecrets() {
       investment_trade_mode: normalizeInvestmentTradeMode(c.investment_trade_mode) || 'normal',
       paper_mode: c.paper_mode !== false,
     };
+    applyTossSafetyWarnings(_secrets);
     return _secrets;
   } catch { /* config.yaml 없음 */ }
 
@@ -270,6 +310,10 @@ export function loadSecrets() {
     const secretsPath = join(__dirname, '..', 'secrets.json');
     ensureSecretFileMode(secretsPath, 'investment secrets.json');
     _secrets = JSON.parse(readFileSync(secretsPath, 'utf8'));
+    _secrets.toss_mode = normalizeTossMode(_secrets.toss_mode);
+    _secrets.toss_live_trading = _secrets.toss_live_trading === true;
+    _secrets.toss_horizon = _secrets.toss_horizon || 'mid_long';
+    applyTossSafetyWarnings(_secrets);
     return _secrets;
   } catch {
     console.warn('⚠️ config.yaml / secrets.json 없음 — executionMode=paper 기본값');
@@ -277,6 +321,9 @@ export function loadSecrets() {
       trading_mode: 'paper',
       binance_mode: 'inherit',
       kis_mode: 'inherit',
+      toss_mode: 'shadow',
+      toss_live_trading: false,
+      toss_horizon: 'mid_long',
       investment_trade_mode: 'normal',
       paper_mode: true,
       binance_symbols: ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT'],
@@ -785,4 +832,25 @@ export function hasKisCredentials() {
   return getKisAppKey().length >= 5
     && getKisAppSecret().length >= 5
     && String(account?.cano || '').length > 0;
+}
+
+// ─── Toss Open API 헬퍼 (TOSS-A: 읽기 전용) ───────────────────────────
+
+export function getTossCredentials() {
+  const s = loadSecrets();
+  return {
+    apiKey: process.env.TOSS_API_KEY || s.toss_api_key || '',
+    secretKey: process.env.TOSS_SECRET_KEY || s.toss_secret_key || '',
+    mode: normalizeTossMode(process.env.TOSS_MODE || s.toss_mode),
+    liveTrading: boolEnv(process.env.TOSS_LIVE_TRADING, s.toss_live_trading === true),
+    accountDomestic: process.env.TOSS_ACCOUNT_DOMESTIC || s.toss_account_domestic || '',
+    accountOverseas: process.env.TOSS_ACCOUNT_OVERSEAS || s.toss_account_overseas || '',
+    horizon: process.env.TOSS_HORIZON || s.toss_horizon || 'mid_long',
+  };
+}
+
+export function hasTossCredentials() {
+  const credentials = getTossCredentials();
+  return String(credentials.apiKey || '').trim().length > 0
+    && String(credentials.secretKey || '').trim().length > 0;
 }
