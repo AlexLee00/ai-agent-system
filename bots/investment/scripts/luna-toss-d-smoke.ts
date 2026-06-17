@@ -37,32 +37,54 @@ function response(body, status = 200) {
 }
 
 async function accountHeaderScenario() {
-  const calls = [];
-  const client = createTossClient({
-    credentialsProvider: async () => ({
-      apiKey: 'test_api_key',
-      secretKey: 'test_secret_key',
-      mode: 'shadow',
-      liveTrading: false,
-      accountDomestic: 'domestic-account-1',
-      accountOverseas: '',
-    }),
-    sleepFn: async () => {},
-    fetchFn: async (url, init = {}) => {
-      calls.push({ url: String(url), headers: init.headers || {}, method: init.method || 'GET' });
-      if (String(url).endsWith('/oauth2/token')) {
-        return response({ access_token: 'test_token', token_type: 'Bearer', expires_in: 3600 });
-      }
-      if (String(url).includes('/api/v1/buying-power')) {
-        return response({ result: { currency: 'KRW', cashBuyingPower: '5000000' } });
-      }
-      return response({ result: {} });
-    },
-  });
-  const buyingPower = await client.getBuyingPower({ market: 'domestic' });
-  const readCall = calls.find((call) => call.url.includes('/api/v1/buying-power'));
-  assert.equal(readCall.headers['X-Tossinvest-Account'], 'domestic-account-1');
-  assert.equal(buyingPower.skipped, false);
+  async function runHeaderCase(accountDomestic, expectAccountsLookup) {
+    const calls = [];
+    const client = createTossClient({
+      credentialsProvider: async () => ({
+        apiKey: 'test_api_key',
+        secretKey: 'test_secret_key',
+        mode: 'shadow',
+        liveTrading: false,
+        accountDomestic,
+        accountOverseas: '',
+      }),
+      sleepFn: async () => {},
+      fetchFn: async (url, init = {}) => {
+        calls.push({ url: String(url), headers: init.headers || {}, method: init.method || 'GET' });
+        if (String(url).endsWith('/oauth2/token')) {
+          return response({ access_token: 'test_token', token_type: 'Bearer', expires_in: 3600 });
+        }
+        if (String(url).includes('/api/v1/accounts')) {
+          return response({ result: [{ accountNo: '15801000654', accountSeq: 1, accountType: 'BROKERAGE' }] });
+        }
+        if (String(url).includes('/api/v1/holdings')) {
+          return response({ result: { items: [] } });
+        }
+        if (String(url).includes('/api/v1/buying-power')) {
+          return response({ result: { currency: 'KRW', cashBuyingPower: '5000000' } });
+        }
+        return response({ result: {} });
+      },
+    });
+    const holdings = await client.getHoldings('domestic', { symbol: '005930' });
+    const buyingPower = await client.getBuyingPower({ market: 'domestic' });
+    const accountCalls = calls.filter((call) => call.url.includes('/api/v1/accounts'));
+    const accountHeaderCalls = calls.filter((call) => (
+      call.url.includes('/api/v1/holdings') || call.url.includes('/api/v1/buying-power')
+    ));
+    assert.equal(holdings.skipped, false);
+    assert.equal(buyingPower.skipped, false);
+    assert.equal(accountCalls.length, expectAccountsLookup ? 1 : 0);
+    assert.ok(accountHeaderCalls.length >= 2);
+    for (const call of accountHeaderCalls) {
+      assert.equal(call.headers['X-Tossinvest-Account'], '1');
+    }
+    return { holdings, buyingPower, accountLookupCount: accountCalls.length };
+  }
+
+  const seqCase = await runHeaderCase('1', false);
+  const colonCase = await runHeaderCase('15801000654:1', false);
+  const accountNoCase = await runHeaderCase('15801000654', true);
 
   let networkCalls = 0;
   const missingAccountClient = createTossClient({
@@ -84,9 +106,81 @@ async function accountHeaderScenario() {
   assert.equal(skipped.skippedReason, 'toss_account_required_domestic');
   assert.equal(networkCalls, 0);
 
-  const resolved = resolveTossAccount({ market: 'domestic' }, { accountDomestic: 'domestic-account-1' });
+  const noMatchCalls = [];
+  const noMatchClient = createTossClient({
+    credentialsProvider: async () => ({
+      apiKey: 'test_api_key',
+      secretKey: 'test_secret_key',
+      mode: 'shadow',
+      liveTrading: false,
+      accountDomestic: '99999999999',
+      accountOverseas: '',
+    }),
+    fetchFn: async (url, init = {}) => {
+      noMatchCalls.push({ url: String(url), headers: init.headers || {} });
+      if (String(url).endsWith('/oauth2/token')) {
+        return response({ access_token: 'test_token', token_type: 'Bearer', expires_in: 3600 });
+      }
+      if (String(url).includes('/api/v1/accounts')) {
+        return response({ result: [{ accountNo: '15801000654', accountSeq: 1, accountType: 'BROKERAGE' }] });
+      }
+      return response({ result: { items: [] } });
+    },
+  });
+  const noMatch = await noMatchClient.getHoldings('domestic');
+  assert.equal(noMatch.skipped, true);
+  assert.equal(noMatch.skippedReason, 'toss_account_seq_resolution_failed_domestic');
+  assert.equal(noMatchCalls.some((call) => call.url.includes('/api/v1/holdings')), false);
+
+  const invalidBuyingPowerClient = createTossClient({
+    credentialsProvider: async () => ({
+      apiKey: 'test_api_key',
+      secretKey: 'test_secret_key',
+      mode: 'shadow',
+      liveTrading: false,
+      accountDomestic: '1',
+      accountOverseas: '',
+    }),
+    fetchFn: async (url, init = {}) => {
+      if (String(url).endsWith('/oauth2/token')) {
+        return response({ access_token: 'test_token', token_type: 'Bearer', expires_in: 3600 });
+      }
+      if (String(url).includes('/api/v1/holdings')) {
+        assert.equal(init.headers['X-Tossinvest-Account'], '1');
+        return response({ result: { items: [] } });
+      }
+      if (String(url).includes('/api/v1/buying-power')) {
+        assert.equal(init.headers['X-Tossinvest-Account'], '1');
+        return response({ error: { code: 'invalid-request', message: '요청이 올바르지 않습니다.' } }, 400);
+      }
+      return response({ result: {} });
+    },
+  });
+  const holdingsAfterInvalidBuyingPower = await invalidBuyingPowerClient.getHoldings('domestic');
+  const invalidBuyingPower = await invalidBuyingPowerClient.getBuyingPower({ market: 'domestic' });
+  assert.equal(holdingsAfterInvalidBuyingPower.skipped, false);
+  assert.equal(invalidBuyingPower.skipped, true);
+  assert.equal(invalidBuyingPower.skippedReason, 'toss_buying_power_invalid_request');
+
+  const invalidHook = await evaluateTossOrderPreflightHook({ symbol: '005930', market: 'domestic', side: 'buy' }, {
+    stageOptions: { stage: 's1_paper_mirror' },
+  }, {
+    adapter: {
+      capabilities: { name: 'toss', canTrade: false },
+      getBuyingPower: async () => invalidBuyingPower,
+      getSellableQuantity: async () => ({ skipped: false }),
+      getCommissions: async () => ({ skipped: false }),
+    },
+    getTossPromotionStage: () => ({ stage: 's1_paper_mirror', advisoryOnly: true, liveTrading: false, approved: false }),
+  });
+  const buyingPowerCheck = invalidHook.checks.find((item) => item.name === 'buying_power');
+  assert.equal(buyingPowerCheck.skipped, true);
+  assert.equal(buyingPowerCheck.reason, 'toss_buying_power_invalid_request');
+
+  const resolved = resolveTossAccount({ market: 'domestic' }, { accountDomestic: '15801000654' }, [{ accountNo: '15801000654', accountSeq: 1 }]);
   assert.equal(resolved.ok, true);
-  return { buyingPower, skipped };
+  assert.equal(resolved.account, '1');
+  return { buyingPower: seqCase.buyingPower, skipped, seqCase, colonCase, accountNoCase, noMatch, invalidBuyingPower, invalidHook };
 }
 
 async function holdingsScenario() {
@@ -97,7 +191,7 @@ async function holdingsScenario() {
       secretKey: 'test_secret_key',
       mode: 'shadow',
       liveTrading: false,
-      accountDomestic: 'domestic-account-1',
+      accountDomestic: '1',
       accountOverseas: '',
     }),
     sleepFn: async () => {},

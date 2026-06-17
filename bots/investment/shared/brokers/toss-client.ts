@@ -40,6 +40,50 @@ function normalizeMarket(value = 'domestic') {
   return 'overseas';
 }
 
+function isLikelyAccountSeq(value) {
+  return /^[0-9]{1,6}$/.test(String(value || '').trim());
+}
+
+function accountResolutionFailure(market, inputValue = '', source = 'unknown', reason = 'account_seq_not_found') {
+  return {
+    ok: false,
+    market,
+    account: null,
+    source,
+    inputMasked: maskSecret(String(inputValue || '')),
+    skippedReason: `toss_account_seq_resolution_failed_${market}`,
+    resolutionReason: reason,
+  };
+}
+
+function resolveAccountSeqCandidate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (raw.includes(':')) {
+    const seq = raw.split(':').pop().trim();
+    if (/^[0-9]+$/.test(seq)) {
+      return { ok: true, account: seq, inputFormat: 'account_id' };
+    }
+    return { ok: false, needsLookup: false, reason: 'invalid_account_id' };
+  }
+  if (isLikelyAccountSeq(raw)) {
+    return { ok: true, account: raw, inputFormat: 'account_seq' };
+  }
+  return { ok: false, needsLookup: true, inputFormat: 'account_no_or_unknown' };
+}
+
+function findAccountSeq(accounts = [], inputValue = '') {
+  const raw = String(inputValue || '').trim();
+  if (!raw) return null;
+  for (const account of Array.isArray(accounts) ? accounts : []) {
+    const accountNo = String(account.accountNo || '').trim();
+    const accountSeq = String(account.accountSeq ?? '').trim();
+    const id = String(account.id || [accountNo, accountSeq].filter(Boolean).join(':')).trim();
+    if (accountSeq && [accountNo, accountSeq, id].includes(raw)) return accountSeq;
+  }
+  return null;
+}
+
 function marketFromSymbol(symbol) {
   return /^[0-9]{6}$/.test(String(symbol || '')) ? 'domestic' : 'overseas';
 }
@@ -237,16 +281,18 @@ async function mapWithConcurrency(items = [], concurrency = DEFAULT_UNIVERSE_WAR
   return results;
 }
 
-export function resolveTossAccount(input = {}, credentials = null) {
+export function resolveTossAccount(input = {}, credentials = null, accounts = null) {
   const market = normalizeMarket(input.market || input.brokerMarket || input.symbol || 'domestic');
   const direct = input.account || input.accountSeq || input.accountNo || '';
   if (direct) {
+    const source = input.account ? 'option.account' : input.accountSeq ? 'option.accountSeq' : 'option.accountNo';
+    const candidate = resolveAccountSeqCandidate(direct);
+    if (candidate?.ok) return { ok: true, account: candidate.account, market, source, inputFormat: candidate.inputFormat, skippedReason: null };
+    const accountSeq = findAccountSeq(accounts, direct);
+    if (accountSeq) return { ok: true, account: accountSeq, market, source: `${source}.accounts`, inputFormat: 'account_no_lookup', skippedReason: null };
     return {
-      ok: true,
-      account: String(direct),
-      market,
-      source: input.account ? 'option.account' : input.accountSeq ? 'option.accountSeq' : 'option.accountNo',
-      skippedReason: null,
+      ...accountResolutionFailure(market, direct, source, candidate?.reason || 'account_seq_lookup_required'),
+      requiresLookup: candidate?.needsLookup === true,
     };
   }
   const sourceCredentials = credentials || getTossCredentials();
@@ -254,12 +300,14 @@ export function resolveTossAccount(input = {}, credentials = null) {
     ? sourceCredentials?.accountOverseas
     : sourceCredentials?.accountDomestic;
   if (account) {
+    const source = market === 'overseas' ? 'secrets.toss_account_overseas' : 'secrets.toss_account_domestic';
+    const candidate = resolveAccountSeqCandidate(account);
+    if (candidate?.ok) return { ok: true, account: candidate.account, market, source, inputFormat: candidate.inputFormat, skippedReason: null };
+    const accountSeq = findAccountSeq(accounts, account);
+    if (accountSeq) return { ok: true, account: accountSeq, market, source: `${source}.accounts`, inputFormat: 'account_no_lookup', skippedReason: null };
     return {
-      ok: true,
-      account: String(account),
-      market,
-      source: market === 'overseas' ? 'secrets.toss_account_overseas' : 'secrets.toss_account_domestic',
-      skippedReason: null,
+      ...accountResolutionFailure(market, account, source, candidate?.reason || 'account_seq_lookup_required'),
+      requiresLookup: candidate?.needsLookup === true,
     };
   }
   return {
@@ -293,6 +341,7 @@ export function createTossClient(options = {}) {
 
   let tokenCache = null;
   let tokenPromise = null;
+  let accountsCachePromise = null;
 
   async function getCredentials() {
     return ensureCredentials(await credentialsProvider());
@@ -360,11 +409,48 @@ export function createTossClient(options = {}) {
         continue;
       }
       if (!response.ok) {
-        throw new Error(`토스 GET 실패 path=${path} status=${response.status} ${summarizeErrorBody(body)}`.trim());
+        const error = new Error(`토스 GET 실패 path=${path} status=${response.status} ${summarizeErrorBody(body)}`.trim());
+        error.status = response.status;
+        error.path = path;
+        error.body = body;
+        throw error;
       }
       return body?.result ?? body;
     }
     throw new Error(`토스 GET 실패 path=${path} retry_exhausted`);
+  }
+
+  async function getAccountsCached() {
+    if (!accountsCachePromise) {
+      accountsCachePromise = getAccounts().catch((error) => {
+        accountsCachePromise = null;
+        throw error;
+      });
+    }
+    return accountsCachePromise;
+  }
+
+  async function resolveTossAccountForRequest(input = {}) {
+    const credentials = await credentialsProvider();
+    const firstPass = resolveTossAccount(input, credentials);
+    if (firstPass.ok || firstPass.requiresLookup !== true) return firstPass;
+    try {
+      const accounts = await getAccountsCached();
+      const resolved = resolveTossAccount(input, credentials, accounts);
+      if (resolved.ok) return resolved;
+      return {
+        ...resolved,
+        skippedReason: `toss_account_seq_resolution_failed_${resolved.market}`,
+        resolutionReason: resolved.resolutionReason || 'account_not_found',
+      };
+    } catch (error) {
+      return {
+        ...firstPass,
+        skippedReason: `toss_account_seq_resolution_failed_${firstPass.market}`,
+        resolutionReason: 'accounts_lookup_failed',
+        error: String(error?.message || error || 'accounts_lookup_failed').slice(0, 240),
+      };
+    }
   }
 
   async function getPrice(symbols) {
@@ -437,21 +523,32 @@ export function createTossClient(options = {}) {
   }
 
   async function getBuyingPower(options = {}) {
-    const credentials = await credentialsProvider();
     const marketHint = options.market || (options.currency === 'USD' ? 'overseas' : 'domestic');
-    const accountState = resolveTossAccount({ ...options, market: marketHint }, credentials);
+    const accountState = await resolveTossAccountForRequest({ ...options, market: marketHint });
     if (!accountState.ok) return normalizeOrderInfo({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, 'buying_power');
-    const result = await tossGet('/api/v1/buying-power', {
-      currency: options.currency || (accountState.market === 'overseas' ? 'USD' : 'KRW'),
-    }, { account: accountState.account });
-    return normalizeOrderInfo(result, 'buying_power');
+    const currency = options.currency || (accountState.market === 'overseas' ? 'USD' : 'KRW');
+    try {
+      const result = await tossGet('/api/v1/buying-power', { currency }, { account: accountState.account });
+      return normalizeOrderInfo(result, 'buying_power');
+    } catch (error) {
+      const message = String(error?.message || error || '');
+      if (error?.status === 400 && /invalid/i.test(message)) {
+        return normalizeOrderInfo({
+          skipped: true,
+          skippedReason: 'toss_buying_power_invalid_request',
+          account: accountState,
+          currency,
+          error: message.slice(0, 240),
+        }, 'buying_power');
+      }
+      throw error;
+    }
   }
 
   async function getSellableQuantity(symbol, options = {}) {
     const normalizedSymbol = normalizeSymbol(symbol);
     if (!normalizedSymbol) throw new Error('symbol_required');
-    const credentials = await credentialsProvider();
-    const accountState = resolveTossAccount({ ...options, symbol: normalizedSymbol, market: options.market || marketFromSymbol(normalizedSymbol) }, credentials);
+    const accountState = await resolveTossAccountForRequest({ ...options, symbol: normalizedSymbol, market: options.market || marketFromSymbol(normalizedSymbol) });
     if (!accountState.ok) return normalizeOrderInfo({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, 'sellable_quantity');
     const result = await tossGet('/api/v1/sellable-quantity', {
       symbol: normalizedSymbol,
@@ -460,8 +557,7 @@ export function createTossClient(options = {}) {
   }
 
   async function getCommissions(options = {}) {
-    const credentials = await credentialsProvider();
-    const accountState = resolveTossAccount(options, credentials);
+    const accountState = await resolveTossAccountForRequest(options);
     if (!accountState.ok) return normalizeOrderInfo({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, 'commissions');
     const result = await tossGet('/api/v1/commissions', {}, { account: accountState.account });
     return normalizeOrderInfo(result, 'commissions');
@@ -469,8 +565,7 @@ export function createTossClient(options = {}) {
 
   async function getHoldings(market = 'domestic', options = {}) {
     const normalizedMarket = normalizeMarket(options.market || market);
-    const credentials = await credentialsProvider();
-    const accountState = resolveTossAccount({ ...options, market: normalizedMarket }, credentials);
+    const accountState = await resolveTossAccountForRequest({ ...options, market: normalizedMarket });
     if (!accountState.ok) {
       return normalizeHoldingsOverview({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, normalizedMarket);
     }
@@ -488,6 +583,7 @@ export function createTossClient(options = {}) {
   function resetTokenCache() {
     tokenCache = null;
     tokenPromise = null;
+    accountsCachePromise = null;
   }
 
   return {

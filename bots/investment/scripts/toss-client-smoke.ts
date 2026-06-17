@@ -144,6 +144,9 @@ export async function runTossClientSmoke() {
   assert.ok(secretsText.includes("toss_live_trading:    c.toss?.live_trading === true"));
   assert.ok(exampleText.includes('"toss_mode":                 "shadow"'));
   assert.ok(exampleText.includes('"toss_live_trading":         false'));
+  assert.ok(exampleText.includes('accountSeq로 자동 환원'));
+  assert.ok(doctorText.includes('X-Tossinvest-Account 헤더에는 accountSeq'));
+  assert.ok(clientText.includes('toss_buying_power_invalid_request'));
   assert.equal(maskSecret('abcdef'), 'ab***ef');
   assert.equal(maskSecret('abcd'), '****');
   assert.equal(maskSecret(''), '');

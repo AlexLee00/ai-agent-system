@@ -69,7 +69,14 @@ export async function evaluateTossOrderPreflightHook(candidate = {}, options = {
   async function readCheck(name, fn) {
     try {
       const result = await fn();
-      checks.push({ name, ok: checkOk(result), result: result || null });
+      const skipped = result?.skipped === true || result?.raw?.skipped === true;
+      checks.push({
+        name,
+        ok: !skipped && checkOk(result),
+        skipped,
+        reason: skipped ? (result?.skippedReason || result?.raw?.skippedReason || 'toss_read_check_skipped') : null,
+        result: result || null,
+      });
     } catch (error) {
       checks.push({
         name,
