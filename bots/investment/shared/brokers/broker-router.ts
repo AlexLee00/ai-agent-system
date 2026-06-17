@@ -87,6 +87,23 @@ export function createBrokerRouter(options: Record<string, any> = {}) {
       async getExchangeRate(rateOptions = {}) {
         return primary.getExchangeRate?.(rateOptions) || null;
       },
+      async getHoldings(holdingMarket = normalizedMarket, holdingOptions = {}) {
+        try {
+          const holdings = await primary.getHoldings?.(holdingMarket, holdingOptions);
+          if (holdings && holdings.skipped !== true) return { ...holdings, fallbackUsed: false };
+          throw new Error(holdings?.skippedReason || 'toss_holdings_empty');
+        } catch (error) {
+          const fallbackHoldings = await fallback.getHoldings?.(holdingMarket, holdingOptions);
+          return {
+            provider: 'kis',
+            market: normalizedMarket,
+            holdings: Array.isArray(fallbackHoldings?.holdings) ? fallbackHoldings.holdings : [],
+            raw: fallbackHoldings || null,
+            fallbackUsed: true,
+            fallbackReason: error instanceof Error ? error.message : String(error),
+          };
+        }
+      },
     };
   }
 

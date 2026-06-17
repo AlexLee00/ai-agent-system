@@ -32,6 +32,14 @@ function normalizeSymbol(value) {
   return String(value || '').trim().toUpperCase();
 }
 
+function normalizeMarket(value = 'domestic') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (['overseas', 'us', 'usa', 'kis_overseas'].includes(raw)) return 'overseas';
+  if (['domestic', 'kr', 'korea', 'kis', 'kis_domestic'].includes(raw)) return 'domestic';
+  if (/^[0-9]{6}$/.test(raw)) return 'domestic';
+  return 'overseas';
+}
+
 function marketFromSymbol(symbol) {
   return /^[0-9]{6}$/.test(String(symbol || '')) ? 'domestic' : 'overseas';
 }
@@ -169,6 +177,46 @@ function normalizeOrderInfo(payload = {}, type = 'unknown') {
   return {
     provider: 'toss',
     type,
+    skipped: payload?.skipped === true,
+    skippedReason: payload?.skippedReason || null,
+    raw: payload,
+  };
+}
+
+function normalizeHolding(row = {}, market = '') {
+  const symbol = normalizeSymbol(row.symbol);
+  const normalizedMarket = row.marketCountry === 'KR' || marketFromSymbol(symbol) === 'domestic'
+    ? 'domestic'
+    : normalizeMarket(market || row.marketCountry || symbol);
+  return {
+    provider: 'toss',
+    symbol,
+    market: normalizedMarket,
+    name: row.name || null,
+    quantity: numberOrNull(row.quantity),
+    avgPrice: numberOrNull(row.averagePurchasePrice),
+    lastPrice: numberOrNull(row.lastPrice),
+    marketValue: numberOrNull(row.marketValue?.amount ?? row.marketValue?.amountAfterCost),
+    pnl: numberOrNull(row.profitLoss?.amount ?? row.profitLoss?.amountAfterCost),
+    currency: row.currency || null,
+    raw: row,
+  };
+}
+
+function normalizeHoldingsOverview(payload = {}, market = '') {
+  const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+  return {
+    provider: 'toss',
+    market: normalizeMarket(market),
+    skipped: payload?.skipped === true,
+    skippedReason: payload?.skippedReason || null,
+    holdings: rows.map((row) => normalizeHolding(row, market)),
+    summary: {
+      totalPurchaseAmount: payload?.totalPurchaseAmount || null,
+      marketValue: payload?.marketValue || null,
+      profitLoss: payload?.profitLoss || null,
+      dailyProfitLoss: payload?.dailyProfitLoss || null,
+    },
     raw: payload,
   };
 }
@@ -187,6 +235,39 @@ async function mapWithConcurrency(items = [], concurrency = DEFAULT_UNIVERSE_WAR
   }
   await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
   return results;
+}
+
+export function resolveTossAccount(input = {}, credentials = null) {
+  const market = normalizeMarket(input.market || input.brokerMarket || input.symbol || 'domestic');
+  const direct = input.account || input.accountSeq || input.accountNo || '';
+  if (direct) {
+    return {
+      ok: true,
+      account: String(direct),
+      market,
+      source: input.account ? 'option.account' : input.accountSeq ? 'option.accountSeq' : 'option.accountNo',
+      skippedReason: null,
+    };
+  }
+  const sourceCredentials = credentials || getTossCredentials();
+  const account = market === 'overseas'
+    ? sourceCredentials?.accountOverseas
+    : sourceCredentials?.accountDomestic;
+  if (account) {
+    return {
+      ok: true,
+      account: String(account),
+      market,
+      source: market === 'overseas' ? 'secrets.toss_account_overseas' : 'secrets.toss_account_domestic',
+      skippedReason: null,
+    };
+  }
+  return {
+    ok: false,
+    market,
+    source: 'missing',
+    skippedReason: `toss_account_required_${market}`,
+  };
 }
 
 function normalizeAccount(row = {}) {
@@ -269,7 +350,7 @@ export function createTossClient(options = {}) {
       authorization: `Bearer ${token.accessToken}`,
       accept: 'application/json',
     };
-    if (requestOptions.account) headers['x-tossinvest-account'] = requestOptions.account;
+    if (requestOptions.account) headers['X-Tossinvest-Account'] = requestOptions.account;
 
     for (let attempt = 0; attempt <= DEFAULT_RETRY_COUNT; attempt += 1) {
       const response = await fetchFn(url, { method: 'GET', headers });
@@ -356,24 +437,47 @@ export function createTossClient(options = {}) {
   }
 
   async function getBuyingPower(options = {}) {
+    const credentials = await credentialsProvider();
+    const marketHint = options.market || (options.currency === 'USD' ? 'overseas' : 'domestic');
+    const accountState = resolveTossAccount({ ...options, market: marketHint }, credentials);
+    if (!accountState.ok) return normalizeOrderInfo({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, 'buying_power');
     const result = await tossGet('/api/v1/buying-power', {
-      currency: options.currency || 'KRW',
-    }, { account: options.account || options.accountSeq });
+      currency: options.currency || (accountState.market === 'overseas' ? 'USD' : 'KRW'),
+    }, { account: accountState.account });
     return normalizeOrderInfo(result, 'buying_power');
   }
 
   async function getSellableQuantity(symbol, options = {}) {
     const normalizedSymbol = normalizeSymbol(symbol);
     if (!normalizedSymbol) throw new Error('symbol_required');
+    const credentials = await credentialsProvider();
+    const accountState = resolveTossAccount({ ...options, symbol: normalizedSymbol, market: options.market || marketFromSymbol(normalizedSymbol) }, credentials);
+    if (!accountState.ok) return normalizeOrderInfo({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, 'sellable_quantity');
     const result = await tossGet('/api/v1/sellable-quantity', {
       symbol: normalizedSymbol,
-    }, { account: options.account || options.accountSeq });
+    }, { account: accountState.account });
     return normalizeOrderInfo(result, 'sellable_quantity');
   }
 
   async function getCommissions(options = {}) {
-    const result = await tossGet('/api/v1/commissions', {}, { account: options.account || options.accountSeq });
+    const credentials = await credentialsProvider();
+    const accountState = resolveTossAccount(options, credentials);
+    if (!accountState.ok) return normalizeOrderInfo({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, 'commissions');
+    const result = await tossGet('/api/v1/commissions', {}, { account: accountState.account });
     return normalizeOrderInfo(result, 'commissions');
+  }
+
+  async function getHoldings(market = 'domestic', options = {}) {
+    const normalizedMarket = normalizeMarket(options.market || market);
+    const credentials = await credentialsProvider();
+    const accountState = resolveTossAccount({ ...options, market: normalizedMarket }, credentials);
+    if (!accountState.ok) {
+      return normalizeHoldingsOverview({ skipped: true, skippedReason: accountState.skippedReason, account: accountState }, normalizedMarket);
+    }
+    const result = await tossGet('/api/v1/holdings', {
+      symbol: options.symbol ? normalizeSymbol(options.symbol) : undefined,
+    }, { account: accountState.account });
+    return normalizeHoldingsOverview(result, normalizedMarket);
   }
 
   async function getAccounts() {
@@ -399,6 +503,7 @@ export function createTossClient(options = {}) {
     getBuyingPower,
     getSellableQuantity,
     getCommissions,
+    getHoldings,
     getAccounts,
     resetTokenCache,
   };
@@ -418,6 +523,7 @@ export const getSecuritiesWarningsForUniverse = (...args) => defaultClient.getSe
 export const getBuyingPower = (...args) => defaultClient.getBuyingPower(...args);
 export const getSellableQuantity = (...args) => defaultClient.getSellableQuantity(...args);
 export const getCommissions = (...args) => defaultClient.getCommissions(...args);
+export const getHoldings = (...args) => defaultClient.getHoldings(...args);
 export const getAccounts = (...args) => defaultClient.getAccounts(...args);
 
 export const __test = {

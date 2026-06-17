@@ -181,6 +181,22 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "toss-account-snapshot",
+      "name": "Toss Account Snapshot Advisory",
+      "description": "토스 잔고와 매수가능금액을 읽기 전용으로 요약하고 기존 포지션과 shadow 비교",
+      "tags": ["finance", "toss", "account", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "toss-preflight-verify",
+      "name": "Toss Preflight Verify Advisory",
+      "description": "토스 buying-power/sellable/commission 읽기 검증을 수행하되 주문은 발행하지 않음",
+      "tags": ["finance", "toss", "preflight", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

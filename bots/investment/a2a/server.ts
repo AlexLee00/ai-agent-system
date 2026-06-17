@@ -31,6 +31,8 @@ import { registerEarningsSurpriseTradingSkill } from './skills/earnings-surprise
 import { registerDisclosureEventDrivenSkill } from './skills/disclosure-event-driven.ts';
 import { register as registerMultiAgentTradeDecisionSkill } from './skills/multi-agent-trade-decision.ts';
 import { registerMultiAgentCoordinationSkill } from './skills/multi-agent-coordination.ts';
+import { registerTossAccountSnapshotSkill } from './skills/toss-account-snapshot.ts';
+import { registerTossPreflightVerifySkill } from './skills/toss-preflight-verify.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -60,6 +62,8 @@ registerEarningsSurpriseTradingSkill();
 registerDisclosureEventDrivenSkill();
 registerMultiAgentTradeDecisionSkill();
 registerMultiAgentCoordinationSkill();
+registerTossAccountSnapshotSkill();
+registerTossPreflightVerifySkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();

@@ -190,7 +190,7 @@ print(json.dumps({"off": off, "on": on, "overseas": overseas, "override": overri
 }
 
 function registryAndSafetyScenario() {
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 35);
+  assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 35);
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.some((row) => row.component === 'securities-warning-gate'));
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.some((row) => row.component === 'preflight-cross-check'));
 

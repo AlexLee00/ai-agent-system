@@ -74,6 +74,9 @@ export function createTossBrokerAdapter(options: Record<string, any> = {}) {
     async getExchangeRate(rateOptions = {}) {
       return client.getExchangeRate(rateOptions);
     },
+    async getHoldings(market = 'domestic', holdingOptions = {}) {
+      return client.getHoldings(normalizeBrokerMarket(market), holdingOptions);
+    },
     async getBuyingPower(powerOptions = {}) {
       return client.getBuyingPower(powerOptions);
     },

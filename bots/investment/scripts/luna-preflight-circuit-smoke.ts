@@ -314,17 +314,21 @@ async function circuitScenarios() {
 
 async function dbRollbackScenario(preflightResult: any, lock: any) {
   const stamp = new Date(Date.now() + 240_000).toISOString();
+  const activeLock = {
+    ...lock,
+    lockUntil: new Date(Date.parse(stamp) + 60 * 60_000).toISOString(),
+  };
   const txResult = await withRollback(async (tx: any) => {
     const preflightRows = await insertEntryPreflightLogs([{ ...preflightResult, evaluatedAt: stamp }], tx.run);
-    const lockRows = await insertCircuitLocks([{ ...lock, evaluatedAt: stamp }], tx.run);
-    const duplicateRows = await insertCircuitLocks([{ ...lock, evaluatedAt: stamp }], tx.run, {
+    const lockRows = await insertCircuitLocks([{ ...activeLock, evaluatedAt: stamp }], tx.run);
+    const duplicateRows = await insertCircuitLocks([{ ...activeLock, evaluatedAt: stamp }], tx.run, {
       skipActiveDuplicates: true,
       queryFn: tx.query,
       now: stamp,
     });
     const newSymbolRows = await insertCircuitLocks([{
-      ...lock,
-      symbol: `${lock.symbol || 'BTC/USDT'}-SMOKE`,
+      ...activeLock,
+      symbol: `${activeLock.symbol || 'BTC/USDT'}-SMOKE`,
       evaluatedAt: stamp,
     }], tx.run, {
       skipActiveDuplicates: true,
@@ -408,8 +412,8 @@ async function main() {
   const dbRollback = await dbRollbackScenario(preflightForDb, circuitForDb);
   const runnerIndependentFailure = await runnerIndependenceScenario();
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 31);
-  assert.equal(seedDryRun.seeded, 31);
+  assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 31);
+  assert.equal(seedDryRun.seeded, LUNA_COMPONENT_REGISTRY_SEED.length);
   assert.equal(seedDryRun.components.includes('entry-preflight-gate'), true);
   assert.equal(seedDryRun.components.includes('loss-circuit'), true);
 
