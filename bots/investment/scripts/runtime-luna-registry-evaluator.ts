@@ -11,6 +11,16 @@ import {
   LUNA_REGIME_CALIBRATION_CONFIRM,
   runLunaRegimeCalibration,
 } from './runtime-luna-regime-calibration.ts';
+import {
+  LUNA_ALPHA_FACTOR_CONFIRM,
+  runLunaAlphaFactor,
+} from './runtime-luna-alpha-factor.ts';
+import {
+  LUNA_TOSS_PAPER_MIRROR_CONFIRM,
+} from '../shared/luna-toss-paper-mirror.ts';
+import {
+  runRuntimeLunaTossPaperMirror,
+} from './runtime-luna-toss-paper-mirror.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
@@ -42,6 +52,13 @@ function argValue(name: string, fallback = null) {
   const prefix = `--${name}=`;
   const found = process.argv.find((item) => item.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
+}
+
+function listValue(value: any, fallback: string[] = []) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  return raw.split(',').map((item) => item.trim()).filter(Boolean);
 }
 
 function toJson(value: any, fallback = {}) {
@@ -245,6 +262,89 @@ async function runCalibrationBeforeEvaluation(options: any = {}, deps: any = {})
   }
 }
 
+async function runAlphaBeforeEvaluation(options: any = {}, deps: any = {}) {
+  if (options.skipAlpha === true) {
+    return { ok: true, skipped: true, reason: 'skip_alpha_flag' };
+  }
+  try {
+    const runner = deps.runLunaAlphaFactor || runLunaAlphaFactor;
+    const dryRun = options.dryRun === true || options.apply !== true;
+    const result = await runner({
+      apply: options.apply === true && !dryRun,
+      dryRun,
+      fixture: false,
+      confirm: options.apply === true && !dryRun ? LUNA_ALPHA_FACTOR_CONFIRM : null,
+      market: options.alphaMarket || 'domestic',
+      limit: options.alphaLimit,
+    }, deps);
+    return {
+      ok: result?.ok !== false,
+      skipped: false,
+      dryRun,
+      evaluated: Number(result?.summary?.evaluated ?? result?.results?.length ?? 0),
+      written: Number(result?.written ?? 0),
+      promotionCandidates: Number(result?.summary?.promotionCandidates ?? 0),
+      canWrite: result?.canWrite === true,
+      generator: result?.generator || null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+async function runPaperMirrorBeforeEvaluation(options: any = {}, deps: any = {}) {
+  if (options.skipPaperMirror === true) {
+    return { ok: true, skipped: true, reason: 'skip_paper_mirror_flag' };
+  }
+  const dryRun = options.dryRun === true || options.apply !== true;
+  const markets = listValue(options.paperMirrorMarkets, ['domestic', 'overseas']);
+  const runner = deps.runRuntimeLunaTossPaperMirror || runRuntimeLunaTossPaperMirror;
+  const aggregate = {
+    ok: true,
+    skipped: false,
+    dryRun,
+    markets: [],
+    evaluated: 0,
+    mirrored: 0,
+    written: 0,
+    placed: 0,
+    results: [],
+    error: null,
+  };
+  for (const market of markets) {
+    try {
+      const result = await runner({
+        market,
+        limit: Number(options.paperMirrorLimit || 20),
+        dryRun,
+        apply: options.apply === true && !dryRun,
+        confirm: options.apply === true && !dryRun ? LUNA_TOSS_PAPER_MIRROR_CONFIRM : null,
+        stage: 's1_paper_mirror',
+      }, deps);
+      const evaluated = Number(result?.evaluated ?? result?.rows?.length ?? 0);
+      const written = Number(result?.written ?? 0);
+      const placed = Number(result?.placed ?? 0);
+      aggregate.markets.push(market);
+      aggregate.evaluated += evaluated;
+      aggregate.mirrored += evaluated;
+      aggregate.written += written;
+      aggregate.placed += placed;
+      aggregate.results.push({ market, ok: result?.ok !== false, evaluated, written, placed });
+    } catch (error) {
+      aggregate.ok = false;
+      aggregate.markets.push(market);
+      aggregate.results.push({ market, ok: false, error: error?.message || String(error) });
+    }
+  }
+  const errors = aggregate.results.filter((row) => row.ok === false).map((row) => `${row.market}:${row.error}`);
+  aggregate.error = errors.length ? errors.join('; ') : null;
+  return aggregate;
+}
+
 export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -254,6 +354,8 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
   }
 
   const calibration = await runCalibrationBeforeEvaluation({ ...options, apply, dryRun }, deps);
+  const alpha = await runAlphaBeforeEvaluation({ ...options, apply, dryRun }, deps);
+  const paperMirror = await runPaperMirrorBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const rows = options.rows || await loadRegistryRows(deps.queryFn || db.query);
   const rowsWithSamples = await attachSampleCounts(rows, options, deps);
   const result = evaluateRegistryRows(rowsWithSamples, {
@@ -274,6 +376,8 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
     dryRun,
     apply,
     calibration,
+    alpha,
+    paperMirror,
     outputPath,
     notificationsAttempted: notifications.length,
     liveMutation: false,
@@ -290,7 +394,11 @@ if (isDirectExecution(import.meta.url)) {
       confirm: argValue('confirm', ''),
       proposalLimit: Number(argValue('proposal-limit', DEFAULT_PROPOSAL_LIMIT)),
       skipCalibration: hasFlag('skip-calibration'),
+      skipAlpha: hasFlag('skip-alpha'),
+      skipPaperMirror: hasFlag('skip-paper-mirror'),
       calibrationMarkets: argValue('calibration-markets'),
+      paperMirrorMarkets: argValue('paper-mirror-markets', 'domestic,overseas'),
+      paperMirrorLimit: Number(argValue('paper-mirror-limit', 20)),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: '❌ runtime-luna-registry-evaluator 실패:',

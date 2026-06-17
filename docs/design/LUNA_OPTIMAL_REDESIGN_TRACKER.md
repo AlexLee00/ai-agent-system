@@ -52,6 +52,8 @@
 - WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능 / **다음 갈림길: ALPHA_FACTOR vs P2**.
 
 ## ALPHA·소형 (2026-06-13 완료)
+- **ALPHA·paper-mirror 정례화 ✅** (2026-06-13, 메티 검증): evaluator-daily 피기백(신규 plist 0·캘리브레이션 동일 패턴·독립 try/catch·--skip-alpha/--skip-paper-mirror). ALPHA --apply 데이터 축적 확인(0→2·value_reversal_quality IC=0.131·gate 통과). **커밋 후 다음 evaluator 일일 주기부터 자동 축적**. paper-mirror=신호 0이라 현재 0(신호 생기면 기록).
+- **📊 데이터 축적 관찰 대상**(다음 세션 점검): luna_alpha_factors(누적·IC 추이·승격 후보 발생) · luna_toss_paper_mirror_log(신호 발생 시 일치율) · Stage A 표본(전략군 30신호·E 우월·~7/9 판정).
 - **L-소형** ✅ (597c785c3): 회의실 웹 파서 공백 형식 지원 + 테스트 자동화 3건(W-21 raw JSON 부재·W-50 세션 증가·W-24 반복 문장 실회의록).
 - **ALPHA_FACTOR(WS-R/C12)** ✅ (2026-06-13, 메티 룩어헤드 직접 재현 검증): LLM 팩터 생성기·IC/RankIC/RankIR 평가·**룩어헤드 3중 방어**(표현식 금지필드·row 미래필드·point-in-time 배제 — 합성데이터 IC=0.07 누수 0 확인)·hypothesis 필수(경제 가설)·candidate-backtest-gate 재사용·shadow 저장·C15 게이팅(자동승격 0). 테이블 luna_alpha_factors·_evaluations·c12.alpha.* 시드 5·레지스트리 38종.
 
