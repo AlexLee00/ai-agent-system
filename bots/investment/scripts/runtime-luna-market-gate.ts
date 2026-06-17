@@ -25,6 +25,7 @@ import {
   insertEntryPreflightLogs,
   summarizeEntryPreflightEvaluations,
 } from '../shared/luna-entry-preflight-gate.ts';
+import { summarizeSecuritiesWarningGates } from '../shared/luna-securities-warning-gate.ts';
 import {
   evaluateLossCircuits,
   insertCircuitLocks,
@@ -227,9 +228,10 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const regimeLine = formatRegimeDailyLine(regimes);
   const strategyLine = summarizeStrategyFamilySignals(strategySignals);
   const preflightSummary = summarizeEntryPreflightEvaluations(preflightEvaluations);
+  const securitiesWarningSummary = summarizeSecuritiesWarningGates(preflightEvaluations.flatMap((row) => row.gates || []));
   const circuitSummary = summarizeCircuitLocks(circuitLocks);
   const circuitDuplicateSuffix = circuitSkippedDuplicates > 0 ? `·중복스킵 ${circuitSkippedDuplicates}` : '';
-  const preflightCircuitLine = `${preflightSummary.line} / ${circuitSummary.line}${circuitDuplicateSuffix}`;
+  const preflightCircuitLine = `${preflightSummary.line} / ${securitiesWarningSummary.line} / ${circuitSummary.line}${circuitDuplicateSuffix}`;
 
   const payload = {
     ok: gateError == null || regimeError == null || strategyError == null || preflightError == null || circuitError == null,

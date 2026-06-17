@@ -1,8 +1,11 @@
 // @ts-nocheck
 
 import * as db from './db.ts';
+import { getBrokerAdapter } from './brokers/broker-router.ts';
+import { getTossCredentials } from './secrets.ts';
 import { getParameter } from './luna-parameter-store.ts';
 import { fetchPhaseABars, normalizePhaseAMarket, normalizePhaseASymbol } from './luna-phase-a-market-data.ts';
+import { evaluateSecuritiesWarningGate } from './luna-securities-warning-gate.ts';
 import { dropIncompleteLastBar } from './luna-strategy-families.ts';
 
 export const LUNA_PREFLIGHT_PARAM_KEYS = Object.freeze({
@@ -263,16 +266,90 @@ export function aggregatePreflightDecision(gates = []) {
   return 'pass';
 }
 
+function shouldRunTossCrossCheck(signal: any, options: any = {}) {
+  if (!['domestic', 'overseas'].includes(signal.market)) return false;
+  if (options.crossCheckWithToss === false) return false;
+  if (options.crossCheckWithToss === true) return true;
+  return signal.market === 'domestic';
+}
+
+export async function evaluateTossCrossCheckGate(signal: any, options: any = {}, deps: any = {}) {
+  if (!['domestic', 'overseas'].includes(signal.market)) {
+    return gate('G-toss-cross-check', 'skip', 'non_stock_market', { market: signal.market, advisoryOnly: true });
+  }
+  if (!shouldRunTossCrossCheck(signal, options)) {
+    return gate('G-toss-cross-check', 'skip', 'toss_cross_check_disabled_for_market', { market: signal.market, advisoryOnly: true });
+  }
+  const credentials = (deps.getTossCredentials || getTossCredentials)();
+  const account = signal.market === 'domestic' ? credentials.accountDomestic : credentials.accountOverseas;
+  if (!account) {
+    return gate('G-toss-cross-check', 'skip', 'toss_cross_check_skipped_no_account', {
+      market: signal.market,
+      symbol: signal.symbol,
+      advisoryOnly: true,
+      attempted: false,
+    });
+  }
+
+  try {
+    const crossCheckFn = deps.tossCrossCheckFn || options.tossCrossCheckFn;
+    const result = crossCheckFn
+      ? await crossCheckFn(signal, { account, credentials, options })
+      : await defaultTossCrossCheck(signal, { account });
+    return gate('G-toss-cross-check', 'pass', 'toss_cross_check_recorded', {
+      market: signal.market,
+      symbol: signal.symbol,
+      advisoryOnly: true,
+      attempted: true,
+      matched: result?.matched ?? null,
+      buyingPower: result?.buyingPower ?? null,
+      sellableQuantity: result?.sellableQuantity ?? null,
+      commissions: result?.commissions ?? null,
+    });
+  } catch (error) {
+    return gate('G-toss-cross-check', 'skip', 'toss_cross_check_lookup_failed', {
+      market: signal.market,
+      symbol: signal.symbol,
+      advisoryOnly: true,
+      attempted: true,
+      error: String(error?.message || error || 'unknown_error').slice(0, 280),
+    });
+  }
+}
+
+async function defaultTossCrossCheck(signal: any, { account }: any = {}) {
+  const adapter = getBrokerAdapter('toss');
+  const currency = signal.market === 'domestic' ? 'KRW' : 'USD';
+  const [buyingPower, sellableQuantity, commissions] = await Promise.all([
+    adapter.getBuyingPower?.({ account, currency }),
+    adapter.getSellableQuantity?.(signal.symbol, { account }),
+    adapter.getCommissions?.({ account }),
+  ]);
+  return {
+    matched: null,
+    buyingPower,
+    sellableQuantity,
+    commissions,
+  };
+}
+
 export async function evaluateEntryPreflight(signalInput: any = {}, options: any = {}, deps: any = {}) {
   const signal = normalizeSignal(signalInput);
   const params = await loadEntryPreflightParameters({ ...options, market: signal.market }, deps);
-  const gates = [
+  const decisiveGates = [
     evaluateRrGate(signal, params),
     await evaluateExpectancyGate(signal, params, options, deps),
     evaluateSidewaysGate(signal, params),
     await evaluateLiquidityGate(signal, params, options, deps),
   ];
-  const decision = aggregatePreflightDecision(gates);
+  if (options.securitiesWarningGate !== false) {
+    decisiveGates.push(await evaluateSecuritiesWarningGate(signal, options, deps));
+  }
+  const advisoryGates = [
+    await evaluateTossCrossCheckGate(signal, options, deps),
+  ];
+  const decision = aggregatePreflightDecision(decisiveGates);
+  const gates = [...decisiveGates, ...advisoryGates];
   return {
     strategySignalId: signal.strategySignalId,
     market: signal.market,

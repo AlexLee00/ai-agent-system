@@ -45,11 +45,14 @@ export type BrokerAdapter = {
   getCandles(symbol: string, interval?: string, range?: unknown, options?: Record<string, unknown>): Promise<Bar[]>;
   getHoldings?: (market?: BrokerMarket | string, options?: Record<string, unknown>) => Promise<unknown>;
   getSecuritiesWarning?: (symbol: string, market?: BrokerMarket | string, options?: Record<string, unknown>) => Promise<unknown>;
+  getSecuritiesWarningsForUniverse?: (symbols: string[], options?: Record<string, unknown>) => Promise<unknown>;
   getMarketCalendar?: (market?: BrokerMarket | string, options?: Record<string, unknown>) => Promise<unknown>;
   getExchangeRate?: (options?: Record<string, unknown>) => Promise<unknown>;
   getBuyingPower?: (...args: unknown[]) => Promise<unknown>;
   getSellable?: (...args: unknown[]) => Promise<unknown>;
+  getSellableQuantity?: (...args: unknown[]) => Promise<unknown>;
   getCommission?: (...args: unknown[]) => Promise<unknown>;
+  getCommissions?: (...args: unknown[]) => Promise<unknown>;
   placeOrder?: (...args: unknown[]) => Promise<never>;
   amendOrder?: (...args: unknown[]) => Promise<never>;
   cancelOrder?: (...args: unknown[]) => Promise<never>;

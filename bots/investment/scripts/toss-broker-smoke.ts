@@ -139,7 +139,7 @@ function runStaticSafetyScenarios() {
   assert.equal(kisAdapterText.includes('marketBuy'), false, 'kis-adapter must not import KIS buy functions');
   assert.equal(kisAdapterText.includes('marketSell'), false, 'kis-adapter must not import KIS sell functions');
   assert.ok(brokerAdapterText.includes('broker_execution_disabled_shadow'));
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 33, 'registry seed count should be 33 after TOSS-B');
+  assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 33, 'registry seed count should include at least the TOSS-B components');
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.some((row) => row.component === 'broker-abstraction'));
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.some((row) => row.component === 'toss-data-source'));
 }

@@ -65,11 +65,29 @@ export function createTossBrokerAdapter(options: Record<string, any> = {}) {
     async getSecuritiesWarning(symbol: string) {
       return client.getSecuritiesWarning(normalizeBrokerSymbol(symbol));
     },
+    async getSecuritiesWarningsForUniverse(symbols = [], warningOptions = {}) {
+      return client.getSecuritiesWarningsForUniverse(symbols, warningOptions);
+    },
     async getMarketCalendar(market = 'domestic', calendarOptions = {}) {
       return client.getMarketCalendar(normalizeBrokerMarket(market), calendarOptions);
     },
     async getExchangeRate(rateOptions = {}) {
       return client.getExchangeRate(rateOptions);
+    },
+    async getBuyingPower(powerOptions = {}) {
+      return client.getBuyingPower(powerOptions);
+    },
+    async getSellable(symbol: string, sellableOptions = {}) {
+      return client.getSellableQuantity(normalizeBrokerSymbol(symbol), sellableOptions);
+    },
+    async getSellableQuantity(symbol: string, sellableOptions = {}) {
+      return client.getSellableQuantity(normalizeBrokerSymbol(symbol), sellableOptions);
+    },
+    async getCommission(commissionOptions = {}) {
+      return client.getCommissions(commissionOptions);
+    },
+    async getCommissions(commissionOptions = {}) {
+      return client.getCommissions(commissionOptions);
     },
     placeOrder: disabled,
     amendOrder: disabled,

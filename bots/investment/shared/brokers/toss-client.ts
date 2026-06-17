@@ -15,6 +15,7 @@ export const TOSS_CAPABILITY = Object.freeze({
 
 const DEFAULT_RETRY_COUNT = 2;
 const DEFAULT_TOKEN_REFRESH_MAX_MS = 50 * 60 * 1000;
+const DEFAULT_UNIVERSE_WARNING_CONCURRENCY = 5;
 
 let warnedMissingCredentials = false;
 
@@ -150,6 +151,42 @@ function normalizeWarning(row = {}, symbol = '') {
     endDate: row.endDate || null,
     raw: row,
   };
+}
+
+function normalizeUniverseWarningResult(symbol, warnings = []) {
+  const normalizedSymbol = normalizeSymbol(symbol);
+  const rows = Array.isArray(warnings) ? warnings : [];
+  const firstWarning = rows.find((row) => row?.warningType || row?.warning_type || row?.type) || null;
+  return {
+    symbol: normalizedSymbol,
+    warned: Boolean(firstWarning),
+    warningType: firstWarning?.warningType || firstWarning?.warning_type || firstWarning?.type || null,
+    warnings: rows,
+  };
+}
+
+function normalizeOrderInfo(payload = {}, type = 'unknown') {
+  return {
+    provider: 'toss',
+    type,
+    raw: payload,
+  };
+}
+
+async function mapWithConcurrency(items = [], concurrency = DEFAULT_UNIVERSE_WARNING_CONCURRENCY, mapper) {
+  const list = Array.isArray(items) ? items : [];
+  const limit = Math.max(1, Math.min(10, Number(concurrency) || DEFAULT_UNIVERSE_WARNING_CONCURRENCY));
+  const results = new Array(list.length);
+  let next = 0;
+  async function worker() {
+    while (next < list.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(list[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+  return results;
 }
 
 function normalizeAccount(row = {}) {
@@ -291,10 +328,52 @@ export function createTossClient(options = {}) {
     return normalizeFxRate(result);
   }
 
-  async function getSecuritiesWarning(symbol = '005930') {
+  async function getSecuritiesWarning(symbol) {
     const normalizedSymbol = normalizeSymbol(symbol);
+    if (!normalizedSymbol) throw new Error('symbol_required');
     const result = await tossGet(`/api/v1/stocks/${encodeURIComponent(normalizedSymbol)}/warnings`);
     return Array.isArray(result) ? result.map((row) => normalizeWarning(row, normalizedSymbol)) : [];
+  }
+
+  async function getSecuritiesWarningsForUniverse(symbols = [], options = {}) {
+    const uniqueSymbols = [...new Set((Array.isArray(symbols) ? symbols : [])
+      .map(normalizeSymbol)
+      .filter(Boolean))];
+    return mapWithConcurrency(uniqueSymbols, options.concurrency || DEFAULT_UNIVERSE_WARNING_CONCURRENCY, async (symbol) => {
+      try {
+        const warnings = await getSecuritiesWarning(symbol);
+        return normalizeUniverseWarningResult(symbol, warnings);
+      } catch (error) {
+        return {
+          symbol,
+          warned: false,
+          warningType: null,
+          warnings: [],
+          error: String(error?.message || error || 'unknown_error').slice(0, 280),
+        };
+      }
+    });
+  }
+
+  async function getBuyingPower(options = {}) {
+    const result = await tossGet('/api/v1/buying-power', {
+      currency: options.currency || 'KRW',
+    }, { account: options.account || options.accountSeq });
+    return normalizeOrderInfo(result, 'buying_power');
+  }
+
+  async function getSellableQuantity(symbol, options = {}) {
+    const normalizedSymbol = normalizeSymbol(symbol);
+    if (!normalizedSymbol) throw new Error('symbol_required');
+    const result = await tossGet('/api/v1/sellable-quantity', {
+      symbol: normalizedSymbol,
+    }, { account: options.account || options.accountSeq });
+    return normalizeOrderInfo(result, 'sellable_quantity');
+  }
+
+  async function getCommissions(options = {}) {
+    const result = await tossGet('/api/v1/commissions', {}, { account: options.account || options.accountSeq });
+    return normalizeOrderInfo(result, 'commissions');
   }
 
   async function getAccounts() {
@@ -316,6 +395,10 @@ export function createTossClient(options = {}) {
     getMarketCalendar,
     getExchangeRate,
     getSecuritiesWarning,
+    getSecuritiesWarningsForUniverse,
+    getBuyingPower,
+    getSellableQuantity,
+    getCommissions,
     getAccounts,
     resetTokenCache,
   };
@@ -331,6 +414,10 @@ export const getCandles = (...args) => defaultClient.getCandles(...args);
 export const getMarketCalendar = (...args) => defaultClient.getMarketCalendar(...args);
 export const getExchangeRate = (...args) => defaultClient.getExchangeRate(...args);
 export const getSecuritiesWarning = (...args) => defaultClient.getSecuritiesWarning(...args);
+export const getSecuritiesWarningsForUniverse = (...args) => defaultClient.getSecuritiesWarningsForUniverse(...args);
+export const getBuyingPower = (...args) => defaultClient.getBuyingPower(...args);
+export const getSellableQuantity = (...args) => defaultClient.getSellableQuantity(...args);
+export const getCommissions = (...args) => defaultClient.getCommissions(...args);
 export const getAccounts = (...args) => defaultClient.getAccounts(...args);
 
 export const __test = {

@@ -163,7 +163,7 @@ def fetch_ohlcv(symbol: str, days: int, deps: dict):
         }
     )[["timestamp", "open", "high", "low", "close", "volume"]]
     df = df.drop_duplicates(subset=["timestamp"]).set_index("timestamp").sort_index()
-    df.attrs["luna_market_calendar"] = "stock"
+    df.attrs["luna_market_calendar"] = stock_market_calendar(symbol)
     df.attrs["luna_data_interval"] = used_interval
     return df
 
@@ -172,6 +172,15 @@ def map_stock_symbol(symbol: str):
     if symbol.isdigit() and len(symbol) == 6:
         return [f"{symbol}.KS", f"{symbol}.KQ"]
     return [symbol]
+
+
+def stock_market_calendar(symbol: str) -> str:
+    normalized = str(symbol or "").strip().upper()
+    if normalized.isdigit() and len(normalized) == 6:
+        return "domestic"
+    if normalized.endswith((".KS", ".KQ")):
+        return "domestic"
+    return "overseas"
 
 
 def calc_rsi(close, period: int, deps: dict):
@@ -321,8 +330,13 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
     portfolio_freq = infer_portfolio_freq(df)
     realistic_costs = bool_env("LUNA_BT_REALISTIC_COSTS", False)
     next_bar_execution = bool_env("LUNA_BT_NEXT_BAR_EXECUTION_ENABLED", False)
+    toss_fee_model_enabled = bool_env("LUNA_BT_TOSS_FEE_MODEL_ENABLED", False)
     slippage_pct = float_env("LUNA_BT_SLIPPAGE_PCT", 0.0005)
     from_signals_params = None
+    market_calendar = params.get("market_calendar") or df.attrs.get("luna_market_calendar") or "crypto"
+    fee_model_info = resolve_toss_fee_model(market_calendar, toss_fee_model_enabled)
+    fees = fee_model_info["fee_pct"]
+    fee_model = fee_model_info["fee_model"]
 
     execution_model = "same_bar_close"
     execution_price_model = "close"
@@ -337,7 +351,7 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         tp_stop=tp_pct,
         sl_stop=sl_pct,
         init_cash=10_000,
-        fees=0.001,
+        fees=fees,
         freq=portfolio_freq,
     )
     if next_bar_execution:
@@ -387,7 +401,7 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         "params": {
             **params,
             "portfolio_freq": portfolio_freq,
-            "market_calendar": params.get("market_calendar") or df.attrs.get("luna_market_calendar") or "crypto",
+            "market_calendar": market_calendar,
         },
         "oos_returns_skew": oos_returns_skew,
         "oos_returns_kurt": oos_returns_kurt,
@@ -396,6 +410,9 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         "execution_model": execution_model,
         "execution_price_model": execution_price_model,
     }
+    if toss_fee_model_enabled:
+        result["fee_model"] = fee_model
+        result["fee_pct"] = fees
     if collect_returns:
         try:
             if returns_series is None:
@@ -412,6 +429,18 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
         result.update(compute_meta_labels(pf, deps))
     result["robust_score"] = robust_rank_score(result)
     return result
+
+
+def resolve_toss_fee_model(market_calendar, enabled: bool = False) -> dict:
+    if enabled and str(market_calendar or "").lower() in {"domestic", "kis_domestic", "kr"}:
+        return {
+            "fee_model": "toss_free",
+            "fee_pct": float_env("LUNA_BT_TOSS_DOMESTIC_FEE_PCT", 0.0),
+        }
+    return {
+        "fee_model": "legacy",
+        "fee_pct": 0.001,
+    }
 
 
 def safe_float(value, fallback: float = 0.0) -> float:
