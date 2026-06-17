@@ -29,6 +29,7 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'candidate-backtest-entry-gate': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status`,
   'dsr-pbo-gate': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status WHERE dsr IS NOT NULL OR pbo IS NOT NULL`,
   'robust-backtest-selection': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status WHERE robust_selection_enabled IS TRUE OR selection_method IS NOT NULL`,
+  'alpha-factor-discovery': `SELECT COUNT(*)::int AS count FROM luna_alpha_factors`,
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
   'meta-neural-reflexion': `SELECT COUNT(*)::int AS count FROM luna_failure_reflexions`,
 });
