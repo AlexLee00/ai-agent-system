@@ -51,6 +51,10 @@
 - **MR-UX 개편 1차** ✅ (2026-06-13, 메티 검증·실화면 합격): 질문형 결정 카드(question/ifConfirm/ifDefer/safetyLabel)·글로서리 평이화 레이어(halt→신규 진입 중단 등 원어 병기)·안건별 접힘 타임라인·ADR 중복 억제(reappearedCount·일괄 보류)·SCENARIO.md. 마스터 피드백 4건 해소. 경미: 웹 서버 인자 파서 등호 전용(1줄 후보).
 - WS-R 알파팩터(→C12): CODEX 갱신 완료 — P1-4와 병행 실행 가능 / **다음 갈림길: ALPHA_FACTOR vs P2**.
 
+## ALPHA·소형 (2026-06-13 완료)
+- **L-소형** ✅ (597c785c3): 회의실 웹 파서 공백 형식 지원 + 테스트 자동화 3건(W-21 raw JSON 부재·W-50 세션 증가·W-24 반복 문장 실회의록).
+- **ALPHA_FACTOR(WS-R/C12)** ✅ (2026-06-13, 메티 룩어헤드 직접 재현 검증): LLM 팩터 생성기·IC/RankIC/RankIR 평가·**룩어헤드 3중 방어**(표현식 금지필드·row 미래필드·point-in-time 배제 — 합성데이터 IC=0.07 누수 0 확인)·hypothesis 필수(경제 가설)·candidate-backtest-gate 재사용·shadow 저장·C15 게이팅(자동승격 0). 테이블 luna_alpha_factors·_evaluations·c12.alpha.* 시드 5·레지스트리 38종.
+
 ## P2 — 검증·피드백·포지션
 - C7 permutation 2종+CPCV+point-in-time 전면 · C8 피드백(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가+expected-fire 워치독(삽입점=entry-trigger-engine:534/1030·T9 테이블 30일) · C11 이벤트 수시회의 · WS-I 리스크 훅.
 
@@ -73,6 +77,7 @@
 ## 무중단 체크리스트
 - [ ] PROTECTED 미중지 · crypto LIVE·스카 무중단 · 신규 plist=비-PROTECTED · shadow 우선 · point-in-time/누수 차단.
 
-## CODEX 순서 (현행화)
-1. ✅ P0_BATCH(6건) 2. ✅ P1_REGISTRY_PARAMSTORE 3. ✅ P1_2_MARKET_GATE → **4. P1_3_REGIME_ENGINE(작성 예정)** → 5. P1-4(C3)·ALPHA_FACTOR 병행 → 6. P1-5 → 7. P1-6 → 회의실 Phase1(병행)
-- 아카이브: docs/codex/archive/(완료 5건). 현역: ALPHA_FACTOR(P1 대기)·완료 CODEX 3건.
+## CODEX 순서 (현행화 2026-06-13)
+✅ P0(6건)·P1(7건)·OPS_FIX·회의실 MR-A/B/C+FIX·UX개편·TOSS-A~D·ALPHA_FACTOR·L-소형 전부 완료.
+- 다음 후보: L-P2a(C16 워치독·회의실 연동) ⭐ / L-P2b(C7 검증) / ALPHA-R5 승격(데이터+승인) / TOSS-E(승인) / 블로 B-B3검증.
+- CLI 운영 인수인계: docs/codex/HANDOFF_CLAUDE_CODE_2026-06-13.md.
