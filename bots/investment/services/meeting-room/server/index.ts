@@ -2189,10 +2189,18 @@ function assertAuthorized(req, token) {
   }
 }
 
-function parseArg(name, fallback = null) {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((arg) => arg.startsWith(prefix));
-  return found ? found.slice(prefix.length) : fallback;
+function parseArg(name, fallback = null, argv = process.argv) {
+  const exact = `--${name}`;
+  const prefix = `${exact}=`;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg.startsWith(prefix)) return arg.slice(prefix.length);
+    if (arg === exact) {
+      const next = argv[index + 1];
+      return next && !next.startsWith('--') ? next : fallback;
+    }
+  }
+  return fallback;
 }
 
 export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
@@ -2380,5 +2388,6 @@ export const _testOnly = {
   normalizeMinute,
   normalizeSession,
   normalizeSessionSummary,
+  parseArg,
   sessionStatusLabel,
 };

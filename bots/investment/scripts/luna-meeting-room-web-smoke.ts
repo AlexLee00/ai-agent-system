@@ -76,6 +76,28 @@ function assertNoUserVisibleRawLeaks(text, context) {
   }
 }
 
+function assertNoRawJsonInMinutes(payload = {}, context) {
+  const blocks = [
+    ...(payload.minutes || []).map((row) => ({ label: `minute:${row.seq || row.id || 'unknown'}`, text: row.content })),
+    ...(payload.decisions || []).flatMap((row) => [
+      { label: `decision:${row.id || 'unknown'}:decision`, text: row.decision },
+      { label: `decision:${row.id || 'unknown'}:question`, text: row.question },
+      { label: `decision:${row.id || 'unknown'}:contextPlain`, text: row.contextPlain },
+      { label: `decision:${row.id || 'unknown'}:ifConfirm`, text: row.ifConfirm },
+      { label: `decision:${row.id || 'unknown'}:ifDefer`, text: row.ifDefer },
+      { label: `decision:${row.id || 'unknown'}:safetyLabel`, text: row.safetyLabel },
+      { label: `decision:${row.id || 'unknown'}:professionalSummary`, text: row.professionalSummary },
+    ]),
+  ].filter((block) => block.text);
+  for (const block of blocks) {
+    assert.equal(
+      /\{\s*"[a-zA-Z0-9_]+":/.test(String(block.text)),
+      false,
+      `${context} ${block.label} should not expose raw JSON`,
+    );
+  }
+}
+
 function repeatedSentenceHits(text, minCount = 3) {
   const sentences = String(text ?? '')
     .replace(/\r/g, '')
@@ -375,6 +397,14 @@ async function waitForRun(baseUrl, runId, expectedStatus = 'completed') {
 
 async function main() {
   assertMeetingLaunchdLogPaths();
+  assert.equal(_testOnly.parseArg('port', '7791', ['node', 'server', '--port=7799']), '7799');
+  assert.equal(_testOnly.parseArg('port', '7791', ['node', 'server', '--port', '7799']), '7799');
+  assert.equal(_testOnly.parseArg('port', '7791', ['node', 'server', '--port', '--host', '127.0.0.1']), '7791');
+  assert.equal(_testOnly.parseArg('host', '127.0.0.1', ['node', 'server', '--host', '0.0.0.0']), '0.0.0.0');
+  assert.throws(
+    () => assertNoRawJsonInMinutes({ minutes: [{ seq: 1, content: '{"raw":true}' }] }, 'raw-json-fixture'),
+    /raw JSON/,
+  );
   const store = createMemoryStore();
   const runSessionOptions = [];
   let releaseRun;
@@ -1822,6 +1852,7 @@ async function main() {
       userVisibleMeetingApiText(detail.payload, catchup.payload.lines),
       'meeting detail/catchup user-visible API text',
     );
+    assertNoRawJsonInMinutes(detail.payload, 'meeting detail API');
     assert.deepEqual(
       repeatedSentenceHits('동일 문장 반복을 잡습니다. 동일 문장 반복을 잡습니다. 동일 문장 반복을 잡습니다.'),
       [{ sentence: '동일 문장 반복을 잡습니다.', count: 3 }],
@@ -1842,6 +1873,7 @@ async function main() {
     assert.equal(pending.payload.decisions[0].decision.includes('C15 레짐 엔진 HMM:'), false);
     assert.equal(pending.payload.decisions[0].decision.includes('regime-engine-hmm'), false);
     assert.equal(detail.payload.decisions[0].decision, '자문 기록 후 마스터 확인 대기');
+    assertNoRawJsonInMinutes(pending.payload, 'pending decisions API');
     const compactDecision = _testOnly.compactDecisionEvidence({
       title: 'raw title',
       agendaKind: 'market:domestic',
@@ -2016,6 +2048,7 @@ async function main() {
     const completedMeetingDetail = await request(baseUrl, '/api/meetings/2');
     assert.equal(completedMeetingDetail.payload.minutes.length, 1);
     const completedMeetingCatchup = await request(baseUrl, '/api/catchup/2');
+    assert.equal(Number(completedMeetingCatchup.payload.meeting.id), completedRun.sessionId);
     assert.ok(completedMeetingCatchup.payload.lines[0].includes('확정 0건, 보류 0건, 대기 0건'));
 
     const missingMeeting = await request(baseUrl, '/api/meetings/999999');
@@ -3303,6 +3336,8 @@ async function main() {
     smoke: 'luna-meeting-room-web',
     scenarios: {
       apiListDetailCatchup: true,
+      cliArgSpaceEquals: true,
+      rawJsonApiAbsent: true,
       headerStatusAndDashboardA11y: true,
       dashboardNewTabNoopener: true,
       keyboardFocusVisible: true,
@@ -3312,6 +3347,7 @@ async function main() {
       startReentryGuard: true,
       completedRunSwitchesToSessionDetail: true,
       completedRunIncreasesMeetingListCount: true,
+      latestSessionFirstCatchupUpdated: true,
       meetingLaunchdPersistentLogs: true,
       failedRunShowsError: true,
       confirmAuditAndIdempotency: true,
@@ -3322,6 +3358,7 @@ async function main() {
       catchupConfirmedDeferredPendingCounts: true,
       catchupLinesA11y: true,
       catchupInternalTermsLocalized: true,
+      latestMinutesNoRepeatedSentences: true,
       catchupPremarketDecisionPrefixDeduped: true,
       cryptoMarketLabelLocalized: true,
       askRateLimit: true,
