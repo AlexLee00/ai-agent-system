@@ -1030,18 +1030,21 @@ function isTerminalEntryTriggerLiveRiskGateBlock(riskGate = {}) {
 export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const env = context?.env || process.env;
   const flags = context?.flags || getLunaIntelligentDiscoveryFlags({ env });
+  const dryRun = context?.dryRun === true;
   const posttradeCfg = getPosttradeFeedbackRuntimeConfig();
   const constitutionalEnabled = posttradeCfg?.constitutional_feedback?.enabled === true;
   if (!flags.phases.entryTriggerEnabled) {
     return { decisions: candidates, stats: { enabled: false, armed: 0, fired: 0, blocked: 0 } };
   }
 
-  await ensureLunaDiscoveryEntryTables();
-  await expireEntryTriggers().catch(() => 0);
+  if (!dryRun) {
+    await ensureLunaDiscoveryEntryTables();
+    await expireEntryTriggers().catch(() => 0);
+  }
 
   const exchange = String(context.exchange || 'binance');
   const openPositionSymbols = await loadOpenEntryPositionSymbols(exchange, context);
-  await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
+  if (!dryRun) await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const ttlMinutes = Number(flags.entryTrigger.ttlMinutes || 180);
   const minConfidence = numEnv('LUNA_MIN_CONFIDENCE', Number(flags.entryTrigger.minConfidence || 0.48), env);
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
@@ -1361,7 +1364,10 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       }
     }
 
-    const persisted = await insertEntryTrigger({
+    const persisted = dryRun ? {
+      id: `dry-run:${activeCandidate.symbol}:${triggerType}`,
+      expires_at: plusMinutes(ttlMinutes),
+    } : await insertEntryTrigger({
       symbol: activeCandidate.symbol,
       exchange,
       setupType: activeCandidate?.setup_type || activeCandidate?.strategy_route?.setupType || null,

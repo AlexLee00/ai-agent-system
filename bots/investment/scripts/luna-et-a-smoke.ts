@@ -3,6 +3,7 @@
 
 import assert from 'assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { evaluateEntryTriggers } from '../shared/entry-trigger-engine.ts';
 import { runLunaMarketGate } from './runtime-luna-market-gate.ts';
 import {
   assertEntryTriggerShadow,
@@ -71,6 +72,20 @@ async function main() {
   assert.equal(flags.shouldEntryTriggerMutate(), false);
   assert.equal(assertEntryTriggerShadow(flags, { dryRun: true }), true);
 
+  const realDryRun = await evaluateEntryTriggers([turtle], {
+    dryRun: true,
+    env: { LUNA_FULL_DATA_LOOP_ENABLED: 'false' },
+    flags,
+    exchange: 'binance',
+    market: 'crypto',
+    regime: 'bull',
+    queryFn: async () => [],
+    openPositionSymbols: [],
+  });
+  assert.equal(realDryRun.stats.fired, 0);
+  assert.equal(realDryRun.stats.allowLiveFire, false);
+  assert.equal(realDryRun.stats.shouldMutate, false);
+
   let observedContext = null;
   const result = await runLunaMarketGate({
     dryRun: true,
@@ -130,6 +145,7 @@ async function main() {
     ok: true,
     smoke: 'luna-et-a',
     adapter: { turtle: turtle.setup_type, testah: testah.setup_type },
+    realDryRun: realDryRun.stats,
     shadow: result.entryTriggerShadow,
     isolatedError: isolated.entryTriggerShadowError,
   };
