@@ -193,11 +193,13 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
         LUNA_ENTRY_TRIGGER_SHADOW_BLOCKS_BUY: 'false',
       };
       const flags = buildEntryTriggerShadowFlags({ env: shadowEnv });
+      const entryTriggerDryRun = dryRun === true;
       const context = {
         ...options,
         env: shadowEnv,
         flags,
-        dryRun: true,
+        dryRun: entryTriggerDryRun,
+        entryTriggerShadowPersistence: !entryTriggerDryRun,
         exchange: options.exchange || 'binance',
         market: options.market || 'crypto',
         regime: options.regime || regimeByMarket.get(options.market || 'crypto')?.dominant || null,

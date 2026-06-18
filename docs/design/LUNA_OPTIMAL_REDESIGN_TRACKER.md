@@ -74,7 +74,8 @@
 ## ET — 진입 트리거 정교화 + 발화 레이어 (2026-06-18 설계, 마스터 지시 B)
 > 설계 SSOT: `LUNA_OPTIMAL_REDESIGN.md` C3·C16(2026-06-18 본문 통합) · 전부 shadow·**liveFireEnabled=false 강제→실발화 0**
 - **설계 ✅**(2026-06-18, 메티): entry-trigger-engine 재사용 연결 설계. **자기수정**: "구세대 잔재" 오판 정정 — worker만 5/4 retired, 엔진은 **C3 재사용 자산**(리테스트/래더 트리거 확장). shadow 게이팅 내장 확인(`shouldAllowLiveEntryFire()`=liveFireEnabled false면 무조건 false). 현재 30분 러너=전략군 기본 룰만, 정교 트리거·발화 레이어 미연결.
-- **ET-A**(대기): 전략군 신호→trigger candidate 어댑터 + 통째 shadow 연결(liveFireEnabled=false 강제) + 30분 러너 trigger 평가 단계. **fire 0 단언**.
+- **ET-A** ✅ (2026-06-18, 메티 검증·**시동**): 전략군 신호→trigger candidate 어댑터(BUY·confidence 매핑) + 30분 러너 shadow 연결(`entryTriggerShadowEnabled` 분기·liveFireEnabled=false **throw 강제**) + `LUNA_ENTRY_TRIGGER_SHADOW=true` plist 활성. 검증: fired:0·allowLiveFire:false·armed 동작. **30분마다 자동 평가 — 전략군 신호 발생 시 armed 축적 시작**.
+- **📊 ET 관찰 대상**: entry_triggers(armed 누적·전략군 신호 발생 시) — ET-B(리테스트/래더 유용성) 판단 근거.
 - **ET-B**(대기): 리테스트/래더 관찰 후 신세대 정리·would-fire(placed:false, paper-mirror 패턴).
 - **ET-C**(대기): C16 expected-fire 워치독(would-fire vs 매칭) + debrief 미발화 편차 등재 + 수시회의⑦. 테이블 1개·30일(T9).
 - **ET-D**(대기): C15 등록(전략군 룰 재평가 vs 기본 shadow 비교)·승급.

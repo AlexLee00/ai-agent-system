@@ -71,6 +71,7 @@ async function main() {
   assert.equal(flags.shouldAllowLiveEntryFire(), false);
   assert.equal(flags.shouldEntryTriggerMutate(), false);
   assert.equal(assertEntryTriggerShadow(flags, { dryRun: true }), true);
+  assert.equal(assertEntryTriggerShadow(flags, { dryRun: false, entryTriggerShadowPersistence: true }), true);
 
   const realDryRun = await evaluateEntryTriggers([turtle], {
     dryRun: true,
@@ -123,6 +124,38 @@ async function main() {
   assert.ok(result.summary.includes('entry-trigger shadow: candidates 2 · armed 2 · fired 0'));
   assert.equal(observedContext?.dryRun, true);
 
+  let persistenceContext = null;
+  const persistenceResult = await runLunaMarketGate({
+    dryRun: false,
+    writeHistory: false,
+    writeOutput: false,
+    entryTriggerShadow: true,
+    env: { LUNA_ENTRY_TRIGGER_SHADOW: 'true', LUNA_LIVE_FIRE_ENABLED: 'true' },
+    strategySignals: [entrySignal('turtle_breakout')],
+    preflightEvaluations: [],
+    circuitLocks: [],
+    gates: [{ market: 'crypto', score: 70, deployment: 'full' }],
+    regimes: [{ market: 'crypto', dominant: 'bull', probabilities: { bull: 0.8 }, source: 'fixture' }],
+    openPositionSymbols: [],
+  }, {
+    evaluateEntryTriggers: async (candidates, context) => {
+      persistenceContext = context;
+      assert.equal(context.dryRun, false);
+      assert.equal(context.entryTriggerShadowPersistence, true);
+      assert.equal(context.flags.liveFireEnabled, false);
+      assert.equal(context.flags.shouldAllowLiveEntryFire(), false);
+      assert.equal(context.flags.shouldEntryTriggerMutate(), false);
+      return {
+        decisions: candidates,
+        stats: { enabled: true, armed: candidates.length, fired: 0, blocked: 0, observed: candidates.length, allowLiveFire: false, shouldMutate: false, mode: 'shadow' },
+      };
+    },
+  });
+  assert.equal(persistenceResult.entryTriggerShadow.armed, 1);
+  assert.equal(persistenceResult.entryTriggerShadow.fired, 0);
+  assert.equal(persistenceResult.entryTriggerShadow.shouldMutate, false);
+  assert.equal(persistenceContext?.entryTriggerShadowPersistence, true);
+
   const isolated = await runLunaMarketGate({
     dryRun: true,
     writeOutput: false,
@@ -147,6 +180,7 @@ async function main() {
     adapter: { turtle: turtle.setup_type, testah: testah.setup_type },
     realDryRun: realDryRun.stats,
     shadow: result.entryTriggerShadow,
+    persistence: persistenceResult.entryTriggerShadow,
     isolatedError: isolated.entryTriggerShadowError,
   };
 }

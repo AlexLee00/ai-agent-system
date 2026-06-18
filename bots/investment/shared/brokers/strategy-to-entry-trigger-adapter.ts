@@ -156,10 +156,15 @@ export function buildEntryTriggerShadowFlags({ env = process.env, baseFlags = nu
 }
 
 export function assertEntryTriggerShadow(flags: any = {}, context: any = {}) {
-  if (context.dryRun !== true) throw new Error('entry_trigger_shadow_requires_dry_run');
+  const observeOnlyPersistence = context.entryTriggerShadowPersistence === true;
+  if (context.dryRun !== true && !observeOnlyPersistence) {
+    throw new Error('entry_trigger_shadow_requires_dry_run_or_observe_only_persistence');
+  }
   if (flags.liveFireEnabled !== false) throw new Error('entry_trigger_shadow_live_fire_not_forced_false');
   if (typeof flags.shouldAllowLiveEntryFire !== 'function') throw new Error('entry_trigger_shadow_flags_missing_live_fire_guard');
   if (flags.shouldAllowLiveEntryFire() !== false) throw new Error('entry_trigger_shadow_live_fire_guard_not_false');
+  if (typeof flags.shouldEntryTriggerMutate !== 'function') throw new Error('entry_trigger_shadow_flags_missing_mutation_guard');
+  if (flags.shouldEntryTriggerMutate() !== false) throw new Error('entry_trigger_shadow_mutation_guard_not_false');
   return true;
 }
 
