@@ -60,6 +60,11 @@
 
 ## P2 — 검증·피드백·포지션
 - C7 permutation 2종+CPCV+point-in-time 전면 · C8 피드백(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가+expected-fire 워치독(삽입점=entry-trigger-engine:534/1030·T9 테이블 30일) · C11 이벤트 수시회의 · WS-I 리스크 훅.
+### C7 검증 전면 분할 (2026-06-18~, L-P2b)
+> 갭 분석: 룩어헤드(.shift(1))·OOS skew/kurt·robust selection·DSR/PBO migration **기존 구현**. 진짜 갭=permutation·CPCV·point-in-time.
+- **C7-2 permutation ✅** (2026-06-18, 메티 검증): backtest-vectorbt.py IS/WF permutation(신호 시점 block-shuffle→null sharpe→p-value)·`LUNA_BT_PERMUTATION_ENABLED` OFF 기본 diff 0·permutation_gate shadow. **합성 검증: 추세 p=0.008(진짜)·random p=0.705(우연) 정확 구분**. 경미: 스모크 자체 seed(env 무반영).
+- **C7-3 CPCV**(다음): purge+embargo combinatorial — 과적합 방지. 가장 복잡.
+- **C7-1 point-in-time 유니버스 진단**(대기): 생존편향 — 현 universe 시점 기준 실측.
 
 ## TOSS — 토스증권 Open API 통합 (2026-06-13 설계, 마스터 지시)
 > 설계 SSOT: `LUNA_OPTIMAL_REDESIGN.md` C18(2026-06-18 본문 통합) · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)
@@ -75,7 +80,8 @@
 > 설계 SSOT: `LUNA_OPTIMAL_REDESIGN.md` C3·C16(2026-06-18 본문 통합) · 전부 shadow·**liveFireEnabled=false 강제→실발화 0**
 - **설계 ✅**(2026-06-18, 메티): entry-trigger-engine 재사용 연결 설계. **자기수정**: "구세대 잔재" 오판 정정 — worker만 5/4 retired, 엔진은 **C3 재사용 자산**(리테스트/래더 트리거 확장). shadow 게이팅 내장 확인(`shouldAllowLiveEntryFire()`=liveFireEnabled false면 무조건 false). 현재 30분 러너=전략군 기본 룰만, 정교 트리거·발화 레이어 미연결.
 - **ET-A** ✅ (2026-06-18, 메티 검증·**시동**): 전략군 신호→trigger candidate 어댑터(BUY·confidence 매핑) + 30분 러너 shadow 연결(`entryTriggerShadowEnabled` 분기·liveFireEnabled=false **throw 강제**) + `LUNA_ENTRY_TRIGGER_SHADOW=true` plist 활성. 검증: fired:0·allowLiveFire:false·armed 동작. **30분마다 자동 평가 — 전략군 신호 발생 시 armed 축적 시작**.
-- **📊 ET 관찰 대상**: entry_triggers(armed 누적·전략군 신호 발생 시) — ET-B(리테스트/래더 유용성) 판단 근거.
+- **🔍 entry-trigger crypto 가동 발견**(2026-06-18): entry-trigger-engine은 worker(주식) retired였으나 **crypto 파이프라인에서 가동 중**(mtf_alignment·fired 매일 2~8건·crypto LIVE 일부). ET-A(주식 kis)와 같은 entry_triggers 테이블 공유하나 **exchange로 격리**(주식=kis·crypto=binance). ET-A 시동 후 crypto 무중단·주식 fired 0 검증 완료.
+- **📊 ET 관찰 대상**: entry_triggers(armed 누적·전략군 신호 발생 시·**전략군 신호 6건으로 적어 ET-B 시기상조**) — ET-B 판단 근거.
 - **ET-B**(대기): 리테스트/래더 관찰 후 신세대 정리·would-fire(placed:false, paper-mirror 패턴).
 - **ET-C**(대기): C16 expected-fire 워치독(would-fire vs 매칭) + debrief 미발화 편차 등재 + 수시회의⑦. 테이블 1개·30일(T9).
 - **ET-D**(대기): C15 등록(전략군 룰 재평가 vs 기본 shadow 비교)·승급.
