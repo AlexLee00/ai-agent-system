@@ -15,6 +15,7 @@ import itertools
 import json
 import math
 import os
+import random
 import sys
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -317,6 +318,162 @@ def apply_next_bar_signal_masks(entries, exits):
     return next_entries, next_exits
 
 
+def permutation_iteration_count() -> int:
+    return min(1000, int_env("LUNA_BT_PERMUTATION_ITERATIONS", 200))
+
+
+def permutation_seed(mode: str = "is") -> int:
+    try:
+        base = int(os.environ.get("LUNA_BT_PERMUTATION_SEED", "20260618"))
+    except Exception:
+        base = 20260618
+    return base + (7919 if mode == "wf" else 0)
+
+
+def portfolio_sharpe_for_masks(df, params: dict, deps: dict, entries, exits):
+    vbt = deps["vbt"]
+    if vbt is None:
+        raise RuntimeError("vectorbt가 설치되지 않았습니다.")
+
+    portfolio_freq = infer_portfolio_freq(df)
+    realistic_costs = bool_env("LUNA_BT_REALISTIC_COSTS", False)
+    next_bar_execution = bool_env("LUNA_BT_NEXT_BAR_EXECUTION_ENABLED", False)
+    toss_fee_model_enabled = bool_env("LUNA_BT_TOSS_FEE_MODEL_ENABLED", False)
+    slippage_pct = float_env("LUNA_BT_SLIPPAGE_PCT", 0.0005)
+    market_calendar = params.get("market_calendar") or df.attrs.get("luna_market_calendar") or "crypto"
+    fee_model_info = resolve_toss_fee_model(market_calendar, toss_fee_model_enabled)
+    from_signals_params = None
+    execution_entries = entries
+    execution_exits = exits
+    if next_bar_execution:
+        execution_entries, execution_exits = apply_next_bar_signal_masks(execution_entries, execution_exits)
+
+    pf_kwargs = dict(
+        close=df["close"],
+        entries=execution_entries.fillna(False),
+        exits=execution_exits.fillna(False),
+        tp_stop=params.get("tp_pct", 0.06),
+        sl_stop=params.get("sl_pct", 0.03),
+        init_cash=10_000,
+        fees=fee_model_info["fee_pct"],
+        freq=portfolio_freq,
+    )
+    if next_bar_execution:
+        from_signals_params = from_signals_param_names(vbt, deps)
+        if "price" in from_signals_params and "open" in df.columns:
+            pf_kwargs["price"] = df["open"]
+    if realistic_costs:
+        if from_signals_params is None:
+            from_signals_params = from_signals_param_names(vbt, deps)
+        if "slippage" in from_signals_params:
+            pf_kwargs["slippage"] = slippage_pct
+        if "high" in from_signals_params and "low" in from_signals_params and "high" in df.columns and "low" in df.columns:
+            pf_kwargs["high"] = df["high"]
+            pf_kwargs["low"] = df["low"]
+
+    stats = vbt.Portfolio.from_signals(**pf_kwargs).stats()
+    sharpe = safe_float(stats.get("Sharpe Ratio"), None)
+    trades = int(safe_float(stats.get("Total Trades"), 0))
+    return sharpe if sharpe is not None and trades > 0 else None
+
+
+def extract_holding_lengths(entries, exits, n: int) -> list[int]:
+    entry_indices = [idx for idx, value in enumerate(entries.fillna(False).tolist()) if bool(value)]
+    exit_indices = [idx for idx, value in enumerate(exits.fillna(False).tolist()) if bool(value)]
+    lengths: list[int] = []
+    for entry_idx in entry_indices:
+        exit_idx = next((idx for idx in exit_indices if idx > entry_idx), None)
+        if exit_idx is None:
+            exit_idx = min(n - 1, entry_idx + 1)
+        length = max(1, min(n - 1 - entry_idx, exit_idx - entry_idx))
+        if length > 0:
+            lengths.append(length)
+    return lengths
+
+
+def build_permuted_signal_masks(entries, exits, rng: random.Random):
+    n = len(entries)
+    entry_indices = [idx for idx, value in enumerate(entries.fillna(False).tolist()) if bool(value)]
+    hold_lengths = extract_holding_lengths(entries, exits, n)
+    if n < 3 or not entry_indices or not hold_lengths:
+        return None, None
+
+    valid_indices = list(range(0, n - 1))
+    rng.shuffle(valid_indices)
+    rng.shuffle(hold_lengths)
+    sample_count = min(len(entry_indices), len(valid_indices))
+    if sample_count <= 0:
+        return None, None
+
+    perm_entries = entries.copy()
+    perm_exits = exits.copy()
+    perm_entries.iloc[:] = False
+    perm_exits.iloc[:] = False
+    for offset, entry_idx in enumerate(valid_indices[:sample_count]):
+        length = hold_lengths[offset % len(hold_lengths)]
+        if entry_idx + length >= n:
+            length = max(1, n - 1 - entry_idx)
+        exit_idx = entry_idx + length
+        if exit_idx <= entry_idx or exit_idx >= n:
+            continue
+        perm_entries.iloc[entry_idx] = True
+        perm_exits.iloc[exit_idx] = True
+    if bool(perm_entries.fillna(False).any()):
+        return perm_entries, perm_exits
+    return None, None
+
+
+def permutation_gate_payload(p_is=None, p_wf=None) -> dict:
+    return {
+        "mode": "shadow",
+        "is_ok": None if p_is is None else bool(p_is < 0.01),
+        "wf_ok": None if p_wf is None else bool(p_wf <= 0.05),
+        "thresholds": {
+            "is": 0.01,
+            "wf": 0.05,
+        },
+    }
+
+
+def permutation_test(df, params: dict, observed_sharpe, deps: dict, mode: str = "is",
+                     iterations: int | None = None, entries=None, exits=None) -> dict:
+    pd = deps["pd"]
+    if pd is None:
+        return {"p_value": None, "iterations": 0, "null_sharpe_mean": None}
+    observed = safe_float(observed_sharpe, None)
+    if observed is None:
+        return {"p_value": None, "iterations": 0, "null_sharpe_mean": None}
+    if entries is None or exits is None:
+        entries, exits = build_signal_masks(df, params, deps)
+    if len([value for value in entries.fillna(False).tolist() if bool(value)]) <= 0:
+        return {"p_value": None, "iterations": 0, "null_sharpe_mean": None}
+
+    target_iterations = min(1000, max(1, int(iterations or permutation_iteration_count())))
+    rng = random.Random(permutation_seed(mode))
+    null_sharpes: list[float] = []
+    for _ in range(target_iterations):
+        perm_entries, perm_exits = build_permuted_signal_masks(entries, exits, rng)
+        if perm_entries is None or perm_exits is None:
+            continue
+        try:
+            sharpe = portfolio_sharpe_for_masks(df, params, deps, perm_entries, perm_exits)
+        except Exception:
+            continue
+        if sharpe is not None and math.isfinite(float(sharpe)):
+            null_sharpes.append(float(sharpe))
+
+    if not null_sharpes:
+        return {"p_value": None, "iterations": 0, "null_sharpe_mean": None}
+    extreme = sum(1 for sharpe in null_sharpes if sharpe >= observed)
+    p_value = (extreme + 1) / (len(null_sharpes) + 1)
+    null_mean = sum(null_sharpes) / len(null_sharpes)
+    return {
+        "p_value": p_value if math.isfinite(p_value) else None,
+        "iterations": len(null_sharpes),
+        "null_sharpe_mean": null_mean if math.isfinite(null_mean) else None,
+    }
+
+
 def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, collect_meta_labels: bool = False):
     vbt = deps["vbt"]
     pd = deps["pd"]
@@ -327,6 +484,7 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
     tp_pct = params.get("tp_pct", 0.06)
     sl_pct = params.get("sl_pct", 0.03)
     entries, exits = build_signal_masks(df, params, deps)
+    raw_entries, raw_exits = entries, exits
     portfolio_freq = infer_portfolio_freq(df)
     realistic_costs = bool_env("LUNA_BT_REALISTIC_COSTS", False)
     next_bar_execution = bool_env("LUNA_BT_NEXT_BAR_EXECUTION_ENABLED", False)
@@ -428,6 +586,20 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
     if collect_meta_labels:
         result.update(compute_meta_labels(pf, deps))
     result["robust_score"] = robust_rank_score(result)
+    if bool_env("LUNA_BT_PERMUTATION_ENABLED", False):
+        perm = permutation_test(
+            df,
+            params,
+            result.get("sharpe_ratio"),
+            deps,
+            mode="is",
+            entries=raw_entries,
+            exits=raw_exits,
+        )
+        result["permutation_p_is"] = perm["p_value"]
+        result["permutation_iterations"] = perm["iterations"]
+        result["permutation_null_sharpe_mean"] = perm["null_sharpe_mean"]
+        result["permutation_gate"] = permutation_gate_payload(p_is=perm["p_value"])
     return result
 
 
@@ -1133,6 +1305,18 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
             "consensus_fold_coverage": consensus_fold_coverage,
             "consensus_param_signature": consensus_sig,
         })
+    if bool_env("LUNA_BT_PERMUTATION_ENABLED", False):
+        perm = permutation_test(
+            df,
+            _wf_params,
+            aggregate.get("sharpe_ratio") if aggregate.get("sharpe_ratio") is not None else pooled_sharpe_oos,
+            deps,
+            mode="wf",
+        )
+        aggregate["permutation_p_wf"] = perm["p_value"]
+        aggregate["permutation_iterations"] = perm["iterations"]
+        aggregate["permutation_null_sharpe_mean"] = perm["null_sharpe_mean"]
+        aggregate["permutation_gate"] = permutation_gate_payload(p_wf=perm["p_value"])
     aggregate["robust_score"] = robust_rank_score(aggregate)
     return aggregate
 

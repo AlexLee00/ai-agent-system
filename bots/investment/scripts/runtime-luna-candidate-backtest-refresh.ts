@@ -798,6 +798,39 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     }
     return rows;
   })();
+  const permutationPIsValues = qualityRows
+    .map((r) => safeNum(r?.permutation_p_is, NaN))
+    .filter(Number.isFinite);
+  const permutationPWfValues = qualityRows
+    .map((r) => safeNum(r?.permutation_p_wf, NaN))
+    .filter(Number.isFinite);
+  const permutationNullSharpeValues = qualityRows
+    .map((r) => safeNum(r?.permutation_null_sharpe_mean, NaN))
+    .filter(Number.isFinite);
+  const permutationIterationValues = qualityRows
+    .map((r) => safeNum(r?.permutation_iterations, NaN))
+    .filter(Number.isFinite);
+  const avgPermutationPIs = permutationPIsValues.length > 0
+    ? permutationPIsValues.reduce((s, v) => s + v, 0) / permutationPIsValues.length
+    : null;
+  const avgPermutationPWf = permutationPWfValues.length > 0
+    ? permutationPWfValues.reduce((s, v) => s + v, 0) / permutationPWfValues.length
+    : null;
+  const avgPermutationNullSharpe = permutationNullSharpeValues.length > 0
+    ? permutationNullSharpeValues.reduce((s, v) => s + v, 0) / permutationNullSharpeValues.length
+    : null;
+  const permutationIterations = permutationIterationValues.length > 0
+    ? Math.max(...permutationIterationValues.map((v) => Math.round(v)))
+    : null;
+  const permutationGate = permutationPIsValues.length > 0 || permutationPWfValues.length > 0
+    ? {
+      mode: 'shadow',
+      isOk: permutationPIsValues.length > 0 ? permutationPIsValues.every((v) => v < 0.01) : null,
+      wfOk: permutationPWfValues.length > 0 ? permutationPWfValues.every((v) => v <= 0.05) : null,
+      thresholds: { is: 0.01, wf: 0.05 },
+      source: 'backtest_run_metadata',
+    }
+    : null;
 
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
@@ -878,6 +911,12 @@ function evaluateQuality(rows: any[], market: string = 'all') {
       const vals = qualityRows.filter((r) => r?.pbo_n_combinations != null).map((r) => safeNum(r?.pbo_n_combinations, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? vals.reduce((s, v) => s + Math.round(v), 0) : null;
     })(),
+    // C7 permutation (SHADOW — healthy/gate_status 판정 미반영)
+    permutationPIs: avgPermutationPIs != null ? Number(avgPermutationPIs.toFixed(6)) : null,
+    permutationPWf: avgPermutationPWf != null ? Number(avgPermutationPWf.toFixed(6)) : null,
+    permutationIterations,
+    permutationNullSharpeMean: avgPermutationNullSharpe != null ? Number(avgPermutationNullSharpe.toFixed(6)) : null,
+    permutationGate,
     // Phase 2 Stage 1: meta-label 분포 (SHADOW — 판정 미반영)
     metaLabelDist: (() => {
       const dist = metaLabelRows.reduce((acc, row) => {
@@ -1050,6 +1089,11 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       dominanceFirstOrder: payload.dominanceFirstOrder ?? null,
       pboNBlocks: payload.pboNBlocks ?? null,
       pboNCombinations: payload.pboNCombinations ?? null,
+      permutationPIs: payload.permutationPIs ?? null,
+      permutationPWf: payload.permutationPWf ?? null,
+      permutationIterations: payload.permutationIterations ?? null,
+      permutationNullSharpeMean: payload.permutationNullSharpeMean ?? null,
+      permutationGate: payload.permutationGate ?? null,
       metaLabelDist: payload.metaLabelDist ?? null,
       metaLabelPosRate: payload.metaLabelPosRate ?? null,
       metaLabelNTrades: payload.metaLabelNTrades ?? null,
