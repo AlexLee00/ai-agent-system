@@ -1029,7 +1029,7 @@ function isTerminalEntryTriggerLiveRiskGateBlock(riskGate = {}) {
 
 export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const env = context?.env || process.env;
-  const flags = getLunaIntelligentDiscoveryFlags();
+  const flags = context?.flags || getLunaIntelligentDiscoveryFlags({ env });
   const posttradeCfg = getPosttradeFeedbackRuntimeConfig();
   const constitutionalEnabled = posttradeCfg?.constitutional_feedback?.enabled === true;
   if (!flags.phases.entryTriggerEnabled) {

@@ -186,10 +186,11 @@ async function main() {
   assert.equal(line, '전략군: 신호 2건(터틀 1·테스타 1)');
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 31);
-  assert.equal(seedDryRun.seeded, 31);
+  assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 32);
+  assert.equal(seedDryRun.seeded, LUNA_COMPONENT_REGISTRY_SEED.length);
   assert.equal(seedDryRun.components.includes('strategy-family-turtle'), true);
   assert.equal(seedDryRun.components.includes('strategy-family-testah'), true);
+  assert.equal(seedDryRun.components.includes('entry-trigger-shadow-link'), true);
 
   return {
     ok: true,

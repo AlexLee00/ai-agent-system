@@ -701,9 +701,9 @@ async function main() {
     return { before, after, appliedRows };
   });
 
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 31);
+  assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 32);
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(seedDryRun.seeded, 31);
+  assert.equal(seedDryRun.seeded, LUNA_COMPONENT_REGISTRY_SEED.length);
   assert.ok(seedDryRun.components.includes('meeting-room-orchestrator'));
 
   return {

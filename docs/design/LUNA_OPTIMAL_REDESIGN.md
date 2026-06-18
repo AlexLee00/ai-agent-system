@@ -1,6 +1,6 @@
 # 루나 최적 재설계 설계서 (Phase 3)
 
-> 작성: 메티 · 2026-06-12 · 상태: **v1.1(2026-06-10)** — v1.0 확정 + 보강 3건(C4 손실빈도 서킷·C3 WB 후보·G2 시퀀스, 마스터 승인 반영). 확정 6건=§7. 회의실=MEETING_ROOM_DESIGN v0.6. 구현=LUNA_OPTIMAL_REDESIGN_TRACKER
+> 작성: 메티 · 2026-06-12 (최신 2026-06-18 통합) · 상태: **v1.4** — C18 토스·ET 트랙 본문 통합 — v1.0 확정 + 보강 3건(C4 손실빈도 서킷·C3 WB 후보·G2 시퀀스, 마스터 승인 반영). 확정 6건=§7. 회의실=MEETING_ROOM_DESIGN v0.6. 구현=LUNA_OPTIMAL_REDESIGN_TRACKER
 > 입력: LUNA_LOGIC_REANALYSIS.md(Phase 1 진단·신규 12영상 6원칙·B-01~20 재배치·M-1~M-11·외부자료 E-1~3/QuantaAlpha 등·루틴 비전)
 > 원칙: 비용 무시·최적 성능(마스터 지시). 무중단(PROTECTED launchd·크립토 LIVE·스카 실매출). 3시장(국내·해외·crypto) 공통 + 시장별 변형.
 
@@ -70,6 +70,7 @@
 | defensive | 신규 진입 없음·EXIT 우선·현금↑ | — | 기존 포지션 트레일 타이트닝 | bear·halt |
 - 공통: 종가 확인(개미털기 회피)·리테스트(fakeout, V-I 70%vs33%)·구조 손절·R:R 사전 계산. 파라미터(20/10/5/25/75/ATR배수)는 **stable-range 선정**(E-1: 최적화 일반화 약함→넓은 양호 구간의 중앙값 고정) 후 파라미터 스토어.
 - 재사용: wyckoff-phase-detector(수요존≈accumulation)·vsa·dynamic-trail-engine(트레일)·entry-trigger-engine(리테스트/래더 트리거 확장).
+- **[ET 트랙 2026-06-18 마스터 지시] entry-trigger-engine 연결 + 발화 레이어**: 현재 30분 러너는 전략군 **기본 룰**(터틀 돌파·테스타 눌림)만 구현, 정교 트리거(리테스트 확인·래더 분할매수·MTF 동의)는 entry-trigger-engine 재사용 예정이나 미연결(worker만 5/4 retired·**엔진 보존**). 발화 레이어("신호→발화")도 재설계 스택 미연결. **shadow 안전**: `shouldAllowLiveEntryFire()`는 `liveFireEnabled=false`면 무조건 false → 실발화 0(내장 게이팅 재사용). 발화 레이어=**would-fire 기록**(주문 안 함·placed:false, 토스 paper-mirror 패턴). 분할: **ET-A**(전략군 신호→trigger candidate 어댑터 + 통째 shadow 연결·liveFireEnabled=false 강제·fire 0 단언) → **ET-B**(리테스트/래더 관찰 후 신세대 정리·would-fire) → **ET-C**(C16 expected-fire 워치독+debrief 미발화 편차+수시회의⑦) → **ET-D**(C15 등록·전략군 룰 재평가 vs 기본). 접근=통째 연결 관찰→유용 로직 추출(처음부터 추출 시 무엇이 유용한지 모른 채 재구현 위험).
 - **[v1.1] 레인지 룰셋 후보 추가**(V-N): WB 더블 볼린저 — 변곡(양 밴드 터치+꼬리+밴드 안 마감=반전) vs 돌파(양 밴드+**앞 매물대 동시 돌파**+종가 마감) 2분류, 매물대 이중 컨펌으로 fakeout 차단 — P1-4에서 Sneaky/ORB와 **비교 백테스트 후 채택**(자가 주장 수치 불신, 자체 검증).
 - **[v1.1] 전략군 시퀀스 노트(G2)**: 추세 진입은 **돌파(터틀) 직후 또는 첫 눌림(테스타)만** — 추세 후반 늦은 눌림 진입 차단(V-N "추세는 초반에"). 라우팅에 추세 연령(돌파 후 경과 캔들) 파라미터.
 
@@ -196,7 +197,7 @@
 4. **시간 정책 재배치**: stale sweep·24h 한도는 **전략군 룰이 우선, 시간은 후순위 안전망**(soft-cap 유지하되 전략군 룰이 활성 관리 중이면 유예). 단 defensive 레짐·halt에서는 시간 정책 강화.
 5. **C15 등록**: "전략군 룰 재평가 vs 기존 지표 bias 재평가"를 shadow 비교(가상 청산 성과 Δ) → 승격 제안.
 - 재사용: reevaluator 1,949줄(골격)·dynamic-trail·protective-order·autopilot cadence·holding-monitor(안전망化). 신설=전략군 태그 스키마+군별 청산 룰 평가기+add 유닛 로직.
-- **[v1.2] expected-fire 워치독(silent miss 감지)**: 트리거 조건 충족인데 실행 부재(주문·알림 미발생) 감지→경보. 에러 감지(클로드팀)와 별개 차원 — "조용한 누락" 탐지. 구현: 트리거 평가 시 expected-fire 레코드 기록 → N분 내 매칭 실행 없으면 경보 + debrief plan vs actual에 자동 편차 등재. 근거: V-P 실사고(서버 트리거 미발화로 딥 매수 누락). 래더·전략군 진입·청산 룰·C15 제안 발화 전체 적용. **[실측] 삽입 지점: `entry-trigger-engine.ts` `buildEntryTriggerFireReadiness`(534)·`evaluateEntryTriggers`(1030)** — readiness 산출 시 expected-fire 레코드 기록.
+- **[v1.2] expected-fire 워치독(silent miss 감지)**: 트리거 조건 충족인데 실행 부재(주문·알림 미발생) 감지→경보. 에러 감지(클로드팀)와 별개 차원 — "조용한 누락" 탐지. 구현: 트리거 평가 시 expected-fire 레코드 기록 → N분 내 매칭 실행 없으면 경보 + debrief plan vs actual에 자동 편차 등재. 근거: V-P 실사고(서버 트리거 미발화로 딥 매수 누락). 래더·전략군 진입·청산 룰·C15 제안 발화 전체 적용. **삽입 지점: ET-A(entry-trigger 30분 러너 연결) 완료 후 `entry-trigger-engine.ts` `buildEntryTriggerFireReadiness`(534)·`evaluateEntryTriggers`(1030) / 연결 전이면 30분 러너 전략군→프리플라이트 흐름.** ET 트랙(C3 참조)의 ET-C에서 구현 — would-fire(placed:false) vs 매칭, 테이블 1개·30일 보존(T9).
 
 ### C17. 파라미터 스토어 [최종 리뷰 보강 — "동적 제어의 실체" 정식 설계]
 > 전 문서에서 11회 전제된 핵심 인프라의 실체 정의. 🔑 **기존 자산 3종 통합·확장**(신설 최소): `runtime-parameter-governance.ts`(203줄 — 키별 거버넌스 티어 escalate/immutable 기존재) + `runtime-config-suggestions`·`runtime-luna-dynamic-policy-operator`(제안·운영 기존재) + `luna_regime_weight_snapshots`(DB 이력 스냅샷 패턴).
@@ -207,10 +208,22 @@
 - **[v1.2] 제약 집행 분리(Constraint Enforcement Isolation)**: immutable tier(회로차단기·order_rules·주문/일일 한도)는 "선언"이 아닌 **물리 강제** — LLM 에이전트(루나 런타임·코덱스)의 쓰기 권한 밖 배치: ①DB role 분리(immutable 키는 별도 role만 UPDATE 가능) ②설정 파일 무결성 검증(해시 대조, 변조 시 보수 디폴트+경보) ③제약 검사는 주문 경로 인라인(LLM이 우회 불가한 위치). 근거: V-O 실사고 — "LLM이 리스크 제약 서비스를 재배포해 우회". **선행 작업: 루나 에이전트가 자기 제약(runtime-config·env·plist)을 런타임 수정 가능한 경로 실측 감사**(P0-6). **[메티 스팟체크] governance `order_rules:'immutable'`은 선언만(125행) — 쓰기 차단 코드 미발견(P0-6에서 정밀 확정)**.
 - **[v1.2 시뮬 2차] break-glass(마스터 수동 오버라이드)**: 물리 강제가 **마스터까지 막으면 안 됨** — 마스터 전용 경로(별도 DB role + CLI 스크립트, 전 사용 감사 로그+텔레그램 통지) 보장. 긴급 상황(서킷 오발동·시장 이상)에서 마스터가 즉시 해제·조정 가능해야 완전자율의 안전판이 성립.
 
-### C18. 브로커 추상화 + 토스증권 통합 [신설 — 2026-06-13, 마스터 지시]
-- 토스증권 Open API(OAuth2·6 카테고리) 통합. **BrokerAdapter 추상화**(KIS·토스·Binance 단일 인터페이스)·토스 데이터 소스 우선(신뢰도·이용자 多)·**투자유의 종목 게이트**·**C4 프리플라이트 외부 진실 교차검증**(buying-power/sellable/commission)·시크릿 마스터 전용 입력(secret-store.md).
-- **LIVE = shadow→자동승급**: S0 shadow→S1 paper-mirror(사전검증 실호출+주문 미발행)→S2 micro-live(1주, 마스터 명시 승인)→S3 scaled. 토스 sandbox 부재 → shadow 검증 결정적. C15 표준 경로 재사용.
-- 상세 설계: **`docs/design/LUNA_TOSS_INTEGRATION_DESIGN.md`**(v0.1) — C18-1~4 + 기존 C1/C3/C4/C7/C14/C16 보강 + 구현 분할 TOSS-A~E.
+### C18. 브로커 추상화 + 토스증권 통합 [신설 — 2026-06-13, 마스터 지시 / 2026-06-18 본문 통합]
+> 마스터 전략: **단기=KIS / 중기·장기=토스**(보유기간 horizon으로 실행 브로커 라우팅). 구현 진행 상태(TOSS-A~E)=TRACKER.
+
+**C18-1. BrokerAdapter 추상화** (`shared/brokers/broker-adapter.ts`): KIS·토스·Binance 단일 인터페이스. 읽기(getQuote/Candles/Holdings/SecuritiesWarning/Calendar/ExchangeRate)·사전검증(getBuyingPower/Sellable/Commission)·실행(placeOrder/amend/cancel — **capability 게이팅: canTrade && liveFireEnabled && 승급완료 3중 조건**, shadow에선 어댑터 실행 메서드 `disabled`(throw)). `selectBroker({horizon})`: short→KIS·mid/long/mid_long→토스. `assertExecutable(adapter)` 단일 실행 게이트.
+
+**C18-2. 토스 클라이언트** (`shared/brokers/toss-client.ts`): OAuth2 Client Credentials(`/oauth2/token` Basic auth)·토큰 50분 캐싱·X-Tossinvest-Account 헤더=**accountSeq**(콜론id/accountNo 자동 환원). 6 카테고리: Market Data(시세·캔들·호가)·Stock Info(종목·**투자유의 securities-warning**)·Market Info(캘린더·환율)·Account/Asset(잔고)·Order(사전검증 3종·주문)·Auth. WS 미공개→REST 폴링(30분 주기 정합).
+
+**C18-3. MCP/A2A/스킬/훅** (신규 서버 신설 금지·기존 재사용): MCP 토스 도구 4종(price/candles/securities-warning/calendar) → marketdata-mcp. A2A 스킬(account-snapshot·preflight-verify). 훅(toss-order-preflight-hook — 승급 후 활성).
+
+**C18-4. 시크릿** (마스터 전용 입력): `bots/hub/secrets-store.json`(600·gitignore)의 `toss` 블록(api_key·secret_key·account·mode·live_trading). 코드는 getSecret 경유·하드코딩 0·`maskSecret` 마스킹·`toss-secret-doctor`(값 미노출 토큰 발급 검증).
+
+**기존 컴포넌트 보강**: C1 게이트(토스 캘린더·시세 교차검증)·C3/C7(캔들 소스·국내 수수료 무료 비용 보정 플래그)·**C4 프리플라이트 외부 진실 교차검증**(buying-power/sellable/commission 대조)·**C14 투자유의 종목 게이트**(관리/환기/유의 자동 배제 — 토스 강점)·C16/C9 잔고 재평가.
+
+**LIVE = shadow→자동승급** (토스 sandbox 부재 → shadow 검증 결정적): **S0 shadow**(would-fire만)→**S1 paper-mirror**(사전검증 실호출+주문 미발행·placed:false)→**S2 micro-live**(1주, 마스터 명시 승인 — 자동 불가)→**S3 scaled**(사이징 정상화). 각 전환=C15 제안. 롤백=`live_trading=false` 한 줄. LIVE 주문=토스 사전검증+C4 프리플라이트+서킷 3중 게이트.
+
+**핵심 시너지 4건**: ①C4 프리플라이트 외부 진실 검증(추정 vs 토스 실제) ②투자유의 종목 자동 배제 ③국내 수수료 무료→백테스트 비용 보정 ④sandbox 부재→shadow 자동승급 설계 결정적.
 
 ### 보강 메모 [최종 리뷰 — 소갭 4건 확정]
 - **G6 초기값**: LLM 리뷰어 감점 캡 = 최종 스코어의 **−20%**(예: 10점 만점 중 −2), 보조점수 블렌드 가중 = **0.2**(결정론 0.8) — 모두 파라미터 스토어(tier=auto), Stage A 데이터로 보정.

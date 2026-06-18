@@ -1,6 +1,6 @@
 # 루나 투자회의 + 펀더멘털 리서치 — 설계 (SSOT)
 
-> 버전 v0.8 (2026-06-11) · 작성: 메티 · 상태: 실험판 + 성장 통합 + **재설계 정합(§21)·사용 시뮬레이션(§22)·3시장 회의 체계(§23)·v1.2~1.3 정합(§24)** · 보강=LUNA_BOOST_DESIGN.md · 적용 검토=LUNA_BOOST_APPLY_REVIEW.md · 성장=LUNA_GROWTH_REINFORCEMENT.md
+> 버전 v0.8 (2026-06-11) · 작성: 메티 · 상태: 실험판 + 성장 통합 + **재설계 정합(§21)·사용 시뮬레이션(§22)·3시장 회의 체계(§23)·v1.2~1.3 정합(§24)** · 보강=archive/luna-precursor/LUNA_BOOST_DESIGN.md · 적용 검토=archive/luna-precursor/LUNA_BOOST_APPLY_REVIEW.md · 성장=archive/luna-precursor/LUNA_GROWTH_REINFORCEMENT.md
 > 전제: 단일 사용자 · 개발 중 · paper 단계. **실험 우선 · 성능 비중(완전 교체 비용 무시) · 가드 최소("게이트를 치우고 계측을 깐다")**.
 > 상위 자산 재사용: `bots/investment`(루나팀). 회의실=신규 오케스트레이터만, 분석/실행/리스크/메모리/졸업은 기존 부품 재사용.
 

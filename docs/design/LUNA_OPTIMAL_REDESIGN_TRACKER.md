@@ -6,6 +6,7 @@
 > 원칙: 무중단(PROTECTED·crypto LIVE·스카) · shadow→L4→L5 표준 경로(C15) · 검증 통과분만 승격 · 마스터=게이트.
 
 ## 📊 종합 현황 (2026-06-11)
+> **[2026-06-18 설계문서 통합]** LUNA 설계문서 12→현역 6개. TOSS·ET 증분을 메인 OPTIMAL_REDESIGN(C18/C3/C16)에 흡수·별도 문서 삭제. 6/8 선행 분석 4종(VIDEO·BOOST_DESIGN·BOOST_APPLY·GROWTH)→`archive/luna-precursor/`. 현역=OPTIMAL_REDESIGN(+TRACKER)·LOGIC_REANALYSIS·회의실 3종.
 - **P0: 6/6 ✅**(커밋 687ece025) · **P1: 7/7 ✅** · **MR-A ✅** · **MR-B ✅ 가동**(2026-06-12 메티 검증·launchd `ai.luna.meeting-room-web`@127.0.0.1:7791 — 빌드리스 2화면·결정 대기함·캐치업·@멘션 가드) · 다음=완료 — **🏛️ 회의실 3분할 완주(2026-06-12)**: MR-A(두뇌)+MR-B(웹 7791)+MR-C(정례 4종 launchd 등록·텔레그램 원클릭[Hub route 활성]·grill skill 2종·G6 debrief·CLI 위생 FIX) → 다음=**갈림길: ALPHA_FACTOR vs P2**
 - **MR-FIX 2~4** ✅ **회의실 표시 품질 3종**(2026-06-12, 메티 검증·웹 재기동): ②마크다운 경량 렌더(innerHTML 무사용·XSS 회귀 검증) ③C15 대기·서킷 안건 JSON 덤프→한국어 요약(원본=meta/evidence 보존) ④서킷 활성 집계 행수→distinct(54→18건 정확화 — 전 표시처 통일). 마스터 브라우저 점검에서 발견·당일 종결.
 - **가동 자산**: DB 10종(`luna_parameter_store` append-only·seed 7 / `luna_component_registry` **31종 active** / `luna_market_gate_history` / `luna_regime_calibration` / `luna_strategy_signals` / `luna_entry_preflight_log` / `luna_circuit_locks` / `luna_meeting_sessions` / `luna_meeting_minutes` / `luna_meeting_decisions`) · 모듈 7종(parameter-store·market-deployment-gate·registry-evaluator·regime-engine·strategy-families·command-policy·meeting-room) · 스모크 6종(전부 ROLLBACK 위생)
@@ -61,7 +62,7 @@
 - C7 permutation 2종+CPCV+point-in-time 전면 · C8 피드백(30거래 규율) · C5 스코어 융합 · C16 전략군 인식 재평가+expected-fire 워치독(삽입점=entry-trigger-engine:534/1030·T9 테이블 30일) · C11 이벤트 수시회의 · WS-I 리스크 훅.
 
 ## TOSS — 토스증권 Open API 통합 (2026-06-13 설계, 마스터 지시)
-> 설계 SSOT: `docs/design/LUNA_TOSS_INTEGRATION_DESIGN.md`(v0.1) · 상위=C18 · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)
+> 설계 SSOT: `LUNA_OPTIMAL_REDESIGN.md` C18(2026-06-18 본문 통합) · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)
 - **설계 ✅**(2026-06-13, 메티): 토스 공식 가이드 정밀 분석(OAuth2·6 카테고리·sandbox 부재 확인) + 기존 KIS/secrets/MCP/A2A 실측 → C18 브로커 추상화 신설 + 기존 7컴포넌트 보강 설계.
 - **TOSS-A** ✅ (2026-06-13, 메티 직접 실접속 검증): 시크릿 매핑(toss_*·maskSecret)·읽기 전용 클라이언트(OAuth2 토큰 50분 캐싱·시세/캔들/캘린더/환율/투자유의/계좌)·secret-doctor(값 미노출). **🔌 토스 API 첫 실접속 성공**: 토큰 발급 OK(만료 24h)·시세 권한 OK·계좌 발견(마스킹됨, BROKERAGE). 정적: 하드코딩 0·실행 메서드 0·canTrade=false.
 - **TOSS-B** ✅ (2026-06-13, 메티 검증): BrokerAdapter 추상화·Toss/KIS 읽기 어댑터·라우터(**단기=KIS/중장기=토스** — 마스터 전략)·MCP 토스 도구 4종. 어댑터 경유 실시세 확인(삼성전자 336,000). canTrade=false·assertExecutable throw.
@@ -69,6 +70,15 @@
 - **TOSS-D** ✅ (2026-06-13, 메티 검증): 계좌 헤더(accountSeq 자동 환원 — 공식 가이드 `X-Tossinvest-Account:1`)·잔고 소스·A2A 스킬 2종·훅·**S0/S1 paper-mirror**(사전검증 실호출+placed:false)·promotion-stage(기본 s0)·테이블 luna_toss_paper_mirror_log·레지스트리 37종. 잔고·매수가능금액 실호출 성공·placeOrder disabled(실주문 물리 차단).
 - **TOSS-E**(보류): S2 micro-live — 마스터 S1 검증 후 명시 승인 시에만.
 - 핵심 시너지: ①C4 프리플라이트 외부 진실 검증 ②투자유의 종목 자동 배제 ③국내 수수료 무료→백테스트 비용 보정 ④sandbox 부재→shadow 자동승급 설계 결정적.
+
+## ET — 진입 트리거 정교화 + 발화 레이어 (2026-06-18 설계, 마스터 지시 B)
+> 설계 SSOT: `LUNA_OPTIMAL_REDESIGN.md` C3·C16(2026-06-18 본문 통합) · 전부 shadow·**liveFireEnabled=false 강제→실발화 0**
+- **설계 ✅**(2026-06-18, 메티): entry-trigger-engine 재사용 연결 설계. **자기수정**: "구세대 잔재" 오판 정정 — worker만 5/4 retired, 엔진은 **C3 재사용 자산**(리테스트/래더 트리거 확장). shadow 게이팅 내장 확인(`shouldAllowLiveEntryFire()`=liveFireEnabled false면 무조건 false). 현재 30분 러너=전략군 기본 룰만, 정교 트리거·발화 레이어 미연결.
+- **ET-A**(대기): 전략군 신호→trigger candidate 어댑터 + 통째 shadow 연결(liveFireEnabled=false 강제) + 30분 러너 trigger 평가 단계. **fire 0 단언**.
+- **ET-B**(대기): 리테스트/래더 관찰 후 신세대 정리·would-fire(placed:false, paper-mirror 패턴).
+- **ET-C**(대기): C16 expected-fire 워치독(would-fire vs 매칭) + debrief 미발화 편차 등재 + 수시회의⑦. 테이블 1개·30일(T9).
+- **ET-D**(대기): C15 등록(전략군 룰 재평가 vs 기본 shadow 비교)·승급.
+- 접근: 통째 연결 관찰→유용 로직 추출(처음부터 추출 시 재구현 위험).
 
 ## P3 — 자율 완성
 - C9 동적 리밋 · C10 워치리스트 · C12 일원화 · C13 ablation·라우팅 · C14 오토리서치·소스 · C16 add 승격 · Stage B/C · 파라미터 스토어 전면 소비 전환.

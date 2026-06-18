@@ -31,6 +31,12 @@ import {
   insertCircuitLocks,
   summarizeCircuitLocks,
 } from '../shared/luna-loss-circuit.ts';
+import { evaluateEntryTriggers } from '../shared/entry-trigger-engine.ts';
+import {
+  assertEntryTriggerShadow,
+  buildEntryTriggerShadowFlags,
+  strategySignalsToEntryCandidates,
+} from '../shared/brokers/strategy-to-entry-trigger-adapter.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,6 +96,8 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   let strategyError = null;
   let preflightError = null;
   let circuitError = null;
+  let entryTriggerShadow = null;
+  let entryTriggerShadowError = null;
 
   if (!Array.isArray(options.gates)) {
     try {
@@ -165,6 +173,70 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     }
   }
 
+  const entryTriggerShadowEnabled = options.entryTriggerShadow === true
+    || String(options.env?.LUNA_ENTRY_TRIGGER_SHADOW ?? process.env.LUNA_ENTRY_TRIGGER_SHADOW ?? '').trim().toLowerCase() === 'true';
+  if (entryTriggerShadowEnabled) {
+    try {
+      const evaluateTriggers = deps.evaluateEntryTriggers || evaluateEntryTriggers;
+      const regimeByMarket = new Map((regimes || []).map((state) => [state.market, state]));
+      const candidates = strategySignalsToEntryCandidates(strategySignals, {
+        market: options.market || 'crypto',
+        regime: options.regime || null,
+      });
+      const shadowEnv = {
+        ...(process.env || {}),
+        ...(options.env || {}),
+        LUNA_RUNTIME_ENV_SOURCE: 'process',
+        LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
+        LUNA_LIVE_FIRE_ENABLED: 'false',
+        LUNA_ENTRY_TRIGGER_FIRE_IN_SHADOW: 'false',
+        LUNA_ENTRY_TRIGGER_SHADOW_BLOCKS_BUY: 'false',
+      };
+      const flags = buildEntryTriggerShadowFlags({ env: shadowEnv });
+      const context = {
+        ...options,
+        env: shadowEnv,
+        flags,
+        dryRun: true,
+        exchange: options.exchange || 'binance',
+        market: options.market || 'crypto',
+        regime: options.regime || regimeByMarket.get(options.market || 'crypto')?.dominant || null,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+        openPositionSymbols: Array.isArray(options.openPositionSymbols) ? options.openPositionSymbols : [],
+      };
+      assertEntryTriggerShadow(flags, context);
+      const result = candidates.length > 0
+        ? await evaluateTriggers(candidates, context)
+        : { decisions: [], stats: { enabled: true, armed: 0, fired: 0, blocked: 0, observed: 0, allowLiveFire: false, shouldMutate: false, mode: 'shadow' } };
+      const stats = result?.stats || {};
+      if (Number(stats.fired || 0) !== 0) throw new Error(`entry_trigger_shadow_fired_nonzero:${stats.fired}`);
+      entryTriggerShadow = {
+        enabled: true,
+        candidates: candidates.length,
+        armed: Number(stats.armed || 0),
+        fired: Number(stats.fired || 0),
+        blocked: Number(stats.blocked || 0),
+        observed: Number(stats.observed || 0),
+        allowLiveFire: stats.allowLiveFire === true,
+        shouldMutate: stats.shouldMutate === true,
+        decisions: Array.isArray(result?.decisions) ? result.decisions.length : 0,
+      };
+    } catch (error) {
+      entryTriggerShadowError = error?.message || String(error);
+      entryTriggerShadow = {
+        enabled: true,
+        candidates: 0,
+        armed: 0,
+        fired: 0,
+        blocked: 0,
+        observed: 0,
+        allowLiveFire: false,
+        shouldMutate: false,
+        decisions: 0,
+      };
+    }
+  }
+
   const inserted = [];
   const regimeInserted = [];
   const strategyInserted = [];
@@ -232,6 +304,9 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const circuitSummary = summarizeCircuitLocks(circuitLocks);
   const circuitDuplicateSuffix = circuitSkippedDuplicates > 0 ? `·중복스킵 ${circuitSkippedDuplicates}` : '';
   const preflightCircuitLine = `${preflightSummary.line} / ${securitiesWarningSummary.line} / ${circuitSummary.line}${circuitDuplicateSuffix}`;
+  const entryTriggerShadowLine = entryTriggerShadow
+    ? `entry-trigger shadow: candidates ${entryTriggerShadow.candidates} · armed ${entryTriggerShadow.armed} · fired ${entryTriggerShadow.fired} · blocked ${entryTriggerShadow.blocked}`
+    : null;
 
   const payload = {
     ok: gateError == null || regimeError == null || strategyError == null || preflightError == null || circuitError == null,
@@ -245,18 +320,20 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     circuitInserted,
     circuitSkippedDuplicates,
     computedAt: new Date().toISOString(),
-    summary: [gateLine, regimeLine, strategyLine, preflightCircuitLine].join('\n'),
+    summary: [gateLine, regimeLine, strategyLine, preflightCircuitLine, entryTriggerShadowLine].filter(Boolean).join('\n'),
     gateError,
     regimeError,
     strategyError,
     preflightError,
     circuitError,
+    entryTriggerShadowError,
     regimeAlerts,
     gates,
     regimes,
     strategySignals,
     preflightEvaluations,
     circuitLocks,
+    entryTriggerShadow,
     shadowOnly: true,
     liveMutation: false,
     protectedPidMutation: false,

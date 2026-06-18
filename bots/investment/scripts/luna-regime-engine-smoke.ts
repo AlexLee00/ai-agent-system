@@ -153,7 +153,7 @@ async function main() {
     },
   });
   assert.equal(alertFailure.publishedCount, 0);
-  assert.equal(alertFailure.alerts[0]?.publishError, 'fixture_alert_down');
+  assert.equal(alertFailure.alerts.find((alert) => alert.market === 'crypto')?.publishError, 'fixture_alert_down');
 
   const gateFailure = await runLunaMarketGate({
     dryRun: true,
@@ -251,8 +251,8 @@ async function main() {
   assert.equal(dbResult.marketGateRegimeRows, 3);
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 31);
-  assert.equal(seedDryRun.seeded, 31);
+  assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 32);
+  assert.equal(seedDryRun.seeded, LUNA_COMPONENT_REGISTRY_SEED.length);
   assert.equal(seedDryRun.components.includes('regime-engine-hmm'), true);
 
   return {
