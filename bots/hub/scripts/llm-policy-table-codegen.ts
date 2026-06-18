@@ -164,7 +164,7 @@ function runModelTokenProbe(constant, constants) {
   env[constant.envName] = marker;
 
   const output = execFileSync(process.execPath, ['--import', 'tsx', '-e', `
-    const { buildLlmChainSnapshot } = require('./bots/hub/scripts/llm-chain-snapshot.ts');
+    const { buildLlmChainSnapshot } = require(process.cwd() + '/bots/hub/scripts/llm-chain-snapshot.ts');
     const snapshot = buildLlmChainSnapshot({ generatedAt: '2026-06-12T00:00:00.000Z' });
     const marker = ${JSON.stringify(marker)};
     const hits = [];

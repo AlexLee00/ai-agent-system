@@ -64,7 +64,7 @@ function runNodeJson(code, env = {}) {
 async function main() {
   await record('TS-R2-1', 'engine full-surface diff is zero', () => {
   const report = runNodeJson(`
-    const { runCli } = require('./bots/hub/scripts/llm-chain-snapshot.ts');
+    const { runCli } = require(process.cwd() + '/bots/hub/scripts/llm-chain-snapshot.ts');
     runCli(['--engine', '--json', '--env-from-launchd']).then((code) => {
       process.exitCode = code;
     });
@@ -301,8 +301,8 @@ async function main() {
 
   await record('TS-R2-8', 'env-dependent model token resolves old and new chains identically', () => {
   const report = runNodeJson(`
-    const { selectLLMChain } = require('./packages/core/lib/llm-model-selector.ts');
-    const { normalizePolicyEngineChain, resolvePolicyChain } = require('./packages/core/lib/llm-policy-engine.ts');
+    const { selectLLMChain } = require(process.cwd() + '/packages/core/lib/llm-model-selector.ts');
+    const { normalizePolicyEngineChain, resolvePolicyChain } = require(process.cwd() + '/packages/core/lib/llm-policy-engine.ts');
     const ctx = {
       selectorKey: 'investment.luna',
       team: 'investment',
@@ -328,8 +328,8 @@ async function main() {
 
   await record('TS-R2-9', 'shared default model tokens preserve scout-specific env overrides', () => {
   const report = runNodeJson(`
-    const { selectLLMChain } = require('./packages/core/lib/llm-model-selector.ts');
-    const { normalizePolicyEngineChain, resolvePolicyChain } = require('./packages/core/lib/llm-policy-engine.ts');
+    const { selectLLMChain } = require(process.cwd() + '/packages/core/lib/llm-model-selector.ts');
+    const { normalizePolicyEngineChain, resolvePolicyChain } = require(process.cwd() + '/packages/core/lib/llm-policy-engine.ts');
     const ctx = {
       selectorKey: 'blog.commenter.reply',
       team: 'blog',

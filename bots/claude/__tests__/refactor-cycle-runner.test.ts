@@ -334,7 +334,7 @@ async function test_active_candidates_skip_ts_extension_import_until_gate_suppor
   fs.mkdirSync(absDir, { recursive: true });
   fs.writeFileSync(path.join(PROJECT_ROOT, target), [
     '// @ts-nocheck',
-    "import { run } from './handler.ts';",
+    "import { run } from '" + "./handler.ts';",
     'run();',
     '',
   ].join('\n'), 'utf8');
