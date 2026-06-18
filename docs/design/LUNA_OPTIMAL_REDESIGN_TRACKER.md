@@ -63,8 +63,9 @@
 ### C7 검증 전면 분할 (2026-06-18~, L-P2b)
 > 갭 분석: 룩어헤드(.shift(1))·OOS skew/kurt·robust selection·DSR/PBO migration **기존 구현**. 진짜 갭=permutation·CPCV·point-in-time.
 - **C7-2 permutation ✅** (2026-06-18, 메티 검증): backtest-vectorbt.py IS/WF permutation(신호 시점 block-shuffle→null sharpe→p-value)·`LUNA_BT_PERMUTATION_ENABLED` OFF 기본 diff 0·permutation_gate shadow. **합성 검증: 추세 p=0.008(진짜)·random p=0.705(우연) 정확 구분**. 경미: 스모크 자체 seed(env 무반영).
-- **C7-3 CPCV**(다음): purge+embargo combinatorial — 과적합 방지. 가장 복잡.
-- **C7-1 point-in-time 유니버스 진단**(대기): 생존편향 — 현 universe 시점 기준 실측.
+- **C7-3 CPCV purge+embargo ✅** (2026-06-19, 메티 검증): 기존 `compute_pbo_from_returns_matrix`(CSCV combinatorial 완비)에 purge_gap+embargo_pct 보강·`LUNA_PBO_PURGE_GAP`/`EMBARGO_PCT` 기본 0 diff 0. **합성 경계누출 검증: purge로 PBO 0.06→0.16 보수화**(누출 제거).
+- **C7-1 진단 ✅ + universe_snapshot 축적 ✅** (2026-06-19, 메티): 생존편향 확인(universe_asof 메타만·fetch now()·candidate_universe upsert+TTL로 시점이력 미보존). 후속=`universe_snapshot`(append-only·UNIQUE·40종) + evaluator 피기백(일1회·신규plist 0). 검증: 오늘 16종목 축적·멱등(재실행 0). 과거 소급 불가→지금부터 축적·미래 asof 연결 후속.
+- **C7 검증 파이프라인 완성**: permutation(유의성)+CPCV(과적합)+생존편향(진단·snapshot). asof 백테스트 연결만 데이터 축적 후 후속.
 
 ## TOSS — 토스증권 Open API 통합 (2026-06-13 설계, 마스터 지시)
 > 설계 SSOT: `LUNA_OPTIMAL_REDESIGN.md` C18(2026-06-18 본문 통합) · 전부 shadow/advisory 우선·LIVE=자동승급(S0~S3)

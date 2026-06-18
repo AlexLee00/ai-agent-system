@@ -26,9 +26,13 @@ const IGNORE_DIRS = new Set([
   'archive',
 ]);
 
+function shouldIgnoreDirName(name) {
+  return IGNORE_DIRS.has(name) || name.startsWith('tmp-refactor');
+}
+
 function walk(dir, files = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (IGNORE_DIRS.has(entry.name)) continue;
+    if (shouldIgnoreDirName(entry.name)) continue;
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       walk(fullPath, files);
@@ -111,7 +115,13 @@ function isBrokenReference(specifier, filePath) {
 }
 
 function scanFile(filePath) {
-  const rawContent = fs.readFileSync(filePath, 'utf8');
+  let rawContent = '';
+  try {
+    rawContent = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return [];
+    throw error;
+  }
   const content = rawContent
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|\s)\/\/.*$/gm, '$1');
