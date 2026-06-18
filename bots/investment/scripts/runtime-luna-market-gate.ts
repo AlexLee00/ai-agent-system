@@ -17,6 +17,7 @@ import {
 } from '../shared/luna-regime-engine.ts';
 import {
   computeStrategyFamilySignals,
+  isRegimeExpansionShadowEnabled,
   insertStrategyFamilySignals,
   summarizeStrategyFamilySignals,
 } from '../shared/luna-strategy-families.ts';
@@ -50,6 +51,21 @@ function argValue(name: string, fallback = null) {
   const prefix = `--${name}=`;
   const found = process.argv.find((item) => item.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
+}
+
+function summarizeRegimeExpansionShadow(signals: any[] = []) {
+  const gainSignals = (signals || []).filter((signal) => signal?.details?.regimeExpansionGain === true);
+  const byFamily = {};
+  for (const signal of gainSignals) {
+    const family = signal.family || 'unknown';
+    byFamily[family] = Number(byFamily[family] || 0) + 1;
+  }
+  return {
+    enabled: true,
+    gainCount: gainSignals.length,
+    byFamily,
+    line: `레짐 확대 shadow: +${gainSignals.length}건 매칭 가능`,
+  };
 }
 
 export async function insertMarketGateHistory(gate: any, runFn = db.run) {
@@ -301,6 +317,9 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const gateLine = formatMarketGateDailyLine(gates);
   const regimeLine = formatRegimeDailyLine(regimes);
   const strategyLine = summarizeStrategyFamilySignals(strategySignals);
+  const regimeExpansion = isRegimeExpansionShadowEnabled(options)
+    ? summarizeRegimeExpansionShadow(strategySignals)
+    : null;
   const preflightSummary = summarizeEntryPreflightEvaluations(preflightEvaluations);
   const securitiesWarningSummary = summarizeSecuritiesWarningGates(preflightEvaluations.flatMap((row) => row.gates || []));
   const circuitSummary = summarizeCircuitLocks(circuitLocks);
@@ -322,7 +341,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     circuitInserted,
     circuitSkippedDuplicates,
     computedAt: new Date().toISOString(),
-    summary: [gateLine, regimeLine, strategyLine, preflightCircuitLine, entryTriggerShadowLine].filter(Boolean).join('\n'),
+    summary: [gateLine, regimeLine, strategyLine, regimeExpansion?.line, preflightCircuitLine, entryTriggerShadowLine].filter(Boolean).join('\n'),
     gateError,
     regimeError,
     strategyError,
@@ -330,6 +349,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     circuitError,
     entryTriggerShadowError,
     regimeAlerts,
+    ...(regimeExpansion ? { regimeExpansion } : {}),
     gates,
     regimes,
     strategySignals,

@@ -37,6 +37,14 @@ export const LUNA_STRATEGY_DEFAULTS = Object.freeze({
   timeframe: '1d',
 });
 
+export const LUNA_REGIME_EXPANSION_SHADOW_ENV = 'LUNA_REGIME_EXPANSION_SHADOW';
+export const LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES_ENV = 'LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES';
+
+export const LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES = Object.freeze({
+  turtle: ['bull', 'volatile', 'sideways'],
+  testah: ['bull', 'sideways'],
+});
+
 export const LUNA_STRATEGY_PARAM_KEYS = Object.freeze({
   turtle: {
     entryLookback: 'c3.turtle.entry_lookback',
@@ -88,6 +96,65 @@ function finite(value: any, fallback = 0) {
 
 function round(value: any, digits = 6) {
   return Number(finite(value, 0).toFixed(digits));
+}
+
+function truthyEnv(value: any) {
+  if (value === true) return true;
+  if (value === false || value == null) return false;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
+export function isRegimeExpansionShadowEnabled(options: any = {}) {
+  if (typeof options.regimeExpansionShadow === 'boolean') return options.regimeExpansionShadow;
+  const env = { ...(process.env || {}), ...(options.env || {}) };
+  return truthyEnv(env[LUNA_REGIME_EXPANSION_SHADOW_ENV]);
+}
+
+function parseRegimeList(value: any) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return trimmed.split(/[,\s]+/).filter(Boolean);
+}
+
+function sanitizeExpandedRegimes(value: any) {
+  const allowed = new Set(['bull', 'sideways', 'volatile']);
+  const seen = new Set();
+  return parseRegimeList(value)
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => allowed.has(item))
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+}
+
+export function resolveStrategyFamilyExpandedRegimes(options: any = {}) {
+  const env = { ...(process.env || {}), ...(options.env || {}) };
+  let source = options.expandedRegimes || options.strategyFamilyExpandedRegimes || env[LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES_ENV];
+  if (typeof source === 'string' && source.trim().startsWith('{')) {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      source = null;
+    }
+  }
+  const turtleSource = source?.turtle ?? source?.turtle_breakout ?? LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES.turtle;
+  const testahSource = source?.testah ?? source?.testah_pullback ?? LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES.testah;
+  return {
+    turtle: sanitizeExpandedRegimes(turtleSource),
+    testah: sanitizeExpandedRegimes(testahSource),
+  };
 }
 
 function normalizeBars(bars = []) {
@@ -479,9 +546,18 @@ export async function loadStrategyFamilyParameters(options: any = {}, deps: any 
   };
 }
 
-export function attachRegimeToSignal(result: any, market: string, regime: any = null, allowedRegimes: any[] = []) {
+export function attachRegimeToSignal(result: any, market: string, regime: any = null, allowedRegimes: any[] = [], expandedRegimes: any[] = []) {
   const dominant = regime?.dominant || null;
   const matched = Boolean(dominant && (allowedRegimes || []).includes(dominant));
+  const normalizedExpandedRegimes = sanitizeExpandedRegimes(expandedRegimes);
+  const wouldMatchExpanded = Boolean(dominant && normalizedExpandedRegimes.includes(dominant));
+  const expansionDetails = normalizedExpandedRegimes.length > 0
+    ? {
+        regimeWouldMatchExpanded: wouldMatchExpanded,
+        expandedRegimes: normalizedExpandedRegimes,
+        regimeExpansionGain: matched === false && wouldMatchExpanded === true,
+      }
+    : {};
   return {
     ...result,
     market: normalizePhaseAMarket(market),
@@ -500,6 +576,7 @@ export function attachRegimeToSignal(result: any, market: string, regime: any = 
       ...(result.details || {}),
       regimeMatched: matched,
       allowedRegimes,
+      ...expansionDetails,
     },
   };
 }
@@ -537,16 +614,18 @@ export async function evaluateStrategyFamiliesForSymbol(input: any = {}, deps: a
     evaluateTransitionAlert: false,
     persist: false,
   }, deps);
+  const expansionEnabled = isRegimeExpansionShadowEnabled(input);
+  const expandedRegimes = expansionEnabled ? resolveStrategyFamilyExpandedRegimes(input) : { turtle: [], testah: [] };
   return [
     attachRegimeToSignal(evaluateTurtleBreakout(bars, {
       ...params.turtle,
       positionOpen: input.positionOpen === true,
-    }), market, regime, params.regimeMatch.turtle),
+    }), market, regime, params.regimeMatch.turtle, expandedRegimes.turtle),
     attachRegimeToSignal(evaluateTestahPullback(bars, {
       ...params.testah,
       positionOpen: input.positionOpen === true,
       pendingSetup: input.pendingSetup === true,
-    }), market, regime, params.regimeMatch.testah),
+    }), market, regime, params.regimeMatch.testah, expandedRegimes.testah),
   ].map((result) => ({
     ...result,
     market,
@@ -715,6 +794,9 @@ export const _testOnly = {
   trueRange,
   withEntryValidity,
   previousSwingHigh,
+  truthyEnv,
+  sanitizeExpandedRegimes,
+  resolveStrategyFamilyExpandedRegimes,
 };
 
 export default {
@@ -725,4 +807,6 @@ export default {
   computeStrategyFamilySignals,
   insertStrategyFamilySignals,
   summarizeStrategyFamilySignals,
+  isRegimeExpansionShadowEnabled,
+  resolveStrategyFamilyExpandedRegimes,
 };
