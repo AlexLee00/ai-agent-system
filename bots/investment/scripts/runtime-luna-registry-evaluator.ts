@@ -21,6 +21,9 @@ import {
 import {
   runRuntimeLunaTossPaperMirror,
 } from './runtime-luna-toss-paper-mirror.ts';
+import {
+  persistUniverseSnapshot,
+} from '../shared/luna-universe-snapshot.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
@@ -40,6 +43,7 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'dsr-pbo-gate': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status WHERE dsr IS NOT NULL OR pbo IS NOT NULL`,
   'robust-backtest-selection': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status WHERE robust_selection_enabled IS TRUE OR selection_method IS NOT NULL`,
   'alpha-factor-discovery': `SELECT COUNT(*)::int AS count FROM luna_alpha_factors`,
+  'universe-snapshot-accumulator': `SELECT COUNT(*)::int AS count FROM universe_snapshot`,
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
   'meta-neural-reflexion': `SELECT COUNT(*)::int AS count FROM luna_failure_reflexions`,
 });
@@ -345,6 +349,34 @@ async function runPaperMirrorBeforeEvaluation(options: any = {}, deps: any = {})
   return aggregate;
 }
 
+async function runUniverseSnapshotBeforeEvaluation(options: any = {}, deps: any = {}) {
+  if (options.skipUniverseSnapshot === true) {
+    return { ok: true, skipped: true, reason: 'skip_universe_snapshot_flag' };
+  }
+  try {
+    const runner = deps.persistUniverseSnapshot || persistUniverseSnapshot;
+    const dryRun = options.dryRun === true || options.apply !== true;
+    const result = await runner({
+      dryRun,
+      snapshotDate: options.universeSnapshotDate,
+    }, deps);
+    return {
+      ok: result?.ok !== false,
+      skipped: false,
+      dryRun,
+      snapshotDate: result?.snapshotDate || null,
+      inserted: Number(result?.inserted || 0),
+      totalActive: Number(result?.totalActive || 0),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      error: error?.message || String(error),
+    };
+  }
+}
+
 export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -356,6 +388,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
   const calibration = await runCalibrationBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const alpha = await runAlphaBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const paperMirror = await runPaperMirrorBeforeEvaluation({ ...options, apply, dryRun }, deps);
+  const universeSnapshot = await runUniverseSnapshotBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const rows = options.rows || await loadRegistryRows(deps.queryFn || db.query);
   const rowsWithSamples = await attachSampleCounts(rows, options, deps);
   const result = evaluateRegistryRows(rowsWithSamples, {
@@ -378,6 +411,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
     calibration,
     alpha,
     paperMirror,
+    universeSnapshot,
     outputPath,
     notificationsAttempted: notifications.length,
     liveMutation: false,
@@ -396,9 +430,11 @@ if (isDirectExecution(import.meta.url)) {
       skipCalibration: hasFlag('skip-calibration'),
       skipAlpha: hasFlag('skip-alpha'),
       skipPaperMirror: hasFlag('skip-paper-mirror'),
+      skipUniverseSnapshot: hasFlag('skip-universe-snapshot'),
       calibrationMarkets: argValue('calibration-markets'),
       paperMirrorMarkets: argValue('paper-mirror-markets', 'domestic,overseas'),
       paperMirrorLimit: Number(argValue('paper-mirror-limit', 20)),
+      universeSnapshotDate: argValue('universe-snapshot-date'),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: '❌ runtime-luna-registry-evaluator 실패:',

@@ -1470,30 +1470,49 @@ def _rank_high_is_better(values, selected_index: int) -> float:
     return less + (equal + 1.0) / 2.0
 
 
-def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: int) -> dict:
+def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: int,
+                                    purge_gap: int = 0, embargo_pct: float = 0.0) -> dict:
     """CSCV/PBO 핵심 계산. 행=시점, 열=trial."""
+    try:
+        purge_gap = max(0, int(purge_gap or 0))
+    except Exception:
+        purge_gap = 0
+    try:
+        embargo_pct = max(0.0, min(1.0, float(embargo_pct or 0.0)))
+    except Exception:
+        embargo_pct = 0.0
+    adjusted = purge_gap > 0 or embargo_pct > 0.0
+    purged_combos = 0
+
+    def with_adjustment_metadata(payload: dict) -> dict:
+        if adjusted:
+            payload["pbo_purge_gap"] = purge_gap
+            payload["pbo_embargo_pct"] = embargo_pct
+            payload["pbo_purged_combos"] = purged_combos
+        return payload
+
     if _np is None:
-        return _pbo_none("dependency_missing", ["numpy_missing"], n_blocks)
+        return with_adjustment_metadata(_pbo_none("dependency_missing", ["numpy_missing"], n_blocks))
     try:
         matrix = _np.asarray(returns_matrix, dtype=float)
     except Exception as exc:
-        return _pbo_none("error", [f"matrix_parse_error({exc})"], n_blocks)
+        return with_adjustment_metadata(_pbo_none("error", [f"matrix_parse_error({exc})"], n_blocks))
 
     if matrix.ndim != 2:
-        return _pbo_none("insufficient", [f"invalid_matrix_shape({matrix.shape})"], n_blocks)
+        return with_adjustment_metadata(_pbo_none("insufficient", [f"invalid_matrix_shape({matrix.shape})"], n_blocks))
 
     rows, trials = matrix.shape
     if trials < min_trials or rows < n_blocks:
-        return _pbo_none(
+        return with_adjustment_metadata(_pbo_none(
             "insufficient",
             [f"trials={trials},bars={rows},min_trials={min_trials},n_blocks={n_blocks}"],
             n_blocks,
             trials,
-        )
+        ))
 
     block_len = rows // n_blocks
     if block_len <= 0:
-        return _pbo_none("insufficient", [f"block_len={block_len},bars={rows},n_blocks={n_blocks}"], n_blocks, trials)
+        return with_adjustment_metadata(_pbo_none("insufficient", [f"block_len={block_len},bars={rows},n_blocks={n_blocks}"], n_blocks, trials))
 
     usable_rows = block_len * n_blocks
     matrix = matrix[:usable_rows, :]
@@ -1502,7 +1521,7 @@ def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: i
     block_sumsq = _np.asarray([_np.sum(block * block, axis=0) for block in blocks], dtype=float)
     combos = list(itertools.combinations(range(n_blocks), n_blocks // 2))
     if not combos:
-        return _pbo_none("insufficient", [f"combinations=0,n_blocks={n_blocks}"], n_blocks, trials)
+        return with_adjustment_metadata(_pbo_none("insufficient", [f"combinations=0,n_blocks={n_blocks}"], n_blocks, trials))
 
     lambdas: list[float] = []
     selected_is_sr: list[float] = []
@@ -1523,13 +1542,53 @@ def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: i
         sr = _np.divide(means, stds, out=_np.zeros_like(means, dtype=float), where=_np.isfinite(stds) & (stds > 0.0))
         return _np.where(_np.isfinite(sr), sr, 0.0)
 
+    def adjusted_is_row_indices(is_indices, oos_indices):
+        mask = _np.zeros(usable_rows, dtype=bool)
+        for index in is_indices:
+            start = index * block_len
+            mask[start:start + block_len] = True
+        before_count = int(_np.count_nonzero(mask))
+        embargo_bars = int(math.ceil(block_len * embargo_pct)) if embargo_pct > 0.0 else 0
+        for index in oos_indices:
+            start = index * block_len
+            end = start + block_len
+            if purge_gap > 0:
+                mask[max(0, start - purge_gap):start] = False
+                mask[end:min(usable_rows, end + purge_gap)] = False
+            if embargo_bars > 0:
+                mask[end:min(usable_rows, end + embargo_bars)] = False
+        after_count = int(_np.count_nonzero(mask))
+        return _np.flatnonzero(mask), after_count < before_count
+
+    def sr_from_row_indices(row_indices):
+        count = int(len(row_indices))
+        if count < 2:
+            return None
+        values = matrix[row_indices, :]
+        sums = _np.sum(values, axis=0)
+        sumsq = _np.sum(values * values, axis=0)
+        means = sums / count
+        variances = (sumsq - (sums * sums) / count) / (count - 1)
+        variances = _np.where(_np.isfinite(variances) & (variances > 0.0), variances, _np.nan)
+        stds = _np.sqrt(variances)
+        sr = _np.divide(means, stds, out=_np.zeros_like(means, dtype=float), where=_np.isfinite(stds) & (stds > 0.0))
+        return _np.where(_np.isfinite(sr), sr, 0.0)
+
     for combo in combos:
         is_set = set(combo)
         is_indices = [index for index in range(n_blocks) if index in is_set]
         oos_indices = [index for index in range(n_blocks) if index not in is_set]
         if not is_indices or not oos_indices:
             continue
-        is_sr_arr = sr_from_block_indices(is_indices)
+        if adjusted:
+            row_indices, was_purged = adjusted_is_row_indices(is_indices, oos_indices)
+            if was_purged:
+                purged_combos += 1
+            is_sr_arr = sr_from_row_indices(row_indices)
+            if is_sr_arr is None:
+                continue
+        else:
+            is_sr_arr = sr_from_block_indices(is_indices)
         oos_sr_arr = sr_from_block_indices(oos_indices)
         oos_sr = [float(value) for value in oos_sr_arr.tolist()]
         selected = int(_np.argmax(is_sr_arr))
@@ -1542,7 +1601,7 @@ def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: i
 
     combinations = len(lambdas)
     if combinations == 0:
-        return _pbo_none("insufficient", [f"usable_combinations=0,n_blocks={n_blocks}"], n_blocks, trials)
+        return with_adjustment_metadata(_pbo_none("insufficient", [f"usable_combinations=0,n_blocks={n_blocks}"], n_blocks, trials))
 
     pbo = sum(1 for value in lambdas if value <= 0.0) / combinations
     prob_loss = sum(1 for value in selected_oos_sr if value < 0.0) / combinations
@@ -1555,7 +1614,7 @@ def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: i
             perf_degradation = None
     dominance_first_order = bool(float(_np.mean(selected_oos_sr)) > float(_np.mean(oos_mean_sr_by_combo)))
 
-    return {
+    return with_adjustment_metadata({
         "pbo": float(pbo),
         "perf_degradation": perf_degradation,
         "prob_loss": float(prob_loss),
@@ -1565,13 +1624,15 @@ def compute_pbo_from_returns_matrix(returns_matrix, n_blocks: int, min_trials: i
         "pbo_n_trials": trials,
         "pbo_status": "ok",
         "pbo_reasons": [],
-    }
+    })
 
 
 def compute_pbo_cscv(df, deps: dict) -> dict:
     """Combinatorial Symmetric Cross-Validation 기반 PBO 기록용 SHADOW 지표."""
     n_blocks = int_env("LUNA_PBO_N_BLOCKS", 16)
     min_trials = int_env("LUNA_PBO_MIN_TRIALS", 10)
+    purge_gap = max(0, int_env("LUNA_PBO_PURGE_GAP", 0))
+    embargo_pct = max(0.0, min(1.0, float_env("LUNA_PBO_EMBARGO_PCT", 0.0)))
     if _np is None:
         return _pbo_none("dependency_missing", ["numpy_missing"], n_blocks)
 
@@ -1619,7 +1680,13 @@ def compute_pbo_cscv(df, deps: dict) -> dict:
             values.append(float(mapping.get(ts, 0.0)))
         rows.append(values)
 
-    return compute_pbo_from_returns_matrix(rows, n_blocks=n_blocks, min_trials=min_trials)
+    return compute_pbo_from_returns_matrix(
+        rows,
+        n_blocks=n_blocks,
+        min_trials=min_trials,
+        purge_gap=purge_gap,
+        embargo_pct=embargo_pct,
+    )
 
 
 def _meta_label_none(method: str, reasons: list[str], n_trades: int = 0) -> dict:

@@ -1301,7 +1301,20 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
         if (Array.isArray(pboRaw) && pboRaw.length > 0) {
           const src = pboRaw[0];
           const pboFields: any = {};
-          const PBO_KEYS = ['pbo', 'perf_degradation', 'prob_loss', 'dominance_first_order', 'pbo_n_blocks', 'pbo_n_combinations', 'pbo_n_trials', 'pbo_status', 'pbo_reasons'];
+          const PBO_KEYS = [
+            'pbo',
+            'perf_degradation',
+            'prob_loss',
+            'dominance_first_order',
+            'pbo_n_blocks',
+            'pbo_n_combinations',
+            'pbo_n_trials',
+            'pbo_status',
+            'pbo_reasons',
+            'pbo_purge_gap',
+            'pbo_embargo_pct',
+            'pbo_purged_combos',
+          ];
           for (const key of PBO_KEYS) {
             if (key in src) pboFields[key] = src[key];
           }
