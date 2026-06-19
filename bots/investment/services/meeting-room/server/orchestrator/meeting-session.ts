@@ -251,6 +251,46 @@ function summarizeCircuitLocks(rows: any[] = []) {
   ].join('\n');
 }
 
+function summarizeEventMeetingEvidence(evidence: any = {}) {
+  const item = Array.isArray(evidence) ? evidence[0] || {} : evidence;
+  if (item.type === 'regime_shift') {
+    return [
+      `레짐 전환: ${marketLabel(item.market)} 시장이 ${plainRegimeLabel(item.previousRegime)}에서 ${plainRegimeLabel(item.currentRegime)}로 바뀌었습니다.`,
+      `신뢰도=${Number(item.confidence || 0).toFixed(2)} · 발생=${item.occurredAt || 'n/a'}`,
+      '이 안건은 수시회의 자문 기록이며 실제 포지션이나 파라미터를 바꾸지 않습니다.',
+    ].join('\n');
+  }
+  if (item.type === 'major_disclosure') {
+    return [
+      `대형 공시: ${item.companyName || item.symbol || '대상 기업'} · ${item.reportName || '공시명 확인 필요'}`,
+      `중요도=${item.importanceScore ?? 'n/a'} · 관련성=${item.matchedSource || '보유/워치'} · 접수=${item.evidence?.rceptDate || item.occurredAt || 'n/a'}`,
+      '공시는 보유/워치 연관 여부만 회의에 올리며 직접 매수·매도 판단으로 쓰지 않습니다.',
+    ].join('\n');
+  }
+  if (item.type === 'daily_loss_threshold') {
+    return [
+      `일일 손실 임계: ${marketLabel(item.market)} ${item.dateKst || '오늘'} 기준 순손익 ${Number(item.pnlNet || 0).toFixed(2)}, 최악 거래 ${Number(item.worstTradePnl || 0).toFixed(2)}, 손실 거래 ${item.losingTrades || 0}건입니다.`,
+      `연관 손실 패턴 ${item.evidence?.lossPatterns?.length || 0}건을 참고 evidence로만 첨부했습니다.`,
+      '이 안건은 손실 원인 점검용이며 리밋이나 거래 정책을 자동 변경하지 않습니다.',
+    ].join('\n');
+  }
+  if (item.type === 'risk_log_severe') {
+    return [
+      `심각 리스크 로그: ${item.symbol || item.exchange || '대상 미상'} · decision=${item.decision || 'n/a'} · risk_score=${item.riskScore ?? 'n/a'}`,
+      `사유: ${item.reason || '기록 없음'}`,
+      '리스크 로그는 마스터 검토용 자문 근거이며 주문 경로에 연결하지 않습니다.',
+    ].join('\n');
+  }
+  if (item.type === 'risk_simulation_severe') {
+    return [
+      `심각 리스크 시뮬레이션: ${marketLabel(item.market)} ${item.analysisType || 'simulation'} · max_loss=${Number(item.maxLossEstimate || 0).toFixed(3)} · cvar99=${Number(item.cvar99 || 0).toFixed(3)}`,
+      `대상 심볼 ${(item.symbols || []).slice(0, 6).join(', ') || 'n/a'} · data_health=${item.dataHealth || 'unknown'}`,
+      '시뮬레이션 결과는 자문용이며 포지션·자본·리밋을 직접 변경하지 않습니다.',
+    ].join('\n');
+  }
+  return `수시 이벤트 점검: ${item.type || item.source || 'unknown'} · 자문/섀도 전용`;
+}
+
 function agendaKeyForSegment(segment: any) {
   return `market:${segment.market}`;
 }
@@ -416,6 +456,7 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
   }));
   if (agenda.kind === 'transition_alert') return applyMeetingGlossary(`시장 분위기 전이 경보\n${compact(agenda.evidence, 900)}`);
   if (agenda.kind === 'circuit_locks') return applyMeetingGlossary(summarizeCircuitLocks(agenda.evidence || []));
+  if (agenda.kind === 'event_meeting') return applyMeetingGlossary(summarizeEventMeetingEvidence(agenda.evidence || {}));
   if (agenda.kind === 'domestic_debrief') {
     const evidence = agenda.evidence || {};
     return [
@@ -479,6 +520,9 @@ function grillEvidenceFocus(agenda: any) {
     const items = Array.isArray(evidence) ? evidence : [];
     const markets = [...new Set(items.map((row: any) => marketLabel(row.market)))].slice(0, 3);
     return `레짐 전이 경보 ${items.length}건${markets.length ? `(${markets.join(', ')})` : ''}`;
+  }
+  if (agenda.kind === 'event_meeting') {
+    return summarizeEventMeetingEvidence(evidence).split('\n')[0];
   }
   if (agenda.kind === 'domestic_debrief') {
     return `G6 대조표 ${evidence.degraded === true ? '데이터 보강 필요' : '정상'} · 전략신호 ${evidence.strategySignals?.length || 0}건 · 활성 서킷 ${evidence.activeCircuits?.length || 0}건`;

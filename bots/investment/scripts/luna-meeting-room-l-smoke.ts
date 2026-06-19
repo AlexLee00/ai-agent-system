@@ -28,6 +28,11 @@ function queryFixture({
   decisions = [],
   locks = [],
   events = [],
+  regimeShifts = [],
+  disclosures = [],
+  dailyLosses = [],
+  riskLogs = [],
+  riskSimulations = [],
   existingAgendaKeys = [],
 } = {}) {
   return async (sql: string) => {
@@ -40,6 +45,11 @@ function queryFixture({
     }
     if (/FROM luna_circuit_locks/i.test(sql)) return locks;
     if (/FROM circuit_breaker_events/i.test(sql)) return events;
+    if (/FROM hmm_regime_log/i.test(sql)) return regimeShifts;
+    if (/FROM corp_disclosures/i.test(sql)) return disclosures;
+    if (/FROM performance_daily/i.test(sql)) return dailyLosses;
+    if (/FROM risk_log/i.test(sql)) return riskLogs;
+    if (/FROM luna_risk_simulation_shadow/i.test(sql)) return riskSimulations;
     return [];
   };
 }
@@ -262,6 +272,165 @@ async function main() {
   });
   assert.equal(circuitDedup.circuit.candidates.length, 0);
 
+  const regimeShift = {
+    market: 'crypto',
+    previous_regime: 'bull',
+    current_regime: 'bear',
+    confidence: 0.81,
+    created_at: fixedNow(),
+    previous_created_at: '2026-06-19T05:30:00.000Z',
+  };
+  const disclosure = {
+    id: 'disc1',
+    stock_code: '005930',
+    company_name: '삼성전자',
+    report_nm: '유상증자결정',
+    report_type: 'dilution',
+    importance_score: 8,
+    matched_source: 'candidate_universe',
+    rcept_no: '202606190001',
+    rcept_dt: '2026-06-19',
+    collected_at: fixedNow(),
+  };
+  const unrelatedDisclosure = {
+    ...disclosure,
+    id: 'disc2',
+    stock_code: '000000',
+    matched_source: null,
+  };
+  const lowImportanceDisclosure = {
+    ...disclosure,
+    id: 'disc3',
+    importance_score: 3,
+  };
+  const dailyLoss = {
+    date: '2026-06-19',
+    market: 'crypto',
+    total_trades: 4,
+    losing_trades: 3,
+    pnl_gross: -120,
+    pnl_net: -130,
+    worst_trade_pnl: -55,
+    created_at: fixedNow(),
+    loss_patterns: [{ pattern_key: 'crypto:loss', trade_count: 4 }],
+  };
+  const mildDaily = {
+    ...dailyLoss,
+    market: 'domestic',
+    losing_trades: 1,
+    pnl_net: -10,
+    worst_trade_pnl: -3,
+  };
+  const riskLog = {
+    id: 'risk1',
+    trace_id: 'trace-risk1',
+    symbol: 'BTC/USDT',
+    exchange: 'binance',
+    decision: 'BLOCK',
+    risk_score: 9,
+    reason: 'severe drawdown pressure',
+    evaluated_at: fixedNow(),
+  };
+  const mildRiskLog = {
+    ...riskLog,
+    id: 'risk2',
+    trace_id: 'trace-risk2',
+    decision: 'APPROVE',
+    risk_score: 4,
+  };
+  const riskSimulation = {
+    id: 501,
+    analysis_type: 'stress_test',
+    market: 'overseas',
+    exchange: 'kis_overseas',
+    symbols: ['AAPL', 'NVDA'],
+    var_99: 0.42,
+    cvar_99: 0.61,
+    max_loss_estimate: 0.72,
+    data_health: 'ready',
+    observed_at: fixedNow(),
+  };
+  const mildRiskSimulation = {
+    ...riskSimulation,
+    id: 502,
+    cvar_99: 0.12,
+    max_loss_estimate: 0.14,
+  };
+  const eventFixture = {
+    locks: [lock],
+    events: [],
+    regimeShifts: [regimeShift],
+    disclosures: [disclosure, unrelatedDisclosure, lowImportanceDisclosure],
+    dailyLosses: [dailyLoss, mildDaily],
+    riskLogs: [riskLog, mildRiskLog],
+    riskSimulations: [riskSimulation, mildRiskSimulation],
+  };
+  const eventDry = await runMeetingRoomLOps({
+    dryRun: true,
+    skipDebrief: true,
+    skipAdr: true,
+    now: fixedNow(),
+  }, {
+    queryFn: queryFixture(eventFixture),
+  });
+  assert.equal(eventDry.circuit.candidates.length, 1);
+  assert.equal(eventDry.regime.candidates.length, 1);
+  assert.equal(eventDry.disclosure.candidates.length, 1);
+  assert.equal(eventDry.dailyLoss.candidates.length, 1);
+  assert.equal(eventDry.risk.candidates.length, 2);
+  assert.equal(eventDry.eventMeeting.candidates, 6);
+
+  const eventDedup = await runMeetingRoomLOps({
+    dryRun: true,
+    skipDebrief: true,
+    skipAdr: true,
+    now: fixedNow(),
+  }, {
+    queryFn: queryFixture({
+      ...eventFixture,
+      existingAgendaKeys: [
+        'circuit:lock:41',
+        'regime:shift:crypto:bull:bear',
+        'disclosure:disc1',
+        'daily-loss:2026-06-19:crypto',
+        'risk:log:risk1',
+        'risk:simulation:501',
+      ],
+    }),
+  });
+  assert.equal(eventDedup.eventMeeting.candidates, 0);
+
+  let eventMeetingCalls = 0;
+  const eventApply = await runMeetingRoomLOps({
+    apply: true,
+    dryRun: false,
+    confirm: LUNA_MEETING_ROOM_L_CONFIRM,
+    skipDebrief: true,
+    skipAdr: true,
+    now: fixedNow(),
+  }, {
+    queryFn: queryFixture(eventFixture),
+    runMeetingSession: async (options: any) => {
+      eventMeetingCalls += 1;
+      assert.equal(options.type, 'adhoc');
+      assert.equal(options.agendas.length, 6);
+      assert.equal(options.agendas.filter((agenda: any) => agenda.kind === 'circuit_locks').length, 1);
+      assert.equal(options.agendas.filter((agenda: any) => agenda.kind === 'event_meeting').length, 5);
+      return {
+        session: { id: 9903 },
+        decisions: options.agendas.map((agenda: any, index: number) => ({ id: 8000 + index, agendaKey: agenda.key })),
+        markdownPath: '/tmp/event.md',
+      };
+    },
+  });
+  assert.equal(eventMeetingCalls, 1);
+  assert.equal(eventApply.eventMeeting.triggered, 6);
+  assert.equal(eventApply.circuit.triggered, 1);
+  assert.equal(eventApply.regime.triggered, 1);
+  assert.equal(eventApply.disclosure.triggered, 1);
+  assert.equal(eventApply.dailyLoss.triggered, 1);
+  assert.equal(eventApply.risk.triggered, 2);
+
   const sourceText = [
     fs.readFileSync(path.join(ROOT, 'services/meeting-room/server/meeting-room-l-ops.ts'), 'utf8'),
     fs.readFileSync(path.join(ROOT, 'services/meeting-room/server/orchestrator/meeting-session.ts'), 'utf8'),
@@ -278,6 +447,11 @@ async function main() {
       duplicateDecisionPreserved: true,
       circuitAdhocTrigger: true,
       circuitDedup: true,
+      regimeShiftTrigger: true,
+      disclosureTrigger: true,
+      dailyLossTrigger: true,
+      riskTrigger: true,
+      aggregatedEventMeeting: true,
       advisoryOnlySafety: true,
     },
   };
