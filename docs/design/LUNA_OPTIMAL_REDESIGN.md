@@ -149,6 +149,8 @@
 
 **5) 재사용**: `luna-hybrid-promotion-gate`·`hybrid-promotion-review` A2A 스킬·rollback_scheduler(24h 자동롤백)·alert-publisher. 신설=컴포넌트 레지스트리(승격 기준·상태·이력 테이블)+제안서 생성기.
 
+> **[구현 2026-06-19 — 메티/CODEX-1] 판정 6상태 정합 완료**: `proposalForRow`가 실제 criteria 스키마를 평가하도록 재설계 — **measurement_only**(승격 게이트 키 없음·metrics-only)·**accumulating**(sample/기간 미달)·**evidence_pending**(sample+기간 충족·성과검증 대기)·stalled·halt. **promotion_proposal은 성과 게이트(CODEX-2) 통과 후만 생성** → "기준 없는 shadow 금지·sample 단독 승격 금지" 준수. 판정상태는 평가 출력 JSON(assessmentSummary)에만 기록(DB `status`는 운영 5값 active/stalled/proposed/promoted/halted 전용·CHECK 제약, 휘발성 판정상태로 미오염). 신규 shadow 등록은 evaluator가 `seedLunaComponentRegistry` 멱등 자동 반영(등록 누락 방지). 44종 실분포: measurement_only 36·accumulating 7·evidence_pending 1(candidate-backtest-entry-gate, sample 1081). 상세: TRACKER「자동승격 레지스트리 정합」.
+
 ### C15-b. Shadow 전수 인벤토리 → 레지스트리 초기 등록 [실측 2026-06-12]
 > 마스터 지시: 모든 shadow를 승격 엔진과 연결. 아래 표 = C15 레지스트리의 **초기 시드**(P1에서 테이블화). 기준은 초안 — 등록 시 확정.
 > 🔑 발견: `posttrade`·`position-lifecycle`은 이미 **shadow → supervised_l4 → autonomous_l5** 3단계 모드 보유 → 이를 C15 **표준 승격 경로**로 채택(전 컴포넌트 통일). phase-a promotion gate(기가동)는 C15의 1호 인스턴스로 일반화.
@@ -208,6 +210,8 @@
 5. **C15 등록**: "전략군 룰 재평가 vs 기존 지표 bias 재평가"를 shadow 비교(가상 청산 성과 Δ) → 승격 제안.
 - 재사용: reevaluator 1,949줄(골격)·dynamic-trail·protective-order·autopilot cadence·holding-monitor(안전망化). 신설=전략군 태그 스키마+군별 청산 룰 평가기+add 유닛 로직.
 - **[v1.2] expected-fire 워치독(silent miss 감지)**: 트리거 조건 충족인데 실행 부재(주문·알림 미발생) 감지→경보. 에러 감지(클로드팀)와 별개 차원 — "조용한 누락" 탐지. 구현: 트리거 평가 시 expected-fire 레코드 기록 → N분 내 매칭 실행 없으면 경보 + debrief plan vs actual에 자동 편차 등재. 근거: V-P 실사고(서버 트리거 미발화로 딥 매수 누락). 래더·전략군 진입·청산 룰·C15 제안 발화 전체 적용. **삽입 지점: ET-A(entry-trigger 30분 러너 연결) 완료 후 `entry-trigger-engine.ts` `buildEntryTriggerFireReadiness`(534)·`evaluateEntryTriggers`(1030) / 연결 전이면 30분 러너 전략군→프리플라이트 흐름.** ET 트랙(C3 참조)의 ET-C에서 구현 — would-fire(placed:false) vs 매칭, 테이블 1개·30일 보존(T9).
+
+> **[정합성 노트 2026-06-19 — 메티 소스 실측]** C16 설계 전제 일부가 코드 발전으로 갱신됨: ① **reevaluator는 이미 setup_type 인식** — `getStrategySetupType`+setup별 청산 가드(`breakout_hold_guard` 추세 확인·`mean_reversion_profit_take` 부분익절·`family_performance_protective_adjust`)+`familyPerformanceFeedback` 존재. 따라서 (a) "전략군 무인식"은 부정확 → 정확히는 **C3 정밀 청산 룰(10봉 최저 이탈 종가·75선 붕괴·구조 손절)이 미연결**(현 가드는 거친 수준). ② **`position_strategy_profiles`(66행·setup_type·exit_plan·strategy_context) 기존재** → "전략군 태그 스키마 신설" 불필요. 단 현 분류(defensive_rotation 39·momentum_rotation 12·trend_following 7·micro_swing 5·breakout 2)와 **C3 전략군(turtle/testah/range/defensive) 매핑 필요**. ③ **3시장**: reevaluator는 `binance`(crypto)·`kis`(국내) 거래소별 분기(지표 프레임/가중/임계)·**해외(미국 주식)는 거래소 미등록**(신호 watchlist만·포지션 0). 실데이터 crypto 중심(보유 2·신호 crypto 7/domestic 1/overseas 0). ④ **ET-D 정의 확정**: C3 정밀 청산 룰 평가기(shadow)를 현 setup 가드와 병행 산출 → 가상 청산 성과 Δ 비교 → C15 등록. **3시장 공통 로직**(거래소 컨텍스트 변형)·데이터는 거래소별 누적분 자동 포함·실청산 0(reevaluator 동작 불변).
 
 ### C17. 파라미터 스토어 [최종 리뷰 보강 — "동적 제어의 실체" 정식 설계]
 > 전 문서에서 11회 전제된 핵심 인프라의 실체 정의. 🔑 **기존 자산 3종 통합·확장**(신설 최소): `runtime-parameter-governance.ts`(203줄 — 키별 거버넌스 티어 escalate/immutable 기존재) + `runtime-config-suggestions`·`runtime-luna-dynamic-policy-operator`(제안·운영 기존재) + `luna_regime_weight_snapshots`(DB 이력 스냅샷 패턴).

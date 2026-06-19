@@ -106,6 +106,22 @@
 - **레짐 확대 shadow ✅ + 시동**(2026-06-19, 메티 검증): `attachRegimeToSignal`에 expandedRegimes 시뮬레이션(would-have 매칭)·`regimeExpansionGain`(matched=false인데 확대 시 매칭). bear 역추세 자동 제외·sideways만 추가(turtle/testah). **matched 무변경**(실거래 0)·`LUNA_REGIME_EXPANSION_SHADOW` OFF diff 0. 검증: sideways gain=true·bear gain=false·matched 무변경. **30분 러너 시동**(plist 환경변수·enabled=true·gainCount=0 첫 사이클). 며칠 관찰 후 실제 확대 결정.
 - **📊 레짐 확대 관찰 대상**: regimeExpansionGain 신호 수(sideways 레짐에서 풀백/돌파 발생 시 +N) → 확대 유효성 판단 근거.
 
+## 자동승격 레지스트리 정합 (2026-06-19, 메티 분석·CODEX-1·커밋 9e0a4d0c7)
+> 배경: 신규 shadow 4종(regime-expansion·pattern-relaxation·signal-outcome 2종) 등록 누락 발견 → 등록 자동화 + 승격 판정 구조적 결함 발견·해소.
+- **C15 등록 자동화 ✅**(권고1): evaluator(registry-evaluator-daily)가 평가 전 `seedLunaComponentRegistry` 멱등 반영 → 신규 shadow 자동 등록. RETURNING `xmax='0'::xid` 트릭으로 inserted/updated 집계·**fail-open**·dryRun 미반영·sample_count/status 보존(ON CONFLICT EXCLUDED 제외)·regime-expansion SAMPLE_COUNT 쿼리(COALESCE null 안전) 추가. 검증(메티): dryRun seeded=44/applied=0·confirm 토큰 거부·기존 sample(31만) 보존·tsc.
+- **승격 판정 구조적 결함 발견 ✅**: `proposalForRow`가 readyForPromotion(보유 0)·minTrades(2)만 봐서 **sample 31만(position-lifecycle)이어도 proposals 0**. 실제 criteria 스키마(metrics 22·durationWeeks 20·evidence 15·minSamplesPerFamilyRegime·virtualExpectancyDeltaPositive 등 27패턴)와 완전 불일치 → 자동승격 평가가 무의미하던 상태.
+- **승격 판정 정합 1단계 ✅**(CODEX-1): proposalForRow **6상태** 재설계 — halt_proposal·stalled_report·measurement_only(게이트 키 없음)·accumulating(sample/기간 미달)·evidence_pending(sample+기간 충족). **promotion_proposal 생성 제거**(성과 검증은 CODEX-2) → "sample 단독 승격 금지"(C15) 완벽 준수. 판정상태는 **DB status(CHECK 5값) 미오염·출력 JSON(assessmentSummary)에만** 기록(매 평가 재계산 파생값). notify=halt/stalled로 제한. 검증(메티): 44종 분포 measurement_only 36/accumulating 7/evidence_pending 1/promotion 0·**position-lifecycle→measurement_only 정확 분류**·스모크 PASS(seedPreservesState·6상태 분기)·DB status 보존·tsc.
+- **📊 evidence_pending 1호 = candidate-backtest-entry-gate**(sample 1081 ≥ minTrades 30) → CODEX-2 성과검증 첫 대상.
+- **다음 (CODEX-2 보류)**: evidence_pending → 성과 게이트(signal_outcomes expectancy·virtualExpectancyDelta) → promotion 승격. evidence_pending 1종·성과 데이터 초기(C8 1건)라 **데이터 축적 후 진행**. 준비자료: `docs/codex/PREP_REGISTRY_PROPOSAL_SCHEMA_AUDIT.md`.
+
+## ET-D 분석 + 구조 선구현 (2026-06-19, 메티 소스 실측·마스터 선택지1)
+> "데이터 무관" 분류 정정 — 소스 실측으로 기존 자산 풍부 확인(이전 "태그 스키마 미존재" 추정 오류 시인).
+- **3시장 적용**: 로직 3시장 공통(C3 청산 룰 시장 무관). reevaluator `binance`(crypto)/`kis`(국내) 거래소 분기(프레임/가중/임계)·**해외(미국주식) 거래소 미등록**(watchlist만). 실데이터 crypto 중심(보유 2·프로파일 binance 65/kis 1·신호 crypto 7/dom 1/ovs 0).
+- **기존 자산 실측**: `position_strategy_profiles` 66행(setup_type·exit_plan·strategy_context)·reevaluator setup 청산 가드(`breakout_hold_guard`·`mean_reversion_profit_take`·`family_performance_protective_adjust`)·`familyPerformanceFeedback` 존재.
+- **분류 불일치**: 현 setup_type(defensive_rotation 39·momentum_rotation 12·trend_following 7·micro_swing 5·breakout 2) vs C3(turtle/testah/range/defensive) → **매핑 필요**.
+- **ET-D 구현 방향**: C3 정밀 청산 룰 평가기(10봉 최저 이탈 종가·75선 붕괴·구조 손절) shadow → 현 setup 가드와 가상 청산 성과 Δ 비교 → C15 등록. 거래소 컨텍스트 3시장 공통·실청산 0(reevaluator 동작 불변).
+- **데이터 의존성**: 구조는 코드(지금)·의미 있는 비교는 C3 전략군 진입 포지션/신호 누적 후(현 crypto 신호 7건).
+
 ## P3 — 자율 완성
 - C9 동적 리밋 · C10 워치리스트 · C12 일원화 · C13 ablation·라우팅 · C14 오토리서치·소스 · C16 add 승격 · Stage B/C · 파라미터 스토어 전면 소비 전환.
 
