@@ -74,6 +74,9 @@
 - **[v1.1] 레인지 룰셋 후보 추가**(V-N): WB 더블 볼린저 — 변곡(양 밴드 터치+꼬리+밴드 안 마감=반전) vs 돌파(양 밴드+**앞 매물대 동시 돌파**+종가 마감) 2분류, 매물대 이중 컨펌으로 fakeout 차단 — P1-4에서 Sneaky/ORB와 **비교 백테스트 후 채택**(자가 주장 수치 불신, 자체 검증).
 - **[v1.1] 전략군 시퀀스 노트(G2)**: 추세 진입은 **돌파(터틀) 직후 또는 첫 눌림(테스타)만** — 추세 후반 늦은 눌림 진입 차단(V-N "추세는 초반에"). 라우팅에 추세 연령(돌파 후 경과 캔들) 파라미터.
 
+
+> **[정합성 노트 2026-06-19 — 메티 정밀 분석]** ① **turtle 활성 레짐 정렬 필요**: 본 표는 turtle=bull·bear(crypto 숏)이나 현 코드는 bull·volatile(숏 미구현→bear를 volatile로 대체 추정). 레짐 확대 shadow가 turtle에 **sideways 추가**(bull·volatile·sideways) 관찰 중 — C3 추세 추종 방향(bull·bear)과 결이 다름. 실제 확대 결정 시 **C8 outcome 데이터로 "sideways turtle 수익성" 검증 후 C3 재정렬**(shadow라 현 영향 0). ② **패턴 완화 stable-range 의무**: 패턴 완화 shadow의 완화안(maFilter 200→100·entryLookback 20→10·pullbackWindow 5→10·maSlow 75→60)은 탐색용 임의값 — 실제 적용 시 **stable-range 백테스트(C7·넓은 양호 구간 중앙값)** 통과 필수.
+
 ### C4. 사전 게이트 [신설 + 기존 강화]
 - **R:R 게이트**: 진입가·구조손절·목표(전략군별 정의)로 R:R 계산 → <2 거부. **E 게이트**: 전략군×레짐별 롤링 E(비용 차감, 최소 30거래 — 미달 시 통과시키되 사이징 축소) ≤0 거부. **횡보/애매 차단**: 레인지 전략 외에는 range 레짐에서 진입 거부 + 거래량 압력 애매(저변동·저거래) 차단. **유동성 최소**: 일평균 거래대금 하한(시장별).
 - 기존 약신호 게이트(0.22/0.32 하드코딩) → 이 4게이트로 대체. reflexion/blacklist 게이트는 유지.
@@ -175,11 +178,15 @@
 | 21 | vault-shadow(eval/adjustments) | shadow | 파라미터 스토어 입력 | 조정안 사후 검증 통과율 | 시그마 vault 연동(Week2) |
 | 22 | meta-neural-reflexion | shadow | C8 학습 레이어 | reflexion 제안의 채택 후 성과 | 소표본 규율 적용 |
 | 23 | MAPEK | env | 자율 루프 프레임 | — | 0-b 루프화와 정합성 검토 |
+| 24 | regime-expansion-shadow-sim | shadow | advisory | sideways/volatile 확대 would-have·bear 제외·matched 무변경, 4주 | C2/C3·2026-06-19 실가동 |
+| 25 | pattern-relaxation-shadow-sim | shadow | supervised_l4 | 완화 entry의 C8 outcome E 양수·30거래/전략군×레짐, 4주 | C3·2026-06-19 실가동 |
+| 26 | signal-outcome-feedback | shadow | supervised_l4 | 전략군×레짐 30거래 후 E 양수 | C8·2026-06-19 실가동 |
+| 27 | signal-outcome-eval-runner | advisory | daily_shadow_feedback | append-only·trade_journal 불변 | C8·2026-06-19 실가동 |
 
 **통합 규칙**:
-1. **등록 의무**: 위 23종 + 신규 shadow는 전부 C15 레지스트리 등록(기준 미정의 shadow는 4주 후 자동 "정체 보고" 발화).
+1. **등록 의무**: 위 27종 + 신규 shadow는 전부 C15 레지스트리 등록(기준 미정의 shadow는 4주 후 자동 "정체 보고" 발화).
 2. **표준 경로**: `shadow → supervised_l4(제안·승인 필요) → autonomous_l5(자율, 사후보고)` — 기존 posttrade/lifecycle 체계 전 컴포넌트 확장. enforce형 게이트(16·17)는 `advisory → enforce` 2단.
-3. **주간 전수 스캔**: 주간 전략회의에서 레지스트리 23종 상태표 자동 생성(표본·진척·제안 대기) → 마스터에게 "결정 대기 N건" 단일 뷰.
+3. **주간 전수 스캔**: 주간 전략회의에서 레지스트리 27종 상태표 자동 생성(표본·진척·제안 대기) → 마스터에게 "결정 대기 N건" 단일 뷰.
 4. **P1 산출물**: 레지스트리 스키마(컴포넌트·모드·기준·표본·이력) + 제안서 생성기 + 일/주간 회의 통합 — CODEX 프롬프트 분리 예정.
 
 ### C16. 포지션 런타임 관리자 (G7-b) [마스터 지시 2026-06-12 — 실시간 감시 정밀 분석 + 보유 중 재평가]

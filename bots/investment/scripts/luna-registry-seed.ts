@@ -68,10 +68,13 @@ function normalizeSeedRow(row: any) {
 export async function seedLunaComponentRegistry(options: any = {}, deps: any = {}) {
   const dryRun = options.dryRun === true;
   const rows = LUNA_COMPONENT_REGISTRY_SEED.map(normalizeSeedRow);
+  let applied = 0;
+  let inserted = 0;
+  let updated = 0;
   if (!dryRun) {
     const runFn = deps.runFn || db.run;
     for (const row of rows) {
-      await runFn(
+      const result = await runFn(
         `INSERT INTO luna_component_registry
            (component, current_mode, target_mode, promotion_criteria, status, notes)
          VALUES ($1, $2, $3, $4::jsonb, 'active', $5)
@@ -79,7 +82,8 @@ export async function seedLunaComponentRegistry(options: any = {}, deps: any = {
            current_mode = EXCLUDED.current_mode,
            target_mode = EXCLUDED.target_mode,
            promotion_criteria = EXCLUDED.promotion_criteria,
-           notes = EXCLUDED.notes`,
+           notes = EXCLUDED.notes
+         RETURNING (xmax = '0'::xid) AS inserted`,
         [
           row.component,
           row.currentMode,
@@ -88,12 +92,22 @@ export async function seedLunaComponentRegistry(options: any = {}, deps: any = {
           row.notes,
         ]
       );
+      const rowCount = Number(result?.rowCount ?? (Array.isArray(result?.rows) && result.rows.length > 0 ? 1 : 0));
+      applied += Math.max(0, rowCount);
+      const returned = Array.isArray(result?.rows) ? result.rows[0] : null;
+      if (returned && Object.prototype.hasOwnProperty.call(returned, 'inserted')) {
+        if (returned.inserted === true || returned.inserted === 'true') inserted += 1;
+        else updated += 1;
+      }
     }
   }
   return {
     ok: true,
     dryRun,
     seeded: rows.length,
+    applied,
+    inserted,
+    updated,
     components: rows.map((row) => row.component),
   };
 }

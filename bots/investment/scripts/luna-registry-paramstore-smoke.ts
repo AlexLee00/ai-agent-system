@@ -109,6 +109,54 @@ async function main() {
     sampleCounts: { 'rl-policy-shadow': 31 },
   });
   assert.equal(sampleAttached[0].sample_count, 31);
+  const sampleSqls = [];
+  const expansionSampleAttached = await attachSampleCounts([
+    { component: 'regime-expansion-shadow-sim', sample_count: 0 },
+    { component: 'pattern-relaxation-shadow-sim', sample_count: 7 },
+  ], {}, {
+    queryFn: async (sql: string) => {
+      sampleSqls.push(sql);
+      assert.match(sql, /regimeExpansionGain/);
+      return [{ count: 11 }];
+    },
+  });
+  assert.equal(expansionSampleAttached[0].sample_count, 11);
+  assert.equal(expansionSampleAttached[1].sample_count, 7);
+  assert.equal(sampleSqls.length, 1);
+
+  const registryPreservation = await withSmokeRollback(async (storeDeps: any) => {
+    const registeredAt = '2026-01-02T03:04:05.000Z';
+    const lastEvaluatedAt = '2026-02-03T04:05:06.000Z';
+    await storeDeps.runFn(
+      `INSERT INTO luna_component_registry
+         (component, current_mode, target_mode, promotion_criteria, status, sample_count, last_evaluated_at, registered_at, notes)
+       VALUES ($1, 'fixture_old_mode', 'fixture_old_target', '{}'::jsonb, 'proposed', 123, $2::timestamptz, $3::timestamptz, 'before seed')
+       ON CONFLICT (component) DO UPDATE SET
+         current_mode = EXCLUDED.current_mode,
+         target_mode = EXCLUDED.target_mode,
+         promotion_criteria = EXCLUDED.promotion_criteria,
+         status = EXCLUDED.status,
+         sample_count = EXCLUDED.sample_count,
+         last_evaluated_at = EXCLUDED.last_evaluated_at,
+         registered_at = EXCLUDED.registered_at,
+         notes = EXCLUDED.notes`,
+      ['regime-expansion-shadow-sim', lastEvaluatedAt, registeredAt]
+    );
+    const seedResult = await seedLunaComponentRegistry({ dryRun: false }, storeDeps);
+    const rows = await storeDeps.queryFn(
+      `SELECT sample_count, status, last_evaluated_at, registered_at
+         FROM luna_component_registry
+        WHERE component = $1`,
+      ['regime-expansion-shadow-sim']
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(Number(rows[0].sample_count), 123);
+    assert.equal(rows[0].status, 'proposed');
+    assert.equal(new Date(rows[0].last_evaluated_at).toISOString(), lastEvaluatedAt);
+    assert.equal(new Date(rows[0].registered_at).toISOString(), registeredAt);
+    return { applied: seedResult.applied, inserted: seedResult.inserted, updated: seedResult.updated };
+  });
+  assert.ok(registryPreservation.applied >= 1);
 
   const oldDate = new Date(Date.now() - 35 * 86_400_000).toISOString();
   const evaluation = evaluateRegistryRows([
@@ -151,6 +199,7 @@ async function main() {
   const paperMirrorCalls = [];
   let universeSnapshotCalled = 0;
   let signalOutcomeCalled = 0;
+  const registrySeedCalls = [];
   const evaluatorWithCalibration = await runLunaRegistryEvaluator({
     dryRun: true,
     rows: [],
@@ -189,11 +238,17 @@ async function main() {
       assert.equal(options.confirm, null);
       return { ok: true, evaluated: 2, written: 0, counts: { open: 1, win: 1 }, summary: { groups: [] }, errors: [] };
     },
+    seedLunaComponentRegistry: async (options: any) => {
+      registrySeedCalls.push(options);
+      assert.equal(options.dryRun, true);
+      return { ok: true, dryRun: true, seeded: LUNA_COMPONENT_REGISTRY_SEED.length, applied: 0, inserted: 0, updated: 0, components: [] };
+    },
   });
   assert.equal(calibrationCalled, 1);
   assert.equal(alphaCalled, 1);
   assert.equal(universeSnapshotCalled, 1);
   assert.equal(signalOutcomeCalled, 1);
+  assert.equal(registrySeedCalls.length, 1);
   assert.deepEqual(paperMirrorCalls.map((item) => item.market), ['domestic', 'overseas']);
   assert.equal(evaluatorWithCalibration.calibration.ok, true);
   assert.equal(evaluatorWithCalibration.calibration.rows, 1);
@@ -208,6 +263,29 @@ async function main() {
   assert.equal(evaluatorWithCalibration.universeSnapshot.totalActive, 4);
   assert.equal(evaluatorWithCalibration.signalOutcome.ok, true);
   assert.equal(evaluatorWithCalibration.signalOutcome.written, 0);
+  assert.equal(evaluatorWithCalibration.registrySeed.ok, true);
+  assert.equal(evaluatorWithCalibration.registrySeed.dryRun, true);
+  assert.equal(evaluatorWithCalibration.registrySeed.applied, 0);
+
+  let badConfirmSeedCalled = 0;
+  await assert.rejects(
+    () => runLunaRegistryEvaluator({
+      apply: true,
+      confirm: 'wrong-confirm',
+      rows: [],
+      skipCalibration: true,
+      skipAlpha: true,
+      skipPaperMirror: true,
+      skipUniverseSnapshot: true,
+      skipSignalOutcome: true,
+    }, {
+      seedLunaComponentRegistry: async () => {
+        badConfirmSeedCalled += 1;
+      },
+    }),
+    /requires --confirm=luna-registry-evaluator-shadow/
+  );
+  assert.equal(badConfirmSeedCalled, 0);
 
   const evaluatorSkipCalibration = await runLunaRegistryEvaluator({
     dryRun: true,
@@ -248,6 +326,7 @@ async function main() {
   const applyPaperMirrorCalls = [];
   let applyUniverseSnapshotCalled = 0;
   let applySignalOutcomeCalled = 0;
+  let applyRegistrySeedCalled = 0;
   const evaluatorApplyPiggyback = await runLunaRegistryEvaluator({
     apply: true,
     confirm: LUNA_REGISTRY_EVALUATOR_CONFIRM,
@@ -286,12 +365,18 @@ async function main() {
       assert.equal(options.confirm, LUNA_SIGNAL_OUTCOME_CONFIRM);
       return { ok: true, evaluated: 2, written: 1, counts: { win: 1, open: 1 }, summary: { groups: [] }, errors: [] };
     },
+    seedLunaComponentRegistry: async (options: any) => {
+      applyRegistrySeedCalled += 1;
+      assert.equal(options.dryRun, false);
+      return { ok: true, dryRun: false, seeded: LUNA_COMPONENT_REGISTRY_SEED.length, applied: 2, inserted: 1, updated: 1, components: [] };
+    },
     runFn: async () => ({ rowCount: 0, rows: [] }),
     publishAlert: async () => ({ ok: true }),
   });
   assert.equal(applyAlphaCalled, 1);
   assert.equal(applyUniverseSnapshotCalled, 1);
   assert.equal(applySignalOutcomeCalled, 1);
+  assert.equal(applyRegistrySeedCalled, 1);
   assert.deepEqual(applyPaperMirrorCalls.map((item) => item.market), ['domestic', 'overseas']);
   assert.equal(evaluatorApplyPiggyback.alpha.canWrite, true);
   assert.equal(evaluatorApplyPiggyback.alpha.written, 1);
@@ -300,6 +385,10 @@ async function main() {
   assert.equal(evaluatorApplyPiggyback.paperMirror.placed, 0);
   assert.equal(evaluatorApplyPiggyback.universeSnapshot.inserted, 2);
   assert.equal(evaluatorApplyPiggyback.signalOutcome.written, 1);
+  assert.equal(evaluatorApplyPiggyback.registrySeed.dryRun, false);
+  assert.equal(evaluatorApplyPiggyback.registrySeed.applied, 2);
+  assert.equal(evaluatorApplyPiggyback.registrySeed.inserted, 1);
+  assert.equal(evaluatorApplyPiggyback.registrySeed.updated, 1);
 
   const evaluatorSkipPiggybacks = await runLunaRegistryEvaluator({
     dryRun: true,
@@ -356,6 +445,23 @@ async function main() {
   assert.equal(evaluatorPiggybackFailures.signalOutcome.ok, false);
   assert.equal(evaluatorPiggybackFailures.signalOutcome.error, 'fixture_signal_outcome_down');
 
+  const evaluatorSeedFailure = await runLunaRegistryEvaluator({
+    dryRun: true,
+    rows: [{ component: 'fixture', sample_count: 0, status: 'active', registered_at: new Date().toISOString() }],
+    skipCalibration: true,
+    skipAlpha: true,
+    skipPaperMirror: true,
+    skipUniverseSnapshot: true,
+    skipSignalOutcome: true,
+  }, {
+    seedLunaComponentRegistry: async () => {
+      throw new Error('fixture_registry_seed_down');
+    },
+  });
+  assert.equal(evaluatorSeedFailure.ok, true);
+  assert.equal(evaluatorSeedFailure.registrySeed.ok, false);
+  assert.equal(evaluatorSeedFailure.registrySeed.error, 'fixture_registry_seed_down');
+
   assert.equal(evaluateLunaAutonomousCommand('launchctl setenv TEST true').blocked, true);
 
   return {
@@ -372,6 +478,12 @@ async function main() {
     },
     registry: {
       seedCount: seedDryRun.seeded,
+      seedPreservesState: true,
+      registrySeedDryRun: true,
+      registrySeedApply: true,
+      registrySeedFailOpen: true,
+      regimeExpansionSampleCount: true,
+      patternRelaxationSampleFallback: true,
       proposals: evaluation.proposals.length,
       notifyNow: evaluation.notifyNow.length,
       deferred: evaluation.deferred.length,

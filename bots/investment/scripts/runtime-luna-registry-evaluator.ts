@@ -28,6 +28,9 @@ import {
   LUNA_SIGNAL_OUTCOME_CONFIRM,
   runLunaSignalOutcomeEval,
 } from './runtime-luna-signal-outcome-eval.ts';
+import {
+  seedLunaComponentRegistry,
+} from './luna-registry-seed.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
@@ -50,6 +53,8 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'universe-snapshot-accumulator': `SELECT COUNT(*)::int AS count FROM universe_snapshot`,
   'signal-outcome-feedback': `SELECT COUNT(*)::int AS count FROM luna_strategy_signal_outcomes`,
   'signal-outcome-eval-runner': `SELECT COUNT(*)::int AS count FROM luna_strategy_signal_outcomes`,
+  'regime-expansion-shadow-sim': `SELECT COUNT(*)::int AS count FROM luna_strategy_signals WHERE COALESCE((details->>'regimeExpansionGain')::boolean, false) IS TRUE`,
+  // pattern-relaxation-shadow-sim currently has no durable gain rows; add a sample query only after relaxed gains are persisted.
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
   'meta-neural-reflexion': `SELECT COUNT(*)::int AS count FROM luna_failure_reflexions`,
 });
@@ -418,6 +423,35 @@ async function runSignalOutcomeBeforeEvaluation(options: any = {}, deps: any = {
   }
 }
 
+async function runRegistrySeedBeforeEvaluation(options: any = {}, deps: any = {}) {
+  try {
+    const runner = deps.seedLunaComponentRegistry || seedLunaComponentRegistry;
+    const dryRun = options.dryRun === true || options.apply !== true;
+    const result = await runner({ dryRun }, deps);
+    return {
+      ok: result?.ok !== false,
+      skipped: false,
+      dryRun,
+      seeded: Number(result?.seeded || 0),
+      applied: Number(result?.applied || 0),
+      inserted: Number(result?.inserted || 0),
+      updated: Number(result?.updated || 0),
+      components: Array.isArray(result?.components) ? result.components : [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      dryRun: options.dryRun === true || options.apply !== true,
+      seeded: 0,
+      applied: 0,
+      inserted: 0,
+      updated: 0,
+      error: error?.message || String(error),
+    };
+  }
+}
+
 export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -431,6 +465,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
   const paperMirror = await runPaperMirrorBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const universeSnapshot = await runUniverseSnapshotBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const signalOutcome = await runSignalOutcomeBeforeEvaluation({ ...options, apply, dryRun }, deps);
+  const registrySeed = await runRegistrySeedBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const rows = options.rows || await loadRegistryRows(deps.queryFn || db.query);
   const rowsWithSamples = await attachSampleCounts(rows, options, deps);
   const result = evaluateRegistryRows(rowsWithSamples, {
@@ -455,6 +490,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
     paperMirror,
     universeSnapshot,
     signalOutcome,
+    registrySeed,
     outputPath,
     notificationsAttempted: notifications.length,
     liveMutation: false,
