@@ -24,6 +24,10 @@ import {
 import {
   persistUniverseSnapshot,
 } from '../shared/luna-universe-snapshot.ts';
+import {
+  LUNA_SIGNAL_OUTCOME_CONFIRM,
+  runLunaSignalOutcomeEval,
+} from './runtime-luna-signal-outcome-eval.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
@@ -44,6 +48,8 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'robust-backtest-selection': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status WHERE robust_selection_enabled IS TRUE OR selection_method IS NOT NULL`,
   'alpha-factor-discovery': `SELECT COUNT(*)::int AS count FROM luna_alpha_factors`,
   'universe-snapshot-accumulator': `SELECT COUNT(*)::int AS count FROM universe_snapshot`,
+  'signal-outcome-feedback': `SELECT COUNT(*)::int AS count FROM luna_strategy_signal_outcomes`,
+  'signal-outcome-eval-runner': `SELECT COUNT(*)::int AS count FROM luna_strategy_signal_outcomes`,
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
   'meta-neural-reflexion': `SELECT COUNT(*)::int AS count FROM luna_failure_reflexions`,
 });
@@ -377,6 +383,41 @@ async function runUniverseSnapshotBeforeEvaluation(options: any = {}, deps: any 
   }
 }
 
+async function runSignalOutcomeBeforeEvaluation(options: any = {}, deps: any = {}) {
+  if (options.skipSignalOutcome === true) {
+    return { ok: true, skipped: true, reason: 'skip_signal_outcome_flag' };
+  }
+  try {
+    const runner = deps.runLunaSignalOutcomeEval || runLunaSignalOutcomeEval;
+    const dryRun = options.dryRun === true || options.apply !== true;
+    const result = await runner({
+      dryRun,
+      apply: options.apply === true && !dryRun,
+      confirm: options.apply === true && !dryRun ? LUNA_SIGNAL_OUTCOME_CONFIRM : null,
+      limit: options.signalOutcomeLimit,
+      maxBars: options.signalOutcomeMaxBars,
+      markets: options.signalOutcomeMarkets,
+      now: options.now,
+    }, deps);
+    return {
+      ok: result?.ok !== false,
+      skipped: false,
+      dryRun,
+      evaluated: Number(result?.evaluated || 0),
+      written: Number(result?.written || 0),
+      counts: result?.counts || {},
+      summary: result?.summary || null,
+      errors: Array.isArray(result?.errors) ? result.errors.slice(0, 5) : [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      error: error?.message || String(error),
+    };
+  }
+}
+
 export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -389,6 +430,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
   const alpha = await runAlphaBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const paperMirror = await runPaperMirrorBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const universeSnapshot = await runUniverseSnapshotBeforeEvaluation({ ...options, apply, dryRun }, deps);
+  const signalOutcome = await runSignalOutcomeBeforeEvaluation({ ...options, apply, dryRun }, deps);
   const rows = options.rows || await loadRegistryRows(deps.queryFn || db.query);
   const rowsWithSamples = await attachSampleCounts(rows, options, deps);
   const result = evaluateRegistryRows(rowsWithSamples, {
@@ -412,6 +454,7 @@ export async function runLunaRegistryEvaluator(options: any = {}, deps: any = {}
     alpha,
     paperMirror,
     universeSnapshot,
+    signalOutcome,
     outputPath,
     notificationsAttempted: notifications.length,
     liveMutation: false,
@@ -431,10 +474,14 @@ if (isDirectExecution(import.meta.url)) {
       skipAlpha: hasFlag('skip-alpha'),
       skipPaperMirror: hasFlag('skip-paper-mirror'),
       skipUniverseSnapshot: hasFlag('skip-universe-snapshot'),
+      skipSignalOutcome: hasFlag('skip-signal-outcome'),
       calibrationMarkets: argValue('calibration-markets'),
       paperMirrorMarkets: argValue('paper-mirror-markets', 'domestic,overseas'),
       paperMirrorLimit: Number(argValue('paper-mirror-limit', 20)),
       universeSnapshotDate: argValue('universe-snapshot-date'),
+      signalOutcomeLimit: Number(argValue('signal-outcome-limit', 100)),
+      signalOutcomeMaxBars: Number(argValue('signal-outcome-max-bars', 20)),
+      signalOutcomeMarkets: argValue('signal-outcome-markets', ''),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: '❌ runtime-luna-registry-evaluator 실패:',

@@ -17,6 +17,7 @@ import {
   runLunaRegistryEvaluator,
 } from './runtime-luna-registry-evaluator.ts';
 import { LUNA_ALPHA_FACTOR_CONFIRM } from './runtime-luna-alpha-factor.ts';
+import { LUNA_SIGNAL_OUTCOME_CONFIRM } from './runtime-luna-signal-outcome-eval.ts';
 import { LUNA_TOSS_PAPER_MIRROR_CONFIRM } from '../shared/luna-toss-paper-mirror.ts';
 import { evaluateLunaAutonomousCommand } from '../shared/luna-autonomous-command-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -149,6 +150,7 @@ async function main() {
   let alphaCalled = 0;
   const paperMirrorCalls = [];
   let universeSnapshotCalled = 0;
+  let signalOutcomeCalled = 0;
   const evaluatorWithCalibration = await runLunaRegistryEvaluator({
     dryRun: true,
     rows: [],
@@ -180,10 +182,18 @@ async function main() {
       assert.equal(options.dryRun, true);
       return { ok: true, dryRun: true, snapshotDate: '2099-06-19', inserted: 0, totalActive: 4 };
     },
+    runLunaSignalOutcomeEval: async (options: any) => {
+      signalOutcomeCalled += 1;
+      assert.equal(options.apply, false);
+      assert.equal(options.dryRun, true);
+      assert.equal(options.confirm, null);
+      return { ok: true, evaluated: 2, written: 0, counts: { open: 1, win: 1 }, summary: { groups: [] }, errors: [] };
+    },
   });
   assert.equal(calibrationCalled, 1);
   assert.equal(alphaCalled, 1);
   assert.equal(universeSnapshotCalled, 1);
+  assert.equal(signalOutcomeCalled, 1);
   assert.deepEqual(paperMirrorCalls.map((item) => item.market), ['domestic', 'overseas']);
   assert.equal(evaluatorWithCalibration.calibration.ok, true);
   assert.equal(evaluatorWithCalibration.calibration.rows, 1);
@@ -196,6 +206,8 @@ async function main() {
   assert.equal(evaluatorWithCalibration.paperMirror.placed, 0);
   assert.equal(evaluatorWithCalibration.universeSnapshot.ok, true);
   assert.equal(evaluatorWithCalibration.universeSnapshot.totalActive, 4);
+  assert.equal(evaluatorWithCalibration.signalOutcome.ok, true);
+  assert.equal(evaluatorWithCalibration.signalOutcome.written, 0);
 
   const evaluatorSkipCalibration = await runLunaRegistryEvaluator({
     dryRun: true,
@@ -204,12 +216,17 @@ async function main() {
     skipAlpha: true,
     skipPaperMirror: true,
     skipUniverseSnapshot: true,
+    skipSignalOutcome: true,
   }, {
     runLunaRegimeCalibration: async () => {
       throw new Error('should_not_run');
     },
+    runLunaSignalOutcomeEval: async () => {
+      throw new Error('signal_outcome_should_not_run');
+    },
   });
   assert.equal(evaluatorSkipCalibration.calibration.skipped, true);
+  assert.equal(evaluatorSkipCalibration.signalOutcome.skipped, true);
 
   const evaluatorCalibrationFailure = await runLunaRegistryEvaluator({
     dryRun: true,
@@ -217,6 +234,7 @@ async function main() {
     skipAlpha: true,
     skipPaperMirror: true,
     skipUniverseSnapshot: true,
+    skipSignalOutcome: true,
   }, {
     runLunaRegimeCalibration: async () => {
       throw new Error('fixture_calibration_down');
@@ -229,6 +247,7 @@ async function main() {
   let applyAlphaCalled = 0;
   const applyPaperMirrorCalls = [];
   let applyUniverseSnapshotCalled = 0;
+  let applySignalOutcomeCalled = 0;
   const evaluatorApplyPiggyback = await runLunaRegistryEvaluator({
     apply: true,
     confirm: LUNA_REGISTRY_EVALUATOR_CONFIRM,
@@ -260,11 +279,19 @@ async function main() {
       assert.equal(options.dryRun, false);
       return { ok: true, dryRun: false, snapshotDate: '2099-06-19', inserted: 2, totalActive: 2 };
     },
+    runLunaSignalOutcomeEval: async (options: any) => {
+      applySignalOutcomeCalled += 1;
+      assert.equal(options.apply, true);
+      assert.equal(options.dryRun, false);
+      assert.equal(options.confirm, LUNA_SIGNAL_OUTCOME_CONFIRM);
+      return { ok: true, evaluated: 2, written: 1, counts: { win: 1, open: 1 }, summary: { groups: [] }, errors: [] };
+    },
     runFn: async () => ({ rowCount: 0, rows: [] }),
     publishAlert: async () => ({ ok: true }),
   });
   assert.equal(applyAlphaCalled, 1);
   assert.equal(applyUniverseSnapshotCalled, 1);
+  assert.equal(applySignalOutcomeCalled, 1);
   assert.deepEqual(applyPaperMirrorCalls.map((item) => item.market), ['domestic', 'overseas']);
   assert.equal(evaluatorApplyPiggyback.alpha.canWrite, true);
   assert.equal(evaluatorApplyPiggyback.alpha.written, 1);
@@ -272,6 +299,7 @@ async function main() {
   assert.equal(evaluatorApplyPiggyback.paperMirror.written, 2);
   assert.equal(evaluatorApplyPiggyback.paperMirror.placed, 0);
   assert.equal(evaluatorApplyPiggyback.universeSnapshot.inserted, 2);
+  assert.equal(evaluatorApplyPiggyback.signalOutcome.written, 1);
 
   const evaluatorSkipPiggybacks = await runLunaRegistryEvaluator({
     dryRun: true,
@@ -280,6 +308,7 @@ async function main() {
     skipAlpha: true,
     skipPaperMirror: true,
     skipUniverseSnapshot: true,
+    skipSignalOutcome: true,
   }, {
     runLunaAlphaFactor: async () => {
       throw new Error('alpha_should_not_run');
@@ -290,10 +319,14 @@ async function main() {
     persistUniverseSnapshot: async () => {
       throw new Error('snapshot_should_not_run');
     },
+    runLunaSignalOutcomeEval: async () => {
+      throw new Error('signal_outcome_should_not_run');
+    },
   });
   assert.equal(evaluatorSkipPiggybacks.alpha.skipped, true);
   assert.equal(evaluatorSkipPiggybacks.paperMirror.skipped, true);
   assert.equal(evaluatorSkipPiggybacks.universeSnapshot.skipped, true);
+  assert.equal(evaluatorSkipPiggybacks.signalOutcome.skipped, true);
 
   const evaluatorPiggybackFailures = await runLunaRegistryEvaluator({
     dryRun: true,
@@ -309,6 +342,9 @@ async function main() {
     persistUniverseSnapshot: async () => {
       throw new Error('fixture_snapshot_down');
     },
+    runLunaSignalOutcomeEval: async () => {
+      throw new Error('fixture_signal_outcome_down');
+    },
   });
   assert.equal(evaluatorPiggybackFailures.ok, true);
   assert.equal(evaluatorPiggybackFailures.alpha.ok, false);
@@ -317,6 +353,8 @@ async function main() {
   assert.match(evaluatorPiggybackFailures.paperMirror.error, /fixture_paper_down/);
   assert.equal(evaluatorPiggybackFailures.universeSnapshot.ok, false);
   assert.equal(evaluatorPiggybackFailures.universeSnapshot.error, 'fixture_snapshot_down');
+  assert.equal(evaluatorPiggybackFailures.signalOutcome.ok, false);
+  assert.equal(evaluatorPiggybackFailures.signalOutcome.error, 'fixture_signal_outcome_down');
 
   assert.equal(evaluateLunaAutonomousCommand('launchctl setenv TEST true').blocked, true);
 
@@ -349,6 +387,9 @@ async function main() {
       universeSnapshotPiggyback: true,
       universeSnapshotSkip: true,
       universeSnapshotFailOpen: true,
+      signalOutcomePiggyback: true,
+      signalOutcomeSkip: true,
+      signalOutcomeFailOpen: true,
     },
   };
 }

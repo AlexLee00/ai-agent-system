@@ -20,6 +20,8 @@ export const LUNA_COMPONENT_REGISTRY_SEED = Object.freeze([
   { component: 'entry-llm-shadow-judge', currentMode: 'shadow', targetMode: 'g6_reviewer_or_retire', criteria: { metrics: ['ablation_contribution'] }, notes: 'E-3' },
   { component: 'position-lifecycle', currentMode: 'shadow', targetMode: 'supervised_l4', criteria: { metrics: ['lifecycle_action_accuracy'] }, notes: 'standard path prototype' },
   { component: 'posttrade-feedback', currentMode: 'shadow', targetMode: 'supervised_l4', criteria: { metrics: ['post_feedback_expectancy_improvement'] }, notes: 'C8' },
+  { component: 'signal-outcome-feedback', currentMode: 'shadow', targetMode: 'supervised_l4', criteria: { durationWeeks: 4, minSamplesPerFamilyRegime: 30, positiveExpectancyRequired: true, evidence: 'luna_strategy_signal_outcomes' }, notes: 'C8 strategy-family shadow signal outcome feedback by family and regime' },
+  { component: 'signal-outcome-eval-runner', currentMode: 'advisory', targetMode: 'daily_shadow_feedback', criteria: { appendOnly: true, tradeJournalUnmodified: true, evidence: 'luna_strategy_signal_outcomes' }, notes: 'C8 daily evaluator for unfilled strategy signals; no live trading or parameter mutation' },
   { component: 'candidate-backtest-entry-gate', currentMode: 'advisory', targetMode: 'enforce', criteria: { dsrMin: 0.9, minTrades: 30 }, notes: 'C7 gate' },
   { component: 'dsr-pbo-gate', currentMode: 'advisory', targetMode: 'enforce', criteria: { blockedCounterfactualUnderperforms: true }, notes: 'C7' },
   { component: 'robust-backtest-selection', currentMode: 'off', targetMode: 'on', criteria: { metrics: ['oos_consensus_parameter_superiority'] }, notes: 'P0-2' },
