@@ -196,6 +196,16 @@ async function buildDomesticDebrief(queryFn: any, now: Date) {
       ORDER BY COALESCE(exit_time, entry_time) DESC
       LIMIT 100`,
     [dateKst]);
+  const silentMissRows = await safeQuery(queryFn,
+    `SELECT trigger_id, symbol, exchange, setup_type, ready_at, expired_at,
+            predictive_score, confidence, reason, detected_at
+       FROM luna_silent_miss_log
+      WHERE matched IS FALSE
+        AND shadow_only IS TRUE
+        AND (detected_at AT TIME ZONE 'Asia/Seoul')::date = $1::date
+      ORDER BY detected_at DESC
+      LIMIT 100`,
+    [dateKst]);
 
   const signals = cleanRows(signalRows).map((row) => ({ ...row }));
   const preflights = cleanRows(preflightRows).map((row) => ({ ...row, gates: safeJson(row.gates) }));
@@ -207,7 +217,22 @@ async function buildDomesticDebrief(queryFn: any, now: Date) {
       symbol: row.symbol,
       family: row.family,
       reason: 'shadow_stage_virtual_tracking',
-    }));
+    }))
+    .concat(cleanRows(silentMissRows).map((row) => ({
+      id: row.trigger_id,
+      triggerId: row.trigger_id,
+      symbol: row.symbol,
+      exchange: row.exchange,
+      family: row.setup_type,
+      setupType: row.setup_type,
+      readyAt: row.ready_at,
+      expiredAt: row.expired_at,
+      predictiveScore: row.predictive_score,
+      confidence: row.confidence,
+      reason: row.reason || 'expected_fire_silent_miss',
+      source: 'expected_fire_watchdog',
+      detectedAt: row.detected_at,
+    })));
 
   return {
     dateKst,
@@ -229,6 +254,7 @@ async function buildDomesticDebrief(queryFn: any, now: Date) {
       firstError(gateRows),
       firstError(regimeRows),
       firstError(tradeRows),
+      firstError(silentMissRows),
     ].filter(Boolean),
   };
 }

@@ -288,6 +288,14 @@ function summarizeEventMeetingEvidence(evidence: any = {}) {
       '시뮬레이션 결과는 자문용이며 포지션·자본·리밋을 직접 변경하지 않습니다.',
     ].join('\n');
   }
+  if (item.type === 'silent_miss') {
+    return [
+      `미발화 후보: ${item.symbol || 'symbol n/a'} ${item.exchange || 'exchange n/a'} · setup=${item.setupType || 'n/a'}`,
+      `ready_at=${item.readyAt || 'n/a'} · expires_at=${item.expiredAt || 'n/a'} · reason=${item.reason || 'n/a'}`,
+      `예측점수=${item.predictiveScore == null ? 'n/a' : Number(item.predictiveScore).toFixed(3)} · confidence=${item.confidence == null ? 'n/a' : Number(item.confidence).toFixed(3)}`,
+      '이 안건은 fired/실행 매칭 누락 여부를 점검하는 자문 기록이며 주문 경로에 연결하지 않습니다.',
+    ].join('\n');
+  }
   return `수시 이벤트 점검: ${item.type || item.source || 'unknown'} · 자문/섀도 전용`;
 }
 

@@ -37,9 +37,11 @@ export function parseMeetingRoomLOpsCliArgs(argv: string[] = process.argv.slice(
     skipDisclosure: hasFlag(argv, 'skip-disclosure'),
     skipDailyLoss: hasFlag(argv, 'skip-daily-loss'),
     skipRisk: hasFlag(argv, 'skip-risk'),
+    skipSilentMiss: hasFlag(argv, 'skip-silent-miss'),
     limit: Number(argValue(argv, 'limit', 20)),
     circuitLookbackHours: Number(argValue(argv, 'circuit-lookback-hours', 24)),
     eventLookbackHours: Number(argValue(argv, 'event-lookback-hours', 24)),
+    silentMissLookbackHours: Number(argValue(argv, 'silent-miss-lookback-hours', 24)),
     outputDir: argValue(argv, 'output-dir', null),
     outputPath: argValue(argv, 'output', null),
   };
@@ -68,6 +70,7 @@ function summarize(result: any = {}) {
     `- disclosure: candidates=${result.disclosure?.candidates?.length || 0} triggered=${result.disclosure?.triggered || 0}`,
     `- daily_loss: candidates=${result.dailyLoss?.candidates?.length || 0} triggered=${result.dailyLoss?.triggered || 0}`,
     `- risk: candidates=${result.risk?.candidates?.length || 0} triggered=${result.risk?.triggered || 0}`,
+    `- silent_miss: candidates=${result.silentMiss?.candidates?.length || 0} triggered=${result.silentMiss?.triggered || 0}`,
     `- event_meeting: candidates=${result.eventMeeting?.candidates || 0} triggered=${result.eventMeeting?.triggered || 0}`,
     `- errors: ${result.errors?.length || 0}`,
   ].join('\n');

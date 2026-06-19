@@ -539,6 +539,59 @@ export async function findRiskMeetingCandidates(options: any = {}, deps: any = {
   return filterExistingMeetingAgendas(candidates, queryFn);
 }
 
+function normalizeSilentMiss(row: any = {}) {
+  const exchange = String(row.exchange || '').toLowerCase();
+  const market = exchange === 'kis' || exchange === 'kis_domestic'
+    ? 'domestic'
+    : exchange === 'kis_overseas' ? 'overseas' : 'crypto';
+  return {
+    type: 'silent_miss',
+    source: 'luna_silent_miss_log',
+    sourceId: row.trigger_id,
+    agendaKey: `silent-miss:${row.trigger_id}`,
+    market,
+    symbol: row.symbol,
+    exchange: row.exchange,
+    setupType: row.setup_type,
+    reason: row.reason,
+    readyAt: row.ready_at,
+    expiredAt: row.expired_at,
+    predictiveScore: row.predictive_score == null ? null : Number(row.predictive_score),
+    confidence: row.confidence == null ? null : Number(row.confidence),
+    detectedAt: row.detected_at,
+    advisoryOnly: true,
+    shadowOnly: true,
+  };
+}
+
+export async function findSilentMissMeetingCandidates(options: any = {}, deps: any = {}) {
+  const queryFn = deps.queryFn || db.query;
+  const limit = normalizeLimit(options.limit, 20);
+  const cutoff = lookbackCutoffIso(options, 'silentMissLookbackHours', 24);
+  let rows = [];
+  try {
+    rows = await queryFn(
+      `SELECT trigger_id, symbol, exchange, setup_type, ready_at, expired_at,
+              predictive_score, confidence, reason, detected_at
+         FROM luna_silent_miss_log
+        WHERE matched IS FALSE
+          AND shadow_only IS TRUE
+          AND detected_at >= $1::timestamptz
+        ORDER BY detected_at DESC
+        LIMIT $2`,
+      [cutoff, limit],
+    );
+  } catch (error) {
+    if (/luna_silent_miss_log|does not exist|42P01/i.test(String(error?.message || error))) return [];
+    throw error;
+  }
+  const candidates = (rows || [])
+    .map(normalizeSilentMiss)
+    .filter((row: any) => row.sourceId && row.symbol && row.exchange)
+    .slice(0, limit);
+  return filterExistingMeetingAgendas(candidates, queryFn);
+}
+
 function buildCircuitAgenda(row: any = {}) {
   const subject = [row.market, row.symbol, row.circuit].filter(Boolean).join(' / ');
   return {
@@ -558,6 +611,7 @@ function eventTitle(row: any = {}) {
   if (row.type === 'daily_loss_threshold') return `일일 손실 임계 점검: ${row.market} ${row.dateKst}`;
   if (row.type === 'risk_log_severe') return `심각 리스크 로그 점검: ${row.symbol || row.exchange || row.sourceId}`;
   if (row.type === 'risk_simulation_severe') return `심각 리스크 시뮬레이션 점검: ${row.market} ${row.analysisType}`;
+  if (row.type === 'silent_miss') return `미발화 후보 점검: ${row.symbol} ${row.setupType || ''}`.trim();
   return `수시 이벤트 점검: ${row.agendaKey || row.type || 'unknown'}`;
 }
 
@@ -634,6 +688,7 @@ export async function runMeetingRoomLOps(options: any = {}, deps: any = {}) {
       disclosure: { candidates: [], triggered: 0, skipped: [] },
       dailyLoss: { candidates: [], triggered: 0, skipped: [] },
       risk: { candidates: [], triggered: 0, skipped: [] },
+      silentMiss: { candidates: [], triggered: 0, skipped: [] },
       eventMeeting: { candidates: 0, triggered: 0, skipped: [] },
       liveMutation: false,
       shadowOnly: true,
@@ -652,6 +707,7 @@ export async function runMeetingRoomLOps(options: any = {}, deps: any = {}) {
     disclosure: { candidates: [], triggered: 0, skipped: [] },
     dailyLoss: { candidates: [], triggered: 0, skipped: [] },
     risk: { candidates: [], triggered: 0, skipped: [] },
+    silentMiss: { candidates: [], triggered: 0, skipped: [] },
     eventMeeting: { candidates: 0, triggered: 0, skipped: [] },
     liveMutation: false,
     shadowOnly: true,
@@ -749,6 +805,16 @@ export async function runMeetingRoomLOps(options: any = {}, deps: any = {}) {
     }
   }
 
+  if (options.skipSilentMiss !== true) {
+    try {
+      const candidates = await findSilentMissMeetingCandidates(options, deps);
+      result.silentMiss.candidates = candidates;
+      eventAgendas.push(...candidates.map(buildEventAgenda));
+    } catch (error) {
+      errors.push({ step: 'silent_miss', error: error?.message || String(error) });
+    }
+  }
+
   result.eventMeeting.candidates = eventAgendas.length;
   if (writable && eventAgendas.length > 0) {
     try {
@@ -761,11 +827,13 @@ export async function runMeetingRoomLOps(options: any = {}, deps: any = {}) {
       result.disclosure.triggered = result.disclosure.candidates.length;
       result.dailyLoss.triggered = result.dailyLoss.candidates.length;
       result.risk.triggered = result.risk.candidates.length;
+      result.silentMiss.triggered = result.silentMiss.candidates.length;
       if (result.circuit.triggered > 0) result.circuit.meeting = meetingRef;
       if (result.regime.triggered > 0) result.regime.meeting = meetingRef;
       if (result.disclosure.triggered > 0) result.disclosure.meeting = meetingRef;
       if (result.dailyLoss.triggered > 0) result.dailyLoss.meeting = meetingRef;
       if (result.risk.triggered > 0) result.risk.meeting = meetingRef;
+      if (result.silentMiss.triggered > 0) result.silentMiss.meeting = meetingRef;
     } catch (error) {
       errors.push({ step: 'event_meeting', error: error?.message || String(error) });
     }
@@ -793,4 +861,5 @@ export default {
   findDisclosureMeetingCandidates,
   findDailyLossMeetingCandidates,
   findRiskMeetingCandidates,
+  findSilentMissMeetingCandidates,
 };
