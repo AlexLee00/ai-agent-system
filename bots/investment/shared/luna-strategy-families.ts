@@ -39,10 +39,17 @@ export const LUNA_STRATEGY_DEFAULTS = Object.freeze({
 
 export const LUNA_REGIME_EXPANSION_SHADOW_ENV = 'LUNA_REGIME_EXPANSION_SHADOW';
 export const LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES_ENV = 'LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES';
+export const LUNA_PATTERN_RELAXATION_SHADOW_ENV = 'LUNA_PATTERN_RELAXATION_SHADOW';
+export const LUNA_STRATEGY_RELAXED_PARAMS_ENV = 'LUNA_STRATEGY_RELAXED_PARAMS_JSON';
 
 export const LUNA_STRATEGY_FAMILY_EXPANDED_REGIMES = Object.freeze({
   turtle: ['bull', 'volatile', 'sideways'],
   testah: ['bull', 'sideways'],
+});
+
+export const LUNA_STRATEGY_RELAXED_PARAMS = Object.freeze({
+  turtle: { maFilter: 100, entryLookback: 10 },
+  testah: { pullbackWindow: 10, maSlow: 60 },
 });
 
 export const LUNA_STRATEGY_PARAM_KEYS = Object.freeze({
@@ -110,6 +117,12 @@ export function isRegimeExpansionShadowEnabled(options: any = {}) {
   return truthyEnv(env[LUNA_REGIME_EXPANSION_SHADOW_ENV]);
 }
 
+export function isPatternRelaxationShadowEnabled(options: any = {}) {
+  if (typeof options.patternRelaxationShadow === 'boolean') return options.patternRelaxationShadow;
+  const env = { ...(process.env || {}), ...(options.env || {}) };
+  return truthyEnv(env[LUNA_PATTERN_RELAXATION_SHADOW_ENV]);
+}
+
 function parseRegimeList(value: any) {
   if (Array.isArray(value)) return value;
   if (typeof value !== 'string') return [];
@@ -154,6 +167,54 @@ export function resolveStrategyFamilyExpandedRegimes(options: any = {}) {
   return {
     turtle: sanitizeExpandedRegimes(turtleSource),
     testah: sanitizeExpandedRegimes(testahSource),
+  };
+}
+
+function parseObjectSource(value: any) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function relaxedOverrides(source: any, familyKey: string, familyName: string, defaults: any) {
+  const raw = source?.[familyKey] ?? source?.[familyName] ?? LUNA_STRATEGY_RELAXED_PARAMS[familyKey] ?? {};
+  const output = {};
+  for (const key of Object.keys(defaults || {})) {
+    if (!Object.prototype.hasOwnProperty.call(raw || {}, key)) continue;
+    const value = Number(raw[key]);
+    if (Number.isFinite(value) && value > 0) output[key] = value;
+  }
+  return output;
+}
+
+export function resolveStrategyFamilyRelaxedParams(params: any = {}, options: any = {}) {
+  const env = { ...(process.env || {}), ...(options.env || {}) };
+  const source = parseObjectSource(
+    options.relaxedParams
+    || options.strategyRelaxedParams
+    || env[LUNA_STRATEGY_RELAXED_PARAMS_ENV],
+  ) || LUNA_STRATEGY_RELAXED_PARAMS;
+  const baseTurtle = { ...LUNA_STRATEGY_DEFAULTS.turtle, ...(params.turtle || {}) };
+  const baseTestah = { ...LUNA_STRATEGY_DEFAULTS.testah, ...(params.testah || {}) };
+  return {
+    turtle: {
+      ...baseTurtle,
+      ...relaxedOverrides(source, 'turtle', LUNA_STRATEGY_SIGNAL_FAMILIES.turtle, LUNA_STRATEGY_DEFAULTS.turtle),
+    },
+    testah: {
+      ...baseTestah,
+      ...relaxedOverrides(source, 'testah', LUNA_STRATEGY_SIGNAL_FAMILIES.testah, LUNA_STRATEGY_DEFAULTS.testah),
+    },
+    regimeMatch: {
+      ...(params.regimeMatch || LUNA_STRATEGY_DEFAULTS.regimeMatch),
+    },
   };
 }
 
@@ -581,6 +642,73 @@ export function attachRegimeToSignal(result: any, market: string, regime: any = 
   };
 }
 
+function patternFamilyKey(family: string) {
+  if (family === LUNA_STRATEGY_SIGNAL_FAMILIES.turtle || family === 'turtle') return 'turtle';
+  if (family === LUNA_STRATEGY_SIGNAL_FAMILIES.testah || family === 'testah') return 'testah';
+  return String(family || 'unknown');
+}
+
+export function summarizePatternRelaxation(samples: any[] = [], options: any = {}) {
+  const enabled = options.enabled === true;
+  const gains = (samples || []).filter((sample) => sample?.gain === true);
+  const byFamily = { turtle: 0, testah: 0 };
+  for (const sample of gains) {
+    const key = patternFamilyKey(sample.family);
+    if (!Object.prototype.hasOwnProperty.call(byFamily, key)) byFamily[key] = 0;
+    byFamily[key] += 1;
+  }
+  const gainCount = gains.length;
+  return {
+    enabled,
+    gainCount,
+    byFamily,
+    line: enabled ? `패턴 완화 shadow: +${gainCount} entry 가능(터틀 ${byFamily.turtle || 0}·테스타 ${byFamily.testah || 0})` : null,
+    samples: gains.slice(0, Number(options.sampleLimit || 20)),
+  };
+}
+
+function evaluatePatternRelaxationShadow({
+  baseResults = [],
+  bars = [],
+  market = 'domestic',
+  symbol = '',
+  regime = null,
+  params = {},
+  input = {},
+} = {}) {
+  const relaxedParams = resolveStrategyFamilyRelaxedParams(params, input);
+  const baseByFamily = new Map((baseResults || []).map((result) => [result.family, result]));
+  const relaxedResults = [
+    attachRegimeToSignal(evaluateTurtleBreakout(bars, {
+      ...relaxedParams.turtle,
+      positionOpen: input.positionOpen === true,
+    }), market, regime, relaxedParams.regimeMatch.turtle),
+    attachRegimeToSignal(evaluateTestahPullback(bars, {
+      ...relaxedParams.testah,
+      positionOpen: input.positionOpen === true,
+      pendingSetup: input.pendingSetup === true,
+    }), market, regime, relaxedParams.regimeMatch.testah),
+  ];
+  const samples = [];
+  for (const relaxed of relaxedResults) {
+    const base = baseByFamily.get(relaxed.family) || null;
+    const gain = base?.signalType !== 'entry' && relaxed.signalType === 'entry';
+    samples.push({
+      market: normalizePhaseAMarket(market),
+      symbol,
+      family: relaxed.family,
+      gain,
+      baseSignalType: base?.signalType || null,
+      baseReason: base?.reason || null,
+      relaxedSignalType: relaxed.signalType,
+      relaxedReason: relaxed.reason,
+      regimeDominant: regime?.dominant || null,
+      relaxedParams: patternFamilyKey(relaxed.family) === 'turtle' ? relaxedParams.turtle : relaxedParams.testah,
+    });
+  }
+  return summarizePatternRelaxation(samples, { enabled: true });
+}
+
 export async function evaluateStrategyFamiliesForSymbol(input: any = {}, deps: any = {}) {
   const market = normalizePhaseAMarket(input.market || 'domestic');
   const symbol = normalizePhaseASymbol(input.symbol || '', market);
@@ -616,7 +744,7 @@ export async function evaluateStrategyFamiliesForSymbol(input: any = {}, deps: a
   }, deps);
   const expansionEnabled = isRegimeExpansionShadowEnabled(input);
   const expandedRegimes = expansionEnabled ? resolveStrategyFamilyExpandedRegimes(input) : { turtle: [], testah: [] };
-  return [
+  const results = [
     attachRegimeToSignal(evaluateTurtleBreakout(bars, {
       ...params.turtle,
       positionOpen: input.positionOpen === true,
@@ -634,6 +762,18 @@ export async function evaluateStrategyFamiliesForSymbol(input: any = {}, deps: a
     shadowOnly: true,
     liveMutation: false,
   }));
+  if (isPatternRelaxationShadowEnabled(input)) {
+    results.patternRelaxation = evaluatePatternRelaxationShadow({
+      baseResults: results,
+      bars,
+      market,
+      symbol,
+      regime,
+      params,
+      input,
+    });
+  }
+  return results;
 }
 
 function normalizePositionMarket(row: any = {}) {
@@ -698,6 +838,8 @@ export async function computeStrategyFamilySignals(options: any = {}, deps: any 
   const universe = await buildStrategyFamilyUniverse(options, deps);
   const signals = [];
   const errors = [];
+  const patternRelaxationEnabled = isPatternRelaxationShadowEnabled(options);
+  const patternRelaxationSamples = [];
   const providedRegimeMap = options.regimeByMarket instanceof Map
     ? options.regimeByMarket
     : new Map(Object.entries(options.regimeByMarket || {}));
@@ -713,6 +855,9 @@ export async function computeStrategyFamilySignals(options: any = {}, deps: any 
         params,
         regime: regimesByMarket.get(normalizePhaseAMarket(item.market)) || options.regime,
       }, deps);
+      if (patternRelaxationEnabled && results.patternRelaxation?.samples?.length) {
+        patternRelaxationSamples.push(...results.patternRelaxation.samples);
+      }
       for (const result of results) {
         if (['entry', 'exit', 'invalidate'].includes(result.signalType)) signals.push(result);
       }
@@ -726,6 +871,7 @@ export async function computeStrategyFamilySignals(options: any = {}, deps: any 
     signals,
     errors,
     summary: summarizeStrategyFamilySignals(signals),
+    patternRelaxation: summarizePatternRelaxation(patternRelaxationSamples, { enabled: patternRelaxationEnabled }),
     shadowOnly: true,
     liveMutation: false,
   };
@@ -797,6 +943,9 @@ export const _testOnly = {
   truthyEnv,
   sanitizeExpandedRegimes,
   resolveStrategyFamilyExpandedRegimes,
+  resolveStrategyFamilyRelaxedParams,
+  isPatternRelaxationShadowEnabled,
+  summarizePatternRelaxation,
 };
 
 export default {
@@ -809,4 +958,7 @@ export default {
   summarizeStrategyFamilySignals,
   isRegimeExpansionShadowEnabled,
   resolveStrategyFamilyExpandedRegimes,
+  isPatternRelaxationShadowEnabled,
+  resolveStrategyFamilyRelaxedParams,
+  summarizePatternRelaxation,
 };

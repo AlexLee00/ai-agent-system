@@ -101,6 +101,9 @@
 - 학습 규율: **최소 30거래/전략군×레짐 단위**(소표본 금지 — reviewHint closedTrades≥3 폐지)·E/R:R 단위로만 평가(승률 단독 금지)·갬블러 오류 차단(연속 손실에 사이징 증가 금지).
 - 반영 경로: 통계 → 가설 → **C7 검증 통과 시에만** 파라미터 스토어 갱신(자동) 또는 회의 안건(구조 변경=마스터 게이팅). win-pattern-extractor·hermes-learn·Sigma RAG 재사용.
 
+
+> **C8 구현 현황 (2026-06-19 실가동)**: 전략군 shadow 신호 결과 추적 완성. `luna_strategy_signal_outcomes`(append-only·UNIQUE signal_id·shadow_only) + 판정 로직(entry 신호→OHLCV→target 먼저=win·stop 먼저=loss·**동시 도달 시 stop 우선** 보수적·**룩어헤드 차단**=candle_ts 익일부터) + 전략군×레짐 E/R:R 집계(30거래 규율·소표본 provisional) + evaluator-daily 피기백(매일 06:20 자동 평가). 첫 실평가 005930=win(target_hit·+1.36R·+14.73%·5봉). shadow/advisory(실거래 0·파라미터 자동 갱신 금지·C7 통과 시에만 반영). **시스템 보강 철학**: 외부 바이럴(인스타 AI 트레이딩=디벙크 다수·조작/과적합) 대신, Dave Cliff 교훈(신기능보다 **측정·학습 능력**이 진짜 견고함)에 따라 검증된 피드백 루프를 우선 보강.
+
 ### C9. 포지션·자본 [M-5]
 - 매도 체결 이벤트 → **capitalSnapshot 재평가 훅**(같은 사이클 내 buyable 재계산 → monitor_only 해제 가능).
 - 일일 거래 리밋: 고정 15 → **동적**(기본 15 × 레짐 멀티 × 최근 E 부호 × G0 배치율, 상한 캡 유지). 회전 과다는 비용 모델(E 게이트)이 자연 억제.

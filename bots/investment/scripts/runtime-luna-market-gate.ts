@@ -18,6 +18,7 @@ import {
 import {
   computeStrategyFamilySignals,
   isRegimeExpansionShadowEnabled,
+  isPatternRelaxationShadowEnabled,
   insertStrategyFamilySignals,
   summarizeStrategyFamilySignals,
 } from '../shared/luna-strategy-families.ts';
@@ -114,6 +115,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   let circuitError = null;
   let entryTriggerShadow = null;
   let entryTriggerShadowError = null;
+  let patternRelaxation = options.patternRelaxation || null;
 
   if (!Array.isArray(options.gates)) {
     try {
@@ -154,6 +156,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
         queryFn: deps.queryFn || options.queryFn || db.query,
       }, deps);
       strategySignals = strategyResult.signals || [];
+      patternRelaxation = strategyResult.patternRelaxation || patternRelaxation;
       if (strategyResult.errors?.length) strategyError = strategyResult.errors;
     } catch (error) {
       strategyError = error?.message || String(error);
@@ -320,6 +323,9 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   const regimeExpansion = isRegimeExpansionShadowEnabled(options)
     ? summarizeRegimeExpansionShadow(strategySignals)
     : null;
+  const effectivePatternRelaxation = isPatternRelaxationShadowEnabled(options) && patternRelaxation?.enabled === true
+    ? patternRelaxation
+    : null;
   const preflightSummary = summarizeEntryPreflightEvaluations(preflightEvaluations);
   const securitiesWarningSummary = summarizeSecuritiesWarningGates(preflightEvaluations.flatMap((row) => row.gates || []));
   const circuitSummary = summarizeCircuitLocks(circuitLocks);
@@ -341,7 +347,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     circuitInserted,
     circuitSkippedDuplicates,
     computedAt: new Date().toISOString(),
-    summary: [gateLine, regimeLine, strategyLine, regimeExpansion?.line, preflightCircuitLine, entryTriggerShadowLine].filter(Boolean).join('\n'),
+    summary: [gateLine, regimeLine, strategyLine, regimeExpansion?.line, effectivePatternRelaxation?.line, preflightCircuitLine, entryTriggerShadowLine].filter(Boolean).join('\n'),
     gateError,
     regimeError,
     strategyError,
@@ -350,6 +356,7 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     entryTriggerShadowError,
     regimeAlerts,
     ...(regimeExpansion ? { regimeExpansion } : {}),
+    ...(effectivePatternRelaxation ? { patternRelaxation: effectivePatternRelaxation } : {}),
     gates,
     regimes,
     strategySignals,

@@ -88,6 +88,18 @@
 - **ET-D**(대기): C15 등록(전략군 룰 재평가 vs 기본 shadow 비교)·승급.
 - 접근: 통째 연결 관찰→유용 로직 추출(처음부터 추출 시 재구현 위험).
 
+## C8 피드백 루프 — 시스템 보강 (2026-06-19, 메티 설계·실가동)
+> 배경: argona 인스타 AI 트레이딩 딥서치 → 디벙크 사례 다수(스크린샷 조작·과적합·실제 손실) 확인 → **자체 시스템 보강으로 피벗**(Dave Cliff: 측정·학습 능력이 견고함).
+- **🔍 진단(메티 자기수정)**: C8 인프라는 풍부(trade_journal 773행·daily-trade-feedback·learning-loop-report)하나 **실거래(crypto normal) 기반**. 진짜 구멍=전략군 shadow 신호(strategy_signals·shadowOnly·trade_journal 연결 0)의 **결과 추적 부재**(outcome 흔적 0).
+- **C8 신호 피드백 루프 ✅ 실가동**(2026-06-19):
+  - 테이블 `luna_strategy_signal_outcomes`(append-only·UNIQUE signal_id·shadow_only·인덱스 3)
+  - 판정 `luna-signal-outcome.ts`: entry 신호(진입가/목표/손절)→OHLCV→target 먼저=win(+rrR)·stop 먼저=loss(-1R)·**동시 도달 시 stop 우선**(백테스트 비관 가정)·**룩어헤드 차단**(candle_ts 익일부터·당일 봉 제외)·maxBars 20 경과=expired·미도달=open
+  - 러너 `runtime-luna-signal-outcome-eval.ts`(confirm 토큰 가드)·**evaluator-daily 피기백**(매일 06:20)
+  - 집계 전략군×레짐 E/R:R·**30거래 규율**(n<30 insufficient_sample provisional·승률 단독 금지)
+  - 검증(메티): 합성 win/loss/stop우선/expired/open 정확·룩어헤드 차단·멱등(재실행 evaluated 0·중복 없음)·**005930 실평가=win**(target_hit·+1.36R·+14.73%·5봉·kis_1d_ohlcv)
+  - shadow/advisory·실거래 0·파라미터 자동 갱신 금지(C7 통과 시에만 — SSOT C8)
+- **📊 관찰 대상**: 매일 06:20 evaluator가 미종결 entry 신호 평가 → outcome 누적. 30거래/전략군×레짐 충족 시 정식 통계. **레짐 확대 would-have 신호 유효성 평가에 연결**(확대로 잡힌 신호가 실제 수익이었나).
+
 ## 신호 병목 진단 + 레짐 확대 (2026-06-19, 메티 진단·마스터 지시)
 > 진단 배경: 전략군 신호 6건뿐(유효 entry 1건)·게이트 1089평가. ET-B·C8·Stage A 공통 발목.
 - **🔍 신호 부족 근본 원인 진단 ✅**(2026-06-19): **4중 필터 곱셈** — 게이트 통과(full/reduced ~70%)×레짐 매칭(testah:['bull']만·turtle:['bull','volatile'])×전략 패턴(돌파/풀백 까다로움)×일봉 완성봉(하루 1회). turtle은 신호 0건(돌파 조건 미충족). 레짐 라벨 4종(bull/bear/sideways/volatile)·domestic/overseas는 bull 우세. **버그 아닌 보수적 설계** — 안전하나 검증 데이터 정체.
