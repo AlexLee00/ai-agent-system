@@ -404,3 +404,24 @@
 6. **[메타학습]** 윈도우·임계치·learn_rate를 성과로 자가 조정 — 학습의 학습(진정한 self-evolution).
 
 → **이 자가발전 폐루프 복원이 C2/C3 재설계의 전제 조건.** 폐루프 없이는 "동적 최적 전략 선택"이 정적 BASE에 머무름. AI OS 비전상 루나가 "자가발전하는 독립 trading OS"가 되려면 1~6이 루나 OS의 자가발전 엔진을 구성.
+
+
+### 8-9. ★shadow 병행 + 자동승급 등록 — learned bias를 self-evolution 컴포넌트로 (2026-06-20 메티)
+> **마스터 결정: shadow 관찰(1) + 자동승급 등록(2) 병행.** learned bias를 사람이 off→shadow→active 수동 전환하는 대신, 자동승급 시스템(luna_component_registry)이 증거 기반으로 스스로 승급. 진정한 self-evolution.
+
+**자동승급 시스템 구조(기존 자산)**:
+- `luna_component_registry`(44 컴포넌트): component·current_mode·target_mode·promotion_criteria·sample_count·status(active 고정, 6-state 런타임 계산).
+- `luna-registry-seed.ts`: 컴포넌트 정의(idempotent). `runtime-luna-registry-evaluator.ts`: `EVIDENCE_QUERIES`(컴포넌트별 COUNT SQL) → `proposalForRow`(6-state) → DB status 직접 미기재.
+- 동형 패턴 다수: strategy-router-phase-a-influence(diagnostic→shadow_bias), regime-expansion-shadow-sim, strategy-family-turtle(virtualExpectancyDeltaPositive).
+
+**learned-regime-bias 등록 설계**:
+- registry-seed에 `{ component:'learned-regime-bias', shadow→active_router_bias, criteria:{durationWeeks:4, minSamplesPerFamilyRegime:30, virtualExpectancyDeltaPositive:true, evidence:'luna_regime_weight_snapshots'} }` 추가.
+- evaluator EVIDENCE_QUERIES에 `'learned-regime-bias': COUNT(*) FROM luna_regime_weight_snapshots WHERE total_trades>=3` 추가(학습 발생 스냅샷 = 증거).
+- 승급 흐름: shadow → evaluator sample 누적 → measurement_only → accumulating → evidence_pending → promotion 제안(알림) → 마스터 검토 → active.
+
+**병행 운영**:
+- (1) 관찰: 매일 07:00 학습 누적(BEAR/RANGING 샘플 증가 모니터링).
+- (2) shadow: `LUNA_LEARNED_BIAS_MODE=shadow`(plist) → strategy-router diff 기록(거래영향 0) + registry 자동승급 추적.
+
+**1차 범위/한계**: promotion은 제안 알림까지, active 자동 적용은 미포함(마스터 승인 유지). virtualExpectancy 실측은 후순위(1차는 sample_count). active 자동화는 검증 누적 후 별도 단계.
+> 코덱스 프롬프트: docs/codex/CODEX_LUNA_LEARNED_BIAS_AUTOPROMOTION.md. self-evolution loop 복원(§8-8)은 docs/codex/archive/로 아카이빙 완료.

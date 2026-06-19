@@ -227,3 +227,70 @@ ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_
 1. **C3 전략군 재정렬**(momentum/mean_reversion 편입) — 데이터 병목 근본 해소·실거래 정렬. 기존 자산 재사용.
 2. C17 제약 집행 강화(안전·V-O). 3. C14 btc_dominance. 4. C10 워치리스트.
 ※주의: 실거래 LIVE(momentum/mean_reversion·+$3,148)는 무중단. 재정렬은 전부 shadow 비교로 검증 후 승격.
+
+
+---
+
+## 2026-06-20 ★자가발전 폐루프 복원 (Self-Evolution Loop) — 학습 단계 부활 ✅
+> 커밋 `3bcbf8ab3 feat(luna): restore self-evolution loop` (main→origin/main, 작업트리 clean)
+
+### 진단 (설계문서 §8-8)
+- regime-weight-learner `7일 윈도우 × 3건 임계치` → 전 레짐 학습 영구 스킵 (snapshot 100개 가중치 Δ0, total_trades 0~1).
+- strategy-router 학습값 미참조 (DB query 호출 0, 학습모듈 미import) → `buildRegimeBias` BASE 하드코딩만.
+- = 자가발전 폐루프 **이중 단절**(학습 정지 + 적용 단절).
+
+### 구현 (코덱스, bots/investment 6파일)
+- regime-weight-learner: 기본 `30일` · 적응형 `30/60/90/180`(임계치 충족까지 확장) · `buildWeightDiagnostics`/`summarizeLearnerStall` 자가진단.
+- strategy-router: `LUNA_LEARNED_BIAS_MODE` off|shadow|active(기본 off) · `±0.1` clamp · alpha 0.2 · fail-open · DI(`learnedWeightsProvider`).
+- 신규 `luna-self-evolution-loop-smoke`(10 시나리오) · Phase-A smoke off/shadow 회귀 단언.
+
+### 메티 독립검증 ✅ (자기보고 미신뢰·직접 재현)
+- 정적: off 회귀0 · shadow scores불변 · active ±0.1 clamp · fail-open.
+- smoke 10/10 PASS · Phase-A `ok:true` · tsc exit 0 · git diff --check clean · DB/plist/migration 없음.
+
+### 학습 부활 실증 (kickstart -k, 2026-06-20 02:45)
+- total_trades 0~1 → **BULL 87 · BEAR 5 · RANGING 4 · VOLATILE 3**(전 레짐 임계치 충족).
+- TRENDING_BULL 가중치 자가조정: momentum 0.35→0.365 · breakout 0.30→0.313 · mean_reversion 0.15→0.115(상승장 모멘텀 강화).
+- 적응형 90일 확장 작동 입증(BULL 87건 = 30일 윈도우론 2건 불가).
+- 보수적 학습 정상: 샘플충분 BULL만 학습, 부족 레짐 BASE 유지.
+
+### 폐루프 현황
+- **학습 🟢 부활** / **적용 ⏸️ off**(`LUNA_LEARNED_BIAS_MODE` 미설정 = 거래영향 0).
+
+### 다음 단계
+1. 며칠 학습 누적 관찰(BEAR/RANGING 샘플 증가 → 학습 확대 확인).
+2. `LUNA_LEARNED_BIAS_MODE=shadow`(plist, 마스터) → diff 관찰 → `active` 점진(α=0.2).
+3. (후순위) 메타학습: 윈도우·임계치·learn_rate 성과 기반 자가조정 = 진정한 self-evolution.
+> 코덱스 프롬프트: docs/codex/CODEX_LUNA_SELF_EVOLUTION_LOOP.md (완료 후 archive 이동 예정).
+
+
+---
+
+## 2026-06-20 (이어서) shadow 병행 + 자동승급 등록 설계 (메티)
+> 마스터 결정: 관찰(1) + shadow(2) 병행 · shadow를 자동승급 시스템 등록까지
+
+### 자동승급 시스템 파악
+- `luna_component_registry`(44 컴포넌트, status=active 고정, 6-state 런타임 계산): component·current_mode·target_mode·promotion_criteria·sample_count.
+- `luna-registry-seed.ts`(정의·idempotent) + `runtime-luna-registry-evaluator.ts`(EVIDENCE_QUERIES COUNT → proposalForRow 6-state → DB status 직접 미기재).
+- 동형 패턴: strategy-router-phase-a-influence(diagnostic→shadow_bias), regime-expansion-shadow-sim, strategy-family-turtle/testah(virtualExpectancyDeltaPositive·evidence).
+
+### learned-regime-bias 등록 설계(코덱스 프롬프트 작성 완료)
+- registry-seed 추가: shadow→active_router_bias, criteria{durationWeeks 4·minSamplesPerFamilyRegime 30·virtualExpectancyDeltaPositive·evidence luna_regime_weight_snapshots}.
+- evaluator EVIDENCE_QUERIES 추가: COUNT(*) FROM luna_regime_weight_snapshots WHERE total_trades>=3.
+- 승급 흐름: shadow → sample 누적 → measurement_only→accumulating→evidence_pending → promotion 제안 → 마스터 검토 → active.
+
+### 문서 정리
+- 코덱스 프롬프트: `docs/codex/CODEX_LUNA_LEARNED_BIAS_AUTOPROMOTION.md`(신규).
+- `docs/codex/CODEX_LUNA_SELF_EVOLUTION_LOOP.md` → `docs/codex/archive/` 아카이빙 완료(§8-8 구현 완료분).
+- 설계문서 §8-9 추가.
+
+### 대기(마스터)
+1. 코덱스 [1][2] 구현(registry-seed + evaluator) → 커밋.
+2. `luna-registry-seed` 실행(DB upsert — learned-regime-bias 등록).
+3. `LUNA_LEARNED_BIAS_MODE=shadow` plist 추가(거래영향 0).
+4. evaluator로 6-state 추적 → evidence_pending 시 promotion 제안 검토.
+
+### 다음 진입점
+- shadow 누적 관찰 + 자동승급 6-state 진행 모니터링.
+- (후순위) virtualExpectancy 실측 evidence 정교화 · active 자동 적용 단계.
+- 메타학습(윈도우·임계치·learn_rate 자가조정).
