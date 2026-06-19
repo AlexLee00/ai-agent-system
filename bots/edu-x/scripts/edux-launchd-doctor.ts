@@ -26,6 +26,8 @@ const DRY_RUN_CONFIRM_TOKEN = 'edux-launchd-dry-run';
 const LIVE_CONFIRM_TOKEN = 'edux-launchd-live';
 const LABEL_PREFIX = 'ai.edux.';
 const EXPECTED_COUNT = 7;
+const PROMOTION_GATE_REQUIRED_CHECKS = 7;
+const PROMOTION_GATE_MAX_AGE_MS = 24 * 3600 * 1000;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {
@@ -133,17 +135,35 @@ function loadPromotionGateReport() {
   }
 }
 
+function promotionGateReportBlockingReasons(report) {
+  const reasons = [];
+  if (!report?.allPass) reasons.push('promotion gate report is missing or not PASS');
+  if (report?.fixture || report?.mode === 'fixture') reasons.push('promotion gate report is fixture-only');
+  if (!Array.isArray(report?.checks) || report.checks.length < PROMOTION_GATE_REQUIRED_CHECKS) {
+    reasons.push(`promotion gate report has fewer than ${PROMOTION_GATE_REQUIRED_CHECKS} checks`);
+  }
+  const generatedAt = report?.generatedAt ? Date.parse(report.generatedAt) : NaN;
+  if (!Number.isFinite(generatedAt) || Date.now() - generatedAt > PROMOTION_GATE_MAX_AGE_MS) {
+    reasons.push('promotion gate report is stale');
+  }
+  return reasons;
+}
+
 function livePromotionGateReady() {
   const report = loadPromotionGateReport();
+  const blockingReasons = promotionGateReportBlockingReasons(report);
   return {
-    ok: Boolean(report?.allPass && report?.fixture !== true && report?.mode !== 'fixture'),
+    ok: blockingReasons.length === 0,
     report: report ? {
       generatedAt: report.generatedAt || null,
       mode: report.mode || null,
       fixture: Boolean(report.fixture),
       summary: report.summary || null,
       allPass: Boolean(report.allPass),
+      checkCount: Array.isArray(report.checks) ? report.checks.length : 0,
+      blockingReasons,
     } : null,
+    blockingReasons,
   };
 }
 
@@ -328,7 +348,7 @@ function buildReport(args) {
           applyRejected && !applyModeExplicit ? 'Apply requires an explicit --dry-run or --live mode.' : null,
           applyRejected && applyModeExplicit && args.confirm !== expectedConfirm ? `Re-run with --confirm=${expectedConfirm} to apply after blockers are clear.` : null,
           applyRejected && confirmOk && !sourceSetSafe ? 'Apply blocked until all expected plist files pass validation.' : null,
-          mode === 'live' && liveGate?.ok !== true ? 'Live apply blocked until non-fixture promotion gate report is PASS.' : null,
+          mode === 'live' && liveGate?.ok !== true ? `Live apply blocked until fresh non-fixture ${PROMOTION_GATE_REQUIRED_CHECKS}/7 promotion gate report is PASS.` : null,
           missing.length ? `Load missing dry-run LaunchAgents: ${missing.join(', ')}` : null,
           reloadRequired.length ? `Loaded LaunchAgents need explicit reload approval: ${reloadRequired.join(', ')}` : null,
           validationFailures.length ? 'Fix plist validation failures before applying.' : null,

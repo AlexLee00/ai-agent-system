@@ -23,6 +23,7 @@ async function main() {
     EDUX_DRY_RUN: process.env.EDUX_DRY_RUN,
     EDUX_LIVE_PUBLISH_APPROVED: process.env.EDUX_LIVE_PUBLISH_APPROVED,
     EDUX_PROMOTION_GATE_PASSED: process.env.EDUX_PROMOTION_GATE_PASSED,
+    EDUX_ONE_OFF_LIVE_TEST_APPROVED: process.env.EDUX_ONE_OFF_LIVE_TEST_APPROVED,
   };
   const originalReport = fs.existsSync(PROMOTION_GATE_REPORT)
     ? fs.readFileSync(PROMOTION_GATE_REPORT, 'utf8')
@@ -37,6 +38,24 @@ async function main() {
     const liveGate = assertLivePublishAllowed({ tableOk: true });
     assert.equal(liveGate.ok, false);
     assert.ok(liveGate.reasons.includes('promotion gate report is fixture-only'));
+
+    const staleReport = {
+      generatedAt: '2026-05-27T06:30:59.654Z',
+      mode: 'live-db-readonly',
+      fixture: false,
+      summary: '5/5 통과',
+      allPass: true,
+      checks: Array.from({ length: 5 }, () => ({ ok: true })),
+    };
+    fs.writeFileSync(PROMOTION_GATE_REPORT, `${JSON.stringify(staleReport, null, 2)}\n`, 'utf8');
+    const staleGate = assertLivePublishAllowed({ tableOk: true });
+    assert.equal(staleGate.ok, false);
+    assert.ok(staleGate.reasons.includes('promotion gate report is stale'));
+    assert.ok(staleGate.reasons.includes('promotion gate report has fewer than 7 checks'));
+    process.env.EDUX_ONE_OFF_LIVE_TEST_APPROVED = 'true';
+    const staleOneOffGate = assertLivePublishAllowed({ tableOk: true, oneOffLiveTest: true });
+    assert.equal(staleOneOffGate.ok, true);
+    assert.ok(staleOneOffGate.warnings.includes('promotion gate is not PASS; one-off live test override active'));
   } finally {
     for (const [key, value] of Object.entries(originalEnv)) {
       if (value == null) delete process.env[key];

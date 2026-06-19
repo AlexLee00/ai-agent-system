@@ -582,9 +582,34 @@ function loadPromotionGateReport() {
   }
 }
 
+const PROMOTION_GATE_REQUIRED_CHECKS = 7;
+const PROMOTION_GATE_MAX_AGE_MS = 24 * 3600 * 1000;
+
+function promotionReportBlockingReasons(report) {
+  const reasons = [];
+  if (!report?.allPass) reasons.push('promotion gate report is missing or not PASS');
+  if (report?.fixture || report?.mode === 'fixture') reasons.push('promotion gate report is fixture-only');
+  if (!Array.isArray(report?.checks) || report.checks.length < PROMOTION_GATE_REQUIRED_CHECKS) {
+    reasons.push(`promotion gate report has fewer than ${PROMOTION_GATE_REQUIRED_CHECKS} checks`);
+  }
+  const generatedAt = report?.generatedAt ? Date.parse(report.generatedAt) : NaN;
+  if (!Number.isFinite(generatedAt) || Date.now() - generatedAt > PROMOTION_GATE_MAX_AGE_MS) {
+    reasons.push('promotion gate report is stale');
+  }
+  return reasons;
+}
+
 function promotionReportSummary(report) {
   return report
-    ? { generatedAt: report.generatedAt, mode: report.mode || null, fixture: Boolean(report.fixture), summary: report.summary, allPass: report.allPass }
+    ? {
+      generatedAt: report.generatedAt,
+      mode: report.mode || null,
+      fixture: Boolean(report.fixture),
+      summary: report.summary,
+      allPass: report.allPass,
+      checkCount: Array.isArray(report.checks) ? report.checks.length : 0,
+      blockingReasons: promotionReportBlockingReasons(report),
+    }
     : null;
 }
 
@@ -602,7 +627,7 @@ function assertLivePublishAllowed({ tableOk = false, oneOffLiveTest = false, fix
       ok: reasons.length === 0,
       mode: 'one_off_live_test',
       reasons,
-      warnings: report?.allPass ? [] : ['promotion gate is not PASS; one-off live test override active'],
+      warnings: promotionReportBlockingReasons(report).length === 0 ? [] : ['promotion gate is not PASS; one-off live test override active'],
       promotionReport: promotionReportSummary(report),
     };
   }
@@ -611,8 +636,7 @@ function assertLivePublishAllowed({ tableOk = false, oneOffLiveTest = false, fix
   if (process.env.EDUX_DRY_RUN !== 'false') reasons.push('EDUX_DRY_RUN is not false');
   if (process.env.EDUX_LIVE_PUBLISH_APPROVED !== 'true') reasons.push('EDUX_LIVE_PUBLISH_APPROVED is not true');
   if (process.env.EDUX_PROMOTION_GATE_PASSED !== 'true') reasons.push('EDUX_PROMOTION_GATE_PASSED is not true');
-  if (!report?.allPass) reasons.push('promotion gate report is missing or not PASS');
-  if (report?.fixture || report?.mode === 'fixture') reasons.push('promotion gate report is fixture-only');
+  reasons.push(...promotionReportBlockingReasons(report));
   if (!tableOk) reasons.push('edux_publish_log table is unavailable');
   return {
     ok: reasons.length === 0,
