@@ -36,6 +36,7 @@ const PLAN_DIR = path.join(ROOT, 'docs', 'codex', 'refactor-plans');
 const PATCH_DIR = path.join(PLAN_DIR, 'patches');
 const REFACTORER_LOCK_PATH = path.join(ROOT, '.refactorer-active.lock');
 const REFACTORER_LOCK_STALE_MS = 10 * 60 * 1000;
+const REFACTORER_HISTORY_SCAN_LIMIT = Math.max(1, Number(process.env.REFACTORER_HISTORY_SCAN_LIMIT || 80) || 80);
 const MAX_SCAN_FILES = Math.max(1, Number(process.env.REFACTORER_MAX_SCAN_FILES || 5000) || 5000);
 const MAX_LARGE_FILES = Math.max(1, Number(process.env.REFACTORER_MAX_LARGE_FILES || 10) || 10);
 
@@ -1257,6 +1258,92 @@ function deriveAvoidedFilesFromFeedback(feedback, threshold = 2) {
     if (count >= threshold) avoided.add(file);
   }
   return avoided;
+}
+
+function parseRefactorHistoryPlan(content = '') {
+  const lines = String(content || '').split(/\r?\n/);
+  const failedCandidates = [];
+  let currentFile = null;
+  let currentSection = [];
+
+  const flush = () => {
+    if (!currentFile) return;
+    const section = currentSection.join('\n');
+    const failed = /- stage:\s+active_deferred/i.test(section)
+      || /- applied:\s+false/i.test(section)
+      || /error_summary:\s+.*(?:strict_failed|verify_failed|token_budget_exceeded|unfixable|apply_failed)/i.test(section);
+    if (failed) failedCandidates.push(currentFile);
+  };
+
+  for (const line of lines) {
+    const candidateMatch = String(line || '').match(/^### Candidate \d+:\s+(.+)$/);
+    if (candidateMatch) {
+      flush();
+      currentFile = normalizeScopePath(candidateMatch[1]);
+      currentSection = [];
+      continue;
+    }
+    if (currentFile && /^##\s+/.test(String(line || ''))) {
+      flush();
+      currentFile = null;
+      currentSection = [];
+      continue;
+    }
+    if (currentFile) currentSection.push(line);
+  }
+  flush();
+  return failedCandidates;
+}
+
+function deriveAvoidedFilesFromLocalHistory(options = {}) {
+  const historyDir = options.historyDir || PLAN_DIR;
+  const threshold = parsePositiveInt(options.threshold, 2, 20);
+  const scanLimit = parsePositiveInt(options.scanLimit, REFACTORER_HISTORY_SCAN_LIMIT, 500);
+  const counts = new Map();
+  try {
+    if (!fs.existsSync(historyDir)) return new Set();
+    const entries = fs.readdirSync(historyDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /^REFACTOR_ACTIVE_.*\.md$/.test(entry.name))
+      .map((entry) => {
+        const fullPath = path.join(historyDir, entry.name);
+        let mtimeMs = 0;
+        try {
+          mtimeMs = fs.statSync(fullPath).mtimeMs;
+        } catch {
+          // Ignore files that disappear while the runner is scanning history.
+        }
+        return { fullPath, mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, scanLimit);
+
+    for (const entry of entries) {
+      const content = safeRead(entry.fullPath, 500_000);
+      for (const file of parseRefactorHistoryPlan(content)) {
+        counts.set(file, (counts.get(file) || 0) + 1);
+      }
+    }
+  } catch {
+    return new Set();
+  }
+
+  const avoided = new Set();
+  for (const [file, count] of counts.entries()) {
+    if (count >= threshold) avoided.add(file);
+  }
+  return avoided;
+}
+
+function mergeAvoidedFiles(...sets) {
+  const merged = new Set();
+  for (const set of sets) {
+    if (!set || typeof set[Symbol.iterator] !== 'function') continue;
+    for (const file of set) {
+      const normalized = normalizeScopePath(file);
+      if (normalized) merged.add(normalized);
+    }
+  }
+  return merged;
 }
 
 function summarizePriorError(value = '') {
@@ -2681,6 +2768,8 @@ async function recordRefactorOutcome(context, result) {
     source: 'claude-refactorer',
     candidateFiles,
     changedFiles,
+    avoidedFiles: Array.isArray(result.plan?.avoidedFiles) ? result.plan.avoidedFiles : [],
+    localHistoryAvoidedFiles: Array.isArray(result.plan?.localHistoryAvoidedFiles) ? result.plan.localHistoryAvoidedFiles : [],
     candidateDiagnostics: active?.candidateDiagnostics || result.plan?.candidateDiagnostics || null,
     errorSummary: firstErrorSummary,
     operational,
@@ -2706,6 +2795,8 @@ async function recordRefactorOutcome(context, result) {
       analysisSource: result.analysis?.source || null,
       vaultFeedbackOk: result.plan?.vaultFeedback?.ok ?? null,
       vaultFeedbackCount: Array.isArray(result.plan?.vaultFeedback?.results) ? result.plan.vaultFeedback.results.length : 0,
+      avoidedFiles: Array.isArray(result.plan?.avoidedFiles) ? result.plan.avoidedFiles : [],
+      localHistoryAvoidedFiles: Array.isArray(result.plan?.localHistoryAvoidedFiles) ? result.plan.localHistoryAvoidedFiles : [],
       phase: isActive ? 'phase3' : 'phase1',
       stage,
       candidateFiles,
@@ -2801,6 +2892,8 @@ function buildCycleContext(options = {}) {
     fixerFn: options.fixerFn || null,
     hubBaseUrl: String(options.hubBaseUrl || DEFAULT_HUB_BASE).replace(/\/+$/, ''),
     avoidThreshold: parsePositiveInt(options.avoidThreshold ?? process.env.REFACTORER_AVOID_THRESHOLD, 2, 20),
+    refactorHistoryDir: options.refactorHistoryDir || PLAN_DIR,
+    localHistoryAvoidanceEnabled: options.localHistoryAvoidanceEnabled === true,
     builderModule: options.builderModule || null,
     reviewerModule: options.reviewerModule || null,
     commitFileFn: options.commitFileFn || defaultCommitFile,
@@ -2894,7 +2987,16 @@ async function runRefactorCycle(options = {}) {
         refactorType: context.refactorType,
       });
       context.vaultFeedback = vaultFeedback;
-      const avoidedFiles = deriveAvoidedFilesFromFeedback(vaultFeedback, context.avoidThreshold);
+      const feedbackAvoidedFiles = deriveAvoidedFilesFromFeedback(vaultFeedback, context.avoidThreshold);
+      const shouldUseLocalHistoryAvoidance = context.localHistoryAvoidanceEnabled
+        || (!context.allowDirtyWorktreeForTest && context.applyEnabled && !context.dryRun);
+      const localHistoryAvoidedFiles = shouldUseLocalHistoryAvoidance
+        ? deriveAvoidedFilesFromLocalHistory({
+          historyDir: context.refactorHistoryDir,
+          threshold: context.avoidThreshold,
+        })
+        : new Set();
+      const avoidedFiles = mergeAvoidedFiles(feedbackAvoidedFiles, localHistoryAvoidedFiles);
       const candidateSelection = selectActiveCandidatesDetailed(analysis, context.refactorType, context.activeMaxFiles, avoidedFiles, {
         allowNonProductionCandidates: context.allowNonProductionCandidatesForTest || context.allowDirtyWorktreeForTest,
         validateCurrentState: true,
@@ -2918,6 +3020,8 @@ async function runRefactorCycle(options = {}) {
             candidates: [],
             candidateDiagnostics: candidateSelection.diagnostics,
             vaultFeedback,
+            avoidedFiles: [...avoidedFiles],
+            localHistoryAvoidedFiles: [...localHistoryAvoidedFiles],
           },
           steps: [
             { id: 'analyze', status: 'complete', mutates: false },
@@ -2953,6 +3057,8 @@ async function runRefactorCycle(options = {}) {
 
       const active = await runActiveRefactor(context, analysis, candidates, candidateSelection.diagnostics);
       active.vaultFeedback = vaultFeedback;
+      active.avoidedFiles = [...avoidedFiles];
+      active.localHistoryAvoidedFiles = [...localHistoryAvoidedFiles];
       active.finalGitStatus = context.gitStatusShortFn();
       active.finalScopedStatus = context.gitStatusScopedFn(context.refactorScopePrefixes || []);
       active.targetGitStatus = context.gitStatusScopedFn([context.target.relativePath]);
@@ -2979,6 +3085,8 @@ async function runRefactorCycle(options = {}) {
           candidates,
           candidateDiagnostics: candidateSelection.diagnostics,
           vaultFeedback,
+          avoidedFiles: [...avoidedFiles],
+          localHistoryAvoidedFiles: [...localHistoryAvoidedFiles],
         },
         steps: [
           { id: 'analyze', status: 'complete', mutates: false },
@@ -3110,6 +3218,9 @@ module.exports = {
   selectCandidate,
   selectActiveCandidates,
   selectActiveCandidatesDetailed,
+  parseRefactorHistoryPlan,
+  deriveAvoidedFilesFromLocalHistory,
+  mergeAvoidedFiles,
   fetchRefactorVaultFeedback,
   cleanupUnexpectedUntracked,
   captureStrictBaseline,

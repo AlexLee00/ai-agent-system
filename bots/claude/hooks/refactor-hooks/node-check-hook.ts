@@ -1,22 +1,29 @@
+'use strict';
+
 /**
  * node-check-hook: Node raw 실행형 파일 문법 검사
  * - shebang/CommonJS .ts 파일에 인라인 TS 타입 문법이 들어가면 런타임을 깨므로 차단
  */
 
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
+const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const REPO_ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '../../../..');
 
-export interface NodeCheckResult {
-  pass: boolean;
-  skipped?: boolean;
-  message: string;
-  error: string | null;
-}
+/**
+ * @typedef {object} NodeCheckResult
+ * @property {boolean} pass
+ * @property {boolean} [skipped]
+ * @property {string} message
+ * @property {string|null} error
+ */
 
-function isNodeExecutableContent(content: string): boolean {
+/**
+ * @param {string} content
+ * @returns {boolean}
+ */
+function isNodeExecutableContent(content) {
   const firstLine = String(content || '').split(/\r?\n/, 1)[0] || '';
   return /^#!.*\bnode\b/.test(firstLine)
     || /\brequire\s*\(/.test(content)
@@ -24,7 +31,12 @@ function isNodeExecutableContent(content: string): boolean {
     || /\bexports\./.test(content);
 }
 
-export function runNodeCheckHook(filePath: string, cwd?: string): NodeCheckResult {
+/**
+ * @param {string} filePath
+ * @param {string} [cwd]
+ * @returns {NodeCheckResult}
+ */
+function runNodeCheckHook(filePath, cwd) {
   const workDir = cwd || REPO_ROOT;
   const absPath = path.isAbsolute(filePath) ? filePath : path.join(workDir, filePath);
 
@@ -52,8 +64,7 @@ export function runNodeCheckHook(filePath: string, cwd?: string): NodeCheckResul
       error: null,
     };
   } catch (err) {
-    const failure = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
-    const error = String(failure.stderr || failure.stdout || failure.message || err);
+    const error = String(err && (err.stderr || err.stdout || err.message) || err);
     console.warn(`[node-check-hook] node --check failed: ${path.basename(absPath)}`);
     return {
       pass: false,
@@ -62,3 +73,5 @@ export function runNodeCheckHook(filePath: string, cwd?: string): NodeCheckResul
     };
   }
 }
+
+module.exports = { runNodeCheckHook };

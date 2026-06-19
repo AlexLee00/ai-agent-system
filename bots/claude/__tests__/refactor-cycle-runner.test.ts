@@ -353,6 +353,122 @@ async function test_active_candidates_skip_ts_extension_import_until_gate_suppor
   console.log('✅ refactor-cycle: active candidates skip .ts extension imports until targeted gate supports them');
 }
 
+async function test_local_refactor_history_avoids_repeated_failed_candidates() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const historyDir = path.join(PROJECT_ROOT, 'bots/claude/__tests__/tmp-refactor-history');
+  fs.rmSync(historyDir, { recursive: true, force: true });
+  fs.mkdirSync(historyDir, { recursive: true });
+  const failedPlan = (id) => [
+    `# Refactor Active Cycle — ${id}`,
+    '',
+    '## Active Results',
+    '- applied: false',
+    '- operational_success: false',
+    '',
+    '## Verification Summary',
+    '### Candidate 1: bots/claude/lib/mainbot-client.ts',
+    '- stage: active_deferred_strict_failed',
+    '- error_summary: stage=strict_gate; file=bots/claude/lib/mainbot-client.ts; error=stage=autofix; file=bots/claude/lib/mainbot-client.ts; error=verify_failed_after_2_attempts',
+    '',
+  ].join('\n');
+  try {
+    fs.writeFileSync(path.join(historyDir, 'REFACTOR_ACTIVE_bots_claude_refactor-a.md'), failedPlan('a'), 'utf8');
+    fs.writeFileSync(path.join(historyDir, 'REFACTOR_ACTIVE_bots_claude_refactor-b.md'), failedPlan('b'), 'utf8');
+    const parsed = runner.parseRefactorHistoryPlan(failedPlan('parsed'));
+    assert.deepStrictEqual(parsed, ['bots/claude/lib/mainbot-client.ts']);
+    const mixedParsed = runner.parseRefactorHistoryPlan([
+      '# Refactor Active Cycle — mixed',
+      '',
+      '## Verification Summary',
+      '### Candidate 1: bots/claude/lib/failed.ts',
+      '- stage: active_deferred_strict_failed',
+      '- applied: false',
+      '- error_summary: stage=strict_gate; file=bots/claude/lib/failed.ts; error=verify_failed_after_2_attempts',
+      '### Candidate 2: bots/claude/lib/success.ts',
+      '- stage: active_verified_ready_for_commit',
+      '- applied: true',
+      '',
+    ].join('\n'));
+    assert.deepStrictEqual(mixedParsed, ['bots/claude/lib/failed.ts']);
+    const avoided = runner.deriveAvoidedFilesFromLocalHistory({ historyDir, threshold: 2 });
+    assert.strictEqual(avoided.has('bots/claude/lib/mainbot-client.ts'), true);
+    assert.strictEqual(runner.mergeAvoidedFiles(new Set(['a']), avoided).has('a'), true);
+  } finally {
+    fs.rmSync(historyDir, { recursive: true, force: true });
+  }
+  console.log('✅ refactor-cycle: local failed plan history avoids repeated candidates');
+}
+
+async function test_active_cycle_skips_candidates_avoided_by_local_history() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const targetDir = 'bots/claude/tmp-refactor-history-cycle';
+  const absDir = path.join(PROJECT_ROOT, targetDir);
+  const historyDir = path.join(PROJECT_ROOT, 'bots/claude/__tests__/tmp-refactor-history-cycle-plans');
+  const fileA = `${targetDir}/a.ts`;
+  const fileB = `${targetDir}/b.ts`;
+  fs.rmSync(absDir, { recursive: true, force: true });
+  fs.rmSync(historyDir, { recursive: true, force: true });
+  fs.mkdirSync(absDir, { recursive: true });
+  fs.mkdirSync(historyDir, { recursive: true });
+  fs.writeFileSync(path.join(PROJECT_ROOT, fileA), '// @ts-nocheck\nexport const a = 1;\n', 'utf8');
+  fs.writeFileSync(path.join(PROJECT_ROOT, fileB), '// @ts-nocheck\nexport const b = 2;\n', 'utf8');
+  const failedPlan = [
+    '# Refactor Active Cycle — skipped-a',
+    '',
+    '## Active Results',
+    '- applied: false',
+    '- operational_success: false',
+    '',
+    '## Verification Summary',
+    `### Candidate 1: ${fileA}`,
+    '- stage: active_deferred_strict_failed',
+    `- error_summary: stage=strict_gate; file=${fileA}; error=stage=autofix; error=verify_failed_after_2_attempts`,
+    '',
+  ].join('\n');
+  let result = null;
+  try {
+    fs.writeFileSync(path.join(historyDir, 'REFACTOR_ACTIVE_skip-a-1.md'), failedPlan, 'utf8');
+    fs.writeFileSync(path.join(historyDir, 'REFACTOR_ACTIVE_skip-a-2.md'), failedPlan, 'utf8');
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target: targetDir,
+      dryRun: true,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      allowNonProductionCandidatesForTest: true,
+      refactorHistoryDir: historyDir,
+      localHistoryAvoidanceEnabled: true,
+      builderModule: {
+        async runTargetedTypeCheck(files, options) {
+          assert.deepStrictEqual(files, [fileB]);
+          assert.deepStrictEqual(options.files, [fileB]);
+          return { pass: true, skipped: false, results: [{ pass: true, skipped: false }] };
+        },
+      },
+      reviewerModule: {
+        async runReview(options) {
+          assert.deepStrictEqual(options.files, [fileB]);
+          return { pass: true, skipped: false, summary: { high: 0, critical: 0 }, findings: [], sent: false };
+        },
+      },
+    });
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(result.plan.candidates.map((candidate) => candidate.file), [fileB]);
+    assert.strictEqual(result.plan.localHistoryAvoidedFiles.includes(fileA), true);
+    assert.strictEqual(result.plan.candidateDiagnostics.skippedByReason.sigma_feedback_avoided, 1);
+  } finally {
+    fs.rmSync(absDir, { recursive: true, force: true });
+    fs.rmSync(historyDir, { recursive: true, force: true });
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: active cycle skips local-history avoided candidates');
+}
+
 async function test_dirty_scope_helpers() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2647,6 +2763,8 @@ async function main() {
     test_active_candidates_skip_non_production_fixtures,
     test_active_candidates_validate_current_ts_nocheck_state,
     test_active_candidates_skip_ts_extension_import_until_gate_supports_it,
+    test_local_refactor_history_avoids_repeated_failed_candidates,
+    test_active_cycle_skips_candidates_avoided_by_local_history,
     test_dirty_scope_helpers,
     test_dirty_scope_guard_ignores_other_workspace_dirty,
     test_dirty_scope_guard_blocks_target_workspace_dirty,
