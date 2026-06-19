@@ -23,6 +23,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>LUNA_ENTRY_TRIGGER_SHADOW</key>
     <string>true</string>
+    <key>LUNA_REGIME_EXPANSION_SHADOW</key>
+    <string>true</string>
   </dict>
   <key>StartInterval</key>
   <integer>1800</integer>

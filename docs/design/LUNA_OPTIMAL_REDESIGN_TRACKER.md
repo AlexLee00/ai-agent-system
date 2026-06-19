@@ -88,6 +88,12 @@
 - **ET-D**(대기): C15 등록(전략군 룰 재평가 vs 기본 shadow 비교)·승급.
 - 접근: 통째 연결 관찰→유용 로직 추출(처음부터 추출 시 재구현 위험).
 
+## 신호 병목 진단 + 레짐 확대 (2026-06-19, 메티 진단·마스터 지시)
+> 진단 배경: 전략군 신호 6건뿐(유효 entry 1건)·게이트 1089평가. ET-B·C8·Stage A 공통 발목.
+- **🔍 신호 부족 근본 원인 진단 ✅**(2026-06-19): **4중 필터 곱셈** — 게이트 통과(full/reduced ~70%)×레짐 매칭(testah:['bull']만·turtle:['bull','volatile'])×전략 패턴(돌파/풀백 까다로움)×일봉 완성봉(하루 1회). turtle은 신호 0건(돌파 조건 미충족). 레짐 라벨 4종(bull/bear/sideways/volatile)·domestic/overseas는 bull 우세. **버그 아닌 보수적 설계** — 안전하나 검증 데이터 정체.
+- **레짐 확대 shadow ✅ + 시동**(2026-06-19, 메티 검증): `attachRegimeToSignal`에 expandedRegimes 시뮬레이션(would-have 매칭)·`regimeExpansionGain`(matched=false인데 확대 시 매칭). bear 역추세 자동 제외·sideways만 추가(turtle/testah). **matched 무변경**(실거래 0)·`LUNA_REGIME_EXPANSION_SHADOW` OFF diff 0. 검증: sideways gain=true·bear gain=false·matched 무변경. **30분 러너 시동**(plist 환경변수·enabled=true·gainCount=0 첫 사이클). 며칠 관찰 후 실제 확대 결정.
+- **📊 레짐 확대 관찰 대상**: regimeExpansionGain 신호 수(sideways 레짐에서 풀백/돌파 발생 시 +N) → 확대 유효성 판단 근거.
+
 ## P3 — 자율 완성
 - C9 동적 리밋 · C10 워치리스트 · C12 일원화 · C13 ablation·라우팅 · C14 오토리서치·소스 · C16 add 승격 · Stage B/C · 파라미터 스토어 전면 소비 전환.
 
