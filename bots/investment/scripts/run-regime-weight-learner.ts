@@ -40,10 +40,11 @@ async function sendTelegram(message) {
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
-  const days = Number(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || 7);
+  const daysArg = process.argv.find((a) => a.startsWith('--days='))?.split('=')[1];
+  const days = daysArg == null ? undefined : Number(daysArg);
   if (maybeSkipForMemory('luna.weight-adaptive-tuner')) return;
 
-  console.log(`[RegimeWeightLearner] ${new Date().toISOString()} 학습 실행 시작 (dryRun=${dryRun}, days=${days})`);
+  console.log(`[RegimeWeightLearner] ${new Date().toISOString()} 학습 실행 시작 (dryRun=${dryRun}, days=${days ?? 'auto'})`);
 
   const adaptiveWeightEnabled = !['0', 'false', 'no', 'off', 'disabled']
     .includes(String(process.env.LUNA_ADAPTIVE_WEIGHT_ENABLED ?? 'true').toLowerCase());
@@ -54,7 +55,10 @@ async function main() {
     } catch {}
   }
 
-  const result = await runRegimeWeightLearner({ dryRun, days });
+  const result = await runRegimeWeightLearner({
+    dryRun,
+    ...(days == null || !Number.isFinite(days) ? {} : { days }),
+  });
 
   if (result.skipped) {
     console.log(`[RegimeWeightLearner] 건너뜀: ${result.reason}`);
@@ -63,7 +67,11 @@ async function main() {
 
   const today = new Date().toISOString().split('T')[0];
   let msg = `🧠 *루나 체제별 가중치 학습 — ${today}*\n\n`;
-  msg += `📊 분석: 최근 ${result.days}일 | 학습률: ${result.learnRate}\n\n`;
+  msg += `📊 분석: 기본 ${result.days}일`;
+  if (result.effectiveDays && result.effectiveDays !== result.days) {
+    msg += ` · 적응형 최대 ${result.effectiveDays}일`;
+  }
+  msg += ` | 학습률: ${result.learnRate}\n\n`;
 
   for (const s of result.snapshots || []) {
     const regime = s.regime.replace('TRENDING_', '');
@@ -73,7 +81,16 @@ async function main() {
 
     const fw = s.fusionWeights || {};
     msg += `  fusion: TA=${(fw.ta || 0).toFixed(2)} 펀더=${(fw.fundamental || 0).toFixed(2)} 감성=${(fw.sentiment || 0).toFixed(2)} WQ=${(fw.worldquant || 0).toFixed(2)}\n`;
+    const diagnostic = (result.diagnostics || []).find((row) => row.regime === s.regime);
+    if (diagnostic) {
+      msg += `  Δ: fusion=${diagnostic.fusionDelta.toFixed(4)} signal=${diagnostic.signalDelta.toFixed(4)}\n`;
+    }
     msg += '\n';
+  }
+
+  if (result.stalled?.currentRunStalled) {
+    const insufficient = (result.stalled.insufficientRegimes || []).join(', ') || 'none';
+    msg += `⚠️ 학습 정지 감지: insufficient=${insufficient}, allWeightsUnchanged=${result.stalled.allWeightsUnchanged ? 'true' : 'false'}\n\n`;
   }
 
   msg += `_데이터 → 가중치 → 수익 확률 우상향 ♻️_`;

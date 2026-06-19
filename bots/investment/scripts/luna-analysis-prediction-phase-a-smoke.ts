@@ -89,6 +89,40 @@ export async function runLunaAnalysisPredictionPhaseASmoke() {
   });
   assert.equal(diagnosticRoute.phaseA.influenceMode, 'diagnostic');
   assert.equal(diagnosticRoute.reasons.some((reason) => String(reason).includes('Phase A')), false);
+  assert.equal(Object.hasOwn(diagnosticRoute, 'learnedBias'), false);
+
+  let learnedProviderCalledInOffMode = false;
+  const offRegressionRoute = await buildStrategyRoute({
+    symbol: '005930',
+    exchange: 'kis',
+    phaseAEvidence: phaseA,
+    marketRegime: { regime: phaseA.modules.hmm.currentRegime },
+    env: { LUNA_LEARNED_BIAS_MODE: 'off' },
+    learnedWeightsProvider: async () => {
+      learnedProviderCalledInOffMode = true;
+      throw new Error('learned provider should not be called in off mode');
+    },
+    decision: { action: 'BUY', confidence: phaseA.predictiveScore, amount_usdt: 50000, reasoning: 'phase a' },
+  });
+  assert.equal(learnedProviderCalledInOffMode, false);
+  assert.deepEqual(offRegressionRoute.scores, diagnosticRoute.scores);
+  assert.deepEqual(offRegressionRoute.ranking, diagnosticRoute.ranking);
+
+  const learnedShadowRoute = await buildStrategyRoute({
+    symbol: '005930',
+    exchange: 'kis',
+    phaseAEvidence: phaseA,
+    marketRegime: { regime: phaseA.modules.hmm.currentRegime },
+    env: { LUNA_LEARNED_BIAS_MODE: 'shadow' },
+    learnedWeightsProvider: async () => [{
+      regime: 'TRENDING_BULL',
+      signalWeights: { momentum: 0.65, breakout: 0.20, mean_reversion: 0.05, defensive: 0.10 },
+      totalTrades: 42,
+    }],
+    decision: { action: 'BUY', confidence: phaseA.predictiveScore, amount_usdt: 50000, reasoning: 'phase a' },
+  });
+  assert.deepEqual(learnedShadowRoute.scores, diagnosticRoute.scores);
+  assert.equal(learnedShadowRoute.learnedBias.mode, 'shadow');
 
   const route = await buildStrategyRoute({
     symbol: '005930',

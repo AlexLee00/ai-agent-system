@@ -3,6 +3,10 @@
 import { ACTIONS, ANALYST_TYPES } from './signal.ts';
 import * as journalDb from './trade-journal-db.ts';
 import { buildEvidenceSummaryForAgent } from './external-evidence-ledger.ts';
+import {
+  BASE_SIGNAL_WEIGHTS,
+  getLatestRegimeWeights as defaultGetLatestRegimeWeights,
+} from './regime-weight-learner.ts';
 
 const CRYPTO_FAMILIES = [
   'trend_following',
@@ -27,6 +31,11 @@ function clamp(value, min = 0, max = 1) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, n));
+}
+
+function numEnv(name, fallback = 0, env = process.env) {
+  const raw = Number(env?.[name]);
+  return Number.isFinite(raw) ? raw : fallback;
 }
 
 function add(scores, key, value, reason, reasons) {
@@ -80,6 +89,90 @@ function buildRegimeBias(regime = null, exchange = 'binance') {
     return { defensive_rotation: 0.18, breakout: 0.06, short_term_scalping: -0.05, micro_swing: -0.03, mean_reversion: -0.04 };
   }
   return {};
+}
+
+function normalizeLearnerRegime(regime = null) {
+  const value = String(regime?.regime || regime || '').toUpperCase();
+  if (value.includes('BULL')) return 'TRENDING_BULL';
+  if (value.includes('BEAR')) return 'TRENDING_BEAR';
+  if (value.includes('VOLAT')) return 'VOLATILE';
+  return 'RANGING';
+}
+
+function learnedBiasMode(env = process.env) {
+  const mode = String(env?.LUNA_LEARNED_BIAS_MODE || 'off').trim().toLowerCase();
+  return ['shadow', 'active'].includes(mode) ? mode : 'off';
+}
+
+function signalWeightsToFamilyBias(signalWeights = {}, families = []) {
+  const familySet = new Set(families);
+  const bias = {};
+  const mapping = {
+    momentum: ['trend_following', 'momentum_rotation', 'equity_swing'],
+    breakout: ['breakout'],
+    mean_reversion: ['mean_reversion'],
+    defensive: ['defensive_rotation'],
+  };
+  for (const [signalKey, targetFamilies] of Object.entries(mapping)) {
+    const activeFamilies = targetFamilies.filter((family) => familySet.has(family));
+    if (activeFamilies.length === 0) continue;
+    const value = Number(signalWeights?.[signalKey] || 0) / activeFamilies.length;
+    for (const family of activeFamilies) {
+      bias[family] = (bias[family] || 0) + value;
+    }
+  }
+  return bias;
+}
+
+async function buildLearnedRegimeBias({
+  marketRegime = null,
+  families = [],
+  env = process.env,
+  learnedWeightsProvider = defaultGetLatestRegimeWeights,
+} = {}) {
+  const mode = learnedBiasMode(env);
+  if (mode === 'off') return null;
+
+  const regime = normalizeLearnerRegime(marketRegime);
+  const alpha = clamp(numEnv('LUNA_LEARNED_BIAS_ALPHA', 0.2, env), 0, 1);
+  try {
+    const rows = await learnedWeightsProvider(regime);
+    const learned = Array.isArray(rows) ? rows[0] : rows;
+    if (!learned?.signalWeights && !learned?.signal_weights) {
+      return { mode, regime, alpha, available: false, reason: 'no_learned_weights' };
+    }
+    const baseSignalWeights = BASE_SIGNAL_WEIGHTS[regime] || BASE_SIGNAL_WEIGHTS.RANGING;
+    const learnedSignalWeights = learned.signalWeights || learned.signal_weights || {};
+    const baseFamilyBias = signalWeightsToFamilyBias(baseSignalWeights, families);
+    const learnedFamilyBias = signalWeightsToFamilyBias(learnedSignalWeights, families);
+    const deltas = {};
+    const applied = {};
+    for (const family of families) {
+      const delta = Number(((learnedFamilyBias[family] || 0) - (baseFamilyBias[family] || 0)).toFixed(6));
+      if (delta === 0) continue;
+      deltas[family] = delta;
+      applied[family] = Number(clamp(delta * alpha, -0.1, 0.1).toFixed(6));
+    }
+    return {
+      mode,
+      regime,
+      alpha,
+      available: true,
+      updatedAt: learned.updatedAt || learned.created_at || null,
+      totalTrades: learned.totalTrades ?? learned.total_trades ?? null,
+      deltas,
+      applied,
+    };
+  } catch (error) {
+    return {
+      mode,
+      regime,
+      alpha,
+      available: false,
+      reason: 'learned_weight_lookup_failed',
+      error: error?.message || String(error),
+    };
+  }
 }
 
 function hasShortTermHint(text = '') {
@@ -298,6 +391,8 @@ export async function buildStrategyRoute({
   phaseAInfluence = 'diagnostic',
   argosStrategy = null,
   decision = null,
+  env = process.env,
+  learnedWeightsProvider = defaultGetLatestRegimeWeights,
 } = {}) {
   const families = exchange === 'binance' ? CRYPTO_FAMILIES : STOCK_FAMILIES;
   const scores = Object.fromEntries(families.map((family) => [family, 0]));
@@ -305,6 +400,27 @@ export async function buildStrategyRoute({
 
   for (const [family, value] of Object.entries(buildRegimeBias(marketRegime, exchange))) {
     if (scores[family] != null) add(scores, family, value, `regime ${marketRegime?.regime || 'unknown'} bias`, reasons);
+  }
+
+  const learnedBias = await buildLearnedRegimeBias({
+    marketRegime,
+    families,
+    env,
+    learnedWeightsProvider,
+  });
+  if (learnedBias?.available) {
+    const changedFamilies = Object.keys(learnedBias.deltas || {});
+    if (learnedBias.mode === 'shadow') {
+      if (changedFamilies.length > 0) {
+        learnedBias.reasonLine = `learned regime bias shadow diff ${changedFamilies.map((family) => `${family}:${learnedBias.deltas[family].toFixed(3)}`).join(' ')}`;
+      }
+    } else if (learnedBias.mode === 'active') {
+      for (const [family, value] of Object.entries(learnedBias.applied || {})) {
+        if (scores[family] != null) add(scores, family, value, `learned regime bias active alpha=${learnedBias.alpha}`, reasons);
+      }
+    }
+  } else if (learnedBias && learnedBias.mode !== 'off') {
+    learnedBias.reasonLine = `learned regime bias ${learnedBias.reason || 'unavailable'} fail-open`;
   }
 
   applyAnalystFeatures({ analyses, exchange, scores, reasons });
@@ -379,7 +495,7 @@ export async function buildStrategyRoute({
     reasons.push('trend_following: weak recent outcome requires pullback/volume/external confirmation before full sizing');
   }
 
-  return {
+  const result = {
     symbol,
     exchange,
     selectedFamily: selected.family,
@@ -423,6 +539,8 @@ export async function buildStrategyRoute({
     feedbackNotes: [...feedback.notes, ...familyFeedback.notes].slice(0, 6),
     reasons: reasons.slice(0, 8),
   };
+  if (learnedBias) result.learnedBias = learnedBias;
+  return result;
 }
 
 export function buildStrategyRouteSection(route = null) {
@@ -500,3 +618,10 @@ export function applyStrategyRouteDecisionBias(decision = null, route = null, ex
 
   return adjusted;
 }
+
+export const _testOnly = {
+  buildLearnedRegimeBias,
+  learnedBiasMode,
+  normalizeLearnerRegime,
+  signalWeightsToFamilyBias,
+};

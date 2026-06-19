@@ -22,6 +22,9 @@ function numEnv(name, fallback = 0, env = process.env) {
 }
 
 export const REGIME_WEIGHT_LEARNER_ENABLED_KEY = 'LUNA_ADAPTIVE_WEIGHT_ENABLED';
+export const DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS = 30;
+export const DEFAULT_WEIGHT_LEARNER_ADAPTIVE_WINDOWS = Object.freeze([30, 60, 90, 180]);
+export const DEFAULT_WEIGHT_LEARNER_MIN_TRADES = 3;
 
 // ─── 4 체제 기본 fusion 가중치 (REGIME_GUIDES 기반) ─────────────────────────
 // fusion: [기술분석, 온체인/펀더, 감성/뉴스, WorldQuant]
@@ -60,9 +63,9 @@ function normalizeWeights(weights) {
 
 // ─── DB 거래 이력 조회 (체제 + 지표별) ────────────────────────────────────────
 
-async function fetchRegimeTradeStats(days = 7) {
+async function fetchRegimeTradeStats(days = DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS, queryFn = query) {
   // trade_journal: exit_time(ms), is_paper, pnl_net/pnl_amount, market_regime, strategy_family/trade_mode, market
-  const rows = await query(
+  const rows = await queryFn(
     `SELECT
        COALESCE(tj.market_regime, 'RANGING')  AS regime,
        COALESCE(tj.strategy_family, tj.trade_mode, 'momentum') AS signal_type,
@@ -97,6 +100,76 @@ async function fetchRegimeTradeStats(days = 7) {
   ).catch(() => []);
 
   return rows || [];
+}
+
+function parseAdaptiveWindows(initialDays, env = process.env) {
+  const raw = String(env?.LUNA_WEIGHT_LEARNER_ADAPTIVE_WINDOWS || '').trim();
+  const configured = raw
+    ? raw.split(',').map((item) => Number(item.trim())).filter((value) => Number.isFinite(value) && value > 0)
+    : [...DEFAULT_WEIGHT_LEARNER_ADAPTIVE_WINDOWS];
+  return [...new Set([Number(initialDays), ...configured])]
+    .filter((value) => Number.isFinite(value) && value >= Number(initialDays))
+    .map((value) => Math.floor(value))
+    .sort((a, b) => a - b);
+}
+
+async function buildAdaptiveRegimeDataset({
+  initialDays,
+  env = process.env,
+  minTrades = DEFAULT_WEIGHT_LEARNER_MIN_TRADES,
+  fetchFn = fetchRegimeTradeStats,
+}) {
+  const windows = parseAdaptiveWindows(initialDays, env);
+  const targetRegimes = Object.keys(BASE_FUSION_WEIGHTS);
+  const rowsByWindow = new Map();
+  const performanceByWindow = new Map();
+  const selected = {};
+
+  for (const days of windows) {
+    const rows = await fetchFn(days);
+    const performance = computeRegimePerformance(rows);
+    rowsByWindow.set(days, rows);
+    performanceByWindow.set(days, performance);
+    for (const regime of targetRegimes) {
+      if (!selected[regime] && Number(performance?.[regime]?.totalTrades || 0) >= minTrades) {
+        selected[regime] = {
+          regime,
+          days,
+          totalTrades: Number(performance[regime].totalTrades || 0),
+          reason: days === Number(initialDays) ? 'initial_window_sufficient' : 'adaptive_window_selected',
+        };
+      }
+    }
+    if (targetRegimes.every((regime) => selected[regime])) break;
+  }
+
+  const fallbackDays = windows[windows.length - 1] || initialDays;
+  const fallbackPerformance = performanceByWindow.get(fallbackDays) || {};
+  for (const regime of targetRegimes) {
+    if (!selected[regime]) {
+      selected[regime] = {
+        regime,
+        days: fallbackDays,
+        totalTrades: Number(fallbackPerformance?.[regime]?.totalTrades || 0),
+        reason: 'max_window_insufficient',
+      };
+    }
+  }
+
+  const finalRows = [];
+  for (const regime of targetRegimes) {
+    const days = selected[regime].days;
+    const rows = rowsByWindow.get(days) || [];
+    finalRows.push(...rows.filter((row) => normalizeRegime(row.regime || 'RANGING') === regime));
+  }
+
+  return {
+    rows: finalRows,
+    windows,
+    selected,
+    maxSelectedDays: Math.max(...Object.values(selected).map((item) => Number(item.days || initialDays))),
+    fetchedWindows: [...rowsByWindow.keys()],
+  };
 }
 
 // ─── 체제별 승률 + 손익비 계산 ────────────────────────────────────────────────
@@ -200,6 +273,153 @@ function adjustSignalWeightsFromPerformance(baseSignalWeights, performance, lear
   return updated;
 }
 
+function maxMapDelta(current = {}, previous = {}) {
+  const keys = new Set([...Object.keys(current || {}), ...Object.keys(previous || {})]);
+  let max = 0;
+  for (const key of keys) {
+    const delta = Math.abs(Number(current?.[key] || 0) - Number(previous?.[key] || 0));
+    if (Number.isFinite(delta)) max = Math.max(max, delta);
+  }
+  return Number(max.toFixed(6));
+}
+
+function indexLatestWeights(rows = []) {
+  const indexed = {};
+  for (const row of rows || []) {
+    if (!row?.regime) continue;
+    indexed[normalizeRegime(row.regime)] = row;
+  }
+  return indexed;
+}
+
+async function fetchRecentRegimeWeightSnapshots(days = 5, queryFn = query) {
+  return await queryFn(
+    `SELECT regime, fusion_weights, signal_weights, total_trades, created_at
+       FROM investment.luna_regime_weight_snapshots
+      WHERE created_at >= NOW() - ($1 || ' days')::interval
+      ORDER BY created_at DESC`,
+    [days],
+  ).catch(() => []);
+}
+
+function buildWeightDiagnostics(snapshots = [], previousRows = [], options = {}) {
+  const minTrades = Number(options.minTrades || DEFAULT_WEIGHT_LEARNER_MIN_TRADES);
+  const previousByRegime = indexLatestWeights(previousRows);
+  return (snapshots || []).map((snapshot) => {
+    const previous = previousByRegime[normalizeRegime(snapshot.regime)] || {};
+    const fusionDelta = maxMapDelta(snapshot.fusionWeights, previous.fusionWeights || previous.fusion_weights || BASE_FUSION_WEIGHTS[snapshot.regime]);
+    const signalDelta = maxMapDelta(snapshot.signalWeights, previous.signalWeights || previous.signal_weights || BASE_SIGNAL_WEIGHTS[snapshot.regime]);
+    const totalTrades = Number(snapshot.totalTrades || 0);
+    return {
+      regime: snapshot.regime,
+      totalTrades,
+      fusionDelta,
+      signalDelta,
+      insufficientSample: totalTrades < minTrades,
+      unchanged: fusionDelta === 0 && signalDelta === 0,
+    };
+  });
+}
+
+function snapshotDate(row = {}) {
+  const raw = String(row.createdAt || row.created_at || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
+}
+
+function snapshotWeightMap(row = {}, camelKey, snakeKey) {
+  const value = row?.[camelKey] ?? row?.[snakeKey];
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return typeof value === 'object' ? value : null;
+}
+
+function snapshotTotalTrades(row = {}) {
+  return Number(row.totalTrades ?? row.total_trades ?? 0);
+}
+
+function snapshotUnchangedFromPrevious(row = {}, previousByRegime = {}) {
+  const regime = normalizeRegime(row.regime || 'RANGING');
+  const previous = previousByRegime[regime];
+  if (!previous) return false;
+  const currentFusion = snapshotWeightMap(row, 'fusionWeights', 'fusion_weights');
+  const previousFusion = snapshotWeightMap(previous, 'fusionWeights', 'fusion_weights');
+  const currentSignal = snapshotWeightMap(row, 'signalWeights', 'signal_weights');
+  const previousSignal = snapshotWeightMap(previous, 'signalWeights', 'signal_weights');
+  if (!currentFusion || !previousFusion || !currentSignal || !previousSignal) return false;
+  return maxMapDelta(currentFusion, previousFusion) === 0
+    && maxMapDelta(currentSignal, previousSignal) === 0;
+}
+
+function countConsecutiveRecentStallDays(recentRows = [], minTrades = DEFAULT_WEIGHT_LEARNER_MIN_TRADES) {
+  const rowsByDate = new Map();
+  for (const row of recentRows || []) {
+    const date = snapshotDate(row);
+    if (!date) continue;
+    if (!rowsByDate.has(date)) rowsByDate.set(date, []);
+    rowsByDate.get(date).push(row);
+  }
+
+  const previousByRegime = {};
+  const stalledByDate = new Map();
+  const datesAsc = [...rowsByDate.keys()].sort();
+  for (const date of datesAsc) {
+    const rows = rowsByDate.get(date) || [];
+    const stalled = rows.length > 0 && rows.every((row) => (
+      snapshotTotalTrades(row) < minTrades || snapshotUnchangedFromPrevious(row, previousByRegime)
+    ));
+    stalledByDate.set(date, stalled);
+    for (const row of rows) {
+      if (row?.regime) previousByRegime[normalizeRegime(row.regime)] = row;
+    }
+  }
+
+  let consecutive = 0;
+  const datesDesc = [...rowsByDate.keys()].sort().reverse();
+  for (const date of datesDesc) {
+    if (!stalledByDate.get(date)) break;
+    consecutive += 1;
+  }
+  return consecutive;
+}
+
+function summarizeLearnerStall(diagnostics = [], recentRows = [], options = {}) {
+  const minTrades = Number(options.minTrades || DEFAULT_WEIGHT_LEARNER_MIN_TRADES);
+  const stallDays = Math.max(1, Number(options.stallDays || 3));
+  const currentRunStalled = diagnostics.length > 0
+    && diagnostics.every((row) => row.unchanged || row.insufficientSample);
+  const allWeightsUnchanged = diagnostics.length > 0
+    && diagnostics.every((row) => row.unchanged);
+  const insufficientRegimes = diagnostics
+    .filter((row) => row.totalTrades < minTrades)
+    .map((row) => row.regime);
+  const observedRecentRows = Array.isArray(recentRows) ? recentRows.length : 0;
+  const observedRecentDays = new Set((recentRows || [])
+    .map((row) => String(row.createdAt || row.created_at || '').slice(0, 10))
+    .filter(Boolean)).size;
+  const consecutiveRecentStallDays = countConsecutiveRecentStallDays(recentRows, minTrades);
+  const consecutiveStallDays = currentRunStalled ? consecutiveRecentStallDays + 1 : consecutiveRecentStallDays;
+  const shouldAlert = currentRunStalled && consecutiveStallDays >= stallDays;
+  return {
+    currentRunStalled,
+    shouldAlert,
+    stallDaysThreshold: stallDays,
+    consecutiveStallDays,
+    consecutiveRecentStallDays,
+    observedRecentRows,
+    observedRecentDays,
+    allWeightsUnchanged,
+    insufficientRegimes,
+    diagnostics,
+  };
+}
+
 // ─── DB 스냅샷 저장 ──────────────────────────────────────────────────────────
 
 async function saveWeightSnapshot(snapshot) {
@@ -259,6 +479,7 @@ async function saveWeightVectorShadow(snapshot) {
 export async function runRegimeWeightLearner(options = {}) {
   const env = options.env || process.env;
   const dryRun = options.dryRun === true;
+  const queryFn = options.queryFn || query;
   const enabled = boolEnv(REGIME_WEIGHT_LEARNER_ENABLED_KEY, true, env);
   if (!enabled && !dryRun) {
     console.log(`[RegimeWeightLearner] 비활성화 (${REGIME_WEIGHT_LEARNER_ENABLED_KEY}=false/미설정)`);
@@ -268,14 +489,22 @@ export async function runRegimeWeightLearner(options = {}) {
     console.log(`[RegimeWeightLearner] ${REGIME_WEIGHT_LEARNER_ENABLED_KEY}=false/미설정 — dry-run 검증만 수행`);
   }
 
-  const days = Number(options.days ?? numEnv('LUNA_WEIGHT_LEARNER_LOOKBACK_DAYS', 7, env)) || 7;
+  const days = Number(options.days ?? numEnv('LUNA_WEIGHT_LEARNER_LOOKBACK_DAYS', DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS, env)) || DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS;
+  const minTrades = Math.max(1, Number(options.minTrades ?? numEnv('LUNA_WEIGHT_LEARNER_MIN_TRADES', DEFAULT_WEIGHT_LEARNER_MIN_TRADES, env)));
+  const stallDays = Math.max(1, Number(options.stallDays ?? numEnv('LUNA_WEIGHT_LEARNER_STALL_DAYS', 3, env)));
   const learnRate = Math.max(0.01, Math.min(0.20, numEnv('LUNA_TA_WEIGHT_ADAPTIVE_LEARN_RATE', 0.08, env)));
 
   console.log(`[RegimeWeightLearner] 학습 시작 — 기간: ${days}일, 학습률: ${learnRate}`);
 
   // 1. DB에서 거래 이력 조회
-  const rows = await fetchRegimeTradeStats(days);
-  console.log(`[RegimeWeightLearner] 거래 이력: ${rows.length}행`);
+  const adaptive = await buildAdaptiveRegimeDataset({
+    initialDays: days,
+    env,
+    minTrades,
+    fetchFn: options.fetchRegimeTradeStats || ((lookbackDays) => fetchRegimeTradeStats(lookbackDays, queryFn)),
+  });
+  const rows = adaptive.rows;
+  console.log(`[RegimeWeightLearner] 거래 이력: ${rows.length}행 (windows=${adaptive.fetchedWindows.join(',')})`);
 
   // 2. 체제별 성과 계산
   const performance = computeRegimePerformance(rows);
@@ -289,7 +518,7 @@ export async function runRegimeWeightLearner(options = {}) {
   // 5. TA 지표 가중치도 업데이트 (ta-weight-adaptive-tuner와 동기화)
   for (const [regime, _] of Object.entries(updatedFusion)) {
     const taWeights = retrieveAdaptedWeights(regime);
-    if (performance[regime]?.totalTrades >= 3) {
+    if (!dryRun && performance[regime]?.totalTrades >= 3) {
       const winRate = performance[regime].winRate;
       const adjustFactor = 1 + learnRate * (winRate - 0.5);
       const adjusted = {};
@@ -300,6 +529,11 @@ export async function runRegimeWeightLearner(options = {}) {
       persistAdaptedWeights(adjusted, regime);
     }
   }
+
+  const previousRows = await (options.getLatestRegimeWeights || getLatestRegimeWeights)(null).catch(() => []);
+  const recentRows = Array.isArray(options.recentSnapshots)
+    ? options.recentSnapshots
+    : await (options.fetchRecentRegimeWeightSnapshots || ((lookbackDays) => fetchRecentRegimeWeightSnapshots(lookbackDays, queryFn)))(stallDays + 2).catch(() => []);
 
   // 6. DB 스냅샷 저장
   const snapshots = [];
@@ -326,6 +560,9 @@ export async function runRegimeWeightLearner(options = {}) {
     }
   }
 
+  const diagnostics = buildWeightDiagnostics(snapshots, previousRows, { minTrades });
+  const stalled = summarizeLearnerStall(diagnostics, recentRows, { minTrades, stallDays });
+
   // 7. 결과 요약
   const summary = snapshots.map((s) => ({
     regime: s.regime,
@@ -346,10 +583,16 @@ export async function runRegimeWeightLearner(options = {}) {
     enabled,
     dryRun,
     days,
+    effectiveDays: adaptive.maxSelectedDays,
+    minTrades,
     learnRate,
     regimesUpdated: snapshots.length,
     snapshots,
     performance,
+    windowSelection: adaptive.selected,
+    fetchedWindows: adaptive.fetchedWindows,
+    diagnostics,
+    stalled,
   };
 }
 
@@ -379,10 +622,26 @@ export async function getLatestRegimeWeights(regime = null) {
   }));
 }
 
+export const _testOnly = {
+  buildAdaptiveRegimeDataset,
+  buildWeightDiagnostics,
+  countConsecutiveRecentStallDays,
+  computeRegimePerformance,
+  fetchRegimeTradeStats,
+  maxMapDelta,
+  normalizeRegime,
+  parseAdaptiveWindows,
+  summarizeLearnerStall,
+};
+
 export default {
   runRegimeWeightLearner,
   getLatestRegimeWeights,
   BASE_FUSION_WEIGHTS,
   BASE_SIGNAL_WEIGHTS,
   REGIME_WEIGHT_LEARNER_ENABLED_KEY,
+  DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS,
+  DEFAULT_WEIGHT_LEARNER_ADAPTIVE_WINDOWS,
+  DEFAULT_WEIGHT_LEARNER_MIN_TRADES,
+  _testOnly,
 };
