@@ -27,6 +27,7 @@ import {
   buildPositionMonitorAgentPlan,
 } from './position-monitor-agent-plan.ts';
 import { recordGuardEvent } from './guard-event-recorder.ts';
+import { runStrategyExitShadowSidecar } from './luna-strategy-exit-shadow.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -35,6 +36,21 @@ const SYMBOL_EXIT_POLICY_REPORT_URL = new URL('../output/reports/luna-symbol-exi
 function safeNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+export async function runStrategyExitShadowForReevaluation(context = {}, deps = {}) {
+  try {
+    return await (deps.runStrategyExitShadowSidecar || runStrategyExitShadowSidecar)(context, deps);
+  } catch (error) {
+    return {
+      ok: false,
+      enabled: true,
+      skipped: true,
+      reason: 'strategy_exit_shadow_uncaught_error',
+      error: error?.message || String(error),
+      written: 0,
+    };
+  }
 }
 
 function loadSymbolExitPolicyReport() {
@@ -1671,6 +1687,15 @@ export async function reevaluateOpenPositions({
       heldHours,
       analysisSummary,
     });
+    // Shadow-only ET-D collection must never delay the reevaluation result.
+    void runStrategyExitShadowForReevaluation({
+      position,
+      strategyProfile,
+      currentDecision: effectiveDecision,
+      tradeMode: effectiveTradeMode,
+      persist,
+      env: process.env,
+    }).catch(() => null);
 
     // 기회비용 측정: 가드가 EXIT/ADJUST를 HOLD로 변경한 경우 guard_events 기록
     const originalDecisionBeforeGuards = decision?.decision?.recommendation || 'HOLD';

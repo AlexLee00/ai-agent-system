@@ -56,6 +56,7 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'universe-snapshot-accumulator': `SELECT COUNT(*)::int AS count FROM universe_snapshot`,
   'signal-outcome-feedback': `SELECT COUNT(*)::int AS count FROM luna_strategy_signal_outcomes`,
   'signal-outcome-eval-runner': `SELECT COUNT(*)::int AS count FROM luna_strategy_signal_outcomes`,
+  'strategy-exit-shadow': `SELECT COUNT(*)::int AS count FROM luna_strategy_exit_shadow`,
   'regime-expansion-shadow-sim': `SELECT COUNT(*)::int AS count FROM luna_strategy_signals WHERE COALESCE((details->>'regimeExpansionGain')::boolean, false) IS TRUE`,
   // pattern-relaxation-shadow-sim currently has no durable gain rows; add a sample query only after relaxed gains are persisted.
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
