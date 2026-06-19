@@ -16,7 +16,7 @@
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>EDUX_DRY_RUN</key>
-    <string>true</string>
+    <string>false</string>
     <key>EDUX_FORCE_SLOT</key>
     <string>1600</string>
     <key>EDUX_FORMATTER_ABSTRACT_MODEL</key>
@@ -28,9 +28,9 @@
     <key>EDUX_IMAGE_ATTACHMENTS_ENABLED</key>
     <string>false</string>
     <key>EDUX_LIVE_PUBLISH_APPROVED</key>
-    <string>false</string>
+    <string>true</string>
     <key>EDUX_PROMOTION_GATE_PASSED</key>
-    <string>false</string>
+    <string>true</string>
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
