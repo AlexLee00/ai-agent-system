@@ -32,6 +32,7 @@ const AUTOFIX_SELECTOR_KEY = 'claude.refactorer.code_refactor';
 const AUTOFIX_FILE_MAX_LINES = 1200;
 const AUTOFIX_FILE_MAX_BYTES = 60 * 1024;
 const AUTOFIX_TIMEOUT_MS = 120000;
+const AUTOFIX_ESTIMATED_COST_LIMIT = Number(process.env.REFACTORER_AUTOFIX_ESTIMATED_COST_LIMIT || 0.25) || 0.25;
 const PLAN_DIR = path.join(ROOT, 'docs', 'codex', 'refactor-plans');
 const PATCH_DIR = path.join(PLAN_DIR, 'patches');
 const REFACTORER_LOCK_PATH = path.join(ROOT, '.refactorer-active.lock');
@@ -256,12 +257,50 @@ function listTsFiles(rootPath, result = []) {
   return result;
 }
 
-function buildCandidate(filePath, refactorType, lines, reason) {
+function estimateAutofixCost({ lines = 0, bytes = 0, errorCount = 0 } = {}) {
+  const estimated = (Number(lines || 0) * 0.00012)
+    + (Number(bytes || 0) / 1024 * 0.0018)
+    + (Number(errorCount || 0) * 0.018);
+  return Number(estimated.toFixed(6));
+}
+
+function candidateRiskLevel({ lines = 0, bytes = 0, nodeExecutable = false, estimatedCost = 0 } = {}) {
+  if (estimatedCost > AUTOFIX_ESTIMATED_COST_LIMIT || lines > 900 || bytes > 45 * 1024) return 'high';
+  if (nodeExecutable || lines > 350 || bytes > 20 * 1024) return 'medium';
+  return 'low';
+}
+
+function scoreRefactorCandidate({ lines = 0, bytes = 0, nodeExecutable = false, estimatedCost = 0, refactorType = DEFAULT_REFACTOR_TYPE } = {}) {
+  let score = refactorType === 'ts_nocheck' ? 100 : 20;
+  score -= Math.min(35, Math.floor(Number(lines || 0) / 25));
+  score -= Math.min(25, Math.floor(Number(bytes || 0) / 2048));
+  if (nodeExecutable) score -= 8;
+  if (estimatedCost > AUTOFIX_ESTIMATED_COST_LIMIT) score -= 45;
+  return Math.max(0, Math.min(100, score));
+}
+
+function buildCandidate(filePath, refactorType, lines, reason, content = null) {
+  const body = content === null ? safeRead(filePath) : String(content || '');
+  const bytes = byteLength(body);
+  const nodeExecutable = isNodeExecutableFile(relPath(filePath), body);
+  const estimatedCost = estimateAutofixCost({ lines, bytes, errorCount: 1 });
+  const riskLevel = candidateRiskLevel({ lines, bytes, nodeExecutable, estimatedCost });
+  const preflightReasons = [
+    nodeExecutable ? 'node_executable_jsdoc_only' : null,
+    estimatedCost > AUTOFIX_ESTIMATED_COST_LIMIT ? 'estimated_cost_over_limit' : null,
+    lines > 500 ? 'large_file' : null,
+  ].filter(Boolean);
   return {
     file: relPath(filePath),
     lines,
+    bytes,
     refactorType,
     reason,
+    score: scoreRefactorCandidate({ lines, bytes, nodeExecutable, estimatedCost, refactorType }),
+    riskLevel,
+    nodeExecutable,
+    estimatedCost,
+    preflightReasons,
   };
 }
 
@@ -287,11 +326,13 @@ function analyzeLocalTechDebt(target) {
 
   const candidates = [];
   for (const item of smallNocheck) {
-    candidates.push(buildCandidate(item.filePath, 'ts_nocheck', item.lines, 'small_ts_nocheck_leaf_first'));
+    const content = safeRead(item.filePath);
+    candidates.push(buildCandidate(item.filePath, 'ts_nocheck', item.lines, 'small_ts_nocheck_leaf_first', content));
   }
   for (const item of largeFiles.slice(0, 5)) {
     if (!candidates.some((candidate) => candidate.file === relPath(item.filePath))) {
-      candidates.push(buildCandidate(item.filePath, 'split', item.lines, 'large_file_split_candidate'));
+      const content = safeRead(item.filePath);
+      candidates.push(buildCandidate(item.filePath, 'split', item.lines, 'large_file_split_candidate', content));
     }
   }
 
@@ -382,6 +423,66 @@ function builderErrorText(verify) {
     builder.message,
     ...resultErrors,
   ].filter(Boolean).join('\n').slice(0, 6000);
+}
+
+function parseTypeScriptErrorCodes(errorText = '') {
+  const codes = new Set();
+  const pattern = /\bTS(\d{4})\b/g;
+  let match = pattern.exec(String(errorText || ''));
+  while (match) {
+    codes.add(`TS${match[1]}`);
+    match = pattern.exec(String(errorText || ''));
+  }
+  return [...codes].sort();
+}
+
+function isLocallySupportedTs2339(errorText = '') {
+  const text = String(errorText || '');
+  return /TS2339[\s\S]*does not exist on type ['"`](unknown|\{\})['"`]/.test(text)
+    || /TS2339[\s\S]*Object\.values/i.test(text);
+}
+
+function classifyFixerCapability({ errorText = '', lines = 0, bytes = 0 } = {}) {
+  const errorCodes = parseTypeScriptErrorCodes(errorText);
+  const estimatedCost = estimateAutofixCost({ lines, bytes, errorCount: Math.max(1, errorCodes.length) });
+  if (estimatedCost > AUTOFIX_ESTIMATED_COST_LIMIT || lines > AUTOFIX_FILE_MAX_LINES || bytes > AUTOFIX_FILE_MAX_BYTES) {
+    return {
+      errorCodes,
+      estimatedCost,
+      fixerCapability: 'budget_blocked',
+      failureClass: 'budget_blocked',
+      nextAction: 'reduce_file_scope_or_raise_budget',
+    };
+  }
+  const localSupported = new Set(['TS7006', 'TS7031', 'TS7053', 'TS18046']);
+  const unsupported = errorCodes.filter((code) => !localSupported.has(code) && !(code === 'TS2339' && isLocallySupportedTs2339(errorText)));
+  const manualCodes = new Set(['TS2365']);
+  const hasUnsupportedShapeTs2339 = unsupported.includes('TS2339');
+  if (hasUnsupportedShapeTs2339 || unsupported.some((code) => manualCodes.has(code))) {
+    return {
+      errorCodes,
+      estimatedCost,
+      fixerCapability: 'manual_required',
+      failureClass: 'autofix_capability_gap',
+      nextAction: 'add_targeted_local_fixer_or_manual_type_repair',
+    };
+  }
+  if (errorCodes.length > 0 && unsupported.length === 0) {
+    return {
+      errorCodes,
+      estimatedCost,
+      fixerCapability: 'local_supported',
+      failureClass: 'local_autofix_available',
+      nextAction: 'run_local_autofix',
+    };
+  }
+  return {
+    errorCodes,
+    estimatedCost,
+    fixerCapability: 'llm_required',
+    failureClass: 'llm_autofix_required',
+    nextAction: 'run_llm_autofix',
+  };
 }
 
 function reviewerHighFindings(verify) {
@@ -1172,7 +1273,15 @@ function candidateMatchesCurrentRefactorState(candidate, requestedType = DEFAULT
 function selectActiveCandidatesDetailed(analysis, requestedType = DEFAULT_REFACTOR_TYPE, maxFiles = 1, avoidedFiles = new Set(), options = {}) {
   const candidates = Array.isArray(analysis?.candidates) ? analysis.candidates : [];
   const preferred = candidates.filter((candidate) => candidate.refactorType === requestedType);
-  const ordered = [...preferred, ...candidates.filter((candidate) => candidate.refactorType !== requestedType)];
+  const byScore = (a, b) => {
+    const scoreDelta = Number(b?.score || 0) - Number(a?.score || 0);
+    if (scoreDelta !== 0) return scoreDelta;
+    return Number(a?.lines || 0) - Number(b?.lines || 0);
+  };
+  const ordered = [
+    ...preferred.slice().sort(byScore),
+    ...candidates.filter((candidate) => candidate.refactorType !== requestedType).sort(byScore),
+  ];
   const allowNonProductionCandidates = Boolean(options.allowNonProductionCandidates);
   const validateCurrentState = Boolean(options.validateCurrentState);
   const selected = [];
@@ -2056,6 +2165,16 @@ function activeOperationalStatus(active, options = {}) {
   };
 }
 
+function firstResultValue(results, key) {
+  const found = (Array.isArray(results) ? results : []).find((item) => item && item[key] !== undefined && item[key] !== null);
+  return found ? found[key] : null;
+}
+
+function firstResultCandidate(results) {
+  const found = (Array.isArray(results) ? results : []).find((item) => item?.candidate);
+  return found ? found.candidate : null;
+}
+
 function resolveVerifierModules(context) {
   return {
     builder: context.builderModule || require('../src/builder'),
@@ -2228,6 +2347,13 @@ function buildActiveDocumentContent(context, analysis, active) {
     ...active.results.map((item, index) => [
       `### Candidate ${index + 1}: ${item.candidate?.file || 'unknown'}`,
       `- stage: ${item.stage}`,
+      `- candidate_score: ${item.candidate?.score ?? 'unknown'}`,
+      `- risk_level: ${item.candidate?.riskLevel || 'unknown'}`,
+      `- estimated_cost: ${item.estimatedCost ?? item.candidate?.estimatedCost ?? 'unknown'}`,
+      `- error_codes: ${Array.isArray(item.errorCodes) && item.errorCodes.length ? item.errorCodes.join(', ') : 'none'}`,
+      item.fixerCapability ? `- fixer_capability: ${item.fixerCapability}` : null,
+      item.failureClass ? `- failure_class: ${item.failureClass}` : null,
+      item.nextAction ? `- next_action: ${item.nextAction}` : null,
       `- builder_pass: ${item.verify?.builderPass ?? false}`,
       `- builder_skipped: ${item.verify?.builderSkipped ?? false}`,
       item.verify?.builderSkipReason ? `- builder_skip_reason: ${item.verify.builderSkipReason}` : null,
@@ -2277,16 +2403,39 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
   const fileRel = relPath(absolutePath);
   const reverifyMode = options.reverify === 'strict' ? 'strict' : 'targeted';
   const priorErrors = deriveFilePriorErrors(context.vaultFeedback, fileRel);
+  const initialContent = fs.readFileSync(absolutePath, 'utf8');
+  const initialErrorText = builderErrorText(initialVerify);
+  const initialClassification = classifyFixerCapability({
+    errorText: initialErrorText,
+    lines: lineCount(initialContent),
+    bytes: byteLength(initialContent),
+  });
   let verify = initialVerify;
   let lastFix = null;
   let lastStrict = null;
   const attempts = [];
+  if (initialClassification.fixerCapability === 'budget_blocked') {
+    restoreFileSnapshot(snapshots, absolutePath);
+    return {
+      stage: 'active_deferred_unfixable',
+      verify,
+      autofixAttempts: 0,
+      priorErrorCount: priorErrors.length,
+      ...initialClassification,
+      errorSummary: formatErrorSummary({
+        stage: 'autofix',
+        candidate,
+        error: `budget_blocked: estimated_cost=${initialClassification.estimatedCost}`,
+      }),
+    };
+  }
   if (context.autofixBillingStopped) {
     return {
       stage: 'active_deferred_unfixable',
       verify,
       autofixAttempts: 0,
       priorErrorCount: priorErrors.length,
+      ...initialClassification,
       errorSummary: formatErrorSummary({ stage: 'autofix', candidate, error: 'billing_guard_stopped' }),
     };
   }
@@ -2326,6 +2475,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         autofixAttempts: attempt,
         autofix: attempts,
         priorErrorCount: priorErrors.length,
+        ...initialClassification,
         errorSummary: formatErrorSummary({
           stage: 'autofix',
           candidate,
@@ -2360,6 +2510,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         autofixAttempts: attempt,
         autofix: attempts,
         priorErrorCount: priorErrors.length,
+        ...initialClassification,
         errorSummary: formatErrorSummary({
           stage: 'autofix',
           candidate,
@@ -2379,6 +2530,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
           autofixAttempts: attempt,
           autofix: attempts,
           priorErrorCount: priorErrors.length,
+          ...initialClassification,
           errorSummary: formatErrorSummary({ stage: 'autofix_strict_verify', candidate, error }),
         };
       }
@@ -2393,6 +2545,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
             autofixAttempts: attempt,
             autofix: attempts,
             priorErrorCount: priorErrors.length,
+            ...initialClassification,
             errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
           };
         }
@@ -2404,6 +2557,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
             autofixAttempts: attempt,
             autofix: attempts,
             priorErrorCount: priorErrors.length,
+            ...initialClassification,
             model: fix.model || null,
             provider: fix.provider || null,
           };
@@ -2439,6 +2593,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
           autofixAttempts: attempt,
           autofix: attempts,
           priorErrorCount: priorErrors.length,
+          ...initialClassification,
           errorSummary: formatErrorSummary({ stage: 'autofix_verify', candidate, error }),
         };
       }
@@ -2450,6 +2605,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
         autofixAttempts: attempt,
         autofix: attempts,
         priorErrorCount: priorErrors.length,
+        ...initialClassification,
         model: fix.model || null,
         provider: fix.provider || null,
       };
@@ -2465,6 +2621,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
     autofixAttempts: attempts.length,
     autofix: attempts,
     priorErrorCount: priorErrors.length,
+    ...initialClassification,
     errorSummary: formatErrorSummary({
       stage: 'autofix',
       candidate,
@@ -2544,11 +2701,17 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
             });
           }
         } else {
+          const classification = classifyFixerCapability({
+            errorText: builderErrorText(verify),
+            lines: lineCount(removed.content),
+            bytes: byteLength(removed.content),
+          });
           restoreFileSnapshot(snapshots, absolutePath);
           results.push({
             candidate,
             stage: 'active_deferred',
             verify,
+            ...classification,
             errorSummary: formatErrorSummary({ stage: 'verify', candidate, verify }),
           });
         }
@@ -2621,9 +2784,19 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
           }
           if (!strict || strict.pass !== true) {
             const errorMessage = String(strict?.error || strict?.message || 'strict_gate_failed').slice(0, 300);
+            const classification = classifyFixerCapability({
+              errorText: errorMessage,
+              lines: item.candidate?.lines || 0,
+              bytes: item.candidate?.bytes || 0,
+            });
             item.stage = 'active_deferred_strict_failed';
             item.applied = false;
             item.strict = strict || { pass: false };
+            item.errorCodes = classification.errorCodes;
+            item.estimatedCost = classification.estimatedCost;
+            item.fixerCapability = classification.fixerCapability;
+            item.failureClass = classification.failureClass;
+            item.nextAction = classification.nextAction;
             item.errorSummary = formatErrorSummary({ stage: 'strict_gate', candidate: item.candidate, error: errorMessage });
             applyResults.push({ file: relFile, applied: false, reason: 'strict_failed', error: errorMessage });
             continue;
@@ -2733,6 +2906,7 @@ async function recordRefactorOutcome(context, result) {
     ? activeOperationalStatus(active, { pushRequired: Boolean(context.applyPushEnabled) })
     : null;
   const firstErrorSummary = verifyResults.find((item) => item.errorSummary)?.errorSummary || null;
+  const outcomeCandidate = result.plan?.candidate || firstResultCandidate(verifyResults) || null;
   const testPass = isActive
     ? verifyResults.some(isReadyResult)
     : null;
@@ -2763,13 +2937,19 @@ async function recordRefactorOutcome(context, result) {
     testPass,
     durationMs: Date.now() - context.startedAtMs,
     kind: 'refactor',
-    refactorType: result.plan?.candidate?.refactorType || context.refactorType,
+    refactorType: outcomeCandidate?.refactorType || context.refactorType,
     cycleId: context.cycleId,
     source: 'claude-refactorer',
     candidateFiles,
     changedFiles,
     avoidedFiles: Array.isArray(result.plan?.avoidedFiles) ? result.plan.avoidedFiles : [],
     localHistoryAvoidedFiles: Array.isArray(result.plan?.localHistoryAvoidedFiles) ? result.plan.localHistoryAvoidedFiles : [],
+    failureClass: firstResultValue(verifyResults, 'failureClass'),
+    errorCodes: firstResultValue(verifyResults, 'errorCodes') || [],
+    fixerCapability: firstResultValue(verifyResults, 'fixerCapability'),
+    candidateScore: outcomeCandidate?.score ?? null,
+    estimatedCost: firstResultValue(verifyResults, 'estimatedCost') ?? outcomeCandidate?.estimatedCost ?? null,
+    nextAction: firstResultValue(verifyResults, 'nextAction'),
     candidateDiagnostics: active?.candidateDiagnostics || result.plan?.candidateDiagnostics || null,
     errorSummary: firstErrorSummary,
     operational,
@@ -2784,7 +2964,7 @@ async function recordRefactorOutcome(context, result) {
     refactorScopePrefixes: context.refactorScopePrefixes || [],
     meta: {
       kind: 'refactor',
-      refactorType: result.plan?.candidate?.refactorType || context.refactorType,
+      refactorType: outcomeCandidate?.refactorType || context.refactorType,
       cycleId: context.cycleId,
       mode: context.mode,
       target: context.target.relativePath,
@@ -2797,6 +2977,12 @@ async function recordRefactorOutcome(context, result) {
       vaultFeedbackCount: Array.isArray(result.plan?.vaultFeedback?.results) ? result.plan.vaultFeedback.results.length : 0,
       avoidedFiles: Array.isArray(result.plan?.avoidedFiles) ? result.plan.avoidedFiles : [],
       localHistoryAvoidedFiles: Array.isArray(result.plan?.localHistoryAvoidedFiles) ? result.plan.localHistoryAvoidedFiles : [],
+      failureClass: firstResultValue(verifyResults, 'failureClass'),
+      errorCodes: firstResultValue(verifyResults, 'errorCodes') || [],
+      fixerCapability: firstResultValue(verifyResults, 'fixerCapability'),
+      candidateScore: outcomeCandidate?.score ?? null,
+      estimatedCost: firstResultValue(verifyResults, 'estimatedCost') ?? outcomeCandidate?.estimatedCost ?? null,
+      nextAction: firstResultValue(verifyResults, 'nextAction'),
       phase: isActive ? 'phase3' : 'phase1',
       stage,
       candidateFiles,
@@ -3208,6 +3394,9 @@ module.exports = {
   addNodeExecutableUnknownGuard,
   attemptNodeExecutableLocalTypeFix,
   deriveFilePriorErrors,
+  estimateAutofixCost,
+  classifyFixerCapability,
+  parseTypeScriptErrorCodes,
   isProtectedTarget,
   isNonProductionRefactorCandidate,
   normalizeCycleMode,

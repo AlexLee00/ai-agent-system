@@ -300,11 +300,13 @@ async function test_active_candidates_validate_current_ts_nocheck_state() {
         file: 'bots/claude/hooks/refactor-hooks/type-check-hook.ts',
         lines: 51,
         refactorType: 'ts_nocheck',
+        score: 90,
       },
       {
         file: ACTIVE_TARGET,
         lines: 8,
         refactorType: 'ts_nocheck',
+        score: 80,
       },
     ],
   };
@@ -467,6 +469,62 @@ async function test_active_cycle_skips_candidates_avoided_by_local_history() {
     cleanupRefactorArtifacts(result);
   }
   console.log('✅ refactor-cycle: active cycle skips local-history avoided candidates');
+}
+
+async function test_active_candidates_prefer_higher_score_over_smaller_file() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const analysis = {
+    candidates: [
+      {
+        file: 'bots/claude/lib/low-score.ts',
+        lines: 5,
+        refactorType: 'ts_nocheck',
+        score: 30,
+      },
+      {
+        file: 'bots/claude/lib/high-score.ts',
+        lines: 20,
+        refactorType: 'ts_nocheck',
+        score: 90,
+      },
+    ],
+  };
+  const selected = runner.selectActiveCandidatesDetailed(analysis, 'ts_nocheck', 1, new Set(), {
+    allowNonProductionCandidates: true,
+  });
+  assert.strictEqual(selected.selected[0].score, 90);
+  console.log('✅ refactor-cycle: candidate scoring prefers higher success score over smaller files');
+}
+
+async function test_ts2365_classifier_requires_manual_or_targeted_fixer() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const classified = runner.classifyFixerCapability({
+    errorText: "file.ts(1,1): error TS2365: Operator '<' cannot be applied to types 'string' and 'number'.",
+    lines: 20,
+    bytes: 800,
+  });
+  assert.deepStrictEqual(classified.errorCodes, ['TS2365']);
+  assert.strictEqual(classified.fixerCapability, 'manual_required');
+  assert.strictEqual(classified.failureClass, 'autofix_capability_gap');
+  assert.match(classified.nextAction, /local_fixer|manual/);
+  const shapeTs2339 = runner.classifyFixerCapability({
+    errorText: "file.ts(2,3): error TS2339: Property 'from_bot' does not exist on type '{ team?: string; }'.",
+    lines: 20,
+    bytes: 800,
+  });
+  assert.deepStrictEqual(shapeTs2339.errorCodes, ['TS2339']);
+  assert.strictEqual(shapeTs2339.fixerCapability, 'manual_required');
+  assert.strictEqual(shapeTs2339.failureClass, 'autofix_capability_gap');
+  const unknownTs2339 = runner.classifyFixerCapability({
+    errorText: "file.ts(2,3): error TS2339: Property 'message' does not exist on type 'unknown'.",
+    lines: 20,
+    bytes: 800,
+  });
+  assert.deepStrictEqual(unknownTs2339.errorCodes, ['TS2339']);
+  assert.strictEqual(unknownTs2339.fixerCapability, 'local_supported');
+  console.log('✅ refactor-cycle: TS2365 and shape TS2339 are classified as manual/targeted-fixer required');
 }
 
 async function test_dirty_scope_helpers() {
@@ -2065,6 +2123,110 @@ async function test_autofix_failure_defers_unfixable_and_restores() {
   console.log('✅ refactor-cycle: autofix failure defers unfixable and restores');
 }
 
+async function test_autofix_budget_precheck_blocks_fixer_call() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const targetDir = 'bots/claude/__tests__/tmp-refactor-budget';
+  const absDir = path.join(PROJECT_ROOT, targetDir);
+  const target = `${targetDir}/large-budget.ts`;
+  fs.rmSync(absDir, { recursive: true, force: true });
+  fs.mkdirSync(absDir, { recursive: true });
+  const content = [
+    '// @ts-nocheck',
+    ...Array.from({ length: 1305 }, (_, index) => `export const value${index} = ${index};`),
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(PROJECT_ROOT, target), content, 'utf8');
+  let fixerCalls = 0;
+  let result = null;
+  try {
+    result = await runner.runRefactorCycle({
+      mode: 'active',
+      target,
+      dryRun: true,
+      noMcp: true,
+      noVaultFeedback: true,
+      noHeartbeat: true,
+      noWriteOutcome: true,
+      allowDirtyWorktreeForTest: true,
+      allowNonProductionCandidatesForTest: true,
+      autofixEnabled: true,
+      builderModule: {
+        async runTargetedTypeCheck() {
+          return {
+            pass: false,
+            skipped: false,
+            results: [{ pass: false, skipped: false, error: 'large-budget.ts(1,1): error TS7006: Parameter input implicitly has an any type.' }],
+          };
+        },
+      },
+      reviewerModule: reviewerModuleAlwaysPass(target),
+      fixerFn: async () => {
+        fixerCalls += 1;
+        return { ok: false, error: 'should_not_call_fixer' };
+      },
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.active.results[0].failureClass, 'budget_blocked');
+    assert.strictEqual(result.active.results[0].fixerCapability, 'budget_blocked');
+    assert.strictEqual(fixerCalls, 0);
+  } finally {
+    fs.rmSync(absDir, { recursive: true, force: true });
+    cleanupRefactorArtifacts(result);
+  }
+  console.log('✅ refactor-cycle: budget precheck blocks expensive autofix calls');
+}
+
+async function test_autofix_metadata_records_failure_class_and_next_action() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    autofixMaxAttempts: 1,
+    gitStatusShortFn: () => '',
+    builderModule: {
+      async runTargetedTypeCheck(files, options) {
+        assert.deepStrictEqual(files, [target]);
+        assert.deepStrictEqual(options.files, [target]);
+        const content = targetContent(target);
+        const pass = content.includes(AUTOFIX_MARKER);
+        return {
+          pass,
+          skipped: false,
+          results: [{
+            pass,
+            skipped: false,
+            error: pass ? null : "fixture.ts(1,1): error TS2365: Operator '<' cannot be applied to types 'string' and 'number'.",
+          }],
+        };
+      },
+    },
+    reviewerModule: reviewerModuleAlwaysPass(target),
+    fixerFn: async (_context, params) => ({
+      ok: true,
+      fixedContent: params.currentContent,
+      model: 'mock-noop',
+    }),
+  });
+  assert.strictEqual(result.ok, false);
+  assert.deepStrictEqual(result.active.results[0].errorCodes, ['TS2365']);
+  assert.strictEqual(result.active.results[0].fixerCapability, 'manual_required');
+  assert.strictEqual(result.active.results[0].failureClass, 'autofix_capability_gap');
+  assert.match(result.active.results[0].nextAction, /local_fixer|manual/);
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix metadata records failure class and next action');
+}
+
 async function test_autofix_rejects_unexpected_mutation() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2765,6 +2927,8 @@ async function main() {
     test_active_candidates_skip_ts_extension_import_until_gate_supports_it,
     test_local_refactor_history_avoids_repeated_failed_candidates,
     test_active_cycle_skips_candidates_avoided_by_local_history,
+    test_active_candidates_prefer_higher_score_over_smaller_file,
+    test_ts2365_classifier_requires_manual_or_targeted_fixer,
     test_dirty_scope_helpers,
     test_dirty_scope_guard_ignores_other_workspace_dirty,
     test_dirty_scope_guard_blocks_target_workspace_dirty,
@@ -2807,6 +2971,8 @@ async function main() {
     test_autofix_preserves_original_final_newline,
     test_autofix_preserves_original_crlf_final_newline,
     test_autofix_failure_defers_unfixable_and_restores,
+    test_autofix_budget_precheck_blocks_fixer_call,
+    test_autofix_metadata_records_failure_class_and_next_action,
     test_autofix_rejects_unexpected_mutation,
     test_autofix_prior_errors_filter_and_cap,
     test_autofix_prior_errors_are_passed_to_fixer,
