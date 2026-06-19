@@ -339,6 +339,14 @@ export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
       WHERE status IN ('stalled', 'proposed', 'active')
       ORDER BY last_evaluated_at DESC NULLS LAST, registered_at DESC
       LIMIT 120`);
+  const overdueAdrRows = await safeQuery(queryFn,
+    `SELECT id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at
+       FROM luna_meeting_decisions
+      WHERE status = 'pending_master'
+        AND due_at IS NOT NULL
+        AND due_at < NOW()
+      ORDER BY due_at ASC, created_at ASC
+      LIMIT 50`);
   const positionRows = await safeQuery(queryFn,
     `SELECT symbol, exchange, amount, entry_price, updated_at
        FROM positions
@@ -356,7 +364,30 @@ export async function buildMeetingPlanNote(options: any = {}, deps: any = {}) {
   const registryPending = (registryRows || [])
     .filter((row) => !row.__error && (row.status === 'stalled' || row.status === 'proposed' || safeJson(row.promotion_criteria).placeholder === true))
     .slice(0, 20);
+  const overdueAdrPending = cleanRows(overdueAdrRows)
+    .map((row) => ({ ...row, evidence: safeJson(row.evidence) }))
+    .filter((row) => {
+      const reagenda = Array.isArray(row.evidence?.mr_l?.reagenda) ? row.evidence.mr_l.reagenda : [];
+      return !reagenda.some((item: any) => item?.dateKst === kstDateKey(now));
+    })
+    .map((row) => ({
+      type: 'adr_overdue_reagenda',
+      decisionId: row.id,
+      sessionId: row.session_id,
+      agendaKey: `adr-overdue:${row.id}`,
+      originalAgendaKey: row.agenda_key,
+      component: row.agenda_key,
+      status: row.status,
+      grade: row.grade,
+      dueAt: row.due_at,
+      dateKst: kstDateKey(now),
+      decision: row.decision,
+      evidence: row.evidence,
+      criteria: { overdue: true, dueAt: row.due_at },
+      recommendation: `기한 초과 ADR #${row.id} 재상정`,
+    }));
   const pendingDecisions = [
+    ...overdueAdrPending,
     ...(Array.isArray(proposalFile.notifyNow) ? proposalFile.notifyNow : []),
     ...(Array.isArray(proposalFile.deferred) ? proposalFile.deferred : []),
     ...registryPending.map((row) => ({

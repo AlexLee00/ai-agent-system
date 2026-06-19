@@ -77,6 +77,7 @@ function componentLabel(value: any) {
 function humanProposalType(value: any, status: any = null) {
   const raw = String(value || status || '').trim();
   return {
+    adr_overdue_reagenda: '기한 초과 ADR 재상정',
     promotion_proposal: '승격 제안',
     halt_proposal: '중단 제안',
     stalled_report: '정체 보고',
@@ -272,12 +273,17 @@ export function buildMorningMeetingAgendas(planNote: any = {}) {
     });
   }
   for (const decision of (planNote.pendingDecisions || []).slice(0, 8)) {
-    const component = decision.component || decision.agenda_key || decision.type || 'pending';
+    const isOverdueAdr = decision.type === 'adr_overdue_reagenda';
+    const component = decision.component || decision.originalAgendaKey || decision.agenda_key || decision.type || 'pending';
     const componentTitle = componentLabel(component);
     agendas.push({
-      key: `decision:${component}`,
-      kind: 'pending_decision',
-      title: `C15 결정 대기: ${componentTitle}`,
+      key: isOverdueAdr
+        ? (decision.agendaKey || `adr-overdue:${decision.decisionId || decision.id || component}`)
+        : `decision:${component}`,
+      kind: isOverdueAdr ? 'adr_overdue_reagenda' : 'pending_decision',
+      title: isOverdueAdr
+        ? `기한 초과 ADR 재상정: ${componentTitle}`
+        : `C15 결정 대기: ${componentTitle}`,
       market: 'any',
       evidence: decision,
       defaultGrade: 'c_master',
@@ -402,6 +408,12 @@ function dataBriefForAgenda(agenda: any, planNote: any) {
     ].join('\n');
   }
   if (agenda.kind === 'pending_decision') return applyMeetingGlossary(summarizePendingDecision(agenda.evidence || {}));
+  if (agenda.kind === 'adr_overdue_reagenda') return applyMeetingGlossary(summarizePendingDecision({
+    ...(agenda.evidence || {}),
+    type: 'adr_overdue_reagenda',
+    status: 'pending_master',
+    recommendation: `기한 ${agenda.evidence?.dueAt || agenda.evidence?.due_at || '확인 필요'} 이후 미이행되어 회의에서 다시 다룹니다.`,
+  }));
   if (agenda.kind === 'transition_alert') return applyMeetingGlossary(`시장 분위기 전이 경보\n${compact(agenda.evidence, 900)}`);
   if (agenda.kind === 'circuit_locks') return applyMeetingGlossary(summarizeCircuitLocks(agenda.evidence || []));
   if (agenda.kind === 'domestic_debrief') {
@@ -717,16 +729,29 @@ async function persistMeeting(result: any, deps: any = {}) {
   const persistedDecisions = [];
   for (const row of result.decisions || []) {
     if (row.status === 'pending_master' && queryFn) {
-      const duplicateRows = await queryFn(
-        `SELECT id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at
-           FROM luna_meeting_decisions
-          WHERE agenda_key = $1
-            AND status = 'pending_master'
-          ORDER BY created_at ASC, id ASC
-          LIMIT 1
-          FOR UPDATE`,
-        [row.agendaKey],
-      );
+      const sourceDecisionId = row.evidence?.evidenceExcerpt?.decisionId || row.evidence?.sourceDecisionId || null;
+      const isOverdueAdrReagenda = row.evidence?.agendaKind === 'adr_overdue_reagenda'
+        || row.evidence?.evidenceExcerpt?.type === 'adr_overdue_reagenda';
+      const duplicateRows = isOverdueAdrReagenda && sourceDecisionId
+        ? await queryFn(
+            `SELECT id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at
+               FROM luna_meeting_decisions
+              WHERE id = $1
+                AND status = 'pending_master'
+              LIMIT 1
+              FOR UPDATE`,
+            [sourceDecisionId],
+          )
+        : await queryFn(
+            `SELECT id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at
+               FROM luna_meeting_decisions
+              WHERE agenda_key = $1
+                AND status = 'pending_master'
+              ORDER BY created_at ASC, id ASC
+              LIMIT 1
+              FOR UPDATE`,
+            [row.agendaKey],
+          );
       const duplicate = duplicateRows?.[0] || null;
       if (duplicate) {
         const reappeared = {
@@ -735,20 +760,41 @@ async function persistMeeting(result: any, deps: any = {}) {
           agendaKey: row.agendaKey,
           title: row.evidence?.title || row.decision,
         };
-        const updated = await queryFn(
-          `UPDATE luna_meeting_decisions
-              SET evidence = evidence || jsonb_build_object(
-                'mr_ux_1',
-                COALESCE(evidence->'mr_ux_1', '{}'::jsonb)
-                || jsonb_build_object(
-                  'reappeared',
-                  COALESCE(evidence #> '{mr_ux_1,reappeared}', '[]'::jsonb) || $2::jsonb
-                )
-              )
-            WHERE id = $1
-            RETURNING id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at`,
-          [duplicate.id, JSON.stringify([reappeared])],
-        );
+        const updated = isOverdueAdrReagenda
+          ? await queryFn(
+              `UPDATE luna_meeting_decisions
+                  SET evidence = evidence || jsonb_build_object(
+                    'mr_l',
+                    COALESCE(evidence->'mr_l', '{}'::jsonb)
+                    || jsonb_build_object(
+                      'reagenda',
+                      COALESCE(evidence #> '{mr_l,reagenda}', '[]'::jsonb) || $2::jsonb
+                    )
+                  )
+                WHERE id = $1
+                RETURNING id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at`,
+              [duplicate.id, JSON.stringify([{
+                ...reappeared,
+                dateKst: row.evidence?.evidenceExcerpt?.dateKst || null,
+                source: 'luna_meeting_room_l',
+                advisoryOnly: true,
+                shadowOnly: true,
+              }])],
+            )
+          : await queryFn(
+              `UPDATE luna_meeting_decisions
+                  SET evidence = evidence || jsonb_build_object(
+                    'mr_ux_1',
+                    COALESCE(evidence->'mr_ux_1', '{}'::jsonb)
+                    || jsonb_build_object(
+                      'reappeared',
+                      COALESCE(evidence #> '{mr_ux_1,reappeared}', '[]'::jsonb) || $2::jsonb
+                    )
+                  )
+                WHERE id = $1
+                RETURNING id, session_id, agenda_key, decision, grade, status, due_at, evidence, created_at`,
+              [duplicate.id, JSON.stringify([reappeared])],
+            );
         const seqRows = await queryFn(
           `SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq
              FROM luna_meeting_minutes
@@ -756,9 +802,9 @@ async function persistMeeting(result: any, deps: any = {}) {
           [sessionId],
         );
         const nextSeq = Number(seqRows?.[0]?.next_seq || 1);
-        const previousCount = Array.isArray(duplicate.evidence?.mr_ux_1?.reappeared)
-          ? duplicate.evidence.mr_ux_1.reappeared.length
-          : 0;
+        const previousCount = isOverdueAdrReagenda
+          ? (Array.isArray(duplicate.evidence?.mr_l?.reagenda) ? duplicate.evidence.mr_l.reagenda.length : 0)
+          : (Array.isArray(duplicate.evidence?.mr_ux_1?.reappeared) ? duplicate.evidence.mr_ux_1.reappeared.length : 0);
         await runFn(
           `INSERT INTO luna_meeting_minutes (session_id, seq, agenda_key, speaker, role, content, meta)
            VALUES ($1,$2,$3,'adr','decision',$4,$5::jsonb)`,
@@ -766,11 +812,14 @@ async function persistMeeting(result: any, deps: any = {}) {
             sessionId,
             nextSeq,
             row.agendaKey,
-            `기존 대기 결정 #${duplicate.id} 유지(${previousCount + 1}번째 재상정)`,
+            isOverdueAdrReagenda
+              ? `기한 초과 ADR 재상정: 기존 대기 결정 #${duplicate.id} 유지(${previousCount + 1}번째 재상정)`
+              : `기존 대기 결정 #${duplicate.id} 유지(${previousCount + 1}번째 재상정)`,
             JSON.stringify({
-              state: 'adr_reappeared',
+              state: isOverdueAdrReagenda ? 'adr_overdue_reagenda' : 'adr_reappeared',
               decisionId: duplicate.id,
               reappearedCount: previousCount + 1,
+              sourceDecisionId: sourceDecisionId || null,
               shadowOnly: true,
             }),
           ],
