@@ -2227,6 +2227,54 @@ async function test_autofix_metadata_records_failure_class_and_next_action() {
   console.log('✅ refactor-cycle: autofix metadata records failure class and next action');
 }
 
+async function test_autofix_metadata_reclassifies_final_failure() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const target = ACTIVE_TARGET;
+  const before = targetContent(target);
+  let builderCalls = 0;
+  const result = await runner.runRefactorCycle({
+    mode: 'active',
+    target,
+    dryRun: true,
+    noMcp: true,
+    noVaultFeedback: true,
+    noHeartbeat: true,
+    noWriteOutcome: true,
+    allowDirtyWorktreeForTest: true,
+    autofixEnabled: true,
+    autofixMaxAttempts: 1,
+    gitStatusShortFn: () => '',
+    builderModule: {
+      async runTargetedTypeCheck(files, options) {
+        builderCalls += 1;
+        assert.deepStrictEqual(files, [target]);
+        assert.deepStrictEqual(options.files, [target]);
+        const error = builderCalls === 1
+          ? "fixture.ts(1,1): error TS7006: Parameter 'input' implicitly has an 'any' type."
+          : "fixture.ts(1,1): error TS2365: Operator '<' cannot be applied to types 'string' and 'number'.";
+        return {
+          pass: false,
+          skipped: false,
+          results: [{ pass: false, skipped: false, error }],
+        };
+      },
+    },
+    reviewerModule: reviewerModuleAlwaysPass(target),
+    fixerFn: async (_context, params) => ({
+      ok: true,
+      fixedContent: params.currentContent,
+      model: 'mock-noop',
+    }),
+  });
+  assert.strictEqual(result.ok, false);
+  assert.deepStrictEqual(result.active.results[0].errorCodes, ['TS2365']);
+  assert.strictEqual(result.active.results[0].fixerCapability, 'manual_required');
+  assert.strictEqual(result.active.results[0].failureClass, 'autofix_capability_gap');
+  assert.strictEqual(targetContent(target), before);
+  console.log('✅ refactor-cycle: autofix metadata reclassifies the final failure');
+}
+
 async function test_autofix_rejects_unexpected_mutation() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -2973,6 +3021,7 @@ async function main() {
     test_autofix_failure_defers_unfixable_and_restores,
     test_autofix_budget_precheck_blocks_fixer_call,
     test_autofix_metadata_records_failure_class_and_next_action,
+    test_autofix_metadata_reclassifies_final_failure,
     test_autofix_rejects_unexpected_mutation,
     test_autofix_prior_errors_filter_and_cap,
     test_autofix_prior_errors_are_passed_to_fixer,

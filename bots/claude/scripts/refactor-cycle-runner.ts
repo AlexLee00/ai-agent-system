@@ -2614,6 +2614,12 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
   }
 
   restoreFileSnapshot(snapshots, absolutePath);
+  const finalContent = fs.existsSync(absolutePath) ? fs.readFileSync(absolutePath, 'utf8') : initialContent;
+  const finalClassification = classifyFixerCapability({
+    errorText: builderErrorText(verify),
+    lines: lineCount(finalContent),
+    bytes: byteLength(finalContent),
+  });
   return {
     stage: 'active_deferred_unfixable',
     verify,
@@ -2621,7 +2627,7 @@ async function runAutofixLoop(context, candidate, absolutePath, initialVerify, s
     autofixAttempts: attempts.length,
     autofix: attempts,
     priorErrorCount: priorErrors.length,
-    ...initialClassification,
+    ...finalClassification,
     errorSummary: formatErrorSummary({
       stage: 'autofix',
       candidate,
