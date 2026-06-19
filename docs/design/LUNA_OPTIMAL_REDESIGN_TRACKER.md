@@ -135,3 +135,34 @@
 ✅ P0(6건)·P1(7건)·OPS_FIX·회의실 MR-A/B/C+FIX·UX개편·TOSS-A~D·ALPHA_FACTOR·L-소형 전부 완료.
 - 다음 후보: L-P2a(C16 워치독·회의실 연동) ⭐ / L-P2b(C7 검증) / ALPHA-R5 승격(데이터+승인) / TOSS-E(승인) / 블로 B-B3검증.
 - CLI 운영 인수인계: docs/codex/HANDOFF_CLAUDE_CODE_2026-06-13.md.
+
+
+## 2026-06-19 ET-D 가동 + 회의실 L/P2d + reevaluator regime 수정 (메티 세션)
+
+### ET-D 가동 (C3 전략군 청산 shadow)
+- migration `luna_strategy_exit_shadow` + autopilot plist `LUNA_STRATEGY_EXIT_SHADOW=true`+confirm + reload. sidecar `void` fire-and-forget·**반환 불변**(reevaluator 결정/실거래 dispatch 무영향).
+- 검증: 테이블·플래그·재등록 정상. 데이터 0 = 보유 포지션 0 + C3 매핑(breakout/trend_following→turtle·micro_swing→testah, defensive_rotation skip) 진입 대기.
+
+### reevaluator regime lookup 버그 수정 (커밋 8184081aa)
+- regime 스냅샷이 `'crypto'` 키로만 적재(`market_regime_snapshots` 3760행·`'binance'` 0행)인데 기존 `'binance'` 조회 → crypto regime **항상 null**(레짐 무시)이던 것을 `['crypto','binance']` 폴백 + `regimeKey=snapshot.market`으로 정상 인식.
+- 실거래 dispatch/주문 로직 무변경·레짐 기반 청산/가중치 활성화 → **결정 변화 모니터링 권고**. (회의실 작업 중 발견)
+
+### 회의실 L (⑥서킷 + debrief 생성기 + ADR 재상정) — 구현·가동·실검증
+- 신규 `meeting-room-l-ops.ts`·`runtime-luna-meeting-room-l.ts`·smoke. `find*Candidates`(SELECT·중복방지 Set)→집계 회의·`canWrite`(confirm `luna-meeting-room-l-shadow`)·dryRun 기본.
+- debrief 미발화=`regenerateMeetingMinutesMarkdown` 재사용·ADR 재상정=`evidence.mr_l.reagenda[]` append(status 직접 쓰기 0).
+- launchd `ai.luna.meeting-room-l-ops`(30분·`--apply`) 가동. **실검증**: session 216 = circuit 10건→**1 adhoc 회의** 집계·재실행 중복방지 후보 0.
+
+### L-P2d (수시회의 나머지 4트리거 + WS-I 리스크 훅) — 구현·가동·실검증
+- 회의실 L ops 패턴 additive 확장: ②레짐 전환·④대형 공시·⑤일일 손실·WS-I 리스크 후보 수집 → eventAgendas 통합 → **단일 '수시 이벤트 점검' adhoc 회의** 1회(`runAdhocMeetingForAgendas`)·각 트리거 limit 20·중복방지. skip 플래그(`--skip-regime/disclosure/daily-loss/risk`).
+- 기존 ⑥서킷/ADR/debrief/정기회의 흐름 무변경(additive)·산출 pending_master 제안만. **참고**: circuit이 eventAgendas에 통합돼 ⑥서킷도 '수시 이벤트 점검' 통합 회의의 일부가 됨(회의 난립 차단).
+- **실검증**: session 219 = 이벤트 23건(disclosure 3+risk 20)→**1 회의** 집계·재실행 중복방지 후보 0·liveMutation false.
+
+### ET-C (expected-fire 워치독 + debrief 미발화 편차 + 수시회의⑦) — 구현·검증 완료
+- 신규 `luna-expected-fire-watchdog.ts`·`runtime-luna-expected-fire-watchdog.ts`·migration `20260619000006_luna_silent_miss_log`·smoke. shadow·관찰만(placed:false·실발화 0)·`canWrite`(confirm `luna-expected-fire-watchdog-shadow`)·dryRun 기본.
+- **판정**: `lastReadyAt`(would-fire)+`fired_at` NULL+`terminalBlock`≠true+정상차단 화이트리스트 11종(`conditions_not_met`·`outside_binance_top30_volume_universe`·`duplicate_fire_cooldown`·`recent_executed_trade_cooldown`·`market_event_missing` 등) 제외+`detectExecutionMatch`(trade_journal/positions 매칭 없음)→silent miss. 회의실 ⑦=`findSilentMissMeetingCandidates`→eventAgendas 통합(읽기전용·`luna_silent_miss_log` 없으면 42P01 graceful·additive).
+- **검증**: entry-trigger-engine 무변경(실발화 보존)·매칭 로직 확인·`scanned 0`(현 silent miss 0 = ready+미발화 전부 정상차단=시스템 건강). **메티 재현 오류 1건 자기수정**(화이트리스트 6종 재현→720h 24건 오탐 의심, 실제 코드 11종 확인→24건 전량 제외로 0 일치 확정·워치독 정상). 코드 cron 커밋 `ceb9eceba`.
+
+### 다음 세션 예약
+- **ET-C 활성화(마스터)**: migration `20260619000006_luna_silent_miss_log` apply + watchdog launchd 생성·활성화 + commit/push → 활성 후 메티가 실 silent miss 감지·회의실 ⑦ 통합 실검증.
+- **ET-D 데이터 대기**: 매핑 가능 포지션(breakout/trend_following→turtle·micro_swing→testah) 진입 시 `luna_strategy_exit_shadow` 누적(현 보유 MEGA=defensive_rotation skip). reevaluator regime 수정 후 실거래 결정 변화 모니터링.
+- (기타 트랙: Hub Week 2·블로 B3·Edu-X/Open DART Phase A 등 메모리 참조)
