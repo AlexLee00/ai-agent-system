@@ -38,6 +38,22 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+async function getLatestRegimeSnapshotForRuntimeMarket(market = null) {
+  const normalized = String(market || '').trim().toLowerCase();
+  const keys = normalized === 'crypto'
+    ? ['crypto', 'binance']
+    : normalized === 'domestic'
+      ? ['domestic', 'kis']
+      : normalized === 'overseas'
+        ? ['overseas', 'kis_overseas']
+        : [normalized].filter(Boolean);
+  for (const key of keys) {
+    const snapshot = await db.getLatestMarketRegimeSnapshot(key).catch(() => null);
+    if (snapshot) return snapshot;
+  }
+  return null;
+}
+
 export async function runStrategyExitShadowForReevaluation(context = {}, deps = {}) {
   try {
     return await (deps.runStrategyExitShadowSidecar || runStrategyExitShadowSidecar)(context, deps);
@@ -1360,9 +1376,9 @@ export async function reevaluateOpenPositions({
     .filter((item) => !symbol || String(item.symbol || '').toUpperCase() === String(symbol || '').toUpperCase());
   const results = [];
   const regimeByMarket = {
-    crypto: (await db.getLatestMarketRegimeSnapshot('binance').catch(() => null))?.regime || null,
-    domestic: (await db.getLatestMarketRegimeSnapshot('domestic').catch(() => null))?.regime || null,
-    overseas: (await db.getLatestMarketRegimeSnapshot('overseas').catch(() => null))?.regime || null,
+    crypto: (await getLatestRegimeSnapshotForRuntimeMarket('crypto'))?.regime || null,
+    domestic: (await getLatestRegimeSnapshotForRuntimeMarket('domestic'))?.regime || null,
+    overseas: (await getLatestRegimeSnapshotForRuntimeMarket('overseas'))?.regime || null,
   };
   const reflexivePortfolioState = analyzeReflexivePortfolioState({
     positions,
@@ -1436,8 +1452,8 @@ export async function reevaluateOpenPositions({
     let signalRefreshResult = null;
     let signalRefreshRow = null;
     const regimeMarket = getPositionRuntimeMarket(position.exchange);
-    const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
-    const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
+    const regimeSnapshot = await getLatestRegimeSnapshotForRuntimeMarket(regimeMarket);
+    const regimeKey = regimeSnapshot?.market || regimeMarket;
     const rawExternalEvidenceSummary = monitorAgentPlan.externalEvidenceEnabled
       ? await buildEvidenceSummaryForAgent({
           symbol: position.symbol,
