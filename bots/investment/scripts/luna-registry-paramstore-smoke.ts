@@ -158,10 +158,48 @@ async function main() {
   });
   assert.ok(registryPreservation.applied >= 1);
 
-  const oldDate = new Date(Date.now() - 35 * 86_400_000).toISOString();
+  const assessmentNow = '2026-06-19T00:00:00.000Z';
+  const oldDate = new Date(Date.parse(assessmentNow) - 35 * 86_400_000).toISOString();
+  const recentDate = new Date(Date.parse(assessmentNow) - 7 * 86_400_000).toISOString();
   const evaluation = evaluateRegistryRows([
     {
-      component: 'mapek',
+      component: 'metrics-only',
+      current_mode: 'shadow',
+      target_mode: 'advisory',
+      promotion_criteria: { metrics: ['availability'] },
+      sample_count: 99,
+      status: 'proposed',
+      registered_at: oldDate,
+    },
+    {
+      component: 'sample-accumulating',
+      current_mode: 'shadow',
+      target_mode: 'supervised_l4',
+      promotion_criteria: { minTrades: 30 },
+      sample_count: 3,
+      status: 'active',
+      registered_at: oldDate,
+    },
+    {
+      component: 'duration-accumulating',
+      current_mode: 'shadow',
+      target_mode: 'supervised_l4',
+      promotion_criteria: { minTrades: 30, durationWeeks: 4 },
+      sample_count: 31,
+      status: 'active',
+      registered_at: recentDate,
+    },
+    {
+      component: 'evidence-pending',
+      current_mode: 'shadow',
+      target_mode: 'supervised_l4',
+      promotion_criteria: { minTrades: 30, durationWeeks: 4, readyForPromotion: true },
+      sample_count: 31,
+      status: 'active',
+      registered_at: oldDate,
+    },
+    {
+      component: 'stalled-placeholder',
       current_mode: 'env',
       target_mode: 'autonomous_loop_frame',
       promotion_criteria: { placeholder: true },
@@ -170,29 +208,40 @@ async function main() {
       registered_at: oldDate,
     },
     {
-      component: 'rl-policy-shadow',
+      component: 'halt-recommended',
       current_mode: 'shadow',
-      target_mode: 'supervised_l4',
-      promotion_criteria: { minTrades: 30, readyForPromotion: true },
-      sample_count: 31,
+      target_mode: 'retired',
+      promotion_criteria: { haltRecommended: true },
+      sample_count: 1,
       status: 'active',
-      registered_at: oldDate,
+      registered_at: recentDate,
     },
-    {
-      component: 'shadow-unvalidated',
-      current_mode: 'shadow',
-      target_mode: 'supervised_l4',
-      promotion_criteria: { minTrades: 30, shadow_unvalidated_passthrough: true },
-      sample_count: 3,
-      status: 'active',
-      registered_at: new Date().toISOString(),
-    },
-  ], { proposalLimit: 1 });
+  ], { proposalLimit: 1, now: assessmentNow });
   assert.equal(evaluation.proposals.length, 2);
   assert.equal(evaluation.notifyNow.length, 1);
   assert.equal(evaluation.deferred.length, 1);
-  assert.ok(evaluation.proposals.some((item) => item.type === 'stalled_report'));
-  assert.ok(evaluation.proposals.some((item) => item.type === 'promotion_proposal'));
+  assert.deepEqual(evaluation.proposals.map((item) => item.type).sort(), ['halt_proposal', 'stalled_report']);
+  assert.equal(evaluation.evaluated.some((item) => item.proposal?.type === 'promotion_proposal'), false);
+  const assessmentByComponent = Object.fromEntries(evaluation.evaluated.map((item) => [item.component, item]));
+  assert.equal(assessmentByComponent['metrics-only'].proposal.type, 'measurement_only');
+  assert.equal(assessmentByComponent['metrics-only'].status, 'proposed');
+  assert.equal(assessmentByComponent['sample-accumulating'].proposal.type, 'accumulating');
+  assert.equal(assessmentByComponent['sample-accumulating'].proposal.gate, 'sample');
+  assert.equal(assessmentByComponent['duration-accumulating'].proposal.type, 'accumulating');
+  assert.equal(assessmentByComponent['duration-accumulating'].proposal.gate, 'duration');
+  assert.equal(assessmentByComponent['evidence-pending'].proposal.type, 'evidence_pending');
+  assert.equal(assessmentByComponent['evidence-pending'].status, 'active');
+  assert.equal(assessmentByComponent['stalled-placeholder'].proposal.type, 'stalled_report');
+  assert.equal(assessmentByComponent['stalled-placeholder'].status, 'stalled');
+  assert.equal(assessmentByComponent['halt-recommended'].proposal.type, 'halt_proposal');
+  assert.equal(assessmentByComponent['halt-recommended'].status, 'halted');
+  assert.deepEqual(evaluation.assessmentSummary, {
+    measurementOnly: 1,
+    accumulating: 2,
+    evidencePending: 1,
+    stalled: 1,
+    halt: 1,
+  });
 
   let calibrationCalled = 0;
   let alphaCalled = 0;

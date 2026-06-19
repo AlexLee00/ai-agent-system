@@ -35,6 +35,9 @@ import {
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
 export const DEFAULT_PROPOSAL_LIMIT = 2;
+const SAMPLE_GATE_KEYS = Object.freeze(['minSamplesPerFamilyRegime', 'minSignalsPerFamily', 'minTrades', 'minSamples']);
+const NOTIFY_TYPES = Object.freeze(['halt_proposal', 'stalled_report']);
+const PERSISTABLE_STATUSES = Object.freeze(['active', 'stalled', 'proposed', 'promoted', 'halted']);
 
 const SAMPLE_COUNT_SQL = Object.freeze({
   'phase-a-prediction-15min': `SELECT COUNT(*)::int AS count FROM luna_analysis_prediction_phase_a_logs`,
@@ -97,13 +100,54 @@ function componentNeedsStalledReport(row: any, now = new Date()) {
   return criteria.placeholder === true && ageDays(row, now) >= 28;
 }
 
+function roundedAgeDays(row: any, now = new Date()) {
+  return Math.round(ageDays(row, now) * 10) / 10;
+}
+
+function resolveSampleGateKey(criteria: any = {}) {
+  return SAMPLE_GATE_KEYS.find((key) => Object.prototype.hasOwnProperty.call(criteria, key)) || null;
+}
+
+function normalizeRegistryStatus(status: any) {
+  const raw = String(status || '').trim();
+  return PERSISTABLE_STATUSES.includes(raw) ? raw : 'active';
+}
+
+function statusForProposal(row: any, proposal: any) {
+  if (proposal?.type === 'halt_proposal') return 'halted';
+  if (proposal?.type === 'stalled_report') return 'stalled';
+  // CODEX-1 assessment states are derived JSON only. Do not persist
+  // measurement_only/accumulating/evidence_pending into the constrained status column.
+  return normalizeRegistryStatus(row.status);
+}
+
+function buildAssessmentSummary(evaluated: any[] = []) {
+  const summary = {
+    measurementOnly: 0,
+    accumulating: 0,
+    evidencePending: 0,
+    stalled: 0,
+    halt: 0,
+  };
+  for (const row of evaluated) {
+    const type = row?.proposal?.type;
+    if (type === 'measurement_only') summary.measurementOnly += 1;
+    else if (type === 'accumulating') summary.accumulating += 1;
+    else if (type === 'evidence_pending') summary.evidencePending += 1;
+    else if (type === 'stalled_report') summary.stalled += 1;
+    else if (type === 'halt_proposal') summary.halt += 1;
+  }
+  return summary;
+}
+
 function proposalForRow(row: any, now = new Date()) {
   const sampleCount = Number(row.sample_count ?? row.sampleCount ?? 0);
   const criteria = toJson(row.promotion_criteria || row.promotionCriteria, {});
+  const component = row.component;
   if (criteria.haltRecommended === true) {
     return {
       type: 'halt_proposal',
-      component: row.component,
+      component,
       priority: 'urgent',
       evidence: { sampleCount, criteria },
       recommendation: 'halt_or_redesign_shadow_component',
@@ -112,60 +156,135 @@ function proposalForRow(row: any, now = new Date()) {
   if (componentNeedsStalledReport(row, now)) {
     return {
       type: 'stalled_report',
-      component: row.component,
+      component,
       priority: 'normal',
       evidence: {
         sampleCount,
-        ageDays: Math.round(ageDays(row, now) * 10) / 10,
+        ageDays: roundedAgeDays(row, now),
         criteria,
       },
       recommendation: 'review_or_refine_shadow_design',
     };
   }
-  if (criteria.readyForPromotion === true && criteria.minTrades && sampleCount >= Number(criteria.minTrades)) {
+  const sampleKey = resolveSampleGateKey(criteria);
+  if (!sampleKey) {
     return {
-      type: 'promotion_proposal',
-      component: row.component,
-      priority: 'normal',
-      evidence: { sampleCount, criteria },
-      recommendation: `consider_${row.target_mode || row.targetMode || 'next_mode'}`,
+      type: 'measurement_only',
+      component,
+      reason: 'no_promotion_gate',
+      criteriaKeys: Object.keys(criteria),
+      sampleCount,
     };
   }
-  return null;
+  const threshold = Number(criteria[sampleKey]);
+  if (sampleCount < threshold) {
+    return {
+      type: 'accumulating',
+      component,
+      gate: 'sample',
+      sampleKey,
+      sampleCount,
+      threshold,
+    };
+  }
+  const durationWeeks = criteria.durationWeeks == null ? null : Number(criteria.durationWeeks);
+  const requiredDays = durationWeeks == null ? null : durationWeeks * 7;
+  const currentAgeDays = roundedAgeDays(row, now);
+  if (requiredDays != null && ageDays(row, now) < requiredDays) {
+    return {
+      type: 'accumulating',
+      component,
+      gate: 'duration',
+      sampleKey,
+      sampleCount,
+      threshold,
+      ageDays: currentAgeDays,
+      requiredDays,
+    };
+  }
+  // Performance gates such as expectancy, drawdown, IC, and C7 validation are CODEX-2 scope.
+  // CODEX-1 never emits promotion_proposal from sample/duration alone.
+  return {
+    type: 'evidence_pending',
+    component,
+    sampleKey,
+    sampleCount,
+    threshold,
+    note: 'awaiting_performance_eval_codex2',
+  };
 }
 
-export function evaluateRegistryRows(rows: any[] = [], options: any = {}) {
-  const now = options.now ? new Date(options.now) : new Date();
-  const proposalLimit = Math.max(1, Number(options.proposalLimit || DEFAULT_PROPOSAL_LIMIT));
-  const evaluated = rows.map((row) => {
-    const proposal = proposalForRow(row, now);
-    const nextStatus = proposal?.type === 'stalled_report'
-      ? 'stalled'
-      : proposal?.type === 'promotion_proposal'
-        ? 'proposed'
-        : proposal?.type === 'halt_proposal'
-          ? 'halted'
-          : ['promoted', 'halted'].includes(String(row.status || ''))
-            ? row.status
-            : 'active';
-    return {
-      ...row,
-      status: nextStatus,
-      lastEvaluatedAt: now.toISOString(),
-      proposal,
-    };
-  });
-  const proposals = evaluated.map((row) => row.proposal).filter(Boolean);
+function shouldNotifyProposal(proposal: any) {
+  return proposal && NOTIFY_TYPES.includes(proposal.type);
+}
+
+function notificationProposals(evaluated: any[] = []) {
+  return evaluated.map((row) => row.proposal).filter(shouldNotifyProposal);
+}
+
+function assessmentStatusForProposal(proposal: any) {
+  return proposal?.type || 'active';
+}
+
+function proposalForStatus(row: any, proposal: any) {
+  if (proposal) return proposal;
+  return {
+    type: 'measurement_only',
+    component: row.component,
+    reason: 'no_assessment',
+    criteriaKeys: [],
+    sampleCount: Number(row.sample_count ?? row.sampleCount ?? 0),
+  };
+}
+
+function evaluatedRowWithAssessment(row: any, now: Date) {
+  const proposal = proposalForRow(row, now);
+  const effectiveProposal = proposalForStatus(row, proposal);
+  return {
+    ...row,
+    status: statusForProposal(row, effectiveProposal),
+    assessmentStatus: assessmentStatusForProposal(effectiveProposal),
+    lastEvaluatedAt: now.toISOString(),
+    proposal: effectiveProposal,
+  };
+}
+
+function buildRegistryEvaluation(rows: any[] = [], now: Date) {
+  return rows.map((row) => evaluatedRowWithAssessment(row, now));
+}
+
+function proposalLimitValue(options: any = {}) {
+  return Math.max(1, Number(options.proposalLimit || DEFAULT_PROPOSAL_LIMIT));
+}
+
+function deferredProposals(proposals: any[] = [], proposalLimit = DEFAULT_PROPOSAL_LIMIT) {
+  return proposals.slice(proposalLimit);
+}
+
+function immediateProposals(proposals: any[] = [], proposalLimit = DEFAULT_PROPOSAL_LIMIT) {
+  return proposals.slice(0, proposalLimit);
+}
+
+function registryEvaluationResult(evaluated: any[] = [], now: Date, options: any = {}) {
+  const proposalLimit = proposalLimitValue(options);
+  const proposals = notificationProposals(evaluated);
   return {
     ok: true,
     now: now.toISOString(),
     total: evaluated.length,
     proposals,
-    notifyNow: proposals.slice(0, proposalLimit),
-    deferred: proposals.slice(proposalLimit),
+    notifyNow: immediateProposals(proposals, proposalLimit),
+    deferred: deferredProposals(proposals, proposalLimit),
     evaluated,
     proposalLimit,
+    assessmentSummary: buildAssessmentSummary(evaluated),
   };
+}
+
+export function evaluateRegistryRows(rows: any[] = [], options: any = {}) {
+  const now = options.now ? new Date(options.now) : new Date();
+  const evaluated = buildRegistryEvaluation(rows, now);
+  return registryEvaluationResult(evaluated, now, options);
 }
 
 async function loadRegistryRows(queryFn = db.query) {
