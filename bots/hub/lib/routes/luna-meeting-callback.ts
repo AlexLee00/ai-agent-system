@@ -80,16 +80,26 @@ async function loadMeetingDecisionActions(projectRoot = env.PROJECT_ROOT) {
   return import(pathToFileURL(modulePath).href);
 }
 
+function validateLunaMeetingCallbackEnvelope(req, source = process.env) {
+  return validateLunaLiveFireCallbackEnvelope(req, {
+    ...source,
+    HUB_CONTROL_APPROVAL_CHAT_ID: '',
+    TELEGRAM_GROUP_ID: '',
+  });
+}
+
 async function lunaMeetingCallbackRoute(req, res) {
   const parsedCallback = parseLunaMeetingCallbackData(callbackDataFromReq(req));
   if (!parsedCallback.ok) return res.status(400).json({ ok: false, error: parsedCallback.error });
   const callbackQueryId = callbackQueryIdFromReq(req);
 
-  const envelope = validateLunaLiveFireCallbackEnvelope(req);
+  const envelope = validateLunaMeetingCallbackEnvelope(req);
   if (!envelope.ok) {
     await answerMeetingCallbackQuery(callbackQueryId, '회의실 버튼 처리 권한을 확인할 수 없습니다.');
     return res.status(envelope.status).json({ ok: false, error: envelope.error });
   }
+
+  const callbackAnswer = await answerMeetingCallbackQuery(callbackQueryId, '회의실 버튼 처리 중입니다.');
 
   try {
     const { applyMeetingDecisionAction } = await loadMeetingDecisionActions();
@@ -105,10 +115,6 @@ async function lunaMeetingCallbackRoute(req, res) {
       },
     });
     const actionText = parsedCallback.action === 'confirm' ? '확정됨' : '보류됨';
-    const callbackAnswer = await answerMeetingCallbackQuery(
-      callbackQueryId,
-      result.idempotent ? `이미 처리됨: ${actionText}` : actionText,
-    );
     return res.status(200).json({
       ok: true,
       status: result.idempotent ? `already_${result.logicalStatus}` : `meeting_decision_${result.logicalStatus}`,
@@ -135,6 +141,7 @@ module.exports = {
   CALLBACK_PREFIX,
   parseLunaMeetingCallbackData,
   answerMeetingCallbackQuery,
+  validateLunaMeetingCallbackEnvelope,
   loadMeetingDecisionActions,
   lunaMeetingCallbackRoute,
 };

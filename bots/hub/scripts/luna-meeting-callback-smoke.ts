@@ -8,6 +8,7 @@ const { resolveHubCallbackTarget } = require('../lib/telegram/callback-router.ts
 const {
   parseLunaMeetingCallbackData,
   answerMeetingCallbackQuery,
+  validateLunaMeetingCallbackEnvelope,
 } = require('../lib/routes/luna-meeting-callback.ts');
 const {
   validateLunaLiveFireCallbackEnvelope,
@@ -74,6 +75,12 @@ async function main() {
   assert.equal(validateLunaLiveFireCallbackEnvelope(makeReq({ actorId: '999' }), env).ok, false);
   assert.equal(validateLunaLiveFireCallbackEnvelope(makeReq({ actorId: '999', nested: true }), env).ok, false);
   assert.equal(validateLunaLiveFireCallbackEnvelope(makeReq({ secret: 'wrong-secret' }), env).ok, false);
+
+  const meetingFromTopic = validateLunaMeetingCallbackEnvelope(makeReq({ chatId: '-100999' }), env);
+  assert.equal(meetingFromTopic.ok, true);
+  assert.equal(meetingFromTopic.actor.actorId, '123');
+  assert.equal(validateLunaMeetingCallbackEnvelope(makeReq({ actorId: '999', chatId: '-100999' }), env).ok, false);
+  assert.equal(validateLunaMeetingCallbackEnvelope(makeReq({ secret: 'wrong-secret', chatId: '-100999' }), env).ok, false);
 
   const answerCalls = [];
   const answerResult = await answerMeetingCallbackQuery('fixture-callback-nested', '확정됨'.repeat(80), {

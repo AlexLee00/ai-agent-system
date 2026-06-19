@@ -37,6 +37,11 @@ type TelegramUpdate = {
   message?: TelegramMessage;
 };
 
+type BotTarget = {
+  key: string;
+  token: string;
+};
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -63,17 +68,32 @@ function readSecrets(): Record<string, Record<string, string>> {
   }
 }
 
-function getBotToken(): string {
+function addBotTarget(targets: BotTarget[], seen: Set<string>, key: string, token: unknown): void {
+  const normalized = String(token || '').trim();
+  if (!normalized || seen.has(normalized)) return;
+  targets.push({ key, token: normalized });
+  seen.add(normalized);
+}
+
+function getBotTargets(): BotTarget[] {
   const store = readSecrets();
-  return (
-    store?.darwin?.telegram_bot_token ||
-    store?.telegram?.darwin_bot_token ||
-    process.env.DARWIN_TELEGRAM_BOT_TOKEN ||
-    store?.telegram?.bot_token ||
-    store?.reservation?.telegram_bot_token ||
-    process.env.TELEGRAM_BOT_TOKEN ||
-    ''
+  const targets: BotTarget[] = [];
+  const seen = new Set<string>();
+
+  addBotTarget(
+    targets,
+    seen,
+    'telegram',
+    store?.telegram?.bot_token || store?.reservation?.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN,
   );
+  addBotTarget(
+    targets,
+    seen,
+    'darwin',
+    store?.darwin?.telegram_bot_token || store?.telegram?.darwin_bot_token || process.env.DARWIN_TELEGRAM_BOT_TOKEN,
+  );
+
+  return targets;
 }
 
 function getHubToken(): string {
@@ -84,20 +104,39 @@ function getControlCallbackSecret(): string {
   return String(process.env.HUB_CONTROL_CALLBACK_SECRET || '').trim();
 }
 
-function readOffset(): number {
+function readOffset(targetKey: string): number {
   try {
-    const data = JSON.parse(fs.readFileSync(OFFSET_FILE, 'utf8')) as { offset?: number };
-    return Number(data.offset || 0);
+    const data = JSON.parse(fs.readFileSync(OFFSET_FILE, 'utf8')) as { offset?: number; offsets?: Record<string, number> };
+    const scopedOffset = Number(data.offsets?.[targetKey] || 0);
+    if (Number.isFinite(scopedOffset) && scopedOffset > 0) return scopedOffset;
+    const legacyOffset = Number(data.offset || 0);
+    return Number.isFinite(legacyOffset) && legacyOffset > 0 ? legacyOffset : 0;
   } catch {
     return 0;
   }
 }
 
-function saveOffset(offset: number): void {
+function readAllOffsets(): Record<string, number> {
+  try {
+    const data = JSON.parse(fs.readFileSync(OFFSET_FILE, 'utf8')) as { offset?: number; offsets?: Record<string, number> };
+    const offsets = data.offsets && typeof data.offsets === 'object' ? { ...data.offsets } : {};
+    if (Object.keys(offsets).length === 0 && Number(data.offset || 0) > 0) {
+      offsets.telegram = Number(data.offset || 0);
+    }
+    return offsets;
+  } catch {
+    return {};
+  }
+}
+
+function saveOffset(targetKey: string, offset: number): void {
   fs.mkdirSync(path.dirname(OFFSET_FILE), { recursive: true });
+  const offsets = readAllOffsets();
+  offsets[targetKey] = Number(offset || 0);
   const payload = JSON.stringify(
     {
-      offset: Number(offset || 0),
+      offset: Math.max(0, ...Object.values(offsets).map((value) => Number(value || 0))),
+      offsets,
       updated_at: new Date().toISOString(),
     },
     null,
@@ -271,39 +310,51 @@ async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> 
 }
 
 async function pollLoop(): Promise<void> {
-  const botToken = getBotToken();
-  if (!botToken) {
+  const botTargets = getBotTargets();
+  if (botTargets.length === 0) {
     throw new Error('telegram bot token missing');
   }
 
-  await ensurePollingAvailable(botToken);
+  for (const target of botTargets) {
+    await ensurePollingAvailable(target.token);
+  }
 
-  let offset = readOffset();
-  logInfo(`시작 (offset=${offset})`);
-  let lastHeartbeatAt = 0;
+  const offsets = Object.fromEntries(botTargets.map((target) => [target.key, readOffset(target.key)]));
+  logInfo(`시작 (bots=${botTargets.map((target) => target.key).join(',')}, offsets=${JSON.stringify(offsets)})`);
+  const lastHeartbeatAt = Object.fromEntries(botTargets.map((target) => [target.key, 0]));
 
   while (true) {
-    try {
-      const updates = await getUpdates(botToken, offset);
-      const now = Date.now();
-      if (updates.length > 0 || now - lastHeartbeatAt >= POLL_HEARTBEAT_MS) {
-        logInfo(`poll ok (updates=${updates.length}, offset=${offset})`);
-        lastHeartbeatAt = now;
-      }
-      for (const update of updates) {
-        if (update.callback_query) {
-          await forwardCallback(update.callback_query);
+    for (const target of botTargets) {
+      try {
+        let offset = offsets[target.key] || 0;
+        const updates = await getUpdates(target.token, offset);
+        const now = Date.now();
+        if (updates.length > 0 || now - (lastHeartbeatAt[target.key] || 0) >= POLL_HEARTBEAT_MS) {
+          logInfo(`poll ok bot=${target.key} (updates=${updates.length}, offset=${offset})`);
+          lastHeartbeatAt[target.key] = now;
         }
-        if (update.message) {
-          await forwardMasterMessage(update.message);
+        for (const update of updates) {
+          try {
+            if (update.callback_query) {
+              await forwardCallback(update.callback_query);
+            }
+            if (update.message) {
+              await forwardMasterMessage(update.message);
+            }
+          } catch (error) {
+            const err = error as Error;
+            logError(`update 처리 실패 bot=${target.key} update=${update.update_id || 'unknown'}: ${err.message}`, err);
+          } finally {
+            offset = Number(update.update_id || 0) + 1;
+            offsets[target.key] = offset;
+            saveOffset(target.key, offset);
+          }
         }
-        offset = Number(update.update_id || 0) + 1;
-        saveOffset(offset);
+      } catch (error) {
+        const err = error as Error;
+        logError(`에러 bot=${target.key}: ${err.message}`, err);
+        await sleep(RETRY_DELAY_MS);
       }
-    } catch (error) {
-      const err = error as Error;
-      logError(`에러: ${err.message}`, err);
-      await sleep(RETRY_DELAY_MS);
     }
   }
 }

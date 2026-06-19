@@ -296,3 +296,111 @@
 - ⑤ Stage A 목표 = **4주 · 전략군별 신호 30+ · 가상 E가 LIVE 대비 우월** — C15 등록 시 기준으로 확정.
 - ⑥ C13 분석가 ablation = **P3 유지**(데이터 누적 후).
 **다음 작업**: 1. P0 CODEX(`docs/codex/CODEX_LUNA_P0_BATCH.md`) 작성 → 코덱스 실행 → 메티 독립 검증 → 마스터 커밋. 2. P1-1(C15 레지스트리+C17 파라미터 스토어) CODEX. 3. C1~C4 CODEX.
+
+
+---
+
+## 8. 현황 정밀 분석 (2026-06-19 메티 — 구현 가능 + 데이터 병목 + 생성 vs 실거래)
+> 상세 근거·쿼리: `LUNA_OPTIMAL_REDESIGN_TRACKER.md` 2026-06-19 섹션 3종 참조
+
+### 8-1. 구현 상태 전수 맵
+- **완료·가동**: P0 6/6 · P1 전부(C1 게이트·C2 레짐·C3 전략군·C4 사전게이트·C15 레지스트리·C17 파라미터 스토어) · 회의실 전부 · ALPHA · P2 C7 전면 · TOSS A~D · ET-A/C/D · C8 실가동
+- **지금 구현 가능(데이터 무관·자산 존재)**: C17 제약 집행 강화(S·V-O 대비) · C14 btc_dominance/vix_term_structure/put_call 소스 연결(M) · C10 워치리스트 통합(M·near-miss 재사용)
+- **부분 가능(Stage/선행)**: C6 LLM 강등(Stage B) · C9 add(P3) · C13 재구성(P3)
+- **데이터 대기**: C5 · C8 30거래 · ALPHA R5/R6 · ET-B · ET-D · promotion(evidence 1)
+- **마스터 승인/지시**: TOSS-E · argona 딥서칭
+
+### 8-2. 데이터 병목 진단 — "데이터 부족"은 시간 문제 아니라 구조적 병목
+- **근원**: crypto 지속 bear 레짐(bull 확률 1~4%) + 추세 추종(turtle/testah)만 구현 → 전략군 신호 8건 중 7건 matched=false(레짐 불일치·정확 동작) → C8 outcome 1·ET-D 0·C5 부족(전부 하류 연쇄).
+- **진짜 병목**: bear/range장 전략군(레인지 v1.1 WB 더블 볼린저·defensive·숏) 미구현 → 하락/횡보장 진입 기회 0.
+
+### 8-3. 생성 데이터 vs 실거래 데이터 — 두 별개 체계·정렬 0 (충격)
+- **재설계 shadow**(C3 turtle/testah=추세) **≠ 실거래**(unified-analyst·strategy-router → momentum_rotation·mean_reversion). signal_id 매칭 **0건**.
+- **방향 불일치**: 실거래 전략군별 순익 — momentum_rotation +$1,786 · mean_reversion +$1,401 · **trend_following −$20 · breakout −$4(손실)**. 재설계가 미는 추세는 실거래 손실, 수익원은 재설계 부재.
+- **실거래 전 레짐 수익**: trending_bull +$1,763 · trending_bear +$875 · ranging +$505. binance 691건·+$3,148·L4 autotune(post +$3,026 vs pre +$123).
+
+### 8-4. 미해결 핵심 의문 → 8-5에서 규명
+백테스트 우수했던 turtle/testah가 실거래 trend_following에서 손실인 **근본 원인**. ⚠️ 단 거래전략은 **페이즈별 대규모 업데이트**로 일관적이지 않음 → 단순 전략별 집계는 오도 가능. **기간별×전략별 데이터를 연결성 있게 분석**(업데이트 히스토리 ↔ 수익/손실 상관)해야 진짜 원인 규명 가능. [분석 진행 중]
+
+
+### 8-5. 전체 거래 데이터 기간별×전략별 정밀 분석 — 손익 히스토리 상관 (2026-06-19 메티)
+> 776건(2026-03-12~06-19) Python 분석. USD 환산(binance/overseas USD·kis KRW÷1350). **마스터 통찰 입증: 거래전략은 페이즈별 대규모 업데이트로 일관성 없음 → 기간별 분리 필수.**
+
+**★ autotune 전환(2026-04-10)이 손익 변곡점**:
+- **l4_pre_autotune**(3/11~4/24·278건): **−$735** — 국내 defensive_rotation 손실(−$818)이 주범. top 손실 6건 중 5건이 국내 주식 defensive(force_exit·orphan_cleanup·journal_reconciled_sell = **운영 미숙·정리거래**).
+- **l4_post_autotune**(4/10~6/18·413건): **+$3,017** — crypto momentum_rotation(+$1,663)·mean_reversion(+$1,429). **autotune의 핵심 = mean_reversion 활성화(17건→151건)**.
+
+**수익의 시장 의존성(중요)**: 4/27~5/03 단 1주에 **+$2,243 집중**(crypto 알트 랠리·PENGU/PUMP/ORCA/AVNT). 나머지 13주는 소폭 손익(−$33~+$222). → **수익 지속성 불확실**(특정 국면 의존·반복 가능성 미검증).
+
+**전략별 USD 순익(전 기간)**: momentum_rotation +$1,786 · mean_reversion +$1,401 · defensive_rotation −$782(국내 pre) · trend_following −$20(17건) · breakout −$4(2건) · equity_swing −$59.
+
+**★ 백테스트 vs 실거래 의문 — 최종 답**:
+- "추세 추종(trend_following/breakout) 손실" 결론은 **표본 17+2건·−$24로 통계 무의미** → **단정 철회**. 백테스트 우수성을 실거래로 반증할 표본 자체가 부족.
+- 진짜 손익 동인: ①pre 국내 defensive 운영 미숙 손실(force_exit·orphan) ②post crypto momentum/mean_reversion 수익(autotune의 mean_reversion 활성화 + 4월 말 알트 랠리 포착).
+- **재설계 시사**: C3에 **mean_reversion(레인지) 편입이 핵심** — autotune 실거래가 mean_reversion 수익성을 입증(+$1,429). 추세(turtle/testah)는 실거래 검증 표본 부족 → 소액 paper-mirror/shadow 검증 후 판단.
+
+**일관성 결여 정량 확인**: 전략 믹스가 페이즈마다 급변(pre: momentum 227/defensive 34 → post: momentum 168/mean_reversion 151/defensive 49). **단순 전략별 집계는 페이즈 교란으로 오도** — 모든 성과 분석은 기간(페이즈)별 분리 필수. 추후 autotune류 대규모 업데이트는 trade_journal에 버전 태그 권고(현 autonomy_phase가 부분 대용).
+
+
+### 8-6. 기존 실거래 전략 로직 vs 재설계 C3 (2026-06-19 메티)
+- **기존(실거래 수익원)**: `unified-analyst`(291줄 — 종합 스코어링: phaseA regime/signals + fundamental + sentiment → calcConfidence → scoreToSignal) + `strategy-router`(502줄 — 라우팅) + `strategy-family-classifier`(329줄 — 문자열 정규화: momentum→momentum_rotation, mean/reversion→mean_reversion). **다요소(기술+펀더멘털+감성) 종합 판단**.
+- **재설계 C3**: 순수 기술 룰(turtle 20/10 돌파·2ATR·SMA200 / testah 5/25/75 정배열·재돌파 / 레짐 matched). 단일 차원·명시적·검증 가능하나 실거래 미적용(shadow only).
+- **차이/시사**: 기존이 더 종합적(펀더·감성 포함)이라 실거래 수익(momentum +$1,786·mean_reversion +$1,401). 재설계 룰은 투명·백테스트 가능하나 실거래 검증 표본 부족(trend_following 17건). **편입 방향**: ①C3에 mean_reversion 룰 신설(실거래가 수익성 입증) ②기존 종합 스코어링의 mean_reversion/momentum 진입 조건을 C3 룰로 역추출·shadow 비교 ③단 기존 sentiment/fundamental 의존부는 C6(LLM 결정권 박탈)·C5(스코어 융합) 원칙과 조율. ※autotune이 손익을 가른 핵심 메커니즘(mean_reversion 활성화 17→151)의 파라미터 변화 정밀 분석은 후속 과제.
+
+
+### 8-7. ★동적 전략 선택 — 기존 인프라 발견 + 재설계 방향 재정의 (2026-06-19 메티)
+> **마스터 철학: 시스템은 다양한 전략을 동적으로 최적 선택·적용하는 유연성을 가져야 한다.** 이 관점으로 재분석한 결과 — 핵심 인프라가 이미 존재.
+
+**★ 기존 시스템에 이미 레짐별 동적 전략 선택 인프라 존재(중대 발견)**:
+- `strategy-router.buildRegimeBias(regime, exchange)`(502줄): 레짐별 전략 가중치 동적 부여 — trending_bull(binance){trend_following 0.24·momentum 0.18·breakout 0.14·mean_reversion −0.04} / ranging{mean_reversion 0.24·micro_swing 0.08} / trending_bear{defensive 0.30·mean_reversion 0.10·momentum −0.12}.
+- `regime-weight-learner`(388줄·매일 07:00 `ai.luna.weight-adaptive-tuner-daily-0700`): 레짐별 fusion+signal 가중치 DB 학습. BASE_SIGNAL_WEIGHTS — TRENDING_BULL{momentum 0.35·breakout 0.30·mean_reversion 0.15·defensive 0.20} / TRENDING_BEAR{momentum 0.15·mean_reversion 0.30·defensive 0.40} / RANGING{mean_reversion 0.50·momentum 0.15} / VOLATILE{defensive 0.45}. → `luna_regime_weight_snapshots`·`luna_weight_vector_shadow`.
+
+**★ 실거래 데이터가 동적 가중치 설계를 검증(레짐 × 전략 post_autotune USD)**:
+| 레짐 | 최적 전략(실거래) | 순익 | 기존 가중치 정합 |
+|---|---|---|---|
+| trending_bull | momentum_rotation | +$1,663(167건) | momentum 0.35 ✓ |
+| ranging | mean_reversion | +$532(83건) | mean_reversion 0.50 ✓ |
+| trending_bear | mean_reversion | +$900(65건) | mean_reversion 0.30+defensive 0.40 ✓ |
+| volatile | defensive_rotation | +$60(5건) | defensive 0.45 ✓ |
+→ **기존 레짐별 가중치가 실거래 성과와 정합 = 동적 전략 선택이 실제 작동 중**. momentum은 상승장 전용(ranging/bear 0), mean_reversion은 횡보+하락장 수익 → **단일 전략 불가·레짐 적응 필수** 데이터 확증.
+
+**★ 재설계 방향 재정의(마스터 철학 반영 — 핵심 전환)**:
+- 재설계 C3를 turtle/testah(추세 단일)로 좁히면 **기존 동적 선택을 오히려 후퇴**시킴(상승장만 커버·횡보/하락 무방비).
+- **올바른 방향 = 레짐 적응형 전략 포트폴리오 + 동적 가중**:
+  1. 기존 `regime-weight-learner`의 레짐별 동적 전략 선택을 C2(레짐)→C3(전략군) 파이프라인의 **1급 자산으로 승격**(신설 아닌 재사용·강화).
+  2. C3 전략군을 momentum/mean_reversion/defensive/추세(turtle/testah) **전부 포함**(현 turtle/testah만 → 확충).
+  3. C8 성과 피드백 → 레짐별 가중치 동적 학습 강화(regime-weight-learner + C8 outcome 연결).
+  4. autotune(가중치 학습·07:00)을 C15 승격 게이트·shadow 비교와 연결.
+- 즉 "단일 최적 전략 탐색"이 아니라 **"레짐 적응형 전략 포트폴리오의 동적 가중 최적화"** — autotune이 손익을 가른 메커니즘(레짐별 가중치 재조정)과 정확히 일치하며 마스터 비전과 합치.
+
+**후속 확인 과제**: ①regime-weight-learner 실가동·가중치 학습 현황(luna_regime_weight_snapshots 데이터) ②buildRegimeBias가 재설계 C3 신호 생성에 연결되는지 ③autotune이 학습한 가중치 vs BASE 가중치 차이(무엇을 동적 조정했나).
+
+
+### 8-8. ★자가 학습 루프 이중 단절 — 진단 + 자가발전 수정 설계 (2026-06-19 메티)
+> **trading OS 자가발전의 핵심 결함.** regime-weight-learner는 매일 가동하나 학습이 0(가중치 BASE 영구 고정)이며, 설령 학습돼도 실거래에 반영되지 않음. AI OS 비전(각 팀=자가발전 독립 OS)의 첫 검증 대상에서 자가발전 메커니즘 자체가 끊겨 있음을 발견.
+
+**진단**: `luna_regime_weight_snapshots` 100개 스냅샷 분석 — 4개 레짐(TRENDING_BULL/BEAR·RANGING·VOLATILE) 전부 가중치 변화 0(초기=최신), total_trades 0~1, performance_metric 0.
+
+**원인 1 — 학습 단계 정지(7일 윈도우 × 3건 임계치)**:
+- `fetchRegimeTradeStats(days=7)`: `to_timestamp(exit_time/1000) >= NOW()-'7 days'` → 최근 7일 거래만 조회.
+- `adjustWeightsFromPerformance`: `if (totalTrades < 3) { updated=BASE; continue; }` → 레짐별 3건 미만 시 학습 스킵.
+- 검증(가드 통과 학습가능 거래·레짐별): 7일=ranging 1·bear 1(**전부 스킵**) / 30일=bear 5·ranging 4 학습O·bull 2·volatile 1 스킵 / **90일=bull 151·bear 53·ranging 51·volatile 3(전부 학습O)**.
+- 최근 거래 빈도 한산(6월 주별 12~26건, 거래 집중은 4~5월) → 7일/3건 미달 → 전 레짐 학습 영구 스킵.
+
+**원인 2 — 적용 단계 단절(strategy-router가 학습값 미참조)**:
+- `strategy-router` import = signal·trade-journal-db·external-evidence-ledger뿐 — **학습 모듈(regime-weight-learner·ta-weight-adaptive-tuner) 미import**.
+- DB query 호출 = **0**(SELECT/investment. 미접근) → 학습값 읽을 경로 부재.
+- `buildRegimeBias`(line 62, 레짐별 전략 가중 하드코딩)를 line 306에서 점수 반영 → **snapshot 학습값 어디에도 미반영 확정**.
+- `retrieveAdaptedWeights` 소비처 = learner·tuner·winrate-tracker·스모크뿐(실거래 라우팅 없음).
+
+**결론: 학습해도 안 쓰고(적용 단절), 쓰려 해도 학습이 안 됨(학습 정지) = 자가발전 폐루프 부재.** 현재 "레짐별 동적 전략 선택"은 BASE 하드코딩에 고정(=정적). 8-7에서 발견한 동적 선택 인프라가 실제로는 정지 상태.
+
+**자가발전 수정 설계(루나 trading OS 1순위)**:
+1. **[학습 재가동]** `fetchRegimeTradeStats` 윈도우 7→90일 또는 적응형(임계치 충족까지 확장). 90일이면 전 레짐 학습 즉시 가능(검증완료).
+2. **[적용 연결]** `buildRegimeBias`가 `luna_regime_weight_snapshots` 최신 가중치를 읽어 BASE에 블렌딩(α·learned + (1−α)·base). 학습→실거래 경로 신설.
+3. **[콜드스타트]** 전체 이력 부트스트랩 후 최근 가중 점진 업데이트 — 데이터 적어도 학습 시작(7일 윈도우 콜드스타트 영구정지 방지).
+4. **[자가진단]** 학습 활성도(total_trades·가중치 Δ) 자체 모니터링·경보 — 무징후 정지(현 사실상 학습 0) 자동 감지. **OS는 자기 상태를 알아야 한다.**
+5. **[폐루프 검증]** 학습→적용→성과(C8 feedback)→재학습 사이클 실가동 확인.
+6. **[메타학습]** 윈도우·임계치·learn_rate를 성과로 자가 조정 — 학습의 학습(진정한 self-evolution).
+
+→ **이 자가발전 폐루프 복원이 C2/C3 재설계의 전제 조건.** 폐루프 없이는 "동적 최적 전략 선택"이 정적 BASE에 머무름. AI OS 비전상 루나가 "자가발전하는 독립 trading OS"가 되려면 1~6이 루나 OS의 자가발전 엔진을 구성.

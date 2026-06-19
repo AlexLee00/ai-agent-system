@@ -166,3 +166,64 @@
 - **ET-C 활성화(마스터)**: migration `20260619000006_luna_silent_miss_log` apply + watchdog launchd 생성·활성화 + commit/push → 활성 후 메티가 실 silent miss 감지·회의실 ⑦ 통합 실검증.
 - **ET-D 데이터 대기**: 매핑 가능 포지션(breakout/trend_following→turtle·micro_swing→testah) 진입 시 `luna_strategy_exit_shadow` 누적(현 보유 MEGA=defensive_rotation skip). reevaluator regime 수정 후 실거래 결정 변화 모니터링.
 - (기타 트랙: Hub Week 2·블로 B3·Edu-X/Open DART Phase A 등 메모리 참조)
+
+
+## 2026-06-19 구현 가능 목록 전수 분석 + 데이터 병목 정밀 진단 (메티 세션)
+
+### ET-C 활성화 완료
+migration `20260619000006` 적용·watchdog launchd(`ai.luna.expected-fire-watchdog`·30분) 가동·검증(scanned 0·written 0·placed 0·liveMutation false·회의실 ⑦ 읽기 정상). 현 silent miss 0(시스템 건강).
+
+### 구현 상태 전수 맵
+- **완료·가동**: P0 6/6 · P1 전부(C1 게이트·C2 레짐·C3 전략군·C4 사전게이트·C15 레지스트리·C17 파라미터 스토어) · 회의실 전부(MR·UX·L·수시회의 6트리거) · ALPHA(팩터·paper-mirror) · P2 C7 전면(permutation·CPCV·생존편향) · TOSS A~D · ET-A/C/D · C8 실가동
+- **지금 구현 가능(데이터 무관·자산 존재)**:
+  - **C17 제약 집행 강화**(S): P0-6 감사 결론은 "코드 변경 불필요"지만 권고 후속 미구현 — ①order_rules/paper_mode `block` 단언 smoke ②autonomous runner allowlist(`launchctl setenv`·plist edit·`--force` 차단). V-O 실사고(LLM 제약 우회) 대비 안전 핵심.
+  - **C14 미구성 신호**(M): `luna-market-deployment-gate.ts`의 `vix_term_structure`·`put_call_ratio`·`btc_dominance`가 `not_configured` → 소스 연결로 C1 게이트 신호 완성(US 2/4·crypto 4/5). btc_dominance 우선(공개 API).
+  - **C10 워치리스트 통합**(M): `runtime-luna-near-miss-watchlist.ts` 기존 → 전략군/ALPHA/레짐 후보 단일 뷰(M-6).
+- **부분 가능(Stage/선행 의존)**: C6 LLM 강등(Stage B)·C9 add 액션(P3·실거래)·C13 재구성(P3)
+- **데이터 대기**: C5(ALPHA IC)·C8 30거래(outcome 1)·ALPHA R5/R6·ET-B(armed 6)·ET-D(매핑 포지션)·promotion(evidence 1) — ※아래 병목 진단 참조
+- **마스터 승인/지시**: TOSS-E(S2 micro-live)·argona AI 트레이딩 딥서칭
+
+### 🔬 데이터 병목 정밀 진단 (핵심 — "데이터 부족"의 진짜 원인)
+**시간 문제가 아니라 구조적 병목**:
+- **근원: bear 레짐 + 추세 추종 전략만** — crypto가 6/12~6/19 지속 bear(bull 확률 1~4%·hmm dominant=bear). turtle/testah는 추세 추종(bull 필요) → 전략군 신호 8건 중 **7건 matched=false**(레짐 불일치·**정확한 동작**, 하락장에서 long 안 함), matched=true는 domestic bull 1건뿐.
+- **하류 연쇄**: C8 outcome은 matched=true만 평가 → outcome 1건(win) → 30거래 규율 정체. ET-D도 매핑 포지션 진입 대기. C5도 입력 부족. **전부 레짐 병목의 하류 결과**.
+- **진짜 구조적 병목 = bear/range장 전략군 부재**: C3에 turtle/testah(추세 추종)만 구현, **레인지 룰셋(v1.1 WB 더블 볼린저)·defensive·숏 미구현** → 하락/횡보장에서 진입 기회 0. 추세장만 기다리는 구조.
+- 부차 병목: ALPHA 팩터 2개만 생성(게이트는 ok·생성기 빈도 낮음·후속 확인) · candidate_universe 16종목(domestic 9·overseas 6·crypto 1)이나 crypto 전략군 신호는 binance top-volume 별개 스캔(AVAX·SUI·NEAR 등).
+
+### 💡 데이터 누적 해소책 (권고)
+**레인지/defensive 전략군 추가(C3 v1.1 WB 더블 볼린저)가 데이터 누적의 키** — bear/range장에서 작동할 전략군이 생기면 matched=true 신호 증가 → C8 outcome·ET-D·C5 입력이 연쇄 누적. 단순 시간 대기보다 근본적. 전부 shadow·실발화 0 유지. (대안: crypto 숏 전략·ALPHA 생성기 빈도 점검)
+
+### 다음 진입점 (갱신)
+ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_dominance→C10) ② **레인지 전략군 추가**(데이터 병목 근본 해소) ③ argona 딥서칭(마스터 지시).
+
+
+## 2026-06-19 생성 데이터 vs 실거래 데이터 정밀 대조 분석 (메티·추가 심층)
+
+### 🔬 충격적 발견: 재설계 전략군이 실거래 수익 전략과 정반대·정렬 0
+**두 개의 완전히 별개인 전략 체계가 병존**:
+- **실거래(LIVE)**: `unified-analyst`·`strategy-router`·`strategy-family-classifier`·`regime-weight-learner` 생성 → momentum_rotation·mean_reversion·defensive_rotation. binance 691건 closed·**+$3,148 순익**·L4 autotune.
+- **재설계 shadow**: C3 전략군(turtle_breakout/testah_pullback=추세 추종)·luna_strategy_signals 8건.
+
+**① 방향 불일치(핵심)** — 전략군별 binance 실거래 수익:
+| 전략 | closed | 승률 | 순익 | 재설계 |
+|---|---|---|---|---|
+| momentum_rotation | 395 | 12.4% | **+$1,786** | ❌ 없음 |
+| mean_reversion | 150 | 18.0% | **+$1,401** | ❌ 없음 |
+| trend_following | 17 | 17.6% | **−$20** | ✅ 집중 |
+| breakout | 2 | 0% | **−$4** | ✅ 집중 |
+| defensive_rotation | 48 | 18.8% | −$19 | 부분 |
+→ 재설계가 집중하는 추세 추종(turtle/testah=trend_following/breakout)은 실거래에서 **손실**, 수익원(momentum/mean_reversion)은 재설계에 **부재**.
+
+**② 정렬 0**: trade_journal signal_id 634건 NOT NULL이나 재설계 luna_strategy_signals 매칭 **0건** → 재설계 shadow는 실거래와 완전 별개.
+
+**③ 실거래는 전 레짐에서 수익**: trending_bull +$1,763(414)·trending_bear **+$875**(111)·ranging **+$505**(89)·volatile +$4 → momentum/mean_reversion이 레짐 무관 작동(bear·ranging 포함). ※재설계 turtle/testah가 bear서 matched=false인 것과 대조 — 실거래는 같은 bear장에서 수익 중.
+
+**④ 구성 정밀화**: cleanup 455건=정리거래(journal_reconciled_no_position 331·cutover 56·dust 13 등)·실전략 거래는 execution_origin=strategy 305건. autonomy_phase: **l4_post_autotune +$3,026(394) vs l4_pre_autotune +$123(227)** → autotune 효과 결정적.
+
+### 💡 데이터 병목 해소책 (재정의·근본)
+앞서 "레인지 룰셋 추가"보다 더 근본적: **재설계 C3 전략군을 실거래가 증명한 수익 전략(momentum_rotation·mean_reversion)으로 재정렬**. 이 전략 로직은 이미 `unified-analyst`·`strategy-router`·`strategy-family-classifier`에 구현됨(재사용 자산) → C3 shadow에 편입 시: ①재설계 신호가 실거래와 정렬 ②matched 증가 ③C8 outcome·ET-D·C5 데이터 연쇄 누적 ④shadow 비교(신구 스택)가 비로소 의미. 추세 추종(turtle/testah)만으론 실거래와 영원히 따로 놀고 bear/range장 데이터 0.
+
+### 권고 우선순위 (갱신)
+1. **C3 전략군 재정렬**(momentum/mean_reversion 편입) — 데이터 병목 근본 해소·실거래 정렬. 기존 자산 재사용.
+2. C17 제약 집행 강화(안전·V-O). 3. C14 btc_dominance. 4. C10 워치리스트.
+※주의: 실거래 LIVE(momentum/mean_reversion·+$3,148)는 무중단. 재정렬은 전부 shadow 비교로 검증 후 승격.
