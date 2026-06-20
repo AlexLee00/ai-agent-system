@@ -81,6 +81,27 @@ export async function runLunaFillResolveBackfillSmoke() {
   assert.equal(calls.some((item) => item[0] === 'update'), false, 'dry-run must not update');
   assert.deepEqual(calls.find((item) => item[0] === 'resolve')?.[1]?.orderIds, ['SL-1', 'TP-1']);
 
+  let queriedCandidate = null;
+  const queryPath = await runLunaFillResolveBackfill({
+    dryRun: true,
+    apply: false,
+    sleepMs: 0,
+  }, {
+    query: async (sql, params) => {
+      assert.match(sql, /FROM trade_journal/);
+      assert.equal(params[0], '2026-06-11');
+      return [candidate({ trade_id: 'TRD-QUERY-PATH', entry_size: 2.442 })];
+    },
+    fetchPreviouslyAttributedFillIds: async () => [],
+    resolveFillForClosedJournal: async (input) => {
+      queriedCandidate = input;
+      return resolvedFill();
+    },
+  });
+  assert.equal(queryPath.matched, 1);
+  assert.equal(queriedCandidate.entrySize, 2.442);
+  assert.deepEqual(queriedCandidate.orderIds, ['SL-1', 'TP-1']);
+
   const noGate = await runLunaFillResolveBackfill({
     dryRun: false,
     apply: true,
@@ -195,14 +216,21 @@ export async function runLunaFillResolveBackfillSmoke() {
   const plist = readFileSync(resolve(INVESTMENT_ROOT, 'launchd/ai.luna.ops-scheduler.plist'), 'utf8');
   const env = extractPlistEnvironment(plist);
   assert.equal(env.LUNA_RECONCILE_FILL_RESOLVE_ENABLED, 'true');
+  assert.equal(env.RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED, 'true');
   assert.equal(Object.hasOwn(env, 'LUNA_RECONCILE_FILL_RESOLVE_DRY_RUN'), false);
 
   const drift = buildLaunchdEnvDriftPlan({
     criticalEnvKeysByLabel: {
-      'ai.luna.ops-scheduler': ['LUNA_RECONCILE_FILL_RESOLVE_ENABLED'],
+      'ai.luna.ops-scheduler': [
+        'LUNA_RECONCILE_FILL_RESOLVE_ENABLED',
+        'RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED',
+      ],
     },
     repoEnvByLabel: {
-      'ai.luna.ops-scheduler': { LUNA_RECONCILE_FILL_RESOLVE_ENABLED: 'true' },
+      'ai.luna.ops-scheduler': {
+        LUNA_RECONCILE_FILL_RESOLVE_ENABLED: 'true',
+        RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED: 'true',
+      },
     },
     installedEnvByLabel: {
       'ai.luna.ops-scheduler': {},
@@ -214,9 +242,11 @@ export async function runLunaFillResolveBackfillSmoke() {
     repoPlistPathForLabel: () => '/tmp/repo.plist',
     existsSyncImpl: () => true,
   });
-  assert.equal(drift.length, 1);
+  assert.equal(drift.length, 2);
   assert.equal(drift[0].key, 'LUNA_RECONCILE_FILL_RESOLVE_ENABLED');
   assert.equal(drift[0].criticalEnabledKey, true);
+  assert.equal(drift[1].key, 'RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED');
+  assert.equal(drift[1].criticalEnabledKey, true);
 
   return {
     ok: true,

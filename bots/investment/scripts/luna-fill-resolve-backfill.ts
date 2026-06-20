@@ -106,7 +106,7 @@ function buildCandidateQuery({ since = '2026-06-11', limit = 50 } = {}) {
 async function loadBackfillCandidates({ since = '2026-06-11', limit = 50 } = {}, deps = {}) {
   const queryFn = deps.query || db.query;
   const { sql, params } = buildCandidateQuery({ since, limit });
-  return (await queryFn(sql, params)).map(normalizeCandidate);
+  return await queryFn(sql, params);
 }
 
 async function fetchPreviouslyAttributedFillIds(candidate = {}, deps = {}) {
