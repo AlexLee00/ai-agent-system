@@ -98,6 +98,22 @@ async function main() {
   assert.equal(boundaryPass.matchedQty, 10);
   assert.ok(Math.abs(boundaryPass.pnlAmount - 0.5) < 0.000001);
 
+  const nullEntryValueFallback = await resolveFillForClosedJournal({
+    symbol: 'EDGE/USDT',
+    entryTime: now - 1_000,
+    entrySize: 20,
+    entryPrice: 0.5,
+    entryValue: null,
+    expectedSide: 'sell',
+    orderIds: ['EDGE-TP-NULL-VALUE'],
+    fetchMyTrades: async () => [
+      trade({ id: 'edge-null-entry-value-fill', order: 'EDGE-TP-NULL-VALUE', amount: 20, price: 0.55 }),
+    ],
+  });
+  assert.equal(nullEntryValueFallback.source, 'fetchMyTrades_orderid');
+  assert.equal(nullEntryValueFallback.matchedQty, 20);
+  assert.ok(Math.abs(nullEntryValueFallback.pnlAmount - 1) < 0.000001);
+
   const result = {
     ok: true,
     smoke: 'luna-fill-resolve-guard',
@@ -106,6 +122,7 @@ async function main() {
       qtyOverflowBlock: true,
       normalPass: true,
       boundaryPass: true,
+      nullEntryValueFallback: true,
     },
   };
   if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));

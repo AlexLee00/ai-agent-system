@@ -99,7 +99,8 @@ export async function resolveFillForClosedJournal({
 } = {}) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const expectedQty = num(entrySize, 0);
-  const expectedEntryValue = num(entryValue, expectedQty * num(entryPrice, 0));
+  const rawEntryValue = num(entryValue, 0);
+  const expectedEntryValue = rawEntryValue > 0 ? rawEntryValue : expectedQty * num(entryPrice, 0);
 
   if (paperMode) {
     return { source: 'unresolved', reason: 'paper_mode_skip', symbol: normalizedSymbol, fillCount: 0 };
