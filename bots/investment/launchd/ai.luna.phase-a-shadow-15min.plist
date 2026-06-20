@@ -30,6 +30,8 @@
     <string>true</string>
     <key>LUNA_PHASE_A_INFLUENCE_MODE</key>
     <string>shadow_bias</string>
+    <key>LUNA_LEARNED_BIAS_MODE</key>
+    <string>shadow</string>
   </dict>
   <key>RunAtLoad</key>
   <false/>
