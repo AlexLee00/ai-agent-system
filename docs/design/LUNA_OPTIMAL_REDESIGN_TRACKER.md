@@ -380,3 +380,79 @@ ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_
 - (확인 권장①) settleOpenJournalForSell 체결량 대칭성 소스 확정
 - (확인 권장②) pending-reconcile-ledger:266 경로 = 67건 진입 경로 핀포인트
 - 검토 후 docs/codex/CODEX_LUNA_*.md 프롬프트 작성 → 마스터 승인 → 코덱스 구현
+
+
+---
+
+## 2026-06-20 세션2 — 67건 완전 재규명 + 병목 정밀 분석 (메티)
+
+### §8-16 67건 완전 재규명 (가설 2회 기각)
+- 67건 = **실제 TP/SL 청산 거래**(미체결❌·매도누락❌): profit 9·near_zero 34·loss 21, 전체 ~-$10.6
+- entry_size 전부 양수, exit_value 존재, incident_link `fetchMyTrades...fills=1~7`
+- **근본원인: pending-reconcile-ledger.ts:40 `excludeFromLearning: true`(무조건)** → TP/SL 청산이 학습 제외 → 학습 41% 손실
+- §8-13/8-15 정정: 매수 체결검증은 67건과 무관
+
+### §8-17 1주 손실 원인 진단
+- 1주 장부 -$17.67(normal 2건), reconcile 25건 pnl $0(은폐)
+- **주원인 = 프로세스**: reconcile 25건 exit_value=entry_value 복사, exit_match_source 없음 → 실제 손익 은폐
+- 부원인 = 전략(micro_swing NIGHT -8.5%·BABY -7.2% SL 도달), 시장 = 약세
+
+### §8-18 병목 정밀 분석
+- 청산 경로: reconcile 87%(67) vs 직접매도 13%(10)
+- fill-resolver 미처리: unresolved 36건 평균 195h(8일) 미처리
+- **★최대 병목: `LUNA_RECONCILE_FILL_RESOLVE_ENABLED` plist 미설정(70키 중 없음) → 기본 false → fill-resolver 호출 안 함**
+- ops-scheduler 60초마다 reconcile-open-journals.ts(line 803) 실행하나 fillResolveEnabled=false라 무효
+- 구조병목: reconcile-open-journals open-only(line 451) → closed 재시도 없음
+- resolved 31건(15일 전) 존재 = 과거 활성, 최근 꺼짐
+
+### 다음 진입점
+- **플래그 이력 추적**: LUNA_RECONCILE_FILL_RESOLVE_ENABLED가 왜/언제 꺼졌나(git/plist 이력)
+- 이후 보강: 플래그 활성화 + 과거 36건 백필 + exclude 정책 재검토
+
+
+---
+
+## 2026-06-20 세션2 추가 — fill-resolver 회귀 확정 + 확정 태스크 (§8-20·8-21)
+
+### 핵심 정정
+- **§8-19 전면 정정**: "잊혀진 Phase 2/승인 미완료"가 아니라 **06-10 재배포 drift 회귀**
+  - with_fill 31건 05-28~06-10 정상 활성 → 06-10 23:58 plist 재배포(a145ca869 V2 env 추가 트리거)가 git 미반영 FILL_RESOLVE 키 덮어씀 → 06-19 zero 25건 폭증
+- **§8-18 정정**: "환경변수 미설정"이 아니라 "설정이 재배포로 소실"
+- **§8-16 정정**: 무조건 exclude는 "근본원인"이 아닌 보조 이슈 (1차는 fill-resolver 비활성)
+
+### 의존 7곳 점검 결과
+- v_trades_real_usd = **materialized view**(refresh 필요), 뷰 변경은 git 마이그레이션(20260528000008) 정식 반영(drift 아님)
+- 활성화 영향 대부분 **개선**(손익·학습 정확도↑), 차단 요소 없음 → 활성화 가능
+- 주의: guard-outcome 학습신호 변화 모니터 + smoke 2곳 재검증
+
+### ★확정 태스크 (다음 진입점)
+- **T1 [최우선]** fill-resolver 재활성화 — git plist에 `LUNA_RECONCILE_FILL_RESOLVE_ENABLED=true` 영구 추가(drift 종결) / 선행: dry-run 1회 검증
+- **T2** 과거 백필 — `LUNA_RECONCILE_FILL_RESOLVE_BACKFILL`로 zero 27 + unresolved 36 복원 (T4 선행)
+- **T3** 배포 drift 가드 — launchd-service.ts에 실로드vs git plist env diff 경보
+- **T4** reconcile-open-journals closed 재시도(현재 open-only)
+- **T5** exclude_from_learning 정렬(with_fill 학습 포함)
+- **T6** 활성화 후 모니터(guard-outcome·smoke·daily-pnl)
+
+### 다음 세션 시작점
+→ **T1 dry-run 1회 실행으로 myTrades VWAP 매칭 정확성 검증** → 정확하면 코덱스 프롬프트(CODEX_LUNA_FILL_RESOLVE_REACTIVATE) 작성 → 마스터 승인·배포
+
+
+---
+
+## 2026-06-20 세션2 추가 — 코덱스 구현 + 독립 검증 완료 (§8-23)
+
+### 코덱스 구현 (CODEX_LUNA_FILL_RESOLVE_REACTIVATE_2026-06-20)
+- plist `LUNA_RECONCILE_FILL_RESOLVE_ENABLED=true` + `luna-fill-resolve-backfill.ts`(352줄) + launchd-service drift helper + runtime-migrate critical key + smoke
+
+### 메티 독립 검증 통과
+- 정적 3 Phase ✅ (A: plist 게이트 / B: 대상조회·전환·4중게이트·완전체결만 / C: drift helper·critical key)
+- smoke 하드테스트 ✅ (dryRunMatched/applyUpdated/unresolved/driftDetected 각 1, plist plutil OK)
+- 설계 대비 강화: confirm 토큰·partial_skipped·excludedFillIds
+- check:luna-fill-resolve-reactivate + tsc + git diff --check 통과
+
+### 진행 상태
+- 코드 구현·검증 **완료**. 미적용(마스터 대기): 운영 백필·launchctl reload·git tag
+- ⚠️ dirty 미커밋: LUNA_OPTIMAL_REDESIGN.md·TRACKER.md(이번 분석) — fill-resolve 구현과 함께 커밋 권장
+
+### 다음 진입점
+→ 백필 dry-run으로 **recent 25건 매칭률 확인** → 양호 시 **Phase A reload(마스터)** → with_fill 재등장 검증 → Phase B 백필 apply

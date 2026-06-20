@@ -132,6 +132,63 @@ assert.equal(
 assert.equal(geminiCodeAssistReauthEnvelope.visibility, 'human_action', 'manual reauth must route to human action visibility');
 assert.equal(geminiCodeAssistReauthEnvelope.actionability, 'needs_human', 'manual reauth must not route to auto repair');
 assert.equal(geminiCodeAssistReauthEnvelope.dedupeMinutes, 120, 'manual reauth cooldown must be propagated');
+const claudeCoveredNearExpiryEnvelope = buildOAuthMonitorAlarmEnvelope({
+  level: 3,
+  title: '[Hub OAuth] Claude Code OAuth 재인증 예정',
+  payload: {
+    provider: 'claude-code-oauth',
+    healthy: true,
+    needs_refresh: true,
+    expires_in_hours: 1,
+    refresh: {
+      ok: false,
+      error: 'Refresh token not found or invalid',
+      details: { status: 400 },
+    },
+    reimport: {
+      ok: true,
+      source: 'claude_keychain',
+      expires_in_hours: 0.95,
+    },
+    live_probe: {
+      ok: true,
+      latency_ms: 3414,
+      session_id_present: true,
+    },
+  },
+  cooldownMs: 120 * 60 * 1000,
+});
+assert.equal(claudeCoveredNearExpiryEnvelope.eventType, 'hub-oauth-monitor_work', 'covered Claude near-expiry must not become an auto-repair error');
+assert.equal(claudeCoveredNearExpiryEnvelope.visibility, 'digest', 'covered Claude near-expiry should be digest visibility');
+assert.equal(claudeCoveredNearExpiryEnvelope.actionability, 'none', 'covered Claude near-expiry should not enqueue auto_dev repair');
+const claudeProbeOnlyNearExpiryEnvelope = buildOAuthMonitorAlarmEnvelope({
+  level: 3,
+  title: '[Hub OAuth] Claude Code OAuth 재인증 예정',
+  payload: {
+    provider: 'claude-code-oauth',
+    healthy: true,
+    needs_refresh: true,
+    expires_in_hours: 1,
+    refresh: {
+      ok: false,
+      error: 'Refresh token not found or invalid',
+      details: { status: 400 },
+    },
+    reimport: {
+      ok: false,
+      source: 'claude_keychain',
+      expires_in_hours: 0.95,
+    },
+    live_probe: {
+      ok: true,
+      latency_ms: 3414,
+      session_id_present: true,
+    },
+  },
+  cooldownMs: 120 * 60 * 1000,
+});
+assert.equal(claudeProbeOnlyNearExpiryEnvelope.eventType, 'hub-oauth-monitor_error', 'live probe alone must not cover a near-expiry refresh failure');
+assert.equal(claudeProbeOnlyNearExpiryEnvelope.actionability, 'auto_repair', 'live probe alone should keep near-expiry refresh failure actionable');
 const oauthFlowSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/oauth/oauth-flow.ts'), 'utf8');
 assert.ok(oauthFlowSource.includes('app_EMoamEEZ73f0CkXaXp7hrann'), 'OpenAI Codex OAuth refresh must use the public Codex-compatible client id by default');
 assert.ok(oauthFlowSource.includes('refreshIncludesScope: false'), 'OpenAI Codex OAuth refresh must match Codex-compatible refresh grant and omit scope');

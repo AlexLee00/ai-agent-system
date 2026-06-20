@@ -35,6 +35,23 @@ function canonicalOAuthAlarmTitle(title?: string, payload?: Record<string, unkno
   return String(title || 'oauth_alarm').trim();
 }
 
+function isCoveredNearExpiryOAuth(payload?: Record<string, unknown> | null): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const provider = String(payload.provider || '').trim();
+  if (provider !== 'claude-code-oauth') return false;
+  if (payload.healthy !== true || payload.needs_refresh !== true) return false;
+  if (isOAuthManualReauth(payload)) return false;
+
+  const refresh = payload.refresh && typeof payload.refresh === 'object'
+    ? payload.refresh as Record<string, unknown>
+    : null;
+  const reimport = payload.reimport && typeof payload.reimport === 'object'
+    ? payload.reimport as Record<string, unknown>
+    : null;
+
+  return refresh?.ok === true || reimport?.ok === true;
+}
+
 export function buildOAuthMonitorAlarmEnvelope({
   level,
   title,
@@ -46,7 +63,8 @@ export function buildOAuthMonitorAlarmEnvelope({
   payload?: Record<string, unknown> | null;
   cooldownMs?: number;
 }) {
-  const alarmLevel = Number(level || 2);
+  const requestedLevel = Number(level || 2);
+  const alarmLevel = isCoveredNearExpiryOAuth(payload) ? Math.min(requestedLevel, 2) : requestedLevel;
   const provider = String(payload?.provider || '').trim();
   const team = provider === 'claude-code-oauth' ? 'claude' : 'hub';
   const fromBot = 'hub-oauth-monitor';
@@ -79,5 +97,6 @@ export function buildOAuthMonitorAlarmEnvelope({
 module.exports = {
   buildOAuthMonitorAlarmEnvelope,
   canonicalOAuthAlarmTitle,
+  isCoveredNearExpiryOAuth,
   isOAuthManualReauth,
 };
