@@ -17,6 +17,9 @@ interface AlarmPayload {
   team: string;
   alertLevel: number;
   fromBot: string;
+  alarmType?: string;
+  visibility?: string;
+  actionability?: string;
   inlineKeyboard?: Array<Array<{ text: string; callback_data: string }>> | null;
 }
 
@@ -355,6 +358,9 @@ async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
     team: 'darwin',
     alertLevel: 2,
     fromBot: 'applicator',
+    alarmType: 'work',
+    visibility: verification.passed && !requiresApproval ? 'digest' : 'human_action',
+    actionability: verification.passed ? (requiresApproval ? 'needs_approval' : 'none') : 'needs_human',
     inlineKeyboard: primaryButtons.length > 0 ? primaryButtons : null,
   });
   if (proposalEventId) {

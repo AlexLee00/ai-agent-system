@@ -120,6 +120,16 @@ const eventLakeTyped: EventLake = eventLake;
 const failureTrajectoryTyped: FailureTrajectory = failureTrajectory;
 const proposalStoreTyped: ProposalStore = proposalStore;
 const autonomyLevelTyped: AutonomyLevelModule = autonomyLevel;
+const DARWIN_IMPLEMENTOR_DEFAULT_TIMEOUT_MS = 180_000;
+const DARWIN_IMPLEMENTOR_MIN_TIMEOUT_MS = 45_000;
+const DARWIN_IMPLEMENTOR_MAX_TIMEOUT_MS = 180_000;
+const DARWIN_IMPLEMENTOR_TIMEOUT_MS = readImplementorTimeoutMs();
+
+function readImplementorTimeoutMs(): number {
+  const raw = Number.parseInt(String(process.env.DARWIN_IMPLEMENTOR_TIMEOUT_MS || ''), 10);
+  if (!Number.isFinite(raw) || raw <= 0) return DARWIN_IMPLEMENTOR_DEFAULT_TIMEOUT_MS;
+  return Math.min(Math.max(raw, DARWIN_IMPLEMENTOR_MIN_TIMEOUT_MS), DARWIN_IMPLEMENTOR_MAX_TIMEOUT_MS);
+}
 
 function toErrorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
@@ -468,7 +478,8 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
     const failureHints = await _loadFailureHintsForImplementation(proposalId, proposal);
     const implementationResult = await callHubLlm({
       callerTeam: 'darwin',
-      agent: 'synthesis',
+      agent: 'implementor',
+      selectorKey: 'darwin.agent_policy',
       taskType: 'auto_implementation',
       runtimePurpose: 'auto_implementation',
       abstractModel: 'anthropic_sonnet',
@@ -500,7 +511,7 @@ ${failureHints}
 
 현재 상태:
 ${JSON.stringify(proposal.verification || {})}`,
-      timeoutMs: 45_000,
+      timeoutMs: DARWIN_IMPLEMENTOR_TIMEOUT_MS,
     }) as HubLlmResponse | string;
 
     const files = _extractFiles(implementationResult, proposalId, proposal);
@@ -639,5 +650,6 @@ module.exports = {
   _hasReasoningLeak,
   _assertProposalCleanForImplementation,
   _recordImplementationSuccessTrajectory,
+  _testOnly_DARWIN_IMPLEMENTOR_TIMEOUT_MS: DARWIN_IMPLEMENTOR_TIMEOUT_MS,
   _testOnly_REPO_ROOT: REPO_ROOT,
 };

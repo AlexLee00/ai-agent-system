@@ -1,4 +1,5 @@
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -56,6 +57,10 @@ async function main() {
   assert.match(verifier._formatFailureHints(hintRows), /use --- FILE/);
   assert.strictEqual(typeof implementor._recordImplementationSuccessTrajectory, 'function');
   assert.strictEqual(typeof verifier._recordVerificationSuccessTrajectory, 'function');
+  assert.strictEqual(implementor._testOnly_DARWIN_IMPLEMENTOR_TIMEOUT_MS, 180_000);
+  const implementorSource = fs.readFileSync(path.join(repoRoot, 'bots/darwin/lib/implementor.ts'), 'utf8');
+  assert.match(implementorSource, /agent:\s*'implementor'/);
+  assert.match(implementorSource, /selectorKey:\s*'darwin\.agent_policy'/);
 
   console.log('✅ darwin auto-apply root smoke ok');
 }

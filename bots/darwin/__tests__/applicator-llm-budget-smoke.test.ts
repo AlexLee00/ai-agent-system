@@ -13,6 +13,7 @@ async function main() {
   const originalProposalTimeout = process.env.DARWIN_APPLICATOR_PROPOSAL_TIMEOUT_MS;
   const originalPrototypeTimeout = process.env.DARWIN_APPLICATOR_PROTOTYPE_TIMEOUT_MS;
   const capturedRequests: Array<Record<string, unknown>> = [];
+  const capturedAlarms: Array<Record<string, unknown>> = [];
 
   delete process.env.DARWIN_APPLICATOR_PROPOSAL_TIMEOUT_MS;
   delete process.env.DARWIN_APPLICATOR_PROTOTYPE_TIMEOUT_MS;
@@ -30,7 +31,12 @@ async function main() {
       };
     }
     if (request === '../../../packages/core/lib/hub-alarm-client') {
-      return { postAlarm: async () => ({ ok: true }) };
+      return {
+        postAlarm: async (alarm: Record<string, unknown>) => {
+          capturedAlarms.push(alarm);
+          return { ok: true };
+        },
+      };
     }
     if (request === '../../../packages/core/lib/event-lake') {
       return { record: async () => null, addFeedback: async () => null };
@@ -89,6 +95,11 @@ async function main() {
       proposal: 120_000,
       prototype: 120_000,
     });
+    await applicator.apply(paper);
+    assert.strictEqual(capturedAlarms.length, 1);
+    assert.strictEqual(capturedAlarms[0].alarmType, 'work');
+    assert.strictEqual(capturedAlarms[0].visibility, 'human_action');
+    assert.strictEqual(capturedAlarms[0].actionability, 'needs_approval');
     console.log('✅ darwin applicator LLM budget smoke ok');
   } finally {
     Module._load = originalLoad;

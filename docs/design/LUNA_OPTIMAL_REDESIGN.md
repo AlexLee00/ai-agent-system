@@ -1106,3 +1106,49 @@ Phase A reload(LUNA_RECONCILE_FILL_RESOLVE_ENABLED=true) 후 검증 중 fill-res
 
 ### dry-run 결과 파일
 - /tmp/phaseb.json (90KB, 245 후보 전체) — 다음 세션 재사용 가능(단 /tmp는 휘발 가능, 필요시 재실행)
+
+
+---
+
+## §8-28 fill-resolver 가드 구현 + Phase B 백필 apply 완료 (2026-06-21)
+
+### 가드 구현 (코덱스, 커밋 64b8a4f8e + 22786ac4a)
+binance-fill-resolver.ts에 3개 방어:
+1. **micro_entry_invalid** (입력검증부, non_usdt 다음): expectedEntryValue < MIN_NOTIONAL_USDT($5) → unresolved. **fetchMyTrades 호출 전 차단**(API 절약). 1차/2차 공통 보호.
+2. **qty_overflow** (1차 order_id 매칭, qty 계산 직후): matchedQty > expectedQty × (1+QTY_OVERFLOW_RATIO=0.5) → unresolved. order_id 오귀속/entry 손상 차단.
+3. **fallback fix** (expectedEntryValue 계산): num(entryValue,0)이 Number(null)=0으로 fallback 무시하는 버그 → `rawEntryValue = num(entryValue,0); expectedEntryValue = rawEntryValue>0 ? rawEntryValue : expectedQty×num(entryPrice,0)`. entry_value null/0이어도 entrySize×entryPrice fallback.
+
+상수: MIN_NOTIONAL_USDT=5, QTY_OVERFLOW_RATIO=0.5 (env override, plist 불필요).
+신규: luna-fill-resolve-guard-smoke.ts (5 시나리오) + check:luna-fill-resolve-guard + check:luna-fill-resolve-reactivate 통합.
+
+### 메티 독립 검증
+- **정적**: 코드 diff(상수·가드①②·fallback fix 정확), smoke 5 시나리오, package.json scripts
+- **동적**: check:luna-fill-resolve-guard 5 시나리오 PASS(microEntryBlock/qtyOverflowBlock/normalPass/boundaryPass/nullEntryValueFallback) + reactivate 회귀 PASS (메티 직접 재실행)
+- **재dry-run(가드 적용)**: 245후보 → matched 173, unresolved 72(micro_entry 34 + qty_overflow 11 + ambiguous 27), **pnlPercent>1000% 0건**(988,662% 완전 제거), 최고 pnl% 12.2%
+- **코덱스 지적 검증**: num/safeNumber가 null→0으로 fallback 무시(정확). 단 binance 628건 중 entry_value=null **0건** → 실제 영향 0. fallback fix는 robustness 보강.
+- ★ ZBT-003(메티가 의심한 "12배 익절")은 실제가 아니라 qty_overflow(오귀속)로 판명, 가드②가 정확히 격리.
+
+
+### Phase B apply 결과 (마스터)
+- 1차 apply: 171건 정정 (no_position → with_fill)
+- 2차 apply(fallback fix 후): scanned 74, matched 0, unresolved 74 (이미 처리된 171 제외, 남은 74 격리 유지), refreshed=false(업데이트 0이라 view refresh 불필요)
+- ops-scheduler 재시작 → LIVE reconcile 가드 반영 (3 env active: FILL_RESOLVE + LEARNED_BIAS shadow + PERIODIC)
+
+### apply 후 검증 (메티)
+- with_fill 232건, **micro_in_withfill 0**(미세 entry 격리 성공), **max pnl% 19.8%**(비정상 완전 제거)
+- 과거(06-11 이전) with_fill 202건 **순 -170.03 USD**(승 55 / 패 147, 승률 27%) — 과거 거래 실제 손실 정확 반영
+- no_position 잔존 128건(micro 34 영구 격리 + 기타 94, pnl=0 유지 안전)
+
+### 핵심 발견
+- 가드 전 표면 +1094 USD는 미세 entry(34건)·qty_overflow(11건) 오류로 부풀려진 **허구**
+- 실제 과거(03~06-10) 거래는 **순손실 -170 USD**였음 → 누적 손익에 정확히 반영
+- 가드가 데이터 무결성 보호: 비정상 pnl 0건, 미세 entry with_fill 유입 0건
+
+### 잔여/후속
+- micro_entry 34 + qty_overflow 11 = 45건은 entry 기록 손상/오귀속 → 영구 unresolved (entry 기록 로직 원인 조사 가능, 우선순위 낮음)
+- order_id 없는 no_position ~54건은 backfill 대상 외 (order_id 부재로 매칭 불가)
+- (병행 대기) bear×mean_reversion 관찰 — trending_bear 도래 시 (§8-26 관찰 항목)
+
+### 교훈
+- **메티 역산 분석의 한계**: pnlPercent>500% 역산은 3건만 식별했으나, 가드의 entry_value 직접 체크는 34건 전부 포착 (pnl 작은 미세 entry는 역산에 안 걸림). 직접 기준값 검증 > 간접 추정.
+- **유틸 함수 null 처리**: num/safeNumber가 Number(null)=0을 유효값으로 처리 → fallback 무시. 방어적 fallback은 `raw>0 ? raw : fallback` 패턴 필요.
