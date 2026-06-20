@@ -217,19 +217,23 @@ export async function runLunaFillResolveBackfillSmoke() {
   const env = extractPlistEnvironment(plist);
   assert.equal(env.LUNA_RECONCILE_FILL_RESOLVE_ENABLED, 'true');
   assert.equal(env.RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED, 'true');
+  assert.equal(env.LUNA_LEARNED_BIAS_MODE, 'shadow');
   assert.equal(Object.hasOwn(env, 'LUNA_RECONCILE_FILL_RESOLVE_DRY_RUN'), false);
 
+  const criticalKeys = [
+    'LUNA_RECONCILE_FILL_RESOLVE_ENABLED',
+    'RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED',
+    'LUNA_LEARNED_BIAS_MODE',
+  ];
   const drift = buildLaunchdEnvDriftPlan({
     criticalEnvKeysByLabel: {
-      'ai.luna.ops-scheduler': [
-        'LUNA_RECONCILE_FILL_RESOLVE_ENABLED',
-        'RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED',
-      ],
+      'ai.luna.ops-scheduler': criticalKeys,
     },
     repoEnvByLabel: {
       'ai.luna.ops-scheduler': {
         LUNA_RECONCILE_FILL_RESOLVE_ENABLED: 'true',
         RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED: 'true',
+        LUNA_LEARNED_BIAS_MODE: 'shadow',
       },
     },
     installedEnvByLabel: {
@@ -242,11 +246,13 @@ export async function runLunaFillResolveBackfillSmoke() {
     repoPlistPathForLabel: () => '/tmp/repo.plist',
     existsSyncImpl: () => true,
   });
-  assert.equal(drift.length, 2);
+  assert.equal(drift.length, 3);
   assert.equal(drift[0].key, 'LUNA_RECONCILE_FILL_RESOLVE_ENABLED');
   assert.equal(drift[0].criticalEnabledKey, true);
   assert.equal(drift[1].key, 'RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED');
   assert.equal(drift[1].criticalEnabledKey, true);
+  assert.equal(drift[2].key, 'LUNA_LEARNED_BIAS_MODE');
+  assert.equal(drift[2].criticalEnabledKey, false);
 
   return {
     ok: true,

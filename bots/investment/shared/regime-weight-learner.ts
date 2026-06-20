@@ -39,7 +39,7 @@ export const BASE_FUSION_WEIGHTS = {
 // ─── 4 체제 기본 signal 가중치 ────────────────────────────────────────────────
 export const BASE_SIGNAL_WEIGHTS = {
   TRENDING_BULL:  { momentum: 0.35, breakout: 0.30, mean_reversion: 0.15, defensive: 0.20 },
-  TRENDING_BEAR:  { momentum: 0.15, breakout: 0.15, mean_reversion: 0.30, defensive: 0.40 },
+  TRENDING_BEAR:  { momentum: 0.15, breakout: 0.15, mean_reversion: 0.40, defensive: 0.30 },
   RANGING:        { momentum: 0.15, breakout: 0.15, mean_reversion: 0.50, defensive: 0.20 },
   VOLATILE:       { momentum: 0.15, breakout: 0.20, mean_reversion: 0.20, defensive: 0.45 },
 };

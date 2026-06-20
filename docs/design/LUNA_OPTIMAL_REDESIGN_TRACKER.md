@@ -478,3 +478,49 @@ ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_
 
 ### 교훈
 mock smoke < 실데이터 dry-run. 신규 스크립트는 실데이터 dry-run 필수.
+
+
+## 2026-06-20 (이어서) — fill-resolver 완전 복구 종결
+
+### 작업
+- Phase A 보강: 2번째 누락 env `RECONCILE_OPEN_JOURNALS_PERIODIC_ENABLED` 발견·복구
+  - fill-resolver = 호출 게이트(FILL_RESOLVE) + 작업 활성화 게이트(PERIODIC) **둘 다 필요**
+  - 06-10 재배포가 두 env 동시 소실 (collateral drift, 둘 다 실로드 drift)
+  - reconcile_open_journals(ops-scheduler line798)가 유일 실행 경로 (process-integrity는 명령 제시만)
+- 두 env drift critical key 등록 + smoke 두 key 확인 보강
+- 백필 버그 수정(double normalizeCandidate) + 회귀 테스트 추가
+- 백필 apply: recent 25건 → with_fill, order_id 100%, near-zero 0
+
+### 검증 결과
+- with_fill 전체 61건, 06-11+ 27건(백필26 + Phase A 자동1)
+- near-zero 잔존 0, exit_match_source order_id 100%
+- **Phase A 작동 직접 증거**: 06-20 자동 with_fill 1건(-3.36) — reload 후 0→1
+- 1주(06-13~06-20) 진짜 손익 **-$51.22** (with_fill -$33.55 은폐 해소 + normal -$17.67)
+- 06-19 -$28.07 손실 집중
+
+### 다음 진입점
+- **커밋/푸시**: 구현 커밋 완료(`a48551e8d`, `a1d87d437`); **설계/추적 docs + CODEX archive 이동만 커밋 대기** (CODEX_LUNA_FILL_RESOLVE_REACTIVATE → archive 이동 완료)
+- Phase B 2차: past(~06-10) 245 order_id 백필 (선택, --since 범위)
+- 06-19 손실 집중 원인 분석 (자가진화 학습 후보)
+
+
+## 2026-06-20 (이어서) — 06-19 손실 분석 + 개선 설계
+
+### 분석
+- **타임존 정리**: DB=Asia/Seoul, `extract(epoch from date)`=UTC 자정 버그(9시간 누락). 06-19(KST) = with_fill 7건 + normal 1건 = 8건 **-$36.15**
+- **메티 자기수정**: `pnl_amount`(KRW/USD raw) → `v_trades_real_usd.pnl_usd` 사용 필수. "-14,351"은 KIS 229000 KRW raw 오인, 실제 **-$11.97**
+- **근본 원인**: BASE_SIGNAL_WEIGHTS TRENDING_BEAR `defensive 0.40 > mean_reversion 0.30`(메모리 원칙 위배) + LEARNED_BIAS=off + exploration 막힘(mean_reversion 0건)
+- **데이터**: bear×defensive 38건 -21.23 승률 26%, bear×mean_reversion 0건, defensive는 volatile용(+5.06/50%)
+- learnedBias = clamp((학습−BASE)×0.2, ±0.1) → BASE 대비 보정이라 BASE 자체 조정 필요
+
+### 설계/CODEX
+- **§8-26 작성** (근본 원인 + 개선안 3단계 + exploration vs exploitation)
+- **CODEX_LUNA_REGIME_BEAR_STRATEGY_FIX_2026-06-20.md 작성**:
+  - A: BASE TRENDING_BEAR `mean_reversion 0.30→0.40, defensive 0.40→0.30`
+  - B: `LUNA_LEARNED_BIAS_MODE=shadow` + drift critical key
+  - C: 회귀 테스트(signalWeightsToFamilyBias) + shadow 동작 확인 + check 스크립트
+
+### 다음 진입점
+- 코덱스: CODEX_LUNA_REGIME_BEAR_STRATEGY_FIX 구현
+- 메티: 구현 검증 → 마스터 배포 → **bear×mean_reversion 선택 시작 관찰**(1-2주)
+- 미커밋 docs: 설계(§8-25, §8-26) + 추적 (CODEX는 gitignore라 로컬 전용)
