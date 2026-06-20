@@ -1043,3 +1043,19 @@ Phase A reload(LUNA_RECONCILE_FILL_RESOLVE_ENABLED=true) 후 검증 중 fill-res
 
 ### CODEX 지시
 → CODEX_LUNA_REGIME_BEAR_STRATEGY_FIX_2026-06-20.md (BASE weight 재조정 + LEARNED_BIAS shadow + 검증)
+
+
+### 배포·검증 결과 (2026-06-20 추가)
+- **코덱스 구현**: BASE TRENDING_BEAR `mean_reversion 0.40 > defensive 0.30`, plist `LEARNED_BIAS_MODE=shadow`, migrate critical key, smoke/check 보강
+- **메티 독립 검증 통과**:
+  - 정적 4: BASE weight / plist shadow / migrate critical key(line 52) / 신규 luna-regime-bear-fix-smoke
+  - 회귀 4 시나리오 전부 true: `bearMeanReversionBasePreferred`, `otherRegimeWeightsUnchanged`, `learnedBiasOffNoProvider`, `learnedBiasShadowNoRouteMutation`
+  - shadow 분기(strategy-router.ts:413): shadow는 reasonLine 로깅만(scores 무변경), active(417)만 적용 — 안전 확인
+- **마스터 배포+reload 완료**: 3 env 로드(FILL_RESOLVE + PERIODIC + LEARNED_BIAS shadow), ops-scheduler 정상(err 0)
+- **배포 시점 레짐**: trending_bull(conf 0.69, momentum 정상), 최근 24h bull 33/bear 11/ranging 7 → **bear 22% 비중**(관찰 기회 충분)
+- CODEX_LUNA_REGIME_BEAR_STRATEGY_FIX → docs/codex/archive/ 이동 완료
+
+### 관찰 항목 (다음 세션/1-2주)
+- bear 레짐 도래 시 **mean_reversion 선택 시작** 확인(defensive 대신)
+- LEARNED_BIAS shadow 로깅(reasonLine diff) 발생 확인
+- bear×mean_reversion 성과 vs defensive 비교 → active 전환 또는 추가 조정 판단
