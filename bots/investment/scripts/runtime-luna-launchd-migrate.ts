@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  buildLaunchdEnvDriftPlan as buildSharedLaunchdEnvDriftPlan,
   inspectLaunchdList,
   launchdDomain,
   parseLaunchctlListLine,
@@ -46,6 +47,7 @@ const CRITICAL_ENV_KEYS_BY_LABEL = {
     'LUNA_BT_ROBUST_SELECTION_ENABLED',
     'LUNA_BT_WALK_FORWARD_ENABLED',
     'LUNA_VECTORBT_TIMEOUT_MS',
+    'LUNA_RECONCILE_FILL_RESOLVE_ENABLED',
   ],
   'ai.luna.candidate-backtest-refresh': [
     'LUNA_BT_ROBUST_SELECTION_ENABLED',
@@ -244,43 +246,16 @@ function installedPlistExists(label, { installedLabels = null } = {}) {
 }
 
 function buildLaunchdEnvDriftPlan({ repoEnvByLabel = null, installedEnvByLabel = null, loadedEnvByLabel = null } = {}) {
-  const plans = [];
-  for (const [label, keys] of Object.entries(CRITICAL_ENV_KEYS_BY_LABEL)) {
-    const sourcePath = plistPathForLabel(label);
-    const installedPath = userLaunchAgentPlistPath(label);
-    const repoEnv = repoEnvByLabel?.[label] || readPlistEnvironment(sourcePath) || {};
-    const installedEnv = installedEnvByLabel?.[label] || readPlistEnvironment(installedPath) || {};
-    const loadedEnv = readLoadedLaunchdEnvironment(label, { loadedEnvByLabel });
-
-    for (const key of keys) {
-      const repoValue = repoEnv[key] ?? null;
-      if (repoValue == null) continue;
-      const installedValue = installedEnv[key] ?? null;
-      const loadedValue = loadedEnv[key] ?? null;
-      const installedMatches = installedValue === repoValue;
-      const loadedMatches = loadedValue === repoValue;
-      if (installedMatches && loadedMatches) continue;
-      plans.push({
-        label,
-        key,
-        repoValue,
-        installedValue,
-        loadedValue,
-        status: !existsSync(installedPath) && !installedEnvByLabel?.[label]
-          ? 'installed_plist_missing'
-          : !installedMatches
-            ? 'installed_env_mismatch'
-            : 'loaded_env_mismatch',
-        sourcePath,
-        installedPath,
-        protected: PROTECTED_LABELS.has(label),
-        action: 'sync_installed_plist_then_reload',
-        installCommand: `cp ${sourcePath} ${installedPath}`,
-        reloadCommand: `launchctl bootout ${launchdDomain()}/${label}; launchctl bootstrap ${launchdDomain()} ${installedPath}`,
-      });
-    }
-  }
-  return plans;
+  return buildSharedLaunchdEnvDriftPlan({
+    criticalEnvKeysByLabel: CRITICAL_ENV_KEYS_BY_LABEL,
+    repoEnvByLabel,
+    installedEnvByLabel,
+    loadedEnvByLabel,
+    repoPlistPathForLabel: plistPathForLabel,
+    installedPlistPathForLabel: userLaunchAgentPlistPath,
+    protectedLabels: Array.from(PROTECTED_LABELS),
+    readLoadedEnv: readLoadedLaunchdEnvironment,
+  });
 }
 
 function buildOrphanReconcilePlan(label, { visible, installedLabels = null } = {}) {

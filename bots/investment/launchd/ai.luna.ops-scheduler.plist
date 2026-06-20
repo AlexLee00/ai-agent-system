@@ -48,6 +48,8 @@
     <string>true</string>
     <key>LUNA_ENTRY_TRIGGER_ENGINE_ENABLED</key>
     <string>true</string>
+    <key>LUNA_RECONCILE_FILL_RESOLVE_ENABLED</key>
+    <string>true</string>
     <key>LUNA_BT_ROBUST_SELECTION_ENABLED</key>
     <string>true</string>
     <key>LUNA_CONSERVATIVE_RELAXATION_ENABLED</key>

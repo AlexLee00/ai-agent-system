@@ -36,6 +36,100 @@ export function launchAgentPlistPath(label) {
   return path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
 }
 
+export function decodePlistValue(value = '') {
+  return String(value)
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+export function extractPlistStringMap(plist = '') {
+  const map = {};
+  for (const match of String(plist).matchAll(/<key>([^<]+)<\/key>\s*<string>([^<]*)<\/string>/g)) {
+    map[decodePlistValue(match[1])] = decodePlistValue(match[2]);
+  }
+  return map;
+}
+
+export function extractPlistEnvironment(plist = '') {
+  const envBlock = String(plist).match(/<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1] || '';
+  return extractPlistStringMap(envBlock);
+}
+
+export function readPlistEnvironment(plistPath) {
+  if (!plistPath || !fs.existsSync(plistPath)) return null;
+  return extractPlistEnvironment(fs.readFileSync(plistPath, 'utf8'));
+}
+
+export function readLoadedLaunchdEnvironment(label, { loadedEnvByLabel = null } = {}) {
+  if (loadedEnvByLabel && loadedEnvByLabel[label]) return loadedEnvByLabel[label];
+  const result = runLaunchctl(['print', `${launchdDomain()}/${label}`], { timeout: 5_000 });
+  if (!result.ok || !result.stdout) return {};
+  const env = {};
+  for (const line of String(result.stdout).split('\n')) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=>\s*(.*?)\s*$/);
+    if (match) env[match[1]] = match[2];
+  }
+  return env;
+}
+
+export function buildLaunchdEnvDriftPlan({
+  criticalEnvKeysByLabel = {},
+  repoEnvByLabel = null,
+  installedEnvByLabel = null,
+  loadedEnvByLabel = null,
+  repoPlistPathForLabel = null,
+  installedPlistPathForLabel = null,
+  protectedLabels = [],
+  readLoadedEnv = null,
+  existsSyncImpl = fs.existsSync,
+} = {}) {
+  const plans = [];
+  const protectedSet = new Set(protectedLabels || []);
+  for (const [label, keys] of Object.entries(criticalEnvKeysByLabel || {})) {
+    const sourcePath = repoPlistPathForLabel ? repoPlistPathForLabel(label) : null;
+    const installedPath = installedPlistPathForLabel ? installedPlistPathForLabel(label) : launchAgentPlistPath(label);
+    const repoEnv = repoEnvByLabel?.[label] || readPlistEnvironment(sourcePath) || {};
+    const installedEnv = installedEnvByLabel?.[label] || readPlistEnvironment(installedPath) || {};
+    const loadedEnv = readLoadedEnv
+      ? readLoadedEnv(label, { loadedEnvByLabel })
+      : readLoadedLaunchdEnvironment(label, { loadedEnvByLabel });
+    const installedExists = installedPath ? existsSyncImpl(installedPath) : false;
+
+    for (const key of keys || []) {
+      const repoValue = repoEnv[key] ?? null;
+      if (repoValue == null) continue;
+      const installedValue = installedEnv[key] ?? null;
+      const loadedValue = loadedEnv?.[key] ?? null;
+      const installedMatches = installedValue === repoValue;
+      const loadedMatches = loadedValue === repoValue;
+      if (installedMatches && loadedMatches) continue;
+      plans.push({
+        label,
+        key,
+        repoValue,
+        installedValue,
+        loadedValue,
+        status: !installedExists && !installedEnvByLabel?.[label]
+          ? 'installed_plist_missing'
+          : !installedMatches
+            ? 'installed_env_mismatch'
+            : 'loaded_env_mismatch',
+        sourcePath,
+        installedPath,
+        protected: protectedSet.has(label),
+        criticalEnabledKey: /_ENABLED$/.test(String(key)),
+        action: 'sync_installed_plist_then_reload',
+        installCommand: sourcePath && installedPath ? `cp ${sourcePath} ${installedPath}` : null,
+        reloadCommand: installedPath ? `launchctl bootout ${launchdDomain()}/${label}; launchctl bootstrap ${launchdDomain()} ${installedPath}` : null,
+      });
+    }
+  }
+  return plans;
+}
+
 export function inspectLaunchAgentPlist(label) {
   const plistPath = launchAgentPlistPath(label);
   if (!plistPath || !fs.existsSync(plistPath)) {
@@ -254,6 +348,12 @@ export default {
   inspectLaunchdList,
   inspectLaunchdPrint,
   launchAgentPlistPath,
+  decodePlistValue,
+  extractPlistStringMap,
+  extractPlistEnvironment,
+  readPlistEnvironment,
+  readLoadedLaunchdEnvironment,
+  buildLaunchdEnvDriftPlan,
   inspectLaunchAgentPlist,
   buildLaunchdBootstrapPlan,
   runLaunchdBootstrap,
