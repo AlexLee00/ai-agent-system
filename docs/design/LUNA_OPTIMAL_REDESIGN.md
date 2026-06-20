@@ -425,3 +425,87 @@
 
 **1차 범위/한계**: promotion은 제안 알림까지, active 자동 적용은 미포함(마스터 승인 유지). virtualExpectancy 실측은 후순위(1차는 sample_count). active 자동화는 검증 누적 후 별도 단계.
 > 코덱스 프롬프트: docs/codex/CODEX_LUNA_LEARNED_BIAS_AUTOPROMOTION.md. self-evolution loop 복원(§8-8)은 docs/codex/archive/로 아카이빙 완료.
+
+
+### 8-10. ★암호화폐 실거래 손실 — 정밀 근본원인 분석 (2026-06-20 메티)
+> 마스터 지시: 시계열·전략·프로세스·데이터적재·포지셔닝·실제계좌비교 복합 분석 + 실제계좌 API 검증 로직 존재여부 체크.
+
+**증상**: 5주 연속 손실(승률~0%, 합계 ~-$28), 이번주 binance 실거래 2전2패 -$17.67(NIGHT -8.5%·BABY -7.2%), journal_reconciled_no_position 25건, positions 테이블 0건, trade_journal open 6건(장부) vs positions 0(실제).
+
+**근본원인 (다층 복합)**:
+
+**① 전략 레벨 — 레짐-전략 미스매치 (손실 직접원인)**:
+- 현재 crypto 레짐 trending_bull(conf 0.69)인데 작동 전략은 defensive_rotation(방어).
+- 레짐 추이: 06-14 bull → 06-17~19 bear → 06-20 bull (며칠 단위 요동) → 전략이 항상 한 박자 지연(06-19 bear에 defensive 진입 → 06-20 bull 전환 시 부적합).
+- 수익전략 momentum_rotation 최근 30일 0건(소멸), 손실전략만 작동(defensive -$11.97 2승5패·micro_swing -$9.58·trend_following -$6.28).
+- 동적 전략선택 미작동(06-19까지 regime-weight-learner 학습정지, §8-8에서 복원). → 레짐 적응 실패가 손실 핵심.
+
+**② 데이터 정합 레벨 — 장부-실제 불일치**:
+- trade_journal open 6건: entry_value($106~122)·tp_sl_set=true 기록(진입성공으로 장부 기재).
+- positions 테이블 0건: 실제 거래소 추적 포지션 없음.
+- journal_reconciled_no_position 25건(06-10~19 진입분): 장부 기록됐으나 실제 없어 사후 정리.
+- signal_to_exec_ms NULL: 실행시간 미기록(실행추적 약함).
+- → **장부는 진입성공인데 실제는 미체결/없음**(핵심 모순).
+
+
+**③ 실행/검증 레벨**:
+- 주문실행: MCP 브리지(scripts/binance-market-mcp-server.py · runBinanceMcpBridge) 또는 ccxt createOrder.
+- `createBinanceMarketBuy/Sell`이 주문결과 반환만 — **주문직후 체결검증(filled>0 확인·미체결 재시도) 부재**(binance-client.ts:366,412). 상위가 filled 미확인 시 미체결을 장부 open 기록.
+
+**④ 실제계좌 API 검증 로직 존재여부 (마스터 핵심 질문) — 존재함, 다층**:
+- `position-sync.syncPositionsAtMarketOpen`(position-sync.ts:253): `getBinanceExchange().fetchBalance()`(실제잔고) ↔ DB positions 비교 → 불일치 시 `db.deletePositionsForExchangeScope`(stale_db_position). autopilot이 crypto 포함 호출(DEFAULT_POSITION_SYNC_MARKETS, autopilot:573).
+- `reconcile-open-journals`(626줄): trade_journal open ↔ 실제, breakeven 청산(closeEntryAtBreakeven). runtime-luna-ops-scheduler · process-integrity-loop가 호출(launchd 직접 미등록).
+- `binance-order-reconcile`/`binance-pending-reconcile-queue/units`: 주문단위 체결 정합.
+- **구조적 한계**: ⓐ 사후 정리 위주(불일치 발생 자체 예방 못함) ⓑ 주문직후 실시간 체결검증 약함 → 미체결을 장부에 진입성공 기록 후 reconcile 정리 ⓒ position-sync 함수명 "AtMarketOpen"이라 24시간 crypto 주기성 의문.
+
+**미해결 핵심 (추가조사 필요)**:
+- **왜 주문이 미체결되나?** entry_value·tp_sl_set 기록됐으나 positions 0. MCP 브리지(binance-market-mcp-server.py) 실제 송신여부 · 실행모드(live/mock/paper) · capital 부족 · 최소주문금액 미달 확인 필요.
+- syncPositionsAtMarketOpen이 24시간 crypto에 실제 주기 작동하는지(호출 빈도·트리거).
+
+**처방 우선순위**:
+1. **[실행검증]** 주문직후 체결검증 추가 — filled>0 확인, 미체결 시 journal open 미기록 또는 재시도/실패기록.
+2. **[근본조사]** MCP 브리지 실제 송신·실행모드 점검(미체결 근본원인 = 25건 반복의 핵심).
+3. **[전략]** 동적 전략선택(§8-8 복원분) 효과로 레짐적응 개선 관찰 + momentum 비활성 원인 규명.
+4. **[정합]** positions 실시간 동기화 주기 강화(시장개장 시 → 주기적), trade_journal↔positions↔실제잔고 3자 정합 모니터.
+> 결론: reconciliation은 풍부히 존재하나 **사후 정리 중심**이라 손실·불일치를 예방하지 못함. 핵심은 ①전략 레짐적응 실패(손실) + ②주문 체결검증 부재(불일치). 미체결 근본원인(MCP/실행모드/capital)이 다음 최우선 조사 대상.
+
+
+### 8-11. ★국내/국외 확대 + 근본원인 심화 (2026-06-20 메티)
+> 마스터 지시: 국내장·국외장 확대 체크 + 설계 차원 근본원인 분석.
+
+**시장별 정합 비교 (최근 30일, 실거래 is_paper=false)**:
+| 시장 | open 장부 | reconciled | strategy | cleanup | 불일치 |
+|---|---|---|---|---|---|
+| binance | 6 | **67** | 10 | 67 | 🔴 심각 |
+| kis(국내) | 0 | 0 | 1 | 0 | ✅ 없음 |
+| kis_overseas(국외) | 0 | 0 | 1 | 0 | ✅ 없음 |
+
+**핵심: 장부-실제 불일치는 암호화폐 고유**:
+- kis-adapter `placeOrder: disabled`(kis-adapter.ts:95) → 국내장 주문 자체 비활성 → 거래 거의 없음(30일 1건) → 불일치 없음(거래를 안 하니 당연).
+- binance만 reconciled 67·cleanup 67 = 주문이 장부 기록되나 실제 미반영.
+
+**실행모드 확정 (paper/testnet 가설 기각)**:
+- `applyDevSafetyOverrides`(secrets.ts:120): `if (env.IS_OPS) return secrets` → OPS 머신은 paper/testnet 강제 건너뜀 = **real mainnet 실거래**.
+- `binance-client.getBinanceExchange`(binance-client.ts:104)·`position-sync.getBinanceExchange`(position-sync.ts:19) 둘 다 testnet/sandbox 미적용 = mainnet real.
+- → 주문도 잔고조회도 mainnet real. paper/testnet 불일치 가설 기각.
+
+**reconciled 67건 패턴**:
+- **전부 defensive_rotation**, entry_value $110~112 알트(MEGA·XLM·ENA·XPL·WLD), quality_flag=exclude_from_learning.
+- 진입~정리 시간차 avg 49h(min 1m·max 8.7d) → 즉시 미체결 아닌 시간 경과 후 "실제 포지션 없음" 발견.
+- → **defensive_rotation 진입이 장부 기록되나 실제 포지션 미반영**(불일치 집중점).
+
+**근본원인 (설계 관점)**:
+1. **주문-기록 정합 결함**: 진입이 trade_journal에 open 기록되나 실제 포지션 미반영. 주문 직후 체결검증(filled>0) 부재 → 미체결/실패도 진입으로 기록.
+2. **defensive_rotation 실행경로 집중**: reconciled 67건 전부 defensive_rotation → 이 전략의 진입 실행/체결에 문제 집중(다른 전략은 정상 체결되나 defensive만 불일치). 전략별 주문 실행경로 차이 의심.
+3. **실시간 정합 부재**: reconcile 사후 정리만(진입~정리 평균 49h 지연) → 불일치를 실시간 차단 못함.
+4. **국내장 비활성**: kis placeOrder disabled → 국내장 거래 자체 막힘(의도/사고 확인 필요).
+5. **positions 테이블 미사용**: 3개 시장 모두 0행 → 실제 포지션 추적이 trade_journal + broker API 직접에 의존, 단일 정합 소스 부재.
+
+**보강 설계 (우선순위)**:
+1. **[체결검증]** 주문 직후 `filled>0`·status 확인 → 성공 시에만 journal open 기록, 미체결/실패 시 미기록 + 재시도 + 실패로그(원인 보존).
+2. **[전략경로 추적]** defensive_rotation 진입→주문→체결→기록 전체 경로 추적 — 왜 이 전략만 67건 불일치(실제 주문 송신 여부·체결 확인·전략별 실행 분기).
+3. **[실시간 정합]** 진입 직후 실제 포지션 확인 + reconcile 주기 단축 + trade_journal↔실제잔고 단일 정합 소스.
+4. **[국내장]** kis placeOrder disabled 원인·활성화 검토(국내장 OS 정상화).
+
+**다음 최우선 조사**: defensive_rotation 진입 실행경로(왜 이 전략만 67건 불일치) — 실제 binance 주문 송신 여부·체결 응답·전략별 실행 분기 추적. 이것이 암호화폐 손실/불일치의 핵심 미규명 지점.
+> 국내/국외 확대 결론: 불일치는 암호화폐 전용(국내장은 placeOrder disabled로 거래 부재). 따라서 ①암호화폐 defensive_rotation 체결경로 ②국내장 활성화가 2대 과제.

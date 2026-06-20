@@ -294,3 +294,24 @@ ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_
 - shadow 누적 관찰 + 자동승급 6-state 진행 모니터링.
 - (후순위) virtualExpectancy 실측 evidence 정교화 · active 자동 적용 단계.
 - 메타학습(윈도우·임계치·learn_rate 자가조정).
+
+
+---
+
+## 2026-06-20 적용 완료 ✅ (마스터 실행 + 메티 최종검증)
+### seed/등록
+- `runtime:luna-registry-seed` 실행: seeded=46, inserted=1(learned-regime-bias), updated=45.
+- learned-regime-bias DB 등록 검증: current_mode=shadow, target_mode=active_router_bias, criteria{durationWeeks 4·minSamplesPerFamilyRegime 30·virtualExpectancyDeltaPositive·evidence luna_regime_weight_snapshots} 정상. registry active **46**(기존 45 무손상 = 회귀 0).
+- evaluator 6-state: sampleCount=21 → **accumulating**(21/30 미달, 정합 재현).
+### shadow 가동
+- plist 2개(`ai.investment.runtime-autopilot`, `ai.luna.phase-a-shadow-15min`)에 `LUNA_LEARNED_BIAS_MODE=shadow` + launchctl last status 0. shadow 모드 = score/ranking/decision 변형 0(거래영향 없음).
+- 미커밋: plist 2개(마스터 커밋 대기).
+
+### 폐루프 최종 현황
+- 학습 🟢 부활(적응형) / 적용 🟡 shadow 관찰(거래영향 0) / 승급 🟢 자동추적(accumulating 21/30).
+- learned bias가 "수동 env 토글" → "증거 기반 자동승급 컴포넌트"로 전환 완료 = 루나 trading OS 자가발전 메커니즘 가동.
+
+### 다음 진입점
+1. 매일 07:00 학습 누적 → sampleCount 21→30 도달 시 evidence_pending → promotion 제안 알림.
+2. promotion 제안 시 마스터 검토 → active 전환(수동 승인 유지, 1차 안전).
+3. (후순위) virtualExpectancy 실측 evidence 정교화 · active 자동화 단계 · 메타학습(윈도우·임계치·learn_rate 자가조정).
