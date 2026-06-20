@@ -509,3 +509,141 @@
 
 **다음 최우선 조사**: defensive_rotation 진입 실행경로(왜 이 전략만 67건 불일치) — 실제 binance 주문 송신 여부·체결 응답·전략별 실행 분기 추적. 이것이 암호화폐 손실/불일치의 핵심 미규명 지점.
 > 국내/국외 확대 결론: 불일치는 암호화폐 전용(국내장은 placeOrder disabled로 거래 부재). 따라서 ①암호화폐 defensive_rotation 체결경로 ②국내장 활성화가 2대 과제.
+
+
+### 8-12. ★체결경로 7단계 추적 — 매수 생애주기 책임 분산 (2026-06-20 메티)
+> 마스터 7단계 흐름 기준 소스 정밀 점검: 전략→매수→매수후검증→포지션유지→매도→매도후검증→(암호화폐)더스트→피드백.
+
+**7단계 흐름 소스 매핑**:
+| 단계 | 구현 모듈 |
+|---|---|
+| 1.전략수립 | shared/unified-analyst.ts, strategy-router.ts (defensive_rotation 분류) |
+| 2.매수 | team/hephaestos/signal-executor.ts:422 marketBuy → market-order-execution.ts → binance-client.createBinanceMarketBuy |
+| 3.매수후검증 | ⚠️분산 — normalize pendingError + pending-reconcile 6파일 + persistBuyPosition(walletTotal) + execution-attach |
+| 4.포지션유지 | execution-attach.ts, protective-exit.ts, position-reevaluator.ts |
+| 5.매도 | executeSellTrade, market-order-execution.marketSell |
+| 6.매도후검증 | finalizeExecutedTrade, telegram-trade-alerts.ts(부분청산 기록) |
+| 7.더스트(암호화폐) | cleanupDustLivePosition, portfolio-position-delta.ts |
+| 8.피드백 | regime-weight-learner (C8, 복원완료) |
+
+**★근본원인 — 매수 생애주기 책임 분산**:
+매수 실행/체결검증/journal기록이 단일 트랜잭션이 아닌 여러 모듈에 흩어짐.
+- 매수 실행(signal-executor.ts): marketBuy → persistBuyPosition(walletTotal 기반 positions 관리) → attach. **trade_journal 직접 기록 없음**
+- journal 기록(insertJournalEntry, trade-journal-db.ts:559): signal.ts:450·hanul.ts:1293/1800·telegram-trade-alerts.ts에서 호출 — **매수 실행 경로 밖**
+- 체결 검증: normalize(미체결 pendingError throw) + attach(execution-attach.ts:48 실제 포지션 없으면 throw 아닌 조용한 `attached:false`)
+→ 매수 실행과 journal 기록이 비동기·분리 → 정합 사각지대
+
+**확인된 결함 지점**:
+- signal-executor.ts:426 `settledUsdt = order.cost || filled*price || actualAmount` ← 미체결(filled=0)을 요청금액으로 폴백
+- execution-attach.ts:48 실제 포지션 없으면 조용한 attached:false (검증 실패가 차단 안 됨)
+- signal-executor.ts:442-450 attach `.catch(warn)` — throw만 잡고 attached:false 무시
+- journal 기록 주체가 매수 경로 밖 → 체결 검증과 독립 진행
+
+**검증 메커니즘은 정교하나 우회 가능**: pending-reconcile 6파일(context/core/ledger/runner/retry) + live-position-reconcile + position-sync(market open fetchBalance↔DB). 단 경로 분산으로 일부 매수가 게이트 통과 전 journal 기록 → 67건 reconciled.
+
+**보강 설계 (우선순위)**:
+1. [생애주기 통합] 매수→체결검증(filled>0 + fetchBalance 실제포지션)→journal open을 단일 순서로, 검증 실패 시 기록 거부 + pending-reconcile 등록
+2. [검증 게이트] execution-attach attached:false(포지션 없음) 시 journal open 미기록 — 조용한 실패를 명시적 차단으로
+3. [폴백 제거] signal-executor.ts:426 settledUsdt actualAmount 폴백 제거 (filled=0이면 진입 거부)
+4. [책임 일원화] journal 기록을 매수 실행 경로로 통합 (telegram-alerts/hanul 분산 제거)
+
+**다음 최우선**: 매수 open 정확한 기록 주체(hanul.ts:1293·telegram-alerts:349) 핀포인트 + marketBuy 결과와의 순서 → 67건 생성 지점 확정.
+> 자기수정: telegram-trade-alerts.ts:252는 매수 open이 아닌 부분청산 기록으로 확인됨(realizedSize·pnlAmount). 매수 open 기록 주체는 추가 핀포인트 필요.
+
+
+### 8-13. ★매수 open 기록 주체 핀포인트 + 체결검증 부재 확정 (2026-06-20 메티)
+> 마스터 지적: "텔레그램은 알림 수단인데 기록은 이상하다" → 정확히 핵심을 짚음.
+
+**telegram-trade-alerts.ts 실제 정체 (이름 ≠ 역할)**:
+- 파일 주석: "Trade notification AND journal settlement helpers... owns the post-fill reporting contract" → 이름은 알림이나 실제는 **"체결 후(post-fill) 보고 + journal 정산" 모듈**. 알림과 DB기록을 한 모듈에 묶음 = **책임 혼재**(마스터 지적이 옳음).
+- 매수 open 기록 진짜 주체: `recordExecutedTradeJournal`(line 349, `if (trade.side==='buy')` 블록)
+- 호출처: hephaestos.ts:548, pending-reconcile-ledger.ts:266, 내부 466
+
+**★근본원인 확정 — 체결 검증 없는 기록**:
+recordExecutedTradeJournal(349~380)이 "Executed(체결됨)" 이름과 달리 실제 체결을 검증하지 않음:
+- `entry_size: trade.amount || 0` ← filled=0이어도 0으로 기록
+- `entry_value: trade.totalUsdt || 0` ← signal-executor.ts:426 `settledUsdt = ... || actualAmount` 폴백된 값(미체결도 요청금액 $110)
+- 유일한 검증(378): `getJournalEntryByTradeId` = **DB에 INSERT 됐는지만** 확인 (실제 거래소 체결/포지션 확인 아님!)
+→ 미체결/부분체결 매수가 entry_value $110로 trade_journal open 기록 → 67건 reconciled의 정확한 메커니즘
+
+**보강 설계 (정밀)**:
+1. [체결검증 추가] recordExecutedTradeJournal 진입 시 `trade.amount(filled) > 0` 검증 → 0이면 journal 기록 거부 + pending-reconcile 등록
+2. [폴백 제거] signal-executor.ts:426 settledUsdt actualAmount 폴백 제거 → filled=0이면 진입 자체 거부
+3. [실제 포지션 확인] getJournalEntryByTradeId(DB 확인) 외 fetchBalance 실제 포지션 확인을 기록 전 게이트로 추가
+4. [책임 분리] journal 기록을 telegram-trade-alerts(알림 모듈)에서 분리 — 알림 ≠ 기록
+
+**다음 확인**: pending-reconcile-ledger.ts:266 경로 — 미체결 처리 중 recordExecutedTradeJournal 호출이 67건 진입 경로인지 확정(normalize가 filled=0 시 pendingError throw하므로, 직접 경로보다 recovery/부분체결 경로 의심).
+> §8-12 자기수정 정정: telegram-trade-alerts.ts는 부분청산(252)뿐 아니라 recordExecutedTradeJournal(349)로 매수 open도 기록. 매수 open 기록 주체 = 이 모듈로 확정.
+
+
+### 8-14. ★책임 분리 + 정리 + 효율 보강 설계 (2026-06-20 메티)
+> 마스터 지시: ①알림/기록 함수 분리 ②불필요 함수·로직 정리 ③7단계는 멘탈 모델 — 시스템이 이미 정교하면 효율 방향으로 보강.
+
+**telegram-trade-alerts.ts 구조 진단 (9함수, 계층 확인)**:
+| 함수 | 역할 | 관계 |
+|---|---|---|
+| closeResolvedJournalEntry(54) | 청산 코어 | ← closeOpenJournalForSymbol(156)·settleOpenJournalForSell(225) 공통 호출 |
+| closeOpenJournalForSymbol(128) | 심볼 청산 진입점 | 기록 |
+| settleOpenJournalForSell(171) | 매도 정산 진입점 | 기록 |
+| recordExecutedTradeJournal(341) | 매수 기록(sell은 settle 위임406) | 기록 ⚠️체결검증 결함 |
+| notifyExecutedTrade(322) | 체결 알림 | 알림(유일) |
+| finalizeExecutedTrade(441) | 알림(463)+기록(466) 조합 | 오케스트레이터 |
+| toEpochMs·dust 3개 | 유틸 | - |
+→ 청산 3함수는 중복 아닌 **계층**(코어1 + 진입점2). 이름은 "알림"이나 실제는 정산6 + 알림1. hephaestos.ts는 얇은 wrapper(478·500·543·547·551).
+
+**A. 책임 분리 설계 (알림 ≠ 기록)**:
+1. **journal 정산/기록 모듈 신설**(예: `trade-journal-settlement.ts`): closeResolvedJournalEntry·closeOpenJournalForSymbol·settleOpenJournalForSell·recordExecutedTradeJournal + 유틸(toEpochMs·dust)
+2. **알림 모듈**(telegram-trade-alerts.ts → 순수 알림으로 축소): notifyExecutedTrade
+3. **finalizeExecutedTrade**(오케스트레이터): 정산 모듈 + 알림 모듈을 조합 호출 — line 463 notify·466 record를 각 모듈에서. 위치는 별도 orchestrator 또는 hephaestos.ts.
+→ 알림과 DB기록이 물리적으로 다른 파일
+
+**B. 불필요 함수·로직 정리**:
+- hephaestos.ts wrapper 층(478·500·543·547·551)은 telegram-trade-alerts 재노출 — 분리 후 import 경로 정리, 단순 재노출 wrapper 제거 가능성
+- 청산 3함수는 계층이므로 **유지**(통합 금지 — 역할 분담된 정교한 구조)
+- 미사용 export·dead code는 구현 시 정적 분석(tsc noUnusedLocals + 호출 그래프)으로 식별
+
+**C. 효율 보강 (현재 정교 구조 유지, 결함만 외과적)**:
+1. recordExecutedTradeJournal: 체결검증(`trade.amount>0`) 추가 → 0이면 journal 기록 거부 + pending-reconcile 위임
+2. signal-executor.ts:426: settledUsdt actualAmount 폴백 제거 → filled=0이면 진입 거부
+3. 기존 pending-reconcile 6파일·position-sync·execution-attach 정교 구조는 그대로 유지
+
+**D. 7단계 vs 현재 — 효율 방향 (마스터 철학 반영)**:
+- 현재 시스템은 마스터 7단계를 이미 더 정교하게 구현(pending-reconcile 6파일·execution-attach·position-sync·normalize). 7단계는 멘탈 모델이므로 강제하지 않음.
+- 효율 방향 = 전면 재작성 ❌, 결함(체결검증 부재·책임 혼재)만 외과적 보강 ✅.
+
+**다음**: 코덱스 프롬프트 — ①정산/알림 모듈 분리 ②recordExecutedTradeJournal 체결검증 추가 ③settledUsdt 폴백 제거. 마스터 승인 후 구현.
+
+
+### 8-15. ★포지셔닝/매수매도/피드백 추가 보완점 (2026-06-20 메티)
+> 마스터 지시: 포지셔닝·매수매도·피드백 추가 보완점 정밀 분석(데이터+소스).
+
+**데이터 진단 (binance 30일, is_paper=false)**:
+| 영역 | 지표 | 상태 |
+|---|---|---|
+| 매도 TP/SL | tp_sl_set=true 81건·에러 0 | ✅ 건강 |
+| 피드백 학습품질 | trusted 48 vs exclude_from_learning 33(41%) | 🔴 손실 |
+| 포지셔닝 sizing | $50~122 일관 / defensive_rotation 58%(47/81) 편중 | 🟡 |
+
+**★보완점 1 — 피드백 학습 데이터 41% 손실 (매수 연쇄)**:
+- exclude_from_learning 33건 = **전부 reconciled**(no_position 31 + duplicate_open 2) = 매수 체결/정합 실패
+- 인과: 매수 체결검증 부재 → 미체결 → exclude_from_learning → 학습 데이터 41% 손실의 직접 연쇄
+- 학습 가능 데이터: 30일 41건(regime당 ~8 부족) / 90일 277건(충분)
+- **§8-13 매수 체결검증 보강이 피드백 손실도 동시 해결**(단일 보강 이중 효과). 적응형 윈도우(30→90, 복원완료)가 데이터 부족 추가 보완.
+
+**보완점 2 — 포지셔닝 전략 편중**:
+- defensive_rotation 58%(47/81) 편중, momentum(13)·trend(9)·breakout(2) 과소
+- 현재 trending_bull regime인데 defensive 과다 = 동적 전략 선택 미흡
+- learned-regime-bias(shadow, 복원완료) active 전환 시 개선 → auto-promotion 6-state(accumulating 21/30) 추적 중
+- sizing 자체는 일관적($50~122), TP/SL 에러 0 → capital 반영은 정상
+
+**보완점 3 — 매도 (양호, 대칭 점검 권장)**:
+- TP/SL 설정·에러 건강(81건 에러 0). 큰 결함 미발견.
+- (점검 권장) 매도 후 검증(settleOpenJournalForSell)에서 실제 체결량(soldAmount) 검증이 매수와 대칭적으로 있는지 — 매수 체결검증 부재가 매도에도 대칭일 가능성. 코덱스 구현 시 동시 점검.
+
+**종합 — 보강 우선순위 (이중효과 반영)**:
+1. **매수 체결검증(§8-13)** = 매수 정합 + 피드백 41% 손실 **동시 해결** → 최우선(이중 효과)
+2. 책임 분리(§8-14) = 알림/기록 분리 + wrapper/미사용 정리
+3. learned-bias active 전환 = 포지셔닝 전략 편중 개선(auto-promotion 진행 중)
+4. (점검) 매도 후 검증 대칭성 — 매수 보강과 함께 검토
+
+> 핵심 통찰: 포지셔닝·피드백 보완점이 대부분 **매수 체결검증 부재의 2차 효과**로 수렴. §8-13 매수 보강이 가장 높은 레버리지(매수+피드백+정합 동시 개선). 매도는 독립적으로 양호.

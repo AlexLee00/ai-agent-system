@@ -315,3 +315,68 @@ ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_
 1. 매일 07:00 학습 누적 → sampleCount 21→30 도달 시 evidence_pending → promotion 제안 알림.
 2. promotion 제안 시 마스터 검토 → active 전환(수동 승인 유지, 1차 안전).
 3. (후순위) virtualExpectancy 실측 evidence 정교화 · active 자동화 단계 · 메타학습(윈도우·임계치·learn_rate 자가조정).
+
+
+---
+
+## 2026-06-20 (이어서) — 크립토 손실 근본원인 + 체결경로 7단계 추적 + 책임분리 설계 (메티)
+
+### 크립토 손실 근본원인 (§8-10·8-11) — 국내/국외 확대
+- 시장별 정합(30일): binance reconciled 67·cleanup 67(🔴) vs kis 0·kis_overseas 0(✅ 단 거래부재)
+- **불일치는 암호화폐 전용** — kis-adapter.ts:95 `placeOrder: disabled`(국내장 주문 비활성)
+- paper/testnet 기각: applyDevSafetyOverrides `if(IS_OPS) return secrets` → OPS real mainnet. binance-client·position-sync 둘다 testnet 미적용.
+- reconciled 67건 전부 defensive_rotation, $110 알트, 진입~정리 avg 49h
+
+### 체결경로 7단계 추적 (§8-12·8-13)
+- 마스터 7단계(전략→매수→매수후검증→포지션유지→매도→매도후검증→더스트→피드백) 소스 매핑 완료
+- 매수 실행: signal-executor.ts:422 marketBuy → persistBuyPosition(walletTotal 기반) → execution-attach(포지션 없으면 조용한 attached:false)
+- **근본원인: 매수 생애주기 책임 분산 + 체결검증 부재**
+  - journal 기록 주체 = `recordExecutedTradeJournal`(telegram-trade-alerts.ts:349) — 매수 경로 밖
+  - 체결검증 없음: entry_size `trade.amount||0`(filled=0도 기록), entry_value `trade.totalUsdt`(signal-executor:426 `||actualAmount` 폴백), 검증은 getJournalEntryByTradeId(DB확인만)
+  - → 미체결도 $110 open 기록 → 67건 reconciled
+
+### 책임 분리 + 정리 + 효율 보강 설계 (§8-14)
+- telegram-trade-alerts.ts 진단: 9함수 = 정산6 + 알림1(notifyExecutedTrade) + 오케(finalize) + 유틸2. 이름은 알림이나 실제는 정산 모듈(책임 혼재 — 마스터 지적 정확)
+- 청산 3함수는 **중복 아닌 계층**(closeResolved 코어 + 진입점2) → 유지
+- 분리: journal 정산/기록 모듈 신설 + 알림 모듈 축소 + finalize 오케스트레이터 조합
+- 정리 대상: hephaestos.ts wrapper(478·500·543·547·551) + 미사용 export(tsc 정적분석)
+- 효율 보강(결함만): ①recordExecutedTradeJournal 체결검증(filled>0) ②settledUsdt actualAmount 폴백 제거. 기존 pending-reconcile 6파일·position-sync 정교구조 유지.
+
+### 다음 진입점
+1. 포지셔닝/매수매도/피드백 추가 보완점 정밀 분석(진행 중)
+2. 코덱스 프롬프트 — 정산/알림 분리 + 체결검증 추가 + 폴백 제거(마스터 승인 후)
+
+
+---
+
+## 2026-06-20 세션 마감 (메티) — 다음 세션 최종검토 진입점
+
+### 이번 세션 완료 (설계문서 §8-10~8-15)
+- 크립토 손실 근본원인(§8-10·8-11): 불일치는 암호화폐 전용, paper/testnet 기각(OPS real mainnet)
+- 체결경로 7단계 추적(§8-12·8-13): 매수 생애주기 책임 분산 + 체결검증 부재 확정
+- 책임분리+정리+효율보강 설계(§8-14)
+- 포지셔닝/매수매도/피드백 보완점(§8-15)
+- (이전 연속) 자가진화 루프 복원 + auto-promotion 등록
+
+### 핵심 결론 (다음 세션 최종검토 대상)
+1. **근본원인 = 매수 체결검증 부재** (recordExecutedTradeJournal, telegram-trade-alerts.ts:349)
+   - entry_size `trade.amount||0`, entry_value `settledUsdt`(signal-executor:426 actualAmount 폴백), 검증은 getJournalEntryByTradeId(DB확인만)
+   - → 미체결 67건 reconciled + 학습데이터 41% 손실(exclude 33건 전부 reconciled) = 이중 효과
+2. **책임 혼재**: telegram-trade-alerts.ts = 정산6 + 알림1(notifyExecutedTrade). 청산 3함수는 계층(유지)
+3. **매도는 order.filled 우선**(portfolio-position-delta:224, 매수보다 양호), 단 amount 폴백 대칭 약점
+4. **포지셔닝 전략 편중**(defensive 58%) — learned-bias shadow 보강 중(auto-promotion 21/30)
+5. **불일치는 암호화폐 전용** — kis-adapter placeOrder disabled(국내장 거래 부재)
+
+### 보강 우선순위 (다음 세션 검토 → 코덱스 프롬프트)
+1. 매수 체결검증(§8-13) = 매수+피드백+정합 **동시 해결**(최고 레버리지)
+2. 책임 분리(§8-14) = 정산/알림 모듈 분리 + wrapper/미사용 정리
+3. learned-bias active 전환(포지셔닝 편중)
+4. 매도 대칭 게이트(filled>0)
+5. 국내장 kis placeOrder 활성화 검토
+
+### 다음 세션 진입점 — 종합 최종 검토
+- 설계문서 §8-10~8-15 + 소스(signal-executor·telegram-trade-alerts·execution-attach·pending-reconcile 6파일·position-sync) 종합 재검토
+- 코덱스 프롬프트 작성 전 설계 정합성 최종 확인
+- (확인 권장①) settleOpenJournalForSell 체결량 대칭성 소스 확정
+- (확인 권장②) pending-reconcile-ledger:266 경로 = 67건 진입 경로 핀포인트
+- 검토 후 docs/codex/CODEX_LUNA_*.md 프롬프트 작성 → 마스터 승인 → 코덱스 구현
