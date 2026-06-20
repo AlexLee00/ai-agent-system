@@ -47,6 +47,7 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'korean-factor-model-shadow': `SELECT COUNT(*)::int AS count FROM korean_factor_log`,
   'rl-policy-shadow': `SELECT COUNT(*)::int AS count FROM luna_guard_counterfactual WHERE guard_reason ILIKE '%rl%'`,
   'stat-arb-shadow': `SELECT COUNT(*)::int AS count FROM luna_signal_policy_shadow WHERE policy_key ILIKE '%stat%'`,
+  'learned-regime-bias': `SELECT COUNT(*)::int AS count FROM luna_regime_weight_snapshots WHERE total_trades >= 3`,
   'position-lifecycle': `SELECT COUNT(*)::int AS count FROM position_lifecycle_events`,
   'posttrade-feedback': `SELECT COUNT(*)::int AS count FROM feedback_to_action_map`,
   'candidate-backtest-entry-gate': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status`,

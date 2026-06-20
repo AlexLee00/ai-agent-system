@@ -174,8 +174,9 @@ async function main() {
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.equal(seedDryRun.components.includes('pattern-relaxation-shadow-sim'), true);
+  assert.equal(seedDryRun.components.includes('learned-regime-bias'), true);
   assert.equal(LUNA_COMPONENT_REGISTRY_SEED.some((row: any) => row.component === 'pattern-relaxation-shadow-sim'), true);
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 44);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 46);
 
   return {
     ok: true,

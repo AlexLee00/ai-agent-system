@@ -201,8 +201,9 @@ async function main() {
 
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.equal(seedDryRun.components.includes('strategy-exit-shadow'), true);
+  assert.equal(seedDryRun.components.includes('learned-regime-bias'), true);
   assert.equal(LUNA_COMPONENT_REGISTRY_SEED.some((row: any) => row.component === 'strategy-exit-shadow'), true);
-  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 45);
+  assert.equal(LUNA_COMPONENT_REGISTRY_SEED.length, 46);
   const evaluatorSource = fs.readFileSync(REGISTRY_EVALUATOR_PATH, 'utf8');
   assert.match(evaluatorSource, /strategy-exit-shadow/);
   assert.match(evaluatorSource, /luna_strategy_exit_shadow/);
