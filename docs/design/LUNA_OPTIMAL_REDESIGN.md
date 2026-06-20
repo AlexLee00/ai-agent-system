@@ -1059,3 +1059,50 @@ Phase A reload(LUNA_RECONCILE_FILL_RESOLVE_ENABLED=true) 후 검증 중 fill-res
 - bear 레짐 도래 시 **mean_reversion 선택 시작** 확인(defensive 대신)
 - LEARNED_BIAS shadow 로깅(reasonLine diff) 발생 확인
 - bear×mean_reversion 성과 vs defensive 비교 → active 전환 또는 추가 조정 판단
+
+
+---
+
+## §8-27 fill-resolver 근본 결함 발견 + Phase B 2차 백필 보류 (2026-06-20 저녁)
+
+### Phase B 2차 백필 dry-run (past ~06-10, --since 2026-04-01 --limit 300)
+- 245 후보 → **187 매칭(76%)** / unresolved 58(24%)
+- 매칭 출처: fetchMyTrades_orderid 167 + fetchMyTrades(단일) 20
+- unresolved 58 = 전부 `ambiguous_no_orderid` (04-26~05-10, ORCA/MEGA 등) → 미변경(안전, pnl=0 유지)
+- 기간 2026-03-26~06-10, 표면상 순손익 +1094.2 USD (승 60 +1495 / 패 127 -401, 승률 32%)
+
+### ★ 근본 결함 발견 (2레이어) — apply 보류 결정적 사유
+**레이어 1: entry 기록 결함 (entry_size 미세 거래 3건)**
+- TRD-20260429-019 BROCCOLI714: entry_size 0.392 → entry_value **$0.0074**
+- TRD-20260426-037 ZBT: entry_size 0.0784 → entry_value **$0.0138**
+- TRD-20260429-013 BROCCOLI714: entry_size 0.795 → entry_value **$0.0151**
+- 바이낸스 최소주문 $5 미만 → 실제 주문일 수 없음, entry 기록 자체 손상 (원인 별도 조사 필요)
+
+**레이어 2: backfill 1차 order_id 매칭 가드 부재** (binance-fill-resolver.ts 라인 132~152)
+- `value = matched.reduce(cost 합)`; `pnlAmount = value - expectedEntryValue`
+- `partial: qty + tolerance(expectedQty) < expectedQty` → **'부족'만 체크, '초과'·'미세 entry' 미검증**
+- 깨진 entry($0.0137)에 실제 exit 체결 cost($136) 차감 → pnl 폭발 (+135.97, pnlPercent 988,662%)
+- pnlPercent 공식 확인: pnlAmount/expectedEntryValue×100 (BROCCOLI-019 121.23/0.0074≈163만% ✓)
+- 참고: 2차 fallback(라인 163)은 `|amount-expectedQty|<=tolerance` 단일 체결만 → 안전(결함 없음)
+
+### 격리 결과 (pnlPercent로 entry_value 역산: ev=pnl/pct×100)
+- 명백 오류 3건 **+379.92** (전체 +1094의 35%) → apply 제외 필수
+- 정상(ev≥$5) 184건 **+714.28** (승 57 +1115 / 패 127 -401)
+- 단 TRD-20260426-003 ZBT (entry $11.9 → +137, **1154%=12배**) 추가 검증 여지 (exit 수량 미확인)
+
+### 기존 with_fill 무오염 확인 ✅
+- 1차 백필(recent 25, 06-11~06-19) + 자동 reconcile: pnl% 최대 **20%**(HOME), entry_value<$5 = **0건**
+- 결함은 과거(03~05월) 후보에만 존재 → 1차 백필 정정 불필요
+
+### 메티 권고 (다음 세션 작업)
+1. **backfill 1차 order_id 매칭에 가드 추가 (CODEX 프롬프트 → 코덱스)**:
+   - ① `expectedEntryValue < MIN_NOTIONAL($5)` → unresolved `micro_entry_invalid`
+   - ② `matchedQty`가 `expectedQty` 크게 초과(비율 임계, 예: >1.5×) → partial/unresolved `qty_overflow`
+   - ③ (선택) `|pnlPercent| > 임계`(예 1000%) → 의심 플래그
+   - 회귀 테스트: 미세 entry → unresolved, 수량 초과 → 차단, 정상 → 통과
+2. 가드 추가 후 **재dry-run** → 깨끗한 후보만 apply (마스터, DB write)
+3. TRD-20260426-003 ZBT exit 수량 직접 확인(fetchMyTrades) — 12배 실제 익절 여부
+4. entry_size 깨진 거래 원인 별도 조사 (entry 기록 로직)
+
+### dry-run 결과 파일
+- /tmp/phaseb.json (90KB, 245 후보 전체) — 다음 세션 재사용 가능(단 /tmp는 휘발 가능, 필요시 재실행)

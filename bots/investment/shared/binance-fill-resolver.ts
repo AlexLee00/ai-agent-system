@@ -16,6 +16,13 @@ const DEFAULT_LOOKBACK_MS = Number(process.env.LUNA_FILL_RESOLVE_LOOKBACK_MS) > 
   ? Number(process.env.LUNA_FILL_RESOLVE_LOOKBACK_MS)
   : 600_000;
 const DEFAULT_LIMIT = 1000;
+// §8-27 guard: block corrupted entries or misattributed order-id fills before PnL mutation.
+const MIN_NOTIONAL_USDT = Number(process.env.LUNA_FILL_RESOLVE_MIN_NOTIONAL_USDT) > 0
+  ? Number(process.env.LUNA_FILL_RESOLVE_MIN_NOTIONAL_USDT)
+  : 5;
+const QTY_OVERFLOW_RATIO = Number(process.env.LUNA_FILL_RESOLVE_QTY_OVERFLOW_RATIO) > 0
+  ? Number(process.env.LUNA_FILL_RESOLVE_QTY_OVERFLOW_RATIO)
+  : 0.5;
 
 function num(value, fallback = 0) {
   const n = Number(value);
@@ -104,6 +111,9 @@ export async function resolveFillForClosedJournal({
   if (!normalizedSymbol.endsWith('/USDT')) {
     return { source: 'unresolved', reason: 'non_usdt_pair_not_supported', symbol: normalizedSymbol, fillCount: 0 };
   }
+  if (!(expectedEntryValue >= MIN_NOTIONAL_USDT)) {
+    return { source: 'unresolved', reason: 'micro_entry_invalid', symbol: normalizedSymbol, fillCount: 0, expectedEntryValue, expectedQty };
+  }
 
   const resolvedLookbackMs = num(lookbackMs, DEFAULT_LOOKBACK_MS);
   const since = Math.max(0, num(entryTime, Date.now() - 30 * 24 * 3600_000) - resolvedLookbackMs);
@@ -130,6 +140,9 @@ export async function resolveFillForClosedJournal({
       const matched = candidates.filter((t) => t.order && oidSet.has(String(t.order)));
       if (matched.length > 0) {
         const qty = matched.reduce((s, t) => s + t.amount, 0);
+        if (qty > expectedQty * (1 + QTY_OVERFLOW_RATIO)) {
+          return { source: 'unresolved', reason: 'qty_overflow', symbol: normalizedSymbol, fillCount: matched.length, matchedQty: qty, expectedQty };
+        }
         const value = matched.reduce((s, t) => s + (t.cost || t.amount * t.price), 0);
         const exitPrice = value > 0 && qty > 0 ? value / qty : null;
         const pnlAmount = exitPrice != null ? value - expectedEntryValue : null;
