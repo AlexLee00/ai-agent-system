@@ -456,3 +456,25 @@ ET-C 활성화 완료. 선택지: ① 구현 가능 목록(C17 안전→C14 btc_
 
 ### 다음 진입점
 → 백필 dry-run으로 **recent 25건 매칭률 확인** → 양호 시 **Phase A reload(마스터)** → with_fill 재등장 검증 → Phase B 백필 apply
+
+
+---
+
+## 2026-06-20 세션2 추가 — dry-run 검증 + 버그 발견 (§8-24)
+
+### dry-run 검증 결과
+- backfill.ts **이중 normalizeCandidate 버그** 발견(loadBackfillCandidates `.map` + 루프 재적용 → entry_size=0)
+- DB·db.query 정상 직접 확인. smoke는 mock injection이라 미검출
+- 수정(코덱스): loadBackfillCandidates `.map(normalizeCandidate)` 제거 → CODEX 문서 §8
+
+### 진행 방침
+- **Phase A 선행**(backfill 버그와 독립): reconcile-open-journals 재활성화는 검증됨(with_fill 31건)
+  - 마스터: git plist 배포 + launchctl reload → 앞으로의 손익 회복
+- **Phase B 백필**: 코덱스 버그 수정 → dry-run 재실행(recent 25건 ~100% 기대) → apply
+
+### 다음 진입점
+→ ① 마스터 Phase A reload → 메티 with_fill 재등장 검증
+→ ② 코덱스 backfill 버그 수정 → 메티 dry-run 재검증 → 마스터 백필 apply
+
+### 교훈
+mock smoke < 실데이터 dry-run. 신규 스크립트는 실데이터 dry-run 필수.
