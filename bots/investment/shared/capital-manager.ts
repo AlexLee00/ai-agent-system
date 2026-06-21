@@ -17,6 +17,8 @@ import { getMinOrderAmount, getMinOrderRatio } from './order-rules.ts';
 import { fetchFearGreedIndex } from '../team/argos.ts';
 import { getInvestmentExecutionRuntimeConfig, getInvestmentSyncRuntimeConfig } from './runtime-config.ts';
 import { getBinanceBalanceSnapshot, getBinanceTickerSnapshot } from './binance-client.ts';
+import { getCurrentRegime } from './dynamic-universe-selector.ts';
+import { getRegimeMultiplier } from './regime-multiplier.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -941,16 +943,16 @@ function buildAllowedTradeDecision(base = {}) {
  * @param {number} stopLossPrice  — 0이면 고정 3% 폴백
  * @returns {Promise<{ size: number, sizeInCoin?: number, riskAmount?: number, riskPercent?: number, capitalPct?: string|number, skip: boolean, reason?: string }>}
  */
-export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, exchange = null) {
-  const policy = getCapitalConfig(exchange);
-  const balance      = await getAvailableBalance(exchange);
-  const totalCapital = await getTotalCapital(exchange);
-  const minOrderUsdt = await getDynamicMinOrderAmount(exchange || 'binance');
+export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, exchange = null, regime = null, deps = {}) {
+  const policy = (deps.getCapitalConfig || getCapitalConfig)(exchange);
+  const balance      = await (deps.getAvailableBalance || getAvailableBalance)(exchange);
+  const totalCapital = await (deps.getTotalCapital || getTotalCapital)(exchange);
+  const minOrderUsdt = await (deps.getDynamicMinOrderAmount || getDynamicMinOrderAmount)(exchange || 'binance');
 
   if (totalCapital <= 0) return { size: 0, skip: true, reason: '총 자본 없음' };
 
   // 리스크 기반 사이징
-  const fearGreedIndex = await fetchFearGreedIndex().catch(() => 50);
+  const fearGreedIndex = await (deps.fetchFearGreedIndex || fetchFearGreedIndex)().catch(() => 50);
   const adjustedRisk = getVolatilityAdjustedRisk(policy.risk_per_trade, fearGreedIndex, 1.0);
   const accountRisk = totalCapital * adjustedRisk;
   const tradeRisk   = (entryPrice > 0 && stopLossPrice > 0)
@@ -958,6 +960,9 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, e
     : 0.03;  // SL 없으면 기본 3% 리스크
 
   let size = accountRisk / tradeRisk;
+  const effRegime = regime || await (deps.getCurrentRegime || getCurrentRegime)(exchange || 'binance').catch(() => null);
+  const regimeMult = getRegimeMultiplier(effRegime, process.env);
+  size *= regimeMult;
 
   // 단일 포지션 최대 비율 제한
   size = Math.min(size, totalCapital * policy.max_position_pct);
@@ -980,6 +985,8 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, e
     riskAmount:  accountRisk,
     riskPercent: adjustedRisk * 100,
     capitalPct:  (size / totalCapital * 100).toFixed(1),
+    regime:      effRegime,
+    regimeMultiplier: regimeMult,
     skip:        false,
   };
 }
