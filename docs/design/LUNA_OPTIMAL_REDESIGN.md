@@ -1152,3 +1152,47 @@ binance-fill-resolver.ts에 3개 방어:
 ### 교훈
 - **메티 역산 분석의 한계**: pnlPercent>500% 역산은 3건만 식별했으나, 가드의 entry_value 직접 체크는 34건 전부 포착 (pnl 작은 미세 entry는 역산에 안 걸림). 직접 기준값 검증 > 간접 추정.
 - **유틸 함수 null 처리**: num/safeNumber가 Number(null)=0을 유효값으로 처리 → fallback 무시. 방어적 fallback은 `raw>0 ? raw : fallback` 패턴 필요.
+
+
+---
+
+## §8-29 micro entry(dust) 원인 규명 + 학습 정정 + order_id 없는 no_position 처리 (2026-06-21)
+
+### 배경
+§8-28에서 backfill 가드가 micro_entry 34건을 격리. 그 entry_size 손상 원인을 조사.
+
+### micro entry의 정체 = dust position ★
+- **정체**: dust position(먼지 잔여, entry_value ~$0.1)
+- **원인**: 2026-04-23 dust 처리 로직 대거 변경 (커밋 6개):
+  - 6b01e4911 isolate dust from position watch
+  - **736616800 fold symbol dust into managed buys** ← 핵심: dust를 managed position에 병합
+  - 8279b6c82 trim dust load and flex max positions
+  - 4ce25753d separate dust from strategy coverage
+  - 648a3b072 separate dust exit signal noise
+  - 2d57dc6d7 keep crypto dust out of synced positions
+- dust가 managed/strategy position으로 다뤄지며 trade_journal에 entry_size 미세($0.1)로 기록
+- **시기**: 04-26~05-10 집중 (04-23 변경 후 ~ 05-10경 수정), 현재 0건 ✅
+
+### 검증 데이터
+- 기간별 micro 비율: 04-26 이전 1.3%(3/231) / **04-26~05-10 21.5%(64/298)** / 05-10 이후 0%(0/98)
+- execution_origin: cleanup 51 + strategy 16 (dust가 양쪽에 fold됨)
+- entry_value ~$0.05~0.16 (정상 $70의 약 1/700), 전부 long
+- sweeper(applyManualDustJournalSync)가 dust 청산 시 exclude_from_learning=true 마킹 → 49건 정상 제외
+- ★ 단 **18건은 trusted(학습 포함)** — dust인데 strategy origin(16)으로 fold되어 정상 거래로 기록 (normal_exit/signal_reverse 청산)
+
+### 학습 정정 (18건)
+- 18건 trusted dust(entry_value<$5, strategy/cleanup origin)를 exclude_from_learning=true로 정정
+- 정정 SQL: `UPDATE ... SET exclude_from_learning=true, quality_flag='exclude_from_learning' WHERE binance AND entry_value<5 AND exclude_from_learning=false` (마스터 실행)
+- 근거: entry_value<$5는 바이낸스 최소주문 미만 → 실제 진입 불가, dust 확실
+
+### order_id 없는 no_position 54건 처리
+- **정체**: TP/SL 미설정(tp_sl_set=false) 초기 거래, exit_order_ids/fill_ids도 null
+- cleanup 52 + strategy 2, **정상 크기(avg $16.82, micro 0)**, 03-26~05-02
+- order_id 없어 backfill 정밀 매칭 불가, symbol+exit_time 근사 매칭은 모호성(ambiguous)으로 권장 안 함
+- **처리 방안**: pnl 미상이므로 exclude_from_learning 마킹 권고 (entry/regime는 유효하나 pnl 학습 노이즈 방지). 정밀 매칭은 보류
+
+### 결론
+- micro entry = dust(04-23 fold 로직), 현재 해결됨(05-10 이후 0건)
+- backfill 가드가 micro 격리 + 학습 정정으로 18건 dust 제외 → 학습 품질 보강
+- order_id 없는 54건은 TP/SL 미설정 초기 거래로 정밀 매칭 불가 → 학습 제외 권고
+- 가드는 LIVE에도 적용되어 향후 dust→position 자동 차단(이중 안전)
