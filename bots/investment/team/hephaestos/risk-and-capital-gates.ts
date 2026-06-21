@@ -232,7 +232,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     const currentPrice = await fetchTicker(symbol).catch(() => 0);
     const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
     const minOrderUsdt = await getDynamicMinOrderAmount('binance', signal?.trade_mode || getInvestmentTradeMode());
-    if (sizing.skip && !effectivePaperMode) {
+    if (sizing.skip) {
       console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
       return rejectExecution({
         persistFailure,
@@ -251,13 +251,13 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     }
 
     const softMultiplier = Number(reducedAmountMultiplier || 1);
-    const baseAmount = effectivePaperMode ? amountUsdt : sizing.size;
+    const baseAmount = sizing.size;
     const uncappedAmount = softMultiplier > 0 && softMultiplier < 1
       ? baseAmount * softMultiplier
       : baseAmount;
-    const capped = capLiveFireTradeAmount(uncappedAmount, effectivePaperMode);
+    const capped = capLiveFireTradeAmount(uncappedAmount);
     const actualAmount = capped.amount;
-    if (!effectivePaperMode && actualAmount < minOrderUsdt) {
+    if (actualAmount < minOrderUsdt) {
       return rejectExecution({
         persistFailure,
         symbol,
@@ -277,7 +277,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
       });
     }
     if (effectivePaperMode) {
-      console.log(`  📄 [PAPER] 시그널 원본 금액으로 가상 포지션 추적: ${actualAmount.toFixed(2)} USDT`);
+      console.log(`  📄 [PAPER] LIVE 동일 사이징으로 가상 포지션 추적: ${actualAmount.toFixed(2)} USDT (자본 ${sizing.capitalPct}%)`);
     } else {
       console.log(`  📐 [자본관리] 포지션 ${actualAmount.toFixed(2)} USDT (자본의 ${sizing.capitalPct}% | 리스크 ${sizing.riskPercent}%)`);
       if (softMultiplier > 0 && softMultiplier < 1) {
