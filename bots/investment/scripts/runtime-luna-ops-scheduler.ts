@@ -599,6 +599,13 @@ export function getOpsSchedulerJobs() {
       ...nodeScript('runtime-luna-discovery-funnel-report.ts', ['--hours=24', '--json']),
     },
     {
+      name: 'bear_strategy_observer',
+      category: 'observability',
+      market: 'crypto',
+      cadence: { type: 'interval', seconds: 21600 },
+      ...nodeScript('luna-bear-strategy-observer.ts', ['--json']),
+    },
+    {
       name: 'active_candidate_analysis_refresh_crypto',
       category: 'analysis_refresh',
       market: 'crypto',

@@ -1196,3 +1196,39 @@ binance-fill-resolver.ts에 3개 방어:
 - backfill 가드가 micro 격리 + 학습 정정으로 18건 dust 제외 → 학습 품질 보강
 - order_id 없는 54건은 TP/SL 미설정 초기 거래로 정밀 매칭 불가 → 학습 제외 권고
 - 가드는 LIVE에도 적용되어 향후 dust→position 자동 차단(이중 안전)
+
+
+---
+
+## §8-30. bear 자동 관찰 시스템 + sweeper dust 점검 (2026-06-21)
+
+### 8-30-1. 배경
+§8-26 bear 전략 fix 배포(BASE weight: TRENDING_BEAR mean_reversion 0.40 > defensive 0.30) 후 bear×mean_reversion 선택 검증 필요. 그러나 배포 후 계속 trending_bull(24h 49/50)이라 bear 미도래 → 검증 불가. 마스터가 수동으로 계속 확인할 수 없으므로 **자동 관찰 + 알림 시스템** 구축.
+
+### 8-30-2. bear 관찰 현황 (06-21 기준)
+- 배포 후(06-20 20:30~) bear 거래 **0건** (계속 bull)
+- 최근 7일 bear 거래 18건 전부 배포 **전**(06-14~06-19), 전부 defensive_rotation → 구 weight 하에선 정상
+- LEARNED_BIAS shadow 로깅 없음 (bull 국면이라 미발생)
+- → bear 도래 시 자동 체크 + 알림이 필요 (대기 상태)
+
+### 8-30-3. bear observer 설계 (자동 관찰)
+- 신규 스크립트 `luna-bear-strategy-observer.ts` — guard-effectiveness-report.ts 패턴 복제
+- 로직: 배포 후 bear 레짐 거래(exclude_from_learning=false) strategy_family 분포 → 상태 판정
+  - waiting(bear 0건) / observing(표본<3) / converted(mean_reversion 우세 ✅) / not_converted(defensive 우세 ⚠️)
+- **상태 변화 시에만 Telegram 알림** (평소 조용, 스팸 방지) — 마스터 수동 확인 불필요
+- ops-scheduler 6시간 interval task (bear_strategy_observer)
+- 출력: /tmp/luna-bear-observer-*.json+md + history.jsonl + 상태파일
+- CODEX 프롬프트: docs/codex/CODEX_LUNA_BEAR_STRATEGY_OBSERVER_2026-06-21.md (코덱스 구현 완료 → 메티 독립 검증/운영 배포 대기)
+
+### 8-30-4. sweeper dust 점검 결과 — 모두 정상
+- **sweeper dust 로직** (team/sweeper.ts): DUST_USDT=3 임계, dust journal을 walletGone 시 종료하며 `exclude_from_learning=true` + quality_flag 설정 (학습 오염 방지) → 정상
+- **consistency guardrail** (sweeper-consistency-check.ts runSweeperConsistencyCheck): binance 포지션 중 notional<$10 → `dust_positions_present` warning 감지
+- **현재 open dust = 0건** (binance 미청산 2건 모두 정상 크기)
+- **dust→position fold 재발 없음**: 월별 micro(entry_value<$5) 비율 — 3월 0% / 4월 8.8% / 5월 20.5% / **6월 0.0%**. 즉 04-23 fold 도입 → ~05-10 수정 → 6월 완전 청결
+- (참고) 임계 이원화: sweep 정리 $3 vs consistency 경고 $10 → 보수적 설계로 판단
+
+### 8-30-5. 인수인계 — 마스터 자동 확인 방법
+- **bear 관찰은 observer 구현 후 자동화**: 수동 확인 불필요. bear 도래 + mean_reversion 전환/실패 시 Telegram 자동 알림
+- 다음 bear 국면에서 mean_reversion 선택이 자동 검증됨
+- 수동 확인이 필요하면: `node bots/investment/scripts/luna-bear-strategy-observer.ts --json` 또는 `/tmp/luna-bear-observer-YYYYMMDD.md` 확인
+- sweeper dust: 현재 청결, 재발 없음. consistency guardrail이 dust 포지션 상시 감지
