@@ -387,6 +387,7 @@ async function executeSignal(signal) {
         console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${responsibilitySizing.multiplier.toFixed(2)} (${responsibilitySizing.reason})`);
       }
 
+      await db.updateSignalAmount?.(signal.id ?? signalId ?? '', actualAmount).catch(() => {});
       executionSubmittedAtMs = Date.now();
       executionClientOrderId = !effectivePaperMode
         ? buildDeterministicClientOrderId({
