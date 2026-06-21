@@ -1232,3 +1232,71 @@ binance-fill-resolver.ts에 3개 방어:
 - 다음 bear 국면에서 mean_reversion 선택이 자동 검증됨
 - 수동 확인이 필요하면: `node bots/investment/scripts/luna-bear-strategy-observer.ts --json` 또는 `/tmp/luna-bear-observer-YYYYMMDD.md` 확인
 - sweeper dust: 현재 청결, 재발 없음. consistency guardrail이 dust 포지션 상시 감지
+
+
+---
+
+## §8-31. 루나 프로세스 구간별 병목 진단 + 즉시/승격 타스크 (2026-06-21 세션2)
+
+### 8-31-1. 배경
+세션 작업 3가지: (1) 즉시 구현 가능 타스크(데이터 누적 불필요), (2) 루나 전체 프로세스 구간별 병목 체크(전략/매도/매수 병목 분석의 전체 확장), (3) 데이터 누적 시 승격 대기 타스크.
+
+### 8-31-2. 파이프라인 구간 맵 (ops-scheduler 59 task)
+- Active 흐름: market_state -> discovery -> candidate_selection -> analysis_refresh -> market_cycle -> decision_probe(active) -> execution(active) -> position_monitor -> reconcile -> learning (+ guardrail/watchlist/policy/report)
+- Shadow 흐름: promotion_shadow(7) + decision/evidence/paper/risk/feedback/strategy/neural shadow + observability(bear observer)
+- 핵심: active 거래는 decision_probe/execution뿐, 각 단계 개선판이 _shadow로 병렬 운영(승격 대기)
+
+### 8-31-3. (2) 병목 3계층 [핵심 발견]
+거래 결과(7일 crypto): 24건(open2/closed22), 실현 -45.78 USD, 3승17패(승률15%). 전부 배포 전. regime×strategy: trending_bear×defensive 17건 -35.04(주범, §8-26 수정완료), trending_bull×momentum 2건 0승(신규 주목), ranging×micro_swing 1건. exit_reason: reconciled_with_fill 19건(TP/SL).
+
+병목 계층 (universe->bull->entry funnel 측정):
+
+| 계층 | 제약 | 값 | 근거 |
+|---|---|---|---|
+| 1. 후보 평가 | universe | 8 | getCryptoScreeningMaxDynamic 기본 8 |
+| 2. 동시 슬롯 | MAX_POSITIONS | ~4 | signal.ts SAFETY 3 + cfg override, 로그 슬롯4->4 |
+| 3. 총 노출 | 가용 자금 | ~474 USDT | 로그 "가용 474.60", capital_backpressure |
+
+funnel: 전체 binance 1d 181심볼 -> daily bull 78(43%) -> universe 동시 8 -> 7일 회전 34심볼 -> trigger fired 29건(18심볼) -> 진입 24건. fired->진입 83%(양호).
+
+핵심: bull 후보 78개 충분. no_bullish_candidate는 funnel-report 진단이 상위 5개만 평가(LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_LIMIT=5, 캡10)한 메시지일 뿐, 실제 발굴(markets/crypto.ts: buildDiscoveryUniverse + binance top volume gate)은 별개. 자금 sizing: perSlotAmount=buyableAmount/effectiveSlots (capital-manager.ts:1209) -> 슬롯 증가 시 포지션크기 감소(자금 고정).
+
+### 8-31-4. (1) 즉시 구현 가능 타스크 (데이터 누적 불필요)
+
+| # | 타스크 | 방법 | 효과 |
+|---|---|---|---|
+| 1 | universe 확대 | screening_crypto_max_dynamic 8->15 | 후보 품질 향상 (자금 무관, 안전) |
+| 2 | MAX_POSITIONS 상향 | cfg.max_concurrent_positions 4->5 | 분산 증가 (자금 무관, 포지션 축소) |
+| 3 | bull×momentum 로직 점검 | 진입/exit 기준 검토 | 0승 원인 규명 |
+| 4 | funnel-report 진단 정확도 | TA_LIMIT 5->10 + 캡 상향 | no_bullish 오진단 해소 |
+
+근본 성장: 자금 증액 (474 USDT -> 증액 시 총 운용규모 증가). 기타 대기: KIS 전략 개선 / Hub LLM Week 2 / 블로 B3.
+
+### 8-31-5. (3) 승격 대기 타스크 [데이터 부족]
+- paper_promotion_gate: backtest winRate 64%(양호)인데 insufficient_oos_sample(trades=14, bars=710) + sharpe 0 -> would_block. strategy_quality not_shadow_ready.
+- LEARNED_BIAS shadow: 0 로깅 (bull 국면, bear 대기)
+- bear observer: waiting (bear 미도래)
+- intent_promotion_candidates: 0 rows (NLU 의도학습용, 거래 승격과 무관)
+- 결론: 즉시 승격 가능 타스크 없음 -> 거래 데이터 누적이 선행 (discovery 병목과 연쇄)
+
+### 8-31-6. 핵심 통찰 [연쇄 구조]
+universe 8 + 자금 474 -> 진입 적음(7일 24건) -> OOS 표본 부족(14건) -> 승격 차단 + 학습 데이터 부족. 즉 입구(universe/자금)가 근본 병목. 진입 증가 -> 데이터 증가 -> 승격/학습 증가의 선순환 가능. 단 fired->진입(83%)은 양호하므로 진입 판정 로직은 정상.
+
+### 8-31-7. sweeper dust 점검 (참고, 동일 세션그룹)
+dust 로직 정상(DUST_USDT=3, exclude_from_learning=true), consistency guardrail($10 감지), 현재 open dust 0, fold 재발 없음(월별 micro: 3월0%/4월8.8%/5월20.5%/6월0%).
+
+
+[정정 2026-06-21 세션2] 가용 자금 실측(지갑 직접 조회 getBinanceBalanceSnapshot): USDT free = 680.80. 본문 8-31-3의 "~474"는 로그 스냅샷(buyable 부분값)이었고 실제 가용 USDT는 680.80. used(포지션 묶임): SOL 1.439, MEGA 1952.5. dust: BNB/TRU/LUNC/PEPE. 따라서 MAX_POSITIONS 상향 여지 더 큼: 680/5슬롯=136, 680/6슬롯=113 USDT(포지션당 충분).
+
+
+[실측 정정 2026-06-21 세션2-B] getLunaBuyingPowerSnapshot 실측: totalCapital=892.05(not 2080), freeCash=680.80, reservedCash=89.20(reserve 10%), buyableAmount=590.24(not 474; 474는 과거 시점값), max_concurrent_positions=7(NOT 4!), openPositionCount=2, remainingSlots=5, minOrderAmount=34.04, universe=8.
+★ 병목 재진단: 슬롯(7개중 2개 사용, 5개 여유) + 자금(buyable 590 = minOrder 17개분) 모두 여유. 동시 open 2개뿐 -> 진짜 병목은 universe 8(후보 평가 게이트)+신호 생성. MAX_POSITIONS 상향 불필요(이미 7). 핵심 조정 = universe 8->15. reserve 10->7%는 선택(buyable 590->625).
+
+
+[전략 분포 실측 2026-06-21 세션2-C] v_trades_real_usd 전체 LIVE regime×strategy:
+- trending_bull×momentum_rotation: 353건 +2045.62 104승(29.5%) [주력 흑자]
+- trending_bear×mean_reversion: 41건 +842.62 11승 [흑자; observer가 기다리던 조합이 이미 흑자]
+- ranging×mean_reversion: 70건 +478.30 25승 [흑자]
+- trending_bear×defensive_rotation: 71건 -649.90 15승 [유일 주요 손실; §8-26 수정완료]
+- trending_bull×equity_swing: 9건 -59.06 [KIS 주식, crypto 무관]
+★ "bull×momentum 2건 0승"은 최근 7일 2건(-7.37) 착시 -> 전체 353건 흑자, 표본 부족. crypto 전략 건강(손볼 손실 없음). bull×momentum 점검 불필요. 진짜 레버는 universe 8->15(진입 기회 확대).
