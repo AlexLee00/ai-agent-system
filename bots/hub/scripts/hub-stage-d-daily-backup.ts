@@ -8,7 +8,7 @@ const { spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
-const DEFAULT_RETENTION_DAYS = 14;
+const DEFAULT_RETENTION_DAYS = 7;
 
 type CommandResult = {
   ok: boolean;

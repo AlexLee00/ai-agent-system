@@ -1300,3 +1300,25 @@ dust 로직 정상(DUST_USDT=3, exclude_from_learning=true), consistency guardra
 - trending_bear×defensive_rotation: 71건 -649.90 15승 [유일 주요 손실; §8-26 수정완료]
 - trending_bull×equity_swing: 9건 -59.06 [KIS 주식, crypto 무관]
 ★ "bull×momentum 2건 0승"은 최근 7일 2건(-7.37) 착시 -> 전체 353건 흑자, 표본 부족. crypto 전략 건강(손볼 손실 없음). bull×momentum 점검 불필요. 진짜 레버는 universe 8->15(진입 기회 확대).
+
+
+## §8-32. sizing 단일화 완료 + 병목 재진단 종합 (2026-06-21 세션3, 메티)
+
+### 8-32-1. sizing unify 5단계 완료
+CODEX_LUNA_SIZING_UNIFY(v3, archive 이동) 5단계 코덱스 구현 + 메티 독립검증 + 마스터 분리커밋 완료. 상세는 TRACKER ## SIZING.
+- Phase 1 레짐멀티->calculatePositionSize(25dd01324) / Phase 2 LIVE·PAPER 통일(6fbd4693d) / Phase 3 signal.amount 정합(1dabb91b3) / Phase 4 거래데이터 가드 sizing 실제연결(57d4e0844) / Phase 5 capital snapshot invalidation dead code 폐기(8c4d2707d)
+- 결과: 실제 주문 = calculatePositionSize(레짐멀티) × combined(재진입 × 실행모드 × 거래데이터가드) 단일경로. LIVE/PAPER 동일 로직, signal.amount=실제체결 정합.
+
+### 8-32-2. 병목 재진단 (§8-31-4 즉시타스크 정정)
+§8-31-4 즉시타스크 4개 중 universe만 유효, 나머지 정정(세션2-B/C 실측):
+- universe 8->15: 적용 완료(18:36 KST). 핵심 레버.
+- MAX_POSITIONS: 이미 7(NOT 4). 동시 open 2개로 슬롯 5 여유 -> 상향 불필요.
+- bull×momentum 0승: 최근7일 2건(-7.37) 착시. 전체 353건 +2045 USD 104승 주력흑자 -> 점검 불필요.
+- funnel TA_LIMIT 5->10: 진단 메시지 정확도만(실제 발굴 별개경로) -> 우선순위 낮음(로그 노이즈).
+
+### 8-32-3. 현 국면 = 데이터 대기
+입구(universe) 확대 직후라 즉시 실거래 코드 작업 거의 없음. 대기 항목:
+- universe 15 효과 검증: 1~2일 후 진입수(baseline 3.7/일)·동시open(2)·심볼다양성(18/주) 비교
+- 승격 게이트: OOS 14건 부족 -> 진입 누적 선행
+- bear observer / LEARNED_BIAS: bear 국면 도래 대기
+- 다음 우선순위: 데이터 누적 후 effect 분석 -> 결과로 다음 조정. 즉시는 TA_LIMIT 로그픽스(선택) 또는 타팀(KIS/Hub/블로) 전환.
