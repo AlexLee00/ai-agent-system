@@ -7,8 +7,11 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const {
   buildDigestMessage,
+  digestWindow,
+  escapeHtml,
   fetchDigestRows,
   parseDigestRow,
+  summarizeOneLine,
 } = require('./runtime-edux-daily-digest.ts');
 
 let pgPool;
@@ -39,7 +42,7 @@ function fixtureRows() {
       post_url: 'https://edu-x.io/community/posts/kis-fixture',
       published_at: '2026-06-22T16:00:00+09:00',
       metadata: {
-        lunaEvidenceSummary: '■ 마감 확정치 | 코스피가 코스닥보다 강했고 대형주 우위가 관측됐습니다. | 수급 보조 문장',
+        lunaEvidenceSummary: '■ 마감 확정치 | 코스피가 코스닥보다 강했고 대형주 우위가 관측됐습니다. 원/달러 환율은 1,537.88원으로 확인됐습니다. 지수는 모두 상승했지만 코스닥보다 코스피가 더 강했습니다. | 수급 보조 문장',
       },
     },
   ];
@@ -49,15 +52,30 @@ function assertMessage(rows, text) {
   const blockCount = (text.match(/^📊/gm) || []).length;
   assert.equal(blockCount, rows.length, `digest block count mismatch: ${blockCount}/${rows.length}`);
   for (const row of rows) {
-    assert.ok(text.includes(row.post_url), `missing post_url: ${row.post_url}`);
+    assert.ok(text.includes(`href="${row.post_url}"`), `missing linked post_url: ${row.post_url}`);
     const parsed = parseDigestRow(row);
     assert.ok(parsed.assetLine, 'asset line should be parsed');
     assert.ok(parsed.summaryLine, 'summary line should be parsed');
+    assert.ok(parsed.summaryLine.length <= 73, `summary must stay one-line-ish: ${parsed.summaryLine}`);
+    if (parsed.category === 'kis' && parsed.scheduleSlot === '1600') {
+      assert.equal(parsed.summaryLine.includes('마감'), false, `summary should omit duplicated close wording: ${parsed.summaryLine}`);
+      assert.equal(parsed.summaryLine.includes('분야 강세'), false, `summary should omit redundant field wording: ${parsed.summaryLine}`);
+    }
     assert.match(parsed.timeLabel, /^\d{2}:\d{2}$/);
+    assert.ok(text.includes(`>${escapeHtml(`[${parsed.summaryLine}]`)}<\/a>`), `summary must be bracketed link: ${parsed.summaryLine}`);
+    assert.ok(text.includes(`📊<b>`), 'title line should be bold');
   }
 }
 
 async function runSmoke() {
+  const reference = new Date('2026-06-22T10:00:00+09:00');
+  const windowCheck = digestWindow(reference);
+  assert.equal(windowCheck.end.toISOString(), reference.toISOString());
+  assert.equal(windowCheck.start.toISOString(), new Date(reference.getTime() - 24 * 60 * 60 * 1000).toISOString());
+  const compressed = summarizeOneLine('원/달러 1,554원 급등 속 코스피·코스닥 동반 급락, 환율 안정 여부가 관건입니다. 추가 문장은 제거됩니다.');
+  assert.ok(compressed.length <= 73, `compressed summary too long: ${compressed}`);
+  assert.equal(compressed.includes('추가 문장'), false);
+
   let dbRows = [];
   let dbWindow = null;
   try {
@@ -75,8 +93,16 @@ async function runSmoke() {
     playUrl: 'https://example.com/app',
   });
   assertMessage(rowsForFormat, text);
-  assert.ok(text.includes('오늘 꼭 알아야 할 시장 정보 총정리'));
-  assert.ok(text.includes('EDU-X 앱 다운로드'));
+  assert.ok(text.includes('<b>🔥[06 / 22]  오늘 꼭 알아야 할 시장 정보 총정리🔥</b>'));
+  assert.ok(text.includes('Edu-X 에듀엑스 - Google Play 앱'));
+  assert.ok(text.includes('href="https://example.com/app"'));
+  assert.ok(text.includes('EduX 커뮤니티에 있습니다'));
+  assert.ok(text.includes('<b>국내 마감 코스피 9,115 +0.7%</b>'));
+  assert.equal(text.includes('국내 마감 요약'), false);
+  assert.equal(text.includes('국내 장시 마감 요약'), false);
+  assert.equal(text.includes('게시글 보기'), false);
+  assert.equal(text.includes('👉'), false);
+  assert.equal(/\(\d{2}:\d{2}\s+요약\)/.test(text), false);
 
   return {
     ok: true,
