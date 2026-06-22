@@ -27,12 +27,6 @@ const pgPool    = _require('../../../packages/core/lib/pg-pool');
 const SCHEMA = 'investment';
 const DOMESTIC_CASH_BUFFER_KRW = 10_000;
 const dynamicMinOrderLogCache = new Set();
-let capitalSnapshotInvalidationVersion = 0;
-let lastCapitalSnapshotInvalidation: {
-  version: number;
-  reason: string;
-  invalidatedAt: string;
-} | null = null;
 
 function numEnv(name, fallback = 0) {
   const value = Number(process.env[name]);
@@ -67,32 +61,6 @@ export function hasOpenPositionForSymbol(positions = [], symbol = '') {
   const target = String(symbol || '').trim().toUpperCase();
   if (!target) return false;
   return positions.some((position) => String(position?.symbol || '').trim().toUpperCase() === target);
-}
-
-export function invalidateCapitalSnapshot(reason = 'manual') {
-  capitalSnapshotInvalidationVersion += 1;
-  lastCapitalSnapshotInvalidation = {
-    version: capitalSnapshotInvalidationVersion,
-    reason: String(reason || 'unspecified'),
-    invalidatedAt: new Date().toISOString(),
-  };
-  return { ...lastCapitalSnapshotInvalidation };
-}
-
-export function getCapitalSnapshotInvalidationState() {
-  return lastCapitalSnapshotInvalidation
-    ? { ...lastCapitalSnapshotInvalidation }
-    : { version: capitalSnapshotInvalidationVersion, reason: null, invalidatedAt: null };
-}
-
-export async function recomputeCapitalSnapshot(
-  exchange: 'binance' | 'kis' | 'kis_overseas' = 'binance',
-  tradeMode: string | null = null,
-  reason = 'manual_recompute',
-) {
-  const invalidation = invalidateCapitalSnapshot(reason);
-  const snapshot = await getLunaBuyingPowerSnapshot(exchange, tradeMode);
-  return { invalidation, snapshot };
 }
 
 // ─── 설정 로드 ───────────────────────────────────────────────────────

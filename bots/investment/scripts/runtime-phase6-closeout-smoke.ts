@@ -5,7 +5,6 @@ import * as db from '../shared/db.ts';
 import { buildPhase6Report } from './runtime-phase6-closeout.ts';
 import { buildPositionScopeKey } from '../shared/lifecycle-contract.ts';
 import { beginCloseout, finalizeCloseout, preflightCloseout } from '../shared/position-closeout-engine.ts';
-import { getCapitalSnapshotInvalidationState } from '../shared/capital-manager.ts';
 
 let passed = 0;
 let failed = 0;
@@ -51,10 +50,8 @@ async function main() {
   const fin = await finalizeCloseout(closeCtx, 'sig-smoke-001', mockResult, null);
   assert('finalizeCloseout ok=true (성공)', fin.ok === true);
   assert('finalizeCloseout reviewId 생성', typeof fin.reviewId === 'string');
-  assert('finalizeCloseout pnl 없는 성공은 capital invalidation 미호출', fin.capitalSnapshotInvalidated == null);
 
-  // 4-1. finalizeCloseout — 성공 + realized PnL 확정 시 capital snapshot invalidation
-  const beforeInvalidation = getCapitalSnapshotInvalidationState().version;
+  // 4-1. finalizeCloseout — 성공 + realized PnL 보존
   const pnlCtx = { ...ctx, idempotencyKey: `smoke:fin-pnl:${Date.now()}` };
   const finPnl = await finalizeCloseout(pnlCtx, 'sig-smoke-001-pnl', {
     tradeId: 'trade-smoke-pnl',
@@ -62,12 +59,9 @@ async function main() {
     status: 'filled',
     pnlRealized: 0,
   }, null);
-  const afterInvalidation = getCapitalSnapshotInvalidationState().version;
   assert('finalizeCloseout pnl=0 성공도 PnL 확정으로 보존', finPnl.pnlRealized === 0);
-  assert('finalizeCloseout sell success + pnl 확정 시 capital invalidation 호출', finPnl.capitalSnapshotInvalidated === true && afterInvalidation === beforeInvalidation + 1);
 
-  // 4-2. finalizeCloseout — partial fill은 invalidation 미호출
-  const beforePartialInvalidation = getCapitalSnapshotInvalidationState().version;
+  // 4-2. finalizeCloseout — partial fill 성공 추론
   const partialCtx = { ...ctx, idempotencyKey: `smoke:fin-partial:${Date.now()}` };
   const finPartial = await finalizeCloseout(partialCtx, 'sig-smoke-001-partial', {
     tradeId: 'trade-smoke-partial',
@@ -76,8 +70,7 @@ async function main() {
     fillRatio: 0.5,
     pnlRealized: 1.23,
   }, null);
-  const afterPartialInvalidation = getCapitalSnapshotInvalidationState().version;
-  assert('finalizeCloseout partial fill은 성공 추론이어도 capital invalidation 미호출', finPartial.capitalSnapshotInvalidated == null && afterPartialInvalidation === beforePartialInvalidation);
+  assert('finalizeCloseout partial fill은 성공 추론 유지', finPartial.ok === true && finPartial.pnlRealized === 1.23);
 
   // 5. finalizeCloseout — 실패 케이스
   const errCtx = { ...ctx, closeoutType: 'full_exit', idempotencyKey: `smoke:err:${Date.now()}` };
