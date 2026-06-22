@@ -300,16 +300,21 @@ async function executeSignal(signal) {
 
       const buyReentryMultiplier = Number(buyReentryState?.reducedAmountMultiplier || 1);
       const executionModeMultiplier = Number(executionModeState.reducedAmountMultiplier || 1);
-      const combinedReducedAmountMultiplier = [buyReentryMultiplier, executionModeMultiplier]
+      const tradeDataGuardMultiplier = Number(tradeDataGuardNotify?.sizingMultiplier || 1);
+      const combinedReducedAmountMultiplier = [buyReentryMultiplier, executionModeMultiplier, tradeDataGuardMultiplier]
         .filter((value) => value > 0 && value < 1)
         .reduce((acc, value) => acc * value, 1);
       const combinedSoftGuards = [
         ...(buyReentryState?.softGuards || []),
         ...(executionModeState.softGuards || []),
+        ...(tradeDataGuardMultiplier > 0 && tradeDataGuardMultiplier < 1
+          ? [{ kind: 'trade_data_notify', multiplier: tradeDataGuardMultiplier }]
+          : []),
       ];
       const combinedSoftGuardApplied = Boolean(
         buyReentryState?.softGuardApplied
         || executionModeState.softGuardApplied
+        || (tradeDataGuardMultiplier > 0 && tradeDataGuardMultiplier < 1)
       );
 
       if (effectivePaperMode) {
