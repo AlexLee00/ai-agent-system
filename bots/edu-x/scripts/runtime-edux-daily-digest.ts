@@ -20,7 +20,8 @@ try {
   pgPool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 } catch { pgPool = null; }
 
-const DEFAULT_PLAY_URL = process.env.EDUX_DIGEST_PLAY_URL || '';
+const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.wcapartners.edux';
+const DEFAULT_PLAY_URL = process.env.EDUX_DIGEST_PLAY_URL || GOOGLE_PLAY_URL;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { dryRun: false, json: false };

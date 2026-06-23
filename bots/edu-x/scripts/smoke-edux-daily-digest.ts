@@ -96,6 +96,11 @@ async function runSmoke() {
   assert.ok(text.includes('<b>🔥[06 / 22]  오늘 꼭 알아야 할 시장 정보 총정리🔥</b>'));
   assert.ok(text.includes('Edu-X 에듀엑스 - Google Play 앱'));
   assert.ok(text.includes('href="https://example.com/app"'));
+  const defaultPlayText = buildDigestMessage(rowsForFormat, {
+    dateMmdd: rowsForFormat[0]?.title?.slice(0, 5) || '06/22',
+  });
+  assert.ok(defaultPlayText.includes('href="https://play.google.com/store/apps/details?id=com.wcapartners.edux"'));
+  assert.ok(defaultPlayText.includes('Edu-X 에듀엑스 - Google Play 앱'));
   assert.ok(text.includes('EduX 커뮤니티에 있습니다'));
   assert.ok(text.includes('<b>국내 마감 코스피 9,115 +0.7%</b>'));
   assert.equal(text.includes('국내 마감 요약'), false);
