@@ -45,6 +45,16 @@ function fixtureRows() {
         lunaEvidenceSummary: '■ 마감 확정치 | 코스피가 코스닥보다 강했고 대형주 우위가 관측됐습니다. 원/달러 환율은 1,537.88원으로 확인됐습니다. 지수는 모두 상승했지만 코스닥보다 코스피가 더 강했습니다. | 수급 보조 문장',
       },
     },
+    {
+      schedule_slot: '0630',
+      category: 'overseas',
+      title: '06/22 미국장 마감 요약 | S&P500 7,365 -1.4%',
+      post_url: 'https://edu-x.io/community/posts/overseas-close-fixture',
+      published_at: '2026-06-22T22:00:00+09:00',
+      metadata: {
+        lunaEvidenceSummary: '■ 마감 확정치 | S&P500 7365로 -1.4%, Nasdaq은 25587로 -2.2%, Dow는 51667로 -0.1% 마감했습니다. | 보조 문장',
+      },
+    },
   ];
 }
 
@@ -88,12 +98,18 @@ async function runSmoke() {
   }
 
   const rowsForFormat = dbRows.length > 0 ? dbRows : fixtureRows();
+  const latestFirstText = buildDigestMessage(fixtureRows().slice().sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()), {
+    dateMmdd: '06/22',
+    playUrl: 'https://example.com/app',
+  });
+  assert.ok(latestFirstText.indexOf('미국 마감 S&amp;P500 7,365 -1.4%') < latestFirstText.indexOf('국내 마감 코스피 9,115 +0.7%'));
+  assert.equal(latestFirstText.includes('미국 증시 S&amp;P500 7,365 -1.4%'), false);
   const text = buildDigestMessage(rowsForFormat, {
     dateMmdd: rowsForFormat[0]?.title?.slice(0, 5) || '06/22',
     playUrl: 'https://example.com/app',
   });
   assertMessage(rowsForFormat, text);
-  assert.ok(text.includes('<b>🔥[06 / 22]  오늘 꼭 알아야 할 시장 정보 총정리🔥</b>'));
+  assert.match(text, /<b>🔥\[\d{2} \/ \d{2}\]  오늘 꼭 알아야 할 시장 정보 총정리🔥<\/b>/);
   assert.ok(text.includes('Edu-X 에듀엑스 - Google Play 앱'));
   assert.ok(text.includes('href="https://example.com/app"'));
   const defaultPlayText = buildDigestMessage(rowsForFormat, {
@@ -102,7 +118,7 @@ async function runSmoke() {
   assert.ok(defaultPlayText.includes('href="https://play.google.com/store/apps/details?id=com.wcapartners.edux"'));
   assert.ok(defaultPlayText.includes('Edu-X 에듀엑스 - Google Play 앱'));
   assert.ok(text.includes('EduX 커뮤니티에 있습니다'));
-  assert.ok(text.includes('<b>국내 마감 코스피 9,115 +0.7%</b>'));
+  assert.ok(latestFirstText.includes('<b>국내 마감 코스피 9,115 +0.7%</b>'));
   assert.equal(text.includes('국내 마감 요약'), false);
   assert.equal(text.includes('국내 장시 마감 요약'), false);
   assert.equal(text.includes('게시글 보기'), false);

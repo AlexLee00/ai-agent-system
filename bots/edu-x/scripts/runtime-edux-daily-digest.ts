@@ -60,7 +60,7 @@ function categoryLabel(category = '', assetLine = '', scheduleSlot = '') {
   const categoryText = String(category || '').toLowerCase();
   const assetText = String(assetLine || '').trim();
   const labels = {
-    overseas: '미국 증시',
+    overseas: String(scheduleSlot || '') === '0630' ? '미국 마감' : '미국 증시',
     kis: String(scheduleSlot || '') === '1600' ? '국내 마감' : '국내 증시',
     crypto: '비트코인',
   };
@@ -74,6 +74,11 @@ function categoryLabel(category = '', assetLine = '', scheduleSlot = '') {
 function digestItemTitle(row = {}) {
   if (String(row.category || '').toLowerCase() === 'kis' && String(row.scheduleSlot || '') === '1600') {
     return [categoryLabel(row.category, row.assetLine, row.scheduleSlot) || '국내 마감', row.assetLine || row.title || '시장 정보']
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (String(row.category || '').toLowerCase() === 'overseas' && /마감/.test(String(row.title || ''))) {
+    return ['미국 마감', row.assetLine || row.title || '시장 정보']
       .filter(Boolean)
       .join(' ');
   }
@@ -225,7 +230,10 @@ function parseDigestRow(row = {}) {
 }
 
 function buildDigestMessage(rows = [], options = {}) {
-  const parsed = rows.map(parseDigestRow).filter((row) => row.postUrl);
+  const parsed = rows
+    .map(parseDigestRow)
+    .filter((row) => row.postUrl)
+    .sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime());
   const dateMmdd = options.dateMmdd || parsed[0]?.dateMmdd || mmddFromDate(new Date());
   const lines = [`<b>🔥[${escapeHtml(displayMmdd(dateMmdd))}]  오늘 꼭 알아야 할 시장 정보 총정리🔥</b>`];
 
@@ -255,7 +263,7 @@ async function fetchDigestRows(pgModule = pgPool, options = {}) {
     WHERE status = 'success'
       AND published_at >= $1
       AND published_at < $2
-    ORDER BY published_at ASC
+    ORDER BY published_at DESC
   `, [window.start.toISOString(), window.end.toISOString()], 'public');
   if (result?.skipped) {
     throw new Error(`digest_db_unavailable:${result.reason || 'unknown'}`);
