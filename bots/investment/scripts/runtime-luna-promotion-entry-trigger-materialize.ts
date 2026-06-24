@@ -7,6 +7,7 @@ import { insertEntryTrigger } from '../shared/luna-discovery-entry-store.ts';
 import { ensureLunaPromotionEntryTriggerBridgeSchema } from '../shared/luna-promotion-entry-trigger-bridge.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
+  DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   fetchBinanceTopVolumeUniverse,
@@ -63,7 +64,7 @@ function top30GateForBridgeRow(row = {}, universe = {}) {
       symbol,
       canonicalSymbol: symbol,
       rank: null,
-      limit: universe?.limit || 30,
+      limit: universe?.limit || DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
       source: universe?.source || 'binance_top30_not_applicable',
       fetchedAt: universe?.fetchedAt || null,
     };
@@ -309,8 +310,9 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
     || (deps.fetchUniverse
       ? await deps.fetchUniverse(options)
       : options.fixture
-        ? buildFixtureBinanceTopVolumeUniverse({ limit: 30 })
-        : await fetchBinanceTopVolumeUniverse({ limit: 30, quote: 'USDT' }));
+        // env(LUNA_BINANCE_TOP_VOLUME_LIMIT) 기반 DEFAULT 사용 (기본30/운영50). 과거 hardcoded 30이 env를 무시했음.
+        ? buildFixtureBinanceTopVolumeUniverse({ limit: DEFAULT_BINANCE_TOP_VOLUME_LIMIT })
+        : await fetchBinanceTopVolumeUniverse({ limit: DEFAULT_BINANCE_TOP_VOLUME_LIMIT, quote: 'USDT' }));
   const bridgeRows = deps.bridgeRows
     || (deps.loadPendingBridgeRows
       ? await deps.loadPendingBridgeRows(options)

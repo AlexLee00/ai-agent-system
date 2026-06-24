@@ -35,9 +35,15 @@ export async function runLunaBinanceTopVolumeUniverseSmoke() {
   const runtime = await runLunaBinanceTopVolumeUniverse({ json: true, dryRun: true, fixture: true });
   assert.equal(runtime.ok, true);
   assert.equal(runtime.universe.symbols.length, 30);
+  assert.equal(runtime.policy.liquidationCandidateCode, 'off_universe_top_liquidation_candidate');
+  assert.ok(runtime.offUniverseHoldings.some((item) => item.symbol === 'PEPE/USDT' && item.code === 'off_universe_top_liquidation_candidate'));
   assert.ok(runtime.excludedActiveCandidates.some((item) => item.symbol === 'PEPE/USDT'));
   assert.ok(runtime.excludedActiveCandidates.some((item) => item.symbol === 'USDC/USDT'));
   assert.ok(runtime.offUniverseHoldings.some((item) => item.symbol === 'PEPE/USDT' && item.liquidationCandidate));
+
+  const runtimeExpanded = await runLunaBinanceTopVolumeUniverse({ json: true, dryRun: true, fixture: true, limit: 50 });
+  assert.equal(runtimeExpanded.policy.limit, 50);
+  assert.equal(runtimeExpanded.universe.limit, 50);
 
   return {
     ok: true,
@@ -46,6 +52,7 @@ export async function runLunaBinanceTopVolumeUniverseSmoke() {
     expandedTopCount: expandedUniverse.symbols.length,
     stableExcluded: !universe.symbols.includes('USDC/USDT'),
     leveragedExcluded: !universe.symbols.includes('BTCUP/USDT'),
+    runtimeExpandedLimit: runtimeExpanded.universe.limit,
     excludedActiveCandidates: runtime.excludedActiveCandidates.length,
     offUniverseHoldings: runtime.offUniverseHoldings.length,
   };

@@ -5,6 +5,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { query } from '../shared/db/core.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
+  DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   fetchBinanceTopVolumeUniverse,
@@ -90,7 +91,8 @@ function evaluateHolding(row = {}, universe = {}) {
     inBinanceTop30Universe: gate.ok,
     binanceTop30Rank: gate.rank,
     liquidationCandidate: gate.blocked,
-    code: gate.blocked ? 'off_universe_top30_liquidation_candidate' : null,
+    // 'top'으로 일반화 (이전 'top30'). 유니버스 크기 env 가변. 매칭 의존 없는 출력 코드. 숫자 제거는 의도.
+    code: gate.blocked ? 'off_universe_top_liquidation_candidate' : null,
     top30Blocker: gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
   };
 }
@@ -98,7 +100,8 @@ function evaluateHolding(row = {}, universe = {}) {
 export async function runLunaBinanceTopVolumeUniverse(options: any = {}) {
   const dryRun = options.dryRun === true;
   const fixture = options.fixture === true;
-  const limit = 30;
+  // env(LUNA_BINANCE_TOP_VOLUME_LIMIT) 기반 DEFAULT 사용 (기본30/운영50). 과거 hardcoded 30이 env를 무시했음.
+  const limit = options.limit && Number(options.limit) > 0 ? Math.floor(Number(options.limit)) : DEFAULT_BINANCE_TOP_VOLUME_LIMIT;
   const quote = 'USDT';
   const universe = fixture
     ? buildFixtureBinanceTopVolumeUniverse({ limit })
@@ -121,7 +124,8 @@ export async function runLunaBinanceTopVolumeUniverse(options: any = {}) {
       quote,
       source: universe.source,
       blockReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
-      liquidationCandidateCode: 'off_universe_top30_liquidation_candidate',
+      // 'top'으로 일반화 (이전 'top30'). 유니버스 크기 env 가변. 매칭 의존 없는 출력 코드. 숫자 제거는 의도.
+      liquidationCandidateCode: 'off_universe_top_liquidation_candidate',
     },
     universe: {
       fetchedAt: universe.fetchedAt,

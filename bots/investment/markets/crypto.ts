@@ -480,7 +480,8 @@ if (isDirectExecution(import.meta.url)) {
       universeMeta.top30OffUniverseHeldSymbols = heldTop30.dropped.map((item) => ({
         ...item,
         liquidationCandidate: true,
-        code: 'off_universe_top30_liquidation_candidate',
+        // 'top'으로 일반화 (이전 'top30'). 유니버스 크기 env 가변. 매칭 의존 없는 출력 코드. 숫자 제거는 의도.
+        code: 'off_universe_top_liquidation_candidate',
       }));
       universeMeta.heldSymbolCount = heldSymbols.length;
       universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldTop30.symbols).heldAddedCount;
