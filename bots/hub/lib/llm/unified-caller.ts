@@ -19,7 +19,7 @@ const {
 } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
 const { readLocalCredentialsForProvider } = require('../oauth/local-credentials');
-const { setProviderCanary, setProviderToken } = require('../oauth/token-store');
+const { getProviderRecord, setProviderCanary, setProviderToken } = require('../oauth/token-store');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
 const rag = require('../../../../packages/core/lib/rag');
 const { resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
@@ -285,21 +285,55 @@ function _adhocChainAllowed(): boolean {
 }
 
 function _applySelectorAvoidProviders(req: LlmRequest, selectorChain: AnyRecord): AnyRecord {
-  const avoidProviders = Array.isArray(req?.avoidProviders)
+  const requestedAvoidProviders = Array.isArray(req?.avoidProviders)
     ? req.avoidProviders.map((item: unknown) => String(item || '').trim().toLowerCase()).filter(Boolean)
     : [];
+  const runtimeAvoidProviders = _runtimeAvoidProviders();
+  const avoidProviders = Array.from(new Set([...requestedAvoidProviders, ...runtimeAvoidProviders]));
   if (!avoidProviders.length || !Array.isArray(selectorChain?.chain)) return selectorChain;
 
-  const avoid = new Set(avoidProviders);
+  const avoid = new Set(avoidProviders.flatMap(_providerAvoidAliases));
   const preferred: AnyRecord[] = [];
   const avoided: AnyRecord[] = [];
   for (const entry of selectorChain.chain) {
     const provider = String(entry?.provider || _routeToProvider(_chainEntryToRoute(entry))).trim().toLowerCase();
-    if (avoid.has(provider)) avoided.push(entry);
+    const routeProvider = _routeToProvider(_chainEntryToRoute(entry));
+    if (avoid.has(provider) || avoid.has(routeProvider)) avoided.push(entry);
     else preferred.push(entry);
   }
   if (!preferred.length) return { ...selectorChain, avoidedProviders: avoidProviders };
-  return { ...selectorChain, chain: preferred.concat(avoided), avoidedProviders: avoidProviders };
+  const chain = runtimeAvoidProviders.length ? preferred : preferred.concat(avoided);
+  return { ...selectorChain, chain, avoidedProviders: avoidProviders };
+}
+
+function _providerAvoidAliases(provider: unknown): string[] {
+  const normalized = String(provider || '').trim().toLowerCase();
+  if (!normalized) return [];
+  if (normalized === 'claude-code' || normalized === 'claude-code-oauth' || normalized === 'claude-code-cli') {
+    return ['claude-code', 'claude-code-oauth', 'claude-code-cli'];
+  }
+  return [normalized];
+}
+
+function _runtimeAvoidProviders(): string[] {
+  const avoided: string[] = [];
+  if (_isStoredOAuthTokenExpired('claude-code-cli')) {
+    avoided.push('claude-code-oauth');
+  }
+  return avoided;
+}
+
+function _isStoredOAuthTokenExpired(provider: string): boolean {
+  try {
+    const record = getProviderRecord(provider);
+    const token = record?.token;
+    const expiresAt = token?.expires_at || token?.expiresAt || token?.expiry || token?.expires;
+    if (!expiresAt) return false;
+    const expiresMs = Date.parse(String(expiresAt));
+    return Number.isFinite(expiresMs) && expiresMs <= Date.now();
+  } catch {
+    return false;
+  }
 }
 
 async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord, team: string): Promise<LlmResponse> {

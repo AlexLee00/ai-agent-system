@@ -411,6 +411,12 @@ async function maybeReimportClaudeCodeCredential(reason: string) {
     };
   }
 
+  const expiresInHours = tokenExpiresInHours(imported.token);
+  const importedExpired = Number.isFinite(Number(expiresInHours))
+    ? Number(expiresInHours) <= 0
+    : true;
+  const hasRefreshToken = Boolean(imported.token?.refresh_token);
+
   setProviderToken('claude-code-cli', imported.token, {
     ...(imported.metadata || {}),
     provider: 'claude-code-cli',
@@ -420,17 +426,22 @@ async function maybeReimportClaudeCodeCredential(reason: string) {
     runtime_enabled: true,
   });
   setProviderCanary('claude-code-cli', {
-    ok: true,
+    ok: !importedExpired,
     details: {
       source: imported.source,
       expires_at: imported.token?.expires_at || null,
+      expires_in_hours: Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours) : null,
+      imported_expired: importedExpired,
+      has_refresh_token: hasRefreshToken,
       imported_by: 'hub_oauth_monitor',
     },
   });
   return {
     ok: true,
     source: imported.source,
-    expires_in_hours: tokenExpiresInHours(imported.token),
+    expires_in_hours: expiresInHours,
+    imported_expired: importedExpired,
+    has_refresh_token: hasRefreshToken,
   };
 }
 
@@ -889,11 +900,24 @@ async function checkClaudeCodeOAuth() {
       reimport = await withMonitorOAuthLock('claude-code-cli', claudeOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh', () =>
         maybeReimportClaudeCodeCredential(claudeOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh'));
       claudeOauth = await checkTokenHealth();
+      if (!claudeOauth.healthy && reimport?.has_refresh_token) {
+        refresh = await withMonitorOAuthLock('claude-code-cli', 'after_reimport', () =>
+          refreshClaudeCodeHubToken('after_reimport'));
+        claudeOauth = await checkTokenHealth();
+      }
+    }
+    if (!claudeOauth.healthy && flag('HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR', true)) {
+      liveProbe = await runClaudeCodeLiveProbe();
+      if (liveProbe?.ok) {
+        reimport = await withMonitorOAuthLock('claude-code-cli', 'unhealthy_after_cli_probe', () =>
+          maybeReimportClaudeCodeCredential('unhealthy_after_cli_probe'));
+        claudeOauth = await checkTokenHealth();
+      }
     }
   }
 
   if (claudeOauth.healthy && flag('HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR', true)) {
-    liveProbe = await runClaudeCodeLiveProbe();
+    liveProbe = liveProbe?.ok ? liveProbe : await runClaudeCodeLiveProbe();
     if (!liveProbe?.ok && isClaudeProbeAuthFailure(liveProbe)) {
       refresh = await withMonitorOAuthLock('claude-code-cli', 'live_probe_auth_failed', () =>
         refreshClaudeCodeHubToken('live_probe_auth_failed'));
@@ -1533,12 +1557,20 @@ async function main() {
         : null,
       refresh_ok: claudeOauth.refresh?.ok ?? null,
       refresh_source: claudeOauth.refresh?.source || null,
+      refresh_error: claudeOauth.refresh?.ok === false ? (claudeOauth.refresh?.error || null) : null,
+      refresh_status: claudeOauth.refresh?.details?.status ?? null,
+      refresh_config_missing: Array.isArray(claudeOauth.refresh?.details?.missing) ? claudeOauth.refresh.details.missing : [],
       local_sync_ok: claudeOauth.refresh?.local_sync?.ok ?? null,
       keychain_sync_ok: claudeOauth.refresh?.keychain_sync?.ok ?? null,
       live_probe_ok: claudeOauth.live_probe?.ok ?? null,
       live_probe_error: claudeOauth.live_probe?.ok === false ? (claudeOauth.live_probe?.error || null) : null,
       reimport_ok: claudeOauth.reimport?.ok ?? null,
       reimport_source: claudeOauth.reimport?.source || null,
+      reimport_expires_in_hours: Number.isFinite(Number(claudeOauth.reimport?.expires_in_hours))
+        ? Math.round(Number(claudeOauth.reimport.expires_in_hours) * 10) / 10
+        : null,
+      reimport_has_refresh_token: claudeOauth.reimport?.has_refresh_token ?? null,
+      reimport_expired: claudeOauth.reimport?.imported_expired ?? null,
       error: claudeOauth.error || null,
     },
     openai_oauth: {

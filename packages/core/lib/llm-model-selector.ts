@@ -907,7 +907,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
   },
   blog: {
     'pos.writer': {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.82 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.82, timeoutMs: 300_000 },
       fallbacks: [
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 12000, temperature: 0.75 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
@@ -915,7 +915,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       ],
     },
     'gems.writer': {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.85 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.85, timeoutMs: 300_000 },
       fallbacks: [
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.75 },
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 12000, temperature: 0.75 },
@@ -1219,14 +1219,14 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
     'pos.writer': {
       primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 16000, temperature: 0.82 },
       fallbacks: [
-        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.78 },
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.78, timeoutMs: 300_000 },
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'gems.writer': {
       primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 16000, temperature: 0.85 },
       fallbacks: [
-        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.78 },
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 16000, temperature: 0.78, timeoutMs: 300_000 },
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 12000, temperature: 0.75 },
       ],
     },

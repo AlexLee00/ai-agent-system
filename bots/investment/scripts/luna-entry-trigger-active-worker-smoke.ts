@@ -59,6 +59,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     LUNA_LIVE_FIRE_ENABLED: 'true',
     LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
     LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_ENABLED: 'false',
+    LUNA_GATE_DECISION_LOG_ENABLED: 'false',
     LUNA_MAX_TRADE_USDT: '50',
   }, async () => {
     const symbol = `ACTIVE${Date.now().toString(36).toUpperCase()}/USDT`;
@@ -757,7 +758,48 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(dsrNotifyGate.notifyMode, true, 'DSR-only hard block should not require global active quality hard_gate');
       assert.equal(dsrNotifyGate.hardBlock, true, 'enabled DSR gate should hard-block low DSR rows even in notify mode');
       assert.equal(dsrNotifyGate.ok, false, 'notify mode must not allow DSR-gated backtests through');
-      assert.equal(dsrNotifyGate.hardBlockReason, 'candidate_backtest_dsr_gate');
+      assert.equal(dsrNotifyGate.hardBlockReason, 'candidate_backtest_active_gate');
+
+      const psrQualitySymbol = `PSRQUALITY${Date.now().toString(36).toUpperCase()}/USDT`;
+      const psrNotifyGate = evaluateActiveEntryTriggerQualityGate(
+        { symbol: psrQualitySymbol },
+        {
+          symbol: psrQualitySymbol,
+          market: 'crypto',
+          backtest: {
+            fresh: true,
+            healthy: true,
+            sharpe: 1.2,
+            maxDrawdown: 10,
+            winRate: 55,
+            lastBacktestAt: new Date().toISOString(),
+            gateStatus: 'pass',
+            wouldBlock: false,
+            blockReasons: [],
+            totalTradesOos: 45,
+            psr: 0.42,
+          },
+          predictive: {
+            decision: 'pass',
+            score: 0.82,
+            componentCoverage: 1,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        {
+          activeQualityGateEnabled: true,
+          activeQualityGateMode: 'notify',
+          env: { LUNA_PSR_GATE_ENABLED: 'true', LUNA_PSR_MIN: '0.5' },
+        },
+      );
+      assert.equal(psrNotifyGate.notifyMode, true, 'PSR active hard block should not require global active quality hard_gate');
+      assert.equal(psrNotifyGate.hardBlock, true, 'enabled PSR gate should hard-block low PSR rows even in notify mode');
+      assert.equal(psrNotifyGate.ok, false, 'notify mode must not allow PSR-gated backtests through');
+      assert.equal(psrNotifyGate.hardBlockReason, 'candidate_backtest_active_gate');
+      assert.ok(
+        psrNotifyGate.backtest?.blockReasons?.some((reason) => String(reason).startsWith('candidate_backtest_psr_low')),
+        'entry-trigger quality gate should preserve explicit low-PSR reason',
+      );
 
       const insufficientTradesQuality = {
         symbol: 'INSUFFICIENT/USDT',

@@ -82,6 +82,7 @@ const PROVIDER_FLOW_CONFIG: Record<string, ProviderTemplate> = {
     defaultClientId: DEFAULT_CLAUDE_CODE_CLIENT_ID,
     defaultScope: DEFAULT_CLAUDE_CODE_SCOPE,
     tokenBodyFormat: 'json',
+    refreshIncludesScope: false,
     enabledDefault: true,
     publicProviderName: 'claude-code',
   },

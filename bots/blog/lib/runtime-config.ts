@@ -169,16 +169,16 @@ const DEFAULTS = {
   llmSelectorOverrides: {
     'blog.pos.writer': {
       chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82 },
-        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.72 },
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82, timeoutMs: 300000 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'blog.gems.writer': {
       chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.85 },
-        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
         { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.75 },
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.85, timeoutMs: 300000 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'blog.social.summarize': {

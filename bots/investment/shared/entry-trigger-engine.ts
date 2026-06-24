@@ -134,6 +134,12 @@ function isTruthy(value) {
   return value === true || String(value).trim().toLowerCase() === 'true';
 }
 
+function finiteOrNull(value) {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function backtestRowForGate(backtest = {}) {
   if (!backtest) return null;
   return {
@@ -146,6 +152,129 @@ function backtestRowForGate(backtest = {}) {
     last_backtest_at: backtest.last_backtest_at ?? backtest.lastBacktestAt,
     total_trades_oos: backtest.total_trades_oos ?? backtest.totalTradesOos,
   };
+}
+
+let gateDecisionLogTableEnsured = false;
+
+async function ensureGateDecisionLogTable(queryFn = dbQuery) {
+  if (gateDecisionLogTableEnsured) return;
+  try {
+    // Gate decision logging is advisory infrastructure. The migration is the SSOT;
+    // this best-effort guard keeps hot-path inserts resilient if deploy order varies.
+    await queryFn(`
+      CREATE TABLE IF NOT EXISTS investment.gate_decision_log (
+        id text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        evaluated_at timestamptz NOT NULL DEFAULT now(),
+        exchange text NOT NULL,
+        market text NOT NULL DEFAULT 'crypto',
+        symbol text NOT NULL,
+        gate_passed boolean NOT NULL,
+        gate_status text,
+        block_reasons jsonb DEFAULT '[]'::jsonb,
+        dsr double precision,
+        psr double precision,
+        sharpe double precision,
+        sharpe_oos double precision,
+        win_rate double precision,
+        max_drawdown double precision,
+        walk_forward_sharpe double precision,
+        decision_mode text,
+        actually_fired boolean DEFAULT false,
+        confidence double precision,
+        signal_id text,
+        trigger_type text,
+        shadow_flags jsonb DEFAULT '{}'::jsonb
+      )`);
+    gateDecisionLogTableEnsured = true;
+  } catch (error) {
+    console.warn(`[GateDecisionLog] ensure table failed (ignored): ${error?.message || error}`);
+  }
+}
+
+function uniqueTextArray(values = []) {
+  return [...new Set((values || []).map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+function backtestBlockReasons(backtest = null) {
+  return uniqueTextArray(parseJsonMaybe(backtest?.blockReasons ?? backtest?.block_reasons, []));
+}
+
+function resolveBacktestGatePassed(backtest = null) {
+  if (!backtest) return false;
+  const gateStatus = String(backtest.gateStatus ?? backtest.gate_status ?? '').trim().toLowerCase();
+  if (isTruthy(backtest.wouldBlock ?? backtest.would_block)) return false;
+  if (gateStatus.startsWith('would_block')) return false;
+  if (backtestBlockReasons(backtest).length > 0) return false;
+  return true;
+}
+
+function compactObject(value = {}) {
+  return Object.fromEntries(Object.entries(value || {}).filter(([, item]) => item !== undefined));
+}
+
+function buildGateDecisionShadowFlags(qualityGate = null, backtest = null) {
+  const flags = {
+    psrGate: backtest?.psrGate ?? backtest?.psr_gate,
+    dsrGate: backtest?.dsrGate ?? backtest?.dsr_gate,
+    shadowUnvalidated: backtest?.shadowUnvalidated ?? backtest?.shadow_unvalidated,
+    dataIncomplete: backtest?.dataIncomplete,
+    genuineFail: backtest?.genuineFail,
+    universeBlock: backtest?.universeBlock,
+    qualityGateOk: qualityGate?.ok,
+    notifyMode: qualityGate?.notifyMode,
+    hardBlock: qualityGate?.hardBlock,
+  };
+  return compactObject(flags);
+}
+
+function signalIdFromTrigger(trigger = {}) {
+  return trigger?.signal_id
+    || trigger?.trigger_context?.signalId
+    || trigger?.trigger_context?.signal_id
+    || trigger?.trigger_meta?.signalId
+    || trigger?.trigger_meta?.signal_id
+    || null;
+}
+
+function marketFromTrigger(trigger = {}, exchange = 'binance', context = {}) {
+  return String(trigger?.market || trigger?.trigger_context?.market || context?.market || normalizeEntryTriggerMarket(exchange));
+}
+
+async function logGateDecision(entry = {}, queryFn = dbQuery) {
+  try {
+    await ensureGateDecisionLogTable(queryFn);
+    const bt = entry.backtest || {};
+    await queryFn(
+      `INSERT INTO investment.gate_decision_log
+         (exchange, market, symbol, gate_passed, gate_status, block_reasons,
+          dsr, psr, sharpe, sharpe_oos, win_rate, max_drawdown, walk_forward_sharpe,
+          decision_mode, actually_fired, confidence, signal_id, trigger_type, shadow_flags)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb)`,
+      [
+        entry.exchange,
+        entry.market || 'crypto',
+        entry.symbol,
+        entry.gatePassed === true,
+        entry.gateStatus ?? null,
+        JSON.stringify(Array.isArray(entry.blockReasons) ? entry.blockReasons : []),
+        finiteOrNull(bt.dsr),
+        finiteOrNull(bt.psr),
+        finiteOrNull(bt.sharpe),
+        finiteOrNull(bt.sharpeOos ?? bt.sharpe_oos),
+        finiteOrNull(bt.winRate ?? bt.win_rate),
+        finiteOrNull(bt.maxDrawdown ?? bt.max_drawdown),
+        finiteOrNull(bt.walkForwardSharpe ?? bt.walk_forward_sharpe),
+        entry.decisionMode ?? null,
+        entry.actuallyFired === true,
+        finiteOrNull(entry.confidence),
+        entry.signalId ?? null,
+        entry.triggerType ?? null,
+        JSON.stringify(entry.shadowFlags || {}),
+      ],
+    );
+  } catch (error) {
+    console.warn(`[GateDecisionLog] insert failed (ignored) ${entry?.symbol || 'unknown'}: ${error?.message || error}`);
+  }
 }
 
 function applyBacktestGateEvaluation(backtest = null, env = process.env, options = {}) {
@@ -189,11 +318,12 @@ function applyBacktestGateEvaluation(backtest = null, env = process.env, options
   };
 }
 
-function hasDsrBacktestHardBlock(backtest = null, options = {}) {
+function hasActiveBacktestHardBlock(backtest = null, options = {}) {
   const reasons = parseJsonMaybe(backtest?.blockReasons ?? backtest?.block_reasons, []);
   return reasons.some((reason) => {
     const value = String(reason || '');
     if (value.startsWith('candidate_backtest_dsr_low')) return true;
+    if (value.startsWith('candidate_backtest_psr_low')) return true;
     if (value.startsWith('candidate_backtest_insufficient_trades')) {
       return options.allowInsufficientTrades !== true;
     }
@@ -226,7 +356,7 @@ export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) 
               last_backtest_at, gate_status, would_block, block_reasons, updated_at,
               sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap,
               n_obs_oos, total_trades_oos, oos_status, selection_method,
-              dsr, psr, sr0, sr_oos_unann, periods_per_year
+              walk_forward_sharpe, dsr, psr, sr0, sr_oos_unann, periods_per_year
          FROM candidate_backtest_status
         WHERE symbol = ANY($1::text[])
           AND market = $2`,
@@ -267,6 +397,7 @@ export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) 
       totalTradesOos: row.total_trades_oos == null ? null : Number(row.total_trades_oos),
       oosStatus: row.oos_status || null,
       selectionMethod: row.selection_method || null,
+      walkForwardSharpe: row.walk_forward_sharpe == null ? null : Number(row.walk_forward_sharpe),
       dsr: row.dsr == null ? null : Number(row.dsr),
       psr: row.psr == null ? null : Number(row.psr),
       sr0: row.sr0 == null ? null : Number(row.sr0),
@@ -333,7 +464,7 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     : { backtest: null, evaluation: null };
   const evaluatedBacktest = backtestEvaluation.backtest;
   const shadowUnvalidatedBacktest = evaluatedBacktest?.shadowUnvalidated === true;
-  const dsrHardBlock = hasDsrBacktestHardBlock(evaluatedBacktest, {
+  const activeBacktestHardBlock = hasActiveBacktestHardBlock(evaluatedBacktest, {
     allowInsufficientTrades: shadowUnvalidatedBacktest,
   });
   let backtestRawFresh = false;
@@ -384,13 +515,13 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
 
   const uniqueReasons = [...new Set(reasons)];
   const notifyMode = mode !== 'hard_gate';
-  const effectiveOk = notifyMode && !dsrHardBlock ? true : uniqueReasons.length === 0;
+  const effectiveOk = notifyMode && !activeBacktestHardBlock ? true : uniqueReasons.length === 0;
   return {
     ok: effectiveOk,
     enabled: true,
     notifyMode,
-    hardBlock: dsrHardBlock,
-    hardBlockReason: dsrHardBlock ? 'candidate_backtest_dsr_gate' : null,
+    hardBlock: activeBacktestHardBlock,
+    hardBlockReason: activeBacktestHardBlock ? 'candidate_backtest_active_gate' : null,
     shadowUnvalidated: shadowUnvalidatedBacktest,
     shadow_unvalidated: shadowUnvalidatedBacktest,
     advisoryReasons: shadowUnvalidatedBacktest ? ['shadow_unvalidated_backtest_passthrough'] : [],
@@ -413,10 +544,15 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
       sharpe: evaluatedBacktest.sharpe ?? null,
       maxDrawdown: evaluatedBacktest.maxDrawdown ?? evaluatedBacktest.max_drawdown ?? null,
       winRate: evaluatedBacktest.winRate ?? evaluatedBacktest.win_rate ?? null,
+      sharpeOos: evaluatedBacktest.sharpeOos ?? evaluatedBacktest.sharpe_oos ?? null,
+      walkForwardSharpe: evaluatedBacktest.walkForwardSharpe ?? evaluatedBacktest.walk_forward_sharpe ?? null,
       lastBacktestAt: evaluatedBacktest.lastBacktestAt || evaluatedBacktest.last_backtest_at || null,
       ageHours: backtestAgeHours,
       blockReasons: evaluatedBacktest.blockReasons || evaluatedBacktest.block_reasons || [],
       dsr: evaluatedBacktest.dsr ?? null,
+      psr: evaluatedBacktest.psr ?? null,
+      sr0: evaluatedBacktest.sr0 ?? null,
+      srOosUnann: evaluatedBacktest.srOosUnann ?? evaluatedBacktest.sr_oos_unann ?? null,
       totalTradesOos: evaluatedBacktest.totalTradesOos ?? evaluatedBacktest.total_trades_oos ?? null,
     } : null,
     predictive: predictive ? {
@@ -1819,6 +1955,36 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const preflightQualityGate = activeQualityGateEnabled
       ? evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context)
       : null;
+    const gateDecisionLogEnabled = boolConfig(
+      context?.gateDecisionLogEnabled ?? process.env.LUNA_GATE_DECISION_LOG_ENABLED,
+      true,
+    );
+    const emitGateDecisionLog = (qualityGate = null, { actuallyFired = false } = {}) => {
+      if (dryRun || !gateDecisionLogEnabled || !qualityGate?.enabled) return;
+      const backtest = qualityGate?.backtest || triggerQuality?.backtest || null;
+      if (!backtest) return;
+      const mergedReasons = uniqueTextArray([
+        ...(qualityGate?.blockedReasons || qualityGate?.reasons || []),
+        ...backtestBlockReasons(backtest),
+      ]);
+      // Records the backtest gate decision, not the notify/hard runtime mode outcome.
+      // This keeps PSR/DSR/Sharpe gate efficacy analyzable against future realized PnL.
+      void logGateDecision({
+        exchange,
+        market: marketFromTrigger(trigger, exchange, context),
+        symbol: normalizeSymbol(trigger.symbol),
+        gatePassed: resolveBacktestGatePassed(backtest),
+        gateStatus: backtest?.gateStatus ?? backtest?.gate_status ?? null,
+        blockReasons: mergedReasons,
+        backtest,
+        decisionMode: qualityGate?.notifyMode ? 'notify' : 'hard_gate',
+        actuallyFired,
+        confidence: trigger?.confidence,
+        signalId: signalIdFromTrigger(trigger),
+        triggerType: trigger?.trigger_type || null,
+        shadowFlags: buildGateDecisionShadowFlags(qualityGate, backtest),
+      });
+    };
     if (preflightQualityGate?.notifyMode && preflightQualityGate.blockedReasons?.length > 0) {
       recordGuardEvent({
         guardName: 'active_quality_gate_notify',
@@ -1842,6 +2008,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       checked++;
       readyBlocked++;
       qualityExpired++;
+      emitGateDecisionLog(preflightQualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'expired',
         triggerMetaPatch: {
@@ -2018,6 +2185,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }
     if (!qualityGate.ok) {
       readyBlocked++;
+      emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
@@ -2048,6 +2216,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }
     if (!allowLiveFire) {
       readyBlocked++;
+      emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
@@ -2119,6 +2288,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       readyBlocked++;
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
       const hardBlockReason = resolveEntryTriggerRiskGateBlockReason(riskGate.reason);
+      emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: terminalBlock ? 'expired' : 'waiting',
         triggerMetaPatch: {
@@ -2144,6 +2314,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
       if (terminalBlock) {
         readyBlocked++;
+        emitGateDecisionLog(qualityGate, { actuallyFired: false });
         await updateTriggerState(trigger.id, {
           triggerState: 'expired',
           triggerMetaPatch: {
@@ -2185,6 +2356,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }).catch(() => null);
     if (recentFired && recentFired.id !== trigger.id) {
       readyBlocked++;
+      emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
@@ -2204,6 +2376,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       continue;
     }
     fired++;
+    emitGateDecisionLog(qualityGate, { actuallyFired: true });
     const updated = await updateTriggerState(trigger.id, {
       triggerState: 'fired',
       firedAt: nowIso(),

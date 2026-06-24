@@ -298,7 +298,7 @@ describe('Hub native OAuth flow', () => {
       expect(body.grant_type).toBe('refresh_token');
       expect(body.refresh_token).toBe('stored-claude-refresh-token');
       expect(body.client_id).toBe('9d1c250a-e61b-44d9-88ed-5944d1962f5e');
-      expect(body.scope).toContain('user:inference');
+      expect(body.scope).toBeUndefined();
       return new Response(JSON.stringify({
         access_token: 'new-claude-access-token',
         refresh_token: 'new-claude-refresh-token',

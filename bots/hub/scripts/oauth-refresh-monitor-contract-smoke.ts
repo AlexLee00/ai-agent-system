@@ -192,6 +192,13 @@ assert.equal(claudeProbeOnlyNearExpiryEnvelope.actionability, 'auto_repair', 'li
 const oauthFlowSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/oauth/oauth-flow.ts'), 'utf8');
 assert.ok(oauthFlowSource.includes('app_EMoamEEZ73f0CkXaXp7hrann'), 'OpenAI Codex OAuth refresh must use the public Codex-compatible client id by default');
 assert.ok(oauthFlowSource.includes('refreshIncludesScope: false'), 'OpenAI Codex OAuth refresh must match Codex-compatible refresh grant and omit scope');
+assert.ok(/'claude-code-cli':\s*{[\s\S]*?refreshIncludesScope:\s*false/.test(oauthFlowSource), 'Claude Code OAuth refresh must omit scope and rely on the stored refresh token grant');
+assert.ok(monitorSource.includes('refresh_error'), 'OAuth monitor report must expose Claude refresh errors instead of only refresh_ok=false');
+assert.ok(monitorSource.includes('after_reimport'), 'Claude monitor must retry refresh immediately when reimport supplies a refresh token');
+assert.ok(monitorSource.includes('unhealthy_after_cli_probe'), 'Claude monitor must let the real CLI refresh Keychain credentials after Hub refresh/import fails');
+assert.ok(monitorSource.includes('imported_expired'), 'Claude reimport must label expired local/keychain credentials explicitly');
+assert.ok(monitorSource.includes('reimport_has_refresh_token'), 'Claude monitor report must expose whether reimport supplied a refresh token');
+assert.ok(monitorSource.includes('reimport_expires_in_hours'), 'Claude monitor report must expose reimported credential expiry');
 assert.ok(monitorSource.includes('postAlarm'), 'OAuth monitor must alarm on refresh/unhealthy failures');
 assert.ok(readinessSource.includes('expires_in_hours'), 'team readiness report must include token expiry windows');
 assert.ok(readinessSource.includes('needs_refresh'), 'team readiness report must include refresh-needed flags');

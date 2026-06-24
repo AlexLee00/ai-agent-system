@@ -130,8 +130,14 @@
     <string>true</string>
     <key>LUNA_INTELLIGENT_DISCOVERY_MODE</key>
     <string>autonomous</string>
+    <!-- 변경: DSR 비활성화 (실매매 데이터 AUC 0.474 — 변별력 없음, crypto 5분봉서 구조적 통과불가) -->
     <key>LUNA_DSR_GATE_ENABLED</key>
+    <string>false</string>
+    <!-- 추가: PSR 게이트 활성화 (DSR 대체 — 시뮬 AUC 0.659, PSR≥0.5 통과종목 83% 수익 적중) -->
+    <key>LUNA_PSR_GATE_ENABLED</key>
     <string>true</string>
+    <key>LUNA_PSR_MIN</key>
+    <string>0.5</string>
     <key>LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH</key>
     <string>true</string>
     <key>LUNA_BT_WALK_FORWARD_ENABLED</key>
