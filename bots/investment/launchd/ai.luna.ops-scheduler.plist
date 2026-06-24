@@ -18,6 +18,8 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_BINANCE_TOP_VOLUME_LIMIT</key>
+    <string>50</string>
     <key>LUNA_OPS_SCHEDULER_ENABLED</key>
     <string>true</string>
     <key>LUNA_V2_ENABLED</key>

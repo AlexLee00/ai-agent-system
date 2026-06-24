@@ -17,8 +17,10 @@
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>NODE_ENV</key>
     <string>production</string>
+    <key>LUNA_BINANCE_TOP_VOLUME_LIMIT</key>
+    <string>50</string>
   </dict>
-  <!-- 매일 08:30 KST — 장 시작 전 유니버스 갱신 (국내 Top50 + 해외 Top50 + 크립토 Top30) -->
+  <!-- 매일 08:30 KST — 장 시작 전 유니버스 갱신 (국내 Top50 + 해외 Top50 + 크립토 Top50) -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
