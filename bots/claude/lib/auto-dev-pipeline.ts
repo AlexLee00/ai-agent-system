@@ -698,6 +698,29 @@ function isNonActionableOpsEmergencyTelegramAlert(analysis = {}) {
   );
 }
 
+function isNonActionableOpsErrorResolutionTelegramReviewAlert(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_ops-error-resolution_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  const isTelegramErrorResolutionSnapshot = (
+    /source_bot:\s*telegram-sender|from_bot:\s*telegram-sender|ops-error-resolution:telegram-sender:telegram_send/.test(combined)
+  );
+  const isReadOnlyMasterReview = (
+    /마스터\s*(상세\s*)?(검토|승인)|master\s*(review|approval)/i.test(combined)
+    && /read[- ]?only|자동\s*LIVE\s*전환\s*없음|승인\s*runbook|검토\s*요청/i.test(combined)
+  );
+  return isTelegramErrorResolutionSnapshot && isReadOnlyMasterReview;
+}
+
 function isNonActionableInvestmentPositionWatchAlert(analysis = {}) {
   const metadata = analysis?.metadata || {};
   if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
@@ -865,6 +888,18 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'non_actionable_alarm_snapshot',
       reason: 'ops-emergency telegram fallback snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableOpsErrorResolutionTelegramReviewAlert(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'ops-error-resolution telegram read-only master review snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,
