@@ -782,6 +782,24 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   }
   const effectiveWouldBlock = wouldBlock || dsrWouldBlock;
   const effectiveMergedReasons = dsrReasons.length > 0 ? [...new Set([...mergedReasons, ...dsrReasons])] : mergedReasons;
+
+  // Phase 1b-3: PSR 게이트 (SHADOW — 실매매 변별력 분석 결과 DSR(AUC0.474) 대비 PSR(AUC0.659)이 우수.
+  // DSR은 crypto 5분봉에서 구조적으로 통과가 어려워 PSR을 대안 게이트로 병렬 기록한다.
+  // 기본 OFF에서는 실제 차단(effectiveWouldBlock)에 미반영하고, 마스터 승인 env가 있을 때만 반영한다.
+  const psrGateActive = envFlagEnabled(process.env.LUNA_PSR_GATE_ENABLED);
+  const psrMin = envNumber(process.env.LUNA_PSR_MIN, 0.5);
+  const psrVals = oosRows.filter((r) => r?.psr != null).map((r) => safeNum(r?.psr, NaN)).filter(Number.isFinite);
+  const avgPsr = psrVals.length > 0 ? psrVals.reduce((s, v) => s + v, 0) / psrVals.length : null;
+  const psrWouldBlockShadow = avgPsr != null && avgPsr < psrMin;
+  const psrShadowReasons: string[] = [];
+  if (psrWouldBlockShadow) {
+    psrShadowReasons.push(`candidate_backtest_psr_low(${avgPsr.toFixed(4)}<${psrMin})`);
+  }
+  const psrWouldBlockEffective = psrGateActive && psrWouldBlockShadow;
+  const effectiveWouldBlockWithPsr = effectiveWouldBlock || psrWouldBlockEffective;
+  const effectiveMergedReasonsWithPsr = psrWouldBlockEffective && psrShadowReasons.length > 0
+    ? [...new Set([...effectiveMergedReasons, ...psrShadowReasons])]
+    : effectiveMergedReasons;
   const metaLabelRows = (() => {
     const seen = new Set<string>();
     const rows = [];
@@ -832,14 +850,32 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     }
     : null;
 
+  // PSR 게이트 shadow 기록: active=false(기본)면 판정만 기록하고, active=true일 때만 실제 차단에 반영한다.
+  // 미래 refresh 데이터로 PSR 문턱을 재조정하기 위한 metadata-only evidence다.
+  const psrGate = avgPsr != null
+    ? {
+      mode: psrGateActive ? 'active' : 'shadow',
+      avgPsr: Number(avgPsr.toFixed(4)),
+      threshold: psrMin,
+      wouldBlock: psrWouldBlockShadow,
+      avgDsr: avgDsr != null ? Number(avgDsr.toFixed(4)) : null,
+      source: 'backtest_run_metadata',
+    }
+    : null;
+
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),
     winRate: Number(avgWinRate.toFixed(4)),
-    healthy: !effectiveWouldBlock,
-    gateStatus: effectiveWouldBlock ? (onlyUnstable ? 'would_block_unstable_backtest' : 'would_block_unhealthy') : 'pass',
-    wouldBlock: effectiveWouldBlock,
-    reasons: effectiveMergedReasons,
+    // PSR 게이트 활성화 시(LUNA_PSR_GATE_ENABLED=true) PSR 포함 판정 사용, 기본 OFF면 기존과 동일.
+    healthy: !effectiveWouldBlockWithPsr,
+    gateStatus: effectiveWouldBlockWithPsr
+      ? (onlyUnstable && !psrWouldBlockEffective
+        ? 'would_block_unstable_backtest'
+        : (psrWouldBlockEffective && !effectiveWouldBlock ? 'would_block_psr_low' : 'would_block_unhealthy'))
+      : 'pass',
+    wouldBlock: effectiveWouldBlockWithPsr,
+    reasons: effectiveMergedReasonsWithPsr,
     totalTrades,
     minPeriodTrades: minTrades,
     stablePeriodCount,
@@ -917,6 +953,7 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     permutationIterations,
     permutationNullSharpeMean: avgPermutationNullSharpe != null ? Number(avgPermutationNullSharpe.toFixed(6)) : null,
     permutationGate,
+    psrGate,
     // Phase 2 Stage 1: meta-label 분포 (SHADOW — 판정 미반영)
     metaLabelDist: (() => {
       const dist = metaLabelRows.reduce((acc, row) => {
@@ -1094,6 +1131,7 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       permutationIterations: payload.permutationIterations ?? null,
       permutationNullSharpeMean: payload.permutationNullSharpeMean ?? null,
       permutationGate: payload.permutationGate ?? null,
+      psrGate: payload.psrGate ?? null,
       metaLabelDist: payload.metaLabelDist ?? null,
       metaLabelPosRate: payload.metaLabelPosRate ?? null,
       metaLabelNTrades: payload.metaLabelNTrades ?? null,

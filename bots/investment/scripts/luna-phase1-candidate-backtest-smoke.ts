@@ -132,31 +132,35 @@ const legacyNoOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candidat
 assert.equal(legacyNoOosQuality.healthy, false, 'non-fixture OOS-less backtests must not be healthy even when fallback was not used');
 assert.equal(legacyNoOosQuality.gateStatus, 'would_block_no_oos', 'non-fixture OOS-less backtests should have an explicit no-OOS gate status');
 assert.ok(legacyNoOosQuality.reasons.includes('backtest_no_oos_validation'), 'non-fallback OOS-less block reason should be explicit');
-const walkForwardOosQuality = candidateBacktestTest.applyFallbackNoOosGate(candidateBacktestTest.evaluateQuality([
-  {
-    status: 'ok',
-    selection_method: 'walk_forward',
-    oos_status: 'ok',
-    walk_forward_days: 365,
-    total_trades: 30,
-    total_trades_oos: 12,
-    n_obs_oos: 109,
-    sharpe_ratio: 1.4,
-    sharpe_is: 1.4,
-    sharpe_oos: 1.2,
-    sharpe_oos_deflated: 1.1,
-    max_drawdown: 10,
-    win_rate: 55,
-    dsr: 0.91,
-    psr: 0.97,
-    sr0: 0.022,
-    sr_oos_unann: 0.011,
-    periods_per_year: 105120,
-  },
-]), false);
+const walkForwardOosQuality = withEnv({ LUNA_PSR_GATE_ENABLED: null, LUNA_PSR_MIN: null }, () => (
+  candidateBacktestTest.applyFallbackNoOosGate(candidateBacktestTest.evaluateQuality([
+    {
+      status: 'ok',
+      selection_method: 'walk_forward',
+      oos_status: 'ok',
+      walk_forward_days: 365,
+      total_trades: 30,
+      total_trades_oos: 12,
+      n_obs_oos: 109,
+      sharpe_ratio: 1.4,
+      sharpe_is: 1.4,
+      sharpe_oos: 1.2,
+      sharpe_oos_deflated: 1.1,
+      max_drawdown: 10,
+      win_rate: 55,
+      dsr: 0.91,
+      psr: 0.97,
+      sr0: 0.022,
+      sr_oos_unann: 0.011,
+      periods_per_year: 105120,
+    },
+  ]), false)
+));
 assert.equal(walkForwardOosQuality.gateStatus, 'pass', 'walk-forward OOS rows should stay eligible when fallback was not used');
 assert.equal(walkForwardOosQuality.healthy, true, 'walk-forward OOS rows should remain healthy when they pass quality gates');
 assert.equal(walkForwardOosQuality.dsr, 0.91, 'DSR shadow value should be carried without changing gate status');
+assert.equal(walkForwardOosQuality.psr, 0.97, 'PSR shadow value should be carried without changing gate status');
+assert.equal(walkForwardOosQuality.psrGate?.wouldBlock, false, 'high PSR should not shadow-block');
 assert.equal(walkForwardOosQuality.periodsPerYear, 105120, 'DSR annualization factor should be carried for audit');
 
 const dsrLowRows = [{
@@ -198,6 +202,28 @@ const dsrNullQuality = withEnv({ LUNA_DSR_GATE_ENABLED: 'true' }, () => candidat
   dsr: null,
 }]));
 assert.equal(dsrNullQuality.gateStatus, 'pass', 'DSR null must not affect candidate quality when DSR gate is enabled');
+
+const psrLowRows = [{
+  ...dsrLowRows[0],
+  dsr: 0.95,
+  psr: 0.42,
+}];
+const psrGateOffQuality = withEnv({ LUNA_PSR_GATE_ENABLED: null, LUNA_PSR_MIN: null }, () => candidateBacktestTest.evaluateQuality(psrLowRows));
+assert.equal(psrGateOffQuality.gateStatus, 'pass', 'PSR gate must be inert by default');
+assert.equal(psrGateOffQuality.psrGate?.mode, 'shadow', 'PSR metadata should record shadow mode by default');
+assert.equal(psrGateOffQuality.psrGate?.wouldBlock, true, 'low PSR should be recorded as shadow would-block');
+assert.equal(psrGateOffQuality.psrGate?.threshold, 0.5, 'PSR default threshold should be 0.5');
+assert.equal(psrGateOffQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_psr_low')), false, 'PSR shadow-only reason must not affect active reasons');
+const psrLowBlockedQuality = withEnv({ LUNA_PSR_GATE_ENABLED: 'true', LUNA_PSR_MIN: null }, () => candidateBacktestTest.evaluateQuality(psrLowRows));
+assert.equal(psrLowBlockedQuality.gateStatus, 'would_block_psr_low', 'enabled PSR gate should use explicit low-PSR gate status');
+assert.equal(psrLowBlockedQuality.wouldBlock, true, 'enabled PSR gate should would-block low PSR candidates');
+assert.ok(psrLowBlockedQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_psr_low')), 'low PSR block reason should be explicit');
+const psrNullQuality = withEnv({ LUNA_PSR_GATE_ENABLED: 'true', LUNA_PSR_MIN: null }, () => candidateBacktestTest.evaluateQuality([{
+  ...psrLowRows[0],
+  psr: null,
+}]));
+assert.equal(psrNullQuality.gateStatus, 'pass', 'PSR null must not affect candidate quality when PSR gate is enabled');
+assert.equal(psrNullQuality.psrGate, null, 'PSR null should not emit PSR gate metadata');
 
 const officialDomesticRows = candidateBacktestTest.buildOfficialDomesticOhlcvRows([
   { basDt: '20260520', mkp: '1000', hipr: '1030', lopr: '990', clpr: '1020', trqu: '10000' },

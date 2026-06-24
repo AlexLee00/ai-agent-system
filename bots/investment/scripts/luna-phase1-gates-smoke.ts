@@ -104,6 +104,27 @@ const dsrNullUnaffected = evaluateCandidateBacktestStatus(
 );
 assert.equal(dsrNullUnaffected.wouldBlock, false, 'DSR null must not block crypto/top30 candidates');
 
+const psrGateOff = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, psr: 0.42, total_trades_oos: 45, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow' },
+);
+assert.equal(psrGateOff.wouldBlock, false, 'PSR gate must be disabled by default');
+
+const psrGateLow = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, psr: 0.42, total_trades_oos: 45, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_PSR_GATE_ENABLED: 'true' },
+);
+assert.equal(psrGateLow.wouldBlock, true);
+assert.equal(psrGateLow.reason, 'candidate_backtest_psr_low');
+assert.equal(psrGateLow.genuineFail, true, 'low PSR should classify as a genuine backtest failure when active');
+assert.ok(psrGateLow.reasons.some((reason) => reason.startsWith('candidate_backtest_psr_low')));
+
+const psrNullUnaffected = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, psr: null, total_trades_oos: 45, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_PSR_GATE_ENABLED: 'true' },
+);
+assert.equal(psrNullUnaffected.wouldBlock, false, 'PSR null must not block candidates');
+
 const newUniverseBlockReason = evaluateCandidateBacktestStatus(
   { fresh: true, healthy: false, gate_status: 'would_block_universe', block_reasons: ['outside_binance_top_volume_universe'] },
   { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow' },

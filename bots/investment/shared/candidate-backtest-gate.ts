@@ -31,6 +31,7 @@ const GENUINE_BACKTEST_FAIL_PREFIXES = [
   'unrealistic_sharpe',
   'overfit_gap_high',
   'candidate_backtest_dsr_low',
+  'candidate_backtest_psr_low',
 ];
 
 const UNIVERSE_BLOCK_PREFIXES = [
@@ -273,8 +274,13 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const totalTradesOos = row.total_trades_oos != null ? finiteNumber(row.total_trades_oos, null) : null;
   const insufficientTrades = totalTradesOos != null && totalTradesOos < dsrMinTrades;
   const dsrWouldBlock = dsrGateActive && dsr != null && (insufficientTrades || dsr < dsrMin);
+  // Phase 1b-3: PSR gate mirrors refresh runtime. Default OFF preserves current entry/backtest decisions.
+  const psrGateActive = ENABLED.has(String(env.LUNA_PSR_GATE_ENABLED || 'false').trim().toLowerCase());
+  const psrMin = envNumber(env.LUNA_PSR_MIN, 0.5);
+  const psr = row.psr != null ? finiteNumber(row.psr, null) : null;
+  const psrWouldBlock = psrGateActive && psr != null && psr < psrMin;
 
-  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock;
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock || psrWouldBlock;
   const reasons = parseReasons(row.block_reasons);
   const gateStatus = String(row.gate_status || row.gateStatus || '').toLowerCase();
   const unstableBacktest = gateStatus.includes('unstable')
@@ -295,9 +301,11 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
         ? 'candidate_backtest_drawdown_high'
         : dsrWouldBlock
           ? (insufficientTrades ? 'candidate_backtest_insufficient_trades' : 'candidate_backtest_dsr_low')
-          : wouldBlock
-            ? 'candidate_backtest_would_block'
-          : null;
+          : psrWouldBlock
+            ? 'candidate_backtest_psr_low'
+            : wouldBlock
+              ? 'candidate_backtest_would_block'
+              : null;
   const baseReasons = overfitFlagged && !reasons.some((item) => String(item).startsWith('overfit_gap_high'))
     ? [...reasons, `overfit_gap_high(${overfitGap!.toFixed(2)})`]
     : reasons;
@@ -315,6 +323,9 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     if (dsr < dsrMin && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_dsr_low'))) {
       effectiveReasons = [...effectiveReasons, `candidate_backtest_dsr_low(${dsr.toFixed(4)}<${dsrMin})`];
     }
+  }
+  if (psrWouldBlock && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_psr_low'))) {
+    effectiveReasons = [...effectiveReasons, `candidate_backtest_psr_low(${psr.toFixed(4)}<${psrMin})`];
   }
   const blockClass = classifyBacktestBlock(effectiveReasons, gateStatus);
   return {
