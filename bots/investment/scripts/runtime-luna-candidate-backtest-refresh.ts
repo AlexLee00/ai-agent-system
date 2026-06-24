@@ -1191,7 +1191,9 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
     sharpe: null,
     maxDrawdown: null,
     winRate: null,
-    gateStatus: 'would_block_top30_universe',
+    // 'would_block_universe'로 일반화 (이전 'would_block_top30_universe'). 유니버스 크기 env 가변.
+    // 소비 측은 신규+레거시 문자열을 병기해 매칭하므로 하위호환 유지. 숫자 제거는 의도.
+    gateStatus: 'would_block_universe',
     wouldBlock: true,
     reasons: [BINANCE_TOP_VOLUME_BLOCK_REASON],
     periods: [],

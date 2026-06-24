@@ -104,6 +104,18 @@ const dsrNullUnaffected = evaluateCandidateBacktestStatus(
 );
 assert.equal(dsrNullUnaffected.wouldBlock, false, 'DSR null must not block crypto/top30 candidates');
 
+const newUniverseBlockReason = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: false, gate_status: 'would_block_universe', block_reasons: ['outside_binance_top_volume_universe'] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow' },
+);
+assert.equal(newUniverseBlockReason.universeBlock, true, 'new generalized universe block reason must be classified as universeBlock');
+
+const legacyUniverseBlockReason = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: false, gate_status: 'would_block_top30_universe', block_reasons: ['outside_binance_top30_volume_universe'] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow' },
+);
+assert.equal(legacyUniverseBlockReason.universeBlock, true, 'legacy top30 universe block reason must remain compatible');
+
 const prevMode = process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE;
 process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE = 'shadow';
 const shadowDeps = baseDeps();
@@ -148,6 +160,8 @@ const payload = {
   dsrGateBlankEnv,
   dsrGateSmallSample,
   dsrNullUnaffected,
+  newUniverseBlockReason,
+  legacyUniverseBlockReason,
   enforceCode: enforceDeps.captured[0].payload.code,
   predictive: {
     shadowDecision: shadowPredictive.decision,

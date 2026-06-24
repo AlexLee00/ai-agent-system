@@ -1,12 +1,15 @@
 // @ts-nocheck
-// Binance Spot USDT quoteVolume Top 30 universe gate.
+// Binance Spot USDT quoteVolume top-volume universe gate.
 // Read-only market-data helper; no account, order, or secret side effects.
 
 const BINANCE_BASE = 'https://api.binance.com';
 
-export const BINANCE_TOP_VOLUME_SOURCE = 'binance_spot_usdt_quote_volume_top30';
-export const BINANCE_TOP_VOLUME_BLOCK_REASON = 'outside_binance_top30_volume_universe';
-export const DEFAULT_BINANCE_TOP_VOLUME_LIMIT = 30;
+// 'top'으로 일반화 (이전 'top30'). 유니버스 크기는 LUNA_BINANCE_TOP_VOLUME_LIMIT env로 가변하므로
+// 문자열에서 숫자를 뺀 것은 의도임. 매칭 측은 신규+레거시('top30')를 병기해 하위호환 유지.
+export const BINANCE_TOP_VOLUME_SOURCE = 'binance_spot_usdt_quote_volume_top';
+export const BINANCE_TOP_VOLUME_BLOCK_REASON = 'outside_binance_top_volume_universe';
+// 유니버스 크기를 env로 가변화 (기본 30, 운영 50). 기존엔 fixedLimit()이 30을 하드 고정했음.
+export const DEFAULT_BINANCE_TOP_VOLUME_LIMIT = Math.max(1, Number(process.env.LUNA_BINANCE_TOP_VOLUME_LIMIT) || 30);
 export const DEFAULT_BINANCE_TOP_VOLUME_QUOTE = 'USDT';
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -30,10 +33,12 @@ const LEVERAGED_BASE_ASSETS = new Set([
 
 let cachedUniverse = null;
 
+// 유니버스 크기 결정. 호출자가 limit을 명시하면 그 값을, 아니면 env 기반 DEFAULT(기본30/운영50)를 사용.
+// 과거엔 입력을 무시하고 30을 하드 고정했으나, env 가변화에 맞춰 입력·DEFAULT를 존중하도록 변경.
 function fixedLimit(value = DEFAULT_BINANCE_TOP_VOLUME_LIMIT) {
   const parsed = Number(value || DEFAULT_BINANCE_TOP_VOLUME_LIMIT);
-  if (!Number.isFinite(parsed)) return DEFAULT_BINANCE_TOP_VOLUME_LIMIT;
-  return DEFAULT_BINANCE_TOP_VOLUME_LIMIT;
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_BINANCE_TOP_VOLUME_LIMIT;
+  return Math.floor(parsed);
 }
 
 function normalizedQuote(value = DEFAULT_BINANCE_TOP_VOLUME_QUOTE) {
@@ -264,8 +269,9 @@ export function evaluateBinanceTopVolumeUniverseGate(symbol, universe = null) {
   return {
     ok,
     blocked: !ok,
-    reason: ok ? 'in_binance_top30_volume_universe' : BINANCE_TOP_VOLUME_BLOCK_REASON,
-    code: ok ? 'in_binance_top30_volume_universe' : BINANCE_TOP_VOLUME_BLOCK_REASON,
+    // 'top'으로 일반화 (이전 'top30'). 유니버스 크기는 env 가변. 숫자 제거는 의도.
+    reason: ok ? 'in_binance_top_volume_universe' : BINANCE_TOP_VOLUME_BLOCK_REASON,
+    code: ok ? 'in_binance_top_volume_universe' : BINANCE_TOP_VOLUME_BLOCK_REASON,
     symbol: canonical,
     canonicalSymbol: canonical,
     rank,

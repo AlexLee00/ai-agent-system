@@ -353,8 +353,8 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
 
     if (!gate.ok) {
       blocked += 1;
-      item.status = 'blocked_outside_binance_top30_volume_universe';
-      item.blockers.push({ name: BINANCE_TOP_VOLUME_BLOCK_REASON, detail: `${symbol} is outside Binance Spot USDT Top30 universe.` });
+      item.status = 'blocked_outside_binance_top_volume_universe';
+      item.blockers.push({ name: BINANCE_TOP_VOLUME_BLOCK_REASON, detail: `${symbol} is outside Binance Spot USDT top-volume universe.` });
       items.push(item);
       continue;
     }

@@ -22,6 +22,8 @@
 		<string>true</string>
 		<key>REFACTORER_AUTOFIX_MAX_ATTEMPTS</key>
 		<string>2</string>
+		<key>REFACTORER_AUTOFIX_ESTIMATED_COST_LIMIT</key>
+		<string>1.0</string>
 		<key>REFACTORER_APPLY_PUSH</key>
 		<string>true</string>
 		<key>REFACTORER_APPLY_STRICT_GATE</key>

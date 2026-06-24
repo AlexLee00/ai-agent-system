@@ -127,7 +127,7 @@ assert.equal(dryRun.summary.blocked, 1);
 assert.equal(dryRun.summary.materialized, 0);
 assert.equal(dryDeps.inserted.length, 0);
 assert.equal(dryDeps.marked.length, 0);
-assert.equal(dryRun.items.find((item) => item.symbol === 'PEPE/USDT').top30Blocker, 'outside_binance_top30_volume_universe');
+assert.equal(dryRun.items.find((item) => item.symbol === 'PEPE/USDT').top30Blocker, 'outside_binance_top_volume_universe');
 
 const domesticDryRun = await runLunaPromotionEntryTriggerMaterialize({
   apply: false,

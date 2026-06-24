@@ -11,6 +11,9 @@ export const NORMAL_ENTRY_TRIGGER_BLOCK_REASONS = Object.freeze([
   'tradingview_chart_guard_blocked',
   'live_risk_gate_blocked',
   'live_risk_gate_terminal_blocked',
+  // 유니버스 밖 차단(정상 차단으로 분류). 유니버스 크기는 LUNA_BINANCE_TOP_VOLUME_LIMIT env 제어.
+  // 신규('top')+레거시('top30') 병기는 의도 - Set 정확매칭이라 둘 다 필요. 중복 버그 아님.
+  'outside_binance_top_volume_universe',
   'outside_binance_top30_volume_universe',
   'duplicate_fire_cooldown',
   'open_position_reentry_guard',

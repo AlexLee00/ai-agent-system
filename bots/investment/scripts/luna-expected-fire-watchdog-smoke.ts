@@ -84,6 +84,8 @@ function lOpsQueryFixture({ silentMisses = [], existingAgendaKeys = [] } = {}) {
 
 async function main() {
   assert.equal(watchdogTestOnly.isNormalBlockReason('conditions_not_met'), true);
+  assert.equal(watchdogTestOnly.isNormalBlockReason('outside_binance_top_volume_universe'), true);
+  assert.equal(watchdogTestOnly.isNormalBlockReason('outside_binance_top30_volume_universe'), true);
   assert.equal(watchdogTestOnly.isNormalBlockReason('ready_but_not_fired_watchdog_fixture'), false);
 
   const silentTrigger = triggerRow();

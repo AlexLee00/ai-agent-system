@@ -34,9 +34,14 @@ const GENUINE_BACKTEST_FAIL_PREFIXES = [
 ];
 
 const UNIVERSE_BLOCK_PREFIXES = [
+  // 신규 일반화 문자열 (유니버스 크기는 LUNA_BINANCE_TOP_VOLUME_LIMIT env로 가변).
+  'outside_binance_top_volume_universe',
+  'would_block_universe',
+  // 레거시 호환: 2026-06 이전 DB 행은 'top30' 문자열 사용. 신규+레거시 병기는 의도이며
+  // 중복 버그 아님. refresh 재실행으로 DB가 신규 문자열로 갱신되나, 과거 데이터/롤백 대비 유지.
+  // (직전 버전엔 여기에 'BINANCE_TOP_VOLUME_BLOCK_REASON' 상수명이 문자열로 잘못 들어가 있었음 - 제거함)
   'outside_binance_top30_volume_universe',
   'would_block_top30_universe',
-  'BINANCE_TOP_VOLUME_BLOCK_REASON',
 ];
 
 const DATA_INCOMPLETE_PREFIXES = [
