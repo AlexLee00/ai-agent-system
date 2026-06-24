@@ -99,6 +99,30 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
     return existingEnd === bookingEnd && existingRoom === bookingRoom;
   }
 
+  function isReactivatableExisting(existing: Record<string, any> | null | undefined) {
+    if (!existing) return false;
+    return (
+      existing.status === 'cancelled'
+      || ['cancelled', 'time_elapsed'].includes(existing.pickkoStatus)
+    );
+  }
+
+  function buildRebookTrackingId(booking: Record<string, any>, existing: Record<string, any> | null | undefined) {
+    const baseId = String(booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start));
+    const existingId = existing?.id ? String(existing.id) : '';
+    if (baseId && existingId && baseId !== existingId) return baseId;
+    const rebookSeed = existingId || `${booking.date}-${booking.start}-${booking.end || ''}-${booking.room || ''}`;
+    return `${baseId}:rebook:${rebookSeed}`;
+  }
+
+  async function preferExistingRebookRow(booking: Record<string, any>, existing: Record<string, any> | null | undefined) {
+    if (!isReactivatableExisting(existing)) return existing || null;
+    const rebookId = buildRebookTrackingId(booking, existing);
+    if (!rebookId || rebookId === String(existing?.id || '')) return existing;
+    const rebookRow = await getReservation(rebookId).catch(() => null);
+    return rebookRow || existing;
+  }
+
   async function clearStaleCancelledKeys(booking: Record<string, any>, bookingId?: string | null) {
     const keys = [
       buildCancelKey(booking, booking.date),
@@ -144,13 +168,13 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
 
     const existingRows = await Promise.all(baseItems.map(async (booking) => {
       const byId = await getReservation(booking._key);
-      if (byId) return byId;
+      if (byId) return preferExistingRebookRow(booking, byId);
 
       const byComposite = await findReservationByCompositeKey(booking._slotKey);
-      if (byComposite) return byComposite;
+      if (byComposite) return preferExistingRebookRow(booking, byComposite);
 
       const bySlot = await findReservationBySlot(booking.phone, booking.date, booking.start, booking.room);
-      if (bySlot && matchesSameWindow(bySlot, booking)) return bySlot;
+      if (bySlot && matchesSameWindow(bySlot, booking)) return preferExistingRebookRow(booking, bySlot);
       if (bySlot) {
         log(`ℹ️ [윈도우분리] 같은 시작시간 기존 예약은 있으나 종료시간이 달라 신규 예약으로 처리: ${maskPhone(booking.phone)} ${booking.date} ${booking.start} ${booking.room} (existing=${bySlot.end || bySlot.end_time}, incoming=${booking.end})`);
       }
@@ -162,26 +186,33 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
       seen: !!existingRows[index] && (existingRows[index].markedSeen || existingRows[index].seenOnly),
       existing: existingRows[index],
     }));
+    const reactivatedEntries = entries.filter((entry) => isReactivatableExisting(entry.existing));
+    const reactivatedTrackingByExistingId = new Map(reactivatedEntries.map((entry) => [
+      String(entry.existing?.id || entry.booking._key),
+      buildRebookTrackingId(entry.booking, entry.existing),
+    ]));
     const unseenEntries = entries.filter((entry) => !entry.seen);
-    const reactivatedEntries = unseenEntries.filter((entry) => (
-      !!entry.existing
-      && (
-        entry.existing.status === 'cancelled'
-        || ['cancelled', 'time_elapsed'].includes(entry.existing.pickkoStatus)
-      )
+    const candidateEntries = entries.filter((entry) => (
+      !entry.seen
+      || reactivatedTrackingByExistingId.has(String(entry.existing?.id || entry.booking._key))
     ));
     const newCandidates: NaverCandidateBooking[] = unseenEntries
       .filter((entry) => !entry.existing)
       .map((entry) => ({ ...entry.booking, _trackingId: entry.booking._key }));
-    const candidates: NaverCandidateBooking[] = unseenEntries
+    const candidates: NaverCandidateBooking[] = candidateEntries
       .filter((entry) => (
         !entry.existing
         || entry.existing.status === 'pending'
         || entry.existing.status === 'failed'
-        || entry.existing.status === 'cancelled'
-        || ['cancelled', 'time_elapsed'].includes(entry.existing.pickkoStatus)
+        || isReactivatableExisting(entry.existing)
       ))
-      .map((entry) => ({ ...entry.booking, _trackingId: entry.existing?.id || entry.booking._key }));
+      .map((entry) => {
+        const existingId = String(entry.existing?.id || entry.booking._key);
+        return {
+          ...entry.booking,
+          _trackingId: reactivatedTrackingByExistingId.get(existingId) || entry.existing?.id || entry.booking._key,
+        };
+      });
 
     if (candidates.length === 0) {
       log('ℹ️ 실행 후보 없음(이미 처리했거나 파싱 실패)');
@@ -197,22 +228,23 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
     for (const entry of reactivatedEntries) {
       const booking = entry.booking;
       const existing = entry.existing;
-      const bookingId = String(existing?.id || booking._trackingId || booking._key || buildReservationId(booking.phoneRaw, booking.date, booking.start));
+      const bookingId = buildRebookTrackingId(booking, existing);
       await clearStaleCancelledKeys(booking, existing?.id ? String(existing.id) : bookingId);
+      if (bookingId !== String(existing?.id || '')) await clearStaleCancelledKeys(booking, bookingId);
 
       await updateBookingState(bookingId, booking, 'pending');
       await sendAlert({
         type: 'info',
-        title: '♻️ 취소 후 재예약 재활성화 감지',
+        title: '♻️ 취소 후 동일 슬롯 신규 예약 감지',
         customer: booking.raw?.name || '고객',
         phone: booking.phone,
         date: booking.date,
         time: `${booking.start}~${booking.end}`,
         room: booking.room,
         status: 'pending',
-        action: '기존 취소 키 해제 후 Pickko 재등록 준비',
+        action: '기존 취소 이력은 보존하고 신규 예약 row로 Pickko 등록 준비',
       });
-      log(`♻️ [재활성화] ${maskPhone(booking.phone)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} → cancelled key 해제 후 재처리`);
+      log(`♻️ [동일슬롯 재예약] ${maskPhone(booking.phone)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} → 기존 취소 row 보존, 신규 row(${bookingId}) 처리`);
     }
 
     const devTestPhone = (process.env.DEV_TEST_PHONE || '01035000586').replace(/\D/g, '');

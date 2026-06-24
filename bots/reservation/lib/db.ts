@@ -156,6 +156,8 @@ async function updateReservation(id, updates) {
     retries:            'retries',
     pickkoStartTime:    'pickko_start_time',
     pickkoCompleteTime: 'pickko_complete_time',
+    markedSeen:         'marked_seen',
+    seenOnly:           'seen_only',
   };
 
   const sets = [];

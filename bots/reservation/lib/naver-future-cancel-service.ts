@@ -17,6 +17,11 @@ type DeleteStaleConfirmedFn = (currentCycle: number, minDate: string) => Promise
 type PruneOldFutureConfirmedFn = (cutoffDate: string) => Promise<any>;
 type RunPickkoCancelFn = (booking: Record<string, any>, bookingId?: string | null) => Promise<any>;
 type ScrapeNewestBookingsFromListFn = (page: any, maxItems?: number) => Promise<Record<string, any>[]>;
+type LiveCancelVerificationResult = {
+  ok: boolean;
+  reason: 'cancel_tab_match' | 'still_confirmed' | 'not_in_cancel_tab' | 'verification_error';
+  error?: string;
+};
 
 export type CreateNaverFutureCancelServiceDeps = {
   delay: DelayFn;
@@ -52,6 +57,68 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
     scrapeNewestBookingsFromList,
     runtimeConfig,
   } = deps;
+
+  function normalizePhone(value: unknown): string {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function normalizeRoom(value: unknown): string {
+    return String(value || '').trim().toUpperCase();
+  }
+
+  function matchesReservation(item: Record<string, any>, booking: Record<string, any>): boolean {
+    const itemBookingId = String(item.bookingId || '').trim();
+    const bookingId = String(booking.bookingId || '').trim();
+    if (itemBookingId && bookingId && itemBookingId === bookingId) return true;
+
+    return (
+      normalizePhone(item.phoneRaw || item.phone) === normalizePhone(booking.phoneRaw || booking.phone) &&
+      String(item.date || '') === String(booking.date || '') &&
+      String(item.start || '') === String(booking.start || '') &&
+      String(item.end || '') === String(booking.end || '') &&
+      normalizeRoom(item.room) === normalizeRoom(booking.room)
+    );
+  }
+
+  function buildDailyStatusUrl(listBase: string, status: string, date: string): string {
+    return `${listBase}?status=${encodeURIComponent(status)}&date=${encodeURIComponent(date)}`;
+  }
+
+  async function verifyStaleCancelAgainstLiveNaver({
+    page,
+    listBase,
+    booking,
+  }: {
+    page: any;
+    listBase: string;
+    booking: Record<string, any>;
+  }): Promise<LiveCancelVerificationResult> {
+    try {
+      const confirmedUrl = buildDailyStatusUrl(listBase, 'CONFIRMED', booking.date);
+      await page.goto(confirmedUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+      await delay(1000);
+      const confirmedList = await scrapeNewestBookingsFromList(page, 100);
+      if (confirmedList.some((item) => matchesReservation(item, booking))) {
+        return { ok: false, reason: 'still_confirmed' };
+      }
+
+      const cancelledUrl = buildDailyStatusUrl(listBase, 'CANCELLED', booking.date);
+      await page.goto(cancelledUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+      await delay(1000);
+      const cancelledList = await scrapeNewestBookingsFromList(page, 100);
+      if (cancelledList.some((item) => matchesReservation(item, booking))) {
+        return { ok: true, reason: 'cancel_tab_match' };
+      }
+
+      return { ok: false, reason: 'not_in_cancel_tab' };
+    } catch (error: any) {
+      return {
+        ok: false,
+        reason: 'verification_error',
+        error: error?.message || String(error),
+      };
+    }
+  }
 
   async function processFutureCancelSnapshot({
     checkCount,
@@ -164,7 +231,17 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
 
             const newCount = (pending.count || 1) + 1;
             if (newCount >= runtimeConfig.staleConfirmCount && elapsed >= runtimeConfig.staleMinElapsedMs) {
-              log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + ${Math.floor(elapsed / 60000)}분 경과 → 취소 확정`);
+              log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + ${Math.floor(elapsed / 60000)}분 경과 → live 검증`);
+              const liveVerification = await verifyStaleCancelAgainstLiveNaver({ page, listBase, booking });
+              if (!liveVerification.ok) {
+                const suffix = liveVerification.error ? ` (${liveVerification.error})` : '';
+                log(`🛡️ [취소감지4] live 검증 차단(${liveVerification.reason}) — 픽코 취소 보류: ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time}${suffix}`);
+                pendingCancelMap.delete(cancelKey);
+                await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
+                continue;
+              }
+
+              log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 네이버 취소 탭 live 검증 통과 → 취소 확정`);
               pendingCancelMap.delete(cancelKey);
               const result = await runPickkoCancel(booking, cancelKey);
               if (result === 0) {

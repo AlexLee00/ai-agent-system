@@ -95,6 +95,11 @@ export function createNaverBookingStateService(deps: CreateNaverBookingStateServ
         } else if (state === 'failed') {
           updates.retries = (existing.retries || 0) + 1;
           if (dailyStats) dailyStats.failed = (dailyStats.failed || 0) + 1;
+        } else if (state === 'pending') {
+          updates.pickkoStatus = null;
+          updates.errorReason = null;
+          updates.markedSeen = 0;
+          updates.seenOnly = 0;
         }
 
         await updateReservation(bookingId, updates);
