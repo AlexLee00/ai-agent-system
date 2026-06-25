@@ -1,6 +1,6 @@
 # 루나 최적 재설계 설계서 (Phase 3)
 
-> 작성: 메티 · 2026-06-12 (최신 2026-06-18 통합) · 상태: **v1.4** — C18 토스·ET 트랙 본문 통합 — v1.0 확정 + 보강 3건(C4 손실빈도 서킷·C3 WB 후보·G2 시퀀스, 마스터 승인 반영). 확정 6건=§7. 회의실=MEETING_ROOM_DESIGN v0.6. 구현=LUNA_OPTIMAL_REDESIGN_TRACKER
+> 작성: 메티 · 2026-06-12 (최신 2026-06-25 갱신) · 상태: **v1.5** — C7 DSR→PSR 게이트 전환(실매매 AUC 실증)·게이트 결정 로깅 신설 반영. v1.4=C18 토스·ET 트랙 본문 통합. 확정 6건=§7. 회의실=MEETING_ROOM_DESIGN v0.6. 구현=LUNA_OPTIMAL_REDESIGN_TRACKER
 > 입력: LUNA_LOGIC_REANALYSIS.md(Phase 1 진단·신규 12영상 6원칙·B-01~20 재배치·M-1~M-11·외부자료 E-1~3/QuantaAlpha 등·루틴 비전)
 > 원칙: 비용 무시·최적 성능(마스터 지시). 무중단(PROTECTED launchd·크립토 LIVE·스카 실매출). 3시장(국내·해외·crypto) 공통 + 시장별 변형.
 
@@ -97,6 +97,8 @@
 - **1-bar shift 룩어헤드 점검**(E-2): backtest-vectorbt.py 감사.
 - **permutation 2종**(E-1): IS(후보 사전 차단, p<1%)·WF(최종, 1년 p≤5%) — backtest-vectorbt.py 확장.
 - 기존 ON 승격: robust selection(`LUNA_BT_ROBUST_SELECTION_ENABLED=true`)·DSR/PBO 게이트(shadow→enforce, 핵심 경로만)·CPCV(purge+embargo, 기존 갭 — 신설).
+- **[2026-06-25 갱신] DSR→PSR 게이트 전환**: 실매매 462건(crypto, +$2,988) AUC 실증 결과 **DSR=0.474(변별력 없음)·PSR=0.659**. DSR이 crypto 5분봉서 구조적 통과불가(sr0 폭발+T=34560 raw bar 186배 증폭→전종목 0). 3수정안 시뮬레이션 모두 0.9 통과 실패 → DSR 폐기, PSR 게이트로 대체(`LUNA_DSR_GATE_ENABLED=false`·`LUNA_PSR_GATE_ENABLED=true`·`LUNA_PSR_MIN=0.5`). `candidate-backtest-gate.ts`+refresh 양쪽 PSR 게이트 병렬 구현. 진입 게이트가 DB psr 값을 실시간 재평가(entry-trigger-engine L152). 상세: TRACKER C7-4.
+- **[2026-06-25 신설] 게이트 결정 로깅**: `investment.gate_decision_log`(진입 시점 게이트 판정+지표 스냅샷+actually_fired 기록, 비차단). 미래에 v_trades_real_usd와 조인하여 PSR 문턱 최적성 실증. 상세: TRACKER C7-5.
 - **OOS 보존 규율**(E-1): OOS 사용 횟수 기록·시도 카운터(스누핑 가드)·최종 검증만 OOS.
 
 ### C8. 피드백 루프 [M-1 — 루틴 ⑥⑦]
@@ -173,8 +175,8 @@
 | 13 | entry-llm-shadow-judge | shadow | G6 리뷰어 합류 또는 폐기 | ablation 기여도 | E-3 원칙 적용 |
 | 14 | position-lifecycle | shadow | supervised_l4→autonomous_l5 | 라이프사이클 액션 정확도 | 표준 경로 원형 |
 | 15 | posttrade feedback | shadow | supervised_l4→autonomous_l5 | 피드백 반영 후 E 개선 | C8 합류 |
-| 16 | candidate-backtest entry gate | MODE env(advisory) | enforce(핵심 경로) | DSR≥0.90·30거래(기존 env) | C7 |
-| 17 | DSR/PBO gate | shadow/advisory | enforce | 게이트 차단 정확도(차단분 가상 성과<0) | C7 |
+| 16 | candidate-backtest entry gate | MODE env(advisory) | enforce(핵심 경로) | **PSR≥0.5**(2026-06-25 DSR→PSR 전환, AUC 0.659) | C7 |
+| 17 | ~~DSR/PBO gate~~ → **PSR gate** | shadow→**enforce 가동**(`LUNA_PSR_GATE_ENABLED=true`) | enforce | 게이트 차단 정확도(gate_decision_log⋈실손익 검증) | C7-4 |
 | 18 | robust backtest selection | **OFF** | ON | 합의 파라미터 OOS 우월(E-1 WF perm) | P0-② 즉시 |
 | 19 | LLM_AUTO_ROUTING (Hub) | shadow 대기(Week2) | active | 과업별 모델 성과 추적 | M-8, Week2 합류 |
 | 20 | shadow-mode 래핑(symbol_decision) | LIVE 병행 로깅 | **신규 스택 Stage A 기반** | — (비교 인프라 자체) | G0~G7 shadow의 골격 재사용 |
