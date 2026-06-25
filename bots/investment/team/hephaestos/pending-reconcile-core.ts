@@ -18,6 +18,17 @@ export function buildPendingReconcileDeltaIncidentLink({
   ].join(':');
 }
 
+export function isPendingReconcileDeltaIncidentLink(value = '') {
+  return String(value || '').startsWith('pending_reconcile_delta:');
+}
+
+export function shouldSkipPendingReconcileDeltaBuyJournal(trade = {}) {
+  if (String(trade?.side || '').toLowerCase() !== 'buy') return false;
+  if (String(trade?.exchange || 'binance') !== 'binance') return false;
+  if (Boolean(trade?.paper)) return false;
+  return isPendingReconcileDeltaIncidentLink(trade?.incidentLink || trade?.incident_link);
+}
+
 export function escapePendingReconcileLikePattern(value = '') {
   return String(value || '').replace(/[\\%_]/g, '\\$&');
 }
@@ -47,6 +58,8 @@ export function normalizePendingReconcileTradeRow(row = {}) {
 
 export default {
   buildPendingReconcileDeltaIncidentLink,
+  isPendingReconcileDeltaIncidentLink,
+  shouldSkipPendingReconcileDeltaBuyJournal,
   escapePendingReconcileLikePattern,
   normalizePendingReconcileTradeRow,
 };

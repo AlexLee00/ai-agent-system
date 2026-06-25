@@ -15,6 +15,7 @@ import {
   buildPendingReconcileDeltaIncidentLink,
   escapePendingReconcileLikePattern,
   normalizePendingReconcileTradeRow,
+  shouldSkipPendingReconcileDeltaBuyJournal,
 } from './pending-reconcile-core.ts';
 
 export function createPendingReconcileLedger(context = {}) {
@@ -236,6 +237,22 @@ export function createPendingReconcileLedger(context = {}) {
   } = {}) {
     if (!trade || !signalId) {
       return { ok: false, reason: 'journal_input_missing' };
+    }
+    if (shouldSkipPendingReconcileDeltaBuyJournal(trade)) {
+      const pendingState = await markBinancePendingReconcileJournalState(signalId, {
+        pendingMeta,
+        trade,
+        followUpRequired: false,
+        queueStatus: 'completed',
+        attemptIncrement: 0,
+        source: `${source}:delta_journal_skipped`,
+      }).catch(() => null);
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'pending_reconcile_delta_journal_skipped',
+        pendingState,
+      };
     }
     const canVerify = Boolean(trade.incidentLink && trade.symbol);
     if (canVerify) {

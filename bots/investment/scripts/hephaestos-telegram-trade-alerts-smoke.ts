@@ -179,6 +179,41 @@ await suppressedAlerts.recordExecutedTradeJournal({
 });
 assert.equal(calls.some((item) => item[0] === 'notifyJournalEntry'), false);
 
+const deltaAlerts = buildAlerts();
+const deltaResult = await deltaAlerts.recordExecutedTradeJournal({
+  signalId: 'sig-delta',
+  trade: {
+    side: 'buy',
+    symbol: 'ORCA/USDT',
+    exchange: 'binance',
+    paper: false,
+    price: 1.78,
+    amount: 8,
+    totalUsdt: 14.24,
+    incidentLink: 'pending_reconcile_delta:sig-delta:ORD-DELTA:buy:8.00000000',
+  },
+});
+assert.equal(deltaResult.skipped, true);
+assert.equal(deltaResult.reason, 'pending_reconcile_delta_journal_skipped');
+assert.equal(calls.some((item) => item[0] === 'insertJournalEntry'), false);
+
+const unsafeDeltaOpenEntry = {
+  ...openEntry,
+  trade_id: 'OPEN-DELTA',
+  symbol: 'ORCA/USDT',
+  entry_price: 1.78,
+  entry_size: 8,
+  entry_value: 14.24,
+  incident_link: 'pending_reconcile_delta:sig-delta:ORD-DELTA:buy:8.00000000',
+};
+const unsafeDeltaAlerts = buildAlerts({ openEntries: [unsafeDeltaOpenEntry] });
+const unsafeDeltaSettlement = await unsafeDeltaAlerts.settleOpenJournalForSell('ORCA/USDT', false, 11.8575, 94.86, 'signal_reverse', 'normal', {
+  soldAmount: 8,
+});
+assert.equal(unsafeDeltaSettlement.updated, false);
+assert.equal(unsafeDeltaSettlement.reason, 'pending_reconcile_delta_journal_close_blocked');
+assert.equal(calls.some((item) => item[0] === 'closeJournalEntry'), false);
+
 const finalizeAlerts = buildAlerts({ openEntries: [openEntry] });
 await finalizeAlerts.finalizeExecutedTrade({
   signalId: 'sig-sell',
@@ -215,6 +250,8 @@ const payload = {
   feeDustClosedAsFull: true,
   intentionalPartialRecorded: true,
   cleanupSuppressed: true,
+  pendingReconcileDeltaJournalSkipped: true,
+  pendingReconcileDeltaCloseBlocked: true,
   finalizeSynced: true,
 };
 

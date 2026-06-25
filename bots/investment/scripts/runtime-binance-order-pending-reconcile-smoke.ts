@@ -736,6 +736,86 @@ async function runBinancePendingJournalRepairSmoke() {
   }
 }
 
+async function runBinancePendingDeltaJournalSkipSmoke() {
+  const marker = `smoke-binance-delta-journal-skip-${Date.now()}`;
+  const signalId = `${marker}-signal`;
+  const tradeId = `${marker}-trade`;
+  const symbol = 'ORCA/USDT';
+  const incidentLink = `pending_reconcile_delta:${signalId}:ORD-DELTA:buy:8.00000000`;
+
+  await db.initSchema();
+  await db.run(
+    `INSERT INTO signals (id, symbol, action, amount_usdt, confidence, reasoning, status, exchange, trade_mode, block_code, block_meta)
+     VALUES ($1, $2, 'BUY', 20, 0.75, 'binance pending delta journal skip smoke', 'executed', 'binance', 'normal', 'order_reconciled', $3::jsonb)`,
+    [signalId, symbol, JSON.stringify({
+      pendingReconcile: {
+        exchange: 'binance',
+        market: 'crypto',
+        symbol,
+        action: 'BUY',
+        tradeMode: 'normal',
+        paperMode: false,
+        orderId: 'ORD-DELTA',
+        expectedQty: 8,
+        filledQty: 8,
+        recordedFilledQty: 8,
+        recordedCost: 14.24,
+        followUpRequired: false,
+        journalPending: {
+          followUpRequired: true,
+          queueStatus: 'queued',
+          attempts: 1,
+          tradeId,
+          incidentLink,
+        },
+      },
+    })],
+  );
+  await db.run(
+    `INSERT INTO trades
+       (id, signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode, incident_link, execution_origin, quality_flag, exclude_from_learning)
+     VALUES
+       ($1, $2, $3, 'buy', 8, 1.78, 14.24, false, 'binance', 'normal', $4, 'reconciliation', 'degraded', true)`,
+    [tradeId, signalId, symbol, incidentLink],
+  );
+
+  try {
+    const result = await processBinancePendingJournalRepairQueue({
+      tradeModes: ['normal'],
+      limit: 10,
+      delayMs: 0,
+    });
+    assert.equal(result.processed >= 1, true);
+    assert.equal(result.summary.repaired >= 1, true);
+
+    const updatedSignal = await db.getSignalById(signalId);
+    const updatedMeta = parseMeta(updatedSignal?.block_meta);
+    assert.equal(Boolean(updatedMeta?.pendingReconcile?.journalPending?.followUpRequired), false);
+    assert.equal(String(updatedMeta?.pendingReconcile?.journalPending?.queueStatus || ''), 'completed');
+    assert.match(String(updatedMeta?.pendingReconcile?.journalPending?.source || ''), /delta_journal_skipped/);
+
+    const [journalAgg] = await db.query(
+      `SELECT COUNT(*)::int AS cnt
+         FROM trade_journal
+        WHERE signal_id = $1
+          AND incident_link = $2`,
+      [signalId, incidentLink],
+    );
+    assert.equal(Number(journalAgg?.cnt || 0), 0);
+
+    return {
+      processed: result.processed,
+      repaired: result.summary.repaired,
+      journalCount: Number(journalAgg?.cnt || 0),
+    };
+  } finally {
+    await db.run(`DELETE FROM trade_journal WHERE signal_id = $1`, [signalId]).catch(() => {});
+    await db.run(`DELETE FROM trades WHERE signal_id = $1`, [signalId]).catch(() => {});
+    await db.run(`DELETE FROM positions WHERE symbol = $1 AND exchange = 'binance' AND paper = false`, [symbol]).catch(() => {});
+    await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
+  }
+}
+
 export async function runBinanceOrderPendingReconcileSmoke() {
   const payload = buildBinancePendingReconcilePayload({
     id: 'signal-binance-1',
@@ -822,6 +902,7 @@ export async function runBinanceOrderPendingReconcileSmoke() {
   const queuePath = await runBinancePendingQueuePathSmoke();
   const actualApplyPath = await runBinancePendingQueueActualApplySmoke();
   const journalRepairPath = await runBinancePendingJournalRepairSmoke();
+  const deltaJournalSkipPath = await runBinancePendingDeltaJournalSkipSmoke();
   const btcFallbackGuardPath = runBtcPairFallbackGuardSmoke();
   const pendingEnqueueFailurePath = await runPendingEnqueueFailureSmoke();
   const bridgeReportedMutatingErrorPath = await runBridgeReportedMutatingErrorSmoke();
@@ -836,6 +917,7 @@ export async function runBinanceOrderPendingReconcileSmoke() {
     queuePath,
     actualApplyPath,
     journalRepairPath,
+    deltaJournalSkipPath,
     btcFallbackGuardPath,
     pendingEnqueueFailurePath,
     bridgeReportedMutatingErrorPath,

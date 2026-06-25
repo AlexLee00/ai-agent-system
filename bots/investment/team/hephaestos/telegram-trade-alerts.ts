@@ -1,5 +1,9 @@
 // @ts-nocheck
 import { selectOpenJournalEntryForSell } from './open-journal-entry-resolver.ts';
+import {
+  isPendingReconcileDeltaIncidentLink,
+  shouldSkipPendingReconcileDeltaBuyJournal,
+} from './pending-reconcile-core.ts';
 /**
  * Trade notification and journal settlement helpers for Hephaestos.
  *
@@ -36,6 +40,12 @@ export function createTelegramTradeAlerts(context = {}) {
   function getJournalDustToleranceUsdt() {
     const configured = Number(process.env.LUNA_JOURNAL_DUST_TOLERANCE_USDT);
     return Number.isFinite(configured) && configured >= 0 ? configured : 1;
+  }
+
+  function isUnsafePendingReconcileDeltaJournalClose(entry = {}) {
+    if (String(entry?.exchange || '') !== 'binance') return false;
+    if (Boolean(entry?.is_paper)) return false;
+    return isPendingReconcileDeltaIncidentLink(entry?.incident_link);
   }
 
   function isDustRemainderAfterSell({ entrySize = 0, entryValue = 0, soldAmount = 0 } = {}) {
@@ -205,6 +215,14 @@ export function createTelegramTradeAlerts(context = {}) {
         candidates: selection.candidates,
       };
     }
+    if (isUnsafePendingReconcileDeltaJournalClose(entry)) {
+      return {
+        partial: false,
+        updated: false,
+        reason: 'pending_reconcile_delta_journal_close_blocked',
+        candidates: selection.candidates,
+      };
+    }
 
     const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
     const entrySize = Number(entry.entry_size || 0);
@@ -340,6 +358,12 @@ export function createTelegramTradeAlerts(context = {}) {
 
   async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
     if (trade.side === 'buy') {
+      if (shouldSkipPendingReconcileDeltaBuyJournal(trade)) {
+        return {
+          skipped: true,
+          reason: 'pending_reconcile_delta_journal_skipped',
+        };
+      }
       const execTime = toEpochMs(trade.executedAt, Date.now());
       const tradeId = await journalDb.generateTradeId();
       const signal = signalId ? await db.getSignalById(signalId).catch(() => null) : null;
