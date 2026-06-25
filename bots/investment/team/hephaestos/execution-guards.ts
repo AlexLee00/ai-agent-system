@@ -169,7 +169,7 @@ export async function runBuySafetyGuards({
         blockReasons: backtestReasons,
       }
       : null;
-    void logGateDecision({
+    await logGateDecision({
       exchange: signal.exchange || 'binance',
       market: signal.market || 'crypto',
       symbol,

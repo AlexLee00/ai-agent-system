@@ -1839,7 +1839,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       context?.gateDecisionLogEnabled ?? process.env.LUNA_GATE_DECISION_LOG_ENABLED,
       true,
     );
-    const emitGateDecisionLog = (qualityGate = null, { actuallyFired = false } = {}) => {
+    const emitGateDecisionLog = async (qualityGate = null, { actuallyFired = false } = {}) => {
       if (dryRun || !gateDecisionLogEnabled || !qualityGate?.enabled) return;
       const backtest = qualityGate?.backtest || triggerQuality?.backtest || null;
       if (!backtest) return;
@@ -1849,7 +1849,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       ]);
       // Records the backtest gate decision, not the notify/hard runtime mode outcome.
       // This keeps PSR/DSR/Sharpe gate efficacy analyzable against future realized PnL.
-      void logGateDecision({
+      await logGateDecision({
         exchange,
         market: marketFromTrigger(trigger, exchange, context),
         symbol: normalizeSymbol(trigger.symbol),
@@ -1888,7 +1888,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       checked++;
       readyBlocked++;
       qualityExpired++;
-      emitGateDecisionLog(preflightQualityGate, { actuallyFired: false });
+      await emitGateDecisionLog(preflightQualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'expired',
         triggerMetaPatch: {
@@ -2065,7 +2065,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }
     if (!qualityGate.ok) {
       readyBlocked++;
-      emitGateDecisionLog(qualityGate, { actuallyFired: false });
+      await emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
@@ -2096,7 +2096,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }
     if (!allowLiveFire) {
       readyBlocked++;
-      emitGateDecisionLog(qualityGate, { actuallyFired: false });
+      await emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
@@ -2168,7 +2168,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       readyBlocked++;
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
       const hardBlockReason = resolveEntryTriggerRiskGateBlockReason(riskGate.reason);
-      emitGateDecisionLog(qualityGate, { actuallyFired: false });
+      await emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: terminalBlock ? 'expired' : 'waiting',
         triggerMetaPatch: {
@@ -2194,7 +2194,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
       if (terminalBlock) {
         readyBlocked++;
-        emitGateDecisionLog(qualityGate, { actuallyFired: false });
+        await emitGateDecisionLog(qualityGate, { actuallyFired: false });
         await updateTriggerState(trigger.id, {
           triggerState: 'expired',
           triggerMetaPatch: {
@@ -2236,7 +2236,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }).catch(() => null);
     if (recentFired && recentFired.id !== trigger.id) {
       readyBlocked++;
-      emitGateDecisionLog(qualityGate, { actuallyFired: false });
+      await emitGateDecisionLog(qualityGate, { actuallyFired: false });
       await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
@@ -2256,7 +2256,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       continue;
     }
     fired++;
-    emitGateDecisionLog(qualityGate, { actuallyFired: true });
+    await emitGateDecisionLog(qualityGate, { actuallyFired: true });
     const updated = await updateTriggerState(trigger.id, {
       triggerState: 'fired',
       firedAt: nowIso(),
