@@ -26,9 +26,6 @@ const OHLCV_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_BACKTEST_OHLCV_
 const LUNA_PBO_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_PBO_TIMEOUT_MS || 90_000));
 const LUNA_PBO_ENABLED = process.env.LUNA_PBO_ENABLED !== 'false';
 const TRUE_ENV_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
-// [시뮬 전용] 유니버스 밖 종목도 백테스트 평가하기 위한 bypass. 기본 OFF.
-// 운영 진입 게이트(top volume 컷오프)와 무관하며, DB 오염 방지를 위해 dry-run에서만 적용한다.
-const UNIVERSE_BYPASS_FOR_SIM = String(process.env.LUNA_BACKTEST_UNIVERSE_BYPASS || '').trim().toLowerCase() === 'true';
 const LUNA_META_LABEL_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_META_LABEL_TIMEOUT_MS || 60_000));
 const LUNA_META_LABEL_ENABLED = TRUE_ENV_VALUES.has(String(process.env.LUNA_META_LABEL_ENABLED || 'false').trim().toLowerCase());
 let upsertFailureCount = 0;
@@ -1519,9 +1516,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     }
     emitProgress(`start ${index + 1}/${budgetedCandidates.length} symbol=${symbol} market=${market} elapsedMs=${elapsedMs}`);
     const top30Gate = evaluateTop30GateForCandidate({ symbol, market }, binanceTopVolumeUniverse);
-    // [시뮬 전용] LUNA_BACKTEST_UNIVERSE_BYPASS=true + dryRun이면 유니버스 밖도 백테스트 평가한다.
-    // 기본/운영 apply에서는 기존 동작처럼 유니버스 밖을 would_block_universe로 차단한다.
-    if (top30Gate.blocked && !(UNIVERSE_BYPASS_FOR_SIM && dryRun)) {
+    if (top30Gate.blocked) {
       results.push(await recordTop30BacktestBlock({ symbol, market, ...universeMetadata }, top30Gate, dryRun));
       emitProgress(`blocked-top30 symbol=${symbol} rank=${top30Gate.rank ?? 'n/a'}`);
       continue;
