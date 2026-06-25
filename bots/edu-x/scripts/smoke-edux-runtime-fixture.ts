@@ -11,6 +11,7 @@ const {
   resolvePublishLogSafetyMetadata,
   buildLunaEvidenceContentPreview,
   buildLunaEvidenceSummary,
+  postUrlFor,
   shouldSendPublishSuccessTelegram,
 } = require('../lib/edux-runtime-support.ts');
 
@@ -44,6 +45,11 @@ function main() {
   const parsedTestArgs = parseArgs(['--test-post', '--exclude-from-luna-evidence']);
   assert.equal(parsedTestArgs.testPost, true, '--test-post must be parsed');
   assert.equal(parsedTestArgs.excludeFromLunaEvidence, true, '--exclude-from-luna-evidence must be parsed');
+  assert.equal(
+    postUrlFor('https://pulse.edu-x.io', 'post-123'),
+    'https://edu-x.io/community/post-123',
+    'public post URL must match Edu-X detail share-link route',
+  );
 
   const oneOffSafety = resolvePublishLogSafetyMetadata({
     title: '[TEST] 05/20 BTC/USDT 시황 카드',

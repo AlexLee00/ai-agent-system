@@ -10,6 +10,7 @@ const {
   digestWindow,
   escapeHtml,
   fetchDigestRows,
+  normalizeDigestPostUrl,
   parseDigestRow,
   summarizeOneLine,
 } = require('./runtime-edux-daily-digest.ts');
@@ -29,7 +30,7 @@ function fixtureRows() {
       schedule_slot: '0600',
       category: 'crypto',
       title: '06/22 BTC/USDT 시황 카드 | BTC/USDT $63,346 +0.9%',
-      post_url: 'https://edu-x.io/community/posts/crypto-fixture',
+      post_url: 'https://edu-x.io/community/crypto-fixture',
       published_at: '2026-06-22T06:00:00+09:00',
       metadata: {
         lunaEvidenceSummary: '⚡ 핵심 3줄 | BTC는 저항선 아래에서 단기 반등을 시험 중입니다. | 보조 문장',
@@ -39,7 +40,7 @@ function fixtureRows() {
       schedule_slot: '1600',
       category: 'kis',
       title: '06/22 국내증시 마감 요약 | 코스피 9,115 +0.7%',
-      post_url: 'https://edu-x.io/community/posts/kis-fixture',
+      post_url: 'https://edu-x.io/community/kis-fixture',
       published_at: '2026-06-22T16:00:00+09:00',
       metadata: {
         lunaEvidenceSummary: '■ 마감 확정치 | 코스피가 코스닥보다 강했고 대형주 우위가 관측됐습니다. 원/달러 환율은 1,537.88원으로 확인됐습니다. 지수는 모두 상승했지만 코스닥보다 코스피가 더 강했습니다. | 수급 보조 문장',
@@ -49,7 +50,7 @@ function fixtureRows() {
       schedule_slot: '0630',
       category: 'overseas',
       title: '06/22 미국장 마감 요약 | S&P500 7,365 -1.4%',
-      post_url: 'https://edu-x.io/community/posts/overseas-close-fixture',
+      post_url: 'https://edu-x.io/community/overseas-close-fixture',
       published_at: '2026-06-22T22:00:00+09:00',
       metadata: {
         lunaEvidenceSummary: '■ 마감 확정치 | S&P500 7365로 -1.4%, Nasdaq은 25587로 -2.2%, Dow는 51667로 -0.1% 마감했습니다. | 보조 문장',
@@ -82,6 +83,11 @@ async function runSmoke() {
   const windowCheck = digestWindow(reference);
   assert.equal(windowCheck.end.toISOString(), reference.toISOString());
   assert.equal(windowCheck.start.toISOString(), new Date(reference.getTime() - 24 * 60 * 60 * 1000).toISOString());
+  assert.equal(
+    normalizeDigestPostUrl('https://edu-x.io/community/posts/legacy-post-id'),
+    'https://edu-x.io/community/legacy-post-id',
+    'digest must normalize legacy API-style post URLs to web detail URLs',
+  );
   const compressed = summarizeOneLine('원/달러 1,554원 급등 속 코스피·코스닥 동반 급락, 환율 안정 여부가 관건입니다. 추가 문장은 제거됩니다.');
   assert.ok(compressed.length <= 73, `compressed summary too long: ${compressed}`);
   assert.equal(compressed.includes('추가 문장'), false);

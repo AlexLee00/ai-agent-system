@@ -214,13 +214,20 @@ function extractTitleDate(title = '', publishedAt = null) {
   return mmddFromDate(new Date());
 }
 
+function normalizeDigestPostUrl(url = '') {
+  const text = String(url || '').trim();
+  if (!text) return '';
+  // Existing publish logs may contain the API-style route; the web share link uses /community/{id}.
+  return text.replace('/community/posts/', '/community/');
+}
+
 function parseDigestRow(row = {}) {
   const metadata = normalizeMetadata(row.metadata);
   return {
     scheduleSlot: row.schedule_slot || row.scheduleSlot || '',
     category: row.category || '',
     title: row.title || '',
-    postUrl: row.post_url || row.postUrl || '',
+    postUrl: normalizeDigestPostUrl(row.post_url || row.postUrl || ''),
     publishedAt: row.published_at || row.publishedAt || null,
     dateMmdd: extractTitleDate(row.title, row.published_at || row.publishedAt),
     assetLine: extractAssetLine(row.title),
@@ -358,6 +365,7 @@ module.exports = {
   parseDigestRow,
   buildDigestMessage,
   summarizeOneLine,
+  normalizeDigestPostUrl,
   displayMmdd,
   escapeHtml,
   linkTo,

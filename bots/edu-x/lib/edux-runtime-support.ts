@@ -667,7 +667,8 @@ function redact(value) {
 function postUrlFor(baseUrl, postId) {
   const base = String(baseUrl || 'https://edu-x.io').replace(/\/$/, '');
   const webBase = base.includes('pulse.edu-x.io') ? 'https://edu-x.io' : base;
-  return `${webBase}/community/posts/${postId}`;
+  // Match the public web URL copied by Edu-X post detail's share button.
+  return `${webBase}/community/${postId}`;
 }
 
 module.exports = {
