@@ -98,7 +98,7 @@
 - **permutation 2종**(E-1): IS(후보 사전 차단, p<1%)·WF(최종, 1년 p≤5%) — backtest-vectorbt.py 확장.
 - 기존 ON 승격: robust selection(`LUNA_BT_ROBUST_SELECTION_ENABLED=true`)·DSR/PBO 게이트(shadow→enforce, 핵심 경로만)·CPCV(purge+embargo, 기존 갭 — 신설).
 - **[2026-06-25 갱신] DSR→PSR 게이트 전환**: 실매매 462건(crypto, +$2,988) AUC 실증 결과 **DSR=0.474(변별력 없음)·PSR=0.659**. DSR이 crypto 5분봉서 구조적 통과불가(sr0 폭발+T=34560 raw bar 186배 증폭→전종목 0). 3수정안 시뮬레이션 모두 0.9 통과 실패 → DSR 폐기, PSR 게이트로 대체(`LUNA_DSR_GATE_ENABLED=false`·`LUNA_PSR_GATE_ENABLED=true`·`LUNA_PSR_MIN=0.5`). `candidate-backtest-gate.ts`+refresh 양쪽 PSR 게이트 병렬 구현. 진입 게이트가 DB psr 값을 실시간 재평가(entry-trigger-engine L152). 상세: TRACKER C7-4.
-- **[2026-06-25 신설] 게이트 결정 로깅**: `investment.gate_decision_log`(진입 시점 게이트 판정+지표 스냅샷+actually_fired 기록, 비차단). 미래에 v_trades_real_usd와 조인하여 PSR 문턱 최적성 실증. 상세: TRACKER C7-5.
+- **[2026-06-25 신설] 게이트 결정 로깅**: `investment.gate_decision_log`(진입 시점 게이트 판정+지표 스냅샷+actually_fired 기록, 비차단). 로깅 지점은 실제 PSR 게이트가 적용되는 **핫패스**(`execution-guards.ts` runBuySafetyGuards — 모든 BUY 주문 통과)이며, 공용 모듈 `gate-decision-logger.ts`로 분리. 미래에 v_trades_real_usd와 조인하여 PSR 문턱 최적성 실증. 상세: TRACKER C7-5·C7-6.
 - **OOS 보존 규율**(E-1): OOS 사용 횟수 기록·시도 카운터(스누핑 가드)·최종 검증만 OOS.
 
 ### C8. 피드백 루프 [M-1 — 루틴 ⑥⑦]

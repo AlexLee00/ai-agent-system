@@ -161,6 +161,17 @@ function _isAiImplementationLecture(researchData = {}, lectureTitle = '') {
   return isAgentIntroLecture(`${displayName} ${seriesName}`, lectureTitle);
 }
 
+function _buildAgentIntroHashtagRules(researchData = {}, lectureTitle = '') {
+  if (!_isAiImplementationLecture(researchData, lectureTitle)) return '';
+
+  return [
+    '[에이전트 입문 해시태그 규칙 — 반드시 우선 적용]',
+    '- 해시태그는 에이전트 입문, Codex, Claude Code, ChatGPT, OpenAI, Anthropic, AI코딩, 프롬프트, 자동화, 실습, 초보자, 파일수정, 결과검증 중심으로 작성하라.',
+    '- Node.js 시리즈가 아니므로 #Nodejs, #Node강의, #백엔드개발, #웹개발 같은 Node.js 전용 해시태그를 쓰지 말라.',
+    '- 스터디카페 해시태그는 보조 맥락으로만 3개 이하 사용하고, 전체 해시태그의 중심을 AI 코딩 에이전트 실습에 둬라.',
+  ].join('\n');
+}
+
 function _buildAgentIntroToolFactRules(lectureNumber, lectureTitle) {
   const title = String(lectureTitle || '').trim();
   const number = Number(lectureNumber || 0);
@@ -495,6 +506,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const geoRules = _buildLectureGeoRules(researchData, lectureTitle);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle, lectureNumber);
   const lectureFormatInstruction = buildBlogFormatInstruction('lecture');
+  const agentIntroHashtagRules = _buildAgentIntroHashtagRules(researchData, lectureTitle);
 
   // 실전 에피소드 블록
   const experienceBlock = realExperiences.length > 0
@@ -535,6 +547,7 @@ ${LECTURE_AI_BRIEFING_CHECKLIST}
 ${lectureFormatInstruction}
 ${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${lectureDirection}
+${agentIntroHashtagRules ? `${agentIntroHashtagRules}\n` : ''}
 ${BLOG_SKILL_BUNDLE ? `${BLOG_SKILL_BUNDLE}\n` : ''}
 다음 강의 포스팅을 작성하라:
 
@@ -710,6 +723,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
   const weatherContext = weatherToContext(researchData.weather || {});
   const lectureDirection = _buildLectureTopicDirection(lectureNumber, lectureTitle);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle, lectureNumber);
+  const agentIntroHashtagRules = _buildAgentIntroHashtagRules(researchData, lectureTitle);
   const issueLines = (quality?.issues || [])
     .map((issue, index) => `${index + 1}. [${issue.severity}] ${issue.msg}`)
     .join('\n') || '1. [warn] 품질 보정 필요';
@@ -725,6 +739,7 @@ async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData,
 [선택된 강의 방향]
 ${lectureDirection}
 ${beginnerLectureRules ? `\n${beginnerLectureRules}\n` : ''}
+${agentIntroHashtagRules ? `\n${agentIntroHashtagRules}\n` : ''}
 
 [품질 이슈]
 ${issueLines}
@@ -816,6 +831,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);
   const beginnerLectureRules = _buildBeginnerLectureRules(researchData, lectureTitle, lectureNumber);
   const lectureFormatInstruction = buildBlogFormatInstruction('lecture');
+  const agentIntroHashtagRules = _buildAgentIntroHashtagRules(researchData, lectureTitle);
 
   const experienceBlock = realExperiences.length > 0
     ? realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n')
@@ -852,6 +868,7 @@ ${lectureFormatInstruction}
 ${LECTURE_AI_BRIEFING_ORDER}
 ${LECTURE_AI_BRIEFING_CHECKLIST}
 ${lectureDirection}
+${agentIntroHashtagRules ? `${agentIntroHashtagRules}\n` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}
@@ -943,6 +960,7 @@ ${POS_PERSONA_GUIDE ? `[참조 페르소나]\n${POS_PERSONA_GUIDE}\n` : ''}
 ${lectureDirection}
 ${lectureFormatInstruction}
 ${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
+${agentIntroHashtagRules ? `${agentIntroHashtagRules}\n` : ''}
 ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
