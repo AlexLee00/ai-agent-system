@@ -9,6 +9,7 @@ import {
 } from '../team/hephaestos/execution-guards.ts';
 
 process.env.LUNA_GUARD_EVENT_RECORDING_DISABLED = 'true';
+process.env.LUNA_GATE_DECISION_LOG_ENABLED = 'false';
 
 function createDeps(overrides = {}) {
   const captured = [];

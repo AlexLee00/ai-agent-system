@@ -8,6 +8,8 @@ import { evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-ga
 import { runBuySafetyGuards } from '../team/hephaestos/execution-guards.ts';
 import { buildFixtureBinanceTopVolumeUniverse } from '../shared/binance-top-volume-universe.ts';
 
+process.env.LUNA_GATE_DECISION_LOG_ENABLED = 'false';
+
 function baseDeps(overrides = {}) {
   const captured = [];
   return {

@@ -7,6 +7,7 @@ import {
 } from '../../shared/trade-data-derived-guards.ts';
 import { recordGuardEvents } from '../../shared/guard-event-recorder.ts';
 import { evaluateCandidateBacktestEntryGate } from '../../shared/candidate-backtest-gate.ts';
+import { logGateDecision, resolveBacktestGatePassed } from '../../shared/gate-decision-logger.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
@@ -154,6 +155,41 @@ export async function runBuySafetyGuards({
   }));
   if (backtestGate?.wouldBlock) {
     console.log(`  🧪 [백테스트 게이트] mode=${backtestGate.mode} reason=${backtestGate.reason || 'would_block'}`);
+  }
+  if (process.env.LUNA_GATE_DECISION_LOG_ENABLED !== 'false') {
+    const backtestSnapshot = backtestGate?.row || null;
+    const backtestReasons = Array.isArray(backtestGate?.reasons)
+      ? backtestGate.reasons
+      : (backtestGate?.reason ? [backtestGate.reason] : []);
+    const backtestDecisionSnapshot = backtestSnapshot
+      ? {
+        ...backtestSnapshot,
+        wouldBlock: backtestGate?.wouldBlock,
+        gateStatus: backtestSnapshot?.gate_status ?? backtestSnapshot?.gateStatus ?? backtestGate?.reason ?? null,
+        blockReasons: backtestReasons,
+      }
+      : null;
+    void logGateDecision({
+      exchange: signal.exchange || 'binance',
+      market: signal.market || 'crypto',
+      symbol,
+      gatePassed: backtestDecisionSnapshot
+        ? resolveBacktestGatePassed(backtestDecisionSnapshot)
+        : backtestGate?.wouldBlock !== true,
+      gateStatus: backtestDecisionSnapshot?.gateStatus ?? backtestGate?.reason ?? null,
+      blockReasons: backtestReasons,
+      backtest: backtestDecisionSnapshot,
+      decisionMode: backtestGate?.mode ?? null,
+      actuallyFired: false,
+      confidence: Number(signal?.confidence ?? signalConfidence) || null,
+      signalId: signal?.signal_id || signal?.signalId || signal?.id || null,
+      triggerType: signal?.trigger_type || signal?.setup_type || signal?.setupType || null,
+      shadowFlags: {
+        wouldBlock: backtestGate?.wouldBlock === true,
+        blocked: backtestGate?.blocked === true,
+        mode: backtestGate?.mode ?? null,
+      },
+    });
   }
   if (backtestGate?.blocked) {
     const reason = `candidate backtest gate blocked: ${backtestGate.reason || 'candidate_backtest_gate'}`;
