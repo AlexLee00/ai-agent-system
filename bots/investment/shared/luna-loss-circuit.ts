@@ -10,6 +10,7 @@ export const LUNA_CIRCUIT_PARAM_KEYS = Object.freeze({
   stopDurationMin: 'c4.circuit_stop_duration_min',
   symbolCooldownCandles: 'c4.symbol_cooldown_candles',
   lowProfitLookbackDays: 'c4.low_profit_lookback_days',
+  lowProfitMinSample: 'c4.low_profit_min_sample',
 });
 
 export const LUNA_CIRCUIT_DEFAULTS = Object.freeze({
@@ -18,6 +19,7 @@ export const LUNA_CIRCUIT_DEFAULTS = Object.freeze({
   stopDurationMin: 1440,
   symbolCooldownCandles: 2,
   lowProfitLookbackDays: 14,
+  lowProfitMinSample: 3,
   candleMinutes: 1440,
 });
 
@@ -53,6 +55,13 @@ function finite(value: any, fallback = null) {
 function round(value: any, digits = 6) {
   const n = finite(value, null);
   return n == null ? null : Number(n.toFixed(digits));
+}
+
+function positiveInteger(value: any, fallback: number) {
+  const n = finite(value, null);
+  if (n == null || n <= 0) return fallback;
+  const integer = Math.floor(n);
+  return integer >= 1 ? integer : fallback;
 }
 
 function timestampMs(value: any) {
@@ -95,6 +104,12 @@ export async function loadLossCircuitParameters(options: any = {}, deps: any = {
       options,
       deps,
     ),
+    lowProfitMinSample: positiveInteger(await parameterNumber(
+      LUNA_CIRCUIT_PARAM_KEYS.lowProfitMinSample,
+      LUNA_CIRCUIT_DEFAULTS.lowProfitMinSample,
+      options,
+      deps,
+    ), LUNA_CIRCUIT_DEFAULTS.lowProfitMinSample),
     candleMinutes: finite(options.candleMinutes, LUNA_CIRCUIT_DEFAULTS.candleMinutes),
   };
 }
@@ -260,9 +275,11 @@ function buildLowProfitLocks(trades = [], params: any, nowMs: number, evaluatedA
   const rows = trades.filter((row) => row.exitTimeMs >= since);
   const groups = groupBy(rows, (row) => `${row.market}:${row.symbol}`);
   const locks = [];
+  const minSample = positiveInteger(params.lowProfitMinSample, LUNA_CIRCUIT_DEFAULTS.lowProfitMinSample);
   for (const [key, groupRows] of groups.entries()) {
     const rValues = groupRows.map(tradeRMultiple).filter((value) => value != null);
     if (rValues.length === 0) continue;
+    if (rValues.length < minSample) continue;
     const cumulativeR = rValues.reduce((sum, value) => sum + Number(value || 0), 0);
     if (cumulativeR >= 0) continue;
     const [market, symbol] = key.split(':');
@@ -276,6 +293,7 @@ function buildLowProfitLocks(trades = [], params: any, nowMs: number, evaluatedA
       evaluatedAt,
       evidence: {
         lowProfitLookbackDays: Number(params.lowProfitLookbackDays),
+        minSample,
         sampleCount: rValues.length,
         cumulativeR: round(cumulativeR, 4),
         source: 'investment.trade_journal',
@@ -407,6 +425,7 @@ export function summarizeCircuitLocks(rows = []) {
 export const _testOnly = {
   normalizeTrade,
   timestampMs,
+  positiveInteger,
   isStopLikeTrade,
   tradeRMultiple,
   buildStoplossGuardLocks,

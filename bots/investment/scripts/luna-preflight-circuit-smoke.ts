@@ -232,6 +232,7 @@ async function circuitScenarios() {
     'c4.circuit_stop_duration_min': 1440,
     'c4.symbol_cooldown_candles': 2,
     'c4.low_profit_lookback_days': 14,
+    'c4.low_profit_min_sample': 3,
   };
   const fourStops = await evaluateLossCircuits({
     now,
@@ -256,14 +257,41 @@ async function circuitScenarios() {
   });
   assert.ok(cooldown.locks.some((item) => item.circuit === 'symbol_cooldown' && item.symbol === 'SOL/USDT'));
 
-  const lowProfit = await evaluateLossCircuits({
+  const lowProfitUnderSample = await evaluateLossCircuits({
     now,
     parameters: params,
     trades: [
       trade({ symbol: 'XRP/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 97, stopPrice: 95, pnlPercent: -3, exitTime: now - 3 * 24 * 60 * 60 * 1000 }),
+      trade({ symbol: 'XRP/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 98, stopPrice: 95, pnlPercent: -2, exitTime: now - 2 * 24 * 60 * 60 * 1000 }),
     ],
   });
-  assert.ok(lowProfit.locks.some((item) => item.circuit === 'low_profit_symbol' && item.symbol === 'XRP/USDT'));
+  assert.equal(lowProfitUnderSample.locks.some((item) => item.circuit === 'low_profit_symbol' && item.symbol === 'XRP/USDT'), false);
+
+  const lowProfitMinSample = await evaluateLossCircuits({
+    now,
+    parameters: params,
+    trades: [
+      trade({ symbol: 'MEGA/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 99, stopPrice: 95, pnlPercent: -1, exitTime: now - 3 * 24 * 60 * 60 * 1000 }),
+      trade({ symbol: 'MEGA/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 98, stopPrice: 95, pnlPercent: -2, exitTime: now - 2 * 24 * 60 * 60 * 1000 }),
+      trade({ symbol: 'MEGA/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 97, stopPrice: 95, pnlPercent: -3, exitTime: now - 1 * 24 * 60 * 60 * 1000 }),
+    ],
+  });
+  const lowProfitLock = lowProfitMinSample.locks.find((item) => item.circuit === 'low_profit_symbol' && item.symbol === 'MEGA/USDT');
+  assert.ok(lowProfitLock);
+  assert.equal(lowProfitLock.evidence.minSample, 3);
+
+  const invalidMinSampleFallsBack = await evaluateLossCircuits({
+    now,
+    parameters: {
+      ...params,
+      'c4.low_profit_min_sample': 0.5,
+    },
+    trades: [
+      trade({ symbol: 'BAD/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 97, stopPrice: 95, pnlPercent: -3, exitTime: now - 3 * 24 * 60 * 60 * 1000 }),
+      trade({ symbol: 'BAD/USDT', exitReason: 'normal_exit', entryPrice: 100, exitPrice: 98, stopPrice: 95, pnlPercent: -2, exitTime: now - 2 * 24 * 60 * 60 * 1000 }),
+    ],
+  });
+  assert.equal(invalidMinSampleFallsBack.locks.some((item) => item.circuit === 'low_profit_symbol' && item.symbol === 'BAD/USDT'), false);
 
   const sideSplit = await evaluateLossCircuits({
     now,
@@ -287,6 +315,7 @@ async function circuitScenarios() {
     },
   });
   assert.ok(requestedKeys.includes('global:c4.circuit_trade_limit'));
+  assert.ok(requestedKeys.includes('global:c4.low_profit_min_sample'));
 
   let capturedSql = '';
   await evaluateLossCircuits({
@@ -305,7 +334,9 @@ async function circuitScenarios() {
     stoplossGuardLocks: fourStops.locks.filter((item) => item.circuit === 'stoploss_guard').length,
     threeStopsLocked: threeStops.locks.some((item) => item.circuit === 'stoploss_guard'),
     cooldown: cooldown.locks.some((item) => item.circuit === 'symbol_cooldown'),
-    lowProfit: lowProfit.locks.some((item) => item.circuit === 'low_profit_symbol'),
+    lowProfitUnderSample: lowProfitUnderSample.locks.some((item) => item.circuit === 'low_profit_symbol'),
+    lowProfitMinSample: Boolean(lowProfitLock),
+    lowProfitInvalidMinSampleFallback: true,
     sideLongOnly: true,
     c17Keys: requestedKeys.length,
     excludedRowsFiltered: true,
@@ -406,6 +437,7 @@ async function main() {
       'c4.circuit_stop_duration_min': 1440,
       'c4.symbol_cooldown_candles': 2,
       'c4.low_profit_lookback_days': 14,
+      'c4.low_profit_min_sample': 3,
     },
     trades: Array.from({ length: 4 }, (_, idx) => trade({ id: `db-${idx}`, exitTime: Date.parse('2026-06-11T12:00:00Z') - idx * 60_000 })),
   })).locks[0];
