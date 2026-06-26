@@ -12,6 +12,7 @@ const {
   fetchDigestRows,
   normalizeDigestPostUrl,
   parseDigestRow,
+  resolveTelegramChannelId,
   summarizeOneLine,
 } = require('./runtime-edux-daily-digest.ts');
 
@@ -63,7 +64,8 @@ function assertMessage(rows, text) {
   const blockCount = (text.match(/^📊/gm) || []).length;
   assert.equal(blockCount, rows.length, `digest block count mismatch: ${blockCount}/${rows.length}`);
   for (const row of rows) {
-    assert.ok(text.includes(`href="${row.post_url}"`), `missing linked post_url: ${row.post_url}`);
+    const expectedPostUrl = normalizeDigestPostUrl(row.post_url);
+    assert.ok(text.includes(`href="${expectedPostUrl}"`), `missing linked post_url: ${expectedPostUrl}`);
     const parsed = parseDigestRow(row);
     assert.ok(parsed.assetLine, 'asset line should be parsed');
     assert.ok(parsed.summaryLine, 'summary line should be parsed');
@@ -116,20 +118,39 @@ async function runSmoke() {
   });
   assertMessage(rowsForFormat, text);
   assert.match(text, /<b>🔥\[\d{2} \/ \d{2}\]  오늘 꼭 알아야 할 시장 정보 총정리🔥<\/b>/);
-  assert.ok(text.includes('Edu-X 에듀엑스 - Google Play 앱'));
+  assert.ok(text.includes('Edu-X 에듀엑스 다운로드'));
   assert.ok(text.includes('href="https://example.com/app"'));
   const defaultPlayText = buildDigestMessage(rowsForFormat, {
     dateMmdd: rowsForFormat[0]?.title?.slice(0, 5) || '06/22',
   });
-  assert.ok(defaultPlayText.includes('href="https://play.google.com/store/apps/details?id=com.wcapartners.edux"'));
-  assert.ok(defaultPlayText.includes('Edu-X 에듀엑스 - Google Play 앱'));
+  assert.ok(defaultPlayText.includes('href="https://onelink.to/vmpdmz"'));
+  assert.ok(defaultPlayText.includes('Edu-X 에듀엑스 다운로드'));
   assert.ok(text.includes('EduX 커뮤니티에 있습니다'));
   assert.ok(latestFirstText.includes('<b>국내 마감 코스피 9,115 +0.7%</b>'));
   assert.equal(text.includes('국내 마감 요약'), false);
   assert.equal(text.includes('국내 장시 마감 요약'), false);
   assert.equal(text.includes('게시글 보기'), false);
-  assert.equal(text.includes('👉'), false);
+  assert.ok(text.includes('<a href="https://example.com/app">Edu-X 에듀엑스 다운로드 👉</a>'));
   assert.equal(/\(\d{2}:\d{2}\s+요약\)/.test(text), false);
+  const originalEnv = {
+    target: process.env.EDUX_DIGEST_TELEGRAM_TARGET,
+    test: process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_TEST,
+    live: process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_LIVE,
+    legacy: process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID,
+  };
+  process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_TEST = 'test-channel';
+  process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_LIVE = 'live-channel';
+  process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID = 'legacy-channel';
+  process.env.EDUX_DIGEST_TELEGRAM_TARGET = 'test';
+  assert.equal(resolveTelegramChannelId(), 'test-channel');
+  process.env.EDUX_DIGEST_TELEGRAM_TARGET = 'live';
+  assert.equal(resolveTelegramChannelId(), 'live-channel');
+  process.env.EDUX_DIGEST_TELEGRAM_TARGET = '';
+  assert.equal(resolveTelegramChannelId(), 'legacy-channel');
+  process.env.EDUX_DIGEST_TELEGRAM_TARGET = originalEnv.target;
+  process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_TEST = originalEnv.test;
+  process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_LIVE = originalEnv.live;
+  process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID = originalEnv.legacy;
 
   return {
     ok: true,

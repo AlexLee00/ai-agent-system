@@ -11,6 +11,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 const env = require('../../../packages/core/lib/env');
 require('../../../packages/core/lib/kst');
 const { dbQuery } = require('../lib/edux-runtime-support.ts');
@@ -21,7 +22,11 @@ try {
 } catch { pgPool = null; }
 
 const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.wcapartners.edux';
-const DEFAULT_PLAY_URL = process.env.EDUX_DIGEST_PLAY_URL || GOOGLE_PLAY_URL;
+const EDUX_DOWNLOAD_URL = 'https://onelink.to/vmpdmz';
+const DEFAULT_PLAY_URL = process.env.EDUX_DIGEST_PLAY_URL || EDUX_DOWNLOAD_URL;
+const DEFAULT_PREVIEW_URL = process.env.EDUX_DIGEST_PREVIEW_URL || GOOGLE_PLAY_URL;
+const DEFAULT_THUMBNAIL_PATH = path.join(env.PROJECT_ROOT, 'bots/edu-x/assets/edux-digest-thumbnail.png');
+const TELEGRAM_PHOTO_CAPTION_LIMIT = 1024;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { dryRun: false, json: false };
@@ -48,6 +53,19 @@ function linkTo(url, label) {
   const text = escapeHtml(label || href);
   if (!href) return text;
   return `<a href="${escapeHtmlAttr(href)}">${text}</a>`;
+}
+
+function unescapeBasicHtml(value = '') {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function isTruthyEnv(value, defaultValue = false) {
+  if (value == null || value === '') return defaultValue;
+  return !/^(0|false|no|off)$/i.test(String(value).trim());
 }
 
 function displayMmdd(mmdd = '') {
@@ -256,9 +274,116 @@ function buildDigestMessage(rows = [], options = {}) {
   const playUrl = options.playUrl == null ? DEFAULT_PLAY_URL : String(options.playUrl || '');
   if (playUrl) {
     lines.push('');
-    lines.push(linkTo(playUrl, 'Edu-X 에듀엑스 - Google Play 앱'));
+    lines.push(linkTo(playUrl, 'Edu-X 에듀엑스 다운로드 👉'));
   }
   return lines.join('\n');
+}
+
+function thumbnailPath() {
+  return process.env.EDUX_DIGEST_THUMBNAIL_PATH || DEFAULT_THUMBNAIL_PATH;
+}
+
+function shouldSendThumbnail(options = {}) {
+  if (options.sendThumbnail === false) return false;
+  if (!isTruthyEnv(process.env.EDUX_DIGEST_SEND_THUMBNAIL, false)) return false;
+  return fs.existsSync(options.thumbnailPath || thumbnailPath());
+}
+
+function shouldShowLinkPreview() {
+  return isTruthyEnv(process.env.EDUX_DIGEST_LINK_PREVIEW, false);
+}
+
+function resolveTelegramChannelId(options = {}) {
+  if (options.chatId) return String(options.chatId);
+  const target = String(options.telegramTarget || process.env.EDUX_DIGEST_TELEGRAM_TARGET || '').trim().toLowerCase();
+  if (target === 'test') {
+    return process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_TEST || process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID || '';
+  }
+  if (target === 'live') {
+    return process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_LIVE || process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID || '';
+  }
+  return process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID
+    || process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_LIVE
+    || process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID_TEST
+    || '';
+}
+
+function resolveTelegramTarget(options = {}) {
+  return String(options.telegramTarget || process.env.EDUX_DIGEST_TELEGRAM_TARGET || 'legacy').trim().toLowerCase();
+}
+
+function buildThumbnailCaption(text = '', options = {}) {
+  if (!options.compact && String(text).length <= TELEGRAM_PHOTO_CAPTION_LIMIT) return text;
+  const header = String(text).split('\n').find((line) => line.trim()) || '<b>Edu-X 오늘의 시장 정보</b>';
+  const playUrl = options.playUrl == null ? DEFAULT_PLAY_URL : String(options.playUrl || '');
+  const cta = playUrl ? linkTo(playUrl, 'Edu-X 에듀엑스 다운로드 👉') : '';
+  const lines = [header];
+  const blockPattern = /📊<b>(.*?)<\/b>\n<a href="([^"]+)">\[(.*?)\]<\/a>/g;
+  for (const match of String(text).matchAll(blockPattern)) {
+    const title = unescapeBasicHtml(String(match[1] || '').replace(/<[^>]+>/g, '').trim());
+    const url = String(match[2] || '').trim();
+    const candidate = `📊 ${linkTo(url, title || '게시글 보기')}`;
+    const next = [...lines, '', candidate, ...(cta ? ['', cta] : [])].join('\n');
+    if (next.length > TELEGRAM_PHOTO_CAPTION_LIMIT) break;
+    lines.push('', candidate);
+  }
+  if (lines.length === 1) {
+    lines.push('', '오늘의 Edu-X 시장 요약입니다.');
+  }
+  if (playUrl) {
+    lines.push('', cta);
+  }
+  return lines.join('\n').slice(0, TELEGRAM_PHOTO_CAPTION_LIMIT);
+}
+
+async function sendTelegramMessage(token, chatId, text, options = {}) {
+  const body = {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+  };
+  if (options.replyToMessageId) body.reply_to_message_id = options.replyToMessageId;
+  if (options.disablePreview || !shouldShowLinkPreview()) {
+    body.link_preview_options = { is_disabled: true };
+  } else {
+    body.link_preview_options = {
+      is_disabled: false,
+      url: options.previewUrl == null ? DEFAULT_PREVIEW_URL : String(options.previewUrl || '') || undefined,
+      prefer_large_media: true,
+      show_above_text: false,
+    };
+  }
+  const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const result = await resp.json().catch(() => ({ ok: false, description: `HTTP ${resp.status}` }));
+  if (!result.ok) throw new Error(result.description || `HTTP ${resp.status}`);
+  return result;
+}
+
+async function sendTelegramPhotoDigest(token, chatId, text, options = {}) {
+  const imagePath = options.thumbnailPath || thumbnailPath();
+  const caption = buildThumbnailCaption(text, { ...options, compact: true });
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  form.append('photo', new Blob([fs.readFileSync(imagePath)], { type: 'image/png' }), path.basename(imagePath));
+  form.append('caption', caption);
+  form.append('parse_mode', 'HTML');
+
+  const resp = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+    method: 'POST',
+    body: form,
+  });
+  const photoResult = await resp.json().catch(() => ({ ok: false, description: `HTTP ${resp.status}` }));
+  if (!photoResult.ok) throw new Error(photoResult.description || `HTTP ${resp.status}`);
+
+  return {
+    ...photoResult,
+    deliveryMode: 'photo_caption_compact',
+    thumbnail_result: photoResult.result,
+  };
 }
 
 async function fetchDigestRows(pgModule = pgPool, options = {}) {
@@ -280,27 +405,14 @@ async function fetchDigestRows(pgModule = pgPool, options = {}) {
 
 async function sendTelegramDigest(text, options = {}) {
   const token = process.env.EDUX_DIGEST_TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.EDUX_DIGEST_TELEGRAM_CHANNEL_ID;
+  const chatId = resolveTelegramChannelId(options);
   if (!token || !chatId) {
     throw new Error('EDUX_DIGEST_TELEGRAM_* 미설정 — 발송 불가');
   }
-  const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: 'HTML',
-      link_preview_options: {
-        is_disabled: false,
-        url: options.previewUrl || DEFAULT_PLAY_URL || undefined,
-        show_above_text: false,
-      },
-    }),
-  });
-  const result = await resp.json().catch(() => ({ ok: false, description: `HTTP ${resp.status}` }));
-  if (!result.ok) throw new Error(result.description || `HTTP ${resp.status}`);
-  return result;
+  if (shouldSendThumbnail(options)) {
+    return sendTelegramPhotoDigest(token, chatId, text, options);
+  }
+  return sendTelegramMessage(token, chatId, text, options);
 }
 
 async function runDailyDigest(options = {}) {
@@ -334,7 +446,15 @@ async function runDailyDigest(options = {}) {
     };
   }
 
-  const telegramResult = await sendTelegramDigest(text, { previewUrl: playUrl });
+  const previewUrl = options.previewUrl == null ? DEFAULT_PREVIEW_URL : String(options.previewUrl || '');
+  const sendOptions = {
+    previewUrl,
+    telegramTarget: options.telegramTarget,
+    chatId: options.chatId,
+    sendThumbnail: options.sendThumbnail,
+    thumbnailPath: options.thumbnailPath,
+  };
+  const telegramResult = await sendTelegramDigest(text, sendOptions);
   console.log(`[digest] 발송 완료 (${rows.length}건)`);
   return {
     ok: true,
@@ -342,6 +462,10 @@ async function runDailyDigest(options = {}) {
     sent: true,
     count: rows.length,
     telegramMessageId: telegramResult?.result?.message_id || null,
+    telegramThumbnailMessageId: telegramResult?.thumbnail_result?.message_id || null,
+    telegramDeliveryMode: telegramResult?.deliveryMode || 'message',
+    telegramTarget: resolveTelegramTarget(sendOptions),
+    telegramPreviewUrl: shouldShowLinkPreview() ? previewUrl || null : null,
     window: { start: window.start.toISOString(), end: window.end.toISOString() },
   };
 }
@@ -372,4 +496,7 @@ module.exports = {
   fetchDigestRows,
   runDailyDigest,
   sendTelegramDigest,
+  buildThumbnailCaption,
+  shouldSendThumbnail,
+  resolveTelegramChannelId,
 };
