@@ -35,6 +35,12 @@ const prompt = buildExitPrompt([position], 'binance');
 assert.equal(prompt.includes('시장: 암호화폐 (binance)'), true);
 assert.equal(prompt.includes('분석가 집계: BUY 1 / HOLD 1 / SELL 0'), true);
 
+const domesticPrompt = buildExitPrompt([{ ...position, symbol: '005930' }], 'kis');
+assert.equal(domesticPrompt.includes('시장: 국내주식 (kis)'), true);
+assert.equal(domesticPrompt.includes('국내장 손실 -3% 이하'), true);
+assert.equal(domesticPrompt.includes('24시간 이상 손실 포지션'), true);
+assert.equal(domesticPrompt.includes('장 마감/오버나잇 리스크'), true);
+
 const normalized = normalizeExitDecision({ symbol: 'ORCA/USDT', action: 'SELL', confidence: 9, reasoning: 'x' }, position);
 assert.equal(normalized.action, ACTIONS.SELL);
 assert.equal(normalized.confidence, 1);
@@ -73,12 +79,41 @@ const earlyLossRecheckGuarded = applyExitGuard({
 assert.equal(earlyLossRecheckGuarded.action, ACTIONS.HOLD);
 assert.equal(earlyLossRecheckGuarded.reasoning.includes('비하드스탑 조기 손실'), true);
 
+const domesticHardLossNotGuarded = applyExitGuard({
+  ...position,
+  symbol: '005930',
+  avg_price: 100,
+  current_price: 96,
+  unrealized_pnl: -4,
+  held_hours: 0.5,
+  analyses: [{ signal: 'HOLD' }],
+}, normalizeExitDecision({ symbol: '005930', action: 'SELL', confidence: 0.7, reasoning: 'domestic -4% loss' }, position), 'kis');
+assert.equal(domesticHardLossNotGuarded.action, ACTIONS.SELL);
+
 const fallback = buildExitFallback([
   { symbol: 'OLD/USDT', avg_price: 10, current_price: 11, held_hours: 80, analyses: [] },
   { symbol: 'LOSS/USDT', avg_price: 10, current_price: 9.4, held_hours: 1, analyses: [] },
 ]);
 assert.equal(fallback.decisions[0].action, ACTIONS.SELL);
 assert.equal(fallback.decisions[1].action, ACTIONS.SELL);
+
+const domesticFallback = buildExitFallback([
+  { symbol: '005930', avg_price: 100, current_price: 96.5, held_hours: 1, analyses: [] },
+  { symbol: '000660', avg_price: 100, current_price: 99, held_hours: 25, analyses: [{ signal: 'HOLD' }] },
+  { symbol: '035420', avg_price: 100, current_price: 99, held_hours: 25, analyses: [{ signal: 'BUY' }] },
+], 'kis');
+assert.equal(domesticFallback.decisions[0].action, ACTIONS.SELL);
+assert.equal(domesticFallback.decisions[0].reasoning.includes('-3%'), true);
+assert.equal(domesticFallback.decisions[1].action, ACTIONS.SELL);
+assert.equal(domesticFallback.decisions[1].reasoning.includes('24h+'), true);
+assert.equal(domesticFallback.decisions[2].action, ACTIONS.HOLD);
+
+const overseasFallback = buildExitFallback([
+  { symbol: 'AAPL', avg_price: 100, current_price: 96.5, held_hours: 1, analyses: [] },
+  { symbol: 'MSFT', avg_price: 100, current_price: 99, held_hours: 73, analyses: [] },
+], 'kis_overseas');
+assert.equal(overseasFallback.decisions[0].action, ACTIONS.HOLD);
+assert.equal(overseasFallback.decisions[1].action, ACTIONS.SELL);
 
 const normalizedResult = normalizeExitDecisionResult({
   decisions: [{ symbol: 'ORCA/USDT', action: 'SELL', confidence: 0.8, reasoning: 'tiny loss' }],
@@ -93,7 +128,10 @@ const payload = {
   guarded,
   smallProfitGuarded,
   earlyLossRecheckGuarded,
+  domesticHardLossNotGuarded,
   fallback,
+  domesticFallback,
+  overseasFallback,
   normalizedResult,
 };
 

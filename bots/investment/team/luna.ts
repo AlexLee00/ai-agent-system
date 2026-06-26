@@ -565,12 +565,12 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] exit decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);
-      return buildExitFallback(enrichedPositions);
+      return buildExitFallback(enrichedPositions, exchange);
     }
     throw err;
   }
 
-  return normalizeExitDecisionResult(parseJSON(raw), enrichedPositions);
+  return normalizeExitDecisionResult(parseJSON(raw), enrichedPositions, exchange);
 }
 
 // ─── 포트폴리오 컨텍스트 ───────────────────────────────────────────

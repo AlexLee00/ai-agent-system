@@ -102,6 +102,14 @@ function buildHanulSignalJournalContext(signal = null) {
   };
 }
 
+export function resolveHanulSellExitReasonOverride(signal = null) {
+  if (signal?.exit_reason_override) return signal.exit_reason_override;
+  const incidentLink = String(signal?.incident_link || signal?.incidentLink || '').trim();
+  const executionOrigin = String(signal?.execution_origin || signal?.executionOrigin || '').trim();
+  if (incidentLink === 'signal_reverse' || executionOrigin === 'kis_active_exit_monitor') return 'signal_reverse';
+  return null;
+}
+
 async function markSignalFailed(signalId, reason) {
   return markSignalFailedDetailed(signalId, { reason });
 }
@@ -2333,7 +2341,7 @@ export async function executeSignal(signal) {
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountKrw } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
-  const exitReasonOverride = signal.exit_reason_override || null;
+  const exitReasonOverride = resolveHanulSellExitReasonOverride(signal);
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const journalContext = buildHanulSignalJournalContext(signal);
   const hanulExecutionAgentPlan = buildHanulExecutionAgentPlan({
@@ -3023,7 +3031,7 @@ export async function executeOverseasSignal(signal) {
   const kisPaper  = isKisPaper();
   const { id: signalId, symbol, action, amount_usdt: amountUsd } = signal;
   const signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
-  const exitReasonOverride = signal.exit_reason_override || null;
+  const exitReasonOverride = resolveHanulSellExitReasonOverride(signal);
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const journalContext = buildHanulSignalJournalContext(signal);
   const hanulExecutionAgentPlan = buildHanulExecutionAgentPlan({

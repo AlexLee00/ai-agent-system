@@ -8,6 +8,44 @@ function getExchangeLabel(exchange) {
   return exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
 }
 
+function isDomesticKis(exchange) {
+  return String(exchange || '').trim().toLowerCase() === 'kis';
+}
+
+function exitPolicyLines(exchange) {
+  if (isDomesticKis(exchange)) {
+    return [
+      '판단 기준:',
+      '1. 수익 실현 (TP): 목표 수익률 도달 시',
+      '2. 손절 (SL): 국내장 손실 -3% 이하 또는 반전 근거 부재 시',
+      '3. 추세 전환: 분석가 신호가 SELL/HOLD로 전환 시',
+      '4. 보유 기간: 24시간 이상 손실 포지션은 당일 재평가',
+      '5. 장 마감/오버나잇 리스크: 마감 임박 손실 포지션은 청산 우선',
+      '',
+      'SELL 우선 규칙:',
+      '- 미실현손익이 음수이고 분석가 다수가 SELL/HOLD면 SELL을 우선 검토',
+      '- 미실현손익 -3% 이하 손실은 특별한 반전 근거가 없으면 SELL',
+      '- 24시간 이상 보유한 손실 포지션은 명확한 상승 근거가 없으면 SELL',
+      '- 장 마감/오버나잇 리스크가 크면 손실 포지션 청산을 우선 검토',
+      '- 단, 작은 손실(-1% 이내)이고 보유 시간이 짧으면 즉시 SELL보다 HOLD를 우선 검토',
+    ];
+  }
+  return [
+    '판단 기준:',
+    '1. 수익 실현 (TP): 목표 수익률 도달 시',
+    '2. 손절 (SL): 손실 한도 초과 시',
+    '3. 추세 전환: 분석가 신호가 SELL/HOLD로 전환 시',
+    '4. 보유 기간: 장기 보유(72시간+) 시 재평가',
+    '5. 시장 레짐: 시장 전반 하락 국면 시',
+    '',
+    'SELL 우선 규칙:',
+    '- 미실현손익이 음수이고 분석가 다수가 SELL/HOLD면 SELL을 우선 검토',
+    '- 미실현손익 -5% 이하 손실은 특별한 반전 근거가 없으면 SELL',
+    '- 72시간 이상 장기 보유는 명확한 상승 근거가 없으면 SELL',
+    '- 단, 작은 손실(-1% 이내)이고 보유 시간이 짧으면 즉시 SELL보다 HOLD를 우선 검토',
+  ];
+}
+
 export function buildCompactExitAnalystSummary(analysesList) {
   if (!Array.isArray(analysesList) || analysesList.length === 0) return '분석 데이터 없음';
   return analysesList.slice(0, 3).map((item) => {
@@ -58,18 +96,7 @@ export function buildExitPrompt(openPositions, exchange = 'binance') {
     '당신은 포지션 청산 전문가입니다.',
     '현재 보유 중인 포지션을 분석하고, 청산이 필요한 포지션을 판단하세요.',
     '',
-    '판단 기준:',
-    '1. 수익 실현 (TP): 목표 수익률 도달 시',
-    '2. 손절 (SL): 손실 한도 초과 시',
-    '3. 추세 전환: 분석가 신호가 SELL/HOLD로 전환 시',
-    '4. 보유 기간: 장기 보유(72시간+) 시 재평가',
-    '5. 시장 레짐: 시장 전반 하락 국면 시',
-    '',
-    'SELL 우선 규칙:',
-    '- 미실현손익이 음수이고 분석가 다수가 SELL/HOLD면 SELL을 우선 검토',
-    '- 미실현손익 -5% 이하 손실은 특별한 반전 근거가 없으면 SELL',
-    '- 72시간 이상 장기 보유는 명확한 상승 근거가 없으면 SELL',
-    '- 단, 작은 손실(-1% 이내)이고 보유 시간이 짧으면 즉시 SELL보다 HOLD를 우선 검토',
+    ...exitPolicyLines(exchange),
     '',
     '각 포지션에 대해 SELL 또는 HOLD를 반드시 지정하세요.',
     '',
@@ -89,8 +116,9 @@ export function normalizeExitDecision(rawDecision, fallbackPosition) {
   };
 }
 
-export function getExitGuardConfig() {
+export function getExitGuardConfig(exchange = 'binance') {
   const guards = getPositionReevaluationRuntimeConfig()?.exitGuards || {};
+  const domestic = isDomesticKis(exchange);
   return {
     mildLossHoldThresholdPct: Number.isFinite(Number(guards?.mildLossHoldThresholdPct))
       ? Number(guards.mildLossHoldThresholdPct)
@@ -101,9 +129,11 @@ export function getExitGuardConfig() {
     smallProfitHoldThresholdPct: Number.isFinite(Number(guards?.smallProfitHoldThresholdPct))
       ? Number(guards.smallProfitHoldThresholdPct)
       : 1.0,
-    earlyLossRecheckThresholdPct: Number.isFinite(Number(guards?.earlyLossRecheckThresholdPct))
-      ? Number(guards.earlyLossRecheckThresholdPct)
-      : -5.0,
+    earlyLossRecheckThresholdPct: domestic
+      ? -3.0
+      : (Number.isFinite(Number(guards?.earlyLossRecheckThresholdPct))
+          ? Number(guards.earlyLossRecheckThresholdPct)
+          : -5.0),
     earlyLossRecheckHours: Number.isFinite(Number(guards?.earlyLossRecheckHours))
       ? Number(guards.earlyLossRecheckHours)
       : 1,
@@ -135,9 +165,9 @@ export function countExitVotes(position) {
   return { buy, sellLike };
 }
 
-export function shouldDowngradeEarlyExit(position, decision) {
+export function shouldDowngradeEarlyExit(position, decision, exchange = 'binance') {
   if (String(decision?.action || '').toUpperCase() !== ACTIONS.SELL) return false;
-  const guards = getExitGuardConfig();
+  const guards = getExitGuardConfig(exchange);
   const heldHours = Number(position?.held_hours || 0);
   const pnlPct = getPositionPnlPct(position);
   const earlyMildLoss = pnlPct < 0
@@ -157,12 +187,12 @@ export function shouldDowngradeEarlyExit(position, decision) {
   return !overwhelmingSell;
 }
 
-export function applyExitGuard(position, decision) {
+export function applyExitGuard(position, decision, exchange = 'binance') {
   if (!position || !decision) return decision;
-  if (!shouldDowngradeEarlyExit(position, decision)) return decision;
+  if (!shouldDowngradeEarlyExit(position, decision, exchange)) return decision;
   const heldHours = Number(position?.held_hours || 0);
   const pnlPct = getPositionPnlPct(position);
-  const guards = getExitGuardConfig();
+  const guards = getExitGuardConfig(exchange);
   return {
     ...decision,
     action: ACTIONS.HOLD,
@@ -175,7 +205,7 @@ export function applyExitGuard(position, decision) {
   };
 }
 
-export function buildExitFallback(openPositions) {
+export function buildExitFallback(openPositions, exchange = 'binance') {
   const decisions = openPositions.map((pos) => {
     const avgPrice = Number(pos.avg_price || 0);
     const currentPrice = Number(pos.current_price || avgPrice || 0);
@@ -188,6 +218,35 @@ export function buildExitFallback(openPositions) {
       const signal = String(item.signal || '').toUpperCase();
       return signal === 'SELL' || signal === 'HOLD';
     }).length;
+    const buyCount = analyses.filter(item => String(item.signal || '').toUpperCase() === 'BUY').length;
+
+    if (isDomesticKis(exchange)) {
+      if (pnlPct <= -3) {
+        return {
+          symbol: pos.symbol,
+          action: ACTIONS.SELL,
+          confidence: 0.64,
+          reasoning: 'EXIT fallback — 국내장 손실 -3% 이하 손절',
+          exit_type: 'normal_exit',
+        };
+      }
+      if (heldHours >= 24 && pnlPct < 0 && sellLikeCount >= buyCount) {
+        return {
+          symbol: pos.symbol,
+          action: ACTIONS.SELL,
+          confidence: 0.6,
+          reasoning: 'EXIT fallback — 국내장 24h+ 손실 + 약세/중립 우세',
+          exit_type: 'normal_exit',
+        };
+      }
+      return {
+        symbol: pos.symbol,
+        action: ACTIONS.HOLD,
+        confidence: 0.5,
+        reasoning: 'EXIT fallback — 국내장 보수적으로 HOLD 유지',
+        exit_type: 'normal_exit',
+      };
+    }
 
     if (heldHours >= 72) {
       return {
@@ -255,16 +314,16 @@ export async function enrichExitPositions(openPositions, exchange = 'binance') {
   return enrichedPositions;
 }
 
-export function normalizeExitDecisionResult(parsed, enrichedPositions) {
+export function normalizeExitDecisionResult(parsed, enrichedPositions, exchange = 'binance') {
   if (!parsed || !Array.isArray(parsed.decisions)) {
-    return buildExitFallback(enrichedPositions);
+    return buildExitFallback(enrichedPositions, exchange);
   }
 
   const bySymbol = new Map(enrichedPositions.map(pos => [pos.symbol, pos]));
   const decisions = parsed.decisions
     .map(item => {
       const position = bySymbol.get(item?.symbol);
-      return applyExitGuard(position, normalizeExitDecision(item, position));
+      return applyExitGuard(position, normalizeExitDecision(item, position), exchange);
     })
     .filter(item => item.symbol && bySymbol.has(item.symbol));
 

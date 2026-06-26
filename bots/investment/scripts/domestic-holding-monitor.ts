@@ -56,6 +56,22 @@ async function createDomesticHoldingExitSignal(candidate) {
   };
 }
 
+export async function hasPendingOrApprovedSellSignal(candidate, queryFn = db.query) {
+  const rows = await queryFn(
+    `SELECT id
+       FROM signals
+      WHERE symbol = $1
+        AND action = 'SELL'
+        AND exchange = $2
+        AND COALESCE(trade_mode, 'normal') = $3
+        AND status IN ('pending', 'approved')
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [candidate.symbol, candidate.exchange, candidate.tradeMode || 'normal'],
+  ).catch(() => []);
+  return rows?.[0] || null;
+}
+
 async function main() {
   const options = parseArgs();
   const prefix = options.dryRun ? '[국내보유모니터][DRY-RUN]' : '[국내보유모니터]';
@@ -90,6 +106,12 @@ async function main() {
   const results = [];
   for (const candidate of candidates) {
     const logLine = `[국내보유모니터] ${candidate.symbol} ${candidate.heldHours.toFixed(1)}h 보유 → 자동 청산 대상`;
+    const duplicateSell = await hasPendingOrApprovedSellSignal(candidate);
+    if (duplicateSell) {
+      console.log(`${prefix} ${candidate.symbol} 기존 SELL 신호(${duplicateSell.id}) 존재 — safety net 스킵`);
+      results.push({ symbol: candidate.symbol, heldHours: candidate.heldHours, status: 'skipped_duplicate_sell', signalId: duplicateSell.id });
+      continue;
+    }
     if (options.dryRun) {
       console.log(`[DRY-RUN] ${logLine}`);
       results.push({ symbol: candidate.symbol, heldHours: candidate.heldHours, status: 'dry_run' });
