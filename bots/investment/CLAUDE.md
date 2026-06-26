@@ -1,20 +1,6 @@
-# 루나팀 — Claude Code 컨텍스트
+# 루나팀 — 작업 가이드 통합 안내
 
-## 팀 구조 (11 에이전트)
-아르고스(스크리닝) → 아리아(기술) + 소피아(감성) + 헤르메스(뉴스) + 오라클(온체인)
-→ 루나(팀장, 종합판단) → 네메시스(리스크) → 헤파이스토스(바이낸스)/한울(국내외)
-크로노스(백테스팅), 제우스/아테나(조건부)
-
-## 핵심 파일
-- team/luna.js(963줄), nemesis.js(954줄), chronos.js(346줄)
-- shared/db.js(906줄), capital-manager.js(466줄), pipeline-decision-runner.js(489줄)
-- shared/ohlcv-fetcher.js(175줄), ta-indicators.js(61줄)
-- packages/core/lib/local-llm-client.js(116줄) — MLX 공용
-
-## 현재 상태
-- 실투자 운영 중 (crypto LIVE, domestic/overseas MOCK)
-- Chronos Phase A 완료: Layer 1 동작, Layer 2~3 LLM 검증 대기
-- MLX: qwen2.5-7b(Layer 2) + deepseek-r1-32b(Layer 3) on_demand
-
-## 전략: docs/strategy/luna.md | 개발: docs/dev/luna.md
-## 코덱스: docs/codex/CODEX_CHRONOS_PHASE_A_*.md
+> 이 팀의 작업 가이드는 `AGENTS.md`로 단일화되었습니다.
+> 봇 작업 시 같은 디렉토리의 `AGENTS.md`를 참조하세요.
+>
+> (단일화 정책: 루트 ARCHITECTURE.md 참조. AGENTS.md = source of truth, Claude Code·OpenAI Codex 공통 진입점)

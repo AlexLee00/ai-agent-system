@@ -1,13 +1,6 @@
-# 스카팀 — Claude Code 컨텍스트
+# 스카팀 — 작업 가이드 통합 안내
 
-## 팀 구조
-스카(팀장) → 앤디(네이버 예약) + 지미(픽코 키오스크) + 레베카(매출분석)
-           → 포캐스트(매출예측) + 대시보드(:3031)
-
-## 핵심 파일
-- auto/monitors/naver-monitor.ts, pickko-kiosk-monitor.ts
-- bots/ska/src/forecast.py, rebecca.py, runtime_config.py
-- lib/ska-read-service.ts, runtime-config.ts
-
-## 현재 상태: 운영 안정 (n8n 5개 워크플로우)
-## 개발: docs/dev/SKA_*.md (9개 운영 문서)
+> 이 팀의 작업 가이드는 `AGENTS.md`로 단일화되었습니다.
+> 봇 작업 시 같은 디렉토리의 `AGENTS.md`를 참조하세요.
+>
+> (단일화 정책: 루트 ARCHITECTURE.md 참조. AGENTS.md = source of truth, Claude Code·OpenAI Codex 공통 진입점)
