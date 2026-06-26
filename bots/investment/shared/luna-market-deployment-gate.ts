@@ -9,6 +9,7 @@ export const LUNA_MARKET_GATE_PARAM_KEYS = Object.freeze({
   reducedThreshold: 'g0.market_gate.reduced_threshold',
   reducedSizeMultiplier: 'g0.market_gate.reduced_size_multiplier',
   usTransitionWeight: 'g0.market_gate.us_transition_weight',
+  regimeDirectionWeight: 'g0.market_gate.regime_direction_weight',
 });
 
 export const LUNA_MARKET_GATE_DEFAULTS = Object.freeze({
@@ -16,6 +17,7 @@ export const LUNA_MARKET_GATE_DEFAULTS = Object.freeze({
   reducedThreshold: 40,
   reducedSizeMultiplier: 0.6,
   usTransitionWeight: 0.2,
+  regimeDirectionWeight: 1.5,
   minAvailableSignals: 2,
 });
 
@@ -72,6 +74,15 @@ function scoreFromMomentumPct(value: any, minBad = -3, maxGood = 3) {
   const n = finite(value, null);
   if (n == null) return null;
   return round(clamp(((n - minBad) / Math.max(0.000001, maxGood - minBad)) * 100));
+}
+
+export function regimeDirectionScore(dominant: any, momentum20: any) {
+  const regime = String(dominant || '').trim().toLowerCase();
+  const momentum = finite(momentum20, null);
+  if (momentum == null) return 50;
+  if (regime === 'bull' && momentum > 0) return round(clamp(50 + momentum * 200, 50, 90));
+  if (regime === 'bear' && momentum < 0) return round(clamp(50 + momentum * 200, 10, 50));
+  return 50;
 }
 
 function unavailableSignal(name: string, source: string, error: any = 'unavailable', weight = 1) {
@@ -158,6 +169,11 @@ export async function loadMarketGateParameters(options: any = {}) {
       LUNA_MARKET_GATE_DEFAULTS.usTransitionWeight,
       options,
     ),
+    regimeDirectionWeight: await numericParameter(
+      LUNA_MARKET_GATE_PARAM_KEYS.regimeDirectionWeight,
+      LUNA_MARKET_GATE_DEFAULTS.regimeDirectionWeight,
+      options,
+    ),
     minAvailableSignals: LUNA_MARKET_GATE_DEFAULTS.minAvailableSignals,
   };
 }
@@ -242,6 +258,83 @@ async function safeSignal(name: string, source: string, weight: number, work: an
   }
 }
 
+function normalizeRegimeDominant(value: any) {
+  const text = String(value || '').trim().toLowerCase();
+  if (text.includes('bull')) return 'bull';
+  if (text.includes('bear')) return 'bear';
+  if (text.includes('volatile')) return 'volatile';
+  if (text.includes('sideways') || text.includes('ranging')) return 'sideways';
+  return text || null;
+}
+
+function regimeStateFromOptions(market: string, options: any = {}) {
+  const normalizedMarket = normalizeMarketDeploymentMarket(market);
+  const byMarket = options.regimeByMarket;
+  if (byMarket?.get) return byMarket.get(normalizedMarket) || byMarket.get(market) || null;
+  if (byMarket && typeof byMarket === 'object') return byMarket[normalizedMarket] || byMarket[market] || null;
+  const regimes = Array.isArray(options.regimes) ? options.regimes : [];
+  return regimes.find((row) => normalizeMarketDeploymentMarket(row?.market || normalizedMarket) === normalizedMarket) || null;
+}
+
+function averageSnapshotTrend(regime: any = {}) {
+  const snapshots = (regime.snapshots || []).filter((item) => Number.isFinite(Number(item.trendPct ?? item.dayChangePct)));
+  if (!snapshots.length) return null;
+  const avgTrendPct = snapshots.reduce((sum, item) => sum + Number(item.trendPct ?? item.dayChangePct ?? 0), 0) / snapshots.length;
+  return avgTrendPct / 100;
+}
+
+function regimeDirectionSignalFromState(market: string, state: any, weight: number) {
+  if (!state) return null;
+  const dominant = normalizeRegimeDominant(state.dominant || state.current_regime || state.currentRegime || state.regime);
+  const momentum20 = finite(state.features?.momentum20 ?? state.momentum20, null);
+  if (!dominant || momentum20 == null) return null;
+  return signal(
+    'regime_direction',
+    {
+      dominant,
+      momentum20: round(momentum20, 6),
+      confidence: state.confidence ?? null,
+      source: state.source || 'hmm',
+    },
+    regimeDirectionScore(dominant, momentum20),
+    weight,
+    'luna-regime-engine',
+  );
+}
+
+function regimeDirectionSignalFromFallback(regime: any, weight: number) {
+  if (!regime) return null;
+  const dominant = normalizeRegimeDominant(regime.regime || regime.bias);
+  const momentum20 = averageSnapshotTrend(regime);
+  if (!dominant || momentum20 == null) return null;
+  return signal(
+    'regime_direction',
+    {
+      dominant,
+      momentum20: round(momentum20, 6),
+      confidence: regime.confidence ?? null,
+      source: 'market-regime',
+    },
+    regimeDirectionScore(dominant, momentum20),
+    weight,
+    'market-regime',
+  );
+}
+
+async function buildRegimeDirectionSignal(market: string, options: any = {}, fallbackRegime: any = null) {
+  const weight = finite(options.params?.regimeDirectionWeight, LUNA_MARKET_GATE_DEFAULTS.regimeDirectionWeight);
+  const stateSignal = regimeDirectionSignalFromState(market, regimeStateFromOptions(market, options), weight);
+  if (stateSignal) return stateSignal;
+  if (fallbackRegime) {
+    const fallbackSignal = regimeDirectionSignalFromFallback(fallbackRegime, weight);
+    if (fallbackSignal) return fallbackSignal;
+  }
+  const { getMarketRegime } = await import('./market-regime.ts');
+  const fallbackMarket = market === 'overseas' ? 'kis_overseas' : market === 'domestic' ? 'kis' : 'binance';
+  const regime = await getMarketRegime(fallbackMarket);
+  return regimeDirectionSignalFromFallback(regime, weight) || unavailableSignal('regime_direction', 'market-regime', 'regime_direction_unavailable', weight);
+}
+
 async function collectOverseasSignals(options: any = {}) {
   if (options.signalInputs?.overseas) return normalizeSignals(options.signalInputs.overseas);
   const { getMarketRegime } = await import('./market-regime.ts');
@@ -265,10 +358,14 @@ async function collectOverseasSignals(options: any = {}) {
       'market-regime:kis_overseas',
     );
   });
+  const regimeDirectionSignal = await safeSignal('regime_direction', 'luna-regime-engine', finite(options.params?.regimeDirectionWeight, LUNA_MARKET_GATE_DEFAULTS.regimeDirectionWeight), async () => (
+    buildRegimeDirectionSignal('overseas', options, options.usRegime)
+  ));
 
   return [
     vixSignal,
     benchmarkSignal,
+    regimeDirectionSignal,
     unavailableSignal('vix_term_structure', 'not_configured', 'source_not_available_yet', 0.6),
     unavailableSignal('put_call_ratio', 'not_configured', 'source_not_available_yet', 0.6),
   ];
@@ -332,8 +429,11 @@ async function collectDomesticSignals(options: any = {}) {
   const transitionSignal = usScore == null
     ? unavailableSignal('us_gate_transition', 'market_gate:overseas', 'us_gate_unavailable', transitionWeight)
     : signal('us_gate_transition', { usScore, usDeployment: options.usGate.deployment }, usScore, transitionWeight, 'market_gate:overseas');
+  const regimeDirectionSignal = await safeSignal('regime_direction', 'luna-regime-engine', finite(options.params?.regimeDirectionWeight, LUNA_MARKET_GATE_DEFAULTS.regimeDirectionWeight), async () => (
+    buildRegimeDirectionSignal('domestic', options, options.domesticRegime)
+  ));
 
-  return [volSignal, flowSignal, fxSignal, transitionSignal];
+  return [volSignal, flowSignal, fxSignal, transitionSignal, regimeDirectionSignal];
 }
 
 function scoreFundingRate(rate: any) {
@@ -383,6 +483,9 @@ async function collectCryptoSignals(options: any = {}) {
   const transitionSignal = usScore == null
     ? unavailableSignal('us_gate_transition', 'market_gate:overseas', 'us_gate_unavailable', transitionWeight)
     : signal('us_gate_transition', { usScore, usDeployment: options.usGate.deployment }, usScore, transitionWeight, 'market_gate:overseas');
+  const regimeDirectionSignal = await safeSignal('regime_direction', 'luna-regime-engine', finite(options.params?.regimeDirectionWeight, LUNA_MARKET_GATE_DEFAULTS.regimeDirectionWeight), async () => (
+    buildRegimeDirectionSignal('crypto', options)
+  ));
 
   return [
     btcVolSignal,
@@ -390,6 +493,7 @@ async function collectCryptoSignals(options: any = {}) {
     fundingSignal,
     unavailableSignal('btc_dominance', 'not_configured', 'source_not_available_yet', 0.5),
     transitionSignal,
+    regimeDirectionSignal,
   ];
 }
 
@@ -452,11 +556,14 @@ export const _testOnly = {
   clamp,
   scoreFromRange,
   scoreFromMomentumPct,
+  regimeDirectionScore,
   classifyDeployment,
   normalizeSignals,
   unavailableSignal,
   signal,
   collectSignals,
+  regimeDirectionSignalFromState,
+  regimeDirectionSignalFromFallback,
 };
 
 export default {

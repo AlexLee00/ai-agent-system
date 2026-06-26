@@ -117,19 +117,6 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
   let entryTriggerShadowError = null;
   let patternRelaxation = options.patternRelaxation || null;
 
-  if (!Array.isArray(options.gates)) {
-    try {
-      const computeGates = deps.computeAllMarketDeploymentGates || computeAllMarketDeploymentGates;
-      gates = await computeGates({
-        ...options,
-        queryFn: deps.queryFn || options.queryFn || db.query,
-      });
-    } catch (error) {
-      gateError = error?.message || String(error);
-      gates = [];
-    }
-  }
-
   if (!Array.isArray(options.regimes)) {
     try {
       const computeRegimes = deps.computeAllRegimeStates || computeAllRegimeStates;
@@ -140,6 +127,22 @@ export async function runLunaMarketGate(options: any = {}, deps: any = {}) {
     } catch (error) {
       regimeError = error?.message || String(error);
       regimes = [];
+    }
+  }
+
+  if (!Array.isArray(options.gates)) {
+    try {
+      const computeGates = deps.computeAllMarketDeploymentGates || computeAllMarketDeploymentGates;
+      const regimeByMarket = new Map((regimes || []).map((state) => [state.market, state]));
+      gates = await computeGates({
+        ...options,
+        regimes,
+        regimeByMarket,
+        queryFn: deps.queryFn || options.queryFn || db.query,
+      });
+    } catch (error) {
+      gateError = error?.message || String(error);
+      gates = [];
     }
   }
 

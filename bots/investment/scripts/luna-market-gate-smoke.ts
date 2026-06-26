@@ -10,6 +10,8 @@ import {
   ensureMarketGateHistorySchema,
   formatMarketGateDailyLine,
   LUNA_MARKET_GATE_DEFAULTS,
+  LUNA_MARKET_GATE_PARAM_KEYS,
+  regimeDirectionScore,
 } from '../shared/luna-market-deployment-gate.ts';
 import { runLunaMarketGate } from './runtime-luna-market-gate.ts';
 import { LUNA_COMPONENT_REGISTRY_SEED, seedLunaComponentRegistry } from './luna-registry-seed.ts';
@@ -22,6 +24,7 @@ const PARAMS = {
   reducedThreshold: 40,
   reducedSizeMultiplier: 0.6,
   usTransitionWeight: 0.2,
+  regimeDirectionWeight: 1.5,
 };
 
 function fixtureSignals(scores: number[], weight = 1) {
@@ -54,6 +57,9 @@ async function main() {
   const normal = combineMarketGateSignals('crypto', fixtureSignals([80, 76, 74, 82]), PARAMS, new Date('2026-06-11T00:00:00Z'));
   assert.equal(normal.deployment, 'full');
   assert.equal(normal.score, 78);
+  assert.equal(regimeDirectionScore('bull', 0.167752), 83.55);
+  assert.equal(regimeDirectionScore('bear', -0.114846), 27.03);
+  assert.equal(regimeDirectionScore('sideways', -0.036081), 50);
 
   const missing = combineMarketGateSignals('domestic', [
     ...fixtureSignals([60, 40]),
@@ -113,6 +119,64 @@ async function main() {
   assert.equal(emptyOnchainSignal?.available, false);
   assert.equal(emptyOnchainSignal?.error, 'empty_onchain_summary');
 
+  const currentFixtureRegimeByMarket = new Map([
+    ['overseas', { market: 'overseas', dominant: 'bear', confidence: 0.3284, source: 'hmm', features: { momentum20: -0.114846 } }],
+    ['domestic', { market: 'domestic', dominant: 'bull', confidence: 0.5368, source: 'hmm', features: { momentum20: 0.167752 } }],
+    ['crypto', { market: 'crypto', dominant: 'sideways', confidence: 0.1775, source: 'hmm', features: { momentum20: -0.036081 } }],
+  ]);
+  const overseasRegimeCombined = combineMarketGateSignals('overseas', [
+    { name: 'vix_level', score: 70.04, weight: 1.2, available: true, source: 'fixture' },
+    { name: 'us_benchmark_trend', score: 0, weight: 1, available: true, source: 'fixture' },
+    { name: 'regime_direction', score: regimeDirectionScore('bear', -0.114846), weight: 1.5, available: true, source: 'luna-regime-engine' },
+  ], PARAMS, new Date('2026-06-11T00:00:00Z'));
+  assert.equal(overseasRegimeCombined.deployment, 'halt');
+
+  const domesticRegimeCombined = combineMarketGateSignals('domestic', [
+    { name: 'kospi_realized_vol_proxy', score: 0, weight: 1, available: true, source: 'fixture' },
+    { name: 'korea_shadow_flow', score: 50, weight: 1, available: true, source: 'fixture' },
+    { name: 'usdkrw_momentum', score: 50, weight: 0.8, available: true, source: 'fixture' },
+    { name: 'us_gate_transition', score: 38.2, weight: 0.2, available: true, source: 'fixture' },
+    { name: 'regime_direction', score: regimeDirectionScore('bull', 0.167752), weight: 1.5, available: true, source: 'luna-regime-engine' },
+  ], PARAMS, new Date('2026-06-11T00:00:00Z'));
+  assert.equal(domesticRegimeCombined.deployment, 'reduced');
+  assert.ok(domesticRegimeCombined.score >= 49 && domesticRegimeCombined.score <= 50);
+
+  const cryptoRegimeCombined = combineMarketGateSignals('crypto', [
+    { name: 'btc_realized_vol_proxy', score: 22.66, weight: 1, available: true, source: 'fixture' },
+    { name: 'btc_onchain_flow', score: 48.58, weight: 1, available: true, source: 'fixture' },
+    { name: 'btc_funding_rate', score: 96.18, weight: 0.8, available: true, source: 'fixture' },
+    { name: 'us_gate_transition', score: 38.2, weight: 0.2, available: true, source: 'fixture' },
+    { name: 'regime_direction', score: regimeDirectionScore('sideways', -0.036081), weight: 1.5, available: true, source: 'luna-regime-engine' },
+  ], PARAMS, new Date('2026-06-11T00:00:00Z'));
+  assert.equal(cryptoRegimeCombined.deployment, 'reduced');
+
+  const domesticCollectorRegime = await computeMarketDeploymentGate('domestic', {
+    params: PARAMS,
+    queryFn: async (sql) => {
+      if (String(sql).includes('korea_public_data_shadow_signals')) return [];
+      if (String(sql).includes('fx_rates')) return [{ inverse_rate: 1360 }, { inverse_rate: 1360 }];
+      return [];
+    },
+    domesticRegime: { regime: 'volatile', bias: 'bearish', snapshots: [{ dayChangePct: 6.24, trendPct: 16.8 }] },
+    regimeByMarket: currentFixtureRegimeByMarket,
+    usGate: { score: 38.2, deployment: 'halt' },
+  });
+  const domesticRegimeSignal = domesticCollectorRegime.signals.find((item) => item.name === 'regime_direction');
+  assert.equal(domesticRegimeSignal?.source, 'luna-regime-engine');
+  assert.equal(domesticRegimeSignal?.score, 83.55);
+
+  const requestedKeys = [];
+  await computeMarketDeploymentGate('crypto', {
+    getParameterFn: async (key) => {
+      requestedKeys.push(key);
+      if (key === LUNA_MARKET_GATE_PARAM_KEYS.regimeDirectionWeight) return { value: 2 };
+      return { value: PARAMS[key] ?? LUNA_MARKET_GATE_DEFAULTS[Object.entries(LUNA_MARKET_GATE_PARAM_KEYS).find(([, value]) => value === key)?.[0]] };
+    },
+    signalInputs: { crypto: fixtureSignals([70, 70]) },
+    usGate: { score: 70, deployment: 'reduced' },
+  });
+  assert.ok(requestedKeys.includes('g0.market_gate.regime_direction_weight'));
+
   const dbStamp = new Date(Date.now() + 60_000).toISOString();
   const dbResult = await withRollback(async (tx: any) => {
     const gates = (await computeAllMarketDeploymentGates({
@@ -151,6 +215,27 @@ async function main() {
   ).catch(() => [{ count: 0 }]);
   assert.equal(Number(afterRollback?.[0]?.count || 0), 0);
 
+  let gateRegimeByMarket = null;
+  const runnerRegimeResult = await runLunaMarketGate({
+    dryRun: true,
+    writeOutput: false,
+    strategySignals: [],
+    preflightEvaluations: [],
+    circuitLocks: [],
+  }, {
+    computeAllRegimeStates: async () => Array.from(currentFixtureRegimeByMarket.values()),
+    computeAllMarketDeploymentGates: async (gateOptions) => {
+      gateRegimeByMarket = gateOptions.regimeByMarket;
+      return [
+        { market: 'overseas', score: 40, deployment: 'reduced' },
+        { market: 'domestic', score: 50, deployment: 'reduced' },
+        { market: 'crypto', score: 55, deployment: 'reduced' },
+      ];
+    },
+  });
+  assert.equal(runnerRegimeResult.regimes.length, 3);
+  assert.equal(gateRegimeByMarket?.get('domestic')?.dominant, 'bull');
+
   const line = formatMarketGateDailyLine([
     { market: 'overseas', score: 78, deployment: 'full' },
     { market: 'domestic', score: 56, deployment: 'reduced' },
@@ -173,6 +258,12 @@ async function main() {
       transitionLowersScore: lowUs.score < highUs.score,
       fetchFailureTolerated: failure.deployment,
       emptyOnchainUnavailable: true,
+      regimeDirectionDomestic: domesticRegimeCombined.deployment,
+      regimeDirectionOverseas: overseasRegimeCombined.deployment,
+      regimeDirectionCrypto: cryptoRegimeCombined.deployment,
+      regimeDirectionSource: domesticRegimeSignal?.source,
+      regimeDirectionParameterLookup: requestedKeys.includes('g0.market_gate.regime_direction_weight'),
+      runnerRegimePassedToGate: gateRegimeByMarket?.get('domestic')?.dominant === 'bull',
       dbRollback: true,
       reportLine: line,
       registrySeed: true,

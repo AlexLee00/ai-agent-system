@@ -145,6 +145,7 @@ async function main() {
     transitionAlert: { type: 'dominant_changed', previousDominant: 'bear', currentDominant: 'bull', createdAt: '2026-06-11T10:00:00Z' },
   }], {
     writeOutput: false,
+    alertOutputPath: `/tmp/luna-regime-engine-alert-failure-${process.pid}.json`,
     now: '2026-06-11T10:00:00Z',
     params: { transitionAlertCooldownHours: 4, transitionAlertDailyLimit: 1 },
   }, {
