@@ -170,14 +170,26 @@ function phaseSecurity(files, cwd) {
   };
 }
 
-function phaseDiff(cwd, baseBranch = 'main') {
+function _shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function _buildDiffPathspec(files) {
+  const scopedFiles = (Array.isArray(files) ? files : [])
+    .filter((file) => typeof file === 'string' && file.trim())
+    .map((file) => _shellQuote(file.trim()));
+  return scopedFiles.length > 0 ? ` -- ${scopedFiles.join(' ')}` : '';
+}
+
+function phaseDiff(cwd, baseBranch = 'main', files = []) {
   try {
-    const diffStat = execSync(`git diff --stat ${baseBranch}`, {
+    const pathspec = _buildDiffPathspec(files);
+    const diffStat = execSync(`git diff --stat ${_shellQuote(baseBranch)}${pathspec}`, {
       cwd,
       encoding: 'utf8',
       stdio: 'pipe',
     }).trim();
-    const conflictCheck = execSync('git diff --check 2>&1 || true', {
+    const conflictCheck = execSync(`git diff --check${pathspec} 2>&1 || true`, {
       cwd,
       encoding: 'utf8',
       stdio: 'pipe',
@@ -266,7 +278,7 @@ function runFullVerification(opts = {}) {
   report.security = phaseSecurity(files, cwd);
   if (stopOnFail && !report.security.pass) return _buildResult(report);
 
-  report.diff = phaseDiff(cwd, baseBranch);
+  report.diff = phaseDiff(cwd, baseBranch, files);
 
   return _buildResult(report);
 }

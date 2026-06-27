@@ -1,1 +1,10 @@
-{"level":3,"appliedSuccesses":3,"consecutiveSuccesses":0,"upgradedAt":"2026-05-17T02:01:21.739510Z"}
+{
+  "level": "L3",
+  "reason": "auto_demotion_after_error",
+  "updated_at": "2026-06-27T20:15:06.035Z",
+  "error_count": 1,
+  "last_error": "Command failed: git checkout darwin/2606_23403_1782591147268\nerror: 현재 인덱스를 먼저 해결해야 합니다\n",
+  "appliedSuccesses": 3,
+  "consecutiveSuccesses": 0,
+  "upgradedAt": "2026-05-17T02:01:21.739510Z"
+}
