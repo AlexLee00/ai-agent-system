@@ -28,6 +28,7 @@ const { mergeTrustedEnvWithUntrustedPatch } = require('../../../packages/core/li
 const teamBus = require('./team-bus');
 const runtimePaths = require('./runtime-paths.js');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('./agent-heartbeat');
+const gitOps = require('./git-ops.ts');
 
 const ROOT = env.PROJECT_ROOT;
 const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
@@ -1251,35 +1252,20 @@ function releaseFileLock(lockHandle) {
 }
 
 function runGit(args, cwd = ROOT, timeout = 30000) {
-  return execFileSync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    timeout,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  }).trim();
+  return String(gitOps.runGit(args, { cwd, timeout }) || '').trim();
 }
 
 function runGitRaw(args, cwd = ROOT, timeout = 30000) {
-  return execFileSync('git', args, {
-    cwd,
-    encoding: 'utf8',
-    timeout,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  return gitOps.runGit(args, { cwd, timeout, raw: true });
 }
 
 function isGitRepository(cwd = ROOT) {
-  try {
-    runGit(['rev-parse', '--is-inside-work-tree'], cwd, 10000);
-    return true;
-  } catch {
-    return false;
-  }
+  return gitOps.isRepo(cwd);
 }
 
 function getCurrentGitBranch(cwd = ROOT) {
   try {
-    return runGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd, 10000);
+    return gitOps.currentBranch({ cwd, timeout: 10000 });
   } catch {
     return '';
   }
@@ -1297,7 +1283,7 @@ function ensureAutoDevTargetBranch() {
   }
 
   try {
-    runGit(['switch', AUTO_DEV_TARGET_BRANCH], ROOT, 60000);
+    gitOps.switchBranch(AUTO_DEV_TARGET_BRANCH, { cwd: ROOT, timeout: 60000 });
     return {
       ok: true,
       branch: AUTO_DEV_TARGET_BRANCH,
@@ -1338,7 +1324,7 @@ function ensureExecutionContext(job, options = {}) {
     `${job.id}-${Date.now().toString(36)}`
   );
   const baseSha = runGit(['rev-parse', AUTO_DEV_BASE_REF], ROOT, 10000);
-  runGit(['worktree', 'add', '--detach', worktreePath, baseSha], ROOT, 20000);
+  gitOps.worktreeAdd(worktreePath, baseSha, { cwd: ROOT, timeout: 20000 });
   ensureWorktreeDependencyLinks(worktreePath);
 
   return {
@@ -2277,12 +2263,7 @@ function resolveScopedTestCommands(analysis = null, cwd = ROOT) {
 function captureGitStatusShort(cwd = ROOT) {
   if (!isGitRepository(cwd)) return [];
   try {
-    const output = execSync('git status --short', {
-      cwd,
-      encoding: 'utf8',
-      timeout: 20000,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const output = gitOps.runGit(['status', '--short'], { cwd, timeout: 20000 });
     return String(output || '').split('\n').map(line => line.trimEnd()).filter(Boolean);
   } catch (error) {
     const output = String(error.stdout || error.stderr || error.message || '').split('\n')[0] || 'unknown_error';
@@ -2437,8 +2418,7 @@ function integrateWorktreeChanges(job, executionContext, {
 
   if (runtimeConfig.integrationMode === 'direct_push') {
     const targetBranch = AUTO_DEV_TARGET_BRANCH;
-    const targetRemote = AUTO_DEV_TARGET_REMOTE;
-    const refspec = `HEAD:${targetBranch}`;
+    const targetRemote = 'origin';
     return {
       ...patchResult,
       mode: 'direct_push_prepared',
@@ -2451,7 +2431,7 @@ function integrateWorktreeChanges(job, executionContext, {
       targetCommitSha: worktreeCommitSha,
       targetBranch,
       targetRemote,
-      targetRefspec: refspec,
+      sourceRef: 'HEAD',
       targetPush: {
         attempted: false,
         pushed: false,
@@ -2545,10 +2525,9 @@ function integrateWorktreeChanges(job, executionContext, {
 function pushIntegratedChanges(integration = null) {
   if (integration && integration.mode === 'direct_push_prepared') {
     const targetBranch = integration.targetBranch || AUTO_DEV_TARGET_BRANCH;
-    const targetRemote = integration.targetRemote || AUTO_DEV_TARGET_REMOTE;
-    const refspec = integration.targetRefspec || `HEAD:${targetBranch}`;
+    const targetRemote = 'origin';
     try {
-      runGit(['push', targetRemote, refspec], integration.worktreePath, 120000);
+      gitOps.pushHeadToBranch(targetBranch, { cwd: integration.worktreePath, timeout: 120000 });
       return {
         attempted: true,
         pushed: true,
@@ -2592,7 +2571,7 @@ function pushIntegratedChanges(integration = null) {
   }
 
   const targetBranch = toSafeString(integration.targetBranch || AUTO_DEV_TARGET_BRANCH);
-  const targetRemote = toSafeString(integration.targetRemote || AUTO_DEV_TARGET_REMOTE);
+  const targetRemote = 'origin';
   if (!targetBranch || !targetRemote) {
     return {
       attempted: true,
@@ -2604,7 +2583,7 @@ function pushIntegratedChanges(integration = null) {
   }
 
   try {
-    runGit(['push', targetRemote, targetBranch], ROOT, 120000);
+    gitOps.pushRef(targetBranch, { cwd: ROOT, timeout: 120000 });
     return {
       attempted: true,
       pushed: true,

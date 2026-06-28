@@ -14,6 +14,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const PIPELINE_PATH = path.resolve(__dirname, '../lib/auto-dev-pipeline.ts');
+const GIT_OPS_PATH = path.resolve(__dirname, '../lib/git-ops.ts');
 const AUTO_DEV_MANIFEST_PATH = path.resolve(__dirname, '../../../packages/core/lib/auto-dev-manifest.ts');
 const AUTO_DEV_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.plist');
 const AUTO_DEV_SHADOW_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.shadow.plist');
@@ -138,6 +139,20 @@ function makeMocks(tmpRoot, overrides = {}) {
 async function withMocks(mocks, fn, env = {}) {
   const original = Module._load;
   const originalEnv = {};
+  const effectiveMocks = { ...mocks };
+
+  if (effectiveMocks.child_process?.execFileSync && effectiveMocks.child_process?.execSync) {
+    const childProcessMock = effectiveMocks.child_process;
+    effectiveMocks.child_process = {
+      ...childProcessMock,
+      execFileSync(command, args = [], opts = {}) {
+        if (command === 'git' && Array.isArray(args) && args[0] === 'status' && args[1] === '--short') {
+          return childProcessMock.execSync('git status --short', opts);
+        }
+        return childProcessMock.execFileSync(command, args, opts);
+      },
+    };
+  }
 
   for (const [key, value] of Object.entries(env)) {
     originalEnv[key] = process.env[key];
@@ -145,12 +160,13 @@ async function withMocks(mocks, fn, env = {}) {
   }
 
   Module._load = function patchedLoad(request, parent, isMain) {
-    if (request in mocks) return mocks[request];
+    if (request in effectiveMocks) return effectiveMocks[request];
     return original.call(this, request, parent, isMain);
   };
 
   try {
     delete require.cache[PIPELINE_PATH];
+    delete require.cache[GIT_OPS_PATH];
     delete require.cache[AUTO_DEV_MANIFEST_PATH];
     return await fn(require(PIPELINE_PATH));
   } finally {
@@ -160,6 +176,7 @@ async function withMocks(mocks, fn, env = {}) {
       else process.env[key] = originalEnv[key];
     }
     delete require.cache[PIPELINE_PATH];
+    delete require.cache[GIT_OPS_PATH];
     delete require.cache[AUTO_DEV_MANIFEST_PATH];
   }
 }

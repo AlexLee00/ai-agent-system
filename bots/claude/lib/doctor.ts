@@ -30,6 +30,7 @@ const {
   isRetiredService,
 } = require('../../../packages/core/lib/service-ownership.js');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('./agent-heartbeat');
+const gitOps = require('./git-ops.ts');
 
 const SCHEMA      = 'reservation';
 const ROOT        = path.join(__dirname, '../../../');
@@ -1000,7 +1001,7 @@ async function verifyRecovery(taskType, params) {
       }
 
       case 'git_stash': {
-        const stashList = execSync('git stash list', { encoding: 'utf8', cwd: ROOT, timeout: 5000 }).trim();
+        const stashList = gitOps.stashList({ cwd: ROOT, timeout: 5000 });
         const found = params.message ? stashList.includes(params.message) : stashList.length > 0;
         return { ok: found, detail: stashList.slice(0, 200) };
       }

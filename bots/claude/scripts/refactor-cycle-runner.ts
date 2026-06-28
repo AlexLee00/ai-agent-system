@@ -22,6 +22,7 @@ const { execFileSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 const { recordAutoDevOutcome } = require('../lib/auto-dev-pipeline');
+const gitOps = require('../lib/git-ops.ts');
 
 const ROOT = env.PROJECT_ROOT || path.resolve(__dirname, '..', '..', '..');
 const DEFAULT_TARGET = 'bots/claude';
@@ -1698,17 +1699,12 @@ function removeTsNocheckLine(content = '') {
 }
 
 function runGit(args = [], options = {}) {
-  return execFileSync('git', args, {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    ...options,
-  });
+  return gitOps.runGit(args, { cwd: ROOT, ...options });
 }
 
 function gitStatusShort() {
   try {
-    return runGit(['status', '--short']).trim();
+    return gitOps.statusShort(ROOT);
   } catch (error) {
     return `git_status_failed:${error?.message || String(error)}`;
   }
@@ -1727,12 +1723,10 @@ function defaultCommitFile(relFile, message, gitFn = runGit) {
     throw new Error(`protected_commit_path:${normalized}`);
   }
   try {
-    gitFn(['add', '--', normalized]);
-    gitFn(['commit', '-m', message, '--', normalized]);
-    return String(gitFn(['rev-parse', 'HEAD']) || '').trim();
+    return gitOps.commitFile(normalized, message, gitFn, { cwd: ROOT });
   } catch (error) {
     try {
-      gitFn(['reset', '--', normalized]);
+      gitFn(['reset', '--', normalized], { cwd: ROOT });
     } catch {
       // Best-effort index cleanup; caller still restores the file snapshot.
     }
@@ -1745,53 +1739,25 @@ function localBin(name) {
 }
 
 function currentGitHead(gitFn = runGit) {
-  return String(gitFn(['rev-parse', 'HEAD']) || '').trim();
+  return gitOps.currentHead(gitFn, { cwd: ROOT });
 }
 
 function defaultPushHead(gitFn = runGit) {
-  gitFn(['push', 'origin', 'HEAD']);
+  gitOps.pushRef('HEAD', gitFn, { cwd: ROOT });
   return { ok: true };
 }
 
 function defaultOriginContainsCommit(sha, gitFn = runGit) {
-  if (!sha) return false;
-  const refs = new Set(['origin/main']);
-  try {
-    const branch = String(gitFn(['rev-parse', '--abbrev-ref', 'HEAD']) || '').trim();
-    if (branch && branch !== 'HEAD') refs.add(`origin/${branch}`);
-  } catch {
-    // Keep default origin/main fallback.
-  }
-  try {
-    const upstream = String(gitFn(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']) || '').trim();
-    if (upstream) refs.add(upstream);
-  } catch {
-    // A branch may not have an upstream; this is not a verification failure.
-  }
-  try {
-    gitFn(['fetch', 'origin']);
-  } catch {
-    // Fetch can fail transiently after a successful push; still check local remote refs.
-  }
-  for (const ref of refs) {
-    try {
-      gitFn(['merge-base', '--is-ancestor', sha, ref]);
-      return true;
-    } catch {
-      // Try the next plausible remote ref.
-    }
-  }
-  return false;
+  return gitOps.originContains(sha, gitFn);
 }
 
 function defaultRollbackToHead(head, relFile = null, gitFn = runGit) {
   if (!head) throw new Error('rollback_head_missing');
-  gitFn(['reset', '--soft', head]);
   const normalized = normalizeScopePath(relFile || '');
-  if (normalized && !normalized.startsWith('..') && !path.isAbsolute(normalized)) {
-    gitFn(['reset', '--', normalized]);
-  }
-  return { ok: true };
+  const safeFile = normalized && !normalized.startsWith('..') && !path.isAbsolute(normalized)
+    ? normalized
+    : null;
+  return gitOps.rollbackToHead(head, safeFile, gitFn);
 }
 
 function strictGateTimeoutMs(value = process.env.REFACTORER_STRICT_GATE_TIMEOUT_MS) {
@@ -1934,7 +1900,7 @@ function gitStatusScoped(prefixes = []) {
     .filter(Boolean);
   if (scopePrefixes.length === 0) return gitStatusShort();
   try {
-    return runGit(['status', '--short', '--', ...scopePrefixes]).trim();
+    return String(runGit(['status', '--short', '--', ...scopePrefixes]) || '').trimEnd();
   } catch (error) {
     return `git_status_failed:${error?.message || String(error)}`;
   }
@@ -2073,6 +2039,35 @@ function gitDiffForFiles(files = []) {
   } catch (error) {
     return `git_diff_failed:${error?.message || String(error)}`;
   }
+}
+
+function snapshotDiffForFiles(files = [], snapshots = new Map()) {
+  const relFiles = files.map((file) => {
+    const absolutePath = path.isAbsolute(file) ? file : path.resolve(ROOT, file);
+    return { rel: relPath(absolutePath), absolutePath };
+  }).filter((item) => item.rel);
+  const chunks = [];
+  for (const item of relFiles) {
+    const snapshot = snapshots.get(item.absolutePath);
+    if (!snapshot || !snapshot.existed || !fs.existsSync(item.absolutePath)) continue;
+    const next = fs.readFileSync(item.absolutePath, 'utf8');
+    if (snapshot.content === next) continue;
+    const beforeLines = String(snapshot.content || '').split(/\r?\n/);
+    const afterLines = String(next || '').split(/\r?\n/);
+    chunks.push(`diff --git a/${item.rel} b/${item.rel}`);
+    chunks.push(`--- a/${item.rel}`);
+    chunks.push(`+++ b/${item.rel}`);
+    chunks.push(`@@ -1,${beforeLines.length} +1,${afterLines.length} @@`);
+    chunks.push(...beforeLines.map((line) => `-${line}`));
+    chunks.push(...afterLines.map((line) => `+${line}`));
+  }
+  return chunks.length > 0 ? `${chunks.join('\n')}\n` : '';
+}
+
+function patchForSuccessfulFiles(files = [], snapshots = new Map()) {
+  const snapshotPatch = snapshotDiffForFiles(files, snapshots);
+  if (String(snapshotPatch || '').trim()) return snapshotPatch;
+  return gitDiffForFiles(files);
 }
 
 function normalizeReviewHighCount(reviewResult) {
@@ -2727,7 +2722,7 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
       .filter(isReadyResult)
       .map((item) => item.candidate?.file)
       .filter(Boolean);
-    patchText = successfulFiles.length > 0 ? gitDiffForFiles(successfulFiles) : '';
+    patchText = successfulFiles.length > 0 ? patchForSuccessfulFiles(successfulFiles, snapshots) : '';
     if (context.applyEnabled && !context.dryRun) {
       let appliedCount = 0;
       for (const item of results.filter(isReadyResult)) {

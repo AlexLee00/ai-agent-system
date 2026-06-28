@@ -22,6 +22,7 @@ const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const teamBus = require('../lib/team-bus');
 const runtimePaths = require('../lib/runtime-paths.js');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
+const gitOps = require('../lib/git-ops.ts');
 const {
   AUTO_PROMOTE_DEFAULTS,
   normalizeIntentText,
@@ -711,9 +712,7 @@ function handleSessionClose(args) {
     // git log로 최근 변경사항 파악
     let gitLog = '';
     try {
-      gitLog = require('child_process').execSync('git log --oneline -8', {
-        cwd: PROJECT_ROOT, encoding: 'utf8',
-      });
+      gitLog = gitOps.log(8, { cwd: PROJECT_ROOT, timeout: 10000 });
     } catch {}
 
     // auto 모드로 실행 (title/items git log 자동 추출) + git commit
@@ -748,9 +747,7 @@ function handleSessionClose(args) {
     const summary = lines.map(l => `• ${l}`).join('\n');
     const gitHash = (() => {
       try {
-        return require('child_process').execSync('git log --oneline -1', {
-          cwd: PROJECT_ROOT, encoding: 'utf8',
-        }).trim();
+        return gitOps.log(1, { cwd: PROJECT_ROOT, timeout: 10000 }).trim();
       } catch { return ''; }
     })();
 

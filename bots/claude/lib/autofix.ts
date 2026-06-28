@@ -26,6 +26,7 @@ const cfg  = require('./config');
 const bugReport = require('./bug-report');
 const { buildNoticeEvent, renderNoticeEvent } = require('../../../packages/core/lib/reporting-hub');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const gitOps = require('./git-ops.ts');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -169,9 +170,13 @@ function fixChecksums(results, fixes) {
 
   // git diff로 해당 파일이 실제 변경됐는지 확인
   try {
-    const gitDiff = execSync('git -C "' + cfg.ROOT + '" diff --name-only HEAD', { encoding: 'utf8', timeout: 5000 });
+    const gitDiff = gitOps.diffNames('HEAD', { cwd: cfg.ROOT, timeout: 5000 });
     const changedFiles = gitDiff.split('\n').map(f => f.trim()).filter(Boolean);
-    const gitStatus = execSync('git -C "' + cfg.ROOT + '" status --porcelain | head -200', { encoding: 'utf8', timeout: 5000, shell: '/bin/zsh' }).trim();
+    const gitStatus = String(gitOps.runGit(['status', '--porcelain'], { cwd: cfg.ROOT, timeout: 5000 }) || '')
+      .split('\n')
+      .slice(0, 200)
+      .join('\n')
+      .trim();
     const isClean = !gitStatus;
 
     // 1) 워킹트리 clean + 경고만 남은 경우 → 커밋 후 의도적 변경으로 간주

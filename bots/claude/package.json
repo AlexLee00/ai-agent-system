@@ -35,6 +35,7 @@
     "test:lead-triage":  "node __tests__/claude-lead-triage-throttle.test.ts",
     "test:dexter-event-filter": "node __tests__/dexter-reportable-event-filter.test.ts",
     "test:dexter-pattern-severity": "node __tests__/dexter-pattern-severity.test.ts",
+    "test:git-ops":      "node __tests__/git-ops.test.ts",
     "test:auto-dev":     "node __tests__/auto-dev-pipeline.test.ts",
     "test:refactor-cycle": "node --disable-warning=DEP0205 --import tsx __tests__/refactor-cycle-runner.test.ts",
     "test:symphony":     "node __tests__/symphony-team-dispatcher.test.ts && node __tests__/symphony-orchestrator.test.ts",
@@ -52,6 +53,6 @@
     "refactor:cycle":    "node --disable-warning=DEP0205 --import tsx scripts/refactor-cycle-runner.ts",
     "auto-dev":          "node scripts/auto-dev-runner.ts",
     "auto-dev:once":     "node scripts/auto-dev-runner.ts --once",
-    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/retired-luna-launchd.test.ts && node __tests__/agent-heartbeat.test.ts && node __tests__/team-bus.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts && node __tests__/claude-lead-triage-throttle.test.ts && node __tests__/dexter-reportable-event-filter.test.ts && node __tests__/dexter-pattern-severity.test.ts && node __tests__/auto-dev-pipeline.test.ts && node --disable-warning=DEP0205 --import tsx __tests__/refactor-cycle-runner.test.ts && node __tests__/symphony-team-dispatcher.test.ts && node __tests__/symphony-orchestrator.test.ts && node --disable-warning=DEP0205 --import tsx scripts/claude-llm-leak-guard-smoke.ts && node --disable-warning=DEP0205 --import tsx scripts/launchd-node26-runner-smoke.ts"
+    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/retired-luna-launchd.test.ts && node __tests__/agent-heartbeat.test.ts && node __tests__/team-bus.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts && node __tests__/claude-lead-triage-throttle.test.ts && node __tests__/dexter-reportable-event-filter.test.ts && node __tests__/dexter-pattern-severity.test.ts && node __tests__/git-ops.test.ts && node __tests__/auto-dev-pipeline.test.ts && node --disable-warning=DEP0205 --import tsx __tests__/refactor-cycle-runner.test.ts && node __tests__/symphony-team-dispatcher.test.ts && node __tests__/symphony-orchestrator.test.ts && node --disable-warning=DEP0205 --import tsx scripts/claude-llm-leak-guard-smoke.ts && node --disable-warning=DEP0205 --import tsx scripts/launchd-node26-runner-smoke.ts"
   }
 }
