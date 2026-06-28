@@ -74,6 +74,7 @@
     "check:blog-v3-unified": "../../node_modules/.bin/tsx scripts/check-blog-v3-unified.ts --json && ../../node_modules/.bin/tsx scripts/blog-naver-mcp-smoke.ts --json && python3 python/reddit_trend_analyzer.py --fixture --dry-run --json --max-llm-calls=0 >/dev/null && python3 -m py_compile python/reddit_trend_analyzer.py && plutil -lint launchd/ai.blog.reddit-trends.plist launchd/ai.blog.bestseller-sync.plist launchd/ai.blog.crank-tracker.plist",
     "smoke:blo-b1-curriculum": "../../node_modules/.bin/tsx scripts/blo-b1-curriculum-smoke.ts",
     "smoke:blo-b3-format-rules": "../../node_modules/.bin/tsx scripts/blo-b3-format-rules-smoke.ts",
+    "smoke:publ-code-fence": "node scripts/publ-code-fence-smoke.ts",
     "smoke:final-content-diff": "../../node_modules/.bin/tsx scripts/final-content-diff-smoke.ts",
     "smoke:master-edit-analyzer-integration": "../../node_modules/.bin/tsx scripts/master-edit-analyzer-integration-smoke.ts",
     "seed-curriculum": "node scripts/seed-curriculum.ts",

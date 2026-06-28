@@ -385,6 +385,40 @@ async function main() {
   assert.equal(Array.isArray(circuitDataMinute.meta?.evidence), true);
   assert.equal(circuitDataMinute.meta?.evidence?.length, 5);
 
+  const emittedMinutes = [];
+  const callbackResult = await runMeetingSession({
+    type: 'morning',
+    dryRun: true,
+    noLlm: true,
+    planNote: fixturePlanNote(),
+    outputPath: outputPath('smoke-on-minute'),
+    onMinute: (minute) => emittedMinutes.push(minute),
+  });
+  assert.equal(callbackResult.ok, true);
+  assert.deepEqual(emittedMinutes.map((row) => row.seq), callbackResult.minutes.map((row) => row.seq));
+  let callbackFailureThrown = false;
+  const originalWarn = console.warn;
+  let throwingCallbackResult;
+  try {
+    console.warn = () => {};
+    throwingCallbackResult = await runMeetingSession({
+      type: 'morning',
+      dryRun: true,
+      noLlm: true,
+      planNote: fixturePlanNote(),
+      outputPath: outputPath('smoke-on-minute-throw'),
+      onMinute: () => {
+        if (callbackFailureThrown) return;
+        callbackFailureThrown = true;
+        throw new Error('fixture onMinute failure');
+      },
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(throwingCallbackResult.ok, true);
+  assert.equal(throwingCallbackResult.minutes.length > 0, true);
+
   const duplicateDecision = {
     id: 7001,
     session_id: 7000,

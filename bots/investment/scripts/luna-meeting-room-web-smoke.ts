@@ -3,6 +3,7 @@
 
 import assert from 'assert/strict';
 import fs from 'fs';
+import http from 'http';
 import { _testOnly, startMeetingRoomWebServer } from '../services/meeting-room/server/index.ts';
 import { loadMeetingMinutesResult, renderMeetingMinutesMarkdown } from '../services/meeting-room/server/minutes.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -395,6 +396,53 @@ async function waitForRun(baseUrl, runId, expectedStatus = 'completed') {
   throw new Error(`run ${runId} did not reach ${expectedStatus}`);
 }
 
+function readSseEvents(baseUrl, path, stopEvent = 'close', timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const events = [];
+    const req = http.get(`${baseUrl}${path}`, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`SSE status ${res.statusCode}`));
+        return;
+      }
+      res.setEncoding('utf8');
+      let buffer = '';
+      res.on('data', (chunk) => {
+        buffer += chunk;
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const event = { event: 'message', data: '' };
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) event.event = line.slice('event:'.length).trim();
+            if (line.startsWith('data:')) event.data += line.slice('data:'.length).trim();
+          }
+          if (event.data) {
+            try {
+              event.payload = JSON.parse(event.data);
+            } catch {
+              event.payload = {};
+            }
+          }
+          if (event.event !== 'message' || event.data) events.push(event);
+          if (event.event === stopEvent) {
+            req.destroy();
+            resolve(events);
+            return;
+          }
+          boundary = buffer.indexOf('\n\n');
+        }
+      });
+      res.on('end', () => resolve(events));
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`SSE timed out waiting for ${stopEvent}`));
+    });
+  });
+}
+
 async function main() {
   assertMeetingLaunchdLogPaths();
   assert.equal(_testOnly.parseArg('port', '7791', ['node', 'server', '--port=7799']), '7799');
@@ -423,6 +471,8 @@ async function main() {
     ],
     runMeetingSessionFn: async (options) => {
       runSessionOptions.push(options);
+      options.onMinute?.({ seq: 1, agendaKey: 'session', speaker: 'system', role: 'system', content: 'open', meta: { state: 'open' } });
+      options.onMinute?.({ seq: 2, agendaKey: 'market:crypto', speaker: 'luna', role: 'analysis', content: '라이브 분석 발언', meta: { state: 'analysis' } });
       await runGate;
       const id = store.addCompletedMeeting();
       return { ok: true, session: { id }, minutes: [{ seq: 1 }], decisions: [], markdownPath: '/tmp/fixture.md' };
@@ -498,6 +548,38 @@ async function main() {
     assert.ok(appJs.text.includes('markdown-table'));
     assert.ok(appJs.text.includes('className="topline" role="status" aria-label="회의실 실행 상태: MR-C, 자문 및 섀도 전용, 정례 및 텔레그램 승인 보조 포함, 로컬 바인딩 127.0.0.1 포트 7791"'));
     assert.ok(appJs.text.includes('aria-label="자문 및 섀도 전용"'));
+    assert.ok(html.text.includes('<link rel="manifest" href="/manifest.json">'));
+    assert.ok(html.text.includes('<link rel="apple-touch-icon" href="/icon-192.png">'));
+    assert.ok(appJs.text.includes('navigator.serviceWorker.register'));
+    assert.ok(appJs.text.includes('beforeinstallprompt'));
+    assert.ok(appJs.text.includes("new EventSource(meetingStreamUrl(selectedRunningRun.id, token))"));
+    assert.ok(appJs.text.includes("'/api/push/vapid-public'"));
+    assert.ok(appJs.text.includes("'/api/push/subscribe'"));
+    const manifest = await request(baseUrl, '/manifest.json');
+    assert.equal(manifest.status, 200);
+    assert.equal(manifest.headers.get('content-type'), 'application/json; charset=utf-8');
+    assert.equal(manifest.payload.display, 'standalone');
+    assert.deepEqual(manifest.payload.icons.map((icon) => icon.sizes), ['192x192', '512x512']);
+    const serviceWorker = await request(baseUrl, '/sw.js');
+    assert.equal(serviceWorker.status, 200);
+    assert.equal(serviceWorker.headers.get('content-type'), 'text/javascript; charset=utf-8');
+    assert.ok(serviceWorker.text.includes("importScripts('https://unpkg.com/workbox-sw@7.1.0/build/workbox-sw.js')"));
+    assert.ok(serviceWorker.text.includes("self.addEventListener('push'"));
+    assert.ok(serviceWorker.text.includes("self.addEventListener('notificationclick'"));
+    const icon192 = await request(baseUrl, '/icon-192.png');
+    assert.equal(icon192.status, 200);
+    assert.equal(icon192.headers.get('content-type'), 'image/png');
+    const disabledVapid = await request(baseUrl, '/api/push/vapid-public');
+    assert.equal(disabledVapid.status, 200);
+    assert.equal(disabledVapid.payload.enabled, false);
+    assert.equal(disabledVapid.payload.publicKey, null);
+    const disabledSubscribe = await request(baseUrl, '/api/push/subscribe', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ subscription: { endpoint: 'https://push.invalid', keys: { p256dh: 'key', auth: 'auth' } } }),
+    });
+    assert.equal(disabledSubscribe.status, 200);
+    assert.equal(disabledSubscribe.payload.reason, 'push_disabled');
     assert.ok(appJs.text.includes('자문 / 섀도 전용'));
     const webTestDoc = fs.readFileSync(new URL('../../../docs/design/LUNA_MEETING_ROOM_WEB_TEST.md', import.meta.url), 'utf8');
     assert.ok(webTestDoc.includes('대상: MR-C 웹(정례 회의·Telegram 승인 보조 포함)'));
@@ -2028,7 +2110,16 @@ async function main() {
     });
     assert.equal(duplicate.status, 409);
     assert.equal(duplicate.payload.message, '이미 진행 중인 같은 타입 회의가 있습니다.');
+    const liveDetail = await request(baseUrl, `/api/meetings/${start.payload.run.id}`);
+    assert.equal(liveDetail.payload.run.status, 'running');
+    assert.equal(liveDetail.payload.run.liveMinutes.length, 2);
+    assert.equal(liveDetail.payload.run.minutes, 2);
+    const sseEventsPromise = readSseEvents(baseUrl, `/api/meetings/${start.payload.run.id}/stream`);
     releaseRun();
+    const sseEvents = await sseEventsPromise;
+    assert.deepEqual(sseEvents.map((event) => event.event), ['hello', 'minute', 'minute', 'close']);
+    assert.deepEqual(sseEvents.filter((event) => event.event === 'minute').map((event) => event.payload.minute.seq), [1, 2]);
+    assert.equal(started.meetingStreams.size, 0);
     const completedRun = await waitForRun(baseUrl, start.payload.run.id);
     assert.equal(completedRun.status, 'completed');
     assert.equal(completedRun.sessionId, 2);
@@ -3327,6 +3418,11 @@ async function main() {
     assert.equal(unauthorized.payload.message, '토큰이 없거나 올바르지 않습니다.');
     const authorized = await request(authBase, '/api/health', { headers: { authorization: 'Bearer fixture-token' } });
     assert.equal(authorized.status, 200);
+    const unauthorizedStream = await request(authBase, '/api/meetings/run_missing/stream');
+    assert.equal(unauthorizedStream.status, 401);
+    const queryAuthorizedStream = await request(authBase, '/api/meetings/run_missing/stream?token=fixture-token');
+    assert.equal(queryAuthorizedStream.status, 404);
+    assert.equal(queryAuthorizedStream.payload.error, 'meeting_not_running');
   } finally {
     await closeServer(authStarted.server);
   }

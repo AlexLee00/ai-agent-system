@@ -436,8 +436,8 @@ function _contentToHtml(content, title, images = null) {
     '핵심 요약',
     '최신 기술 브리핑',
     '강의 - 이론',
-    '실무 - 코드',
     '실무 - 코드 및 아키텍처',
+    '실무 - 코드',
     'AEO FAQ',
     '마무리 인사',
     '본론 섹션 1',
@@ -521,17 +521,69 @@ function _contentToHtml(content, title, images = null) {
     return normalized.length >= 55 && wordCount >= 8;
   }
 
-  text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
-    const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function renderCodeBlock(lang, codeLines) {
+    const escaped = codeLines.join('\n')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
     return `<pre><code class="language-${lang || 'text'}">${escaped.trim()}</code></pre>`;
-  });
+  }
+
+  function renderMarkdownCodeFences(source) {
+    const sourceLines = String(source || '').split('\n');
+    const rendered = [];
+    let inFence = false;
+    let fenceLang = 'text';
+    let codeLines = [];
+
+    const nextFenceLang = (fromIndex) => {
+      for (let i = fromIndex + 1; i < sourceLines.length; i += 1) {
+        const match = sourceLines[i].trim().match(/^```([a-zA-Z0-9_-]+)?\s*$/);
+        if (match) return match[1] || '';
+      }
+      return null;
+    };
+
+    for (let i = 0; i < sourceLines.length; i += 1) {
+      const line = sourceLines[i];
+      const fenceMatch = line.trim().match(/^```([a-zA-Z0-9_-]+)?\s*$/);
+
+      if (fenceMatch) {
+        const lang = fenceMatch[1] || '';
+        if (!inFence) {
+          const nextLang = nextFenceLang(i);
+          if (!lang && nextLang) {
+            // Writer repairs sometimes leave a lone closing fence before a typed block.
+            continue;
+          }
+          inFence = true;
+          fenceLang = lang || 'text';
+          codeLines = [];
+        } else {
+          rendered.push(renderCodeBlock(fenceLang, codeLines));
+          inFence = false;
+          fenceLang = 'text';
+          codeLines = [];
+        }
+        continue;
+      }
+
+      if (inFence) codeLines.push(line);
+      else rendered.push(line);
+    }
+
+    if (inFence) rendered.push(renderCodeBlock(fenceLang, codeLines));
+    return rendered.join('\n');
+  }
+
+  text = renderMarkdownCodeFences(text);
 
   const lines = text.split('\n');
   const htmlLines = [];
   let inPre = false;
 
   for (const line of lines) {
-    if (line.startsWith('<pre>')) {
+    if (line.startsWith('<pre')) {
       htmlLines.push(line);
       if (!line.includes('</pre>')) inPre = true;
       continue;
@@ -1129,5 +1181,6 @@ module.exports = {
   _testOnly: {
     normalizePostContentForPublish,
     normalizeAgentIntroToolIdentityText,
+    _contentToHtml,
   },
 };
