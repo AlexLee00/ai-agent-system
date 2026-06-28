@@ -563,6 +563,7 @@ async function main() {
     const serviceWorker = await request(baseUrl, '/sw.js');
     assert.equal(serviceWorker.status, 200);
     assert.equal(serviceWorker.headers.get('content-type'), 'text/javascript; charset=utf-8');
+    assert.ok(serviceWorker.headers.get('content-security-policy')?.includes("script-src 'self' https://unpkg.com"));
     assert.ok(serviceWorker.text.includes("importScripts('https://unpkg.com/workbox-sw@7.1.0/build/workbox-sw.js')"));
     assert.ok(serviceWorker.text.includes("self.addEventListener('push'"));
     assert.ok(serviceWorker.text.includes("self.addEventListener('notificationclick'"));
