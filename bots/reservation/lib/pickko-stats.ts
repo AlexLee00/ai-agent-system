@@ -11,6 +11,7 @@
 
 const { delay } = require('./utils');
 const { normalizeStudyRoomKey } = require('./study-room-pricing');
+const { installBrowserEvalShim } = require('./browser');
 
 type MonthlyRevenueRow = {
   date: string;
@@ -215,6 +216,7 @@ function parseStudyRoomDescription(description: unknown, defaultYear: number | n
  */
 async function fetchMonthlyRevenue(page: any, year: number, month: number): Promise<MonthlyRevenueRow[]> {
   const url = `https://pickkoadmin.com/manager/statistic/month/${year}/${month}.html`;
+  await installBrowserEvalShim(page);
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await delay(1500);
 
@@ -276,6 +278,7 @@ async function fetchDailyRevenue(page: any, date: string): Promise<MonthlyRevenu
  */
 async function fetchDailyDetail(page: any, date: string): Promise<DailyDetail> {
   const url = `https://pickkoadmin.com/manager/statistic/day/${date}.html`;
+  await installBrowserEvalShim(page);
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await delay(1500);
 

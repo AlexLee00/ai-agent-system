@@ -9,6 +9,8 @@
  *
  * 사용:
  *   node dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js
+ *   node dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js --date=2026-06-29
+ *   node dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js --from=2026-06-29 --to=2026-07-31
  *   node dist/ts-runtime/bots/reservation/scripts/audit-duplicate-slots.js --json
  */
 
@@ -47,6 +49,21 @@ type GroupClassification = {
 
 function normalizeStatus(value) {
   return String(value || '').trim() || 'unknown';
+}
+
+function getArg(name: string): string | null {
+  const prefix = `--${name}=`;
+  const match = process.argv.find((item) => item.startsWith(prefix));
+  return match ? match.slice(prefix.length) : null;
+}
+
+function parseDateArg(name: string): string | null {
+  const value = getArg(name);
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error(`--${name}=YYYY-MM-DD 형식이 필요합니다: ${value}`);
+  }
+  return value;
 }
 
 function classifyGroup(group: DuplicateGroup): GroupClassification {
@@ -107,7 +124,24 @@ function formatGroupLine(group: DuplicateGroup): string {
   ].join('\n');
 }
 
-async function loadDuplicateGroups() {
+async function loadDuplicateGroups(filters: { fromDate?: string | null; toDate?: string | null } = {}) {
+  const where = [
+    'seen_only = 0',
+    'phone IS NOT NULL',
+    'date IS NOT NULL',
+    'start_time IS NOT NULL',
+    'room IS NOT NULL',
+  ];
+  const params: string[] = [];
+  if (filters.fromDate) {
+    params.push(filters.fromDate);
+    where.push(`date >= $${params.length}`);
+  }
+  if (filters.toDate) {
+    params.push(filters.toDate);
+    where.push(`date <= $${params.length}`);
+  }
+
   const groups = await pgPool.query('reservation', `
     SELECT
       phone,
@@ -117,16 +151,12 @@ async function loadDuplicateGroups() {
       room,
       COUNT(*) AS row_count
     FROM reservations
-    WHERE seen_only = 0
-      AND phone IS NOT NULL
-      AND date IS NOT NULL
-      AND start_time IS NOT NULL
-      AND room IS NOT NULL
+    WHERE ${where.join('\n      AND ')}
     GROUP BY phone, date, start_time, end_time, room
     HAVING COUNT(*) > 1
     ORDER BY date DESC, start_time DESC
     LIMIT 100
-  `);
+  `, params);
 
   const detailed = [];
   for (const group of groups) {
@@ -228,8 +258,15 @@ function printText(report) {
 
 async function main() {
   const jsonMode = process.argv.includes('--json');
-  const groups = await loadDuplicateGroups();
+  const date = parseDateArg('date');
+  const fromDate = date || parseDateArg('from');
+  const toDate = date || parseDateArg('to');
+  if (fromDate && toDate && fromDate > toDate) {
+    throw new Error(`--from은 --to보다 늦을 수 없습니다: ${fromDate} > ${toDate}`);
+  }
+  const groups = await loadDuplicateGroups({ fromDate, toDate });
   const report = buildReport(groups);
+  report.filter = { fromDate: fromDate || null, toDate: toDate || null };
   report.aiSummary = await buildReservationCliInsight({
     bot: 'audit-duplicate-slots',
     requestType: 'duplicate-slot-audit',
@@ -239,6 +276,7 @@ async function main() {
       riskyCount: report.riskyCount,
       historicalCount: report.historicalCount,
       unknownCount: report.unknownCount,
+      filter: report.filter,
     },
     fallback: report.riskyCount > 0
       ? `중복 슬롯 위험군 ${report.riskyCount}건이 있어 canonical row 정리가 우선입니다.`

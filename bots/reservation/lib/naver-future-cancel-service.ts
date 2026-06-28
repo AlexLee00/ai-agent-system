@@ -3,6 +3,7 @@ type DelayFn = (ms: number) => Promise<void>;
 type MaskPhoneFn = (phone: string) => string;
 type IsCancelledKeyFn = (key: string) => Promise<boolean>;
 type AddCancelledKeyFn = (key: string) => Promise<any>;
+type BuildCancelKeyFn = (booking: Record<string, any>, todaySeoul?: string | null) => string;
 type UpsertFutureConfirmedFn = (
   bookingKey: string,
   phoneRaw: string,
@@ -17,6 +18,7 @@ type DeleteStaleConfirmedFn = (currentCycle: number, minDate: string) => Promise
 type PruneOldFutureConfirmedFn = (cutoffDate: string) => Promise<any>;
 type RunPickkoCancelFn = (booking: Record<string, any>, bookingId?: string | null) => Promise<any>;
 type ScrapeNewestBookingsFromListFn = (page: any, maxItems?: number) => Promise<Record<string, any>[]>;
+type ScrapeExpandedCancelledFn = (page: any, cancelledHref: string) => Promise<Record<string, any>[]>;
 
 export type CreateNaverFutureCancelServiceDeps = {
   delay: DelayFn;
@@ -24,16 +26,19 @@ export type CreateNaverFutureCancelServiceDeps = {
   maskPhone: MaskPhoneFn;
   isCancelledKey: IsCancelledKeyFn;
   addCancelledKey: AddCancelledKeyFn;
+  buildCancelKey: BuildCancelKeyFn;
   upsertFutureConfirmed: UpsertFutureConfirmedFn;
   getStaleConfirmed: GetStaleConfirmedFn;
   deleteStaleConfirmed: DeleteStaleConfirmedFn;
   pruneOldFutureConfirmed: PruneOldFutureConfirmedFn;
   runPickkoCancel: RunPickkoCancelFn;
   scrapeNewestBookingsFromList: ScrapeNewestBookingsFromListFn;
+  scrapeExpandedCancelled: ScrapeExpandedCancelledFn;
   runtimeConfig: {
     staleConfirmCount: number;
     staleMinElapsedMs: number;
     staleExpireMs: number;
+    futureStaleCancelMutationEnabled?: boolean;
   };
 };
 
@@ -44,14 +49,65 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
     maskPhone,
     isCancelledKey,
     addCancelledKey,
+    buildCancelKey,
     upsertFutureConfirmed,
     getStaleConfirmed,
     deleteStaleConfirmed,
     pruneOldFutureConfirmed,
     runPickkoCancel,
     scrapeNewestBookingsFromList,
+    scrapeExpandedCancelled,
     runtimeConfig,
   } = deps;
+
+  function normalizePhone(value: any): string {
+    return String(value || '').replace(/\D+/g, '');
+  }
+
+  function normalizeRoom(value: any): string {
+    const text = String(value || '').toUpperCase();
+    if (text.includes('A1')) return 'A1';
+    if (text.includes('A2')) return 'A2';
+    if (text.includes('B')) return 'B';
+    return text.trim();
+  }
+
+  function getStart(booking: Record<string, any>): string {
+    return String(booking.start || booking.start_time || '').trim();
+  }
+
+  function getEnd(booking: Record<string, any>): string {
+    return String(booking.end || booking.end_time || '').trim();
+  }
+
+  function isSameBooking(a: Record<string, any>, b: Record<string, any>): boolean {
+    const aId = String(a.bookingId || a.booking_id || '').trim();
+    const bId = String(b.bookingId || b.booking_id || '').trim();
+    if (aId && bId && aId === bId) return true;
+
+    return (
+      normalizePhone(a.phoneRaw || a.phone || a.phone_raw) === normalizePhone(b.phoneRaw || b.phone || b.phone_raw) &&
+      String(a.date || '').trim() === String(b.date || '').trim() &&
+      getStart(a) === getStart(b) &&
+      getEnd(a) === getEnd(b) &&
+      normalizeRoom(a.room) === normalizeRoom(b.room)
+    );
+  }
+
+  async function findVerifiedCancelledBooking({
+    page,
+    cancelledHref,
+    booking,
+    expandedCancelledList,
+  }: {
+    page: any;
+    cancelledHref: string;
+    booking: Record<string, any>;
+    expandedCancelledList?: Record<string, any>[] | null;
+  }): Promise<Record<string, any> | null> {
+    const expandedCancelled = expandedCancelledList || (await scrapeExpandedCancelled(page, cancelledHref));
+    return expandedCancelled.find((candidate) => isSameBooking(candidate, booking)) || null;
+  }
 
   async function processFutureCancelSnapshot({
     checkCount,
@@ -83,11 +139,9 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
       throw new Error('cancelledHref 없음');
     }
 
-    const past30Str = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-      .toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
     const futureUrl =
       `${listBase}?bookingStatusCodes=RC03&dateDropdownType=RANGE` +
-      `&dateFilter=REGDATE&startDateTime=${past30Str}&endDateTime=${future60Str}`;
+      `&dateFilter=USEDATE&startDateTime=${tomorrowStr}&endDateTime=${future60Str}`;
 
     log(`🔮 [취소감지4] 미래 예약 스캔 (${tomorrowStr}~${future60Str}) — 사이클 #${checkCount}`);
     await page.goto(futureUrl, { waitUntil: 'networkidle2', timeout: 20000 });
@@ -121,6 +175,7 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
     if (futureList.length > 0 && !hitScanLimit) {
       const staleItems = await getStaleConfirmed(checkCount, tomorrowStr);
       if (staleItems.length > 0) {
+        let expandedCancelledList: Record<string, any>[] | null = null;
         log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 더블체크 진행`);
         for (const stale of staleItems) {
           const cancelKey = /^\d+$/.test(String(stale.booking_key))
@@ -146,6 +201,13 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
             bookingId: /^\d+$/.test(String(stale.booking_key)) ? stale.booking_key : null,
           };
 
+          if (!runtimeConfig.futureStaleCancelMutationEnabled) {
+            log(`🛡️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 미래 stale만으로는 픽코 취소 실행 금지`);
+            pendingCancelMap.delete(cancelKey);
+            await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
+            continue;
+          }
+
           if (pendingCancelMap.has(cancelKey)) {
             const pending = pendingCancelMap.get(cancelKey);
             const elapsed = Date.now() - pending.firstDetectedAt;
@@ -164,11 +226,33 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
 
             const newCount = (pending.count || 1) + 1;
             if (newCount >= runtimeConfig.staleConfirmCount && elapsed >= runtimeConfig.staleMinElapsedMs) {
-              log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + ${Math.floor(elapsed / 60000)}분 경과 → 취소 확정`);
+              if (!expandedCancelledList) {
+                expandedCancelledList = await scrapeExpandedCancelled(page, cancelledHref);
+              }
+              const verifiedCancelled = await findVerifiedCancelledBooking({
+                page,
+                cancelledHref,
+                booking,
+                expandedCancelledList,
+              });
+              if (!verifiedCancelled) {
+                log(`🛡️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — stale 조건 충족, 그러나 확장 취소 탭 미검증 → 픽코 취소 금지`);
+                pendingCancelMap.delete(cancelKey);
+                await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
+                continue;
+              }
+
+              const verifiedCancelKey = buildCancelKey(verifiedCancelled, todaySeoul);
+              if (await isCancelledKey(verifiedCancelKey)) {
+                pendingCancelMap.delete(cancelKey);
+                continue;
+              }
+
+              log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + 확장 취소 탭 검증 완료 → 취소 확정`);
               pendingCancelMap.delete(cancelKey);
-              const result = await runPickkoCancel(booking, cancelKey);
+              const result = await runPickkoCancel(verifiedCancelled, verifiedCancelKey);
               if (result === 0) {
-                await addCancelledKey(cancelKey);
+                await addCancelledKey(verifiedCancelKey);
                 cycleNewCancelDetections += 1;
               } else {
                 log(`🛡️ [취소감지4] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time}`);

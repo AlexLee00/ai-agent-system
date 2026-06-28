@@ -169,6 +169,7 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     }
 
     const currentKeys = new Set(currentConfirmedList.map((b) => buildConfirmedListKey(b, todaySeoul)));
+    const cancelledKeySet = new Set(currentCancelledList.map((c) => buildCancelKey(c, todaySeoul)));
     const droppedFromConfirmed = previousConfirmedList.filter((b) => !currentKeys.has(buildConfirmedListKey(b, todaySeoul)));
 
     if (pendingCancelMap.size > 0) {
@@ -181,9 +182,9 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
           log(`✅ [취소감지1] 더블체크 취소 — 다시 나타남: ${maskPhone(entry.booking.phone)} ${entry.booking.date} (오탐 방지)`);
           pendingCancelMap.delete(pendingKey);
         } else if (expired) {
-          log(`⏱️ [취소감지1] pending 30분 만료 → 취소 확정: ${maskPhone(entry.booking.phone)} ${entry.booking.date}`);
           pendingCancelMap.delete(pendingKey);
-          if (!await isCancelledKey(pendingKey)) {
+          if (cancelledKeySet.has(pendingKey) && !(await isCancelledKey(pendingKey))) {
+            log(`⏱️ [취소감지1] pending 30분 만료 + 취소 탭 검증 완료 → 취소 확정: ${maskPhone(entry.booking.phone)} ${entry.booking.date}`);
             const result = await runPickkoCancel(entry.booking, pendingKey);
             if (result === 0) {
               await addCancelledKey(pendingKey);
@@ -191,6 +192,8 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
             } else {
               log(`🛡️ [취소감지1] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(entry.booking.phone)} ${entry.booking.date} ${entry.booking.start}~${entry.booking.end}`);
             }
+          } else {
+            log(`🛡️ [취소감지1] pending 30분 만료, 그러나 취소 탭 미검증 → 픽코 취소 금지: ${maskPhone(entry.booking.phone)} ${entry.booking.date} ${entry.booking.start}~${entry.booking.end}`);
           }
         }
       }
@@ -202,7 +205,6 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     }
 
     log(`🗑️ 확정 리스트에서 ${droppedFromConfirmed.length}건 사라짐 → 취소 탭 교차검증 시작`);
-    const cancelledKeySet = new Set(currentCancelledList.map((c) => buildCancelKey(c, todaySeoul)));
     for (const dropped of droppedFromConfirmed) {
       const cancelKey = buildCancelKey(dropped, todaySeoul);
       if (await isCancelledKey(cancelKey)) continue;
@@ -220,15 +222,8 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
 
       if (dropped.date && dropped.date > todaySeoul) {
         if (pendingCancelMap.has(cancelKey)) {
-          log(`🗑️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 2회 연속 미감지 → 취소 확정`);
+          log(`🛡️ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 2회 연속 미감지, 그러나 취소 탭 미검증 → 픽코 취소 금지`);
           pendingCancelMap.delete(cancelKey);
-          const result = await runPickkoCancel(dropped, cancelKey);
-          if (result === 0) {
-            await addCancelledKey(cancelKey);
-            cycleNewCancelDetections += 1;
-          } else {
-            log(`🛡️ [취소감지1] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end}`);
-          }
         } else {
           log(`⏳ [취소감지1] ${maskPhone(dropped.phone)} ${dropped.date} ${dropped.start}~${dropped.end} 사라짐 감지 → 1사이클 후 재확인 (더블체크 대기)`);
           pendingCancelMap.set(cancelKey, {

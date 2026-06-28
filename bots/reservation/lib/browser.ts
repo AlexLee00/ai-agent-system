@@ -96,22 +96,20 @@ export async function installBrowserEvalShim(page: any): Promise<void> {
   if (!page || page.__reservationEvalShimInstalled) return;
   page.__reservationEvalShimInstalled = true;
 
-  const install = () => {
-    const shim = (value: any) => value;
-    (globalThis as any).__name = shim;
-    if (typeof window !== 'undefined') {
-      (window as any).__name = shim;
-    }
-    try {
-      (0, eval)('var __name = globalThis.__name;');
-    } catch {
-      // Some pages block eval; globalThis/window still cover normal lookups.
-    }
-  };
+  const installSource = `
+    (() => {
+      const shim = (value) => value;
+      globalThis.__name = shim;
+      if (typeof window !== 'undefined') window.__name = shim;
+      try {
+        (0, eval)('var __name = globalThis.__name;');
+      } catch (_) {}
+    })();
+  `;
 
   try {
-    await page.evaluateOnNewDocument(install);
-    await page.evaluate(install).catch(() => null);
+    await page.evaluateOnNewDocument(installSource);
+    await page.evaluate(installSource).catch(() => null);
   } catch {
     // Keep this non-fatal. The caller's navigation/action will expose real failures.
   }

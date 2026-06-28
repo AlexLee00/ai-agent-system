@@ -422,13 +422,20 @@ const naverFutureCancelService = createNaverFutureCancelService({
   maskPhone,
   isCancelledKey,
   addCancelledKey,
+  buildCancelKey,
   upsertFutureConfirmed,
   getStaleConfirmed,
   deleteStaleConfirmed,
   pruneOldFutureConfirmed,
   runPickkoCancel,
   scrapeNewestBookingsFromList,
-  runtimeConfig: NAVER_MONITOR_RUNTIME,
+  scrapeExpandedCancelled,
+  runtimeConfig: {
+    ...NAVER_MONITOR_RUNTIME,
+    futureStaleCancelMutationEnabled:
+      process.env.NAVER_FUTURE_STALE_CANCEL_ENABLE === '1' &&
+      process.env.PICKKO_CANCEL_MUTATION_ENABLE === '1',
+  },
 });
 const naverCancelDetectionService = createNaverCancelDetectionService({
   delay,

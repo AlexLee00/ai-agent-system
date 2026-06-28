@@ -144,14 +144,16 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     await page.waitForFunction(() => {
       const rows = document.querySelectorAll('a[class*="contents-user"]');
       const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
-      return rows.length > 0 || noData;
+      const noDataVisible = !!noData && (noData as HTMLElement).offsetParent !== null;
+      return rows.length > 0 || noDataVisible;
     }, { timeout: 20000 });
 
     const scraped = await page.evaluate((n: number) => {
       const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
-      if (noData) return [];
+      const noDataVisible = !!noData && (noData as HTMLElement).offsetParent !== null;
 
       const rows = Array.from(document.querySelectorAll('a[class*="contents-user"]')).slice(0, n);
+      if (noDataVisible && rows.length === 0) return [];
       if (rows.length === 0) return [];
 
       const out: any[] = [];

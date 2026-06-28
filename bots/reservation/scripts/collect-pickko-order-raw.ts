@@ -20,6 +20,7 @@
 const puppeteer = require('puppeteer');
 const { loadSecrets } = require('../lib/secrets');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../lib/browser');
+const { installBrowserEvalShim } = require('../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { fetchDailyDetail } = require('../lib/pickko-stats');
 const { delay } = require('../lib/utils');
@@ -185,6 +186,7 @@ function calcPolicyAmountFromRoomDetail(roomDetail: RoomDetail | null | undefine
 
 async function scrapeOrderDetail(page: any, href: string): Promise<ScrapedOrderDetail> {
   const url = href.startsWith('http') ? href : `https://pickkoadmin.com${href}`;
+  await installBrowserEvalShim(page);
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   try {
     await page.waitForFunction(() => {
@@ -250,6 +252,7 @@ async function collectRows(date: string): Promise<CollectRowsResult> {
     const page = (await browser.pages())[0] || await browser.newPage();
     page.setDefaultTimeout(30000);
     setupDialogHandler(page, console.log);
+    await installBrowserEvalShim(page);
     await loginToPickko(page, pickko_id, pickko_pw, delay);
 
     const detail: DailyDetail = await fetchDailyDetail(page, date);
@@ -279,6 +282,7 @@ async function collectRows(date: string): Promise<CollectRowsResult> {
     const detailPage = await browser.newPage();
     detailPage.setDefaultTimeout(30000);
     setupDialogHandler(detailPage, console.log);
+    await installBrowserEvalShim(detailPage);
 
     const generalRows: RawOrderRow[] = [];
     const roomTransactions: DailyTransaction[] = [];
