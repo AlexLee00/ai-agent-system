@@ -1846,8 +1846,16 @@ export function routeEntryFromAbstractRoute(route: string, selectorVersion: Team
   return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1024, temperature: 0.1 };
 }
 
-function buildAbstractRoutePolicy(route: string, fallbacks: string[] = [], selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): any {
+function buildAbstractRoutePolicy(
+  route: string,
+  fallbacks: string[] = [],
+  selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY,
+  primaryOverride: Partial<LLMChainEntry> = {},
+): any {
   const chain = [route, ...fallbacks].map((item) => routeEntryFromAbstractRoute(item, selectorVersion));
+  if (chain[0] && Object.keys(primaryOverride).length > 0) {
+    chain[0] = { ...chain[0], ...primaryOverride };
+  }
   return {
     route,
     primary: chain[0] || null,
@@ -2006,7 +2014,7 @@ function buildSelectorRegistry(): Record<string, any> {
 
     'darwin.agent_policy': (options: SelectorOptions = {}) => {
       const { agentName } = options;
-      const DARWIN_ROUTES: Record<string, { route: string; fallback: string[] }> = {
+      const DARWIN_ROUTES: Record<string, { route: string; fallback: string[]; primaryOverride?: Partial<LLMChainEntry> }> = {
         'darwin.scanner':              { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.evaluator':            { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.planner':              { route: 'openai_mini', fallback: ['groq_scout'] },
@@ -2019,9 +2027,9 @@ function buildSelectorRegistry(): Record<string, any> {
         'darwin.self_rewarding_judge': { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.rag.query_planner':    { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.rag.synthesizer':      { route: 'openai_mini', fallback: ['groq_scout'] },
-        'darwin.synthesis':            { route: 'groq_scout', fallback: ['openai_perf'] },
+        'darwin.synthesis':            { route: 'groq_scout', fallback: ['openai_perf'], primaryOverride: { maxTokens: 2048 } },
         research:                      { route: 'openai_mini', fallback: ['groq_scout'] },
-        synthesis:                     { route: 'groq_scout', fallback: ['openai_perf'] },
+        synthesis:                     { route: 'groq_scout', fallback: ['openai_perf'], primaryOverride: { maxTokens: 2048 } },
         commander:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         evaluator:                     { route: 'openai_mini', fallback: ['groq_scout'] },
         planner:                       { route: 'openai_mini', fallback: ['groq_scout'] },
@@ -2040,7 +2048,7 @@ function buildSelectorRegistry(): Record<string, any> {
       const key = String(agentName || 'commander');
       const entry = DARWIN_ROUTES[key] || { route: 'anthropic_haiku', fallback: [] };
       const selectorVersion = resolveSelectorVersionForKey('darwin.agent_policy', options);
-      return buildAbstractRoutePolicy(entry.route, entry.fallback, selectorVersion);
+      return buildAbstractRoutePolicy(entry.route, entry.fallback, selectorVersion, entry.primaryOverride);
     },
 
     'investment.agent_policy': (options: SelectorOptions = {}) => {

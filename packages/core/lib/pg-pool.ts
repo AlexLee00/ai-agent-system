@@ -47,7 +47,7 @@ function parsePositiveIntEnv(name: string, fallback: number): number {
 const PG_POOL_WARN_MIN_TOTAL = parsePositiveIntEnv('PG_POOL_WARN_MIN_TOTAL', Math.max(3, PG_CONFIG.max));
 const PG_POOL_WARN_WAITING_LIMIT = parsePositiveIntEnv('PG_POOL_WARN_WAITING_LIMIT', 1);
 
-const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'blog', 'agent', 'sigma', 'rag', 'public', 'legal']);
+const VALID_SCHEMAS = new Set(['claude', 'reservation', 'investment', 'ska', 'blog', 'agent', 'sigma', 'rag', 'hub', 'public', 'legal']);
 const pools = new Map<string, PgPoolLike>();
 
 const MAX_RECONNECT_ATTEMPTS = 10;

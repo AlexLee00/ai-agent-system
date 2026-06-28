@@ -3,6 +3,19 @@ defmodule Jay.Core.LLM.RecommenderTest do
 
   alias Jay.Core.LLM.Recommender
 
+  defmodule WeightedFixture do
+    use Jay.Core.LLM.Recommender, affinity_fn: &__MODULE__.agent_affinity/0
+
+    def agent_affinity do
+      %{
+        "weighted_agent" => %{
+          anthropic_haiku: 1.2,
+          anthropic_opus: 0.8
+        }
+      }
+    end
+  end
+
   describe "length_bias/2" do
     test "haiku + 토큰 3000 → 패널티" do
       assert Recommender.length_bias(3000, :anthropic_haiku) == -0.3
@@ -133,6 +146,7 @@ defmodule Jay.Core.LLM.RecommenderTest do
         anthropic_sonnet: 0.5,
         anthropic_opus: 0.2
       }
+
       {:ok, rec} = Recommender.scores_to_recommendation(scores)
       assert rec.primary == :anthropic_haiku
       assert :anthropic_sonnet in rec.fallback
@@ -144,6 +158,7 @@ defmodule Jay.Core.LLM.RecommenderTest do
         anthropic_haiku: 1.0,
         anthropic_sonnet: 1.0
       }
+
       {:ok, rec} = Recommender.scores_to_recommendation(scores)
       assert rec.primary == :anthropic_haiku
     end
@@ -157,6 +172,38 @@ defmodule Jay.Core.LLM.RecommenderTest do
       {:ok, rec} = Recommender.scores_to_recommendation(scores)
       assert is_binary(rec.reason)
       assert String.length(rec.reason) > 0
+    end
+  end
+
+  describe "learned bias weights injection" do
+    test "default weights preserve legacy recommendation" do
+      {:ok, rec} =
+        WeightedFixture.recommend("weighted_agent", %{
+          accuracy: :critical,
+          prompt_tokens: 500,
+          budget_ratio: 1.0
+        })
+
+      assert rec.primary == :anthropic_opus
+    end
+
+    test "explicit context weights can alter recommendation without env mutation" do
+      {:ok, rec} =
+        WeightedFixture.recommend("weighted_agent", %{
+          accuracy: :critical,
+          prompt_tokens: 500,
+          budget_ratio: 1.0,
+          llm_recommender_bias_weights: %{
+            length: 1.0 / 6.0,
+            budget: 1.0 / 6.0,
+            failure: 1.0 / 6.0,
+            urgency: 1.0 / 6.0,
+            task_type: 1.0 / 6.0,
+            accuracy: 0.08
+          }
+        })
+
+      assert rec.primary == :anthropic_haiku
     end
   end
 end

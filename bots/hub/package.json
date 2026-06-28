@@ -91,6 +91,8 @@
     "smoke:llm-chain-snapshot": "tsx scripts/llm-chain-snapshot.ts --smoke",
     "llm:policy-table-codegen": "tsx scripts/llm-policy-table-codegen.ts",
     "smoke:llm-policy-engine": "tsx scripts/llm-policy-engine-smoke.ts",
+    "runtime:llm-recommender-weight-learning": "tsx scripts/runtime-llm-recommender-weight-learning.ts",
+    "smoke:llm-recommender-weight-learning": "tsx scripts/llm-recommender-weight-learning-smoke.ts",
     "llm:investment-selector-keys-smoke": "tsx scripts/investment-selector-explicit-keys-smoke.ts",
     "llm:oauth4-balance-smoke": "tsx scripts/llm-oauth-4-balance-smoke.ts",
     "llm:oauth4-rollout-launchd-smoke": "tsx scripts/llm-oauth4-rollout-launchd-smoke.ts",

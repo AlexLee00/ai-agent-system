@@ -108,18 +108,25 @@ defmodule Jay.Core.LLM.Recommender do
         urgency       = context[:urgency]    || :medium
         task_type     = context[:task_type]  || :unknown
         accuracy      = context[:accuracy]   || :normal
+        bias_weights  = Jay.Core.LLM.RecommenderWeights.weights_from_context(context)
 
         scores =
           affinity
           |> Enum.map(fn {model, base} ->
             score =
               base +
-              Jay.Core.LLM.Recommender.length_bias(prompt_tokens, model) +
-              Jay.Core.LLM.Recommender.budget_bias(budget_ratio, model) +
-              Jay.Core.LLM.Recommender.failure_bias(failure_rate, agent_name, model) +
-              Jay.Core.LLM.Recommender.urgency_bias(urgency, model) +
-              Jay.Core.LLM.Recommender.task_type_bias(task_type, model) +
-              Jay.Core.LLM.Recommender.accuracy_bias(accuracy, model)
+                Jay.Core.LLM.Recommender.length_bias(prompt_tokens, model) *
+                  Jay.Core.LLM.RecommenderWeights.multiplier(bias_weights, :length) +
+                Jay.Core.LLM.Recommender.budget_bias(budget_ratio, model) *
+                  Jay.Core.LLM.RecommenderWeights.multiplier(bias_weights, :budget) +
+                Jay.Core.LLM.Recommender.failure_bias(failure_rate, agent_name, model) *
+                  Jay.Core.LLM.RecommenderWeights.multiplier(bias_weights, :failure) +
+                Jay.Core.LLM.Recommender.urgency_bias(urgency, model) *
+                  Jay.Core.LLM.RecommenderWeights.multiplier(bias_weights, :urgency) +
+                Jay.Core.LLM.Recommender.task_type_bias(task_type, model) *
+                  Jay.Core.LLM.RecommenderWeights.multiplier(bias_weights, :task_type) +
+                Jay.Core.LLM.Recommender.accuracy_bias(accuracy, model) *
+                  Jay.Core.LLM.RecommenderWeights.multiplier(bias_weights, :accuracy)
 
             {model, score}
           end)
