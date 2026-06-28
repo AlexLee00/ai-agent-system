@@ -30,8 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: TypeScript check
+        run: npm run typecheck
+
       - name: TypeScript strict check
         run: npm run typecheck:strict
+
+      - name: TypeScript Phase 1 build
+        run: npm run build:ts
 
       - name: Syntax check (changed JS files)
         run: |

@@ -56,8 +56,9 @@ else
   echo "✅ 의존성 변경 없음"
 fi
 
-echo "🔎 TypeScript strict 검증"
-npm run typecheck:strict
+echo "🔎 TypeScript 배포 사전 검증"
+npm run typecheck
+npm run build:ts
 
 echo "🏗️ daemon 사전 번들 빌드"
 npm run build:daemons
