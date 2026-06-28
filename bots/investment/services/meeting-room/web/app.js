@@ -794,7 +794,6 @@ function PwaControls({ token }) {
     writeLocalValue(PWA_INSTALL_DISMISSED_STORAGE_KEY, '1');
   }
 
-  if (standalone && !status) return null;
   const showInstallPrompt = !standalone && !dismissed && (deferredPrompt || isIos);
   if (!showInstallPrompt && !status) {
     return html`

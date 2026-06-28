@@ -555,6 +555,8 @@ async function main() {
     assert.ok(appJs.text.includes("new EventSource(meetingStreamUrl(selectedRunningRun.id, token))"));
     assert.ok(appJs.text.includes("'/api/push/vapid-public'"));
     assert.ok(appJs.text.includes("'/api/push/subscribe'"));
+    assert.equal(appJs.text.includes('if (standalone && !status) return null;'), false);
+    assert.ok(appJs.text.includes('const showInstallPrompt = !standalone'));
     const manifest = await request(baseUrl, '/manifest.json');
     assert.equal(manifest.status, 200);
     assert.equal(manifest.headers.get('content-type'), 'application/json; charset=utf-8');
@@ -564,6 +566,7 @@ async function main() {
     assert.equal(serviceWorker.status, 200);
     assert.equal(serviceWorker.headers.get('content-type'), 'text/javascript; charset=utf-8');
     assert.ok(serviceWorker.headers.get('content-security-policy')?.includes("script-src 'self' https://unpkg.com"));
+    assert.ok(serviceWorker.text.includes("const CACHE_VERSION = 'luna-meeting-room-20260628b';"));
     assert.ok(serviceWorker.text.includes("importScripts('https://unpkg.com/workbox-sw@7.1.0/build/workbox-sw.js')"));
     assert.ok(serviceWorker.text.includes("self.addEventListener('push'"));
     assert.ok(serviceWorker.text.includes("self.addEventListener('notificationclick'"));
