@@ -1,0 +1,24 @@
+{
+  "name": "Luna Meeting Room",
+  "short_name": "Luna Room",
+  "description": "Luna 회의록, 결정 대기함, 에이전트 질의를 모바일에서 확인합니다.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fffaf0",
+  "theme_color": "#486d4a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

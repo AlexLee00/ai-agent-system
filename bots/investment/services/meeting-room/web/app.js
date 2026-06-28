@@ -51,6 +51,7 @@ const TOKEN_STORAGE_KEY = 'lunaMeetingRoomToken';
 const ASK_AGENT_STORAGE_KEY = 'lunaMeetingRoomAskAgent';
 const ASK_QUESTION_STORAGE_KEY = 'lunaMeetingRoomAskQuestion';
 const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';
+const PWA_INSTALL_DISMISSED_STORAGE_KEY = 'lunaMeetingRoomPwaInstallDismissed';
 const MEETING_START_MALFORMED_MESSAGE = '회의 시작 응답이 올바르지 않습니다. 잠시 후 다시 시도하세요.';
 const ASK_SUGGESTION_BUILDERS = Object.freeze([
   {
@@ -133,9 +134,57 @@ function writeSessionValue(key, value) {
   }
 }
 
+function readInitialMeetingId() {
+  try {
+    const fromQuery = new URLSearchParams(window.location.search).get('meeting');
+    if (fromQuery) return fromQuery;
+  } catch {
+    // Query parsing is best effort. The previous session selection remains a safe fallback.
+  }
+  return readSessionValue(SELECTED_MEETING_STORAGE_KEY, '') || null;
+}
+
 function normalizeAgentName(value) {
   const normalized = String(value || '').toLowerCase();
   return AGENT_OPTIONS.includes(normalized) ? normalized : 'luna';
+}
+
+function mergeMinutesBySeq(existing = [], incoming = []) {
+  const rows = new Map();
+  for (const minute of safeArray(existing)) {
+    const key = minute?.seq == null ? `existing-${rows.size}` : String(minute.seq);
+    rows.set(key, minute);
+  }
+  for (const minute of safeArray(incoming)) {
+    const key = minute?.seq == null ? `incoming-${rows.size}` : String(minute.seq);
+    rows.set(key, {
+      ...minute,
+      createdAt: minute?.createdAt || new Date().toISOString(),
+    });
+  }
+  return Array.from(rows.values()).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+}
+
+function parseSseData(event) {
+  try {
+    return JSON.parse(event.data || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function meetingStreamUrl(meetingId, token) {
+  const base = `/api/meetings/${encodeURIComponent(meetingId)}/stream`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+function urlBase64ToUint8Array(value) {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4);
+  const base64 = `${value}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let index = 0; index < raw.length; index += 1) output[index] = raw.charCodeAt(index);
+  return output;
 }
 
 function formatTime(value) {
@@ -667,6 +716,112 @@ function Header({ token, setToken, tab, setTab }) {
   `;
 }
 
+function PwaControls({ token }) {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [dismissed, setDismissed] = useState(() => readLocalValue(PWA_INSTALL_DISMISSED_STORAGE_KEY, '') === '1');
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const standalone = Boolean(window.matchMedia?.('(display-mode: standalone)')?.matches || window.navigator?.standalone === true);
+  const isIos = /iphone|ipad|ipod/i.test(window.navigator?.userAgent || '');
+
+  useEffect(() => {
+    function handleBeforeInstallPrompt(event) {
+      event.preventDefault();
+      setDeferredPrompt(event);
+      setDismissed(false);
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  async function installApp() {
+    if (!deferredPrompt) return;
+    setBusy(true);
+    try {
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      setDeferredPrompt(null);
+      setStatus('설치 요청을 처리했습니다.');
+    } catch (error) {
+      setStatus(`설치 요청 실패: ${error?.message || String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function enablePush() {
+    setBusy(true);
+    setStatus('');
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+        setStatus('이 브라우저는 웹 푸시를 지원하지 않습니다.');
+        return;
+      }
+      const vapid = await api(token, '/api/push/vapid-public');
+      if (!vapid.enabled) {
+        setStatus('회의 시작 푸시는 아직 비활성 상태입니다.');
+        return;
+      }
+      if (!vapid.configured || !vapid.publicKey) {
+        setStatus('VAPID 키가 설정되지 않아 푸시를 켤 수 없습니다.');
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setStatus('알림 권한이 허용되지 않았습니다.');
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const subscription = existing || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
+      });
+      await api(token, '/api/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({ subscription: subscription.toJSON ? subscription.toJSON() : subscription, userAgent: navigator.userAgent }),
+      });
+      setStatus('회의 시작 푸시 구독을 저장했습니다.');
+    } catch (error) {
+      setStatus(`푸시 설정 실패: ${error?.message || String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function dismissInstall() {
+    setDismissed(true);
+    writeLocalValue(PWA_INSTALL_DISMISSED_STORAGE_KEY, '1');
+  }
+
+  if (standalone && !status) return null;
+  const showInstallPrompt = !standalone && !dismissed && (deferredPrompt || isIos);
+  if (!showInstallPrompt && !status) {
+    return html`
+      <div className="pwa-controls compact" role="region" aria-label="PWA 알림 설정">
+        <button className="secondary" onClick=${enablePush} disabled=${busy} aria-busy=${busy}>회의 시작 푸시 설정</button>
+      </div>
+    `;
+  }
+  return html`
+    <div className="pwa-controls" role="region" aria-label="PWA 설치 및 알림 설정">
+      ${showInstallPrompt ? html`
+        <div className="pwa-copy">
+          ${isIos && !deferredPrompt
+            ? 'iOS Safari 공유 버튼에서 홈 화면에 추가하면 회의실을 앱처럼 열 수 있습니다.'
+            : 'Luna Meeting Room을 홈 화면에 설치할 수 있습니다.'}
+        </div>
+      ` : null}
+      <div className="inline">
+        ${deferredPrompt ? html`<button onClick=${installApp} disabled=${busy} aria-busy=${busy}>앱 설치</button>` : null}
+        <button className="secondary" onClick=${enablePush} disabled=${busy} aria-busy=${busy}>회의 시작 푸시 설정</button>
+        ${showInstallPrompt ? html`<button className="secondary" onClick=${dismissInstall}>설치 안내 숨김</button>` : null}
+      </div>
+      ${status ? html`<div className="meta" role="status" aria-live="polite">${status}</div>` : null}
+    </div>
+  `;
+}
+
 function MeetingList({ meetings, activeRuns, selectedId, setSelectedId }) {
   const meetingRows = safeArray(meetings);
   const activeRunRows = safeArray(activeRuns);
@@ -1047,21 +1202,26 @@ function DailyRoom({ token }) {
   const [segments, setSegments] = useState([]);
   const [scheduleStatus, setScheduleStatus] = useState('');
   const [pending, setPending] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(() => readInitialMeetingId());
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [streamStatus, setStreamStatus] = useState('idle');
   const [authRequired, setAuthRequired] = useState(false);
   const [blockedAuthToken, setBlockedAuthToken] = useState(null);
   const baseRequestSeq = useRef(0);
   const detailRequestSeq = useRef(0);
   const hasRunningRun = activeRuns.some((run) => run.status === 'running');
+  const selectedRunningRun = activeRuns.find((run) => String(run.id) === String(selectedId) && run.status === 'running');
+  const streamReplacingDetailPoll = Boolean(selectedRunningRun && (streamStatus === 'connecting' || streamStatus === 'connected'));
   const authRequestBlocked = authRequired && String(token || '') === String(blockedAuthToken ?? '');
   const pollingIntervalMs = authRequestBlocked ? 0 : (hasRunningRun ? 3000 : 30000);
   const pollingLabel = authRequestBlocked
     ? '폴링: 접근 토큰 입력 대기'
+    : streamReplacingDetailPoll
+    ? '라이브: SSE 연결 · 목록은 3초마다 확인'
     : hasRunningRun
     ? '폴링: 실행 중 회의 감지 · 3초마다 갱신'
     : '폴링: 대기 · 30초마다 갱신';
@@ -1078,6 +1238,7 @@ function DailyRoom({ token }) {
     setDetail(null);
     setDetailLoading(false);
     setCatchup([]);
+    setStreamStatus('idle');
     setNotice('');
   }
 
@@ -1127,7 +1288,7 @@ function DailyRoom({ token }) {
           setSelectedId(payload.run.sessionId);
           return;
         }
-        setDetail({ session: payload.run, minutes: [], decisions: [] });
+        setDetail({ session: payload.run, minutes: safeArray(payload.run.liveMinutes), decisions: [] });
         setCatchup([
           `실행 상태: ${payload.run.status}`,
           `세션: ${payload.run.sessionId || '생성 중'}`,
@@ -1168,12 +1329,70 @@ function DailyRoom({ token }) {
   }, [selectedId]);
 
   useEffect(() => {
+    if (authRequestBlocked || !selectedRunningRun || typeof EventSource === 'undefined') {
+      setStreamStatus(selectedRunningRun ? 'fallback' : 'idle');
+      return undefined;
+    }
+    let closed = false;
+    const source = new EventSource(meetingStreamUrl(selectedRunningRun.id, token));
+    setStreamStatus('connecting');
+    source.addEventListener('open', () => {
+      if (!closed) setStreamStatus('connected');
+    });
+    source.addEventListener('hello', (event) => {
+      if (closed) return;
+      const payload = parseSseData(event);
+      if (payload.run) setDetail((current) => ({
+        session: payload.run,
+        minutes: mergeMinutesBySeq(current?.minutes, payload.run.liveMinutes || []),
+        decisions: current?.decisions || [],
+      }));
+    });
+    source.addEventListener('minute', (event) => {
+      if (closed) return;
+      const payload = parseSseData(event);
+      if (!payload.minute) return;
+      setDetail((current) => ({
+        session: current?.session || selectedRunningRun,
+        minutes: mergeMinutesBySeq(current?.minutes, [payload.minute]),
+        decisions: current?.decisions || [],
+      }));
+      setCatchup([
+        '라이브 수신 중',
+        `${payload.minute.seq || '?'}번 발언: ${roleName(payload.minute.role, payload.minute)} / ${speakerLabel(payload.minute.speaker)}`,
+      ]);
+    });
+    source.addEventListener('close', (event) => {
+      if (closed) return;
+      closed = true;
+      source.close();
+      setStreamStatus('closed');
+      const payload = parseSseData(event);
+      if (payload.run?.sessionId) setSelectedId(payload.run.sessionId);
+      refreshBase().then(() => refreshSelected(payload.run?.sessionId || selectedRunningRun.id)).catch((error) => setError(error.message));
+    });
+    source.addEventListener('error', () => {
+      if (closed) return;
+      closed = true;
+      source.close();
+      setStreamStatus('fallback');
+      refreshSelected(selectedRunningRun.id).catch((error) => setError(error.message));
+    });
+    return () => {
+      closed = true;
+      source.close();
+    };
+  }, [selectedRunningRun?.id, token, authRequestBlocked]);
+
+  useEffect(() => {
     if (authRequestBlocked) return;
     const interval = setInterval(() => {
-      refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
+      refreshBase()
+        .then(() => (streamReplacingDetailPoll ? null : refreshSelected()))
+        .catch((error) => setError(error.message));
     }, pollingIntervalMs);
     return () => clearInterval(interval);
-  }, [activeRuns.map((run) => `${run.id}:${run.status}`).join(','), selectedId, token, pollingIntervalMs, authRequestBlocked]);
+  }, [activeRuns.map((run) => `${run.id}:${run.status}`).join(','), selectedId, token, pollingIntervalMs, authRequestBlocked, streamReplacingDetailPoll]);
 
   function handleMeetingStarted(run) {
     if (run?.id == null) {
@@ -1375,9 +1594,19 @@ function App() {
   const [token, setToken] = useToken();
   const apiToken = useDebouncedValue(token);
   const [tab, setTab] = useState('daily');
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return undefined;
+    let cancelled = false;
+    navigator.serviceWorker.register('/sw.js').catch((error) => {
+      if (!cancelled) console.warn('[luna-meeting-room] service worker registration failed:', error?.message || String(error));
+    });
+    return () => { cancelled = true; };
+  }, []);
   return html`
     <main className="shell">
       <${Header} token=${token} setToken=${setToken} tab=${tab} setTab=${setTab} />
+      ${'\n'}
+      <${PwaControls} token=${apiToken} />
       ${'\n'}
       <section
         id="meeting-panel-daily"

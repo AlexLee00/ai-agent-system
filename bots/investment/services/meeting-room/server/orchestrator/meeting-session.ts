@@ -906,6 +906,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
   const agendas = options.agendas || buildMeetingAgendasForType(type, planNote);
   const minutes = [];
   const decisions = [];
+  const onMinute = typeof options.onMinute === 'function' ? options.onMinute : null;
   const context = {
     config,
     noLlm: options.noLlm === true,
@@ -919,8 +920,18 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
     context.config.maxLlmCallsPerMeeting = Math.min(Number(context.config.maxLlmCallsPerMeeting || 0), 2);
   }
   let seq = 1;
+  function addMinute(minute) {
+    minutes.push(minute);
+    if (onMinute) {
+      try {
+        onMinute(minute);
+      } catch (error) {
+        console.warn('[luna-meeting-room] onMinute callback failed:', error?.message || String(error));
+      }
+    }
+  }
 
-  minutes.push({
+  addMinute({
     seq: seq++,
     agendaKey: 'session',
     speaker: 'system',
@@ -931,7 +942,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
 
   for (const agenda of agendas) {
     const dataBrief = dataBriefForAgenda(agenda, planNote);
-    minutes.push({
+    addMinute({
       seq: seq++,
       agendaKey: agenda.key,
       speaker: 'stack-adapter',
@@ -942,7 +953,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
 
     for (const agent of (config.analysisAgents || []).slice(0, 2)) {
       const analysis = await callAnalysisLLM(agenda, planNote, agent, context, deps);
-      minutes.push({
+      addMinute({
         seq: seq++,
         agendaKey: agenda.key,
         speaker: agent,
@@ -955,7 +966,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
     context.forceInsufficientGrill = options.forceInsufficientGrill === true || agenda.forceInsufficientGrill === true;
     const grillResult = await callGrill(agenda, planNote, context, deps);
     const grill = grillResult.text;
-    minutes.push({
+    addMinute({
       seq: seq++,
       agendaKey: agenda.key,
       speaker: 'luna',
@@ -972,7 +983,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
 
     const decision = draftDecision(agenda, grill, { now: startedAt, decisionDueHours: config.decisionDueHours });
     decisions.push(decision);
-    minutes.push({
+    addMinute({
       seq: seq++,
       agendaKey: agenda.key,
       speaker: 'luna',
@@ -980,7 +991,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
       content: decision.decision,
       meta: { state: 'decision_draft', grade: decision.grade, status: decision.status },
     });
-    minutes.push({
+    addMinute({
       seq: seq++,
       agendaKey: agenda.key,
       speaker: 'adr',
@@ -992,7 +1003,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
 
   const closedAt = iso(options.closedAt || Date.now());
   const summary = `${meetingTypeLabel(type)} 완료: 안건 ${agendas.length}건, ADR ${decisions.length}건, LLM ${context.llmCalls}회`;
-  minutes.push({ seq: seq++, agendaKey: 'session', speaker: 'system', role: 'system', content: 'close', meta: { state: 'close', summary } });
+  addMinute({ seq: seq++, agendaKey: 'session', speaker: 'system', role: 'system', content: 'close', meta: { state: 'close', summary } });
   const result = {
     ok: true,
     type,
