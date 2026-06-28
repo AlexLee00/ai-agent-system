@@ -74,7 +74,6 @@ for (const { selectorKey, agentName } of [
   { selectorKey: 'darwin.agent_policy', agentName: 'darwin.planner' },
   { selectorKey: 'darwin.agent_policy', agentName: 'darwin.evaluator' },
   { selectorKey: 'darwin.agent_policy', agentName: 'darwin.scanner' },
-  { selectorKey: 'darwin.agent_policy', agentName: 'darwin.synthesis' },
   { selectorKey: 'sigma.agent_policy', agentName: 'skill.causal' },
   { selectorKey: 'sigma.agent_policy', agentName: 'mapek.monitor' },
 ]) {
@@ -83,6 +82,14 @@ for (const { selectorKey, agentName } of [
   assert(chain.some((entry) => providerOf(entry) === 'groq'), `${selectorKey}/${agentName} must retain Groq Scout fallback behind OpenAI`);
   assert(!chain.some((entry) => providerOf(entry) === 'local'), `${selectorKey}/${agentName} must not use local generative fallback`);
   assert(!chain.some(isGemini), `${selectorKey}/${agentName} must not fall back to Gemini`);
+}
+
+{
+  const chain = chainFor('darwin.agent_policy', { agentName: 'darwin.synthesis' });
+  assert.equal(providerOf(chain[0]), 'groq', 'darwin.agent_policy/darwin.synthesis must start on Groq account-pool routing');
+  assert(chain.some((entry) => providerOf(entry) === 'openai-oauth'), 'darwin.agent_policy/darwin.synthesis must retain OpenAI quality fallback');
+  assert(!chain.some((entry) => providerOf(entry) === 'local'), 'darwin.agent_policy/darwin.synthesis must not use local generative fallback');
+  assert(!chain.some(isGemini), 'darwin.agent_policy/darwin.synthesis must not fall back to Gemini');
 }
 
 for (const key of CLAUDE_FIRST_WRITING_SELECTORS) {

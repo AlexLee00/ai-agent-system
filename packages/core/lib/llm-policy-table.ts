@@ -22,10 +22,10 @@ export const LLM_POLICY_TABLE_GENERATED_FROM = "docs/hub/snapshots/llm-chain-sna
 export const LLM_POLICY_TABLE_GENERATED_AT = "2026-06-12T12:44:44.915Z";
 export const LLM_POLICY_TABLE_SELECTOR_VERSION = "v3.0_oauth_4";
 export const LLM_POLICY_TABLE_RULE_COUNT = 408;
-export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = 789;
+export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = 783;
 export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNTS: Record<string, number> = {
   "@OPENAI_MINI_MODEL": 243,
-  "@GROQ_FAST_MODEL": 261,
+  "@GROQ_FAST_MODEL": 255,
   "@GROQ_DEEP_MODEL": 90,
   "@OPENAI_PERF_MODEL": 168,
   "@GROQ_SCOUT_MODEL": 6,
@@ -3065,7 +3065,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
+        "model": "llama-3.1-8b-instant",
         "maxTokens": 1024,
         "temperature": 0.1
       }
@@ -3088,7 +3088,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
+        "model": "llama-3.1-8b-instant",
         "maxTokens": 1024,
         "temperature": 0.1
       }
@@ -3110,7 +3110,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
+        "model": "llama-3.1-8b-instant",
         "maxTokens": 1024,
         "temperature": 0.1
       }
@@ -4017,7 +4017,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
+        "model": "llama-3.1-8b-instant",
         "maxTokens": 1024,
         "temperature": 0.1
       }
@@ -4040,7 +4040,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
+        "model": "llama-3.1-8b-instant",
         "maxTokens": 1024,
         "temperature": 0.1
       }
@@ -4062,7 +4062,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
+        "model": "llama-3.1-8b-instant",
         "maxTokens": 1024,
         "temperature": 0.1
       }

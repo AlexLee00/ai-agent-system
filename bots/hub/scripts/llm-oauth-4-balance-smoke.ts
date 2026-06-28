@@ -259,12 +259,12 @@ function main(): void {
     ...(PROFILES?.darwin?.synthesis?.fallback_routes || []),
   ];
   assert.ok(
-    String(darwinSynthesisRuntimeRoutes[0] || '').startsWith('openai-oauth/'),
-    'darwin/synthesis runtime profile must use OpenAI primary, not Groq/Gemini routing',
+    String(darwinSynthesisRuntimeRoutes[0] || '').startsWith('groq/'),
+    'darwin/synthesis runtime profile must start on Groq account-pool routing to avoid OpenAI OAuth pressure',
   );
   assert.ok(
-    darwinSynthesisRuntimeRoutes.some((route) => String(route).startsWith('groq/')),
-    'darwin/synthesis runtime profile must keep Groq Scout fallback',
+    darwinSynthesisRuntimeRoutes.some((route) => String(route).startsWith('openai-oauth/')),
+    'darwin/synthesis runtime profile must keep OpenAI OAuth as a quality fallback',
   );
   assert.equal(
     darwinSynthesisRuntimeRoutes.some((route) => String(route).startsWith('local/')),

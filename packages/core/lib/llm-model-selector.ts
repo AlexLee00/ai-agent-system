@@ -702,6 +702,7 @@ function applyGroqTokenPolicy(chain: LLMChainEntry[]): LLMChainEntry[] {
 
 function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
   const selectorKey = String(options.selectorKey || '');
+  const agentName = String(options.agentName || '').trim().toLowerCase();
   if (isBacktestSelector(selectorKey, options)) return [localEmbeddingEntry()];
   if (isExplicitGeminiDiagnosticSelector(selectorKey)) return chain;
 
@@ -710,6 +711,7 @@ function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: Select
 
   if (
     (selectorKey === 'darwin.agent_policy' || selectorKey === 'sigma.agent_policy')
+    && !(selectorKey === 'darwin.agent_policy' && (agentName === 'darwin.synthesis' || agentName === 'synthesis'))
     && parseEnabledFlag(process.env.HUB_DARWIN_SIGMA_GROQ_PRIMARY) !== true
   ) {
     optimized = ensureOpenAiPrimaryWithBoundedFallback(optimized, options);
@@ -2017,9 +2019,9 @@ function buildSelectorRegistry(): Record<string, any> {
         'darwin.self_rewarding_judge': { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.rag.query_planner':    { route: 'openai_mini', fallback: ['groq_scout'] },
         'darwin.rag.synthesizer':      { route: 'openai_mini', fallback: ['groq_scout'] },
-        'darwin.synthesis':            { route: 'openai_perf', fallback: ['groq_scout'] },
+        'darwin.synthesis':            { route: 'groq_scout', fallback: ['openai_perf'] },
         research:                      { route: 'openai_mini', fallback: ['groq_scout'] },
-        synthesis:                     { route: 'openai_perf', fallback: ['groq_scout'] },
+        synthesis:                     { route: 'groq_scout', fallback: ['openai_perf'] },
         commander:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         evaluator:                     { route: 'openai_mini', fallback: ['groq_scout'] },
         planner:                       { route: 'openai_mini', fallback: ['groq_scout'] },
