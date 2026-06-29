@@ -1,8 +1,9 @@
 import { mkdir, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
-const root = '/Users/alexlee/projects/ai-agent-system';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outdir = path.join(root, 'dist', 'ts-phase1');
 const runtimeOutdir = path.join(root, 'dist', 'ts-runtime');
 

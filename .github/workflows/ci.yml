@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
+      - name: Check for secrets in code
+        run: ./node_modules/.bin/tsx bots/hub/scripts/secret-leak-smoke.ts
+
       - name: TypeScript check
         run: npm run typecheck
 
@@ -48,9 +51,6 @@ jobs:
             exit 1
           fi
           echo "✅ All files passed"
-
-      - name: Check for secrets in code
-        run: ./node_modules/.bin/tsx bots/hub/scripts/secret-leak-smoke.ts
 
       - name: Investment fill resolver smoke
         run: npm --prefix bots/investment run smoke:fill-resolver-dca
