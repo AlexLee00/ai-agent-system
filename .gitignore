@@ -255,3 +255,7 @@ docs/STRATEGY.md
 
 # Sigma V2 principles (환경별 변형 방지)
 bots/sigma/config/sigma_principles.yaml
+
+# 다윈 자율 레벨 런타임 상태 (런타임마다 변동 — 추적 부적합)
+bots/darwin/sandbox/darwin-autonomy-level.json
+bots/darwin/sandbox/*.bak-*
