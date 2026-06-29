@@ -15,6 +15,7 @@ const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
 const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));
+const { AUTONOMY_PROMOTION_THRESHOLDS } = require(path.join(PROJECT_ROOT, "bots/darwin/lib/autonomy-level"));
 
 interface QueryResultRow {
   [key: string]: unknown;
@@ -165,9 +166,15 @@ function collectAutonomyState(): {
   const blockers = [];
   if (level < 5) blockers.push(`level L${level}/L5`);
   if (killSwitchOn) blockers.push("kill_switch_on");
-  if (consecutiveSuccesses < 5) blockers.push(`L4_successes ${consecutiveSuccesses}/5`);
-  if (consecutiveSuccesses < 10) blockers.push(`L5_successes ${consecutiveSuccesses}/10`);
-  if (appliedSuccesses < 3) blockers.push(`L5_applied ${appliedSuccesses}/3`);
+  if (consecutiveSuccesses < AUTONOMY_PROMOTION_THRESHOLDS.l4ConsecutiveSuccesses) {
+    blockers.push(`L4_successes ${consecutiveSuccesses}/${AUTONOMY_PROMOTION_THRESHOLDS.l4ConsecutiveSuccesses}`);
+  }
+  if (consecutiveSuccesses < AUTONOMY_PROMOTION_THRESHOLDS.l5ConsecutiveSuccesses) {
+    blockers.push(`L5_successes ${consecutiveSuccesses}/${AUTONOMY_PROMOTION_THRESHOLDS.l5ConsecutiveSuccesses}`);
+  }
+  if (appliedSuccesses < AUTONOMY_PROMOTION_THRESHOLDS.l5AppliedSuccesses) {
+    blockers.push(`L5_applied ${appliedSuccesses}/${AUTONOMY_PROMOTION_THRESHOLDS.l5AppliedSuccesses}`);
+  }
   const promotionReady = level >= 5 && blockers.length === 0;
 
   return {

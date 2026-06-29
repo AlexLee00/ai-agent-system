@@ -68,6 +68,9 @@ interface ProposalStore {
 
 interface AutonomyLevelModule {
   requiresApproval(): boolean;
+  recordVerifiedSuccess(): void;
+  recordMergeSuccess(): void;
+  recordMergeFailure(error: unknown): void;
   recordError(error: unknown): void;
 }
 
@@ -398,6 +401,12 @@ ${failureHints}
         : null,
     } as AlarmPayload);
 
+    if (passed) {
+      autonomyLevelTyped.recordVerifiedSuccess();
+    } else {
+      autonomyLevelTyped.recordError(new Error(`verification_failed: ${verificationText.slice(0, 500)}`));
+    }
+
     if (passed && !requiresApproval) {
       setImmediate(() => {
         mergeVerifiedProposal(proposalId).catch((error) => {
@@ -447,13 +456,18 @@ ${failureHints}
 
 async function mergeVerifiedProposal(proposalId: string): Promise<{ ok: true; branch: string }> {
   const proposal = proposalStoreTyped.loadProposal(proposalId);
-  if (!proposal?.branch) throw new Error(`branch missing for proposal: ${proposalId}`);
+  if (!proposal?.branch) {
+    const error = new Error(`branch missing for proposal: ${proposalId}`);
+    autonomyLevelTyped.recordMergeFailure(error);
+    throw error;
+  }
 
   const merged = await mergeBranch(proposal.branch, proposalId);
   proposalStoreTyped.updateStatus(proposalId, 'merged', {
     merged_at: new Date().toISOString(),
     merged_branch: proposal.branch,
   });
+  autonomyLevelTyped.recordMergeSuccess();
   await postAlarm({
     message: `🎉 다윈 제안 머지 완료\n📄 ${proposal.title || proposalId}\n🌿 ${proposal.branch}`,
     team: 'darwin',
@@ -486,7 +500,7 @@ async function mergeBranch(branchName: string, label: string): Promise<{ ok: tru
         ]],
       } as AlarmPayload);
     }
-    autonomyLevelTyped.recordError(error);
+    autonomyLevelTyped.recordMergeFailure(error);
     throw error;
   } finally {
     try {

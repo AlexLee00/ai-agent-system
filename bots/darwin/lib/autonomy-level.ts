@@ -17,9 +17,17 @@ interface AutonomyState {
   updated_at: string | null;
   error_count: number;
   last_error: string | null;
+  consecutiveSuccesses: number;
+  appliedSuccesses: number;
+  upgradedAt: string | null;
 }
 
 const STATE_FILE = path.join(env.PROJECT_ROOT, 'bots/darwin/sandbox/darwin-autonomy-level.json');
+const AUTONOMY_PROMOTION_THRESHOLDS = Object.freeze({
+  l4ConsecutiveSuccesses: 5,
+  l5ConsecutiveSuccesses: 10,
+  l5AppliedSuccesses: 3,
+});
 
 const DEFAULT_STATE: AutonomyState = {
   level: 'L4',
@@ -27,6 +35,9 @@ const DEFAULT_STATE: AutonomyState = {
   updated_at: null,
   error_count: 0,
   last_error: null,
+  consecutiveSuccesses: 0,
+  appliedSuccesses: 0,
+  upgradedAt: null,
 };
 
 function normalizeLevel(level: unknown): AutonomyLevel {
@@ -46,6 +57,21 @@ function ensureStateDir() {
   fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
 }
 
+function count(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+}
+
+function errorMessage(error: unknown): string {
+  return typeof error === 'object' && error !== null && 'message' in error
+    ? String((error as { message?: unknown }).message || 'unknown error')
+    : String(error || 'unknown error');
+}
+
+function killSwitchOn(): boolean {
+  return String(process.env.DARWIN_KILL_SWITCH || 'false').trim().toLowerCase() === 'true';
+}
+
 function loadState(): AutonomyState {
   ensureStateDir();
   const envLevel = process.env.DARWIN_AUTONOMY_LEVEL;
@@ -55,6 +81,9 @@ function loadState(): AutonomyState {
       ...(JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) as Partial<AutonomyState>),
     };
     merged.level = normalizeLevel(envLevel || merged.level);
+    merged.error_count = count(merged.error_count);
+    merged.consecutiveSuccesses = count(merged.consecutiveSuccesses);
+    merged.appliedSuccesses = count(merged.appliedSuccesses);
     return merged;
   } catch {
     return {
@@ -70,6 +99,9 @@ function saveState(state: Partial<AutonomyState>): AutonomyState {
     ...DEFAULT_STATE,
     ...state,
     level: normalizeLevel(state?.level),
+    error_count: count(state?.error_count),
+    consecutiveSuccesses: count(state?.consecutiveSuccesses),
+    appliedSuccesses: count(state?.appliedSuccesses),
     updated_at: new Date().toISOString(),
   };
   fs.writeFileSync(STATE_FILE, JSON.stringify(nextState, null, 2), 'utf8');
@@ -84,19 +116,80 @@ function setLevel(level: unknown, reason = ''): AutonomyState {
   });
 }
 
-function recordError(error: unknown): AutonomyState {
-  const errorMessage =
-    typeof error === 'object' && error !== null && 'message' in error
-      ? String((error as { message?: unknown }).message || 'unknown error')
-      : String(error || 'unknown error');
+function evaluatePromotion(state: AutonomyState): AutonomyState {
+  const level = normalizeLevel(state.level);
+  const consecutiveSuccesses = count(state.consecutiveSuccesses);
+  const appliedSuccesses = count(state.appliedSuccesses);
+  const eligibleForL4 = level === 'L3'
+    && consecutiveSuccesses >= AUTONOMY_PROMOTION_THRESHOLDS.l4ConsecutiveSuccesses;
+  const eligibleForL5 = level === 'L4'
+    && consecutiveSuccesses >= AUTONOMY_PROMOTION_THRESHOLDS.l5ConsecutiveSuccesses
+    && appliedSuccesses >= AUTONOMY_PROMOTION_THRESHOLDS.l5AppliedSuccesses;
 
+  if (killSwitchOn() && (eligibleForL4 || eligibleForL5)) {
+    return saveState({
+      ...state,
+      level,
+      consecutiveSuccesses,
+      appliedSuccesses,
+      reason: 'promotion_blocked_by_kill_switch',
+    });
+  }
+
+  if (eligibleForL4 || eligibleForL5) {
+    return saveState({
+      ...state,
+      level: eligibleForL5 ? 'L5' : 'L4',
+      consecutiveSuccesses,
+      appliedSuccesses,
+      reason: 'auto_recovery',
+      upgradedAt: new Date().toISOString(),
+    });
+  }
+
+  return saveState({
+    ...state,
+    level,
+    consecutiveSuccesses,
+    appliedSuccesses,
+  });
+}
+
+function recordVerifiedSuccess(): AutonomyState {
+  const current = loadState();
+  return evaluatePromotion({
+    ...current,
+    consecutiveSuccesses: count(current.consecutiveSuccesses) + 1,
+  });
+}
+
+function recordMergeSuccess(): AutonomyState {
+  const current = loadState();
+  return evaluatePromotion({
+    ...current,
+    appliedSuccesses: count(current.appliedSuccesses) + 1,
+  });
+}
+
+function recordMergeFailure(error: unknown): AutonomyState {
+  const current = loadState();
+  return saveState({
+    ...current,
+    reason: 'merge_failed_after_verification',
+    consecutiveSuccesses: 0,
+    last_error: errorMessage(error),
+  });
+}
+
+function recordError(error: unknown): AutonomyState {
   const current = loadState();
   return saveState({
     ...current,
     level: 'L3',
     reason: 'auto_demotion_after_error',
     error_count: Number(current.error_count || 0) + 1,
-    last_error: errorMessage,
+    consecutiveSuccesses: 0,
+    last_error: errorMessage(error),
   });
 }
 
@@ -106,9 +199,13 @@ function requiresApproval(): boolean {
 
 module.exports = {
   STATE_FILE,
+  AUTONOMY_PROMOTION_THRESHOLDS,
   loadState,
   saveState,
   setLevel,
+  recordVerifiedSuccess,
+  recordMergeSuccess,
+  recordMergeFailure,
   recordError,
   requiresApproval,
 };
