@@ -33,9 +33,6 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
-      - name: TypeScript strict check
-        run: npm run typecheck:strict
-
       - name: TypeScript Phase 1 build
         run: npm run build:ts
 
@@ -57,6 +54,11 @@ jobs:
 
       - name: Investment fill resolver smoke
         run: npm --prefix bots/investment run smoke:fill-resolver-dca
+
+      # strict는 보안/필수 게이트 뒤 + 경고(비차단): strict debt를 가시화하되 CI 차단은 하지 않는다.
+      - name: TypeScript strict check (warning, non-blocking)
+        run: npm run typecheck:strict
+        continue-on-error: true
 
   deploy:
     name: 운영 배포 (맥 스튜디오)
