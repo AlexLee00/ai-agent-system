@@ -107,6 +107,9 @@ async function main(): Promise<void> {
     assert(Math.abs(sum - 1) < 0.000_01);
     assert(LLM_RECOMMENDER_WEIGHT_CATEGORIES.every((category) => weights[category] >= 0.08 - 0.000_01));
     assert(LLM_RECOMMENDER_WEIGHT_CATEGORIES.every((category) => weights[category] <= 0.48 + 0.000_01));
+    assert.equal(weights.length, 0.181833);
+    assert.equal(weights.budget, 0.090833);
+    assert.equal(weights.accuracy, 0.181833);
     return `sum=${sum.toFixed(6)} max=${Math.max(...Object.values(weights)).toFixed(6)}`;
   });
 

@@ -1,4 +1,10 @@
 import * as pgPool from '../../../packages/core/lib/pg-pool';
+import {
+  applyDelta,
+  clamp,
+  n,
+  round,
+} from '../../_shared/common-weight-learning.ts';
 
 export const LLM_RECOMMENDER_WEIGHT_CATEGORIES = ['length', 'budget', 'failure', 'urgency', 'task_type', 'accuracy'] as const;
 export type LlmRecommenderWeightCategory = typeof LLM_RECOMMENDER_WEIGHT_CATEGORIES[number];
@@ -62,19 +68,6 @@ export const DEFAULT_LLM_RECOMMENDER_WEIGHT_POLICY: LlmRecommenderWeights = Obje
   LLM_RECOMMENDER_WEIGHT_CATEGORIES.map((category) => [category, DEFAULT_WEIGHT]),
 ) as LlmRecommenderWeights);
 
-function n(value: unknown, fallback = 0): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function clamp(value: unknown, min = 0, max = 1, fallback = 0): number {
-  return Math.max(min, Math.min(max, n(value, fallback)));
-}
-
-function round(value: unknown, digits = 6): number {
-  return Number(n(value, 0).toFixed(digits));
-}
-
 function normalizeToken(value: unknown, fallback = 'unknown'): string {
   const normalized = String(value ?? '').trim();
   return normalized || fallback;
@@ -121,20 +114,20 @@ export function normalizeLlmRecommenderWeights(
   return Object.fromEntries(LLM_RECOMMENDER_WEIGHT_CATEGORIES.map((category) => [category, round(bounded[category])])) as LlmRecommenderWeights;
 }
 
-function capDelta(delta: unknown, maxDelta: number): number {
-  return clamp(delta, -Math.abs(maxDelta), Math.abs(maxDelta), 0);
-}
-
 export function applyLlmRecommenderWeightDeltas(
   baseWeights: LlmRecommenderWeights,
   deltas: Partial<Record<LlmRecommenderWeightCategory, unknown>>,
   maxDelta = DEFAULT_MAX_DELTA,
 ): LlmRecommenderWeights {
-  const next = Object.fromEntries(LLM_RECOMMENDER_WEIGHT_CATEGORIES.map((category) => [
-    category,
-    baseWeights[category] + capDelta(deltas[category] ?? 0, maxDelta),
-  ])) as LlmRecommenderWeights;
-  return normalizeLlmRecommenderWeights(next, baseWeights);
+  return applyDelta(
+    baseWeights,
+    deltas,
+    [...LLM_RECOMMENDER_WEIGHT_CATEGORIES],
+    maxDelta,
+    (weights, _components, _floor, _ceiling, fallback) => normalizeLlmRecommenderWeights(weights, fallback as LlmRecommenderWeights),
+    FLOOR_WEIGHT,
+    CEILING_WEIGHT,
+  ) as LlmRecommenderWeights;
 }
 
 function percentile(values: number[], ratio: number): number {

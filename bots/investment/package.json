@@ -91,7 +91,7 @@
     "smoke:fill-resolver-dca": "../../node_modules/.bin/tsx scripts/binance-fill-resolver-dca-dry-run-smoke.ts",
     "smoke:luna-fill-resolve-guard": "node scripts/luna-fill-resolve-guard-smoke.ts --json",
     "smoke:luna-fill-resolve-backfill": "node scripts/luna-fill-resolve-backfill-smoke.ts --json",
-    "smoke:luna-autonomous-weight-feedback": "node scripts/luna-autonomous-weight-feedback-smoke.ts --json",
+    "smoke:luna-autonomous-weight-feedback": "../../node_modules/.bin/tsx scripts/luna-autonomous-weight-feedback-smoke.ts --json",
     "smoke:luna-candidate-bottleneck-diagnostics": "node scripts/luna-candidate-bottleneck-diagnostics-smoke.ts --json",
     "smoke:luna-candidate-quality-governance": "node scripts/luna-candidate-quality-governance-smoke.ts --json",
     "smoke:luna-candidate-quality-remediation": "node scripts/luna-candidate-quality-remediation-smoke.ts --json",

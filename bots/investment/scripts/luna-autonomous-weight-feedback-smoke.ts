@@ -53,6 +53,21 @@ const staticFallback = buildLunaAutonomousWeightFeedback({ metrics: {} });
 assert.deepEqual(staticFallback.weights, DEFAULT_LUNA_WEIGHT_POLICY);
 assert.equal(staticFallback.status, 'insufficient_feedback_static_weights');
 
+const deterministicWeakCommunity = buildLunaAutonomousWeightFeedback({
+  now: '2026-06-29T00:00:00.000Z',
+  metrics: {
+    candidate: { activeCount: 10 },
+    backtest: { sample: 10, freshRate: 0.8, healthyRate: 0.65, passRate: 0.45 },
+    predictive: { sample: 10, coverageAvg: 0.82, passRate: 0.36, blockRate: 0.5 },
+    community: { sample: 12, readyRatio: 0.4, blockedRatio: 0.25, downweightedRatio: 0.5, avgQuality: 0.22 },
+  },
+});
+assert.equal(deterministicWeakCommunity.generatedAt, '2026-06-29T00:00:00.000Z');
+assert.equal(deterministicWeakCommunity.shadowOnly, true);
+assert.equal(deterministicWeakCommunity.liveMutation, false);
+assert.equal(deterministicWeakCommunity.weights.community, 0.156145);
+assert.equal(deterministicWeakCommunity.deltas.community, -0.0439);
+
 const now = new Date('2026-05-14T00:00:00.000Z').toISOString();
 const vector = buildLunaWeightVector({
   asOf: now,
@@ -75,6 +90,11 @@ const payload = {
   weakCommunity: {
     community: weakCommunity.weights.community,
     reasons: weakCommunity.reasons,
+  },
+  deterministicWeakCommunity: {
+    generatedAt: deterministicWeakCommunity.generatedAt,
+    community: deterministicWeakCommunity.weights.community,
+    delta: deterministicWeakCommunity.deltas.community,
   },
   strongCommunity: {
     community: strongCommunity.weights.community,

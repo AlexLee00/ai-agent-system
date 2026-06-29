@@ -9,6 +9,12 @@
 
 import * as db from './db/core.ts';
 import { fetchLunaCommunitySourceQualityAudit } from './luna-community-source-quality.ts';
+import {
+  buildWeightFeedback,
+  clamp,
+  n,
+  round,
+} from '../../_shared/common-weight-learning.ts';
 
 export const DEFAULT_LUNA_WEIGHT_POLICY = Object.freeze({
   candidate: 0.20,
@@ -20,19 +26,6 @@ export const DEFAULT_LUNA_WEIGHT_POLICY = Object.freeze({
 const COMPONENTS = ['candidate', 'backtest', 'predictive', 'community'];
 const FLOOR_WEIGHT = 0.08;
 const CEILING_WEIGHT = 0.48;
-
-function n(value: any, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function clamp(value: any, min = 0, max = 1, fallback = 0) {
-  return Math.max(min, Math.min(max, n(value, fallback)));
-}
-
-function round(value: any, digits = 4) {
-  return Number(n(value, 0).toFixed(digits));
-}
 
 function normalizeMarket(value: any = null) {
   const raw = String(value || '').trim().toLowerCase();
@@ -55,29 +48,18 @@ export function normalizeLunaWeightPolicy(weights: any = {}, fallback: any = DEF
   return normalized;
 }
 
-function normalizeBoundedWeights(weights: any = {}, baseWeights: any = DEFAULT_LUNA_WEIGHT_POLICY) {
+function normalizeBoundedWeights(
+  weights: any = {},
+  components: string[] = COMPONENTS,
+  floor = FLOOR_WEIGHT,
+  ceiling = CEILING_WEIGHT,
+  baseWeights: any = DEFAULT_LUNA_WEIGHT_POLICY,
+) {
   const bounded = {};
-  for (const key of COMPONENTS) {
-    bounded[key] = clamp(weights?.[key], FLOOR_WEIGHT, CEILING_WEIGHT, baseWeights[key]);
+  for (const key of components) {
+    bounded[key] = clamp(weights?.[key], floor, ceiling, baseWeights[key]);
   }
   return normalizeLunaWeightPolicy(bounded, baseWeights);
-}
-
-function capDelta(delta: number, maxDelta: number) {
-  return clamp(delta, -Math.abs(maxDelta), Math.abs(maxDelta), 0);
-}
-
-function applyDelta(base: any, deltas: any, maxDelta: number) {
-  const next = {};
-  for (const key of COMPONENTS) next[key] = base[key] + capDelta(deltas[key] || 0, maxDelta);
-  return normalizeBoundedWeights(next, base);
-}
-
-function metricHasSamples(metrics: any = {}) {
-  return n(metrics?.candidate?.activeCount, 0) > 0
-    || n(metrics?.backtest?.sample, 0) > 0
-    || n(metrics?.predictive?.sample, 0) > 0
-    || n(metrics?.community?.sample, 0) > 0;
 }
 
 function deriveCommunityMetrics(report: any = {}) {
@@ -98,30 +80,10 @@ function deriveCommunityMetrics(report: any = {}) {
   };
 }
 
-export function buildLunaAutonomousWeightFeedback(input: any = {}) {
-  const baseWeights = normalizeLunaWeightPolicy(input.baseWeights || DEFAULT_LUNA_WEIGHT_POLICY);
-  const metrics = input.metrics || {};
-  const maxDelta = clamp(input.maxDelta, 0.01, 0.12, 0.07);
-  const mode = input.mode || 'shadow';
+function buildLunaAutonomousWeightDeltas(metrics: any = {}, context: any = {}) {
+  const maxDelta = context.maxDelta;
   const reasons = [];
   const deltas = { candidate: 0, backtest: 0, predictive: 0, community: 0 };
-
-  if (!metricHasSamples(metrics)) {
-    return {
-      ok: true,
-      status: 'insufficient_feedback_static_weights',
-      source: 'luna_autonomous_feedback',
-      mode,
-      shadowOnly: true,
-      liveMutation: false,
-      generatedAt: new Date().toISOString(),
-      baseWeights,
-      weights: baseWeights,
-      deltas: { candidate: 0, backtest: 0, predictive: 0, community: 0 },
-      metrics,
-      reasons: ['insufficient_feedback_samples'],
-    };
-  }
 
   const backtestSample = n(metrics?.backtest?.sample, 0);
   const backtestFreshRate = clamp(metrics?.backtest?.freshRate, 0, 1, 0);
@@ -187,26 +149,39 @@ export function buildLunaAutonomousWeightFeedback(input: any = {}) {
     reasons.push('community_source_quality_strong_boost');
   }
 
-  const weights = applyDelta(baseWeights, deltas, maxDelta);
-  const appliedDeltas = {};
-  for (const key of COMPONENTS) appliedDeltas[key] = round(weights[key] - baseWeights[key]);
-  if (reasons.length === 0) reasons.push('feedback_within_control_band');
+  return { deltas, reasons };
+}
 
-  return {
-    ok: true,
+export function buildLunaAutonomousWeightFeedback(input: any = {}) {
+  const baseWeights = normalizeLunaWeightPolicy(input.baseWeights || DEFAULT_LUNA_WEIGHT_POLICY);
+  const metrics = input.metrics || {};
+  const maxDelta = clamp(input.maxDelta, 0.01, 0.12, 0.07);
+  const mode = input.mode || 'shadow';
+  const generatedAt = input.generatedAt || (input.now ? new Date(input.now).toISOString() : new Date().toISOString());
+
+  return buildWeightFeedback({
+    baseWeights,
+    components: COMPONENTS,
+    metrics,
+    sampleKeys: [
+      'candidate.activeCount',
+      'backtest.sample',
+      'predictive.sample',
+      'community.sample',
+    ],
+    normalize: normalizeBoundedWeights,
+    adjustPolicy: buildLunaAutonomousWeightDeltas,
+    maxDelta,
+    floor: FLOOR_WEIGHT,
+    ceiling: CEILING_WEIGHT,
     status: 'shadow_weight_feedback_ready',
+    insufficientStatus: 'insufficient_feedback_static_weights',
     source: 'luna_autonomous_feedback',
     mode,
-    shadowOnly: true,
-    liveMutation: false,
-    generatedAt: new Date().toISOString(),
-    baseWeights,
-    weights,
-    deltas: appliedDeltas,
-    maxDelta,
-    metrics,
-    reasons,
-  };
+    generatedAt,
+    insufficientReasons: ['insufficient_feedback_samples'],
+    deltaDigits: 4,
+  });
 }
 
 async function safeGet(sql: string, params: any[] = [], fallback: any = {}, errors: any[] = [], source = 'query') {
