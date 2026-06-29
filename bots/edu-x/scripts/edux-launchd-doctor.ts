@@ -5,7 +5,7 @@
 /**
  * edux-launchd-doctor.ts
  *
- * Audits and optionally bootstraps/reloads the seven Edu-X LaunchAgents.
+ * Audits and optionally bootstraps/reloads the eight Edu-X LaunchAgents.
  * Dry-run apply only loads missing agents after every plist proves safe
  * dry-run flags. Live apply requires an explicit live confirm token and a
  * non-fixture PASS promotion gate report before reloading ai.edux.* agents.
@@ -25,7 +25,7 @@ const PROMOTION_GATE_REPORT = path.join(OUTPUT_DIR, 'edux-promotion-gate.json');
 const DRY_RUN_CONFIRM_TOKEN = 'edux-launchd-dry-run';
 const LIVE_CONFIRM_TOKEN = 'edux-launchd-live';
 const LABEL_PREFIX = 'ai.edux.';
-const EXPECTED_COUNT = 7;
+const EXPECTED_COUNT = 8;
 const PROMOTION_GATE_REQUIRED_CHECKS = 7;
 const PROMOTION_GATE_MAX_AGE_MS = 24 * 3600 * 1000;
 
@@ -126,6 +126,50 @@ function detectRuntimeMode(envVars = {}) {
   return 'invalid';
 }
 
+function detectDigestRuntimeMode(envVars = {}) {
+  const value = String(envVars.EDUX_DIGEST_DRY_RUN || '').trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(value)) return 'dry-run';
+  if (['false', '0', 'no', 'off'].includes(value)) return 'live';
+  return 'invalid';
+}
+
+function programArgDetails(programArgs = []) {
+  let envFilePath = '';
+  let runtimePath = '';
+  for (let i = 1; i < programArgs.length; i += 1) {
+    const item = String(programArgs[i] || '');
+    if (item.startsWith('--env-file=')) {
+      envFilePath = item.slice('--env-file='.length);
+      continue;
+    }
+    if (item === '--env-file') {
+      envFilePath = String(programArgs[i + 1] || '');
+      i += 1;
+      continue;
+    }
+    if (!item.startsWith('-') && /\.(?:c?js|mjs|tsx?|mts|cts)$/.test(item)) {
+      runtimePath = item;
+    }
+  }
+  return {
+    nodePath: String(programArgs[0] || ''),
+    envFilePath,
+    runtimePath,
+  };
+}
+
+function isDailyDigestJob(label = '', programArgs = []) {
+  const details = programArgDetails(programArgs);
+  return label === 'ai.edux.daily-digest'
+    || /runtime-edux-daily-digest\.ts$/.test(details.runtimePath);
+}
+
+function runtimeModeForPlist(label = '', programArgs = [], envVars = {}) {
+  return isDailyDigestJob(label, programArgs)
+    ? detectDigestRuntimeMode(envVars)
+    : detectRuntimeMode(envVars);
+}
+
 function loadPromotionGateReport() {
   try {
     if (!fs.existsSync(PROMOTION_GATE_REPORT)) return null;
@@ -177,7 +221,8 @@ function validatePlist(filePath, plist, requestedMode = 'auto') {
   const envVars = plist.EnvironmentVariables || {};
   const programArgs = Array.isArray(plist.ProgramArguments) ? plist.ProgramArguments : [];
   const calendar = plist.StartCalendarInterval || {};
-  const mode = detectRuntimeMode(envVars);
+  const programArgsInfo = programArgDetails(programArgs);
+  const mode = runtimeModeForPlist(label, programArgs, envVars);
   const expectedMode = normalizeMode(requestedMode);
   const imageAttachmentsEnabled = String(envVars.EDUX_IMAGE_ATTACHMENTS_ENABLED || 'false') === 'true';
 
@@ -190,8 +235,10 @@ function validatePlist(filePath, plist, requestedMode = 'auto') {
   if (plist.KeepAlive !== false) issues.push('KeepAlive_not_false');
   if (!Number.isInteger(calendar.Hour) || !Number.isInteger(calendar.Minute)) issues.push('StartCalendarInterval_missing');
   if (programArgs.length < 2) issues.push('ProgramArguments_incomplete');
-  if (programArgs[0] && !fs.existsSync(programArgs[0])) issues.push(`node_missing:${programArgs[0]}`);
-  if (programArgs[1] && !fs.existsSync(programArgs[1])) issues.push(`runtime_missing:${programArgs[1]}`);
+  if (programArgsInfo.nodePath && !fs.existsSync(programArgsInfo.nodePath)) issues.push(`node_missing:${programArgsInfo.nodePath}`);
+  if (programArgsInfo.envFilePath && !fs.existsSync(programArgsInfo.envFilePath)) issues.push(`env_file_missing:${programArgsInfo.envFilePath}`);
+  if (!programArgsInfo.runtimePath) issues.push('runtime_missing');
+  else if (!fs.existsSync(programArgsInfo.runtimePath)) issues.push(`runtime_missing:${programArgsInfo.runtimePath}`);
 
   return issues;
 }
@@ -299,8 +346,10 @@ function buildReport(args) {
       dryRun: plist.EnvironmentVariables?.EDUX_DRY_RUN || null,
       liveApproved: plist.EnvironmentVariables?.EDUX_LIVE_PUBLISH_APPROVED || null,
       promotionGatePassed: plist.EnvironmentVariables?.EDUX_PROMOTION_GATE_PASSED || null,
+      digestDryRun: plist.EnvironmentVariables?.EDUX_DIGEST_DRY_RUN || null,
+      digestTelegramTarget: plist.EnvironmentVariables?.EDUX_DIGEST_TELEGRAM_TARGET || null,
       imageAttachmentsEnabled: plist.EnvironmentVariables?.EDUX_IMAGE_ATTACHMENTS_ENABLED || null,
-      runtimeMode: detectRuntimeMode(plist.EnvironmentVariables || {}),
+      runtimeMode: runtimeModeForPlist(label, plist.ProgramArguments || [], plist.EnvironmentVariables || {}),
       validationIssues: issues,
       copy,
       bootstrap,
