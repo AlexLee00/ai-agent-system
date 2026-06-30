@@ -958,6 +958,7 @@ async function searchNaverBookByQuery(query) {
 async function searchGoogleBookByQuery(query) {
   const apiKey = await resolveGoogleBooksApiKey();
   if (!query) return null;
+  if (!apiKey) return null;
   const keyPart = apiKey ? `&key=${apiKey}` : '';
 
   try {
@@ -1021,6 +1022,7 @@ async function searchNaverBookCandidates(input = {}, catalogBooks = DEFAULT_CANO
 
 async function searchGoogleBookCandidates(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS) {
   const apiKey = await resolveGoogleBooksApiKey();
+  if (!apiKey) return [];
   const keyPart = apiKey ? `&key=${apiKey}` : '';
   const results = [];
 
@@ -1052,25 +1054,32 @@ async function searchGoogleBookCandidates(input = {}, catalogBooks = DEFAULT_CAN
   return uniqueByBookSignature(results);
 }
 
+function mapOpenLibraryDocs(docs = []) {
+  return docs.slice(0, 5).map((doc) => ({
+    title: doc.title || '',
+    author: (doc.author_name || []).join(', '),
+    isbn: (doc.isbn || []).find((value) => String(value || '').replace(/[^0-9]/g, '').length === 13) || '',
+    publisher: (doc.publisher || [])[0] || '',
+    pubDate: String(doc.first_publish_year || ''),
+    description: '',
+    coverUrl: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null,
+    source: 'openlibrary',
+    editionCount: doc.edition_count || 0,
+  }));
+}
+
 async function searchOpenLibrary(query) {
   if (!query) return [];
 
   try {
-    const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&language=kor`;
-    const { status, body } = await httpsGet(url, {}, { timeoutMs: 15000 });
-    if (status !== 200 || !body?.docs?.length) return [];
+    const korUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5&language=kor`;
+    const kor = await httpsGet(korUrl, {}, { timeoutMs: 15000 });
+    if (kor.status === 200 && kor.body?.docs?.length) return mapOpenLibraryDocs(kor.body.docs);
 
-    return body.docs.slice(0, 5).map((doc) => ({
-      title: doc.title || '',
-      author: (doc.author_name || []).join(', '),
-      isbn: (doc.isbn || []).find((value) => String(value || '').replace(/[^0-9]/g, '').length === 13) || '',
-      publisher: (doc.publisher || [])[0] || '',
-      pubDate: String(doc.first_publish_year || ''),
-      description: '',
-      coverUrl: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null,
-      source: 'openlibrary',
-      editionCount: doc.edition_count || 0,
-    }));
+    const globalUrl = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5`;
+    const global = await httpsGet(globalUrl, {}, { timeoutMs: 15000 });
+    if (global.status !== 200 || !global.body?.docs?.length) return [];
+    return mapOpenLibraryDocs(global.body.docs);
   } catch (error) {
     console.warn('[도서스킬] Open Library 검색 실패:', error.message);
     return [];
@@ -1166,7 +1175,7 @@ async function searchKakaoBook(query) {
   if (!apiKey || !query) return [];
 
   try {
-    const url = `https://dapi.kakao.com/v2/search/book?query=${encodeURIComponent(query)}&size=5&sort=accuracy`;
+    const url = `https://dapi.kakao.com/v3/search/book?query=${encodeURIComponent(query)}&size=5&sort=accuracy`;
     const { status, body } = await httpsGet(url, {
       Authorization: `KakaoAK ${apiKey}`,
     });
@@ -1333,22 +1342,14 @@ async function searchCanonicalVerifiedBooks() {
   return verified;
 }
 
-async function resolveBookForReview(input = {}) {
-  const topicLabel = input.topic ? ` (${input.topic})` : '';
-  console.log(`[도서스킬] 도서 후보 검색 시작...${topicLabel}`);
-  const reviewedHistory = await loadReviewedBookHistory();
-  const canonicalCandidates = await searchCanonicalVerifiedBooks();
-  const candidates = canonicalCandidates.length
-    ? canonicalCandidates
-    : await searchBookCandidates(input);
+async function selectVerifiedBookCandidate(candidates = [], reviewedHistory = []) {
   if (!candidates.length) return null;
-
+  const catalogBooks = await loadCatalogBooks();
   for (const primary of candidates.slice(0, 8)) {
     const verificationCandidates = await buildVerificationCandidates(primary);
     const resolvedPrimary = verificationCandidates.find((candidate) =>
       candidate && candidate.isbn && candidate.source !== 'catalog'
     ) || verificationCandidates.find((candidate) => candidate && candidate.isbn) || primary;
-    const catalogBooks = await loadCatalogBooks();
     const canonicalMatch = findCanonicalMatch(resolvedPrimary, catalogBooks) || findCanonicalMatch(primary, catalogBooks);
     if (canonicalMatch) {
       verificationCandidates.push({
@@ -1394,6 +1395,21 @@ async function resolveBookForReview(input = {}) {
   }
 
   return null;
+}
+
+async function resolveBookForReview(input = {}) {
+  const topicLabel = input.topic ? ` (${input.topic})` : '';
+  console.log(`[도서스킬] 도서 후보 검색 시작...${topicLabel}`);
+  const reviewedHistory = await loadReviewedBookHistory();
+  const canonicalCandidates = await searchCanonicalVerifiedBooks();
+  const canonicalBook = await selectVerifiedBookCandidate(canonicalCandidates, reviewedHistory);
+  if (canonicalBook) return canonicalBook;
+  if (canonicalCandidates.length) {
+    console.warn('[도서스킬] canonical 후보가 모두 중복/검증 실패 → 외부 검색 후보로 재시도');
+  }
+
+  const searchCandidates = await searchBookCandidates(input);
+  return selectVerifiedBookCandidate(searchCandidates, reviewedHistory);
 }
 
 module.exports = {

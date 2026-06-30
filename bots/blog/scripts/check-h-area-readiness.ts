@@ -29,11 +29,27 @@ async function checkRedditSecrets(): Promise<CheckResult> {
   return fail('Reddit API 키', `❌ 누락: ${missing}\n     → secrets-store.json blog 섹션에 추가하세요`);
 }
 
-async function checkAladinSecret(): Promise<CheckResult> {
+async function checkAladinSource(): Promise<CheckResult> {
   const secrets = await fetchHubSecrets('blog').catch(() => null);
   const hasKey = !!(secrets?.ALADIN_TTB_KEY || process.env.ALADIN_TTB_KEY);
   if (hasKey) return pass('Aladin TTB 키', '✅ ALADIN_TTB_KEY 설정됨');
-  return fail('Aladin TTB 키', '❌ 누락: ALADIN_TTB_KEY\n     → secrets-store.json blog 섹션에 추가하세요\n     → 가입: https://www.aladin.co.kr/ttb/wblog_manage.aspx');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const res = await fetch('https://www.aladin.co.kr/shop/common/wbest.aspx?BranchType=1&CID=0&BestType=Bestseller', {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 ai-agent-blog/1.0' },
+    });
+    const html = await res.text();
+    if (res.ok && html.includes('ss_book_box')) {
+      return pass('Aladin 소스', '✅ ALADIN_TTB_KEY 없음 — 웹 베스트셀러 fallback 사용 가능');
+    }
+    return fail('Aladin 소스', `❌ 키 없음 + 웹 fallback 비정상(status=${res.status})`);
+  } catch (e: any) {
+    return fail('Aladin 소스', `❌ 키 없음 + 웹 fallback 실패: ${e.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function checkPrawInstalled(): Promise<CheckResult> {
@@ -115,7 +131,7 @@ async function main() {
 
   const checks = await Promise.all([
     checkRedditSecrets(),
-    checkAladinSecret(),
+    checkAladinSource(),
     checkPrawInstalled(),
     checkTrendTopicsTable(),
     checkBookReviewQueue(),
@@ -140,7 +156,7 @@ async function main() {
     console.log('\n📌 다음 단계:');
     console.log('  1. secrets-store.json blog 섹션에 API 키 추가');
     console.log('  2. Reddit: https://www.reddit.com/prefs/apps → create app (script 타입)');
-    console.log('  3. Aladin: https://www.aladin.co.kr/ttb/wblog_manage.aspx → TTB 키 발급');
+    console.log('  3. Aladin: 웹 fallback 가능, API 안정성이 필요하면 https://www.aladin.co.kr/ttb/wblog_manage.aspx → TTB 키 발급');
     console.log('  4. 키 추가 후 수동 테스트: npx tsx bots/blog/scripts/run-trend-collector.ts');
     console.log('  5. 베스트셀러 테스트: npx tsx bots/blog/scripts/run-bestseller-sync.ts --dry-run');
   }
