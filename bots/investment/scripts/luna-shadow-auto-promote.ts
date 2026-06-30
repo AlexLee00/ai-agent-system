@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // @ts-nocheck
 /**
- * scripts/luna-shadow-auto-promote.ts — Shadow 3일 자동 검증 알림
+ * scripts/luna-shadow-auto-promote.ts — 하이브리드 승급 게이트 검증 알림
  *
  * 체크:
- *   - luna_v2_shadow_comparison 최근 72시간(3일) 레코드 수 ≥ 50건
- *   - avg_similarity ≥ 0.85
+ *   - runtime-luna-hybrid-promotion-gate (Phase 1~10) 호출 (read-only)
+ *   - status === 'luna_hybrid_promotion_gate_ready_for_master_review'
+ *   - manualPromotionReviewCandidate === true
  *
- * 조건 충족 시: Telegram general 채널에 마스터 승인 요청 메시지 전송
- * 자동 LIVE flip 하지 않음 — 마스터 최종 결정 필수
+ * 조건 충족 시: Telegram general 채널에 마스터 검토 요청 메시지 전송
+ * 자동 LIVE flip 하지 않음 — gate는 read-only, 마스터 최종 결정 필수
  *
  * 실행:
  *   node scripts/luna-shadow-auto-promote.ts
@@ -21,41 +22,32 @@ const require = createRequire(import.meta.url);
 const path = require('path');
 const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
 
-const { pool, query } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const { closeAll } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 const telegramSender   = require(path.join(PROJECT_ROOT, 'packages/core/lib/telegram-sender'));
 const { today }        = require(path.join(PROJECT_ROOT, 'packages/core/lib/kst'));
 
+import { runLunaHybridPromotionGate } from './runtime-luna-hybrid-promotion-gate.ts';
+
 const DRY_RUN = process.argv.includes('--dry-run');
 
-const REQUIRED_RUNS    = 50;
-const REQUIRED_SIM     = 0.85;
-const WINDOW_HOURS     = 72;
+const EVIDENCE_HOURS = 168; // hybrid-gate 증거 lookback (7일)
+const READY_STATUS   = 'luna_hybrid_promotion_gate_ready_for_master_review';
 
-// ─── DB 집계 ──────────────────────────────────────────────────────
+async function closePools() {
+  if (typeof closeAll === 'function') await closeAll().catch(() => {});
+}
 
-async function fetchShadowStats(): Promise<{
-  runs: number;
-  avg_similarity: number;
-  sufficient: boolean;
-}> {
+// ─── Hybrid Gate 집계 ─────────────────────────────────────────────
+
+async function fetchHybridGateReport() {
   try {
-    const { rows } = await query(
-      `SELECT
-         COUNT(*)                          AS runs,
-         COALESCE(AVG(similarity_score), 0) AS avg_similarity
-       FROM luna_v2_shadow_comparison
-       WHERE created_at > NOW() - INTERVAL '${WINDOW_HOURS} hours'`
-    );
-    const runs          = parseInt(rows[0]?.runs ?? 0, 10);
-    const avg_similarity = parseFloat(rows[0]?.avg_similarity ?? 0);
-    return {
-      runs,
-      avg_similarity,
-      sufficient: runs >= REQUIRED_RUNS && avg_similarity >= REQUIRED_SIM,
-    };
+    const report = await runLunaHybridPromotionGate({
+      apply: false, json: true, strict: false, noDb: false, hours: EVIDENCE_HOURS,
+    });
+    return report as any;
   } catch (e) {
-    console.error('[shadow-auto-promote] DB 조회 실패:', e?.message ?? e);
-    return { runs: 0, avg_similarity: 0, sufficient: false };
+    console.error('[shadow-auto-promote] hybrid-gate 호출 실패:', e?.message ?? e);
+    return null;
   }
 }
 
@@ -63,32 +55,33 @@ async function fetchShadowStats(): Promise<{
 
 async function main() {
   console.log(`[luna-shadow-auto-promote] 시작 (dry-run=${DRY_RUN})`);
-  console.log(`  조건: runs ≥ ${REQUIRED_RUNS}, avg_similarity ≥ ${REQUIRED_SIM} (최근 ${WINDOW_HOURS}h)`);
+  console.log(`  조건: status=${READY_STATUS} & manualPromotionReviewCandidate=true (증거 ${EVIDENCE_HOURS}h)`);
 
-  const stats = await fetchShadowStats();
-  console.log(`  실제: runs=${stats.runs}, avg_similarity=${stats.avg_similarity.toFixed(4)}, 충족=${stats.sufficient}`);
+  const report = await fetchHybridGateReport();
+  const status = report?.status ?? 'unknown';
+  const s = report?.summary ?? {};
+  const reviewReady = report?.manualPromotionReviewCandidate === true && status === READY_STATUS;
+  console.log(`  실제: status=${status}, reviewCandidate=${report?.manualPromotionReviewCandidate === true}, contractFailures=${s.contractFailures}, securityFailures=${s.securityFailures}, evidenceWarnings=${s.evidenceWarnings}`);
 
-  if (!stats.sufficient) {
-    const remaining = Math.max(0, REQUIRED_RUNS - stats.runs);
-    console.log(`[shadow-auto-promote] 조건 미충족 — 대기 중 (추가 필요: ${remaining}건)`);
-    await pool.end();
+  if (!reviewReady) {
+    console.log('[shadow-auto-promote] 조건 미충족 — 대기 중');
+    await closePools();
     return;
   }
 
-  const message = `🚀 [루나] Shadow 3일 검증 완료 — 마스터 승인 필요
+  const message = `🚀 [루나] 하이브리드 승급 게이트 — 마스터 검토 요청
 
-Shadow 통계 (최근 72h):
-  실행 수: ${stats.runs}건 (≥${REQUIRED_RUNS} ✅)
-  유사도:  ${stats.avg_similarity.toFixed(4)} (≥${REQUIRED_SIM} ✅)
-  기준일:  ${today()}
+Phase 1~10 Shadow 검증 통과:
+  계약 실패: ${s.contractFailures ?? '?'} / ${s.contractChecks ?? '?'} (0 기대 ✅)
+  보안 실패: ${s.securityFailures ?? '?'} / ${s.securityChecks ?? '?'} (0 기대 ✅)
+  증거 경고: ${s.evidenceWarnings ?? '?'} (0 기대 ✅)
+  상태:      ${status}
+  기준일:    ${today()}
 
-▶ 국내주식 LIVE 전환 승인 시:
-  launchctl setenv LUNA_LIVE_DOMESTIC true
+▶ 마스터 상세 리뷰:
+  cd bots/investment && node scripts/runtime-luna-hybrid-promotion-review.ts --json --strict
 
-▶ 미국주식 LIVE 전환 승인 시:
-  launchctl setenv LUNA_LIVE_OVERSEAS true
-
-⚠️ 자동 전환 없음 — 마스터 직접 명령 필요`;
+⚠️ 자동 LIVE 전환 없음 — gate는 read-only, 마스터 승인 runbook 필요`;
 
   console.log(`\n${message}`);
 
@@ -102,7 +95,7 @@ Shadow 통계 (최근 72h):
   }
 
   console.log('[shadow-auto-promote] 완료');
-  await pool.end();
+  await closePools();
 }
 
 main().catch((e) => {
