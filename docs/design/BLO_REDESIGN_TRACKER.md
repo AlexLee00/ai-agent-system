@@ -441,3 +441,39 @@ F4 유지. 다음 세션: CODEX-B5a 프롬프트(제거+통합) 작성 -> 이후
 - 실제 다음 일반 포스트에서 3,000자대 본문, B3 warning/autoRewrite 빈도, 크랭크 점수 변화를 자연 검증.
 
 이력: 2026-06-13 B3 구현·검증 (코덱스)
+
+## Z. B3 효과 자연 검증 + 도서리뷰 장애 발견·복구 (2026-06-30, 메티)
+
+### B3 효과 (blog.crank_scores, 6-13 적용 전후)
+- 일반 글(general) overall: B3이전 50.9 → B3이후 54.2 (+3.3). 단 도서리뷰 포함 값.
+- ★ 도서리뷰 제외 순수 일반(기타일반): overall 50.7 → 54.2 (+3.5), content 93.6 → 97.6 (+4.0) — B3 효과 더 명확.
+- 강의(lecture, B3 비대상 8000자 유지): 62.3 → 62.4 (무변화) — 대조군, B3 효과의 인과 신뢰도 보강.
+- 표본: B3이후 일반 14건(작음). 정밀 검증은 데이터 축적 후 재측정 권고.
+- general category 7종: 개발기획25·최신IT트렌드24·홈페이지23·도서리뷰19·IT정보19·성장19·자기계발17. 도서리뷰도 general에 포함됨.
+
+### 도서리뷰 장애 발견·복구 (B3 검증 중 별건 발견)
+- ★ B3이후 도서리뷰 crank_scores 0건 → 도서리뷰 장애가 데이터로 확인.
+- 근본 원인: Kakao 책 API URL v2 → 404(deprecated, v3로 이전됨). packages/core/lib/skills/blog/book-review-book.ts L1169. + OpenLibrary language=kor로 한국어 0. + 정보나루 timeout/승인.
+- 인과 사슬: 도서 소스 3개(Kakao·OpenLibrary·정보나루) 전부 검색 0 → 도서 후보 없음 → 도서리뷰 스킵(다음 일반 카테고리 전환) → 발행 중단.
+- 복구(마스터 직접): Kakao v2→v3 + OpenLibrary language=kor 수정. 메티 검증: Kakao 5건·정보나루 20건·OpenLibrary 영문 5건 정상.
+
+### 다음 재측정 기준점
+- 순수 일반 글 overall 54.2 (2026-06-30 기준). 도서리뷰 복구 후 도서리뷰 점수 재누적 예정.
+- B3 효과 확정은 B3이후 일반 글 30건+ 축적 시 재측정.
+
+이력: 2026-06-30 B3 효과 검증 + 도서리뷰 복구 (메티)
+
+## AA. B4 댓글 유형 분류기 — SPEC·구현·메티 검증 합격 (2026-06-30, 메티/코덱스)
+
+- **SPEC(메티)**: SPEC_BLOG_B4_COMMENT_CLASSIFIER (project-docs 905c9e7). 신규 lib/comment-classifier.ts: classifyComment() 6유형(질문/감사/공감/스팸/제안/기타), hub LLM + 결정론 폴백. generateReply(L1840) 통합·스팸 skip. 범위: 분류기 모듈만(commenter 6,434줄 분할·B4-2 성장루프 후속 분리).
+- **구현(코덱스)**: comment-classifier.ts(142 신규)·commenter.ts(75)·commenter-run-telemetry.ts(20)·run-commenter.ts(4)·blo-b4-comment-classifier-smoke.ts(138 신규)·package.json(1). 커밋 95eac370f, origin 푸시.
+- **메티 검증(합격)**:
+  - 정적: SPEC 충실 — COMMENT_TYPES 6유형·COMMENT_TYPE_STRATEGIES(Object.freeze)·classifySpamByRule(URL 0.95/반복 0.9)·classifyByFallback·classifyComment(LLM confidence≥0.5 채택, 실패 시 폴백 advisory 무중단)·selectorKey 'blog.commenter.classify'·_testOnly 노출.
+  - 통합: commenter.ts L1842 분류(options.classification 재사용=이중 LLM 호출 방지)·L1843+L5768 스팸 skip 이중 방어·L1850/1871 전략 주입·telemetry(commenter-run-telemetry L42 + run-commenter cycle 집계).
+  - 하드: node --check 2파일 통과 / smoke:blo-b4-comment-classifier 통과(ok:true, 6케이스, spamSkipped+processSpamSkipped, replyClassification 질문, hubCalls 3).
+  - git 일치: 커밋 95eac370f(6파일 +371/-9) = 메티 검증 working tree, diff 0.
+  - 품질: SPEC 요구 충족 + 이중분류 방지·스팸 skip 이중 등 SPEC보다 견고. actionable 이슈 0.
+- **남은 마스터**: ★ Hub selector blog.commenter.classify 등록(미등록도 catch 폴백 무중단, smoke hubCalls 3 확인).
+- **다음 후보**: commenter 6,434줄 분할 리팩터 · B4-2 성장루프(댓글 초안 vs 실제 + 반응 회수 학습) · B5/B6.
+
+이력: 2026-06-30 B4 댓글 유형 분류기 SPEC·구현·검증 합격 (메티/코덱스)
