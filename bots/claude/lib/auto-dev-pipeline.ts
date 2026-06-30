@@ -2027,7 +2027,7 @@ function resolveChangedFilesForReview({
 }
 
 async function runReviewCycle(options = {}, executionContext = null, beforeStatus = []) {
-  const reviewer = require('../src/reviewer');
+  const reviewer = require('../src/reviewer.ts');
   const guardian = require('../src/guardian');
   const testMode = Boolean(options.test);
   const reviewScope = resolveChangedFilesForReview({

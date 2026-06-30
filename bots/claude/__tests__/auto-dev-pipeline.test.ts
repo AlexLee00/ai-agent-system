@@ -117,7 +117,7 @@ function makeMocks(tmpRoot, overrides = {}) {
         writeClaudeHeartbeat: async () => ({ ok: true }),
         errorHeartbeatMeta: (error, meta = {}) => ({ ...meta, message: error?.message || String(error) }),
       },
-      '../src/reviewer': {
+      '../src/reviewer.ts': {
         runReview: async () => ({ summary: { pass: true }, message: 'review ok' }),
       },
       '../src/guardian': {
@@ -983,7 +983,7 @@ async function test_auto_dev_failed_outcome_masks_secrets() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_SECRET_FAIL.md', '# Fail\nx');
   const { mocks, autoDevOutcomes } = makeMocks(tmpRoot, {
-    '../src/reviewer': {
+    '../src/reviewer.ts': {
       runReview: async () => ({
         summary: { pass: false },
         message: 'review failed api_key=fixture-secret-value password=plain-secret',
@@ -1314,7 +1314,7 @@ async function test_review_failure_triggers_single_revise_loop() {
   let codexCalls = 0;
 
   const { mocks } = makeMocks(tmpRoot, {
-    '../src/reviewer': {
+    '../src/reviewer.ts': {
       runReview: async () => {
         reviewCalls += 1;
         return reviewCalls === 1
@@ -1512,7 +1512,7 @@ async function test_completed_state_clears_active_error() {
   const doc = makeDoc(tmpRoot, 'CODEX_CLEAR_ERROR.md', '# A\nx');
   let call = 0;
   const { mocks } = makeMocks(tmpRoot, {
-    '../src/reviewer': {
+    '../src/reviewer.ts': {
       runReview: async () => {
         call += 1;
         if (call === 1) return { summary: { pass: false }, message: 'review failed once' };
@@ -1999,7 +1999,7 @@ async function test_review_cycle_uses_execution_context() {
   let guardianOptions = null;
 
   const { mocks } = makeMocks(tmpRoot, {
-    '../src/reviewer': {
+    '../src/reviewer.ts': {
       runReview: async (opts) => {
         reviewerOptions = opts;
         return { summary: { pass: true }, message: 'review ok' };

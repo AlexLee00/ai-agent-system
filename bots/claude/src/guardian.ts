@@ -27,7 +27,7 @@ const { execSync } = require('child_process');
 const skills        = require('../../../packages/core/lib/skills');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env           = require('../../../packages/core/lib/env');
-const reviewer      = require('./reviewer');
+const reviewer      = require('./reviewer.ts');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const ROOT         = env.PROJECT_ROOT;

@@ -5,7 +5,7 @@
 
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
-const reviewer = require('./reviewer');
+const reviewer = require('./reviewer.ts');
 const guardian = require('./guardian');
 const builder = require('./builder');
 

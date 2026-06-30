@@ -292,7 +292,7 @@ async function runReviewCore(options = {}) {
   }
 
   const files    = await getChangedFiles({ ...options, rootDir });
-  const jsFiles  = files.filter(file => /\.(m?js|cjs|ts|tsx)$/i.test(file));
+  const jsFiles  = files.filter(file => /\.(m?js|cjs|ts|tsx)$/i.test(file) && fs.existsSync(file));
   const tsIssues = jsFiles.length > 0
     ? runTypeScriptCheck(jsFiles, { rootDir })
     : [];

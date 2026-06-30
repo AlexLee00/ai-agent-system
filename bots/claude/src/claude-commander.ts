@@ -810,7 +810,7 @@ async function handleCodexReject(args) {
  */
 async function handleRunReview(args) {
   try {
-    const reviewer = require('./reviewer');
+    const reviewer = require('./reviewer.ts');
     const result = await reviewer.runReview({ force: true, test: parseBool(args.test, false) });
     return { ok: true, message: result.message, data: { pass: result.summary?.pass } };
   } catch (e) {
@@ -850,7 +850,7 @@ async function handleRunBuilder(args) {
 async function handleRunFullQuality(args) {
   const results = { reviewer: null, guardian: null, builder: null, overall: 'pass' };
   try {
-    const reviewer = require('./reviewer');
+    const reviewer = require('./reviewer.ts');
     const guardian = require('./guardian');
     const builder  = require('./builder');
 

@@ -2173,7 +2173,7 @@ function firstResultCandidate(results) {
 function resolveVerifierModules(context) {
   return {
     builder: context.builderModule || require('../src/builder'),
-    reviewer: context.reviewerModule || require('../src/reviewer'),
+    reviewer: context.reviewerModule || require('../src/reviewer.ts'),
   };
 }
 
