@@ -22,7 +22,7 @@ function readLock() {
   }
 }
 
-function isPidAlive(pid: number): boolean {
+function isPidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -78,6 +78,7 @@ async function main() {
       replied: Number(result?.replied || 0),
       failed: Number(result?.failed || 0),
       skippedCount: Number(result?.skipped || 0),
+      commentClassifications: result?.commentClassifications || {},
     });
     if (result?.ok !== true && result?.skipped === true) {
       console.log(`[커멘터] 스킵: ${result.reason}`);
@@ -104,6 +105,7 @@ main()
       replied: 0,
       failed: 1,
       skippedCount: 0,
+      commentClassifications: {},
     });
     console.error('[커멘터] 실패:', error?.stack || error?.message || String(error));
     process.exit(1);

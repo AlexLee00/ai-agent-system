@@ -15,6 +15,7 @@ const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url
 const { getBlogCommenterConfig, getBlogNeighborCommenterConfig } = require('./runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
+const { COMMENT_TYPE_STRATEGIES, classifyComment } = require('./comment-classifier.ts');
 const {
   appendIncidentLine,
   canonicalizeBlogCriticalAlert,
@@ -1837,11 +1838,21 @@ async function getPostSummary(postUrl, { testMode = false } = {}) {
   });
 }
 
-async function generateReply(postTitle, postSummary, commentText) {
+async function generateReply(postTitle, postSummary, commentText, options = {}) {
+  const classification = options.classification || await classifyComment(commentText, { postTitle });
+  if (classification?.type === '스팸') {
+    return {
+      skipped: true,
+      reason: 'comment_classified_spam',
+      classification,
+    };
+  }
+  const commentTypeStrategy = COMMENT_TYPE_STRATEGIES[classification?.type] || COMMENT_TYPE_STRATEGIES.기타;
   const learningHints = await fetchEngagementLearningHints('reply');
   const systemPrompt = [
     '너는 IT 블로그 운영자다.',
     '네이버 블로그 댓글에 사람이 직접 쓴 것처럼 자연스럽고 따뜻한 한국어 답글을 JSON으로만 작성한다.',
+    commentTypeStrategy,
     '답글은 보통 2문장, 길어도 3문장으로 쓴다.',
     '첫 문장에서는 댓글의 핵심 포인트를 정확히 짚어 공감하거나 반응한다.',
     '댓글에 질문이 있으면 둘째 문장 안에서 바로 답한다.',
@@ -1857,6 +1868,7 @@ async function generateReply(postTitle, postSummary, commentText) {
     `[글 제목] ${postTitle || ''}`,
     `[글 요약] ${postSummary || ''}`,
     `[댓글] ${commentText || ''}`,
+    `[댓글 유형] ${classification?.type || '기타'} (confidence=${Number(classification?.confidence || 0).toFixed(2)}, method=${classification?.method || 'fallback'})`,
     learningHints,
     '',
     '규칙:',
@@ -1935,6 +1947,7 @@ async function generateReply(postTitle, postSummary, commentText) {
   return {
     reply,
     tone,
+    classification,
   };
 }
 
@@ -5751,13 +5764,29 @@ async function processComment(comment, options = {}) {
 
   const sanitizedComment = sanitizeCommentTextForReply(comment.comment_text);
   const effectiveCommentText = sanitizedComment.text || normalizeText(comment.comment_text || '');
+  const classification = await classifyComment(effectiveCommentText, { postTitle: comment.post_title });
+  if (classification?.type === '스팸') {
+    await updateCommentStatus(comment.id, 'skipped', {
+      errorMessage: 'comment_classified_spam',
+      meta: {
+        phase: 'classification',
+        classification,
+      },
+    });
+    return {
+      ok: false,
+      skipped: true,
+      reason: 'comment_classified_spam',
+      classification,
+    };
+  }
   const simpleReply = buildSimpleAcknowledgementReply(effectiveCommentText, inboundAssessment.reason);
   const postInfo = simpleReply ? { title: '', summary: '' } : await getPostSummary(comment.post_url, options);
   let generated;
   try {
     generated = simpleReply
-      ? { reply: simpleReply, tone: 'acknowledgement' }
-      : await generateReply(postInfo.title || comment.post_title, postInfo.summary, effectiveCommentText);
+      ? { reply: simpleReply, tone: 'acknowledgement', classification }
+      : await generateReply(postInfo.title || comment.post_title, postInfo.summary, effectiveCommentText, { classification });
   } catch (error) {
     if (!simpleReply && isReplyGenerationTransientError(error)) {
       const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, effectiveCommentText, inboundAssessment.reason);
@@ -5770,11 +5799,28 @@ async function processComment(comment, options = {}) {
       throw error;
     }
   }
+  if (generated?.skipped) {
+    await updateCommentStatus(comment.id, 'skipped', {
+      errorMessage: generated.reason || 'comment_classified_skip',
+      meta: {
+        phase: 'classification',
+        classification: generated.classification || null,
+      },
+    });
+    return {
+      ok: false,
+      skipped: true,
+      reason: generated.reason || 'comment_classified_skip',
+      classification: generated.classification || null,
+    };
+  }
   let validation = validateReply(generated.reply, effectiveCommentText, undefined, { assessmentReason: inboundAssessment.reason });
 
   if (!validation.ok && !simpleReply) {
     try {
-      generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, effectiveCommentText);
+      generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, effectiveCommentText, {
+        classification: generated.classification,
+      });
     } catch (error) {
       if (isReplyGenerationTransientError(error)) {
         const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, effectiveCommentText, inboundAssessment.reason);
@@ -5819,16 +5865,25 @@ async function processComment(comment, options = {}) {
   }
   await updateCommentStatus(comment.id, 'replied', {
     replyText: generated.reply,
-    meta: { tone: generated.tone || null },
+    meta: {
+      tone: generated.tone || null,
+      commentType: generated.classification?.type || null,
+      classification: generated.classification || null,
+    },
   });
   await recordCommentAction('reply', {
     targetBlog: await resolveBlogId(),
     targetPostUrl: comment.post_url,
     commentText: generated.reply,
     success: true,
-    meta: { commentId: comment.id, commenterName: comment.commenter_name || null },
+    meta: {
+      commentId: comment.id,
+      commenterName: comment.commenter_name || null,
+      commentType: generated.classification?.type || null,
+      classification: generated.classification || null,
+    },
   });
-  return { ok: true, reply: generated.reply };
+  return { ok: true, reply: generated.reply, classification: generated.classification || null };
 }
 
 function _checkOpsAndWindow(config, { testMode = false, enabledForceEnv = '' } = {}) {
@@ -5917,10 +5972,15 @@ async function runCommentReply({ testMode = false } = {}) {
   let replied = 0;
   let failed = 0;
   let skipped = 0;
+  const commentClassifications = {};
 
   for (const comment of targets) {
     try {
       const result = await processCommentWithTimeout(comment, { testMode });
+      const commentType = String(result?.classification?.type || '').trim();
+      if (commentType) {
+        commentClassifications[commentType] = Number(commentClassifications[commentType] || 0) + 1;
+      }
       if (result.ok) replied += 1;
       else if (result.skipped) skipped += 1;
     } catch (error) {
@@ -6018,6 +6078,7 @@ async function runCommentReply({ testMode = false } = {}) {
     unmetReplyTarget,
     externalFill,
     testMode,
+    commentClassifications,
   };
 }
 
