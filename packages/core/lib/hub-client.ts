@@ -772,7 +772,16 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
 }
 
 function resolveHubLlmMaxTimeoutMs(request: HubLlmCallRequest): number {
+  if (isArcherRequest(request)) return 300_000;
   return isLongRunningBlogWriterRequest(request) ? 600_000 : 180_000;
+}
+
+function isArcherRequest(request: HubLlmCallRequest): boolean {
+  const callerTeam = String(request?.callerTeam || '').trim().toLowerCase();
+  const selectorKey = String(request?.selectorKey || '').trim().toLowerCase();
+  const agent = String(request?.agent || '').trim().toLowerCase();
+  return callerTeam === 'claude'
+    && (agent === 'archer' || selectorKey === 'claude.archer.tech_analysis');
 }
 
 function isLongRunningBlogWriterRequest(request: HubLlmCallRequest): boolean {

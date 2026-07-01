@@ -850,7 +850,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       ],
     },
     archer: {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 240_000 },
       fallbacks: [
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.3 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.2 },
@@ -1196,7 +1196,7 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     archer: {
-      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 240_000 },
       fallbacks: [
         { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.3 },
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.2 },

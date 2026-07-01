@@ -4,6 +4,7 @@ const VALID_ABSTRACT_MODELS = ['anthropic_haiku', 'anthropic_sonnet', 'anthropic
 const VALID_PRIORITY = ['low', 'normal', 'high', 'critical'];
 const DEFAULT_MAX_TIMEOUT_MS = 180_000;
 const BLOG_WRITER_MAX_TIMEOUT_MS = 600_000;
+const ARCHER_MAX_TIMEOUT_MS = 300_000;
 
 const LlmCallBodySchema = z.object({
   prompt: z.string().min(1),
@@ -66,7 +67,16 @@ function parseLlmCallPayload(body: unknown): LlmCallParseResult {
 }
 
 function resolveMaxTimeoutMs(data: Record<string, any>): number {
+  if (isArcherRequest(data)) return ARCHER_MAX_TIMEOUT_MS;
   return isLongRunningBlogWriterRequest(data) ? BLOG_WRITER_MAX_TIMEOUT_MS : DEFAULT_MAX_TIMEOUT_MS;
+}
+
+function isArcherRequest(data: Record<string, any>): boolean {
+  const callerTeam = String(data?.callerTeam || '').trim().toLowerCase();
+  const selectorKey = String(data?.selectorKey || '').trim().toLowerCase();
+  const agent = String(data?.agent || '').trim().toLowerCase();
+  return callerTeam === 'claude'
+    && (agent === 'archer' || selectorKey === 'claude.archer.tech_analysis');
 }
 
 function isLongRunningBlogWriterRequest(data: Record<string, any>): boolean {
@@ -83,8 +93,10 @@ function isLongRunningBlogWriterRequest(data: Record<string, any>): boolean {
 module.exports = {
   VALID_ABSTRACT_MODELS,
   VALID_PRIORITY,
+  ARCHER_MAX_TIMEOUT_MS,
   BLOG_WRITER_MAX_TIMEOUT_MS,
   DEFAULT_MAX_TIMEOUT_MS,
+  isArcherRequest,
   isLongRunningBlogWriterRequest,
   parseLlmCallPayload,
 };

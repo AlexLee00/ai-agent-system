@@ -1905,7 +1905,8 @@
           "maxTokens": 4096,
           "model": "gpt-5.4",
           "provider": "openai-oauth",
-          "temperature": 0.2
+          "temperature": 0.2,
+          "timeoutMs": 240000
         },
         {
           "maxTokens": 4096,
@@ -1941,7 +1942,8 @@
         "maxTokens": 4096,
         "model": "gpt-5.4",
         "provider": "openai-oauth",
-        "temperature": 0.2
+        "temperature": 0.2,
+        "timeoutMs": 240000
       },
       "runtimePurpose": "backtest_embedding",
       "taskType": "backtest_embedding",
@@ -1954,7 +1956,8 @@
           "maxTokens": 4096,
           "model": "gpt-5.4",
           "provider": "openai-oauth",
-          "temperature": 0.2
+          "temperature": 0.2,
+          "timeoutMs": 240000
         },
         {
           "maxTokens": 4096,
@@ -1990,7 +1993,8 @@
         "maxTokens": 4096,
         "model": "gpt-5.4",
         "provider": "openai-oauth",
-        "temperature": 0.2
+        "temperature": 0.2,
+        "timeoutMs": 240000
       },
       "runtimePurpose": "backtest_judgment",
       "taskType": "backtest_judgment",
@@ -2003,7 +2007,8 @@
           "maxTokens": 4096,
           "model": "gpt-5.4",
           "provider": "openai-oauth",
-          "temperature": 0.2
+          "temperature": 0.2,
+          "timeoutMs": 240000
         },
         {
           "maxTokens": 4096,
@@ -2039,7 +2044,8 @@
         "maxTokens": 4096,
         "model": "gpt-5.4",
         "provider": "openai-oauth",
-        "temperature": 0.2
+        "temperature": 0.2,
+        "timeoutMs": 240000
       },
       "runtimePurpose": null,
       "taskType": null,

@@ -1107,6 +1107,7 @@ function _shouldSuppressFallbackExhaustionAlarm(req: LlmRequest, selectorChain: 
   const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
   const callerTeam = String(req?.callerTeam || '').trim().toLowerCase();
   const agent = String(req?.agent || '').trim().toLowerCase();
+  if (callerTeam === 'claude' && (agent === 'archer' || selectorKey === 'claude.archer.tech_analysis')) return true;
   if (selectorKey === 'elsa.chat.answer' || (callerTeam === 'elsa' && ['chat', 'rag', 'vision', 'voice'].includes(agent))) return true;
   if (selectorKey === 'hub.alarm.classifier' || selectorKey.startsWith('hub.alarm.interpreter.')) return true;
   if (selectorKey.startsWith('hub.') && (selectorKey.endsWith('.smoke') || selectorKey.includes('.smoke.'))) return true;

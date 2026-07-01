@@ -176,7 +176,7 @@ module.exports = {
     githubTimeout:  8000,
     npmTimeout:     5000,
     webTimeout:     10000,
-    openaiTimeout:  60000,
+    openaiTimeout:  240000,
     auditTimeout:   30000,
   },
 

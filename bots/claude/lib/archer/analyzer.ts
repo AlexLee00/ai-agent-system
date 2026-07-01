@@ -422,7 +422,7 @@ async function analyze(data, cache = {}) {
       systemPrompt: SYSTEM_PROMPT,
       prompt:       contextText,
       maxTokens:    config.OPENAI?.maxTokens || 4096,
-      timeoutMs:    config.TIMEOUTS?.openaiTimeout || 60000,
+      timeoutMs:    config.THRESHOLDS?.openaiTimeout || config.TIMEOUTS?.openaiTimeout || 60000,
       maxBudgetUsd: 0.08,
     });
     const attempt = Number(fallbackCount || 0) + 1;

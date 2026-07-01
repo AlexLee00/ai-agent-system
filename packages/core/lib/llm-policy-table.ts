@@ -1234,7 +1234,8 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
         "provider": "openai-oauth",
         "model": "@OPENAI_PERF_MODEL",
         "maxTokens": 4096,
-        "temperature": 0.2
+        "temperature": 0.2,
+        "timeoutMs": 240000
       },
       {
         "provider": "groq",
@@ -1262,7 +1263,8 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
         "provider": "openai-oauth",
         "model": "@OPENAI_PERF_MODEL",
         "maxTokens": 4096,
-        "temperature": 0.2
+        "temperature": 0.2,
+        "timeoutMs": 240000
       },
       {
         "provider": "groq",
@@ -1289,7 +1291,8 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
         "provider": "openai-oauth",
         "model": "@OPENAI_PERF_MODEL",
         "maxTokens": 4096,
-        "temperature": 0.2
+        "temperature": 0.2,
+        "timeoutMs": 240000
       },
       {
         "provider": "groq",

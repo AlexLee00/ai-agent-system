@@ -162,6 +162,16 @@ const PROFILES: Record<string, TokenBudgetProfile> = {
     perAttemptTimeoutMs: 60_000,
     fallbackAttempts: 3,
   },
+  archer_batch_analysis: {
+    name: 'archer_batch_analysis',
+    maxInputTokens: 64_000,
+    maxOutputTokens: 4_096,
+    maxTotalTokens: 72_000,
+    maxCostUsd: 0.12,
+    timeoutMs: 240_000,
+    perAttemptTimeoutMs: 240_000,
+    fallbackAttempts: 3,
+  },
   code_refactor: {
     name: 'code_refactor',
     maxInputTokens: 64_000,
@@ -217,6 +227,7 @@ export function inferTokenBudgetProfile(request: TokenBudgetRequest = {}): strin
   if (team === 'blog' || taskType.includes('blog')) return 'blog_section_generation';
   if (selectorKey.startsWith('hub.alarm.') || taskType.includes('alarm_interpreter') || taskType.includes('alarm')) return 'hub_alarm_interpreter';
   if (selectorKey.includes('oauth') || agent.includes('oauth') || taskType.includes('oauth')) return 'oauth_monitor';
+  if (team === 'claude' && (agent === 'archer' || selectorKey === 'claude.archer.tech_analysis')) return 'archer_batch_analysis';
   if (team === 'darwin' || selectorKey.startsWith('darwin.') || taskType.includes('research')) return 'darwin_research';
   if (selectorKey.includes('refactorer') || taskType.includes('code_refactor') || agent.includes('refactorer')) return 'code_refactor';
   if (taskType.includes('triage') || taskType.includes('classif')) return 'fast_triage';
