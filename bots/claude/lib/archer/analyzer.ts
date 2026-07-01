@@ -21,6 +21,56 @@ function normalizeDateLabel(value) {
   return Number.isNaN(asDate.getTime()) ? String(value).slice(0, 10) : asDate.toISOString().slice(0, 10);
 }
 
+function mapProviderGroup(provider) {
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'openai' || value.startsWith('openai-')) return 'openai';
+  if (value === 'anthropic' || value.startsWith('anthropic-') || value.startsWith('claude')) return 'anthropic';
+  if (value === 'groq' || value.startsWith('groq-')) return 'groq';
+  if (value === 'local' || value.startsWith('local-')) return 'local';
+  return 'other';
+}
+
+function buildDailyBillingTrendLines(dailyRows) {
+  if (!dailyRows || dailyRows.length === 0) return null;
+
+  // 날짜별 일간 사용 규모 맵: provider column is execution route, grouped for report readability.
+  const byDate = {};
+  for (const r of dailyRows) {
+    const d = normalizeDateLabel(r.day);
+    const group = mapProviderGroup(r.provider);
+    if (!byDate[d]) byDate[d] = {};
+    if (!byDate[d][group]) byDate[d][group] = { est: 0, real: 0, calls: 0 };
+    byDate[d][group].est += parseFloat(r.cost_est || 0);
+    byDate[d][group].real += parseFloat(r.cost_real || 0);
+    byDate[d][group].calls += parseInt(r.calls || 0, 10) || 0;
+  }
+
+  const lines = [
+    '## 💰 LLM 비용 트렌드',
+    '',
+    '| 날짜 | OpenAI | Anthropic | Groq | Local | 기타 | 추정 합계 | 실지출 | 호출 |',
+    '|------|--------|-----------|------|-------|------|-----------|--------|------|',
+  ];
+
+  const recentDates = Object.keys(byDate).sort().slice(-7).reverse();
+  for (const d of recentDates) {
+    const row = byDate[d];
+    const openai = row.openai?.est || 0;
+    const anthropic = row.anthropic?.est || 0;
+    const groq = row.groq?.est || 0;
+    const local = row.local?.est || 0;
+    const other = row.other?.est || 0;
+    const totalEst = openai + anthropic + groq + local + other;
+    const totalReal = Object.values(row).reduce((sum, item) => sum + (item.real || 0), 0);
+    const calls = Object.values(row).reduce((sum, item) => sum + (item.calls || 0), 0);
+    lines.push(`| ${d} | $${openai.toFixed(3)} | $${anthropic.toFixed(3)} | $${groq.toFixed(3)} | $${local.toFixed(3)} | $${other.toFixed(3)} | $${totalEst.toFixed(3)} | $${totalReal.toFixed(3)} | ${calls} |`);
+  }
+  lines.push('');
+  lines.push('> 추정비용 = 토큰×표준단가(사용 규모). 실지출 = 실제 청구액(oauth 구독 경로는 $0일 수 있음).');
+  lines.push('');
+  return lines;
+}
+
 function priorityRank(priority = 'medium') {
   return { critical: 4, high: 3, medium: 2, low: 1 }[priority] || 0;
 }
@@ -466,7 +516,7 @@ async function analyze(data, cache = {}) {
 // ── 빌링 트렌드 섹션 ─────────────────────────────────────────────
 
 /**
- * billing_snapshots에서 최근 7일 일별 비용 + 월간 소진율 조회
+ * llm_routing_log에서 최근 7일 일별 사용 규모 + billing_snapshots 월간 소진율 조회
  * @returns {string} 마크다운 섹션 문자열
  */
 async function buildBillingTrendSection() {
@@ -474,49 +524,27 @@ async function buildBillingTrendSection() {
   const lines  = [];
 
   try {
-    // 최근 7일 표는 실제 사용 로그(llm_usage_log)의 일별 합계를 사용한다.
+    // 최근 7일 표는 Hub routing log의 일별 합계를 사용한다.
+    // cost_usd는 OAuth 구독 경로에서 0일 수 있어 estimated_cost_usd를 사용 규모로 병기한다.
     // billing_snapshots 는 외부 billing API의 "월 누적 snapshot"이므로
     // 최근 일별 비용 표 source 로 쓰면 변화가 없을 때 전부 0으로 보일 수 있다.
-    const dailyRows = await pgPool.query('reservation', `
-      SELECT created_at::date AS day,
-             CASE
-               WHEN model ILIKE 'claude%' OR model ILIKE '%claude%' THEN 'anthropic'
-               WHEN model ILIKE 'gpt-%'   OR model ILIKE 'openai/%'  THEN 'openai'
-               WHEN model ILIKE 'gemini%' OR model ILIKE '%gemini%'  THEN 'google'
-               WHEN model ILIKE '%groq%'  OR model ILIKE '%llama%'   THEN 'groq'
-               ELSE 'other'
-             END AS provider,
-             SUM(cost_usd)::float AS total_cost
-      FROM llm_usage_log
-      WHERE created_at::date >= CURRENT_DATE - 7
-      GROUP BY day, provider
+    const dailyRows = await pgPool.query('public', `
+      SELECT (created_at::date)::text AS day,
+             provider,
+             SUM(COALESCE(cost_usd, 0))::float AS cost_real,
+             SUM(COALESCE(estimated_cost_usd, 0))::float AS cost_est,
+             COUNT(*)::int AS calls
+      FROM llm_routing_log
+      WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+      GROUP BY created_at::date, provider
       ORDER BY day ASC, provider
     `);
 
     if (!dailyRows || dailyRows.length === 0) {
-      return '## 💰 LLM 비용 트렌드\n\n> 데이터 없음 (llm_usage_log 비어있음)\n';
+      return '## 💰 LLM 비용 트렌드\n\n> 데이터 없음 (llm_routing_log 비어있음)\n';
     }
 
-    // 날짜별 실제 일간 비용 맵
-    const byDate = {};
-    for (const r of dailyRows) {
-      const d = normalizeDateLabel(r.day);
-      if (!byDate[d]) byDate[d] = {};
-      byDate[d][r.provider] = parseFloat(r.total_cost || 0);
-    }
-
-    lines.push('## 💰 LLM 비용 트렌드');
-    lines.push('');
-    lines.push('| 날짜 | Anthropic | OpenAI | 일합계 |');
-    lines.push('|------|-----------|--------|--------|');
-
-    const recentDates = Object.keys(byDate).sort().slice(-7).reverse();
-    for (const d of recentDates) {
-      const ant = byDate[d].anthropic || 0;
-      const oai = byDate[d].openai    || 0;
-      lines.push(`| ${d} | $${ant.toFixed(3)} | $${oai.toFixed(3)} | $${(ant + oai).toFixed(3)} |`);
-    }
-    lines.push('');
+    lines.push(...buildDailyBillingTrendLines(dailyRows));
 
     // 월간 소진율 + 예상 월말
     // 누적 snapshot 구조이므로 provider별 "최신" 값만 합산해야 한다.
@@ -561,4 +589,6 @@ module.exports = {
   normalizeAnalysis,
   buildContext,
   buildBillingTrendSection,
+  buildDailyBillingTrendLines,
+  mapProviderGroup,
 };
