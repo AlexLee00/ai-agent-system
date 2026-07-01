@@ -646,6 +646,7 @@ async function resolveBuyExecutionMode({
   globalPaperMode,
   capitalPolicy,
   agentPlan = null,
+  exchange = 'binance',
 }) {
   return riskAndCapitalGates.resolveBuyExecutionMode({
     persistFailure,
@@ -657,19 +658,20 @@ async function resolveBuyExecutionMode({
     globalPaperMode,
     capitalPolicy,
     agentPlan,
+    exchange,
   });
 }
 
-function getNormalToValidationFallbackPolicy() {
-  return riskAndCapitalGates.getNormalToValidationFallbackPolicy();
+function getNormalToValidationFallbackPolicy(exchange = 'binance') {
+  return riskAndCapitalGates.getNormalToValidationFallbackPolicy(exchange);
 }
 
-function getMaxPositionsOverflowPolicy(signalTradeMode = 'normal') {
-  return riskAndCapitalGates.getMaxPositionsOverflowPolicy(signalTradeMode);
+function getMaxPositionsOverflowPolicy(exchange = 'binance', signalTradeMode = undefined) {
+  return riskAndCapitalGates.getMaxPositionsOverflowPolicy(exchange, signalTradeMode);
 }
 
-function getValidationLiveReentrySofteningPolicy() {
-  return riskAndCapitalGates.getValidationLiveReentrySofteningPolicy();
+function getValidationLiveReentrySofteningPolicy(exchange = 'binance') {
+  return riskAndCapitalGates.getValidationLiveReentrySofteningPolicy(exchange);
 }
 
 function classifyValidationFallbackGuard(reason = '') {
@@ -682,6 +684,7 @@ async function maybeFallbackToValidationLane({
   amountUsdt,
   reason,
   signalTradeMode,
+  exchange = 'binance',
 }) {
   return riskAndCapitalGates.maybeFallbackToValidationLane({
     symbol,
@@ -689,6 +692,7 @@ async function maybeFallbackToValidationLane({
     amountUsdt,
     reason,
     signalTradeMode,
+    exchange,
   });
 }
 
@@ -701,6 +705,7 @@ async function resolveBuyOrderAmount({
   effectivePaperMode,
   reducedAmountMultiplier = 1,
   softGuards = [],
+  exchange = 'binance',
 }) {
   return riskAndCapitalGates.resolveBuyOrderAmount({
     persistFailure,
@@ -711,6 +716,7 @@ async function resolveBuyOrderAmount({
     effectivePaperMode,
     reducedAmountMultiplier,
     softGuards,
+    exchange,
   });
 }
 

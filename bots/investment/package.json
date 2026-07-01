@@ -13,6 +13,7 @@
     "sweeper:dust-sync": "node team/sweeper.ts --sync-manual-dust",
     "sweeper:smoke": "node scripts/sweeper-dust-sync-smoke.ts",
     "smoke:crypto-holding-monitor": "node --check scripts/crypto-holding-monitor.ts && node --check scripts/crypto-holding-monitor-guard-event-smoke.ts && node scripts/crypto-holding-monitor-guard-event-smoke.ts",
+    "smoke:hephaestos-risk-and-capital-gates": "node scripts/hephaestos-risk-and-capital-gates-smoke.ts --json",
     "aria": "node team/aria.ts --symbol=BTC/USDT",
     "oracle": "node team/oracle.ts --symbol=BTC/USDT",
     "hermes": "node team/hermes.ts --symbol=BTC/USDT",

@@ -11,6 +11,8 @@ import { rejectExecution } from './execution-failure.ts';
 import { buildGuardTelemetryMeta } from './execution-guards.ts';
 import { buildHephaestosExecutionAgentPlan } from './execution-agent-plan.ts';
 
+const KNOWN_EXCHANGE_KEYS = new Set(['binance', 'kis', 'kis_overseas', 'toss']);
+
 export function createRiskAndCapitalGatePolicy(context = {}) {
   const {
     getInvestmentExecutionRuntimeConfig,
@@ -29,19 +31,44 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     return String(reason || '').includes('잔고 부족') || String(reason || '').includes('현금 보유 부족');
   }
 
-  function getNormalToValidationFallbackPolicy() {
-    const execution = getInvestmentExecutionRuntimeConfig();
-    return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.normal?.validationFallback || {};
+  function normalizeExchange(exchange = 'binance') {
+    return String(exchange || 'binance').trim().toLowerCase() || 'binance';
   }
 
-  function getMaxPositionsOverflowPolicy(signalTradeMode = 'normal') {
-    const execution = getInvestmentExecutionRuntimeConfig();
-    return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.[signalTradeMode || 'normal']?.maxPositions || {};
+  function exchangeEnvSuffix(exchange = 'binance') {
+    return normalizeExchange(exchange).replace(/[^a-z0-9]+/g, '_').toUpperCase();
   }
 
-  function getValidationLiveReentrySofteningPolicy() {
+  function resolveExchangeAndTradeMode(exchangeOrTradeMode = 'binance', maybeTradeMode = undefined) {
+    if (maybeTradeMode !== undefined) {
+      return {
+        exchange: normalizeExchange(exchangeOrTradeMode),
+        signalTradeMode: maybeTradeMode || 'normal',
+      };
+    }
+    const value = String(exchangeOrTradeMode || '').trim().toLowerCase();
+    if (!KNOWN_EXCHANGE_KEYS.has(value)) {
+      return { exchange: 'binance', signalTradeMode: value || 'normal' };
+    }
+    return { exchange: normalizeExchange(exchangeOrTradeMode), signalTradeMode: 'normal' };
+  }
+
+  function getExchangeSofteningConfig(exchange = 'binance') {
     const execution = getInvestmentExecutionRuntimeConfig();
-    return execution?.cryptoGuardSoftening?.byExchange?.binance?.tradeModes?.validation?.livePositionReentry || {};
+    return execution?.cryptoGuardSoftening?.byExchange?.[normalizeExchange(exchange)] || {};
+  }
+
+  function getNormalToValidationFallbackPolicy(exchange = 'binance') {
+    return getExchangeSofteningConfig(exchange)?.tradeModes?.normal?.validationFallback || {};
+  }
+
+  function getMaxPositionsOverflowPolicy(exchange = 'binance', signalTradeMode = undefined) {
+    const resolved = resolveExchangeAndTradeMode(exchange, signalTradeMode);
+    return getExchangeSofteningConfig(resolved.exchange)?.tradeModes?.[resolved.signalTradeMode || 'normal']?.maxPositions || {};
+  }
+
+  function getValidationLiveReentrySofteningPolicy(exchange = 'binance') {
+    return getExchangeSofteningConfig(exchange)?.tradeModes?.validation?.livePositionReentry || {};
   }
 
   function classifyValidationFallbackGuard(reason = '') {
@@ -52,14 +79,15 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     return null;
   }
 
-  function getLiveFireMaxTradeUsdt() {
-    const value = Number(process.env.LUNA_MAX_TRADE_USDT || 0);
+  function getLiveFireMaxTradeUsdt(exchange = 'binance') {
+    const exchangeKey = `LUNA_MAX_TRADE_USDT_${exchangeEnvSuffix(exchange)}`;
+    const value = Number(process.env[exchangeKey] || process.env.LUNA_MAX_TRADE_USDT || 0);
     return Number.isFinite(value) && value > 0 ? value : 0;
   }
 
-  function capLiveFireTradeAmount(amount, effectivePaperMode = false) {
+  function capLiveFireTradeAmount(amount, effectivePaperMode = false, exchange = 'binance') {
     const numeric = Number(amount || 0);
-    const cap = getLiveFireMaxTradeUsdt();
+    const cap = getLiveFireMaxTradeUsdt(exchange);
     if (effectivePaperMode || !(cap > 0) || !(numeric > cap)) {
       return { amount: numeric, capApplied: false, cap };
     }
@@ -72,9 +100,11 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     amountUsdt,
     reason,
     signalTradeMode,
+    exchange = 'binance',
     executionAgentPlan = null,
   }) {
-    const policy = getNormalToValidationFallbackPolicy();
+    const normalizedExchange = normalizeExchange(exchange);
+    const policy = getNormalToValidationFallbackPolicy(normalizedExchange);
     if (policy?.enabled === false) return null;
     if (executionAgentPlan?.normalToValidationFallbackEnabled === false) return null;
 
@@ -82,14 +112,14 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     const allowedGuardKinds = Array.isArray(policy?.allowedGuardKinds) ? policy.allowedGuardKinds : [];
     if (!guardKind || !allowedGuardKinds.includes(guardKind)) return null;
 
-    const existingLive = await findAnyLivePosition(symbol, 'binance').catch(() => null);
+    const existingLive = await findAnyLivePosition(symbol, normalizedExchange).catch(() => null);
     if (existingLive) return null;
 
     const reductionMultiplier = Number(policy?.reductionMultiplier || 0);
     if (!(reductionMultiplier > 0 && reductionMultiplier < 1)) return null;
 
     const reducedAmount = Number(amountUsdt || 0) * reductionMultiplier;
-    const validationCheck = await preTradeCheck(symbol, 'BUY', reducedAmount, 'binance', 'validation');
+    const validationCheck = await preTradeCheck(symbol, 'BUY', reducedAmount, normalizedExchange, 'validation');
     if (!validationCheck.allowed) return null;
 
     return {
@@ -112,16 +142,18 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     globalPaperMode,
     capitalPolicy,
     agentPlan = null,
+    exchange = 'binance',
   }) {
-    const normalFallbackPolicy = getNormalToValidationFallbackPolicy();
+    const normalizedExchange = normalizeExchange(exchange);
+    const normalFallbackPolicy = getNormalToValidationFallbackPolicy(normalizedExchange);
     const executionAgentPlan = buildHephaestosExecutionAgentPlan({
       agentPlan,
       enabled: {
         normal_to_validation_fallback: normalFallbackPolicy?.enabled !== false,
       },
     });
-    const preTradeAmount = capLiveFireTradeAmount(amountUsdt, globalPaperMode).amount;
-    const check = await preTradeCheck(symbol, 'BUY', preTradeAmount, 'binance', signalTradeMode);
+    const preTradeAmount = capLiveFireTradeAmount(amountUsdt, globalPaperMode, normalizedExchange).amount;
+    const check = await preTradeCheck(symbol, 'BUY', preTradeAmount, normalizedExchange, signalTradeMode);
     if (check.allowed) {
       if (check.softGuardApplied) {
         const guardSummary = (check.softGuards || []).map((guard) => guard.kind).join(', ');
@@ -142,7 +174,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
         await db.updateSignalBlock(signalId, {
           reason: `paper_fallback:${check.reason}`,
           code: 'paper_fallback',
-          meta: { exchange: 'binance', symbol, action, amount: amountUsdt },
+          meta: { exchange: normalizedExchange, symbol, action, amount: amountUsdt },
         });
         notifyTradeSkip({ symbol, action, reason: `실잔고 부족으로 PAPER 전환: ${check.reason}`, priority: 'low' }).catch(() => {});
         return { effectivePaperMode: true };
@@ -172,6 +204,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
         amountUsdt,
         reason: check.reason || '',
         signalTradeMode,
+        exchange: normalizedExchange,
         executionAgentPlan,
       });
       if (fallback) {
@@ -185,7 +218,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
           softGuards: [
             {
               kind: 'normal_to_validation_fallback',
-              exchange: 'binance',
+              exchange: normalizedExchange,
               tradeMode: 'validation',
               originTradeMode: signalTradeMode,
               reductionMultiplier: fallback.reducedAmountMultiplier,
@@ -208,7 +241,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
       meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
         circuit: Boolean(check.circuit),
         circuitType: check.circuitType ?? null,
-        openPositions: !check.circuit ? (await getOpenPositions('binance', false, signalTradeMode).catch(() => [])).length : undefined,
+        openPositions: !check.circuit ? (await getOpenPositions(normalizedExchange, false, signalTradeMode).catch(() => [])).length : undefined,
         maxPositions: !check.circuit ? capitalPolicy.max_concurrent_positions : undefined,
       }, {
         guardKind: check.circuit ? 'capital_circuit_breaker' : 'capital_guard_rejected',
@@ -227,11 +260,13 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     effectivePaperMode,
     reducedAmountMultiplier = 1,
     softGuards = [],
+    exchange = 'binance',
   }) {
+    const normalizedExchange = normalizeExchange(exchange);
     const slPrice = signal.slPrice || 0;
     const currentPrice = await fetchTicker(symbol).catch(() => 0);
-    const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
-    const minOrderUsdt = await getDynamicMinOrderAmount('binance', signal?.trade_mode || getInvestmentTradeMode());
+    const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, normalizedExchange);
+    const minOrderUsdt = await getDynamicMinOrderAmount(normalizedExchange, signal?.trade_mode || getInvestmentTradeMode());
     if (sizing.skip && !effectivePaperMode) {
       console.log(`  ⛔ [자본관리] 포지션 크기 부족: ${sizing.reason}`);
       return rejectExecution({
@@ -255,7 +290,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     const uncappedAmount = softMultiplier > 0 && softMultiplier < 1
       ? baseAmount * softMultiplier
       : baseAmount;
-    const capped = capLiveFireTradeAmount(uncappedAmount, effectivePaperMode);
+    const capped = capLiveFireTradeAmount(uncappedAmount, effectivePaperMode, normalizedExchange);
     const actualAmount = capped.amount;
     if (!effectivePaperMode && actualAmount < minOrderUsdt) {
       return rejectExecution({
@@ -297,6 +332,8 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     getMaxPositionsOverflowPolicy,
     getValidationLiveReentrySofteningPolicy,
     classifyValidationFallbackGuard,
+    getLiveFireMaxTradeUsdt,
+    capLiveFireTradeAmount,
     maybeFallbackToValidationLane,
     resolveBuyExecutionMode,
     resolveBuyOrderAmount,
