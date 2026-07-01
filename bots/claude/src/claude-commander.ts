@@ -823,7 +823,7 @@ async function handleRunReview(args) {
  */
 async function handleRunGuardian(args) {
   try {
-    const guardian = require('./guardian');
+    const guardian = require('./guardian.ts');
     const result = await guardian.runFullSecurityScan({ force: true, test: parseBool(args.test, false) });
     return { ok: true, message: result.message, data: { pass: result.pass, critical: result.critical.length, high: result.high.length } };
   } catch (e) {
@@ -851,7 +851,7 @@ async function handleRunFullQuality(args) {
   const results = { reviewer: null, guardian: null, builder: null, overall: 'pass' };
   try {
     const reviewer = require('./reviewer.ts');
-    const guardian = require('./guardian');
+    const guardian = require('./guardian.ts');
     const builder  = require('./builder');
 
     // 1. Reviewer

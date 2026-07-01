@@ -6,7 +6,7 @@
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 const reviewer = require('./reviewer.ts');
-const guardian = require('./guardian');
+const guardian = require('./guardian.ts');
 const builder = require('./builder');
 
 function formatCombinedReport(results) {

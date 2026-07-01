@@ -40,7 +40,6 @@ function resolveRootDir(options = {}) {
 function buildGuardianSelfFiles(rootDir = ROOT) {
   return new Set([
     path.join(rootDir, 'bots', 'claude', 'src', 'guardian.ts'),
-    path.join(rootDir, 'bots', 'claude', 'src', 'guardian.js'),
     path.join(rootDir, 'bots', 'claude', '__tests__', 'guardian.test.ts'),
   ].map(file => path.resolve(file)));
 }
@@ -78,7 +77,6 @@ function shouldIgnoreNetworkAuditHit(filePath, options = {}) {
 
   // detector definition 자체는 self-scan false positive이므로 제외한다.
   if (resolved.endsWith(`${path.sep}bots${path.sep}claude${path.sep}src${path.sep}guardian.ts`)) return true;
-  if (resolved.endsWith(`${path.sep}bots${path.sep}claude${path.sep}src${path.sep}guardian.js`)) return true;
   return false;
 }
 
@@ -278,7 +276,7 @@ async function runFullSecurityScanCore(options = {}) {
   const files = Array.isArray(options.files)
     ? options.files.map(file => (path.isAbsolute(file) ? file : path.join(rootDir, file)))
     : await reviewer.getChangedFiles({ rootDir });
-  const jsFiles = files.filter(file => /\.(m?js|cjs|json)$/i.test(file));
+  const jsFiles = files.filter(file => /\.(m?js|cjs|json)$/i.test(file) && fs.existsSync(file));
 
   // 기존 skills 기반 파일 패턴 체크
   const findings = [];

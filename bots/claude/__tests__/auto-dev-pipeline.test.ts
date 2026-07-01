@@ -120,7 +120,7 @@ function makeMocks(tmpRoot, overrides = {}) {
       '../src/reviewer.ts': {
         runReview: async () => ({ summary: { pass: true }, message: 'review ok' }),
       },
-      '../src/guardian': {
+      '../src/guardian.ts': {
         runFullSecurityScan: async () => ({ pass: true, message: 'guardian ok', critical: [], high: [] }),
       },
       '../src/builder': {
@@ -2005,7 +2005,7 @@ async function test_review_cycle_uses_execution_context() {
         return { summary: { pass: true }, message: 'review ok' };
       },
     },
-    '../src/guardian': {
+    '../src/guardian.ts': {
       runFullSecurityScan: async (opts) => {
         guardianOptions = opts;
         return { pass: true, message: 'guardian ok', critical: [], high: [], layers: {} };
