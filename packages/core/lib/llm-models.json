@@ -1,7 +1,7 @@
 {
-  "last_updated": "2026-05-27",
+  "last_updated": "2026-07-01",
   "sources": {
-    "anthropic": "https://docs.anthropic.com/en/docs/about-claude/models",
+    "anthropic": "https://platform.claude.com/docs/en/about-claude/models/overview",
     "openai": "https://developers.openai.com/api/docs/models",
     "google": "https://ai.google.dev/gemini-api/docs/models",
     "groq": "https://console.groq.com/docs/models"
@@ -17,19 +17,19 @@
       "recommended_for": ["fast_classification", "batch_processing", "rule_based_decisions"]
     },
     "anthropic_sonnet": {
-      "current": "claude-sonnet-4-6",
-      "previous": ["claude-sonnet-4-5-20250929"],
-      "released_at": "2026-02-17",
+      "current": "claude-sonnet-5",
+      "previous": ["claude-sonnet-4-6", "claude-sonnet-4-5-20250929"],
+      "released_at": "2026-06-30",
       "cost_per_1m_input_usd": 3.0,
       "cost_per_1m_output_usd": 15.0,
       "max_context_tokens": 1000000,
-      "max_output_tokens": 64000,
+      "max_output_tokens": 128000,
       "recommended_for": ["structured_reasoning", "code_generation", "analysis"]
     },
     "anthropic_opus": {
-      "current": "claude-opus-4-7",
-      "previous": ["claude-opus-4-6"],
-      "released_at": "2026-04-16",
+      "current": "claude-opus-4-8",
+      "previous": ["claude-opus-4-7", "claude-opus-4-6"],
+      "released_at": "2026-05-28",
       "cost_per_1m_input_usd": 5.0,
       "cost_per_1m_output_usd": 25.0,
       "max_context_tokens": 1000000,
@@ -43,21 +43,74 @@
       "provider": "groq",
       "cost_per_1m_input_usd": 0.05,
       "cost_per_1m_output_usd": 0.08,
-      "max_context_tokens": 128000
+      "max_context_tokens": 131072,
+      "max_output_tokens": 131072
     },
     "anthropic_sonnet": {
-      "current": "llama-3.3-70b-versatile",
+      "current": "openai/gpt-oss-120b",
       "provider": "groq",
-      "cost_per_1m_input_usd": 0.59,
-      "cost_per_1m_output_usd": 0.79,
-      "max_context_tokens": 128000
+      "cost_per_1m_input_usd": 0.15,
+      "cost_per_1m_output_usd": 0.60,
+      "max_context_tokens": 131072,
+      "max_output_tokens": 65536
     },
     "anthropic_opus": {
-      "current": "llama-3.3-70b-versatile",
+      "current": "openai/gpt-oss-120b",
       "provider": "groq",
-      "cost_per_1m_input_usd": 0.59,
-      "cost_per_1m_output_usd": 0.79,
-      "max_context_tokens": 128000
+      "cost_per_1m_input_usd": 0.15,
+      "cost_per_1m_output_usd": 0.60,
+      "max_context_tokens": 131072,
+      "max_output_tokens": 65536
+    }
+  },
+  "groq_available_models": {
+    "openai/gpt-oss-120b": {
+      "params": "120B",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 65536,
+      "note": "OpenAI open flagship, reasoning and tool use"
+    },
+    "openai/gpt-oss-20b": {
+      "params": "20B",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 65536,
+      "note": "medium reasoning model"
+    },
+    "meta-llama/llama-4-scout-17b-16e-instruct": {
+      "params": "17B-MoE",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 8192,
+      "note": "Llama 4 Scout, Archer-compatible Groq model"
+    },
+    "qwen/qwen3-32b": {
+      "params": "32B",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 40960,
+      "note": "Alibaba reasoning model"
+    },
+    "qwen/qwen3.6-27b": {
+      "params": "27B",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 32768,
+      "note": "Alibaba newer Qwen model"
+    },
+    "groq/compound": {
+      "params": "-",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 8192,
+      "note": "agentic system with built-in tools"
+    },
+    "llama-3.1-8b-instant": {
+      "params": "8B",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 131072,
+      "note": "fast, low-cost model"
+    },
+    "llama-3.3-70b-versatile": {
+      "params": "70B",
+      "max_context_tokens": 131072,
+      "max_output_tokens": 32768,
+      "note": "general-purpose model"
     }
   },
   "openai_fallback_models": {
