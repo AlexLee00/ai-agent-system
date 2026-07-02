@@ -1210,7 +1210,7 @@ async function main() {
     assert.ok(appJs.text.includes('</select>\n        ${\'\\n\'}'));
     assert.ok(appJs.text.includes("index < segmentRows.length - 1 ? '\\n' : ''"));
     assert.ok(appJs.text.includes('<${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />\n        ${\'\\n\'}'));
-    assert.ok(appJs.text.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />\n      ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('<${Timeline} token=${token} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />\n      ${\'\\n\'}'));
     assert.ok(appJs.text.includes('function MeetingLifecycle({ detail, loading })'));
     assert.ok(appJs.text.includes('회의 시작</span>'));
     assert.ok(appJs.text.includes('회의 종료</span>'));

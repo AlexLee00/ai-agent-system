@@ -328,16 +328,22 @@ async function main() {
   assert.ok(appJs.includes('function AgentHistory'));
   assert.ok(appJs.includes('function ReplayControls'));
   assert.ok(appJs.includes('function minuteToReplayEvent'));
+  assert.ok(appJs.includes('function ScoreGraph'));
   assert.ok(appJs.includes('function mergeEventsBySeq'));
-  assert.ok(appJs.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />'));
+  assert.ok(appJs.includes('function eventFullKey'));
+  assert.ok(appJs.includes('전문 보기'));
+  assert.ok(appJs.includes('점수 표본 없음'));
+  assert.ok(appJs.includes('<${Timeline} token=${token} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />'));
   assert.ok(indexHtml.includes('.live-event-list'));
   assert.ok(indexHtml.includes('.agent-history-grid'));
   assert.ok(indexHtml.includes('.replay-panel'));
+  assert.ok(indexHtml.includes('.full-text-panel'));
+  assert.ok(indexHtml.includes('.score-graph'));
 
   const summary = {
     ok: true,
     smoke: 'luna-meeting-live',
-    step: 'S4',
+    step: 'S5',
     buffered: buffered.length,
     minuteEvents: events.length,
     firstEvent: events[0].type,
@@ -350,6 +356,7 @@ async function main() {
       jayBusFailureSafe: true,
       webLiveView: true,
       replay: true,
+      debateVisibility: true,
     },
   };
   console.log(JSON.stringify(summary, null, 2));

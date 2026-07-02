@@ -274,6 +274,74 @@ function groupEventsByAgent(events = []) {
   return Array.from(grouped.entries()).map(([agent, rows]) => ({ agent, rows }));
 }
 
+function eventFullKey(event = {}) {
+  return `${event.meetingId || 'meeting'}:${event.seq || 'unknown'}`;
+}
+
+function numericScore(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const normalized = parsed > 1 ? parsed / 100 : parsed;
+  return Math.max(0, Math.min(1, normalized));
+}
+
+function scoreRows(events = []) {
+  return safeArray(events)
+    .map((event) => ({
+      seq: event.seq,
+      bull: numericScore(event.scores?.bull),
+      bear: numericScore(event.scores?.bear),
+      risk: numericScore(event.scores?.risk),
+    }))
+    .filter((row) => row.bull != null || row.bear != null || row.risk != null);
+}
+
+function ScoreGraph({ events }) {
+  const rows = scoreRows(events);
+  if (!rows.length) return html`<div className="score-empty" role="status">점수 표본 없음</div>`;
+  const width = 320;
+  const height = 140;
+  const left = 34;
+  const top = 18;
+  const plotWidth = 260;
+  const plotHeight = 84;
+  const point = (row, value, index) => {
+    const x = left + (rows.length <= 1 ? plotWidth / 2 : (index * plotWidth) / (rows.length - 1));
+    const y = top + plotHeight - (Number(value) * plotHeight);
+    return { x, y };
+  };
+  const series = [
+    ['bull', '#3f7f4f', '상승'],
+    ['bear', '#b74949', '하락'],
+    ['risk', '#bc7a22', '리스크'],
+  ];
+  return html`
+    <div className="score-graph" role="region" aria-label="찬반 점수 흐름">
+      <div className="section-title">찬반 흐름</div>
+      ${'\n'}
+      <svg viewBox=${`0 0 ${width} ${height}`} role="img" aria-label=${`점수 표본 ${rows.length}개`}>
+        <line x1=${left} y1=${top} x2=${left} y2=${top + plotHeight} stroke="#d6d0c4" />
+        <line x1=${left} y1=${top + plotHeight} x2=${left + plotWidth} y2=${top + plotHeight} stroke="#d6d0c4" />
+        ${series.map(([key, color, label]) => {
+          const points = rows
+            .map((row, index) => (row[key] == null ? null : point(row, row[key], index)))
+            .filter(Boolean);
+          const pointText = points.map((item) => `${item.x},${item.y}`).join(' ');
+          return html`
+            ${points.length > 1 ? html`<polyline fill="none" stroke=${color} strokeWidth="2.4" points=${pointText} />` : null}
+            ${points.map((item) => html`<circle cx=${item.x} cy=${item.y} r="3.5" fill=${color}><title>${label}</title></circle>`)}
+          `;
+        })}
+        <text x="4" y=${top + 4} className="score-axis">1.0</text>
+        <text x="4" y=${top + plotHeight} className="score-axis">0.0</text>
+      </svg>
+      <div className="score-legend" role="list" aria-label="점수 범례">
+        ${series.map(([key, color, label]) => html`<span role="listitem"><span className="score-swatch" style=${{ background: color }}></span>${label}</span>`)}
+      </div>
+    </div>
+  `;
+}
+
 function ReplayControls({ minutes }) {
   const replayEvents = safeArray(minutes).map(minuteToReplayEvent);
   const [playing, setPlaying] = useState(false);
@@ -1111,9 +1179,12 @@ function AgentHistory({ events }) {
   `;
 }
 
-function Timeline({ detail, catchup, loading, liveEvents }) {
+function Timeline({ token, detail, catchup, loading, liveEvents }) {
   const eventRows = safeArray(liveEvents);
   const minutes = eventRows.length ? eventRows.map(liveEventToMinute) : safeArray(detail?.minutes);
+  const [fullTextByKey, setFullTextByKey] = useState({});
+  const [fullTextLoadingKey, setFullTextLoadingKey] = useState('');
+  const [fullTextError, setFullTextError] = useState('');
   const groups = groupMinutesByAgenda(minutes);
   const catchupList = safeArray(catchup);
   const catchupLines = loading
@@ -1128,6 +1199,21 @@ function Timeline({ detail, catchup, loading, liveEvents }) {
     ['decision', '결정'],
     ['adr', 'ADR'],
   ];
+  async function loadFullText(event) {
+    if (!event?.meetingId || event?.seq == null || fullTextLoadingKey) return;
+    const key = eventFullKey(event);
+    if (fullTextByKey[key]) return;
+    setFullTextLoadingKey(key);
+    setFullTextError('');
+    try {
+      const result = await api(token, `/api/meetings/${encodeURIComponent(event.meetingId)}/events/${encodeURIComponent(event.seq)}/full`);
+      setFullTextByKey((current) => ({ ...current, [key]: result.fullText || '전문 없음' }));
+    } catch (error) {
+      setFullTextError(error.message || '전문을 불러오지 못했습니다.');
+    } finally {
+      setFullTextLoadingKey('');
+    }
+  }
   return html`
     <div className="card" role="region" aria-label="회의 타임라인">
       <h2>타임라인</h2>
@@ -1158,10 +1244,26 @@ function Timeline({ detail, catchup, loading, liveEvents }) {
                 <div className="meta">${formatTime(event.createdAt)} · ${agendaLabel(event.agendaKey || 'session')}${event.hasFullText ? ' · 전문 있음' : ''}</div>
                 ${'\n'}
                 <div>${event.summary || '요약 없음'}</div>
+                ${event.hasFullText ? html`
+                  <button
+                    className="text-button"
+                    onClick=${() => loadFullText(event)}
+                    disabled=${Boolean(fullTextLoadingKey)}
+                    aria-busy=${fullTextLoadingKey === eventFullKey(event)}
+                    aria-label=${`${event.seq}번 라이브 이벤트 전문 보기`}
+                  >${fullTextLoadingKey === eventFullKey(event) ? '전문 로딩 중' : fullTextByKey[eventFullKey(event)] ? '전문 접기/유지' : '전문 보기'}</button>
+                  ${fullTextByKey[eventFullKey(event)] ? html`
+                    <div className="full-text-panel">
+                      <${MarkdownLite} text=${fullTextByKey[eventFullKey(event)]} />
+                    </div>
+                  ` : null}
+                ` : null}
               </article>
             `)}
+            ${fullTextError ? html`<div className="error" role="alert">${fullTextError}</div>` : null}
           </div>
           <${AgentHistory} events=${eventRows} />
+          <${ScoreGraph} events=${eventRows} />
         ` : null}
         ${!eventRows.length ? html`<${ReplayControls} minutes=${minutes} />` : null}
         <div className="list timeline-groups" style=${{ marginTop: '14px' }}>
@@ -1613,7 +1715,7 @@ function DailyRoom({ token }) {
         <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
       </div>
       ${'\n'}
-      <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />
+      <${Timeline} token=${token} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />
       ${'\n'}
       <${Decisions} token=${token} decisions=${pending} onUpdated=${refreshAfterDecisionUpdate} setError=${setError} setNotice=${setNotice} />
     </div>

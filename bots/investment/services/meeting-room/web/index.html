@@ -604,6 +604,20 @@
     .live-event-decision { border-left-color: var(--red); }
     .live-event-error { border-left-color: var(--red); background: rgba(183, 73, 73, 0.08); }
     .live-event-analysis { border-left-color: var(--sage); }
+    .text-button {
+      width: auto;
+      min-height: 34px;
+      margin-top: 8px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .full-text-panel {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(23, 33, 26, 0.06);
+    }
     .agent-history {
       display: grid;
       gap: 10px;
@@ -620,6 +634,43 @@
       background: rgba(255, 255, 255, 0.38);
       padding: 10px;
       min-width: 0;
+    }
+    .score-graph {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.34);
+    }
+    .score-graph svg {
+      width: 100%;
+      max-width: 420px;
+      height: auto;
+    }
+    .score-axis {
+      fill: var(--muted);
+      font-size: 10px;
+    }
+    .score-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .score-swatch {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 99px;
+      margin-right: 4px;
+      vertical-align: -1px;
+    }
+    .score-empty {
+      margin: 12px 0;
+      color: var(--muted);
     }
     .replay-panel {
       display: grid;
