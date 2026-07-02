@@ -6,11 +6,14 @@
   <key>Label</key>
   <string>ai.hub.resource-api</string>
 
-  <key>ProgramArguments</key>
-  <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/dist/daemons/ai.hub.resource-api.mjs</string>
-  </array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>bots/hub/src/hub.ts</string>
+	</array>
 
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system</string>

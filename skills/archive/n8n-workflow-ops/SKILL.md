@@ -1,7 +1,18 @@
 ---
 name: n8n-workflow-ops
-description: Use when creating, updating, reinstalling, or debugging n8n workflows in this repository, especially when workflows must be recreated safely, live webhook paths must be resolved from the registry, or health and setup scripts must be kept in sync.
+description: Archived n8n workflow operations guidance kept for historical reference; do not use for new active routing.
+triggers:
+  - archived n8n workflow ops
+permissions:
+  - read-only
+owner: platform
 ---
+
+# Archived: N8N Workflow Ops
+
+This skill was moved out of the active `skills/` root by the O3 interface standard cleanup.
+
+Use current Hub/Orchestrator runbooks for new workflow operations. This archived copy is retained only to preserve historical guidance.
 
 # N8N Workflow Ops
 
