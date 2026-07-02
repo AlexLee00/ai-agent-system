@@ -282,20 +282,62 @@ async function main() {
     await closeServer(onStarted.server);
   }
 
+  const jayBusFailureStarted = await startMeetingRoomWebServer({
+    port: 0,
+    host: '127.0.0.1',
+    liveStreamEnabled: true,
+    liveJayBusEnabled: true,
+  }, {
+    meetingStore: {
+      listMeetings: async () => [],
+      hasOpenMeetingType: async () => false,
+    },
+    buildMarketSegmentsFn: () => [
+      { market: 'domestic', skipped: true, reason: 'weekend' },
+      { market: 'overseas', skipped: false, reason: null },
+      { market: 'crypto', skipped: false, reason: null },
+    ],
+    runMeetingSessionFn: async (options) => {
+      options.onMinute?.({ seq: 1, agendaKey: 'session', speaker: 'system', role: 'system', content: 'open', meta: { state: 'open' } });
+      options.onEvent?.({ type: 'meeting.started', agent: 'system', role: 'system', agendaKey: 'session', summary: 'open', fullText: 'open' });
+      return { ok: true, session: { id: 9902 }, minutes: [{ seq: 1 }], decisions: [], markdownPath: null };
+    },
+    publishToJayBusFn: async () => {
+      throw new Error('jaybus fixture failure');
+    },
+  });
+  const jayBusFailureBaseUrl = `http://127.0.0.1:${jayBusFailureStarted.server.address().port}`;
+  try {
+    const start = await request(jayBusFailureBaseUrl, '/api/meetings/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'morning', noLlm: true }),
+    });
+    assert.equal(start.status, 202);
+    await sleep(50);
+    const run = await request(jayBusFailureBaseUrl, `/api/meetings/${start.payload.run.id}`);
+    assert.equal(run.payload.run.status, 'completed');
+  } finally {
+    await closeServer(jayBusFailureStarted.server);
+  }
+
   const appJs = fs.readFileSync(new URL('../services/meeting-room/web/app.js', import.meta.url), 'utf8');
   const indexHtml = fs.readFileSync(new URL('../services/meeting-room/web/index.html', import.meta.url), 'utf8');
   assert.ok(appJs.includes('const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);'));
   assert.ok(appJs.includes("source.addEventListener('meeting.event'"));
   assert.ok(appJs.includes('function AgentHistory'));
+  assert.ok(appJs.includes('function ReplayControls'));
+  assert.ok(appJs.includes('function minuteToReplayEvent'));
   assert.ok(appJs.includes('function mergeEventsBySeq'));
   assert.ok(appJs.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />'));
   assert.ok(indexHtml.includes('.live-event-list'));
   assert.ok(indexHtml.includes('.agent-history-grid'));
+  assert.ok(indexHtml.includes('.replay-panel'));
 
   const summary = {
     ok: true,
     smoke: 'luna-meeting-live',
-    step: 'S3',
+    step: 'S4',
     buffered: buffered.length,
     minuteEvents: events.length,
     firstEvent: events[0].type,
@@ -305,7 +347,9 @@ async function main() {
       sseReplay: true,
       fullText: true,
       jayBusMock: jayBusEvents.length,
+      jayBusFailureSafe: true,
       webLiveView: true,
+      replay: true,
     },
   };
   console.log(JSON.stringify(summary, null, 2));

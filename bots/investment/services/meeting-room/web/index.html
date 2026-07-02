@@ -621,6 +621,34 @@
       padding: 10px;
       min-width: 0;
     }
+    .replay-panel {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(23, 33, 26, 0.06);
+    }
+    .replay-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .replay-toolbar button {
+      min-width: 88px;
+    }
+    .replay-events {
+      display: grid;
+      gap: 6px;
+    }
+    .replay-event {
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.5);
+      overflow-wrap: anywhere;
+    }
     .form-row { display: grid; gap: 8px; margin-bottom: 12px; }
     .inline { display: flex; gap: 8px; align-items: center; }
     .inline > * { flex: 1; }

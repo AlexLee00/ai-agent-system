@@ -236,6 +236,34 @@ function liveEventToMinute(event = {}) {
   };
 }
 
+function minuteToReplayEvent(minute = {}) {
+  const state = String(minute.meta?.state || '').toLowerCase();
+  const role = String(minute.role || '').toLowerCase();
+  const type = state.includes('시작') || state === 'open'
+    ? 'meeting.started'
+    : state.includes('종료') || state === 'close'
+    ? 'meeting.ended'
+    : role === 'decision'
+    ? 'decision.made'
+    : role === 'data'
+    ? 'phase.changed'
+    : role === 'analysis' || role === 'grill'
+    ? 'agent.done'
+    : 'signal.summary';
+  return {
+    meetingId: minute.sessionId || 'completed',
+    seq: minute.seq,
+    type,
+    agent: minute.speaker || 'system',
+    role: minute.role || 'system',
+    agendaKey: minute.agendaKey || 'session',
+    createdAt: minute.createdAt,
+    summary: minute.content || eventTypeLabel(type),
+    payload: { replay: true, minuteSeq: minute.seq },
+    hasFullText: Boolean(minute.content),
+  };
+}
+
 function groupEventsByAgent(events = []) {
   const grouped = new Map();
   for (const event of safeArray(events)) {
@@ -244,6 +272,54 @@ function groupEventsByAgent(events = []) {
     grouped.get(agent).push(event);
   }
   return Array.from(grouped.entries()).map(([agent, rows]) => ({ agent, rows }));
+}
+
+function ReplayControls({ minutes }) {
+  const replayEvents = safeArray(minutes).map(minuteToReplayEvent);
+  const [playing, setPlaying] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const [speed, setSpeed] = useState(1);
+  useEffect(() => {
+    if (!playing) return undefined;
+    if (cursor >= replayEvents.length) {
+      setPlaying(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setCursor((value) => Math.min(replayEvents.length, value + 1)), Math.max(250, 900 / Number(speed || 1)));
+    return () => clearTimeout(timer);
+  }, [playing, cursor, speed, replayEvents.length]);
+  useEffect(() => {
+    setPlaying(false);
+    setCursor(0);
+  }, [replayEvents.length]);
+  if (!replayEvents.length) return null;
+  const visible = replayEvents.slice(0, cursor);
+  return html`
+    <div className="replay-panel" role="region" aria-label="완료 회의 재생">
+      <div className="replay-toolbar">
+        <button onClick=${() => setPlaying((value) => !value)} aria-pressed=${playing} aria-label=${playing ? '회의록 재생 일시정지' : '회의록 재생 시작'}>${playing ? '일시정지' : '재생'}</button>
+        ${'\n'}
+        <button onClick=${() => { setPlaying(false); setCursor(0); }} aria-label="회의록 재생 초기화">초기화</button>
+        ${'\n'}
+        <label className="meta">속도
+          <select value=${speed} onChange=${(event) => setSpeed(Number(event.target.value) || 1)} aria-label="회의록 재생 속도">
+            <option value="1">1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+        </label>
+      </div>
+      <div className="meta">재생 ${Math.min(cursor, replayEvents.length)} / ${replayEvents.length}</div>
+      ${'\n'}
+      <div className="replay-events" role="list" aria-label="재생된 회의 이벤트">
+        ${(visible.length ? visible : [replayEvents[0]]).map((event) => html`
+          <div className="replay-event" role="listitem" key=${event.seq}>
+            ${event.seq}. ${eventTypeLabel(event.type)} · ${agentLabel(event.agent)} · ${event.summary}
+          </div>
+        `)}
+      </div>
+    </div>
+  `;
 }
 
 function urlBase64ToUint8Array(value) {
@@ -1087,6 +1163,7 @@ function Timeline({ detail, catchup, loading, liveEvents }) {
           </div>
           <${AgentHistory} events=${eventRows} />
         ` : null}
+        ${!eventRows.length ? html`<${ReplayControls} minutes=${minutes} />` : null}
         <div className="list timeline-groups" style=${{ marginTop: '14px' }}>
           ${groups.map((group) => html`
             <details className="timeline-group" key=${group.key}>
