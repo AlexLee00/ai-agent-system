@@ -268,8 +268,12 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const totalTradesOos = row.total_trades_oos != null ? finiteNumber(row.total_trades_oos, null) : null;
   const insufficientTrades = totalTradesOos != null && totalTradesOos < dsrMinTrades;
   const dsrWouldBlock = dsrGateActive && dsr != null && (insufficientTrades || dsr < dsrMin);
+  const pboGateActive = ENABLED.has(String(env.LUNA_PBO_GATE_ENABLED || 'false').trim().toLowerCase());
+  const pboMax = envNumber(env.LUNA_PBO_MAX, 0.30);
+  const pbo = row.pbo != null ? finiteNumber(row.pbo, null) : null;
+  const pboWouldBlock = pboGateActive && pbo != null && Number.isFinite(pboMax) && pbo > pboMax;
 
-  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock;
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock || pboWouldBlock;
   const reasons = parseReasons(row.block_reasons);
   const gateStatus = String(row.gate_status || row.gateStatus || '').toLowerCase();
   const unstableBacktest = gateStatus.includes('unstable')
@@ -290,6 +294,8 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
         ? 'candidate_backtest_drawdown_high'
         : dsrWouldBlock
           ? (insufficientTrades ? 'candidate_backtest_insufficient_trades' : 'candidate_backtest_dsr_low')
+          : pboWouldBlock
+            ? 'candidate_backtest_pbo_high'
           : wouldBlock
             ? 'candidate_backtest_would_block'
           : null;
@@ -311,6 +317,9 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
       effectiveReasons = [...effectiveReasons, `candidate_backtest_dsr_low(${dsr.toFixed(4)}<${dsrMin})`];
     }
   }
+  if (pboWouldBlock && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_pbo_high'))) {
+    effectiveReasons = [...effectiveReasons, `candidate_backtest_pbo_high(${pbo.toFixed(4)}>${pboMax})`];
+  }
   const blockClass = classifyBacktestBlock(effectiveReasons, gateStatus);
   return {
     ok: mode !== 'enforce' || !wouldBlock,
@@ -319,6 +328,9 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     wouldBlock,
     reason,
     reasons: effectiveReasons,
+    pboWouldBlock,
+    pbo,
+    pboMax,
     row,
     ...blockClass,
   };

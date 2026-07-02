@@ -25,7 +25,10 @@ import { getOrderBook } from './tools/order-book.ts';
 import { getTossCandles } from './tools/toss-candles.ts';
 import { getTossMarketCalendar } from './tools/toss-calendar.ts';
 import { getTossPrice } from './tools/toss-price.ts';
+import { getTossOrderBook } from './tools/toss-orderbook.ts';
 import { getTossSecuritiesWarning } from './tools/toss-securities-warning.ts';
+import { getTossStockMaster } from './tools/toss-stock-master.ts';
+import { getTossTrades } from './tools/toss-trades.ts';
 import {
   closeTradingViewSubscriptions,
   subscribeTradingViewMarketData,
@@ -104,6 +107,18 @@ export const MARKETDATA_MCP_TOOLS = [
     name: 'get_toss_calendar',
     description: 'Return read-only Toss Open API market calendar metadata.',
   },
+  {
+    name: 'get_toss_orderbook',
+    description: 'Return read-only Toss Open API orderbook metadata for a symbol.',
+  },
+  {
+    name: 'get_toss_trades',
+    description: 'Return read-only Toss Open API recent trades for a symbol.',
+  },
+  {
+    name: 'get_toss_stock_master',
+    description: 'Return read-only Toss Open API stock master metadata for a symbol.',
+  },
 ];
 
 function json(res: http.ServerResponse, status: number, payload: unknown) {
@@ -179,6 +194,9 @@ export async function callMarketdataTool(name: string, args: MarketDataArgs = {}
   if (name === 'get_toss_candles') return await getTossCandles(args) as Record<string, unknown>;
   if (name === 'get_toss_securities_warning') return await getTossSecuritiesWarning(args) as Record<string, unknown>;
   if (name === 'get_toss_calendar') return await getTossMarketCalendar(args) as Record<string, unknown>;
+  if (name === 'get_toss_orderbook') return await getTossOrderBook(args) as Record<string, unknown>;
+  if (name === 'get_toss_trades') return await getTossTrades(args) as Record<string, unknown>;
+  if (name === 'get_toss_stock_master') return await getTossStockMaster(args) as Record<string, unknown>;
   throw new Error(`unknown_tool:${name}`);
 }
 

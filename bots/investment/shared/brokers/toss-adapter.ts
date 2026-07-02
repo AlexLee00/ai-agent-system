@@ -68,6 +68,15 @@ export function createTossBrokerAdapter(options: Record<string, any> = {}) {
     async getSecuritiesWarningsForUniverse(symbols = [], warningOptions = {}) {
       return client.getSecuritiesWarningsForUniverse(symbols, warningOptions);
     },
+    async getOrderBook(symbol: string, orderBookOptions = {}) {
+      return client.getOrderBook(normalizeBrokerSymbol(symbol), orderBookOptions);
+    },
+    async getTrades(symbol: string, tradeOptions = {}) {
+      return client.getTrades(normalizeBrokerSymbol(symbol), tradeOptions);
+    },
+    async getStockMaster(symbol: string, masterOptions = {}) {
+      return client.getStockMaster(normalizeBrokerSymbol(symbol), masterOptions);
+    },
     async getMarketCalendar(market = 'domestic', calendarOptions = {}) {
       return client.getMarketCalendar(normalizeBrokerMarket(market), calendarOptions);
     },

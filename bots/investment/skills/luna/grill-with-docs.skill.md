@@ -1,3 +1,12 @@
+---
+name: luna-grill-with-docs
+description: Challenge a Luna boundary decision with cited plan-note, OOS, parameter-store, or registry evidence only.
+triggers:
+  - grill with docs
+  - evidence-backed challenge
+  - luna decision review
+---
+
 # Grill With Docs
 
 - Owner: luna

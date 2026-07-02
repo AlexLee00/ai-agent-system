@@ -17,6 +17,8 @@ import { getMinOrderAmount, getMinOrderRatio } from './order-rules.ts';
 import { fetchFearGreedIndex } from '../team/argos.ts';
 import { getInvestmentExecutionRuntimeConfig, getInvestmentSyncRuntimeConfig } from './runtime-config.ts';
 import { getBinanceBalanceSnapshot, getBinanceTickerSnapshot } from './binance-client.ts';
+import { buildPositionCorrelationAdvisory } from './position-correlation.ts';
+import { buildPeakDrawdownCircuitEvidence } from './capital-high-water-mark.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -35,6 +37,18 @@ let lastCapitalSnapshotInvalidation: {
 function numEnv(name, fallback = 0) {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function boolEnv(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined || value === null || value === '') return fallback;
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(String(value).trim().toLowerCase());
+}
+
+function boundedNumEnv(name, fallback, min, max) {
+  const value = Number(process.env[name]);
+  const parsed = Number.isFinite(value) ? value : fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 export function getLunaLiveFireCaps(env = process.env) {
@@ -759,6 +773,35 @@ export async function checkCircuitBreaker(exchange = null, tradeMode = null) {
       };
     }
 
+    const peakDd = await buildPeakDrawdownCircuitEvidence({
+      exchange: exchange || 'binance',
+      totalCapital,
+      env: process.env,
+    });
+    if (peakDd?.wouldTrigger) {
+      if (peakDd.mode === 'enforce') {
+        return {
+          triggered: true,
+          reason: `peak drawdown halt: capital ${totalCapital.toFixed(2)} <= threshold ${Number(peakDd.thresholdCapital || 0).toFixed(2)}`,
+          type: 'peak_drawdown',
+          peakDrawdown: peakDd,
+        };
+      }
+      return {
+        triggered: false,
+        softened: true,
+        reason: 'peak drawdown threshold would trigger in shadow mode',
+        type: 'peak_drawdown',
+        softGuard: {
+          kind: 'peak_drawdown_shadow',
+          exchange: exchange || 'binance',
+          tradeMode: tradeMode || getInvestmentTradeMode(),
+          reductionMultiplier: 1,
+          peakDrawdown: peakDd,
+        },
+      };
+    }
+
     // 3. 연속 손실 쿨다운
     const recentTrades = await getRecentClosedTrades(policy.cooldown_after_loss_streak, exchange, tradeMode);
     if (recentTrades.length >= policy.cooldown_after_loss_streak) {
@@ -876,6 +919,28 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
   }
   if (correlationGuard.softened && correlationGuard.softGuard) {
     softGuards.push(correlationGuard.softGuard);
+  }
+
+  if (isBuy && boolEnv('LUNA_CORR_ADVISORY_ENABLED', false)) {
+    const openPositions = await getOpenPositions(exchange || 'binance', false, effectiveTradeMode);
+    const advisory = buildPositionCorrelationAdvisory({
+      candidate: { symbol, direction, tradeMode: effectiveTradeMode },
+      openPositions,
+      threshold: boundedNumEnv('LUNA_CORR_ADVISORY_THRESHOLD', 0.8, 0, 1),
+      reductionMultiplier: boundedNumEnv('LUNA_CORR_ADVISORY_REDUCTION_MULTIPLIER', 0.8, 0.05, 1),
+    });
+    if (advisory.enabled && advisory.reductionMultiplier < 1) {
+      softGuards.push({
+        kind: 'correlation_advisory_reduction',
+        exchange: exchange || 'binance',
+        tradeMode: effectiveTradeMode,
+        reductionMultiplier: advisory.reductionMultiplier,
+        threshold: advisory.threshold,
+        maxCorrelation: advisory.maxCorrelation,
+        advisoryOnly: true,
+        matches: advisory.matches,
+      });
+    }
   }
 
   // 5. 일간 매매 횟수 (BUY만)

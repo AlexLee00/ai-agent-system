@@ -128,6 +128,9 @@ async function executeSignal(signal) {
   } = executionContext;
   let { amountUsdt } = executionContext;
   let { effectivePaperMode } = executionContext;
+  const executionExchange = String(signal?.exchange || executionContext.exchange || (signal?.market === 'domestic' ? 'kis' : 'binance'))
+    .trim()
+    .toLowerCase() || 'binance';
   const executionAgentPlan = extractExecutionAgentPlan(signal);
 
   // ★ SEC-004 가드: 네메시스 승인/실행 freshness 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
@@ -169,7 +172,7 @@ async function executeSignal(signal) {
     failedStatus: SIGNAL_STATUS.FAILED,
   });
 
-  if (!isBinanceSymbol(symbol)) {
+  if (executionExchange === 'binance' && !isBinanceSymbol(symbol)) {
     const reason = `바이낸스 심볼이 아님: ${symbol}`;
     console.log(`  ⛔ [헤파이스토스] ${reason}`);
     await persistFailure(reason, {
@@ -194,6 +197,47 @@ async function executeSignal(signal) {
   try {
 
     if (action === ACTIONS.BUY) {
+      if (executionExchange === 'kis') {
+        const executionModeState = await resolveBuyExecutionMode({
+          persistFailure,
+          signalId,
+          symbol,
+          action,
+          amountUsdt,
+          signalTradeMode,
+          globalPaperMode,
+          capitalPolicy,
+          agentPlan: executionAgentPlan,
+          exchange: 'kis',
+        });
+        if (executionModeState?.success === false) return executionModeState;
+        const orderAmountState = await resolveBuyOrderAmount({
+          persistFailure,
+          symbol,
+          action,
+          amountUsdt,
+          signal,
+          effectivePaperMode: true,
+          reducedAmountMultiplier: Number(executionModeState.reducedAmountMultiplier || 1),
+          softGuards: executionModeState.softGuards || [],
+          exchange: 'kis',
+        });
+        if (orderAmountState?.success === false) return orderAmountState;
+        return {
+          success: true,
+          shadowOnly: true,
+          liveMutation: false,
+          orderSubmitted: false,
+          exchange: 'kis',
+          symbol,
+          action,
+          effectiveTradeMode: executionModeState.effectiveTradeMode || signalTradeMode,
+          requestedAmount: Number(amountUsdt || 0),
+          actualAmount: Number(orderAmountState.actualAmount || 0),
+          reason: 'kis_execution_shadow_disabled',
+          softGuards: executionModeState.softGuards || [],
+        };
+      }
       let promoted = [];
       if (!globalPaperMode && signalTradeMode === 'normal') {
         promoted = await maybePromotePaperPositions({ reserveSlots: 1 }).catch(err => {

@@ -1,3 +1,12 @@
+---
+name: luna-grill-me
+description: Challenge one Luna meeting-room decision with concise adversarial questions using supplied evidence only.
+triggers:
+  - grill luna decision
+  - adversarial review
+  - meeting-room challenge
+---
+
 # Grill Me
 
 - Owner: luna

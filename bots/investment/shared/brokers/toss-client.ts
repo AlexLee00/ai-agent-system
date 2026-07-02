@@ -502,6 +502,55 @@ export function createTossClient(options = {}) {
     return Array.isArray(result) ? result.map((row) => normalizeWarning(row, normalizedSymbol)) : [];
   }
 
+  async function getOrderBook(symbol, options = {}) {
+    const normalizedSymbol = normalizeSymbol(symbol);
+    if (!normalizedSymbol) throw new Error('symbol_required');
+    const result = await tossGet('/api/v1/orderbook', {
+      symbol: normalizedSymbol,
+      depth: options.depth || 10,
+    });
+    return {
+      provider: 'toss',
+      symbol: normalizedSymbol,
+      bids: Array.isArray(result?.bids) ? result.bids : [],
+      asks: Array.isArray(result?.asks) ? result.asks : [],
+      timestamp: result?.timestamp || result?.time || null,
+      raw: result,
+    };
+  }
+
+  async function getTrades(symbol, options = {}) {
+    const normalizedSymbol = normalizeSymbol(symbol);
+    if (!normalizedSymbol) throw new Error('symbol_required');
+    const result = await tossGet('/api/v1/trades', {
+      symbol: normalizedSymbol,
+      count: options.count || options.limit || 50,
+    });
+    const trades = Array.isArray(result?.trades) ? result.trades : Array.isArray(result) ? result : [];
+    return {
+      provider: 'toss',
+      symbol: normalizedSymbol,
+      trades,
+      raw: result,
+    };
+  }
+
+  async function getStockMaster(symbol, options = {}) {
+    const normalizedSymbol = normalizeSymbol(symbol);
+    if (!normalizedSymbol) throw new Error('symbol_required');
+    const result = await tossGet(`/api/v1/stocks/${encodeURIComponent(normalizedSymbol)}`, {
+      market: options.market,
+    });
+    return {
+      provider: 'toss',
+      symbol: normalizeSymbol(result?.symbol || normalizedSymbol),
+      name: result?.name || result?.stockName || null,
+      market: result?.market || options.market || marketFromSymbol(normalizedSymbol),
+      currency: result?.currency || null,
+      raw: result,
+    };
+  }
+
   async function getSecuritiesWarningsForUniverse(symbols = [], options = {}) {
     const uniqueSymbols = [...new Set((Array.isArray(symbols) ? symbols : [])
       .map(normalizeSymbol)
@@ -596,6 +645,9 @@ export function createTossClient(options = {}) {
     getExchangeRate,
     getSecuritiesWarning,
     getSecuritiesWarningsForUniverse,
+    getOrderBook,
+    getTrades,
+    getStockMaster,
     getBuyingPower,
     getSellableQuantity,
     getCommissions,
@@ -616,6 +668,9 @@ export const getMarketCalendar = (...args) => defaultClient.getMarketCalendar(..
 export const getExchangeRate = (...args) => defaultClient.getExchangeRate(...args);
 export const getSecuritiesWarning = (...args) => defaultClient.getSecuritiesWarning(...args);
 export const getSecuritiesWarningsForUniverse = (...args) => defaultClient.getSecuritiesWarningsForUniverse(...args);
+export const getOrderBook = (...args) => defaultClient.getOrderBook(...args);
+export const getTrades = (...args) => defaultClient.getTrades(...args);
+export const getStockMaster = (...args) => defaultClient.getStockMaster(...args);
 export const getBuyingPower = (...args) => defaultClient.getBuyingPower(...args);
 export const getSellableQuantity = (...args) => defaultClient.getSellableQuantity(...args);
 export const getCommissions = (...args) => defaultClient.getCommissions(...args);

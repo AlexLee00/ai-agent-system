@@ -20,6 +20,27 @@ function numFromAny(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+export function isTrailModeExpandEnabled(env = process.env) {
+  return boolFromAny(env.LUNA_TRAIL_MODE_EXPAND, false);
+}
+
+export function isReverseExitPriorityEnabled(env = process.env) {
+  return boolFromAny(env.LUNA_REVERSE_EXIT_PRIORITY, false);
+}
+
+export function normalizeExitReasonTag(reason = '') {
+  const value = String(reason || '').trim().toLowerCase();
+  if (!value) return 'manual';
+  if (value.includes('reverse') || value.includes('signal_reverse')) return 'reverse';
+  if (value.includes('trail')) return 'trail';
+  if (value.includes('take_profit') || value === 'tp' || value.includes('profit')) return 'tp';
+  if (value.includes('stop_loss') || value === 'sl' || value.includes('loss')) return 'sl';
+  if (value.includes('halt') || value.includes('circuit')) return 'halt';
+  if (value.includes('force')) return 'force';
+  if (value.includes('manual')) return 'manual';
+  return value.replace(/[^a-z0-9_]+/g, '_') || 'manual';
+}
+
 function loadPositionLifecycleConfig() {
   try {
     const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
@@ -132,7 +153,7 @@ export function resolvePositionLifecycleFlags() {
       return this.phaseE.enabled;
     },
     shouldApplyDynamicTrail() {
-      return this.phaseF.enabled;
+      return this.phaseF.enabled || isTrailModeExpandEnabled();
     },
     shouldApplyReflexiveMonitoring() {
       return this.phaseG.enabled;

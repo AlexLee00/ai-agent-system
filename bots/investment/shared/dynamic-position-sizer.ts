@@ -18,6 +18,12 @@ function round(value, digits = 4) {
   return Math.round(Number(value || 0) * scale) / scale;
 }
 
+function boolEnv(name, fallback = false) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(String(raw).trim().toLowerCase());
+}
+
 function computeHalfKelly({ winRate = 0.5, rewardRisk = 1.5 } = {}) {
   const p = clamp(winRate, 0.01, 0.99);
   const b = Math.max(0.1, Number(rewardRisk || 1.5));
@@ -39,7 +45,13 @@ export function computeDynamicPositionSizing(input = {}) {
   const kellyTargetWeight = clamp(halfKelly * flags.phaseE.kellyHalfCap, 0, 1);
   const momentumBoost = clamp((pnlPct - 1) / 20, 0, flags.phaseE.maxPyramidRatio);
   const defensiveFloor = clamp(currentWeight * 0.85, 0, 1);
-  const targetWeight = clamp(Math.max(kellyTargetWeight + momentumBoost, defensiveFloor), 0, 1);
+  const regimeProbDelta = clamp(n(input.regimeProbDelta, 0), -1, 1);
+  const regimeStabilityBars = Math.max(0, Math.floor(n(input.regimeStabilityBars, 0)));
+  const convictionEnabled = boolEnv('LUNA_CONVICTION_ENABLED', false) && regimeStabilityBars >= 3 && regimeProbDelta !== 0;
+  const convictionMultiplier = convictionEnabled
+    ? clamp(1 + (regimeProbDelta * 0.25), 0.75, 1.25)
+    : 1;
+  const targetWeight = clamp(Math.max((kellyTargetWeight + momentumBoost) * convictionMultiplier, defensiveFloor), 0, 1);
 
   const volatilityRatio = targetVolatility > 0 ? realizedVolatility / targetVolatility : 1;
   const sizingGap = targetWeight - currentWeight;
@@ -62,6 +74,10 @@ export function computeDynamicPositionSizing(input = {}) {
       winRate: round(winRate, 4),
       rewardRisk: round(rewardRisk, 4),
       sizingGap: round(sizingGap, 4),
+      regimeProbDelta: round(regimeProbDelta, 4),
+      regimeStabilityBars,
+      convictionEnabled,
+      convictionMultiplier: round(convictionMultiplier, 4),
     },
   };
 
