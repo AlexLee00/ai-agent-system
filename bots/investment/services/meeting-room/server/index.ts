@@ -16,6 +16,8 @@ import { runMeetingSession } from './orchestrator/meeting-session.ts';
 import { applyMeetingDecisionAction } from './meeting-decision-actions.ts';
 import { normalizeChair, normalizeMeetingType } from '../config/meeting.config.ts';
 import { applyMeetingGlossary, buildDecisionPlainFields } from './glossary.ts';
+import { createMeetingEventBus } from './meeting-event-bus.ts';
+import { publishToJayBus } from '../../../shared/jay-bus-bridge.ts';
 
 const SERVICE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_ROOT = path.join(SERVICE_ROOT, 'web');
@@ -102,8 +104,9 @@ function serializeRun(run = {}, options = {}) {
   return payload;
 }
 
-function writeSseEvent(res, event, payload) {
+function writeSseEvent(res, event, payload, id = null) {
   if (!res || res.destroyed || res.writableEnded) return false;
+  if (id != null) res.write(`id: ${id}\n`);
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
   return true;
@@ -1374,6 +1377,7 @@ function getDeps(deps = {}) {
     buildMarketSegmentsFn: deps.buildMarketSegmentsFn || buildMarketSegments,
     resolveAgentLLMRouteFn: deps.resolveAgentLLMRouteFn || resolveAgentLLMRoute,
     callViaHubFn: deps.callViaHubFn || callViaHub,
+    publishToJayBusFn: deps.publishToJayBusFn || publishToJayBus,
     meetingStore: deps.meetingStore || null,
   };
 }
@@ -1401,7 +1405,9 @@ function allowedMethodsForApiPath(pathname, parts) {
   if (pathname === '/api/health') return 'GET';
   if (pathname === '/api/meetings') return 'GET';
   if (pathname === '/api/meetings/start') return 'POST';
+  if (pathname === '/api/meetings/live') return 'GET';
   if (parts[0] === 'api' && parts[1] === 'meetings' && parts[2] && parts[3] === 'stream') return 'GET';
+  if (parts[0] === 'api' && parts[1] === 'meetings' && parts[2] && parts[3] === 'events' && parts[4] && parts[5] === 'full') return 'GET';
   if (parts[0] === 'api' && parts[1] === 'meetings' && parts[2]) return 'GET';
   if (parts[0] === 'api' && parts[1] === 'catchup' && parts[2]) return 'GET';
   if (pathname === '/api/push/vapid-public') return 'GET';
@@ -1451,6 +1457,60 @@ async function getMeeting(id, deps) {
     session: normalizeSession(sessionRows[0]),
     minutes: minuteRows.map(normalizeMinute),
     decisions: decisionRows.map(normalizeDecision),
+  };
+}
+
+async function getMeetingEventFullText(meetingId, seq, eventBus, activeRuns, deps) {
+  const local = eventBus.getFullEvent(meetingId, seq);
+  if (local?.fullText) {
+    return {
+      ok: true,
+      meetingId,
+      seq: Number(seq),
+      source: 'memory',
+      fullText: local.fullText,
+      event: local.publicEvent,
+    };
+  }
+
+  const active = activeRuns.get(meetingId);
+  const sessionId = active?.sessionId || (isNumericMeetingId(meetingId) ? meetingId : null);
+  if (!sessionId) {
+    throw new HttpError(404, 'event_full_text_not_found', '요청한 회의 이벤트 전문을 찾을 수 없습니다.');
+  }
+
+  if (deps.meetingStore?.getMeeting) {
+    const detail = await deps.meetingStore.getMeeting(sessionId);
+    const minute = (detail?.minutes || []).find((row) => Number(row.seq) === Number(seq));
+    if (minute?.content) {
+      return {
+        ok: true,
+        meetingId,
+        seq: Number(seq),
+        source: 'meeting_store',
+        fullText: String(minute.content),
+      };
+    }
+    throw new HttpError(404, 'event_full_text_not_found', '요청한 회의 이벤트 전문을 찾을 수 없습니다.');
+  }
+
+  const rows = await deps.queryFn(
+    `SELECT session_id, seq, agenda_key, speaker, role, content, meta, created_at
+       FROM luna_meeting_minutes
+      WHERE session_id = $1 AND seq = $2
+      LIMIT 1`,
+    [sessionId, Number(seq)],
+  );
+  if (!rows?.[0]) {
+    throw new HttpError(404, 'event_full_text_not_found', '요청한 회의 이벤트 전문을 찾을 수 없습니다.');
+  }
+  return {
+    ok: true,
+    meetingId,
+    seq: Number(seq),
+    source: 'db',
+    fullText: String(rows[0].content || ''),
+    minute: normalizeMinute(rows[0]),
   };
 }
 
@@ -2328,11 +2388,18 @@ function parseArg(name, fallback = null, argv = process.argv) {
 export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
   const deps = getDeps(rawDeps);
   const token = options.token ?? process.env.MEETING_ROOM_TOKEN ?? '';
+  const liveStreamEnabled = options.liveStreamEnabled ?? (process.env.LUNA_MEETING_LIVE_STREAM_ENABLED === 'true');
+  const liveJayBusEnabled = options.liveJayBusEnabled ?? (process.env.LUNA_MEETING_LIVE_JAYBUS_ENABLED === 'true');
   const activeRuns = new Map();
   const activeTypes = new Map();
   const meetingStreams = new Map();
+  const globalStreams = new Set();
+  const meetingEventBus = rawDeps.meetingEventBus || options.meetingEventBus || createMeetingEventBus({
+    limit: options.meetingEventBufferLimit || 500,
+  });
   const pushConfig = resolvePushConfig(options, rawDeps);
   const askLimiter = createAskLimiter();
+  const sseHeartbeatMs = Math.max(1000, Number(options.sseHeartbeatMs || SSE_HEARTBEAT_MS));
 
   function removeMeetingStream(meetingId, res) {
     const subscribers = meetingStreams.get(meetingId);
@@ -2341,12 +2408,36 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
     if (subscribers.size === 0) meetingStreams.delete(meetingId);
   }
 
-  function emitMeetingStream(meetingId, event, payload) {
-    const subscribers = meetingStreams.get(meetingId);
-    if (!subscribers) return;
-    for (const res of Array.from(subscribers)) {
-      if (!writeSseEvent(res, event, payload)) removeMeetingStream(meetingId, res);
-    }
+  function removeGlobalStream(res) {
+    globalStreams.delete(res);
+  }
+
+  function parseLastEventId(req, parsed) {
+    return Number(req.headers['last-event-id'] || parsed.searchParams.get('lastEventId') || parsed.searchParams.get('last_event_id') || 0) || 0;
+  }
+
+  function writePublicMeetingEvent(res, event, mode = 'meeting') {
+    const id = mode === 'global' ? event.globalSeq : event.seq;
+    return writeSseEvent(res, 'meeting.event', event, id);
+  }
+
+  function sseHeaders(res) {
+    res.writeHead(200, {
+      ...STATIC_SECURITY_HEADERS,
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+    res.flushHeaders?.();
+  }
+
+  function publishLiveEvent(publicEvent) {
+    if (!liveJayBusEnabled) return;
+    Promise.resolve(deps.publishToJayBusFn(`meeting.${publicEvent.type}`, publicEvent, 'luna-meeting-room'))
+      .catch((error) => {
+        console.warn('[luna-meeting-room] JayBus publish failed:', error?.message || String(error));
+      });
   }
 
   function closeMeetingStreams(meetingId, event, payload) {
@@ -2359,36 +2450,77 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
     meetingStreams.delete(meetingId);
   }
 
+  function handleGlobalMeetingStream(req, res, parsed) {
+    if (!liveStreamEnabled) {
+      return jsonResponse(res, 404, {
+        ok: false,
+        error: 'meeting_live_stream_disabled',
+        message: '회의 라이브 스트림이 비활성화되어 있습니다.',
+      });
+    }
+    sseHeaders(res);
+    globalStreams.add(res);
+    const unsubscribe = meetingEventBus.subscribeGlobal((event) => {
+      if (!writePublicMeetingEvent(res, event, 'global')) removeGlobalStream(res);
+    });
+    const heartbeat = setInterval(() => {
+      if (res.destroyed || res.writableEnded) return;
+      res.write(': heartbeat\n\n');
+    }, sseHeartbeatMs);
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      removeGlobalStream(res);
+    });
+    const lastId = parseLastEventId(req, parsed);
+    writeSseEvent(res, 'hello', { ok: true, stream: 'global', liveStreamEnabled, stats: meetingEventBus.stats() }, 0);
+    for (const event of meetingEventBus.getGlobalEvents(lastId)) writePublicMeetingEvent(res, event, 'global');
+    return null;
+  }
+
   function handleMeetingStream(req, res, meetingId) {
+    if (!liveStreamEnabled) {
+      return jsonResponse(res, 404, {
+        ok: false,
+        error: 'meeting_live_stream_disabled',
+        message: '회의 라이브 스트림이 비활성화되어 있습니다.',
+      });
+    }
     const run = activeRuns.get(meetingId);
-    if (!run) {
+    const bufferedEvents = meetingEventBus.getMeetingEvents(meetingId, 0);
+    if (!run && bufferedEvents.length === 0) {
       return jsonResponse(res, 404, {
         ok: false,
         error: 'meeting_not_running',
         message: '실행 중인 회의 스트림을 찾을 수 없습니다.',
       });
     }
-    res.writeHead(200, {
-      ...STATIC_SECURITY_HEADERS,
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-store, no-transform',
-      connection: 'keep-alive',
-      'x-accel-buffering': 'no',
-    });
-    res.flushHeaders?.();
+    const parsed = new URL(req.url || '/', 'http://127.0.0.1');
+    sseHeaders(res);
     if (!meetingStreams.has(meetingId)) meetingStreams.set(meetingId, new Set());
     meetingStreams.get(meetingId).add(res);
+    const unsubscribe = meetingEventBus.subscribeMeeting(meetingId, (event) => {
+      if (!writePublicMeetingEvent(res, event, 'meeting')) removeMeetingStream(meetingId, res);
+    });
     const heartbeat = setInterval(() => {
       if (res.destroyed || res.writableEnded) return;
       res.write(': heartbeat\n\n');
-    }, SSE_HEARTBEAT_MS);
+    }, sseHeartbeatMs);
     req.on('close', () => {
       clearInterval(heartbeat);
+      unsubscribe();
       removeMeetingStream(meetingId, res);
     });
-    writeSseEvent(res, 'hello', { ok: true, meetingId, run: serializeRun(run), liveMinutes: run.liveMinutes?.length || 0 });
-    for (const minute of run.liveMinutes || []) writeSseEvent(res, 'minute', { meetingId, minute });
-    if (run.status !== 'running') {
+    const lastId = parseLastEventId(req, parsed);
+    writeSseEvent(res, 'hello', {
+      ok: true,
+      meetingId,
+      liveStreamEnabled,
+      run: run ? serializeRun(run) : null,
+      liveEvents: bufferedEvents.length,
+    }, 0);
+    for (const event of meetingEventBus.getMeetingEvents(meetingId, lastId)) writePublicMeetingEvent(res, event, 'meeting');
+    if (run && run.status !== 'running') {
       writeSseEvent(res, 'close', { ok: true, meetingId, run: serializeRun(run) });
       res.end();
       removeMeetingStream(meetingId, res);
@@ -2399,19 +2531,22 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
   async function handleApi(req, res) {
     const parsed = new URL(req.url || '/', 'http://127.0.0.1');
     const parts = parsed.pathname.split('/').filter(Boolean);
+    const queryTokenAllowed = parsed.pathname === '/api/meetings/live'
+      || (parts[0] === 'api' && parts[1] === 'meetings' && parts[2] && parts[3] === 'stream');
     assertAuthorized(req, token, {
-      allowQueryToken: parts[0] === 'api' && parts[1] === 'meetings' && parts[2] && parts[3] === 'stream',
+      allowQueryToken: queryTokenAllowed,
       queryToken: parsed.searchParams.get('token') || '',
     });
 
     if (req.method === 'GET' && parsed.pathname === '/api/health') {
-      return jsonResponse(res, 200, { ok: true, service: 'luna-meeting-room-web', shadowOnly: true });
+      return jsonResponse(res, 200, { ok: true, service: 'luna-meeting-room-web', shadowOnly: true, liveStreamEnabled });
     }
 
     if (req.method === 'GET' && parsed.pathname === '/api/meetings') {
       const meetings = await listMeetings(parsed.searchParams.get('limit') || 20, deps);
       return jsonResponse(res, 200, {
         ok: true,
+        liveStreamEnabled,
         meetings,
         activeRuns: Array.from(activeRuns.values())
           .filter((run) => run.status === 'running')
@@ -2425,8 +2560,23 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
       return methodNotAllowed(res, 'POST');
     }
 
+    if (req.method === 'GET' && parsed.pathname === '/api/meetings/live') {
+      return handleGlobalMeetingStream(req, res, parsed);
+    }
+
     if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'meetings' && parts[2] && parts[3] === 'stream') {
       return handleMeetingStream(req, res, parts[2]);
+    }
+
+    if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'meetings' && parts[2] && parts[3] === 'events' && parts[4] && parts[5] === 'full') {
+      if (!liveStreamEnabled) {
+        return jsonResponse(res, 404, {
+          ok: false,
+          error: 'meeting_live_stream_disabled',
+          message: '회의 라이브 스트림이 비활성화되어 있습니다.',
+        });
+      }
+      return jsonResponse(res, 200, await getMeetingEventFullText(parts[2], parts[4], meetingEventBus, activeRuns, deps));
     }
 
     if (req.method === 'GET' && parts[0] === 'api' && parts[1] === 'meetings' && parts[2]) {
@@ -2478,7 +2628,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
         throw new HttpError(409, 'meeting_already_open', '이미 진행 중인 같은 타입 회의가 있습니다.');
       }
       const runId = `run_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      const run = { id: runId, type, chair, status: 'running', startedAt: nowIso(), shadowOnly: true, minutes: 0, liveMinutes: [] };
+      const run = { id: runId, type, chair, status: 'running', startedAt: nowIso(), shadowOnly: true, minutes: 0, liveMinutes: [], liveEvents: [] };
       activeRuns.set(runId, run);
       activeTypes.set(type, runId);
       run.promise = Promise.resolve()
@@ -2493,7 +2643,13 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
             const liveMinute = normalizeMinute({ ...minute, createdAt: minute.createdAt || nowIso() });
             run.liveMinutes.push(liveMinute);
             run.minutes = run.liveMinutes.length;
-            emitMeetingStream(runId, 'minute', { meetingId: runId, minute: liveMinute });
+          },
+          onEvent: (event) => {
+            if (!liveStreamEnabled) return;
+            const publicEvent = meetingEventBus.emit({ ...event, meetingId: runId });
+            run.liveEvents.push(publicEvent);
+            if (run.liveEvents.length > meetingEventBus.limit) run.liveEvents.shift();
+            publishLiveEvent(publicEvent);
           },
         }, rawDeps))
         .then((result) => {
@@ -2512,6 +2668,18 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
         .catch((error) => {
           Object.assign(run, { status: 'failed', completedAt: nowIso(), error: error?.message || String(error) });
           activeTypes.delete(type);
+          if (liveStreamEnabled) {
+            const publicEvent = meetingEventBus.emit({
+              meetingId: runId,
+              type: 'meeting.error',
+              agent: 'system',
+              role: 'error',
+              summary: run.error,
+              payload: { status: 'failed' },
+              fullText: run.error,
+            });
+            publishLiveEvent(publicEvent);
+          }
           closeMeetingStreams(runId, 'error', { ok: false, meetingId: runId, run: serializeRun(run), error: run.error });
           return null;
         });
@@ -2557,7 +2725,7 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
     }
   });
 
-  return { server, activeRuns, activeTypes, meetingStreams, askLimiter };
+  return { server, activeRuns, activeTypes, meetingStreams, globalStreams, meetingEventBus, liveStreamEnabled, askLimiter };
 }
 
 export function startMeetingRoomWebServer(options = {}, deps = {}) {

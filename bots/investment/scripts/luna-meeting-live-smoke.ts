@@ -2,9 +2,80 @@
 // @ts-nocheck
 
 import assert from 'assert/strict';
+import http from 'http';
 import { createMeetingEventBus } from '../services/meeting-room/server/meeting-event-bus.ts';
+import { startMeetingRoomWebServer } from '../services/meeting-room/server/index.ts';
 import { runMeetingSession } from '../services/meeting-room/server/orchestrator/meeting-session.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function closeServer(server) {
+  await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+}
+
+async function request(baseUrl, pathname, options = {}) {
+  const res = await fetch(`${baseUrl}${pathname}`, options);
+  const text = await res.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+  return { status: res.status, ok: res.ok, payload, text };
+}
+
+function readSseEvents(baseUrl, pathname, stopEvent = 'close', timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const events = [];
+    const req = http.get(`${baseUrl}${pathname}`, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`SSE status ${res.statusCode}`));
+        return;
+      }
+      res.setEncoding('utf8');
+      let buffer = '';
+      res.on('data', (chunk) => {
+        buffer += chunk;
+        let boundary = buffer.indexOf('\n\n');
+        while (boundary >= 0) {
+          const block = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          const event = { event: 'message', id: null, data: '' };
+          for (const line of block.split('\n')) {
+            if (line.startsWith('id:')) event.id = line.slice('id:'.length).trim();
+            if (line.startsWith('event:')) event.event = line.slice('event:'.length).trim();
+            if (line.startsWith('data:')) event.data += line.slice('data:'.length).trim();
+          }
+          if (event.data) {
+            try {
+              event.payload = JSON.parse(event.data);
+            } catch {
+              event.payload = {};
+            }
+          }
+          if (event.event !== 'message' || event.data) events.push(event);
+          if (event.event === stopEvent) {
+            req.destroy();
+            resolve(events);
+            return;
+          }
+          boundary = buffer.indexOf('\n\n');
+        }
+      });
+      res.on('end', () => resolve(events));
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      resolve(events);
+    });
+  });
+}
 
 function fixturePlanNote() {
   return {
@@ -96,14 +167,134 @@ async function main() {
   assert.equal(events.at(-1).type, 'meeting.ended');
   assert.equal(result.telegram.attempted, false);
 
+  const offStarted = await startMeetingRoomWebServer({
+    port: 0,
+    host: '127.0.0.1',
+  }, {
+    meetingStore: {
+      listMeetings: async () => [],
+      hasOpenMeetingType: async () => false,
+    },
+  });
+  const offBaseUrl = `http://127.0.0.1:${offStarted.server.address().port}`;
+  try {
+    const health = await request(offBaseUrl, '/api/health');
+    assert.equal(health.payload.liveStreamEnabled, false);
+    const live = await request(offBaseUrl, '/api/meetings/live');
+    assert.equal(live.status, 404);
+    assert.equal(live.payload.error, 'meeting_live_stream_disabled');
+    const stream = await request(offBaseUrl, '/api/meetings/run_fixture/stream');
+    assert.equal(stream.status, 404);
+    assert.equal(stream.payload.error, 'meeting_live_stream_disabled');
+    const full = await request(offBaseUrl, '/api/meetings/run_fixture/events/1/full');
+    assert.equal(full.status, 404);
+    assert.equal(full.payload.error, 'meeting_live_stream_disabled');
+  } finally {
+    await closeServer(offStarted.server);
+  }
+
+  let releaseRun;
+  const runGate = new Promise((resolve) => { releaseRun = resolve; });
+  const jayBusEvents = [];
+  const onServerMinute = (options, minute) => {
+    options.onMinute?.(minute);
+    options.onEvent?.({
+      type: minute.seq === 1 ? 'meeting.started' : 'meeting.ended',
+      agent: minute.speaker,
+      role: minute.role,
+      agendaKey: minute.agendaKey,
+      summary: minute.content,
+      fullText: minute.content,
+      payload: { minuteSeq: minute.seq, state: minute.meta?.state || null },
+    });
+  };
+  const onStarted = await startMeetingRoomWebServer({
+    port: 0,
+    host: '127.0.0.1',
+    liveStreamEnabled: true,
+    liveJayBusEnabled: true,
+    sseHeartbeatMs: 1000,
+  }, {
+    meetingStore: {
+      listMeetings: async () => [],
+      hasOpenMeetingType: async () => false,
+    },
+    buildMarketSegmentsFn: () => [
+      { market: 'domestic', skipped: true, reason: 'weekend' },
+      { market: 'overseas', skipped: false, reason: null },
+      { market: 'crypto', skipped: false, reason: null },
+    ],
+    runMeetingSessionFn: async (options) => {
+      onServerMinute(options, {
+        seq: 1,
+        agendaKey: 'session',
+        speaker: 'system',
+        role: 'system',
+        content: '회의 시작 full text',
+        meta: { state: 'open' },
+      });
+      await runGate;
+      onServerMinute(options, {
+        seq: 2,
+        agendaKey: 'session',
+        speaker: 'system',
+        role: 'system',
+        content: '회의 종료 full text',
+        meta: { state: 'close' },
+      });
+      return { ok: true, session: { id: 9901 }, minutes: [{ seq: 1 }, { seq: 2 }], decisions: [], markdownPath: null };
+    },
+    publishToJayBusFn: async (topic, payload, source) => {
+      jayBusEvents.push({ topic, payload, source });
+    },
+  });
+  const onBaseUrl = `http://127.0.0.1:${onStarted.server.address().port}`;
+  try {
+    const health = await request(onBaseUrl, '/api/health');
+    assert.equal(health.payload.liveStreamEnabled, true);
+    const start = await request(onBaseUrl, '/api/meetings/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'morning', noLlm: true }),
+    });
+    assert.equal(start.status, 202);
+    const runId = start.payload.run.id;
+    const liveSse = readSseEvents(onBaseUrl, `/api/meetings/${runId}/stream`, 'close');
+    const full = await request(onBaseUrl, `/api/meetings/${runId}/events/1/full`);
+    assert.equal(full.status, 200);
+    assert.equal(full.payload.source, 'memory');
+    assert.equal(full.payload.fullText, '회의 시작 full text');
+    releaseRun();
+    const sseEvents = await liveSse;
+    assert.deepEqual(sseEvents.map((event) => event.event), ['hello', 'meeting.event', 'meeting.event', 'close']);
+    assert.deepEqual(sseEvents.filter((event) => event.event === 'meeting.event').map((event) => event.id), ['1', '2']);
+    const replayEvents = await readSseEvents(onBaseUrl, `/api/meetings/${runId}/stream?lastEventId=1`, 'close');
+    assert.deepEqual(replayEvents.filter((event) => event.event === 'meeting.event').map((event) => event.payload.seq), [2]);
+    const globalEvents = await readSseEvents(onBaseUrl, '/api/meetings/live', 'meeting.event');
+    assert.equal(globalEvents[0].event, 'hello');
+    assert.equal(globalEvents.find((event) => event.event === 'meeting.event').payload.meetingId, runId);
+    await sleep(25);
+    assert.ok(jayBusEvents.length >= 2);
+    assert.equal(jayBusEvents[0].source, 'luna-meeting-room');
+    assert.equal(jayBusEvents[0].topic, 'meeting.meeting.started');
+  } finally {
+    await closeServer(onStarted.server);
+  }
+
   const summary = {
     ok: true,
     smoke: 'luna-meeting-live',
-    step: 'S1',
+    step: 'S2',
     buffered: buffered.length,
     minuteEvents: events.length,
     firstEvent: events[0].type,
     lastEvent: events.at(-1).type,
+    http: {
+      offDisabled: true,
+      sseReplay: true,
+      fullText: true,
+      jayBusMock: jayBusEvents.length,
+    },
   };
   console.log(JSON.stringify(summary, null, 2));
   return summary;

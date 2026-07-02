@@ -471,8 +471,20 @@ async function main() {
     ],
     runMeetingSessionFn: async (options) => {
       runSessionOptions.push(options);
-      options.onMinute?.({ seq: 1, agendaKey: 'session', speaker: 'system', role: 'system', content: 'open', meta: { state: 'open' } });
-      options.onMinute?.({ seq: 2, agendaKey: 'market:crypto', speaker: 'luna', role: 'analysis', content: '라이브 분석 발언', meta: { state: 'analysis' } });
+      const emitFixtureMinute = (minute) => {
+        options.onMinute?.(minute);
+        options.onEvent?.({
+          type: minute.seq === 1 ? 'meeting.started' : 'agent.done',
+          agent: minute.speaker,
+          role: minute.role,
+          agendaKey: minute.agendaKey,
+          summary: minute.content,
+          fullText: minute.content,
+          payload: { minuteSeq: minute.seq, state: minute.meta?.state || null },
+        });
+      };
+      emitFixtureMinute({ seq: 1, agendaKey: 'session', speaker: 'system', role: 'system', content: 'open', meta: { state: 'open' } });
+      emitFixtureMinute({ seq: 2, agendaKey: 'market:crypto', speaker: 'luna', role: 'analysis', content: '라이브 분석 발언', meta: { state: 'analysis' } });
       await runGate;
       const id = store.addCompletedMeeting();
       return { ok: true, session: { id }, minutes: [{ seq: 1 }], decisions: [], markdownPath: '/tmp/fixture.md' };
@@ -487,7 +499,7 @@ async function main() {
     }),
   };
 
-  const started = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1' }, deps);
+  const started = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1', liveStreamEnabled: true, pushEnabled: false }, deps);
   const address = started.server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
   assert.equal(address.address, '127.0.0.1');
@@ -2121,8 +2133,8 @@ async function main() {
     const sseEventsPromise = readSseEvents(baseUrl, `/api/meetings/${start.payload.run.id}/stream`);
     releaseRun();
     const sseEvents = await sseEventsPromise;
-    assert.deepEqual(sseEvents.map((event) => event.event), ['hello', 'minute', 'minute', 'close']);
-    assert.deepEqual(sseEvents.filter((event) => event.event === 'minute').map((event) => event.payload.minute.seq), [1, 2]);
+    assert.deepEqual(sseEvents.map((event) => event.event), ['hello', 'meeting.event', 'meeting.event', 'close']);
+    assert.deepEqual(sseEvents.filter((event) => event.event === 'meeting.event').map((event) => event.payload.seq), [1, 2]);
     assert.equal(started.meetingStreams.size, 0);
     const completedRun = await waitForRun(baseUrl, start.payload.run.id);
     assert.equal(completedRun.status, 'completed');
@@ -3426,7 +3438,7 @@ async function main() {
     assert.equal(unauthorizedStream.status, 401);
     const queryAuthorizedStream = await request(authBase, '/api/meetings/run_missing/stream?token=fixture-token');
     assert.equal(queryAuthorizedStream.status, 404);
-    assert.equal(queryAuthorizedStream.payload.error, 'meeting_not_running');
+    assert.equal(queryAuthorizedStream.payload.error, 'meeting_live_stream_disabled');
   } finally {
     await closeServer(authStarted.server);
   }
