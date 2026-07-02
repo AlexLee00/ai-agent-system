@@ -165,6 +165,22 @@ function mergeMinutesBySeq(existing = [], incoming = []) {
   return Array.from(rows.values()).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
 }
 
+function mergeEventsBySeq(existing = [], incoming = []) {
+  const rows = new Map();
+  for (const event of safeArray(existing)) {
+    const key = event?.seq == null ? `existing-${rows.size}` : String(event.seq);
+    rows.set(key, event);
+  }
+  for (const event of safeArray(incoming)) {
+    const key = event?.seq == null ? `incoming-${rows.size}` : String(event.seq);
+    rows.set(key, {
+      ...event,
+      createdAt: event?.createdAt || new Date().toISOString(),
+    });
+  }
+  return Array.from(rows.values()).sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+}
+
 function parseSseData(event) {
   try {
     return JSON.parse(event.data || '{}');
@@ -176,6 +192,58 @@ function parseSseData(event) {
 function meetingStreamUrl(meetingId, token) {
   const base = `/api/meetings/${encodeURIComponent(meetingId)}/stream`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+function eventTypeLabel(type) {
+  return {
+    'meeting.started': '회의 시작',
+    'meeting.ended': '회의 종료',
+    'meeting.error': '회의 오류',
+    'phase.changed': '단계 전환',
+    'agent.done': '에이전트 발언',
+    'decision.pending': '결정 초안',
+    'decision.made': '결정 기록',
+    'signal.summary': '요약 신호',
+  }[String(type || '').toLowerCase()] || '라이브 이벤트';
+}
+
+function eventRole(event = {}) {
+  const role = String(event.role || '').toLowerCase();
+  if (role) return role;
+  const type = String(event.type || '').toLowerCase();
+  if (type.includes('decision')) return 'decision';
+  if (type.includes('error')) return 'error';
+  if (type.includes('phase')) return 'data';
+  if (type.includes('agent')) return 'analysis';
+  return 'system';
+}
+
+function liveEventToMinute(event = {}) {
+  const role = eventRole(event);
+  return {
+    id: event.seq,
+    seq: event.seq,
+    agendaKey: event.agendaKey || 'session',
+    speaker: event.agent || 'system',
+    role,
+    content: event.summary || eventTypeLabel(event.type),
+    meta: {
+      state: eventTypeLabel(event.type),
+      liveEvent: true,
+      hasFullText: event.hasFullText === true,
+    },
+    createdAt: event.createdAt,
+  };
+}
+
+function groupEventsByAgent(events = []) {
+  const grouped = new Map();
+  for (const event of safeArray(events)) {
+    const agent = String(event.agent || 'system').toLowerCase();
+    if (!grouped.has(agent)) grouped.set(agent, []);
+    grouped.get(agent).push(event);
+  }
+  return Array.from(grouped.entries()).map(([agent, rows]) => ({ agent, rows }));
 }
 
 function urlBase64ToUint8Array(value) {
@@ -947,8 +1015,29 @@ function StartMeeting({ token, segments, onStarted, setError }) {
   `;
 }
 
-function Timeline({ detail, catchup, loading }) {
-  const minutes = safeArray(detail?.minutes);
+function AgentHistory({ events }) {
+  const groups = groupEventsByAgent(events);
+  if (!groups.length) return null;
+  return html`
+    <div className="agent-history" role="region" aria-label="에이전트별 라이브 발언 히스토리">
+      <div className="section-title">에이전트별 히스토리</div>
+      ${'\n'}
+      <div className="agent-history-grid" role="list">
+        ${groups.map((group) => html`
+          <div className="agent-history-card" role="listitem" key=${group.agent}>
+            <div className="meeting-title">${agentLabel(group.agent)}</div>
+            ${'\n'}
+            <div className="meta">${group.rows.length}개 이벤트 · 최신 ${formatTime(group.rows.at(-1)?.createdAt)}</div>
+          </div>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+function Timeline({ detail, catchup, loading, liveEvents }) {
+  const eventRows = safeArray(liveEvents);
+  const minutes = eventRows.length ? eventRows.map(liveEventToMinute) : safeArray(detail?.minutes);
   const groups = groupMinutesByAgenda(minutes);
   const catchupList = safeArray(catchup);
   const catchupLines = loading
@@ -984,6 +1073,20 @@ function Timeline({ detail, catchup, loading }) {
           `)}
         </div>
         <${MarkdownLite} text=${detail?.planNote?.briefMarkdown || ''} />
+        ${eventRows.length ? html`
+          <div className="live-event-list" role="list" aria-label=${`라이브 이벤트 ${eventRows.length}건`}>
+            ${eventRows.map((event) => html`
+              <article className=${`live-event live-event-${eventRole(event)}`} role="listitem" key=${`${event.meetingId || 'meeting'}:${event.seq}`}>
+                <div className="meeting-title">${event.seq}. ${eventTypeLabel(event.type)} — ${agentLabel(event.agent || 'system')}</div>
+                ${'\n'}
+                <div className="meta">${formatTime(event.createdAt)} · ${agendaLabel(event.agendaKey || 'session')}${event.hasFullText ? ' · 전문 있음' : ''}</div>
+                ${'\n'}
+                <div>${event.summary || '요약 없음'}</div>
+              </article>
+            `)}
+          </div>
+          <${AgentHistory} events=${eventRows} />
+        ` : null}
         <div className="list timeline-groups" style=${{ marginTop: '14px' }}>
           ${groups.map((group) => html`
             <details className="timeline-group" key=${group.key}>
@@ -1208,13 +1311,15 @@ function DailyRoom({ token }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [streamStatus, setStreamStatus] = useState('idle');
+  const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
+  const [liveEvents, setLiveEvents] = useState([]);
   const [authRequired, setAuthRequired] = useState(false);
   const [blockedAuthToken, setBlockedAuthToken] = useState(null);
   const baseRequestSeq = useRef(0);
   const detailRequestSeq = useRef(0);
   const hasRunningRun = activeRuns.some((run) => run.status === 'running');
   const selectedRunningRun = activeRuns.find((run) => String(run.id) === String(selectedId) && run.status === 'running');
-  const streamReplacingDetailPoll = Boolean(selectedRunningRun && (streamStatus === 'connecting' || streamStatus === 'connected'));
+  const streamReplacingDetailPoll = Boolean(liveStreamEnabled && selectedRunningRun && (streamStatus === 'connecting' || streamStatus === 'connected'));
   const authRequestBlocked = authRequired && String(token || '') === String(blockedAuthToken ?? '');
   const pollingIntervalMs = authRequestBlocked ? 0 : (hasRunningRun ? 3000 : 30000);
   const pollingLabel = authRequestBlocked
@@ -1238,6 +1343,8 @@ function DailyRoom({ token }) {
     setDetailLoading(false);
     setCatchup([]);
     setStreamStatus('idle');
+    setLiveStreamEnabled(false);
+    setLiveEvents([]);
     setNotice('');
   }
 
@@ -1250,6 +1357,7 @@ function DailyRoom({ token }) {
       const list = await api(token, '/api/meetings');
       const pendingPayload = await api(token, '/api/decisions/pending');
       if (baseRequestSeq.current !== requestId) return;
+      setLiveStreamEnabled(list.liveStreamEnabled === true);
       setMeetings(safeArray(list.meetings));
       setActiveRuns(safeArray(list.activeRuns));
       setSegments(safeArray(list.segments));
@@ -1287,7 +1395,8 @@ function DailyRoom({ token }) {
           setSelectedId(payload.run.sessionId);
           return;
         }
-        setDetail({ session: payload.run, minutes: safeArray(payload.run.liveMinutes), decisions: [] });
+        setLiveEvents(safeArray(payload.run.liveEvents));
+        setDetail({ session: payload.run, minutes: safeArray(payload.run.liveMinutes), liveEvents: safeArray(payload.run.liveEvents), decisions: [] });
         setCatchup([
           `실행 상태: ${payload.run.status}`,
           `세션: ${payload.run.sessionId || '생성 중'}`,
@@ -1324,11 +1433,12 @@ function DailyRoom({ token }) {
   useEffect(() => {
     if (!selectedId) return;
     writeSessionValue(SELECTED_MEETING_STORAGE_KEY, selectedId);
+    setLiveEvents([]);
     refreshSelected().catch((error) => setError(error.message));
   }, [selectedId]);
 
   useEffect(() => {
-    if (authRequestBlocked || !selectedRunningRun || typeof EventSource === 'undefined') {
+    if (authRequestBlocked || !liveStreamEnabled || !selectedRunningRun || typeof EventSource === 'undefined') {
       setStreamStatus(selectedRunningRun ? 'fallback' : 'idle');
       return undefined;
     }
@@ -1341,24 +1451,30 @@ function DailyRoom({ token }) {
     source.addEventListener('hello', (event) => {
       if (closed) return;
       const payload = parseSseData(event);
-      if (payload.run) setDetail((current) => ({
-        session: payload.run,
-        minutes: mergeMinutesBySeq(current?.minutes, payload.run.liveMinutes || []),
-        decisions: current?.decisions || [],
-      }));
+      if (payload.run) {
+        setLiveEvents(safeArray(payload.run.liveEvents));
+        setDetail((current) => ({
+          session: payload.run,
+          minutes: mergeMinutesBySeq(current?.minutes, payload.run.liveMinutes || []),
+          liveEvents: safeArray(payload.run.liveEvents),
+          decisions: current?.decisions || [],
+        }));
+      }
     });
-    source.addEventListener('minute', (event) => {
+    source.addEventListener('meeting.event', (event) => {
       if (closed) return;
       const payload = parseSseData(event);
-      if (!payload.minute) return;
+      if (!payload.seq) return;
+      setLiveEvents((current) => mergeEventsBySeq(current, [payload]));
       setDetail((current) => ({
         session: current?.session || selectedRunningRun,
-        minutes: mergeMinutesBySeq(current?.minutes, [payload.minute]),
+        minutes: mergeMinutesBySeq(current?.minutes, [liveEventToMinute(payload)]),
+        liveEvents: mergeEventsBySeq(current?.liveEvents, [payload]),
         decisions: current?.decisions || [],
       }));
       setCatchup([
         '라이브 수신 중',
-        `${payload.minute.seq || '?'}번 발언: ${roleName(payload.minute.role, payload.minute)} / ${speakerLabel(payload.minute.speaker)}`,
+        `${payload.seq || '?'}번 이벤트: ${eventTypeLabel(payload.type)} / ${agentLabel(payload.agent || 'system')}`,
       ]);
     });
     source.addEventListener('close', (event) => {
@@ -1381,7 +1497,7 @@ function DailyRoom({ token }) {
       closed = true;
       source.close();
     };
-  }, [selectedRunningRun?.id, token, authRequestBlocked]);
+  }, [selectedRunningRun?.id, token, authRequestBlocked, liveStreamEnabled]);
 
   useEffect(() => {
     if (authRequestBlocked) return;
@@ -1420,7 +1536,7 @@ function DailyRoom({ token }) {
         <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
       </div>
       ${'\n'}
-      <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />
+      <${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />
       ${'\n'}
       <${Decisions} token=${token} decisions=${pending} onUpdated=${refreshAfterDecisionUpdate} setError=${setError} setNotice=${setNotice} />
     </div>

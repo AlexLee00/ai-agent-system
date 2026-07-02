@@ -834,7 +834,8 @@ async function main() {
     assert.ok(appJs.text.includes("'stack-adapter': '데이터 어댑터'"));
     assert.ok(appJs.text.includes("adr: 'ADR 기록기'"));
     assert.ok(appJs.text.includes('const catchupLines = loading'));
-    assert.ok(appJs.text.includes('const minutes = safeArray(detail?.minutes);'));
+    assert.ok(appJs.text.includes('const eventRows = safeArray(liveEvents);'));
+    assert.ok(appJs.text.includes('const minutes = eventRows.length ? eventRows.map(liveEventToMinute) : safeArray(detail?.minutes);'));
     assert.ok(appJs.text.includes('const catchupList = safeArray(catchup);'));
     assert.ok(appJs.text.includes("catchupList.length ? catchupList : ['회의를 선택하면 U1 캐치업이 표시됩니다.']"));
     assert.ok(appJs.text.includes("const catchupLabel = `U1 캐치업 요약: ${catchupLines.join(' / ')}`"));
@@ -1209,7 +1210,7 @@ async function main() {
     assert.ok(appJs.text.includes('</select>\n        ${\'\\n\'}'));
     assert.ok(appJs.text.includes("index < segmentRows.length - 1 ? '\\n' : ''"));
     assert.ok(appJs.text.includes('<${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />\n        ${\'\\n\'}'));
-    assert.ok(appJs.text.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} />\n      ${\'\\n\'}'));
+    assert.ok(appJs.text.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />\n      ${\'\\n\'}'));
     assert.ok(appJs.text.includes('function MeetingLifecycle({ detail, loading })'));
     assert.ok(appJs.text.includes('회의 시작</span>'));
     assert.ok(appJs.text.includes('회의 종료</span>'));

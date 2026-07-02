@@ -589,6 +589,38 @@
       gap: 10px;
       margin-top: 8px;
     }
+    .live-event-list {
+      display: grid;
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .live-event {
+      border-left: 5px solid var(--blue);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.52);
+      padding: 12px;
+      overflow-wrap: anywhere;
+    }
+    .live-event-decision { border-left-color: var(--red); }
+    .live-event-error { border-left-color: var(--red); background: rgba(183, 73, 73, 0.08); }
+    .live-event-analysis { border-left-color: var(--sage); }
+    .agent-history {
+      display: grid;
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .agent-history-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 8px;
+    }
+    .agent-history-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.38);
+      padding: 10px;
+      min-width: 0;
+    }
     .form-row { display: grid; gap: 8px; margin-bottom: 12px; }
     .inline { display: flex; gap: 8px; align-items: center; }
     .inline > * { flex: 1; }

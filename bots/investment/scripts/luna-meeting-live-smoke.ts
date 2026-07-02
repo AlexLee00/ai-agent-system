@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'assert/strict';
+import fs from 'fs';
 import http from 'http';
 import { createMeetingEventBus } from '../services/meeting-room/server/meeting-event-bus.ts';
 import { startMeetingRoomWebServer } from '../services/meeting-room/server/index.ts';
@@ -281,10 +282,20 @@ async function main() {
     await closeServer(onStarted.server);
   }
 
+  const appJs = fs.readFileSync(new URL('../services/meeting-room/web/app.js', import.meta.url), 'utf8');
+  const indexHtml = fs.readFileSync(new URL('../services/meeting-room/web/index.html', import.meta.url), 'utf8');
+  assert.ok(appJs.includes('const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);'));
+  assert.ok(appJs.includes("source.addEventListener('meeting.event'"));
+  assert.ok(appJs.includes('function AgentHistory'));
+  assert.ok(appJs.includes('function mergeEventsBySeq'));
+  assert.ok(appJs.includes('<${Timeline} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />'));
+  assert.ok(indexHtml.includes('.live-event-list'));
+  assert.ok(indexHtml.includes('.agent-history-grid'));
+
   const summary = {
     ok: true,
     smoke: 'luna-meeting-live',
-    step: 'S2',
+    step: 'S3',
     buffered: buffered.length,
     minuteEvents: events.length,
     firstEvent: events[0].type,
@@ -294,6 +305,7 @@ async function main() {
       sseReplay: true,
       fullText: true,
       jayBusMock: jayBusEvents.length,
+      webLiveView: true,
     },
   };
   console.log(JSON.stringify(summary, null, 2));
