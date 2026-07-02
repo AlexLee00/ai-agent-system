@@ -16,6 +16,10 @@
 		<string>true</string>
 		<key>LUNA_AGENT_LLM_ROUTING_ENABLED</key>
 		<string>true</string>
+		<key>LUNA_YAML_ROUTING_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_C3_REALIGN_MODE</key>
+		<string>shadow</string>
 		<key>INVESTMENT_LLM_DIRECT_FALLBACK</key>
 		<string>false</string>
 	</dict>

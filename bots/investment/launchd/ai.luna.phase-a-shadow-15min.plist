@@ -32,6 +32,8 @@
     <string>shadow_bias</string>
     <key>LUNA_LEARNED_BIAS_MODE</key>
     <string>shadow</string>
+    <key>LUNA_C3_REALIGN_MODE</key>
+    <string>shadow</string>
   </dict>
   <key>RunAtLoad</key>
   <false/>
