@@ -1,0 +1,63 @@
+{
+  "name": "Hub Kernel Agent",
+  "description": "공통 커널 에이전트 — LLM 게이트웨이, 에이전트 레지스트리, 알람 거버넌스, 운영 메트릭을 제공한다. 실행 제어와 팀 조율은 Orchestrator 역할로 분리한다.",
+  "version": "1.0.0",
+  "url": "http://localhost:7788",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/hub/README.md",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true,
+    "kernel": true,
+    "registry": true,
+    "llmGateway": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "hub-health",
+      "name": "Hub Health",
+      "description": "Hub live/ready/startup 상태와 Prometheus 메트릭을 읽기 전용으로 조회한다.",
+      "tags": ["hub", "kernel", "health", "readonly", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "llm-routing",
+      "name": "LLM Routing Registry",
+      "description": "selector key별 실효 LLM 체인과 provider circuit 상태를 조회한다. 라우팅 변경은 수행하지 않는다.",
+      "tags": ["hub", "llm", "routing", "readonly", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "agent-registry",
+      "name": "Agent Registry",
+      "description": "agent.registry 조회 경로의 source of truth 역할을 제공한다. Orchestrator 전환은 dual-read shadow 이후 진행한다.",
+      "tags": ["hub", "registry", "agent", "readonly", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "alarm-governance",
+      "name": "Alarm Governance",
+      "description": "Hub alarm severity, dedupe, noisy producer 상태를 읽기 전용으로 점검한다.",
+      "tags": ["hub", "alarm", "governance", "readonly", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "ops-mcp",
+      "name": "Hub Ops MCP",
+      "description": "hub-ops-mcp를 통해 health, metrics, circuit, routing, cost 정보를 read-only로 노출한다.",
+      "tags": ["hub", "mcp", "ops", "readonly", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "provider": {
+    "organization": "Team Jay",
+    "url": "https://github.com/AlexLee00/ai-agent-system"
+  }
+}

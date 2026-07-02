@@ -1,0 +1,63 @@
+{
+  "name": "Orchestrator Control Plane Agent",
+  "description": "공통 제어평면 에이전트 — Jay runtime, commander dispatch, 팀 조율, 승인 대기열, 운영 브리핑을 담당한다. Hub 커널의 레지스트리와 LLM 정책은 수렴 게이트 이후 dual-read로 소비한다.",
+  "version": "1.0.0",
+  "url": "local://launchd/ai.orchestrator",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/orchestrator/README.md",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": true,
+    "stateTransitionHistory": true,
+    "controlPlane": true,
+    "orchestration": true,
+    "dispatch": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "commander-dispatch",
+      "name": "Commander Dispatch",
+      "description": "마스터 명령을 팀·commander·작업 큐로 분류하고 실행 전 승인 경계를 유지한다.",
+      "tags": ["orchestrator", "control-plane", "dispatch", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "team-coordination",
+      "name": "Team Coordination",
+      "description": "팀별 상태, handoff, blocker를 조율하고 필요한 commander 경로로 라우팅한다.",
+      "tags": ["orchestrator", "coordination", "teams", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "ops-health-briefing",
+      "name": "Ops Health Briefing",
+      "description": "팀별 health-report와 Hub health/metrics를 종합해 운영 브리핑을 생성한다.",
+      "tags": ["orchestrator", "ops-health", "briefing", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "registry-dual-read-shadow",
+      "name": "Registry Dual-read Shadow",
+      "description": "Orchestrator 기존 registry 조회와 Hub registry 조회를 병행 비교하는 수렴 게이트 경로를 나타낸다. 기본 동작은 기존 경로 유지다.",
+      "tags": ["orchestrator", "hub-convergence", "registry", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "llm-policy-shadow",
+      "name": "LLM Policy Shadow",
+      "description": "jay-model-policy와 Hub selector 정책을 비교해 LLM 정책 수렴 근거를 수집한다. 기본 동작은 기존 정책 유지다.",
+      "tags": ["orchestrator", "hub-convergence", "llm", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "provider": {
+    "organization": "Team Jay",
+    "url": "https://github.com/AlexLee00/ai-agent-system"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@team-jay/hub-ops-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node --disable-warning=DEP0205 --import tsx src/server.ts",
+    "smoke": "tsx ../../scripts/hub-ops-mcp-smoke.ts"
+  }
+}

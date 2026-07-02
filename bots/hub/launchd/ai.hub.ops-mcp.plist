@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.ops-mcp</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/mcp/hub-ops-mcp/src/server.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>HUB_OPS_MCP_PORT</key>
+    <string>4095</string>
+    <key>HUB_BASE_URL</key>
+    <string>http://127.0.0.1:7788</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/hub-ops-mcp.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/hub-ops-mcp-error.log</string>
+</dict>
+</plist>
