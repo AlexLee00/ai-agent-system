@@ -2,7 +2,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 function assert(condition: unknown, message: string): void {
@@ -37,6 +39,15 @@ function main(): void {
       alertClient.includes('incident_key,') &&
       alertClient.includes('dedupe_minutes: dedupe_minutes ?? dedupeMinutes ?? cooldown_minutes ?? cooldownMinutes'),
     'reservation alert-client must propagate incident_key and dedupe_minutes',
+  );
+
+  const kioskMonitorHelpers = readRepoFile('bots/reservation/lib/kiosk-monitor-helpers.ts');
+  assert(
+    kioskMonitorHelpers.includes('const RETRYABLE_BLOCK_DEDUPE_MINUTES = 12 * 60') &&
+      kioskMonitorHelpers.includes('export function buildRetryableBlockIncidentKey') &&
+      kioskMonitorHelpers.includes('incident_key: options.incidentKey || buildRetryableBlockIncidentKey(entry, reason, sourceLabel)') &&
+      kioskMonitorHelpers.includes('dedupe_minutes: options.dedupe_minutes ?? options.dedupeMinutes ?? RETRYABLE_BLOCK_DEDUPE_MINUTES'),
+    'retryable Naver block alerts must use stable incident keys and 12h dedupe',
   );
 
   assert(

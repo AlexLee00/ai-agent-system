@@ -27,11 +27,13 @@ function parseScalar(raw) {
   if (value === 'true') return true;
   if (value === 'false') return false;
   if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
-  if (value.startsWith('[') && value.endsWith(']')) {
+  if ((value.startsWith('[') && value.endsWith(']')) || (value.startsWith('{') && value.endsWith('}'))) {
     try {
       return JSON.parse(value.replace(/'/g, '"'));
     } catch {
-      return value.slice(1, -1).split(',').map((item) => item.trim()).filter(Boolean);
+      if (value.startsWith('[')) {
+        return value.slice(1, -1).split(',').map((item) => item.trim()).filter(Boolean);
+      }
     }
   }
   return value.replace(/^['"]|['"]$/g, '');

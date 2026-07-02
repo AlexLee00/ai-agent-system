@@ -1269,10 +1269,12 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS fallback_count INTEGER DEFAULT 0`).catch(() => {});
   await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS error TEXT`).catch(() => {});
   await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS route_chain JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS routing_source TEXT`).catch(() => {});
   try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_agent_created ON llm_routing_log(agent_name, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_provider_created ON llm_routing_log(provider, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_response_ok ON llm_routing_log(response_ok, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_task ON llm_routing_log(market, task_type, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_routing_source_created ON llm_routing_log(routing_source, created_at DESC)`); } catch { /* 무시 */ }
 
   // ── Posttrade feedback loop (A~H) ──
   await run(`

@@ -7,6 +7,7 @@ import {
   BASE_SIGNAL_WEIGHTS,
   getLatestRegimeWeights as defaultGetLatestRegimeWeights,
 } from './regime-weight-learner.ts';
+import { applyC3RealignToRoute, recordC3RealignShadowSignal } from './luna-c3-realign.ts';
 
 const CRYPTO_FAMILIES = [
   'trend_following',
@@ -129,6 +130,7 @@ async function buildLearnedRegimeBias({
   families = [],
   env = process.env,
   learnedWeightsProvider = defaultGetLatestRegimeWeights,
+  c3RealignShadowRunFn = null,
 } = {}) {
   const mode = learnedBiasMode(env);
   if (mode === 'off') return null;
@@ -393,6 +395,7 @@ export async function buildStrategyRoute({
   decision = null,
   env = process.env,
   learnedWeightsProvider = defaultGetLatestRegimeWeights,
+  c3RealignShadowRunFn = null,
 } = {}) {
   const families = exchange === 'binance' ? CRYPTO_FAMILIES : STOCK_FAMILIES;
   const scores = Object.fromEntries(families.map((family) => [family, 0]));
@@ -540,7 +543,17 @@ export async function buildStrategyRoute({
     reasons: reasons.slice(0, 8),
   };
   if (learnedBias) result.learnedBias = learnedBias;
-  return result;
+  const routed = applyC3RealignToRoute(result, { env, marketRegime, exchange });
+  if (routed?.c3Realign?.shadowOnly === true && routed.c3Realign.liveMutation !== true) {
+    await recordC3RealignShadowSignal(result, {
+      env,
+      symbol,
+      exchange,
+      marketRegime,
+      runFn: c3RealignShadowRunFn || undefined,
+    }).catch(() => null);
+  }
+  return routed;
 }
 
 export function buildStrategyRouteSection(route = null) {

@@ -3,6 +3,8 @@ import { publishReservationAlert } from './alert-client';
 type KioskEntry = Record<string, any>;
 type TrackerMap = Map<string, number>;
 
+const RETRYABLE_BLOCK_DEDUPE_MINUTES = 12 * 60;
+
 function nowKST(): string {
   return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).replace(' ', 'T') + '+09:00';
 }
@@ -39,6 +41,43 @@ export function buildOpsAlertMessage({
   return message;
 }
 
+function normalizeIncidentPart(value: unknown): string {
+  return String(value || 'unknown')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'unknown';
+}
+
+function normalizeRetryableBlockReason(reason: string): string {
+  const text = String(reason || '').trim();
+  const failedMatch = text.match(/차단 실패\(([^)]+)\)/);
+  if (failedMatch?.[1]) return normalizeIncidentPart(failedMatch[1]);
+  if (/naver-monitor|미실행/i.test(text)) return 'naver_monitor_unavailable';
+  if (/로그인/i.test(text)) return 'naver_login_failed';
+  if (/slot_click_failed/i.test(text)) return 'slot_click_failed';
+  if (/검증|verify/i.test(text)) return 'verify_failed';
+  return normalizeIncidentPart(text);
+}
+
+export function buildRetryableBlockIncidentKey(entry: KioskEntry, reason: string, sourceLabel = '키오스크 예약'): string {
+  const phoneDigits = String(entry?.phoneRaw || '').replace(/\D/g, '');
+  const phoneSuffix = phoneDigits ? phoneDigits.slice(-4) : 'unknown';
+  const slot = `${entry?.start || 'unknown'}-${entry?.end || 'unknown'}`.replace(/:/g, '');
+  return [
+    'reservation',
+    'jimmy',
+    'naver_block_retry',
+    normalizeIncidentPart(sourceLabel),
+    normalizeIncidentPart(entry?.date),
+    normalizeIncidentPart(entry?.room),
+    normalizeIncidentPart(slot),
+    normalizeIncidentPart(phoneSuffix),
+    normalizeRetryableBlockReason(reason),
+  ].join(':');
+}
+
 export function publishRetryableBlockAlert(entry: KioskEntry, reason: string, options: Record<string, any> = {}): void {
   const {
     prefix = '⚠️',
@@ -52,6 +91,8 @@ export function publishRetryableBlockAlert(entry: KioskEntry, reason: string, op
     from_bot: 'jimmy',
     event_type: 'alert',
     alert_level: alertLevel,
+    incident_key: options.incidentKey || buildRetryableBlockIncidentKey(entry, reason, sourceLabel),
+    dedupe_minutes: options.dedupe_minutes ?? options.dedupeMinutes ?? RETRYABLE_BLOCK_DEDUPE_MINUTES,
     message: buildOpsAlertMessage({
       title: `${prefix} ${title}`,
       customer: entry?.name || '(이름없음)',

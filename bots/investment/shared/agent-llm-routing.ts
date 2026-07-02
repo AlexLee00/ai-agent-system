@@ -12,7 +12,7 @@ import { createRequire } from 'node:module';
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 const require = createRequire(import.meta.url);
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector.js');
+const { selectLLMChain, selectLLMPolicy } = require('../../../packages/core/lib/llm-model-selector.js');
 
 export type AgentName =
   | 'luna' | 'nemesis' | 'aria' | 'sophia' | 'argos' | 'hermes'
@@ -48,6 +48,7 @@ export interface LLMRoute {
   /** rule-based라 LLM 불필요 */
   noLLM?: boolean;
   selectorKey?: string;
+  routingSource?: 'yaml' | 'legacy' | 'oauth4';
 }
 
 export interface HubChainEntry {
@@ -64,6 +65,7 @@ export interface HubRoutingPlan {
   abstractModel: 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
   chain: HubChainEntry[];
   selectorKey: string | null;
+  routingSource: 'yaml' | 'legacy' | 'oauth4';
 }
 
 const SELECTOR_VERSION = 'v3.0_oauth_4';
@@ -152,6 +154,22 @@ function chainForSelector(selectorKey: string, agent: string, maxTokens?: number
   }) as HubChainEntry[];
 }
 
+function routingSourceForSelector(selectorKey: string, agent: string): 'yaml' | 'legacy' | 'oauth4' {
+  try {
+    const policy = selectLLMPolicy(selectorKey, {
+      agentName: agent,
+      selectorVersion: SELECTOR_VERSION,
+      rolloutPercent: ROLLOUT_PERCENT,
+      rolloutKey: `investment-agent:${agent}`,
+    });
+    const source = String(policy?.routingSource || '').trim().toLowerCase();
+    if (source === 'yaml' || source === 'legacy' || source === 'oauth4') return source;
+  } catch {
+    // source tagging is diagnostic only.
+  }
+  return 'oauth4';
+}
+
 export function selectorKeyForAgentTask(
   agent: AgentName | string,
   market: MarketType | string = 'any',
@@ -179,7 +197,7 @@ export function resolveAgentLLMRoute(
   const normalizedAgent = String(agent || '').trim().toLowerCase();
   const selectorKey = selectorKeyForAgentTask(normalizedAgent, market, task);
   if (RULE_BASED_AGENTS.has(normalizedAgent)) {
-    return { primary: selectorKey, fallbacks: [], noLLM: true, selectorKey };
+    return { primary: selectorKey, fallbacks: [], noLLM: true, selectorKey, routingSource: routingSourceForSelector(selectorKey, normalizedAgent) };
   }
   const chain = chainForSelector(selectorKey, normalizedAgent);
   const labels = chain.map(routeLabel).filter(Boolean);
@@ -187,6 +205,7 @@ export function resolveAgentLLMRoute(
     primary: selectorKey,
     fallbacks: labels.slice(1),
     selectorKey,
+    routingSource: routingSourceForSelector(selectorKey, normalizedAgent),
   };
 }
 
@@ -229,5 +248,6 @@ export function resolveHubRoutingPlan(
     abstractModel: getAbstractModelForHub(agent, market, task) as HubRoutingPlan['abstractModel'],
     chain,
     selectorKey: route.selectorKey || null,
+    routingSource: route.routingSource || 'oauth4',
   };
 }

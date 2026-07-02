@@ -1,3 +1,9 @@
+const {
+  isLunaYamlRoutingEnabled,
+  resolveInvestmentYamlRoutingPolicy,
+  routingSourceForSelectorVersion,
+} = require('./agent-llm-routing-adapter.js');
+
 type LLMChainEntry = {
   provider: string;
   model: string;
@@ -733,6 +739,7 @@ function applyLocalBacktestOnlyGuard(chain: LLMChainEntry[], options: SelectorOp
 }
 
 export function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  if (!Array.isArray(chain) || chain.length === 0) return [];
   const providerGuarded = chain.map((entry) => {
     if (shouldAvoidClaudeCode(entry, options)) return replacementForClaudeCode(entry, options);
     if (shouldAvoidPublicOpenAi(entry, options)) return replacementForPublicOpenAi(entry);
@@ -2054,6 +2061,11 @@ function buildSelectorRegistry(): Record<string, any> {
     'investment.agent_policy': (options: SelectorOptions = {}) => {
       const { agentName, agentModel = null, openaiPerfModel = OPENAI_PERF_MODEL, policyOverride } = options;
       const normalizedAgentName = String(agentName || '');
+      const selectorVersion = resolveSelectorVersionForKey('investment.agent_policy', options);
+      if (isLunaYamlRoutingEnabled(process.env)) {
+        const yamlPolicy = resolveInvestmentYamlRoutingPolicy(normalizedAgentName);
+        if (yamlPolicy) return yamlPolicy;
+      }
       const defaultRoutesLegacy: Record<string, string> = {
         default: 'openai_perf',
         luna: 'openai_perf',
@@ -2101,7 +2113,6 @@ function buildSelectorRegistry(): Record<string, any> {
         reporter: 'market_reporter',
       };
 
-      const selectorVersion = resolveSelectorVersionForKey('investment.agent_policy', options);
       const defaultRoutes = selectorVersion === TEAM_SELECTOR_VERSION_OAUTH4 ? defaultRoutesOauth4 : defaultRoutesLegacy;
       const configuredRoutes = isObject(policyOverride?.agentRoutes) ? { ...defaultRoutes, ...policyOverride.agentRoutes } : defaultRoutes;
       const openaiMiniModel = policyOverride?.openaiMiniModel || OPENAI_MINI_MODEL;
@@ -2209,6 +2220,7 @@ function buildSelectorRegistry(): Record<string, any> {
         groqCompetitionModels,
         anthropicModel,
         selectorVersion,
+        routingSource: routingSourceForSelectorVersion(selectorVersion),
         primary: selectedChain[0] || null,
         fallbacks: selectedChain.slice(1),
         fallbackChain: selectedChain,

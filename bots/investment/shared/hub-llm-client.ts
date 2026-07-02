@@ -128,33 +128,48 @@ export async function recordInvestmentLlmRouteLog(entry: {
   hubText?: string | null;
   directText?: string | null;
   matched?: boolean | null;
+  routingSource?: 'yaml' | 'legacy' | 'oauth4' | null;
 }): Promise<void> {
+  const values = [
+    entry.agentName,
+    entry.provider || null,
+    entry.ok == null ? null : entry.ok === true,
+    Number(entry.costUsd || 0),
+    Math.max(0, Math.round(Number(entry.latencyMs || 0))),
+    entry.market || null,
+    entry.symbol || null,
+    entry.taskType || null,
+    entry.incidentKey || null,
+    entry.shadowMode === true,
+    entry.fallbackUsed === true,
+    Math.max(0, Math.round(Number(entry.fallbackCount || 0))),
+    entry.error ? String(entry.error).slice(0, 500) : null,
+    JSON.stringify(Array.isArray(entry.routeChain) ? entry.routeChain.slice(0, 8) : []),
+    entry.hubText ? String(entry.hubText).slice(0, 2000) : null,
+    entry.directText ? String(entry.directText).slice(0, 2000) : null,
+    entry.matched == null ? null : entry.matched === true,
+  ];
   try {
+    try {
+      await db.run(
+        `INSERT INTO investment.llm_routing_log
+         (agent_name, provider, response_ok, cost_usd, latency_ms, market, symbol, task_type,
+          incident_key, shadow_mode, fallback_used, fallback_count, error, route_chain,
+          hub_text, direct_text, matched, routing_source, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,$18,NOW())`,
+        [...values, entry.routingSource || null],
+      );
+      return;
+    } catch (err) {
+      if (!String(err?.message || err).toLowerCase().includes('routing_source')) throw err;
+    }
     await db.run(
       `INSERT INTO investment.llm_routing_log
          (agent_name, provider, response_ok, cost_usd, latency_ms, market, symbol, task_type,
           incident_key, shadow_mode, fallback_used, fallback_count, error, route_chain,
           hub_text, direct_text, matched, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,NOW())`,
-      [
-        entry.agentName,
-        entry.provider || null,
-        entry.ok == null ? null : entry.ok === true,
-        Number(entry.costUsd || 0),
-        Math.max(0, Math.round(Number(entry.latencyMs || 0))),
-        entry.market || null,
-        entry.symbol || null,
-        entry.taskType || null,
-        entry.incidentKey || null,
-        entry.shadowMode === true,
-        entry.fallbackUsed === true,
-        Math.max(0, Math.round(Number(entry.fallbackCount || 0))),
-        entry.error ? String(entry.error).slice(0, 500) : null,
-        JSON.stringify(Array.isArray(entry.routeChain) ? entry.routeChain.slice(0, 8) : []),
-        entry.hubText ? String(entry.hubText).slice(0, 2000) : null,
-        entry.directText ? String(entry.directText).slice(0, 2000) : null,
-        entry.matched == null ? null : entry.matched === true,
-      ],
+      values,
     );
   } catch (err) {
     noteObservabilityDrop('route_log', err);
@@ -215,6 +230,10 @@ export function buildHubLlmCallPayload(
   if (routeHealthAvoidProviders.length > 0) {
     payload.avoidProviders = routeHealthAvoidProviders;
   }
+  Object.defineProperty(payload, '_routingSource', {
+    value: routingPlan.routingSource,
+    enumerable: false,
+  });
   // Hub owns selector-chain materialization. Luna only passes selectorKey and
   // provider avoidance hints so model changes stay centralized in the selector.
   return payload;
@@ -273,6 +292,7 @@ export async function callViaHub(
       taskType: options.taskType || null,
       incidentKey: options.incidentKey || null,
       error: 'missing_hub_auth_token',
+      routingSource: null,
     }).catch((err) => noteObservabilityDrop('route_log', err));
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs: 0, error: 'HUB_AUTH_TOKEN 없음' };
   }
@@ -336,6 +356,7 @@ export async function callViaHub(
         incidentKey: options.incidentKey || null,
         error: `HTTP ${res.status}`,
         routeChain: (payload?.chain as unknown[]) || [],
+        routingSource: payload?._routingSource || null,
       }).catch((err) => noteObservabilityDrop('route_log', err));
       return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: `HTTP ${res.status}` };
     }
@@ -361,6 +382,7 @@ export async function callViaHub(
         fallbackCount: json.fallbackCount || 0,
         error: json.error || 'hub_response_not_ok',
         routeChain: (payload?.chain as unknown[]) || [],
+        routingSource: payload?._routingSource || null,
       }).catch((err) => noteObservabilityDrop('route_log', err));
       return { ok: false, text: '', provider: json.provider || 'hub', costUsd: 0, latencyMs, error: json.error };
     }
@@ -379,6 +401,7 @@ export async function callViaHub(
         taskType: options.taskType,
         incidentKey: options.incidentKey,
         routeChain: (payload?.chain as unknown[]) || [],
+        routingSource: payload?._routingSource || null,
       });
       return { ok: false, text, provider: json.provider || 'hub', costUsd, latencyMs };
     }
@@ -396,6 +419,7 @@ export async function callViaHub(
       incidentKey: options.incidentKey || null,
       fallbackCount: json.fallbackCount || 0,
       routeChain: (payload?.chain as unknown[]) || [],
+      routingSource: payload?._routingSource || null,
     }).catch((err) => noteObservabilityDrop('route_log', err));
     return { ok: true, text, provider: json.provider || 'hub', costUsd, latencyMs };
 
@@ -414,6 +438,7 @@ export async function callViaHub(
       incidentKey: options.incidentKey || null,
       error: msg,
       routeChain: (payload?.chain as unknown[]) || [],
+      routingSource: payload?._routingSource || null,
     }).catch((err) => noteObservabilityDrop('route_log', err));
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: msg };
   }
@@ -495,6 +520,7 @@ async function _saveShadowLog(
     incidentKey: meta.incidentKey || null,
     shadowMode: true,
     routeChain: meta.routeChain || [],
+    routingSource: null,
     hubText,
     directText,
     matched,
