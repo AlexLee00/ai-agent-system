@@ -2304,13 +2304,14 @@ export function selectLLMChain(key: string, options: SelectorOptions = {}): LLMC
 
 export function describeLLMSelector(key: string, options: SelectorOptions = {}): any {
   const resolved = selectLLMPolicy(key, options);
+  const routingSource = resolved?.routingSource || null;
   if (resolved?.enabled === false) {
-    return { key, kind: 'none', primary: null, fallbacks: [], chain: [], enabled: false };
+    return { key, kind: 'none', primary: null, fallbacks: [], chain: [], enabled: false, routingSource };
   }
   const chain = normalizeChainFromPolicy(resolved);
   if (chain) {
     const guardedChain = applyProviderRuntimeGuards(chain, { ...options, selectorKey: key });
-    return { key, kind: 'chain', primary: guardedChain[0] || null, fallbacks: guardedChain.slice(1), chain: guardedChain };
+    return { key, kind: 'chain', primary: guardedChain[0] || null, fallbacks: guardedChain.slice(1), chain: guardedChain, routingSource };
   }
   return { key, kind: 'policy', policy: resolved };
 }

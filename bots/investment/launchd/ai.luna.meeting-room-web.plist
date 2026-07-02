@@ -21,6 +21,8 @@
     <string>production</string>
     <key>MEETING_ROOM_HOST</key>
     <string>127.0.0.1</string>
+    <key>LUNA_MEETING_LIVE_STREAM_ENABLED</key>
+    <string>true</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>

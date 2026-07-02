@@ -74,6 +74,7 @@ export function runLunaYamlRoutingSmoke() {
       selectorVersion: 'v3.0_oauth_4',
       rolloutPercent: 100,
     });
+    assert.equal(described.routingSource, 'yaml', `${item.agentName} describe output must expose yaml routing source`);
     assert.equal(described.enabled === false, RULE_BASED.has(item.agentName));
     if (RULE_BASED.has(item.agentName)) {
       assert.equal(chain.length, 0, `${item.agentName} must remain LLM disabled`);
