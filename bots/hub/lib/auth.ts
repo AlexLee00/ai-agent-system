@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import * as env from '../../../packages/core/lib/env';
 
 type RequestLike = {
@@ -11,6 +12,21 @@ type ResponseLike = {
 
 type NextLike = () => unknown;
 
+function readLaunchctlEnv(name: string): string {
+  try {
+    return String(execFileSync('/bin/launchctl', ['getenv', name], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function configuredHubAuthToken(): string {
+  return String(process.env.HUB_AUTH_TOKEN || env.HUB_AUTH_TOKEN || readLaunchctlEnv('HUB_AUTH_TOKEN') || '').trim();
+}
+
 export function safeCompare(a: unknown, b: unknown): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const left = Buffer.from(a, 'utf8');
@@ -20,7 +36,7 @@ export function safeCompare(a: unknown, b: unknown): boolean {
 }
 
 export function authMiddleware(req: RequestLike, res: ResponseLike, next: NextLike): unknown {
-  const configured = String(env.HUB_AUTH_TOKEN || '').trim();
+  const configured = configuredHubAuthToken();
   if (!configured) {
     return res.status(503).json({ error: 'hub_auth_not_configured' });
   }

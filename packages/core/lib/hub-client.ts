@@ -493,7 +493,7 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000, option
       headers: {
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
-        ...cycleTraceHeaders(safePayload),
+        ...cycleTraceHeaders(getCurrentCycleTraceFields()),
       },
       signal: controller.signal,
     });
@@ -565,7 +565,7 @@ export async function queryOpsDb(
       headers: {
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
-        ...cycleTraceHeaders(tracedPayload),
+        ...cycleTraceHeaders(getCurrentCycleTraceFields()),
       },
       body: JSON.stringify({ sql, schema, params: safeParams }),
       signal: controller.signal,

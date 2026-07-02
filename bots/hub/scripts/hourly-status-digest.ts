@@ -11,12 +11,13 @@
 import { createRequire } from 'module';
 const require = createRequire(__filename);
 const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
+const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const { getLaunchctlStatus } = require('../../../packages/core/lib/health-provider');
 const { isExpectedIdleService, isOptionalService } = require('../../../packages/core/lib/service-ownership');
 
-const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
-const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
+const HUB_BASE = process.env.HUB_BASE_URL || env.HUB_BASE_URL || 'http://localhost:7788';
+const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || env.HUB_AUTH_TOKEN || '';
 const TIMEOUT_MS = 8_000;
 
 interface BotHealth {
