@@ -4,7 +4,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.hub.ops-mcp</string>
+  <string>ai.hub.ai-os-dashboard</string>
 
   <key>ProgramArguments</key>
   <array>
@@ -12,7 +12,7 @@
     <string>--disable-warning=DEP0205</string>
     <string>--import</string>
     <string>tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/mcp/hub-ops-mcp/src/server.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/services/ai-os-dashboard/server.ts</string>
   </array>
 
   <key>WorkingDirectory</key>
@@ -20,25 +20,24 @@
 
   <key>EnvironmentVariables</key>
   <dict>
-    <key>MODE</key>
-    <string>ops</string>
-    <key>HUB_OPS_MCP_PORT</key>
-    <string>4095</string>
+    <key>AI_OS_DASHBOARD_ENABLED</key>
+    <string>false</string>
+    <key>AI_OS_DASHBOARD_PORT</key>
+    <string>4105</string>
     <key>HUB_BASE_URL</key>
     <string>http://127.0.0.1:7788</string>
-    <key>LUNA_YAML_ROUTING_ENABLED</key>
-    <string>true</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>KeepAlive</key>
-  <true/>
+  <false/>
   <key>StandardOutPath</key>
-  <string>/Users/alexlee/.ai-agent-system/logs/hub-ops-mcp.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/ai-os-dashboard.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/alexlee/.ai-agent-system/logs/hub-ops-mcp-error.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/ai-os-dashboard-error.log</string>
 </dict>
 </plist>
+

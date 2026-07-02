@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const cycleTrace = require('./cycle-trace');
 
 type CacheEntry = {
   value: any;
@@ -43,6 +44,10 @@ type HubLlmCallRequest = {
   priority?: 'low' | 'normal' | 'high' | 'critical';
   cacheEnabled?: boolean;
   cacheType?: string;
+  traceId?: string | null;
+  trace_id?: string | null;
+  cycleId?: string | null;
+  cycle_id?: string | null;
 };
 
 type HubLlmCallResponse = {
@@ -79,6 +84,10 @@ type HubVisionRequest = {
   maxBudgetUsd?: number;
   model?: string;
   priority?: 'low' | 'normal' | 'high' | 'critical';
+  traceId?: string | null;
+  trace_id?: string | null;
+  cycleId?: string | null;
+  cycle_id?: string | null;
 };
 
 type HubEmbeddingRequest = {
@@ -89,6 +98,10 @@ type HubEmbeddingRequest = {
   input: string | string[];
   timeoutMs?: number;
   expectedDimensions?: number;
+  traceId?: string | null;
+  trace_id?: string | null;
+  cycleId?: string | null;
+  cycle_id?: string | null;
 };
 
 const cache = new Map<string, CacheEntry>();
@@ -147,6 +160,53 @@ function boolEnv(name: string, fallback = false): boolean {
   const raw = String(process.env[name] ?? '').trim().toLowerCase();
   if (!raw) return fallback;
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
+}
+
+function getCurrentCycleTraceFields(): Record<string, string> {
+  try {
+    const current = cycleTrace.getCurrentTracePropagation?.() || {};
+    const traceId = String(current.traceId || current.trace_id || '').trim();
+    const cycleId = String(current.cycleId || current.cycle_id || '').trim();
+    const fields: Record<string, string> = {};
+    if (traceId) {
+      fields.traceId = traceId;
+      fields.trace_id = traceId;
+    }
+    if (cycleId) {
+      fields.cycleId = cycleId;
+      fields.cycle_id = cycleId;
+    }
+    return fields;
+  } catch {
+    return {};
+  }
+}
+
+function withCurrentCycleTrace(payload: any): any {
+  const current = getCurrentCycleTraceFields();
+  if (!current.traceId && !current.cycleId) return payload;
+  const existingTraceId = payload?.traceId || payload?.trace_id;
+  const existingCycleId = payload?.cycleId || payload?.cycle_id;
+  const traceFields = !existingTraceId && current.traceId
+    ? { traceId: current.traceId, trace_id: current.trace_id }
+    : {};
+  const cycleFields = !existingCycleId && current.cycleId
+    ? { cycleId: current.cycleId, cycle_id: current.cycle_id }
+    : {};
+  return {
+    ...payload,
+    ...traceFields,
+    ...cycleFields,
+  };
+}
+
+function cycleTraceHeaders(payload: any): Record<string, string> {
+  const traceId = String(payload?.traceId || payload?.trace_id || '').trim();
+  const cycleId = String(payload?.cycleId || payload?.cycle_id || '').trim();
+  return {
+    ...(traceId ? { 'X-Hub-Trace-Id': traceId } : {}),
+    ...(cycleId ? { 'X-Hub-Cycle-Id': cycleId } : {}),
+  };
 }
 
 function positiveIntEnv(name: string, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
@@ -433,6 +493,7 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000, option
       headers: {
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
+        ...cycleTraceHeaders(safePayload),
       },
       signal: controller.signal,
     });
@@ -504,6 +565,7 @@ export async function queryOpsDb(
       headers: {
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
+        ...cycleTraceHeaders(tracedPayload),
       },
       body: JSON.stringify({ sql, schema, params: safeParams }),
       signal: controller.signal,
@@ -697,7 +759,8 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
     taskType: request.taskType || 'default',
     timeoutMs,
   };
-  const safePayload = prepareHubLlmPayload(payload);
+  const tracedPayload = withCurrentCycleTrace(payload);
+  const safePayload = prepareHubLlmPayload(tracedPayload);
   if (safePayload?.payloadRejected) {
     throw new Error(`hub_llm_payload_too_large:${safePayload.payloadRejectReason || 'client_payload_limit'}:${safePayload.finalPayloadBytes || 0}>${safePayload.payloadLimitBytes || 0}`);
   }
@@ -862,6 +925,7 @@ export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{ 
 
 async function postHubJson(path: string, payload: any, timeoutMs: number): Promise<any> {
   const url = `${env.HUB_BASE_URL}${path}`;
+  const tracedPayload = withCurrentCycleTrace(payload);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs + 1000);
   try {
@@ -871,7 +935,7 @@ async function postHubJson(path: string, payload: any, timeoutMs: number): Promi
         Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(tracedPayload),
       signal: controller.signal,
     });
     const body = await res.json().catch(() => ({}));
@@ -882,7 +946,7 @@ async function postHubJson(path: string, payload: any, timeoutMs: number): Promi
     return body;
   } catch (error) {
     if (shouldUseCurlFallback(error, url)) {
-      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, payload, timeoutMs);
+      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, tracedPayload, timeoutMs);
       if (body && body?.ok !== false) return body;
     }
     const err = error as Error & { name?: string };

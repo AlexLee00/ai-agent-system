@@ -666,6 +666,14 @@ export async function alarmRoute(req: any, res: any) {
     const title = normalizeText(req.body?.title, `${team} alarm`);
     const payload = req.body?.payload ?? {};
     const eventType = normalizeEventType(payload);
+    const traceId = normalizeText(req.body?.traceId)
+      || normalizeText(req.body?.trace_id)
+      || normalizeText((payload as Record<string, unknown>)?.traceId)
+      || normalizeText((payload as Record<string, unknown>)?.trace_id);
+    const cycleId = normalizeText(req.body?.cycleId)
+      || normalizeText(req.body?.cycle_id)
+      || normalizeText((payload as Record<string, unknown>)?.cycleId)
+      || normalizeText((payload as Record<string, unknown>)?.cycle_id);
 
     const { type: baseAlarmType, confidence: classificationConfidence } = classifyAlarmTypeWithConfidence({
       requestedType: req.body?.alarmType ?? req.body?.alarm_type ?? req.body?.type,
@@ -801,7 +809,7 @@ export async function alarmRoute(req: any, res: any) {
       team,
       botName: fromBot,
       severity,
-      traceId: incidentKey,
+      traceId: traceId || incidentKey,
       title,
       message,
       tags: [
@@ -817,6 +825,8 @@ export async function alarmRoute(req: any, res: any) {
         fromBot,
         event_type: eventType,
         incident_key: incidentKey,
+        trace_id: traceId || null,
+        cycle_id: cycleId || null,
         cluster_key: clusterKey || null,
         alarm_type: alarmType,
         visibility,
@@ -861,6 +871,8 @@ export async function alarmRoute(req: any, res: any) {
         event_id: eventId,
         event_type: eventType,
         incident_key: incidentKey,
+        trace_id: traceId || null,
+        cycle_id: cycleId || null,
         cluster_key: clusterKey || null,
         dispatch_mode: dispatchMode,
         classification_source: classificationSource,

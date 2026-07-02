@@ -27,6 +27,7 @@
     "check:package-script-paths": "node --disable-warning=DEP0205 --import tsx scripts/package-script-path-smoke.ts",
     "check:team-autonomy-gaps": "node scripts/check-team-autonomy-gaps.js",
     "check:llm-stage-a": "npm --prefix bots/hub run -s check:llm-stage-a",
+    "smoke:cycle-trace": "tsx scripts/cycle-trace-smoke.ts",
     "smoke:common-weight-learning": "tsx scripts/common-weight-learning-smoke.ts",
     "platform:convergence-map": "tsx scripts/platform-convergence-map.ts --json",
     "smoke:platform-convergence-map": "tsx scripts/platform-convergence-map.ts --smoke --json",

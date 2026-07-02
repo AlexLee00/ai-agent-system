@@ -27,6 +27,9 @@ const docArchiver = require('../lib/write/doc-archiver') as {
 const { generateGemmaPilotText } = require('../../../packages/core/lib/gemma-pilot') as {
   generateGemmaPilotText: (payload: Record<string, any>) => Promise<{ ok?: boolean; content?: string }>;
 };
+const { callHubLlm } = require('../../../packages/core/lib/hub-client') as {
+  callHubLlm: (payload: Record<string, any>) => Promise<{ ok?: boolean; text?: string; result?: string }>;
+};
 
 type WriteOptions = {
   mode?: string;
@@ -88,6 +91,40 @@ function getChangedFiles(): string[] {
   const output = safeExec('git diff --name-only HEAD~1');
   if (!output) return [];
   return output.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+async function generateDailyInsight(prompt: string): Promise<{ ok?: boolean; content?: string }> {
+  if (process.env.WRITE_HUB_ENABLED === 'true') {
+    try {
+      const response = await callHubLlm({
+        callerTeam: 'orchestrator',
+        agent: 'write',
+        selectorKey: 'write.report',
+        taskType: 'daily-insight',
+        prompt,
+        maxTokens: 300,
+        temperature: 0.7,
+        timeoutMs: 10000,
+        maxBudgetUsd: 0.03,
+      });
+      const content = String(response?.text || response?.result || '').trim();
+      if (response?.ok !== false && content) return { ok: true, content };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[write] Hub write.report 인사이트 실패, gemma fallback 사용: ${message}`);
+    }
+  }
+
+  return generateGemmaPilotText({
+    team: 'orchestrator',
+    purpose: 'gemma-insight',
+    bot: 'write',
+    requestType: 'daily-insight',
+    prompt,
+    maxTokens: 300,
+    temperature: 0.7,
+    timeoutMs: 10000,
+  });
 }
 
 function formatPushReport(syncIssues: SyncIssue[], changelogEntry: any, archiveResult: ArchiveResult = {}, trackerResult: TrackerResult = {}): string {
@@ -175,16 +212,7 @@ export async function runDaily(options: WriteOptions = {}): Promise<Record<strin
 데이터:
 ${JSON.stringify(collected, null, 2).slice(0, 2000)}`;
 
-    const insight = await generateGemmaPilotText({
-      team: 'orchestrator',
-      purpose: 'gemma-insight',
-      bot: 'write',
-      requestType: 'daily-insight',
-      prompt: insightPrompt,
-      maxTokens: 300,
-      temperature: 0.7,
-      timeoutMs: 10000,
-    });
+    const insight = await generateDailyInsight(insightPrompt);
 
     if (insight?.ok && insight.content) {
       messageLines.push('', '🔍 AI 인사이트 (gemma4):', insight.content.trim());

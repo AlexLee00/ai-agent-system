@@ -535,40 +535,46 @@ function parseIntentJson(content) {
 
 async function runIntentModel({ systemPrompt, text }) {
   const startedAt = Date.now();
-  try {
-    const result = await callHubLlm({
-      callerTeam: 'orchestrator',
-      agent: 'jay',
-      selectorKey: 'orchestrator.jay.intent',
-      taskType: 'command_parse',
-      abstractModel: 'anthropic_haiku',
-      systemPrompt,
-      prompt: text,
-      timeoutMs: 9000,
-      maxBudgetUsd: 0.02,
-      jsonSchema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['intent', 'args', 'confidence'],
-        properties: {
-          intent: { type: 'string' },
-          args: { type: 'object' },
-          confidence: { type: 'number' },
+  const selectors = process.env.JAY_INTENT_HUB_ENABLED === 'true'
+    ? ['jay.intent', 'orchestrator.jay.intent']
+    : ['orchestrator.jay.intent'];
+  for (const selectorKey of selectors) {
+    try {
+      const result = await callHubLlm({
+        callerTeam: 'orchestrator',
+        agent: 'jay',
+        selectorKey,
+        taskType: 'command_parse',
+        abstractModel: 'anthropic_haiku',
+        systemPrompt,
+        prompt: text,
+        timeoutMs: 9000,
+        maxBudgetUsd: 0.02,
+        jsonSchema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['intent', 'args', 'confidence'],
+          properties: {
+            intent: { type: 'string' },
+            args: { type: 'object' },
+            confidence: { type: 'number' },
+          },
         },
-      },
-    });
-    const parsed = parseIntentJson(result.text);
-    if (!parsed) return null;
-    return {
-      ...parsed,
-      model: result.model || result.selected_route,
-      provider: result.provider,
-      durationMs: Date.now() - startedAt,
-      traceId: result.traceId || null,
-    };
-  } catch {
-    return null;
+      });
+      const parsed = parseIntentJson(result.text);
+      if (!parsed) return null;
+      return {
+        ...parsed,
+        model: result.model || result.selected_route,
+        provider: result.provider,
+        durationMs: Date.now() - startedAt,
+        traceId: result.traceId || null,
+      };
+    } catch {
+      // Env-gated jay.intent is allowed to fail open to the legacy selector.
+    }
   }
+  return null;
 }
 
 async function parseLLMFallback(text) {

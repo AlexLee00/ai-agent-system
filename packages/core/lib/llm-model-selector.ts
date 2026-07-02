@@ -1871,6 +1871,23 @@ function buildAbstractRoutePolicy(
   };
 }
 
+function buildJayIntentSelector({ intentPrimary, intentFallback }: SelectorOptions = {}) {
+  return {
+    primary: {
+      provider: intentPrimary ? inferProviderFromModel(intentPrimary) : 'gemini-cli-oauth',
+      model: intentPrimary || GEMINI_CLI_FLASH_LITE_MODEL,
+    },
+    fallback: {
+      provider: intentFallback ? inferProviderFromModel(intentFallback) : 'groq',
+      model: intentFallback
+        ? (intentFallback.startsWith('gemini-cli-oauth/')
+            ? intentFallback
+            : `gemini-cli-oauth/${intentFallback.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`)
+        : GROQ_FAST_MODEL,
+    },
+  };
+}
+
 function buildSelectorRegistry(): Record<string, any> {
   return {
     'hub._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub._default', options),
@@ -1905,20 +1922,14 @@ function buildSelectorRegistry(): Record<string, any> {
     'claude.doctor.recovery': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.doctor.recovery', options),
     'claude.guardian.safety': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.guardian.safety', options),
 
-    'orchestrator.jay.intent': ({ intentPrimary, intentFallback }: SelectorOptions = {}) => ({
-      primary: {
-        provider: intentPrimary ? inferProviderFromModel(intentPrimary) : 'gemini-cli-oauth',
-        model: intentPrimary || GEMINI_CLI_FLASH_LITE_MODEL,
-      },
-      fallback: {
-        provider: intentFallback ? inferProviderFromModel(intentFallback) : 'groq',
-        model: intentFallback
-          ? (intentFallback.startsWith('gemini-cli-oauth/')
-              ? intentFallback
-              : `gemini-cli-oauth/${intentFallback.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`)
-          : GROQ_FAST_MODEL,
-      },
-    }),
+    'jay.intent': buildJayIntentSelector,
+    'orchestrator.jay.intent': buildJayIntentSelector,
+
+    'write.report': ({ maxTokens = 300, temperature = 0.7 }: SelectorOptions = {}) => ([
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature, timeoutMs: 10000 },
+      { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens, temperature, timeoutMs: 15000 },
+      { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens, temperature: Math.min(Number(temperature) || 0.7, 0.3), timeoutMs: 25000 },
+    ]),
 
     'orchestrator.jay.chat_fallback': ({ chatFallbackChain }: SelectorOptions = {}) => {
       if (Array.isArray(chatFallbackChain) && chatFallbackChain.length > 0) {

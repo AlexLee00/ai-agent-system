@@ -27,6 +27,8 @@ type RouteReq = AnyRecord;
 type RouteRes = AnyRecord;
 
 let routingLogAuditColumnsPromise: Promise<boolean> | null = null;
+let routingLogTraceColumnsPromise: Promise<boolean> | null = null;
+let routingLogTraceColumnsCheckedAt = 0;
 
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
 export async function llmCallRoute(req: RouteReq, res: RouteRes) {
@@ -101,8 +103,11 @@ export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
     selectorKey,
     taskType,
     prompt,
-    requestId: body.requestId || context.traceId || undefined,
-    traceId: context.traceId || undefined,
+    requestId: body.requestId || body.traceId || body.trace_id || context.traceId || undefined,
+    traceId: body.traceId || body.trace_id || context.traceId || undefined,
+    trace_id: body.trace_id || body.traceId || context.traceId || undefined,
+    cycleId: body.cycleId || body.cycle_id || undefined,
+    cycle_id: body.cycle_id || body.cycleId || undefined,
   };
   if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
 
@@ -249,8 +254,11 @@ export async function llmEmbeddingsRoute(req: RouteReq, res: RouteRes) {
     selectorKey,
     taskType,
     prompt: nonEmptyTexts.join('\n\n').slice(0, 8000),
-    requestId: body.requestId || context.traceId || undefined,
-    traceId: context.traceId || undefined,
+    requestId: body.requestId || body.traceId || body.trace_id || context.traceId || undefined,
+    traceId: body.traceId || body.trace_id || context.traceId || undefined,
+    trace_id: body.trace_id || body.traceId || context.traceId || undefined,
+    cycleId: body.cycleId || body.cycle_id || undefined,
+    cycle_id: body.cycle_id || body.cycleId || undefined,
   };
   if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
 
@@ -427,8 +435,11 @@ function normalizeLlmCallRequest(
     callerTeam: body.callerTeam || context.callerTeam || undefined,
     agent: body.agent || context.agent || undefined,
     urgency: body.urgency || context.priority || undefined,
-    requestId: body.requestId || context.traceId || undefined,
-    traceId: context.traceId || undefined,
+    requestId: body.requestId || body.traceId || body.trace_id || context.traceId || undefined,
+    traceId: body.traceId || body.trace_id || context.traceId || undefined,
+    trace_id: body.trace_id || body.traceId || context.traceId || undefined,
+    cycleId: body.cycleId || body.cycle_id || undefined,
+    cycle_id: body.cycle_id || body.cycleId || undefined,
   };
 }
 
@@ -990,21 +1001,66 @@ function redactJobPayload(job: AnyRecord): AnyRecord {
 async function logRouting(resp: AnyRecord, body: AnyRecord): Promise<void> {
   const audit = buildRoutingLogAudit(body);
   const includeAudit = await ensureRoutingLogAuditColumns();
+  const includeTrace = await routingLogTraceColumnsExist().catch(() => false);
   try {
-    await insertRoutingLog(resp, body, audit, includeAudit);
+    await insertRoutingLog(resp, body, audit, includeAudit, includeTrace);
   } catch (err: any) {
-    if (includeAudit && isRoutingLogAuditColumnError(err)) {
+    if ((includeAudit && isRoutingLogAuditColumnError(err)) || (includeTrace && isRoutingLogTraceColumnError(err))) {
       routingLogAuditColumnsPromise = null;
-      await insertRoutingLog(resp, body, audit, false);
+      routingLogTraceColumnsPromise = null;
+      await insertRoutingLog(resp, body, audit, false, false);
       return;
     }
     throw err;
   }
 }
 
-async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyRecord, includeAudit: boolean): Promise<void> {
+async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyRecord, includeAudit: boolean, includeTrace: boolean): Promise<void> {
   const providerForLog = resp?.dedupeHit ? 'dedupe' : resp.provider;
+  const traceId = body.traceId ?? body.trace_id ?? resp.traceId ?? resp.trace_id ?? null;
+  const cycleId = body.cycleId ?? body.cycle_id ?? resp.cycleId ?? resp.cycle_id ?? null;
   if (includeAudit) {
+    if (includeTrace) {
+      await pgPool.run('public', `
+        INSERT INTO llm_routing_log (
+          created_at, provider, agent, caller_team, abstract_model,
+          success, duration_ms, cost_usd, fallback_count, error, session_id,
+          prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars,
+          selector_key, selected_route, runtime_profile, attempted_providers, avoided_providers,
+          request_id, route_target_kind, runtime_purpose, estimated_cost_usd, budget_guard_status, provider_tier,
+          trace_id, cycle_id
+        ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20, $21, $22, $23, $24, $25, $26, $27)
+      `, [
+        providerForLog,
+        body.agent ?? null,
+        body.callerTeam ?? null,
+        body.abstractModel,
+        resp.ok,
+        resp.durationMs,
+        resp.totalCostUsd ?? 0,
+        resp.fallbackCount ?? 0,
+        resp.error ?? null,
+        resp.sessionId ?? traceId ?? null,
+        audit.promptHash,
+        audit.systemPromptHash,
+        audit.requestFingerprint,
+        audit.promptChars,
+        resp.selectorKey ?? body.selectorKey ?? null,
+        resp.selected_route ?? null,
+        resp.runtimeProfile ?? null,
+        JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []),
+        JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []),
+        body.requestId ?? traceId ?? resp.sessionId ?? null,
+        resp.routeTargetKind ?? null,
+        resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null,
+        Number(resp.estimatedCostUsd ?? body.estimatedCostUsd ?? body.estimated_cost_usd ?? 0) || 0,
+        resp.budgetGuardStatus ?? null,
+        resolveProviderTierForLog(resp),
+        traceId,
+        cycleId,
+      ]);
+      return;
+    }
     await pgPool.run('public', `
       INSERT INTO llm_routing_log (
         created_at, provider, agent, caller_team, abstract_model,
@@ -1023,7 +1079,7 @@ async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyReco
       resp.totalCostUsd ?? 0,
       resp.fallbackCount ?? 0,
       resp.error ?? null,
-      resp.sessionId ?? body.traceId ?? null,
+      resp.sessionId ?? traceId ?? null,
       audit.promptHash,
       audit.systemPromptHash,
       audit.requestFingerprint,
@@ -1033,12 +1089,36 @@ async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyReco
       resp.runtimeProfile ?? null,
       JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []),
       JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []),
-      body.requestId ?? body.traceId ?? resp.traceId ?? resp.sessionId ?? null,
+      body.requestId ?? traceId ?? resp.sessionId ?? null,
       resp.routeTargetKind ?? null,
       resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null,
       Number(resp.estimatedCostUsd ?? body.estimatedCostUsd ?? body.estimated_cost_usd ?? 0) || 0,
       resp.budgetGuardStatus ?? null,
       resolveProviderTierForLog(resp),
+    ]);
+    return;
+  }
+
+  if (includeTrace) {
+    await pgPool.run('public', `
+      INSERT INTO llm_routing_log (
+        created_at, provider, agent, caller_team, abstract_model,
+        success, duration_ms, cost_usd, fallback_count, error, session_id,
+        trace_id, cycle_id
+      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `, [
+      providerForLog,
+      body.agent ?? null,
+      body.callerTeam ?? null,
+      body.abstractModel,
+      resp.ok,
+      resp.durationMs,
+      resp.totalCostUsd ?? 0,
+      resp.fallbackCount ?? 0,
+      resp.error ?? null,
+      resp.sessionId ?? traceId ?? null,
+      traceId,
+      cycleId,
     ]);
     return;
   }
@@ -1058,7 +1138,7 @@ async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyReco
     resp.totalCostUsd ?? 0,
     resp.fallbackCount ?? 0,
     resp.error ?? null,
-    resp.sessionId ?? body.traceId ?? null,
+    resp.sessionId ?? traceId ?? null,
   ]);
 }
 
@@ -1150,6 +1230,28 @@ async function routingLogAuditColumnsExist() {
       'provider_tier',
     ]]);
   return Number(rows?.[0]?.count || 0) === 15;
+}
+
+function routingLogTraceColumnsExist(): Promise<boolean> {
+  const stale = Date.now() - routingLogTraceColumnsCheckedAt > 60_000;
+  if (!routingLogTraceColumnsPromise || stale) {
+    routingLogTraceColumnsPromise = (async () => {
+      const rows = await pgPool.query('public', `
+        SELECT COUNT(*)::int AS count
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        AND table_name = 'llm_routing_log'
+          AND column_name = ANY($1::text[])
+      `, [['trace_id', 'cycle_id']]);
+      routingLogTraceColumnsCheckedAt = Date.now();
+      return Number(rows?.[0]?.count || 0) === 2;
+    })().catch((err) => {
+      routingLogTraceColumnsCheckedAt = 0;
+      console.warn('[llm] routing log trace column check skipped:', err?.message || err);
+      return false;
+    });
+  }
+  return routingLogTraceColumnsPromise;
 }
 
 async function createRoutingLogAuditIndexes() {
@@ -1250,5 +1352,12 @@ function isRoutingLogAuditColumnError(err: unknown): boolean {
     || message.includes('estimated_cost_usd')
     || message.includes('budget_guard_status')
     || message.includes('provider_tier')
+    || message.includes('column') && message.includes('does not exist');
+}
+
+function isRoutingLogTraceColumnError(err: unknown): boolean {
+  const message = String((err as any)?.message || err || '').toLowerCase();
+  return message.includes('trace_id')
+    || message.includes('cycle_id')
     || message.includes('column') && message.includes('does not exist');
 }

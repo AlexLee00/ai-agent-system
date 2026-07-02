@@ -76,7 +76,7 @@ async function withMcpServer(work) {
 
 function assertReadOnlySurface() {
   const toolNames = HUB_OPS_MCP_TOOLS.map((tool) => tool.name);
-  assert.deepEqual(toolNames.sort(), ['hub-circuit', 'hub-cost', 'hub-health', 'hub-metrics', 'hub-routing'].sort());
+  assert.deepEqual(toolNames.sort(), ['hub-circuit', 'hub-cost', 'hub-health', 'hub-metrics', 'hub-routing', 'hub-trace'].sort());
   for (const tool of HUB_OPS_MCP_TOOLS) {
     assert.equal(/apply|write|delete|reset|mutation|restart|kill/i.test(`${tool.name} ${tool.description}`), false);
   }
@@ -103,6 +103,43 @@ async function assertCostQuerySelectOnly() {
   assert.equal(result.ok, true);
   assert.equal(result.totalCalls, 3);
   assert.equal(calls.length, 1);
+}
+
+async function assertTraceQuerySelectOnly() {
+  const calls = [];
+  const result = await callHubOpsTool('hub-trace', { traceId: 'trace-smoke', limit: 5 }, {
+    queryReadonly: async (schema, sql, params) => {
+      calls.push({ schema, sql, params });
+      assert.match(String(sql).trim(), /^SELECT/i);
+      assert.equal(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(sql), false);
+      if (String(sql).includes('information_schema.columns')) {
+        return [{ column_name: 'trace_id' }, { column_name: 'cycle_id' }];
+      }
+      if (String(sql).includes('public.llm_routing_log')) {
+        return [{
+          created_at: '2026-07-02T00:00:00.000Z',
+          trace_id: 'trace-smoke',
+          cycle_id: 'cycle-smoke',
+          provider: 'groq',
+          caller_team: 'hub',
+          agent: 'smoke',
+          selected_route: 'groq/model',
+          success: true,
+        }];
+      }
+      if (String(sql).includes('agent.hub_alarms')) return [];
+      if (String(sql).includes('agent.event_lake')) return [];
+      return [];
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.counts.routing, 1);
+  assert.ok(calls.length >= 2);
+
+  const skipped = await callHubOpsTool('hub-trace', { traceId: 'trace-smoke' }, {
+    queryReadonly: async () => [],
+  });
+  assert.equal(skipped.skipped, true);
 }
 
 async function assertDirectTools() {
@@ -135,7 +172,7 @@ async function assertRpcServer() {
     await withMcpServer(async (base) => {
       const listed = await postJson(`${base}/rpc`, { jsonrpc: '2.0', id: 1, method: 'tools/list' });
       assert.equal(listed.status, 200);
-      assert.equal(listed.body.result.tools.length, 5);
+      assert.equal(listed.body.result.tools.length, 6);
 
       const called = await postJson(`${base}/rpc`, {
         jsonrpc: '2.0',
@@ -166,6 +203,7 @@ export async function runHubOpsMcpSmoke() {
   assertReadOnlySurface();
   await assertDirectTools();
   await assertCostQuerySelectOnly();
+  await assertTraceQuerySelectOnly();
   await assertRpcServer();
   await assertHardServerPath();
   return {

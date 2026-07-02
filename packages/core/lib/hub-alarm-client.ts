@@ -147,6 +147,10 @@ type PostAlarmInput = {
   cooldownMinutes?: number;
   criticalTelegramMode?: string;
   inlineKeyboard?: InlineKeyboard | null;
+  traceId?: string | null;
+  trace_id?: string | null;
+  cycleId?: string | null;
+  cycle_id?: string | null;
 };
 
 type InlineTelegramInput = {
@@ -204,6 +208,47 @@ function _normalizeLegacyAlertLevel(value: unknown): number | null {
 
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _currentCycleTraceFields(): Record<string, string> {
+  try {
+    const cycleTrace = require('./cycle-trace');
+    const current = cycleTrace.getCurrentTracePropagation?.() || {};
+    const traceId = _normalizeAlertText(current.traceId || current.trace_id);
+    const cycleId = _normalizeAlertText(current.cycleId || current.cycle_id);
+    const fields: Record<string, string> = {};
+    if (traceId) {
+      fields.traceId = traceId;
+      fields.trace_id = traceId;
+    }
+    if (cycleId) {
+      fields.cycleId = cycleId;
+      fields.cycle_id = cycleId;
+    }
+    return fields;
+  } catch {
+    return {};
+  }
+}
+
+function _withCycleTraceFields(payload: Record<string, unknown>): Record<string, unknown> {
+  const current = _currentCycleTraceFields();
+  const traceId = _normalizeAlertText(payload.traceId || payload.trace_id);
+  const cycleId = _normalizeAlertText(payload.cycleId || payload.cycle_id);
+  return {
+    ...payload,
+    ...(!traceId && current.traceId ? { traceId: current.traceId, trace_id: current.trace_id } : {}),
+    ...(!cycleId && current.cycleId ? { cycleId: current.cycleId, cycle_id: current.cycle_id } : {}),
+  };
+}
+
+function _cycleTraceHeaders(payload: Record<string, unknown>): Record<string, string> {
+  const traceId = _normalizeAlertText(payload.traceId || payload.trace_id);
+  const cycleId = _normalizeAlertText(payload.cycleId || payload.cycle_id);
+  return {
+    ...(traceId ? { 'X-Hub-Trace-Id': traceId } : {}),
+    ...(cycleId ? { 'X-Hub-Cycle-Id': cycleId } : {}),
+  };
 }
 
 function _truncateString(value: unknown, maxChars: number): string {
@@ -779,6 +824,7 @@ async function _postAlarmViaHub({
   const sanitizedPayload = payload && typeof payload === 'object' && !Array.isArray(payload)
     ? (_sanitizeHubAlarmValue(payload) as Record<string, unknown>)
     : (payload == null ? {} : { value: _sanitizeHubAlarmValue(payload) });
+  const tracedPayload = _withCycleTraceFields(sanitizedPayload);
   const hubAlarmBody = _fitHubAlarmBody({
     message: _truncateString(message, HUB_ALARM_MAX_MESSAGE_CHARS),
     team,
@@ -792,7 +838,7 @@ async function _postAlarmViaHub({
     eventType: normalizedEventType,
     dedupeMinutes: normalizedDedupeMinutes,
     payload: {
-      ...sanitizedPayload,
+      ...tracedPayload,
       event_type: normalizedEventType,
     },
   }, normalizedEventType);
@@ -802,6 +848,7 @@ async function _postAlarmViaHub({
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${hubToken}`,
+        ..._cycleTraceHeaders(tracedPayload),
       },
       body: JSON.stringify(hubAlarmBody),
       signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),

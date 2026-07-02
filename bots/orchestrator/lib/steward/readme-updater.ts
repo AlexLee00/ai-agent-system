@@ -10,6 +10,7 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const launchdManager = require('./launchd-manager');
 const telegramManager = require('./telegram-manager');
 const codexManager = require('./codex-manager');
+const { shadowRegistryStatsViaHub } = require('../hub-agent-registry-read');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const README_PATH = path.join(REPO_ROOT, 'README.md');
@@ -87,7 +88,7 @@ async function countRegistryStats() {
     `, []);
     const agentCount = Number(row?.agent_total || 0);
     const teamCount = Number(row?.team_total || 0);
-    if (agentCount > 0) return { agentCount, teamCount };
+    if (agentCount > 0) return shadowRegistryStatsViaHub({ agentCount, teamCount });
   } catch {
     // seed fallback
   }

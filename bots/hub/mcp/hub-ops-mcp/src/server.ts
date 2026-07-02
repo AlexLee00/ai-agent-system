@@ -30,6 +30,10 @@ export const HUB_OPS_MCP_TOOLS = [
     name: 'hub-cost',
     description: 'Return recent Hub LLM cost/call summary from public.llm_routing_log. SELECT-only.',
   },
+  {
+    name: 'hub-trace',
+    description: 'Return read-only Hub routing/alarm/event timeline for a traceId or cycleId.',
+  },
 ];
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -204,6 +208,165 @@ async function buildCostSummary(args = {}, deps = {}) {
   }
 }
 
+function normalizeTraceLimit(value, fallback = 80) {
+  return Math.max(1, Math.min(200, Number(value || fallback) || fallback));
+}
+
+async function buildTraceTimeline(args = {}, deps = {}) {
+  const traceId = String(args.traceId || args.trace_id || '').trim();
+  const cycleId = String(args.cycleId || args.cycle_id || '').trim();
+  const limit = normalizeTraceLimit(args.limit);
+  const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  if (!traceId && !cycleId) {
+    return {
+      ok: false,
+      mode: 'read_only_select',
+      error: 'traceId_or_cycleId_required',
+      events: [],
+    };
+  }
+
+  try {
+    const columns = await queryReadonly('public', `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'llm_routing_log'
+        AND column_name = ANY($1::text[])
+    `, [['trace_id', 'cycle_id']]);
+    const columnSet = new Set(columns.map((row) => row.column_name));
+    if (!columnSet.has('trace_id') || !columnSet.has('cycle_id')) {
+      return {
+        ok: true,
+        skipped: true,
+        mode: 'read_only_select',
+        reason: 'cycle_trace_columns_missing',
+        traceId: traceId || null,
+        cycleId: cycleId || null,
+        events: [],
+      };
+    }
+
+    const routingRows = await queryReadonly('public', `
+      SELECT
+        created_at,
+        trace_id,
+        cycle_id,
+        provider,
+        agent,
+        caller_team,
+        selector_key,
+        selected_route,
+        runtime_purpose,
+        success,
+        duration_ms,
+        error
+      FROM public.llm_routing_log
+      WHERE ($1::text <> '' AND trace_id = $1)
+         OR ($2::text <> '' AND cycle_id = $2)
+      ORDER BY created_at DESC
+      LIMIT $3
+    `, [traceId, cycleId, limit]);
+
+    const alarmRows = await queryReadonly('agent', `
+      SELECT
+        created_at,
+        team,
+        bot_name,
+        severity,
+        alarm_type,
+        title,
+        status,
+        metadata
+      FROM agent.hub_alarms
+      WHERE ($1::text <> '' AND metadata->>'trace_id' = $1)
+         OR ($2::text <> '' AND metadata->>'cycle_id' = $2)
+         OR ($1::text <> '' AND metadata->>'incident_key' = $1)
+      ORDER BY created_at DESC
+      LIMIT $3
+    `, [traceId, cycleId, limit]).catch(() => []);
+
+    const eventRows = await queryReadonly('agent', `
+      SELECT
+        created_at,
+        event_type,
+        team,
+        bot_name,
+        severity,
+        title,
+        trace_id,
+        metadata
+      FROM agent.event_lake
+      WHERE ($1::text <> '' AND trace_id = $1)
+         OR ($1::text <> '' AND metadata->>'trace_id' = $1)
+         OR ($2::text <> '' AND metadata->>'cycle_id' = $2)
+      ORDER BY created_at DESC
+      LIMIT $3
+    `, [traceId, cycleId, limit]).catch(() => []);
+
+    const events = [
+      ...routingRows.map((row) => ({
+        source: 'llm_routing_log',
+        createdAt: row.created_at,
+        type: 'llm_route',
+        traceId: row.trace_id || null,
+        cycleId: row.cycle_id || null,
+        team: row.caller_team || null,
+        agent: row.agent || null,
+        summary: `${row.provider || 'unknown'} ${row.selected_route || ''}`.trim(),
+        data: redact(row),
+      })),
+      ...alarmRows.map((row) => ({
+        source: 'hub_alarms',
+        createdAt: row.created_at,
+        type: 'hub_alarm',
+        traceId: row.metadata?.trace_id || row.metadata?.incident_key || null,
+        cycleId: row.metadata?.cycle_id || null,
+        team: row.team || null,
+        agent: row.bot_name || null,
+        summary: row.title || row.alarm_type || 'hub_alarm',
+        data: redact(row),
+      })),
+      ...eventRows.map((row) => ({
+        source: 'event_lake',
+        createdAt: row.created_at,
+        type: row.event_type || 'event',
+        traceId: row.trace_id || row.metadata?.trace_id || null,
+        cycleId: row.metadata?.cycle_id || null,
+        team: row.team || null,
+        agent: row.bot_name || null,
+        summary: row.title || row.event_type || 'event',
+        data: redact(row),
+      })),
+    ].sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+
+    return {
+      ok: true,
+      mode: 'read_only_select',
+      traceId: traceId || null,
+      cycleId: cycleId || null,
+      counts: {
+        routing: routingRows.length,
+        alarms: alarmRows.length,
+        events: eventRows.length,
+        total: events.length,
+      },
+      events: events.slice(-limit),
+    };
+  } catch (error) {
+    return {
+      ok: true,
+      skipped: true,
+      mode: 'read_only_select',
+      reason: 'hub_trace_query_unavailable',
+      error: String(error?.message || error).slice(0, 240),
+      traceId: traceId || null,
+      cycleId: cycleId || null,
+      events: [],
+    };
+  }
+}
+
 export async function callHubOpsTool(name, args = {}, deps = {}) {
   if (name === 'hub-health') {
     const response = await fetchHub('/hub/health/live', { timeoutMs: args.timeoutMs || 5000 });
@@ -255,6 +418,9 @@ export async function callHubOpsTool(name, args = {}, deps = {}) {
   }
   if (name === 'hub-cost') {
     return buildCostSummary(args, deps);
+  }
+  if (name === 'hub-trace') {
+    return buildTraceTimeline(args, deps);
   }
   throw new Error(`unknown_tool:${name}`);
 }

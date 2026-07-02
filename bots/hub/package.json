@@ -89,6 +89,8 @@
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "mcp:hub-ops": "node --disable-warning=DEP0205 --import tsx mcp/hub-ops-mcp/src/server.ts",
     "smoke:hub-ops-mcp": "tsx scripts/hub-ops-mcp-smoke.ts --json",
+    "dashboard:ai-os": "node --disable-warning=DEP0205 --import tsx services/ai-os-dashboard/server.ts",
+    "smoke:ai-os-dashboard": "tsx scripts/ai-os-dashboard-smoke.ts",
     "smoke:local-cold-start-retry": "tsx scripts/local-cold-start-retry-smoke.ts",
     "smoke:archer-stabilization": "tsx scripts/archer-stabilization-smoke.ts",
     "smoke:llm-chain-snapshot": "tsx scripts/llm-chain-snapshot.ts --smoke",
