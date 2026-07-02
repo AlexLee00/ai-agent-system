@@ -121,6 +121,7 @@
     "smoke:luna-meeting-room-l": "node scripts/luna-meeting-room-l-smoke.ts --json",
     "smoke:luna-expected-fire-watchdog": "node scripts/luna-expected-fire-watchdog-smoke.ts --json",
     "smoke:luna-meeting-room-web": "node scripts/luna-meeting-room-web-smoke.ts --json",
+    "smoke:luna-meeting-live": "node scripts/luna-meeting-live-smoke.ts --json",
     "smoke:luna-meeting-room-c": "node scripts/luna-meeting-room-smoke.ts --json && node ../hub/scripts/luna-meeting-callback-smoke.ts",
     "smoke:luna-paper-promotion-gate": "node scripts/luna-paper-promotion-gate-smoke.ts --json",
     "smoke:luna-paper-data-collection-router": "node scripts/luna-paper-data-collection-router-smoke.ts --json",

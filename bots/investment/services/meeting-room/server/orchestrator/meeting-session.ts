@@ -27,6 +27,67 @@ function compact(value: any, max = 1600) {
   return text.length > max ? `${text.slice(0, max)}\n...[truncated]` : text;
 }
 
+function compactEventSummary(value: any, max = 220) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text;
+}
+
+function scoresFromMinute(minute: any = {}) {
+  const meta = minute.meta || {};
+  const scores = {};
+  const speaker = String(minute.speaker || '').toLowerCase();
+  const evidence = meta.evidence || {};
+  const scoreCandidates = {
+    bull: meta.bullScore ?? meta.bull_score ?? evidence.bullScore ?? evidence.bull_score,
+    bear: meta.bearScore ?? meta.bear_score ?? evidence.bearScore ?? evidence.bear_score,
+    risk: meta.riskScore ?? meta.risk_score ?? evidence.riskScore ?? evidence.risk_score,
+  };
+  if (speaker === 'zeus' && scoreCandidates.bull == null) scoreCandidates.bull = meta.confidence ?? evidence.confidence;
+  if (speaker === 'athena' && scoreCandidates.bear == null) scoreCandidates.bear = meta.confidence ?? evidence.confidence;
+  if (speaker === 'nemesis' && scoreCandidates.risk == null) scoreCandidates.risk = meta.risk ?? meta.confidence ?? evidence.risk ?? evidence.confidence;
+  for (const [key, raw] of Object.entries(scoreCandidates)) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) scores[key] = parsed;
+  }
+  return Object.keys(scores).length ? scores : null;
+}
+
+function eventTypeFromMinute(minute: any = {}) {
+  const state = String(minute.meta?.state || '').toLowerCase();
+  const role = String(minute.role || '').toLowerCase();
+  const speaker = String(minute.speaker || '').toLowerCase();
+  if (state === 'open') return 'meeting.started';
+  if (state === 'close') return 'meeting.ended';
+  if (state === 'data_brief') return 'phase.changed';
+  if (role === 'analysis' || role === 'grill') return 'agent.done';
+  if (state === 'decision_draft') return 'decision.pending';
+  if (state === 'adr' || speaker === 'adr') return 'decision.made';
+  return 'signal.summary';
+}
+
+function liveEventFromMinute(minute: any = {}) {
+  const meta = minute.meta || {};
+  return {
+    type: eventTypeFromMinute(minute),
+    agent: minute.speaker || null,
+    role: minute.role || null,
+    agendaKey: minute.agendaKey || minute.agenda_key || null,
+    summary: compactEventSummary(minute.content || meta.summary || meta.state),
+    fullText: String(minute.content || '').trim(),
+    payload: {
+      minuteSeq: minute.seq,
+      state: meta.state || null,
+      skipped: meta.skipped === true,
+      reason: meta.reason || null,
+      provider: meta.provider || null,
+      grade: meta.grade || null,
+      status: meta.status || null,
+    },
+    scores: scoresFromMinute(minute),
+  };
+}
+
 const METRIC_LABELS = Object.freeze({
   brier_hmm_lt_fallback: 'Brier: HMM이 폴백보다 낮음',
   transition_alert_precision: '전이 경보 정밀도',
@@ -907,6 +968,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
   const minutes = [];
   const decisions = [];
   const onMinute = typeof options.onMinute === 'function' ? options.onMinute : null;
+  const onEvent = typeof options.onEvent === 'function' ? options.onEvent : null;
   const context = {
     config,
     noLlm: options.noLlm === true,
@@ -920,6 +982,14 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
     context.config.maxLlmCallsPerMeeting = Math.min(Number(context.config.maxLlmCallsPerMeeting || 0), 2);
   }
   let seq = 1;
+  function emitLiveEvent(event) {
+    if (!onEvent) return;
+    try {
+      onEvent(event);
+    } catch (error) {
+      console.warn('[luna-meeting-room] onEvent callback failed:', error?.message || String(error));
+    }
+  }
   function addMinute(minute) {
     minutes.push(minute);
     if (onMinute) {
@@ -929,6 +999,7 @@ export async function runMeetingSession(options: any = {}, deps: any = {}) {
         console.warn('[luna-meeting-room] onMinute callback failed:', error?.message || String(error));
       }
     }
+    emitLiveEvent(liveEventFromMinute(minute));
   }
 
   addMinute({
