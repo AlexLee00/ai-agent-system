@@ -19,6 +19,8 @@
   <dict>
     <key>MODE</key>
     <string>ops</string>
+    <key>LUNA_YAML_ROUTING_ENABLED</key>
+    <string>true</string>
     <key>LLM_USE_OAUTH_PRIMARY</key>
     <string>true</string>
     <key>LLM_TEAM_SELECTOR_VERSION</key>
