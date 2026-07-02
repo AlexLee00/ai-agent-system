@@ -6,7 +6,10 @@ type AdmissionRequest = {
   } & Record<string, unknown>;
   hubRequestContext?: {
     callerTeam?: string;
+    cycleId?: string;
+    cycle_id?: string;
   } & Record<string, unknown>;
+  headers?: Record<string, unknown>;
   method?: string;
   path?: string;
   once(event: string, listener: () => void): unknown;
@@ -56,6 +59,12 @@ const DEFAULT_MAX_QUEUE = parseEnvNumber('HUB_LLM_MAX_QUEUE', 128, 0);
 const DEFAULT_QUEUE_TIMEOUT_MS = parseEnvNumber('HUB_LLM_QUEUE_TIMEOUT_MS', 15000, 100);
 const DEFAULT_RETRY_AFTER_MS = parseEnvNumber('HUB_LLM_RETRY_AFTER_MS', 1000, 200);
 const { acquireSharedLimiterLease, getSharedLimiterState } = require('./shared-limiter');
+const {
+  buildCycleBudgetReport,
+  cycleGuardMode,
+  normalizeCycleId,
+  summarizeCycleBudget,
+} = require('./cycle-budget');
 
 let inFlight = 0;
 const waiters: Waiter[] = [];
@@ -181,8 +190,57 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function requestCycleId(req: AdmissionRequest): string {
+  const headers = req.headers || {};
+  return normalizeCycleId(
+    req.body?.cycleId
+      || req.body?.cycle_id
+      || req.hubRequestContext?.cycleId
+      || req.hubRequestContext?.cycle_id
+      || headers['x-hub-cycle-id']
+      || headers['X-Hub-Cycle-Id'],
+  );
+}
+
+async function evaluateCycleBudgetGuard(req: AdmissionRequest, res: AdmissionResponse): Promise<boolean> {
+  const mode = cycleGuardMode();
+  if (mode === 'off') return true;
+  const cycleId = requestCycleId(req);
+  if (!cycleId) return true;
+
+  const report = await buildCycleBudgetReport(cycleId);
+  res.locals = res.locals || {};
+  res.locals.hubCycleBudget = report;
+  const summary = summarizeCycleBudget(report);
+  if (summary) {
+    res.set('X-Hub-Cycle-Budget-Warn', summary);
+    console.warn(`[hub-cycle-budget] ${summary} cycle=${cycleId}`);
+  }
+  if (mode === 'enforce' && report && report.ok === false) {
+    res.set('Retry-After', '60');
+    res.status(429).json({
+      ok: false,
+      error: {
+        code: 'cycle_budget_exceeded',
+        message: 'Hub cycle budget exceeded',
+      },
+      cycleBudget: {
+        cycleId: report.cycleId,
+        metrics: report.metrics,
+        blockers: report.blockers,
+      },
+      retryAfterMs: 60000,
+    });
+    return false;
+  }
+  return true;
+}
+
 async function llmAdmissionMiddleware(req: AdmissionRequest, res: AdmissionResponse, next: NextFunction) {
   try {
+    const cycleOk = await evaluateCycleBudgetGuard(req, res);
+    if (!cycleOk) return;
+
     const acquired = await acquireSlot(req);
     let released = false;
     const releaseOnce = () => {

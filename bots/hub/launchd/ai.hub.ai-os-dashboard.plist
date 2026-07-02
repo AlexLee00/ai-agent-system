@@ -21,7 +21,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>AI_OS_DASHBOARD_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>AI_OS_DASHBOARD_PORT</key>
     <string>4105</string>
     <key>HUB_BASE_URL</key>
@@ -31,13 +31,12 @@
   </dict>
 
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
   <key>KeepAlive</key>
-  <false/>
+  <true/>
   <key>StandardOutPath</key>
   <string>/Users/alexlee/.ai-agent-system/logs/ai-os-dashboard.log</string>
   <key>StandardErrorPath</key>
   <string>/Users/alexlee/.ai-agent-system/logs/ai-os-dashboard-error.log</string>
 </dict>
 </plist>
-

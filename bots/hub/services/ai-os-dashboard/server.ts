@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../../packages/core/lib/pg-pool.ts');
+const cycleBudget = require('../../lib/llm/cycle-budget.ts');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB_ROOT = path.join(__dirname, 'web');
@@ -131,7 +132,28 @@ async function collectLlmCost() {
     calls24h: Number(row.calls || 0),
     success24h: Number(row.success || 0),
     costUsd24h: Number(row.cost_usd || 0),
+    cycleBudget: await collectRecentCycleBudget().catch((error) => ({
+      skipped: true,
+      reason: 'cycle_budget_unavailable',
+      error: String(error?.message || error).slice(0, 160),
+    })),
   };
+}
+
+async function collectRecentCycleBudget() {
+  const rows = await pgPool.queryReadonly('public', `
+    SELECT cycle_id, COUNT(*)::int AS calls
+    FROM public.llm_routing_log
+    WHERE created_at >= NOW() - INTERVAL '6 hours'
+      AND cycle_id IS NOT NULL
+      AND cycle_id <> ''
+    GROUP BY cycle_id
+    ORDER BY calls DESC
+    LIMIT 1
+  `, []);
+  const cycleId = rows?.[0]?.cycle_id;
+  if (!cycleId) return { skipped: true, reason: 'recent_cycle_not_found' };
+  return cycleBudget.buildCycleBudgetReport(cycleId, { queryReadonly: pgPool.queryReadonly });
 }
 
 async function collectHubAlarms() {

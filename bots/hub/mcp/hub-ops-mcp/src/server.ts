@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const selector = require('../../../../../packages/core/lib/llm-model-selector.ts');
 const pgPool = require('../../../../../packages/core/lib/pg-pool.ts');
+const cycleBudget = require('../../../lib/llm/cycle-budget.ts');
 
 export const HUB_OPS_MCP_TOOLS = [
   {
@@ -170,6 +171,7 @@ async function buildCostSummary(args = {}, deps = {}) {
   const days = Math.max(1, Math.min(30, Number(args.days || 7) || 7));
   const limit = Math.max(1, Math.min(100, Number(args.limit || 40) || 40));
   const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  const cycleId = String(args.cycleId || args.cycle_id || '').trim();
   try {
     const rows = await queryReadonly('public', `
       SELECT
@@ -194,6 +196,9 @@ async function buildCostSummary(args = {}, deps = {}) {
       totalCalls,
       totalCostUsd: Math.round(totalCostUsd * 1_000_000) / 1_000_000,
       rows,
+      cycleBudget: cycleId
+        ? await cycleBudget.buildCycleBudgetReport(cycleId, { queryReadonly })
+        : null,
     };
   } catch (error) {
     return {
@@ -351,6 +356,9 @@ async function buildTraceTimeline(args = {}, deps = {}) {
         events: eventRows.length,
         total: events.length,
       },
+      cycleBudget: cycleId
+        ? await cycleBudget.buildCycleBudgetReport(cycleId, { queryReadonly })
+        : null,
       events: events.slice(-limit),
     };
   } catch (error) {
