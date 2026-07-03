@@ -2078,8 +2078,8 @@ function buildSelectorRegistry(): Record<string, any> {
       const normalizedAgentName = String(agentName || '');
       const selectorVersion = resolveSelectorVersionForKey('investment.agent_policy', options);
       const taskType = normalizeTaskTypeInput(options);
-      const skipYamlRouting = normalizedAgentName === 'chronos' && taskType === 'backtest_judgment';
-      if (!skipYamlRouting && isLunaYamlRoutingEnabled(process.env)) {
+      const useYamlRouting = normalizedAgentName === 'chronos' ? taskType === 'backtest_embedding' : true;
+      if (useYamlRouting && isLunaYamlRoutingEnabled(process.env)) {
         const yamlPolicy = resolveInvestmentYamlRoutingPolicy(normalizedAgentName);
         if (yamlPolicy) return yamlPolicy;
       }

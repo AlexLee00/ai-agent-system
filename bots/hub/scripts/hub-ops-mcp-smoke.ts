@@ -115,6 +115,29 @@ async function assertCostQuerySelectOnly() {
       assert.equal(schema, 'public');
       assert.match(String(sql).trim(), /^SELECT/i);
       assert.equal(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(sql), false);
+      if (String(sql).includes('hub.llm_auto_routing_log')) {
+        if (String(sql).includes('manual_comparison_count')) {
+          return [{
+            total: 4,
+            manual_comparison_count: 2,
+            manual_agreement_count: 1,
+            pending_result_count: 1,
+            success_count: 2,
+            completed_count: 3,
+            avg_latency_ms: 900,
+            total_cost_usd: 0.002,
+          }];
+        }
+        if (String(sql).includes('COALESCE(mode')) {
+          return [{ mode: 'shadow', count: 4 }];
+        }
+        if (String(sql).includes('task_complexity')) {
+          return [{ task_complexity: 'medium', count: 3 }];
+        }
+        if (String(sql).includes('auto_model')) {
+          return [{ auto_model: 'anthropic_sonnet', count: 4 }];
+        }
+      }
       return [{
         day: '2026-07-02',
         provider: 'groq',
@@ -127,7 +150,15 @@ async function assertCostQuerySelectOnly() {
   });
   assert.equal(result.ok, true);
   assert.equal(result.totalCalls, 3);
-  assert.equal(calls.length, 1);
+  assert.equal(result.autoRouting.total, 4);
+  assert.equal(result.autoRouting.byMode.shadow, 4);
+  assert.equal(result.autoRouting.byComplexity.medium, 3);
+  assert.equal(result.autoRouting.byAutoModel.anthropic_sonnet, 4);
+  assert.equal(result.autoRouting.manualComparisonCount, 2);
+  assert.equal(result.autoRouting.manualAgreementRate, 0.5);
+  assert.equal(result.autoRouting.pendingResultCount, 1);
+  assert.equal(result.autoRouting.successRate, 0.6667);
+  assert.equal(calls.length, 5);
 }
 
 async function assertTraceQuerySelectOnly() {

@@ -231,32 +231,40 @@ export async function updateRoutingResult(opts: {
   errorCode?: string;
 }): Promise<void> {
   try {
-    await pgPool.query('public', `
-      UPDATE hub.llm_auto_routing_log
-      SET selected_provider = $1,
-          latency_ms        = $2,
-          cost_usd          = $3,
-          success           = $4,
-          quality_score     = $5,
-          error_code        = $6
-      WHERE id = (
-        SELECT id FROM hub.llm_auto_routing_log
-        WHERE agent = $7
-          AND auto_model = $8
-          AND success IS NULL
-        ORDER BY created_at DESC
-        LIMIT 1
-      )
-    `, [
+    const params = [
       opts.selectedProvider || null,
-      opts.latencyMs || null,
-      opts.costUsd || null,
+      opts.latencyMs ?? null,
+      opts.costUsd ?? null,
       opts.success,
-      opts.qualityScore || null,
+      opts.qualityScore ?? null,
       opts.errorCode || null,
       opts.agent || null,
+      opts.callerTeam || null,
       opts.autoModel,
-    ]);
+    ];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const rows = await pgPool.query('public', `
+        UPDATE hub.llm_auto_routing_log
+        SET selected_provider = $1,
+            latency_ms        = $2,
+            cost_usd          = $3,
+            success           = $4,
+            quality_score     = $5,
+            error_code        = $6
+        WHERE id = (
+          SELECT id FROM hub.llm_auto_routing_log
+          WHERE agent IS NOT DISTINCT FROM $7
+            AND caller_team IS NOT DISTINCT FROM $8
+            AND auto_model = $9
+            AND success IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
+        RETURNING id
+      `, params);
+      if (Array.isArray(rows) && rows.length > 0) return;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 25 : 100));
+    }
   } catch {
     // 무시
   }

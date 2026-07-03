@@ -131,6 +131,15 @@ assert.deepEqual(
   ['local-embedding/qwen3-embed-0.6b'],
   'chronos.backtest must be fixed to local embedding only',
 );
+const chronosBacktestEmbedding = chainFor('investment.agent_policy', {
+  agentName: 'chronos',
+  taskType: 'backtest_embedding',
+});
+assert.deepEqual(
+  chronosBacktestEmbedding.map((entry) => `${entry.provider}/${entry.model}`),
+  ['local-embedding/qwen3-embed-0.6b'],
+  'investment.agent_policy/chronos backtest_embedding must remain local embedding only',
+);
 
 const highTokenGroqGuard = groqFallback._testOnly.resolveGroqTokenGuard({
   prompt: 'short prompt',

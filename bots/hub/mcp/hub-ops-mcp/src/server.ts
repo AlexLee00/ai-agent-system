@@ -198,6 +198,7 @@ async function buildCostSummary(args = {}, deps = {}) {
     `, [days, limit]);
     const totalCalls = rows.reduce((sum, row) => sum + Number(row.total_calls || 0), 0);
     const totalCostUsd = rows.reduce((sum, row) => sum + Number(row.total_cost_usd || 0), 0);
+    const autoRouting = await buildAutoRoutingSummary(args, { queryReadonly });
     return {
       ok: true,
       mode: 'read_only_select',
@@ -205,6 +206,7 @@ async function buildCostSummary(args = {}, deps = {}) {
       totalCalls,
       totalCostUsd: Math.round(totalCostUsd * 1_000_000) / 1_000_000,
       rows,
+      autoRouting,
       cycleBudget: cycleId
         ? await cycleBudget.buildCycleBudgetReport(cycleId, { queryReadonly })
         : null,
@@ -218,6 +220,99 @@ async function buildCostSummary(args = {}, deps = {}) {
       error: String(error?.message || error).slice(0, 240),
       days,
       rows: [],
+      autoRouting: await buildAutoRoutingSummary(args, { queryReadonly }).catch((autoError) => ({
+        ok: true,
+        skipped: true,
+        reason: 'llm_auto_routing_summary_unavailable',
+        error: String(autoError?.message || autoError).slice(0, 240),
+      })),
+    };
+  }
+}
+
+function roundedRatio(numerator, denominator) {
+  const total = Number(denominator || 0);
+  if (total <= 0) return 0;
+  return Math.round((Number(numerator || 0) / total) * 10000) / 10000;
+}
+
+function countMap(rows, key) {
+  const out = {};
+  for (const row of rows || []) {
+    const name = String(row[key] || 'unknown');
+    out[name] = Number(row.count || row.cnt || 0);
+  }
+  return out;
+}
+
+async function buildAutoRoutingSummary(args = {}, deps = {}) {
+  const hours = Math.max(1, Math.min(24 * 30, Number(args.autoRoutingHours || args.hours || (Number(args.days || 7) * 24)) || 168));
+  const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  try {
+    const [summaryRows, modeRows, complexityRows, modelRows] = await Promise.all([
+      queryReadonly('public', `
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE manual_model IS NOT NULL)::int AS manual_comparison_count,
+          COUNT(*) FILTER (WHERE manual_model IS NOT NULL AND manual_model = auto_model)::int AS manual_agreement_count,
+          COUNT(*) FILTER (WHERE success IS NULL)::int AS pending_result_count,
+          COUNT(*) FILTER (WHERE success IS TRUE)::int AS success_count,
+          COUNT(*) FILTER (WHERE success IS NOT NULL)::int AS completed_count,
+          ROUND(AVG(latency_ms) FILTER (WHERE latency_ms IS NOT NULL))::int AS avg_latency_ms,
+          ROUND(SUM(COALESCE(cost_usd, 0))::numeric, 6)::float AS total_cost_usd
+        FROM hub.llm_auto_routing_log
+        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+      `, [hours]),
+      queryReadonly('public', `
+        SELECT COALESCE(mode, 'unknown') AS mode, COUNT(*)::int AS count
+        FROM hub.llm_auto_routing_log
+        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+        GROUP BY 1
+        ORDER BY count DESC
+      `, [hours]),
+      queryReadonly('public', `
+        SELECT COALESCE(task_complexity, 'unknown') AS task_complexity, COUNT(*)::int AS count
+        FROM hub.llm_auto_routing_log
+        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+        GROUP BY 1
+        ORDER BY count DESC
+      `, [hours]),
+      queryReadonly('public', `
+        SELECT COALESCE(auto_model, 'unknown') AS auto_model, COUNT(*)::int AS count
+        FROM hub.llm_auto_routing_log
+        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+        GROUP BY 1
+        ORDER BY count DESC
+      `, [hours]),
+    ]);
+    const summary = summaryRows[0] || {};
+    const manualCount = Number(summary.manual_comparison_count || 0);
+    const manualAgreement = Number(summary.manual_agreement_count || 0);
+    const completedCount = Number(summary.completed_count || 0);
+    const successCount = Number(summary.success_count || 0);
+    return {
+      ok: true,
+      mode: 'read_only_select',
+      hours,
+      total: Number(summary.total || 0),
+      byMode: countMap(modeRows, 'mode'),
+      byComplexity: countMap(complexityRows, 'task_complexity'),
+      byAutoModel: countMap(modelRows, 'auto_model'),
+      manualComparisonCount: manualCount,
+      manualAgreementRate: roundedRatio(manualAgreement, manualCount),
+      pendingResultCount: Number(summary.pending_result_count || 0),
+      successRate: roundedRatio(successCount, completedCount),
+      avgLatencyMs: Number(summary.avg_latency_ms || 0),
+      totalCostUsd: Math.round(Number(summary.total_cost_usd || 0) * 1_000_000) / 1_000_000,
+    };
+  } catch (error) {
+    return {
+      ok: true,
+      skipped: true,
+      mode: 'read_only_select',
+      reason: 'llm_auto_routing_summary_unavailable',
+      error: String(error?.message || error).slice(0, 240),
+      hours,
     };
   }
 }

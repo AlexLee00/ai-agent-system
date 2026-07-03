@@ -4,6 +4,7 @@ const { callClaudeCodeOAuth } = require('../llm/claude-code-oauth');
 const { callGeminiCliOAuth, callGeminiCodeAssistOAuth, callOpenAiCodexOAuth } = require('../llm/oauth-direct');
 const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
+const { routeModel, updateRoutingResult } = require('../llm/llm-auto-router');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
 const rag = require('../../../../packages/core/lib/rag');
 const { getLlmAdmissionState } = require('../llm/admission-control');
@@ -46,12 +47,17 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
   const body = parsed.data;
   const normalizedRequest = normalizeLlmCallRequest(body, context);
   if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
+  const autoRouting = applyAutoRoutingShadowWiring(normalizedRequest);
+  const llmRequest = autoRouting.request;
 
   try {
-    const resp = await callWithFallback(normalizedRequest);
+    const resp = await callWithFallback(llmRequest);
 
-    logRouting(resp, normalizedRequest).catch((err: any) =>
+    logRouting(resp, llmRequest).catch((err: any) =>
       console.error('[llm] routing log 기록 실패:', err.message)
+    );
+    recordAutoRoutingResult(autoRouting, resp).catch((err: any) =>
+      console.error('[llm] auto-routing result update 실패:', err.message)
     );
 
     const providerBackpressure = buildProviderBackpressure(resp);
@@ -72,14 +78,18 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
     if (providerBackpressure?.retryAfterMs) {
       res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1000))));
     }
-    return res.status(500).json({
+    const failureResp = {
       ok: false,
       provider: 'failed',
       durationMs: 0,
       error: err.message,
       traceId: context.traceId || null,
       ...(providerBackpressure ? { providerBackpressure } : {}),
-    });
+    };
+    recordAutoRoutingResult(autoRouting, failureResp).catch((updateErr: any) =>
+      console.error('[llm] auto-routing failure update 실패:', updateErr.message)
+    );
+    return res.status(500).json(failureResp);
   }
 }
 
@@ -464,6 +474,92 @@ function checkLlmRouteTarget(
     return null;
   }
   return targetPolicy;
+}
+
+export function resolveAutoRoutingMode(env: Record<string, any> = process.env): 'disabled' | 'shadow' | 'active' {
+  const raw = String(env.LLM_AUTO_ROUTING_ENABLED || '').trim().toLowerCase();
+  if (raw === 'shadow') return 'shadow';
+  if (raw === 'true') return 'active';
+  return 'disabled';
+}
+
+export function buildAutoRoutingInput(request: AnyRecord = {}): AnyRecord {
+  return {
+    prompt: String(request.prompt || ''),
+    systemPrompt: String(request.systemPrompt || ''),
+    abstractModel: request.abstractModel,
+    taskType: request.taskType || request.task_type || request.runtimePurpose || request.runtime_purpose,
+    agent: request.agent,
+    callerTeam: request.callerTeam,
+    cacheEnabled: request.cacheEnabled,
+  };
+}
+
+export function applyAutoRoutingShadowWiring(
+  normalizedRequest: AnyRecord,
+  deps: { env?: Record<string, any>; routeModel?: (input: AnyRecord) => AnyRecord } = {},
+): AnyRecord {
+  const mode = resolveAutoRoutingMode(deps.env || process.env);
+  if (mode === 'disabled') {
+    return { mode, result: null, request: normalizedRequest, activeApplied: false };
+  }
+  const routeModelFn = deps.routeModel || routeModel;
+  try {
+    const result = routeModelFn(buildAutoRoutingInput(normalizedRequest));
+    if (mode === 'active' && !normalizedRequest.abstractModel && result?.modelOverridden === true && result?.resolvedModel) {
+      return {
+        mode,
+        result,
+        request: { ...normalizedRequest, abstractModel: result.resolvedModel },
+        activeApplied: true,
+      };
+    }
+    return { mode, result, request: normalizedRequest, activeApplied: false };
+  } catch (err: any) {
+    return {
+      mode,
+      result: null,
+      request: normalizedRequest,
+      activeApplied: false,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+function optionalNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function mapAutoRoutingResultUpdate(autoRouting: AnyRecord, response: AnyRecord): AnyRecord | null {
+  if (!autoRouting?.result?.autoModel) return null;
+  const request = autoRouting.request || {};
+  const provider = response?.selectedProvider
+    || response?.provider
+    || (typeof response?.selected_route === 'string' ? response.selected_route.split('/')[0] : null);
+  const cost = optionalNumber(response?.totalCostUsd ?? response?.costUsd ?? response?.estimatedCostUsd);
+  return {
+    agent: request.agent,
+    callerTeam: request.callerTeam,
+    autoModel: autoRouting.result.autoModel,
+    selectedProvider: provider || null,
+    latencyMs: optionalNumber(response?.durationMs ?? response?.latencyMs),
+    costUsd: cost,
+    success: response?.ok === true,
+    errorCode: response?.error ? String(response.error).slice(0, 240) : null,
+  };
+}
+
+export async function recordAutoRoutingResult(
+  autoRouting: AnyRecord,
+  response: AnyRecord,
+  deps: { updateRoutingResult?: (payload: AnyRecord) => Promise<void> } = {},
+) {
+  const payload = mapAutoRoutingResultUpdate(autoRouting, response);
+  if (!payload) return { skipped: true };
+  const updateFn = deps.updateRoutingResult || updateRoutingResult;
+  await updateFn(payload);
+  return { ok: true, payload };
 }
 
 function rejectIfDirectProviderRoutesDisabled(res: RouteRes): boolean {
