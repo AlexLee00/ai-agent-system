@@ -1222,6 +1222,8 @@ async function main() {
     assert.ok(appJs.text.includes('function liveEventKey'));
     assert.ok(appJs.text.includes('setTypedSummary(latestSummary.slice(0, index));'));
     assert.ok(appJs.text.includes('aria-label="현재 타이핑 중인 라이브 발언"'));
+    assert.ok(appJs.text.includes('className="visually-hidden" aria-live="polite"'));
+    assert.ok(appJs.text.includes('className="live-stream-typed" aria-hidden="true"'));
     assert.ok(appJs.text.includes('className="mobile-action-bar" role="navigation" aria-label="모바일 회의실 빠른 메뉴"'));
     assert.ok(appJs.text.includes('aria-controls="meeting-selection-drawer"'));
     assert.ok(appJs.text.includes('aria-controls="meeting-decision-drawer"'));

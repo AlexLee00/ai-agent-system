@@ -1542,9 +1542,10 @@ function LiveStreamPanel({ enabled, status, selectedRunningRun, activeRuns, live
         </div>
       </div>
       ${latestEvent ? html`
-        <div className="live-stream-typing" role="status" aria-live="polite" aria-label="현재 타이핑 중인 라이브 발언">
-          <div className="live-stream-speaker">${latestEvent.seq}. ${agentLabel(latestEvent.agent || 'system')} · ${eventTypeLabel(latestEvent.type)}</div>
-          <div className="live-stream-typed">
+        <div className="live-stream-typing" role="group" aria-label="현재 타이핑 중인 라이브 발언">
+          <div className="visually-hidden" aria-live="polite">${latestEvent.seq}. ${agentLabel(latestEvent.agent || 'system')} · ${eventTypeLabel(latestEvent.type)} · ${latestSummary}</div>
+          <div className="live-stream-speaker" aria-hidden="true">${latestEvent.seq}. ${agentLabel(latestEvent.agent || 'system')} · ${eventTypeLabel(latestEvent.type)}</div>
+          <div className="live-stream-typed" aria-hidden="true">
             ${typedSummary}
             ${typedSummary.length < latestSummary.length ? html`<span className="typing-cursor" aria-hidden="true"></span>` : null}
           </div>
