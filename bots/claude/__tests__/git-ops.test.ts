@@ -85,9 +85,66 @@ function testRollbackAndOriginContains() {
   ]);
 }
 
+function testCreatePrUsesGhAndReturnsViewResult() {
+  const gh = recorder({
+    'pr create --base main --head claude/auto-dev-job-20260703 --title Test PR --body body': 'https://github.com/example/repo/pull/7\n',
+    'pr view https://github.com/example/repo/pull/7 --json number,url': '{"number":7,"url":"https://github.com/example/repo/pull/7"}\n',
+  });
+  const result = gitOps.createPR({
+    head: 'claude/auto-dev-job-20260703',
+    title: 'Test PR',
+    body: 'body',
+  }, gh, { cwd: '/repo' });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.number, 7);
+  assert.strictEqual(result.url, 'https://github.com/example/repo/pull/7');
+  assert.deepEqual(gh.calls.map((call) => call.args), [
+    ['pr', 'create', '--base', 'main', '--head', 'claude/auto-dev-job-20260703', '--title', 'Test PR', '--body', 'body'],
+    ['pr', 'view', 'https://github.com/example/repo/pull/7', '--json', 'number,url'],
+  ]);
+  assert.equal(gh.calls[0].opts.cwd, '/repo');
+}
+
+function testCreatePrFailureDoesNotThrow() {
+  const gh = recorder({
+    'pr create --base main --head claude/fail --title Test PR --body ': new Error('gh failed'),
+  });
+  const result = gitOps.createPR({ head: 'claude/fail', title: 'Test PR' }, gh);
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /gh failed/);
+}
+
+function testMergePrRequiresEnvGate() {
+  const original = process.env.CLAUDE_PR_AUTOMERGE_ENABLED;
+  const gh = recorder();
+  try {
+    delete process.env.CLAUDE_PR_AUTOMERGE_ENABLED;
+    assert.deepEqual(gitOps.mergePR(7, {}, gh), {
+      ok: true,
+      merged: false,
+      reason: 'automerge_disabled',
+    });
+    assert.deepEqual(gh.calls, []);
+
+    process.env.CLAUDE_PR_AUTOMERGE_ENABLED = 'true';
+    const result = gitOps.mergePR(7, { method: 'squash' }, gh);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.merged, true);
+    assert.deepEqual(gh.calls.map((call) => call.args), [
+      ['pr', 'merge', '7', '--squash'],
+    ]);
+  } finally {
+    if (original === undefined) delete process.env.CLAUDE_PR_AUTOMERGE_ENABLED;
+    else process.env.CLAUDE_PR_AUTOMERGE_ENABLED = original;
+  }
+}
+
 testRunGitMockableHelpers();
 testCommitFileUsesPathScopedCommit();
 testPushRefSecurity();
 testRollbackAndOriginContains();
+testCreatePrUsesGhAndReturnsViewResult();
+testCreatePrFailureDoesNotThrow();
+testMergePrRequiresEnvGate();
 
 console.log('git-ops tests ok');

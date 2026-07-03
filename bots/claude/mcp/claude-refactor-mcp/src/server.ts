@@ -4,11 +4,14 @@
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../../../..');
+const require = createRequire(import.meta.url);
+const pgPool = require(path.join(REPO_ROOT, 'packages/core/lib/pg-pool.js'));
 const DEFAULT_PORT = 8774;
 const HUB_BASE = 'http://localhost:7788';
 
@@ -32,6 +35,14 @@ export const CLAUDE_REFACTOR_MCP_TOOLS = [
   {
     name: 'verify_refactoring',
     description: '리팩토링 검증 (Static 분석). 라인 수 변화, @ts-nocheck 제거 확인.',
+  },
+  {
+    name: 'score_pr',
+    description: 'PR 번호별 Claude quality gate 점수 최신 기록을 조회한다(read-only).',
+  },
+  {
+    name: 'pr_pipeline_status',
+    description: 'Claude PR pipeline outcome/score 상태를 조회한다(read-only).',
   },
 ];
 
@@ -149,6 +160,39 @@ function estimateFunctions(filePath) {
 }
 
 async function handleTool(name, params) {
+  if (name === 'score_pr') {
+    const prNumber = Math.floor(Number(params.prNumber || params.pr_number || params.number || 0));
+    if (!prNumber) return { ok: false, error: 'prNumber is required' };
+    try {
+      const rows = await pgPool.queryReadonly('claude', `
+        SELECT pr_number, build_score, review_score, guard_score, total, verdict, created_at
+        FROM claude.pr_review_scores
+        WHERE pr_number = $1
+        ORDER BY created_at DESC
+        LIMIT 5
+      `, [prNumber]);
+      return { ok: true, prNumber, rows };
+    } catch (err) {
+      return { ok: true, skipped: true, reason: 'pr_review_scores_unavailable', error: String(err?.message || err) };
+    }
+  }
+
+  if (name === 'pr_pipeline_status') {
+    const limit = Math.max(1, Math.min(50, Number(params.limit || 10) || 10));
+    try {
+      const rows = await pgPool.queryReadonly('claude', `
+        SELECT id, job_id, rel_path, outcome, stage, pr_number, pr_url, created_at
+        FROM claude.auto_dev_outcomes
+        WHERE pr_number IS NOT NULL OR pr_url IS NOT NULL OR (meta -> 'prWorkflow') IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT $1
+      `, [limit]);
+      return { ok: true, limit, rows };
+    } catch (err) {
+      return { ok: true, skipped: true, reason: 'auto_dev_pr_columns_unavailable', error: String(err?.message || err) };
+    }
+  }
+
   if (name === 'analyze_tech_debt') {
     const targetPath = String(params.path || REPO_ROOT + '/bots');
     if (!existsSync(targetPath)) return { ok: false, error: `path not found: ${targetPath}` };

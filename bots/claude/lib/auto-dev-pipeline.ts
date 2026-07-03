@@ -130,6 +130,25 @@ function isTruthyEnvValue(value) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
 }
 
+function safeBranchSlug(value, fallback = 'job') {
+  const slug = String(value || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/\/+/g, '/')
+    .slice(0, 80);
+  return slug || fallback;
+}
+
+function timestampSlug(date = new Date()) {
+  return date.toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+}
+
+function autoDevPrBranch(job = {}, date = new Date()) {
+  const source = job.id || job.relPath || 'job';
+  return `claude/auto-dev-${safeBranchSlug(source)}-${timestampSlug(date)}`;
+}
+
 function isTimeGateActive(value) {
   const raw = String(value || '').trim();
   if (!raw) return false;
@@ -400,6 +419,7 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     hardDisabled,
     disabledReason: hardDisabled ? 'CLAUDE_AUTO_DEV_DISABLED' : null,
     symphonyMode: normalizeSymphonyMode(options.symphonyMode || envVars.CLAUDE_AUTO_DEV_SYMPHONY_MODE),
+    prWorkflowEnabled: isTruthyEnvValue(options.prWorkflowEnabled ?? envVars.CLAUDE_PR_WORKFLOW_ENABLED),
   };
 
   const envOverrides = {
@@ -2432,6 +2452,7 @@ function integrateWorktreeChanges(job, executionContext, {
       targetBranch,
       targetRemote,
       sourceRef: 'HEAD',
+      worktreePath: executionContext.worktreePath || executionContext.cwd,
       targetPush: {
         attempted: false,
         pushed: false,
@@ -2601,6 +2622,70 @@ function pushIntegratedChanges(integration = null) {
       error: summarizeExecError(error, 1600),
     };
   }
+}
+
+function publishIntegrationAsPR(integration = null, job = {}, options = {}) {
+  if (!integration || integration.mode !== 'direct_push_prepared') {
+    return {
+      attempted: false,
+      pushed: false,
+      prCreated: false,
+      reason: 'pr_workflow_requires_direct_push_prepared',
+    };
+  }
+  const branch = options.branch || autoDevPrBranch(job);
+  const base = options.base || AUTO_DEV_TARGET_BRANCH;
+  const cwd = integration.worktreePath || integration.targetRoot || ROOT;
+  try {
+    gitOps.pushHeadToBranch(branch, { cwd, timeout: 120000 });
+  } catch (error) {
+    return {
+      attempted: true,
+      pushed: false,
+      prCreated: false,
+      reason: 'pr_branch_push_failed',
+      branch,
+      base,
+      error: summarizeExecError(error, 1600),
+    };
+  }
+  const title = options.title || formatAutoDevCommitMessage(job);
+  const body = [
+    'Claude auto-dev PR workflow shadow artifact.',
+    '',
+    `- job: ${job?.id || 'unknown'}`,
+    `- source: ${job?.relPath || 'unknown'}`,
+    `- commit: ${integration.worktreeCommitSha || 'unknown'}`,
+  ].join('\n');
+  const pr = gitOps.createPR({ head: branch, base, title, body }, { cwd, timeout: 120000 });
+  let branchCleanup = null;
+  if (!pr?.ok) {
+    try {
+      gitOps.runGit(['push', 'origin', '--delete', branch], { cwd, timeout: 120000 });
+      branchCleanup = { attempted: true, deleted: true };
+    } catch (cleanupError) {
+      branchCleanup = {
+        attempted: true,
+        deleted: false,
+        error: summarizeExecError(cleanupError, 1000),
+      };
+    }
+  }
+  return {
+    attempted: true,
+    pushed: true,
+    prCreated: Boolean(pr?.ok),
+    reason: pr?.ok ? 'pr_created' : 'pr_create_failed',
+    branch,
+    base,
+    ref: `origin/${branch}`,
+    commitSha: integration.worktreeCommitSha || null,
+    pr,
+    prNumber: pr?.number || null,
+    prUrl: pr?.url || null,
+    branchCleanup,
+    error: pr?.ok ? null : pr?.error || 'pr_create_failed',
+  };
 }
 
 function rollbackIntegratedChanges(integration = null) {
@@ -3088,6 +3173,9 @@ async function recordAutoDevOutcome(job, outcome, extra = {}) {
     refactorType: extra.refactorType || extraMeta.refactorType || null,
     cycleId: extra.cycleId || extraMeta.cycleId || null,
     source: extra.source || extraMeta.source || 'claude-auto-dev',
+    prNumber: extra.prNumber ?? extraMeta.prNumber ?? job?.integration?.prNumber ?? null,
+    prUrl: extra.prUrl || extraMeta.prUrl || job?.integration?.prUrl || null,
+    prWorkflow: extra.prWorkflow || extraMeta.prWorkflow || job?.integration?.prWorkflow || null,
   };
   try {
     const rows = await pgPool.query('claude', `
@@ -3112,7 +3200,19 @@ async function recordAutoDevOutcome(job, outcome, extra = {}) {
       commitShaForJob(job, extra),
       JSON.stringify(meta),
     ]);
-    return { ok: true, id: rows?.[0]?.id || null };
+    const id = rows?.[0]?.id || null;
+    if (id && (meta.prNumber || meta.prUrl) && typeof pgPool.run === 'function') {
+      try {
+        await pgPool.run('claude', `
+          UPDATE claude.auto_dev_outcomes
+          SET pr_number = $2, pr_url = $3
+          WHERE id = $1
+        `, [id, meta.prNumber || null, meta.prUrl || null]);
+      } catch (updateError) {
+        console.warn(`[auto-dev] outcome PR column update skipped: ${updateError?.message || updateError}`);
+      }
+    }
+    return { ok: true, id };
   } catch (error) {
     console.warn(`[auto-dev] outcome record failed: ${error?.message || error}`);
     return { ok: false, error: error?.message || String(error) };
@@ -3540,19 +3640,34 @@ async function processAutoDevDocument(filePath, options = {}) {
       }
     }
 
-    targetPushResult = pushIntegratedChanges(integrationResult);
-    integrationResult = {
-      ...integrationResult,
-      mode: integrationResult.mode === 'direct_push_prepared' && targetPushResult?.pushed
-        ? 'direct_pushed'
-        : integrationResult.mode,
-      directPushed: integrationResult.mode === 'direct_push_prepared'
-        ? Boolean(targetPushResult?.pushed)
-        : Boolean(integrationResult.directPushed),
-      targetPush: targetPushResult,
-      pushed: Boolean(targetPushResult?.pushed),
-    };
-    if (targetPushResult.attempted && !targetPushResult.pushed) {
+    targetPushResult = runtimeConfig.prWorkflowEnabled
+      ? publishIntegrationAsPR(integrationResult, { ...job, relPath, integration: integrationResult })
+      : pushIntegratedChanges(integrationResult);
+    integrationResult = runtimeConfig.prWorkflowEnabled
+      ? {
+        ...integrationResult,
+        mode: targetPushResult?.prCreated ? 'pr_created' : integrationResult.mode,
+        prWorkflow: targetPushResult,
+        targetBranch: targetPushResult?.branch || integrationResult.targetBranch,
+        targetRemote: 'origin',
+        targetPush: targetPushResult,
+        pushed: Boolean(targetPushResult?.pushed),
+        prCreated: Boolean(targetPushResult?.prCreated),
+        prNumber: targetPushResult?.prNumber || null,
+        prUrl: targetPushResult?.prUrl || null,
+      }
+      : {
+        ...integrationResult,
+        mode: integrationResult.mode === 'direct_push_prepared' && targetPushResult?.pushed
+          ? 'direct_pushed'
+          : integrationResult.mode,
+        directPushed: integrationResult.mode === 'direct_push_prepared'
+          ? Boolean(targetPushResult?.pushed)
+          : Boolean(integrationResult.directPushed),
+        targetPush: targetPushResult,
+        pushed: Boolean(targetPushResult?.pushed),
+      };
+    if (targetPushResult.attempted && (!targetPushResult.pushed || (runtimeConfig.prWorkflowEnabled && !targetPushResult.prCreated))) {
       const rollbackErrors = [];
       integrationRollback = rollbackIntegratedChanges(integrationResult);
       if (integrationRollback?.attempted && !integrationRollback?.rolledBack) {
@@ -3657,6 +3772,9 @@ async function processAutoDevDocument(filePath, options = {}) {
       archivedPath,
       archiveManifestPath,
       completionDocumentPath,
+      prNumber: integrationResult.prNumber || null,
+      prUrl: integrationResult.prUrl || null,
+      prWorkflow: integrationResult.prWorkflow || null,
       durationMs: elapsedMsSince(processStartedAtMs),
     });
     const changedPreview = newlyChangedFiles.length === 0
@@ -3664,6 +3782,8 @@ async function processAutoDevDocument(filePath, options = {}) {
       : `변경 후보 파일 ${newlyChangedFiles.length}개\n${newlyChangedFiles.slice(0, 10).map(file => `- ${file}`).join('\n')}`;
     const integrationPreview = integrationResult.mode === 'direct_pushed'
       ? `통합 산출물: direct pushed\n- commit: ${integrationResult.worktreeCommitSha}\n- ref: ${integrationResult.targetRemote}/${integrationResult.targetBranch}\n- patch: ${integrationResult.patchPath}`
+      : integrationResult.mode === 'pr_created'
+      ? `통합 산출물: pull request\n- commit: ${integrationResult.worktreeCommitSha}\n- branch: ${integrationResult.targetRemote}/${integrationResult.targetBranch}\n- pr: ${integrationResult.prUrl || integrationResult.prNumber || 'created'}\n- patch: ${integrationResult.patchPath}`
       : integrationResult.mode === 'cherry_picked'
       ? `통합 산출물: cherry-picked\n- commit: ${integrationResult.worktreeCommitSha}\n- patch: ${integrationResult.patchPath}`
       : integrationResult.exported
@@ -4058,4 +4178,6 @@ module.exports = {
   _testOnly_findDirtyPathConflicts: findDirtyPathConflicts,
   _testOnly_resolveNodeExecutable: resolveNodeExecutable,
   _testOnly_resolveScopedTestCommands: resolveScopedTestCommands,
+  _testOnly_autoDevPrBranch: autoDevPrBranch,
+  _testOnly_publishIntegrationAsPR: publishIntegrationAsPR,
 };

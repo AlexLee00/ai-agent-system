@@ -23,6 +23,7 @@ const env = require('../../../packages/core/lib/env');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 const { recordAutoDevOutcome } = require('../lib/auto-dev-pipeline');
 const gitOps = require('../lib/git-ops.ts');
+const { isProtectedTargetPath } = require('../lib/protected-targets.ts');
 
 const ROOT = env.PROJECT_ROOT || path.resolve(__dirname, '..', '..', '..');
 const DEFAULT_TARGET = 'bots/claude';
@@ -58,19 +59,6 @@ const EXCLUDED_DIRS = new Set([
   'venv',
   '__pycache__',
 ]);
-
-const PROTECTED_TARGET_FRAGMENTS = [
-  'bots/investment/markets/',
-  'bots/investment/launchd/ai.luna',
-  'bots/investment/scripts/runtime-luna-live',
-  'bots/investment/scripts/runtime-luna-approved-signal-executor',
-  'bots/investment/scripts/crypto-holding-monitor',
-  'bots/investment/shared/binance',
-  'bots/investment/shared/kis',
-  'bots/hub/secrets',
-  'secrets-store.json',
-  '/.git/',
-];
 
 const NON_PRODUCTION_CANDIDATE_FRAGMENTS = [
   '/__tests__/',
@@ -199,9 +187,7 @@ function resolveTarget(target = DEFAULT_TARGET) {
 }
 
 function isProtectedTarget(relativePath = '') {
-  const normalized = String(relativePath || '').replace(/\\/g, '/');
-  const withSlash = normalized.endsWith('/') ? normalized : `${normalized}/`;
-  return PROTECTED_TARGET_FRAGMENTS.some((fragment) => normalized.includes(fragment) || withSlash.includes(fragment));
+  return isProtectedTargetPath(relativePath);
 }
 
 function isNonProductionRefactorCandidate(relativePath = '') {
@@ -1714,6 +1700,22 @@ function normalizeScopePath(value = '') {
   return String(value || '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 }
 
+function safeBranchSlug(value, fallback = 'refactor') {
+  const slug = String(value || fallback)
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/\/+/g, '-')
+    .slice(0, 80);
+  return slug || fallback;
+}
+
+function refactorPrBranch(file = '', cycleId = '') {
+  const fileSlug = safeBranchSlug(path.basename(String(file || 'target'), path.extname(String(file || 'target'))));
+  const cycle = safeBranchSlug(cycleId || cycleStamp(), 'cycle');
+  return `claude/refactor-${fileSlug}-${cycle}`;
+}
+
 function defaultCommitFile(relFile, message, gitFn = runGit) {
   const normalized = normalizeScopePath(relFile);
   if (!normalized || normalized.startsWith('..') || path.isAbsolute(normalized)) {
@@ -1745,6 +1747,35 @@ function currentGitHead(gitFn = runGit) {
 function defaultPushHead(gitFn = runGit) {
   gitOps.pushRef('HEAD', gitFn, { cwd: ROOT });
   return { ok: true };
+}
+
+function defaultPushRefactorPr({ commit = '', file = '', context = {} } = {}, gitFn = runGit) {
+  const branch = refactorPrBranch(file, context.cycleId);
+  gitOps.pushHeadToBranch(branch, gitFn, { cwd: ROOT, timeout: 120000 });
+  const title = `refactor: ${file}`;
+  const body = [
+    'Claude refactor-cycle PR workflow shadow artifact.',
+    '',
+    `- cycle: ${context.cycleId || 'unknown'}`,
+    `- file: ${file || 'unknown'}`,
+    `- commit: ${commit || 'unknown'}`,
+  ].join('\n');
+  const pr = gitOps.createPR({ head: branch, base: 'main', title, body }, { cwd: ROOT, timeout: 120000 });
+  if (!pr?.ok) {
+    let branchCleanup = null;
+    try {
+      gitFn(['push', 'origin', '--delete', branch], { cwd: ROOT, timeout: 120000 });
+      branchCleanup = { attempted: true, deleted: true };
+    } catch (cleanupError) {
+      branchCleanup = {
+        attempted: true,
+        deleted: false,
+        error: String(cleanupError?.message || cleanupError).slice(0, 1000),
+      };
+    }
+    return { ok: false, branch, branchCleanup, error: pr?.error || 'pr_create_failed' };
+  }
+  return { ok: true, branch, prNumber: pr.number || null, prUrl: pr.url || null, pr };
 }
 
 function defaultOriginContainsCommit(sha, gitFn = runGit) {
@@ -2823,13 +2854,21 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
           );
           let pushed = false;
           let originContains = null;
+          let prWorkflow = null;
           if (context.applyPushEnabled) {
-            const pushResult = await context.pushFn({ commit, file: relFile, context });
+            const pushResult = context.prWorkflowEnabled
+              ? await context.pushPrFn({ commit, file: relFile, context })
+              : await context.pushFn({ commit, file: relFile, context });
             if (pushResult && pushResult.ok === false) {
               throw new Error(pushResult.error || 'push_failed');
             }
-            originContains = await context.originContainsFn(commit, { file: relFile, context });
-            if (!originContains) throw new Error(`push_verify_failed:${commit}`);
+            prWorkflow = context.prWorkflowEnabled ? pushResult : null;
+            if (context.prWorkflowEnabled) {
+              originContains = true;
+            } else {
+              originContains = await context.originContainsFn(commit, { file: relFile, context });
+              if (!originContains) throw new Error(`push_verify_failed:${commit}`);
+            }
             pushed = true;
           }
           snapshots.delete(path.resolve(ROOT, relFile));
@@ -2838,7 +2877,9 @@ async function runActiveRefactor(context, analysis, candidates, candidateDiagnos
           item.pushed = pushed;
           item.originContains = originContains;
           appliedCount += 1;
-          applyResults.push({ file: relFile, applied: true, commit, pushed, originContains });
+          const appliedResult = { file: relFile, applied: true, commit, pushed, originContains };
+          if (prWorkflow) appliedResult.prWorkflow = prWorkflow;
+          applyResults.push(appliedResult);
         } catch (error) {
           const errorMessage = String(error?.message || error).slice(0, 300);
           try {
@@ -3069,6 +3110,7 @@ function buildCycleContext(options = {}) {
     activeMaxFiles: activeMaxFiles(options.activeMaxFiles ?? process.env.REFACTORER_ACTIVE_MAX_FILES),
     applyEnabled: mode === 'active' && applyEnabled(options.applyEnabled ?? process.env.REFACTORER_APPLY_ENABLED),
     applyPushEnabled: applyPushEnabled(options.applyPushEnabled ?? process.env.REFACTORER_APPLY_PUSH),
+    prWorkflowEnabled: booleanEnvEnabled(options.prWorkflowEnabled ?? process.env.CLAUDE_PR_WORKFLOW_ENABLED),
     applyStrictGateEnabled: applyStrictGateEnabled(options.applyStrictGateEnabled ?? process.env.REFACTORER_APPLY_STRICT_GATE),
     strictGateBaselineEnabled: strictGateBaselineEnabled(options.strictGateBaselineEnabled ?? process.env.REFACTORER_STRICT_GATE_BASELINE),
     applyMaxPerCycle: applyMaxPerCycle(options.applyMaxPerCycle ?? process.env.REFACTORER_APPLY_MAX_PER_CYCLE),
@@ -3085,6 +3127,7 @@ function buildCycleContext(options = {}) {
     reviewerModule: options.reviewerModule || null,
     commitFileFn: options.commitFileFn || defaultCommitFile,
     pushFn: options.pushFn || (() => defaultPushHead()),
+    pushPrFn: options.pushPrFn || ((params) => defaultPushRefactorPr(params)),
     originContainsFn: options.originContainsFn || ((sha) => defaultOriginContainsCommit(sha)),
     rollbackFn: options.rollbackFn || ((head, meta) => defaultRollbackToHead(head, meta?.file)),
     currentHeadFn: options.currentHeadFn || (() => currentGitHead()),
@@ -3415,7 +3458,9 @@ module.exports = {
   cleanupUnexpectedUntracked,
   captureStrictBaseline,
   defaultCommitFile,
+  defaultPushRefactorPr,
   defaultOriginContainsCommit,
+  refactorPrBranch,
   runNodeCheckForFile,
   defaultStrictCheck,
   acquireRefactorLock,

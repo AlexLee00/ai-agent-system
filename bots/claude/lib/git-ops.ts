@@ -18,11 +18,29 @@ function runGit(args = [], opts = {}) {
   });
 }
 
+function runGh(args = [], opts = {}) {
+  if (!Array.isArray(args)) throw new Error('gh args must be an array');
+  const { raw = false, cwd = ROOT, timeout = 30000 } = opts || {};
+  return execFileSync('gh', args, {
+    cwd,
+    timeout,
+    encoding: raw ? undefined : 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
 function normalizeGitCall(gitFnOrOptions = runGit, options = {}) {
   if (typeof gitFnOrOptions === 'function') {
     return { gitFn: gitFnOrOptions, options: options || {} };
   }
   return { gitFn: runGit, options: gitFnOrOptions || {} };
+}
+
+function normalizeGhCall(ghFnOrOptions = runGh, options = {}) {
+  if (typeof ghFnOrOptions === 'function') {
+    return { ghFn: ghFnOrOptions, options: options || {} };
+  }
+  return { ghFn: runGh, options: ghFnOrOptions || {} };
 }
 
 function asText(value) {
@@ -133,6 +151,17 @@ function validatePushRef(ref, gitFn = runGit, options = {}) {
   return value;
 }
 
+function validateBranchName(ref, label = 'branch') {
+  const value = String(ref || '').trim();
+  if (!value) throw new Error(`${label} is required`);
+  if (value.startsWith('-')) throw new Error(`flags not allowed: ${value}`);
+  if (value.includes(':')) throw new Error(`refspec not allowed: ${value}`);
+  if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..') || value.includes('@{') || value.endsWith('.lock')) {
+    throw new Error(`invalid ${label}: ${value}`);
+  }
+  return value;
+}
+
 function pushRef(ref = 'HEAD', gitFnOrOptions = runGit, options = {}) {
   const call = normalizeGitCall(gitFnOrOptions, options);
   const safeRef = validatePushRef(ref, call.gitFn, call.options);
@@ -176,9 +205,87 @@ function rollbackToHead(head, file = null, gitFn = runGit) {
   return { ok: true };
 }
 
+function parseJson(text) {
+  try {
+    return JSON.parse(String(text || '{}'));
+  } catch {
+    return null;
+  }
+}
+
+function summarizeToolError(error) {
+  const stderr = error?.stderr ? String(error.stderr) : '';
+  const stdout = error?.stdout ? String(error.stdout) : '';
+  const message = error?.message ? String(error.message) : String(error || 'unknown_error');
+  return [stderr, stdout, message].filter(Boolean).join('\n').trim().slice(0, 2000);
+}
+
+function createPR(input = {}, ghFnOrOptions = runGh, options = {}) {
+  const call = normalizeGhCall(ghFnOrOptions, options);
+  try {
+    const head = validateBranchName(input.head, 'head');
+    const base = validateBranchName(input.base || 'main', 'base');
+    const title = String(input.title || '').trim();
+    if (!title) throw new Error('title is required');
+    const body = String(input.body || '');
+    const created = asText(call.ghFn([
+      'pr',
+      'create',
+      '--base',
+      base,
+      '--head',
+      head,
+      '--title',
+      title,
+      '--body',
+      body,
+    ], { ...call.options, timeout: call.options.timeout || 120000 }));
+    const viewTarget = created || head;
+    const viewed = parseJson(call.ghFn([
+      'pr',
+      'view',
+      viewTarget,
+      '--json',
+      'number,url',
+    ], { ...call.options, timeout: call.options.timeout || 30000 }));
+    return {
+      ok: true,
+      number: viewed?.number || null,
+      url: viewed?.url || created || null,
+      head,
+      base,
+    };
+  } catch (error) {
+    return { ok: false, error: summarizeToolError(error) };
+  }
+}
+
+function mergePR(prNumber, mergeOptions = {}, ghFnOrOptions = runGh, options = {}) {
+  if (process.env.CLAUDE_PR_AUTOMERGE_ENABLED !== 'true') {
+    return { ok: true, merged: false, reason: 'automerge_disabled' };
+  }
+  const call = normalizeGhCall(ghFnOrOptions, options);
+  try {
+    const number = Math.floor(Number(prNumber));
+    if (!Number.isFinite(number) || number <= 0) throw new Error('valid pr number is required');
+    const method = String(mergeOptions.method || 'squash').trim().toLowerCase();
+    if (!['squash', 'merge', 'rebase'].includes(method)) throw new Error(`invalid merge method: ${method}`);
+    const output = asText(call.ghFn([
+      'pr',
+      'merge',
+      String(number),
+      `--${method}`,
+    ], { ...call.options, timeout: call.options.timeout || 120000 }));
+    return { ok: true, merged: true, number, method, output };
+  } catch (error) {
+    return { ok: false, merged: false, error: summarizeToolError(error) };
+  }
+}
+
 module.exports = {
   ROOT,
   runGit,
+  runGh,
   currentHead,
   currentBranch,
   isRepo,
@@ -197,6 +304,9 @@ module.exports = {
   pushRef,
   pushHeadToBranch,
   validatePushRef,
+  validateBranchName,
+  createPR,
+  mergePR,
   originContains,
   rollbackToHead,
 };
