@@ -166,7 +166,9 @@ function selectorOptionsFromRequest(req = {}, extra = {}) {
     task_type: req.task_type || req.taskType,
     runtimePurpose: req.runtimePurpose || req.runtime_purpose,
     runtime_purpose: req.runtime_purpose || req.runtimePurpose,
-    rolloutKey: req.traceId || req.requestId || req.incidentKey,
+    selectorVersion: req.selectorVersion,
+    rolloutPercent: req.rolloutPercent,
+    rolloutKey: req.rolloutKey || req.traceId || req.requestId || req.incidentKey,
     traceId: req.traceId || req.requestId,
     incidentKey: req.incidentKey,
     ...extra,
@@ -394,6 +396,24 @@ function resolveHubLlmSelection(req = {}, options = {}) {
   }
 
   if (agent) {
+    if (isChronosBacktestJudgmentTarget({ ...req, callerTeam: team, agent })) {
+      const selectorKey = 'investment.chronos';
+      const chain = selectChainWithShadow(selectorKey, selectorOptionsFromRequest(req, {
+        team,
+        callerTeam: team,
+        agentName: agent,
+        agent,
+      }), shadowDeps);
+      return selectionResult({
+        selectorKey,
+        runtimeProfile: null,
+        runtimePurpose: requestRuntimePurpose(req, selectorKey) || null,
+        routeTargetKind: targetPolicy.target.kind,
+        target: targetPolicy.target,
+        source: 'agent_registry',
+      }, chain);
+    }
+
     const described = coreSelector.describeAgentModel(team, agent);
     if (described?.selected && Array.isArray(described.chain) && described.chain.length > 0) {
       shadowCompareChain(described.selectorKey, selectorOptionsFromRequest(req, {

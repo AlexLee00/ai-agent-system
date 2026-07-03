@@ -2077,7 +2077,9 @@ function buildSelectorRegistry(): Record<string, any> {
       const { agentName, agentModel = null, openaiPerfModel = OPENAI_PERF_MODEL, policyOverride } = options;
       const normalizedAgentName = String(agentName || '');
       const selectorVersion = resolveSelectorVersionForKey('investment.agent_policy', options);
-      if (isLunaYamlRoutingEnabled(process.env)) {
+      const taskType = normalizeTaskTypeInput(options);
+      const skipYamlRouting = normalizedAgentName === 'chronos' && taskType === 'backtest_judgment';
+      if (!skipYamlRouting && isLunaYamlRoutingEnabled(process.env)) {
         const yamlPolicy = resolveInvestmentYamlRoutingPolicy(normalizedAgentName);
         if (yamlPolicy) return yamlPolicy;
       }

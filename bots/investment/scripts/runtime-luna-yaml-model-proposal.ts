@@ -61,7 +61,7 @@ export function buildLunaYamlModelProposal({ generatedAt = new Date().toISOStrin
     '## Guardrails',
     '',
     '- Actual YAML model changes require master approval.',
-    '- `LUNA_YAML_ROUTING_ENABLED` remains default OFF.',
+    '- `LUNA_YAML_ROUTING_ENABLED=false` is the reverse switch; unset defaults to YAML routing.',
     '- Rule-based agents stay non-LLM unless a separate SPEC changes ownership.',
     '- Gemini residue must stay 0 in the YAML runtime path.',
     '',

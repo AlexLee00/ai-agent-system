@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.sigma.dreaming-lite-nightly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/npm</string>
+    <string>--prefix</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+    <string>run</string>
+    <string>-s</string>
+    <string>dreaming:lite</string>
+    <string>--</string>
+    <string>--json</string>
+    <string>--dry-run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>2</integer>
+    <key>Minute</key>
+    <integer>40</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/sigma-dreaming-lite-nightly.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/sigma-dreaming-lite-nightly-error.log</string>
+</dict>
+</plist>

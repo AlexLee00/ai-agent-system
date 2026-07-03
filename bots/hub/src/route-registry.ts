@@ -55,6 +55,7 @@ const {
   llmStatsRoute,
   llmLoadTestsRoute,
   llmCircuitRoute,
+  llmSelectorRoute,
   llmJobsCreateRoute,
   llmJobsListRoute,
   llmJobStatusRoute,
@@ -269,6 +270,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.post('/hub/llm/groq', llmLimiter, llmGroqRoute);
   app.get('/hub/llm/stats', generalLimiter, llmStatsRoute);
   app.get('/hub/llm/load-tests', generalLimiter, llmLoadTestsRoute);
+  app.get('/hub/llm/selector', generalLimiter, llmSelectorRoute);
   app.get('/hub/llm/circuit', generalLimiter, llmCircuitRoute);
   app.delete('/hub/llm/circuit', generalLimiter, llmCircuitRoute);
 

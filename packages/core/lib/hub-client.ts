@@ -104,6 +104,23 @@ type HubEmbeddingRequest = {
   cycle_id?: string | null;
 };
 
+type HubSelectorRequest = {
+  key?: string;
+  selectorKey?: string;
+  callerTeam?: string;
+  team?: string;
+  agent?: string;
+  agentName?: string;
+  taskType?: string;
+  task_type?: string;
+  runtimePurpose?: string;
+  runtime_purpose?: string;
+  selectorVersion?: string;
+  rolloutPercent?: number;
+  rolloutKey?: string;
+  timeoutMs?: number;
+};
+
 const cache = new Map<string, CacheEntry>();
 const warnCache = new Map<string, number>();
 
@@ -396,6 +413,16 @@ function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): Hu
   } catch {
     return null;
   }
+}
+
+function buildQueryString(params: Record<string, any>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === '') continue;
+    search.set(key, String(value));
+  }
+  const raw = search.toString();
+  return raw ? `?${raw}` : '';
 }
 
 function postJsonViaCurl(url: string, authToken: string, payload: any, timeoutMs: number): any | null {
@@ -921,6 +948,60 @@ export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{ 
     traceId: body?.traceId || null,
     raw: body,
   };
+}
+
+export async function fetchHubLlmSelector(request: HubSelectorRequest): Promise<any | null> {
+  const selectorKey = String(request?.selectorKey || request?.key || '').trim();
+  if (!selectorKey) throw new Error('selectorKey required for Hub selector lookup');
+  if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub selector lookup');
+  if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub selector lookup');
+  const timeoutMs = Math.min(Math.max(1_000, Number(request.timeoutMs || 5_000) || 5_000), 30_000);
+  const query = buildQueryString({
+    key: selectorKey,
+    callerTeam: request.callerTeam || request.team,
+    team: request.team || request.callerTeam,
+    agent: request.agent || request.agentName,
+    agentName: request.agentName || request.agent,
+    taskType: request.taskType || request.task_type,
+    task_type: request.task_type || request.taskType,
+    runtimePurpose: request.runtimePurpose || request.runtime_purpose,
+    runtime_purpose: request.runtime_purpose || request.runtimePurpose,
+    selectorVersion: request.selectorVersion || 'v3.0_oauth_4',
+    rolloutPercent: request.rolloutPercent ?? 100,
+    rolloutKey: request.rolloutKey || `hub-client:${selectorKey}`,
+  });
+  const url = `${env.HUB_BASE_URL}/hub/llm/selector${query}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs + 500);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+        ...cycleTraceHeaders(getCurrentCycleTraceFields()),
+      },
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body?.ok === false) {
+      const reason = stringifyHubErrorReason(body?.error || body?.reason || `HTTP ${res.status}`) || `HTTP ${res.status}`;
+      throw new Error(`hub_selector_lookup_failed:${reason}`);
+    }
+    return body;
+  } catch (error) {
+    if (shouldUseCurlFallback(error, url)) {
+      const body = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (body && body?.ok !== false) return body;
+    }
+    const err = error as Error & { name?: string };
+    const message = err.name === 'AbortError'
+      ? 'timeout'
+      : (stringifyHubErrorReason(err.message || err) || 'hub_selector_error');
+    throw new Error(`hub_selector_lookup_failed:${message}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function postHubJson(path: string, payload: any, timeoutMs: number): Promise<any> {

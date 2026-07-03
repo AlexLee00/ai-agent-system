@@ -14,7 +14,9 @@ const {
   getJobStoreState,
 } = require('../llm/job-store');
 const { parseLlmCallPayload } = require('../llm/request-schema');
-const { isHubLlmRouteTargetAllowed, resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
+const hubLlmSelector = require('../../src/llm-selector');
+const { isHubLlmRouteTargetAllowed, resolveHubLlmSelection, isGeminiDisabled } = hubLlmSelector;
+const selectorTimeoutProfiles = require('../../../../packages/core/lib/selector-timeout-profiles');
 const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
 const {
   getProviderCooldownSnapshot,
@@ -771,6 +773,101 @@ export async function llmCircuitRoute(req: RouteReq, res: RouteRes) {
     provider_circuits: providerStats,
     provider_cooldowns: providerCooldowns,
     any_open: hasOpen,
+  });
+}
+
+function normalizeSelectorQueryValue(value: any): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const normalized = String(raw || '').trim();
+  return normalized || undefined;
+}
+
+function compactSelectorChain(chain: AnyRecord[] = []): AnyRecord[] {
+  return (Array.isArray(chain) ? chain : []).map((entry: AnyRecord = {}) => {
+    const compacted: AnyRecord = {
+      provider: entry.provider || null,
+      model: entry.model || null,
+      route: entry.route || (entry.provider && entry.model ? `${entry.provider}/${entry.model}` : null),
+    };
+    for (const key of ['maxTokens', 'temperature', 'timeoutMs', 'providerTier', 'fallbackIndex']) {
+      if (entry[key] !== undefined && entry[key] !== null) compacted[key] = entry[key];
+    }
+    return compacted;
+  });
+}
+
+// GET /hub/llm/selector — read-only Hub-owned selector chain inspection.
+export async function llmSelectorRoute(req: RouteReq, res: RouteRes) {
+  const selectorKey = normalizeSelectorQueryValue(req.query?.key || req.query?.selectorKey);
+  if (!selectorKey) {
+    return res.status(400).json({ ok: false, error: 'selector_key_required' });
+  }
+
+  const rolloutPercentRaw = normalizeSelectorQueryValue(req.query?.rolloutPercent);
+  const options: AnyRecord = {
+    agentName: normalizeSelectorQueryValue(req.query?.agentName || req.query?.agent),
+    agent: normalizeSelectorQueryValue(req.query?.agent),
+    taskType: normalizeSelectorQueryValue(req.query?.taskType || req.query?.task_type),
+    task_type: normalizeSelectorQueryValue(req.query?.task_type || req.query?.taskType),
+    runtimePurpose: normalizeSelectorQueryValue(req.query?.runtimePurpose || req.query?.runtime_purpose),
+    runtime_purpose: normalizeSelectorQueryValue(req.query?.runtime_purpose || req.query?.runtimePurpose),
+    selectorVersion: normalizeSelectorQueryValue(req.query?.selectorVersion) || 'v3.0_oauth_4',
+    rolloutPercent: Number.isFinite(Number(rolloutPercentRaw)) ? Number(rolloutPercentRaw) : 100,
+    rolloutKey: normalizeSelectorQueryValue(req.query?.rolloutKey) || `hub-selector-api:${selectorKey}`,
+    team: normalizeSelectorQueryValue(req.query?.team || req.query?.callerTeam) || String(selectorKey).split('.')[0],
+    callerTeam: normalizeSelectorQueryValue(req.query?.callerTeam || req.query?.team) || String(selectorKey).split('.')[0],
+  };
+
+  const selection = resolveHubLlmSelection({
+    selectorKey,
+    callerTeam: options.callerTeam,
+    team: options.team,
+    agent: options.agent || options.agentName,
+    taskType: options.taskType,
+    task_type: options.task_type,
+    runtimePurpose: options.runtimePurpose,
+    runtime_purpose: options.runtime_purpose,
+    selectorVersion: options.selectorVersion,
+    rolloutPercent: options.rolloutPercent,
+    rolloutKey: options.rolloutKey,
+    maxTokens: normalizeSelectorQueryValue(req.query?.maxTokens),
+    temperature: normalizeSelectorQueryValue(req.query?.temperature),
+  }, {
+    shadowDeps: { mode: 'off' },
+  });
+
+  let description: AnyRecord = {};
+  try {
+    description = hubLlmSelector.describeLLMSelector?.(selectorKey, options) || {};
+  } catch (_) {
+    description = {};
+  }
+
+  const chain = compactSelectorChain(selection.chain || []);
+  const selectorDisabled = description?.enabled === false && description?.kind === 'none';
+  const timeoutProfile = description.timeoutProfile || selectorTimeoutProfiles.resolveSelectorTimeoutProfile(selectorKey, {
+    fallbackTimeoutMs: chain[0]?.timeoutMs ?? null,
+  });
+
+  return res.status(selection.ok || selectorDisabled ? 200 : 409).json({
+    ok: Boolean(selection.ok || selectorDisabled),
+    mode: 'read_only_selector',
+    selectorKey,
+    enabled: !selectorDisabled,
+    source: selection.source || null,
+    routingSource: description.routingSource || selection.routingSource || null,
+    runtimeProfile: selection.runtimeProfile || null,
+    runtimePurpose: selection.runtimePurpose || null,
+    routeTargetKind: selection.routeTargetKind || null,
+    target: selection.target || null,
+    error: selection.error || null,
+    disabledProvidersRemoved: selection.disabledProvidersRemoved || 0,
+    effectiveTimeoutMs: timeoutProfile?.timeoutMs ?? chain[0]?.timeoutMs ?? null,
+    timeoutProfile,
+    primary: chain[0] || null,
+    fallbacks: chain.slice(1),
+    chain,
+    providerTiers: selection.providerTiers || [],
   });
 }
 

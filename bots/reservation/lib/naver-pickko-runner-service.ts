@@ -100,11 +100,17 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
     return new Promise(async (resolve) => {
       const phoneRawForKey = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
       const doneKey = buildCancelDoneKey(booking);
+      const currentEntry = booking.bookingId
+        ? await getReservation(String(booking.bookingId)).catch(() => null)
+        : null;
 
       if (await isCancelledKey(doneKey)) {
-        log(`ℹ️ [취소 스킵] 이미 완료된 취소 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} (exact doneKey 존재)`);
-        resolve(0);
-        return;
+        if (!currentEntry || currentEntry.status === 'cancelled' || ['time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus)) {
+          log(`ℹ️ [취소 스킵] 이미 완료된 취소 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room} (exact doneKey 존재)`);
+          resolve(0);
+          return;
+        }
+        log(`🧹 [취소키 무시] stale doneKey 감지 — DB 상태는 ${currentEntry.status}/${currentEntry.pickkoStatus || '-'} 이므로 픽코 취소 계속 진행: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room}`);
       }
 
       const blockedKey = buildCancelBlockedKey(booking);
@@ -115,7 +121,6 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       }
 
       if (booking.bookingId) {
-        const currentEntry = await getReservation(String(booking.bookingId)).catch(() => null);
         if (currentEntry && (currentEntry.status === 'cancelled' || ['time_elapsed', 'cancelled'].includes(currentEntry.pickkoStatus))) {
           log(`✅ [취소 건너뜀] 이미 종결 처리됨: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start} → ${currentEntry.pickkoStatus || currentEntry.status}`);
           await markSeen(String(booking.bookingId)).catch(() => {});

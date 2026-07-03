@@ -5,7 +5,8 @@ type BuildCancelKeyFn = (booking: Record<string, any>, todaySeoul?: string | nul
 type BuildConfirmedListKeyFn = (booking: Record<string, any>, todaySeoul?: string | null) => string;
 type IsCancelledKeyFn = (key: string) => Promise<boolean>;
 type AddCancelledKeyFn = (key: string) => Promise<any>;
-type ShouldProcessCancelledBookingFn = (booking: Record<string, any>) => Promise<boolean>;
+type TrackedCancelledBooking = boolean | Record<string, any> | null | undefined;
+type ShouldProcessCancelledBookingFn = (booking: Record<string, any>) => Promise<TrackedCancelledBooking>;
 type RunPickkoCancelFn = (booking: Record<string, any>, bookingId?: string | null) => Promise<any>;
 type ScrapeNewestBookingsFromListFn = (page: any, maxItems?: number) => Promise<Record<string, any>[]>;
 type ScrapeExpandedCancelledFn = (page: any, cancelledHref: string) => Promise<Record<string, any>[]>;
@@ -39,6 +40,28 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     scrapeExpandedCancelled,
   } = deps;
 
+  function isTodayCancelledCandidate(candidate: Record<string, any>, todaySeoul: string): boolean {
+    return String(candidate?.date || '').trim() === todaySeoul;
+  }
+
+  function isCancelledTrackedReservation(tracked: TrackedCancelledBooking): boolean {
+    if (!tracked || typeof tracked !== 'object') return false;
+    return Boolean(
+      tracked.status === 'cancelled'
+      || ['time_elapsed', 'cancelled'].includes(String(tracked.pickkoStatus || tracked.pickko_status || '')),
+    );
+  }
+
+  function formatTrackedState(tracked: TrackedCancelledBooking): string {
+    if (!tracked || typeof tracked !== 'object') return 'unknown';
+    return `${tracked.status || '-'} / ${tracked.pickkoStatus || tracked.pickko_status || '-'}`;
+  }
+
+  function withTrackedBookingId(candidate: Record<string, any>, tracked: TrackedCancelledBooking): Record<string, any> {
+    if (candidate.bookingId || !tracked || typeof tracked !== 'object' || !tracked.id) return candidate;
+    return { ...candidate, bookingId: tracked.id };
+  }
+
   async function processCancelTab({
     page,
     cancelledHref,
@@ -67,31 +90,35 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     log(`🗑️ 오늘 취소 탭: ${cancelledList.length}건`);
 
     if (cancelledList.length > 0) {
-      const cancelledFlags = await Promise.all(cancelledList.map((c) => isCancelledKey(buildCancelKey(c, todaySeoul))));
-      const cancelCandidates = cancelledList.filter((c, i) => !cancelledFlags[i]);
-
-      if (cancelCandidates.length > 0) {
-        log(`🗑️ 취소 탭 신규 취소: ${cancelCandidates.length}건`);
-        for (const candidate of cancelCandidates) {
-          const cancelKey = buildCancelKey(candidate, todaySeoul);
-          const tracked = await shouldProcessCancelledBooking(candidate);
-          if (!tracked) {
-            await addCancelledKey(cancelKey);
-            cycleNewCancelDetections += 1;
-            log(`ℹ️ [취소탭] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
-            continue;
-          }
-          const result = await runPickkoCancel(candidate, cancelKey);
-          if (result === 0) {
-            await addCancelledKey(cancelKey);
-            cycleNewCancelDetections += 1;
-          } else {
-            log(`🛡️ [취소탭] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end}`);
-          }
+      let actionableCancels = 0;
+      for (const candidate of cancelledList) {
+        if (!isTodayCancelledCandidate(candidate, todaySeoul)) {
+          log(`🛡️ [취소탭] 오늘자 외 취소 후보 자동 처리 차단: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
+          continue;
         }
-      } else {
-        log('ℹ️ 취소 탭 신규 취소 없음');
+        const cancelKey = buildCancelKey(candidate, todaySeoul);
+        const tracked = await shouldProcessCancelledBooking(candidate);
+        const alreadyRecorded = await isCancelledKey(cancelKey);
+        if (alreadyRecorded) {
+          if (!tracked || isCancelledTrackedReservation(tracked)) continue;
+          log(`🧹 [취소탭] stale 취소키 감지 — DB 상태는 ${formatTrackedState(tracked)} 이므로 픽코 취소 계속 진행: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
+        }
+        actionableCancels += 1;
+        if (!tracked) {
+          await addCancelledKey(cancelKey);
+          cycleNewCancelDetections += 1;
+          log(`ℹ️ [취소탭] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
+          continue;
+        }
+        const result = await runPickkoCancel(withTrackedBookingId(candidate, tracked), cancelKey);
+        if (result === 0) {
+          await addCancelledKey(cancelKey);
+          cycleNewCancelDetections += 1;
+        } else {
+          log(`🛡️ [취소탭] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end}`);
+        }
       }
+      if (actionableCancels === 0) log('ℹ️ 취소 탭 신규 취소 없음');
     }
 
     await page.goto(naverUrl, { waitUntil: 'networkidle2' }).catch(() => null);
@@ -116,30 +143,35 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     log(`🔍 [취소감지2E] ${expandedList.length}건 확인`);
 
     if (expandedList.length > 0) {
-      const expandedFlags = await Promise.all(expandedList.map((c) => isCancelledKey(buildCancelKey(c, todaySeoul))));
-      const newCancels = expandedList.filter((c, i) => !expandedFlags[i]);
-      if (newCancels.length > 0) {
-        log(`🗑️ [취소감지2E] 신규 취소 ${newCancels.length}건 처리`);
-        for (const candidate of newCancels) {
-          const key = buildCancelKey(candidate, todaySeoul);
-          const tracked = await shouldProcessCancelledBooking(candidate);
-          if (!tracked) {
-            await addCancelledKey(key);
-            cycleNewCancelDetections += 1;
-            log(`ℹ️ [취소감지2E] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
-            continue;
-          }
-          const result = await runPickkoCancel(candidate, key);
-          if (result === 0) {
-            await addCancelledKey(key);
-            cycleNewCancelDetections += 1;
-          } else {
-            log(`🛡️ [취소감지2E] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end}`);
-          }
+      let actionableCancels = 0;
+      for (const candidate of expandedList) {
+        if (!isTodayCancelledCandidate(candidate, todaySeoul)) {
+          log(`🛡️ [취소감지2E] 오늘자 외 취소 후보 자동 처리 차단: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
+          continue;
         }
-      } else {
-        log('[취소감지2E] 신규 취소 없음');
+        const key = buildCancelKey(candidate, todaySeoul);
+        const tracked = await shouldProcessCancelledBooking(candidate);
+        const alreadyRecorded = await isCancelledKey(key);
+        if (alreadyRecorded) {
+          if (!tracked || isCancelledTrackedReservation(tracked)) continue;
+          log(`🧹 [취소감지2E] stale 취소키 감지 — DB 상태는 ${formatTrackedState(tracked)} 이므로 픽코 취소 계속 진행: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
+        }
+        actionableCancels += 1;
+        if (!tracked) {
+          await addCancelledKey(key);
+          cycleNewCancelDetections += 1;
+          log(`ℹ️ [취소감지2E] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
+          continue;
+        }
+        const result = await runPickkoCancel(withTrackedBookingId(candidate, tracked), key);
+        if (result === 0) {
+          await addCancelledKey(key);
+          cycleNewCancelDetections += 1;
+        } else {
+          log(`🛡️ [취소감지2E] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end}`);
+        }
       }
+      if (actionableCancels === 0) log('[취소감지2E] 신규 취소 없음');
     }
 
     await page.goto(naverUrl, { waitUntil: 'networkidle2' }).catch(() => null);

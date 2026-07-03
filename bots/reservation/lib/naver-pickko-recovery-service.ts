@@ -89,8 +89,8 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
     return null;
   }
 
-  async function shouldProcessCancelledBooking(booking: Record<string, any>): Promise<boolean> {
-    return Boolean(await findTrackedReservationForCancelCandidate(booking));
+  async function shouldProcessCancelledBooking(booking: Record<string, any>): Promise<Record<string, any> | null> {
+    return findTrackedReservationForCancelCandidate(booking);
   }
 
   async function reconcileSlotDuplicatesAfterRecovery(bookingId: string | number | null, booking: Record<string, any>) {

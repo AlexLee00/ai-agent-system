@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const selector = require('../../../packages/core/lib/llm-model-selector.js');
 const {
   buildAgentYamlRoutingPolicy,
+  isLunaYamlRoutingEnabled,
   listInvestmentYamlRoutingPolicies,
 } = require('../../../packages/core/lib/agent-llm-routing-adapter.js');
 
@@ -60,6 +61,22 @@ export function runLunaYamlRoutingSmoke() {
     ]),
   ));
   assert.ok(offChains.luna.length > 0, 'env OFF must preserve existing selector chain');
+  const offDescription = withEnv('false', () => selector.describeLLMSelector('investment.luna', {
+    agentName: 'luna',
+    selectorVersion: 'v3.0_oauth_4',
+    rolloutPercent: 100,
+  }));
+  assert.equal(isLunaYamlRoutingEnabled({ LUNA_YAML_ROUTING_ENABLED: 'false' }), false, 'explicit false must be the reverse switch');
+  assert.equal(offDescription.routingSource, 'oauth4', 'explicit false must preserve oauth4 routing source');
+
+  const unsetDescription = withEnv(null, () => selector.describeLLMSelector('investment.luna', {
+    agentName: 'luna',
+    selectorVersion: 'v3.0_oauth_4',
+    rolloutPercent: 100,
+  }));
+  assert.equal(isLunaYamlRoutingEnabled({}), true, 'unset env must default to YAML routing');
+  assert.equal(isLunaYamlRoutingEnabled({ LUNA_YAML_ROUTING_ENABLED: 'true' }), true, 'explicit true must enable YAML routing');
+  assert.equal(unsetDescription.routingSource, 'yaml', 'unset env must expose yaml routing source');
 
   const yamlChecks = withEnv('true', () => policies.map((item) => {
     const policy = item.policy;
@@ -85,6 +102,13 @@ export function runLunaYamlRoutingSmoke() {
     return { agentName: item.agentName, disabled: false, chain: compactChain(chain) };
   }));
 
+  const defaultPayload = withEnv(null, () => buildHubLlmCallPayload('luna', 'system', 'reply ok', {
+    market: 'binance',
+    taskType: 'final_decision',
+    maxTokens: 64,
+  }));
+  assert.equal(defaultPayload._routingSource, 'yaml', 'unset env must label Luna payload as yaml');
+
   const payload = withEnv('true', () => buildHubLlmCallPayload('luna', 'system', 'reply ok', {
     market: 'binance',
     taskType: 'final_decision',
@@ -97,6 +121,8 @@ export function runLunaYamlRoutingSmoke() {
     ok: true,
     totalAgents: policies.length,
     ruleBasedAgents: Array.from(RULE_BASED).sort(),
+    defaultRoutingSource: unsetDescription.routingSource,
+    reverseSwitchRoutingSource: offDescription.routingSource,
     yamlChecks,
     offLunaPrimary: offChains.luna[0],
     malformedFallback: malformed === null,

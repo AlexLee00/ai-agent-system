@@ -5,6 +5,7 @@ const {
   getGatewayPrimaryModel,
   buildIntentParsePolicy,
   buildJayChatFallbackChain,
+  buildHubSelectorDiffReport,
 } = require('../lib/jay-model-policy');
 
 function formatSelectorEntry(entry = {}) {
@@ -88,6 +89,11 @@ function buildPayload() {
       reason: 'Jay 모델 경로는 Hub → team selector → agent 표준 경로로 고정합니다. retired gateway 설정 파일과 동기화하지 않습니다.',
     },
     candidateProfiles,
+    hubSelectorDiff: {
+      enabled: false,
+      mode: 'not_checked_sync',
+      diffs: [],
+    },
     experimentCriteria: [
       {
         stage: 'hold',
@@ -109,6 +115,14 @@ function buildPayload() {
   };
 }
 
+async function buildPayloadAsync() {
+  const payload = buildPayload();
+  return {
+    ...payload,
+    hubSelectorDiff: await buildHubSelectorDiffReport(),
+  };
+}
+
 function printHuman(payload) {
   const lines = [
     '🤖 제이 Hub selector primary 점검',
@@ -127,6 +141,11 @@ function printHuman(payload) {
   ];
   for (const route of payload.selectorRoutes) {
     lines.push(`- ${route}`);
+  }
+  lines.push('');
+  lines.push(`Hub selector dual-read: ${payload.hubSelectorDiff?.mode || 'unknown'}`);
+  for (const diff of payload.hubSelectorDiff?.diffs || []) {
+    lines.push(`- ${diff.selectorKey}: ${diff.match === null ? 'skipped' : (diff.match ? 'match' : 'diff')}`);
   }
   lines.push('');
   lines.push('후보 프로필:');
@@ -153,7 +172,7 @@ async function main() {
     throw new Error('retired gateway 설정 동기화는 비활성화되었습니다. Hub selector override 경로를 사용하세요.');
   }
 
-  const payload = buildPayload();
+  const payload = await buildPayloadAsync();
   if (args.has('--json')) {
     console.log(JSON.stringify(payload, null, 2));
     return;
@@ -170,5 +189,6 @@ if (require.main === module) {
 
 module.exports = {
   buildPayload,
+  buildPayloadAsync,
   printHuman,
 };

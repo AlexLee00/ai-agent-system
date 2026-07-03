@@ -6,8 +6,6 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const selector = require('../../../../../packages/core/lib/llm-model-selector.ts');
-const selectorTimeoutProfiles = require('../../../../../packages/core/lib/selector-timeout-profiles.ts');
 const pgPool = require('../../../../../packages/core/lib/pg-pool.ts');
 const cycleBudget = require('../../../lib/llm/cycle-budget.ts');
 
@@ -26,7 +24,7 @@ export const HUB_OPS_MCP_TOOLS = [
   },
   {
     name: 'hub-routing',
-    description: 'Return selector chain for a Hub selector key. Read-only local selector inspection.',
+    description: 'Return selector chain from Hub /hub/llm/selector. Read-only proxy.',
   },
   {
     name: 'hub-cost',
@@ -100,6 +98,16 @@ async function fetchHub(path, { accept = 'json', timeoutMs = 5000 } = {}) {
     path,
     body: redact(body),
   };
+}
+
+function queryString(params = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue;
+    search.set(key, String(value));
+  }
+  const raw = search.toString();
+  return raw ? `?${raw}` : '';
 }
 
 function parsePrometheusMetrics(text) {
@@ -456,36 +464,73 @@ export async function callHubOpsTool(name, args = {}, deps = {}) {
   if (name === 'hub-routing') {
     const selectorKey = String(args.selectorKey || args.key || 'investment.luna').trim();
     const options = {
+      key: selectorKey,
       agentName: args.agentName || args.agent || undefined,
+      agent: args.agent || args.agentName || undefined,
+      team: args.team || args.callerTeam || undefined,
+      callerTeam: args.callerTeam || args.team || undefined,
       taskType: args.taskType || args.task_type || undefined,
+      task_type: args.task_type || args.taskType || undefined,
       runtimePurpose: args.runtimePurpose || args.runtime_purpose || undefined,
+      runtime_purpose: args.runtime_purpose || args.runtimePurpose || undefined,
       selectorVersion: args.selectorVersion || 'v3.0_oauth_4',
       rolloutPercent: Number(args.rolloutPercent ?? 100),
       rolloutKey: args.rolloutKey || `hub-ops-mcp:${selectorKey}`,
     };
-    const chain = selector.selectLLMChain(selectorKey, options);
-    const description = selector.describeLLMSelector(selectorKey, options);
-    const compactedChain = compactChain(chain);
-    const timeoutProfile = description.timeoutProfile || selectorTimeoutProfiles.resolveSelectorTimeoutProfile(selectorKey, {
-      fallbackTimeoutMs: compactedChain[0]?.timeoutMs ?? null,
-    });
+    const response = await fetchHub(`/hub/llm/selector${queryString(options)}`, {
+      timeoutMs: args.timeoutMs || 5000,
+    }).catch((error) => ({
+      ok: false,
+      status: 0,
+      path: '/hub/llm/selector',
+      body: { ok: false, error: error?.message || String(error) },
+    }));
+    const body = response.body || {};
+    if (!response.ok || body?.ok === false) {
+      return {
+        ok: false,
+        mode: 'read_only_selector_proxy',
+        selectorKey,
+        status: response.status || 0,
+        error: body?.error || `hub_selector_proxy_failed:${response.status || 0}`,
+        response,
+      };
+    }
+    const compactedChain = compactChain(body.chain || []);
     return {
       ok: true,
-      mode: 'read_only_selector',
+      mode: 'read_only_selector_proxy',
       selectorKey,
-      routingSource: description.routingSource || null,
-      effectiveTimeoutMs: timeoutProfile?.timeoutMs ?? compactedChain[0]?.timeoutMs ?? null,
-      timeoutProfile: redact(timeoutProfile),
+      status: response.status,
+      routingSource: body.routingSource || null,
+      effectiveTimeoutMs: body.effectiveTimeoutMs ?? compactedChain[0]?.timeoutMs ?? null,
+      timeoutProfile: redact(body.timeoutProfile || null),
       primary: compactedChain[0] || null,
       fallbacks: compactedChain.slice(1),
       chain: compactedChain,
+      source: body.source || null,
+      routeTargetKind: body.routeTargetKind || null,
     };
   }
   if (name === 'hub-cost') {
     return buildCostSummary(args, deps);
   }
   if (name === 'hub-trace') {
-    return buildTraceTimeline(args, deps);
+    const timeoutMs = boundedInt(
+      deps.traceRequestTimeoutMs || args.requestTimeoutMs || process.env.HUB_OPS_MCP_TRACE_REQUEST_TIMEOUT_MS,
+      5000,
+      500,
+      15000,
+    );
+    return withTraceQueryTimeout(buildTraceTimeline(args, deps), 'request', timeoutMs).catch((error) => ({
+      ok: false,
+      mode: 'read_only_select',
+      error: String(error?.message || error).slice(0, 240),
+      timeoutMs,
+      traceId: args.traceId || args.trace_id || null,
+      cycleId: args.cycleId || args.cycle_id || null,
+      events: [],
+    }));
   }
   throw new Error(`unknown_tool:${name}`);
 }

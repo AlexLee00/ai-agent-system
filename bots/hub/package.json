@@ -89,6 +89,8 @@
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "mcp:hub-ops": "node --disable-warning=DEP0205 --import tsx mcp/hub-ops-mcp/src/server.ts",
     "smoke:hub-ops-mcp": "tsx scripts/hub-ops-mcp-smoke.ts --json",
+    "smoke:hub-llm-selector-route": "tsx scripts/hub-llm-selector-route-smoke.ts",
+    "smoke:hub-ops-mcp-trace-hard": "tsx scripts/hub-ops-mcp-trace-hard-smoke.ts",
     "dashboard:ai-os": "node --disable-warning=DEP0205 --import tsx services/ai-os-dashboard/server.ts",
     "smoke:ai-os-dashboard": "tsx scripts/ai-os-dashboard-smoke.ts",
     "smoke:loop-budget-guard": "tsx scripts/loop-budget-guard-smoke.ts",

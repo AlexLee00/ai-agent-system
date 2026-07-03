@@ -18,6 +18,7 @@
     "smoke:readme-seed-stats": "tsx scripts/readme-updater-seed-stats-smoke.ts",
     "smoke:nonstd-convergence": "tsx scripts/nonstd-convergence-smoke.ts",
     "smoke:orch-registry-dual-read": "tsx scripts/orch-registry-dual-read-smoke.ts",
+    "smoke:orch-llm-policy-via-hub": "tsx scripts/orch-llm-policy-via-hub-smoke.ts",
     "check": "tsx scripts/jay-runtime-policy-smoke.ts && tsx scripts/jay-runtime-db-startup-retry-smoke.ts && tsx scripts/jay-symphony-cutover-shadow-smoke.ts && tsx scripts/pg-role-mapping-smoke.ts && tsx scripts/pending-confirms-smoke.ts && tsx scripts/morning-queue-smoke.ts && tsx scripts/jay-incident-store-smoke.ts && tsx scripts/eventlake-collab-trace-smoke.ts --json && tsx scripts/readme-updater-seed-stats-smoke.ts && tsx scripts/report-aggregator-node-runner-smoke.ts && tsx scripts/launchd-node26-runner-smoke.ts && plutil -lint launchd/ai.metty.trace.plist",
     "smoke:launchd-node26-runner": "tsx scripts/launchd-node26-runner-smoke.ts",
     "smoke:report-aggregator-node-runner": "tsx scripts/report-aggregator-node-runner-smoke.ts",

@@ -47,6 +47,31 @@ async function withFixtureHub(work) {
       }));
       return;
     }
+    if (req.method === 'GET' && req.url?.startsWith('/hub/llm/selector')) {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      const key = url.searchParams.get('key') || 'fixture.selector';
+      if (key === 'unknown.disabled') {
+        res.writeHead(503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'fixture_selector_unavailable' }));
+        return;
+      }
+      const timeoutMs = key === 'claude.archer.tech_analysis' ? 300_000 : 30_000;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: true,
+        mode: 'read_only_selector',
+        selectorKey: key,
+        routingSource: 'oauth4',
+        source: 'selector_key',
+        effectiveTimeoutMs: timeoutMs,
+        timeoutProfile: { source: 'fixture', timeoutMs },
+        chain: [
+          { provider: 'openai-oauth', model: 'gpt-5.4-mini', route: 'openai-oauth/gpt-5.4-mini', timeoutMs, providerTier: 'primary', fallbackIndex: 0 },
+          { provider: 'groq', model: 'openai/gpt-oss-20b', route: 'groq/openai/gpt-oss-20b', timeoutMs: 30_000, providerTier: 'fallback', fallbackIndex: 1 },
+        ],
+      }));
+      return;
+    }
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: false, error: 'not_found' }));
   });
@@ -181,31 +206,43 @@ async function assertDirectTools() {
     assert.equal(circuit.circuit.providers[0].provider, 'groq');
   });
 
-  const routing = await callHubOpsTool('hub-routing', {
-    selectorKey: 'investment.luna',
-    agentName: 'luna',
-    selectorVersion: 'v3.0_oauth_4',
+  await withFixtureHub(async () => {
+    const routing = await callHubOpsTool('hub-routing', {
+      selectorKey: 'investment.luna',
+      agentName: 'luna',
+      selectorVersion: 'v3.0_oauth_4',
+    });
+    assert.equal(routing.ok, true);
+    assert.equal(routing.mode, 'read_only_selector_proxy');
+    assert.ok(routing.chain.length > 0);
+    assert.ok(routing.primary.provider);
+    assert.ok(Object.prototype.hasOwnProperty.call(routing, 'effectiveTimeoutMs'));
+    assert.ok(routing.timeoutProfile);
   });
-  assert.equal(routing.ok, true);
-  assert.ok(routing.chain.length > 0);
-  assert.ok(routing.primary.provider);
-  assert.ok(Object.prototype.hasOwnProperty.call(routing, 'effectiveTimeoutMs'));
-  assert.ok(routing.timeoutProfile);
 
   const previousProfilesEnabled = process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED;
   process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = 'true';
   try {
-    const archerRouting = await callHubOpsTool('hub-routing', {
-      selectorKey: 'claude.archer.tech_analysis',
-      selectorVersion: 'v3.0_oauth_4',
+    await withFixtureHub(async () => {
+      const archerRouting = await callHubOpsTool('hub-routing', {
+        selectorKey: 'claude.archer.tech_analysis',
+        selectorVersion: 'v3.0_oauth_4',
+      });
+      assert.equal(archerRouting.ok, true);
+      assert.equal(archerRouting.effectiveTimeoutMs, 300_000);
+      assert.equal(archerRouting.timeoutProfile.source, 'fixture');
     });
-    assert.equal(archerRouting.ok, true);
-    assert.equal(archerRouting.effectiveTimeoutMs, 300_000);
-    assert.equal(archerRouting.timeoutProfile.source, 'declaration');
   } finally {
     if (previousProfilesEnabled == null) delete process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED;
     else process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = previousProfilesEnabled;
   }
+
+  const failedRouting = await withFixtureHub(async () => callHubOpsTool('hub-routing', {
+    selectorKey: 'unknown.disabled',
+    timeoutMs: 1,
+  }));
+  assert.equal(failedRouting.ok, false);
+  assert.equal(failedRouting.mode, 'read_only_selector_proxy');
 }
 
 async function assertRpcServer() {

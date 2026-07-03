@@ -14,7 +14,8 @@ function clean(value, fallback = '') {
 
 function parseEnabled(value) {
   const normalized = clean(value).toLowerCase();
-  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+  if (!normalized) return true;
+  return !['0', 'false', 'no', 'n', 'off'].includes(normalized);
 }
 
 function normalizeRouteLabel(label) {
