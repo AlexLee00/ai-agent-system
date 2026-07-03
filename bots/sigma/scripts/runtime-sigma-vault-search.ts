@@ -58,12 +58,17 @@ export async function runSigmaVaultSearch() {
   const minSimilarity = minSimilarityArg == null
     ? undefined
     : boundedNumber(minSimilarityArg, 0, -1, 1);
+  const layerSearchEnabled = hasFlag('layer') || process.env.SIGMA_LAYER_SEARCH_ENABLED === 'true';
+  const intent = argValue('intent', null);
 
   const search = await searchVault(query, {
     topK,
     sourceKinds,
     paraCategory: paraCategory || undefined,
     minSimilarity,
+    layerSearchEnabled,
+    intent: intent || undefined,
+    includeRoutingDebug: hasFlag('routing-debug') || layerSearchEnabled,
   });
 
   return {
@@ -74,6 +79,8 @@ export async function runSigmaVaultSearch() {
       sourceKinds,
       paraCategory: paraCategory || null,
       minSimilarity: minSimilarity ?? null,
+      layerSearchEnabled,
+      intent: intent || null,
     },
     safety: {
       readOnly: true,

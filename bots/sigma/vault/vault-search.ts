@@ -4,6 +4,13 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { createVaultEmbedding } from './vault-manager.ts';
+import {
+  buildLayerRoute,
+  coordsMatchFilters,
+  isLayerSearchEnabled,
+  normalizeCoordFilters,
+} from './layer-router.ts';
+import { normalizeLibraryCoords } from '../shared/library-coords.ts';
 
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
@@ -17,6 +24,11 @@ export interface VaultSearchOptions {
   sourceKinds?: string[];
   paraCategory?: string;
   minSimilarity?: number;
+  layerSearchEnabled?: boolean;
+  intent?: string;
+  coordFilters?: Record<string, unknown>;
+  includeRoutingDebug?: boolean;
+  deps?: Record<string, unknown>;
 }
 
 export interface VaultSearchResult {
@@ -26,6 +38,7 @@ export interface VaultSearchResult {
   contentPreview: string | null;
   similarity: number;
   meta: Record<string, unknown>;
+  libraryCoords?: Record<string, unknown>;
 }
 
 function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
@@ -58,10 +71,51 @@ function normalizeMeta(meta: unknown): Record<string, unknown> {
   }
 }
 
+function normalizeRows(rows: unknown): any[] {
+  return Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+}
+
+function extractLibraryCoords(row: any): Record<string, unknown> {
+  const meta = normalizeMeta(row.meta);
+  return normalizeLibraryCoords({
+    ...(meta.libraryCoords || {}),
+    abstraction_level: row.abstraction_level || meta.libraryCoords?.abstraction_level,
+    time_stage: row.time_stage || meta.libraryCoords?.time_stage,
+    validation_state: row.validation_state || meta.libraryCoords?.validation_state,
+    prediction_state: row.prediction_state || meta.libraryCoords?.prediction_state,
+    prediction_horizon: row.prediction_horizon || meta.libraryCoords?.prediction_horizon,
+  });
+}
+
+async function detectCoordColumns(queryReadonly: any): Promise<Set<string>> {
+  try {
+    const rows = await queryReadonly('sigma', `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'sigma'
+        AND table_name = 'vault_entries'
+        AND column_name = ANY($1::text[])
+    `, [['abstraction_level', 'time_stage', 'validation_state', 'prediction_state', 'prediction_horizon']]);
+    return new Set(normalizeRows(rows).map((row) => row.column_name));
+  } catch {
+    return new Set();
+  }
+}
+
+function addCoordSqlFilter(filters: string[], params: any[], nextParam: number, key: string, values: string[], hasColumn: boolean): number {
+  if (!values || values.length === 0) return nextParam;
+  const clauses = [`meta->'libraryCoords'->>$${nextParam + 1} = ANY($${nextParam}::text[])`];
+  params.push(values, key);
+  if (hasColumn) clauses.unshift(`${key} = ANY($${nextParam}::text[])`);
+  filters.push(`(${clauses.join(' OR ')})`);
+  return nextParam + 2;
+}
+
 export async function searchVault(query: string, opts: VaultSearchOptions = {}): Promise<{
   ok: boolean;
   results: VaultSearchResult[];
   warning?: string;
+  routing?: Record<string, unknown> | null;
 }> {
   const normalizedQuery = String(query || '').trim();
   if (!normalizedQuery) return { ok: false, results: [], warning: 'query_required' };
@@ -73,12 +127,21 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     ? null
     : boundedNumber(opts.minSimilarity, 0, -1, 1);
 
-  const embeddingResult = await createVaultEmbedding(normalizedQuery);
+  const deps = opts.deps || {};
+  const embeddingFactory = deps.embeddingFactory || createVaultEmbedding;
+  const queryReadonly = deps.queryReadonly || pgPool.queryReadonly || pgPool.query;
+  const layerEnabled = Boolean(opts.layerSearchEnabled ?? isLayerSearchEnabled());
+  const layerRoute = layerEnabled
+    ? buildLayerRoute(normalizedQuery, { intent: opts.intent, coordFilters: opts.coordFilters })
+    : null;
+
+  const embeddingResult = await embeddingFactory(normalizedQuery);
   if (!embeddingResult.embedding) {
     return {
       ok: false,
       results: [],
       warning: embeddingResult.warning || 'embedding_failed',
+      routing: opts.includeRoutingDebug ? layerRoute : undefined,
     };
   }
 
@@ -86,6 +149,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
   const params: any[] = [embeddingVector];
   const filters = ['embedding IS NOT NULL'];
   let nextParam = 2;
+  const coordColumns = layerRoute ? await detectCoordColumns(queryReadonly) : new Set();
 
   if (sourceKinds.length > 0) {
     filters.push(`source = ANY($${nextParam}::text[])`);
@@ -99,11 +163,25 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     nextParam += 1;
   }
 
-  params.push(topK);
+  if (layerRoute) {
+    const coordFilters = normalizeCoordFilters(layerRoute.coordFilters);
+    for (const key of ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state']) {
+      nextParam = addCoordSqlFilter(filters, params, nextParam, key, coordFilters[key], coordColumns.has(key));
+    }
+  }
+
+  const effectiveLimit = layerRoute ? Math.min(100, Math.max(topK, topK * 5)) : topK;
+  params.push(effectiveLimit);
   const limitParam = nextParam;
+  const coordSelect = coordColumns.size > 0
+    ? `, ${[...coordColumns].join(', ')}`
+    : '';
+  const orderBy = layerRoute?.coordFilters?.order === 'latest'
+    ? 'created_at DESC, embedding <=> $1::vector'
+    : 'embedding <=> $1::vector';
 
   try {
-    const rows = await pgPool.query('sigma', `
+    const rows = await queryReadonly('sigma', `
       SELECT
         id,
         title,
@@ -111,29 +189,52 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
         LEFT(content, 200) AS content_preview,
         meta,
         1 - (embedding <=> $1::vector) AS similarity
+        ${coordSelect}
       FROM sigma.vault_entries
       WHERE ${filters.join(' AND ')}
-      ORDER BY embedding <=> $1::vector
+      ORDER BY ${orderBy}
       LIMIT $${limitParam}
     `, params);
 
-    const results = (Array.isArray(rows) ? rows : rows?.rows ?? [])
-      .map((row: any) => ({
-        id: row.id,
-        title: row.title,
-        source: row.source || null,
-        contentPreview: row.content_preview || null,
-        similarity: Number(row.similarity),
-        meta: normalizeMeta(row.meta),
-      }))
-      .filter((row: VaultSearchResult) => minSimilarity == null || row.similarity >= minSimilarity);
+    const coordFilters = normalizeCoordFilters(layerRoute?.coordFilters || {});
+    const results = normalizeRows(rows)
+      .map((row: any) => {
+        const libraryCoords = extractLibraryCoords(row);
+        const result = {
+          id: row.id,
+          title: row.title,
+          source: row.source || null,
+          contentPreview: row.content_preview || null,
+          similarity: Number(row.similarity),
+          meta: normalizeMeta(row.meta),
+        };
+        if (layerRoute || opts.includeRoutingDebug) result.libraryCoords = libraryCoords;
+        return result;
+      })
+      .filter((row: VaultSearchResult) => !layerRoute || coordsMatchFilters(row.libraryCoords, coordFilters))
+      .filter((row: VaultSearchResult) => minSimilarity == null || row.similarity >= minSimilarity)
+      .slice(0, topK);
 
-    return { ok: true, results };
+    const response = {
+      ok: true,
+      results,
+    };
+    if (layerRoute) {
+      response.routing = {
+          ...layerRoute,
+          coordColumnsPresent: [...coordColumns].sort(),
+          fallback: coordColumns.size === 0 ? 'meta.libraryCoords' : 'coord_columns_or_meta',
+        };
+    } else if (opts.includeRoutingDebug) {
+      response.routing = null;
+    }
+    return response;
   } catch (err: any) {
     return {
       ok: false,
       results: [],
       warning: `vault_search_failed:${err?.message || String(err)}`,
+      routing: opts.includeRoutingDebug ? layerRoute : undefined,
     };
   }
 }

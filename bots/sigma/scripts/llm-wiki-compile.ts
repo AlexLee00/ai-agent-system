@@ -6,12 +6,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { normalizeLibraryCoords } from '../shared/library-coords.ts';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const DEFAULT_PROJECT_DOCS = path.join(os.homedir(), 'project-docs/ai-agent-system');
 const DEFAULT_WIKI_DIR = path.join(DEFAULT_PROJECT_DOCS, 'wiki');
+const WIKI_STATE_FILE = '.llm-wiki-state.json';
+const COORD_COLUMNS = ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state', 'prediction_horizon'];
 const pgPool = require(path.join(repoRoot, 'packages/core/lib/pg-pool.ts'));
 
 const TOPIC_RULES = [
@@ -32,6 +35,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     dryRun: !write || argv.includes('--dry-run'),
     writeVault: write && argv.includes('--write-vault') && argv.includes('--no-dry-run'),
     noDb: argv.includes('--no-db'),
+    legacyDocSource: argv.includes('--legacy-doc-source'),
     limit: Number(argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1] || 80) || 80,
     outDir: argv.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) || DEFAULT_WIKI_DIR,
   };
@@ -78,6 +82,64 @@ function excerpt(content, max = 700) {
   return normalized.slice(0, max).trim();
 }
 
+function parseMeta(meta) {
+  if (!meta) return {};
+  if (typeof meta === 'object') return meta;
+  try {
+    return JSON.parse(String(meta));
+  } catch {
+    return {};
+  }
+}
+
+function statePath(outDir) {
+  return path.join(outDir, WIKI_STATE_FILE);
+}
+
+export function readWikiState(outDir = DEFAULT_WIKI_DIR) {
+  try {
+    const raw = fs.readFileSync(statePath(outDir), 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      version: 1,
+      processedVaultEntryIds: Array.isArray(parsed.processedVaultEntryIds) ? parsed.processedVaultEntryIds : [],
+      updatedAt: parsed.updatedAt || null,
+    };
+  } catch {
+    return { version: 1, processedVaultEntryIds: [], updatedAt: null };
+  }
+}
+
+export function nextWikiState(previous, vaultEntryIds, now = new Date()) {
+  const ids = [...new Set([...(previous?.processedVaultEntryIds || []), ...(vaultEntryIds || [])])].slice(-10000);
+  return {
+    version: 1,
+    processedVaultEntryIds: ids,
+    updatedAt: now.toISOString(),
+  };
+}
+
+function writeWikiState(outDir, state) {
+  fs.writeFileSync(statePath(outDir), `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+}
+
+function formatCoords(coords = {}) {
+  const normalized = normalizeLibraryCoords(coords);
+  return `y=${normalized.abstraction_level} z=${normalized.time_stage} w=${normalized.validation_state} p=${normalized.prediction_state}`;
+}
+
+function rowCoords(row) {
+  const meta = parseMeta(row.meta);
+  return normalizeLibraryCoords({
+    ...(meta.libraryCoords || {}),
+    abstraction_level: row.abstraction_level || meta.libraryCoords?.abstraction_level,
+    time_stage: row.time_stage || meta.libraryCoords?.time_stage,
+    validation_state: row.validation_state || meta.libraryCoords?.validation_state,
+    prediction_state: row.prediction_state || meta.libraryCoords?.prediction_state,
+    prediction_horizon: row.prediction_horizon || meta.libraryCoords?.prediction_horizon,
+  });
+}
+
 export function buildWikiEntriesFromDocuments(files, { baseDir = repoRoot } = {}) {
   const seen = new Set();
   const entries = [];
@@ -99,6 +161,69 @@ export function buildWikiEntriesFromDocuments(files, { baseDir = repoRoot } = {}
   return entries;
 }
 
+export function buildWikiEntriesFromVaultRows(rows, { processedVaultEntryIds = [] } = {}) {
+  const processed = new Set(processedVaultEntryIds || []);
+  const seen = new Set();
+  const entries = [];
+  for (const row of rows || []) {
+    const id = String(row.id || '').trim();
+    if (!id || processed.has(id)) continue;
+    const coords = rowCoords(row);
+    if (coords.abstraction_level !== 'L0' || coords.time_stage !== 'raw') continue;
+    const title = String(row.title || row.file_path || `vault ${id}`).trim();
+    const content = row.content || row.content_preview || '';
+    const topic = classifyTopic(`${title}\n${content}\n${row.source || ''}\n${row.file_path || ''}`);
+    const source = `vault-entry:${id}`;
+    const sourceKey = `${topic}:${source}`;
+    if (seen.has(sourceKey)) continue;
+    seen.add(sourceKey);
+    entries.push({
+      topic,
+      title,
+      source,
+      excerpt: excerpt(content),
+      coords,
+      vaultEntryId: id,
+      filePath: row.file_path || null,
+      createdAt: row.created_at || null,
+    });
+  }
+  return entries;
+}
+
+async function detectCoordColumns(queryReadonly = pgPool.queryReadonly) {
+  try {
+    const rows = await queryReadonly('sigma', `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'sigma'
+        AND table_name = 'vault_entries'
+        AND column_name = ANY($1::text[])
+    `, [COORD_COLUMNS]);
+    const set = new Set((Array.isArray(rows) ? rows : rows?.rows ?? []).map((row) => row.column_name));
+    return COORD_COLUMNS.filter((column) => set.has(column));
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchVaultWikiEntries({ limit = 80, state = null, queryReadonly = pgPool.queryReadonly } = {}) {
+  const coordColumns = await detectCoordColumns(queryReadonly);
+  const coordSelect = coordColumns.length > 0
+    ? `, ${coordColumns.join(', ')}`
+    : '';
+  const rows = await queryReadonly('sigma', `
+    SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
+    FROM sigma.vault_entries
+    WHERE COALESCE(status, 'active') <> 'archived'
+    ORDER BY created_at DESC
+    LIMIT $1
+  `, [Math.max(1, Math.min(500, Number(limit) || 80))]);
+  return buildWikiEntriesFromVaultRows(Array.isArray(rows) ? rows : rows?.rows ?? [], {
+    processedVaultEntryIds: state?.processedVaultEntryIds || [],
+  });
+}
+
 export function mergeWikiPages(entries, existingPages = {}) {
   const byTopic = new Map();
   for (const entry of entries) {
@@ -117,10 +242,18 @@ export function mergeWikiPages(entries, existingPages = {}) {
         `## ${entry.title}`,
         '',
         `Source: \`${entry.source}\``,
+        entry.coords ? `Coords: \`${formatCoords(entry.coords)}\`` : null,
+        entry.filePath ? `Raw: \`${entry.filePath}\`` : null,
         '',
         entry.excerpt || '_No excerpt available._',
-      ].join('\n'));
-    const header = existing.trim() || `# ${topic} wiki\n\nCompiled from Team Jay handoffs, incidents, meeting minutes, and design notes.`;
+      ].filter((line) => line !== null).join('\n'));
+    const header = existing.trim() || [
+      `# ${topic} wiki`,
+      '',
+      'Library Coords: `y=L2 z=digest w=observed p=none`',
+      '',
+      'Compiled from Sigma vault raw entries and linked back to immutable source entries.',
+    ].join('\n');
     pages[topic] = [header, ...newSections].filter(Boolean).join('\n\n').trim() + '\n';
   }
   return pages;
@@ -163,6 +296,12 @@ async function persistVaultPages(pages) {
       filePath: `library/sigma/llm-wiki/${topic}.md`,
       source: 'sigma',
       meta: { topic, generatedBy: 'llm-wiki-compile' },
+      libraryCoords: {
+        abstraction_level: 'L2',
+        time_stage: 'digest',
+        validation_state: 'observed',
+        prediction_state: 'none',
+      },
     }));
   }
   return results;
@@ -171,31 +310,62 @@ async function persistVaultPages(pages) {
 export async function buildLlmWikiCompileReport(options = {}) {
   const projectDocs = options.projectDocs || DEFAULT_PROJECT_DOCS;
   const outDir = options.outDir || DEFAULT_WIKI_DIR;
-  const files = [
-    ...walkMarkdown(path.join(projectDocs, 'handoff'), options.limit),
-    ...walkMarkdown(path.join(projectDocs, 'codex-specs'), Math.ceil(options.limit / 2)),
-    ...walkMarkdown(path.join(repoRoot, 'docs/handoff'), Math.ceil(options.limit / 2)),
-    ...walkMarkdown(path.join(repoRoot, 'docs/sessions'), Math.ceil(options.limit / 2)),
-  ].slice(0, options.limit);
-  const docEntries = buildWikiEntriesFromDocuments(files, { baseDir: projectDocs });
-  const minuteEntries = options.noDb ? [] : await fetchMeetingMinuteEntries(30);
-  const entries = [...docEntries, ...minuteEntries].filter((entry) => entry.excerpt);
+  const limit = Math.max(1, Math.min(500, Number(options.limit || 80) || 80));
+  const state = options.state || readWikiState(outDir);
+  let files = [];
+  let docEntries = [];
+  let minuteEntries = [];
+  let vaultEntries = [];
+  let sourceMode = 'vault';
+
+  if (!options.noDb) {
+    vaultEntries = await fetchVaultWikiEntries({
+      limit,
+      state,
+      queryReadonly: options.queryReadonly || pgPool.queryReadonly,
+    }).catch(() => []);
+  }
+
+  if (options.noDb || options.legacyDocSource) {
+    sourceMode = options.noDb ? 'document_fixture' : 'legacy_documents';
+    files = [
+      ...walkMarkdown(path.join(projectDocs, 'handoff'), limit),
+      ...walkMarkdown(path.join(projectDocs, 'codex-specs'), Math.ceil(limit / 2)),
+      ...walkMarkdown(path.join(repoRoot, 'docs/handoff'), Math.ceil(limit / 2)),
+      ...walkMarkdown(path.join(repoRoot, 'docs/sessions'), Math.ceil(limit / 2)),
+    ].slice(0, limit);
+    docEntries = buildWikiEntriesFromDocuments(files, { baseDir: projectDocs });
+    minuteEntries = options.noDb ? [] : await fetchMeetingMinuteEntries(30);
+  }
+
+  const entries = [...vaultEntries, ...docEntries, ...minuteEntries].filter((entry) => entry.excerpt);
   const topics = [...new Set(entries.map((entry) => entry.topic))].sort();
   const existing = readExistingPages(outDir, topics);
   const pages = mergeWikiPages(entries, existing);
+  const sourceKeys = entries.map((entry) => `${entry.topic}:${entry.source}`);
   const duplicateRate = entries.length === 0
     ? 0
-    : 1 - (new Set(entries.map((entry) => `${entry.topic}:${entry.source}`)).size / entries.length);
+    : 1 - (new Set(sourceKeys).size / entries.length);
+  const sourceVaultEntryIds = vaultEntries.map((entry) => entry.vaultEntryId).filter(Boolean);
+
   return {
     ok: true,
     source: 'sigma_llm_wiki_compile',
+    sourceMode,
     generatedAt: new Date().toISOString(),
     dryRun: options.dryRun !== false,
     liveMutation: false,
     fileMutation: false,
     outputDir: outDir,
+    state: {
+      path: statePath(outDir),
+      previousProcessedVaultEntryIds: state.processedVaultEntryIds.length,
+      newVaultEntryIds: sourceVaultEntryIds,
+      nextProcessedVaultEntryIds: nextWikiState(state, sourceVaultEntryIds).processedVaultEntryIds.length,
+    },
     counts: {
       sourceFiles: files.length,
+      sourceVaultEntries: vaultEntries.length,
       dbMinutes: minuteEntries.length,
       entries: entries.length,
       topics: topics.length,
@@ -208,11 +378,14 @@ export async function buildLlmWikiCompileReport(options = {}) {
 
 async function main() {
   const args = parseArgs();
+  const initialState = readWikiState(args.outDir);
   const report = await buildLlmWikiCompileReport({
     outDir: args.outDir,
     limit: args.limit,
     noDb: args.noDb,
+    legacyDocSource: args.legacyDocSource,
     dryRun: args.dryRun,
+    state: initialState,
   });
   let vaultResults = [];
   if (args.write && !args.dryRun) {
@@ -220,6 +393,7 @@ async function main() {
     for (const [topic, content] of Object.entries(report.pages)) {
       fs.writeFileSync(path.join(args.outDir, `${topic}.md`), content, 'utf8');
     }
+    writeWikiState(args.outDir, nextWikiState(initialState, report.state.newVaultEntryIds));
     report.fileMutation = true;
   }
   if (args.writeVault) {
@@ -227,7 +401,7 @@ async function main() {
   }
   const output = { ...report, vaultResults: vaultResults.map((item) => ({ ok: item.ok, id: item.id || null, embedded: item.embedded })) };
   if (args.json) console.log(JSON.stringify(output, null, 2));
-  else console.log(`[llm-wiki] topics=${report.counts.topics} entries=${report.counts.entries} dryRun=${report.dryRun}`);
+  else console.log(`[llm-wiki] mode=${report.sourceMode} topics=${report.counts.topics} entries=${report.counts.entries} dryRun=${report.dryRun}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

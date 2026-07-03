@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.sigma.library-mcp</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/npm</string>
+    <string>--prefix</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+    <string>run</string>
+    <string>-s</string>
+    <string>mcp:library</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/sigma</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>SIGMA_LIBRARY_MCP_PORT</key>
+    <string>4097</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/sigma-library-mcp.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sigma-library-mcp.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
