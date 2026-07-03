@@ -415,7 +415,9 @@ if (require.main === module) {
   runFullSecurityScan({ force: true })
     .then(result => {
       console.log(result.message);
-      process.exit(result.pass ? 0 : 1);
+      // Security findings are reported through alarm/heartbeat; launchd exit
+      // code should only represent whether the guardian process completed.
+      process.exit(0);
     })
     .catch(error => {
       console.warn(`[guardian] 실행 실패: ${error.message}`);

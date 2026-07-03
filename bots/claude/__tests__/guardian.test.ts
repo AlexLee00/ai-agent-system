@@ -13,6 +13,7 @@ const os     = require('os');
 const fs     = require('fs');
 
 const GUARDIAN_PATH = path.resolve(__dirname, '../src/guardian.ts');
+const CODE_REVIEW_PATH = path.resolve(__dirname, '../../../packages/core/lib/skills/code-review.ts');
 
 function makeGuardianMocks(overrides = {}) {
   return {
@@ -216,6 +217,45 @@ async function test_guardian_respects_kill_switch() {
   console.log('✅ guardian: reportToTelegram respects Kill Switch');
 }
 
+function test_cli_exit_code_does_not_fail_launchd_on_security_findings() {
+  const source = fs.readFileSync(GUARDIAN_PATH, 'utf8');
+  assert.ok(
+    !source.includes('process.exit(result.pass ? 0 : 1)'),
+    'guardian finding must not make launchd mark guardian as abnormal exit',
+  );
+  assert.match(
+    source,
+    /Security findings are reported through alarm\/heartbeat; launchd exit[\s\S]*process\.exit\(0\);/,
+    'CLI entrypoint must exit 0 after a completed security scan',
+  );
+  console.log('✅ guardian: CLI keeps launchd healthy when findings exist');
+}
+
+function test_code_review_ignores_localhost_database_env_fallback() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-'));
+  const target = path.join(tmpDir, 'package.json');
+  fs.writeFileSync(target, JSON.stringify({
+    scripts: {
+      local: 'PG_DIRECT=true tsx -e "new Pool({connectionString:process.env.DATABASE_URL||\'postgresql://localhost:5432/jay\'})"',
+      secret: 'node -e "const x=process.env.API_TOKEN||\'0123456789abcdef0123456789abcdef\'"',
+    },
+  }, null, 2));
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const findings = codeReview.checkPatterns(target);
+    const fallbackFindings = findings.filter(
+      item => item.desc === 'env 폴백에 시크릿 문자열 사용 의심',
+    );
+    assert.strictEqual(fallbackFindings.length, 1, 'localhost DB fallback은 제외하고 실제 긴 fallback은 유지해야 함');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: localhost DB fallback is not flagged as secret');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -228,6 +268,8 @@ async function main() {
     test_layer4_parses_npm_audit,
     test_layer6_ignores_guardian_self_file,
     test_guardian_respects_kill_switch,
+    test_cli_exit_code_does_not_fail_launchd_on_security_findings,
+    test_code_review_ignores_localhost_database_env_fallback,
   ];
 
   let passed = 0, failed = 0;

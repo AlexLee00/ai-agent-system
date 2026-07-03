@@ -62,6 +62,7 @@ export async function runInboxProcessor(options = {}) {
         tags: ['sigma-vault', classification.paraCategory],
         filePath: row.relativePath,
         source: 'vault-inbox-processor',
+        libraryCoords: classification.libraryCoords,
         meta: {
           classification,
           mode,

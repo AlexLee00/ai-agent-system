@@ -374,7 +374,9 @@ if (require.main === module) {
   runReview({ force: true })
     .then(result => {
       console.log(result.message || formatReport(result));
-      process.exit(result.summary?.pass === false ? 1 : 0);
+      // Review findings are reported via alarm/heartbeat; launchd exit code
+      // should reflect whether the reviewer process itself ran successfully.
+      process.exit(0);
     })
     .catch(error => {
       console.warn(`[reviewer] 실행 실패: ${error.message}`);

@@ -6,7 +6,13 @@
 // 파일 기반 vault (ts/lib/vault-manager.ts)와 DB를 동기화하는 상위 레이어
 
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
+import {
+  attachLibraryCoordsToMeta,
+  inferRawLibraryCoords,
+  normalizeLibraryCoords,
+} from '../shared/library-coords.ts';
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
@@ -56,11 +62,12 @@ export interface VaultEntry {
   filePath?: string;
   source?: string;
   meta?: Record<string, unknown>;
+  libraryCoords?: Record<string, unknown>;
 }
 
 export interface VaultAuditRecord {
   entryId?: string;
-  action: 'created' | 'classified' | 'moved' | 'archived' | 'tagged';
+  action: 'created' | 'classified' | 'moved' | 'archived' | 'tagged' | 'deduped' | 'revised';
   fromCategory?: string;
   toCategory?: string;
   classifier?: 'rule' | 'llm' | 'manual';
@@ -70,53 +77,178 @@ export interface VaultAuditRecord {
   dryRun?: boolean;
 }
 
+const COORD_COLUMNS = ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state', 'prediction_horizon'];
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function parseMeta(meta: unknown): Record<string, unknown> {
+  if (!meta) return {};
+  if (typeof meta === 'object') return meta as Record<string, unknown>;
+  try {
+    return JSON.parse(String(meta));
+  } catch {
+    return {};
+  }
+}
+
+function originalFilePath(filePath?: string | null): string | null {
+  const normalized = String(filePath || '').trim();
+  if (!normalized) return null;
+  return normalized.split('#rev-')[0];
+}
+
+export function buildVaultRawHash(entry: Partial<VaultEntry>, rawFilePath = originalFilePath(entry.filePath) || null): string {
+  return crypto.createHash('sha256').update(stableJson({
+    title: entry.title || '',
+    type: entry.type || 'note',
+    content: entry.content || null,
+    source: entry.source || 'vault',
+    filePath: rawFilePath,
+  })).digest('hex');
+}
+
 export class VaultManager {
   private pgPool: any;
+  private embeddingFactory: any;
+  private coordColumnCache: Promise<boolean> | null = null;
 
-  constructor() {
-    this.pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+  constructor(deps: Record<string, unknown> = {}) {
+    this.pgPool = deps.pgPool || require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+    this.embeddingFactory = deps.embeddingFactory || createVaultEmbedding;
   }
 
   async addToInbox(entry: VaultEntry): Promise<{ ok: boolean; id?: string; message: string; embedded: boolean; embeddingDim?: number | null; embeddingWarning?: string | null }> {
     try {
+      const rawFilePath = originalFilePath(entry.filePath);
+      const rawHash = buildVaultRawHash(entry, rawFilePath);
+      const baseCoords = normalizeLibraryCoords(entry.libraryCoords || inferRawLibraryCoords({
+        title: entry.title,
+        content: entry.content,
+        source: entry.source,
+        tags: entry.tags,
+        meta: entry.meta,
+      }));
+      const baseMeta = {
+        ...attachLibraryCoordsToMeta(entry.meta || {}, baseCoords),
+        rawContentHash: rawHash,
+      };
+      if (rawFilePath) baseMeta.rawOriginalFilePath = rawFilePath;
+
+      let effectiveFilePath = entry.filePath || null;
+      let effectiveMeta = baseMeta;
+
+      if (rawFilePath) {
+        const existing = await this._findEntryByFilePath(rawFilePath);
+        if (existing) {
+          const existingMeta = parseMeta(existing.meta);
+          const existingHash = existingMeta.rawContentHash || buildVaultRawHash({
+            title: existing.title,
+            type: existing.type,
+            content: existing.content,
+            source: existing.source,
+            filePath: rawFilePath,
+          }, rawFilePath);
+          if (existingHash === rawHash) {
+            await this._writeAudit({
+              entryId: existing.id,
+              action: 'deduped',
+              toCategory: existing.para_category || 'inbox',
+              classifier: 'manual',
+              reasoning: `raw unchanged for ${rawFilePath}`,
+              applied: true,
+            });
+            return {
+              ok: true,
+              id: existing.id,
+              message: `중복 raw 유지 (id=${existing.id})`,
+              embedded: false,
+              embeddingDim: null,
+              embeddingWarning: null,
+            };
+          }
+
+          effectiveFilePath = `${rawFilePath}#rev-${rawHash.slice(0, 8)}`;
+          effectiveMeta = {
+            ...baseMeta,
+            rawRevisionOf: existing.id,
+            rawOriginalFilePath: rawFilePath,
+          };
+          const existingRevision = await this._findEntryByFilePath(effectiveFilePath);
+          if (existingRevision) {
+            await this._writeAudit({
+              entryId: existingRevision.id,
+              action: 'deduped',
+              toCategory: existingRevision.para_category || 'inbox',
+              classifier: 'manual',
+              reasoning: `revision already exists for ${rawFilePath}`,
+              applied: true,
+            });
+            return {
+              ok: true,
+              id: existingRevision.id,
+              message: `기존 revision 유지 (id=${existingRevision.id})`,
+              embedded: false,
+              embeddingDim: null,
+              embeddingWarning: null,
+            };
+          }
+        }
+      }
+
       // 임베딩 생성 (graceful — 서버 미가동/실패 시 NULL 적재, 적재 자체는 진행)
       const textToEmbed = entry.content || entry.title;
-      const embeddingResult = await createVaultEmbedding(textToEmbed);
+      const embeddingResult = await this.embeddingFactory(textToEmbed);
       const embedding = embeddingResult.embedding;
       const embeddingStr = embedding ? `[${embedding.join(',')}]` : null;
-
-      const rows = await this.pgPool.query('sigma', `
-        INSERT INTO sigma.vault_entries (title, type, content, tags, para_category, file_path, source, meta, embedding)
-        VALUES ($1, $2, $3, $4, 'inbox', $5, $6, $7, $8::vector)
-        ON CONFLICT (file_path) WHERE file_path IS NOT NULL
-        DO UPDATE SET
-          title = EXCLUDED.title,
-          type = EXCLUDED.type,
-          content = EXCLUDED.content,
-          tags = EXCLUDED.tags,
-          source = EXCLUDED.source,
-          meta = sigma.vault_entries.meta || EXCLUDED.meta,
-          embedding = COALESCE(EXCLUDED.embedding, sigma.vault_entries.embedding),
-          updated_at = NOW()
-        RETURNING id
-      `, [
+      const hasCoordColumns = await this._hasCoordColumns();
+      const columns = ['title', 'type', 'content', 'tags', 'para_category', 'file_path', 'source', 'meta', 'embedding'];
+      const values = ['$1', '$2', '$3', '$4', "'inbox'", '$5', '$6', '$7', '$8::vector'];
+      const params = [
         entry.title,
         entry.type || 'note',
         entry.content || null,
         entry.tags || [],
-        entry.filePath || null,
+        effectiveFilePath,
         entry.source || 'vault',
-        JSON.stringify(entry.meta || {}),
+        JSON.stringify(effectiveMeta),
         embeddingStr,
-      ]);
+      ];
+      if (hasCoordColumns) {
+        for (const column of COORD_COLUMNS) {
+          columns.push(column);
+          params.push(baseCoords[column]);
+          values.push(`$${params.length}`);
+        }
+      }
 
-      const id = rows?.[0]?.id || rows?.rows?.[0]?.id;
+      const rows = await this.pgPool.query('sigma', `
+        INSERT INTO sigma.vault_entries (${columns.join(', ')})
+        VALUES (${values.join(', ')})
+        ON CONFLICT (file_path) WHERE file_path IS NOT NULL
+        DO NOTHING
+        RETURNING id
+      `, params);
+
+      let id = rows?.[0]?.id || rows?.rows?.[0]?.id;
+      if (!id && effectiveFilePath) {
+        const existing = await this._findEntryByFilePath(effectiveFilePath);
+        id = existing?.id;
+      }
 
       await this._writeAudit({
         entryId: id,
-        action: 'created',
+        action: effectiveFilePath !== (entry.filePath || null) ? 'revised' : 'created',
         toCategory: 'inbox',
         classifier: 'manual',
+        reasoning: effectiveFilePath !== (entry.filePath || null)
+          ? `immutable raw revision for ${rawFilePath}`
+          : undefined,
         applied: true,
       });
 
@@ -131,6 +263,34 @@ export class VaultManager {
     } catch (err: any) {
       return { ok: false, message: `addToInbox 실패: ${err?.message || err}`, embedded: false, embeddingDim: null, embeddingWarning: err?.message || String(err) };
     }
+  }
+
+  private async _findEntryByFilePath(filePath: string): Promise<Record<string, unknown> | null> {
+    const rows = await this.pgPool.query('sigma', `
+      SELECT id, title, type, content, source, file_path, para_category, meta
+      FROM sigma.vault_entries
+      WHERE file_path = $1
+      LIMIT 1
+    `, [filePath]);
+    return (Array.isArray(rows) ? rows : rows?.rows ?? [])[0] || null;
+  }
+
+  private async _hasCoordColumns(): Promise<boolean> {
+    if (!this.coordColumnCache) {
+      this.coordColumnCache = this.pgPool.query('sigma', `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'sigma'
+          AND table_name = 'vault_entries'
+          AND column_name = ANY($1::text[])
+      `, [COORD_COLUMNS])
+        .then((rows: any[]) => {
+          const set = new Set((Array.isArray(rows) ? rows : rows?.rows ?? []).map((row) => row.column_name));
+          return COORD_COLUMNS.every((column) => set.has(column));
+        })
+        .catch(() => false);
+    }
+    return this.coordColumnCache;
   }
 
   async listInbox(): Promise<VaultEntry[]> {

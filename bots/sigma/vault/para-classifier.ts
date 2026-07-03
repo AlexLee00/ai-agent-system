@@ -6,6 +6,10 @@
 
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import {
+  inferRawLibraryCoords,
+  normalizeLibraryCoords,
+} from '../shared/library-coords.ts';
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
@@ -20,6 +24,7 @@ export interface ClassificationResult {
   reasoning: string;
   classifier: 'rule' | 'llm';
   durationMs: number;
+  libraryCoords?: Record<string, unknown>;
 }
 
 const RULE_PATTERNS: Array<{ test: RegExp; category: ParaCategory; weight: number }> = [
@@ -47,6 +52,7 @@ function classifyByRule(title: string, content: string): ClassificationResult | 
     reasoning: `규칙 기반 분류 (패턴 매칭)`,
     classifier: 'rule',
     durationMs: 0,
+    libraryCoords: inferRawLibraryCoords({ title, content }),
   };
 }
 
@@ -59,7 +65,7 @@ const SYSTEM_PROMPT = `당신은 Tiago Forte의 PARA 시스템 자동 분류기�
 - archives: 비활성 + 완료된 항목 (예: "완료된 프로젝트", "은퇴한 팀", "과거 기록")
 
 반드시 JSON 형태로만 응답하세요:
-{"category": "projects|areas|resources|archives", "confidence": 0.0~1.0, "reasoning": "분류 이유"}`;
+{"category": "projects|areas|resources|archives", "confidence": 0.0~1.0, "reasoning": "분류 이유", "prediction_state": "none|forward", "prediction_horizon": "ISO8601 or null"}`;
 
 export async function classifyParaWithLlm(
   title: string,
@@ -102,6 +108,11 @@ export async function classifyParaWithLlm(
       reasoning: parsed.reasoning || 'LLM 분류',
       classifier: 'llm',
       durationMs: Date.now() - startMs,
+      libraryCoords: normalizeLibraryCoords({
+        ...inferRawLibraryCoords({ title, content }),
+        prediction_state: parsed.prediction_state,
+        prediction_horizon: parsed.prediction_horizon,
+      }, { text: `${title}\n${content}` }),
     };
   } catch (err: any) {
     // LLM 실패 시 규칙 기반 fallback
@@ -116,6 +127,7 @@ export async function classifyParaWithLlm(
       reasoning: `분류 실패 — inbox 유지 (${err?.message || 'unknown error'})`,
       classifier: 'rule',
       durationMs: Date.now() - startMs,
+      libraryCoords: inferRawLibraryCoords({ title, content }),
     };
   }
 }
@@ -131,7 +143,14 @@ export async function classify(
   const ruleResult = classifyByRule(title, content);
   if (ruleResult && ruleResult.confidence >= 0.9) return ruleResult;
 
-  if (!useLlm) return ruleResult ?? { paraCategory: 'inbox', confidence: 0.3, reasoning: '규칙 없음', classifier: 'rule', durationMs: 0 };
+  if (!useLlm) return ruleResult ?? {
+    paraCategory: 'inbox',
+    confidence: 0.3,
+    reasoning: '규칙 없음',
+    classifier: 'rule',
+    durationMs: 0,
+    libraryCoords: inferRawLibraryCoords({ title, content }),
+  };
 
   return classifyParaWithLlm(title, content, options);
 }

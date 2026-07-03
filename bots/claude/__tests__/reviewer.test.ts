@@ -7,6 +7,7 @@
  */
 
 const assert = require('assert');
+const fs     = require('fs');
 const Module = require('module');
 const path   = require('path');
 
@@ -194,6 +195,22 @@ async function test_reportToTelegram_calls_postAlarm() {
   console.log('✅ reviewer: reportToTelegram calls postAlarm');
 }
 
+// ─── Test 9: CLI — 리뷰 이슈와 프로세스 실패 종료코드 분리 ──────────
+
+function test_cli_exit_code_does_not_fail_launchd_on_review_findings() {
+  const source = fs.readFileSync(REVIEWER_PATH, 'utf8');
+  assert.ok(
+    !source.includes('process.exit(result.summary?.pass === false ? 1 : 0)'),
+    'review finding must not make launchd mark reviewer as abnormal exit',
+  );
+  assert.match(
+    source,
+    /Review findings are reported via alarm\/heartbeat; launchd exit code[\s\S]*process\.exit\(0\);/,
+    'CLI entrypoint must exit 0 after a completed review run',
+  );
+  console.log('✅ reviewer: CLI keeps launchd healthy when review findings exist');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -207,6 +224,7 @@ async function main() {
     test_runReview_docs_only_skips_typescript_check,
     test_analyzeChanges_empty_diff,
     test_reportToTelegram_calls_postAlarm,
+    test_cli_exit_code_does_not_fail_launchd_on_review_findings,
   ];
 
   let passed = 0, failed = 0;

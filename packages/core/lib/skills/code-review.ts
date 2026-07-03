@@ -26,7 +26,12 @@ const SECURITY_PATTERNS = [
   {
     severity: 'HIGH',
     desc: 'env 폴백에 시크릿 문자열 사용 의심',
-    match: (line) => /process\.env\.[A-Z0-9_]+\s*\|\|\s*['"`][^'"`]{16,}['"`]/.test(line),
+    match: (line) => {
+      const match = line.match(/process\.env\.[A-Z0-9_]+\s*\|\|\s*['"`]([^'"`]{16,})['"`]/);
+      if (!match) return false;
+      const fallback = match[1];
+      return !/^postgres(?:ql)?:\/\/(?:localhost|127\.0\.0\.1)(?::|\/|$)/i.test(fallback);
+    },
   },
   {
     severity: 'HIGH',

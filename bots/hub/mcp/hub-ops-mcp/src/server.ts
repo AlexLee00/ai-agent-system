@@ -217,11 +217,39 @@ function normalizeTraceLimit(value, fallback = 80) {
   return Math.max(1, Math.min(200, Number(value || fallback) || fallback));
 }
 
+function boundedInt(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+async function withTraceQueryTimeout(promise, label, timeoutMs) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`hub_trace_query_timeout:${label}`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function buildTraceTimeline(args = {}, deps = {}) {
   const traceId = String(args.traceId || args.trace_id || '').trim();
   const cycleId = String(args.cycleId || args.cycle_id || '').trim();
   const limit = normalizeTraceLimit(args.limit);
   const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  const hours = boundedInt(args.hours, 168, 1, 24 * 30);
+  const scanLimit = boundedInt(args.scanLimit, Math.max(5000, limit * 25), limit, 50000);
+  const timeoutMs = boundedInt(
+    deps.traceQueryTimeoutMs || args.timeoutMs || process.env.HUB_OPS_MCP_TRACE_QUERY_TIMEOUT_MS,
+    2500,
+    100,
+    10000,
+  );
   if (!traceId && !cycleId) {
     return {
       ok: false,
@@ -232,13 +260,13 @@ async function buildTraceTimeline(args = {}, deps = {}) {
   }
 
   try {
-    const columns = await queryReadonly('public', `
+    const columns = await withTraceQueryTimeout(queryReadonly('public', `
       SELECT column_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND table_name = 'llm_routing_log'
         AND column_name = ANY($1::text[])
-    `, [['trace_id', 'cycle_id']]);
+    `, [['trace_id', 'cycle_id']]), 'columns', timeoutMs);
     const columnSet = new Set(columns.map((row) => row.column_name));
     if (!columnSet.has('trace_id') || !columnSet.has('cycle_id')) {
       return {
@@ -248,11 +276,13 @@ async function buildTraceTimeline(args = {}, deps = {}) {
         reason: 'cycle_trace_columns_missing',
         traceId: traceId || null,
         cycleId: cycleId || null,
+        hours,
+        scanLimit,
         events: [],
       };
     }
 
-    const routingRows = await queryReadonly('public', `
+    const routingRows = await withTraceQueryTimeout(queryReadonly('public', `
       SELECT
         created_at,
         trace_id,
@@ -271,11 +301,11 @@ async function buildTraceTimeline(args = {}, deps = {}) {
          OR ($2::text <> '' AND cycle_id = $2)
       ORDER BY created_at DESC
       LIMIT $3
-    `, [traceId, cycleId, limit]);
+    `, [traceId, cycleId, limit]), 'routing', timeoutMs);
 
-    const alarmRows = await queryReadonly('agent', `
+    const alarmRows = await withTraceQueryTimeout(queryReadonly('agent', `
       SELECT
-        created_at,
+        received_at AS created_at,
         team,
         bot_name,
         severity,
@@ -284,14 +314,32 @@ async function buildTraceTimeline(args = {}, deps = {}) {
         status,
         metadata
       FROM agent.hub_alarms
-      WHERE ($1::text <> '' AND metadata->>'trace_id' = $1)
-         OR ($2::text <> '' AND metadata->>'cycle_id' = $2)
-         OR ($1::text <> '' AND metadata->>'incident_key' = $1)
-      ORDER BY created_at DESC
+      WHERE received_at >= NOW() - ($4::int * INTERVAL '1 hour')
+        AND (
+          ($1::text <> '' AND metadata->>'trace_id' = $1)
+          OR ($2::text <> '' AND metadata->>'cycle_id' = $2)
+          OR ($1::text <> '' AND metadata->>'incident_key' = $1)
+        )
+      ORDER BY received_at DESC
       LIMIT $3
-    `, [traceId, cycleId, limit]).catch(() => []);
+    `, [traceId, cycleId, limit, hours]), 'alarms', timeoutMs).catch(() => []);
 
-    const eventRows = await queryReadonly('agent', `
+    const eventRows = await withTraceQueryTimeout(queryReadonly('agent', `
+      WITH recent_events AS MATERIALIZED (
+        SELECT
+          created_at,
+          event_type,
+          team,
+          bot_name,
+          severity,
+          title,
+          trace_id,
+          metadata
+        FROM agent.event_lake
+        WHERE created_at >= NOW() - ($4::int * INTERVAL '1 hour')
+        ORDER BY created_at DESC
+        LIMIT $5
+      )
       SELECT
         created_at,
         event_type,
@@ -301,13 +349,13 @@ async function buildTraceTimeline(args = {}, deps = {}) {
         title,
         trace_id,
         metadata
-      FROM agent.event_lake
+      FROM recent_events
       WHERE ($1::text <> '' AND trace_id = $1)
          OR ($1::text <> '' AND metadata->>'trace_id' = $1)
          OR ($2::text <> '' AND metadata->>'cycle_id' = $2)
       ORDER BY created_at DESC
       LIMIT $3
-    `, [traceId, cycleId, limit]).catch(() => []);
+    `, [traceId, cycleId, limit, hours, scanLimit]), 'events', timeoutMs).catch(() => []);
 
     const events = [
       ...routingRows.map((row) => ({
@@ -350,6 +398,8 @@ async function buildTraceTimeline(args = {}, deps = {}) {
       mode: 'read_only_select',
       traceId: traceId || null,
       cycleId: cycleId || null,
+      hours,
+      scanLimit,
       counts: {
         routing: routingRows.length,
         alarms: alarmRows.length,

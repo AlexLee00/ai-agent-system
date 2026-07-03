@@ -140,6 +140,30 @@ async function assertTraceQuerySelectOnly() {
     queryReadonly: async () => [],
   });
   assert.equal(skipped.skipped, true);
+
+  const started = Date.now();
+  const bounded = await callHubOpsTool('hub-trace', { traceId: 'trace-smoke', limit: 5, hours: 24 }, {
+    traceQueryTimeoutMs: 25,
+    queryReadonly: async (schema, sql) => {
+      assert.match(String(sql).trim(), /^(SELECT|WITH)/i);
+      assert.equal(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(sql), false);
+      if (String(sql).includes('information_schema.columns')) {
+        return [{ column_name: 'trace_id' }, { column_name: 'cycle_id' }];
+      }
+      if (String(sql).includes('public.llm_routing_log')) return [];
+      if (String(sql).includes('agent.hub_alarms')) {
+        assert.match(String(sql), /received_at AS created_at/);
+        return [];
+      }
+      if (String(sql).includes('recent_events')) {
+        return new Promise(() => {});
+      }
+      return [];
+    },
+  });
+  assert.equal(bounded.ok, true);
+  assert.equal(bounded.counts.events, 0);
+  assert.ok(Date.now() - started < 1000, 'hub-trace must not hang when an optional source stalls');
 }
 
 async function assertDirectTools() {
