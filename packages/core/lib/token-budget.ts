@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import pgPool = require('./pg-pool');
+import { resolveSelectorTimeoutProfile } from './selector-timeout-profiles.ts';
 
 type Priority = 'low' | 'normal' | 'high' | 'critical';
 
@@ -206,6 +207,30 @@ const PROFILES: Record<string, TokenBudgetProfile> = {
 
 let schemaReadyPromise: Promise<void> | null = null;
 
+function selectorKeyForTimeoutProfile(request: TokenBudgetRequest = {}): string | null {
+  const direct = normalizeNullableText(request.selectorKey);
+  if (direct) return direct;
+  const team = normalizeKey(request.callerTeam);
+  const agent = normalizeKey(request.agent);
+  if (team === 'claude' && agent === 'archer') return 'claude.archer.tech_analysis';
+  if (team && agent) return `${team}.${agent}`;
+  return null;
+}
+
+function applySelectorTimeoutToBudgetProfile(profile: TokenBudgetProfile, request: TokenBudgetRequest = {}): TokenBudgetProfile {
+  const selectorKey = selectorKeyForTimeoutProfile(request);
+  if (!selectorKey) return profile;
+  const timeoutProfile = resolveSelectorTimeoutProfile(selectorKey, {
+    fallbackTimeoutMs: profile.timeoutMs,
+  });
+  if (!timeoutProfile.enabled || !timeoutProfile.timeoutMs) return profile;
+  return {
+    ...profile,
+    timeoutMs: timeoutProfile.timeoutMs,
+    perAttemptTimeoutMs: timeoutProfile.timeoutMs,
+  };
+}
+
 export function estimateTokens(text: string | null | undefined): number {
   const value = String(text || '');
   if (!value) return 0;
@@ -236,7 +261,7 @@ export function inferTokenBudgetProfile(request: TokenBudgetRequest = {}): strin
 
 export function resolveTokenBudget(request: TokenBudgetRequest = {}): TokenBudgetCheck {
   const profileName = inferTokenBudgetProfile(request);
-  const profile = PROFILES[profileName] || PROFILES.default;
+  const profile = applySelectorTimeoutToBudgetProfile(PROFILES[profileName] || PROFILES.default, request);
   const callerTeam = normalizeText(request.callerTeam, 'hub');
   const agent = normalizeText(request.agent, 'unknown');
   const taskType = normalizeText(request.taskType, 'default');

@@ -1,0 +1,33 @@
+{
+  "version": "2026-07-03",
+  "defaultTier": "standard",
+  "globalDefaultTimeoutMs": 60000,
+  "tiers": {
+    "fast": {
+      "timeoutMs": 15000,
+      "minMs": 5000,
+      "maxMs": 30000
+    },
+    "standard": {
+      "timeoutMs": 60000,
+      "minMs": 30000,
+      "maxMs": 120000
+    },
+    "deep": {
+      "timeoutMs": 300000,
+      "minMs": 60000,
+      "maxMs": 300000
+    }
+  },
+  "selectors": {
+    "claude.archer.tech_analysis": {
+      "tier": "deep"
+    },
+    "hub.alarm.classifier": {
+      "tier": "fast"
+    },
+    "investment.luna": {
+      "tier": "standard"
+    }
+  }
+}

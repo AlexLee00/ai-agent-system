@@ -3,6 +3,10 @@ const {
   resolveInvestmentYamlRoutingPolicy,
   routingSourceForSelectorVersion,
 } = require('./agent-llm-routing-adapter.js');
+const {
+  applySelectorTimeoutProfileToChain,
+  resolveSelectorTimeoutProfile,
+} = require('./selector-timeout-profiles.ts');
 
 type LLMChainEntry = {
   provider: string;
@@ -2310,7 +2314,8 @@ export function selectLLMChain(key: string, options: SelectorOptions = {}): LLMC
   const resolved = selectLLMPolicy(key, options);
   const normalizedChain = normalizeChainFromPolicy(resolved);
   if (!normalizedChain) throw new Error(`LLM selector key ${key} 는 chain이 아닙니다`);
-  return applyProviderRuntimeGuards(normalizedChain, { ...options, selectorKey: key });
+  const guardedChain = applyProviderRuntimeGuards(normalizedChain, { ...options, selectorKey: key });
+  return applySelectorTimeoutProfileToChain(key, guardedChain, options);
 }
 
 export function describeLLMSelector(key: string, options: SelectorOptions = {}): any {
@@ -2322,7 +2327,20 @@ export function describeLLMSelector(key: string, options: SelectorOptions = {}):
   const chain = normalizeChainFromPolicy(resolved);
   if (chain) {
     const guardedChain = applyProviderRuntimeGuards(chain, { ...options, selectorKey: key });
-    return { key, kind: 'chain', primary: guardedChain[0] || null, fallbacks: guardedChain.slice(1), chain: guardedChain, routingSource };
+    const timedChain = applySelectorTimeoutProfileToChain(key, guardedChain, options);
+    const timeoutProfile = resolveSelectorTimeoutProfile(key, {
+      ...options,
+      fallbackTimeoutMs: guardedChain[0]?.timeoutMs ?? null,
+    });
+    return {
+      key,
+      kind: 'chain',
+      primary: timedChain[0] || null,
+      fallbacks: timedChain.slice(1),
+      chain: timedChain,
+      routingSource,
+      timeoutProfile,
+    };
   }
   return { key, kind: 'policy', policy: resolved };
 }

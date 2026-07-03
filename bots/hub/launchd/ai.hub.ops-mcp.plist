@@ -28,6 +28,8 @@
     <string>http://127.0.0.1:7788</string>
     <key>LUNA_YAML_ROUTING_ENABLED</key>
     <string>true</string>
+    <key>SELECTOR_TIMEOUT_PROFILES_ENABLED</key>
+    <string>true</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>

@@ -68,7 +68,32 @@ function assertLaunchdNodePrebuiltDaemon(plistName: string, daemonName: string):
   assert(buildDaemonsSource.includes(`label: '${daemonName}'`), `${daemonName} must be included in build-daemons manifest`);
 }
 
-assertLaunchdNodePrebuiltDaemon('ai.hub.resource-api.plist', 'ai.hub.resource-api');
+function assertLaunchdNodePrebuiltDaemonOrTsx(plistName: string, daemonName: string, tsSourcePath: string): void {
+  const plistPath = path.join(launchdDir, plistName);
+  const plist = fs.readFileSync(plistPath, 'utf8');
+  assert(plist.includes('<string>/opt/homebrew/bin/node</string>'), `${plistName} must use an absolute Node binary`);
+  assert(!plist.includes(`${daemonName}.cjs`), `${plistName} must not point at stale CJS daemon bundle`);
+
+  const daemonPath = path.join(repoRoot, 'dist', 'daemons', `${daemonName}.mjs`);
+  const tsxSourceAllowed = (
+    plist.includes('<string>--import</string>')
+      && plist.includes('<string>tsx</string>')
+      && (
+        plist.includes(`<string>${tsSourcePath}</string>`)
+          || plist.includes(`<string>${path.relative(repoRoot, tsSourcePath)}</string>`)
+      )
+  );
+  if (tsxSourceAllowed) {
+    assert(plist.includes('<string>--disable-warning=DEP0205</string>'), `${plistName} must suppress known tsx DEP0205 stderr noise`);
+    return;
+  }
+
+  assert(plist.includes(`<string>${daemonPath}</string>`), `${plistName} must point at the prebuilt daemon bundle or approved tsx source`);
+  const buildDaemonsSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'build-daemons.mjs'), 'utf8');
+  assert(buildDaemonsSource.includes(`label: '${daemonName}'`), `${daemonName} must be included in build-daemons manifest`);
+}
+
+assertLaunchdNodePrebuiltDaemonOrTsx('ai.hub.resource-api.plist', 'ai.hub.resource-api', path.join(repoRoot, 'bots', 'hub', 'src', 'hub.ts'));
 const resourceApiPlist = fs.readFileSync(path.join(launchdDir, 'ai.hub.resource-api.plist'), 'utf8');
 for (const key of [
   'GEMINI_CLI_OAUTH_PROJECT_ID',

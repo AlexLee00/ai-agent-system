@@ -117,6 +117,8 @@
     "llm:gemini-residue-audit": "tsx scripts/llm-gemini-residue-audit.ts",
     "llm:routing-optimization-smoke": "tsx scripts/llm-routing-optimization-smoke.ts",
     "llm:model-speed-test": "tsx scripts/llm-model-speed-test.ts",
+    "selector-timeout:tune": "tsx scripts/selector-timeout-tuner.ts --json",
+    "smoke:selector-timeout-profiles": "tsx scripts/selector-timeout-profiles-smoke.ts",
     "llm:role-routing-balance-smoke": "tsx scripts/llm-role-routing-balance-smoke.ts",
     "llm:runtime-selector-source-smoke": "tsx scripts/llm-runtime-selector-source-smoke.ts",
     "llm:token-budget-smoke": "tsx ../../packages/core/scripts/token-budget-smoke.ts",

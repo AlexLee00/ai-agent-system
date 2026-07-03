@@ -13,6 +13,16 @@ const os   = require('os');
 const HOME = os.homedir();
 const ROOT = path.join(HOME, 'projects', 'ai-agent-system');
 const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
+const ARCHER_TIMEOUT_MS = (() => {
+  const profilesEnabled = /^(1|true|yes|on)$/i.test(String(process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED || '').trim());
+  const fallback = profilesEnabled ? 300000 : 240000;
+  const override = profilesEnabled
+    ? (process.env.SELECTOR_TIMEOUT_MS_CLAUDE_ARCHER_TECH_ANALYSIS || process.env.ARCHER_TIMEOUT_MS)
+    : null;
+  const parsed = Number(override || fallback);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(60000, Math.min(300000, Math.floor(parsed)));
+})();
 
 module.exports = {
   ROOT,
@@ -176,7 +186,7 @@ module.exports = {
     githubTimeout:  8000,
     npmTimeout:     5000,
     webTimeout:     10000,
-    openaiTimeout:  240000,
+    openaiTimeout:  ARCHER_TIMEOUT_MS,
     auditTimeout:   30000,
   },
 

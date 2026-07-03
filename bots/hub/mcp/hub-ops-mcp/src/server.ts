@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const selector = require('../../../../../packages/core/lib/llm-model-selector.ts');
+const selectorTimeoutProfiles = require('../../../../../packages/core/lib/selector-timeout-profiles.ts');
 const pgPool = require('../../../../../packages/core/lib/pg-pool.ts');
 const cycleBudget = require('../../../lib/llm/cycle-budget.ts');
 
@@ -464,14 +465,20 @@ export async function callHubOpsTool(name, args = {}, deps = {}) {
     };
     const chain = selector.selectLLMChain(selectorKey, options);
     const description = selector.describeLLMSelector(selectorKey, options);
+    const compactedChain = compactChain(chain);
+    const timeoutProfile = description.timeoutProfile || selectorTimeoutProfiles.resolveSelectorTimeoutProfile(selectorKey, {
+      fallbackTimeoutMs: compactedChain[0]?.timeoutMs ?? null,
+    });
     return {
       ok: true,
       mode: 'read_only_selector',
       selectorKey,
       routingSource: description.routingSource || null,
-      primary: compactChain(chain)[0] || null,
-      fallbacks: compactChain(chain).slice(1),
-      chain: compactChain(chain),
+      effectiveTimeoutMs: timeoutProfile?.timeoutMs ?? compactedChain[0]?.timeoutMs ?? null,
+      timeoutProfile: redact(timeoutProfile),
+      primary: compactedChain[0] || null,
+      fallbacks: compactedChain.slice(1),
+      chain: compactedChain,
     };
   }
   if (name === 'hub-cost') {

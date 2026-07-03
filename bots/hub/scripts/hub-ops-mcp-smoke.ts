@@ -189,6 +189,23 @@ async function assertDirectTools() {
   assert.equal(routing.ok, true);
   assert.ok(routing.chain.length > 0);
   assert.ok(routing.primary.provider);
+  assert.ok(Object.prototype.hasOwnProperty.call(routing, 'effectiveTimeoutMs'));
+  assert.ok(routing.timeoutProfile);
+
+  const previousProfilesEnabled = process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED;
+  process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = 'true';
+  try {
+    const archerRouting = await callHubOpsTool('hub-routing', {
+      selectorKey: 'claude.archer.tech_analysis',
+      selectorVersion: 'v3.0_oauth_4',
+    });
+    assert.equal(archerRouting.ok, true);
+    assert.equal(archerRouting.effectiveTimeoutMs, 300_000);
+    assert.equal(archerRouting.timeoutProfile.source, 'declaration');
+  } finally {
+    if (previousProfilesEnabled == null) delete process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED;
+    else process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = previousProfilesEnabled;
+  }
 }
 
 async function assertRpcServer() {
