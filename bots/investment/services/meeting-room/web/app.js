@@ -1477,6 +1477,92 @@ function Decisions({ token, decisions, onUpdated, setError, setNotice }) {
   `;
 }
 
+function liveStreamStatusLabel(status, enabled, selectedRunningRun) {
+  if (!enabled) return '비활성';
+  if (!selectedRunningRun) return '대기 중';
+  return {
+    connecting: '연결 중',
+    connected: '실시간 연결',
+    fallback: '폴링 대체',
+    closed: '종료됨',
+    idle: '대기 중',
+  }[String(status || '').toLowerCase()] || '상태 확인 중';
+}
+
+function liveEventKey(event = {}) {
+  return `${event.meetingId || 'meeting'}:${event.seq ?? event.createdAt ?? event.type ?? 'event'}`;
+}
+
+function LiveStreamPanel({ enabled, status, selectedRunningRun, activeRuns, liveEvents }) {
+  const eventRows = safeArray(liveEvents);
+  const runningRows = safeArray(activeRuns).filter((run) => run.status === 'running');
+  const active = enabled && Boolean(selectedRunningRun);
+  const latestEvent = eventRows[eventRows.length - 1] || null;
+  const latestEventKey = latestEvent ? liveEventKey(latestEvent) : '';
+  const latestSummary = String(latestEvent?.summary || '요약 없음');
+  const previousEvents = latestEvent ? eventRows.slice(-4, -1).reverse() : eventRows.slice(-3).reverse();
+  const [typedSummary, setTypedSummary] = useState('');
+  const copy = !enabled
+    ? '서버 설정에서 라이브스트리밍이 꺼져 있습니다. 회의록 재생은 계속 사용할 수 있습니다.'
+    : selectedRunningRun
+    ? `${meetingTypeLabel(selectedRunningRun.type)} 회의의 에이전트 발언을 실시간으로 수신합니다. 상세 발언은 아래 타임라인에도 함께 쌓입니다.`
+    : runningRows.length
+    ? '실행 중 회의를 선택하면 에이전트 발언이 이 패널과 타임라인에 실시간으로 표시됩니다.'
+    : '진행 중 회의가 없어서 대기 중입니다. 새 회의를 시작하면 실시간 발언 패널이 자동으로 켜집니다.';
+
+  useEffect(() => {
+    if (!latestEvent) {
+      setTypedSummary('');
+      return undefined;
+    }
+    const reduceMotion = Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches);
+    if (reduceMotion) {
+      setTypedSummary(latestSummary);
+      return undefined;
+    }
+    let index = 0;
+    setTypedSummary('');
+    const timer = setInterval(() => {
+      index = Math.min(latestSummary.length, index + 2);
+      setTypedSummary(latestSummary.slice(0, index));
+      if (index >= latestSummary.length) clearInterval(timer);
+    }, 24);
+    return () => clearInterval(timer);
+  }, [latestEventKey, latestSummary]);
+
+  return html`
+    <section className=${`live-stream-panel ${active ? 'active' : ''}`} role="region" aria-label="라이브스트리밍 회의 발언">
+      <div className="live-stream-head">
+        <div>
+          <h2 className="live-stream-title">라이브스트리밍</h2>
+          <div className="live-stream-copy">${copy}</div>
+        </div>
+        <div className="live-stream-status" role="status" aria-live="polite">
+          ${liveStreamStatusLabel(status, enabled, selectedRunningRun)} · 이벤트 ${eventRows.length}건
+        </div>
+      </div>
+      ${latestEvent ? html`
+        <div className="live-stream-typing" role="status" aria-live="polite" aria-label="현재 타이핑 중인 라이브 발언">
+          <div className="live-stream-speaker">${latestEvent.seq}. ${agentLabel(latestEvent.agent || 'system')} · ${eventTypeLabel(latestEvent.type)}</div>
+          <div className="live-stream-typed">
+            ${typedSummary}
+            ${typedSummary.length < latestSummary.length ? html`<span className="typing-cursor" aria-hidden="true"></span>` : null}
+          </div>
+        </div>
+      ` : null}
+      ${previousEvents.length ? html`
+        <div className="live-stream-events" role="list" aria-label="최근 라이브 발언">
+          ${previousEvents.map((event) => html`
+            <div className="live-stream-event" role="listitem" key=${liveEventKey(event)}>
+              ${event.seq}. ${agentLabel(event.agent || 'system')} · ${eventTypeLabel(event.type)} · ${event.summary || '요약 없음'}
+            </div>
+          `)}
+        </div>
+      ` : null}
+    </section>
+  `;
+}
+
 function DailyRoom({ token }) {
   const [meetings, setMeetings] = useState([]);
   const [activeRuns, setActiveRuns] = useState([]);
@@ -1492,6 +1578,7 @@ function DailyRoom({ token }) {
   const [streamStatus, setStreamStatus] = useState('idle');
   const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
   const [liveEvents, setLiveEvents] = useState([]);
+  const [mobileDrawer, setMobileDrawer] = useState('');
   const [authRequired, setAuthRequired] = useState(false);
   const [blockedAuthToken, setBlockedAuthToken] = useState(null);
   const baseRequestSeq = useRef(0);
@@ -1693,13 +1780,22 @@ function DailyRoom({ token }) {
       setError(MEETING_START_MALFORMED_MESSAGE);
       return;
     }
+    setMobileDrawer('');
     setSelectedId(run.id);
     refreshBase().catch((error) => setError(error.message));
+  }
+
+  function handleMeetingSelected(id) {
+    setMobileDrawer('');
+    setSelectedId(id);
   }
 
   function refreshAfterDecisionUpdate() {
     refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
   }
+
+  const meetingDrawerOpen = mobileDrawer === 'meetings';
+  const decisionDrawerOpen = mobileDrawer === 'decisions';
 
   return html`
     ${error ? html`<p className="error" role="alert" aria-live="assertive">${error}</p>` : null}
@@ -1708,16 +1804,46 @@ function DailyRoom({ token }) {
     ${'\n'}
     ${scheduleStatus ? html`<div className="schedule-status" role="status" aria-live="polite" aria-label=${scheduleStatus}>${scheduleStatus}</div>` : null}
     ${'\n'}
+    <div className="mobile-action-bar" role="navigation" aria-label="모바일 회의실 빠른 메뉴">
+      <button onClick=${() => setMobileDrawer('meetings')} aria-expanded=${meetingDrawerOpen} aria-controls="meeting-selection-drawer">☰ 회의 선택</button>
+      ${'\n'}
+      <button onClick=${() => setMobileDrawer('decisions')} aria-expanded=${decisionDrawerOpen} aria-controls="meeting-decision-drawer">☰ 컨펌 박스</button>
+    </div>
+    ${mobileDrawer ? html`
+      <button className="drawer-backdrop" onClick=${() => setMobileDrawer('')} aria-label="모바일 패널 닫기">
+        <span className="visually-hidden">모바일 패널 닫기</span>
+      </button>
+    ` : null}
+    <${LiveStreamPanel}
+      enabled=${liveStreamEnabled}
+      status=${streamStatus}
+      selectedRunningRun=${selectedRunningRun}
+      activeRuns=${activeRuns}
+      liveEvents=${liveEvents}
+    />
+    ${'\n'}
     <div className="grid">
-      <div>
+      <aside id="meeting-selection-drawer" className=${`panel-shell meeting-drawer ${meetingDrawerOpen ? 'open' : ''}`} aria-label="회의 선택 패널">
+        <div className="mobile-drawer-header">
+          <h2>회의 선택</h2>
+          <button className="secondary" onClick=${() => setMobileDrawer('')}>닫기</button>
+        </div>
         <${StartMeeting} token=${token} segments=${segments} onStarted=${handleMeetingStarted} setError=${setError} />
         ${'\n'}
-        <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${setSelectedId} />
-      </div>
+        <${MeetingList} meetings=${meetings} activeRuns=${activeRuns} selectedId=${selectedId} setSelectedId=${handleMeetingSelected} />
+      </aside>
       ${'\n'}
-      <${Timeline} token=${token} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />
+      <main className="meeting-main">
+        <${Timeline} token=${token} detail=${detail} catchup=${catchup} loading=${detailLoading} liveEvents=${liveEvents} />
+      </main>
       ${'\n'}
-      <${Decisions} token=${token} decisions=${pending} onUpdated=${refreshAfterDecisionUpdate} setError=${setError} setNotice=${setNotice} />
+      <aside id="meeting-decision-drawer" className=${`panel-shell decision-drawer ${decisionDrawerOpen ? 'open' : ''}`} aria-label="컨펌 박스">
+        <div className="mobile-drawer-header">
+          <h2>컨펌 박스</h2>
+          <button className="secondary" onClick=${() => setMobileDrawer('')}>닫기</button>
+        </div>
+        <${Decisions} token=${token} decisions=${pending} onUpdated=${refreshAfterDecisionUpdate} setError=${setError} setNotice=${setNotice} />
+      </aside>
     </div>
   `;
 }

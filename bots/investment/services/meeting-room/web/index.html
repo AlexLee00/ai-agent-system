@@ -203,6 +203,116 @@
       grid-template-columns: 280px minmax(360px, 1fr) 360px;
       gap: 16px;
     }
+    .meeting-main { min-width: 0; }
+    .mobile-action-bar,
+    .mobile-drawer-header,
+    .drawer-backdrop {
+      display: none;
+    }
+    .live-stream-panel {
+      display: grid;
+      gap: 12px;
+      margin: 0 0 16px;
+      padding: 14px;
+      border: 1px solid rgba(54, 95, 122, 0.2);
+      border-radius: 22px;
+      background: rgba(255, 252, 241, 0.66);
+      box-shadow: 0 14px 44px rgba(51, 62, 38, 0.12);
+    }
+    .live-stream-panel.active {
+      border-color: rgba(72, 109, 74, 0.34);
+      background: rgba(224, 239, 207, 0.58);
+    }
+    .live-stream-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .live-stream-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+    }
+    .live-stream-status {
+      width: fit-content;
+      border-radius: 999px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.55);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 850;
+    }
+    .live-stream-copy {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.5;
+    }
+    .live-stream-events {
+      display: grid;
+      gap: 8px;
+    }
+    .live-stream-typing {
+      display: grid;
+      gap: 7px;
+      min-height: 92px;
+      border-radius: 16px;
+      padding: 12px;
+      border: 1px solid rgba(72, 109, 74, 0.22);
+      background: rgba(255, 255, 255, 0.58);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    }
+    .live-stream-speaker {
+      color: var(--sage);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+    .live-stream-typed {
+      font-size: 14px;
+      font-weight: 780;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    .typing-cursor {
+      display: inline-block;
+      width: 7px;
+      height: 1.15em;
+      margin-left: 2px;
+      border-right: 2px solid var(--sage);
+      vertical-align: -0.18em;
+      animation: typingCursorBlink 0.85s steps(1) infinite;
+    }
+    @keyframes typingCursorBlink {
+      0%, 52% { opacity: 1; }
+      53%, 100% { opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .typing-cursor { animation: none; }
+    }
+    .live-stream-event {
+      border-radius: 14px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.48);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
     .ask-grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
     .polling-status {
       display: inline-flex;
@@ -724,6 +834,77 @@
       .grid, .ask-grid { grid-template-columns: 1fr; }
       .hero { align-items: start; flex-direction: column; }
       .token-box { min-width: 0; width: 100%; max-width: 100%; }
+      .shell { padding: 16px; }
+      .mobile-action-bar {
+        position: sticky;
+        top: 8px;
+        z-index: 30;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0 0 12px;
+      }
+      .mobile-action-bar button {
+        min-height: 44px;
+        padding: 10px 12px;
+      }
+      .panel-shell {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        z-index: 50;
+        width: min(88vw, 390px);
+        max-width: calc(100vw - 28px);
+        padding: 14px;
+        overflow-y: auto;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(188, 122, 34, 0.2), transparent 34%),
+          linear-gradient(145deg, #fff9e8 0%, #edf3e6 100%);
+        box-shadow: 0 28px 80px rgba(23, 33, 26, 0.34);
+        transition: transform 180ms ease;
+      }
+      .meeting-drawer {
+        left: 0;
+        border-radius: 0 24px 24px 0;
+        transform: translateX(-106%);
+      }
+      .decision-drawer {
+        right: 0;
+        border-radius: 24px 0 0 24px;
+        transform: translateX(106%);
+      }
+      .panel-shell.open {
+        transform: translateX(0);
+      }
+      .mobile-drawer-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 0 0 12px;
+      }
+      .mobile-drawer-header h2 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: -0.02em;
+      }
+      .mobile-drawer-header button {
+        min-width: 68px;
+        box-shadow: none;
+      }
+      .drawer-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 45;
+        border-radius: 0;
+        padding: 0;
+        background: rgba(23, 33, 26, 0.42);
+        box-shadow: none;
+      }
+      .live-stream-panel {
+        border-radius: 18px;
+      }
       .decision-header {
         align-items: stretch;
         flex-direction: column;

@@ -12,8 +12,11 @@ type CacheEntry = {
 };
 
 type HubFetchResponse = {
+  ok?: boolean;
   data?: any;
+  error?: any;
   profile?: any;
+  reason?: any;
 };
 
 type LegacyHubAbstractModel = 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
