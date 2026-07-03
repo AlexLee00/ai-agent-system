@@ -221,9 +221,35 @@ function runPickko(entry: ReservationLike): Promise<number | null> {
       cwd: path.dirname(args[0]),
       stdio: 'inherit',
     });
+    const configuredTimeoutMs = Number(process.env.PICKKO_ACCURATE_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+      ? Math.max(1000, Math.floor(configuredTimeoutMs))
+      : 12 * 60 * 1000;
+    let timedOut = false;
+    let sigkillTimer: ReturnType<typeof setTimeout> | null = null;
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      log(`  ⏱️ 픽코 등록 타임아웃 (${Math.round(timeoutMs / 1000)}초) — child 종료 요청`);
+      child.kill('SIGTERM');
+      sigkillTimer = setTimeout(() => {
+        log('  ⏱️ 픽코 등록 SIGTERM 미응답 — SIGKILL 전송');
+        child.kill('SIGKILL');
+      }, 5000);
+      sigkillTimer.unref?.();
+    }, timeoutMs);
+    timeoutTimer.unref?.();
+    child.on('error', (err: Error) => {
+      clearTimeout(timeoutTimer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
+      log(`  ❌ 픽코 실행 오류: ${err.message}`);
+      resolve(1);
+    });
     child.on('close', (code: number | null) => {
-      log(`  🤖 픽코 완료 (exit: ${code})`);
-      resolve(code);
+      clearTimeout(timeoutTimer);
+      if (sigkillTimer) clearTimeout(sigkillTimer);
+      const exitCode = timedOut ? 1 : code;
+      log(`  🤖 픽코 완료 (exit: ${exitCode})`);
+      resolve(exitCode);
     });
   });
 }
@@ -352,10 +378,12 @@ module.exports = {
   main,
 };
 
-main()
-  .then(() => process.exit(0))
-  .catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    log(`❌ 치명 오류: ${message}`);
-    process.exit(1);
-  });
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`❌ 치명 오류: ${message}`);
+      process.exit(1);
+    });
+}

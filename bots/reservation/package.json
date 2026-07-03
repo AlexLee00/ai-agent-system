@@ -14,7 +14,10 @@
     "check:naver-recovery-window": "tsx scripts/naver-recovery-window-smoke.ts",
     "check:ska-self-healing": "tsx scripts/ska-self-healing-autodev-smoke.ts",
     "check:ts-bridge-eisdir": "tsx scripts/ts-bridge-eisdir-smoke.ts",
-    "runtime:ska-agent-llm-drill": "tsx scripts/ska-agent-llm-primary-fallback-call-drill.ts"
+    "runtime:ska-agent-llm-drill": "tsx scripts/ska-agent-llm-primary-fallback-call-drill.ts",
+    "runtime:cancel-shadow-diff": "tsx scripts/cancel-shadow-diff.ts",
+    "smoke:unified-cancel-scanner": "tsx scripts/unified-cancel-scanner-smoke.ts",
+    "smoke:cancel-retry-queue": "tsx scripts/cancel-retry-queue-smoke.ts"
   },
   "dependencies": {
     "@ai-agent/core": "*",

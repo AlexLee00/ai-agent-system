@@ -18,6 +18,7 @@ const {
   addAlert, updateAlertSent, resolveAlert, resolveAlertsByTitle, getUnresolvedAlerts, pruneOldAlerts,
   getTodayStats,
   upsertFutureConfirmed, getStaleConfirmed, deleteStaleConfirmed, pruneOldFutureConfirmed,
+  query: dbQuery, run: dbRun,
 } = require('../../lib/db');
 const fs = require('fs');
 const path = require('path');
@@ -65,6 +66,7 @@ const { createNaverConfirmedCycleService } = require('../../lib/naver-confirmed-
 const { createNaverMonitorCycleService } = require('../../lib/naver-monitor-cycle-service');
 const { createNaverBrowserSessionService } = require('../../lib/naver-browser-session-service');
 const { createNaverDetachedRecoveryService } = require('../../lib/naver-detached-recovery-service');
+const { createCancelRetryEngine } = require('../../lib/cancel-retry-engine');
 const {
   buildPickkoCancelArgs,
   buildPickkoAccurateArgs,
@@ -308,6 +310,12 @@ const {
   verifyRecoverablePickkoFailure,
 } = naverPickkoRecoveryService;
 
+const cancelRetryEngine = createCancelRetryEngine({
+  db: { query: dbQuery, run: dbRun },
+  log,
+  env: process.env,
+});
+
 const naverPickkoRunnerService = createNaverPickkoRunnerService({
   isCancelledKey,
   getReservation,
@@ -332,6 +340,8 @@ const naverPickkoRunnerService = createNaverPickkoRunnerService({
   maskPhone,
   toKst: kst.toKST,
   log,
+  onCancelRetrySuccess: (payload: any) => cancelRetryEngine.markSucceeded(payload),
+  onCancelRetryFailure: (payload: any) => cancelRetryEngine.recordFailure(payload),
 });
 
 async function scrapeExpandedCancelled(page: any, cancelHref: string) {
@@ -564,6 +574,14 @@ async function monitorBookings() {
       await updateAgentState('andy', 'running', `모니터링 사이클 #${checkCount}`);
 
       try {
+        await cancelRetryEngine.processDueQueue({
+          runPickkoCancel,
+          limit: Number.isFinite(Number(process.env.SKA_CANCEL_RETRY_BATCH_SIZE))
+            ? Number(process.env.SKA_CANCEL_RETRY_BATCH_SIZE)
+            : 3,
+        }).catch((error: any) => {
+          log(`⚠️ [취소 재시도 큐] due 처리 스킵: ${error?.message || String(error)}`);
+        });
         ({
           sleepMs,
           previousConfirmedList,
