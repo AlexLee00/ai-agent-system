@@ -16,6 +16,24 @@ const DEFAULT_WIKI_DIR = path.join(DEFAULT_PROJECT_DOCS, 'wiki');
 const WIKI_STATE_FILE = '.llm-wiki-state.json';
 const COORD_COLUMNS = ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state', 'prediction_horizon'];
 const pgPool = require(path.join(repoRoot, 'packages/core/lib/pg-pool.ts'));
+const hubClient = require(path.join(repoRoot, 'packages/core/lib/hub-client.ts'));
+const cycleTrace = require(path.join(repoRoot, 'packages/core/lib/cycle-trace.ts'));
+const HIGH_VALUE_WIKI_PATTERNS = [
+  '%luna_review%',
+  '%luna-review%',
+  '%reflexion%',
+  '%handoff%',
+  '%sigma_directive%',
+  '%sigma-directive%',
+];
+const LOW_VALUE_DIGEST_PATTERNS = [
+  '%blog_comment%',
+  '%blog-comment%',
+  '%neighbor_comment%',
+  '%comment_post%',
+  '%comment/action%',
+  '%library/blo/comment%',
+];
 
 const TOPIC_RULES = [
   { topic: 'hub', pattern: /\bhub\b|resource-api|ops-mcp|llm_routing|routing/i },
@@ -36,6 +54,7 @@ export function parseArgs(argv = process.argv.slice(2)) {
     writeVault: write && argv.includes('--write-vault') && argv.includes('--no-dry-run'),
     noDb: argv.includes('--no-db'),
     legacyDocSource: argv.includes('--legacy-doc-source'),
+    llmPreview: !argv.includes('--no-llm-preview'),
     limit: Number(argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1] || 80) || 80,
     outDir: argv.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) || DEFAULT_WIKI_DIR,
   };
@@ -161,15 +180,55 @@ export function buildWikiEntriesFromDocuments(files, { baseDir = repoRoot } = {}
   return entries;
 }
 
-export function buildWikiEntriesFromVaultRows(rows, { processedVaultEntryIds = [] } = {}) {
+function rowSearchText(row) {
+  return [
+    row?.title,
+    row?.type,
+    row?.source,
+    row?.file_path,
+    row?.content,
+    typeof row?.meta === 'string' ? row.meta : JSON.stringify(row?.meta || {}),
+  ].filter(Boolean).join('\n').toLowerCase();
+}
+
+function matchesPatternText(text, patterns) {
+  const normalizedPatterns = (patterns || []).map((pattern) => String(pattern).replace(/%/g, '').toLowerCase());
+  return normalizedPatterns.some((pattern) => pattern && text.includes(pattern));
+}
+
+export function classifyVaultWikiSource(row) {
+  const text = rowSearchText(row);
+  if (matchesPatternText(text, LOW_VALUE_DIGEST_PATTERNS)) {
+    return { lane: 'dreaming_digest', reason: 'low_value_blog_comment' };
+  }
+  if (matchesPatternText(text, HIGH_VALUE_WIKI_PATTERNS)) {
+    return { lane: 'wiki', reason: 'high_value_source' };
+  }
+  return { lane: 'ignored', reason: 'not_high_value_for_wiki' };
+}
+
+export function buildWikiEntrySetFromVaultRows(rows, { processedVaultEntryIds = [] } = {}) {
   const processed = new Set(processedVaultEntryIds || []);
   const seen = new Set();
   const entries = [];
+  const skipped = [];
   for (const row of rows || []) {
     const id = String(row.id || '').trim();
     if (!id || processed.has(id)) continue;
     const coords = rowCoords(row);
     if (coords.abstraction_level !== 'L0' || coords.time_stage !== 'raw') continue;
+    const lane = classifyVaultWikiSource(row);
+    if (lane.lane !== 'wiki') {
+      skipped.push({
+        vaultEntryId: id,
+        lane: lane.lane,
+        reason: lane.reason,
+        title: row.title || row.file_path || `vault ${id}`,
+        filePath: row.file_path || null,
+        source: row.source || null,
+      });
+      continue;
+    }
     const title = String(row.title || row.file_path || `vault ${id}`).trim();
     const content = row.content || row.content_preview || '';
     const topic = classifyTopic(`${title}\n${content}\n${row.source || ''}\n${row.file_path || ''}`);
@@ -188,7 +247,11 @@ export function buildWikiEntriesFromVaultRows(rows, { processedVaultEntryIds = [
       createdAt: row.created_at || null,
     });
   }
-  return entries;
+  return { entries, skipped };
+}
+
+export function buildWikiEntriesFromVaultRows(rows, { processedVaultEntryIds = [] } = {}) {
+  return buildWikiEntrySetFromVaultRows(rows, { processedVaultEntryIds }).entries;
 }
 
 async function detectCoordColumns(queryReadonly = pgPool.queryReadonly) {
@@ -207,21 +270,55 @@ async function detectCoordColumns(queryReadonly = pgPool.queryReadonly) {
   }
 }
 
-export async function fetchVaultWikiEntries({ limit = 80, state = null, queryReadonly = pgPool.queryReadonly } = {}) {
-  const coordColumns = await detectCoordColumns(queryReadonly);
-  const coordSelect = coordColumns.length > 0
-    ? `, ${coordColumns.join(', ')}`
-    : '';
+async function fetchVaultRowsByPatterns({ patterns, limit, queryReadonly, coordSelect }) {
   const rows = await queryReadonly('sigma', `
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'active') <> 'archived'
+      AND (
+        COALESCE(title, '') ILIKE ANY($1::text[])
+        OR COALESCE(type, '') ILIKE ANY($1::text[])
+        OR COALESCE(source, '') ILIKE ANY($1::text[])
+        OR COALESCE(file_path, '') ILIKE ANY($1::text[])
+        OR COALESCE(content, '') ILIKE ANY($1::text[])
+        OR COALESCE(meta::text, '') ILIKE ANY($1::text[])
+      )
     ORDER BY created_at DESC
-    LIMIT $1
-  `, [Math.max(1, Math.min(500, Number(limit) || 80))]);
-  return buildWikiEntriesFromVaultRows(Array.isArray(rows) ? rows : rows?.rows ?? [], {
+    LIMIT $2
+  `, [patterns, Math.max(1, Math.min(500, Number(limit) || 80))]);
+  return Array.isArray(rows) ? rows : rows?.rows ?? [];
+}
+
+export async function fetchVaultWikiEntrySet({ limit = 80, state = null, queryReadonly = pgPool.queryReadonly } = {}) {
+  const coordColumns = await detectCoordColumns(queryReadonly);
+  const coordSelect = coordColumns.length > 0
+    ? `, ${coordColumns.join(', ')}`
+    : '';
+  const highValueRows = await fetchVaultRowsByPatterns({
+    patterns: HIGH_VALUE_WIKI_PATTERNS,
+    limit,
+    queryReadonly,
+    coordSelect,
+  });
+  const digestRows = await fetchVaultRowsByPatterns({
+    patterns: LOW_VALUE_DIGEST_PATTERNS,
+    limit,
+    queryReadonly,
+    coordSelect,
+  }).catch(() => []);
+  const wikiSet = buildWikiEntrySetFromVaultRows([...highValueRows, ...digestRows], {
     processedVaultEntryIds: state?.processedVaultEntryIds || [],
   });
+  const digestCandidates = wikiSet.skipped.filter((item) => item.lane === 'dreaming_digest');
+  return {
+    ...wikiSet,
+    digestCandidates,
+  };
+}
+
+export async function fetchVaultWikiEntries({ limit = 80, state = null, queryReadonly = pgPool.queryReadonly } = {}) {
+  const entrySet = await fetchVaultWikiEntrySet({ limit, state, queryReadonly });
+  return entrySet.entries;
 }
 
 export function mergeWikiPages(entries, existingPages = {}) {
@@ -307,6 +404,130 @@ async function persistVaultPages(pages) {
   return results;
 }
 
+function extractJsonObject(text = '') {
+  const raw = String(text || '').trim();
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return {};
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return {};
+    }
+  }
+}
+
+function buildLlmPreviewPrompt(topic, entries) {
+  const sources = entries.slice(0, 6).map((entry, index) => [
+    `SOURCE ${index + 1}`,
+    `title: ${entry.title}`,
+    `source: ${entry.source}`,
+    `coords: ${entry.coords ? formatCoords(entry.coords) : 'unknown'}`,
+    `excerpt: ${entry.excerpt}`,
+  ].join('\n')).join('\n\n');
+  return [
+    'Sigma wiki page generation preview.',
+    `Topic: ${topic}`,
+    'Summarize and conceptualize the sources for a high-value internal wiki page.',
+    'Return JSON only: {"summary":"...","concepts":["..."],"qualityGate":"pass|warn","notes":["..."]}.',
+    '',
+    sources,
+  ].join('\n');
+}
+
+function applyLlmPreviewToPages(pages, previews = []) {
+  const byTopic = new Map((previews || []).filter((preview) => preview?.topic).map((preview) => [preview.topic, preview]));
+  const out = { ...pages };
+  for (const [topic, preview] of byTopic.entries()) {
+    if (!out[topic]) continue;
+    const concepts = Array.isArray(preview.concepts) && preview.concepts.length > 0
+      ? preview.concepts.map((concept) => `- ${concept}`).join('\n')
+      : '- _No concepts returned._';
+    const block = [
+      '## LLM Concept Preview',
+      '',
+      `Cycle: \`${preview.cycleId || 'n/a'}\``,
+      `Quality: \`${preview.qualityGate || 'warn'}\``,
+      '',
+      preview.summary || '_No summary returned._',
+      '',
+      'Concepts:',
+      concepts,
+    ].join('\n');
+    out[topic] = out[topic].replace(/\n?$/, `\n\n${block}\n`);
+  }
+  return out;
+}
+
+export async function buildLlmWikiPreviews({
+  entries = [],
+  maxCalls = 1,
+  llmClient = hubClient.callHubLlm,
+  now = new Date(),
+} = {}) {
+  const trace = cycleTrace.createCycleTrace('sigma.llm-wiki-compile', { startedAt: now.getTime() });
+  const warnings = [];
+  const previews = [];
+  const byTopic = new Map();
+  for (const entry of entries || []) {
+    const list = byTopic.get(entry.topic) || [];
+    list.push(entry);
+    byTopic.set(entry.topic, list);
+  }
+  const topics = [...byTopic.keys()].sort().slice(0, Math.max(0, Number(maxCalls) || 0));
+  for (const topic of topics) {
+    try {
+      const response = await llmClient({
+        callerTeam: 'sigma',
+        agent: 'llm-wiki-compiler',
+        selectorKey: 'sigma.agent_policy',
+        taskType: 'wiki_compile',
+        abstractModel: 'claude_code_haiku',
+        systemPrompt: 'You are Sigma wiki compiler. Return compact JSON only.',
+        prompt: buildLlmPreviewPrompt(topic, byTopic.get(topic) || []),
+        maxTokens: 450,
+        temperature: 0.1,
+        timeoutMs: 30000,
+        maxBudgetUsd: 0.01,
+        policyOverride: {
+          chain: [
+            { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 450, temperature: 0.1, timeoutMs: 30000 },
+          ],
+        },
+        cycleId: trace.cycleId,
+        cycle_id: trace.cycleId,
+        traceId: trace.traceId,
+        trace_id: trace.traceId,
+      });
+      const parsed = extractJsonObject(response?.text || response?.result || '');
+      previews.push({
+        topic,
+        cycleId: trace.cycleId,
+        traceId: trace.traceId,
+        provider: response?.provider || null,
+        model: response?.model || response?.selected_route || null,
+        summary: String(parsed.summary || '').trim(),
+        concepts: Array.isArray(parsed.concepts) ? parsed.concepts.map((item) => String(item).trim()).filter(Boolean).slice(0, 8) : [],
+        qualityGate: ['pass', 'warn'].includes(parsed.qualityGate) ? parsed.qualityGate : 'warn',
+        notes: Array.isArray(parsed.notes) ? parsed.notes.map((item) => String(item).trim()).filter(Boolean).slice(0, 5) : [],
+      });
+    } catch (error) {
+      warnings.push({ topic, error: error?.message || String(error) });
+    }
+  }
+  return {
+    enabled: topics.length > 0,
+    cycleId: trace.cycleId,
+    traceId: trace.traceId,
+    calls: previews.length,
+    previews,
+    warnings,
+  };
+}
+
 export async function buildLlmWikiCompileReport(options = {}) {
   const projectDocs = options.projectDocs || DEFAULT_PROJECT_DOCS;
   const outDir = options.outDir || DEFAULT_WIKI_DIR;
@@ -316,14 +537,19 @@ export async function buildLlmWikiCompileReport(options = {}) {
   let docEntries = [];
   let minuteEntries = [];
   let vaultEntries = [];
+  let vaultSkipped = [];
+  let digestCandidates = [];
   let sourceMode = 'vault';
 
   if (!options.noDb) {
-    vaultEntries = await fetchVaultWikiEntries({
+    const entrySet = await fetchVaultWikiEntrySet({
       limit,
       state,
       queryReadonly: options.queryReadonly || pgPool.queryReadonly,
-    }).catch(() => []);
+    }).catch(() => ({ entries: [], skipped: [], digestCandidates: [] }));
+    vaultEntries = entrySet.entries || [];
+    vaultSkipped = entrySet.skipped || [];
+    digestCandidates = entrySet.digestCandidates || [];
   }
 
   if (options.noDb || options.legacyDocSource) {
@@ -341,7 +567,16 @@ export async function buildLlmWikiCompileReport(options = {}) {
   const entries = [...vaultEntries, ...docEntries, ...minuteEntries].filter((entry) => entry.excerpt);
   const topics = [...new Set(entries.map((entry) => entry.topic))].sort();
   const existing = readExistingPages(outDir, topics);
-  const pages = mergeWikiPages(entries, existing);
+  const deterministicPages = mergeWikiPages(entries, existing);
+  const llm = options.llmPreview && !options.noDb && entries.length > 0
+    ? await buildLlmWikiPreviews({
+      entries,
+      maxCalls: options.dryRun !== false ? 1 : Math.min(10, topics.length),
+      llmClient: options.llmClient || hubClient.callHubLlm,
+      now: options.now || new Date(),
+    })
+    : { enabled: false, cycleId: null, traceId: null, calls: 0, previews: [], warnings: [] };
+  const pages = applyLlmPreviewToPages(deterministicPages, llm.previews);
   const sourceKeys = entries.map((entry) => `${entry.topic}:${entry.source}`);
   const duplicateRate = entries.length === 0
     ? 0
@@ -366,10 +601,19 @@ export async function buildLlmWikiCompileReport(options = {}) {
     counts: {
       sourceFiles: files.length,
       sourceVaultEntries: vaultEntries.length,
+      skippedVaultEntries: vaultSkipped.length,
+      dreamingDigestCandidates: digestCandidates.length,
       dbMinutes: minuteEntries.length,
       entries: entries.length,
       topics: topics.length,
     },
+    routing: {
+      wikiLane: 'Y:high_value_l2_digest',
+      dreamingLane: 'Z:DREAMING',
+      highValuePatterns: HIGH_VALUE_WIKI_PATTERNS,
+      lowValueDigestPatterns: LOW_VALUE_DIGEST_PATTERNS,
+    },
+    llm,
     duplicateRate,
     topics,
     pages,
@@ -386,6 +630,7 @@ async function main() {
     legacyDocSource: args.legacyDocSource,
     dryRun: args.dryRun,
     state: initialState,
+    llmPreview: args.llmPreview,
   });
   let vaultResults = [];
   if (args.write && !args.dryRun) {
