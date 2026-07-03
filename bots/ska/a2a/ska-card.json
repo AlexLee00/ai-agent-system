@@ -51,6 +51,14 @@
       "tags": ["ska", "audit", "today", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "cancel-sync-status",
+      "name": "취소 동기화 상태",
+      "description": "네이버 취소 감지·Pickko 반영·재시도 큐·shadow diff 상태를 read-only로 점검",
+      "tags": ["ska", "cancel", "sync", "ops", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     }
   ]
 }

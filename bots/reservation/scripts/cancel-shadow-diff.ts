@@ -32,6 +32,9 @@ const {
   dedupeCancelEvidence,
   scanUnifiedCancelledList,
 } = require('../lib/unified-cancel-scanner');
+const {
+  appendCancelShadowSummary,
+} = require('../lib/cancel-shadow-history');
 
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 
@@ -39,6 +42,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   const args = {
     json: argv.includes('--json'),
     force: argv.includes('--force'),
+    record: argv.includes('--record'),
     browserWs: null,
     cancelledHref: null,
   };
@@ -210,6 +214,10 @@ async function main() {
     console.log(`cancel-shadow-diff skipped: ${result.reason}`);
   } else {
     console.log(`cancel-shadow-diff ${result.ok ? 'ok' : 'mismatch'} ${JSON.stringify(result.diff?.counts || {})}`);
+  }
+  if (args.record) {
+    const summary = appendCancelShadowSummary(result);
+    if (!args.json) console.log(`cancel-shadow-diff recorded ${summary.today}`);
   }
   process.exit(result.ok || result.skipped ? 0 : 1);
 }

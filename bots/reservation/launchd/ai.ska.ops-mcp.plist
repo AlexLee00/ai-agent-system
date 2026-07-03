@@ -8,24 +8,24 @@
 		<string>/Users/alexlee</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-		<key>SKA_UNIFIED_CANCEL_SCANNER</key>
-		<string>true</string>
+		<key>SKA_OPS_MCP_PORT</key>
+		<string>4098</string>
 	</dict>
+	<key>KeepAlive</key>
+	<true/>
 	<key>Label</key>
-	<string>ai.ska.cancel-shadow-diff</string>
+	<string>ai.ska.ops-mcp</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
 		<string>-lc</string>
-		<string>cd /Users/alexlee/projects/ai-agent-system &amp;&amp; /opt/homebrew/bin/npm --prefix bots/reservation run -s runtime:cancel-shadow-diff -- --json --record</string>
+		<string>cd /Users/alexlee/projects/ai-agent-system &amp;&amp; /opt/homebrew/bin/npm --prefix bots/reservation run -s runtime:ska-ops-mcp</string>
 	</array>
 	<key>RunAtLoad</key>
-	<false/>
+	<true/>
 	<key>StandardErrorPath</key>
-	<string>/tmp/ska-cancel-shadow-diff.log</string>
+	<string>/tmp/ska-ops-mcp.log</string>
 	<key>StandardOutPath</key>
-	<string>/tmp/ska-cancel-shadow-diff.log</string>
-	<key>StartInterval</key>
-	<integer>1800</integer>
+	<string>/tmp/ska-ops-mcp.log</string>
 </dict>
 </plist>
