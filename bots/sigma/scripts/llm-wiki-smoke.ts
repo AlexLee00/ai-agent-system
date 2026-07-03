@@ -59,7 +59,7 @@ async function main() {
     id: 'hv-1',
     title: 'luna_review weekly risk note',
     type: 'luna_review',
-    source: 'sigma',
+    source: 'luna_review',
     file_path: 'library/luna_review/weekly.md',
     content: 'Luna risk gate review and capital policy evidence.',
     meta: { libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'observed', prediction_state: 'none' } },
@@ -75,6 +75,34 @@ async function main() {
     meta: { libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'unverified', prediction_state: 'none' } },
     created_at: '2026-07-03T00:00:00.000Z',
   };
+  const handoffWithBlogMention = {
+    id: 'hf-1',
+    title: 'handoff mentions blog_comment cleanup',
+    type: 'handoff_doc',
+    source: 'handoff',
+    file_path: 'library/handoff/HANDOFF_BLOG_CLEANUP.md',
+    content: 'handoff source can mention blog_comment cleanup without being demoted from the wiki lane.',
+    meta: { libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'observed', prediction_state: 'none' } },
+    created_at: '2026-07-03T00:00:00.000Z',
+  };
+  const pollutedBlogRow = {
+    id: 'blo-1',
+    title: 'review라는 단어가 들어간 블로그 댓글',
+    type: 'blog_comment',
+    source: 'blo',
+    file_path: 'library/blo/comment/inbound/1',
+    content: 'luna_review handoff reflexion marker should not promote blo content to wiki.',
+    meta: { libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'unverified', prediction_state: 'none' } },
+  };
+  const hubAlarmRow = {
+    id: 'ha-1',
+    title: 'handoff marker in hub alarm',
+    type: 'hub_alarm',
+    source: 'hub_alarm',
+    file_path: 'library/hub_alarm/1',
+    content: 'handoff marker should not promote hub_alarm to wiki.',
+    meta: { libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'unverified', prediction_state: 'none' } },
+  };
   const neutralRow = {
     id: 'nt-1',
     title: 'ordinary raw note',
@@ -84,10 +112,13 @@ async function main() {
     content: 'A raw note about ordinary workspace maintenance.',
     meta: { libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'unverified', prediction_state: 'none' } },
   };
-  const wikiSet = buildWikiEntrySetFromVaultRows([highValueRow, lowValueRow, neutralRow]);
-  assert.equal(wikiSet.entries.length, 1, 'only high-value raw source should enter wiki lane');
+  const wikiSet = buildWikiEntrySetFromVaultRows([highValueRow, lowValueRow, handoffWithBlogMention, pollutedBlogRow, hubAlarmRow, neutralRow]);
+  assert.equal(wikiSet.entries.length, 2, 'only high-value raw sources should enter wiki lane');
   assert.equal(wikiSet.entries[0].vaultEntryId, 'hv-1');
+  assert.equal(wikiSet.entries.find((entry) => entry.vaultEntryId === 'hf-1')?.source, 'vault-entry:hf-1');
   assert.equal(wikiSet.skipped.find((item) => item.vaultEntryId === 'lv-1')?.lane, 'dreaming_digest');
+  assert.equal(wikiSet.skipped.find((item) => item.vaultEntryId === 'blo-1')?.lane, 'dreaming_digest');
+  assert.equal(wikiSet.skipped.find((item) => item.vaultEntryId === 'ha-1')?.reason, 'excluded_low_value_source');
   assert.equal(classifyVaultWikiSource(lowValueRow).reason, 'low_value_blog_comment');
 
   let llmCalls = 0;
@@ -107,7 +138,7 @@ async function main() {
         ];
       }
       const patterns = params?.[0] || [];
-      if (patterns.some((pattern) => String(pattern).includes('luna_review'))) return [highValueRow];
+      if (patterns.some((pattern) => String(pattern).includes('luna_review'))) return [highValueRow, handoffWithBlogMention, pollutedBlogRow, hubAlarmRow];
       if (patterns.some((pattern) => String(pattern).includes('blog_comment'))) return [lowValueRow];
       return [];
     },
@@ -134,11 +165,11 @@ async function main() {
   });
   assert.equal(llmCalls, 1, 'dry-run preview should call LLM once');
   assert.equal(llmReport.llm.calls, 1);
-  assert.equal(llmReport.counts.dreamingDigestCandidates, 1);
+  assert.equal(llmReport.counts.dreamingDigestCandidates, 2);
   assert.match(Object.values(llmReport.pages).join('\n'), /LLM Concept Preview/);
   assert.equal(fs.existsSync(path.join(tmp, 'wiki-llm/luna.md')), false, 'LLM dry-run must not write files');
 
-  console.log(JSON.stringify({ ok: true, checks: 24 }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: 30 }, null, 2));
 }
 
 main().catch((error) => {

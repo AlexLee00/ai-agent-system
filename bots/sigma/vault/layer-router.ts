@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { normalizeLibraryCoords } from '../shared/library-coords.ts';
+
 export const LAYER_SEARCH_INTENTS = ['principle', 'recent', 'prediction', 'evidence', 'strategy'] as const;
 
 const INTENT_RULES = [
@@ -131,8 +133,9 @@ export function buildLayerRoute(query = '', options = {}) {
 
 export function coordsMatchFilters(coords = {}, filters = {}) {
   const normalized = normalizeCoordFilters(filters);
+  const safeCoords = normalizeLibraryCoords(coords || {});
   for (const key of ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state']) {
-    if (normalized[key]?.length > 0 && !normalized[key].includes(coords[key])) return false;
+    if (normalized[key]?.length > 0 && !normalized[key].includes(safeCoords[key])) return false;
   }
   return true;
 }

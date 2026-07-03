@@ -75,6 +75,13 @@ function normalizeRows(rows: unknown): any[] {
   return Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
 }
 
+const DEFAULT_COORDS: Record<string, string> = {
+  abstraction_level: 'L0',
+  time_stage: 'raw',
+  validation_state: 'unverified',
+  prediction_state: 'none',
+};
+
 function extractLibraryCoords(row: any): Record<string, unknown> {
   const meta = normalizeMeta(row.meta);
   return normalizeLibraryCoords({
@@ -104,11 +111,14 @@ async function detectCoordColumns(queryReadonly: any): Promise<Set<string>> {
 
 function addCoordSqlFilter(filters: string[], params: any[], nextParam: number, key: string, values: string[], hasColumn: boolean): number {
   if (!values || values.length === 0) return nextParam;
-  const clauses = [`meta->'libraryCoords'->>$${nextParam + 1} = ANY($${nextParam}::text[])`];
-  params.push(values, key);
-  if (hasColumn) clauses.unshift(`${key} = ANY($${nextParam}::text[])`);
-  filters.push(`(${clauses.join(' OR ')})`);
-  return nextParam + 2;
+  const keyParam = nextParam + 1;
+  const defaultParam = nextParam + 2;
+  const coordExpr = hasColumn
+    ? `COALESCE(${key}, meta->'libraryCoords'->>$${keyParam}, $${defaultParam})`
+    : `COALESCE(meta->'libraryCoords'->>$${keyParam}, $${defaultParam})`;
+  params.push(values, key, DEFAULT_COORDS[key] || '');
+  filters.push(`${coordExpr} = ANY($${nextParam}::text[])`);
+  return nextParam + 3;
 }
 
 export async function searchVault(query: string, opts: VaultSearchOptions = {}): Promise<{

@@ -18,6 +18,21 @@ const COORD_COLUMNS = ['abstraction_level', 'time_stage', 'validation_state', 'p
 const pgPool = require(path.join(repoRoot, 'packages/core/lib/pg-pool.ts'));
 const hubClient = require(path.join(repoRoot, 'packages/core/lib/hub-client.ts'));
 const cycleTrace = require(path.join(repoRoot, 'packages/core/lib/cycle-trace.ts'));
+const HIGH_VALUE_WIKI_SOURCES = [
+  'luna_review',
+  'luna_reflexion',
+  'handoff',
+  'meeting_minutes',
+  'sigma_directive',
+];
+const EXCLUDED_WIKI_SOURCES = [
+  'blo',
+  'blog_comment',
+  'blog_comment_action',
+  'blog_comment_inbound',
+  'blog_post',
+  'hub_alarm',
+];
 const HIGH_VALUE_WIKI_PATTERNS = [
   '%luna_review%',
   '%luna-review%',
@@ -191,6 +206,11 @@ function rowSearchText(row) {
   ].filter(Boolean).join('\n').toLowerCase();
 }
 
+function rowSourceKind(row) {
+  const meta = parseMeta(row?.meta);
+  return String(row?.source || meta.sourceKind || row?.type || '').trim().toLowerCase();
+}
+
 function matchesPatternText(text, patterns) {
   const normalizedPatterns = (patterns || []).map((pattern) => String(pattern).replace(/%/g, '').toLowerCase());
   return normalizedPatterns.some((pattern) => pattern && text.includes(pattern));
@@ -198,11 +218,18 @@ function matchesPatternText(text, patterns) {
 
 export function classifyVaultWikiSource(row) {
   const text = rowSearchText(row);
+  const source = rowSourceKind(row);
+  if (HIGH_VALUE_WIKI_SOURCES.includes(source)) {
+    return {
+      lane: 'wiki',
+      reason: matchesPatternText(text, HIGH_VALUE_WIKI_PATTERNS) ? 'source_whitelist_with_marker' : 'source_whitelist',
+    };
+  }
   if (matchesPatternText(text, LOW_VALUE_DIGEST_PATTERNS)) {
     return { lane: 'dreaming_digest', reason: 'low_value_blog_comment' };
   }
-  if (matchesPatternText(text, HIGH_VALUE_WIKI_PATTERNS)) {
-    return { lane: 'wiki', reason: 'high_value_source' };
+  if (EXCLUDED_WIKI_SOURCES.includes(source) || source.startsWith('claude_')) {
+    return { lane: 'ignored', reason: 'excluded_low_value_source' };
   }
   return { lane: 'ignored', reason: 'not_high_value_for_wiki' };
 }
@@ -270,6 +297,21 @@ async function detectCoordColumns(queryReadonly = pgPool.queryReadonly) {
   }
 }
 
+async function fetchVaultRowsBySources({ sources, limit, queryReadonly, coordSelect }) {
+  const rows = await queryReadonly('sigma', `
+    SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
+    FROM sigma.vault_entries
+    WHERE COALESCE(status, 'active') <> 'archived'
+      AND (
+        LOWER(COALESCE(source, '')) = ANY($1::text[])
+        OR LOWER(COALESCE(meta->>'sourceKind', '')) = ANY($1::text[])
+      )
+    ORDER BY created_at DESC
+    LIMIT $2
+  `, [sources, Math.max(1, Math.min(500, Number(limit) || 80))]);
+  return Array.isArray(rows) ? rows : rows?.rows ?? [];
+}
+
 async function fetchVaultRowsByPatterns({ patterns, limit, queryReadonly, coordSelect }) {
   const rows = await queryReadonly('sigma', `
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
@@ -294,8 +336,8 @@ export async function fetchVaultWikiEntrySet({ limit = 80, state = null, queryRe
   const coordSelect = coordColumns.length > 0
     ? `, ${coordColumns.join(', ')}`
     : '';
-  const highValueRows = await fetchVaultRowsByPatterns({
-    patterns: HIGH_VALUE_WIKI_PATTERNS,
+  const highValueRows = await fetchVaultRowsBySources({
+    sources: HIGH_VALUE_WIKI_SOURCES,
     limit,
     queryReadonly,
     coordSelect,
@@ -610,6 +652,8 @@ export async function buildLlmWikiCompileReport(options = {}) {
     routing: {
       wikiLane: 'Y:high_value_l2_digest',
       dreamingLane: 'Z:DREAMING',
+      highValueSources: HIGH_VALUE_WIKI_SOURCES,
+      excludedSources: EXCLUDED_WIKI_SOURCES,
       highValuePatterns: HIGH_VALUE_WIKI_PATTERNS,
       lowValueDigestPatterns: LOW_VALUE_DIGEST_PATTERNS,
     },
