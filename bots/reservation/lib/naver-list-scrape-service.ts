@@ -6,17 +6,18 @@ export type CreateNaverListScrapeServiceDeps = {
   log: Logger;
 };
 
-export function parseNaverDateTimeText(input: unknown): { date: string; start: string; end: string } | null {
+export function parseNaverDateTimeText(input: unknown, fallbackDate?: string | null): { date: string; start: string; end: string } | null {
   const dateTimeText = String(input || '').replace(/\s+/g, ' ').trim();
   if (!dateTimeText) return null;
 
   const dateMatch = dateTimeText.match(/(\d{2})\.\s+(\d{1,2})\.\s+(\d{1,2})/);
   const timeMatch = dateTimeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(오전|오후)?\s*(\d{1,2}):(\d{2})/);
-  if (!dateMatch || !timeMatch) return null;
+  if (!dateMatch && !fallbackDate) return null;
+  if (!timeMatch) return null;
 
-  const yyyy = `20${dateMatch[1]}`;
-  const mm = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
-  const dd = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
+  const date = dateMatch
+    ? `20${dateMatch[1]}-${String(parseInt(dateMatch[2], 10)).padStart(2, '0')}-${String(parseInt(dateMatch[3], 10)).padStart(2, '0')}`
+    : String(fallbackDate || '').trim();
 
   const startAmpm = timeMatch[1];
   const startHour = parseInt(timeMatch[2], 10);
@@ -45,7 +46,7 @@ export function parseNaverDateTimeText(input: unknown): { date: string; start: s
   if (endAmpm === '오전' && endHour24 === 12) endHour24 = 0;
 
   return {
-    date: `${yyyy}-${mm}-${dd}`,
+    date,
     start: `${String(startHour24).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`,
     end: `${String(endHour24).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`,
   };
@@ -149,6 +150,16 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     }, { timeout: 20000 });
 
     const scraped = await page.evaluate((n: number) => {
+      const sameDayFallbackDate = (() => {
+        try {
+          const url = new URL(location.href);
+          if (url.searchParams.get('dateFilter') !== 'USEDATE') return null;
+          const startDate = url.searchParams.get('startDateTime');
+          const endDate = url.searchParams.get('endDateTime');
+          if (startDate && startDate === endDate) return startDate;
+        } catch (_e) {}
+        return null;
+      })();
       const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
       const noDataVisible = !!noData && (noData as HTMLElement).offsetParent !== null;
 
@@ -181,6 +192,8 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
             const mm = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
             const dd = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
             date = `${yyyy}-${mm}-${dd}`;
+          } else if (sameDayFallbackDate) {
+            date = sameDayFallbackDate;
           }
 
           const timeMatch = dateTimeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(오전|오후)?\s*(\d{1,2}):(\d{2})/);
@@ -244,7 +257,7 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     }, limit);
 
     return scraped.map((booking: any) => {
-      const parsed = parseNaverDateTimeText(booking?.raw?.dateTimeText);
+      const parsed = parseNaverDateTimeText(booking?.raw?.dateTimeText, booking?.date);
       if (!parsed) return booking;
       return {
         ...booking,
