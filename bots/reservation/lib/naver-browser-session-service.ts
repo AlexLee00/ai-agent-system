@@ -47,7 +47,6 @@ export function createNaverBrowserSessionService(deps: CreateNaverBrowserSession
     try { unlinkSync(pathJoin(resolvedNaverUserDataDir, 'DevToolsActivePort')); } catch (_) {}
 
     const browser = await launchPuppeteer(getNaverLaunchOptions({
-      protocolTimeout: 30000,
       userDataDir: resolvedNaverUserDataDir,
     }));
 

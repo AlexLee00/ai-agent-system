@@ -7,6 +7,7 @@ interface ReservationRuntimeConfig {
     launchRetries: number;
     launchRetryDelayMs: number;
     navigationTimeoutMs: number;
+    naverProtocolTimeoutMs: number;
     pickkoProtocolTimeoutMs: number;
   };
   naverMonitor: {
@@ -29,6 +30,7 @@ const DEFAULT_RUNTIME_CONFIG: ReservationRuntimeConfig = {
     launchRetries: 3,
     launchRetryDelayMs: 2000,
     navigationTimeoutMs: 30000,
+    naverProtocolTimeoutMs: 180000,
     pickkoProtocolTimeoutMs: 180000,
   },
   naverMonitor: {

@@ -44,6 +44,11 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     return String(candidate?.date || '').trim() === todaySeoul;
   }
 
+  function isFutureCancelledCandidate(candidate: Record<string, any>, todaySeoul: string): boolean {
+    const date = String(candidate?.date || '').trim();
+    return Boolean(date && date > todaySeoul);
+  }
+
   function isCancelledTrackedReservation(tracked: TrackedCancelledBooking): boolean {
     if (!tracked || typeof tracked !== 'object') return false;
     return Boolean(
@@ -145,12 +150,17 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     if (expandedList.length > 0) {
       let actionableCancels = 0;
       for (const candidate of expandedList) {
-        if (!isTodayCancelledCandidate(candidate, todaySeoul)) {
-          log(`🛡️ [취소감지2E] 오늘자 외 취소 후보 자동 처리 차단: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
-          continue;
-        }
         const key = buildCancelKey(candidate, todaySeoul);
         const tracked = await shouldProcessCancelledBooking(candidate);
+        const isToday = isTodayCancelledCandidate(candidate, todaySeoul);
+        const isFuture = isFutureCancelledCandidate(candidate, todaySeoul);
+        if (!isToday) {
+          if (!isFuture || !tracked || isCancelledTrackedReservation(tracked)) {
+            log(`🛡️ [취소감지2E] 오늘자 외 취소 후보 자동 처리 차단: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
+            continue;
+          }
+          log(`✅ [취소감지2E] 미래 직접 취소 예외 처리: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''}`);
+        }
         const alreadyRecorded = await isCancelledKey(key);
         if (alreadyRecorded) {
           if (!tracked || isCancelledTrackedReservation(tracked)) continue;

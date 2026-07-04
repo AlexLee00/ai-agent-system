@@ -56,17 +56,22 @@ export function getPickkoLaunchOptions(): Record<string, unknown> {
 
 export function getNaverLaunchOptions({
   userDataDir,
-  protocolTimeout = 30000,
+  protocolTimeout,
 }: {
   userDataDir?: string;
   protocolTimeout?: number;
 } = {}): Record<string, unknown> {
+  const runtime = getReservationBrowserConfig();
   const headed = isHeadedMode('naver');
+  const resolvedProtocolTimeout = protocolTimeout ?? parseInt(
+    process.env.NAVER_PROTOCOL_TIMEOUT_MS || String(runtime.naverProtocolTimeoutMs),
+    10,
+  );
   return {
     headless: getHeadlessMode('naver'),
     pipe: false,
     defaultViewport: headed ? null : { width: 1920, height: 1080 },
-    protocolTimeout,
+    protocolTimeout: resolvedProtocolTimeout,
     ...(userDataDir ? { userDataDir } : {}),
     args: [
       ...getCommonBrowserArgs('naver'),

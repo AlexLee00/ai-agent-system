@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import {
+  GPT_OSS_20B_MODEL,
+  GROQ_SCOUT_MODEL,
+  HAIKU_MODEL,
+  OPENAI_MINI_MODEL,
+  OPENAI_PERF_MODEL,
+} from '../shared/llm-client.ts';
 import { getInvestmentLLMPolicyConfig } from '../shared/runtime-config.ts';
 
 const require = createRequire(import.meta.url);
@@ -14,6 +21,17 @@ function assertNoLegacyOpenAiMiniModel(model: unknown, label: string) {
 function main() {
   const policy = getInvestmentLLMPolicyConfig()?.investmentAgentPolicy || {};
   assertNoLegacyOpenAiMiniModel(policy.openaiMiniModel, 'runtime_config.llmPolicies.investmentAgentPolicy.openaiMiniModel');
+  for (const [label, model] of Object.entries({
+    GPT_OSS_20B_MODEL,
+    GROQ_SCOUT_MODEL,
+    HAIKU_MODEL,
+    OPENAI_MINI_MODEL,
+    OPENAI_PERF_MODEL,
+  })) {
+    assert.equal(typeof model, 'string', `${label} must be a string`);
+    assert(model.trim().length > 0, `${label} must not be empty`);
+  }
+  assertNoLegacyOpenAiMiniModel(OPENAI_MINI_MODEL, 'llm-client OPENAI_MINI_MODEL');
 
   for (const selectorKey of ['investment.athena', 'investment.nemesis', 'investment.agent_policy', 'investment._default']) {
     const chain = selectLLMChain(selectorKey, {
@@ -29,6 +47,13 @@ function main() {
 
   console.log(JSON.stringify({
     ok: true,
+    llm_client_models: {
+      GPT_OSS_20B_MODEL,
+      GROQ_SCOUT_MODEL,
+      HAIKU_MODEL,
+      OPENAI_MINI_MODEL,
+      OPENAI_PERF_MODEL,
+    },
     runtime_openai_mini_model: policy.openaiMiniModel,
     checked_selectors: ['investment.athena', 'investment.nemesis', 'investment.agent_policy', 'investment._default'],
   }));

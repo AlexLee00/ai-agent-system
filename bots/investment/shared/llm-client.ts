@@ -39,11 +39,45 @@ const {
 const DEFAULT_INVESTMENT_POLICY = selectLLMPolicy('investment.agent_policy', {
   agentName: 'luna',
 });
-export const GROQ_SCOUT_MODEL  = DEFAULT_INVESTMENT_POLICY.groqScoutModel;
-export const GPT_OSS_20B_MODEL = DEFAULT_INVESTMENT_POLICY.groqCompetitionModels[0];
-export const OPENAI_PERF_MODEL = DEFAULT_INVESTMENT_POLICY.openaiPerfModel;
-export const HAIKU_MODEL       = DEFAULT_INVESTMENT_POLICY.anthropicModel;
-export const OPENAI_MINI_MODEL = DEFAULT_INVESTMENT_POLICY.openaiMiniModel;
+const DEFAULT_GROQ_SCOUT_MODEL = 'llama-3.1-8b-instant';
+const DEFAULT_GROQ_COMPETITION_MODELS = ['openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
+const DEFAULT_OPENAI_PERF_MODEL = 'gpt-5.4';
+const DEFAULT_OPENAI_MINI_MODEL = 'gpt-5.4-mini';
+const DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5-20251001';
+
+function normalizePolicyChain(policy) {
+  if (Array.isArray(policy)) return policy;
+  if (Array.isArray(policy?.fallbackChain)) return policy.fallbackChain;
+  const chain = [];
+  if (policy?.primary) chain.push(policy.primary);
+  if (policy?.fallback) chain.push(policy.fallback);
+  if (Array.isArray(policy?.fallbacks)) chain.push(...policy.fallbacks);
+  return chain;
+}
+
+function stripModelProvider(model, providers) {
+  const value = String(model || '').trim();
+  for (const provider of providers) {
+    const prefix = `${provider}/`;
+    if (value.startsWith(prefix)) return value.slice(prefix.length);
+  }
+  return value;
+}
+
+function firstChainModel(policy, provider) {
+  const found = normalizePolicyChain(policy).find((entry) => entry?.provider === provider && entry?.model);
+  return found?.model || null;
+}
+
+const chainOpenAiModel = stripModelProvider(firstChainModel(DEFAULT_INVESTMENT_POLICY, 'openai-oauth'), ['openai-oauth', 'openai']);
+
+export const GROQ_SCOUT_MODEL  = DEFAULT_INVESTMENT_POLICY.groqScoutModel || DEFAULT_GROQ_SCOUT_MODEL;
+export const GPT_OSS_20B_MODEL = (
+  Array.isArray(DEFAULT_INVESTMENT_POLICY.groqCompetitionModels) && DEFAULT_INVESTMENT_POLICY.groqCompetitionModels[0]
+) || DEFAULT_GROQ_COMPETITION_MODELS[0];
+export const OPENAI_PERF_MODEL = DEFAULT_INVESTMENT_POLICY.openaiPerfModel || chainOpenAiModel || DEFAULT_OPENAI_PERF_MODEL;
+export const HAIKU_MODEL       = DEFAULT_INVESTMENT_POLICY.anthropicModel || DEFAULT_HAIKU_MODEL;
+export const OPENAI_MINI_MODEL = DEFAULT_INVESTMENT_POLICY.openaiMiniModel || DEFAULT_OPENAI_MINI_MODEL;
 
 // ─── JSON 파싱 헬퍼 ──────────────────────────────────────────────────
 

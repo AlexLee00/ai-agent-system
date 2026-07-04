@@ -26,6 +26,7 @@ const REPORT_JOBS = [
     key: 'ska',
     label: '스카',
     args: ['bots/reservation/auto/scheduled/pickko-daily-summary.ts'],
+    timeoutMs: 300000,
   },
   {
     key: 'common',
@@ -43,18 +44,18 @@ function buildLocalNodeArgs(args) {
   ];
 }
 
-function runLocalNode(args) {
+function runLocalNode(args, timeoutMs = 120000) {
   return execFileSync(NODE_BIN, buildLocalNodeArgs(args), {
     cwd: ROOT,
     stdio: 'pipe',
     encoding: 'utf8',
-    timeout: 120000,
+    timeout: timeoutMs,
   }).trim();
 }
 
 function collectLocal(job) {
   try {
-    const stdout = runLocalNode(job.args || []);
+    const stdout = runLocalNode(job.args || [], job.timeoutMs || 120000);
     return {
       key: job.key,
       label: job.label,

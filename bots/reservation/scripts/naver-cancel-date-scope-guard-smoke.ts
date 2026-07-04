@@ -83,12 +83,29 @@ async function main() {
     cycleNewCancelDetections: 0,
   });
 
-  assert.equal(expandedResult, 0, 'future expanded cancel rows must not count as handled');
-  assert.deepEqual(expanded.pickkoCancels, [], 'future expanded cancel rows must not call Pickko cancel');
-  assert.deepEqual(expanded.addedKeys, [], 'future expanded cancel rows must not be recorded as cancelled');
+  assert.equal(expandedResult, 1, 'tracked future expanded cancel rows should count as handled');
+  assert.equal(expanded.pickkoCancels.length, 1, 'tracked future expanded cancel rows should call Pickko cancel');
+  assert.deepEqual(expanded.addedKeys, ['cancelid|future-cancel']);
   assert.ok(
-    expanded.logs.some((line) => line.includes('[취소감지2E] 오늘자 외 취소 후보 자동 처리 차단')),
-    'future expanded cancel rows should log the date scope guard',
+    expanded.logs.some((line) => line.includes('미래 직접 취소 예외 처리')),
+    'tracked future expanded cancel rows should log the direct-detect exception',
+  );
+
+  const untrackedFuture = createService({ expandedList: [future], tracked: null });
+  const untrackedFutureResult = await untrackedFuture.service.processExpandedCancelled({
+    page: createPage(),
+    cancelledHref: 'https://example.test/cancelled',
+    todaySeoul,
+    naverUrl: 'https://example.test/naver',
+    cycleNewCancelDetections: 0,
+  });
+
+  assert.equal(untrackedFutureResult, 0, 'untracked future expanded cancel rows must not count as handled');
+  assert.deepEqual(untrackedFuture.pickkoCancels, [], 'untracked future expanded cancel rows must not call Pickko cancel');
+  assert.deepEqual(untrackedFuture.addedKeys, [], 'untracked future expanded cancel rows must not be recorded as cancelled');
+  assert.ok(
+    untrackedFuture.logs.some((line) => line.includes('[취소감지2E] 오늘자 외 취소 후보 자동 처리 차단')),
+    'untracked future expanded cancel rows should remain blocked by the date scope guard',
   );
 
   const today = booking({ bookingId: 'today-cancel', date: todaySeoul });
