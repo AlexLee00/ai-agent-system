@@ -22,6 +22,14 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { Registry, Gauge, Counter, collectDefaultMetrics } from 'prom-client';
 import { resolveTradingViewWsUrl } from './tradingview-url.js';
+import {
+  DEFAULT_LONG_RETRY_GIVEUP_MS,
+  DEFAULT_LONG_RETRY_INTERVAL_MS,
+  buildReconnectPlan,
+  createLongRetryState,
+  positiveInt,
+  resetLongRetryState,
+} from './reconnect-self-healing.js';
 
 const SERVICE_BUILD_ID = 'tvws-session-scoped-v2';
 const serviceStartedAt = new Date().toISOString();
@@ -42,6 +50,8 @@ const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 10;
+const LONG_RETRY_INTERVAL_MS = positiveInt(process.env.TV_LONG_RETRY_INTERVAL_MS, DEFAULT_LONG_RETRY_INTERVAL_MS);
+const LONG_RETRY_GIVEUP_MS = positiveInt(process.env.TV_LONG_RETRY_GIVEUP_MS, DEFAULT_LONG_RETRY_GIVEUP_MS);
 const RUNTIME_REEVAL_ENABLED = process.env.TV_RUNTIME_REEVAL_ENABLED === 'true';
 const RUNTIME_REEVAL_PREFIX = process.env.TV_RUNTIME_REEVAL_PREFIX || '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const RUNTIME_REEVAL_COOLDOWN_MS = parseInt(process.env.TV_RUNTIME_REEVAL_COOLDOWN_MS || '45000', 10);
@@ -118,6 +128,7 @@ let reconnectTimer = null;
 let staleCheckTimer = null;
 let subscribeQueueTimer = null;
 let lastStaleForceReconnectAt = 0;
+const longRetryState = createLongRetryState();
 const runtimeReevalCooldowns = new Map();
 const runtimeActiveScopeCache = new Map();
 const connectionStats = {
@@ -143,6 +154,15 @@ function extractJsonObject(raw = '') {
   }
 }
 
+function resetReconnectState({ clearTimer = false } = {}) {
+  reconnectAttempts = 0;
+  resetLongRetryState(longRetryState);
+  if (clearTimer && reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
 function connectTradingView() {
   // dovudo/tradingview-websocket 패턴: wss://data.tradingview.com/socket.io/websocket
   const tvUrl = resolveTradingViewWsUrl(process.env);
@@ -165,7 +185,7 @@ function connectTradingView() {
     console.log('[TV-WS] TradingView 연결됨');
     connectionStats.opens += 1;
     connectionStats.lastOpenAt = Date.now();
-    reconnectAttempts = 0;
+    resetReconnectState();
     clearSubscribeQueue();
     sendTvMessage({ m: 'set_auth_token', p: ['unauthorized_user_token'] });
     resetChartSessions();
@@ -193,7 +213,7 @@ function connectTradingView() {
   tvWs.on('error', (err) => {
     connectionStats.lastErrorAt = Date.now();
     connectionStats.lastError = err?.message || String(err);
-    console.error('[TV-WS] 오류:', err.message);
+    console.error(`[TV-WS] 연결 에러: ${connectionStats.lastError}`);
   });
 }
 
@@ -685,24 +705,39 @@ function sendTvUnsubscribe(symbol, timeframe) {
 
 function scheduleReconnect() {
   if (reconnectTimer) return;
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.error('[TV-WS] 최대 재연결 시도 초과');
-    recoveryAttemptsCounter.inc({ type: 'failed' });
-    return;
+  const plan = buildReconnectPlan({
+    reconnectAttempts,
+    maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS,
+    baseDelayMs: RECONNECT_DELAY_BASE_MS,
+    longRetryState,
+    longRetryIntervalMs: LONG_RETRY_INTERVAL_MS,
+    longRetryGiveupMs: LONG_RETRY_GIVEUP_MS,
+  });
+  if (plan.mode === 'exit') {
+    console.error(`[TV-WS] ${Math.round(LONG_RETRY_GIVEUP_MS / 3600000)}h 연속 실패 — exit(1)로 KeepAlive 재기동 위임`);
+    recoveryAttemptsCounter.inc({ type: plan.metricType || 'failed' });
+    process.exit(1);
   }
-  const delay = Math.min(60_000, RECONNECT_DELAY_BASE_MS * Math.pow(2, reconnectAttempts));
-  reconnectAttempts++;
-  recoveryAttemptsCounter.inc({ type: 'scheduled' });
+  if (plan.mode === 'long_retry') {
+    longRetryState.startedAt = plan.longRetryState.startedAt;
+    longRetryState.attempts = plan.longRetryState.attempts;
+    console.warn(`[TV-WS] 장기 재연결 모드 시도 #${longRetryState.attempts} (MAX 소진 후)`);
+  } else {
+    reconnectAttempts = plan.nextReconnectAttempts;
+    resetLongRetryState(longRetryState);
+  }
+  recoveryAttemptsCounter.inc({ type: plan.metricType });
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connectTradingView();
-  }, delay);
+  }, plan.delayMs);
 }
 
 function forceTradingViewReconnect(reason = 'stale_protected_subscription') {
   const now = Date.now();
   if (lastStaleForceReconnectAt && now - lastStaleForceReconnectAt < STALE_FORCE_RECONNECT_COOLDOWN_MS) return false;
   lastStaleForceReconnectAt = now;
+  resetReconnectState({ clearTimer: true });
   recoveryAttemptsCounter.inc({ type: 'force_reconnect' });
   console.warn(`[TV-WS] TradingView 세션 강제 재연결: ${reason}`);
   try {
