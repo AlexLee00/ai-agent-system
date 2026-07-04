@@ -59,8 +59,16 @@ export function buildCancelledRangeUrl(cancelledHref: string, {
 } = {}): string {
   if (!cancelledHref) throw new Error('cancelledHref_required');
   const url = new URL(cancelledHref);
+  const originalCountFilter = url.searchParams.get('countFilter');
+  const originalStatus = url.searchParams.get('status');
   url.search = '';
-  url.searchParams.set('bookingStatusCodes', 'RC03');
+  if (String(originalCountFilter || '').toUpperCase() === 'CANCELLED') {
+    url.searchParams.set('countFilter', 'CANCELLED');
+  } else if (String(originalStatus || '').toUpperCase() === 'CANCELLED') {
+    url.searchParams.set('status', 'CANCELLED');
+  } else {
+    url.searchParams.set('countFilter', 'CANCELLED');
+  }
   url.searchParams.set('dateDropdownType', 'RANGE');
   url.searchParams.set('dateFilter', 'USEDATE');
   url.searchParams.set('startDateTime', startDate);

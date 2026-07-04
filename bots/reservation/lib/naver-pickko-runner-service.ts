@@ -104,6 +104,11 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
     return `cancel_blocked|${phoneRaw}|${booking.date}|${booking.start}|${booking.end || ''}|${booking.room || ''}`;
   }
 
+  function isPickkoCancelMutationEnabled() {
+    return process.env.PICKKO_CANCEL_MUTATION_ENABLE === '1'
+      && process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION === '1';
+  }
+
   function runPickkoCancel({
     booking,
     scriptsDir,
@@ -132,10 +137,14 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       }
 
       const blockedKey = buildCancelBlockedKey(booking);
+      const mutationEnabled = isPickkoCancelMutationEnabled();
       if (await isCancelledKey(blockedKey)) {
-        log(`ℹ️ [취소 차단 알림 스킵] 이미 수동확인 대기 알림 발송됨 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
-        resolve(PICKKO_CANCEL_BLOCKED_CODE);
-        return;
+        if (!mutationEnabled) {
+          log(`ℹ️ [취소 차단 알림 스킵] 이미 수동확인 대기 알림 발송됨 — ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
+          resolve(PICKKO_CANCEL_BLOCKED_CODE);
+          return;
+        }
+        log(`🧹 [취소차단키 무시] 자동취소 승인 상태이므로 stale cancel_blocked 키를 무시하고 계속 진행: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
       }
 
       if (booking.bookingId) {
@@ -148,8 +157,8 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
         }
       }
 
-      if (process.env.PICKKO_CANCEL_MUTATION_ENABLE !== '1') {
-        log(`🛡️ [픽코 취소 차단] PICKKO_CANCEL_MUTATION_ENABLE!=1 — 실제 취소 실행 안 함: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
+      if (!mutationEnabled) {
+        log(`🛡️ [픽코 취소 차단] PICKKO_CANCEL_MUTATION_ENABLE=1 및 SKA_ENABLE_PICKKO_CANCEL_MUTATION=1 필요 — 실제 취소 실행 안 함: ${maskPhone(phoneRawForKey)} ${booking.date} ${booking.start}~${booking.end} ${booking.room || ''}`);
         await addCancelledKey(blockedKey).catch(() => {});
         await Promise.resolve(sendAlert({
           type: 'error',
@@ -159,7 +168,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           start: booking.start,
           time: `${booking.start}~${booking.end}`,
           room: booking.room,
-          reason: 'PICKKO_CANCEL_MUTATION_ENABLE!=1',
+          reason: 'PICKKO_CANCEL_MUTATION_ENABLE=1 및 SKA_ENABLE_PICKKO_CANCEL_MUTATION=1 필요',
           action: '네이버 취소 감지는 됐지만 픽코 실제 취소는 차단되어 수동 확인이 필요합니다.',
         }));
         await Promise.resolve(publishReservationAlert({

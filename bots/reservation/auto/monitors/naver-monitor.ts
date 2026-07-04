@@ -444,7 +444,8 @@ const naverFutureCancelService = createNaverFutureCancelService({
     ...NAVER_MONITOR_RUNTIME,
     futureStaleCancelMutationEnabled:
       process.env.NAVER_FUTURE_STALE_CANCEL_ENABLE === '1' &&
-      process.env.PICKKO_CANCEL_MUTATION_ENABLE === '1',
+      process.env.PICKKO_CANCEL_MUTATION_ENABLE === '1' &&
+      process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION === '1',
   },
 });
 const naverCancelDetectionService = createNaverCancelDetectionService({

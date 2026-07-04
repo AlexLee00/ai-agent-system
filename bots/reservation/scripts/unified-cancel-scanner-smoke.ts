@@ -36,11 +36,19 @@ async function main() {
     startDate: '2026-07-03',
     endDate: '2026-09-01',
   });
-  assert.ok(url.includes('bookingStatusCodes=RC03'));
+  assert.ok(url.includes('status=CANCELLED'));
+  assert.ok(!url.includes('bookingStatusCodes=RC03'));
   assert.ok(url.includes('dateDropdownType=RANGE'));
   assert.ok(url.includes('dateFilter=USEDATE'));
   assert.ok(url.includes('startDateTime=2026-07-03'));
   assert.ok(url.includes('endDateTime=2026-09-01'));
+
+  const countFilterUrl = buildCancelledRangeUrl('https://partner.booking.naver.com/bizes/596871/booking-list-view?countFilter=CANCELLED', {
+    startDate: '2026-07-03',
+    endDate: '2026-09-01',
+  });
+  assert.ok(countFilterUrl.includes('countFilter=CANCELLED'));
+  assert.ok(!countFilterUrl.includes('bookingStatusCodes=RC03'));
 
   assert.deepStrictEqual(
     await inspectCancelListSoft200(createPage({ rows: 2 })),

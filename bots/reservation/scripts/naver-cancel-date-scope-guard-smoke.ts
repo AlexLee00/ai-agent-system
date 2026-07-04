@@ -35,6 +35,12 @@ function createService({ cancelTabList = [], expandedList = [], tracked = true, 
     },
     shouldProcessCancelledBooking: async () => tracked,
     runPickkoCancel: async (item, key) => {
+      const mutationEnabled = process.env.PICKKO_CANCEL_MUTATION_ENABLE === '1'
+        && process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION === '1';
+      if (!mutationEnabled) {
+        logs.push('자동 픽코 취소 실행 차단: PICKKO_CANCEL_MUTATION_ENABLE=1 및 SKA_ENABLE_PICKKO_CANCEL_MUTATION=1 필요');
+        return 99;
+      }
       pickkoCancels.push({ booking: item, key });
       return 0;
     },
@@ -53,6 +59,11 @@ function createPage() {
 }
 
 async function main() {
+  const previousMutationFlag = process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION;
+  const previousPickkoMutationFlag = process.env.PICKKO_CANCEL_MUTATION_ENABLE;
+  delete process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION;
+  delete process.env.PICKKO_CANCEL_MUTATION_ENABLE;
+
   const todaySeoul = '2099-01-01';
   const future = booking({ bookingId: 'future-cancel', date: '2099-01-02' });
 
@@ -73,6 +84,45 @@ async function main() {
     cancelTab.logs.some((line) => line.includes('[취소탭] 오늘자 외 취소 후보 자동 처리 차단')),
     'future cancel-tab rows should log the date scope guard',
   );
+
+  const expandedBlocked = createService({ expandedList: [future] });
+  const expandedBlockedResult = await expandedBlocked.service.processExpandedCancelled({
+    page: createPage(),
+    cancelledHref: 'https://example.test/cancelled',
+    todaySeoul,
+    naverUrl: 'https://example.test/naver',
+    cycleNewCancelDetections: 0,
+  });
+
+  assert.equal(expandedBlockedResult, 0, 'tracked future expanded cancel rows must not count as handled by default');
+  assert.deepEqual(expandedBlocked.pickkoCancels, [], 'tracked future expanded cancel rows must not call Pickko cancel by default');
+  assert.deepEqual(expandedBlocked.addedKeys, [], 'tracked future expanded cancel rows must not be recorded by default');
+  assert.ok(
+    expandedBlocked.logs.some((line) => line.includes('자동 픽코 취소 실행 차단')),
+    'tracked future expanded cancel rows should be blocked unless mutation is explicitly enabled',
+  );
+
+  process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION = '1';
+  delete process.env.PICKKO_CANCEL_MUTATION_ENABLE;
+
+  const expandedSkaOnly = createService({ expandedList: [future] });
+  const expandedSkaOnlyResult = await expandedSkaOnly.service.processExpandedCancelled({
+    page: createPage(),
+    cancelledHref: 'https://example.test/cancelled',
+    todaySeoul,
+    naverUrl: 'https://example.test/naver',
+    cycleNewCancelDetections: 0,
+  });
+
+  assert.equal(expandedSkaOnlyResult, 0, 'SKA-only approval must not run Pickko cancel');
+  assert.deepEqual(expandedSkaOnly.pickkoCancels, [], 'SKA-only approval must remain blocked by the second gate');
+  assert.ok(
+    expandedSkaOnly.logs.some((line) => line.includes('PICKKO_CANCEL_MUTATION_ENABLE=1 및 SKA_ENABLE_PICKKO_CANCEL_MUTATION=1 필요')),
+    'SKA-only approval should explain both required mutation flags',
+  );
+
+  process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION = '1';
+  process.env.PICKKO_CANCEL_MUTATION_ENABLE = '1';
 
   const expanded = createService({ expandedList: [future] });
   const expandedResult = await expanded.service.processExpandedCancelled({
@@ -178,9 +228,16 @@ async function main() {
   );
 
   console.log('✅ naver cancel date scope guard smoke ok');
+
+  if (previousMutationFlag === undefined) delete process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION;
+  else process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION = previousMutationFlag;
+  if (previousPickkoMutationFlag === undefined) delete process.env.PICKKO_CANCEL_MUTATION_ENABLE;
+  else process.env.PICKKO_CANCEL_MUTATION_ENABLE = previousPickkoMutationFlag;
 }
 
 main().catch((error) => {
+  delete process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION;
+  delete process.env.PICKKO_CANCEL_MUTATION_ENABLE;
   console.error(error.stack || error.message || error);
   process.exit(1);
 });

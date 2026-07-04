@@ -125,33 +125,21 @@ async function run() {
     const endKorean = toKoreanTime(pickkoEndTime(END));
     log(`🔍 매칭 키: "${startKorean}" ~ "${endKorean}"`);
 
-    const viewHref = await page.evaluate((startKo: string, endKo: string, phone: string) => {
+    const viewHref = await page.evaluate((startKo: string, endKo: string, phone: string, room: string) => {
       const clean = (s: any) => (s ?? '').replace(/\s+/g, ' ').trim();
+      const digits = (s: any) => clean(s).replace(/\D+/g, '');
+      const hasSamePhone = (rowText: string) => digits(rowText).includes(phone);
+      const hasSameRoom = (rowText: string) => !room || rowText.toUpperCase().includes(`스터디룸${room}`) || rowText.toUpperCase().includes(`${room}룸`);
       const allTrs = Array.from(document.querySelectorAll('tbody tr'));
       for (const tr of allTrs) {
         const rowText = clean((tr as HTMLElement).textContent);
-        if (rowText.includes(startKo) && rowText.includes(endKo)) {
-          const link = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
-          if (link) return link.href;
-        }
-      }
-      for (const tr of allTrs) {
-        const rowText = clean((tr as HTMLElement).textContent);
-        if (rowText.includes(startKo)) {
-          const link = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
-          if (link) return link.href;
-        }
-      }
-      const phoneSuffix = phone.slice(-8);
-      for (const tr of allTrs) {
-        const rowText = clean((tr as HTMLElement).textContent);
-        if (rowText.includes(phoneSuffix)) {
+        if (hasSamePhone(rowText) && hasSameRoom(rowText) && rowText.includes(startKo) && rowText.includes(endKo)) {
           const link = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
           if (link) return link.href;
         }
       }
       return null;
-    }, startKorean, endKorean, PHONE_RAW);
+    }, startKorean, endKorean, PHONE_RAW, ROOM);
 
     if (!viewHref) {
       const resultsText = await page.evaluate(() => {

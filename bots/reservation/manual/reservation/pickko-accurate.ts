@@ -335,7 +335,10 @@ async function main() {
     const TIME_SLOTS = timeToSlots(START_TIME, END_TIME);
     log(`🔄 [30분 단위 슬롯 변환] ${START_TIME}~${END_TIME} → [${TIME_SLOTS.join(', ')}] (${TIME_SLOTS.length}개)`);
 
-    const adjustedSlots = adjustEffectiveTimeSlots(DATE, TIME_SLOTS);
+    const allowElapsedSlots = process.env.PICKKO_ALLOW_ELAPSED_SLOTS === '1';
+    const adjustedSlots = allowElapsedSlots
+      ? { effectiveTimeSlots: TIME_SLOTS, skippedCount: 0, nowText: '' }
+      : adjustEffectiveTimeSlots(DATE, TIME_SLOTS);
     let effectiveTimeSlots = adjustedSlots.effectiveTimeSlots;
 
     if (adjustedSlots.skippedCount > 0) {
