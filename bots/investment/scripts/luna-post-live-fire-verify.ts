@@ -35,7 +35,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function verifyBlockers({ operating, entryTrigger, worker, liveFireGate, tradeGate, tradeDataHygiene } = {}) {
+function verifyBlockers({ operating, entryTrigger, worker, tradeGate, tradeDataHygiene } = {}) {
   const blockers = [];
   if (operating?.status !== 'luna_l5_operating') blockers.push(`operating_not_ready:${operating?.status || 'unknown'}`);
   if (entryTrigger?.ok !== true) blockers.push(`entry_trigger_not_clean:${entryTrigger?.status || 'unknown'}`);
@@ -44,8 +44,13 @@ function verifyBlockers({ operating, entryTrigger, worker, liveFireGate, tradeGa
   if (!tradeDataHygieneReady(tradeDataHygiene)) {
     blockers.push(`trade_data_hygiene_not_ready:${tradeDataHygieneStatus(tradeDataHygiene)}`);
   }
-  if (liveFireGate?.status === 'live_fire_blocked') blockers.push('live_fire_gate_blocked');
   return blockers;
+}
+
+function verifyObservations({ liveFireGate } = {}) {
+  const observations = [];
+  if (liveFireGate?.status === 'live_fire_blocked') observations.push('live_fire_gate_observation:live_fire_blocked');
+  return observations;
 }
 
 export function isSettleablePostLiveFireVerification(report = {}) {
@@ -73,6 +78,7 @@ async function buildLunaPostLiveFireVerificationSnapshot({ exchange = 'binance',
     buildRuntimeTradeDataHygiene(),
   ]);
   const blockers = verifyBlockers({ operating, entryTrigger, worker, liveFireGate, tradeGate, tradeDataHygiene });
+  const observations = verifyObservations({ liveFireGate });
   return {
     ok: blockers.length === 0,
     checkedAt: new Date().toISOString(),
@@ -80,6 +86,7 @@ async function buildLunaPostLiveFireVerificationSnapshot({ exchange = 'binance',
     exchange,
     hours,
     blockers,
+    observations,
     operating: {
       status: operating.status,
       nextAction: operating.nextAction,
@@ -204,8 +211,18 @@ export async function runLunaPostLiveFireVerificationSmoke() {
     tradeDataHygiene: { ok: false, status: 'needs_attention', blockers: ['trade_data_hygiene:open_journal_reconcile_pending'] },
     liveFireGate: { status: 'live_fire_blocked' },
   });
-  assert.ok(blocked.includes('live_fire_gate_blocked'));
+  assert.equal(blocked.includes('live_fire_gate_blocked'), false);
   assert.ok(blocked.includes('trade_data_hygiene_not_ready:needs_attention'));
+  const liveFireOnly = verifyBlockers({
+    operating: { status: 'luna_l5_operating' },
+    entryTrigger: { ok: true, status: 'entry_trigger_operating' },
+    worker: { ok: true, status: 'entry_trigger_worker_ready' },
+    tradeGate: { ok: true, status: 'trade_reconciliation_clear' },
+    tradeDataHygiene: { ok: true, status: 'ready', hygiene: { status: 'ready' } },
+    liveFireGate: { status: 'live_fire_blocked' },
+  });
+  assert.deepEqual(liveFireOnly, []);
+  assert.deepEqual(verifyObservations({ liveFireGate: { status: 'live_fire_blocked' } }), ['live_fire_gate_observation:live_fire_blocked']);
   const advisoryOnly = verifyBlockers({
     operating: { status: 'luna_l5_operating' },
     entryTrigger: { ok: true, status: 'entry_trigger_operating' },

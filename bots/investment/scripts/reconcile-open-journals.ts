@@ -369,6 +369,15 @@ export function buildWriteImpactGuard(summary = {}, maxAffectedTrades = 10) {
   };
 }
 
+export const RECONCILE_OPEN_JOURNAL_MARKETS = ['crypto', 'domestic', 'overseas'];
+
+export function normalizeReconcileOpenJournalsMarket(value = 'crypto') {
+  const normalized = String(value || 'crypto').trim().toLowerCase();
+  if (normalized === 'kis') return 'domestic';
+  if (normalized === 'all') return 'all';
+  return RECONCILE_OPEN_JOURNAL_MARKETS.includes(normalized) ? normalized : 'crypto';
+}
+
 export function parseReconcileOpenJournalsArgs(args = []) {
   const dryRun = !args.includes('--write');
   const confirmLive = args.includes('--confirm-live');
@@ -382,9 +391,7 @@ export function parseReconcileOpenJournalsArgs(args = []) {
   const symbols = symbolsArg
     ? symbolsArg.split(',').map((value) => value.trim()).filter(Boolean)
     : [];
-  const market = ['crypto', 'domestic', 'overseas'].includes(String(marketArg || '').trim())
-    ? String(marketArg).trim()
-    : 'crypto';
+  const market = normalizeReconcileOpenJournalsMarket(marketArg);
   return {
     dryRun,
     market,
@@ -408,12 +415,14 @@ export async function reconcileOpenJournals({
   maxAffectedTrades = 10,
   resolveFillsDryRun = false,
   fillResolveEnabled = boolEnv('LUNA_RECONCILE_FILL_RESOLVE_ENABLED', false),
+  marketRunner = null,
 } = {}) {
+  const normalizedMarket = normalizeReconcileOpenJournalsMarket(market);
   if (dryRun === false && confirmLive !== true) {
     return {
       ok: false,
       dryRun: false,
-      market,
+      market: normalizedMarket,
       blocked: true,
       reason: 'confirm_live_required',
       message: '라이브 open journal을 닫으려면 --write --confirm-live를 함께 지정해야 합니다.',
@@ -424,10 +433,87 @@ export async function reconcileOpenJournals({
     };
   }
 
+  if (normalizedMarket === 'all') {
+    const runMarket = marketRunner || ((options) => reconcileOpenJournals(options));
+    if (dryRun === false) {
+      const preflight = await reconcileOpenJournals({
+        dryRun: true,
+        market: 'all',
+        noPositionMinAgeHours,
+        dustCloseMaxValueUsdt,
+        symbols,
+        confirmLive: true,
+        maxAffectedTrades: null,
+        resolveFillsDryRun,
+        fillResolveEnabled,
+        marketRunner,
+      });
+      const impactGuard = buildWriteImpactGuard(preflight.summary, maxAffectedTrades);
+      if (impactGuard) {
+        return {
+          ...preflight,
+          ...impactGuard,
+          dryRun: false,
+          confirmLive,
+        };
+      }
+    }
+
+    const marketResults = [];
+    for (const childMarket of RECONCILE_OPEN_JOURNAL_MARKETS) {
+      const child = await runMarket({
+        dryRun,
+        market: childMarket,
+        noPositionMinAgeHours,
+        dustCloseMaxValueUsdt,
+        symbols,
+        confirmLive,
+        maxAffectedTrades: null,
+        resolveFillsDryRun,
+        fillResolveEnabled,
+      });
+      marketResults.push({
+        market: childMarket,
+        ok: child?.ok === true,
+        blocked: child?.blocked === true,
+        totalScopes: Number(child?.totalScopes || 0),
+        candidates: Number(child?.candidates || 0),
+        summary: child?.summary || summarizeReconcileResults([]),
+        results: child?.results || [],
+      });
+    }
+
+    const combinedResults = marketResults.flatMap((child) => (
+      (child.results || []).map((row) => ({ ...row, market: row?.market || child.market }))
+    ));
+    const summary = summarizeReconcileResults(combinedResults);
+    return {
+      ok: marketResults.every((child) => child.ok && !child.blocked),
+      dryRun,
+      market: 'all',
+      confirmLive,
+      maxAffectedTrades: maxAffectedTrades == null
+        ? null
+        : Number.isFinite(Number(maxAffectedTrades)) ? Number(maxAffectedTrades) : null,
+      totalScopes: marketResults.reduce((sum, child) => sum + child.totalScopes, 0),
+      candidates: combinedResults.length,
+      summary,
+      markets: marketResults.map(({ market: childMarket, ok, blocked, totalScopes, candidates, summary: childSummary }) => ({
+        market: childMarket,
+        ok,
+        blocked,
+        totalScopes,
+        candidates,
+        summary: childSummary,
+      })),
+      results: combinedResults,
+    };
+  }
+
   if (dryRun === false) {
     const preflight = await reconcileOpenJournals({
       dryRun: true,
-      market,
+      market: normalizedMarket,
       noPositionMinAgeHours,
       dustCloseMaxValueUsdt,
       symbols,
@@ -448,7 +534,7 @@ export async function reconcileOpenJournals({
   await db.initSchema();
   await journalDb.initJournalSchema();
 
-  const openEntries = await journalDb.getOpenJournalEntries(market);
+  const openEntries = await journalDb.getOpenJournalEntries(normalizedMarket);
   const symbolFilter = new Set((symbols || []).map((value) => String(value).trim()).filter(Boolean));
   const filteredEntries = symbolFilter.size > 0
     ? openEntries.filter((entry) => symbolFilter.has(String(entry.symbol || '').trim()))
@@ -601,7 +687,7 @@ export async function reconcileOpenJournals({
   return {
     ok: true,
     dryRun,
-    market,
+    market: normalizedMarket,
     confirmLive,
     maxAffectedTrades: Number.isFinite(Number(maxAffectedTrades)) ? Number(maxAffectedTrades) : null,
     totalScopes: grouped.size,

@@ -38,6 +38,26 @@ function normalizeCode(code = '') {
   return String(code || '').trim();
 }
 
+function normalizeOpenJournalMarket(market = '') {
+  const normalized = String(market || '').trim().toLowerCase();
+  if (normalized === 'kis') return 'domestic';
+  return ['crypto', 'domestic', 'overseas'].includes(normalized) ? normalized : null;
+}
+
+export function resolveOpenJournalReconcileMarket(openJournal = {}) {
+  const markets = new Set((openJournal.scopes || [])
+    .map((scope) => normalizeOpenJournalMarket(scope?.market))
+    .filter(Boolean));
+  return markets.size === 1 ? [...markets][0] : 'all';
+}
+
+export function buildOpenJournalReconcileCommand(market = 'all', { write = false } = {}) {
+  const normalizedMarket = normalizeOpenJournalMarket(market) || 'all';
+  const base = `npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --json --market=${normalizedMarket}`;
+  if (!write) return base;
+  return `npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --write --confirm-live --market=${normalizedMarket} --max-affected-trades=10 --json`;
+}
+
 export function isExpectedPolicyBlockCode(code = '') {
   const normalized = normalizeCode(code);
   if (!normalized) return false;
@@ -214,13 +234,14 @@ export function buildTradeDataHygieneFindings({
   const openSummary = openJournal.summary || {};
   const staleOpenTrades = num(openSummary.affectedTradeCount, 0);
   if (staleOpenTrades > 0) {
+    const reconcileMarket = resolveOpenJournalReconcileMarket(openJournal);
     findings.push({
       id: 'open_journal_reconcile_pending',
       severity: 'P0',
       count: staleOpenTrades,
       reason: 'open journal rows no longer match the authoritative position table',
-      command: 'npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --json --market=crypto',
-      writeCommand: 'npm --prefix bots/investment run -s runtime:reconcile-open-journals -- --write --confirm-live --market=crypto --max-affected-trades=10 --json',
+      command: buildOpenJournalReconcileCommand(reconcileMarket),
+      writeCommand: buildOpenJournalReconcileCommand(reconcileMarket, { write: true }),
       approvalRequired: true,
       approvalReason: 'manual DB journal close/reconcile write; dry-run evidence must be reviewed first',
     });
@@ -299,6 +320,8 @@ export default {
   EXPECTED_POLICY_BLOCK_CODE_SUFFIX,
   isExpectedPolicyBlockCode,
   resolveExpectedPolicyBlockStatus,
+  resolveOpenJournalReconcileMarket,
+  buildOpenJournalReconcileCommand,
   summarizeOpenJournalHygiene,
   buildTradeDataHygieneFindings,
   buildTradeDataHygieneReport,

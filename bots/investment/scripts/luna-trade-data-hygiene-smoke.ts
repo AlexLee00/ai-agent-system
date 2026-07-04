@@ -3,9 +3,11 @@
 
 import assert from 'node:assert/strict';
 import {
+  buildOpenJournalReconcileCommand,
   buildTradeDataHygieneFindings,
   isExpectedPolicyBlockCode,
   resolveExpectedPolicyBlockStatus,
+  resolveOpenJournalReconcileMarket,
   summarizeOpenJournalHygiene,
 } from '../shared/trade-data-hygiene.ts';
 
@@ -80,6 +82,30 @@ assert.equal(findings.filter((finding) => finding.severity === 'P0').length, 2);
 const openJournalFinding = findings.find((finding) => finding.id === 'open_journal_reconcile_pending');
 assert.equal(openJournalFinding.approvalRequired, true);
 assert.equal(openJournalFinding.writeCommand.includes('--write --confirm-live'), true);
+assert.equal(openJournalFinding.command.includes('--market=crypto'), true);
+
+const overseasOpenJournal = {
+  summary: { affectedTradeCount: 1 },
+  scopes: [{ market: 'overseas', openTradeIds: ['os-1'] }],
+};
+assert.equal(resolveOpenJournalReconcileMarket(overseasOpenJournal), 'overseas');
+const overseasFinding = buildTradeDataHygieneFindings({ openJournal: overseasOpenJournal })
+  .find((finding) => finding.id === 'open_journal_reconcile_pending');
+assert.equal(overseasFinding.command.includes('--market=overseas'), true);
+assert.equal(overseasFinding.writeCommand.includes('--market=overseas'), true);
+
+const mixedOpenJournal = {
+  summary: { affectedTradeCount: 2 },
+  scopes: [
+    { market: 'crypto', openTradeIds: ['c-1'] },
+    { market: 'overseas', openTradeIds: ['o-1'] },
+  ],
+};
+assert.equal(resolveOpenJournalReconcileMarket(mixedOpenJournal), 'all');
+const mixedFinding = buildTradeDataHygieneFindings({ openJournal: mixedOpenJournal })
+  .find((finding) => finding.id === 'open_journal_reconcile_pending');
+assert.equal(mixedFinding.command.includes('--market=all'), true);
+assert.equal(buildOpenJournalReconcileCommand('kis').includes('--market=domestic'), true);
 
 const payload = {
   ok: true,

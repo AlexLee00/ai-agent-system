@@ -25,6 +25,7 @@ export function evaluateLunaLiveFireReadinessGate({
   const legacyHeartbeatAgeMinutes = worker?.heartbeat?.ageMinutes ?? operating?.entryTrigger?.heartbeatAgeMinutes ?? null;
   const heartbeatAgeMinutes = workerMigrated ? null : legacyHeartbeatAgeMinutes;
 
+  // L5 operating status is base-signal only; final/live-fire gate state must remain an observation.
   if (operating.status !== 'luna_l5_operating') blockers.push(`operating_not_ready:${operating.status || 'unknown'}`);
   if (Array.isArray(operating.readinessWarnings) && operating.readinessWarnings.length) blockers.push('luna_readiness_warnings');
   if (killSwitches.LUNA_VALIDATION_ENABLED !== 'true') blockers.push('validation_canary_not_enabled');

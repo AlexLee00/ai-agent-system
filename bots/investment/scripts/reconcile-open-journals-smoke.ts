@@ -10,9 +10,11 @@ import {
   deriveExpectedExitSide,
   entryAgeHours,
   isDustNoPositionScope,
+  normalizeReconcileOpenJournalsMarket,
   parseReconcileOpenJournalsArgs,
   pickMatchingSellTradeForOpenScope,
   reconcileOpenJournals,
+  RECONCILE_OPEN_JOURNAL_MARKETS,
   scopeKey,
   summarizeReconcileResults,
   tolerance,
@@ -86,8 +88,68 @@ assert.equal(buildWriteImpactGuard({ affectedTradeCount: 10 }, 10), null);
 const parsedOverseas = parseReconcileOpenJournalsArgs(['--market=overseas', '--symbols=POET,AAPL']);
 assert.equal(parsedOverseas.market, 'overseas');
 assert.deepEqual(parsedOverseas.symbols, ['POET', 'AAPL']);
+assert.equal(parseReconcileOpenJournalsArgs(['--market=all']).market, 'all');
+assert.equal(parseReconcileOpenJournalsArgs(['--market=kis']).market, 'domestic');
+assert.equal(normalizeReconcileOpenJournalsMarket('KIS'), 'domestic');
 const parsedDust = parseReconcileOpenJournalsArgs(['--dust-close-max-value-usdt=0.5']);
 assert.equal(parsedDust.dustCloseMaxValueUsdt, 0.5);
+
+const fixtureByMarket = {
+  crypto: {
+    ok: true,
+    market: 'crypto',
+    totalScopes: 1,
+    candidates: 1,
+    results: [{ action: 'close_all_no_position', closedTradeIds: ['c-1'] }],
+    summary: summarizeReconcileResults([{ action: 'close_all_no_position', closedTradeIds: ['c-1'] }]),
+  },
+  domestic: {
+    ok: true,
+    market: 'domestic',
+    totalScopes: 2,
+    candidates: 1,
+    results: [{ action: 'close_stale_duplicates', staleTradeIds: ['d-1'] }],
+    summary: summarizeReconcileResults([{ action: 'close_stale_duplicates', staleTradeIds: ['d-1'] }]),
+  },
+  overseas: {
+    ok: true,
+    market: 'overseas',
+    totalScopes: 3,
+    candidates: 1,
+    results: [{ action: 'observe_latest_mismatch', openTradeIds: ['o-1'] }],
+    summary: summarizeReconcileResults([{ action: 'observe_latest_mismatch', openTradeIds: ['o-1'] }]),
+  },
+};
+
+const calledMarkets = [];
+const allDryRun = await reconcileOpenJournals({
+  market: 'all',
+  marketRunner: async ({ market }) => {
+    calledMarkets.push(market);
+    return fixtureByMarket[market];
+  },
+});
+assert.deepEqual(calledMarkets, RECONCILE_OPEN_JOURNAL_MARKETS);
+assert.equal(allDryRun.market, 'all');
+assert.equal(allDryRun.totalScopes, 6);
+assert.equal(allDryRun.candidates, 3);
+assert.equal(allDryRun.summary.affectedTradeCount, 2);
+assert.equal(allDryRun.summary.observeScopes, 1);
+
+const guardCalls = [];
+const allWriteBlocked = await reconcileOpenJournals({
+  dryRun: false,
+  confirmLive: true,
+  market: 'all',
+  maxAffectedTrades: 1,
+  marketRunner: async ({ market, dryRun }) => {
+    guardCalls.push(`${market}:${dryRun ? 'dry' : 'write'}`);
+    return fixtureByMarket[market];
+  },
+});
+assert.equal(allWriteBlocked.blocked, true);
+assert.equal(allWriteBlocked.reason, 'max_affected_trades_exceeded');
+assert.deepEqual(guardCalls, RECONCILE_OPEN_JOURNAL_MARKETS.map((market) => `${market}:dry`));
 
 const blocked = await reconcileOpenJournals({ dryRun: false, confirmLive: false });
 assert.equal(blocked.ok, false);

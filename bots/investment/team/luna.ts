@@ -44,7 +44,7 @@ import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary, shouldPubl
 import { buildDiscoveryUniverse, toDiscoveryMarket } from './discovery/discovery-universe.ts';
 import { runNewsToSymbolMapping } from './discovery/news-to-symbol-mapper.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
-import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.ts';
+import { buildAccuracyReport } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
 import {
   ANALYST_WEIGHTS as POLICY_ANALYST_WEIGHTS,
@@ -114,6 +114,14 @@ import {
   buildAnalysisSummary as buildAnalysisSummaryBase,
   createLunaSymbolDecisionPromptBuilder,
 } from '../shared/luna-symbol-decision-prompt.ts';
+import {
+  REVIEW_HINT_LOW_WIN_RATE_DELTA,
+  REVIEW_HINT_MIN_TRADES,
+  REVIEW_HINT_NEGATIVE_AVG_PNL_DELTA,
+  REVIEW_HINT_WIN_RATE_BOOST_DELTA,
+  buildReviewConfidenceHint,
+  mapSuggestedWeightsToAnalystTypes,
+} from './luna-support.ts';
 
 const LUNA_RUNTIME = getLunaRuntimeConfig();
 const LUNA_STOCK_PROFILE = getLunaStockStrategyProfile();
@@ -242,18 +250,6 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
   return fuseSignalsPolicy(analyses, weights);
 }
 
-function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}, fallbackWeights = ANALYST_WEIGHTS) {
-  const sentinelWeight = suggestedWeights.sentinel
-    ?? (((suggestedWeights.sophia ?? fallbackWeights[ANALYST_TYPES.SENTIMENT]) + (suggestedWeights.hermes ?? fallbackWeights[ANALYST_TYPES.NEWS])) / 2);
-  return normalizeWeights({
-    [ANALYST_TYPES.TA_MTF]: suggestedWeights.aria ?? fallbackWeights[ANALYST_TYPES.TA_MTF],
-    [ANALYST_TYPES.ONCHAIN]: suggestedWeights.oracle ?? fallbackWeights[ANALYST_TYPES.ONCHAIN],
-    [ANALYST_TYPES.SENTINEL]: sentinelWeight,
-    [ANALYST_TYPES.SENTIMENT]: suggestedWeights.sophia ?? fallbackWeights[ANALYST_TYPES.SENTIMENT],
-    [ANALYST_TYPES.NEWS]: suggestedWeights.hermes ?? fallbackWeights[ANALYST_TYPES.NEWS],
-  });
-}
-
 async function loadAdaptiveAnalystWeights(exchange = 'binance', marketRegime = null) {
   const baseWeights = buildAnalystWeights(exchange, { marketRegime });
   try {
@@ -274,31 +270,7 @@ async function loadAdaptiveAnalystWeights(exchange = 'binance', marketRegime = n
   }
 }
 
-const REVIEW_HINT_MIN_TRADES = 30;
-const REVIEW_HINT_WIN_RATE_BOOST_DELTA = 0.025;
-const REVIEW_HINT_LOW_WIN_RATE_DELTA = -0.04;
-const REVIEW_HINT_NEGATIVE_AVG_PNL_DELTA = -0.025;
-
-export function buildReviewConfidenceHint(insight) {
-  if (!insight || Number(insight.closedTrades || 0) < REVIEW_HINT_MIN_TRADES) {
-    return { insight, delta: 0, notes: [] };
-  }
-
-  let delta = 0;
-  const notes = [];
-  if (insight.winRate != null && insight.winRate >= 0.65) {
-    delta += REVIEW_HINT_WIN_RATE_BOOST_DELTA;
-    notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
-  } else if (insight.winRate != null && insight.winRate < 0.4) {
-    delta += REVIEW_HINT_LOW_WIN_RATE_DELTA;
-    notes.push(`최근 승률 ${(insight.winRate * 100).toFixed(0)}%`);
-  }
-  if (insight.avgPnlPercent != null && insight.avgPnlPercent < 0) {
-    delta += REVIEW_HINT_NEGATIVE_AVG_PNL_DELTA;
-    notes.push(`평균 실현손익 ${insight.avgPnlPercent.toFixed(2)}%`);
-  }
-  return { insight, delta, notes };
-}
+export { buildReviewConfidenceHint };
 
 export const __test = {
   buildReviewConfidenceHint,

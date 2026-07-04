@@ -38,10 +38,25 @@ function nextAction({ validation, prediction, entryTrigger, tradeReconciliation,
   if (posttradeFeedback?.ok === false) return posttradeFeedback.nextAction || 'repair_posttrade_feedback_loop';
   if (entryTrigger?.warnings?.length) return 'repair_entry_trigger_worker_runtime';
   if (tradeReconciliation?.ok === false) return 'resolve_trade_reconciliation_blockers';
-  if (finalGate?.ok === false) return 'resolve_luna_l5_final_gate_blockers';
   if (validation?.ok && validation?.alreadyEnabled !== true) return 'enable_validation_canary';
   if (prediction?.ok && prediction?.alreadyEnabled !== true) return 'enable_prediction_canary';
   return 'continue_observation';
+}
+
+export function buildLunaL5OperatingBlockers({ mapek = {}, tradeReconciliation = {}, posttradeFeedback = {} } = {}) {
+  return [
+    ...(mapek.ok ? [] : ['mapek_not_clean']),
+    ...(tradeReconciliation.ok ? [] : ['trade_reconciliation_attention']),
+    ...(posttradeFeedback.ok ? [] : ['posttrade_feedback_attention']),
+  ];
+}
+
+export function buildLunaL5OperatingObservations({ finalGate = {} } = {}) {
+  const observations = [];
+  if (finalGate.ok === false) {
+    observations.push(`final_gate_observation:${finalGate.status || 'unknown'}`);
+  }
+  return observations;
 }
 
 export async function buildLunaL5OperatingReport({ hours = 24 } = {}) {
@@ -73,19 +88,15 @@ export async function buildLunaL5OperatingReport({ hours = 24 } = {}) {
   const phaseActivationStatus = phaseActivationComplete
     ? 'luna_l5_phase_activation_complete'
     : phaseActivation.status;
-  const blockers = [
-    ...(mapek.ok ? [] : ['mapek_not_clean']),
-    ...(tradeReconciliation.ok ? [] : ['trade_reconciliation_attention']),
-    ...(finalGate.ok ? [] : ['luna_l5_final_gate_attention']),
-    ...(posttradeFeedback.ok ? [] : ['posttrade_feedback_attention']),
-    ...(validation.ok || prediction.ok ? [] : []),
-  ];
+  const blockers = buildLunaL5OperatingBlockers({ mapek, tradeReconciliation, posttradeFeedback });
+  const observations = buildLunaL5OperatingObservations({ finalGate });
   const baseReport = {
     ok: blockers.length === 0,
     checkedAt: new Date().toISOString(),
     status: blockers.length === 0 ? 'luna_l5_operating' : 'luna_l5_attention',
     nextAction: nextAction({ validation, prediction, entryTrigger, tradeReconciliation, finalGate, phaseActivation, posttradeFeedback }),
     blockers,
+    observations,
     killSwitches: Object.fromEntries(Object.entries(readiness.G1_killSwitches || {}).map(([key, value]) => [key, value?.effectiveHint ?? null])),
     mapek: {
       ok: mapek.ok,
@@ -190,6 +201,7 @@ export async function publishLunaL5OperatingReport(report = {}) {
       checkedAt: report.checkedAt,
       status: report.status,
       nextAction: report.nextAction,
+      observations: report.observations || [],
       killSwitches: report.killSwitches,
       mapek: report.mapek,
       validation: report.validation,
@@ -205,6 +217,22 @@ export async function publishLunaL5OperatingReport(report = {}) {
 }
 
 export async function runLunaL5OperatingReportSmoke() {
+  const baseClearBlockers = buildLunaL5OperatingBlockers({
+    mapek: { ok: true },
+    tradeReconciliation: { ok: true },
+    posttradeFeedback: { ok: true },
+  });
+  assert.deepEqual(baseClearBlockers, []);
+  const finalGateObservations = buildLunaL5OperatingObservations({
+    finalGate: { ok: false, status: 'luna_l5_final_gate_blocked' },
+  });
+  assert.deepEqual(finalGateObservations, ['final_gate_observation:luna_l5_final_gate_blocked']);
+  const baseFailBlockers = buildLunaL5OperatingBlockers({
+    mapek: { ok: true },
+    tradeReconciliation: { ok: false },
+    posttradeFeedback: { ok: true },
+  });
+  assert.deepEqual(baseFailBlockers, ['trade_reconciliation_attention']);
   const report = await buildLunaL5OperatingReport({ hours: 24 });
   assert.ok(report.checkedAt);
   assert.ok(report.mapek);
