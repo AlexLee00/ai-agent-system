@@ -139,6 +139,64 @@ function testMergePrRequiresEnvGate() {
   }
 }
 
+function testCreateRevertPrUsesMockableGitAndGh() {
+  const git = recorder();
+  const gh = recorder({
+    'pr create --base main --head claude/revert-abc1234 --title Revert test --body body': 'https://github.com/example/repo/pull/9\n',
+    'pr view https://github.com/example/repo/pull/9 --json number,url': '{"number":9,"url":"https://github.com/example/repo/pull/9"}\n',
+  });
+  const result = gitOps.createRevertPR({
+    mergeCommit: 'abc1234',
+    branch: 'claude/revert-abc1234',
+    title: 'Revert test',
+    body: 'body',
+    switchBack: false,
+  }, { gitFn: git, ghFn: gh, cwd: '/repo' });
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.prNumber, 9);
+  assert.deepEqual(git.calls.map((call) => call.args), [
+    ['switch', '-c', 'claude/revert-abc1234'],
+    ['revert', '--no-edit', 'abc1234'],
+    ['check-ref-format', '--branch', 'claude/revert-abc1234'],
+    ['push', 'origin', 'HEAD:claude/revert-abc1234'],
+  ]);
+  assert.deepEqual(gh.calls.map((call) => call.args), [
+    ['pr', 'create', '--base', 'main', '--head', 'claude/revert-abc1234', '--title', 'Revert test', '--body', 'body'],
+    ['pr', 'view', 'https://github.com/example/repo/pull/9', '--json', 'number,url'],
+  ]);
+}
+
+function testCreateRevertPrCleansRemoteBranchOnPrFailure() {
+  const git = recorder();
+  const gh = recorder({
+    'pr create --base main --head claude/revert-fail --title Revert fail --body body': new Error('gh failed'),
+  });
+  const result = gitOps.createRevertPR({
+    mergeCommit: 'def4567',
+    branch: 'claude/revert-fail',
+    title: 'Revert fail',
+    body: 'body',
+    switchBack: false,
+  }, { gitFn: git, ghFn: gh, cwd: '/repo' });
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.branchCleanup.deleted, true);
+  assert.deepEqual(git.calls.map((call) => call.args), [
+    ['switch', '-c', 'claude/revert-fail'],
+    ['revert', '--no-edit', 'def4567'],
+    ['check-ref-format', '--branch', 'claude/revert-fail'],
+    ['push', 'origin', 'HEAD:claude/revert-fail'],
+    ['push', 'origin', '--delete', 'claude/revert-fail'],
+  ]);
+}
+
+function testCreateRevertPrRejectsOptionLikeCommit() {
+  const git = recorder();
+  const result = gitOps.createRevertPR({ mergeCommit: '--abort', switchBack: false }, { gitFn: git });
+  assert.strictEqual(result.ok, false);
+  assert.match(result.error, /flags not allowed/);
+  assert.deepEqual(git.calls, []);
+}
+
 testRunGitMockableHelpers();
 testCommitFileUsesPathScopedCommit();
 testPushRefSecurity();
@@ -146,5 +204,8 @@ testRollbackAndOriginContains();
 testCreatePrUsesGhAndReturnsViewResult();
 testCreatePrFailureDoesNotThrow();
 testMergePrRequiresEnvGate();
+testCreateRevertPrUsesMockableGitAndGh();
+testCreateRevertPrCleansRemoteBranchOnPrFailure();
+testCreateRevertPrRejectsOptionLikeCommit();
 
 console.log('git-ops tests ok');

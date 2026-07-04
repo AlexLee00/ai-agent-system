@@ -37,7 +37,42 @@ function runMockSmoke() {
     if (original === undefined) delete process.env.CLAUDE_PR_AUTOMERGE_ENABLED;
     else process.env.CLAUDE_PR_AUTOMERGE_ENABLED = original;
   }
-  return { mock: true, createPrCalls: gh.calls.length };
+
+  const revertGit = recorder();
+  const revertGh = recorder({
+    'pr create --base main --head claude/revert-smoke --title Revert smoke --body body': 'https://github.com/example/repo/pull/12\n',
+    'pr view https://github.com/example/repo/pull/12 --json number,url': '{"number":12,"url":"https://github.com/example/repo/pull/12"}\n',
+  });
+  const revert = gitOps.createRevertPR({
+    mergeCommit: 'abc1234',
+    branch: 'claude/revert-smoke',
+    title: 'Revert smoke',
+    body: 'body',
+    switchBack: false,
+  }, { gitFn: revertGit, ghFn: revertGh });
+  assert.strictEqual(revert.ok, true);
+  assert.deepStrictEqual(revertGit.calls.map((call) => call.args), [
+    ['switch', '-c', 'claude/revert-smoke'],
+    ['revert', '--no-edit', 'abc1234'],
+    ['check-ref-format', '--branch', 'claude/revert-smoke'],
+    ['push', 'origin', 'HEAD:claude/revert-smoke'],
+  ]);
+
+  const failGit = recorder();
+  const failGh = recorder({
+    'pr create --base main --head claude/revert-fail --title Revert fail --body body': new Error('gh failed'),
+  });
+  const failedRevert = gitOps.createRevertPR({
+    mergeCommit: 'def4567',
+    branch: 'claude/revert-fail',
+    title: 'Revert fail',
+    body: 'body',
+    switchBack: false,
+  }, { gitFn: failGit, ghFn: failGh });
+  assert.strictEqual(failedRevert.ok, false);
+  assert.strictEqual(failedRevert.branchCleanup.deleted, true);
+
+  return { mock: true, createPrCalls: gh.calls.length, revertPrCalls: revertGh.calls.length };
 }
 
 function run(command, args, options = {}) {

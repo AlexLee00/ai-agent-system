@@ -282,6 +282,77 @@ function mergePR(prNumber, mergeOptions = {}, ghFnOrOptions = runGh, options = {
   }
 }
 
+function cleanupRemoteBranch(branch, gitFn = runGit, options = {}) {
+  try {
+    gitFn(['push', 'origin', '--delete', branch], { ...options, timeout: options.timeout || 120000 });
+    return { attempted: true, deleted: true };
+  } catch (error) {
+    return { attempted: true, deleted: false, error: summarizeToolError(error) };
+  }
+}
+
+function validateCommitSha(value, label = 'commit') {
+  const normalized = String(value || '').trim();
+  if (!normalized) throw new Error(`${label} is required`);
+  if (normalized.startsWith('-')) throw new Error(`flags not allowed: ${normalized}`);
+  if (!/^[A-Fa-f0-9]{7,64}$/.test(normalized)) throw new Error(`invalid ${label}: ${normalized}`);
+  return normalized;
+}
+
+function createRevertPR(input = {}, helpers = {}) {
+  const gitFn = helpers.gitFn || runGit;
+  const ghFn = helpers.ghFn || runGh;
+  const cwd = helpers.cwd || ROOT;
+  const timeout = helpers.timeout || 120000;
+  let mergeCommit = '';
+  try {
+    mergeCommit = validateCommitSha(input.mergeCommit || input.commit, 'mergeCommit');
+  } catch (error) {
+    return { ok: false, error: summarizeToolError(error) };
+  }
+
+  const branch = validateBranchName(
+    input.branch || `claude/revert-${mergeCommit.replace(/[^A-Za-z0-9._/-]+/g, '-').slice(0, 16)}`,
+    'revert branch'
+  );
+  const base = validateBranchName(input.base || 'main', 'base');
+  const title = String(input.title || `revert: ${mergeCommit.slice(0, 12)}`).trim();
+  const body = String(input.body || [
+    'Automated rollback PR prepared by Claude automerge safety.',
+    '',
+    `- merge_commit: ${mergeCommit}`,
+    `- reason: ${input.reason || 'post_merge_failure'}`,
+  ].join('\n'));
+  let remotePushed = false;
+  let originalBranch = null;
+
+  try {
+    if (input.switchBack !== false) {
+      try { originalBranch = currentBranch(gitFn, { cwd, timeout: 10000 }); } catch {}
+    }
+    gitFn(['switch', '-c', branch], { cwd, timeout });
+    gitFn(['revert', '--no-edit', mergeCommit], { cwd, timeout });
+    pushHeadToBranch(branch, gitFn, { cwd, timeout });
+    remotePushed = true;
+    const pr = createPR({ head: branch, base, title, body }, ghFn, { cwd, timeout });
+    if (!pr?.ok) {
+      const branchCleanup = cleanupRemoteBranch(branch, gitFn, { cwd, timeout });
+      return { ok: false, branch, branchCleanup, error: pr?.error || 'revert_pr_create_failed' };
+    }
+    return { ok: true, branch, prNumber: pr.number || null, prUrl: pr.url || null, pr };
+  } catch (error) {
+    const branchCleanup = remotePushed ? cleanupRemoteBranch(branch, gitFn, { cwd, timeout }) : null;
+    return { ok: false, branch, branchCleanup, error: summarizeToolError(error) };
+  } finally {
+    if (originalBranch && originalBranch !== 'HEAD') {
+      try { gitFn(['switch', originalBranch], { cwd, timeout: 60000 }); } catch {}
+      if (!remotePushed || input.cleanupLocalOnFailure === true) {
+        try { gitFn(['branch', '-D', branch], { cwd, timeout: 60000 }); } catch {}
+      }
+    }
+  }
+}
+
 module.exports = {
   ROOT,
   runGit,
@@ -305,8 +376,10 @@ module.exports = {
   pushHeadToBranch,
   validatePushRef,
   validateBranchName,
+  validateCommitSha,
   createPR,
   mergePR,
+  createRevertPR,
   originContains,
   rollbackToHead,
 };

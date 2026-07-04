@@ -42,6 +42,7 @@
     "test:llm-leak":     "node --disable-warning=DEP0205 --import tsx scripts/claude-llm-leak-guard-smoke.ts",
     "test:launchd-node26": "node --disable-warning=DEP0205 --import tsx scripts/launchd-node26-runner-smoke.ts",
     "smoke:claude-gitops-pr": "node --disable-warning=DEP0205 --import tsx scripts/claude-gitops-pr-smoke.ts",
+    "smoke:claude-pr-automerge-gate": "node --disable-warning=DEP0205 --import tsx scripts/claude-pr-automerge-gate-smoke.ts",
     "smoke:claude-pr-workflow": "node --disable-warning=DEP0205 --import tsx scripts/claude-pr-workflow-smoke.ts",
     "smoke:claude-pr-quality-gate": "node --disable-warning=DEP0205 --import tsx scripts/claude-pr-quality-gate-smoke.ts",
     "check:symphony-migration": "node --check lib/auto-dev-pipeline.ts && node --check lib/symphony/index.ts && node --check lib/symphony/task-adapter.ts && node --check lib/symphony/workspace-adapter.ts && node --check lib/symphony/runner-adapter.ts && node --check lib/symphony/validation-adapter.ts && node --check lib/symphony/state-store.ts && node --check scripts/symphony-migration-audit.ts && node --check scripts/symphony-shadow-runner.ts && node --check scripts/symphony-migration-smoke.ts && node scripts/symphony-migration-smoke.ts --json && node scripts/symphony-shadow-runner.ts --json --fixture --no-write",
