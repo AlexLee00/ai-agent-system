@@ -15,6 +15,18 @@ const BOT_CONFIGS = [
   { id: 'orchestrator', path: 'bots/orchestrator/config.json' },
 ];
 
+function resolveConfigPath(configPath) {
+  const absPath = path.isAbsolute(configPath)
+    ? configPath
+    : path.join(ROOT, configPath);
+  if (fs.existsSync(absPath)) return absPath;
+
+  const examplePath = `${absPath}.example`;
+  if (fs.existsSync(examplePath)) return examplePath;
+
+  return absPath;
+}
+
 // YAML에서 skills 배열 추출 (최상위 skills: 만 파싱, 외부 라이브러리 불필요)
 function parseYamlSkills(content) {
   const lines = content.split('\n');
@@ -44,19 +56,17 @@ function parseYamlSkills(content) {
 
 // config 파일에서 skills 배열 읽기
 function readSkillsFromConfig(configPath) {
-  const absPath = path.isAbsolute(configPath)
-    ? configPath
-    : path.join(ROOT, configPath);
+  const absPath = resolveConfigPath(configPath);
 
   try {
     const content = fs.readFileSync(absPath, 'utf8');
 
-    if (absPath.endsWith('.json')) {
+    if (configPath.endsWith('.json')) {
       const parsed = JSON.parse(content);
       return Array.isArray(parsed.skills) ? parsed.skills : [];
     }
 
-    if (absPath.endsWith('.yaml') || absPath.endsWith('.yml')) {
+    if (configPath.endsWith('.yaml') || configPath.endsWith('.yml')) {
       return parseYamlSkills(content);
     }
 

@@ -15,6 +15,16 @@ const BOT_CONFIGS = [
   { id: 'claude', path: 'bots/claude/config.json' },
 ];
 
+function resolveConfigPath(configPath) {
+  const absPath = path.isAbsolute(configPath) ? configPath : path.join(ROOT, configPath);
+  if (fs.existsSync(absPath)) return absPath;
+
+  const examplePath = `${absPath}.example`;
+  if (fs.existsSync(examplePath)) return examplePath;
+
+  return absPath;
+}
+
 function parseYamlList(content, keyName) {
   const lines = content.split('\n');
   const items = [];
@@ -39,17 +49,17 @@ function parseYamlList(content, keyName) {
 }
 
 function readMcpsFromConfig(configPath) {
-  const absPath = path.isAbsolute(configPath) ? configPath : path.join(ROOT, configPath);
+  const absPath = resolveConfigPath(configPath);
 
   try {
     const content = fs.readFileSync(absPath, 'utf8');
 
-    if (absPath.endsWith('.json')) {
+    if (configPath.endsWith('.json')) {
       const parsed = JSON.parse(content);
       return Array.isArray(parsed.mcps) ? parsed.mcps : [];
     }
 
-    if (absPath.endsWith('.yaml') || absPath.endsWith('.yml')) {
+    if (configPath.endsWith('.yaml') || configPath.endsWith('.yml')) {
       return parseYamlList(content, 'mcps');
     }
   } catch (error) {
