@@ -23,7 +23,6 @@
 		<string>tsx</string>
 		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-book-review-collector.ts</string>
 		<string>--json</string>
-		<string>--dry-run</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>
