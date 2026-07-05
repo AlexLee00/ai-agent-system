@@ -8,6 +8,7 @@ import {
   getLatestRegimeWeights as defaultGetLatestRegimeWeights,
 } from './regime-weight-learner.ts';
 import { applyC3RealignToRoute, recordC3RealignShadowSignal } from './luna-c3-realign.ts';
+import { buildSymbolFeedbackBiasFromStats, loadSymbolFeedbackStats } from './symbol-feedback.ts';
 
 const CRYPTO_FAMILIES = [
   'trend_following',
@@ -320,30 +321,13 @@ function applyAnalystFeatures({ analyses = [], exchange = 'binance', scores, rea
 }
 
 async function buildFeedbackBias(symbol, exchange) {
-  const notes = [];
-  const bias = {};
   try {
-    const insight = await journalDb.getTradeReviewInsight(symbol, exchange, 90);
-    if (!insight || Number(insight.closedTrades || 0) < 3) {
-      return { bias, notes };
-    }
-    const winRate = Number(insight.winRate);
-    const avgPnl = Number(insight.avgPnlPercent);
-    if (Number.isFinite(winRate) && winRate >= 0.62) {
-      bias[exchange === 'binance' ? 'momentum_rotation' : 'equity_swing'] = 0.08;
-      notes.push(`symbol feedback winRate ${(winRate * 100).toFixed(0)}%`);
-    } else if (Number.isFinite(winRate) && winRate < 0.38) {
-      bias.defensive_rotation = 0.10;
-      notes.push(`symbol feedback weak winRate ${(winRate * 100).toFixed(0)}%`);
-    }
-    if (Number.isFinite(avgPnl) && avgPnl < 0) {
-      bias.defensive_rotation = (bias.defensive_rotation || 0) + 0.06;
-      notes.push(`symbol feedback avgPnl ${avgPnl.toFixed(2)}%`);
-    }
+    const stats = await loadSymbolFeedbackStats(symbol, exchange, { days: 90 });
+    return buildSymbolFeedbackBiasFromStats(stats, exchange);
   } catch {
     // feedback is optional.
   }
-  return { bias, notes };
+  return { bias: {}, notes: [] };
 }
 
 export function buildStrategyFamilyPerformanceBiasFromInsight(insight = null) {

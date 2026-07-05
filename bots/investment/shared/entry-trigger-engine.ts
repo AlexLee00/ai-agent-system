@@ -28,6 +28,7 @@ import {
   getCachedBinanceTopVolumeUniverse,
 } from './binance-top-volume-universe.ts';
 import { evaluateTechnicalEntryChangeGate } from './technical-change-gates.ts';
+import { buildWeakFeedbackSymbolEvidence, loadSymbolFeedbackStatsBatch } from './symbol-feedback.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -215,6 +216,39 @@ function normalizeQualityMap(input = null) {
   return new Map();
 }
 
+function normalizeWeakSymbolFeedbackMap(input = null) {
+  if (!input) return new Map();
+  if (input instanceof Map) {
+    return new Map([...input.entries()].map(([symbol, stats]) => [normalizeSymbol(symbol), stats]).filter(([symbol]) => symbol));
+  }
+  if (typeof input === 'object') {
+    return new Map(Object.entries(input).map(([symbol, stats]) => [normalizeSymbol(symbol), stats]).filter(([symbol]) => symbol));
+  }
+  return new Map();
+}
+
+function isWeakSymbolHardEnabled(context = {}, env = process.env) {
+  return boolConfig(context?.weakSymbolHardEnabled ?? env.LUNA_WEAK_SYMBOL_HARD_ENABLED, false);
+}
+
+async function loadWeakSymbolFeedbackStatsBySymbol(symbols = [], exchange = 'binance', context = {}) {
+  const normalized = [...new Set(symbols.map(normalizeSymbol).filter(Boolean))];
+  if (normalized.length === 0) return new Map();
+  try {
+    if (context.loadWeakSymbolFeedbackStats) {
+      const entries = [];
+      for (const symbol of normalized) {
+        const stats = await context.loadWeakSymbolFeedbackStats(symbol, exchange, context);
+        if (stats) entries.push([symbol, stats]);
+      }
+      return new Map(entries);
+    }
+    return await loadSymbolFeedbackStatsBatch(normalized, exchange, { days: 90 });
+  } catch {
+    return new Map();
+  }
+}
+
 export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) {
   const normalized = [...new Set((symbols || []).map(normalizeSymbol).filter(Boolean))];
   if (normalized.length === 0) return new Map();
@@ -384,20 +418,41 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
 
   const uniqueReasons = [...new Set(reasons)];
   const notifyMode = mode !== 'hard_gate';
-  const effectiveOk = notifyMode && !dsrHardBlock ? true : uniqueReasons.length === 0;
+  const symbol = normalizeSymbol(trigger.symbol || quality?.symbol || '');
+  const weakSymbolHardEnabled = isWeakSymbolHardEnabled(context, env);
+  const weakSymbolFeedbackStats = weakSymbolHardEnabled
+    ? context.weakSymbolFeedback || normalizeWeakSymbolFeedbackMap(context.weakSymbolFeedbackBySymbol || context.weakSymbolFeedbackMap).get(symbol)
+    : null;
+  const weakSymbolFeedback = weakSymbolHardEnabled
+    ? buildWeakFeedbackSymbolEvidence(symbol, weakSymbolFeedbackStats, env)
+    : null;
+  const qualityWouldBlock = Boolean(quality) && uniqueReasons.length > 0;
+  const weakSymbolHardBlock = Boolean(
+    weakSymbolHardEnabled
+      && notifyMode
+      && !dsrHardBlock
+      && qualityWouldBlock
+      && weakSymbolFeedback?.weak === true,
+  );
+  const effectiveOk = weakSymbolHardBlock
+    ? false
+    : notifyMode && !dsrHardBlock ? true : uniqueReasons.length === 0;
   return {
     ok: effectiveOk,
     enabled: true,
     notifyMode,
     hardBlock: dsrHardBlock,
     hardBlockReason: dsrHardBlock ? 'candidate_backtest_dsr_gate' : null,
+    weakSymbolHardEnabled,
+    weakSymbolHardBlock,
+    weakSymbolFeedback,
     shadowUnvalidated: shadowUnvalidatedBacktest,
     shadow_unvalidated: shadowUnvalidatedBacktest,
     advisoryReasons: shadowUnvalidatedBacktest ? ['shadow_unvalidated_backtest_passthrough'] : [],
     reason: uniqueReasons[0] || 'active_quality_gate_passed',
     reasons: uniqueReasons,
     blockedReasons: uniqueReasons,
-    symbol: normalizeSymbol(trigger.symbol || quality?.symbol || ''),
+    symbol,
     minPredictiveScore,
     maxBacktestAgeHours,
     backtest: evaluatedBacktest ? {
@@ -441,6 +496,38 @@ function isTerminalActiveEntryTriggerQualityGateBlock(qualityGate = {}) {
   if (!qualityGate?.enabled || qualityGate?.ok === true) return false;
   const reasons = new Set((qualityGate.reasons || []).map((reason) => String(reason || '').trim()));
   return reasons.has('backtest_unhealthy_or_would_block') || reasons.has('predictive_blocked');
+}
+
+function recordActiveQualityGateEvents({ qualityGate = null, trigger = {}, exchange = 'binance' } = {}) {
+  if (!qualityGate?.notifyMode || !Array.isArray(qualityGate.blockedReasons) || qualityGate.blockedReasons.length === 0) return;
+  const action = qualityGate.ok === false ? 'BUY_BLOCKED' : 'BUY_ALLOWED';
+  recordGuardEvent({
+    guardName: 'active_quality_gate_notify',
+    symbol: trigger.symbol || null,
+    exchange,
+    reason: qualityGate.blockedReasons.join(','),
+    severity: 'info',
+    decisionBefore: { wouldBlock: true, reasons: qualityGate.blockedReasons },
+    decisionAfter: qualityGate.hardBlock
+      ? { notifyMode: true, hardBlock: true, action }
+      : { notifyMode: true, action },
+    guardMetadata: { activeQualityGate: qualityGate },
+  });
+  if (qualityGate.weakSymbolHardBlock === true) {
+    recordGuardEvent({
+      guardName: 'weak_symbol_quality_hard',
+      symbol: trigger.symbol || null,
+      exchange,
+      reason: qualityGate.blockedReasons.join(','),
+      severity: 'warning',
+      decisionBefore: { wouldBlock: true, reasons: qualityGate.blockedReasons },
+      decisionAfter: { notifyMode: true, weakSymbolHardBlock: true, action: 'BUY_BLOCKED' },
+      guardMetadata: {
+        weakSymbolFeedback: qualityGate.weakSymbolFeedback,
+        activeQualityGate: qualityGate,
+      },
+    });
+  }
 }
 
 function resolvePullbackTechnicalConfirmation(details = {}, thresholds = {}, context = {}) {
@@ -1753,6 +1840,7 @@ export async function refreshEntryTriggersFromRecentBuySignals({
 }
 
 export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = [], context = {}) {
+  const env = context.env || process.env;
   const flags = getLunaIntelligentDiscoveryFlags();
   if (!flags.phases.entryTriggerEnabled) {
     return { enabled: false, fired: 0, readyBlocked: 0, checked: 0, results: [] };
@@ -1791,8 +1879,9 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
   const expireQualityBlockedActive = activeQualityGateEnabled && shouldExpireQualityBlockedActiveTriggers(context);
   const providedQualityBySymbol = normalizeQualityMap(context.activeQualityBySymbol || context.activeQualityMap);
   let activeQualityBySymbol = new Map(providedQualityBySymbol);
+  let qualitySymbols = [];
   if (activeQualityGateEnabled && context.skipActiveQualityLoad !== true) {
-    const qualitySymbols = [...new Set((active || [])
+    qualitySymbols = [...new Set((active || [])
       .map((trigger) => normalizeSymbol(trigger.symbol))
       .filter((symbol) => symbol && (expireQualityBlockedActive || eventsBySymbol.has(symbol))))];
     const loadedQualityBySymbol = context.loadActiveTriggerQuality
@@ -1801,6 +1890,22 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     activeQualityBySymbol = new Map([
       ...normalizeQualityMap(loadedQualityBySymbol),
       ...providedQualityBySymbol,
+    ]);
+  }
+  const providedWeakFeedbackBySymbol = normalizeWeakSymbolFeedbackMap(context.weakSymbolFeedbackBySymbol || context.weakSymbolFeedbackMap);
+  let weakSymbolFeedbackBySymbol = new Map(providedWeakFeedbackBySymbol);
+  const weakSymbolHardEnabled = activeQualityGateEnabled && isWeakSymbolHardEnabled(context, env);
+  if (weakSymbolHardEnabled) {
+    const weakFeedbackSymbols = [...new Set([
+      ...qualitySymbols,
+      ...[...providedQualityBySymbol.keys()],
+    ].filter((symbol) => symbol && activeQualityBySymbol.has(symbol) && !providedWeakFeedbackBySymbol.has(symbol)))];
+    const loadedWeakFeedbackBySymbol = context.loadWeakSymbolFeedbackBySymbol
+      ? await context.loadWeakSymbolFeedbackBySymbol(weakFeedbackSymbols, { exchange, context }).catch(() => new Map())
+      : await loadWeakSymbolFeedbackStatsBySymbol(weakFeedbackSymbols, exchange, context);
+    weakSymbolFeedbackBySymbol = new Map([
+      ...normalizeWeakSymbolFeedbackMap(loadedWeakFeedbackBySymbol),
+      ...providedWeakFeedbackBySymbol,
     ]);
   }
   const results = [];
@@ -1816,22 +1921,15 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       continue;
     }
     const triggerQuality = activeQualityBySymbol.get(normalizeSymbol(trigger.symbol));
+    const weakSymbolFeedback = weakSymbolFeedbackBySymbol.get(normalizeSymbol(trigger.symbol));
+    const qualityGateContext = weakSymbolHardEnabled
+      ? { ...context, weakSymbolFeedback }
+      : context;
     const preflightQualityGate = activeQualityGateEnabled
-      ? evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context)
+      ? evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, qualityGateContext)
       : null;
     if (preflightQualityGate?.notifyMode && preflightQualityGate.blockedReasons?.length > 0) {
-      recordGuardEvent({
-        guardName: 'active_quality_gate_notify',
-        symbol: trigger.symbol || null,
-        exchange,
-        reason: preflightQualityGate.blockedReasons.join(','),
-        severity: 'info',
-        decisionBefore: { wouldBlock: true, reasons: preflightQualityGate.blockedReasons },
-        decisionAfter: preflightQualityGate.hardBlock
-          ? { notifyMode: true, hardBlock: true, action: 'BUY_BLOCKED' }
-          : { notifyMode: true, action: 'BUY_ALLOWED' },
-        guardMetadata: { activeQualityGate: preflightQualityGate },
-      });
+      recordActiveQualityGateEvents({ qualityGate: preflightQualityGate, trigger, exchange });
     }
     if (
       expireQualityBlockedActive
@@ -2000,21 +2098,10 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       });
       continue;
     }
-    const qualityGate = preflightQualityGate || evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context);
+    const qualityGate = preflightQualityGate || evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, qualityGateContext);
     if (qualityGate.notifyMode && qualityGate.blockedReasons?.length > 0 && !preflightQualityGate) {
       // preflight에서 이미 기록하지 않은 경우만 (preflightQualityGate가 없을 때)
-      recordGuardEvent({
-        guardName: 'active_quality_gate_notify',
-        symbol: trigger.symbol || null,
-        exchange,
-        reason: qualityGate.blockedReasons.join(','),
-        severity: 'info',
-        decisionBefore: { wouldBlock: true, reasons: qualityGate.blockedReasons },
-        decisionAfter: qualityGate.hardBlock
-          ? { notifyMode: true, hardBlock: true, action: 'BUY_BLOCKED' }
-          : { notifyMode: true, action: 'BUY_ALLOWED' },
-        guardMetadata: { activeQualityGate: qualityGate },
-      });
+      recordActiveQualityGateEvents({ qualityGate, trigger, exchange });
     }
     if (!qualityGate.ok) {
       readyBlocked++;

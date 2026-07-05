@@ -727,6 +727,7 @@
     "luna:curriculum-smoke": "node scripts/agent-curriculum-smoke.ts",
     "luna:message-bus-smoke": "node scripts/agent-message-bus-smoke.ts",
     "runtime:luna-entry-trigger-active-worker-smoke": "node scripts/luna-entry-trigger-active-worker-smoke.ts --json",
+    "smoke:luna-weak-symbol-hard": "node scripts/luna-weak-symbol-hard-smoke.ts --json",
     "runtime:luna-mode-safety-smoke": "node scripts/luna-mode-safety-smoke.ts --json",
     "runtime:luna-score-fusion-safety-smoke": "node scripts/luna-score-fusion-safety-smoke.ts --json",
     "runtime:luna-feedback-action-mapper": "node scripts/runtime-luna-feedback-action-mapper.ts --json",

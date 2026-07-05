@@ -75,6 +75,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
     const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
     const qualityHardGateSymbol = `QUALITYHARD${Date.now().toString(36).toUpperCase()}/USDT`;
+    const weakQualityHardSymbol = `WEAKQUALITY${Date.now().toString(36).toUpperCase()}/USDT`;
     const qualityPredictiveFallbackSymbol = `QUALITYPRED${Date.now().toString(36).toUpperCase()}/USDT`;
     const trendingBullNoMtfSymbol = `TRENDNOMTF${Date.now().toString(36).toUpperCase()}/USDT`;
     const binanceTopVolumeUniverse = makeSmokeTop30Universe([
@@ -91,6 +92,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       terminalLowConfSymbol,
       qualityBlockedSymbol,
       qualityHardGateSymbol,
+      weakQualityHardSymbol,
       qualityPredictiveFallbackSymbol,
       trendingBullNoMtfSymbol,
       'FAKE/USDT',
@@ -622,6 +624,94 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(qualityNotifyEvent?.guard_name, 'active_quality_gate_notify');
       assert.ok(String(qualityNotifyEvent?.reason || '').includes('backtest_unhealthy_or_would_block'), 'notify event should preserve quality blocker reasons');
       assert.equal(qualityNotifyEvent?.decision_after?.notifyMode, true);
+
+      const weakQualityHardTrigger = await insertEntryTrigger({
+        symbol: weakQualityHardSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.82,
+        predictiveScore: 0.81,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.82 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(weakQualityHardTrigger?.id);
+      const weakQualityHardResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: weakQualityHardSymbol,
+          mtfAgreement: 0.9,
+          mtfAlignmentScore: 0.8,
+          mtfDominantSignal: 'BUY',
+          discoveryScore: 0.82,
+          breakoutRetest: true,
+          tradingViewSnapshot: {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket',
+            market: 'tradingview',
+            price: 101,
+            open: 100,
+            stale: false,
+          },
+        },
+      ], {
+        exchange: 'binance',
+        capitalSnapshot,
+        binanceTopVolumeUniverse,
+        activeQualityGateEnabled: true,
+        skipActiveQualityLoad: true,
+        activeQualityBySymbol: {
+          [weakQualityHardSymbol]: {
+            backtest: {
+              fresh: true,
+              healthy: false,
+              sharpe: -0.42,
+              maxDrawdown: 28,
+              winRate: 31,
+              gateStatus: 'would_block_unhealthy',
+              wouldBlock: true,
+              lastBacktestAt: new Date().toISOString(),
+            },
+            predictive: {
+              decision: 'block_backtest_gate',
+              score: 0.2,
+              threshold: 0.55,
+              componentCoverage: 1,
+              blockedReason: 'backtest_unhealthy_or_would_block',
+              createdAt: new Date().toISOString(),
+            },
+          },
+        },
+        weakSymbolFeedbackBySymbol: {
+          [weakQualityHardSymbol]: {
+            sampleCount: 3,
+            winRate: 1 / 3,
+            avgPnl: -3.9553,
+          },
+        },
+        env: {
+          LUNA_WEAK_SYMBOL_HARD_ENABLED: 'true',
+        },
+      });
+      assert.equal(weakQualityHardResult.results[0].fired, false, 'weak feedback should hard-block active quality wouldBlock when enabled');
+      assert.equal(weakQualityHardResult.results[0].qualityGate.weakSymbolHardBlock, true);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const weakQualityHardEvent = await db.get(
+        `SELECT guard_name, decision_after, guard_metadata
+           FROM investment.guard_events
+          WHERE guard_name = 'weak_symbol_quality_hard'
+            AND symbol = $1
+          ORDER BY triggered_at DESC
+          LIMIT 1`,
+        [weakQualityHardSymbol],
+      );
+      assert.equal(weakQualityHardEvent?.guard_name, 'weak_symbol_quality_hard');
+      assert.equal(weakQualityHardEvent?.decision_after?.action, 'BUY_BLOCKED');
+      assert.equal(weakQualityHardEvent?.guard_metadata?.weakSymbolFeedback?.sampleCount, 3);
 
       const qualityHardGateTrigger = await insertEntryTrigger({
         symbol: qualityHardGateSymbol,
@@ -1355,11 +1445,13 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [terminalLowConfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityBlockedSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityHardGateSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [weakQualityHardSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityPredictiveFallbackSymbol]).catch(() => {});
       await db.run(
         `DELETE FROM investment.guard_events
-          WHERE symbol IN ($1, $2) AND guard_name = 'active_quality_gate_notify'`,
-        [qualityBlockedSymbol, qualityHardGateSymbol],
+          WHERE symbol IN ($1, $2, $3)
+            AND guard_name IN ('active_quality_gate_notify', 'weak_symbol_quality_hard')`,
+        [qualityBlockedSymbol, qualityHardGateSymbol, weakQualityHardSymbol],
       ).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
       await db.run(
