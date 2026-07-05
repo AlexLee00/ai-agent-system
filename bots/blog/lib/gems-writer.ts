@@ -28,6 +28,7 @@ const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.j
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
+const { resolveBlogWriterModel, writerModelCacheSuffix } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
@@ -35,11 +36,12 @@ const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs ||
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
-async function callGemsWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
+async function callGemsWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS, writerModel = resolveBlogWriterModel() }) {
   const selectorOverrides = getBlogLLMSelectorOverrides();
   return callHubLlm({
     callerTeam: 'blog',
     agent: 'gems',
+    abstractModel: writerModel,
     selectorKey: 'blog.gems.writer',
     policyOverride: selectorOverrides['blog.gems.writer'] || null,
     taskType,
@@ -1329,13 +1331,17 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
     throw new Error('검증된 도서 정보가 없어 도서리뷰 작성 불가');
   }
   const today    = new Date().toLocaleDateString('ko-KR');
-  const cacheKey = `gems_general_${category}_${kst.today()}`;
+  const writerModel = resolveBlogWriterModel();
+  const cacheKey = `gems_general_${category}_${kst.today()}_${writerModelCacheSuffix(writerModel)}`;
 
   // 캐시 확인
   const cached = await llmCache.getCached('blog', 'general_post', cacheKey);
   if (cached) {
     console.log('[젬스] 캐시 히트:', cacheKey);
-    try { return JSON.parse(cached.response); } catch {}
+    try {
+      const parsed = JSON.parse(cached.response);
+      return { ...parsed, writerModel: parsed.writerModel || writerModel };
+    } catch {}
   }
 
   const weather         = researchData.weather || {};
@@ -1484,6 +1490,7 @@ ${_buildVariationBlock(sectionVariation)}
       userPrompt,
       taskType: 'general_post',
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
+      writerModel,
     });
     content      = result.text;
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
@@ -1493,7 +1500,7 @@ ${_buildVariationBlock(sectionVariation)}
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems', success: !!content,
       duration_ms: Date.now() - startTime,
-      metadata: { model: usedModel, category, trace_id: getTraceId(), fallback_used: fallbackUsed },
+      metadata: { model: usedModel, writer_model: writerModel, category, trace_id: getTraceId(), fallback_used: fallbackUsed },
     }).catch(() => {});
   }
 
@@ -1513,6 +1520,7 @@ ${_buildVariationBlock(sectionVariation)}
         taskType: 'general_post_continue',
         maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000),
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
+        writerModel,
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
@@ -1537,7 +1545,7 @@ ${_buildVariationBlock(sectionVariation)}
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems', success: true,
       duration_ms: Date.now() - startTime,
-      metadata: { model: usedModel, type: 'continue', category, trace_id: getTraceId() },
+      metadata: { model: usedModel, writer_model: writerModel, type: 'continue', category, trace_id: getTraceId() },
     }).catch(() => {});
 
     console.log(`[젬스] 이어쓰기 완료: ${content.length}자`);
@@ -1576,7 +1584,7 @@ ${_buildVariationBlock(sectionVariation)}
   const title     = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
 
-  const result = { content, charCount: content.length, model: usedModel, title, fallbackUsed };
+  const result = { content, charCount: content.length, model: usedModel, writerModel, title, fallbackUsed };
 
   // 최소 글자수 달성 시에만 캐시 저장 (실패 결과 캐시 방지)
   if (content.length >= MIN_CHARS_GENERAL) {
@@ -1593,7 +1601,7 @@ ${_buildVariationBlock(sectionVariation)}
       {
         keywords: [category, result.title, 'general_post'].filter(Boolean),
         importance: Math.min(content.length / 10000, 1.0),
-        metadata: { category, title: result.title, charCount: content.length, model: usedModel, fallbackUsed },
+        metadata: { category, title: result.title, charCount: content.length, model: usedModel, writerModel, fallbackUsed },
       }
     );
   } catch { /* 메모리 저장 실패 무시 */ }
@@ -1751,6 +1759,7 @@ ${content}
 async function writeGeneralPostChunked(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
   const model    = 'hub:blog.gems.writer';
+  const writerModel = resolveBlogWriterModel();
 
   const weather         = researchData.weather || {};
   const itNews          = researchData.it_news || [];
@@ -1903,6 +1912,7 @@ ${linkingBlock}
   const selectorOverrides = getBlogLLMSelectorOverrides();
   const result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
     model,
+    abstractModel: writerModel,
     selectorKey: 'blog.gems.writer',
     policyOverride: selectorOverrides['blog.gems.writer'] || null,
     callerTeam: 'blog',
@@ -1931,7 +1941,7 @@ ${linkingBlock}
 
   console.log(`[젬스청크] 전체 ${content.length}자 (${chunks.length}청크)`);
 
-  return { content, charCount: content.length, model: `chunked-${model}`, title };
+  return { content, charCount: content.length, model: `chunked-${model}`, writerModel, title };
 }
 
 module.exports = {

@@ -23,6 +23,7 @@ const { calculateSectionChars, buildCharCountInstruction } = require(path.join(e
 const { isAgentIntroLecture } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agent-intro-curriculum.ts'));
 const { buildBlogFormatInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-format-rules.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
+const { resolveBlogWriterModel, writerModelCacheSuffix } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
@@ -37,11 +38,12 @@ function isHubWriterTimeout(error) {
     || message.includes('timeout');
 }
 
-async function callPosWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
+async function callPosWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS, writerModel = resolveBlogWriterModel() }) {
   const selectorOverrides = getBlogLLMSelectorOverrides();
   return callHubLlm({
     callerTeam: 'blog',
     agent: 'pos',
+    abstractModel: writerModel,
     selectorKey: 'blog.pos.writer',
     policyOverride: selectorOverrides['blog.pos.writer'] || null,
     taskType,
@@ -463,13 +465,17 @@ function _buildLectureTopicDirection(lectureNumber, lectureTitle) {
  * @returns {{ content, charCount, model }}
  */
 async function writeLecturePost(lectureNumber, lectureTitle, researchData, sectionVariation = {}) {
-  const cacheKey = `pos_lecture_${lectureNumber}`;
+  const writerModel = resolveBlogWriterModel();
+  const cacheKey = `pos_lecture_${lectureNumber}_${writerModelCacheSuffix(writerModel)}`;
 
   // 캐시 확인 (당일 재실행 중복 방지)
   const cached = await llmCache.getCached('blog', 'lecture_post', cacheKey);
   if (cached) {
     console.log('[포스] 캐시 히트:', cacheKey);
-    try { return JSON.parse(cached.response); } catch {}
+    try {
+      const parsed = JSON.parse(cached.response);
+      return { ...parsed, writerModel: parsed.writerModel || writerModel };
+    } catch {}
   }
 
   const weather        = researchData.weather        || {};
@@ -614,6 +620,7 @@ ${_buildVariationBlock(sectionVariation)}
       userPrompt,
       taskType: 'lecture_post',
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
+      writerModel,
     });
     content      = result.text;
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
@@ -631,7 +638,7 @@ ${_buildVariationBlock(sectionVariation)}
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-pos', success: !!content,
       duration_ms: Date.now() - startTime,
-      metadata: { model: usedModel, lecture_num: lectureNumber, trace_id: getTraceId(), fallback_used: fallbackUsed },
+      metadata: { model: usedModel, writer_model: writerModel, lecture_num: lectureNumber, trace_id: getTraceId(), fallback_used: fallbackUsed },
     }).catch(() => {});
   }
 
@@ -651,6 +658,7 @@ ${_buildVariationBlock(sectionVariation)}
         taskType: 'lecture_post_continue',
         maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000),
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
+        writerModel,
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
@@ -676,6 +684,7 @@ ${_buildVariationBlock(sectionVariation)}
     content,
     charCount: content.length,
     model:     usedModel,
+    writerModel,
     fallbackUsed,
   };
 
@@ -694,7 +703,7 @@ ${_buildVariationBlock(sectionVariation)}
       {
         keywords: [lectureTitle, String(lectureNumber), 'lecture_post'].filter(Boolean),
         importance: Math.min(content.length / 12000, 1.0),
-        metadata: { lectureNumber, lectureTitle, charCount: content.length, model: usedModel, fallbackUsed },
+        metadata: { lectureNumber, lectureTitle, charCount: content.length, model: usedModel, writerModel, fallbackUsed },
       }
     );
   } catch { /* 메모리 저장 실패 무시 */ }
@@ -815,6 +824,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
 
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
+  const writerModel     = resolveBlogWriterModel();
   const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
   const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
   const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);
@@ -976,6 +986,7 @@ ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
   const selectorOverrides = getBlogLLMSelectorOverrides();
   const result    = await chunkedGenerate(POS_SYSTEM_PROMPT, chunks, {
     model,
+    abstractModel: writerModel,
     selectorKey: 'blog.pos.writer',
     policyOverride: selectorOverrides['blog.pos.writer'] || null,
     callerTeam: 'blog',
@@ -998,6 +1009,7 @@ ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
     content,
     charCount: content.length,
     model:     `chunked-${model}`,
+    writerModel,
   };
 }
 

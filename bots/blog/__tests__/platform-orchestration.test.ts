@@ -227,6 +227,11 @@ describe('platform-orchestrator', () => {
     process.env.BLOG_MULTI_PLATFORM_ENABLED = 'true';
     pgPool.get.mockResolvedValueOnce(null);
     const result = await orchestrator.orchestrateDailyPublishing(true);
+    if (result?.reason === 'blog_sns_crosspost_disabled') {
+      expect(result.skipped).toBe(true);
+      expect(result.platform).toBe('orchestrator');
+      return;
+    }
     if (result === null) {
       expect(result).toBeNull();
       return;

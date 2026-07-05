@@ -59,6 +59,30 @@
       "tags": ["blog", "v3", "naver", "shadow", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "great-library-w-axis",
+      "name": "Great Library W-axis",
+      "description": "Sigma Great Library W축 기여 경로와 블로그 vault feed 상태를 읽기 전용으로 설명",
+      "tags": ["blog", "sigma", "library", "w-axis", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sigma-success-pattern",
+      "name": "Sigma 성공 패턴 조회",
+      "description": "Sigma library MCP에서 검증된 성공 패턴을 읽어 writer 참고 자료로 반환",
+      "tags": ["blog", "sigma", "success-pattern", "read-only", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "comment-evolution-proposal",
+      "name": "댓글 전략 개선안",
+      "description": "댓글 학습 이벤트를 shadow 집계해 전략 개선 proposal을 읽기 전용으로 반환",
+      "tags": ["blog", "comment", "evolution", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     }
   ]
 }

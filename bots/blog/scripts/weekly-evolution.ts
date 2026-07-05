@@ -9,6 +9,7 @@ const { analyzeMarketingToRevenue } = require('../lib/marketing-revenue-correlat
 const { trackWeeklyAutonomy } = require('../lib/autonomy-tracker.ts');
 const { aggregatePatterns } = require('../lib/feedback-learner.ts');
 const { summarizeRecentCrankDiagnosisEvents } = require('../lib/crank-diagnoser.ts');
+const { buildWriterModelCrankComparisonFromDb } = require('../lib/writer-model-crank-report.ts');
 const { runCommentStrategyEvolver } = require('../lib/comment-strategy-evolver.ts');
 const { summarizeRecentExternalTrendLearnings } = require('../lib/external-trend-learnings.ts');
 const { getCrosspostStats } = require('../../social-media/instagram/lib/insta-crosspost.ts');
@@ -31,7 +32,7 @@ function buildWeeklyMemoryQuery(diagnosis = {}, evolution = {}, autonomy = null)
   ].filter(Boolean).join(' ');
 }
 
-function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], crosspostStats = null, assetMemory = null, crankLearningSummary = [], commentStrategyReport = null, externalTrendLearningSummary = null) {
+function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], crosspostStats = null, assetMemory = null, crankLearningSummary = [], commentStrategyReport = null, externalTrendLearningSummary = null, writerModelCrankComparison = null) {
   const lines = [
     `최근 포스트: ${diagnosis.postCount || 0}건 / 실행 이력: ${diagnosis.executionCount || 0}건`,
     `주요 약점: ${diagnosis.primaryWeakness?.message || '없음'}`,
@@ -100,6 +101,13 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
     });
   }
 
+  if (writerModelCrankComparison?.models?.length) {
+    lines.push('', 'Writer model crank 비교:');
+    writerModelCrankComparison.models.slice(0, 5).forEach((item) => {
+      lines.push(`- ${item.writerModel}: sample ${item.sample}, avg ${item.avgOverall ?? 'n/a'}, ${item.verdict}`);
+    });
+  }
+
   const winners = Array.isArray(assetMemory?.winners) ? assetMemory.winners : [];
   const losers = Array.isArray(assetMemory?.losers) ? assetMemory.losers : [];
   const saturated = Array.isArray(assetMemory?.saturation)
@@ -139,8 +147,8 @@ function buildWeeklyLines(diagnosis = {}, evolution = {}, marketingDigest = null
   return lines;
 }
 
-async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], options = {}, crosspostStats = null, assetMemory = null, crankLearningSummary = [], commentStrategyReport = null, externalTrendLearningSummary = null) {
-  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary);
+async function sendWeeklyReport(diagnosis = {}, evolution = {}, marketingDigest = null, autonomy = null, revenueCorrelation = null, feedbackPatterns = [], options = {}, crosspostStats = null, assetMemory = null, crankLearningSummary = [], commentStrategyReport = null, externalTrendLearningSummary = null, writerModelCrankComparison = null) {
+  const lines = buildWeeklyLines(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary, writerModelCrankComparison);
   const memoryQuery = buildWeeklyMemoryQuery(diagnosis, evolution, autonomy);
   const episodicHint = await weeklyEvolutionMemory.recallCountHint(memoryQuery, {
     type: 'episodic',
@@ -226,7 +234,7 @@ async function main() {
     console.log('[블로][dry-run] 전략 파일 저장 없이 진단만 실행');
   }
 
-  const [diagnosis, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary] = await Promise.all([
+  const [diagnosis, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary, writerModelCrankComparison] = await Promise.all([
     diagnoseWeeklyPerformance(7),
     buildMarketingDigest({
       revenueWindow: 14,
@@ -242,6 +250,7 @@ async function main() {
     summarizeRecentCrankDiagnosisEvents({ days: 30, limit: 5 }).catch(() => []),
     runCommentStrategyEvolver({ days: 7, write: false }).catch(() => null),
     summarizeRecentExternalTrendLearnings({ days: 7, limit: 200 }).catch(() => null),
+    buildWriterModelCrankComparisonFromDb({ days: 30, limit: 300 }).catch(() => null),
   ]);
   const evolution = await evolveStrategy(diagnosis, { dryRun, marketingDigest });
 
@@ -257,6 +266,7 @@ async function main() {
     crankLearningSummary,
     commentStrategyReport,
     externalTrendLearningSummary,
+    writerModelCrankComparison,
     evolution,
   };
   result.aiSummary = await buildBlogCliInsight({
@@ -288,7 +298,7 @@ async function main() {
     }
   }
 
-  await sendWeeklyReport(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, { dryRun }, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary);
+  await sendWeeklyReport(diagnosis, evolution, marketingDigest, autonomy, revenueCorrelation, feedbackPatterns, { dryRun }, crosspostStats, assetMemory, crankLearningSummary, commentStrategyReport, externalTrendLearningSummary, writerModelCrankComparison);
 }
 
 main().catch((error) => {

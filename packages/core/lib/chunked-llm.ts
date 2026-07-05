@@ -23,6 +23,7 @@ type ChunkResult = {
 
 type GenerateOptions = {
   model?: string | unknown[];
+  abstractModel?: string;
   selectorKey?: string;
   policyOverride?: any;
   callerTeam?: string;
@@ -58,6 +59,7 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
     timeoutMs,
     onChunkComplete,
     logMeta = {},
+    abstractModel,
     selectorKey,
     policyOverride = null,
     callerTeam = String(logMeta.team || 'core'),
@@ -86,6 +88,7 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
         const result = await callHubLlm({
           callerTeam,
           agent,
+          abstractModel,
           selectorKey: resolvedSelectorKey,
           policyOverride,
           taskType: `${taskType}:${chunk.id}`,

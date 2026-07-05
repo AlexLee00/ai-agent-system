@@ -9,6 +9,7 @@ const {
   WRITING_LEARNINGS_FORMAT_VERSION,
   appendWritingLearningsSummary,
 } = require('./writing-learnings.ts');
+const { buildWriterModelCrankComparisonFromDb } = require('./writer-model-crank-report.ts');
 
 const DETAIL_AXES = [
   ['dia_depth', 'DIA depth'],
@@ -321,6 +322,8 @@ async function summarizeRecentCrankDiagnosisEvents({ days = 30, limit = 5, pool 
 async function runCrankDiagnoser(options = {}) {
   const rows = options.rows || await fetchRecentCrankRows(options);
   const titleRows = options.titleRows || (options.rows ? rows : await fetchRecentTitleRows(options));
+  const writerModelCrankComparison = options.writerModelCrankComparison
+    || await buildWriterModelCrankComparisonFromDb({ ...options, rows: options.writerModelRows });
   let lessons = buildCrankDiagnosisLessons(rows, { ...options, titleRows });
   lessons = await maybePolishLessonsWithLlm(lessons, { enabled: Boolean(options.useLlm), callLlm: options.callLlm || callHubLlm });
   let writeResult = null;
@@ -335,6 +338,7 @@ async function runCrankDiagnoser(options = {}) {
     formatVersion: WRITING_LEARNINGS_FORMAT_VERSION,
     rows: rows.length,
     titleRows: titleRows.length,
+    writerModelCrankComparison,
     lessons,
     writeResult,
     learningsResult,
@@ -355,6 +359,7 @@ module.exports = {
   buildCrankDiagnosisEventPayload,
   recordCrankDiagnosisEvents,
   summarizeRecentCrankDiagnosisEvents,
+  buildWriterModelCrankComparisonFromDb,
   fetchRecentCrankRows,
   fetchRecentTitleRows,
   runCrankDiagnoser,

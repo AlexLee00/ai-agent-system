@@ -107,6 +107,7 @@ const {
   getVaultLectureContext,
   getVaultRelatedPosts,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/vault-context.ts'));
+const { withBlogTelemetry }                         = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-telemetry.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');
 const hiringContract                                = require('../../../packages/core/lib/hiring-contract');
@@ -1117,11 +1118,11 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
 }
 
 async function _resolvePipelineExecution(postType, sectionVariation, payload, runLocalDraft) {
-  const execution = await maestro.run(
+  const execution = await withBlogTelemetry('writing', () => maestro.run(
     postType,
     variation => runLocalDraft(variation || sectionVariation),
     payload
-  );
+  ), { postType, dryRun: Boolean(payload?.dryRun) });
 
   return execution;
 }
@@ -1244,43 +1245,45 @@ function _createLocalDraftRunner({
       post = await singleWriter(...buildSingleArgs(context, variation));
     }
 
-    return _runQualityRepair(
+    return withBlogTelemetry('scoring', () => _runQualityRepair(
       kind,
       buildRepairContext(context),
       post,
       variation,
       async (repairContext, currentPost, quality) => repairDraft(...buildRepairArgs(repairContext, currentPost, quality, variation))
-    );
+    ), { postType: kind });
   };
 }
 
 async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, options = {}) {
-  if (options.dryRun) {
-    console.log(`[블로][dry-run] 발행 생략: ${postData?.title || 'untitled'}`);
-    return {
-      dryRun: true,
-      filename: null,
-      postId: null,
-      reused: true,
-    };
-  }
+  return withBlogTelemetry('publishing', async () => {
+    if (options.dryRun) {
+      console.log(`[블로][dry-run] 발행 생략: ${postData?.title || 'untitled'}`);
+      return {
+        dryRun: true,
+        filename: null,
+        postId: null,
+        reused: true,
+      };
+    }
 
-  const published = await publishToFile(postData);
+    const published = await publishToFile(postData);
 
-  if (scheduleId) {
-    await updateScheduleStatus(scheduleId, 'ready', published.postId);
-  }
+    if (scheduleId) {
+      await updateScheduleStatus(scheduleId, 'ready', published.postId);
+    }
 
-  await _emitEvent(eventDetail.type === 'lecture' ? 'post_completed' : 'post_completed', {
-    ...eventDetail,
-    traceId: traceCtx.trace_id,
-  });
+    await _emitEvent(eventDetail.type === 'lecture' ? 'post_completed' : 'post_completed', {
+      ...eventDetail,
+      traceId: traceCtx.trace_id,
+    });
 
-  if (published?.postId && postData?.performanceMetrics) {
-    await recordPerformance(published.postId, postData.performanceMetrics);
-  }
+    if (published?.postId && postData?.performanceMetrics) {
+      await recordPerformance(published.postId, postData.performanceMetrics);
+    }
 
-  return published;
+    return published;
+  }, { postType: eventDetail?.type || postData?.postType || 'unknown', dryRun: !!options.dryRun });
 }
 
 function _buildAccumulationOptions(traceCtx, options = {}, published = null) {
@@ -1590,6 +1593,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
 async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
   const postTitle = _normalizeLecturePostTitle(context);
   const lectureCategory = _lectureCategoryForContext(context);
+  const metadata = {};
   const autonomy = await _decideAutonomyForPost({
     title: postTitle,
     content: post.content,
@@ -1597,6 +1601,8 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     postType: 'lecture',
     category: lectureCategory,
   }, context.daily || {}, quality);
+  if (autonomy) metadata.autonomy = autonomy;
+  if (post.writerModel) metadata.writer_model = post.writerModel;
   const published = await _publishAndTrack({
     title:         postTitle,
     content:       post.content,
@@ -1607,7 +1613,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     charCount:     post.charCount,
     writerName,
     scheduleId,
-    metadata: autonomy ? { autonomy } : undefined,
+    metadata: Object.keys(metadata).length ? metadata : undefined,
   }, scheduleId, traceCtx, {
     type: 'lecture',
     number: context.number,
@@ -1618,7 +1624,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     postType: 'lecture',
     category: lectureCategory,
     title: postTitle,
-    metadata: autonomy ? { autonomy } : {},
+    metadata,
   }, published);
 
   await _accumulatePublishedPost({
@@ -1661,8 +1667,9 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     aiRisk:         quality.aiRisk,
     filename:       published.filename,
     postId:         published.postId,
+    writerModel:    post.writerModel || null,
     dryRun:         !!options.dryRun,
-    };
+  };
 }
 
 async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
@@ -1733,6 +1740,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     title: genTitle,
   }, context);
   const metadata = {};
+  if (post.writerModel) metadata.writer_model = post.writerModel;
   if (autonomy) metadata.autonomy = autonomy;
   if (titleAlignment?.preview_title || titleAlignment?.final_title) {
     metadata.title_alignment = titleAlignment;
@@ -1860,6 +1868,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     aiRisk:         quality.aiRisk,
     filename:       published.filename,
     postId:         published.postId,
+    writerModel:    post.writerModel || null,
     dryRun:         !!options.dryRun,
   };
 }
@@ -1953,7 +1962,9 @@ async function _prepareDailyRun(traceCtx, options = {}) {
       {},
     ];
 
-  const researchData = await collectAllResearch('general', false);
+  const researchData = await withBlogTelemetry('collection', () => collectAllResearch('general', false), {
+    dryRun: !!options.dryRun,
+  });
 
   const lunaRequest = await getPendingLunaRequest().catch((error) => {
     console.warn('[블로] 루나 요청 조회 실패 (무시):', error.message);
@@ -2703,7 +2714,7 @@ async function run(options = {}) {
   if (generalResult) results.push(generalResult);
 
   await _sendDailyReport(results, traceCtx, { ...options, daily });
-  await _runPostPublishChecks(options);
+  await withBlogTelemetry('diagnosis', () => _runPostPublishChecks(options), { dryRun: !!options.dryRun });
 
   console.log('\n📝 [블로] 일간 작업 완료\n');
   return results;

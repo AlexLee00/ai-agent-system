@@ -32,6 +32,13 @@ async function main() {
     return;
   }
   console.log(`[crank-diagnoser] dryRun=${result.dryRun} rows=${result.rows} titleRows=${result.titleRows} lessons=${result.lessons.length} inserted=${result.writeResult?.inserted || 0}`);
+  const modelRows = result.writerModelCrankComparison?.models || [];
+  if (modelRows.length) {
+    console.log('[writer-model crank]');
+    for (const item of modelRows.slice(0, 5)) {
+      console.log(`- ${item.writerModel}: sample=${item.sample} avg=${item.avgOverall ?? 'n/a'} ${item.verdict}`);
+    }
+  }
   for (const lesson of result.lessons.slice(0, 10)) {
     console.log(`- ${lesson.axis}: ${lesson.lesson}`);
   }

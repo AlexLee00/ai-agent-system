@@ -30,6 +30,20 @@ function isEnabled() {
   return process.env.BLOG_MULTI_PLATFORM_ENABLED === 'true';
 }
 
+function isSnsCrosspostEnabled() {
+  return process.env.BLOG_SNS_CROSSPOST_ENABLED === 'true';
+}
+
+function buildSnsCrosspostDisabledResult(platform = 'sns') {
+  return {
+    ok: true,
+    skipped: true,
+    platform,
+    reason: 'blog_sns_crosspost_disabled',
+    snsCrosspostEnabled: false,
+  };
+}
+
 function getProjectRoot() {
   return env.PROJECT_ROOT || process.env.PROJECT_ROOT || process.cwd();
 }
@@ -315,6 +329,10 @@ async function buildIndependentPlatformCampaign(options = {}) {
  * @param {boolean} dryRun
  */
 async function crosspostToInstagram(blogPost, dryRun = false) {
+  if (!isSnsCrosspostEnabled()) {
+    console.log('[platform-orchestrator] BLOG_SNS_CROSSPOST_ENABLED=false — 인스타 크로스포스트 스킵');
+    return buildSnsCrosspostDisabledResult('instagram');
+  }
   try {
     const crossposter = require(path.join(getProjectRoot(), 'bots/social-media/instagram/lib/insta-crosspost.ts'));
     const payload = blogPost?.sourceMode === 'strategy_native'
@@ -349,6 +367,10 @@ async function crosspostToInstagram(blogPost, dryRun = false) {
  * @param {boolean} dryRun
  */
 async function crosspostToFacebook(blogPost, dryRun = false) {
+  if (!isSnsCrosspostEnabled()) {
+    console.log('[platform-orchestrator] BLOG_SNS_CROSSPOST_ENABLED=false — 페이스북 크로스포스트 스킵');
+    return buildSnsCrosspostDisabledResult('facebook');
+  }
   try {
     const { publishFacebookPost } = require(path.join(getProjectRoot(), 'bots/social-media/facebook/lib/facebook-publisher.ts'));
     const prepared = blogPost?.sourceMode === 'strategy_native'
@@ -380,6 +402,9 @@ async function crosspostToFacebook(blogPost, dryRun = false) {
 }
 
 async function runStrategyNativeFollowup(platform, dryRun = false) {
+  if (!isSnsCrosspostEnabled()) {
+    return buildSnsCrosspostDisabledResult(platform);
+  }
   const campaign = await buildIndependentPlatformCampaign({
     needInstagram: platform === 'instagram',
     needFacebook: platform === 'facebook',
@@ -428,6 +453,12 @@ async function orchestrateDailyPublishing(dryRun = false) {
   if (!isEnabled()) {
     console.log('[platform-orchestrator] BLOG_MULTI_PLATFORM_ENABLED=false — 건너뜀');
     return null;
+  }
+  // B5a removed the old broad crosspost path; this remaining consumer is kept
+  // behind a narrower SNS gate so daily Naver publishing stays unaffected.
+  if (!isSnsCrosspostEnabled()) {
+    console.log('[platform-orchestrator] BLOG_SNS_CROSSPOST_ENABLED=false — SNS 크로스포스트 스킵');
+    return buildSnsCrosspostDisabledResult('orchestrator');
   }
 
   const [igQuota, fbQuota] = await Promise.all([
@@ -602,6 +633,8 @@ async function orchestrateDailyPublishing(dryRun = false) {
 
 module.exports = {
   isEnabled,
+  isSnsCrosspostEnabled,
+  buildSnsCrosspostDisabledResult,
   orchestrateDailyPublishing,
   crosspostToInstagram,
   crosspostToFacebook,
