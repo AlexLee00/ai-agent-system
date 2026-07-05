@@ -22,19 +22,43 @@ async function main() {
   let verificationOverall = true;
   let requiresApproval = true;
   let llmText = '종합 판정: PASS\n1. 문법 정확성: PASS';
+  const passPredicate = {
+    assertions: [
+      { name: 'one', command: 'true', expect: { exitCode: 0 } },
+      { name: 'two', command: 'true', expect: { exitCode: 0 } },
+      { name: 'three', command: 'true', expect: { exitCode: 0 } },
+    ],
+    targetMetric: { description: 'fixture', source: 'smoke' },
+    budget: { maxWallMs: 300000, maxLlmCalls: 20 },
+  };
+  const failPredicate = {
+    ...passPredicate,
+    assertions: [
+      { name: 'fail', command: 'false', expect: { exitCode: 0 } },
+      ...passPredicate.assertions.slice(1),
+    ],
+  };
   let proposal = {
     branch: 'feature/recovery',
     title: 'Recovery fixture',
     changed_files: ['bots/darwin/fixture.ts'],
+    successPredicate: passPredicate,
   };
 
   Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
     if (request === 'child_process') {
       return {
-        execFileSync: (_bin: string, args: string[]) => {
-          gitCommands.push(args.join(' '));
-          if (args.join(' ') === 'rev-parse --abbrev-ref HEAD') return 'main\n';
-          if (args.join(' ') === 'branch --show-current') return 'main\n';
+        execFileSync: (binOrCommand: string, argsOrOptions: string[] | Record<string, unknown>) => {
+          const args = Array.isArray(argsOrOptions) ? argsOrOptions : [];
+          const command = Array.isArray(argsOrOptions) ? args.join(' ') : binOrCommand;
+          gitCommands.push(command);
+          if (command === 'false') {
+            const error = new Error('predicate failed');
+            (error as any).status = 1;
+            throw error;
+          }
+          if (command === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+          if (command === 'branch --show-current') return 'main\n';
           if (args[0] === 'merge' && args[1] === '--no-ff' && args[2] === 'conflict-branch') {
             const error = new Error('Automatic merge failed; fix conflicts');
             (error as any).stderr = 'CONFLICT fixture\nAutomatic merge failed; fix conflicts';
@@ -110,9 +134,11 @@ async function main() {
 
     verificationOverall = false;
     llmText = '종합 판정: FAIL\n보안 문제: FAIL';
+    proposal = { ...proposal, successPredicate: failPredicate };
     await verifier.triggerVerification('proposal-fail', 'feature/recovery');
-    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 1);
-    assert.ok(updates.some((item) => item.id === 'proposal-fail' && item.status === 'archived'));
+    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 0);
+    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeFailure').length, 1);
+    assert.ok(updates.some((item) => item.id === 'proposal-fail' && item.status === 'implementing'));
 
     await verifier.mergeVerifiedProposal('proposal-merge');
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeSuccess').length, 1);
@@ -122,8 +148,8 @@ async function main() {
       () => verifier.mergeBranch('conflict-branch', 'conflict-fixture'),
       /Automatic merge failed|CONFLICT/,
     );
-    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeFailure').length, 1);
-    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 1);
+    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeFailure').length, 2);
+    assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 0);
     assert.ok(gitCommands.some((cmd) => cmd === 'merge --abort'));
 
     verificationOverall = true;
@@ -132,6 +158,7 @@ async function main() {
     proposal = {
       ...proposal,
       branch: 'conflict-branch',
+      successPredicate: passPredicate,
     };
     const mergeFailuresBefore = autonomyCalls.filter((item) => item === 'recordMergeFailure').length;
     const errorsBefore = autonomyCalls.filter((item) => item === 'recordError').length;
@@ -139,7 +166,7 @@ async function main() {
     await new Promise((resolve) => setImmediate(resolve));
     assert.strictEqual(
       autonomyCalls.filter((item) => item === 'recordMergeFailure').length,
-      mergeFailuresBefore + 1,
+      mergeFailuresBefore,
     );
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, errorsBefore);
 

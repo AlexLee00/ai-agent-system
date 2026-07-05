@@ -3,7 +3,7 @@
 
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
@@ -43,6 +43,10 @@ export const CLAUDE_REFACTOR_MCP_TOOLS = [
   {
     name: 'pr_pipeline_status',
     description: 'Claude PR pipeline outcome/score 상태를 조회한다(read-only).',
+  },
+  {
+    name: 'quality_gate',
+    description: 'Claude quality gate 점수를 산출하고 가능하면 pr_review_scores에 best-effort 저장한다.',
   },
 ];
 
@@ -159,7 +163,17 @@ function estimateFunctions(filePath) {
   }
 }
 
-async function handleTool(name, params) {
+export async function handleTool(name, params) {
+  if (name === 'quality_gate') {
+    try {
+      const qualityGate = await import(pathToFileURL(path.join(REPO_ROOT, 'bots/claude/a2a/skills/quality-gate.ts')).href);
+      const result = await qualityGate.runQualityGate(params || {});
+      return { ok: result?.status === 'completed', result, ...(result?.output || {}) };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
+  }
+
   if (name === 'score_pr') {
     const prNumber = Math.floor(Number(params.prNumber || params.pr_number || params.number || 0));
     if (!prNumber) return { ok: false, error: 'prNumber is required' };
@@ -358,6 +372,7 @@ async function handleTool(name, params) {
 
 const PORT = Number(argValue('port', DEFAULT_PORT));
 const IS_SMOKE = process.argv.includes('--smoke') || process.argv.includes('--json');
+const IS_DIRECT_RUN = Boolean(process.argv[1]) && pathToFileURL(process.argv[1]).href === import.meta.url;
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -381,7 +396,7 @@ const server = http.createServer(async (req, res) => {
   json(res, 404, { ok: false, error: 'not found' });
 });
 
-if (IS_SMOKE) {
+if (IS_DIRECT_RUN && IS_SMOKE) {
   (async () => {
     const health = await hubFetch('/health');
     console.log(JSON.stringify({
@@ -392,7 +407,7 @@ if (IS_SMOKE) {
       hubReachable: health.ok,
     }));
   })();
-} else {
+} else if (IS_DIRECT_RUN) {
   server.on('error', (err) => {
     console.error(`[claude-refactor-mcp] server error: ${err.message}`);
     process.exit(1);

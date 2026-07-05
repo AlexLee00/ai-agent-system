@@ -29,6 +29,20 @@ const {
 }: {
   assertOpsRootOnMain: (options?: Record<string, unknown>) => { ok: boolean; branch: string; action: string; message: string };
 } = require('./ops-root-guard');
+const {
+  runSuccessPredicate,
+  appendLearningLine,
+}: {
+  runSuccessPredicate: (rawPredicate: unknown, options: { cwd: string }) => {
+    ok: boolean;
+    predicate_results?: Array<Record<string, unknown>>;
+    assertionResults: Array<Record<string, unknown>>;
+    budget: Record<string, unknown> | null;
+    failureReason: string | null;
+    validation: { ok: boolean; errors: string[] };
+  };
+  appendLearningLine: (proposalId: string, reason: string, details?: Record<string, unknown>) => string;
+} = require('./success-predicate');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const logger = createLogger('verifier', { team: 'darwin' });
@@ -285,6 +299,7 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
   let lab: { branchName: string; path: string } | null = null;
   let passed = false;
   let keepLab = false;
+  let deleteBranch = false;
   proposalStoreTyped.updateStatus(proposalId, 'verifying', {
     verification_started_at: new Date().toISOString(),
     branch: branchName,
@@ -299,45 +314,14 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
       cwd: lab.path,
       baseBranch: 'main',
     });
-    const fileContents = _loadContents(changedFiles, lab.path).slice(0, 8);
-    const failureHints = await _loadFailureHintsForVerification(proposalId, proposal, changedFiles, verification);
-
-    const verificationResult = await callHubLlm({
-      callerTeam: 'darwin',
-      agent: 'review',
-      taskType: 'auto_verification',
-      runtimePurpose: 'auto_verification',
-      abstractModel: 'anthropic_sonnet',
-      systemPrompt: `당신은 팀 제이의 연구 검증자(proof-r)입니다.
-다윈 자동 구현 결과를 검증하세요.
-
-검증 항목:
-1. 문법 정확성
-2. 기존 코드와 충돌 가능성
-3. 보안 문제
-4. 성능 우려
-5. 스타일/패턴 적합성
-
-반드시 PASS 또는 FAIL을 명시하고, 5개 항목별 짧은 판정을 포함하세요.`,
-      prompt: `제안 ID: ${proposalId}
-논문: ${proposal.title || proposal.paper?.title || 'unknown'}
-변경 파일:
-${fileContents.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')}
-
-사전 자동 검증 리포트:
-${verification.summary}
-
-이전 유사 검증 실패 궤적:
-${failureHints}
-
-위 실패 궤적이 있으면 같은 검증 누락을 반복하지 말고, PASS/FAIL 판정에 반영하세요.`,
-      timeoutMs: 30_000,
-    }) as HubLlmResponse | string;
-
-    const verificationText = String(
-      (typeof verificationResult === 'string' ? verificationResult : verificationResult?.text) || ''
-    ).trim();
-    passed = _decideVerificationPass(verification, verificationText);
+    const successPredicate = proposal.successPredicate && typeof proposal.successPredicate === 'object'
+      ? proposal.successPredicate as Record<string, unknown>
+      : {};
+    const predicateResult = runSuccessPredicate(successPredicate, { cwd: lab.path });
+    passed = predicateResult.ok;
+    const verificationText = passed
+      ? `PASS successPredicate assertions=${predicateResult.assertionResults.length}`
+      : `FAIL successPredicate reason=${predicateResult.failureReason || 'unknown'} errors=${predicateResult.validation?.errors?.join(',') || 'none'}`;
     const requiresApproval = autonomyLevelTyped.requiresApproval();
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
     if (!passed) {
@@ -370,22 +354,33 @@ ${failureHints}
         verification_report: verification.report,
         verification_summary: verification.summary,
         verified_at: new Date().toISOString(),
-        predicate_results: [],
-        metrics_evidence: [],
+        predicate_results: predicateResult.predicate_results || predicateResult.assertionResults,
+        metrics_evidence: [{
+          targetMetric: successPredicate.targetMetric || null,
+          source: 'successPredicate',
+        }],
+        budget: predicateResult.budget,
       });
     } else if (!passed && proposalStoreTyped.transitionProposal) {
-      proposalStoreTyped.transitionProposal(proposalId, 'archived', {
-        reason: 'verification_failed',
+      proposalStoreTyped.updateStatus(proposalId, 'implementing', {
         branch: branchName,
         files: changedFiles,
         error: null,
         verification_text: verificationText,
         verification_report: verification.report,
         verification_summary: verification.summary,
+        predicate_results: predicateResult.assertionResults,
+        predicate_failure_reason: predicateResult.failureReason,
         verified_at: new Date().toISOString(),
       });
+      appendLearningLine(proposalId, String(predicateResult.failureReason || 'verification_failed'), {
+        branch: branchName,
+        files: changedFiles,
+        predicate_results: predicateResult.assertionResults,
+      });
+      deleteBranch = true;
     } else {
-      proposalStoreTyped.updateStatus(proposalId, passed ? 'measured' : 'archived', {
+      proposalStoreTyped.updateStatus(proposalId, passed ? 'measured' : 'implementing', {
         branch: branchName,
         files: changedFiles,
         error: null,
@@ -393,8 +388,17 @@ ${failureHints}
         verification_report: verification.report,
         verification_summary: verification.summary,
         verified_at: new Date().toISOString(),
-        archive_reason: passed ? undefined : 'verification_failed',
+        predicate_results: predicateResult.assertionResults,
+        predicate_failure_reason: passed ? undefined : predicateResult.failureReason,
       });
+      if (!passed) {
+        appendLearningLine(proposalId, String(predicateResult.failureReason || 'verification_failed'), {
+          branch: branchName,
+          files: changedFiles,
+          predicate_results: predicateResult.assertionResults,
+        });
+        deleteBranch = true;
+      }
     }
 
     await rag.storeExperience({
@@ -431,14 +435,14 @@ ${failureHints}
 
     await postAlarm({
       message: passed
-        ? `✅ proof-r 검증 통과\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n📂 ${changedFiles.length}개 파일${requiresApproval ? '' : '\n🚀 L5 완전자율 모드 — 자동 머지 진행'}`
+        ? `✅ proof-r 검증 통과\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n📂 ${changedFiles.length}개 파일\n🧾 measured 상태로 전이 — adopt review 대기`
         : `❌ proof-r 검증 실패\n📄 ${proposal.title || proposalId}\n🌿 ${branchName}\n사유: ${verificationText.slice(0, 500)}`,
       team: 'darwin',
       alertLevel: passed ? 2 : 3,
       fromBot: 'proof-r',
       inlineKeyboard: passed && requiresApproval
         ? [[
-            { text: '✅ 머지 승인', callback_data: `darwin_merge:${proposalId}` },
+            { text: '🧾 채택 검토', callback_data: `darwin_manual:${proposalId}` },
             { text: '📝 수동 검토', callback_data: `darwin_manual:${proposalId}` },
           ]]
         : !passed ? [[
@@ -450,15 +454,7 @@ ${failureHints}
     if (passed) {
       autonomyLevelTyped.recordVerifiedSuccess();
     } else {
-      autonomyLevelTyped.recordError(new Error(`verification_failed: ${verificationText.slice(0, 500)}`));
-    }
-
-    if (passed && !requiresApproval) {
-      setImmediate(() => {
-        mergeVerifiedProposal(proposalId).catch((error) => {
-          logger.error(`자동 머지 실패: ${proposalId} -> ${error.message}`);
-        });
-      });
+      autonomyLevelTyped.recordMergeFailure(new Error(`predicate_failed: ${verificationText.slice(0, 500)}`));
     }
 
     return { ok: true, passed, changedFiles, verificationText };
@@ -515,6 +511,11 @@ ${failureHints}
     if (lab && (!keepLab || passed)) {
       try {
         removeLab(lab.path);
+      } catch {}
+    }
+    if (deleteBranch) {
+      try {
+        _deleteBranchIfExists(branchName);
       } catch {}
     }
   }

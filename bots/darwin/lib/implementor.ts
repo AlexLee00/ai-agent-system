@@ -22,6 +22,11 @@ const {
   createLab: (branchName: string) => { branchName: string; path: string };
   removeLab: (labPath: string) => { removed: boolean; pruned: boolean };
 } = require('./worktree-lab');
+const {
+  validateSuccessPredicate,
+}: {
+  validateSuccessPredicate: (raw: unknown) => { ok: boolean; errors: string[] };
+} = require('./success-predicate');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/', 'prototypes/'];
@@ -126,6 +131,8 @@ interface ApplyResult {
   branchName: string;
   changedFiles: string[];
   syntaxChecks: SyntaxCheckResult[];
+  blockedReason?: string;
+  predicateErrors?: string[];
 }
 
 const eventLakeTyped: EventLake = eventLake;
@@ -456,6 +463,22 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
   _assertProposalCleanForImplementation(proposalId, proposal);
 
   const branchName = proposal.branch || _sanitizeBranchName(proposalId);
+  const predicateValidation = validateSuccessPredicate(proposal.successPredicate);
+  if (!predicateValidation.ok) {
+    proposalStoreTyped.updateStatus(proposalId, String(proposal.status || 'proposed'), {
+      implementation_blocked_reason: 'predicate_missing',
+      predicate_errors: predicateValidation.errors,
+      implementation_blocked_at: new Date().toISOString(),
+    });
+    return {
+      ok: false,
+      branchName,
+      changedFiles: [],
+      syntaxChecks: [],
+      blockedReason: 'predicate_missing',
+      predicateErrors: predicateValidation.errors,
+    };
+  }
   let lab: { branchName: string; path: string } | null = null;
   let committed = false;
   let keepLab = false;

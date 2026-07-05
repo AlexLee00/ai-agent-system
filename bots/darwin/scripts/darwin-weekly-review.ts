@@ -14,6 +14,7 @@ const { query } = require(
 );
 const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));
 const proposalStore = require(path.join(PROJECT_ROOT, "bots/darwin/lib/proposal-store.ts"));
+const adoptPipeline = require(path.join(PROJECT_ROOT, "bots/darwin/lib/adopt-pipeline.ts"));
 
 const SHADOW_MIN_RUNS = 20;
 const SHADOW_MIN_DAYS = 7;
@@ -81,6 +82,11 @@ interface WeeklyReviewStats {
   triage_archived: number;
   triage_dry_run: boolean;
   triage_actions: Array<Record<string, unknown>>;
+  adopt_candidates: number;
+  adopt_blocked: number;
+  adopt_weekly_cap: number;
+  adopt_enabled: boolean;
+  adopt_dry_run: boolean;
 }
 
 interface CliOptions {
@@ -392,6 +398,7 @@ async function collectWeeklyStats(options: { triageDryRun?: boolean } = {}): Pro
   const triageResult = proposalStore.runProposalTriage({
     dryRun: options.triageDryRun !== false,
   });
+  const adoptReview = adoptPipeline.selectAdoptCandidates();
 
   const total = Number(cycle.total ?? 0);
   const successes = Number(cycle.successes ?? 0);
@@ -457,6 +464,11 @@ async function collectWeeklyStats(options: { triageDryRun?: boolean } = {}): Pro
     triage_archived: Number(triageResult.archived ?? 0),
     triage_dry_run: Boolean(triageResult.dryRun),
     triage_actions: Array.isArray(triageResult.actions) ? triageResult.actions : [],
+    adopt_candidates: Number(adoptReview.candidates?.length ?? 0),
+    adopt_blocked: Number(adoptReview.blocked?.length ?? 0),
+    adopt_weekly_cap: Number(adoptReview.cap ?? 0),
+    adopt_enabled: process.env.DARWIN_ADOPT_ENABLED === "true",
+    adopt_dry_run: process.env.DARWIN_ADOPT_ENABLED !== "true",
   };
 }
 
@@ -483,6 +495,9 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
 
 🧹 Proposal triage:
   대상: ${stats.triage_candidates}건 | archived: ${stats.triage_archived} | dryRun: ${stats.triage_dry_run}
+
+🧾 Adopt review:
+  후보: ${stats.adopt_candidates}/${stats.adopt_weekly_cap} | blocked: ${stats.adopt_blocked} | enabled: ${stats.adopt_enabled} | dryRun: ${stats.adopt_dry_run}
 
 🧠 Self-Rewarding DPO:
   preferred: ${stats.preferred_pairs} | rejected: ${stats.rejected_pairs}

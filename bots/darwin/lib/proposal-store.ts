@@ -146,7 +146,11 @@ function transitionProposal(
       metrics_evidence: Array.isArray((safeEvidence as { metrics_evidence?: unknown }).metrics_evidence)
         ? (safeEvidence as { metrics_evidence: unknown[] }).metrics_evidence
         : [],
-      pending_d3_predicate: true,
+      budget: safeEvidence.budget || (proposal.measurement && typeof proposal.measurement === 'object'
+        ? (proposal.measurement as Record<string, unknown>).budget
+        : null),
+      pending_d3_predicate: !Array.isArray((safeEvidence as { predicate_results?: unknown }).predicate_results)
+        || (safeEvidence as { predicate_results: unknown[] }).predicate_results.length === 0,
       updated_at: now,
     };
   }

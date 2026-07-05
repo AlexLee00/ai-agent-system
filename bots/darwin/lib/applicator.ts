@@ -96,6 +96,15 @@ const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: bool
 const eventLake: EventLake = require('../../../packages/core/lib/event-lake');
 const proposalStore: ProposalStore = require('./proposal-store');
 const autonomyLevel: AutonomyLevelModule = require('./autonomy-level');
+const {
+  buildPredicateGenerationPrompt,
+  parseJsonObjectFromText,
+  validateSuccessPredicate,
+}: {
+  buildPredicateGenerationPrompt: (paper: Record<string, unknown>, proposal: string) => string;
+  parseJsonObjectFromText: (text: unknown) => Record<string, unknown> | null;
+  validateSuccessPredicate: (raw: unknown) => { ok: boolean; predicate: Record<string, unknown> | null; errors: string[] };
+} = require('./success-predicate');
 
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - 10팀 113에이전트, Node.js 모노레포
@@ -204,6 +213,38 @@ Node.js (ES5, require) 스타일로 작성.
   return stripReasoningBlocks(result.text);
 }
 
+async function generateSuccessPredicate(paper: Partial<ResearchPaper>, proposal: string) {
+  try {
+    const result = await callHubLlm({
+      callerTeam: 'darwin',
+      agent: 'darwin.synthesis',
+      selectorKey: DARWIN_LLM_SELECTOR_KEY,
+      tokenBudgetProfile: DARWIN_TOKEN_BUDGET_PROFILE,
+      taskType: 'success_predicate_generation',
+      runtimePurpose: 'success_predicate_generation',
+      abstractModel: 'anthropic_sonnet',
+      systemPrompt: 'Return JSON only. Generate Darwin successPredicate assertions for machine execution.',
+      prompt: buildPredicateGenerationPrompt(paper as Record<string, unknown>, proposal),
+      timeoutMs: DARWIN_PROPOSAL_TIMEOUT_MS,
+    });
+    const parsed = parseJsonObjectFromText(result.text);
+    const validation = validateSuccessPredicate(parsed);
+    return {
+      ok: validation.ok,
+      predicate: validation.predicate,
+      errors: validation.errors,
+      raw: result.text || '',
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      predicate: null,
+      errors: [`predicate_generation_failed:${toErrorMessage(error)}`],
+      raw: '',
+    };
+  }
+}
+
 function verifyPrototype(code: string): VerificationResult {
   proposalStore.ensureDirs();
   const checks: VerificationChecks = { syntax: false, hasExports: false, noSideEffects: false, errors: [] };
@@ -283,6 +324,7 @@ async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
   const codeMatch = String(prototype || '').match(/```(?:javascript|js)?\n([\s\S]*?)```/);
   const codeOnly = codeMatch ? codeMatch[1].trim() : String(prototype || '').trim();
   const verification = verifyPrototype(codeOnly);
+  const predicateResult = await generateSuccessPredicate(paper, proposal);
   const requiresApproval = autonomyLevel.requiresApproval();
 
   const statusIcon = verification.passed ? '✅' : '⚠️';
@@ -297,10 +339,11 @@ async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
     String(proposal || '').slice(0, 600),
     '',
     `🔍 검증: ${verification.passed ? '통과' : `실패 — ${verification.checks.errors.join(', ')}`}`,
+    `🎯 Predicate: ${predicateResult.ok ? 'valid' : `invalid — ${predicateResult.errors.join(', ')}`}`,
     '',
-    verification.passed
+    verification.passed && predicateResult.ok
       ? (requiresApproval ? '승인하려면 "적용 승인"이라고 답해주세요.' : 'L5 완전자율 모드 — 자동 구현을 이어서 진행합니다.')
-      : '검증 실패 — 수동 검토 필요.',
+      : '검증/predicate 실패 — 수동 검토 필요.',
   ].filter(Boolean).join('\n');
 
   const proposalData = {
@@ -313,7 +356,9 @@ async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
     proposal,
     prototype: codeOnly,
     verification,
-    status: verification.passed ? (requiresApproval ? 'pending_approval' : 'approved') : 'needs_review',
+    successPredicate: predicateResult.predicate,
+    predicate_error: predicateResult.ok ? null : predicateResult.errors,
+    status: verification.passed && predicateResult.ok ? (requiresApproval ? 'pending_approval' : 'approved') : 'needs_review',
     created_at: new Date().toISOString(),
   };
 
@@ -325,24 +370,25 @@ async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
   }
 
   const proposalEventId = await eventLake.record({
-    eventType: verification.passed ? 'proposal_generated' : 'proposal_review_required',
+    eventType: verification.passed && predicateResult.ok ? 'proposal_generated' : 'proposal_review_required',
     team: 'darwin',
     botName: 'applicator',
-    severity: verification.passed ? 'info' : 'warn',
+    severity: verification.passed && predicateResult.ok ? 'info' : 'warn',
     title: String(paper.title || '').slice(0, 140),
-    message: verification.passed
+    message: verification.passed && predicateResult.ok
       ? (requiresApproval ? '검증 통과 후 승인 대기' : '검증 통과 후 자동 구현 진행')
-      : '프로토타입 검증 실패',
-    tags: ['proposal', verification.passed ? 'passed' : 'failed'],
+      : '프로토타입 또는 predicate 검증 실패',
+    tags: ['proposal', verification.passed && predicateResult.ok ? 'passed' : 'failed'],
     metadata: {
       proposal_id: proposalId,
       arxiv_id: paper.arxiv_id || '',
       verification_passed: verification.passed,
+      predicate_passed: predicateResult.ok,
       autonomy_level: requiresApproval ? 'L4' : 'L5',
     },
   }).catch(() => null);
 
-  const primaryButtons = verification.passed && requiresApproval ? [[
+  const primaryButtons = verification.passed && predicateResult.ok && requiresApproval ? [[
     { text: '✅ 승인 — 구현 시작', callback_data: `darwin_approve:${proposalId}` },
     { text: '❌ 거절', callback_data: `darwin_reject:${proposalId}` },
   ]] : !verification.passed ? [[
@@ -363,7 +409,7 @@ async function apply(paper: Partial<ResearchPaper>): Promise<ApplyResult> {
     }).catch(() => {});
   }
 
-  if (verification.passed && !requiresApproval) {
+  if (verification.passed && predicateResult.ok && !requiresApproval) {
       const implementor = require('./implementor');
       setImmediate(() => {
       implementor.triggerImplementation(proposalId).catch((error: unknown) => {
@@ -385,6 +431,7 @@ module.exports = {
   apply,
   generateProposal,
   generatePrototype,
+  generateSuccessPredicate,
   verifyPrototype,
   _testOnly_stripReasoningBlocks: stripReasoningBlocks,
   _testOnly_applicatorTimeouts: {
