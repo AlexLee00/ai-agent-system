@@ -80,3 +80,7 @@ GET  /hub/legal/case/:id/report    — 최신 감정서 조회
 - 시크릿 소스: `secrets-store.json` (14섹션, git 미추적)
 - 현재 상태: launchd는 `src/hub.js` wrapper 기준 운영, dist 런타임은 별도 targeted rebuild 대상
 - 런타임 dist 재생성: `npm run build:hub-runtime`
+
+## 페르소나
+
+→ **AGENTS.md 참조**(팀 정신·에이전트 정체성 — 정본은 설계서 § 부록).

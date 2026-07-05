@@ -18,3 +18,7 @@
 
 ## 전략: docs/strategy/luna.md | 개발: docs/dev/luna.md
 ## 코덱스: docs/codex/CODEX_CHRONOS_PHASE_A_*.md
+
+## 페르소나
+
+→ **AGENTS.md 참조**(팀 정신·에이전트 정체성 — 정본은 설계서 § 부록).
