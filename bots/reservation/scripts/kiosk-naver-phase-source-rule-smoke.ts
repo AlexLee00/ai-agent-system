@@ -252,6 +252,11 @@ async function main() {
     1,
     'elapsed Pickko rows should use low-severity reporting',
   );
+  assert.equal(
+    timeElapsedAlerts[0]?.dedupe_minutes,
+    12 * 60,
+    'elapsed Pickko report should be deduped across kiosk-monitor cycles',
+  );
   assert.ok(
     String(timeElapsedAlerts[0]?.incident_key || '').includes('2020_01_02'),
     'elapsed Pickko report incident key should include the date',

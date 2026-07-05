@@ -11,6 +11,8 @@ const {
   normalizeSourceRoom,
 } = require('./reservation-source-classifier');
 
+const TIME_ELAPSED_DEDUPE_MINUTES = 12 * 60;
+
 export type CreateKioskNaverPhaseServiceDeps = {
   log: Logger;
   readWsFile: (path: string, encoding: BufferEncoding) => string;
@@ -403,6 +405,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
             event_type: 'report',
             alert_level: 1,
             incident_key: buildTimeElapsedIncidentKey(entry),
+            dedupe_minutes: TIME_ELAPSED_DEDUPE_MINUTES,
             message: buildOpsAlertMessage({
               title: '⏰ 시간 경과 — 네이버 차단 생략',
               customer: entry.name || '(이름없음)',

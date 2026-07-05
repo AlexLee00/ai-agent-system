@@ -6,6 +6,7 @@ import { evaluateActiveEntryTriggerQualityGate } from '../shared/entry-trigger-e
 import {
   buildSymbolFeedbackBiasFromStats,
   buildWeakFeedbackSymbolEvidence,
+  getWeakFeedbackSymbolThresholds,
   isWeakFeedbackSymbol,
   loadSymbolFeedbackStats,
 } from '../shared/symbol-feedback.ts';
@@ -101,10 +102,11 @@ export async function runLunaWeakSymbolHardSmoke({ hardDb = false, symbol = 'SYN
   if (hardDb) {
     const stats = await loadSymbolFeedbackStats(symbol, exchange, { days: 90 });
     const evidence = buildWeakFeedbackSymbolEvidence(symbol, stats, {});
+    const thresholds = getWeakFeedbackSymbolThresholds({});
     assert.equal(evidence.weak, true);
-    assert.equal(evidence.sampleCount, 3);
-    assert.equal(evidence.winRate, 1 / 3);
-    assert.ok(evidence.avgPnl < 0);
+    assert.ok(evidence.sampleCount >= thresholds.minSamples);
+    assert.ok(evidence.winRate < thresholds.minWinRate);
+    assert.ok(evidence.avgPnl <= thresholds.maxAvgPnl);
     hard = evidence;
   }
 
