@@ -13,6 +13,7 @@ const env     = require('../../../packages/core/lib/env');
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 const kst     = require('../../../packages/core/lib/kst');
 const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
+const bookReviewBook = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/book-review-book.js'));
 
 // 알라딘 카테고리 ID
 const CATEGORIES = [
@@ -249,20 +250,15 @@ async function addToBookReviewQueue(books: RankedBook[]): Promise<number> {
 
   for (const book of books) {
     try {
-      const result = await pgPool.run('blog', `
-        INSERT INTO blog.book_review_queue
-          (title, author, publisher, isbn, category, priority, status, source, meta, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, 'queued', 'bestseller', $7, NOW())
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `, [
-        book.title,
-        book.author,
-        book.publisher,
-        book.isbn13 || null,
-        book.category_name_local || book.categoryName || '일반',
-        Math.round(book.final_score),
-        JSON.stringify({
+      const result = await bookReviewBook.upsertBookReviewQueueEntry({
+        title: book.title,
+        author: book.author,
+        publisher: book.publisher,
+        isbn: book.isbn13 || null,
+        category: book.category_name_local || book.categoryName || '일반',
+        priority: Math.round(book.final_score),
+        source: 'bestseller',
+        metadata: {
           aladin_url: book.link,
           cover_url: book.cover,
           pub_date: book.pubDate,
@@ -272,9 +268,9 @@ async function addToBookReviewQueue(books: RankedBook[]): Promise<number> {
           sales_point: book.salesPoint,
           added_by: 'bestseller-fetcher',
           added_at: kst.today(),
-        }),
-      ]);
-      if (result?.rowCount > 0) inserted++;
+        },
+      }, { source: 'bestseller' });
+      if (result?.inserted) inserted++;
     } catch (e: any) {
       console.warn(`[베스트셀러] 큐 추가 실패 (${book.title}):`, e.message);
     }

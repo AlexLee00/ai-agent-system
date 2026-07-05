@@ -88,6 +88,104 @@ function normalizeBookAuthor(value = '') {
     .filter(Boolean)[0] || '';
 }
 
+function normalizeReviewedBookKey(value = '') {
+  return normalizeBookKey(value);
+}
+
+function safeMetadata(value = {}) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+let bookReviewQueuePgForTest = null;
+function getBookReviewQueuePg() {
+  return bookReviewQueuePgForTest || pgPool;
+}
+
+function setBookReviewQueuePgForTest(mockPg = null) {
+  const previous = bookReviewQueuePgForTest;
+  bookReviewQueuePgForTest = mockPg;
+  return () => {
+    bookReviewQueuePgForTest = previous;
+  };
+}
+
+function buildBookReviewQueueDedupeKey(book = {}) {
+  const isbn = normalizeBookIsbn(book?.isbn || book?.book_isbn || book?.isbn13);
+  if (isbn) return `isbn:${isbn}`;
+  const titleKey = normalizeReviewedBookKey(book?.title || book?.book_title);
+  return titleKey ? `title:${titleKey}` : '';
+}
+
+function buildQueueMetadata(book = {}, metadata = {}) {
+  const dedupeKey = buildBookReviewQueueDedupeKey(book);
+  const reviewDemand = book?.reviewDemand || book?.review_demand || null;
+  const reviewDemandScore = Number(reviewDemand?.boost ?? book?.review_demand_score ?? 0);
+  return {
+    ...safeMetadata(book?.metadata),
+    ...safeMetadata(book?.meta),
+    ...safeMetadata(metadata),
+    ...(dedupeKey ? { dedupe_key: dedupeKey } : {}),
+    ...(reviewDemand ? { review_demand: reviewDemand } : {}),
+    ...(reviewDemandScore > 0 ? { review_demand_score: reviewDemandScore } : {}),
+  };
+}
+
+function sortQueueRowsForKeep(a = {}, b = {}) {
+  const aTime = Date.parse(a?.created_at || a?.updated_at || '') || 0;
+  const bTime = Date.parse(b?.created_at || b?.updated_at || '') || 0;
+  if (aTime !== bTime) return bTime - aTime;
+  return Number(b?.id || 0) - Number(a?.id || 0);
+}
+
+function sortQueueMatchesForStatus(rows = [], statusOrder = ['queued', 'selected', 'done']) {
+  const rank = (row = {}) => {
+    const status = String(row?.status || '').trim();
+    const idx = statusOrder.indexOf(status);
+    return idx >= 0 ? idx : statusOrder.length;
+  };
+  return [...rows].sort((a, b) => {
+    const rankDiff = rank(a) - rank(b);
+    if (rankDiff !== 0) return rankDiff;
+    const aTime = Date.parse(a?.queue_date || a?.created_at || a?.updated_at || '') || 0;
+    const bTime = Date.parse(b?.queue_date || b?.created_at || b?.updated_at || '') || 0;
+    if (aTime !== bTime) return bTime - aTime;
+    return Number(b?.id || 0) - Number(a?.id || 0);
+  });
+}
+
+function buildBookReviewQueueCleanupPlan(rows = []) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    if (String(row?.status || 'queued') !== 'queued') continue;
+    const key = buildBookReviewQueueDedupeKey(row);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+
+  const duplicateGroups = [];
+  for (const [dedupeKey, groupRows] of groups.entries()) {
+    if (groupRows.length < 2) continue;
+    const sorted = [...groupRows].sort(sortQueueRowsForKeep);
+    const keep = sorted[0];
+    const duplicates = sorted.slice(1);
+    duplicateGroups.push({
+      dedupeKey,
+      keepId: keep?.id,
+      title: keep?.title,
+      duplicateIds: duplicates.map((row) => row?.id).filter(Boolean),
+      duplicateCount: duplicates.length,
+    });
+  }
+
+  return {
+    totalRows: rows.length,
+    uniqueBooks: groups.size,
+    duplicateRows: duplicateGroups.reduce((sum, group) => sum + group.duplicateCount, 0),
+    groups: duplicateGroups,
+  };
+}
+
 async function ensureBookCatalogTable() {
   try {
     await pgPool.run('blog', `
@@ -124,7 +222,8 @@ async function ensureBookCatalogTable() {
 
 async function ensureBookReviewQueueTable() {
   try {
-    await pgPool.run('blog', `
+    const db = getBookReviewQueuePg();
+    await db.run('blog', `
       CREATE TABLE IF NOT EXISTS blog.book_review_queue (
         id SERIAL PRIMARY KEY,
         queue_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -141,12 +240,12 @@ async function ensureBookReviewQueueTable() {
       )
     `);
 
-    await pgPool.run('blog', `
+    await db.run('blog', `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_book_review_queue_daily_unique
       ON blog.book_review_queue (queue_date, title, author)
     `);
 
-    await pgPool.run('blog', `
+    await db.run('blog', `
       CREATE INDEX IF NOT EXISTS idx_book_review_queue_status
       ON blog.book_review_queue (status, queue_date DESC, priority DESC)
     `);
@@ -250,6 +349,7 @@ async function listBookCatalog(options = {}) {
 
 async function listBookReviewQueue(options = {}) {
   await ensureBookReviewQueueTable();
+  const db = getBookReviewQueuePg();
 
   const clauses = [];
   const params = [];
@@ -262,7 +362,7 @@ async function listBookReviewQueue(options = {}) {
   const limit = Math.max(1, Math.min(Number(options.limit || 20), 100));
   const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-  const rows = await pgPool.query('blog', `
+  const rows = await db.query('blog', `
     SELECT
       id,
       queue_date,
@@ -285,8 +385,135 @@ async function listBookReviewQueue(options = {}) {
   return Array.isArray(rows) ? rows : [];
 }
 
+async function findBookReviewQueueEntryByDedupeKey(book = {}, options = {}) {
+  await ensureBookReviewQueueTable();
+  const db = getBookReviewQueuePg();
+  const isbn = normalizeBookIsbn(book?.isbn || book?.book_isbn || book?.isbn13);
+  const titleKey = normalizeReviewedBookKey(book?.title || book?.book_title);
+  const statusOrder = Array.isArray(options.statusOrder) && options.statusOrder.length
+    ? options.statusOrder.map((status) => String(status || '').trim()).filter(Boolean)
+    : null;
+  if (!isbn && !titleKey) return null;
+
+  if (isbn) {
+    const isbnRows = await db.query('blog', `
+      SELECT id, title, author, isbn, status, metadata, created_at, updated_at
+      FROM blog.book_review_queue
+      WHERE isbn = ?
+        AND status <> 'archived_duplicate'
+      ORDER BY queue_date DESC, id DESC
+      LIMIT 50
+    `, [isbn]);
+    const current = sortQueueMatchesForStatus(isbnRows || [], statusOrder || ['queued', 'selected', 'done'])[0];
+    if (current?.id) return current;
+  }
+
+  if (!titleKey) return null;
+  const rows = await db.query('blog', `
+    SELECT id, title, author, isbn, status, metadata, created_at, updated_at
+    FROM blog.book_review_queue
+    WHERE status <> 'archived_duplicate'
+    ORDER BY queue_date DESC, id DESC
+    LIMIT 5000
+  `);
+  const matches = (rows || []).filter((row) => normalizeReviewedBookKey(row?.title) === titleKey);
+  return sortQueueMatchesForStatus(matches, statusOrder || ['queued', 'selected', 'done'])[0] || null;
+}
+
+async function upsertBookReviewQueueEntry(book = {}, options = {}) {
+  await ensureBookReviewQueueTable();
+  const db = getBookReviewQueuePg();
+  const title = String(book?.title || book?.book_title || '').trim();
+  const author = String(book?.author || book?.book_author || '').trim() || '미상';
+  const isbn = normalizeBookIsbn(book?.isbn || book?.book_isbn || book?.isbn13) || null;
+  const category = String(book?.category || book?.category_name_local || book?.categoryName || '기타').trim();
+  const priority = Number.isFinite(Number(book?.priority ?? book?.final_score))
+    ? Math.round(Number(book?.priority ?? book?.final_score))
+    : 50;
+  const source = String(book?.source || options.source || 'catalog').trim();
+  const metadata = buildQueueMetadata({ ...book, title, author, isbn }, options.metadata);
+  const dedupeKey = buildBookReviewQueueDedupeKey({ title, isbn });
+  if (!title) throw new Error('도서리뷰 큐 적재에는 title이 필요합니다');
+
+  const current = await findBookReviewQueueEntryByDedupeKey({ title, isbn });
+  if (current?.id) {
+    const currentStatus = String(current.status || '').trim() || 'queued';
+    if (currentStatus !== 'queued') {
+      return {
+        inserted: false,
+        updated: false,
+        id: current.id,
+        dedupeKey,
+        reason: `existing_${currentStatus}`,
+      };
+    }
+    const nextMetadata = {
+      ...safeMetadata(current.metadata),
+      ...metadata,
+      duplicate_seen_at: new Date().toISOString(),
+    };
+    const result = await db.run('blog', `
+      UPDATE blog.book_review_queue
+      SET author = CASE WHEN COALESCE(author, '') = '' THEN ? ELSE author END,
+          isbn = COALESCE(NULLIF(isbn, ''), ?),
+          category = ?,
+          priority = GREATEST(COALESCE(priority, 0), ?),
+          source = ?,
+          metadata = ?::jsonb,
+          updated_at = NOW()
+      WHERE id = ?
+    `, [
+      author,
+      isbn,
+      category,
+      priority,
+      source,
+      JSON.stringify(nextMetadata),
+      current.id,
+    ]);
+    return {
+      inserted: false,
+      updated: Number(result?.rowCount || 0) > 0,
+      id: current.id,
+      dedupeKey,
+    };
+  }
+
+  const result = await db.get('blog', `
+    INSERT INTO blog.book_review_queue (
+      queue_date, title, author, isbn, category, priority, status, source, metadata, updated_at
+    )
+    VALUES (
+      CURRENT_DATE, ?, ?, ?, ?, ?, 'queued', ?, ?::jsonb, NOW()
+    )
+    ON CONFLICT (queue_date, title, author) DO UPDATE
+      SET priority = GREATEST(COALESCE(blog.book_review_queue.priority, 0), EXCLUDED.priority),
+          category = EXCLUDED.category,
+          source = EXCLUDED.source,
+          metadata = COALESCE(blog.book_review_queue.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+          updated_at = NOW()
+    RETURNING id
+  `, [
+    title,
+    author,
+    isbn,
+    category,
+    priority,
+    source,
+    JSON.stringify(metadata),
+  ]);
+
+  return {
+    inserted: true,
+    updated: false,
+    id: result?.id || null,
+    dedupeKey,
+  };
+}
+
 async function updateBookReviewQueueEntry(input = {}) {
   await ensureBookReviewQueueTable();
+  const db = getBookReviewQueuePg();
 
   const isbn = normalizeBookIsbn(input.isbn);
   const title = String(input.title || '').trim();
@@ -294,11 +521,13 @@ async function updateBookReviewQueueEntry(input = {}) {
     throw new Error('queue 업데이트에는 isbn 또는 title이 필요합니다');
   }
 
-  const matchSql = isbn
-    ? 'SELECT id, metadata FROM blog.book_review_queue WHERE isbn = ? ORDER BY queue_date DESC, id DESC LIMIT 1'
-    : 'SELECT id, metadata FROM blog.book_review_queue WHERE title = ? ORDER BY queue_date DESC, id DESC LIMIT 1';
-  const matchParams = isbn ? [isbn] : [title];
-  const current = await pgPool.get('blog', matchSql, matchParams);
+  const targetStatus = String(input.status || '').trim();
+  const statusOrder = targetStatus === 'done'
+    ? ['selected', 'queued', 'done']
+    : targetStatus === 'selected'
+      ? ['queued', 'selected']
+      : ['queued', 'selected', 'done'];
+  const current = await findBookReviewQueueEntryByDedupeKey({ isbn, title }, { statusOrder });
   if (!current?.id) {
     return { updated: false, reason: '큐 항목 없음' };
   }
@@ -317,6 +546,8 @@ async function updateBookReviewQueueEntry(input = {}) {
 
   if (Number.isFinite(Number(input.postId))) nextMetadata.postId = Number(input.postId);
   if (input.note) nextMetadata.note = String(input.note).trim();
+  if (String(input.status || '') === 'selected') nextMetadata.selected_at = new Date().toISOString();
+  if (String(input.status || '') === 'done') nextMetadata.done_at = new Date().toISOString();
   if (Object.keys(nextMetadata).length > 0) {
     updates.push('metadata = ?::jsonb');
     params.push(JSON.stringify(nextMetadata));
@@ -329,7 +560,7 @@ async function updateBookReviewQueueEntry(input = {}) {
   updates.push('updated_at = NOW()');
   params.push(current.id);
 
-  const result = await pgPool.run('blog', `
+  const result = await db.run('blog', `
     UPDATE blog.book_review_queue
     SET ${updates.join(', ')}
     WHERE id = ?
@@ -618,6 +849,64 @@ function httpsGet(url, headers = {}, options = {}) {
   });
 }
 
+function sleep(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+function calculateReviewDemandBoost(total = 0, weight = 5) {
+  const value = Math.max(0, Number(total || 0));
+  if (!value) return 0;
+  return Math.round(Math.log10(value + 1) * Number(weight || 5));
+}
+
+async function fetchNaverBookReviewDemand(title, options = {}) {
+  const queryTitle = String(title || '').trim();
+  if (!queryTitle) return { total: 0, boost: 0, skipped: true, reason: 'missing_title' };
+  const credentials = options.credentials || await resolveNaverCredentials({ timeoutMs: options.secretTimeoutMs || 3000 }).catch(() => ({}));
+  const { clientId, clientSecret } = credentials;
+  if (!clientId || !clientSecret) return { total: 0, boost: 0, skipped: true, reason: 'missing_naver_credentials' };
+
+  const query = `${queryTitle} 서평`;
+  const url = `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(query)}&display=1&sort=sim`;
+  const request = options.fetchJson
+    ? options.fetchJson(url, { clientId, clientSecret, query })
+    : httpsGet(url, {
+      'X-Naver-Client-Id': clientId,
+      'X-Naver-Client-Secret': clientSecret,
+    }, { timeoutMs: options.timeoutMs || 8000 });
+  const response = await request.catch((error) => ({ error }));
+  if (response?.error) {
+    return { total: 0, boost: 0, skipped: true, reason: response.error.message || 'naver_request_failed' };
+  }
+  const body = response?.body || response;
+  const total = Math.max(0, Number(body?.total || 0));
+  return {
+    total,
+    boost: calculateReviewDemandBoost(total, options.weight || 5),
+    query,
+    skipped: false,
+  };
+}
+
+async function enrichBooksWithReviewDemand(books = [], options = {}) {
+  const result = [];
+  const delayMs = Math.max(0, Number(options.delayMs ?? 250));
+  const credentials = options.credentials || await resolveNaverCredentials({ timeoutMs: options.secretTimeoutMs || 3000 }).catch(() => ({}));
+  for (const book of books || []) {
+    const demand = await fetchNaverBookReviewDemand(book?.title || book?.book_title, {
+      ...options,
+      credentials,
+    });
+    result.push({
+      ...book,
+      priority: Number(book?.priority ?? book?.final_score ?? 50) + Number(demand.boost || 0),
+      reviewDemand: demand,
+    });
+    if (delayMs > 0) await sleep(delayMs);
+  }
+  return result;
+}
+
 function normalizeBook(value = {}) {
   return {
     title: String(value.title || '').replace(/<[^>]+>/g, '').trim(),
@@ -746,6 +1035,53 @@ function buildDiversePreferredBooks(catalogBooks = [], limit = 5, reviewedHistor
   return result.slice(0, limit);
 }
 
+function buildBalancedBookReviewSeeds({
+  queuedBooks = [],
+  catalogBooks = [],
+  reviewedHistory = [],
+  queueLimit = 3,
+  totalLimit = 6,
+} = {}) {
+  const seen = new Set();
+  const queueSeeds = [];
+  for (const book of queuedBooks || []) {
+    const key = buildBookReviewQueueDedupeKey(book);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    queueSeeds.push({
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn || '',
+      category: book.category || '기타',
+      priority: Number(book.priority || 50),
+      source: book.source || 'queue',
+      queueId: book.id || null,
+      fromQueue: true,
+    });
+    if (queueSeeds.length >= queueLimit) break;
+  }
+
+  const catalogSeeds = [];
+  const candidates = buildDiversePreferredBooks(catalogBooks, Math.max(totalLimit * 2, 12), reviewedHistory);
+  for (const book of candidates || []) {
+    const key = buildBookReviewQueueDedupeKey(book);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    catalogSeeds.push({
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn || '',
+      category: book.category || inferCatalogCategory(book.title),
+      priority: Number(book.priority || 50),
+      source: book.source || 'catalog',
+      fromCatalog: true,
+    });
+    if (queueSeeds.length + catalogSeeds.length >= totalLimit) break;
+  }
+
+  return [...queueSeeds, ...catalogSeeds].slice(0, totalLimit);
+}
+
 async function buildBookReviewQueue(options = {}) {
   await ensureBookReviewQueueTable();
   const limit = Math.max(1, Math.min(Number(options.limit || 5), 20));
@@ -753,90 +1089,39 @@ async function buildBookReviewQueue(options = {}) {
   const reviewedHistory = await loadReviewedBookHistory();
   const preferredBooks = buildDiversePreferredBooks(catalogBooks, Math.max(limit * 2, 8), reviewedHistory);
 
-  const todayRows = await pgPool.query('blog', `
-    SELECT id, title, author, isbn, status
-    FROM blog.book_review_queue
-    WHERE queue_date = CURRENT_DATE
-  `);
-  const todayRowMap = new Map(
-    (todayRows || []).map((row) => [
-      normalizeBookIsbn(row?.isbn) || `${normalizeBookKey(row?.title)}|${normalizeBookAuthor(row?.author)}`,
-      row,
-    ])
-  );
-  const existingKeys = new Set(todayRowMap.keys());
-
   const selected = [];
-  let updated = 0;
+  const existingKeys = new Set();
   for (const book of preferredBooks) {
-    const key = normalizeBookIsbn(book?.isbn) || `${normalizeBookKey(book?.title)}|${normalizeBookAuthor(book?.author)}`;
+    const key = buildBookReviewQueueDedupeKey(book);
     if (!key) continue;
-
-    const metadata = {
-      category: book.category || inferCatalogCategory(book.title),
-      preferred: true,
-      builtAt: new Date().toISOString(),
-    };
-
-    if (existingKeys.has(key)) {
-      const current = todayRowMap.get(key);
-      const result = await pgPool.run('blog', `
-        UPDATE blog.book_review_queue
-        SET isbn = COALESCE(?, isbn),
-            category = ?,
-            priority = ?,
-            source = ?,
-            metadata = COALESCE(metadata, '{}'::jsonb) || ?::jsonb,
-            updated_at = NOW()
-        WHERE id = ?
-      `, [
-        normalizeBookIsbn(book.isbn) || null,
-        book.category || inferCatalogCategory(book.title),
-        Number(book.priority || 50),
-        book.source || 'catalog',
-        JSON.stringify(metadata),
-        current.id,
-      ]);
-      updated += Number(result?.rowCount || 0) > 0 ? 1 : 0;
-      continue;
-    }
-
+    if (existingKeys.has(key)) continue;
     selected.push(book);
     existingKeys.add(key);
     if (selected.length >= limit) break;
   }
 
+  const demandBooks = options.skipDemand
+    ? selected
+    : await enrichBooksWithReviewDemand(selected, {
+      delayMs: options.demandDelayMs ?? 250,
+      secretTimeoutMs: options.secretTimeoutMs || 3000,
+    }).catch((error) => {
+      console.warn('[도서스킬] 네이버 서평 수요 점수 보강 실패:', error.message);
+      return selected;
+    });
+
   let inserted = 0;
-  for (const book of selected) {
+  let updated = 0;
+  for (const book of demandBooks) {
     const metadata = {
       category: book.category || inferCatalogCategory(book.title),
       preferred: true,
       builtAt: new Date().toISOString(),
     };
 
-    const result = await pgPool.run('blog', `
-      INSERT INTO blog.book_review_queue (
-        queue_date, title, author, isbn, category, priority, status, source, metadata, updated_at
-      )
-      VALUES (
-        CURRENT_DATE, ?, ?, ?, ?, ?, 'queued', ?, ?::jsonb, NOW()
-      )
-      ON CONFLICT (queue_date, title, author) DO UPDATE
-        SET priority = EXCLUDED.priority,
-            category = EXCLUDED.category,
-            source = EXCLUDED.source,
-            metadata = COALESCE(blog.book_review_queue.metadata, '{}'::jsonb) || EXCLUDED.metadata,
-            updated_at = NOW()
-    `, [
-      book.title,
-      book.author,
-      normalizeBookIsbn(book.isbn) || null,
-      book.category || inferCatalogCategory(book.title),
-      Number(book.priority || 50),
-      book.source || 'catalog',
-      JSON.stringify(metadata),
-    ]);
-    inserted += Number(result?.rowCount || 0) > 0 ? 1 : 0;
+    const result = await upsertBookReviewQueueEntry(book, { source: book.source || 'catalog', metadata });
+    if (result.inserted) inserted += 1;
+    else if (result.updated) updated += 1;
   }
 
   const rows = await listBookReviewQueue({ limit, status: 'queued' });
@@ -866,6 +1151,7 @@ function scoreBookCandidate(candidate = {}, sourceFrequency = new Map()) {
   if (candidate.author && !String(candidate.author).includes('^')) score += 1;
   if (/세트|전집|필독서|진로|교과연계/i.test(candidate.title || '')) score -= 4;
   score += Number(candidate.sourceScore || SOURCE_SCORE_MAP[candidate.source] || 0);
+  score += Number(candidate.reviewDemand?.boost ?? candidate.review_demand_score ?? 0);
   score += Number(candidate.editionCount || 0) > 0 ? Math.min(2, Math.floor(Number(candidate.editionCount || 0) / 5)) : 0;
   score += Number(sourceFrequency.get(candidate.isbn || `${candidate.title}|${candidate.author}`) || 0) * 4;
   return score;
@@ -1413,13 +1699,21 @@ async function resolveBookForReview(input = {}) {
 }
 
 module.exports = {
+  buildBalancedBookReviewSeeds,
   buildBookReviewQueue,
+  buildBookReviewQueueCleanupPlan,
+  buildBookReviewQueueDedupeKey,
   buildDiversePreferredBooks,
+  calculateReviewDemandBoost,
+  enrichBooksWithReviewDemand,
+  fetchNaverBookReviewDemand,
+  findBookReviewQueueEntryByDedupeKey,
   inferCatalogCategory,
   listBookCatalog,
   listBookReviewQueue,
   loadCatalogBooks,
   loadReviewedBookHistory,
+  normalizeReviewedBookKey,
   resolveBookForReview,
   searchBookCandidates,
   searchData4LibraryPopular,
@@ -1428,6 +1722,8 @@ module.exports = {
   searchOpenLibrary,
   syncPopularBooksToCatalog,
   syncRecommendedBooksToCatalog,
+  setBookReviewQueuePgForTest,
+  upsertBookReviewQueueEntry,
   updateBookCatalogEntry,
   updateBookReviewQueueEntry,
 };

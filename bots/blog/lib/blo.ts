@@ -258,6 +258,9 @@ function _extractTopicKeywords(researchData = {}) {
 }
 
 function _normalizeReviewedBookKey(value = '') {
+  if (typeof blogSkills.bookReviewBook.normalizeReviewedBookKey === 'function') {
+    return blogSkills.bookReviewBook.normalizeReviewedBookKey(value);
+  }
   return String(value || '')
     .toLowerCase()
     .replace(/\([^)]*\)/g, ' ')
@@ -305,7 +308,7 @@ async function _buildBookReviewSkillInput(researchData = {}) {
   let queuedBooks = [];
   let reviewedHistory = [];
   try {
-    queuedBooks = await blogSkills.bookReviewBook.listBookReviewQueue({ limit: 6, status: 'queued' });
+    queuedBooks = await blogSkills.bookReviewBook.listBookReviewQueue({ limit: 20, status: 'queued' });
   } catch (error) {
     console.warn('[블로] 도서리뷰 큐 로드 실패:', error.message);
   }
@@ -322,6 +325,7 @@ async function _buildBookReviewSkillInput(researchData = {}) {
 
   const queuedSeeds = Array.isArray(queuedBooks)
     ? queuedBooks.map((book) => ({
+      id: book.id || null,
       title: book.title,
       author: book.author,
       isbn: book.isbn || '',
@@ -330,10 +334,17 @@ async function _buildBookReviewSkillInput(researchData = {}) {
       source: book.source || 'queue',
     }))
     : [];
-  const catalogSeeds = Array.isArray(preferredBooks)
-    ? blogSkills.bookReviewBook.buildDiversePreferredBooks(preferredBooks, 6, reviewedHistory)
-    : [];
-  const preferredSeeds = [...queuedSeeds, ...catalogSeeds].slice(0, 6);
+  const preferredSeeds = typeof blogSkills.bookReviewBook.buildBalancedBookReviewSeeds === 'function'
+    ? blogSkills.bookReviewBook.buildBalancedBookReviewSeeds({
+      queuedBooks: queuedSeeds,
+      catalogBooks: preferredBooks,
+      reviewedHistory,
+      queueLimit: 3,
+      totalLimit: 6,
+    })
+    : [...queuedSeeds, ...(Array.isArray(preferredBooks)
+      ? blogSkills.bookReviewBook.buildDiversePreferredBooks(preferredBooks, 6, reviewedHistory)
+      : [])].slice(0, 6);
   const topic = String(
     researchData?.it_news?.[0]?.title
     || researchData?.nodejs_updates?.[0]?.name
