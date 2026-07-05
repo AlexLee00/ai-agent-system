@@ -52,6 +52,16 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  Darwin V2 shadow/evaluator 학습층 활성 상태.
+  FROZEN 2026-07-05 — TS 리모델링 사이클이 canonical이므로 명시 env가 없으면 동결.
+  DARWIN_V2_SHADOW_ENABLED=true AND 기존 shadow 활성 조건을 모두 만족해야 활성.
+  """
+  def v2_shadow_enabled? do
+    System.get_env("DARWIN_V2_SHADOW_ENABLED", "false") == "true" and
+      shadow_mode_active?()
+  end
+
+  @doc """
   ESPL 활성화 여부.
   환경변수: DARWIN_ESPL_ENABLED (기본 false)
   """
@@ -185,6 +195,7 @@ defmodule Darwin.V2.Config do
       kill_switch:                 kill_switch?(),
       llm_selector_enabled:        llm_selector_enabled?(),
       shadow_mode_enabled:         shadow_mode_active?(),
+      v2_shadow_enabled:           v2_shadow_enabled?(),
       espl_enabled:                espl_enabled?(),
       reflexion_enabled:           reflexion_enabled?(),
       self_rag_enabled:            self_rag_enabled?(),

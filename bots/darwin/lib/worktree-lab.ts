@@ -11,6 +11,7 @@ const os: typeof import('os') = require('os');
 const path: typeof import('path') = require('path');
 const { execFileSync }: typeof import('child_process') = require('child_process');
 const env: { PROJECT_ROOT: string } = require('../../../packages/core/lib/env');
+const telemetry = require('./telemetry');
 
 type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
 
@@ -97,6 +98,13 @@ function createLab(branchName: string, options: LabOptions = {}): LabRecord {
     runGit(['worktree', 'add', labPath, branchName], { cwd: repoRoot });
   }
 
+  telemetry.recordTelemetry({
+    phase: 'worktree_lab',
+    event: 'create',
+    branchName,
+    labPath,
+    baseRef,
+  });
   return { branchName, path: labPath, labRoot, baseRef };
 }
 
@@ -105,6 +113,11 @@ function removeLab(labPath: string, options: LabOptions = {}): { removed: boolea
   const runGit = options.runGit || defaultRunGit;
   runGit(['worktree', 'remove', '--force', labPath], { cwd: repoRoot });
   runGit(['worktree', 'prune'], { cwd: repoRoot });
+  telemetry.recordTelemetry({
+    phase: 'worktree_lab',
+    event: 'remove',
+    labPath,
+  });
   return { removed: true, pruned: true };
 }
 

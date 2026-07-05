@@ -77,6 +77,9 @@ interface AnalysisSummaryResult {
 const { callHubLlm }: {
   callHubLlm: (request: Record<string, unknown>) => Promise<HubLlmResponse | string>;
 } = require('../../../packages/core/lib/hub-client');
+const { getDarwinLlmTimeout }: {
+  getDarwinLlmTimeout: (purpose: string) => number;
+} = require('./llm-timeout-profile');
 const pgPool: PgPool = require('../../../packages/core/lib/pg-pool');
 const githubClient: GitHubClient = require('../../../packages/core/lib/github-client');
 const env: EnvModule = require('../../../packages/core/lib/env');
@@ -601,7 +604,7 @@ GitHub/논문에서 발견한 패턴을 Node.js 스킬 모듈로 구현하세요
 ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
 
 파일 경로: packages/core/lib/skills/${skillDir}/${skillName}.js`,
-        timeoutMs: 45_000,
+        timeoutMs: getDarwinLlmTimeout('skill_generation'),
       });
 
       const generatedText = typeof generated === 'string' ? generated : generated?.text || '';

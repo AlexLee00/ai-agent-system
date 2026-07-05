@@ -63,6 +63,7 @@ async function main() {
                 scanner_proposals: 2,
                 scanner_verified: 1,
                 scanner_avg_duration_sec: 123,
+                scanner_keyword_evolution_count: 3,
             }];
           }
           if (text.includes('darwin_dpo_preference_pairs')) {
@@ -103,8 +104,13 @@ async function main() {
         },
       };
     }
-    if (String(request).endsWith('bots/darwin/lib/proposal-store.ts')) {
+    if (String(request).endsWith('bots/darwin/lib/proposal-store.ts') || request === './proposal-store.ts') {
       return {
+        listProposals: () => [
+          { id: 'm', status: 'measured', measurement: { predicate_results: [{ ok: true }, { ok: false }] } },
+          { id: 'a', status: 'adopted', measurement: { predicate_results: [{ ok: true }] } },
+        ],
+        normalizeProposalState: (status: unknown) => String(status || 'proposed'),
         runProposalTriage: ({ dryRun }: { dryRun?: boolean } = {}) => ({
           ok: true,
           dryRun: dryRun !== false,
@@ -115,6 +121,12 @@ async function main() {
             previousStatus: 'implementing',
           }],
         }),
+      };
+    }
+    if (String(request).endsWith('bots/darwin/lib/telemetry')) {
+      return {
+        recordTelemetry: () => ({ ok: true }),
+        tailTelemetry: () => [],
       };
     }
     return originalLoad.call(this, request, parent, isMain);
@@ -187,8 +199,12 @@ async function main() {
   assert.strictEqual(opsPayload.stats.scanner_summary_alarm_failures, 1);
   assert.strictEqual(opsPayload.stats.scanner_registry_synced, 20);
   assert.strictEqual(opsPayload.stats.scanner_registry_sync_failures, 0);
+  assert.strictEqual(opsPayload.stats.scanner_keyword_evolution_count, 3);
+  assert.strictEqual(opsPayload.stats.learn_report.keywordEvolutionCount, 3);
+  assert.strictEqual(opsPayload.stats.learn_report.proposalStats.predicatePassed, 2);
   assert.strictEqual(reviewPayload.stats.scanner_high_relevance, 5);
   assert.match(opsPayload.payload.message, /Scanner evidence/);
+  assert.match(opsPayload.payload.message, /LEARN/);
   assert.match(opsPayload.payload.message, /promotionReady: true/);
   assert.match(opsPayload.payload.message, /최신 알림 상태: high=0, sent=false/);
   assert.match(opsPayload.payload.message, /Registry sync: 20\/0/);

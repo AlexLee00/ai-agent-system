@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const crypto = require('node:crypto');
+const nodeCrypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
@@ -29,6 +29,16 @@ type PruneResult = {
   removed: RemovedBackup[];
 };
 
+type CompressedRuntimeBackup = {
+  path: string;
+  compressedPath: string;
+  ok: boolean;
+  status: string;
+  bytesBefore: number;
+  bytesAfter: number | null;
+  stderr?: string;
+};
+
 type SecretsBackupResult = {
   ok: boolean;
   status: string;
@@ -52,7 +62,7 @@ function parsePositiveInt(value: unknown, fallback: number) {
 
 function sha256(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256');
+    const hash = nodeCrypto.createHash('sha256');
     const stream = fs.createReadStream(filePath);
     stream.on('data', (chunk: Buffer | string) => hash.update(chunk));
     stream.on('error', reject);
@@ -110,6 +120,55 @@ function pruneOldBackups(backupDir: string, currentRunDir: string, retentionDays
   }
 
   return { enabled: true, retentionDays, removed };
+}
+
+function compressOldRuntimeBackups(backupDir: string, currentRunDir: string): CompressedRuntimeBackup[] {
+  const current = path.resolve(currentRunDir);
+  const compressed: CompressedRuntimeBackup[] = [];
+
+  if (!fs.existsSync(backupDir)) return compressed;
+
+  for (const entry of fs.readdirSync(backupDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !isBackupRunDirName(entry.name)) continue;
+    const dirPath = path.resolve(backupDir, entry.name);
+    if (dirPath === current) continue;
+    if (!isHubStageDBackupDir(dirPath)) continue;
+
+    const runtimePath = path.join(dirPath, 'hub_runtime.sql');
+    const compressedPath = `${runtimePath}.zst`;
+    if (!fs.existsSync(runtimePath) || fs.existsSync(compressedPath)) continue;
+
+    const bytesBefore = fs.statSync(runtimePath).size;
+    const zstd = run('zstd', ['-T0', '-3', runtimePath], { timeout: 300_000 });
+    if (!zstd.ok) {
+      compressed.push({
+        path: runtimePath,
+        compressedPath,
+        ok: false,
+        status: 'compress_failed',
+        bytesBefore,
+        bytesAfter: fs.existsSync(compressedPath) ? fs.statSync(compressedPath).size : null,
+        stderr: zstd.stderr,
+      });
+      continue;
+    }
+
+    const verify = run('zstd', ['-t', compressedPath], { timeout: 300_000 });
+    if (verify.ok) {
+      fs.rmSync(runtimePath, { force: true });
+    }
+    compressed.push({
+      path: runtimePath,
+      compressedPath,
+      ok: verify.ok,
+      status: verify.ok ? 'compressed' : 'verify_failed',
+      bytesBefore,
+      bytesAfter: fs.existsSync(compressedPath) ? fs.statSync(compressedPath).size : null,
+      stderr: verify.stderr,
+    });
+  }
+
+  return compressed;
 }
 
 function buildPlan() {
@@ -224,9 +283,12 @@ async function main() {
     secretsBackup,
     artifacts: files,
     prunedBackups: null as PruneResult | null,
+    compressedRuntimeBackups: [] as CompressedRuntimeBackup[],
   };
   if (manifest.ok) {
     manifest.prunedBackups = pruneOldBackups(plan.backupDir, plan.runDir, plan.retention.days);
+    manifest.compressedRuntimeBackups = compressOldRuntimeBackups(plan.backupDir, plan.runDir);
+    if (manifest.compressedRuntimeBackups.some((item) => !item.ok)) manifest.ok = false;
   }
   fs.writeFileSync(plan.files.manifest, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 

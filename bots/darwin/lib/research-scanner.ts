@@ -25,6 +25,7 @@ const registry = require('../../../packages/core/lib/agent-registry');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
+const telemetry = require('./telemetry');
 
 const MAX_EVALUATIONS_PER_RUN = _readPositiveIntEnv('DARWIN_MAX_EVALUATIONS_PER_RUN', 40, { min: 1, max: 100 });
 const EVALUATION_CONCURRENCY = _readPositiveIntEnv('DARWIN_EVALUATION_CONCURRENCY', 6, { min: 1, max: 8 });
@@ -958,6 +959,13 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
   const observeOnly = !dryRun && Boolean(options.observeOnly || process.env.DARWIN_RESEARCH_OBSERVE_ONLY === '1');
   const maxEvaluations = Math.max(1, Math.min(Number(options.maxEvaluations || MAX_EVALUATIONS_PER_RUN), MAX_EVALUATIONS_PER_RUN));
   console.log(`[research-scanner] 시작: ${kst.datetimeStr()}`);
+  telemetry.recordTelemetry({
+    phase: 'research_scanner',
+    event: 'start',
+    dryRun,
+    observeOnly,
+    maxEvaluations,
+  });
   if (!dryRun) {
     await rag.initSchema();
   }
@@ -967,6 +975,12 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
     ? searchers.slice(0, Math.max(1, Number(options.maxDomains)))
     : searchers;
   const allPapers = await _collectPapers(activeSearchers);
+  telemetry.recordTelemetry({
+    phase: 'research_scanner.collect',
+    event: 'end',
+    collected: allPapers.length,
+    searchers: activeSearchers.length,
+  });
   const unique = _dedupePapers(allPapers);
   console.log(`[research-scanner] 중복 제거 후: ${unique.length}건 (전체 ${allPapers.length}건)`);
 
@@ -979,6 +993,12 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
     }
   );
   const evaluationFailures = evaluated.filter((paper) => paper.evaluation_failed === true).length;
+  telemetry.recordTelemetry({
+    phase: 'research_scanner.evaluate',
+    event: 'end',
+    evaluated: evaluated.length,
+    evaluationFailures,
+  });
 
   const enrichment = dryRun || observeOnly ? { githubEnriched: 0, tasksRegistered: 0 } : await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = dryRun
@@ -1035,6 +1055,14 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
     weeklyTasksRegistered = Number(weekly?.tasksRegistered || 0);
     weeklySummaryAlarmSent = weekly?.alarmSent === true;
     weeklySummaryAlarmFailure = String(weekly?.alarmFailure || '');
+    telemetry.recordTelemetry({
+      phase: 'research_scanner.weekly_report',
+      event: 'end',
+      keywordEvolutionCount,
+      tasksRegistered: weeklyTasksRegistered,
+      alarmSent: weeklySummaryAlarmSent,
+      alarmFailure: weeklySummaryAlarmFailure,
+    });
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
@@ -1075,6 +1103,16 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
   }
   console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
   console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, GitHub 분석 ${result.githubAnalyzed}건, 과제 등록 ${result.tasksRegistered}건, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
+  telemetry.recordTelemetry({
+    phase: 'research_scanner',
+    event: 'end',
+    ok: true,
+    durationSec,
+    stored: storedCount,
+    highRelevance: highRelevanceCount,
+    proposals: proposalCount,
+    verified: verifiedCount,
+  });
 
   return result;
 }

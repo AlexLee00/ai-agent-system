@@ -27,6 +27,9 @@ interface EvaluationResult {
 const { callHubLlm }: {
   callHubLlm: (request: Record<string, unknown>) => Promise<HubLlmResponse>;
 } = require('../../../packages/core/lib/hub-client');
+const { getDarwinLlmTimeout }: {
+  getDarwinLlmTimeout: (purpose: string) => number;
+} = require('./llm-timeout-profile');
 
 const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 팀 제이는 113개 AI 에이전트를 운영하는 멀티에이전트 자동화 플랫폼입니다.
@@ -83,7 +86,7 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
       abstractModel: 'anthropic_haiku',
       systemPrompt: SYSTEM_PROMPT,
       prompt: `제목: ${paper.title}\n초록: ${paper.summary}`,
-      timeoutMs: 25_000,
+      timeoutMs: getDarwinLlmTimeout('evaluator'),
     };
 
     let result = await callHubLlm(request);

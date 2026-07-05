@@ -1,8 +1,9 @@
 defmodule Darwin.V2.ShadowRunner do
   @moduledoc """
   다윈 V2 Shadow Runner (Phase 6) — V1 vs V2 파이프라인 병행 비교.
+  FROZEN 2026-07-05 — TS 리모델링(learnings.md 방식)으로 대체.
 
-  DARWIN_SHADOW_MODE=true 시 활성화.
+  DARWIN_V2_SHADOW_ENABLED=true AND 기존 shadow env가 true일 때만 활성화.
 
   동작:
   1. JayBus "darwin.paper.evaluated" 이벤트 구독
@@ -46,14 +47,10 @@ defmodule Darwin.V2.ShadowRunner do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc "활성화 여부 (DARWIN_SHADOW_MODE=true 런타임 환경변수 우선)."
+  @doc "활성화 여부. 명시적 DARWIN_V2_SHADOW_ENABLED hard gate가 기본 false."
   @spec enabled?() :: boolean()
   def enabled? do
-    case System.get_env("DARWIN_SHADOW_MODE") do
-      "true" -> true
-      "false" -> false
-      nil -> Darwin.V2.Config.shadow_mode_active?()
-    end
+    Darwin.V2.Config.v2_shadow_enabled?()
   end
 
   @doc "최근 N일 평균 match_score. 데이터 없으면 0.0."
@@ -80,6 +77,14 @@ defmodule Darwin.V2.ShadowRunner do
   """
   @spec run_once() :: map()
   def run_once do
+    unless enabled?() do
+      %{ok: true, skipped: true, reason: :v2_shadow_frozen}
+    else
+      do_run_once()
+    end
+  end
+
+  defp do_run_once do
     sample_paper = %{
       title: "Darwin shadow smoke paper",
       source: "shadow_smoke",

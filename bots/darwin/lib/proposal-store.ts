@@ -165,6 +165,23 @@ function transitionProposal(
   }
 
   fs.writeFileSync(proposalFile, JSON.stringify(proposal, null, 2), 'utf8');
+  if (to === 'adopted' || to === 'archived') {
+    try {
+      const sigmaHook = require('./sigma-findings-hook.ts');
+      Promise.resolve(
+        sigmaHook.contributeSigmaFinding(proposal, to, {
+          transition: {
+            from,
+            to,
+            from_status: fromStatus,
+            evidence: safeEvidence,
+          },
+        })
+      ).catch(() => null);
+    } catch {
+      // Sigma hook is advisory; proposal lifecycle must not depend on it.
+    }
+  }
   return proposal;
 }
 

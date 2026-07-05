@@ -3,10 +3,12 @@ type DelayFn = (ms: number) => Promise<void>;
 const {
   getKioskNaverBlockEntry,
   isKioskEntryEnded,
+  normalizeKioskSlotEndTime,
 } = require('./kiosk-monitor-helpers');
 const {
   classifyPickkoEntriesByNaver,
   isValidSourceEntry,
+  normalizeSourceRoom,
 } = require('./reservation-source-classifier');
 
 export type CreateKioskNaverPhaseServiceDeps = {
@@ -116,6 +118,16 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
       out.push(entry);
     }
     return out;
+  }
+
+  function getSavedKioskBlockForSourceEntry(entry: Record<string, any>) {
+    return getKioskBlock(
+      entry.phoneRaw,
+      entry.date,
+      entry.start,
+      normalizeKioskSlotEndTime(entry.end),
+      normalizeSourceRoom(entry.room),
+    );
   }
 
   async function loadNaverConfirmedUseDateSnapshot(page: any): Promise<{
@@ -315,7 +327,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
       const sourceBlockCandidates = sortEntries(dedupeEntries(blockSource.kioskOrManual));
       const sourceCancelCandidates = sortEntries(dedupeEntries(cancelSource.kioskOrManual));
       const blockSaved = await Promise.all(
-        sourceBlockCandidates.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
+        sourceBlockCandidates.map((entry) => getSavedKioskBlockForSourceEntry(entry)),
       );
       const newEntries = sourceBlockCandidates.filter((_, index) => !blockSaved[index]);
       const nowForRetry = new Date();
@@ -329,7 +341,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
       const blockEntries = sortEntries(dedupeEntries([...newEntries, ...retryEntries]));
 
       const cancelSaved = await Promise.all(
-        sourceCancelCandidates.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
+        sourceCancelCandidates.map((entry) => getSavedKioskBlockForSourceEntry(entry)),
       );
       const unblockEntries = sortEntries(sourceCancelCandidates.filter((entry, index) => {
         const saved = cancelSaved[index];

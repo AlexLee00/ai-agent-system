@@ -1,6 +1,7 @@
 defmodule Darwin.V2.Evaluator do
   @moduledoc """
   다윈 V2 평가자 — 논문 적합성 LLM 평가 + ESPL 프롬프트 진화 통합.
+  FROZEN 2026-07-05 — TS 리모델링(learnings.md 방식)으로 대체.
 
   TeamJay.Darwin.Evaluator에서 진화:
     - V2 LLM 직접 호출 (Darwin.V2.LLM.Selector.complete/3)
@@ -164,6 +165,16 @@ defmodule Darwin.V2.Evaluator do
   end
 
   defp evaluate_paper(paper) do
+    unless Darwin.V2.Config.v2_shadow_enabled?() do
+      title = paper["title"] || paper[:title] || "unknown"
+      Logger.info("[다윈V2 평가자] FROZEN — #{title} 평가 건너뜀")
+      :ok
+    else
+      do_evaluate_paper(paper)
+    end
+  end
+
+  defp do_evaluate_paper(paper) do
     title = paper["title"] || paper[:title] || "unknown"
     Logger.debug("[다윈V2 평가자] 평가 중: #{title}")
 

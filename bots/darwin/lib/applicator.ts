@@ -105,6 +105,18 @@ const {
   parseJsonObjectFromText: (text: unknown) => Record<string, unknown> | null;
   validateSuccessPredicate: (raw: unknown) => { ok: boolean; predicate: Record<string, unknown> | null; errors: string[] };
 } = require('./success-predicate');
+const {
+  getDarwinLlmTimeout,
+  readDarwinTimeoutOverride,
+}: {
+  getDarwinLlmTimeout: (purpose: string) => number;
+  readDarwinTimeoutOverride: (
+    envName: string,
+    fallbackMs: number,
+    envObj?: NodeJS.ProcessEnv,
+    options?: { minMs?: number; maxMs?: number }
+  ) => number;
+} = require('./llm-timeout-profile');
 
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - 10팀 113에이전트, Node.js 모노레포
@@ -119,28 +131,25 @@ const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - DB: PostgreSQL + pgvector (RAG)
 - 인프라: Mac Studio M4 Max (OPS) + MacBook Air M3 (DEV)`;
 
-const DARWIN_APPLICATOR_DEFAULT_TIMEOUT_MS = 120_000;
 const DARWIN_APPLICATOR_MIN_TIMEOUT_MS = 30_000;
 const DARWIN_APPLICATOR_MAX_TIMEOUT_MS = 180_000;
 const DARWIN_LLM_SELECTOR_KEY = 'darwin.agent_policy';
 const DARWIN_TOKEN_BUDGET_PROFILE = 'darwin_research';
 
-function readApplicatorTimeoutMs(envName: string, fallbackMs: number): number {
-  const raw = Number.parseInt(String(process.env[envName] || ''), 10);
-  if (!Number.isFinite(raw) || raw <= 0) return fallbackMs;
-  return Math.min(Math.max(raw, DARWIN_APPLICATOR_MIN_TIMEOUT_MS), DARWIN_APPLICATOR_MAX_TIMEOUT_MS);
-}
-
 // The Hub may need a slow primary attempt plus a fast Groq fallback. Keeping the
 // client timeout aligned with the Darwin budget prevents "Hub succeeded, caller
 // already aborted" proposal gaps.
-const DARWIN_PROPOSAL_TIMEOUT_MS = readApplicatorTimeoutMs(
+const DARWIN_PROPOSAL_TIMEOUT_MS = readDarwinTimeoutOverride(
   'DARWIN_APPLICATOR_PROPOSAL_TIMEOUT_MS',
-  DARWIN_APPLICATOR_DEFAULT_TIMEOUT_MS,
+  getDarwinLlmTimeout('synthesis'),
+  process.env,
+  { minMs: DARWIN_APPLICATOR_MIN_TIMEOUT_MS, maxMs: DARWIN_APPLICATOR_MAX_TIMEOUT_MS },
 );
-const DARWIN_PROTOTYPE_TIMEOUT_MS = readApplicatorTimeoutMs(
+const DARWIN_PROTOTYPE_TIMEOUT_MS = readDarwinTimeoutOverride(
   'DARWIN_APPLICATOR_PROTOTYPE_TIMEOUT_MS',
-  DARWIN_APPLICATOR_DEFAULT_TIMEOUT_MS,
+  getDarwinLlmTimeout('edison'),
+  process.env,
+  { minMs: DARWIN_APPLICATOR_MIN_TIMEOUT_MS, maxMs: DARWIN_APPLICATOR_MAX_TIMEOUT_MS },
 );
 
 function toErrorMessage(err: unknown): string {

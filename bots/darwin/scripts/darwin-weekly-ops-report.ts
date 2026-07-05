@@ -16,6 +16,11 @@ const { query } = require(
 );
 const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));
 const { AUTONOMY_PROMOTION_THRESHOLDS } = require(path.join(PROJECT_ROOT, "bots/darwin/lib/autonomy-level"));
+const {
+  collectLearnReport,
+  formatLearnReportBlock,
+} = require(path.join(PROJECT_ROOT, "bots/darwin/lib/learn-report"));
+const telemetry = require(path.join(PROJECT_ROOT, "bots/darwin/lib/telemetry"));
 
 interface QueryResultRow {
   [key: string]: unknown;
@@ -73,6 +78,8 @@ interface WeeklyOpsStats {
   scanner_proposals: number;
   scanner_verified: number;
   scanner_avg_duration_sec: number;
+  scanner_keyword_evolution_count: number;
+  learn_report: ReturnType<typeof collectLearnReport>;
 }
 
 interface CliOptions {
@@ -271,6 +278,7 @@ async function collectStats(): Promise<WeeklyOpsStats> {
         COALESCE(SUM(NULLIF(metadata->>'registry_sync_failures', '')::numeric), 0) AS scanner_registry_sync_failures,
         COALESCE(SUM(NULLIF(metadata->>'proposals_generated', '')::numeric), 0) AS scanner_proposals,
         COALESCE(SUM(NULLIF(metadata->>'proposals_verified', '')::numeric), 0) AS scanner_verified,
+        COALESCE(SUM(NULLIF(metadata->>'keyword_evolution_count', '')::numeric), 0) AS scanner_keyword_evolution_count,
         COALESCE(AVG(NULLIF(metadata->>'duration_sec', '')::numeric), 0) AS scanner_avg_duration_sec
       FROM reservation.rag_research
       WHERE created_at >= NOW() - INTERVAL '7 days'
@@ -303,6 +311,8 @@ async function collectStats(): Promise<WeeklyOpsStats> {
   for (const r of registry) {
     regMap[String(r.stage || "")] = Number(r.count);
   }
+  const scannerKeywordEvolutionCount = Number(scanner.scanner_keyword_evolution_count ?? 0);
+  const learnReport = collectLearnReport({ keywordEvolutionCount: scannerKeywordEvolutionCount });
 
   return {
     date: new Date().toISOString().slice(0, 10),
@@ -342,12 +352,21 @@ async function collectStats(): Promise<WeeklyOpsStats> {
     scanner_proposals: Number(scanner.scanner_proposals ?? 0),
     scanner_verified: Number(scanner.scanner_verified ?? 0),
     scanner_avg_duration_sec: Math.round(Number(scanner.scanner_avg_duration_sec ?? 0)),
+    scanner_keyword_evolution_count: scannerKeywordEvolutionCount,
+    learn_report: learnReport,
   };
 }
 
 async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Promise<void> {
   log(options, "[darwin-weekly-ops-report] 주간 운영 리포트 수집 시작");
+  const startedAt = Date.now();
+  telemetry.recordTelemetry({
+    phase: "weekly_ops_report",
+    event: "start",
+    dryRun: options.dryRun,
+  });
   const stats = await collectStats();
+  const learnBlock = formatLearnReportBlock(stats.learn_report);
 
   const msg = `
 📊 다윈 주간 운영 리포트 (${stats.date})
@@ -373,6 +392,8 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
   후보 알림 실패 사유: ${stats.scanner_alarm_failure_reasons || "N/A"}
   주간 summary 실패: ${stats.scanner_summary_alarm_failures} | Registry sync: ${stats.scanner_registry_synced}/${stats.scanner_registry_sync_failures}
   제안/검증: ${stats.scanner_proposals}/${stats.scanner_verified} | 평균 소요: ${stats.scanner_avg_duration_sec}초
+
+${learnBlock}
 
 ⚠️ 지난 7일 원칙 위반: ${stats.violations}회
 `.trim();
@@ -416,6 +437,13 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
       alarmSent: !options.dryRun,
     }, null, 2));
   }
+  telemetry.recordTelemetry({
+    phase: "weekly_ops_report",
+    event: "end",
+    dryRun: options.dryRun,
+    durationMs: Date.now() - startedAt,
+    ok: true,
+  });
 }
 
 if (require.main === module) {

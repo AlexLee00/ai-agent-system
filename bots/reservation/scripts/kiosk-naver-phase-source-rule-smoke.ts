@@ -121,6 +121,68 @@ async function main() {
     'source classification summary should be logged',
   );
 
+  const normalizedLookupBlockedPhones = [];
+  const normalizedLookupCalls = [];
+  const normalizedLookupService = createKioskNaverPhaseService({
+    log: () => {},
+    readWsFile: () => 'ws://example.test/devtools/browser/test',
+    connectBrowser: async () => ({
+      newPage: async () => createFakePage(),
+      disconnect: () => {},
+    }),
+    attachNaverScheduleTrace: () => {},
+    naverBookingLogin: async () => true,
+    upsertKioskBlock: async () => {},
+    journalBlockAttempt: async () => {},
+    publishRetryableBlockAlert: () => {},
+    publishReservationAlert: () => {},
+    buildOpsAlertMessage: () => 'message',
+    fmtPhone: (phone) => phone,
+    nowKST: () => '2099-01-01T00:00:00+09:00',
+    waitForCustomerCooldown: async () => {},
+    markCustomerCooldown: () => {},
+    runtimeConfig: { customerOperationCooldownMs: 0 },
+    delay: async () => {},
+    blockNaverSlot: async (_page, item) => {
+      normalizedLookupBlockedPhones.push(item.phoneRaw);
+      return { ok: true, reason: 'verified' };
+    },
+    unblockNaverSlot: async () => true,
+    publishKioskSuccessReport: () => {},
+    getKioskBlock: async (phoneRaw, date, start, end, room) => {
+      normalizedLookupCalls.push({ phoneRaw, date, start, end, room });
+      if (phoneRaw === '01099990000' && date === '2099-01-02' && start === '10:00' && end === '11:00' && room === 'A1') {
+        return { naverBlocked: true, naverUnblockedAt: null };
+      }
+      return null;
+    },
+    bookingUrl: 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    scrapeNewestBookingsFromList: async () => [{
+      phoneRaw: '01000000000',
+      date: '2099-01-02',
+      start: '09:00',
+      end: '09:30',
+      room: 'B',
+    }],
+  });
+
+  await normalizedLookupService.processNaverPhase({
+    wsFile: '/tmp/ws-file-not-read',
+    toBlockEntries: [entry({ phoneRaw: '01099990000', room: '스터디룸A1', start: '10:00', end: '10:50', amount: 0 })],
+    cancelledEntries: [],
+    recordKioskBlockAttempt: async () => {},
+  });
+
+  assert.deepEqual(
+    normalizedLookupBlockedPhones,
+    [],
+    'already-blocked Pickko rows must not be reprocessed when only room/end display format differs',
+  );
+  assert.ok(
+    normalizedLookupCalls.some((call) => call.phoneRaw === '01099990000' && call.end === '11:00' && call.room === 'A1'),
+    'kiosk_blocks lookup should normalize Pickko display room/end before deciding reprocess',
+  );
+
   const zeroSnapshotBlockedPhones = [];
   const zeroSnapshotAlerts = [];
   const zeroSnapshotService = createKioskNaverPhaseService({

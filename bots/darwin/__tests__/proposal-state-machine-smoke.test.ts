@@ -24,6 +24,11 @@ async function main() {
     if (request === '../../../packages/core/lib/env') {
       return { PROJECT_ROOT: tmpRoot };
     }
+    if (request === './sigma-findings-hook.ts') {
+      return {
+        contributeSigmaFinding: async () => ({ ok: true, skipped: true, reason: 'mocked' }),
+      };
+    }
     return originalLoad.call(this, request, parent, isMain);
   };
 

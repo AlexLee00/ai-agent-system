@@ -3,16 +3,46 @@ defmodule Darwin.V2.ShadowRunnerTest do
 
   alias Darwin.V2.ShadowRunner
 
+  setup do
+    old_shadow_mode = System.get_env("DARWIN_SHADOW_MODE")
+    old_shadow_enabled = System.get_env("DARWIN_SHADOW_ENABLED")
+    old_v2_shadow_enabled = System.get_env("DARWIN_V2_SHADOW_ENABLED")
+    old_shadow_sample = System.get_env("DARWIN_SHADOW_SAMPLE_PERCENT")
+
+    on_exit(fn ->
+      restore_env("DARWIN_SHADOW_MODE", old_shadow_mode)
+      restore_env("DARWIN_SHADOW_ENABLED", old_shadow_enabled)
+      restore_env("DARWIN_V2_SHADOW_ENABLED", old_v2_shadow_enabled)
+      restore_env("DARWIN_SHADOW_SAMPLE_PERCENT", old_shadow_sample)
+    end)
+
+    :ok
+  end
+
   describe "enabled?/0" do
-    test "DARWIN_SHADOW_MODE=false → disabled (기본값)" do
-      System.put_env("DARWIN_SHADOW_MODE", "false")
+    test "기본값은 disabled" do
+      System.delete_env("DARWIN_SHADOW_MODE")
+      System.delete_env("DARWIN_SHADOW_ENABLED")
+      System.delete_env("DARWIN_V2_SHADOW_ENABLED")
       refute ShadowRunner.enabled?()
     end
 
-    test "DARWIN_SHADOW_MODE=true → enabled" do
+    test "기존 shadow env만으로는 disabled" do
       System.put_env("DARWIN_SHADOW_MODE", "true")
+      System.delete_env("DARWIN_V2_SHADOW_ENABLED")
+      refute ShadowRunner.enabled?()
+    end
+
+    test "DARWIN_V2_SHADOW_ENABLED=true AND 기존 shadow env true일 때만 enabled" do
+      System.put_env("DARWIN_SHADOW_MODE", "true")
+      System.put_env("DARWIN_V2_SHADOW_ENABLED", "true")
       assert ShadowRunner.enabled?()
-      System.put_env("DARWIN_SHADOW_MODE", "false")
+    end
+
+    test "run_once는 frozen 상태에서 신규 shadow run을 만들지 않고 skip한다" do
+      System.put_env("DARWIN_SHADOW_MODE", "true")
+      System.delete_env("DARWIN_V2_SHADOW_ENABLED")
+      assert %{ok: true, skipped: true, reason: :v2_shadow_frozen} = ShadowRunner.run_once()
     end
   end
 
@@ -100,4 +130,7 @@ defmodule Darwin.V2.ShadowRunnerTest do
       end
     end
   end
+
+  defp restore_env(key, nil), do: System.delete_env(key)
+  defp restore_env(key, value), do: System.put_env(key, value)
 end

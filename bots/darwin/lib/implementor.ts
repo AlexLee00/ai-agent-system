@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
+const { getDarwinLlmTimeout } = require('./llm-timeout-profile');
 const { createLogger } = require('../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
@@ -530,7 +531,7 @@ ${failureHints}
 
 현재 상태:
 ${JSON.stringify(proposal.verification || {})}`,
-      timeoutMs: 45_000,
+      timeoutMs: getDarwinLlmTimeout('implementation'),
     }) as HubLlmResponse | string;
 
     const files = _extractFiles(implementationResult, proposalId, proposal);

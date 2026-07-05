@@ -51,6 +51,14 @@
       "tags": ["research", "measure", "effect", "espl", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "findings-adopt-review",
+      "name": "Findings Adopt Review",
+      "description": "measured proposal의 adopt queue와 Sigma findings fallback 상태를 read-only로 검토",
+      "tags": ["research", "adopt", "findings", "sigma", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     }
   ]
 }
