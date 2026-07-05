@@ -82,6 +82,11 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
     }
   }
 
+  function isRecoverablePageError(error: any): boolean {
+    return /detached Frame|Protocol error|Target closed|Session closed|Navigation timeout|Waiting failed|TimeoutError/i
+      .test(String(error?.message || error || ''));
+  }
+
   async function runBlockSlotOnly({
     entry,
     wsEndpoint,
@@ -150,8 +155,8 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
           blocked = Boolean((blockResult as any)?.ok ?? blockResult);
           break;
         } catch (error: any) {
-          if (String(error?.message || '').includes('detached Frame') && attempt === 1) {
-            log('⚠️ Frame detach 감지 — 새 탭으로 재시도');
+          if (isRecoverablePageError(error) && attempt === 1) {
+            log(`⚠️ block-slot 페이지 오류 감지 — 새 탭으로 재시도 (${error?.message || String(error)})`);
             try { await naverPg.close(); } catch {}
             naverPg = await createPage();
             const reLoggedIn = await naverBookingLogin(naverPg);
@@ -316,8 +321,8 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
           unblocked = await unblockNaverSlot(naverPg, entry);
           break;
         } catch (error: any) {
-          if (String(error?.message || '').includes('detached Frame') && attempt === 1) {
-            log('⚠️ Frame detach 감지 — 새 탭으로 재시도');
+          if (isRecoverablePageError(error) && attempt === 1) {
+            log(`⚠️ unblock-slot 페이지 오류 감지 — 새 탭으로 재시도 (${error?.message || String(error)})`);
             try { await naverPg.close(); } catch {}
             naverPg = await createPage();
             const reLoggedIn = await naverBookingLogin(naverPg);

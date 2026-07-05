@@ -8,6 +8,8 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { loadAutoDevManifest } = require('../../../packages/core/lib/auto-dev-manifest.ts');
 const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
+const { decrypt } = require('../../reservation/lib/crypto.ts');
+const { normalizeStudyRoomKey } = require('../../reservation/lib/study-room-pricing.ts');
 
 const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
 const DEFAULT_COMPLETED_ARCHIVE_DIR = path.join(env.PROJECT_ROOT, 'docs', 'archive', 'codex-completed');
@@ -169,6 +171,68 @@ function resolveByCurrentPolicy(row: Record<string, any>): Record<string, any> |
   };
 }
 
+function normalizePhoneDigits(value: unknown): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function extractReservationPhoneDigits(row: Record<string, any>): string | null {
+  const text = `${row.message || ''}\n${row.title || ''}`;
+  const match = text.match(/(?:📞\s*)?(?:번호|전화번호)\s*[:：]\s*([0-9][0-9\-\s]{8,})/);
+  const digits = normalizePhoneDigits(match?.[1] || '');
+  return digits.length >= 10 ? digits : null;
+}
+
+function parseReservationNaverBlockRetry(row: Record<string, any>): Record<string, any> | null {
+  const incidentKey = String(row.incident_key || '');
+  if (row.team !== 'reservation' || !incidentKey.includes(':naver_block_retry:')) return null;
+  const parts = incidentKey.split(':');
+  const datePart = parts.find((part) => /^20\d{2}_\d{2}_\d{2}$/.test(part));
+  const timePart = parts.find((part) => /^\d{4}_\d{4}$/.test(part));
+  const phoneSuffix = parts.find((part) => /^\d{4}$/.test(part));
+  const roomPart = parts.find((part) => normalizeStudyRoomKey(part));
+  const phoneDigits = extractReservationPhoneDigits(row);
+  if (!datePart || !timePart || !phoneSuffix || !roomPart || !phoneDigits) return null;
+  if (!phoneDigits.endsWith(phoneSuffix)) return null;
+  const [startRaw, endRaw] = timePart.split('_');
+  return {
+    date: datePart.replace(/_/g, '-'),
+    start: `${startRaw.slice(0, 2)}:${startRaw.slice(2)}`,
+    end: `${endRaw.slice(0, 2)}:${endRaw.slice(2)}`,
+    roomKey: normalizeStudyRoomKey(roomPart),
+    phoneDigits,
+  };
+}
+
+async function resolveByReservationCurrentState(row: Record<string, any>, db = pgPool): Promise<Record<string, any> | null> {
+  const parsed = parseReservationNaverBlockRetry(row);
+  if (!parsed) return null;
+  const rows = await db.query('reservation', `
+    SELECT phone_raw_enc, date, start_time, end_time, room, naver_blocked, blocked_at, last_block_result, last_block_reason
+    FROM reservation.kiosk_blocks
+    WHERE date = $1
+      AND start_time = $2
+      AND end_time = $3
+      AND naver_blocked = 1
+  `, [parsed.date, parsed.start, parsed.end]);
+  const matched = rows.find((candidate: Record<string, any>) => {
+    if (normalizeStudyRoomKey(candidate.room) !== parsed.roomKey) return false;
+    try {
+      return normalizePhoneDigits(decrypt(candidate.phone_raw_enc)) === parsed.phoneDigits;
+    } catch {
+      return false;
+    }
+  });
+  if (!matched) return null;
+  return {
+    stale_status: 'resolved_current_state',
+    stale_resolution_reason: `reservation_kiosk_blocked:${parsed.date}:${parsed.roomKey}:${parsed.start}_${parsed.end}`,
+    current_state_table: 'reservation.kiosk_blocks',
+    current_state_last_block_result: matched.last_block_result || null,
+    current_state_last_block_reason: matched.last_block_reason || null,
+    current_state_blocked_at: matched.blocked_at || null,
+  };
+}
+
 function annotateRows(rows: Array<Record<string, any>>, {
   manifest = loadManifest(),
   archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
@@ -192,6 +256,22 @@ function annotateRows(rows: Array<Record<string, any>>, {
       stale_resolution_reason: null,
     };
   });
+}
+
+async function resolveRowsByCurrentState(
+  rows: Array<Record<string, any>>,
+  db = pgPool,
+): Promise<Array<Record<string, any>>> {
+  const resolvedRows = [];
+  for (const row of rows) {
+    if (row.stale_status !== 'active') {
+      resolvedRows.push(row);
+      continue;
+    }
+    const currentStateResolution = await resolveByReservationCurrentState(row, db);
+    resolvedRows.push(currentStateResolution ? { ...row, ...currentStateResolution } : row);
+  }
+  return resolvedRows;
 }
 
 function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: number, resolvedRows: Array<Record<string, any>> = []): string {
@@ -281,7 +361,8 @@ export async function scanStaleAutoRepair({
     ORDER BY enqueued_at DESC, created_at DESC
     LIMIT $2
   `, [threshold, rowLimit]);
-  const annotatedRows = annotateRows(rows, { manifest, archiveDir });
+  const initiallyAnnotatedRows = annotateRows(rows, { manifest, archiveDir });
+  const annotatedRows = await resolveRowsByCurrentState(initiallyAnnotatedRows, db);
   const activeRows = annotatedRows.filter((row) => row.stale_status === 'active');
   const resolvedRows = annotatedRows.filter((row) => row.stale_status !== 'active');
   return {

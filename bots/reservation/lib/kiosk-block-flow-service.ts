@@ -1,6 +1,8 @@
 type Logger = (message: string) => void;
 const { normalizeKioskSlotEndTime } = require('./kiosk-monitor-helpers');
 
+const SCREENSHOT_TIMEOUT_MS = 5_000;
+
 export type CreateKioskBlockFlowServiceDeps = {
   log: Logger;
   delay: (ms: number) => Promise<void>;
@@ -31,6 +33,17 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
     fillAvailablePopup,
   } = deps;
 
+  async function screenshotWithTimeout(page: any, options: Record<string, any>) {
+    const screenshot = page.screenshot(options);
+    screenshot.catch(() => null);
+    return Promise.race([
+      screenshot,
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error(`screenshot_timeout:${SCREENSHOT_TIMEOUT_MS}`)), SCREENSHOT_TIMEOUT_MS).unref();
+      }),
+    ]);
+  }
+
   async function blockNaverSlot(page: any, entry: any) {
     const { name, date, start, end, room } = entry;
     log(`\n[Phase 3] 네이버 차단 시도: ${maskName(name)} ${date} ${start}~${end} ${room}`);
@@ -38,7 +51,7 @@ export function createKioskBlockFlowService(deps: CreateKioskBlockFlowServiceDep
     async function capture(stage: string) {
       const safeStage = String(stage || 'stage').replace(/[^a-z0-9_-]+/gi, '-');
       const ssPath = `/tmp/naver-block-${date}-${safeStage}.png`;
-      await page.screenshot({ path: ssPath, fullPage: false }).catch(() => null);
+      await screenshotWithTimeout(page, { path: ssPath, fullPage: false }).catch(() => null);
       log(`📸 [${safeStage}] 스크린샷: ${ssPath}`);
       return ssPath;
     }

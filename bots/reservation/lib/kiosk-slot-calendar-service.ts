@@ -142,13 +142,11 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         .map((dailyRow: any) => {
           const rowRect = dailyRow.getBoundingClientRect();
           if (rowRect.height <= 0 || rowRect.bottom < 0 || rowRect.top > window.innerHeight) return null;
-          const roomCells = Array.from(dailyRow.children).filter((cell: any) => {
-            const rect = cell.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          });
+          const roomCells = Array.from(dailyRow.children);
           if (roomCells.length === 0) return null;
           return {
             y: rowRect.top + rowRect.height / 2,
+            height: rowRect.height,
             roomCells,
           };
         })
@@ -222,8 +220,23 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         };
       }
 
+      const findNearestGridRow = (timeline: any) => {
+        let best: any = null;
+        let bestDistance = Infinity;
+        for (const grid of gridRows as any[]) {
+          const distance = Math.abs(Number(grid.y) - Number(timeline.y));
+          if (distance < bestDistance) {
+            best = grid;
+            bestDistance = distance;
+          }
+        }
+        if (!best) return null;
+        const maxDistance = Math.max(24, Math.min(120, Number(best.height || 192) / 2 + 16));
+        return bestDistance <= maxDistance ? best : null;
+      };
+
       const rows = timelineRows
-        .map((timeline, idx) => ({ idx, timeline, grid: (gridRows as any[])[idx] || null }))
+        .map((timeline, idx) => ({ idx, timeline, grid: findNearestGridRow(timeline) }))
         .filter((row) => row.grid && row.timeline.slot24);
 
       const targetRows = rows.filter((row) => row.timeline.slot24 === startTimeArg);
@@ -487,20 +500,33 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         .map((dailyRow: any) => {
           const rowRect = dailyRow.getBoundingClientRect();
           if (rowRect.height <= 0 || rowRect.bottom < 0 || rowRect.top > window.innerHeight) return null;
-          const roomCells = Array.from(dailyRow.children).filter((cell: any) => {
-            const rect = cell.getBoundingClientRect();
-            return rect.width > 0 && rect.height > 0;
-          });
+          const roomCells = Array.from(dailyRow.children);
           if (roomCells.length === 0) return null;
           return {
             y: rowRect.top + rowRect.height / 2,
+            height: rowRect.height,
             roomCells,
           };
         })
         .filter(Boolean);
 
+      const findNearestGridRow = (timeline: any) => {
+        let best: any = null;
+        let bestDistance = Infinity;
+        for (const grid of gridRows as any[]) {
+          const distance = Math.abs(Number(grid.y) - Number(timeline.y));
+          if (distance < bestDistance) {
+            best = grid;
+            bestDistance = distance;
+          }
+        }
+        if (!best) return null;
+        const maxDistance = Math.max(24, Math.min(120, Number(best.height || 192) / 2 + 16));
+        return bestDistance <= maxDistance ? best : null;
+      };
+
       const rows = timelineRows
-        .map((timeline, idx) => ({ idx, timeline, grid: (gridRows as any[])[idx] || null }))
+        .map((timeline, idx) => ({ idx, timeline, grid: findNearestGridRow(timeline) }))
         .filter((row) => row.grid && row.timeline.slot24);
 
       const targetRows = rows.filter((row) => row.timeline.slot24 === startTimeArg);

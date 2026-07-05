@@ -14,6 +14,7 @@
 const { encrypt, decrypt, hashKioskKey, hashKioskKeyLegacy } = require('./crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers');
+const { normalizeStudyRoomKey } = require('./study-room-pricing');
 
 const SCHEMA = 'reservation';
 const schemaDb = createSchemaDbHelpers(pgPool, SCHEMA);
@@ -427,9 +428,14 @@ function _mapKioskBlockRow(row) {
 
 function _buildKioskLookupIds(phoneRaw, date, start, end, room) {
   const ids = [];
-  if (end || room) ids.push(hashKioskKey(phoneRaw, date, start, end, room));
+  const roomKey = _normalizeKioskBlockRoom(room);
+  if (end || roomKey) ids.push(hashKioskKey(phoneRaw, date, start, end, roomKey));
   ids.push(hashKioskKeyLegacy(phoneRaw, date, start));
   return [...new Set(ids)];
+}
+
+function _normalizeKioskBlockRoom(room) {
+  return normalizeStudyRoomKey(room) || (room ? String(room).trim() : null);
 }
 
 async function _findKioskBlockRow(phoneRaw, date, start, end = null, room = null) {
@@ -446,7 +452,7 @@ async function _findKioskBlockRow(phoneRaw, date, start, end = null, room = null
     const samePhone = decrypt(row.phone_raw_enc) === phoneRaw;
     if (!samePhone) return false;
     if (end && row.end_time !== end) return false;
-    if (room && row.room !== room) return false;
+    if (room && _normalizeKioskBlockRoom(row.room) !== _normalizeKioskBlockRoom(room)) return false;
     return true;
   });
   if (filtered.length === 0) return null;
@@ -467,7 +473,7 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
   const effectiveDate = data.date || date;
   const effectiveStart = data.start || start;
   const effectiveEnd = data.end || null;
-  const effectiveRoom = data.room || null;
+  const effectiveRoom = _normalizeKioskBlockRoom(data.room) || null;
   const existingRow = await _findKioskBlockRow(phoneRaw, effectiveDate, effectiveStart, effectiveEnd, effectiveRoom);
   const legacyId = existingRow?.id || null;
   const id = hashKioskKey(phoneRaw, effectiveDate, effectiveStart, effectiveEnd, effectiveRoom);
@@ -511,6 +517,18 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
 
   if (legacyId && legacyId !== id) {
     await pgPool.run(SCHEMA, 'DELETE FROM kiosk_blocks WHERE id = $1', [legacyId]);
+  }
+
+  const duplicateRows = await pgPool.query(SCHEMA,
+    'SELECT id, phone_raw_enc, end_time, room FROM kiosk_blocks WHERE date = $1 AND start_time = $2 AND id <> $3',
+    [effectiveDate, effectiveStart, id]
+  );
+  for (const row of duplicateRows) {
+    const samePhone = decrypt(row.phone_raw_enc) === phoneRaw;
+    if (!samePhone) continue;
+    if (effectiveEnd && row.end_time !== effectiveEnd) continue;
+    if (effectiveRoom && _normalizeKioskBlockRoom(row.room) !== effectiveRoom) continue;
+    await pgPool.run(SCHEMA, 'DELETE FROM kiosk_blocks WHERE id = $1', [row.id]);
   }
 }
 

@@ -8,6 +8,9 @@ type VerifyBlockFn = (page: any, room: string, start: string, end: string) => Pr
 type RoundUpFn = (time: string) => string;
 type DelayFn = (ms: number) => Promise<void>;
 
+const VERIFY_BLOCK_STATE_TIMEOUT_MS = 90_000;
+const VERIFY_SCREENSHOT_TIMEOUT_MS = 5_000;
+
 export type CreateKioskVerifyServiceDeps = {
   connectBrowser: ConnectBrowserFn;
   naverBookingLogin: LoginFn;
@@ -30,7 +33,41 @@ export function createKioskVerifyService(deps: CreateKioskVerifyServiceDeps) {
     log,
   } = deps;
 
+  async function withVerifyTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+    work.catch(() => null);
+    return Promise.race([
+      work,
+      new Promise<T>((_resolve, reject) => {
+        setTimeout(() => reject(new Error(`${label}_timeout:${VERIFY_BLOCK_STATE_TIMEOUT_MS}`)), VERIFY_BLOCK_STATE_TIMEOUT_MS).unref();
+      }),
+    ]);
+  }
+
+  async function screenshotWithTimeout(page: any, options: Record<string, any>) {
+    const screenshot = page.screenshot(options);
+    screenshot.catch(() => null);
+    return Promise.race([
+      screenshot,
+      new Promise((_resolve, reject) => {
+        setTimeout(() => reject(new Error(`verify_screenshot_timeout:${VERIFY_SCREENSHOT_TIMEOUT_MS}`)), VERIFY_SCREENSHOT_TIMEOUT_MS).unref();
+      }),
+    ]);
+  }
+
   async function verifyBlockStateInFreshPage(
+    naverBrowser: any,
+    entry: Record<string, any>,
+    options: Record<string, any> = {},
+  ): Promise<boolean> {
+    try {
+      return await withVerifyTimeout(verifyBlockStateInFreshPageInner(naverBrowser, entry, options), 'verify_block_state');
+    } catch (error: any) {
+      log(`⚠️ 검증용 페이지 확인 타임아웃/오류: ${entry?.date || '-'} ${entry?.start || '-'}~${entry?.end || '-'} (${error?.message || String(error)})`);
+      return false;
+    }
+  }
+
+  async function verifyBlockStateInFreshPageInner(
     naverBrowser: any,
     entry: Record<string, any>,
     options: Record<string, any> = {},
@@ -46,7 +83,7 @@ export function createKioskVerifyService(deps: CreateKioskVerifyServiceDeps) {
         if (!capturePrefix) return null;
         const safeStage = String(stage || 'stage').replace(/[^a-z0-9_-]+/gi, '-');
         const ssPath = `/tmp/${capturePrefix}-${date}-${safeStage}.png`;
-        await verifyPage.screenshot({ path: ssPath, fullPage: false }).catch(() => null);
+        await screenshotWithTimeout(verifyPage, { path: ssPath, fullPage: false }).catch(() => null);
         log(`📸 [${safeStage}] 스크린샷: ${ssPath}`);
         return ssPath;
       };

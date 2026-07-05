@@ -1,5 +1,8 @@
 type Logger = (message: string) => void;
 
+const SELECT_BOOKING_DATE_TIMEOUT_MS = 45_000;
+const VERIFY_BLOCK_GRID_TIMEOUT_MS = 45_000;
+
 export type CreateKioskCalendarServiceDeps = {
   log: Logger;
   delay: (ms: number) => Promise<void>;
@@ -20,6 +23,116 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
     publishReservationAlert,
     getTodayKST,
   } = deps;
+
+  async function withCalendarTimeout<T>(
+    work: Promise<T>,
+    label: string,
+    timeoutMs = SELECT_BOOKING_DATE_TIMEOUT_MS,
+  ): Promise<T> {
+    work.catch(() => null);
+    return Promise.race([
+      work,
+      new Promise<T>((_resolve, reject) => {
+        setTimeout(() => reject(new Error(`${label}_timeout:${timeoutMs}`)), timeoutMs).unref();
+      }),
+    ]);
+  }
+
+  function diffCalendarDays(fromDate: string, toDate: string): number | null {
+    const fromParts = fromDate.split('-').map(Number);
+    const toParts = toDate.split('-').map(Number);
+    if (fromParts.length !== 3 || toParts.length !== 3 || [...fromParts, ...toParts].some(Number.isNaN)) return null;
+    const fromMs = Date.UTC(fromParts[0], fromParts[1] - 1, fromParts[2]);
+    const toMs = Date.UTC(toParts[0], toParts[1] - 1, toParts[2]);
+    return Math.round((toMs - fromMs) / 86_400_000);
+  }
+
+  async function readDailyHeaderDate(page: any): Promise<{ date: string; text: string } | null> {
+    return page.evaluate(() => {
+      const candidates = Array.from(document.querySelectorAll('[class*="DatePeriodCalendar__date-info"], a, button'));
+      for (const el of candidates) {
+        const rect = (el as HTMLElement).getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) continue;
+        const text = String((el as HTMLElement).textContent || '').replace(/\s+/g, ' ').trim();
+        const match = text.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\./);
+        if (!match) continue;
+        return {
+          date: `${match[1]}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[3])).padStart(2, '0')}`,
+          text,
+        };
+      }
+      return null;
+    });
+  }
+
+  async function clickDailyHeaderArrow(page: any, direction: 'prev' | 'next'): Promise<boolean> {
+    return page.evaluate((directionArg: string) => {
+      const selector = directionArg === 'next'
+        ? '[class*="DatePeriodCalendar__next"]'
+        : '[class*="DatePeriodCalendar__prev"]';
+      const buttons = Array.from(document.querySelectorAll(selector));
+      for (const button of buttons) {
+        const rect = (button as HTMLElement).getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) continue;
+        (button as HTMLElement).click();
+        return true;
+      }
+      return false;
+    }, direction);
+  }
+
+  async function clickDailyHeaderArrowWithRetry(page: any, direction: 'prev' | 'next'): Promise<boolean> {
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      if (await clickDailyHeaderArrow(page, direction).catch(() => false)) return true;
+      await delay(500);
+    }
+    return false;
+  }
+
+  async function selectDailyHeaderDate(page: any, date: string): Promise<boolean> {
+    const current = await readDailyHeaderDate(page).catch(() => null);
+    if (!current?.date) return false;
+    if (current.date === date) {
+      log(`  ✅ 일간 헤더 날짜 이미 선택됨: ${date}`);
+      return true;
+    }
+
+    const dayDiff = diffCalendarDays(current.date, date);
+    if (dayDiff == null || Math.abs(dayDiff) > 120) return false;
+    const direction = dayDiff > 0 ? 'next' : 'prev';
+    log(`  ↪ 일간 헤더 날짜 이동: ${current.date} → ${date} (${direction} ${Math.abs(dayDiff)}회)`);
+
+    let lastDate = current.date;
+    for (let i = 0; i < Math.abs(dayDiff); i += 1) {
+      let next: { date: string; text: string } | null = null;
+      for (let clickAttempt = 0; clickAttempt < 3; clickAttempt += 1) {
+        const clicked = await clickDailyHeaderArrowWithRetry(page, direction);
+        if (!clicked) break;
+        for (let waitAttempt = 0; waitAttempt < 8; waitAttempt += 1) {
+          await delay(500);
+          next = await readDailyHeaderDate(page).catch(() => null);
+          if (next?.date && next.date !== lastDate) break;
+        }
+        if (next?.date && next.date !== lastDate) break;
+        log(`  ↪ 일간 헤더 이동 재시도 ${i + 1}/${Math.abs(dayDiff)}.${clickAttempt + 1}: ${lastDate} 유지`);
+      }
+      log(`  ↪ 일간 헤더 이동 결과 ${i + 1}/${Math.abs(dayDiff)}: ${lastDate} → ${next?.date || 'unknown'}`);
+      if (!next?.date || next.date === lastDate) break;
+      lastDate = next.date;
+      if (lastDate === date) {
+        log(`  ✅ 일간 헤더 날짜 선택 완료: ${date}`);
+        return true;
+      }
+      await delay(1200);
+    }
+
+    const finalDate = await readDailyHeaderDate(page).catch(() => null);
+    if (finalDate?.date === date) {
+      log(`  ✅ 일간 헤더 날짜 선택 완료: ${date}`);
+      return true;
+    }
+    return false;
+  }
 
   async function naverBookingLogin(page: any) {
     log('🔐 네이버 booking 로그인 시작...');
@@ -114,6 +227,19 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
   }
 
   async function selectBookingDate(page: any, date: string) {
+    try {
+      return await withCalendarTimeout(selectBookingDateInner(page, date), 'select_booking_date');
+    } catch (error: any) {
+      log(`  ❌ 날짜 선택 타임아웃/오류: ${date} (${error?.message || String(error)})`);
+      return false;
+    }
+  }
+
+  async function selectBookingDateInner(page: any, date: string) {
+    if (await selectDailyHeaderDate(page, date).catch(() => false)) {
+      return true;
+    }
+
     const today = getTodayKST();
     const isToday = date === today;
     const [yearStr, monthStr] = date.split('-');
@@ -303,6 +429,19 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
   }
 
   async function verifyBlockInGrid(page: any, roomRaw: string, start: string, end: string) {
+    try {
+      return await withCalendarTimeout(
+        verifyBlockInGridInner(page, roomRaw, start, end),
+        'verify_block_grid',
+        VERIFY_BLOCK_GRID_TIMEOUT_MS,
+      );
+    } catch (error: any) {
+      log(`  ❌ 차단 상태 검증 타임아웃/오류: room=${roomRaw} ${start}~${end} (${error?.message || String(error)})`);
+      return false;
+    }
+  }
+
+  async function verifyBlockInGridInner(page: any, roomRaw: string, start: string, end: string) {
     const roomType = (roomRaw || '').replace(/스터디룸?\s*/g, '').replace(/룸\s*$/, '').trim() || roomRaw;
     log(`  🔍 차단 최종 확인: room=${roomType} ${start}~${end}`);
 
@@ -433,23 +572,44 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
             const ampmText = String(row.querySelector('[class*="Calendar__time-ampm"]')?.textContent || '').trim();
             const timeText = String(row.querySelector('[class*="Calendar__time__"]')?.textContent || '').trim();
             const label = \`\${ampmText} \${timeText}\`.replace(/\\s+/g, ' ').trim();
-            return { label, slot24: to24Hour(label) };
+            const rect = row.getBoundingClientRect();
+            return {
+              label,
+              slot24: to24Hour(label),
+              y: rect.top + rect.height / 2,
+            };
           });
 
         const gridRows = Array.from(document.querySelectorAll('[class*="Calendar__week-cell-daily-row"]'))
           .map((dailyRow) => {
             const rect = dailyRow.getBoundingClientRect();
             if (rect.height <= 0 || rect.bottom < 0 || rect.top > window.innerHeight) return null;
-            const roomCells = Array.from(dailyRow.children).filter((cell) => {
-              const cellRect = cell.getBoundingClientRect();
-              return cellRect.width > 0 && cellRect.height > 0;
-            });
+            const roomCells = Array.from(dailyRow.children);
             if (roomCells.length === 0) return null;
-            return { roomCells };
+            return {
+              roomCells,
+              y: rect.top + rect.height / 2,
+              height: rect.height,
+            };
           })
           .filter(Boolean);
 
         return { timelineRows, gridRows };
+      }
+
+      function findNearestGridRow(timeline, gridRows) {
+        let best = null;
+        let bestDistance = Infinity;
+        for (const grid of gridRows) {
+          const distance = Math.abs(Number(grid.y) - Number(timeline.y));
+          if (distance < bestDistance) {
+            best = grid;
+            bestDistance = distance;
+          }
+        }
+        if (!best) return null;
+        const maxDistance = Math.max(24, Math.min(120, Number(best.height || 192) / 2 + 16));
+        return bestDistance <= maxDistance ? best : null;
       }
 
       scrollToSlot(requestedSlotsArg[0]);
@@ -466,7 +626,7 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
           missingSlots.push({ slot, reason: 'timeline_row_not_found' });
           continue;
         }
-        const gridRow = gridRows[rowIndex];
+        const gridRow = findNearestGridRow(timelineRows[rowIndex], gridRows);
         if (!gridRow) {
           missingSlots.push({ slot, reason: 'grid_row_not_found' });
           continue;
