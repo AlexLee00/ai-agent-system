@@ -430,6 +430,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           const alreadyPaidWithoutButton = /결제하기 버튼 미발견/.test(outputBuf);
           if (bookingId) {
             await updateBookingState(String(bookingId), booking, 'completed');
+            await updateReservation(String(bookingId), { errorReason: null });
             if (alreadyRegisteredRecovered) {
               await updateReservation(String(bookingId), { pickkoStatus: 'manual', errorReason: null });
             }

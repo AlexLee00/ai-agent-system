@@ -30,7 +30,7 @@ const DEFAULT_RUNTIME_CONFIG: ReservationRuntimeConfig = {
     launchRetries: 3,
     launchRetryDelayMs: 2000,
     navigationTimeoutMs: 30000,
-    naverProtocolTimeoutMs: 180000,
+    naverProtocolTimeoutMs: 300000,
     pickkoProtocolTimeoutMs: 180000,
   },
   naverMonitor: {

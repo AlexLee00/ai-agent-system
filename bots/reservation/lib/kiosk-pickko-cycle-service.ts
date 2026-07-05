@@ -3,9 +3,9 @@ type DelayFn = (ms: number) => Promise<void>;
 type GetKioskBlockFn = (phoneRaw: string, date: string, start: string, end?: string, room?: string) => Promise<any>;
 type CompareEntrySequenceFn = (a: Record<string, any>, b: Record<string, any>) => number;
 const {
-  isKioskEntryEnded,
   splitKioskEntryForNaverBlocks,
 } = require('./kiosk-monitor-helpers');
+const { isValidSourceEntry } = require('./reservation-source-classifier');
 type KioskEntry = Record<string, any> & {
   phoneRaw: string;
   date: string;
@@ -32,11 +32,74 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     delay,
     loginToPickko,
     fetchPickkoEntries,
-    getKioskBlock,
-    compareEntrySequence,
     maskName,
     maskPhone,
   } = deps;
+
+  const SOURCE_SCAN_DAYS_AHEAD = Number(process.env.KIOSK_SOURCE_SCAN_DAYS_AHEAD || 31);
+  const PICKKO_RANGE_PAGE_LIMIT_THRESHOLD = Number(process.env.PICKKO_RANGE_PAGE_LIMIT_THRESHOLD || 20);
+
+  function addDaysKST(dateStr: string, days: number): string {
+    const date = new Date(`${dateStr}T00:00:00+09:00`);
+    date.setDate(date.getDate() + days);
+    return date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  }
+
+  function dedupeEntries(entries: Record<string, any>[]): Record<string, any>[] {
+    const out: Record<string, any>[] = [];
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}|${entry.statusText || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(entry);
+    }
+    return out;
+  }
+
+  async function fetchSourceEntries({
+    page,
+    today,
+    endDate,
+    statusKeyword,
+  }: {
+    page: any;
+    today: string;
+    endDate: string;
+    statusKeyword: string;
+  }) {
+    const rangeResult = await fetchPickkoEntries(page, today, {
+      endDate,
+      statusKeyword,
+      minAmount: 0,
+    });
+    const rangeEntries = rangeResult.entries
+      .flatMap((entry) => splitKioskEntryForNaverBlocks(entry))
+      .filter(isValidSourceEntry);
+
+    if (rangeEntries.length < PICKKO_RANGE_PAGE_LIMIT_THRESHOLD || endDate === today) {
+      return { entries: rangeEntries, fetchOk: rangeResult.fetchOk ?? true, usedDateFallback: false };
+    }
+
+    log(`[Pickko 조회] ${statusKeyword} 범위 조회 ${rangeEntries.length}건 — 페이지 한계 가능성으로 날짜 단위 재조회`);
+    const byDateEntries: Record<string, any>[] = [];
+    let fetchOk = rangeResult.fetchOk ?? true;
+    for (let offset = 0; offset <= SOURCE_SCAN_DAYS_AHEAD; offset += 1) {
+      const date = addDaysKST(today, offset);
+      const dayResult = await fetchPickkoEntries(page, date, {
+        endDate: date,
+        statusKeyword,
+        minAmount: 0,
+      });
+      fetchOk = fetchOk && (dayResult.fetchOk ?? true);
+      byDateEntries.push(
+        ...dayResult.entries
+          .flatMap((entry) => splitKioskEntryForNaverBlocks(entry))
+          .filter(isValidSourceEntry),
+      );
+    }
+    return { entries: dedupeEntries(byDateEntries), fetchOk, usedDateFallback: true };
+  }
 
   async function preparePickkoCycle({
     page,
@@ -53,72 +116,41 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     await loginToPickko(page, pickkoId, pickkoPw, delay);
     log(`✅ 픽코 로그인 완료: ${page.url()}`);
 
-    log(`\n[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=결제완료`);
-    const { entries: rawKioskEntries, fetchOk } = await fetchPickkoEntries(page, today, { minAmount: 1 });
-    const kioskEntries = rawKioskEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
+    const endDate = addDaysKST(today, SOURCE_SCAN_DAYS_AHEAD);
+    log(`\n[Pickko 조회] 이용일 ${today}~${endDate}, 상태=결제완료, 이용금액 필터 없음`);
+    const paidResult = await fetchSourceEntries({
+      page,
+      today,
+      endDate,
+      statusKeyword: '결제완료',
+    });
+    const kioskEntries = paidResult.entries;
 
     for (const entry of kioskEntries) {
       log(`  • ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | ${entry.amount}원`);
     }
 
-    let excludedEntries: Record<string, any>[] = [];
-    try {
-      const { entries: rawAllEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
-      const allEntries = rawAllEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
-      const paidKeys = new Set(kioskEntries.map((entry) => `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`));
-      excludedEntries = allEntries.filter((entry) => {
-        const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
-        if (paidKeys.has(key)) return false;
-        const statusText = String(entry.statusText || '');
-        if (statusText.includes('취소') || statusText.includes('환불')) return false;
-        return true;
-      });
-
-      if (excludedEntries.length > 0) {
-        log(`\n[Pickko 진단] 차단 대상 제외 예약: ${excludedEntries.length}건 (0원/결제대기 등, 자동 차단 안 함)`);
-        for (const entry of excludedEntries.slice(0, 10)) {
-          log(`  · 제외 ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | ${entry.amount}원 | ${entry.statusText || '상태미상'}`);
-        }
-        if (excludedEntries.length > 10) {
-          log(`  · 외 ${excludedEntries.length - 10}건`);
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      log(`⚠️ [Pickko 진단] 전체 예약 조회 실패 — 유료 예약 처리만 계속 진행 (${message})`);
-    }
-
-    const kioskFlags = await Promise.all(
-      kioskEntries.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
-    );
-    const newEntries = kioskEntries.filter((_, index) => !kioskFlags[index]);
-
-    const nowForRetry = new Date();
-    const retryEntries = kioskEntries.filter((entry, index) => {
-      const saved = kioskFlags[index];
-      if (!saved) return false;
-      if (saved.naverBlocked) return false;
-      if (saved.naverUnblockedAt) return false;
-      return !isKioskEntryEnded(entry, nowForRetry);
-    });
-
-    const toBlockEntries: Record<string, any>[] = [];
-    const seenBlockKeys = new Set<string>();
-    for (const entry of [...newEntries, ...retryEntries]) {
-      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
-      if (seenBlockKeys.has(key)) continue;
-      seenBlockKeys.add(key);
-      toBlockEntries.push(entry);
-    }
-    toBlockEntries.sort(compareEntrySequence);
+    const newEntries = kioskEntries;
+    const retryEntries: Record<string, any>[] = [];
+    const toBlockEntries = kioskEntries;
 
     log('\n[Phase 2B] 픽코 취소/환불 예약 직접 조회');
-    log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=환불`);
-    const { entries: rawRefundedEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '환불', minAmount: 1 });
-    const refundedEntries = rawRefundedEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
-    log(`[Pickko 조회] 이용일>=${today}, 이용금액>=1, 상태=취소`);
-    const { entries: rawCancelledStatusEntries } = await fetchPickkoEntries(page, today, { statusKeyword: '취소', minAmount: 1 });
-    const cancelledStatusEntries = rawCancelledStatusEntries.flatMap((entry) => splitKioskEntryForNaverBlocks(entry));
+    log(`[Pickko 조회] 이용일 ${today}~${endDate}, 상태=환불, 이용금액 필터 없음`);
+    const refundedResult = await fetchSourceEntries({
+      page,
+      today,
+      endDate,
+      statusKeyword: '환불',
+    });
+    const refundedEntries = refundedResult.entries;
+    log(`[Pickko 조회] 이용일 ${today}~${endDate}, 상태=취소, 이용금액 필터 없음`);
+    const cancelledStatusResult = await fetchSourceEntries({
+      page,
+      today,
+      endDate,
+      statusKeyword: '취소',
+    });
+    const cancelledStatusEntries = cancelledStatusResult.entries;
 
     const rawCancelledEntries = [...refundedEntries, ...cancelledStatusEntries];
     const dedupedCancelledEntries: Record<string, any>[] = [];
@@ -134,27 +166,18 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
       ...(entry as KioskEntry),
       key: `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`,
     })) as KioskEntry[];
-    const cancelledSaved = await Promise.all(
-      cancelledWithKey.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
-    );
-    const cancelledEntries = cancelledWithKey.filter((entry, index) => {
-      const saved = cancelledSaved[index];
-      if (!saved || !saved.naverBlocked) return false;
-      if (saved.naverUnblockedAt) return false;
-      return true;
-    });
-    cancelledEntries.sort(compareEntrySequence);
+    const cancelledEntries = cancelledWithKey;
 
-    log(`\n🆕 신규 키오스크 예약: ${newEntries.length}건 / 🔁 차단 재시도: ${retryEntries.length}건 (전체 ${kioskEntries.length}건)`);
-    log(`🗑 픽코 취소 감지: 환불 ${refundedEntries.length}건 / 취소 ${cancelledStatusEntries.length}건 / 합산 ${dedupedCancelledEntries.length}건 (처리 필요: ${cancelledEntries.length}건)`);
+    log(`\n📦 Pickko 결제완료 원천 후보: ${kioskEntries.length}건 (금액 0 포함, 네이버 원천 분류 전)`);
+    log(`🗑 Pickko 취소/환불 원천 후보: 환불 ${refundedEntries.length}건 / 취소 ${cancelledStatusEntries.length}건 / 합산 ${dedupedCancelledEntries.length}건 (네이버 원천 분류 전)`);
 
     return {
-      fetchOk: fetchOk ?? true,
+      fetchOk: paidResult.fetchOk ?? true,
       kioskEntries,
       newEntries,
       retryEntries,
       toBlockEntries,
-      excludedEntries,
+      excludedEntries: [],
       refundedEntries,
       cancelledStatusEntries,
       dedupedCancelledEntries,

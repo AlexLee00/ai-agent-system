@@ -32,7 +32,10 @@ export function buildSlotCandidates(slots: string[]): SlotCandidate[] {
 
   const candidates: SlotCandidate[] = [];
   const seen = new Set<string>();
-  const strictRequestWindow = process.env.PICKKO_STRICT_REQUEST_WINDOW === '1';
+  const strictRequestWindow =
+    process.env.PICKKO_STRICT_REQUEST_WINDOW === '1'
+    || process.env.STRICT_TIME === '1'
+    || process.env.MODE === 'ops';
 
   const addThirtyMinutes = (hhmm: string) => {
     const [hour, minute] = hhmm.split(':').map(Number);

@@ -1,6 +1,13 @@
 type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
-const { isKioskEntryEnded } = require('./kiosk-monitor-helpers');
+const {
+  getKioskNaverBlockEntry,
+  isKioskEntryEnded,
+} = require('./kiosk-monitor-helpers');
+const {
+  classifyPickkoEntriesByNaver,
+  isValidSourceEntry,
+} = require('./reservation-source-classifier');
 
 export type CreateKioskNaverPhaseServiceDeps = {
   log: Logger;
@@ -25,12 +32,16 @@ export type CreateKioskNaverPhaseServiceDeps = {
   ) => Promise<void>;
   markCustomerCooldown: (entry: Record<string, any>, tracker: Map<string, any>) => void;
   runtimeConfig: { customerOperationCooldownMs?: number | string };
+  browserProtocolTimeoutMs?: number;
   delay: DelayFn;
   blockNaverSlot: (page: any, entry: Record<string, any>) => Promise<any>;
   unblockNaverSlot: (page: any, entry: Record<string, any>) => Promise<boolean>;
   publishKioskSuccessReport: (message: string) => void;
   getKioskBlock: (phoneRaw: string, date: string, start: string, end?: string, room?: string) => Promise<any>;
   bookingUrl: string;
+  scrapeNewestBookingsFromList?: (page: any, limit?: number) => Promise<Record<string, any>[]>;
+  sourceClassificationDaysAhead?: number;
+  sourceSnapshotLimit?: number;
 };
 
 export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceDeps) {
@@ -50,13 +61,82 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
     waitForCustomerCooldown,
     markCustomerCooldown,
     runtimeConfig,
+    browserProtocolTimeoutMs = 300000,
     delay,
     blockNaverSlot,
     unblockNaverSlot,
     publishKioskSuccessReport,
     getKioskBlock,
     bookingUrl,
+    scrapeNewestBookingsFromList,
+    sourceClassificationDaysAhead = 31,
+    sourceSnapshotLimit = 300,
   } = deps;
+
+  function addDaysKST(dateStr: string, days: number): string {
+    const date = new Date(`${dateStr}T00:00:00+09:00`);
+    date.setDate(date.getDate() + days);
+    return date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  }
+
+  function todayKST(): string {
+    return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  }
+
+  function buildConfirmedUseDateRangeUrl(startDate: string, endDate: string): string {
+    const url = new URL(bookingUrl);
+    url.pathname = url.pathname.replace(/booking-calendar-view.*$/, 'booking-list-view');
+    if (!url.pathname.includes('booking-list-view')) {
+      url.pathname = `${url.pathname.replace(/\/+$/, '')}/booking-list-view`;
+    }
+    url.search = '';
+    url.searchParams.set('bookingStatusCodes', 'RC03');
+    url.searchParams.set('dateDropdownType', 'RANGE');
+    url.searchParams.set('dateFilter', 'USEDATE');
+    url.searchParams.set('startDateTime', startDate);
+    url.searchParams.set('endDateTime', endDate);
+    return url.toString();
+  }
+
+  function sortEntries(entries: Record<string, any>[]): Record<string, any>[] {
+    return [...entries].sort((a, b) => {
+      const left = `${a.date || ''}|${a.start || ''}|${a.room || ''}|${a.phoneRaw || ''}`;
+      const right = `${b.date || ''}|${b.start || ''}|${b.room || ''}|${b.phoneRaw || ''}`;
+      return left.localeCompare(right);
+    });
+  }
+
+  function dedupeEntries(entries: Record<string, any>[]): Record<string, any>[] {
+    const out: Record<string, any>[] = [];
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const key = `${entry.phoneRaw}|${entry.date}|${entry.start}|${entry.end || ''}|${entry.room || ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(entry);
+    }
+    return out;
+  }
+
+  async function loadNaverConfirmedUseDateSnapshot(page: any): Promise<{
+    rows: Record<string, any>[];
+    startDate: string;
+    endDate: string;
+    url: string;
+  }> {
+    if (typeof scrapeNewestBookingsFromList !== 'function') {
+      throw new Error('scrapeNewestBookingsFromList dependency is required for source classification');
+    }
+    const startDate = todayKST();
+    const endDate = addDaysKST(startDate, sourceClassificationDaysAhead);
+    const url = buildConfirmedUseDateRangeUrl(startDate, endDate);
+    log(`🔎 [원천분류] 네이버 확정 USEDATE 조회: ${startDate}~${endDate}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    await delay(1200);
+    const rows = await scrapeNewestBookingsFromList(page, sourceSnapshotLimit);
+    log(`🔎 [원천분류] 네이버 확정 snapshot: ${rows.length}건`);
+    return { rows, startDate, endDate, url };
+  }
 
   async function installBrowserEvalShim(page: any) {
     try {
@@ -95,44 +175,18 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
     reason: 'naver_monitor_unavailable' | 'naver_login_failed';
   }) {
     const reasonLabel = reason === 'naver_login_failed' ? '네이버 로그인 실패' : 'naver-monitor 미실행';
-    for (const entry of toBlockEntries) {
-      await upsertKioskBlock(entry.phoneRaw, entry.date, entry.start, {
-        ...entry,
-        naverBlocked: false,
-        firstSeenAt: nowKST(),
-        lastBlockAttemptAt: nowKST(),
-        lastBlockResult: 'deferred',
-        lastBlockReason: reason,
-      });
-      await journalBlockAttempt(entry, 'deferred', reason, {
-        naverBlocked: false,
-        incrementRetry: true,
-      });
-      publishRetryableBlockAlert(entry, reasonLabel, {
-        title: '네이버 차단 지연',
-        sourceLabel: '키오스크 예약',
-      });
-    }
-
-    for (const entry of cancelledEntries) {
-      publishReservationAlert({
-        from_bot: 'jimmy',
-        event_type: 'alert',
-        alert_level: 3,
-        message: buildOpsAlertMessage({
-          title: '⚠️ 네이버 차단 해제 필요 — 수동 처리',
-          customer: entry.name || '(이름없음)',
-          phone: fmtPhone(entry.phoneRaw),
-          date: entry.date,
-          start: entry.start,
-          end: entry.end,
-          room: entry.room || '',
-          status: '키오스크 취소',
-          reason: reasonLabel,
-          action: '네이버 예약가능 상태를 수동으로 복구해 주세요.',
-        }),
-      });
-    }
+    log(`🛡️ [원천분류] ${reasonLabel} — Pickko 후보 ${toBlockEntries.length}건/취소후보 ${cancelledEntries.length}건 자동 처리 중단`);
+    publishReservationAlert({
+      from_bot: 'jimmy',
+      event_type: 'alert',
+      alert_level: 3,
+      message: buildOpsAlertMessage({
+        title: '⚠️ 네이버 원천 분류 불가 — 자동 처리 중단',
+        status: 'Pickko 후보 미분류',
+        reason: `${reasonLabel}. 네이버 live 확정 목록 없이 예약불가/해제를 실행하지 않음`,
+        action: 'naver-monitor 로그인/WS 상태를 복구한 뒤 다음 사이클에서 재분류',
+      }),
+    });
   }
 
   async function processNaverPhase({
@@ -165,12 +219,16 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
     let naverPage: any = null;
 
     try {
-      naverBrowser = await connectBrowser({ browserWSEndpoint: wsEndpoint });
+      naverBrowser = await connectBrowser({
+        browserWSEndpoint: wsEndpoint,
+        protocolTimeout: browserProtocolTimeoutMs,
+      });
       log('✅ CDP 연결 성공');
 
       const createNaverPage = async () => {
         const page = await naverBrowser.newPage();
-        page.setDefaultTimeout(30000);
+        page.setDefaultTimeout(60000);
+        page.setDefaultNavigationTimeout(60000);
         await page.setViewport({ width: 1920, height: 1080 });
         await installBrowserEvalShim(page);
         attachNaverScheduleTrace(page, 'main-loop');
@@ -192,8 +250,96 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
       }
 
       const customerOperationTracker = new Map<string, any>();
+      let confirmedSnapshot: { rows: Record<string, any>[]; startDate: string; endDate: string; url: string };
+      try {
+        confirmedSnapshot = await loadNaverConfirmedUseDateSnapshot(naverPage);
+      } catch (error: any) {
+        const message = error?.message || String(error);
+        log(`🛡️ [원천분류] 네이버 확정 snapshot 실패 — 자동 처리 중단: ${message}`);
+        publishReservationAlert({
+          from_bot: 'jimmy',
+          event_type: 'alert',
+          alert_level: 3,
+          message: buildOpsAlertMessage({
+            title: '⚠️ 네이버 확정 snapshot 실패 — 자동 처리 중단',
+            status: 'Pickko 후보 미분류',
+            reason: message,
+            action: '네이버 USEDATE 확정 목록 파싱 복구 후 재시도',
+          }),
+        });
+        return;
+      }
+      if (confirmedSnapshot.rows.length === 0 && (toBlockEntries.length > 0 || cancelledEntries.length > 0)) {
+        log('🛡️ [원천분류] 네이버 확정 snapshot 0건 — Pickko 후보가 있어 자동 처리 중단');
+        publishReservationAlert({
+          from_bot: 'jimmy',
+          event_type: 'alert',
+          alert_level: 3,
+          message: buildOpsAlertMessage({
+            title: '⚠️ 네이버 확정 snapshot 0건 — 자동 처리 중단',
+            status: 'Pickko 후보 미분류',
+            reason: '네이버 확정 목록 파싱 결과가 0건이므로 DOM 변경/필터 오류 가능성이 있음',
+            action: '네이버 확정 목록 live 파싱을 확인한 뒤 예약불가/해제를 재시도',
+          }),
+        });
+        return;
+      }
+      const invalidConfirmedRows = confirmedSnapshot.rows.filter((entry) => !isValidSourceEntry(entry));
+      if (invalidConfirmedRows.length > 0 && (toBlockEntries.length > 0 || cancelledEntries.length > 0)) {
+        log(`🛡️ [원천분류] 네이버 확정 snapshot 불완전 ${invalidConfirmedRows.length}건 — 자동 처리 중단`);
+        publishReservationAlert({
+          from_bot: 'jimmy',
+          event_type: 'alert',
+          alert_level: 3,
+          message: buildOpsAlertMessage({
+            title: '⚠️ 네이버 확정 snapshot 불완전 — 자동 처리 중단',
+            status: 'Pickko 후보 미분류',
+            reason: '네이버 확정 목록에 전화/date/room/time 중 누락된 row가 있어 원천 분류가 불완전함',
+            action: '네이버 확정 목록 DOM 파싱을 확인한 뒤 예약불가/해제를 재시도',
+          }),
+        });
+        return;
+      }
 
-      for (const entry of toBlockEntries) {
+      const blockSource = classifyPickkoEntriesByNaver(toBlockEntries, confirmedSnapshot.rows);
+      const cancelSource = classifyPickkoEntriesByNaver(cancelledEntries, confirmedSnapshot.rows);
+      log(
+        `[원천분류] 차단 후보 ${toBlockEntries.length}건 → 네이버 매칭 제외 ${blockSource.naverMatched.length}건 / ` +
+        `키오스크·수동 ${blockSource.kioskOrManual.length}건 / invalid ${blockSource.invalid.length}건`,
+      );
+      log(
+        `[원천분류] 취소/환불 후보 ${cancelledEntries.length}건 → 네이버 매칭 제외 ${cancelSource.naverMatched.length}건 / ` +
+        `키오스크·수동 ${cancelSource.kioskOrManual.length}건 / invalid ${cancelSource.invalid.length}건`,
+      );
+
+      const sourceBlockCandidates = sortEntries(dedupeEntries(blockSource.kioskOrManual));
+      const sourceCancelCandidates = sortEntries(dedupeEntries(cancelSource.kioskOrManual));
+      const blockSaved = await Promise.all(
+        sourceBlockCandidates.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
+      );
+      const newEntries = sourceBlockCandidates.filter((_, index) => !blockSaved[index]);
+      const nowForRetry = new Date();
+      const retryEntries = sourceBlockCandidates.filter((entry, index) => {
+        const saved = blockSaved[index];
+        if (!saved) return false;
+        if (saved.naverBlocked) return false;
+        if (saved.naverUnblockedAt) return false;
+        return !isKioskEntryEnded(entry, nowForRetry);
+      });
+      const blockEntries = sortEntries(dedupeEntries([...newEntries, ...retryEntries]));
+
+      const cancelSaved = await Promise.all(
+        sourceCancelCandidates.map((entry) => getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room)),
+      );
+      const unblockEntries = sortEntries(sourceCancelCandidates.filter((entry, index) => {
+        const saved = cancelSaved[index];
+        if (!saved || !saved.naverBlocked) return false;
+        if (saved.naverUnblockedAt) return false;
+        return true;
+      }));
+      log(`[원천분류] 처리 대상 확정: 신규 ${newEntries.length}건 / 재시도 ${retryEntries.length}건 / 차단 ${blockEntries.length}건 / 해제 ${unblockEntries.length}건`);
+
+      for (const entry of blockEntries) {
         const key = `${entry.phoneRaw}|${entry.date}|${entry.start}`;
         log(`\n처리 중: ${key}`);
 
@@ -247,11 +393,49 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
 
         let blocked = false;
         let blockReason = 'verify_failed';
+        const naverBlockEntry = getKioskNaverBlockEntry(entry);
+        if (!naverBlockEntry) {
+          const now = nowKST();
+          log(`  ⏰ [부분 시간 경과] 네이버에서 열 수 있는 미래 슬롯 없음: ${entry.date} ${entry.start}~${entry.end}`);
+          await upsertKioskBlock(entry.phoneRaw, entry.date, entry.start, {
+            name: entry.name,
+            date: entry.date,
+            start: entry.start,
+            end: entry.end,
+            room: entry.room,
+            amount: entry.amount,
+            naverBlocked: false,
+            firstSeenAt: now,
+            blockedAt: null,
+            lastBlockAttemptAt: now,
+            lastBlockResult: 'skipped',
+            lastBlockReason: 'time_elapsed_no_blockable_slot',
+          });
+          continue;
+        }
+        if (naverBlockEntry.naverBlockAdjustedStart && naverBlockEntry.naverBlockAdjustedStart !== entry.start) {
+          log(`  ⏩ 진행 중 예약 — 지난 슬롯 제외: ${entry.start} → ${naverBlockEntry.start} (종료 ${entry.end})`);
+        }
         for (let attempt = 1; attempt <= 2; attempt += 1) {
           try {
-            const blockResult = await blockNaverSlot(naverPage, entry);
+            const blockResult = await blockNaverSlot(naverPage, naverBlockEntry);
             blocked = Boolean(blockResult?.ok);
             blockReason = blockResult?.reason || (blocked ? 'verified' : 'verify_failed');
+            if (blocked && naverBlockEntry.naverBlockAdjustedStart && naverBlockEntry.naverBlockAdjustedStart !== entry.start) {
+              blockReason = `${blockReason}_partial_from_${naverBlockEntry.naverBlockAdjustedStart.replace(':', '')}`;
+            }
+            if (!blocked && blockReason === 'exception' && attempt === 1) {
+              log(`⚠️ 네이버 차단 예외 — 새 탭으로 재시도 (attempt ${attempt + 1}/2, error=${blockResult?.error || 'unknown'})`);
+              try { await naverPage.close(); } catch (_) {}
+              naverPage = await createNaverPage();
+              const reloggedIn = await naverBookingLogin(naverPage);
+              if (!reloggedIn) {
+                blocked = false;
+                blockReason = 'naver_relogin_failed';
+                break;
+              }
+              continue;
+            }
             if (!blocked && attempt === 1) {
               log(`⚠️ 네이버 차단 검증 실패 — 예약불가 처리 1회 재실행 (attempt ${attempt + 1}/2, reason=${blockReason})`);
               await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -313,9 +497,9 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         }
       }
 
-      if (cancelledEntries.length > 0) {
-        log(`\n[Phase 3B] 취소 예약 ${cancelledEntries.length}건 네이버 차단 해제 시작`);
-        for (const entry of cancelledEntries) {
+      if (unblockEntries.length > 0) {
+        log(`\n[Phase 3B] 취소 예약 ${unblockEntries.length}건 네이버 차단 해제 시작`);
+        for (const entry of unblockEntries) {
           log(`\n처리 중 (취소): ${entry.key}`);
 
           await waitForCustomerCooldown(

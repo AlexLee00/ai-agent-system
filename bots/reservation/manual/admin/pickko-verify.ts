@@ -71,7 +71,6 @@ function resolveChildRuntime(label: string, sourceRelPath: string) {
 }
 
 function needsVerify(entry: ReservationLike) {
-  if (entry.status === 'pending' || entry.status === 'failed') return true;
   if (entry.status === 'completed') {
     const ps = entry.pickkoStatus;
     return ps !== 'verified' && ps !== 'manual';

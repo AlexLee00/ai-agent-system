@@ -44,6 +44,7 @@ const { createKioskSlotCalendarService } = require('../../lib/kiosk-slot-calenda
 const { createKioskBlockFlowService } = require('../../lib/kiosk-block-flow-service');
 const { createKioskCliService } = require('../../lib/kiosk-cli-service');
 const { createKioskMainService } = require('../../lib/kiosk-main-service');
+const { createNaverListScrapeService } = require('../../lib/naver-list-scrape-service');
 const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
 const SECRETS = loadSecrets();
@@ -251,6 +252,11 @@ const kioskPickkoCycleService = createKioskPickkoCycleService({
   maskPhone,
 });
 
+const naverListScrapeService = createNaverListScrapeService({
+  delay,
+  log,
+});
+
 const kioskNaverPhaseService = createKioskNaverPhaseService({
   log,
   readWsFile: fs.readFileSync,
@@ -267,12 +273,17 @@ const kioskNaverPhaseService = createKioskNaverPhaseService({
   waitForCustomerCooldown,
   markCustomerCooldown,
   runtimeConfig: KIOSK_MONITOR_RUNTIME,
+  browserProtocolTimeoutMs: parseInt(
+    process.env.NAVER_PROTOCOL_TIMEOUT_MS || String(BROWSER_RUNTIME.naverProtocolTimeoutMs),
+    10,
+  ),
   delay,
   blockNaverSlot,
   unblockNaverSlot,
   publishKioskSuccessReport,
   getKioskBlock,
   bookingUrl: BOOKING_URL,
+  scrapeNewestBookingsFromList: (page: any, limit?: number) => naverListScrapeService.scrapeNewestBookingsFromList(page, limit),
 });
 
 const kioskRuntimeService = createKioskRuntimeService({

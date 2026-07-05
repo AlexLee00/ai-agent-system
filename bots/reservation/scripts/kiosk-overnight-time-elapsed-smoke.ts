@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   getKioskEntryEndDateTime,
+  getKioskNaverBlockEntry,
   isKioskEntryEnded,
   normalizeKioskSlotEndTime,
   splitKioskEntryForNaverBlocks,
@@ -94,6 +95,39 @@ assert.equal(
   normalizeKioskSlotEndTime('14:55'),
   '15:00',
   'non-slot end times still round up to the next half-hour boundary',
+);
+
+const ongoingEntry = {
+  name: '5832',
+  phoneRaw: '01082305832',
+  date: '2026-07-05',
+  start: '12:00',
+  end: '13:50',
+  room: '스터디룸A1',
+};
+
+assert.equal(
+  getKioskNaverBlockEntry(ongoingEntry, new Date('2026-07-05T02:59:00.000Z'))?.start,
+  '12:00',
+  'future same-day kiosk block should keep the requested start time',
+);
+
+assert.equal(
+  getKioskNaverBlockEntry(ongoingEntry, new Date('2026-07-05T03:10:00.000Z'))?.start,
+  '12:30',
+  'started same-day kiosk block should skip the already started Naver slot',
+);
+
+assert.equal(
+  getKioskNaverBlockEntry(ongoingEntry, new Date('2026-07-05T03:44:00.000Z'))?.start,
+  '13:00',
+  'started same-day kiosk block should use the next unopened half-hour slot',
+);
+
+assert.equal(
+  getKioskNaverBlockEntry(ongoingEntry, new Date('2026-07-05T04:31:00.000Z')),
+  null,
+  'started same-day kiosk block should skip when no future Naver slot remains',
 );
 
 const midnightSplitEntries = splitKioskEntryForNaverBlocks({

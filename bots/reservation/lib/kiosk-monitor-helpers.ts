@@ -162,6 +162,49 @@ export function toClockMinutes(timeStr: unknown): number | null {
   return h * 60 + m;
 }
 
+function toClockString(minutes: number): string {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function getKstDateAndMinutes(now: Date): { date: string; minutes: number } | null {
+  const text = now.toLocaleString('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    hour12: false,
+    hourCycle: 'h23',
+  });
+  const match = text.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2})/);
+  if (!match) return null;
+  const [, date, hourStr, minuteStr] = match;
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  return { date, minutes: hour * 60 + minute };
+}
+
+export function getKioskNaverBlockEntry(entry: KioskEntry, now: Date = new Date()): KioskEntry | null {
+  const date = String(entry?.date || '').trim();
+  const startMin = toClockMinutes(entry?.start);
+  const endMin = toClockMinutes(normalizeKioskSlotEndTime(entry?.end));
+  if (!date || startMin == null || endMin == null) return entry;
+
+  const kstNow = getKstDateAndMinutes(now);
+  if (!kstNow || kstNow.date !== date || kstNow.minutes < startMin) return entry;
+
+  const nextBlockableMin = Math.floor(kstNow.minutes / 30) * 30 + 30;
+  if (nextBlockableMin >= endMin) return null;
+
+  const adjustedStart = toClockString(nextBlockableMin);
+  return {
+    ...entry,
+    naverBlockOriginalStart: entry.start,
+    naverBlockAdjustedStart: adjustedStart,
+    naverBlockReason: 'started_slot_not_clickable',
+    start: adjustedStart,
+  };
+}
+
 export function getKioskEntryEndDateTime(entry: KioskEntry): Date | null {
   const date = String(entry?.date || '').trim();
   const startMin = toClockMinutes(entry?.start);
