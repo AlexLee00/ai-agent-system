@@ -123,7 +123,7 @@
     "maxReplyLen": 200,
     "maxDetectPerCycle": 20,
     "maxProcessPerCycle": 20,
-    "processTimeoutMs": 240000
+    "processTimeoutMs": 360000
   },
     "neighborCommenter": {
       "enabled": true,

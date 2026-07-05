@@ -12,6 +12,8 @@
 		<string>1</string>
 		<key>PICKKO_CANCEL_MUTATION_ENABLE</key>
 		<string>0</string>
+		<key>SKA_ENABLE_PICKKO_CANCEL_MUTATION</key>
+		<string>0</string>
 		<key>PICKKO_ENABLE</key>
 		<string>1</string>
 		<key>PICKKO_HEADLESS</key>

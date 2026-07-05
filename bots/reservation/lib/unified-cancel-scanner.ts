@@ -100,7 +100,7 @@ function normalizeDate(value: unknown): string {
   return String(value || '').trim();
 }
 
-export function dedupeCancelEvidence(rows: Record<string, any>[], {
+export async function dedupeCancelEvidence(rows: Record<string, any>[], {
   buildCancelKey,
   todaySeoul = kst.today(),
   findTrackedReservation,
@@ -110,10 +110,10 @@ export function dedupeCancelEvidence(rows: Record<string, any>[], {
   findTrackedReservation?: FindTrackedReservationFn;
 }): Promise<UnifiedCancelEvidence[]> {
   const seen = new Set<string>();
-  return rows.reduce(async (prevPromise, booking) => {
-    const out = await prevPromise;
+  const out: UnifiedCancelEvidence[] = [];
+  for (const booking of rows) {
     const cancelKey = buildCancelKey(booking, todaySeoul);
-    if (!cancelKey || seen.has(cancelKey)) return out;
+    if (!cancelKey || seen.has(cancelKey)) continue;
     seen.add(cancelKey);
     const tracked = findTrackedReservation
       ? await findTrackedReservation(booking).catch(() => null)
@@ -126,8 +126,8 @@ export function dedupeCancelEvidence(rows: Record<string, any>[], {
       trackedReservationId: tracked?.id ? String(tracked.id) : null,
       source: 'unified_cancel_scanner',
     });
-    return out;
-  }, Promise.resolve([] as UnifiedCancelEvidence[]));
+  }
+  return out;
 }
 
 export async function scanUnifiedCancelledList({

@@ -71,6 +71,9 @@ function isExactPickkoReservation(row, info) {
     && info.room === row.room;
 }
 
+/**
+ * @returns {Promise<{ code: number | null, output: string, error: string | null }>}
+ */
 function runPickkoAccurate(row) {
   return new Promise((resolve) => {
     const args = [
@@ -111,6 +114,19 @@ function runPickkoAccurate(row) {
       resolve({ code, output, error: null });
     });
   });
+}
+
+function pickkoResultOutput(result) {
+  return String(result && typeof result === 'object' && 'output' in result ? result.output : '');
+}
+
+function pickkoResultCode(result) {
+  const code = result && typeof result === 'object' && 'code' in result ? result.code : 1;
+  return typeof code === 'number' && Number.isFinite(code) ? code : 1;
+}
+
+function pickkoResultError(result) {
+  return String(result && typeof result === 'object' && 'error' in result ? result.error || '' : '');
 }
 
 async function loadCandidates() {
@@ -214,13 +230,16 @@ async function main() {
     fs.appendFileSync(LOG_PATH, `\n===== RESTORE ${label} =====\n`);
 
     const result = await runPickkoAccurate(row);
-    const pickkoOrderId = parsePickkoOrderId(result.output);
-    const pickkoInfo = parsePickkoReservationInfo(result.output);
+    const resultOutput = pickkoResultOutput(result);
+    const resultCode = pickkoResultCode(result);
+    const resultError = pickkoResultError(result);
+    const pickkoOrderId = parsePickkoOrderId(resultOutput);
+    const pickkoInfo = parsePickkoReservationInfo(resultOutput);
     const exactReservation = isExactPickkoReservation(row, pickkoInfo);
-    const ok = result.code === 0 && (
+    const ok = resultCode === 0 && (
       pickkoOrderId
-      || String(result.output).includes('픽코 예약등록 + 결제 완료됨')
-      || String(result.output).includes('이미 결제완료 상태')
+      || resultOutput.includes('픽코 예약등록 + 결제 완료됨')
+      || resultOutput.includes('이미 결제완료 상태')
     ) && exactReservation;
 
     if (ok) {
@@ -233,20 +252,20 @@ async function main() {
       });
       await markSeen(row.id);
       const removedKeys = await clearCancelKeys(row);
-      results.push({ id: row.id, ok: true, code: result.code, pickkoOrderId, removedKeys });
+      results.push({ id: row.id, ok: true, code: resultCode, pickkoOrderId, removedKeys });
       console.log(`RESTORE_OK ${label} order=${pickkoOrderId || '-'}`);
       continue;
     }
 
-    const failureReason = result.error || (pickkoInfo && !exactReservation ? `pickko_time_mismatch:${pickkoInfo.start}-${pickkoInfo.end}` : 'pickko_not_completed');
+    const failureReason = resultError || (pickkoInfo && !exactReservation ? `pickko_time_mismatch:${pickkoInfo.start}-${pickkoInfo.end}` : 'pickko_not_completed');
     await updateReservation(row.id, {
       status: 'failed',
       pickkoStatus: row.pickkoStatus,
-      errorReason: `false_cancel_restore_failed:${result.code}:${failureReason}`,
+      errorReason: `false_cancel_restore_failed:${resultCode}:${failureReason}`,
       pickkoCompleteTime: nowKstText(),
     });
-    results.push({ id: row.id, ok: false, code: result.code, error: failureReason });
-    console.log(`RESTORE_FAIL ${label} code=${result.code} error=${failureReason}`);
+    results.push({ id: row.id, ok: false, code: resultCode, error: failureReason });
+    console.log(`RESTORE_FAIL ${label} code=${resultCode} error=${failureReason}`);
   }
 
   console.log(JSON.stringify({
