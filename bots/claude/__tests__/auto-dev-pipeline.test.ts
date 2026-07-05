@@ -431,6 +431,46 @@ async function test_completed_history_prevents_archived_missing_requeue() {
   console.log('✅ auto-dev: completed history prevents archived_missing requeue');
 }
 
+async function test_completed_manifest_record_blocks_failed_overwrite() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_completed_overwrite.md';
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived',
+        archivedAt: '2026-07-06T07:00:00.000Z',
+        archivedBy: 'codex',
+        archivedPath: 'docs/archive/codex-completed/ALARM_INCIDENT_completed_overwrite.md',
+        reason: 'auto_dev_current_state_resolved',
+        implementationStatus: 'auto_dev_implementation_completed',
+        createdAt: '2026-07-06T06:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async () => {
+    const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+    manifestLib.markAutoDevManifestState(autoDir, relPath, 'active', {
+      failedAt: '2026-07-06T07:10:00.000Z',
+      failureReason: 'ENOENT after archive',
+    });
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'archived');
+    assert.strictEqual(manifest.entries[relPath].implementationStatus, 'auto_dev_implementation_completed');
+    assert.strictEqual(manifest.entries[relPath].failedAt, undefined);
+    assert.strictEqual(manifest.entries[relPath].failureReason, undefined);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed manifest record blocks failed overwrite');
+}
+
 async function test_archived_missing_without_completed_history_requeues() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -2769,6 +2809,7 @@ async function main() {
     test_listAutoDevDocuments_respects_manifest_states,
     test_empty_auto_dev_inbox_marks_agent_done,
     test_completed_history_prevents_archived_missing_requeue,
+    test_completed_manifest_record_blocks_failed_overwrite,
     test_archived_missing_without_completed_history_requeues,
     test_auto_dev_watch_passes_state_file_to_manifest_sync,
     test_missing_auto_dev_document_is_skipped,

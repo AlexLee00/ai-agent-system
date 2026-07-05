@@ -68,9 +68,13 @@ function hasCompletedManifestRecord(entry) {
   const reason = String(entry?.reason || '').trim();
   const implementationStatus = String(entry?.implementationStatus || entry?.implementation_status || '').trim();
   return Boolean(
-    ['completed', 'already_completed', 'implementation_completed', 'auto_dev_implementation_completed'].includes(reason)
+    ['completed', 'already_completed', 'implementation_completed', 'auto_dev_implementation_completed', 'auto_dev_current_state_resolved'].includes(reason)
     || ['completed', 'done', 'implementation_completed', 'auto_dev_implementation_completed'].includes(implementationStatus)
   );
+}
+
+function isActiveAutoDevState(state) {
+  return ['inbox', 'claimed', 'active', 'failed'].includes(String(state || ''));
 }
 
 function hasCompletedAutoDevHistory(relPath, entry, completedRelPaths) {
@@ -118,6 +122,9 @@ function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
   if (!normalized) return null;
   const manifest = loadAutoDevManifest(autoDevDir);
   const current = manifest.entries[normalized] || {};
+  if (hasCompletedManifestRecord(current) && isActiveAutoDevState(patch.state)) {
+    return current;
+  }
   manifest.entries[normalized] = {
     state: 'inbox',
     createdAt: current.createdAt || new Date().toISOString(),

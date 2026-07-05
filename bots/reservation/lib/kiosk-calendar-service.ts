@@ -2,6 +2,7 @@ type Logger = (message: string) => void;
 
 const SELECT_BOOKING_DATE_TIMEOUT_MS = 45_000;
 const VERIFY_BLOCK_GRID_TIMEOUT_MS = 45_000;
+const MAX_SELECT_BOOKING_DATE_TIMEOUT_MS = 480_000;
 
 export type CreateKioskCalendarServiceDeps = {
   log: Logger;
@@ -36,6 +37,21 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         setTimeout(() => reject(new Error(`${label}_timeout:${timeoutMs}`)), timeoutMs).unref();
       }),
     ]);
+  }
+
+  async function estimateSelectBookingDateTimeout(page: any, date: string): Promise<number> {
+    const current = await readDailyHeaderDate(page).catch(() => null);
+    const dayDiff = current?.date ? diffCalendarDays(current.date, date) : null;
+    if (dayDiff == null) return SELECT_BOOKING_DATE_TIMEOUT_MS;
+    const distance = Math.abs(dayDiff);
+    if (distance <= 7) return SELECT_BOOKING_DATE_TIMEOUT_MS;
+
+    // Moving the daily header is intentionally sequential and can take 2-3s per day.
+    // Long-range kiosk blocks must not timeout while the UI is still moving.
+    return Math.min(
+      MAX_SELECT_BOOKING_DATE_TIMEOUT_MS,
+      Math.max(SELECT_BOOKING_DATE_TIMEOUT_MS, 30_000 + distance * 3_500),
+    );
   }
 
   function diffCalendarDays(fromDate: string, toDate: string): number | null {
@@ -228,7 +244,8 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
 
   async function selectBookingDate(page: any, date: string) {
     try {
-      return await withCalendarTimeout(selectBookingDateInner(page, date), 'select_booking_date');
+      const timeoutMs = await estimateSelectBookingDateTimeout(page, date);
+      return await withCalendarTimeout(selectBookingDateInner(page, date), 'select_booking_date', timeoutMs);
     } catch (error: any) {
       log(`  ❌ 날짜 선택 타임아웃/오류: ${date} (${error?.message || String(error)})`);
       return false;
