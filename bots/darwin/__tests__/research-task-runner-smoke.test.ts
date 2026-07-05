@@ -30,6 +30,9 @@ async function main() {
     if (request === '../../../packages/core/lib/hub-alarm-client') {
       return { postAlarm: async () => {} };
     }
+    if (request === '../lib/ops-root-guard') {
+      return { assertOpsRootOnMain: () => ({ ok: true, branch: 'main', action: 'none' }) };
+    }
     return originalLoad.call(this, request, parent, isMain);
   };
 
@@ -73,6 +76,9 @@ async function main() {
     }
     if (request === '../../../packages/core/lib/hub-alarm-client') {
       return { postAlarm: async () => { throw new Error('must_not_post_alarm'); } };
+    }
+    if (request === '../lib/ops-root-guard') {
+      return { assertOpsRootOnMain: () => ({ ok: true, branch: 'main', action: 'none' }) };
     }
     return originalLoad.call(this, request, parent, isMain);
   };

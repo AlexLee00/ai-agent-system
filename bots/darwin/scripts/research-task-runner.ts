@@ -5,6 +5,7 @@ const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const autonomyLevel = require('../lib/autonomy-level');
+const { assertOpsRootOnMain } = require('../lib/ops-root-guard');
 
 type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
 
@@ -101,7 +102,8 @@ function _runGit(args: string[], opts: ExecFileOptions = {}): string {
 
 function _autoMergeSkillBranch(branchName: string | null | undefined, taskId: string): { merged: boolean; branch?: string } {
   if (!branchName) return { merged: false };
-  _runGit(['checkout', 'main']);
+  const guard = assertOpsRootOnMain({ context: `research-task-runner:auto-merge:${taskId}` });
+  if (!guard.ok) throw new Error(`ops_root_not_main:${guard.branch}`);
   _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin-skill): ${taskId}`]);
   try {
     _runGit(['branch', '-D', branchName]);
@@ -111,7 +113,7 @@ function _autoMergeSkillBranch(branchName: string | null | undefined, taskId: st
   return { merged: true, branch: branchName };
 }
 
-async function main() {
+async function runMain() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.dryRun) {
     await tasksTyped.ensureTaskStatusSchema();
@@ -233,6 +235,15 @@ async function main() {
 
   if (options.json) {
     console.log(JSON.stringify(summary, null, 2));
+  }
+}
+
+async function main() {
+  assertOpsRootOnMain({ context: 'research-task-runner:start' });
+  try {
+    await runMain();
+  } finally {
+    assertOpsRootOnMain({ context: 'research-task-runner:end' });
   }
 }
 

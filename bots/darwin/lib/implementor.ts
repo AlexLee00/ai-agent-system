@@ -15,6 +15,13 @@ const failureTrajectory = require('../../../packages/core/lib/failure-trajectory
 const env = require('../../../packages/core/lib/env');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
+const {
+  createLab,
+  removeLab,
+}: {
+  createLab: (branchName: string) => { branchName: string; path: string };
+  removeLab: (labPath: string) => { removed: boolean; pruned: boolean };
+} = require('./worktree-lab');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/', 'prototypes/'];
@@ -60,6 +67,11 @@ interface ProposalStore {
     proposalId: string,
     status: string,
     extra?: Record<string, unknown>
+  ): ProposalRecord | null;
+  transitionProposal?(
+    proposalId: string,
+    to: 'proposed' | 'implementing' | 'measured' | 'adopted' | 'archived',
+    evidence?: Record<string, unknown>
   ): ProposalRecord | null;
 }
 
@@ -348,9 +360,9 @@ function _deleteBranchIfExists(branchName: string | null | undefined): void {
   }
 }
 
-function _hasStagedChanges() {
+function _hasStagedChanges(cwd = REPO_ROOT) {
   try {
-    _runGit(['diff', '--cached', '--quiet']);
+    _runGit(['diff', '--cached', '--quiet'], { cwd });
     return false;
   } catch {
     return true;
@@ -402,10 +414,10 @@ function _extractFiles(
   return files;
 }
 
-function _writeFiles(files: ExtractedFile[]): string[] {
+function _writeFiles(files: ExtractedFile[], baseDir = REPO_ROOT): string[] {
   const changed: string[] = [];
   for (const file of files) {
-    const fullPath = path.join(REPO_ROOT, file.path);
+    const fullPath = path.join(baseDir, file.path);
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     fs.writeFileSync(fullPath, file.content, 'utf8');
     changed.push(file.path);
@@ -413,7 +425,7 @@ function _writeFiles(files: ExtractedFile[]): string[] {
   return changed;
 }
 
-function _checkSyntax(paths: string[]): SyntaxCheckResult[] {
+function _checkSyntax(paths: string[], cwd = REPO_ROOT): SyntaxCheckResult[] {
   const results: SyntaxCheckResult[] = [];
   for (const filePath of paths) {
     if (!filePath.endsWith('.js')) {
@@ -422,7 +434,7 @@ function _checkSyntax(paths: string[]): SyntaxCheckResult[] {
     }
     try {
       execFileSync('node', ['--check', filePath], {
-        cwd: REPO_ROOT,
+        cwd,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -443,28 +455,23 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
   _assertProposalCleanForImplementation(proposalId, proposal);
 
-  const originalBranch = _getCurrentBranch();
   const branchName = proposal.branch || _sanitizeBranchName(proposalId);
-  let stashState: StashState | null = null;
-  let branchCheckedOut = false;
+  let lab: { branchName: string; path: string } | null = null;
   let committed = false;
-  proposalStoreTyped.updateStatus(proposalId, 'implementing', { branch: branchName, implementation_started_at: new Date().toISOString() });
+  let keepLab = false;
+  if (proposalStoreTyped.transitionProposal) {
+    proposalStoreTyped.transitionProposal(proposalId, 'implementing', {
+      reason: 'implementation_started',
+      branch: branchName,
+      implementation_started_at: new Date().toISOString(),
+    });
+  } else {
+    proposalStoreTyped.updateStatus(proposalId, 'implementing', { branch: branchName, implementation_started_at: new Date().toISOString() });
+  }
   logger.info(`구현 시작: ${proposalId} -> ${branchName}`);
 
   try {
-    stashState = _stashPushIfNeeded(proposalId);
-    _runGit(['checkout', '-b', branchName]);
-    branchCheckedOut = true;
-  } catch (error) {
-    if (toErrorMessage(error).includes('already exists')) {
-      _runGit(['checkout', branchName]);
-      branchCheckedOut = true;
-    } else {
-      throw error;
-    }
-  }
-
-  try {
+    lab = createLab(branchName);
     const failureHints = await _loadFailureHintsForImplementation(proposalId, proposal);
     const implementationResult = await callHubLlm({
       callerTeam: 'darwin',
@@ -506,34 +513,24 @@ ${JSON.stringify(proposal.verification || {})}`,
     const files = _extractFiles(implementationResult, proposalId, proposal);
     logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일`);
     if (files.length === 0) {
-      _runGit(['checkout', originalBranch]);
-      branchCheckedOut = false;
-      _deleteBranchIfExists(branchName);
-      proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
-        error: 'no_files_extracted',
-      });
+      keepLab = process.env.DARWIN_KEEP_FAILED_LAB === 'true';
       throw new Error('no files extracted from edison output');
     }
 
-    const changedFiles = _writeFiles(files);
-    const syntaxChecks = _checkSyntax(changedFiles);
+    const changedFiles = _writeFiles(files, lab.path);
+    const syntaxChecks = _checkSyntax(changedFiles, lab.path);
     const syntaxPassed = syntaxChecks.every((item) => item.ok);
     logger.info(`구현 커밋 준비: ${changedFiles.length}개 파일, syntax=${syntaxPassed ? 'pass' : 'partial-fail'}`);
 
-    _runGit(['add', ...changedFiles]);
-    if (!_hasStagedChanges()) {
-      _runGit(['checkout', originalBranch]);
-      branchCheckedOut = false;
-      _deleteBranchIfExists(branchName);
-      proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
-        error: 'no_effective_changes',
-      });
+    _runGit(['add', ...changedFiles], { cwd: lab.path });
+    if (!_hasStagedChanges(lab.path)) {
+      keepLab = process.env.DARWIN_KEEP_FAILED_LAB === 'true';
       throw new Error('edison produced no effective file changes');
     }
-    _runGit(['commit', '-m', `feat(darwin): auto-implement ${proposalId}`]);
+    _runGit(['commit', '-m', `feat(darwin): auto-implement ${proposalId}`], { cwd: lab.path });
     committed = true;
 
-    proposalStoreTyped.updateStatus(proposalId, 'implemented', {
+    proposalStoreTyped.updateStatus(proposalId, 'implementing', {
       branch: branchName,
       changed_files: changedFiles,
       syntax_checks: syntaxChecks,
@@ -587,10 +584,27 @@ ${JSON.stringify(proposal.verification || {})}`,
     logger.error(`구현 실패: ${proposalId} -> ${errorMessage}`);
     autonomyLevelTyped.recordError(error);
     await _recordImplementationFailureTrajectory(proposalId, proposal, branchName, errorMessage);
-    proposalStoreTyped.updateStatus(proposalId, 'implementation_failed', {
-      branch: branchName,
-      error: errorMessage,
-    });
+    if (proposalStoreTyped.transitionProposal) {
+      try {
+        proposalStoreTyped.transitionProposal(proposalId, 'archived', {
+          reason: 'implementation_failed',
+          branch: branchName,
+          error: errorMessage,
+        });
+      } catch {
+        proposalStoreTyped.updateStatus(proposalId, 'archived', {
+          archive_reason: 'implementation_failed',
+          branch: branchName,
+          error: errorMessage,
+        });
+      }
+    } else {
+      proposalStoreTyped.updateStatus(proposalId, 'archived', {
+        archive_reason: 'implementation_failed',
+        branch: branchName,
+        error: errorMessage,
+      });
+    }
     await eventLakeTyped.record({
       eventType: 'implementation_failed',
       team: 'darwin',
@@ -612,23 +626,19 @@ ${JSON.stringify(proposal.verification || {})}`,
       fromBot: 'implementor',
       inlineKeyboard: null,
     } as AlarmPayload);
+    keepLab = process.env.DARWIN_KEEP_FAILED_LAB === 'true';
     throw error;
   } finally {
-    try {
-      if (branchCheckedOut) {
-        try {
-          _runGit(['checkout', 'main']);
-        } catch {
-          _runGit(['checkout', originalBranch]);
-        }
-      }
-    } catch {}
-    try {
-      if (!committed) _deleteBranchIfExists(branchName);
-    } catch {}
-    try {
-      _stashPopIfNeeded(stashState);
-    } catch {}
+    if (lab && (!keepLab || committed)) {
+      try {
+        removeLab(lab.path);
+      } catch {}
+    }
+    if (!committed && !keepLab) {
+      try {
+        _deleteBranchIfExists(branchName);
+      } catch {}
+    }
   }
 }
 

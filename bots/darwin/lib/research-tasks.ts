@@ -93,6 +93,13 @@ const {
     codePatterns: Array<Record<string, unknown>>;
   }) => AnalysisSummaryResult;
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/darwin/github-analysis.js'));
+const {
+  createLab,
+  removeLab,
+}: {
+  createLab: (branchName: string) => { branchName: string; path: string };
+  removeLab: (labPath: string) => { removed: boolean; pruned: boolean };
+} = require('./worktree-lab');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const TASKS_DIR = path.join(REPO_ROOT, 'docs/research/tasks');
@@ -533,12 +540,21 @@ async function executeGitHubAnalysis(task: ResearchTask): Promise<GitHubAnalysis
       }
 }
 
-function _runGit(args: string[]): string {
+function _runGit(args: string[], cwd = REPO_ROOT): string {
   return execFileSync('git', args, {
-    cwd: REPO_ROOT,
+    cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+}
+
+function _deleteBranchIfExists(branchName: string | null | undefined): void {
+  if (!branchName) return;
+  try {
+    _runGit(['branch', '-D', branchName]);
+  } catch {
+    // ignore cleanup failures
+  }
 }
 
 function _extractCodeBlock(text: unknown): string {
@@ -556,15 +572,21 @@ async function executeSkillCreation(task: ResearchTask): Promise<SkillCreationRe
   try {
     const skillDir = task.targetCategory || 'shared';
     const skillName = task.skillName || `auto-${String(task.id || '').toLowerCase()}`;
-    const skillPath = path.join(REPO_ROOT, 'packages', 'core', 'lib', 'skills', skillDir, `${skillName}.js`);
+    const skillRelPath = path.join('packages', 'core', 'lib', 'skills', skillDir, `${skillName}.js`);
+    const branchName = `darwin/skill-${skillName}`;
+    const lab = createLab(branchName);
+    const skillPath = path.join(lab.path, skillRelPath);
+    let keepLab = false;
+    let committed = false;
 
-    const generated = await callHubLlm({
-      callerTeam: 'darwin',
-      agent: 'synthesis',
-      taskType: 'skill_creation',
-      runtimePurpose: 'skill_creation',
-      abstractModel: 'anthropic_sonnet',
-      systemPrompt: `당신은 팀 제이의 스킬 개발자입니다.
+    try {
+      const generated = await callHubLlm({
+        callerTeam: 'darwin',
+        agent: 'synthesis',
+        taskType: 'skill_creation',
+        runtimePurpose: 'skill_creation',
+        abstractModel: 'anthropic_sonnet',
+        systemPrompt: `당신은 팀 제이의 스킬 개발자입니다.
 GitHub/논문에서 발견한 패턴을 Node.js 스킬 모듈로 구현하세요.
 
 규칙:
@@ -573,76 +595,64 @@ GitHub/논문에서 발견한 패턴을 Node.js 스킬 모듈로 구현하세요
 - JSDoc 포함
 - node --check 통과 가능한 코드
 - 외부 네트워크/비밀값/I/O 의존 금지`,
-      prompt: `## 과제: ${task.title}
+        prompt: `## 과제: ${task.title}
 ## 설명: ${task.description}
 ## 소스 분석 결과:
 ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
 
 파일 경로: packages/core/lib/skills/${skillDir}/${skillName}.js`,
-      timeoutMs: 45_000,
-    });
-
-    const generatedText = typeof generated === 'string' ? generated : generated?.text || '';
-    const code = _extractCodeBlock(generatedText);
-    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
-    fs.writeFileSync(skillPath, code, 'utf8');
-
-    let syntaxOk = true;
-    try {
-      execFileSync('node', ['--check', skillPath], {
-        cwd: REPO_ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
+        timeoutMs: 45_000,
       });
-    } catch {
-      syntaxOk = false;
-    }
 
-    let branchName = null;
-    if (syntaxOk) {
-      branchName = `darwin/skill-${skillName}`;
+      const generatedText = typeof generated === 'string' ? generated : generated?.text || '';
+      const code = _extractCodeBlock(generatedText);
+      fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+      fs.writeFileSync(skillPath, code, 'utf8');
+
+      let syntaxOk = true;
       try {
-        _runGit(['checkout', 'main']);
+        execFileSync('node', ['--check', skillRelPath], {
+          cwd: lab.path,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch {
+        syntaxOk = false;
+      }
+
+      if (syntaxOk) {
+        _runGit(['add', skillRelPath], lab.path);
+        _runGit(['commit', '-m', `feat(skills): auto-create ${skillName} skill`], lab.path);
+        committed = true;
+      }
+
+      const result = {
+        skillPath: skillRelPath,
+        syntaxOk,
+        branch: syntaxOk ? branchName : null,
+        linesOfCode: code.split('\n').length,
+      };
+
+      await updateTask(task.id, {
+        status: syntaxOk ? 'completed' : 'failed',
+        completed_at: new Date().toISOString(),
+        result,
+      });
+
+      return result;
+    } catch (error) {
+      keepLab = process.env.DARWIN_KEEP_FAILED_LAB === 'true';
+      throw error;
+    } finally {
+      if (!keepLab) {
         try {
-          _runGit(['checkout', '-b', branchName]);
-        } catch (error) {
-          const stderr =
-            typeof error === 'object' && error !== null && 'stderr' in error
-              ? String((error as { stderr?: unknown }).stderr || '')
-              : '';
-          const message =
-            typeof error === 'object' && error !== null && 'message' in error
-              ? String((error as { message?: unknown }).message || '')
-              : String(error || '');
-          if (String(stderr || message || '').includes('already exists')) {
-            _runGit(['checkout', branchName]);
-          } else {
-            throw error;
-          }
-        }
-        _runGit(['add', path.relative(REPO_ROOT, skillPath)]);
-        _runGit(['commit', '-m', `feat(skills): auto-create ${skillName} skill`]);
-      } finally {
-        try {
-          _runGit(['checkout', 'main']);
+          removeLab(lab.path);
         } catch {}
       }
+      if (!committed && !keepLab) {
+        _deleteBranchIfExists(branchName);
+      }
     }
-
-    const result = {
-      skillPath: path.relative(REPO_ROOT, skillPath),
-      syntaxOk,
-      branch: branchName,
-      linesOfCode: code.split('\n').length,
-    };
-
-    await updateTask(task.id, {
-      status: syntaxOk ? 'completed' : 'failed',
-      completed_at: new Date().toISOString(),
-      result,
-    });
-
-    return result;
   } catch (err) {
     await updateTask(task.id, {
       status: 'failed',

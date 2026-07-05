@@ -13,6 +13,7 @@ const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
 const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));
+const proposalStore = require(path.join(PROJECT_ROOT, "bots/darwin/lib/proposal-store.ts"));
 
 const SHADOW_MIN_RUNS = 20;
 const SHADOW_MIN_DAYS = 7;
@@ -76,17 +77,23 @@ interface WeeklyReviewStats {
   scanner_registry_sync_failures: number;
   scanner_proposals: number;
   scanner_verified: number;
+  triage_candidates: number;
+  triage_archived: number;
+  triage_dry_run: boolean;
+  triage_actions: Array<Record<string, unknown>>;
 }
 
 interface CliOptions {
   dryRun: boolean;
   json: boolean;
+  triageDryRun: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
   return {
     dryRun: argv.includes("--dry-run") || process.env.DARWIN_WEEKLY_REVIEW_DRY_RUN === "1",
     json: argv.includes("--json") || process.env.DARWIN_WEEKLY_REVIEW_JSON === "1",
+    triageDryRun: argv.includes("--triage-dry-run") || process.env.DARWIN_WEEKLY_REVIEW_TRIAGE_DRY_RUN === "1",
   };
 }
 
@@ -230,7 +237,7 @@ async function firstSuccessfulRow(schema: string, sqlStatements: string[]): Prom
   return {};
 }
 
-async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
+async function collectWeeklyStats(options: { triageDryRun?: boolean } = {}): Promise<WeeklyReviewStats> {
   const [cycleRows, registryRows, dpoRows, shadowRows, shadowRecentRows, costRows, scannerRows] =
     await Promise.allSettled([
       firstSuccessfulRow("public", [
@@ -382,6 +389,9 @@ async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
     (scannerRows as SettledRowsResult).status === "fulfilled"
       ? (scannerRows as SettledRowsResult).value?.[0] ?? {}
       : {};
+  const triageResult = proposalStore.runProposalTriage({
+    dryRun: options.triageDryRun !== false,
+  });
 
   const total = Number(cycle.total ?? 0);
   const successes = Number(cycle.successes ?? 0);
@@ -443,12 +453,16 @@ async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
     scanner_registry_sync_failures: Number(scanner.scanner_registry_sync_failures ?? 0),
     scanner_proposals: Number(scanner.scanner_proposals ?? 0),
     scanner_verified: Number(scanner.scanner_verified ?? 0),
+    triage_candidates: Number(triageResult.actions?.length ?? 0),
+    triage_archived: Number(triageResult.archived ?? 0),
+    triage_dry_run: Boolean(triageResult.dryRun),
+    triage_actions: Array.isArray(triageResult.actions) ? triageResult.actions : [],
   };
 }
 
 async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Promise<void> {
   log(options, "[darwin-weekly-review] 주간 리뷰 수집 시작");
-  const stats = await collectWeeklyStats();
+  const stats = await collectWeeklyStats({ triageDryRun: options.dryRun || options.triageDryRun });
 
   const msg = `
 📅 다윈 주간 리뷰 (${stats.week})
@@ -466,6 +480,9 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
   최신 알림 상태: high=${stats.scanner_latest_high_relevance}, sent=${stats.scanner_latest_alarm_sent ? "true" : "false"}, bypassed=${stats.scanner_latest_alarm_bypassed ? "true" : "false"}, failure=${stats.scanner_latest_alarm_failure || "N/A"}
   후보 알림 실패 사유: ${stats.scanner_alarm_failure_reasons || "N/A"}
   Registry sync: ${stats.scanner_registry_synced}/${stats.scanner_registry_sync_failures} | 제안/검증: ${stats.scanner_proposals}/${stats.scanner_verified}
+
+🧹 Proposal triage:
+  대상: ${stats.triage_candidates}건 | archived: ${stats.triage_archived} | dryRun: ${stats.triage_dry_run}
 
 🧠 Self-Rewarding DPO:
   preferred: ${stats.preferred_pairs} | rejected: ${stats.rejected_pairs}

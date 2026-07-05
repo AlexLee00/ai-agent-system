@@ -34,6 +34,7 @@ async function main() {
         execFileSync: (_bin: string, args: string[]) => {
           gitCommands.push(args.join(' '));
           if (args.join(' ') === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+          if (args.join(' ') === 'branch --show-current') return 'main\n';
           if (args[0] === 'merge' && args[1] === '--no-ff' && args[2] === 'conflict-branch') {
             const error = new Error('Automatic merge failed; fix conflicts');
             (error as any).stderr = 'CONFLICT fixture\nAutomatic merge failed; fix conflicts';
@@ -105,17 +106,17 @@ async function main() {
     await verifier.triggerVerification('proposal-pass', 'feature/recovery');
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordVerifiedSuccess').length, 1);
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 0);
-    assert.ok(updates.some((item) => item.id === 'proposal-pass' && item.status === 'verified'));
+    assert.ok(updates.some((item) => item.id === 'proposal-pass' && item.status === 'measured'));
 
     verificationOverall = false;
     llmText = '종합 판정: FAIL\n보안 문제: FAIL';
     await verifier.triggerVerification('proposal-fail', 'feature/recovery');
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordError').length, 1);
-    assert.ok(updates.some((item) => item.id === 'proposal-fail' && item.status === 'verification_failed'));
+    assert.ok(updates.some((item) => item.id === 'proposal-fail' && item.status === 'archived'));
 
     await verifier.mergeVerifiedProposal('proposal-merge');
     assert.strictEqual(autonomyCalls.filter((item) => item === 'recordMergeSuccess').length, 1);
-    assert.ok(updates.some((item) => item.id === 'proposal-merge' && item.status === 'merged'));
+    assert.ok(updates.some((item) => item.id === 'proposal-merge' && item.status === 'adopted'));
 
     await assert.rejects(
       () => verifier.mergeBranch('conflict-branch', 'conflict-fixture'),

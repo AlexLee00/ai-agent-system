@@ -17,6 +17,18 @@ const { runFullVerification } = require('../../../packages/core/lib/skills/verif
 const env = require('../../../packages/core/lib/env');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
+const {
+  createLab,
+  removeLab,
+}: {
+  createLab: (branchName: string) => { branchName: string; path: string };
+  removeLab: (labPath: string) => { removed: boolean; pruned: boolean };
+} = require('./worktree-lab');
+const {
+  assertOpsRootOnMain,
+}: {
+  assertOpsRootOnMain: (options?: Record<string, unknown>) => { ok: boolean; branch: string; action: string; message: string };
+} = require('./ops-root-guard');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const logger = createLogger('verifier', { team: 'darwin' });
@@ -63,6 +75,11 @@ interface ProposalStore {
     proposalId: string,
     status: string,
     extra?: Record<string, unknown>
+  ): ProposalRecord | null;
+  transitionProposal?(
+    proposalId: string,
+    to: 'proposed' | 'implementing' | 'measured' | 'adopted' | 'archived',
+    evidence?: Record<string, unknown>
   ): ProposalRecord | null;
 }
 
@@ -124,15 +141,15 @@ function _deleteBranchIfExists(branchName: string | null | undefined): void {
   }
 }
 
-function _listChangedFiles(baseBranch = 'main') {
-  const output = _runGit(['diff', '--name-only', `${baseBranch}...HEAD`]);
+function _listChangedFiles(baseBranch = 'main', cwd = REPO_ROOT) {
+  const output = _runGit(['diff', '--name-only', `${baseBranch}...HEAD`], { cwd });
   return output ? output.split('\n').map((line: string) => line.trim()).filter(Boolean) : [];
 }
 
-function _loadContents(files: string[]): Array<{ path: string; content: string }> {
+function _loadContents(files: string[], cwd = REPO_ROOT): Array<{ path: string; content: string }> {
   return files.map((file: string) => ({
     path: file,
-    content: fs.readFileSync(path.join(REPO_ROOT, file), 'utf8'),
+    content: fs.readFileSync(path.join(cwd, file), 'utf8'),
   }));
 }
 
@@ -251,21 +268,23 @@ async function _recordVerificationSuccessTrajectory(
   }
 }
 
-function _resolveVerificationFiles(proposal: ProposalRecord | null): string[] {
+function _resolveVerificationFiles(proposal: ProposalRecord | null, cwd = REPO_ROOT): string[] {
   const preferred = Array.isArray(proposal?.changed_files) ? proposal.changed_files : [];
   const existing = preferred.filter((file: string) => {
     if (typeof file !== 'string' || !file) return false;
-    return fs.existsSync(path.join(REPO_ROOT, file));
+    return fs.existsSync(path.join(cwd, file));
   });
   if (existing.length > 0) return existing;
-  return _listChangedFiles('main');
+  return _listChangedFiles('main', cwd);
 }
 
 async function triggerVerification(proposalId: string, branchName: string): Promise<{ ok: true; passed: boolean; changedFiles: string[]; verificationText: string }> {
   const proposal = proposalStoreTyped.loadProposal(proposalId);
   if (!proposal) throw new Error(`proposal not found: ${proposalId}`);
 
-  const originalBranch = _getCurrentBranch();
+  let lab: { branchName: string; path: string } | null = null;
+  let passed = false;
+  let keepLab = false;
   proposalStoreTyped.updateStatus(proposalId, 'verifying', {
     verification_started_at: new Date().toISOString(),
     branch: branchName,
@@ -273,14 +292,14 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
   logger.info(`검증 시작: ${proposalId} -> ${branchName}`);
 
   try {
-    _runGit(['checkout', branchName]);
-    const changedFiles = _resolveVerificationFiles(proposal);
+    lab = createLab(branchName);
+    const changedFiles = _resolveVerificationFiles(proposal, lab.path);
     const verification = runFullVerificationTyped({
       files: changedFiles,
-      cwd: REPO_ROOT,
+      cwd: lab.path,
       baseBranch: 'main',
     });
-    const fileContents = _loadContents(changedFiles).slice(0, 8);
+    const fileContents = _loadContents(changedFiles, lab.path).slice(0, 8);
     const failureHints = await _loadFailureHintsForVerification(proposalId, proposal, changedFiles, verification);
 
     const verificationResult = await callHubLlm({
@@ -318,7 +337,7 @@ ${failureHints}
     const verificationText = String(
       (typeof verificationResult === 'string' ? verificationResult : verificationResult?.text) || ''
     ).trim();
-    const passed = _decideVerificationPass(verification, verificationText);
+    passed = _decideVerificationPass(verification, verificationText);
     const requiresApproval = autonomyLevelTyped.requiresApproval();
     logger.info(`검증 완료: ${proposalId} -> ${passed ? 'PASS' : 'FAIL'}`, { files: changedFiles.length });
     if (!passed) {
@@ -341,15 +360,42 @@ ${failureHints}
       );
     }
 
-    proposalStoreTyped.updateStatus(proposalId, passed ? 'verified' : 'verification_failed', {
-      branch: branchName,
-      files: changedFiles,
-      error: null,
-      verification_text: verificationText,
-      verification_report: verification.report,
-      verification_summary: verification.summary,
-      verified_at: new Date().toISOString(),
-    });
+    if (passed && proposalStoreTyped.transitionProposal) {
+      proposalStoreTyped.transitionProposal(proposalId, 'measured', {
+        reason: 'verification_passed',
+        branch: branchName,
+        files: changedFiles,
+        error: null,
+        verification_text: verificationText,
+        verification_report: verification.report,
+        verification_summary: verification.summary,
+        verified_at: new Date().toISOString(),
+        predicate_results: [],
+        metrics_evidence: [],
+      });
+    } else if (!passed && proposalStoreTyped.transitionProposal) {
+      proposalStoreTyped.transitionProposal(proposalId, 'archived', {
+        reason: 'verification_failed',
+        branch: branchName,
+        files: changedFiles,
+        error: null,
+        verification_text: verificationText,
+        verification_report: verification.report,
+        verification_summary: verification.summary,
+        verified_at: new Date().toISOString(),
+      });
+    } else {
+      proposalStoreTyped.updateStatus(proposalId, passed ? 'measured' : 'archived', {
+        branch: branchName,
+        files: changedFiles,
+        error: null,
+        verification_text: verificationText,
+        verification_report: verification.report,
+        verification_summary: verification.summary,
+        verified_at: new Date().toISOString(),
+        archive_reason: passed ? undefined : 'verification_failed',
+      });
+    }
 
     await rag.storeExperience({
       userInput: `Darwin auto verification ${proposalId}`,
@@ -421,10 +467,27 @@ ${failureHints}
     logger.error(`검증 실패: ${proposalId} -> ${errorMessage}`);
     autonomyLevelTyped.recordError(error);
     await _recordVerificationFailureTrajectory(proposalId, proposal, branchName, [], errorMessage, 'verification_error');
-    proposalStoreTyped.updateStatus(proposalId, 'verification_failed', {
-      branch: branchName,
-      error: errorMessage,
-    });
+    if (proposalStoreTyped.transitionProposal) {
+      try {
+        proposalStoreTyped.transitionProposal(proposalId, 'archived', {
+          reason: 'verification_error',
+          branch: branchName,
+          error: errorMessage,
+        });
+      } catch {
+        proposalStoreTyped.updateStatus(proposalId, 'archived', {
+          archive_reason: 'verification_error',
+          branch: branchName,
+          error: errorMessage,
+        });
+      }
+    } else {
+      proposalStoreTyped.updateStatus(proposalId, 'archived', {
+        archive_reason: 'verification_error',
+        branch: branchName,
+        error: errorMessage,
+      });
+    }
     await eventLakeTyped.record({
       eventType: 'verification_error',
       team: 'darwin',
@@ -446,11 +509,14 @@ ${failureHints}
       fromBot: 'proof-r',
       inlineKeyboard: null,
     } as AlarmPayload);
+    keepLab = process.env.DARWIN_KEEP_FAILED_LAB === 'true';
     throw error;
   } finally {
-    try {
-      _runGit(['checkout', originalBranch]);
-    } catch {}
+    if (lab && (!keepLab || passed)) {
+      try {
+        removeLab(lab.path);
+      } catch {}
+    }
   }
 }
 
@@ -463,10 +529,18 @@ async function mergeVerifiedProposal(proposalId: string): Promise<{ ok: true; br
   }
 
   const merged = await mergeBranch(proposal.branch, proposalId);
-  proposalStoreTyped.updateStatus(proposalId, 'merged', {
-    merged_at: new Date().toISOString(),
-    merged_branch: proposal.branch,
-  });
+  if (proposalStoreTyped.transitionProposal) {
+    proposalStoreTyped.transitionProposal(proposalId, 'adopted', {
+      reason: 'merge_succeeded',
+      merged_at: new Date().toISOString(),
+      merged_branch: proposal.branch,
+    });
+  } else {
+    proposalStoreTyped.updateStatus(proposalId, 'adopted', {
+      merged_at: new Date().toISOString(),
+      merged_branch: proposal.branch,
+    });
+  }
   autonomyLevelTyped.recordMergeSuccess();
   await postAlarm({
     message: `🎉 다윈 제안 머지 완료\n📄 ${proposal.title || proposalId}\n🌿 ${proposal.branch}`,
@@ -478,9 +552,9 @@ async function mergeVerifiedProposal(proposalId: string): Promise<{ ok: true; br
 }
 
 async function mergeBranch(branchName: string, label: string): Promise<{ ok: true; branch: string }> {
-  const originalBranch = _getCurrentBranch();
+  const guard = assertOpsRootOnMain({ context: `verifier:merge:${label}` });
+  if (!guard.ok) throw new Error(`ops_root_not_main:${guard.branch}`);
   try {
-    _runGit(['checkout', 'main']);
     _runGit(['merge', '--no-ff', branchName, '-m', `merge(darwin): ${label}`]);
     _deleteBranchIfExists(branchName);
     return { ok: true, branch: branchName };
@@ -502,14 +576,6 @@ async function mergeBranch(branchName: string, label: string): Promise<{ ok: tru
     }
     autonomyLevelTyped.recordMergeFailure(error);
     throw error;
-  } finally {
-    try {
-      _runGit(['checkout', 'main']);
-    } catch {
-      try {
-        _runGit(['checkout', originalBranch]);
-      } catch {}
-    }
   }
 }
 

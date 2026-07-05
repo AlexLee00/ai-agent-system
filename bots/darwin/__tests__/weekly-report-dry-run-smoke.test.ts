@@ -103,6 +103,20 @@ async function main() {
         },
       };
     }
+    if (String(request).endsWith('bots/darwin/lib/proposal-store.ts')) {
+      return {
+        runProposalTriage: ({ dryRun }: { dryRun?: boolean } = {}) => ({
+          ok: true,
+          dryRun: dryRun !== false,
+          archived: dryRun === false ? 1 : 0,
+          actions: [{
+            id: 'triage-fixture',
+            reason: 'triage_stale',
+            previousStatus: 'implementing',
+          }],
+        }),
+      };
+    }
     return originalLoad.call(this, request, parent, isMain);
   };
   console.log = (...args: unknown[]) => {
@@ -157,6 +171,10 @@ async function main() {
   assert.strictEqual(reviewPayload.stats.shadow_recent_within_2_rate, '50.0');
   assert.strictEqual(reviewPayload.stats.shadow_promotion_ready, false);
   assert.match(reviewPayload.stats.shadow_blocker, /avg_match 85\.0%\/95%/);
+  assert.strictEqual(reviewPayload.stats.triage_candidates, 1);
+  assert.strictEqual(reviewPayload.stats.triage_archived, 0);
+  assert.strictEqual(reviewPayload.stats.triage_dry_run, true);
+  assert.strictEqual(reviewPayload.stats.triage_actions[0].reason, 'triage_stale');
   assert.strictEqual(opsPayload.stats.scanner_runs, 2);
   assert.strictEqual(opsPayload.stats.autonomy_level, 5);
   assert.strictEqual(opsPayload.stats.autonomy_source, 'env');
@@ -178,6 +196,7 @@ async function main() {
   assert.match(reviewPayload.payload.message, /후보 알림 실패 사유: rate_limit_cooldown/);
   assert.match(reviewPayload.payload.message, /promotionReady: false/);
   assert.match(reviewPayload.payload.message, /최근 2건: match=50\.0% \| avg_delta=1\.25 \| within±2=50\.0%/);
+  assert.match(reviewPayload.payload.message, /Proposal triage/);
   assert.match(opsPayload.payload.message, /다윈 주간 운영 리포트/);
   assert.match(reviewPayload.payload.message, /다윈 주간 리뷰/);
   console.log('✅ darwin weekly reports dry-run smoke ok');
