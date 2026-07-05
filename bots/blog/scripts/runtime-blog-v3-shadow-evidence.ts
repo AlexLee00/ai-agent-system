@@ -13,7 +13,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { execFileSync, execSync } = require('child_process');
+const { execSync } = require('child_process');
 const { pathToFileURL } = require('url');
 const env = require('../../../packages/core/lib/env');
 
@@ -27,6 +27,7 @@ const {
   evaluateBlogV3PromotionGate,
   recordShadowEvidence,
 } = require(path.join(BLOG_DIR, 'lib/blog-v3-unified.ts'));
+const { buildItTrendTopics, runItTrendsCollector } = require(path.join(BLOG_DIR, 'lib/it-trends-collector.ts'));
 const { detectAiSignals, recordHumanizeAudit } = require(path.join(BLOG_DIR, 'lib/humanize-agent.ts'));
 const { generateHomeFeedReport, recordHomeFeedAudit } = require(path.join(BLOG_DIR, 'lib/naver-home-feed-optimizer.ts'));
 
@@ -66,17 +67,6 @@ function auditHubLlmRoutes() {
   };
 }
 
-function runRedditFixture() {
-  const stdout = execFileSync('python3', [
-    path.join(BLOG_DIR, 'python/reddit_trend_analyzer.py'),
-    '--fixture',
-    '--dry-run',
-    '--json',
-    '--max-llm-calls=0',
-  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  return JSON.parse(stdout);
-}
-
 async function persistEvidence(type, evidence, persist) {
   const result = await recordShadowEvidence(type, evidence, { dryRun: !persist });
   return {
@@ -93,17 +83,18 @@ async function main() {
   const json = process.argv.includes('--json');
   const evidence = [];
 
-  const reddit = runRedditFixture();
-  assert.equal(reddit.ok, true, 'reddit fixture should be ok');
+  const itTrends = await runItTrendsCollector({ fixture: true, dryRun: true });
+  assert.equal(itTrends.ok, true, 'IT trend fixture should be ok');
+  const itTopics = itTrends.topics || buildItTrendTopics(itTrends.items || []);
 
   const semanticRows = [
-    { source: 'reddit', topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준', trend_score: 84, korea_relevance: 78 },
-    { source: 'naver', topic_ko: 'AI 개발 자동화 도구 선택 기준', trend_score: 80, korea_relevance: 90 },
+    { source: 'hn', topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준', trend_score: 84, korea_relevance: 78 },
+    { source: 'naver_it', topic_ko: 'AI 개발 자동화 도구 선택 기준', trend_score: 80, korea_relevance: 90 },
     { source: 'bestseller', topic_ko: '자동화 시대에 다시 읽는 실무 생산성', category: '자기계발', trend_score: 70, korea_relevance: 85, is_book_topic: true },
   ];
   const topicRows = [
-    ...(reddit.topics || []).map((topic) => ({ ...topic, source: 'reddit' })),
-    ...buildNaverTrendTopics().map((topic) => ({ ...topic, source: 'naver' })),
+    ...itTopics,
+    ...buildNaverTrendTopics().map((topic) => ({ ...topic, source: 'naver_it' })),
     ...semanticRows,
   ];
   const clusters = buildTrendTopicFusionClusters(topicRows);
@@ -112,7 +103,7 @@ async function main() {
   const topicFusion = {
     ok: !!multiSourceCluster,
     source: 'runtime-blog-v3-shadow-evidence',
-    redditFixtureTopics: (reddit.topics || []).length,
+    itFixtureTopics: itTopics.length,
     naverFixtureTopics: buildNaverTrendTopics().length,
     clusterCount: clusters.length,
     topCluster: topCluster ? {

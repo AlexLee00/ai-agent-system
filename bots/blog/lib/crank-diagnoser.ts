@@ -32,6 +32,8 @@ const TITLE_PATTERNS = [
   { key: 'contrast', label: '대비형', pattern: /보다|대신|vs|VS|차이|비교/ },
 ];
 
+const DEFAULT_TITLE_LIMIT = 60;
+
 function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -172,7 +174,8 @@ function buildCrankDiagnosisLessons(rows = [], options = {}) {
       lessonSource: 'rule',
     });
   }
-  const titleSummary = buildTitlePatternSummary(rows, options);
+  const titleRows = Array.isArray(options.titleRows) ? options.titleRows : rows;
+  const titleSummary = buildTitlePatternSummary(titleRows, options);
   if (titleSummary.lesson) {
     lessons.push({
       post_id: null,
@@ -224,6 +227,26 @@ async function fetchRecentCrankRows({ limit = 10, days = 30, pool = pgPool } = {
     ORDER BY overall ASC, scored_date DESC
     LIMIT $2
   `, [Math.max(1, Number(days || 30)), Math.max(1, Number(limit || 10))]);
+}
+
+async function fetchRecentTitleRows({ titleLimit = DEFAULT_TITLE_LIMIT, days = 30, pool = pgPool } = {}) {
+  return pool.query('blog', `
+    SELECT
+      p.id AS post_id,
+      p.title,
+      p.category,
+      p.post_type,
+      p.publish_date,
+      p.created_at
+    FROM blog.posts p
+    WHERE COALESCE(p.publish_date::timestamptz, p.created_at) >= CURRENT_DATE - ($1::text || ' days')::interval
+      AND COALESCE(p.title, '') <> ''
+    ORDER BY COALESCE(p.publish_date::timestamptz, p.created_at) DESC, p.id DESC
+    LIMIT $2
+  `, [
+    Math.max(1, Number(days || 30)),
+    Math.max(1, Number(titleLimit || DEFAULT_TITLE_LIMIT)),
+  ]);
 }
 
 function buildCrankDiagnosisEventPayload(lesson = {}) {
@@ -297,7 +320,8 @@ async function summarizeRecentCrankDiagnosisEvents({ days = 30, limit = 5, pool 
 
 async function runCrankDiagnoser(options = {}) {
   const rows = options.rows || await fetchRecentCrankRows(options);
-  let lessons = buildCrankDiagnosisLessons(rows, options);
+  const titleRows = options.titleRows || (options.rows ? rows : await fetchRecentTitleRows(options));
+  let lessons = buildCrankDiagnosisLessons(rows, { ...options, titleRows });
   lessons = await maybePolishLessonsWithLlm(lessons, { enabled: Boolean(options.useLlm), callLlm: options.callLlm || callHubLlm });
   let writeResult = null;
   let learningsResult = null;
@@ -310,6 +334,7 @@ async function runCrankDiagnoser(options = {}) {
     dryRun: options.write !== true,
     formatVersion: WRITING_LEARNINGS_FORMAT_VERSION,
     rows: rows.length,
+    titleRows: titleRows.length,
     lessons,
     writeResult,
     learningsResult,
@@ -319,6 +344,7 @@ async function runCrankDiagnoser(options = {}) {
 module.exports = {
   DETAIL_AXES,
   TITLE_PATTERNS,
+  DEFAULT_TITLE_LIMIT,
   inferWriter,
   normalizeCategory,
   selectLowestAxis,
@@ -330,5 +356,6 @@ module.exports = {
   recordCrankDiagnosisEvents,
   summarizeRecentCrankDiagnosisEvents,
   fetchRecentCrankRows,
+  fetchRecentTitleRows,
   runCrankDiagnoser,
 };

@@ -26,7 +26,7 @@ export const BLOG_NAVER_MCP_TOOLS = [
   },
   {
     name: 'trend_topic_candidates',
-    description: 'Read-only Blog V3 Reddit/Aladin/Naver trend topic candidates.',
+    description: 'Read-only Blog V3 HN/dev.to/Aladin/Naver trend topic candidates.',
   },
 ];
 

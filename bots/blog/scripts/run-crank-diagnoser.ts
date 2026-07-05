@@ -22,6 +22,7 @@ function boundedNumber(value, fallback, min, max) {
 async function main() {
   const result = await runCrankDiagnoser({
     limit: boundedNumber(argValue('limit', 10), 10, 1, 100),
+    titleLimit: boundedNumber(argValue('title-limit', 60), 60, 1, 200),
     days: boundedNumber(argValue('days', 30), 30, 1, 365),
     write: hasFlag('write'),
     useLlm: hasFlag('llm'),
@@ -30,7 +31,7 @@ async function main() {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  console.log(`[crank-diagnoser] dryRun=${result.dryRun} rows=${result.rows} lessons=${result.lessons.length} inserted=${result.writeResult?.inserted || 0}`);
+  console.log(`[crank-diagnoser] dryRun=${result.dryRun} rows=${result.rows} titleRows=${result.titleRows} lessons=${result.lessons.length} inserted=${result.writeResult?.inserted || 0}`);
   for (const lesson of result.lessons.slice(0, 10)) {
     console.log(`- ${lesson.axis}: ${lesson.lesson}`);
   }

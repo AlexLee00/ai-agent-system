@@ -17,6 +17,7 @@ const {
   buildTitlePatternSummary,
   buildCrankDiagnosisLessons,
   buildCrankDiagnosisEventPayload,
+  runCrankDiagnoser,
 } = require('../lib/crank-diagnoser.ts');
 const {
   buildBlogVaultCandidates,
@@ -39,6 +40,25 @@ async function main() {
   const lessons = buildCrankDiagnosisLessons(rows, { threshold: 0.3 });
   assert.ok(lessons.some((item) => item.writer === 'pos'), 'lecture should map to pos');
   assert.ok(lessons.some((item) => item.axis === 'title_diversity'), 'title diversity lesson missing');
+  const independentTitleLessons = buildCrankDiagnosisLessons([{
+    post_id: 7,
+    title: '기본형 제목',
+    category: 'IT정보와분석',
+    post_type: 'general',
+    overall: 60,
+    dia_depth: 50,
+  }], {
+    threshold: 0.5,
+    titleRows: [
+      { title: '업무 자동화 3가지 기준' },
+      { title: '성과를 높이는 5가지 방법' },
+      { title: '기획 전 확인할 4단계' },
+      { title: '운영 점검 2가지' },
+    ],
+  });
+  const titleLesson = independentTitleLessons.find((item) => item.axis === 'title_diversity');
+  assert.ok(titleLesson, 'title diversity should use titleRows independent from crank rows');
+  assert.equal(titleLesson.titlePatternSummary.total, 4);
   const payload = buildCrankDiagnosisEventPayload(lessons[0]);
   assert.equal(payload.format_version, WRITING_LEARNINGS_FORMAT_VERSION);
   assert.equal(payload.post_id, 1);
@@ -82,6 +102,15 @@ async function main() {
   assert.equal(candidates[0].meta.structure.hasVideo, true);
   assert.equal(candidates[0].meta.crank.overall, 64);
   assert.equal(entryForCandidate(candidates[0]).source, 'blo');
+
+  const runnerResult = await runCrankDiagnoser({
+    rows: [rows[0]],
+    titleRows: rows,
+    write: false,
+  });
+  assert.equal(runnerResult.rows, 1);
+  assert.equal(runnerResult.titleRows, 3);
+  assert.ok(runnerResult.lessons.some((item) => item.axis === 'title_diversity'));
 
   const gemsSource = fs.readFileSync(path.join(__dirname, '../lib/gems-writer.ts'), 'utf8');
   const posSource = fs.readFileSync(path.join(__dirname, '../lib/pos-writer.ts'), 'utf8');

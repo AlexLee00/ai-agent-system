@@ -56,11 +56,12 @@ interface RankedBook extends AladinBook {
 async function fetchBestsellers(
   categoryId: number,
   ttbKey: string,
-  maxResults: number = MAX_RESULTS_PER_CATEGORY
+  maxResults: number = MAX_RESULTS_PER_CATEGORY,
+  queryType: string = 'Bestseller'
 ): Promise<AladinBook[]> {
   const url = new URL(ALADIN_API_BASE);
   url.searchParams.set('ttbkey', ttbKey);
-  url.searchParams.set('QueryType', 'Bestseller');
+  url.searchParams.set('QueryType', queryType);
   url.searchParams.set('CategoryId', String(categoryId));
   url.searchParams.set('MaxResults', String(maxResults));
   url.searchParams.set('SearchTarget', 'Book');
@@ -78,6 +79,20 @@ async function fetchBestsellers(
   const cleanText = text.replace(/^[^{]*/, '').replace(/[^}]*$/, '');
   const data = JSON.parse(cleanText.length > 0 ? cleanText : text);
   return (data.item || []) as AladinBook[];
+}
+
+export async function fetchAladinBooksByQueryType({
+  categoryId,
+  ttbKey,
+  maxResults = MAX_RESULTS_PER_CATEGORY,
+  queryType = 'Bestseller',
+}: {
+  categoryId: number;
+  ttbKey: string;
+  maxResults?: number;
+  queryType?: string;
+}): Promise<AladinBook[]> {
+  return fetchBestsellers(categoryId, ttbKey, maxResults, queryType);
 }
 
 function stripHtml(value: string = ''): string {
@@ -120,7 +135,7 @@ function parseKoreanMonth(value: string = ''): string {
   return `${matched[1]}-${String(matched[2]).padStart(2, '0')}-01`;
 }
 
-async function fetchAladinWebBestsellers(
+export async function fetchAladinWebBestsellers(
   categoryId: number,
   categoryName: string,
   maxResults: number = MAX_RESULTS_PER_CATEGORY

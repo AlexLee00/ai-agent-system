@@ -162,11 +162,20 @@
         "richer": { "runtimePurpose": "blog_research_enrichment", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" },
         "humanize": { "runtimePurpose": "blog_humanize_shadow", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" },
         "home_feed": { "runtimePurpose": "blog_naver_exposure_shadow", "llmSelectorKey": "blog.social.caption", "primaryModel": "haiku-4.5" },
-        "reddit_trend": { "runtimePurpose": "blog_trend_cluster_shadow", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" }
+        "it_trend": { "runtimePurpose": "blog_trend_cluster_shadow", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" }
       },
       "nonLlmAgents": ["publ", "maestro"],
       "hubGatewayRequired": true,
       "localLlmFallbackEnv": "BLOG_ALLOW_LOCAL_LLM_FALLBACK"
+    },
+    "externalLearning": {
+      "itKeywords": [
+        "AI 개발 자동화",
+        "AI 에이전트",
+        "개발 생산성",
+        "웹앱 UX",
+        "클라우드 비용 최적화"
+      ]
     },
     "llmSelectorOverrides": {
       "blog.pos.writer": {

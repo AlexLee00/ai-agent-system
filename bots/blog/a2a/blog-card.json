@@ -31,8 +31,8 @@
     {
       "id": "trend-check",
       "name": "트렌드 수집",
-      "description": "Reddit·네이버 트렌드에서 오늘의 핫 키워드·주제 수집",
-      "tags": ["blog", "trend", "reddit", "a2a"],
+      "description": "HN·dev.to·네이버 IT 트렌드에서 오늘의 핫 키워드·주제 수집",
+      "tags": ["blog", "trend", "it", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
     },

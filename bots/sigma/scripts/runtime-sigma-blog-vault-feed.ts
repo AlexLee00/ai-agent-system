@@ -189,6 +189,16 @@ function commentTags(kind: string, row: any): string[] {
   return [...tags].slice(0, 12);
 }
 
+function externalTrendTags(row: any): string[] {
+  const meta = typeof row?.meta === 'string' ? safeJson(row.meta) : (row?.meta || {});
+  const genre = String(meta?.raw?.genre || meta?.genre || row?.genre || '').trim();
+  const tags = new Set(['blog', 'blo', 'blog_external_trend']);
+  if (genre) tags.add(`genre:${genre}`);
+  const source = safeTag(row?.source);
+  if (source) tags.add(`source:${source}`);
+  return [...tags].slice(0, 12);
+}
+
 function buildPostCandidates(posts: any[], options: { chunkSize?: number } = {}) {
   const candidates = [];
   for (const row of posts || []) {
@@ -309,15 +319,67 @@ function buildCommentActionCandidates(actions: any[]) {
   return candidates;
 }
 
+function buildExternalTrendCandidates(trends: any[]) {
+  const candidates = [];
+  for (const row of trends || []) {
+    const meta = typeof row?.meta === 'string' ? safeJson(row.meta) : (row?.meta || {});
+    const raw = meta?.raw || {};
+    const genre = String(raw.genre || meta.genre || row.genre || '').trim();
+    if (!['it', 'book'].includes(genre)) continue;
+    const sourceId = String(row?.id || '');
+    const sourceTitle = String(raw.review_title || raw.title || raw.book_title || row?.topic_ko || '').trim();
+    const title = sourceTitle || `external ${genre} trend ${sourceId}`;
+    const content = normalizeText([
+      `[블로그 외부 ${genre === 'book' ? '도서' : 'IT'} 트렌드]`,
+      `출처: ${row?.source || raw.source || 'unknown'}`,
+      `제목: ${title}`,
+      raw.book_title ? `도서: ${raw.book_title}` : '',
+      raw.title_pattern?.label ? `제목 패턴: ${raw.title_pattern.label}` : '',
+      raw.structure_hint ? `구조 힌트: ${JSON.stringify(raw.structure_hint)}` : '',
+      raw.url ? `URL: ${raw.url}` : '',
+    ].filter(Boolean).join('\n'));
+    if (!content) continue;
+    candidates.push({
+      sourceKind: 'blog_external_trend',
+      sourceTable: 'blog.trend_topics',
+      sourceId,
+      title: `[blog_external_${genre}] ${title.slice(0, 96)}`,
+      type: 'blog_external_trend',
+      content,
+      tags: externalTrendTags(row),
+      filePath: `library/blo/external/${genre}/${sourceId}-${shortHash(`external:${genre}:${sourceId}:${title}`)}`,
+      meta: {
+        sourceTable: 'blog.trend_topics',
+        sourceId,
+        sourceKind: 'blog_external_trend',
+        source: row?.source || raw.source || null,
+        genre,
+        createdAt: row?.created_at || raw.collected_at || null,
+        titlePattern: raw.title_pattern || null,
+        scoreSignal: raw.score_signal || null,
+        libraryCoords: {
+          abstraction_level: 'L1',
+          time_stage: 'raw',
+          validation_state: 'unverified',
+          prediction_state: 'none',
+        },
+      },
+    });
+  }
+  return candidates;
+}
+
 export function buildBlogVaultCandidates(rows: {
   posts?: any[];
   comments?: any[];
   commentActions?: any[];
+  externalTrends?: any[];
 }, options: { chunkSize?: number } = {}) {
   return [
     ...buildPostCandidates(rows.posts || [], options),
     ...buildInboundCommentCandidates(rows.comments || []),
     ...buildCommentActionCandidates(rows.commentActions || []),
+    ...buildExternalTrendCandidates(rows.externalTrends || []),
   ];
 }
 
@@ -428,6 +490,7 @@ async function collectBlogRows(options: {
     posts: backfill ? null : (await latestVaultCreatedAtBySource('blog.posts', pool) || fallbackSinceIso(sinceHours)),
     comments: backfill ? null : (await latestVaultCreatedAtBySource('blog.comments', pool) || fallbackSinceIso(sinceHours)),
     commentActions: backfill ? null : (await latestVaultCreatedAtBySource('blog.comment_actions', pool) || fallbackSinceIso(sinceHours)),
+    externalTrends: backfill ? null : (await latestVaultCreatedAtBySource('blog.trend_topics', pool) || fallbackSinceIso(sinceHours)),
   };
   const [finalContentColumnsExist, crankScoresExists] = await Promise.all([
     sourceTableHasColumns(pool, 'blog', 'final_content_checks', ['final_title', 'final_content_text', 'checked_at', 'metadata']),
@@ -478,7 +541,9 @@ async function collectBlogRows(options: {
       ) cs ON true`
     : '';
 
-  const [posts, comments, commentActions] = await Promise.all([
+  const trendTopicsExists = await sourceTableExists(pool, 'blog', 'trend_topics');
+
+  const [posts, comments, commentActions, externalTrends] = await Promise.all([
     pool.query('blog', `
       SELECT p.id, p.title, p.category, p.post_type, p.lecture_number, p.series_name, p.publish_date, p.status,
              p.char_count, p.content, p.html_content, p.hashtags, p.naver_url, p.metadata, p.created_at
@@ -506,12 +571,23 @@ async function collectBlogRows(options: {
       ORDER BY executed_at ASC, id ASC
       LIMIT $2
     `, [sinceByTable.commentActions, limitPerSource]),
+    trendTopicsExists
+      ? pool.query('blog', `
+        SELECT id, date, source, topic_ko, category, meta, created_at
+        FROM blog.trend_topics
+        WHERE ($1::timestamptz IS NULL OR created_at > $1::timestamptz)
+          AND COALESCE(meta->'raw'->>'genre', meta->>'genre', '') IN ('it', 'book')
+        ORDER BY created_at ASC, id ASC
+        LIMIT $2
+      `, [sinceByTable.externalTrends, limitPerSource])
+      : Promise.resolve([]),
   ]);
 
   return {
     posts: Array.isArray(posts) ? posts : posts?.rows || [],
     comments: Array.isArray(comments) ? comments : comments?.rows || [],
     commentActions: Array.isArray(commentActions) ? commentActions : commentActions?.rows || [],
+    externalTrends: Array.isArray(externalTrends) ? externalTrends : externalTrends?.rows || [],
     sinceByTable,
     limitPerSource,
   };
@@ -566,6 +642,7 @@ export async function runSigmaBlogVaultFeed(options: {
       posts: rows.posts.length,
       comments: rows.comments.length,
       commentActions: rows.commentActions.length,
+      externalTrends: rows.externalTrends.length,
     },
     candidates: candidates.length,
     candidatesBySource: countBy(candidates, (record) => record.sourceKind),
@@ -606,6 +683,7 @@ export async function runSigmaBlogVaultFeed(options: {
       writesOnlySigmaVaultEntries: true,
       vaultCoreModified: false,
       livePublishImpact: false,
+      externalTrendGenreRequired: true,
     },
     generatedAt: new Date().toISOString(),
   };

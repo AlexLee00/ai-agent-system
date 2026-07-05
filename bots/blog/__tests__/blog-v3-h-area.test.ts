@@ -3,7 +3,7 @@
 /**
  * Blog V3 H영역 Goal-Driven 5/5 smoke tests
  *
- * ① Reddit 트렌드 추출 동작 (fixture 모드)
+ * ① IT 트렌드 추출 동작 (fixture 모드)
  * ② 베스트셀러 동기화 동작 (dry-run — run-bestseller-sync.ts 파일 + saveTrendTopics 검증)
  * ③ 통합 토픽 선정 동작 (calculateTrendFusionScore + buildNaverTrendTopics)
  * ④ 매일/매주 자동 (launchd plist 존재 + 스케줄 검증)
@@ -29,56 +29,32 @@ jest.mock('../../../packages/core/lib/hub-client', () => ({
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { queryOpsDb } = require('../../../packages/core/lib/hub-client');
 
-// ── ① Reddit 트렌드 추출 (fixture 모드) ────────────────────────────────────
+// ── ① IT 트렌드 추출 (fixture 모드) ───────────────────────────────────────
 
-describe('① Reddit 트렌드 추출 — fixture 모드', () => {
-  const { execFileSync } = require('child_process');
-  const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/python/reddit_trend_analyzer.py');
+describe('① IT 트렌드 추출 — fixture 모드', () => {
+  const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/lib/it-trends-collector.ts');
 
   test('스크립트 파일 존재', () => {
     expect(fs.existsSync(scriptPath)).toBe(true);
   });
 
-  test('python3 --fixture --dry-run --json 실행 → ok:true + topics 배열', () => {
-    let stdout;
-    try {
-      stdout = execFileSync(
-        'python3',
-        [scriptPath, '--fixture', '--dry-run', '--json'],
-        { timeout: 30_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-      );
-    } catch (err) {
-      if (String(err.message).includes('ENOENT')) {
-        console.warn('[test] python3 미설치 — 스킵');
-        return;
-      }
-      throw err;
-    }
-    const result = JSON.parse(stdout.trim());
+  test('fixture 실행 → ok:true + items 배열', async () => {
+    const { runItTrendsCollector } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/it-trends-collector.ts'));
+    const result = await runItTrendsCollector({ fixture: true, dryRun: true });
     expect(result.ok).toBe(true);
-    expect(result.dry_run).toBe(true);
-    expect(Array.isArray(result.topics)).toBe(true);
-    expect(result.topics.length).toBeGreaterThan(0);
-    const topic = result.topics[0];
-    expect(topic).toHaveProperty('topic_ko');
-    expect(topic).toHaveProperty('category');
-    expect(topic).toHaveProperty('trend_score');
-    expect(topic).toHaveProperty('korea_relevance');
+    expect(result.dryRun).toBe(true);
+    expect(Array.isArray(result.items)).toBe(true);
+    expect(result.items.length).toBeGreaterThan(0);
+    const item = result.items[0];
+    expect(item).toHaveProperty('title');
+    expect(item).toHaveProperty('title_pattern');
+    expect(item).toHaveProperty('score_signal');
+    expect(item.genre).toBe('it');
   });
 
   test('fixture 토픽 trend_score 0~100 범위', () => {
-    let stdout;
-    try {
-      stdout = execFileSync(
-        'python3',
-        [scriptPath, '--fixture', '--dry-run', '--json'],
-        { timeout: 30_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-      );
-    } catch (err) {
-      if (String(err.message).includes('ENOENT')) return;
-      throw err;
-    }
-    const { topics } = JSON.parse(stdout.trim());
+    const { buildItTrendTopics, fixtureItTrendItems } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/it-trends-collector.ts'));
+    const topics = buildItTrendTopics(fixtureItTrendItems());
     for (const t of topics) {
       expect(t.trend_score).toBeGreaterThanOrEqual(0);
       expect(t.trend_score).toBeLessThanOrEqual(100);
@@ -149,40 +125,40 @@ describe('③ 통합 토픽 선정 — 3원 fusion score', () => {
     path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-v3-unified.ts')
   );
 
-  test('Reddit 토픽 fusion 점수 계산', () => {
+  test('HN 토픽 fusion 점수 계산', () => {
     const fusion = calculateTrendFusionScore({
-      source:          'reddit',
+      source:          'hn',
       topic_ko:        'AI 도구 자동화 흐름에서 지금 확인할 실행 기준',
       trend_score:     84,
       korea_relevance: 78,
       is_book_topic:   false,
       date:            new Date().toISOString(),
-      meta:            { source_count: 1, sources: ['reddit'] },
+      meta:            { source_count: 1, sources: ['hn'] },
     });
     expect(fusion.score).toBeGreaterThan(0);
     expect(fusion.score).toBeLessThanOrEqual(100);
-    expect(fusion.source).toBe('reddit');
+    expect(fusion.source).toBe('hn');
     expect(typeof fusion.sourceWeight).toBe('number');
   });
 
-  test('Naver 토픽이 Reddit보다 source weight 높음', () => {
+  test('Naver IT 토픽이 HN보다 source weight 높음', () => {
     const base = { trend_score: 80, korea_relevance: 90, is_book_topic: false };
-    const naverScore  = calculateTrendFusionScore({ ...base, source: 'naver'  }).score;
-    const redditScore = calculateTrendFusionScore({ ...base, source: 'reddit' }).score;
-    expect(naverScore).toBeGreaterThan(redditScore);
+    const naverScore = calculateTrendFusionScore({ ...base, source: 'naver_it' }).score;
+    const hnScore    = calculateTrendFusionScore({ ...base, source: 'hn' }).score;
+    expect(naverScore).toBeGreaterThan(hnScore);
   });
 
   test('다중 출처 diversityBonus 반영', () => {
-    const base = { source: 'reddit', trend_score: 80, korea_relevance: 80 };
+    const base = { source: 'hn', trend_score: 80, korea_relevance: 80 };
     const single = calculateTrendFusionScore({ ...base, meta: { source_count: 1 } });
-    const multi  = calculateTrendFusionScore({ ...base, meta: { source_count: 3, sources: ['reddit', 'naver', 'bestseller'] } });
+    const multi  = calculateTrendFusionScore({ ...base, meta: { source_count: 3, sources: ['hn', 'naver_it', 'bestseller'] } });
     expect(multi.score).toBeGreaterThan(single.score);
   });
 
   test('saveTrendTopics dry-run — DB 미기록', async () => {
     jest.clearAllMocks();
     const topics = [{ topic_ko: '테스트 토픽', category: '최신IT트렌드', trend_score: 70, korea_relevance: 75 }];
-    const result = await saveTrendTopics(topics, 'reddit', { dryRun: true });
+    const result = await saveTrendTopics(topics, 'hn', { dryRun: true });
     expect(result.ok).toBe(true);
     expect(result.dryRun).toBe(true);
     expect(result.inserted).toBe(0);
@@ -273,40 +249,39 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
     expect(firstCall[1]).toContain('trend_topics');
   });
 
-  test('Reddit + Naver 통합 dry-run — candidates 합산', async () => {
-    const redditTopics = [
+  test('HN + Naver IT 통합 dry-run — candidates 합산', async () => {
+    const hnTopics = [
       { topic_ko: 'AI 자동화 도구', trend_score: 82, korea_relevance: 78, category: '최신IT트렌드' },
-      { topic_ko: '독서 루틴 정착', trend_score: 74, korea_relevance: 85, category: '자기계발', is_book_topic: true },
     ];
     const naverTopics = buildNaverTrendTopics([{ keyword: 'AI 개발', trend_score: 80, growth_rate_week: 25 }]);
 
-    const r = await saveTrendTopics(redditTopics, 'reddit', { dryRun: true });
-    const n = await saveTrendTopics(naverTopics,  'naver',  { dryRun: true });
+    const h = await saveTrendTopics(hnTopics, 'hn', { dryRun: true });
+    const n = await saveTrendTopics(naverTopics,  'naver_it',  { dryRun: true });
 
-    expect(r.candidates).toBe(2);
+    expect(h.candidates).toBe(1);
     expect(n.candidates).toBe(1);
-    expect(r.inserted + n.inserted).toBe(0);
+    expect(h.inserted + n.inserted).toBe(0);
   });
 
   test('dry-run에서 Hub LLM INSERT 없음', async () => {
     const topics = [{ topic_ko: 'SaaS 구독 피로 이후 도구 선택', trend_score: 72, korea_relevance: 80 }];
-    await saveTrendTopics(topics, 'reddit', { dryRun: true, addedBy: 'reddit-trend-collector' });
+    await saveTrendTopics(topics, 'hn', { dryRun: true, addedBy: 'it-trends-collector' });
     const insertCalls = pgPool.run.mock.calls.filter(
       (args) => String(args[1] || '').toLowerCase().includes('insert'),
     );
     expect(insertCalls.length).toBe(0);
   });
 
-  test('source 정규화 — reddit/aladin/bestseller/naver 모두 유효한 점수', () => {
-    ['reddit', 'aladin', 'bestseller', 'naver'].forEach((src) => {
+  test('source 정규화 — hn/devto/aladin/naver_it 모두 유효한 점수', () => {
+    ['hn', 'devto', 'aladin_blogbest', 'naver_it'].forEach((src) => {
       const r = calculateTrendFusionScore({ source: src, trend_score: 75, korea_relevance: 75 });
       expect(r.score).toBeGreaterThan(0);
       expect(r.score).toBeLessThanOrEqual(100);
     });
   });
 
-  test('3원 통합 점수 — reddit+naver+bestseller 조합', () => {
-    const scores = ['reddit', 'naver', 'bestseller'].map((src) =>
+  test('3원 통합 점수 — hn+naver_it+bestseller 조합', () => {
+    const scores = ['hn', 'naver_it', 'bestseller'].map((src) =>
       calculateTrendFusionScore({ source: src, trend_score: 80, korea_relevance: 80 })
     );
     // 모두 유효한 점수 반환
@@ -314,10 +289,9 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
       expect(s.score).toBeGreaterThan(0);
       expect(s.sourceWeight).toBeGreaterThan(0);
     });
-    // Naver 가중치 최고 → bestseller 최저
-    const [redditScore, naverScore, bestsellerScore] = scores.map((s) => s.score);
-    expect(naverScore).toBeGreaterThanOrEqual(redditScore);
-    expect(redditScore).toBeGreaterThan(bestsellerScore);
+    const [hnScore, naverScore, bestsellerScore] = scores.map((s) => s.score);
+    expect(naverScore).toBeGreaterThanOrEqual(hnScore);
+    expect(hnScore).toBeGreaterThan(bestsellerScore);
   });
 
   test('semantic 3원 fusion — 제목이 달라도 관련 토픽은 하나의 클러스터로 묶는다', () => {
@@ -327,7 +301,7 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
     const clusters = buildTrendTopicFusionClusters([
       {
         id: 1,
-        source: 'reddit',
+        source: 'hn',
         topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준',
         category: '최신IT트렌드',
         trend_score: 84,
@@ -335,7 +309,7 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
       },
       {
         id: 2,
-        source: 'naver',
+        source: 'naver_it',
         topic_ko: 'AI 개발 자동화 도구 선택 기준',
         category: '최신IT트렌드',
         trend_score: 80,
@@ -354,7 +328,7 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
 
     const multi = clusters.find((cluster) => cluster.sourceCount >= 2);
     expect(multi).toBeTruthy();
-    expect(multi.sources).toEqual(expect.arrayContaining(['reddit', 'naver']));
+    expect(multi.sources).toEqual(expect.arrayContaining(['hn', 'naver_it']));
     expect(multi.fusion.score).toBeGreaterThan(70);
   });
 

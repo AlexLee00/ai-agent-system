@@ -12,6 +12,20 @@ function normalizeLine(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeGenre(value = '') {
+  const raw = normalizeLine(value).toLowerCase();
+  if (['it', 'tech', 'technology'].includes(raw)) return 'it';
+  if (['book', 'books', '도서', '도서리뷰'].includes(raw)) return 'book';
+  return '';
+}
+
+function inferBlogLearningGenre(category = '') {
+  const raw = normalizeLine(category);
+  if (/도서|서평|책|book/i.test(raw)) return 'book';
+  if (/IT|AI|개발|자동화|홈페이지|App|앱|lecture|강의|기술/i.test(raw)) return 'it';
+  return '';
+}
+
 function isoWeekKey(date = new Date()) {
   const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = copy.getUTCDay() || 7;
@@ -23,6 +37,7 @@ function isoWeekKey(date = new Date()) {
 
 function learningKeyFor(lesson = {}) {
   return [
+    normalizeGenre(lesson.genre || inferBlogLearningGenre(lesson.category || '')),
     normalizeLine(lesson.category || '전체'),
     normalizeLine(lesson.axis || 'unknown'),
     normalizeLine(lesson.lesson || '').toLowerCase(),
@@ -35,9 +50,11 @@ function summarizeLessonsForAppend(lessons = [], limit = 5) {
     const key = learningKeyFor(lesson);
     if (!key.includes('|') || key.endsWith('|')) continue;
     const category = normalizeLine(lesson.category || '전체') || '전체';
+    const genre = normalizeGenre(lesson.genre || inferBlogLearningGenre(category));
     const existing = grouped.get(key) || {
       axis: normalizeLine(lesson.axis || 'unknown'),
       category,
+      genre,
       lesson: normalizeLine(lesson.lesson || ''),
       count: 0,
       examples: [],
@@ -63,7 +80,9 @@ function renderLearningsAppendBlock({ lessons = [], generatedAt = new Date(), we
   } else {
     topLessons.forEach((item) => {
       const examples = item.examples.length ? ` / 예: ${item.examples.join(' · ')}` : '';
-      lines.push(`- [${item.category || '전체'}] ${item.axis} (${item.count}회): ${item.lesson}${examples}`);
+      const genre = normalizeGenre(item.genre);
+      const genreMarker = genre ? `[genre:${genre}]` : '';
+      lines.push(`- [${item.category || '전체'}]${genreMarker} ${item.axis} (${item.count}회): ${item.lesson}${examples}`);
     });
   }
   lines.push('');
@@ -83,17 +102,28 @@ function appendWritingLearningsSummary({ lessons = [], filePath = DEFAULT_LEARNI
   return { ok: true, appended: true, filePath, weekKey: key };
 }
 
-function loadRecentWritingLearnings({ filePath = DEFAULT_LEARNINGS_PATH, limit = 20, category = null, env: runtimeEnv = process.env } = {}) {
+function extractLearningLineCategory(line = '') {
+  return String(line || '').match(/^\s*-\s*\[([^\]]+)\]/)?.[1] || '';
+}
+
+function learningLineGenre(line = '') {
+  const explicit = String(line || '').match(/\[genre:([a-z_:-]+)\]/i)?.[1] || '';
+  return normalizeGenre(explicit) || inferBlogLearningGenre(extractLearningLineCategory(line));
+}
+
+function loadRecentWritingLearnings({ filePath = DEFAULT_LEARNINGS_PATH, limit = 20, category = null, genre = null, env: runtimeEnv = process.env } = {}) {
   if (runtimeEnv?.BLOG_LEARNINGS_ENABLED === 'false') return [];
   try {
     if (!fs.existsSync(filePath)) return [];
     const categoryText = normalizeLine(category);
+    const genreText = normalizeGenre(genre || inferBlogLearningGenre(categoryText));
     const lines = fs.readFileSync(filePath, 'utf8')
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line.startsWith('- '));
     return lines
       .filter((line) => !categoryText || line.includes(`[${categoryText}]`) || line.includes('[전체]') || line.includes('[all]'))
+      .filter((line) => !genreText || learningLineGenre(line) === genreText || line.includes('[전체]') || line.includes('[all]'))
       .slice(-Math.max(1, Number(limit || 20)));
   } catch {
     return [];
@@ -113,7 +143,10 @@ async function buildWritingLearningsPromptBlock(options = {}) {
 module.exports = {
   WRITING_LEARNINGS_FORMAT_VERSION,
   DEFAULT_LEARNINGS_PATH,
+  inferBlogLearningGenre,
   isoWeekKey,
+  learningLineGenre,
+  normalizeGenre,
   summarizeLessonsForAppend,
   renderLearningsAppendBlock,
   appendWritingLearningsSummary,

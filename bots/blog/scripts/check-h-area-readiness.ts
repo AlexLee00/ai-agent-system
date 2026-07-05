@@ -2,7 +2,7 @@
 // @ts-nocheck
 'use strict';
 /**
- * H영역 준비 상태 진단 — Reddit 트렌드 + 베스트셀러 통합
+ * H영역 준비 상태 진단 — IT 트렌드 + 베스트셀러 통합
  * 실행: npx tsx bots/blog/scripts/check-h-area-readiness.ts
  */
 
@@ -20,13 +20,25 @@ function fail(label: string, detail: string): CheckResult {
   return { ok: false, label, detail };
 }
 
-async function checkRedditSecrets(): Promise<CheckResult> {
+async function checkItTrendSources(): Promise<CheckResult> {
   const secrets = await fetchHubSecrets('blog').catch(() => null);
-  const hasId = !!(secrets?.REDDIT_CLIENT_ID || process.env.REDDIT_CLIENT_ID);
-  const hasSecret = !!(secrets?.REDDIT_CLIENT_SECRET || process.env.REDDIT_CLIENT_SECRET);
-  if (hasId && hasSecret) return pass('Reddit API 키', '✅ REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET 설정됨');
-  const missing = [!hasId && 'REDDIT_CLIENT_ID', !hasSecret && 'REDDIT_CLIENT_SECRET'].filter(Boolean).join(', ');
-  return fail('Reddit API 키', `❌ 누락: ${missing}\n     → secrets-store.json blog 섹션에 추가하세요`);
+  const hasNaver = !!((secrets?.NAVER_CLIENT_ID || process.env.NAVER_CLIENT_ID)
+    && (secrets?.NAVER_CLIENT_SECRET || process.env.NAVER_CLIENT_SECRET));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch('https://hn.algolia.com/api/v1/search?tags=front_page', {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'ai-agent-blog/1.0' },
+    });
+    if (!res.ok) return fail('IT 트렌드 소스', `❌ HN 응답 비정상(status=${res.status})`);
+    const suffix = hasNaver ? 'Naver credential 설정됨' : 'Naver credential 없음 — HN/dev.to만 사용';
+    return pass('IT 트렌드 소스', `✅ HN 접근 가능 / ${suffix}`);
+  } catch (e: any) {
+    return fail('IT 트렌드 소스', `❌ HN 접근 실패: ${e.message}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function checkAladinSource(): Promise<CheckResult> {
@@ -52,31 +64,21 @@ async function checkAladinSource(): Promise<CheckResult> {
   }
 }
 
-async function checkPrawInstalled(): Promise<CheckResult> {
-  const { execSync } = require('child_process');
-  try {
-    execSync('python3 -c "import praw"', { stdio: 'pipe', timeout: 10_000 });
-    return pass('Python praw 패키지', '✅ praw 설치됨');
-  } catch {
-    return fail('Python praw 패키지', '❌ praw 미설치\n     → 실행: pip install praw');
-  }
-}
-
 async function checkTrendTopicsTable(): Promise<CheckResult> {
   try {
     const rows = await pgPool.query('blog', `
       SELECT COUNT(*) as total,
              SUM(CASE WHEN date >= CURRENT_DATE - 7 THEN 1 ELSE 0 END) as recent_7d,
-             SUM(CASE WHEN source = 'reddit' THEN 1 ELSE 0 END) as reddit_count,
+             SUM(CASE WHEN source IN ('hn', 'naver_it', 'devto') THEN 1 ELSE 0 END) as it_count,
              SUM(CASE WHEN source = 'bestseller' THEN 1 ELSE 0 END) as bestseller_count
       FROM blog.trend_topics
     `);
     const r = rows[0];
     const total = Number(r.total);
     const recent = Number(r.recent_7d);
-    const reddit = Number(r.reddit_count);
+    const it = Number(r.it_count);
     const bestseller = Number(r.bestseller_count);
-    const detail = `total:${total} / 최근7일:${recent} / reddit:${reddit} / bestseller:${bestseller}`;
+    const detail = `total:${total} / 최근7일:${recent} / it:${it} / bestseller:${bestseller}`;
     if (recent === 0) return fail('trend_topics DB', `⚠️  최근 7일 트렌드 없음 (${detail})\n     → API 키 설정 후 수동 실행: npx tsx bots/blog/scripts/run-trend-collector.ts`);
     return pass('trend_topics DB', `✅ ${detail}`);
   } catch (e: any) {
@@ -102,10 +104,10 @@ async function checkLaunchd(): Promise<CheckResult> {
   const { execSync } = require('child_process');
   try {
     const out = execSync('launchctl list 2>/dev/null | grep "ai.blog"', { encoding: 'utf8', timeout: 5_000 });
-    const hasReddit = out.includes('ai.blog.reddit-trends');
+    const hasTrend = out.includes('ai.blog.reddit-trends');
     const hasBestseller = out.includes('ai.blog.bestseller-sync');
-    if (hasReddit && hasBestseller) return pass('launchd', '✅ ai.blog.reddit-trends + ai.blog.bestseller-sync 로드됨');
-    const missing = [!hasReddit && 'ai.blog.reddit-trends', !hasBestseller && 'ai.blog.bestseller-sync'].filter(Boolean).join(', ');
+    if (hasTrend && hasBestseller) return pass('launchd', '✅ ai.blog.reddit-trends(IT collector) + ai.blog.bestseller-sync 로드됨');
+    const missing = [!hasTrend && 'ai.blog.reddit-trends', !hasBestseller && 'ai.blog.bestseller-sync'].filter(Boolean).join(', ');
     return fail('launchd', `❌ 미로드: ${missing}`);
   } catch {
     return fail('launchd', '❌ launchctl 확인 실패');
@@ -130,9 +132,8 @@ async function main() {
   console.log('\n🔍 H영역 준비 상태 진단\n' + '='.repeat(50));
 
   const checks = await Promise.all([
-    checkRedditSecrets(),
+    checkItTrendSources(),
     checkAladinSource(),
-    checkPrawInstalled(),
     checkTrendTopicsTable(),
     checkBookReviewQueue(),
     checkLaunchd(),
@@ -154,11 +155,10 @@ async function main() {
 
   if (failed > 0) {
     console.log('\n📌 다음 단계:');
-    console.log('  1. secrets-store.json blog 섹션에 API 키 추가');
-    console.log('  2. Reddit: https://www.reddit.com/prefs/apps → create app (script 타입)');
-    console.log('  3. Aladin: 웹 fallback 가능, API 안정성이 필요하면 https://www.aladin.co.kr/ttb/wblog_manage.aspx → TTB 키 발급');
-    console.log('  4. 키 추가 후 수동 테스트: npx tsx bots/blog/scripts/run-trend-collector.ts');
-    console.log('  5. 베스트셀러 테스트: npx tsx bots/blog/scripts/run-bestseller-sync.ts --dry-run');
+    console.log('  1. Naver/Aladin 키는 secrets-store.json blog 섹션에 추가');
+    console.log('  2. IT 트렌드 테스트: npx tsx bots/blog/scripts/run-trend-collector.ts --dry-run');
+    console.log('  3. 도서 테스트: npx tsx bots/blog/scripts/run-book-review-collector.ts --dry-run');
+    console.log('  4. 베스트셀러 테스트: npx tsx bots/blog/scripts/run-bestseller-sync.ts --dry-run');
   }
 
   process.exit(failed > 0 ? 1 : 0);

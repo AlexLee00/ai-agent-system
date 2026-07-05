@@ -71,22 +71,16 @@ async function main() {
   const { generateHomeFeedReport } = require('../lib/naver-home-feed-optimizer.ts');
   const { detectAiSignals, scoreSentenceNaturalness } = require('../lib/humanize-agent.ts');
 
-  const redditOut = execFileSync('python3', [
-    path.join(BLOG_DIR, 'python/reddit_trend_analyzer.py'),
-    '--fixture',
-    '--dry-run',
-    '--json',
-    '--max-llm-calls=0',
-  ], { encoding: 'utf8' });
-  const reddit = JSON.parse(redditOut);
-  assert.equal(reddit.ok, true, 'reddit fixture should be ok');
-  assert.ok((reddit.topics || []).length >= 1, 'reddit fixture should return topics');
+  const { runItTrendsCollector } = require('../lib/it-trends-collector.ts');
+  const itTrends = await runItTrendsCollector({ fixture: true, dryRun: true });
+  assert.equal(itTrends.ok, true, 'IT trend fixture should be ok');
+  assert.ok((itTrends.items || []).length >= 1, 'IT trend fixture should return items');
 
   const fusion = calculateTrendFusionScore({
-    source: 'naver',
+    source: 'naver_it',
     trend_score: 82,
     korea_relevance: 90,
-    meta: { source_count: 3, sources: ['naver', 'reddit', 'bestseller'] },
+    meta: { source_count: 3, sources: ['naver_it', 'hn', 'bestseller'] },
     date: new Date().toISOString(),
   });
   assert.ok(fusion.score >= 70, 'fusion score should prioritize Naver+multi-source');
@@ -96,12 +90,12 @@ async function main() {
     'semantic topic similarity should cluster related V3 sources',
   );
   const semanticClusters = buildTrendTopicFusionClusters([
-    { source: 'reddit', topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준', trend_score: 84, korea_relevance: 78 },
-    { source: 'naver', topic_ko: 'AI 개발 자동화 도구 선택 기준', trend_score: 80, korea_relevance: 90 },
+    { source: 'hn', topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준', trend_score: 84, korea_relevance: 78 },
+    { source: 'naver_it', topic_ko: 'AI 개발 자동화 도구 선택 기준', trend_score: 80, korea_relevance: 90 },
   ]);
   assert.ok(
-    semanticClusters.some((cluster) => cluster.sourceCount >= 2 && cluster.sources.includes('reddit') && cluster.sources.includes('naver')),
-    'V3 fusion should merge semantically related Reddit/Naver rows',
+    semanticClusters.some((cluster) => cluster.sourceCount >= 2 && cluster.sources.includes('hn') && cluster.sources.includes('naver_it')),
+    'V3 fusion should merge semantically related HN/Naver IT rows',
   );
 
   const sampleText = '제가 직접 써보니 생각보다 기준이 중요했습니다. 오늘 오전 30분 동안 확인한 내용만 정리합니다. 어떻게 적용하면 좋을까요?';
@@ -146,7 +140,7 @@ async function main() {
     ok: true,
     shadowMode: true,
     checks: {
-      redditFixtureTopics: reddit.topics.length,
+      itFixtureItems: itTrends.items.length,
       fusionScore: fusion.score,
       semanticFusionClusters: semanticClusters.length,
       homeFeedChannels: homeFeed.channels.length,

@@ -13,18 +13,32 @@ const kst = require('../../../packages/core/lib/kst');
 
 const SOURCE_WEIGHTS = {
   naver: 0.40,
+  naver_it: 0.40,
+  naver_book_review: 0.30,
   naver_datalab: 0.40,
   naver_home_feed: 0.40,
-  reddit: 0.35,
+  hn: 0.38,
+  devto: 0.30,
+  reddit: 0.20,
   bestseller: 0.25,
+  aladin_blogbest: 0.28,
+  aladin_editor_choice: 0.26,
+  aladin_new_special: 0.24,
 };
 
 const SOURCE_LABELS = {
   naver: 'Naver',
+  naver_it: 'Naver Blog IT',
+  naver_book_review: 'Naver Book Reviews',
   naver_datalab: 'Naver DataLab',
   naver_home_feed: 'Naver HomeFeed',
-  reddit: 'Reddit',
+  hn: 'Hacker News',
+  devto: 'dev.to',
+  reddit: 'Reddit (legacy)',
   bestseller: 'Aladin Bestseller',
+  aladin_blogbest: 'Aladin BlogBest',
+  aladin_editor_choice: 'Aladin Editor Choice',
+  aladin_new_special: 'Aladin New Special',
 };
 
 const NAVER_TREND_FIXTURES = [
@@ -51,6 +65,13 @@ function safeJson(value, fallback = {}) {
 
 function normalizeSource(source) {
   const raw = String(source || '').toLowerCase();
+  if (['hn', 'hacker_news', 'hackernews'].includes(raw)) return 'hn';
+  if (['devto', 'dev.to', 'dev_to'].includes(raw)) return 'devto';
+  if (['naver_it', 'naver_blog_it'].includes(raw)) return 'naver_it';
+  if (['naver_book_review', 'naver_book_reviews'].includes(raw)) return 'naver_book_review';
+  if (['aladin_blogbest', 'aladin_blog_best'].includes(raw)) return 'aladin_blogbest';
+  if (['aladin_editor_choice', 'item_editor_choice', 'itemeditorchoice'].includes(raw)) return 'aladin_editor_choice';
+  if (['aladin_new_special', 'item_new_special', 'itemnewspecial'].includes(raw)) return 'aladin_new_special';
   if (raw.includes('naver')) return 'naver';
   if (raw.includes('reddit')) return 'reddit';
   if (raw.includes('bestseller') || raw.includes('aladin')) return 'bestseller';

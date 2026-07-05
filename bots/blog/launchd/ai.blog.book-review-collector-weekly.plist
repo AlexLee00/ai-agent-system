@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>PG_DIRECT</key>
+		<string>true</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.blog.book-review-collector-weekly</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>--disable-warning=DEP0205</string>
+		<string>--import</string>
+		<string>tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/run-book-review-collector.ts</string>
+		<string>--json</string>
+		<string>--dry-run</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/book-review-collector.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog/book-review-collector.log</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Weekday</key>
+		<integer>1</integer>
+		<key>Hour</key>
+		<integer>7</integer>
+		<key>Minute</key>
+		<integer>20</integer>
+	</dict>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/blog</string>
+</dict>
+</plist>
