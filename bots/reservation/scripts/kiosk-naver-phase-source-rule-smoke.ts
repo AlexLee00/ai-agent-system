@@ -183,6 +183,84 @@ async function main() {
     'kiosk_blocks lookup should normalize Pickko display room/end before deciding reprocess',
   );
 
+  const timeElapsedAlerts = [];
+  const timeElapsedUpserts = [];
+  const timeElapsedBlockedPhones = [];
+  const timeElapsedService = createKioskNaverPhaseService({
+    log: () => {},
+    readWsFile: () => 'ws://example.test/devtools/browser/test',
+    connectBrowser: async () => ({
+      newPage: async () => createFakePage(),
+      disconnect: () => {},
+    }),
+    attachNaverScheduleTrace: () => {},
+    naverBookingLogin: async () => true,
+    upsertKioskBlock: async (phoneRaw, date, start, patch) => {
+      timeElapsedUpserts.push({ phoneRaw, date, start, patch });
+    },
+    journalBlockAttempt: async () => {},
+    publishRetryableBlockAlert: () => {},
+    publishReservationAlert: (payload) => timeElapsedAlerts.push(payload),
+    buildOpsAlertMessage: (options) => `${options.title} ${options.reason}`,
+    fmtPhone: (phone) => phone,
+    nowKST: () => '2099-01-01T00:00:00+09:00',
+    waitForCustomerCooldown: async () => {},
+    markCustomerCooldown: () => {},
+    runtimeConfig: { customerOperationCooldownMs: 0 },
+    delay: async () => {},
+    blockNaverSlot: async (_page, item) => {
+      timeElapsedBlockedPhones.push(item.phoneRaw);
+      return { ok: true, reason: 'verified' };
+    },
+    unblockNaverSlot: async () => true,
+    publishKioskSuccessReport: () => {},
+    getKioskBlock: async () => null,
+    bookingUrl: 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    scrapeNewestBookingsFromList: async () => [{
+      phoneRaw: '01000000000',
+      date: '2099-01-02',
+      start: '09:00',
+      end: '09:30',
+      room: 'B',
+    }],
+  });
+
+  await timeElapsedService.processNaverPhase({
+    wsFile: '/tmp/ws-file-not-read',
+    toBlockEntries: [entry({ phoneRaw: '01088889999', date: '2020-01-02', start: '10:00', end: '10:50', amount: 12000 })],
+    cancelledEntries: [],
+    recordKioskBlockAttempt: async () => {},
+  });
+
+  assert.deepEqual(
+    timeElapsedBlockedPhones,
+    [],
+    'elapsed Pickko rows must not attempt Naver blocking',
+  );
+  assert.equal(
+    timeElapsedUpserts[0]?.patch?.lastBlockReason,
+    'time_elapsed',
+    'elapsed Pickko rows should be journaled as time_elapsed',
+  );
+  assert.equal(
+    timeElapsedAlerts[0]?.event_type,
+    'report',
+    'elapsed Pickko rows should publish a non-actionable report, not an alert',
+  );
+  assert.equal(
+    timeElapsedAlerts[0]?.alert_level,
+    1,
+    'elapsed Pickko rows should use low-severity reporting',
+  );
+  assert.ok(
+    String(timeElapsedAlerts[0]?.incident_key || '').includes('2020_01_02'),
+    'elapsed Pickko report incident key should include the date',
+  );
+  assert.ok(
+    String(timeElapsedAlerts[0]?.incident_key || '').includes('1050'),
+    'elapsed Pickko report incident key should include the slot',
+  );
+
   const zeroSnapshotBlockedPhones = [];
   const zeroSnapshotAlerts = [];
   const zeroSnapshotService = createKioskNaverPhaseService({

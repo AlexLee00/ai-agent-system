@@ -75,6 +75,30 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
     sourceSnapshotLimit = 300,
   } = deps;
 
+  function normalizeIncidentPart(value: unknown): string {
+    return String(value || 'unknown')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 80) || 'unknown';
+  }
+
+  function buildTimeElapsedIncidentKey(entry: Record<string, any>): string {
+    const phoneDigits = String(entry?.phoneRaw || '').replace(/\D/g, '');
+    const phoneSuffix = phoneDigits ? phoneDigits.slice(-4) : 'unknown';
+    const slot = `${entry?.start || 'unknown'}-${entry?.end || 'unknown'}`.replace(/:/g, '');
+    return [
+      'reservation',
+      'jimmy',
+      'naver_block_time_elapsed',
+      normalizeIncidentPart(entry?.date),
+      normalizeIncidentPart(entry?.room),
+      normalizeIncidentPart(slot),
+      normalizeIncidentPart(phoneSuffix),
+    ].join(':');
+  }
+
   function addDaysKST(dateStr: string, days: number): string {
     const date = new Date(`${dateStr}T00:00:00+09:00`);
     date.setDate(date.getDate() + days);
@@ -376,8 +400,9 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
           });
           publishReservationAlert({
             from_bot: 'jimmy',
-            event_type: 'alert',
-            alert_level: 2,
+            event_type: 'report',
+            alert_level: 1,
+            incident_key: buildTimeElapsedIncidentKey(entry),
             message: buildOpsAlertMessage({
               title: '⏰ 시간 경과 — 네이버 차단 생략',
               customer: entry.name || '(이름없음)',
