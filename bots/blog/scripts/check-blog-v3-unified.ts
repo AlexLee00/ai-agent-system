@@ -36,7 +36,7 @@ function auditHubLlmRoutes() {
     if (rel !== 'lib/blog-llm-gateway.ts' && /local-llm-client|callLocalLlm|callLocalFast/.test(src)) {
       directLocal.push(rel);
     }
-    if (/require\(['"]openai['"]\)|from ['"]openai['"]|@anthropic-ai|google-generative-ai/.test(src)) {
+    if (/require\(['"](?:openai|@anthropic-ai\/[^'"]+|@google\/generative-ai|google-generative-ai)['"]\)|from ['"](?:openai|@anthropic-ai\/[^'"]+|@google\/generative-ai|google-generative-ai)['"]/.test(src)) {
       directProvider.push(rel);
     }
   }

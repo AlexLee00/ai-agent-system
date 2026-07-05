@@ -127,8 +127,45 @@ function chunkText(text: string, chunkSize = DEFAULT_CHUNK_SIZE): string[] {
   return chunks;
 }
 
+function postTitle(row: any): string {
+  return String(row?.final_title || row?.title || `blog post ${row?.id || ''}`).trim();
+}
+
 function postContent(row: any): string {
-  return normalizeText(row?.content) || stripHtml(row?.html_content);
+  return normalizeText(row?.final_content_text) || normalizeText(row?.content) || stripHtml(row?.html_content);
+}
+
+function countHeadingTags(value: unknown): number {
+  const source = String(value || '');
+  return (source.match(/<h[1-6]\b/gi) || []).length
+    || (source.match(/^\s*#{1,6}\s+/gm) || []).length
+    || (source.match(/^\s*\[[^\]\n]{2,60}\]\s*$/gm) || []).length;
+}
+
+function hasVideoSignal(row: any): boolean {
+  const source = [row?.html_content, row?.content, row?.final_content_text].map((item) => String(item || '')).join('\n');
+  return /<video\b|<iframe\b|youtu\.be|youtube\.com|tv\.naver|naver\.me\/x/i.test(source);
+}
+
+function buildPostStructureMeta(row: any, content: string): Record<string, unknown> {
+  return {
+    charCount: normalizeText(content).length || Number(row?.char_count || 0),
+    headingCount: countHeadingTags(row?.html_content || content),
+    hasVideo: hasVideoSignal(row),
+    finalContentUsed: Boolean(normalizeText(row?.final_content_text)),
+    finalContentCheckedAt: row?.final_content_checked_at || null,
+  };
+}
+
+function buildPostCrankMeta(row: any): Record<string, unknown> | null {
+  if (row?.crank_overall == null) return null;
+  return {
+    scoredDate: row?.crank_scored_date || null,
+    overall: Number(row?.crank_overall || 0),
+    crankTotal: row?.crank_total == null ? null : Number(row.crank_total),
+    diaTotal: row?.dia_total == null ? null : Number(row.dia_total),
+    geoTotal: row?.geo_total == null ? null : Number(row.geo_total),
+  };
 }
 
 function postTags(row: any): string[] {
@@ -159,7 +196,7 @@ function buildPostCandidates(posts: any[], options: { chunkSize?: number } = {})
     const chunks = chunkText(rawContent, options.chunkSize || DEFAULT_CHUNK_SIZE);
     chunks.forEach((chunk, index) => {
       const chunkCount = chunks.length;
-      const title = String(row?.title || `blog post ${row?.id || ''}`).trim();
+      const title = postTitle(row);
       const prefix = [
         '[블로그 포스트]',
         `제목: ${title}`,
@@ -190,6 +227,8 @@ function buildPostCandidates(posts: any[], options: { chunkSize?: number } = {})
           chunkIndex: index + 1,
           chunkCount,
           contentHash: contentHash(chunk),
+          structure: buildPostStructureMeta(row, rawContent),
+          crank: buildPostCrankMeta(row),
         },
       });
     });
@@ -347,6 +386,31 @@ async function latestVaultCreatedAtBySource(sourceTable: string, pool: any): Pro
   }
 }
 
+async function sourceTableExists(pool: any, schemaName: string, tableName: string): Promise<boolean> {
+  try {
+    const rows = await pool.query('public', 'SELECT to_regclass($1) AS regclass', [`${schemaName}.${tableName}`]);
+    return Boolean(rows?.[0]?.regclass || rows?.rows?.[0]?.regclass);
+  } catch {
+    return false;
+  }
+}
+
+async function sourceTableHasColumns(pool: any, schemaName: string, tableName: string, columns: string[]): Promise<boolean> {
+  try {
+    const rows = await pool.query('public', `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = $1
+        AND table_name = $2
+        AND column_name = ANY($3::text[])
+    `, [schemaName, tableName, columns]);
+    const present = new Set((rows?.rows || rows || []).map((row: any) => String(row.column_name)));
+    return columns.every((column) => present.has(column));
+  } catch {
+    return false;
+  }
+}
+
 function fallbackSinceIso(sinceHours: number): string {
   return new Date(Date.now() - sinceHours * 3600_000).toISOString();
 }
@@ -365,14 +429,66 @@ async function collectBlogRows(options: {
     comments: backfill ? null : (await latestVaultCreatedAtBySource('blog.comments', pool) || fallbackSinceIso(sinceHours)),
     commentActions: backfill ? null : (await latestVaultCreatedAtBySource('blog.comment_actions', pool) || fallbackSinceIso(sinceHours)),
   };
+  const [finalContentColumnsExist, crankScoresExists] = await Promise.all([
+    sourceTableHasColumns(pool, 'blog', 'final_content_checks', ['final_title', 'final_content_text', 'checked_at', 'metadata']),
+    sourceTableExists(pool, 'blog', 'crank_scores'),
+  ]);
+  const finalSelect = finalContentColumnsExist
+    ? `,
+             fcc.final_title,
+             fcc.final_content_text,
+             fcc.checked_at AS final_content_checked_at,
+             fcc.metadata AS final_content_metadata`
+    : `,
+             NULL::text AS final_title,
+             NULL::text AS final_content_text,
+             NULL::timestamptz AS final_content_checked_at,
+             NULL::jsonb AS final_content_metadata`;
+  const finalJoin = finalContentColumnsExist
+    ? `
+      LEFT JOIN LATERAL (
+        SELECT final_title, final_content_text, checked_at, metadata
+        FROM blog.final_content_checks
+        WHERE post_id = p.id
+        ORDER BY checked_at DESC
+        LIMIT 1
+      ) fcc ON true`
+    : '';
+  const crankSelect = crankScoresExists
+    ? `,
+             cs.scored_date AS crank_scored_date,
+             cs.overall AS crank_overall,
+             cs.crank_total,
+             cs.dia_total,
+             cs.geo_total`
+    : `,
+             NULL::date AS crank_scored_date,
+             NULL::int AS crank_overall,
+             NULL::int AS crank_total,
+             NULL::int AS dia_total,
+             NULL::int AS geo_total`;
+  const crankJoin = crankScoresExists
+    ? `
+      LEFT JOIN LATERAL (
+        SELECT scored_date, overall, crank_total, dia_total, geo_total
+        FROM blog.crank_scores
+        WHERE post_id = p.id
+        ORDER BY scored_date DESC, id DESC
+        LIMIT 1
+      ) cs ON true`
+    : '';
 
   const [posts, comments, commentActions] = await Promise.all([
     pool.query('blog', `
-      SELECT id, title, category, post_type, lecture_number, series_name, publish_date, status,
-             char_count, content, html_content, hashtags, naver_url, metadata, created_at
-      FROM blog.posts
-      WHERE ($1::timestamptz IS NULL OR created_at > $1::timestamptz)
-      ORDER BY created_at ASC, id ASC
+      SELECT p.id, p.title, p.category, p.post_type, p.lecture_number, p.series_name, p.publish_date, p.status,
+             p.char_count, p.content, p.html_content, p.hashtags, p.naver_url, p.metadata, p.created_at
+             ${finalSelect}
+             ${crankSelect}
+      FROM blog.posts p
+      ${finalJoin}
+      ${crankJoin}
+      WHERE ($1::timestamptz IS NULL OR p.created_at > $1::timestamptz)
+      ORDER BY p.created_at ASC, p.id ASC
       LIMIT $2
     `, [sinceByTable.posts, limitPerSource]),
     pool.query('blog', `

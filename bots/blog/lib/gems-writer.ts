@@ -27,6 +27,7 @@ const { BLOG_FORMAT_RULES, buildBlogFormatInstruction } = require(path.join(env.
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
+const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
@@ -1354,6 +1355,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const marketingRecommendations = (researchData.topic_marketing_recommendations || []).filter(Boolean).join(' / ');
   const marketingCtaHint = String(researchData.topic_marketing_cta_hint || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
+  const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category }).catch(() => '');
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('gems', bonusInsights);
@@ -1432,6 +1434,7 @@ ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''
 ${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\n` : ''}
 ${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
 ${masterStyleHint ? `[마스터 스타일 가이드]\n${masterStyleHint}\n` : ''}
+${writingLearningsBlock ? `${writingLearningsBlock}\n` : ''}
 ${marketingSignalSummary ? `[매출/시즌 신호]\n${marketingSignalSummary}\n` : ''}
 ${marketingRecommendations ? `[마케팅 반영 지시]\n${marketingRecommendations}\n` : ''}
 ${marketingCtaHint ? `[전환 CTA 힌트]\n${marketingCtaHint}\n` : ''}
@@ -1763,6 +1766,7 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
+  const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category }).catch(() => '');
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const generalFormatInstruction = buildBlogFormatInstruction('general');
 
@@ -1822,7 +1826,8 @@ ${strategyFocus ? `\n[이번 주 전략 포커스]\n${strategyFocus}` : ''}
 ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
-${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}`.trim();
+${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}
+${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}`.trim();
 
   const chunks = [
     {

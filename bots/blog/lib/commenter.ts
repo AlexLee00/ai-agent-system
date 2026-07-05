@@ -16,6 +16,7 @@ const { getBlogCommenterConfig, getBlogNeighborCommenterConfig } = require('./ru
 const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 const { COMMENT_TYPE_STRATEGIES, classifyComment } = require('./comment-classifier.ts');
+const { recordCommentLearningEvent, deriveNeighborLearningType } = require('./comment-learning.ts');
 const {
   appendIncidentLine,
   canonicalizeBlogCriticalAlert,
@@ -5883,6 +5884,21 @@ async function processComment(comment, options = {}) {
       classification: generated.classification || null,
     },
   });
+  await recordCommentLearningEvent({
+    source: 'own',
+    commentId: comment.id,
+    type: generated.classification?.type || '기타',
+    replyPostedAt: new Date().toISOString(),
+    outcome: { success: true },
+    metadata: {
+      action: 'reply',
+      commentType: generated.classification?.type || null,
+      classificationMethod: generated.classification?.method || null,
+      tone: generated.tone || null,
+    },
+  }).catch((error) => {
+    console.warn('[commenter] comment learning record failed:', error instanceof Error ? error.message : String(error));
+  });
   return { ok: true, reply: generated.reply, classification: generated.classification || null };
 }
 
@@ -6094,6 +6110,20 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
       targetBlogName: candidate.target_blog_name || null,
       tone: generated.tone || null,
     },
+  });
+  await recordCommentLearningEvent({
+    source: 'neighbor',
+    commentId: candidate.id,
+    type: deriveNeighborLearningType(candidate),
+    replyPostedAt: new Date().toISOString(),
+    outcome: { success: true, sympathy: posted?.sympathy?.ok === true },
+    metadata: {
+      action: 'neighbor_comment',
+      sourceType: candidate.source_type || null,
+      tone: generated.tone || null,
+    },
+  }).catch((error) => {
+    console.warn('[neighbor-commenter] comment learning record failed:', error instanceof Error ? error.message : String(error));
   });
 
   if (!posted?.sympathy?.ok) return;
