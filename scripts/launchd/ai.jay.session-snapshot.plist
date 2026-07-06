@@ -3,16 +3,18 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.hub.selector-timeout-tuner-weekly</string>
+  <string>ai.jay.session-snapshot</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
     <string>--disable-warning=DEP0205</string>
     <string>--import</string>
     <string>tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/selector-timeout-tuner.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/scripts/runtime-session-snapshot.ts</string>
     <string>--json</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
@@ -24,18 +26,18 @@
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
-    <key>Weekday</key>
-    <integer>1</integer>
     <key>Hour</key>
-    <integer>4</integer>
+    <integer>7</integer>
     <key>Minute</key>
-    <integer>55</integer>
+    <integer>0</integer>
   </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
   <key>StandardOutPath</key>
-  <string>/Users/alexlee/.ai-agent-system/logs/selector-timeout-tuner.out.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/session-snapshot.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/alexlee/.ai-agent-system/logs/selector-timeout-tuner.err.log</string>
-  <key>WorkingDirectory</key>
-  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/session-snapshot-error.log</string>
 </dict>
 </plist>

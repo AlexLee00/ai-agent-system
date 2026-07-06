@@ -291,10 +291,28 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     triggers: source.triggers,
     minPromotionRepeats: options.minPromotionRepeats || 3,
   });
+  const rawApplyLimit = Number(options.applyLimit || 0);
+  const applyLimit = Number.isFinite(rawApplyLimit) && rawApplyLimit > 0
+    ? Math.max(1, Math.min(500, Math.trunc(rawApplyLimit)))
+    : null;
+  const applicableCount = plan.filter((item) => item.apply && item.matched).length;
+  let seenApplicable = 0;
+  const applyPlan = applyLimit == null
+    ? plan
+    : plan.map((item) => {
+      if (!item.apply || !item.matched) return item;
+      seenApplicable += 1;
+      if (seenApplicable <= applyLimit) return item;
+      return {
+        ...item,
+        apply: false,
+        applySkippedReason: 'apply_limit_reached',
+      };
+    });
   let applyResult = { applied: [], count: 0, skipped: true, reason: dryRun ? 'dry_run' : 'apply_not_requested' };
   const shouldApply = !dryRun && options.apply === true && isSigmaTransitionEnabled(options.env || process.env);
   if (shouldApply) {
-    applyResult = await applyTeamTransitionPlan(plan, { pg: options.pg || pgPool, env: options.env || process.env });
+    applyResult = await applyTeamTransitionPlan(applyPlan, { pg: options.pg || pgPool, env: options.env || process.env });
   }
   const counts = {
     triggers: source.triggers.length,
@@ -302,7 +320,9 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     plannedValidated: plan.filter((item) => item.nextCoords?.validation_state === 'validated').length,
     plannedContradicted: plan.filter((item) => item.nextCoords?.validation_state === 'contradicted').length,
     promotionCandidates: plan.filter((item) => item.metaPatch?.promotion_candidate === true).length,
-    applicable: plan.filter((item) => item.apply && item.matched).length,
+    applicable: applicableCount,
+    applyLimit,
+    applyCapReached: applyLimit != null && applicableCount > applyLimit,
     applied: applyResult.count || 0,
   };
   const report = {

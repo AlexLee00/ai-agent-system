@@ -38,6 +38,34 @@ function modeAllowsMutation(mode) {
   return ['active', 'apply'].includes(String(mode || '').toLowerCase());
 }
 
+function truthy(value) {
+  return ['true', '1', 'yes', 'on'].includes(String(value || '').toLowerCase());
+}
+
+function boundedInt(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+export function buildTransitionScanOptions(options = {}, env = process.env) {
+  const transitionEnabled = truthy(env.SIGMA_TRANSITION_ENABLED);
+  const applyLimit = boundedInt(
+    options.transitionApplyLimit || env.SIGMA_TRANSITION_APPLY_LIMIT,
+    20,
+    1,
+    500,
+  );
+  return {
+    sinceHours: boundedInt(options.transitionSinceHours, 24, 1, 720),
+    limit: boundedInt(options.transitionLimit, 50, 1, 500),
+    dryRun: !transitionEnabled,
+    apply: transitionEnabled,
+    applyLimit,
+    env,
+  };
+}
+
 export async function runInboxProcessor(options = {}) {
   const root = resolve(options.root || DEFAULT_SIGMA_VAULT_ROOT);
   const mode = String(options.mode || process.env.SIGMA_VAULT_PROCESSOR_MODE || 'shadow').toLowerCase();
@@ -114,11 +142,7 @@ export async function runInboxProcessor(options = {}) {
   if (options.transitionScan !== false && String(process.env.SIGMA_5AXIS_TRANSITION_SCAN_DISABLED || '').toLowerCase() !== 'true') {
     try {
       const scanner = await import('../scripts/runtime-sigma-5axis-transition.ts');
-      transitionScan = await scanner.buildSigma5AxisTransitionReport({
-        sinceHours: Number(options.transitionSinceHours || 24),
-        limit: Number(options.transitionLimit || 50),
-        dryRun: true,
-      });
+      transitionScan = await scanner.buildSigma5AxisTransitionReport(buildTransitionScanOptions(options, process.env));
     } catch (error) {
       transitionScan = {
         ok: false,
@@ -148,6 +172,16 @@ export async function runInboxProcessor(options = {}) {
       reason: transitionScan.reason || null,
       counts: transitionScan.counts || null,
       sourceCounts: transitionScan.sourceCounts || null,
+      transitionEnabled: Boolean(transitionScan.transitionEnabled),
+      dryRun: Boolean(transitionScan.dryRun),
+      liveMutation: Boolean(transitionScan.liveMutation),
+      applyResult: transitionScan.applyResult
+        ? {
+            count: transitionScan.applyResult.count || 0,
+            skipped: Boolean(transitionScan.applyResult.skipped),
+            reason: transitionScan.applyResult.reason || null,
+          }
+        : null,
     },
     results,
     safety: {
@@ -168,6 +202,9 @@ async function main() {
     writeDb: hasFlag('write-db'),
     useLlm: hasFlag('llm'),
     timeoutMs: Number(argValue('timeout-ms', '8000')),
+    transitionSinceHours: Number(argValue('transition-since-hours', '24')),
+    transitionLimit: Number(argValue('transition-limit', '50')),
+    transitionApplyLimit: Number(argValue('transition-apply-limit', '20')),
   });
   if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));
   else console.log(`[sigma-vault-inbox-processor] ${result.status} inbox=${result.inboxNotes} moved=${result.moved} writeDb=${result.writeDb}`);
