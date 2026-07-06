@@ -300,10 +300,27 @@ async function buildLifecyclePromptContext({
   recallFn = recallMemories,
   personaFn = loadPersona,
 } = {}) {
+  if (!enabled) {
+    return {
+      persona: '',
+      recall: {
+        ok: true,
+        skipped: true,
+        reason: 'lifecycle_disabled',
+        requestedLimit: limit,
+        effectiveLimit: clampLimit(limit, 8),
+        memories: [],
+      },
+      block: '',
+      promptBlock: '',
+      injected: false,
+      telemetry: { ok: true, skipped: true, reason: 'lifecycle_disabled' },
+    };
+  }
   const persona = personaFn(team);
   const recall = await recallFn({ team, agent, topic, limit, fetch });
   const block = buildLifecycleBlock({ persona, memories: recall.memories || [] });
-  const injected = Boolean(enabled && block);
+  const injected = Boolean(block);
   const telemetryResult = recordLifecycleTelemetry({
     team,
     agent,

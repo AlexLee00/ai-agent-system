@@ -112,6 +112,7 @@ const fetchOk = async (_url, opts) => {
   }, { env: { AGENT_LIFECYCLE_TELEMETRY_PATH: telemetryPath } });
   assert.equal(telemetry.ok, true);
   assert.ok(fs.readFileSync(telemetryPath, 'utf8').includes('"agent":"gems"'));
+  const telemetryBeforeOff = fs.readFileSync(telemetryPath, 'utf8');
 
   const contextOff = await lifecycle.buildLifecyclePromptContext({
     team: 'blog',
@@ -119,11 +120,13 @@ const fetchOk = async (_url, opts) => {
     topic: 'off mode',
     enabled: false,
     env: { AGENT_LIFECYCLE_TELEMETRY_PATH: telemetryPath },
-    personaFn: () => persona,
-    recallFn: async () => ({ ok: true, memories: recall.memories }),
+    personaFn: () => { throw new Error('persona should not load when disabled'); },
+    recallFn: async () => { throw new Error('recall should not run when disabled'); },
   });
   assert.equal(contextOff.promptBlock, '', 'off mode must not inject');
-  assert.ok(contextOff.block.includes(lifecycle.LIFECYCLE_BEGIN), 'off mode still builds shadow block');
+  assert.equal(contextOff.block, '', 'off mode must not build shadow block');
+  assert.equal(contextOff.recall.skipped, true, 'off mode must report skipped recall');
+  assert.equal(fs.readFileSync(telemetryPath, 'utf8'), telemetryBeforeOff, 'off mode must not append telemetry');
 
   const contextOn = await lifecycle.buildLifecyclePromptContext({
     team: 'blog',

@@ -34,11 +34,13 @@ const memories = [
     topic: 'IT 글 제목 다양성',
     enabled: false,
     env: { AGENT_LIFECYCLE_TELEMETRY_PATH: telemetryPath },
-    personaFn: () => persona,
-    recallFn: async () => ({ ok: true, memories }),
+    personaFn: () => { throw new Error('persona should not load when disabled'); },
+    recallFn: async () => { throw new Error('recall should not run when disabled'); },
   });
   assert.equal(off.promptBlock, '', 'BLOG_LIFECYCLE_INJECT_ENABLED=false must not inject');
-  assert.ok(off.block.includes(lifecycle.LIFECYCLE_BEGIN), 'shadow block should still be built');
+  assert.equal(off.block, '', 'BLOG_LIFECYCLE_INJECT_ENABLED=false must not build shadow block');
+  assert.equal(off.recall.skipped, true, 'BLOG_LIFECYCLE_INJECT_ENABLED=false must skip recall');
+  assert.equal(fs.existsSync(telemetryPath), false, 'BLOG_LIFECYCLE_INJECT_ENABLED=false must not append telemetry');
 
   const on = await lifecycle.buildLifecyclePromptContext({
     team: 'blog',
