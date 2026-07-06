@@ -1,10 +1,42 @@
 // @ts-nocheck
 
+import { createRequire } from 'node:module';
 import { formatMarketRegime, getMarketRegime } from './market-regime.ts';
+
+const require = createRequire(import.meta.url);
+const { buildLifecyclePromptContext } = require('../../../packages/core/lib/agent-lifecycle.ts');
+
+function lifecycleTopicFor(symbols, exchange, signalLines) {
+  return [
+    `exchange:${exchange}`,
+    `symbols:${symbols.join(',')}`,
+    signalLines,
+  ].filter(Boolean).join(' | ');
+}
+
+export async function buildLunaLifecyclePromptBlock({ symbols, exchange, signalLines, lifecycleBuilder = buildLifecyclePromptContext } = {}) {
+  try {
+    const context = await lifecycleBuilder({
+      team: 'investment',
+      agent: 'luna',
+      topic: lifecycleTopicFor(symbols || [], exchange, signalLines),
+      enabled: process.env.LUNA_LIFECYCLE_INJECT_ENABLED === 'true',
+      telemetry: {
+        stage: 'luna_portfolio_decision_prompt',
+        exchange,
+        symbolCount: Array.isArray(symbols) ? symbols.length : 0,
+      },
+    });
+    return context?.promptBlock || '';
+  } catch {
+    return '';
+  }
+}
 
 export async function buildPortfolioDecisionPromptParts(symbolDecisions, portfolio, exchange = 'binance', exitSummary = null, {
   maxPosCount = 5,
   buildPortfolioPrompt,
+  lifecycleBuilder = buildLifecyclePromptContext,
 } = {}) {
   const symbols = [...new Set(symbolDecisions.map(s => s.symbol))];
   const signalLines = symbolDecisions
@@ -36,6 +68,12 @@ export async function buildPortfolioDecisionPromptParts(symbolDecisions, portfol
         ``,
       ].join('\n')
     : '';
+  const lifecyclePromptBlock = await buildLunaLifecyclePromptBlock({
+    symbols,
+    exchange,
+    signalLines,
+    lifecycleBuilder,
+  });
 
   const userMsg = [
     `=== 포트폴리오 현황 ===`,
@@ -46,6 +84,7 @@ export async function buildPortfolioDecisionPromptParts(symbolDecisions, portfol
     regimeSection,
     regimeSection ? `` : '',
     exitSection,
+    ...(lifecyclePromptBlock ? [lifecyclePromptBlock, ``] : []),
     `=== 분석가 신호 (${symbols.join(', ')}) ===`,
     signalLines,
     ``,
@@ -61,4 +100,5 @@ export async function buildPortfolioDecisionPromptParts(symbolDecisions, portfol
 
 export default {
   buildPortfolioDecisionPromptParts,
+  buildLunaLifecyclePromptBlock,
 };

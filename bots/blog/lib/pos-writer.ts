@@ -24,12 +24,32 @@ const { isAgentIntroLecture } = require(path.join(env.PROJECT_ROOT, 'bots/blog/l
 const { buildBlogFormatInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-format-rules.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
 const { resolveBlogWriterModel, writerModelCacheSuffix } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
+const { buildLifecyclePromptContext } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/agent-lifecycle.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
+
+function joinLifecycleTopic(parts = []) {
+  return parts.map((item) => String(item || '').trim()).filter(Boolean).join(' | ');
+}
+
+async function buildBlogLifecyclePromptBlock({ topic = '', category = '', stage = 'writer' } = {}) {
+  try {
+    const context = await buildLifecyclePromptContext({
+      team: 'blog',
+      agent: 'pos',
+      topic,
+      enabled: process.env.BLOG_LIFECYCLE_INJECT_ENABLED === 'true',
+      telemetry: { stage, category },
+    });
+    return context.promptBlock || '';
+  } catch {
+    return '';
+  }
+}
 
 function isHubWriterTimeout(error) {
   const message = String(error?.message || error || '');
@@ -495,6 +515,11 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category: researchData?.category || 'lecture' }).catch(() => '');
+  const lifecyclePromptBlock = await buildBlogLifecyclePromptBlock({
+    category: researchData?.category || 'lecture',
+    stage: 'pos_writer_direct',
+    topic: joinLifecycleTopic([researchData?.category || 'lecture', lectureTitle, experimentWinnerSummary, experimentWeakLaneSummary]),
+  });
 
   const weatherContext = weatherToContext(weather);
   const seriesGuidance = _buildLectureSeriesGuidance(researchData, lectureTitle);
@@ -576,6 +601,7 @@ ${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\
 ${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
 ${masterStyleHint ? `[마스터 스타일 가이드]\n${masterStyleHint}\n` : ''}
 ${writingLearningsBlock ? `${writingLearningsBlock}\n` : ''}
+${lifecyclePromptBlock ? `${lifecyclePromptBlock}\n` : ''}
 ${charInstruction}
 이전 강의 (${lectureNumber - 1}강) 내용을 자연스럽게 연결하고,
 다음 강의 (${lectureNumber + 1}강) 내용을 마무리에서 예고하라.
@@ -821,6 +847,11 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category: researchData?.category || 'lecture' }).catch(() => '');
+  const lifecyclePromptBlock = await buildBlogLifecyclePromptBlock({
+    category: researchData?.category || 'lecture',
+    stage: 'pos_writer_chunked',
+    topic: joinLifecycleTopic([researchData?.category || 'lecture', lectureTitle, experimentWinnerSummary, experimentWeakLaneSummary]),
+  });
 
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
@@ -870,6 +901,7 @@ ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}
 ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
+${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   [핵심 요약 3줄] — 150자 내외 AI 스니펫용
@@ -904,6 +936,7 @@ ${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
+${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
@@ -933,6 +966,7 @@ ${beginnerLectureRules ? `${beginnerLectureRules}\n` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
+${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━
@@ -964,6 +998,7 @@ ${linkingBlock ? `[관련 과거 포스팅]\n${linkingBlock}` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
+${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   ━━━━━━━━━━━━━━━━━━━━━

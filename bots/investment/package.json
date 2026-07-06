@@ -238,6 +238,7 @@
     "runtime:luna-hybrid-final-closure": "node scripts/runtime-luna-hybrid-final-closure.ts --json",
     "smoke:luna-hybrid-final-closure": "node scripts/luna-hybrid-final-closure-smoke.ts --json",
     "smoke:luna-hybrid-final-closure-a2a": "node scripts/luna-hybrid-final-closure-a2a-smoke.ts --json",
+    "smoke:luna-portfolio-prompt-parts": "node scripts/luna-portfolio-prompt-parts-smoke.ts --json",
     "runtime:luna-fx-refresh": "node scripts/luna-fx-refresh.ts --json",
     "smoke:luna-trades-usd-normalization": "node scripts/luna-trades-usd-normalization-smoke.ts --json",
     "check:luna-trades-usd-normalization": "node --check scripts/luna-fx-refresh.ts && node --check scripts/luna-daily-pnl-report.ts && node --check scripts/luna-trades-usd-normalization-smoke.ts && plutil -lint launchd/ai.luna.fx-refresh.plist launchd/ai.luna.daily-pnl-report.plist && node scripts/luna-trades-usd-normalization-smoke.ts --json",

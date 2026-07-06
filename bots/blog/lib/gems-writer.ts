@@ -29,12 +29,32 @@ const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/li
 const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
 const { resolveBlogWriterModel, writerModelCacheSuffix } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
+const { buildLifecyclePromptContext } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/agent-lifecycle.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
 const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs || 90000);
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
+
+function joinLifecycleTopic(parts = []) {
+  return parts.map((item) => String(item || '').trim()).filter(Boolean).join(' | ');
+}
+
+async function buildBlogLifecyclePromptBlock({ agent = 'gems', topic = '', category = '', stage = 'writer' } = {}) {
+  try {
+    const context = await buildLifecyclePromptContext({
+      team: 'blog',
+      agent,
+      topic,
+      enabled: process.env.BLOG_LIFECYCLE_INJECT_ENABLED === 'true',
+      telemetry: { stage, category },
+    });
+    return context.promptBlock || '';
+  } catch {
+    return '';
+  }
+}
 
 async function callGemsWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS, writerModel = resolveBlogWriterModel() }) {
   const selectorOverrides = getBlogLLMSelectorOverrides();
@@ -1362,6 +1382,12 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const marketingCtaHint = String(researchData.topic_marketing_cta_hint || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category }).catch(() => '');
+  const lifecyclePromptBlock = await buildBlogLifecyclePromptBlock({
+    agent: 'gems',
+    category,
+    stage: 'gems_writer_direct',
+    topic: joinLifecycleTopic([category, topicTitleCandidate, topicHint, topicQuestion, strategyFocus]),
+  });
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('gems', bonusInsights);
@@ -1441,6 +1467,7 @@ ${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\
 ${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
 ${masterStyleHint ? `[마스터 스타일 가이드]\n${masterStyleHint}\n` : ''}
 ${writingLearningsBlock ? `${writingLearningsBlock}\n` : ''}
+${lifecyclePromptBlock ? `${lifecyclePromptBlock}\n` : ''}
 ${marketingSignalSummary ? `[매출/시즌 신호]\n${marketingSignalSummary}\n` : ''}
 ${marketingRecommendations ? `[마케팅 반영 지시]\n${marketingRecommendations}\n` : ''}
 ${marketingCtaHint ? `[전환 CTA 힌트]\n${marketingCtaHint}\n` : ''}
@@ -1776,6 +1803,12 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
   const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const writingLearningsBlock = await buildWritingLearningsPromptBlock({ category }).catch(() => '');
+  const lifecyclePromptBlock = await buildBlogLifecyclePromptBlock({
+    agent: 'gems',
+    category,
+    stage: 'gems_writer_chunked',
+    topic: joinLifecycleTopic([category, topicTitleCandidate, topicHint, topicQuestion, strategyFocus]),
+  });
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const generalFormatInstruction = buildBlogFormatInstruction('general');
 
@@ -1836,7 +1869,8 @@ ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
 ${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}
-${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}`.trim();
+${writingLearningsBlock ? `\n${writingLearningsBlock}` : ''}
+${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}`.trim();
 
   const chunks = [
     {

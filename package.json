@@ -29,6 +29,7 @@
     "check:llm-stage-a": "npm --prefix bots/hub run -s check:llm-stage-a",
     "smoke:cycle-trace": "tsx scripts/cycle-trace-smoke.ts",
     "smoke:common-weight-learning": "tsx scripts/common-weight-learning-smoke.ts",
+    "smoke:agent-lifecycle": "tsx scripts/agent-lifecycle-smoke.ts",
     "deploy-drift-guard": "tsx scripts/deploy-drift-guard.ts --json",
     "smoke:deploy-drift-guard": "tsx scripts/deploy-drift-guard-smoke.ts",
     "smoke:harness-principles-audit": "tsx scripts/harness-principles-audit.ts --smoke",

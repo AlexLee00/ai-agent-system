@@ -80,6 +80,7 @@
     "smoke:blog-remodel-bls3": "../../node_modules/.bin/tsx scripts/blog-remodel-bls3-smoke.ts",
     "smoke:blog-remodel-bls3b": "../../node_modules/.bin/tsx scripts/blog-remodel-bls3b-smoke.ts",
     "smoke:blog-remodel-bls4-bls6": "../../node_modules/.bin/tsx scripts/blog-remodel-bls4-bls6-smoke.ts",
+    "smoke:blog-agent-lifecycle": "../../node_modules/.bin/tsx scripts/blog-agent-lifecycle-smoke.ts",
     "runtime:crank-diagnoser": "../../node_modules/.bin/tsx scripts/run-crank-diagnoser.ts",
     "runtime:book-review-collector": "../../node_modules/.bin/tsx scripts/run-book-review-collector.ts",
     "runtime:cleanup-book-review-queue": "../../node_modules/.bin/tsx scripts/cleanup-book-review-queue.ts",

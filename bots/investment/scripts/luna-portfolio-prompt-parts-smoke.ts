@@ -35,6 +35,10 @@ const parts = await buildPortfolioDecisionPromptParts([
 }, {
   maxPosCount: 7,
   buildPortfolioPrompt: (symbols, exchange, exitSummary) => `system:${exchange}:${symbols.join('|')}:${exitSummary?.closedCount || 0}`,
+  lifecycleBuilder: async (input) => {
+    assert.equal(input.enabled, false);
+    return { promptBlock: '', block: '<!-- AGENT_LIFECYCLE:BEGIN -->shadow<!-- AGENT_LIFECYCLE:END -->' };
+  },
 });
 
 assert.deepEqual(parts.symbols, ['BTC/USDT', 'ETH/USDT']);
@@ -44,12 +48,43 @@ assert.equal(parts.userMsg.includes('BTC/USDT: BUY | 확신도 72% | 전략 brea
 assert.equal(parts.userMsg.includes('방금 1개 포지션을 청산했습니다.'), true);
 assert.equal(parts.userMsg.includes('- SOL/USDT: take profit | 회수 $12.50'), true);
 assert.equal(parts.userMsg.includes('최종 포트폴리오 투자 결정:'), true);
+assert.equal(parts.userMsg.includes('AGENT_LIFECYCLE:BEGIN'), false);
+
+const oldLifecycleEnv = process.env.LUNA_LIFECYCLE_INJECT_ENABLED;
+process.env.LUNA_LIFECYCLE_INJECT_ENABLED = 'true';
+const injected = await buildPortfolioDecisionPromptParts([
+  {
+    symbol: 'BTC/USDT',
+    action: ACTIONS.BUY,
+    confidence: 0.72,
+    reasoning: 'breakout',
+  },
+], {
+  usdtFree: 123.45,
+  totalAsset: 456.78,
+  positionCount: 2,
+  todayPnl: { pnl: -1.23 },
+}, 'binance', null, {
+  buildPortfolioPrompt: (symbols, exchange) => `system:${exchange}:${symbols.join('|')}`,
+  lifecycleBuilder: async (input) => {
+    assert.equal(input.enabled, true);
+    assert.equal(input.team, 'investment');
+    assert.equal(input.agent, 'luna');
+    return { promptBlock: '<!-- AGENT_LIFECYCLE:BEGIN -->\n[BOOT]\n루나\n<!-- AGENT_LIFECYCLE:END -->' };
+  },
+});
+if (oldLifecycleEnv == null) delete process.env.LUNA_LIFECYCLE_INJECT_ENABLED;
+else process.env.LUNA_LIFECYCLE_INJECT_ENABLED = oldLifecycleEnv;
+
+assert.equal((injected.userMsg.match(/AGENT_LIFECYCLE:BEGIN/g) || []).length, 1);
 
 const payload = {
   ok: true,
   smoke: 'luna-portfolio-prompt-parts',
   symbols: parts.symbols,
   userMsgLength: parts.userMsg.length,
+  lifecycleOffMarker: parts.userMsg.includes('AGENT_LIFECYCLE:BEGIN'),
+  lifecycleOnMarkerCount: (injected.userMsg.match(/AGENT_LIFECYCLE:BEGIN/g) || []).length,
 };
 
 if (process.argv.includes('--json')) {
