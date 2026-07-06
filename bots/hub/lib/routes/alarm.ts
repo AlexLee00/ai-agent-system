@@ -12,6 +12,11 @@ const { runRoundtable, shouldTriggerRoundtable } = require('../alarm/alarm-round
 const { ensureAlarmAutoDevDocument } = require('../alarm/auto-dev-incident');
 const { buildAlarmClusterKey } = require('../alarm/cluster');
 const {
+  buildAlarmLifecycleFingerprint,
+  isAlarmLifecycleEnabled,
+  repeatIntervalMinutes,
+} = require('../alarm/lifecycle');
+const {
   formatAlarmNotification,
   formatAutoRepairResultMessage,
   resolveAlarmDeliveryTeam,
@@ -627,6 +632,29 @@ async function findRecentClusterDuplicate({
   }
 }
 
+async function findRecentLifecycleDuplicate({
+  fingerprint,
+  minutes,
+}: {
+  fingerprint: string;
+  minutes: number;
+}) {
+  try {
+    if (!fingerprint) return null;
+    return await alarmDb.get('agent', `
+      SELECT id, received_at AS created_at, metadata
+      FROM agent.hub_alarms
+      WHERE received_at >= NOW() - ($1::int * INTERVAL '1 minute')
+        AND fingerprint = $2
+        AND COALESCE(status, 'new') NOT IN ('resolved', 'suppressed')
+      ORDER BY received_at DESC
+      LIMIT 1
+    `, [Math.max(1, Number(minutes || 0) || 1), fingerprint]);
+  } catch {
+    return null;
+  }
+}
+
 async function _insertLunaBlogRequest(regime: string, mood: string, keywordHints: string, eventId: number | null): Promise<void> {
   const urgency = regime === 'crisis' ? 9 : regime === 'volatile' ? 7 : 5;
   await alarmDb.run('blog', `
@@ -708,7 +736,7 @@ export async function alarmRoute(req: any, res: any) {
     if (explicitHumanEscalation && alarmType !== 'critical') {
       alarmType = 'critical';
     }
-    const cooldownMinutes = Math.max(
+    let cooldownMinutes = Math.max(
       1,
       Number(req.body?.dedupeMinutes ?? req.body?.cooldownMinutes ?? 5) || 5,
     );
@@ -747,6 +775,20 @@ export async function alarmRoute(req: any, res: any) {
     const clusterKey = alarmType === 'error'
       ? buildAlarmClusterKey({ team, fromBot, eventType, title, message, payload })
       : '';
+    const lifecycleEnabled = isAlarmLifecycleEnabled();
+    const lifecycleFingerprint = lifecycleEnabled
+      ? buildAlarmLifecycleFingerprint({
+          team,
+          alarmType,
+          incidentKey,
+          clusterKey,
+          eventType,
+          title,
+          message,
+        })
+      : null;
+    const mirrorFingerprint = lifecycleFingerprint?.fingerprint || clusterKey || incidentKey;
+    if (lifecycleEnabled) cooldownMinutes = repeatIntervalMinutes();
     const suppressionRule = !explicitHumanEscalation
       ? findMatchingAlarmSuppressionRule({
           team,
@@ -786,14 +828,22 @@ export async function alarmRoute(req: any, res: any) {
           minutes: cooldownMinutes,
         })
       : null;
+    const duplicateByLifecycle = lifecycleFingerprint?.fingerprint
+      ? await findRecentLifecycleDuplicate({
+          fingerprint: lifecycleFingerprint.fingerprint,
+          minutes: cooldownMinutes,
+        })
+      : null;
 
-    if (duplicate || duplicateByIncident || duplicateByCluster) {
+    if (duplicate || duplicateByIncident || duplicateByCluster || duplicateByLifecycle) {
       return res.json({
         ok: true,
         deduped: true,
-        event_id: duplicate?.id || duplicateByIncident?.id || duplicateByCluster?.id || null,
+        event_id: duplicate?.id || duplicateByIncident?.id || duplicateByCluster?.id || duplicateByLifecycle?.id || null,
         incident_key: incidentKey,
         cluster_key: clusterKey || null,
+        lifecycle_fingerprint: lifecycleFingerprint?.fingerprint || null,
+        lifecycle_labels: lifecycleFingerprint?.labels || null,
         alarm_type: alarmType,
         visibility,
         actionability,
@@ -862,7 +912,7 @@ export async function alarmRoute(req: any, res: any) {
       alarmType,
       title,
       message,
-      fingerprint: clusterKey || incidentKey,
+      fingerprint: mirrorFingerprint,
       visibility,
       actionability,
       status,
@@ -874,6 +924,8 @@ export async function alarmRoute(req: any, res: any) {
         trace_id: traceId || null,
         cycle_id: cycleId || null,
         cluster_key: clusterKey || null,
+        lifecycle_fingerprint: lifecycleFingerprint?.fingerprint || null,
+        lifecycle_labels: lifecycleFingerprint?.labels || null,
         dispatch_mode: dispatchMode,
         classification_source: classificationSource,
         classification_confidence: finalClassificationConfidence,

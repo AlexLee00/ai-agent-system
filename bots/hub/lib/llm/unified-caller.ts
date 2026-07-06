@@ -305,7 +305,8 @@ function _applySelectorAvoidProviders(req: LlmRequest, selectorChain: AnyRecord)
 async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord, team: string): Promise<LlmResponse> {
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(selectorChain.chain || [], tokenBudget);
-  const cooldownPlan = _rateLimitCooldownPlan(budgetedChain, req.abstractModel);
+  const resiliencePlan = _buildResilienceFallbackPlan(budgetedChain, selectorChain, req);
+  const cooldownPlan = _rateLimitCooldownPlan(resiliencePlan.chain, req.abstractModel);
   const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
   const attempts: AnyRecord[] = [];
 
@@ -331,7 +332,11 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
         tokenBudgetStatus: 'allowed',
         avoidedProviders: selectorChain.avoidedProviders || [],
         fallbackCount: attempts.length,
+        fallbackUsed: attempts.length > 0,
         attempted_providers: attempts.map((a: AnyRecord) => a.provider),
+        fallbackChain: resiliencePlan.routes,
+        resilienceMode: resiliencePlan.mode,
+        routingSource: selectorChain.routingSource || selectorChain.source || null,
       };
       await _recordBudgetUsage(req, success, 'success');
       return success;
@@ -356,11 +361,15 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
     attempted_providers: attempts.map((a: AnyRecord) => a.provider),
     avoidedProviders: selectorChain.avoidedProviders || [],
     fallbackCount: attempts.length,
+    fallbackUsed: attempts.length > 0,
     selectorKey: selectorChain.selectorKey,
     runtimeProfile: selectorChain.runtimeProfile || null,
     runtimePurpose: selectorChain.runtimePurpose || null,
     routeTargetKind: selectorChain.routeTargetKind || selectorChain.target?.kind || null,
     providerTiers: selectorChain.providerTiers || [],
+    fallbackChain: resiliencePlan.routes,
+    resilienceMode: resiliencePlan.mode,
+    routingSource: selectorChain.routingSource || selectorChain.source || null,
     estimatedCostUsd: req._estimatedCostUsd || null,
     budgetGuardStatus: req._budgetGuardStatus || null,
     tokenBudget,
@@ -440,6 +449,65 @@ async function _callLegacy(req: LlmRequest, _team: string): Promise<LlmResponse>
   console.warn(`[llm/unified] Primary 실패: ${primary.error} → Groq 폴백 (${groqModel})`);
   const fallback = await callGroqFallback({ prompt: req.prompt, model: groqModel, systemPrompt: req.systemPrompt });
   return { ...fallback, provider: fallback.ok ? 'groq' : 'failed', primaryError: primary.error, fallbackCount: 1, cacheHit: false };
+}
+
+function _hubResilienceEnabled(): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_RESILIENCE_ENABLED || '').trim().toLowerCase());
+}
+
+function _routeSortCost(entry: unknown, abstractModel?: unknown): number {
+  const route = _normalizeRoute(_chainEntryToRoute(entry as RouteEntry), abstractModel);
+  const provider = _routeToProvider(route);
+  const maxTokens = Number((entry as RouteEntry)?.maxTokens || 0);
+  const providerWeight: Record<string, number> = {
+    'groq': 10,
+    'openai-oauth': 20,
+    'gemini-cli-oauth': 30,
+    'gemini-oauth': 30,
+    'gemini-codeassist-oauth': 30,
+    'local': 90,
+    'local-embedding': 95,
+    'claude-code-oauth': 100,
+  };
+  return (providerWeight[provider] ?? 80) * 1_000_000 + maxTokens;
+}
+
+function _buildResilienceFallbackPlan(chain: unknown[], selectorChain: AnyRecord, req: LlmRequest): AnyRecord {
+  const original = Array.isArray(chain) ? chain : [];
+  const routes = original.map((entry) => _normalizeRoute(_chainEntryToRoute(entry as RouteEntry), req.abstractModel));
+  if (!_hubResilienceEnabled() || original.length <= 1) {
+    return {
+      mode: _hubResilienceEnabled() ? 'enabled_no_reorder' : 'off',
+      chain: original,
+      routes,
+    };
+  }
+
+  const first = original[0];
+  const firstProvider = _routeToProvider(_normalizeRoute(_chainEntryToRoute(first as RouteEntry), req.abstractModel));
+  const rest = original.slice(1);
+  const sameProvider = rest
+    .filter((entry) => _routeToProvider(_normalizeRoute(_chainEntryToRoute(entry as RouteEntry), req.abstractModel)) === firstProvider)
+    .sort((a, b) => _routeSortCost(a, req.abstractModel) - _routeSortCost(b, req.abstractModel));
+  const otherProvider = rest
+    .filter((entry) => {
+      const provider = _routeToProvider(_normalizeRoute(_chainEntryToRoute(entry as RouteEntry), req.abstractModel));
+      return provider !== firstProvider && provider !== 'local' && provider !== 'local-embedding';
+    })
+    .sort((a, b) => _routeSortCost(a, req.abstractModel) - _routeSortCost(b, req.abstractModel));
+  const localTerminal = rest
+    .filter((entry) => {
+      const provider = _routeToProvider(_normalizeRoute(_chainEntryToRoute(entry as RouteEntry), req.abstractModel));
+      return provider === 'local' || provider === 'local-embedding';
+    })
+    .sort((a, b) => _routeSortCost(a, req.abstractModel) - _routeSortCost(b, req.abstractModel));
+  const planned = [first, ...sameProvider, ...otherProvider, ...localTerminal];
+  return {
+    mode: 'enabled',
+    chain: planned,
+    routes: planned.map((entry) => _normalizeRoute(_chainEntryToRoute(entry as RouteEntry), req.abstractModel)),
+    selectorKey: selectorChain?.selectorKey || null,
+  };
 }
 
 async function _callRoute(route: unknown, req: LlmRequest, timeoutMs: unknown, chainEntry: RouteEntry = {}): Promise<LlmResponse> {
@@ -1139,11 +1207,13 @@ function _safeFallbackForSelectorExhaustion(req: LlmRequest, selectorChain: AnyR
     attempted_providers: attempts.map((attempt: AnyRecord) => attempt.provider),
     avoidedProviders: selectorChain?.avoidedProviders || [],
     fallbackCount: attempts.length,
+    fallbackUsed: attempts.length > 0,
     selectorKey: selectorChain?.selectorKey || req?.selectorKey || null,
     runtimeProfile: selectorChain?.runtimeProfile || null,
     runtimePurpose: selectorChain?.runtimePurpose || null,
     routeTargetKind: selectorChain?.routeTargetKind || selectorChain?.target?.kind || null,
     providerTiers: selectorChain?.providerTiers || [],
+    routingSource: selectorChain?.routingSource || selectorChain?.source || null,
     estimatedCostUsd: req?._estimatedCostUsd || null,
     budgetGuardStatus: req?._budgetGuardStatus || null,
   };
@@ -1180,6 +1250,8 @@ module.exports = {
     _openAiOAuthRetryDelayMs,
     _shouldSuppressFallbackExhaustionAlarm,
     _safeFallbackForSelectorExhaustion,
+    _hubResilienceEnabled,
+    _buildResilienceFallbackPlan,
     _isProviderRateLimitError,
     _shouldRecordProviderCircuitFailure,
     _rateLimitCooldownPlan,

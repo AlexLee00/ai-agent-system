@@ -24,6 +24,7 @@
     "luna:vault-feed": "tsx scripts/runtime-sigma-luna-vault-feed.ts --json",
     "docs:vault-feed": "tsx scripts/runtime-sigma-docs-vault-feed.ts --json",
     "team:vault-feed": "tsx scripts/runtime-sigma-team-vault-feed.ts --json",
+    "hub:llm-feed": "tsx scripts/runtime-sigma-hub-llm-feed.ts --json",
     "blog:vault-feed": "tsx scripts/runtime-sigma-blog-vault-feed.ts --json",
     "smoke:blog-vault-feed": "tsx scripts/sigma-blog-vault-feed-smoke.ts",
     "smoke:feed-expand": "tsx scripts/sigma-feed-expand-smoke.ts",

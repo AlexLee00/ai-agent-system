@@ -1,8 +1,10 @@
 // Circuit breaker for local Ollama/MLX LLM endpoints
 // States: CLOSED (normal) → OPEN (skip) → HALF_OPEN (one test) → CLOSED
 
-const FAILURE_THRESHOLD = 3;
-const OPEN_DURATION_MS = 30_000;
+const DEFAULT_FAILURE_THRESHOLD = 3;
+const DEFAULT_OPEN_DURATION_MS = 30_000;
+const HUB_RESILIENCE_FAILURE_THRESHOLD = 5;
+const HUB_RESILIENCE_OPEN_DURATION_MS = 60_000;
 
 type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
 
@@ -14,6 +16,27 @@ interface Circuit {
 }
 
 const circuits = new Map<string, Circuit>();
+
+function truthyEnv(name: string): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function configuredPositiveInt(name: string): number | null {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null;
+}
+
+function failureThreshold(): number {
+  return configuredPositiveInt('HUB_PROVIDER_CIRCUIT_FAILURE_THRESHOLD')
+    || configuredPositiveInt('HUB_RESILIENCE_CIRCUIT_FAILURE_THRESHOLD')
+    || (truthyEnv('HUB_RESILIENCE_ENABLED') ? HUB_RESILIENCE_FAILURE_THRESHOLD : DEFAULT_FAILURE_THRESHOLD);
+}
+
+function openDurationMs(): number {
+  return configuredPositiveInt('HUB_PROVIDER_CIRCUIT_OPEN_MS')
+    || configuredPositiveInt('HUB_RESILIENCE_CIRCUIT_OPEN_MS')
+    || (truthyEnv('HUB_RESILIENCE_ENABLED') ? HUB_RESILIENCE_OPEN_DURATION_MS : DEFAULT_OPEN_DURATION_MS);
+}
 
 function _get(baseUrl: string): Circuit {
   if (!circuits.has(baseUrl)) {
@@ -33,7 +56,7 @@ export function isCircuitOpen(baseUrl: string): boolean {
   if (c.state === 'CLOSED') return false;
 
   if (c.state === 'OPEN') {
-    if (Date.now() - c.lastOpenAt > OPEN_DURATION_MS) {
+    if (Date.now() - c.lastOpenAt > openDurationMs()) {
       c.state = 'HALF_OPEN';
       console.log(`[local-circuit] ${key}: OPEN → HALF_OPEN (testing)`);
       return false;
@@ -68,7 +91,7 @@ export function recordFailure(baseUrl: string): void {
     return;
   }
 
-  if (c.state === 'CLOSED' && c.failures >= FAILURE_THRESHOLD) {
+  if (c.state === 'CLOSED' && c.failures >= failureThreshold()) {
     c.state = 'OPEN';
     c.lastOpenAt = Date.now();
     console.warn(`[local-circuit] ${key}: CLOSED → OPEN (${c.failures} consecutive failures)`);
@@ -84,8 +107,9 @@ export function getCircuitStatus(baseUrl: string): {
   const key = _normalizeUrl(baseUrl);
   const c = _get(key);
   const openSinceMs = c.state !== 'CLOSED' ? Date.now() - c.lastOpenAt : undefined;
+  const durationMs = openDurationMs();
   const remainingMs =
-    c.state === 'OPEN' ? Math.max(0, OPEN_DURATION_MS - (Date.now() - c.lastOpenAt)) : undefined;
+    c.state === 'OPEN' ? Math.max(0, durationMs - (Date.now() - c.lastOpenAt)) : undefined;
   return { state: c.state, failures: c.failures, openSinceMs, remainingMs };
 }
 

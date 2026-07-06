@@ -24,6 +24,7 @@ const {
   resetProviderCooldown,
 } = require('../../../../packages/core/lib/llm-fallback');
 const { getProviderStats, resetProviderCircuit, resetAllProviderCircuits } = require('../llm/provider-registry');
+const { recordHubTelemetry } = require('../telemetry');
 
 type AnyRecord = Record<string, any>;
 type RouteReq = AnyRecord;
@@ -32,6 +33,8 @@ type RouteRes = AnyRecord;
 let routingLogAuditColumnsPromise: Promise<boolean> | null = null;
 let routingLogTraceColumnsPromise: Promise<boolean> | null = null;
 let routingLogTraceColumnsCheckedAt = 0;
+let routingLogStandardColumnsPromise: Promise<boolean> | null = null;
+let routingLogStandardColumnsCheckedAt = 0;
 
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
 export async function llmCallRoute(req: RouteReq, res: RouteRes) {
@@ -47,11 +50,29 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
   const body = parsed.data;
   const normalizedRequest = normalizeLlmCallRequest(body, context);
   if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
+  recordHubTelemetry('llm_call_start', {
+    traceId: context.traceId || normalizedRequest.traceId || null,
+    callerTeam: normalizedRequest.callerTeam || null,
+    agent: normalizedRequest.agent || null,
+    selectorKey: normalizedRequest.selectorKey || null,
+    runtimePurpose: normalizedRequest.runtimePurpose || normalizedRequest.taskType || null,
+  });
   const autoRouting = applyAutoRoutingShadowWiring(normalizedRequest);
   const llmRequest = autoRouting.request;
 
   try {
     const resp = await callWithFallback(llmRequest);
+    recordHubTelemetry('llm_call_end', {
+      traceId: context.traceId || llmRequest.traceId || null,
+      callerTeam: llmRequest.callerTeam || null,
+      agent: llmRequest.agent || null,
+      ok: resp.ok === true,
+      provider: resp.provider || null,
+      selectedRoute: resp.selected_route || null,
+      fallbackCount: resp.fallbackCount || 0,
+      fallbackUsed: Boolean(resp.fallbackUsed ?? Number(resp.fallbackCount || 0) > 0),
+      durationMs: resp.durationMs || 0,
+    });
 
     logRouting(resp, llmRequest).catch((err: any) =>
       console.error('[llm] routing log 기록 실패:', err.message)
@@ -86,6 +107,12 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
       traceId: context.traceId || null,
       ...(providerBackpressure ? { providerBackpressure } : {}),
     };
+    recordHubTelemetry('llm_call_error', {
+      traceId: context.traceId || llmRequest.traceId || null,
+      callerTeam: llmRequest.callerTeam || null,
+      agent: llmRequest.agent || null,
+      error: err.message,
+    });
     recordAutoRoutingResult(autoRouting, failureResp).catch((updateErr: any) =>
       console.error('[llm] auto-routing failure update 실패:', updateErr.message)
     );
@@ -1195,133 +1222,61 @@ async function logRouting(resp: AnyRecord, body: AnyRecord): Promise<void> {
   const audit = buildRoutingLogAudit(body);
   const includeAudit = await ensureRoutingLogAuditColumns();
   const includeTrace = await routingLogTraceColumnsExist().catch(() => false);
+  const includeStandard = await routingLogStandardColumnsExist().catch(() => false);
   try {
-    await insertRoutingLog(resp, body, audit, includeAudit, includeTrace);
+    await insertRoutingLog(resp, body, audit, { includeAudit, includeTrace, includeStandard });
   } catch (err: any) {
-    if ((includeAudit && isRoutingLogAuditColumnError(err)) || (includeTrace && isRoutingLogTraceColumnError(err))) {
+    if (
+      (includeAudit && isRoutingLogAuditColumnError(err))
+      || (includeTrace && isRoutingLogTraceColumnError(err))
+      || (includeStandard && isRoutingLogStandardColumnError(err))
+    ) {
       routingLogAuditColumnsPromise = null;
       routingLogTraceColumnsPromise = null;
-      await insertRoutingLog(resp, body, audit, false, false);
+      routingLogStandardColumnsPromise = null;
+      await insertRoutingLog(resp, body, audit, { includeAudit: false, includeTrace: false, includeStandard: false });
       return;
     }
     throw err;
   }
 }
 
-async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyRecord, includeAudit: boolean, includeTrace: boolean): Promise<void> {
+async function insertRoutingLog(
+  resp: AnyRecord,
+  body: AnyRecord,
+  audit: AnyRecord,
+  flags: { includeAudit: boolean; includeTrace: boolean; includeStandard: boolean },
+): Promise<void> {
   const providerForLog = resp?.dedupeHit ? 'dedupe' : resp.provider;
   const traceId = body.traceId ?? body.trace_id ?? resp.traceId ?? resp.trace_id ?? null;
   const cycleId = body.cycleId ?? body.cycle_id ?? resp.cycleId ?? resp.cycle_id ?? null;
-  if (includeAudit) {
-    if (includeTrace) {
-      await pgPool.run('public', `
-        INSERT INTO llm_routing_log (
-          created_at, provider, agent, caller_team, abstract_model,
-          success, duration_ms, cost_usd, fallback_count, error, session_id,
-          prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars,
-          selector_key, selected_route, runtime_profile, attempted_providers, avoided_providers,
-          request_id, route_target_kind, runtime_purpose, estimated_cost_usd, budget_guard_status, provider_tier,
-          trace_id, cycle_id
-        ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20, $21, $22, $23, $24, $25, $26, $27)
-      `, [
-        providerForLog,
-        body.agent ?? null,
-        body.callerTeam ?? null,
-        body.abstractModel,
-        resp.ok,
-        resp.durationMs,
-        resp.totalCostUsd ?? 0,
-        resp.fallbackCount ?? 0,
-        resp.error ?? null,
-        resp.sessionId ?? traceId ?? null,
-        audit.promptHash,
-        audit.systemPromptHash,
-        audit.requestFingerprint,
-        audit.promptChars,
-        resp.selectorKey ?? body.selectorKey ?? null,
-        resp.selected_route ?? null,
-        resp.runtimeProfile ?? null,
-        JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []),
-        JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []),
-        body.requestId ?? traceId ?? resp.sessionId ?? null,
-        resp.routeTargetKind ?? null,
-        resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null,
-        Number(resp.estimatedCostUsd ?? body.estimatedCostUsd ?? body.estimated_cost_usd ?? 0) || 0,
-        resp.budgetGuardStatus ?? null,
-        resolveProviderTierForLog(resp),
-        traceId,
-        cycleId,
-      ]);
-      return;
-    }
-    await pgPool.run('public', `
-      INSERT INTO llm_routing_log (
-        created_at, provider, agent, caller_team, abstract_model,
-        success, duration_ms, cost_usd, fallback_count, error, session_id,
-        prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars,
-        selector_key, selected_route, runtime_profile, attempted_providers, avoided_providers,
-        request_id, route_target_kind, runtime_purpose, estimated_cost_usd, budget_guard_status, provider_tier
-      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20, $21, $22, $23, $24, $25)
-    `, [
-      providerForLog,
-      body.agent ?? null,
-      body.callerTeam ?? null,
-      body.abstractModel,
-      resp.ok,
-      resp.durationMs,
-      resp.totalCostUsd ?? 0,
-      resp.fallbackCount ?? 0,
-      resp.error ?? null,
-      resp.sessionId ?? traceId ?? null,
-      audit.promptHash,
-      audit.systemPromptHash,
-      audit.requestFingerprint,
-      audit.promptChars,
-      resp.selectorKey ?? body.selectorKey ?? null,
-      resp.selected_route ?? null,
-      resp.runtimeProfile ?? null,
-      JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []),
-      JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []),
-      body.requestId ?? traceId ?? resp.sessionId ?? null,
-      resp.routeTargetKind ?? null,
-      resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null,
-      Number(resp.estimatedCostUsd ?? body.estimatedCostUsd ?? body.estimated_cost_usd ?? 0) || 0,
-      resp.budgetGuardStatus ?? null,
-      resolveProviderTierForLog(resp),
-    ]);
-    return;
-  }
-
-  if (includeTrace) {
-    await pgPool.run('public', `
-      INSERT INTO llm_routing_log (
-        created_at, provider, agent, caller_team, abstract_model,
-        success, duration_ms, cost_usd, fallback_count, error, session_id,
-        trace_id, cycle_id
-      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    `, [
-      providerForLog,
-      body.agent ?? null,
-      body.callerTeam ?? null,
-      body.abstractModel,
-      resp.ok,
-      resp.durationMs,
-      resp.totalCostUsd ?? 0,
-      resp.fallbackCount ?? 0,
-      resp.error ?? null,
-      resp.sessionId ?? traceId ?? null,
-      traceId,
-      cycleId,
-    ]);
-    return;
-  }
-
-  await pgPool.run('public', `
-    INSERT INTO llm_routing_log (
-      created_at, provider, agent, caller_team, abstract_model,
-      success, duration_ms, cost_usd, fallback_count, error, session_id
-    ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-  `, [
+  const columns = [
+    'created_at',
+    'provider',
+    'agent',
+    'caller_team',
+    'abstract_model',
+    'success',
+    'duration_ms',
+    'cost_usd',
+    'fallback_count',
+    'error',
+    'session_id',
+  ];
+  const values = [
+    'NOW()',
+    '$1',
+    '$2',
+    '$3',
+    '$4',
+    '$5',
+    '$6',
+    '$7',
+    '$8',
+    '$9',
+    '$10',
+  ];
+  const params: unknown[] = [
     providerForLog,
     body.agent ?? null,
     body.callerTeam ?? null,
@@ -1332,7 +1287,46 @@ async function insertRoutingLog(resp: AnyRecord, body: AnyRecord, audit: AnyReco
     resp.fallbackCount ?? 0,
     resp.error ?? null,
     resp.sessionId ?? traceId ?? null,
-  ]);
+  ];
+  const addValue = (column: string, value: unknown, cast = '') => {
+    params.push(value);
+    columns.push(column);
+    values.push(`$${params.length}${cast}`);
+  };
+
+  if (flags.includeAudit) {
+    addValue('prompt_hash', audit.promptHash);
+    addValue('system_prompt_hash', audit.systemPromptHash);
+    addValue('request_fingerprint', audit.requestFingerprint);
+    addValue('prompt_chars', audit.promptChars);
+    addValue('selector_key', resp.selectorKey ?? body.selectorKey ?? null);
+    addValue('selected_route', resp.selected_route ?? null);
+    addValue('runtime_profile', resp.runtimeProfile ?? null);
+    addValue('attempted_providers', JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []), '::jsonb');
+    addValue('avoided_providers', JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []), '::jsonb');
+    addValue('request_id', body.requestId ?? traceId ?? resp.sessionId ?? null);
+    addValue('route_target_kind', resp.routeTargetKind ?? null);
+    addValue('runtime_purpose', resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null);
+    addValue('estimated_cost_usd', Number(resp.estimatedCostUsd ?? body.estimatedCostUsd ?? body.estimated_cost_usd ?? 0) || 0);
+    addValue('budget_guard_status', resp.budgetGuardStatus ?? null);
+    addValue('provider_tier', resolveProviderTierForLog(resp));
+  }
+
+  if (flags.includeTrace) {
+    addValue('trace_id', traceId);
+    addValue('cycle_id', cycleId);
+  }
+
+  if (flags.includeStandard) {
+    addValue('routing_source', resolveRoutingSourceForLog(resp, body));
+    addValue('fallback_used', Boolean(resp.fallbackUsed ?? Number(resp.fallbackCount || 0) > 0));
+    addValue('latency_ms', Number(resp.latencyMs ?? resp.durationMs ?? 0) || 0);
+  }
+
+  await pgPool.run('public', `
+    INSERT INTO llm_routing_log (${columns.join(', ')})
+    VALUES (${values.join(', ')})
+  `, params);
 }
 
 function buildRoutingLogAudit(body: AnyRecord): AnyRecord {
@@ -1447,6 +1441,28 @@ function routingLogTraceColumnsExist(): Promise<boolean> {
   return routingLogTraceColumnsPromise;
 }
 
+function routingLogStandardColumnsExist(): Promise<boolean> {
+  const stale = Date.now() - routingLogStandardColumnsCheckedAt > 60_000;
+  if (!routingLogStandardColumnsPromise || stale) {
+    routingLogStandardColumnsPromise = (async () => {
+      const rows = await pgPool.query('public', `
+        SELECT COUNT(*)::int AS count
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'llm_routing_log'
+          AND column_name = ANY($1::text[])
+      `, [['routing_source', 'fallback_used', 'latency_ms']]);
+      routingLogStandardColumnsCheckedAt = Date.now();
+      return Number(rows?.[0]?.count || 0) === 3;
+    })().catch((err) => {
+      routingLogStandardColumnsCheckedAt = 0;
+      console.warn('[llm] routing log standard column check skipped:', err?.message || err);
+      return false;
+    });
+  }
+  return routingLogStandardColumnsPromise;
+}
+
 async function createRoutingLogAuditIndexes() {
   try {
     await pgPool.run('public', `
@@ -1528,6 +1544,15 @@ function resolveProviderTierForLog(resp: AnyRecord): string | null {
   return null;
 }
 
+function resolveRoutingSourceForLog(resp: AnyRecord, body: AnyRecord): string | null {
+  const source = String(resp?.routingSource || body?.routingSource || resp?.source || body?.source || '').trim();
+  if (source) return source;
+  if (resp?.selectorKey || body?.selectorKey) return 'selector';
+  if (resp?.runtimeProfile) return 'runtime_profile';
+  if (resp?.selected_route || resp?.selectedRoute) return 'oauth4';
+  return null;
+}
+
 function isRoutingLogAuditColumnError(err: unknown): boolean {
   const message = String((err as any)?.message || err || '').toLowerCase();
   return message.includes('prompt_hash')
@@ -1552,5 +1577,13 @@ function isRoutingLogTraceColumnError(err: unknown): boolean {
   const message = String((err as any)?.message || err || '').toLowerCase();
   return message.includes('trace_id')
     || message.includes('cycle_id')
+    || message.includes('column') && message.includes('does not exist');
+}
+
+function isRoutingLogStandardColumnError(err: unknown): boolean {
+  const message = String((err as any)?.message || err || '').toLowerCase();
+  return message.includes('routing_source')
+    || message.includes('fallback_used')
+    || message.includes('latency_ms')
     || message.includes('column') && message.includes('does not exist');
 }

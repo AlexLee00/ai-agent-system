@@ -6,7 +6,7 @@
 // that adds seed/runtime-purpose semantics and Hub-specific non-LLM guards.
 
 const coreSelector = require('../../../packages/core/lib/llm-model-selector');
-const { selectRuntimeProfile } = require('../lib/runtime-profiles');
+const { PROFILES, selectRuntimeProfile } = require('../lib/runtime-profiles');
 
 const NON_LLM_TARGETS = new Set([
   'blog.publ',
@@ -181,13 +181,31 @@ function requestRuntimePurpose(req = {}, fallback = null) {
 
 function resolveRuntimeProfile(req = {}, team) {
   const purpose = requestRuntimePurpose(req, 'default').toLowerCase() || 'default';
-  const profile = selectRuntimeProfile(team, purpose);
-  if (profile) return { profile, purpose };
-  if (purpose !== 'default') {
-    const fallback = selectRuntimeProfile(team, 'default');
-    if (fallback) return { profile: fallback, purpose: 'default' };
-  }
+  const normalizedTeam = normalizeToken(team);
+  const teamProfiles = PROFILES?.[normalizedTeam] || {};
+  if (teamProfiles[purpose]) return { profile: teamProfiles[purpose], purpose };
+  if (purpose === 'default') return { profile: selectRuntimeProfile(team, 'default'), purpose };
+  const fallback = teamProfiles.default || selectRuntimeProfile(team, 'default');
+  if (fallback) return { profile: fallback, purpose: 'default' };
   return { profile: null, purpose };
+}
+
+function selectHubDefaultFallback(req = {}, team, targetPolicy, shadowDeps, reason = 'selector_chain_required_defaulted') {
+  const chain = selectChainWithShadow('hub._default', selectorOptionsFromRequest(req, {
+    team: 'hub',
+    callerTeam: team || 'hub',
+  }), shadowDeps);
+  return selectionResult({
+    selectorKey: 'hub._default',
+    runtimeProfile: 'hub.default',
+    runtimePurpose: 'default',
+    routeTargetKind: targetPolicy.target.kind,
+    target: targetPolicy.target,
+    source: 'hub_default',
+    routingSource: 'hub_default',
+    selectorFallbackReason: reason,
+    warning: reason,
+  }, chain);
 }
 
 function selectionResult(base, chain) {
@@ -454,27 +472,10 @@ function resolveHubLlmSelection(req = {}, options = {}) {
   }
 
   if (!req.selectorKey && !agent) {
-    const chain = selectChainWithShadow('hub._default', selectorOptionsFromRequest(req, {
-      team,
-      callerTeam: team,
-    }), shadowDeps);
-    return selectionResult({
-      selectorKey: 'hub._default',
-      runtimeProfile: 'hub.default',
-      runtimePurpose: 'default',
-      routeTargetKind: targetPolicy.target.kind,
-      target: targetPolicy.target,
-      source: 'hub_default',
-    }, chain);
+    return selectHubDefaultFallback(req, team, targetPolicy, shadowDeps, 'missing_selector_defaulted');
   }
 
-  return {
-    ok: false,
-    error: 'llm_selector_chain_required',
-    target: targetPolicy.target,
-    chain: [],
-    providerTiers: [],
-  };
+  return selectHubDefaultFallback(req, team, targetPolicy, shadowDeps);
 }
 
 function isHubLlmRouteTargetAllowed(input = {}) {
@@ -508,5 +509,6 @@ module.exports = {
   resolveHubLlmSelection,
   routeLabel,
   shadowCompareChain,
+  selectHubDefaultFallback,
   selectChainWithShadow,
 };
