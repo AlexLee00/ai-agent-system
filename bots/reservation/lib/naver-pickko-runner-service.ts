@@ -334,9 +334,11 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       if (bookingId) {
         const currentEntry = await getReservation(String(bookingId)).catch(() => null);
         const currentRetries = currentEntry?.retries || 0;
+        const retryableStatus = ['pending', 'failed', 'cancelled'].includes(String(currentEntry?.status || ''));
+        const terminalPickkoStatus = ['manual', 'manual_retry', 'manual_pending', 'verified', 'time_elapsed'].includes(currentEntry?.pickkoStatus);
         if (currentEntry && (
           currentEntry.status === 'completed'
-          || ['manual', 'manual_retry', 'manual_pending', 'verified', 'time_elapsed'].includes(currentEntry.pickkoStatus)
+          || (terminalPickkoStatus && !retryableStatus)
         )) {
           log(`✅ [건너뜀] 이미 수동/완료 처리됨: ${maskPhone(booking.phone)} ${booking.date} ${booking.start}`);
           await markSeen(String(bookingId)).catch(() => {});

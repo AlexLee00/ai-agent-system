@@ -38,6 +38,8 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
 
   const SOURCE_SCAN_DAYS_AHEAD = Number(process.env.KIOSK_SOURCE_SCAN_DAYS_AHEAD || 31);
   const PICKKO_RANGE_PAGE_LIMIT_THRESHOLD = Number(process.env.PICKKO_RANGE_PAGE_LIMIT_THRESHOLD || 20);
+  const PICKKO_RECEIPT_FAST_SCAN_ENABLED = process.env.KIOSK_PICKKO_RECEIPT_FAST_SCAN_ENABLED !== '0';
+  const PICKKO_PAID_DATE_FALLBACK_ENABLED = process.env.KIOSK_PICKKO_PAID_DATE_FALLBACK_ENABLED === '1';
 
   function addDaysKST(dateStr: string, days: number): string {
     const date = new Date(`${dateStr}T00:00:00+09:00`);
@@ -57,31 +59,84 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     return out;
   }
 
+  function normalizeSourceEntries(entries: Record<string, any>[]): Record<string, any>[] {
+    return entries
+      .flatMap((entry) => splitKioskEntryForNaverBlocks(entry))
+      .filter(isValidSourceEntry);
+  }
+
+  function isPaidEntry(entry: Record<string, any>): boolean {
+    return String(entry?.statusText || '').includes('결제완료');
+  }
+
+  async function fetchReceiptFastScanPaidEntries(page: any, today: string) {
+    if (!PICKKO_RECEIPT_FAST_SCAN_ENABLED) {
+      return { entries: [], fetchOk: true, skipped: true };
+    }
+
+    log(`\n[Pickko fast-scan] 접수일시 최신순 fast-scan: 접수일 ${today}, 상태=전체보기`);
+    let result: { entries: Record<string, any>[]; fetchOk?: boolean };
+    try {
+      result = await fetchPickkoEntries(page, today, {
+        sortBy: 'sd_regdate',
+        receiptDate: today,
+        statusKeyword: '',
+        minAmount: 0,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[Pickko fast-scan] 실패 — 기존 결제완료 날짜별 fallback으로 전환: ${message}`);
+      return { entries: [], fetchOk: false, skipped: false };
+    }
+    const entries = normalizeSourceEntries(result.entries)
+      .filter(isPaidEntry);
+
+    log(`[Pickko fast-scan] 당일 접수 결제완료 후보 ${entries.length}건 (fetchOk=${result.fetchOk ?? true})`);
+    for (const entry of entries) {
+      log(`  • ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | 접수 ${entry.receiptText || '-'}`);
+    }
+
+    return { entries, fetchOk: result.fetchOk ?? true, skipped: false };
+  }
+
   async function fetchSourceEntries({
     page,
     today,
     endDate,
     statusKeyword,
+    seedEntries = [],
+    useDateFallback = true,
   }: {
     page: any;
     today: string;
     endDate: string;
     statusKeyword: string;
+    seedEntries?: Record<string, any>[];
+    useDateFallback?: boolean;
   }) {
     const rangeResult = await fetchPickkoEntries(page, today, {
       endDate,
       statusKeyword,
       minAmount: 0,
     });
-    const rangeEntries = rangeResult.entries
-      .flatMap((entry) => splitKioskEntryForNaverBlocks(entry))
-      .filter(isValidSourceEntry);
+    const rangeEntries = normalizeSourceEntries(rangeResult.entries);
+    const combinedRangeEntries = dedupeEntries([...seedEntries, ...rangeEntries]);
 
     if (rangeEntries.length < PICKKO_RANGE_PAGE_LIMIT_THRESHOLD || endDate === today) {
-      return { entries: rangeEntries, fetchOk: rangeResult.fetchOk ?? true, usedDateFallback: false };
+      return { entries: combinedRangeEntries, fetchOk: rangeResult.fetchOk ?? true, usedDateFallback: false };
     }
 
     log(`[Pickko 조회] ${statusKeyword} 범위 조회 ${rangeEntries.length}건 — 페이지 한계 가능성으로 날짜 단위 재조회`);
+    if (!useDateFallback) {
+      log(`[Pickko 조회] ${statusKeyword} 날짜 단위 재조회 생략 — 접수일시 최신순 fast-scan 결과와 범위 첫 페이지를 우선 사용`);
+      return {
+        entries: combinedRangeEntries,
+        fetchOk: rangeResult.fetchOk ?? true,
+        usedDateFallback: false,
+        skippedDateFallback: true,
+      };
+    }
+
     const byDateEntries: Record<string, any>[] = [];
     let fetchOk = rangeResult.fetchOk ?? true;
     for (let offset = 0; offset <= SOURCE_SCAN_DAYS_AHEAD; offset += 1) {
@@ -93,12 +148,10 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
       });
       fetchOk = fetchOk && (dayResult.fetchOk ?? true);
       byDateEntries.push(
-        ...dayResult.entries
-          .flatMap((entry) => splitKioskEntryForNaverBlocks(entry))
-          .filter(isValidSourceEntry),
+        ...normalizeSourceEntries(dayResult.entries),
       );
     }
-    return { entries: dedupeEntries(byDateEntries), fetchOk, usedDateFallback: true };
+    return { entries: dedupeEntries([...seedEntries, ...byDateEntries]), fetchOk, usedDateFallback: true };
   }
 
   async function preparePickkoCycle({
@@ -117,12 +170,15 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     log(`✅ 픽코 로그인 완료: ${page.url()}`);
 
     const endDate = addDaysKST(today, SOURCE_SCAN_DAYS_AHEAD);
+    const receiptFastScanResult = await fetchReceiptFastScanPaidEntries(page, today);
     log(`\n[Pickko 조회] 이용일 ${today}~${endDate}, 상태=결제완료, 이용금액 필터 없음`);
     const paidResult = await fetchSourceEntries({
       page,
       today,
       endDate,
       statusKeyword: '결제완료',
+      seedEntries: receiptFastScanResult.entries,
+      useDateFallback: PICKKO_PAID_DATE_FALLBACK_ENABLED || receiptFastScanResult.skipped || !receiptFastScanResult.fetchOk,
     });
     const kioskEntries = paidResult.entries;
 

@@ -99,6 +99,14 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
     return existingEnd === bookingEnd && existingRoom === bookingRoom;
   }
 
+  function isReactivatableExisting(existing: Record<string, any> | null | undefined) {
+    if (!existing) return false;
+    return (
+      existing.status === 'cancelled'
+      || ['cancelled', 'time_elapsed'].includes(existing.pickkoStatus)
+    );
+  }
+
   async function clearStaleCancelledKeys(booking: Record<string, any>, bookingId?: string | null) {
     const keys = [
       buildCancelKey(booking, booking.date),
@@ -124,6 +132,7 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
       const key = buildMonitoringTrackingKey(booking);
       if (await isSeenId(key)) continue;
       const existing = await getReservation(key);
+      if (isReactivatableExisting(existing)) continue;
       if (existing && (existing.status === 'completed' || ['manual', 'manual_retry', 'manual_pending'].includes(existing.pickkoStatus))) {
         await markSeen(key);
         autoMarked += 1;
@@ -159,17 +168,15 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
 
     const entries = baseItems.map((booking, index) => ({
       booking,
-      seen: !!existingRows[index] && (existingRows[index].markedSeen || existingRows[index].seenOnly),
+      seen: (
+        !!existingRows[index]
+        && !isReactivatableExisting(existingRows[index])
+        && (existingRows[index].markedSeen || existingRows[index].seenOnly)
+      ),
       existing: existingRows[index],
     }));
     const unseenEntries = entries.filter((entry) => !entry.seen);
-    const reactivatedEntries = unseenEntries.filter((entry) => (
-      !!entry.existing
-      && (
-        entry.existing.status === 'cancelled'
-        || ['cancelled', 'time_elapsed'].includes(entry.existing.pickkoStatus)
-      )
-    ));
+    const reactivatedEntries = unseenEntries.filter((entry) => isReactivatableExisting(entry.existing));
     const newCandidates: NaverCandidateBooking[] = unseenEntries
       .filter((entry) => !entry.existing)
       .map((entry) => ({ ...entry.booking, _trackingId: entry.booking._key }));
@@ -178,8 +185,7 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
         !entry.existing
         || entry.existing.status === 'pending'
         || entry.existing.status === 'failed'
-        || entry.existing.status === 'cancelled'
-        || ['cancelled', 'time_elapsed'].includes(entry.existing.pickkoStatus)
+        || isReactivatableExisting(entry.existing)
       ))
       .map((entry) => ({ ...entry.booking, _trackingId: entry.existing?.id || entry.booking._key }));
 

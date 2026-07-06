@@ -26,6 +26,8 @@ NAVER_PROFILE="$NAVER_BROWSER_PROFILE_ROOT/naver-monitor"
 NAVER_MONITOR_SCRIPT="$PROJECT_ROOT/dist/daemons/ai.ska.naver-monitor.cjs"
 PREFLIGHT_SCRIPT="$PROJECT_ROOT/dist/daemons/ai.ska.preflight.cjs"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
+KIOSK_FULL_SCAN_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-full-scan.plist"
+KIOSK_FULL_SCAN_SOURCE_PLIST="$PROJECT_ROOT/bots/reservation/launchd/ai.ska.kiosk-full-scan.plist"
 NODE_BIN="/opt/homebrew/bin/node"
 [ ! -x "$NODE_BIN" ] && NODE_BIN=$(which node)
 : "${NAVER_MONITOR_DURATION_MS:=3600000}"
@@ -63,7 +65,14 @@ pid_matches_script() {
 ensure_launchd_service() {
   local label="$1"
   local plist="$2"
+  local source_plist="${3:-}"
   local service="gui/$(id -u)/$label"
+
+  if [ ! -f "$plist" ] && [ -n "$source_plist" ] && [ -f "$source_plist" ]; then
+    mkdir -p "$(dirname "$plist")"
+    cp "$source_plist" "$plist"
+    log "launchd plist 설치: $plist"
+  fi
 
   if launchctl print "$service" >/dev/null 2>&1; then
     return 0
@@ -213,6 +222,12 @@ if [ "${SKA_KIOSK_KICKSTART_ON_BOOT:-0}" = "1" ]; then
   fi
 else
   log "  ℹ️  픽코 키오스크 모니터 즉시 kickstart 비활성화 (launchd 주기 사용)"
+fi
+
+if ensure_launchd_service "ai.ska.kiosk-full-scan" "$KIOSK_FULL_SCAN_PLIST" "$KIOSK_FULL_SCAN_SOURCE_PLIST"; then
+  log "  ✅ 픽코 키오스크 새벽 full scan launchd 확인"
+else
+  log "  ⚠️  픽코 키오스크 새벽 full scan launchd 확인 실패"
 fi
 
 while true; do

@@ -28,6 +28,8 @@ NODE_BIN="/opt/homebrew/bin/node"
 DEXTER_SCRIPT="$HOME/projects/ai-agent-system/bots/claude/src/dexter.js"
 NAVER_PLIST="$HOME/Library/LaunchAgents/ai.ska.naver-monitor.plist"
 KIOSK_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-monitor.plist"
+KIOSK_FULL_SCAN_PLIST="$HOME/Library/LaunchAgents/ai.ska.kiosk-full-scan.plist"
+KIOSK_FULL_SCAN_SOURCE_PLIST="$BOT_DIR/launchd/ai.ska.kiosk-full-scan.plist"
 
 # ── 플래그 파싱 ──────────────────────────────────────────────────
 AUTO_YES=0
@@ -55,7 +57,14 @@ log_ok() { log "✅ $1"; }
 ensure_launchd_service() {
   local label="$1"
   local plist="$2"
+  local source_plist="${3:-}"
   local service="gui/$(id -u)/$label"
+
+  if [ ! -f "$plist" ] && [ -n "$source_plist" ] && [ -f "$source_plist" ]; then
+    mkdir -p "$(dirname "$plist")"
+    cp "$source_plist" "$plist"
+    log "  $label plist 설치: $plist"
+  fi
 
   if launchctl print "$service" >/dev/null 2>&1; then
     return 0
@@ -125,6 +134,7 @@ if [ "$AUTO_YES" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
   echo "  📋 배포 대상:"
   echo "     - ai.ska.naver-monitor  (OPS 재시작)"
   echo "     - ai.ska.kiosk-monitor  (OPS 재시작)"
+  echo "     - ai.ska.kiosk-full-scan (새벽 주기 확인)"
   echo ""
   read -r -p "  OPS에 배포하겠습니까? (yes/N): " CONFIRM
   if [ "$CONFIRM" != "yes" ]; then
@@ -164,6 +174,12 @@ log "  kiosk-monitor 재시작..."
 ensure_launchd_service "ai.ska.kiosk-monitor" "$KIOSK_PLIST" && \
 launchctl kickstart -k "gui/$(id -u)/ai.ska.kiosk-monitor" 2>&1 | tee -a "$LOG_FILE" || \
   log "  ⚠️  kiosk-monitor kickstart 실패 (무시하고 진행)"
+
+# kiosk-full-scan은 새벽 주기 작업이므로 등록만 확인하고 즉시 실행하지 않는다.
+log "  kiosk-full-scan 등록 확인..."
+ensure_launchd_service "ai.ska.kiosk-full-scan" "$KIOSK_FULL_SCAN_PLIST" "$KIOSK_FULL_SCAN_SOURCE_PLIST" && \
+  log_ok "kiosk-full-scan launchd 확인" || \
+  log "  ⚠️  kiosk-full-scan launchd 확인 실패 (무시하고 진행)"
 
 # ── 4. 재시작 확인 (최대 60초, 5초 간격 재시도) ──────────────────
 log "━━━ [4단계] 재시작 확인 (최대 60초 대기) ━━━━━━━━━━━━━━━━━━"

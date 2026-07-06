@@ -36,6 +36,7 @@ const CORE_SERVICES = [
 const SCHEDULED_SERVICES = [
   'ai.ska.health-check',
   'ai.ska.today-audit',
+  'ai.ska.kiosk-full-scan',
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',
   'ai.ska.pickko-daily-summary',
