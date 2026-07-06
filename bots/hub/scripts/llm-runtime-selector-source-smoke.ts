@@ -72,6 +72,15 @@ assert.equal(blogDefaultChain.selectorKey, 'blog._default');
 assert.equal(blogDefaultChain.runtimeProfile, 'blog.default');
 assert.equal(blogDefaultChain.chain[0]?.provider, 'openai-oauth');
 
+const blogCommenterProfile = selectRuntimeProfile('blog', 'commenter');
+assert.equal(blogCommenterProfile.selector_key, 'blog.commenter.reply');
+assert(Array.isArray(blogCommenterProfile.primary_routes) && blogCommenterProfile.primary_routes.length === 1);
+assert(Array.isArray(blogCommenterProfile.fallback_routes) && blogCommenterProfile.fallback_routes.length >= 1);
+const blogCommenterChain = resolveSelectorChain({ callerTeam: 'blog', runtimePurpose: 'commenter' }, 'blog');
+assert.equal(blogCommenterChain.selectorKey, 'blog.commenter.reply');
+assert.equal(blogCommenterChain.runtimeProfile, 'blog.commenter');
+assert.equal(blogCommenterChain.chain.length >= 2, true);
+
 const hubDefaultChain = resolveSelectorChain({ callerTeam: 'hub' }, 'hub');
 assert.equal(hubDefaultChain.selectorKey, 'hub._default');
 assert.equal(hubDefaultChain.runtimeProfile, 'hub.default');

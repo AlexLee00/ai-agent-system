@@ -190,7 +190,10 @@ function resolveRuntimeProfile(req = {}, team) {
   return { profile: null, purpose };
 }
 
-function selectHubDefaultFallback(req = {}, team, targetPolicy, shadowDeps, reason = 'selector_chain_required_defaulted') {
+function selectHubDefaultFallback(req = {}, team, targetPolicy, shadowDeps, reason = 'selector_chain_required_defaulted', purpose = null) {
+  if (reason === 'unregistered_purpose_defaulted') {
+    console.warn(`[selector] unregistered purpose → default chain: ${team || 'hub'}/${purpose || requestRuntimePurpose(req, 'default') || 'default'}`);
+  }
   const chain = selectChainWithShadow('hub._default', selectorOptionsFromRequest(req, {
     team: 'hub',
     callerTeam: team || 'hub',
@@ -471,11 +474,11 @@ function resolveHubLlmSelection(req = {}, options = {}) {
     }, chain);
   }
 
-  if (!req.selectorKey && !agent) {
-    return selectHubDefaultFallback(req, team, targetPolicy, shadowDeps, 'missing_selector_defaulted');
+  if (!profile) {
+    return selectHubDefaultFallback(req, team, targetPolicy, shadowDeps, 'unregistered_purpose_defaulted', purpose);
   }
 
-  return selectHubDefaultFallback(req, team, targetPolicy, shadowDeps);
+  return selectHubDefaultFallback(req, team, targetPolicy, shadowDeps, 'unregistered_purpose_defaulted', purpose);
 }
 
 function isHubLlmRouteTargetAllowed(input = {}) {

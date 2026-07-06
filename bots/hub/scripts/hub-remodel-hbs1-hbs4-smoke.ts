@@ -36,15 +36,27 @@ function withEnv(env, fn) {
 }
 
 function assertSelectorFallback() {
-  const fallback = selector.resolveHubLlmSelection({
-    callerTeam: 'unknownteam',
-    agent: 'missing-profile-smoke',
-    taskType: 'missing-purpose-smoke',
-  });
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  let fallback: any;
+  try {
+    console.warn = (...args: unknown[]) => warnings.push(args.map((item) => String(item)).join(' '));
+    fallback = selector.resolveHubLlmSelection({
+      callerTeam: 'unknownteam',
+      taskType: 'missing-purpose-smoke',
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
   assert.equal(fallback.ok, true);
   assert.equal(fallback.selectorKey, 'hub._default');
-  assert.equal(fallback.selectorFallbackReason, 'selector_chain_required_defaulted');
+  assert.equal(fallback.selectorFallbackReason, 'unregistered_purpose_defaulted');
   assert.ok(fallback.chain.length > 0);
+  assert.equal(fallback.error || null, null);
+  assert.ok(
+    warnings.some((line) => line.includes('[selector] unregistered purpose → default chain: unknownteam/missing-purpose-smoke')),
+    'unregistered purpose fallback must emit selector warning',
+  );
 
   const profileFallback = selector.resolveHubLlmSelection({
     callerTeam: 'blog',
@@ -53,6 +65,17 @@ function assertSelectorFallback() {
   });
   assert.equal(profileFallback.ok, true);
   assert.equal(profileFallback.runtimeProfile, 'blog.default');
+
+  const commenterProfile = selector.resolveHubLlmSelection({
+    callerTeam: 'blog',
+    runtimePurpose: 'commenter',
+    maxTokens: 600,
+  });
+  assert.equal(commenterProfile.ok, true);
+  assert.equal(commenterProfile.selectorKey, 'blog.commenter.reply');
+  assert.equal(commenterProfile.runtimeProfile, 'blog.commenter');
+  assert.equal(commenterProfile.source, 'runtime_profile');
+  assert.ok(commenterProfile.chain.length > 0);
 
   const nonLlm = selector.resolveHubLlmSelection({
     callerTeam: 'investment',

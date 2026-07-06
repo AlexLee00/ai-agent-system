@@ -86,6 +86,7 @@ const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
   blog: {
     default: llm(blogRuntime(), 'blog._default'),
     writer: llm(blogRuntime(), 'blog.pos.writer'),
+    commenter: llm(blogRuntime(), 'blog.commenter.reply'),
     social: llm(blogRuntime(), 'blog.social.summarize'),
     curriculum: llm(blogRuntime(), 'blog.curriculum.generate'),
     'image-local': {
