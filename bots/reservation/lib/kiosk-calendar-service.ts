@@ -579,6 +579,9 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
         scrollContainer.scrollTop = nextScrollTop;
         if (rowWrap && rowWrap !== scrollContainer) rowWrap.scrollTop = nextScrollTop;
         if (innerWrap && innerWrap !== scrollContainer) innerWrap.scrollTop = nextScrollTop;
+        scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+        if (rowWrap && rowWrap !== scrollContainer) rowWrap.dispatchEvent(new Event('scroll', { bubbles: true }));
+        if (innerWrap && innerWrap !== scrollContainer) innerWrap.dispatchEvent(new Event('scroll', { bubbles: true }));
         return true;
       }
 
@@ -630,13 +633,13 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
       }
 
       scrollToSlot(requestedSlotsArg[0]);
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await new Promise((resolve) => setTimeout(resolve, 900));
 
       const matchedSlots = [];
       const missingSlots = [];
       for (const slot of requestedSlotsArg) {
         scrollToSlot(slot);
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await new Promise((resolve) => setTimeout(resolve, 900));
         const { timelineRows, gridRows } = collectVisibleRows();
         const rowIndex = timelineRows.findIndex((row) => row.slot24 === slot);
         if (rowIndex < 0) {

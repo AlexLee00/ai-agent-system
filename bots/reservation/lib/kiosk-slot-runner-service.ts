@@ -168,17 +168,19 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
         }
       }
 
+      const existingBeforeUpsert = await getKioskBlock(phoneRaw, date, start, end, room);
+      const preserveBlockedState = existingBeforeUpsert?.naverBlocked === true && !blocked;
       await upsertKioskBlock(phoneRaw, date, start, {
         name, date, start, end, room, amount: 0,
-        naverBlocked: blocked,
+        naverBlocked: blocked || preserveBlockedState,
         firstSeenAt: nowKST(),
-        blockedAt: blocked ? nowKST() : null,
+        blockedAt: blocked ? nowKST() : (preserveBlockedState ? existingBeforeUpsert?.blockedAt || nowKST() : null),
         lastBlockAttemptAt: nowKST(),
-        lastBlockResult: blocked ? 'blocked' : 'attempted',
-        lastBlockReason: blockResult?.reason || 'block_attempt_finished',
+        lastBlockResult: blocked ? 'blocked' : (preserveBlockedState ? existingBeforeUpsert?.lastBlockResult || 'blocked' : 'attempted'),
+        lastBlockReason: blocked ? (blockResult?.reason || 'block_attempt_finished') : (preserveBlockedState ? existingBeforeUpsert?.lastBlockReason || 'preserved_existing_block' : blockResult?.reason || 'block_attempt_finished'),
       });
 
-      if (!blocked) {
+      if (!blocked && !preserveBlockedState) {
         blocked = await verifyBlockStateInFreshPage(naverBrowser, entry, { capturePrefix: 'naver-recheck' });
         log(`  🔁 대리등록 후 독립 재검증: ${blocked ? '✅ 차단 확인' : '❌ 차단 미확인'}`);
         if (blocked) {
@@ -205,6 +207,8 @@ export function createKioskSlotRunnerService(deps: CreateKioskSlotRunnerServiceD
       if (blocked) {
         log(`✅ 네이버 차단 완료: ${name} ${date} ${start}~${end} ${room}`);
         await Promise.resolve(publishKioskSuccessReport(`✅ [대리등록] 네이버 예약불가 처리 완료\n${name} ${date} ${start}~${end} ${room}룸`));
+      } else if (preserveBlockedState) {
+        log(`  ℹ️ 기존 네이버 차단 상태 보존: ${name} ${date} ${start}~${end} ${room} (reason=${blockResult?.reason || 'block_attempt_finished'})`);
       } else if (blockResult?.applied) {
         log('⚠️ 네이버 차단 검증 불확실 — 화면 확인 권장');
         await journalBlockAttempt(entry, 'uncertain', blockResult?.reason || 'applied_but_unverified', {

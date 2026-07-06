@@ -505,6 +505,8 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         markCustomerCooldown(entry, customerOperationTracker);
 
         const now = nowKST();
+        const existingAfterAttempt = await getSavedKioskBlockForSourceEntry(entry);
+        const preserveBlockedState = existingAfterAttempt?.naverBlocked === true && !blocked;
         await upsertKioskBlock(entry.phoneRaw, entry.date, entry.start, {
           name: entry.name,
           date: entry.date,
@@ -512,18 +514,20 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
           end: entry.end,
           room: entry.room,
           amount: entry.amount,
-          naverBlocked: blocked,
+          naverBlocked: blocked || preserveBlockedState,
           firstSeenAt: now,
-          blockedAt: blocked ? now : null,
+          blockedAt: blocked ? now : (preserveBlockedState ? existingAfterAttempt?.blockedAt || now : null),
           lastBlockAttemptAt: now,
-          lastBlockResult: blocked ? 'blocked' : 'retryable_failure',
-          lastBlockReason: blockReason,
+          lastBlockResult: blocked ? 'blocked' : (preserveBlockedState ? existingAfterAttempt?.lastBlockResult || 'blocked' : 'retryable_failure'),
+          lastBlockReason: blocked ? blockReason : (preserveBlockedState ? existingAfterAttempt?.lastBlockReason || 'preserved_existing_block' : blockReason),
         });
 
         if (blocked) {
           publishKioskSuccessReport(
             `✅ 네이버 예약 차단 완료\n${entry.name || '(이름없음)'} ${fmtPhone(entry.phoneRaw)}\n${entry.date} ${entry.start}~${entry.end} ${entry.room || ''} (키오스크 예약)`,
           );
+        } else if (preserveBlockedState) {
+          log(`  ℹ️ 기존 네이버 차단 상태 보존: ${entry.date} ${entry.start}~${entry.end} ${entry.room || ''} (reason=${blockReason})`);
         } else {
           await journalBlockAttempt(entry, 'retryable_failure', blockReason, {
             recordKioskBlockAttempt,

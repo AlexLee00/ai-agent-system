@@ -183,6 +183,79 @@ async function main() {
     'kiosk_blocks lookup should normalize Pickko display room/end before deciding reprocess',
   );
 
+  const preserveBlockedUpserts = [];
+  const preserveBlockedAlerts = [];
+  let preserveBlockedLookupCount = 0;
+  const preserveBlockedService = createKioskNaverPhaseService({
+    log: () => {},
+    readWsFile: () => 'ws://example.test/devtools/browser/test',
+    connectBrowser: async () => ({
+      newPage: async () => createFakePage(),
+      disconnect: () => {},
+    }),
+    attachNaverScheduleTrace: () => {},
+    naverBookingLogin: async () => true,
+    upsertKioskBlock: async (phoneRaw, date, start, patch) => {
+      preserveBlockedUpserts.push({ phoneRaw, date, start, patch });
+    },
+    journalBlockAttempt: async () => {},
+    publishRetryableBlockAlert: (entry, reason) => preserveBlockedAlerts.push({ entry, reason }),
+    publishReservationAlert: () => {},
+    buildOpsAlertMessage: () => 'message',
+    fmtPhone: (phone) => phone,
+    nowKST: () => '2099-01-01T00:00:00+09:00',
+    waitForCustomerCooldown: async () => {},
+    markCustomerCooldown: () => {},
+    runtimeConfig: { customerOperationCooldownMs: 0 },
+    delay: async () => {},
+    blockNaverSlot: async () => ({ ok: false, reason: 'slot_click_failed' }),
+    unblockNaverSlot: async () => true,
+    publishKioskSuccessReport: () => {},
+    getKioskBlock: async (phoneRaw) => {
+      if (phoneRaw !== '01044445555') return null;
+      preserveBlockedLookupCount += 1;
+      if (preserveBlockedLookupCount === 1) return null;
+      return {
+        naverBlocked: true,
+        naverUnblockedAt: null,
+        blockedAt: '2099-01-01T00:00:00+09:00',
+        lastBlockResult: 'blocked',
+        lastBlockReason: 'already_blocked',
+      };
+    },
+    bookingUrl: 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    scrapeNewestBookingsFromList: async () => [{
+      phoneRaw: '01000000000',
+      date: '2099-01-02',
+      start: '09:00',
+      end: '09:30',
+      room: 'B',
+    }],
+  });
+
+  await preserveBlockedService.processNaverPhase({
+    wsFile: '/tmp/ws-file-not-read',
+    toBlockEntries: [entry({ phoneRaw: '01044445555', room: '스터디룸B', start: '13:00', end: '15:20', amount: 0 })],
+    cancelledEntries: [],
+    recordKioskBlockAttempt: async () => {},
+  });
+
+  assert.equal(
+    preserveBlockedUpserts[0]?.patch?.naverBlocked,
+    true,
+    'retryable block failure must not overwrite an already-blocked kiosk row',
+  );
+  assert.equal(
+    preserveBlockedUpserts[0]?.patch?.lastBlockResult,
+    'blocked',
+    'preserved rows should keep blocked result instead of retryable_failure',
+  );
+  assert.equal(
+    preserveBlockedAlerts.length,
+    0,
+    'preserved already-blocked rows should not publish retryable failure alerts',
+  );
+
   const timeElapsedAlerts = [];
   const timeElapsedUpserts = [];
   const timeElapsedBlockedPhones = [];

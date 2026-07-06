@@ -438,6 +438,21 @@ function _normalizeKioskBlockRoom(room) {
   return normalizeStudyRoomKey(room) || (room ? String(room).trim() : null);
 }
 
+function _roundKioskBlockEndToHalfHour(timeStr) {
+  const [h, m] = String(timeStr || '').split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return String(timeStr || '');
+  if (m === 0 || m === 30) return String(timeStr || '');
+  const nextHour = m > 30 ? h + 1 : h;
+  const nextMinute = m > 30 ? 0 : 30;
+  return `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+}
+
+function _isKioskBlockEndMatch(storedEnd, requestedEnd) {
+  if (!requestedEnd) return true;
+  if (storedEnd === requestedEnd) return true;
+  return _roundKioskBlockEndToHalfHour(storedEnd) === _roundKioskBlockEndToHalfHour(requestedEnd);
+}
+
 async function _findKioskBlockRow(phoneRaw, date, start, end = null, room = null) {
   for (const id of _buildKioskLookupIds(phoneRaw, date, start, end, room)) {
     const row = await pgPool.get(SCHEMA, 'SELECT * FROM kiosk_blocks WHERE id = $1', [id]);
@@ -451,7 +466,7 @@ async function _findKioskBlockRow(phoneRaw, date, start, end = null, room = null
   const filtered = rows.filter((row) => {
     const samePhone = decrypt(row.phone_raw_enc) === phoneRaw;
     if (!samePhone) return false;
-    if (end && row.end_time !== end) return false;
+    if (!_isKioskBlockEndMatch(row.end_time, end)) return false;
     if (room && _normalizeKioskBlockRoom(row.room) !== _normalizeKioskBlockRoom(room)) return false;
     return true;
   });
@@ -526,7 +541,7 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
   for (const row of duplicateRows) {
     const samePhone = decrypt(row.phone_raw_enc) === phoneRaw;
     if (!samePhone) continue;
-    if (effectiveEnd && row.end_time !== effectiveEnd) continue;
+    if (!_isKioskBlockEndMatch(row.end_time, effectiveEnd)) continue;
     if (effectiveRoom && _normalizeKioskBlockRoom(row.room) !== effectiveRoom) continue;
     await pgPool.run(SCHEMA, 'DELETE FROM kiosk_blocks WHERE id = $1', [row.id]);
   }
@@ -535,6 +550,9 @@ async function upsertKioskBlock(phoneRaw, date, start, data) {
 async function recordKioskBlockAttempt(phoneRaw, date, start, data: KioskBlockRecord = {}) {
   const existing = await getKioskBlock(phoneRaw, data.date || date, data.start || start, data.end || null, data.room || null);
   const nextRetryCount = Number(existing?.blockRetryCount || 0) + (data.incrementRetry ? 1 : 0);
+  const preserveBlockedState = existing?.naverBlocked === true
+    && data.naverBlocked === false
+    && data.naverUnblockedAt === undefined;
 
   await upsertKioskBlock(phoneRaw, date, start, {
     ...(existing || {}),
@@ -545,13 +563,17 @@ async function recordKioskBlockAttempt(phoneRaw, date, start, data: KioskBlockRe
     room: data.room !== undefined ? data.room : (existing?.room || null),
     amount: data.amount !== undefined ? data.amount : (existing?.amount || 0),
     name: data.name !== undefined ? data.name : (existing?.name || null),
-    naverBlocked: typeof data.naverBlocked === 'boolean' ? data.naverBlocked : Boolean(existing?.naverBlocked),
+    naverBlocked: preserveBlockedState
+      ? true
+      : (typeof data.naverBlocked === 'boolean' ? data.naverBlocked : Boolean(existing?.naverBlocked)),
     firstSeenAt: existing?.firstSeenAt || data.firstSeenAt || null,
-    blockedAt: data.blockedAt !== undefined ? data.blockedAt : (existing?.blockedAt || null),
+    blockedAt: preserveBlockedState
+      ? (existing?.blockedAt || data.blockedAt || null)
+      : (data.blockedAt !== undefined ? data.blockedAt : (existing?.blockedAt || null)),
     naverUnblockedAt: data.naverUnblockedAt !== undefined ? data.naverUnblockedAt : (existing?.naverUnblockedAt || null),
     lastBlockAttemptAt: data.lastBlockAttemptAt || new Date().toISOString(),
-    lastBlockResult: data.lastBlockResult || null,
-    lastBlockReason: data.lastBlockReason || null,
+    lastBlockResult: preserveBlockedState ? (existing?.lastBlockResult || data.lastBlockResult || null) : (data.lastBlockResult || null),
+    lastBlockReason: preserveBlockedState ? (existing?.lastBlockReason || data.lastBlockReason || null) : (data.lastBlockReason || null),
     blockRetryCount: nextRetryCount,
   });
 }

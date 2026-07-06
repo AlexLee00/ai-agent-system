@@ -101,6 +101,9 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         (scrollContainer as HTMLElement).scrollTop = nextScrollTop;
         if (rowWrap && rowWrap !== scrollContainer) (rowWrap as HTMLElement).scrollTop = nextScrollTop;
         if (innerWrap && innerWrap !== scrollContainer) (innerWrap as HTMLElement).scrollTop = nextScrollTop;
+        scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+        if (rowWrap && rowWrap !== scrollContainer) rowWrap.dispatchEvent(new Event('scroll', { bubbles: true }));
+        if (innerWrap && innerWrap !== scrollContainer) innerWrap.dispatchEvent(new Event('scroll', { bubbles: true }));
 
         return {
           targetIndex,
@@ -118,7 +121,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         return normalize(`${ampmText} ${timeText}`) === targetLabel;
       });
       const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       const timelineRows = allTimelineEls
         .filter((row: any) => isVisible(row))
@@ -463,6 +466,9 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         (scrollContainer as HTMLElement).scrollTop = nextScrollTop;
         if (rowWrap && rowWrap !== scrollContainer) (rowWrap as HTMLElement).scrollTop = nextScrollTop;
         if (innerWrap && innerWrap !== scrollContainer) (innerWrap as HTMLElement).scrollTop = nextScrollTop;
+        scrollContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+        if (rowWrap && rowWrap !== scrollContainer) rowWrap.dispatchEvent(new Event('scroll', { bubbles: true }));
+        if (innerWrap && innerWrap !== scrollContainer) innerWrap.dispatchEvent(new Event('scroll', { bubbles: true }));
 
         return {
           targetIndex,
@@ -480,7 +486,7 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         return normalize(`${ampmText} ${timeText}`) === targetLabel;
       });
       const scrollDebug = scrollCalendarToTarget(targetTimelineEl);
-      await new Promise((resolve) => setTimeout(resolve, 450));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       const timelineRows = allTimelineEls
         .filter((row: any) => isVisible(row))
