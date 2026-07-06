@@ -748,10 +748,10 @@
     "runtime:luna-decision-filter-report": "node scripts/runtime-luna-decision-filter-report.ts --json"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
+    "@anthropic-ai/sdk": "^0.110.0",
     "axios": "^1.16.0",
-    "ccxt": "^4.5.42",
-    "groq-sdk": "^1.1.1",
+    "ccxt": "^4.5.64",
+    "groq-sdk": "^1.3.0",
     "js-yaml": "^4.1.0",
     "nyse-holidays": "^1.2.0",
     "openai": "^6.29.0",
