@@ -7,7 +7,9 @@ const { createNaverPickkoRunnerService } = require('../lib/naver-pickko-runner-s
 
 async function main() {
   const previous = process.env.PICKKO_CANCEL_MUTATION_ENABLE;
+  const previousSka = process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION;
   process.env.PICKKO_CANCEL_MUTATION_ENABLE = '1';
+  process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION = '1';
 
   const doneKey = 'cancel_done|01071848299|2026-07-03|14:00|15:00|A2';
   const cancelledKeys = new Set([doneKey]);
@@ -69,6 +71,8 @@ async function main() {
 
   if (previous === undefined) delete process.env.PICKKO_CANCEL_MUTATION_ENABLE;
   else process.env.PICKKO_CANCEL_MUTATION_ENABLE = previous;
+  if (previousSka === undefined) delete process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION;
+  else process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION = previousSka;
 
   assert.strictEqual(result, 0);
   assert.strictEqual(spawnCount, 1);

@@ -3,6 +3,7 @@
 
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
+import { attachSourceRefToMeta } from '../shared/source-ref.ts';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool.ts');
@@ -59,7 +60,7 @@ function buildVaultEntry(report: any) {
     tags: ['sigma-library', 'hub', 'hub_llm', 'W-axis', 'routing-feedback'],
     filePath: `hub/llm-feedback/${shortHash(content)}`,
     source: 'hub_llm',
-    meta: {
+    meta: attachSourceRefToMeta({
       team: 'hub',
       domain: 'hub_llm',
       generatedAt: report.generatedAt,
@@ -71,7 +72,7 @@ function buildVaultEntry(report: any) {
         validation_state: 'unverified',
         prediction_state: 'none',
       },
-    },
+    }, { team: 'hub', table: 'public.llm_routing_log.aggregate', id: report.generatedAt.slice(0, 10) }),
   };
 }
 

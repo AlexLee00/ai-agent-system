@@ -36,7 +36,9 @@ async function main() {
     startDate: '2026-07-03',
     endDate: '2026-09-01',
   });
-  assert.ok(url.includes('status=CANCELLED'));
+  assert.ok(url.includes('bookingStatusCodes=RC04'));
+  assert.ok(!url.includes('status=CANCELLED'));
+  assert.ok(!url.includes('countFilter=CANCELLED'));
   assert.ok(!url.includes('bookingStatusCodes=RC03'));
   assert.ok(url.includes('dateDropdownType=RANGE'));
   assert.ok(url.includes('dateFilter=USEDATE'));
@@ -47,7 +49,8 @@ async function main() {
     startDate: '2026-07-03',
     endDate: '2026-09-01',
   });
-  assert.ok(countFilterUrl.includes('countFilter=CANCELLED'));
+  assert.ok(countFilterUrl.includes('bookingStatusCodes=RC04'));
+  assert.ok(!countFilterUrl.includes('countFilter=CANCELLED'));
   assert.ok(!countFilterUrl.includes('bookingStatusCodes=RC03'));
 
   assert.deepStrictEqual(

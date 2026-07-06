@@ -171,7 +171,7 @@ async function runCancelShadowDiff(options = {}) {
       delay,
       log: runtimeLog,
       scrapeNewestBookingsFromList: listScrapeService.scrapeNewestBookingsFromList,
-      scrapeExpandedCancelled: listScrapeService.scrapeExpandedCancelled,
+      includeExpandedFallback: false,
       buildCancelKey,
       findTrackedReservation: (booking) => recoveryService.findTrackedReservationForCancelCandidate(booking),
     });
@@ -179,8 +179,7 @@ async function runCancelShadowDiff(options = {}) {
     const todayUrl = buildCancelledRangeUrl(cancelledHref, { startDate: todaySeoul, endDate: todaySeoul });
     await page.goto(todayUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     const todayRows = await listScrapeService.scrapeNewestBookingsFromList(page, 100);
-    const expandedRows = await listScrapeService.scrapeExpandedCancelled(page, cancelledHref).catch(() => []);
-    const legacy = await buildEvidenceFromRows([...todayRows, ...expandedRows], todaySeoul);
+    const legacy = await buildEvidenceFromRows(todayRows, todaySeoul);
     const diff = compareCancelShadow({
       unified: unified.evidence,
       legacy,

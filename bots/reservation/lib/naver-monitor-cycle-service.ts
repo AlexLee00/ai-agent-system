@@ -21,6 +21,11 @@ export type CreateNaverMonitorCycleServiceDeps = {
   };
   cancelDetectionService: {
     processCancelTab: (args: any) => Promise<{ currentCancelledList: Record<string, any>[]; cycleNewCancelDetections: number }>;
+    processStatusCancelledList?: (args: any) => Promise<{
+      statusCancelledList: Record<string, any>[];
+      confirmedStatusList: Record<string, any>[];
+      cycleNewCancelDetections: number;
+    }>;
     processExpandedCancelled: (args: any) => Promise<number>;
     reconcileDroppedConfirmed: (args: any) => Promise<number>;
   };
@@ -214,66 +219,35 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
           todaySeoul,
           naverUrl,
           cycleNewCancelDetections,
+          currentConfirmedList,
         }));
       } catch (err: any) {
         log(`⚠️ 취소 탭 처리 중 오류: ${err.message}`);
         try { await safeGotoNaverHome(page, naverUrl, 'cancel-tab-recovery'); } catch (_) {}
       }
-    }
 
-    if (checkCount % 3 === 2 && process.env.PICKKO_CANCEL_ENABLE === '1' && cancelledHref) {
-      try {
-        cycleNewCancelDetections = await cancelDetectionService.processExpandedCancelled({
-          page,
-          cancelledHref,
-          todaySeoul,
-          naverUrl,
-          cycleNewCancelDetections,
-        });
-      } catch (err: any) {
-        log(`⚠️ [취소감지2E] 오류: ${err.message}`);
-        try { await safeGotoNaverHome(page, naverUrl, 'expanded-cancel-recovery'); } catch (_) {}
-      }
-    }
-
-    if (previousConfirmedList.length > 0 && process.env.PICKKO_CANCEL_ENABLE === '1') {
-      try {
-        cycleNewCancelDetections = await cancelDetectionService.reconcileDroppedConfirmed({
-          previousConfirmedList,
-          currentConfirmedList,
-          currentCancelledList,
-          todaySeoul,
-          confirmedCount,
-          pendingCancelMap,
-          cycleNewCancelDetections,
-        });
-      } catch (err: any) {
-        log(`⚠️ 확정→취소 감지 중 오류: ${err.message}`);
+      if (cancelDetectionService.processStatusCancelledList) {
+        try {
+          const statusResult = await cancelDetectionService.processStatusCancelledList({
+            page,
+            cancelledHref,
+            todaySeoul,
+            naverUrl,
+            cycleNewCancelDetections,
+          });
+          cycleNewCancelDetections = statusResult.cycleNewCancelDetections;
+          currentCancelledList = [
+            ...currentCancelledList,
+            ...(statusResult.statusCancelledList || []),
+          ];
+        } catch (err: any) {
+          log(`⚠️ [취소상태목록] 처리 중 오류: ${err.message}`);
+          try { await safeGotoNaverHome(page, naverUrl, 'cancel-status-recovery'); } catch (_) {}
+        }
       }
     }
 
     const nextPreviousConfirmedList = currentConfirmedList;
-
-    if (checkCount % 3 === 1 && process.env.PICKKO_CANCEL_ENABLE === '1') {
-      try {
-        cycleNewCancelDetections = await futureCancelService.processFutureCancelSnapshot({
-          checkCount,
-          cancelledHref,
-          page,
-          todaySeoul,
-          naverUrl,
-          pendingCancelMap,
-          cycleNewCancelDetections,
-        });
-      } catch (err: any) {
-        if (err.message !== 'cancelledHref 없음') {
-          try { await safeGotoNaverHome(page, naverUrl, 'future-cancel-recovery'); } catch (_) {}
-        }
-        log(`⚠️ [취소감지4] 오류 — 스킵: ${err.message}`);
-      }
-    } else if (checkCount % 3 === 1) {
-      log('ℹ️ [취소감지4] PICKKO_CANCEL_ENABLE!=1 — 미래 stale 취소 감지 스킵');
-    }
 
     if (
       previousCancelledCount !== null &&

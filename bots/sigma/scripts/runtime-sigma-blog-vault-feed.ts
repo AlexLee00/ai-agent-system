@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { redactPii } from '../ts/lib/intelligent-library.ts';
+import { attachSourceRefToMeta, sourceRefFromCandidate } from '../shared/source-ref.ts';
 import { createVaultEmbedding, VaultManager } from '../vault/vault-manager.ts';
 
 const require = createRequire(import.meta.url);
@@ -384,6 +385,11 @@ export function buildBlogVaultCandidates(rows: {
 }
 
 export function entryForCandidate(candidate: any) {
+  const meta = attachSourceRefToMeta({
+    ...(candidate.meta || {}),
+    team: 'blog',
+    source: 'blo',
+  }, sourceRefFromCandidate(candidate, 'blog'));
   return {
     title: candidate.title,
     type: candidate.type,
@@ -391,11 +397,7 @@ export function entryForCandidate(candidate: any) {
     tags: candidate.tags,
     filePath: candidate.filePath,
     source: 'blo',
-    meta: {
-      ...(candidate.meta || {}),
-      team: 'blog',
-      source: 'blo',
-    },
+    meta,
   };
 }
 
@@ -410,7 +412,7 @@ export function buildPopularPatternEntry(pattern: any = {}, options: { key?: str
     tags: ['blog', 'blo', 'popular_pattern', safeTag(pattern.category) || 'lecture'].filter(Boolean).slice(0, 12),
     filePath: `library/blo/popular_pattern/${shortHash(key)}`,
     source: 'blo',
-    meta: {
+    meta: attachSourceRefToMeta({
       sourceTable: 'popular_pattern_interface',
       sourceId: key,
       sourceKind: 'popular_pattern',
@@ -418,7 +420,7 @@ export function buildPopularPatternEntry(pattern: any = {}, options: { key?: str
       createdAt: pattern.createdAt || new Date().toISOString(),
       contentHash: contentHash(content || title),
       metrics: pattern.metrics || {},
-    },
+    }, { team: 'blog', table: 'popular_pattern_interface', id: key }),
   };
 }
 

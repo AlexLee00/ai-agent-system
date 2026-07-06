@@ -102,7 +102,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
     const today = dateOverride || getTodayKST();
     const shouldAuditEntry = (entry: any) => {
       const entryDate = String(entry?.date || '');
-      return entryDate.length > 0 && entryDate >= today;
+      return entryDate === today;
     };
     log(`\n📋 [오늘 예약 검증] ${today} 시작`);
 
@@ -132,7 +132,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
       const historyResult = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
       pickkoHistoryEntries = historyResult.entries.filter((entry) => {
         const statusText = String(entry.statusText || '');
-        return !statusText.includes('취소') && !statusText.includes('환불');
+        return shouldAuditEntry(entry) && !statusText.includes('취소') && !statusText.includes('환불');
       });
       log(`  픽코 예약내역(취소/환불 제외): ${pickkoHistoryEntries.length}건`);
     } finally {
@@ -293,6 +293,30 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
             }
 
             const existing = await getKioskBlock(entry.phoneRaw, entry.date, entry.start, entry.end, entry.room);
+            const hasExistingBlockedEvidence = existing?.naverBlocked
+              || (
+                !existing?.naverUnblockedAt
+                && (
+                  existing?.lastBlockResult === 'manually_confirmed'
+                  || (existing?.lastBlockResult === 'blocked' && existing?.lastBlockReason === 'already_blocked')
+                )
+              );
+            if (!success && hasExistingBlockedEvidence) {
+              if (!existing?.naverBlocked) {
+                await upsertKioskBlock(entry.phoneRaw, entry.date, entry.start, {
+                  ...(existing || {}),
+                  ...entry,
+                  naverBlocked: true,
+                  firstSeenAt: existing?.firstSeenAt || nowKST(),
+                  blockedAt: existing?.blockedAt || nowKST(),
+                  lastBlockResult: existing?.lastBlockResult || 'blocked',
+                  lastBlockReason: existing?.lastBlockReason || 'existing_blocked_state_preserved',
+                });
+              }
+              log(`  🛡 기존 차단 상태 보존: ${entry.room} ${entry.start}~${entry.end} — 재시도 실패가 DB 차단 상태를 덮어쓰지 않음`);
+              okList.push(entry);
+              continue;
+            }
             await upsertKioskBlock(entry.phoneRaw, entry.date, entry.start, {
               ...(existing || {}),
               ...entry,

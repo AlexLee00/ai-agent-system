@@ -6,6 +6,46 @@ export type CreateNaverListScrapeServiceDeps = {
   log: Logger;
 };
 
+function todayKst(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+function addDaysKst(dateStr: string, days: number): string {
+  const base = new Date(`${dateStr}T00:00:00+09:00`);
+  return new Date(base.getTime() + days * 24 * 60 * 60 * 1000)
+    .toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+}
+
+export function buildBookingStatusListUrl(sourceUrl: string, {
+  statusCode,
+  startDate = todayKst(),
+  endDate,
+  daysAhead = 30,
+  dateDropdownType = 'RANGE',
+  dateFilter = 'USEDATE',
+}: {
+  statusCode: string;
+  startDate?: string;
+  endDate?: string;
+  daysAhead?: number;
+  dateDropdownType?: string;
+  dateFilter?: string;
+}): string {
+  if (!sourceUrl) throw new Error('sourceUrl_required');
+  const url = new URL(sourceUrl);
+  if (!url.pathname.includes('booking-list-view')) {
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/booking-list-view`;
+  }
+  url.search = '';
+  url.searchParams.set('bookingStatusCodes', statusCode);
+  url.searchParams.set('dateDropdownType', dateDropdownType);
+  url.searchParams.set('startDateTime', startDate);
+  url.searchParams.set('endDateTime', endDate || addDaysKst(startDate, daysAhead));
+  url.searchParams.set('dateFilter', dateFilter);
+  url.searchParams.set('searchValueCode', 'USER_NAME');
+  return url.toString();
+}
+
 export function parseNaverDateTimeText(input: unknown, fallbackDate?: string | null): { date: string; start: string; end: string } | null {
   const dateTimeText = String(input || '').replace(/\s+/g, ' ').trim();
   if (!dateTimeText) return null;
@@ -56,84 +96,53 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
   const { delay, log } = deps;
 
   async function scrapeExpandedCancelled(page: any, cancelHref: string): Promise<any[]> {
-    await page.goto(cancelHref, { waitUntil: 'networkidle2', timeout: 30000 });
-    await delay(1000);
+    log('[취소감지2E] legacy UI-click 확장 스캔은 사용하지 않고 RC04 상태 URL로 조회');
+    return scrapeCancelledStatusList(page, cancelHref, {
+      startDate: todayKst(),
+      daysAhead: 30,
+      dateDropdownType: 'MONTH',
+      limit: 50,
+    });
+  }
 
-    try {
-      const activeBtn = await page.$(
-        'input[class*="BookingListView__active__"][value*="오늘취소"], ' +
-        'input.BookingListView__active__2xtEI[value*="오늘취소"]',
-      );
-      if (activeBtn) {
-        log('[취소감지2E] "오늘취소" 날짜 필터 비활성화');
-        await activeBtn.click();
-        await delay(1200);
-      }
-    } catch (error: any) {
-      log(`[취소감지2E] Step1 실패 (무시): ${error?.message || String(error)}`);
-    }
+  async function scrapeBookingStatusList(page: any, sourceUrl: string, {
+    statusCode,
+    startDate = todayKst(),
+    endDate,
+    daysAhead = 30,
+    dateDropdownType = 'RANGE',
+    limit = 100,
+  }: {
+    statusCode: string;
+    startDate?: string;
+    endDate?: string;
+    daysAhead?: number;
+    dateDropdownType?: string;
+    limit?: number;
+  }): Promise<any[]> {
+    const url = buildBookingStatusListUrl(sourceUrl, {
+      statusCode,
+      startDate,
+      endDate,
+      daysAhead,
+      dateDropdownType,
+    });
+    log(`🔎 [네이버상태목록] ${statusCode} ${startDate}~${endDate || addDaysKst(startDate, daysAhead)}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.waitForSelector(
+      'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
+      { timeout: 20000 },
+    ).catch(() => null);
+    await delay(500);
+    return scrapeNewestBookingsFromList(page, limit);
+  }
 
-    try {
-      const dateDropBtn = await page.$('[class*="Select__root"] button[class*="Select__btn-selected"]');
-      if (dateDropBtn) {
-        const currentText = await page.evaluate((el: any) => el.querySelector('span')?.textContent?.trim(), dateDropBtn);
-        if (currentText && currentText !== '일간') {
-          await dateDropBtn.click();
-          await delay(500);
-          const changed = await page.evaluate(() => {
-            for (const el of Array.from(document.querySelectorAll('button, li, [role="option"]'))) {
-              if (el.textContent?.trim() === '일간') {
-                (el as HTMLElement).click();
-                return true;
-              }
-            }
-            return false;
-          });
-          if (changed) await delay(1000);
-        }
-      }
-    } catch (error: any) {
-      log(`[취소감지2E] Step2 실패 (무시): ${error?.message || String(error)}`);
-    }
+  async function scrapeCancelledStatusList(page: any, sourceUrl: string, options: Record<string, any> = {}): Promise<any[]> {
+    return scrapeBookingStatusList(page, sourceUrl, { ...options, statusCode: 'RC04' });
+  }
 
-    try {
-      const statusDropBtn = await page.$('#dropdownBookingStatus');
-      if (statusDropBtn) {
-        await statusDropBtn.click();
-        await delay(500);
-        const checked = await page.evaluate(() => {
-          const menu = document.querySelector('[aria-labelledby="dropdownBookingStatus"], [class*="dropdown-menu"]');
-          if (!menu) return false;
-          for (const item of Array.from(menu.querySelectorAll('li, label, [role="option"]'))) {
-            const text = item.textContent?.trim() || '';
-            if (text === '취소' || (text.includes('취소') && !text.includes('노쇼') && !text.includes('이용완료'))) {
-              const checkbox = item.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-              if (checkbox && !checkbox.checked) {
-                checkbox.click();
-                return true;
-              }
-              (item as HTMLElement).click();
-              return true;
-            }
-          }
-          return false;
-        });
-        if (checked) {
-          await delay(500);
-          await page.keyboard.press('Escape').catch(() => {});
-          await delay(800);
-          await page.evaluate(() => {
-            const closeBtn = document.querySelector('[class*="drawer__close"], [class*="side-panel__close"], [aria-label="닫기"]');
-            if (closeBtn) (closeBtn as HTMLElement).click();
-          }).catch(() => {});
-          await delay(500);
-        }
-      }
-    } catch (error: any) {
-      log(`[취소감지2E] Step3 실패 (무시): ${error?.message || String(error)}`);
-    }
-
-    return scrapeNewestBookingsFromList(page, 50);
+  async function scrapeConfirmedStatusList(page: any, sourceUrl: string, options: Record<string, any> = {}): Promise<any[]> {
+    return scrapeBookingStatusList(page, sourceUrl, { ...options, statusCode: 'RC03' });
   }
 
   async function scrapeNewestBookingsFromList(page: any, limit = 5): Promise<any[]> {
@@ -269,6 +278,9 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
   }
 
   return {
+    scrapeBookingStatusList,
+    scrapeCancelledStatusList,
+    scrapeConfirmedStatusList,
     scrapeExpandedCancelled,
     scrapeNewestBookingsFromList,
   };

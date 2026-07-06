@@ -352,6 +352,14 @@ async function scrapeNewestBookingsFromList(page: any, limit = 5) {
   return naverListScrapeService.scrapeNewestBookingsFromList(page, limit);
 }
 
+async function scrapeCancelledStatusList(page: any, sourceUrl: string, options: any = {}) {
+  return naverListScrapeService.scrapeCancelledStatusList(page, sourceUrl, options);
+}
+
+async function scrapeConfirmedStatusList(page: any, sourceUrl: string, options: any = {}) {
+  return naverListScrapeService.scrapeConfirmedStatusList(page, sourceUrl, options);
+}
+
 function runPickkoCancel(booking: any) {
   const scriptPath = resolveReservationChildScript(null, 'bots/reservation/manual/reservation/pickko-cancel.ts');
   return naverPickkoRunnerService.runPickkoCancel({
@@ -460,6 +468,8 @@ const naverCancelDetectionService = createNaverCancelDetectionService({
   runPickkoCancel,
   scrapeNewestBookingsFromList,
   scrapeExpandedCancelled,
+  scrapeCancelledStatusList,
+  scrapeConfirmedStatusList,
 });
 const naverConfirmedCycleService = createNaverConfirmedCycleService({
   delay,

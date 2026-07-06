@@ -52,27 +52,22 @@ export function buildCancelledRangeUrl(cancelledHref: string, {
   startDate = kst.today(),
   daysAhead = 60,
   endDate = addDaysKst(startDate, daysAhead),
+  dateDropdownType = 'RANGE',
 }: {
   startDate?: string;
   daysAhead?: number;
   endDate?: string;
+  dateDropdownType?: string;
 } = {}): string {
   if (!cancelledHref) throw new Error('cancelledHref_required');
   const url = new URL(cancelledHref);
-  const originalCountFilter = url.searchParams.get('countFilter');
-  const originalStatus = url.searchParams.get('status');
   url.search = '';
-  if (String(originalCountFilter || '').toUpperCase() === 'CANCELLED') {
-    url.searchParams.set('countFilter', 'CANCELLED');
-  } else if (String(originalStatus || '').toUpperCase() === 'CANCELLED') {
-    url.searchParams.set('status', 'CANCELLED');
-  } else {
-    url.searchParams.set('countFilter', 'CANCELLED');
-  }
-  url.searchParams.set('dateDropdownType', 'RANGE');
+  url.searchParams.set('bookingStatusCodes', 'RC04');
+  url.searchParams.set('dateDropdownType', dateDropdownType);
   url.searchParams.set('dateFilter', 'USEDATE');
   url.searchParams.set('startDateTime', startDate);
   url.searchParams.set('endDateTime', endDate);
+  url.searchParams.set('searchValueCode', 'USER_NAME');
   return url.toString();
 }
 
@@ -136,7 +131,7 @@ export async function scanUnifiedCancelledList({
   startDate = kst.today(),
   daysAhead = 60,
   includeTodayExact = true,
-  includeExpandedFallback = true,
+  includeExpandedFallback = false,
   limit = 300,
   delay = async () => {},
   log = () => {},

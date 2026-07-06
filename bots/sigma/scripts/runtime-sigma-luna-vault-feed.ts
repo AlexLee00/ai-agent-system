@@ -3,6 +3,7 @@
 
 import crypto from 'node:crypto';
 import { collectLibraryRecords } from '../ts/lib/library-data-source.js';
+import { attachSourceRefToMeta, sourceRefForLibraryRecord } from '../shared/source-ref.ts';
 import { createVaultEmbedding, VaultManager } from '../vault/vault-manager.ts';
 
 function hasFlag(name: string): boolean {
@@ -59,7 +60,7 @@ function entryForRecord(record: any) {
     tags: tagsForRecord(record),
     filePath: `library/${record.sourceKind}/${shortHash(record.sourceId)}`,
     source: record.sourceKind,
-    meta: {
+    meta: attachSourceRefToMeta({
       contentHash: record.contentHash,
       sourceId: record.sourceId,
       sourceKind: record.sourceKind,
@@ -69,7 +70,7 @@ function entryForRecord(record: any) {
       constitutionAllowed: record.constitutionAllowed,
       redactions: record.redactions || [],
       payload: record.payload || {},
-    },
+    }, sourceRefForLibraryRecord(record)),
   };
 }
 

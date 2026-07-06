@@ -100,7 +100,7 @@ async function main() {
   assert.equal(guarded.cancelledKeys.length, 0, 'guarded stale item must not be recorded as cancelled');
   assert.equal(guarded.pendingCancelMap.size, 0, 'guarded stale item should clear pending cancel state');
   assert.ok(
-    guarded.logs.some((line) => line.includes('미래 stale만으로는 픽코 취소 실행 금지')),
+    guarded.logs.some((line) => line.includes('미래 stale 경로는 관찰 전용')),
     'guarded path should log the explicit stale cancel guard',
   );
   assert.ok(
@@ -114,16 +114,16 @@ async function main() {
   );
 
   const unverified = await runScenario(true, false);
-  assert.equal(unverified.cancels.length, 0, 'future stale must not cancel without expanded cancelled-tab verification');
+  assert.equal(unverified.cancels.length, 0, 'future stale must not cancel after legacy path removal');
   assert.equal(unverified.cancelledKeys.length, 0, 'unverified stale item must not be recorded as cancelled');
   assert.ok(
-    unverified.logs.some((line) => line.includes('확장 취소 탭 미검증')),
-    'unverified path should log cancelled-tab verification failure',
+    unverified.logs.some((line) => line.includes('미래 stale 경로는 관찰 전용')),
+    'future stale should log observation-only guard',
   );
 
   const verified = await runScenario(true, true);
-  assert.equal(verified.cancels.length, 1, 'verified future stale should cancel only after expanded cancelled-tab match');
-  assert.deepEqual(verified.cancelledKeys, ['cancelid|1270000000']);
+  assert.equal(verified.cancels.length, 0, 'verified future stale must still not cancel after legacy path removal');
+  assert.deepEqual(verified.cancelledKeys, []);
 
   console.log('✅ naver-future-stale-cancel-guard-smoke passed');
 }

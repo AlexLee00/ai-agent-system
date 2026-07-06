@@ -14,6 +14,7 @@ import {
 } from './sigma-observation-history.js';
 import { buildProtectedRuntimeReport } from './sigma-protected-runtime.js';
 import { resolveSigmaRuntimeEnv } from './sigma-runtime-env.js';
+import { buildSigma5AxisTransitionReport } from './runtime-sigma-5axis-transition.ts';
 
 const require = createRequire(import.meta.url);
 const { query } = require('../../../packages/core/lib/pg-pool.js') as {
@@ -144,6 +145,7 @@ function buildWeeklyMessage(input: {
   protectedMissing: string[];
   observationWindow: { observedDays: number; targetDays: number; status: string };
   metrics: Awaited<ReturnType<typeof collectWeeklyMetrics>>;
+  transition: any;
   weeklyCostLimitUsd: number;
   budgetPct: number;
   blockers: string[];
@@ -168,6 +170,9 @@ function buildWeeklyMessage(input: {
     `- graph: nodes=${input.graphNodes}, edges=${input.graphEdges}`,
     `- datasets: ${input.datasets}`,
     `- Voyager skill candidates: ${input.skillCandidates}`,
+    input.transition?.ok
+      ? `- 5-axis transitions: triggers=${input.transition.counts?.triggers || 0}, matched=${input.transition.counts?.matched || 0}, validated=${input.transition.counts?.plannedValidated || 0}, contradicted=${input.transition.counts?.plannedContradicted || 0}, promotion=${input.transition.counts?.promotionCandidates || 0}, applied=${input.transition.counts?.applied || 0}`
+      : `- 5-axis transitions: skipped (${input.transition?.reason || 'unavailable'})`,
     `- Sigma LLM cost 7d: $${input.metrics.sigmaCost7dUsd.value.toFixed(4)} / $${input.weeklyCostLimitUsd.toFixed(2)} (${input.budgetPct.toFixed(1)}%)`,
     '',
     '안전 가드:',
@@ -188,6 +193,25 @@ async function main(): Promise<void> {
   const activation = buildFinalActivationSummary(envSource.env);
   const protectedLabels = buildProtectedRuntimeReport();
   const metrics = await collectWeeklyMetrics();
+  const transitionRaw = await buildSigma5AxisTransitionReport({
+    sinceHours: 168,
+    limit: 100,
+    dryRun: true,
+  }).catch((error) => ({
+    ok: false,
+    reason: `sigma_5axis_transition_unavailable:${String((error as Error)?.message || error).slice(0, 180)}`,
+  }));
+  const transition = transitionRaw.ok
+    ? {
+        ok: true,
+        dryRun: transitionRaw.dryRun,
+        liveMutation: transitionRaw.liveMutation,
+        transitionEnabled: transitionRaw.transitionEnabled,
+        sourceCounts: transitionRaw.sourceCounts,
+        counts: transitionRaw.counts,
+        warnings: transitionRaw.warnings,
+      }
+    : transitionRaw;
   const historyPath = defaultObservationHistoryPath(repoRoot);
   const observationHistory = summarizeObservationHistory(readObservationHistory(historyPath));
   const dailyLimitUsd = numberEnv(envSource.env.SIGMA_LLM_DAILY_BUDGET_USD || process.env.SIGMA_LLM_DAILY_BUDGET_USD, 10);
@@ -200,6 +224,7 @@ async function main(): Promise<void> {
   const warnings = [
     ...dashboard.warnings,
     ...metricWarnings,
+    ...(transition.ok === false ? [transition.reason] : []),
     ...(budgetPct >= 80 && budgetPct <= 100 ? [`sigma_weekly_budget_near_limit:${budgetPct.toFixed(1)}pct`] : []),
   ];
   const blockers = [
@@ -226,6 +251,7 @@ async function main(): Promise<void> {
       status: observationHistory.status,
     },
     metrics,
+    transition,
     weeklyCostLimitUsd,
     budgetPct,
     blockers,
@@ -253,6 +279,7 @@ async function main(): Promise<void> {
       utilizationPct: budgetPct,
     },
     metrics,
+    transition,
     blockers,
     warnings,
     rollbackCommand: 'launchctl setenv SIGMA_V2_ENABLED false',

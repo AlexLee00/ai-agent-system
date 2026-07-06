@@ -12,6 +12,9 @@ const {
 } = require('./reservation-source-classifier');
 
 const TIME_ELAPSED_DEDUPE_MINUTES = 12 * 60;
+const DEFAULT_RETRY_BACKOFF_MINUTES = 180;
+const MAX_RETRY_BACKOFF_MINUTES = 12 * 60;
+const RETRYABLE_BLOCK_RESULTS = new Set(['attempted', 'deferred', 'retryable_failure', 'spawn_failed', 'uncertain']);
 
 export type CreateKioskNaverPhaseServiceDeps = {
   log: Logger;
@@ -144,6 +147,28 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
       out.push(entry);
     }
     return out;
+  }
+
+  function retryBackoffMinutes(saved: Record<string, any>): number {
+    const configured = Number(process.env.KIOSK_BLOCK_RETRY_BACKOFF_MINUTES || DEFAULT_RETRY_BACKOFF_MINUTES);
+    const base = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_RETRY_BACKOFF_MINUTES;
+    const retryCount = Math.max(1, Number(saved?.blockRetryCount || 0));
+    return Math.min(MAX_RETRY_BACKOFF_MINUTES, base * retryCount);
+  }
+
+  function isRetryBackoffElapsed(saved: Record<string, any>, now: Date): boolean {
+    const result = String(saved?.lastBlockResult || '');
+    if (result === 'queued' || !result) return true;
+    if (!RETRYABLE_BLOCK_RESULTS.has(result)) return false;
+
+    const lastAttemptAt = saved?.lastBlockAttemptAt;
+    if (!lastAttemptAt) return true;
+
+    const lastAttemptMs = new Date(lastAttemptAt).getTime();
+    if (!Number.isFinite(lastAttemptMs)) return true;
+
+    const elapsedMinutes = (now.getTime() - lastAttemptMs) / 60000;
+    return elapsedMinutes >= retryBackoffMinutes(saved);
   }
 
   function getSavedKioskBlockForSourceEntry(entry: Record<string, any>) {
@@ -362,7 +387,16 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         if (!saved) return false;
         if (saved.naverBlocked) return false;
         if (saved.naverUnblockedAt) return false;
+        if (!isRetryBackoffElapsed(saved, nowForRetry)) return false;
         return !isKioskEntryEnded(entry, nowForRetry);
+      });
+      const deferredRetryEntries = sourceBlockCandidates.filter((entry, index) => {
+        const saved = blockSaved[index];
+        if (!saved) return false;
+        if (saved.naverBlocked) return false;
+        if (saved.naverUnblockedAt) return false;
+        if (isKioskEntryEnded(entry, nowForRetry)) return false;
+        return !isRetryBackoffElapsed(saved, nowForRetry);
       });
       const blockEntries = sortEntries(dedupeEntries([...newEntries, ...retryEntries]));
 
@@ -375,7 +409,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         if (saved.naverUnblockedAt) return false;
         return true;
       }));
-      log(`[원천분류] 처리 대상 확정: 신규 ${newEntries.length}건 / 재시도 ${retryEntries.length}건 / 차단 ${blockEntries.length}건 / 해제 ${unblockEntries.length}건`);
+      log(`[원천분류] 처리 대상 확정: 신규 ${newEntries.length}건 / 재시도 ${retryEntries.length}건 / 재시도보류 ${deferredRetryEntries.length}건 / 차단 ${blockEntries.length}건 / 해제 ${unblockEntries.length}건`);
 
       for (const entry of blockEntries) {
         const key = `${entry.phoneRaw}|${entry.date}|${entry.start}`;

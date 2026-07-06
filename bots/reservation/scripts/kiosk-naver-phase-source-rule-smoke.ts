@@ -256,6 +256,69 @@ async function main() {
     'preserved already-blocked rows should not publish retryable failure alerts',
   );
 
+  const retryBackoffLogs = [];
+  const retryBackoffBlockedPhones = [];
+  const retryBackoffService = createKioskNaverPhaseService({
+    log: (message) => retryBackoffLogs.push(String(message)),
+    readWsFile: () => 'ws://example.test/devtools/browser/test',
+    connectBrowser: async () => ({
+      newPage: async () => createFakePage(),
+      disconnect: () => {},
+    }),
+    attachNaverScheduleTrace: () => {},
+    naverBookingLogin: async () => true,
+    upsertKioskBlock: async () => {},
+    journalBlockAttempt: async () => {},
+    publishRetryableBlockAlert: () => {},
+    publishReservationAlert: () => {},
+    buildOpsAlertMessage: () => 'message',
+    fmtPhone: (phone) => phone,
+    nowKST: () => '2099-01-01T00:00:00+09:00',
+    waitForCustomerCooldown: async () => {},
+    markCustomerCooldown: () => {},
+    runtimeConfig: { customerOperationCooldownMs: 0 },
+    delay: async () => {},
+    blockNaverSlot: async (_page, item) => {
+      retryBackoffBlockedPhones.push(item.phoneRaw);
+      return { ok: true, reason: 'verified' };
+    },
+    unblockNaverSlot: async () => true,
+    publishKioskSuccessReport: () => {},
+    getKioskBlock: async () => ({
+      naverBlocked: false,
+      naverUnblockedAt: null,
+      lastBlockAttemptAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      lastBlockResult: 'retryable_failure',
+      lastBlockReason: 'slot_click_failed',
+      blockRetryCount: 1,
+    }),
+    bookingUrl: 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    scrapeNewestBookingsFromList: async () => [{
+      phoneRaw: '01000000000',
+      date: '2099-01-02',
+      start: '09:00',
+      end: '09:30',
+      room: 'B',
+    }],
+  });
+
+  await retryBackoffService.processNaverPhase({
+    wsFile: '/tmp/ws-file-not-read',
+    toBlockEntries: [entry({ phoneRaw: '01022223333', room: '스터디룸B', start: '13:00', end: '15:20', amount: 0 })],
+    cancelledEntries: [],
+    recordKioskBlockAttempt: async () => {},
+  });
+
+  assert.deepEqual(
+    retryBackoffBlockedPhones,
+    [],
+    'recent retryable failures must not be reprocessed every kiosk-monitor cycle',
+  );
+  assert.ok(
+    retryBackoffLogs.some((line) => line.includes('재시도보류 1건')),
+    'retry backoff should be visible in the source classification summary',
+  );
+
   const timeElapsedAlerts = [];
   const timeElapsedUpserts = [];
   const timeElapsedBlockedPhones = [];

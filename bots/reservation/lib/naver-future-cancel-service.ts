@@ -201,78 +201,9 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
             bookingId: /^\d+$/.test(String(stale.booking_key)) ? stale.booking_key : null,
           };
 
-          if (!runtimeConfig.futureStaleCancelMutationEnabled) {
-            log(`🛡️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 미래 stale만으로는 픽코 취소 실행 금지`);
-            pendingCancelMap.delete(cancelKey);
-            await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
-            continue;
-          }
-
-          if (pendingCancelMap.has(cancelKey)) {
-            const pending = pendingCancelMap.get(cancelKey);
-            const elapsed = Date.now() - pending.firstDetectedAt;
-            if (elapsed > runtimeConfig.staleExpireMs) {
-              log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — pending 만료(${Math.floor(elapsed / 60000)}분) → 재등록`);
-              pendingCancelMap.set(cancelKey, {
-                source: 'future_stale',
-                booking,
-                stale,
-                firstDetectedAt: Date.now(),
-                count: 1,
-              });
-              await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
-              continue;
-            }
-
-            const newCount = (pending.count || 1) + 1;
-            if (newCount >= runtimeConfig.staleConfirmCount && elapsed >= runtimeConfig.staleMinElapsedMs) {
-              if (!expandedCancelledList) {
-                expandedCancelledList = await scrapeExpandedCancelled(page, cancelledHref);
-              }
-              const verifiedCancelled = await findVerifiedCancelledBooking({
-                page,
-                cancelledHref,
-                booking,
-                expandedCancelledList,
-              });
-              if (!verifiedCancelled) {
-                log(`🛡️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — stale 조건 충족, 그러나 확장 취소 탭 미검증 → 픽코 취소 금지`);
-                pendingCancelMap.delete(cancelKey);
-                await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
-                continue;
-              }
-
-              const verifiedCancelKey = buildCancelKey(verifiedCancelled, todaySeoul);
-              if (await isCancelledKey(verifiedCancelKey)) {
-                pendingCancelMap.delete(cancelKey);
-                continue;
-              }
-
-              log(`🗑️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 연속 stale + 확장 취소 탭 검증 완료 → 취소 확정`);
-              pendingCancelMap.delete(cancelKey);
-              const result = await runPickkoCancel(verifiedCancelled, verifiedCancelKey);
-              if (result === 0) {
-                await addCancelledKey(verifiedCancelKey);
-                cycleNewCancelDetections += 1;
-              } else {
-                log(`🛡️ [취소감지4] 픽코 취소 미완료(exit ${result}) — 취소 key 등록 보류: ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time}`);
-              }
-            } else {
-              pendingCancelMap.set(cancelKey, { ...pending, source: 'future_stale', booking, count: newCount });
-              log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — ${newCount}회 stale (${Math.floor(elapsed / 60000)}분 경과) → 취소 대기 (${runtimeConfig.staleConfirmCount}회/${Math.floor(runtimeConfig.staleMinElapsedMs / 60000)}분 필요)`);
-              await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
-            }
-          } else {
-            log(`⏳ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 1회 stale 감지 → 대기 (${runtimeConfig.staleConfirmCount}회 연속 필요)`);
-            pendingCancelMap.set(cancelKey, {
-              source: 'future_stale',
-              booking,
-              stale,
-              firstDetectedAt: Date.now(),
-              count: 1,
-            });
-            await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
-          }
+          log(`🛡️ [취소감지4] ${maskPhone(stale.phone_raw)} ${stale.date} ${stale.start_time}~${stale.end_time} — 미래 stale 경로는 관찰 전용, 픽코 취소 실행 금지`);
+          pendingCancelMap.delete(cancelKey);
+          await upsertFutureConfirmed(stale.booking_key, stale.phone_raw, stale.date, stale.start_time, stale.end_time, stale.room, checkCount);
         }
         await deleteStaleConfirmed(checkCount, tomorrowStr);
       }

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { attachSourceRefToMeta } from '../shared/source-ref.ts';
 import { createVaultEmbedding, VaultManager } from '../vault/vault-manager.ts';
 
 const require = createRequire(import.meta.url);
@@ -104,12 +105,12 @@ export function buildDocsVaultCandidates({ handoffFiles = [], meetingMinutes = [
       tags: ['sigma-library', 'handoff', 'docs'],
       filePath: `library/handoff/${safePathPart(relative)}-${hash.slice(0, 12)}`,
       source: 'handoff',
-      meta: {
+      meta: attachSourceRefToMeta({
         sourceKind: 'handoff',
         sourcePath: relative,
         contentHash: hash,
         modifiedAt: new Date((typeof item === 'string' ? fs.statSync(file) : item.stat).mtimeMs).toISOString(),
-      },
+      }, { team: 'docs', table: 'project_docs.handoff', id: relative }),
     });
   }
 
@@ -129,7 +130,7 @@ export function buildDocsVaultCandidates({ handoffFiles = [], meetingMinutes = [
         tags: ['sigma-library', 'meeting_minutes', 'luna', row.role || row.agenda_key || 'minute'].filter(Boolean),
         filePath: `library/meeting_minutes/${safePathPart(sessionId)}/${safePathPart(seq)}-${hash.slice(0, 12)}`,
         source: 'meeting_minutes',
-        meta: {
+        meta: attachSourceRefToMeta({
           sourceKind: 'meeting_minutes',
           sessionId,
           seq,
@@ -138,7 +139,7 @@ export function buildDocsVaultCandidates({ handoffFiles = [], meetingMinutes = [
           role: row.role || null,
           contentHash: hash,
           createdAt: row.created_at || null,
-        },
+        }, { team: 'luna', table: 'investment.luna_meeting_minutes', id: `${sessionId}:${seq}` }),
       };
     })
     .filter(Boolean);

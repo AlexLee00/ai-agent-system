@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { attachSourceRefToMeta } from '../shared/source-ref.ts';
 import { createVaultEmbedding, VaultManager } from '../vault/vault-manager.ts';
 
 const require = createRequire(import.meta.url);
@@ -95,7 +96,10 @@ export function buildTeamVaultCandidates({ skaDaily = [], skaReservations = [], 
       tags: ['sigma-library', 'ska', 'reservation', 'revenue'],
       filePath: `library/ska/daily_summary/${safePathPart(date)}-${hash.slice(0, 12)}`,
       source: 'ska_daily_summary',
-      meta: { sourceKind: 'ska_daily_summary', date, contentHash: hash, pii: 'aggregate_only' },
+      meta: attachSourceRefToMeta(
+        { sourceKind: 'ska_daily_summary', date, contentHash: hash, pii: 'aggregate_only' },
+        { team: 'ska', table: 'reservation.daily_summary', id: date },
+      ),
     });
   }
 
@@ -119,7 +123,10 @@ export function buildTeamVaultCandidates({ skaDaily = [], skaReservations = [], 
       tags: ['sigma-library', 'ska', 'reservation', 'status'],
       filePath: `library/ska/reservation_summary/${safePathPart(date)}-${hash.slice(0, 12)}`,
       source: 'ska_reservation_summary',
-      meta: { sourceKind: 'ska_reservation_summary', date, contentHash: hash, pii: 'aggregate_only' },
+      meta: attachSourceRefToMeta(
+        { sourceKind: 'ska_reservation_summary', date, contentHash: hash, pii: 'aggregate_only' },
+        { team: 'ska', table: 'reservation.reservations.aggregate', id: date },
+      ),
     });
   }
 
@@ -145,13 +152,13 @@ export function buildTeamVaultCandidates({ skaDaily = [], skaReservations = [], 
       tags: ['sigma-library', 'darwin', 'research', row.stage || 'stage:unknown'].filter(Boolean),
       filePath: `library/darwin/research/${safePathPart(paperId)}-${hash.slice(0, 12)}`,
       source: 'darwin_research',
-      meta: {
+      meta: attachSourceRefToMeta({
         sourceKind: 'darwin_research',
         paperId,
         stage: row.stage || null,
         contentHash: hash,
         updatedAt: row.updated_at || row.inserted_at || null,
-      },
+      }, { team: 'darwin', table: 'public.darwin_research_registry', id: paperId }),
     });
   }
 
@@ -177,13 +184,13 @@ export function buildTeamVaultCandidates({ skaDaily = [], skaReservations = [], 
       tags: ['sigma-library', 'darwin', 'cycle', row.status || row.verification_status || 'status:unknown'].filter(Boolean),
       filePath: `library/darwin/cycle_result/${safePathPart(cycleId)}-${hash.slice(0, 12)}`,
       source: 'darwin_cycle_result',
-      meta: {
+      meta: attachSourceRefToMeta({
         sourceKind: 'darwin_cycle_result',
         cycleId,
         status: row.status || row.verification_status || null,
         contentHash: hash,
         createdAt: row.inserted_at || row.completed_at || null,
-      },
+      }, { team: 'darwin', table: 'public.darwin_v2_cycle_results', id: cycleId }),
     });
   }
 

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { attachSourceRefToMeta } from '../shared/source-ref.ts';
 import { classify } from './para-classifier.ts';
 import { VaultManager } from './vault-manager.ts';
 import {
@@ -63,11 +64,11 @@ export async function runInboxProcessor(options = {}) {
         filePath: row.relativePath,
         source: 'vault-inbox-processor',
         libraryCoords: classification.libraryCoords,
-        meta: {
+        meta: attachSourceRefToMeta({
           classification,
           mode,
           dryRun: !apply,
-        },
+        }, { team: 'sigma', table: 'sigma.vault_inbox', id: row.relativePath }),
       });
     }
 
@@ -109,6 +110,24 @@ export async function runInboxProcessor(options = {}) {
     });
   }
 
+  let transitionScan = { ok: true, skipped: true, reason: 'disabled_by_option' };
+  if (options.transitionScan !== false && String(process.env.SIGMA_5AXIS_TRANSITION_SCAN_DISABLED || '').toLowerCase() !== 'true') {
+    try {
+      const scanner = await import('../scripts/runtime-sigma-5axis-transition.ts');
+      transitionScan = await scanner.buildSigma5AxisTransitionReport({
+        sinceHours: Number(options.transitionSinceHours || 24),
+        limit: Number(options.transitionLimit || 50),
+        dryRun: true,
+      });
+    } catch (error) {
+      transitionScan = {
+        ok: false,
+        skipped: true,
+        reason: `sigma_5axis_transition_scan_failed:${String(error?.message || error).slice(0, 180)}`,
+      };
+    }
+  }
+
   return {
     ok: true,
     status: apply ? 'sigma_vault_inbox_processor_applied' : 'sigma_vault_inbox_processor_shadow',
@@ -123,6 +142,13 @@ export async function runInboxProcessor(options = {}) {
     moved: results.filter((item) => item.moved).length,
     durationMs: Date.now() - startedAt,
     structure,
+    transitionScan: {
+      ok: transitionScan.ok !== false,
+      skipped: Boolean(transitionScan.skipped),
+      reason: transitionScan.reason || null,
+      counts: transitionScan.counts || null,
+      sourceCounts: transitionScan.sourceCounts || null,
+    },
     results,
     safety: {
       fileMoveRequiresApply: true,
