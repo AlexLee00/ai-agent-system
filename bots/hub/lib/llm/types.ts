@@ -27,6 +27,7 @@ export interface LLMCallRequest {
   taskType?: string;
   cacheEnabled?: boolean;
   cacheType?: 'realtime' | 'sentiment_realtime' | 'analysis' | 'research' | 'default' | string;
+  strictProviderFamily?: string;
 }
 
 export interface LLMCallResponse {

@@ -41,6 +41,7 @@ type HubLlmCallRequest = {
   groqModel?: string;
   configuredProviders?: string[];
   avoidProviders?: string[];
+  strictProviderFamily?: string;
   chain?: any[];
   policyOverride?: any;
   urgency?: 'low' | 'normal' | 'high' | 'critical';

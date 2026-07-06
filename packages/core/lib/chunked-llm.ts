@@ -26,6 +26,7 @@ type GenerateOptions = {
   abstractModel?: string;
   selectorKey?: string;
   policyOverride?: any;
+  strictProviderFamily?: string;
   callerTeam?: string;
   agent?: string;
   taskType?: string;
@@ -62,6 +63,7 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
     abstractModel,
     selectorKey,
     policyOverride = null,
+    strictProviderFamily,
     callerTeam = String(logMeta.team || 'core'),
     agent = String(logMeta.bot || 'chunked-llm'),
     taskType = String(logMeta.requestType || 'chunked_generate'),
@@ -91,6 +93,7 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
           abstractModel,
           selectorKey: resolvedSelectorKey,
           policyOverride,
+          strictProviderFamily,
           taskType: `${taskType}:${chunk.id}`,
           systemPrompt,
           prompt: fullPrompt,

@@ -58,7 +58,10 @@ async function main() {
     assert.ok(pos.includes('abstractModel: writerModel'), 'pos direct writer must pass abstractModel');
     assert.ok(chunked.includes('abstractModel') && chunked.includes('callHubLlm'), 'chunkedGenerate must pass abstractModel');
     assert.ok(gems.includes('writerModelCacheSuffix') && pos.includes('writerModelCacheSuffix'), 'writer cache must be model scoped');
-    assert.ok(blo.includes('metadata.writer_model = post.writerModel'), 'post metadata writer_model tag missing');
+    assert.ok(blo.includes('buildWriterAbMetadata(post, traceCtx)'), 'post metadata writer model helper missing');
+    assert.ok(blo.includes('metadata.served_model = servedModel'), 'post metadata served_model tag missing');
+    assert.ok(blo.includes('metadata.fallback_used = Boolean'), 'post metadata fallback_used tag missing');
+    assert.ok(blo.includes('metadata.trace_id = traceId'), 'post metadata trace_id tag missing');
 
     const comparison = buildWriterModelCrankComparison([
       { writer_model: 'anthropic_haiku', overall: 62, post_type: 'general' },

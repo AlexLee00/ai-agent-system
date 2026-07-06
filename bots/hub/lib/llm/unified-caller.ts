@@ -235,6 +235,7 @@ function _inflightDedupeKey(req: LlmRequest): string {
     temperature: req?.temperature ?? null,
     timeoutMs: req?.timeoutMs ?? null,
     maxBudgetUsd: req?.maxBudgetUsd ?? null,
+    strictProviderFamily: req?.strictProviderFamily || null,
     chain: req?.chain || null,
   };
   return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
@@ -267,7 +268,9 @@ async function _runWithInflightDedupe(req: LlmRequest, executor: () => Promise<L
 function _resolveSelectorChain(req: LlmRequest, team: string): AnyRecord | null {
   try {
     const selection = resolveHubLlmSelection(req, { allowAdhocChain: _adhocChainAllowed() });
-    if (selection?.chain?.length) return _applySelectorAvoidProviders(req, selection);
+    if (selection?.chain?.length) {
+      return _applyStrictProviderFamily(req, _applySelectorAvoidProviders(req, selection));
+    }
     if (selection?.error === 'llm_adhoc_chain_blocked') return null;
     return selection?.error ? selection : null;
   } catch (e: any) {
@@ -302,6 +305,43 @@ function _applySelectorAvoidProviders(req: LlmRequest, selectorChain: AnyRecord)
   return { ...selectorChain, chain: preferred.concat(avoided), avoidedProviders: avoidProviders };
 }
 
+function _normalizeStrictProviderFamily(value: unknown): string {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'claude' || normalized === 'anthropic' || normalized === 'claude-code') return 'anthropic';
+  if (normalized === 'openai' || normalized === 'gpt') return 'openai';
+  if (normalized === 'gemini' || normalized === 'google') return 'gemini';
+  if (normalized === 'groq') return 'groq';
+  if (normalized === 'local' || normalized === 'ollama') return 'local';
+  return '';
+}
+
+function _routeProviderFamily(route: unknown, abstractModel?: unknown): string {
+  const rawRoute = typeof route === 'string' ? route : _chainEntryToRoute(route as RouteEntry);
+  const normalizedRoute = _normalizeRoute(rawRoute, abstractModel);
+  const provider = _routeToProvider(normalizedRoute);
+  if (provider === 'claude-code-oauth' || provider === 'anthropic') return 'anthropic';
+  if (provider === 'openai-oauth' || provider === 'openai') return 'openai';
+  if (_isGeminiProvider(provider)) return 'gemini';
+  if (provider === 'groq') return 'groq';
+  if (provider === 'local' || provider === 'local-embedding') return 'local';
+  return '';
+}
+
+function _applyStrictProviderFamily(req: LlmRequest, selectorChain: AnyRecord): AnyRecord {
+  const strictFamily = _normalizeStrictProviderFamily(req?.strictProviderFamily);
+  if (!strictFamily || !Array.isArray(selectorChain?.chain)) return selectorChain;
+
+  const originalChain = selectorChain.chain;
+  const chain = originalChain.filter((entry: AnyRecord) => _routeProviderFamily(entry, req?.abstractModel) === strictFamily);
+  return {
+    ...selectorChain,
+    chain,
+    strictProviderFamily: strictFamily,
+    strictProviderFamilyFilteredCount: originalChain.length - chain.length,
+    error: chain.length ? selectorChain.error : `strict_provider_family_unavailable:${strictFamily}`,
+  };
+}
+
 async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord, team: string): Promise<LlmResponse> {
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(selectorChain.chain || [], tokenBudget);
@@ -331,6 +371,7 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
         tokenBudget,
         tokenBudgetStatus: 'allowed',
         avoidedProviders: selectorChain.avoidedProviders || [],
+        strictProviderFamily: selectorChain.strictProviderFamily || null,
         fallbackCount: attempts.length,
         fallbackUsed: attempts.length > 0,
         attempted_providers: attempts.map((a: AnyRecord) => a.provider),
@@ -360,6 +401,7 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
     attempted_providers: attempts.map((a: AnyRecord) => a.provider),
     avoidedProviders: selectorChain.avoidedProviders || [],
+    strictProviderFamily: selectorChain.strictProviderFamily || null,
     fallbackCount: attempts.length,
     fallbackUsed: attempts.length > 0,
     selectorKey: selectorChain.selectorKey,
@@ -1241,6 +1283,8 @@ module.exports = {
     _isGeminiProvider,
     _providerCircuitKey,
     _resolveSelectorChain,
+    _applyStrictProviderFamily,
+    _routeProviderFamily,
     _adhocChainAllowed,
     _callOpenAiCodexOAuthWithRetry,
     _isRetryableOpenAiOAuthError,

@@ -23,7 +23,11 @@ const { calculateSectionChars, buildCharCountInstruction } = require(path.join(e
 const { isAgentIntroLecture } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agent-intro-curriculum.ts'));
 const { buildBlogFormatInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-format-rules.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
-const { resolveBlogWriterModel, writerModelCacheSuffix } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
+const {
+  resolveBlogWriterModel,
+  writerModelCacheSuffix,
+  buildWriterFamilyRequestOptions,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
 const { buildLifecyclePromptContext } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/agent-lifecycle.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
@@ -64,6 +68,7 @@ async function callPosWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens 
     callerTeam: 'blog',
     agent: 'pos',
     abstractModel: writerModel,
+    ...buildWriterFamilyRequestOptions(writerModel),
     selectorKey: 'blog.pos.writer',
     policyOverride: selectorOverrides['blog.pos.writer'] || null,
     taskType,
@@ -638,6 +643,7 @@ ${_buildVariationBlock(sectionVariation)}
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let usedChunkedFallback = false;
+  let traceId = getTraceId();
   let content;
 
   try {
@@ -650,6 +656,7 @@ ${_buildVariationBlock(sectionVariation)}
     });
     content      = result.text;
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    traceId      = result.traceId || result.trace_id || traceId;
     fallbackUsed = Number(result.fallbackCount || 0) > 0;
     if (fallbackUsed) console.log(`[포스] LLM 폴백 발생: ${usedModel} (${result.fallbackCount} fallback)`);
   } catch (error) {
@@ -658,13 +665,14 @@ ${_buildVariationBlock(sectionVariation)}
     const chunked = await writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation);
     content = chunked.content;
     usedModel = chunked.model || 'chunked-hub:blog.pos.writer';
+    traceId = chunked.traceId || traceId;
     fallbackUsed = true;
     usedChunkedFallback = true;
   } finally {
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-pos', success: !!content,
       duration_ms: Date.now() - startTime,
-      metadata: { model: usedModel, writer_model: writerModel, lecture_num: lectureNumber, trace_id: getTraceId(), fallback_used: fallbackUsed },
+      metadata: { model: usedModel, writer_model: writerModel, lecture_num: lectureNumber, trace_id: traceId, fallback_used: fallbackUsed },
     }).catch(() => {});
   }
 
@@ -686,6 +694,10 @@ ${_buildVariationBlock(sectionVariation)}
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
         writerModel,
       });
+      let acceptedContinuation = false;
+      const contModel = cont.selected_route || cont.model || cont.provider || null;
+      const contFallbackUsed = Number(cont.fallbackCount || 0) > 0;
+      const contTraceId = cont.traceId || cont.trace_id || null;
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
       const isRestart     = contFirstLine.startsWith('#') && cont.text.length > content.length * 0.5;
@@ -693,6 +705,12 @@ ${_buildVariationBlock(sectionVariation)}
         console.warn(`[포스] ⚠️ 이어쓰기 LLM이 새 글 시작 감지 — 이어붙이기 건너뜀 (${cont.text.length}자)`);
       } else {
         content = content + '\n' + cont.text;
+        acceptedContinuation = true;
+      }
+      if (acceptedContinuation) {
+        if (contModel && contModel !== usedModel) usedModel = `${usedModel}+continue:${contModel}`;
+        fallbackUsed = fallbackUsed || contFallbackUsed;
+        traceId = contTraceId || traceId;
       }
     } catch (e) {
       console.warn(`[포스] 이어쓰기 실패 (무시): ${e.message}`);
@@ -710,8 +728,10 @@ ${_buildVariationBlock(sectionVariation)}
     content,
     charCount: content.length,
     model:     usedModel,
+    usedModel,
     writerModel,
     fallbackUsed,
+    traceId,
   };
 
   // 최소 글자수 달성 시에만 캐시 저장 (실패 결과 캐시 방지)
@@ -783,8 +803,10 @@ ${content}
   `.trim();
 
   const startTime = Date.now();
+  const writerModel = resolveBlogWriterModel();
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
+  let traceId = getTraceId();
   let repaired;
 
   try {
@@ -792,9 +814,11 @@ ${content}
       systemPrompt: POS_SYSTEM_PROMPT,
       userPrompt: repairPrompt,
       taskType: 'lecture_post_repair',
+      writerModel,
     });
     repaired     = result.text;
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    traceId      = result.traceId || result.trace_id || traceId;
     fallbackUsed = Number(result.fallbackCount || 0) > 0;
   } finally {
     await toolLogger.logToolCall('llm', 'callHubLlm', {
@@ -803,8 +827,9 @@ ${content}
       duration_ms: Date.now() - startTime,
       metadata: {
         model: usedModel,
+        writer_model: writerModel,
         lecture_num: lectureNumber,
-        trace_id: getTraceId(),
+        trace_id: traceId,
         fallback_used: fallbackUsed,
         type: 'repair',
       },
@@ -818,7 +843,10 @@ ${content}
     content: repaired,
     charCount: repaired.length,
     model: usedModel,
+    usedModel,
+    writerModel,
     fallbackUsed,
+    traceId,
     repairedFromDraft: true,
   };
 }
@@ -1022,6 +1050,7 @@ ${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}
   const result    = await chunkedGenerate(POS_SYSTEM_PROMPT, chunks, {
     model,
     abstractModel: writerModel,
+    ...buildWriterFamilyRequestOptions(writerModel),
     selectorKey: 'blog.pos.writer',
     policyOverride: selectorOverrides['blog.pos.writer'] || null,
     callerTeam: 'blog',
@@ -1040,11 +1069,16 @@ ${lifecyclePromptBlock ? `\n${lifecyclePromptBlock}` : ''}
   let content = _ensureLectureBriefingFloor(String(result.content || '').trim(), lectureTitle);
   content = _ensureWeeklyNewsSection(content, researchData);
 
+  const chunkModels = [...new Set((result.chunks || []).map((chunk) => chunk.model).filter(Boolean))];
+  const chunkModel = chunkModels.length > 1 ? `chunked:${chunkModels.join('+')}` : (chunkModels[0] || `chunked-${model}`);
   return {
     content,
     charCount: content.length,
-    model:     `chunked-${model}`,
+    model:     chunkModel,
+    usedModel: chunkModel,
     writerModel,
+    fallbackUsed: false,
+    traceId: getTraceId(),
   };
 }
 

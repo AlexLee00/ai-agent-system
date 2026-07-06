@@ -1294,6 +1294,20 @@ function _buildAccumulationOptions(traceCtx, options = {}, published = null) {
   };
 }
 
+function buildWriterAbMetadata(post = {}, traceCtx = {}) {
+  const metadata = {};
+  const writerModel = post.writerModel || post.writer_model || null;
+  const servedModel = post.usedModel || post.servedModel || post.model || null;
+  const traceId = post.traceId || post.trace_id || traceCtx.trace_id || traceCtx.traceId || null;
+  if (writerModel) metadata.writer_model = writerModel;
+  if (servedModel) metadata.served_model = servedModel;
+  if (post.fallbackUsed !== undefined || post.fallback_used !== undefined) {
+    metadata.fallback_used = Boolean(post.fallbackUsed ?? post.fallback_used);
+  }
+  if (traceId) metadata.trace_id = traceId;
+  return metadata;
+}
+
 async function _accumulatePublishedPost(postData, quality, traceCtx, options = {}, published = null) {
   await accumulatePostExperience(postData, quality, _buildAccumulationOptions(traceCtx, options, published));
 }
@@ -1593,7 +1607,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
 async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx, writerName = null, options = {}) {
   const postTitle = _normalizeLecturePostTitle(context);
   const lectureCategory = _lectureCategoryForContext(context);
-  const metadata = {};
+  const metadata = buildWriterAbMetadata(post, traceCtx);
   const autonomy = await _decideAutonomyForPost({
     title: postTitle,
     content: post.content,
@@ -1602,7 +1616,6 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     category: lectureCategory,
   }, context.daily || {}, quality);
   if (autonomy) metadata.autonomy = autonomy;
-  if (post.writerModel) metadata.writer_model = post.writerModel;
   const published = await _publishAndTrack({
     title:         postTitle,
     content:       post.content,
@@ -1668,6 +1681,9 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     filename:       published.filename,
     postId:         published.postId,
     writerModel:    post.writerModel || null,
+    usedModel:      post.usedModel || post.model || null,
+    fallbackUsed:   Boolean(post.fallbackUsed),
+    traceId:        post.traceId || traceCtx.trace_id || null,
     dryRun:         !!options.dryRun,
   };
 }
@@ -1739,8 +1755,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     ...post,
     title: genTitle,
   }, context);
-  const metadata = {};
-  if (post.writerModel) metadata.writer_model = post.writerModel;
+  const metadata = buildWriterAbMetadata(post, traceCtx);
   if (autonomy) metadata.autonomy = autonomy;
   if (titleAlignment?.preview_title || titleAlignment?.final_title) {
     metadata.title_alignment = titleAlignment;
@@ -1869,6 +1884,9 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     filename:       published.filename,
     postId:         published.postId,
     writerModel:    post.writerModel || null,
+    usedModel:      post.usedModel || post.model || null,
+    fallbackUsed:   Boolean(post.fallbackUsed),
+    traceId:        post.traceId || traceCtx.trace_id || null,
     dryRun:         !!options.dryRun,
   };
 }
@@ -2772,4 +2790,11 @@ async function retryGeneralOnly(options = {}) {
   return generalResult;
 }
 
-module.exports = { run, retryLectureOnly, retryGeneralOnly };
+module.exports = {
+  run,
+  retryLectureOnly,
+  retryGeneralOnly,
+  _testOnly: {
+    buildWriterAbMetadata,
+  },
+};

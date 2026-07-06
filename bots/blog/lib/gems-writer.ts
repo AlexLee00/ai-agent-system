@@ -28,7 +28,11 @@ const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.j
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
 const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
-const { resolveBlogWriterModel, writerModelCacheSuffix } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
+const {
+  resolveBlogWriterModel,
+  writerModelCacheSuffix,
+  buildWriterFamilyRequestOptions,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
 const { buildLifecyclePromptContext } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/agent-lifecycle.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
@@ -62,6 +66,7 @@ async function callGemsWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens
     callerTeam: 'blog',
     agent: 'gems',
     abstractModel: writerModel,
+    ...buildWriterFamilyRequestOptions(writerModel),
     selectorKey: 'blog.gems.writer',
     policyOverride: selectorOverrides['blog.gems.writer'] || null,
     taskType,
@@ -1072,10 +1077,11 @@ function _getShortSections(text, category) {
     .filter(section => section.missing || section.currentChars < section.minChars);
 }
 
-async function _runGeneralPostRepairPasses(category, researchData, content, sectionVariation, usedModel, fallbackUsed, minCharsGeneral) {
+async function _runGeneralPostRepairPasses(category, researchData, content, sectionVariation, usedModel, fallbackUsed, minCharsGeneral, traceId = null) {
   let repairedContent = String(content || '').trim();
   let nextUsedModel = usedModel;
   let nextFallbackUsed = fallbackUsed;
+  let nextTraceId = traceId;
   const weatherContext = weatherToContext(researchData.weather || {}, { detailed: false });
   const relatedPosts = researchData.relatedPosts || [];
 
@@ -1131,6 +1137,7 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
       repairedContent = String(repaired.content || repairedContent).trim();
       if (repaired.model) nextUsedModel = repaired.model;
       nextFallbackUsed = nextFallbackUsed || !!repaired.fallbackUsed;
+      nextTraceId = repaired.traceId || nextTraceId;
       console.log(`[젬스] repair 완료 #${attempt}: ${repairedContent.length}자`);
     } catch (e) {
       console.warn(`[젬스] repair 실패 #${attempt} (무시): ${e.message}`);
@@ -1142,6 +1149,7 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
     content: repairedContent,
     model: nextUsedModel,
     fallbackUsed: nextFallbackUsed,
+    traceId: nextTraceId,
   };
 }
 
@@ -1510,6 +1518,7 @@ ${_buildVariationBlock(sectionVariation)}
   const startTime = Date.now();
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
+  let traceId = getTraceId();
   let content;
   try {
     const result = await callGemsWriterLlm({
@@ -1521,13 +1530,14 @@ ${_buildVariationBlock(sectionVariation)}
     });
     content      = result.text;
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    traceId      = result.traceId || result.trace_id || traceId;
     fallbackUsed = Number(result.fallbackCount || 0) > 0;
     if (fallbackUsed) console.log(`[젬스] LLM 폴백 발생: ${usedModel} (${result.fallbackCount} fallback)`);
   } finally {
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems', success: !!content,
       duration_ms: Date.now() - startTime,
-      metadata: { model: usedModel, writer_model: writerModel, category, trace_id: getTraceId(), fallback_used: fallbackUsed },
+      metadata: { model: usedModel, writer_model: writerModel, category, trace_id: traceId, fallback_used: fallbackUsed },
     }).catch(() => {});
   }
 
@@ -1549,6 +1559,10 @@ ${_buildVariationBlock(sectionVariation)}
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
         writerModel,
       });
+      let acceptedContinuation = false;
+      const contModel = cont.selected_route || cont.model || cont.provider || null;
+      const contFallbackUsed = Number(cont.fallbackCount || 0) > 0;
+      const contTraceId = cont.traceId || cont.trace_id || null;
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
       const isRestart     = contFirstLine.startsWith('#') && cont.text.length > content.length * 0.5;
@@ -1561,9 +1575,16 @@ ${_buildVariationBlock(sectionVariation)}
         } else if (continuation.mode === 'trimmed_to_missing_section') {
           console.log(`[젬스] 이어쓰기 중복 섹션 정리 후 이어붙임 (${continuation.marker}부터)`);
           content = content + '\n' + continuation.text;
+          acceptedContinuation = true;
         } else if (continuation.text) {
           content = content + '\n' + continuation.text;
+          acceptedContinuation = true;
         }
+      }
+      if (acceptedContinuation) {
+        if (contModel && contModel !== usedModel) usedModel = `${usedModel}+continue:${contModel}`;
+        fallbackUsed = fallbackUsed || contFallbackUsed;
+        traceId = contTraceId || traceId;
       }
     } catch (e) {
       console.warn(`[젬스] 이어쓰기 실패 (무시): ${e.message}`);
@@ -1572,7 +1593,7 @@ ${_buildVariationBlock(sectionVariation)}
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems', success: true,
       duration_ms: Date.now() - startTime,
-      metadata: { model: usedModel, writer_model: writerModel, type: 'continue', category, trace_id: getTraceId() },
+      metadata: { model: usedModel, writer_model: writerModel, type: 'continue', category, trace_id: traceId },
     }).catch(() => {});
 
     console.log(`[젬스] 이어쓰기 완료: ${content.length}자`);
@@ -1588,11 +1609,13 @@ ${_buildVariationBlock(sectionVariation)}
     sectionVariation,
     usedModel,
     fallbackUsed,
-    MIN_CHARS_GENERAL
+    MIN_CHARS_GENERAL,
+    traceId
   );
   content = repairResult.content;
   usedModel = repairResult.model;
   fallbackUsed = repairResult.fallbackUsed;
+  traceId = repairResult.traceId || traceId;
 
   content = _ensureGeneralQualityFloor(content, {
     category,
@@ -1611,7 +1634,7 @@ ${_buildVariationBlock(sectionVariation)}
   const title     = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
 
-  const result = { content, charCount: content.length, model: usedModel, writerModel, title, fallbackUsed };
+  const result = { content, charCount: content.length, model: usedModel, usedModel, writerModel, title, fallbackUsed, traceId };
 
   // 최소 글자수 달성 시에만 캐시 저장 (실패 결과 캐시 방지)
   if (content.length >= MIN_CHARS_GENERAL) {
@@ -1719,8 +1742,10 @@ ${content}
   `.trim();
 
   const startTime = Date.now();
+  const writerModel = resolveBlogWriterModel();
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
+  let traceId = getTraceId();
   let repaired;
   try {
     const result = await callGemsWriterLlm({
@@ -1728,9 +1753,11 @@ ${content}
       userPrompt: repairPrompt,
       taskType: 'general_post_repair',
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
+      writerModel,
     });
     repaired     = result.text;
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    traceId      = result.traceId || result.trace_id || traceId;
     fallbackUsed = Number(result.fallbackCount || 0) > 0;
   } finally {
     await toolLogger.logToolCall('llm', 'callHubLlm', {
@@ -1739,8 +1766,9 @@ ${content}
       duration_ms: Date.now() - startTime,
       metadata: {
         model: usedModel,
+        writer_model: writerModel,
         category,
-        trace_id: getTraceId(),
+        trace_id: traceId,
         fallback_used: fallbackUsed,
         type: 'repair',
       },
@@ -1763,8 +1791,11 @@ ${content}
     content: repaired,
     charCount: repaired.length,
     model: usedModel,
+    usedModel,
+    writerModel,
     title,
     fallbackUsed,
+    traceId,
     repairedFromDraft: true,
   };
 }
@@ -1947,6 +1978,7 @@ ${linkingBlock}
   const result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
     model,
     abstractModel: writerModel,
+    ...buildWriterFamilyRequestOptions(writerModel),
     selectorKey: 'blog.gems.writer',
     policyOverride: selectorOverrides['blog.gems.writer'] || null,
     callerTeam: 'blog',
@@ -1975,7 +2007,18 @@ ${linkingBlock}
 
   console.log(`[젬스청크] 전체 ${content.length}자 (${chunks.length}청크)`);
 
-  return { content, charCount: content.length, model: `chunked-${model}`, writerModel, title };
+  const chunkModels = [...new Set((result.chunks || []).map((chunk) => chunk.model).filter(Boolean))];
+  const chunkModel = chunkModels.length > 1 ? `chunked:${chunkModels.join('+')}` : (chunkModels[0] || `chunked-${model}`);
+  return {
+    content,
+    charCount: content.length,
+    model: chunkModel,
+    usedModel: chunkModel,
+    writerModel,
+    title,
+    fallbackUsed: false,
+    traceId: getTraceId(),
+  };
 }
 
 module.exports = {
