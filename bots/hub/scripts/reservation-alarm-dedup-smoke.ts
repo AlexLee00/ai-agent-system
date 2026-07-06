@@ -68,10 +68,11 @@ function main(): void {
       healthCheck.includes("todayAuditIssue === 'ok'") &&
       healthCheck.includes("todayAuditIssue === 'partial'") &&
       healthCheck.includes('const selected = latestCompletion') &&
-      healthCheck.includes('const hasInternalFailure = Number(summary?.failedCount || 0) > 0') &&
-      healthCheck.includes('const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected)') &&
+      healthCheck.includes('const hasInternalFailure = isTodayCompletion && Number(summary?.failedCount || 0) > 0') &&
+      healthCheck.includes('const hasFailedExit = isTodayCompletion && lastExitCode != null && lastExitCode !== 0') &&
+      healthCheck.includes('const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected && isTodayCompletion)') &&
       healthCheck.includes('const recentSuccess = isExpectedCompletion && lastExitCode === 0 && !hasInternalFailure'),
-    'health-check must classify the latest today-audit completion before alert/recovery decisions',
+    'health-check must classify only today-scoped today-audit completions before alert/recovery decisions',
   );
 
   console.log('✅ reservation_alarm_dedup_smoke_ok');

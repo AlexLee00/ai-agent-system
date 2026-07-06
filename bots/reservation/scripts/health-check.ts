@@ -129,15 +129,16 @@ function readTodayAuditStatus() {
     const summary = selected?.summary || null;
     const lastAuditDate = selected?.lastAuditDate || null;
     const isTodayCompletion = lastAuditDate === kst.isoDate;
-    const hasInternalFailure = Number(summary?.failedCount || 0) > 0;
-    const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected);
+    const hasInternalFailure = isTodayCompletion && Number(summary?.failedCount || 0) > 0;
+    const hasFailedExit = isTodayCompletion && lastExitCode != null && lastExitCode !== 0;
+    const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected && isTodayCompletion);
     const recentSuccess = isExpectedCompletion && lastExitCode === 0 && !hasInternalFailure;
     const missingTodayRun = shouldHaveRunToday && !isTodayCompletion;
     const issue = missingTodayRun
       ? 'missing'
       : hasInternalFailure
         ? 'partial'
-        : lastExitCode != null && lastExitCode !== 0
+        : hasFailedExit
           ? 'failed'
           : recentSuccess
             ? 'ok'

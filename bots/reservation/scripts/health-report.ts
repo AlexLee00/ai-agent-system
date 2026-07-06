@@ -315,15 +315,16 @@ function buildTodayAuditHealth() {
     const lastWrapperStarted = selected?.lastWrapperStarted || null;
     const summary = selected?.summary || null;
     const isTodayCompletion = lastAuditDate === kst.isoDate;
-    const hasInternalFailure = Number(summary?.failedCount || 0) > 0;
-    const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected);
+    const hasInternalFailure = isTodayCompletion && Number(summary?.failedCount || 0) > 0;
+    const hasFailedExit = isTodayCompletion && lastExitCode != null && lastExitCode !== 0;
+    const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected && isTodayCompletion);
     const recentSuccess = isExpectedCompletion && lastExitCode === 0 && !hasInternalFailure;
     const missingTodayRun = shouldHaveRunToday && !isTodayCompletion;
     const issue = missingTodayRun
       ? 'missing'
       : hasInternalFailure
         ? 'partial'
-        : lastExitCode != null && lastExitCode !== 0
+        : hasFailedExit
           ? 'failed'
           : recentSuccess
             ? 'ok'
@@ -340,6 +341,23 @@ function buildTodayAuditHealth() {
           ...(lastCompleted ? [`  latest completion: ${lastCompleted}`] : []),
           ...(summary ? [`  latest summary: 확인 ${summary.okCount}, 차단추가 ${summary.blockedCount}, 해제 ${summary.unblockedCount}, 실패 ${summary.failedCount}`] : []),
         ],
+        warn: [],
+        samples,
+        lastExitCode,
+        lastCompletedAt: lastCompleted,
+        lastStartedAt: lastStarted,
+        lastWrapperStartedAt: lastWrapperStarted,
+        lastAuditDate,
+        missingTodayRun,
+        summary,
+        recentSuccess,
+        issue,
+      };
+    }
+
+    if (issue === 'unknown' && !shouldHaveRunToday) {
+      return {
+        ok: ['  today-audit 로그: 오늘 예정 실행 전'],
         warn: [],
         samples,
         lastExitCode,
