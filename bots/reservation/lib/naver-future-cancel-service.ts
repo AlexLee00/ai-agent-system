@@ -16,9 +16,7 @@ type UpsertFutureConfirmedFn = (
 type GetStaleConfirmedFn = (currentCycle: number, minDate: string) => Promise<any[]>;
 type DeleteStaleConfirmedFn = (currentCycle: number, minDate: string) => Promise<any>;
 type PruneOldFutureConfirmedFn = (cutoffDate: string) => Promise<any>;
-type RunPickkoCancelFn = (booking: Record<string, any>, bookingId?: string | null) => Promise<any>;
 type ScrapeNewestBookingsFromListFn = (page: any, maxItems?: number) => Promise<Record<string, any>[]>;
-type ScrapeExpandedCancelledFn = (page: any, cancelledHref: string) => Promise<Record<string, any>[]>;
 
 export type CreateNaverFutureCancelServiceDeps = {
   delay: DelayFn;
@@ -31,15 +29,7 @@ export type CreateNaverFutureCancelServiceDeps = {
   getStaleConfirmed: GetStaleConfirmedFn;
   deleteStaleConfirmed: DeleteStaleConfirmedFn;
   pruneOldFutureConfirmed: PruneOldFutureConfirmedFn;
-  runPickkoCancel: RunPickkoCancelFn;
   scrapeNewestBookingsFromList: ScrapeNewestBookingsFromListFn;
-  scrapeExpandedCancelled: ScrapeExpandedCancelledFn;
-  runtimeConfig: {
-    staleConfirmCount: number;
-    staleMinElapsedMs: number;
-    staleExpireMs: number;
-    futureStaleCancelMutationEnabled?: boolean;
-  };
 };
 
 export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServiceDeps) {
@@ -54,60 +44,8 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
     getStaleConfirmed,
     deleteStaleConfirmed,
     pruneOldFutureConfirmed,
-    runPickkoCancel,
     scrapeNewestBookingsFromList,
-    scrapeExpandedCancelled,
-    runtimeConfig,
   } = deps;
-
-  function normalizePhone(value: any): string {
-    return String(value || '').replace(/\D+/g, '');
-  }
-
-  function normalizeRoom(value: any): string {
-    const text = String(value || '').toUpperCase();
-    if (text.includes('A1')) return 'A1';
-    if (text.includes('A2')) return 'A2';
-    if (text.includes('B')) return 'B';
-    return text.trim();
-  }
-
-  function getStart(booking: Record<string, any>): string {
-    return String(booking.start || booking.start_time || '').trim();
-  }
-
-  function getEnd(booking: Record<string, any>): string {
-    return String(booking.end || booking.end_time || '').trim();
-  }
-
-  function isSameBooking(a: Record<string, any>, b: Record<string, any>): boolean {
-    const aId = String(a.bookingId || a.booking_id || '').trim();
-    const bId = String(b.bookingId || b.booking_id || '').trim();
-    if (aId && bId && aId === bId) return true;
-
-    return (
-      normalizePhone(a.phoneRaw || a.phone || a.phone_raw) === normalizePhone(b.phoneRaw || b.phone || b.phone_raw) &&
-      String(a.date || '').trim() === String(b.date || '').trim() &&
-      getStart(a) === getStart(b) &&
-      getEnd(a) === getEnd(b) &&
-      normalizeRoom(a.room) === normalizeRoom(b.room)
-    );
-  }
-
-  async function findVerifiedCancelledBooking({
-    page,
-    cancelledHref,
-    booking,
-    expandedCancelledList,
-  }: {
-    page: any;
-    cancelledHref: string;
-    booking: Record<string, any>;
-    expandedCancelledList?: Record<string, any>[] | null;
-  }): Promise<Record<string, any> | null> {
-    const expandedCancelled = expandedCancelledList || (await scrapeExpandedCancelled(page, cancelledHref));
-    return expandedCancelled.find((candidate) => isSameBooking(candidate, booking)) || null;
-  }
 
   async function processFutureCancelSnapshot({
     checkCount,
@@ -175,7 +113,6 @@ export function createNaverFutureCancelService(deps: CreateNaverFutureCancelServ
     if (futureList.length > 0 && !hitScanLimit) {
       const staleItems = await getStaleConfirmed(checkCount, tomorrowStr);
       if (staleItems.length > 0) {
-        let expandedCancelledList: Record<string, any>[] | null = null;
         log(`🗑️ [취소감지4] ${staleItems.length}건 stale (네이버 확정에서 사라짐) → 더블체크 진행`);
         for (const stale of staleItems) {
           const cancelKey = /^\d+$/.test(String(stale.booking_key))

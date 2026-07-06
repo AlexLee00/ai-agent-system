@@ -36,7 +36,6 @@ function createService({ currentCancelledList }) {
         currentCancelledList,
         cycleNewCancelDetections,
       }),
-      processExpandedCancelled: async ({ cycleNewCancelDetections }) => cycleNewCancelDetections,
       reconcileDroppedConfirmed: async ({ cycleNewCancelDetections }) => cycleNewCancelDetections,
     },
     futureCancelService: {

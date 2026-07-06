@@ -1,11 +1,10 @@
 import * as assert from 'assert';
 import { createNaverFutureCancelService } from '../lib/naver-future-cancel-service';
 
-async function runScenario(futureStaleCancelMutationEnabled: boolean, verifiedCancelled: boolean) {
+async function runScenario() {
   const logs: string[] = [];
   const gotos: string[] = [];
   const upserts: any[] = [];
-  const cancels: any[] = [];
   const cancelledKeys: string[] = [];
   const pendingCancelMap = new Map<string, any>();
   const stale = {
@@ -45,10 +44,6 @@ async function runScenario(futureStaleCancelMutationEnabled: boolean, verifiedCa
     getStaleConfirmed: async () => [stale],
     deleteStaleConfirmed: async () => {},
     pruneOldFutureConfirmed: async () => {},
-    runPickkoCancel: async (booking, key) => {
-      cancels.push({ booking, key });
-      return 0;
-    },
     scrapeNewestBookingsFromList: async () => [
       {
         bookingId: '1279999999',
@@ -59,22 +54,6 @@ async function runScenario(futureStaleCancelMutationEnabled: boolean, verifiedCa
         room: 'A2',
       },
     ],
-    scrapeExpandedCancelled: async () => verifiedCancelled ? [
-      {
-        bookingId: stale.booking_key,
-        phoneRaw: stale.phone_raw,
-        date: stale.date,
-        start: stale.start_time,
-        end: stale.end_time,
-        room: stale.room,
-      },
-    ] : [],
-    runtimeConfig: {
-      staleConfirmCount: 5,
-      staleMinElapsedMs: 10 * 60 * 1000,
-      staleExpireMs: 30 * 60 * 1000,
-      futureStaleCancelMutationEnabled,
-    },
   });
 
   await service.processFutureCancelSnapshot({
@@ -91,12 +70,11 @@ async function runScenario(futureStaleCancelMutationEnabled: boolean, verifiedCa
     cycleNewCancelDetections: 0,
   });
 
-  return { logs, gotos, upserts, cancels, cancelledKeys, pendingCancelMap };
+  return { logs, gotos, upserts, cancelledKeys, pendingCancelMap };
 }
 
 async function main() {
-  const guarded = await runScenario(false, true);
-  assert.equal(guarded.cancels.length, 0, 'future stale guard must not call Pickko cancel by default');
+  const guarded = await runScenario();
   assert.equal(guarded.cancelledKeys.length, 0, 'guarded stale item must not be recorded as cancelled');
   assert.equal(guarded.pendingCancelMap.size, 0, 'guarded stale item should clear pending cancel state');
   assert.ok(
@@ -113,16 +91,14 @@ async function main() {
     'future snapshot must not use registration-date filtering',
   );
 
-  const unverified = await runScenario(true, false);
-  assert.equal(unverified.cancels.length, 0, 'future stale must not cancel after legacy path removal');
+  const unverified = await runScenario();
   assert.equal(unverified.cancelledKeys.length, 0, 'unverified stale item must not be recorded as cancelled');
   assert.ok(
     unverified.logs.some((line) => line.includes('미래 stale 경로는 관찰 전용')),
     'future stale should log observation-only guard',
   );
 
-  const verified = await runScenario(true, true);
-  assert.equal(verified.cancels.length, 0, 'verified future stale must still not cancel after legacy path removal');
+  const verified = await runScenario();
   assert.deepEqual(verified.cancelledKeys, []);
 
   console.log('✅ naver-future-stale-cancel-guard-smoke passed');

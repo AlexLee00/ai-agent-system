@@ -95,16 +95,6 @@ export function parseNaverDateTimeText(input: unknown, fallbackDate?: string | n
 export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceDeps) {
   const { delay, log } = deps;
 
-  async function scrapeExpandedCancelled(page: any, cancelHref: string): Promise<any[]> {
-    log('[취소감지2E] legacy UI-click 확장 스캔은 사용하지 않고 RC04 상태 URL로 조회');
-    return scrapeCancelledStatusList(page, cancelHref, {
-      startDate: todayKst(),
-      daysAhead: 30,
-      dateDropdownType: 'MONTH',
-      limit: 50,
-    });
-  }
-
   async function scrapeBookingStatusList(page: any, sourceUrl: string, {
     statusCode,
     startDate = todayKst(),
@@ -281,7 +271,6 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     scrapeBookingStatusList,
     scrapeCancelledStatusList,
     scrapeConfirmedStatusList,
-    scrapeExpandedCancelled,
     scrapeNewestBookingsFromList,
   };
 }

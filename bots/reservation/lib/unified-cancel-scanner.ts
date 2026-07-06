@@ -1,7 +1,6 @@
 type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
 type ScrapeNewestBookingsFromListFn = (page: any, maxItems?: number) => Promise<Record<string, any>[]>;
-type ScrapeExpandedCancelledFn = (page: any, cancelledHref: string) => Promise<Record<string, any>[]>;
 type BuildCancelKeyFn = (booking: Record<string, any>, todaySeoul?: string | null) => string;
 type FindTrackedReservationFn = (booking: Record<string, any>) => Promise<Record<string, any> | null>;
 
@@ -131,12 +130,10 @@ export async function scanUnifiedCancelledList({
   startDate = kst.today(),
   daysAhead = 60,
   includeTodayExact = true,
-  includeExpandedFallback = false,
   limit = 300,
   delay = async () => {},
   log = () => {},
   scrapeNewestBookingsFromList,
-  scrapeExpandedCancelled,
   buildCancelKey,
   findTrackedReservation,
 }: {
@@ -145,12 +142,10 @@ export async function scanUnifiedCancelledList({
   startDate?: string;
   daysAhead?: number;
   includeTodayExact?: boolean;
-  includeExpandedFallback?: boolean;
   limit?: number;
   delay?: DelayFn;
   log?: Logger;
   scrapeNewestBookingsFromList: ScrapeNewestBookingsFromListFn;
-  scrapeExpandedCancelled?: ScrapeExpandedCancelledFn;
   buildCancelKey: BuildCancelKeyFn;
   findTrackedReservation?: FindTrackedReservationFn;
 }): Promise<UnifiedCancelScanResult> {
@@ -202,13 +197,6 @@ export async function scanUnifiedCancelledList({
     } else {
       log('⚠️ [통합취소스캐너] 오늘 취소 보강 스캔 soft-200 실패 — 기간 스캔 결과만 사용');
     }
-  }
-  if (includeExpandedFallback && scrapeExpandedCancelled) {
-    const expandedRows = await scrapeExpandedCancelled(page, cancelledHref).catch((error: any) => {
-      log(`⚠️ [통합취소스캐너] 확장 취소 fallback 실패 — 무시: ${error?.message || String(error)}`);
-      return [];
-    });
-    combinedRows = [...expandedRows, ...combinedRows];
   }
   const evidence = await dedupeCancelEvidence(combinedRows, {
     buildCancelKey,

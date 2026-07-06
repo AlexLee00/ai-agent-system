@@ -45,7 +45,6 @@ const {
   buildMonitoringTrackingKey,
   buildSlotCompositeKey,
   fillMissingBookingDate,
-  buildConfirmedListKey,
   buildCancelKey,
 } = require('../../lib/naver-reservation-helpers');
 const {
@@ -344,10 +343,6 @@ const naverPickkoRunnerService = createNaverPickkoRunnerService({
   onCancelRetryFailure: (payload: any) => cancelRetryEngine.recordFailure(payload),
 });
 
-async function scrapeExpandedCancelled(page: any, cancelHref: string) {
-  return naverListScrapeService.scrapeExpandedCancelled(page, cancelHref);
-}
-
 async function scrapeNewestBookingsFromList(page: any, limit = 5) {
   return naverListScrapeService.scrapeNewestBookingsFromList(page, limit);
 }
@@ -445,29 +440,18 @@ const naverFutureCancelService = createNaverFutureCancelService({
   getStaleConfirmed,
   deleteStaleConfirmed,
   pruneOldFutureConfirmed,
-  runPickkoCancel,
   scrapeNewestBookingsFromList,
-  scrapeExpandedCancelled,
-  runtimeConfig: {
-    ...NAVER_MONITOR_RUNTIME,
-    futureStaleCancelMutationEnabled:
-      process.env.NAVER_FUTURE_STALE_CANCEL_ENABLE === '1' &&
-      process.env.PICKKO_CANCEL_MUTATION_ENABLE === '1' &&
-      process.env.SKA_ENABLE_PICKKO_CANCEL_MUTATION === '1',
-  },
 });
 const naverCancelDetectionService = createNaverCancelDetectionService({
   delay,
   log,
   maskPhone,
   buildCancelKey,
-  buildConfirmedListKey,
   isCancelledKey,
   addCancelledKey,
   shouldProcessCancelledBooking,
   runPickkoCancel,
   scrapeNewestBookingsFromList,
-  scrapeExpandedCancelled,
   scrapeCancelledStatusList,
   scrapeConfirmedStatusList,
 });
@@ -683,7 +667,6 @@ module.exports = {
   ragSaveReservation,
   rollbackProcessingEntries,
   updateBookingState,
-  scrapeExpandedCancelled,
   scrapeNewestBookingsFromList,
   runPickkoCancel,
   runPickko,

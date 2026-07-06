@@ -37,10 +37,6 @@ export function fillMissingBookingDate(
   return { ...booking, date: booking.date || todaySeoul };
 }
 
-export function buildConfirmedListKey(booking: ReservationLike, todaySeoul: string): string {
-  return booking.bookingId || `${booking.date || todaySeoul}|${booking.start}|${booking.end}|${booking.room}|${booking.phone}`;
-}
-
 export function buildCancelKey(booking: ReservationLike, todaySeoul: string): string {
   const bookingId = booking.bookingId;
   if (bookingId && /^\d+$/.test(String(bookingId))) return `cancelid|${bookingId}`;

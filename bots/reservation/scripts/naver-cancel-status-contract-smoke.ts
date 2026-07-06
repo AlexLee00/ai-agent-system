@@ -40,7 +40,6 @@ function createService({
     log: (message) => logs.push(String(message)),
     maskPhone: (phone) => String(phone || '').replace(/(\d{3})\d+(\d{4})/, '$1****$2'),
     buildCancelKey: (item) => `cancelid|${item.bookingId}`,
-    buildConfirmedListKey: (item) => `${item.date}|${item.start}|${item.end}|${item.room}|${item.phoneRaw || item.phone}`,
     isCancelledKey: async (key) => cancelledKeySet.has(key),
     addCancelledKey: async (key) => {
       cancelledKeySet.add(key);
@@ -52,9 +51,6 @@ function createService({
       return 0;
     },
     scrapeNewestBookingsFromList: async () => cancelledRows,
-    scrapeExpandedCancelled: async () => {
-      throw new Error('legacy_expanded_cancel_must_not_run');
-    },
     scrapeCancelledStatusList: async () => cancelledRows,
     scrapeConfirmedStatusList: async () => confirmedRows,
   });
@@ -109,17 +105,13 @@ async function main() {
   assert.deepEqual(actionable.addedKeys, ['cancelid|cancelled-only']);
   assert.equal(actionable.pickkoCancels.length, 1);
 
-  const legacy = createService({ cancelledRows: [booking({ bookingId: 'legacy' })] });
-  const legacyExpanded = await legacy.service.processExpandedCancelled({
-    page: createPage(),
-    cancelledHref: 'https://example.test/cancelled',
-    todaySeoul: '2099-01-01',
-    naverUrl: 'https://example.test/naver',
-    cycleNewCancelDetections: 0,
-  });
-  assert.equal(legacyExpanded, 0, 'legacy 2E path must be disabled');
-  assert.deepEqual(legacy.pickkoCancels, []);
+  assert.deepEqual(Object.keys(actionable.service).sort(), [
+    'processCancelTab',
+    'processStatusCancelledList',
+    'reconcileDroppedConfirmed',
+  ].sort());
 
+  const legacy = createService({ cancelledRows: [booking({ bookingId: 'legacy' })] });
   const dropped = await legacy.service.reconcileDroppedConfirmed({
     previousConfirmedList: [booking({ bookingId: 'dropped' })],
     currentConfirmedList: [],

@@ -101,10 +101,7 @@ export function createNaverCandidateService(deps: CreateNaverCandidateServiceDep
 
   function isReactivatableExisting(existing: Record<string, any> | null | undefined) {
     if (!existing) return false;
-    return (
-      existing.status === 'cancelled'
-      || ['cancelled', 'time_elapsed'].includes(existing.pickkoStatus)
-    );
+    return existing.status === 'cancelled' || existing.pickkoStatus === 'cancelled';
   }
 
   async function clearStaleCancelledKeys(booking: Record<string, any>, bookingId?: string | null) {

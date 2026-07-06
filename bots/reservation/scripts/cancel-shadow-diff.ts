@@ -171,7 +171,6 @@ async function runCancelShadowDiff(options = {}) {
       delay,
       log: runtimeLog,
       scrapeNewestBookingsFromList: listScrapeService.scrapeNewestBookingsFromList,
-      includeExpandedFallback: false,
       buildCancelKey,
       findTrackedReservation: (booking) => recoveryService.findTrackedReservationForCancelCandidate(booking),
     });

@@ -26,7 +26,6 @@ export type CreateNaverMonitorCycleServiceDeps = {
       confirmedStatusList: Record<string, any>[];
       cycleNewCancelDetections: number;
     }>;
-    processExpandedCancelled: (args: any) => Promise<number>;
     reconcileDroppedConfirmed: (args: any) => Promise<number>;
   };
   futureCancelService: {

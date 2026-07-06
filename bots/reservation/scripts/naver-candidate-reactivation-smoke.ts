@@ -120,6 +120,27 @@ async function main() {
   assert.equal(completedHarness.updated.length, 0, 'completed seen row must stay skipped');
   assert.equal(completedHarness.pickkoRuns.length, 0, 'completed seen row must not rerun Pickko');
 
+  const elapsed = booking({ bookingId: 'already-time-elapsed' });
+  const elapsedHarness = createHarness({
+    [elapsed.bookingId]: {
+      id: elapsed.bookingId,
+      status: 'completed',
+      pickkoStatus: 'time_elapsed',
+      markedSeen: true,
+      seenOnly: false,
+      end: elapsed.end,
+      room: elapsed.room,
+    },
+  });
+
+  await elapsedHarness.service.processConfirmedCandidates({
+    newest: [elapsed],
+    page: elapsedHarness.page,
+  });
+
+  assert.equal(elapsedHarness.updated.length, 0, 'time_elapsed seen row must stay terminal');
+  assert.equal(elapsedHarness.pickkoRuns.length, 0, 'time_elapsed seen row must not rerun Pickko');
+
   console.log('naver_candidate_reactivation_smoke_ok');
 }
 

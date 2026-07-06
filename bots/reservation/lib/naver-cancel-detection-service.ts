@@ -2,14 +2,12 @@ type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
 type MaskPhoneFn = (phone: string) => string;
 type BuildCancelKeyFn = (booking: Record<string, any>, todaySeoul?: string | null) => string;
-type BuildConfirmedListKeyFn = (booking: Record<string, any>, todaySeoul?: string | null) => string;
 type IsCancelledKeyFn = (key: string) => Promise<boolean>;
 type AddCancelledKeyFn = (key: string) => Promise<any>;
 type TrackedCancelledBooking = boolean | Record<string, any> | null | undefined;
 type ShouldProcessCancelledBookingFn = (booking: Record<string, any>) => Promise<TrackedCancelledBooking>;
 type RunPickkoCancelFn = (booking: Record<string, any>, bookingId?: string | null) => Promise<any>;
 type ScrapeNewestBookingsFromListFn = (page: any, maxItems?: number) => Promise<Record<string, any>[]>;
-type ScrapeExpandedCancelledFn = (page: any, cancelledHref: string) => Promise<Record<string, any>[]>;
 type ScrapeStatusListFn = (page: any, sourceUrl: string, options?: Record<string, any>) => Promise<Record<string, any>[]>;
 
 export type CreateNaverCancelDetectionServiceDeps = {
@@ -17,13 +15,11 @@ export type CreateNaverCancelDetectionServiceDeps = {
   log: Logger;
   maskPhone: MaskPhoneFn;
   buildCancelKey: BuildCancelKeyFn;
-  buildConfirmedListKey: BuildConfirmedListKeyFn;
   isCancelledKey: IsCancelledKeyFn;
   addCancelledKey: AddCancelledKeyFn;
   shouldProcessCancelledBooking: ShouldProcessCancelledBookingFn;
   runPickkoCancel: RunPickkoCancelFn;
   scrapeNewestBookingsFromList: ScrapeNewestBookingsFromListFn;
-  scrapeExpandedCancelled: ScrapeExpandedCancelledFn;
   scrapeCancelledStatusList?: ScrapeStatusListFn;
   scrapeConfirmedStatusList?: ScrapeStatusListFn;
 };
@@ -34,24 +30,17 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     log,
     maskPhone,
     buildCancelKey,
-    buildConfirmedListKey,
     isCancelledKey,
     addCancelledKey,
     shouldProcessCancelledBooking,
     runPickkoCancel,
     scrapeNewestBookingsFromList,
-    scrapeExpandedCancelled,
     scrapeCancelledStatusList,
     scrapeConfirmedStatusList,
   } = deps;
 
   function isTodayCancelledCandidate(candidate: Record<string, any>, todaySeoul: string): boolean {
     return String(candidate?.date || '').trim() === todaySeoul;
-  }
-
-  function isFutureCancelledCandidate(candidate: Record<string, any>, todaySeoul: string): boolean {
-    const date = String(candidate?.date || '').trim();
-    return Boolean(date && date > todaySeoul);
   }
 
   function isCancelledTrackedReservation(tracked: TrackedCancelledBooking): boolean {
@@ -255,24 +244,6 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
     return { statusCancelledList: cancelledList, confirmedStatusList: confirmedList, cycleNewCancelDetections };
   }
 
-  async function processExpandedCancelled({
-    page,
-    cancelledHref,
-    todaySeoul,
-    naverUrl,
-    cycleNewCancelDetections,
-  }: {
-    page: any;
-    cancelledHref: string;
-    todaySeoul: string;
-    naverUrl: string;
-    cycleNewCancelDetections: number;
-  }): Promise<number> {
-    log('🛡️ [취소감지2E] legacy 확장 취소 경로 폐기 — RC04/RC03 취소상태목록 계약만 사용');
-    await page.goto(naverUrl, { waitUntil: 'networkidle2' }).catch(() => null);
-    return cycleNewCancelDetections;
-  }
-
   async function reconcileDroppedConfirmed({
     previousConfirmedList,
     currentConfirmedList,
@@ -300,7 +271,6 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
   return {
     processCancelTab,
     processStatusCancelledList,
-    processExpandedCancelled,
     reconcileDroppedConfirmed,
   };
 }

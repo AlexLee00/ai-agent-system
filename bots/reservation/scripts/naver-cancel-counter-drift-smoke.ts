@@ -14,7 +14,6 @@ async function main() {
     log: (message) => logs.push(String(message)),
     maskPhone: (phone) => String(phone || '').replace(/(\d{3})\d+(\d{4})/, '$1****$2'),
     buildCancelKey: (booking) => booking.bookingId ? `cancelid|${booking.bookingId}` : `cancel|${booking.date}|${booking.start}`,
-    buildConfirmedListKey: (booking) => `${booking.date}|${booking.start}|${booking.end}|${booking.room}|${booking.phoneRaw || booking.phone}`,
     isCancelledKey: async () => false,
     addCancelledKey: async (key) => addedKeys.push(key),
     shouldProcessCancelledBooking: async () => false,
@@ -27,7 +26,6 @@ async function main() {
       end: '11:00',
       room: 'A1',
     }],
-    scrapeExpandedCancelled: async () => [],
   });
 
   const page = {

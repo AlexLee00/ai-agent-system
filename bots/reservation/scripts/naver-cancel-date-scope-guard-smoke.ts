@@ -27,7 +27,6 @@ function createService({ cancelTabList = [], tracked = true, cancelledKeys = [] 
     log: (message) => logs.push(String(message)),
     maskPhone: (phone) => String(phone || '').replace(/(\d{3})\d+(\d{4})/, '$1****$2'),
     buildCancelKey: (item) => `cancelid|${item.bookingId}`,
-    buildConfirmedListKey: (item) => `${item.date}|${item.start}|${item.end}|${item.room}|${item.phoneRaw || item.phone}`,
     isCancelledKey: async (key) => cancelledKeySet.has(key),
     addCancelledKey: async (key) => {
       cancelledKeySet.add(key);
@@ -39,9 +38,6 @@ function createService({ cancelTabList = [], tracked = true, cancelledKeys = [] 
       return 0;
     },
     scrapeNewestBookingsFromList: async () => cancelTabList,
-    scrapeExpandedCancelled: async () => {
-      throw new Error('legacy_expanded_cancel_must_not_run');
-    },
   });
 
   return { service, logs, addedKeys, pickkoCancels };
@@ -107,17 +103,11 @@ async function main() {
   assert.deepEqual(alive.pickkoCancels, []);
   assert.ok(alive.logs.some((line) => line.includes('RC03 확정 생존')));
 
-  const legacy = createService({ cancelTabList: [today] });
-  const legacyResult = await legacy.service.processExpandedCancelled({
-    page: createPage(),
-    cancelledHref: 'https://example.test/cancelled',
-    todaySeoul,
-    naverUrl: 'https://example.test/naver',
-    cycleNewCancelDetections: 0,
-  });
-  assert.equal(legacyResult, 0, 'legacy expanded cancel path must be disabled');
-  assert.deepEqual(legacy.pickkoCancels, []);
-  assert.ok(legacy.logs.some((line) => line.includes('legacy 확장 취소 경로 폐기')));
+  assert.deepEqual(Object.keys(sameDay.service).sort(), [
+    'processCancelTab',
+    'processStatusCancelledList',
+    'reconcileDroppedConfirmed',
+  ].sort());
 
   console.log('✅ naver cancel date scope guard smoke ok');
 }
