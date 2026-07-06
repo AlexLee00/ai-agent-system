@@ -14,6 +14,8 @@
 		<string>true</string>
 		<key>EDUX_PROMOTION_GATE_PASSED</key>
 		<string>true</string>
+		<key>EDUX_REQUIRE_PROMOTION_GATE</key>
+		<string>false</string>
 		<key>EDUX_IMAGE_ATTACHMENTS_ENABLED</key>
 		<string>false</string>
 		<key>EDUX_FORMATTER_MODE</key>
