@@ -79,6 +79,7 @@ function main() {
 
   const overseasClose = runRuntime('runtime-edux-overseas-daily.ts', ['--slot=0630'], { EDUX_TEST_NOW: '2026-06-12T21:30:00.000Z' }).result;
   assertDryRun(overseasClose, 'overseas', '0630');
+  assert.equal(overseasClose.status, 'dry_run', 'TS-EX-2: KST Saturday 0630 should publish Friday NY close');
   assert.equal(overseasClose.quality.sectionCount, 6, 'TS-EX-2: overseas close should have exactly 6 section blocks');
   const overseasCloseMd = readArtifact(overseasClose);
   assertPublicSafety(overseasCloseMd, 'overseas:0630');
@@ -90,24 +91,30 @@ function main() {
 
   const weekendSkip = runRuntime('runtime-edux-kis-daily.ts', ['--slot=1600'], { EDUX_TEST_NOW: '2026-06-13T07:00:00.000Z' }).result;
   assert.equal(weekendSkip.status, 'skipped_holiday', 'TS-EX-3: weekend close slot should skipped_holiday');
+  const weekendKisOpenSkip = runRuntime('runtime-edux-kis-daily.ts', ['--slot=0900'], { EDUX_TEST_NOW: '2026-06-13T00:00:00.000Z' }).result;
+  assert.equal(weekendKisOpenSkip.status, 'skipped_holiday', 'TS-EX-3: weekend kis preview slot should skipped_holiday');
+  const weekendOverseasOpenSkip = runRuntime('runtime-edux-overseas-daily.ts', ['--slot=2200'], { EDUX_TEST_NOW: '2026-06-14T13:00:00.000Z' }).result;
+  assert.equal(weekendOverseasOpenSkip.status, 'skipped_holiday', 'TS-EX-3: weekend overseas preview slot should skipped_holiday');
+  const mondayKstOverseasCloseSkip = runRuntime('runtime-edux-overseas-daily.ts', ['--slot=0630'], { EDUX_TEST_NOW: '2026-06-14T21:30:00.000Z' }).result;
+  assert.equal(mondayKstOverseasCloseSkip.status, 'skipped_holiday', 'TS-EX-3: KST Monday 0630 should skip because NY market date is Sunday');
 
   const legacyRuns = [
     ['runtime-edux-crypto-daily.ts', 'crypto', '0600'],
     ['runtime-edux-crypto-daily.ts', 'crypto', '1400'],
     ['runtime-edux-crypto-daily.ts', 'crypto', '2230'],
-    ['runtime-edux-kis-daily.ts', 'kis', '0900'],
-    ['runtime-edux-overseas-daily.ts', 'overseas', '2200'],
+    ['runtime-edux-kis-daily.ts', 'kis', '0900', '2026-06-12T00:00:00.000Z'],
+    ['runtime-edux-overseas-daily.ts', 'overseas', '2200', '2026-06-12T13:00:00.000Z'],
   ];
-  for (const [script, category, slot] of legacyRuns) {
-    const result = runRuntime(script, [`--slot=${slot}`]).result;
+  for (const [script, category, slot, testNow] of legacyRuns) {
+    const result = runRuntime(script, [`--slot=${slot}`], testNow ? { EDUX_TEST_NOW: testNow } : {}).result;
     assertDryRun(result, category, slot);
     assertPublicSafety(readArtifact(result), `${category}:${slot}`);
   }
 
-  const kisOpen = runRuntime('runtime-edux-kis-daily.ts', ['--slot=0900']).result;
+  const kisOpen = runRuntime('runtime-edux-kis-daily.ts', ['--slot=0900'], { EDUX_TEST_NOW: '2026-06-12T00:00:00.000Z' }).result;
   assert(Array.isArray(kisOpen.watchPoints) && kisOpen.watchPoints.length > 0, 'TS-EX-5: kis 0900 should emit watchPoints');
   assert(Array.isArray(kisClose.previousWatchPoints) && kisClose.previousWatchPoints.length > 0, 'TS-EX-5: kis 1600 should consume previousWatchPoints');
-  const overseasOpen = runRuntime('runtime-edux-overseas-daily.ts', ['--slot=2200']).result;
+  const overseasOpen = runRuntime('runtime-edux-overseas-daily.ts', ['--slot=2200'], { EDUX_TEST_NOW: '2026-06-12T13:00:00.000Z' }).result;
   assert(Array.isArray(overseasOpen.watchPoints) && overseasOpen.watchPoints.length > 0, 'TS-EX-5: overseas 2200 should emit watchPoints');
   assert(Array.isArray(overseasClose.previousWatchPoints) && overseasClose.previousWatchPoints.length > 0, 'TS-EX-5: overseas 0630 should consume previousWatchPoints');
 

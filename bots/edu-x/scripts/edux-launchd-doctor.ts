@@ -8,7 +8,8 @@
  * Audits and optionally bootstraps/reloads the eight Edu-X LaunchAgents.
  * Dry-run apply only loads missing agents after every plist proves safe
  * dry-run flags. Live apply requires an explicit live confirm token and a
- * non-fixture PASS promotion gate report before reloading ai.edux.* agents.
+ * promotion gate report by default. Set EDUX_REQUIRE_PROMOTION_GATE=false only
+ * after master-approved gate relaxation.
  */
 
 const fs = require('fs');
@@ -28,6 +29,14 @@ const LABEL_PREFIX = 'ai.edux.';
 const EXPECTED_COUNT = 8;
 const PROMOTION_GATE_REQUIRED_CHECKS = 7;
 const PROMOTION_GATE_MAX_AGE_MS = 24 * 3600 * 1000;
+
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function envRequiresPromotionGate(envVars = process.env) {
+  return String(envVars.EDUX_REQUIRE_PROMOTION_GATE || '').trim().toLowerCase() !== 'false';
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {
@@ -116,12 +125,12 @@ function detectRuntimeMode(envVars = {}) {
   if (
     envVars.EDUX_DRY_RUN === 'true'
     && envVars.EDUX_LIVE_PUBLISH_APPROVED === 'false'
-    && envVars.EDUX_PROMOTION_GATE_PASSED === 'false'
+    && (!envRequiresPromotionGate(envVars) || envVars.EDUX_PROMOTION_GATE_PASSED === 'false')
   ) return 'dry-run';
   if (
     envVars.EDUX_DRY_RUN === 'false'
     && envVars.EDUX_LIVE_PUBLISH_APPROVED === 'true'
-    && envVars.EDUX_PROMOTION_GATE_PASSED === 'true'
+    && (!envRequiresPromotionGate(envVars) || envVars.EDUX_PROMOTION_GATE_PASSED === 'true')
   ) return 'live';
   return 'invalid';
 }
@@ -311,7 +320,8 @@ function reloadPlist(label, destination, apply, reloadNeeded) {
 
 function buildReport(args) {
   const mode = normalizeMode(args.mode);
-  const liveGate = mode === 'live' ? livePromotionGateReady() : null;
+  const promotionGateRequired = envRequiresPromotionGate();
+  const liveGate = mode === 'live' && promotionGateRequired ? livePromotionGateReady() : null;
   const applyModeExplicit = mode !== 'auto';
   const expectedConfirm = applyModeExplicit ? confirmTokenFor(mode) : null;
   const plists = listPlists();
@@ -326,7 +336,7 @@ function buildReport(args) {
   const sourceSetSafe = plists.length === EXPECTED_COUNT && preflightValidationFailures.length === 0;
   const confirmOk = applyModeExplicit
     && args.confirm === expectedConfirm
-    && (mode !== 'live' || liveGate?.ok === true);
+    && (mode !== 'live' || !promotionGateRequired || liveGate?.ok === true);
   const allowApply = Boolean(args.apply && confirmOk && sourceSetSafe);
   const applyRejected = Boolean(args.apply && !allowApply);
   const entries = sources.map(({ filePath, plist, label, issues, destination }) => {
@@ -369,13 +379,14 @@ function buildReport(args) {
     && validationFailures.length === 0
     && missing.length === 0
     && reloadRequired.length === 0
-    && (mode !== 'live' || liveGate?.ok === true)
+    && (mode !== 'live' || !promotionGateRequired || liveGate?.ok === true)
     && !applyRejected;
 
   return {
     generatedAt: new Date().toISOString(),
     mode: allowApply ? `apply_${mode}_launchd` : 'audit',
     targetMode: mode,
+    promotionGateRequired,
     livePromotionGate: liveGate,
     applyRequested: args.apply,
     applyAllowed: allowApply,
@@ -397,7 +408,7 @@ function buildReport(args) {
           applyRejected && !applyModeExplicit ? 'Apply requires an explicit --dry-run or --live mode.' : null,
           applyRejected && applyModeExplicit && args.confirm !== expectedConfirm ? `Re-run with --confirm=${expectedConfirm} to apply after blockers are clear.` : null,
           applyRejected && confirmOk && !sourceSetSafe ? 'Apply blocked until all expected plist files pass validation.' : null,
-          mode === 'live' && liveGate?.ok !== true ? `Live apply blocked until fresh non-fixture ${PROMOTION_GATE_REQUIRED_CHECKS}/7 promotion gate report is PASS.` : null,
+          mode === 'live' && promotionGateRequired && liveGate?.ok !== true ? `Live apply blocked until fresh non-fixture ${PROMOTION_GATE_REQUIRED_CHECKS}/7 promotion gate report is PASS.` : null,
           missing.length ? `Load missing dry-run LaunchAgents: ${missing.join(', ')}` : null,
           reloadRequired.length ? `Loaded LaunchAgents need explicit reload approval: ${reloadRequired.join(', ')}` : null,
           validationFailures.length ? 'Fix plist validation failures before applying.' : null,

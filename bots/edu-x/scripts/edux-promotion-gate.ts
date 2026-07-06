@@ -342,8 +342,9 @@ async function generateReport(options = {}) {
     nextStep: allPass
       ? [
           '1. 마스터 검토: bots/edu-x/output/edux-promotion-gate.json',
-          '2. 별도 승인 후 EDUX_DRY_RUN=false, EDUX_LIVE_PUBLISH_APPROVED=true, EDUX_PROMOTION_GATE_PASSED=true 적용',
-          '3. launchd 리로드는 별도 명시 승인 후만 수행',
+          '2. LIVE 승인 후 기본 운영은 EDUX_LIVE_PUBLISH_APPROVED=true, EDUX_PROMOTION_GATE_PASSED=true로 유지',
+          '3. promotion gate 완화가 승인된 경우에만 EDUX_REQUIRE_PROMOTION_GATE=false 적용',
+          '4. launchd 리로드는 별도 명시 승인 후만 수행',
         ]
       : [
           launchd && !launchd.ok ? `Edu-X dry-run LaunchAgent 로드 필요: ${launchd.loadedCount}/${launchd.expectedCount}` : null,

@@ -585,6 +585,14 @@ function loadPromotionGateReport() {
 const PROMOTION_GATE_REQUIRED_CHECKS = 7;
 const PROMOTION_GATE_MAX_AGE_MS = 24 * 3600 * 1000;
 
+function isTruthyEnv(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isPromotionGateRequired() {
+  return String(process.env.EDUX_REQUIRE_PROMOTION_GATE || '').trim().toLowerCase() !== 'false';
+}
+
 function promotionReportBlockingReasons(report) {
   const reasons = [];
   if (!report?.allPass) reasons.push('promotion gate report is missing or not PASS');
@@ -615,6 +623,7 @@ function promotionReportSummary(report) {
 
 function assertLivePublishAllowed({ tableOk = false, oneOffLiveTest = false, fixture = false } = {}) {
   const report = loadPromotionGateReport();
+  const promotionGateRequired = isPromotionGateRequired();
 
   if (oneOffLiveTest) {
     const reasons = [];
@@ -627,7 +636,10 @@ function assertLivePublishAllowed({ tableOk = false, oneOffLiveTest = false, fix
       ok: reasons.length === 0,
       mode: 'one_off_live_test',
       reasons,
-      warnings: promotionReportBlockingReasons(report).length === 0 ? [] : ['promotion gate is not PASS; one-off live test override active'],
+      warnings: promotionGateRequired && promotionReportBlockingReasons(report).length !== 0
+        ? ['promotion gate is not PASS; one-off live test override active']
+        : [],
+      promotionGateRequired,
       promotionReport: promotionReportSummary(report),
     };
   }
@@ -635,14 +647,17 @@ function assertLivePublishAllowed({ tableOk = false, oneOffLiveTest = false, fix
   const reasons = [];
   if (process.env.EDUX_DRY_RUN !== 'false') reasons.push('EDUX_DRY_RUN is not false');
   if (process.env.EDUX_LIVE_PUBLISH_APPROVED !== 'true') reasons.push('EDUX_LIVE_PUBLISH_APPROVED is not true');
-  if (process.env.EDUX_PROMOTION_GATE_PASSED !== 'true') reasons.push('EDUX_PROMOTION_GATE_PASSED is not true');
-  reasons.push(...promotionReportBlockingReasons(report));
+  if (promotionGateRequired) {
+    if (process.env.EDUX_PROMOTION_GATE_PASSED !== 'true') reasons.push('EDUX_PROMOTION_GATE_PASSED is not true');
+    reasons.push(...promotionReportBlockingReasons(report));
+  }
   if (!tableOk) reasons.push('edux_publish_log table is unavailable');
   return {
     ok: reasons.length === 0,
-    mode: 'promotion_gate',
+    mode: promotionGateRequired ? 'promotion_gate' : 'live_approved',
     reasons,
     warnings: [],
+    promotionGateRequired,
     promotionReport: promotionReportSummary(report),
   };
 }
@@ -699,6 +714,7 @@ module.exports = {
   formatContentForEduXWeb,
   writeDryRunArtifact,
   loadPromotionGateReport,
+  isPromotionGateRequired,
   assertLivePublishAllowed,
   shouldSendPublishSuccessTelegram,
   emitJsonIfRequested,

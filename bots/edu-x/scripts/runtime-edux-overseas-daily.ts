@@ -126,10 +126,12 @@ function detectSlot() {
   return { ok: true, slot: DEFAULT_SLOT, source: 'default' };
 }
 
-function shouldSkipCloseSlot(slot, now = runtimeNow()) {
-  if (slot !== '0630') return { skip: false };
+function shouldSkipMarketDay(slot, now = runtimeNow()) {
   const market = evaluateOverseasMarketHours(now);
   const nyParts = timeZoneParts(now, 'America/New_York');
+  // Overseas slots follow the New York market date, not the KST calendar date.
+  // KST Saturday 06:30 is Friday's NY close and should publish; KST Monday
+  // 06:30 is Sunday in New York and should skip.
   const weekend = ['Sat', 'Sun'].includes(nyParts.weekday || '');
   const holiday = market.reasonCode === 'holiday';
   return {
@@ -347,11 +349,11 @@ async function main() {
     return;
   }
 
-  const holidaySkip = shouldSkipCloseSlot(slot);
+  const holidaySkip = shouldSkipMarketDay(slot);
   if (holidaySkip.skip) {
     const metadata = { marketCalendar: holidaySkip, skipStatus: 'skipped_holiday', fixture: ARGS.fixture, imageAttachmentDisabled: true };
     await logPublish({ slot, title: null, content: '', imageUrls: [], status: 'skipped', errorMsg: holidaySkip.reason, metadata });
-    console.log(`[edu-x/overseas] ${slot} 마감 슬롯 휴장/주말 스킵: ${holidaySkip.reason}`);
+    console.log(`[edu-x/overseas] ${slot} 시장 휴장/주말 스킵: ${holidaySkip.reason}`);
     emitJsonIfRequested(ARGS.json, { ok: true, category: CATEGORY, slot, status: 'skipped_holiday', reason: holidaySkip.reason, marketCalendar: holidaySkip });
     return;
   }
