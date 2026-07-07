@@ -28,7 +28,7 @@ function main() {
     env: {
       OPS_CONSOLE_VAPID_PUBLIC_KEY: keys.publicKey,
       OPS_CONSOLE_VAPID_PRIVATE_KEY: keys.privateKey,
-      OPS_CONSOLE_VAPID_SUBJECT: 'mailto:ops-console@localhost',
+      OPS_CONSOLE_VAPID_SUBJECT: 'mailto:jay@team-jay.ai',
     },
   }, null, 2));
 }

@@ -354,7 +354,7 @@ function resolvePushConfig(options = {}) {
   })();
   const publicKey = String(options.vapidPublicKey || process.env.OPS_CONSOLE_VAPID_PUBLIC_KEY || '');
   const privateKey = String(options.vapidPrivateKey || process.env.OPS_CONSOLE_VAPID_PRIVATE_KEY || '');
-  const subject = String(options.vapidSubject || process.env.OPS_CONSOLE_VAPID_SUBJECT || 'mailto:ops-console@localhost');
+  const subject = String(options.vapidSubject || process.env.OPS_CONSOLE_VAPID_SUBJECT || 'mailto:jay@team-jay.ai');
   const subscriptionPath = options.pushSubscriptionPath || process.env.OPS_CONSOLE_PUSH_SUBSCRIPTIONS_PATH || DEFAULT_PUSH_SUBSCRIPTIONS_PATH;
   const configured = Boolean(webPush && publicKey && privateKey);
   if (configured) webPush.setVapidDetails(subject, publicKey, privateKey);

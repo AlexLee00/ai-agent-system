@@ -157,6 +157,35 @@ export async function collectLaunchdFailures(options = {}) {
   }
 }
 
+export function summarizeOpsConsoleServeStatus(output = '') {
+  try {
+    const parsed = typeof output === 'string' ? JSON.parse(output || '{}') : output;
+    const web = parsed?.Web && typeof parsed.Web === 'object' ? parsed.Web : {};
+    const has8444WebMapping = Object.entries(web).some(([host, value]) => {
+      const handlers = value?.Handlers && typeof value.Handlers === 'object' ? value.Handlers : {};
+      return String(host).includes(':8444') && Object.keys(handlers).length > 0;
+    });
+    return has8444WebMapping ? 'ok' : 'missing';
+  } catch {
+    return String(output || '').includes(':8444') ? 'ok' : 'missing';
+  }
+}
+
+export async function collectOpsConsoleServeStatus(options = {}) {
+  if (options.tailscaleServeStatusOutput != null) {
+    return summarizeOpsConsoleServeStatus(options.tailscaleServeStatusOutput);
+  }
+  try {
+    const result = await execFileAsync('tailscale', ['serve', 'status', '--json'], {
+      timeout: Number(options.timeoutMs || 3000),
+      maxBuffer: 512 * 1024,
+    });
+    return summarizeOpsConsoleServeStatus(result.stdout || '');
+  } catch {
+    return 'missing';
+  }
+}
+
 function readJsonFile(filePath) {
   try {
     if (!fs.existsSync(filePath)) return null;
@@ -323,6 +352,7 @@ export function renderSnapshotMarkdown(snapshot) {
     `- Luna weak symbol hard 24h: ${JSON.stringify(metric.luna.weakSymbolHard24h)}`,
     `- Blog sonnet tags 24h: ${JSON.stringify(metric.blog.sonnetTags24h.rows || metric.blog.sonnetTags24h)}`,
     `- Darwin shadow: ${JSON.stringify(metric.darwin.shadow)}`,
+    `- OPS Console serve :8444: ${snapshot.opsConsoleServe}`,
     '',
   ].join('\n');
 }
@@ -330,17 +360,19 @@ export function renderSnapshotMarkdown(snapshot) {
 export async function buildSessionSnapshot(options = {}) {
   const startedAt = Date.now();
   const generatedAt = new Date();
-  const [health, launchd, metrics] = await Promise.all([
+  const [health, launchd, metrics, opsConsoleServe] = await Promise.all([
     collectServiceHealth(options),
     collectLaunchdFailures(options),
     collectCoreMetrics(options),
+    collectOpsConsoleServeStatus(options),
   ]);
   const snapshot = {
-    ok: health.failed === 0 && (launchd.failedCount || 0) === 0,
+    ok: health.failed === 0 && (launchd.failedCount || 0) === 0 && opsConsoleServe === 'ok',
     source: 'jay_session_snapshot',
     generatedAt: generatedAt.toISOString(),
     generatedAtKst: kst.datetimeStr(),
     durationMs: Date.now() - startedAt,
+    opsConsoleServe,
     health,
     launchd,
     metrics,
@@ -397,9 +429,11 @@ export default {
   buildSessionSnapshot,
   collectCoreMetrics,
   collectLaunchdFailures,
+  collectOpsConsoleServeStatus,
   collectServiceHealth,
   renderSnapshotMarkdown,
   runSessionSnapshot,
+  summarizeOpsConsoleServeStatus,
   summarizeLaunchdList,
   writeSnapshot,
 };
