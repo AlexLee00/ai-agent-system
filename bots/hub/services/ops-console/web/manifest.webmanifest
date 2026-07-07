@@ -1,0 +1,16 @@
+{
+  "name": "AI OS Ops Console",
+  "short_name": "AI OS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0E1116",
+  "theme_color": "#0E1116",
+  "description": "Read-only Team Jay operations console",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='28' fill='%230E1116'/%3E%3Ctext x='20' y='78' font-size='42' font-family='Arial' font-weight='800' fill='%23E8EAED'%3EAI%3C/text%3E%3Ctext x='70' y='78' font-size='42' font-family='Arial' font-weight='800' fill='%23FFB454'%3EOS%3C/text%3E%3C/svg%3E",
+      "sizes": "128x128",
+      "type": "image/svg+xml"
+    }
+  ]
+}
