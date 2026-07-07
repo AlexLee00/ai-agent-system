@@ -3,6 +3,7 @@
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { getProviderRecord } = require('../oauth/token-store');
+const { recordHubTelemetry } = require('../telemetry');
 const { parseSseJsonEvents, summarizeSseGuard } = require('../../../../packages/core/lib/sse-event-guard');
 
 const execFileAsync = promisify(execFile);
@@ -13,6 +14,10 @@ type ImagePart = {
   mimeType: string;
   data: string;
 };
+
+const SSE_GUARD_UNTRUSTED_DEBUG_INTERVAL_MS = 300_000;
+let sseGuardUntrustedLastDebugAt = 0;
+let sseGuardUntrustedSuppressed = 0;
 
 function parseExpiryMs(value: unknown): number {
   if (value == null || value === '') return NaN;
@@ -304,14 +309,42 @@ function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTok
 
 async function readSseEvents(response: Response): Promise<AnyRecord[]> {
   const parsed = await parseSseJsonEvents(response, { source: 'hub-oauth-direct-openai-codex' });
-  if (
-    parsed.summary.malformed_fragments > 0
-    || parsed.summary.oversized_fragments > 0
-    || parsed.summary.untrusted_events.length > 0
-  ) {
-    console.warn(`[hub/oauth-direct] guarded SSE fragments: ${summarizeSseGuard(parsed.summary)}`);
-  }
+  recordSseGuardSummary(parsed.summary);
   return parsed.events;
+}
+
+function sseGuardLogSeverity(summary: AnyRecord): 'none' | 'debug' | 'warn' {
+  if (Number(summary?.malformed_fragments || 0) > 0 || Number(summary?.oversized_fragments || 0) > 0) return 'warn';
+  if (Array.isArray(summary?.untrusted_events) && summary.untrusted_events.length > 0) return 'debug';
+  return 'none';
+}
+
+function recordSseGuardSummary(summary: AnyRecord): void {
+  const severity = sseGuardLogSeverity(summary);
+  if (severity === 'none') return;
+
+  recordHubTelemetry('hub.oauth_direct.sse_guard', {
+    severity,
+    source: summary?.source || 'hub-oauth-direct-openai-codex',
+    eventCount: Number(summary?.event_count || summary?.events || 0) || 0,
+    malformedFragments: Number(summary?.malformed_fragments || 0) || 0,
+    oversizedFragments: Number(summary?.oversized_fragments || 0) || 0,
+    untrustedEventCount: Array.isArray(summary?.untrusted_events) ? summary.untrusted_events.length : 0,
+  });
+
+  if (severity === 'warn') {
+    console.warn(`[hub/oauth-direct] guarded SSE fragments: ${summarizeSseGuard(summary)}`);
+    return;
+  }
+
+  sseGuardUntrustedSuppressed += 1;
+  const now = Date.now();
+  const shouldDebug = process.env.HUB_SSE_GUARD_DEBUG === 'true'
+    || now - sseGuardUntrustedLastDebugAt >= SSE_GUARD_UNTRUSTED_DEBUG_INTERVAL_MS;
+  if (!shouldDebug) return;
+  console.debug(`[hub/oauth-direct] guarded SSE fragments debug: ${summarizeSseGuard(summary)} suppressed=${sseGuardUntrustedSuppressed - 1}`);
+  sseGuardUntrustedLastDebugAt = now;
+  sseGuardUntrustedSuppressed = 0;
 }
 
 function extractResponseText(response: AnyRecord | null | undefined): string {
@@ -817,5 +850,7 @@ module.exports = {
   callGeminiCodeAssistOAuth,
   _testOnly: {
     isGeminiDisabled,
+    sseGuardLogSeverity,
+    recordSseGuardSummary,
   },
 };

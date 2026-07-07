@@ -174,6 +174,7 @@ function unitSmokeScripts(): string[] {
     'llm-env-model-overrides-smoke.ts',
     'llm-role-routing-balance-smoke.ts',
     'llm-runtime-selector-source-smoke.ts',
+    'oauth-direct-sse-guard-smoke.ts',
     'llm-anthropic-primary-audit.ts',
     'llm-sonnet-hotspot-guard-smoke.ts',
     'gemini-route-assignment-smoke.ts',

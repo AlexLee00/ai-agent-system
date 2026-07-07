@@ -231,6 +231,29 @@ function applySelectorTimeoutToBudgetProfile(profile: TokenBudgetProfile, reques
   };
 }
 
+function runtimeProfileForSelectorKey(selectorKey: string | null): any | null {
+  if (!selectorKey) return null;
+  try {
+    const runtimeSelector = require('./runtime-selector');
+    if (typeof runtimeSelector.selectLocalRuntimeProfileForSelectorKey !== 'function') return null;
+    return runtimeSelector.selectLocalRuntimeProfileForSelectorKey(selectorKey);
+  } catch {
+    return null;
+  }
+}
+
+function applyRuntimeProfileTimeoutToBudgetProfile(profile: TokenBudgetProfile, request: TokenBudgetRequest = {}): TokenBudgetProfile {
+  const selectorKey = selectorKeyForTimeoutProfile(request);
+  const runtimeProfile = runtimeProfileForSelectorKey(selectorKey);
+  const perAttemptTimeoutMs = toPositiveInt(runtimeProfile?.per_attempt_timeout_ms, 0);
+  if (!perAttemptTimeoutMs) return profile;
+  return {
+    ...profile,
+    timeoutMs: Math.max(profile.timeoutMs, perAttemptTimeoutMs),
+    perAttemptTimeoutMs,
+  };
+}
+
 export function estimateTokens(text: string | null | undefined): number {
   const value = String(text || '');
   if (!value) return 0;
@@ -261,7 +284,10 @@ export function inferTokenBudgetProfile(request: TokenBudgetRequest = {}): strin
 
 export function resolveTokenBudget(request: TokenBudgetRequest = {}): TokenBudgetCheck {
   const profileName = inferTokenBudgetProfile(request);
-  const profile = applySelectorTimeoutToBudgetProfile(PROFILES[profileName] || PROFILES.default, request);
+  const profile = applyRuntimeProfileTimeoutToBudgetProfile(
+    applySelectorTimeoutToBudgetProfile(PROFILES[profileName] || PROFILES.default, request),
+    request,
+  );
   const callerTeam = normalizeText(request.callerTeam, 'hub');
   const agent = normalizeText(request.agent, 'unknown');
   const taskType = normalizeText(request.taskType, 'default');

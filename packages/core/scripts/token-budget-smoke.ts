@@ -33,6 +33,9 @@ async function main() {
   if (blogBudget.timeoutMs !== 600_000) {
     throw new Error(`blog timeout cap mismatch: ${blogBudget.timeoutMs}`);
   }
+  if (blogBudget.perAttemptTimeoutMs !== 420_000) {
+    throw new Error(`blog per-attempt timeout mismatch: ${blogBudget.perAttemptTimeoutMs}`);
+  }
 
   const alarmBudget = resolveTokenBudget({
     callerTeam: 'hub',
@@ -126,6 +129,7 @@ async function main() {
       inputTokens: blogBudget.inputTokens,
       maxOutputTokens: blogBudget.maxOutputTokens,
       timeoutMs: blogBudget.timeoutMs,
+      perAttemptTimeoutMs: blogBudget.perAttemptTimeoutMs,
     },
     alarm: {
       profile: alarmBudget.profileName,

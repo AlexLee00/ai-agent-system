@@ -17,6 +17,7 @@ type RuntimeProfile = {
   base_url?: string;
   model?: string;
   timeout_ms?: number;
+  per_attempt_timeout_ms?: number;
   max_tokens?: number;
   temperature?: number;
   local_image?: boolean;
@@ -69,6 +70,7 @@ const justinRuntime = () => baseRuntime('justin-legal');
 const sigmaRuntime = () => baseRuntime('sigma-data');
 const claudeRuntime = () => baseRuntime('claude-ops');
 const opsRuntime = () => baseRuntime('claude-ops');
+const BLOG_WRITER_PER_ATTEMPT_TIMEOUT_MS = 420_000;
 
 const llm = (
   runtime: RuntimeProfileDefinition,
@@ -85,8 +87,15 @@ const llm = (
 const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
   blog: {
     default: llm(blogRuntime(), 'blog._default'),
-    writer: llm(blogRuntime(), 'blog.pos.writer'),
+    writer: llm(blogRuntime(), 'blog.pos.writer', undefined, { per_attempt_timeout_ms: BLOG_WRITER_PER_ATTEMPT_TIMEOUT_MS }),
+    'pos-writer': llm(blogRuntime(), 'blog.pos.writer', undefined, { per_attempt_timeout_ms: BLOG_WRITER_PER_ATTEMPT_TIMEOUT_MS }),
+    'gems-writer': llm(blogRuntime(), 'blog.gems.writer', undefined, { per_attempt_timeout_ms: BLOG_WRITER_PER_ATTEMPT_TIMEOUT_MS }),
     commenter: llm(blogRuntime(), 'blog.commenter.reply'),
+    'commenter-classify': llm(blogRuntime(), 'blog.commenter.classify'),
+    comment_classification: llm(blogRuntime(), 'blog.commenter.classify'),
+    blog_comment_classification: llm(blogRuntime(), 'blog.commenter.classify'),
+    'master-analyze': llm(blogRuntime(), 'blog.master.analyze'),
+    master_edit_analysis: llm(blogRuntime(), 'blog.master.analyze'),
     social: llm(blogRuntime(), 'blog.social.summarize'),
     curriculum: llm(blogRuntime(), 'blog.curriculum.generate'),
     'image-local': {
@@ -236,6 +245,27 @@ export function selectRuntimeProfile(team: string | null | undefined, purpose = 
   return teamProfiles[normalizedPurpose] || teamProfiles.default || null;
 }
 
+export function findRuntimeProfilesBySelectorKey(selectorKey: string | null | undefined): Array<RuntimeProfile & { team: string; purpose: string }> {
+  const normalizedSelectorKey = String(selectorKey || '').trim().toLowerCase();
+  if (!normalizedSelectorKey) return [];
+
+  const matches: Array<RuntimeProfile & { team: string; purpose: string }> = [];
+  for (const [team, teamProfiles] of Object.entries(PROFILES)) {
+    for (const [purpose, profile] of Object.entries(teamProfiles)) {
+      if (String(profile.selector_key || '').trim().toLowerCase() !== normalizedSelectorKey) continue;
+      matches.push({ ...profile, team, purpose });
+    }
+  }
+  return matches;
+}
+
+export function selectRuntimeProfileForSelectorKey(selectorKey: string | null | undefined): (RuntimeProfile & { team: string; purpose: string }) | null {
+  const matches = findRuntimeProfilesBySelectorKey(selectorKey);
+  if (matches.length === 0) return null;
+  return matches.find((profile) => Number(profile.per_attempt_timeout_ms || 0) > 0) || matches[0] || null;
+}
+
 export {
   LOCAL_LLM_BASE_URL,
+  PROFILE_DEFINITIONS,
 };

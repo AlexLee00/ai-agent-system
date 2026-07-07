@@ -29,6 +29,7 @@ assert(!new RegExp('claude-code/', 'm').test(source), 'runtime profile source mu
 const { PROFILES, selectRuntimeProfile } = require('../lib/runtime-profiles.ts');
 const unifiedCaller = require('../lib/llm/unified-caller.ts');
 const selector = require('../../../packages/core/lib/llm-model-selector.js');
+const { buildLlmPurposeAlignmentReport } = require('./llm-purpose-alignment-audit.ts');
 
 const llmProfiles: string[] = [];
 for (const [team, profiles] of Object.entries(PROFILES || {})) {
@@ -81,6 +82,20 @@ assert.equal(blogCommenterChain.selectorKey, 'blog.commenter.reply');
 assert.equal(blogCommenterChain.runtimeProfile, 'blog.commenter');
 assert.equal(blogCommenterChain.chain.length >= 2, true);
 
+const blogCommenterClassifyProfile = selectRuntimeProfile('blog', 'commenter-classify');
+assert.equal(blogCommenterClassifyProfile.selector_key, 'blog.commenter.classify');
+const blogCommenterClassifyChain = resolveSelectorChain({ callerTeam: 'blog', runtimePurpose: 'blog_comment_classification' }, 'blog');
+assert.equal(blogCommenterClassifyChain.selectorKey, 'blog.commenter.classify');
+assert.equal(blogCommenterClassifyChain.runtimeProfile, 'blog.blog_comment_classification');
+assert.equal(blogCommenterClassifyChain.chain.length >= 2, true);
+
+const blogMasterAnalyzeProfile = selectRuntimeProfile('blog', 'master-analyze');
+assert.equal(blogMasterAnalyzeProfile.selector_key, 'blog.master.analyze');
+const blogMasterAnalyzeChain = resolveSelectorChain({ callerTeam: 'blog', runtimePurpose: 'master_edit_analysis' }, 'blog');
+assert.equal(blogMasterAnalyzeChain.selectorKey, 'blog.master.analyze');
+assert.equal(blogMasterAnalyzeChain.runtimeProfile, 'blog.master_edit_analysis');
+assert.equal(blogMasterAnalyzeChain.chain.length >= 2, true);
+
 const hubDefaultChain = resolveSelectorChain({ callerTeam: 'hub' }, 'hub');
 assert.equal(hubDefaultChain.selectorKey, 'hub._default');
 assert.equal(hubDefaultChain.runtimeProfile, 'hub.default');
@@ -108,6 +123,8 @@ const runtimeSelectorKeys = [
   'justin.citation',
   'justin.opinion',
   'justin.simple-qa',
+  'blog.commenter.classify',
+  'blog.master.analyze',
 ];
 for (const key of runtimeSelectorKeys) {
   const chain = selector.selectLLMChain(key);
@@ -159,6 +176,9 @@ async function main() {
   assert.notEqual(selectorWinsOverAdhoc.chain[0]?.model, 'manual-single-route');
   delete process.env.HUB_LLM_ALLOW_ADHOC_CHAIN;
 
+  const purposeAudit = await buildLlmPurposeAlignmentReport({ noDb: true });
+  assert.equal(purposeAudit.unresolvedSelectors.length, 0, 'static selector usage audit must have 0 unregistered purpose selectors');
+
   console.log(JSON.stringify({
     ok: true,
     selector_backed_profiles: llmProfiles.length,
@@ -167,6 +187,7 @@ async function main() {
     runtime_profiles_hardcoded_primary_routes: 0,
     runtime_selector_keys_checked: runtimeSelectorKeys.length,
     selector_only_runtime_files_checked: selectorOnlyRuntimeFiles.length,
+    static_unregistered_purpose_selectors: purposeAudit.unresolvedSelectors.length,
     adhoc_chain_default: 'blocked',
     selector_key_precedence: 'managed_selector_over_adhoc_chain',
   }, null, 2));

@@ -53,6 +53,7 @@ function runFixture(envPatch = {}) {
       blogPosTimeout: blogPos.primary?.timeoutMs ?? null,
       blogPosProfile: blogPos.timeoutProfile,
       blogBudgetTimeout: blogBudget.timeoutMs,
+      blogBudgetPerAttempt: blogBudget.perAttemptTimeoutMs,
     }));
   `], {
     cwd: repoRoot,
@@ -91,6 +92,7 @@ assert.equal(on.lunaProfile.source, 'declaration');
 assert.equal(on.blogPosTimeout, null, 'undeclared selectors must keep their existing chain timeout');
 assert.equal(on.blogPosProfile.enabled, false, 'undeclared selectors must not receive the default tier overlay');
 assert.equal(on.blogBudgetTimeout, 600_000, 'undeclared long-running blog budget must not be reduced by selector profiles');
+assert.equal(on.blogBudgetPerAttempt, 420_000, 'blog writer runtime profile must apply 420s per-attempt timeout');
 
 const override = runFixture({
   SELECTOR_TIMEOUT_PROFILES_ENABLED: 'true',
@@ -147,6 +149,7 @@ console.log(JSON.stringify({
     classifierTimeout: on.classifierTimeout,
     lunaTimeout: on.lunaTimeout,
     blogBudgetTimeout: on.blogBudgetTimeout,
+    blogBudgetPerAttempt: on.blogBudgetPerAttempt,
   },
   override: {
     archerTimeout: override.archerTimeout,

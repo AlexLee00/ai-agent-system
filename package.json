@@ -32,6 +32,8 @@
     "smoke:agent-lifecycle": "tsx scripts/agent-lifecycle-smoke.ts",
     "session:snapshot": "node --disable-warning=DEP0205 --import tsx scripts/runtime-session-snapshot.ts --json",
     "smoke:infra-bundle2": "tsx scripts/infra-bundle2-smoke.ts",
+    "event-lake:retention": "node --disable-warning=DEP0205 --import tsx scripts/runtime-event-lake-retention.ts --json",
+    "smoke:event-lake-retention": "tsx scripts/event-lake-retention-smoke.ts",
     "deploy-drift-guard": "tsx scripts/deploy-drift-guard.ts --json",
     "smoke:deploy-drift-guard": "tsx scripts/deploy-drift-guard-smoke.ts",
     "smoke:harness-principles-audit": "tsx scripts/harness-principles-audit.ts --smoke",

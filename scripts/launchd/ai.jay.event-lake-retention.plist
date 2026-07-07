@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.jay.event-lake-retention</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/scripts/runtime-event-lake-retention.ts</string>
+    <string>--json</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>20</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/event-lake-retention.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/event-lake-retention.err.log</string>
+</dict>
+</plist>

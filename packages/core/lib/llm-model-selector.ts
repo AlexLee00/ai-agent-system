@@ -980,6 +980,20 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
         { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 700, temperature: 0.1 },
       ],
     },
+    'master.analyze': {
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 300, temperature: 0.1, timeoutMs: 22000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 300, temperature: 0.1, timeoutMs: 18000 },
+        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 300, temperature: 0.1, timeoutMs: 15000 },
+      ],
+    },
+    'commenter.classify': {
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 200, temperature: 0, timeoutMs: 18000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 200, temperature: 0, timeoutMs: 15000 },
+        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 200, temperature: 0, timeoutMs: 12000 },
+      ],
+    },
     'commenter.reply': {
       primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 600, temperature: 0.4, timeoutMs: 22000 },
       fallbacks: [
@@ -1985,6 +1999,8 @@ function buildSelectorRegistry(): Record<string, any> {
     'blog.curriculum.recommend': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.curriculum.recommend', options),
     'blog.curriculum.generate': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.curriculum.generate', options),
     'blog.feedback.analyze': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.feedback.analyze', options),
+    'blog.master.analyze': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.master.analyze', options),
+    'blog.commenter.classify': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.commenter.classify', options),
     'blog.commenter.reply': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.commenter.reply', options),
     'blog.commenter.neighbor': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.commenter.neighbor', options),
     'blog.book_review.preview': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.book_review.preview', options),
