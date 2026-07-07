@@ -28,9 +28,6 @@ export type CreateNaverMonitorCycleServiceDeps = {
     }>;
     reconcileDroppedConfirmed: (args: any) => Promise<number>;
   };
-  futureCancelService: {
-    processFutureCancelSnapshot: (args: any) => Promise<number>;
-  };
   cycleReportService: {
     handlePeriodicReports: (args: any) => Promise<{
       lastHeartbeatTime: number;
@@ -55,7 +52,6 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
     closePopupsIfPresent,
     confirmedCycleService,
     cancelDetectionService,
-    futureCancelService,
     cycleReportService,
     sendAlert,
     resolveSystemAlertByTitle,

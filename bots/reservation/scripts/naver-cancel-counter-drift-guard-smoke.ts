@@ -38,9 +38,6 @@ function createService({ currentCancelledList }) {
       }),
       reconcileDroppedConfirmed: async ({ cycleNewCancelDetections }) => cycleNewCancelDetections,
     },
-    futureCancelService: {
-      processFutureCancelSnapshot: async ({ cycleNewCancelDetections }) => cycleNewCancelDetections,
-    },
     cycleReportService: {
       handlePeriodicReports: async (args) => ({
         lastHeartbeatTime: args.lastHeartbeatTime,

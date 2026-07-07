@@ -59,7 +59,6 @@ const { createNaverSessionService } = require('../../lib/naver-session-service')
 const { createNaverCycleReportService } = require('../../lib/naver-cycle-report-service');
 const { createNaverBookingStateService } = require('../../lib/naver-booking-state-service');
 const { createNaverCandidateService } = require('../../lib/naver-candidate-service');
-const { createNaverFutureCancelService } = require('../../lib/naver-future-cancel-service');
 const { createNaverCancelDetectionService } = require('../../lib/naver-cancel-detection-service');
 const { createNaverConfirmedCycleService } = require('../../lib/naver-confirmed-cycle-service');
 const { createNaverMonitorCycleService } = require('../../lib/naver-monitor-cycle-service');
@@ -429,19 +428,6 @@ const naverCandidateService = createNaverCandidateService({
   mode: MODE,
   naverUrl: NAVER_URL,
 });
-const naverFutureCancelService = createNaverFutureCancelService({
-  delay,
-  log,
-  maskPhone,
-  isCancelledKey,
-  addCancelledKey,
-  buildCancelKey,
-  upsertFutureConfirmed,
-  getStaleConfirmed,
-  deleteStaleConfirmed,
-  pruneOldFutureConfirmed,
-  scrapeNewestBookingsFromList,
-});
 const naverCancelDetectionService = createNaverCancelDetectionService({
   delay,
   log,
@@ -470,7 +456,6 @@ const naverMonitorCycleService = createNaverMonitorCycleService({
   closePopupsIfPresent,
   confirmedCycleService: naverConfirmedCycleService,
   cancelDetectionService: naverCancelDetectionService,
-  futureCancelService: naverFutureCancelService,
   cycleReportService: naverCycleReportService,
   sendAlert,
   resolveSystemAlertByTitle,
