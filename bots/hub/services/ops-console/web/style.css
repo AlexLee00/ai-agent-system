@@ -137,8 +137,9 @@ h1, h2 {
 
 .team-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(172px, 100%), 1fr));
   gap: 10px;
+  align-items: start;
 }
 
 .team-card {
@@ -210,10 +211,14 @@ h1, h2 {
 .town-list {
   display: grid;
   gap: 10px;
+  align-items: start;
+  min-width: 0;
+  max-height: min(640px, calc(100vh - 220px));
+  overflow: auto;
 }
 
 .town-list.mini {
-  max-height: 360px;
+  max-height: min(360px, calc(100vh - 260px));
   overflow: auto;
 }
 
@@ -230,8 +235,9 @@ h1, h2 {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(104px, 100%), 1fr));
   gap: 8px;
+  align-items: start;
   margin: 0 0 12px;
 }
 
@@ -249,9 +255,12 @@ h1, h2 {
 .panel-stack {
   display: grid;
   gap: 10px;
+  align-items: start;
+  min-width: 0;
 }
 
 .detail-panel {
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
@@ -265,7 +274,7 @@ h1, h2 {
 }
 
 .detail-panel pre {
-  max-height: 180px;
+  max-height: min(360px, calc(100vh - 260px));
   overflow: auto;
   margin: 0;
   color: var(--dim);
@@ -278,6 +287,10 @@ h1, h2 {
 .memory-list {
   display: grid;
   gap: 9px;
+  align-items: start;
+  min-width: 0;
+  max-height: min(640px, calc(100vh - 260px));
+  overflow: auto;
 }
 
 .memory-bubble {
@@ -309,6 +322,10 @@ h1, h2 {
 .bridge-list {
   display: grid;
   gap: 9px;
+  align-items: start;
+  min-width: 0;
+  max-height: min(640px, calc(100vh - 220px));
+  overflow: auto;
 }
 
 .replay-bar {
@@ -351,10 +368,16 @@ h1, h2 {
 
 .gate-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 10px;
+  align-items: start;
+  min-width: 0;
+  max-height: min(640px, calc(100vh - 190px));
+  overflow: auto;
 }
 
 .gate-group {
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 17px;
@@ -420,6 +443,10 @@ h1, h2 {
 .knowledge-graph {
   display: grid;
   gap: 7px;
+  align-items: start;
+  min-width: 0;
+  max-height: min(640px, calc(100vh - 260px));
+  overflow: auto;
 }
 
 .knowledge-graph svg {
@@ -502,7 +529,8 @@ h1, h2 {
 }
 
 .detail-card {
-  max-height: 220px;
+  min-width: 0;
+  max-height: min(360px, calc(100vh - 260px));
   overflow: auto;
   white-space: pre-wrap;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
