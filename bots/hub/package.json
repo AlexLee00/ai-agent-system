@@ -96,6 +96,7 @@
     "ops-console:vapid-keygen": "tsx scripts/ops-console-vapid-keygen.ts",
     "smoke:ops-console-d1_5": "node --disable-warning=DEP0205 --import tsx scripts/ops-console-d1_5-smoke.ts",
     "smoke:ops-console-d2": "node --disable-warning=DEP0205 --import tsx scripts/ops-console-d2-smoke.ts",
+    "smoke:ops-console-d3": "node --disable-warning=DEP0205 --import tsx scripts/ops-console-d3-smoke.ts",
     "smoke:loop-budget-guard": "tsx scripts/loop-budget-guard-smoke.ts",
     "smoke:local-cold-start-retry": "tsx scripts/local-cold-start-retry-smoke.ts",
     "smoke:archer-stabilization": "tsx scripts/archer-stabilization-smoke.ts",

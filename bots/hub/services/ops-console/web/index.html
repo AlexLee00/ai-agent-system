@@ -36,9 +36,27 @@
     <section class="town-section" data-panel="town" hidden>
       <div class="section-head">
         <h2>타운스퀘어</h2>
-        <span>SSE live</span>
+        <span id="townMode">SSE live</span>
+      </div>
+      <div class="replay-bar">
+        <button id="replayToggle" type="button">리플레이</button>
+        <label>최근
+          <select id="replayWindow">
+            <option value="1">1h</option>
+            <option value="6">6h</option>
+            <option value="24" selected>24h</option>
+          </select>
+        </label>
       </div>
       <div id="townList" class="town-list"></div>
+    </section>
+
+    <section class="gates-section" data-panel="gates" hidden>
+      <div class="section-head">
+        <h2>게이트 콘솔</h2>
+        <span id="gateCount">read-only</span>
+      </div>
+      <div id="gateList" class="gate-list"></div>
     </section>
 
     <section class="team-detail-section" data-panel="team" hidden>
@@ -87,6 +105,7 @@
   <nav class="bottom-tabs" aria-label="OPS Console tabs">
     <button class="active" data-tab="home">▦<span>홈</span></button>
     <button data-tab="town">🗣<span>타운</span></button>
+    <button data-tab="gates">⚙<span>게이트</span></button>
     <button data-tab="bridge">🌉<span>브리지</span></button>
     <button data-tab="settings">☰<span>설정</span></button>
   </nav>

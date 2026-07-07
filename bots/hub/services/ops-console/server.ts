@@ -46,6 +46,21 @@ const TEAM_META = Object.freeze({
   write: { name: '라이트', emoji: '✍️', color: '#D6D3D1' },
 });
 const TEAM_IDS = Object.freeze(Object.keys(TEAM_META));
+const OPERATION_GATES = Object.freeze([
+  { key: 'SIGMA_TRANSITION_ENABLED', team: 'sigma', desc: '시그마 전이 적용 루프' },
+  { key: 'SIGMA_DEDUPE_ENABLED', team: 'sigma', desc: '시그마 중복 지식 정리' },
+  { key: 'SIGMA_SHORT_TERM_ENABLED', team: 'sigma', desc: '시그마 단기 기억 만료' },
+  { key: 'SIGMA_LIBRARIAN_ENABLED', team: 'sigma', desc: '시그마 사서 루프' },
+  { key: 'HUB_ALARM_LIFECYCLE_ENABLED', team: 'hub', desc: '허브 알람 lifecycle 처리' },
+  { key: 'HUB_RESILIENCE_ENABLED', team: 'hub', desc: '허브 resilience/self-healing 보조' },
+  { key: 'LLM_AUTO_ROUTING_ENABLED', team: 'hub', desc: 'LLM 자동 라우팅 모드' },
+  { key: 'BLOG_WRITER_MODEL', team: 'blog', desc: '블로그 writer 모델 선택' },
+  { key: 'BLOG_AB_STRICT_FAMILY', team: 'blog', desc: '블로그 A/B 모델 family 엄격화' },
+  { key: 'BLOG_LIFECYCLE_INJECT_ENABLED', team: 'blog', desc: '블로그 lifecycle context 주입' },
+  { key: 'LUNA_WEAK_SYMBOL_HARD_ENABLED', team: 'luna', desc: '루나 약한 종목 hard gate' },
+  { key: 'LUNA_LIFECYCLE_INJECT_ENABLED', team: 'luna', desc: '루나 lifecycle context 주입' },
+  { key: 'EVENT_LAKE_RETENTION_ENABLED', team: 'orchestrator', desc: 'event_lake retention 관리' },
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -98,6 +113,12 @@ function toIso(value) {
   if (!value) return nowIso();
   const date = value instanceof Date ? value : new Date(value);
   return Number.isFinite(date.getTime()) ? date.toISOString() : nowIso();
+}
+
+function parseDateOrNull(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 function normalizeTeam(team) {
@@ -341,6 +362,43 @@ export function collectBridgeQueue(options = {}) {
       failed: rows.filter((row) => /fail|reject/i.test(`${row.status} ${row.verdict}`)).length,
     },
     items: rows,
+  };
+}
+
+function normalizeGateState(value) {
+  const textValue = String(value == null ? '' : value).trim();
+  if (!textValue) return 'unset';
+  const lowered = textValue.toLowerCase();
+  if (['0', 'false', 'off', 'disabled', 'disable', 'no'].includes(lowered)) return 'off';
+  if (lowered.includes('shadow') || lowered.includes('dry') || lowered.includes('preview')) return 'shadow';
+  if (['1', 'true', 'on', 'enabled', 'enable', 'yes', 'active'].includes(lowered)) return 'on';
+  return 'on';
+}
+
+export function collectOperationGates(options = {}) {
+  const env = options.env || process.env;
+  const gates = OPERATION_GATES.map((gate) => {
+    const value = env[gate.key];
+    return {
+      key: gate.key,
+      value: value == null || value === '' ? null : String(value),
+      state: normalizeGateState(value),
+      team: gate.team,
+      desc: gate.desc,
+    };
+  });
+  const groups = gates.reduce((acc, gate) => {
+    acc[gate.team] = acc[gate.team] || [];
+    acc[gate.team].push(gate);
+    return acc;
+  }, {});
+  return {
+    ok: true,
+    readOnly: true,
+    generatedAt: nowIso(),
+    count: gates.length,
+    gates,
+    groups,
   };
 }
 
@@ -712,9 +770,89 @@ async function collectBlogPanels(queryReadonly) {
   ];
 }
 
+function normalizeSourceRef(value, fallbackSource = 'sigma') {
+  const parsed = safeJson(value, value || {});
+  if (Array.isArray(parsed)) return parsed[0] || { team: fallbackSource };
+  if (parsed && typeof parsed === 'object') return parsed;
+  return { team: fallbackSource };
+}
+
+function validationStateForVaultRow(row) {
+  const meta = safeJson(row.meta, {});
+  return row.validation_state
+    || meta.validation_state
+    || meta.libraryCoords?.validation_state
+    || meta.library_coords?.validation_state
+    || 'unverified';
+}
+
+export async function collectKnowledgeGraph(options = {}) {
+  const limit = Math.max(1, Math.min(200, Number(options.limit || 100) || 100));
+  const sourceFilter = String(options.source || '').toLowerCase().trim();
+  const queryReadonly = options.queryReadonly || pgPool.queryReadonly;
+  const rows = await safeQuery('sigma', 'sigma.vault_entries.knowledge_graph', `
+    SELECT id, title, source, status, validation_state, created_at, meta, meta->'source_ref' AS source_ref
+    FROM sigma.vault_entries
+    WHERE COALESCE(status, 'active') NOT IN ('merged', 'retired', 'archived', 'deleted')
+      AND COALESCE(meta->>'merged_into', '') = ''
+    ORDER BY
+      CASE
+        WHEN COALESCE(validation_state, meta->'libraryCoords'->>'validation_state', meta->>'validation_state') = 'validated' THEN 0
+        ELSE 1
+      END,
+      created_at DESC NULLS LAST
+    LIMIT $1
+  `, [limit], queryReadonly);
+  const nodes = new Map();
+  const edges = [];
+  for (const row of rows) {
+    if (row.__opsConsoleError || !row.id) continue;
+    const sourceRef = normalizeSourceRef(row.source_ref, row.source || 'sigma');
+    const sourceTeam = normalizeTeam(sourceRef.team || sourceRef.source || row.source || 'sigma');
+    if (sourceFilter && sourceTeam !== sourceFilter && String(row.source || '').toLowerCase() !== sourceFilter) continue;
+    const sourceTable = String(sourceRef.table || sourceRef.kind || 'source').slice(0, 48);
+    const sourceId = sourceRef.id || sourceRef.key || sourceRef.symbol || sourceTable;
+    const sourceNodeId = `source:${sourceTeam}:${sourceTable}`;
+    const vaultNodeId = `vault:${row.id}`;
+    const validationState = validationStateForVaultRow(row);
+    nodes.set(sourceNodeId, {
+      id: sourceNodeId,
+      label: `${TEAM_META[sourceTeam]?.name || sourceTeam}/${sourceTable}`,
+      kind: 'source',
+      team: sourceTeam,
+      validated: false,
+    });
+    nodes.set(vaultNodeId, {
+      id: vaultNodeId,
+      label: String(row.title || row.id).slice(0, 80),
+      kind: 'vault_entry',
+      source: row.source || sourceTeam,
+      validationState,
+      validated: validationState === 'validated',
+      ts: toIso(row.created_at),
+    });
+    edges.push({
+      id: `${sourceNodeId}->${vaultNodeId}`,
+      from: sourceNodeId,
+      to: vaultNodeId,
+      kind: 'source_ref',
+      label: String(sourceId).slice(0, 80),
+    });
+  }
+  return {
+    ok: true,
+    readOnly: true,
+    generatedAt: nowIso(),
+    limit,
+    source: sourceFilter || null,
+    nodes: Array.from(nodes.values()).slice(0, limit * 2),
+    edges: edges.slice(0, limit * 2),
+  };
+}
+
 async function collectSigmaPanels(queryReadonly, options = {}) {
   const workspace = localWorkspace(options);
-  const [total, coord, transitions, feed] = await Promise.all([
+  const [total, coord, transitions, feed, graph] = await Promise.all([
     safeQuery('sigma', 'sigma.vault_entries.total', `
       SELECT COUNT(*)::int AS total FROM sigma.vault_entries
     `, [], queryReadonly),
@@ -739,10 +877,12 @@ async function collectSigmaPanels(queryReadonly, options = {}) {
       ORDER BY created_at DESC
       LIMIT 8
     `, [], queryReadonly),
+    collectKnowledgeGraph({ queryReadonly, limit: 80 }),
   ]);
   return [
     panel('vault total', total),
     panel('coordinate distribution', coord),
+    panel('mini knowledge graph', [], { kind: 'knowledgeGraph', graph }),
     panel('transition telemetry', jsonlTail(path.join(workspace, 'sigma', 'transition-telemetry.jsonl'), 8)),
     panel('vault audit recent', transitions),
     panel('feed recent', feed),
@@ -888,7 +1028,9 @@ export async function collectTeamDetail(teamId, options = {}) {
 export async function collectTownSquareEvents(options = {}) {
   const limit = Math.max(1, Math.min(200, Number(options.limit || DEFAULT_TOWN_LIMIT) || DEFAULT_TOWN_LIMIT));
   const team = options.team ? normalizeTeam(options.team) : '';
-  const since = options.since ? new Date(options.since) : null;
+  const from = parseDateOrNull(options.from || options.since);
+  const to = parseDateOrNull(options.to);
+  const replayMode = options.replay === true || options.replay === '1' || Boolean(from || to);
   const queryReadonly = options.queryReadonly || pgPool.queryReadonly;
   const events = [];
 
@@ -1024,9 +1166,15 @@ export async function collectTownSquareEvents(options = {}) {
 
   let filtered = events
     .filter((event) => !team || event.from === team || event.to === team || String(event.tag || '').toLowerCase().includes(team))
-    .filter((event) => !since || new Date(event.ts) >= since)
+    .filter((event) => {
+      const date = parseDateOrNull(event.ts);
+      if (!date) return false;
+      if (from && date < from) return false;
+      if (to && date > to) return false;
+      return true;
+    })
     .sort((a, b) => b.ts.localeCompare(a.ts));
-  if (filtered.length === 0) {
+  if (filtered.length === 0 && !replayMode) {
     filtered = [eventRow({
       ts: nowIso(),
       from: 'hub',
@@ -1113,6 +1261,32 @@ function buildHighlights(snapshot, events) {
   }
   while (highlights.length < 3) highlights.push('read-only 관제 데이터 수집 대기');
   return highlights.slice(0, 3);
+}
+
+export async function collectHighlightDigest(options = {}) {
+  const queryReadonly = options.queryReadonly || pgPool.queryReadonly;
+  const snapshot = await (options.buildSessionSnapshot || buildSessionSnapshot)({
+    write: false,
+    skipLaunchctl: options.skipLaunchctl === true,
+    queryReadonly,
+    launchctlOutput: options.launchctlOutput,
+  });
+  const [town, bridge] = await Promise.all([
+    collectTownSquareEvents({ limit: 30, queryReadonly }),
+    Promise.resolve(collectBridgeQueue({ bridgeRoot: options.bridgeRoot })),
+  ]);
+  const lines = buildHighlights(snapshot, town);
+  if ((bridge.counts?.pending || 0) > 0) {
+    lines[2] = `브리지 대기 ${bridge.counts.pending}건 · 완료 ${bridge.counts.done || 0}건`;
+  }
+  return {
+    ok: true,
+    readOnly: true,
+    generatedAt: nowIso(),
+    costUsd: 0,
+    source: 'rules',
+    lines: lines.slice(0, 3),
+  };
 }
 
 export async function collectOverview(options = {}) {
@@ -1230,6 +1404,19 @@ export function createOpsConsoleServer(options = {}) {
       if (url.pathname === '/api/bridge') {
         return json(res, 200, collectBridgeQueue({ bridgeRoot: options.bridgeRoot }));
       }
+      if (url.pathname === '/api/gates') {
+        return json(res, 200, collectOperationGates(options));
+      }
+      if (url.pathname === '/api/knowledge-graph') {
+        return json(res, 200, await collectKnowledgeGraph({
+          queryReadonly: options.queryReadonly,
+          limit: url.searchParams.get('limit') || 100,
+          source: url.searchParams.get('source') || '',
+        }));
+      }
+      if (url.pathname === '/api/highlight') {
+        return json(res, 200, await collectHighlightDigest(options));
+      }
       if (url.pathname.startsWith('/api/team/')) {
         const teamId = decodeURIComponent(url.pathname.slice('/api/team/'.length));
         const detail = await collectTeamDetail(teamId, options);
@@ -1270,9 +1457,20 @@ export function createOpsConsoleServer(options = {}) {
           limit: url.searchParams.get('limit') || DEFAULT_TOWN_LIMIT,
           team: url.searchParams.get('team') || '',
           since: url.searchParams.get('since') || '',
+          from: url.searchParams.get('from') || '',
+          to: url.searchParams.get('to') || '',
+          replay: url.searchParams.get('replay') === '1',
           queryReadonly: options.queryReadonly,
         });
-        return json(res, 200, { ok: true, readOnly: true, generatedAt: nowIso(), events: payload });
+        return json(res, 200, {
+          ok: true,
+          readOnly: true,
+          generatedAt: nowIso(),
+          replay: url.searchParams.get('replay') === '1',
+          from: url.searchParams.get('from') || null,
+          to: url.searchParams.get('to') || null,
+          events: payload,
+        });
       }
       if (url.pathname === '/api/stream') {
         res.writeHead(200, {
