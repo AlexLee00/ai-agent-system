@@ -19,6 +19,13 @@
   const teamGrid = document.getElementById('teamGrid');
   const townList = document.getElementById('townList');
   const generatedAt = document.getElementById('generatedAt');
+  const bridgeList = document.getElementById('bridgeList');
+  const bridgeDetail = document.getElementById('bridgeDetail');
+  const bridgeCount = document.getElementById('bridgeCount');
+  const pushStatus = document.getElementById('pushStatus');
+  const pushButton = document.getElementById('pushButton');
+  const tabs = Array.from(document.querySelectorAll('[data-tab]'));
+  const panels = Array.from(document.querySelectorAll('[data-panel]'));
 
   function fmtTime(value) {
     const date = value ? new Date(value) : new Date();
@@ -85,6 +92,31 @@
     while (townList.children.length > 30) townList.removeChild(townList.lastChild);
   }
 
+  function renderBridge(data) {
+    bridgeList.innerHTML = '';
+    const items = data.items || [];
+    bridgeCount.textContent = `${items.length} tasks · pending ${data.counts?.pending || 0}`;
+    if (items.length === 0) {
+      bridgeList.innerHTML = '<div class="empty-card">브리지 큐가 비어 있습니다.</div>';
+      bridgeDetail.textContent = '선택된 브리지 작업이 없습니다.';
+      return;
+    }
+    for (const item of items) {
+      const button = document.createElement('button');
+      button.className = `bridge-item ${item.status === 'pending' ? 'pending' : ''}`;
+      button.innerHTML = `
+        <span class="bridge-id">${item.id}</span>
+        <b>${item.title || item.id}</b>
+        <small>${item.status || 'unknown'} · ${item.verdict || 'pending'} · ${fmtTime(item.ts)}</small>
+      `;
+      button.addEventListener('click', () => {
+        bridgeDetail.textContent = JSON.stringify(item, null, 2);
+      });
+      bridgeList.appendChild(button);
+    }
+    bridgeDetail.textContent = JSON.stringify(items[0], null, 2);
+  }
+
   async function loadOverview() {
     const response = await fetch('/api/overview', { cache: 'no-store' });
     const data = await response.json();
@@ -99,6 +131,54 @@
     const response = await fetch('/api/townsquare?limit=8', { cache: 'no-store' });
     const data = await response.json();
     renderTown(data.events || [], false);
+  }
+
+  async function loadBridge() {
+    const response = await fetch('/api/bridge', { cache: 'no-store' });
+    renderBridge(await response.json());
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i += 1) outputArray[i] = rawData.charCodeAt(i);
+    return outputArray;
+  }
+
+  async function enablePush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      pushStatus.textContent = '이 브라우저는 Web Push를 지원하지 않습니다.';
+      return;
+    }
+    const vapid = await (await fetch('/api/push/vapid-public', { cache: 'no-store' })).json();
+    if (!vapid.publicKey) {
+      pushStatus.textContent = 'VAPID public key가 설정되지 않았습니다. 마스터 setenv 후 활성화됩니다.';
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      pushStatus.textContent = `알림 권한 상태: ${permission}`;
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
+    });
+    const stored = await (await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ subscription }),
+    })).json();
+    pushStatus.textContent = stored.ok ? `푸시 구독 저장 완료 · ${stored.count}개` : `푸시 구독 실패: ${stored.error || 'unknown'}`;
+  }
+
+  function switchTab(tab) {
+    for (const button of tabs) button.classList.toggle('active', button.dataset.tab === tab);
+    for (const panel of panels) panel.hidden = panel.dataset.panel !== tab;
+    if (tab === 'bridge') loadBridge().catch(() => {});
   }
 
   function openStream() {
@@ -120,10 +200,16 @@
     };
   }
 
+  for (const button of tabs) button.addEventListener('click', () => switchTab(button.dataset.tab));
+  if (pushButton) pushButton.addEventListener('click', () => enablePush().catch((error) => {
+    pushStatus.textContent = `푸시 구독 오류: ${String(error.message || error).slice(0, 120)}`;
+  }));
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(function () {});
   }
 
-  Promise.all([loadOverview(), loadTown()]).finally(openStream);
+  Promise.all([loadOverview(), loadTown(), loadBridge()]).finally(openStream);
   setInterval(loadOverview, 30000);
+  setInterval(loadBridge, 15000);
 }());

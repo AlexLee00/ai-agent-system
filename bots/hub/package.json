@@ -93,6 +93,8 @@
     "smoke:hub-ops-mcp-trace-hard": "tsx scripts/hub-ops-mcp-trace-hard-smoke.ts",
     "dashboard:ai-os": "node --disable-warning=DEP0205 --import tsx services/ai-os-dashboard/server.ts",
     "smoke:ai-os-dashboard": "tsx scripts/ai-os-dashboard-smoke.ts",
+    "ops-console:vapid-keygen": "tsx scripts/ops-console-vapid-keygen.ts",
+    "smoke:ops-console-d1_5": "node --disable-warning=DEP0205 --import tsx scripts/ops-console-d1_5-smoke.ts",
     "smoke:loop-budget-guard": "tsx scripts/loop-budget-guard-smoke.ts",
     "smoke:local-cold-start-retry": "tsx scripts/local-cold-start-retry-smoke.ts",
     "smoke:archer-stabilization": "tsx scripts/archer-stabilization-smoke.ts",
@@ -207,7 +209,8 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "langfuse": "^3.38.20",
-    "tsx": "^4.22.3"
+    "tsx": "^4.22.3",
+    "web-push": "^3.6.7"
   },
   "jest": {
     "transform": {
