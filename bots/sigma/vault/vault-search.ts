@@ -157,7 +157,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
 
   const embeddingVector = `[${embeddingResult.embedding.join(',')}]`;
   const params: any[] = [embeddingVector];
-  const filters = ['embedding IS NOT NULL'];
+  const filters = ['embedding IS NOT NULL', "(meta->>'merged_into') IS NULL"];
   let nextParam = 2;
   const coordColumns = layerRoute ? await detectCoordColumns(queryReadonly) : new Set();
 

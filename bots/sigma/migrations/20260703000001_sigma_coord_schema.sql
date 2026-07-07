@@ -19,7 +19,7 @@ DO $$
 BEGIN
   ALTER TABLE sigma.vault_entries
     ADD CONSTRAINT vault_entries_time_stage_coord_check
-    CHECK (time_stage IS NULL OR time_stage IN ('raw', 'digest', 'pattern', 'decayed'));
+    CHECK (time_stage IS NULL OR time_stage IN ('raw', 'digest', 'pattern', 'dormant', 'forgotten'));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 

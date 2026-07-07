@@ -10,7 +10,10 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const pgPool = require(path.join(repoRoot, 'packages/core/lib/pg-pool.ts'));
-const MIGRATION_PATH = path.join(__dirname, '../migrations/20260703000001_sigma_coord_schema.sql');
+const MIGRATION_PATHS = [
+  path.join(__dirname, '../migrations/20260703000001_sigma_coord_schema.sql'),
+  path.join(__dirname, '../migrations/20260707000001_sigma_zaxis_lifecycle.sql'),
+];
 
 export const SIGMA_COORD_COLUMNS = [
   'abstraction_level',
@@ -61,8 +64,10 @@ export async function buildSigmaCoordSchemaBootstrapReport({ apply = false, quer
   const before = await inspectSigmaCoordSchema({ queryReadonly });
   let applied = false;
   if (apply) {
-    const sql = fs.readFileSync(MIGRATION_PATH, 'utf8');
-    await run('sigma', sql, []);
+    for (const migrationPath of MIGRATION_PATHS) {
+      const sql = fs.readFileSync(migrationPath, 'utf8');
+      await run('sigma', sql, []);
+    }
     applied = true;
   }
   const after = apply ? await inspectSigmaCoordSchema({ queryReadonly }) : before;
@@ -72,7 +77,8 @@ export async function buildSigmaCoordSchemaBootstrapReport({ apply = false, quer
     checkedAt: new Date().toISOString(),
     dryRun: !apply,
     liveMutation: apply,
-    migrationPath: MIGRATION_PATH,
+    migrationPath: MIGRATION_PATHS[0],
+    migrationPaths: MIGRATION_PATHS,
     applied,
     before,
     after,

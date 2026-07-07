@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { redactPii } from '../ts/lib/intelligent-library.ts';
 import { attachSourceRefToMeta, sourceRefFromCandidate } from '../shared/source-ref.ts';
+import { rowsFromPg, sigmaContentMd5 } from '../shared/zaxis.ts';
 import { createVaultEmbedding, VaultManager } from '../vault/vault-manager.ts';
 
 const require = createRequire(import.meta.url);
@@ -385,10 +386,13 @@ export function buildBlogVaultCandidates(rows: {
 }
 
 export function entryForCandidate(candidate: any) {
+  const contentMd5 = sigmaContentMd5({ title: candidate.title, content: candidate.content });
   const meta = attachSourceRefToMeta({
     ...(candidate.meta || {}),
     team: 'blog',
     source: 'blo',
+    sigmaContentMd5: contentMd5,
+    sigmaDedupeKey: `blo:${contentMd5}`,
   }, sourceRefFromCandidate(candidate, 'blog'));
   return {
     title: candidate.title,
@@ -399,6 +403,28 @@ export function entryForCandidate(candidate: any) {
     source: 'blo',
     meta,
   };
+}
+
+export async function findRecentBloDuplicateByDigest(
+  digest: string,
+  { pool = pgPool, recentDays = 30 } = {},
+) {
+  if (!digest) return null;
+  const rows = await pool.query('sigma', `
+    SELECT id, title, file_path, created_at
+    FROM sigma.vault_entries
+    WHERE source = 'blo'
+      AND COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
+      AND created_at >= NOW() - ($2::int * INTERVAL '1 day')
+      AND (
+        meta->>'sigmaContentMd5' = $1
+        OR md5(COALESCE(title, '') || E'\\n' || COALESCE(content, '')) = $1
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+  `, [digest, Math.max(1, Math.min(3650, Number(recentDays) || 30))]);
+  return rowsFromPg(rows)[0] || null;
 }
 
 export function buildPopularPatternEntry(pattern: any = {}, options: { key?: string } = {}) {
@@ -617,6 +643,23 @@ export async function runSigmaBlogVaultFeed(options: {
   if (manager) {
     for (const candidate of candidates) {
       const entry = entryForCandidate(candidate);
+      const existing = await findRecentBloDuplicateByDigest(entry.meta?.sigmaContentMd5, { pool: pgPool });
+      if (existing) {
+        results.push({
+          sourceKind: candidate.sourceKind,
+          sourceId: candidate.sourceId,
+          filePath: entry.filePath,
+          ok: true,
+          id: existing.id,
+          embedded: false,
+          embeddingDim: null,
+          embeddingWarning: null,
+          skipped: true,
+          skipReason: 'blo_content_digest_duplicate',
+          message: `동일 md5 blo entry 존재 (id=${existing.id})`,
+        });
+        continue;
+      }
       const persisted = await manager.addToInbox(entry);
       results.push({
         sourceKind: candidate.sourceKind,
@@ -671,6 +714,7 @@ export async function runSigmaBlogVaultFeed(options: {
       bySource: countBy(results.filter((item) => item.ok), (item) => item.sourceKind),
       embeddingWarnings: results.filter((item) => item.embeddingWarning).slice(0, 10),
       failures: failed.slice(0, 10),
+      skippedDuplicates: results.filter((item) => item.skipped && item.skipReason === 'blo_content_digest_duplicate').length,
     },
     sample: candidates.slice(0, 3).map((candidate) => ({
       sourceKind: candidate.sourceKind,

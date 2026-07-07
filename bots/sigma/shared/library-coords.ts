@@ -2,7 +2,7 @@
 
 export const LIBRARY_COORD_VALUES = {
   abstractionLevels: ['L0', 'L1', 'L2', 'L3'],
-  timeStages: ['raw', 'digest', 'pattern', 'decayed'],
+  timeStages: ['raw', 'digest', 'pattern', 'dormant', 'forgotten'],
   validationStates: ['unverified', 'observed', 'validated', 'contradicted', 'retired'],
   predictionStates: ['none', 'forward', 'due', 'resolved'],
 };
@@ -59,7 +59,9 @@ export function normalizeLibraryCoords(input = {}, options = {}) {
 
   return {
     abstraction_level: includesValue(LIBRARY_COORD_VALUES.abstractionLevels, input.abstraction_level) ? input.abstraction_level : 'L0',
-    time_stage: includesValue(LIBRARY_COORD_VALUES.timeStages, input.time_stage) ? input.time_stage : 'raw',
+    time_stage: input.time_stage === 'decayed'
+      ? 'dormant'
+      : (includesValue(LIBRARY_COORD_VALUES.timeStages, input.time_stage) ? input.time_stage : 'raw'),
     validation_state: includesValue(LIBRARY_COORD_VALUES.validationStates, input.validation_state) ? input.validation_state : 'unverified',
     prediction_state: predictionState,
     prediction_horizon: horizon,

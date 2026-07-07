@@ -133,6 +133,7 @@ async function buildPredictionLedger(args = {}, deps = {}) {
     SELECT id, title, source, file_path, meta, created_at${selectCoords}
     FROM sigma.vault_entries
     WHERE ${stateExpr} IN ('forward', 'due', 'resolved')
+      AND (meta->>'merged_into') IS NULL
     ORDER BY created_at DESC
     LIMIT $1
   `, [limit], deps).catch(() => []);
@@ -195,6 +196,7 @@ async function buildCoordSummary(args = {}, deps = {}) {
       ${expr('prediction_state', 'none')} AS prediction_state,
       COUNT(*)::int AS count
     FROM sigma.vault_entries
+    WHERE (meta->>'merged_into') IS NULL
     GROUP BY 1, 2, 3, 4
     ORDER BY count DESC
     LIMIT $1

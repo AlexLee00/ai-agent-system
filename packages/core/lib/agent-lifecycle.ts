@@ -288,6 +288,52 @@ function recordLifecycleTelemetry(event = {}, options = {}) {
   }
 }
 
+function isShortTermRecordEnabled(envObj = process.env) {
+  return String(envObj.SIGMA_SHORT_TERM_ENABLED || '').toLowerCase() === 'true';
+}
+
+function boundedTtlDays(value, fallback = 7) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1 / 24, Math.min(30, parsed));
+}
+
+async function recordShortTerm({
+  team,
+  agent,
+  agentName,
+  content,
+  context = {},
+  ttlDays = 7,
+  env: runtimeEnv = process.env,
+  pgPool,
+} = {}) {
+  if (!isShortTermRecordEnabled(runtimeEnv)) {
+    return { ok: true, skipped: true, reason: 'SIGMA_SHORT_TERM_ENABLED_not_true' };
+  }
+  const safeTeam = safeSegment(team || 'unknown');
+  const safeAgent = safeSegment(agent || agentName || 'unknown');
+  const safeContent = typeof content === 'object' && content !== null ? content : { text: normalizeText(content || '') };
+  if (!safeContent || JSON.stringify(safeContent) === '{}') {
+    return { ok: false, skipped: true, reason: 'content_required' };
+  }
+  const pool = pgPool || require(path.join(repoRoot(), 'packages/core/lib/pg-pool'));
+  const ttl = boundedTtlDays(ttlDays, 7);
+  const rows = await pool.query('sigma', `
+    INSERT INTO sigma.agent_short_term_memory (team, agent_name, content, context, expires_at)
+    VALUES ($1, $2, $3::jsonb, $4::jsonb, NOW() + ($5::numeric * INTERVAL '1 day'))
+    RETURNING id, expires_at
+  `, [
+    safeTeam,
+    safeAgent,
+    JSON.stringify(safeContent),
+    JSON.stringify(context || {}),
+    ttl,
+  ]);
+  const row = (Array.isArray(rows) ? rows : rows?.rows || [])[0] || {};
+  return { ok: true, skipped: false, id: row.id || null, expiresAt: row.expires_at || null, ttlDays: ttl };
+}
+
 async function buildLifecyclePromptContext({
   team,
   agent,
@@ -352,11 +398,13 @@ module.exports = {
   recallMemories,
   buildLifecycleBlock,
   recordLifecycleTelemetry,
+  recordShortTerm,
   buildLifecyclePromptContext,
   _testOnly: {
     matchesTeamNamespace,
     normalizeMemory,
     validationState,
     telemetryPathFor,
+    isShortTermRecordEnabled,
   },
 };
