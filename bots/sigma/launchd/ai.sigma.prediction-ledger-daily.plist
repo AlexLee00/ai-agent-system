@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.sigma.prediction-ledger-daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=DEP0205</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/scripts/runtime-sigma-prediction-ledger.ts</string>
+    <string>--json</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/sigma-prediction-ledger-daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sigma-prediction-ledger-daily.err.log</string>
+
+  <!-- 매일 03:20 KST (UTC 18:20 전날), dry/read-only 기본 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>18</integer>
+    <key>Minute</key>
+    <integer>20</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

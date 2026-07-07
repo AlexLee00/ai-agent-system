@@ -9,6 +9,7 @@ import {
   applyTeamTransitionPlan,
   buildTeamTransitionPlan,
   fetchVaultRowsForSourceRefs,
+  isSigmaPredictionEnabled,
   isSigmaTransitionEnabled,
 } from '../vault/validation-transition.ts';
 
@@ -290,6 +291,8 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     vaultRows,
     triggers: source.triggers,
     minPromotionRepeats: options.minPromotionRepeats || 3,
+    predictionEnabled: isSigmaPredictionEnabled(options.env || process.env),
+    now: options.now || new Date(),
   });
   const rawApplyLimit = Number(options.applyLimit || 0);
   const applyLimit = Number.isFinite(rawApplyLimit) && rawApplyLimit > 0
@@ -319,6 +322,7 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     matched: plan.filter((item) => item.matched).length,
     plannedValidated: plan.filter((item) => item.nextCoords?.validation_state === 'validated').length,
     plannedContradicted: plan.filter((item) => item.nextCoords?.validation_state === 'contradicted').length,
+    plannedPredictionResolved: plan.filter((item) => item.nextCoords?.prediction_state === 'resolved').length,
     promotionCandidates: plan.filter((item) => item.metaPatch?.promotion_candidate === true).length,
     applicable: applicableCount,
     applyLimit,
@@ -331,6 +335,7 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     dryRun,
     liveMutation: Boolean(applyResult.count > 0),
     transitionEnabled: isSigmaTransitionEnabled(options.env || process.env),
+    predictionEnabled: isSigmaPredictionEnabled(options.env || process.env),
     generatedAt: new Date().toISOString(),
     sourceCounts: source.sourceCounts,
     counts,
@@ -348,8 +353,13 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     type: 'sigma_5axis_transition',
     dryRun,
     transitionEnabled: report.transitionEnabled,
+    predictionEnabled: report.predictionEnabled,
     sourceCounts: report.sourceCounts,
     counts,
+    pAxis: {
+      plannedResolved: counts.plannedPredictionResolved,
+      linked: plan.filter((item) => item.pAxis?.linked).length,
+    },
     warnings: source.warnings.slice(0, 10),
   }, { path: options.telemetryPath, env: options.env });
   return report;

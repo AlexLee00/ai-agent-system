@@ -91,7 +91,129 @@ export function isSigmaTransitionEnabled(env = process.env) {
   return String(env.SIGMA_TRANSITION_ENABLED || '').toLowerCase() === 'true';
 }
 
-export function buildTeamTransitionPlan({ vaultRows = [], triggers = [], minPromotionRepeats = 3 } = {}) {
+export function isSigmaPredictionEnabled(env = process.env) {
+  return String(env.SIGMA_PREDICTION_ENABLED || '').toLowerCase() === 'true';
+}
+
+function predictionOutcomeForValidation(validationState) {
+  if (validationState === 'validated') return 'hit';
+  if (validationState === 'contradicted') return 'miss';
+  return null;
+}
+
+function horizonDate(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(String(value));
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function horizonBucket(row = {}) {
+  const coords = row.coords || rowCoords(row);
+  const horizon = horizonDate(coords.prediction_horizon);
+  if (!horizon) return 'unknown';
+  const created = horizonDate(row.created_at);
+  if (!created) return 'unknown';
+  const days = (horizon.getTime() - created.getTime()) / 86_400_000;
+  if (days <= 1) return 'lte_1d';
+  if (days <= 7) return 'lte_7d';
+  if (days <= 30) return 'lte_30d';
+  return 'gt_30d';
+}
+
+function accuracyBucket(rows = []) {
+  const counts = { total: 0, hit: 0, miss: 0, accuracy: null };
+  for (const row of rows) {
+    const meta = parseMeta(row.meta);
+    const coords = row.coords || rowCoords(row);
+    const outcome = meta.prediction_outcome || predictionOutcomeForValidation(coords.validation_state);
+    if (outcome !== 'hit' && outcome !== 'miss') continue;
+    counts.total += 1;
+    counts[outcome] += 1;
+  }
+  counts.accuracy = counts.total > 0 ? counts.hit / counts.total : null;
+  return counts;
+}
+
+export function buildPredictionAccuracy({ rows = [] } = {}) {
+  const resolved = (rows || [])
+    .map((row) => ({ ...row, coords: row.coords || rowCoords(row) }))
+    .filter((row) => row.coords.prediction_state === 'resolved');
+  const bySource = {};
+  const byHorizon = {};
+  for (const row of resolved) {
+    const source = String(row.source || 'unknown');
+    const bucket = horizonBucket(row);
+    bySource[source] = bySource[source] || [];
+    byHorizon[bucket] = byHorizon[bucket] || [];
+    bySource[source].push(row);
+    byHorizon[bucket].push(row);
+  }
+  return {
+    overall: accuracyBucket(resolved),
+    bySource: Object.fromEntries(Object.entries(bySource).map(([key, value]) => [key, accuracyBucket(value)])),
+    byHorizon: Object.fromEntries(Object.entries(byHorizon).map(([key, value]) => [key, accuracyBucket(value)])),
+  };
+}
+
+export function buildPredictionLedgerTransitionPlan({ rows = [], now = new Date() } = {}) {
+  const nowDate = now instanceof Date ? now : new Date(now);
+  const normalizedNow = Number.isFinite(nowDate.getTime()) ? nowDate : new Date();
+  return (rows || [])
+    .map((row) => ({ ...row, coords: row.coords || rowCoords(row) }))
+    .flatMap((row) => {
+      const coords = row.coords;
+      const horizon = horizonDate(coords.prediction_horizon);
+      if (coords.prediction_state === 'forward') {
+        if (!horizon || horizon.getTime() > normalizedNow.getTime()) return [];
+        return [{
+          id: row.id,
+          title: row.title || row.file_path || `vault ${row.id}`,
+          current: coords,
+          nextCoords: { prediction_state: 'due' },
+          metaPatch: {
+            prediction_due_at: normalizedNow.toISOString(),
+          },
+          apply: true,
+          reason: 'prediction_horizon_due',
+        }];
+      }
+      if (coords.prediction_state === 'due') {
+        const outcome = predictionOutcomeForValidation(coords.validation_state);
+        if (!outcome) {
+          return [{
+            id: row.id,
+            title: row.title || row.file_path || `vault ${row.id}`,
+            current: coords,
+            nextCoords: null,
+            metaPatch: {},
+            apply: false,
+            reason: 'validation_unresolved',
+          }];
+        }
+        return [{
+          id: row.id,
+          title: row.title || row.file_path || `vault ${row.id}`,
+          current: coords,
+          nextCoords: { prediction_state: 'resolved' },
+          metaPatch: {
+            prediction_outcome: outcome,
+            prediction_resolved_at: normalizedNow.toISOString(),
+          },
+          apply: true,
+          reason: `prediction_${outcome}`,
+        }];
+      }
+      return [];
+    });
+}
+
+export function buildTeamTransitionPlan({
+  vaultRows = [],
+  triggers = [],
+  minPromotionRepeats = 3,
+  predictionEnabled = false,
+  now = new Date(),
+} = {}) {
   const rowsByRef = new Map();
   const normalizedRows = (vaultRows || []).map((row) => {
     const sourceRef = extractSourceRef(row);
@@ -115,6 +237,9 @@ export function buildTeamTransitionPlan({ vaultRows = [], triggers = [], minProm
     const nextCoords = row && nextValidationState
       ? { validation_state: nextValidationState }
       : null;
+    const pAxisOutcome = predictionEnabled && row?.coords?.prediction_state === 'due'
+      ? predictionOutcomeForValidation(nextValidationState)
+      : null;
     return {
       id: row?.id || null,
       title: row?.title || trigger.title || sourceRef?.id || 'unmatched trigger',
@@ -131,11 +256,21 @@ export function buildTeamTransitionPlan({ vaultRows = [], triggers = [], minProm
       },
       lessonKey,
       apply: Boolean(row && nextCoords),
-      nextCoords,
+      nextCoords: nextCoords && pAxisOutcome
+        ? { ...nextCoords, prediction_state: 'resolved' }
+        : nextCoords,
       metaPatch: {},
       reason: row
         ? `sigma_5axis_${polarity}`
         : 'source_ref_unmatched',
+      pAxis: pAxisOutcome
+        ? {
+            linked: true,
+            outcome: pAxisOutcome,
+            resolvedAt: (now instanceof Date ? now : new Date(now)).toISOString(),
+            reason: 'validation_transition_resolved_prediction',
+          }
+        : null,
     };
   });
 
@@ -158,6 +293,15 @@ export function buildTeamTransitionPlan({ vaultRows = [], triggers = [], minProm
         promotion_candidate: true,
         promotion_candidate_reason: 'validated_repeat_threshold',
         promotion_candidate_count: count,
+      };
+      item.apply = true;
+    }
+    if (item.pAxis?.linked) {
+      item.metaPatch = {
+        ...item.metaPatch,
+        prediction_outcome: item.pAxis.outcome,
+        prediction_resolved_at: item.pAxis.resolvedAt,
+        prediction_resolved_by: 'sigma_5axis_validation_transition',
       };
       item.apply = true;
     }
@@ -377,6 +521,27 @@ export async function applyValidationTransitionPlan(plan = [], { pg = pgPool } =
   return { applied, count: applied.length };
 }
 
+function sanitizePredictionAxisPatch(nextCoords = {}, metaPatch = {}, env = process.env) {
+  const safeNextCoords = { ...(nextCoords || {}) };
+  const safeMetaPatch = { ...(metaPatch || {}) };
+  if (isSigmaPredictionEnabled(env)) {
+    return {
+      nextCoords: safeNextCoords,
+      metaPatch: Object.keys(safeMetaPatch).length ? safeMetaPatch : null,
+    };
+  }
+  delete safeNextCoords.prediction_state;
+  delete safeNextCoords.prediction_horizon;
+  delete safeMetaPatch.prediction_outcome;
+  delete safeMetaPatch.prediction_resolved_at;
+  delete safeMetaPatch.prediction_resolved_by;
+  delete safeMetaPatch.prediction_due_at;
+  return {
+    nextCoords: safeNextCoords,
+    metaPatch: Object.keys(safeMetaPatch).length ? safeMetaPatch : null,
+  };
+}
+
 export async function applyTeamTransitionPlan(plan = [], { pg = pgPool, env = process.env } = {}) {
   if (!isSigmaTransitionEnabled(env)) {
     return { applied: [], count: 0, skipped: true, reason: 'SIGMA_TRANSITION_ENABLED_not_true' };
@@ -385,14 +550,39 @@ export async function applyTeamTransitionPlan(plan = [], { pg = pgPool, env = pr
   const applied = [];
   for (const item of plan) {
     if (!item.apply || !item.id) continue;
-    await updateEntryCoords(item.id, item.nextCoords || {}, {
+    const patch = sanitizePredictionAxisPatch(item.nextCoords || {}, item.metaPatch || {}, env);
+    if (!Object.keys(patch.nextCoords).length && !patch.metaPatch) continue;
+    await updateEntryCoords(item.id, patch.nextCoords, {
       pg,
       coordColumns,
-      metaPatch: item.metaPatch || null,
+      metaPatch: patch.metaPatch,
       reasoning: `sigma_5axis_transition:${JSON.stringify({
         sourceRef: item.sourceRef,
         polarity: item.trigger?.polarity,
         reason: item.trigger?.reason || item.reason,
+        nextCoords: patch.nextCoords,
+        metaPatch: patch.metaPatch,
+      })}`,
+    });
+    applied.push(item.id);
+  }
+  return { applied, count: applied.length, skipped: false };
+}
+
+export async function applyPredictionLedgerPlan(plan = [], { pg = pgPool, env = process.env } = {}) {
+  if (!isSigmaPredictionEnabled(env)) {
+    return { applied: [], count: 0, skipped: true, reason: 'SIGMA_PREDICTION_ENABLED_not_true' };
+  }
+  const coordColumns = await detectCoordColumns(pg.queryReadonly || pg.query);
+  const applied = [];
+  for (const item of plan) {
+    if (!item.apply || !item.id || !item.nextCoords) continue;
+    await updateEntryCoords(item.id, item.nextCoords, {
+      pg,
+      coordColumns,
+      metaPatch: item.metaPatch || null,
+      reasoning: `sigma_prediction_ledger:${JSON.stringify({
+        reason: item.reason,
         nextCoords: item.nextCoords,
         metaPatch: item.metaPatch,
       })}`,
@@ -441,13 +631,14 @@ export function buildPredictionLedgerReport({ rows = [], now = new Date() } = {}
     validated: normalized.filter((row) => row.coords.validation_state === 'validated').length,
     contradicted: normalized.filter((row) => row.coords.validation_state === 'contradicted').length,
   };
-  const resolved = counts.validated + counts.contradicted;
+  const accuracy = buildPredictionAccuracy({ rows: normalized });
   return {
     ok: true,
     source: 'sigma_prediction_ledger',
     generatedAt: now.toISOString(),
     counts,
-    accuracy: resolved > 0 ? counts.validated / resolved : null,
+    accuracy: accuracy.overall.accuracy,
+    accuracyDetail: accuracy,
     dueRows: normalized
       .filter((row) => row.coords.prediction_state === 'due')
       .map((row) => ({ id: row.id, title: row.title || row.file_path, horizon: row.coords.prediction_horizon || null })),
@@ -476,10 +667,14 @@ export default {
   applyValidationTransitionPlan,
   buildTeamTransitionPlan,
   applyTeamTransitionPlan,
+  applyPredictionLedgerPlan,
+  buildPredictionLedgerTransitionPlan,
+  buildPredictionAccuracy,
   buildPredictionLedgerReport,
   detectCoordColumns,
   fetchVaultRowsForSourceRefs,
   fetchDuePredictionRows,
   fetchPredictionLedgerRows,
   isSigmaTransitionEnabled,
+  isSigmaPredictionEnabled,
 };
