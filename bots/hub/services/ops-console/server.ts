@@ -5,12 +5,15 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { promisify } from 'node:util';
 import { buildSessionSnapshot } from '../../../../scripts/runtime-session-snapshot.ts';
 import { classifyOpsPushEvent } from '../../lib/ops-push-router.ts';
 
 const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
 const pgPool = require('../../../../packages/core/lib/pg-pool.ts');
 
 const SERVICE_ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -42,6 +45,7 @@ const TEAM_META = Object.freeze({
   orchestrator: { name: '오케스트라', emoji: '🎼', color: '#A5B4FC' },
   write: { name: '라이트', emoji: '✍️', color: '#D6D3D1' },
 });
+const TEAM_IDS = Object.freeze(Object.keys(TEAM_META));
 
 function nowIso() {
   return new Date().toISOString();
@@ -444,7 +448,444 @@ export async function sendOpsPushEvent(event, options = {}) {
   return { ok: results.every((row) => row.ok), decision, sent: results.filter((row) => row.ok).length, total: results.length, results };
 }
 
-async function collectTownSquareEvents(options = {}) {
+function panel(title, rows = [], extra = {}) {
+  return {
+    title,
+    rows: Array.isArray(rows) ? rows.slice(0, 12) : [],
+    ...extra,
+  };
+}
+
+function jsonlTail(filePath, limit = 3) {
+  const rows = readTextFile(filePath).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return rows.slice(-limit).flatMap((line) => {
+    try {
+      return [JSON.parse(line)];
+    } catch {
+      return [{ raw: line.slice(0, 220) }];
+    }
+  });
+}
+
+function relatedLaunchdRows(snapshot, teamKey) {
+  const needle = teamKey === 'orchestrator' ? 'jay' : teamKey;
+  const rows = [
+    ...(snapshot.launchd?.failed || []),
+    ...(snapshot.launchd?.runningWithLastExit || []),
+  ];
+  return rows.filter((row) => String(row.label || '').toLowerCase().includes(needle));
+}
+
+function localWorkspace(options = {}) {
+  return options.workspace || path.join(os.homedir(), '.ai-agent-system/workspace');
+}
+
+async function probeOllamaModels(options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 1200) : null;
+  try {
+    const response = await fetchImpl('http://127.0.0.1:11434/v1/models', controller ? { signal: controller.signal } : {});
+    const body = typeof response.json === 'function' ? await response.json() : {};
+    const models = Array.isArray(body.data) ? body.data : [];
+    return [{ ok: Boolean(response.ok), status: response.status || 0, models: models.slice(0, 5).map((row) => row.id || row.name || row.model) }];
+  } catch (error) {
+    return [{ ok: false, error: String(error?.message || error).slice(0, 140), models: [] }];
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function readGitRefactorerLog() {
+  try {
+    const { stdout } = await execFileAsync('git', ['log', '--grep=refactorer', '--pretty=format:%h %ad %s', '--date=short', '-5'], {
+      cwd: PROJECT_ROOT,
+      encoding: 'utf8',
+      timeout: 1500,
+      maxBuffer: 32 * 1024,
+    });
+    return stdout.split(/\r?\n/).filter(Boolean).map((line) => ({ commit: line }));
+  } catch (error) {
+    return [{ error: String(error?.message || error).slice(0, 140) }];
+  }
+}
+
+async function collectMemoryTransitions(teamKey, queryReadonly) {
+  const rows = await safeQuery('sigma', 'sigma.vault_audit.memory_transitions', `
+    SELECT
+      va.created_at,
+      va.action,
+      va.classifier,
+      va.reasoning,
+      va.applied,
+      ve.title,
+      ve.meta->'source_ref' AS source_ref
+    FROM sigma.vault_audit va
+    LEFT JOIN sigma.vault_entries ve ON ve.id = va.entry_id
+    WHERE LOWER(COALESCE(ve.meta->'source_ref'->>'team', ve.meta->>'team', ve.source, '')) = LOWER($1)
+    ORDER BY va.created_at DESC
+    LIMIT 8
+  `, [teamKey], queryReadonly);
+  return rows.filter((row) => !row.__opsConsoleError).map((row) => ({
+    ts: toIso(row.created_at),
+    title: row.title || 'memory transition',
+    action: row.action || 'audit',
+    applied: row.applied === true,
+    classifier: row.classifier || null,
+    reasoning: row.reasoning || '',
+    sourceRef: safeJson(row.source_ref, row.source_ref || {}),
+  }));
+}
+
+async function collectHubPanels(queryReadonly, snapshot, options = {}) {
+  const [routes, shadow, alarms, models] = await Promise.all([
+    safeQuery('public', 'public.llm_routing_log.routing_source', `
+      SELECT COALESCE(selected_route, provider, 'unknown') AS routing_source, COUNT(*)::int AS count
+      FROM public.llm_routing_log
+      WHERE created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 8
+    `, [], queryReadonly),
+    safeQuery('hub', 'hub.llm_policy_shadow_log.match', `
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE match)::int AS matched,
+             ROUND(CASE WHEN COUNT(*) = 0 THEN 0 ELSE 100.0 * COUNT(*) FILTER (WHERE match) / COUNT(*) END, 1) AS match_pct
+      FROM hub.llm_policy_shadow_log
+      WHERE created_at >= NOW() - INTERVAL '24 hours'
+    `, [], queryReadonly),
+    safeQuery('agent', 'agent.hub_alarms.lifecycle', `
+      SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS count
+      FROM agent.hub_alarms
+      WHERE received_at >= NOW() - INTERVAL '7 days'
+      GROUP BY 1
+      ORDER BY count DESC
+    `, [], queryReadonly),
+    probeOllamaModels(options),
+  ]);
+  return [
+    panel('routing_source distribution', routes),
+    panel('shadow match', shadow),
+    panel('LLM models :11434/v1/models', models),
+    panel('alarm lifecycle', alarms),
+    panel('circuit/service status', snapshot.health?.services || []),
+  ];
+}
+
+async function collectSkaPanels(queryReadonly, snapshot, options = {}) {
+  const workspace = localWorkspace(options);
+  const reservations = await safeQuery('reservation', 'reservation.reservations.today', `
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE LOWER(COALESCE(status::text, '')) = 'cancelled')::int AS cancelled,
+      COUNT(*) FILTER (WHERE LOWER(COALESCE(status::text, '')) = 'completed')::int AS completed
+    FROM reservation.reservations
+    WHERE (
+      CASE
+        WHEN NULLIF(date::text, '') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        THEN NULLIF(date::text, '')::date
+        ELSE NULL
+      END
+    ) = CURRENT_DATE
+  `, [], queryReadonly);
+  return [
+    panel('reservation today', reservations),
+    panel('cancel shadow diff 3d', jsonlTail(path.join(workspace, 'reservation', 'cancel-shadow-diff-history.jsonl'), 3)),
+    panel('naver/kiosk monitor exits', relatedLaunchdRows(snapshot, 'ska').filter((row) => /naver|kiosk|ska/i.test(row.label || ''))),
+  ];
+}
+
+async function collectLunaPanels(queryReadonly) {
+  const [positions, pnl, guards, shadows, strategy] = await Promise.all([
+    safeQuery('investment', 'investment.trade_journal.open_positions', `
+      SELECT market, exchange, symbol, entry_size, entry_price, pnl_net, status
+      FROM investment.trade_journal
+      WHERE status = 'open'
+      ORDER BY created_at DESC
+      LIMIT 12
+    `, [], queryReadonly),
+    safeQuery('investment', 'investment.trade_journal.today_pnl', `
+      SELECT COALESCE(SUM(pnl_net), 0)::float AS pnl_net,
+             COUNT(*) FILTER (WHERE status = 'closed')::int AS closed_count
+      FROM investment.trade_journal
+      WHERE to_timestamp(COALESCE(exit_time, created_at) / 1000.0)::date = CURRENT_DATE
+    `, [], queryReadonly),
+    safeQuery('investment', 'investment.guard_events.24h', `
+      SELECT guard_name, symbol, exchange, market, severity, reason, triggered_at
+      FROM investment.guard_events
+      WHERE triggered_at >= NOW() - INTERVAL '24 hours'
+      ORDER BY triggered_at DESC
+      LIMIT 12
+    `, [], queryReadonly),
+    safeQuery('investment', 'investment.luna_shadow_recency', `
+      SELECT 'regime_llm' AS shadow, MAX(captured_at) AS latest FROM investment.luna_regime_llm_shadow
+      UNION ALL
+      SELECT 'stat_arb' AS shadow, MAX(observed_at) AS latest FROM investment.luna_stat_arb_shadow
+      UNION ALL
+      SELECT 'strategy_exit' AS shadow, MAX(evaluated_at) AS latest FROM investment.luna_strategy_exit_shadow
+    `, [], queryReadonly),
+    safeQuery('investment', 'investment.trade_journal.strategy_distribution', `
+      SELECT COALESCE(market, exchange, 'unknown') AS market,
+             COALESCE(strategy_family, 'unknown') AS strategy_family,
+             COUNT(*)::int AS open_count
+      FROM investment.trade_journal
+      WHERE status = 'open'
+      GROUP BY 1, 2
+      ORDER BY open_count DESC
+      LIMIT 12
+    `, [], queryReadonly),
+  ]);
+  return [
+    panel('open positions', positions),
+    panel('today pnl', pnl),
+    panel('guard events 24h', guards),
+    panel('shadow recency', shadows),
+    panel('strategy by market', strategy),
+  ];
+}
+
+async function collectClaudePanels(queryReadonly) {
+  const [recent, distribution, quality] = await Promise.all([
+    safeQuery('claude', 'claude.auto_dev_outcomes.recent', `
+      SELECT created_at, rel_path, outcome, stage, test_pass, error_summary
+      FROM claude.auto_dev_outcomes
+      ORDER BY created_at DESC
+      LIMIT 8
+    `, [], queryReadonly),
+    safeQuery('claude', 'claude.auto_dev_outcomes.kind_distribution', `
+      SELECT COALESCE(outcome, 'unknown') AS kind, COUNT(*)::int AS count
+      FROM claude.auto_dev_outcomes
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY 1
+      ORDER BY count DESC
+    `, [], queryReadonly),
+    safeQuery('claude', 'claude.auto_dev_outcomes.quality_gate', `
+      SELECT COALESCE(test_pass::text, 'unknown') AS test_pass, COUNT(*)::int AS count
+      FROM claude.auto_dev_outcomes
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY 1
+      ORDER BY count DESC
+    `, [], queryReadonly),
+  ]);
+  return [
+    panel('auto_dev recent', recent),
+    panel('auto_dev kind distribution', distribution),
+    panel('refactorer git log', readGitRefactorerLog()),
+    panel('quality gate', quality),
+  ];
+}
+
+async function collectBlogPanels(queryReadonly) {
+  const [published, servedModel, crank, queue] = await Promise.all([
+    safeQuery('blog', 'blog.posts.publish_counts', `
+      SELECT
+        COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::int AS today,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int AS seven_days
+      FROM blog.posts
+    `, [], queryReadonly),
+    safeQuery('blog', 'blog.posts.served_model', `
+      SELECT COALESCE(metadata->>'served_model', metadata->>'writer_model', 'unknown') AS served_model,
+             COUNT(*)::int AS count
+      FROM blog.posts
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY 1
+      ORDER BY count DESC
+    `, [], queryReadonly),
+    safeQuery('blog', 'blog.crank_scores.recent', `
+      SELECT scored_date, post_id, overall, crank_total, dia_total, geo_total
+      FROM blog.crank_scores
+      ORDER BY scored_date DESC
+      LIMIT 8
+    `, [], queryReadonly),
+    safeQuery('blog', 'blog.book_review_queue.status', `
+      SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS count
+      FROM blog.book_review_queue
+      GROUP BY 1
+      ORDER BY count DESC
+    `, [], queryReadonly),
+  ]);
+  return [
+    panel('publish counts', published),
+    panel('A/B served_model', servedModel),
+    panel('crank recent', crank),
+    panel('book_review_queue', queue),
+  ];
+}
+
+async function collectSigmaPanels(queryReadonly, options = {}) {
+  const workspace = localWorkspace(options);
+  const [total, coord, transitions, feed] = await Promise.all([
+    safeQuery('sigma', 'sigma.vault_entries.total', `
+      SELECT COUNT(*)::int AS total FROM sigma.vault_entries
+    `, [], queryReadonly),
+    safeQuery('sigma', 'sigma.vault_entries.coord_distribution', `
+      SELECT COALESCE(meta->>'abstraction_level', abstraction_level::text, 'unknown') AS abstraction_level,
+             COALESCE(meta->>'validation_state', validation_state::text, status, 'unknown') AS validation_state,
+             COUNT(*)::int AS count
+      FROM sigma.vault_entries
+      GROUP BY 1, 2
+      ORDER BY count DESC
+      LIMIT 12
+    `, [], queryReadonly),
+    safeQuery('sigma', 'sigma.vault_audit.recent', `
+      SELECT created_at, action, classifier, applied, reasoning
+      FROM sigma.vault_audit
+      ORDER BY created_at DESC
+      LIMIT 8
+    `, [], queryReadonly),
+    safeQuery('sigma', 'sigma.vault_entries.feed_recent', `
+      SELECT created_at, title, source, status
+      FROM sigma.vault_entries
+      ORDER BY created_at DESC
+      LIMIT 8
+    `, [], queryReadonly),
+  ]);
+  return [
+    panel('vault total', total),
+    panel('coordinate distribution', coord),
+    panel('transition telemetry', jsonlTail(path.join(workspace, 'sigma', 'transition-telemetry.jsonl'), 8)),
+    panel('vault audit recent', transitions),
+    panel('feed recent', feed),
+  ];
+}
+
+async function collectDarwinPanels(queryReadonly) {
+  let proposals = [];
+  try {
+    const store = require(path.join(PROJECT_ROOT, 'bots/darwin/lib/proposal-store.ts'));
+    proposals = store.listProposals();
+  } catch {
+    proposals = [];
+  }
+  const proposalCounts = proposals.reduce((acc, item) => {
+    const status = String(item.status || 'unknown');
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const [pipelineAudit, eventLake] = await Promise.all([
+    safeQuery('agent', 'agent.event_lake.darwin_pipeline', `
+      SELECT created_at, event_type, title, severity, metadata
+      FROM agent.event_lake
+      WHERE team = 'darwin'
+      ORDER BY created_at DESC
+      LIMIT 8
+    `, [], queryReadonly),
+    safeQuery('agent', 'agent.event_lake.darwin_counts', `
+      SELECT event_type, COUNT(*)::int AS count
+      FROM agent.event_lake
+      WHERE team = 'darwin' AND created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 8
+    `, [], queryReadonly),
+  ]);
+  return [
+    panel('proposal status', Object.entries(proposalCounts).map(([status, count]) => ({ status, count }))),
+    panel('pipeline audit recent', pipelineAudit),
+    panel('T cycle', [{ nextCycle: '2026-07-12', note: 'configured observation date' }]),
+    panel('PR read-only', [{ status: 'not_configured', count: 0 }]),
+    panel('event lake 7d', eventLake),
+  ];
+}
+
+async function collectOrchestratorPanels(queryReadonly, snapshot) {
+  const [events] = await Promise.all([
+    safeQuery('agent', 'agent.event_lake.orchestrator', `
+      SELECT event_type, COUNT(*)::int AS count
+      FROM agent.event_lake
+      WHERE created_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY 1
+      ORDER BY count DESC
+      LIMIT 12
+    `, [], queryReadonly),
+  ]);
+  const rows = [
+    ...(snapshot.launchd?.failed || []),
+    ...(snapshot.launchd?.runningWithLastExit || []),
+  ];
+  return [
+    panel('launchd summary', [{ checked: snapshot.launchd?.checked || 0, failed: snapshot.launchd?.failedCount || 0, runningWithLastExit: snapshot.launchd?.runningWithLastExitCount || 0 }]),
+    panel('steward/write/backup exits', rows.filter((row) => /steward|write|backup/i.test(row.label || ''))),
+    panel('event_lake inflow', events),
+  ];
+}
+
+async function collectWritePanels(queryReadonly, snapshot) {
+  const dailyPath = path.join(os.homedir(), '.ai-agent-system/workspace/write');
+  const recentFiles = (() => {
+    try {
+      return fs.readdirSync(dailyPath).slice(-8).map((name) => ({ name, path: path.join(dailyPath, name) }));
+    } catch {
+      return [];
+    }
+  })();
+  const [events] = await Promise.all([
+    safeQuery('agent', 'agent.event_lake.write', `
+      SELECT created_at, event_type, title, severity
+      FROM agent.event_lake
+      WHERE team = 'write'
+      ORDER BY created_at DESC
+      LIMIT 8
+    `, [], queryReadonly),
+  ]);
+  return [
+    panel('ai.write.daily recent', recentFiles),
+    panel('related jobs', relatedLaunchdRows(snapshot, 'write')),
+    panel('write event lake', events),
+  ];
+}
+
+async function collectTeamPanels(teamKey, queryReadonly, snapshot, options = {}) {
+  if (teamKey === 'hub') return collectHubPanels(queryReadonly, snapshot, options);
+  if (teamKey === 'ska') return collectSkaPanels(queryReadonly, snapshot, options);
+  if (teamKey === 'luna') return collectLunaPanels(queryReadonly, snapshot, options);
+  if (teamKey === 'claude') return collectClaudePanels(queryReadonly, snapshot, options);
+  if (teamKey === 'blog') return collectBlogPanels(queryReadonly);
+  if (teamKey === 'sigma') return collectSigmaPanels(queryReadonly, options);
+  if (teamKey === 'darwin') return collectDarwinPanels(queryReadonly);
+  if (teamKey === 'orchestrator') return collectOrchestratorPanels(queryReadonly, snapshot);
+  if (teamKey === 'write') return collectWritePanels(queryReadonly, snapshot);
+  return [panel('unknown team', [{ team: teamKey }])];
+}
+
+export async function collectTeamDetail(teamId, options = {}) {
+  const teamKey = normalizeTeam(teamId);
+  if (!TEAM_IDS.includes(teamKey)) {
+    return { ok: false, error: 'unknown_team', teamId };
+  }
+  const queryReadonly = options.queryReadonly || pgPool.queryReadonly;
+  const snapshot = await (options.buildSessionSnapshot || buildSessionSnapshot)({
+    write: false,
+    skipLaunchctl: options.skipLaunchctl === true,
+    queryReadonly,
+    launchctlOutput: options.launchctlOutput,
+  });
+  const [panels, memoryTransitions, townSquare] = await Promise.all([
+    collectTeamPanels(teamKey, queryReadonly, snapshot, options),
+    collectMemoryTransitions(teamKey, queryReadonly),
+    collectTownSquareEvents({ limit: 10, team: teamKey, queryReadonly }),
+  ]);
+  const service = serviceStatusForTeam(snapshot, teamKey);
+  const failedJobs = countLaunchdFailuresForTeam(snapshot, teamKey);
+  return {
+    ok: true,
+    readOnly: true,
+    generatedAt: nowIso(),
+    team: { id: teamKey, ...TEAM_META[teamKey] },
+    status: statusFromParts(service, failedJobs),
+    jobs: {
+      total: Number(snapshot.launchd?.checked || 0),
+      failed: failedJobs,
+      relatedFailures: relatedLaunchdRows(snapshot, teamKey),
+    },
+    mcp: service,
+    panels: panels.length ? panels : [panel('empty', [])],
+    memoryTransitions,
+    townSquare,
+  };
+}
+
+export async function collectTownSquareEvents(options = {}) {
   const limit = Math.max(1, Math.min(200, Number(options.limit || DEFAULT_TOWN_LIMIT) || DEFAULT_TOWN_LIMIT));
   const team = options.team ? normalizeTeam(options.team) : '';
   const since = options.since ? new Date(options.since) : null;
@@ -485,7 +926,7 @@ async function collectTownSquareEvents(options = {}) {
       LIMIT $1
     `, [limit], queryReadonly),
     safeQuery('investment', 'investment.guard_events', `
-      SELECT triggered_at, guard_name, symbol, action, decision, reason, id
+      SELECT triggered_at, guard_name, symbol, exchange, market, severity, reason, id
       FROM investment.guard_events
       ORDER BY triggered_at DESC
       LIMIT $1
@@ -547,7 +988,7 @@ async function collectTownSquareEvents(options = {}) {
       ts: row.triggered_at,
       from: 'luna',
       to: 'hub',
-      text: `${row.guard_name || 'guard'} · ${row.symbol || '-'} ${row.action || ''} · ${row.decision || ''} · ${row.reason || ''}`,
+      text: `${row.guard_name || 'guard'} · ${row.symbol || row.exchange || row.market || '-'} · ${row.severity || ''} · ${row.reason || ''}`,
       tag: 'guard',
       kind: 'guard',
       sourceId: row.id,
@@ -582,7 +1023,7 @@ async function collectTownSquareEvents(options = {}) {
   events.push(...readBridgeReportEvents(10));
 
   let filtered = events
-    .filter((event) => !team || event.from === team || event.to === team)
+    .filter((event) => !team || event.from === team || event.to === team || String(event.tag || '').toLowerCase().includes(team))
     .filter((event) => !since || new Date(event.ts) >= since)
     .sort((a, b) => b.ts.localeCompare(a.ts));
   if (filtered.length === 0) {
@@ -674,7 +1115,7 @@ function buildHighlights(snapshot, events) {
   return highlights.slice(0, 3);
 }
 
-async function collectOverview(options = {}) {
+export async function collectOverview(options = {}) {
   const snapshot = await (options.buildSessionSnapshot || buildSessionSnapshot)({
     write: false,
     skipLaunchctl: options.skipLaunchctl === true,
@@ -789,6 +1230,11 @@ export function createOpsConsoleServer(options = {}) {
       if (url.pathname === '/api/bridge') {
         return json(res, 200, collectBridgeQueue({ bridgeRoot: options.bridgeRoot }));
       }
+      if (url.pathname.startsWith('/api/team/')) {
+        const teamId = decodeURIComponent(url.pathname.slice('/api/team/'.length));
+        const detail = await collectTeamDetail(teamId, options);
+        return json(res, detail.ok ? 200 : 404, detail);
+      }
       if (url.pathname === '/api/push/vapid-public') {
         const push = resolvePushConfig(options);
         return json(res, 200, {
@@ -896,6 +1342,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 export default {
   collectBridgeQueue,
   collectOverview,
+  collectTeamDetail,
   collectTownSquareEvents,
   createOpsConsoleServer,
   sendOpsPushEvent,

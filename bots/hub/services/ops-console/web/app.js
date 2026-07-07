@@ -24,6 +24,14 @@
   const bridgeCount = document.getElementById('bridgeCount');
   const pushStatus = document.getElementById('pushStatus');
   const pushButton = document.getElementById('pushButton');
+  const teamDetailTitle = document.getElementById('teamDetailTitle');
+  const teamDetailStatus = document.getElementById('teamDetailStatus');
+  const teamStatusStrip = document.getElementById('teamStatusStrip');
+  const teamPanels = document.getElementById('teamPanels');
+  const memoryCount = document.getElementById('memoryCount');
+  const memoryTransitions = document.getElementById('memoryTransitions');
+  const teamTownList = document.getElementById('teamTownList');
+  const backHomeButton = document.getElementById('backHomeButton');
   const tabs = Array.from(document.querySelectorAll('[data-tab]'));
   const panels = Array.from(document.querySelectorAll('[data-panel]'));
 
@@ -31,6 +39,15 @@
     const date = value ? new Date(value) : new Date();
     if (!Number.isFinite(date.getTime())) return '--:--';
     return date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function setStatus(status) {
@@ -53,6 +70,8 @@
     for (const team of teams || []) {
       const card = document.createElement('article');
       card.className = 'team-card';
+      card.dataset.team = team.key;
+      card.tabIndex = 0;
       card.style.color = team.color || '#D6D3D1';
       card.innerHTML = `
         <span class="team-chip"></span>
@@ -67,6 +86,12 @@
         </div>
         <div class="recent">${team.recent || '최근 활동 없음'}</div>
       `;
+      card.addEventListener('click', () => {
+        window.location.hash = `#/team/${team.key}`;
+      });
+      card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') window.location.hash = `#/team/${team.key}`;
+      });
       teamGrid.appendChild(card);
     }
   }
@@ -79,11 +104,11 @@
       const item = document.createElement('article');
       item.className = `bubble ${event.accent ? 'accent' : ''} ${append ? 'new' : ''}`;
       item.innerHTML = `
-        <div class="avatar">${from.emoji}</div>
+        <div class="avatar">${escapeHtml(from.emoji)}</div>
         <div>
-          <div class="bubble-meta">${fmtTime(event.ts)} ${from.name} <span class="arrow">→</span> ${to.name}</div>
-          <p>${event.text || ''}</p>
-          <span class="tag">${event.tag || event.kind || 'event'}</span>
+          <div class="bubble-meta">${fmtTime(event.ts)} ${escapeHtml(from.name)} <span class="arrow">→</span> ${escapeHtml(to.name)}</div>
+          <p>${escapeHtml(event.text || '')}</p>
+          <span class="tag">${escapeHtml(event.tag || event.kind || 'event')}</span>
         </div>
       `;
       if (append) townList.prepend(item);
@@ -105,9 +130,9 @@
       const button = document.createElement('button');
       button.className = `bridge-item ${item.status === 'pending' ? 'pending' : ''}`;
       button.innerHTML = `
-        <span class="bridge-id">${item.id}</span>
-        <b>${item.title || item.id}</b>
-        <small>${item.status || 'unknown'} · ${item.verdict || 'pending'} · ${fmtTime(item.ts)}</small>
+        <span class="bridge-id">${escapeHtml(item.id)}</span>
+        <b>${escapeHtml(item.title || item.id)}</b>
+        <small>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.verdict || 'pending')} · ${fmtTime(item.ts)}</small>
       `;
       button.addEventListener('click', () => {
         bridgeDetail.textContent = JSON.stringify(item, null, 2);
@@ -115,6 +140,71 @@
       bridgeList.appendChild(button);
     }
     bridgeDetail.textContent = JSON.stringify(items[0], null, 2);
+  }
+
+  function renderPanelRows(rows) {
+    if (!rows || rows.length === 0) return '<small>표시할 데이터가 없습니다.</small>';
+    return `<pre>${escapeHtml(JSON.stringify(rows.slice(0, 6), null, 2))}</pre>`;
+  }
+
+  function renderTeamDetail(data) {
+    const meta = data.team || {};
+    teamDetailTitle.textContent = `${meta.emoji || ''} ${meta.name || meta.id || '팀'} 상세`;
+    teamDetailStatus.textContent = data.status || 'unknown';
+    teamStatusStrip.innerHTML = `
+      <span>잡 ${data.jobs?.total || 0}/${Math.max(0, (data.jobs?.total || 0) - (data.jobs?.failed || 0))}</span>
+      <span>실패 ${data.jobs?.failed || 0}</span>
+      <span>MCP ${data.mcp?.ok === false ? 'CHECK' : 'OK'}</span>
+    `;
+    teamPanels.innerHTML = '';
+    for (const item of data.panels || []) {
+      const article = document.createElement('article');
+      article.className = 'detail-panel';
+      article.innerHTML = `
+        <h3>${escapeHtml(item.title || 'panel')}</h3>
+        ${renderPanelRows(item.rows || [])}
+      `;
+      teamPanels.appendChild(article);
+    }
+    memoryTransitions.innerHTML = '';
+    const transitions = data.memoryTransitions || [];
+    memoryCount.textContent = `${transitions.length} events`;
+    if (transitions.length === 0) {
+      memoryTransitions.innerHTML = '<div class="empty-card">기억 전이 이벤트가 없습니다.</div>';
+    } else {
+      for (const item of transitions) {
+        const bubble = document.createElement('article');
+        bubble.className = 'memory-bubble';
+        bubble.innerHTML = `
+          <b>${escapeHtml(item.title || 'memory')}</b>
+          <p>${escapeHtml(item.action || 'audit')} · applied=${item.applied === true} · ${escapeHtml(item.reasoning || '')}</p>
+          <small>${fmtTime(item.ts)} · ${escapeHtml(item.classifier || 'sigma')}</small>
+        `;
+        memoryTransitions.appendChild(bubble);
+      }
+    }
+    renderTownInto(teamTownList, data.townSquare || [], false);
+  }
+
+  function renderTownInto(target, events, append) {
+    if (!append) target.innerHTML = '';
+    for (const event of events || []) {
+      const from = teamMeta[event.from] || { emoji: '•', name: event.from || 'unknown' };
+      const to = teamMeta[event.to] || { name: event.to || 'unknown' };
+      const item = document.createElement('article');
+      item.className = `bubble ${event.accent ? 'accent' : ''} ${append ? 'new' : ''}`;
+      item.innerHTML = `
+        <div class="avatar">${escapeHtml(from.emoji)}</div>
+        <div>
+          <div class="bubble-meta">${fmtTime(event.ts)} ${escapeHtml(from.name)} <span class="arrow">→</span> ${escapeHtml(to.name)}</div>
+          <p>${escapeHtml(event.text || '')}</p>
+          <span class="tag">${escapeHtml(event.tag || event.kind || 'event')}</span>
+        </div>
+      `;
+      if (append) target.prepend(item);
+      else target.appendChild(item);
+    }
+    while (target.children.length > 30) target.removeChild(target.lastChild);
   }
 
   async function loadOverview() {
@@ -136,6 +226,11 @@
   async function loadBridge() {
     const response = await fetch('/api/bridge', { cache: 'no-store' });
     renderBridge(await response.json());
+  }
+
+  async function loadTeamDetail(teamId) {
+    const response = await fetch(`/api/team/${encodeURIComponent(teamId)}`, { cache: 'no-store' });
+    renderTeamDetail(await response.json());
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -179,6 +274,24 @@
     for (const button of tabs) button.classList.toggle('active', button.dataset.tab === tab);
     for (const panel of panels) panel.hidden = panel.dataset.panel !== tab;
     if (tab === 'bridge') loadBridge().catch(() => {});
+    if (tab !== 'team' && window.location.hash.startsWith('#/team/')) window.location.hash = `#/${tab}`;
+  }
+
+  function routeFromHash() {
+    const hash = window.location.hash || '#/home';
+    const teamMatch = hash.match(/^#\/team\/([^/]+)$/);
+    if (teamMatch) {
+      const teamId = decodeURIComponent(teamMatch[1]);
+      for (const button of tabs) button.classList.remove('active');
+      for (const panel of panels) panel.hidden = panel.dataset.panel !== 'team';
+      loadTeamDetail(teamId).catch(() => {
+        teamDetailTitle.textContent = '팀 상세 오류';
+        teamDetailStatus.textContent = 'error';
+      });
+      return;
+    }
+    const tab = hash.replace(/^#\//, '') || 'home';
+    switchTab(['home', 'town', 'bridge', 'settings'].includes(tab) ? tab : 'home');
   }
 
   function openStream() {
@@ -200,7 +313,13 @@
     };
   }
 
-  for (const button of tabs) button.addEventListener('click', () => switchTab(button.dataset.tab));
+  for (const button of tabs) button.addEventListener('click', () => {
+    window.location.hash = `#/${button.dataset.tab}`;
+  });
+  if (backHomeButton) backHomeButton.addEventListener('click', () => {
+    window.location.hash = '#/home';
+  });
+  window.addEventListener('hashchange', routeFromHash);
   if (pushButton) pushButton.addEventListener('click', () => enablePush().catch((error) => {
     pushStatus.textContent = `푸시 구독 오류: ${String(error.message || error).slice(0, 120)}`;
   }));
@@ -210,6 +329,7 @@
   }
 
   Promise.all([loadOverview(), loadTown(), loadBridge()]).finally(openStream);
+  routeFromHash();
   setInterval(loadOverview, 30000);
   setInterval(loadBridge, 15000);
 }());
