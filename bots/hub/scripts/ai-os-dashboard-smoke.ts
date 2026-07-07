@@ -81,10 +81,15 @@ async function main() {
   assert.match(web, /EventSource/);
   assert.match(web, /api\/os\/snapshot/);
 
+  const css = fs.readFileSync(path.join(__dirname, '../services/ai-os-dashboard/web/style.css'), 'utf8');
+  assert.match(css, /align-items:\s*start/, 'dashboard grid must not stretch rows to the tallest JSON panel');
+  assert.match(css, /max-height:\s*min\(/, 'dashboard panels must cap large JSON payload height');
+  assert.match(css, /overflow:\s*auto/, 'dashboard JSON panels must scroll internally');
+
   const serverSource = fs.readFileSync(path.join(__dirname, '../services/ai-os-dashboard/server.ts'), 'utf8');
   assert.doesNotMatch(serverSource, /pgPool\.run|launchctl.+bootout|launchctl.+bootstrap|INSERT\s+INTO|UPDATE\s+.+SET|DELETE\s+FROM/i);
 
-  console.log(JSON.stringify({ ok: true, checks: 7 }, null, 2));
+  console.log(JSON.stringify({ ok: true, checks: 10 }, null, 2));
 }
 
 main().catch((error) => {
