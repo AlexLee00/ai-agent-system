@@ -91,8 +91,6 @@
     "smoke:hub-ops-mcp": "tsx scripts/hub-ops-mcp-smoke.ts --json",
     "smoke:hub-llm-selector-route": "tsx scripts/hub-llm-selector-route-smoke.ts",
     "smoke:hub-ops-mcp-trace-hard": "tsx scripts/hub-ops-mcp-trace-hard-smoke.ts",
-    "dashboard:ai-os": "node --disable-warning=DEP0205 --import tsx services/ai-os-dashboard/server.ts",
-    "smoke:ai-os-dashboard": "tsx scripts/ai-os-dashboard-smoke.ts",
     "ops-console:vapid-keygen": "tsx scripts/ops-console-vapid-keygen.ts",
     "smoke:ops-console-d1_5": "node --disable-warning=DEP0205 --import tsx scripts/ops-console-d1_5-smoke.ts",
     "smoke:ops-console-d2": "node --disable-warning=DEP0205 --import tsx scripts/ops-console-d2-smoke.ts",

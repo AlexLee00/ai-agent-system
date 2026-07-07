@@ -82,7 +82,6 @@ function isAllowedNodeCommand(command = '') {
     'bots/claude/src/dexter.js',
     'bots/claude/src/dexter-quickcheck.js',
     'bots/claude/src/claude-commander.js',
-    'bots/claude/scripts/health-dashboard-server.js',
     'bots/orchestrator/',
     'bots/investment/',
     'bots/reservation/',

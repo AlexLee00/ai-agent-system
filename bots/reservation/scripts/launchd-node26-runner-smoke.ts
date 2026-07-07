@@ -8,7 +8,6 @@ const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const launchdDir = path.join(repoRoot, 'bots/reservation/launchd');
 const checkedPlists = [
   'ai.ska.commander.plist',
-  'ai.ska.dashboard.plist',
   'ai.ska.db-backup.plist',
   'ai.ska.health-check.plist',
   'ai.ska.log-rotate.plist',

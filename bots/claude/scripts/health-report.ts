@@ -5,7 +5,7 @@
  * scripts/health-report.js — 클로드팀 운영자용 헬스 리포트
  *
  * 목적:
- *   - launchd 서비스 상태와 health-dashboard 요약을 사람이 읽기 쉽게 출력
+ *   - launchd 서비스 상태와 헬스 요약을 사람이 읽기 쉽게 출력
  *   - 공용 health-core 포맷을 사용하는 운영 리포트
  *
  * 실행:
@@ -55,7 +55,6 @@ const ALL_SERVICES = [
   'ai.claude.builder',
   'ai.claude.codex-notifier',
   ...AUTO_DEV_SERVICES,
-  'ai.claude.health-dashboard',
 ];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const CLAUDE_ROOT = path.join(__dirname, '..');
@@ -116,8 +115,8 @@ async function buildDashboardHealth() {
       url: 'http://127.0.0.1:3032/api/health',
       expectJson: true,
       isOk: Boolean,
-      okText: '  health-dashboard API: 정상',
-      warnText: '  health-dashboard API: 응답 없음',
+      okText: '  health dashboard API: 정상',
+      warnText: '  health dashboard API: 응답 없음',
     },
   ]);
   const data = checks.results.dashboard || null;
@@ -184,10 +183,10 @@ function buildDecision(serviceRows, dashboardHealth) {
       {
         active: dashboardHealth.warn.length > 0,
         level: 'medium',
-        reason: `health-dashboard 경고 ${dashboardHealth.warn.length}건이 있어 리드 모드/그림자 상태 확인이 필요합니다.`,
+        reason: `health dashboard 경고 ${dashboardHealth.warn.length}건이 있어 리드 모드/그림자 상태 확인이 필요합니다.`,
       },
     ],
-    okReason: '클로드 핵심 서비스와 health-dashboard가 현재는 안정 구간입니다.',
+    okReason: '클로드 핵심 서비스와 health dashboard가 현재는 안정 구간입니다.',
   });
 }
 
@@ -197,7 +196,7 @@ function formatText(report) {
     sections: [
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
-      buildHealthCountSection('■ health-dashboard 상태', report.dashboardHealth, { okLimit: 4 }),
+      buildHealthCountSection('■ health dashboard 상태', report.dashboardHealth, { okLimit: 4 }),
       {
         title: null,
         lines: buildHealthDecisionSection({

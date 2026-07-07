@@ -30,7 +30,6 @@ const CLAUDE_RUNTIME_FILES = [
   'bots/claude/lib/daily-report.ts',
   'bots/claude/scripts/claude-daily-report.ts',
   'bots/claude/scripts/claude-weekly-review.ts',
-  'bots/claude/scripts/health-dashboard-server.ts',
   'bots/claude/scripts/health-report.ts',
   'bots/claude/scripts/migrate.ts',
   'bots/claude/scripts/team-check.ts',
@@ -38,7 +37,6 @@ const CLAUDE_RUNTIME_FILES = [
   'bots/claude/src/dexter.ts',
   'bots/claude/src/dexter-quickcheck.ts',
   'bots/claude/launchd/ai.claude.commander.plist',
-  'bots/claude/launchd/ai.claude.health-dashboard.plist',
 ];
 
 const FORBIDDEN_ACTIVE_PATTERNS = [

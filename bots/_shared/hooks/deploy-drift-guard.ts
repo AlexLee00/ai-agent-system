@@ -9,7 +9,6 @@ const SECRET_KEY = /(token|secret|password|authorization|api[_-]?key|credential|
 export const DEFAULT_DEPLOY_DRIFT_TARGETS = [
   { label: 'ai.hub.resource-api', repoPath: 'bots/hub/launchd/ai.hub.resource-api.plist' },
   { label: 'ai.hub.ops-mcp', repoPath: 'bots/hub/launchd/ai.hub.ops-mcp.plist' },
-  { label: 'ai.hub.ai-os-dashboard', repoPath: 'bots/hub/launchd/ai.hub.ai-os-dashboard.plist' },
   { label: 'ai.investment.commander', repoPath: 'bots/investment/launchd/ai.investment.commander.plist' },
   { label: 'ai.luna.meeting-room-web', repoPath: 'bots/investment/launchd/ai.luna.meeting-room-web.plist' },
   { label: 'ai.claude.archer', repoPath: 'bots/claude/launchd/ai.claude.archer.plist' },

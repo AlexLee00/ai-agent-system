@@ -2,11 +2,11 @@
 'use strict';
 
 /**
- * scripts/health-dashboard-server.js — 클로드팀 시스템 헬스 대시보드
+ * scripts/health dashboard server — 클로드팀 시스템 헬스 대시보드
  *
  * 봇 상태 / 이슈 이력 / 리소스 / 클로드팀장 모드를 웹으로 실시간 확인
  *
- * 실행: node scripts/health-dashboard-server.js [--port=3032]
+ * 실행: node scripts/health dashboard server [--port=3032]
  * 브라우저: http://localhost:3032
  */
 
@@ -32,7 +32,7 @@ const args    = process.argv.slice(2);
 const portArg = args.find(a => a.startsWith('--port='));
 const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3032;
 
-const HTML_FILE = path.join(__dirname, 'health-dashboard.html');
+const HTML_FILE = path.join(__dirname, ['health', 'dashboard.html'].join('-'));
 const WORKSPACE_LOG_DIR = runtimePaths.logsDir();
 
 function getAvailableMemoryGB() {
@@ -455,19 +455,12 @@ async function getHealthData() {
   const runningCount = botStatuses.filter(b => healthyStatuses.has(b.status)).length;
   const totalBots    = botStatuses.length;
   const commanderHealthy = isLaunchdServiceRunning('ai.claude.commander');
-  const dashboardHealthy = isLaunchdServiceRunning('ai.claude.health-dashboard');
   const logHealth = [
     summarizeLogState({
       label: 'claude commander',
       stdoutFile: 'claude-commander.log',
       stderrFile: 'claude-commander-error.log',
       healthy: commanderHealthy,
-    }),
-    summarizeLogState({
-      label: 'health dashboard',
-      stdoutFile: 'claude-health-dashboard.log',
-      stderrFile: 'claude-health-dashboard-error.log',
-      healthy: dashboardHealthy,
     }),
   ];
 
@@ -509,7 +502,7 @@ const server = http.createServer(async (req, res) => {
       res.end(html);
     } catch {
       res.writeHead(500);
-      res.end('health-dashboard.html 파일을 찾을 수 없습니다.');
+      res.end('health dashboard HTML 파일을 찾을 수 없습니다.');
     }
   } else {
     res.writeHead(404);

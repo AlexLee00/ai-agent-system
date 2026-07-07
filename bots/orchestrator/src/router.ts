@@ -947,7 +947,6 @@ function buildTeamLogSummary(team = '') {
       : value === 'claude'
         ? [
             { label: '클로드 commander', out: runtimeLogPath('claude-commander.log'), err: runtimeLogPath('claude-commander-error.log') },
-            { label: '클로드 dashboard', out: runtimeLogPath('claude-health-dashboard.log'), err: runtimeLogPath('claude-health-dashboard-error.log') },
           ]
         : [];
 

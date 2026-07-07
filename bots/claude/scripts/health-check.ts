@@ -6,7 +6,7 @@
  *
  * 감지 대상:
  *   - 상시 실행: commander (PID 없으면 다운)
- *   - 스케줄: dexter, dexter.quick, dexter.daily, archer, health-dashboard
+ *   - 스케줄: dexter, dexter.quick, dexter.daily, archer
  *
  * 클로드팀 서비스 exit 1 → [점검] 태그 자동 부착
  * 공통 상태: packages/core/lib/health-state-manager.js
@@ -51,7 +51,6 @@ const ALL_SERVICES = [...new Set([
   'ai.claude.builder',
   'ai.claude.codex-notifier',
   ...AUTO_DEV_SERVICES,
-  'ai.claude.health-dashboard',
 ])];
 
 // 정상 종료 코드

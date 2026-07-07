@@ -21,7 +21,6 @@ const ACTIVE_RUNTIME_FILES = [
   'bots/orchestrator/src/dashboard.ts',
   'bots/orchestrator/launchd/ai.orchestrator.plist',
   'bots/reservation/launchd/ai.ska.commander.plist',
-  'bots/reservation/launchd/ai.ska.dashboard.plist',
   'bots/reservation/auto/monitors/run-kiosk-monitor.sh',
   'bots/reservation/auto/monitors/run-today-audit.sh',
   'bots/reservation/auto/monitors/start-ops.sh',
