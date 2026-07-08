@@ -17,7 +17,6 @@ const {
   isCancelledKey, addCancelledKey, removeCancelledKey, pruneOldCancelledKeys,
   addAlert, updateAlertSent, resolveAlert, resolveAlertsByTitle, getUnresolvedAlerts, pruneOldAlerts,
   getTodayStats,
-  upsertFutureConfirmed, getStaleConfirmed, deleteStaleConfirmed, pruneOldFutureConfirmed,
   query: dbQuery, run: dbRun,
 } = require('../../lib/db');
 const fs = require('fs');

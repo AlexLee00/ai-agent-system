@@ -153,7 +153,7 @@ async function main() {
   await todayOnlyService.auditToday({ dateOverride: '2099-08-05', wsEndpoint: 'ws://example.test/devtools/browser/test' });
 
   assert.ok(
-    todayOnlyLogs.some((line) => line.includes('픽코 예약: 1건')),
+    todayOnlyLogs.some((line) => line.includes('픽코 예약(오늘 감사 대상): 1건')),
     'today audit should only include same-day Pickko reservations',
   );
   assert.equal(

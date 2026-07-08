@@ -119,7 +119,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
       const result = await fetchPickkoEntries(page, today, { minAmount: 0 });
       const skippedEntries = result.entries.filter((entry) => !shouldAuditEntry(entry));
       pickkoEntries = result.entries.filter((entry) => shouldAuditEntry(entry));
-      log(`  픽코 예약: ${pickkoEntries.length}건`);
+      log(`  픽코 예약(오늘 감사 대상): ${pickkoEntries.length}건`);
       for (const entry of pickkoEntries) {
         log(`    • ${maskName(entry.name)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}`);
       }

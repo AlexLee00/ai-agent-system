@@ -1179,42 +1179,6 @@ async function getTodayStats(date) {
   }
 }
 
-// ─── naver_future_confirmed ─────────────────────────────────────────
-
-async function upsertFutureConfirmed(bookingKey, phoneRaw, date, startTime, endTime, room, scanCycle) {
-  await pgPool.run(SCHEMA, `
-    INSERT INTO naver_future_confirmed
-      (booking_key, phone_raw, date, start_time, end_time, room, last_scan)
-    VALUES ($1,$2,$3,$4,$5,$6,$7)
-    ON CONFLICT(booking_key) DO UPDATE SET
-      phone_raw  = EXCLUDED.phone_raw,
-      date       = EXCLUDED.date,
-      start_time = EXCLUDED.start_time,
-      end_time   = EXCLUDED.end_time,
-      room       = EXCLUDED.room,
-      last_scan  = EXCLUDED.last_scan
-  `, [bookingKey, phoneRaw || '', date || '', startTime || '', endTime || '', room || null, scanCycle || 0]);
-}
-
-async function getStaleConfirmed(currentCycle, minDate) {
-  return pgPool.query(SCHEMA,
-    'SELECT * FROM naver_future_confirmed WHERE last_scan < $1 AND date >= $2',
-    [currentCycle, minDate || '']);
-}
-
-async function deleteStaleConfirmed(currentCycle, minDate) {
-  const result = await pgPool.run(SCHEMA,
-    'DELETE FROM naver_future_confirmed WHERE last_scan < $1 AND date >= $2',
-    [currentCycle, minDate || '']);
-  return result.rowCount;
-}
-
-async function pruneOldFutureConfirmed(cutoffDate) {
-  const result = await pgPool.run(SCHEMA,
-    'DELETE FROM naver_future_confirmed WHERE date < $1', [cutoffDate]);
-  return result.rowCount;
-}
-
 // ─── 마이그레이션 헬퍼 ─────────────────────────────────────────────
 
 /** schema_migrations 초기화 (PG에서는 테이블이 이미 존재) */
@@ -1235,20 +1199,6 @@ async function recordMigration(version, name) {
 
 async function removeMigration(version) {
   await pgPool.run(SCHEMA, 'DELETE FROM schema_migrations WHERE version = $1', [version]);
-}
-
-async function getFuturePickkoRegistered(fromDate) {
-  const rows = await pgPool.query(SCHEMA,
-    `
-      SELECT *
-      FROM reservations
-      WHERE date >= $1
-        AND status = 'completed'
-        AND seen_only = 0
-        AND COALESCE(pickko_status, 'paid') IN ('paid', 'manual', 'manual_retry', 'verified')
-    `,
-    [fromDate]);
-  return rows.map(_decryptRow);
 }
 
 async function getSchemaVersion() {
@@ -1278,7 +1228,6 @@ module.exports = {
   getManualPendingReservations,
   getVerifiedReservationsForPayScan,
   getAllNaverKeys,
-  getFuturePickkoRegistered,
   rollbackProcessing,
   pruneOldReservations,
   // cancelled_keys
@@ -1318,9 +1267,4 @@ module.exports = {
   getRoomRevenueSummary,
   // stats
   getTodayStats,
-  // naver_future_confirmed
-  upsertFutureConfirmed,
-  getStaleConfirmed,
-  deleteStaleConfirmed,
-  pruneOldFutureConfirmed,
 };
