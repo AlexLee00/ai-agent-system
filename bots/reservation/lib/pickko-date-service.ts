@@ -64,8 +64,8 @@ export function createPickkoDateService({
     log(`📅 [${retryCount + 1}/5] 입력필드: ${inputDateNorm}`);
     log(`📅 [${retryCount + 1}/5] 목표 날짜: ${targetDateNorm}`);
 
-    if (inputDateNorm === prevScheduleDateNorm) {
-      log('✅ 입력필드와 예약일자 일치. 날짜 설정 스킵!');
+    if (inputDateNorm === targetDateNorm && prevScheduleDateNorm === targetDateNorm) {
+      log('✅ 입력필드와 예약일자가 목표 날짜와 일치. 날짜 설정 스킵!');
       return;
     }
 

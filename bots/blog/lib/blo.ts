@@ -1304,6 +1304,14 @@ function buildWriterAbMetadata(post = {}, traceCtx = {}) {
   if (post.fallbackUsed !== undefined || post.fallback_used !== undefined) {
     metadata.fallback_used = Boolean(post.fallbackUsed ?? post.fallback_used);
   }
+  if (post.repairUsed !== undefined || post.repair_used !== undefined) {
+    metadata.repair_used = Boolean(post.repairUsed ?? post.repair_used);
+  }
+  if (post.repairFallback !== undefined || post.repair_fallback !== undefined) {
+    metadata.repair_fallback = Boolean(post.repairFallback ?? post.repair_fallback);
+  }
+  const repairServedModel = post.repairServedModel || post.repair_served_model || null;
+  if (repairServedModel) metadata.repair_served_model = repairServedModel;
   if (traceId) metadata.trace_id = traceId;
   return metadata;
 }

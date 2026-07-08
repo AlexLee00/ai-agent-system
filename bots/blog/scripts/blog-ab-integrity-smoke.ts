@@ -17,6 +17,7 @@ const {
 const { _testOnly: bloTest } = require('../lib/blo.ts');
 const unified = require('../../hub/lib/llm/unified-caller.ts');
 const {
+  assignChunkedLogsToNearestPost,
   estimateProviderForPost,
   summarizePollutedRoutingLogs,
   routeFamily,
@@ -62,14 +63,20 @@ async function main() {
 
     const metadata = bloTest.buildWriterAbMetadata({
       writerModel: 'anthropic_sonnet',
-      usedModel: 'openai-oauth/gpt-5.4',
-      fallbackUsed: true,
+      usedModel: 'claude-code/sonnet',
+      fallbackUsed: false,
+      repairUsed: true,
+      repairFallback: true,
+      repairServedModel: 'openai-oauth/gpt-5.4',
       traceId: 'trace-smoke',
     });
     assert.deepEqual(metadata, {
       writer_model: 'anthropic_sonnet',
-      served_model: 'openai-oauth/gpt-5.4',
-      fallback_used: true,
+      served_model: 'claude-code/sonnet',
+      fallback_used: false,
+      repair_used: true,
+      repair_fallback: true,
+      repair_served_model: 'openai-oauth/gpt-5.4',
       trace_id: 'trace-smoke',
     });
 
@@ -113,6 +120,34 @@ async function main() {
       },
     ]);
     assert.equal(pollutedLogs.length, 1, 'routing-log pollution summary must dedupe duplicate inserts');
+    const assignedBodyLogs = assignChunkedLogsToNearestPost([
+      { id: 6, created_at: '2026-07-06T12:00:00.000Z' },
+      { id: 7, created_at: '2026-07-06T12:10:00.000Z' },
+    ], [
+      {
+        post_id: 6,
+        request_id: 'same-window-log',
+        created_at: '2026-07-06T11:58:00.000Z',
+        provider: 'claude-code-oauth',
+        selected_route: 'claude-code/sonnet',
+        fallback_count: 0,
+        runtime_purpose: 'blog_chunked_body',
+      },
+      {
+        post_id: 7,
+        request_id: 'same-window-log',
+        created_at: '2026-07-06T11:58:00.000Z',
+        provider: 'claude-code-oauth',
+        selected_route: 'claude-code/sonnet',
+        fallback_count: 0,
+        runtime_purpose: 'blog_chunked_body',
+      },
+    ]);
+    assert.deepEqual(
+      assignedBodyLogs.map((log) => log.post_id),
+      [6],
+      'overlapping chunked logs must be assigned only to the nearest post',
+    );
 
     const gems = read('lib/gems-writer.ts');
     const pos = read('lib/pos-writer.ts');
@@ -129,6 +164,7 @@ async function main() {
       strictChainLength: strict.chain.length,
       disabledClaudeChainLength: strictWithClaudeDisabled.chain.length,
       pollutedRoutingLogs: pollutedLogs.length,
+      assignedBodyLogs: assignedBodyLogs.length,
       pollutedEstimate: estimate,
     }, null, 2));
   } finally {

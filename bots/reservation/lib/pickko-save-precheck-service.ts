@@ -9,6 +9,31 @@ export function createPickkoSavePrecheckService({
   log,
   buildStageError,
 }: SavePrecheckDeps) {
+  function getSavePrecheckStepTimeoutMs() {
+    const raw = Number(process.env.PICKKO_SAVE_PRECHECK_STEP_TIMEOUT_MS || 30_000);
+    return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+  }
+
+  async function withSavePrecheckTimeout<T>(label: string, work: () => Promise<T>): Promise<T> {
+    const timeoutMs = getSavePrecheckStepTimeoutMs();
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        work(),
+        new Promise<T>((_resolve, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(buildStageError(
+              'SAVE_PRECHECK_TIMEOUT',
+              `${label} timeout after ${timeoutMs}ms`,
+            ));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+  }
+
   function shiftMinutes(hhmm: string, deltaMin: number) {
     const [h, m] = String(hhmm || '').split(':').map(Number);
     if (!Number.isFinite(h) || !Number.isFinite(m)) return '';
@@ -46,6 +71,7 @@ export function createPickkoSavePrecheckService({
       endTime: string;
     },
   ) {
+    return withSavePrecheckTimeout('alignExpectedTimes', async () => {
     const expectedStartDate = String(expected?.startDate || '').trim();
     const expectedStartTime = String(expected?.startTime || '').trim();
     const expectedEndDate = String(expected?.endDate || expectedStartDate || '').trim();
@@ -90,6 +116,7 @@ export function createPickkoSavePrecheckService({
 
     log(`🛠️ 저장 전 폼 시간 보정: ${JSON.stringify(result)}`);
     return result;
+    });
   }
 
   async function runSavePrecheck(
@@ -101,6 +128,7 @@ export function createPickkoSavePrecheckService({
       endTime: string;
     },
   ) {
+    return withSavePrecheckTimeout('runSavePrecheck', async () => {
     const sanity = await page.evaluate(`
       (() => {
         const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
@@ -233,9 +261,11 @@ export function createPickkoSavePrecheckService({
     }
 
     return sanity;
+    });
   }
 
   async function submitDraft(page: any) {
+    return withSavePrecheckTimeout('submitDraft', async () => {
     log('💾 "작성하기" 버튼 클릭...');
 
     const submitClicked = await page.evaluate(`
@@ -259,6 +289,7 @@ export function createPickkoSavePrecheckService({
 
     log('✅ 작성하기 클릭 완료');
     return { submitClicked };
+    });
   }
 
   return {

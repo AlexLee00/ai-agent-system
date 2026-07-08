@@ -1082,6 +1082,9 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
   let nextUsedModel = usedModel;
   let nextFallbackUsed = fallbackUsed;
   let nextTraceId = traceId;
+  let repairUsed = false;
+  let repairFallback = false;
+  let repairServedModel = null;
   const weatherContext = weatherToContext(researchData.weather || {}, { detailed: false });
   const relatedPosts = researchData.relatedPosts || [];
 
@@ -1130,14 +1133,24 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
       const repaired = await repairGeneralPostDraft(
         category,
         researchData,
-        { content: repairedContent },
+        {
+          content: repairedContent,
+          usedModel: nextUsedModel,
+          fallbackUsed: nextFallbackUsed,
+          traceId: nextTraceId,
+        },
         { issues },
         sectionVariation
       );
       repairedContent = String(repaired.content || repairedContent).trim();
-      if (repaired.model) nextUsedModel = repaired.model;
-      nextFallbackUsed = nextFallbackUsed || !!repaired.fallbackUsed;
+      const bodyModel = repaired.model || repaired.usedModel || nextUsedModel;
+      const bodyFallbackUsed = Boolean(repaired.fallbackUsed);
+      nextUsedModel = bodyModel;
+      nextFallbackUsed = bodyFallbackUsed;
       nextTraceId = repaired.traceId || nextTraceId;
+      repairUsed = repairUsed || !!repaired.repairUsed;
+      repairFallback = repairFallback || !!repaired.repairFallback;
+      repairServedModel = repaired.repairServedModel || repairServedModel;
       console.log(`[젬스] repair 완료 #${attempt}: ${repairedContent.length}자`);
     } catch (e) {
       console.warn(`[젬스] repair 실패 #${attempt} (무시): ${e.message}`);
@@ -1147,9 +1160,12 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
 
   return {
     content: repairedContent,
-    model: nextUsedModel,
-    fallbackUsed: nextFallbackUsed,
-    traceId: nextTraceId,
+    bodyModel: nextUsedModel,
+    bodyFallbackUsed: nextFallbackUsed,
+    bodyTraceId: nextTraceId,
+    repairUsed,
+    repairFallback,
+    repairServedModel,
   };
 }
 
@@ -1602,7 +1618,7 @@ ${_buildVariationBlock(sectionVariation)}
   // _THE_END_ 마커 제거
   content = content.replace(/_THE_END_/g, '').trim();
 
-  const repairResult = await _runGeneralPostRepairPasses(
+  const postRepairPasses = await _runGeneralPostRepairPasses(
     category,
     researchData,
     content,
@@ -1612,10 +1628,10 @@ ${_buildVariationBlock(sectionVariation)}
     MIN_CHARS_GENERAL,
     traceId
   );
-  content = repairResult.content;
-  usedModel = repairResult.model;
-  fallbackUsed = repairResult.fallbackUsed;
-  traceId = repairResult.traceId || traceId;
+  content = postRepairPasses.content;
+  usedModel = postRepairPasses.bodyModel;
+  fallbackUsed = postRepairPasses.bodyFallbackUsed;
+  traceId = postRepairPasses.bodyTraceId || traceId;
 
   content = _ensureGeneralQualityFloor(content, {
     category,
@@ -1634,7 +1650,19 @@ ${_buildVariationBlock(sectionVariation)}
   const title     = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
 
-  const result = { content, charCount: content.length, model: usedModel, usedModel, writerModel, title, fallbackUsed, traceId };
+  const result = {
+    content,
+    charCount: content.length,
+    model: usedModel,
+    usedModel,
+    writerModel,
+    title,
+    fallbackUsed,
+    traceId,
+    repairUsed: postRepairPasses.repairUsed,
+    repairFallback: postRepairPasses.repairFallback,
+    repairServedModel: postRepairPasses.repairServedModel,
+  };
 
   // 최소 글자수 달성 시에만 캐시 저장 (실패 결과 캐시 방지)
   if (content.length >= MIN_CHARS_GENERAL) {
@@ -1787,15 +1815,25 @@ ${content}
   const title = firstLine.slice(0, 80).trim();
   _assertDistinctGeneralTitle(category, title);
 
+  const bodyUsedModel = draft?.usedModel || draft?.servedModel || draft?.model || usedModel;
+  const bodyFallbackUsed = draft?.fallbackUsed !== undefined || draft?.fallback_used !== undefined
+    ? Boolean(draft.fallbackUsed ?? draft.fallback_used)
+    : fallbackUsed;
+  const bodyTraceId = draft?.traceId || draft?.trace_id || traceId;
+
   return {
     content: repaired,
     charCount: repaired.length,
-    model: usedModel,
-    usedModel,
+    model: bodyUsedModel,
+    usedModel: bodyUsedModel,
     writerModel,
     title,
-    fallbackUsed,
-    traceId,
+    fallbackUsed: bodyFallbackUsed,
+    traceId: bodyTraceId,
+    repairUsed: true,
+    repairFallback: fallbackUsed,
+    repairServedModel: usedModel,
+    repairTraceId: traceId,
     repairedFromDraft: true,
   };
 }

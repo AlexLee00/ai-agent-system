@@ -1,4 +1,4 @@
-import { spawn as nodeSpawn } from 'child_process';
+import { execFile as nodeExecFile, spawn as nodeSpawn } from 'child_process';
 const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 export const PICKKO_CANCEL_BLOCKED_CODE = 98;
 
@@ -26,6 +26,54 @@ function safeWriteToStream(stream: NodeJS.WriteStream, text: string) {
     if (code === 'EPIPE') return;
     throw error;
   }
+}
+
+function collectDescendantPids(rootPid: number, psOutput: string) {
+  const childrenByParent = new Map<number, number[]>();
+  for (const line of psOutput.split(/\r?\n/)) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const ppid = Number(match[2]);
+    if (!Number.isFinite(pid) || !Number.isFinite(ppid)) continue;
+    const children = childrenByParent.get(ppid) || [];
+    children.push(pid);
+    childrenByParent.set(ppid, children);
+  }
+
+  const result: number[] = [];
+  const stack = [...(childrenByParent.get(rootPid) || [])];
+  while (stack.length > 0) {
+    const pid = stack.pop()!;
+    result.push(pid);
+    stack.push(...(childrenByParent.get(pid) || []));
+  }
+  return result;
+}
+
+function killPid(pid: number, signal: NodeJS.Signals) {
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // The process may already have exited.
+  }
+}
+
+function terminateProcessTree(rootPid: number | undefined, signal: NodeJS.Signals, log: Logger, rememberedDescendants?: Set<number>) {
+  if (!rootPid || rootPid <= 0) return;
+  nodeExecFile('/bin/ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' }, (error, stdout) => {
+    const descendants = error ? [] : collectDescendantPids(rootPid, String(stdout || ''));
+    for (const pid of descendants) {
+      rememberedDescendants?.add(pid);
+    }
+    for (const pid of descendants.reverse()) {
+      killPid(pid, signal);
+    }
+    killPid(rootPid, signal);
+    if (descendants.length > 0) {
+      log(`🧹 [픽코 타임아웃] 자식 프로세스 트리 ${signal} 전송: root=${rootPid}, descendants=${descendants.length}`);
+    }
+  });
 }
 
 export type CreateNaverPickkoRunnerServiceDeps = {
@@ -377,21 +425,22 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       const accurateTimeoutMs = Number(process.env.PICKKO_ACCURATE_TIMEOUT_MS || 12 * 60 * 1000);
       let timedOut = false;
       let sigkillHandle: ReturnType<typeof setTimeout> | null = null;
+      const timeoutDescendantPids = new Set<number>();
       const timeoutHandle = accurateTimeoutMs > 0
         ? setTimeoutImpl(() => {
           timedOut = true;
           const message = `child timeout after ${accurateTimeoutMs}ms`;
           outputBuf += `\nPICKKO_FAILURE_STAGE=CHILD_TIMEOUT ${message}\nError: ${message}\n`;
           log(`⏱️ [픽코 타임아웃] ${message} — 자식 프로세스 종료 시도: ${maskPhone(normalized.phone)} ${normalized.date} ${normalized.start}`);
+          terminateProcessTree(child.pid, 'SIGTERM', log, timeoutDescendantPids);
           child.kill('SIGTERM');
           sigkillHandle = setTimeoutImpl(() => {
-            if (!child.pid) return;
-            try {
-              process.kill(child.pid, 0);
-              child.kill('SIGKILL');
-            } catch (_error) {
-              // already exited
+            for (const pid of Array.from(timeoutDescendantPids).reverse()) {
+              killPid(pid, 'SIGKILL');
             }
+            if (!child.pid) return;
+            terminateProcessTree(child.pid, 'SIGKILL', log);
+            child.kill('SIGKILL');
           }, 5000);
         }, accurateTimeoutMs)
         : null;
@@ -399,7 +448,7 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
       child.stderr.on('data', (chunk) => { const text = chunk.toString(); safeWriteToStream(process.stderr, text); outputBuf += text; });
       child.on('close', async (code) => {
         if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (sigkillHandle) clearTimeout(sigkillHandle);
+        if (sigkillHandle && !timedOut) clearTimeout(sigkillHandle);
         if (timedOut && code === 0) code = 1;
         log(`🤖 픽코 실행 종료 (exit code: ${code})`);
         const stageMatch = outputBuf.match(/PICKKO_FAILURE_STAGE=([A-Z0-9_]+)/);

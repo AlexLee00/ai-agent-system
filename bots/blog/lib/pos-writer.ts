@@ -839,14 +839,24 @@ ${content}
   repaired = repaired.replace(/_THE_END_/g, '').trim();
   repaired = _ensureLectureBriefingFloor(repaired, lectureTitle);
 
+  const bodyUsedModel = draft?.usedModel || draft?.servedModel || draft?.model || usedModel;
+  const bodyFallbackUsed = draft?.fallbackUsed !== undefined || draft?.fallback_used !== undefined
+    ? Boolean(draft.fallbackUsed ?? draft.fallback_used)
+    : fallbackUsed;
+  const bodyTraceId = draft?.traceId || draft?.trace_id || traceId;
+
   return {
     content: repaired,
     charCount: repaired.length,
-    model: usedModel,
-    usedModel,
+    model: bodyUsedModel,
+    usedModel: bodyUsedModel,
     writerModel,
-    fallbackUsed,
-    traceId,
+    fallbackUsed: bodyFallbackUsed,
+    traceId: bodyTraceId,
+    repairUsed: true,
+    repairFallback: fallbackUsed,
+    repairServedModel: usedModel,
+    repairTraceId: traceId,
     repairedFromDraft: true,
   };
 }
