@@ -7,11 +7,6 @@ const {
   buildCancelPipelineStatus,
   buildReservationSyncCheck,
 } = require('../../../lib/ska-ops-read-service');
-const {
-  evaluateCancelLegacyCleanupGate,
-  readCancelShadowHistory,
-  readLatestCancelShadowSummary,
-} = require('../../../lib/cancel-shadow-history');
 
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 4098;
@@ -19,15 +14,11 @@ const DEFAULT_PORT = 4098;
 const SKA_OPS_MCP_TOOLS = [
   {
     name: 'cancel-pipeline-status',
-    description: 'Return read-only SKA cancel pipeline status, retry queue depth, migration state, and cleanup gate.',
+    description: 'Return read-only SKA cancel pipeline status, retry queue depth, and migration state.',
   },
   {
     name: 'reservation-sync-check',
     description: 'Compare reservation DB rows with pickko_order_raw evidence for a date/range. Read-only advisory.',
-  },
-  {
-    name: 'shadow-diff',
-    description: 'Return recorded cancel shadow-diff latest/history and cleanup readiness. Does not open Naver browser.',
   },
 ];
 
@@ -55,17 +46,6 @@ async function callSkaOpsTool(name, args = {}, deps = {}) {
   }
   if (name === 'reservation-sync-check') {
     return buildReservationSyncCheck(args, deps);
-  }
-  if (name === 'shadow-diff') {
-    const history = deps.history || readCancelShadowHistory({ limit: Number(args.limit || 10) || 10 });
-    const latest = deps.latestShadow || readLatestCancelShadowSummary();
-    return {
-      ok: true,
-      mode: 'read_only_recorded_shadow',
-      latest,
-      history,
-      cleanupGate: evaluateCancelLegacyCleanupGate({ history, days: Number(args.days || 3) || 3 }),
-    };
   }
   throw new Error(`unknown_tool:${name}`);
 }

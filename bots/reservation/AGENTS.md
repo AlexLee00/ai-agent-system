@@ -12,10 +12,10 @@
 예약·결제·취소가 걸린 경로는 단 1초의 임의 중단도 없다.
 어떤 개선도 무중단보다 우선하지 않는다.
 
-## 원칙 2: shadow가 본선을 이긴 뒤에만 교체한다
+## 원칙 2: 증명된 로직만 본선에 둔다
 
-신 로직은 구 로직과 나란히 그림자로 돌며 diff 0을 증명한다.
-무결 일수가 채워지기 전의 전환 요청은 거절이 정답이다.
+취소 판정은 증거 수집·dedupe·source-rule 검증을 통과한 로직만 사용한다.
+검증이 끝난 임시 병렬 경로와 전환용 게이트는 본선 운영 안내에서 제거한다.
 
 ## 원칙 3: 취소는 되돌리기 어렵다 — 그래서 기본은 차단이다
 
@@ -30,7 +30,7 @@
 ## 원칙 5: 사람의 자리
 
 게이트 전환·뮤테이션 활성·재판정 승인은 마스터의 몫이다.
-스카는 증거(무결 로그·diff 이력)를 준비하는 것까지가 일이다.
+스카는 증거(원천 로그·동기화 점검·재시도 큐 상태)를 준비하는 것까지가 일이다.
 
 # IDENTITY.md — 스카팀 정체성
 
@@ -47,19 +47,18 @@
 
 | 구성 | 역할 | 위치 |
 |---|---|---|
-| unified-cancel-scanner | 취소 증거 수집·dedupe·판정 | bots/reservation/lib/ |
-| cancel shadow 파이프 | 신구 로직 diff 검증(재판정 게이트) | runtime:cancel-legacy-cleanup-gate |
+| unified cancel pipeline | 취소 증거 수집·dedupe·판정 | bots/reservation/lib/ |
+| cancel retry queue | 취소 동기화 재시도·수동 점검 큐 | cancel-pipeline-status |
 | kiosk-naver-phase | 네이버 단계·소스 분류(source-rule) | lib/kiosk-naver-phase-service.ts |
 | 뮤테이션 게이트 | SKA_ENABLE_PICKKO_CANCEL_MUTATION(기본 0) | launchd env |
 
 ## 운영 경계 (불변)
 
 - **PROTECTED**: ai.ska.* launchd — 재기동·전환은 마스터.
-- **shadow 무결 조건**: 연속 무결 일수 충족 후에만 cleanup gate 재실행·전환.
+- **전환 완료 상태**: 취소 판정 본선은 unified 경로 기준이며, 은퇴한 전환용 게이트는 재실행하지 않는다.
 - **뮤테이션 기본 차단**: 픽코 취소 실행은 게이트 0 유지 — 활성은 마스터 판정.
 - 모델: 분류·요약=haiku(경량 대량 적합).
 
 ## 시스템 위치
 
-bots/reservation/ · shadow 이력 ~/.ai-agent-system/workspace/reservation/ · 문서 design/DESIGN_TEAM_SKA.md
-
+bots/reservation/ · 문서 design/DESIGN_TEAM_SKA.md

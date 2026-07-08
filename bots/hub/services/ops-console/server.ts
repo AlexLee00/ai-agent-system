@@ -648,7 +648,6 @@ async function collectSkaPanels(queryReadonly, snapshot, options = {}) {
   `, [], queryReadonly);
   return [
     panel('reservation today', reservations),
-    panel('cancel shadow diff 3d', jsonlTail(path.join(workspace, 'reservation', 'cancel-shadow-diff-history.jsonl'), 3)),
     panel('naver/kiosk monitor exits', relatedLaunchdRows(snapshot, 'ska').filter((row) => /naver|kiosk|ska/i.test(row.label || ''))),
   ];
 }

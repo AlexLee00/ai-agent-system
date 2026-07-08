@@ -34,7 +34,7 @@ async function buildSessionSnapshot() {
     health: { ok: true, checked: 3, failed: 0, services: [{ key: 'hub', ok: true }, { key: 'hub_ops_mcp', ok: true }, { key: 'blog_node_server', ok: true }] },
     launchd: { checked: 9, failedCount: 0, failed: [], runningWithLastExitCount: 0, runningWithLastExit: [] },
     metrics: {
-      ska: { todayReservations: { rows: { total: 7, cancelled: 0, completed: 3 } }, cancelShadow: { ok: true } },
+      ska: { todayReservations: { rows: { total: 7, cancelled: 0, completed: 3 } } },
       sigma: { transition: { counts: { applied: 2, matched: 3 } } },
       hub: { chainRequired24h: { count: 0 } },
       luna: { weakSymbolHard24h: { count: 1 } },

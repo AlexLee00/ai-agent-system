@@ -15,12 +15,8 @@
     "check:ska-self-healing": "tsx scripts/ska-self-healing-autodev-smoke.ts",
     "check:ts-bridge-eisdir": "tsx scripts/ts-bridge-eisdir-smoke.ts",
     "runtime:ska-agent-llm-drill": "tsx scripts/ska-agent-llm-primary-fallback-call-drill.ts",
-    "runtime:cancel-shadow-diff": "tsx scripts/cancel-shadow-diff.ts",
-    "runtime:cancel-legacy-cleanup-gate": "tsx scripts/cancel-legacy-cleanup-gate.ts --json",
     "runtime:ska-ops-mcp": "tsx mcp/ska-ops-mcp/src/server.ts",
-    "smoke:unified-cancel-scanner": "tsx scripts/unified-cancel-scanner-smoke.ts",
     "smoke:cancel-retry-queue": "tsx scripts/cancel-retry-queue-smoke.ts",
-    "smoke:cancel-legacy-cleanup-gate": "tsx scripts/cancel-legacy-cleanup-gate-smoke.ts",
     "smoke:ska-ops-mcp": "tsx scripts/ska-ops-mcp-smoke.ts",
     "smoke:ska-cancel-ops-advisory": "tsx scripts/ska-cancel-ops-advisory-smoke.ts"
   },

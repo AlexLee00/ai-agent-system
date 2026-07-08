@@ -7,7 +7,7 @@ const { buildSkaCancelOpsAdvisory } = require('../lib/ska-ops-read-service.ts');
 async function main() {
   const session = buildSkaCancelOpsAdvisory({
     type: 'session_expired',
-    payload: { monitor: 'cancel-shadow-diff' },
+    payload: { monitor: 'cancel-pipeline-status' },
   });
   assert.equal(session.ok, true);
   assert.equal(session.alertLevel, 3);

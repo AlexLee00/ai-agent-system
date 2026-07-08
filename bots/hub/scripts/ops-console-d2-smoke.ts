@@ -99,7 +99,7 @@ async function buildSessionSnapshot() {
       runningWithLastExit: [],
     },
     metrics: {
-      ska: { todayReservations: { rows: { total: 7, cancelled: 1, completed: 3 } }, cancelShadow: { ok: true } },
+      ska: { todayReservations: { rows: { total: 7, cancelled: 1, completed: 3 } } },
       sigma: { transition: { counts: { applied: 2, matched: 3 } } },
       hub: { chainRequired24h: { count: 0 } },
       luna: { weakSymbolHard24h: { count: 1 } },
@@ -113,11 +113,6 @@ function makeFixtures(tmp) {
   const workspace = path.join(tmp, 'workspace');
   fs.mkdirSync(path.join(workspace, 'reservation'), { recursive: true });
   fs.mkdirSync(path.join(workspace, 'sigma'), { recursive: true });
-  fs.writeFileSync(path.join(workspace, 'reservation', 'cancel-shadow-diff-history.jsonl'), [
-    JSON.stringify({ day: 'd-2', diff: 0 }),
-    JSON.stringify({ day: 'd-1', diff: 1 }),
-    JSON.stringify({ day: 'd', diff: 0 }),
-  ].join('\n'));
   fs.writeFileSync(path.join(workspace, 'sigma', 'transition-telemetry.jsonl'), JSON.stringify({ type: 'transition', counts: { applied: 2, matched: 3 } }) + '\n');
 
   const bridgeRoot = path.join(tmp, 'bridge');

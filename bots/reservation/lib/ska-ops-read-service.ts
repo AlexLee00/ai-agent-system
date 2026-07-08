@@ -4,11 +4,6 @@
 const kst = require('../../../packages/core/lib/kst');
 const crypto = require('node:crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const {
-  evaluateCancelLegacyCleanupGate,
-  readCancelShadowHistory,
-  readLatestCancelShadowSummary,
-} = require('./cancel-shadow-history');
 
 function addDays(dateStr, days) {
   const base = new Date(`${dateStr}T00:00:00+09:00`);
@@ -73,9 +68,6 @@ function tableMissing(error) {
 
 async function buildCancelPipelineStatus(args = {}, deps = {}) {
   const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
-  const latestShadow = deps.latestShadow || readLatestCancelShadowSummary();
-  const history = deps.history || readCancelShadowHistory({ limit: Number(args.historyLimit || 10) || 10 });
-  const cleanupGate = evaluateCancelLegacyCleanupGate({ history, days: Number(args.days || 3) || 3 });
   let retryQueue = {
     ok: true,
     skipped: false,
@@ -121,14 +113,8 @@ async function buildCancelPipelineStatus(args = {}, deps = {}) {
     mode: 'read_only',
     migration,
     retryQueue,
-    shadow: {
-      latest: latestShadow,
-      historyCount: history.length,
-      cleanupGate,
-    },
     env: {
       PICKKO_CANCEL_ENABLE: String(process.env.PICKKO_CANCEL_ENABLE || ''),
-      SKA_UNIFIED_CANCEL_SCANNER: String(process.env.SKA_UNIFIED_CANCEL_SCANNER || ''),
       SKA_CANCEL_RETRY_ENABLED: String(process.env.SKA_CANCEL_RETRY_ENABLED || ''),
     },
   };

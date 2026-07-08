@@ -100,30 +100,19 @@ function getJson({ port, path = '/health' }) {
 async function main() {
   assert.deepStrictEqual(
     SKA_OPS_MCP_TOOLS.map((tool) => tool.name),
-    ['cancel-pipeline-status', 'reservation-sync-check', 'shadow-diff'],
+    ['cancel-pipeline-status', 'reservation-sync-check'],
   );
 
   const mock = createQueryReadonlyMock();
   const deps = {
     queryReadonly: mock.queryReadonly,
-    latestShadow: {
-      today: '2026-07-03',
-      ok: true,
-      skipped: false,
-      counts: { todayMissingInLegacy: 0, todayMissingInUnified: 0, futureUnifiedOnly: 1 },
-    },
-    history: [
-      { today: '2026-07-01', ok: true, skipped: false, scannerOk: true, counts: { todayMissingInLegacy: 0, todayMissingInUnified: 0, futureUnifiedOnly: 1 } },
-      { today: '2026-07-02', ok: true, skipped: false, scannerOk: true, counts: { todayMissingInLegacy: 0, todayMissingInUnified: 0, futureUnifiedOnly: 1 } },
-      { today: '2026-07-03', ok: true, skipped: false, scannerOk: true, counts: { todayMissingInLegacy: 0, todayMissingInUnified: 0, futureUnifiedOnly: 1 } },
-    ],
   };
 
   const pipeline = await callSkaOpsTool('cancel-pipeline-status', {}, deps);
   assert.equal(pipeline.mode, 'read_only');
   assert.equal(pipeline.migration.version, 14);
   assert.equal(pipeline.retryQueue.byStatus[0].status, 'pending');
-  assert.equal(pipeline.shadow.cleanupGate.ready, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(pipeline, 'shadow'), false);
 
   const sync = await callSkaOpsTool('reservation-sync-check', { date: '2026-07-03' }, deps);
   assert.equal(sync.mode, 'read_only_advisory');
@@ -137,10 +126,6 @@ async function main() {
   assert.match(sync.pickkoOnly[0].entryRef, /^[0-9a-f]{12}$/);
   assert.equal(sync.cancelledButPickkoEvidence[0].pickkoEvidence[0].entryRef.includes('pk-b'), false);
 
-  const shadow = await callSkaOpsTool('shadow-diff', {}, deps);
-  assert.equal(shadow.mode, 'read_only_recorded_shadow');
-  assert.equal(shadow.cleanupGate.ready, true);
-
   const { server, port } = await startServer({ port: 0, deps });
   try {
     const health = await getJson({ port });
@@ -149,9 +134,9 @@ async function main() {
 
     const list = await postJson({ port, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
     assert.equal(list.status, 200);
-    assert.equal(list.body.result.tools.length, 3);
+    assert.equal(list.body.result.tools.length, 2);
 
-    for (const name of ['cancel-pipeline-status', 'reservation-sync-check', 'shadow-diff']) {
+    for (const name of ['cancel-pipeline-status', 'reservation-sync-check']) {
       const response = await postJson({
         port,
         body: { jsonrpc: '2.0', id: name, method: 'tools/call', params: { name, arguments: { date: '2026-07-03' } } },
@@ -166,7 +151,7 @@ async function main() {
 
   console.log(JSON.stringify({
     ok: true,
-    tests: ['tools', 'pipeline-status', 'reservation-sync-check', 'shadow-diff', 'http-json-rpc', 'read-only-sql'],
+    tests: ['tools', 'pipeline-status', 'reservation-sync-check', 'http-json-rpc', 'read-only-sql'],
     queryCalls: mock.calls.length,
   }));
 }

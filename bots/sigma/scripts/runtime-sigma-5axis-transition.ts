@@ -192,32 +192,7 @@ export function collectDarwinTriggers({ limit = 100, warnings = [] } = {}) {
 }
 
 export function collectSkaTriggers({ warnings = [] } = {}) {
-  try {
-    const history = require(path.join(PROJECT_ROOT, 'bots/reservation/lib/cancel-shadow-history.ts'));
-    const latest = history.readLatestCancelShadowSummary();
-    if (!latest?.today) return [];
-    const counts = latest.counts || {};
-    const mismatch = Number(counts.todayMissingInLegacy || 0) + Number(counts.todayMissingInUnified || 0);
-    const negative = latest.skipped || latest.scannerOk === false || mismatch > 0;
-    return [trigger({
-      team: 'ska',
-      table: 'reservation.cancel_shadow_diff_history',
-      id: latest.today,
-      polarity: negative ? 'negative' : 'positive',
-      reason: negative ? 'cancel_shadow_mismatch_or_skip' : 'cancel_shadow_integrity_ok',
-      occurredAt: latest.recordedAt || null,
-      lessonKey: `ska_cancel_shadow_${latest.today}`,
-      evidence: {
-        counts,
-        scannerOk: latest.scannerOk,
-        skipped: latest.skipped,
-        reason: latest.reason || null,
-      },
-    })];
-  } catch (error) {
-    warnings.push(`reservation.cancel_shadow_diff_history:${String(error?.message || error).slice(0, 180)}`);
-    return [];
-  }
+  return [];
 }
 
 export async function collectClaudeTriggers({ sinceHours, limit, warnings = [], queryReadonly = pgPool.queryReadonly } = {}) {

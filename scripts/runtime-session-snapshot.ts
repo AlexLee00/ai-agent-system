@@ -224,7 +224,6 @@ async function safeMetric(key, fn) {
 export async function collectCoreMetrics(options = {}) {
   const queryReadonly = options.queryReadonly || pgPool.queryReadonly;
   const workspace = options.workspace || DEFAULT_WORKSPACE;
-  const latestShadow = readJsonFile(path.join(workspace, 'reservation', 'cancel-shadow-diff-latest.json'));
   const sigmaTransition = readLatestJsonl(path.join(workspace, 'sigma', 'transition-telemetry.jsonl'));
 
   const [skaReservations, chainRequired, weakSymbol, sonnetTags, darwinShadow] = await Promise.all([
@@ -289,15 +288,6 @@ export async function collectCoreMetrics(options = {}) {
   return {
     ska: {
       todayReservations: skaReservations,
-      cancelShadow: latestShadow
-        ? {
-            ok: latestShadow.ok,
-            today: latestShadow.today,
-            skipped: latestShadow.skipped,
-            scannerOk: latestShadow.scannerOk,
-            counts: latestShadow.counts || {},
-          }
-        : { ok: false, skipped: true, reason: 'latest_cancel_shadow_missing' },
     },
     sigma: {
       transition: sigmaTransition
@@ -346,7 +336,6 @@ export function renderSnapshotMarkdown(snapshot) {
     '## Core Signals',
     '',
     `- SKA today reservations: ${JSON.stringify(metric.ska.todayReservations.rows || metric.ska.todayReservations)}`,
-    `- SKA cancel shadow: ${JSON.stringify(metric.ska.cancelShadow)}`,
     `- Sigma transition: ${JSON.stringify(metric.sigma.transition)}`,
     `- Hub chain_required 24h: ${JSON.stringify(metric.hub.chainRequired24h)}`,
     `- Luna weak symbol hard 24h: ${JSON.stringify(metric.luna.weakSymbolHard24h)}`,
