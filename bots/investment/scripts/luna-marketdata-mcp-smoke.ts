@@ -35,7 +35,7 @@ export async function runSmoke() {
       method: 'POST',
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     });
-    assert.equal(list.body.result.tools.length, 9);
+    assert.equal(list.body.result.tools.length, 12);
     assert.ok(list.body.result.tools.some((tool) => tool.name === 'get_toss_price'));
 
     const snapshot = await requestJson(`${baseUrl}/rpc`, {
