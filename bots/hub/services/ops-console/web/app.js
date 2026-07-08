@@ -56,6 +56,49 @@
       .replace(/'/g, '&#39;');
   }
 
+  function summarizeValue(value) {
+    if (value == null || value === '') return '-';
+    if (typeof value !== 'object') return String(value);
+    if (Array.isArray(value)) {
+      const sample = value.slice(0, 3).map((item) => summarizeValue(item)).join(', ');
+      return `배열 ${value.length}${sample ? ` · ${sample}` : ''}`;
+    }
+    const entries = Object.entries(value);
+    if (entries.length === 0) return '-';
+    const priority = ['id', 'key', 'title', 'name', 'status', 'state', 'kind', 'type', 'team', 'message', 'summary', 'count', 'ts', 'created_at'];
+    const picked = priority
+      .filter((key) => Object.prototype.hasOwnProperty.call(value, key))
+      .map((key) => [key, value[key]]);
+    const selected = (picked.length ? picked : entries).slice(0, 4);
+    const suffix = entries.length > selected.length ? ` · +${entries.length - selected.length}` : '';
+    return `${selected.map(([key, val]) => `${key}=${summarizeValue(val)}`).join(' · ')}${suffix}`;
+  }
+
+  function badgeTone(value) {
+    const normalized = String(value || '').toLowerCase();
+    if (['ok', 'done', 'pass', 'passed', 'approved', 'completed'].includes(normalized)) return 'ok';
+    if (['pending', 'warn', 'warning', 'review', 'waiting', 'blocked'].includes(normalized)) return 'warn';
+    if (['bad', 'fail', 'failed', 'error', 'rejected'].includes(normalized)) return 'bad';
+    return '';
+  }
+
+  function renderBadge(value) {
+    const text = value == null || value === '' ? 'unknown' : value;
+    const tone = badgeTone(text);
+    return `<span class="field-badge ${tone}">${escapeHtml(text)}</span>`;
+  }
+
+  function renderField(label, value, options) {
+    const formatted = options?.time ? (value ? fmtTime(value) : '--:--') : summarizeValue(value);
+    const content = options?.badge ? renderBadge(value) : escapeHtml(formatted);
+    return `
+      <div class="kv-row">
+        <dt>${escapeHtml(label)}</dt>
+        <dd>${content}</dd>
+      </div>
+    `;
+  }
+
   function setStatus(status) {
     const normalized = status === 'bad' ? 'bad' : status === 'warn' ? 'warn' : 'ok';
     statusDot.className = `dot ${normalized === 'ok' ? '' : normalized}`;
@@ -129,7 +172,7 @@
     bridgeCount.textContent = `${items.length} tasks · pending ${data.counts?.pending || 0}`;
     if (items.length === 0) {
       bridgeList.innerHTML = '<div class="empty-card">브리지 큐가 비어 있습니다.</div>';
-      bridgeDetail.textContent = '선택된 브리지 작업이 없습니다.';
+      bridgeDetail.innerHTML = '<div class="empty-card">선택된 브리지 작업이 없습니다.</div>';
       return;
     }
     for (const item of items) {
@@ -141,11 +184,40 @@
         <small>${escapeHtml(item.status || 'unknown')} · ${escapeHtml(item.verdict || 'pending')} · ${fmtTime(item.ts)}</small>
       `;
       button.addEventListener('click', () => {
-        bridgeDetail.textContent = JSON.stringify(item, null, 2);
+        bridgeDetail.innerHTML = renderBridgeDetail(item);
       });
       bridgeList.appendChild(button);
     }
-    bridgeDetail.textContent = JSON.stringify(items[0], null, 2);
+    bridgeDetail.innerHTML = renderBridgeDetail(items[0]);
+  }
+
+  function renderBridgeDetail(item) {
+    if (!item) return '<div class="empty-card">선택된 브리지 작업이 없습니다.</div>';
+    const known = new Set(['id', 'title', 'status', 'verdict', 'ts', 'note', 'summary']);
+    const extra = Object.entries(item).filter(([key, value]) => !known.has(key) && value != null && value !== '');
+    return `
+      <article class="bridge-detail-card">
+        <div class="bridge-detail-head">
+          <span class="bridge-id">${escapeHtml(item.id || 'bridge')}</span>
+          <b>${escapeHtml(item.title || item.id || '브리지 작업')}</b>
+        </div>
+        <dl class="kv-list">
+          ${renderField('상태', item.status || 'unknown', { badge: true })}
+          ${renderField('판정', item.verdict || 'pending', { badge: true })}
+          ${renderField('시간', item.ts, { time: true })}
+          ${item.note ? renderField('노트', item.note) : ''}
+          ${item.summary ? renderField('요약', item.summary) : ''}
+        </dl>
+        ${extra.length ? `
+          <details class="bridge-extra">
+            <summary>추가 정보 ${extra.length}</summary>
+            <dl class="kv-list">
+              ${extra.slice(0, 8).map(([key, value]) => renderField(key, value)).join('')}
+            </dl>
+          </details>
+        ` : ''}
+      </article>
+    `;
   }
 
   function renderGates(data) {
@@ -218,7 +290,18 @@
 
   function renderPanelRows(rows) {
     if (!rows || rows.length === 0) return '<small>표시할 데이터가 없습니다.</small>';
-    return `<pre>${escapeHtml(JSON.stringify(rows.slice(0, 6), null, 2))}</pre>`;
+    return `
+      <div class="panel-row-list">
+        ${rows.slice(0, 6).map((row, index) => `
+          <article class="panel-row-card">
+            <b>row ${index + 1}</b>
+            <dl class="kv-list">
+              ${Object.entries(row || {}).map(([key, value]) => renderField(key, value)).join('')}
+            </dl>
+          </article>
+        `).join('')}
+      </div>
+    `;
   }
 
   function renderTeamDetail(data) {

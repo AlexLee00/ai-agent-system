@@ -34,13 +34,17 @@ body {
 
 .topbar {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
   gap: 10px;
   align-items: center;
   padding: 4px 2px 14px;
 }
 
 .brand {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 21px;
   font-weight: 800;
   letter-spacing: -0.5px;
@@ -52,6 +56,8 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  max-width: 112px;
   padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -60,7 +66,15 @@ body {
   font-size: 12px;
 }
 
+.status-pill span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dot {
+  flex: 0 0 auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -413,6 +427,8 @@ h1, h2 {
 
 .gate-row small {
   grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dim);
   font-size: 11px;
   line-height: 1.35;
@@ -499,9 +515,13 @@ h1, h2 {
 }
 
 .bridge-id {
+  min-width: 0;
+  overflow: hidden;
   color: var(--amber);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bridge-item b {
@@ -532,9 +552,132 @@ h1, h2 {
   min-width: 0;
   max-height: min(360px, calc(100vh - 260px));
   overflow: auto;
-  white-space: pre-wrap;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.bridge-detail-card {
+  display: grid;
+  gap: 10px;
+}
+
+.bridge-detail-head {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.bridge-detail-head b {
+  overflow-wrap: anywhere;
+  color: var(--txt);
+  font-size: 13px;
+}
+
+.kv-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+.kv-row {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.38fr) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 0;
+  border-top: 1px solid rgba(42, 51, 66, 0.72);
+}
+
+.kv-row:first-child {
+  border-top: 0;
+}
+
+.kv-row dt {
+  color: var(--dim);
   font-size: 11px;
+}
+
+.kv-row dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--txt);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.field-badge {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 7px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(139, 149, 165, 0.08);
+  color: var(--dim);
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.field-badge.ok {
+  border-color: rgba(74, 222, 128, 0.42);
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--ok);
+}
+
+.field-badge.warn {
+  border-color: rgba(255, 180, 84, 0.42);
+  background: rgba(255, 180, 84, 0.1);
+  color: var(--amber);
+}
+
+.field-badge.bad {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--bad);
+}
+
+.bridge-extra {
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(42, 51, 66, 0.72);
+}
+
+.bridge-extra summary {
+  color: var(--amber);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bridge-extra .kv-list {
+  margin-top: 8px;
+}
+
+.panel-row-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  max-height: min(360px, calc(100vh - 260px));
+  overflow: auto;
+}
+
+.panel-row-card {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(42, 51, 66, 0.72);
+  border-radius: 14px;
+  background: rgba(14, 17, 22, 0.3);
+}
+
+.panel-row-card b {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--amber);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10px;
 }
 
 .settings-card p:not(.eyebrow) {
