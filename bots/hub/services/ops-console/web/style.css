@@ -713,6 +713,10 @@ h1, h2 {
   background: linear-gradient(110deg, rgba(255, 180, 84, 0.11), rgba(23, 28, 36, 0.92) 42%);
 }
 
+.bubble > div:nth-child(2) {
+  min-width: 0;
+}
+
 .avatar {
   display: grid;
   place-items: center;
@@ -728,6 +732,7 @@ h1, h2 {
   color: var(--dim);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 11px;
+  overflow-wrap: break-word;
 }
 
 .bubble-meta .arrow { color: var(--amber); }
@@ -736,6 +741,7 @@ h1, h2 {
   margin: 0;
   font-size: 13px;
   line-height: 1.42;
+  overflow-wrap: break-word;
 }
 
 .tag {
