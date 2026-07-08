@@ -17,8 +17,94 @@ const NAVER_MONITOR_WS_FILES = [
 ];
 const DEFAULT_NAVER_PROFILE_DIR = path.join(os.homedir(), 'Library/Application Support/Google/Chrome');
 
-function parseArgs(argv = process.argv.slice(2)) {
-  const options = {
+type AnyRecord = Record<string, any>;
+type QueryRows = AnyRecord[];
+type CollectOptions = {
+  json: boolean;
+  dryRun: boolean;
+  write: boolean;
+  days: number;
+  limit: number;
+  postId: number | null;
+  headful: boolean;
+};
+type NaverPost = {
+  title: string;
+  content: string;
+  html: string;
+  url: string;
+};
+type BlogPostRow = {
+  id: number | string;
+  title?: string;
+  content?: string;
+  html_content?: string;
+  naver_url: string;
+};
+type ContentDiff = {
+  changed: boolean;
+  originalContentHash: string;
+  finalContentHash: string;
+  diffSummary: string;
+  metrics: AnyRecord;
+  addedSamples: string[];
+  removedSamples: string[];
+};
+type FinalContentResult = AnyRecord & {
+  postId: number | string;
+  naverUrl: string;
+  status: string;
+  changed: boolean | null;
+  originalContentHash?: string | null;
+  finalContentHash?: string | null;
+  finalContentText?: string;
+  _writePayload?: AnyRecord;
+};
+type PoolLike = {
+  __rawQuery?: boolean;
+  getPool?: () => unknown;
+  query: (...args: any[]) => Promise<any>;
+  run?: (...args: any[]) => Promise<any>;
+};
+type CollectDeps = {
+  pgPool?: PoolLike;
+  fetchFinalContent?: (naverUrl: string, options: Partial<CollectOptions>) => Promise<NaverPost>;
+  recordFeedback?: (
+    postId: number | string,
+    originalTitle: string,
+    finalTitle: string,
+    originalHash: unknown,
+    finalHash: unknown,
+  ) => Promise<unknown>;
+  addVaultEntry?: (entry: AnyRecord) => Promise<any>;
+};
+type BrowserLike = {
+  newPage: () => Promise<PageLike>;
+  close: () => Promise<void>;
+  disconnect: () => Promise<void>;
+};
+type FrameLike = {
+  evaluate: (fn: () => AnyRecord) => Promise<AnyRecord>;
+};
+type PageLike = FrameLike & {
+  setDefaultNavigationTimeout: (ms: number) => void;
+  setDefaultTimeout: (ms: number) => void;
+  goto: (url: string, options: AnyRecord) => Promise<unknown>;
+  frames: () => FrameLike[];
+  mainFrame: () => FrameLike;
+  close: () => Promise<void>;
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorStack(error: unknown): string {
+  return error instanceof Error && error.stack ? error.stack : String(error);
+}
+
+function parseArgs(argv: string[] = process.argv.slice(2)): CollectOptions {
+  const options: CollectOptions = {
     json: false,
     dryRun: true,
     write: false,
@@ -43,20 +129,22 @@ function parseArgs(argv = process.argv.slice(2)) {
   return options;
 }
 
-function parsePositiveInteger(value, fallback) {
+function parsePositiveInteger(value: unknown, fallback: number): number;
+function parsePositiveInteger(value: unknown, fallback: null): number | null;
+function parsePositiveInteger(value: unknown, fallback: number | null): number | null {
   const parsed = Number.parseInt(String(value), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sha256(value) {
+function sha256(value: unknown): string {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
 }
 
-function shortHash(value) {
+function shortHash(value: unknown): string {
   return sha256(value).slice(0, 12);
 }
 
-function decodeHtmlEntities(value) {
+function decodeHtmlEntities(value: unknown): string {
   return String(value || '')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -64,11 +152,11 @@ function decodeHtmlEntities(value) {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number.parseInt(dec, 10)));
+    .replace(/&#x([0-9a-f]+);/gi, (_: string, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_: string, dec: string) => String.fromCodePoint(Number.parseInt(dec, 10)));
 }
 
-function stripHtmlToText(html) {
+function stripHtmlToText(html: unknown): string {
   return decodeHtmlEntities(String(html || '')
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
@@ -76,22 +164,22 @@ function stripHtmlToText(html) {
     .replace(/<[^>]+>/g, ' '));
 }
 
-function normalizeFinalContent(value) {
+function normalizeFinalContent(value: unknown): string {
   return String(value || '')
     .replace(/\r/g, '\n')
     .replace(/\u00a0/g, ' ')
     .split('\n')
-    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .map((line: string) => line.replace(/[ \t]+/g, ' ').trim())
     .filter(Boolean)
     .join('\n')
     .trim();
 }
 
-function normalizeTitle(value) {
+function normalizeTitle(value: unknown): string {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-function extractMetaContent(html, propertyName) {
+function extractMetaContent(html: string, propertyName: string): string {
   const escaped = propertyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const propertyRegex = new RegExp(`<meta[^>]+property=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
   const nameRegex = new RegExp(`<meta[^>]+name=["']${escaped}["'][^>]+content=["']([^"']+)["'][^>]*>`, 'i');
@@ -100,7 +188,7 @@ function extractMetaContent(html, propertyName) {
   return match ? decodeHtmlEntities(match[1]) : '';
 }
 
-function extractTagText(html, tagName) {
+function extractTagText(html: unknown, tagName: string): string {
   const regex = new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i');
   const match = String(html || '').match(regex);
   return match ? stripHtmlToText(match[1]) : '';
@@ -116,11 +204,11 @@ const PREFERRED_BODY_PATTERNS = [
   /<article\b[^>]*>([\s\S]*?)<\/article>/i
 ];
 
-function hasPreferredBodyContainer(html) {
+function hasPreferredBodyContainer(html: unknown): boolean {
   return PREFERRED_BODY_PATTERNS.some((pattern) => pattern.test(String(html || '')));
 }
 
-function extractPreferredBodyHtml(html) {
+function extractPreferredBodyHtml(html: string): string {
   const patterns = [
     ...PREFERRED_BODY_PATTERNS,
     /<body\b[^>]*>([\s\S]*?)<\/body>/i
@@ -132,7 +220,7 @@ function extractPreferredBodyHtml(html) {
   return html;
 }
 
-function extractNaverPostFromHtml(html, fallback = {}) {
+function extractNaverPostFromHtml(html: unknown, fallback: Partial<NaverPost> = {}): NaverPost {
   const source = String(html || '');
   const title = normalizeTitle(
     extractMetaContent(source, 'og:title')
@@ -150,7 +238,7 @@ function extractNaverPostFromHtml(html, fallback = {}) {
   };
 }
 
-function extractNaverPostFromPayload(payload) {
+function extractNaverPostFromPayload(payload: AnyRecord | null | undefined): NaverPost {
   const html = payload && payload.html ? String(payload.html) : '';
   if (html && hasPreferredBodyContainer(html)) {
     const post = extractNaverPostFromHtml(html, {
@@ -175,16 +263,16 @@ function extractNaverPostFromPayload(payload) {
   });
 }
 
-function tokenizeForDiff(value) {
+function tokenizeForDiff(value: unknown): string[] {
   return normalizeFinalContent(value)
     .split(/[\s,.;:!?()[\]{}"'`~<>|/\\]+/g)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
+    .map((token: string) => token.trim())
+    .filter((token: string) => token.length >= 2);
 }
 
-function uniqueSample(tokens, limit = 8) {
-  const seen = new Set();
-  const output = [];
+function uniqueSample(tokens: string[], limit = 8): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
   for (const token of tokens) {
     const key = token.toLowerCase();
     if (seen.has(key)) continue;
@@ -195,7 +283,7 @@ function uniqueSample(tokens, limit = 8) {
   return output;
 }
 
-function computeContentDiff(originalContent, finalContent) {
+function computeContentDiff(originalContent: unknown, finalContent: unknown): ContentDiff {
   const original = normalizeFinalContent(originalContent);
   const final = normalizeFinalContent(finalContent);
   const originalHash = sha256(original);
@@ -221,10 +309,10 @@ function computeContentDiff(originalContent, finalContent) {
 
   const originalTokens = tokenizeForDiff(original);
   const finalTokens = tokenizeForDiff(final);
-  const originalSet = new Set(originalTokens.map((token) => token.toLowerCase()));
-  const finalSet = new Set(finalTokens.map((token) => token.toLowerCase()));
-  const added = finalTokens.filter((token) => !originalSet.has(token.toLowerCase()));
-  const removed = originalTokens.filter((token) => !finalSet.has(token.toLowerCase()));
+  const originalSet = new Set(originalTokens.map((token: string) => token.toLowerCase()));
+  const finalSet = new Set(finalTokens.map((token: string) => token.toLowerCase()));
+  const added = finalTokens.filter((token: string) => !originalSet.has(token.toLowerCase()));
+  const removed = originalTokens.filter((token: string) => !finalSet.has(token.toLowerCase()));
   const addedSamples = uniqueSample(added);
   const removedSamples = uniqueSample(removed);
   const denominator = Math.max(originalTokens.length, 1);
@@ -252,13 +340,23 @@ function computeContentDiff(originalContent, finalContent) {
   };
 }
 
-function buildOriginalContentFromPost(post) {
+function buildOriginalContentFromPost(post: BlogPostRow): string {
   const content = normalizeFinalContent(post && post.content);
   if (content) return content;
   return normalizeFinalContent(stripHtmlToText(post && post.html_content));
 }
 
-function buildMasterEditVaultEntry({ post, originalTitle, finalTitle, diff }) {
+function buildMasterEditVaultEntry({
+  post,
+  originalTitle,
+  finalTitle,
+  diff,
+}: {
+  post: BlogPostRow;
+  originalTitle: string;
+  finalTitle: string;
+  diff: ContentDiff;
+}): AnyRecord {
   const fileHash = shortHash(`${post.id}:${diff.originalContentHash}:${diff.finalContentHash}`);
   const filePath = `library/blo/master_edit/${post.id}-${fileHash}`;
   const content = [
@@ -310,10 +408,10 @@ function readNaverMonitorWsEndpoint() {
   return process.env.BLOG_NAVER_BROWSER_WS_ENDPOINT || process.env.NAVER_BROWSER_WS_ENDPOINT || null;
 }
 
-async function withBrowser(fn, options = {}) {
+async function withBrowser<T>(fn: (browser: BrowserLike) => Promise<T>, options: Partial<CollectOptions> = {}): Promise<T> {
   const puppeteer = require('puppeteer');
   const wsEndpoint = readNaverMonitorWsEndpoint();
-  let browser = null;
+  let browser: BrowserLike | null = null;
   let owned = false;
 
   if (wsEndpoint) {
@@ -335,17 +433,17 @@ async function withBrowser(fn, options = {}) {
   }
 
   try {
-    return await fn(browser);
+    return await fn(browser as BrowserLike);
   } finally {
-    if (!browser) return;
+    if (!browser) return undefined as T;
     if (owned) await browser.close();
     else await browser.disconnect();
   }
 }
 
-async function extractFromPage(page) {
+async function extractFromPage(page: PageLike): Promise<NaverPost> {
   const payload = await page.evaluate(() => {
-    const meta = (name) => {
+    const meta = (name: string) => {
       const selector = `meta[property="${name}"], meta[name="${name}"]`;
       const el = document.querySelector(selector);
       return el ? el.getAttribute('content') || '' : '';
@@ -361,7 +459,7 @@ async function extractFromPage(page) {
   return extractNaverPostFromPayload(payload);
 }
 
-async function fetchNaverFinalContent(naverUrl, options = {}) {
+async function fetchNaverFinalContent(naverUrl: string, options: Partial<CollectOptions> = {}): Promise<NaverPost> {
   return withBrowser(async (browser) => {
     const page = await browser.newPage();
     page.setDefaultNavigationTimeout(NAV_TIMEOUT_MS);
@@ -393,7 +491,7 @@ async function fetchNaverFinalContent(naverUrl, options = {}) {
   }, options);
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -401,12 +499,12 @@ async function getDefaultPgPool() {
   return require('../../../packages/core/lib/pg-pool');
 }
 
-function normalizeDbRows(result) {
+function normalizeDbRows(result: AnyRecord[] | { rows?: AnyRecord[] } | null | undefined): QueryRows {
   if (Array.isArray(result)) return result;
   return result && Array.isArray(result.rows) ? result.rows : [];
 }
 
-async function poolQuery(pool, schema, sql, params = []) {
+async function poolQuery(pool: PoolLike, schema: string, sql: string, params: unknown[] = []): Promise<QueryRows> {
   if (pool && pool.__rawQuery) return normalizeDbRows(await pool.query(sql, params));
   if (pool && typeof pool.getPool === 'function' && typeof pool.query === 'function') {
     return normalizeDbRows(await pool.query(schema, sql, params));
@@ -414,19 +512,19 @@ async function poolQuery(pool, schema, sql, params = []) {
   return normalizeDbRows(await pool.query(sql, params));
 }
 
-async function poolRun(pool, schema, sql, params = []) {
+async function poolRun(pool: PoolLike, schema: string, sql: string, params: unknown[] = []): Promise<any> {
   if (pool && pool.__rawQuery) return pool.query(sql, params);
   if (pool && typeof pool.run === 'function') return pool.run(schema, sql, params);
   if (pool && typeof pool.getPool === 'function' && typeof pool.query === 'function') return pool.query(schema, sql, params);
   return pool.query(sql, params);
 }
 
-async function tableExists(pool, qualifiedName) {
+async function tableExists(pool: PoolLike, qualifiedName: string): Promise<boolean> {
   const rows = await poolQuery(pool, 'public', 'SELECT to_regclass($1) AS regclass', [qualifiedName]);
   return Boolean(rows && rows[0] && rows[0].regclass);
 }
 
-async function tableHasColumns(pool, schemaName, tableName, columnNames) {
+async function tableHasColumns(pool: PoolLike, schemaName: string, tableName: string, columnNames: string[]): Promise<boolean> {
   const expected = Array.from(new Set(columnNames.filter(Boolean)));
   if (expected.length === 0) return true;
   const rows = await poolQuery(pool, 'public', `
@@ -436,15 +534,15 @@ async function tableHasColumns(pool, schemaName, tableName, columnNames) {
       AND table_name = $2
       AND column_name = ANY($3::text[])
   `, [schemaName, tableName, expected]);
-  const found = new Set((rows || []).map((row) => row.column_name));
+  const found = new Set((rows || []).map((row: AnyRecord) => row.column_name));
   return expected.every((columnName) => found.has(columnName));
 }
 
-async function selectFinalContentCandidates(pool, options = {}) {
+async function selectFinalContentCandidates(pool: PoolLike, options: Partial<CollectOptions> = {}) {
   const limit = Math.max(1, Math.min(Number(options.limit || DEFAULT_LIMIT), 100));
   const days = Math.max(1, Math.min(Number(options.days || DEFAULT_DAYS), 30));
   const ledgerExists = await tableExists(pool, 'blog.final_content_checks');
-  const params = [];
+  const params: unknown[] = [];
   let whereDate = '';
   if (options.postId) {
     params.push(options.postId);
@@ -490,7 +588,7 @@ async function selectFinalContentCandidates(pool, options = {}) {
   };
 }
 
-async function upsertFinalContentCheck(pool, row) {
+async function upsertFinalContentCheck(pool: PoolLike, row: FinalContentResult): Promise<void> {
   const metadata = JSON.stringify(row.metadata || {});
   await poolRun(pool, 'blog', `
     INSERT INTO blog.final_content_checks (
@@ -535,19 +633,23 @@ async function upsertFinalContentCheck(pool, row) {
   ]);
 }
 
-async function addVaultEntry(entry) {
+async function addVaultEntry(entry: AnyRecord): Promise<any> {
   const modulePath = pathToFileURL(path.join(PROJECT_ROOT, 'bots/sigma/vault/vault-manager.ts')).href;
   const { VaultManager } = await import(modulePath);
   const vault = new VaultManager();
   return vault.addToInbox(entry);
 }
 
-async function recordMasterFeedback(postId, originalTitle, finalTitle, originalHash, finalHash) {
+async function recordMasterFeedback(postId: number | string, originalTitle: string, finalTitle: string, originalHash: unknown, finalHash: unknown) {
   const { recordFeedback } = require('../lib/feedback-learner.ts');
   return recordFeedback(postId, originalTitle, finalTitle, originalHash, finalHash);
 }
 
-async function processFinalContentCandidate(post, options = {}, deps = {}) {
+async function processFinalContentCandidate(
+  post: BlogPostRow,
+  options: Partial<CollectOptions> = {},
+  deps: CollectDeps = {},
+): Promise<FinalContentResult> {
   const originalContent = buildOriginalContentFromPost(post);
   const originalTitle = normalizeTitle(post.title);
   if (!originalContent) {
@@ -578,7 +680,7 @@ async function processFinalContentCandidate(post, options = {}, deps = {}) {
       finalContentHash: null,
       diffSummary: 'fetch_failed',
       vaultFilePath: null,
-      metadata: { error: error && error.message ? error.message : String(error) }
+      metadata: { error: errorMessage(error) }
     };
   }
 
@@ -641,7 +743,7 @@ async function processFinalContentCandidate(post, options = {}, deps = {}) {
   };
 }
 
-async function ensureWriteTables(pool) {
+async function ensureWriteTables(pool: PoolLike) {
   const masterFeedbackExists = await tableExists(pool, 'blog.master_feedback');
   const finalChecksExists = await tableExists(pool, 'blog.final_content_checks');
   const finalContentColumnsReady = finalChecksExists
@@ -655,7 +757,7 @@ async function ensureWriteTables(pool) {
   };
 }
 
-async function persistFinalContentResult(pool, result, deps = {}) {
+async function persistFinalContentResult(pool: PoolLike, result: FinalContentResult, deps: CollectDeps = {}): Promise<FinalContentResult> {
   const writableResult = { ...result };
   if (result.changed && result._writePayload) {
     const record = deps.recordFeedback || recordMasterFeedback;
@@ -688,7 +790,7 @@ async function persistFinalContentResult(pool, result, deps = {}) {
           ...writableResult.metadata,
           feedbackRecorded: true,
           vaultStored: false,
-          vaultError: error && error.message ? error.message : String(error)
+          vaultError: errorMessage(error)
         };
       }
     }
@@ -697,20 +799,20 @@ async function persistFinalContentResult(pool, result, deps = {}) {
   return writableResult;
 }
 
-function publicResult(result) {
+function publicResult(result: FinalContentResult): AnyRecord {
   const { _writePayload, finalContentText, ...rest } = result;
   if (finalContentText) rest.finalContentLength = finalContentText.length;
   return rest;
 }
 
-async function runCollectFinalContent(options = {}, deps = {}) {
+async function runCollectFinalContent(options: Partial<CollectOptions> = {}, deps: CollectDeps = {}): Promise<AnyRecord> {
   const effectiveOptions = {
     ...parseArgs([]),
     ...options
   };
   const dryRun = effectiveOptions.write !== true;
   const pool = deps.pgPool || await getDefaultPgPool();
-  const warnings = [];
+  const warnings: string[] = [];
 
   const selection = await selectFinalContentCandidates(pool, effectiveOptions);
   if (!selection.ledgerExists) warnings.push('final_content_checks_missing');
@@ -732,8 +834,8 @@ async function runCollectFinalContent(options = {}, deps = {}) {
     }
   }
 
-  const results = [];
-  for (const post of selection.rows) {
+  const results: AnyRecord[] = [];
+  for (const post of selection.rows as BlogPostRow[]) {
     const processed = await processFinalContentCandidate(post, effectiveOptions, deps);
     const persisted = dryRun ? processed : await persistFinalContentResult(pool, processed, deps);
     results.push(publicResult(persisted));
@@ -767,7 +869,7 @@ async function main() {
   } catch (error) {
     const report = {
       ok: false,
-      error: error && error.stack ? error.stack : String(error)
+      error: errorStack(error)
     };
     if (options.json) console.log(JSON.stringify(report, null, 2));
     else console.error(report.error);

@@ -468,7 +468,7 @@ export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
 function normalizeLlmCallRequest(
   body: Record<string, any>,
   context: { callerTeam?: string; agent?: string; priority?: string; traceId?: string | null },
-) {
+): AnyRecord {
   return {
     ...body,
     callerTeam: body.callerTeam || context.callerTeam || undefined,
@@ -485,7 +485,7 @@ function normalizeLlmCallRequest(
 function checkLlmRouteTarget(
   res: RouteRes,
   context: { traceId?: string | null },
-  normalizedRequest: Record<string, unknown>,
+  normalizedRequest: AnyRecord,
 ) {
   const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
   if (!targetPolicy.ok) {

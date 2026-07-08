@@ -17,11 +17,13 @@ const {
 const { getBlogGenerationRuntimeConfig } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 
-function sentence(text) {
+type AnyRecord = Record<string, any>;
+
+function sentence(text: string): string {
   return `${text} 오늘 바로 확인할 수 있게 짧게 정리했습니다.`;
 }
 
-function bodyLines(prefix, count = 11) {
+function bodyLines(prefix: string, count = 11): string {
   return Array.from({ length: count }, (_, index) =>
     sentence(`${prefix} ${index + 1}번 기준은 실제 실행 전에 문제와 결과를 한 줄로 쓰는 것입니다.`)
   ).join('\n');
@@ -97,7 +99,7 @@ function buildGeneralFixture({ title = '[IT정보와분석] Claude Code로 회�
 }
 
 async function run() {
-  const tests = [];
+  const tests: AnyRecord[] = [];
 
   assert.equal(BLOG_FORMAT_RULES.general.minChars, 3000);
   assert.equal(BLOG_FORMAT_RULES.general.goalChars, 3600);
@@ -119,7 +121,7 @@ async function run() {
 
   const abstractTitle = buildGeneralFixture({ title: '[IT정보와분석] 성공적인 업무 자동화 전략' });
   const abstractFormat = checkBlogFormatRules(abstractTitle, 'general');
-  assert.ok(abstractFormat.issues.some((issue) => issue.msg.includes('제목 추상어')));
+  assert.ok(abstractFormat.issues.some((issue: AnyRecord) => issue.msg.includes('제목 추상어')));
   tests.push({ id: 'TS-B3-3', ok: true, name: 'abstract title terms are warned' });
 
   const noExperience = buildGeneralFixture({
@@ -127,12 +129,12 @@ async function run() {
     includeExperience: false,
   });
   const noExperienceFormat = checkBlogFormatRules(noExperience, 'general');
-  assert.ok(noExperienceFormat.issues.some((issue) => issue.msg.includes('실경험')));
+  assert.ok(noExperienceFormat.issues.some((issue: AnyRecord) => issue.msg.includes('실경험')));
   tests.push({ id: 'TS-B3-4', ok: true, name: 'missing experience is warned' });
 
   const longParagraph = buildGeneralFixture({ longParagraph: true });
   const longParagraphFormat = checkBlogFormatRules(longParagraph, 'general');
-  assert.ok(longParagraphFormat.issues.some((issue) => issue.msg.includes('단락 길이')));
+  assert.ok(longParagraphFormat.issues.some((issue: AnyRecord) => issue.msg.includes('단락 길이')));
   tests.push({ id: 'TS-B3-5', ok: true, name: 'paragraphs over 3 sentences are warned' });
 
   assert.ok(goodContent.length >= 3000 && goodContent.length < 6000, `goodContent length=${goodContent.length}`);
@@ -152,7 +154,7 @@ async function run() {
   });
   assert.equal(warningQuality.passed, true);
   assert.equal(warningQuality.autoRewriteRecommended, true);
-  assert.ok(warningQuality.issues.some((issue) => issue.msg.includes('B3 제목 추상어')));
+  assert.ok(warningQuality.issues.some((issue: AnyRecord) => issue.msg.includes('B3 제목 추상어')));
   tests.push({ id: 'TS-B3-7', ok: true, name: 'B3 warnings set autoRewriteRecommended without blocking publish' });
 
   const report = {
@@ -164,11 +166,11 @@ async function run() {
   if (!report.ok) process.exit(1);
 }
 
-run().catch((error) => {
+run().catch((error: unknown) => {
   console.error(JSON.stringify({
     ok: false,
     suite: 'blo-b3-format-rules',
-    error: error && error.stack ? error.stack : String(error),
+    error: error instanceof Error && error.stack ? error.stack : String(error),
   }, null, 2));
   process.exit(1);
 });

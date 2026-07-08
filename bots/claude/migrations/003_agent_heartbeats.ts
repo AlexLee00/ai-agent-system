@@ -14,7 +14,8 @@ exports.name = 'agent_heartbeats';
 /**
  * @param {any} db
  */
-exports.up = function(db) {
+exports.up = function() {
+  const db = arguments[0];
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_heartbeats (
       agent_name TEXT PRIMARY KEY,
@@ -36,7 +37,8 @@ exports.up = function(db) {
 /**
  * @param {any} db
  */
-exports.down = function(db) {
+exports.down = function() {
+  const db = arguments[0];
   db.exec(`DROP TABLE IF EXISTS agent_heartbeats;`);
   try {
     db.prepare(`DELETE FROM schema_migrations WHERE version = ?`).run(exports.version);

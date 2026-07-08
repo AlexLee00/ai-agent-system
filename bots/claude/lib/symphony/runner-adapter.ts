@@ -3,19 +3,16 @@
 const pipeline = require('../auto-dev-pipeline');
 
 /**
- * @typedef {{ id?: unknown }} SymphonyTask
- * @typedef {{ runtimeConfig?: unknown, allowClaudeCodeEmergency?: boolean }} RunnerPlanOptions
+ * @param {{ id?: unknown }} [task]
+ * @param {{ runtimeConfig?: unknown, allowClaudeCodeEmergency?: boolean }} [options]
  */
-
-/**
- * @param {SymphonyTask} [task]
- * @param {RunnerPlanOptions} [options]
- */
-function buildSymphonyRunnerPlan(task, {
-  runtimeConfig = null,
-  allowClaudeCodeEmergency = false,
-} = {}) {
-  /** @type {SymphonyTask} */
+function buildSymphonyRunnerPlan(task = {}, options = {}) {
+  const runtimeConfig = options && typeof options === 'object' && 'runtimeConfig' in options
+    ? options.runtimeConfig
+    : null;
+  const allowClaudeCodeEmergency = options && typeof options === 'object' && 'allowClaudeCodeEmergency' in options
+    ? Boolean(options.allowClaudeCodeEmergency)
+    : false;
   const normalizedTask = task || {};
   const runtime = runtimeConfig || pipeline.resolveAutoDevRuntimeConfig({ dryRun: true });
   const modelMeta = pipeline._testOnly_buildImplementationModelMeta(runtime);
@@ -24,7 +21,7 @@ function buildSymphonyRunnerPlan(task, {
 
   return {
     mode: 'plan_only',
-    taskId: normalizedTask.id || null,
+    taskId: normalizedTask && typeof normalizedTask === 'object' && 'id' in normalizedTask ? normalizedTask.id || null : null,
     provider: modelMeta.provider,
     model: modelMeta.model,
     cliModelArg: modelMeta.cliModelArg,

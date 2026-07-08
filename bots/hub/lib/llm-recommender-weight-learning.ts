@@ -152,7 +152,7 @@ function normalizeMetricRow(row: Record<string, unknown>): LlmRoutingLearningMet
     sample: n(row.sample ?? row.count, 0),
     successRate: clamp(row.success_rate ?? row.successRate, 0, 1, 0),
     avgDurationMs: n(row.avg_duration_ms ?? row.avgDurationMs, 0),
-    p95DurationMs: n(row.p95_duration_ms ?? row.p95DurationMs, row.avg_duration_ms ?? row.avgDurationMs ?? 0),
+    p95DurationMs: n(row.p95_duration_ms ?? row.p95DurationMs, n(row.avg_duration_ms ?? row.avgDurationMs, 0)),
     avgEffectiveCostUsd: n(row.avg_effective_cost_usd ?? row.avgEffectiveCostUsd, 0),
     avgPromptChars: n(row.avg_prompt_chars ?? row.avgPromptChars, 0),
     fallbackRate: clamp(row.fallback_rate ?? row.fallbackRate, 0, 1, 0),
@@ -450,7 +450,11 @@ export async function fetchLlmRecommenderWeightLearningReport(options: {
 } = {}): Promise<LlmRecommenderWeightLearningReport> {
   const rows = options.noDb || options.queryFn === null
     ? []
-    : await fetchLlmRecommenderWeightLearningRows(options);
+    : await fetchLlmRecommenderWeightLearningRows({
+      queryFn: options.queryFn || undefined,
+      days: options.days,
+      minSamples: options.minSamples,
+    });
   return buildLlmRecommenderWeightLearningReport({
     rows,
     days: options.days,

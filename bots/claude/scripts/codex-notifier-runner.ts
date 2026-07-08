@@ -35,7 +35,8 @@ async function main() {
   try {
     await mainLoop();
   } catch (e) {
-    console.error('[codex-notifier] Fatal:', (e && e.message ? e.message : String(e)));
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[codex-notifier] Fatal:', message);
     process.exit(1);
   }
 }

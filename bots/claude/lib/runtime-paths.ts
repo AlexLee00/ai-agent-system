@@ -19,14 +19,16 @@ function logsDir() {
 /**
  * @param {...string} parts
  */
-function workspacePath(...parts) {
+function workspacePath() {
+  const parts = Array.from(arguments, String);
   return path.join(workspaceDir(), ...parts);
 }
 
 /**
  * @param {...string} parts
  */
-function logPath(...parts) {
+function logPath() {
+  const parts = Array.from(arguments, String);
   return path.join(logsDir(), ...parts);
 }
 

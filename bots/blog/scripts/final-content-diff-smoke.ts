@@ -8,7 +8,16 @@ const collector = require('./collect-final-content.ts');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
-function makePost(overrides = {}) {
+type AnyRecord = Record<string, any>;
+type BlogPostFixture = AnyRecord & {
+  id: number;
+  title: string;
+  content: string;
+  html_content: string;
+  naver_url: string;
+};
+
+function makePost(overrides: Partial<BlogPostFixture> = {}): BlogPostFixture {
   return {
     id: 101,
     title: '[에이전트 입문 5강] 초안 제목',
@@ -21,7 +30,7 @@ function makePost(overrides = {}) {
   };
 }
 
-function makeFixtureHtml({ changed = true } = {}) {
+function makeFixtureHtml({ changed = true }: { changed?: boolean } = {}) {
   const body = changed
     ? '오늘은 AI 에이전트가 도구를 선택하는 과정을 설명합니다.<br>실습에서는 작업을 쪼개고 로그를 남기는 방법을 봅니다.<br>마스터가 최종 발행 전에 독자 질문 예시를 추가했습니다.'
     : '오늘은 AI 에이전트가 도구를 선택하는 과정을 설명합니다.<br>실습에서는 작업을 쪼개고 로그를 남기는 방법을 봅니다.';
@@ -38,16 +47,16 @@ function makeFixtureHtml({ changed = true } = {}) {
   `;
 }
 
-function makeFakePool(rows) {
+function makeFakePool(rows: BlogPostFixture[]) {
   const state = {
-    completed: new Map(),
-    ledgerWrites: [],
+    completed: new Map<number, string>(),
+    ledgerWrites: [] as AnyRecord[],
     candidateSelectCount: 0,
     lastCandidateSql: ''
   };
   return {
     state,
-    async query(sql, params = []) {
+    async query(sql: string, params: any[] = []) {
       const text = String(sql);
       if (text.includes('to_regclass')) {
         return { rows: [{ regclass: params[0] }] };
@@ -63,7 +72,7 @@ function makeFakePool(rows) {
       if (text.includes('FROM blog.posts')) {
         state.candidateSelectCount += 1;
         state.lastCandidateSql = text;
-        const visibleRows = rows.filter((row) => !['changed', 'unchanged'].includes(state.completed.get(row.id)));
+        const visibleRows = rows.filter((row: BlogPostFixture) => !['changed', 'unchanged'].includes(state.completed.get(row.id) || ''));
         return { rows: visibleRows.slice(0, params[params.length - 1] || visibleRows.length) };
       }
       if (text.includes('INSERT INTO blog.final_content_checks')) {
@@ -90,7 +99,7 @@ function makeFakePool(rows) {
 }
 
 async function run() {
-  const tests = [];
+  const tests: AnyRecord[] = [];
 
   const finalPost = collector.extractNaverPostFromHtml(makeFixtureHtml({ changed: true }));
   assert.equal(finalPost.title, '[에이전트 입문 5강] 최종 제목');
@@ -140,18 +149,18 @@ async function run() {
   tests.push({ id: 'TS-B9-3', ok: true, name: 'dry-run blocks master_feedback and vault writes' });
 
   const writePool = makeFakePool([makePost()]);
-  const feedbackWrites = [];
-  const vaultWrites = [];
+  const feedbackWrites: AnyRecord[] = [];
+  const vaultWrites: AnyRecord[] = [];
   const writeReport = await collector.runCollectFinalContent(
     { json: true, write: true, dryRun: false, days: 3, limit: 20 },
     {
       pgPool: writePool,
       fetchFinalContent: async () => finalPost,
-      recordFeedback: async (postId, originalTitle, finalTitle, originalHash, finalHash) => {
+      recordFeedback: async (postId: number, originalTitle: string, finalTitle: string, originalHash: string, finalHash: string) => {
         feedbackWrites.push({ postId, originalTitle, finalTitle, originalHash, finalHash });
         return { post_id: postId };
       },
-      addVaultEntry: async (entry) => {
+      addVaultEntry: async (entry: AnyRecord) => {
         vaultWrites.push(entry);
         return { ok: true, filePath: entry.filePath };
       }
@@ -228,11 +237,11 @@ async function run() {
   if (!report.ok) process.exit(1);
 }
 
-run().catch((error) => {
+run().catch((error: unknown) => {
   console.error(JSON.stringify({
     ok: false,
     suite: 'final-content-diff',
-    error: error && error.stack ? error.stack : String(error)
+    error: error instanceof Error && error.stack ? error.stack : String(error)
   }, null, 2));
   process.exit(1);
 });

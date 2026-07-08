@@ -14,7 +14,8 @@ exports.name    = 'dexter_patterns';
 /**
  * @param {any} db
  */
-exports.up = function(db) {
+exports.up = function() {
+  const db = arguments[0];
   db.exec(`
     CREATE TABLE IF NOT EXISTS dexter_error_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -62,7 +62,8 @@ function main() {
       console.log(`  ✅ v${version} ${name} 완료`);
       applied++;
     } catch (e) {
-      console.error(`  ❌ v${version} ${name} 실패: ${e && e.message ? e.message : String(e)}`);
+      const message = e instanceof Error ? e.message : String(e);
+      console.error(`  ❌ v${version} ${name} 실패: ${message}`);
       db.close();
       process.exit(1);
     }

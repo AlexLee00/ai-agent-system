@@ -5,7 +5,16 @@ const assert = require('assert/strict');
 const collector = require('./collect-final-content.ts');
 const analyzer = require('../lib/master-edit-analyzer.ts');
 
-function makePost(overrides = {}) {
+type AnyRecord = Record<string, any>;
+type BlogPostFixture = AnyRecord & {
+  id: number;
+  title: string;
+  content: string;
+  html_content: string;
+  naver_url: string;
+};
+
+function makePost(overrides: Partial<BlogPostFixture> = {}): BlogPostFixture {
   return {
     id: 201,
     title: '[에이전트 입문 6강] 초안 제목',
@@ -28,16 +37,16 @@ function makeFinalPost() {
   };
 }
 
-function makeCollectorPool(rows) {
+function makeCollectorPool(rows: BlogPostFixture[]) {
   const state = {
-    completed: new Set(),
-    ledgerWrites: [],
+    completed: new Set<number>(),
+    ledgerWrites: [] as AnyRecord[],
     candidateSelectCount: 0
   };
   return {
     __rawQuery: true,
     state,
-    async query(sql, params = []) {
+    async query(sql: string, params: any[] = []) {
       const text = String(sql);
       if (text.includes('to_regclass')) {
         return { rows: [{ regclass: params[0] }] };
@@ -52,7 +61,7 @@ function makeCollectorPool(rows) {
       }
       if (text.includes('FROM blog.posts')) {
         state.candidateSelectCount += 1;
-        const visible = rows.filter((row) => !state.completed.has(row.id));
+        const visible = rows.filter((row: BlogPostFixture) => !state.completed.has(row.id));
         return { rows: visible.slice(0, params[params.length - 1] || visible.length) };
       }
       if (text.includes('INSERT INTO blog.final_content_checks')) {
@@ -78,14 +87,14 @@ function makeCollectorPool(rows) {
   };
 }
 
-function makeAnalyzerPool(candidates = [], styleRows = []) {
+function makeAnalyzerPool(candidates: AnyRecord[] = [], styleRows: AnyRecord[] = []) {
   const state = {
-    insertedAnalyses: [],
+    insertedAnalyses: [] as AnyRecord[],
     candidateSelectCount: 0
   };
   return {
     state,
-    async query(schema, sql, params = []) {
+    async query(schema: string, sql: string, params: any[] = []) {
       const text = String(sql);
       if (text.includes('CREATE TABLE IF NOT EXISTS blog.master_edit_analysis')) {
         return [];
@@ -93,10 +102,10 @@ function makeAnalyzerPool(candidates = [], styleRows = []) {
       if (text.includes('FROM blog.posts p') && text.includes('JOIN blog.final_content_checks')) {
         state.candidateSelectCount += 1;
         return candidates
-          .filter((row) => row.status === 'changed')
-          .filter((row) => row.changed === true)
-          .filter((row) => row.final_content_text)
-          .filter((row) => !row.analysis_exists)
+          .filter((row: AnyRecord) => row.status === 'changed')
+          .filter((row: AnyRecord) => row.changed === true)
+          .filter((row: AnyRecord) => row.final_content_text)
+          .filter((row: AnyRecord) => !row.analysis_exists)
           .slice(0, 20);
       }
       if (text.includes('INSERT INTO blog.master_edit_analysis')) {
@@ -121,7 +130,7 @@ function makeAnalyzerPool(candidates = [], styleRows = []) {
       }
       if (text.includes('SELECT primary_type, preference_rule')) {
         if (styleRows.length > 0) return styleRows;
-        return state.insertedAnalyses.map((row) => ({
+        return state.insertedAnalyses.map((row: AnyRecord) => ({
           primary_type: row.primaryType,
           preference_rule: row.preferenceRule,
           title_changed: row.titleChanged,
@@ -161,8 +170,8 @@ async function run() {
     {
       pgPool: writePool,
       fetchFinalContent: async () => finalPost,
-      recordFeedback: async (postId) => ({ post_id: postId }),
-      addVaultEntry: async (entry) => ({ ok: true, filePath: entry.filePath })
+      recordFeedback: async (postId: number) => ({ post_id: postId }),
+      addVaultEntry: async (entry: AnyRecord) => ({ ok: true, filePath: entry.filePath })
     }
   );
   assert.equal(writeReport.changed, 1);

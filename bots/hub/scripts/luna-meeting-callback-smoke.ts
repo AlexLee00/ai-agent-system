@@ -1,9 +1,7 @@
 #!/usr/bin/env tsx
 
-import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+const assert = require('node:assert/strict');
 
-const require = createRequire(import.meta.url);
 const { resolveHubCallbackTarget } = require('../lib/telegram/callback-router.ts');
 const {
   parseLunaMeetingCallbackData,
@@ -21,6 +19,13 @@ function makeReq({
   chatId = '-1001',
   data = 'luna_meeting:42:confirm',
   nested = false,
+}: {
+  secret?: string;
+  actorId?: string;
+  username?: string;
+  chatId?: string;
+  data?: string;
+  nested?: boolean;
 } = {}) {
   const callbackQuery = {
     id: 'fixture-callback-nested',
@@ -82,10 +87,10 @@ async function main() {
   assert.equal(validateLunaMeetingCallbackEnvelope(makeReq({ actorId: '999', chatId: '-100999' }), env).ok, false);
   assert.equal(validateLunaMeetingCallbackEnvelope(makeReq({ secret: 'wrong-secret', chatId: '-100999' }), env).ok, false);
 
-  const answerCalls = [];
+  const answerCalls: Array<{ url: string; options: Record<string, any>; body: Record<string, any> }> = [];
   const answerResult = await answerMeetingCallbackQuery('fixture-callback-nested', '확정됨'.repeat(80), {
     botToken: 'fixture-token',
-    fetchFn: async (url, options) => {
+    fetchFn: async (url: string, options: Record<string, any>) => {
       answerCalls.push({ url, options, body: JSON.parse(options.body) });
       return { ok: true, status: 200, json: async () => ({ ok: true }) };
     },
@@ -108,7 +113,7 @@ async function main() {
   }, null, 2));
 }
 
-main().catch((error) => {
-  console.error('[luna-meeting-callback-smoke] failed:', error?.message || error);
+main().catch((error: unknown) => {
+  console.error('[luna-meeting-callback-smoke] failed:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

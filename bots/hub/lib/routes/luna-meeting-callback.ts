@@ -7,28 +7,41 @@ const { validateLunaLiveFireCallbackEnvelope } = require('./luna-live-fire-callb
 const CALLBACK_PREFIX = 'luna_meeting:';
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
-function normalizeText(value, fallback = '') {
+type AnyRecord = Record<string, any>;
+type ParsedMeetingCallback =
+  | { ok: true; decisionId: string; action: 'confirm' | 'defer'; callbackData: string }
+  | { ok: false; error: string };
+type AnswerCallbackOptions = {
+  botToken?: string;
+  fetchFn?: (url: string, options: AnyRecord) => Promise<AnyRecord>;
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
 }
 
-function parseLunaMeetingCallbackData(callbackData) {
+function parseLunaMeetingCallbackData(callbackData: unknown): ParsedMeetingCallback {
   const normalized = normalizeText(callbackData);
   if (!normalized.startsWith(CALLBACK_PREFIX)) return { ok: false, error: 'unsupported_callback_prefix' };
   const parts = normalized.slice(CALLBACK_PREFIX.length).split(':');
   if (parts.length !== 2) return { ok: false, error: 'invalid_luna_meeting_callback_shape' };
   const [decisionId, action] = parts;
   if (!/^[0-9]+$/.test(decisionId)) return { ok: false, error: 'invalid_luna_meeting_decision_id' };
-  if (!['confirm', 'defer'].includes(action)) return { ok: false, error: 'unsupported_luna_meeting_action' };
+  if (action !== 'confirm' && action !== 'defer') return { ok: false, error: 'unsupported_luna_meeting_action' };
   if (Buffer.byteLength(normalized, 'utf8') > 64) return { ok: false, error: 'luna_meeting_callback_data_too_long' };
   return { ok: true, decisionId, action, callbackData: normalized };
 }
 
-function callbackDataFromReq(req) {
+function callbackDataFromReq(req: AnyRecord) {
   return req?.body?.callback_data || req?.body?.callback_query?.data;
 }
 
-function callbackQueryIdFromReq(req) {
+function callbackQueryIdFromReq(req: AnyRecord) {
   return normalizeText(req?.body?.callback_query_id || req?.body?.callback_query?.id, '');
 }
 
@@ -44,7 +57,7 @@ function readTelegramToken() {
   }
 }
 
-async function answerMeetingCallbackQuery(callbackQueryId, text, options = {}) {
+async function answerMeetingCallbackQuery(callbackQueryId: unknown, text: unknown, options: AnswerCallbackOptions = {}) {
   const normalizedCallbackQueryId = normalizeText(callbackQueryId, '');
   const botToken = normalizeText(options.botToken, '') || readTelegramToken();
   if (!normalizedCallbackQueryId || !botToken) return { ok: false, skipped: true, reason: 'missing_callback_query_or_token' };
@@ -63,7 +76,7 @@ async function answerMeetingCallbackQuery(callbackQueryId, text, options = {}) {
     const body = await res.json().catch(() => null);
     return { ok: res.ok && body?.ok === true, status: res.status, body };
   } catch (error) {
-    return { ok: false, error: error?.message || String(error) };
+    return { ok: false, error: errorMessage(error) };
   }
 }
 
@@ -80,7 +93,7 @@ async function loadMeetingDecisionActions(projectRoot = env.PROJECT_ROOT) {
   return import(pathToFileURL(modulePath).href);
 }
 
-function validateLunaMeetingCallbackEnvelope(req, source = process.env) {
+function validateLunaMeetingCallbackEnvelope(req: AnyRecord, source: AnyRecord = process.env) {
   return validateLunaLiveFireCallbackEnvelope(req, {
     ...source,
     HUB_CONTROL_APPROVAL_CHAT_ID: '',
@@ -88,7 +101,7 @@ function validateLunaMeetingCallbackEnvelope(req, source = process.env) {
   });
 }
 
-async function lunaMeetingCallbackRoute(req, res) {
+async function lunaMeetingCallbackRoute(req: AnyRecord, res: AnyRecord) {
   const parsedCallback = parseLunaMeetingCallbackData(callbackDataFromReq(req));
   if (!parsedCallback.ok) return res.status(400).json({ ok: false, error: parsedCallback.error });
   const callbackQueryId = callbackQueryIdFromReq(req);
@@ -128,11 +141,12 @@ async function lunaMeetingCallbackRoute(req, res) {
     });
   } catch (error) {
     await answerMeetingCallbackQuery(callbackQueryId, '회의실 버튼 처리에 실패했습니다.');
-    const status = Number(error?.statusCode || 500);
+    const failure = error as AnyRecord;
+    const status = Number(failure?.statusCode || 500);
     return res.status(status).json({
       ok: false,
-      error: error?.code || 'luna_meeting_callback_failed',
-      message: error?.message || String(error),
+      error: failure?.code || 'luna_meeting_callback_failed',
+      message: errorMessage(error),
     });
   }
 }

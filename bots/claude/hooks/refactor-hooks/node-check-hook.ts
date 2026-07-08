@@ -12,18 +12,10 @@ const path = require('node:path');
 const REPO_ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '../../../..');
 
 /**
- * @typedef {object} NodeCheckResult
- * @property {boolean} pass
- * @property {boolean} [skipped]
- * @property {string} message
- * @property {string|null} error
- */
-
-/**
  * @param {string} content
  * @returns {boolean}
  */
-function isNodeExecutableContent(content) {
+function isNodeExecutableContent(content = '') {
   const firstLine = String(content || '').split(/\r?\n/, 1)[0] || '';
   return /^#!.*\bnode\b/.test(firstLine)
     || /\brequire\s*\(/.test(content)
@@ -36,7 +28,9 @@ function isNodeExecutableContent(content) {
  * @param {string} [cwd]
  * @returns {NodeCheckResult}
  */
-function runNodeCheckHook(filePath, cwd) {
+function runNodeCheckHook() {
+  const filePath = String(arguments[0] || '');
+  const cwd = arguments[1];
   const workDir = cwd || REPO_ROOT;
   const absPath = path.isAbsolute(filePath) ? filePath : path.join(workDir, filePath);
 
@@ -64,7 +58,10 @@ function runNodeCheckHook(filePath, cwd) {
       error: null,
     };
   } catch (err) {
-    const error = String(err && (err.stderr || err.stdout || err.message) || err);
+    const stderr = err && typeof err === 'object' && 'stderr' in err ? err.stderr : null;
+    const stdout = err && typeof err === 'object' && 'stdout' in err ? err.stdout : null;
+    const message = err && typeof err === 'object' && 'message' in err ? err.message : null;
+    const error = String(stderr || stdout || message || err);
     console.warn(`[node-check-hook] node --check failed: ${path.basename(absPath)}`);
     return {
       pass: false,

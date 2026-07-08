@@ -96,8 +96,9 @@ async function persistPrReviewScore(params: Record<string, unknown>, scores: Rec
       scores.verdict,
     ]);
     return { ok: true, prNumber };
-  } catch (error) {
-    return { ok: false, skipped: true, reason: 'pr_review_scores_unavailable', error: error?.message || String(error) };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, skipped: true, reason: 'pr_review_scores_unavailable', error: message };
   }
 }
 

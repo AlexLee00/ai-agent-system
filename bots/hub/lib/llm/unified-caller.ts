@@ -346,7 +346,7 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
   const budgetedChain = applyTokenBudgetToFallbackChain(selectorChain.chain || [], tokenBudget);
   const resiliencePlan = _buildResilienceFallbackPlan(budgetedChain, selectorChain, req);
-  const cooldownPlan = _rateLimitCooldownPlan(resiliencePlan.chain, req.abstractModel);
+  const cooldownPlan = _rateLimitCooldownPlan<RouteEntry>(resiliencePlan.chain as RouteEntry[], req.abstractModel);
   const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
   const attempts: AnyRecord[] = [];
 
@@ -428,15 +428,16 @@ async function _callWithProfileChain(req: LlmRequest, profile: AnyRecord, team: 
   ].filter(_isProviderSupported);
 
   const tokenBudget = req._tokenBudget || resolveTokenBudget(req);
-  const budgetedChain = applyTokenBudgetToFallbackChain(chain, tokenBudget);
-  const cooldownPlan = _rateLimitCooldownPlan(budgetedChain, req.abstractModel);
+  const budgetedChain = applyTokenBudgetToFallbackChain(chain as RouteEntry[], tokenBudget);
+  const cooldownPlan = _rateLimitCooldownPlan<RouteEntry>(budgetedChain, req.abstractModel);
   const chainTimeout = Math.min(profile.timeout_ms || req.timeoutMs || 30_000, tokenBudget.perAttemptTimeoutMs || 30_000);
   const attempts: AnyRecord[] = [];
 
   for (const route of cooldownPlan.chain) {
-    const selectedRoute = _normalizeRoute(route, req.abstractModel);
+    const routeKey = typeof route === 'string' ? route : _chainEntryToRoute(route);
+    const selectedRoute = _normalizeRoute(routeKey, req.abstractModel);
     const chainEntry = _withCooldownOverride(route, cooldownPlan.ignoreCooldown);
-    const result = await _callRoute(route, req, route.timeoutMs || chainTimeout, chainEntry);
+    const result = await _callRoute(routeKey, req, route.timeoutMs || chainTimeout, chainEntry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
       const success = {
@@ -956,7 +957,7 @@ function _routeToProvider(route: string): string {
   return route;
 }
 
-function _normalizeRoute(route: string, abstractModel = 'anthropic_haiku'): string {
+function _normalizeRoute(route: string, abstractModel: unknown = 'anthropic_haiku'): string {
   const sonnetReplacement = _claudeCodeSonnetReplacementRoute(route);
   if (sonnetReplacement) return sonnetReplacement;
 

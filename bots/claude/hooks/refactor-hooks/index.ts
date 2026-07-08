@@ -16,8 +16,16 @@ export type { PreRefactorResult } from './pre-refactor-hook.ts';
 export { runTypeCheckHook } from './type-check-hook.ts';
 export type { TypeCheckResult } from './type-check-hook.ts';
 
-export { runNodeCheckHook } from './node-check-hook.ts';
-export type { NodeCheckResult } from './node-check-hook.ts';
+const nodeCheckHook = require('./node-check-hook.ts');
+
+export type NodeCheckResult = {
+  pass: boolean;
+  skipped?: boolean;
+  message: string;
+  error: string | null;
+};
+
+export const runNodeCheckHook = nodeCheckHook.runNodeCheckHook as (filePath: string, cwd?: string) => NodeCheckResult;
 
 export { runTestGreenHook } from './test-green-hook.ts';
 export type { TestGreenResult } from './test-green-hook.ts';
@@ -33,7 +41,6 @@ export type { VerifyLoopResult, VerifyFn, FixFn } from './verify-loop-hook.ts';
 
 import { runPreRefactorHook } from './pre-refactor-hook.ts';
 import { runTypeCheckHook } from './type-check-hook.ts';
-import { runNodeCheckHook } from './node-check-hook.ts';
 import { runTestGreenHook } from './test-green-hook.ts';
 import { runComplexityHook } from './complexity-hook.ts';
 import { runDependencyHook } from './dependency-hook.ts';

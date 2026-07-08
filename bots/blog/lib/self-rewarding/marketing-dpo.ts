@@ -13,6 +13,33 @@ const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
 const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 const { isBlogMarketingEnabled } = require('../marketing-enabled.ts');
 
+type AnyRecord = Record<string, any>;
+type PostMetric = AnyRecord & {
+  id: string | number;
+  title: string;
+  category: string;
+  persona?: string;
+  content_length?: number;
+  views_7d?: number;
+  engagement_rate?: number;
+  revenue_attributed_krw?: number;
+  score?: number;
+};
+type ScoredPost = PostMetric & {
+  score: number;
+};
+type DpoPair = {
+  post_a_id: string;
+  post_b_id: string;
+  metric_winner: string;
+  metric_type: string;
+  features: AnyRecord;
+};
+type FailureTaxonomyBucket = {
+  post_ids: string[];
+  count: number;
+};
+
 function isEnabled() {
   return isBlogMarketingEnabled() && process.env.BLOG_DPO_ENABLED === 'true';
 }
@@ -59,7 +86,7 @@ async function fetchPostsWithMetrics(periodDays = 30) {
  * 포스팅 성과 종합 점수 계산 (0~100)
  * views_7d: 40%, engagement_rate: 40%, revenue_attributed: 20%
  */
-function calcPostScore(post) {
+function calcPostScore(post: PostMetric): number {
   const viewScore = Math.min(Number(post.views_7d || 0) / 1000, 1) * 40;
   const engScore = Math.min(Number(post.engagement_rate || 0) * 100, 1) * 40;
   const revScore = Math.min(Number(post.revenue_attributed_krw || 0) / 100000, 1) * 20;
@@ -69,7 +96,7 @@ function calcPostScore(post) {
 /**
  * 포스팅 제목에서 후킹 스타일 분류
  */
-function classifyHookStyle(title) {
+function classifyHookStyle(title: unknown): string {
   if (!title) return 'unknown';
   const text = String(title);
   if (/\d+가지|\d+개|TOP\s*\d+/i.test(text)) return 'list';
@@ -90,22 +117,20 @@ async function buildPreferencePairs(periodDays = 30) {
   const posts = await fetchPostsWithMetrics(periodDays);
   if (posts.length < 4) return [];
 
-  const scored = posts.map((p) => ({ ...p, score: calcPostScore(p) }));
+  const scored: ScoredPost[] = posts.map((p: PostMetric) => ({ ...p, score: calcPostScore(p) }));
 
   // 카테고리별 그룹
-  const byCategory = {};
+  const byCategory: Record<string, ScoredPost[]> = {};
   for (const post of scored) {
     const cat = post.category || 'uncategorized';
     if (!byCategory[cat]) byCategory[cat] = [];
     byCategory[cat].push(post);
   }
 
-  const pairs = [];
-  for (const [, catPosts] of /** @type {Array<[string, any[]]>} */ (Object.entries(byCategory))) {
-    // @ts-ignore Object.entries over dynamic buckets still narrows to unknown in checkJs
+  const pairs: DpoPair[] = [];
+  for (const [, catPosts] of Object.entries(byCategory)) {
     if (catPosts.length < 2) continue;
 
-    // @ts-ignore Object.entries over dynamic buckets still narrows to unknown in checkJs
     const sorted = [...catPosts].sort((a, b) => b.score - a.score);
     const cutTop = Math.max(1, Math.ceil(sorted.length * 0.2));
     const cutBot = Math.max(1, Math.ceil(sorted.length * 0.2));
@@ -150,7 +175,7 @@ async function buildPreferencePairs(periodDays = 30) {
  * LLM으로 성공/실패 포스팅 쌍의 원인 분석
  * 실제 LLM 호출 실패 시 규칙 기반 fallback
  */
-async function analyzePairWithLlm(preferred, rejected) {
+async function analyzePairWithLlm(preferred: Partial<PostMetric>, rejected: Partial<PostMetric>) {
   try {
     const { callBlogFast } = require('../blog-llm-gateway.ts');
     const prompt = `마케팅 포스팅 A(성공) vs B(실패) 비교 분석.
@@ -189,7 +214,7 @@ JSON만 응답:
 /**
  * DPO 선호 쌍 DB 저장 + 성공 패턴 라이브러리 업데이트
  */
-async function saveDpoPairs(pairs, reasonings) {
+async function saveDpoPairs(pairs: DpoPair[], reasonings: AnyRecord[] | null | undefined) {
   if (!pairs.length) return 0;
 
   let saved = 0;
@@ -236,8 +261,8 @@ async function saveDpoPairs(pairs, reasonings) {
 /**
  * 실패 Taxonomy 업데이트
  */
-async function updateFailureTaxonomy(pairs) {
-  const failureMap = {};
+async function updateFailureTaxonomy(pairs: DpoPair[]) {
+  const failureMap: Record<string, FailureTaxonomyBucket> = {};
 
   for (const pair of pairs) {
     const hookB = pair.features?.hook_type_b || 'unknown';
@@ -250,7 +275,6 @@ async function updateFailureTaxonomy(pairs) {
   }
 
   for (const [category, data] of Object.entries(failureMap)) {
-    const typedData = /** @type {any} */ (data);
     try {
       await pgPool.query('blog', `
         INSERT INTO blog.failure_taxonomy
@@ -263,13 +287,10 @@ async function updateFailureTaxonomy(pairs) {
           last_seen_at = NOW()
       `, [
         category,
-        // @ts-ignore failure taxonomy map value is dynamic runtime data
-        typedData.post_ids,
-        // @ts-ignore failure taxonomy map value is dynamic runtime data
-        JSON.stringify({ hook_type: category.replace('poor_hook_', ''), count: typedData.count }),
+        data.post_ids,
+        JSON.stringify({ hook_type: category.replace('poor_hook_', ''), count: data.count }),
         `${category.replace('poor_hook_', '')} 스타일 제목은 engagement가 낮음 — 대안 훅 스타일 사용`,
-        // @ts-ignore failure taxonomy map value is dynamic runtime data
-        typedData.count,
+        data.count,
       ]);
     } catch {
       // 무시
@@ -317,7 +338,7 @@ async function fetchFailureTaxonomy(limit = 10) {
 /**
  * 카테고리별 최고 성과 후킹 스타일 반환 (DPO 힌트)
  */
-async function getBestHookStyleByCategory(category) {
+async function getBestHookStyleByCategory(category: string) {
   try {
     const rows = await pgPool.query('blog', `
       SELECT features->>'hook_type_a' AS hook_type, AVG((features->>'score_a')::numeric) AS avg_score, COUNT(*) AS cnt
@@ -408,7 +429,7 @@ async function runDpoLearningCycle(periodDays = 30) {
  * @param failureTaxonomy - fetchFailureTaxonomy() 결과
  * @returns 0~100 DPO 점수 (높을수록 성공 패턴과 일치)
  */
-function calculateDpoScore(candidate, successPatterns, failureTaxonomy) {
+function calculateDpoScore(candidate: AnyRecord, successPatterns: AnyRecord[], failureTaxonomy: AnyRecord[]) {
   let score = 50; // 기본 점수
 
   if (!candidate?.topic && !candidate?.title) return score;

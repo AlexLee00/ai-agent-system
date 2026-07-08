@@ -63,7 +63,7 @@ function readConfig(): SelectorTimeoutProfilesConfig {
   if (!cachedConfig) {
     cachedConfig = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   }
-  return cachedConfig;
+  return cachedConfig as SelectorTimeoutProfilesConfig;
 }
 
 function selectorEnvName(selectorKey: string): string {
