@@ -89,6 +89,24 @@ async function ensureSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS luna_nextbar_execution_shadow (
+      id SERIAL PRIMARY KEY,
+      run_id INTEGER REFERENCES vectorbt_backtest_runs(id) ON DELETE SET NULL,
+      symbol TEXT NOT NULL,
+      signal_ts TIMESTAMPTZ,
+      same_bar_close_price DOUBLE PRECISION,
+      next_bar_price DOUBLE PRECISION,
+      return_delta DOUBLE PRECISION,
+      trade_count_delta INTEGER,
+      metadata JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await db.run(`
+    CREATE INDEX IF NOT EXISTS idx_luna_nextbar_execution_shadow_symbol_time
+      ON luna_nextbar_execution_shadow (symbol, created_at DESC)
+  `);
 }
 
 function scoreRow(row = {}, attention = 'manual', context = {}) {
@@ -122,6 +140,20 @@ function hasUsableTrades(row = {}) {
   return safeNumber(row?.total_trades) > 0;
 }
 
+function rowParam(row = {}, key: string) {
+  return row?.[key] ?? row?.params?.[key] ?? null;
+}
+
+function comparisonKey(row = {}) {
+  return JSON.stringify({
+    label: row?.label || null,
+    strategy: rowParam(row, 'strategy'),
+    tp_pct: rowParam(row, 'tp_pct'),
+    sl_pct: rowParam(row, 'sl_pct'),
+    params: row?.params || {},
+  });
+}
+
 function selectTopResult(rows = [], attention = 'manual', context = {}) {
   return [...rows]
     .filter((row) => (!row?.status || row.status === 'ok') && hasUsableTrades(row))
@@ -135,20 +167,22 @@ function selectFallbackResult(rows = [], attention = 'manual', context = {}) {
 }
 
 async function persistRows(symbol, market, days, attention, source, rows = [], context = {}) {
-  if (!Array.isArray(rows) || rows.length === 0) return 0;
+  if (!Array.isArray(rows) || rows.length === 0) return [];
   await ensureSchema();
+  const persisted = [];
 
   for (const row of rows) {
-    await db.run(`
+    const result = await db.run(`
       INSERT INTO vectorbt_backtest_runs (
         symbol, days, tp_pct, sl_pct, label, status,
         sharpe, total_return, max_drawdown, win_rate, total_trades, metadata
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+      RETURNING id
     `, [
       symbol,
       days,
-      row.tp ?? null,
-      row.sl ?? null,
+      rowParam(row, 'tp_pct'),
+      rowParam(row, 'sl_pct'),
       row.label || null,
       row.status || 'ok',
       row.sharpe_ratio ?? null,
@@ -171,9 +205,123 @@ async function persistRows(symbol, market, days, attention, source, rows = [], c
         error: row.error || null,
       }),
     ]);
+    const inserted = Array.isArray(result?.rows) ? result.rows[0] : null;
+    if (inserted?.id != null) persisted.push({ runId: inserted.id, row });
   }
 
-  return rows.length;
+  return persisted;
+}
+
+async function persistNextbarShadowRows({
+  symbol,
+  market,
+  days,
+  attention,
+  source,
+  context = {},
+  sameBarRows = [],
+  nextbarRows = [],
+  persistedRows = [],
+} = {}) {
+  if (!Array.isArray(sameBarRows) || !Array.isArray(nextbarRows) || persistedRows.length === 0) {
+    return {
+      ok: false,
+      persisted: 0,
+      matched: 0,
+      compared: Array.isArray(persistedRows) ? persistedRows.length : 0,
+      nextbarRows: Array.isArray(nextbarRows) ? nextbarRows.length : 0,
+      unmatched: Array.isArray(persistedRows) ? persistedRows.length : 0,
+      reason: 'missing_rows',
+    };
+  }
+  const nextbarByKey = new Map(nextbarRows.map((row) => [comparisonKey(row), row]));
+  let persisted = 0;
+  const unmatchedRows = [];
+  for (const item of persistedRows) {
+    const sameBar = item.row || {};
+    const nextbar = nextbarByKey.get(comparisonKey(sameBar));
+    if (!nextbar) {
+      unmatchedRows.push({
+        runId: item.runId ?? null,
+        label: sameBar.label || null,
+        params: sameBar.params || {},
+        reason: 'nextbar_param_not_found',
+      });
+      continue;
+    }
+    const sameReturn = safeNumber(sameBar.total_return, 0);
+    const nextReturn = safeNumber(nextbar.total_return, 0);
+    const sameTrades = safeNumber(sameBar.total_trades, 0);
+    const nextTrades = safeNumber(nextbar.total_trades, 0);
+    await db.run(`
+      INSERT INTO luna_nextbar_execution_shadow (
+        run_id, symbol, signal_ts, same_bar_close_price, next_bar_price,
+        return_delta, trade_count_delta, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+    `, [
+      item.runId,
+      symbol,
+      null,
+      null,
+      null,
+      nextReturn - sameReturn,
+      Math.round(nextTrades - sameTrades),
+      JSON.stringify({
+        market,
+        days,
+        attention,
+        source,
+        context,
+        label: sameBar.label || null,
+        params: sameBar.params || {},
+        sameBar: {
+          executionModel: sameBar.execution_model || null,
+          executionPriceModel: sameBar.execution_price_model || null,
+          totalReturn: sameBar.total_return ?? null,
+          totalTrades: sameBar.total_trades ?? null,
+        },
+        nextbar: {
+          executionModel: nextbar.execution_model || null,
+          executionPriceModel: nextbar.execution_price_model || null,
+          totalReturn: nextbar.total_return ?? null,
+          totalTrades: nextbar.total_trades ?? null,
+        },
+      }),
+    ]);
+    persisted += 1;
+  }
+  return {
+    ok: persisted > 0 && unmatchedRows.length === 0,
+    persisted,
+    matched: persisted,
+    compared: persistedRows.length,
+    nextbarRows: nextbarRows.length,
+    unmatched: unmatchedRows.length,
+    unmatchedRows: unmatchedRows.slice(0, 20),
+  };
+}
+
+async function runAndPersistNextbarShadow(symbol, days, context = {}) {
+  const nextbarRows = runVectorBtGrid(symbol, days, {
+    env: {
+      LUNA_BT_NEXT_BAR_EXECUTION_ENABLED: 'true',
+      LUNA_BT_GRID_RETURN_ALL: 'true',
+    },
+  });
+  if (!Array.isArray(nextbarRows)) {
+    return {
+      ok: false,
+      persisted: 0,
+      reason: nextbarRows?.status || 'nextbar_backtest_error',
+      details: nextbarRows,
+    };
+  }
+  return persistNextbarShadowRows({
+    ...context,
+    symbol,
+    days,
+    nextbarRows,
+  });
 }
 
 function classifyBacktestQuality({ market, usableRows = [], topResult = null, context = {} }) {
@@ -324,7 +472,20 @@ export async function runActiveBacktest({
   const usableRows = raw.filter((row) => (!row?.status || row.status === 'ok') && hasUsableTrades(row));
   const topResult = selectTopResult(raw, attention, context) || selectFallbackResult(raw, attention, context);
   const quality = classifyBacktestQuality({ market, usableRows, topResult, context });
-  const persisted = await persistRows(symbol, market, effectiveDays, attention, source, raw, context);
+  const persistedRows = await persistRows(symbol, market, effectiveDays, attention, source, raw, context);
+  const persisted = persistedRows.length;
+  const nextbarShadow = await runAndPersistNextbarShadow(symbol, effectiveDays, {
+    market,
+    attention,
+    source,
+    context,
+    sameBarRows: raw,
+    persistedRows,
+  }).catch((error) => ({
+    ok: false,
+    persisted: 0,
+    reason: error?.message || String(error),
+  }));
   const payload = {
     ok: true,
     status: quality.status,
@@ -338,6 +499,7 @@ export async function runActiveBacktest({
     topResult,
     usableResultCount: usableRows.length,
     totalResults: raw.length,
+    nextbarShadow,
   };
 
   await syncActiveBacktestRuntimeState(symbol, market, payload).catch(() => null);

@@ -103,6 +103,17 @@ async function main() {
   assert.ok(LUNA_COMPONENT_REGISTRY_SEED.length >= 31);
   const seedDryRun = await seedLunaComponentRegistry({ dryRun: true });
   assert.equal(seedDryRun.seeded, LUNA_COMPONENT_REGISTRY_SEED.length);
+  const seedByComponent = Object.fromEntries(LUNA_COMPONENT_REGISTRY_SEED.map((row) => [row.component, row]));
+  for (const component of [
+    'market-deployment-gate',
+    'regime-engine-hmm',
+    'backtest-nextbar-execution',
+    'meeting-room-orchestrator',
+  ]) {
+    assert.equal(seedByComponent[component].criteria.placeholder, undefined);
+    assert.ok(seedByComponent[component].criteria.evidence);
+  }
+  assert.equal(seedByComponent.mapek, undefined);
   const sampleAttached = await attachSampleCounts([
     { component: 'rl-policy-shadow', sample_count: 0 },
   ], {
@@ -123,6 +134,24 @@ async function main() {
   assert.equal(expansionSampleAttached[0].sample_count, 11);
   assert.equal(expansionSampleAttached[1].sample_count, 7);
   assert.equal(sampleSqls.length, 1);
+  const stalledResolutionSampleSqls = [];
+  const stalledResolutionSampleAttached = await attachSampleCounts([
+    { component: 'market-deployment-gate', sample_count: 0 },
+    { component: 'regime-engine-hmm', sample_count: 0 },
+    { component: 'backtest-nextbar-execution', sample_count: 0 },
+    { component: 'meeting-room-orchestrator', sample_count: 0 },
+  ], {}, {
+    queryFn: async (sql: string) => {
+      stalledResolutionSampleSqls.push(sql);
+      if (sql.includes('luna_market_gate_history')) return [{ count: 4035 }];
+      if (sql.includes('luna_regime_calibration')) return [{ count: 47 }];
+      if (sql.includes('luna_nextbar_execution_shadow')) return [{ count: 6 }];
+      if (sql.includes('luna_meeting_sessions')) return [{ count: 328 }];
+      throw new Error(`unexpected_sample_sql:${sql}`);
+    },
+  });
+  assert.deepEqual(stalledResolutionSampleAttached.map((row) => row.sample_count), [4035, 47, 6, 328]);
+  assert.equal(stalledResolutionSampleSqls.length, 4);
 
   const registryPreservation = await withSmokeRollback(async (storeDeps: any) => {
     const registeredAt = '2026-01-02T03:04:05.000Z';
@@ -169,6 +198,15 @@ async function main() {
       promotion_criteria: { metrics: ['availability'] },
       sample_count: 99,
       status: 'proposed',
+      registered_at: oldDate,
+    },
+    {
+      component: 'recovered-stalled',
+      current_mode: 'shadow',
+      target_mode: 'advisory',
+      promotion_criteria: { metrics: ['availability'], evidence: 'fixture' },
+      sample_count: 4,
+      status: 'stalled',
       registered_at: oldDate,
     },
     {
@@ -225,6 +263,8 @@ async function main() {
   const assessmentByComponent = Object.fromEntries(evaluation.evaluated.map((item) => [item.component, item]));
   assert.equal(assessmentByComponent['metrics-only'].proposal.type, 'measurement_only');
   assert.equal(assessmentByComponent['metrics-only'].status, 'proposed');
+  assert.equal(assessmentByComponent['recovered-stalled'].proposal.type, 'measurement_only');
+  assert.equal(assessmentByComponent['recovered-stalled'].status, 'active');
   assert.equal(assessmentByComponent['sample-accumulating'].proposal.type, 'accumulating');
   assert.equal(assessmentByComponent['sample-accumulating'].proposal.gate, 'sample');
   assert.equal(assessmentByComponent['duration-accumulating'].proposal.type, 'accumulating');
@@ -236,7 +276,7 @@ async function main() {
   assert.equal(assessmentByComponent['halt-recommended'].proposal.type, 'halt_proposal');
   assert.equal(assessmentByComponent['halt-recommended'].status, 'halted');
   assert.deepEqual(evaluation.assessmentSummary, {
-    measurementOnly: 1,
+    measurementOnly: 2,
     accumulating: 2,
     evidencePending: 1,
     stalled: 1,

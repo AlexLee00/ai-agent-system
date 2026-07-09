@@ -13,6 +13,7 @@ const META_LABEL_TIMEOUT_MS = Math.max(30_000, Number(process.env.LUNA_META_LABE
 
 function runVectorBtCommand(args = [], options = {}) {
   const timeoutMs = Math.max(5_000, Number(options.timeoutMs || DEFAULT_VECTORBT_TIMEOUT_MS));
+  const env = options.env ? { ...process.env, ...options.env } : process.env;
   try {
     const raw = execFileSync(
       'python3',
@@ -21,6 +22,7 @@ function runVectorBtCommand(args = [], options = {}) {
         cwd: SCRIPT_DIR,
         encoding: 'utf8',
         timeout: timeoutMs,
+        env,
       },
     );
     return JSON.parse(raw);

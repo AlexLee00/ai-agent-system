@@ -1435,6 +1435,12 @@ def grid_search(df, deps: dict):
     return results
 
 
+def limit_grid_results(results: list[dict]) -> list[dict]:
+    if bool_env("LUNA_BT_GRID_RETURN_ALL", False):
+        return results
+    return results[:10]
+
+
 def _pbo_none(status: str, reasons: list[str], n_blocks: int, n_trials: int = 0, n_combinations: int = 0) -> dict:
     return {
         "pbo": None,
@@ -1940,7 +1946,7 @@ def main():
                 split_result = None if wf_result is not None else select_on_is_evaluate_on_oos(df, deps)
                 result = [item for item in [wf_result, split_result] if item is not None]
             else:
-                result = grid_search(df, deps)[:10]
+                result = limit_grid_results(grid_search(df, deps))
             if args.pbo:
                 try:
                     pbo_result = compute_pbo_cscv(df, deps)

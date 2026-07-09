@@ -60,6 +60,10 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'strategy-exit-shadow': `SELECT COUNT(*)::int AS count FROM luna_strategy_exit_shadow`,
   'regime-expansion-shadow-sim': `SELECT COUNT(*)::int AS count FROM luna_strategy_signals WHERE COALESCE((details->>'regimeExpansionGain')::boolean, false) IS TRUE`,
   // pattern-relaxation-shadow-sim currently has no durable gain rows; add a sample query only after relaxed gains are persisted.
+  'market-deployment-gate': `SELECT COUNT(*)::int AS count FROM luna_market_gate_history`,
+  'regime-engine-hmm': `SELECT COUNT(*)::int AS count FROM luna_regime_calibration`,
+  'backtest-nextbar-execution': `SELECT COUNT(*)::int AS count FROM luna_nextbar_execution_shadow`,
+  'meeting-room-orchestrator': `SELECT COUNT(*)::int AS count FROM luna_meeting_sessions WHERE status = 'closed'`,
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
   'meta-neural-reflexion': `SELECT COUNT(*)::int AS count FROM luna_failure_reflexions`,
 });
@@ -120,7 +124,8 @@ function statusForProposal(row: any, proposal: any) {
   if (proposal?.type === 'stalled_report') return 'stalled';
   // CODEX-1 assessment states are derived JSON only. Do not persist
   // measurement_only/accumulating/evidence_pending into the constrained status column.
-  return normalizeRegistryStatus(row.status);
+  const current = normalizeRegistryStatus(row.status);
+  return current === 'stalled' ? 'active' : current;
 }
 
 function buildAssessmentSummary(evaluated: any[] = []) {

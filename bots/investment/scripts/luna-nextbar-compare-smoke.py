@@ -129,6 +129,14 @@ def main(as_json: bool = False):
     for metric in ["total_return", "win_rate", "total_trades", "max_drawdown"]:
         assert_close(off.get(metric), off_false.get(metric), f"off regression {metric}")
 
+    grid_fixture = [{"idx": idx} for idx in range(12)]
+    with patched_env({"LUNA_BT_GRID_RETURN_ALL": None}):
+        default_limited = module.limit_grid_results(grid_fixture)
+    with patched_env({"LUNA_BT_GRID_RETURN_ALL": "true"}):
+        full_grid = module.limit_grid_results(grid_fixture)
+    assert len(default_limited) == 10
+    assert len(full_grid) == 12
+
     entries = deps["pd"].Series([False, True, False, True, False], index=df.index[:5])
     exits = deps["pd"].Series([False, False, True, True, False], index=df.index[:5])
     shifted_entries, shifted_exits = module.apply_next_bar_signal_masks(entries, exits)
@@ -157,6 +165,8 @@ def main(as_json: bool = False):
         "gridExecutionModel": grid[0].get("execution_model"),
         "walkForwardExecutionModel": wf.get("execution_model"),
         "walkForwardExecutionPriceModel": wf.get("execution_price_model"),
+        "defaultGridLimit": len(default_limited),
+        "fullGridLimit": len(full_grid),
         "shiftedEntryIndex": str(shifted_entries[shifted_entries].index[0]),
         "lastRowEntry": bool(shifted_entries.iloc[-1]),
         "lastRowExit": bool(shifted_exits.iloc[-1]),
