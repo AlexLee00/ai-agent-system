@@ -444,6 +444,7 @@ const naverConfirmedCycleService = createNaverConfirmedCycleService({
   delay,
   log,
   saveJson,
+  deleteFile: (filePath: string) => fs.unlinkSync(filePath),
   scrapeNewestBookingsFromList,
   processConfirmedCandidates: ({ newest, page }: { newest: any[]; page: any }) =>
     naverCandidateService.processConfirmedCandidates({ newest, page }),

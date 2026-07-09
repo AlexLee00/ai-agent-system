@@ -1,6 +1,7 @@
 type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
 type SaveJsonFn = (path: string, data: unknown) => void;
+type DeleteFileFn = (path: string) => void;
 type ScrapeNewestBookingsFromListFn = (page: any, limit?: number) => Promise<Record<string, any>[]>;
 type ProcessConfirmedCandidatesFn = (args: { newest: Record<string, any>[]; page: any }) => Promise<void>;
 
@@ -8,6 +9,7 @@ export type CreateNaverConfirmedCycleServiceDeps = {
   delay: DelayFn;
   log: Logger;
   saveJson: SaveJsonFn;
+  deleteFile?: DeleteFileFn;
   scrapeNewestBookingsFromList: ScrapeNewestBookingsFromListFn;
   processConfirmedCandidates: ProcessConfirmedCandidatesFn;
 };
@@ -17,9 +19,60 @@ export function createNaverConfirmedCycleService(deps: CreateNaverConfirmedCycle
     delay,
     log,
     saveJson,
+    deleteFile,
     scrapeNewestBookingsFromList,
     processConfirmedCandidates,
   } = deps;
+
+  function todayKst(): string {
+    return new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  }
+
+  function buildTodayUseDateConfirmedUrl(sourceUrl: string): string {
+    const today = todayKst();
+    const url = new URL(sourceUrl);
+    if (!url.pathname.includes('booking-list-view')) {
+      url.pathname = `${url.pathname.replace(/\/+$/, '')}/booking-list-view`;
+    }
+    url.search = '';
+    url.searchParams.set('bookingStatusCodes', 'RC03');
+    url.searchParams.set('dateDropdownType', 'RANGE');
+    url.searchParams.set('startDateTime', today);
+    url.searchParams.set('endDateTime', today);
+    url.searchParams.set('dateFilter', 'USEDATE');
+    url.searchParams.set('searchValueCode', 'USER_NAME');
+    return url.toString();
+  }
+
+  function getTodayUseDateConfirmedSnapshotPath(workspace: string): string {
+    return `${workspace}/naver-bookings-use-date-full.json`;
+  }
+
+  async function saveTodayUseDateConfirmedSnapshot(page: any, sourceUrl: string, workspace: string): Promise<Record<string, any>[]> {
+    const useDateUrl = buildTodayUseDateConfirmedUrl(sourceUrl);
+    log(`🔎 오늘 이용 확정 USEDATE 리스트 이동: ${useDateUrl}`);
+    await page.goto(useDateUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.waitForNetworkIdle({ idleTime: 1200, timeout: 30000 }).catch(() => null);
+    await delay(500);
+    const useDateRows = await scrapeNewestBookingsFromList(page, 100);
+    const useDateFile = getTodayUseDateConfirmedSnapshotPath(workspace);
+    saveJson(useDateFile, useDateRows);
+    log(`💾 오늘 이용 확정 데이터 저장: ${useDateFile} (${useDateRows.length}건)`);
+    return useDateRows;
+  }
+
+  function invalidateTodayUseDateConfirmedSnapshot(workspace: string): void {
+    if (!deleteFile) return;
+    const useDateFile = getTodayUseDateConfirmedSnapshotPath(workspace);
+    try {
+      deleteFile(useDateFile);
+      log(`🧹 오늘 이용 확정 캐시 무효화: ${useDateFile}`);
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') {
+        log(`⚠️ 오늘 이용 확정 캐시 무효화 실패: ${err.message}`);
+      }
+    }
+  }
 
   async function processConfirmedCycle({
     page,
@@ -92,6 +145,13 @@ export function createNaverConfirmedCycleService(deps: CreateNaverConfirmedCycle
       const bizId = naverUrl.match(/\/place\/(\d+)/)?.[1] || naverUrl.split('/').filter(Boolean).pop();
       confirmedHref = `https://new.smartplace.naver.com/bizes/place/${bizId}/booking-list-view?status=CONFIRMED&date=${today}`;
       log(`⚠️ 오늘 확정 링크 자동 탐색 실패 → URL 직접 구성: ${confirmedHref}`);
+    }
+
+    try {
+      await saveTodayUseDateConfirmedSnapshot(page, confirmedHref || naverUrl, workspace);
+    } catch (err: any) {
+      log(`⚠️ 오늘 이용 확정 데이터 저장 실패: ${err.message}`);
+      invalidateTodayUseDateConfirmedSnapshot(workspace);
     }
 
     if (confirmedCount === 0) {

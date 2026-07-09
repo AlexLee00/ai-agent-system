@@ -23,7 +23,8 @@ const { buildReservationCliInsight } = require('../../lib/cli-insight');
 const { parseNaverDateTimeText } = require('../../lib/naver-list-scrape-service');
 const { getReadableReservationRuntimeFile } = require('../../lib/runtime-paths');
 
-const BOOKINGS_FILE = getReadableReservationRuntimeFile('naver-bookings-full.json');
+const DEFAULT_BOOKINGS_FILE = getReadableReservationRuntimeFile('naver-bookings-full.json');
+const USE_DATE_BOOKINGS_FILE = getReadableReservationRuntimeFile('naver-bookings-use-date-full.json');
 
 const ARGS = parseArgs(process.argv);
 const queryMemory = createAgentMemory({ agentId: 'reservation.pickko-query', team: 'reservation' });
@@ -96,6 +97,36 @@ function formatDate(dateStr: string): string {
   const days = ['일', '월', '화', '수', '목', '금', '토'];
   return `${d.getMonth() + 1}월 ${d.getDate()}일(${days[d.getDay()]})`;
 }
+
+function todayKst(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+function fileMtimeDateKst(filePath: string): string | null {
+  try {
+    return fs.statSync(filePath).mtime.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+  } catch (_e: unknown) {
+    return null;
+  }
+}
+
+function selectBookingsFile(): string {
+  if (ARGS.date !== undefined) {
+    const resolved = resolveDate(ARGS.date);
+    const today = todayKst();
+    if (
+      resolved &&
+      resolved === today &&
+      fs.existsSync(USE_DATE_BOOKINGS_FILE) &&
+      fileMtimeDateKst(USE_DATE_BOOKINGS_FILE) === today
+    ) {
+      return USE_DATE_BOOKINGS_FILE;
+    }
+  }
+  return DEFAULT_BOOKINGS_FILE;
+}
+
+const BOOKINGS_FILE = selectBookingsFile();
 
 if (!fs.existsSync(BOOKINGS_FILE)) {
   fail('예약 데이터 없음 (naver-monitor가 실행 중인지 확인해 주세요)');

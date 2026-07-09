@@ -5,7 +5,6 @@ const { createPickkoSavePrecheckService } = require('../lib/pickko-save-precheck
 
 async function main() {
   const previous = process.env.PICKKO_SAVE_PRECHECK_STEP_TIMEOUT_MS;
-  process.env.PICKKO_SAVE_PRECHECK_STEP_TIMEOUT_MS = '1';
 
   const service = createPickkoSavePrecheckService({
     log: () => {},
@@ -16,7 +15,34 @@ async function main() {
     },
   });
 
+  let fieldLookupCount = 0;
+  const alignedPage = {
+    evaluate: async () => ({
+      startDate: '2026-07-09',
+      startTime: '11:00',
+      endDate: '2026-07-09',
+      endTime: '11:55',
+    }),
+    $: async () => {
+      fieldLookupCount += 1;
+      return null;
+    },
+  };
+
+  const alignedResult = await service.alignExpectedTimes(alignedPage, {
+    startDate: '2026-07-09',
+    startTime: '11:00',
+    endDate: '2026-07-09',
+    endTime: '12:00',
+  });
+  assert.equal(fieldLookupCount, 0, 'already aligned fields should not be retyped through the browser');
+  assert.equal(alignedResult.skipped, true);
+  assert.equal(alignedResult.endTime, '11:55');
+
+  process.env.PICKKO_SAVE_PRECHECK_STEP_TIMEOUT_MS = '1';
+
   const page = {
+    evaluate: async () => new Promise(() => {}),
     $: async () => new Promise(() => {}),
   };
 

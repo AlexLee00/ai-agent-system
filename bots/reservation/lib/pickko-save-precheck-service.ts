@@ -76,8 +76,43 @@ export function createPickkoSavePrecheckService({
     const expectedStartTime = String(expected?.startTime || '').trim();
     const expectedEndDate = String(expected?.endDate || expectedStartDate || '').trim();
     const expectedEndTime = String(expected?.endTime || '').trim();
+    const acceptedEndTimes = buildAcceptedEndTimes(expectedEndTime);
 
-    const setField = async (selector: string, value: string) => {
+    const currentValues = await page.evaluate(`
+      (() => {
+        const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
+        return {
+          startDate: clean(document.querySelector('#start_date')?.value),
+          startTime: clean(document.querySelector('#start_time')?.value),
+          endDate: clean(document.querySelector('#end_date')?.value),
+          endTime: clean(document.querySelector('#end_time')?.value),
+        };
+      })()
+    `).catch(() => null);
+
+    if (
+      currentValues &&
+      (!expectedStartDate || currentValues.startDate === expectedStartDate) &&
+      (!expectedStartTime || currentValues.startTime === expectedStartTime) &&
+      (!expectedEndDate || currentValues.endDate === expectedEndDate) &&
+      (!expectedEndTime || acceptedEndTimes.has(currentValues.endTime))
+    ) {
+      const result = {
+        startDateChanged: false,
+        startTimeChanged: false,
+        endDateChanged: false,
+        endTimeChanged: false,
+        startDate: currentValues.startDate,
+        startTime: currentValues.startTime,
+        endDate: currentValues.endDate,
+        endTime: currentValues.endTime,
+        skipped: true,
+      };
+      log(`🛠️ 저장 전 폼 시간 보정 생략: ${JSON.stringify(result)}`);
+      return result;
+    }
+
+    const setField = async (selector: string, value: string, acceptedValues?: Set<string>) => {
       if (!value) return { changed: false, value: '' };
       const handle = await page.$(selector).catch(() => null);
       if (!handle) {
@@ -86,6 +121,10 @@ export function createPickkoSavePrecheckService({
 
       const prevHandle = await handle.getProperty('value').catch(() => null);
       const prev = String((await prevHandle?.jsonValue().catch(() => '')) || '').trim();
+      const accepted = acceptedValues || new Set([value]);
+      if (accepted.has(prev)) {
+        return { changed: false, value: prev };
+      }
       await page.click(selector, { clickCount: 3 }).catch(async () => {
         await handle.click({ force: true }).catch(() => {});
       });
@@ -101,7 +140,7 @@ export function createPickkoSavePrecheckService({
     const startDateResult = await setField('#start_date', expectedStartDate);
     const startTimeResult = await setField('#start_time', expectedStartTime);
     const endDateResult = await setField('#end_date', expectedEndDate);
-    const endTimeResult = await setField('#end_time', expectedEndTime);
+    const endTimeResult = await setField('#end_time', expectedEndTime, acceptedEndTimes);
 
     const result = {
       startDateChanged: startDateResult.changed,
