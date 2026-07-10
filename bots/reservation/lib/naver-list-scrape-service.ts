@@ -1,6 +1,11 @@
 type Logger = (message: string) => void;
 type DelayFn = (ms: number) => Promise<void>;
 
+const LIST_READY_TIMEOUT_MS = 5000;
+const LIST_RETRY_DELAYS_MS = [1000, 2000];
+const LIST_ROW_SELECTOR = 'a[class*="contents-user"]';
+const LIST_EMPTY_SELECTOR = '[class*="nodata-area"], [class*="nodata"], .nodata';
+
 export type CreateNaverListScrapeServiceDeps = {
   delay: DelayFn;
   log: Logger;
@@ -33,7 +38,9 @@ export function buildBookingStatusListUrl(sourceUrl: string, {
 }): string {
   if (!sourceUrl) throw new Error('sourceUrl_required');
   const url = new URL(sourceUrl);
-  if (!url.pathname.includes('booking-list-view')) {
+  if (url.pathname.includes('booking-calendar-view')) {
+    url.pathname = url.pathname.replace(/\/booking-calendar-view(?:\/.*)?$/, '/booking-list-view');
+  } else if (!url.pathname.includes('booking-list-view')) {
     url.pathname = `${url.pathname.replace(/\/+$/, '')}/booking-list-view`;
   }
   url.search = '';
@@ -118,11 +125,7 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
       dateDropdownType,
     });
     log(`🔎 [네이버상태목록] ${statusCode} ${startDate}~${endDate || addDaysKst(startDate, daysAhead)}`);
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-    await page.waitForSelector(
-      'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
-      { timeout: 20000 },
-    ).catch(() => null);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(500);
     return scrapeNewestBookingsFromList(page, limit);
   }
@@ -135,18 +138,48 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
     return scrapeBookingStatusList(page, sourceUrl, { ...options, statusCode: 'RC03' });
   }
 
-  async function scrapeNewestBookingsFromList(page: any, limit = 5): Promise<any[]> {
-    await page.waitForSelector(
-      'a[class*="contents-user"], [class*="nodata-area"], [class*="nodata"], .nodata',
-      { timeout: 20000 },
-    );
-
-    await page.waitForFunction(() => {
-      const rows = document.querySelectorAll('a[class*="contents-user"]');
-      const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
+  async function readListState(page: any): Promise<{ rowCount: number; noDataVisible: boolean; dateFilter: string }> {
+    return page.evaluate((selectors: { row: string; empty: string }) => {
+      const rows = document.querySelectorAll(selectors.row);
+      const noData = document.querySelector(selectors.empty);
       const noDataVisible = !!noData && (noData as HTMLElement).offsetParent !== null;
-      return rows.length > 0 || noDataVisible;
-    }, { timeout: 20000 });
+      let dateFilter = '';
+      try {
+        dateFilter = new URL(location.href).searchParams.get('dateFilter') || '';
+      } catch (_error) {}
+      return { rowCount: rows.length, noDataVisible, dateFilter };
+    }, { row: LIST_ROW_SELECTOR, empty: LIST_EMPTY_SELECTOR });
+  }
+
+  async function waitForListState(page: any): Promise<{ rowCount: number; noDataVisible: boolean; dateFilter: string }> {
+    let lastState = { rowCount: 0, noDataVisible: false, dateFilter: '' };
+
+    for (let attempt = 0; attempt <= LIST_RETRY_DELAYS_MS.length; attempt += 1) {
+      await page.waitForFunction((selectors: { row: string; empty: string }) => {
+        const rows = document.querySelectorAll(selectors.row);
+        const noData = document.querySelector(selectors.empty);
+        const noDataVisible = !!noData && (noData as HTMLElement).offsetParent !== null;
+        return rows.length > 0 || noDataVisible;
+      }, { timeout: LIST_READY_TIMEOUT_MS }, { row: LIST_ROW_SELECTOR, empty: LIST_EMPTY_SELECTOR }).catch(() => null);
+
+      lastState = await readListState(page);
+      if (lastState.rowCount > 0 || lastState.noDataVisible) return lastState;
+
+      if (attempt < LIST_RETRY_DELAYS_MS.length) {
+        const retryNumber = attempt + 1;
+        log(`⚠️ [네이버상태목록] 행 0건·빈 목록 미확인 → ${LIST_RETRY_DELAYS_MS[attempt]}ms 후 재조회 (${retryNumber}/${LIST_RETRY_DELAYS_MS.length})`);
+        await delay(LIST_RETRY_DELAYS_MS[attempt]);
+        if (typeof page.reload === 'function') {
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+        }
+      }
+    }
+
+    throw new Error(`NAVER_LIST_NOT_READY: rows=${lastState.rowCount}, noDataVisible=${lastState.noDataVisible}`);
+  }
+
+  async function scrapeNewestBookingsFromList(page: any, limit = 5): Promise<any[]> {
+    const listState = await waitForListState(page);
 
     const scraped = await page.evaluate((n: number) => {
       const sameDayFallbackDate = (() => {
@@ -254,6 +287,10 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
 
       return out;
     }, limit);
+
+    if (listState.rowCount > 0 && scraped.length === 0 && listState.dateFilter !== 'CANCELDATE') {
+      throw new Error(`NAVER_LIST_PARSE_EMPTY: rows=${listState.rowCount}, parsed=0`);
+    }
 
     return scraped.map((booking: any) => {
       const parsed = parseNaverDateTimeText(booking?.raw?.dateTimeText, booking?.date);

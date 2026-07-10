@@ -11,11 +11,12 @@ function fakeText(text) {
   return { textContent: text };
 }
 
-function fakeRow() {
+function fakeRow({ malformed = false } = {}) {
   return {
     href: 'https://partner.booking.naver.com/bizes/596871/booking-list-view/bookings/1280609777',
     textContent: '확정이도원000-0000-00001280609777오전 9:00~10:30A1룸',
     querySelector(selector) {
+      if (malformed) return null;
       if (selector.includes('name__')) return fakeText('이도원');
       if (selector.includes('phone__')) return fakeText('000-0000-0000');
       if (selector.includes('book-date__')) return fakeText('오전 9:00~10:30');
@@ -26,9 +27,11 @@ function fakeRow() {
   };
 }
 
-function createFakePage({ dateFilter = 'USEDATE' } = {}) {
+function createFakePage({ dateFilter = 'USEDATE', delayedRows = false, emptyState = false, reloadNeverReady = false, malformedRows = false } = {}) {
+  let ready = !delayedRows;
   return {
-    waitForSelector: async () => {},
+    goto: async () => { ready = !delayedRows; },
+    reload: async () => { if (!reloadNeverReady) ready = true; },
     waitForFunction: async () => {},
     evaluate: async (fn, arg) => {
       const previousDocument = global.document;
@@ -38,11 +41,11 @@ function createFakePage({ dateFilter = 'USEDATE' } = {}) {
       };
       global.document = {
         querySelector(selector) {
-          if (selector.includes('nodata')) return null;
+          if (selector.includes('nodata')) return emptyState ? { offsetParent: {} } : null;
           return null;
         },
         querySelectorAll(selector) {
-          if (selector.includes('contents-user')) return [fakeRow()];
+          if (selector.includes('contents-user')) return ready && !emptyState ? [fakeRow({ malformed: malformedRows })] : [];
           return [];
         },
       };
@@ -87,6 +90,36 @@ async function main() {
     cancelDateRows.length,
     0,
     'CANCELDATE pages must not use the cancel date as the reservation date when row text omits the use date',
+  );
+
+  const delayedRows = await service.scrapeConfirmedStatusList(
+    createFakePage({ delayedRows: true }),
+    'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    { startDate: '2026-07-04', endDate: '2026-07-04', limit: 10 },
+  );
+  assert.equal(delayedRows.length, 1, 'a transient zero-row page should be retried before parsing');
+
+  const emptyRows = await service.scrapeConfirmedStatusList(
+    createFakePage({ emptyState: true }),
+    'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    { startDate: '2026-07-04', endDate: '2026-07-04', limit: 10 },
+  );
+  assert.deepStrictEqual(emptyRows, [], 'an explicit empty state is a valid zero-row result');
+
+  await assert.rejects(
+    service.scrapeConfirmedStatusList(
+      createFakePage({ delayedRows: true, emptyState: false, reloadNeverReady: true }),
+      'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+      { startDate: '2026-07-04', endDate: '2026-07-04', limit: 10 },
+    ),
+    /NAVER_LIST_NOT_READY/,
+    'an empty DOM without explicit nodata must fail closed',
+  );
+
+  await assert.rejects(
+    service.scrapeNewestBookingsFromList(createFakePage({ malformedRows: true }), 10),
+    /NAVER_LIST_PARSE_EMPTY/,
+    'raw rows with no parseable fields must fail closed',
   );
 
   console.log('✅ naver list scrape DOM smoke ok');

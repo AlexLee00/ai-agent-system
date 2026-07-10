@@ -72,6 +72,16 @@ async function main() {
   assert.ok(!statusUrl.includes('countFilter=CANCELLED'));
   assert.ok(!statusUrl.includes('status=CANCELLED'));
 
+  const calendarStatusUrl = buildBookingStatusListUrl(
+    'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    { statusCode: 'RC03', startDate: '2099-01-01', endDate: '2099-01-31' },
+  );
+  assert.equal(
+    new URL(calendarStatusUrl).pathname,
+    '/bizes/596871/booking-list-view',
+    'calendar source URL must normalize to the list endpoint, not a nested calendar/list path',
+  );
+
   const cancelled = booking({ bookingId: 'cancelled-but-alive' });
   const aliveGate = createService({
     cancelledRows: [cancelled],
