@@ -54,6 +54,8 @@
     "check:luna-rl-sigma": "node --check scripts/runtime-sigma-luna-feed.ts && node --check scripts/runtime-sigma-luna-feedback.ts && node --check a2a/skills/luna-evolution-meta-learning.ts && node --check a2a/skills/sigma-to-luna-feedback.ts && node --check a2a/skills/multi-agent-meta-learning.ts && node --check a2a/server.ts && plutil -lint launchd/ai.sigma.luna-feed-15min.plist launchd/ai.sigma.luna-feedback-daily-0600.plist && tsx scripts/runtime-sigma-luna-feed.ts --json --limit=5 && tsx scripts/runtime-sigma-luna-feedback.ts --json --limit=5",
     "vault:classify": "tsx scripts/runtime-sigma-vault-classifier.ts --json",
     "vault:search": "tsx scripts/runtime-sigma-vault-search.ts --json",
+    "vault:knowledge-graph-report": "tsx scripts/runtime-sigma-vault-knowledge-graph.ts",
+    "smoke:vault-knowledge-graph": "tsx scripts/sigma-vault-knowledge-graph-smoke.ts",
     "vault:inbox": "tsx vault/inbox-processor.ts",
     "vault:week3-report": "tsx scripts/week3-vault-summary-report.ts",
     "week4:master-report": "tsx scripts/week4-master-promotion-report.ts",
