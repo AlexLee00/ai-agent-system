@@ -116,7 +116,6 @@ async function main() {
   assert.match(autoRouterSource, /result\.mode !== 'shadow'/);
   assert.match(autoRouterSource, /jsonb_build_object\('cluster_recommendation'/);
   assert.match(autoRouterSource, /routing_request_id/);
-  assert(autoRouterSource.indexOf('INSERT INTO hub.llm_auto_routing_log') < autoRouterSource.indexOf('buildClusterRoutingRecommendation(input)'));
 
   const clusterSource = fs.readFileSync(path.resolve(__dirname, '../lib/llm/cluster-routing-shadow.ts'), 'utf8');
   assert.match(clusterSource, /routing_request_id/);

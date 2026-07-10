@@ -66,6 +66,13 @@ export interface AutoRouterResult {
   resolvedModel: string;
 }
 
+type AutoRouterDeps = {
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  query?: (schema: string, sql: string, params: unknown[]) => Promise<any[]>;
+  buildClusterRoutingRecommendation?: (input: AutoRouterInput) => Promise<unknown | null>;
+  pendingWrites?: Promise<void>[];
+};
+
 // ─── 복잡도 평가 ─────────────────────────────────────────────────────────────
 
 function evaluateComplexity(input: AutoRouterInput): { complexity: Complexity; score: number; signals: Record<string, number | boolean | string> } {
@@ -158,8 +165,9 @@ function evaluateComplexity(input: AutoRouterInput): { complexity: Complexity; s
 
 // ─── 메인 라우터 ─────────────────────────────────────────────────────────────
 
-export function routeModel(input: AutoRouterInput): AutoRouterResult {
-  const modeEnv = (process.env.LLM_AUTO_ROUTING_ENABLED || '').toLowerCase().trim();
+export function routeModel(input: AutoRouterInput, deps: AutoRouterDeps = {}): AutoRouterResult {
+  const env = deps.env || process.env;
+  const modeEnv = (env.LLM_AUTO_ROUTING_ENABLED || '').toLowerCase().trim();
   const mode: AutoRouterResult['mode'] =
     modeEnv === 'true' ? 'active'
     : modeEnv === 'shadow' ? 'shadow'
@@ -187,16 +195,18 @@ export function routeModel(input: AutoRouterInput): AutoRouterResult {
   };
 
   // 비동기 로깅 (실패해도 무시)
-  _logRouting(input, result).catch(() => {});
+  const pendingWrite = _logRouting(input, result, deps).catch(() => {});
+  if (Array.isArray(deps.pendingWrites)) deps.pendingWrites.push(pendingWrite);
 
   return result;
 }
 
 // ─── DB 로깅 ─────────────────────────────────────────────────────────────────
 
-async function _logRouting(input: AutoRouterInput, result: AutoRouterResult): Promise<void> {
+async function _logRouting(input: AutoRouterInput, result: AutoRouterResult, deps: AutoRouterDeps = {}): Promise<void> {
   try {
-    const rows = await pgPool.query('public', `
+    const query = deps.query || ((schema: string, sql: string, params: unknown[]) => pgPool.query(schema, sql, params));
+    const rows = await query('public', `
       INSERT INTO hub.llm_auto_routing_log
         (agent, caller_team, task_type, task_complexity, prompt_chars,
          context_chars, auto_model, manual_model, mode, model_overridden,
@@ -223,9 +233,11 @@ async function _logRouting(input: AutoRouterInput, result: AutoRouterResult): Pr
     const routingId = Array.isArray(rows) ? rows[0]?.id : null;
     if (result.mode !== 'shadow' || !routingId) return;
 
-    const clusterRecommendation = await buildClusterRoutingRecommendation(input);
+    const buildRecommendation = deps.buildClusterRoutingRecommendation
+      || ((request: AutoRouterInput) => buildClusterRoutingRecommendation(request, { env: deps.env || process.env }));
+    const clusterRecommendation = await buildRecommendation(input);
     if (!clusterRecommendation) return;
-    await pgPool.query('public', `
+    await query('public', `
       UPDATE hub.llm_auto_routing_log
       SET routing_signals = COALESCE(routing_signals, '{}'::jsonb)
         || jsonb_build_object('cluster_recommendation', $2::jsonb)

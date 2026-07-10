@@ -11,7 +11,7 @@ import {
   recordAutoRoutingResult,
   resolveAutoRoutingMode,
 } from '../lib/routes/llm.ts';
-import { updateRoutingResult } from '../lib/llm/llm-auto-router.ts';
+import { routeModel, updateRoutingResult } from '../lib/llm/llm-auto-router.ts';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
@@ -202,12 +202,83 @@ async function assertConcurrentRequestsKeepOwnLabels() {
   assert.equal(legacyQueryCalls, 0);
 }
 
+async function assertUnifiedRouteRecordsClusterRecommendation() {
+  const pendingWrites = [];
+  const queries = [];
+  const request = fixtureRequest({ callerTeam: 'hub', agent: 'archer' });
+  const env = {
+    LLM_AUTO_ROUTING_ENABLED: 'shadow',
+    LLM_CLUSTER_ROUTING_SHADOW_ENABLED: 'true',
+  };
+  const recommendation = {
+    version: 'v1',
+    cluster_id: 'cluster-1-of-1',
+    cluster_count: 1,
+    sample_count: 0,
+    recommended_model: null,
+    model_sample_count: 0,
+    success_rate: null,
+    avg_latency_ms: null,
+    avg_cost_usd: null,
+    reason: 'insufficient_samples',
+    embedding_model: 'test-embed',
+    embedding_dimensions: 2,
+    signature_dimensions: 2,
+    signature_key: 'v1:test-embed:2:2',
+    embedding_signature: [1, 0],
+  };
+
+  const decision = applyAutoRoutingShadowWiring(request, {
+    env,
+    routeModel: (input) => routeModel(input, {
+      env,
+      pendingWrites,
+      buildClusterRoutingRecommendation: async () => recommendation,
+      query: async (_schema, sql, params) => {
+        queries.push({ sql, params });
+        if (/INSERT INTO hub\.llm_auto_routing_log/.test(sql)) return [{ id: 41 }];
+        if (/UPDATE hub\.llm_auto_routing_log/.test(sql)) return [{ id: 41 }];
+        throw new Error(`unexpected query: ${sql}`);
+      },
+    }),
+  });
+
+  assert.equal(decision.mode, 'shadow');
+  assert.equal(decision.request, request);
+  assert.equal(decision.request.abstractModel, 'anthropic_haiku');
+  await Promise.all(pendingWrites);
+  assert.equal(queries.length, 2);
+  assert.match(queries[0].sql, /INSERT INTO hub\.llm_auto_routing_log/);
+  assert.match(queries[1].sql, /jsonb_build_object\('cluster_recommendation'/);
+  assert.equal(JSON.parse(queries[1].params[1]).signature_key, recommendation.signature_key);
+
+  const fallbackWrites = [];
+  const fallbackQueries = [];
+  const fallbackDecision = applyAutoRoutingShadowWiring(request, {
+    env,
+    routeModel: (input) => routeModel(input, {
+      env,
+      pendingWrites: fallbackWrites,
+      buildClusterRoutingRecommendation: async () => null,
+      query: async (_schema, sql) => {
+        fallbackQueries.push(sql);
+        return /INSERT INTO hub\.llm_auto_routing_log/.test(sql) ? [{ id: 42 }] : [];
+      },
+    }),
+  });
+  await Promise.all(fallbackWrites);
+  assert.equal(fallbackDecision.request, request);
+  assert.equal(fallbackQueries.length, 1);
+  assert.match(fallbackQueries[0], /INSERT INTO hub\.llm_auto_routing_log/);
+}
+
 export async function runLlmAutoRoutingShadowWiringSmoke() {
   assertDisabledModeDoesNotCallRouteModel();
   assertShadowDoesNotMutateRequest();
   assertActiveOnlyInjectsWhenNoManualModel();
   await assertResultUpdateMapping();
   await assertConcurrentRequestsKeepOwnLabels();
+  await assertUnifiedRouteRecordsClusterRecommendation();
   return {
     ok: true,
     smoke: 'llm-auto-routing-shadow-wiring',
@@ -215,6 +286,8 @@ export async function runLlmAutoRoutingShadowWiringSmoke() {
     shadowNoMutation: true,
     activeManualPreserved: true,
     resultUpdateMapped: true,
+    unifiedClusterRecordPath: true,
+    clusterFailureFallsBackWithoutMutation: true,
   };
 }
 
