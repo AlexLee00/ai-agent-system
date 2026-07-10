@@ -21,6 +21,7 @@ import http from 'http';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { Registry, Gauge, Counter, collectDefaultMetrics } from 'prom-client';
+import { createCompletedBarTracker } from './completed-bar-tracker.js';
 import { resolveTradingViewWsUrl } from './tradingview-url.js';
 import {
   DEFAULT_LONG_RETRY_GIVEUP_MS,
@@ -112,6 +113,7 @@ const latestBars = new Map(); // key: `${symbol}:${timeframe}` → { symbol, tim
 const seriesIds = new Map(); // key → TradingView series id
 const chartSessionIds = new Map(); // key → TradingView chart session id
 const chartSessionKeys = new Map(); // chart session id → key
+const completedBarTracker = createCompletedBarTracker();
 const pendingSubscribeKeys = new Set();
 let nextClientId = 1;
 
@@ -289,6 +291,7 @@ function removeSubscription(key, reason = 'removed') {
   sendTvUnsubscribe(sub.symbol, sub.timeframe);
   subscriptions.delete(key);
   latestBars.delete(key);
+  completedBarTracker.delete(key);
   seriesIds.delete(key);
   const chartSessionId = chartSessionIds.get(key);
   if (chartSessionId) chartSessionKeys.delete(chartSessionId);
@@ -540,15 +543,18 @@ function processOhlcvUpdate(msg) {
 }
 
 function processBarsForSubscription(key, sub, bars) {
-  for (const bar of bars) {
+  const barPayloads = bars.map((bar) => {
     const [timestamp, open, high, low, close, volume] = bar.v;
-    const barPayload = {
+    return {
       symbol: sub.symbol,
       timeframe: sub.timeframe,
       timestamp: Math.floor(timestamp * 1000),
       open, high, low, close, volume,
     };
+  });
+  const completedBars = completedBarTracker.observe(key, barPayloads);
 
+  for (const barPayload of barPayloads) {
     sub.lastBarAt = Date.now();
     sub.staleStrikes = 0;
     latestBars.set(key, {
@@ -561,8 +567,11 @@ function processBarsForSubscription(key, sub, bars) {
     barPublishedCounter.inc({ symbol: sub.symbol, timeframe: sub.timeframe });
 
     broadcastToClients(barPayload);
-    publishToHub(sub.symbol, sub.timeframe, barPayload);
     triggerRuntimeReevaluation(sub.symbol, sub.timeframe, barPayload).catch(() => {});
+  }
+
+  for (const completedBar of completedBars) {
+    publishToHub(sub.symbol, sub.timeframe, completedBar);
   }
 }
 
