@@ -91,6 +91,33 @@ async function runReceiptFastScanSkipsPaidDateFallback() {
       if (options.statusKeyword === '취소' || options.statusKeyword === '환불') {
         return { entries: [], fetchOk: true };
       }
+      if (options.statusKeyword === '결제완료' && options.endDate === date) {
+        return {
+          entries: [
+            {
+              name: '오늘이용',
+              phoneRaw: '01062290586',
+              date: '2026-07-06',
+              start: '18:30',
+              end: '20:50',
+              room: '스터디룸B',
+              amount: 0,
+              statusText: '결제완료',
+            },
+            {
+              name: '범위밖',
+              phoneRaw: '01058948656',
+              date: '2026-07-05',
+              start: '22:00',
+              end: '23:20',
+              room: '스터디룸A2',
+              amount: 10500,
+              statusText: '결제완료',
+            },
+          ],
+          fetchOk: true,
+        };
+      }
       return {
         entries: Array.from({ length: 20 }, (_unused, index) => ({
           name: `범위${index}`,
@@ -125,8 +152,24 @@ async function runReceiptFastScanSkipsPaidDateFallback() {
     'receipt fast-scan entry must be merged into block candidates',
   );
   assert.ok(
+    result.toBlockEntries.some((entry) => entry.phoneRaw === '01062290586' && entry.date === '2026-07-06'),
+    'same-day paid scan must catch today-use entries missed by the range first page',
+  );
+  assert.ok(
+    !result.toBlockEntries.some((entry) => entry.phoneRaw === '01058948656' && entry.date === '2026-07-05'),
+    'same-day paid scan must ignore rows outside the requested use date',
+  );
+  assert.ok(
     fetchCalls.some((call) => call.options.sortBy === 'sd_regdate' && call.options.receiptDate === '2026-07-06'),
     'receipt fast-scan should run before the long paid range fallback',
+  );
+  assert.ok(
+    fetchCalls.some((call) => (
+      call.options.statusKeyword === '결제완료'
+        && call.options.endDate === '2026-07-06'
+        && call.date === '2026-07-06'
+    )),
+    'same-day paid scan should run before deciding whether to skip the long date fallback',
   );
   assert.equal(
     fetchCalls.filter((call) => (

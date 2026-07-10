@@ -386,7 +386,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
         const saved = blockSaved[index];
         if (!saved) return false;
         if (saved.naverBlocked) return false;
-        if (saved.naverUnblockedAt) return false;
+        if (saved.naverUnblockedAt) return true;
         if (!isRetryBackoffElapsed(saved, nowForRetry)) return false;
         return !isKioskEntryEnded(entry, nowForRetry);
       });

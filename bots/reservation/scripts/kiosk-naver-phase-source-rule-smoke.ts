@@ -256,6 +256,63 @@ async function main() {
     'preserved already-blocked rows should not publish retryable failure alerts',
   );
 
+  const reblockAfterFalseUnblockPhones = [];
+  const reblockAfterFalseUnblockService = createKioskNaverPhaseService({
+    log: () => {},
+    readWsFile: () => 'ws://example.test/devtools/browser/test',
+    connectBrowser: async () => ({
+      newPage: async () => createFakePage(),
+      disconnect: () => {},
+    }),
+    attachNaverScheduleTrace: () => {},
+    naverBookingLogin: async () => true,
+    upsertKioskBlock: async () => {},
+    journalBlockAttempt: async () => {},
+    publishRetryableBlockAlert: () => {},
+    publishReservationAlert: () => {},
+    buildOpsAlertMessage: () => 'message',
+    fmtPhone: (phone) => phone,
+    nowKST: () => '2099-01-01T00:00:00+09:00',
+    waitForCustomerCooldown: async () => {},
+    markCustomerCooldown: () => {},
+    runtimeConfig: { customerOperationCooldownMs: 0 },
+    delay: async () => {},
+    blockNaverSlot: async (_page, item) => {
+      reblockAfterFalseUnblockPhones.push(item.phoneRaw);
+      return { ok: true, reason: 'verified' };
+    },
+    unblockNaverSlot: async () => true,
+    publishKioskSuccessReport: () => {},
+    getKioskBlock: async () => ({
+      naverBlocked: false,
+      naverUnblockedAt: '2099-01-01T00:10:00+09:00',
+      lastBlockResult: 'blocked',
+      lastBlockReason: 'already_blocked',
+      lastBlockAttemptAt: '2098-12-31T00:00:00+09:00',
+    }),
+    bookingUrl: 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view',
+    scrapeNewestBookingsFromList: async () => [{
+      phoneRaw: '01000000000',
+      date: '2099-01-02',
+      start: '09:00',
+      end: '09:30',
+      room: 'B',
+    }],
+  });
+
+  await reblockAfterFalseUnblockService.processNaverPhase({
+    wsFile: '/tmp/ws-file-not-read',
+    toBlockEntries: [entry({ phoneRaw: '01062290586', room: '스터디룸B', start: '18:30', end: '20:50', amount: 0 })],
+    cancelledEntries: [],
+    recordKioskBlockAttempt: async () => {},
+  });
+
+  assert.deepEqual(
+    reblockAfterFalseUnblockPhones,
+    ['01062290586'],
+    'currently active Pickko paid rows must be reblocked even when stale naverUnblockedAt exists',
+  );
+
   const retryBackoffLogs = [];
   const retryBackoffBlockedPhones = [];
   const retryBackoffService = createKioskNaverPhaseService({

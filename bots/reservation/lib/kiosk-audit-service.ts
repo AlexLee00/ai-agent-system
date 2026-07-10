@@ -116,7 +116,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
       page.setDefaultTimeout(30000);
       setupDialogHandler(page, log);
       await loginToPickko(page, pickkoId, pickkoPw, delay);
-      const result = await fetchPickkoEntries(page, today, { minAmount: 0 });
+      const result = await fetchPickkoEntries(page, today, { endDate: today, minAmount: 0 });
       const skippedEntries = result.entries.filter((entry) => !shouldAuditEntry(entry));
       pickkoEntries = result.entries.filter((entry) => shouldAuditEntry(entry));
       log(`  픽코 예약(오늘 감사 대상): ${pickkoEntries.length}건`);
@@ -129,7 +129,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
           log(`    • 제외 ${maskName(entry.name)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}`);
         }
       }
-      const historyResult = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
+      const historyResult = await fetchPickkoEntries(page, today, { endDate: today, statusKeyword: '', minAmount: 0 });
       pickkoHistoryEntries = historyResult.entries.filter((entry) => {
         const statusText = String(entry.statusText || '');
         return shouldAuditEntry(entry) && !statusText.includes('취소') && !statusText.includes('환불');

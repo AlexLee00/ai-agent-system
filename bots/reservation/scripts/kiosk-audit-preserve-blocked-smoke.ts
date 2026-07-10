@@ -18,6 +18,9 @@ function createFakePage() {
 function createService({
   existingBlock,
   entries,
+  fetchPickkoEntries,
+  dbBlocks = [],
+  unblocks = [],
   upserts,
   alerts,
   logs,
@@ -46,17 +49,20 @@ function createService({
     delay: async () => {},
     setupDialogHandler: () => {},
     loginToPickko: async () => {},
-    fetchPickkoEntries: async () => ({ entries: sourceEntries }),
+    fetchPickkoEntries: fetchPickkoEntries || (async () => ({ entries: sourceEntries })),
     attachNaverScheduleTrace: () => {},
     naverBookingLogin: async () => true,
     selectBookingDate: async () => true,
     verifyBlockInGrid: async () => false,
     blockNaverSlot: async () => false,
-    unblockNaverSlot: async () => false,
+    unblockNaverSlot: async (_page, row) => {
+      unblocks.push(row);
+      return true;
+    },
     publishReservationAlert: async (payload) => alerts.push(payload),
     getKioskBlock: async () => existingBlock,
     upsertKioskBlock: async (...args) => upserts.push(args),
-    getKioskBlocksForDate: async () => [],
+    getKioskBlocksForDate: async () => dbBlocks,
     getReservationsBySlot: async () => [],
     maskName: (name) => name,
     getTodayKST: () => '2099-08-05',
@@ -160,6 +166,36 @@ async function main() {
     todayOnlyLogs.filter((line) => line.includes('기존 차단 상태 보존')).length,
     1,
     'today audit must not validate future Pickko reservations',
+  );
+
+  const exactDateFetchCalls = [];
+  const exactDateUnblocks = [];
+  const exactDateService = createService({
+    existingBlock: { ...entry, naverBlocked: true, blockedAt: '2099-08-05T10:00:00+09:00' },
+    dbBlocks: [entry],
+    fetchPickkoEntries: async (_page, date, options = {}) => {
+      exactDateFetchCalls.push({ date, options });
+      if (options.endDate === '2099-08-05') {
+        return { entries: [entry], fetchOk: true };
+      }
+      return { entries: [], fetchOk: true };
+    },
+    unblocks: exactDateUnblocks,
+    upserts: [],
+    alerts: [],
+    logs: [],
+  });
+
+  await exactDateService.auditToday({ dateOverride: '2099-08-05', wsEndpoint: 'ws://example.test/devtools/browser/test' });
+
+  assert.ok(
+    exactDateFetchCalls.filter((call) => call.options.endDate === '2099-08-05').length >= 2,
+    'today audit Pickko reads must be exact-day reads before orphan unblock decisions',
+  );
+  assert.equal(
+    exactDateUnblocks.length,
+    0,
+    'exact-day Pickko evidence must prevent false orphan unblocks',
   );
 
   console.log('kiosk_audit_preserve_blocked_smoke_ok');

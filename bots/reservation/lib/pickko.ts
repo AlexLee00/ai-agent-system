@@ -100,7 +100,7 @@ function _normalizeTime(str: string): string {
  * @param {object} page      - Puppeteer page (픽코 로그인 완료 상태)
  * @param {string} startDate - 이용일 시작 'YYYY-MM-DD' (sortBy=sd_start) 또는 기준 날짜
  * @param {object} [opts]
- *   endDate: string        — 이용일 종료 (sortBy=sd_start일 때만, 기본='')
+ *   endDate: string        — 이용일 종료 (sortBy=sd_start일 때만, 기본=startDate)
  *   statusKeyword: string  — 상태 필터 텍스트 (기본='결제완료', ''=전체 상태)
  *   minAmount: number      — 이용금액 하한 (기본=0=필터 없음, 1=키오스크 예약만)
  *   sortBy: string         — 'sd_start'(이용일시, 기본) | 'sd_regdate'(접수일시)
@@ -119,6 +119,7 @@ async function fetchPickkoEntries(
     sortBy = 'sd_start',
     receiptDate = ''
   } = opts;
+  const effectiveEndDate = sortBy === 'sd_regdate' ? '' : (endDate || startDate);
 
   await installBrowserEvalShim(page);
   try {
@@ -188,7 +189,7 @@ async function fetchPickkoEntries(
         }
       }
     }
-  }, startDate, endDate, statusKeyword, minAmount, sortBy);
+  }, startDate, effectiveEndDate, statusKeyword, minAmount, sortBy);
 
   // 검색 실행
   try {

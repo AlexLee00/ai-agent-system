@@ -99,6 +99,21 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     return { entries, fetchOk: result.fetchOk ?? true, skipped: false };
   }
 
+  async function fetchTodayPaidEntries(page: any, today: string) {
+    log(`\n[Pickko 조회] 이용일 ${today}, 상태=결제완료, 이용금액 필터 없음`);
+    const result = await fetchPickkoEntries(page, today, {
+      endDate: today,
+      statusKeyword: '결제완료',
+      minAmount: 0,
+    });
+    const entries = normalizeSourceEntries(result.entries)
+      .filter((entry) => entry.date === today)
+      .filter(isPaidEntry);
+
+    log(`[Pickko 조회] 오늘 이용 결제완료 후보 ${entries.length}건 (fetchOk=${result.fetchOk ?? true})`);
+    return { entries, fetchOk: result.fetchOk ?? true };
+  }
+
   async function fetchSourceEntries({
     page,
     today,
@@ -171,15 +186,19 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
 
     const endDate = addDaysKST(today, SOURCE_SCAN_DAYS_AHEAD);
     const receiptFastScanResult = await fetchReceiptFastScanPaidEntries(page, today);
+    const todayPaidResult = await fetchTodayPaidEntries(page, today);
     log(`\n[Pickko 조회] 이용일 ${today}~${endDate}, 상태=결제완료, 이용금액 필터 없음`);
     const paidResult = await fetchSourceEntries({
       page,
       today,
       endDate,
       statusKeyword: '결제완료',
-      seedEntries: receiptFastScanResult.entries,
+      seedEntries: [...receiptFastScanResult.entries, ...todayPaidResult.entries],
       useDateFallback: PICKKO_PAID_DATE_FALLBACK_ENABLED || receiptFastScanResult.skipped || !receiptFastScanResult.fetchOk,
     });
+    const paidFetchOk = (receiptFastScanResult.fetchOk ?? true)
+      && (todayPaidResult.fetchOk ?? true)
+      && (paidResult.fetchOk ?? true);
     const kioskEntries = paidResult.entries;
 
     for (const entry of kioskEntries) {
@@ -228,7 +247,7 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     log(`🗑 Pickko 취소/환불 원천 후보: 환불 ${refundedEntries.length}건 / 취소 ${cancelledStatusEntries.length}건 / 합산 ${dedupedCancelledEntries.length}건 (네이버 원천 분류 전)`);
 
     return {
-      fetchOk: paidResult.fetchOk ?? true,
+      fetchOk: paidFetchOk,
       kioskEntries,
       newEntries,
       retryEntries,
