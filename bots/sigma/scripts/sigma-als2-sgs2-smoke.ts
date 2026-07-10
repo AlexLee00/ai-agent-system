@@ -124,6 +124,7 @@ async function testShortTermRecordAndExpire() {
     team: 'blog',
     agent: 'writer',
     content: 'hello',
+    env: {},
     pgPool: makePg(),
   });
   assert.equal(disabled.skipped, true);

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { mergeLibraryCoords, nextDecayStage, normalizeTimeStage, recallStage, rowsFromPg } from '../shared/zaxis.ts';
+import { fetchVaultTierReport, isVaultTierReportEnabled } from '../vault/vault-tiering.ts';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -133,14 +134,21 @@ export async function applyLibrarianPlan(plan = [], { pg = pgPool, env = process
 }
 
 export async function buildLibrarianReport(options = {}) {
+  const queryReadonly = options.queryReadonly || pgPool.queryReadonly;
   const candidates = options.candidates || await fetchLibrarianCandidates({
     limit: options.limit || 500,
     recallDays: options.recallDays || 30,
-    queryReadonly: options.queryReadonly || pgPool.queryReadonly,
+    queryReadonly,
   });
   const plan = buildLibrarianPlan(candidates);
   const applyResult = options.apply
     ? await applyLibrarianPlan(plan, { pg: options.pg || pgPool, env: options.env || process.env })
+    : null;
+  const vaultTierReport = isVaultTierReportEnabled(options.env || process.env)
+    ? await fetchVaultTierReport({
+      queryReadonly,
+      sampleLimit: options.vaultTierSampleLimit || 12,
+    })
     : null;
   return {
     ok: !options.apply || applyResult?.skipped === false,
@@ -160,8 +168,10 @@ export async function buildLibrarianReport(options = {}) {
     },
     plan: plan.slice(0, options.planLimit || 50),
     applyResult,
+    vaultTierReport,
     safety: {
       applyRequiresEnv: 'SIGMA_LIBRARIAN_ENABLED=true',
+      vaultTierReportRequiresEnv: 'SIGMA_VAULT_TIER_REPORT_ENABLED=true',
       writesOnlySigmaTables: ['sigma.vault_entries', 'sigma.vault_audit'],
       defaultDryRun: true,
     },
