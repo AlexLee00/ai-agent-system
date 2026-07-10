@@ -88,6 +88,7 @@ async function main() {
     assert.deepStrictEqual(applicator._testOnly_applicatorTimeouts, {
       proposal: 120_000,
       prototype: 120_000,
+      predicate: 120_000,
     });
     console.log('✅ darwin applicator LLM budget smoke ok');
   } finally {

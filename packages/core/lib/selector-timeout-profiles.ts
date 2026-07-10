@@ -10,6 +10,9 @@ type TimeoutTier = {
 type SelectorTimeoutDeclaration = {
   tier?: string;
   timeoutMs?: number;
+  minMs?: number;
+  maxMs?: number;
+  purposes?: Record<string, SelectorTimeoutDeclaration>;
 };
 
 type SelectorTimeoutProfilesConfig = {
@@ -23,6 +26,9 @@ type SelectorTimeoutProfilesConfig = {
 type ResolveOptions = {
   env?: NodeJS.ProcessEnv;
   fallbackTimeoutMs?: number | null;
+  runtimePurpose?: string;
+  taskType?: string;
+  timeoutPurpose?: string;
 };
 
 type SelectorTimeoutResolution = {
@@ -88,6 +94,21 @@ function resolveTier(config: SelectorTimeoutProfilesConfig, declaration?: Select
   return { name: null, tier: null };
 }
 
+function resolveDeclaration(
+  config: SelectorTimeoutProfilesConfig,
+  selectorKey: string,
+  options: ResolveOptions,
+): SelectorTimeoutDeclaration | null {
+  const base = config.selectors?.[selectorKey] || null;
+  if (!base) return null;
+  const purpose = String(options.timeoutPurpose || options.runtimePurpose || options.taskType || '')
+    .trim()
+    .toLowerCase();
+  const purposeDeclaration = purpose ? base.purposes?.[purpose] : null;
+  if (!purposeDeclaration) return base;
+  return { ...base, purposes: undefined, ...purposeDeclaration };
+}
+
 export function selectorTimeoutProfilesEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return truthy(env.SELECTOR_TIMEOUT_PROFILES_ENABLED);
 }
@@ -121,10 +142,10 @@ export function resolveSelectorTimeoutProfile(
   }
 
   const config = readConfig();
-  const declaration = config.selectors?.[key] || null;
+  const declaration = resolveDeclaration(config, key, options);
   const { name: tierName, tier } = resolveTier(config, declaration);
-  const minMs = asPositiveInt(tier?.minMs);
-  const maxMs = asPositiveInt(tier?.maxMs);
+  const minMs = asPositiveInt(declaration?.minMs) ?? asPositiveInt(tier?.minMs);
+  const maxMs = asPositiveInt(declaration?.maxMs) ?? asPositiveInt(tier?.maxMs);
 
   for (const envName of selectorEnvCandidates(key)) {
     const envTimeout = asPositiveInt(env[envName]);

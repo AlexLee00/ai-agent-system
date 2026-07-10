@@ -500,6 +500,7 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
     const implementationResult = await callHubLlm({
       callerTeam: 'darwin',
       agent: 'synthesis',
+      selectorKey: 'darwin.agent_policy',
       taskType: 'auto_implementation',
       runtimePurpose: 'auto_implementation',
       abstractModel: 'anthropic_sonnet',

@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-03",
+  "version": "2026-07-10",
   "defaultTier": "standard",
   "globalDefaultTimeoutMs": 60000,
   "tiers": {
@@ -28,6 +28,26 @@
     },
     "investment.luna": {
       "tier": "standard"
+    },
+    "darwin.agent_policy": {
+      "tier": "standard",
+      "timeoutMs": 45000,
+      "purposes": {
+        "evaluator": { "tier": "fast", "timeoutMs": 25000 },
+        "paper_evaluation": { "tier": "fast", "timeoutMs": 25000 },
+        "paper_evaluation_retry": { "tier": "fast", "timeoutMs": 25000 },
+        "scanner": { "tier": "standard", "timeoutMs": 45000 },
+        "implementation": { "tier": "standard", "timeoutMs": 45000 },
+        "auto_implementation": { "tier": "standard", "timeoutMs": 45000 },
+        "skill_generation": { "tier": "standard", "timeoutMs": 45000 },
+        "skill_creation": { "tier": "standard", "timeoutMs": 45000 },
+        "synthesis": { "tier": "deep", "timeoutMs": 120000, "minMs": 30000, "maxMs": 180000 },
+        "proposal_generation": { "tier": "deep", "timeoutMs": 120000, "minMs": 30000, "maxMs": 180000 },
+        "edison": { "tier": "deep", "timeoutMs": 120000, "minMs": 30000, "maxMs": 180000 },
+        "prototype_generation": { "tier": "deep", "timeoutMs": 120000, "minMs": 30000, "maxMs": 180000 },
+        "success_predicate": { "tier": "deep", "timeoutMs": 120000, "minMs": 30000, "maxMs": 180000 },
+        "success_predicate_generation": { "tier": "deep", "timeoutMs": 120000, "minMs": 30000, "maxMs": 180000 }
+      }
     }
   }
 }

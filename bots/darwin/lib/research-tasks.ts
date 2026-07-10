@@ -586,6 +586,7 @@ async function executeSkillCreation(task: ResearchTask): Promise<SkillCreationRe
       const generated = await callHubLlm({
         callerTeam: 'darwin',
         agent: 'synthesis',
+        selectorKey: 'darwin.agent_policy',
         taskType: 'skill_creation',
         runtimePurpose: 'skill_creation',
         abstractModel: 'anthropic_sonnet',

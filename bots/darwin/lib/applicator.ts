@@ -105,17 +105,8 @@ const {
   parseJsonObjectFromText: (text: unknown) => Record<string, unknown> | null;
   validateSuccessPredicate: (raw: unknown) => { ok: boolean; predicate: Record<string, unknown> | null; errors: string[] };
 } = require('./success-predicate');
-const {
-  getDarwinLlmTimeout,
-  readDarwinTimeoutOverride,
-}: {
+const { getDarwinLlmTimeout }: {
   getDarwinLlmTimeout: (purpose: string) => number;
-  readDarwinTimeoutOverride: (
-    envName: string,
-    fallbackMs: number,
-    envObj?: NodeJS.ProcessEnv,
-    options?: { minMs?: number; maxMs?: number }
-  ) => number;
 } = require('./llm-timeout-profile');
 
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
@@ -131,26 +122,15 @@ const TEAM_CONTEXT = `팀 제이 시스템 구조:
 - DB: PostgreSQL + pgvector (RAG)
 - 인프라: Mac Studio M4 Max (OPS) + MacBook Air M3 (DEV)`;
 
-const DARWIN_APPLICATOR_MIN_TIMEOUT_MS = 30_000;
-const DARWIN_APPLICATOR_MAX_TIMEOUT_MS = 180_000;
 const DARWIN_LLM_SELECTOR_KEY = 'darwin.agent_policy';
 const DARWIN_TOKEN_BUDGET_PROFILE = 'darwin_research';
 
 // The Hub may need a slow primary attempt plus a fast Groq fallback. Keeping the
 // client timeout aligned with the Darwin budget prevents "Hub succeeded, caller
 // already aborted" proposal gaps.
-const DARWIN_PROPOSAL_TIMEOUT_MS = readDarwinTimeoutOverride(
-  'DARWIN_APPLICATOR_PROPOSAL_TIMEOUT_MS',
-  getDarwinLlmTimeout('synthesis'),
-  process.env,
-  { minMs: DARWIN_APPLICATOR_MIN_TIMEOUT_MS, maxMs: DARWIN_APPLICATOR_MAX_TIMEOUT_MS },
-);
-const DARWIN_PROTOTYPE_TIMEOUT_MS = readDarwinTimeoutOverride(
-  'DARWIN_APPLICATOR_PROTOTYPE_TIMEOUT_MS',
-  getDarwinLlmTimeout('edison'),
-  process.env,
-  { minMs: DARWIN_APPLICATOR_MIN_TIMEOUT_MS, maxMs: DARWIN_APPLICATOR_MAX_TIMEOUT_MS },
-);
+const DARWIN_PROPOSAL_TIMEOUT_MS = getDarwinLlmTimeout('synthesis');
+const DARWIN_PROTOTYPE_TIMEOUT_MS = getDarwinLlmTimeout('edison');
+const DARWIN_PREDICATE_TIMEOUT_MS = getDarwinLlmTimeout('success_predicate');
 
 function toErrorMessage(err: unknown): string {
   return typeof err === 'object' && err !== null && 'message' in err
@@ -234,7 +214,7 @@ async function generateSuccessPredicate(paper: Partial<ResearchPaper>, proposal:
       abstractModel: 'anthropic_sonnet',
       systemPrompt: 'Return JSON only. Generate Darwin successPredicate assertions for machine execution.',
       prompt: buildPredicateGenerationPrompt(paper as Record<string, unknown>, proposal),
-      timeoutMs: DARWIN_PROPOSAL_TIMEOUT_MS,
+      timeoutMs: DARWIN_PREDICATE_TIMEOUT_MS,
     });
     const parsed = parseJsonObjectFromText(result.text);
     const validation = validateSuccessPredicate(parsed);
@@ -446,5 +426,6 @@ module.exports = {
   _testOnly_applicatorTimeouts: {
     proposal: DARWIN_PROPOSAL_TIMEOUT_MS,
     prototype: DARWIN_PROTOTYPE_TIMEOUT_MS,
+    predicate: DARWIN_PREDICATE_TIMEOUT_MS,
   },
 };
