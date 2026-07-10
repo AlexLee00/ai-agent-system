@@ -11,6 +11,7 @@ import {
   recordAutoRoutingResult,
   resolveAutoRoutingMode,
 } from '../lib/routes/llm.ts';
+import { updateRoutingResult } from '../lib/llm/llm-auto-router.ts';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
@@ -101,12 +102,13 @@ function assertActiveOnlyInjectsWhenNoManualModel() {
 async function assertResultUpdateMapping() {
   const decision = {
     mode: 'shadow',
-    result: { autoModel: 'anthropic_sonnet' },
+    result: { autoModel: 'anthropic_sonnet', routingRequestId: 'routing-request-a' },
     request: fixtureRequest({ callerTeam: 'claude' }),
   };
   const successPayload = mapAutoRoutingResultUpdate(decision, {
     ok: true,
     provider: 'openai-oauth',
+    selected_route: 'openai-oauth/gpt-5.4-mini',
     durationMs: 1234,
     totalCostUsd: 0.0042,
   });
@@ -114,7 +116,9 @@ async function assertResultUpdateMapping() {
     agent: 'archer',
     callerTeam: 'claude',
     autoModel: 'anthropic_sonnet',
+    routingRequestId: 'routing-request-a',
     selectedProvider: 'openai-oauth',
+    selectedModel: 'openai-oauth/gpt-5.4-mini',
     latencyMs: 1234,
     costUsd: 0.0042,
     success: true,
@@ -129,6 +133,7 @@ async function assertResultUpdateMapping() {
   });
   assert.equal(failurePayload.success, false);
   assert.equal(failurePayload.errorCode, 'provider_timeout');
+  assert.equal(mapAutoRoutingResultUpdate({ ...decision, result: { autoModel: 'anthropic_sonnet' } }, { ok: true }), null);
 
   let captured = null;
   const result = await recordAutoRoutingResult(decision, { ok: true, provider: 'groq', durationMs: 50, costUsd: 0 }, {
@@ -141,17 +146,60 @@ async function assertResultUpdateMapping() {
   assert.equal(captured.costUsd, 0);
 }
 
-function assertConcurrentMatchSqlShape() {
+async function assertConcurrentRequestsKeepOwnLabels() {
   const source = fs.readFileSync(
     path.join(PROJECT_ROOT, 'bots/hub/lib/llm/llm-auto-router.ts'),
     'utf8',
   );
-  assert.match(source, /agent IS NOT DISTINCT FROM \$7/);
-  assert.match(source, /caller_team IS NOT DISTINCT FROM \$8/);
-  assert.match(source, /auto_model = \$9/);
+  assert.match(source, /routing_signals\s*->>\s*'routing_request_id'\s*=\s*\$7/);
+  assert.match(source, /routingRequestId:\s*randomUUID\(\)/);
+  assert.match(source, /routing_request_id:\s*result\.routingRequestId/);
+  assert.doesNotMatch(source, /ORDER BY created_at DESC/);
   assert.match(source, /success IS NULL/);
-  assert.match(source, /ORDER BY created_at DESC/);
-  assert.match(source, /LIMIT 1/);
+
+  const rows = new Map([
+    ['routing-request-a', { id: 1, success: null, selectedModel: null }],
+    ['routing-request-b', { id: 2, success: null, selectedModel: null }],
+  ]);
+  const query = async (_schema, sql, params) => {
+    assert.match(sql, /routing_signals\s*->>\s*'routing_request_id'\s*=\s*\$7/);
+    const routingRequestId = params[6];
+    const row = rows.get(routingRequestId);
+    if (!row || row.success !== null) return [];
+    await new Promise((resolve) => setTimeout(resolve, routingRequestId === 'routing-request-a' ? 15 : 0));
+    row.success = params[3];
+    row.selectedModel = params[7];
+    return [{ id: row.id }];
+  };
+
+  await Promise.all([
+    updateRoutingResult({
+      autoModel: 'anthropic_sonnet',
+      routingRequestId: 'routing-request-a',
+      selectedProvider: 'openai-oauth',
+      selectedModel: 'openai-oauth/model-a',
+      success: true,
+    }, { query }),
+    updateRoutingResult({
+      autoModel: 'anthropic_sonnet',
+      routingRequestId: 'routing-request-b',
+      selectedProvider: 'groq',
+      selectedModel: 'groq/model-b',
+      success: false,
+    }, { query }),
+  ]);
+
+  assert.deepEqual(rows.get('routing-request-a'), { id: 1, success: true, selectedModel: 'openai-oauth/model-a' });
+  assert.deepEqual(rows.get('routing-request-b'), { id: 2, success: false, selectedModel: 'groq/model-b' });
+
+  let legacyQueryCalls = 0;
+  await updateRoutingResult({ autoModel: 'anthropic_sonnet', success: true }, {
+    query: async () => {
+      legacyQueryCalls += 1;
+      return [];
+    },
+  });
+  assert.equal(legacyQueryCalls, 0);
 }
 
 export async function runLlmAutoRoutingShadowWiringSmoke() {
@@ -159,7 +207,7 @@ export async function runLlmAutoRoutingShadowWiringSmoke() {
   assertShadowDoesNotMutateRequest();
   assertActiveOnlyInjectsWhenNoManualModel();
   await assertResultUpdateMapping();
-  assertConcurrentMatchSqlShape();
+  await assertConcurrentRequestsKeepOwnLabels();
   return {
     ok: true,
     smoke: 'llm-auto-routing-shadow-wiring',

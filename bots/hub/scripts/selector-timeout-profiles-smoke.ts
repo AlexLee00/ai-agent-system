@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { buildSelectorTimeoutTunerReport } from './selector-timeout-tuner.ts';
 
@@ -130,12 +131,48 @@ const tunerReport = buildSelectorTimeoutTunerReport([
     p99_duration_ms: 1500,
     max_duration_ms: 1800,
   },
+  {
+    selector_key: 'darwin.agent_policy',
+    runtime_purpose: 'paper_evaluation',
+    sample: 20,
+    avg_duration_ms: 8_000,
+    p95_duration_ms: 9_000,
+    p99_duration_ms: 10_000,
+    max_duration_ms: 12_000,
+  },
+  {
+    selector_key: 'darwin.agent_policy',
+    runtime_purpose: 'auto_implementation',
+    sample: 20,
+    avg_duration_ms: 20_000,
+    p95_duration_ms: 25_000,
+    p99_duration_ms: 30_000,
+    max_duration_ms: 35_000,
+  },
+  {
+    selector_key: 'darwin.agent_policy',
+    runtime_purpose: 'proposal_generation',
+    sample: 20,
+    avg_duration_ms: 60_000,
+    p95_duration_ms: 70_000,
+    p99_duration_ms: 80_000,
+    max_duration_ms: 90_000,
+  },
 ], { days: 14, minSamples: 10, generatedAt: '2026-07-03T00:00:00.000Z' });
 const archerSuggestion = tunerReport.suggestions.find((item) => item.selectorKey === 'claude.archer.tech_analysis');
 assert.equal(archerSuggestion.proposedTimeoutMs, 120_000, 'tuner must propose p99*1.5 clamped by tier bounds');
 const classifierSuggestion = tunerReport.suggestions.find((item) => item.selectorKey === 'hub.alarm.classifier');
 assert.equal(classifierSuggestion.status, 'insufficient_samples_keep_current');
 assert.equal(classifierSuggestion.proposedTimeoutMs, 15_000);
+const evaluatorSuggestion = tunerReport.suggestions.find((item) => item.selectorKey === 'darwin.agent_policy' && item.runtimePurpose === 'paper_evaluation');
+const implementationSuggestion = tunerReport.suggestions.find((item) => item.selectorKey === 'darwin.agent_policy' && item.runtimePurpose === 'auto_implementation');
+const proposalSuggestion = tunerReport.suggestions.find((item) => item.selectorKey === 'darwin.agent_policy' && item.runtimePurpose === 'proposal_generation');
+assert.equal(evaluatorSuggestion.currentTimeoutMs, 25_000);
+assert.equal(implementationSuggestion.currentTimeoutMs, 45_000);
+assert.equal(proposalSuggestion.currentTimeoutMs, 120_000);
+const tunerSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/selector-timeout-tuner.ts'), 'utf8');
+assert.match(tunerSource, /COALESCE\(NULLIF\(runtime_purpose, ''\), 'default'\) AS runtime_purpose/);
+assert.match(tunerSource, /GROUP BY 1, 2/);
 
 console.log(JSON.stringify({
   ok: true,

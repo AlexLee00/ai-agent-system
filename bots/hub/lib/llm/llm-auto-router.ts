@@ -4,9 +4,11 @@
 // Shadow Mode: LLM_AUTO_ROUTING_ENABLED=shadow → 분석만 하고 실제 모델은 overri하지 않음
 // Active Mode: LLM_AUTO_ROUTING_ENABLED=true → abstractModel 없을 때 자동 주입
 
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const { buildClusterRoutingRecommendation } = require('./cluster-routing-shadow');
 
 // ─── 복잡도 → 모델 매핑 ──────────────────────────────────────────────────────
 
@@ -54,6 +56,7 @@ export interface AutoRouterInput {
 
 export interface AutoRouterResult {
   autoModel: AbstractModel;
+  routingRequestId: string;
   complexity: Complexity;
   complexityScore: number;
   routingSignals: Record<string, number | boolean | string>;
@@ -174,6 +177,7 @@ export function routeModel(input: AutoRouterInput): AutoRouterResult {
 
   const result: AutoRouterResult = {
     autoModel,
+    routingRequestId: randomUUID(),
     complexity,
     complexityScore: score,
     routingSignals: signals,
@@ -192,12 +196,13 @@ export function routeModel(input: AutoRouterInput): AutoRouterResult {
 
 async function _logRouting(input: AutoRouterInput, result: AutoRouterResult): Promise<void> {
   try {
-    await pgPool.query('public', `
+    const rows = await pgPool.query('public', `
       INSERT INTO hub.llm_auto_routing_log
         (agent, caller_team, task_type, task_complexity, prompt_chars,
          context_chars, auto_model, manual_model, mode, model_overridden,
          complexity_score, routing_signals)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      RETURNING id
     `, [
       input.agent || null,
       input.callerTeam || null,
@@ -210,8 +215,22 @@ async function _logRouting(input: AutoRouterInput, result: AutoRouterResult): Pr
       result.mode,
       result.modelOverridden,
       result.complexityScore,
-      JSON.stringify(result.routingSignals),
+      JSON.stringify({
+        ...result.routingSignals,
+        routing_request_id: result.routingRequestId,
+      }),
     ]);
+    const routingId = Array.isArray(rows) ? rows[0]?.id : null;
+    if (result.mode !== 'shadow' || !routingId) return;
+
+    const clusterRecommendation = await buildClusterRoutingRecommendation(input);
+    if (!clusterRecommendation) return;
+    await pgPool.query('public', `
+      UPDATE hub.llm_auto_routing_log
+      SET routing_signals = COALESCE(routing_signals, '{}'::jsonb)
+        || jsonb_build_object('cluster_recommendation', $2::jsonb)
+      WHERE id = $1
+    `, [routingId, JSON.stringify(clusterRecommendation)]);
   } catch {
     // 로깅 실패는 무시
   }
@@ -223,14 +242,23 @@ export async function updateRoutingResult(opts: {
   agent?: string;
   callerTeam?: string;
   autoModel: string;
+  routingRequestId?: string;
   selectedProvider?: string;
+  selectedModel?: string;
   latencyMs?: number;
   costUsd?: number;
   success: boolean;
   qualityScore?: number;
   errorCode?: string;
-}): Promise<void> {
+}, deps: {
+  query?: (schema: string, sql: string, params: unknown[]) => Promise<any[]>;
+  sleep?: (ms: number) => Promise<void>;
+} = {}): Promise<void> {
+  const routingRequestId = String(opts.routingRequestId || '').trim();
+  if (!routingRequestId) return;
   try {
+    const query = deps.query || ((schema: string, sql: string, params: unknown[]) => pgPool.query(schema, sql, params));
+    const sleep = deps.sleep || ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
     const params = [
       opts.selectedProvider || null,
       opts.latencyMs ?? null,
@@ -238,32 +266,29 @@ export async function updateRoutingResult(opts: {
       opts.success,
       opts.qualityScore ?? null,
       opts.errorCode || null,
-      opts.agent || null,
-      opts.callerTeam || null,
-      opts.autoModel,
+      routingRequestId,
+      opts.selectedModel || null,
     ];
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const rows = await pgPool.query('public', `
+      const rows = await query('public', `
         UPDATE hub.llm_auto_routing_log
         SET selected_provider = $1,
             latency_ms        = $2,
             cost_usd          = $3,
             success           = $4,
             quality_score     = $5,
-            error_code        = $6
-        WHERE id = (
-          SELECT id FROM hub.llm_auto_routing_log
-          WHERE agent IS NOT DISTINCT FROM $7
-            AND caller_team IS NOT DISTINCT FROM $8
-            AND auto_model = $9
-            AND success IS NULL
-          ORDER BY created_at DESC
-          LIMIT 1
-        )
+            error_code        = $6,
+            routing_signals   = COALESCE(routing_signals, '{}'::jsonb)
+              || jsonb_build_object(
+                'execution',
+                jsonb_build_object('provider', $1, 'model', $8)
+              )
+        WHERE routing_signals ->> 'routing_request_id' = $7
+          AND success IS NULL
         RETURNING id
       `, params);
       if (Array.isArray(rows) && rows.length > 0) return;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 25 : 100));
+      if (attempt < 2) await sleep(attempt === 0 ? 25 : 100);
     }
   } catch {
     // 무시

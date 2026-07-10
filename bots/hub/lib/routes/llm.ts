@@ -559,7 +559,7 @@ function optionalNumber(value: unknown): number | null {
 }
 
 export function mapAutoRoutingResultUpdate(autoRouting: AnyRecord, response: AnyRecord): AnyRecord | null {
-  if (!autoRouting?.result?.autoModel) return null;
+  if (!autoRouting?.result?.autoModel || !autoRouting?.result?.routingRequestId) return null;
   const request = autoRouting.request || {};
   const provider = response?.selectedProvider
     || response?.provider
@@ -569,7 +569,9 @@ export function mapAutoRoutingResultUpdate(autoRouting: AnyRecord, response: Any
     agent: request.agent,
     callerTeam: request.callerTeam,
     autoModel: autoRouting.result.autoModel,
+    routingRequestId: autoRouting.result.routingRequestId,
     selectedProvider: provider || null,
+    selectedModel: response?.selected_route || response?.selectedRoute || response?.model || null,
     latencyMs: optionalNumber(response?.durationMs ?? response?.latencyMs),
     costUsd: cost,
     success: response?.ok === true,

@@ -12,6 +12,7 @@ import {
 
 type RoutingStatsRow = {
   selector_key: string;
+  runtime_purpose?: string | null;
   sample: number;
   avg_duration_ms: number | null;
   p95_duration_ms: number | null;
@@ -34,19 +35,21 @@ function positiveInt(value: unknown, fallback: number, min = 1, max = Number.MAX
   return Math.max(min, Math.min(max, Math.floor(parsed)));
 }
 
-function tierBounds(selectorKey: string) {
+function tierBounds(selectorKey: string, runtimePurpose: string) {
   const config = getSelectorTimeoutProfilesConfig();
-  const declaration = config.selectors?.[selectorKey] || {};
+  const baseDeclaration = config.selectors?.[selectorKey] || {};
+  const declaration = baseDeclaration.purposes?.[runtimePurpose] || baseDeclaration;
   const tierName = declaration.tier || config.defaultTier || 'standard';
   const tier = config.tiers?.[tierName] || {};
   const current = resolveSelectorTimeoutProfile(selectorKey, {
     env: { ...process.env, SELECTOR_TIMEOUT_PROFILES_ENABLED: 'true' },
+    runtimePurpose,
   });
   return {
     tier: tierName,
     currentTimeoutMs: current.timeoutMs || tier.timeoutMs || config.globalDefaultTimeoutMs || 60_000,
-    minMs: positiveInt(tier.minMs, 5_000),
-    maxMs: positiveInt(tier.maxMs, 300_000),
+    minMs: positiveInt(current.minMs ?? declaration.minMs ?? tier.minMs, 5_000),
+    maxMs: positiveInt(current.maxMs ?? declaration.maxMs ?? tier.maxMs, 300_000),
   };
 }
 
@@ -59,7 +62,8 @@ export function buildSelectorTimeoutTunerReport(rows: RoutingStatsRow[], options
   const generatedAt = options.generatedAt || new Date().toISOString();
   const suggestions = rows.map((row) => {
     const selectorKey = String(row.selector_key || '').trim();
-    const bounds = tierBounds(selectorKey);
+    const runtimePurpose = String(row.runtime_purpose || 'default').trim() || 'default';
+    const bounds = tierBounds(selectorKey, runtimePurpose);
     const sample = positiveInt(row.sample, 0, 0);
     const p99 = Number(row.p99_duration_ms || 0);
     const proposed = sample >= minSamples && Number.isFinite(p99) && p99 > 0
@@ -68,6 +72,7 @@ export function buildSelectorTimeoutTunerReport(rows: RoutingStatsRow[], options
     const deltaMs = proposed - bounds.currentTimeoutMs;
     return {
       selectorKey,
+      runtimePurpose,
       sample,
       tier: bounds.tier,
       currentTimeoutMs: bounds.currentTimeoutMs,
@@ -98,6 +103,7 @@ async function fetchRoutingStats(days: number): Promise<RoutingStatsRow[]> {
   return pgPool.queryReadonly('public', `
     SELECT
       COALESCE(NULLIF(selector_key, ''), NULLIF(CONCAT_WS('.', caller_team, agent), ''), 'unknown') AS selector_key,
+      COALESCE(NULLIF(runtime_purpose, ''), 'default') AS runtime_purpose,
       COUNT(*)::int AS sample,
       AVG(duration_ms)::double precision AS avg_duration_ms,
       percentile_disc(0.95) WITHIN GROUP (ORDER BY duration_ms)::int AS p95_duration_ms,
@@ -107,7 +113,7 @@ async function fetchRoutingStats(days: number): Promise<RoutingStatsRow[]> {
     WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
       AND duration_ms IS NOT NULL
       AND duration_ms > 0
-    GROUP BY 1
+    GROUP BY 1, 2
     ORDER BY sample DESC
     LIMIT 500
   `, [days]);
