@@ -2,6 +2,7 @@
 'use strict';
 
 const { buildAlarmClusterKey } = require('../lib/alarm/cluster.ts');
+const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
 const { resolveAlarmDeliveryTeam, formatAutoRepairResultMessage } = require('../lib/alarm/templates.ts');
 const { buildAlarmReadinessSnapshot } = require('../lib/alarm/readiness.ts');
 const { buildAlarmNoiseReport } = require('./alarm-noise-report.ts');
@@ -88,6 +89,15 @@ async function main() {
     assert(first === second, `expected similar provider cooldown errors to cluster together: ${first} vs ${second}`);
     assert(first.includes('llm_provider_cooldown'), 'expected cooldown family in cluster key');
 
+    const naverSourceUnavailable = classifyAlarmTypeWithConfidence({
+      severity: 'error',
+      eventType: 'alert',
+      title: 'reservation alarm',
+      message: '⚠️ 네이버 원천 분류 불가 — 자동 처리 중단\n📊 상태: Pickko 후보 미분류\nℹ️ 사유: naver-monitor 미실행. 네이버 live 확정 목록 없이 예약불가/해제를 실행하지 않음',
+    });
+    assert(naverSourceUnavailable.type === 'work', 'naver source-unavailable guard alerts must not route to auto-repair');
+    assert(naverSourceUnavailable.confidence >= 0.9, 'naver source-unavailable guard classification must be high confidence');
+
     process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';
     assert(resolveAlarmDeliveryTeam({ alarmType: 'work', visibility: 'notify', team: 'luna' }) === 'ops-work', 'expected work class topic');
     assert(resolveAlarmDeliveryTeam({ alarmType: 'report', visibility: 'notify', team: 'blog' }) === 'ops-reports', 'expected report class topic');
@@ -165,6 +175,16 @@ async function main() {
         incident_key: 'blog:blog-commenter:operational-noise-sample',
         auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_operational_noise_sample.md',
       },
+      {
+        team: 'reservation',
+        bot_name: 'jimmy',
+        severity: 'error',
+        title: 'reservation alarm',
+        message: '⚠️ 네이버 원천 분류 불가 — 자동 처리 중단\n📊 상태: Pickko 후보 미분류\nℹ️ 사유: naver-monitor 미실행. 네이버 live 확정 목록 없이 예약불가/해제를 실행하지 않음',
+        event_type: 'alert',
+        incident_key: 'reservation:jimmy:alert:source-unavailable-sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_reservation_source_unavailable_sample.md',
+      },
     ], {
       manifest: {
         entries: {
@@ -187,6 +207,7 @@ async function main() {
     assert(annotatedResolved[2].stale_status === 'resolved_manifest', 'expected completed archive document to suppress stale scan');
     assert(annotatedResolved[2].stale_resolution_reason === 'completed_archive_document_matches_incident', 'expected archive evidence reason');
     assert(annotatedResolved[3].stale_status === 'resolved_manifest', 'expected operational-noise manifest reason to suppress stale scan');
+    assert(annotatedResolved[4].stale_status === 'resolved_current_policy', 'expected naver source-unavailable guard to suppress stale auto-repair');
     const backfillPlan = _testOnly_buildBackfillPlan([
       { id: 11, incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
       { id: 12, incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },

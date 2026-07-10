@@ -26,6 +26,18 @@ test('downgrades reservation booking detection to report', async () => {
   assert.deepEqual(result, { type: 'report', confidence: 0.97 });
 });
 
+test('treats reservation naver source-unavailable guard as work', async () => {
+  const { classifyAlarmTypeWithConfidence } = await loadModule();
+  const result = classifyAlarmTypeWithConfidence({
+    severity: 'error',
+    eventType: 'alert',
+    title: 'reservation alarm',
+    message: '⚠️ 네이버 원천 분류 불가 — 자동 처리 중단\n📊 상태: Pickko 후보 미분류\nℹ️ 사유: naver-monitor 미실행. 네이버 live 확정 목록 없이 예약불가/해제를 실행하지 않음',
+  });
+
+  assert.deepEqual(result, { type: 'work', confidence: 0.97 });
+});
+
 test('downgrades investment position watch snapshot to report', async () => {
   const { classifyAlarmTypeWithConfidence } = await loadModule();
   const result = classifyAlarmTypeWithConfidence({

@@ -51,6 +51,13 @@ function classifyOperationalSnapshot({
     return { type: 'report', confidence: 0.97 };
   }
 
+  if (event === 'alert'
+    && lower.includes('네이버 원천 분류 불가')
+    && lower.includes('자동 처리 중단')
+    && lower.includes('pickko 후보 미분류')) {
+    return { type: 'work', confidence: 0.97 };
+  }
+
   if (/blog-commenter|blog-neighbor-commenter|blog-neighbor-sympathy/.test(lower)
     && lower.includes('실패 0건')) {
     return { type: 'report', confidence: 0.95 };
