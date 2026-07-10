@@ -514,7 +514,9 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           || outputBuf.match(/Error[:\s]+(.+)/m);
         const rawErrorMsg = errMatch ? errMatch[1].trim().substring(0, 200) : `exit code ${code}`;
         const errorMsg = failureStage ? `[${failureStage}] ${rawErrorMsg}` : rawErrorMsg;
-        const needsManualPendingFollowup = failureStage === 'ALREADY_REGISTERED';
+        // PAYMENT is reached only after the draft save and reservation verification pass,
+        // so a failure here means the Pickko reservation already exists.
+        const needsManualPendingFollowup = failureStage === 'ALREADY_REGISTERED' || failureStage === 'PAYMENT';
 
         if (bookingId) {
           const recovered = await verifyRecoverablePickkoFailure(String(bookingId), booking, failureStage, outputBuf);
