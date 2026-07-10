@@ -2064,4 +2064,5 @@ module.exports = {
   writeGeneralPostChunked,
   repairGeneralPostDraft,
   GEMS_SYSTEM_PROMPT,
+  _assertDistinctGeneralTitle,
 };

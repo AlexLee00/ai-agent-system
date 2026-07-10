@@ -88,6 +88,8 @@ const {
   repairTerminalQualityArtifacts,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
+const { runTitleFeedbackLoop }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/title-feedback-loop.ts'));
+const { buildContentHarnessReport }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/content-harness.ts'));
 const {
   diagnoseImageGeneration,
   reportImageGenFailure,
@@ -1257,17 +1259,29 @@ function _createLocalDraftRunner({
 
 async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, options = {}) {
   return withBlogTelemetry('publishing', async () => {
+    const harnessReport = buildContentHarnessReport(postData);
+    const preparedPostData = {
+      ...postData,
+      metadata: {
+        ...(postData?.metadata || {}),
+        harness_report: harnessReport,
+      },
+    };
+    console.log(`[블로/하네스][report] ${harnessReport.score}/100 — 위반 ${harnessReport.violations.length}건 (차단 없음)`);
+
     if (options.dryRun) {
-      console.log(`[블로][dry-run] 발행 생략: ${postData?.title || 'untitled'}`);
+      console.log(`[블로][dry-run] 발행 생략: ${preparedPostData?.title || 'untitled'}`);
       return {
         dryRun: true,
         filename: null,
         postId: null,
         reused: true,
+        metadata: preparedPostData.metadata,
+        harnessReport,
       };
     }
 
-    const published = await publishToFile(postData);
+    const published = await publishToFile(preparedPostData);
 
     if (scheduleId) {
       await updateScheduleStatus(scheduleId, 'ready', published.postId);
@@ -1278,12 +1292,28 @@ async function _publishAndTrack(postData, scheduleId, traceCtx, eventDetail, opt
       traceId: traceCtx.trace_id,
     });
 
-    if (published?.postId && postData?.performanceMetrics) {
-      await recordPerformance(published.postId, postData.performanceMetrics);
+    if (published?.postId && preparedPostData?.performanceMetrics) {
+      await recordPerformance(published.postId, preparedPostData.performanceMetrics);
     }
 
     return published;
   }, { postType: eventDetail?.type || postData?.postType || 'unknown', dryRun: !!options.dryRun });
+}
+
+async function _applyGeneralTitleFeedback(post, context, options = {}) {
+  const titleResult = await runTitleFeedbackLoop({
+    category: context?.category || '',
+    baseTitle: post?.title || `[${context?.category || '일반'}] 오늘의 포스팅`,
+    topic: context?.topicHint || context?.researchData?.topic_hint || context?.researchData?.topic_title_candidate || '',
+    topicTitleCandidate: context?.researchData?.topic_title_candidate || '',
+    expectedTitlePattern: context?.researchData?.strategy_preferred_pattern || '',
+    content: post?.content || '',
+    requiredPhrase: context?.category === '도서리뷰' ? String(context?.book_info?.title || '').trim() : '',
+  }, options.titleFeedbackDependencies || {});
+  post.title = titleResult.title;
+  post.content = titleResult.content;
+  post.charCount = titleResult.content.length;
+  return titleResult.metadata;
 }
 
 function _buildAccumulationOptions(traceCtx, options = {}, published = null) {
@@ -1706,6 +1736,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     throw new Error(`일반 포스팅 품질 미달${qualityErrors ? `: ${qualityErrors}` : ''}`);
   }
 
+  const titleFeedbackMetadata = await _applyGeneralTitleFeedback(post, context, options);
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
   let homeFeedReport = null;
   let humanizeShadow = null;
@@ -1764,6 +1795,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     title: genTitle,
   }, context);
   const metadata = buildWriterAbMetadata(post, traceCtx);
+  Object.assign(metadata, titleFeedbackMetadata);
   if (autonomy) metadata.autonomy = autonomy;
   if (titleAlignment?.preview_title || titleAlignment?.final_title) {
     metadata.title_alignment = titleAlignment;
@@ -2804,5 +2836,7 @@ module.exports = {
   retryGeneralOnly,
   _testOnly: {
     buildWriterAbMetadata,
+    _applyGeneralTitleFeedback,
+    _publishAndTrack,
   },
 };
