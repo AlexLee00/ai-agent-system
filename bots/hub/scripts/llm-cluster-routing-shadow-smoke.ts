@@ -112,6 +112,46 @@ async function main() {
     },
   }), null);
 
+  const unavailableRecommendation = await buildClusterRoutingRecommendation(request, {
+    env: { LLM_CLUSTER_ROUTING_SHADOW_ENABLED: 'true' },
+    embedText: async () => [1, 0],
+    loadHistory: async () => {
+      throw new Error('history temporarily unavailable');
+    },
+    embeddingModel: 'test-embed',
+  });
+  assert.equal(unavailableRecommendation?.reason, 'recommendation_unavailable');
+  assert.equal(unavailableRecommendation?.recommended_model, null);
+  assert.equal(unavailableRecommendation?.signature_key, CURRENT_SIGNATURE_KEY);
+  assert.deepEqual(unavailableRecommendation?.embedding_signature, [1, 0]);
+
+  const coldStartHistory: ReturnType<typeof historyRow>[] = [];
+  const coldStartResults = [];
+  for (let index = 0; index < 3; index += 1) {
+    const result = await buildClusterRoutingRecommendation(request, {
+      env: {
+        LLM_CLUSTER_ROUTING_SHADOW_ENABLED: 'true',
+        LLM_CLUSTER_ROUTING_MIN_SAMPLES: '2',
+      },
+      embedText: async () => [1, 0],
+      loadHistory: async () => [...coldStartHistory],
+      embeddingModel: 'test-embed',
+    });
+    assert(result);
+    coldStartResults.push(result);
+    coldStartHistory.push(historyRow(
+      result.embedding_signature,
+      'anthropic_sonnet',
+      'openai-oauth/gpt-5.4-mini',
+      true,
+      100 + index,
+      0.001,
+    ));
+  }
+  assert.deepEqual(coldStartResults.map((result) => result.sample_count), [0, 1, 2]);
+  assert.deepEqual(coldStartResults.map((result) => result.recommended_model), [null, null, 'openai-oauth/gpt-5.4-mini']);
+  assert(coldStartResults.every((result) => result.embedding_signature.length === 2));
+
   const autoRouterSource = fs.readFileSync(path.resolve(__dirname, '../lib/llm/llm-auto-router.ts'), 'utf8');
   assert.match(autoRouterSource, /result\.mode !== 'shadow'/);
   assert.match(autoRouterSource, /jsonb_build_object\('cluster_recommendation'/);

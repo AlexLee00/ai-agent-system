@@ -38,7 +38,7 @@ export type ClusterRoutingRecommendation = {
   success_rate: number | null;
   avg_latency_ms: number | null;
   avg_cost_usd: number | null;
-  reason: 'recommended' | 'insufficient_samples';
+  reason: 'recommended' | 'insufficient_samples' | 'recommendation_unavailable';
   embedding_model: string;
   embedding_dimensions: number;
   signature_dimensions: number;
@@ -272,38 +272,56 @@ export async function buildClusterRoutingRecommendation(
     if (!signature) return null;
     const embeddingModel = String(deps.embeddingModel || rag.EMBED_MODEL || 'qwen3-embed-0.6b');
     const signatureKey = buildEmbeddingSignatureKey(embeddingModel, embedding.length, signature.length);
-
-    const historyLimit = boundedInt(env.LLM_CLUSTER_ROUTING_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT, 10, 2000);
-    const minSamples = boundedInt(env.LLM_CLUSTER_ROUTING_MIN_SAMPLES, DEFAULT_MIN_SAMPLES, 1, 100);
-    const rawHistory = await (deps.loadHistory || loadHistory)(historyLimit, signatureKey);
-    const history = rawHistory
-      .map((row) => ({ row, signature: readSignature(row, signature.length, signatureKey), model: readExecutedModel(row) }))
-      .filter((entry): entry is { row: HistoryRow; signature: number[]; model: string } => Boolean(entry.signature && entry.model));
-    const points = [signature, ...history.map((entry) => entry.signature)];
-    const clustered = clusterPoints(points);
-    const currentCluster = clustered.assignments[0];
-    const clusterRows = history
-      .filter((_entry, index) => clustered.assignments[index + 1] === currentCluster)
-      .map((entry) => entry.row);
-    const recommendation = recommendModel(clusterRows, minSamples);
-
-    return {
+    const evidence = {
       version: SIGNATURE_VERSION,
-      cluster_id: `cluster-${currentCluster + 1}-of-${clustered.centroids.length}`,
-      cluster_count: clustered.centroids.length,
-      sample_count: clusterRows.length,
-      recommended_model: recommendation?.model || null,
-      model_sample_count: recommendation?.total || 0,
-      success_rate: recommendation ? Number(recommendation.successRate.toFixed(4)) : null,
-      avg_latency_ms: recommendation?.avgLatencyMs == null ? null : Math.round(recommendation.avgLatencyMs),
-      avg_cost_usd: recommendation?.avgCostUsd == null ? null : Number(recommendation.avgCostUsd.toFixed(6)),
-      reason: recommendation ? 'recommended' : 'insufficient_samples',
       embedding_model: embeddingModel,
       embedding_dimensions: embedding.length,
       signature_dimensions: signature.length,
       signature_key: signatureKey,
       embedding_signature: signature,
-    };
+    } as const;
+
+    try {
+      const historyLimit = boundedInt(env.LLM_CLUSTER_ROUTING_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT, 10, 2000);
+      const minSamples = boundedInt(env.LLM_CLUSTER_ROUTING_MIN_SAMPLES, DEFAULT_MIN_SAMPLES, 1, 100);
+      const rawHistory = await (deps.loadHistory || loadHistory)(historyLimit, signatureKey);
+      const history = rawHistory
+        .map((row) => ({ row, signature: readSignature(row, signature.length, signatureKey), model: readExecutedModel(row) }))
+        .filter((entry): entry is { row: HistoryRow; signature: number[]; model: string } => Boolean(entry.signature && entry.model));
+      const points = [signature, ...history.map((entry) => entry.signature)];
+      const clustered = clusterPoints(points);
+      const currentCluster = clustered.assignments[0];
+      const clusterRows = history
+        .filter((_entry, index) => clustered.assignments[index + 1] === currentCluster)
+        .map((entry) => entry.row);
+      const recommendation = recommendModel(clusterRows, minSamples);
+
+      return {
+        ...evidence,
+        cluster_id: `cluster-${currentCluster + 1}-of-${clustered.centroids.length}`,
+        cluster_count: clustered.centroids.length,
+        sample_count: clusterRows.length,
+        recommended_model: recommendation?.model || null,
+        model_sample_count: recommendation?.total || 0,
+        success_rate: recommendation ? Number(recommendation.successRate.toFixed(4)) : null,
+        avg_latency_ms: recommendation?.avgLatencyMs == null ? null : Math.round(recommendation.avgLatencyMs),
+        avg_cost_usd: recommendation?.avgCostUsd == null ? null : Number(recommendation.avgCostUsd.toFixed(6)),
+        reason: recommendation ? 'recommended' : 'insufficient_samples',
+      };
+    } catch {
+      return {
+        ...evidence,
+        cluster_id: 'unavailable',
+        cluster_count: 0,
+        sample_count: 0,
+        recommended_model: null,
+        model_sample_count: 0,
+        success_rate: null,
+        avg_latency_ms: null,
+        avg_cost_usd: null,
+        reason: 'recommendation_unavailable',
+      };
+    }
   } catch {
     return null;
   }
