@@ -11,6 +11,8 @@ import {
   normalizeCoordFilters,
 } from './layer-router.ts';
 import { normalizeLibraryCoords } from '../shared/library-coords.ts';
+import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.js';
+import { buildVaultKnowledgeGraph, queryRelatedRecords } from './vault-knowledge-graph.js';
 
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
@@ -18,6 +20,10 @@ const PROJECT_ROOT = path.resolve(
   '../../..',
 );
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const KG_SEARCH_ENV = 'SIGMA_KG_SEARCH_ENABLED';
+const KG_SEARCH_MAX_HOPS = 2;
+const KG_SEARCH_RESULT_LIMIT = 5;
+const KG_SEARCH_SOURCE_LIMIT = 2000;
 
 export interface VaultSearchOptions {
   topK?: number;
@@ -73,6 +79,58 @@ function normalizeMeta(meta: unknown): Record<string, unknown> {
 
 function normalizeRows(rows: unknown): any[] {
   return Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+}
+
+function isKnowledgeGraphSearchEnabled(env: Record<string, string | undefined>): boolean {
+  return String(env[KG_SEARCH_ENV] || '').trim().toLowerCase() === 'true';
+}
+
+async function searchKnowledgeGraph(query: string, queryReadonly: any) {
+  const rows = normalizeRows(await queryReadonly('sigma', `
+    SELECT
+      id::text,
+      title,
+      type,
+      source,
+      tags,
+      meta,
+      created_at,
+      LEFT(content, 200) AS content_preview
+    FROM sigma.vault_entries
+    WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (
+        type = ANY($1::text[])
+        OR LOWER(COALESCE(meta->>'vaultTier', meta->>'vault_tier', '')) = 'knowledge'
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT $2
+  `, [[...KNOWLEDGE_TYPES], KG_SEARCH_SOURCE_LIMIT]));
+  const knowledgeRows = rows.filter((row) => resolveVaultTier(row).tier === 'knowledge');
+  const related = queryRelatedRecords(
+    buildVaultKnowledgeGraph(knowledgeRows),
+    query,
+    KG_SEARCH_MAX_HOPS,
+    KG_SEARCH_RESULT_LIMIT,
+  );
+  const rowById = new Map(knowledgeRows.map((row) => [String(row.id), row]));
+  return {
+    enabled: true,
+    maxHops: KG_SEARCH_MAX_HOPS,
+    resultLimit: KG_SEARCH_RESULT_LIMIT,
+    matchedNodes: related.matchedNodes.map((node) => ({ id: node.id, type: node.type, label: node.label })),
+    results: related.records.flatMap(({ record, hop }) => {
+      const row = rowById.get(record.id);
+      if (!row) return [];
+      return [{
+        id: record.id,
+        title: record.title,
+        source: row.source || null,
+        contentPreview: row.content_preview || null,
+        meta: normalizeMeta(row.meta),
+        hop,
+      }];
+    }),
+  };
 }
 
 const DEFAULT_COORDS: Record<string, string> = {
@@ -140,6 +198,8 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
   const deps = opts.deps || {};
   const embeddingFactory = deps.embeddingFactory || createVaultEmbedding;
   const queryReadonly = deps.queryReadonly || pgPool.queryReadonly || pgPool.query;
+  const env = deps.env || process.env;
+  const knowledgeGraphEnabled = isKnowledgeGraphSearchEnabled(env);
   const layerEnabled = Boolean(opts.layerSearchEnabled ?? isLayerSearchEnabled());
   const layerRoute = layerEnabled
     ? buildLayerRoute(normalizedQuery, { intent: opts.intent, coordFilters: opts.coordFilters })
@@ -225,7 +285,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
       .filter((row: VaultSearchResult) => minSimilarity == null || row.similarity >= minSimilarity)
       .slice(0, topK);
 
-    const response = {
+    const response: any = {
       ok: true,
       results,
     };
@@ -237,6 +297,20 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
         };
     } else if (opts.includeRoutingDebug) {
       response.routing = null;
+    }
+    if (knowledgeGraphEnabled) {
+      try {
+        response.knowledgeGraph = await searchKnowledgeGraph(normalizedQuery, queryReadonly);
+      } catch (error: any) {
+        response.knowledgeGraph = {
+          enabled: true,
+          maxHops: KG_SEARCH_MAX_HOPS,
+          resultLimit: KG_SEARCH_RESULT_LIMIT,
+          matchedNodes: [],
+          results: [],
+          warning: `kg_search_unavailable:${error?.message || String(error)}`,
+        };
+      }
     }
     return response;
   } catch (err: any) {

@@ -47,6 +47,7 @@
     "wiki:health": "tsx scripts/wiki-health-check.ts --json",
     "smoke:wiki-health-check": "tsx scripts/wiki-health-check-smoke.ts",
     "smoke:layer-search": "tsx scripts/layer-search-smoke.ts",
+    "smoke:vault-kg-search": "tsx scripts/sigma-vault-kg-search-smoke.ts",
     "mcp:library": "tsx mcp/sigma-library-mcp/src/server.ts",
     "smoke:sigma-library-mcp": "tsx scripts/sigma-library-mcp-smoke.ts",
     "coord:schema-bootstrap": "tsx scripts/runtime-sigma-coord-schema-bootstrap.ts --json",

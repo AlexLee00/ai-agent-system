@@ -43,6 +43,11 @@ export interface VaultKnowledgeGraph {
   nodeCounts: Record<VaultKnowledgeNodeType, number>;
 }
 
+export interface VaultGraphRelatedRecord {
+  record: VaultGraphRecord;
+  hop: number;
+}
+
 type ReportOptions = {
   env?: Record<string, string | undefined>;
   entity?: string;
@@ -258,6 +263,71 @@ export function queryRecordsByEntity(
     .slice(0, Math.max(1, Math.min(200, limit)));
 }
 
+export function queryRelatedRecords(
+  graph: VaultKnowledgeGraph,
+  query: string,
+  maxHops = 2,
+  limit = 5,
+): { matchedNodes: VaultKnowledgeNode[]; records: VaultGraphRelatedRecord[] } {
+  const queryKey = slug(query);
+  if (!queryKey) return { matchedNodes: [], records: [] };
+
+  const matchedNodes = graph.nodes.filter((node) => {
+    if (node.type === 'record') return false;
+    const labelKey = slug(node.label);
+    return labelKey.length >= 2 && queryKey.includes(labelKey);
+  });
+  if (matchedNodes.length === 0) return { matchedNodes: [], records: [] };
+
+  const adjacency = new Map<string, Set<string>>();
+  for (const edge of graph.edges) {
+    if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set());
+    if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set());
+    adjacency.get(edge.source)?.add(edge.target);
+    adjacency.get(edge.target)?.add(edge.source);
+  }
+
+  const recordByNodeId = new Map(graph.records.map((record) => [record.nodeId, record]));
+  const seenConcepts = new Set(matchedNodes.map((node) => node.id));
+  const related = new Map<string, VaultGraphRelatedRecord>();
+  let frontier = new Set(seenConcepts);
+  const safeMaxHops = Math.max(1, Math.min(2, Math.floor(Number(maxHops) || 1)));
+
+  for (let hop = 1; hop <= safeMaxHops && frontier.size > 0; hop += 1) {
+    const recordNodes = new Set<string>();
+    for (const conceptNode of frontier) {
+      for (const neighbor of adjacency.get(conceptNode) || []) {
+        if (recordByNodeId.has(neighbor)) recordNodes.add(neighbor);
+      }
+    }
+    for (const recordNode of recordNodes) {
+      const record = recordByNodeId.get(recordNode);
+      if (record && !related.has(record.id)) related.set(record.id, { record, hop });
+    }
+
+    const nextFrontier = new Set<string>();
+    for (const recordNode of recordNodes) {
+      for (const neighbor of adjacency.get(recordNode) || []) {
+        if (!recordByNodeId.has(neighbor) && !seenConcepts.has(neighbor)) {
+          seenConcepts.add(neighbor);
+          nextFrontier.add(neighbor);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  const safeLimit = Math.max(1, Math.min(5, Math.floor(Number(limit) || 5)));
+  return {
+    matchedNodes,
+    records: [...related.values()]
+      .sort((left, right) => left.hop - right.hop
+        || left.record.title.localeCompare(right.record.title)
+        || left.record.id.localeCompare(right.record.id))
+      .slice(0, safeLimit),
+  };
+}
+
 export function isVaultKnowledgeGraphReportEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return String(env[REPORT_ENV] || '').trim().toLowerCase() === 'true';
 }
@@ -322,5 +392,6 @@ export default {
   buildVaultKnowledgeGraph,
   fetchVaultKnowledgeGraphReport,
   isVaultKnowledgeGraphReportEnabled,
+  queryRelatedRecords,
   queryRecordsByEntity,
 };
