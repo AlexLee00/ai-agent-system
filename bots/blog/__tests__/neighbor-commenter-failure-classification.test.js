@@ -6,6 +6,7 @@ const {
   shouldDeferRecoverableReplyRequeue,
   isTransientBrowserNavigationError,
   validateNeighborCommentWithCandidate,
+  _testOnly,
 } = require('../lib/commenter.ts');
 
 describe('neighbor commenter failure classification', () => {
@@ -82,5 +83,25 @@ describe('reply commenter failure classification', () => {
 
     expect(shouldDeferRecoverableReplyRequeue(recent, now)).toBe(true);
     expect(shouldDeferRecoverableReplyRequeue(old, now)).toBe(false);
+  });
+});
+
+describe('neighbor commenter managed browser connection', () => {
+  test('skips stale runtime ws endpoints and connects to the next candidate', async () => {
+    const attempts = [];
+    const browser = { id: 'fresh-managed-browser' };
+
+    const result = await _testOnly.connectBrowser(true, {
+      readWsEndpoints: () => ['ws://stale:1', 'ws://fresh:2'],
+      connect: async ({ browserWSEndpoint }) => {
+        attempts.push(browserWSEndpoint);
+        if (browserWSEndpoint === 'ws://stale:1') throw new Error('socket closed');
+        return browser;
+      },
+      fetchManagedBrowserWsEndpoint: async () => '',
+    });
+
+    expect(result).toEqual({ browser, managed: true, mode: 'connect-ws-file' });
+    expect(attempts).toEqual(['ws://stale:1', 'ws://fresh:2']);
   });
 });

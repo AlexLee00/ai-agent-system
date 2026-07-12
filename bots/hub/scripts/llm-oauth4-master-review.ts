@@ -331,8 +331,14 @@ function buildReport(stats, options = {}) {
   const nonOauthReportedCost = rows
     .filter((row) => !OAUTH_RUNTIME_PROVIDERS.has(row.provider) && row.provider !== 'failed')
     .reduce((sum, row) => sum + row.total_cost_usd, 0);
+  const providerOrder = [
+    ...PROVIDER_ORDER,
+    ...rows
+      .map((row) => row.provider)
+      .filter((provider) => !PROVIDER_ORDER.includes(provider)),
+  ];
   const byProvider = {};
-  for (const provider of PROVIDER_ORDER) {
+  for (const provider of providerOrder) {
     const row = rows.find((candidate) => candidate.provider === provider) || normalizeProviderRow({ provider });
     byProvider[provider] = {
       ...row,
@@ -393,6 +399,7 @@ function buildReport(stats, options = {}) {
       non_oauth_reported_cost_usd: Number(nonOauthReportedCost.toFixed(6)),
       anthropic_provider_calls: anthropicCalls,
     },
+    provider_order: providerOrder,
     providers: byProvider,
     selector_matrix: selectorSnapshot,
     targets: {
@@ -447,7 +454,7 @@ function renderMarkdown(report) {
   lines.push('');
   lines.push('| Provider | Calls | Share % | Success % | Avg ms | Cost USD |');
   lines.push('|---|---:|---:|---:|---:|---:|');
-  for (const provider of PROVIDER_ORDER) {
+  for (const provider of report.provider_order || PROVIDER_ORDER) {
     const row = report.providers[provider];
     lines.push(`| ${providerLabel(provider)} | ${row.calls} | ${row.share_pct.toFixed(2)} | ${row.success_rate_pct.toFixed(2)} | ${row.avg_duration_ms} | ${row.total_cost_usd.toFixed(6)} |`);
   }

@@ -67,16 +67,21 @@ function expandHome(value) {
   return raw;
 }
 
-function readNaverMonitorWsEndpoint() {
+function readNaverMonitorWsEndpoints() {
+  const endpoints = [];
   for (const filePath of NAVER_MONITOR_WS_FILES) {
     try {
       const value = String(fs.readFileSync(filePath, 'utf8') || '').trim();
-      if (value) return value;
+      if (value && !endpoints.includes(value)) endpoints.push(value);
     } catch {
       // try next runtime file
     }
   }
-  return '';
+  return endpoints;
+}
+
+function readNaverMonitorWsEndpoint() {
+  return readNaverMonitorWsEndpoints()[0] || '';
 }
 
 function ensureDirSync(dirPath = '') {
@@ -1396,10 +1401,12 @@ async function hasSuccessfulReplyForComment(comment) {
   return Boolean(existing?.id);
 }
 
-async function fetchManagedBrowserWsEndpoint(config) {
-  const wsFileEndpoint = readNaverMonitorWsEndpoint();
-  if (wsFileEndpoint) return wsFileEndpoint;
-  if (config.browserWsEndpoint) return config.browserWsEndpoint;
+async function fetchManagedBrowserWsEndpoint(config, { skipRuntimeFiles = false, skipConfiguredWs = false } = {}) {
+  if (!skipRuntimeFiles) {
+    const wsFileEndpoint = readNaverMonitorWsEndpoint();
+    if (wsFileEndpoint) return wsFileEndpoint;
+  }
+  if (!skipConfiguredWs && config.browserWsEndpoint) return config.browserWsEndpoint;
   if (!config.browserHttpUrl) return '';
 
   const baseUrl = config.browserHttpUrl.replace(/\/+$/, '');
@@ -1483,12 +1490,15 @@ async function fetchManagedBrowserWsEndpoint(config) {
   return '';
 }
 
-async function connectBrowser(testMode = false) {
+async function connectBrowser(testMode = false, dependencies = {}) {
   const config = getCommenterConfig();
-  const wsFileEndpoint = readNaverMonitorWsEndpoint();
-  if (wsFileEndpoint) {
+  const connect = dependencies.connect || puppeteer.connect.bind(puppeteer);
+  const readWsEndpoints = dependencies.readWsEndpoints || readNaverMonitorWsEndpoints;
+  const fetchManaged = dependencies.fetchManagedBrowserWsEndpoint || fetchManagedBrowserWsEndpoint;
+  const wsFileEndpoints = readWsEndpoints();
+  for (const wsFileEndpoint of wsFileEndpoints) {
     try {
-      const browser = await puppeteer.connect({
+      const browser = await connect({
         browserWSEndpoint: wsFileEndpoint,
         protocolTimeout: testMode ? 15000 : BROWSER_PROTOCOL_TIMEOUT_MS,
       });
@@ -1498,13 +1508,28 @@ async function connectBrowser(testMode = false) {
     }
   }
 
-  const wsEndpoint = await fetchManagedBrowserWsEndpoint(config);
+  if (config.browserWsEndpoint && !wsFileEndpoints.includes(config.browserWsEndpoint)) {
+    try {
+      const browser = await connect({
+        browserWSEndpoint: config.browserWsEndpoint,
+        protocolTimeout: testMode ? 15000 : BROWSER_PROTOCOL_TIMEOUT_MS,
+      });
+      return { browser, managed: true, mode: 'connect-config' };
+    } catch (error) {
+      console.warn(`[commenter] configured browser ws 연결 실패 — HTTP 관리 브라우저 조회로 폴백: ${error.message}`);
+    }
+  }
+
+  const wsEndpoint = await fetchManaged(config, {
+    skipRuntimeFiles: true,
+    skipConfiguredWs: true,
+  });
   if (wsEndpoint) {
-    const browser = await puppeteer.connect({
+    const browser = await connect({
       browserWSEndpoint: wsEndpoint,
       protocolTimeout: testMode ? 15000 : BROWSER_PROTOCOL_TIMEOUT_MS,
     });
-    return { browser, managed: true, mode: 'connect' };
+    return { browser, managed: true, mode: 'connect-http' };
   }
 
   if (env.IS_OPS && config.browserHttpUrl) {
@@ -6522,4 +6547,9 @@ module.exports = {
   runNeighborSympathy,
   runCommentReply,
   writeNeighborCollectDiagnostics,
+  _testOnly: {
+    connectBrowser,
+    fetchManagedBrowserWsEndpoint,
+    readNaverMonitorWsEndpoints,
+  },
 };

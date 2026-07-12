@@ -60,6 +60,7 @@ function main(): void {
       { provider: 'claude-code-oauth', total_calls: 5, success_count: 5, total_cost_usd: 10.5 },
       { provider: 'openai-oauth', total_calls: 10, success_count: 10, total_cost_usd: 0 },
       { provider: 'failed', total_calls: 1, success_count: 0, total_cost_usd: 0 },
+      { provider: 'local-embedding', total_calls: 7, success_count: 7, total_cost_usd: 0 },
     ],
   }, { selectorSnapshot });
 
@@ -68,6 +69,12 @@ function main(): void {
   assert.equal(trafficMixReport.verdict.selector_claude_code_sonnet_share_ok, true);
   assert.equal(trafficMixReport.verdict.runtime_anthropic_zero_ok, true);
   assert.equal(trafficMixReport.verdict.reported_cost_accounting_only, true);
+  assert.ok(trafficMixReport.provider_order.includes('local-embedding'));
+  assert.equal(
+    Object.values(trafficMixReport.providers).reduce((sum, row) => sum + row.calls, 0),
+    223,
+    'all summary providers must be represented in the report',
+  );
   assert.ok(trafficMixReport.warnings.includes('runtime_reported_cost_is_accounting_or_cli_imputed_cost_not_oauth4_billing_gate'));
   assert.ok(trafficMixReport.warnings.includes('runtime_claude_code_reported_cost_share_high_historical_usage_wait_for_decay'));
 
