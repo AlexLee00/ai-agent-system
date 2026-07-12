@@ -27,7 +27,7 @@ CRITICAL_SERVICES=(
   "🏪 SKA팀|ai.ska.naver-monitor|앤디 (네이버 모니터)"
   "📝 블로그팀|ai.blog.node-server|블로그 node-server"
   "🛎️  클로드팀|ai.claude.commander|클로드 커맨더"
-  "🛎️  클로드팀|ai.claude.auto-dev.autonomous|클로드 자동개발 (L5)"
+  "🛎️  클로드팀|ai.claude.auto-dev.autonomous|클로드 자동개발 (L5)|expected_idle"
 )
 
 if [ "${1:-}" = "--dry-run" ]; then
@@ -133,6 +133,29 @@ check_svc() {
   fi
 }
 
+check_expected_idle_svc() {
+  local svc="$1"
+  local label="$2"
+  local list_row pid exit_code
+  list_row=$(launchctl list 2>/dev/null | awk -v s="$svc" '$3==s {print; exit}')
+  pid=$(echo "$list_row" | awk '{print $1}')
+  exit_code=$(echo "$list_row" | awk '{print $2}')
+
+  if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" != "0" ]; then
+    log "   ✅ ${label} (PID: ${pid})"
+    append_report "✅ ${label}"
+    ((OK++)) || true
+  elif [ "$pid" = "-" ] && [ "$exit_code" = "0" ]; then
+    log "   ✅ ${label} (expected-idle, 최근 종료 정상)"
+    append_report "✅ ${label} (expected-idle)"
+    ((OK++)) || true
+  else
+    log "   ❌ ${label} 미등록 또는 오류 (exit=${exit_code:-unknown})"
+    append_report "❌ ${label} 미등록 또는 오류 (exit=${exit_code:-unknown})"
+    ((FAIL++)) || true
+  fi
+}
+
 snapshot_services() {
   local snapshot_file="$1"
   launchctl list 2>/dev/null \
@@ -158,9 +181,9 @@ normalize_snapshot() {
 
 is_critical_service() {
   local requested_service="$1"
-  local entry group service label
+  local entry group service label mode
   for entry in "${CRITICAL_SERVICES[@]}"; do
-    IFS='|' read -r group service label <<< "$entry"
+    IFS='|' read -r group service label mode <<< "$entry"
     if [ "$requested_service" = "$service" ]; then
       return 0
     fi
@@ -169,14 +192,18 @@ is_critical_service() {
 }
 
 run_critical_service_checks() {
-  local entry group service label current_group=""
+  local entry group service label mode current_group=""
   for entry in "${CRITICAL_SERVICES[@]}"; do
-    IFS='|' read -r group service label <<< "$entry"
+    IFS='|' read -r group service label mode <<< "$entry"
     if [ "$group" != "$current_group" ]; then
       log "$group"
       current_group="$group"
     fi
-    check_svc "$service" "$label"
+    if [ "$mode" = "expected_idle" ]; then
+      check_expected_idle_svc "$service" "$label"
+    else
+      check_svc "$service" "$label"
+    fi
   done
 }
 
