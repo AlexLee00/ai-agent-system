@@ -6129,3 +6129,6 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - http://localhost:7787 영역 2에 Cycle 43 + COLLAB_TRACE archived 표시
 
 **커밋**: 0e56e15c
+
+## 2026-07-13 (재부팅 전 정리)
+- V2.0 스프린트 완주(진단 34후보→레드팀 공방→T1 구현·P2 5봉쇄)·재부팅 체계 v2(스냅샷 대조·커버 187·보호 데몬 완전·RUNBOOK_REBOOT.md)·Langfuse 은퇴·디스크 +55G(주간 누적). 상세: project-docs handoff.

@@ -1906,3 +1906,6 @@
   - 결과: `web / nextjs / lead / task-runner`, `worker web API`, `n8n intake webhook` 정상
 - 2026-04-20: `tsx bots/claude/scripts/health-report.ts --json` / `tsx bots/claude/scripts/health-check.ts` ✅
   - 결과: `commander / dexter / archer / health-dashboard` 및 `n8n webhook` 정상
+
+## 2026-07-13
+- post-reboot dry-run: OK 187/WARN 0/FAIL 0·보호 데몬 중지 mock FAIL 검출 ✅·root strict 0·브리지 47~53회차 전부 verified.

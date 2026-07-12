@@ -2571,3 +2571,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 2026-04-20 — `ops(post-reboot)`: 포스트 리붓 점검 재실행 후 `hub`, `n8n`, `mlx`, `rag`와 `luna/blog/ska/worker/claude` 팀 상태를 재검증했다. 현재 핵심 서비스와 팀별 헬스체크는 모두 정상 구간이다.
 - 2026-04-20 — `ops(reservation)`: `today-audit`를 wrapper 경로로 재실행해 `/tmp/today-audit.log` 기준 `exit 0` 성공 이력을 다시 적재했다.
 - 2026-04-20 — `fix(reservation)`: duplicate slot audit가 `completed/completed` 중복을 위험군으로 보던 기준을 historical duplicate로 조정해 예약 헬스 리포트가 실제 운영 체감과 같도록 정렬했다.
+
+## 2026-07-13
+- improve(scripts): 재부팅 검증 v2(b1dac8384·3a7215675) / feat: V2.0 T1(KG search·cluster promotion) / fix: P2 5건 / chore: Langfuse 은퇴(9cd90afff)
