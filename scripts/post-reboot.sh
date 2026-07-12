@@ -11,7 +11,24 @@ LOG_FILE="/tmp/post-reboot.log"
 FOLLOWUP_FILE="/tmp/post-reboot-followup.txt"
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
 TELEGRAM_NODE="/opt/homebrew/bin/node"
+PRE_REBOOT_SNAPSHOT_FILE="${PRE_REBOOT_SERVICE_SNAPSHOT_FILE:-/tmp/pre-reboot-services.txt}"
+POST_REBOOT_SNAPSHOT_FILE="${POST_REBOOT_SERVICE_SNAPSHOT_FILE:-/tmp/post-reboot-services.txt}"
 DRY_RUN=0
+CRITICAL_SERVICES=(
+  "🔧 인프라 (Hub / Telegram callback / MLX)|ai.mlx.server|MLX LLM 서버"
+  "🔧 인프라 (Hub / Telegram callback / MLX)|ai.hub.resource-api|Hub 리소스 API"
+  "🔧 인프라 (Hub / Telegram callback / MLX)|ai.telegram.callback-poller|텔레그램 콜백 poller"
+  "🔧 인프라 (Hub / Telegram callback / MLX)|ai.elixir.supervisor|Team Jay 대시보드/Elixir supervisor"
+  "🔧 인프라 (Hub / Telegram callback / MLX)|ai.sigma.mcp-server|Sigma MCP 서버"
+  "💹 투자팀|ai.investment.commander|루나 커맨더"
+  "💹 투자팀|ai.luna.marketdata-mcp|루나 마켓데이터 MCP"
+  "💹 투자팀|ai.luna.tradingview-ws|루나 TradingView WS"
+  "🏪 SKA팀|ai.ska.commander|스카 커맨더"
+  "🏪 SKA팀|ai.ska.naver-monitor|앤디 (네이버 모니터)"
+  "📝 블로그팀|ai.blog.node-server|블로그 node-server"
+  "🛎️  클로드팀|ai.claude.commander|클로드 커맨더"
+  "🛎️  클로드팀|ai.claude.auto-dev.autonomous|클로드 자동개발 (L5)"
+)
 
 if [ "${1:-}" = "--dry-run" ]; then
   DRY_RUN=1
@@ -52,13 +69,19 @@ const { publishToWebhook } = require(process.env.PROJECT_DIR_ENV + '/packages/co
 NODE
 }
 
-log "🚀 재부팅 후 시작 루틴 시작 (시스템 안정화 대기 45초)..."
-sleep 45
+if [ "$DRY_RUN" -eq 1 ]; then
+  log "🧪 dry-run 모드 — 시스템 안정화 대기 생략"
+else
+  log "🚀 재부팅 후 시작 루틴 시작 (시스템 안정화 대기 45초)..."
+  sleep 45
+fi
 
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 log "🔍 서비스 상태 점검 시작"
 log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-sleep 20
+if [ "$DRY_RUN" -eq 0 ]; then
+  sleep 20
+fi
 
 REPORT_LINES=()
 OK=0
@@ -70,24 +93,6 @@ append_report() {
   REPORT_LINES+=("$1")
 }
 
-has_recent_dexter_report() {
-  local log_path="$PROJECT_DIR/bots/claude/dexter.log"
-  if [ ! -f "$log_path" ]; then
-    return 1
-  fi
-
-  local now_ts mtime age tail_text
-  now_ts=$(date +%s)
-  mtime=$(stat -f %m "$log_path" 2>/dev/null || echo 0)
-  age=$((now_ts - mtime))
-  if [ "$age" -gt 5400 ]; then
-    return 1
-  fi
-
-  tail_text=$(tail -n 80 "$log_path" 2>/dev/null || true)
-  [[ "$tail_text" == *"📋 요약:"* || "$tail_text" == *"🎉 모든 체크 통과"* || "$tail_text" == *"이상 없음 — 텔레그램 발송 생략"* ]]
-}
-
 launchctl_field() {
   local info="$1"
   local pattern="$2"
@@ -97,11 +102,10 @@ launchctl_field() {
 check_svc() {
   local svc="$1"
   local label="$2"
-  local pid info state exit_raw exit_code runs
+  local pid info state exit_raw exit_code
   pid=$(launchctl list 2>/dev/null | awk -v s="$svc" '$3==s {print $1}')
   info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null || true)
   state=$(launchctl_field "$info" "state")
-  runs=$(launchctl_field "$info" "runs")
   exit_raw=$(launchctl_field "$info" "last exit code")
 
   if [[ "$exit_raw" =~ ^[0-9]+$ ]]; then
@@ -129,131 +133,130 @@ check_svc() {
   fi
 }
 
-check_periodic() {
-  local svc="$1"
-  local label="$2"
-  local optional="${3:-0}"
-  local info state runs exit_raw exit_code
-  info=$(launchctl print "$LAUNCHCTL_DOMAIN/$svc" 2>/dev/null || true)
-  runs=$(echo "$info" | awk '/	runs =/ {print $3}')
-  exit_raw=$(echo "$info" | sed -n 's/^[[:space:]]*last exit code = \(.*\)$/\1/p' | head -n 1)
-
-  if [[ "$exit_raw" =~ ^[0-9]+$ ]]; then
-    exit_code="$exit_raw"
-  else
-    exit_code=""
-  fi
-
-  if [ "$state" = "running" ]; then
-    log "   ✅ ${label} (현재 실행 중)"
-    append_report "✅ ${label} (running)"
-    ((OK++)) || true
-  elif [ -z "$runs" ]; then
-    if [ "$optional" = "1" ]; then
-      log "   ℹ️  ${label} (선택적 서비스 미등록)"
-      append_report "ℹ️ ${label} 미등록(선택)"
-    else
-      log "   ⚠️  ${label} (서비스 미등록)"
-      append_report "⚠️ ${label} 미등록"
-      ((WARN++)) || true
-    fi
-  elif [ "$runs" -ge 1 ] && [ "$exit_code" = "0" ]; then
-    log "   ✅ ${label} (${runs}회 실행, exit=0)"
-    append_report "✅ ${label}"
-    ((OK++)) || true
-  elif [ "$state" = "spawn scheduled" ] && [ "$runs" -ge 1 ] && [ "${exit_code:-}" = "0" ]; then
-    log "   ⏳ ${label} (launchd 대기 중, 최근 종료 정상)"
-    append_report "⏳ ${label} 대기중(최근 정상)"
-    ((WARN++)) || true
-  elif [ "$runs" -eq 0 ] || [ -z "$exit_code" ] || [ "$exit_raw" = "(never)" ]; then
-    log "   ℹ️  ${label} (등록됨, 첫 트리거 대기 중)"
-    append_report "ℹ️ ${label} 대기중"
-    ((INFO++)) || true
-  elif [ "$svc" = "ai.claude.dexter" ] && [ "$exit_code" = "1" ] && has_recent_dexter_report; then
-    log "   ✅ ${label} (최근 점검 결과 존재, exit=1 허용)"
-    append_report "✅ ${label} (최근 점검 결과 있음)"
-    ((OK++)) || true
-  else
-    log "   ❌ ${label} (exit=${exit_raw:-unknown})"
-    append_report "❌ ${label} 오류 (exit=${exit_raw:-unknown})"
-    ((FAIL++)) || true
-  fi
+snapshot_services() {
+  local snapshot_file="$1"
+  launchctl list 2>/dev/null \
+    | awk '$3 ~ /^ai\./ { print $3 "|" $1 "|" $2 }' \
+    | sort > "$snapshot_file"
 }
 
-log "🔧 인프라 (Hub / Telegram callback / MLX)"
-check_svc      "ai.mlx.server"          "MLX LLM 서버"
-check_svc      "ai.hub.resource-api"    "Hub 리소스 API"
-check_svc      "ai.telegram.callback-poller" "텔레그램 콜백 poller"
-check_svc      "ai.elixir.supervisor"   "Team Jay 대시보드/Elixir supervisor"
-check_svc      "ai.sigma.mcp-server"    "Sigma MCP 서버"
-check_periodic "ai.env.setup"           "환경 설정"
+normalize_snapshot() {
+  local source_file="$1"
+  local normalized_file="$2"
+  awk '
+    index($0, "|") {
+      split($0, fields, "|")
+      if (fields[1] ~ /^ai\./) print fields[1] "|" fields[2] "|" fields[3]
+      next
+    }
+    {
+      count = split($0, fields, /[[:space:]]+/)
+      if (count >= 3 && fields[3] ~ /^ai\./) print fields[3] "|" fields[1] "|" fields[2]
+    }
+  ' "$source_file" | sort -t '|' -k1,1 -u > "$normalized_file"
+}
 
-log "💹 투자팀"
-check_svc      "ai.investment.commander"             "루나 커맨더"
-check_svc      "ai.luna.marketdata-mcp"              "루나 마켓데이터 MCP"
-check_periodic "ai.investment.runtime-autopilot"     "루나 런타임 오토파일럿"
-check_periodic "ai.luna.ops-scheduler"               "루나 운영 스케줄러"
-check_periodic "ai.luna.log-rotate"                  "루나 로그 로테이트"
+is_critical_service() {
+  local requested_service="$1"
+  local entry group service label
+  for entry in "${CRITICAL_SERVICES[@]}"; do
+    IFS='|' read -r group service label <<< "$entry"
+    if [ "$requested_service" = "$service" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
-log "🏪 SKA팀"
-check_svc      "ai.ska.commander"            "스카 커맨더"
-check_svc      "ai.ska.dashboard"            "스카 대시보드"
-check_svc      "ai.ska.naver-monitor"        "앤디 (네이버 모니터)"
-check_periodic "ai.ska.kiosk-monitor"        "지미 (키오스크 모니터)"
-check_periodic "ai.ska.kiosk-full-scan"      "지미 (키오스크 새벽 full scan)"
-check_periodic "ai.ska.eve"                  "이브"
-check_periodic "ai.ska.eve-crawl"            "이브 크롤"
-check_periodic "ai.ska.rebecca"              "레베카"
-check_periodic "ai.ska.rebecca-weekly"       "레베카 weekly"
-check_periodic "ai.ska.etl"                  "스카 ETL"
-check_periodic "ai.ska.db-backup"            "스카 DB 백업"
-check_periodic "ai.ska.health-check"         "스카 health-check"
-check_periodic "ai.ska.forecast-daily"       "매출 예측 daily"
-check_periodic "ai.ska.forecast-weekly"      "매출 예측 weekly"
-check_periodic "ai.ska.forecast-monthly"     "매출 예측 monthly"
-check_periodic "ai.ska.log-rotate"           "스카 로그 로테이트"
-check_periodic "ai.ska.pickko-daily-audit"   "피코 일일 감사"
-check_periodic "ai.ska.pickko-daily-summary" "피코 일일 요약"
-check_periodic "ai.ska.pickko-pay-scan"      "피코 결제 스캔"
-check_periodic "ai.ska.pickko-verify"        "피코 검증"
-check_periodic "ai.ska.today-audit"          "스카 금일 감사"
+run_critical_service_checks() {
+  local entry group service label current_group=""
+  for entry in "${CRITICAL_SERVICES[@]}"; do
+    IFS='|' read -r group service label <<< "$entry"
+    if [ "$group" != "$current_group" ]; then
+      log "$group"
+      current_group="$group"
+    fi
+    check_svc "$service" "$label"
+  done
+}
 
-log "📝 블로그팀"
-check_svc      "ai.blog.node-server"         "블로그 node-server"
-check_periodic "ai.blog.daily"               "블로그 daily"
-check_periodic "ai.blog.health-check"        "블로그 health-check"
-check_periodic "ai.blog.collect-performance" "블로그 성과 수집"
+is_failed_snapshot_state() {
+  local pid="$1"
+  local exit_code="$2"
+  [ "$pid" = "-" ] && [[ "$exit_code" =~ ^[1-9][0-9]*$ ]]
+}
 
-log "🛎️  클로드팀"
-check_svc      "ai.claude.commander"        "클로드 커맨더"
-check_svc      "ai.claude.health-dashboard" "클로드 health-dashboard"
-check_periodic "ai.claude.dexter.quick"     "덱스터 quick"
-check_periodic "ai.claude.dexter"           "덱스터"
-check_periodic "ai.claude.dexter.daily"     "덱스터 daily"
-check_periodic "ai.claude.archer"           "아처"
-check_periodic "ai.claude.health-check"     "클로드 health-check"
-check_periodic "ai.claude.speed-test"       "클로드 speed-test"
+compare_service_snapshots() {
+  local baseline_file="$1"
+  local current_file="$2"
+  local normalized_baseline svc pid exit_code current_line current_pid current_exit
+  local baseline_line baseline_pid baseline_exit matched_count=0 baseline_missing=0
 
-check_periodic "ai.darwin.weekly.autonomous" "다윈 weekly autonomous"
-check_periodic "ai.darwin.weekly-ops-report" "다윈 weekly ops report"
-check_periodic "ai.darwin.weekly-review"     "다윈 weekly review"
+  normalized_baseline=$(mktemp /tmp/post-reboot-baseline.XXXXXX)
+  if [ ! -s "$baseline_file" ]; then
+    log "   ℹ️  재부팅 전 스냅샷 없음 — 현재 launchctl 목록을 기준선으로 사용"
+    append_report "ℹ️ 재부팅 전 스냅샷 없음 (현재 상태로 기준선 초기화)"
+    ((INFO++)) || true
+    baseline_missing=1
+    cp "$current_file" "$normalized_baseline"
+  else
+    normalize_snapshot "$baseline_file" "$normalized_baseline"
+  fi
 
-log "🏠 집사 (Steward)"
-check_periodic "ai.steward.hourly"       "집사 hourly"
-check_periodic "ai.steward.daily"        "집사 daily"
-check_periodic "ai.steward.weekly"       "집사 weekly"
+  while IFS='|' read -r svc pid exit_code; do
+    [ -n "$svc" ] || continue
+    is_critical_service "$svc" && continue
+    current_line=$(awk -F '|' -v service="$svc" '$1 == service { print; exit }' "$current_file")
+    if [ -z "$current_line" ]; then
+      log "   ⚠️  ${svc} (재부팅 후 목록에서 사라짐)"
+      append_report "⚠️ ${svc} 재부팅 후 미등록"
+      ((WARN++)) || true
+      continue
+    fi
 
-log "✍️  라이트 / 이벤트"
-check_periodic "ai.write.daily"          "라이트 daily"
-check_periodic "ai.event.reminders"      "이벤트 리마인더"
+    IFS='|' read -r _ current_pid current_exit <<< "$current_line"
+    if ! is_failed_snapshot_state "$current_pid" "$current_exit"; then
+      ((matched_count++)) || true
+    elif [ "$baseline_missing" -eq 0 ] \
+      && is_failed_snapshot_state "$pid" "$exit_code" \
+      && [ "$exit_code" = "$current_exit" ]; then
+      ((matched_count++)) || true
+    fi
+  done < "$normalized_baseline"
 
-log "🔄 공통 에이전트"
-check_periodic "ai.agent.auto-commit"    "auto-commit"
-check_periodic "ai.agent.nightly-sync"   "nightly-sync"
-check_periodic "ai.agent.post-reboot"    "post-reboot (자기 자신)"
+  while IFS='|' read -r svc pid exit_code; do
+    [ -n "$svc" ] || continue
+    is_critical_service "$svc" && continue
+    is_failed_snapshot_state "$pid" "$exit_code" || continue
 
-launchctl list 2>/dev/null | grep "	ai\." | sort > /tmp/post-reboot-services.txt
-log "💾 전체 서비스 목록 저장 → /tmp/post-reboot-services.txt"
+    baseline_line=$(awk -F '|' -v service="$svc" '$1 == service { print; exit }' "$normalized_baseline")
+    if [ "$baseline_missing" -eq 0 ] && [ -n "$baseline_line" ]; then
+      IFS='|' read -r _ baseline_pid baseline_exit <<< "$baseline_line"
+      if is_failed_snapshot_state "$baseline_pid" "$baseline_exit" && [ "$baseline_exit" = "$exit_code" ]; then
+        continue
+      fi
+    fi
+
+    log "   ❌ ${svc} (재부팅 후 신규 실패, exit=${exit_code})"
+    append_report "❌ ${svc} 신규 실패 (exit=${exit_code})"
+    ((FAIL++)) || true
+  done < "$current_file"
+
+  if [ "$matched_count" -gt 0 ]; then
+    OK=$((OK + matched_count))
+    log "   ✅ 나머지 launchd 잡 ${matched_count}개 스냅샷 일치"
+    append_report "✅ 나머지 launchd 잡 ${matched_count}개 스냅샷 일치"
+  fi
+
+  rm -f "$normalized_baseline"
+}
+
+run_critical_service_checks
+
+log "📋 나머지 launchd 잡 재부팅 전후 비교"
+snapshot_services "$POST_REBOOT_SNAPSHOT_FILE"
+compare_service_snapshots "$PRE_REBOOT_SNAPSHOT_FILE" "$POST_REBOOT_SNAPSHOT_FILE"
+log "💾 전체 서비스 목록 저장 → $POST_REBOOT_SNAPSHOT_FILE"
 
 cat > "$FOLLOWUP_FILE" <<EOF
 post_reboot_at=$(date '+%Y-%m-%dT%H:%M:%S%z')

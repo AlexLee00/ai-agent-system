@@ -12,7 +12,8 @@ set -uo pipefail
 PROJECT_DIR="$HOME/projects/ai-agent-system"
 LOG_FILE="/tmp/pre-reboot.log"
 PREPARED_FILE="/tmp/ai-agent-pre-reboot-prepared.txt"
-SERVICE_SNAPSHOT_FILE="/tmp/pre-reboot-services.txt"
+SERVICE_SNAPSHOT_FILE="${PRE_REBOOT_SERVICE_SNAPSHOT_FILE:-/tmp/pre-reboot-services.txt}"
+POST_DRAIN_SNAPSHOT_FILE="/tmp/pre-reboot-services-after-drain.txt"
 DOC_STATUS_FILE="/tmp/pre-reboot-docs.txt"
 TELEGRAM_NODE="/opt/homebrew/bin/node"
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
@@ -105,8 +106,11 @@ stop_service_if_registered() {
 }
 
 snapshot_services() {
-  launchctl list 2>/dev/null | grep "	ai\." | sort > "$SERVICE_SNAPSHOT_FILE"
-  log "💾 launchd 서비스 상태 스냅샷 저장 → $SERVICE_SNAPSHOT_FILE"
+  local snapshot_file="${1:-$SERVICE_SNAPSHOT_FILE}"
+  launchctl list 2>/dev/null \
+    | awk '$3 ~ /^ai\./ { print $3 "|" $1 "|" $2 }' \
+    | sort > "$snapshot_file"
+  log "💾 launchd 서비스 상태 스냅샷 저장 → $snapshot_file"
 }
 
 validate_reboot_docs() {
@@ -237,7 +241,6 @@ stop_service_if_registered "ai.luna.log-rotate" "루나 로그 로테이트"
 
 log "🏪 SKA팀"
 stop_service_if_registered "ai.ska.commander" "스카 커맨더"
-stop_service_if_registered "ai.ska.dashboard" "스카 대시보드"
 stop_service_if_registered "ai.ska.naver-monitor" "앤디 (네이버 모니터)"
 stop_service_if_registered "ai.ska.kiosk-monitor" "지미 (키오스크 모니터)"
 stop_service_if_registered "ai.ska.kiosk-full-scan" "지미 (키오스크 새벽 full scan)"
@@ -270,7 +273,6 @@ stop_service_if_registered "ai.claude.dexter" "덱스터"
 stop_service_if_registered "ai.claude.dexter.quick" "덱스터 quick"
 stop_service_if_registered "ai.claude.dexter.daily" "덱스터 daily"
 stop_service_if_registered "ai.claude.archer" "아처"
-stop_service_if_registered "ai.claude.health-dashboard" "클로드 health-dashboard"
 stop_service_if_registered "ai.claude.health-check" "클로드 health-check"
 stop_service_if_registered "ai.claude.speed-test" "클로드 speed-test"
 
@@ -289,7 +291,6 @@ stop_service_if_registered "ai.write.daily" "라이트 daily"
 stop_service_if_registered "ai.event.reminders" "이벤트 리마인더"
 
 log "🔄 공통 에이전트"
-stop_service_if_registered "ai.agent.auto-commit" "auto-commit"
 stop_service_if_registered "ai.agent.nightly-sync" "nightly-sync"
 stop_service_if_registered "ai.agent.post-reboot" "post-reboot (자기 자신)"
 
@@ -301,7 +302,7 @@ stop_service_if_registered "ai.sigma.mcp-server" "Sigma MCP 서버"
 stop_service_if_registered "ai.mlx.server" "MLX LLM 서버"
 stop_service_if_registered "ai.env.setup" "환경 설정"
 
-snapshot_services
+snapshot_services "$POST_DRAIN_SNAPSHOT_FILE"
 date '+%Y-%m-%dT%H:%M:%S KST' > /tmp/last-reboot-time.txt
 log "📝 재부팅 직전 시각 기록: $(cat /tmp/last-reboot-time.txt)"
 
