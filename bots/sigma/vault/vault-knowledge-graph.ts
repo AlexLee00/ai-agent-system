@@ -46,6 +46,7 @@ export interface VaultKnowledgeGraph {
 export interface VaultGraphRelatedRecord {
   record: VaultGraphRecord;
   hop: number;
+  confidence: number;
 }
 
 type ReportOptions = {
@@ -279,41 +280,48 @@ export function queryRelatedRecords(
   });
   if (matchedNodes.length === 0) return { matchedNodes: [], records: [] };
 
-  const adjacency = new Map<string, Set<string>>();
+  const adjacency = new Map<string, Array<{ nodeId: string; confidence: number }>>();
   for (const edge of graph.edges) {
-    if (!adjacency.has(edge.source)) adjacency.set(edge.source, new Set());
-    if (!adjacency.has(edge.target)) adjacency.set(edge.target, new Set());
-    adjacency.get(edge.source)?.add(edge.target);
-    adjacency.get(edge.target)?.add(edge.source);
+    if (!adjacency.has(edge.source)) adjacency.set(edge.source, []);
+    if (!adjacency.has(edge.target)) adjacency.set(edge.target, []);
+    adjacency.get(edge.source)?.push({ nodeId: edge.target, confidence: edge.confidence });
+    adjacency.get(edge.target)?.push({ nodeId: edge.source, confidence: edge.confidence });
   }
 
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
   const recordByNodeId = new Map(graph.records.map((record) => [record.nodeId, record]));
   const seenConcepts = new Set(matchedNodes.map((node) => node.id));
   const related = new Map<string, VaultGraphRelatedRecord>();
-  let frontier = new Set(seenConcepts);
+  let frontier = new Map([...seenConcepts].map((nodeId) => [nodeId, 1]));
   const safeMaxHops = Math.max(1, Math.min(2, Math.floor(Number(maxHops) || 1)));
 
   for (let hop = 1; hop <= safeMaxHops && frontier.size > 0; hop += 1) {
-    const recordNodes = new Set<string>();
-    for (const conceptNode of frontier) {
-      for (const neighbor of adjacency.get(conceptNode) || []) {
-        if (recordByNodeId.has(neighbor)) recordNodes.add(neighbor);
+    const recordNodes = new Map<string, number>();
+    for (const [conceptNode, pathConfidence] of frontier) {
+      for (const edge of adjacency.get(conceptNode) || []) {
+        if (!recordByNodeId.has(edge.nodeId)) continue;
+        const confidence = pathConfidence * edge.confidence;
+        recordNodes.set(edge.nodeId, Math.max(recordNodes.get(edge.nodeId) || 0, confidence));
       }
     }
-    for (const recordNode of recordNodes) {
+    for (const [recordNode, confidence] of recordNodes) {
       const record = recordByNodeId.get(recordNode);
-      if (record && !related.has(record.id)) related.set(record.id, { record, hop });
+      const existing = record ? related.get(record.id) : null;
+      if (record && (!existing || hop < existing.hop || (hop === existing.hop && confidence > existing.confidence))) {
+        related.set(record.id, { record, hop, confidence: Number(confidence.toFixed(4)) });
+      }
     }
 
-    const nextFrontier = new Set<string>();
-    for (const recordNode of recordNodes) {
-      for (const neighbor of adjacency.get(recordNode) || []) {
-        if (!recordByNodeId.has(neighbor) && !seenConcepts.has(neighbor)) {
-          seenConcepts.add(neighbor);
-          nextFrontier.add(neighbor);
-        }
+    const nextFrontier = new Map<string, number>();
+    for (const [recordNode, pathConfidence] of recordNodes) {
+      for (const edge of adjacency.get(recordNode) || []) {
+        const node = nodeById.get(edge.nodeId);
+        if (!node || !['entity', 'topic_theme'].includes(node.type) || seenConcepts.has(node.id)) continue;
+        const confidence = pathConfidence * edge.confidence;
+        nextFrontier.set(node.id, Math.max(nextFrontier.get(node.id) || 0, confidence));
       }
     }
+    for (const nodeId of nextFrontier.keys()) seenConcepts.add(nodeId);
     frontier = nextFrontier;
   }
 
@@ -322,6 +330,7 @@ export function queryRelatedRecords(
     matchedNodes,
     records: [...related.values()]
       .sort((left, right) => left.hop - right.hop
+        || right.confidence - left.confidence
         || left.record.title.localeCompare(right.record.title)
         || left.record.id.localeCompare(right.record.id))
       .slice(0, safeLimit),

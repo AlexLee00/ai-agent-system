@@ -47,6 +47,33 @@ export interface VaultSearchResult {
   libraryCoords?: Record<string, unknown>;
 }
 
+export interface VaultKnowledgeGraphSearchRecord {
+  id: string;
+  title: string;
+  source: string | null;
+  contentPreview: string | null;
+  meta: Record<string, unknown>;
+  hop: number;
+  confidence: number;
+}
+
+export interface VaultKnowledgeGraphSearchResult {
+  enabled: true;
+  maxHops: number;
+  resultLimit: number;
+  matchedNodes: Array<{ id: string; type: string; label: string }>;
+  results: VaultKnowledgeGraphSearchRecord[];
+  warning?: string;
+}
+
+export interface VaultSearchResponse {
+  ok: boolean;
+  results: VaultSearchResult[];
+  warning?: string;
+  routing?: Record<string, unknown> | null;
+  knowledgeGraph?: VaultKnowledgeGraphSearchResult;
+}
+
 function boundedNumber(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = Number(value);
   const safeValue = Number.isFinite(parsed) ? parsed : fallback;
@@ -85,7 +112,7 @@ function isKnowledgeGraphSearchEnabled(env: Record<string, string | undefined>):
   return String(env[KG_SEARCH_ENV] || '').trim().toLowerCase() === 'true';
 }
 
-async function searchKnowledgeGraph(query: string, queryReadonly: any) {
+async function searchKnowledgeGraph(query: string, queryReadonly: any): Promise<VaultKnowledgeGraphSearchResult> {
   const rows = normalizeRows(await queryReadonly('sigma', `
     SELECT
       id::text,
@@ -118,7 +145,7 @@ async function searchKnowledgeGraph(query: string, queryReadonly: any) {
     maxHops: KG_SEARCH_MAX_HOPS,
     resultLimit: KG_SEARCH_RESULT_LIMIT,
     matchedNodes: related.matchedNodes.map((node) => ({ id: node.id, type: node.type, label: node.label })),
-    results: related.records.flatMap(({ record, hop }) => {
+    results: related.records.flatMap(({ record, hop, confidence }) => {
       const row = rowById.get(record.id);
       if (!row) return [];
       return [{
@@ -128,6 +155,7 @@ async function searchKnowledgeGraph(query: string, queryReadonly: any) {
         contentPreview: row.content_preview || null,
         meta: normalizeMeta(row.meta),
         hop,
+        confidence,
       }];
     }),
   };
@@ -179,12 +207,7 @@ function addCoordSqlFilter(filters: string[], params: any[], nextParam: number, 
   return nextParam + 3;
 }
 
-export async function searchVault(query: string, opts: VaultSearchOptions = {}): Promise<{
-  ok: boolean;
-  results: VaultSearchResult[];
-  warning?: string;
-  routing?: Record<string, unknown> | null;
-}> {
+export async function searchVault(query: string, opts: VaultSearchOptions = {}): Promise<VaultSearchResponse> {
   const normalizedQuery = String(query || '').trim();
   if (!normalizedQuery) return { ok: false, results: [], warning: 'query_required' };
 
@@ -285,7 +308,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
       .filter((row: VaultSearchResult) => minSimilarity == null || row.similarity >= minSimilarity)
       .slice(0, topK);
 
-    const response: any = {
+    const response: VaultSearchResponse = {
       ok: true,
       results,
     };
