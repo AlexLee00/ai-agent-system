@@ -102,6 +102,8 @@ async function main() {
   assert.equal(recommendation?.embedding_dimensions, 2);
   assert.equal(recommendation?.signature_dimensions, 2);
   assert.equal(recommendation?.signature_key, CURRENT_SIGNATURE_KEY);
+  assert.equal(recommendation?.cluster_algorithm_version, 'kmeans-v1');
+  assert.match(String(recommendation?.centroid_hash), /^[a-f0-9]{16}$/);
   assert.equal(JSON.stringify(recommendation).includes(request.prompt), false);
 
   assert.equal(await buildClusterRoutingRecommendation(request, {

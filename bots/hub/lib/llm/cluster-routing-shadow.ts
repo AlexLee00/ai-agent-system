@@ -1,5 +1,6 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const rag = require('../../../../packages/core/lib/rag');
 
@@ -44,6 +45,8 @@ export type ClusterRoutingRecommendation = {
   signature_dimensions: number;
   signature_key: string;
   embedding_signature: number[];
+  cluster_algorithm_version: 'kmeans-v1';
+  centroid_hash: string | null;
 };
 
 const DEFAULT_HISTORY_LIMIT = 500;
@@ -51,6 +54,7 @@ const DEFAULT_MIN_SAMPLES = 3;
 const MAX_CLUSTERS = 4;
 const SIGNATURE_DIMENSIONS = 24;
 const SIGNATURE_VERSION = 'v1';
+const CLUSTER_ALGORITHM_VERSION = 'kmeans-v1';
 
 function enabled(env: Record<string, any>): boolean {
   return /^(1|true|yes|on|shadow)$/i.test(String(env.LLM_CLUSTER_ROUTING_SHADOW_ENABLED || '').trim());
@@ -74,6 +78,16 @@ function normalize(vector: number[]): number[] | null {
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
   if (!Number.isFinite(norm) || norm === 0) return null;
   return vector.map((value) => value / norm);
+}
+
+function buildCentroidHash(vector: number[]): string | null {
+  const normalized = normalize(vector);
+  if (!normalized) return null;
+  const payload = normalized.map((value) => value.toFixed(6)).join(',');
+  return createHash('sha256')
+    .update(`${CLUSTER_ALGORITHM_VERSION}:${payload}`)
+    .digest('hex')
+    .slice(0, 16);
 }
 
 export function buildEmbeddingSignature(vector: number[], dimensions = SIGNATURE_DIMENSIONS): number[] | null {
@@ -298,6 +312,8 @@ export async function buildClusterRoutingRecommendation(
 
       return {
         ...evidence,
+        cluster_algorithm_version: CLUSTER_ALGORITHM_VERSION,
+        centroid_hash: buildCentroidHash(clustered.centroids[currentCluster]),
         cluster_id: `cluster-${currentCluster + 1}-of-${clustered.centroids.length}`,
         cluster_count: clustered.centroids.length,
         sample_count: clusterRows.length,
@@ -311,6 +327,8 @@ export async function buildClusterRoutingRecommendation(
     } catch {
       return {
         ...evidence,
+        cluster_algorithm_version: CLUSTER_ALGORITHM_VERSION,
+        centroid_hash: null,
         cluster_id: 'unavailable',
         cluster_count: 0,
         sample_count: 0,
@@ -329,6 +347,7 @@ export async function buildClusterRoutingRecommendation(
 
 module.exports = {
   buildClusterRoutingRecommendation,
+  buildCentroidHash,
   buildEmbeddingSignature,
   buildEmbeddingSignatureKey,
   isClusterRoutingEligible,

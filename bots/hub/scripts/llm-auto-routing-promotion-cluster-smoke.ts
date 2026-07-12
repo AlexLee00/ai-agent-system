@@ -9,18 +9,27 @@ import {
 type ClusterRow = {
   cluster_id: string;
   signature_key: string;
+  cluster_algorithm_version?: string;
+  centroid_hash?: string;
   recommended_model: string;
   selected_model: string;
   success: boolean;
 };
 
-function clusterRows(recommendedSuccesses: number, alternativeSuccesses: number): ClusterRow[] {
+function clusterRows(
+  recommendedSuccesses: number,
+  alternativeSuccesses: number,
+  centroidHash = 'centroid-a',
+  recommendationSelectedCount = 15,
+): ClusterRow[] {
   return Array.from({ length: 30 }, (_value, index) => {
-    const recommendationSelected = index < 15;
-    const successIndex = recommendationSelected ? index : index - 15;
+    const recommendationSelected = index < recommendationSelectedCount;
+    const successIndex = recommendationSelected ? index : index - recommendationSelectedCount;
     return {
       cluster_id: 'cluster-1-of-2',
       signature_key: 'v1:test-embed:2:2',
+      cluster_algorithm_version: 'kmeans-v1',
+      centroid_hash: centroidHash,
       recommended_model: 'openai/gpt-5.4-mini',
       selected_model: recommendationSelected ? 'openai/gpt-5.4-mini' : 'anthropic/claude-sonnet',
       success: successIndex < (recommendationSelected ? recommendedSuccesses : alternativeSuccesses),
@@ -56,13 +65,36 @@ async function main() {
   assert.equal(direct.clusters[0].recommendationMatchRate, 0.5);
   assert.equal(direct.clusters[0].successRateDelta, -0.2);
   assert.equal(direct.checks[0].passed, false);
+  assert.equal(direct.minSamplesPerCohort, 10);
+
+  const oneVsTwentyNine = evaluateClusterPromotion(clusterRows(1, 20, 'centroid-1-vs-29', 1));
+  assert.equal(oneVsTwentyNine.applied, false);
+  assert.equal(oneVsTwentyNine.fallbackReason, 'insufficient_cluster_data');
+
+  const tenVsTwenty = evaluateClusterPromotion(clusterRows(8, 15, 'centroid-10-vs-20', 10));
+  assert.equal(tenVsTwenty.applied, true);
+
+  const zeroVsThirty = evaluateClusterPromotion(clusterRows(0, 20, 'centroid-0-vs-30', 0));
+  assert.equal(zeroVsThirty.applied, false);
+  assert.equal(zeroVsThirty.fallbackReason, 'insufficient_cluster_data');
+
+  const stableKeySplit = evaluateClusterPromotion([
+    ...clusterRows(12, 15, 'centroid-a'),
+    ...clusterRows(12, 15, 'centroid-b'),
+  ]);
+  assert.equal(stableKeySplit.clusters.length, 2, 'same display cluster ID must not merge different centroids');
+
+  const legacyRows = clusterRows(12, 15).map(({ cluster_algorithm_version, centroid_hash, ...row }) => row);
+  const legacy = evaluateClusterPromotion(legacyRows);
+  assert.equal(legacy.applied, false);
+  assert.equal(legacy.fallbackReason, 'insufficient_cluster_data');
 
   const signatureMismatchRows = clusterRows(12, 15);
   signatureMismatchRows[0] = { ...signatureMismatchRows[0], signature_key: 'v1:other-embed:2:2' };
   const signatureMismatch = evaluateClusterPromotion(signatureMismatchRows);
   assert.equal(signatureMismatch.applied, false);
   assert.equal(signatureMismatch.fallbackReason, 'insufficient_cluster_data');
-  assert.equal(signatureMismatch.clusters[0].signatureMatched, false);
+  assert.equal(signatureMismatch.clusters.length, 2);
 
   const offPool = mockPgPool(clusterRows(12, 15));
   const off = await runLlmAutoRoutingPromotionEvaluation({ env: {}, pgPool: offPool });
@@ -91,7 +123,7 @@ async function main() {
   assert.equal(integrated.blockers.some((blocker) => blocker.includes('cluster-1-of-2')), true);
   assert.equal(integrated.nextStep.includes('launchctl'), false);
 
-  console.log(JSON.stringify({ ok: true, smoke: 'llm-auto-routing-promotion-cluster', checks: 20 }, null, 2));
+  console.log(JSON.stringify({ ok: true, smoke: 'llm-auto-routing-promotion-cluster', checks: 29 }, null, 2));
 }
 
 main().catch((error) => {

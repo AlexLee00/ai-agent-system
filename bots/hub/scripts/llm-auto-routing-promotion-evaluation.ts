@@ -20,6 +20,7 @@ export const AUTO_ROUTING_PROMOTION_CRITERIA = {
   minManualComparisonSamples: 30,
   minManualAgreementRate: 0.85,
   minClusterSamples: 30,
+  minClusterCohortSamples: 10,
 } as const;
 
 const CLUSTER_PROMOTION_ENV = 'LLM_CLUSTER_PROMOTION_EVALUATION_ENABLED';
@@ -27,6 +28,8 @@ const CLUSTER_PROMOTION_ENV = 'LLM_CLUSTER_PROMOTION_EVALUATION_ENABLED';
 type ClusterPromotionRow = {
   cluster_id?: string | null;
   signature_key?: string | null;
+  cluster_algorithm_version?: string | null;
+  centroid_hash?: string | null;
   recommended_model?: string | null;
   selected_model?: string | null;
   success?: boolean | string | null;
@@ -35,6 +38,8 @@ type ClusterPromotionRow = {
 type ClusterPromotionSummary = {
   clusterId: string;
   signatureKey: string | null;
+  algorithmVersion: string | null;
+  centroidHash: string | null;
   recommendedModel: string | null;
   sampleCount: number;
   recommendationMatchCount: number;
@@ -51,6 +56,7 @@ export type ClusterPromotionEvaluation = {
   applied: boolean;
   fallbackReason?: 'insufficient_cluster_data';
   minSamplesPerCluster: number;
+  minSamplesPerCohort: number;
   clusters: ClusterPromotionSummary[];
   checks: Array<{ name: string; passed: boolean; value: string }>;
 };
@@ -112,19 +118,35 @@ export function evaluateClusterPromotion(
   minSamples = AUTO_ROUTING_PROMOTION_CRITERIA.minClusterSamples,
 ): ClusterPromotionEvaluation {
   const groups = new Map<string, ClusterPromotionRow[]>();
+  let missingStableKey = false;
   for (const row of Array.isArray(rows) ? rows : []) {
     const clusterId = String(row.cluster_id || '').trim();
     if (!clusterId) continue;
-    const group = groups.get(clusterId) || [];
+    const signatureKey = String(row.signature_key || '').trim();
+    const algorithmVersion = String(row.cluster_algorithm_version || '').trim();
+    const centroidHash = String(row.centroid_hash || '').trim();
+    if (!signatureKey || !algorithmVersion || !centroidHash) {
+      missingStableKey = true;
+      continue;
+    }
+    const stableKey = `${signatureKey}|${algorithmVersion}|${centroidHash}`;
+    const group = groups.get(stableKey) || [];
     group.push(row);
-    groups.set(clusterId, group);
+    groups.set(stableKey, group);
   }
 
   const safeMinSamples = Math.max(1, Math.floor(Number(minSamples) || AUTO_ROUTING_PROMOTION_CRITERIA.minClusterSamples));
-  const clusters = [...groups.entries()].map(([clusterId, group]): ClusterPromotionSummary => {
+  const minCohortSamples = AUTO_ROUTING_PROMOTION_CRITERIA.minClusterCohortSamples;
+  const clusters = [...groups.values()].map((group): ClusterPromotionSummary => {
+    const clusterIds = new Set(group.map((row) => String(row.cluster_id || '').trim()).filter(Boolean));
     const signatures = new Set(group.map((row) => String(row.signature_key || '').trim()).filter(Boolean));
+    const algorithmVersions = new Set(group.map((row) => String(row.cluster_algorithm_version || '').trim()).filter(Boolean));
+    const centroidHashes = new Set(group.map((row) => String(row.centroid_hash || '').trim()).filter(Boolean));
     const recommendedModels = new Set(group.map((row) => String(row.recommended_model || '').trim()).filter(Boolean));
-    const signatureMatched = signatures.size === 1 && recommendedModels.size === 1;
+    const signatureMatched = signatures.size === 1
+      && algorithmVersions.size === 1
+      && centroidHashes.size === 1
+      && recommendedModels.size === 1;
     const recommendedModel = recommendedModels.size === 1 ? [...recommendedModels][0] : null;
     const recommendationMatches = recommendedModel
       ? group.filter((row) => String(row.selected_model || '').trim() === recommendedModel)
@@ -141,8 +163,10 @@ export function evaluateClusterPromotion(
       ? null
       : Number((recommendedSuccessRate - alternativeSuccessRate).toFixed(4));
     return {
-      clusterId,
+      clusterId: clusterIds.size === 1 ? [...clusterIds][0] : 'mixed-cluster-labels',
       signatureKey: signatures.size === 1 ? [...signatures][0] : null,
+      algorithmVersion: algorithmVersions.size === 1 ? [...algorithmVersions][0] : null,
+      centroidHash: centroidHashes.size === 1 ? [...centroidHashes][0] : null,
       recommendedModel,
       sampleCount: group.length,
       recommendationMatchCount: recommendationMatches.length,
@@ -153,12 +177,12 @@ export function evaluateClusterPromotion(
       signatureMatched,
       sufficientSamples: signatureMatched
         && group.length >= safeMinSamples
-        && recommendationMatches.length > 0
-        && alternatives.length > 0,
+        && recommendationMatches.length >= minCohortSamples
+        && alternatives.length >= minCohortSamples,
     };
   }).sort((left, right) => left.clusterId.localeCompare(right.clusterId));
 
-  const applied = clusters.length > 0 && clusters.every((cluster) => cluster.sufficientSamples);
+  const applied = !missingStableKey && clusters.length > 0 && clusters.every((cluster) => cluster.sufficientSamples);
   const checks = applied
     ? clusters.map((cluster) => ({
       name: `Cluster ${cluster.clusterId} 추천 성공률 delta 0%p+`,
@@ -172,6 +196,7 @@ export function evaluateClusterPromotion(
     applied,
     ...(!applied ? { fallbackReason: 'insufficient_cluster_data' as const } : {}),
     minSamplesPerCluster: safeMinSamples,
+    minSamplesPerCohort: minCohortSamples,
     clusters,
     checks,
   };
@@ -301,6 +326,8 @@ export async function runLlmAutoRoutingPromotionEvaluation(
       SELECT
         routing_signals #>> '{cluster_recommendation,cluster_id}' AS cluster_id,
         routing_signals #>> '{cluster_recommendation,signature_key}' AS signature_key,
+        routing_signals #>> '{cluster_recommendation,cluster_algorithm_version}' AS cluster_algorithm_version,
+        routing_signals #>> '{cluster_recommendation,centroid_hash}' AS centroid_hash,
         routing_signals #>> '{cluster_recommendation,recommended_model}' AS recommended_model,
         routing_signals #>> '{execution,model}' AS selected_model,
         success
