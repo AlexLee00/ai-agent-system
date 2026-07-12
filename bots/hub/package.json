@@ -171,6 +171,7 @@
     "shadow:activation-smoke": "tsx scripts/shadow-mode-activation-smoke.ts",
     "smoke:llm-auto-routing-shadow-wiring": "tsx scripts/llm-auto-routing-shadow-wiring-smoke.ts",
     "smoke:llm-cluster-routing-shadow": "tsx scripts/llm-cluster-routing-shadow-smoke.ts",
+    "smoke:llm-auto-routing-promotion-cluster": "tsx scripts/llm-auto-routing-promotion-cluster-smoke.ts",
     "smoke:hub-remodel-hbs1-hbs4": "tsx scripts/hub-remodel-hbs1-hbs4-smoke.ts --json",
     "shadow:week2-summary": "tsx scripts/week2-shadow-summary-report.ts",
     "promotion:llm-auto-routing": "tsx scripts/llm-auto-routing-promotion-evaluation.ts",

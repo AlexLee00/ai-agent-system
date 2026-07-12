@@ -19,7 +19,41 @@ export const AUTO_ROUTING_PROMOTION_CRITERIA = {
   maxP99LatencyMs: 5000,
   minManualComparisonSamples: 30,
   minManualAgreementRate: 0.85,
+  minClusterSamples: 30,
 } as const;
+
+const CLUSTER_PROMOTION_ENV = 'LLM_CLUSTER_PROMOTION_EVALUATION_ENABLED';
+
+type ClusterPromotionRow = {
+  cluster_id?: string | null;
+  signature_key?: string | null;
+  recommended_model?: string | null;
+  selected_model?: string | null;
+  success?: boolean | string | null;
+};
+
+type ClusterPromotionSummary = {
+  clusterId: string;
+  signatureKey: string | null;
+  recommendedModel: string | null;
+  sampleCount: number;
+  recommendationMatchCount: number;
+  recommendationMatchRate: number;
+  recommendedSuccessRate: number | null;
+  alternativeSuccessRate: number | null;
+  successRateDelta: number | null;
+  signatureMatched: boolean;
+  sufficientSamples: boolean;
+};
+
+export type ClusterPromotionEvaluation = {
+  enabled: true;
+  applied: boolean;
+  fallbackReason?: 'insufficient_cluster_data';
+  minSamplesPerCluster: number;
+  clusters: ClusterPromotionSummary[];
+  checks: Array<{ name: string; passed: boolean; value: string }>;
+};
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
@@ -44,7 +78,13 @@ interface RoutingPromotionResult {
   checks: Array<{ name: string; passed: boolean; value: string }>;
   blockers: string[];
   nextStep: string;
+  clusterEvaluation?: ClusterPromotionEvaluation;
 }
+
+type PromotionEvaluationDeps = {
+  env?: Record<string, string | undefined>;
+  pgPool?: any;
+};
 
 async function queryWithFallback(pgPool: any, sql: string, params: any[] = []): Promise<any[]> {
   try {
@@ -55,8 +95,93 @@ async function queryWithFallback(pgPool: any, sql: string, params: any[] = []): 
   }
 }
 
-export async function runLlmAutoRoutingPromotionEvaluation(): Promise<RoutingPromotionResult> {
-  const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+function envEnabled(value: unknown): boolean {
+  return /^(1|true|yes|on|shadow)$/i.test(String(value || '').trim());
+}
+
+function booleanSuccess(value: unknown): boolean {
+  return value === true || String(value).toLowerCase() === 'true';
+}
+
+function rate(successes: number, total: number): number | null {
+  return total > 0 ? successes / total : null;
+}
+
+export function evaluateClusterPromotion(
+  rows: ClusterPromotionRow[],
+  minSamples = AUTO_ROUTING_PROMOTION_CRITERIA.minClusterSamples,
+): ClusterPromotionEvaluation {
+  const groups = new Map<string, ClusterPromotionRow[]>();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const clusterId = String(row.cluster_id || '').trim();
+    if (!clusterId) continue;
+    const group = groups.get(clusterId) || [];
+    group.push(row);
+    groups.set(clusterId, group);
+  }
+
+  const safeMinSamples = Math.max(1, Math.floor(Number(minSamples) || AUTO_ROUTING_PROMOTION_CRITERIA.minClusterSamples));
+  const clusters = [...groups.entries()].map(([clusterId, group]): ClusterPromotionSummary => {
+    const signatures = new Set(group.map((row) => String(row.signature_key || '').trim()).filter(Boolean));
+    const recommendedModels = new Set(group.map((row) => String(row.recommended_model || '').trim()).filter(Boolean));
+    const signatureMatched = signatures.size === 1 && recommendedModels.size === 1;
+    const recommendedModel = recommendedModels.size === 1 ? [...recommendedModels][0] : null;
+    const recommendationMatches = recommendedModel
+      ? group.filter((row) => String(row.selected_model || '').trim() === recommendedModel)
+      : [];
+    const alternatives = recommendedModel
+      ? group.filter((row) => {
+        const selected = String(row.selected_model || '').trim();
+        return selected && selected !== recommendedModel;
+      })
+      : [];
+    const recommendedSuccessRate = rate(recommendationMatches.filter((row) => booleanSuccess(row.success)).length, recommendationMatches.length);
+    const alternativeSuccessRate = rate(alternatives.filter((row) => booleanSuccess(row.success)).length, alternatives.length);
+    const successRateDelta = recommendedSuccessRate == null || alternativeSuccessRate == null
+      ? null
+      : Number((recommendedSuccessRate - alternativeSuccessRate).toFixed(4));
+    return {
+      clusterId,
+      signatureKey: signatures.size === 1 ? [...signatures][0] : null,
+      recommendedModel,
+      sampleCount: group.length,
+      recommendationMatchCount: recommendationMatches.length,
+      recommendationMatchRate: group.length ? Number((recommendationMatches.length / group.length).toFixed(4)) : 0,
+      recommendedSuccessRate: recommendedSuccessRate == null ? null : Number(recommendedSuccessRate.toFixed(4)),
+      alternativeSuccessRate: alternativeSuccessRate == null ? null : Number(alternativeSuccessRate.toFixed(4)),
+      successRateDelta,
+      signatureMatched,
+      sufficientSamples: signatureMatched
+        && group.length >= safeMinSamples
+        && recommendationMatches.length > 0
+        && alternatives.length > 0,
+    };
+  }).sort((left, right) => left.clusterId.localeCompare(right.clusterId));
+
+  const applied = clusters.length > 0 && clusters.every((cluster) => cluster.sufficientSamples);
+  const checks = applied
+    ? clusters.map((cluster) => ({
+      name: `Cluster ${cluster.clusterId} 추천 성공률 delta 0%p+`,
+      passed: Number(cluster.successRateDelta) >= 0,
+      value: `${(Number(cluster.successRateDelta) * 100).toFixed(1)}%p (n=${cluster.sampleCount}, match=${(cluster.recommendationMatchRate * 100).toFixed(1)}%)`,
+    }))
+    : [];
+
+  return {
+    enabled: true,
+    applied,
+    ...(!applied ? { fallbackReason: 'insufficient_cluster_data' as const } : {}),
+    minSamplesPerCluster: safeMinSamples,
+    clusters,
+    checks,
+  };
+}
+
+export async function runLlmAutoRoutingPromotionEvaluation(
+  deps: PromotionEvaluationDeps = {},
+): Promise<RoutingPromotionResult> {
+  const pgPool = deps.pgPool || require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+  const env = deps.env || process.env;
 
   const twentyOneDaysAgo = new Date(Date.now() - 21 * 86400_000).toISOString();
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
@@ -170,6 +295,29 @@ export async function runLlmAutoRoutingPromotionEvaluation(): Promise<RoutingPro
     },
   ];
 
+  let clusterEvaluation: ClusterPromotionEvaluation | undefined;
+  if (envEnabled(env[CLUSTER_PROMOTION_ENV])) {
+    const clusterRows = await queryWithFallback(pgPool, `
+      SELECT
+        routing_signals #>> '{cluster_recommendation,cluster_id}' AS cluster_id,
+        routing_signals #>> '{cluster_recommendation,signature_key}' AS signature_key,
+        routing_signals #>> '{cluster_recommendation,recommended_model}' AS recommended_model,
+        routing_signals #>> '{execution,model}' AS selected_model,
+        success
+      FROM hub.llm_auto_routing_log
+      WHERE mode = 'shadow'
+        AND created_at >= $1
+        AND success IS NOT NULL
+        AND NULLIF(routing_signals ->> 'routing_request_id', '') IS NOT NULL
+        AND NULLIF(routing_signals #>> '{cluster_recommendation,cluster_id}', '') IS NOT NULL
+        AND NULLIF(routing_signals #>> '{cluster_recommendation,signature_key}', '') IS NOT NULL
+        AND NULLIF(routing_signals #>> '{cluster_recommendation,recommended_model}', '') IS NOT NULL
+        AND NULLIF(routing_signals #>> '{execution,model}', '') IS NOT NULL
+    `, [twentyOneDaysAgo]);
+    clusterEvaluation = evaluateClusterPromotion(clusterRows);
+    if (clusterEvaluation.applied) checks.push(...clusterEvaluation.checks);
+  }
+
   const blockers = checks.filter((c) => !c.passed).map((c) => c.name);
   const promotionEligible = blockers.length === 0;
 
@@ -203,6 +351,7 @@ export async function runLlmAutoRoutingPromotionEvaluation(): Promise<RoutingPro
     checks,
     blockers,
     nextStep,
+    ...(clusterEvaluation ? { clusterEvaluation } : {}),
   };
 }
 
