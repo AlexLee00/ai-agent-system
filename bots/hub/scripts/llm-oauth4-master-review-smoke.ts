@@ -3,6 +3,17 @@
 import assert from 'node:assert/strict';
 import { buildReport } from './llm-oauth4-master-review';
 
+interface ProviderReportRow {
+  calls: number;
+}
+
+function isProviderReportRow(row: unknown): row is ProviderReportRow {
+  return typeof row === 'object'
+    && row !== null
+    && 'calls' in row
+    && typeof row.calls === 'number';
+}
+
 const selectorSnapshot = {
   selector_version: 'v3_oauth_4',
   rollout_percent: 100,
@@ -70,8 +81,10 @@ function main(): void {
   assert.equal(trafficMixReport.verdict.runtime_anthropic_zero_ok, true);
   assert.equal(trafficMixReport.verdict.reported_cost_accounting_only, true);
   assert.ok(trafficMixReport.provider_order.includes('local-embedding'));
+  const providerRows = Object.values(trafficMixReport.providers);
+  assert.ok(providerRows.every(isProviderReportRow), 'all provider report rows must expose a numeric call count');
   assert.equal(
-    Object.values(trafficMixReport.providers).reduce((sum, row) => sum + row.calls, 0),
+    providerRows.filter(isProviderReportRow).reduce((sum, row) => sum + row.calls, 0),
     223,
     'all summary providers must be represented in the report',
   );
