@@ -1865,11 +1865,9 @@ function resolveClaudeCliCommand() {
 }
 
 function resolveCodexCliCommand() {
-  const configured = String(
-    process.env.CLAUDE_AUTO_DEV_CODEX_CLI
-    || process.env.CODEX_CLI
-    || '/Applications/Codex.app/Contents/Resources/codex'
-  ).trim();
+  const legacyCodexCliPath = '/Applications/Codex.app/Contents/Resources/codex';
+  const configuredFromEnv = process.env.CLAUDE_AUTO_DEV_CODEX_CLI || process.env.CODEX_CLI;
+  const configured = String(configuredFromEnv || 'codex').trim();
   if (!configured) {
     return { ok: false, error: 'Codex CLI 경로가 비어 있습니다. CLAUDE_AUTO_DEV_CODEX_CLI 또는 CODEX_CLI를 확인하세요.' };
   }
@@ -1877,6 +1875,26 @@ function resolveCodexCliCommand() {
   if (configured.includes('/') || configured.startsWith('.')) {
     const resolved = path.isAbsolute(configured) ? configured : path.join(ROOT, configured);
     if (fs.existsSync(resolved)) return { ok: true, command: resolved, source: 'path' };
+    if (resolved !== legacyCodexCliPath) {
+      return { ok: false, error: `Codex CLI 경로를 찾을 수 없습니다: ${resolved}` };
+    }
+    try {
+      const lookup = execFileSync('bash', ['-lc', 'command -v codex'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        timeout: 3000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (lookup) {
+        return {
+          ok: true,
+          command: 'codex',
+          resolvedPath: lookup,
+          source: 'PATH_FALLBACK',
+          warning: `설정된 Codex CLI 경로를 찾지 못해 PATH 실행기를 사용합니다: ${resolved}`,
+        };
+      }
+    } catch {}
     return { ok: false, error: `Codex CLI 경로를 찾을 수 없습니다: ${resolved}` };
   }
 
@@ -1918,6 +1936,7 @@ function runCodexImplementation(prompt, modelMeta, options = {}, cwd = ROOT) {
     '--skip-git-repo-check',
     '-',
   ];
+  if (cli.warning) console.warn(`[auto-dev] ${cli.warning}`);
 
   try {
     const output = execFileSync(cli.command, args, {
@@ -1933,6 +1952,7 @@ function runCodexImplementation(prompt, modelMeta, options = {}, cwd = ROOT) {
       skipped: false,
       output: output.slice(-4000),
       cli: cli.resolvedPath || cli.command,
+      warning: cli.warning,
       modelMeta,
     };
   } catch (error) {
@@ -1942,6 +1962,7 @@ function runCodexImplementation(prompt, modelMeta, options = {}, cwd = ROOT) {
       skipped: false,
       error: stderr.slice(-4000),
       cli: cli.resolvedPath || cli.command,
+      warning: cli.warning,
       modelMeta,
     };
   }
@@ -4177,6 +4198,8 @@ module.exports = {
   _testOnly_partitionDirtyBaseForWriteScope: partitionDirtyBaseForWriteScope,
   _testOnly_findDirtyPathConflicts: findDirtyPathConflicts,
   _testOnly_resolveNodeExecutable: resolveNodeExecutable,
+  _testOnly_resolveCodexCliCommand: resolveCodexCliCommand,
+  _testOnly_runCodexImplementation: runCodexImplementation,
   _testOnly_resolveScopedTestCommands: resolveScopedTestCommands,
   _testOnly_autoDevPrBranch: autoDevPrBranch,
   _testOnly_publishIntegrationAsPR: publishIntegrationAsPR,

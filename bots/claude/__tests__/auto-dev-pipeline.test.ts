@@ -1600,10 +1600,63 @@ async function test_launchd_plist_defaults_are_safe() {
   assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>false<\/string>/);
   assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_MODEL<\/key>\s*<string>openai-oauth\/gpt-5\.4<\/string>/);
   assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_CODEX_CLI<\/key>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_CODEX_CLI<\/key>\s*<string>codex<\/string>/);
   assert.doesNotMatch(shadowPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.doesNotMatch(autonomousPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
   console.log('✅ auto-dev: launchd plist safe defaults verified');
+}
+
+async function test_codex_cli_missing_configured_path_falls_back_to_path() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+  const originalExecFileSync = mocks['child_process'].execFileSync;
+  mocks['child_process'].execFileSync = (command, args = [], options = {}) => {
+    if (command === 'bash' && args[1] === 'command -v codex') return '/opt/homebrew/bin/codex\n';
+    if (command === 'codex') return 'ok';
+    return originalExecFileSync(command, args, options);
+  };
+
+  await withMocks(mocks, async pipeline => {
+    const result = pipeline._testOnly_resolveCodexCliCommand();
+    assert.deepStrictEqual(result, {
+      ok: true,
+      command: 'codex',
+      resolvedPath: '/opt/homebrew/bin/codex',
+      source: 'PATH_FALLBACK',
+      warning: '설정된 Codex CLI 경로를 찾지 못해 PATH 실행기를 사용합니다: /Applications/Codex.app/Contents/Resources/codex',
+    });
+    const execution = pipeline._testOnly_runCodexImplementation('test prompt', {
+      cliModelArg: 'gpt-5.4',
+    }, {}, tmpRoot);
+    assert.strictEqual(execution.pass, true);
+    assert.strictEqual(execution.warning, result.warning);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_CODEX_CLI: '/Applications/Codex.app/Contents/Resources/codex',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: missing legacy Codex path falls back to PATH');
+}
+
+async function test_codex_cli_missing_custom_path_fails_closed() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+  mocks['child_process'].execFileSync = command => {
+    if (command === 'bash') return '/opt/homebrew/bin/codex\n';
+    throw new Error(`unexpected command: ${command}`);
+  };
+
+  await withMocks(mocks, async pipeline => {
+    const result = pipeline._testOnly_resolveCodexCliCommand();
+    assert.strictEqual(result.ok, false);
+    assert.match(result.error, /\/opt\/pinned\/codex-1\.2\.3/);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_CODEX_CLI: '/opt/pinned/codex-1.2.3',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: missing custom Codex path fails closed');
 }
 
 async function test_profile_resolver_maps_runtime_profiles() {
@@ -2844,6 +2897,8 @@ async function main() {
     test_job_lock_blocks_duplicate_document_execution,
     test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
+    test_codex_cli_missing_configured_path_falls_back_to_path,
+    test_codex_cli_missing_custom_path_fails_closed,
     test_profile_resolver_maps_runtime_profiles,
     test_profile_authoritative_blocks_legacy_overrides,
     test_profile_compatibility_mode_allows_legacy_overrides,
