@@ -56,7 +56,6 @@ LLM 라우팅(abstract_model→4사)·비밀 관리(secrets-store)·헬스(:7788
 
 - **PROTECTED**: ai.hub.*·ai.elixir.supervisor — 재기동은 마스터.
 - **키 등록·DDL**: 마스터 전용. 허브는 읽기와 전달만.
-- Week 2 대기: LLM_AUTO_ROUTING shadow·Langfuse·시그마 vault-manager(공통 LLM 트랙 합류).
 
 ## 시스템 위치
 

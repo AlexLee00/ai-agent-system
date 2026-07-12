@@ -2,7 +2,7 @@
 'use strict';
 
 // Week 2 Day 14: 7일 Shadow 누적 통계 보고서
-// Phase A / LLM Auto-Routing / Permission / Budget / Langfuse 통계 집계
+// Phase A / LLM Auto-Routing / Permission / Budget 통계 집계
 //
 // 실행:
 //   tsx bots/hub/scripts/week2-shadow-summary-report.ts
@@ -24,7 +24,6 @@ interface Week2ShadowSummary {
   llmRouting: { total: number; byShadow: number; byActive: number; byComplexity: Record<string, number>; estimatedSavingsUsd: number };
   permission: { total: number; allowed: number; blocked: number; escalated: number };
   budget: { events: number; teamBreakdown: Record<string, number> };
-  langfuse: { enabled: boolean; note: string };
   readyForWeek3: boolean;
   recommendations: string[];
 }
@@ -116,15 +115,11 @@ export async function runWeek2ShadowSummaryReport(options: { days?: number } = {
     budgetTotal += cnt;
   }
 
-  // Langfuse 상태
-  const langfuseEnabled = ['true', '1', 'yes'].includes((process.env.LANGFUSE_ENABLED || '').toLowerCase());
-
   // 권장사항 생성
   const recommendations: string[] = [];
   if (shadowSignals < 100) recommendations.push(`Phase A Shadow 신호 부족 (${shadowSignals}개) — Phase A launchd 동작 확인 필요`);
   if (routingTotal === 0) recommendations.push('LLM Auto-Routing 로그 없음 — LLM_AUTO_ROUTING_ENABLED=shadow 설정 확인');
   if (permStats.total === 0) recommendations.push('Permission Audit 로그 없음 — PERMISSION_TIER_ENFORCE=shadow 설정 확인');
-  if (!langfuseEnabled) recommendations.push('Langfuse 미활성화 — Day 10 마스터 Action: API Keys 발급 필요');
   if (permStats.escalated > 10) recommendations.push(`Permission ESCALATE ${permStats.escalated}건 — 패턴 분석 권고`);
 
   const readyForWeek3 = shadowSignals > 0 || routingTotal > 0 || permStats.total > 0;
@@ -137,7 +132,6 @@ export async function runWeek2ShadowSummaryReport(options: { days?: number } = {
     llmRouting: { total: routingTotal, byShadow: routingShadow, byActive: routingActive, byComplexity, estimatedSavingsUsd: totalCostEstimate },
     permission: permStats,
     budget: { events: budgetTotal, teamBreakdown: budgetBreakdown },
-    langfuse: { enabled: langfuseEnabled, note: langfuseEnabled ? '자동 trace 수집 중' : '마스터 API Keys 발급 필요' },
     readyForWeek3,
     recommendations,
   };
@@ -162,8 +156,6 @@ function formatReport(summary: Week2ShadowSummary): string {
     '💰 Budget 이벤트:',
     `  총 ${summary.budget.events}건`,
     `  팀별: ${JSON.stringify(summary.budget.teamBreakdown)}`,
-    '',
-    `🔭 Langfuse: ${summary.langfuse.enabled ? '✅ 활성화' : '❌ 비활성화'} — ${summary.langfuse.note}`,
     '',
     `✅ Week 3 진행 가능: ${summary.readyForWeek3 ? '예' : '아니오'}`,
   ];

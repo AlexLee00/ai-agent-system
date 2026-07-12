@@ -19,7 +19,6 @@ defmodule TeamJay.MixProject do
       "dashboard.phase_a_check": ["team_jay.dashboard.phase_a_check"],
       "dashboard.phase_c_check": ["team_jay.dashboard.phase_c_check"],
       "dashboard.phase_d_check": ["team_jay.dashboard.phase_d_check"],
-      "dashboard.phase_e_check": ["team_jay.dashboard.phase_e_check"],
       "dashboard.phase_g_check": ["team_jay.dashboard.phase_g_check"],
       "dashboard.phase_52_check": ["team_jay.dashboard.phase_52_check"],
       "sigma.migrate": ["sigma.migrate"],
@@ -77,9 +76,6 @@ defmodule TeamJay.MixProject do
       {:req_llm, "~> 1.9"},
 
       # 보강 의존성
-      {:opentelemetry, "~> 1.7"},
-      {:opentelemetry_exporter, "~> 1.7"},
-      {:opentelemetry_ecto, "~> 1.2"},
       {:pgvector, "~> 0.3"},
 
       # Phase 1 명시적 추가 (transitive → explicit)

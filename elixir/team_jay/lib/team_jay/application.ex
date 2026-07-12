@@ -6,48 +6,13 @@ defmodule TeamJay.Application do
   def start(_type, _args) do
     Logger.info("🚀 TeamJay Elixir Phase 4 시작! (Jay 성장 오케스트레이터)")
 
-    setup_opentelemetry()
-
     children =
       base_children() ++
         if(enable_diagnostics?(), do: [Jay.Core.Diagnostics], else: []) ++
         [Jay.Core.Scheduler, TeamJay.Dashboard.Endpoint]
 
     opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
-    result = Supervisor.start_link(children, opts)
-    log_otel_status()
-    result
-  end
-
-  # Phase F: Ecto 쿼리 자동 trace (OpenTelemetry → Langfuse OTLP)
-  defp setup_opentelemetry do
-    langfuse_cfg = Application.get_env(:team_jay, :langfuse, [])
-
-    if Keyword.get(langfuse_cfg, :enabled, false) do
-      try do
-        OpentelemetryEcto.setup([:jay, :core, :repo])
-        Logger.info("[OpenTelemetry] Ecto trace 활성화 → Langfuse OTLP")
-      rescue
-        e -> Logger.warning("[OpenTelemetry] Ecto setup 실패: #{inspect(e)}")
-      end
-    end
-  end
-
-  defp log_otel_status do
-    langfuse_cfg = Application.get_env(:team_jay, :langfuse, [])
-    enabled = Keyword.get(langfuse_cfg, :enabled, false)
-    host = Keyword.get(langfuse_cfg, :host, "http://localhost:3000")
-    public_key_set? = System.get_env("LANGFUSE_PUBLIC_KEY", "") != ""
-    secret_key_set? = System.get_env("LANGFUSE_SECRET_KEY", "") != ""
-
-    if enabled and public_key_set? and secret_key_set? do
-      Logger.info("[TeamJay] OpenTelemetry OTLP → Langfuse 활성화 (#{host}/api/public/otel)")
-    else
-      Logger.info(
-        "[TeamJay] OpenTelemetry 비활성 — LANGFUSE_OTEL_ENABLED=#{enabled}, " <>
-          "PUBLIC_KEY=#{public_key_set?}, SECRET_KEY=#{secret_key_set?}"
-      )
-    end
+    Supervisor.start_link(children, opts)
   end
 
   defp base_children do

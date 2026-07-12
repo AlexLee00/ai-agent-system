@@ -5,9 +5,6 @@
 
 const crypto = require('node:crypto');
 
-const path = require('node:path');
-const { traceLLMCall } = require(path.join(__dirname, '../langfuse-tracer'));
-
 const { callClaudeCodeOAuth } = require('./claude-code-oauth');
 const { callGroqFallback } = require('./groq-fallback');
 const { callLocalOllama } = require('./local-ollama');
@@ -103,14 +100,6 @@ async function callWithFallback(req: LlmRequest): Promise<LlmResponse> {
   } else {
     result = await _callWithFallbackInternal(req);
   }
-  traceLLMCall(req, result, {
-    agent: req.agent,
-    callerTeam: req.callerTeam,
-    taskType: req.taskType,
-    selectorKey: req.selectorKey,
-    abstractModel: req.abstractModel,
-    budgetGuardStatus: req._budgetGuardStatus,
-  });
   return result;
 }
 

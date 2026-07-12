@@ -4,7 +4,7 @@ defmodule TeamJay.Dashboard.HealthPlug do
   import Plug.Conn
 
   @dashboard_phase "G"
-  @dashboard_layer "Visibility v3.4 영역 1~11 + Project/Milestone/Timeline"
+  @dashboard_layer "Visibility v3.4 영역 1~8, 10~11 + Project/Milestone/Timeline"
 
   def init(opts), do: opts
 

@@ -6,20 +6,18 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
 
     * `--ingest-recent` - upsert recent `codex.task.*` / `project.*` EventLake rows.
     * `--reconcile-milestones` - run MilestoneSentry reconciliation once.
-    * `--runtime-dom` - verify the served dashboard HTML includes the area 9 initial slot.
     * `--json` - print JSON.
   """
   use Mix.Task
 
   @shortdoc "Verifies Visibility v3.4 Cycle #52 readiness"
-  @expected_dashboard_layer "Visibility v3.4 영역 1~11 + Project/Milestone/Timeline"
+  @expected_dashboard_layer "Visibility v3.4 영역 1~8, 10~11 + Project/Milestone/Timeline"
 
   @impl true
   def run(args) do
     json? = "--json" in args
     ingest_recent? = "--ingest-recent" in args
     reconcile? = "--reconcile-milestones" in args
-    runtime_dom? = "--runtime-dom" in args
 
     ensure_repo_started!()
 
@@ -35,7 +33,6 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
 
     source_checks = source_checks()
     runtime = runtime_health()
-    runtime_dom = if runtime_dom?, do: runtime_dom_area_9_initial_slot(), else: %{enabled: false}
     trace_kpi = trace_kpi()
     snapshot = TeamJay.Dashboard.ProjectRepo.snapshot()
 
@@ -49,7 +46,6 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
         milestone_data_visible: length(snapshot.milestones) >= 8,
         milestone_action_queue_visible: is_list(snapshot[:action_items])
       })
-      |> maybe_put_runtime_dom_check(runtime_dom)
 
     result = %{
       ok: Enum.all?(Map.values(checks)),
@@ -57,7 +53,6 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
       visibility_version: "v3.4",
       checks: checks,
       runtime_health: runtime,
-      runtime_dom: runtime_dom,
       expected_dashboard_layer: @expected_dashboard_layer,
       trace_kpi: trace_kpi,
       project_snapshot: %{
@@ -71,8 +66,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
       ingest_result: ingest_result,
       reconcile_result: reconcile_result,
       manual_visual_validation: [
-        "브라우저에서 11개 영역이 모두 보이는지 확인",
-        "영역 4 trace_id 클릭 후 영역 9 상세 표시 확인",
+        "브라우저에서 영역 1~8, 10~11이 모두 보이는지 확인",
         "영역 10 task stage 변경 후 Project + Timeline 즉시 반영 확인"
       ]
     }
@@ -101,17 +95,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
     darwin_pwc = read!("../../bots/darwin/elixir/lib/darwin/v2/sensor/papers_with_code.ex")
 
     %{
-      eleven_areas_wired:
-        String.contains?(dashboard, "[9] Langfuse Trace 상세") and
-          String.contains?(dashboard, "[10] Project + Milestone 보드") and
+      active_areas_wired:
+        String.contains?(dashboard, "[10] Project + Milestone 보드") and
           String.contains?(dashboard, "[11] TimelineGantt 2주"),
-      area_9_initial_slot:
-        String.contains?(dashboard, "<.trace_detail_board") and
-          String.contains?(dashboard, "trace_id={@selected_trace_id}") and
-          String.contains?(dashboard, "attr(:trace_id, :string, default: nil)") and
-          String.contains?(dashboard, "영역 4의 trace_id 클릭") and
-          String.contains?(dashboard, "Trace 선택 안 됨") and
-          not String.contains?(dashboard, "<%= if @selected_trace_id do %>"),
       project_repo_split:
         String.contains?(project_repo, "defmodule TeamJay.Dashboard.ProjectRepo") and
           String.contains?(project_repo, "ingest_event"),
@@ -150,43 +136,6 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
     end
   rescue
     error -> %{ok: false, phase: nil, error: inspect(error)}
-  end
-
-  defp maybe_put_runtime_dom_check(checks, %{enabled: false}), do: checks
-
-  defp maybe_put_runtime_dom_check(checks, runtime_dom) do
-    Map.put(checks, :runtime_area_9_initial_slot, runtime_dom.ok)
-  end
-
-  defp runtime_dom_area_9_initial_slot do
-    Application.ensure_all_started(:req)
-
-    port =
-      System.get_env("TEAM_JAY_DASHBOARD_PORT")
-      |> Kernel.||(System.get_env("DASHBOARD_PORT"))
-      |> Kernel.||("7787")
-
-    case Req.get("http://localhost:#{port}", receive_timeout: 2_000) do
-      {:ok, %{status: 200, body: body}} when is_binary(body) ->
-        checks = %{
-          area_9_always_visible_comment:
-            String.contains?(body, "영역 9: Langfuse Trace 상세 (항상 표시, 4상태 분기)"),
-          area_9_initial_header_hint: String.contains?(body, "영역 4의 trace_id 클릭"),
-          area_9_initial_body_hint: String.contains?(body, "Trace 선택 안 됨"),
-          area_9_not_gated_by_selected_trace:
-            not String.contains?(body, "영역 9: Langfuse Trace 상세 (phx-click으로 활성화)")
-        }
-
-        %{enabled: true, ok: Enum.all?(Map.values(checks)), checks: checks}
-
-      {:ok, %{status: status}} ->
-        %{enabled: true, ok: false, status: status, checks: %{}}
-
-      {:error, reason} ->
-        %{enabled: true, ok: false, error: inspect(reason), checks: %{}}
-    end
-  rescue
-    error -> %{enabled: true, ok: false, error: inspect(error), checks: %{}}
   end
 
   defp trace_kpi do

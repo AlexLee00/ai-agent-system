@@ -207,7 +207,6 @@ async function runConcurrentDedupeScenarios(repairReq) {
   return withLocalEnvAsync({
     HUB_BUDGET_GUARDIAN_ENABLED: 'false',
     HUB_LLM_INFLIGHT_DEDUPE_ENABLED: 'true',
-    LANGFUSE_ENABLED: 'false',
   }, async () => {
     t._clearRateLimitCooldowns?.();
     mockState.reset();

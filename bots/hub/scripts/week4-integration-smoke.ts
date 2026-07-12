@@ -22,8 +22,6 @@ function envMode(name) {
 export async function runWeek4IntegrationSmoke() {
   const files = [
     'bots/hub/scripts/shadow-mode-activation-smoke.ts',
-    'bots/hub/scripts/langfuse-tracer-smoke.ts',
-    'bots/hub/scripts/langfuse-trace-validation.ts',
     'bots/hub/scripts/week2-shadow-summary-report.ts',
     'bots/hub/scripts/llm-auto-routing-promotion-evaluation.ts',
     'bots/hub/scripts/permission-tier-promotion-evaluation.ts',
@@ -40,7 +38,6 @@ export async function runWeek4IntegrationSmoke() {
   const env = {
     LLM_AUTO_ROUTING_ENABLED: envMode('LLM_AUTO_ROUTING_ENABLED'),
     PERMISSION_TIER_ENFORCE: envMode('PERMISSION_TIER_ENFORCE'),
-    LANGFUSE_ENABLED: envMode('LANGFUSE_ENABLED'),
     PHASE_A_PROMOTION_APPROVED: envMode('PHASE_A_PROMOTION_APPROVED'),
   };
   const safety = {

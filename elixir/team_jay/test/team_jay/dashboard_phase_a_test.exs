@@ -10,7 +10,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert payload["ok"] == true
     assert payload["service"] == "team_jay_dashboard"
     assert payload["phase"] == "G"
-    assert payload["layer"] == "Visibility v3.4 영역 1~11 + Project/Milestone/Timeline"
+    assert payload["layer"] == "Visibility v3.4 영역 1~8, 10~11 + Project/Milestone/Timeline"
   end
 
   test "dashboard endpoint is wired to Bandit and TeamJay PubSub" do
@@ -185,16 +185,6 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ "load_recent_cycles()"
     assert source =~ "load_cross_pipelines()"
     assert source =~ "|> refresh_phase_status()"
-  end
-
-  test "area 9 refreshes selected Langfuse trace detail after delayed arrival" do
-    source =
-      File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
-
-    assert source =~ "Process.send_after(self(), :refresh_trace_detail, 30_000)"
-    assert source =~ "def handle_info(:refresh_trace_detail, socket)"
-    assert source =~ "valid_trace_id?(socket.assigns.selected_trace_id)"
-    assert source =~ "send(self(), {:fetch_trace, socket.assigns.selected_trace_id})"
   end
 
   test "area 7 and 8 include DB-backed freshness indicators" do

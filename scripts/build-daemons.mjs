@@ -41,8 +41,6 @@ const external = [
   'tesseract.js-core',
   'technicalindicators',
   'ccxt',
-  'langfuse',
-  'langfuse-core',
   'openai',
   'groq-sdk',
 ];

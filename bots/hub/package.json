@@ -168,9 +168,6 @@
     "hub:bg-deploy": "tsx scripts/hub-blue-green-deploy.ts deploy",
     "hub:bg-switch": "tsx scripts/hub-blue-green-deploy.ts switch",
     "hub:bg-rollback": "tsx scripts/hub-blue-green-deploy.ts rollback",
-    "langfuse:smoke": "tsx scripts/langfuse-integration-smoke.ts",
-    "langfuse:tracer-smoke": "tsx scripts/langfuse-tracer-smoke.ts",
-    "langfuse:trace-validation": "tsx scripts/langfuse-trace-validation.ts",
     "shadow:activation-smoke": "tsx scripts/shadow-mode-activation-smoke.ts",
     "smoke:llm-auto-routing-shadow-wiring": "tsx scripts/llm-auto-routing-shadow-wiring-smoke.ts",
     "smoke:llm-cluster-routing-shadow": "tsx scripts/llm-cluster-routing-shadow-smoke.ts",
@@ -209,7 +206,6 @@
   "dependencies": {
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
-    "langfuse": "^3.38.20",
     "tsx": "^4.22.3",
     "web-push": "^3.6.7"
   },

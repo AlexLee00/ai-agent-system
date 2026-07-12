@@ -130,10 +130,6 @@
     <string>shadow</string>
     <key>HUB_BUDGET_GUARDIAN_ENABLED</key>
     <string>true</string>
-    <key>LANGFUSE_HOST</key>
-    <string>http://localhost:3000</string>
-    <key>LANGFUSE_ENABLED</key>
-    <string>true</string>
   </dict>
 
   <key>RunAtLoad</key>

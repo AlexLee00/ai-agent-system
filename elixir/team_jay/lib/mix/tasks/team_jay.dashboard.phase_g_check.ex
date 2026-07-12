@@ -49,7 +49,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       visibility_doc_authority:
         String.contains?(visibility_doc, "v3.4 = v3.3") or
           String.contains?(visibility_doc, "v3.3 본질 100% 도달 조건"),
-      phase_g_header: String.contains?(dashboard_source, "Phase G • 영역 1~11"),
+      phase_g_header: String.contains?(dashboard_source, "Phase G • 영역 1~8, 10~11"),
       area_10_rendered:
         String.contains?(dashboard_source, "project_milestone_board") and
           String.contains?(dashboard_source, "[10] Project + Milestone 보드"),
@@ -61,13 +61,6 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       area_11_rendered:
         String.contains?(dashboard_source, "timeline_gantt_board") and
           String.contains?(dashboard_source, "[11] TimelineGantt 2주"),
-      area_9_initial_slot:
-        String.contains?(dashboard_source, "<.trace_detail_board") and
-          String.contains?(dashboard_source, "trace_id={@selected_trace_id}") and
-          String.contains?(dashboard_source, "attr(:trace_id, :string, default: nil)") and
-          String.contains?(dashboard_source, "영역 4의 trace_id 클릭") and
-          String.contains?(dashboard_source, "Trace 선택 안 됨") and
-          not String.contains?(dashboard_source, "<%= if @selected_trace_id do %>"),
       core_box_freshness_loop:
         String.contains?(
           dashboard_source,
@@ -80,17 +73,6 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
           String.contains?(dashboard_source, "load_recent_cycles()") and
           String.contains?(dashboard_source, "load_cross_pipelines()") and
           String.contains?(dashboard_source, "|> refresh_phase_status()"),
-      langfuse_trace_freshness_loop:
-        String.contains?(
-          dashboard_source,
-          "Process.send_after(self(), :refresh_trace_detail, 30_000)"
-        ) and
-          String.contains?(dashboard_source, "def handle_info(:refresh_trace_detail, socket)") and
-          String.contains?(dashboard_source, "valid_trace_id?(socket.assigns.selected_trace_id)") and
-          String.contains?(
-            dashboard_source,
-            "send(self(), {:fetch_trace, socket.assigns.selected_trace_id})"
-          ),
       project_topics:
         Enum.all?(
           [
