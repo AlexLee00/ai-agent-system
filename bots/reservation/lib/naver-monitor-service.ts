@@ -62,8 +62,10 @@ export function createNaverMonitorService(deps: CreateNaverMonitorServiceDeps) {
   function isOperationalManualPendingAlert(alert: any): boolean {
     const title = String(alert?.title || '');
     const message = String(alert?.message || '');
-    return title.includes('픽코 예약 등록됨, 결제 확인 필요')
-      && message.includes('status: manual_pending');
+    const manualPendingStatus = message.includes('status: manual_pending')
+      || message.includes('상태: manual_pending');
+    return title.includes('픽코 예약 등록됨')
+      && manualPendingStatus;
   }
 
   async function cleanupOldAlerts(): Promise<void> {
