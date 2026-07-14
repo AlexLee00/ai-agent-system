@@ -74,6 +74,7 @@ export function sourceRefForLibraryRecord(record = {}) {
     dpo_preference: 'public.dpo_preferences',
     hub_alarm: 'hub.alarms',
     luna_reflexion: 'investment.luna_reflexion',
+    luna_learned_bias: 'investment.luna_regime_weight_snapshots',
     luna_signal: 'investment.signals',
     luna_trade_journal: 'investment.trade_journal',
     luna_trade_review: 'investment.trade_review',

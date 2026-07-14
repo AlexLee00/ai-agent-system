@@ -6,6 +6,7 @@ import {
   type SelfImprovementSignal,
   type SigmaTeam,
 } from './intelligent-library.js';
+import { buildLunaLearnedBiasFeedInput } from '../../shared/luna-learned-bias-feed.js';
 
 const require = createRequire(import.meta.url);
 
@@ -17,6 +18,7 @@ export type LibrarySourceKind =
   | 'hub_alarm'
   | 'agent_message'
   | 'luna_reflexion'
+  | 'luna_learned_bias'
   | 'sigma_directive'
   | 'dpo_preference'
   | 'mcp_usage'
@@ -316,6 +318,19 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
         stageAttribution: row.stage_attribution ?? {},
       },
     });
+    if (record && allowedTeams.has(record.team)) records.push(record);
+  }
+
+  const learnedBiasSnapshots = await safeQuery<any>('investment', 'investment.luna_regime_weight_snapshots', `
+    SELECT id, regime, fusion_weights, signal_weights, universe_weights,
+           win_rate, profit_factor, performance_metric, total_trades, learn_rate, created_at
+      FROM investment.luna_regime_weight_snapshots
+     WHERE created_at >= NOW() - ($1 || ' hours')::INTERVAL
+     ORDER BY created_at DESC, id DESC
+     LIMIT $2
+  `, [String(sinceHours), limit], warnings);
+  for (const row of learnedBiasSnapshots) {
+    const record = buildRecord(buildLunaLearnedBiasFeedInput(row));
     if (record && allowedTeams.has(record.team)) records.push(record);
   }
 

@@ -8,6 +8,8 @@ import { query } from './db/core.ts';
 import { persistAdaptedWeights, retrieveAdaptedWeights } from './ta-weight-adaptive-tuner.ts';
 import { REGIME_AXIS_WEIGHTS } from './dynamic-universe-selector.ts';
 import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
+import { sanitizeLunaLearnedBiasWeightMap } from './luna-data-contracts.ts';
+import { fetchLunaLearnedBiasVaultRows } from '../../sigma/shared/luna-learned-bias-feed.ts';
 
 // ─── 환경 게이트 ──────────────────────────────────────────────────────────────
 function boolEnv(name, fallback = false, env = process.env) {
@@ -530,7 +532,7 @@ export async function runRegimeWeightLearner(options = {}) {
     }
   }
 
-  const previousRows = await (options.getLatestRegimeWeights || getLatestRegimeWeights)(null).catch(() => []);
+  const previousRows = await (options.getLatestRegimeWeights || getLatestSnapshotRegimeWeights)(null).catch(() => []);
   const recentRows = Array.isArray(options.recentSnapshots)
     ? options.recentSnapshots
     : await (options.fetchRecentRegimeWeightSnapshots || ((lookbackDays) => fetchRecentRegimeWeightSnapshots(lookbackDays, queryFn)))(stallDays + 2).catch(() => []);
@@ -598,17 +600,144 @@ export async function runRegimeWeightLearner(options = {}) {
 
 // ─── 현재 학습된 가중치 조회 ────────────────────────────────────────────────
 
-export async function getLatestRegimeWeights(regime = null) {
-  const rows = await query(
-    `SELECT DISTINCT ON (regime)
-       regime, fusion_weights, signal_weights, universe_weights,
-       win_rate, profit_factor, performance_metric, total_trades, created_at
-     FROM investment.luna_regime_weight_snapshots
-     WHERE ($1::text IS NULL OR regime = $1)
-     ORDER BY regime, created_at DESC`,
-    [regime ? normalizeRegime(regime) : null],
-  ).catch(() => []);
+function parseVaultMeta(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return {};
+  }
+}
 
+export function timeStageDecayMultiplier(value) {
+  const stage = String(value || 'raw').trim().toLowerCase();
+  return {
+    raw: 1,
+    digest: 0.75,
+    pattern: 0.5,
+    dormant: 0.25,
+    forgotten: 0,
+    decayed: 0.25,
+  }[stage] ?? 1;
+}
+
+function vaultRowTimestamp(row = {}, meta = {}) {
+  const raw = meta.createdAt || meta.payload?.createdAt || row.updated_at || row.created_at;
+  const timestamp = new Date(String(raw || 0)).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function compareVaultRows(left, right) {
+  const leftMeta = parseVaultMeta(left.meta);
+  const rightMeta = parseVaultMeta(right.meta);
+  const timeDelta = vaultRowTimestamp(right, rightMeta) - vaultRowTimestamp(left, leftMeta);
+  if (timeDelta !== 0) return timeDelta;
+  return String(right.id || '').localeCompare(String(left.id || ''), 'en', { numeric: true });
+}
+
+function normalizeMergedWeights(weights = {}, fallback = {}) {
+  const entries = Object.entries(weights).filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= 0);
+  const total = entries.reduce((sum, [, value]) => sum + Number(value), 0);
+  if (total <= 0) return normalizeWeights(fallback);
+  return Object.fromEntries(entries.map(([key, value]) => [key, Number(value) / total]));
+}
+
+export function buildVaultRegimeWeights(rows = [], requestedRegime = null) {
+  const requested = requestedRegime ? normalizeRegime(requestedRegime) : null;
+  const mapDefinitions = {
+    fusionWeights: BASE_FUSION_WEIGHTS,
+    signalWeights: BASE_SIGNAL_WEIGHTS,
+    universeWeights: REGIME_AXIS_WEIGHTS,
+  };
+  const selectedByRegime = new Map();
+  const rejectedByRegime = new Map();
+  const rowMetaByRegime = new Map();
+
+  for (const row of [...(rows || [])].sort(compareVaultRows)) {
+    const meta = parseVaultMeta(row.meta);
+    if (meta.constitutionAllowed === false) continue;
+    const payload = parseVaultMeta(meta.payload || {});
+    const regime = normalizeRegime(payload.regime || 'RANGING');
+    if (requested && regime !== requested) continue;
+    if (payload.weightUnit && payload.weightUnit !== 'ratio_0_1') continue;
+    const symbol = String(payload.symbol || `__REGIME_${regime}__`);
+    if (symbol !== `__REGIME_${regime}__`) continue;
+    const timeStage = row.time_stage || meta.libraryCoords?.time_stage || 'raw';
+    const decayMultiplier = timeStageDecayMultiplier(timeStage);
+    if (!selectedByRegime.has(regime)) selectedByRegime.set(regime, {});
+    if (!rejectedByRegime.has(regime)) rejectedByRegime.set(regime, []);
+    const selected = selectedByRegime.get(regime);
+
+    for (const [mapName, bases] of Object.entries(mapDefinitions)) {
+      const base = bases[regime] || bases.RANGING || {};
+      const contract = sanitizeLunaLearnedBiasWeightMap(payload[mapName], {
+        allowedKeys: Object.keys(base),
+      });
+      for (const rejected of contract.rejected) {
+        rejectedByRegime.get(regime).push({
+          map: mapName,
+          factor: rejected.key,
+          sourceId: String(row.id || ''),
+          reason: rejected.reason,
+        });
+      }
+      if (!selected[mapName]) selected[mapName] = {};
+      for (const [factor, value] of Object.entries(contract.weights)) {
+        if (selected[mapName][factor]) continue;
+        const baseValue = Number(base[factor] || 0);
+        selected[mapName][factor] = {
+          value,
+          decayedValue: baseValue + (Number(value) - baseValue) * decayMultiplier,
+          sourceId: String(row.id || ''),
+          updatedAt: new Date(vaultRowTimestamp(row, meta)).toISOString(),
+          timeStage: String(timeStage),
+          decayMultiplier,
+        };
+        if (!rowMetaByRegime.has(regime)) rowMetaByRegime.set(regime, payload);
+      }
+    }
+  }
+
+  const output = [];
+  for (const [regime, selected] of selectedByRegime.entries()) {
+    const hasSelectedFactor = Object.values(selected)
+      .some((factorMap) => Object.keys(factorMap || {}).length > 0);
+    if (!hasSelectedFactor) continue;
+    const mergedMaps = {};
+    for (const [mapName, bases] of Object.entries(mapDefinitions)) {
+      const base = bases[regime] || bases.RANGING || {};
+      mergedMaps[mapName] = normalizeMergedWeights(Object.fromEntries(
+        Object.keys(base).map((factor) => [
+          factor,
+          selected[mapName]?.[factor]?.decayedValue ?? base[factor],
+        ]),
+      ), base);
+    }
+    const payload = rowMetaByRegime.get(regime) || {};
+    const selectedFactors = selected;
+    const updatedAt = Object.values(selectedFactors)
+      .flatMap((factorMap) => Object.values(factorMap || {}))
+      .map((factor) => factor.updatedAt)
+      .sort()
+      .at(-1) || null;
+    output.push({
+      regime,
+      ...mergedMaps,
+      winRate: payload.winRate ?? null,
+      profitFactor: payload.profitFactor ?? null,
+      performanceMetric: payload.performanceMetric ?? null,
+      totalTrades: payload.totalTrades ?? null,
+      updatedAt,
+      source: 'sigma_vault',
+      selectedFactors,
+      rejectedFactors: rejectedByRegime.get(regime) || [],
+    });
+  }
+  return output.sort((left, right) => left.regime.localeCompare(right.regime));
+}
+
+function mapSnapshotRows(rows = []) {
   return (rows || []).map((r) => ({
     regime: r.regime,
     fusionWeights: r.fusion_weights || BASE_FUSION_WEIGHTS[r.regime],
@@ -619,12 +748,46 @@ export async function getLatestRegimeWeights(regime = null) {
     performanceMetric: r.performance_metric,
     totalTrades: r.total_trades,
     updatedAt: r.created_at,
+    source: 'snapshot_fallback',
   }));
+}
+
+export async function getLatestSnapshotRegimeWeights(regime = null, options = {}) {
+  const normalizedRegime = regime ? normalizeRegime(regime) : null;
+  const snapshotRowsProvider = options.snapshotRowsProvider || (async () => query(
+    `SELECT DISTINCT ON (regime)
+       id, regime, fusion_weights, signal_weights, universe_weights,
+       win_rate, profit_factor, performance_metric, total_trades, created_at
+     FROM investment.luna_regime_weight_snapshots
+     WHERE ($1::text IS NULL OR regime = $1)
+     ORDER BY regime, created_at DESC, id DESC`,
+    [normalizedRegime],
+  ));
+  const rows = await snapshotRowsProvider(normalizedRegime).catch(() => []);
+  return mapSnapshotRows(rows);
+}
+
+export async function getLatestRegimeWeights(regime = null, options = {}) {
+  const normalizedRegime = regime ? normalizeRegime(regime) : null;
+  const vaultRowsProvider = options.vaultRowsProvider || fetchLunaLearnedBiasVaultRows;
+  const vaultRows = await vaultRowsProvider(normalizedRegime).catch(() => []);
+  const vaultWeights = buildVaultRegimeWeights(vaultRows, normalizedRegime);
+  if (normalizedRegime && vaultWeights.length > 0) return vaultWeights;
+  const knownRegimes = Object.keys(BASE_FUSION_WEIGHTS);
+  const vaultRegimes = new Set(vaultWeights.map((row) => row.regime));
+  if (!normalizedRegime && knownRegimes.every((key) => vaultRegimes.has(key))) return vaultWeights;
+  const snapshotWeights = await getLatestSnapshotRegimeWeights(normalizedRegime, options);
+  if (vaultWeights.length === 0) return snapshotWeights;
+  return [
+    ...vaultWeights,
+    ...snapshotWeights.filter((row) => !vaultRegimes.has(row.regime)),
+  ].sort((left, right) => left.regime.localeCompare(right.regime));
 }
 
 export const _testOnly = {
   buildAdaptiveRegimeDataset,
   buildWeightDiagnostics,
+  buildVaultRegimeWeights,
   countConsecutiveRecentStallDays,
   computeRegimePerformance,
   fetchRegimeTradeStats,
@@ -632,11 +795,13 @@ export const _testOnly = {
   normalizeRegime,
   parseAdaptiveWindows,
   summarizeLearnerStall,
+  timeStageDecayMultiplier,
 };
 
 export default {
   runRegimeWeightLearner,
   getLatestRegimeWeights,
+  getLatestSnapshotRegimeWeights,
   BASE_FUSION_WEIGHTS,
   BASE_SIGNAL_WEIGHTS,
   REGIME_WEIGHT_LEARNER_ENABLED_KEY,

@@ -15,6 +15,36 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+export function sanitizeLunaLearnedBiasWeightMap(weights = {}, options = {}) {
+  const allowedKeys = new Set((options.allowedKeys || []).map((key) => String(key)));
+  const input = weights && typeof weights === 'object' && !Array.isArray(weights) ? weights : {};
+  const accepted = {};
+  const rejected = [];
+  for (const [key, rawValue] of Object.entries(input)) {
+    if (allowedKeys.size > 0 && !allowedKeys.has(key)) {
+      rejected.push({ key, value: rawValue, reason: 'unknown_factor' });
+      continue;
+    }
+    const isNumericScalar = typeof rawValue === 'number'
+      || (typeof rawValue === 'string' && rawValue.trim() !== '');
+    if (!isNumericScalar) {
+      rejected.push({ key, value: rawValue, reason: 'non_numeric_ratio' });
+      continue;
+    }
+    const value = finiteNumber(rawValue);
+    if (value == null || value < 0 || value > 1) {
+      rejected.push({ key, value: rawValue, reason: 'outside_ratio_0_1' });
+      continue;
+    }
+    accepted[key] = value;
+  }
+  return {
+    weights: accepted,
+    rejected,
+    unit: 'ratio_0_1',
+  };
+}
+
 export function normalizeLunaMarketKey(value) {
   const market = String(value || '').trim().toLowerCase();
   if (['crypto', 'binance'].includes(market)) return 'crypto';
@@ -241,4 +271,5 @@ export default {
   normalizeLunaMarketKey,
   normalizeLunaReflectionText,
   resolveLunaAnalystCallAccuracy,
+  sanitizeLunaLearnedBiasWeightMap,
 };
