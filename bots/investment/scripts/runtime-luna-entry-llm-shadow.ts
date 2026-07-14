@@ -2,17 +2,73 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
+import { Client } from 'pg';
+import { INVESTMENT_SCHEMA, pgPool } from '../shared/db/core.ts';
+import { performance } from 'node:perf_hooks';
 import { listActiveEntryTriggers } from '../shared/luna-discovery-entry-store.ts';
 import { callViaHub } from '../shared/hub-llm-client.ts';
 import {
   buildEntryLlmPrompt,
+  evaluateRecallLatencyBudget,
   evaluateEntryTriggerShadowCandidate,
   normalizeEntryLlmShadowResult,
 } from '../shared/entry-llm-shadow-judge.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { normalizeLunaMarketKey } from '../shared/luna-data-contracts.ts';
+import {
+  tradeJournalMarketSql,
+  tradeJournalNumericIdSql,
+} from '../shared/posttrade-trade-journal-adapter.ts';
 
 const CONFIRM_TOKEN = 'luna-entry-llm-shadow';
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
+const REFLECTION_RECALL_LIMIT = 3;
+const REFLECTION_RECALL_MAX_TIMEOUT_MS = 200;
+
+function createCancellationClient() {
+  const { max, min, idleTimeoutMillis, allowExitOnIdle, maxUses, ...clientConfig } = pgPool.getPool(INVESTMENT_SCHEMA).options;
+  return new Client(clientConfig);
+}
+
+export async function cancelPostgresBackend(processId, createClient = createCancellationClient) {
+  const client = createClient();
+  try {
+    await client.connect();
+    const result = await client.query('SELECT pg_cancel_backend($1)', [processId]);
+    return result.rows || [];
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+export async function queryWithStatementTimeout(
+  sql,
+  params = [],
+  { timeoutMs = REFLECTION_RECALL_MAX_TIMEOUT_MS, signal = null } = {},
+  withTransactionFn = db.withTransaction,
+  cancelBackendFn = cancelPostgresBackend,
+) {
+  const safeTimeoutMs = Math.max(1, Math.min(
+    REFLECTION_RECALL_MAX_TIMEOUT_MS,
+    Number(timeoutMs) || REFLECTION_RECALL_MAX_TIMEOUT_MS,
+  ));
+  return withTransactionFn(async (tx, client) => {
+    await tx.query(`SELECT set_config('statement_timeout', $1, true)`, [`${safeTimeoutMs}ms`]);
+    if (signal?.aborted) throw signal.reason || new Error('reflection_recall_cancelled');
+    let cancelPromise = null;
+    const cancelQuery = () => {
+      if (!client?.processID || cancelPromise) return;
+      cancelPromise = cancelBackendFn(client.processID).catch(() => []);
+    };
+    signal?.addEventListener('abort', cancelQuery, { once: true });
+    try {
+      return await tx.query(sql, params);
+    } finally {
+      signal?.removeEventListener('abort', cancelQuery);
+      if (cancelPromise) await cancelPromise;
+    }
+  });
+}
 
 function argValue(name, fallback = null, argv = process.argv.slice(2)) {
   const prefix = `--${name}=`;
@@ -41,6 +97,10 @@ function marketForExchange(exchange) {
   if (exchange === 'kis') return 'domestic';
   if (exchange === 'kis_overseas') return 'overseas';
   return 'crypto';
+}
+
+function reflectionSymbolKey(value) {
+  return String(value || '').trim().toUpperCase().split(/[\s|&]/, 1)[0];
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -146,8 +206,130 @@ async function insertEntryShadow(runFn, payload) {
   ));
 }
 
-async function buildEntryContextEvidence(queryFn, { symbol, exchange, hours }) {
+export async function fetchSimilarTradeReflections(queryFn, {
+  symbol,
+  market,
+  setupType = null,
+  limit = REFLECTION_RECALL_LIMIT,
+  timeoutMs = REFLECTION_RECALL_MAX_TIMEOUT_MS,
+  controller: suppliedController = null,
+} = {}) {
+  const startedAt = performance.now();
+  const safeLimit = Math.max(1, Math.min(REFLECTION_RECALL_LIMIT, Number(limit) || REFLECTION_RECALL_LIMIT));
+  const safeTimeoutMs = Math.max(1, Math.min(REFLECTION_RECALL_MAX_TIMEOUT_MS, Number(timeoutMs) || REFLECTION_RECALL_MAX_TIMEOUT_MS));
+  const normalizedMarket = normalizeLunaMarketKey(market);
+  const journalIdExpr = tradeJournalNumericIdSql('tj');
+  const journalMarketExpr = tradeJournalMarketSql('tj');
+  const controller = suppliedController || new AbortController();
+  let timer;
+  try {
+    if (!suppliedController) {
+      timer = setTimeout(() => controller.abort(new Error('reflection_recall_timeout')), safeTimeoutMs);
+    }
+    const rows = await Promise.resolve(queryFn(
+        `WITH current_regime AS (
+           SELECT COALESCE(llm_regime, rule_regime) AS regime
+             FROM investment.luna_regime_llm_shadow
+            WHERE market = $1
+            ORDER BY captured_at DESC
+            LIMIT 1
+         ), candidates AS (
+           SELECT tqe.trade_id::text AS trade_id,
+                  tqe.sub_score_breakdown->'reflection'->>'text' AS hindsight,
+                  tqe.sub_score_breakdown->'reflection'->>'symbol' AS symbol,
+                  tqe.sub_score_breakdown->'reflection'->>'market' AS market,
+                  tqe.sub_score_breakdown->'reflection'->>'regime' AS regime,
+                  tqe.sub_score_breakdown->'reflection'->>'setupType' AS setup_type,
+                  tqe.evaluated_at AS created_at
+             FROM investment.trade_quality_evaluations tqe
+            WHERE jsonb_typeof(tqe.sub_score_breakdown->'reflection') = 'object'
+           UNION ALL
+           SELECT lfr.trade_id::text,
+                  lfr.hindsight,
+                  COALESCE(lfr.avoid_pattern->>'symbol', lfr.avoid_pattern->>'symbol_pattern'),
+                  COALESCE(
+                    lfr.stage_attribution->>'market',
+                    lfr.avoid_pattern->>'market',
+                    NULLIF(${journalMarketExpr}, 'all')
+                  ),
+                  COALESCE(lfr.avoid_pattern->>'regime', lfr.stage_attribution->>'regime'),
+                  lfr.avoid_pattern->>'setup_type',
+                  lfr.created_at
+             FROM investment.luna_failure_reflexions lfr
+             LEFT JOIN investment.trade_journal tj ON ${journalIdExpr} = lfr.trade_id
+            WHERE NULLIF(BTRIM(lfr.hindsight), '') IS NOT NULL
+         ), normalized_candidates AS (
+           SELECT candidates.*,
+                  CASE
+                    WHEN LOWER(BTRIM(candidates.market)) IN ('crypto', 'binance') THEN 'crypto'
+                    WHEN LOWER(BTRIM(candidates.market)) IN ('domestic', 'stocks', 'stock', 'kis', 'krx') THEN 'domestic'
+                    WHEN LOWER(BTRIM(candidates.market)) IN ('overseas', 'kis_overseas') THEN 'overseas'
+                    ELSE NULLIF(LOWER(BTRIM(candidates.market)), '')
+                  END AS normalized_market,
+                  UPPER(REGEXP_REPLACE(BTRIM(candidates.symbol), '[[:space:]|&].*$', '')) AS normalized_symbol
+             FROM candidates
+         ), scored AS (
+           SELECT normalized_candidates.*,
+                  (CASE WHEN normalized_candidates.normalized_symbol IN (UPPER($2), UPPER(SPLIT_PART($2, '/', 1))) THEN 4 ELSE 0 END
+                   + CASE WHEN normalized_candidates.regime = (SELECT regime FROM current_regime) THEN 2 ELSE 0 END
+                   + CASE WHEN $3::text IS NOT NULL AND normalized_candidates.setup_type = $3 THEN 1 ELSE 0 END) AS similarity_score,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY LOWER(BTRIM(normalized_candidates.hindsight))
+                    ORDER BY normalized_candidates.created_at DESC
+                  ) AS dedupe_rank
+             FROM normalized_candidates
+            WHERE normalized_candidates.normalized_market = $1
+              AND (normalized_candidates.normalized_symbol IN (UPPER($2), UPPER(SPLIT_PART($2, '/', 1)))
+               OR normalized_candidates.regime = (SELECT regime FROM current_regime)
+               OR ($3::text IS NOT NULL AND normalized_candidates.setup_type = $3))
+         )
+         SELECT trade_id, hindsight, symbol, market, regime, setup_type, similarity_score, created_at
+           FROM scored
+          WHERE dedupe_rank = 1
+          ORDER BY similarity_score DESC, created_at DESC
+          LIMIT $4`,
+        [normalizedMarket, symbol, setupType, safeLimit],
+        {
+          signal: controller.signal,
+          timeoutMs: suppliedController ? REFLECTION_RECALL_MAX_TIMEOUT_MS : safeTimeoutMs,
+        },
+      ));
+    const items = (Array.isArray(rows) ? rows : [])
+      .filter((row) => {
+        const rowMarket = String(row.market || '').trim();
+        return rowMarket.length > 0 && normalizeLunaMarketKey(rowMarket) === normalizedMarket;
+      })
+      .slice(0, safeLimit)
+      .map((row) => ({
+        tradeId: row.trade_id,
+        text: row.hindsight,
+        symbol: row.symbol,
+        market: normalizeLunaMarketKey(row.market || normalizedMarket),
+        regime: row.regime,
+        setupType: row.setup_type,
+        similarityScore: Number(row.similarity_score || 0),
+      }));
+    return {
+      status: items.length > 0 ? 'injected' : 'empty',
+      items,
+      latencyMs: performance.now() - startedAt,
+    };
+  } catch (error) {
+    if (controller.signal.aborted || error?.code === '57014') {
+      const reason = String(controller.signal.reason?.message || controller.signal.reason || '');
+      const status = reason.includes('budget_exceeded') ? 'budget_exceeded' : 'timeout';
+      return { status, items: [], latencyMs: performance.now() - startedAt };
+    }
+    return { status: 'error', items: [], latencyMs: performance.now() - startedAt };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function buildEntryContextEvidence(queryFn, recallQueryFn, { symbol, exchange, market, setupType, hours }) {
   const safeHours = Math.max(1, Number(hours || 24));
+  const startedAt = performance.now();
+  const baselineStartedAt = startedAt;
   const [analysisRows, positionRows] = await Promise.all([
     Promise.resolve(queryFn(
       `SELECT analyst, signal, confidence, reasoning, created_at
@@ -169,6 +351,38 @@ async function buildEntryContextEvidence(queryFn, { symbol, exchange, hours }) {
       [exchange],
     )).catch(() => []),
   ]);
+  const baselineMs = performance.now() - baselineStartedAt;
+  const remainingBudgetMs = Math.max(0, baselineMs * 0.2);
+  const recallController = new AbortController();
+  let budgetTimer;
+  let reflectionRecall;
+  if (remainingBudgetMs > 0) {
+    const recallPromise = fetchSimilarTradeReflections(recallQueryFn, {
+      symbol,
+      market,
+      setupType,
+      timeoutMs: Math.min(REFLECTION_RECALL_MAX_TIMEOUT_MS, remainingBudgetMs),
+      controller: recallController,
+    });
+    reflectionRecall = await Promise.race([
+      recallPromise,
+      new Promise((resolve) => {
+        budgetTimer = setTimeout(() => {
+          recallController.abort(new Error('reflection_recall_budget_exceeded'));
+          resolve({ status: 'budget_exceeded', items: [], latencyMs: remainingBudgetMs });
+        }, remainingBudgetMs);
+      }),
+    ]);
+  } else {
+    recallController.abort(new Error('reflection_recall_budget_exceeded'));
+    reflectionRecall = { status: 'budget_exceeded', items: [], latencyMs: 0 };
+  }
+  if (budgetTimer) clearTimeout(budgetTimer);
+  const totalMs = performance.now() - startedAt;
+  const latencyBudget = evaluateRecallLatencyBudget({ baselineMs, totalMs });
+  const boundedRecall = latencyBudget.withinBudget
+    ? reflectionRecall
+    : { status: 'budget_exceeded', items: [], latencyMs: reflectionRecall.latencyMs || 0 };
   const normalizedSymbol = String(symbol || '').trim().toUpperCase();
   const livePositions = (Array.isArray(positionRows) ? positionRows : []).filter((row) => row?.paper !== true);
   return {
@@ -186,11 +400,24 @@ async function buildEntryContextEvidence(queryFn, { symbol, exchange, hours }) {
       exchangeOpenPositionCount: livePositions.length,
       openPositionCount: livePositions.length,
     },
+    reflectionRecall: {
+      ...boundedRecall,
+      ...latencyBudget,
+    },
   };
 }
 
 async function analyzeTrigger(trigger, options, deps, budget) {
   const queryFn = deps.query || db.query;
+  const recallQueryFn = deps.reflectionRecallQuery
+    || (deps.query
+      ? queryFn
+      : (sql, params, queryOptions) => queryWithStatementTimeout(
+        sql,
+        params,
+        queryOptions,
+        deps.withTransaction || db.withTransaction,
+      ));
   const runFn = deps.run || db.run;
   const llmCaller = deps.callViaHub || callViaHub;
   const exchange = normalizeExchange(trigger.exchange || options.exchange || 'binance');
@@ -218,9 +445,11 @@ async function analyzeTrigger(trigger, options, deps, budget) {
 
   const [regimeShadow, contextEvidence] = await Promise.all([
     latestRegimeShadow(queryFn, market),
-    buildEntryContextEvidence(queryFn, {
+    buildEntryContextEvidence(queryFn, recallQueryFn, {
       symbol: trigger.symbol,
       exchange,
+      market,
+      setupType: trigger.setup_type || null,
       hours: options.hours,
     }),
   ]);

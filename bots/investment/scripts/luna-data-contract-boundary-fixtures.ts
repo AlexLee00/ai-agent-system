@@ -1,0 +1,131 @@
+// @ts-nocheck
+
+export const LUNA_DATA_CONTRACT_BOUNDARY_FIXTURES = Object.freeze({
+  decimalReflection: {
+    input: 'PnL -2.5%였습니다. 판단을 재검토합니다. 다음에는 레짐을 확인합니다.',
+    expected: 'PnL -2.5%였습니다. 판단을 재검토합니다. 다음에는 레짐을 확인합니다.',
+  },
+  directionCases: [
+    { side: 'buy', profitable: true, prediction: 'bullish', expected: true },
+    { side: 'buy', profitable: false, prediction: 'bearish', expected: true },
+    { side: 'sell', profitable: true, prediction: 'bearish', expected: true },
+    { side: 'sell', profitable: false, prediction: 'bullish', expected: true },
+  ],
+  oppositeSideDedupe: {
+    common: {
+      market: 'crypto',
+      symbol: 'BTC/USDT',
+      pnlPct: 1.2,
+      regime: 'volatile',
+      strategyProfile: 'breakout',
+      analystCalls: [],
+    },
+    sides: ['buy', 'sell'],
+  },
+  ambiguousOutcomeCandidates: [
+    {
+      candidate_key: 'journal-2',
+      priority: 1,
+      outcome_source: 'trade_journal',
+      actual_action_type: 'buy',
+      actual_action_size_pct: null,
+      realized_reward: 0.2,
+      outcome_unit: 'return_fraction',
+      is_paper: true,
+    },
+    {
+      candidate_key: 'journal-1',
+      priority: 1,
+      outcome_source: 'trade_journal',
+      actual_action_type: 'buy',
+      actual_action_size_pct: null,
+      realized_reward: -0.1,
+      outcome_unit: 'return_fraction',
+      is_paper: true,
+    },
+    {
+      candidate_key: 'trades-1',
+      priority: 2,
+      outcome_source: 'trades',
+      actual_action_type: 'buy',
+      actual_action_size_pct: null,
+      realized_reward: 0.05,
+      outcome_unit: 'return_fraction',
+      is_paper: true,
+    },
+  ],
+  uniqueOutcomeCandidates: [
+    {
+      candidate_key: 'journal-1',
+      priority: 1,
+      outcome_source: 'trade_journal',
+      actual_action_type: 'buy',
+      actual_action_size_pct: null,
+      realized_reward: 0.05,
+      outcome_unit: 'return_fraction',
+      is_paper: true,
+    },
+    {
+      candidate_key: 'trades-1',
+      priority: 2,
+      outcome_source: 'trades',
+      actual_action_type: 'buy',
+      actual_action_size_pct: null,
+      realized_reward: 0.04,
+      outcome_unit: 'return_fraction',
+      is_paper: true,
+    },
+  ],
+  tradeOutcomeRows: [
+    { id: 'buy-unit', symbol: 'BTC/USDT', side: 'buy', paper: true, exchange: 'binance', executed_at: '2026-07-13 00:00:00', realized_pnl_pct: null, matched_buy_id: null, amount: 2 },
+    { id: 'sell-unit', symbol: 'BTC/USDT', side: 'sell', paper: true, exchange: 'binance', executed_at: '2026-07-13 01:00:00', realized_pnl_pct: 0.05, matched_buy_id: 'buy-unit', amount: 2 },
+    { id: 'buy-partial', symbol: 'ETH/USDT', side: 'buy', paper: true, exchange: 'binance', executed_at: '2026-07-13 02:00:00', realized_pnl_pct: null, matched_buy_id: null, amount: 4 },
+    { id: 'sell-partial-1', symbol: 'ETH/USDT', side: 'sell', paper: true, exchange: 'binance', executed_at: '2026-07-13 03:00:00', realized_pnl_pct: 0.1, matched_buy_id: 'buy-partial', amount: 1 },
+    { id: 'sell-partial-2', symbol: 'ETH/USDT', side: 'sell', paper: true, exchange: 'binance', executed_at: '2026-07-13 04:00:00', realized_pnl_pct: -0.02, matched_buy_id: 'buy-partial', amount: 3 },
+    { id: 'buy-incomplete', symbol: 'XRP/USDT', side: 'buy', paper: true, exchange: 'binance', executed_at: '2026-07-13 04:10:00', realized_pnl_pct: null, matched_buy_id: null, amount: 4 },
+    { id: 'sell-incomplete', symbol: 'XRP/USDT', side: 'sell', paper: true, exchange: 'binance', executed_at: '2026-07-13 04:20:00', realized_pnl_pct: 0.1, matched_buy_id: 'buy-incomplete', amount: 1 },
+    { id: 'buy-multi-1', symbol: 'SOL/USDT', side: 'buy', paper: true, exchange: 'binance', executed_at: '2026-07-13 05:00:00', realized_pnl_pct: null, matched_buy_id: null, amount: 1 },
+    { id: 'buy-multi-2', symbol: 'SOL/USDT', side: 'buy', paper: true, exchange: 'binance', executed_at: '2026-07-13 05:30:00', realized_pnl_pct: null, matched_buy_id: null, amount: 2 },
+    { id: 'sell-multi', symbol: 'SOL/USDT', side: 'sell', paper: true, exchange: 'binance', executed_at: '2026-07-13 06:00:00', realized_pnl_pct: 0.04, matched_buy_id: 'buy-multi-1', amount: 3 },
+  ],
+  mixedOutcomeRows: [
+    { id: 'r-1', reward_estimate: 0.4, realized_reward: 2, outcome_unit: 'r_multiple', outcome_source: 'luna_strategy_signal_outcomes' },
+    { id: 'r-2', reward_estimate: 0.2, realized_reward: 1, outcome_unit: 'r_multiple', outcome_source: 'luna_strategy_signal_outcomes' },
+    { id: 'fraction-1', reward_estimate: -0.2, realized_reward: -0.1, outcome_unit: 'return_fraction', outcome_source: 'trades' },
+    { id: 'fraction-2', reward_estimate: 0.1, realized_reward: 0.05, outcome_unit: 'return_fraction', outcome_source: 'trades' },
+  ],
+  outlierOutcomeRows: [
+    ...[-0.05, -0.02, 0.01, 0.02, 0.03, 0.04, 25].map((realized_reward, index) => ({
+      id: `fraction-${index + 1}`,
+      reward_estimate: realized_reward,
+      realized_reward,
+      outcome_unit: 'return_fraction',
+      outcome_source: 'trade_journal',
+    })),
+    ...[-2, -1, 0.5, 1, 1.5, 2, 200].map((realized_reward, index) => ({
+      id: `r-${index + 1}`,
+      reward_estimate: realized_reward,
+      realized_reward,
+      outcome_unit: 'r_multiple',
+      outcome_source: 'luna_strategy_signal_outcomes',
+    })),
+  ],
+  zeroMadOutlierOutcomeRows: [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `zero-mad-baseline-${index + 1}`,
+      reward_estimate: 0.01,
+      realized_reward: 0.01,
+      outcome_unit: 'return_fraction',
+      outcome_source: 'trade_journal',
+    })),
+    {
+      id: 'zero-mad-outlier',
+      reward_estimate: 100,
+      realized_reward: 100,
+      outcome_unit: 'return_fraction',
+      outcome_source: 'trade_journal',
+    },
+  ],
+});
+
+export default LUNA_DATA_CONTRACT_BOUNDARY_FIXTURES;

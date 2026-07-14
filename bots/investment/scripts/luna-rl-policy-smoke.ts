@@ -24,6 +24,7 @@ type FakeInsert = {
 
 type FakeDeps = {
   inserts: FakeInsert[];
+  queries: FakeInsert[];
   schemaInits: string[];
   initSchema: () => Promise<{ ok: boolean }>;
   listActiveEntryTriggers: (args: Record<string, any>) => Promise<Array<{ symbol: string; trigger_state: string }>>;
@@ -46,9 +47,11 @@ function fixtureBars(start = 100, drift = 1, count = 40) {
 
 function fakeDeps({ existingShadow = false } = {}): FakeDeps {
   const inserts: FakeInsert[] = [];
+  const queries: FakeInsert[] = [];
   const schemaInits: string[] = [];
   return {
     inserts,
+    queries,
     schemaInits,
     initSchema: async () => {
       schemaInits.push(new Date().toISOString());
@@ -65,7 +68,8 @@ function fakeDeps({ existingShadow = false } = {}): FakeDeps {
       if (/^[A-Z]{1,5}$/.test(symbol)) return fixtureBars(150, 0.55);
       return fixtureBars(100, 0.8);
     },
-    query: async (sql: string) => {
+    query: async (sql: string, params: any[] = []) => {
+      queries.push({ sql, params });
       if (sql.includes('luna_rl_policy_shadow') && existingShadow) {
         return [{
           symbol: 'BTC/USDT',
@@ -182,13 +186,17 @@ export async function runLunaRlPolicySmoke() {
     bars: fixtureBars(),
     factorEvidence: { compositeScore: 0.72 },
     statArbEvidence: { confidence: 0.45 },
-    entryEvidence: { confidence: 0.68 },
+    entryEvidence: {
+      confidence: 0.68,
+      evidence: { triggerId: 'trigger-policy-1' },
+    },
     regimeEvidence: { confidence: 0.62 },
   });
   assert.equal(policy.ok, true);
   assert.equal(policy.shadowOnly, true);
   assert.equal(policy.liveMutation, false);
   assert.equal(['buy', 'hold', 'sell'].includes(policy.actionType), true);
+  assert.deepEqual(policy.evidence.outcomeLineage, { entryTriggerId: 'trigger-policy-1' });
 
   const noPositionSellSuppressed = buildRlPolicyShadow({
     symbol: 'RISK/USDT',
@@ -230,6 +238,10 @@ export async function runLunaRlPolicySmoke() {
   assert.equal(btcEvidence.factorSource, 'investment.luna_factor_model_shadow');
   assert.equal(btcEvidence.statArbSource, 'investment.luna_stat_arb_shadow');
   assert.equal(btcEvidence.sellSuppressedNoPosition, false);
+  assert.deepEqual(btcEvidence.outcomeLineage, { entryTriggerId: 'trigger-1' });
+  const entryQuery = dryDeps.queries.find((item) => item.sql.includes('luna_entry_llm_shadow'));
+  assert.match(entryQuery?.sql || '', /UPPER\(symbol\) = ANY/);
+  assert.equal(entryQuery?.params.some((param) => Array.isArray(param) && param.includes('BTC/USDT')), true);
 
   const applyDeps = fakeDeps();
   const written = await runLunaRlPolicyShadow({
@@ -250,6 +262,10 @@ export async function runLunaRlPolicySmoke() {
   assert.equal(written.summary.written, 1);
   assert.equal(applyDeps.schemaInits.length, 1);
   assert.equal(JSON.parse(String(applyDeps.inserts[0].params[3])).values.length, 12);
+  assert.deepEqual(
+    JSON.parse(String(applyDeps.inserts[0].params[11])).outcomeLineage,
+    { entryTriggerId: 'trigger-1' },
+  );
 
   const cachedDeps = fakeDeps({ existingShadow: true });
   const cached = await runLunaRlPolicyShadow({

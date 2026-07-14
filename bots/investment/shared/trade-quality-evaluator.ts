@@ -14,6 +14,9 @@ import { callLLM } from './llm-client.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 import { evaluateLunaConstitutionForTrade } from './luna-constitution.ts';
 import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
+import { generateAndPersistTradeReflection } from './luna-trade-reflection.ts';
+import { normalizeLunaMarketKey } from './luna-data-contracts.ts';
+import { ensureDailyReflexionBudget } from './posttrade-reflexion-budget.ts';
 import {
   fetchPendingTradeJournalPosttradeCandidates,
   fetchTradeJournalPosttradeTrade,
@@ -69,6 +72,69 @@ export function normalizeTradeQualityResult(row: any): TradeQualityResult | null
     rationale: String(row.rationale || ''),
     sub_score_breakdown: normalizeJsonObject(row.sub_score_breakdown),
   };
+}
+
+export function buildTradeQualityReflectionPayload({
+  tradeId,
+  trade,
+  breakdown = {},
+  reviewData = {},
+  analystData = {},
+}) {
+  const storedAccuracy = normalizeJsonObject(analystData?.analyst_accuracy);
+  const analystCalls = ['aria', 'sophia', 'oracle', 'hermes']
+    .map((botName) => {
+      const direct = analystData?.[`${botName}_accurate`];
+      const accurate = typeof direct === 'boolean' ? direct : storedAccuracy[botName];
+      return typeof accurate === 'boolean'
+        ? { botName, prediction: 'neutral', confidence: 0, accurate }
+        : null;
+    })
+    .filter(Boolean);
+  const breakdownPnl = breakdown?.pnl_pct == null ? Number.NaN : Number(breakdown.pnl_pct);
+  const breakdownHoldHours = breakdown?.hold_hours == null ? Number.NaN : Number(breakdown.hold_hours);
+  const direction = String(trade?.direction || trade?.side || '').trim().toLowerCase();
+  return {
+    tradeId: String(tradeId),
+    market: normalizeLunaMarketKey(trade?.market || trade?.exchange),
+    symbol: String(trade?.symbol || ''),
+    side: ['sell', 'short'].includes(direction) ? 'sell' : 'buy',
+    paper: trade?.paper === true,
+    pnlPct: Number.isFinite(breakdownPnl) ? breakdownPnl : computePnlPct(trade),
+    holdingHours: Number.isFinite(breakdownHoldHours) ? breakdownHoldHours : computeHoldHours(trade),
+    analystCalls,
+    strategyProfile: reviewData?.strategy_family || reviewData?.setup_type || trade?.setup_type || undefined,
+    regime: reviewData?.regime || undefined,
+  };
+}
+
+export async function persistTradeQualityReflection(
+  context,
+  generateFn = generateAndPersistTradeReflection,
+  options = {},
+) {
+  const reflexionConfig = options.reflexionConfig;
+  if (reflexionConfig) {
+    if (reflexionConfig.enabled !== true) {
+      return { skipped: true, reason: 'reflexion_disabled' };
+    }
+    if (context?.category === 'rejected') {
+      return { skipped: true, reason: 'phase_c_owns_rejected' };
+    }
+    const ensureBudget = options.ensureBudget || ensureDailyReflexionBudget;
+    const withinBudget = await ensureBudget({
+      dryRun: options.dryRun === true,
+      budgetUsd: Number(reflexionConfig.llm_daily_budget_usd ?? 3),
+    });
+    if (!withinBudget.ok) {
+      return {
+        skipped: true,
+        reason: 'reflexion_llm_daily_budget_exceeded',
+        usedEstimateUsd: withinBudget.usedEstimateUsd,
+      };
+    }
+  }
+  return generateFn(buildTradeQualityReflectionPayload(context));
 }
 
 /**
@@ -149,6 +215,19 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
 
   if (!opts.dryRun) {
     await persistResult(result);
+    await persistTradeQualityReflection({
+      tradeId,
+      category: result.category,
+      trade,
+      breakdown,
+      reviewData,
+      analystData,
+    }, undefined, {
+      reflexionConfig: posttradeCfg?.reflexion || {},
+      dryRun: opts?.dryRun === true,
+    }).catch((error) => {
+      console.error(`[TradeQualityEvaluator] 회고 생성 실패 trade_id=${tradeId}:`, error?.message || error);
+    });
     await db.run(
       `INSERT INTO investment.mapek_knowledge (event_type, payload)
        VALUES ('posttrade_quality_evaluated', $1)`,
@@ -293,10 +372,11 @@ export async function fetchPendingPosttradeCandidates({
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-async function fetchRejectedReflexionRetryCandidates({
+export async function fetchRejectedReflexionRetryCandidates({
   limit = 50,
   market = 'all',
   seen = new Set(),
+  queryFn = db.query,
 } = {}) {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = normalizeMarketKey(market);
@@ -309,26 +389,40 @@ async function fetchRejectedReflexionRetryCandidates({
         params.push(targetMarket);
         return `AND ${marketExpr} = $${params.length}`;
       })();
-  const rows = await db.query(
+  const rows = await Promise.resolve(queryFn(
     `SELECT tqe.trade_id,
             tqe.evaluated_at,
             tj.id AS journal_id,
+            tqe.sub_score_breakdown->'reflection'->>'dedupeOfTradeId' AS dedupe_of_trade_id,
+            canonical_lfr.trade_id AS canonical_failure_trade_id,
             ${marketExpr} AS market
        FROM investment.trade_quality_evaluations tqe
        LEFT JOIN investment.luna_failure_reflexions lfr
          ON lfr.trade_id = tqe.trade_id
+       LEFT JOIN investment.luna_failure_reflexions canonical_lfr
+         ON canonical_lfr.trade_id = CASE
+              WHEN tqe.sub_score_breakdown->'reflection'->>'dedupeOfTradeId' ~ '^[0-9]+$'
+              THEN (tqe.sub_score_breakdown->'reflection'->>'dedupeOfTradeId')::BIGINT
+              ELSE NULL
+            END
        LEFT JOIN investment.trade_journal tj
          ON ${idExpr} = tqe.trade_id
       WHERE LOWER(COALESCE(tqe.category, '')) = 'rejected'
         AND lfr.trade_id IS NULL
+        AND canonical_lfr.trade_id IS NULL
         AND (tj.id IS NULL OR ${learningPnlValidSql('tj')})
         ${marketClause}
       ORDER BY tqe.evaluated_at DESC NULLS LAST
       LIMIT $1`,
     params,
-  ).catch(() => []);
+  )).catch(() => []);
   const output = [];
   for (const row of rows || []) {
+    if (
+      row.dedupe_of_trade_id != null
+      && row.canonical_failure_trade_id != null
+      && String(row.dedupe_of_trade_id) === String(row.canonical_failure_trade_id)
+    ) continue;
     const tradeId = Number(row.trade_id);
     if (!Number.isSafeInteger(tradeId) || tradeId <= 0 || seen.has(tradeId)) continue;
     seen.add(tradeId);
@@ -567,7 +661,16 @@ async function persistResult(result: TradeQualityResult) {
       overall_score              = EXCLUDED.overall_score,
       category                   = EXCLUDED.category,
       rationale                  = EXCLUDED.rationale,
-      sub_score_breakdown        = EXCLUDED.sub_score_breakdown,
+      sub_score_breakdown        = CASE
+        WHEN trade_quality_evaluations.sub_score_breakdown ? 'reflection'
+        THEN jsonb_set(
+          EXCLUDED.sub_score_breakdown,
+          '{reflection}',
+          trade_quality_evaluations.sub_score_breakdown->'reflection',
+          TRUE
+        )
+        ELSE EXCLUDED.sub_score_breakdown
+      END,
       evaluated_at               = NOW()
   `, [
     result.trade_id,

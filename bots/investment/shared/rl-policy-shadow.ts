@@ -195,6 +195,10 @@ export function buildRlPolicyShadow(input: AnyRecord = {}, context: AnyRecord = 
   const exchange = normalizeRlExchange(input.exchange || context.exchange);
   const market = input.market || context.market || marketForRlExchange(exchange);
   const symbol = String(input.symbol || input.symbols?.[0] || '').trim();
+  const entryEvidence = input.entryEvidence || input.entry || context.entryEvidence || {};
+  const entryTriggerId = String(
+    entryEvidence?.evidence?.triggerId ?? entryEvidence?.triggerId ?? '',
+  ).trim();
   const state = buildRlStateVector({ ...input, exchange, market }, context);
   const f = state.features;
   const opportunity =
@@ -243,6 +247,7 @@ export function buildRlPolicyShadow(input: AnyRecord = {}, context: AnyRecord = 
       policy: 'deterministic_ppo_shadow_proxy',
       trainedModelUsed: context.modelLoaded === true,
       sellSuppressedNoPosition,
+      outcomeLineage: entryTriggerId ? { entryTriggerId } : {},
     },
   };
 }

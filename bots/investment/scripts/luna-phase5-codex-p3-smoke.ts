@@ -44,6 +44,16 @@ export async function runLunaPhase5CodexP3Smoke() {
     'RL ensemble must include PPO/DQN/LSTM/Transformer votes',
   );
   assert.equal(rlRows.every((row) => row.liveMutation === false && row.shadowOnly === true), true, 'RL rows are shadow-only');
+  assert.equal(
+    rlRows.every((row) => Object.hasOwn(row.evidence, 'outcomeLineage')),
+    true,
+    'RL rows expose an explicit outcome lineage contract',
+  );
+  assert.equal(
+    rlRows.some((row) => Boolean(row.evidence.outcomeLineage?.entryTriggerId)),
+    true,
+    'RL fixture rows carry a stable entry trigger lineage ID',
+  );
   assert.equal(geneticRows.length, 2, 'Genetic alpha fixture rows');
   assert.equal(geneticRows.some((row) => row.promotionStatus === 'shadow_candidate_ready'), true, 'one genetic candidate should be ready');
   assert.equal(geneticRows.some((row) => row.blockedReasons.includes('max_drawdown_guard_blocks_live_forward')), true, 'drawdown block carried into genetic alpha');

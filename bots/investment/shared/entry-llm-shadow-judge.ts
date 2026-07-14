@@ -10,6 +10,7 @@ const REGIME_RISK = Object.freeze({
 });
 
 const MAX_CONTEXT_ANALYSIS_ROWS = 12;
+const MAX_REFLECTION_RECALL_ROWS = 3;
 
 function redactSensitiveText(value = '', limit = 240) {
   return String(value || '')
@@ -90,6 +91,29 @@ function normalizeAnalysisEvidence(rows = []) {
     .filter((row) => row.analyst && row.signal);
 }
 
+function normalizeReflectionRecall(value = {}) {
+  const items = (Array.isArray(value.items) ? value.items : [])
+    .slice(0, MAX_REFLECTION_RECALL_ROWS)
+    .map((item) => ({
+      tradeId: item?.tradeId ?? item?.trade_id ?? null,
+      text: redactSensitiveText(item?.text || item?.hindsight, 500),
+      symbol: String(item?.symbol || '').slice(0, 48) || null,
+      regime: String(item?.regime || '').slice(0, 48) || null,
+      setupType: String(item?.setupType || item?.setup_type || '').slice(0, 80) || null,
+      similarityScore: finiteNumber(item?.similarityScore ?? item?.similarity_score, 0),
+    }))
+    .filter((item) => item.text);
+  return {
+    status: items.length > 0 ? 'injected' : String(value.status || 'empty').slice(0, 32),
+    items,
+    latencyMs: Math.max(0, finiteNumber(value.latencyMs, 0)),
+    baselineMs: Math.max(0, finiteNumber(value.baselineMs, 0)),
+    totalMs: Math.max(0, finiteNumber(value.totalMs, 0)),
+    increasePct: Math.max(0, finiteNumber(value.increasePct, 0)),
+    withinBudget: value.withinBudget !== false,
+  };
+}
+
 function normalizeContextEvidence(evidence = {}) {
   const analysisRows = normalizeAnalysisEvidence(evidence.analysis?.recent || evidence.recentAnalysis || []);
   const signalCounts = analysisRows.reduce((acc, row) => {
@@ -114,6 +138,21 @@ function normalizeContextEvidence(evidence = {}) {
       capitalMode: String(evidence.capital?.mode || evidence.capitalMode || '').slice(0, 48) || null,
       balanceStatus: String(evidence.capital?.balanceStatus || evidence.balanceStatus || '').slice(0, 48) || null,
     },
+    reflectionRecall: normalizeReflectionRecall(evidence.reflectionRecall),
+  };
+}
+
+export function evaluateRecallLatencyBudget({ baselineMs, totalMs, budgetPct = 0.2 } = {}) {
+  const baseline = Math.max(0, finiteNumber(baselineMs, 0));
+  const total = Math.max(0, finiteNumber(totalMs, 0));
+  const budget = clamp(budgetPct, 0, 1, 0.2);
+  const increasePct = baseline > 0 ? Math.max(0, (total - baseline) / baseline) : (total > 0 ? 1 : 0);
+  return {
+    baselineMs: Number(baseline.toFixed(3)),
+    totalMs: Number(total.toFixed(3)),
+    increasePct: Number(increasePct.toFixed(4)),
+    budgetPct: budget,
+    withinBudget: increasePct <= budget,
   };
 }
 
@@ -205,6 +244,7 @@ export function buildEntryLlmJudgeInput({ trigger = {}, candidate = {}, fireRead
     0.7,
   );
   return {
+    reviewMode: 'g6_penalty_flag_only',
     triggerId: trigger.id || null,
     symbol: candidate.symbol || trigger.symbol || null,
     exchange: candidate.exchange || trigger.exchange || 'binance',
@@ -239,6 +279,7 @@ export function buildEntryLlmPrompt(input = {}) {
   return [
     '너는 Luna Phase 2 Entry Decision LLM Shadow Judge다.',
     '실거래 권한은 없고, 기존 fixed threshold 판단과 비교할 shadow 판단만 JSON으로 반환한다.',
+    'reflectionRecall은 감점/플래그 참고만 가능하며 거부권이나 주문 실행 권한을 만들지 않는다.',
     'dynamicThreshold는 0.50~0.90 사이, confidence와 position_size_pct는 0~100 또는 0~1 모두 허용된다.',
     '',
     '[entry_context]',
@@ -285,6 +326,7 @@ export function evaluateEntryTriggerShadowCandidate(trigger = {}, context = {}) 
 
 export default {
   normalizeEntryLlmShadowResult,
+  evaluateRecallLatencyBudget,
   buildEntryDecisionDebate,
   buildEntryLlmJudgeInput,
   buildEntryLlmPrompt,

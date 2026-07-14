@@ -4,12 +4,19 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
+import { INVESTMENT_SCHEMA, pgPool } from '../shared/db/core.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   buildEntryDecisionDebate,
+  evaluateRecallLatencyBudget,
   normalizeEntryLlmShadowResult,
 } from '../shared/entry-llm-shadow-judge.ts';
-import { runLunaEntryLlmShadow } from './runtime-luna-entry-llm-shadow.ts';
+import {
+  fetchSimilarTradeReflections,
+  queryWithStatementTimeout,
+  runLunaEntryLlmShadow,
+} from './runtime-luna-entry-llm-shadow.ts';
 
 const FAKE_SK_VALUE = ['sk', 'test', 'secret', '1234567890'].join('-');
 const FAKE_BEARER_VALUE = ['abcdefghijkl', 'mnop'].join('');
@@ -60,6 +67,18 @@ function fakeDeps({ existingShadow = false } = {}) {
           observed_at: new Date().toISOString(),
         }];
       }
+      if (sql.includes('luna_failure_reflexions')) {
+        return [{
+          trade_id: 41001,
+          hindsight: 'BTC breakout 손실에서는 volatile 레짐 확인을 먼저 했어야 했다.',
+          symbol: 'BTC/USDT',
+          market: 'crypto',
+          regime: 'volatile',
+          setup_type: 'breakout',
+          similarity_score: 7,
+          created_at: new Date().toISOString(),
+        }];
+      }
       if (sql.includes('luna_regime_llm_shadow')) {
         return [{
           market: 'crypto',
@@ -71,6 +90,7 @@ function fakeDeps({ existingShadow = false } = {}) {
         }];
       }
       if (sql.includes('FROM investment.analysis')) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
         return [
           {
             analyst: 'ta_mtf',
@@ -89,6 +109,7 @@ function fakeDeps({ existingShadow = false } = {}) {
         ];
       }
       if (sql.includes('FROM investment.positions')) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
         return [{
           symbol: 'ETH/USDT',
           amount: 1,
@@ -220,6 +241,10 @@ export async function runLunaEntryLlmSmoke() {
   assert.equal(dryDeps.listCalls[0].orderBy, 'updated_desc');
   assert.equal(Boolean(dryDeps.listCalls[0].updatedAfter), true);
   assert.equal(planned.rows[0].contextEvidence.analysis.signalCounts.BUY, 1);
+  assert.equal(planned.rows[0].contextEvidence.reflectionRecall.status, 'injected');
+  assert.equal(planned.rows[0].contextEvidence.reflectionRecall.items.length, 1);
+  assert.equal(planned.rows[0].contextEvidence.reflectionRecall.withinBudget, true);
+  assert.ok(planned.rows[0].contextEvidence.reflectionRecall.increasePct <= 0.2);
   assert.doesNotMatch(planned.rows[0].contextEvidence.analysis.recent[0].reasoning, /supersecret-token/);
   assert.doesNotMatch(planned.rows[0].contextEvidence.analysis.recent[0].reasoning, /sk-test-secret/);
 
@@ -238,6 +263,8 @@ export async function runLunaEntryLlmSmoke() {
   assert.equal(applyDeps.inserts.length, 1);
   assert.equal(applyDeps.llmCalls[0][3].taskType, 'entry_decision_shadow');
   assert.match(applyDeps.llmCalls[0][2], /contextEvidence/);
+  assert.match(applyDeps.llmCalls[0][2], /reflectionRecall/);
+  assert.match(applyDeps.llmCalls[0][2], /penalty_flag_only/);
   assert.doesNotMatch(applyDeps.llmCalls[0][2], /supersecret-token/);
   assert.doesNotMatch(applyDeps.llmCalls[0][2], /sk-test-secret/);
   const insertedRisk = JSON.parse(applyDeps.inserts[0].params[15]);
@@ -247,6 +274,7 @@ export async function runLunaEntryLlmSmoke() {
   assert.equal(insertedRiskText.includes(FAKE_BEARER_VALUE), false);
   assert.equal(insertedRisk.nested.api_key, '[redacted]');
   assert.equal(JSON.parse(applyDeps.inserts[0].params[17]).analysis.signalCounts.BUY, 1);
+  assert.equal(JSON.parse(applyDeps.inserts[0].params[17]).reflectionRecall.items.length, 1);
   assert.doesNotMatch(JSON.parse(applyDeps.inserts[0].params[17]).analysis.recent[0].reasoning, /supersecret-token/);
 
   const cappedDeps = fakeDeps();
@@ -274,6 +302,144 @@ export async function runLunaEntryLlmSmoke() {
   assert.equal(fresh.rows[0].reason, 'fresh_shadow_exists');
   assert.equal(fresh.summary.llmCalls, 0);
 
+  const missingRecall = await fetchSimilarTradeReflections(async () => [], {
+    symbol: 'ETH/USDT',
+    market: 'crypto',
+    setupType: 'mean_reversion',
+    timeoutMs: 20,
+  });
+  assert.equal(missingRecall.status, 'empty');
+  assert.deepEqual(missingRecall.items, []);
+
+  const marketScopedRecall = await fetchSimilarTradeReflections(async () => [
+    {
+      trade_id: 41002,
+      hindsight: '국내 종목 회고',
+      symbol: '229000',
+      market: 'domestic',
+      regime: 'volatile',
+      setup_type: 'breakout',
+      similarity_score: 2,
+    },
+    {
+      trade_id: 41003,
+      hindsight: 'BTC 회고',
+      symbol: 'BTC/USDT',
+      market: 'crypto',
+      regime: 'volatile',
+      setup_type: 'breakout',
+      similarity_score: 7,
+    },
+  ], {
+    symbol: 'BTC/USDT',
+    market: 'crypto',
+    setupType: 'breakout',
+    timeoutMs: 20,
+  });
+  assert.deepEqual(marketScopedRecall.items.map((item) => item.tradeId), [41003]);
+
+  let timeoutCancelled = false;
+  const timeoutRecall = await fetchSimilarTradeReflections(
+    async (_sql, _params, { signal } = {}) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => {
+        timeoutCancelled = true;
+        reject(signal.reason || new Error('aborted'));
+      }, { once: true });
+    }),
+    { symbol: 'ETH/USDT', market: 'crypto', setupType: 'mean_reversion', timeoutMs: 5 },
+  );
+  assert.equal(timeoutRecall.status, 'timeout');
+  assert.deepEqual(timeoutRecall.items, []);
+  assert.equal(timeoutCancelled, true);
+
+  const budgetDeps = fakeDeps();
+  const baselineQuery = budgetDeps.query;
+  budgetDeps.query = async (sql, ...args) => {
+    if (sql.includes('FROM investment.analysis') || sql.includes('FROM investment.positions')) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return baselineQuery(sql, ...args);
+  };
+  let budgetCancelled = false;
+  budgetDeps.reflectionRecallQuery = async (_sql, _params, { signal } = {}) => new Promise((_resolve, reject) => {
+    signal?.addEventListener('abort', () => {
+      budgetCancelled = true;
+      reject(signal.reason || new Error('aborted'));
+    }, { once: true });
+  });
+  const budgetExceeded = await runLunaEntryLlmShadow({
+    apply: false,
+    confirm: '',
+    exchanges: ['binance'],
+    limit: 1,
+    ttlMinutes: 120,
+    maxLlmCalls: 0,
+  }, budgetDeps);
+  assert.equal(budgetExceeded.rows[0].contextEvidence.reflectionRecall.status, 'budget_exceeded');
+  assert.equal(budgetCancelled, true);
+
+  const isolatedBaselineDeps = fakeDeps();
+  const isolatedBaselineQuery = isolatedBaselineDeps.query;
+  let baselineCompletions = 0;
+  let recallStartedAfterBaselineQueries = false;
+  isolatedBaselineDeps.query = async (sql, ...args) => {
+    if (sql.includes('FROM investment.analysis') || sql.includes('FROM investment.positions')) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      baselineCompletions += 1;
+    }
+    return isolatedBaselineQuery(sql, ...args);
+  };
+  isolatedBaselineDeps.reflectionRecallQuery = async () => {
+    recallStartedAfterBaselineQueries = baselineCompletions === 2;
+    return [];
+  };
+  await runLunaEntryLlmShadow({
+    apply: false,
+    confirm: '',
+    exchanges: ['binance'],
+    limit: 1,
+    ttlMinutes: 120,
+    maxLlmCalls: 0,
+  }, isolatedBaselineDeps);
+  assert.equal(recallStartedAfterBaselineQueries, true);
+
+  await assert.rejects(
+    queryWithStatementTimeout('SELECT pg_sleep(0.05)', [], { timeoutMs: 5 }),
+    (error) => error?.code === '57014',
+  );
+  const queryController = new AbortController();
+  const queryCancellation = queryWithStatementTimeout(
+    'SELECT pg_sleep(0.1)',
+    [],
+    { timeoutMs: 200, signal: queryController.signal },
+  );
+  setTimeout(() => queryController.abort(new Error('smoke_budget_exceeded')), 20);
+  await assert.rejects(queryCancellation, (error) => error?.code === '57014');
+
+  const targetPool = pgPool.getPool(INVESTMENT_SCHEMA);
+  assert.equal(targetPool.options.max, 2);
+  const blocker = await targetPool.connect();
+  try {
+    const saturatedController = new AbortController();
+    const startedAt = performance.now();
+    const saturatedCancellation = queryWithStatementTimeout(
+      'SELECT pg_sleep(1)',
+      [],
+      { timeoutMs: 200, signal: saturatedController.signal },
+    );
+    setTimeout(() => saturatedController.abort(new Error('smoke_pool_saturated')), 40);
+    await assert.rejects(saturatedCancellation, (error) => error?.code === '57014');
+    assert.ok(
+      performance.now() - startedAt < 150,
+      'abort cancellation must not wait for a target-pool connection',
+    );
+  } finally {
+    blocker.release();
+  }
+
+  assert.equal(evaluateRecallLatencyBudget({ baselineMs: 100, totalMs: 119 }).withinBudget, true);
+  assert.equal(evaluateRecallLatencyBudget({ baselineMs: 100, totalMs: 121 }).withinBudget, false);
+
   return {
     ok: true,
     smoke: 'luna-entry-llm-shadow',
@@ -281,6 +447,14 @@ export async function runLunaEntryLlmSmoke() {
     written: written.status,
     capGuard: capped.rows[0].reason,
     freshGuard: fresh.rows[0].reason,
+    recallFallback: missingRecall.status,
+    recallTimeout: timeoutRecall.status,
+    recallLatency: {
+      baselineMs: planned.rows[0].contextEvidence.reflectionRecall.baselineMs,
+      totalMs: planned.rows[0].contextEvidence.reflectionRecall.totalMs,
+      increasePct: planned.rows[0].contextEvidence.reflectionRecall.increasePct,
+      withinBudget: planned.rows[0].contextEvidence.reflectionRecall.withinBudget,
+    },
   };
 }
 

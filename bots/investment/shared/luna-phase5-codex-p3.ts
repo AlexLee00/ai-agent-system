@@ -165,7 +165,12 @@ function fixtureRlRows() {
       reward_estimate: 0.19,
       data_health: 'ready',
       state_vector: { values: [0.62, 0.58, 0.22, 0.11, 0.72, 0.2, 0.76, 0.7] },
-      context_evidence: { fixture: true, trendScore: 0.66, riskScore: 0.24 },
+      context_evidence: {
+        fixture: true,
+        trendScore: 0.66,
+        riskScore: 0.24,
+        outcomeLineage: { entryTriggerId: 'fixture-entry-trigger-btc' },
+      },
     },
     {
       symbol: 'DOGE/USDT',
@@ -200,7 +205,7 @@ async function loadLatestRlPolicyRows({ limit = 50, market = null } = {}) {
   const marketWhere = marketFilter ? `AND market = $${params.push(marketFilter)}` : '';
   return query(`
     SELECT DISTINCT ON (symbol, market)
-           symbol, market, exchange, action_type, action_size_pct, confidence,
+           id, symbol, market, exchange, action_type, action_size_pct, confidence,
            reward_estimate, data_health, state_vector, context_evidence, observed_at
       FROM luna_rl_policy_shadow
      WHERE shadow_only = true
@@ -304,8 +309,10 @@ function buildRlEnsembleRow(row = {}, phase4 = {}) {
       phase: 'luna_phase5_codex_p3',
       task: 'rl_diversification_ensemble',
       source: 'ppo_dqn_lstm_transformer_shadow_proxy',
+      rlPolicyId: row.id ?? row.rlPolicyId ?? null,
       phase4ObservedAt: phase4.observed_at || null,
       rlObservedAt: row.observed_at || null,
+      outcomeLineage: parseJsonMaybe(evidence.outcomeLineage ?? evidence.outcome_lineage, {}),
       riskScore: round(riskScore, 4),
       trendScore: round(trendScore, 4),
       liveMutation: false,

@@ -10,6 +10,8 @@
 
 import * as db from './db/core.ts';
 import { learningPnlValidSql } from './trade-journal-learning-guard.ts';
+import { generateAndPersistTradeReflection } from './luna-trade-reflection.ts';
+import { isAnalystPredictionCorrect } from './analyst-prediction-correctness.ts';
 
 const ANALYST_ACCURACY_COLUMNS: Record<string, string> = {
   aria: 'aria_accurate',
@@ -17,6 +19,13 @@ const ANALYST_ACCURACY_COLUMNS: Record<string, string> = {
   oracle: 'oracle_accurate',
   hermes: 'hermes_accurate',
 };
+
+export const FAILURE_REFLEXION_INSERT_SQL = `
+  INSERT INTO investment.luna_failure_reflexions (
+    trade_id, five_why, stage_attribution, hindsight, avoid_pattern, created_at
+  ) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, NOW())
+  ON CONFLICT (trade_id) DO NOTHING
+`;
 
 function analystAccuracyColumn(agentName: string): string | null {
   const key = String(agentName || '').trim().toLowerCase();
@@ -80,12 +89,23 @@ export async function runPostTradeFeedbackLoop(payload: TradeOutcomePayload): Pr
     steps.push(await stepUpdateAnalystAccuracy(payload));
   }
 
-  // Step 4: 실패 반성 (손실 거래)
-  if (payload.pnlPct !== undefined && payload.pnlPct < -1.0) {
-    steps.push(await stepCreateFailureReflexion(payload));
+  // Step 4: 정답/오답 시퀀스 회고를 기존 quality JSONB에 병기
+  let reflectionResult = null;
+  if (payload.pnlPct !== undefined) {
+    reflectionResult = await stepCreateTradeReflection(payload);
+    steps.push(reflectionResult.step);
   }
 
-  // Step 5: feedback_to_action_map 갱신
+  // Step 5: 실패 반성 (손실 거래) — 기존 Sigma luna_reflexion feed 경로
+  if (payload.pnlPct !== undefined && payload.pnlPct < -1.0) {
+    steps.push(await stepCreateFailureReflexion(
+      payload,
+      reflectionResult?.reflection?.text,
+      reflectionResult?.reflection?.dedupeOfTradeId,
+    ));
+  }
+
+  // Step 6: feedback_to_action_map 갱신
   const feedbackStep = await stepUpdateFeedbackActionMap(payload);
   steps.push(feedbackStep);
   if (feedbackStep.success && feedbackStep.detail?.includes('mutation')) {
@@ -99,6 +119,25 @@ export async function runPostTradeFeedbackLoop(payload: TradeOutcomePayload): Pr
 
   console.log(`[FeedbackLoop] ${payload.tradeId}: ${summary}`);
   return { tradeId: payload.tradeId, steps, mutationSuggested, summary };
+}
+
+async function stepCreateTradeReflection(p: TradeOutcomePayload) {
+  try {
+    const result = await generateAndPersistTradeReflection(p);
+    return {
+      step: {
+        step: 'create_trade_reflection',
+        success: result.persisted,
+        detail: result.persisted ? result.source : 'trade_quality_evaluation_not_found',
+      },
+      reflection: result.reflection,
+    };
+  } catch (err) {
+    return {
+      step: { step: 'create_trade_reflection', success: false, detail: err?.message },
+      reflection: null,
+    };
+  }
 }
 
 // ─── 매일 06:00 — 일간 루프 ──────────────────────────────────
@@ -199,18 +238,19 @@ async function stepEvaluateTradeQuality(p: TradeOutcomePayload): Promise<Feedbac
   }
 }
 
+export function evaluateAnalystCalls(p: TradeOutcomePayload) {
+  const profitable = (p.pnlPct ?? 0) > 0;
+  return (p.analystCalls || [])
+    .map((call) => ({
+      call,
+      accurate: isAnalystPredictionCorrect(call.prediction, p.side, profitable),
+    }))
+    .filter(({ accurate }) => accurate !== null);
+}
+
 async function stepUpdateAnalystAccuracy(p: TradeOutcomePayload): Promise<FeedbackStep> {
   try {
-    const profitable = (p.pnlPct ?? 0) > 0;
-    for (const call of p.analystCalls) {
-      // 예측과 결과가 일치했는지 판단
-      const accurate = call.prediction === 'bullish'
-        ? profitable
-        : call.prediction === 'bearish'
-          ? !profitable
-          : null;   // neutral은 평가 제외
-
-      if (accurate === null) continue;
+    for (const { call, accurate } of evaluateAnalystCalls(p)) {
       const column = analystAccuracyColumn(call.botName);
       if (!column) {
         console.warn(`[FeedbackLoop] unknown analyst skipped: ${call.botName}`);
@@ -240,10 +280,23 @@ async function stepUpdateAnalystAccuracy(p: TradeOutcomePayload): Promise<Feedba
   }
 }
 
-async function stepCreateFailureReflexion(p: TradeOutcomePayload): Promise<FeedbackStep> {
+async function stepCreateFailureReflexion(
+  p: TradeOutcomePayload,
+  reflectionText = '',
+  dedupeOfTradeId = null,
+): Promise<FeedbackStep> {
   try {
     const sourceTradeId = /^\d+$/.test(String(p.tradeId || '')) ? Number(p.tradeId) : null;
     if (sourceTradeId == null) return { step: 'create_failure_reflexion', success: true, detail: 'skip (non-numeric trade_id)' };
+    if (dedupeOfTradeId != null) {
+      const canonical = await db.query(
+        `SELECT 1 FROM investment.luna_failure_reflexions WHERE trade_id = $1 LIMIT 1`,
+        [dedupeOfTradeId],
+      );
+      if (Array.isArray(canonical) && canonical.length > 0) {
+        return { step: 'create_failure_reflexion', success: true, detail: 'deduplicated' };
+      }
+    }
     const fiveWhy = [
       `Why 1: PnL ${p.pnlPct?.toFixed(2)}% — 목표 미달`,
       `Why 2: 레짐 불일치 — ${p.regime ?? '알 수 없음'} 에서 ${p.side}`,
@@ -252,17 +305,12 @@ async function stepCreateFailureReflexion(p: TradeOutcomePayload): Promise<Feedb
       `Why 5: 전략 프로파일 — ${p.strategyProfile ?? '미확인'}`,
     ];
 
-    await db.query(`
-      INSERT INTO investment.luna_failure_reflexions (
-        trade_id, five_why, stage_attribution, hindsight, avoid_pattern, created_at
-      ) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, NOW())
-      ON CONFLICT (trade_id) DO NOTHING
-    `, [
+    await db.query(FAILURE_REFLEXION_INSERT_SQL, [
       sourceTradeId,
       JSON.stringify(fiveWhy),
-      JSON.stringify({ pnl_pct: p.pnlPct, regime: p.regime, analysts: p.analystCalls.map(a => a.botName) }),
-      `${p.symbol} ${p.side} — PnL ${p.pnlPct?.toFixed(2)}%. 레짐/분석 재검토 필요.`,
-      JSON.stringify({ symbol: p.symbol, side: p.side, regime: p.regime }),
+      JSON.stringify({ market: p.market, pnl_pct: p.pnlPct, regime: p.regime, analysts: p.analystCalls.map(a => a.botName) }),
+      reflectionText || `${p.symbol} ${p.side} — PnL ${p.pnlPct?.toFixed(2)}%. 레짐/분석 재검토 필요.`,
+      JSON.stringify({ symbol: p.symbol, side: p.side, regime: p.regime, setup_type: p.strategyProfile }),
     ]);
     return { step: 'create_failure_reflexion', success: true };
   } catch (err) {

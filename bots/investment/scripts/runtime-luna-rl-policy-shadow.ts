@@ -203,15 +203,31 @@ async function latestRegimeRow(queryFn: NonNullable<RuntimeDeps['query']>, { mar
   return Array.isArray(rows) ? rows[0] || null : null;
 }
 
-async function latestEntryRows(queryFn: NonNullable<RuntimeDeps['query']>, { exchange, hours, limit }: AnyRecord): Promise<AnyRecord[]> {
+async function latestEntryRows(queryFn: NonNullable<RuntimeDeps['query']>, {
+  exchange,
+  hours,
+  limit,
+  symbols = [],
+}: AnyRecord): Promise<AnyRecord[]> {
+  const targetSymbols = [...new Set(
+    (Array.isArray(symbols) ? symbols : [])
+      .map((symbol) => normalizeSymbol(symbol))
+      .filter(Boolean),
+  )];
+  const params: any[] = [exchange, Math.max(1, Number(hours || 24))];
+  const symbolWhere = targetSymbols.length > 0
+    ? `AND UPPER(symbol) = ANY($${params.push(targetSymbols)}::text[])`
+    : '';
+  params.push(Math.max(1, Number(limit || 20)));
   const rows = await Promise.resolve(queryFn(
     `SELECT DISTINCT ON (symbol, exchange) *
        FROM investment.luna_entry_llm_shadow
       WHERE exchange = $1
         AND observed_at >= NOW() - ($2::int * INTERVAL '1 hour')
+        ${symbolWhere}
       ORDER BY symbol, exchange, observed_at DESC, llm_confidence DESC
-      LIMIT $3`,
-    [exchange, Math.max(1, Number(hours || 24)), Math.max(1, Number(limit || 20))],
+      LIMIT $${params.length}`,
+    params,
   )).catch(() => []);
   return Array.isArray(rows) ? rows : [];
 }
@@ -364,7 +380,12 @@ async function buildPolicyRows(exchange: string, options: RlOptions, deps: Runti
   const [factorRows, statRows, entryRows, regimeRow, positionRows] = await Promise.all([
     latestFactorRows(queryFn, { exchange, hours: options.hours, limit: Math.max(options.limit, symbols.length) }),
     latestStatArbRows(queryFn, { exchange, hours: options.hours, limit: 50 }),
-    latestEntryRows(queryFn, { exchange, hours: options.hours, limit: Math.max(options.limit, symbols.length) }),
+    latestEntryRows(queryFn, {
+      exchange,
+      hours: options.hours,
+      limit: Math.max(options.limit, symbols.length),
+      symbols,
+    }),
     latestRegimeRow(queryFn, { market, hours: options.hours }),
     latestPositionRows(queryFn, { exchange }),
   ]);
