@@ -257,3 +257,7 @@ bots/sigma/config/sigma_principles.yaml
 bots/darwin/sandbox/darwin-autonomy-level.json
 bots/darwin/sandbox/*.bak-*
 bots/reservation/manual/reports/
+
+# 시스템 생성물 미추적 (2026-07-15 마스터 결정 — 주간 잡이 덮어쓰는 리뷰 산출물)
+bots/hub/output/llm-oauth4-master-review.json
+docs/hub/LLM_OAUTH4_MASTER_REVIEW.md
