@@ -9,6 +9,179 @@ export const REGIMES = {
   VOLATILE: 'volatile',
 };
 
+export const JAENONG_C17_PARAMETER_KEYS = Object.freeze({
+  capitalBudgetRatio: 'c17.jaenong.capital_budget_ratio',
+  averagingMaxCount: 'c17.jaenong.averaging_max_count',
+  trackMddCircuitPct: 'c17.jaenong.track_mdd_circuit_pct',
+  zoneStopLossAlpha: 'c17.jaenong.zone_stop_loss_alpha',
+});
+
+export const JAENONG_C17_DEFAULTS = Object.freeze({
+  capitalBudgetRatio: 0.5,
+  averagingMaxCount: 3,
+  trackMddCircuitPct: -15,
+  zoneStopLossAlpha: null,
+});
+
+function pullbackComponentScore(value, boundaries) {
+  for (const [predicate, score] of boundaries) {
+    if (predicate(value)) return score;
+  }
+  return 0;
+}
+
+export function computeJaenongPullbackScore({ spyDrawdownPct, vix, fearGreed } = {}) {
+  const supplied = [spyDrawdownPct, vix, fearGreed];
+  const drawdown = Number(spyDrawdownPct);
+  const volatility = Number(vix);
+  const sentiment = Number(fearGreed);
+  if (supplied.some((value) => value == null || value === '')
+    || ![drawdown, volatility, sentiment].every(Number.isFinite)) {
+    return {
+      available: false,
+      total: null,
+      components: { spy: null, vix: null, fearGreed: null },
+      reason: 'pullback_input_unavailable',
+      shadowOnly: true,
+    };
+  }
+  const spy = pullbackComponentScore(drawdown, [
+    [(value) => value <= -20, 3],
+    [(value) => value <= -10, 1],
+    [(value) => value <= -5, 0],
+    [() => true, -1],
+  ]);
+  const vixScore = pullbackComponentScore(volatility, [
+    [(value) => value <= 15, -1],
+    [(value) => value <= 20, 0],
+    [(value) => value < 30, 1],
+    [() => true, 2],
+  ]);
+  const fearGreedScore = pullbackComponentScore(sentiment, [
+    [(value) => value <= 25, 2],
+    [(value) => value <= 45, 1],
+    [(value) => value <= 55, 0],
+    [(value) => value < 75, -1],
+    [() => true, -2],
+  ]);
+  return {
+    available: true,
+    total: spy + vixScore + fearGreedScore,
+    components: { spy, vix: vixScore, fearGreed: fearGreedScore },
+    inputs: { spyDrawdownPct: drawdown, vix: volatility, fearGreed: sentiment },
+    reason: 'c17_jaenong_pullback_score',
+    shadowOnly: true,
+  };
+}
+
+export function buildJaenongTranchePlan(score) {
+  const value = Number(score);
+  if (Number.isFinite(value) && value >= 3) {
+    return { action: 'start_first_tranche', plannedTranches: 3, immediateTranches: 1, shadowOnly: true };
+  }
+  if (Number.isFinite(value) && value >= 1) {
+    return { action: 'start_first_tranche', plannedTranches: 1, immediateTranches: 1, shadowOnly: true };
+  }
+  return { action: 'wait', plannedTranches: 0, immediateTranches: 0, shadowOnly: true };
+}
+
+export function buildJaenongTranchePlanRecord({ planId, symbol, score, referencePrice, createdAt } = {}) {
+  const plan = buildJaenongTranchePlan(score);
+  return {
+    planId: String(planId || ''),
+    symbol: String(symbol || '').toUpperCase(),
+    score: Number.isFinite(Number(score)) ? Number(score) : null,
+    referencePrice: Number.isFinite(Number(referencePrice)) ? Number(referencePrice) : null,
+    status: 'planned_shadow',
+    plan,
+    createdAt: createdAt || new Date().toISOString(),
+    executionTime: null,
+    executionConnected: false,
+    journalTarget: 'trade_journal',
+  };
+}
+
+export async function recordJaenongTranchePlan(record, runFn) {
+  if (typeof runFn !== 'function') throw new Error('jaenong_plan_run_function_required');
+  if (!record?.planId || !record?.symbol) throw new Error('jaenong_plan_identity_required');
+  const createdAtMs = new Date(record.createdAt || Date.now()).getTime();
+  if (!Number.isFinite(createdAtMs)) throw new Error('jaenong_plan_created_at_invalid');
+  const entryPrice = Number(record.referencePrice);
+  if (!Number.isFinite(entryPrice) || entryPrice <= 0) {
+    return {
+      recorded: false,
+      skipped: true,
+      reason: 'invalid_reference_price',
+      executionConnected: false,
+      status: 'planned_shadow',
+    };
+  }
+  const result = await runFn(
+    `INSERT INTO trade_journal
+       (trade_id, market, exchange, symbol, is_paper, trade_mode,
+        entry_time, entry_price, entry_size, entry_value, direction,
+        execution_time, strategy_family, strategy_route, execution_origin,
+        quality_flag, exclude_from_learning, status, created_at)
+     VALUES ($1, 'overseas', 'kis_overseas', $2, true, 'shadow',
+             $3, $4, 0, 0, 'long', null, 'jaenong_pullback', $5::jsonb,
+             'jaenong_plan', 'shadow', true, 'planned_shadow', $3)
+     ON CONFLICT (trade_id) DO NOTHING`,
+    [record.planId, record.symbol, createdAtMs, entryPrice, JSON.stringify(record)],
+  );
+  const recorded = Number(result?.rowCount || 0) > 0;
+  return {
+    recorded,
+    skipped: !recorded,
+    reason: recorded ? null : 'duplicate_trade_id',
+    executionConnected: false,
+    status: 'planned_shadow',
+  };
+}
+
+async function fetchYahooJaenongPullbackInputs() {
+  const url = 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1y&interval=1d';
+  const [spyResponse, vixResponse] = await Promise.all([
+    fetch(url, { headers: { 'User-Agent': 'luna-market-regime/1.0' }, signal: AbortSignal.timeout(8000) }),
+    fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?range=5d&interval=1d', {
+      headers: { 'User-Agent': 'luna-market-regime/1.0' },
+      signal: AbortSignal.timeout(8000),
+    }),
+  ]);
+  if (!spyResponse.ok || !vixResponse.ok) throw new Error('jaenong_pullback_market_data_unavailable');
+  const [spyJson, vixJson] = await Promise.all([spyResponse.json(), vixResponse.json()]);
+  const spyCloses = (spyJson?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(Number.isFinite);
+  const vixCloses = (vixJson?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(Number.isFinite);
+  const current = Number(spyCloses.at(-1));
+  const high52Week = Math.max(...spyCloses);
+  return {
+    spyDrawdownPct: current > 0 && high52Week > 0 ? (current / high52Week - 1) * 100 : null,
+    vix: Number(vixCloses.at(-1)),
+  };
+}
+
+async function resolveJaenongPullbackShadow(signals = {}) {
+  const config = signals.jaenongPullback;
+  if (!config || config.enabled !== true) return null;
+  try {
+    const marketInputs = Number.isFinite(Number(config.spyDrawdownPct)) && Number.isFinite(Number(config.vix))
+      ? { spyDrawdownPct: Number(config.spyDrawdownPct), vix: Number(config.vix) }
+      : await fetchYahooJaenongPullbackInputs();
+    const fearGreed = Number.isFinite(Number(config.fearGreed))
+      ? Number(config.fearGreed)
+      : await import('../team/sophia.ts').then((module) => module.fetchFearGreedIndex());
+    const score = computeJaenongPullbackScore({ ...marketInputs, fearGreed });
+    return { ...score, tranchePlan: buildJaenongTranchePlan(score.total) };
+  } catch (error) {
+    return {
+      available: false,
+      total: null,
+      reason: String(error?.message || error),
+      shadowOnly: true,
+      tranchePlan: buildJaenongTranchePlan(null),
+    };
+  }
+}
+
 export const REGIME_GUIDES = {
   [REGIMES.TRENDING_BULL]: {
     description: '강한 상승 추세',
@@ -268,10 +441,14 @@ export async function getMarketRegime(market = 'binance', signals = {}) {
   const cacheKey = getCacheKey(market);
   const cached = _cache.get(cacheKey);
   if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) {
-    return {
+    const result = {
       ...cached.value,
       ...classifyRegime(market, cached.value.bias, cached.value.snapshots, signals),
     };
+    const jaenongPullbackShadow = market === 'kis_overseas'
+      ? await resolveJaenongPullbackShadow(signals)
+      : null;
+    return jaenongPullbackShadow ? { ...result, jaenongPullbackShadow } : result;
   }
 
   const benchmarks = BENCHMARKS[market] || [];
@@ -318,7 +495,11 @@ export async function getMarketRegime(market = 'binance', signals = {}) {
 
   const value = { market, bias, summary, snapshots };
   _cache.set(cacheKey, { ts: Date.now(), value });
-  return { ...value, ...classifyRegime(market, bias, snapshots, signals) };
+  const result = { ...value, ...classifyRegime(market, bias, snapshots, signals) };
+  const jaenongPullbackShadow = market === 'kis_overseas'
+    ? await resolveJaenongPullbackShadow(signals)
+    : null;
+  return jaenongPullbackShadow ? { ...result, jaenongPullbackShadow } : result;
 }
 
 export function formatMarketRegime(regime) {

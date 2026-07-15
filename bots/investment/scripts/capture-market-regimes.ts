@@ -18,6 +18,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   return {
     dryRun: argv.includes('--dry-run'),
     json: argv.includes('--json'),
+    jaenongPullbackShadow: argv.includes('--jaenong-pullback-shadow'),
     markets,
   };
 }
@@ -43,14 +44,18 @@ function scoutPayloadForMarket(market, intel) {
   };
 }
 
-async function captureMarketRegimes({ dryRun = false, markets = [] } = {}) {
+async function captureMarketRegimes({ dryRun = false, markets = [], jaenongPullbackShadow = false } = {}) {
   await db.initSchema();
 
   const scoutIntel = await loadLatestScoutIntel({ minutes: 24 * 60 }).catch(() => null);
   const rows = [];
 
   for (const market of markets) {
-    const regime = await getMarketRegime(market, scoutPayloadForMarket(market, scoutIntel));
+    const signals = scoutPayloadForMarket(market, scoutIntel);
+    if (market === 'kis_overseas' && jaenongPullbackShadow) {
+      signals.jaenongPullback = { enabled: true };
+    }
+    const regime = await getMarketRegime(market, signals);
     const row = {
       market,
       normalizedMarket: normalizeRegimeMarket(market),
@@ -61,6 +66,7 @@ async function captureMarketRegimes({ dryRun = false, markets = [] } = {}) {
       bias: regime.bias,
       tradingStyle: regime.guide?.tradingStyle || null,
       timeframe: regime.guide?.timeframe || null,
+      jaenongPullbackShadow: regime.jaenongPullbackShadow || null,
       evidence: (regime.snapshots || []).map((item) => ({
         label: item.label,
         symbol: item.symbol,
@@ -87,6 +93,7 @@ async function captureMarketRegimes({ dryRun = false, markets = [] } = {}) {
           evidence: row.evidence,
           bias: row.bias,
           guide: regime.guide || null,
+          jaenongPullbackShadow: row.jaenongPullbackShadow,
         },
       });
     }

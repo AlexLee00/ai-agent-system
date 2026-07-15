@@ -111,7 +111,7 @@ function capSubreddits(list = []) {
 
 // ─── Fear & Greed Index (alternative.me) ─────────────────────────────
 
-async function fetchFearGreedIndex() {
+export async function fetchFearGreedIndex() {
   const now = Date.now();
   if (_fgCache.data !== null && (now - _fgCache.ts) < FG_TTL) return _fgCache.data;
   try {

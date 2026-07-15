@@ -47,6 +47,7 @@ import {
   getCachedDomesticOfficialReference,
   summarizeDomesticOfficialReference,
 } from '../shared/domestic-official-reference.ts';
+import { JAENONG_TICKER_DRAFT } from '../scripts/jaenong-post-parser.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -56,6 +57,35 @@ const _require = createRequire(import.meta.url);
 export const CORE_CRYPTO   = [];
 export const CORE_KIS      = [];
 export const CORE_OVERSEAS = [];
+
+export const JAENONG_BLUECHIP_WHITELIST = Object.freeze(Object.keys(JAENONG_TICKER_DRAFT));
+export const JAENONG_PULLBACK_MIN_MARKET_CAP_USD = 100_000_000_000;
+
+export function normalizeArgosScreeningMode(mode) {
+  return String(mode || '').trim().toLowerCase() === 'pullback' ? 'pullback' : 'top-volume';
+}
+
+export function buildOverseasPullbackUniverse(candidates = [], options = {}) {
+  const whitelist = new Set(options.whitelist || JAENONG_BLUECHIP_WHITELIST);
+  const minMarketCapUsd = Math.max(0, Number(options.minMarketCapUsd ?? JAENONG_PULLBACK_MIN_MARKET_CAP_USD) || 0);
+  const maxSymbols = Math.max(1, Number(options.maxSymbols || 10) || 10);
+  return (Array.isArray(candidates) ? candidates : [])
+    .map((candidate) => {
+      const symbol = String(candidate.symbol || '').trim().toUpperCase();
+      const currentPrice = Number(candidate.currentPrice || candidate.price || 0);
+      const high52Week = Number(candidate.high52Week || 0);
+      const marketCapUsd = Number(candidate.marketCapUsd || 0);
+      const drawdownPct = currentPrice > 0 && high52Week > 0
+        ? Math.round((currentPrice / high52Week - 1) * 10_000) / 100
+        : null;
+      return { ...structuredClone(candidate), symbol, currentPrice, high52Week, marketCapUsd, drawdownPct };
+    })
+    .filter((candidate) => whitelist.has(candidate.symbol))
+    .filter((candidate) => candidate.marketCapUsd >= minMarketCapUsd)
+    .filter((candidate) => Number.isFinite(candidate.drawdownPct) && candidate.drawdownPct <= -5)
+    .sort((a, b) => a.drawdownPct - b.drawdownPct || a.symbol.localeCompare(b.symbol))
+    .slice(0, maxSymbols);
+}
 
 const DOMESTIC_LIQUID_FALLBACK_SYMBOLS = [
   '005930', // 삼성전자
@@ -1440,7 +1470,29 @@ async function _tryNaverRiseHtml(max = 10) {
  * Yahoo Finance Trending Tickers → 동적 해외주식 선정
  * @param {number} [maxDynamic] - 동적 종목 수 (기본: config.yaml 또는 2)
  */
-export async function screenOverseasSymbols(maxDynamic, fng = 50) {
+export async function screenOverseasSymbols(maxDynamic, fng = 50, options = {}) {
+  if (normalizeArgosScreeningMode(options.mode) === 'pullback') {
+    const configuredMax = maxDynamic ?? _screenCfg('overseas', 'max_dynamic', 5);
+    const candidates = Array.isArray(options.candidates)
+      ? options.candidates
+      : await _fetchOverseasPullbackCandidates(options);
+    const screening = buildOverseasPullbackUniverse(candidates, {
+      minMarketCapUsd: options.minMarketCapUsd,
+      maxSymbols: options.maxSymbols || configuredMax,
+      whitelist: options.whitelist,
+    });
+    const dynamic = screening.map((candidate) => candidate.symbol);
+    return {
+      core: CORE_OVERSEAS,
+      dynamic,
+      all: dynamic,
+      screening,
+      fng,
+      mode: 'pullback',
+      shadowOnly: true,
+      executionConnected: false,
+    };
+  }
   const configuredMax = maxDynamic ?? _screenCfg('overseas', 'max_dynamic', 5);
   const baseMax = _adjustPaperExploration(configuredMax, 'overseas');
   const max     = _adjustMaxByFNG(baseMax, fng);
@@ -1495,6 +1547,51 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
   }
 
   return { core: CORE_OVERSEAS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked, fng };
+}
+
+async function _fetchOverseasPullbackCandidates(options = {}) {
+  const symbols = options.whitelist || JAENONG_BLUECHIP_WHITELIST;
+  const marketCaps = options.marketCaps || {};
+  return Promise.all(symbols.map(async (symbol) => {
+    const [bars, officialMetrics] = await Promise.all([
+      (options.getBars || getOverseasDailyPriceBars)(symbol, { days: 5 }).catch(() => []),
+      _fetchNasdaqPullbackMetrics(symbol),
+    ]);
+    const closes = (bars || []).map((bar) => Number(bar?.close || 0)).filter((value) => value > 0);
+    return {
+      symbol,
+      currentPrice: closes.at(-1) || 0,
+      high52Week: Number(officialMetrics.high52Week || 0),
+      marketCapUsd: Number(marketCaps[symbol] ?? officialMetrics.marketCapUsd ?? 0),
+      source: 'kis_overseas_daily_nasdaq_market_cap_pullback_shadow',
+    };
+  }));
+}
+
+async function _fetchNasdaqPullbackMetrics(symbol) {
+  try {
+    const response = await fetch(
+      `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/summary?assetclass=stocks`,
+      {
+        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+    if (!response.ok) return { marketCapUsd: 0, high52Week: 0 };
+    const data = await response.json();
+    const summary = data?.data?.summaryData || {};
+    const marketCap = Number(String(summary?.MarketCap?.value || '').replace(/[^0-9.-]/g, ''));
+    const rangeNumbers = String(summary?.FiftTwoWeekHighLow?.value || '')
+      .match(/\d[\d,]*(?:\.\d+)?/g)
+      ?.map((value) => Number(value.replaceAll(',', '')))
+      .filter((value) => Number.isFinite(value) && value > 0) || [];
+    return {
+      marketCapUsd: Number.isFinite(marketCap) && marketCap > 0 ? marketCap : 0,
+      high52Week: rangeNumbers.length ? Math.max(...rangeNumbers) : 0,
+    };
+  } catch {
+    return { marketCapUsd: 0, high52Week: 0 };
+  }
 }
 
 function _mergeOverseasSourceCandidates(yahooTickers, apeTickers, quoteMap = new Map()) {
