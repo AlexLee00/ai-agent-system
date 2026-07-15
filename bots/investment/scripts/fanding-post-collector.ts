@@ -13,6 +13,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const SECRET_STORE = path.join(REPO_ROOT, 'bots', 'hub', 'secrets-store.json');
 const FANDING_ORIGIN = 'https://fanding.kr';
+const POST_CONTENT_SELECTOR = '.main-section__main-text, .fd-editor__content';
+
+export const FANDING_POST_FAILURE_THRESHOLD = 0.3;
 
 export const FANDING_COLLECT_STATUSES = Object.freeze([
   'ok',
@@ -36,6 +39,23 @@ function normalizePublishedAt(value) {
   const isoLike = raw.includes('T') ? raw : `${raw.replace(' ', 'T')}+09:00`;
   const date = new Date(isoLike);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizeArchiveMonths(value) {
+  const parsed = Number(value);
+  return Math.max(1, Math.min(12, Number.isFinite(parsed) ? Math.floor(parsed) : 12));
+}
+
+export function computeFandingArchiveCutoff(nowValue = Date.now(), monthsValue = 12) {
+  const cutoff = new Date(nowValue);
+  if (Number.isNaN(cutoff.getTime())) throw new Error('fanding_cutoff_date_invalid');
+  const months = normalizeArchiveMonths(monthsValue);
+  const day = cutoff.getUTCDate();
+  cutoff.setUTCDate(1);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - months);
+  const lastDay = new Date(Date.UTC(cutoff.getUTCFullYear(), cutoff.getUTCMonth() + 1, 0)).getUTCDate();
+  cutoff.setUTCDate(Math.min(day, lastDay));
+  return cutoff;
 }
 
 function normalizePost(post = {}) {
@@ -223,15 +243,86 @@ async function listPostMetadata(page, handle, cutoff, { delayMs, maxPosts }) {
 }
 
 async function collectPostSnapshot(page, post, { delayMs, timeoutMs }) {
-  await page.goto(post.url, { waitUntil: 'networkidle2', timeout: timeoutMs });
-  if (page.url().includes('/account')) throw Object.assign(new Error('fanding_session_expired'), { code: 'session_expired' });
-  const snapshot = await page.evaluate(() => {
-    const content = document.querySelector('.main-section__main-text, .fd-editor__content');
-    return content ? String(content.innerText || '').trim() : null;
-  });
-  if (snapshot === null) throw Object.assign(new Error('fanding_post_dom_changed'), { code: 'dom_changed' });
-  await sleep(delayMs);
-  return normalizePost({ ...post, content: snapshot });
+  try {
+    try {
+      await page.goto(post.url, { waitUntil: 'networkidle2', timeout: timeoutMs });
+    } catch (error) {
+      throw Object.assign(new Error(error?.message || 'fanding_post_navigation_failed'), {
+        code: 'dom_changed_post',
+        stage: 'snapshot_navigation',
+        selectorHint: POST_CONTENT_SELECTOR,
+      });
+    }
+    if (page.url().includes('/account')) {
+      throw Object.assign(new Error('fanding_session_expired'), {
+        code: 'session_expired',
+        stage: 'snapshot_auth',
+        selectorHint: POST_CONTENT_SELECTOR,
+      });
+    }
+    let snapshot;
+    try {
+      snapshot = await page.evaluate((selector) => {
+        const content = document.querySelector(selector);
+        return content ? String(content.innerText || '').trim() : null;
+      }, POST_CONTENT_SELECTOR);
+    } catch (error) {
+      throw Object.assign(new Error(error?.message || 'fanding_post_snapshot_failed'), {
+        code: 'dom_changed_post',
+        stage: 'snapshot_extract',
+        selectorHint: POST_CONTENT_SELECTOR,
+      });
+    }
+    if (snapshot === null) {
+      throw Object.assign(new Error('fanding_post_dom_changed'), {
+        code: 'dom_changed_post',
+        stage: 'snapshot_selector',
+        selectorHint: POST_CONTENT_SELECTOR,
+      });
+    }
+    return normalizePost({ ...post, content: snapshot });
+  } finally {
+    await sleep(delayMs);
+  }
+}
+
+export async function collectFandingPostSnapshots(posts = [], collector, failureThreshold = FANDING_POST_FAILURE_THRESHOLD) {
+  if (typeof collector !== 'function') throw new Error('fanding_post_collector_required');
+  const rows = Array.isArray(posts) ? posts : [];
+  const successfulPosts = [];
+  const failedPosts = [];
+  for (const post of rows) {
+    try {
+      successfulPosts.push(await collector(post));
+    } catch (error) {
+      if (error?.code === 'session_expired') throw error;
+      failedPosts.push({
+        sourcePostId: String(post?.sourcePostId || post?.iPostNo || ''),
+        url: String(post?.url || ''),
+        status: 'dom_changed_post',
+        stage: error?.stage || 'snapshot_unknown',
+        selectorHint: error?.selectorHint || POST_CONTENT_SELECTOR,
+        error: String(error?.message || error),
+      });
+    }
+  }
+  const threshold = Math.max(0, Math.min(1, Number(failureThreshold) || 0));
+  const failureRate = rows.length > 0 ? failedPosts.length / rows.length : 0;
+  return {
+    status: rows.length === 0
+      ? 'empty_feed'
+      : failureRate > threshold
+        ? 'dom_changed'
+        : 'ok',
+    successfulPosts,
+    failedPosts,
+    totalCount: rows.length,
+    successCount: successfulPosts.length,
+    failureCount: failedPosts.length,
+    skippedCount: failedPosts.length,
+    failureRate,
+    failureThreshold: threshold,
+  };
 }
 
 export async function upsertFandingPosts(posts = [], runFn = db.run) {
@@ -269,13 +360,27 @@ export async function upsertFandingPosts(posts = [], runFn = db.run) {
 }
 
 export async function collectFandingPosts(options = {}, deps = {}) {
-  const months = Math.max(6, Math.min(12, Number(options.months || 12) || 12));
+  const months = normalizeArchiveMonths(options.months ?? 12);
   const delayMs = Math.max(750, Number(options.delayMs || 1_250) || 1_250);
   const timeoutMs = Math.max(10_000, Number(options.timeoutMs || 45_000) || 45_000);
   const maxPosts = Math.max(1, Number(options.maxPosts || 2_000) || 2_000);
   const now = options.now ? new Date(options.now) : new Date();
-  const cutoff = new Date(now);
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - months);
+  const cutoff = computeFandingArchiveCutoff(now, months);
+  const emptyResult = (status) => ({
+    status,
+    posts: [],
+    failedPosts: [],
+    written: 0,
+    totalCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    skippedCount: 0,
+    failureRate: 0,
+    failureThreshold: FANDING_POST_FAILURE_THRESHOLD,
+    months,
+    cutoff: cutoff.toISOString(),
+    privateSnapshot: true,
+  });
   const credentials = options.credentials || loadFandingCredentials(options.secretPath);
   const browser = deps.browser || await (deps.launchBrowser || puppeteer.launch)({
     headless: true,
@@ -286,23 +391,31 @@ export async function collectFandingPosts(options = {}, deps = {}) {
   try {
     page = await browser.newPage();
     const auth = await login(page, credentials, timeoutMs);
-    if (!auth.authenticated) return { status: auth.status, posts: [], written: 0 };
+    if (!auth.authenticated) return emptyResult(auth.status);
     const creator = await resolveCreatorHandle(page, credentials.creator, timeoutMs);
-    if (!creator.handle) return { status: creator.status, posts: [], written: 0 };
+    if (!creator.handle) return emptyResult(creator.status);
     const listed = await listPostMetadata(page, creator.handle, cutoff, { delayMs, maxPosts });
-    if (listed.status !== 'ok') return { status: listed.status, posts: [], written: 0 };
+    if (listed.status !== 'ok') return emptyResult(listed.status);
 
-    const posts = await mapWithConcurrency(listed.posts, 1, (post) => (
+    const snapshots = await collectFandingPostSnapshots(listed.posts, (post) => (
       collectPostSnapshot(page, post, { delayMs, timeoutMs })
     ));
-    const normalized = dedupeFandingPosts(posts);
+    const normalized = dedupeFandingPosts(snapshots.successfulPosts);
+    const dedupeSkips = snapshots.successCount - normalized.length;
     const written = options.write === true
       ? await upsertFandingPosts(normalized, deps.runFn || db.run)
       : 0;
     return {
-      status: normalized.length > 0 ? 'ok' : 'empty_feed',
+      status: snapshots.status,
       posts: normalized,
+      failedPosts: snapshots.failedPosts,
       written,
+      totalCount: snapshots.totalCount,
+      successCount: normalized.length,
+      failureCount: snapshots.failureCount,
+      skippedCount: snapshots.skippedCount + dedupeSkips,
+      failureRate: snapshots.failureRate,
+      failureThreshold: snapshots.failureThreshold,
       months,
       cutoff: cutoff.toISOString(),
       privateSnapshot: true,
@@ -313,7 +426,7 @@ export async function collectFandingPosts(options = {}, deps = {}) {
       : error?.code === 'dom_changed'
         ? 'dom_changed'
         : 'dom_changed';
-    return { status, posts: [], written: 0, error: String(error?.message || error) };
+    return { ...emptyResult(status), error: String(error?.message || error) };
   } finally {
     await page?.close().catch(() => null);
     if (ownsBrowser) await browser.close().catch(() => null);
@@ -341,6 +454,13 @@ if (isDirectExecution(import.meta.url)) {
         status: result.status,
         collected: result.posts?.length || 0,
         written: result.written || 0,
+        totalCount: result.totalCount || 0,
+        successCount: result.successCount || 0,
+        failureCount: result.failureCount || 0,
+        skippedCount: result.skippedCount || 0,
+        failureRate: result.failureRate || 0,
+        failureThreshold: result.failureThreshold ?? FANDING_POST_FAILURE_THRESHOLD,
+        failedPosts: result.failedPosts || [],
         cutoff: result.cutoff || null,
         privateSnapshot: result.privateSnapshot === true,
         error: result.error || null,

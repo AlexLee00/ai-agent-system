@@ -3,9 +3,13 @@
 
 import assert from 'node:assert/strict';
 import {
+  FANDING_POST_FAILURE_THRESHOLD,
   classifyFandingFailure,
+  collectFandingPostSnapshots,
+  computeFandingArchiveCutoff,
   dedupeFandingPosts,
   mapWithConcurrency,
+  upsertFandingPosts,
 } from './fanding-post-collector.ts';
 import {
   JAENONG_TICKER_DRAFT,
@@ -29,6 +33,68 @@ async function main() {
   assert.equal(classifyFandingFailure({ loginAttempted: true, authenticated: false }), 'login_failed');
   assert.equal(classifyFandingFailure({ authenticated: true, feedItems: [] }), 'empty_feed');
   assert.equal(classifyFandingFailure({ authenticated: true, feedItems: null }), 'dom_changed');
+  assert.equal(FANDING_POST_FAILURE_THRESHOLD, 0.3);
+  assert.equal(
+    computeFandingArchiveCutoff('2026-07-15T09:30:00.000Z', 1).toISOString(),
+    '2026-06-15T09:30:00.000Z',
+  );
+  assert.equal(
+    computeFandingArchiveCutoff('2026-07-15T09:30:00.000Z', 12).toISOString(),
+    '2025-07-15T09:30:00.000Z',
+  );
+
+  const archivePosts = [1, 2, 3, 4].map((id) => ({
+    sourcePostId: `archive-${id}`,
+    url: `https://fanding.kr/@fixture/post/${id}/`,
+    title: `archive ${id}`,
+    publishedAt: '2026-01-02T00:00:00.000Z',
+    content: `snapshot ${id}`,
+  }));
+  const mixedSnapshots = await collectFandingPostSnapshots(archivePosts, async (post) => {
+    if (post.sourcePostId === 'archive-2') {
+      throw Object.assign(new Error('fixture selector mismatch'), {
+        stage: 'snapshot_selector',
+        selectorHint: '.fixture-content',
+      });
+    }
+    return post;
+  });
+  assert.equal(mixedSnapshots.status, 'ok');
+  assert.equal(mixedSnapshots.successCount, 3);
+  assert.equal(mixedSnapshots.failureCount, 1);
+  assert.equal(mixedSnapshots.skippedCount, 1);
+  assert.deepEqual(mixedSnapshots.failedPosts[0], {
+    sourcePostId: 'archive-2',
+    url: 'https://fanding.kr/@fixture/post/2/',
+    status: 'dom_changed_post',
+    stage: 'snapshot_selector',
+    selectorHint: '.fixture-content',
+    error: 'fixture selector mismatch',
+  });
+  let archiveWrites = 0;
+  assert.equal(await upsertFandingPosts(mixedSnapshots.successfulPosts, async () => {
+    archiveWrites += 1;
+  }), 3);
+  assert.equal(archiveWrites, 3, 'only successful snapshots may reach the DB runner');
+  const thresholdBoundary = await collectFandingPostSnapshots(
+    Array.from({ length: 10 }, (_, index) => ({
+      sourcePostId: `boundary-${index + 1}`,
+      url: `https://fanding.kr/@fixture/post/boundary-${index + 1}/`,
+    })),
+    async (post) => {
+      if (['boundary-1', 'boundary-2', 'boundary-3'].includes(post.sourcePostId)) {
+        throw new Error('fixture boundary failure');
+      }
+      return post;
+    },
+  );
+  assert.equal(thresholdBoundary.failureRate, 0.3);
+  assert.equal(thresholdBoundary.status, 'ok', 'the aggregate must fail only above the threshold');
+  const excessiveFailures = await collectFandingPostSnapshots(archivePosts, async (post) => {
+    if (['archive-1', 'archive-2'].includes(post.sourcePostId)) throw new Error('fixture archive failure');
+    return post;
+  });
+  assert.equal(excessiveFailures.status, 'dom_changed');
 
   const deduped = dedupeFandingPosts([
     rawPost,
