@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 57);
+  assert.equal(jobs.length, 58);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -157,6 +157,14 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic')?.requiresMarketOpen, true);
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.requiresMarketOpen, true);
   assert.equal(jobs.find((job) => job.name === 'market_cycle_overseas')?.requiresMarketOpen, true);
+  const jaenongRouteShadow = jobs.find((job) => job.name === 'jaenong_route_shadow_overseas');
+  assert.equal(jaenongRouteShadow?.category, 'decision_shadow');
+  assert.equal(jaenongRouteShadow?.market, 'overseas');
+  assert.equal(jaenongRouteShadow?.requiresMarketOpen, true);
+  assert.equal(jaenongRouteShadow?.cadence?.seconds, 1800);
+  assert.equal(jaenongRouteShadow?.args?.includes('--write'), true);
+  assert.equal(jaenongRouteShadow?.args?.includes('--confirm=jaenong-route-shadow'), true);
+  assert.equal(jaenongRouteShadow?.args?.includes('--fixture'), false);
   assert.equal(jobs.some((job) => job.name === 'discovery_funnel_report'), true);
   assert.equal(jobs.some((job) => job.name === 'active_candidate_analysis_refresh_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'active_candidate_analysis_refresh_domestic'), true);
@@ -235,6 +243,44 @@ export async function runLunaOpsSchedulerSmoke() {
     onlyJob: 'market_cycle_overseas',
   });
   assert.equal(overseasCyclePreOpenPlan.due, 0);
+
+  const routeAtDailyBrief = buildOpsSchedulerPlan({
+    now: new Date('2026-07-16T21:00:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'jaenong_route_shadow_overseas',
+  });
+  assert.equal(routeAtDailyBrief.due, 0, 'the 21:00 daily brief must not race the overseas route shadow');
+
+  const routeBeforeDstOpen = buildOpsSchedulerPlan({
+    now: new Date('2026-07-16T22:29:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'jaenong_route_shadow_overseas',
+  });
+  const routeAtDstOpen = buildOpsSchedulerPlan({
+    now: new Date('2026-07-16T22:30:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'jaenong_route_shadow_overseas',
+  });
+  assert.equal(routeBeforeDstOpen.due, 0);
+  assert.equal(routeAtDstOpen.due, 1, 'DST open must be recognized at 22:30 KST');
+
+  const routeBeforeStandardOpen = buildOpsSchedulerPlan({
+    now: new Date('2026-01-05T23:29:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'jaenong_route_shadow_overseas',
+  });
+  const routeAtStandardOpen = buildOpsSchedulerPlan({
+    now: new Date('2026-01-05T23:30:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'jaenong_route_shadow_overseas',
+  });
+  assert.equal(routeBeforeStandardOpen.due, 0);
+  assert.equal(routeAtStandardOpen.due, 1, 'standard-time open must be recognized at 23:30 KST');
 
   const recentState = {
     jobs: Object.fromEntries(jobs.map((job) => [job.name, { lastRunAt: now.toISOString() }])),

@@ -25,6 +25,7 @@ import {
 import {
   JAENONG_DAILY_WRITE_CONFIRM,
   runJaenongDailyShadow,
+  summarizeJaenongDailyShadowResult,
 } from './runtime-jaenong-daily-shadow.ts';
 import { runJaenongReferenceSnapshot } from './jaenong-reference-snapshot.ts';
 import {
@@ -41,6 +42,7 @@ import {
 } from '../mcp/luna-ops-mcp/src/server.ts';
 import { buildLunaJaenongPredictionFeedInput } from '../../sigma/shared/luna-jaenong-feed.ts';
 import { runLunaOpsMcpSmoke } from './luna-ops-mcp-smoke.ts';
+import { runLunaLogRotate } from './luna-log-rotate.ts';
 
 function cell(value, formula = null) {
   return { value, formula };
@@ -397,6 +399,39 @@ async function main() {
   assert.equal(collectPlan.mode, 'dry_run');
   assert.equal(collectPlan.write, false);
   assert.equal(collectorCalls, 0);
+  const privateContentMarker = 'private-post-body-must-not-reach-stdout';
+  const collectSummary = summarizeJaenongDailyShadowResult({
+    ok: true,
+    stage: 'collect',
+    mode: 'shadow_write',
+    write: true,
+    state: 'parsed',
+    collected: {
+      status: 'ok',
+      posts: [{ content: privateContentMarker.repeat(10_000) }],
+      failedPosts: [],
+      written: 1336,
+      totalCount: 1336,
+      successCount: 1336,
+      failureCount: 0,
+      skippedCount: 0,
+      failureRate: 0,
+      failureThreshold: 0.3,
+      cutoff: '2025-07-16T11:00:03.426Z',
+      privateSnapshot: true,
+    },
+    parsedCount: 100,
+    executionConnected: false,
+  });
+  const collectSummaryJson = JSON.stringify(collectSummary);
+  assert.equal(collectSummaryJson.includes(privateContentMarker), false);
+  assert.equal(Object.hasOwn(collectSummary.collected, 'posts'), false);
+  assert.equal(Object.hasOwn(collectSummary.collected, 'failedPosts'), false);
+  assert.ok(Buffer.byteLength(collectSummaryJson) < 1024, 'daily collector stdout summary must stay below 1 KiB');
+  assert.equal(collectSummary.executionConnected, false);
+  const rotatedFiles = runLunaLogRotate({ dryRun: true }).results.map((item) => item.filePath);
+  assert.ok(rotatedFiles.includes('/Users/alexlee/.ai-agent-system/logs/luna-jaenong-collector.log'));
+  assert.ok(rotatedFiles.includes('/Users/alexlee/.ai-agent-system/logs/luna-jaenong-collector-error.log'));
   await assert.rejects(
     runJaenongDailyShadow({ stage: 'collect', write: true }, {
       collectFn: async () => ({ status: 'ok' }),
@@ -516,6 +551,26 @@ async function main() {
   });
   assert.equal(routeRuntimeWrite.recorded.recorded, true);
   assert.equal(routeRuntimeWrites, 1);
+  let absentRouteWrites = 0;
+  const absentRouteRuntime = await runJaenongRouteShadow({
+    write: true,
+    confirm: JAENONG_ROUTE_WRITE_CONFIRM,
+    now,
+  }, {
+    queryFn: async () => [],
+    runFn: async (sql) => {
+      absentRouteWrites += 1;
+      assert.match(sql, /investment\.jaenong_route_shadow/);
+      assert.doesNotMatch(sql, /trade_journal|orders?|execution_time/i);
+      return { rowCount: 1 };
+    },
+  });
+  assert.equal(absentRouteRuntime.inputs.briefState, 'absent');
+  assert.equal(absentRouteRuntime.route.briefRef, null);
+  assert.equal(absentRouteRuntime.route.shadowOnly, true);
+  assert.equal(absentRouteRuntime.route.executionConnected, false);
+  assert.equal(absentRouteRuntime.recorded.recorded, true);
+  assert.equal(absentRouteWrites, 1);
 
   const preflight = jaenongBriefPreflight({ brief, state: active, now });
   assert.equal(preflight.ok, true);

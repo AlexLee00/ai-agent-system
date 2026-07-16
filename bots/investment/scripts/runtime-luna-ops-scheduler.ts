@@ -592,6 +592,18 @@ export function getOpsSchedulerJobs() {
       ...marketScript('overseas.ts', [], { LUNA_LIVE_OVERSEAS: 'true' }),
     },
     {
+      name: 'jaenong_route_shadow_overseas',
+      category: 'decision_shadow',
+      market: 'overseas',
+      immutable: true,
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 1800 },
+      ...nodeScript('runtime-jaenong-route-shadow.ts', [
+        '--write',
+        '--confirm=jaenong-route-shadow',
+      ]),
+    },
+    {
       name: 'discovery_funnel_report',
       category: 'report',
       market: 'all',

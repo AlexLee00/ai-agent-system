@@ -19,6 +19,8 @@ const DEFAULT_FILES = [
   '/tmp/ai.luna.tradingview-ws.err.log',
   '/tmp/ai.luna.marketdata-mcp.log',
   '/tmp/ai.luna.marketdata-mcp.err.log',
+  '/Users/alexlee/.ai-agent-system/logs/luna-jaenong-collector.log',
+  '/Users/alexlee/.ai-agent-system/logs/luna-jaenong-collector-error.log',
 ];
 
 function hasArg(name) {
@@ -137,4 +139,3 @@ async function main() {
 if (isDirectExecution(import.meta.url)) {
   await runCliMain({ run: main, errorPrefix: 'luna-log-rotate failed:' });
 }
-

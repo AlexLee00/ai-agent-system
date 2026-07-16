@@ -188,6 +188,48 @@ export async function runJaenongDailyShadow(options = {}, deps = {}) {
   return stage === 'collect' ? collectStage(normalized, deps) : briefStage(normalized, deps);
 }
 
+export function summarizeJaenongDailyShadowResult(result = {}) {
+  const summary = {
+    ok: result.ok === true,
+    stage: result.stage || null,
+    mode: result.mode || null,
+    write: result.write === true,
+    state: result.state || null,
+    executionConnected: result.executionConnected === true,
+  };
+  if (result.stage === 'collect') {
+    if (Array.isArray(result.plan)) summary.plan = result.plan;
+    if (result.collected) {
+      summary.collected = {
+        status: result.collected.status || null,
+        written: Number(result.collected.written || 0),
+        totalCount: Number(result.collected.totalCount || 0),
+        successCount: Number(result.collected.successCount || 0),
+        failureCount: Number(result.collected.failureCount || 0),
+        skippedCount: Number(result.collected.skippedCount || 0),
+        failureRate: Number(result.collected.failureRate || 0),
+        failureThreshold: Number(result.collected.failureThreshold || 0),
+        cutoff: result.collected.cutoff || null,
+        privateSnapshot: result.collected.privateSnapshot === true,
+      };
+    }
+    summary.parsedCount = Number(result.parsedCount || 0);
+    return summary;
+  }
+  if (result.brief) {
+    summary.brief = {
+      briefRef: result.brief.briefRef || null,
+      state: result.brief.state || null,
+      candidateCount: Array.isArray(result.brief.candidateSymbols)
+        ? result.brief.candidateSymbols.length
+        : 0,
+    };
+  } else {
+    summary.brief = null;
+  }
+  return summary;
+}
+
 if (isDirectExecution(import.meta.url)) {
   const argv = process.argv.slice(2);
   const value = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) || null;
@@ -197,8 +239,7 @@ if (isDirectExecution(import.meta.url)) {
       write: argv.includes('--write'),
       confirm: value('confirm'),
     }),
-    onSuccess: (result) => console.log(JSON.stringify(result, null, 2)),
+    onSuccess: (result) => console.log(JSON.stringify(summarizeJaenongDailyShadowResult(result), null, 2)),
     errorPrefix: 'jaenong daily shadow failed:',
   });
 }
-
