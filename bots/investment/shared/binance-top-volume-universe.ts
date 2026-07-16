@@ -60,7 +60,7 @@ function normalizeMajorWhitelistSymbol(value = '') {
   return normalizeBinanceUsdtSymbol(raw);
 }
 
-function isMajorExcludedBaseAsset(base = '') {
+export function isMajorExcludedBaseAsset(base = '') {
   const normalized = String(base || '').trim().toUpperCase();
   return isStableOrFiatBaseAsset(normalized)
     || isLeveragedBaseAsset(normalized)

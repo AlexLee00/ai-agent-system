@@ -766,6 +766,13 @@ export function getOpsSchedulerJobs() {
       ...nodeScript('runtime-luna-daily-backtest.ts', ['--json', '--dry-run']),
     },
     {
+      name: 'binance_major20_market_cap_drift',
+      category: 'report',
+      market: 'crypto',
+      cadence: { type: 'weekly', day: 1, hour: 9, minute: 20 },
+      ...nodeScript('runtime-luna-binance-major-drift.ts', ['--json']),
+    },
+    {
       name: 'guardrails_hourly',
       category: 'guardrail',
       market: 'all',
@@ -916,6 +923,18 @@ function dailyDue(cadence, now, lastRunAt) {
   return !sameLocalDate(last, now);
 }
 
+function weeklyDue(cadence, now, lastRunAt) {
+  const scheduled = new Date(now);
+  const targetDay = Math.max(0, Math.min(6, Number(cadence.day || 0)));
+  const daysSinceTarget = (scheduled.getDay() - targetDay + 7) % 7;
+  scheduled.setDate(scheduled.getDate() - daysSinceTarget);
+  scheduled.setHours(Number(cadence.hour || 0), Number(cadence.minute || 0), 0, 0);
+  if (now < scheduled) return false;
+  if (!lastRunAt) return daysSinceTarget === 0;
+  const last = new Date(lastRunAt);
+  return Number.isFinite(last.getTime()) && last < scheduled;
+}
+
 function intervalDue(cadence, now, lastRunAt) {
   if (!lastRunAt) return true;
   const elapsedMs = now.getTime() - new Date(lastRunAt).getTime();
@@ -964,6 +983,7 @@ function isJobDue(job, now, state, force = false) {
   }
   const lastRunAt = state?.jobs?.[job.name]?.lastRunAt || null;
   if (job.cadence?.type === 'daily') return dailyDue(job.cadence, now, lastRunAt);
+  if (job.cadence?.type === 'weekly') return weeklyDue(job.cadence, now, lastRunAt);
   return intervalDue(job.cadence || {}, now, lastRunAt);
 }
 

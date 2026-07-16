@@ -3401,10 +3401,29 @@ function safeMetaObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function normalizeAutoDevError(value) {
+  const raw = value == null ? '' : String(value);
+  if (!raw.trim()) return null;
+  const firstLine = raw.split(/\r?\n/u).map(line => line.trim()).find(Boolean) || 'no error detail';
+  const tag = /test[_ -]?revision[^\n]*fail/i.test(raw) ? 'test_revision_failed'
+    : /\btests?[_ -]?failed\b|test (?:command|suite)[^\n]*fail/i.test(raw) ? 'tests_failed'
+      : /codex_cli_unavailable|(?:codex|claude)[^\n]*(?:command not found|cli unavailable)|spawn[^\n]*(?:codex|claude)[^\n]*ENOENT/i.test(raw) ? 'cli_unavailable'
+        : /\bENOENT\b|no such file or directory/i.test(raw) ? 'enoent'
+          : /review[_ -]?failed|review[^\n]*fail/i.test(raw) ? 'review_failed'
+            : /usage[_ -]?limit|hit your usage limit|quota (?:exceeded|exhausted)/i.test(raw) ? 'usage_limit'
+              : 'other';
+  return {
+    tag,
+    summary: `${tag}: ${maskSensitiveText(firstLine, 500)}`,
+    raw: maskSensitiveText(raw, 20_000),
+  };
+}
+
 async function recordAutoDevOutcome(job, outcome, extra = {}) {
   const relPath = job?.relPath || extra.relPath || null;
   if (!relPath) return { ok: false, skipped: true, reason: 'missing_rel_path' };
   const errorSummary = extra.errorSummary || extra.error || job?.error || null;
+  const normalizedError = normalizeAutoDevError(errorSummary);
   const extraMeta = safeMetaObject(extra.meta);
   const meta = {
     ...extraMeta,
@@ -3425,6 +3444,7 @@ async function recordAutoDevOutcome(job, outcome, extra = {}) {
     prNumber: extra.prNumber ?? extraMeta.prNumber ?? job?.integration?.prNumber ?? null,
     prUrl: extra.prUrl || extraMeta.prUrl || job?.integration?.prUrl || null,
     prWorkflow: extra.prWorkflow || extraMeta.prWorkflow || job?.integration?.prWorkflow || null,
+    ...(normalizedError ? { error: normalizedError } : {}),
   };
   try {
     const rows = await pgPool.query('claude', `
@@ -3445,7 +3465,7 @@ async function recordAutoDevOutcome(job, outcome, extra = {}) {
       Math.max(0, Number(extra.staleRecoveryCount ?? job?.staleRecoveryCount ?? 0) || 0),
       extra.durationMs ?? durationMsForJob(job),
       extra.testPass ?? job?.test?.pass ?? null,
-      errorSummary ? maskSensitiveText(errorSummary, 1000) : null,
+      normalizedError?.summary || null,
       commitShaForJob(job, extra),
       JSON.stringify(meta),
     ]);
@@ -4580,6 +4600,7 @@ module.exports = {
   getAutoDevStatusSnapshot,
   loadState,
   recordAutoDevOutcome,
+  _testOnly_normalizeAutoDevError: normalizeAutoDevError,
   _testOnly_buildImplementationModelMeta: buildImplementationModelMeta,
   _testOnly_buildAutoDevChildEnv: buildAutoDevChildEnv,
   _testOnly_evaluateDocumentPolicy: evaluateDocumentPolicy,

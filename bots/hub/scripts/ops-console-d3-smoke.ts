@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
-import { createOpsConsoleServer } from '../services/ops-console/server.ts';
+import { collectOperationGates, createOpsConsoleServer } from '../services/ops-console/server.ts';
 
 function queryReadonly(schema, sql, params = []) {
   const now = new Date().toISOString();
@@ -62,6 +62,19 @@ function queryReadonly(schema, sql, params = []) {
   }
   if (schema === 'investment' && /guard_events/.test(sql)) {
     return Promise.resolve([{ triggered_at: now, guard_name: 'loss_limit_guard', symbol: 'BTC/USDT', action: 'SELL', decision: 'blocked', severity: 'high', reason: 'smoke', id: 'guard-smoke' }]);
+  }
+  if (schema === 'investment' && /jaenong_route_shadow/.test(sql) && /route_shadow_24h/.test(sql)) {
+    return Promise.resolve([{
+      brief_ref: 'post:jaenong-smoke',
+      brief_state: 'awaiting_ack',
+      updated_at: now,
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      acknowledged_at: null,
+      route_shadow_24h: 7,
+      collector_latest_success_at: now,
+      collector_latest_failure_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      collector_latest_failure_reason: 'empty_feed',
+    }]);
   }
   if (schema === 'investment' && /trade_journal/.test(sql) && /GROUP BY/.test(sql)) {
     return Promise.resolve([{ market: 'crypto', strategy_family: 'trend', open_count: 2 }]);
@@ -189,6 +202,28 @@ async function main() {
     assert(gates.gates.length >= 13, 'gate console must expose at least 13 gates');
     const states = new Set(gates.gates.map((row) => row.state));
     for (const state of ['on', 'off', 'shadow', 'unset']) assert(states.has(state), `missing gate state ${state}`);
+    const jaenong = gates.gates.find((row) => row.key === 'JAENONG_OPERATIONS');
+    assert.equal(jaenong.state, 'shadow');
+    assert.equal(jaenong.todayBriefState, 'awaiting_ack');
+    assert.equal(jaenong.ackStatus, 'pending');
+    assert.equal(jaenong.routeShadow24hCount, 7);
+    assert.equal(jaenong.collector.latestStatus, 'success');
+    assert.ok(jaenong.collector.latestSuccessAt);
+    assert.equal(jaenong.collector.latestFailureReason, 'empty_feed');
+    assert.equal(jaenong.cryptoUniverseMode, 'major');
+
+    const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const stateFixtures = [
+      ['absent', {}],
+      ['awaiting_ack', { brief_ref: 'post:pending', brief_state: 'awaiting_ack', updated_at: past, expires_at: future }],
+      ['active', { brief_ref: 'post:active', brief_state: 'active', updated_at: past, expires_at: future, acknowledged_at: new Date().toISOString() }],
+      ['expired', { brief_ref: 'post:expired', brief_state: 'expired', updated_at: past, expires_at: past }],
+    ];
+    for (const [expected, row] of stateFixtures) {
+      const fixtureGates = await collectOperationGates({ env, queryReadonly: async () => [row] });
+      assert.equal(fixtureGates.gates.find((item) => item.key === 'JAENONG_OPERATIONS')?.todayBriefState, expected);
+    }
 
     const postGate = await fetch(`${base}/api/gates`, { method: 'POST' });
     assert.equal(postGate.status, 405, 'gate console must not expose mutation route');

@@ -1422,6 +1422,44 @@ async function test_record_outcome_accepts_refactor_meta_tags() {
   console.log('✅ auto-dev: outcome meta supports refactor tags without schema change');
 }
 
+async function test_record_outcome_normalizes_error_summary_and_keeps_raw_meta() {
+  const tmpRoot = makeTempRoot();
+  const { mocks, autoDevOutcomes } = makeMocks(tmpRoot);
+  const fixtures = [
+    ['tests_failed', 'Tests failed: 2 suites\nfull test output'],
+    ['test_revision_failed', 'test_revision_failed: retry still red\nrevision diff'],
+    ['enoent', 'ENOENT: no such file or directory, open /tmp/missing'],
+    ['cli_unavailable', 'codex_cli_unavailable: codex command not found'],
+    ['review_failed', 'review failed api_key=fixture-secret-value\nreview log'],
+    ['usage_limit', 'You have hit your usage limit for this billing period'],
+    ['other', 'unexpected implementation failure\nraw details'],
+  ];
+
+  await withMocks(mocks, async pipeline => {
+    for (const [tag, raw] of fixtures) {
+      const result = await pipeline.recordAutoDevOutcome({
+        id: `error-${tag}`,
+        relPath: `docs/auto_dev/${tag}.md`,
+        stage: 'failed',
+      }, 'failed', { errorSummary: raw });
+      assert.strictEqual(result.ok, true);
+    }
+  }, testEnv(tmpRoot));
+
+  assert.strictEqual(autoDevOutcomes.length, fixtures.length);
+  fixtures.forEach(([tag], index) => {
+    const row = autoDevOutcomes[index];
+    assert.match(row.error_summary, new RegExp(`^${tag}: `));
+    assert.equal(row.error_summary.includes('\n'), false);
+    const meta = JSON.parse(row.meta);
+    assert.strictEqual(meta.error.tag, tag);
+    assert.ok(meta.error.raw.length > 0);
+  });
+  assert.ok(!JSON.parse(autoDevOutcomes[4].meta).error.raw.includes('fixture-secret-value'));
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: normalizes error summaries and keeps masked raw details in meta');
+}
+
 async function test_stale_running_job_retries_with_recovery_count() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_STALE_RETRY.md', '# Stale\nretry');
@@ -3373,6 +3411,7 @@ async function main() {
     test_failure_circuit_breaker_dead_letters_once_and_allows_new_hash,
     test_dead_letter_move_failure_stays_terminal,
     test_record_outcome_accepts_refactor_meta_tags,
+    test_record_outcome_normalizes_error_summary_and_keeps_raw_meta,
     test_stale_running_job_retries_with_recovery_count,
     test_stale_running_job_blocks_after_recovery_exhaustion,
     test_invalid_stale_recovery_env_falls_back_to_default_limit,

@@ -11,6 +11,7 @@ import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { buildSessionSnapshot } from '../../../../scripts/runtime-session-snapshot.ts';
 import { classifyOpsPushEvent } from '../../lib/ops-push-router.ts';
+import { resolveCryptoUniverseMode } from '../../../investment/shared/binance-top-volume-universe.ts';
 
 const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
@@ -375,9 +376,60 @@ function normalizeGateState(value) {
   return 'on';
 }
 
-export function collectOperationGates(options = {}) {
+function normalizeJaenongGateRow(row = {}, env = process.env) {
+  if (row.__opsConsoleError) {
+    return {
+      key: 'JAENONG_OPERATIONS',
+      value: 'shadow',
+      state: 'shadow',
+      team: 'luna',
+      desc: '재농 브리프/라우트 shadow 운영 상태',
+      todayBriefState: 'unavailable',
+      ackStatus: 'unavailable',
+      routeShadow24hCount: 0,
+      collector: { latestStatus: 'unavailable', latestSuccessAt: null, latestFailureAt: null, latestFailureReason: row.error || null },
+      cryptoUniverseMode: resolveCryptoUniverseMode({ env }).mode,
+      readError: row.error || null,
+    };
+  }
+  const expiresAt = parseDateOrNull(row.expires_at);
+  const updatedAt = parseDateOrNull(row.updated_at);
+  const acknowledgedAt = parseDateOrNull(row.acknowledged_at);
+  const collectorSuccessAt = parseDateOrNull(row.collector_latest_success_at);
+  const collectorFailureAt = parseDateOrNull(row.collector_latest_failure_at);
+  const collectorLatestStatus = !collectorSuccessAt && !collectorFailureAt ? 'unknown'
+    : collectorFailureAt && (!collectorSuccessAt || collectorFailureAt > collectorSuccessAt) ? 'failure'
+      : 'success';
+  const todayBriefState = !row.brief_ref
+    ? 'absent'
+    : row.brief_state === 'expired' || (expiresAt && expiresAt.getTime() <= Date.now())
+      ? 'expired'
+      : acknowledgedAt && updatedAt && acknowledgedAt.getTime() >= updatedAt.getTime()
+        ? 'active'
+        : 'awaiting_ack';
+  return {
+    key: 'JAENONG_OPERATIONS',
+    value: 'shadow',
+    state: 'shadow',
+    team: 'luna',
+    desc: '재농 브리프/라우트 shadow 운영 상태',
+    todayBriefState,
+    ackStatus: todayBriefState === 'absent' ? 'not_applicable'
+      : todayBriefState === 'active' ? 'acknowledged' : 'pending',
+    routeShadow24hCount: Number(row.route_shadow_24h || 0),
+    collector: {
+      latestStatus: collectorLatestStatus,
+      latestSuccessAt: row.collector_latest_success_at || null,
+      latestFailureAt: row.collector_latest_failure_at || null,
+      latestFailureReason: row.collector_latest_failure_reason || null,
+    },
+    cryptoUniverseMode: resolveCryptoUniverseMode({ env }).mode,
+  };
+}
+
+export async function collectOperationGates(options = {}) {
   const env = options.env || process.env;
-  const gates = OPERATION_GATES.map((gate) => {
+  const staticGates = OPERATION_GATES.map((gate) => {
     const value = env[gate.key];
     return {
       key: gate.key,
@@ -387,6 +439,40 @@ export function collectOperationGates(options = {}) {
       desc: gate.desc,
     };
   });
+  const rows = await safeQuery('investment', 'investment.jaenong.ops_gate', `
+    WITH today_brief AS (
+      SELECT brief_ref, state AS brief_state, updated_at, expires_at
+      FROM investment.jaenong_brief
+      WHERE published_at >= (date_trunc('day', NOW() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul')
+        AND published_at < (date_trunc('day', NOW() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul') + INTERVAL '1 day'
+      ORDER BY published_at DESC, id DESC
+      LIMIT 1
+    ), latest_ack AS (
+      SELECT a.acknowledged_at
+      FROM investment.jaenong_brief_ack a
+      JOIN today_brief b ON b.brief_ref = a.brief_ref
+      ORDER BY a.acknowledged_at DESC, a.id DESC
+      LIMIT 1
+    ), collector_failure AS (
+      SELECT created_at, reason
+      FROM investment.jaenong_brief_event
+      WHERE event_type = 'parse_failed' AND payload->>'stage' = 'collector'
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    )
+    SELECT b.brief_ref, b.brief_state, b.updated_at, b.expires_at,
+           a.acknowledged_at,
+           (SELECT COUNT(*)::int FROM investment.jaenong_route_shadow
+             WHERE recorded_at >= NOW() - INTERVAL '24 hours') AS route_shadow_24h,
+           (SELECT MAX(collected_at) FROM investment.jaenong_posts) AS collector_latest_success_at,
+           f.created_at AS collector_latest_failure_at,
+           f.reason AS collector_latest_failure_reason
+    FROM (SELECT 1) root
+    LEFT JOIN today_brief b ON true
+    LEFT JOIN latest_ack a ON true
+    LEFT JOIN collector_failure f ON true
+  `, [], options.queryReadonly || pgPool.queryReadonly);
+  const gates = [...staticGates, normalizeJaenongGateRow(rows?.[0] || {}, env)];
   const groups = gates.reduce((acc, gate) => {
     acc[gate.team] = acc[gate.team] || [];
     acc[gate.team].push(gate);
@@ -1404,7 +1490,7 @@ export function createOpsConsoleServer(options = {}) {
         return json(res, 200, collectBridgeQueue({ bridgeRoot: options.bridgeRoot }));
       }
       if (url.pathname === '/api/gates') {
-        return json(res, 200, collectOperationGates(options));
+        return json(res, 200, await collectOperationGates(options));
       }
       if (url.pathname === '/api/knowledge-graph') {
         return json(res, 200, await collectKnowledgeGraph({

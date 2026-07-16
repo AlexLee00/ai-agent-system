@@ -20,7 +20,13 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 58);
+  assert.equal(jobs.length, 59);
+  const majorDrift = jobs.find((job) => job.name === 'binance_major20_market_cap_drift');
+  assert.equal(majorDrift?.category, 'report');
+  assert.deepEqual(majorDrift?.cadence, { type: 'weekly', day: 1, hour: 9, minute: 20 });
+  assert.equal(majorDrift?.args?.includes('--json'), true);
+  assert.equal(majorDrift?.args?.includes('--apply'), false);
+  assert.equal(majorDrift?.args?.includes('--confirm'), false);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -46,6 +52,32 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-enrichment-symbols=2'), true);
   assert.equal(shouldSkipPreScreen({ isOpen: true }), true);
   assert.equal(shouldSkipPreScreen({ isOpen: false, isWeekend: false, holiday: { isHoliday: false } }), false);
+  const weeklyJob = [{
+    name: 'weekly_fixture',
+    cadence: { type: 'weekly', day: 1, hour: 9, minute: 20 },
+    command: process.execPath,
+    args: [],
+  }];
+  assert.equal(buildOpsSchedulerPlan({
+    now: new Date('2026-07-20T09:19:00+09:00'),
+    state: { jobs: {} },
+    jobs: weeklyJob,
+  }).due, 0);
+  assert.equal(buildOpsSchedulerPlan({
+    now: new Date('2026-07-20T09:20:00+09:00'),
+    state: { jobs: {} },
+    jobs: weeklyJob,
+  }).due, 1);
+  assert.equal(buildOpsSchedulerPlan({
+    now: new Date('2026-07-20T12:00:00+09:00'),
+    state: { jobs: { weekly_fixture: { lastRunAt: '2026-07-20T09:20:00+09:00' } } },
+    jobs: weeklyJob,
+  }).due, 0);
+  assert.equal(buildOpsSchedulerPlan({
+    now: new Date('2026-07-27T09:20:00+09:00'),
+    state: { jobs: { weekly_fixture: { lastRunAt: '2026-07-20T09:20:00+09:00' } } },
+    jobs: weeklyJob,
+  }).due, 1);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'active_entry_trigger_evaluator_crypto'), true);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.cadence?.seconds, 60);
