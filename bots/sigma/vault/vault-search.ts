@@ -256,6 +256,10 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     nextParam += 1;
   }
 
+  const broadFilters = [...filters];
+  const broadParams = [...params];
+  const broadLimitParam = nextParam;
+
   if (layerRoute) {
     const coordFilters = normalizeCoordFilters(layerRoute.coordFilters);
     for (const key of ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state']) {
@@ -290,7 +294,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     `, params);
 
     const coordFilters = normalizeCoordFilters(layerRoute?.coordFilters || {});
-    const results = normalizeRows(rows)
+    const normalizeResults = (searchRows: unknown, applyLayerFilters: boolean) => normalizeRows(searchRows)
       .map((row: any) => {
         const libraryCoords = extractLibraryCoords(row);
         const result = {
@@ -304,9 +308,39 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
         if (layerRoute || opts.includeRoutingDebug) result.libraryCoords = libraryCoords;
         return result;
       })
-      .filter((row: VaultSearchResult) => !layerRoute || coordsMatchFilters(row.libraryCoords, coordFilters))
+      .filter((row: VaultSearchResult) => !applyLayerFilters || coordsMatchFilters(row.libraryCoords, coordFilters))
       .filter((row: VaultSearchResult) => minSimilarity == null || row.similarity >= minSimilarity)
       .slice(0, topK);
+    let results = normalizeResults(rows, Boolean(layerRoute));
+    let layerFallbackReason: string | null = null;
+
+    if (layerRoute && results.length < topK) {
+      const layerResultCount = results.length;
+      const fallbackRows = await queryReadonly('sigma', `
+        SELECT
+          id,
+          title,
+          source,
+          LEFT(content, 200) AS content_preview,
+          meta,
+          1 - (embedding <=> $1::vector) AS similarity
+          ${coordSelect}
+        FROM sigma.vault_entries
+        WHERE ${broadFilters.join(' AND ')}
+        ORDER BY embedding <=> $1::vector
+        LIMIT $${broadLimitParam}
+      `, [...broadParams, topK]);
+      const seenIds = new Set(results.map((row) => String(row.id)));
+      for (const row of normalizeResults(fallbackRows, false)) {
+        if (seenIds.has(String(row.id))) continue;
+        results.push(row);
+        seenIds.add(String(row.id));
+        if (results.length >= topK) break;
+      }
+      layerFallbackReason = layerResultCount === 0
+        ? 'layer_empty_fallback'
+        : 'layer_sparse_fallback';
+    }
 
     const response: VaultSearchResponse = {
       ok: true,
@@ -314,10 +348,11 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     };
     if (layerRoute) {
       response.routing = {
-          ...layerRoute,
-          coordColumnsPresent: [...coordColumns].sort(),
-          fallback: coordColumns.size === 0 ? 'meta.libraryCoords' : 'coord_columns_or_meta',
-        };
+        ...layerRoute,
+        reason: layerFallbackReason || layerRoute.reason,
+        coordColumnsPresent: [...coordColumns].sort(),
+        fallback: coordColumns.size === 0 ? 'meta.libraryCoords' : 'coord_columns_or_meta',
+      };
     } else if (opts.includeRoutingDebug) {
       response.routing = null;
     }
