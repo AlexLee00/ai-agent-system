@@ -20,6 +20,7 @@ const env = require('../../../packages/core/lib/env');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const {
   listAutoDevManifestEntries,
+  loadAutoDevManifest,
   markAutoDevManifestState,
   syncAutoDevManifest,
 } = require('../../../packages/core/lib/auto-dev-manifest.ts');
@@ -629,6 +630,41 @@ function isDevelopmentTaskMetadata(metadata = {}) {
 
 function isImplementationCompletedMetadata(metadata = {}) {
   return COMPLETED_IMPLEMENTATION_STATUSES.has(normalizeMetadataToken(metadata.implementation_status));
+}
+
+function getManifestEntryContentHash(entry) {
+  const recordedHash = toSafeString(entry?.contentHash || entry?.content_hash);
+  if (recordedHash) return recordedHash;
+
+  const archivedPath = toSafeString(entry?.archivedPath || entry?.archived_path);
+  if (!archivedPath) return '';
+  try {
+    const archivedContent = fs.readFileSync(path.join(ROOT, archivedPath), 'utf8');
+    return hashContent(archivedContent);
+  } catch {
+    return '';
+  }
+}
+
+function getCompletedAutoDevManifestEntry(relPath, expectedContentHash) {
+  const entry = loadAutoDevManifest(AUTO_DEV_DIR)?.entries?.[relPath];
+  if (!entry || typeof entry !== 'object') return null;
+  const expectedHash = toSafeString(expectedContentHash);
+  if (!expectedHash || getManifestEntryContentHash(entry) !== expectedHash) return null;
+  const reason = normalizeMetadataToken(entry.reason);
+  const implementationStatus = normalizeMetadataToken(
+    entry.implementationStatus || entry.implementation_status,
+  );
+  if (
+    entry.state === 'archived'
+    || COMPLETED_IMPLEMENTATION_STATUSES.has(reason)
+    || COMPLETED_IMPLEMENTATION_STATUSES.has(implementationStatus)
+    || reason === 'auto_dev_current_state_resolved'
+    || reason === 'already_completed'
+  ) {
+    return entry;
+  }
+  return null;
 }
 
 function isNonActionableBlogEngagementAlarm(analysis = {}) {
@@ -1709,6 +1745,13 @@ function formatAlarmRepairResultMessage(context, status, summary, changedFiles =
 async function sendAlarmRepairResult(job, status, summary, options = {}, payload = null, content = '') {
   const context = extractAlarmIncidentContext(job, content);
   if (!context) return { ok: true, skipped: true, reason: 'not_alarm_incident' };
+  if (
+    status === 'unresolved_needs_human'
+    && getCompletedAutoDevManifestEntry(context.docPath, job?.contentHash)
+  ) {
+    console.log(`[auto-dev] suppressed stale unresolved alarm for completed manifest: ${context.docPath}`);
+    return { ok: true, skipped: true, reason: 'completed_manifest', context };
+  }
 
   const runtimeConfig = getRuntimeConfig(options);
   const shadow = options.shadow ?? runtimeConfig.shadow;
@@ -1751,6 +1794,12 @@ async function sendAlarmRepairResult(job, status, summary, options = {}, payload
 }
 
 async function sendStageAlarm(job, stageId, details = '', options = {}, payload = null) {
+  const relPath = toSafeString(job?.analysis?.relPath || job?.relPath);
+  if (stageId === 'failed' && relPath && getCompletedAutoDevManifestEntry(relPath, job?.contentHash)) {
+    console.log(`[auto-dev] suppressed stale stage failure for completed manifest: ${relPath}`);
+    return { ok: true, skipped: true, reason: 'completed_manifest' };
+  }
+
   const runtimeConfig = getRuntimeConfig(options);
   const shadow = options.shadow ?? runtimeConfig.shadow;
   const message = formatStageMessage(job, stageId, details);
@@ -3288,6 +3337,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       archivedAt: nowIso(),
       archivedBy: 'auto-dev-pipeline',
       reason: 'already_completed',
+      contentHash,
     });
     await recordAutoDevOutcome(state.jobs[id], 'skipped', {
       stage: 'already_completed',
@@ -3427,6 +3477,7 @@ async function processAutoDevDocument(filePath, options = {}) {
         archivedAt: nowIso(),
         archivedBy: 'auto-dev-pipeline',
         reason: policy.decision,
+        contentHash,
       });
       const blockedJob = updateJobState(job, policy.decision, {
         contentHash,
@@ -3842,6 +3893,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       archivedBy: 'auto-dev-pipeline',
       reason: 'completed',
       archivedPath: archivedPath || null,
+      contentHash,
     });
     await markAgentDone();
     return {
@@ -3861,6 +3913,40 @@ async function processAutoDevDocument(filePath, options = {}) {
     const afterStatus = captureGitStatusShort(executionContext?.cwd || ROOT);
     const newlyChangedFiles = collectNewlyChangedFiles(beforeStatus, afterStatus);
     cleanupResult = cleanupExecutionContext(executionContext, options);
+    const completedManifestEntry = getCompletedAutoDevManifestEntry(relPath, contentHash);
+    if (completedManifestEntry) {
+      const completedJob = updateJobState(job, 'implementation_completed', {
+        contentHash,
+        reason: 'completed_during_execution',
+        suppressedError: maskSensitiveText(error.message, 500),
+        archivedPath: completedManifestEntry.archivedPath || null,
+        implementationStatus: completedManifestEntry.implementationStatus
+          || completedManifestEntry.implementation_status
+          || IMPLEMENTATION_COMPLETED_MARKER,
+        worktreeCleanup: cleanupResult,
+        event: {
+          type: 'failure_suppressed_completed_manifest',
+          manifestState: completedManifestEntry.state || null,
+          manifestReason: completedManifestEntry.reason || null,
+        },
+      });
+      await recordAutoDevOutcome(completedJob, 'skipped', {
+        stage: 'completed_during_execution',
+        reason: 'completed_during_execution',
+        profile: runtimeConfig.profile,
+        changedFiles: newlyChangedFiles,
+        archivedPath: completedManifestEntry.archivedPath || null,
+        durationMs: elapsedMsSince(processStartedAtMs),
+      });
+      console.log(`[auto-dev] completed manifest superseded stale worker failure: ${relPath}`);
+      await markAgentDone();
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'completed_during_execution',
+        job: completedJob,
+      };
+    }
     const failedJob = updateJobState(job, 'failed', {
       error: error.message,
       beforeStatus,
@@ -4194,6 +4280,8 @@ module.exports = {
   _testOnly_evaluateDocumentPolicy: evaluateDocumentPolicy,
   _testOnly_extractAlarmIncidentContext: extractAlarmIncidentContext,
   _testOnly_formatAlarmRepairResultMessage: formatAlarmRepairResultMessage,
+  _testOnly_sendAlarmRepairResult: sendAlarmRepairResult,
+  _testOnly_sendStageAlarm: sendStageAlarm,
   _testOnly_normalizeSymphonyMode: normalizeSymphonyMode,
   _testOnly_partitionDirtyBaseForWriteScope: partitionDirtyBaseForWriteScope,
   _testOnly_findDirtyPathConflicts: findDirtyPathConflicts,

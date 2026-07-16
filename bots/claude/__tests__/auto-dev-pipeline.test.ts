@@ -471,6 +471,189 @@ async function test_completed_manifest_record_blocks_failed_overwrite() {
   console.log('✅ auto-dev: completed manifest record blocks failed overwrite');
 }
 
+async function test_completed_manifest_during_execution_suppresses_failure_alarm() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_SUPERSEDED.md';
+  const doc = makeDoc(tmpRoot, 'ALARM_INCIDENT_SUPERSEDED.md', [
+    '---',
+    'target_team: claude',
+    'owner_agent: codex',
+    'source_team: blog',
+    'source_bot: blog-neighbor-commenter',
+    'incident_key: blog:blog-neighbor-commenter:test:completed-race',
+    'alarm_event_type: blog-neighbor-commenter_error',
+    'risk_tier: normal',
+    'task_type: development_task',
+    'write_scope:',
+    '  - bots/claude/**',
+    'test_scope:',
+    '  - npm --prefix bots/claude run test:auto-dev',
+    'autonomy_level: autonomous_l5',
+    'requires_live_execution: false',
+    '---',
+    '',
+    '# Superseded failure',
+  ].join('\n'));
+
+  const { mocks, alarms, autoDevOutcomes } = makeMocks(tmpRoot, {
+    '../src/reviewer.ts': {
+      runReview: async () => {
+        const manifestPath = path.join(autoDir, '.auto-dev-manifest.json');
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+        manifest.entries[relPath] = {
+          ...manifest.entries[relPath],
+          state: 'archived',
+          reason: 'auto_dev_current_state_resolved',
+          implementationStatus: 'auto_dev_implementation_completed',
+          contentHash: crypto.createHash('sha1').update(fs.readFileSync(doc, 'utf8')).digest('hex').slice(0, 16),
+          archivedAt: new Date().toISOString(),
+          archivedPath: 'docs/archive/codex-completed/ALARM_INCIDENT_SUPERSEDED.md',
+        };
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+        return { summary: { pass: false }, message: 'stale worker review failed' };
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      shadow: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'completed_during_execution');
+  }, testEnv(tmpRoot, { CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true' }));
+
+  assert.strictEqual(
+    alarms.some(alarm => alarm?.payload?.event_type === 'auto_dev_stage_failed'),
+    false,
+    'completed manifest must suppress stale stage-failed alarm',
+  );
+  assert.strictEqual(
+    alarms.some(alarm => alarm?.eventType === 'auto_dev_alarm_repair_unresolved_needs_human'),
+    false,
+    'completed manifest must suppress stale unresolved alarm',
+  );
+  assert.ok(
+    autoDevOutcomes.some(row => row.outcome === 'skipped' && row.stage === 'completed_during_execution'),
+    'superseded worker should retain a non-failure audit outcome',
+  );
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed manifest suppresses in-flight stale failure alarms');
+}
+
+async function test_completed_manifest_suppresses_failure_at_notification_boundary() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_NOTIFICATION_RACE.md';
+  const currentContent = '# Current incident\n';
+  const currentContentHash = crypto.createHash('sha1').update(currentContent).digest('hex').slice(0, 16);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived',
+        reason: 'auto_dev_current_state_resolved',
+        implementationStatus: 'auto_dev_implementation_completed',
+        contentHash: currentContentHash,
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks, alarms } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const job = {
+      relPath,
+      contentHash: currentContentHash,
+      analysis: {
+        relPath,
+        metadata: {
+          source_team: 'blog',
+          incident_key: 'blog:test:completed-notification-race',
+          alarm_event_type: 'test_error',
+        },
+      },
+    };
+    const stageResult = await pipeline._testOnly_sendStageAlarm(
+      job,
+      'failed',
+      'stale worker failed',
+      { shadow: false, test: false },
+    );
+    const repairResult = await pipeline._testOnly_sendAlarmRepairResult(
+      job,
+      'unresolved_needs_human',
+      'stale worker failed',
+      { shadow: false, test: false },
+      null,
+      [
+        '---',
+        'source_team: blog',
+        'incident_key: blog:test:completed-notification-race',
+        'alarm_event_type: test_error',
+        '---',
+      ].join('\n'),
+    );
+    assert.strictEqual(stageResult.reason, 'completed_manifest');
+    assert.strictEqual(repairResult.reason, 'completed_manifest');
+  }, testEnv(tmpRoot));
+
+  assert.strictEqual(alarms.length, 0, 'notification boundary must not emit completed-job failure alarms');
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: notification boundary suppresses completed-manifest failure alarms');
+}
+
+async function test_regenerated_incident_with_same_path_keeps_failure_alarm() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_REGENERATED.md';
+  const oldContentHash = crypto.createHash('sha1').update('# Old incident\n').digest('hex').slice(0, 16);
+  const newContentHash = crypto.createHash('sha1').update('# New incident\n').digest('hex').slice(0, 16);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived',
+        reason: 'auto_dev_current_state_resolved',
+        implementationStatus: 'auto_dev_implementation_completed',
+        contentHash: oldContentHash,
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks, alarms } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const job = {
+      relPath,
+      contentHash: newContentHash,
+      analysis: { relPath },
+    };
+    const result = await pipeline._testOnly_sendStageAlarm(
+      job,
+      'failed',
+      'new incident failed',
+      { shadow: false, test: false },
+    );
+    assert.notStrictEqual(result?.reason, 'completed_manifest');
+  }, testEnv(tmpRoot));
+
+  assert.strictEqual(alarms.length, 1, 'new content at a reused path must retain its failure alarm');
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: regenerated same-path incidents retain failure alarms');
+}
+
 async function test_archived_missing_without_completed_history_requeues() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -2863,6 +3046,9 @@ async function main() {
     test_empty_auto_dev_inbox_marks_agent_done,
     test_completed_history_prevents_archived_missing_requeue,
     test_completed_manifest_record_blocks_failed_overwrite,
+    test_completed_manifest_during_execution_suppresses_failure_alarm,
+    test_completed_manifest_suppresses_failure_at_notification_boundary,
+    test_regenerated_incident_with_same_path_keeps_failure_alarm,
     test_archived_missing_without_completed_history_requeues,
     test_auto_dev_watch_passes_state_file_to_manifest_sync,
     test_missing_auto_dev_document_is_skipped,
