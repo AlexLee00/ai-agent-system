@@ -11,7 +11,6 @@ import { ACTIONS, ANALYST_TYPES } from './signal.ts';
 import { getOpenPositions, getCapitalConfigWithOverrides } from './capital-manager.ts';
 import { getMarketOrderRule } from './order-rules.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
 } from './binance-top-volume-universe.ts';
 
@@ -288,7 +287,7 @@ export function promotePredictiveObservationHoldCandidates(portfolioDecision, pr
       if (row.top30Gate?.ok === true) return true;
       top30Blocked.push({
         symbol: row.item?.symbol || null,
-        reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        reason: row.top30Gate?.reason,
         rank: row.top30Gate?.rank || null,
       });
       return false;

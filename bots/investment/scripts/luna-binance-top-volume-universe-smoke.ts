@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  BINANCE_TOP_VOLUME_LEGACY_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
 } from '../shared/binance-top-volume-universe.ts';
@@ -19,7 +19,7 @@ export async function runLunaBinanceTopVolumeUniverseSmoke() {
   assert.equal(evaluateBinanceTopVolumeUniverseGate('BTCUSDT', universe).ok, true);
   const offUniverse = evaluateBinanceTopVolumeUniverseGate('PEPE/USDT', universe);
   assert.equal(offUniverse.blocked, true);
-  assert.equal(offUniverse.reason, BINANCE_TOP_VOLUME_BLOCK_REASON);
+  assert.equal(offUniverse.reason, BINANCE_TOP_VOLUME_LEGACY_BLOCK_REASON);
 
   const runtime = await runLunaBinanceTopVolumeUniverse({ json: true, dryRun: true, fixture: true });
   assert.equal(runtime.ok, true);

@@ -10,6 +10,7 @@ export const EXPECTED_POLICY_BLOCK_CODES = new Set([
   'journal_open_entry_ambiguous_for_sell',
   'journal_open_entry_missing_for_sell',
   'market_closed',
+  'outside_binance_major_universe',
   'position_mode_conflict',
   'position_sizing_rejected',
   'safety_gate_blocked',

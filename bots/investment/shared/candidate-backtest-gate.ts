@@ -34,6 +34,7 @@ const GENUINE_BACKTEST_FAIL_PREFIXES = [
 ];
 
 const UNIVERSE_BLOCK_PREFIXES = [
+  'outside_binance_major_universe',
   'outside_binance_top30_volume_universe',
   'would_block_top30_universe',
   'BINANCE_TOP_VOLUME_BLOCK_REASON',

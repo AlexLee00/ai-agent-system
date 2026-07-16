@@ -23,7 +23,6 @@ import {
   isShadowUnvalidatedPassthroughEnabled,
 } from './candidate-backtest-gate.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from './binance-top-volume-universe.ts';
@@ -2024,7 +2023,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
           triggerState: 'waiting',
           triggerMetaPatch: {
             lastReadyAt: nowIso(),
-            reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+            reason: top30Gate.reason,
             binanceTop30Gate: top30Gate,
           },
         }).catch(() => null);
@@ -2033,7 +2032,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
           symbol: trigger.symbol,
           state: 'waiting',
           fired: false,
-          reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+          reason: top30Gate.reason,
           binanceTop30Rank: top30Gate.rank,
         });
         continue;

@@ -6,7 +6,6 @@ import { get, query, run } from '../shared/db/core.ts';
 import { insertEntryTrigger } from '../shared/luna-discovery-entry-store.ts';
 import { ensureLunaPromotionEntryTriggerBridgeSchema } from '../shared/luna-promotion-entry-trigger-bridge.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   fetchBinanceTopVolumeUniverse,
@@ -340,7 +339,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
       binanceTop30Rank: gate.rank,
       binanceTop30Applicable: gate.applies === true,
       inBinanceTop30Universe: gate.ok,
-      top30Blocker: gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+      top30Blocker: gate.blocked ? gate.reason : null,
       liveMutation: false,
       entryTriggerDbMutation: false,
       bridgeDbMutation: false,
@@ -354,7 +353,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
     if (!gate.ok) {
       blocked += 1;
       item.status = 'blocked_outside_binance_top30_volume_universe';
-      item.blockers.push({ name: BINANCE_TOP_VOLUME_BLOCK_REASON, detail: `${symbol} is outside Binance Spot USDT Top30 universe.` });
+      item.blockers.push({ name: gate.reason, detail: `${symbol} is outside the configured Binance Spot USDT universe.` });
       items.push(item);
       continue;
     }

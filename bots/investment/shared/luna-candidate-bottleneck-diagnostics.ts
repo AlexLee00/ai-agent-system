@@ -15,7 +15,6 @@ import {
   normalizeLunaPhase2Symbols,
 } from './luna-weight-vector.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
@@ -329,7 +328,7 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
       ? binanceTop30Gate?.ok === true
       : null;
     if (market === 'crypto' && binanceTop30Gate?.blocked === true) {
-      reasons.push(BINANCE_TOP_VOLUME_BLOCK_REASON);
+      reasons.push(binanceTop30Gate.reason);
     }
 
     const backtestFresh = isTrue(backtest.fresh) && ageHours(backtest.last_backtest_at) <= staleBacktestHours;
@@ -405,7 +404,7 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
       primaryBlocker,
       binanceTop30Rank: binanceTop30Gate?.rank || null,
       inBinanceTop30Universe,
-      top30Blocker: binanceTop30Gate?.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+      top30Blocker: binanceTop30Gate?.blocked ? binanceTop30Gate.reason : null,
       liquidationCandidate: input.liquidationCandidate === true || false,
       candidateSelectionPenalty,
       reasons: uniqueReasons,
@@ -439,7 +438,7 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
           recommendedRefreshCommand,
           binanceTop30Rank: binanceTop30Gate?.rank || null,
           inBinanceTop30Universe,
-          top30Blocker: binanceTop30Gate?.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+          top30Blocker: binanceTop30Gate?.blocked ? binanceTop30Gate.reason : null,
           liquidationCandidate: input.liquidationCandidate === true || false,
           candidateQualityAdjustedScore: round(candidate.quality_adjusted_score ?? candidate.score, 4),
           priorCandidateSelectionPenalty: round(candidate.prior_candidate_selection_penalty, 4),

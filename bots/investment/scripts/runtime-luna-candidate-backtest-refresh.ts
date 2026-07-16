@@ -10,7 +10,6 @@ import { fetchDataGoStockPriceHistoryForSymbol } from '../shared/domestic-offici
 import { exchangeForLunaPhase2Market } from '../shared/luna-weight-vector.ts';
 import { getActiveCandidates as getDiscoveryActiveCandidates } from '../team/discovery/discovery-store.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
@@ -1193,7 +1192,7 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
     winRate: null,
     gateStatus: 'would_block_top30_universe',
     wouldBlock: true,
-    reasons: [BINANCE_TOP_VOLUME_BLOCK_REASON],
+    reasons: [gate.reason],
     periods: [],
     rowsByPeriod: {},
     top30Gate: gate,
@@ -1213,7 +1212,7 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
     reasons: payload.reasons,
     binanceTop30Rank: gate.rank,
     inBinanceTop30Universe: false,
-    top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+    top30Blocker: gate.reason,
     universeAsOf: payload.universeAsOf,
     universeSource: payload.universeSource,
     error: null,

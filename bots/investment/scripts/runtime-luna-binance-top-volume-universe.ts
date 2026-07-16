@@ -4,11 +4,11 @@
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { query } from '../shared/db/core.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   fetchBinanceTopVolumeUniverse,
   normalizeBinanceUsdtSymbol,
+  resolveBinanceUniverseBlockReason,
 } from '../shared/binance-top-volume-universe.ts';
 
 function hasFlag(name: string) {
@@ -72,7 +72,7 @@ function evaluateCandidate(row = {}, universe = {}) {
     score: Number(row.score || 0),
     inBinanceTop30Universe: gate.ok,
     binanceTop30Rank: gate.rank,
-    top30Blocker: gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+    top30Blocker: gate.blocked ? gate.reason : null,
     reason: gate.reason,
   };
 }
@@ -91,7 +91,7 @@ function evaluateHolding(row = {}, universe = {}) {
     binanceTop30Rank: gate.rank,
     liquidationCandidate: gate.blocked,
     code: gate.blocked ? 'off_universe_top30_liquidation_candidate' : null,
-    top30Blocker: gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+    top30Blocker: gate.blocked ? gate.reason : null,
   };
 }
 
@@ -120,7 +120,7 @@ export async function runLunaBinanceTopVolumeUniverse(options: any = {}) {
       limit,
       quote,
       source: universe.source,
-      blockReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+      blockReason: resolveBinanceUniverseBlockReason(universe),
       liquidationCandidateCode: 'off_universe_top30_liquidation_candidate',
     },
     universe: {

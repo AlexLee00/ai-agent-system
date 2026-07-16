@@ -8,7 +8,6 @@
  */
 
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../../shared/binance-top-volume-universe.ts';
@@ -177,7 +176,7 @@ export function createPaperPromotionPolicy(context = {}) {
       let check = {
         allowed: false,
         reason: top30Gate.blocked
-          ? BINANCE_TOP_VOLUME_BLOCK_REASON
+          ? top30Gate.reason
           : tooSmall
             ? `최소 주문 미만: ${desiredUsdt.toFixed(2)} USDT`
             : 'USDT 부족',
@@ -197,7 +196,7 @@ export function createPaperPromotionPolicy(context = {}) {
         reason: !tooSmall && enoughUsdt ? (check.allowed ? '승격 가능' : check.reason) : check.reason,
         binanceTop30Rank: top30Gate.rank,
         inBinanceTop30Universe: top30Gate.ok,
-        top30Blocker: top30Gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+        top30Blocker: top30Gate.blocked ? top30Gate.reason : null,
       });
     }
 
@@ -221,20 +220,20 @@ export function createPaperPromotionPolicy(context = {}) {
         requestedAmountUsdt: amountUsdt,
         currentPrice,
         liveAllowed: false,
-        liveReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        liveReason: top30Gate.reason,
         paperFallback: false,
         finalMode: 'blocked',
         suggestedLiveAmountUsdt: 0,
         binanceTop30Rank: top30Gate.rank,
         inBinanceTop30Universe: false,
-        top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        top30Blocker: top30Gate.reason,
         capitalPolicy: {
           reserveRatio: capitalPolicy.reserve_ratio,
           minOrderUsdt,
           maxPositionPct: capitalPolicy.max_position_pct,
           maxConcurrentPositions: capitalPolicy.max_concurrent_positions,
         },
-        sizing: { skip: true, reason: BINANCE_TOP_VOLUME_BLOCK_REASON },
+        sizing: { skip: true, reason: top30Gate.reason },
       };
     }
     const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance');

@@ -4,7 +4,6 @@ import { runDiscoveryOrchestrator } from './discovery-orchestrator.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../../shared/luna-intelligent-discovery-config.ts';
 import { checkTradeDataWeakSymbol } from '../../shared/trade-data-derived-guards.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../../shared/binance-top-volume-universe.ts';
@@ -100,7 +99,7 @@ function getBinanceTopVolumeSelectionBlock(symbol, market = 'crypto', universe =
   return {
     blocked: true,
     source: 'pre_entry/binance_top30_volume_universe',
-    reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+    reason: gate.reason,
     gate,
   };
 }

@@ -8,7 +8,6 @@ import {
 import { recordGuardEvents } from '../../shared/guard-event-recorder.ts';
 import { evaluateCandidateBacktestEntryGate } from '../../shared/candidate-backtest-gate.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../../shared/binance-top-volume-universe.ts';
@@ -41,6 +40,7 @@ export async function runBuySafetyGuards({
   notifyEnabled = true,
   binanceTopVolumeUniverse = null,
 }) {
+  if (String(action || '').toUpperCase() !== 'BUY') return null;
   if (String(signal.exchange || 'binance') === 'binance') {
     const topVolumeUniverse = binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
       source: 'binance_top30_unavailable',
@@ -51,18 +51,19 @@ export async function runBuySafetyGuards({
     }));
     const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, topVolumeUniverse);
     if (top30Gate.blocked) {
-      const reason = `Binance Top 30 universe blocked: ${BINANCE_TOP_VOLUME_BLOCK_REASON}`;
-      console.log(`  ⛔ [Binance Top30] ${symbol} ${reason}`);
+      const blockReason = top30Gate.reason;
+      const reason = `Binance crypto universe blocked: ${blockReason}`;
+      console.log(`  ⛔ [Binance Universe] ${symbol} ${reason}`);
       return rejectExecution({
         persistFailure,
         symbol,
         action,
         reason,
-        code: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        code: blockReason,
         meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
           binanceTop30Gate: top30Gate,
         }, {
-          guardKind: 'binance_top30_volume_universe',
+          guardKind: 'binance_crypto_universe',
           pressureSource: 'binance_market_liquidity',
         }),
         notify: notifyEnabled ? 'skip' : false,

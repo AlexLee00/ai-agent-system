@@ -46,7 +46,6 @@ import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../shared/binance-top-volume-universe.ts';
@@ -134,7 +133,7 @@ function filterCryptoTopVolumeUniverse(symbols = [], universe = null, source = '
   for (const symbol of symbols || []) {
     const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
     if (gate.ok) kept.push(gate.canonicalSymbol);
-    else dropped.push({ symbol, reason: BINANCE_TOP_VOLUME_BLOCK_REASON, source, rank: gate.rank });
+    else dropped.push({ symbol, reason: gate.reason, source, rank: gate.rank });
   }
   const deduped = [...new Set(kept)];
   if (dropped.length > 0) {

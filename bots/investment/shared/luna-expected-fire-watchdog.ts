@@ -11,6 +11,7 @@ export const NORMAL_ENTRY_TRIGGER_BLOCK_REASONS = Object.freeze([
   'tradingview_chart_guard_blocked',
   'live_risk_gate_blocked',
   'live_risk_gate_terminal_blocked',
+  'outside_binance_major_universe',
   'outside_binance_top30_volume_universe',
   'duplicate_fire_cooldown',
   'open_position_reentry_guard',

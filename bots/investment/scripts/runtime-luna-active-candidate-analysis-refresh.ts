@@ -12,7 +12,6 @@ import { buildDailyTechnicalCoverage, buildLunaDiscoveryFunnelReport } from './r
 import { buildStockIntradayLlmPolicyMeta, isStockIntradayEnrichmentEnabled } from '../shared/stock-intraday-llm-policy.ts';
 import { extractCryptoTechnicalEvidence } from '../shared/luna-conservative-relaxation-policy.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../shared/binance-top-volume-universe.ts';
@@ -730,7 +729,7 @@ function filterTop30SelectedSymbols(symbols = [], universe = null) {
   for (const symbol of symbols || []) {
     const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
     if (gate.ok) selected.push(gate.canonicalSymbol);
-    else excluded.push({ symbol, reason: BINANCE_TOP_VOLUME_BLOCK_REASON, rank: gate.rank });
+    else excluded.push({ symbol, reason: gate.reason, rank: gate.rank });
   }
   return { selected: [...new Set(selected)], excluded };
 }

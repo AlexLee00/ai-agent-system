@@ -24,7 +24,6 @@ import {
 } from '../shared/trade-data-derived-guards.ts';
 import { recordGuardEvents } from '../shared/guard-event-recorder.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../shared/binance-top-volume-universe.ts';
@@ -787,7 +786,7 @@ export async function materializeFiredEntryTriggerSignals({
           triggerId: trigger.id,
           symbol,
           status: 'skipped',
-          reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+          reason: top30Gate.reason,
           binanceTop30Rank: top30Gate.rank,
         });
         continue;

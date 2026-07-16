@@ -12,7 +12,6 @@ import {
   normalizeLunaPhase2Symbol,
 } from '../shared/luna-weight-vector.ts';
 import {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
@@ -268,8 +267,8 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
         componentCoverage: 0,
         blocked: true,
         wouldBlock: true,
-        reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
-        blockedReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        reason: top30Gate.reason,
+        blockedReason: top30Gate.reason,
         top30Gate,
       };
       if (!dryRun) {
@@ -299,11 +298,11 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
         forecastTimeframe: null,
         forecastCandles: 0,
         forecastFallbackReason: null,
-        reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
-        blockedReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        reason: top30Gate.reason,
+        blockedReason: top30Gate.reason,
         binanceTop30Rank: top30Gate.rank,
         inBinanceTop30Universe: false,
-        top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        top30Blocker: top30Gate.reason,
       };
     }
     candidate.binanceTop30Rank = top30Gate.rank;

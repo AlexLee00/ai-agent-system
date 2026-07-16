@@ -5,9 +5,23 @@
 const BINANCE_BASE = 'https://api.binance.com';
 
 export const BINANCE_TOP_VOLUME_SOURCE = 'binance_spot_usdt_quote_volume_top30';
-export const BINANCE_TOP_VOLUME_BLOCK_REASON = 'outside_binance_top30_volume_universe';
+export const BINANCE_TOP_VOLUME_LEGACY_BLOCK_REASON = 'outside_binance_top30_volume_universe';
+export const BINANCE_MAJOR_UNIVERSE_SOURCE = 'coingecko_market_cap_binance_usdt_major20';
+export const BINANCE_MAJOR_UNIVERSE_BLOCK_REASON = 'outside_binance_major_universe';
+export const BINANCE_MAJOR_WHITELIST_SOURCE = Object.freeze({
+  provider: 'CoinGecko /api/v3/coins/markets',
+  snapshotAt: '2026-07-16T13:08:37.000Z',
+  quote: 'USD market cap',
+});
+export const DEFAULT_BINANCE_MAJOR_WHITELIST = Object.freeze([
+  'BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'XRP/USDT', 'SOL/USDT',
+  'TRX/USDT', 'DOGE/USDT', 'ZEC/USDT', 'XLM/USDT', 'LINK/USDT',
+  'ADA/USDT', 'BCH/USDT', 'LTC/USDT', 'SUI/USDT', 'HBAR/USDT',
+  'AVAX/USDT', 'NEAR/USDT', 'SHIB/USDT', 'UNI/USDT', 'TAO/USDT',
+]);
 export const DEFAULT_BINANCE_TOP_VOLUME_LIMIT = 30;
 export const DEFAULT_BINANCE_TOP_VOLUME_QUOTE = 'USDT';
+export const DEFAULT_BINANCE_MAJOR_UNIVERSE_LIMIT = 20;
 
 const DEFAULT_TIMEOUT_MS = 8_000;
 const DEFAULT_CACHE_TTL_MS = 5 * 60_000;
@@ -27,8 +41,75 @@ const LEVERAGED_BASE_ASSETS = new Set([
   'YFIUP', 'YFIDOWN', 'FILUP', 'FILDOWN', 'EOSUP', 'EOSDOWN',
   'TRXUP', 'TRXDOWN', 'XTZUP', 'XTZDOWN',
 ]);
+const MAJOR_ADDITIONAL_EXCLUDED_BASE_ASSETS = new Set([
+  'XAUT', 'PAXG', 'USD0', 'USDTB', 'SUSDS', 'SUSDE', 'BFUSD', 'U',
+]);
 
 let cachedUniverse = null;
+
+export function resolveCryptoUniverseMode({ env = process.env } = {}) {
+  const raw = String(env?.LUNA_CRYPTO_UNIVERSE_MODE ?? 'major').trim().toLowerCase();
+  if (raw === 'major' || raw === 'top_volume') return { mode: raw, valid: true, raw };
+  return { mode: 'major', valid: false, raw, reason: 'invalid_crypto_universe_mode' };
+}
+
+function normalizeMajorWhitelistSymbol(value = '') {
+  const raw = String(value || '').trim().toUpperCase();
+  if (!raw) return null;
+  if (/^[A-Z0-9]+$/u.test(raw) && !raw.endsWith('USDT')) return `${raw}/USDT`;
+  return normalizeBinanceUsdtSymbol(raw);
+}
+
+function isMajorExcludedBaseAsset(base = '') {
+  const normalized = String(base || '').trim().toUpperCase();
+  return isStableOrFiatBaseAsset(normalized)
+    || isLeveragedBaseAsset(normalized)
+    || MAJOR_ADDITIONAL_EXCLUDED_BASE_ASSETS.has(normalized);
+}
+
+export function parseBinanceMajorWhitelist({ env = process.env, value } = {}) {
+  const explicitlyConfigured = value !== undefined
+    || Object.prototype.hasOwnProperty.call(env || {}, 'LUNA_CRYPTO_MAJOR_WHITELIST');
+  const raw = value !== undefined ? value : env?.LUNA_CRYPTO_MAJOR_WHITELIST;
+  const tokens = explicitlyConfigured
+    ? String(raw ?? '').split(',').map((item) => item.trim()).filter(Boolean)
+    : [...DEFAULT_BINANCE_MAJOR_WHITELIST];
+  if (!tokens.length) {
+    return { valid: false, symbols: [], source: 'env', reason: 'major_whitelist_empty' };
+  }
+  const symbols = tokens.map(normalizeMajorWhitelistSymbol);
+  if (symbols.some((symbol) => !symbol)) {
+    return { valid: false, symbols: [], source: explicitlyConfigured ? 'env' : 'default', reason: 'major_whitelist_invalid_symbol' };
+  }
+  if (new Set(symbols).size !== symbols.length) {
+    return { valid: false, symbols: [], source: explicitlyConfigured ? 'env' : 'default', reason: 'major_whitelist_duplicate_symbol' };
+  }
+  if (symbols.length !== DEFAULT_BINANCE_MAJOR_UNIVERSE_LIMIT) {
+    return {
+      valid: false,
+      symbols: [],
+      source: explicitlyConfigured ? 'env' : 'default',
+      reason: 'major_whitelist_requires_exactly_20_symbols',
+      observedCount: symbols.length,
+    };
+  }
+  const structurallyExcluded = symbols.filter((symbol) => isMajorExcludedBaseAsset(baseAssetFromCanonicalSymbol(symbol)));
+  if (structurallyExcluded.length) {
+    return {
+      valid: false,
+      symbols: [],
+      source: explicitlyConfigured ? 'env' : 'default',
+      reason: 'major_whitelist_contains_excluded_asset',
+      invalidSymbols: structurallyExcluded,
+    };
+  }
+  return {
+    valid: true,
+    symbols,
+    source: explicitlyConfigured ? 'env' : 'default',
+    reason: null,
+  };
+}
 
 function fixedLimit(value = DEFAULT_BINANCE_TOP_VOLUME_LIMIT) {
   const parsed = Number(value || DEFAULT_BINANCE_TOP_VOLUME_LIMIT);
@@ -173,6 +254,108 @@ export function buildBinanceTopVolumeUniverse({
   };
 }
 
+function unavailableMajorUniverse({
+  whitelistResult,
+  invalidSymbols = [],
+  reason = 'binance_major_universe_unavailable',
+  fetchedAt = new Date().toISOString(),
+} = {}) {
+  return {
+    source: BINANCE_MAJOR_UNIVERSE_SOURCE,
+    whitelistSource: BINANCE_MAJOR_WHITELIST_SOURCE,
+    fetchedAt,
+    quote: 'USDT',
+    limit: DEFAULT_BINANCE_MAJOR_UNIVERSE_LIMIT,
+    mode: 'major',
+    available: false,
+    failClosed: true,
+    warning: reason,
+    whitelistSourceType: whitelistResult?.source || null,
+    configuredSymbols: whitelistResult?.symbols || [],
+    invalidSymbols,
+    symbols: [],
+    ranks: {},
+    rows: [],
+    excluded: { invalidSymbols },
+  };
+}
+
+export function buildBinanceMajorUniverse({
+  exchangeInfo = {},
+  whitelistResult = parseBinanceMajorWhitelist(),
+  fetchedAt = new Date().toISOString(),
+} = {}) {
+  if (!whitelistResult?.valid) {
+    return unavailableMajorUniverse({
+      whitelistResult,
+      reason: whitelistResult?.reason || 'major_whitelist_invalid',
+      fetchedAt,
+    });
+  }
+  const infoByCanonical = new Map();
+  for (const info of Array.isArray(exchangeInfo?.symbols) ? exchangeInfo.symbols : []) {
+    const canonical = normalizeBinanceUsdtSymbol(info?.symbol);
+    if (canonical) infoByCanonical.set(canonical, info);
+  }
+  const invalidSymbols = [];
+  for (const symbol of whitelistResult.symbols) {
+    const info = infoByCanonical.get(symbol);
+    const base = baseAssetFromCanonicalSymbol(symbol);
+    const reasons = [];
+    if (!info) reasons.push('not_listed');
+    if (info && info.status !== 'TRADING') reasons.push('not_trading');
+    if (info && String(info.quoteAsset || '').toUpperCase() !== 'USDT') reasons.push('not_usdt_quote');
+    if (info && info.isSpotTradingAllowed !== true) reasons.push('spot_trading_not_confirmed');
+    if (isMajorExcludedBaseAsset(base)) reasons.push('structurally_excluded');
+    if (reasons.length) invalidSymbols.push({ symbol, reasons });
+  }
+  if (invalidSymbols.length) {
+    return unavailableMajorUniverse({
+      whitelistResult,
+      invalidSymbols,
+      reason: 'major_whitelist_exchange_validation_failed',
+      fetchedAt,
+    });
+  }
+  const rows = whitelistResult.symbols.map((symbol, index) => ({
+    symbol,
+    binanceSymbol: symbol.replace('/', ''),
+    baseAsset: baseAssetFromCanonicalSymbol(symbol),
+    whitelistRank: index + 1,
+  }));
+  return {
+    source: BINANCE_MAJOR_UNIVERSE_SOURCE,
+    whitelistSource: BINANCE_MAJOR_WHITELIST_SOURCE,
+    whitelistSourceType: whitelistResult.source,
+    fetchedAt,
+    quote: 'USDT',
+    limit: DEFAULT_BINANCE_MAJOR_UNIVERSE_LIMIT,
+    mode: 'major',
+    available: true,
+    failClosed: false,
+    warning: null,
+    invalidSymbols: [],
+    symbols: rows.map((row) => row.symbol),
+    ranks: Object.fromEntries(rows.map((row) => [row.symbol, row.whitelistRank])),
+    rows,
+    excluded: { invalidSymbols: [] },
+  };
+}
+
+export function buildFixtureBinanceMajorUniverse(options = {}) {
+  const whitelistResult = options.whitelistResult || parseBinanceMajorWhitelist({ env: {} });
+  const exchangeInfo = {
+    symbols: whitelistResult.symbols.map((symbol) => ({
+      symbol: symbol.replace('/', ''),
+      baseAsset: baseAssetFromCanonicalSymbol(symbol),
+      quoteAsset: 'USDT',
+      status: 'TRADING',
+      isSpotTradingAllowed: true,
+    })),
+  };
+  return buildBinanceMajorUniverse({ exchangeInfo, whitelistResult, fetchedAt: options.fetchedAt });
+}
+
 export function buildFixtureBinanceTopVolumeUniverse({ limit = DEFAULT_BINANCE_TOP_VOLUME_LIMIT } = {}) {
   const bases = [
     'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'TRX', 'LINK', 'AVAX',
@@ -221,27 +404,65 @@ async function fetchJson(url, timeoutMs) {
   }
 }
 
+function warnMajorUniverse(universe, warnFn = console.error) {
+  if (universe?.available !== false || typeof warnFn !== 'function') return;
+  const invalid = (universe.invalidSymbols || []).map((item) => item.symbol).join(',');
+  warnFn(`[LUNA][CRITICAL] Binance major universe fail-closed: ${universe.warning}${invalid ? ` invalid=${invalid}` : ''}`);
+}
+
 export async function fetchBinanceTopVolumeUniverse(options = {}) {
+  const modeResult = resolveCryptoUniverseMode({ env: options.env || process.env });
+  if (!modeResult.valid) {
+    const universe = unavailableMajorUniverse({
+      whitelistResult: { valid: false, symbols: [], source: 'env', reason: modeResult.reason },
+      reason: modeResult.reason,
+    });
+    warnMajorUniverse(universe, options.warnFn);
+    return universe;
+  }
   const limit = fixedLimit(options.limit);
   const quote = normalizedQuote(options.quote);
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
-  if (options.dryRun || options.fixture) return buildFixtureBinanceTopVolumeUniverse({ limit });
+  if (modeResult.mode === 'top_volume') {
+    if (options.dryRun || options.fixture) return buildFixtureBinanceTopVolumeUniverse({ limit });
 
-  const [exchangeInfo, tickerRows] = await Promise.all([
-    fetchJson(`${BINANCE_BASE}/api/v3/exchangeInfo?permissions=SPOT`, timeoutMs),
-    fetchJson(`${BINANCE_BASE}/api/v3/ticker/24hr`, timeoutMs),
-  ]);
-  return buildBinanceTopVolumeUniverse({ exchangeInfo, tickerRows, limit, quote });
+    const [exchangeInfo, tickerRows] = await Promise.all([
+      fetchJson(`${BINANCE_BASE}/api/v3/exchangeInfo?permissions=SPOT`, timeoutMs),
+      fetchJson(`${BINANCE_BASE}/api/v3/ticker/24hr`, timeoutMs),
+    ]);
+    return buildBinanceTopVolumeUniverse({ exchangeInfo, tickerRows, limit, quote });
+  }
+
+  const whitelistResult = parseBinanceMajorWhitelist({ env: options.env || process.env, value: options.whitelist });
+  if (!whitelistResult.valid) {
+    const universe = unavailableMajorUniverse({ whitelistResult, reason: whitelistResult.reason });
+    warnMajorUniverse(universe, options.warnFn);
+    return universe;
+  }
+  if (options.dryRun || options.fixture) {
+    return buildFixtureBinanceMajorUniverse({ whitelistResult });
+  }
+  const exchangeInfo = options.exchangeInfo
+    || await fetchJson(`${BINANCE_BASE}/api/v3/exchangeInfo?permissions=SPOT`, timeoutMs);
+  const universe = buildBinanceMajorUniverse({ exchangeInfo, whitelistResult });
+  warnMajorUniverse(universe, options.warnFn);
+  return universe;
 }
 
 export async function getCachedBinanceTopVolumeUniverse(options = {}) {
   const now = Date.now();
   const ttlMs = Math.max(1_000, Number(options.ttlMs || DEFAULT_CACHE_TTL_MS));
-  if (!options.refresh && cachedUniverse && (now - cachedUniverse.cachedAtMs) < ttlMs) {
+  const env = options.env || process.env;
+  const modeResult = resolveCryptoUniverseMode({ env });
+  const whitelistKey = modeResult.mode === 'major'
+    ? String(options.whitelist ?? env.LUNA_CRYPTO_MAJOR_WHITELIST ?? 'default')
+    : 'legacy';
+  const cacheKey = `${modeResult.valid}:${modeResult.mode}:${whitelistKey}`;
+  if (!options.refresh && cachedUniverse && cachedUniverse.cacheKey === cacheKey && (now - cachedUniverse.cachedAtMs) < ttlMs) {
     return cachedUniverse.value;
   }
   const value = await fetchBinanceTopVolumeUniverse(options);
-  cachedUniverse = { cachedAtMs: now, value };
+  cachedUniverse = { cachedAtMs: now, cacheKey, value };
   return value;
 }
 
@@ -259,20 +480,43 @@ export function evaluateBinanceTopVolumeUniverseGate(symbol, universe = null) {
       limit: universe?.limit || DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
     };
   }
+  const universeMode = universe?.mode === 'major'
+    || universe?.source === BINANCE_MAJOR_UNIVERSE_SOURCE
+    ? 'major'
+    : universe?.source === BINANCE_TOP_VOLUME_SOURCE
+      ? 'top_volume'
+      : resolveCryptoUniverseMode().mode;
+  const blockReason = resolveBinanceUniverseBlockReason(universe);
+  const passReason = universeMode === 'major'
+    ? 'in_binance_major_universe'
+    : 'in_binance_top30_volume_universe';
   const rank = universe?.ranks?.[canonical] || null;
   const ok = Number(rank || 0) >= 1 && Number(rank || 0) <= Number(universe?.limit || DEFAULT_BINANCE_TOP_VOLUME_LIMIT);
   return {
     ok,
     blocked: !ok,
-    reason: ok ? 'in_binance_top30_volume_universe' : BINANCE_TOP_VOLUME_BLOCK_REASON,
-    code: ok ? 'in_binance_top30_volume_universe' : BINANCE_TOP_VOLUME_BLOCK_REASON,
+    reason: ok ? passReason : blockReason,
+    code: ok ? passReason : blockReason,
     symbol: canonical,
     canonicalSymbol: canonical,
     rank,
     limit: universe?.limit || DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
     source: universe?.source || BINANCE_TOP_VOLUME_SOURCE,
     fetchedAt: universe?.fetchedAt || null,
+    ...(universeMode === 'major' ? { mode: universeMode, failClosed: universe?.failClosed === true } : {}),
   };
+}
+
+export function resolveBinanceUniverseBlockReason(universe = null, env = process.env) {
+  const universeMode = universe?.mode === 'major'
+    || universe?.source === BINANCE_MAJOR_UNIVERSE_SOURCE
+    ? 'major'
+    : universe?.source === BINANCE_TOP_VOLUME_SOURCE
+      ? 'top_volume'
+      : resolveCryptoUniverseMode({ env }).mode;
+  return universeMode === 'major'
+    ? BINANCE_MAJOR_UNIVERSE_BLOCK_REASON
+    : BINANCE_TOP_VOLUME_LEGACY_BLOCK_REASON;
 }
 
 export function filterSymbolsByBinanceTopVolumeUniverse(symbols = [], universe = null) {
@@ -287,13 +531,23 @@ export function filterSymbolsByBinanceTopVolumeUniverse(symbols = [], universe =
 }
 
 export default {
-  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  BINANCE_MAJOR_UNIVERSE_BLOCK_REASON,
+  BINANCE_MAJOR_UNIVERSE_SOURCE,
+  BINANCE_MAJOR_WHITELIST_SOURCE,
+  BINANCE_TOP_VOLUME_LEGACY_BLOCK_REASON,
+  DEFAULT_BINANCE_MAJOR_WHITELIST,
+  DEFAULT_BINANCE_MAJOR_UNIVERSE_LIMIT,
   DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
   fetchBinanceTopVolumeUniverse,
+  resolveBinanceUniverseBlockReason,
   getCachedBinanceTopVolumeUniverse,
   buildBinanceTopVolumeUniverse,
+  buildBinanceMajorUniverse,
+  buildFixtureBinanceMajorUniverse,
   buildFixtureBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
   filterSymbolsByBinanceTopVolumeUniverse,
   normalizeBinanceUsdtSymbol,
+  parseBinanceMajorWhitelist,
+  resolveCryptoUniverseMode,
 };

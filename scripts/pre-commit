@@ -93,6 +93,7 @@ if [ -n "$JS_STAGED" ]; then
   # 시크릿 검사 제외 파일 (체크섬, 해시 파일 등 오탐 방지)
   SECRET_SKIP_FILES=(
     ".checksums.json"
+    "luna-binance-major-universe-smoke.ts"  # HG-2 롤백 동등성 SHA-256 어서션 상수 (오탐 방지·2026-07-17)
   )
 
   for pattern in "${SECRET_PATTERNS[@]}"; do
