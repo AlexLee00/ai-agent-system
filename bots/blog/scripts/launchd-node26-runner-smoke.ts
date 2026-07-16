@@ -6,6 +6,8 @@ import { execFileSync } from 'node:child_process';
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const launchdDir = path.join(repoRoot, 'bots/blog/launchd');
+// B3 소셜 분리(runTsB3 삭제 어서션과 정합). 재개 시 bots/social-media 소유 plist로 신규 설계한다.
+// instagram-token-health와 instagram-token-refresh는 각각 2026-04-12/04-21 추가된 별도 plist였고, 2026-06-13 각각 삭제됐다.
 const checkedPlists = [
   'ai.blog.bestseller-sync.plist',
   'ai.blog.collect-competition.plist',
@@ -14,10 +16,7 @@ const checkedPlists = [
   'ai.blog.commenter.plist',
   'ai.blog.crank-tracker.plist',
   'ai.blog.daily.plist',
-  'ai.blog.facebook-publish.plist',
   'ai.blog.health-check.plist',
-  'ai.blog.instagram-publish.plist',
-  'ai.blog.instagram-token-refresh.plist',
   'ai.blog.neighbor-commenter.plist',
   'ai.blog.neighbor-sympathy.plist',
   'ai.blog.reddit-trends.plist',
