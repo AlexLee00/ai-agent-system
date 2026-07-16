@@ -701,14 +701,17 @@ async function test_missing_auto_dev_document_is_skipped() {
   const tmpRoot = makeTempRoot();
   const missingDoc = path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_missing.md');
 
-  const { mocks } = makeMocks(tmpRoot);
+  const { mocks, alarms, autoDevOutcomes } = makeMocks(tmpRoot);
   await withMocks(mocks, async pipeline => {
     const result = await pipeline.processAutoDevDocument(missingDoc, { shadow: true });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.skipped, true);
-    assert.strictEqual(result.reason, 'missing_document');
-    assert.strictEqual(result.job?.stage, 'missing_document');
+    assert.strictEqual(result.reason, 'skipped_missing_doc');
+    assert.strictEqual(result.job?.stage, 'skipped_missing_doc');
   }, testEnv(tmpRoot));
+  assert.strictEqual(alarms.length, 0);
+  assert.strictEqual(autoDevOutcomes.length, 1);
+  assert.strictEqual(autoDevOutcomes[0].outcome, 'skipped_missing_doc');
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: missing docs are skipped without fatal error');
@@ -717,6 +720,20 @@ async function test_missing_auto_dev_document_is_skipped() {
 async function test_missing_auto_dev_document_after_listing_is_skipped() {
   const tmpRoot = makeTempRoot();
   const missingDoc = path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_raced.md');
+  const relPath = path.relative(tmpRoot, missingDoc).replace(/\\/g, '/');
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  fs.writeFileSync(statePath, JSON.stringify({
+    jobs: {
+      raced: {
+        id: 'raced',
+        relPath,
+        contentHash: 'old-content-hash',
+        status: 'running',
+        stage: 'implementation',
+        updatedAt: new Date().toISOString(),
+      },
+    },
+  }), 'utf8');
   const enoent = new Error(`ENOENT: no such file or directory, open '${missingDoc}'`);
   enoent.code = 'ENOENT';
   const fsMock = {
@@ -728,14 +745,20 @@ async function test_missing_auto_dev_document_after_listing_is_skipped() {
     },
   };
 
-  const { mocks } = makeMocks(tmpRoot, { fs: fsMock });
+  const { mocks, alarms, autoDevOutcomes } = makeMocks(tmpRoot, { fs: fsMock });
   await withMocks(mocks, async pipeline => {
     const result = await pipeline.processAutoDevDocument(missingDoc, { shadow: true });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(result.skipped, true);
-    assert.strictEqual(result.reason, 'missing_document');
-    assert.strictEqual(result.job?.stage, 'missing_document');
+    assert.strictEqual(result.reason, 'skipped_missing_doc');
+    assert.strictEqual(result.job?.stage, 'skipped_missing_doc');
+    const state = pipeline.loadState();
+    assert.strictEqual(state.jobs.raced.status, 'skipped');
+    assert.strictEqual(state.jobs.raced.stage, 'skipped_missing_doc');
   }, testEnv(tmpRoot));
+  assert.strictEqual(alarms.length, 0);
+  assert.strictEqual(autoDevOutcomes.length, 1);
+  assert.strictEqual(autoDevOutcomes[0].outcome, 'skipped_missing_doc');
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: docs removed after listing are skipped without fatal error');
@@ -1241,6 +1264,124 @@ async function test_auto_dev_failed_outcome_masks_secrets() {
   assert.ok(!autoDevOutcomes[0].error_summary.includes('plain-secret'));
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: failed outcome masks sensitive error summaries');
+}
+
+async function test_failure_circuit_breaker_dead_letters_once_and_allows_new_hash() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_CIRCUIT_BREAKER.md', '# Circuit\nfail until deferred');
+  const originalContent = fs.readFileSync(doc, 'utf8');
+  const { mocks, alarms } = makeMocks(tmpRoot, {
+    '../src/reviewer.ts': {
+      runReview: async () => ({ summary: { pass: false }, message: 'fixture review failure' }),
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const options = {
+      force: true,
+      test: false,
+      dryRun: true,
+      shadow: false,
+      maxRevisionPasses: 0,
+    };
+    const first = await pipeline.processAutoDevDocument(doc, options);
+    const second = await pipeline.processAutoDevDocument(doc, options);
+    const third = await pipeline.processAutoDevDocument(doc, options);
+
+    assert.strictEqual(first.ok, false);
+    assert.strictEqual(first.job.failureAttempts, 1);
+    assert.strictEqual(second.ok, false);
+    assert.strictEqual(second.job.failureAttempts, 2);
+    assert.strictEqual(third.ok, true);
+    assert.strictEqual(third.skipped, true);
+    assert.strictEqual(third.reason, 'dead_letter');
+    assert.strictEqual(third.job.status, 'dead_letter');
+    assert.strictEqual(third.job.failureAttempts, 3);
+    assert.ok(third.job.deadLetteredAt);
+    assert.ok(fs.existsSync(path.join(tmpRoot, third.job.processedPath)));
+    assert.strictEqual(fs.existsSync(doc), false);
+    assert.doesNotThrow(() => JSON.parse(fs.readFileSync(path.join(tmpRoot, 'auto-dev-state.json'), 'utf8')));
+
+    fs.writeFileSync(doc, originalContent, 'utf8');
+    assert.deepStrictEqual(pipeline.listAutoDevDocuments(), []);
+    assert.strictEqual(fs.existsSync(doc), false);
+
+    fs.writeFileSync(doc, originalContent, 'utf8');
+    const sameHash = await pipeline.processAutoDevDocument(doc, options);
+    assert.strictEqual(sameHash.ok, true);
+    assert.strictEqual(sameHash.skipped, true);
+    assert.strictEqual(sameHash.reason, 'dead_letter_same_content');
+    assert.strictEqual(fs.existsSync(doc), false);
+
+    fs.writeFileSync(doc, `${originalContent}\nnew requirement`, 'utf8');
+    assert.deepStrictEqual(pipeline.listAutoDevDocuments(), [doc]);
+    const newHash = await pipeline.processAutoDevDocument(doc, options);
+    assert.strictEqual(newHash.ok, false);
+    assert.notStrictEqual(newHash.job.id, third.job.id);
+    assert.strictEqual(newHash.job.failureAttempts, 1);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_MAX_ATTEMPTS: '3',
+  }));
+
+  const deadLetterAlarms = alarms.filter(alarm => alarm.eventType === 'auto_dev_dead_letter');
+  assert.strictEqual(deadLetterAlarms.length, 1, 'dead-letter master alarm must be emitted once per content hash');
+  assert.strictEqual(
+    alarms.filter(alarm => alarm.alertLevel === 3).length,
+    1,
+    'retryable failures must not emit duplicate master error alarms before dead-letter',
+  );
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: failure circuit breaker dead-letters once and allows new content hash');
+}
+
+async function test_dead_letter_move_failure_stays_terminal() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_MOVE_FAILURE.md', '# Move\nfail safely');
+  const statePath = path.join(tmpRoot, 'auto-dev-state.json');
+  let observedTerminalStateBeforeMove = false;
+  const fsMock = {
+    ...fs,
+    copyFileSync: (source, destination, flags) => {
+      if (String(destination).includes(`${path.sep}processed${path.sep}`)) {
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+        observedTerminalStateBeforeMove = Object.values(state.jobs || {})
+          .some(job => job.status === 'dead_letter');
+        const error = new Error('fixture processed directory is read-only');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return fs.copyFileSync(source, destination, flags);
+    },
+  };
+  const { mocks, alarms } = makeMocks(tmpRoot, {
+    fs: fsMock,
+    '../src/reviewer.ts': {
+      runReview: async () => ({ summary: { pass: false }, message: 'fixture review failure' }),
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const options = { force: true, test: false, dryRun: true, shadow: false, maxRevisionPasses: 0 };
+    const terminal = await pipeline.processAutoDevDocument(doc, options);
+    assert.strictEqual(terminal.reason, 'dead_letter');
+    assert.strictEqual(terminal.job.status, 'dead_letter');
+    assert.strictEqual(terminal.job.processedMove.ok, false);
+    assert.strictEqual(terminal.job.processedMove.reason, 'processed_move_failed');
+    assert.strictEqual(observedTerminalStateBeforeMove, true);
+    assert.strictEqual(fs.existsSync(doc), true);
+    assert.deepStrictEqual(pipeline.listAutoDevDocuments(), []);
+
+    const duplicate = await pipeline.processAutoDevDocument(doc, options);
+    assert.strictEqual(duplicate.reason, 'dead_letter_same_content');
+    assert.strictEqual(duplicate.job.status, 'dead_letter');
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_MAX_ATTEMPTS: '1',
+  }));
+
+  assert.strictEqual(alarms.filter(alarm => alarm.eventType === 'auto_dev_dead_letter').length, 1);
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: processed move failure cannot reopen a dead-lettered job');
 }
 
 async function test_record_outcome_accepts_refactor_meta_tags() {
@@ -1790,56 +1931,146 @@ async function test_launchd_plist_defaults_are_safe() {
   console.log('✅ auto-dev: launchd plist safe defaults verified');
 }
 
-async function test_codex_cli_missing_configured_path_falls_back_to_path() {
+async function test_codex_cli_path_precedence_and_fallback_chain() {
   const tmpRoot = makeTempRoot();
+  const configuredCli = path.join(tmpRoot, 'bin', 'codex-pinned');
+  fs.mkdirSync(path.dirname(configuredCli), { recursive: true });
+  fs.writeFileSync(configuredCli, '#!/bin/sh\n', 'utf8');
+  fs.chmodSync(configuredCli, 0o755);
   const { mocks } = makeMocks(tmpRoot);
   const originalExecFileSync = mocks['child_process'].execFileSync;
   mocks['child_process'].execFileSync = (command, args = [], options = {}) => {
+    if (command === 'bash' && String(args[1] || '').includes('codex-wrapper')) {
+      return '/usr/local/bin/codex-wrapper\n';
+    }
     if (command === 'bash' && args[1] === 'command -v codex') return '/opt/homebrew/bin/codex\n';
-    if (command === 'codex') return 'ok';
+    if (command === configuredCli || command === 'codex') return 'ok';
     return originalExecFileSync(command, args, options);
   };
 
   await withMocks(mocks, async pipeline => {
-    const result = pipeline._testOnly_resolveCodexCliCommand();
-    assert.deepStrictEqual(result, {
+    const configured = pipeline._testOnly_resolveCodexCliCommand();
+    assert.deepStrictEqual(configured, {
       ok: true,
-      command: 'codex',
-      resolvedPath: '/opt/homebrew/bin/codex',
-      source: 'PATH_FALLBACK',
-      warning: '설정된 Codex CLI 경로를 찾지 못해 PATH 실행기를 사용합니다: /Applications/Codex.app/Contents/Resources/codex',
+      command: configuredCli,
+      source: 'CODEX_CLI_PATH',
     });
     const execution = pipeline._testOnly_runCodexImplementation('test prompt', {
       cliModelArg: 'gpt-5.4',
     }, {}, tmpRoot);
     assert.strictEqual(execution.pass, true);
-    assert.strictEqual(execution.warning, result.warning);
+    assert.strictEqual(execution.cli, configuredCli);
   }, testEnv(tmpRoot, {
-    CLAUDE_AUTO_DEV_CODEX_CLI: '/Applications/Codex.app/Contents/Resources/codex',
+    CODEX_CLI_PATH: configuredCli,
+    CLAUDE_AUTO_DEV_CODEX_CLI: '',
+    CODEX_CLI: '',
+  }));
+
+  fs.rmSync(configuredCli, { force: true });
+  await withMocks(mocks, async pipeline => {
+    const fallback = pipeline._testOnly_resolveCodexCliCommand();
+    assert.deepStrictEqual(fallback, {
+      ok: true,
+      command: 'codex',
+      resolvedPath: '/opt/homebrew/bin/codex',
+      source: 'PATH',
+      warning: `CODEX_CLI_PATH를 찾지 못해 PATH의 codex를 사용합니다: ${configuredCli}`,
+    });
+  }, testEnv(tmpRoot, {
+    CODEX_CLI_PATH: configuredCli,
+    CLAUDE_AUTO_DEV_CODEX_CLI: '',
+    CODEX_CLI: '',
+  }));
+
+  await withMocks(mocks, async pipeline => {
+    assert.deepStrictEqual(pipeline._testOnly_resolveCodexCliCommand(), {
+      ok: true,
+      command: 'codex-wrapper',
+      resolvedPath: '/usr/local/bin/codex-wrapper',
+      source: 'PATH',
+    });
+  }, testEnv(tmpRoot, {
+    CODEX_CLI_PATH: '',
+    CLAUDE_AUTO_DEV_CODEX_CLI: 'codex-wrapper',
+    CODEX_CLI: '',
+  }));
+
+  const legacyPath = '/Applications/Codex.app/Contents/Resources/codex';
+  const legacyFsMock = {
+    ...fs,
+    existsSync: filePath => (filePath === legacyPath ? true : fs.existsSync(filePath)),
+    statSync: filePath => (filePath === legacyPath ? { isFile: () => true } : fs.statSync(filePath)),
+    accessSync: filePath => (filePath === legacyPath ? undefined : fs.accessSync(filePath, fs.constants.X_OK)),
+  };
+  const { mocks: legacyMocks } = makeMocks(tmpRoot, { fs: legacyFsMock });
+  legacyMocks['child_process'].execFileSync = (command, args = []) => {
+    if (command === 'bash' && args[1] === 'command -v codex') throw new Error('codex not found');
+    return '';
+  };
+  await withMocks(legacyMocks, async pipeline => {
+    assert.deepStrictEqual(pipeline._testOnly_resolveCodexCliCommand(), {
+      ok: true,
+      command: legacyPath,
+      source: 'legacy_path',
+    });
+  }, testEnv(tmpRoot, {
+    CODEX_CLI_PATH: '',
+    CLAUDE_AUTO_DEV_CODEX_CLI: '',
+    CODEX_CLI: '',
   }));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  console.log('✅ auto-dev: missing legacy Codex path falls back to PATH');
+  console.log('✅ auto-dev: Codex CLI resolves CODEX_CLI_PATH before PATH fallback');
 }
 
-async function test_codex_cli_missing_custom_path_fails_closed() {
+async function test_codex_cli_unavailable_is_non_retryable_and_trips_breaker() {
   const tmpRoot = makeTempRoot();
-  const { mocks } = makeMocks(tmpRoot);
-  mocks['child_process'].execFileSync = command => {
-    if (command === 'bash') return '/opt/homebrew/bin/codex\n';
-    throw new Error(`unexpected command: ${command}`);
+  const doc = makeDoc(tmpRoot, 'CODEX_NO_CLI.md', '# CLI\nunavailable');
+  const legacyPath = '/Applications/Codex.app/Contents/Resources/codex';
+  const missingConfiguredPath = path.join(tmpRoot, 'missing', 'codex');
+  const fsMock = {
+    ...fs,
+    existsSync: filePath => (filePath === legacyPath ? false : fs.existsSync(filePath)),
+  };
+  const { mocks, alarms } = makeMocks(tmpRoot, { fs: fsMock });
+  mocks['child_process'].execFileSync = (command, args = []) => {
+    if (command === 'bash' && args[1] === 'command -v codex') throw new Error('codex not found');
+    if (command === 'rg') throw new Error('no match');
+    return '';
   };
 
   await withMocks(mocks, async pipeline => {
-    const result = pipeline._testOnly_resolveCodexCliCommand();
-    assert.strictEqual(result.ok, false);
-    assert.match(result.error, /\/opt\/pinned\/codex-1\.2\.3/);
+    const resolution = pipeline._testOnly_resolveCodexCliCommand();
+    assert.strictEqual(resolution.ok, false);
+    assert.strictEqual(resolution.reason, 'codex_cli_unavailable');
+    assert.strictEqual(resolution.nonRetryable, true);
+
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      shadow: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.reason, 'dead_letter');
+    assert.strictEqual(result.job.status, 'dead_letter');
+    assert.strictEqual(result.job.failureAttempts, 1);
+    assert.strictEqual(result.job.nonRetryableReason, 'codex_cli_unavailable');
+    assert.ok(result.job.failedAt);
+    assert.ok(result.job.deadLetteredAt);
   }, testEnv(tmpRoot, {
-    CLAUDE_AUTO_DEV_CODEX_CLI: '/opt/pinned/codex-1.2.3',
+    CODEX_CLI_PATH: missingConfiguredPath,
+    CLAUDE_AUTO_DEV_CODEX_CLI: '',
+    CODEX_CLI: '',
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
   }));
 
+  assert.strictEqual(alarms.filter(alarm => alarm.eventType === 'auto_dev_dead_letter').length, 1);
+
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  console.log('✅ auto-dev: missing custom Codex path fails closed');
+  console.log('✅ auto-dev: missing Codex CLI trips non-retryable breaker immediately');
 }
 
 async function test_profile_resolver_maps_runtime_profiles() {
@@ -2455,6 +2686,80 @@ async function test_test_scope_normalizes_silent_hub_commands() {
   console.log('✅ auto-dev: silent hub scoped test_scope commands are normalized');
 }
 
+async function test_test_scope_npm_boundary_matrix() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const allowed = [
+      'npm --prefix bots/blog run -s test:unit',
+      'npm --prefix bots/reservation run --silent typecheck',
+      'npm run -s test:unit --prefix bots/claude',
+    ];
+    const valid = pipeline._testOnly_resolveScopedTestCommands({
+      metadata: { test_scope: allowed },
+    }, tmpRoot);
+    assert.deepStrictEqual(valid.rejected, []);
+    assert.deepStrictEqual(valid.commands, [
+      "npm --prefix 'bots/blog' run test:unit",
+      "npm --prefix 'bots/reservation' run typecheck",
+      "npm --prefix 'bots/claude' run test:unit",
+    ]);
+
+    const blocked = [
+      'npm --prefix bots/blog run test:unit; touch /tmp/pwned',
+      'npm --prefix bots/blog run test:unit && whoami',
+      'npm --prefix bots/blog run test:unit | cat',
+      'npm --prefix bots/blog run test:unit $(id)',
+      'npm --prefix bots/blog run test:unit `id`',
+      'npm --prefix bots/claude/../hub run test:unit',
+    ];
+    for (const entry of blocked) {
+      const invalid = pipeline._testOnly_resolveScopedTestCommands({
+        metadata: { test_scope: [entry] },
+      }, tmpRoot);
+      assert.strictEqual(invalid.commands.length, 0, entry);
+      assert.strictEqual(invalid.rejected.length, 1, entry);
+      if (/[;&|$`]/.test(entry)) {
+        assert.strictEqual(invalid.rejected[0].reason, 'shell_meta_character', entry);
+      } else {
+        assert.match(invalid.rejected[0].reason, /prefix_not_allowlisted|prefix_invalid/, entry);
+      }
+    }
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: test_scope accepts bots/<team> npm commands and blocks shell boundaries');
+}
+
+async function test_test_scope_configured_prefix_allowlist_is_authoritative() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const scoped = pipeline._testOnly_resolveScopedTestCommands({
+      metadata: { test_scope: ['npm --prefix bots/reservation run typecheck'] },
+    }, tmpRoot);
+    assert.deepStrictEqual(scoped.commands, []);
+    assert.deepStrictEqual(scoped.rejected, [{
+      entry: 'npm --prefix bots/reservation run typecheck',
+      reason: 'prefix_not_allowlisted:bots/reservation',
+    }]);
+    assert.deepStrictEqual(scoped.prefixAllowlist, ['bots/claude', 'packages/core']);
+
+    const configuredNonBotPrefix = pipeline._testOnly_resolveScopedTestCommands({
+      metadata: { test_scope: ['npm --prefix packages/core run typecheck'] },
+    }, tmpRoot);
+    assert.deepStrictEqual(configuredNonBotPrefix.rejected, []);
+    assert.deepStrictEqual(configuredNonBotPrefix.commands, ["npm --prefix 'packages/core' run typecheck"]);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_TEST_SCOPE_PREFIX_ALLOWLIST: 'bots/claude,packages/core',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: configured test_scope prefix allowlist is authoritative');
+}
+
 async function test_archive_manifest_is_created() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_ARCHIVE_MANIFEST.md', '# Archive\nmanifest');
@@ -3065,6 +3370,8 @@ async function main() {
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
     test_auto_dev_failed_outcome_masks_secrets,
+    test_failure_circuit_breaker_dead_letters_once_and_allows_new_hash,
+    test_dead_letter_move_failure_stays_terminal,
     test_record_outcome_accepts_refactor_meta_tags,
     test_stale_running_job_retries_with_recovery_count,
     test_stale_running_job_blocks_after_recovery_exhaustion,
@@ -3083,8 +3390,8 @@ async function main() {
     test_job_lock_blocks_duplicate_document_execution,
     test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
-    test_codex_cli_missing_configured_path_falls_back_to_path,
-    test_codex_cli_missing_custom_path_fails_closed,
+    test_codex_cli_path_precedence_and_fallback_chain,
+    test_codex_cli_unavailable_is_non_retryable_and_trips_breaker,
     test_profile_resolver_maps_runtime_profiles,
     test_profile_authoritative_blocks_legacy_overrides,
     test_profile_compatibility_mode_allows_legacy_overrides,
@@ -3102,6 +3409,8 @@ async function main() {
     test_test_scope_rejects_unsafe_shell_command,
     test_test_scope_allows_hub_scoped_commands,
     test_test_scope_normalizes_silent_hub_commands,
+    test_test_scope_npm_boundary_matrix,
+    test_test_scope_configured_prefix_allowlist_is_authoritative,
     test_archive_manifest_is_created,
     test_archive_manifest_failure_is_fail_closed,
     test_archive_manifest_failure_does_not_push_direct_commit,

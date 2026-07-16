@@ -34,6 +34,7 @@ const gitOps = require('./git-ops.ts');
 const ROOT = env.PROJECT_ROOT;
 const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
 const AUTO_DEV_ARCHIVE_DIR = path.join(ROOT, 'docs', 'archive', 'codex-completed');
+const AUTO_DEV_PROCESSED_DIR = path.join(AUTO_DEV_DIR, 'processed');
 const WORKSPACE = runtimePaths.workspaceDir();
 const STATE_FILE = process.env.CLAUDE_AUTO_DEV_STATE_FILE ||
   path.join(WORKSPACE, 'claude-auto-dev-state.json');
@@ -55,6 +56,11 @@ function parseNonNegativeIntegerEnv(value, fallback) {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return Math.floor(parsed);
+}
+
+function parsePositiveIntegerEnv(value, fallback) {
+  const parsed = parseNonNegativeIntegerEnv(value, fallback);
+  return parsed > 0 ? parsed : fallback;
 }
 
 function maskSensitiveText(value, maxLength = 1000) {
@@ -89,6 +95,7 @@ const DEFAULT_LOCK_TTL_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_TTL_MS || 15
 const DEFAULT_LOCK_HEARTBEAT_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_HEARTBEAT_MS || 60 * 1000);
 const DEFAULT_RUNNING_STALE_MS = Number(process.env.CLAUDE_AUTO_DEV_RUNNING_STALE_MS || 30 * 60 * 1000);
 const MAX_STALE_RECOVERY = parseNonNegativeIntegerEnv(process.env.CLAUDE_AUTO_DEV_MAX_STALE_RECOVERY, 3);
+const MAX_FAILURE_ATTEMPTS = parsePositiveIntegerEnv(process.env.CLAUDE_AUTO_DEV_MAX_ATTEMPTS, 3);
 const DEFAULT_TARGET_TEAM = String(process.env.CLAUDE_AUTO_DEV_TARGET_TEAM || 'claude').toLowerCase();
 const AUTO_DEV_ARTIFACT_DIR = process.env.CLAUDE_AUTO_DEV_ARTIFACT_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-artifacts');
@@ -1134,6 +1141,16 @@ function isExecutableFile(candidate) {
   }
 }
 
+function isExecutableCommandFile(candidate) {
+  if (!isExecutableFile(candidate)) return false;
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isHomebrewCellarNodePath(candidate) {
   return /\/(?:opt\/homebrew|usr\/local)\/Cellar\/node\/[^/]+\/bin\/node$/.test(String(candidate || ''));
 }
@@ -1435,7 +1452,15 @@ function safeReadJson(filePath, fallback = {}) {
 
 function saveJson(filePath, value) {
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+  const tempPath = `${filePath}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(value, null, 2), 'utf8');
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch {}
+  }
 }
 
 function loadState() {
@@ -1491,8 +1516,73 @@ function reconcileMissingRunningJobs(state = loadState()) {
   return { state, changed };
 }
 
+function moveAutoDevDocumentToProcessed(filePath, contentHash) {
+  const ext = path.extname(filePath) || '.md';
+  const stem = path.basename(filePath, ext);
+  const destination = path.join(AUTO_DEV_PROCESSED_DIR, `${stem}.${contentHash}${ext}`);
+  ensureDir(AUTO_DEV_PROCESSED_DIR);
+
+  if (!fs.existsSync(filePath)) {
+    return fs.existsSync(destination)
+      ? { ok: true, path: destination, relPath: relativeToRoot(destination), alreadyMoved: true }
+      : { ok: false, reason: 'source_missing' };
+  }
+
+  try {
+    fs.copyFileSync(filePath, destination, fs.constants.COPYFILE_EXCL);
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    const existingHash = hashContent(fs.readFileSync(destination, 'utf8'));
+    if (existingHash !== contentHash) throw error;
+  }
+
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  return { ok: true, path: destination, relPath: relativeToRoot(destination) };
+}
+
+function tryMoveAutoDevDocumentToProcessed(filePath, contentHash) {
+  try {
+    return moveAutoDevDocumentToProcessed(filePath, contentHash);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: 'processed_move_failed',
+      error: maskSensitiveText(error?.message || error, 500),
+    };
+  }
+}
+
+function reconcileDeadLetterDocuments() {
+  const manifest = loadAutoDevManifest(AUTO_DEV_DIR);
+  for (const [relPath, entry] of Object.entries(manifest?.entries || {})) {
+    if (entry?.state !== 'dead_letter') continue;
+    const filePath = path.join(ROOT, relPath);
+    if (!fs.existsSync(filePath)) continue;
+    let contentHash = '';
+    try {
+      contentHash = hashContent(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (contentHash === entry.contentHash) {
+      tryMoveAutoDevDocumentToProcessed(filePath, contentHash);
+      continue;
+    }
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'inbox', {
+      contentHash,
+      deadLetteredAt: null,
+      updatedAt: nowIso(),
+    });
+  }
+}
+
 function listAutoDevDocuments() {
   ensureDir(AUTO_DEV_DIR);
+  reconcileDeadLetterDocuments();
   const manifestOptions = { autoDevStateFile: STATE_FILE };
   syncAutoDevManifest(AUTO_DEV_DIR, manifestOptions);
   return listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox', 'claimed', 'active', 'failed'], manifestOptions)
@@ -1817,6 +1907,50 @@ async function sendStageAlarm(job, stageId, details = '', options = {}, payload 
   });
 }
 
+async function sendDeadLetterAlarm(job, errorSummary, options = {}) {
+  const runtimeConfig = getRuntimeConfig(options);
+  const shadow = options.shadow ?? runtimeConfig.shadow;
+  const message = [
+    '[auto_dev] 반복 실패 서킷브레이커 작동',
+    `문서: ${job.relPath}`,
+    `작업: ${job.id}`,
+    `시도: ${job.failureAttempts}/${job.maxFailureAttempts}`,
+    `오류: ${maskSensitiveText(errorSummary, 1200)}`,
+    `보관: ${job.processedPath || (job.processedMove?.reason === 'pending' ? 'processed_move_pending' : 'move_failed')}`,
+  ].join('\n');
+  if (shadow || options.test) {
+    console.log(`[auto-dev] [SHADOW] dead_letter: ${job.relPath}`);
+    return { ok: true, shadow: true, message };
+  }
+  try {
+    return await postAlarm({
+      message,
+      team: 'claude',
+      alertLevel: 3,
+      alarmType: 'error',
+      fromBot: 'auto-dev',
+      visibility: 'human_action',
+      actionability: 'needs_human',
+      incidentKey: `auto-dev:dead-letter:${job.id}`,
+      title: 'auto_dev dead_letter',
+      eventType: 'auto_dev_dead_letter',
+      payload: {
+        event_type: 'auto_dev_dead_letter',
+        job_id: job.id,
+        rel_path: job.relPath,
+        content_hash: job.contentHash,
+        attempts: job.failureAttempts,
+        max_attempts: job.maxFailureAttempts,
+        processed_path: job.processedPath || null,
+        non_retryable_reason: job.nonRetryableReason || null,
+      },
+    });
+  } catch (error) {
+    console.warn(`[auto-dev] dead-letter notification failed: ${error?.message || error}`);
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
 function loadPrompt(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
@@ -1915,58 +2049,89 @@ function resolveClaudeCliCommand() {
 
 function resolveCodexCliCommand() {
   const legacyCodexCliPath = '/Applications/Codex.app/Contents/Resources/codex';
-  const configuredFromEnv = process.env.CLAUDE_AUTO_DEV_CODEX_CLI || process.env.CODEX_CLI;
-  const configured = String(configuredFromEnv || 'codex').trim();
-  if (!configured) {
-    return { ok: false, error: 'Codex CLI 경로가 비어 있습니다. CLAUDE_AUTO_DEV_CODEX_CLI 또는 CODEX_CLI를 확인하세요.' };
-  }
+  const configuredRaw = process.env.CODEX_CLI_PATH
+    || process.env.CLAUDE_AUTO_DEV_CODEX_CLI
+    || process.env.CODEX_CLI
+    || '';
+  const configured = String(configuredRaw).trim();
+  let missingConfiguredPath = null;
 
-  if (configured.includes('/') || configured.startsWith('.')) {
-    const resolved = path.isAbsolute(configured) ? configured : path.join(ROOT, configured);
-    if (fs.existsSync(resolved)) return { ok: true, command: resolved, source: 'path' };
-    if (resolved !== legacyCodexCliPath) {
-      return { ok: false, error: `Codex CLI 경로를 찾을 수 없습니다: ${resolved}` };
-    }
+  if (configured && configured !== 'codex' && !configured.includes('/') && !configured.startsWith('.')) {
     try {
-      const lookup = execFileSync('bash', ['-lc', 'command -v codex'], {
+      const lookup = execFileSync('bash', ['-lc', `command -v ${shellQuote(configured)}`], {
         cwd: ROOT,
         encoding: 'utf8',
         timeout: 3000,
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
       if (lookup) {
-        return {
-          ok: true,
-          command: 'codex',
-          resolvedPath: lookup,
-          source: 'PATH_FALLBACK',
-          warning: `설정된 Codex CLI 경로를 찾지 못해 PATH 실행기를 사용합니다: ${resolved}`,
-        };
+        return { ok: true, command: configured, resolvedPath: lookup, source: 'PATH' };
       }
     } catch {}
-    return { ok: false, error: `Codex CLI 경로를 찾을 수 없습니다: ${resolved}` };
+  }
+
+  if (configured && configured !== 'codex' && (configured.includes('/') || configured.startsWith('.'))) {
+    const resolved = path.isAbsolute(configured) ? configured : path.join(ROOT, configured);
+    if (isExecutableCommandFile(resolved)) {
+      return {
+        ok: true,
+        command: resolved,
+        source: process.env.CODEX_CLI_PATH ? 'CODEX_CLI_PATH' : 'legacy_config',
+      };
+    }
+    missingConfiguredPath = resolved;
   }
 
   try {
-    const lookup = execFileSync('bash', ['-lc', `command -v "${configured.replace(/"/g, '\\"')}"`], {
+    const lookup = execFileSync('bash', ['-lc', 'command -v codex'], {
       cwd: ROOT,
       encoding: 'utf8',
       timeout: 3000,
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    if (lookup) return { ok: true, command: configured, resolvedPath: lookup, source: 'PATH' };
+    if (lookup) {
+      return {
+        ok: true,
+        command: 'codex',
+        resolvedPath: lookup,
+        source: 'PATH',
+        ...(missingConfiguredPath
+          ? { warning: `CODEX_CLI_PATH를 찾지 못해 PATH의 codex를 사용합니다: ${missingConfiguredPath}` }
+          : {}),
+      };
+    }
   } catch {}
+
+  if (isExecutableCommandFile(legacyCodexCliPath)) {
+    return {
+      ok: true,
+      command: legacyCodexCliPath,
+      source: 'legacy_path',
+      ...(missingConfiguredPath
+        ? { warning: `CODEX_CLI_PATH와 PATH의 codex를 찾지 못해 레거시 경로를 사용합니다: ${missingConfiguredPath}` }
+        : {}),
+    };
+  }
 
   return {
     ok: false,
-    error: `Codex CLI를 PATH에서 찾을 수 없습니다: ${configured} (CLAUDE_AUTO_DEV_CODEX_CLI 또는 CODEX_CLI 설정 필요)`,
+    reason: 'codex_cli_unavailable',
+    nonRetryable: true,
+    error: `Codex CLI를 찾을 수 없습니다 (CODEX_CLI_PATH -> PATH -> ${legacyCodexCliPath})`,
   };
 }
 
 function runCodexImplementation(prompt, modelMeta, options = {}, cwd = ROOT) {
   const cli = resolveCodexCliCommand();
   if (!cli.ok) {
-    return { pass: false, skipped: false, error: cli.error, modelMeta };
+    return {
+      pass: false,
+      skipped: false,
+      error: cli.error,
+      reason: cli.reason || 'codex_cli_unavailable',
+      nonRetryable: cli.nonRetryable === true,
+      modelMeta,
+    };
   }
 
   const timeout = Number(process.env.CLAUDE_AUTO_DEV_TIMEOUT_MS || 60 * 60 * 1000);
@@ -2218,6 +2383,13 @@ function isAllowedScopedPrefix(relPath, prefixAllowlist = []) {
   return prefixAllowlist.some(prefix => relPath === prefix || relPath.startsWith(`${prefix}/`));
 }
 
+function isAllowedScopedNpmPrefix(relPath, prefixAllowlist = []) {
+  const normalized = String(relPath || '');
+  const configured = toList(process.env.CLAUDE_AUTO_DEV_TEST_SCOPE_PREFIX_ALLOWLIST || '').filter(Boolean);
+  if (configured.length > 0) return prefixAllowlist.includes(normalized);
+  return /^bots\/[A-Za-z0-9._-]+$/.test(normalized) || prefixAllowlist.includes(normalized);
+}
+
 function normalizeScopedNpmTestEntry(entry) {
   const text = toSafeString(entry).replace(/\s+/g, ' ').trim();
   if (!text) return '';
@@ -2242,12 +2414,17 @@ function resolveScopedNpmCommand(entry, {
   prefixAllowlist = [],
   repoRoot = ROOT,
 } = {}) {
+  const rawText = toSafeString(entry).replace(/\s+/g, ' ').trim();
+  const isNpmEntry = /^npm(?:\s|$)/.test(rawText);
+  if (isNpmEntry && /[;&|`$<>]/.test(rawText)) {
+    return { matched: true, ok: false, reason: 'shell_meta_character' };
+  }
   const text = normalizeScopedNpmTestEntry(entry);
   if (!text) return { matched: false, ok: false, reason: 'empty' };
 
   const m1 = text.match(/^npm\s+--prefix\s+([^\s]+)\s+run\s+([A-Za-z0-9:_-]+)$/);
   const m2 = text.match(/^npm\s+run\s+([A-Za-z0-9:_-]+)\s+--prefix\s+([^\s]+)$/);
-  if (!m1 && !m2) return { matched: false, ok: false, reason: 'not_supported_npm_shape' };
+  if (!m1 && !m2) return { matched: isNpmEntry, ok: false, reason: 'not_supported_npm_shape' };
 
   const script = toSafeString(m1 ? m1[2] : m2[1]);
   const prefixRaw = stripQuotes(m1 ? m1[1] : m2[2]);
@@ -2255,7 +2432,7 @@ function resolveScopedNpmCommand(entry, {
   if (!scriptAllowlist.has(script)) {
     return { matched: true, ok: false, reason: `script_not_allowlisted:${script}` };
   }
-  if (!isAllowedScopedPrefix(normalizedPrefix, prefixAllowlist)) {
+  if (!isAllowedScopedNpmPrefix(normalizedPrefix, prefixAllowlist)) {
     return { matched: true, ok: false, reason: `prefix_not_allowlisted:${normalizedPrefix}` };
   }
   const absolutePrefix = path.resolve(repoRoot, normalizedPrefix);
@@ -3111,6 +3288,8 @@ function updateJobState(job, stageId, data = {}) {
   const now = nowIso();
   const nextStatus = stageId === 'completed' || stageId === 'implementation_completed'
     ? 'completed'
+    : stageId === 'dead_letter'
+      ? 'dead_letter'
     : stageId === 'failed'
       ? 'failed'
       : stageId === 'stale_recovery_exhausted' || stageId.startsWith('blocked_')
@@ -3289,23 +3468,63 @@ async function recordAutoDevOutcome(job, outcome, extra = {}) {
   }
 }
 
-function buildMissingAutoDevDocumentResult(filePath, relPath, reason = 'missing_document') {
-  markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
-    archivedAt: nowIso(),
-    archivedBy: 'auto-dev-pipeline',
-    reason,
+async function buildMissingAutoDevDocumentResult(filePath, relPath, missingReason = 'missing_document') {
+  const state = loadState();
+  const now = nowIso();
+  const matchingJobs = Object.values(state.jobs || {})
+    .filter(job => job?.relPath === relPath)
+    .filter(job => !['completed', 'dead_letter', 'skipped', 'routed', 'blocked'].includes(String(job.status || '')));
+  const skippedJobs = matchingJobs.map(job => {
+    const events = Array.isArray(job.events) ? job.events.slice() : [];
+    events.push({
+      at: now,
+      type: 'missing_document_skipped',
+      previousStage: job.stage || null,
+      missingReason,
+    });
+    const skippedJob = {
+      ...job,
+      stage: 'skipped_missing_doc',
+      status: 'skipped',
+      reason: 'skipped_missing_doc',
+      missingReason,
+      updatedAt: now,
+      events: events.slice(-200),
+    };
+    state.jobs[job.id] = skippedJob;
+    return skippedJob;
   });
+  if (skippedJobs.length > 0) saveState(state);
+
+  markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
+    archivedAt: now,
+    archivedBy: 'auto-dev-pipeline',
+    reason: missingReason,
+  });
+  const resultJob = skippedJobs[0] || {
+    id: makeJobId(relPath, 'missing_document'),
+    filePath,
+    relPath,
+    contentHash: null,
+    stage: 'skipped_missing_doc',
+    status: 'skipped',
+    reason: 'skipped_missing_doc',
+    missingReason,
+    updatedAt: now,
+  };
+  for (const skippedJob of skippedJobs.length > 0 ? skippedJobs : [resultJob]) {
+    await recordAutoDevOutcome(skippedJob, 'skipped_missing_doc', {
+      stage: 'skipped_missing_doc',
+      reason: missingReason,
+      relPath,
+      contentHash: skippedJob.contentHash || null,
+    });
+  }
   return {
     ok: true,
     skipped: true,
-    reason: 'missing_document',
-    job: {
-      id: null,
-      filePath,
-      relPath,
-      stage: 'missing_document',
-      status: 'skipped',
-    },
+    reason: 'skipped_missing_doc',
+    job: resultJob,
   };
 }
 
@@ -3313,14 +3532,14 @@ async function processAutoDevDocument(filePath, options = {}) {
   const processStartedAtMs = Date.now();
   const relPath = relativeToRoot(filePath);
   if (!fs.existsSync(filePath)) {
-    return buildMissingAutoDevDocumentResult(filePath, relPath);
+    return await buildMissingAutoDevDocumentResult(filePath, relPath);
   }
   let content;
   try {
     content = fs.readFileSync(filePath, 'utf8');
   } catch (error) {
     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
-      return buildMissingAutoDevDocumentResult(filePath, relPath, 'missing_document_after_listing');
+      return await buildMissingAutoDevDocumentResult(filePath, relPath, 'missing_document_after_listing');
     }
     throw error;
   }
@@ -3331,6 +3550,37 @@ async function processAutoDevDocument(filePath, options = {}) {
   const contentHash = hashContent(content);
   const id = makeJobId(relPath, contentHash);
   const state = loadState();
+  const job = { id, filePath, relPath, title: path.basename(filePath, '.md'), contentHash };
+
+  if (state.jobs[id]?.status === 'dead_letter') {
+    let deadLetterJob = state.jobs[id];
+    if (!deadLetterJob.deadLetterAlarmAttemptedAt) {
+      const alarmResult = await sendDeadLetterAlarm(
+        deadLetterJob,
+        deadLetterJob.errorSummary || deadLetterJob.error || 'dead_letter recovery',
+        options,
+      );
+      deadLetterJob = updateJobState(job, 'dead_letter', {
+        deadLetterAlarmAttemptedAt: nowIso(),
+        deadLetterAlarm: alarmResult,
+      });
+    }
+    const moveResult = tryMoveAutoDevDocumentToProcessed(filePath, contentHash);
+    deadLetterJob = updateJobState(job, 'dead_letter', {
+      processedPath: deadLetterJob.processedPath || moveResult.relPath || null,
+      processedMove: moveResult,
+    });
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'dead_letter', {
+      contentHash,
+      deadLetteredAt: deadLetterJob.deadLetteredAt || nowIso(),
+    });
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'dead_letter_same_content',
+      job: deadLetterJob,
+    };
+  }
 
   if (!options.force && state.jobs[id]?.status === 'completed') {
     markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived', {
@@ -3349,7 +3599,6 @@ async function processAutoDevDocument(filePath, options = {}) {
     return { ok: true, skipped: true, reason: 'already_completed', job: state.jobs[id] };
   }
 
-  const job = { id, filePath, relPath, title: path.basename(filePath, '.md'), contentHash };
   const maxRevisionPasses = Number(options.maxRevisionPasses ?? process.env.CLAUDE_AUTO_DEV_MAX_REVISIONS ?? 1);
   const runtimeConfig = getRuntimeConfig(options);
   const implementationModelMeta = buildImplementationModelMeta(runtimeConfig);
@@ -3585,7 +3834,14 @@ async function processAutoDevDocument(filePath, options = {}) {
     });
     await setAgentStatus('implementation', job);
     const implementation = await runClaudeImplementation(job, 'implementation', options, '', executionContext);
-    if (!implementation.pass) throw new Error(`implementation failed: ${implementation.error}`);
+    if (!implementation.pass) {
+      const implementationError = new Error(`implementation failed: ${implementation.error}`);
+      if (implementation.nonRetryable) {
+        implementationError.nonRetryable = true;
+        implementationError.nonRetryableReason = implementation.reason || 'implementation_unavailable';
+      }
+      throw implementationError;
+    }
     const resolvedImplementationModelMeta = implementation.modelMeta || implementationModelMeta;
 
     let reviewResult;
@@ -3947,8 +4203,80 @@ async function processAutoDevDocument(filePath, options = {}) {
         job: completedJob,
       };
     }
+    const previousJob = loadState().jobs[id] || state.jobs[id] || {};
+    const previousFailureAttempts = Number(previousJob.failureAttempts || 0);
+    const failureAttempts = (
+      Number.isFinite(previousFailureAttempts) && previousFailureAttempts >= 0
+        ? Math.floor(previousFailureAttempts)
+        : 0
+    ) + 1;
+    const nonRetryableReason = error.nonRetryable
+      ? toSafeString(error.nonRetryableReason || 'non_retryable_failure')
+      : null;
+    if (failureAttempts >= MAX_FAILURE_ATTEMPTS || nonRetryableReason) {
+      const deadLetteredAt = nowIso();
+      let deadLetterJob = updateJobState(job, 'dead_letter', {
+        error: maskSensitiveText(error.message, 1000),
+        errorSummary: maskSensitiveText(error.message, 1000),
+        failureAttempts,
+        maxFailureAttempts: MAX_FAILURE_ATTEMPTS,
+        failedAt: previousJob.failedAt || deadLetteredAt,
+        deadLetteredAt,
+        processedPath: null,
+        processedMove: { ok: false, reason: 'pending' },
+        nonRetryableReason,
+        beforeStatus,
+        afterStatus,
+        newlyChangedFiles,
+        contentHash,
+        profile: runtimeConfig.profile,
+        implementationModelMeta,
+        worktreeCleanup: cleanupResult,
+        integration: integrationResult || null,
+        integrationRollback: integrationRollback || null,
+        targetPush: targetPushResult || null,
+        targetTeam: policy?.targetTeam || null,
+        writeScope: policy?.writeScope || [],
+        riskTier: policy?.riskTier || null,
+        policyDecision: policy?.policyDecision || null,
+        event: {
+          type: 'failure_circuit_opened',
+          failureAttempts,
+          maxFailureAttempts: MAX_FAILURE_ATTEMPTS,
+          nonRetryableReason,
+        },
+      });
+      const alarmResult = await sendDeadLetterAlarm(deadLetterJob, error.message, options);
+      deadLetterJob = updateJobState(job, 'dead_letter', {
+        deadLetterAlarmAttemptedAt: nowIso(),
+        deadLetterAlarm: alarmResult,
+      });
+      const moveResult = tryMoveAutoDevDocumentToProcessed(filePath, contentHash);
+      deadLetterJob = updateJobState(job, 'dead_letter', {
+        processedPath: moveResult.relPath || null,
+        processedMove: moveResult,
+      });
+      markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'dead_letter', {
+        contentHash,
+        deadLetteredAt,
+      });
+      await recordAutoDevOutcome(deadLetterJob, 'dead_letter', {
+        stage: 'dead_letter',
+        attempts: failureAttempts,
+        errorSummary: error.message,
+        reason: nonRetryableReason || 'max_attempts_exhausted',
+        profile: runtimeConfig.profile,
+        changedFiles: newlyChangedFiles,
+        processedPath: moveResult.relPath || null,
+        durationMs: elapsedMsSince(processStartedAtMs),
+      });
+      await markAgentDone();
+      return { ok: true, skipped: true, reason: 'dead_letter', job: deadLetterJob };
+    }
     const failedJob = updateJobState(job, 'failed', {
       error: error.message,
+      failureAttempts,
+      maxFailureAttempts: MAX_FAILURE_ATTEMPTS,
       beforeStatus,
       afterStatus,
       newlyChangedFiles,
@@ -3977,6 +4305,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     });
     await recordAutoDevOutcome(failedJob, 'failed', {
       stage: 'failed',
+      attempts: failureAttempts,
       errorSummary: error.message,
       profile: runtimeConfig.profile,
       targetTeam: policy?.targetTeam || null,
@@ -3988,30 +4317,6 @@ async function processAutoDevDocument(filePath, options = {}) {
       archiveManifestPath,
       durationMs: elapsedMsSince(processStartedAtMs),
     });
-    await sendStageAlarm(
-      { ...job, analysis: job.analysis || { title: job.title, relPath } },
-      'failed',
-      error.message,
-      { ...options, shadow: options.shadow },
-      {
-        event_type: 'auto_dev_stage_failed',
-        profile: runtimeConfig.profile,
-        implementationModelMeta,
-        error: error.message,
-      },
-    );
-    await sendAlarmRepairResult(
-      { ...job, analysis: job.analysis || { title: job.title, relPath } },
-      'unresolved_needs_human',
-      `auto_dev 구현이 실패했습니다. 사람이 확인해야 합니다.\n\n${error.message}`,
-      { ...options, shadow: options.shadow },
-      {
-        event_type: 'auto_dev_alarm_repair_unresolved_needs_human',
-        error: error.message,
-        changedFiles: newlyChangedFiles,
-      },
-      content,
-    );
     markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'active', {
       updatedAt: nowIso(),
       failedAt: nowIso(),
