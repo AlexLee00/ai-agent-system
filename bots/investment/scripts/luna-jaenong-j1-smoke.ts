@@ -12,6 +12,7 @@ import {
   upsertFandingPosts,
 } from './fanding-post-collector.ts';
 import {
+  JAENONG_PARSER_VERSION,
   JAENONG_TICKER_DRAFT,
   parseJaenongPost,
   pointInTimeReferencePrice,
@@ -108,6 +109,107 @@ async function main() {
   assert.equal(parsed.candidates[0].direction, 'long');
   assert.equal(parsed.candidates[0].buyPoints[0].price, 400);
   assert.equal(parseJaenongPost({ content: 'multiple expansion을 관찰합니다.' }).candidates.length, 0);
+
+  const yearOnly = parseJaenongPost({
+    content: 'MSFT는 2027년까지 분할 매수 관점입니다.',
+  });
+  assert.equal(yearOnly.candidates[0].buyPoints.length, 0, 'a year must not become a price');
+
+  const explicitDollar = parseJaenongPost({ content: 'MSFT $390 1차 매수.' });
+  assert.equal(explicitDollar.candidates[0].buyPoints[0].price, 390);
+
+  const dollarFormats = parseJaenongPost({
+    content: 'MSFT $1,250.50 1차 매수. MSFT 390달러 타점. MSFT 380불에 진입.',
+  });
+  assert.deepEqual(
+    dollarFormats.candidates[0].buyPoints.map((point) => point.price),
+    [1250.5, 390, 380],
+  );
+
+  const nonPrices = parseJaenongPost({
+    content: 'MSFT는 20%, 3배, 4개, 5월, 6일, 시총 3조 달러, 매출 4억 이후 분할 매수 관점입니다.',
+  });
+  assert.equal(nonPrices.candidates[0].buyPoints.length, 0, 'business metrics and bare numbers are not prices');
+
+  const distantPrice = parseJaenongPost({
+    content: `MSFT $390 ${'관망 '.repeat(20)}매수 관점입니다.`,
+  });
+  assert.equal(distantPrice.candidates[0].buyPoints.length, 0, 'price and trade keyword must be near each other');
+
+  const drawdownPost = {
+    content: 'MSFT -20% 오면 줍는다.',
+    publishedAt: '2026-01-02T00:00:00.000Z',
+  };
+  const drawdown = validateJaenongBrief(parseJaenongPost(drawdownPost), drawdownPost, { MSFT: 500 });
+  assert.equal(drawdown.candidates[0].buyPoints[0].price, 400);
+  assert.equal(drawdown.candidates[0].buyPoints[0].derived, true);
+  assert.deepEqual(drawdown.candidates[0].buyPoints[0].basis, {
+    type: 'publication_reference_price',
+    price: 500,
+  });
+
+  const explicitHigh = parseJaenongPost({
+    content: 'MSFT 52주 고점 $500 대비 -30% 오면 줍는다.',
+  });
+  assert.equal(explicitHigh.candidates[0].buyPoints[0].price, 350);
+  assert.equal(explicitHigh.candidates[0].buyPoints[0].derived, true);
+  assert.deepEqual(explicitHigh.candidates[0].buyPoints[0].basis, {
+    type: 'explicit_52_week_high',
+    price: 500,
+  });
+
+  const impliedDrawdownPost = {
+    content: 'MSFT 고점 대비 -30% 오면.',
+    publishedAt: '2026-01-02T00:00:00.000Z',
+  };
+  const impliedDrawdown = validateJaenongBrief(
+    parseJaenongPost(impliedDrawdownPost),
+    impliedDrawdownPost,
+    { MSFT: 500 },
+  );
+  assert.equal(impliedDrawdown.candidates[0].buyPoints[0].price, null);
+  assert.equal(impliedDrawdown.candidates[0].available, false);
+  assert.ok(impliedDrawdown.candidates[0].unavailableReasons.includes('drawdown_basis_missing'));
+
+  const stopLossPercentagePost = {
+    content: 'MSFT는 매수 후 -10% 손절합니다.',
+    publishedAt: '2026-01-02T00:00:00.000Z',
+  };
+  const stopLossPercentage = validateJaenongBrief(
+    parseJaenongPost(stopLossPercentagePost),
+    stopLossPercentagePost,
+    { MSFT: 400 },
+  );
+  assert.equal(stopLossPercentage.candidates[0].buyPoints.length, 0, 'a stop-loss percentage is not an entry');
+
+  const explicitEntryPost = {
+    content: 'MSFT 52주 고점 $500, 현재 $400에서 매수하고 -10% 손절합니다.',
+    publishedAt: '2026-01-02T00:00:00.000Z',
+  };
+  const explicitEntry = validateJaenongBrief(
+    parseJaenongPost(explicitEntryPost),
+    explicitEntryPost,
+    { MSFT: 400 },
+  );
+  assert.deepEqual(explicitEntry.candidates[0].buyPoints, [{
+    price: 400,
+    sourceSpan: explicitEntryPost.content,
+  }]);
+  assert.equal(explicitEntry.candidates[0].available, true);
+
+  const explicitHighExit = parseJaenongPost({ content: 'MSFT 52주 고점 $500에 매도합니다.' });
+  assert.equal(explicitHighExit.candidates[0].sellPoints[0].price, 500);
+
+  const wonPost = {
+    content: 'MSFT 55만원에 매수하고 5만 5천원에도 진입합니다.',
+    publishedAt: '2026-01-02T00:00:00.000Z',
+  };
+  const wonDraft = parseJaenongPost(wonPost);
+  assert.deepEqual(wonDraft.candidates[0].currencyMismatches.map((item) => item.amount), [550000, 55000]);
+  assert.equal(wonDraft.candidates[0].buyPoints.length, 0, 'KRW must not be converted to a US ticker price');
+  const wonValidated = validateJaenongBrief(wonDraft, wonPost, { MSFT: 400 });
+  assert.ok(wonValidated.candidates[0].unavailableReasons.includes('currency_mismatch'));
+  assert.equal(JAENONG_PARSER_VERSION, 'jaenong-deterministic-v2');
 
   const validated = validateJaenongBrief(parsed, rawPost, { MSFT: 410 });
   assert.equal(validated.candidates[0].available, true);

@@ -243,6 +243,19 @@ export function isAlreadyPaidWithoutButton(entry: ReservationLike, result: Recor
     && result.message.includes('결제하기 버튼 미발견');
 }
 
+export function classifyPickkoPaymentState(bodyText: unknown): {
+  isPending: boolean;
+  isCompleted: boolean;
+  normalizedText: string;
+} {
+  const normalizedText = String(bodyText ?? '').replace(/\s+/g, ' ').trim();
+  return {
+    isPending: normalizedText.includes('결제대기'),
+    isCompleted: normalizedText.includes('결제완료'),
+    normalizedText,
+  };
+}
+
 export function isExpectedManualFollowup(result: Record<string, any>): boolean {
   const message = typeof result?.message === 'string' ? result.message : '';
   return message.includes('결제하기 버튼 미발견')

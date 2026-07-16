@@ -5,7 +5,7 @@ import * as db from '../shared/db.ts';
 import { getOverseasDailyPriceBars } from '../shared/kis-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-export const JAENONG_PARSER_VERSION = 'jaenong-deterministic-v1';
+export const JAENONG_PARSER_VERSION = 'jaenong-deterministic-v2';
 
 export const JAENONG_TICKER_DRAFT = Object.freeze({
   AAPL: { company: 'Apple', aliases: ['애플', 'Apple', 'AAPL'], status: 'draft_master_approval_required' },
@@ -26,10 +26,12 @@ export const JAENONG_TICKER_DRAFT = Object.freeze({
 
 const LONG_WORDS = ['매수', '분할매수', '사다', '진입', '롱', '상승'];
 const SHORT_WORDS = ['매도 관점', '숏', '하락 베팅', '공매도'];
-const BUY_WORDS = ['매수', '진입', '사다', '분할'];
+const BUY_WORDS = ['매수', '진입', '사다', '분할', '타점', '줍'];
 const SELL_WORDS = ['매도', '목표가', '익절', '청산'];
 const STOP_WORDS = ['손절', '이탈', '스탑', 'stop loss'];
 const CONDITIONAL_WORDS = ['만약', '경우', '때', '조건', '확인되면', '돌파하면', '이탈하면'];
+const PRICE_KEYWORD_DISTANCE = 40;
+const NUMBER_PATTERN = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?`;
 
 function round(value, digits = 4) {
   const factor = 10 ** digits;
@@ -82,15 +84,95 @@ function mentionedTickers(content) {
     .map(([ticker]) => ticker);
 }
 
-function extractPrices(sentence) {
-  const values = [];
-  const regex = /(?:\$\s*)?(\d{1,4}(?:\.\d{1,2})?)\s*(?:달러|불|usd)?/gi;
-  let match;
-  while ((match = regex.exec(sentence)) !== null) {
-    const price = Number(match[1]);
-    if (Number.isFinite(price) && price > 0) values.push(price);
+function parseNumber(value) {
+  return Number(String(value || '').replaceAll(',', ''));
+}
+
+function rangeDistance(left, right) {
+  if (left.end < right.start) return right.start - left.end;
+  if (right.end < left.start) return left.start - right.end;
+  return 0;
+}
+
+function keywordRanges(sentence, keywords) {
+  const lower = String(sentence || '').toLowerCase();
+  const ranges = [];
+  for (const keyword of keywords) {
+    const needle = keyword.toLowerCase();
+    let start = lower.indexOf(needle);
+    while (start >= 0) {
+      ranges.push({ start, end: start + needle.length, keyword });
+      start = lower.indexOf(needle, start + needle.length);
+    }
   }
-  return [...new Set(values)];
+  return ranges;
+}
+
+function extractPriceTokens(sentence) {
+  const tokens = [];
+  const usdRegex = new RegExp(`\\$\\s*(${NUMBER_PATTERN})|(${NUMBER_PATTERN})\\s*(달러|불|usd)`, 'gi');
+  for (const match of sentence.matchAll(usdRegex)) {
+    const amount = parseNumber(match[1] || match[2]);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    tokens.push({
+      amount,
+      currency: 'USD',
+      raw: match[0],
+      start: match.index || 0,
+      end: (match.index || 0) + match[0].length,
+    });
+  }
+
+  const krwRegex = new RegExp(
+    `(${NUMBER_PATTERN})\\s*만(?:\\s*(${NUMBER_PATTERN})\\s*천)?\\s*원`
+      + `|(${NUMBER_PATTERN})\\s*천\\s*원`
+      + `|(${NUMBER_PATTERN})\\s*원`,
+    'gi',
+  );
+  for (const match of sentence.matchAll(krwRegex)) {
+    const amount = match[1]
+      ? parseNumber(match[1]) * 10_000 + parseNumber(match[2]) * 1_000
+      : match[3]
+        ? parseNumber(match[3]) * 1_000
+        : parseNumber(match[4]);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    tokens.push({
+      amount,
+      currency: 'KRW',
+      raw: match[0],
+      start: match.index || 0,
+      end: (match.index || 0) + match[0].length,
+    });
+  }
+  return tokens.toSorted((a, b) => a.start - b.start);
+}
+
+function explicitHighRanges(sentence) {
+  return [...sentence.matchAll(/52\s*주\s*고점/gi)].map((match) => ({
+    start: match.index || 0,
+    end: (match.index || 0) + match[0].length,
+  }));
+}
+
+function nearestRange(target, ranges) {
+  return ranges.toSorted((a, b) => rangeDistance(a, target) - rangeDistance(b, target))[0] || null;
+}
+
+function explicitHighPriceTokens(sentence, tokens) {
+  const highTokens = explicitHighRanges(sentence)
+    .map((range) => {
+      const token = nearestRange(range, tokens);
+      return token && rangeDistance(range, token) <= PRICE_KEYWORD_DISTANCE ? token : null;
+    })
+    .filter(Boolean);
+  return [...new Map(highTokens.map((token) => [`${token.start}:${token.end}`, token])).values()];
+}
+
+function isExplicitHighToken(sentence, token) {
+  if (!/-\s*\d+(?:\.\d+)?\s*%/.test(sentence)) return false;
+  const usdTokens = extractPriceTokens(sentence).filter((item) => item.currency === 'USD');
+  return explicitHighPriceTokens(sentence, usdTokens)
+    .some((item) => item.start === token.start && item.end === token.end);
 }
 
 function nearbySentences(content, ticker) {
@@ -109,30 +191,80 @@ function nearbySentences(content, ticker) {
 function extractPoint(sentences, keywords) {
   const points = [];
   for (const sentence of sentences) {
-    const lower = sentence.toLowerCase();
-    const keywordRanges = keywords
-      .map((keyword) => {
-        const index = lower.indexOf(keyword.toLowerCase());
-        return index >= 0 ? { start: index, end: index + keyword.length } : null;
-      })
-      .filter(Boolean);
-    if (keywordRanges.length === 0) continue;
-    const matches = [...sentence.matchAll(/(?:\$\s*)?(\d{1,4}(?:\.\d{1,2})?)\s*(?:달러|불|usd)?/gi)]
-      .map((match) => ({
-        price: Number(match[1]),
-        start: match.index || 0,
-        end: (match.index || 0) + match[0].length,
-      }))
-      .filter((item) => Number.isFinite(item.price) && item.price > 0);
-    for (const keyword of keywordRanges) {
-      const nearest = matches.toSorted((a, b) => (
-        Math.min(Math.abs(a.end - keyword.start), Math.abs(a.start - keyword.end))
-        - Math.min(Math.abs(b.end - keyword.start), Math.abs(b.start - keyword.end))
-      ))[0];
-      if (nearest) points.push({ price: nearest.price, sourceSpan: sentence });
+    const ranges = keywordRanges(sentence, keywords);
+    if (ranges.length === 0) continue;
+    const tokens = extractPriceTokens(sentence).filter((token) => (
+      token.currency === 'USD' && !isExplicitHighToken(sentence, token)
+    ));
+    for (const keyword of ranges) {
+      const nearest = tokens.toSorted((a, b) => rangeDistance(a, keyword) - rangeDistance(b, keyword))[0];
+      if (nearest && rangeDistance(nearest, keyword) <= PRICE_KEYWORD_DISTANCE) {
+        points.push({ price: nearest.amount, sourceSpan: sentence });
+      }
     }
   }
   return [...new Map(points.map((point) => [`${point.price}:${point.sourceSpan}`, point])).values()];
+}
+
+function extractDrawdownPoints(sentences) {
+  const points = [];
+  for (const sentence of sentences) {
+    const entryRanges = keywordRanges(sentence, [...BUY_WORDS, '오면']);
+    const exitRanges = keywordRanges(sentence, [...SELL_WORDS, ...STOP_WORDS]);
+    const usdTokens = extractPriceTokens(sentence).filter((token) => token.currency === 'USD');
+    const highTokens = explicitHighPriceTokens(sentence, usdTokens);
+    const genericHighRanges = keywordRanges(sentence, ['고점']);
+    for (const match of sentence.matchAll(/-\s*(\d+(?:\.\d+)?)\s*%/g)) {
+      const percentage = Number(match[1]);
+      const percentageRange = {
+        start: match.index || 0,
+        end: (match.index || 0) + match[0].length,
+      };
+      if (!Number.isFinite(percentage) || percentage <= 0 || percentage >= 100) continue;
+      const entryRange = nearestRange(percentageRange, entryRanges);
+      const exitRange = nearestRange(percentageRange, exitRanges);
+      const entryDistance = entryRange ? rangeDistance(entryRange, percentageRange) : Infinity;
+      const exitDistance = exitRange ? rangeDistance(exitRange, percentageRange) : Infinity;
+      if (entryDistance > PRICE_KEYWORD_DISTANCE || exitDistance <= entryDistance) continue;
+      const highToken = highTokens
+        .toSorted((a, b) => rangeDistance(a, percentageRange) - rangeDistance(b, percentageRange))[0];
+      const missingHighReference = !highToken
+        && genericHighRanges.some((range) => rangeDistance(range, percentageRange) <= PRICE_KEYWORD_DISTANCE);
+      const basis = highToken
+        ? { type: 'explicit_52_week_high', price: highToken.amount }
+        : missingHighReference
+          ? { type: 'missing_high_reference', price: null }
+          : { type: 'publication_reference_price', price: null };
+      points.push({
+        price: highToken ? round(highToken.amount * (1 - percentage / 100)) : null,
+        derived: true,
+        drawdownPercent: -percentage,
+        basis,
+        sourceSpan: sentence,
+      });
+    }
+  }
+  return [...new Map(points.map((point) => [
+    `${point.drawdownPercent}:${point.basis.type}:${point.basis.price}:${point.sourceSpan}`,
+    point,
+  ])).values()];
+}
+
+function extractCurrencyMismatches(sentences) {
+  const mismatches = [];
+  for (const sentence of sentences) {
+    const ranges = keywordRanges(sentence, [...BUY_WORDS, ...SELL_WORDS, ...STOP_WORDS]);
+    for (const token of extractPriceTokens(sentence).filter((item) => item.currency === 'KRW')) {
+      if (!ranges.some((range) => rangeDistance(range, token) <= PRICE_KEYWORD_DISTANCE)) continue;
+      mismatches.push({
+        currency: token.currency,
+        amount: token.amount,
+        raw: token.raw,
+        sourceSpan: sentence,
+      });
+    }
+  }
+  return [...new Map(mismatches.map((item) => [`${item.amount}:${item.sourceSpan}`, item])).values()];
 }
 
 function inferDirection(sentences) {
@@ -151,9 +283,10 @@ export function parseJaenongPost(post = {}) {
   const content = String(post.content || '');
   const candidates = mentionedTickers(content).map((ticker) => {
     const sourceSpans = nearbySentences(content, ticker);
-    const buyPoints = extractPoint(sourceSpans, BUY_WORDS);
+    const buyPoints = [...extractPoint(sourceSpans, BUY_WORDS), ...extractDrawdownPoints(sourceSpans)];
     const sellPoints = extractPoint(sourceSpans, SELL_WORDS);
     const stopPoints = extractPoint(sourceSpans, STOP_WORDS);
+    const currencyMismatches = extractCurrencyMismatches(sourceSpans);
     const conditionalSentence = sourceSpans.find((sentence) => includesAny(sentence, CONDITIONAL_WORDS));
     const evidenceCount = Number(sourceSpans.length > 0)
       + Number(buyPoints.length > 0)
@@ -166,6 +299,7 @@ export function parseJaenongPost(post = {}) {
       buyPoints,
       sellPoints,
       stopLoss: stopPoints[0] || null,
+      currencyMismatches,
       conditional: conditionalSentence
         ? { type: 'conditional', trigger: conditionalSentence }
         : { type: 'unconditional', trigger: null },
@@ -210,6 +344,20 @@ function validatePoint(point, { content, ticker, keywords, range, reasonPrefix }
   return reasons;
 }
 
+function materializeDerivedPoint(point, referencePrice) {
+  const output = structuredClone(point);
+  if (output?.derived !== true) return output;
+  if (output.basis?.type === 'publication_reference_price') {
+    output.basis.price = Number.isFinite(referencePrice) && referencePrice > 0 ? referencePrice : null;
+  }
+  const basisPrice = Number(output.basis?.price);
+  const drawdownPercent = Number(output.drawdownPercent);
+  output.price = Number.isFinite(basisPrice) && basisPrice > 0 && Number.isFinite(drawdownPercent)
+    ? round(basisPrice * (1 + drawdownPercent / 100))
+    : null;
+  return output;
+}
+
 function pointRanges(direction, referencePrice) {
   if (direction === 'short') {
     return {
@@ -239,36 +387,48 @@ export function validateJaenongBrief(brief = {}, post = {}, referencePrices = {}
     const reasons = [];
     if (!Object.hasOwn(JAENONG_TICKER_DRAFT, ticker)) reasons.push('ticker_not_whitelisted');
     const referencePrice = Number(referencePrices[ticker]);
+    const normalizedCandidate = {
+      ...structuredClone(candidate),
+      buyPoints: (candidate.buyPoints || []).map((point) => materializeDerivedPoint(point, referencePrice)),
+    };
     if (!publicationDateValid) reasons.push('invalid_publication_date');
     if (!Number.isFinite(referencePrice) || referencePrice <= 0) reasons.push('reference_price_missing');
-    for (const span of candidate.sourceSpans || []) {
+    for (const span of normalizedCandidate.sourceSpans || []) {
       if (!sourceSpanExists(content, span)) reasons.push('source_span_missing');
     }
-    if (!['long', 'short'].includes(candidate.direction)) reasons.push('direction_invalid');
-    if (hasDirectionConflict(candidate)) reasons.push('direction_conflict');
+    if (!['long', 'short'].includes(normalizedCandidate.direction)) reasons.push('direction_invalid');
+    if (hasDirectionConflict(normalizedCandidate)) reasons.push('direction_conflict');
+    if ((normalizedCandidate.currencyMismatches || []).length > 0) reasons.push('currency_mismatch');
 
     if (Number.isFinite(referencePrice) && referencePrice > 0) {
-      const ranges = pointRanges(candidate.direction, referencePrice);
-      for (const point of candidate.buyPoints || []) {
+      const ranges = pointRanges(normalizedCandidate.direction, referencePrice);
+      for (const point of normalizedCandidate.buyPoints || []) {
+        if (point.derived && point.basis?.type === 'missing_high_reference') {
+          reasons.push('drawdown_basis_missing');
+        }
         reasons.push(...validatePoint(point, {
-          content, ticker, keywords: BUY_WORDS, range: ranges.buy, reasonPrefix: 'buy_point',
+          content,
+          ticker,
+          keywords: point.derived ? [...BUY_WORDS, '오면'] : BUY_WORDS,
+          range: ranges.buy,
+          reasonPrefix: 'buy_point',
         }));
       }
-      for (const point of candidate.sellPoints || []) {
+      for (const point of normalizedCandidate.sellPoints || []) {
         reasons.push(...validatePoint(point, {
           content, ticker, keywords: SELL_WORDS, range: ranges.sell, reasonPrefix: 'sell_point',
         }));
       }
-      if (candidate.stopLoss) {
-        reasons.push(...validatePoint(candidate.stopLoss, {
+      if (normalizedCandidate.stopLoss) {
+        reasons.push(...validatePoint(normalizedCandidate.stopLoss, {
           content, ticker, keywords: STOP_WORDS, range: ranges.stop, reasonPrefix: 'stop_loss',
         }));
       }
     }
-    if (!(candidate.buyPoints || []).length) reasons.push('buy_point_missing');
+    if (!(normalizedCandidate.buyPoints || []).length) reasons.push('buy_point_missing');
     const unavailableReasons = [...new Set(reasons)];
     return {
-      ...structuredClone(candidate),
+      ...normalizedCandidate,
       ticker,
       referencePrice: Number.isFinite(referencePrice) && referencePrice > 0 ? referencePrice : null,
       available: unavailableReasons.length === 0,
