@@ -2,6 +2,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as db from './db.ts';
+import {
+  getJaenongBriefStatus,
+  getJaenongRetroSummary,
+  handleJaenongCommand,
+} from './jaenong-operations.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const INVESTMENT_ROOT = path.resolve(path.dirname(__filename), '..');
@@ -73,6 +79,36 @@ export async function executeInvestmentSkill(agent, skillName, input = {}, conte
   const registry = createInvestmentSkillRegistry();
   const skill = registry.list({ owner: agent }).find((item) => item.name === skillName);
   if (!skill) return { ok: false, code: 'skill_not_found', agent, skillName };
+  try {
+    if (skillName === 'jaenong.brief.today') {
+      const result = await getJaenongBriefStatus(
+        { fixture: input.fixture === true, now: input.now },
+        { queryFn: context.queryFn || db.query },
+      );
+      return { ok: true, code: 'skill_executed', name: skillName, result };
+    }
+    if (skillName === 'jaenong.retro.score') {
+      const result = await getJaenongRetroSummary(
+        { fixture: input.fixture === true },
+        { queryFn: context.queryFn || db.query },
+      );
+      return { ok: true, code: 'skill_executed', name: skillName, result };
+    }
+    if (skillName === 'jaenong.brief.invalidate') {
+      const result = await handleJaenongCommand(
+        `/jaenong invalidate ${String(input.briefRef || '')} ${String(input.reason || '')}`,
+        {
+          actor: context.actor || input.actor,
+          now: context.now,
+          queryFn: context.queryFn || db.query,
+          runFn: context.runFn || db.run,
+        },
+      );
+      return { ok: true, code: 'skill_executed', name: skillName, result };
+    }
+  } catch (error) {
+    return { ok: false, code: 'skill_failed', name: skillName, error: error?.message || String(error) };
+  }
   return registry.execute(skill.name, input, { ...context, agent });
 }
 

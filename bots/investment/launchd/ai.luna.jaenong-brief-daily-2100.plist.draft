@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.jaenong-brief-daily-2100</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-jaenong-daily-shadow.ts</string>
+    <string>--stage=brief</string>
+    <string>--write</string>
+    <string>--confirm=jaenong-daily-shadow</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>21</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/luna-jaenong-brief.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/.ai-agent-system/logs/luna-jaenong-brief-error.log</string>
+  <key>TimeOut</key>
+  <integer>900</integer>
+</dict>
+</plist>

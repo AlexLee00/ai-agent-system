@@ -16,6 +16,11 @@ import {
   buildPhase5McpBridgeRows,
   buildPhase5RlEnsembleRows,
 } from '../../../shared/luna-phase5-codex-p3.ts';
+import * as db from '../../../shared/db.ts';
+import {
+  getJaenongBriefStatus,
+  getJaenongRetroSummary,
+} from '../../../shared/jaenong-operations.ts';
 
 export const LUNA_OPS_MCP_TOOLS = [
   {
@@ -49,6 +54,14 @@ export const LUNA_OPS_MCP_TOOLS = [
   {
     name: 'luna_phase5_shadow_plan',
     description: 'Return Phase 5 RL ensemble and Genetic Alpha shadow candidates; never executes trades.',
+  },
+  {
+    name: 'jaenong_brief_status',
+    description: 'Return the read-only JAENONG brief freshness and acknowledgement state.',
+  },
+  {
+    name: 'jaenong_retro_summary',
+    description: 'Return read-only JAENONG treatment/control shadow-route metrics.',
   },
 ];
 
@@ -167,6 +180,18 @@ export async function callLunaOpsTool(name, args = {}) {
       },
       rows: { mcp: mcpRows, rl: rlRows, genetic: geneticRows },
     };
+  }
+  if (name === 'jaenong_brief_status') {
+    return getJaenongBriefStatus(
+      { fixture: args.fixture === true, now: args.now },
+      { queryFn: db.query },
+    );
+  }
+  if (name === 'jaenong_retro_summary') {
+    return getJaenongRetroSummary(
+      { fixture: args.fixture === true },
+      { queryFn: db.query },
+    );
   }
   throw new Error(`unknown_tool:${name}`);
 }

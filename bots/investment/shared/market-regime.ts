@@ -10,6 +10,7 @@ export const REGIMES = {
 };
 
 export const JAENONG_C17_PARAMETER_KEYS = Object.freeze({
+  referenceDirectory: 'c17.jaenong.reference_directory',
   capitalBudgetRatio: 'c17.jaenong.capital_budget_ratio',
   averagingMaxCount: 'c17.jaenong.averaging_max_count',
   trackMddCircuitPct: 'c17.jaenong.track_mdd_circuit_pct',

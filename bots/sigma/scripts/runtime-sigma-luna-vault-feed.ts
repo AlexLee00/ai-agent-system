@@ -4,6 +4,7 @@
 import crypto from 'node:crypto';
 import { collectLibraryRecords } from '../ts/lib/library-data-source.js';
 import { attachSourceRefToMeta, sourceRefForLibraryRecord } from '../shared/source-ref.ts';
+import { attachLibraryCoordsToMeta } from '../shared/library-coords.ts';
 import { createVaultEmbedding, VaultManager } from '../vault/vault-manager.ts';
 
 function hasFlag(name: string): boolean {
@@ -53,6 +54,17 @@ function tagsForRecord(record: any): string[] {
 }
 
 function entryForRecord(record: any) {
+  const sourceMeta = attachSourceRefToMeta({
+    contentHash: record.contentHash,
+    sourceId: record.sourceId,
+    sourceKind: record.sourceKind,
+    team: record.team,
+    agent: record.agent,
+    createdAt: record.createdAt,
+    constitutionAllowed: record.constitutionAllowed,
+    redactions: record.redactions || [],
+    payload: record.payload || {},
+  }, sourceRefForLibraryRecord(record));
   return {
     title: titleForRecord(record),
     type: 'library_record',
@@ -60,17 +72,9 @@ function entryForRecord(record: any) {
     tags: tagsForRecord(record),
     filePath: `library/${record.sourceKind}/${shortHash(record.sourceId)}`,
     source: record.sourceKind,
-    meta: attachSourceRefToMeta({
-      contentHash: record.contentHash,
-      sourceId: record.sourceId,
-      sourceKind: record.sourceKind,
-      team: record.team,
-      agent: record.agent,
-      createdAt: record.createdAt,
-      constitutionAllowed: record.constitutionAllowed,
-      redactions: record.redactions || [],
-      payload: record.payload || {},
-    }, sourceRefForLibraryRecord(record)),
+    meta: record.payload?.libraryCoords
+      ? attachLibraryCoordsToMeta(sourceMeta, record.payload.libraryCoords)
+      : sourceMeta,
   };
 }
 
@@ -80,6 +84,7 @@ export async function runSigmaLunaVaultFeed(options: {
   dryRun?: boolean;
   write?: boolean;
   sampleEmbedding?: boolean;
+  enableJaenongPredictionFeed?: boolean;
 } = {}) {
   const sinceHours = boundedNumber(options.sinceHours, 24 * 30, 1, 24 * 30);
   const limitPerSource = boundedNumber(options.limitPerSource, 80, 1, 500);
@@ -89,6 +94,7 @@ export async function runSigmaLunaVaultFeed(options: {
     teams: ['luna'],
     sinceHours,
     limitPerSource,
+    enableJaenongPredictionFeed: options.enableJaenongPredictionFeed === true,
   });
 
   const candidates = sourceReport.records
@@ -173,6 +179,7 @@ async function main() {
     limitPerSource: boundedNumber(argValue('limit-per-source', '80'), 80, 1, 500),
     dryRun: !noDryRun,
     write,
+    enableJaenongPredictionFeed: hasFlag('enable-jaenong-prediction-feed'),
   });
   if (json) console.log(JSON.stringify(result, null, 2));
   else {

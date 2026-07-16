@@ -7,6 +7,7 @@ import {
   type SigmaTeam,
 } from './intelligent-library.js';
 import { buildLunaLearnedBiasFeedInput } from '../../shared/luna-learned-bias-feed.js';
+import { buildLunaJaenongPredictionFeedInput } from '../../shared/luna-jaenong-feed.js';
 
 const require = createRequire(import.meta.url);
 
@@ -19,6 +20,7 @@ export type LibrarySourceKind =
   | 'agent_message'
   | 'luna_reflexion'
   | 'luna_learned_bias'
+  | 'luna_jaenong_shadow'
   | 'sigma_directive'
   | 'dpo_preference'
   | 'mcp_usage'
@@ -67,6 +69,7 @@ export interface CollectLibraryRecordsOptions {
   sinceHours?: number;
   limitPerSource?: number;
   teams?: readonly SigmaTeam[];
+  enableJaenongPredictionFeed?: boolean;
 }
 
 function stableJson(value: unknown): string {
@@ -332,6 +335,40 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
   for (const row of learnedBiasSnapshots) {
     const record = buildRecord(buildLunaLearnedBiasFeedInput(row));
     if (record && allowedTeams.has(record.team)) records.push(record);
+  }
+
+  if (options.enableJaenongPredictionFeed === true) {
+    const jaenongRoutes = await safeQuery<any>('investment', 'investment.jaenong_route_shadow', `
+      SELECT r.id, r.signal_ref, r.created_at, r.selected_track, r.selected_candidates,
+             r.treatment, r.control_group, r.reference_snapshot_hash, r.brief_ref,
+             r.c17_risk, r.shadow_only, r.execution_connected, b.market_view
+        FROM investment.jaenong_route_shadow r
+        LEFT JOIN investment.jaenong_brief b ON b.brief_ref = r.brief_ref
+       WHERE r.recorded_at >= NOW() - ($1 || ' hours')::INTERVAL
+         AND r.shadow_only = true
+         AND r.execution_connected = false
+       ORDER BY r.recorded_at DESC, r.id DESC
+       LIMIT $2
+    `, [String(sinceHours), limit], warnings);
+    for (const row of jaenongRoutes) {
+      const feed = buildLunaJaenongPredictionFeedInput({
+        signalRef: row.signal_ref,
+        createdAt: row.created_at,
+        selectedTrack: row.selected_track,
+        selectedCandidates: row.selected_candidates || [],
+        treatment: row.treatment || {},
+        control: row.control_group || {},
+        referenceSnapshotHash: row.reference_snapshot_hash,
+        briefRef: row.brief_ref,
+        risk: row.c17_risk || {},
+        shadowOnly: row.shadow_only === true,
+        executionConnected: row.execution_connected === true,
+        orderPath: null,
+      }, { enabled: true, marketView: row.market_view || '' });
+      if (!feed.enabled || !feed.record) continue;
+      const record = buildRecord(feed.record);
+      if (record && allowedTeams.has(record.team)) records.push(record);
+    }
   }
 
   const directives = await safeQuery<any>('public', 'public.sigma_v2_directive_audit', `
