@@ -97,6 +97,59 @@ function parseMeta(meta: unknown): Record<string, unknown> {
   }
 }
 
+function normalizeSourceRef(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const ref = value as Record<string, unknown>;
+  const team = String(ref.team ?? '').trim();
+  const table = String(ref.table ?? '').trim();
+  const id = String(ref.id ?? '').trim();
+  if (!team || !table || !id) return null;
+  return { ...ref, team, table, id };
+}
+
+function uniqueObjects(values: Record<string, unknown>[]): Record<string, unknown>[] {
+  return [...new Map(values.map((value) => [stableJson(value), value])).values()];
+}
+
+function provenanceAlias(source: unknown, filePath: unknown, sourceRef: unknown): Record<string, unknown> | null {
+  const normalizedSource = String(source || '').trim();
+  const normalizedFilePath = String(filePath || '').trim();
+  const normalizedSourceRef = normalizeSourceRef(sourceRef);
+  if (!normalizedSource && !normalizedFilePath && !normalizedSourceRef) return null;
+  return {
+    ...(normalizedSource ? { source: normalizedSource } : {}),
+    ...(normalizedFilePath ? { filePath: normalizedFilePath } : {}),
+    ...(normalizedSourceRef ? { sourceRef: normalizedSourceRef } : {}),
+  };
+}
+
+function mergeDuplicateProvenanceMeta(existing: Record<string, unknown>, incoming: VaultEntry): Record<string, unknown> {
+  const existingMeta = parseMeta(existing.meta);
+  const incomingMeta = parseMeta(incoming.meta);
+  const sourceRefs = uniqueObjects([
+    normalizeSourceRef(existingMeta.source_ref),
+    ...(Array.isArray(existingMeta.source_refs) ? existingMeta.source_refs.map(normalizeSourceRef) : []),
+    normalizeSourceRef(incomingMeta.source_ref),
+    ...(Array.isArray(incomingMeta.source_refs) ? incomingMeta.source_refs.map(normalizeSourceRef) : []),
+  ].filter(Boolean) as Record<string, unknown>[]);
+  const priorAliases = Array.isArray(existingMeta.provenance_aliases)
+    ? existingMeta.provenance_aliases.map((alias) => {
+      const value = parseMeta(alias);
+      return provenanceAlias(value.source, value.filePath || value.file_path, value.sourceRef || value.source_ref);
+    }).filter(Boolean) as Record<string, unknown>[]
+    : [];
+  const aliases = uniqueObjects([
+    ...priorAliases,
+    provenanceAlias(existing.source, existing.file_path, existingMeta.source_ref),
+    provenanceAlias(incoming.source, incoming.filePath, incomingMeta.source_ref),
+  ].filter(Boolean) as Record<string, unknown>[]);
+  return {
+    ...existingMeta,
+    ...(sourceRefs.length ? { source_refs: sourceRefs } : {}),
+    ...(aliases.length ? { provenance_aliases: aliases } : {}),
+  };
+}
+
 function originalFilePath(filePath?: string | null): string | null {
   const normalized = String(filePath || '').trim();
   if (!normalized) return null;
@@ -113,6 +166,17 @@ export function buildVaultRawHash(entry: Partial<VaultEntry>, rawFilePath = orig
   })).digest('hex');
 }
 
+export function normalizeVaultContentText(value: unknown): string {
+  return String(value || '').trim().replace(/\s+/gu, ' ');
+}
+
+export function buildVaultNormalizedContentMd5(entry: Partial<VaultEntry>): string | null {
+  const title = normalizeVaultContentText(entry.title);
+  const content = normalizeVaultContentText(entry.content);
+  if (!title && !content) return null;
+  return crypto.createHash('md5').update(`${title}\n${content}`).digest('hex');
+}
+
 export class VaultManager {
   private pgPool: any;
   private embeddingFactory: any;
@@ -127,6 +191,7 @@ export class VaultManager {
     try {
       const rawFilePath = originalFilePath(entry.filePath);
       const rawHash = buildVaultRawHash(entry, rawFilePath);
+      const normalizedContentMd5 = buildVaultNormalizedContentMd5(entry);
       const baseCoords = normalizeLibraryCoords(entry.libraryCoords || inferRawLibraryCoords({
         title: entry.title,
         content: entry.content,
@@ -137,8 +202,31 @@ export class VaultManager {
       const baseMeta = {
         ...attachLibraryCoordsToMeta(entry.meta || {}, baseCoords),
         rawContentHash: rawHash,
+        ...(normalizedContentMd5 ? { normalizedContentMd5 } : {}),
       };
       if (rawFilePath) baseMeta.rawOriginalFilePath = rawFilePath;
+
+      if (normalizedContentMd5) {
+        const existing = await this._findAndMergeNormalizedDuplicate(normalizedContentMd5, entry);
+        if (existing) {
+          await this._writeAudit({
+            entryId: existing.id,
+            action: 'deduped',
+            toCategory: existing.para_category || 'inbox',
+            classifier: 'manual',
+            reasoning: `normalized content unchanged md5=${normalizedContentMd5}`,
+            applied: true,
+          });
+          return {
+            ok: true,
+            id: existing.id,
+            message: `정규화 중복 유지 (id=${existing.id})`,
+            embedded: false,
+            embeddingDim: null,
+            embeddingWarning: null,
+          };
+        }
+      }
 
       let effectiveFilePath = entry.filePath || null;
       let effectiveMeta = baseMeta;
@@ -227,14 +315,56 @@ export class VaultManager {
         }
       }
 
-      const rows = await this.pgPool.query('sigma', `
+      const insertSql = `
         INSERT INTO sigma.vault_entries (${columns.join(', ')})
         VALUES (${values.join(', ')})
         ON CONFLICT (file_path) WHERE file_path IS NOT NULL
         DO NOTHING
         RETURNING id
-      `, params);
+      `;
 
+      const insertEntry = async (db: any, useAdvisoryLock: boolean) => {
+        if (useAdvisoryLock && normalizedContentMd5) {
+          await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sigma-vault-content:${normalizedContentMd5}`]);
+          const existing = await this._findEntryByNormalizedMd5(normalizedContentMd5, db);
+          if (existing) {
+            return {
+              rows: [],
+              normalizedDuplicate: await this._mergeDuplicateProvenance(existing, entry, db),
+            };
+          }
+        }
+        const rows = useAdvisoryLock
+          ? await db.query(insertSql, params)
+          : await this.pgPool.query('sigma', insertSql, params);
+        return { rows, normalizedDuplicate: null };
+      };
+
+      const insertResult = normalizedContentMd5 && typeof this.pgPool.transaction === 'function'
+        ? await this.pgPool.transaction('sigma', (client: any) => insertEntry(client, true))
+        : await insertEntry(this.pgPool, false);
+
+      if (insertResult.normalizedDuplicate) {
+        const existing = insertResult.normalizedDuplicate;
+        await this._writeAudit({
+          entryId: existing.id,
+          action: 'deduped',
+          toCategory: existing.para_category || 'inbox',
+          classifier: 'manual',
+          reasoning: `concurrent normalized duplicate md5=${normalizedContentMd5}`,
+          applied: true,
+        });
+        return {
+          ok: true,
+          id: existing.id,
+          message: `동시 정규화 중복 유지 (id=${existing.id})`,
+          embedded: false,
+          embeddingDim: null,
+          embeddingWarning: null,
+        };
+      }
+
+      const rows = insertResult.rows;
       let id = rows?.[0]?.id || rows?.rows?.[0]?.id;
       if (!id && effectiveFilePath) {
         const existing = await this._findEntryByFilePath(effectiveFilePath);
@@ -265,14 +395,76 @@ export class VaultManager {
     }
   }
 
-  private async _findEntryByFilePath(filePath: string): Promise<Record<string, unknown> | null> {
-    const rows = await this.pgPool.query('sigma', `
+  private async _queryRows(db: any, sql: string, params: unknown[]): Promise<any[]> {
+    const result = db === this.pgPool
+      ? await db.query('sigma', sql, params)
+      : await db.query(sql, params);
+    return Array.isArray(result) ? result : result?.rows ?? [];
+  }
+
+  private async _findEntryByFilePath(filePath: string, db: any = this.pgPool): Promise<Record<string, unknown> | null> {
+    const rows = await this._queryRows(db, `
       SELECT id, title, type, content, source, file_path, para_category, meta
       FROM sigma.vault_entries
       WHERE file_path = $1
       LIMIT 1
     `, [filePath]);
-    return (Array.isArray(rows) ? rows : rows?.rows ?? [])[0] || null;
+    return rows[0] || null;
+  }
+
+  private async _findEntryByNormalizedMd5(normalizedContentMd5: string, db: any = this.pgPool): Promise<Record<string, unknown> | null> {
+    const rows = await this._queryRows(db, `
+      SELECT id, title, type, content, source, file_path, para_category, meta
+      FROM sigma.vault_entries
+      WHERE COALESCE(status, 'captured') <> 'archived'
+        AND (meta->>'merged_into') IS NULL
+        AND COALESCE(
+          meta->>'normalizedContentMd5',
+          md5(
+            regexp_replace(BTRIM(COALESCE(title, '')), '[[:space:]]+', ' ', 'g')
+            || E'\\n' ||
+            regexp_replace(BTRIM(COALESCE(content, '')), '[[:space:]]+', ' ', 'g')
+          )
+        ) = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `, [normalizedContentMd5]);
+    return rows[0] || null;
+  }
+
+  private async _mergeDuplicateProvenance(
+    existing: Record<string, unknown>,
+    incoming: VaultEntry,
+    db: any = this.pgPool,
+  ): Promise<Record<string, unknown>> {
+    const meta = mergeDuplicateProvenanceMeta(existing, incoming);
+    if (stableJson(meta) === stableJson(parseMeta(existing.meta))) return existing;
+    const rows = await this._queryRows(db, `
+      UPDATE sigma.vault_entries
+      SET meta = $2::jsonb,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, title, type, content, source, file_path, para_category, meta
+    `, [existing.id, JSON.stringify(meta)]);
+    if (!rows[0]) throw new Error(`duplicate_provenance_update_failed:${existing.id}`);
+    return rows[0];
+  }
+
+  private async _findAndMergeNormalizedDuplicate(
+    normalizedContentMd5: string,
+    incoming: VaultEntry,
+  ): Promise<Record<string, unknown> | null> {
+    const findAndMerge = async (db: any, useAdvisoryLock: boolean) => {
+      if (useAdvisoryLock) {
+        await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sigma-vault-content:${normalizedContentMd5}`]);
+      }
+      const existing = await this._findEntryByNormalizedMd5(normalizedContentMd5, db);
+      return existing ? this._mergeDuplicateProvenance(existing, incoming, db) : null;
+    };
+    if (typeof this.pgPool.transaction === 'function') {
+      return this.pgPool.transaction('sigma', (client: any) => findAndMerge(client, true));
+    }
+    return findAndMerge(this.pgPool, false);
   }
 
   private async _hasCoordColumns(): Promise<boolean> {

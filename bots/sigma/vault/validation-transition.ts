@@ -216,10 +216,18 @@ export function buildTeamTransitionPlan({
 } = {}) {
   const rowsByRef = new Map();
   const normalizedRows = (vaultRows || []).map((row) => {
-    const sourceRef = extractSourceRef(row);
+    const meta = parseMeta(row.meta);
+    const sourceRefs = [...new Map([
+      extractSourceRef(row),
+      ...(Array.isArray(meta.source_refs) ? meta.source_refs.map((ref) => normalizeSourceRef(ref)) : []),
+    ].filter(Boolean).map((ref) => [sourceRefKey(ref), ref])).values()];
+    const sourceRef = sourceRefs[0] || null;
     const refKey = sourceRefKey(sourceRef);
-    const normalized = { ...row, sourceRef, refKey, coords: rowCoords(row) };
-    if (refKey && !rowsByRef.has(refKey)) rowsByRef.set(refKey, normalized);
+    const normalized = { ...row, sourceRef, sourceRefs, refKey, coords: rowCoords(row) };
+    for (const ref of sourceRefs) {
+      const key = sourceRefKey(ref);
+      if (key && !rowsByRef.has(key)) rowsByRef.set(key, normalized);
+    }
     return normalized;
   });
 
@@ -426,13 +434,28 @@ export async function fetchVaultRowsForSourceRefs({ sourceRefs = [], limit = 500
   const clauses = boundedRefs.map((ref) => {
     params.push(ref.team, ref.table, ref.id);
     const start = params.length - 2;
-    return `(meta->'source_ref'->>'team' = $${start} AND meta->'source_ref'->>'table' = $${start + 1} AND meta->'source_ref'->>'id' = $${start + 2})`;
+    return `(
+      (meta->'source_ref'->>'team' = $${start} AND meta->'source_ref'->>'table' = $${start + 1} AND meta->'source_ref'->>'id' = $${start + 2})
+      OR EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(meta->'source_refs') = 'array' THEN meta->'source_refs'
+            ELSE '[]'::jsonb
+          END
+        ) AS source_ref_alias
+        WHERE source_ref_alias->>'team' = $${start}
+          AND source_ref_alias->>'table' = $${start + 1}
+          AND source_ref_alias->>'id' = $${start + 2}
+      )
+    )`;
   });
   params.push(boundedRefs.length);
   const rows = await queryReadonly('sigma', `
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
       AND (${clauses.join(' OR ')})
     ORDER BY created_at DESC
     LIMIT $${params.length}
@@ -450,6 +473,7 @@ export async function fetchDuePredictionRows({ limit = 100, queryReadonly = pgPo
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
       AND ${predictionExpr} = 'due'
     ORDER BY created_at ASC
     LIMIT $1
@@ -465,6 +489,7 @@ export async function fetchEvidenceRowsForDue({ dueRows = [], limit = 300, query
     SELECT id, title, type, content, source, file_path, meta, created_at
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
       AND (
         COALESCE(content, '') ILIKE ANY($1::text[])
         OR COALESCE(meta::text, '') ILIKE ANY($1::text[])
@@ -654,7 +679,8 @@ export async function fetchPredictionLedgerRows({ limit = 500, queryReadonly = p
   const rows = await queryReadonly('sigma', `
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
-    WHERE ${predictionExpr} <> 'none'
+    WHERE (meta->>'merged_into') IS NULL
+      AND ${predictionExpr} <> 'none'
     ORDER BY created_at DESC
     LIMIT $1
   `, [Math.max(1, Math.min(2000, Number(limit) || 500))]);

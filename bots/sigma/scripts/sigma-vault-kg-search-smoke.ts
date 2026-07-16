@@ -55,6 +55,9 @@ function mockDeps({ enabled, graphFailure = false }: { enabled: boolean; graphFa
       calls.push({ schema, sql, params });
       assert.equal(schema, 'sigma');
       assert.equal(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i.test(sql), false);
+      if (String(sql).includes('FROM sigma.vault_entries')) {
+        assert.match(sql, /meta->>'merged_into'\) IS NULL/);
+      }
       if (String(sql).includes('type = ANY')) {
         if (graphFailure) throw new Error('missing_graph_source');
         return graphRows;

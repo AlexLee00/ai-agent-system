@@ -125,6 +125,7 @@ async function searchKnowledgeGraph(query: string, queryReadonly: any): Promise<
       LEFT(content, 200) AS content_preview
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
       AND (
         type = ANY($1::text[])
         OR LOWER(COALESCE(meta->>'vaultTier', meta->>'vault_tier', '')) = 'knowledge'

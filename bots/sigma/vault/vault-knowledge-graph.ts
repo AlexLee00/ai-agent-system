@@ -184,7 +184,11 @@ export function buildVaultKnowledgeGraph(entries: VaultGraphEntry[]): VaultKnowl
     const recordId = String(entry.id || '').trim();
     if (!recordId) continue;
     const meta = parseMeta(entry.meta);
-    const sourceRef = meta.source_ref && typeof meta.source_ref === 'object' ? meta.source_ref : {};
+    const sourceRefs = [
+      ...(meta.source_ref && typeof meta.source_ref === 'object' ? [meta.source_ref] : []),
+      ...(Array.isArray(meta.source_refs) ? meta.source_refs.filter((ref) => ref && typeof ref === 'object') : []),
+    ];
+    const sourceRef = sourceRefs[0] || {};
     const team = firstString(meta.team, sourceRef.team, entry.source);
     const agent = firstString(meta.agent);
     const recordNodeId = `record:${slug(recordId)}`;
@@ -226,8 +230,9 @@ export function buildVaultKnowledgeGraph(entries: VaultGraphEntry[]): VaultKnowl
     for (const entity of stringValues(meta.entity, meta.entities, meta.subject, meta.subjects, meta.technologies)) {
       addEntity(nodes, edges, recordNodeId, entity, 'meta');
     }
-    const sourceTable = firstString(sourceRef.table, meta.sourceTable);
-    if (sourceTable) addEntity(nodes, edges, recordNodeId, sourceTable, 'source_ref');
+    for (const sourceTable of new Set(stringValues(sourceRefs.map((ref) => ref.table), meta.sourceTable))) {
+      addEntity(nodes, edges, recordNodeId, sourceTable, 'source_ref');
+    }
   }
 
   const graphNodes = [...nodes.values()].sort((left, right) => left.id.localeCompare(right.id));
@@ -370,6 +375,7 @@ export async function fetchVaultKnowledgeGraphReport(options: ReportOptions = {}
     SELECT id::text, title, type, source, tags, meta, created_at
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
       AND (
         type = ANY($1::text[])
         OR LOWER(COALESCE(meta->>'vaultTier', meta->>'vault_tier', '')) = 'knowledge'

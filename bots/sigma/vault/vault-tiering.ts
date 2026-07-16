@@ -223,6 +223,7 @@ export async function fetchVaultTierReport({
     SELECT id::text, title, type, source, file_path, meta, abstraction_level, time_stage, validation_state, prediction_state, created_at
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
     ORDER BY created_at DESC, id DESC
   `, []);
   return buildVaultTierReport(rows, { sampleLimit });

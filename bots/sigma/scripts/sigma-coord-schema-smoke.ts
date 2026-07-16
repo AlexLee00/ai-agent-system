@@ -11,7 +11,11 @@ import {
   normalizeLibraryCoords,
 } from '../shared/library-coords.ts';
 import { classify } from '../vault/para-classifier.ts';
-import { VaultManager, buildVaultRawHash } from '../vault/vault-manager.ts';
+import {
+  VaultManager,
+  buildVaultNormalizedContentMd5,
+  buildVaultRawHash,
+} from '../vault/vault-manager.ts';
 import {
   inspectSigmaCoordSchema,
   SIGMA_COORD_COLUMNS,
@@ -24,7 +28,8 @@ function makeMockPgPool({ coordColumns = [] } = {}) {
   const audits = [];
   let idSeq = 1;
   const calls = [];
-  return {
+  let transactionQueue = Promise.resolve();
+  const pgPool = {
     rowsByFilePath,
     audits,
     calls,
@@ -38,9 +43,14 @@ function makeMockPgPool({ coordColumns = [] } = {}) {
         return [];
       }
       if (normalized.startsWith('SELECT id, title, type, content, source, file_path')) {
+        if (normalized.includes("normalizedContentMd5")) {
+          const row = [...rowsByFilePath.values()].find((candidate) => candidate.meta?.normalizedContentMd5 === params[0]);
+          return row ? [row] : [];
+        }
         const row = rowsByFilePath.get(params[0]);
         return row ? [row] : [];
       }
+      if (normalized.startsWith('SELECT pg_advisory_xact_lock')) return [];
       if (normalized.startsWith('INSERT INTO sigma.vault_entries')) {
         const meta = JSON.parse(params[6] || '{}');
         const row = {
@@ -57,6 +67,12 @@ function makeMockPgPool({ coordColumns = [] } = {}) {
         if (row.file_path && rowsByFilePath.has(row.file_path)) return [];
         rowsByFilePath.set(row.file_path || row.id, row);
         return [{ id: row.id }];
+      }
+      if (normalized.startsWith('UPDATE sigma.vault_entries SET meta =')) {
+        const row = [...rowsByFilePath.values()].find((candidate) => candidate.id === params[0]);
+        if (!row) return [];
+        row.meta = JSON.parse(params[1] || '{}');
+        return [row];
       }
       if (normalized.startsWith('INSERT INTO sigma.vault_audit')) {
         audits.push({
@@ -77,7 +93,19 @@ function makeMockPgPool({ coordColumns = [] } = {}) {
     async queryReadonly(schema, sql, params = []) {
       return this.query(schema, sql, params);
     },
+    async transaction(schema, callback) {
+      const execute = async () => callback({
+        query: async (sql, params = []) => {
+          const rows = await pgPool.query(schema, sql, params);
+          return { rows, rowCount: rows.length };
+        },
+      });
+      const result = transactionQueue.then(execute, execute);
+      transactionQueue = result.then(() => undefined, () => undefined);
+      return result;
+    },
   };
+  return pgPool;
 }
 
 async function assertCoordUtilities() {
@@ -178,13 +206,92 @@ async function assertVaultManagerRawImmutability() {
   assert.equal(pgPool.calls.some((call) => /abstraction_level/.test(call.sql) && /INSERT INTO sigma\.vault_entries/.test(call.sql)), false);
 }
 
+async function assertVaultManagerNormalizedUpsert() {
+  const pgPool = makeMockPgPool();
+  let embeddingCalls = 0;
+  const makeManager = () => new VaultManager({
+    pgPool,
+    embeddingFactory: async () => {
+      embeddingCalls += 1;
+      return { embedding: null, dim: null, warning: 'mock_embedding_disabled' };
+    },
+  });
+  const first = await makeManager().addToInbox({
+    title: 'Lecture Note',
+    content: 'one\ntwo',
+    filePath: 'feeds/docs/1',
+    source: 'docs',
+    meta: { source_ref: { team: 'docs', table: 'lessons', id: '1' } },
+  });
+  const whitespaceDuplicate = await makeManager().addToInbox({
+    title: ' Lecture   Note ',
+    content: 'one   two',
+    filePath: 'feeds/team/2',
+    source: 'team',
+    meta: { source_ref: { team: 'team', table: 'lessons', id: '2' } },
+  });
+  assert.equal(whitespaceDuplicate.id, first.id);
+  assert.equal(embeddingCalls, 1, 'preflight normalized duplicate should skip embedding');
+  assert.equal(pgPool.rowsByFilePath.size, 1);
+  assert.equal(
+    pgPool.rowsByFilePath.get('feeds/docs/1').meta.normalizedContentMd5,
+    buildVaultNormalizedContentMd5({ title: 'Lecture Note', content: 'one\ntwo' }),
+  );
+  assert.deepEqual(pgPool.rowsByFilePath.get('feeds/docs/1').meta.source_refs, [
+    { team: 'docs', table: 'lessons', id: '1' },
+    { team: 'team', table: 'lessons', id: '2' },
+  ]);
+  assert.deepEqual(pgPool.rowsByFilePath.get('feeds/docs/1').meta.provenance_aliases, [
+    { source: 'docs', filePath: 'feeds/docs/1', sourceRef: { team: 'docs', table: 'lessons', id: '1' } },
+    { source: 'team', filePath: 'feeds/team/2', sourceRef: { team: 'team', table: 'lessons', id: '2' } },
+  ]);
+
+  const concurrent = await Promise.all([
+    makeManager().addToInbox({
+      title: 'Concurrent',
+      content: 'same body',
+      filePath: 'feeds/claude/1',
+      source: 'claude',
+      meta: { source_ref: { team: 'claude', table: 'outcomes', id: '1' } },
+    }),
+    makeManager().addToInbox({
+      title: 'Concurrent',
+      content: 'same\nbody',
+      filePath: 'feeds/luna/1',
+      source: 'luna',
+      meta: { source_ref: { team: 'luna', table: 'outcomes', id: '2' } },
+    }),
+  ]);
+  assert.equal(concurrent[0].id, concurrent[1].id);
+  assert.equal([...pgPool.rowsByFilePath.values()].filter((row) => row.title === 'Concurrent').length, 1);
+  assert.equal(pgPool.calls.some((call) => /pg_advisory_xact_lock/i.test(call.sql)), true);
+  assert.equal(
+    pgPool.calls.filter((call) => /pg_advisory_xact_lock/i.test(call.sql)).every((call) => String(call.params[0]).startsWith('sigma-vault-content:')),
+    true,
+  );
+  const concurrentRow = [...pgPool.rowsByFilePath.values()].find((row) => row.title === 'Concurrent');
+  assert.deepEqual(concurrentRow.meta.source_refs, [
+    { team: 'claude', table: 'outcomes', id: '1' },
+    { team: 'luna', table: 'outcomes', id: '2' },
+  ]);
+
+  const nearDuplicate = await makeManager().addToInbox({
+    title: 'Concurrent',
+    content: 'same body.',
+    filePath: 'feeds/hub/1',
+    source: 'hub-llm',
+  });
+  assert.notEqual(nearDuplicate.id, concurrent[0].id);
+}
+
 async function main() {
   await assertCoordUtilities();
   await assertClassifierCoords();
   await assertMigrationMarkers();
   await assertBootstrapReadOnly();
   await assertVaultManagerRawImmutability();
-  console.log(JSON.stringify({ ok: true, smoke: 'sigma-coord-schema', checks: 18 }, null, 2));
+  await assertVaultManagerNormalizedUpsert();
+  console.log(JSON.stringify({ ok: true, smoke: 'sigma-coord-schema', checks: 25 }, null, 2));
 }
 
 main().catch((error) => {

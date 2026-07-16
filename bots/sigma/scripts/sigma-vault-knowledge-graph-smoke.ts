@@ -30,7 +30,13 @@ const fixtures = [
     type: 'refactor_outcome',
     source: 'darwin',
     tags: ['darwin', 'routing'],
-    meta: { team: 'darwin', agent: 'evaluator', entities: ['Hub'], lesson: 'routing contract' },
+    meta: {
+      team: 'darwin',
+      agent: 'evaluator',
+      entities: ['Hub'],
+      lesson: 'routing contract',
+      source_refs: [{ team: 'luna', table: 'trade_journal', id: '42' }],
+    },
   },
 ];
 
@@ -41,6 +47,8 @@ async function main() {
   assert(graph.nodes.some((node) => node.type === 'record' && node.id === 'record:record-1'));
   assert(graph.nodes.some((node) => node.type === 'topic_theme' && node.id === 'topic:seo'));
   assert(graph.nodes.some((node) => node.type === 'entity' && node.id === 'entity:openai'));
+  assert(graph.nodes.some((node) => node.type === 'entity' && node.id === 'entity:trade-journal'));
+  assert.deepEqual(queryRecordsByEntity(graph, 'trade_journal').map((record) => record.id), ['record-3']);
 
   const openAiRecords = queryRecordsByEntity(graph, 'OpenAI');
   assert.deepEqual(openAiRecords.map((record) => record.id).sort(), ['record-1', 'record-2']);
@@ -66,6 +74,7 @@ async function main() {
       queryCalls += 1;
       assert.match(sql, /^\s*SELECT\b/i);
       assert.doesNotMatch(sql, /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/i);
+      assert.match(sql, /meta->>'merged_into'\) IS NULL/);
       return fixtures;
     },
   });

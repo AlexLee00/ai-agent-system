@@ -4,7 +4,7 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { mergeLibraryCoords, nextDecayStage, normalizeTimeStage, recallStage, rowsFromPg } from '../shared/zaxis.ts';
+import { nextDecayStage, normalizeTimeStage, recallStage, rowsFromPg } from '../shared/zaxis.ts';
 import { fetchVaultTierReport, isVaultTierReportEnabled } from '../vault/vault-tiering.ts';
 
 const require = createRequire(import.meta.url);
@@ -52,6 +52,7 @@ export async function fetchLibrarianCandidates({
       SELECT id, title, source, file_path, meta, created_at, ${stage} AS current_time_stage
       FROM sigma.vault_entries v
       WHERE COALESCE(status, 'captured') <> 'archived'
+        AND (meta->>'merged_into') IS NULL
         AND ${stage} IN ('raw', 'digest', 'pattern', 'dormant')
         AND (
           (${stage} = 'raw' AND created_at < NOW() - INTERVAL '7 days')
@@ -73,6 +74,7 @@ export async function fetchLibrarianCandidates({
       SELECT id, title, source, file_path, meta, created_at, ${stage} AS current_time_stage
       FROM sigma.vault_entries v
       WHERE COALESCE(status, 'captured') <> 'archived'
+        AND (meta->>'merged_into') IS NULL
         AND ${stage} IN ('dormant', 'forgotten')
         AND EXISTS (
           SELECT 1
@@ -115,15 +117,19 @@ export async function applyLibrarianPlan(plan = [], { pg = pgPool, env = process
   }
   let applied = 0;
   for (const item of plan) {
-    const row = rowsFromPg(await pg.query('sigma', 'SELECT meta FROM sigma.vault_entries WHERE id = $1 LIMIT 1', [item.id]))[0] || {};
-    const meta = mergeLibraryCoords(row.meta, { time_stage: item.to });
     await pg.query('sigma', `
       UPDATE sigma.vault_entries
       SET time_stage = $1,
-          meta = $2::jsonb,
+          meta = jsonb_set(
+            COALESCE(meta, '{}'::jsonb),
+            '{libraryCoords}',
+            COALESCE(meta->'libraryCoords', '{}'::jsonb) || jsonb_build_object('time_stage', $1::text),
+            true
+          ),
           updated_at = NOW()
-      WHERE id = $3
-    `, [item.to, JSON.stringify(meta), item.id]);
+      WHERE id = $2
+        AND (meta->>'merged_into') IS NULL
+    `, [item.to, item.id]);
     await pg.query('sigma', `
       INSERT INTO sigma.vault_audit (entry_id, action, classifier, reasoning, applied, dry_run)
       VALUES ($1, 'tagged', 'rule', $2, true, false)
