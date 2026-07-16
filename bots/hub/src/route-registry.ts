@@ -37,6 +37,7 @@ const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
 const { lunaLiveFireCallbackRoute } = require('../lib/routes/luna-live-fire-callback');
 const { lunaMeetingCallbackRoute } = require('../lib/routes/luna-meeting-callback');
+const { jaenongCommandRoute } = require('../lib/routes/jaenong-command');
 const { autonomyInterventionRoute } = require('../lib/routes/autonomy');
 const { memoryRememberRoute, memoryRecallRoute } = require('../lib/routes/memory');
 const {
@@ -215,6 +216,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.post('/hub/darwin/callback', generalLimiter, darwinCallbackRoute);
   app.post('/hub/luna/live-fire/callback', generalLimiter, lunaLiveFireCallbackRoute);
   app.post('/hub/luna/meeting-callback', generalLimiter, lunaMeetingCallbackRoute);
+  app.post('/hub/luna/jaenong-command', generalLimiter, jaenongCommandRoute);
   app.post('/hub/v2/autonomy/intervention', generalLimiter, autonomyInterventionRoute);
   app.post('/hub/memory/remember', generalLimiter, memoryRememberRoute);
   app.post('/hub/memory/recall', generalLimiter, memoryRecallRoute);

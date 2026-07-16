@@ -25,6 +25,7 @@ type CallbackQuery = {
 
 type TelegramMessage = {
   message_id?: number;
+  message_thread_id?: number;
   date?: number;
   text?: string;
   chat?: { id?: number | string };
@@ -262,7 +263,7 @@ function isMasterMessage(message: TelegramMessage): boolean {
   return allowed.size > 0 && allowed.has(chatId);
 }
 
-async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> {
+async function forwardMasterMessage(message: TelegramMessage, botToken = ''): Promise<unknown> {
   if (!isMasterMessage(message)) {
     return { skipped: true, reason: 'non_master_chat' };
   }
@@ -270,6 +271,10 @@ async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> 
   const text = String(message?.text || '').trim();
   if (!text) {
     return { skipped: true, reason: 'empty_message' };
+  }
+
+  if (/^\/jaenong(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(text)) {
+    return forwardJaenongCommand(message, botToken);
   }
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -309,6 +314,44 @@ async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> 
   return body;
 }
 
+async function sendJaenongReply(message: TelegramMessage, reply: string, botToken: string): Promise<void> {
+  if (!String(botToken || '').trim()) return;
+  const payload: Record<string, unknown> = {
+    chat_id: message.chat?.id,
+    text: reply,
+  };
+  if (message.message_thread_id) payload.message_thread_id = message.message_thread_id;
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) logWarn(`JAENONG 응답 전송 실패: HTTP ${res.status}`);
+}
+
+async function forwardJaenongCommand(message: TelegramMessage, botToken: string): Promise<unknown> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const hubToken = getHubToken();
+  if (hubToken) headers.Authorization = `Bearer ${hubToken}`;
+  const callbackSecret = getControlCallbackSecret();
+  if (callbackSecret) headers['x-hub-control-callback-secret'] = callbackSecret;
+  const res = await fetch(`${HUB_BASE}/hub/luna/jaenong-command`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      text: String(message.text || '').trim(),
+      chat_id: String(message.chat?.id || '').trim(),
+      message_id: message.message_id || null,
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+  await sendJaenongReply(message, body.message || `JAENONG error=${body.error || `HTTP ${res.status}`}`, botToken);
+  if (!res.ok) throw new Error(`Hub JAENONG command HTTP ${res.status}`);
+  return body;
+}
+
 async function pollLoop(): Promise<void> {
   const botTargets = getBotTargets();
   if (botTargets.length === 0) {
@@ -339,7 +382,7 @@ async function pollLoop(): Promise<void> {
               await forwardCallback(update.callback_query);
             }
             if (update.message) {
-              await forwardMasterMessage(update.message);
+              await forwardMasterMessage(update.message, target.token);
             }
           } catch (error) {
             const err = error as Error;
