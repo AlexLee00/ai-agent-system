@@ -43,6 +43,18 @@ function isMasterChat(chatId: string): boolean {
   return allowed.size > 0 && allowed.has(chatId);
 }
 
+export function isAuthorizedMasterSender(chatId: string, userId: string, chatType: string): boolean {
+  if (!chatId || !userId || !isMasterChat(chatId)) return false;
+  if (chatType === 'private') return chatId === userId;
+  if (chatType !== 'group' && chatType !== 'supergroup') return false;
+
+  const allowedUsers = new Set(String(process.env.MASTER_TELEGRAM_USER_IDS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean));
+  return allowedUsers.has(userId) || isMasterChat(userId);
+}
+
 export async function jaenongCommandRoute(req: Request, res: Response) {
   try {
     const command = String(req.body?.text || '').trim();
@@ -50,12 +62,14 @@ export async function jaenongCommandRoute(req: Request, res: Response) {
       return res.status(400).json({ ok: false, error: 'jaenong_command_invalid' });
     }
     const chatId = String(req.body?.chat_id || '').trim();
-    if (!chatId || !isMasterChat(chatId)) {
-      return res.status(403).json({ ok: false, error: 'jaenong_master_chat_required' });
+    const userId = String(req.body?.from_user_id || '').trim();
+    const chatType = String(req.body?.chat_type || '').trim();
+    if (!isAuthorizedMasterSender(chatId, userId, chatType)) {
+      return res.status(403).json({ ok: false, error: 'jaenong_master_sender_required' });
     }
     const { operations, db } = await loadBackend();
     const result = await operations.handleJaenongCommand(command, {
-      actor: `telegram-master:${chatId}`,
+      actor: `telegram-master:${userId}`,
       queryFn: db.query,
       runFn: db.run,
     });

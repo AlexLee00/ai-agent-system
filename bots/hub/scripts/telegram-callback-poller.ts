@@ -28,8 +28,8 @@ type TelegramMessage = {
   message_thread_id?: number;
   date?: number;
   text?: string;
-  chat?: { id?: number | string };
-  from?: unknown;
+  chat?: { id?: number | string; type?: string };
+  from?: { id?: number | string };
 };
 
 type TelegramUpdate = {
@@ -342,6 +342,8 @@ async function forwardJaenongCommand(message: TelegramMessage, botToken: string)
     body: JSON.stringify({
       text: String(message.text || '').trim(),
       chat_id: String(message.chat?.id || '').trim(),
+      chat_type: String(message.chat?.type || '').trim(),
+      from_user_id: String(message.from?.id || '').trim(),
       message_id: message.message_id || null,
     }),
     signal: AbortSignal.timeout(30_000),
