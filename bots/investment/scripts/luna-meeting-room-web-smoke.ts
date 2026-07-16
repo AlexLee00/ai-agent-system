@@ -454,6 +454,27 @@ async function main() {
     /raw JSON/,
   );
   const store = createMemoryStore();
+  const jaenongBrief = {
+    briefRef: 'post:meeting-room-smoke',
+    sourceKind: 'post',
+    publishedAt: '2026-07-16T09:00:00.000Z',
+    parsedAt: '2026-07-16T09:05:00.000Z',
+    updatedAt: '2026-07-16T09:05:00.000Z',
+    expiresAt: '2026-07-17T15:05:00.000Z',
+    marketAdjustment: 1,
+    marketView: '조정 구간 분할매수 기회',
+    candidateSymbols: ['BTC', 'ETH'],
+    state: 'awaiting_ack',
+  };
+  let jaenongStatus = {
+    ok: true,
+    brief: jaenongBrief,
+    ack: null,
+    state: { status: 'awaiting_ack', reason: 'brief_ack_required', mayApplyWeight: false },
+    shadowOnly: true,
+    executionConnected: false,
+  };
+  const jaenongAckCalls = [];
   const runSessionOptions = [];
   let releaseRun;
   const runGate = new Promise((resolve) => { releaseRun = resolve; });
@@ -497,6 +518,21 @@ async function main() {
       provider: 'fixture',
       text: '#### fixture answer\n- **bold** answer\n| k | v |\n|---|---|\n| ok | true |\n회의 plan-note 기준 세그먼트는 domestic과 overseas는 활성이고 crypto는 대기입니다. 게이트가 정지 상태이고 게이트가 감소한 상태입니다. 감소한 상태로 reduced 표시도 있습니다. 국내(33%), 미국(47%), 암호화폐(61%) 시장은 각각 중단, 감소, reduced 상태이며, 미국는 수평 상태입니다. 국내는 진행이 중단된 상태입니다. 국내는 중단 상태, 미국은 reduced 상태, 암호화폐는 최대 상태입니다. 암호화폐는 완전한 상태입니다.',
     }),
+    getJaenongBriefStatusFn: async (options) => ({ ...jaenongStatus, requestedAt: options.now.toISOString() }),
+    acknowledgeJaenongBriefFn: async (input) => {
+      jaenongAckCalls.push(input);
+      if (input.briefRef === 'post:expired-brief') throw new Error('jaenong_brief_expired');
+      if (input.briefRef === 'x') throw new Error('jaenong_brief_ref_invalid');
+      return {
+        ok: true,
+        briefRef: input.briefRef,
+        actor: input.actor,
+        state: 'active',
+        idempotent: jaenongAckCalls.length > 1,
+        shadowOnly: true,
+        executionConnected: false,
+      };
+    },
   };
 
   const started = await startMeetingRoomWebServer({ port: 0, host: '127.0.0.1', liveStreamEnabled: true, pushEnabled: false }, deps);
@@ -514,6 +550,39 @@ async function main() {
     assert.equal(health.headers.get('x-frame-options'), 'DENY');
     assert.ok(health.headers.get('permissions-policy')?.includes('camera=()'));
     assert.ok(health.headers.get('content-security-policy')?.includes("frame-ancestors 'none'"));
+
+    const jaenong = await request(baseUrl, '/api/jaenong/brief');
+    assert.equal(jaenong.status, 200);
+    assert.equal(jaenong.payload.brief.briefRef, jaenongBrief.briefRef);
+    assert.equal(jaenong.payload.state.status, 'awaiting_ack');
+    assert.equal(jaenong.payload.shadowOnly, true);
+    assert.equal(jaenong.payload.executionConnected, false);
+    const ackResponses = await Promise.all([
+      request(baseUrl, `/api/jaenong/brief/${encodeURIComponent(jaenongBrief.briefRef)}/ack`, { method: 'POST', headers: jsonHeaders() }),
+      request(baseUrl, `/api/jaenong/brief/${encodeURIComponent(jaenongBrief.briefRef)}/ack`, { method: 'POST', headers: jsonHeaders() }),
+    ]);
+    assert.deepEqual(ackResponses.map((response) => response.status), [200, 200]);
+    assert.equal(ackResponses[1].payload.idempotent, true);
+    assert.equal(jaenongAckCalls.every((call) => call.actor === 'meeting-room:master'), true);
+    const expiredAck = await request(baseUrl, '/api/jaenong/brief/post%3Aexpired-brief/ack', { method: 'POST', headers: jsonHeaders() });
+    assert.equal(expiredAck.status, 409);
+    assert.equal(expiredAck.payload.error, 'jaenong_brief_expired');
+    const invalidAck = await request(baseUrl, '/api/jaenong/brief/x/ack', { method: 'POST', headers: jsonHeaders() });
+    assert.equal(invalidAck.status, 400);
+    assert.equal(invalidAck.payload.error, 'jaenong_brief_ref_invalid');
+    jaenongStatus = {
+      ok: true,
+      brief: null,
+      ack: null,
+      state: { status: 'absent', reason: 'brief_absent', mayApplyWeight: false },
+      shadowOnly: true,
+      executionConnected: false,
+    };
+    const absentJaenong = await request(baseUrl, '/api/jaenong/brief');
+    assert.equal(absentJaenong.status, 200);
+    assert.equal(absentJaenong.payload.brief, null);
+    assert.equal(absentJaenong.payload.state.status, 'absent');
+    jaenongStatus = { ...jaenongStatus, brief: jaenongBrief, state: { status: 'awaiting_ack', reason: 'brief_ack_required', mayApplyWeight: false } };
 
     const html = await request(baseUrl, '/');
     assert.equal(html.status, 200);
@@ -567,6 +636,11 @@ async function main() {
     assert.ok(appJs.text.includes("new EventSource(meetingStreamUrl(selectedRunningRun.id, token))"));
     assert.ok(appJs.text.includes("'/api/push/vapid-public'"));
     assert.ok(appJs.text.includes("'/api/push/subscribe'"));
+    assert.ok(appJs.text.includes("'/api/jaenong/brief'"));
+    assert.ok(appJs.text.includes('function JaenongBriefCard'));
+    assert.ok(appJs.text.includes('JAENONG 오늘의 브리프'));
+    assert.ok(appJs.text.includes('무시는 DB 상태를 바꾸지 않으며 만료까지 미응답과 동일합니다.'));
+    assert.ok(appJs.text.includes('meeting-room:master'));
     assert.equal(appJs.text.includes('if (standalone && !status) return null;'), false);
     assert.ok(appJs.text.includes('const showInstallPrompt = !standalone'));
     const manifest = await request(baseUrl, '/manifest.json');
@@ -578,7 +652,7 @@ async function main() {
     assert.equal(serviceWorker.status, 200);
     assert.equal(serviceWorker.headers.get('content-type'), 'text/javascript; charset=utf-8');
     assert.ok(serviceWorker.headers.get('content-security-policy')?.includes("script-src 'self' https://unpkg.com"));
-    assert.ok(serviceWorker.text.includes("const CACHE_VERSION = 'luna-meeting-room-20260703a';"));
+    assert.ok(serviceWorker.text.includes("const CACHE_VERSION = 'luna-meeting-room-20260716a';"));
     assert.ok(serviceWorker.text.includes("importScripts('https://unpkg.com/workbox-sw@7.1.0/build/workbox-sw.js')"));
     assert.ok(serviceWorker.text.includes("self.addEventListener('push'"));
     assert.ok(serviceWorker.text.includes("self.addEventListener('notificationclick'"));

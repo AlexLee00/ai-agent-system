@@ -7,7 +7,11 @@ const PROJECT_ROOT = process.env.PROJECT_ROOT
 
 type JaenongBackend = {
   operations: { handleJaenongCommand: (command: string, deps: Record<string, unknown>) => Promise<any> };
-  db: { query: (...args: any[]) => Promise<any>; run: (...args: any[]) => Promise<any> };
+  db: {
+    query: (...args: any[]) => Promise<any>;
+    run: (...args: any[]) => Promise<any>;
+    withTransaction: (...args: any[]) => Promise<any>;
+  };
 };
 
 let backendPromise: Promise<JaenongBackend> | null = null;
@@ -72,6 +76,7 @@ export async function jaenongCommandRoute(req: Request, res: Response) {
       actor: `telegram-master:${userId}`,
       queryFn: db.query,
       runFn: db.run,
+      withTransactionFn: db.withTransaction,
     });
     return res.json({ ...result, message: responseText(result), executionConnected: false });
   } catch (error: unknown) {

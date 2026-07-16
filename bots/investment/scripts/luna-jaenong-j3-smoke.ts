@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  acknowledgeJaenongBrief,
   applyJaenongBriefWeight,
   attachJaenongAttribution,
   buildJaenongBriefFromPostScore,
@@ -13,6 +14,7 @@ import {
   buildJaenongReferenceSnapshot,
   deriveJaenongMarketAdjustment,
   evaluateJaenongBriefState,
+  getJaenongBriefStatus,
   getJaenongRetroSummary,
   handleJaenongCommand,
   invalidateJaenongBriefState,
@@ -223,6 +225,111 @@ async function main() {
     brief: { ...brief, invalidatedAt: '2026-07-16T10:30:00.000Z' },
   }).status, 'invalid');
 
+  let todayStatusQuery = null;
+  const todayStatus = await getJaenongBriefStatus({ now, todayKst: true }, {
+    queryFn: async (sql, params) => {
+      todayStatusQuery = { sql, params };
+      return [{}];
+    },
+  });
+  assert.equal(todayStatus.state.status, 'absent');
+  assert.deepEqual(todayStatusQuery.params, ['2026-07-15T15:00:00.000Z', '2026-07-16T15:00:00.000Z']);
+  assert.match(todayStatusQuery.sql, /published_at\s*>=\s*\$1::timestamptz/i);
+  assert.equal(todayStatus.executionConnected, false);
+
+  const ackWrites = [];
+  const ackQueries = [];
+  const ackTransaction = async (callback) => callback({
+    query: async (sql, params) => {
+      ackQueries.push({ sql, params });
+      if (/FOR UPDATE/i.test(sql)) return [{
+        brief_ref: brief.briefRef,
+        source_kind: 'post',
+        published_at: brief.publishedAt,
+        parsed_at: brief.parsedAt,
+        updated_at: brief.updatedAt,
+        expires_at: brief.expiresAt,
+        market_adjustment: brief.marketAdjustment,
+        market_view: brief.marketView,
+        candidate_symbols: brief.candidateSymbols,
+        state: 'awaiting_ack',
+        shadow_only: true,
+      }];
+      if (/FROM investment\.jaenong_brief_ack/i.test(sql)) return [];
+      throw new Error(`unexpected ack query: ${sql}`);
+    },
+    run: async (sql, params) => {
+      ackWrites.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  const meetingRoomAck = await acknowledgeJaenongBrief({
+    briefRef: brief.briefRef,
+    actor: 'meeting-room:master',
+    now,
+  }, { withTransactionFn: ackTransaction });
+  assert.equal(meetingRoomAck.state, 'active');
+  assert.equal(meetingRoomAck.idempotent, false);
+  assert.equal(meetingRoomAck.shadowOnly, true);
+  assert.equal(meetingRoomAck.executionConnected, false);
+  assert.equal(ackWrites.length, 3);
+  assert.match(ackQueries[0].sql, /FOR UPDATE/i);
+  assert.match(ackWrites[0].sql, /jaenong_brief_ack/i);
+  assert.match(ackWrites[1].sql, /state\s*=\s*'active'/i);
+  assert.match(ackWrites[2].sql, /jaenong_brief_event/i);
+  assert.doesNotMatch(ackWrites.map((write) => write.sql).join('\n'), /trade_journal|order|execution/i);
+
+  const idempotentAck = await acknowledgeJaenongBrief({
+    briefRef: brief.briefRef,
+    actor: 'meeting-room:master',
+    now,
+  }, {
+    withTransactionFn: async (callback) => callback({
+      query: async (sql) => (/FOR UPDATE/i.test(sql) ? [{
+        brief_ref: brief.briefRef,
+        source_kind: 'post',
+        published_at: brief.publishedAt,
+        parsed_at: brief.parsedAt,
+        updated_at: brief.updatedAt,
+        expires_at: brief.expiresAt,
+        market_adjustment: brief.marketAdjustment,
+        market_view: brief.marketView,
+        candidate_symbols: brief.candidateSymbols,
+        state: 'active',
+        shadow_only: true,
+      }] : [{ acknowledged_at: '2026-07-16T11:30:00.000Z' }]),
+      run: async () => { throw new Error('idempotent ack must not write'); },
+    }),
+  });
+  assert.equal(idempotentAck.idempotent, true);
+  assert.equal(idempotentAck.state, 'active');
+
+  await assert.rejects(
+    acknowledgeJaenongBrief({
+      briefRef: brief.briefRef,
+      actor: 'meeting-room:master',
+      now,
+    }, {
+      withTransactionFn: async (callback) => callback({
+        query: async (sql) => (/FOR UPDATE/i.test(sql) ? [{
+          brief_ref: brief.briefRef,
+          source_kind: 'post',
+          published_at: brief.publishedAt,
+          parsed_at: brief.parsedAt,
+          updated_at: brief.updatedAt,
+          expires_at: now,
+          market_adjustment: brief.marketAdjustment,
+          market_view: brief.marketView,
+          candidate_symbols: brief.candidateSymbols,
+          state: 'awaiting_ack',
+          shadow_only: true,
+        }] : []),
+        run: async () => { throw new Error('expired ack must not write'); },
+      }),
+    }),
+    /jaenong_brief_expired/,
+  );
+
   const commandWrites = [];
   const commandDeps = {
     now: () => new Date(now),
@@ -236,6 +343,7 @@ async function main() {
       commandWrites.push({ sql, params });
       return { rowCount: 1 };
     },
+    withTransactionFn: ackTransaction,
   };
   const statusCommand = await handleJaenongCommand('/jaenong', { ...commandDeps, actor: 'master' });
   assert.equal(statusCommand.ok, true);
@@ -246,17 +354,17 @@ async function main() {
   });
   assert.equal(ackCommand.action, 'ack');
   assert.equal(ackCommand.shadowOnly, true);
-  assert.equal(commandWrites.length, 1);
-  assert.match(commandWrites[0].sql, /jaenong_brief_ack/);
-  assert.doesNotMatch(commandWrites[0].sql, /trade_journal|order|execution/i);
+  assert.equal(ackWrites.length, 6);
+  assert.match(ackWrites[3].sql, /jaenong_brief_ack/);
+  assert.doesNotMatch(ackWrites.slice(3).map((write) => write.sql).join('\n'), /trade_journal|order|execution/i);
   const correctCommand = await handleJaenongCommand(
     `/jaenong correct ${brief.briefRef} 1 MSFT corrected view`,
     { ...commandDeps, actor: 'master' },
   );
   assert.equal(correctCommand.action, 'correct');
   assert.equal(correctCommand.state, 'awaiting_ack');
-  assert.match(commandWrites[1].sql, /invalidated_at\s*=\s*NULL/i);
-  assert.match(commandWrites[1].sql, /invalid_reason\s*=\s*NULL/i);
+  assert.match(commandWrites[0].sql, /invalidated_at\s*=\s*NULL/i);
+  assert.match(commandWrites[0].sql, /invalid_reason\s*=\s*NULL/i);
   await assert.rejects(
     handleJaenongCommand('/jaenong set 2 MSFT too-high', { ...commandDeps, actor: 'master' }),
     /jaenong_market_adjustment_out_of_range/,

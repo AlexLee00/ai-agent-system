@@ -1,6 +1,6 @@
 self.__WB_DISABLE_DEV_LOGS = true;
 
-const CACHE_VERSION = 'luna-meeting-room-20260703a';
+const CACHE_VERSION = 'luna-meeting-room-20260716a';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

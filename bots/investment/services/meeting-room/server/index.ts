@@ -18,6 +18,7 @@ import { normalizeChair, normalizeMeetingType } from '../config/meeting.config.t
 import { applyMeetingGlossary, buildDecisionPlainFields } from './glossary.ts';
 import { createMeetingEventBus } from './meeting-event-bus.ts';
 import { publishToJayBus } from '../../../shared/jay-bus-bridge.ts';
+import { acknowledgeJaenongBrief, getJaenongBriefStatus } from '../../../shared/jaenong-operations.ts';
 
 const SERVICE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WEB_ROOT = path.join(SERVICE_ROOT, 'web');
@@ -1378,6 +1379,8 @@ function getDeps(deps = {}) {
     resolveAgentLLMRouteFn: deps.resolveAgentLLMRouteFn || resolveAgentLLMRoute,
     callViaHubFn: deps.callViaHubFn || callViaHub,
     publishToJayBusFn: deps.publishToJayBusFn || publishToJayBus,
+    getJaenongBriefStatusFn: deps.getJaenongBriefStatusFn || getJaenongBriefStatus,
+    acknowledgeJaenongBriefFn: deps.acknowledgeJaenongBriefFn || acknowledgeJaenongBrief,
     meetingStore: deps.meetingStore || null,
   };
 }
@@ -1413,6 +1416,8 @@ function allowedMethodsForApiPath(pathname, parts) {
   if (pathname === '/api/push/vapid-public') return 'GET';
   if (pathname === '/api/push/subscribe') return 'POST';
   if (pathname === '/api/decisions/pending') return 'GET';
+  if (pathname === '/api/jaenong/brief') return 'GET';
+  if (parts[0] === 'api' && parts[1] === 'jaenong' && parts[2] === 'brief' && parts[3] && parts[4] === 'ack') return 'POST';
   if (parts[0] === 'api' && parts[1] === 'decisions' && parts[2]) return 'POST';
   if (pathname === '/api/agents/ask') return 'POST';
   return null;
@@ -2597,6 +2602,40 @@ export function createMeetingRoomWebServer(options = {}, rawDeps = {}) {
 
     if (req.method === 'GET' && parsed.pathname === '/api/decisions/pending') {
       return jsonResponse(res, 200, { ok: true, decisions: await listPendingDecisions(deps) });
+    }
+
+    if (req.method === 'GET' && parsed.pathname === '/api/jaenong/brief') {
+      const status = await deps.getJaenongBriefStatusFn(
+        { now: new Date(), todayKst: true },
+        { queryFn: deps.queryFn },
+      );
+      return jsonResponse(res, 200, { ...status, executionConnected: false });
+    }
+
+    if (req.method === 'POST' && parts[0] === 'api' && parts[1] === 'jaenong'
+      && parts[2] === 'brief' && parts[3] && parts[4] === 'ack') {
+      try {
+        const result = await deps.acknowledgeJaenongBriefFn({
+          briefRef: decodeURIComponent(parts[3]),
+          actor: 'meeting-room:master',
+          now: new Date(),
+        }, { withTransactionFn: deps.withTransactionFn });
+        return jsonResponse(res, 200, result);
+      } catch (error) {
+        const code = error?.message || String(error);
+        if (code === 'jaenong_brief_not_found') {
+          throw new HttpError(404, code, '브리프를 찾을 수 없습니다.');
+        }
+        if (code === 'jaenong_brief_ref_invalid') {
+          throw new HttpError(400, code, '브리프 식별자가 올바르지 않습니다.');
+        }
+        if (['jaenong_brief_expired', 'jaenong_brief_stale', 'jaenong_brief_invalid'].includes(code)) {
+          throw new HttpError(409, code, code === 'jaenong_brief_expired'
+            ? '만료된 브리프는 승인할 수 없습니다.'
+            : '현재 상태의 브리프는 승인할 수 없습니다.');
+        }
+        throw error;
+      }
     }
 
     if (req.method === 'GET' && parsed.pathname === '/api/push/vapid-public') {

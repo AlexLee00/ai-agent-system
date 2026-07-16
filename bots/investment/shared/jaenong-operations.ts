@@ -397,20 +397,41 @@ export async function getJaenongBriefStatus(options = {}, deps = {}) {
       state: evaluateJaenongBriefState({ now, brief, ack }),
       mutationAllowed: false,
       shadowOnly: true,
+      executionConnected: false,
     };
   }
 
   const queryFn = deps.queryFn;
   if (typeof queryFn !== 'function') throw new Error('jaenong_brief_query_function_required');
+  const now = dateOrNull(options.now || new Date());
+  if (!now) throw new Error('jaenong_state_now_invalid');
+  let publishedFrom = null;
+  let publishedBefore = null;
+  if (options.todayKst === true) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(now);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const start = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), -9));
+    publishedFrom = start.toISOString();
+    publishedBefore = new Date(start.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  }
   const rows = await queryFn(
     `WITH latest_brief AS (
        SELECT * FROM investment.jaenong_brief
+        WHERE ($1::timestamptz IS NULL OR published_at >= $1::timestamptz)
+          AND ($2::timestamptz IS NULL OR published_at < $2::timestamptz)
         ORDER BY published_at DESC, id DESC
         LIMIT 1
      ), latest_failure AS (
        SELECT event_type, reason, created_at
          FROM investment.jaenong_brief_event
         WHERE event_type = 'parse_failed'
+          AND ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
+          AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
         ORDER BY created_at DESC, id DESC
         LIMIT 1
      )
@@ -427,7 +448,7 @@ export async function getJaenongBriefStatus(options = {}, deps = {}) {
           LIMIT 1
        ) a ON true
        LEFT JOIN latest_failure e ON true`,
-    [],
+    [publishedFrom, publishedBefore],
   );
   if (!rows?.[0]?.brief_ref) {
     const parseFailure = rows?.[0]?.latest_event_type === 'parse_failed';
@@ -443,6 +464,7 @@ export async function getJaenongBriefStatus(options = {}, deps = {}) {
       }),
       mutationAllowed: false,
       shadowOnly: true,
+      executionConnected: false,
     };
   }
   const row = rows[0];
@@ -467,6 +489,7 @@ export async function getJaenongBriefStatus(options = {}, deps = {}) {
     }),
     mutationAllowed: false,
     shadowOnly: true,
+    executionConnected: false,
   };
 }
 
@@ -486,6 +509,92 @@ function requireActor(actor) {
   return normalized;
 }
 
+export async function acknowledgeJaenongBrief(input = {}, deps = {}) {
+  const briefRef = validBriefRef(input.briefRef);
+  const actor = requireActor(input.actor);
+  const acknowledgedAt = dateOrNull(input.now || new Date());
+  if (!acknowledgedAt) throw new Error('jaenong_command_now_invalid');
+  if (typeof deps.withTransactionFn !== 'function') {
+    throw new Error('jaenong_brief_transaction_function_required');
+  }
+
+  return deps.withTransactionFn(async (tx) => {
+    const rows = await tx.query(
+      `SELECT brief_ref, source_kind, source_post_id, reference_snapshot_hash,
+              published_at, parsed_at, updated_at, expires_at, invalidated_at,
+              invalid_reason, market_adjustment, market_view, candidate_symbols,
+              state, shadow_only
+         FROM investment.jaenong_brief
+        WHERE brief_ref = $1 AND shadow_only = true
+        FOR UPDATE`,
+      [briefRef],
+    );
+    if (!rows?.[0]) throw new Error('jaenong_brief_not_found');
+    const row = rows[0];
+    const brief = briefFromRow(row);
+    const evaluated = evaluateJaenongBriefState({ now: acknowledgedAt, brief });
+    const storedState = text(row.state).toLowerCase();
+    if (evaluated.status === 'expired' || storedState === 'expired') throw new Error('jaenong_brief_expired');
+    if (evaluated.status === 'stale' || storedState === 'stale') throw new Error('jaenong_brief_stale');
+    if (evaluated.status === 'invalid' || ['invalid', 'parse_failed'].includes(storedState)) {
+      throw new Error('jaenong_brief_invalid');
+    }
+
+    const actorAcks = await tx.query(
+      `SELECT acknowledged_at
+         FROM investment.jaenong_brief_ack
+        WHERE brief_ref = $1 AND actor = $2
+        LIMIT 1`,
+      [briefRef, actor],
+    );
+    const priorAckAt = dateOrNull(actorAcks?.[0]?.acknowledged_at);
+    const briefUpdatedAt = dateOrNull(brief.updatedAt);
+    if (priorAckAt && briefUpdatedAt && priorAckAt.getTime() >= briefUpdatedAt.getTime()) {
+      return {
+        ok: true,
+        briefRef,
+        actor,
+        state: 'active',
+        idempotent: true,
+        acknowledgedAt: priorAckAt.toISOString(),
+        shadowOnly: true,
+        executionConnected: false,
+      };
+    }
+
+    const timestamp = acknowledgedAt.toISOString();
+    await tx.run(
+      `INSERT INTO investment.jaenong_brief_ack (brief_ref, actor, acknowledged_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (brief_ref, actor) DO UPDATE
+         SET acknowledged_at = EXCLUDED.acknowledged_at`,
+      [briefRef, actor, timestamp],
+    );
+    await tx.run(
+      `UPDATE investment.jaenong_brief
+          SET state = 'active'
+        WHERE brief_ref = $1 AND shadow_only = true`,
+      [briefRef],
+    );
+    await tx.run(
+      `INSERT INTO investment.jaenong_brief_event
+         (brief_ref, event_type, from_state, to_state, reason, payload, shadow_only)
+       VALUES ($1, 'acknowledged', $2, 'active', 'brief_acknowledged', $3::jsonb, true)`,
+      [briefRef, storedState || 'awaiting_ack', JSON.stringify({ actor, acknowledgedAt: timestamp })],
+    );
+    return {
+      ok: true,
+      briefRef,
+      actor,
+      state: 'active',
+      idempotent: false,
+      acknowledgedAt: timestamp,
+      shadowOnly: true,
+      executionConnected: false,
+    };
+  });
+}
+
 export async function handleJaenongCommand(command, deps = {}) {
   const parts = commandParts(command);
   if (!/^\/jaenong(?:@[A-Za-z0-9_]+)?$/i.test(parts[0] || '')) throw new Error('jaenong_command_invalid');
@@ -501,16 +610,10 @@ export async function handleJaenongCommand(command, deps = {}) {
   const actor = requireActor(deps.actor);
   if (typeof deps.runFn !== 'function') throw new Error('jaenong_command_run_function_required');
   if (action === 'ack') {
-    const briefRef = validBriefRef(parts[2]);
-    const result = await deps.runFn(
-      `INSERT INTO investment.jaenong_brief_ack (brief_ref, actor, acknowledged_at)
-       SELECT brief_ref, $2, $3 FROM investment.jaenong_brief
-        WHERE brief_ref = $1 AND shadow_only = true
-       ON CONFLICT (brief_ref, actor) DO UPDATE SET acknowledged_at = EXCLUDED.acknowledged_at`,
-      [briefRef, actor, dateOrNull(now).toISOString()],
-    );
-    if (Number(result?.rowCount || 0) === 0) throw new Error('jaenong_brief_not_found');
-    return { ok: true, action: 'ack', briefRef, actor, shadowOnly: true };
+    const result = await acknowledgeJaenongBrief({ briefRef: parts[2], actor, now }, {
+      withTransactionFn: deps.withTransactionFn,
+    });
+    return { ...result, action: 'ack' };
   }
 
   if (action === 'set') {

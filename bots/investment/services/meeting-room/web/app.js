@@ -1564,6 +1564,92 @@ function LiveStreamPanel({ enabled, status, selectedRunningRun, activeRuns, live
   `;
 }
 
+function jaenongStateLabel(status) {
+  return {
+    absent: '오늘 브리프 없음',
+    awaiting_ack: '승인 대기',
+    active: '승인됨',
+    stale: '오래됨',
+    expired: '만료됨',
+    invalid: '무효',
+    parse_failed: '분석 실패',
+  }[String(status || '').toLowerCase()] || '상태 확인 필요';
+}
+
+function JaenongBriefCard({ token, status, ignoredBriefRef, onIgnore, onUpdated, setError, setNotice }) {
+  const [busy, setBusy] = useState(false);
+  const brief = status?.brief || null;
+  const state = status?.state?.status || (brief ? brief.state : 'absent');
+  const ignored = Boolean(brief && ignoredBriefRef === brief.briefRef);
+  const canAck = Boolean(brief && state === 'awaiting_ack' && !busy);
+
+  async function acknowledge() {
+    if (!canAck) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await api(token, `/api/jaenong/brief/${encodeURIComponent(brief.briefRef)}/ack`, {
+        method: 'POST',
+      });
+      setNotice(result.idempotent
+        ? '이미 승인된 JAENONG 브리프입니다. 최신 상태를 불러왔습니다.'
+        : 'JAENONG 브리프를 승인했습니다. 실행 연결 없이 섀도 가중 적용만 허용됩니다.');
+      await onUpdated();
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (ignored) {
+    return html`
+      <section className="jaenong-brief-card ignored" role="region" aria-label="무시한 JAENONG 오늘의 브리프">
+        <div>
+          <strong>JAENONG 오늘의 브리프</strong>
+          <div className="meta">무시됨 · DB 상태는 변경하지 않았습니다.</div>
+        </div>
+        <button className="secondary" onClick=${() => onIgnore('')}>다시 보기</button>
+      </section>
+    `;
+  }
+
+  return html`
+    <section className="jaenong-brief-card" role="region" aria-label="JAENONG 오늘의 브리프">
+      <div className="jaenong-brief-head">
+        <div>
+          <div className="jaenong-kicker">JAENONG 오늘의 브리프</div>
+          <h2>${brief?.marketView || '오늘 등록된 브리프가 없습니다.'}</h2>
+        </div>
+        <span className=${`jaenong-state ${state}`}>${jaenongStateLabel(state)}</span>
+      </div>
+      ${brief ? html`
+        <div className="jaenong-brief-meta">
+          <span>시장 조정 ${Number(brief.marketAdjustment || 0) > 0 ? '+' : ''}${brief.marketAdjustment ?? 0}</span>
+          <span>만료 ${formatTime(brief.expiresAt)}</span>
+          <span>승인 기록 meeting-room:master</span>
+        </div>
+        <div className="jaenong-symbols" aria-label="JAENONG 후보 심볼">
+          ${safeArray(brief.candidateSymbols).length
+            ? safeArray(brief.candidateSymbols).map((symbol) => html`<span>${symbol}</span>`)
+            : html`<span>후보 없음</span>`}
+        </div>
+        <div className="jaenong-actions">
+          <button onClick=${acknowledge} disabled=${!canAck} aria-busy=${busy}>
+            ${busy ? '승인 중' : state === 'active' ? '승인됨' : 'ack 승인'}
+          </button>
+          <button className="secondary" onClick=${() => {
+            onIgnore(brief.briefRef);
+            setNotice('무시는 DB 상태를 바꾸지 않으며 만료까지 미응답과 동일합니다.');
+          }}>무시</button>
+        </div>
+      ` : html`<div className="meta">새 브리프가 생성되면 이 카드에서 승인하거나 무시할 수 있습니다.</div>`}
+      <div className="jaenong-safety">섀도 전용 · execution_connected=false · 실제 주문/실행 연결 없음</div>
+    </section>
+  `;
+}
+
 function DailyRoom({ token }) {
   const [meetings, setMeetings] = useState([]);
   const [activeRuns, setActiveRuns] = useState([]);
@@ -1576,6 +1662,8 @@ function DailyRoom({ token }) {
   const [catchup, setCatchup] = useState([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [jaenongStatus, setJaenongStatus] = useState(null);
+  const [ignoredJaenongBriefRef, setIgnoredJaenongBriefRef] = useState('');
   const [streamStatus, setStreamStatus] = useState('idle');
   const [liveStreamEnabled, setLiveStreamEnabled] = useState(false);
   const [liveEvents, setLiveEvents] = useState([]);
@@ -1605,6 +1693,7 @@ function DailyRoom({ token }) {
     setSegments([]);
     setScheduleStatus('');
     setPending([]);
+    setJaenongStatus(null);
     setSelectedId(null);
     setDetail(null);
     setDetailLoading(false);
@@ -1621,8 +1710,14 @@ function DailyRoom({ token }) {
     const requestId = baseRequestSeq.current + 1;
     baseRequestSeq.current = requestId;
     try {
-      const list = await api(token, '/api/meetings');
-      const pendingPayload = await api(token, '/api/decisions/pending');
+      const [list, pendingPayload, jaenongResult] = await Promise.all([
+        api(token, '/api/meetings'),
+        api(token, '/api/decisions/pending'),
+        api(token, '/api/jaenong/brief')
+          .then((payload) => ({ payload, error: null }))
+          .catch((error) => ({ payload: null, error })),
+      ]);
+      if (jaenongResult.error?.status === 401) throw jaenongResult.error;
       if (baseRequestSeq.current !== requestId) return;
       setLiveStreamEnabled(list.liveStreamEnabled === true);
       setMeetings(safeArray(list.meetings));
@@ -1630,6 +1725,11 @@ function DailyRoom({ token }) {
       setSegments(safeArray(list.segments));
       setScheduleStatus(String(list.scheduleStatus || ''));
       setPending(safeArray(pendingPayload.decisions));
+      setJaenongStatus(jaenongResult.payload || {
+        brief: null,
+        state: { status: 'absent' },
+        loadError: jaenongResult.error?.message || 'JAENONG 브리프를 불러오지 못했습니다.',
+      });
       setAuthRequired(false);
       setBlockedAuthToken(null);
       setError('');
@@ -1795,6 +1895,12 @@ function DailyRoom({ token }) {
     refreshBase().then(() => refreshSelected()).catch((error) => setError(error.message));
   }
 
+  async function refreshJaenongBrief() {
+    const payload = await api(token, '/api/jaenong/brief');
+    setJaenongStatus(payload);
+    return payload;
+  }
+
   const meetingDrawerOpen = mobileDrawer === 'meetings';
   const decisionDrawerOpen = mobileDrawer === 'decisions';
 
@@ -1804,6 +1910,16 @@ function DailyRoom({ token }) {
     <div className="polling-status" role="status" aria-live="polite" aria-label=${`회의실 폴링 상태: ${pollingLabel}`}>${pollingLabel}</div>
     ${'\n'}
     ${scheduleStatus ? html`<div className="schedule-status" role="status" aria-live="polite" aria-label=${scheduleStatus}>${scheduleStatus}</div>` : null}
+    ${'\n'}
+    <${JaenongBriefCard}
+      token=${token}
+      status=${jaenongStatus}
+      ignoredBriefRef=${ignoredJaenongBriefRef}
+      onIgnore=${setIgnoredJaenongBriefRef}
+      onUpdated=${refreshJaenongBrief}
+      setError=${setError}
+      setNotice=${setNotice}
+    />
     ${'\n'}
     <div className="mobile-action-bar" role="navigation" aria-label="모바일 회의실 빠른 메뉴">
       <button onClick=${() => setMobileDrawer('meetings')} aria-expanded=${meetingDrawerOpen} aria-controls="meeting-selection-drawer">☰ 회의 선택</button>
