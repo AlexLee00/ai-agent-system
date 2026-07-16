@@ -25,6 +25,23 @@ function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function includesQueryPart(container = '', candidate = '') {
+  const normalizedContainer = ` ${normalizeText(container).toLowerCase()} `;
+  const normalizedCandidate = ` ${normalizeText(candidate).toLowerCase()} `;
+  return normalizedCandidate.trim() !== '' && normalizedContainer.includes(normalizedCandidate);
+}
+
+function joinIdempotentQueryParts(values = []) {
+  let parts = [];
+  for (const value of values) {
+    const part = normalizeText(value);
+    if (!part || parts.some((existing) => includesQueryPart(existing, part))) continue;
+    parts = parts.filter((existing) => !includesQueryPart(part, existing));
+    parts.push(part);
+  }
+  return parts.join(' ');
+}
+
 function buildVaultLectureQuery(input = {}) {
   const keywords = Array.isArray(input.curriculumKeywords)
     ? input.curriculumKeywords
@@ -76,16 +93,13 @@ function buildVaultRelatedQuery(input = {}) {
   const keywords = Array.isArray(input.curriculumKeywords)
     ? input.curriculumKeywords
     : [];
-  const parts = [
+  return joinIdempotentQueryParts([
     input.seriesName,
     input.currentLectureNum ? `${input.currentLectureNum}강` : '',
     input.topic,
     input.postType,
     ...keywords,
-  ]
-    .map((item) => normalizeText(item))
-    .filter(Boolean);
-  return [...new Set(parts)].join(' ');
+  ]);
 }
 
 function buildVaultRelatedPosts(results = [], input = {}) {
