@@ -59,11 +59,10 @@ export function computeJaenongPullbackScore({ spyDrawdownPct, vix, fearGreed } =
     [() => true, 2],
   ]);
   const fearGreedScore = pullbackComponentScore(sentiment, [
-    [(value) => value <= 25, 2],
-    [(value) => value <= 45, 1],
-    [(value) => value <= 55, 0],
-    [(value) => value < 75, -1],
-    [() => true, -2],
+    [(value) => value <= 10, 2],
+    [(value) => value <= 30, 1],
+    [(value) => value <= 70, 0],
+    [() => true, -1],
   ]);
   return {
     available: true,

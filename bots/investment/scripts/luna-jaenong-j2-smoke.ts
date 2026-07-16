@@ -21,10 +21,38 @@ function score(spyDrawdownPct, vix, fearGreed) {
 }
 
 async function main() {
-  assert.equal(score(-20, 30, 20).total, 7);
-  assert.equal(score(-10, 20, 40).total, 2);
+  const componentCases = [
+    ['fearGreed', 0, 20, 10, 2],
+    ['fearGreed', 0, 20, 10.001, 1],
+    ['fearGreed', 0, 20, 30, 1],
+    ['fearGreed', 0, 20, 30.001, 0],
+    ['fearGreed', 0, 20, 70, 0],
+    ['fearGreed', 0, 20, 70.001, -1],
+    ['spy', -20, 20, 50, 3],
+    ['spy', -19.999, 20, 50, 1],
+    ['spy', -10, 20, 50, 1],
+    ['spy', -9.999, 20, 50, 0],
+    ['spy', -5, 20, 50, 0],
+    ['spy', -4.999, 20, 50, -1],
+    ['vix', 0, 15, 50, -1],
+    ['vix', 0, 15.001, 50, 0],
+    ['vix', 0, 20, 50, 0],
+    ['vix', 0, 20.001, 50, 1],
+    ['vix', 0, 29.999, 50, 1],
+    ['vix', 0, 30, 50, 2],
+  ];
+  for (const [component, spyDrawdownPct, vix, fearGreed, expected] of componentCases) {
+    assert.equal(
+      score(spyDrawdownPct, vix, fearGreed).components[component],
+      expected,
+      `${component} boundary ${spyDrawdownPct}/${vix}/${fearGreed}`,
+    );
+  }
+
+  assert.equal(score(-20, 30, 20).total, 6);
+  assert.equal(score(-10, 20, 40).total, 1);
   assert.equal(score(-5, 15, 50).total, -1);
-  assert.equal(score(-4.99, 14.99, 80).total, -4);
+  assert.equal(score(-4.99, 14.99, 80).total, -3);
   assert.equal(score(null, 20, 50).available, false);
   assert.equal(score(-10, Number.NaN, 50).available, false);
 
