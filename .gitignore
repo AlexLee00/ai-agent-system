@@ -261,3 +261,14 @@ bots/reservation/manual/reports/
 # 시스템 생성물 미추적 (2026-07-15 마스터 결정 — 주간 잡이 덮어쓰는 리뷰 산출물)
 bots/hub/output/llm-oauth4-master-review.json
 docs/hub/LLM_OAUTH4_MASTER_REVIEW.md
+
+# Hub 재생성 가능 리포트/드릴 산출물 (TASK-0059)
+bots/hub/output/hub-alarm-dependency-inventory.json
+bots/hub/output/hub-stage-c-resilience-report.json
+bots/hub/output/hub-stage-d-production-report.json
+bots/hub/output/llm-agent-model-inventory-report.json
+bots/hub/output/multi-team-agent-llm-drill-*.json
+bots/hub/output/openclaw-residue-audit.json
+docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md
+docs/hub/LLM_AGENT_MODEL_INVENTORY_REPORT.md
+docs/hub/OPENCLAW_RESIDUE_AUDIT.md
