@@ -30,6 +30,7 @@ describe('marketing-dpo', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.BLOG_MARKETING_ENABLED;
     delete process.env.BLOG_DPO_ENABLED;
   });
 
@@ -38,6 +39,7 @@ describe('marketing-dpo', () => {
   });
 
   test('isEnabled() — true when set', () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     expect(dpo.isEnabled()).toBe(true);
   });

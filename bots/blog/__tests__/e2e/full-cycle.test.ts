@@ -12,6 +12,7 @@ const env = require('../../../../packages/core/lib/env');
 
 jest.mock('../../../../packages/core/lib/pg-pool', () => ({
   query: jest.fn().mockResolvedValue([]),
+  run: jest.fn().mockResolvedValue({ rowCount: 0, rows: [] }),
   get: jest.fn().mockResolvedValue(null),
 }));
 jest.mock('../../../../packages/core/lib/hub-client', () => ({
@@ -52,10 +53,11 @@ describe('시나리오 1: 일일 3 플랫폼 발행 + 매출 연동', () => {
       url: 'https://blog.naver.com/test/123',
       duration_ms: 5000,
     });
-    expect(postAlarm).toHaveBeenCalledWith(
-      expect.stringContaining('네이버'),
-      expect.anything(),
-    );
+    expect(pgPool.run).toHaveBeenCalled();
+    expect(postAlarm).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('네이버'),
+      team: 'blog',
+    }));
   });
 
   test('인스타그램 발행 실패 → 긴급 Telegram 알림', async () => {

@@ -26,6 +26,11 @@ jest.mock('../../../packages/core/lib/llm-fallback', () => ({
 jest.mock('../../../packages/core/lib/llm-model-selector', () => ({
   selectLLMChain: jest.fn().mockReturnValue([]),
 }));
+jest.mock('../lib/blog-llm-gateway.ts', () => ({
+  callBlogFast: jest.fn().mockResolvedValue({
+    text: '{"primary_strategy":"list 후킹 활용","expected_views_uplift":"+15%","hook_difference":"질문형 vs 나열형","key_insight":"테스트","action_hint":"질문형 제목 활용"}',
+  }),
+}));
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 

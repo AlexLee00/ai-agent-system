@@ -33,6 +33,8 @@ describe('marketing-dpo', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    pgPool.query.mockReset().mockResolvedValue([]);
+    delete process.env.BLOG_MARKETING_ENABLED;
     delete process.env.BLOG_DPO_ENABLED;
   });
 
@@ -41,6 +43,7 @@ describe('marketing-dpo', () => {
   });
 
   test('isEnabled() — true when set', () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     expect(dpo.isEnabled()).toBe(true);
   });
@@ -125,6 +128,7 @@ describe('marketing-dpo', () => {
   });
 
   test('buildPreferencePairs — 데이터 부족 시 빈 배열', async () => {
+    process.env.BLOG_MARKETING_ENABLED = 'true';
     process.env.BLOG_DPO_ENABLED = 'true';
     pgPool.query.mockResolvedValueOnce([{ id: 1, category: '자기계발', title: '테스트', views_7d: 100 }]);
     const result = await dpo.buildPreferencePairs(30);
@@ -146,6 +150,7 @@ describe('marketing-rag', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    pgPool.query.mockReset().mockResolvedValue([]);
     delete process.env.BLOG_MARKETING_RAG_ENABLED;
   });
 
