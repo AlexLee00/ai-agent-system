@@ -108,7 +108,32 @@ async function main() {
   assert.deepEqual(fallback.knowledgeGraph.results, []);
   assert.match(String(fallback.knowledgeGraph.warning), /^kg_search_unavailable:/);
 
-  console.log(JSON.stringify({ ok: true, smoke: 'sigma-vault-kg-search', checks: 18 }, null, 2));
+  const shapedCalls: Array<{ schema: string; sql: string; params: unknown[] }> = [];
+  const shaped = await searchVault('SSR SEO', {
+    topK: 3,
+    sourceKinds: ['blo'],
+    types: ['blog_post'],
+    sourceRefIds: ['61', '62'],
+    groupBySourceRef: true,
+    layerSearchEnabled: false,
+    deps: {
+      env: {},
+      embeddingFactory: async () => ({ embedding: [0.1, 0.2, 0.3], dim: 3 }),
+      queryReadonly: async (schema: string, sql: string, params: unknown[] = []) => {
+        shapedCalls.push({ schema, sql, params });
+        return vectorRows;
+      },
+    },
+  });
+  assert.equal(shaped.ok, true);
+  assert.equal(shapedCalls.length, 1);
+  assert.match(shapedCalls[0].sql, /type = ANY/);
+  assert.match(shapedCalls[0].sql, /meta->>'sourceId'/);
+  assert.match(shapedCalls[0].sql, /meta->'source_ref'->>'id'/);
+  assert.match(shapedCalls[0].sql, /ROW_NUMBER\(\) OVER/i);
+  assert.deepEqual(shapedCalls[0].params.slice(1, 4), [['blo'], ['blog_post'], ['61', '62']]);
+
+  console.log(JSON.stringify({ ok: true, smoke: 'sigma-vault-kg-search', checks: 24 }, null, 2));
 }
 
 main().catch((error: unknown) => {

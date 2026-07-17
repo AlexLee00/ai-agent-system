@@ -28,6 +28,9 @@ const KG_SEARCH_SOURCE_LIMIT = 2000;
 export interface VaultSearchOptions {
   topK?: number;
   sourceKinds?: string[];
+  types?: string[];
+  sourceRefIds?: Array<string | number>;
+  groupBySourceRef?: boolean;
   paraCategory?: string;
   minSimilarity?: number;
   layerSearchEnabled?: boolean;
@@ -169,6 +172,82 @@ const DEFAULT_COORDS: Record<string, string> = {
   prediction_state: 'none',
 };
 
+const SOURCE_REF_ID_SQL = `COALESCE(
+  NULLIF(meta->>'sourceId', ''),
+  NULLIF(meta->>'source_id', ''),
+  NULLIF(meta->'source_ref'->>'id', ''),
+  NULLIF(meta->'sourceRef'->>'id', ''),
+  NULLIF(meta->>'post_id', ''),
+  NULLIF(meta->>'postId', ''),
+  NULLIF(meta->>'blog_post_id', ''),
+  NULLIF(meta->>'blogPostId', '')
+)`;
+
+function normalizeFilterValues(values: unknown, limit: number): string[] {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean))]
+    .slice(0, limit);
+}
+
+function buildVectorSearchSql({
+  filters,
+  limitParam,
+  coordSelect,
+  orderBy,
+  groupBySourceRef,
+}: {
+  filters: string[];
+  limitParam: number;
+  coordSelect: string;
+  orderBy: string;
+  groupBySourceRef: boolean;
+}): string {
+  if (!groupBySourceRef) {
+    return `
+      SELECT
+        id,
+        title,
+        source,
+        LEFT(content, 200) AS content_preview,
+        meta,
+        1 - (embedding <=> $1::vector) AS similarity
+        ${coordSelect}
+      FROM sigma.vault_entries
+      WHERE ${filters.join(' AND ')}
+      ORDER BY ${orderBy}
+      LIMIT $${limitParam}
+    `;
+  }
+  const outerOrderBy = orderBy.startsWith('created_at')
+    ? 'created_at DESC, similarity DESC, id DESC'
+    : 'similarity DESC, id DESC';
+  return `
+    WITH ranked AS (
+      SELECT
+        id,
+        title,
+        source,
+        LEFT(content, 200) AS content_preview,
+        meta,
+        created_at,
+        1 - (embedding <=> $1::vector) AS similarity,
+        ROW_NUMBER() OVER (
+          PARTITION BY COALESCE(${SOURCE_REF_ID_SQL}, id::text)
+          ORDER BY ${orderBy}, id DESC
+        ) AS source_group_rank
+        ${coordSelect}
+      FROM sigma.vault_entries
+      WHERE ${filters.join(' AND ')}
+    )
+    SELECT id, title, source, content_preview, meta, similarity${coordSelect}
+    FROM ranked
+    WHERE source_group_rank = 1
+    ORDER BY ${outerOrderBy}
+    LIMIT $${limitParam}
+  `;
+}
+
 function extractLibraryCoords(row: any): Record<string, unknown> {
   const meta = normalizeMeta(row.meta);
   return normalizeLibraryCoords({
@@ -214,6 +293,9 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
 
   const topK = Math.floor(boundedNumber(opts.topK, 5, 1, 50));
   const sourceKinds = normalizeSourceKinds(opts.sourceKinds);
+  const types = normalizeFilterValues(opts.types, 50);
+  const sourceRefIds = normalizeFilterValues(opts.sourceRefIds, 2000);
+  const groupBySourceRef = opts.groupBySourceRef === true;
   const paraCategory = normalizeParaCategory(opts.paraCategory);
   const minSimilarity = opts.minSimilarity == null
     ? null
@@ -251,6 +333,18 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     nextParam += 1;
   }
 
+  if (types.length > 0) {
+    filters.push(`type = ANY($${nextParam}::text[])`);
+    params.push(types);
+    nextParam += 1;
+  }
+
+  if (sourceRefIds.length > 0) {
+    filters.push(`${SOURCE_REF_ID_SQL} = ANY($${nextParam}::text[])`);
+    params.push(sourceRefIds);
+    nextParam += 1;
+  }
+
   if (paraCategory) {
     filters.push(`para_category = $${nextParam}`);
     params.push(paraCategory);
@@ -279,20 +373,13 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     : 'embedding <=> $1::vector';
 
   try {
-    const rows = await queryReadonly('sigma', `
-      SELECT
-        id,
-        title,
-        source,
-        LEFT(content, 200) AS content_preview,
-        meta,
-        1 - (embedding <=> $1::vector) AS similarity
-        ${coordSelect}
-      FROM sigma.vault_entries
-      WHERE ${filters.join(' AND ')}
-      ORDER BY ${orderBy}
-      LIMIT $${limitParam}
-    `, params);
+    const rows = await queryReadonly('sigma', buildVectorSearchSql({
+      filters,
+      limitParam,
+      coordSelect,
+      orderBy,
+      groupBySourceRef,
+    }), params);
 
     const coordFilters = normalizeCoordFilters(layerRoute?.coordFilters || {});
     const normalizeResults = (searchRows: unknown, applyLayerFilters: boolean) => normalizeRows(searchRows)
@@ -317,20 +404,13 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
 
     if (layerRoute && results.length < topK) {
       const layerResultCount = results.length;
-      const fallbackRows = await queryReadonly('sigma', `
-        SELECT
-          id,
-          title,
-          source,
-          LEFT(content, 200) AS content_preview,
-          meta,
-          1 - (embedding <=> $1::vector) AS similarity
-          ${coordSelect}
-        FROM sigma.vault_entries
-        WHERE ${broadFilters.join(' AND ')}
-        ORDER BY embedding <=> $1::vector
-        LIMIT $${broadLimitParam}
-      `, [...broadParams, topK]);
+      const fallbackRows = await queryReadonly('sigma', buildVectorSearchSql({
+        filters: broadFilters,
+        limitParam: broadLimitParam,
+        coordSelect,
+        orderBy: 'embedding <=> $1::vector',
+        groupBySourceRef,
+      }), [...broadParams, topK]);
       const seenIds = new Set(results.map((row) => String(row.id)));
       for (const row of normalizeResults(fallbackRows, false)) {
         if (seenIds.has(String(row.id))) continue;

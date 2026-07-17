@@ -120,12 +120,18 @@ function buildVaultRelatedPosts(results = [], input = {}) {
         lectureNumber,
         source: 'vault',
         similarity: Number(item.similarity || 0),
+        postId: extractVaultPostId(item),
+        filename: extractVaultPostFilename(item),
       };
     })
     .filter((item) => item.title && item.summary)
     .filter((item) => !currentLectureNum || !item.lectureNumber || item.lectureNumber < currentLectureNum)
     .filter((item) => {
-      const key = `${item.title}|${item.summary}`;
+      const key = item.postId
+        ? `post:${item.postId}`
+        : item.filename
+          ? `file:${item.filename}`
+          : `${item.title}|${item.summary}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -140,11 +146,48 @@ function extractVaultPostFilename(result = {}) {
 
 function extractVaultPostId(result = {}) {
   const meta = result.meta || {};
-  const numeric = Number(meta.post_id || meta.postId || meta.blog_post_id || meta.blogPostId);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  for (const value of [
+    meta.post_id,
+    meta.postId,
+    meta.blog_post_id,
+    meta.blogPostId,
+    meta.sourceId,
+    meta.source_id,
+    meta.source_ref?.id,
+    meta.sourceRef?.id,
+  ]) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  return null;
 }
 
-async function filterPublishedVaultBlogResults(results = []) {
+function buildPublishedReferenceIndex(rows = []) {
+  const publishedRows = (Array.isArray(rows) ? rows : [])
+    .filter((row) => String(row?.status || '').trim() === 'published')
+    .filter((row) => !isExcludedReferencePost(row));
+  return {
+    rows: publishedRows,
+    ids: new Set(publishedRows
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isFinite(id) && id > 0)),
+    filenames: new Set(publishedRows
+      .map((row) => normalizeText(row.filename))
+      .filter(Boolean)),
+  };
+}
+
+async function loadPublishedReferenceIndex() {
+  const rows = await pgPool.query('blog', `
+    SELECT id, title, status, metadata->>'filename' AS filename, metadata
+    FROM blog.posts
+    WHERE status = 'published'
+      AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
+  `, []);
+  return buildPublishedReferenceIndex(Array.isArray(rows) ? rows : (rows?.rows || []));
+}
+
+async function filterPublishedVaultBlogResults(results = [], publishedIndex = null) {
   const rows = Array.isArray(results) ? results : [];
   if (!rows.length) return [];
 
@@ -152,34 +195,25 @@ async function filterPublishedVaultBlogResults(results = []) {
   const postIds = [...new Set(rows.map(extractVaultPostId).filter(Boolean))];
   if (!filenames.length && !postIds.length) return [];
 
-  const publishedRows = await pgPool.query('blog', `
-    SELECT id, title, metadata->>'filename' AS filename, metadata
-    FROM blog.posts
-    WHERE status = 'published'
-      AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
-      AND (
-        id = ANY($1::int[])
-        OR metadata->>'filename' = ANY($2::text[])
-      )
-  `, [postIds, filenames]);
-  const publishedList = Array.isArray(publishedRows) ? publishedRows : (publishedRows?.rows || []);
-  const publishedIds = new Set(
-    publishedList
-      .filter((row) => !isExcludedReferencePost(row))
-      .map((row) => Number(row.id))
-      .filter((id) => Number.isFinite(id) && id > 0)
-  );
-  const publishedFilenames = new Set(
-    publishedList
-      .filter((row) => !isExcludedReferencePost(row))
-      .map((row) => normalizeText(row.filename))
-      .filter(Boolean)
-  );
+  let index = publishedIndex;
+  if (!index) {
+    const publishedRows = await pgPool.query('blog', `
+      SELECT id, title, status, metadata->>'filename' AS filename, metadata
+      FROM blog.posts
+      WHERE status = 'published'
+        AND COALESCE(NULLIF(metadata->>'exclude_from_reference', '')::boolean, false) = false
+        AND (
+          id = ANY($1::int[])
+          OR metadata->>'filename' = ANY($2::text[])
+        )
+    `, [postIds, filenames]);
+    index = buildPublishedReferenceIndex(Array.isArray(publishedRows) ? publishedRows : (publishedRows?.rows || []));
+  }
 
   return rows.filter((row) => {
     const postId = extractVaultPostId(row);
     const filename = extractVaultPostFilename(row);
-    return (postId && publishedIds.has(postId)) || (filename && publishedFilenames.has(filename));
+    return (postId && index.ids.has(postId)) || (filename && index.filenames.has(filename));
   });
 }
 
@@ -260,13 +294,22 @@ async function getVaultRelatedPosts(input = {}, deps = {}) {
 
   try {
     const searchVault = await loadSearchVault(deps);
+    const publishedIndex = await loadPublishedReferenceIndex();
+    const publishedPostIds = [...publishedIndex.ids].map(String);
+    if (publishedPostIds.length === 0) {
+      return { enabled: true, ok: true, query, relatedPosts: [], results: [], warning: 'published_posts_empty' };
+    }
     const report = await withTimeout(searchVault(query, {
       topK,
       sourceKinds: ['blo'],
+      types: ['blog_post'],
+      sourceRefIds: publishedPostIds,
+      groupBySourceRef: true,
+      layerSearchEnabled: false,
       minSimilarity,
     }), timeoutMs);
     const results = Array.isArray(report?.results) ? report.results : [];
-    const publishedResults = await filterPublishedVaultBlogResults(results);
+    const publishedResults = await filterPublishedVaultBlogResults(results, publishedIndex);
     return {
       enabled: true,
       ok: report?.ok !== false,
@@ -296,6 +339,9 @@ module.exports = {
     buildVaultLectureBlock,
     buildVaultRelatedQuery,
     buildVaultRelatedPosts,
+    extractVaultPostFilename,
+    extractVaultPostId,
+    buildPublishedReferenceIndex,
     filterPublishedVaultBlogResults,
   },
 };
