@@ -67,12 +67,48 @@ export function parseCsvArg(argv: string[], name: string): string[] {
     .filter(Boolean);
 }
 
+export function isMatchingPickkoReservationUrl(currentUrl: unknown, expectedUrl: unknown): boolean {
+  try {
+    const current = new URL(String(currentUrl || ''));
+    const expected = new URL(String(expectedUrl || ''));
+    if (expected.hostname !== 'pickkoadmin.com') return false;
+    if (!expected.pathname.includes('/study/view/')) return false;
+    current.hash = '';
+    expected.hash = '';
+    current.searchParams.sort();
+    expected.searchParams.sort();
+    return current.href === expected.href;
+  } catch {
+    return false;
+  }
+}
+
 export function ts(): string {
   return new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
 }
 
 export function buildFailureLine(entry: ReservationLike, result: Record<string, any>): string {
   return `- ${entry.date} ${entry.start}~${entry.end} ${entry.room}룸 / ${entry.phone} / ${result.message}`;
+}
+
+export function buildPayScanLockDeferralFailures(
+  targets: ReservationLike[] = [],
+  lockResult: Record<string, any> = {},
+): PayScanFailure[] {
+  const blockedBy = String(lockResult?.blockedBy || 'unknown');
+  const waitedMs = Math.max(0, Number(lockResult?.waitedMs || 0));
+  return targets.map((entry) => ({
+    entry,
+    result: {
+      ok: false,
+      exitCode: null,
+      message: `pickko_lock_wait_timeout: blocked_by=${blockedBy}, waited=${waitedMs}ms`,
+      stdout: '',
+      stderr: '',
+      timedOut: false,
+      lockDeferred: true,
+    },
+  }));
 }
 
 function normalizePhone(raw: unknown): string {
@@ -238,9 +274,53 @@ export function reconcilePayScanFollowupFiles(baseDir: string, activeEntries: Re
 }
 
 export function isAlreadyPaidWithoutButton(entry: ReservationLike, result: Record<string, any>): boolean {
-  return entry?.pickkoStatus === 'verified'
+  return result?.ok === true
+    && entry?.pickkoStatus === 'verified'
     && typeof result?.message === 'string'
-    && result.message.includes('결제하기 버튼 미발견');
+    && result.message.includes('이미 결제완료 상태');
+}
+
+export function classifyPickkoPaymentState(bodyText: unknown): {
+  isPending: boolean;
+  isCompleted: boolean;
+  normalizedText: string;
+} {
+  const normalizedText = String(bodyText ?? '').replace(/\s+/g, ' ').trim();
+  return {
+    isPending: normalizedText.includes('결제대기'),
+    isCompleted: normalizedText.includes('결제완료'),
+    normalizedText,
+  };
+}
+
+function extractPickkoPaymentStatusTexts(bodyText: unknown): string[] {
+  return [...new Set(String(bodyText ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .map((line) => {
+      if (line === '결제대기' || line === '결제완료') return line;
+      return line.match(/^(?:결제\s*상태|상태)\s*[:：-]?\s*(결제대기|결제완료)$/)?.[1] || '';
+    })
+    .filter(Boolean))];
+}
+
+export function extractPickkoPaymentStatusText(bodyText: unknown): string {
+  return extractPickkoPaymentStatusTexts(bodyText)[0] || '';
+}
+
+export function derivePickkoPaymentStateFromBody(bodyText: unknown): {
+  isPending: boolean;
+  isCompleted: boolean;
+  normalizedText: string;
+  statusText: string;
+} {
+  const statusTexts = extractPickkoPaymentStatusTexts(bodyText);
+  const statusText = statusTexts.join(' / ');
+  return { ...classifyPickkoPaymentState(statusTexts.join(' ')), statusText };
+}
+
+export function isConfirmedPickkoPaymentCompletion(state: Record<string, any> | null | undefined): boolean {
+  return state?.isCompleted === true && state?.isPending !== true;
 }
 
 export function isExpectedManualFollowup(result: Record<string, any>): boolean {

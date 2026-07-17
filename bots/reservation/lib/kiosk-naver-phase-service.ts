@@ -257,11 +257,13 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
     toBlockEntries,
     cancelledEntries,
     recordKioskBlockAttempt,
+    assertLockLease = () => {},
   }: {
     wsFile: string;
     toBlockEntries: Record<string, any>[];
     cancelledEntries: Record<string, any>[];
     recordKioskBlockAttempt: (...args: any[]) => Promise<any>;
+    assertLockLease?: () => void;
   }) {
     let wsEndpoint: string | null = null;
     try { wsEndpoint = readWsFile(wsFile, 'utf8').trim(); } catch (_) {}
@@ -491,6 +493,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
           log(`  ⏩ 진행 중 예약 — 지난 슬롯 제외: ${entry.start} → ${naverBlockEntry.start} (종료 ${entry.end})`);
         }
         for (let attempt = 1; attempt <= 2; attempt += 1) {
+          assertLockLease();
           try {
             const blockResult = await blockNaverSlot(naverPage, naverBlockEntry);
             blocked = Boolean(blockResult?.ok);
@@ -517,6 +520,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
             }
             break;
           } catch (err: any) {
+            assertLockLease();
             if (String(err.message || '').includes('detached Frame') && attempt === 1) {
               log(`⚠️ Frame detach 감지 — 새 탭으로 재시도 (attempt ${attempt + 1}/2)`);
               try { await naverPage.close(); } catch (_) {}
@@ -555,6 +559,7 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
           lastBlockResult: blocked ? 'blocked' : (preserveBlockedState ? existingAfterAttempt?.lastBlockResult || 'blocked' : 'retryable_failure'),
           lastBlockReason: blocked ? blockReason : (preserveBlockedState ? existingAfterAttempt?.lastBlockReason || 'preserved_existing_block' : blockReason),
         });
+        assertLockLease();
 
         if (blocked) {
           publishKioskSuccessReport(
@@ -591,10 +596,12 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
 
           let unblocked = false;
           for (let attempt = 1; attempt <= 2; attempt += 1) {
+            assertLockLease();
             try {
               unblocked = await unblockNaverSlot(naverPage, entry);
               break;
             } catch (err: any) {
+              assertLockLease();
               if (String(err.message || '').includes('detached Frame') && attempt === 1) {
                 log(`⚠️ Frame detach 감지 — 새 탭으로 재시도 (attempt ${attempt + 1}/2)`);
                 try { await naverPage.close(); } catch (_) {}
@@ -622,10 +629,12 @@ export function createKioskNaverPhaseService(deps: CreateKioskNaverPhaseServiceD
               naverBlocked: false,
               naverUnblockedAt: nowKST(),
             });
+            assertLockLease();
             publishKioskSuccessReport(
               `✅ 네이버 예약불가 해제\n${entry.name || '(이름없음)'} ${fmtPhone(entry.phoneRaw)}\n${entry.date} ${entry.start}~${entry.end} ${entry.room || ''} (키오스크 취소)`,
             );
           } else {
+            assertLockLease();
             publishReservationAlert({
               from_bot: 'jimmy',
               event_type: 'alert',

@@ -130,6 +130,24 @@ export async function acquirePickkoLock(agentName: string, ttlMs = 5 * 60 * 1000
   }
 }
 
+export async function renewPickkoLock(agentName: string, ttlMs = 5 * 60 * 1000): Promise<boolean> {
+  try {
+    const now = new Date();
+    const nowStr = now.toISOString();
+    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    const result = await run(`
+      UPDATE pickko_lock
+      SET expires_at = $3
+      WHERE id = 1 AND locked_by = $1
+        AND (expires_at IS NULL OR expires_at >= $2)
+    `, [agentName, nowStr, expiresAt]);
+    return result.rowCount === 1;
+  } catch (error) {
+    console.error('[state-bus] renewPickkoLock 실패:', (error as Error).message);
+    return false;
+  }
+}
+
 export async function releasePickkoLock(agentName: string): Promise<boolean> {
   try {
     const result = await run(`
@@ -163,8 +181,26 @@ export async function setManualPickkoPriority(currentTask = 'manual_reservation'
   await updateAgentState(MANUAL_PICKKO_AGENT, 'running', currentTask, null);
 }
 
-export async function clearManualPickkoPriority(): Promise<void> {
-  await updateAgentState(MANUAL_PICKKO_AGENT, 'idle', null, null);
+export async function clearManualPickkoPriority(expectedTask: string | null = null): Promise<boolean> {
+  if (!expectedTask) {
+    await updateAgentState(MANUAL_PICKKO_AGENT, 'idle', null, null);
+    return true;
+  }
+
+  try {
+    const now = new Date().toISOString();
+    const result = await run(
+      `UPDATE agent_state
+       SET status = 'idle', current_task = NULL, last_success_at = $3,
+           last_error = NULL, updated_at = $3
+       WHERE agent = $1 AND status = 'running' AND current_task = $2`,
+      [MANUAL_PICKKO_AGENT, expectedTask, now],
+    );
+    return result.rowCount === 1;
+  } catch (error) {
+    console.error(`[state-bus] clearManualPickkoPriority 실패: ${error}`);
+    return false;
+  }
 }
 
 export async function isManualPickkoPriorityActive(activeMs = MANUAL_PICKKO_ACTIVE_MS) {

@@ -8,6 +8,11 @@ const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatti
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
 const { buildReservationCliInsight } = require('../../lib/cli-insight');
+const {
+  derivePickkoPaymentStateFromBody,
+  isConfirmedPickkoPaymentCompletion,
+  isMatchingPickkoReservationUrl,
+} = require('../../lib/report-followup-helpers');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
 const SECRETS = loadSecrets();
@@ -22,6 +27,8 @@ const DATE = ARGS.date || '';
 const START = ARGS.start || '';
 const END = ARGS.end || '';
 const ROOM = (ARGS.room || '').toUpperCase();
+
+const PAYMENT_REVALIDATION_DELAY_MS = 800;
 
 function exitJson(payload: any, code = 0): never {
   process.stdout.write(JSON.stringify(payload) + '\n');
@@ -164,6 +171,43 @@ async function installBrowserEvalShim(page: any) {
   }
 }
 
+async function readPaymentState(page: any) {
+  try {
+    const bodyText = await page.evaluate(() => document.body?.innerText || '');
+    return { ...derivePickkoPaymentStateFromBody(bodyText), bodyText };
+  } catch (error: any) {
+    log(`⚠️ 결제 상태 DOM 재검증 읽기 실패: ${error.message}`);
+    return null;
+  }
+}
+
+async function revalidatePaymentState(page: any, reason: string, expectedHref: string | null = null) {
+  log(`🔁 결제 상태 재검증 시작: ${reason}`);
+  if (expectedHref && !isMatchingPickkoReservationUrl(page.url(), expectedHref)) {
+    log(`🛑 결제 상태 재검증 차단: 대상 예약 URL 불일치 (${page.url()})`);
+    return null;
+  }
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
+  } catch (error: any) {
+    log(`⚠️ 결제 상태 재검증 reload 실패: ${error.message}`);
+  }
+  await delay(PAYMENT_REVALIDATION_DELAY_MS);
+  if (expectedHref && !isMatchingPickkoReservationUrl(page.url(), expectedHref)) {
+    log(`🛑 결제 상태 재검증 차단: reload 후 대상 예약 URL 이탈 (${page.url()})`);
+    return null;
+  }
+  const state = await readPaymentState(page);
+  if (state) {
+    log(`🔍 재검증 결과: ${JSON.stringify({
+      isPending: state.isPending,
+      isCompleted: state.isCompleted,
+      statusText: state.statusText,
+    })}`);
+  }
+  return state;
+}
+
 async function preClickReassertZero(page: any) {
   try { await page.$eval('#od_add_item_price', (el: any) => { el.setAttribute('price', '0'); el.setAttribute('ea', '0'); }); } catch (_e) {}
   try { await page.$eval('#od_total_price', (el: any) => { el.value = '0'; }); } catch (_e) {}
@@ -277,10 +321,12 @@ async function processPaymentModal(page: any) {
 
 async function run() {
   let browser: any;
+  let page: any;
+  let viewHref: string | null = null;
   try {
     browser = await puppeteer.launch(getPickkoLaunchOptions());
     const pages = await browser.pages();
-    const page = pages[0] || await browser.newPage();
+    page = pages[0] || await browser.newPage();
     page.setDefaultTimeout(30000);
     setupDialogHandler(page, log);
     await installBrowserEvalShim(page);
@@ -329,7 +375,7 @@ async function run() {
     const endKo = toKoreanTime(pickkoEndTime(END));
     log(`🔍 시간 키: "${startKo}" ~ "${endKo}"`);
 
-    const viewHref = await page.evaluate((startKo: string, endKo: string, phone: string) => {
+    viewHref = await page.evaluate((startKo: string, endKo: string, phone: string) => {
       const clean = (s: any) => (s ?? '').replace(/\s+/g, ' ').trim();
       const trs = Array.from(document.querySelectorAll('tbody tr'));
       for (const tr of trs) {
@@ -369,17 +415,16 @@ async function run() {
     await page.goto(viewHref, { waitUntil: 'networkidle2', timeout: 20000 });
     await delay(1500);
 
-    const viewInfo = await page.evaluate(() => {
-      const body = (document.body?.innerText || '').replace(/\s+/g, ' ');
-      return {
-        isPending: body.includes('결제대기'),
-        isCompleted: body.includes('결제완료'),
-        url: window.location.href,
-      };
-    });
+    const viewState = await readPaymentState(page);
+    const viewInfo = {
+      isPending: viewState?.isPending ?? false,
+      isCompleted: viewState?.isCompleted ?? false,
+      statusText: viewState?.statusText || '',
+      url: page.url(),
+    };
     log(`📊 view 상태: ${JSON.stringify(viewInfo)}`);
 
-    if (viewInfo.isCompleted && !viewInfo.isPending) {
+    if (isConfirmedPickkoPaymentCompletion(viewInfo)) {
       log('ℹ️ 이미 결제완료 상태 → 처리 불필요');
       await exitJsonWithInsight({
         payload: { success: true, message: '이미 결제완료 상태' },
@@ -405,11 +450,30 @@ async function run() {
     });
 
     if (!hasPayBtn) {
-      log('⚠️ view 페이지에 결제하기 버튼 없음 → 수동 확인 필요');
+      const revalidated = await revalidatePaymentState(page, '결제하기 버튼 미검출', viewHref);
+      if (isConfirmedPickkoPaymentCompletion(revalidated)) {
+        log('✅ 버튼 미검출 후 재검증에서 이미 결제완료 상태 확인');
+        await exitJsonWithInsight({
+          payload: { success: true, message: '결제하기 버튼 미검출 후 재검증에서 이미 결제완료 상태' },
+          code: 0,
+          title: '픽코 결제대기 수동 처리 결과',
+          requestType: 'pay-pending',
+          data: {
+            mode: 'revalidated_completed',
+            phone: PHONE_RAW,
+            date: DATE,
+            start: START,
+            end: END,
+            room: ROOM,
+          },
+          fallback: '결제 버튼은 없었지만 상세 페이지 재검증에서 이미 결제완료 상태를 확인했습니다.',
+        });
+      }
+      log('⚠️ view 페이지에 결제하기 버튼 없음 → 재검증 후 수동 확인 필요');
       await exitJsonWithInsight({
         payload: {
           success: false,
-          message: `결제하기 버튼 미발견 — 픽코 관리자에서 수동 처리 필요: ${DATE} ${START}~${END} ${ROOM} (${PHONE_RAW})`,
+          message: `결제하기 버튼 미발견 — 재검증 후 픽코 관리자에서 수동 처리 필요: ${DATE} ${START}~${END} ${ROOM} (${PHONE_RAW})`,
         },
         code: 1,
         title: '픽코 결제대기 수동 처리 결과',
@@ -429,9 +493,10 @@ async function run() {
     log('\n[7단계] 결제 모달 처리 (0원 현금)');
     const payResult = await processPaymentModal(page);
     log(`💳 결제 결과: ${JSON.stringify(payResult)}`);
+    const confirmedState = await revalidatePaymentState(page, '결제 제출 후', viewHref);
 
     const info = `${DATE} ${START}~${END} ${ROOM}룸 (${PHONE_RAW})`;
-    if (payResult.success) {
+    if (payResult.success && isConfirmedPickkoPaymentCompletion(confirmedState)) {
       await exitJsonWithInsight({
         payload: { success: true, message: `결제완료 처리: ${info}` },
         code: 0,
@@ -448,8 +513,11 @@ async function run() {
         fallback: '결제대기 건이 정상 반영되어 같은 슬롯의 후속 확인 부담이 줄었습니다.',
       });
     } else {
+      const failureReason = payResult.success
+        ? '결제 제출 후 결제완료 상태 재검증 실패 (수동 확인 필요)'
+        : payResult.reason;
       await exitJsonWithInsight({
-        payload: { success: false, message: payResult.reason },
+        payload: { success: false, message: failureReason },
         code: 1,
         title: '픽코 결제대기 수동 처리 결과',
         requestType: 'pay-pending',
@@ -460,13 +528,34 @@ async function run() {
           start: START,
           end: END,
           room: ROOM,
-          reason: payResult.reason,
+          reason: failureReason,
         },
         fallback: '결제대기 처리가 중단돼 같은 예약 슬롯을 수동 재확인하는 편이 좋습니다.',
       });
     }
   } catch (err: any) {
     log(`❌ 오류: ${err.message}`);
+    const revalidated = page && viewHref
+      ? await revalidatePaymentState(page, `작업 예외: ${err.message}`, viewHref)
+      : null;
+    if (isConfirmedPickkoPaymentCompletion(revalidated)) {
+      log('✅ 작업 예외 후 재검증에서 이미 결제완료 상태 확인');
+      await exitJsonWithInsight({
+        payload: { success: true, message: '작업 예외 후 재검증에서 이미 결제완료 상태' },
+        code: 0,
+        title: '픽코 결제대기 수동 처리 결과',
+        requestType: 'pay-pending',
+        data: {
+          mode: 'exception_revalidated_completed',
+          phone: PHONE_RAW,
+          date: DATE,
+          start: START,
+          end: END,
+          room: ROOM,
+        },
+        fallback: '작업 중 timeout이 발생했지만 상세 페이지 재검증에서 결제완료 상태를 확인했습니다.',
+      });
+    }
     await exitJsonWithInsight({
       payload: { success: false, message: err.message },
       code: 1,
@@ -496,6 +585,8 @@ module.exports = {
   waitTotalZeroStable,
   preClickReassertZero,
   processPaymentModal,
+  readPaymentState,
+  revalidatePaymentState,
   run,
 };
 

@@ -26,6 +26,7 @@ const {
 const {
   updateAgentState,
   acquirePickkoLock,
+  renewPickkoLock,
   releasePickkoLock,
   isPickkoLocked,
   isManualPickkoPriorityActive,
@@ -292,6 +293,7 @@ const kioskRuntimeService = createKioskRuntimeService({
   isManualPickkoPriorityActive,
   isPickkoLocked,
   acquirePickkoLock,
+  renewPickkoLock,
   releasePickkoLock,
   updateAgentState,
   launchBrowser: (options: any) => puppeteer.launch(options),
@@ -352,10 +354,17 @@ const kioskMainService = createKioskMainService({
   log,
   updateAgentState,
   prepareRuntime: ({ today }: any) => kioskRuntimeService.prepareRuntime({ today }),
-  cleanupRuntime: ({ browser, lockAcquired }: any) => kioskRuntimeService.cleanupRuntime({ browser, lockAcquired }),
+  cleanupRuntime: ({ browser, lockAcquired, lockOwner, stopLockHeartbeat }: any) =>
+    kioskRuntimeService.cleanupRuntime({ browser, lockAcquired, lockOwner, stopLockHeartbeat }),
   preparePickkoCycle: ({ page, today, pickkoId, pickkoPw }: any) => kioskPickkoCycleService.preparePickkoCycle({ page, today, pickkoId, pickkoPw }),
-  processNaverPhase: ({ wsFile, toBlockEntries, cancelledEntries, recordKioskBlockAttempt }: any) =>
-    kioskNaverPhaseService.processNaverPhase({ wsFile, toBlockEntries, cancelledEntries, recordKioskBlockAttempt }),
+  processNaverPhase: ({ wsFile, toBlockEntries, cancelledEntries, recordKioskBlockAttempt, assertLockLease }: any) =>
+    kioskNaverPhaseService.processNaverPhase({
+      wsFile,
+      toBlockEntries,
+      cancelledEntries,
+      recordKioskBlockAttempt,
+      assertLockLease,
+    }),
   recordKioskBlockAttempt,
   wsFile: NAVER_WS_FILE,
   pickkoId: PICKKO_ID,

@@ -8,11 +8,7 @@ async function main() {
 
   const service = createPickkoSavePrecheckService({
     log: () => {},
-    buildStageError: (code, message) => {
-      const error = new Error(message);
-      error.stageCode = code;
-      return error;
-    },
+    buildStageError: (code, message) => Object.assign(new Error(message), { stageCode: code }),
   });
 
   let fieldLookupCount = 0;

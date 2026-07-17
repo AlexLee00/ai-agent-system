@@ -8,11 +8,7 @@ function createService(logs) {
     delay: async () => {},
     log: (message) => logs.push(String(message)),
     sendErrorNotification: async () => {},
-    buildStageError: (code, message) => {
-      const error = new Error(message);
-      error.stageCode = code;
-      return error;
-    },
+    buildStageError: (code, message) => Object.assign(new Error(message), { stageCode: code }),
   });
 }
 

@@ -11,9 +11,9 @@ const {
   writePayScanChecklistFile,
   resolvePayScanFollowupFiles,
   reconcilePayScanFollowupFiles,
-  isAlreadyPaidWithoutButton,
   isExpectedManualFollowup,
   buildPayScanAlertMessage,
+  buildPayScanLockDeferralFailures,
 } = require('../../lib/report-followup-helpers');
 const {
   getManualPendingReservations,
@@ -26,10 +26,34 @@ const {
 const {
   chooseCanonicalReservationIdForSlot,
 } = require('../../lib/naver-monitor-helpers');
+const {
+  acquirePickkoLock,
+  renewPickkoLock,
+  releasePickkoLock,
+  isPickkoLocked,
+  setManualPickkoPriority,
+  clearManualPickkoPriority,
+} = require('../../lib/state-bus');
+const {
+  createPickkoOperationLockOwner,
+  requirePickkoOperationLockRenewal,
+  waitForPickkoChildProcess,
+  waitForPickkoOperationLock,
+} = require('../../lib/pickko-operation-lock');
 const payScanMemory = createAgentMemory({ agentId: 'reservation.pickko-pay-scan', team: 'reservation' });
+
+const PAY_SCAN_LOCK_TTL_MS = 30 * 60 * 1000;
+const PAY_SCAN_LOCK_WAIT_MS = 20 * 60 * 1000;
+const PAY_SCAN_LOCK_POLL_MS = 2 * 1000;
+const PAY_PENDING_TIMEOUT_MS = 20 * 60 * 1000;
+const PAY_PENDING_KILL_GRACE_MS = 5 * 1000;
 
 function log(message: string) {
   process.stdout.write(`[${ts()}] ${message}\n`);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function buildPayScanMemoryQuery(successCount: number, failureCount: number, unexpectedFailureCount: number) {
@@ -42,55 +66,56 @@ function buildPayScanMemoryQuery(successCount: number, failureCount: number, une
   ].filter(Boolean).join(' ');
 }
 
-function runPayPending(entry: any) {
-  return new Promise<any>((resolve) => {
-    const scriptPath = path.join(
-      __dirname,
-      '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts',
-    );
-    const tsxBin = path.join(__dirname, '../../../../node_modules/.bin/tsx');
-    const args = [
-      scriptPath,
-      `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
-      `--date=${entry.date}`,
-      `--start=${entry.start}`,
-      `--end=${entry.end}`,
-      `--room=${entry.room}`,
-    ];
+async function runPayPending(entry: any) {
+  const scriptPath = path.join(
+    __dirname,
+    '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts',
+  );
+  const tsxBin = path.join(__dirname, '../../../../node_modules/.bin/tsx');
+  const args = [
+    scriptPath,
+    `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
+    `--date=${entry.date}`,
+    `--start=${entry.start}`,
+    `--end=${entry.end}`,
+    `--room=${entry.room}`,
+  ];
 
-    const child = spawn(tsxBin, args, {
-      cwd: path.dirname(scriptPath),
-      env: { ...process.env, MODE: 'ops' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk: any) => { stdout += String(chunk); });
-    child.stderr.on('data', (chunk: any) => { stderr += String(chunk); });
-
-    child.on('error', (error: any) => {
-      resolve({ ok: false, exitCode: -1, message: error.message, stdout, stderr });
-    });
-
-    child.on('close', (code: number) => {
-      let parsed = null;
-      const trimmed = stdout.trim();
-      if (trimmed) {
-        try {
-          parsed = JSON.parse(trimmed.split('\n').filter(Boolean).at(-1) as string);
-        } catch {}
-      }
-      resolve({
-        ok: code === 0 && !!parsed?.success,
-        exitCode: code,
-        message: parsed?.message || `exit=${code}`,
-        stdout,
-        stderr,
-      });
-    });
+  const child = spawn(tsxBin, args, {
+    cwd: path.dirname(scriptPath),
+    env: { ...process.env, MODE: 'ops' },
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+
+  let stdout = '';
+  let stderr = '';
+
+  child.stdout.on('data', (chunk: any) => { stdout += String(chunk); });
+  child.stderr.on('data', (chunk: any) => { stderr += String(chunk); });
+
+  const outcome: any = await waitForPickkoChildProcess(child, {
+    timeoutMs: PAY_PENDING_TIMEOUT_MS,
+    killGraceMs: PAY_PENDING_KILL_GRACE_MS,
+  });
+
+  let parsed = null;
+  const trimmed = stdout.trim();
+  if (trimmed) {
+    try {
+      parsed = JSON.parse(trimmed.split('\n').filter(Boolean).at(-1) as string);
+    } catch {}
+  }
+  return {
+    ok: !outcome.timedOut && !outcome.error && outcome.code === 0 && !!parsed?.success,
+    exitCode: outcome.code,
+    message: outcome.timedOut
+      ? `pickko-pay-pending timeout (${PAY_PENDING_TIMEOUT_MS}ms)`
+      : outcome.error?.message || parsed?.message || `exit=${outcome.code}`,
+    stdout,
+    stderr,
+    timedOut: outcome.timedOut,
+    signal: outcome.signal,
+  };
 }
 
 async function reconcileSlotDuplicatesAfterPayScan(entry: any) {
@@ -171,39 +196,79 @@ async function main() {
   const failures: any[] = [];
   const resolvedEntries: any[] = [];
 
-  for (const entry of targets) {
-    const label = `${entry.date} ${entry.start}~${entry.end} ${entry.room} ${entry.phone}`;
-    log(`🚀 결제완료 처리 시작: ${label}`);
-    const result = await runPayPending(entry);
-
-    if (result.ok || isAlreadyPaidWithoutButton(entry, result)) {
-      await updateReservation(entry.id, {
-        pickkoStatus: 'manual',
-        errorReason: null,
-        pickkoCompleteTime: ts(),
-      });
-      await markSeen(entry.id);
-      const dedupe = await reconcileSlotDuplicatesAfterPayScan(entry).catch(() => null);
-      successCount += 1;
-      if (result.ok) log(`✅ 결제완료 처리 성공: ${label}`);
-      else log(`✅ 결제버튼 없음 → 이미 결제완료로 간주: ${label}`);
-      if (dedupe?.hiddenCount > 0) {
-        log(`🧹 duplicate slot 정리: canonical=${dedupe.canonicalId} hidden=${dedupe.hiddenCount} (${label})`);
-      }
-      resolvedEntries.push(entry);
-      continue;
-    }
-
-    failureCount += 1;
-    if (!isExpectedManualFollowup(result)) unexpectedFailureCount += 1;
-    await updateReservation(entry.id, {
-      errorReason: `pay_scan_failed: ${result.message}`,
+  let lockAcquired = false;
+  const lockOwner = createPickkoOperationLockOwner('pay_scan');
+  await setManualPickkoPriority('pickko_pay_scan');
+  try {
+    log('⏳ 공용 Pickko 락 대기 시작');
+    const lockResult = await waitForPickkoOperationLock({
+      owner: lockOwner,
+      ttlMs: PAY_SCAN_LOCK_TTL_MS,
+      waitMs: PAY_SCAN_LOCK_WAIT_MS,
+      pollMs: PAY_SCAN_LOCK_POLL_MS,
+      acquireLock: acquirePickkoLock,
+      getLockState: isPickkoLocked,
+      delay: wait,
     });
-    failures.push({ entry, result });
-    log(`❌ 결제완료 처리 실패: ${label} (${result.message})`);
-    if (result.stderr.trim()) {
-      log(`stderr: ${result.stderr.trim().slice(0, 500)}`);
+
+    if (!lockResult.acquired) {
+      log(`⏭️ 공용 Pickko 락 대기 초과 — 이번 pay-scan 연기 (점유=${lockResult.blockedBy || 'unknown'}, 대기=${lockResult.waitedMs}ms)`);
+      const lockFailures = buildPayScanLockDeferralFailures(targets, lockResult);
+      failures.push(...lockFailures);
+      failureCount += lockFailures.length;
+      unexpectedFailureCount += lockFailures.length;
+    } else {
+      lockAcquired = true;
+      log(`🔒 공용 Pickko 락 획득 (시도=${lockResult.attempts}, 대기=${lockResult.waitedMs}ms)`);
+
+      for (const entry of targets) {
+        const label = `${entry.date} ${entry.start}~${entry.end} ${entry.room} ${entry.phone}`;
+        await requirePickkoOperationLockRenewal({
+          owner: lockOwner,
+          ttlMs: PAY_SCAN_LOCK_TTL_MS,
+          renewLock: renewPickkoLock,
+        });
+        log(`🚀 결제완료 처리 시작: ${label}`);
+        const result = await runPayPending(entry);
+
+        if (result.ok) {
+          await updateReservation(entry.id, {
+            pickkoStatus: 'manual',
+            errorReason: null,
+            pickkoCompleteTime: ts(),
+          });
+          await markSeen(entry.id);
+          const dedupe = await reconcileSlotDuplicatesAfterPayScan(entry).catch(() => null);
+          successCount += 1;
+          log(`✅ 결제완료 처리 성공: ${label}`);
+          if (dedupe?.hiddenCount > 0) {
+            log(`🧹 duplicate slot 정리: canonical=${dedupe.canonicalId} hidden=${dedupe.hiddenCount} (${label})`);
+          }
+          resolvedEntries.push(entry);
+          continue;
+        }
+
+        failureCount += 1;
+        if (!isExpectedManualFollowup(result)) unexpectedFailureCount += 1;
+        await updateReservation(entry.id, {
+          errorReason: `pay_scan_failed: ${result.message}`,
+        });
+        failures.push({ entry, result });
+        log(`❌ 결제완료 처리 실패: ${label} (${result.message})`);
+        if (result.stdout.trim()) {
+          log(`child stdout:\n${result.stdout.trim().slice(-3000)}`);
+        }
+        if (result.stderr.trim()) {
+          log(`stderr: ${result.stderr.trim().slice(0, 500)}`);
+        }
+      }
     }
+  } finally {
+    if (lockAcquired) {
+      await releasePickkoLock(lockOwner);
+      log('🔓 공용 Pickko 락 해제');
+    }
+    await clearManualPickkoPriority('pickko_pay_scan');
   }
 
   log(`📊 완료: 성공 ${successCount}건 / 실패 ${failureCount}건`);
