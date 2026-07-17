@@ -28,6 +28,7 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const lifecycle = require(path.join(repoRoot, 'packages/core/lib/agent-lifecycle.ts'));
+const VAULT_AUDIT_ACTION_CHECK_FIXTURE = new Set(['created', 'classified', 'moved', 'archived', 'tagged']);
 
 function makePg({ readonlyRows = [], queryRows = [], updateRowCount = null } = {}) {
   const calls = [];
@@ -72,9 +73,11 @@ function assertOnlySigmaWrites(calls) {
 function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {}) {
   const rows = new Map(seedRows.map((row) => [String(row.id), structuredClone(row)]));
   const calls = [];
+  const audits = [];
   const pg = {
     rows,
     calls,
+    audits,
     activeCount() {
       return [...rows.values()].filter((row) => !row.meta?.merged_into).length;
     },
@@ -120,7 +123,14 @@ function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {
                 rowCount: duplicateUpdateRowCount == null ? rowCount : duplicateUpdateRowCount,
               };
             }
-            if (/INSERT INTO sigma\.vault_audit/i.test(sql)) return { rows: [], rowCount: (params[0] || []).length };
+            if (/INSERT INTO sigma\.vault_audit/i.test(sql)) {
+              const action = String(sql).match(/SELECT duplicate_id,\s*'([^']+)'/i)?.[1] || '';
+              if (!VAULT_AUDIT_ACTION_CHECK_FIXTURE.has(action)) {
+                throw new Error('violates check constraint "vault_audit_action_check"');
+              }
+              for (const entryId of params[0] || []) audits.push({ entryId, action, reasoning: params[1] });
+              return { rows: [], rowCount: (params[0] || []).length };
+            }
             throw new Error(`unexpected dedupe apply query: ${String(sql).replace(/\s+/g, ' ').trim().slice(0, 160)}`);
           },
         });
@@ -252,6 +262,9 @@ async function testDedupe() {
     { team: 'blo', table: 'posts', id: '2' },
   ]);
   assert.equal(keepAfter.embedding, '[0.3,0.4]');
+  assert.equal(applyPg.audits.length, 2);
+  assert.equal(applyPg.audits.every((audit) => audit.action === 'tagged'), true);
+  assert.match(applyPg.audits[0].reasoning, /sigma_vault_dedupe: merged_into=/);
   const reapplied = await applyVaultDedupePlan(plan, { pg: applyPg, write: true, confirm: true });
   assert.equal(reapplied.applied, 0);
   assert.equal(applyPg.activeCount(), activeBefore - 2);
@@ -311,6 +324,7 @@ async function testDedupe() {
     fullInvariantApplied: bulkApplied.applied,
     fullInvariantMarked: 297,
     fullInvariantReapply: bulkReapplied.applied,
+    auditActionCheck: 'tagged',
     fullPlanWithDisplayLimit: limitedReport.counts.plannedGroups,
   };
 }

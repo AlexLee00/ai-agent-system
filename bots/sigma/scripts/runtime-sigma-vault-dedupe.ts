@@ -301,7 +301,7 @@ export async function applyVaultDedupePlan(plan = [], {
       }
       await client.query(`
         INSERT INTO sigma.vault_audit (entry_id, action, classifier, reasoning, applied, dry_run)
-        SELECT duplicate_id, 'deduped', 'rule', $2, true, false
+        SELECT duplicate_id, 'tagged', 'rule', $2, true, false
         FROM UNNEST($1::uuid[]) AS duplicate_id
       `, [activeDuplicateIds, `sigma_vault_dedupe: merged_into=${group.keepId} md5=${group.contentMd5}`]);
       return activeDuplicateIds.length;
