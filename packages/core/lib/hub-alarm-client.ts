@@ -609,6 +609,11 @@ function _stableHash(value: unknown): string {
   return crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12);
 }
 
+function _extractCanonicalIncidentReason(message: string): string {
+  const match = String(message || '').match(/(?:^|\n)\s*incident:\s*canonical=1\b[^\n]*\breason=([^\s\n]+)/i);
+  return _normalizeAlertText(match?.[1] || '');
+}
+
 function _deriveEventType({
   eventType,
   message,
@@ -644,6 +649,7 @@ function _deriveIncidentKey({
 }): string {
   const explicit = _normalizeAlertText(incidentKey || sessionKey);
   if (explicit) return explicit;
+  const canonicalReason = _extractCanonicalIncidentReason(message);
   // Use only the first line (structural headline) for stable hashing across
   // repeated alarms that share the same issue but have varying detail lines.
   const headline = _normalizeAlertText(message).split('\n')[0].slice(0, 120);
@@ -651,7 +657,7 @@ function _deriveIncidentKey({
     _slugToken(team, 'general'),
     _slugToken(fromBot, 'unknown'),
     _slugToken(eventType, 'alarm'),
-    _stableHash(headline),
+    _stableHash(canonicalReason || headline),
   ].join(':');
 }
 

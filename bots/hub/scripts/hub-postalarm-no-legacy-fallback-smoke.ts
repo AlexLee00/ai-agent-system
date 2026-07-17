@@ -282,6 +282,68 @@ async function runExplicitReportContractCase(tempWorkspace: string) {
   assert(calls[0].body.payload.event_type === 'darwin_weekly_research_report', 'expected payload event_type to match explicit eventType');
 }
 
+async function runCanonicalIncidentKeyCase(tempWorkspace: string) {
+  resetEnv(tempWorkspace);
+  resetClientModule();
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          delivered: true,
+          event_id: 1261 + calls.length,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw new Error(`unexpected fetch url for canonical incident-key case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const messages = [
+    [
+      '이웃 댓글 0건 완료, 댓글 공감 0건 완료, 실패 2건, 스킵 0건 (오늘 댓글 총 13/20, 댓글공감 총 13)',
+      'incident: canonical=1 count=1 first_seen=2026-07-16T07:25:22.742Z last_seen=2026-07-16T07:25:22.742Z reason=neighbor_commenter_failures',
+    ].join('\n'),
+    [
+      '이웃 댓글 0건 완료, 댓글 공감 0건 완료, 실패 3건, 스킵 1건 (오늘 댓글 총 14/20, 댓글공감 총 14)',
+      'incident: canonical=1 count=2 first_seen=2026-07-16T07:25:22.742Z last_seen=2026-07-16T08:25:22.742Z reason=neighbor_commenter_failures',
+    ].join('\n'),
+  ];
+
+  for (const message of messages) {
+    const result = await postAlarm({
+      message,
+      team: 'blog',
+      alertLevel: 3,
+      fromBot: 'blog-neighbor-commenter',
+      alarmType: 'error',
+      eventType: 'blog-neighbor-commenter_error',
+      payload: { event_type: 'blog-neighbor-commenter_error' },
+    });
+    assert(result && result.ok === true, 'expected canonical incident-key case to deliver');
+  }
+
+  assert(calls.length === 2, `expected 2 hub calls, got ${calls.length}`);
+  const firstIncidentKey = String(calls[0].body?.incidentKey || '');
+  const secondIncidentKey = String(calls[1].body?.incidentKey || '');
+  assert(
+    /^blog:blog-neighbor-commenter:blog-neighbor-commenter_error:[a-f0-9]{12}$/.test(firstIncidentKey),
+    `unexpected canonical incidentKey: ${firstIncidentKey}`,
+  );
+  assert(
+    firstIncidentKey === secondIncidentKey,
+    `canonical reason must stabilize incidentKey across varying first lines. got:\n  ${firstIncidentKey}\n  ${secondIncidentKey}`,
+  );
+}
+
 async function runHubRateLimitMetadataCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
@@ -392,6 +454,7 @@ async function main() {
     await runStandardContractFallbackCase(tempWorkspace);
     await runCriticalContractFallbackCase(tempWorkspace);
     await runExplicitReportContractCase(tempWorkspace);
+    await runCanonicalIncidentKeyCase(tempWorkspace);
     await runHubRateLimitMetadataCase(tempWorkspace);
     await runLargePayloadCappedCase(tempWorkspace);
     console.log('hub_postalarm_no_legacy_fallback_smoke_ok');
