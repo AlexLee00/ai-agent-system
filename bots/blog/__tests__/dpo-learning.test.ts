@@ -21,6 +21,11 @@ jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({
 jest.mock('../../../packages/core/lib/local-llm-client', () => ({
   callLocalFast: jest.fn().mockResolvedValue('{"hook_difference":"테스트","key_insight":"테스트","action_hint":"테스트"}'),
 }));
+jest.mock('../lib/blog-llm-gateway.ts', () => ({
+  callBlogFast: jest.fn().mockResolvedValue({
+    text: '{"hook_difference":"테스트","key_insight":"테스트","action_hint":"테스트"}',
+  }),
+}));
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
@@ -187,8 +192,8 @@ describe('marketing-dpo', () => {
   });
 
   test('analyzePairWithLlm — LLM 실패 시 규칙 기반 fallback', async () => {
-    const { callLocalFast } = require('../../../packages/core/lib/local-llm-client');
-    callLocalFast.mockRejectedValueOnce(new Error('LLM timeout'));
+    const { callBlogFast } = require('../lib/blog-llm-gateway.ts');
+    callBlogFast.mockRejectedValueOnce(new Error('LLM timeout'));
 
     const preferred = { title: '합격 비결 3가지', category: '공부법', views_7d: 300 };
     const rejected = { title: '오늘 일상', category: '공부법', views_7d: 20 };

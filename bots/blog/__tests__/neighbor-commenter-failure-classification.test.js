@@ -1,6 +1,29 @@
 'use strict';
 
+jest.mock('../../../packages/core/lib/pg-pool', () => ({
+  query: jest.fn().mockResolvedValue([]),
+  get: jest.fn().mockResolvedValue(null),
+  run: jest.fn().mockResolvedValue({ rowCount: 0 }),
+}));
+jest.mock('../../../packages/core/lib/hub-client', () => ({
+  callHubLlm: jest.fn().mockResolvedValue({
+    text: '{"comment":"본문의 구체적인 흐름이 자연스럽게 이어져서 인상 깊게 읽었습니다. 핵심 포인트도 이해하기 쉽게 정리되어 있네요.","tone":"공감형"}',
+  }),
+}));
+jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({
+  postAlarm: jest.fn().mockResolvedValue({ ok: true }),
+}));
+jest.mock('../../../packages/core/lib/naver-blog-url', () => ({
+  parseNaverBlogUrl: jest.fn().mockReturnValue({ ok: false }),
+}));
+jest.mock('../lib/strategy-loader.ts', () => ({
+  loadStrategyBundle: jest.fn().mockReturnValue({ plan: {} }),
+  resolveExecutionTarget: jest.fn((_key, _plan, fallback) => fallback),
+}));
+
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const {
+  generateNeighborComment,
   isDirectReplyUiError,
   isRecoverableNeighborCommentFailure,
   shouldDeferRecoverableReplyRequeue,
@@ -16,6 +39,7 @@ describe('neighbor commenter failure classification', () => {
       new Error('fetch failed'),
       new Error('detached Frame'),
       new Error('neighbor_comment_process_timeout:180000'),
+      new Error('hub_llm_call_failed:타임아웃'),
     ];
 
     for (const error of errors) {
@@ -23,9 +47,75 @@ describe('neighbor commenter failure classification', () => {
     }
   });
 
+  test('keeps the Hub transport open for the full neighbor fallback chain', async () => {
+    await generateNeighborComment('테스트 글', '구체적인 본문 요약', {
+      target_blog_id: 'neighbor-blog',
+      source_type: 'buddy_feed',
+      priorNeighborInteractionCount: 1,
+    });
+
+    expect(callHubLlm).toHaveBeenCalledWith(expect.objectContaining({
+      selectorKey: 'blog.commenter.neighbor',
+      timeoutMs: 75_000,
+    }));
+  });
+
+  test('reserves pre-post time outside the browser posting timeout', () => {
+    expect(_testOnly.resolveNeighborCommentTimeouts({ processTimeoutMs: 180_000 })).toEqual({
+      postTimeoutMs: 180_000,
+      totalTimeoutMs: 420_000,
+    });
+  });
+
   test('keeps non-transient validation failures as hard failures', () => {
     expect(isRecoverableNeighborCommentFailure(new Error('neighbor_comment_validation_failed'))).toBe(false);
+    expect(isRecoverableNeighborCommentFailure(new Error('comment_post_timeout:180000'))).toBe(false);
     expect(isTransientBrowserNavigationError(new Error('permission denied'))).toBe(false);
+  });
+
+  test('reconciles a post timeout only after the published comment is verified', async () => {
+    const verifyPublished = jest.fn().mockResolvedValue(true);
+    const reconciled = await _testOnly.reconcileTimedOutNeighborComment(
+      new Error('comment_post_timeout:180000'),
+      {
+        postUrl: 'https://blog.naver.com/example/1234567890',
+        commentText: '이미 등록된 댓글',
+        verifyPublished,
+      },
+    );
+
+    expect(reconciled).toBe(true);
+    expect(verifyPublished).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps a post timeout failed when the published comment is not found', async () => {
+    const verifyPublished = jest.fn().mockResolvedValue(false);
+    const reconciled = await _testOnly.reconcileTimedOutNeighborComment(
+      new Error('comment_post_timeout:180000'),
+      {
+        postUrl: 'https://blog.naver.com/example/1234567890',
+        commentText: '등록되지 않은 댓글',
+        verifyPublished,
+      },
+    );
+
+    expect(reconciled).toBe(false);
+    expect(verifyPublished).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not reconcile unrelated failures as successful posts', async () => {
+    const verifyPublished = jest.fn().mockResolvedValue(true);
+    const reconciled = await _testOnly.reconcileTimedOutNeighborComment(
+      new Error('comment_editor_not_found'),
+      {
+        postUrl: 'https://blog.naver.com/example/1234567890',
+        commentText: '등록되지 않은 댓글',
+        verifyPublished,
+      },
+    );
+
+    expect(reconciled).toBe(false);
+    expect(verifyPublished).not.toHaveBeenCalled();
   });
 
   test('rejects first-visit phrasing when target has prior neighbor comment history', () => {
@@ -95,7 +185,7 @@ describe('neighbor commenter managed browser connection', () => {
       readWsEndpoints: () => ['ws://stale:1', 'ws://fresh:2'],
       connect: async ({ browserWSEndpoint }) => {
         attempts.push(browserWSEndpoint);
-        if (browserWSEndpoint === 'ws://stale:1') throw new Error('socket closed');
+        if (browserWSEndpoint === 'ws://stale:1') return Promise.reject(new Error('socket closed'));
         return browser;
       },
       fetchManagedBrowserWsEndpoint: async () => '',

@@ -23,6 +23,8 @@ const { getConfig }                                 = require(path.join(env.PROJ
 const {
   GENERAL_CATEGORIES,
   advanceGeneralCategory,
+  buildGeneralRetryOptions,
+  shouldAdvanceContentTracker,
   getNextGeneralCategory,
   advanceLectureNumber,
   isSeriesComplete,
@@ -277,29 +279,17 @@ function _normalizeReviewedBookIsbn(value = '') {
   return String(value || '').replace(/[^0-9]/g, '');
 }
 
-async function _findExistingReviewedBook(bookInfo = {}) {
+async function _findExistingReviewedBook(bookInfo = {}, excludeScheduleId = null) {
   const isbn = _normalizeReviewedBookIsbn(bookInfo.book_isbn || bookInfo.isbn);
   const titleKey = _normalizeReviewedBookKey(bookInfo.book_title || bookInfo.title);
   if (!isbn && !titleKey) return null;
 
   try {
-    const rows = await pgPool.query('blog', `
-      SELECT publish_date, book_title, book_author, book_isbn, status
-      FROM blog.publish_schedule
-      WHERE post_type = 'general'
-        AND category = '도서리뷰'
-        AND status IN ('ready', 'published', 'archived')
-        AND (book_title IS NOT NULL OR book_isbn IS NOT NULL)
-      ORDER BY publish_date DESC
-    `);
-
-    return (rows || []).find((row) => {
-      const rowIsbn = _normalizeReviewedBookIsbn(row?.book_isbn);
-      const rowTitleKey = _normalizeReviewedBookKey(row?.book_title);
-      if (isbn && rowIsbn && isbn === rowIsbn) return true;
-      if (titleKey && rowTitleKey && titleKey === rowTitleKey) return true;
-      return false;
-    }) || null;
+    const history = await blogSkills.bookReviewBook.loadReviewedBookHistory();
+    return blogSkills.bookReviewBook.findReviewedBookMatch({
+      title: bookInfo.book_title || bookInfo.title,
+      isbn: bookInfo.book_isbn || bookInfo.isbn,
+    }, history, { excludeScheduleId });
   } catch (error) {
     console.warn('[블로] 도서리뷰 중복 이력 조회 실패:', error.message);
     return null;
@@ -349,9 +339,9 @@ async function _buildBookReviewSkillInput(researchData = {}) {
       ? blogSkills.bookReviewBook.buildDiversePreferredBooks(preferredBooks, 6, reviewedHistory)
       : [])].slice(0, 6);
   const topic = String(
-    researchData?.it_news?.[0]?.title
+    preferredSeeds?.[0]?.title
+    || researchData?.it_news?.[0]?.title
     || researchData?.nodejs_updates?.[0]?.name
-    || preferredSeeds?.[0]?.title
     || '일과 삶을 함께 돌아보게 만드는 책'
   ).trim();
 
@@ -691,11 +681,12 @@ function _buildBookReviewTopicMeta(bookInfo = {}) {
 async function _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId = null) {
 
   if (scheduledBook?.book_title && scheduledBook?.book_isbn) {
-    const duplicateBook = await _findExistingReviewedBook(scheduledBook);
+    const duplicateBook = await _findExistingReviewedBook(scheduledBook, scheduleId);
     if (duplicateBook) {
       return {
         ok: false,
         skipped: true,
+        duplicate: true,
         reason: `기존 도서리뷰와 중복: ${scheduledBook.book_title}`,
       };
     }
@@ -770,7 +761,9 @@ async function _resolveDynamicBookResearch(preparedResearch, researchData, sched
 
 async function _prepareBookReviewResearch(preparedResearch, researchData, scheduledBook, scheduleId = null) {
   if (scheduledBook?.book_title || scheduledBook?.book_isbn) {
-    return _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId);
+    const scheduledResult = await _resolveScheduledBookResearch(preparedResearch, scheduledBook, scheduleId);
+    if (!scheduledResult.duplicate) return scheduledResult;
+    console.warn(`[젬스] ${scheduledResult.reason} — 새 도서 후보로 재선정`);
   }
 
   try {
@@ -1373,17 +1366,21 @@ async function _recordPublishedExperiment(postData = {}, published = null) {
 async function _advanceContentTracker({
   dryRun = false,
   published = null,
+  preserveContentTracker = false,
   skipLabel = '',
+  preserveLabel = '',
   dryRunLabel = '',
   readonlyLabel = '',
   advance,
 }) {
-  if (!dryRun && !published?.reused && !DEV_HUB_READONLY) {
+  if (shouldAdvanceContentTracker({ dryRun, published, preserveContentTracker }) && !DEV_HUB_READONLY) {
     await advance();
     return;
   }
 
-  if (published?.reused) {
+  if (preserveContentTracker) {
+    console.log(preserveLabel);
+  } else if (published?.reused) {
     console.log(skipLabel);
   } else if (dryRun) {
     console.log(dryRunLabel);
@@ -1619,6 +1616,9 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
       });
     }
     preparedResearch = bookResult.researchData;
+    if (String(options.bookReviewTitleCandidate || '').trim()) {
+      preparedResearch.topic_title_candidate = String(options.bookReviewTitleCandidate).trim();
+    }
     if (preparedResearch.book_info?.title) {
       console.log(`[젬스] 도서 정보 준비 완료: ${preparedResearch.book_info.title}`);
     }
@@ -1884,7 +1884,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     topic_hint: context.topicHint || null,
   });
 
-  if (context.category === '도서리뷰' && context.book_info && !options.dryRun) {
+  if (context.category === '도서리뷰' && context.book_info && !options.dryRun && !published?.reused) {
     const catalogCandidate = Array.isArray(context.book_info.verification_candidates)
       ? context.book_info.verification_candidates.find((candidate) => candidate?.source === 'catalog')
       : null;
@@ -1908,7 +1908,9 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   await _advanceContentTracker({
     dryRun: !!options.dryRun,
     published,
+    preserveContentTracker: options.preserveContentTracker === true,
     skipLabel: `[블로] 일반 포스팅 재실행 감지 (${context.category}) — 카테고리 증가 생략`,
+    preserveLabel: `[블로] 수동 재발행 (${context.category}) — 카테고리 증가 생략`,
     dryRunLabel: `[블로][dry-run] 일반 카테고리 증가 생략 (${context.category})`,
     readonlyLabel: `[블로] DEV/HUB 읽기 전용 — 일반 카테고리 증가 생략 (${context.category})`,
     advance: advanceGeneralCategory,
@@ -2643,13 +2645,20 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
   if (prepared?.skipped) {
     const skippedResult = prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
     const canFallbackCategory = skippedResult.category === '도서리뷰' && !preloaded._bookFallbackTried;
+    const shouldAdvanceSkippedTracker = shouldAdvanceContentTracker({
+      dryRun: !!options.dryRun,
+      preserveContentTracker: options.preserveContentTracker === true,
+    }) && !DEV_HUB_READONLY;
     if (canFallbackCategory) {
-      await advanceGeneralCategory();
-      const nextCategoryInfo = await getNextGeneralCategory();
-      const fallbackCategory = nextCategoryInfo?.category === '도서리뷰'
-        ? _getNextFallbackGeneralCategory(skippedResult.category)
-        : (nextCategoryInfo?.category || _getNextFallbackGeneralCategory(skippedResult.category));
-      if (scheduleId) {
+      let fallbackCategory = _getNextFallbackGeneralCategory(skippedResult.category);
+      if (shouldAdvanceSkippedTracker) {
+        await advanceGeneralCategory();
+        const nextCategoryInfo = await getNextGeneralCategory();
+        fallbackCategory = nextCategoryInfo?.category === '도서리뷰'
+          ? fallbackCategory
+          : (nextCategoryInfo?.category || fallbackCategory);
+      }
+      if (scheduleId && !options.dryRun) {
         await updateScheduleCategory(scheduleId, fallbackCategory);
       }
       console.log(`[블로] 도서리뷰 스킵 — 같은 런에서 다음 일반 카테고리로 전환: ${fallbackCategory}`);
@@ -2660,7 +2669,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         _bookFallbackTried: true,
       }, scheduleId, options, dailyState);
     }
-    if (!DEV_HUB_READONLY) {
+    if (shouldAdvanceSkippedTracker) {
       await advanceGeneralCategory();
     }
     return skippedResult;
@@ -2805,15 +2814,16 @@ async function retryLectureOnly(options = {}) {
 }
 
 async function retryGeneralOnly(options = {}) {
+  const retryOptions = buildGeneralRetryOptions(options);
   console.log('\n📝 [블로] 일반 포스팅 재발행 시작\n');
-  if (options.dryRun) {
+  if (retryOptions.dryRun) {
     console.log('[블로][dry-run] 일반 포스팅 재발행 검증 실행');
   }
 
   const traceCtx = startTrace({ bot: 'blog-blo', action: 'general_retry' });
   console.log(`[블로] trace_id: ${traceCtx.trace_id}`);
 
-  const daily = await _prepareDailyRun(traceCtx, { ...options, generalOnly: true });
+  const daily = await _prepareDailyRun(traceCtx, { ...retryOptions, generalOnly: true });
   if (daily.inactive) {
     console.log('[블로] 일시 정지 상태. 종료.');
     return { type: 'general', skipped: true, reason: 'inactive' };
@@ -2823,8 +2833,8 @@ async function retryGeneralOnly(options = {}) {
     return { type: 'general', skipped: true, reason: 'general_not_scheduled' };
   }
 
-  const generalResult = await _runGeneralStage(daily, traceCtx, options);
-  await _runPostPublishChecks(options);
+  const generalResult = await _runGeneralStage(daily, traceCtx, retryOptions);
+  await _runPostPublishChecks(retryOptions);
 
   console.log('\n📝 [블로] 일반 포스팅 재발행 완료\n');
   return generalResult;

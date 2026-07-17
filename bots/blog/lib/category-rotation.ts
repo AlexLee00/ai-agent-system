@@ -6,6 +6,22 @@ const GENERAL_CATEGORIES = [
   '최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅',
 ];
 
+function shouldAdvanceContentTracker({
+  dryRun = false,
+  published = null,
+  preserveContentTracker = false,
+}: {
+  dryRun?: boolean;
+  published?: { reused?: boolean } | null;
+  preserveContentTracker?: boolean;
+} = {}) {
+  return !dryRun && !published?.reused && !preserveContentTracker;
+}
+
+function buildGeneralRetryOptions(options = {}) {
+  return { ...options, preserveContentTracker: true };
+}
+
 async function getNextGeneralCategory() {
   try {
     const row = await pgPool.get('blog', `
@@ -145,6 +161,8 @@ async function getLectureTitle(number: number, seriesName = 'nodejs_120') {
 
 module.exports = {
   GENERAL_CATEGORIES,
+  buildGeneralRetryOptions,
+  shouldAdvanceContentTracker,
   getNextGeneralCategory,
   advanceGeneralCategory,
   getNextLectureNumber,

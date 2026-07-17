@@ -29,6 +29,8 @@ const DEFAULT_SUMMARY_LEN = 220;
 const BROWSER_CONNECT_TIMEOUT_MS = 5000;
 const BROWSER_PROTOCOL_TIMEOUT_MS = 180000;
 const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
+const BLOG_COMMENTER_HUB_TIMEOUT_MS = 75_000;
+const BLOG_NEIGHBOR_PREPOST_TIMEOUT_MS = 240_000;
 const BLOG_BROWSER_RUNTIME_DIR = env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
 const NAVER_MONITOR_WS_FILES = [
   process.env.BLOG_NAVER_MONITOR_WS_FILE || '',
@@ -345,6 +347,11 @@ function isNeighborCommentUiTimeoutError(error) {
   );
 }
 
+function isCommentPostTimeoutError(error) {
+  const message = String(error?.message || error || '');
+  return message === 'comment_post_timeout' || message.startsWith('comment_post_timeout:');
+}
+
 function isTransientBrowserNavigationError(error) {
   const message = String(error?.message || error || '');
   return (
@@ -356,11 +363,22 @@ function isTransientBrowserNavigationError(error) {
   );
 }
 
+function isTransientHubLlmError(error) {
+  const message = String(error?.message || error || '');
+  return (
+    message.includes('hub_llm_call_failed:타임아웃')
+    || message.includes('hub_llm_call_failed:fetch failed')
+    || message.includes('hub_llm_call_failed:provider_cooldown')
+    || /hub_llm_call_failed:.*(?:429|rate limit)/i.test(message)
+  );
+}
+
 function isRecoverableNeighborCommentFailure(error) {
   const message = String(error?.message || error || '');
   return (
     isNeighborCommentUiTimeoutError(error)
     || isTransientBrowserNavigationError(error)
+    || isTransientHubLlmError(error)
     || message === 'comment_submit_not_confirmed'
     || message.startsWith('comment_submit_not_confirmed:')
     || message === 'neighbor_comment_process_timeout'
@@ -390,16 +408,31 @@ function isDetachedFrameError(error) {
   return message.includes('detached Frame');
 }
 
+function resolveNeighborCommentTimeouts(config = {}, { testMode = false } = {}) {
+  const configuredTimeoutMs = Number(config.processTimeoutMs || 180000);
+  const postTimeoutMs = testMode ? Math.min(configuredTimeoutMs, 45000) : configuredTimeoutMs;
+  return {
+    postTimeoutMs,
+    totalTimeoutMs: postTimeoutMs + (testMode ? 5000 : BLOG_NEIGHBOR_PREPOST_TIMEOUT_MS),
+  };
+}
+
 async function processNeighborCommentWithTimeout(candidate, { testMode = false } = {}) {
   const config = getNeighborCommenterConfig();
-  return Promise.race([
-    processNeighborComment(candidate, { testMode }),
-    new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(createTimeoutError('neighbor_comment_process_timeout', `neighbor_comment_process_timeout:${config.processTimeoutMs}`));
-      }, Number(config.processTimeoutMs || 180000));
-    }),
-  ]);
+  const { totalTimeoutMs } = resolveNeighborCommentTimeouts(config, { testMode });
+  let timeoutId;
+  try {
+    return await Promise.race([
+      processNeighborComment(candidate, { testMode }),
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(createTimeoutError('neighbor_comment_process_timeout', `neighbor_comment_process_timeout:${totalTimeoutMs}`));
+        }, totalTimeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function processCommentWithTimeout(comment, { testMode = false } = {}) {
@@ -1920,6 +1953,7 @@ async function generateReply(postTitle, postSummary, commentText, options = {}) 
     systemPrompt,
     prompt: userPrompt,
     maxTokens: 600,
+    timeoutMs: BLOG_COMMENTER_HUB_TIMEOUT_MS,
   });
   let reply = normalizeText(result?.text || '');
   let tone = '';
@@ -1955,6 +1989,7 @@ async function generateReply(postTitle, postSummary, commentText, options = {}) 
         'JSON만 응답하세요.',
       ].join('\n'),
       maxTokens: 600,
+      timeoutMs: BLOG_COMMENTER_HUB_TIMEOUT_MS,
     });
     reply = normalizeText(result?.text || reply);
     try {
@@ -2823,6 +2858,7 @@ async function generateNeighborComment(postTitle, postSummary, candidate, extraG
     systemPrompt,
     prompt: userPrompt,
     maxTokens: 700,
+    timeoutMs: BLOG_COMMENTER_HUB_TIMEOUT_MS,
   });
 
   let text = normalizeText(result?.text || '');
@@ -5200,6 +5236,33 @@ async function verifyCommentPosted(page, commentText, testMode = false) {
   `, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
 
+async function verifyPublishedCommentText(page, commentText, testMode = false) {
+  const needle = normalizeText(commentText).slice(0, 32);
+  if (!needle) return false;
+
+  const timeoutMs = testMode ? 5000 : 15000;
+  return page.waitForFunction(`
+    (() => {
+      const expected = ${JSON.stringify(needle)};
+      const textOf = (el) =>
+        String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      };
+      const publishedRows = Array.from(
+        document.querySelectorAll('li.u_cbox_comment.u_cbox_mine, div.u_cbox_comment_box.u_cbox_mine'),
+      ).filter((node) =>
+        visible(node)
+        && !node.closest('.u_cbox_write_box, .u_cbox_comment_write, .u_cbox_reply_write, [class*="write_area"]')
+      );
+      return publishedRows.some((node) => textOf(node).includes(expected));
+    })()
+  `, { timeout: timeoutMs }).then(() => true).catch(() => false);
+}
+
 async function typeReply(frame, browserPage, selector, replyText, config, testMode) {
   const durationMs = calcDelayMs(config.typingMinSec, config.typingMaxSec, testMode);
   const perCharDelay = Math.max(15, Math.min(180, Math.round(durationMs / Math.max(replyText.length, 1))));
@@ -5770,6 +5833,51 @@ async function postComment(postUrl, commentText, { testMode = false, withSympath
   });
 }
 
+async function verifyPublishedNeighborComment(postUrl, commentText, { testMode = false } = {}) {
+  const targetPostUrl = resolveNavigablePostUrl(postUrl);
+  const logNo = extractLogNo(targetPostUrl || postUrl);
+
+  return withBrowserPage(testMode, async (page) => {
+    await goto(page, targetPostUrl);
+    const contentFrame = await waitForPostContentFrame(page, testMode);
+    const openedList = await contentFrame.evaluate(`
+      (() => {
+        const targetNo = ${JSON.stringify(logNo)};
+        const controller = window.naverCommentController;
+        if (!targetNo || !controller || !window.blogNo) return false;
+        controller.open({
+          blogNo: window.blogNo,
+          ticketNo: '201',
+          targetNo,
+          aFormation: ['list', 'page', 'write'],
+          isPostComment: true,
+          nPageSize: 50,
+          sPageType: 'default',
+        });
+        return true;
+      })()
+    `).catch(() => false);
+    if (!openedList) {
+      await openCommentPanel(contentFrame, logNo, testMode).catch(() => false);
+    }
+    await waitForCommentPanel(contentFrame, logNo).catch(() => false);
+    return verifyPublishedCommentText(contentFrame, commentText, testMode);
+  }, {
+    timeoutMs: testMode ? 30_000 : 60_000,
+    timeoutCode: 'comment_reconcile_timeout',
+  });
+}
+
+async function reconcileTimedOutNeighborComment(error, {
+  postUrl,
+  commentText,
+  testMode = false,
+  verifyPublished = verifyPublishedNeighborComment,
+} = {}) {
+  if (!isCommentPostTimeoutError(error) || !postUrl || !commentText) return false;
+  return verifyPublished(postUrl, commentText, { testMode }).catch(() => false);
+}
+
 async function processComment(comment, options = {}) {
   const alreadyReplied = await hasSuccessfulReplyForComment(comment);
   if (alreadyReplied) {
@@ -6134,6 +6242,7 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
       sourceType: candidate.source_type || null,
       targetBlogName: candidate.target_blog_name || null,
       tone: generated.tone || null,
+      reconciledAfterTimeout: posted?.reconciled === true,
     },
   });
   await recordCommentLearningEvent({
@@ -6146,6 +6255,7 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
       action: 'neighbor_comment',
       sourceType: candidate.source_type || null,
       tone: generated.tone || null,
+      reconciledAfterTimeout: posted?.reconciled === true,
     },
   }).catch((error) => {
     console.warn('[neighbor-commenter] comment learning record failed:', error instanceof Error ? error.message : String(error));
@@ -6168,6 +6278,7 @@ async function _recordNeighborCommentSuccess(candidate, generated, posted) {
 
 async function processNeighborComment(candidate, { testMode = false } = {}) {
   const config = getNeighborCommenterConfig();
+  const { postTimeoutMs } = resolveNeighborCommentTimeouts(config, { testMode });
   const interactionStats = await getNeighborTargetInteractionStats(candidate.target_blog_id, candidate.id).catch(() => ({ priorSuccessCount: 0 }));
   const effectiveCandidate = {
     ...candidate,
@@ -6220,15 +6331,37 @@ async function processNeighborComment(candidate, { testMode = false } = {}) {
     candidateId: effectiveCandidate.id,
     commentLength: String(generated.comment || '').length,
   });
-  const posted = await postComment(effectiveCandidate.post_url, generated.comment, {
-    testMode,
-    withSympathy: true,
-    operationTimeoutMs: testMode ? Math.min(config.processTimeoutMs, 45000) : config.processTimeoutMs,
-  });
+  let posted;
+  try {
+    posted = await postComment(effectiveCandidate.post_url, generated.comment, {
+      testMode,
+      withSympathy: true,
+      operationTimeoutMs: postTimeoutMs,
+    });
+  } catch (error) {
+    const reconciled = await reconcileTimedOutNeighborComment(error, {
+      postUrl: effectiveCandidate.post_url,
+      commentText: generated.comment,
+      testMode,
+    });
+    if (!reconciled) throw error;
+    posted = {
+      ok: true,
+      postUrl: effectiveCandidate.post_url,
+      commentText: generated.comment,
+      sympathy: null,
+      reconciled: true,
+    };
+  }
 
   await updateNeighborCommentStatus(effectiveCandidate.id, 'posted', {
     commentText: generated.comment,
-    meta: { tone: generated.tone || null, sourceType: effectiveCandidate.source_type || null, priorNeighborInteractionCount: interactionStats.priorSuccessCount },
+    meta: {
+      tone: generated.tone || null,
+      sourceType: effectiveCandidate.source_type || null,
+      priorNeighborInteractionCount: interactionStats.priorSuccessCount,
+      reconciledAfterTimeout: posted?.reconciled === true,
+    },
   });
   await _recordNeighborCommentSuccess(effectiveCandidate, generated, posted);
   traceCommenter('neighborComment:posted', {
@@ -6551,5 +6684,7 @@ module.exports = {
     connectBrowser,
     fetchManagedBrowserWsEndpoint,
     readNaverMonitorWsEndpoints,
+    reconcileTimedOutNeighborComment,
+    resolveNeighborCommentTimeouts,
   },
 };

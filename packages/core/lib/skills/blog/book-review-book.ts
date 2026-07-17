@@ -797,14 +797,24 @@ async function syncRecommendedBooksToCatalog(options = {}) {
 
 async function loadReviewedBookHistory() {
   try {
-    const rows = await pgPool.query('blog', `
-      SELECT publish_date, book_title, book_author, book_isbn, status
-      FROM blog.publish_schedule
-      WHERE post_type = 'general'
-        AND category = '도서리뷰'
-        AND status IN ('ready', 'published', 'archived')
-        AND (book_title IS NOT NULL OR book_isbn IS NOT NULL)
-      ORDER BY publish_date DESC
+    const db = getBookReviewQueuePg();
+    const rows = await db.query('blog', `
+      SELECT s.id AS schedule_id,
+             p.id AS post_id,
+             s.publish_date,
+             s.book_title,
+             s.book_author,
+             s.book_isbn,
+             s.status,
+             s.category AS schedule_category,
+             p.category AS post_category
+      FROM blog.publish_schedule s
+      LEFT JOIN blog.posts p ON p.id = s.post_id
+      WHERE s.post_type = 'general'
+        AND (s.category = '도서리뷰' OR p.category = '도서리뷰')
+        AND s.status IN ('ready', 'published', 'archived')
+        AND (s.book_title IS NOT NULL OR s.book_isbn IS NOT NULL)
+      ORDER BY s.publish_date DESC
     `);
     return rows || [];
   } catch (error) {
@@ -813,12 +823,14 @@ async function loadReviewedBookHistory() {
   }
 }
 
-function findReviewedBookMatch(book, history = []) {
+function findReviewedBookMatch(book, history = [], options = {}) {
   const isbn = normalizeBookIsbn(book?.isbn);
   const titleKey = normalizeBookKey(book?.title);
+  const excludeScheduleId = String(options?.excludeScheduleId ?? '').trim();
   if (!isbn && !titleKey) return null;
 
   return history.find((row) => {
+    if (excludeScheduleId && String(row?.schedule_id ?? '').trim() === excludeScheduleId) return false;
     const rowIsbn = normalizeBookIsbn(row?.book_isbn);
     const rowTitleKey = normalizeBookKey(row?.book_title);
     if (isbn && rowIsbn && isbn === rowIsbn) return true;
@@ -953,9 +965,9 @@ function buildSearchKeywords(input = {}, catalogBooks = DEFAULT_CANONICAL_BOOKS)
     : [];
   const focusedKeywords = catalogBooks.map((book) => [book.title, book.author].filter(Boolean).join(' '));
   return [...new Set([
+    ...preferredKeywords,
     ...(topic ? [topic] : []),
     ...extraKeywords,
-    ...preferredKeywords,
     ...focusedKeywords,
     ...DEFAULT_TOPIC_KEYWORDS,
   ])];
@@ -965,7 +977,7 @@ function inferCatalogCategory(title = '') {
   if (/아토믹 해빗|원씽|함께 자라기|죽음의 수용소에서|열한 계단|공부머리 독서법/.test(title)) return '자기계발';
   if (/사피엔스|총 균 쇠|책은 도끼다|지적 대화를 위한 넓고 얕은 지식|시민의 교양|지대넓얕/.test(title)) return '인문학';
   if (/어린 왕자|데미안|아몬드|불편한 편의점|작별인사/.test(title)) return '소설';
-  return 'IT';
+  return '기타';
 }
 
 function buildDiversePreferredBooks(catalogBooks = [], limit = 5, reviewedHistory = []) {
@@ -1687,6 +1699,19 @@ async function resolveBookForReview(input = {}) {
   const topicLabel = input.topic ? ` (${input.topic})` : '';
   console.log(`[도서스킬] 도서 후보 검색 시작...${topicLabel}`);
   const reviewedHistory = await loadReviewedBookHistory();
+  const preferredCandidates = uniqueByBookSignature(
+    (Array.isArray(input.preferredBooks) ? input.preferredBooks : []).map((book) => ({
+      ...book,
+      source: book?.source || 'catalog',
+    }))
+  );
+  if (preferredCandidates.length) {
+    const preferredBook = await selectVerifiedBookCandidate(preferredCandidates, reviewedHistory);
+    if (preferredBook) return preferredBook;
+    console.warn('[도서스킬] 편집 큐 후보가 모두 중복/검증 실패 → 도서리뷰를 안전하게 중단');
+    return null;
+  }
+
   const canonicalCandidates = await searchCanonicalVerifiedBooks();
   const canonicalBook = await selectVerifiedBookCandidate(canonicalCandidates, reviewedHistory);
   if (canonicalBook) return canonicalBook;
@@ -1699,6 +1724,7 @@ async function resolveBookForReview(input = {}) {
 }
 
 module.exports = {
+  buildBookReviewSearchKeywords: buildSearchKeywords,
   buildBalancedBookReviewSeeds,
   buildBookReviewQueue,
   buildBookReviewQueueCleanupPlan,
@@ -1708,6 +1734,7 @@ module.exports = {
   enrichBooksWithReviewDemand,
   fetchNaverBookReviewDemand,
   findBookReviewQueueEntryByDedupeKey,
+  findReviewedBookMatch,
   inferCatalogCategory,
   listBookCatalog,
   listBookReviewQueue,
