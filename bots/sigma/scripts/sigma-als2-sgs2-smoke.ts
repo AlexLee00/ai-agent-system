@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { entryForCandidate, findRecentBloDuplicateByDigest } from './runtime-sigma-blog-vault-feed.ts';
 import {
   applyVaultDedupePlan,
+  buildVaultDedupeReport,
   buildVaultDedupePlan,
   buildVaultDuplicateInventory,
 } from './runtime-sigma-vault-dedupe.ts';
@@ -66,6 +67,71 @@ function assertOnlySigmaWrites(calls) {
   const mutating = /\b(INSERT INTO|UPDATE|DELETE FROM|CREATE TABLE|ALTER TABLE|DROP TABLE|TRUNCATE)\b/i;
   const bad = calls.filter((call) => mutating.test(call.sql || '') && call.schema !== 'sigma');
   assert.equal(bad.length, 0, `non-sigma write detected: ${JSON.stringify(bad)}`);
+}
+
+function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {}) {
+  const rows = new Map(seedRows.map((row) => [String(row.id), structuredClone(row)]));
+  const calls = [];
+  const pg = {
+    rows,
+    calls,
+    activeCount() {
+      return [...rows.values()].filter((row) => !row.meta?.merged_into).length;
+    },
+    async transaction(schema, callback) {
+      calls.push({ kind: 'transaction', schema, sql: 'BEGIN', params: [] });
+      const snapshot = [...rows.entries()].map(([id, row]) => [id, structuredClone(row)]);
+      try {
+        return await callback({
+          async query(sql, params = []) {
+            calls.push({ kind: 'transactionQuery', schema, sql, params });
+            if (/pg_advisory_xact_lock/i.test(sql)) return { rows: [], rowCount: 1 };
+            if (/SELECT id, title, type, content, source, file_path, meta, embedding/i.test(sql)) {
+              const ids = new Set((params[0] || []).map(String));
+              return {
+                rows: [...rows.values()].filter((row) => ids.has(String(row.id)) && !row.meta?.merged_into),
+                rowCount: ids.size,
+              };
+            }
+            if (/SET meta = \$2::jsonb,[\s\S]*embedding = COALESCE/i.test(sql)) {
+              const keep = rows.get(String(params[0]));
+              if (!keep || keep.meta?.merged_into) return { rows: [], rowCount: 0 };
+              keep.meta = JSON.parse(params[1]);
+              const embeddingSource = rows.get(String(params[2]));
+              if (!keep.embedding && embeddingSource?.embedding) keep.embedding = embeddingSource.embedding;
+              return { rows: [{ id: keep.id }], rowCount: 1 };
+            }
+            if (/SET meta = COALESCE\(meta/i.test(sql) && /merged_into/i.test(sql)) {
+              const duplicateIds = (params[2] || []).map(String);
+              let rowCount = 0;
+              for (const id of duplicateIds) {
+                const row = rows.get(id);
+                if (!row || row.meta?.merged_into) continue;
+                row.meta = {
+                  ...(row.meta || {}),
+                  merged_into: String(params[0]),
+                  merged_reason: 'sigma_vault_dedupe',
+                  dedupe_md5: params[1],
+                };
+                rowCount += 1;
+              }
+              return {
+                rows: [],
+                rowCount: duplicateUpdateRowCount == null ? rowCount : duplicateUpdateRowCount,
+              };
+            }
+            if (/INSERT INTO sigma\.vault_audit/i.test(sql)) return { rows: [], rowCount: (params[0] || []).length };
+            throw new Error(`unexpected dedupe apply query: ${String(sql).replace(/\s+/g, ' ').trim().slice(0, 160)}`);
+          },
+        });
+      } catch (error) {
+        rows.clear();
+        for (const [id, row] of snapshot) rows.set(id, row);
+        throw error;
+      }
+    },
+  };
+  return pg;
 }
 
 async function testDedupe() {
@@ -143,14 +209,110 @@ async function testDedupe() {
   const unconfirmed = await applyVaultDedupePlan(plan, { pg: makePg(), write: true, confirm: false });
   assert.equal(unconfirmed.reason, 'write_confirm_required');
 
-  const pg = makePg();
-  const blocked = await applyVaultDedupePlan(plan, { pg, write: true, confirm: true });
-  assert.equal(blocked.applied, 0);
-  assert.equal(blocked.skipped, true);
-  assert.equal(blocked.reason, 'reference_transfer_not_implemented');
-  assert.equal(pg.calls.length, 0, 'dedupe must not hide rows before references are transferred');
-  assertOnlySigmaWrites(pg.calls);
-  return { groups: inventory.normalized.groups, duplicateRows: plan[0].duplicateCount, nearDuplicatesExcluded: true };
+  const applySeedRows = [
+    {
+      ...rows[0],
+      embedding: null,
+      meta: {
+        keep_only: 'preserved',
+        source_ref: { team: 'docs', table: 'lessons', id: '1' },
+      },
+    },
+    {
+      ...rows[2],
+      embedding: '[0.3,0.4]',
+      meta: {
+        source_ref: { team: 'blo', table: 'posts', id: '3' },
+        source_refs: [{ team: 'archive', table: 'posts', id: '3a' }],
+      },
+    },
+    {
+      ...rows[1],
+      embedding: '[0.1,0.2]',
+      meta: { source_ref: { team: 'blo', table: 'posts', id: '2' } },
+    },
+  ];
+  const applyPg = makeDedupeApplyPg(applySeedRows);
+  const activeBefore = applyPg.activeCount();
+  const keepBefore = structuredClone(applyPg.rows.get(rows[0].id));
+  const applied = await applyVaultDedupePlan(plan, { pg: applyPg, write: true, confirm: true });
+  assert.equal(applied.applied, 2);
+  assert.equal(applyPg.activeCount(), activeBefore - 2);
+  assert.equal([...applyPg.rows.values()].filter((row) => row.meta?.merged_into === rows[0].id).length, 2);
+  const keepAfter = applyPg.rows.get(rows[0].id);
+  assert.equal(keepAfter.title, keepBefore.title);
+  assert.equal(keepAfter.content, keepBefore.content);
+  assert.equal(keepAfter.source, keepBefore.source);
+  assert.equal(keepAfter.meta.keep_only, 'preserved');
+  assert.deepEqual(keepAfter.meta.source_ref, keepBefore.meta.source_ref);
+  assert.deepEqual(keepAfter.meta.source_refs, [
+    { team: 'docs', table: 'lessons', id: '1' },
+    { team: 'blo', table: 'posts', id: '3' },
+    { team: 'archive', table: 'posts', id: '3a' },
+    { team: 'blo', table: 'posts', id: '2' },
+  ]);
+  assert.equal(keepAfter.embedding, '[0.3,0.4]');
+  const reapplied = await applyVaultDedupePlan(plan, { pg: applyPg, write: true, confirm: true });
+  assert.equal(reapplied.applied, 0);
+  assert.equal(applyPg.activeCount(), activeBefore - 2);
+  assertOnlySigmaWrites(applyPg.calls);
+
+  const conflictPg = makeDedupeApplyPg(applySeedRows, { duplicateUpdateRowCount: 1 });
+  const rollbackBefore = structuredClone([...conflictPg.rows.values()]);
+  await assert.rejects(
+    applyVaultDedupePlan(plan, { pg: conflictPg, write: true, confirm: true }),
+    /dedupe_concurrency_conflict/
+  );
+  assert.deepEqual([...conflictPg.rows.values()], rollbackBefore, 'row-count conflicts must roll back the whole group');
+  assertOnlySigmaWrites(conflictPg.calls);
+
+  const bulkKeepId = '00000000-0000-4000-8000-999999999999';
+  const bulkDuplicates = Array.from({ length: 297 }, (_, index) => ({
+    id: `00000000-0000-4000-8001-${String(index + 1).padStart(12, '0')}`,
+    meta: {},
+    embedding: null,
+  }));
+  const bulkPg = makeDedupeApplyPg([
+    { id: bulkKeepId, meta: { keep_only: 'preserved' }, embedding: '[0.9,1.0]' },
+    ...bulkDuplicates,
+  ]);
+  const bulkPlan = [{
+    contentMd5: 'bulk-297-invariant',
+    keepId: bulkKeepId,
+    duplicateIds: bulkDuplicates.map((row) => row.id),
+  }];
+  const bulkActiveBefore = bulkPg.activeCount();
+  const bulkApplied = await applyVaultDedupePlan(bulkPlan, { pg: bulkPg, write: true, confirm: true });
+  assert.equal(bulkApplied.applied, 297);
+  assert.equal(bulkPg.activeCount(), bulkActiveBefore - 297);
+  assert.equal([...bulkPg.rows.values()].filter((row) => row.meta?.merged_into === bulkKeepId).length, 297);
+  const bulkReapplied = await applyVaultDedupePlan(bulkPlan, { pg: bulkPg, write: true, confirm: true });
+  assert.equal(bulkReapplied.applied, 0);
+  assert.equal(bulkPg.rows.get(bulkKeepId).meta.keep_only, 'preserved');
+  assertOnlySigmaWrites(bulkPg.calls);
+
+  const limitRows = [
+    ...rows.slice(0, 2),
+    { ...rows[0], id: '00000000-0000-4000-8000-000000000011', title: 'Group 2', content: 'same' },
+    { ...rows[1], id: '00000000-0000-4000-8000-000000000012', title: ' Group 2 ', content: 'same' },
+    { ...rows[0], id: '00000000-0000-4000-8000-000000000021', title: 'Group 3', content: 'same' },
+    { ...rows[1], id: '00000000-0000-4000-8000-000000000022', title: ' Group 3 ', content: 'same' },
+  ];
+  const limitedReport = await buildVaultDedupeReport({ rows: limitRows, limit: 1 });
+  assert.equal(limitedReport.counts.plannedGroups, 3, 'limit must not truncate executable groups');
+  assert.equal(limitedReport.plan.length, 1, 'limit may only cap the displayed plan sample');
+  return {
+    groups: inventory.normalized.groups,
+    duplicateRows: plan[0].duplicateCount,
+    nearDuplicatesExcluded: true,
+    invariantApplied: applied.applied,
+    idempotentReapply: reapplied.applied,
+    conflictRolledBack: true,
+    fullInvariantApplied: bulkApplied.applied,
+    fullInvariantMarked: 297,
+    fullInvariantReapply: bulkReapplied.applied,
+    fullPlanWithDisplayLimit: limitedReport.counts.plannedGroups,
+  };
 }
 
 async function testBlogDuplicateGuard() {

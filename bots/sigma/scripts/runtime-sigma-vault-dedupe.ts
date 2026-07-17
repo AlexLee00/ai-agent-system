@@ -47,6 +47,37 @@ function parseMeta(meta) {
   }
 }
 
+function normalizeSourceRef(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const team = String(value.team ?? '').trim();
+  const table = String(value.table ?? '').trim();
+  const id = String(value.id ?? '').trim();
+  if (!team || !table || !id) return null;
+  return { ...value, team, table, id };
+}
+
+function sourceRefKey(value) {
+  const ref = normalizeSourceRef(value);
+  return ref ? `${ref.team}:${ref.table}:${ref.id}` : null;
+}
+
+function unionSourceRefs(rows = []) {
+  const refs = new Map();
+  for (const row of rows) {
+    const meta = parseMeta(row?.meta);
+    const candidates = [
+      meta.source_ref,
+      ...(Array.isArray(meta.source_refs) ? meta.source_refs : []),
+    ];
+    for (const candidate of candidates) {
+      const ref = normalizeSourceRef(candidate);
+      const key = sourceRefKey(ref);
+      if (key && !refs.has(key)) refs.set(key, ref);
+    }
+  }
+  return [...refs.values()];
+}
+
 function exactContentMd5(row) {
   return crypto.createHash('md5')
     .update(`${row?.title || ''}\n${row?.content || ''}`)
@@ -188,24 +219,97 @@ export function buildVaultDedupePlan(groups = []) {
 }
 
 export async function applyVaultDedupePlan(plan = [], {
+  pg = pgPool,
   write = false,
   confirm = false,
 } = {}) {
   if (!write || !confirm) {
     return { applied: 0, skipped: true, reason: 'write_confirm_required' };
   }
-  const plannedDuplicateRows = plan.reduce((sum, group) => (
-    sum + (group.duplicateIds || []).filter((id) => String(id) !== String(group.keepId)).length
-  ), 0);
-  if (plannedDuplicateRows > 0) {
-    return {
-      applied: 0,
-      skipped: true,
-      reason: 'reference_transfer_not_implemented',
-      plannedDuplicateRows,
-    };
+  if (typeof pg.transaction !== 'function') {
+    return { applied: 0, skipped: true, reason: 'transaction_required' };
   }
-  return { applied: 0, skipped: false };
+
+  let applied = 0;
+  let groupsApplied = 0;
+  for (const group of plan) {
+    const duplicateIds = [...new Set((group.duplicateIds || [])
+      .map(String)
+      .filter((id) => id && id !== String(group.keepId)))];
+    if (!group.keepId || duplicateIds.length === 0) continue;
+    const groupApplied = await pg.transaction('sigma', async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sigma-vault-content:${group.contentMd5}`]);
+      const ids = [String(group.keepId), ...duplicateIds];
+      const lockedResult = await client.query(`
+        SELECT id, title, type, content, source, file_path, meta, embedding
+        FROM sigma.vault_entries
+        WHERE id = ANY($1::uuid[])
+          AND COALESCE(status, 'captured') <> 'archived'
+          AND (meta->>'merged_into') IS NULL
+        FOR UPDATE
+      `, [ids]);
+      const lockedRows = rowsFromPg(lockedResult);
+      const rowById = new Map(lockedRows.map((row) => [String(row.id), row]));
+      const keep = rowById.get(String(group.keepId));
+      if (!keep) throw new Error(`dedupe_keep_missing:${group.keepId}`);
+      const activeDuplicateIds = duplicateIds.filter((id) => rowById.has(id));
+      if (activeDuplicateIds.length === 0) return 0;
+
+      const orderedRows = [keep, ...activeDuplicateIds.map((id) => rowById.get(id))];
+      const keepMeta = parseMeta(keep.meta);
+      const sourceRefs = unionSourceRefs(orderedRows);
+      const mergedKeepMeta = {
+        ...keepMeta,
+        ...(sourceRefs.length ? { source_refs: sourceRefs } : {}),
+      };
+      const embeddingSourceId = keep.embedding == null
+        ? activeDuplicateIds.find((id) => rowById.get(id)?.embedding != null) || null
+        : null;
+      const keepUpdate = await client.query(`
+        UPDATE sigma.vault_entries
+        SET meta = $2::jsonb,
+            embedding = COALESCE(
+              embedding,
+              (SELECT embedding FROM sigma.vault_entries WHERE id = $3::uuid)
+            ),
+            updated_at = NOW()
+        WHERE id = $1::uuid
+          AND COALESCE(status, 'captured') <> 'archived'
+          AND (meta->>'merged_into') IS NULL
+        RETURNING id
+      `, [String(group.keepId), JSON.stringify(mergedKeepMeta), embeddingSourceId]);
+      if (Number(keepUpdate?.rowCount || 0) !== 1) {
+        throw new Error(`dedupe_keep_update_conflict:${group.contentMd5}`);
+      }
+
+      const duplicateUpdate = await client.query(`
+        UPDATE sigma.vault_entries
+        SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+              'merged_into', $1::text,
+              'merged_at', NOW()::text,
+              'merged_reason', 'sigma_vault_dedupe',
+              'dedupe_md5', $2::text
+            ),
+            updated_at = NOW()
+        WHERE id = ANY($3::uuid[])
+          AND id <> $1::uuid
+          AND COALESCE(status, 'captured') <> 'archived'
+          AND (meta->>'merged_into') IS NULL
+      `, [String(group.keepId), group.contentMd5, activeDuplicateIds]);
+      if (Number(duplicateUpdate?.rowCount || 0) !== activeDuplicateIds.length) {
+        throw new Error(`dedupe_concurrency_conflict:${group.contentMd5}`);
+      }
+      await client.query(`
+        INSERT INTO sigma.vault_audit (entry_id, action, classifier, reasoning, applied, dry_run)
+        SELECT duplicate_id, 'deduped', 'rule', $2, true, false
+        FROM UNNEST($1::uuid[]) AS duplicate_id
+      `, [activeDuplicateIds, `sigma_vault_dedupe: merged_into=${group.keepId} md5=${group.contentMd5}`]);
+      return activeDuplicateIds.length;
+    });
+    applied += groupApplied;
+    if (groupApplied > 0) groupsApplied += 1;
+  }
+  return { applied, groupsApplied, skipped: false };
 }
 
 export async function buildVaultDedupeReport(options = {}) {
@@ -214,11 +318,12 @@ export async function buildVaultDedupeReport(options = {}) {
     queryReadonly: options.queryReadonly || pgPool.queryReadonly,
   });
   const inventory = options.inventory || buildVaultDuplicateInventory(rows);
-  const groups = inventory.normalizedGroups.slice(0, boundedInt(options.limit, 100, 1, 10_000));
+  const groups = inventory.normalizedGroups;
   const plan = buildVaultDedupePlan(groups);
   const writeRequested = options.write === true;
   const applyResult = writeRequested
     ? await applyVaultDedupePlan(plan, {
+      pg: options.pg || pgPool,
       write: true,
       confirm: options.confirm === true,
     })
@@ -243,7 +348,7 @@ export async function buildVaultDedupeReport(options = {}) {
       byTier: inventory.byTier,
       bySource: inventory.bySource,
     },
-    plan: plan.slice(0, options.planLimit || 50).map((item) => ({
+    plan: plan.slice(0, boundedInt(options.planLimit ?? options.limit, 50, 1, 10_000)).map((item) => ({
       ...item,
       duplicateIds: item.duplicateIds.slice(0, options.duplicateIdSampleLimit || 20),
       duplicateIdsOmitted: Math.max(0, item.duplicateIds.length - (options.duplicateIdSampleLimit || 20)),
@@ -252,10 +357,10 @@ export async function buildVaultDedupeReport(options = {}) {
     safety: {
       hardDelete: false,
       softMergeField: 'meta.merged_into',
-      writeGate: 'blocked_until_reference_transfer_is_implemented',
-      groupAtomicity: null,
-      writesOnlySigmaTables: [],
-      transferPlanOnly: true,
+      writeGate: '--write --confirm',
+      groupAtomicity: 'transaction+pg_advisory_xact_lock+row_count_verification',
+      writesOnlySigmaTables: ['sigma.vault_entries', 'sigma.vault_audit'],
+      transferPlanOnly: false,
     },
   };
 }
@@ -265,7 +370,7 @@ async function main() {
     write: hasFlag('write'),
     confirm: hasFlag('confirm'),
     source: valueArg('source', 'all'),
-    limit: boundedInt(valueArg('limit'), 100, 1, 10_000),
+    planLimit: boundedInt(valueArg('limit'), 50, 1, 10_000),
   });
   if (hasFlag('json')) console.log(JSON.stringify(report, null, 2));
   else console.log(`[sigma-vault-dedupe] groups=${report.counts.normalized.groups} duplicates=${report.counts.normalized.duplicateRows} dryRun=${report.dryRun}`);
