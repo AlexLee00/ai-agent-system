@@ -1117,69 +1117,107 @@ export async function alarmRoute(req: any, res: any) {
   }
 }
 
-function normalizeAutoRepairStatus(value: unknown): 'resolved' | 'partially_resolved' | 'unresolved_needs_human' {
+type AutoRepairCallbackStatus = 'resolved' | 'partially_resolved' | 'unresolved_needs_human';
+
+type AutoRepairMirrorRow = {
+  id?: number | string;
+  status?: string;
+  metadata?: Record<string, unknown> | string | null;
+};
+
+const autoRepairCallbackLocks = new Map<string, Promise<void>>();
+
+async function acquireAutoRepairCallbackLock(key: string): Promise<() => void> {
+  const previous = autoRepairCallbackLocks.get(key) || Promise.resolve();
+  let releaseCurrent = () => {};
+  const current = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+  autoRepairCallbackLocks.set(key, current);
+  await previous;
+  return () => {
+    if (autoRepairCallbackLocks.get(key) === current) autoRepairCallbackLocks.delete(key);
+    releaseCurrent();
+  };
+}
+
+function normalizeAutoRepairStatus(value: unknown): AutoRepairCallbackStatus {
   const normalized = normalizeText(value, 'resolved').toLowerCase();
   if (['resolved', 'fixed', 'done', 'completed'].includes(normalized)) return 'resolved';
   if (['partial', 'partially_resolved', 'partially-resolved'].includes(normalized)) return 'partially_resolved';
   return 'unresolved_needs_human';
 }
 
+function normalizeMirrorMetadata(value: AutoRepairMirrorRow['metadata']): Record<string, unknown> {
+  if (value && typeof value === 'object') return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function expectedAutoRepairMirrorStatus(status: AutoRepairCallbackStatus): string {
+  if (status === 'resolved') return 'resolved';
+  if (status === 'partially_resolved') return 'verified';
+  return 'exhausted';
+}
+
+async function findHubAlarmMirrorForAutoRepairCallback(
+  incidentKey: string,
+  alarmEventId: string,
+): Promise<AutoRepairMirrorRow | null> {
+  const rows = await alarmDb.query('agent', `
+    SELECT id, status, metadata
+    FROM agent.hub_alarms
+    WHERE (metadata->>'incident_key' = $1 OR fingerprint = $1)
+      AND metadata->>'event_id' = $2
+    ORDER BY received_at DESC
+    LIMIT 1
+  `, [incidentKey, alarmEventId]);
+  return rows[0] || null;
+}
+
 async function updateHubAlarmMirrorForAutoRepairCallback({
   incidentKey,
+  alarmEventId,
   status,
   eventId,
 }: {
   incidentKey: string;
-  status: 'resolved' | 'partially_resolved' | 'unresolved_needs_human';
+  alarmEventId: string;
+  status: AutoRepairCallbackStatus;
   eventId: number | string;
 }): Promise<{ ok: boolean; updated: number; status: string | null; error?: string; idempotent?: boolean }> {
-  if (!incidentKey) return { ok: false, updated: 0, status: null, error: 'incident_key_required' };
+  if (!incidentKey || !alarmEventId) {
+    return { ok: false, updated: 0, status: null, error: 'callback_generation_required' };
+  }
   try {
-    const expectedMirrorStatus = status === 'resolved'
-      ? 'resolved'
-      : status === 'partially_resolved'
-        ? 'verified'
-        : 'exhausted';
-    if (status === 'resolved' || status === 'partially_resolved') {
-      const result = await alarmDb.run('agent', `
-        UPDATE agent.hub_alarms
-        SET status = $1,
-            resolved_at = NOW(),
-            metadata = COALESCE(metadata, '{}') || jsonb_build_object(
-              'auto_repair_callback_status', $2::text,
-              'auto_repair_callback_event_id', $3::text,
-              'auto_repair_callback_at', NOW()::text
-            )
-        WHERE (metadata->>'incident_key' = $4 OR fingerprint = $4)
-          AND COALESCE(status, 'new') NOT IN ('resolved', 'suppressed')
-      `, [expectedMirrorStatus, status, String(eventId || ''), incidentKey]);
-      const updated = Number(result?.rowCount || 0);
-      if (updated > 0) return { ok: true, updated, status: expectedMirrorStatus };
-    } else {
-      const result = await alarmDb.run('agent', `
-        UPDATE agent.hub_alarms
-        SET status = 'exhausted',
-            metadata = COALESCE(metadata, '{}') || jsonb_build_object(
-              'auto_repair_callback_status', $1::text,
-              'auto_repair_callback_event_id', $2::text,
-              'auto_repair_callback_at', NOW()::text
-            )
-        WHERE (metadata->>'incident_key' = $3 OR fingerprint = $3)
-          AND COALESCE(status, 'new') IN ('repairing', 'correlating')
-          AND COALESCE(actionability, '') = 'auto_repair'
-      `, [status, String(eventId || ''), incidentKey]);
-      const updated = Number(result?.rowCount || 0);
-      if (updated > 0) return { ok: true, updated, status: expectedMirrorStatus };
-    }
+    const expectedMirrorStatus = expectedAutoRepairMirrorStatus(status);
+    const result = await alarmDb.run('agent', `
+      UPDATE agent.hub_alarms
+      SET status = $1,
+          resolved_at = CASE WHEN $1 IN ('resolved', 'verified') THEN NOW() ELSE resolved_at END,
+          metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+            'auto_repair_callback_status', $2::text,
+            'auto_repair_callback_event_id', $3::text,
+            'auto_repair_callback_alarm_event_id', $5::text,
+            'auto_repair_callback_at', NOW()::text
+          )
+      WHERE (metadata->>'incident_key' = $4 OR fingerprint = $4)
+        AND metadata->>'event_id' = $5
+        AND COALESCE(status, 'new') IN ('repairing', 'correlating')
+        AND COALESCE(actionability, '') = 'auto_repair'
+    `, [expectedMirrorStatus, status, String(eventId || ''), incidentKey, alarmEventId]);
+    const updated = Number(result?.rowCount || 0);
+    if (updated > 0) return { ok: true, updated, status: expectedMirrorStatus };
 
-    const existing = await alarmDb.query('agent', `
-      SELECT status
-      FROM agent.hub_alarms
-      WHERE metadata->>'incident_key' = $1 OR fingerprint = $1
-      ORDER BY received_at DESC
-      LIMIT 1
-    `, [incidentKey]);
-    const alreadyTerminal = String(existing[0]?.status || '') === expectedMirrorStatus;
+    const existing = await findHubAlarmMirrorForAutoRepairCallback(incidentKey, alarmEventId);
+    const existingMetadata = normalizeMirrorMetadata(existing?.metadata);
+    const alreadyTerminal = String(existing?.status || '') === expectedMirrorStatus
+      && String(existingMetadata.auto_repair_callback_status || '') === status;
     if (alreadyTerminal) {
       return { ok: true, updated: 0, status: expectedMirrorStatus, idempotent: true };
     }
@@ -1199,10 +1237,52 @@ async function updateHubAlarmMirrorForAutoRepairCallback({
   }
 }
 
+async function commitAutoRepairResultEvent(eventId: number | string): Promise<boolean> {
+  const result = await alarmDb.run('agent', `
+    UPDATE agent.event_lake
+    SET metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+      'callback_committed', 'true',
+      'callback_committed_at', NOW()::text
+    )
+    WHERE id = $1
+      AND event_type = 'hub_alarm_auto_repair_result'
+  `, [eventId]);
+  return Number(result?.rowCount || 0) > 0;
+}
+
+async function recordAutoRepairCallbackDelivery({
+  incidentKey,
+  alarmEventId,
+  eventId,
+  delivered,
+  error,
+}: {
+  incidentKey: string;
+  alarmEventId: string;
+  eventId: number | string;
+  delivered: boolean;
+  error?: string;
+}): Promise<void> {
+  await alarmDb.run('agent', `
+    UPDATE agent.hub_alarms
+    SET metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+      'auto_repair_callback_delivery_state', $1::text,
+      'auto_repair_callback_delivery_at', CASE WHEN $1 = 'sent' THEN NOW()::text ELSE NULL END,
+      'auto_repair_callback_delivery_error', NULLIF($2::text, '')
+    )
+    WHERE (metadata->>'incident_key' = $3 OR fingerprint = $3)
+      AND metadata->>'event_id' = $4
+      AND metadata->>'auto_repair_callback_event_id' = $5
+  `, [delivered ? 'sent' : 'failed', error || '', incidentKey, alarmEventId, String(eventId)]);
+}
+
 export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
+  const incidentKey = normalizeText(req.body?.incidentKey || req.body?.incident_key);
+  if (!incidentKey) return res.status(400).json({ ok: false, error: 'incident_key_required' });
+  const alarmEventId = normalizeText(req.body?.alarmEventId || req.body?.alarm_event_id);
+  if (!alarmEventId) return res.status(400).json({ ok: false, error: 'alarm_event_id_required' });
+  const releaseCallbackLock = await acquireAutoRepairCallbackLock(`${incidentKey}:${alarmEventId}`);
   try {
-    const incidentKey = normalizeText(req.body?.incidentKey || req.body?.incident_key);
-    if (!incidentKey) return res.status(400).json({ ok: false, error: 'incident_key_required' });
     const team = normalizeTeam(req.body?.team);
     const status = normalizeAutoRepairStatus(req.body?.status);
     const summary = normalizeText(req.body?.summary, '오류 처리 결과가 등록되었습니다.');
@@ -1225,39 +1305,95 @@ export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
       docPath,
       changedFiles,
     });
-    const mirrorUpdate = await updateHubAlarmMirrorForAutoRepairCallback({
-      incidentKey,
-      status,
-      eventId: 'pending',
-    });
-    if (!mirrorUpdate.ok) {
+    const existingMirror = await findHubAlarmMirrorForAutoRepairCallback(incidentKey, alarmEventId);
+    if (!existingMirror) {
       return res.status(409).json({
         ok: false,
-        error: mirrorUpdate.error || 'hub_alarm_mirror_not_transitioned',
+        error: 'hub_alarm_mirror_generation_not_found',
         incident_key: incidentKey,
+        alarm_event_id: alarmEventId,
         status,
-        mirror_update: mirrorUpdate,
+        mirror_update: { ok: false, updated: 0, status: null, error: 'hub_alarm_mirror_generation_not_found' },
       });
     }
 
-    const eventId = await eventLake.record({
-      eventType: 'hub_alarm_auto_repair_result',
-      team,
-      botName: normalizeText(req.body?.fromBot, 'auto-dev'),
-      severity,
-      title: 'Alarm auto repair result',
-      message,
-      tags: ['hub', 'alarm', 'auto_repair_result', `team:${team}`, `status:${status}`],
-      metadata: {
-        source: 'hub_alarm_auto_repair_callback',
+    const expectedMirrorStatus = expectedAutoRepairMirrorStatus(status);
+    const existingMetadata = normalizeMirrorMetadata(existingMirror.metadata);
+    const existingCallbackEventId = normalizeText(existingMetadata.auto_repair_callback_event_id);
+    const existingCallbackStatus = normalizeText(existingMetadata.auto_repair_callback_status);
+    const isIdempotent = String(existingMirror.status || '') === expectedMirrorStatus
+      && existingCallbackStatus === status
+      && existingCallbackEventId;
+    if (isIdempotent) {
+      const committed = await commitAutoRepairResultEvent(existingCallbackEventId);
+      if (!committed) throw new Error('auto_repair_result_event_commit_failed');
+      if (normalizeText(existingMetadata.auto_repair_callback_delivery_state) === 'sent') {
+        return res.json({
+          ok: true,
+          event_id: existingCallbackEventId,
+          incident_key: incidentKey,
+          alarm_event_id: alarmEventId,
+          status,
+          visibility,
+          delivered: true,
+          delivery_deduped: true,
+          mirror_update: { ok: true, updated: 0, status: expectedMirrorStatus, idempotent: true },
+        });
+      }
+    } else if (!['repairing', 'correlating'].includes(String(existingMirror.status || ''))) {
+      return res.status(409).json({
+        ok: false,
+        error: 'hub_alarm_mirror_not_transitionable',
         incident_key: incidentKey,
+        alarm_event_id: alarmEventId,
         status,
-        doc_path: docPath || null,
-        changed_files: changedFiles,
-        visibility,
-      },
-    });
-    if (eventId == null) throw new Error('auto_repair_result_event_not_recorded');
+        mirror_update: { ok: false, updated: 0, status: expectedMirrorStatus, error: 'hub_alarm_mirror_not_transitionable' },
+      });
+    }
+
+    let eventId: number | string = existingCallbackEventId;
+    let mirrorUpdate = { ok: true, updated: 0, status: expectedMirrorStatus, idempotent: true };
+    if (!isIdempotent) {
+      const recordedEventId = await alarmEventLake.record({
+        eventType: 'hub_alarm_auto_repair_result',
+        team,
+        botName: normalizeText(req.body?.fromBot, 'auto-dev'),
+        severity,
+        title: 'Alarm auto repair result',
+        message,
+        tags: ['hub', 'alarm', 'auto_repair_result', `team:${team}`, `status:${status}`],
+        metadata: {
+          source: 'hub_alarm_auto_repair_callback',
+          incident_key: incidentKey,
+          alarm_event_id: alarmEventId,
+          callback_committed: 'false',
+          status,
+          doc_path: docPath || null,
+          changed_files: changedFiles,
+          visibility,
+        },
+      });
+      if (recordedEventId == null) throw new Error('auto_repair_result_event_not_recorded');
+      eventId = recordedEventId;
+      mirrorUpdate = await updateHubAlarmMirrorForAutoRepairCallback({
+        incidentKey,
+        alarmEventId,
+        status,
+        eventId,
+      });
+      if (!mirrorUpdate.ok) {
+        return res.status(409).json({
+          ok: false,
+          error: mirrorUpdate.error || 'hub_alarm_mirror_not_transitioned',
+          incident_key: incidentKey,
+          alarm_event_id: alarmEventId,
+          status,
+          mirror_update: mirrorUpdate,
+        });
+      }
+      const committed = await commitAutoRepairResultEvent(eventId);
+      if (!committed) throw new Error('auto_repair_result_event_commit_failed');
+    }
 
     let delivered = false;
     let deliveryError = '';
@@ -1267,11 +1403,32 @@ export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
     } catch (error: any) {
       deliveryError = error?.message || 'telegram_send_failed';
     }
+    await recordAutoRepairCallbackDelivery({
+      incidentKey,
+      alarmEventId,
+      eventId,
+      delivered,
+      error: deliveryError,
+    });
+
+    if (!delivered) {
+      return res.status(503).json({
+        ok: false,
+        retryable: true,
+        error: deliveryError || 'telegram_send_failed',
+        event_id: eventId,
+        incident_key: incidentKey,
+        alarm_event_id: alarmEventId,
+        status,
+        mirror_update: mirrorUpdate,
+      });
+    }
 
     return res.json({
       ok: true,
       event_id: eventId,
       incident_key: incidentKey,
+      alarm_event_id: alarmEventId,
       status,
       visibility,
       delivery_team: deliveryTeam,
@@ -1281,6 +1438,8 @@ export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
     });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error?.message || 'auto_repair_callback_failed' });
+  } finally {
+    releaseCallbackLock();
   }
 }
 

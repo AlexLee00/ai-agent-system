@@ -4,10 +4,11 @@ const {
   alarmSuppressDryRunRoute,
   alarmDigestFlushRoute,
   alarmAutoRepairCallbackRoute,
+  _testOnly_setAlarmEventLakeMocks,
+  _testOnly_resetAlarmEventLakeMocks,
   _testOnly_setAlarmRouteDbMocks,
   _testOnly_resetAlarmRouteDbMocks,
 } = require('../lib/routes/alarm.ts');
-const eventLake = require('../../../packages/core/lib/event-lake');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -42,8 +43,6 @@ function makeRes() {
 
 async function main() {
   const originals = {
-    findRecentDuplicateAlarm: eventLake.findRecentDuplicateAlarm,
-    record: eventLake.record,
     fetch: global.fetch,
     tgToken: process.env.TELEGRAM_BOT_TOKEN,
     tgChatId: process.env.TELEGRAM_CHAT_ID,
@@ -56,16 +55,27 @@ async function main() {
   let eventId = 100;
   let pgRunCount = 0;
   let mirrorUpdateRowCount = 1;
-  let mirrorExistingRows: Array<{ status: string }> = [];
+  let mirrorExistingRows: Array<{
+    id?: number;
+    status: string;
+    actionability?: string;
+    fingerprint?: string;
+    metadata?: AnyRecord;
+  }> = [];
+  const recordedEvents: Array<AnyRecord & { id: number }> = [];
   const pgRuns: Array<{ sql: string; params: unknown[] }> = [];
   let useClusterDuplicate = false;
   const autoDevDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-alarm-auto-dev-'));
 
-  eventLake.findRecentDuplicateAlarm = async () => null;
-  eventLake.record = async () => {
+  const recordEvent = async (record: AnyRecord) => {
     eventId += 1;
+    recordedEvents.push({ ...record, id: eventId });
     return eventId;
   };
+  _testOnly_setAlarmEventLakeMocks({
+    findRecentDuplicateAlarm: async () => null,
+    record: recordEvent,
+  });
   process.env['TELEGRAM_' + 'BOT_TOKEN'] = 'alarm-governor-smoke-fixture';
   process.env.TELEGRAM_CHAT_ID = '123456';
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
@@ -85,9 +95,14 @@ async function main() {
     });
   };
   _testOnly_setAlarmRouteDbMocks({
-    query: async (_schema: string, sql: string) => {
-      if (String(sql).includes('SELECT status') && String(sql).includes('FROM agent.hub_alarms')) {
-        return mirrorExistingRows;
+    query: async (_schema: string, sql: string, params: unknown[] = []) => {
+      if (String(sql).includes('SELECT id, status, metadata') && String(sql).includes('FROM agent.hub_alarms')) {
+        const incidentKey = String(params[0] || '');
+        const alarmEventId = String(params[1] || '');
+        return mirrorExistingRows.filter((row) => (
+          (String(row.metadata?.incident_key || '') === incidentKey || String(row.fingerprint || '') === incidentKey)
+          && String(row.metadata?.event_id || '') === alarmEventId
+        )).slice(0, 1);
       }
       if (String(sql).includes(`metadata->>'visibility' = 'digest'`)) {
         return [
@@ -129,6 +144,49 @@ async function main() {
     run: async (_schema: string, sql: string, params: unknown[] = []) => {
       pgRunCount += 1;
       pgRuns.push({ sql: String(sql), params });
+      if (String(sql).includes('UPDATE agent.event_lake') && String(sql).includes('callback_committed')) {
+        const event = recordedEvents.find((row) => String(row.id) === String(params[0] || ''));
+        if (event) {
+          event.metadata = {
+            ...(event.metadata || {}),
+            callback_committed: 'true',
+          };
+        }
+        return { rowCount: mirrorUpdateRowCount, rows: [] };
+      }
+      if (String(sql).includes('UPDATE agent.hub_alarms') && String(sql).includes('auto_repair_callback_status')) {
+        const row = mirrorExistingRows.find((candidate) => (
+          (String(candidate.metadata?.incident_key || '') === String(params[3] || '')
+            || String(candidate.fingerprint || '') === String(params[3] || ''))
+          && String(candidate.metadata?.event_id || '') === String(params[4] || '')
+          && ['repairing', 'correlating'].includes(candidate.status)
+          && candidate.actionability === 'auto_repair'
+        ));
+        if (!row) return { rowCount: 0, rows: [] };
+        row.status = String(params[0] || '');
+        row.metadata = {
+          ...(row.metadata || {}),
+          auto_repair_callback_status: String(params[1] || ''),
+          auto_repair_callback_event_id: String(params[2] || ''),
+          auto_repair_callback_alarm_event_id: String(params[4] || ''),
+        };
+        return { rowCount: 1, rows: [] };
+      }
+      if (String(sql).includes('UPDATE agent.hub_alarms') && String(sql).includes('auto_repair_callback_delivery_state')) {
+        const row = mirrorExistingRows.find((candidate) => (
+          (String(candidate.metadata?.incident_key || '') === String(params[2] || '')
+            || String(candidate.fingerprint || '') === String(params[2] || ''))
+          && String(candidate.metadata?.event_id || '') === String(params[3] || '')
+          && String(candidate.metadata?.auto_repair_callback_event_id || '') === String(params[4] || '')
+        ));
+        if (!row) return { rowCount: 0, rows: [] };
+        row.metadata = {
+          ...(row.metadata || {}),
+          auto_repair_callback_delivery_state: String(params[0] || ''),
+          auto_repair_callback_delivery_error: String(params[1] || ''),
+        };
+        return { rowCount: 1, rows: [] };
+      }
       return { rowCount: mirrorUpdateRowCount, rows: [] };
     },
   });
@@ -253,9 +311,19 @@ async function main() {
     assert(similarErrorRes.body.deduped === true, 'expected similar error to be deduped by cluster');
     assert(similarErrorRes.body.event_id === 999, 'expected cluster duplicate event id');
 
+    mirrorExistingRows = [{
+      id: 501,
+      status: 'repairing',
+      actionability: 'auto_repair',
+      metadata: {
+        incident_key: errorRes.body.incident_key,
+        event_id: String(errorRes.body.event_id),
+      },
+    }];
     const callbackReq = {
       body: {
         incidentKey: errorRes.body.incident_key,
+        alarmEventId: errorRes.body.event_id,
         team: 'luna',
         status: 'resolved',
         summary: 'provider cooldown reset and verified',
@@ -273,16 +341,37 @@ async function main() {
     assert(callbackRes.body.mirror_update?.status === 'resolved', `expected mirror status resolved, got ${callbackRes.body.mirror_update?.status}`);
     assert(callbackRes.body.mirror_update?.updated === 1, `expected one mirror update, got ${callbackRes.body.mirror_update?.updated}`);
     assert(
-      pgRuns.some((entry) => entry.sql.includes('UPDATE agent.hub_alarms') && entry.sql.includes('auto_repair_callback_status') && entry.params.includes(errorRes.body.incident_key)),
-      'expected auto-repair callback to close matching hub_alarms mirror rows',
+      pgRuns.some((entry) => entry.sql.includes('UPDATE agent.hub_alarms')
+        && entry.sql.includes('auto_repair_callback_status')
+        && entry.params.includes(errorRes.body.incident_key)
+        && entry.params.includes(String(errorRes.body.event_id))),
+      'expected auto-repair callback to close the exact hub_alarms generation',
     );
+    const callbackEvents = recordedEvents.filter((event) => event.eventType === 'hub_alarm_auto_repair_result');
+    assert(callbackEvents.length === 1, `expected one callback result event, got ${callbackEvents.length}`);
+    assert(
+      String(callbackEvents[0].metadata?.alarm_event_id || '') === String(errorRes.body.event_id),
+      'callback result event must retain the source alarm event id',
+    );
+    assert(callbackEvents[0].metadata?.callback_committed === 'true', 'callback result must be committed after mirror transition');
     assert(Number(sendCount) === 3, `expected callback to send one result notification, got ${sendCount}`);
 
-    mirrorUpdateRowCount = 0;
+    const duplicateCallbackRes = makeRes();
+    await alarmAutoRepairCallbackRoute(callbackReq, duplicateCallbackRes);
+    assert(duplicateCallbackRes.statusCode === 200, `expected duplicate callback 200, got ${duplicateCallbackRes.statusCode}`);
+    assert(duplicateCallbackRes.body.delivery_deduped === true, 'duplicate callback must be delivery-idempotent');
+    assert(
+      recordedEvents.filter((event) => event.eventType === 'hub_alarm_auto_repair_result').length === 1,
+      'duplicate callback must not create a second result event',
+    );
+    assert(Number(sendCount) === 3, 'duplicate callback must not resend Telegram');
+
+    mirrorExistingRows = [];
     const failedCallbackRes = makeRes();
     await alarmAutoRepairCallbackRoute({
       body: {
         incidentKey: 'smoke:missing-mirror',
+        alarmEventId: 'missing-generation',
         team: 'luna',
         status: 'resolved',
         summary: 'must not acknowledge a missing mirror transition',
@@ -292,18 +381,44 @@ async function main() {
     assert(failedCallbackRes.body.ok === false, 'missing mirror transition must not be acknowledged');
     assert(Number(sendCount) === 3, 'failed mirror transition must not send a resolved notification');
 
-    mirrorExistingRows = [{ status: 'repairing' }, { status: 'resolved' }];
+    const reusedIncidentKey = 'smoke:reused-incident-key';
+    mirrorExistingRows = [
+      {
+        id: 601,
+        status: 'resolved',
+        actionability: 'auto_repair',
+        metadata: {
+          incident_key: reusedIncidentKey,
+          event_id: 'old-generation',
+          auto_repair_callback_status: 'resolved',
+          auto_repair_callback_event_id: '777',
+          auto_repair_callback_delivery_state: 'sent',
+        },
+      },
+      {
+        id: 602,
+        status: 'repairing',
+        actionability: 'auto_repair',
+        metadata: {
+          incident_key: reusedIncidentKey,
+          event_id: 'new-generation',
+        },
+      },
+    ];
     const staleGenerationCallbackRes = makeRes();
     await alarmAutoRepairCallbackRoute({
       body: {
-        incidentKey: 'smoke:reused-incident-key',
+        incidentKey: reusedIncidentKey,
+        alarmEventId: 'old-generation',
         team: 'luna',
         status: 'resolved',
         summary: 'old terminal generation must not hide a newer active generation',
       },
     }, staleGenerationCallbackRes);
-    assert(staleGenerationCallbackRes.statusCode === 409, 'older terminal rows must not make a newer active generation idempotent');
-    assert(Number(sendCount) === 3, 'stale-generation callback must not send a resolved notification');
+    assert(staleGenerationCallbackRes.statusCode === 200, 'completed old generation callback should remain idempotent');
+    assert(staleGenerationCallbackRes.body.delivery_deduped === true, 'old generation result must remain delivery-idempotent');
+    assert(mirrorExistingRows[1].status === 'repairing', 'old generation callback must not close the newer generation');
+    assert(Number(sendCount) === 3, 'old generation callback must not resend a resolved notification');
     mirrorExistingRows = [];
     mirrorUpdateRowCount = 1;
 
@@ -402,8 +517,7 @@ async function main() {
 
     console.log('alarm_governor_smoke_ok');
   } finally {
-    eventLake.findRecentDuplicateAlarm = originals.findRecentDuplicateAlarm;
-    eventLake.record = originals.record;
+    _testOnly_resetAlarmEventLakeMocks();
     _testOnly_resetAlarmRouteDbMocks();
     global.fetch = originals.fetch;
     if (originals.tgToken == null) delete process.env.TELEGRAM_BOT_TOKEN;
