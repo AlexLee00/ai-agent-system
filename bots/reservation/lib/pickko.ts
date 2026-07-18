@@ -36,7 +36,7 @@ type PickkoMemberLookupResult = {
   selectedPhone?: string | null;
 };
 
-export async function submitPickkoSearch(page: any): Promise<boolean> {
+async function submitPickkoSearch(page: any): Promise<boolean> {
   const navigation = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 })
     .catch(() => null);
   const clicked = await page.evaluate(() => {

@@ -9,12 +9,29 @@ type PaymentStepError = Error & {
   paymentStep?: string;
 };
 
+type PickkoPaymentSnapshot = {
+  od_add_item_price: string | null;
+  pay_list_price: string | null;
+  od_total_price3: string;
+};
+
 function norm(s: unknown) {
   return String(s ?? '').replace(/[\s,]/g, '').trim();
 }
 
-export async function setPickkoPaymentPriceZero(page: any) {
-  return page.evaluate(() => {
+function normalizePaymentSnapshot(value: unknown): PickkoPaymentSnapshot {
+  const snapshot = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    od_add_item_price: snapshot.od_add_item_price == null ? null : String(snapshot.od_add_item_price),
+    pay_list_price: snapshot.pay_list_price == null ? null : String(snapshot.pay_list_price),
+    od_total_price3: String(snapshot.od_total_price3 ?? ''),
+  };
+}
+
+export async function setPickkoPaymentPriceZero(page: any): Promise<boolean> {
+  const changed = await page.evaluate(() => {
     const input = document.querySelector('#od_add_item_price') as HTMLInputElement | null;
     if (!input) return false;
 
@@ -38,6 +55,7 @@ export async function setPickkoPaymentPriceZero(page: any) {
     }
     return true;
   });
+  return changed === true;
 }
 
 export function createPickkoPaymentService({
@@ -76,31 +94,31 @@ export function createPickkoPaymentService({
     return runPaymentStep('price_zero', () => setPickkoPaymentPriceZero(page));
   }
 
-  async function setMemo(page: any) {
+  async function setMemo(page: any): Promise<boolean> {
     try {
-      return await runPaymentStep('memo', () => page.evaluate(() => {
+      return await runPaymentStep('memo', async () => (await page.evaluate(() => {
         const input = document.querySelector('#od_memo') as HTMLInputElement | null;
         if (!input) return false;
         input.value = '네이버예약 결제';
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
-      }));
+      })) === true);
     } catch (e: any) {
       log(`⚠️ 주문메모 입력 실패: ${e.message}`);
       return false;
     }
   }
 
-  async function clickCashMouse(page: any) {
+  async function clickCashMouse(page: any): Promise<boolean> {
     try {
-      const isChecked = await runPaymentStep('cash_select', () => page.evaluate(() => {
+      const isChecked = await runPaymentStep('cash_select', async () => (await page.evaluate(() => {
         const input = document.querySelector('#pay_type1_2') as HTMLInputElement | null;
         const label = document.querySelector('label[for="pay_type1_2"]') as HTMLElement | null;
         if (!input || !label) return false;
         label.click();
         return input.checked;
-      }));
+      })) === true);
       log(`💳 현금 클릭 결과: checked=${isChecked}`);
       return isChecked;
     } catch (e: any) {
@@ -109,13 +127,14 @@ export function createPickkoPaymentService({
     }
   }
 
-  async function readTotals(page: any) {
-    return runPaymentStep('read_totals', () => page.evaluate(() => {
+  async function readTotals(page: any): Promise<PickkoPaymentSnapshot> {
+    const snapshot = await runPaymentStep<unknown>('read_totals', () => page.evaluate(() => {
       const v1 = (document.querySelector('#od_add_item_price') as HTMLInputElement | null)?.value ?? null;
       const v2 = (document.querySelector('input[name*="pay_list"][name*="price"]') as HTMLInputElement | null)?.value ?? null;
       const total = (document.querySelector('#od_total_price3')?.textContent || '').trim();
       return { od_add_item_price: v1, pay_list_price: v2, od_total_price3: total };
     }));
+    return normalizePaymentSnapshot(snapshot);
   }
 
   async function waitTotalZeroStable(page: any) {
@@ -136,18 +155,18 @@ export function createPickkoPaymentService({
     return { ok: false, snap: last };
   }
 
-  async function clickPayOrderMouse(page: any) {
-    return runPaymentStep('submit', () => page.evaluate(() => {
+  async function clickPayOrderMouse(page: any): Promise<boolean> {
+    return runPaymentStep('submit', async () => (await page.evaluate(() => {
       const button = document.querySelector('#pay_order') as HTMLElement | null;
       if (!button) return false;
       button.click();
       return true;
-    }));
+    })) === true);
   }
 
-  async function modalClosed(page: any) {
-    return runPaymentStep('post_submit_modal_state', () => (
-      page.evaluate(() => !document.querySelector('#order_write'))
+  async function modalClosed(page: any): Promise<boolean> {
+    return runPaymentStep('post_submit_modal_state', async () => (
+      (await page.evaluate(() => !document.querySelector('#order_write'))) === true
     ));
   }
 
@@ -162,7 +181,7 @@ export function createPickkoPaymentService({
     },
   ) {
     log('PICKKO_PAYMENT_STAGE_ENTERED');
-    const payBtnClicked = await runPaymentStep('open_payment_modal', () => page.evaluate(() => {
+    const payBtnClicked = await runPaymentStep('open_payment_modal', async () => (await page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]')) as any[];
       for (const b of btns) {
         const t = (b.innerText || b.value || b.textContent || '').trim();
@@ -172,7 +191,7 @@ export function createPickkoPaymentService({
         }
       }
       return false;
-    }));
+    })) === true);
     log(payBtnClicked ? '✅ 상세 화면 결제하기 클릭' : '⚠️ 상세 화면 결제하기 버튼을 못 찾음');
     if (!payBtnClicked) {
       throw buildStageError('PAYMENT', '[PAYMENT_BUTTON_NOT_FOUND] 상세 화면 결제하기 버튼을 찾지 못함');
@@ -264,9 +283,10 @@ export function createPickkoPaymentService({
     try {
       await delay(600);
       closed = await modalClosed(page);
-      after = await runPaymentStep('post_submit_total', () => (
+      const postSubmitTotal = await runPaymentStep<unknown>('post_submit_total', () => (
         page.evaluate(() => (document.querySelector('#od_total_price3')?.textContent || '').trim())
       ));
+      after = String(postSubmitTotal ?? '');
       log(`🔍 클릭 후 상태: modalClosed=${closed}, od_total_price3=${after}`);
 
       await delay(200);
