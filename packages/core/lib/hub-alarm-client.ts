@@ -153,6 +153,17 @@ type PostAlarmInput = {
   cycle_id?: string | null;
 };
 
+type PostAlarmAutoRepairResultInput = {
+  incidentKey: string;
+  alarmEventId: string | number;
+  team?: string;
+  status: 'resolved' | 'partially_resolved' | 'unresolved_needs_human';
+  summary?: string;
+  docPath?: string;
+  changedFiles?: string[];
+  fromBot?: string;
+};
+
 type InlineTelegramInput = {
   message: string;
   team: string;
@@ -881,6 +892,71 @@ async function _postAlarmViaHub({
     const err = error as ExecError;
     _recordHubAlarmClientResult(false);
     return { ok: false, source: 'hub_alarm', error: err.message };
+  }
+}
+
+export async function postAlarmAutoRepairResult({
+  incidentKey,
+  alarmEventId,
+  team = 'general',
+  status,
+  summary = '',
+  docPath = '',
+  changedFiles = [],
+  fromBot = 'auto-dev',
+}: PostAlarmAutoRepairResultInput) {
+  const hubBaseUrl = String(env.HUB_BASE_URL || '').trim().replace(/\/+$/, '');
+  const hubToken = String(env.HUB_AUTH_TOKEN || '').trim();
+  const normalizedIncidentKey = _normalizeAlertText(incidentKey);
+  if (!hubBaseUrl || !hubToken) {
+    return { ok: false, skipped: true, error: 'hub_alarm_auth_missing' };
+  }
+  if (!normalizedIncidentKey) {
+    return { ok: false, error: 'incident_key_required' };
+  }
+  const normalizedAlarmEventId = _normalizeAlertText(alarmEventId);
+  if (!normalizedAlarmEventId) {
+    return { ok: false, error: 'alarm_event_id_required' };
+  }
+
+  try {
+    const response = await fetch(`${hubBaseUrl}/hub/alarm/auto-repair/callback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${hubToken}`,
+      },
+      body: JSON.stringify({
+        incidentKey: normalizedIncidentKey,
+        alarmEventId: normalizedAlarmEventId,
+        team: _normalizeAlertText(team) || 'general',
+        status,
+        summary: _truncateString(summary, 4_000),
+        docPath: _normalizeAlertText(docPath),
+        changedFiles: Array.isArray(changedFiles) ? changedFiles.slice(0, 12) : [],
+        fromBot: _normalizeAlertText(fromBot) || 'auto-dev',
+      }),
+      signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),
+    });
+    const body = await response.json().catch(() => null);
+    const mirrorUpdate = body?.mirror_update || null;
+    const accepted = response.ok && body?.ok === true && mirrorUpdate?.ok === true;
+    return {
+      ok: accepted,
+      status: response.status,
+      body,
+      mirrorUpdate,
+      source: 'hub_alarm_auto_repair_callback',
+      error: accepted
+        ? null
+        : (body?.error || mirrorUpdate?.error || `hub_alarm_callback_http_${response.status}`),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'hub_alarm_auto_repair_callback',
+      error: (error as Error)?.message || String(error),
+    };
   }
 }
 

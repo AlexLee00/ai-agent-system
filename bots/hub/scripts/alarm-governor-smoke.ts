@@ -55,6 +55,8 @@ async function main() {
   let sendCount = 0;
   let eventId = 100;
   let pgRunCount = 0;
+  let mirrorUpdateRowCount = 1;
+  let mirrorExistingRows: Array<{ status: string }> = [];
   const pgRuns: Array<{ sql: string; params: unknown[] }> = [];
   let useClusterDuplicate = false;
   const autoDevDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-alarm-auto-dev-'));
@@ -84,6 +86,9 @@ async function main() {
   };
   _testOnly_setAlarmRouteDbMocks({
     query: async (_schema: string, sql: string) => {
+      if (String(sql).includes('SELECT status') && String(sql).includes('FROM agent.hub_alarms')) {
+        return mirrorExistingRows;
+      }
       if (String(sql).includes(`metadata->>'visibility' = 'digest'`)) {
         return [
           {
@@ -124,7 +129,7 @@ async function main() {
     run: async (_schema: string, sql: string, params: unknown[] = []) => {
       pgRunCount += 1;
       pgRuns.push({ sql: String(sql), params });
-      return { rowCount: 1, rows: [] };
+      return { rowCount: mirrorUpdateRowCount, rows: [] };
     },
   });
 
@@ -272,6 +277,35 @@ async function main() {
       'expected auto-repair callback to close matching hub_alarms mirror rows',
     );
     assert(Number(sendCount) === 3, `expected callback to send one result notification, got ${sendCount}`);
+
+    mirrorUpdateRowCount = 0;
+    const failedCallbackRes = makeRes();
+    await alarmAutoRepairCallbackRoute({
+      body: {
+        incidentKey: 'smoke:missing-mirror',
+        team: 'luna',
+        status: 'resolved',
+        summary: 'must not acknowledge a missing mirror transition',
+      },
+    }, failedCallbackRes);
+    assert(failedCallbackRes.statusCode === 409, `expected missing mirror callback 409, got ${failedCallbackRes.statusCode}`);
+    assert(failedCallbackRes.body.ok === false, 'missing mirror transition must not be acknowledged');
+    assert(Number(sendCount) === 3, 'failed mirror transition must not send a resolved notification');
+
+    mirrorExistingRows = [{ status: 'repairing' }, { status: 'resolved' }];
+    const staleGenerationCallbackRes = makeRes();
+    await alarmAutoRepairCallbackRoute({
+      body: {
+        incidentKey: 'smoke:reused-incident-key',
+        team: 'luna',
+        status: 'resolved',
+        summary: 'old terminal generation must not hide a newer active generation',
+      },
+    }, staleGenerationCallbackRes);
+    assert(staleGenerationCallbackRes.statusCode === 409, 'older terminal rows must not make a newer active generation idempotent');
+    assert(Number(sendCount) === 3, 'stale-generation callback must not send a resolved notification');
+    mirrorExistingRows = [];
+    mirrorUpdateRowCount = 1;
 
     const digestReq = {
       body: {

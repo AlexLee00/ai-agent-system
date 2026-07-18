@@ -109,6 +109,26 @@ function lineNumber(text: string, index: number) {
   return text.slice(0, index).split(/\r?\n/).length;
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveNamedHelperContext(text: string, snippet: string) {
+  const helperCall = /^postAlarm\s*\(\s*([A-Za-z_$][\w$]*)\s*\(/.exec(snippet);
+  if (!helperCall) return snippet;
+
+  const helperName = helperCall[1];
+  const declaration = new RegExp(`\\b(?:export\\s+)?(?:async\\s+)?function\\s+${escapeRegExp(helperName)}\\s*\\(`).exec(text);
+  if (!declaration) return snippet;
+
+  const helperTail = text.slice(declaration.index);
+  const nextDeclaration = /\n(?:export\s+)?(?:async\s+)?function\s+[A-Za-z_$][\w$]*\s*\(/.exec(helperTail.slice(1));
+  const helperSource = nextDeclaration
+    ? helperTail.slice(0, nextDeclaration.index + 1)
+    : helperTail;
+  return `${snippet}\n${helperSource}`;
+}
+
 function auditFile(file: string): AlarmContractFinding[] {
   const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
   const rows: AlarmContractFinding[] = [];
@@ -117,12 +137,13 @@ function auditFile(file: string): AlarmContractFinding[] {
   while ((match = pattern.exec(text))) {
     if (isLikelyCommentedOut(text, match.index)) continue;
     const snippet = extractCallSnippet(text, match.index);
-    const missing = REQUIRED_FIELDS.filter((field) => !new RegExp(`\\b${field}\\s*:`).test(snippet));
-    const hasMessageObject = /\bmessage\s*:/.test(snippet) || /[{,]\s*message\s*[,}]/.test(snippet);
-    const hasMessageFirstArg = /^postAlarm\s*\(\s*[^,{][\s\S]*?,\s*\{/.test(snippet);
-    const hasTeamContext = /\bteam\s*:/.test(snippet) || /[{,]\s*team\s*[,}]/.test(snippet);
-    const hasProducerContext = /\b(fromBot|bot)\s*:/.test(snippet) || /[{,]\s*(fromBot|bot)\s*[,}]/.test(snippet);
-    const hasSeverityContext = /\b(alertLevel|level|severity)\s*:/.test(snippet) || /[{,]\s*(alertLevel|level|severity)\s*[,}]/.test(snippet);
+    const contractContext = resolveNamedHelperContext(text, snippet);
+    const missing = REQUIRED_FIELDS.filter((field) => !new RegExp(`\\b${field}\\s*:`).test(contractContext));
+    const hasMessageObject = /\bmessage\s*:/.test(contractContext) || /[{,]\s*message\s*[,}]/.test(contractContext);
+    const hasMessageFirstArg = /^postAlarm\s*\(\s*[^,{][\s\S]*?,\s*\{/.test(contractContext);
+    const hasTeamContext = /\bteam\s*:/.test(contractContext) || /[{,]\s*team\s*[,}]/.test(contractContext);
+    const hasProducerContext = /\b(fromBot|bot)\s*:/.test(contractContext) || /[{,]\s*(fromBot|bot)\s*[,}]/.test(contractContext);
+    const hasSeverityContext = /\b(alertLevel|level|severity)\s*:/.test(contractContext) || /[{,]\s*(alertLevel|level|severity)\s*[,}]/.test(contractContext);
     const runtimeCovered = (hasMessageObject || hasMessageFirstArg)
       && (hasTeamContext || hasProducerContext || hasSeverityContext);
     const explicitComplete = missing.length === 0;

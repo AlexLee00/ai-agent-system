@@ -6,7 +6,13 @@ const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
 const { resolveAlarmDeliveryTeam, formatAutoRepairResultMessage } = require('../lib/alarm/templates.ts');
 const { buildAlarmReadinessSnapshot } = require('../lib/alarm/readiness.ts');
 const { buildAlarmNoiseReport } = require('./alarm-noise-report.ts');
-const { scanStaleAutoRepair, _testOnly_annotateRows } = require('./alarm-auto-repair-stale-scan.ts');
+const {
+  scanStaleAutoRepair,
+  _testOnly_annotateRows,
+  _testOnly_buildActiveIncidentFingerprint,
+  _testOnly_buildStaleAlarmInput,
+  _testOnly_isResolvedManifestReason,
+} = require('./alarm-auto-repair-stale-scan.ts');
 const { APPLY_CONFIRM_TOKEN, _testOnly_buildBackfillPlan, _testOnly_isApplyConfirmed } = require('./alarm-auto-repair-stale-backfill.ts');
 const {
   applyAlarmSuppressionProposals,
@@ -98,6 +104,20 @@ async function main() {
     assert(naverSourceUnavailable.type === 'work', 'naver source-unavailable guard alerts must not route to auto-repair');
     assert(naverSourceUnavailable.confidence >= 0.9, 'naver source-unavailable guard classification must be high confidence');
 
+    const promotionGateReady = classifyAlarmTypeWithConfidence({
+      severity: 'warn',
+      eventType: 'telegram_send',
+      title: 'ops-error-resolution alarm',
+      message: [
+        '🚀 [루나] 하이브리드 승급 게이트 — 마스터 검토 요청',
+        'Phase 1~10 Shadow 검증 통과:',
+        '상태: luna_hybrid_promotion_gate_ready_for_master_review',
+        '⚠️ 자동 LIVE 전환 없음 — gate는 read-only, 마스터 승인 runbook 필요',
+      ].join('\n'),
+    });
+    assert(promotionGateReady.type === 'report', 'read-only promotion-gate readiness must not route to auto-repair');
+    assert(promotionGateReady.confidence >= 0.9, 'promotion-gate readiness classification must be high confidence');
+
     process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';
     assert(resolveAlarmDeliveryTeam({ alarmType: 'work', visibility: 'notify', team: 'luna' }) === 'ops-work', 'expected work class topic');
     assert(resolveAlarmDeliveryTeam({ alarmType: 'report', visibility: 'notify', team: 'blog' }) === 'ops-reports', 'expected report class topic');
@@ -126,6 +146,31 @@ async function main() {
     const staleDefault = await scanStaleAutoRepair({ db });
     assert(staleDefault.stale_minutes === 120, `expected default stale minutes=120, got ${staleDefault.stale_minutes}`);
     assert(staleDefault.limit === 20, `expected default limit=20, got ${staleDefault.limit}`);
+    const fingerprintA = _testOnly_buildActiveIncidentFingerprint([
+      { incident_key: 'incident:b', enqueue_event_id: 2 },
+      { incident_key: 'incident:a', enqueue_event_id: 1 },
+    ]);
+    const fingerprintB = _testOnly_buildActiveIncidentFingerprint([
+      { incident_key: 'incident:a', enqueue_event_id: 1 },
+      { incident_key: 'incident:b', enqueue_event_id: 2 },
+    ]);
+    const fingerprintChanged = _testOnly_buildActiveIncidentFingerprint([
+      { incident_key: 'incident:a', enqueue_event_id: 1 },
+      { incident_key: 'incident:c', enqueue_event_id: 3 },
+    ]);
+    assert(fingerprintA === fingerprintB, 'active incident fingerprint must be order independent');
+    assert(fingerprintA !== fingerprintChanged, 'active incident fingerprint must change with membership');
+    const staleAlarmInput = _testOnly_buildStaleAlarmInput({
+      ...stale,
+      active_count: stale.rows.length,
+      active_fingerprint: fingerprintA,
+    });
+    assert(staleAlarmInput.incidentKey.endsWith(fingerprintA.slice(0, 16)), 'stale alarm key must follow active set fingerprint');
+    assert(staleAlarmInput.dedupeMinutes === 1440, 'unchanged stale set must notify at most once per day');
+    assert(_testOnly_isResolvedManifestReason('completed') === true, 'completed must remain a resolved manifest reason');
+    assert(_testOnly_isResolvedManifestReason('implementation_not_completed_requires_followup') === false, 'negative completion reasons must remain active');
+    assert(_testOnly_isResolvedManifestReason('manual_review_required') === false, 'manual review must remain active');
+    assert(_testOnly_isResolvedManifestReason('manual_action_needed') === false, 'manual action must remain active');
     const completedArchiveDir = path.join(tempRoot, 'codex-completed');
     fs.mkdirSync(completedArchiveDir, { recursive: true });
     fs.writeFileSync(path.join(completedArchiveDir, '2026-06-10__replayed__ALARM_INCIDENT_blog_archive_sample.md'), [
@@ -304,6 +349,67 @@ async function main() {
     assert(queryLog.some((sql) => String(sql).includes('DISTINCT ON (incident_key)')), 'expected stale scan to dedupe duplicate mirror rows by incident');
     assert(queryLog.some((sql) => String(sql).includes('ORDER BY enqueued_at DESC')), 'expected stale scan to prioritize recently enqueued stale repairs');
     assert(queryLog.some((sql) => String(sql).includes('NOT EXISTS')), 'expected stale scan to exclude completed repairs');
+    assert(queryLog.some((sql) => String(sql).includes("COALESCE(event.metadata->>'created', 'true') = 'true'")), 'expected stale generation to ignore created=false re-enqueues');
+    assert(queryLog.some((sql) => String(sql).includes("event.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'")), 'expected stale generation to stay bound to the alarm that created the document');
+    assert(queryLog.some((sql) => String(sql).includes("result.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'")), 'expected repair results to stay bound to the same alarm generation');
+    assert(queryLog.some((sql) => String(sql).includes("result.metadata->>'callback_committed' = 'true'")), 'expected stale scan to ignore uncommitted callback results');
+    assert(queryLog.some((sql) => String(sql).includes('enqueued.created_at < NOW()')), 'expected stale age to start at enqueue time');
+
+    const pagedManifestEntries = {};
+    for (let index = 0; index < 100; index += 1) {
+      pagedManifestEntries[`docs/auto_dev/ALARM_INCIDENT_resolved_${index}.md`] = {
+        relPath: `docs/auto_dev/ALARM_INCIDENT_resolved_${index}.md`,
+        state: 'archived_missing',
+        reason: 'completed',
+      };
+    }
+    let candidatePageQueries = 0;
+    const pagedDb = {
+      query: async (schema: string, sql: string, params: unknown[] = []) => {
+        if (schema !== 'agent' || !String(sql).includes('FROM agent.hub_alarms')) return [];
+        candidatePageQueries += 1;
+        const pageSize = Number(params[1] || 1);
+        const offset = Number(params[2] || 0);
+        if (offset === 0) {
+          return Array.from({ length: pageSize }, (_, index) => ({
+            id: index + 1,
+            team: 'blog',
+            bot_name: 'blog-health',
+            severity: 'error',
+            message: 'resolved fixture',
+            incident_key: `resolved:${index}`,
+            enqueue_event_id: index + 100,
+            auto_dev_path: `docs/auto_dev/ALARM_INCIDENT_resolved_${index}.md`,
+            created_at: new Date().toISOString(),
+            enqueued_at: new Date().toISOString(),
+          }));
+        }
+        if (offset === pageSize) {
+          return [{
+            id: 999,
+            team: 'darwin',
+            bot_name: 'implementor',
+            severity: 'error',
+            message: 'still active',
+            incident_key: 'darwin:active:after-resolved-page',
+            enqueue_event_id: 999,
+            auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_active_after_page.md',
+            created_at: new Date().toISOString(),
+            enqueued_at: new Date().toISOString(),
+          }];
+        }
+        return [];
+      },
+    };
+    const pagedStale = await scanStaleAutoRepair({
+      limit: 1,
+      db: pagedDb,
+      manifest: { entries: pagedManifestEntries },
+      archiveDir: path.join(tempRoot, 'missing-paged-archive'),
+    });
+    assert(pagedStale.rows.length === 1, 'resolved candidates must not consume the active row limit');
+    assert(pagedStale.rows[0].incident_key === 'darwin:active:after-resolved-page', 'later active candidate must be discovered');
+    assert(candidatePageQueries >= 2, 'stale scan must page beyond resolved candidates');
 
     const proposals = await buildAlarmSuppressionProposals({ minutes: 60, limit: 5, minTotal: 5, db });
     assert(proposals.proposals.length === 1, 'expected one suppression proposal');

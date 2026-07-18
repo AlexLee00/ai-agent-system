@@ -5,6 +5,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const env = require('../../../packages/core/lib/env');
 const { loadAutoDevManifest } = require('../../../packages/core/lib/auto-dev-manifest.ts');
 const { classifyAlarmTypeWithConfidence } = require('../lib/alarm/policy.ts');
@@ -13,8 +14,8 @@ const { normalizeStudyRoomKey } = require('../../reservation/lib/study-room-pric
 
 const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
 const DEFAULT_COMPLETED_ARCHIVE_DIR = path.join(env.PROJECT_ROOT, 'docs', 'archive', 'codex-completed');
-const RESOLVED_MANIFEST_REASON_RE = /(completed|resolved|replayed|manual|verified|current_code|current_code_patched|recovered|cleanup|skip|skipped|routed_report|routed_to_digest|missing_document|stale_resolved_live_check|stale_or_recovered|dedupe_patched|operational_noise)/i;
 const CURRENT_POLICY_RESOLUTION_MIN_CONFIDENCE = 0.8;
+const STALE_SCAN_MAX_CANDIDATES = 1000;
 
 function argValue(name: string, fallback = ''): string {
   const prefix = `--${name}=`;
@@ -43,6 +44,42 @@ function repoFileExists(relPath: unknown): boolean {
   return fs.existsSync(path.join(env.PROJECT_ROOT, normalized));
 }
 
+function isResolvedManifestReason(value: unknown): boolean {
+  const reason = String(value || '').trim().toLowerCase();
+  if (!reason) return false;
+  const tokens = reason.split(/[_\s:-]+/).filter(Boolean);
+  const negativeTokens = new Set([
+    'not', 'unresolved', 'failed', 'failure', 'error', 'pending', 'blocked',
+    'dead', 'letter', 'required', 'requires', 'needed', 'needs',
+  ]);
+  if (tokens.some((token) => negativeTokens.has(token))) return false;
+
+  const resolvedTokens = new Set([
+    'completed', 'resolved', 'verified', 'recovered', 'recovery', 'patched',
+    'cleanup', 'archived', 'replayed', 'skip', 'skipped', 'suppressed', 'passed',
+  ]);
+  if (tokens.some((token) => resolvedTokens.has(token))) return true;
+  return new Set([
+    'missing_document',
+    'operational_noise',
+    'routed_report',
+    'routed_to_digest',
+  ]).has(reason);
+}
+
+function hashRepoFile(relPath: unknown): string {
+  const normalized = normalizeRelPath(relPath);
+  if (!normalized) return '';
+  try {
+    return crypto.createHash('sha1')
+      .update(fs.readFileSync(path.join(env.PROJECT_ROOT, normalized), 'utf8'))
+      .digest('hex')
+      .slice(0, 16);
+  } catch {
+    return '';
+  }
+}
+
 function loadManifest(autoDevDir = DEFAULT_AUTO_DEV_DIR): Record<string, any> {
   try {
     return loadAutoDevManifest(autoDevDir);
@@ -68,10 +105,22 @@ function manifestResolvedReason(entry: Record<string, any> | null): string {
   return [
     entry.reason,
     entry.resolvedReason,
+    entry.resolutionReason,
     entry.implementationStatus,
     entry.implementation_status,
     entry.note,
   ].map((item) => String(item || '').trim()).filter(Boolean).join(' ');
+}
+
+function manifestEntryHasResolvedReason(entry: Record<string, any> | null): boolean {
+  if (!entry) return false;
+  return [
+    entry.reason,
+    entry.resolvedReason,
+    entry.resolutionReason,
+    entry.implementationStatus,
+    entry.implementation_status,
+  ].some((item) => isResolvedManifestReason(item));
 }
 
 function listArchiveCandidates(relPath: unknown, archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR): string[] {
@@ -109,6 +158,7 @@ function resolveByCompletedArchive(
   row: Record<string, any>,
   archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
 ): Record<string, any> | null {
+  if (repoFileExists(row.auto_dev_path)) return null;
   const candidates = listArchiveCandidates(row.auto_dev_path, archiveDir);
   const matchedPath = candidates.find((candidate) => archiveDocumentMatches(row, candidate));
   if (!matchedPath) return null;
@@ -133,7 +183,12 @@ function resolveByManifest(
   const reason = manifestResolvedReason(entry);
   const archiveExists = repoFileExists(entry.archivedPath);
   const inboxExists = repoFileExists(row.auto_dev_path);
-  const reasonResolved = RESOLVED_MANIFEST_REASON_RE.test(reason);
+  const reasonResolved = manifestEntryHasResolvedReason(entry);
+  if (inboxExists) {
+    const manifestHash = String(entry.contentHash || '').trim();
+    const inboxHash = hashRepoFile(row.auto_dev_path);
+    if (!manifestHash || !inboxHash || manifestHash !== inboxHash) return null;
+  }
 
   if (state === 'dead_letter' && entry.deadLetteredAt && !inboxExists) {
     const explicitProcessedPath = String(entry.processedPath || '').trim();
@@ -327,6 +382,39 @@ function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: numbe
   return lines.join('\n');
 }
 
+function buildActiveIncidentFingerprint(rows: Array<Record<string, any>>): string {
+  const members = [...new Set((rows || []).map((row) => {
+    const incidentKey = String(row.incident_key || '').trim();
+    const generation = String(row.enqueue_event_id || row.enqueued_at || '').trim();
+    return incidentKey ? `${incidentKey}|${generation}` : '';
+  }).filter(Boolean))].sort();
+  return crypto.createHash('sha256').update(members.join('\n')).digest('hex');
+}
+
+function buildStaleAlarmInput(result: Record<string, any>): Record<string, any> {
+  const fingerprint = String(result.active_fingerprint || buildActiveIncidentFingerprint(result.rows || []));
+  const activeCount = Number(result.active_count ?? result.rows?.length ?? 0);
+  return {
+    message: result.message,
+    team: 'hub',
+    fromBot: 'alarm-auto-repair-stale-scan',
+    alertLevel: 3,
+    alarmType: 'error',
+    visibility: 'human_action',
+    actionability: 'needs_human',
+    incidentKey: `hub:stale_auto_repair:${fingerprint.slice(0, 16)}`,
+    eventType: 'stale_auto_repair_scan',
+    dedupeMinutes: 1440,
+    payload: {
+      event_type: 'stale_auto_repair_scan',
+      stale_count: activeCount,
+      active_fingerprint: fingerprint,
+      total_candidates: Number(result.total_candidates || 0),
+      truncated: Boolean(result.truncated),
+    },
+  };
+}
+
 export async function scanStaleAutoRepair({
   staleMinutes = 120,
   limit = 20,
@@ -342,7 +430,16 @@ export async function scanStaleAutoRepair({
 } = {}) {
   const threshold = normalizeNumber(staleMinutes, 120, 5, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 20, 1, 100);
-  const rows = await db.query('agent', `
+  const pageSize = Math.max(20, rowLimit);
+  const manifestSnapshot = manifest || loadManifest();
+  const candidateRows: Array<Record<string, any>> = [];
+  const activeRows: Array<Record<string, any>> = [];
+  const resolvedRows: Array<Record<string, any>> = [];
+  let offset = 0;
+  let truncated = false;
+
+  while (offset < STALE_SCAN_MAX_CANDIDATES) {
+    const rows = await db.query('agent', `
     WITH candidates AS (
       SELECT
         alarm.id,
@@ -353,21 +450,24 @@ export async function scanStaleAutoRepair({
         alarm.message,
         COALESCE(alarm.metadata->>'event_type', '') AS event_type,
         COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint) AS incident_key,
+        enqueued.id AS enqueue_event_id,
         enqueued.metadata->>'auto_dev_path' AS auto_dev_path,
         alarm.received_at AS created_at,
         enqueued.created_at AS enqueued_at
       FROM agent.hub_alarms alarm
       JOIN LATERAL (
-        SELECT event.metadata, event.created_at
+        SELECT event.id, event.metadata, event.created_at
         FROM agent.event_lake event
         WHERE event.event_type = 'hub_alarm_auto_repair_enqueued'
           AND event.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
+          AND event.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'
+          AND COALESCE(event.metadata->>'created', 'true') = 'true'
         ORDER BY event.created_at DESC
         LIMIT 1
       ) enqueued ON TRUE
       WHERE COALESCE(alarm.actionability, '') = 'auto_repair'
         AND COALESCE(alarm.status, '') IN ('repairing', 'correlating')
-        AND alarm.received_at < NOW() - ($1::int * INTERVAL '1 minute')
+        AND enqueued.created_at < NOW() - ($1::int * INTERVAL '1 minute')
         AND COALESCE(alarm.metadata->>'auto_repair_shadow_skipped', 'false') <> 'true'
         AND COALESCE(alarm.metadata->>'event_type', '') NOT LIKE 'auto_dev_%'
         AND NOT EXISTS (
@@ -375,6 +475,8 @@ export async function scanStaleAutoRepair({
           FROM agent.event_lake result
           WHERE result.event_type = 'hub_alarm_auto_repair_result'
             AND result.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
+            AND result.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'
+            AND result.metadata->>'callback_committed' = 'true'
             AND result.created_at >= enqueued.created_at
         )
     ), latest_by_incident AS (
@@ -391,24 +493,35 @@ export async function scanStaleAutoRepair({
       message,
       event_type,
       incident_key,
+      enqueue_event_id,
       auto_dev_path,
       created_at,
       enqueued_at
     FROM latest_by_incident
     ORDER BY enqueued_at DESC, created_at DESC
-    LIMIT $2
-  `, [threshold, rowLimit]);
-  const initiallyAnnotatedRows = annotateRows(rows, { manifest, archiveDir });
-  const annotatedRows = await resolveRowsByCurrentState(initiallyAnnotatedRows, db);
-  const activeRows = annotatedRows.filter((row) => row.stale_status === 'active');
-  const resolvedRows = annotatedRows.filter((row) => row.stale_status !== 'active');
+    LIMIT $2 OFFSET $3
+    `, [threshold, pageSize, offset]);
+    candidateRows.push(...rows);
+    const initiallyAnnotatedRows = annotateRows(rows, { manifest: manifestSnapshot, archiveDir });
+    const annotatedRows = await resolveRowsByCurrentState(initiallyAnnotatedRows, db);
+    activeRows.push(...annotatedRows.filter((row) => row.stale_status === 'active'));
+    resolvedRows.push(...annotatedRows.filter((row) => row.stale_status !== 'active'));
+    offset += rows.length;
+    if (rows.length < pageSize) break;
+    if (offset >= STALE_SCAN_MAX_CANDIDATES) truncated = true;
+  }
+
+  const activeFingerprint = buildActiveIncidentFingerprint(activeRows);
   return {
     ok: true,
     stale_minutes: threshold,
     limit: rowLimit,
-    rows: activeRows,
+    rows: activeRows.slice(0, rowLimit),
+    active_count: activeRows.length,
+    active_fingerprint: activeFingerprint,
     resolved_rows: resolvedRows,
-    total_candidates: rows.length,
+    total_candidates: candidateRows.length,
+    truncated,
     message: formatStaleReport(activeRows, threshold, resolvedRows),
   };
 }
@@ -422,22 +535,8 @@ async function main() {
   } else {
     console.log(result.message);
   }
-  if (hasFlag('send') && result.rows.length > 0) {
-    const sent = await postAlarm({
-      message: result.message,
-      team: 'hub',
-      fromBot: 'alarm-auto-repair-stale-scan',
-      alertLevel: 3,
-      alarmType: 'error',
-      visibility: 'human_action',
-      actionability: 'needs_human',
-      incidentKey: `hub:stale_auto_repair:${new Date().toISOString().slice(0, 10)}`,
-      eventType: 'stale_auto_repair_scan',
-      payload: {
-        event_type: 'stale_auto_repair_scan',
-        stale_count: result.rows.length,
-      },
-    });
+  if (hasFlag('send') && result.active_count > 0) {
+    const sent = await postAlarm(buildStaleAlarmInput(result));
     if (!sent?.ok) {
       throw new Error(sent?.error || 'stale_auto_repair_send_failed');
     }
@@ -454,4 +553,7 @@ if (require.main === module) {
 module.exports = {
   scanStaleAutoRepair,
   _testOnly_annotateRows: annotateRows,
+  _testOnly_buildActiveIncidentFingerprint: buildActiveIncidentFingerprint,
+  _testOnly_buildStaleAlarmInput: buildStaleAlarmInput,
+  _testOnly_isResolvedManifestReason: isResolvedManifestReason,
 };

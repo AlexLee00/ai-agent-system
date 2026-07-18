@@ -113,6 +113,13 @@ function classifyOperationalSnapshot({
     return { type: 'report', confidence: 0.97 };
   }
 
+  if (event === 'telegram_send'
+    && lower.includes('promotion_gate_ready_for_master_review')
+    && lower.includes('자동 live 전환 없음')
+    && lower.includes('read-only')) {
+    return { type: 'report', confidence: 0.97 };
+  }
+
   return null;
 }
 
