@@ -1,3 +1,6 @@
 'use strict';
 
-module.exports = require('./applicator.ts');
+const { loadTsSourceBridge } = require('../../../packages/core/lib/ts-source-bridge.js');
+
+module.exports = loadTsSourceBridge(__dirname, 'applicator');
+module.exports.default = module.exports;

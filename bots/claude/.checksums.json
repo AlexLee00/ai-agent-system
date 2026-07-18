@@ -10,12 +10,12 @@
   "bots/claude/src/dexter.js": "b8d0a0b5dad48f2befa61ca75275a38d1a6120b828d8924dbb4d961410da4db3",
   "bots/blog/lib/critical-alerts.js": "50131971ec2f05a50ba1b5ee25a299e7decd25000e30f323a4a163a21c230eeb",
   "bots/blog/lib/health-memory-bridge.js": "eccea731de5befb070e45febaa183b84a855a8a188b3278979807533cb6ee3d0",
-  "bots/darwin/lib/applicator.js": "191ac2387c70a1b6a3a815f975448743070aab45786c7b97d716803833717e1b",
+  "bots/darwin/lib/applicator.js": "c9cd8a082c9109c2b033857fbf9152de7703339edf30e760b5d1abe5d2ae9d22",
   "bots/darwin/lib/autonomy-level.js": "abdfabc7b40b3e160454aa1d412abd4a29058ee796b2dbf7bc775b24ce675656",
-  "bots/darwin/lib/implementor.js": "ff1de6f2923786a1fc0d20342ab1b915fd69541239a9f27d32acf53a911de490",
+  "bots/darwin/lib/implementor.js": "1438d81bc67b5484b5960268bfa46c37d374781945f116a4756bf8780632a096",
   "bots/darwin/lib/proposal-store.js": "689e3adc7aca5893dafa1073dddfd7d4ececff246b621026a86c00d83d4179c8",
   "bots/darwin/lib/research-tasks.js": "2694777edd88f063354c5bad7aa960454efc60f9205e4fa2b146c0efb0db2d8e",
-  "bots/darwin/lib/verifier.js": "ea6db2522c324a4b83b095f827f5904327de4ddb8127e0faf108e35c835037a3",
+  "bots/darwin/lib/verifier.js": "ab5f4b392410211f53669e0b97c3f68c40ec02872fc8d8a06bd030438bc5af20",
   "bots/hub/lib/secrets-meta.js": "3a869c26ebbc10257b90edf58ba751328b37d7aa7ff3e88c9604bb17bd55ee0c",
   "packages/core/lib/skills/verify-loop.js": "7dbffe2716ffc841974c632e69676dcd7b73703437f529eaec65d93ec6e1a848"
 }

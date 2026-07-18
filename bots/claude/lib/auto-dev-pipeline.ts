@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const { execFileSync, execSync, spawn } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { postAlarm, postAlarmAutoRepairResult } = require('../../../packages/core/lib/hub-alarm-client');
 const {
   listAutoDevManifestEntries,
   loadAutoDevManifest,
@@ -1783,7 +1783,9 @@ function extractAlarmIncidentContext(job, content = '') {
   const incidentKey = toSafeString(
     rawMetadata.incident_key ||
     rawMetadata.incidentKey ||
-    extractMarkdownListValue(body, 'incident_key')
+    extractMarkdownListValue(body, 'incident_key') ||
+    job?.analysis?.metadata?.incident_key ||
+    job?.analysis?.metadata?.incidentKey
   );
   if (!incidentKey) return null;
 
@@ -1798,11 +1800,21 @@ function extractAlarmIncidentContext(job, content = '') {
     rawMetadata.alarm_event_type ||
     rawMetadata.event_type ||
     extractMarkdownListValue(body, 'event_type') ||
+    job?.analysis?.metadata?.alarm_event_type ||
+    job?.analysis?.metadata?.event_type ||
     'auto_dev_alarm_incident'
+  );
+  const alarmEventId = toSafeString(
+    rawMetadata.alarm_event_id ||
+    rawMetadata.event_id ||
+    extractMarkdownListValue(body, 'event_id') ||
+    job?.analysis?.metadata?.alarm_event_id ||
+    job?.analysis?.metadata?.event_id
   );
 
   return {
     incidentKey,
+    alarmEventId,
     team: team || 'hub',
     eventType,
     docPath: relPath,
@@ -1857,25 +1869,15 @@ async function sendAlarmRepairResult(job, status, summary, options = {}, payload
   }
 
   try {
-    return await postAlarm({
-      message,
-      team: context.team,
-      alertLevel: status === 'unresolved_needs_human' ? 3 : status === 'partially_resolved' ? 2 : 1,
-      fromBot: 'auto-dev',
-      alarmType: 'error',
-      visibility: status === 'unresolved_needs_human' ? 'human_action' : 'notify',
-      actionability: status === 'unresolved_needs_human' ? 'needs_human' : 'none',
+    return await postAlarmAutoRepairResult({
       incidentKey: context.incidentKey,
-      title: `auto_dev ${status}`,
-      eventType: `auto_dev_alarm_repair_${status}`,
-      payload: {
-        ...(payload && typeof payload === 'object' ? payload : {}),
-        event_type: `auto_dev_alarm_repair_${status}`,
-        status,
-        incident_key: context.incidentKey,
-        source_team: context.team,
-        doc_path: context.docPath,
-      },
+      alarmEventId: context.alarmEventId,
+      team: context.team,
+      status,
+      summary,
+      docPath: context.docPath,
+      changedFiles,
+      fromBot: 'auto-dev',
     });
   } catch (error) {
     console.warn(`[auto-dev] alarm repair result notification failed: ${error?.message || error}`);
@@ -4151,6 +4153,13 @@ async function processAutoDevDocument(filePath, options = {}) {
         archiveManifestPath: archiveManifestPath || null,
       },
     );
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived', {
+      archivedAt: nowIso(),
+      archivedBy: 'auto-dev-pipeline',
+      reason: 'completed',
+      archivedPath: archivedPath || null,
+      contentHash,
+    });
     await sendAlarmRepairResult(
       { ...job, analysis: finalJob.analysis || job.analysis },
       'resolved',
@@ -4165,13 +4174,6 @@ async function processAutoDevDocument(filePath, options = {}) {
       },
       content,
     );
-    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived', {
-      archivedAt: nowIso(),
-      archivedBy: 'auto-dev-pipeline',
-      reason: 'completed',
-      archivedPath: archivedPath || null,
-      contentHash,
-    });
     await markAgentDone();
     return {
       ok: true,

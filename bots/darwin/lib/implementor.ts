@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
-const { getDarwinLlmTimeout } = require('./llm-timeout-profile');
+const { getDarwinLlmTimeout } = require('./llm-timeout-profile.ts');
 const { createLogger } = require('../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
@@ -153,6 +153,25 @@ function _hasReasoningLeak(value: unknown): boolean {
   return /<\/?think>/i.test(String(value || ''));
 }
 
+function _sanitizeImplementationOutputTail(value: unknown): string {
+  return String(value || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '[REDACTED_REASONING]')
+    .replace(/<think>[\s\S]*$/gi, '[REDACTED_REASONING]')
+    .replace(/\b(token|secret|password|authorization|api[_-]?key)\s*[:=]\s*[^\s,'"`]+/gi, '$1=[REDACTED]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{12,}/gi, 'Bearer [REDACTED]')
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[REDACTED_LONG_TOKEN]')
+    .slice(-2000);
+}
+
+function _sanitizeImplementationOutputForRecovery(value: unknown): string {
+  return String(value || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '[REDACTED_REASONING]')
+    .replace(/<think>[\s\S]*$/gi, '[REDACTED_REASONING]')
+    .replace(/\b(token|secret|password|authorization|api[_-]?key)\s*[:=]\s*[^\s,'"`]+/gi, '$1=[REDACTED]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{12,}/gi, 'Bearer [REDACTED]')
+    .slice(-6000);
+}
+
 function _assertProposalCleanForImplementation(proposalId: string, proposal: ProposalRecord): void {
   if (!_hasReasoningLeak(proposal.proposal) && !_hasReasoningLeak(proposal.prototype)) return;
 
@@ -204,7 +223,8 @@ async function _recordImplementationFailureTrajectory(
   proposalId: string,
   proposal: ProposalRecord,
   branchName: string,
-  errorMessage: string
+  errorMessage: string,
+  outputTail = ''
 ): Promise<void> {
   try {
     await failureTrajectoryTyped.recordFailureTrajectory({
@@ -222,6 +242,7 @@ async function _recordImplementationFailureTrajectory(
         proposal_id: proposalId,
         branch: branchName,
         title: proposal.title || proposal.paper?.title || '',
+        implementation_output_tail: _sanitizeImplementationOutputTail(outputTail) || null,
       },
     });
   } catch (recordError) {
@@ -386,12 +407,32 @@ function _extractFiles(
   const files: ExtractedFile[] = [];
   const seen = new Set();
   const pushFile = (filePath: string, content: string): void => {
-    const normalizedPath = _normalizeRepoPath(String(filePath || '').trim(), proposalId, proposal);
+    const cleanedPath = String(filePath || '').trim().replace(/^#{1,6}\s*/, '');
+    const normalizedPath = _normalizeRepoPath(cleanedPath, proposalId, proposal);
     const normalizedContent = String(content || '').trim();
     if (!normalizedPath || !normalizedContent || seen.has(normalizedPath)) return;
     seen.add(normalizedPath);
     files.push({ path: normalizedPath, content: normalizedContent });
   };
+
+  const jsonCandidates = [text];
+  for (const fenced of text.matchAll(/```json\s*\n([\s\S]*?)```/gi)) {
+    jsonCandidates.push(fenced[1]);
+  }
+  for (const candidate of jsonCandidates) {
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = JSON.parse(String(candidate || '').trim()) as Record<string, unknown>;
+    } catch {
+      // Non-JSON output continues through the text formats below.
+      continue;
+    }
+    if (!Array.isArray(parsed?.files)) continue;
+    parsed.files.forEach((file: Record<string, unknown>) => {
+      pushFile(String(file?.path || ''), String(file?.content || ''));
+    });
+    if (files.length > 0) return files;
+  }
 
   const pattern = /---\s*FILE:\s*([^\n]+?)\s*---\n([\s\S]*?)(?=\n---\s*FILE:|\s*$)/g;
   let match;
@@ -420,6 +461,24 @@ function _extractFiles(
     pushFile(match[1], match[2]);
   }
   return files;
+}
+
+async function _extractFilesWithSingleRecovery(
+  rawText: string | HubLlmResponse,
+  recoveryFn: (sanitizedTail: string) => Promise<string | HubLlmResponse>,
+  proposalId: string | null = null,
+  proposal: ProposalRecord | null = null
+): Promise<{ files: ExtractedFile[]; recovered: boolean; output: string | HubLlmResponse }> {
+  const files = _extractFiles(rawText, proposalId, proposal);
+  if (files.length > 0) return { files, recovered: false, output: rawText };
+  const recoveredOutput = await recoveryFn(_sanitizeImplementationOutputForRecovery(
+    typeof rawText === 'string' ? rawText : rawText?.text,
+  ));
+  return {
+    files: _extractFiles(recoveredOutput, proposalId, proposal),
+    recovered: true,
+    output: recoveredOutput,
+  };
 }
 
 function _writeFiles(files: ExtractedFile[], baseDir = REPO_ROOT): string[] {
@@ -483,6 +542,7 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
   let lab: { branchName: string; path: string } | null = null;
   let committed = false;
   let keepLab = false;
+  let implementationOutputTail = '';
   if (proposalStoreTyped.transitionProposal) {
     proposalStoreTyped.transitionProposal(proposalId, 'implementing', {
       reason: 'implementation_started',
@@ -534,9 +594,30 @@ ${failureHints}
 ${JSON.stringify(proposal.verification || {})}`,
       timeoutMs: getDarwinLlmTimeout('implementation'),
     }) as HubLlmResponse | string;
-
-    const files = _extractFiles(implementationResult, proposalId, proposal);
-    logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일`);
+    implementationOutputTail = _sanitizeImplementationOutputTail(
+      typeof implementationResult === 'string' ? implementationResult : implementationResult?.text,
+    );
+    const extraction = await _extractFilesWithSingleRecovery(
+      implementationResult,
+      async (sanitizedTail) => callHubLlm({
+        callerTeam: 'darwin',
+        agent: 'synthesis',
+        selectorKey: 'darwin.agent_policy',
+        taskType: 'auto_implementation',
+        runtimePurpose: 'auto_implementation',
+        abstractModel: 'anthropic_sonnet',
+        systemPrompt: '당신은 코드 출력 형식 복구기입니다. 새 구현이나 설명을 추가하지 말고, 입력에 이미 포함된 파일만 --- FILE: repo-relative/path --- 블록으로 다시 출력하세요. 복구할 파일이 없으면 빈 문자열만 출력하세요.',
+        prompt: `안전 출력 베이스: ${_resolveProposalBaseDir(proposalId, proposal)}\n\n형식이 잘못된 이전 출력의 정제된 끝부분:\n${sanitizedTail}`,
+        timeoutMs: getDarwinLlmTimeout('implementation'),
+      }) as Promise<HubLlmResponse | string>,
+      proposalId,
+      proposal,
+    );
+    implementationOutputTail = _sanitizeImplementationOutputTail(
+      typeof extraction.output === 'string' ? extraction.output : extraction.output?.text,
+    );
+    const files = extraction.files;
+    logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일${extraction.recovered ? ' (format recovery 1회)' : ''}`);
     if (files.length === 0) {
       keepLab = process.env.DARWIN_KEEP_FAILED_LAB === 'true';
       throw new Error('no files extracted from edison output');
@@ -608,7 +689,7 @@ ${JSON.stringify(proposal.verification || {})}`,
     const errorMessage = toErrorMessage(error);
     logger.error(`구현 실패: ${proposalId} -> ${errorMessage}`);
     autonomyLevelTyped.recordError(error);
-    await _recordImplementationFailureTrajectory(proposalId, proposal, branchName, errorMessage);
+    await _recordImplementationFailureTrajectory(proposalId, proposal, branchName, errorMessage, implementationOutputTail);
     if (proposalStoreTyped.transitionProposal) {
       try {
         proposalStoreTyped.transitionProposal(proposalId, 'archived', {
@@ -670,6 +751,9 @@ ${JSON.stringify(proposal.verification || {})}`,
 module.exports = {
   triggerImplementation,
   _extractFiles,
+  _extractFilesWithSingleRecovery,
+  _sanitizeImplementationOutputTail,
+  _sanitizeImplementationOutputForRecovery,
   _formatFailureHints,
   _hasReasoningLeak,
   _assertProposalCleanForImplementation,

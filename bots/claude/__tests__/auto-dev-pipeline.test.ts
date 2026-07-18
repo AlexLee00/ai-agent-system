@@ -62,6 +62,7 @@ function makeDoc(tmpRoot, fileName = 'CODEX_SAMPLE.md', content = '# A\nx') {
 
 function makeMocks(tmpRoot, overrides = {}) {
   const alarms = [];
+  const repairCallbacks = [];
   const autoDevOutcomes = [];
   const childProcessMock = {
     execFileSync: (command) => {
@@ -75,6 +76,7 @@ function makeMocks(tmpRoot, overrides = {}) {
 
   return {
     alarms,
+    repairCallbacks,
     autoDevOutcomes,
     mocks: {
       '../../../packages/core/lib/env': { PROJECT_ROOT: tmpRoot },
@@ -82,6 +84,10 @@ function makeMocks(tmpRoot, overrides = {}) {
         postAlarm: async payload => {
           alarms.push(payload);
           return { ok: true };
+        },
+        postAlarmAutoRepairResult: async payload => {
+          repairCallbacks.push(payload);
+          return { ok: true, mirrorUpdate: { ok: true, updated: 1 } };
         },
       },
       '../../../packages/core/lib/pg-pool.js': {
@@ -362,6 +368,95 @@ async function test_listAutoDevDocuments_respects_manifest_states() {
   console.log('✅ auto-dev: manifest states gate document pickup');
 }
 
+async function test_regenerated_archived_document_reenters_inbox() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const archiveDir = path.join(tmpRoot, 'docs', 'archive', 'codex-completed');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_REGENERATED_HASH.md';
+  const archivedPath = 'docs/archive/codex-completed/ALARM_INCIDENT_REGENERATED_HASH.done.md';
+  const oldContent = withRequiredMetadata('# Old incident');
+  const newContent = withRequiredMetadata('# New incident');
+  const oldHash = crypto.createHash('sha1').update(oldContent).digest('hex').slice(0, 16);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.mkdirSync(archiveDir, { recursive: true });
+  fs.writeFileSync(path.join(tmpRoot, relPath), newContent, 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, archivedPath), oldContent, 'utf8');
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived',
+        reason: 'completed',
+        archivedPath,
+        contentHash: oldHash,
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
+    assert.deepStrictEqual(docs, [relPath]);
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'inbox');
+    assert.strictEqual(manifest.entries[relPath].source, 'regenerated_content');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: regenerated archived content re-enters inbox');
+}
+
+async function test_legacy_archived_document_without_hash_uses_archive_content() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const archiveDir = path.join(tmpRoot, 'docs', 'archive', 'codex-completed');
+  const changedRelPath = 'docs/auto_dev/ALARM_INCIDENT_LEGACY_CHANGED.md';
+  const sameRelPath = 'docs/auto_dev/ALARM_INCIDENT_LEGACY_SAME.md';
+  const changedArchivePath = 'docs/archive/codex-completed/ALARM_INCIDENT_LEGACY_CHANGED.done.md';
+  const sameArchivePath = 'docs/archive/codex-completed/ALARM_INCIDENT_LEGACY_SAME.done.md';
+  const oldContent = withRequiredMetadata('# Old incident');
+  const newContent = withRequiredMetadata('# New incident');
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.mkdirSync(archiveDir, { recursive: true });
+  fs.writeFileSync(path.join(tmpRoot, changedRelPath), newContent, 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, sameRelPath), oldContent, 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, changedArchivePath), oldContent, 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, sameArchivePath), oldContent, 'utf8');
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      [changedRelPath]: {
+        relPath: changedRelPath,
+        state: 'archived',
+        reason: 'completed',
+        archivedPath: changedArchivePath,
+      },
+      [sameRelPath]: {
+        relPath: sameRelPath,
+        state: 'archived',
+        reason: 'completed',
+        archivedPath: sameArchivePath,
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
+    assert.deepStrictEqual(docs, [changedRelPath]);
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[changedRelPath].source, 'regenerated_content');
+    assert.strictEqual(manifest.entries[sameRelPath].state, 'archived');
+    assert.ok(manifest.entries[sameRelPath].contentHash, 'legacy matching archive should receive a baseline hash');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: legacy hashless archives compare content before requeue');
+}
+
 async function test_empty_auto_dev_inbox_marks_agent_done() {
   const tmpRoot = makeTempRoot();
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
@@ -610,6 +705,40 @@ async function test_completed_manifest_suppresses_failure_at_notification_bounda
   assert.strictEqual(alarms.length, 0, 'notification boundary must not emit completed-job failure alarms');
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: notification boundary suppresses completed-manifest failure alarms');
+}
+
+async function test_alarm_repair_result_uses_callback_contract() {
+  const tmpRoot = makeTempRoot();
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK.md';
+  const { mocks, alarms, repairCallbacks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline._testOnly_sendAlarmRepairResult(
+      {
+        relPath,
+        analysis: {
+          relPath,
+          metadata: {
+            source_team: 'reservation',
+            incident_key: 'reservation:test:callback',
+            alarm_event_type: 'test_error',
+          },
+        },
+      },
+      'resolved',
+      'fixed and verified',
+      { shadow: false, test: false },
+      { changedFiles: ['bots/reservation/lib/pickko.ts'] },
+      '',
+    );
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot));
+
+  assert.strictEqual(alarms.length, 0, 'repair results must not use generic /hub/alarm');
+  assert.strictEqual(repairCallbacks.length, 1, 'repair result must use the callback contract once');
+  assert.strictEqual(repairCallbacks[0].incidentKey, 'reservation:test:callback');
+  assert.strictEqual(repairCallbacks[0].status, 'resolved');
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: repair result uses Hub callback contract');
 }
 
 async function test_regenerated_incident_with_same_path_keeps_failure_alarm() {
@@ -3389,11 +3518,14 @@ async function main() {
     test_status_snapshot_reconciles_stale_missing_running_jobs,
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_listAutoDevDocuments_respects_manifest_states,
+    test_regenerated_archived_document_reenters_inbox,
+    test_legacy_archived_document_without_hash_uses_archive_content,
     test_empty_auto_dev_inbox_marks_agent_done,
     test_completed_history_prevents_archived_missing_requeue,
     test_completed_manifest_record_blocks_failed_overwrite,
     test_completed_manifest_during_execution_suppresses_failure_alarm,
     test_completed_manifest_suppresses_failure_at_notification_boundary,
+    test_alarm_repair_result_uses_callback_contract,
     test_regenerated_incident_with_same_path_keeps_failure_alarm,
     test_archived_missing_without_completed_history_requeues,
     test_auto_dev_watch_passes_state_file_to_manifest_sync,

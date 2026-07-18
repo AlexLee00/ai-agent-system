@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const env = require('./env');
 
 const MANIFEST_FILE_NAME = '.auto-dev-manifest.json';
@@ -88,6 +89,63 @@ function hasCompletedAutoDevHistory(relPath, entry, completedRelPaths) {
   );
 }
 
+function hashAutoDevContent(content) {
+  return crypto.createHash('sha1').update(String(content || '')).digest('hex').slice(0, 16);
+}
+
+function hashAutoDevFile(filePath) {
+  const normalized = normalizeRelPath(filePath);
+  if (!normalized) return '';
+  const absolute = path.isAbsolute(filePath) ? filePath : path.join(getProjectRoot(), normalized);
+  try {
+    return hashAutoDevContent(fs.readFileSync(absolute, 'utf8'));
+  } catch {
+    return '';
+  }
+}
+
+function manifestContentHash(entry) {
+  return String(entry?.contentHash || '').trim() || hashAutoDevFile(entry?.archivedPath || '');
+}
+
+function resetTerminalManifestEntry(entry, contentHash, source) {
+  const {
+    archivedAt,
+    archivedBy,
+    archivedPath,
+    reason,
+    note,
+    resolvedReason,
+    resolutionReason,
+    implementationStatus,
+    implementation_status,
+    implementationCompletedAt,
+    completedAt,
+    completedNoRequeueAt,
+    deadLetteredAt,
+    processedPath,
+    failureClass,
+    lastError,
+    failedAt,
+    failureReason,
+    rootInboxRemovedAt,
+    rootInboxRemovedBy,
+    rootInboxArchivedCopy,
+    rootInboxCleanupReason,
+    duplicateCleanupAt,
+    ...rest
+  } = entry || {};
+  const now = new Date().toISOString();
+  return {
+    ...rest,
+    state: 'inbox',
+    source,
+    contentHash,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function loadAutoDevManifest(autoDevDir) {
   const manifestPath = manifestPathForDir(autoDevDir);
   try {
@@ -123,7 +181,16 @@ function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
   const manifest = loadAutoDevManifest(autoDevDir);
   const current = manifest.entries[normalized] || {};
   if (hasCompletedManifestRecord(current) && isActiveAutoDevState(patch.state)) {
-    return current;
+    const currentHash = manifestContentHash(current);
+    const nextHash = String(patch.contentHash || '').trim();
+    if (!nextHash || (currentHash && currentHash === nextHash)) return current;
+    manifest.entries[normalized] = {
+      ...resetTerminalManifestEntry(current, nextHash, 'regenerated_content'),
+      ...patch,
+      relPath: normalized,
+    };
+    saveAutoDevManifest(autoDevDir, manifest);
+    return manifest.entries[normalized];
   }
   manifest.entries[normalized] = {
     state: 'inbox',
@@ -163,6 +230,28 @@ function syncAutoDevManifest(autoDevDir, options = {}) {
         source: 'root_scan',
       };
       continue;
+    }
+    const currentContentHash = hashAutoDevContent(fs.readFileSync(abs, 'utf8'));
+    const recordedContentHash = manifestContentHash(current);
+    const terminalRecord = hasCompletedManifestRecord(current)
+      || ['archived', 'archived_missing', 'dead_letter'].includes(String(current.state || ''));
+    if (
+      terminalRecord
+      && recordedContentHash
+      && recordedContentHash !== currentContentHash
+    ) {
+      manifest.entries[relPath] = {
+        ...resetTerminalManifestEntry(current, currentContentHash, 'regenerated_content'),
+        relPath,
+      };
+      continue;
+    }
+    if (terminalRecord && !current.contentHash && recordedContentHash === currentContentHash) {
+      manifest.entries[relPath] = {
+        ...current,
+        contentHash: currentContentHash,
+        updatedAt: new Date().toISOString(),
+      };
     }
     if (!current.state || current.state === 'archived_missing') {
       if (current.state === 'archived_missing' && hasCompletedAutoDevHistory(relPath, current, completedRelPaths)) {

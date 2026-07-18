@@ -3,7 +3,7 @@
 const assert = require('assert');
 
 const timeout = require('../lib/llm-timeout-profile.ts');
-const { resolveSelectorTimeoutProfile } = require('../../../packages/core/lib/selector-timeout-profiles.ts');
+const { resolveSelectorTimeoutProfile } = require('../../../packages/core/lib/selector-timeout-profiles');
 
 function main() {
   const evaluatorProfile = timeout.resolveDarwinLlmTimeoutProfile('evaluator', {});

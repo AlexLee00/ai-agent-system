@@ -256,6 +256,34 @@ function test_code_review_ignores_localhost_database_env_fallback() {
   console.log('✅ code-review: localhost DB fallback is not flagged as secret');
 }
 
+function test_code_review_distinguishes_storage_keys_from_credentials() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-storage-key-'));
+  const target = path.join(tmpDir, 'app.js');
+  fs.writeFileSync(target, [
+    "const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';",
+    "const PWA_INSTALL_DISMISSED_STORAGE_KEY = 'lunaMeetingRoomPwaInstallDismissed';",
+    "const storageKey = 'Abcdef0123456789Abcdef0123456789';",
+    "const API_TOKEN = 'Abcdef0123456789Abcdef0123456789';",
+    "const apiKey = 'Zyxwvu9876543210Zyxwvu9876543210';",
+    "const config = { apiKey: 'ObjectKey9876543210ObjectKey987654' };",
+    "module.exports = { authToken: 'ObjectToken987654ObjectToken987654' };",
+    "const storage = { cacheKey: 'CacheValue987654CacheValue987654' };",
+  ].join('\n'));
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const findings = codeReview.checkPatterns(target).filter(
+      item => item.desc === 'API 키 또는 시크릿 하드코딩 의심',
+    );
+    assert.deepStrictEqual(findings.map(item => item.line), [4, 5, 6, 7]);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: storage keys are not treated as credentials');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -270,6 +298,7 @@ async function main() {
     test_guardian_respects_kill_switch,
     test_cli_exit_code_does_not_fail_launchd_on_security_findings,
     test_code_review_ignores_localhost_database_env_fallback,
+    test_code_review_distinguishes_storage_keys_from_credentials,
   ];
 
   let passed = 0, failed = 0;

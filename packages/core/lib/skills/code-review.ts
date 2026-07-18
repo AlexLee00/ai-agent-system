@@ -7,6 +7,21 @@ const { execSync } = require('child_process');
 const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
 const PATTERN_SKIP_FILES = new Set(['.checksums.json']);
 
+function looksLikeHardcodedCredential(line) {
+  const text = String(line || '');
+  if (/['"`](?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{20,})['"`]/.test(text)) {
+    return true;
+  }
+
+  const assignment = text.match(/\b([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:=|:)\s*['"`]([A-Za-z0-9._-]{24,})['"`]/);
+  if (!assignment) return false;
+  const identifier = assignment[1]
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toUpperCase();
+  if (/(?:STORAGE|CACHE|LOCAL_STORAGE|SESSION_STORAGE)(?:_|$)/.test(identifier)) return false;
+  return /(?:^|_)(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|BOT_TOKEN|CLIENT_SECRET|PRIVATE_KEY|PASSWORD|SECRET|TOKEN)(?:_|$)/.test(identifier);
+}
+
 const SECURITY_PATTERNS = [
   {
     severity: 'CRITICAL',
@@ -21,7 +36,7 @@ const SECURITY_PATTERNS = [
   {
     severity: 'HIGH',
     desc: 'API 키 또는 시크릿 하드코딩 의심',
-    match: (line) => /['"`][A-Za-z0-9]{32,}['"`]/.test(line),
+    match: (line) => looksLikeHardcodedCredential(line),
   },
   {
     severity: 'HIGH',
@@ -167,4 +182,5 @@ module.exports = {
   runChecklist,
   SECURITY_PATTERNS,
   RULE_PATTERNS,
+  looksLikeHardcodedCredential,
 };
