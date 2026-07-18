@@ -10,6 +10,9 @@ import {
 
 export const JAENONG_REFERENCE_PARSER_VERSION = 'jaenong-reference-v1';
 export const JAENONG_REFERENCE_DIRECTORY_KEY = 'c17.jaenong.reference_directory';
+export const JAENONG_BRIEF_MAX_PUBLISHED_AGE_HOURS_DEFAULT = 30;
+
+const HOUR_MS = 60 * 60 * 1000;
 
 function text(value) {
   return String(value ?? '').trim();
@@ -18,6 +21,13 @@ function text(value) {
 function finite(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+export function resolveJaenongBriefMaxPublishedAgeHours(value, env = process.env) {
+  const configured = finite(value ?? env.JAENONG_BRIEF_MAX_PUBLISHED_AGE_HOURS);
+  return configured != null && configured >= 1
+    ? configured
+    : JAENONG_BRIEF_MAX_PUBLISHED_AGE_HOURS_DEFAULT;
 }
 
 function cell(workbook, sheetName, address) {
@@ -265,12 +275,12 @@ export function evaluateJaenongBriefState(input = {}) {
   if (publishedAt.getTime() > now.getTime() + 5 * 60 * 1000) {
     return { status: 'invalid', reason: 'brief_from_future', mayApplyWeight: false, checkedAt: now.toISOString() };
   }
+  const maxAgeHours = resolveJaenongBriefMaxPublishedAgeHours(input.maxAgeHours, input.env);
+  if (now.getTime() - publishedAt.getTime() > maxAgeHours * HOUR_MS) {
+    return { status: 'stale', reason: 'brief_stale', mayApplyWeight: false, checkedAt: now.toISOString() };
+  }
   if (expiresAt.getTime() <= now.getTime()) {
     return { status: 'expired', reason: 'brief_expired', mayApplyWeight: false, checkedAt: now.toISOString() };
-  }
-  const maxAgeHours = Math.max(1, Number(input.maxAgeHours ?? 30) || 30);
-  if (now.getTime() - publishedAt.getTime() > maxAgeHours * 60 * 60 * 1000) {
-    return { status: 'stale', reason: 'brief_stale', mayApplyWeight: false, checkedAt: now.toISOString() };
   }
 
   const acknowledgedAt = dateOrNull(input.ack?.acknowledgedAt);
@@ -329,7 +339,9 @@ export function deriveJaenongMarketAdjustment(marketView = '') {
 export function buildJaenongBriefFromPostScore(row = {}, options = {}) {
   const parsedAt = dateOrNull(row.parsed_at || row.parsedAt || options.now);
   const publishedAt = dateOrNull(row.published_at || row.publishedAt);
+  const now = dateOrNull(options.now || parsedAt);
   if (!parsedAt || !publishedAt) throw new Error('jaenong_post_score_time_invalid');
+  if (!now) throw new Error('jaenong_state_now_invalid');
   const sourcePostId = text(row.source_post_id || row.sourcePostId || row.post_id || row.postId);
   if (!sourcePostId) throw new Error('jaenong_post_score_identity_required');
   const sourceBrief = row.brief && typeof row.brief === 'object' ? row.brief : {};
@@ -338,6 +350,15 @@ export function buildJaenongBriefFromPostScore(row = {}, options = {}) {
     .filter((candidate) => candidate?.available === true)
     .map((candidate) => candidate.ticker || candidate.symbol));
   const safeSourceId = sourcePostId.replace(/[^A-Za-z0-9._:-]/g, '-').slice(0, 96);
+  const maxPublishedAgeHours = resolveJaenongBriefMaxPublishedAgeHours(
+    options.maxPublishedAgeHours,
+    options.env,
+  );
+  const publishedDeadline = publishedAt.getTime() + maxPublishedAgeHours * HOUR_MS + 1;
+  const expiresAt = Math.min(parsedAt.getTime() + maxPublishedAgeHours * HOUR_MS, publishedDeadline);
+  const state = now.getTime() - publishedAt.getTime() > maxPublishedAgeHours * HOUR_MS
+    ? 'stale'
+    : 'awaiting_ack';
   return {
     briefRef: `post:${safeSourceId}`,
     sourceKind: 'post',
@@ -346,11 +367,11 @@ export function buildJaenongBriefFromPostScore(row = {}, options = {}) {
     publishedAt: publishedAt.toISOString(),
     parsedAt: parsedAt.toISOString(),
     updatedAt: parsedAt.toISOString(),
-    expiresAt: new Date(parsedAt.getTime() + 30 * 60 * 60 * 1000).toISOString(),
+    expiresAt: new Date(expiresAt).toISOString(),
     marketAdjustment: deriveJaenongMarketAdjustment(marketView),
     marketView,
     candidateSymbols,
-    state: 'awaiting_ack',
+    state,
     shadowOnly: true,
   };
 }
@@ -481,6 +502,7 @@ export async function getJaenongBriefStatus(options = {}, deps = {}) {
       now: options.now,
       brief,
       ack,
+      maxAgeHours: resolveJaenongBriefMaxPublishedAgeHours(options.maxPublishedAgeHours, options.env),
       parseStatus: row.latest_event_type === 'parse_failed'
         && dateOrNull(row.latest_event_at)?.getTime() > dateOrNull(brief.updatedAt)?.getTime()
         ? 'failed'

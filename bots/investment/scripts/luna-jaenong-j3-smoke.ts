@@ -20,6 +20,7 @@ import {
   invalidateJaenongBriefState,
   jaenongBriefPreflight,
   recordJaenongRouteShadow,
+  resolveJaenongBriefMaxPublishedAgeHours,
   resolveJaenongReferenceDirectory,
 } from '../shared/jaenong-operations.ts';
 import {
@@ -389,7 +390,39 @@ async function main() {
   assert.equal(materialized.marketAdjustment, 1);
   assert.deepEqual(materialized.candidateSymbols, ['MSFT']);
   assert.equal(materialized.state, 'awaiting_ack');
+  assert.equal(resolveJaenongBriefMaxPublishedAgeHours(undefined, {}), 30);
+  assert.equal(resolveJaenongBriefMaxPublishedAgeHours(undefined, {
+    JAENONG_BRIEF_MAX_PUBLISHED_AGE_HOURS: '48',
+  }), 48);
   assert.equal(materialized.referenceSnapshotHash, snapshot.snapshotHash);
+
+  const freshnessBoundaryRow = {
+    source_post_id: 'post-freshness-boundary',
+    published_at: '2026-07-15T06:00:00.000Z',
+    parsed_at: '2026-07-16T12:00:00.000Z',
+    brief: { marketView: '중립', candidates: [] },
+  };
+  const atFreshnessBoundary = buildJaenongBriefFromPostScore(freshnessBoundaryRow, { now });
+  const pastFreshnessBoundary = buildJaenongBriefFromPostScore(freshnessBoundaryRow, {
+    now: '2026-07-16T12:00:00.001Z',
+  });
+  assert.equal(atFreshnessBoundary.state, 'awaiting_ack');
+  assert.equal(evaluateJaenongBriefState({
+    now,
+    brief: atFreshnessBoundary,
+  }).status, 'awaiting_ack');
+  assert.equal(atFreshnessBoundary.expiresAt, '2026-07-16T12:00:00.001Z');
+  assert.equal(pastFreshnessBoundary.state, 'stale');
+  assert.equal(pastFreshnessBoundary.expiresAt, atFreshnessBoundary.expiresAt);
+  assert.equal(buildJaenongBriefFromPostScore(freshnessBoundaryRow, {
+    now: '2026-07-16T12:00:00.001Z',
+    env: { JAENONG_BRIEF_MAX_PUBLISHED_AGE_HOURS: '48' },
+  }).state, 'awaiting_ack');
+  assert.equal(evaluateJaenongBriefState({
+    now: '2026-07-16T12:00:00.001Z',
+    brief: pastFreshnessBoundary,
+    ack: { briefRef: pastFreshnessBoundary.briefRef, acknowledgedAt: now },
+  }).status, 'stale');
 
   let collectorCalls = 0;
   const collectPlan = await runJaenongDailyShadow({ stage: 'collect' }, {
@@ -466,6 +499,37 @@ async function main() {
   assert.equal(briefRun.brief.state, 'awaiting_ack');
   assert.equal(dailyWrites.some((write) => /INSERT INTO investment\.jaenong_brief/.test(write.sql)), true);
   assert.equal(dailyWrites.every((write) => !/trade_journal|order/i.test(write.sql)), true);
+
+  const staleWrites = [];
+  const staleRun = await runJaenongDailyShadow({
+    stage: 'brief',
+    write: true,
+    confirm: JAENONG_DAILY_WRITE_CONFIRM,
+    now: '2026-07-18T12:00:00.001Z',
+    env: {},
+  }, {
+    queryFn: async (sql) => {
+      if (/jaenong_post_scores/.test(sql)) return [{
+        ...freshnessBoundaryRow,
+        parsed_at: '2026-07-18T12:00:00.000Z',
+      }];
+      if (/jaenong_reference_snapshot/.test(sql)) return [];
+      return [{ brief_ref: null, latest_event_type: null }];
+    },
+    runFn: async (sql, params) => {
+      staleWrites.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  const staleUpsert = staleWrites.find((write) => /INSERT INTO investment\.jaenong_brief/.test(write.sql));
+  assert.equal(staleRun.state, 'stale');
+  assert.equal(staleRun.brief.state, 'stale');
+  assert.match(staleUpsert.sql, /expires_at = LEAST/);
+  assert.match(
+    staleUpsert.sql,
+    /invalidated_at IS NOT NULL THEN 'invalid'\s+WHEN EXCLUDED\.state = 'stale'/,
+  );
+  assert.equal(staleUpsert.params[10], 'stale');
 
   const topVolume = [
     { symbol: 'TSLA', quoteVolume: 1000, rank: 1 },

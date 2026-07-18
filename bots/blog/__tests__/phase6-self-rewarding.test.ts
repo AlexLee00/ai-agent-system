@@ -17,11 +17,14 @@ jest.mock('../../../packages/core/lib/mode-guard', () => ({
 jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({
   postAlarm: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock('../../../packages/core/lib/local-llm-client', () => ({
-  callLocalFast: jest.fn().mockResolvedValue('{"primary_strategy":"테스트 전략","key_insight":"테스트"}'),
-}), { virtual: true });
+jest.mock('../lib/blog-llm-gateway.ts', () => ({
+  callBlogFast: jest.fn().mockResolvedValue({
+    text: '{"primary_strategy":"테스트 전략","key_insight":"테스트"}',
+  }),
+}));
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { callBlogFast } = require('../lib/blog-llm-gateway.ts');
 
 // ─── marketing-dpo ────────────────────────────────────────────────────────────
 
@@ -226,6 +229,7 @@ describe('marketing-rag', () => {
       { source: 'own_success', relevance: 0.8, snippet: '스터디카페 공부법', title: '집중 비법' },
     ];
     const result = await rag.synthesizeMarketingResponse(retrieved, '비수기 대응');
+    expect(callBlogFast).toHaveBeenCalledTimes(1);
     expect(result).toHaveProperty('content_calendar');
     expect(Array.isArray(result.content_calendar)).toBe(true);
   });

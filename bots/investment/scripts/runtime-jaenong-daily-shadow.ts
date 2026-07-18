@@ -105,15 +105,17 @@ async function upsertBrief(brief, runFn) {
        (brief_ref, source_kind, source_post_id, reference_snapshot_hash,
         published_at, parsed_at, expires_at, market_adjustment, market_view,
         candidate_symbols, state, shadow_only, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'awaiting_ack', true, $6)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, true, $6)
      ON CONFLICT (brief_ref) DO UPDATE SET
        reference_snapshot_hash = EXCLUDED.reference_snapshot_hash,
        parsed_at = EXCLUDED.parsed_at,
-       expires_at = EXCLUDED.expires_at,
+       expires_at = LEAST(investment.jaenong_brief.expires_at, EXCLUDED.expires_at),
        market_adjustment = EXCLUDED.market_adjustment,
        market_view = EXCLUDED.market_view,
        candidate_symbols = EXCLUDED.candidate_symbols,
        state = CASE
+         WHEN investment.jaenong_brief.invalidated_at IS NOT NULL THEN 'invalid'
+         WHEN EXCLUDED.state = 'stale' THEN 'stale'
          WHEN investment.jaenong_brief.updated_at < EXCLUDED.updated_at THEN 'awaiting_ack'
          ELSE investment.jaenong_brief.state
        END,
@@ -129,6 +131,7 @@ async function upsertBrief(brief, runFn) {
       brief.marketAdjustment,
       brief.marketView,
       JSON.stringify(brief.candidateSymbols),
+      brief.state,
     ],
   );
 }
@@ -137,7 +140,11 @@ async function briefStage(options, deps) {
   const queryFn = deps.queryFn || db.query;
   const runFn = deps.runFn || db.run;
   const now = options.now || new Date();
-  const current = await getJaenongBriefStatus({ now }, { queryFn });
+  const current = await getJaenongBriefStatus({
+    now,
+    env: options.env || process.env,
+    maxPublishedAgeHours: options.maxPublishedAgeHours,
+  }, { queryFn });
   if (options.write === true && current.brief && current.brief.state !== current.state.status
     && ['stale', 'expired', 'invalid'].includes(current.state.status)) {
     await runFn(
@@ -167,14 +174,19 @@ async function briefStage(options, deps) {
     };
   }
   const referenceSnapshotHash = await latestReferenceHash(queryFn);
-  const brief = buildJaenongBriefFromPostScore(scoreRow, { now, referenceSnapshotHash });
+  const brief = buildJaenongBriefFromPostScore(scoreRow, {
+    now,
+    referenceSnapshotHash,
+    env: options.env || process.env,
+    maxPublishedAgeHours: options.maxPublishedAgeHours,
+  });
   if (options.write === true) await upsertBrief(brief, runFn);
   return {
     ok: true,
     stage: 'brief',
     mode: options.write === true ? 'shadow_write' : 'dry_run',
     write: options.write === true,
-    state: 'awaiting_ack',
+    state: brief.state,
     brief,
     currentState: current.state,
     executionConnected: false,
