@@ -20,6 +20,9 @@ type TokenBudgetRequest = {
   agent?: string | null;
   selectorKey?: string | null;
   taskType?: string | null;
+  task_type?: string | null;
+  runtimePurpose?: string | null;
+  runtime_purpose?: string | null;
   priority?: Priority | string | null;
   provider?: string | null;
   model?: string | null;
@@ -222,6 +225,8 @@ function applySelectorTimeoutToBudgetProfile(profile: TokenBudgetProfile, reques
   if (!selectorKey) return profile;
   const timeoutProfile = resolveSelectorTimeoutProfile(selectorKey, {
     fallbackTimeoutMs: profile.timeoutMs,
+    runtimePurpose: normalizeNullableText(request.runtimePurpose || request.runtime_purpose) || undefined,
+    taskType: normalizeNullableText(request.taskType || request.task_type) || undefined,
   });
   if (!timeoutProfile.enabled || !timeoutProfile.timeoutMs) return profile;
   return {
@@ -267,7 +272,7 @@ export function inferTokenBudgetProfile(request: TokenBudgetRequest = {}): strin
   const team = normalizeKey(request.callerTeam);
   const agent = normalizeKey(request.agent);
   const selectorKey = normalizeKey(request.selectorKey);
-  const taskType = normalizeKey(request.taskType);
+  const taskType = normalizeKey(request.taskType || request.task_type || request.runtimePurpose || request.runtime_purpose);
 
   if (team === 'blog' && (selectorKey === 'blog.pos.writer' || selectorKey === 'blog.gems.writer' || agent === 'pos' || agent === 'gems')) {
     return 'blog_long_generation';
@@ -284,13 +289,16 @@ export function inferTokenBudgetProfile(request: TokenBudgetRequest = {}): strin
 
 export function resolveTokenBudget(request: TokenBudgetRequest = {}): TokenBudgetCheck {
   const profileName = inferTokenBudgetProfile(request);
-  const profile = applyRuntimeProfileTimeoutToBudgetProfile(
-    applySelectorTimeoutToBudgetProfile(PROFILES[profileName] || PROFILES.default, request),
+  const profile = applySelectorTimeoutToBudgetProfile(
+    applyRuntimeProfileTimeoutToBudgetProfile(PROFILES[profileName] || PROFILES.default, request),
     request,
   );
   const callerTeam = normalizeText(request.callerTeam, 'hub');
   const agent = normalizeText(request.agent, 'unknown');
-  const taskType = normalizeText(request.taskType, 'default');
+  const taskType = normalizeText(
+    request.taskType || request.task_type || request.runtimePurpose || request.runtime_purpose,
+    'default',
+  );
   const selectorKey = normalizeNullableText(request.selectorKey);
   const inputTokens = estimateTokens(`${request.systemPrompt || ''}\n${request.prompt || ''}`);
   const requestedOutput = toPositiveInt(request.maxTokens, profile.maxOutputTokens);

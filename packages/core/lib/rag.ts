@@ -55,6 +55,10 @@ type StoreOptions = {
   isSuccess?: boolean;
 };
 
+type EmbeddingOptions = {
+  signal?: AbortSignal;
+};
+
 type StatsRow = {
   total?: string | number;
   oldest?: string | null;
@@ -88,9 +92,12 @@ function getEmbedUrl(): string {
   return process.env.EMBED_URL || getEmbeddingsUrl() || 'http://127.0.0.1:11434/v1/embeddings';
 }
 
-function execCurl(args: string[]): Promise<string> {
+function execCurl(args: string[], options: EmbeddingOptions = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('curl', args, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile('curl', args, {
+      maxBuffer: 10 * 1024 * 1024,
+      signal: options.signal,
+    }, (error, stdout, stderr) => {
       if (error) {
         const detail = stderr?.trim() || stdout?.trim() || error.message;
         reject(new Error(detail));
@@ -155,7 +162,7 @@ async function initSchema(): Promise<void> {
   console.log('[RAG] 스키마 초기화 완료 (rag_operations, rag_trades, rag_tech, rag_video, rag_experience)');
 }
 
-async function createEmbedding(text: string): Promise<number[]> {
+async function createEmbedding(text: string, options: EmbeddingOptions = {}): Promise<number[]> {
   const embedModel = await resolveEmbeddingModel(EMBED_MODEL);
   const payload = JSON.stringify({
     model: embedModel,
@@ -168,7 +175,7 @@ async function createEmbedding(text: string): Promise<number[]> {
     getEmbedUrl(),
     '-H', 'Content-Type: application/json',
     '-d', payload,
-  ]);
+  ], options);
 
   const resp = JSON.parse(raw) as {
     error?: { message?: string };
@@ -185,9 +192,9 @@ async function createEmbedding(text: string): Promise<number[]> {
 // 배치 임베딩 — 최대 BATCH_EMBED_SIZE개씩 묶어서 단일 API 호출 (Step 1)
 const BATCH_EMBED_SIZE = 16;
 
-async function createEmbeddingBatch(texts: string[]): Promise<number[][]> {
+async function createEmbeddingBatch(texts: string[], options: EmbeddingOptions = {}): Promise<number[][]> {
   if (!texts.length) return [];
-  if (texts.length === 1) return [await createEmbedding(texts[0])];
+  if (texts.length === 1) return [await createEmbedding(texts[0], options)];
 
   const embedModel = await resolveEmbeddingModel(EMBED_MODEL);
   const results: number[][] = [];
@@ -202,7 +209,7 @@ async function createEmbeddingBatch(texts: string[]): Promise<number[][]> {
       getEmbedUrl(),
       '-H', 'Content-Type: application/json',
       '-d', payload,
-    ]);
+    ], options);
 
     const resp = JSON.parse(raw) as {
       error?: { message?: string };

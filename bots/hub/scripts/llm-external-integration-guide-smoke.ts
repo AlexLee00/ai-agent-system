@@ -36,12 +36,18 @@ const { selectLLMChain } = require(modelSelectorPath);
 for (const required of [
   'POST /hub/llm/call',
   'POST /hub/llm/jobs',
+  'GET /hub/llm/jobs?limit=<1..100>',
   'POST /hub/llm/vision',
   'POST /hub/llm/embeddings',
   'GET /hub/llm/jobs/:id/result',
   'GET /hub/llm/gateway-contract',
+  'contractRevision',
+  'contextSources',
   'requestSchemas',
+  'requiredContext',
+  'oneOfBody',
   'Authorization: Bearer <HUB_AUTH_TOKEN>',
+  '신뢰하지 않는 tenant',
   'X-Hub-Team',
   'X-Hub-Agent',
   'X-Hub-Priority',
@@ -70,6 +76,10 @@ for (const required of [
   'provider_termination_unconfirmed',
   'docs/hub/OAUTH_REAUTH_GUIDE.md',
   'docs/hub/HUB_STAGE_C_OPERATIONS.md',
+  'payload.ok !== true',
+  'payload.get("ok") is not True',
+  'Array.isArray(decoded)',
+  'isinstance(payload, dict)',
 ]) {
   assert(guide.includes(required), `external guide missing required contract text: ${required}`);
 }
@@ -90,9 +100,15 @@ for (const required of [
   'provider_termination_unconfirmed',
   '직접 fallback',
   '같은 job ID',
+  'tenant 인증',
   'callerTeam_required',
   'callerTeam_mismatch',
   'llm_job_not_found',
+  'GET /hub/llm/gateway-contract',
+  'contractRevision',
+  'contextSources',
+  'requiredContext',
+  'oneOfBody',
 ]) {
   assert(internalGuide.includes(required), `internal guide missing required contract text: ${required}`);
 }
@@ -109,6 +125,10 @@ for (const required of [
   'direct provider fallback',
   'X-Hub-Team',
   'cross-team reads return `404`',
+  'contractRevision',
+  'contextSources',
+  'requiredContext',
+  'oneOfBody',
 ]) {
   assert(onboarding.includes(required), `external onboarding missing required contract text: ${required}`);
 }

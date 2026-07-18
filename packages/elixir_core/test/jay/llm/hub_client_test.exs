@@ -10,13 +10,16 @@ defmodule Jay.Core.LLM.HubClientTest do
 
   setup do
     old_routing = System.get_env("TEST_LLM_HUB_ROUTING_ENABLED")
-    old_shadow  = System.get_env("TEST_LLM_HUB_ROUTING_SHADOW")
+    old_shadow = System.get_env("TEST_LLM_HUB_ROUTING_SHADOW")
 
     on_exit(fn ->
-      if old_routing, do: System.put_env("TEST_LLM_HUB_ROUTING_ENABLED", old_routing),
-                      else: System.delete_env("TEST_LLM_HUB_ROUTING_ENABLED")
-      if old_shadow,  do: System.put_env("TEST_LLM_HUB_ROUTING_SHADOW", old_shadow),
-                      else: System.delete_env("TEST_LLM_HUB_ROUTING_SHADOW")
+      if old_routing,
+        do: System.put_env("TEST_LLM_HUB_ROUTING_ENABLED", old_routing),
+        else: System.delete_env("TEST_LLM_HUB_ROUTING_ENABLED")
+
+      if old_shadow,
+        do: System.put_env("TEST_LLM_HUB_ROUTING_SHADOW", old_shadow),
+        else: System.delete_env("TEST_LLM_HUB_ROUTING_SHADOW")
     end)
 
     :ok
@@ -55,11 +58,12 @@ defmodule Jay.Core.LLM.HubClientTest do
     test "Hub 연결 시 {:ok, _} 또는 {:error, _} 반환" do
       System.put_env("TEST_LLM_HUB_ROUTING_ENABLED", "true")
 
-      result = TestHubClient.call(%{
-        prompt: "ping",
-        abstract_model: :anthropic_haiku,
-        agent: "test_agent"
-      })
+      result =
+        TestHubClient.call(%{
+          prompt: "ping",
+          abstract_model: :anthropic_haiku,
+          agent: "test_agent"
+        })
 
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
@@ -68,11 +72,12 @@ defmodule Jay.Core.LLM.HubClientTest do
       System.put_env("TEST_LLM_HUB_ROUTING_ENABLED", "true")
       System.put_env("HUB_BASE_URL", "http://localhost:19999")
 
-      result = TestHubClient.call(%{
-        prompt: "테스트 프롬프트",
-        abstract_model: :anthropic_haiku,
-        agent: "test_agent"
-      })
+      result =
+        TestHubClient.call(%{
+          prompt: "테스트 프롬프트",
+          abstract_model: :anthropic_haiku,
+          agent: "test_agent"
+        })
 
       assert match?({:error, _}, result)
     after
@@ -90,6 +95,89 @@ defmodule Jay.Core.LLM.HubClientTest do
       assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:critical) == "critical"
       assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:unexpected) == "normal"
       assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(nil) == "normal"
+    end
+  end
+
+  describe "Hub admission backpressure contract" do
+    test "503 admission response preserves retry metadata" do
+      result =
+        Jay.Core.LLM.HubClient.Impl.parse_http_response(
+          503,
+          %{
+            "ok" => false,
+            "error" => %{"code" => "queue_timeout", "message" => "queue wait timeout"},
+            "retryAfterMs" => 1_800
+          },
+          "2"
+        )
+
+      assert {:error, {:hub_backpressure, meta}} = result
+      assert meta.status == 503
+      assert meta.code == "queue_timeout"
+      assert meta.retry_after_ms == 1_800
+      assert Jay.Core.LLM.HubClient.Impl.backpressure_reason?({:hub_backpressure, meta})
+    end
+
+    test "legacy 200 ok:false shared limiter response remains backpressure" do
+      result =
+        Jay.Core.LLM.HubClient.Impl.parse_http_response(
+          200,
+          %{"ok" => false, "error" => "shared_limiter_full:team:investment"},
+          nil
+        )
+
+      assert {:error, {:hub_backpressure, %{code: "shared_limiter_full:team:investment"}}} =
+               result
+    end
+
+    test "legacy 200 provider backpressure prevents direct fallback" do
+      result =
+        Jay.Core.LLM.HubClient.Impl.parse_http_response(
+          200,
+          %{
+            "ok" => false,
+            "error" => "fallback_exhausted: Groq 429",
+            "providerBackpressure" => %{
+              "kind" => "provider_rate_limit",
+              "retryAfterMs" => 60_000,
+              "httpStatus" => 429
+            }
+          },
+          nil
+        )
+
+      assert {:error, {:hub_backpressure, meta}} = result
+      assert meta.code == "provider_rate_limit"
+      assert meta.retry_after_ms == 60_000
+    end
+
+    test "legacy boolean provider backpressure remains parseable" do
+      result =
+        Jay.Core.LLM.HubClient.Impl.parse_http_response(
+          200,
+          %{"ok" => false, "error" => "provider unavailable", "providerBackpressure" => true},
+          nil
+        )
+
+      assert {:error, {:hub_backpressure, %{retry_after_ms: 0}}} = result
+    end
+
+    test "central cycle and job policy failures prevent direct fallback" do
+      for code <- [
+            "budget_exceeded",
+            "cycle_budget_exceeded",
+            "job_enqueue_failed",
+            "token_budget_exceeded"
+          ] do
+        result =
+          Jay.Core.LLM.HubClient.Impl.parse_http_response(
+            503,
+            %{"ok" => false, "error" => %{"code" => code}},
+            nil
+          )
+
+        assert {:error, {:hub_backpressure, %{code: ^code}}} = result
+      end
     end
   end
 

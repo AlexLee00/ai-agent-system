@@ -228,32 +228,59 @@ defmodule Jay.Core.LLM.Selector do
           {:ok, hub_resp.result}
 
         {:error, reason} ->
-          if direct_fallback_enabled?(policy_module) do
-            Logger.warning(
-              "#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 명시적 직접 호출 fallback"
-            )
+          direct_enabled = direct_fallback_enabled?(policy_module)
 
-            call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
-          else
-            Logger.error(
-              "#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 직접 fallback 비활성"
-            )
+          cond do
+            Jay.Core.LLM.HubClient.Impl.backpressure_reason?(reason) ->
+              Logger.warning(
+                "#{log_prefix} Hub backpressure (#{inspect(reason)}) — agent=#{agent_name}, 직접 fallback 금지"
+              )
 
-            log_routing(
-              policy_module,
-              agent_name,
-              primary,
-              nil,
-              nil,
-              false,
-              context,
-              "hub_call_failed",
-              "direct_disabled"
-            )
+              log_routing(
+                policy_module,
+                agent_name,
+                primary,
+                nil,
+                nil,
+                false,
+                context,
+                "hub_backpressure",
+                "hub_admission"
+              )
 
-            {:error, {:hub_call_failed, reason}}
+              {:error, reason}
+
+            direct_fallback_allowed_for_hub_error?(direct_enabled, reason) ->
+              Logger.warning(
+                "#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 명시적 직접 호출 fallback"
+              )
+
+              call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
+
+            true ->
+              Logger.error(
+                "#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 직접 fallback 비활성"
+              )
+
+              log_routing(
+                policy_module,
+                agent_name,
+                primary,
+                nil,
+                nil,
+                false,
+                context,
+                "hub_call_failed",
+                "direct_disabled"
+              )
+
+              {:error, {:hub_call_failed, reason}}
           end
       end
+    end
+
+    def direct_fallback_allowed_for_hub_error?(enabled, reason) do
+      enabled == true and not Jay.Core.LLM.HubClient.Impl.backpressure_reason?(reason)
     end
 
     # -------------------------------------------------------------------

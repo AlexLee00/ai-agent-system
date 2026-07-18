@@ -114,4 +114,22 @@ defmodule Jay.Core.LLM.SelectorTest do
       refute function_exported?(TestPolicy, :kill_switch?, 0)
     end
   end
+
+  describe "Hub backpressure direct fallback policy" do
+    test "never bypasses Hub admission through direct provider fallback" do
+      reason = {:hub_backpressure, %{code: "queue_full", retry_after_ms: 1_000}}
+
+      refute Jay.Core.LLM.Selector.Impl.direct_fallback_allowed_for_hub_error?(true, reason)
+
+      assert Jay.Core.LLM.Selector.Impl.direct_fallback_allowed_for_hub_error?(
+               true,
+               :network_failure
+             )
+
+      refute Jay.Core.LLM.Selector.Impl.direct_fallback_allowed_for_hub_error?(
+               false,
+               :network_failure
+             )
+    end
+  end
 end

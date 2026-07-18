@@ -35,10 +35,17 @@ type LlmCallParseResult = {
   };
 };
 
-function parseLlmCallPayload(body: unknown): LlmCallParseResult {
+function parseLlmCallPayload(
+  body: unknown,
+  context: { callerTeam?: unknown; agent?: unknown } = {},
+): LlmCallParseResult {
   const parsed = LlmCallBodySchema.safeParse(body ?? {});
   if (parsed.success) {
-    const maxTimeoutMs = resolveMaxTimeoutMs(parsed.data);
+    const maxTimeoutMs = resolveMaxTimeoutMs({
+      ...parsed.data,
+      callerTeam: parsed.data.callerTeam || context.callerTeam,
+      agent: parsed.data.agent || context.agent,
+    });
     if (Number(parsed.data.timeoutMs || 0) > maxTimeoutMs) {
       return {
         ok: false,

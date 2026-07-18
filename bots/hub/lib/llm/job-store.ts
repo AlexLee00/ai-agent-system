@@ -148,7 +148,7 @@ async function readJob(jobId: string): Promise<LlmJob | null> {
     await ensurePgJobTable();
     const pgPool = getPgPool();
     const row = await pgPool.get<{ job: LlmJob }>('agent', 'SELECT job FROM hub_llm_jobs WHERE id = $1', [jobId]);
-    return row?.job?.id ? row.job : null;
+    return row?.job?.id === jobId ? row.job : null;
   }
 
   try {
@@ -264,7 +264,7 @@ async function processJob(jobId: string, deps: ProcessJobDeps = {}): Promise<Llm
     const request = {
       ...job.payload,
       traceId: job.traceId || undefined,
-      callerTeam: job.payload?.callerTeam || job.callerTeam || undefined,
+      callerTeam: job.payload?.callerTeam || job.callerTeam || job.ownerTeam || undefined,
       agent: job.payload?.agent || job.agent || undefined,
     };
     const result = deps.callWithFallback
@@ -406,17 +406,17 @@ async function listOwnedLlmJobs(limit = 20, owner: LlmJobOwner | null): Promise<
     .filter((name: string) => name.endsWith('.json'))
     .map((name: string) => path.join(JOB_DIR, name))
     .sort((a: string, b: string) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  const parsedJobs: Array<LlmJob | null> = files.map((file: string) => {
+  const jobs: Array<Record<string, unknown>> = [];
+  for (const file of files) {
     try {
-      return JSON.parse(fs.readFileSync(file, 'utf8')) as LlmJob;
+      const job = JSON.parse(fs.readFileSync(file, 'utf8')) as LlmJob;
+      if (canReadLlmJob(job, normalizedOwner)) jobs.push(summarizeJob(job));
     } catch {
-      return null;
+      // Ignore malformed files and continue looking for owned jobs.
     }
-  });
-  return parsedJobs
-    .filter((job): job is LlmJob => Boolean(job) && canReadLlmJob(job, normalizedOwner))
-    .slice(0, normalizedLimit)
-    .map((job) => summarizeJob(job));
+    if (jobs.length >= normalizedLimit) break;
+  }
+  return jobs;
 }
 
 async function getJobStoreState(): Promise<Record<string, unknown>> {

@@ -8,6 +8,8 @@
 
 외부 프로젝트는 이 문서가 아니라 `docs/hub/EXTERNAL_LLM_INTEGRATION_GUIDE.md`를 따른다.
 
+현재 `HUB_AUTH_TOKEN` legacy root 호출자는 신뢰된 내부 서비스 경계로 취급한다. `X-Hub-Team`은 라우팅·목록 가시성 가드이며 독립 tenant 인증 수단이 아니다. 신뢰하지 않는 tenant와 root token을 공유하지 않는다.
+
 ## 1. 표준 진입점
 
 | 런타임 | 표준 진입점 | 금지 경로 |
@@ -20,9 +22,19 @@ Hub endpoint:
 
 - 짧은 텍스트 호출: `POST /hub/llm/call`
 - 장시간 비동기 작업: `POST /hub/llm/jobs`
+- 비동기 작업 목록: `GET /hub/llm/jobs?limit=<1..100>`
 - 이미지/차트: `POST /hub/llm/vision`
 - RAG embedding: `POST /hub/llm/embeddings`
 - selector 조회: `GET /hub/llm/selector`
+- 기계 판독 연동 계약: `GET /hub/llm/gateway-contract`
+
+새 내부 연동도 구현 전에 현재 계약을 조회한다. `contractVersion` 호환 여부와 `contractRevision`을 기록하고, `contextSources` 및 endpoint별 `requestSchemas.requiredBody`, `requiredContext`, `oneOfBody`를 확인한다. 최상위 `requiredBody`는 구형 소비자 호환용이므로 신규 코드의 기준으로 사용하지 않는다.
+
+```bash
+curl -fsS -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
+  "$HUB_BASE_URL/hub/llm/gateway-contract" | \
+  jq '{ok, contractVersion, contractRevision, contextSources, requestSchemas, selectorPolicy, providerPolicy, timeoutPolicy, backpressurePolicy}'
+```
 
 ## 2. 연동 전 등록
 
@@ -127,7 +139,7 @@ const result = await callHubEmbedding({
 
 ### 장시간 비동기 Job
 
-core client에는 비동기 job helper가 아직 없으므로 승인된 Hub endpoint를 사용한다. provider endpoint를 직접 호출하지 않는다.
+core client에는 비동기 job helper가 아직 없으므로 승인된 Hub endpoint를 사용한다. provider endpoint를 직접 호출하지 않는다. 직접 생성에는 body `callerTeam` 또는 `X-Hub-Team`이 필수다.
 
 ```bash
 JOB_ID="$(

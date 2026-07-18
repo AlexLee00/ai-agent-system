@@ -19,6 +19,51 @@ type HubFetchResponse = {
   reason?: any;
 };
 
+type CurlJsonResponse = {
+  body: any;
+  status: number;
+  retryAfter: string | null;
+};
+
+export type HubFailureClassification = {
+  code: string;
+  reason: string;
+  httpStatus: number;
+  retryAfterMs: number;
+  limiterBackpressure: boolean;
+  providerBackpressure: boolean;
+  backpressureKind: string | null;
+  noDirectFallback: boolean;
+  admissionScope: string | null;
+  body: any;
+};
+
+export class HubCallError extends Error {
+  code: string;
+  httpStatus: number;
+  retryAfterMs: number;
+  limiterBackpressure: boolean;
+  providerBackpressure: boolean;
+  backpressureKind: string | null;
+  noDirectFallback: boolean;
+  admissionScope: string | null;
+  body: any;
+
+  constructor(prefix: string, failure: HubFailureClassification) {
+    super(`${prefix}:${failure.reason}`);
+    this.name = 'HubCallError';
+    this.code = failure.code;
+    this.httpStatus = failure.httpStatus;
+    this.retryAfterMs = failure.retryAfterMs;
+    this.limiterBackpressure = failure.limiterBackpressure;
+    this.providerBackpressure = failure.providerBackpressure;
+    this.backpressureKind = failure.backpressureKind;
+    this.noDirectFallback = failure.noDirectFallback;
+    this.admissionScope = failure.admissionScope;
+    this.body = failure.body;
+  }
+}
+
 type LegacyHubAbstractModel = 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
 type OAuth4HubAbstractModel = 'claude_code_haiku' | 'claude_code_sonnet' | 'claude_code_opus';
 type HubAbstractModel = LegacyHubAbstractModel | OAuth4HubAbstractModel | 'claude-code/haiku' | 'claude-code/sonnet' | 'claude-code/opus';
@@ -28,6 +73,14 @@ type HubLlmCallRequest = {
   agent: string;
   selectorKey?: string;
   taskType?: string;
+  task_type?: string;
+  runtimePurpose?: string;
+  runtime_purpose?: string;
+  selectorVersion?: string;
+  rolloutPercent?: number;
+  rolloutKey?: string;
+  requestId?: string;
+  incidentKey?: string;
   abstractModel?: HubAbstractModel;
   prompt: string;
   systemPrompt?: string;
@@ -68,6 +121,9 @@ type HubLlmCallResponse = {
   admission?: {
     queued?: boolean;
   };
+  limiterReleaseWarning?: boolean;
+  limiterReleaseUncertain?: boolean;
+  releaseError?: string;
   error?: string;
   raw?: any;
 };
@@ -77,6 +133,9 @@ type HubVisionRequest = {
   agent: string;
   selectorKey?: string;
   taskType?: string;
+  task_type?: string;
+  runtimePurpose?: string;
+  runtime_purpose?: string;
   prompt: string;
   systemPrompt?: string;
   imageBase64?: string;
@@ -99,6 +158,9 @@ type HubEmbeddingRequest = {
   agent: string;
   selectorKey?: string;
   taskType?: string;
+  task_type?: string;
+  runtimePurpose?: string;
+  runtime_purpose?: string;
   input: string | string[];
   timeoutMs?: number;
   expectedDimensions?: number;
@@ -397,10 +459,37 @@ function shouldUseCurlFallback(error: unknown, url: string): boolean {
   );
 }
 
-function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): HubFetchResponse | null {
+const CURL_META_MARKER = '__HUB_CURL_META__';
+
+function parseCurlJsonResponse(raw: string): CurlJsonResponse | null {
+  const markerIndex = raw.lastIndexOf(`\n${CURL_META_MARKER}`);
+  if (markerIndex < 0) return null;
+  try {
+    const body = JSON.parse(raw.slice(0, markerIndex));
+    const [statusRaw, retryAfterRaw = ''] = raw.slice(markerIndex + CURL_META_MARKER.length + 1).split('\t', 2);
+    return {
+      body,
+      status: Number(statusRaw || 0) || 0,
+      retryAfter: retryAfterRaw.trim() || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isSuccessfulCurlResponse(response: CurlJsonResponse | null): boolean {
+  return Boolean(
+    response
+    && response.status >= 200
+    && response.status < 300
+    && response.body?.ok !== false,
+  );
+}
+
+function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): CurlJsonResponse | null {
   try {
     const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-    const raw = execFileSync('/usr/bin/curl', [
+    const raw = String(execFileSync('/usr/bin/curl', [
       '-sS',
       '--max-time',
       String(seconds),
@@ -408,12 +497,14 @@ function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): Hu
       `Authorization: Bearer ${authToken}`,
       '-H',
       'Content-Type: application/json',
+      '--write-out',
+      `\n${CURL_META_MARKER}%{http_code}\t%header{retry-after}`,
       url,
     ], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return JSON.parse(raw);
+    }));
+    return parseCurlJsonResponse(raw);
   } catch {
     return null;
   }
@@ -429,10 +520,10 @@ function buildQueryString(params: Record<string, any>): string {
   return raw ? `?${raw}` : '';
 }
 
-function postJsonViaCurl(url: string, authToken: string, payload: any, timeoutMs: number): any | null {
+function postJsonViaCurl(url: string, authToken: string, payload: any, timeoutMs: number): CurlJsonResponse | null {
   try {
     const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-    const raw = execFileSync('/usr/bin/curl', [
+    const raw = String(execFileSync('/usr/bin/curl', [
       '-sS',
       '--max-time',
       String(seconds),
@@ -444,12 +535,14 @@ function postJsonViaCurl(url: string, authToken: string, payload: any, timeoutMs
       'Content-Type: application/json',
       '--data',
       JSON.stringify(payload),
+      '--write-out',
+      `\n${CURL_META_MARKER}%{http_code}\t%header{retry-after}`,
       url,
     ], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return JSON.parse(raw);
+    }));
+    return parseCurlJsonResponse(raw);
   } catch {
     return null;
   }
@@ -493,6 +586,86 @@ function stringifyHubErrorReason(value: unknown): string {
     }
   }
   return String(value).trim();
+}
+
+function retryAfterHeaderMs(value: unknown): number {
+  const raw = String(value || '').trim();
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1_000);
+  const at = Date.parse(raw);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
+}
+
+function hubFailureCode(body: any): string {
+  const providerBackpressureKind = String(body?.providerBackpressure?.kind || '').trim();
+  if (providerBackpressureKind) return providerBackpressureKind;
+  const error = body?.error;
+  if (error && typeof error === 'object') {
+    return String(error.code || body?.code || '').trim();
+  }
+  return String(body?.code || error || body?.reason || '').trim();
+}
+
+const NO_DIRECT_FALLBACK_CODES = new Set([
+  'budget_exceeded',
+  'cycle_budget_exceeded',
+  'job_enqueue_failed',
+  'token_budget_exceeded',
+]);
+
+function isLimiterBackpressureCode(code: string): boolean {
+  const normalized = String(code || '').trim().toLowerCase();
+  return normalized.startsWith('shared_limiter_')
+    || normalized === 'queue_full'
+    || normalized === 'queue_timeout'
+    || normalized === 'admission_rejected';
+}
+
+function isCentralNoDirectFallbackCode(code: string): boolean {
+  const normalized = String(code || '').trim().toLowerCase();
+  for (const blockedCode of NO_DIRECT_FALLBACK_CODES) {
+    if (normalized === blockedCode || normalized.startsWith(`${blockedCode}:`)) return true;
+  }
+  return false;
+}
+
+export function classifyHubFailureResponse(
+  body: any,
+  httpStatus = 0,
+  retryAfterHeader: string | null = null,
+): HubFailureClassification {
+  const code = hubFailureCode(body) || (httpStatus ? `http_${httpStatus}` : 'hub_call_failed');
+  const configuredRetryAfterMs = Number(body?.retryAfterMs || body?.providerBackpressure?.retryAfterMs || 0);
+  const retryAfterMs = Number.isFinite(configuredRetryAfterMs) && configuredRetryAfterMs > 0
+    ? Math.round(configuredRetryAfterMs)
+    : retryAfterHeaderMs(retryAfterHeader);
+  const reason = stringifyHubErrorReason(body?.error || body?.reason || code)
+    || (httpStatus ? `HTTP ${httpStatus}` : code);
+  const limiterBackpressure = body?.limiterBackpressure === true || isLimiterBackpressureCode(code);
+  const providerBackpressure = body?.providerBackpressure === true
+    || Boolean(body?.providerBackpressure && typeof body.providerBackpressure === 'object');
+  const backpressureKind = String(body?.providerBackpressure?.kind || '').trim() || null;
+  return {
+    code,
+    reason,
+    httpStatus: Number(httpStatus || 0),
+    retryAfterMs,
+    limiterBackpressure,
+    providerBackpressure,
+    backpressureKind,
+    noDirectFallback: limiterBackpressure || providerBackpressure || isCentralNoDirectFallbackCode(code),
+    admissionScope: String(body?.admissionScope || '').trim() || null,
+    body,
+  };
+}
+
+export function isHubLimiterBackpressureFailure(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && (value as Record<string, unknown>).limiterBackpressure === true);
+}
+
+export function isHubNoDirectFallbackFailure(value: unknown): boolean {
+  return Boolean(value && typeof value === 'object' && (value as Record<string, unknown>).noDirectFallback === true);
 }
 
 type FetchHubSecretsOptions = {
@@ -551,13 +724,20 @@ export async function fetchHubSecrets(category: string, timeoutMs = 3000, option
   } catch (error) {
     const err = error as Error & { name?: string };
     if (shouldUseCurlFallback(error, url)) {
-      const json = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
-      if (json) {
-        const data = json.data || null;
+      const curlResponse = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (isSuccessfulCurlResponse(curlResponse)) {
+        const data = curlResponse?.body?.data || null;
         setCached(cacheKey, data, getSecretsSuccessTtl(category));
         writeSharedSecretCache(category, data, getSecretsSuccessTtl(category));
         return data;
       }
+      const curlStatus = Number(curlResponse?.status || 0);
+      if (curlStatus === 429 || curlStatus >= 500) {
+        const stale = useSharedSecretCacheFallback(category, cacheKey, `HTTP ${curlStatus}`);
+        if (stale !== undefined) return stale;
+      }
+      if (curlStatus === 429) setCached(cacheKey, null, getSecretsRateLimitTtl(category));
+      if (curlStatus === 401) setCached(cacheKey, null, 30000);
     }
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     const stale = useSharedSecretCacheFallback(category, cacheKey, message || 'fetch_failed');
@@ -663,11 +843,13 @@ export async function fetchHubSecretMetadata(category?: string, timeoutMs = 3000
   } catch (error) {
     const err = error as Error & { name?: string };
     if (shouldUseCurlFallback(error, url)) {
-      const json = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
-      if (json) {
-        setCached(cacheKey, json, 30000);
-        return json;
+      const curlResponse = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (isSuccessfulCurlResponse(curlResponse)) {
+        setCached(cacheKey, curlResponse?.body, 30000);
+        return curlResponse?.body;
       }
+      if (curlResponse?.status === 429) setCached(cacheKey, null, 5000);
+      if (curlResponse?.status === 401) setCached(cacheKey, null, 30000);
     }
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] secrets-meta: ${message}`);
@@ -778,8 +960,12 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
   if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub LLM call');
   if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub LLM call');
 
-  const requestedTimeoutMs = Math.max(1000, Number(request.timeoutMs || 30000) || 30000);
-  const timeoutMs = Math.min(requestedTimeoutMs, resolveHubLlmMaxTimeoutMs(request));
+  const maxTimeoutMs = resolveHubLlmMaxTimeoutMs(request);
+  const configuredTimeoutMs = Number(request.timeoutMs);
+  const requestedTimeoutMs = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? Math.max(1_000, configuredTimeoutMs)
+    : maxTimeoutMs;
+  const timeoutMs = Math.min(requestedTimeoutMs, maxTimeoutMs);
   const abstractModel = normalizeHubAbstractModel(request.abstractModel || 'claude_code_haiku');
   const payload = {
     ...request,
@@ -787,7 +973,11 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
     agent,
     prompt,
     abstractModel,
-    taskType: request.taskType || 'default',
+    taskType: request.taskType
+      || request.task_type
+      || request.runtimePurpose
+      || request.runtime_purpose
+      || 'default',
     timeoutMs,
   };
   const tracedPayload = withCurrentCycleTrace(payload);
@@ -812,8 +1002,10 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
 
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body?.ok === false) {
-      const reason = stringifyHubErrorReason(body?.error || body?.reason || `HTTP ${res.status}`) || `HTTP ${res.status}`;
-      throw new Error(`hub_llm_call_failed:${reason}`);
+      throw new HubCallError(
+        'hub_llm_call_failed',
+        classifyHubFailureResponse(body, res.status, res.headers.get('retry-after')),
+      );
     }
 
     const text = String(body?.result || body?.text || '').trim();
@@ -830,12 +1022,16 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
       durationMs: Number(body?.durationMs || 0),
       traceId: body?.traceId || null,
       admission: body?.admission || null,
+      limiterReleaseWarning: body?.limiterReleaseWarning === true,
+      limiterReleaseUncertain: body?.limiterReleaseUncertain === true,
+      releaseError: body?.releaseError || undefined,
       raw: body,
     };
   } catch (error) {
     if (shouldUseCurlFallback(error, url)) {
-      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, safePayload, timeoutMs);
-      if (body?.ok !== false) {
+      const curlResponse = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, safePayload, timeoutMs);
+      const body = curlResponse?.body;
+      if (isSuccessfulCurlResponse(curlResponse)) {
         const text = String(body?.result || body?.text || '').trim();
         if (text) {
           return {
@@ -850,11 +1046,21 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
             durationMs: Number(body?.durationMs || 0),
             traceId: body?.traceId || null,
             admission: body?.admission || null,
+            limiterReleaseWarning: body?.limiterReleaseWarning === true,
+            limiterReleaseUncertain: body?.limiterReleaseUncertain === true,
+            releaseError: body?.releaseError || undefined,
             raw: body,
           };
         }
       }
+      if (curlResponse) {
+        throw new HubCallError(
+          'hub_llm_call_failed',
+          classifyHubFailureResponse(body, curlResponse.status, curlResponse.retryAfter),
+        );
+      }
     }
+    if (error instanceof HubCallError) throw error;
     const err = error as Error & { name?: string };
     const message = err.name === 'AbortError'
       ? '타임아웃'
@@ -906,7 +1112,11 @@ export async function callHubVision(request: HubVisionRequest): Promise<HubLlmCa
     callerTeam,
     agent,
     prompt,
-    taskType: request.taskType || 'vision',
+    taskType: request.taskType
+      || request.task_type
+      || request.runtimePurpose
+      || request.runtime_purpose
+      || 'vision',
     timeoutMs,
   };
   const body = await postHubJson('/hub/llm/vision', payload, timeoutMs);
@@ -923,11 +1133,24 @@ export async function callHubVision(request: HubVisionRequest): Promise<HubLlmCa
     attempted_providers: [],
     durationMs: Number(body?.durationMs || 0),
     traceId: body?.traceId || null,
+    limiterReleaseWarning: body?.limiterReleaseWarning === true,
+    limiterReleaseUncertain: body?.limiterReleaseUncertain === true,
+    releaseError: body?.releaseError || undefined,
     raw: body,
   };
 }
 
-export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{ ok: boolean; data: Array<{ index: number; embedding: number[] }>; model?: string; dimensions?: number; traceId?: string | null; raw?: any }> {
+export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{
+  ok: boolean;
+  data: Array<{ index: number; embedding: number[] }>;
+  model?: string;
+  dimensions?: number;
+  traceId?: string | null;
+  limiterReleaseWarning?: boolean;
+  limiterReleaseUncertain?: boolean;
+  releaseError?: string;
+  raw?: any;
+}> {
   const callerTeam = String(request?.callerTeam || '').trim();
   const agent = String(request?.agent || '').trim();
   if (!callerTeam) throw new Error('callerTeam required for Hub embedding call');
@@ -935,12 +1158,17 @@ export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{ 
   if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub embedding call');
   if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub embedding call');
 
-  const timeoutMs = Math.min(Math.max(5_000, Number(request.timeoutMs || 30_000) || 30_000), 180_000);
+  const timeoutMs = Math.min(Math.max(5_000, Number(request.timeoutMs || 180_000) || 180_000), 180_000);
   const body = await postHubJson('/hub/llm/embeddings', {
     ...request,
     callerTeam,
     agent,
-    taskType: request.taskType || 'embedding',
+    taskType: request.taskType
+      || request.task_type
+      || request.runtimePurpose
+      || request.runtime_purpose
+      || 'embedding',
+    timeoutMs,
   }, timeoutMs);
   const data = Array.isArray(body?.data) ? body.data : [];
   if (!data.length) throw new Error('hub_embedding_call_failed:empty_response');
@@ -950,6 +1178,9 @@ export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{ 
     model: body?.model,
     dimensions: Number(body?.dimensions || 0) || undefined,
     traceId: body?.traceId || null,
+    limiterReleaseWarning: body?.limiterReleaseWarning === true,
+    limiterReleaseUncertain: body?.limiterReleaseUncertain === true,
+    releaseError: body?.releaseError || undefined,
     raw: body,
   };
 }
@@ -989,15 +1220,24 @@ export async function fetchHubLlmSelector(request: HubSelectorRequest): Promise<
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body?.ok === false) {
-      const reason = stringifyHubErrorReason(body?.error || body?.reason || `HTTP ${res.status}`) || `HTTP ${res.status}`;
-      throw new Error(`hub_selector_lookup_failed:${reason}`);
+      throw new HubCallError(
+        'hub_selector_lookup_failed',
+        classifyHubFailureResponse(body, res.status, res.headers.get('retry-after')),
+      );
     }
     return body;
   } catch (error) {
     if (shouldUseCurlFallback(error, url)) {
-      const body = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
-      if (body && body?.ok !== false) return body;
+      const curlResponse = fetchJsonViaCurl(url, env.HUB_AUTH_TOKEN, timeoutMs);
+      if (isSuccessfulCurlResponse(curlResponse)) return curlResponse?.body;
+      if (curlResponse) {
+        throw new HubCallError(
+          'hub_selector_lookup_failed',
+          classifyHubFailureResponse(curlResponse.body, curlResponse.status, curlResponse.retryAfter),
+        );
+      }
     }
+    if (error instanceof HubCallError) throw error;
     const err = error as Error & { name?: string };
     const message = err.name === 'AbortError'
       ? 'timeout'
@@ -1025,15 +1265,24 @@ async function postHubJson(path: string, payload: any, timeoutMs: number): Promi
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body?.ok === false) {
-      const reason = stringifyHubErrorReason(body?.error || body?.reason || `HTTP ${res.status}`) || `HTTP ${res.status}`;
-      throw new Error(`hub_call_failed:${reason}`);
+      throw new HubCallError(
+        'hub_call_failed',
+        classifyHubFailureResponse(body, res.status, res.headers.get('retry-after')),
+      );
     }
     return body;
   } catch (error) {
     if (shouldUseCurlFallback(error, url)) {
-      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, tracedPayload, timeoutMs);
-      if (body && body?.ok !== false) return body;
+      const curlResponse = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, tracedPayload, timeoutMs);
+      if (isSuccessfulCurlResponse(curlResponse)) return curlResponse?.body;
+      if (curlResponse) {
+        throw new HubCallError(
+          'hub_call_failed',
+          classifyHubFailureResponse(curlResponse.body, curlResponse.status, curlResponse.retryAfter),
+        );
+      }
     }
+    if (error instanceof HubCallError) throw error;
     const err = error as Error & { name?: string };
     const message = err.name === 'AbortError'
       ? '타임아웃'

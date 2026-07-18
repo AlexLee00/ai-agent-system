@@ -748,45 +748,20 @@ node scripts/session-close.js \
   --files="a.js|b.js"
 ```
 
-### Anthropic SDK 직접 호출 패턴 (Python)
+### Hub LLM 표준 호출 패턴
 
-Hub selector를 통하지 않고 Python 코드에서 Claude API를 직접 호출할 때 (forecast.py 월간 진단 등):
+내부 코드가 Anthropic/OpenAI/Groq/Gemini SDK 또는 provider endpoint를 직접 호출하지 않는다. 모델 선택, fallback, timeout, admission, 비용 제한은 Hub가 소유한다.
 
-```python
-import anthropic
+- Node.js/TypeScript: `packages/core/lib/hub-client.ts`의 `callHubLlm`, `callHubVision`, `callHubEmbedding` 사용
+- Python/외부 프로젝트: Bearer 인증으로 `/hub/llm/call` 사용
+- 새 호출은 승인된 `selectorKey`와 안정적인 `runtimePurpose`/`taskType`을 함께 보낸다.
+- `429/503/504`는 구조화된 `retryAfterMs`, `providerBackpressure`, `limiterBackpressure`, `admissionScope`로 분기한다.
+- Hub 장애 후 provider SDK로 직접 fallback하지 않는다.
 
-client = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
+상세 예제와 검증 절차:
 
-resp = client.messages.create(
-    model='claude-haiku-4-5-20251001',   # 고빈도·단순 분석 → Haiku
-    max_tokens=500,
-    temperature=0.1,                     # 분석용 — 낮은 온도로 일관된 결과
-    system=[
-        {
-            "type": "text",
-            "text": "역할 정의 (정적 텍스트)",
-            "cache_control": {"type": "ephemeral"},  # Prompt Caching (5분 TTL)
-        }
-    ],
-    messages=[{'role': 'user', 'content': user_content}],
-)
-result = resp.content[0].text.strip()
-```
-
-**에러 처리 — 구체적으로 분기:**
-```python
-except anthropic.RateLimitError:
-    return '(API 한도 초과 — 잠시 후 재시도)'
-except anthropic.AuthenticationError:
-    return '(ANTHROPIC_API_KEY 인증 실패)'
-except Exception as e:
-    return f'(LLM 호출 실패: {e})'
-```
-
-**Prompt Caching 원칙:**
-- 정적인 system 프롬프트(역할 정의, 규칙 등)에만 `cache_control` 적용
-- 동적 데이터(사용자 입력, 실시간 지표)는 캐싱 대상 아님
-- 캐시 읽기 비용: 입력 토큰의 10% (최대 90% 절감)
+- 내부 연동: `bots/hub/docs/LLM_ROUTING.md`
+- 외부/Python 연동: `docs/hub/EXTERNAL_LLM_INTEGRATION_GUIDE.md`
 
 **temperature 가이드:**
 | 용도 | temperature |
@@ -799,55 +774,21 @@ except Exception as e:
 
 ## 13. 모델 선택 가이드
 
-### 현재 Hub/LLM 스택 (스카봇)
+호출부가 provider나 model ID를 선택하지 않는다. 현재 primary/fallback은 운영 정책에 따라 바뀔 수 있으며 아래 정본에서만 관리한다.
 
-| 순서 | 모델 | 용도 | TTFT | 비용 |
-|------|------|------|------|------|
-| Primary | `google-gemini-cli/gemini-2.5-flash` | 기본 | ~608ms | 무료 (Google OAuth) |
-| Fallback 1 | `anthropic/claude-haiku-4-5` | 빠른 응답 | ~300ms | 유료 |
-| Fallback 2 | `ollama/qwen2.5:7b` | 비상용 | ~811ms | 로컬 |
+- selector chain: `packages/core/lib/llm-model-selector.ts`
+- `callerTeam + runtimePurpose`: `bots/hub/lib/runtime-profiles.ts`
+- timeout profile: `packages/core/lib/selector-timeout-profiles.ts`
+- 현재 외부 계약: `GET /hub/llm/gateway-contract`
 
-### 속도 테스트 결과 (2026-02-26)
+새 연동 절차:
 
-| 모델 | TTFT | 상태 |
-|------|------|------|
-| `groq/llama-3.1-8b-instant` | 203ms | 무료, Phase 3 교체 검토 |
-| `groq/llama-4-scout-17b` | 211ms | 무료 |
-| `groq/llama-3.3-70b-versatile` | 225ms | 무료 |
-| `gemini-2.5-flash` | 608ms | 현재 primary |
-| `ollama/qwen2.5:7b` | 811ms | 로컬 (MLX 미지원) |
+1. 안정적인 `callerTeam`, `agent`, `runtimePurpose`, `taskType`을 정한다.
+2. 기존 selector를 재사용할 수 있는지 확인한다.
+3. `selectorKey`를 생략할 호출은 runtime profile을 먼저 등록한다.
+4. `npm run -s test:hub-readonly-contract`에서 미등록 purpose/selector `0`을 확인한다.
 
-### 봇별 권장 모델 (LLM_DOCS 기준)
-
-| 봇 | Primary | Fallback | 이유 |
-|----|---------|---------|------|
-| 스카봇 (Hub selector) | `gemini-2.5-flash` | `claude-haiku-4-5` | 무료 OAuth, 고빈도 |
-| 스카봇 LLM 진단 (직접 호출) | `claude-haiku-4-5-20251001` | — | 저비용, 분석 충분 |
-| 클로드팀 아처 (주간 기술 분석) | `claude-sonnet-4-6` | — | 복잡한 패치 티켓 생성 |
-| 클로드팀 덱스터 (일일 리포트) | `claude-haiku-4-5-20251001` | — | 비용 최적화 |
-| 미래 투자봇 오케스트레이터 | `claude-sonnet-4-6` | `gemini-2.5-flash` | 복잡한 멀티에이전트 결정 |
-| 미래 투자봇 분석가 (고빈도) | `groq/llama-3.3-70b` | `claude-haiku-4-5` | 속도 3배, 무료 |
-
-### Claude 모델 ID (최신)
-
-| 모델 | 컨텍스트 | 용도 |
-|------|---------|------|
-| `claude-opus-4-6` | 200K | 최고 성능, 복잡한 추론 |
-| `claude-sonnet-4-6` | 200K | 오케스트레이터 권장 |
-| `claude-haiku-4-5-20251001` | 200K | 고빈도 봇, 분석 (권장) |
-
-### 모델 교체 CLI
-
-```bash
-node bots/hub/scripts/check-llm-route.js --model google-gemini-cli/gemini-2.5-flash
-# prefix 주의: google-gemini-cli/ (일반 gemini/ 아님)
-```
-
-### Gemini-2.5-flash 알려진 quirks
-
-- `streamMode`: `"partial"` | `"block"` (권장) | `"off"` (전송 차단)
-- `<execute_tool>` 텍스트 누출 버그 → **종결** (2026-02-27 전수 검사 0건 확인)
-- Ollama 맥북 M3: Homebrew 빌드는 MLX GPU 가속 미지원 → CPU 전용, 봇용 사용 불가
+팀 코드에서 raw provider/model, ad-hoc `chain`, provider별 API key를 하드코딩하지 않는다. provider 변경은 Hub selector 정책 변경으로만 수행한다.
 
 ---
 

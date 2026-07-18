@@ -21,6 +21,7 @@
     "test:smoke": "npm --prefix bots/blog run test:smoke",
     "test:unit": "npm --prefix bots/blog run test:unit",
     "test:daily-dry": "npm --prefix bots/blog run test:daily-dry",
+    "test:hub-readonly-contract": "node --disable-warning=DEP0205 --import tsx bots/hub/scripts/run-tests.ts readonly-contract",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "typecheck:darwin": "bash bots/darwin/scripts/typecheck-darwin-ts.sh",

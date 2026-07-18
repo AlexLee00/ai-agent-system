@@ -46,6 +46,20 @@ describe('hub llm request schema', () => {
     expect(parsed.data.timeoutMs).toBe(600000);
   });
 
+  test('uses trusted request context when validating a header-only blog writer timeout', () => {
+    const parsed = parseLlmCallPayload({
+      prompt: 'write a long lecture draft',
+      abstractModel: 'anthropic_sonnet',
+      timeoutMs: 600000,
+      selectorKey: 'blog.pos.writer',
+    }, {
+      callerTeam: 'blog',
+      agent: 'pos',
+    });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.timeoutMs).toBe(600000);
+  });
+
   test('keeps non-blog llm timeout capped at 180 seconds', () => {
     const parsed = parseLlmCallPayload({
       prompt: 'risk check',

@@ -68,7 +68,11 @@ async function main(): Promise<void> {
       assert.equal(body.ok, true);
       assert.equal(body.contractVersion, 'hub-llm-gateway/v1');
       assert.equal(body.contractRevision, '2026-07-18.1');
+      assert.equal(body.auth.principalMode, 'legacy_root_with_scoped_audit');
+      assert.equal(body.auth.teamHeaderSecurityBoundary, false);
       assert.equal(body.endpoints.syncCall.path, '/hub/llm/call');
+      assert.equal(body.endpoints.asyncJob.listPath, '/hub/llm/jobs');
+      assert.equal(body.endpoints.asyncJob.listMethod, 'GET');
       assert.equal(body.endpoints.vision.path, '/hub/llm/vision');
       assert.equal(body.endpoints.embeddings.path, '/hub/llm/embeddings');
       assert.equal(body.selectorPolicy.directProviderRoutes, 'disabled_by_default');
@@ -77,6 +81,7 @@ async function main(): Promise<void> {
       assert(body.recommendedBody.includes('runtimePurpose'), 'gateway contract must recommend runtimePurpose');
       assert.deepEqual(body.requestSchemas.syncCall.requiredBody, ['prompt', 'abstractModel']);
       assert.deepEqual(body.requestSchemas.asyncJob.requiredBody, ['prompt', 'abstractModel']);
+      assert.deepEqual(body.requestSchemas.asyncJob.requiredContext, ['callerTeam']);
       assert.deepEqual(body.contextSources.callerTeam, ['body.callerTeam', 'header.X-Hub-Team']);
       assert.deepEqual(body.contextSources.agent, ['body.agent', 'header.X-Hub-Agent']);
       assert.deepEqual(body.requestSchemas.vision.requiredBody, ['prompt']);
@@ -104,6 +109,29 @@ async function main(): Promise<void> {
       ]);
       assert.equal(body.backpressurePolicy.directProviderFallback, 'forbidden');
       assert.equal(body.backpressurePolicy.asyncJobAdmissionRetry, 'same_job_id_requeued');
+
+      const headerOnlyBlogWriter = await fetch(`${baseUrl}/hub/llm/call`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.HUB_AUTH_TOKEN}`,
+          'Content-Type': 'application/json',
+          'X-Hub-Team': 'blog',
+          'X-Hub-Agent': 'publ',
+        },
+        body: JSON.stringify({
+          prompt: 'validate header-only writer timeout without calling a provider',
+          abstractModel: 'anthropic_sonnet',
+          selectorKey: 'blog.pos.writer',
+          timeoutMs: 600_000,
+        }),
+      });
+      const headerOnlyBlogWriterBody = await headerOnlyBlogWriter.json();
+      assert.equal(
+        headerOnlyBlogWriter.status,
+        403,
+        'header-only caller context must pass timeout validation before the non-LLM target guard',
+      );
+      assert.equal(headerOnlyBlogWriterBody.error?.code, 'llm_non_llm_target_blocked');
 
       const invalidVision = await fetch(`${baseUrl}/hub/llm/vision`, {
         method: 'POST',

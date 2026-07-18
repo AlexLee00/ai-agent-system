@@ -41,7 +41,7 @@ let routingLogStandardColumnsCheckedAt = 0;
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
 export async function llmCallRoute(req: RouteReq, res: RouteRes) {
   const context = req.hubRequestContext || {};
-  const parsed = parseLlmCallPayload(req.body);
+  const parsed = parseLlmCallPayload(req.body, context);
   if (!parsed.ok) {
     return res.status(400).json({
       ok: false,
@@ -517,6 +517,9 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
       scheme: 'bearer',
       header: 'Authorization: Bearer <HUB_AUTH_TOKEN>',
       providerSecretsDistributedToClients: false,
+      principalMode: 'legacy_root_with_scoped_audit',
+      teamHeaderSecurityBoundary: false,
+      trustBoundary: 'Do not share the legacy root bearer with untrusted tenants; X-Hub-Team is a visibility/routing guard, not tenant authentication.',
     },
     endpoints: {
       syncCall: {
@@ -527,6 +530,8 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
       asyncJob: {
         method: 'POST',
         path: '/hub/llm/jobs',
+        listMethod: 'GET',
+        listPath: '/hub/llm/jobs',
         resultPaths: ['/hub/llm/jobs/:id', '/hub/llm/jobs/:id/result'],
         resultAccess: {
           readTeamHeader: 'X-Hub-Team',
@@ -569,6 +574,7 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
       },
       asyncJob: {
         requiredBody: ['prompt', 'abstractModel'],
+        requiredContext: ['callerTeam'],
       },
       vision: {
         requiredBody: ['prompt'],
@@ -642,7 +648,7 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
 // POST /hub/llm/jobs — 비동기 LLM job 생성
 export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
   const context = req.hubRequestContext || {};
-  const parsed = parseLlmCallPayload(req.body);
+  const parsed = parseLlmCallPayload(req.body, context);
   if (!parsed.ok) {
     return res.status(400).json({
       ok: false,
@@ -653,6 +659,14 @@ export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
   const body = parsed.data;
   const headerTeam = canonicalHubTeam(context.callerTeam);
   const bodyTeam = canonicalHubTeam(body.callerTeam);
+  if (!headerTeam && !bodyTeam) {
+    return res.status(400).json({
+      ok: false,
+      error: 'callerTeam_required',
+      message: 'Async LLM job creation requires body.callerTeam or X-Hub-Team.',
+      traceId: context.traceId || null,
+    });
+  }
   if (headerTeam && bodyTeam && headerTeam !== bodyTeam) {
     return res.status(400).json({
       ok: false,
@@ -1596,7 +1610,9 @@ async function callVisionSelectorRoute(route: AnyRecord, input: AnyRecord): Prom
 }
 
 function redactJobPayload(job: AnyRecord): AnyRecord {
-  const { payload, ownerPrincipalId, ...rest } = job;
+  const rest = { ...job };
+  delete rest.payload;
+  delete rest.ownerPrincipalId;
   return {
     ...rest,
     payloadSummary: job.payloadSummary,

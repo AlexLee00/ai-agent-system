@@ -70,6 +70,14 @@ async function main() {
   });
 
   await withServer(app, async (baseUrl) => {
+    const missingCreateTeam = await requestJson(baseUrl, 'POST', '/hub/llm/jobs', {
+      prompt: 'missing create team smoke',
+      agent: 'synthesis',
+      selectorKey: 'darwin.agent_policy',
+      abstractModel: 'anthropic_sonnet',
+    });
+    assert.equal(missingCreateTeam.status, 400, 'direct job creation requires an explicit caller team');
+
     const created = await requestJson(baseUrl, 'POST', '/hub/llm/jobs', {
       prompt: 'job smoke',
       callerTeam: 'luna',
@@ -153,6 +161,23 @@ async function main() {
   });
 
   const { createLlmJob, processJob, readJobForWorker } = require('../lib/llm/job-store.ts');
+  const overflowLike = await createLlmJob({
+    prompt: 'selector-owned admission overflow smoke',
+    agent: 'synthesis',
+    selectorKey: 'darwin.agent_policy',
+    abstractModel: 'anthropic_sonnet',
+  }, {
+    authPrincipalId: 'legacy-root',
+  }, { start: false, source: 'admission_overflow' });
+  assert.equal(overflowLike.ownerTeam, 'darwin', 'selector target must provide an owner for admission overflow');
+  let overflowRequest = null;
+  await processJob(overflowLike.id, {
+    callWithFallback: async (request) => {
+      overflowRequest = request;
+      return { ok: true, provider: 'mock', result: 'overflow processed' };
+    },
+  });
+  assert.equal(overflowRequest.callerTeam, 'darwin', 'overflow worker must preserve selector-derived owner team');
   const scoped = await createLlmJob({
     prompt: 'scoped owner smoke',
     callerTeam: 'luna',
