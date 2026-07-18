@@ -89,10 +89,14 @@ function listArchiveCandidates(relPath: unknown, archiveDir = DEFAULT_COMPLETED_
 }
 
 function archiveDocumentMatches(row: Record<string, any>, relPath: string): boolean {
-  const incidentKey = normalizeRelPath(row.incident_key);
+  return documentMatchesIncident(row, path.join(env.PROJECT_ROOT, relPath));
+}
+
+function documentMatchesIncident(row: Record<string, any>, filePath: string): boolean {
+  const incidentKey = String(row.incident_key || '').trim();
   if (!incidentKey) return false;
   try {
-    const text = fs.readFileSync(path.join(env.PROJECT_ROOT, relPath), 'utf8');
+    const text = fs.readFileSync(filePath, 'utf8');
     return text.includes(`incident_key: ${incidentKey}`)
       || text.includes(`incident_key: ${JSON.stringify(incidentKey).slice(1, -1)}`)
       || text.includes(incidentKey);
@@ -117,7 +121,11 @@ function resolveByCompletedArchive(
   };
 }
 
-function resolveByManifest(row: Record<string, any>, manifest: Record<string, any>): Record<string, any> | null {
+function resolveByManifest(
+  row: Record<string, any>,
+  manifest: Record<string, any>,
+  processedDir = path.join(DEFAULT_AUTO_DEV_DIR, 'processed'),
+): Record<string, any> | null {
   const entry = findManifestEntry(manifest, row.auto_dev_path);
   if (!entry) return null;
 
@@ -126,6 +134,33 @@ function resolveByManifest(row: Record<string, any>, manifest: Record<string, an
   const archiveExists = repoFileExists(entry.archivedPath);
   const inboxExists = repoFileExists(row.auto_dev_path);
   const reasonResolved = RESOLVED_MANIFEST_REASON_RE.test(reason);
+
+  if (state === 'dead_letter' && entry.deadLetteredAt && !inboxExists) {
+    const explicitProcessedPath = String(entry.processedPath || '').trim();
+    const contentHash = String(entry.contentHash || '').trim();
+    const baseName = path.basename(normalizeRelPath(row.auto_dev_path)).replace(/\.md$/i, '');
+    const processedCandidates = [
+      explicitProcessedPath
+        ? (path.isAbsolute(explicitProcessedPath)
+          ? explicitProcessedPath
+          : path.join(env.PROJECT_ROOT, normalizeRelPath(explicitProcessedPath)))
+        : '',
+      contentHash && baseName ? path.join(processedDir, `${baseName}.${contentHash}.md`) : '',
+    ].filter(Boolean);
+    const matchedProcessedPath = processedCandidates.find((candidate) => {
+      return fs.existsSync(candidate) && documentMatchesIncident(row, candidate);
+    });
+    if (matchedProcessedPath) {
+      return {
+        stale_status: 'terminal_dead_letter',
+        stale_resolution_reason: 'auto_dev_dead_letter_result_recorded',
+        manifest_state: state,
+        dead_lettered_at: entry.deadLetteredAt,
+        processed_path: normalizeRelPath(path.relative(env.PROJECT_ROOT, matchedProcessedPath)),
+        inbox_exists: false,
+      };
+    }
+  }
 
   if (state === 'archived' && (archiveExists || reasonResolved)) {
     return {
@@ -236,12 +271,14 @@ async function resolveByReservationCurrentState(row: Record<string, any>, db = p
 function annotateRows(rows: Array<Record<string, any>>, {
   manifest = loadManifest(),
   archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
+  processedDir = path.join(DEFAULT_AUTO_DEV_DIR, 'processed'),
 }: {
   manifest?: Record<string, any>;
   archiveDir?: string;
+  processedDir?: string;
 } = {}) {
   return rows.map((row) => {
-    const manifestResolution = resolveByManifest(row, manifest);
+    const manifestResolution = resolveByManifest(row, manifest, processedDir);
     if (manifestResolution) return { ...row, ...manifestResolution };
 
     const archiveResolution = resolveByCompletedArchive(row, archiveDir);
@@ -281,7 +318,7 @@ function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: numbe
     `대상: ${rows.length}건`,
   ];
   if (resolvedRows.length > 0) {
-    lines.push(`제외: ${resolvedRows.length}건 (manifest/current policy로 처리 완료 판정)`);
+    lines.push(`제외: ${resolvedRows.length}건 (manifest/current policy/terminal state로 처리 결과 판정)`);
   }
   for (const row of rows.slice(0, 8)) {
     lines.push(`- ${row.team}/${row.bot_name}: ${row.incident_key} (${row.created_at})`);

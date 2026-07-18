@@ -4,8 +4,8 @@
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { scanStaleAutoRepair } = require('./alarm-auto-repair-stale-scan.ts');
 
-type BackfillStatus = 'resolved' | 'verified';
-type ResultStatus = 'resolved' | 'partially_resolved';
+type BackfillStatus = 'resolved' | 'verified' | 'exhausted';
+type ResultStatus = 'resolved' | 'partially_resolved' | 'unresolved_needs_human';
 
 const APPLY_CONFIRM_TOKEN = 'hub-stale-auto-repair-backfill';
 
@@ -32,10 +32,12 @@ function normalizeText(value: unknown, fallback = ''): string {
 }
 
 function mirrorStatusForRow(row: Record<string, any>): BackfillStatus {
+  if (row.stale_status === 'terminal_dead_letter') return 'exhausted';
   return row.stale_status === 'resolved_current_policy' ? 'verified' : 'resolved';
 }
 
 function resultStatusForRow(row: Record<string, any>): ResultStatus {
+  if (row.stale_status === 'terminal_dead_letter') return 'unresolved_needs_human';
   return row.stale_status === 'resolved_current_policy' ? 'partially_resolved' : 'resolved';
 }
 
@@ -68,6 +70,7 @@ function buildBackfillPlan(rows: Array<Record<string, any>>) {
 
 async function applyBackfillRow(row: Record<string, any>, db = pgPool) {
   return db.transaction('agent', async (client: any) => {
+    const terminalFailure = row.result_status === 'unresolved_needs_human';
     const message = `Backfilled stale auto-repair row as ${row.mirror_status}: ${row.incident_key} (${row.stale_resolution_reason})`;
     const eventResult = await client.query(`
       INSERT INTO agent.event_lake (
@@ -80,7 +83,7 @@ async function applyBackfillRow(row: Record<string, any>, db = pgPool) {
       'hub_alarm_auto_repair_result',
       row.team,
       'alarm-stale-auto-repair-backfill',
-      'info',
+      terminalFailure ? 'warn' : 'info',
       row.incident_key,
       'Alarm auto repair stale backfill',
       message,
@@ -101,7 +104,7 @@ async function applyBackfillRow(row: Record<string, any>, db = pgPool) {
     const updateResult = await client.query(`
       UPDATE agent.hub_alarms
       SET status = $1,
-          resolved_at = COALESCE(resolved_at, NOW()),
+          resolved_at = CASE WHEN $1 = 'exhausted' THEN resolved_at ELSE COALESCE(resolved_at, NOW()) END,
           metadata = COALESCE(metadata, '{}') || jsonb_build_object(
             'auto_repair_backfill_status', $2::text,
             'auto_repair_backfill_result_status', $3::text,

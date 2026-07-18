@@ -3593,6 +3593,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'dead_letter', {
       contentHash,
       deadLetteredAt: deadLetterJob.deadLetteredAt || nowIso(),
+      processedPath: deadLetterJob.processedPath || moveResult.relPath || null,
     });
     return {
       ok: true,
@@ -4279,6 +4280,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'dead_letter', {
         contentHash,
         deadLetteredAt,
+        processedPath: moveResult.relPath || null,
       });
       await recordAutoDevOutcome(deadLetterJob, 'dead_letter', {
         stage: 'dead_letter',

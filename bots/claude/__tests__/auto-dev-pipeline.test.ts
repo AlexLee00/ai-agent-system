@@ -1299,6 +1299,9 @@ async function test_failure_circuit_breaker_dead_letters_once_and_allows_new_has
     assert.strictEqual(third.job.failureAttempts, 3);
     assert.ok(third.job.deadLetteredAt);
     assert.ok(fs.existsSync(path.join(tmpRoot, third.job.processedPath)));
+    const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'docs', 'auto_dev', '.auto-dev-manifest.json'), 'utf8'));
+    const manifestEntry = manifest.entries['docs/auto_dev/CODEX_CIRCUIT_BREAKER.md'];
+    assert.strictEqual(manifestEntry.processedPath, third.job.processedPath);
     assert.strictEqual(fs.existsSync(doc), false);
     assert.doesNotThrow(() => JSON.parse(fs.readFileSync(path.join(tmpRoot, 'auto-dev-state.json'), 'utf8')));
 

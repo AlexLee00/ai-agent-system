@@ -134,6 +134,14 @@ async function main() {
       '---',
       '# completed archive sample',
     ].join('\n'), 'utf8');
+    const deadLetterProcessedDir = path.join(tempRoot, 'processed');
+    fs.mkdirSync(deadLetterProcessedDir, { recursive: true });
+    fs.writeFileSync(path.join(deadLetterProcessedDir, 'ALARM_INCIDENT_blog_dead_letter_sample.deadbeef.md'), [
+      '---',
+      'incident_key: blog:blog-commenter:dead-letter-sample',
+      '---',
+      '# dead-letter sample',
+    ].join('\n'), 'utf8');
     const annotatedResolved = _testOnly_annotateRows([
       {
         team: 'blog',
@@ -185,6 +193,26 @@ async function main() {
         incident_key: 'reservation:jimmy:alert:source-unavailable-sample',
         auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_reservation_source_unavailable_sample.md',
       },
+      {
+        team: 'blog',
+        bot_name: 'blog-commenter',
+        severity: 'error',
+        title: 'blog alarm',
+        message: 'auto-dev reached its terminal dead-letter state',
+        event_type: 'blog-commenter_error',
+        incident_key: 'blog:blog-commenter:dead-letter-sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_sample.md',
+      },
+      {
+        team: 'blog',
+        bot_name: 'blog-commenter',
+        severity: 'error',
+        title: 'blog alarm',
+        message: 'dead-letter manifest without processed evidence',
+        event_type: 'blog-commenter_error',
+        incident_key: 'blog:blog-commenter:dead-letter-missing',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_missing.md',
+      },
     ], {
       manifest: {
         entries: {
@@ -198,9 +226,22 @@ async function main() {
             state: 'archived_missing',
             reason: 'operational_noise_archived',
           },
+          'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_sample.md': {
+            relPath: 'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_sample.md',
+            state: 'dead_letter',
+            contentHash: 'deadbeef',
+            deadLetteredAt: '2026-07-17T00:00:00.000Z',
+          },
+          'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_missing.md': {
+            relPath: 'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_missing.md',
+            state: 'dead_letter',
+            contentHash: 'missing',
+            deadLetteredAt: '2026-07-17T00:00:00.000Z',
+          },
         },
       },
       archiveDir: completedArchiveDir,
+      processedDir: deadLetterProcessedDir,
     });
     assert(annotatedResolved[0].stale_status === 'resolved_manifest', 'expected completed manifest entry to suppress stale scan');
     assert(annotatedResolved[1].stale_status === 'resolved_current_policy', 'expected current policy downgrade to suppress stale scan');
@@ -208,14 +249,19 @@ async function main() {
     assert(annotatedResolved[2].stale_resolution_reason === 'completed_archive_document_matches_incident', 'expected archive evidence reason');
     assert(annotatedResolved[3].stale_status === 'resolved_manifest', 'expected operational-noise manifest reason to suppress stale scan');
     assert(annotatedResolved[4].stale_status === 'resolved_current_policy', 'expected naver source-unavailable guard to suppress stale auto-repair');
+    assert(annotatedResolved[5].stale_status === 'terminal_dead_letter', 'expected processed dead-letter result to suppress missing-result stale scan');
+    assert(annotatedResolved[6].stale_status === 'active', 'expected dead-letter manifest without processed evidence to stay active');
     const backfillPlan = _testOnly_buildBackfillPlan([
       { id: 11, incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
       { id: 12, incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },
+      { id: 13, incident_key: 'blog:dead-letter', team: 'blog', bot_name: 'blog-commenter', stale_status: 'terminal_dead_letter', stale_resolution_reason: 'auto_dev_dead_letter_result_recorded' },
     ]);
     assert(backfillPlan[0].mirror_status === 'resolved', 'manifest-resolved stale rows must backfill mirror status to resolved');
     assert(backfillPlan[0].result_status === 'resolved', 'manifest-resolved stale rows must emit resolved repair result');
     assert(backfillPlan[1].mirror_status === 'verified', 'policy-resolved stale rows must backfill mirror status to verified');
     assert(backfillPlan[1].result_status === 'partially_resolved', 'policy-resolved stale rows must emit partial repair result');
+    assert(backfillPlan[2].mirror_status === 'exhausted', 'terminal dead-letter rows must backfill mirror status to exhausted');
+    assert(backfillPlan[2].result_status === 'unresolved_needs_human', 'terminal dead-letter rows must preserve unresolved result status');
     assert(_testOnly_isApplyConfirmed(APPLY_CONFIRM_TOKEN), 'expected stale backfill apply confirm token to be accepted');
     assert(!_testOnly_isApplyConfirmed(''), 'expected stale backfill apply without confirm token to be rejected');
     const lowConfidencePolicy = _testOnly_annotateRows([{
