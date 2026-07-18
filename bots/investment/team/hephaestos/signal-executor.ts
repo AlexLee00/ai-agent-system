@@ -2,6 +2,9 @@
 
 import { extractExecutionTimestampMs } from '../../shared/binance-order-execution-normalizer.ts';
 import { recordPositionLifecycleStageEvent } from '../../shared/lifecycle-contract.ts';
+import {
+  resolveGuardSizingAuthority,
+} from './guard-sizing-authority.ts';
 
 export function isHephaestosHotPathPrefetchEnabled(env = process.env) {
   const raw = String(env?.HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED || '').trim().toLowerCase();
@@ -29,6 +32,7 @@ function extractExecutionAgentPlan(signal = {}) {
 
 export function createHephaestosSignalExecutor(deps = {}) {
   const {
+    env = process.env,
     ACTIONS,
     SIGNAL_STATUS,
     db,
@@ -265,6 +269,15 @@ async function executeSignal(signal) {
       });
       if (safetyResult?.success === false) return safetyResult;
       const tradeDataGuardNotify = safetyResult?.tradeDataGuardNotify || null;
+      const guardAuthorityCaps = tradeDataGuardNotify
+        ? [{
+            source: 'trade_data_entry_guard',
+            referenceAmountUsdt: tradeDataGuardNotify.requestedAmountUsdt,
+            multiplier: tradeDataGuardNotify.sizingMultiplier,
+            capAmountUsdt: tradeDataGuardNotify.adjustedAmountUsdt,
+            blockers: tradeDataGuardNotify.blockers,
+          }]
+        : [];
       if (tradeDataGuardNotify?.adjustedAmountUsdt > 0 && tradeDataGuardNotify.adjustedAmountUsdt < amountUsdt) {
         amountUsdt = tradeDataGuardNotify.adjustedAmountUsdt;
         signal.amount_usdt = amountUsdt;
@@ -303,14 +316,69 @@ async function executeSignal(signal) {
       // ── 미추적 BTC로 직접 매수 (BTC 페어 우선) ─────────────────────
       // 1순위: ETH/BTC 같은 직접 페어 → BTC→USDT 변환 없이 1회 수수료로 매수
       // 2순위: BTC 페어 없으면 BTC→USDT 전환 후 매수 (USDT 폴백)
-      try {
-        const btcResult = await _tryBuyWithBtcPair(symbol, base, signalId, signal, effectivePaperMode);
-        if (btcResult) return btcResult;
-      } catch (e) {
-        if (shouldBlockUsdtFallbackAfterBtcPairError(e)) {
-          throw e;
+      const preRouteGuardAuthority = resolveGuardSizingAuthority({
+        downstreamAmountUsdt: amountUsdt,
+        guardCaps: guardAuthorityCaps,
+        minOrderUsdt,
+      }, effectivePaperMode ? {} : env);
+      if (preRouteGuardAuthority.enabled && preRouteGuardAuthority.wouldRejectBelowMinimum) {
+        return rejectExecution({
+          persistFailure,
+          symbol,
+          action,
+          reason: `가드 상한 주문금액 ${preRouteGuardAuthority.counterfactualAmountUsdt.toFixed(2)} < 최소 ${minOrderUsdt}`,
+          code: 'guard_sizing_authority_rejected',
+          meta: { guardSizingAuthority: preRouteGuardAuthority },
+          notify: 'skip',
+        });
+      }
+      if (preRouteGuardAuthority.enabled && preRouteGuardAuthority.authoritativeCapUsdt != null) {
+        console.log(`  🛡️ [가드 사이징 권위] ${symbol} BTC 직접매수 우회 비활성 — 최종 USDT 상한 적용`);
+      } else {
+        try {
+          const btcResult = await _tryBuyWithBtcPair(symbol, base, signalId, signal, effectivePaperMode);
+          if (btcResult) {
+            const btcDirectAmountUsdt = Number(btcResult.totalUsdt
+              || (Number(btcResult.amount || 0) * Number(btcResult.price || 0))
+              || 0);
+            const btcDirectGuardAuthority = resolveGuardSizingAuthority({
+              downstreamAmountUsdt: btcDirectAmountUsdt,
+              guardCaps: guardAuthorityCaps,
+              minOrderUsdt,
+            }, {});
+            const counterfactualQuantity = Number(btcResult.price || 0) > 0
+              ? btcDirectGuardAuthority.counterfactualAmountUsdt / Number(btcResult.price)
+              : null;
+            await recordHephaestosLifecycleStage({
+              symbol,
+              signalId,
+              signalTradeMode,
+              stageId: 'stage_4',
+              eventType: 'completed',
+              inputSnapshot: {
+                action,
+                btcPair: btcResult.btcPair || null,
+                paper: effectivePaperMode,
+              },
+              outputSnapshot: {
+                amount: Number(btcResult.amount || 0),
+                price: Number(btcResult.price || 0),
+                totalUsdt: btcDirectAmountUsdt,
+              },
+              evidenceSnapshot: {
+                btcDirect: true,
+                guardSizingAuthority: btcDirectGuardAuthority,
+                counterfactualQuantity,
+              },
+            });
+            return { ...btcResult, guardSizingAuthority: btcDirectGuardAuthority };
+          }
+        } catch (e) {
+          if (shouldBlockUsdtFallbackAfterBtcPairError(e)) {
+            throw e;
+          }
+          console.warn(`  ⚠️ BTC 직접 매수 실패 (주문 전 오류, USDT 전환 폴백): ${e.message}`);
         }
-        console.warn(`  ⚠️ BTC 직접 매수 실패 (주문 전 오류, USDT 전환 폴백): ${e.message}`);
       }
 
       // USDT 폴백: BTC 페어 없는 종목일 때 BTC → USDT → 매수
@@ -394,7 +462,16 @@ async function executeSignal(signal) {
         responsibilityPlan: signal.existingResponsibilityPlan || null,
         executionPlan: signal.existingExecutionPlan || null,
       });
-      const actualAmount = responsibilitySizing.amount;
+      const guardSizingAuthority = resolveGuardSizingAuthority({
+        downstreamAmountUsdt: responsibilitySizing.amount,
+        guardCaps: guardAuthorityCaps,
+        minOrderUsdt,
+      }, effectivePaperMode ? {} : env);
+      const actualAmount = guardSizingAuthority.appliedAmountUsdt;
+      if (guardAuthorityCaps.length > 0) {
+        const mode = guardSizingAuthority.enabled ? 'authoritative' : 'shadow';
+        console.log(`  🛡️ [가드 사이징 권위:${mode}] ${symbol} 현행 $${guardSizingAuthority.downstreamAmountUsdt} / 반사실 $${guardSizingAuthority.counterfactualAmountUsdt}`);
+      }
       if (!effectivePaperMode && actualAmount < minOrderUsdt) {
         return rejectExecution({
           persistFailure,
@@ -406,6 +483,7 @@ async function executeSignal(signal) {
             minOrderUsdt,
             responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
             responsibilityExecutionReason: responsibilitySizing.reason,
+            guardSizingAuthority,
           },
           notify: 'skip',
         });
@@ -418,6 +496,7 @@ async function executeSignal(signal) {
         actualAmountUsdt: Number(actualAmount || 0),
         responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
         responsibilityExecutionReason: responsibilitySizing.reason,
+        guardSizingAuthority,
         agentRole: hephaestosRoleState
           ? {
               mission: hephaestosRoleState.mission || null,
@@ -461,6 +540,7 @@ async function executeSignal(signal) {
         evidenceSnapshot: {
           executionClientOrderId,
           riskApproval: 'passed',
+          guardSizingAuthority,
         },
       });
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode, {
@@ -526,6 +606,7 @@ async function executeSignal(signal) {
         evidenceSnapshot: {
           executionAttachTracked: !effectivePaperMode,
           lifecycleStatus: 'position_open',
+          guardSizingAuthority,
         },
       });
       await applyBuyProtectiveExit({ trade, signal, order, effectivePaperMode, symbol });
