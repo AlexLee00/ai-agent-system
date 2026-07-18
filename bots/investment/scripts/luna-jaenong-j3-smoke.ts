@@ -24,9 +24,11 @@ import {
   resolveJaenongReferenceDirectory,
 } from '../shared/jaenong-operations.ts';
 import {
+  getJaenongBusinessDateKst,
   JAENONG_DAILY_WRITE_CONFIRM,
   runJaenongDailyShadow,
   summarizeJaenongDailyShadowResult,
+  waitForJaenongCollectorReadiness,
 } from './runtime-jaenong-daily-shadow.ts';
 import { runJaenongReferenceSnapshot } from './jaenong-reference-snapshot.ts';
 import {
@@ -219,6 +221,76 @@ async function main() {
     now,
     brief: { ...brief, publishedAt: '2026-07-14T09:00:00.000Z' },
   }).status, 'stale');
+
+  assert.equal(getJaenongBusinessDateKst('2026-07-16T20:59:59+09:00'), '2026-07-16');
+  assert.equal(getJaenongBusinessDateKst('2026-07-16T21:00:00+09:00'), '2026-07-16');
+  assert.equal(getJaenongBusinessDateKst('2026-07-16T23:59:59+09:00'), '2026-07-16');
+  assert.equal(getJaenongBusinessDateKst('2026-07-17T00:00:00+09:00'), '2026-07-17');
+
+  let readinessNowMs = 0;
+  let readinessReads = 0;
+  const duringWait = await waitForJaenongCollectorReadiness({
+    businessDateKst: '2026-07-16',
+    maxWaitMs: 1_000,
+    pollIntervalMs: 500,
+  }, {
+    nowFn: () => readinessNowMs,
+    sleepFn: async (ms) => { readinessNowMs += ms; },
+    queryFn: async () => {
+      readinessReads += 1;
+      return readinessReads === 1
+        ? [{ success_count: 0, failure_count: 0, started_at: '2026-07-16T11:00:00.000Z' }]
+        : [{ success_count: 1, failure_count: 1, succeeded_at: '2026-07-16T12:00:00.000Z', started_at: '2026-07-16T11:00:00.000Z' }];
+    },
+  });
+  assert.equal(duringWait.status, 'succeeded');
+  assert.equal(duringWait.waitedMs, 500);
+  assert.equal(readinessReads, 2);
+  assert.equal(duringWait.collectorStartedAt, '2026-07-16T11:00:00.000Z');
+
+  const terminalFailure = await waitForJaenongCollectorReadiness({
+    businessDateKst: '2026-07-16',
+    maxWaitMs: 1_000,
+    pollIntervalMs: 500,
+  }, {
+    nowFn: () => 0,
+    sleepFn: async () => { throw new Error('terminal failure must not sleep'); },
+    queryFn: async () => [{ success_count: 0, failure_count: 1, failed_at: '2026-07-16T12:00:00.000Z' }],
+  });
+  assert.equal(terminalFailure.status, 'failed');
+  assert.equal(terminalFailure.fallbackUsed, true);
+
+  let concurrentNowMs = 0;
+  let concurrentReads = 0;
+  const concurrentRetry = await waitForJaenongCollectorReadiness({
+    businessDateKst: '2026-07-16',
+    maxWaitMs: 1_000,
+    pollIntervalMs: 500,
+  }, {
+    nowFn: () => concurrentNowMs,
+    sleepFn: async (ms) => { concurrentNowMs += ms; },
+    queryFn: async () => {
+      concurrentReads += 1;
+      return concurrentReads === 1
+        ? [{ success_count: 0, failure_count: 1, running_count: 1 }]
+        : [{ success_count: 1, failure_count: 1, running_count: 0 }];
+    },
+  });
+  assert.equal(concurrentRetry.status, 'succeeded');
+  assert.equal(concurrentRetry.waitedMs, 500);
+
+  let timeoutNowMs = 0;
+  const timeout = await waitForJaenongCollectorReadiness({
+    businessDateKst: '2026-07-16',
+    maxWaitMs: 1_000,
+    pollIntervalMs: 600,
+  }, {
+    nowFn: () => timeoutNowMs,
+    sleepFn: async (ms) => { timeoutNowMs += ms; },
+    queryFn: async () => [{ success_count: 0, failure_count: 0 }],
+  });
+  assert.equal(timeout.status, 'timeout');
+  assert.equal(timeout.waitedMs, 1_000);
   assert.equal(evaluateJaenongBriefState({
     now,
     brief: { ...brief, expiresAt: '2026-07-16T11:59:59.000Z' },
@@ -473,12 +545,110 @@ async function main() {
     /jaenong_daily_write_confirmation_required/,
   );
 
+  const collectorMarkerWrites = [];
+  const successfulCollect = await runJaenongDailyShadow({
+    stage: 'collect',
+    write: true,
+    confirm: JAENONG_DAILY_WRITE_CONFIRM,
+    now: '2026-07-16T20:00:00+09:00',
+  }, {
+    runIdFn: () => 'collector-run-success',
+    collectFn: async () => ({ status: 'ok' }),
+    parseFn: async () => [{ id: 1 }],
+    runFn: async (sql, params) => {
+      collectorMarkerWrites.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  assert.equal(successfulCollect.ok, true);
+  assert.deepEqual(collectorMarkerWrites.map((write) => write.params[0]), [
+    'collector_started',
+    'collector_succeeded',
+  ]);
+  assert.match(collectorMarkerWrites[1].params[2], /"businessDateKst":"2026-07-16"/);
+
+  const failedCollectorWrites = [];
+  const failedCollect = await runJaenongDailyShadow({
+    stage: 'collect',
+    write: true,
+    confirm: JAENONG_DAILY_WRITE_CONFIRM,
+    now: '2026-07-16T20:00:00+09:00',
+  }, {
+    runIdFn: () => 'collector-run-failed',
+    collectFn: async () => ({ status: 'collector_failed', error: 'fixture_failure' }),
+    parseFn: async () => { throw new Error('parser must not run'); },
+    runFn: async (sql, params) => {
+      failedCollectorWrites.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  assert.equal(failedCollect.ok, false);
+  assert.deepEqual(failedCollectorWrites.map((write) => write.params[0]), [
+    'collector_started',
+    'parse_failed',
+  ]);
+
+  const firstRunWrites = [];
+  const firstRun = await runJaenongDailyShadow({
+    stage: 'brief',
+    write: true,
+    confirm: JAENONG_DAILY_WRITE_CONFIRM,
+    now,
+    collectorWaitMaxMs: 0,
+  }, {
+    queryFn: async (sql) => {
+      if (/COUNT\(\*\) FILTER/.test(sql)) return [{ success_count: 0, failure_count: 0 }];
+      if (/jaenong_post_scores/.test(sql)) return [];
+      return [{ brief_ref: null, latest_event_type: null }];
+    },
+    runFn: async (sql, params) => {
+      firstRunWrites.push({ sql, params });
+      return { rowCount: 1 };
+    },
+  });
+  assert.equal(firstRun.brief, null);
+  assert.equal(firstRun.sourceDependency.sourceMode, 'prior_snapshot_fallback');
+  assert.equal(firstRun.sourceDependency.sourceScorePublishedAt, null);
+  assert.equal(firstRunWrites.some((write) => /brief_dependency/.test(write.sql)), true);
+
+  let fallbackScoreParams = null;
+  const boundedFallback = await runJaenongDailyShadow({
+    stage: 'brief',
+    write: true,
+    confirm: JAENONG_DAILY_WRITE_CONFIRM,
+    now,
+  }, {
+    queryFn: async (sql, params) => {
+      if (/WITH run_states/.test(sql)) return [{
+        success_count: 0,
+        failure_count: 1,
+        running_count: 0,
+        started_at: '2026-07-16T10:00:00.000Z',
+      }];
+      if (/jaenong_post_scores/.test(sql)) {
+        fallbackScoreParams = params;
+        return [{
+          source_post_id: 'post-before-collector',
+          published_at: '2026-07-16T08:00:00.000Z',
+          parsed_at: '2026-07-16T09:59:59.000Z',
+          brief: { marketView: '중립', candidates: [] },
+        }];
+      }
+      if (/jaenong_reference_snapshot/.test(sql)) return [];
+      return [{ brief_ref: null, latest_event_type: null }];
+    },
+    runFn: async () => ({ rowCount: 1 }),
+  });
+  assert.deepEqual(fallbackScoreParams, ['2026-07-16T10:00:00.000Z']);
+  assert.equal(boundedFallback.sourceDependency.snapshotCutoffAt, '2026-07-16T10:00:00.000Z');
+
   const dailyWrites = [];
   const briefRun = await runJaenongDailyShadow({
     stage: 'brief',
     write: true,
     confirm: JAENONG_DAILY_WRITE_CONFIRM,
     now,
+    collectorWaitMaxMs: 0,
   }, {
     queryFn: async (sql) => {
       if (/jaenong_post_scores/.test(sql)) return [{
@@ -497,6 +667,7 @@ async function main() {
   });
   assert.equal(briefRun.mode, 'shadow_write');
   assert.equal(briefRun.brief.state, 'awaiting_ack');
+  assert.equal(briefRun.sourceDependency.sourceMode, 'prior_snapshot_fallback');
   assert.equal(dailyWrites.some((write) => /INSERT INTO investment\.jaenong_brief/.test(write.sql)), true);
   assert.equal(dailyWrites.every((write) => !/trade_journal|order/i.test(write.sql)), true);
 
@@ -507,6 +678,7 @@ async function main() {
     confirm: JAENONG_DAILY_WRITE_CONFIRM,
     now: '2026-07-18T12:00:00.001Z',
     env: {},
+    collectorWaitMaxMs: 0,
   }, {
     queryFn: async (sql) => {
       if (/jaenong_post_scores/.test(sql)) return [{

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import { randomUUID } from 'node:crypto';
 import * as db from '../shared/db.ts';
 import {
   buildJaenongBriefFromPostScore,
@@ -9,6 +10,8 @@ import {
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 export const JAENONG_DAILY_WRITE_CONFIRM = 'jaenong-daily-shadow';
+const DEFAULT_COLLECTOR_WAIT_MAX_MS = 30 * 60 * 1_000;
+const DEFAULT_COLLECTOR_WAIT_POLL_MS = 5_000;
 
 function normalizeStage(value) {
   const stage = String(value || '').trim().toLowerCase();
@@ -20,6 +23,112 @@ function requireWriteConfirmation(options) {
   if (options.write === true && options.confirm !== JAENONG_DAILY_WRITE_CONFIRM) {
     throw new Error('jaenong_daily_write_confirmation_required');
   }
+}
+
+export function getJaenongBusinessDateKst(value = new Date()) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error('jaenong_business_date_invalid');
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function boundedWaitMs(value, fallback, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
+  return Math.min(Math.floor(number), maximum);
+}
+
+export async function waitForJaenongCollectorReadiness(options = {}, deps = {}) {
+  const businessDateKst = String(options.businessDateKst || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDateKst)) {
+    throw new Error('jaenong_business_date_invalid');
+  }
+  const queryFn = deps.queryFn || db.query;
+  const sleepFn = deps.sleepFn || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const nowFn = deps.nowFn || Date.now;
+  const maxWaitMs = boundedWaitMs(options.maxWaitMs, DEFAULT_COLLECTOR_WAIT_MAX_MS, DEFAULT_COLLECTOR_WAIT_MAX_MS);
+  const pollIntervalMs = Math.max(1, boundedWaitMs(
+    options.pollIntervalMs,
+    DEFAULT_COLLECTOR_WAIT_POLL_MS,
+    DEFAULT_COLLECTOR_WAIT_MAX_MS,
+  ));
+  const startedAtMs = Number(nowFn());
+
+  while (true) {
+    const rows = await queryFn(
+      `WITH run_states AS (
+         SELECT payload->>'runId' AS run_id,
+                BOOL_OR(event_type = 'collector_started') AS started,
+                BOOL_OR(event_type = 'collector_succeeded') AS succeeded,
+                BOOL_OR(event_type = 'parse_failed') AS failed,
+                MIN((payload->>'startedAt')::timestamptz)
+                  FILTER (WHERE event_type = 'collector_started') AS started_at,
+                MAX(created_at) FILTER (WHERE event_type = 'collector_succeeded') AS succeeded_at,
+                MAX(created_at) FILTER (WHERE event_type = 'parse_failed') AS failed_at
+           FROM investment.jaenong_brief_event
+          WHERE event_type IN ('collector_started', 'collector_succeeded', 'parse_failed')
+            AND payload->>'businessDateKst' = $1
+          GROUP BY payload->>'runId'
+       )
+       SELECT COUNT(*) FILTER (WHERE succeeded)::int AS success_count,
+              COUNT(*) FILTER (WHERE failed)::int AS failure_count,
+              COUNT(*) FILTER (WHERE started AND NOT succeeded AND NOT failed)::int AS running_count,
+              MIN(started_at) AS started_at,
+              MAX(succeeded_at) AS succeeded_at,
+              MAX(failed_at) AS failed_at
+         FROM run_states`,
+      [businessDateKst],
+    );
+    const row = rows?.[0] || {};
+    const waitedMs = Math.max(0, Number(nowFn()) - startedAtMs);
+    if (Number(row.success_count || 0) > 0) {
+      return {
+        businessDateKst,
+        status: 'succeeded',
+        ready: true,
+        fallbackUsed: false,
+        waitedMs,
+        markerAt: row.succeeded_at || null,
+        collectorStartedAt: row.started_at || null,
+      };
+    }
+    if (Number(row.failure_count || 0) > 0 && Number(row.running_count || 0) === 0) {
+      return {
+        businessDateKst,
+        status: 'failed',
+        ready: false,
+        fallbackUsed: true,
+        waitedMs,
+        markerAt: row.failed_at || null,
+        collectorStartedAt: row.started_at || null,
+      };
+    }
+    if (waitedMs >= maxWaitMs) {
+      return {
+        businessDateKst,
+        status: 'timeout',
+        ready: false,
+        fallbackUsed: true,
+        waitedMs,
+        markerAt: null,
+        collectorStartedAt: row.started_at || null,
+      };
+    }
+    await sleepFn(Math.min(pollIntervalMs, maxWaitMs - waitedMs));
+  }
+}
+
+async function recordCollectorEvent(runFn, eventType, reason, payload) {
+  return runFn(
+    `INSERT INTO investment.jaenong_brief_event
+       (event_type, to_state, reason, payload, shadow_only)
+     VALUES ($1, $1, $2, $3::jsonb, true)`,
+    [eventType, reason, JSON.stringify(payload)],
+  );
 }
 
 async function collectStage(options, deps) {
@@ -38,18 +147,25 @@ async function collectStage(options, deps) {
   const parseFn = deps.parseFn || await import('./jaenong-post-parser.ts')
     .then((module) => module.parseStoredJaenongPosts);
   const runFn = deps.runFn || db.run;
-  const collected = await collectFn({ write: true, now: options.now });
-  if (collected?.status !== 'ok') {
-    await runFn(
-      `INSERT INTO investment.jaenong_brief_event
-         (event_type, to_state, reason, payload, shadow_only)
-       VALUES ('parse_failed', 'parse_failed', $1, $2::jsonb, true)`,
-      [String(collected?.status || 'collector_failed'), JSON.stringify({
-        stage: 'collector',
-        failureRate: collected?.failureRate ?? null,
-        error: collected?.error || null,
-      })],
-    );
+  const startedAt = new Date(options.now || new Date());
+  const businessDateKst = getJaenongBusinessDateKst(startedAt);
+  const runId = String(deps.runIdFn?.() || randomUUID());
+  const markerBase = { runId, businessDateKst, startedAt: startedAt.toISOString() };
+  await recordCollectorEvent(runFn, 'collector_started', 'collector_started', markerBase);
+  let collected;
+  let parsed;
+  try {
+    collected = await collectFn({ write: true, now: options.now });
+    if (collected?.status !== 'ok') throw new Error(String(collected?.status || 'collector_failed'));
+    parsed = await parseFn({ write: true }, { runFn, queryFn: deps.queryFn || db.query });
+  } catch (error) {
+    await recordCollectorEvent(runFn, 'parse_failed', String(error?.message || 'collector_failed'), {
+      ...markerBase,
+      completedAt: new Date().toISOString(),
+      stage: collected?.status === 'ok' ? 'parser' : 'collector',
+      failureRate: collected?.failureRate ?? null,
+      error: String(error?.message || error),
+    });
     return {
       ok: false,
       stage: 'collect',
@@ -58,10 +174,15 @@ async function collectStage(options, deps) {
       state: 'parse_failed',
       collected,
       parsed: [],
+      dependency: { runId, businessDateKst, status: 'failed' },
       executionConnected: false,
     };
   }
-  const parsed = await parseFn({ write: true }, { runFn, queryFn: deps.queryFn || db.query });
+  await recordCollectorEvent(runFn, 'collector_succeeded', 'collector_succeeded', {
+    ...markerBase,
+    completedAt: new Date().toISOString(),
+    parsedCount: parsed.length,
+  });
   return {
     ok: true,
     stage: 'collect',
@@ -70,19 +191,21 @@ async function collectStage(options, deps) {
     state: parsed.length > 0 ? 'parsed' : 'absent',
     collected,
     parsedCount: parsed.length,
+    dependency: { runId, businessDateKst, status: 'succeeded' },
     executionConnected: false,
   };
 }
 
-async function latestPostScore(queryFn) {
+async function latestPostScore(queryFn, snapshotCutoffAt = null) {
   const rows = await queryFn(
     `SELECT p.source_post_id, p.published_at, ps.scored_at AS parsed_at, ps.brief, ps.status
        FROM investment.jaenong_post_scores ps
        JOIN investment.jaenong_posts p ON p.id = ps.post_id
       WHERE ps.status IN ('available', 'partial')
+        AND ($1::timestamptz IS NULL OR ps.scored_at < $1::timestamptz)
       ORDER BY p.published_at DESC NULLS LAST, ps.scored_at DESC, ps.id DESC
       LIMIT 1`,
-    [],
+    [snapshotCutoffAt],
   );
   return rows?.[0] || null;
 }
@@ -140,9 +263,22 @@ async function briefStage(options, deps) {
   const queryFn = deps.queryFn || db.query;
   const runFn = deps.runFn || db.run;
   const now = options.now || new Date();
+  const env = options.env || process.env;
+  const businessDateKst = getJaenongBusinessDateKst(now);
+  const dependency = await waitForJaenongCollectorReadiness({
+    businessDateKst,
+    maxWaitMs: options.write === true
+      ? boundedWaitMs(options.collectorWaitMaxMs ?? env.JAENONG_COLLECTOR_WAIT_MAX_MS, DEFAULT_COLLECTOR_WAIT_MAX_MS, DEFAULT_COLLECTOR_WAIT_MAX_MS)
+      : 0,
+    pollIntervalMs: boundedWaitMs(options.collectorWaitPollMs ?? env.JAENONG_COLLECTOR_WAIT_POLL_MS, DEFAULT_COLLECTOR_WAIT_POLL_MS, DEFAULT_COLLECTOR_WAIT_MAX_MS),
+  }, {
+    queryFn,
+    sleepFn: deps.sleepFn,
+    nowFn: deps.nowFn,
+  });
   const current = await getJaenongBriefStatus({
     now,
-    env: options.env || process.env,
+    env,
     maxPublishedAgeHours: options.maxPublishedAgeHours,
   }, { queryFn });
   if (options.write === true && current.brief && current.brief.state !== current.state.status
@@ -161,8 +297,27 @@ async function briefStage(options, deps) {
     );
   }
 
-  const scoreRow = await latestPostScore(queryFn);
+  const snapshotCutoffAt = dependency.ready ? null : dependency.collectorStartedAt;
+  const scoreRow = await latestPostScore(queryFn, snapshotCutoffAt);
+  const sourceDependency = {
+    ...dependency,
+    sourceMode: dependency.ready ? 'current_collector' : 'prior_snapshot_fallback',
+    sourceScorePublishedAt: scoreRow?.published_at || null,
+    sourceScoreParsedAt: scoreRow?.parsed_at || null,
+    snapshotCutoffAt: snapshotCutoffAt || null,
+  };
+  if (sourceDependency.fallbackUsed) {
+    console.warn(`  ⚠️ [재농 brief] ${businessDateKst} collector ${dependency.status}; 이전 데이터 사용`);
+  }
   if (!scoreRow) {
+    if (options.write === true) {
+      await runFn(
+        `INSERT INTO investment.jaenong_brief_event
+           (event_type, to_state, reason, payload, shadow_only)
+         VALUES ('brief_dependency', 'absent', $1, $2::jsonb, true)`,
+        [sourceDependency.sourceMode, JSON.stringify(sourceDependency)],
+      );
+    }
     return {
       ok: true,
       stage: 'brief',
@@ -170,6 +325,7 @@ async function briefStage(options, deps) {
       write: options.write === true,
       state: current.state.status,
       brief: null,
+      sourceDependency,
       executionConnected: false,
     };
   }
@@ -177,10 +333,19 @@ async function briefStage(options, deps) {
   const brief = buildJaenongBriefFromPostScore(scoreRow, {
     now,
     referenceSnapshotHash,
-    env: options.env || process.env,
+    env,
     maxPublishedAgeHours: options.maxPublishedAgeHours,
   });
-  if (options.write === true) await upsertBrief(brief, runFn);
+  brief.sourceDependency = sourceDependency;
+  if (options.write === true) {
+    await upsertBrief(brief, runFn);
+    await runFn(
+      `INSERT INTO investment.jaenong_brief_event
+         (brief_ref, event_type, to_state, reason, payload, shadow_only)
+       VALUES ($1, 'brief_dependency', $2, $3, $4::jsonb, true)`,
+      [brief.briefRef, brief.state, sourceDependency.sourceMode, JSON.stringify(sourceDependency)],
+    );
+  }
   return {
     ok: true,
     stage: 'brief',
@@ -189,6 +354,7 @@ async function briefStage(options, deps) {
     state: brief.state,
     brief,
     currentState: current.state,
+    sourceDependency,
     executionConnected: false,
   };
 }
@@ -239,6 +405,18 @@ export function summarizeJaenongDailyShadowResult(result = {}) {
   } else {
     summary.brief = null;
   }
+  if (result.sourceDependency) {
+    summary.sourceDependency = {
+      businessDateKst: result.sourceDependency.businessDateKst || null,
+      status: result.sourceDependency.status || null,
+      sourceMode: result.sourceDependency.sourceMode || null,
+      fallbackUsed: result.sourceDependency.fallbackUsed === true,
+      waitedMs: Number(result.sourceDependency.waitedMs || 0),
+      sourceScorePublishedAt: result.sourceDependency.sourceScorePublishedAt || null,
+      sourceScoreParsedAt: result.sourceDependency.sourceScoreParsedAt || null,
+      snapshotCutoffAt: result.sourceDependency.snapshotCutoffAt || null,
+    };
+  }
   return summary;
 }
 
@@ -251,7 +429,10 @@ if (isDirectExecution(import.meta.url)) {
       write: argv.includes('--write'),
       confirm: value('confirm'),
     }),
-    onSuccess: (result) => console.log(JSON.stringify(summarizeJaenongDailyShadowResult(result), null, 2)),
+    onSuccess: (result) => {
+      console.log(JSON.stringify(summarizeJaenongDailyShadowResult(result), null, 2));
+      if (result.ok !== true) process.exitCode = 1;
+    },
     errorPrefix: 'jaenong daily shadow failed:',
   });
 }
