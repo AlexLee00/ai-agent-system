@@ -61,9 +61,13 @@ function resolveReservationManualScript({
   sourceRelPath,
   jsRelPath,
   projectRoot = getProjectRoot(),
+  runtimeMode = process.env.MODE,
 }) {
   const daemonPath = label ? path.join(projectRoot, 'dist', 'daemons', `${label}.cjs`) : null;
   if (daemonPath && fs.existsSync(daemonPath)) return daemonPath;
+  if (label && runtimeMode === 'ops') {
+    throw new Error(`missing prebuilt reservation daemon in OPS: ${label} (${daemonPath})`);
+  }
 
   const normalizedJsRelPath = normalizeReservationRelPath(jsRelPath);
   const jsPath = normalizedJsRelPath ? path.join(projectRoot, normalizedJsRelPath) : null;
@@ -72,6 +76,26 @@ function resolveReservationManualScript({
   const normalizedSourceRelPath = normalizeReservationRelPath(sourceRelPath);
   const sourcePath = path.join(projectRoot, normalizedSourceRelPath);
   return sourcePath;
+}
+
+function resolveReservationChildRuntime({
+  label,
+  sourceRelPath,
+  jsRelPath = String(sourceRelPath || '').replace(/\.ts$/, '.js'),
+  projectRoot = getProjectRoot(),
+  runtimeMode = process.env.MODE,
+  nodeBin = process.execPath || '/opt/homebrew/bin/node',
+  tsxBin = path.join(projectRoot, 'node_modules/.bin/tsx'),
+}) {
+  const script = resolveReservationManualScript({
+    label,
+    sourceRelPath,
+    jsRelPath,
+    projectRoot,
+    runtimeMode,
+  });
+  const command = /\.(?:cjs|mjs|js)$/u.test(script) ? nodeBin : tsxBin;
+  return { command, script };
 }
 
 module.exports = {
@@ -85,5 +109,6 @@ module.exports = {
   ensureDir,
   ensureParentDir,
   normalizeReservationRelPath,
+  resolveReservationChildRuntime,
   resolveReservationManualScript,
 };

@@ -40,6 +40,7 @@ const {
   waitForPickkoChildProcess,
   waitForPickkoOperationLock,
 } = require('../../lib/pickko-operation-lock');
+const { resolveReservationChildRuntime } = require('../../lib/runtime-paths');
 const payScanMemory = createAgentMemory({ agentId: 'reservation.pickko-pay-scan', team: 'reservation' });
 
 const PAY_SCAN_LOCK_TTL_MS = 30 * 60 * 1000;
@@ -67,13 +68,13 @@ function buildPayScanMemoryQuery(successCount: number, failureCount: number, une
 }
 
 async function runPayPending(entry: any) {
-  const scriptPath = path.join(
-    __dirname,
-    '../../../../bots/reservation/manual/reports/pickko-pay-pending.ts',
-  );
-  const tsxBin = path.join(__dirname, '../../../../node_modules/.bin/tsx');
+  const runtime = resolveReservationChildRuntime({
+    label: 'ai.ska.pickko-pay-pending',
+    sourceRelPath: 'bots/reservation/manual/reports/pickko-pay-pending.ts',
+    runtimeMode: process.env.MODE,
+  });
   const args = [
-    scriptPath,
+    runtime.script,
     `--phone=${String(entry.phone || '').replace(/\D/g, '')}`,
     `--date=${entry.date}`,
     `--start=${entry.start}`,
@@ -81,8 +82,8 @@ async function runPayPending(entry: any) {
     `--room=${entry.room}`,
   ];
 
-  const child = spawn(tsxBin, args, {
-    cwd: path.dirname(scriptPath),
+  const child = spawn(runtime.command, args, {
+    cwd: path.dirname(runtime.script),
     env: { ...process.env, MODE: 'ops' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

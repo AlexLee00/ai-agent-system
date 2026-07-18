@@ -132,17 +132,31 @@ export function createPickkoFinalizationService({
   async function readFinalStatus(page: any) {
     const finalStatus = await page.evaluate(() => {
       const bodyText = document.querySelector('body')?.innerText || '';
+      const paymentStatuses = [...new Set(bodyText
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .map((line) => {
+          if (line === '결제대기' || line === '결제완료') return line;
+          return line.match(/^(?:결제\s*상태|상태)\s*[:：-]?\s*(결제대기|결제완료)$/)?.[1] || '';
+        })
+        .filter(Boolean))];
       return {
         pageTitle: document.title || '',
         hasErrorMsg: bodyText.includes('에러'),
         hasSuccessMsg: bodyText.includes('완료'),
+        isPaymentPending: paymentStatuses.includes('결제대기'),
+        isPaymentCompleted: paymentStatuses.includes('결제완료'),
+        paymentStatusText: paymentStatuses.join(' / '),
         url: window.location.href,
         timestamp: new Date().toLocaleString('ko-KR'),
       };
     });
 
     const hasOrderUrl = /\/order\/view\/\d+/.test(finalStatus.url);
-    const isSuccess = !finalStatus.hasErrorMsg && (hasOrderUrl || finalStatus.hasSuccessMsg);
+    const isSuccess = !finalStatus.hasErrorMsg
+      && hasOrderUrl
+      && finalStatus.isPaymentCompleted
+      && !finalStatus.isPaymentPending;
 
     log(`🔍 최종 상태: ${JSON.stringify(finalStatus)}`);
 

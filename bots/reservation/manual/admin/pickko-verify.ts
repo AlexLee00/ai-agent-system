@@ -7,13 +7,13 @@
 
 const puppeteer = require('puppeteer');
 const { spawn } = require('child_process');
-const fs = require('fs');
 const path = require('path');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets } = require('../../lib/secrets');
 const { toKoreanTime, pickkoEndTime, formatPhone, maskPhone } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
+const { resolveReservationChildRuntime } = require('../../lib/runtime-paths');
 const {
   getPendingReservations,
   getUnverifiedCompletedReservations,
@@ -31,8 +31,6 @@ const MODE = IS_OPS ? 'ops' : 'dev';
 const DRY_RUN = process.argv.includes('--dry-run');
 const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
 const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
-const DAEMON_DIR = path.join(PROJECT_ROOT, 'dist/daemons');
-const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
 
 type ReservationLike = {
   id: string;
@@ -63,11 +61,13 @@ type PickkoDateResult = {
 };
 
 function resolveChildRuntime(label: string, sourceRelPath: string) {
-  const daemonPath = path.join(DAEMON_DIR, `${label}.cjs`);
-  if (fs.existsSync(daemonPath)) {
-    return { command: NODE_BIN, script: daemonPath };
-  }
-  return { command: TSX_BIN, script: path.join(PROJECT_ROOT, sourceRelPath) };
+  return resolveReservationChildRuntime({
+    label,
+    sourceRelPath,
+    projectRoot: PROJECT_ROOT,
+    runtimeMode: IS_OPS ? 'ops' : 'dev',
+    nodeBin: NODE_BIN,
+  });
 }
 
 function needsVerify(entry: ReservationLike) {

@@ -8,10 +8,15 @@ const {
   classifyPickkoPaymentState,
   derivePickkoPaymentStateFromBody,
   extractPickkoPaymentStatusText,
+  classifyPickkoPaymentOutcome,
   isConfirmedPickkoPaymentCompletion,
   isAlreadyPaidWithoutButton,
   isMatchingPickkoReservationUrl,
 } = require('../lib/report-followup-helpers.ts');
+
+assert.equal(classifyPickkoPaymentOutcome(false, false), 'not_submitted');
+assert.equal(classifyPickkoPaymentOutcome(true, false), 'outcome_unknown');
+assert.equal(classifyPickkoPaymentOutcome(true, true), 'verified_paid');
 
 const pending = classifyPickkoPaymentState('상태 결제대기 결제금액 14,000 원');
 assert.equal(pending.isPending, true);
@@ -117,19 +122,61 @@ const payPendingSource = fs.readFileSync(
   path.resolve(__dirname, '../manual/reports/pickko-pay-pending.ts'),
   'utf8',
 );
-const paymentResultStart = payPendingSource.indexOf('const payResult = await processPaymentModal(page);');
+const paymentResultStart = payPendingSource.indexOf('const payResult = await paymentService.processPaymentStep(page, {');
 const paymentResultEnd = payPendingSource.indexOf('} catch (err: any)', paymentResultStart);
 assert.ok(paymentResultStart >= 0 && paymentResultEnd > paymentResultStart, 'payment result branch must be present');
 const paymentResultBranch = payPendingSource.slice(paymentResultStart, paymentResultEnd);
 assert.match(
   paymentResultBranch,
-  /await revalidatePaymentState\(page, ['"]결제 제출 후['"], viewHref\)/,
-  'successful submission must reload and revalidate the live payment state',
+  /await revalidatePaymentStateFresh\(['"]결제 제출 후['"], viewHref\)/,
+  'successful submission must use a fresh browser to revalidate the live payment state',
 );
 assert.match(
   paymentResultBranch,
   /isConfirmedPickkoPaymentCompletion\(/,
   'successful submission must use the fail-closed completion predicate',
+);
+assert.doesNotMatch(
+  payPendingSource,
+  /function\s+(?:processPaymentModal|preClickReassertZero)\s*\(/,
+  'pay-pending must not keep a second payment implementation',
+);
+assert.match(
+  payPendingSource,
+  /if \(require\.main === module\) run\(\);/,
+  'pay-pending must remain import-safe for contract tests',
+);
+const exceptionBranchStart = payPendingSource.indexOf('} catch (err: any) {', paymentResultEnd);
+const exceptionBranchEnd = payPendingSource.indexOf('} finally {', exceptionBranchStart);
+assert.ok(
+  exceptionBranchStart >= 0 && exceptionBranchEnd > exceptionBranchStart,
+  'payment exception branch must be present',
+);
+const exceptionBranch = payPendingSource.slice(exceptionBranchStart, exceptionBranchEnd);
+assert.match(
+  exceptionBranch,
+  /await revalidatePaymentStateFresh\(`/,
+  'any payment-path exception must revalidate with a fresh browser',
+);
+assert.doesNotMatch(
+  exceptionBranch,
+  /await revalidatePaymentState\(page/,
+  'a timed-out browser session must never be reused for payment-state revalidation',
+);
+assert.doesNotMatch(
+  payPendingSource,
+  /protocolTimeout:\s*PAYMENT_(?:PROTOCOL|STEP)_TIMEOUT_MS/,
+  'the payment step deadline must not replace the browser-wide Pickko protocol timeout',
+);
+
+const accurateSource = fs.readFileSync(
+  path.resolve(__dirname, '../manual/reservation/pickko-accurate.ts'),
+  'utf8',
+);
+assert.doesNotMatch(
+  accurateSource,
+  /protocolTimeout:\s*PAYMENT_(?:PROTOCOL|STEP)_TIMEOUT_MS/,
+  'accurate registration must preserve the normal browser protocol timeout outside payment',
 );
 
 console.log('✅ pickko payment-state revalidation smoke ok');

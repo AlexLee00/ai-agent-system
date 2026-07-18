@@ -14,8 +14,8 @@ export PROJECT_ROOT
 NODE="/opt/homebrew/bin/node"
 RUNTIME_SCRIPT="$PROJECT_ROOT/dist/daemons/ai.ska.pickko-verify.cjs"
 if [ ! -f "$RUNTIME_SCRIPT" ]; then
-  NODE="$PROJECT_ROOT/node_modules/.bin/tsx"
-  RUNTIME_SCRIPT="$PROJECT_ROOT/bots/reservation/manual/admin/pickko-verify.ts"
+  echo "[pickko-verify] missing prebuilt OPS daemon: $RUNTIME_SCRIPT" >&2
+  exit 1
 fi
 WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-${JAY_WORKSPACE:-$HOME/.ai-agent-system/workspace}}"
 mkdir -p "$WORKSPACE_DIR"

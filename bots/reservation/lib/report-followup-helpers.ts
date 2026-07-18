@@ -323,6 +323,14 @@ export function isConfirmedPickkoPaymentCompletion(state: Record<string, any> | 
   return state?.isCompleted === true && state?.isPending !== true;
 }
 
+export function classifyPickkoPaymentOutcome(
+  submitAttempted: boolean,
+  completionConfirmed: boolean,
+): 'not_submitted' | 'outcome_unknown' | 'verified_paid' {
+  if (!submitAttempted) return 'not_submitted';
+  return completionConfirmed ? 'verified_paid' : 'outcome_unknown';
+}
+
 export function isExpectedManualFollowup(result: Record<string, any>): boolean {
   const message = typeof result?.message === 'string' ? result.message : '';
   return message.includes('결제하기 버튼 미발견')

@@ -7,9 +7,11 @@ const { parseArgs } = require('../../lib/args');
 const { formatPhone, toKoreanTime, pickkoEndTime } = require('../../lib/formatting');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko } = require('../../lib/pickko');
+const { createPickkoPaymentService } = require('../../lib/pickko-payment-service');
 const { buildReservationCliInsight } = require('../../lib/cli-insight');
 const {
   derivePickkoPaymentStateFromBody,
+  classifyPickkoPaymentOutcome,
   isConfirmedPickkoPaymentCompletion,
   isMatchingPickkoReservationUrl,
 } = require('../../lib/report-followup-helpers');
@@ -29,6 +31,20 @@ const END = ARGS.end || '';
 const ROOM = (ARGS.room || '').toUpperCase();
 
 const PAYMENT_REVALIDATION_DELAY_MS = 800;
+const PAYMENT_STEP_TIMEOUT_MS = (() => {
+  const configured = Number(process.env.PICKKO_PAYMENT_STEP_TIMEOUT_MS || 60_000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 60_000;
+})();
+
+function buildPaymentStageError(code: string, message: string) {
+  return Object.assign(new Error(message), { stageCode: code });
+}
+
+const paymentService = createPickkoPaymentService({
+  delay,
+  log,
+  stepTimeoutMs: PAYMENT_STEP_TIMEOUT_MS,
+});
 
 function exitJson(payload: any, code = 0): never {
   process.stdout.write(JSON.stringify(payload) + '\n');
@@ -60,103 +76,10 @@ async function exitJsonWithInsight({
   exitJson({ ...payload, aiSummary }, code);
 }
 
-if (!PHONE_RAW || !DATE || !START || !END || !ROOM) {
-  exitJson({
-    success: false,
-    message: '필수 인자 누락: --phone, --date, --start, --end, --room',
-  }, 1);
-}
-
-log(`📋 결제완료 처리 대상: ${PHONE_RAW} / ${DATE} / ${START}~${END} / ${ROOM}룸`);
-
 const DEV_WHITELIST = (process.env.DEV_WHITELIST_PHONES || '01035000586,01054350586')
   .split(',')
   .map((p: string) => p.trim())
   .filter((p: string) => /^\d{10,11}$/.test(p));
-
-if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
-  log(`🛑 DEV 모드: 화이트리스트 아님 (${PHONE_RAW}) → 실행 안 함`);
-  process.exit(0);
-}
-
-const norm = (s: any) => (s ?? '').replace(/[\s,]/g, '').trim();
-
-async function setTopPriceZero(page: any) {
-  const inp = await page.$('#od_add_item_price');
-  if (!inp) return false;
-  await inp.click({ clickCount: 3 });
-  await delay(120);
-  try { await page.keyboard.press('Meta+A'); } catch (_e) {}
-  try { await page.keyboard.press('Control+A'); } catch (_e) {}
-  for (let k = 0; k < 8; k++) {
-    await page.keyboard.press('Backspace');
-    await delay(40);
-  }
-  await delay(80);
-  await page.keyboard.type('0', { delay: 80 });
-  await delay(150);
-  await page.mouse.click(20, 20);
-  return true;
-}
-
-async function setMemo(page: any) {
-  try {
-    await page.$eval('#od_memo', (el: any) => {
-      el.value = '';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.value = '네이버예약 결제';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    return true;
-  } catch (e: any) {
-    log(`⚠️ 메모 입력 실패: ${e.message}`);
-    return false;
-  }
-}
-
-async function clickCashMouse(page: any) {
-  try {
-    await page.waitForSelector('label[for="pay_type1_2"]', { timeout: 5000 });
-    const lbl = await page.$('label[for="pay_type1_2"]');
-    if (!lbl) throw new Error('현금 label 없음');
-    await page.evaluate(() => {
-      document.querySelector('label[for="pay_type1_2"]')?.scrollIntoView({ block: 'center' });
-    });
-    await delay(200);
-    const box = await lbl.boundingBox();
-    if (!box) throw new Error('현금 label boundingBox 없음');
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await delay(150);
-    const checked = await page.evaluate(() => (document.querySelector('#pay_type1_2') as HTMLInputElement | null)?.checked ?? false);
-    log(`💳 현금 선택: checked=${checked}`);
-    return checked;
-  } catch (e: any) {
-    log(`⚠️ 현금 선택 실패: ${e.message}`);
-    return false;
-  }
-}
-
-async function readTotals(page: any) {
-  return page.evaluate(() => ({
-    od_add_item_price: (document.querySelector('#od_add_item_price') as HTMLInputElement | null)?.value ?? null,
-    od_total_price3: (document.querySelector('#od_total_price3')?.textContent || '').trim(),
-  }));
-}
-
-async function waitTotalZeroStable(page: any) {
-  for (let i = 0; i < 10; i++) {
-    await delay(250);
-    const s1 = await readTotals(page);
-    await delay(250);
-    const s2 = await readTotals(page);
-    log(`🔁 총액 체크#${i + 1}: ${JSON.stringify(s2)}`);
-    if (norm(s1.od_total_price3) === '0' && norm(s2.od_total_price3) === '0') {
-      return { ok: true, snap: s2 };
-    }
-  }
-  return { ok: false, snap: await readTotals(page) };
-}
 
 async function installBrowserEvalShim(page: any) {
   try {
@@ -208,121 +131,55 @@ async function revalidatePaymentState(page: any, reason: string, expectedHref: s
   return state;
 }
 
-async function preClickReassertZero(page: any) {
-  try { await page.$eval('#od_add_item_price', (el: any) => { el.setAttribute('price', '0'); el.setAttribute('ea', '0'); }); } catch (_e) {}
-  try { await page.$eval('#od_total_price', (el: any) => { el.value = '0'; }); } catch (_e) {}
+async function revalidatePaymentStateFresh(reason: string, expectedHref: string) {
+  let freshBrowser: any;
   try {
-    const inp = await page.$('#od_add_item_price');
-    if (inp) {
-      await inp.click({ clickCount: 3 });
-      await delay(80);
-      try { await page.keyboard.press('Meta+A'); } catch (_e) {}
-      for (let k = 0; k < 8; k++) {
-        await page.keyboard.press('Backspace');
-        await delay(30);
-      }
-      await page.keyboard.type('0', { delay: 50 });
-      await delay(80);
-      await page.mouse.click(20, 20);
+    log(`🆕 새 브라우저 결제 상태 재검증 시작: ${reason}`);
+    freshBrowser = await puppeteer.launch(getPickkoLaunchOptions());
+    const pages = await freshBrowser.pages();
+    const freshPage = pages[0] || await freshBrowser.newPage();
+    freshPage.setDefaultTimeout(30_000);
+    setupDialogHandler(freshPage, log);
+    await installBrowserEvalShim(freshPage);
+    await loginToPickko(freshPage, PICKKO_ID, PICKKO_PW, delay);
+    await freshPage.goto(expectedHref, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await delay(PAYMENT_REVALIDATION_DELAY_MS);
+    if (!isMatchingPickkoReservationUrl(freshPage.url(), expectedHref)) {
+      log(`🛑 새 브라우저 재검증 차단: 대상 예약 URL 불일치 (${freshPage.url()})`);
+      return null;
     }
-  } catch (_e) {}
-}
-
-async function processPaymentModal(page: any) {
-  const payBtnClicked = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]')) as any[];
-    for (const b of btns) {
-      const t = (b.innerText || b.value || b.textContent || '').trim();
-      if (t === '결제하기') {
-        b.click();
-        return true;
-      }
+    const state = await readPaymentState(freshPage);
+    if (state) {
+      log(`🔍 새 브라우저 재검증 결과: ${JSON.stringify({
+        isPending: state.isPending,
+        isCompleted: state.isCompleted,
+        statusText: state.statusText,
+      })}`);
     }
-    return false;
-  });
-  log(payBtnClicked ? '✅ 결제하기 클릭' : '⚠️ 결제하기 버튼 미발견');
-  if (!payBtnClicked) return { success: false, reason: '결제하기 버튼 없음' };
-  await delay(1200);
-
-  let cashOk = false;
-  let priceOk = false;
-  let memoOk = false;
-  let totalText = '';
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    log(`🧾 결제 입력 시도 #${attempt}`);
-    priceOk = await setTopPriceZero(page);
-    await delay(250);
-    memoOk = await setMemo(page);
-    await delay(250);
-    cashOk = await clickCashMouse(page);
-    await delay(250);
-    const stable = await waitTotalZeroStable(page);
-    totalText = stable.snap?.od_total_price3 ?? '';
-    if (stable.ok) break;
-    log(`⚠️ 총액 0 안정화 실패(${totalText}). 재시도...`);
+    return state;
+  } catch (error: any) {
+    log(`⚠️ 새 브라우저 결제 상태 재검증 실패: ${error.message}`);
+    return null;
+  } finally {
+    try { if (freshBrowser) await freshBrowser.close(); } catch (_e) {}
   }
-  log(`🧾 입력 결과: priceOk=${priceOk}, memoOk=${memoOk}, cashOk=${cashOk}, totalText=${totalText}`);
-  if (norm(totalText) !== '0') {
-    return { success: false, reason: `결제 중단: 총액 0 아님 (${totalText})` };
-  }
-
-  let paySubmitClicked = false;
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    log(`🧾 결제 제출 시도 #${attempt}`);
-    await preClickReassertZero(page);
-    try {
-      await page.waitForSelector('#pay_order', { timeout: 5000 });
-      const h = await page.$('#pay_order');
-      if (!h) throw new Error('#pay_order 없음');
-      await page.evaluate(() => document.querySelector('#pay_order')?.scrollIntoView({ block: 'center' }));
-      await delay(150);
-      const box = await h.boundingBox();
-      if (!box) throw new Error('#pay_order boundingBox 없음');
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-      paySubmitClicked = true;
-    } catch (e: any) {
-      log(`⚠️ 결제 제출 실패: ${e.message}`);
-    }
-    await delay(600);
-    const closed = await page.evaluate(() => !document.querySelector('#order_write'));
-    const after = await page.evaluate(() => (document.querySelector('#od_total_price3')?.textContent || '').trim());
-    log(`🔍 제출 후: modalClosed=${closed}, 총액=${after}`);
-    if (closed || norm(after) === '0') break;
-    log('⚠️ 총액 원복 감지. 재시도...');
-    await delay(400);
-  }
-
-  await delay(800);
-  const popupResult = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]')) as any[];
-    const btn = btns.find((b) => {
-      const t = (b.textContent || b.value || '').trim();
-      return t === '확인' || t === 'OK';
-    });
-    if (btn) {
-      btn.click();
-      return { clicked: true, text: (btn.textContent || btn.value || '').trim() };
-    }
-    return { clicked: false };
-  });
-  log(`팝업 확인: ${JSON.stringify(popupResult)}`);
-  await delay(500);
-
-  const finalStatus = await page.evaluate(() => ({
-    hasError: (document.body?.innerText || '').includes('에러') || (document.body?.innerText || '').includes('오류'),
-    hasSuccess: (document.body?.innerText || '').includes('완료'),
-    url: window.location.href,
-  }));
-  log(`🔍 최종: ${JSON.stringify(finalStatus)}`);
-
-  const isSuccess = paySubmitClicked && !finalStatus.hasError;
-  return { success: isSuccess, reason: isSuccess ? null : '결제 상태 불명확 (수동 확인 필요)' };
 }
 
 async function run() {
   let browser: any;
   let page: any;
   let viewHref: string | null = null;
+  if (!PHONE_RAW || !DATE || !START || !END || !ROOM) {
+    exitJson({
+      success: false,
+      message: '필수 인자 누락: --phone, --date, --start, --end, --room',
+    }, 1);
+  }
+  log(`📋 결제완료 처리 대상: ${PHONE_RAW} / ${DATE} / ${START}~${END} / ${ROOM}룸`);
+  if (IS_DEV && !DEV_WHITELIST.includes(PHONE_RAW)) {
+    log(`🛑 DEV 모드: 화이트리스트 아님 (${PHONE_RAW}) → 실행 안 함`);
+    process.exit(0);
+  }
   try {
     browser = await puppeteer.launch(getPickkoLaunchOptions());
     const pages = await browser.pages();
@@ -491,12 +348,21 @@ async function run() {
     }
 
     log('\n[7단계] 결제 모달 처리 (0원 현금)');
-    const payResult = await processPaymentModal(page);
+    const payResult = await paymentService.processPaymentStep(page, {
+      skipPriceZero: false,
+      buildStageError: buildPaymentStageError,
+    });
     log(`💳 결제 결과: ${JSON.stringify(payResult)}`);
-    const confirmedState = await revalidatePaymentState(page, '결제 제출 후', viewHref);
+    try { await browser.close(); } catch (_e) {}
+    browser = null;
+    const confirmedState = await revalidatePaymentStateFresh('결제 제출 후', viewHref);
+    const paymentOutcome = classifyPickkoPaymentOutcome(
+      payResult.paySubmitClicked,
+      isConfirmedPickkoPaymentCompletion(confirmedState),
+    );
 
     const info = `${DATE} ${START}~${END} ${ROOM}룸 (${PHONE_RAW})`;
-    if (payResult.success && isConfirmedPickkoPaymentCompletion(confirmedState)) {
+    if (paymentOutcome === 'verified_paid') {
       await exitJsonWithInsight({
         payload: { success: true, message: `결제완료 처리: ${info}` },
         code: 0,
@@ -513,9 +379,7 @@ async function run() {
         fallback: '결제대기 건이 정상 반영되어 같은 슬롯의 후속 확인 부담이 줄었습니다.',
       });
     } else {
-      const failureReason = payResult.success
-        ? '결제 제출 후 결제완료 상태 재검증 실패 (수동 확인 필요)'
-        : payResult.reason;
+      const failureReason = `결제 상태 검증 실패 (${paymentOutcome}, 수동 확인 필요)`;
       await exitJsonWithInsight({
         payload: { success: false, message: failureReason },
         code: 1,
@@ -535,8 +399,10 @@ async function run() {
     }
   } catch (err: any) {
     log(`❌ 오류: ${err.message}`);
-    const revalidated = page && viewHref
-      ? await revalidatePaymentState(page, `작업 예외: ${err.message}`, viewHref)
+    try { if (browser) await browser.close(); } catch (_e) {}
+    browser = null;
+    const revalidated = viewHref
+      ? await revalidatePaymentStateFresh(`작업 예외: ${err.message}`, viewHref)
       : null;
     if (isConfirmedPickkoPaymentCompletion(revalidated)) {
       log('✅ 작업 예외 후 재검증에서 이미 결제완료 상태 확인');
@@ -578,16 +444,10 @@ async function run() {
 }
 
 module.exports = {
-  setTopPriceZero,
-  setMemo,
-  clickCashMouse,
-  readTotals,
-  waitTotalZeroStable,
-  preClickReassertZero,
-  processPaymentModal,
   readPaymentState,
   revalidatePaymentState,
+  revalidatePaymentStateFresh,
   run,
 };
 
-run();
+if (require.main === module) run();

@@ -36,6 +36,20 @@ type PickkoMemberLookupResult = {
   selectedPhone?: string | null;
 };
 
+export async function submitPickkoSearch(page: any): Promise<boolean> {
+  const navigation = page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 })
+    .catch(() => null);
+  const clicked = await page.evaluate(() => {
+    const button = document.querySelector('input[type="submit"][value="검색"]') as HTMLElement | null;
+    if (!button) return false;
+    button.click();
+    return true;
+  });
+  if (!clicked) return false;
+  await navigation;
+  return true;
+}
+
 type PickkoMemberLookupOptions = {
   select?: boolean;
 };
@@ -193,11 +207,16 @@ async function fetchPickkoEntries(
 
   // 검색 실행
   try {
-    await Promise.all([
-      page.click('input[type="submit"][value="검색"]'),
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => null)
-    ]);
-  } catch (_e) {}
+    const submitted = await submitPickkoSearch(page);
+    if (!submitted) {
+      console.error('[pickko] 검색 버튼을 찾지 못했습니다.');
+      return { entries: [], fetchOk: false };
+    }
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error('[pickko] 검색 실행 실패:', message);
+    return { entries: [], fetchOk: false };
+  }
   await delay(2000);
 
   // colMap 분석
@@ -456,4 +475,4 @@ async function findPickkoMember(
   return result;
 }
 
-module.exports = { loginToPickko, fetchPickkoEntries, findPickkoMember };
+module.exports = { loginToPickko, fetchPickkoEntries, findPickkoMember, submitPickkoSearch };

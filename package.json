@@ -15,6 +15,7 @@
     "build:ts": "node scripts/build-ts-phase1.mjs",
     "build:hub-runtime": "node scripts/build-hub-runtime.mjs",
     "build:daemons": "node scripts/build-daemons.mjs",
+    "build:daemons:ska-payment": "node scripts/build-daemons.mjs --labels=ai.ska.naver-monitor,ai.ska.pickko-accurate,ai.ska.pickko-pay-pending,ai.ska.pickko-verify",
     "test": "npm run test --workspaces --if-present --include-workspace-root=false",
     "test:blog": "npm --prefix bots/blog run test",
     "test:smoke": "npm --prefix bots/blog run test:smoke",

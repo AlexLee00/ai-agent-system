@@ -10,9 +10,7 @@
  */
 
 const puppeteer = require('puppeteer');
-const path = require('path');
 const { spawn } = require('child_process');
-const fs = require('fs');
 const { transformAndNormalizeData, validateTimeRange } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
@@ -39,11 +37,15 @@ const { createPickkoMemberSelectionService } = require('../../lib/pickko-member-
 const { createPickkoRoomSlotService } = require('../../lib/pickko-room-slot-service');
 const { createPickkoFinalizationService } = require('../../lib/pickko-finalization-service');
 const { createPickkoSavePrecheckService } = require('../../lib/pickko-save-precheck-service');
+const { classifyPickkoPaymentOutcome } = require('../../lib/report-followup-helpers');
+const { resolveReservationChildRuntime } = require('../../lib/runtime-paths');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 const PROJECT_ROOT = process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system';
 const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
-const DAEMON_DIR = path.join(PROJECT_ROOT, 'dist/daemons');
-const TSX_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tsx');
+const PAYMENT_STEP_TIMEOUT_MS = (() => {
+  const configured = Number(process.env.PICKKO_PAYMENT_STEP_TIMEOUT_MS || 60_000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 60_000;
+})();
 
 type StageError = Error & {
   stageCode?: string;
@@ -51,11 +53,13 @@ type StageError = Error & {
 };
 
 function resolveChildRuntime(label: string, sourceRelPath: string) {
-  const daemonPath = path.join(DAEMON_DIR, `${label}.cjs`);
-  if (fs.existsSync(daemonPath)) {
-    return { command: NODE_BIN, script: daemonPath };
-  }
-  return { command: TSX_BIN, script: path.join(PROJECT_ROOT, sourceRelPath) };
+  return resolveReservationChildRuntime({
+    label,
+    sourceRelPath,
+    projectRoot: PROJECT_ROOT,
+    runtimeMode: IS_OPS ? 'ops' : 'dev',
+    nodeBin: NODE_BIN,
+  });
 }
 
 function buildStageError(code: string, message: string): StageError {
@@ -188,6 +192,7 @@ const pickkoMemberService = createPickkoMemberService({
 const pickkoPaymentService = createPickkoPaymentService({
   delay,
   log,
+  stepTimeoutMs: PAYMENT_STEP_TIMEOUT_MS,
 });
 const pickkoDateService = createPickkoDateService({
   delay,
@@ -459,24 +464,29 @@ async function main() {
       buildStageError,
     });
 
-    log('\n✅ 완료! (등록+확정(결제) 처리까지 완료)');
-
     setStage('FINAL_CONFIRM');
     log('\n[9단계] 픽코 예약등록 + 결제 완료 확인');
 
     const finalStatus = await pickkoFinalizationService.readFinalStatus(page);
-    const isSuccess = finalStatus.isSuccess;
+    const paymentOutcome = classifyPickkoPaymentOutcome(paySubmitClicked, finalStatus.isSuccess);
 
-    if (isSuccess) {
+    if (paymentOutcome === 'verified_paid') {
       log('✅ [SUCCESS] 픽코 예약등록 + 결제 완료됨!');
       log(`📅 예약정보: ${PHONE_NOHYPHEN} / ${DATE} / ${chosen.start}~${chosen.end} / ${ROOM}`);
       log(`💳 결제: ${payModalResult.totalText}원 (0원 현금결제)`);
-    } else if (paySubmitClicked) {
+    } else if (paymentOutcome === 'outcome_unknown') {
       log(`⚠️ [WARNING] 결제 버튼 클릭됐으나 완료 미확인 (URL: ${finalStatus.url})`);
       log('⚠️ [WARNING] 수동 확인 필요 — 픽코 관리자에서 결제 상태 확인 바랍니다');
+      throw buildStageError(
+        'PAYMENT',
+        `[PAYMENT_OUTCOME_UNKNOWN] 결제 제출 후 완료 상태를 확인하지 못함 (URL: ${finalStatus.url})`,
+      );
     } else {
       log('⚠️ [WARNING] 완료 상태 불명확 (수동 확인 필요)');
+      throw buildStageError('PAYMENT', '[PAYMENT_SUBMIT_NOT_CONFIRMED] 결제 제출 여부를 확인하지 못함');
     }
+
+    log('\n✅ 완료! (등록+확정(결제) 처리까지 완료)');
 
     const shouldCloseBrowser = MODE === 'ops' || (process.env.HOLD_BROWSER !== '1');
     if (shouldCloseBrowser) {
