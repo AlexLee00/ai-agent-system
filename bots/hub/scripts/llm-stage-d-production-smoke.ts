@@ -1,6 +1,11 @@
 #!/usr/bin/env tsx
 
 const assert = require('node:assert/strict');
+const { parseLlmCallPayload } = require('../lib/llm/request-schema');
+const {
+  buildCanaryRequest,
+  evaluateCanaryResponse,
+} = require('./llm-stage-d-external-gateway-canary');
 const {
   PROTECTED_HUB_LABELS,
   SELF_HEALING_CANARY_LABELS,
@@ -17,6 +22,14 @@ const { redact, sanitizeHubError } = require('../lib/sentry-mcp-adapter');
 const { readChaosState } = require('../src/middleware/stage-d-chaos');
 
 async function main() {
+  const canaryRequest = buildCanaryRequest();
+  assert.equal(parseLlmCallPayload(canaryRequest).ok, true, 'Stage D canary request must satisfy /hub/llm/call schema');
+  assert.equal(canaryRequest.abstractModel, 'anthropic_haiku');
+  assert.equal(canaryRequest.requestId, 'hub-stage-d-external-gateway-canary');
+  assert(canaryRequest.timeoutMs < 30_000, 'Hub deadline must finish before the canary transport timeout');
+  assert.equal(evaluateCanaryResponse(200, '{"ok":false,"error":"provider_failed"}').ok, false);
+  assert.equal(evaluateCanaryResponse(200, '{"ok":true,"provider":"mock"}').ok, true);
+  assert.equal(evaluateCanaryResponse(503, '{"ok":true}').ok, false);
   assert.equal(PROTECTED_HUB_LABELS.length, 14, 'Stage D must preserve PROTECTED 14 catalog');
 
   const selfHealing = checkSelfHealing();

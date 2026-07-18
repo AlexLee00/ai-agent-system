@@ -2,7 +2,7 @@ import type { Express } from 'express';
 
 const express = require('express');
 const { authMiddleware } = require('../lib/auth');
-const { llmAdmissionMiddleware } = require('../lib/llm/admission-control');
+const { llmLocalAdmissionMiddleware } = require('../lib/llm/admission-control');
 const { hubErrorHandler } = require('./middleware/error-handler');
 const {
   createShutdownGuard,
@@ -82,7 +82,7 @@ export function createHubApp(options: HubAppOptions = {}): Express {
     pgLimiter,
     secretsLimiter,
     llmLimiter,
-    llmAdmissionMiddleware,
+    llmLocalAdmissionMiddleware,
   });
 
   app.use(hubErrorHandler);

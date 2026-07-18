@@ -1,8 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { callWithFallback } = require('./unified-caller');
-const { acquireSharedLimiterLease } = require('./shared-limiter');
 const { isLlmRouteTargetAllowed } = require('../../../../packages/core/lib/llm-model-selector');
+const { canonicalHubTeam } = require('../team-identity');
 
 type LlmJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -24,6 +24,8 @@ type LlmJob = {
   updatedAt: string;
   traceId: string | null;
   callerTeam: string | null;
+  ownerTeam?: string | null;
+  ownerPrincipalId?: string | null;
   agent: string | null;
   payload: LlmJobPayload;
   payloadSummary: Record<string, unknown>;
@@ -47,6 +49,17 @@ type JobContext = {
   traceId?: string;
   callerTeam?: string;
   agent?: string;
+  authPrincipalId?: string | null;
+};
+
+type ProcessJobDeps = {
+  callWithFallback?: (payload: LlmJobPayload) => Promise<Record<string, unknown>>;
+  scheduleJob?: (jobId: string, retryAfterMs: number) => void;
+};
+
+type LlmJobOwner = {
+  callerTeam: string;
+  authPrincipalId?: string | null;
 };
 
 const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
@@ -140,7 +153,7 @@ async function readJob(jobId: string): Promise<LlmJob | null> {
 
   try {
     const job = JSON.parse(fs.readFileSync(jobPath(jobId), 'utf8')) as LlmJob;
-    return job && job.id ? job : null;
+    return job?.id === jobId ? job : null;
   } catch {
     return null;
   }
@@ -181,6 +194,25 @@ async function createLlmJob(payload: LlmJobPayload, context: JobContext = {}, op
     error.target = targetPolicy.target;
     throw error;
   }
+  const payloadTeam = canonicalHubTeam(payload.callerTeam);
+  const contextTeam = canonicalHubTeam(context.callerTeam);
+  if (payloadTeam && contextTeam && payloadTeam !== contextTeam) {
+    const error = new Error('callerTeam_mismatch') as Error & { code?: string };
+    error.code = 'callerTeam_mismatch';
+    throw error;
+  }
+  const ownerTeam = contextTeam
+    || payloadTeam
+    || canonicalHubTeam((targetPolicy as any)?.target?.canonicalTeam || (targetPolicy as any)?.target?.team);
+  if (!ownerTeam) {
+    const error = new Error('llm_job_owner_required') as Error & { code?: string };
+    error.code = 'llm_job_owner_required';
+    throw error;
+  }
+  const ownerPrincipalId = String(context.authPrincipalId || '').trim() || null;
+  const persistedPayload = { ...payload };
+  if (ownerPrincipalId) persistedPayload.authPrincipalId = ownerPrincipalId;
+  else delete persistedPayload.authPrincipalId;
   const job: LlmJob = {
     id: createJobId(),
     status: 'queued',
@@ -188,9 +220,11 @@ async function createLlmJob(payload: LlmJobPayload, context: JobContext = {}, op
     updatedAt: nowIso(),
     traceId: context.traceId || payload.traceId || null,
     callerTeam: payload.callerTeam || context.callerTeam || null,
+    ownerTeam,
+    ownerPrincipalId,
     agent: payload.agent || context.agent || null,
-    payload,
-    payloadSummary: summarizePayload(payload),
+    payload: persistedPayload,
+    payloadSummary: summarizePayload(persistedPayload),
     result: null,
     error: null,
     attempts: 0,
@@ -214,37 +248,28 @@ function scheduleJob(jobId: string): void {
   });
 }
 
-async function processJob(jobId: string): Promise<LlmJob | null> {
+async function processJob(jobId: string, deps: ProcessJobDeps = {}): Promise<LlmJob | null> {
   if (activeJobs.has(jobId)) return readJob(jobId);
   const job = await readJob(jobId);
   if (!job || job.status === 'completed' || job.status === 'failed') return job;
   activeJobs.add(jobId);
 
-  let lease: { ok: boolean; scopes?: string[]; skipped?: boolean; release?: () => void; retryAfterMs?: number } | null = null;
   try {
-    lease = await acquireSharedLimiterLease({
-      team: job.callerTeam || job.payload?.callerTeam || 'unknown',
-      provider: job.payload?.provider || '',
-    });
-    if (!lease || !lease.ok) {
-      await updateJob(jobId, {
-        status: 'queued',
-        retryAfterMs: lease?.retryAfterMs || JOB_RETRY_AFTER_MS,
-        limiter: lease,
-      });
-      setTimeout(() => scheduleJob(jobId), lease?.retryAfterMs || JOB_RETRY_AFTER_MS).unref?.();
-      return readJob(jobId);
-    }
-    const acquiredLease = lease;
-
     await updateJob(jobId, {
       status: 'running',
       startedAt: nowIso(),
       attempts: Number(job.attempts || 0) + 1,
-      limiter: { scopes: acquiredLease.scopes || [], skipped: Boolean(acquiredLease.skipped) },
     });
 
-    const result = shouldMockJobs()
+    const request = {
+      ...job.payload,
+      traceId: job.traceId || undefined,
+      callerTeam: job.payload?.callerTeam || job.callerTeam || undefined,
+      agent: job.payload?.agent || job.agent || undefined,
+    };
+    const result = deps.callWithFallback
+      ? await deps.callWithFallback(request)
+      : shouldMockJobs()
       ? {
           ok: true,
           provider: 'mock',
@@ -252,12 +277,22 @@ async function processJob(jobId: string): Promise<LlmJob | null> {
           durationMs: 0,
           totalCostUsd: 0,
         }
-      : await callWithFallback({
-          ...job.payload,
-          traceId: job.traceId || undefined,
-          callerTeam: job.payload?.callerTeam || job.callerTeam || undefined,
-          agent: job.payload?.agent || job.agent || undefined,
-        });
+      : await callWithFallback(request);
+
+    if (!result?.ok && (
+      result?.limiterBackpressure === true
+      || String(result?.error || '').startsWith('shared_limiter_')
+    )) {
+      const retryAfterMs = Number(result?.retryAfterMs || JOB_RETRY_AFTER_MS);
+      await updateJob(jobId, {
+        status: 'queued',
+        retryAfterMs,
+        limiter: { error: result.error, admissionScope: result.admissionScope || null },
+      });
+      if (deps.scheduleJob) deps.scheduleJob(jobId, retryAfterMs);
+      else setTimeout(() => scheduleJob(jobId), retryAfterMs).unref?.();
+      return readJob(jobId);
+    }
 
     await updateJob(jobId, {
       status: result?.ok ? 'completed' : 'failed',
@@ -268,11 +303,7 @@ async function processJob(jobId: string): Promise<LlmJob | null> {
     });
     return readJob(jobId);
   } finally {
-    try {
-      lease?.release?.();
-    } finally {
-      activeJobs.delete(jobId);
-    }
+    activeJobs.delete(jobId);
   }
 }
 
@@ -302,34 +333,90 @@ function summarizeJob(job: LlmJob): Record<string, unknown> {
   };
 }
 
-async function listLlmJobs(limit = 20): Promise<Array<Record<string, unknown>>> {
+function jobOwnerTeamAliases(callerTeam: string): string[] {
+  const canonical = canonicalHubTeam(callerTeam);
+  if (canonical === 'investment') return ['investment', 'luna'];
+  if (canonical === 'orchestrator') return ['orchestrator', 'jay'];
+  return canonical ? [canonical] : [];
+}
+
+function canReadLlmJob(job: LlmJob | null, owner: LlmJobOwner): boolean {
+  if (!job || !owner?.callerTeam) return false;
+  if (canonicalHubTeam(job.ownerTeam || job.callerTeam || job.payload?.callerTeam) !== canonicalHubTeam(owner.callerTeam)) {
+    return false;
+  }
+
+  const requestedPrincipal = String(owner.authPrincipalId || '').trim();
+  const storedPrincipal = String(job.ownerPrincipalId || '').trim();
+  if (
+    storedPrincipal
+    && storedPrincipal !== 'legacy-root'
+    && requestedPrincipal !== 'legacy-root'
+    && storedPrincipal !== requestedPrincipal
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function requireLlmJobOwner(owner: LlmJobOwner | null): LlmJobOwner {
+  const callerTeam = canonicalHubTeam(owner?.callerTeam);
+  if (!callerTeam) throw new Error('llm_job_owner_required');
+  return {
+    callerTeam,
+    authPrincipalId: owner?.authPrincipalId || null,
+  };
+}
+
+async function readOwnedLlmJob(jobId: string, owner: LlmJobOwner | null): Promise<LlmJob | null> {
+  const normalizedOwner = requireLlmJobOwner(owner);
+  const job = await readJob(jobId);
+  return canReadLlmJob(job, normalizedOwner) ? job : null;
+}
+
+async function listOwnedLlmJobs(limit = 20, owner: LlmJobOwner | null): Promise<Array<Record<string, unknown>>> {
+  const normalizedOwner = requireLlmJobOwner(owner);
   const normalizedLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
   if (jobStoreBackend() === 'pg') {
     await ensurePgJobTable();
     const pgPool = getPgPool();
+    const teamAliases = jobOwnerTeamAliases(normalizedOwner.callerTeam);
+    const scopedPrincipal = normalizedOwner.authPrincipalId && normalizedOwner.authPrincipalId !== 'legacy-root'
+      ? normalizedOwner.authPrincipalId
+      : null;
     const rows = await pgPool.query<{ job: LlmJob }>('agent', `
       SELECT job
       FROM hub_llm_jobs
+      WHERE LOWER(BTRIM(COALESCE(job->>'ownerTeam', job->>'callerTeam', job #>> '{payload,callerTeam}', ''))) = ANY($1::text[])
+      AND (
+        $2::text IS NULL
+        OR COALESCE(job->>'ownerPrincipalId', '') IN ('', 'legacy-root', $2)
+      )
       ORDER BY updated_at DESC
-      LIMIT $1
-    `, [normalizedLimit]);
-    return rows.map((row) => summarizeJob(row.job)).filter(Boolean);
+      LIMIT $3
+    `, [teamAliases, scopedPrincipal, normalizedLimit]);
+    return rows
+      .map((row) => row.job)
+      .filter((job) => canReadLlmJob(job, normalizedOwner))
+      .map((job) => summarizeJob(job));
   }
 
   ensureJobDir();
   const files = fs.readdirSync(JOB_DIR)
     .filter((name: string) => name.endsWith('.json'))
     .map((name: string) => path.join(JOB_DIR, name))
-    .sort((a: string, b: string) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
-    .slice(0, normalizedLimit);
-  return files.map((file: string) => {
+    .sort((a: string, b: string) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  const parsedJobs: Array<LlmJob | null> = files.map((file: string) => {
     try {
-      const job = JSON.parse(fs.readFileSync(file, 'utf8')) as LlmJob;
-      return summarizeJob(job);
+      return JSON.parse(fs.readFileSync(file, 'utf8')) as LlmJob;
     } catch {
       return null;
     }
-  }).filter(Boolean) as Array<Record<string, unknown>>;
+  });
+  return parsedJobs
+    .filter((job): job is LlmJob => Boolean(job) && canReadLlmJob(job, normalizedOwner))
+    .slice(0, normalizedLimit)
+    .map((job) => summarizeJob(job));
 }
 
 async function getJobStoreState(): Promise<Record<string, unknown>> {
@@ -368,8 +455,9 @@ async function resetJobStoreForTests(): Promise<void> {
 
 module.exports = {
   createLlmJob,
-  readJob,
-  listLlmJobs,
+  readJobForWorker: readJob,
+  readOwnedLlmJob,
+  listOwnedLlmJobs,
   processJob,
   getJobStoreState,
   resetJobStoreForTests,

@@ -16,6 +16,8 @@ type LocalOllamaRequest = {
   baseUrl?: string;
   timeoutMs?: number;
   systemPrompt?: string;
+  signal?: AbortSignal;
+  attemptDeadlineAt?: number;
 };
 
 type LocalOllamaAttempt = {
@@ -25,6 +27,8 @@ type LocalOllamaAttempt = {
   failureReason?: string;
   durationMs: number;
   totalCostUsd?: number;
+  upstreamStatus?: number;
+  retryAfterMs?: number;
 };
 
 function positiveInteger(value: unknown, fallback: number): number {
@@ -50,9 +54,22 @@ function shouldRetryColdStart(first: LocalOllamaAttempt, timeoutMs: number, expl
   return !explicitTimeout || timeoutMs <= DEFAULT_TIMEOUT_MS;
 }
 
+function parseRetryAfterMs(res: Response): number | undefined {
+  const raw = String(res.headers.get('retry-after') || '').trim();
+  if (!raw) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const retryAt = Date.parse(raw);
+  if (!Number.isFinite(retryAt)) return undefined;
+  return Math.max(0, retryAt - Date.now()) || undefined;
+}
+
 async function attemptLocalOllama(req: LocalOllamaRequest, baseUrl: string, timeoutMs: number): Promise<LocalOllamaAttempt> {
   const start = Date.now();
   const controller = new AbortController();
+  const abortFromParent = () => controller.abort(req.signal?.reason);
+  if (req.signal?.aborted) abortFromParent();
+  else req.signal?.addEventListener('abort', abortFromParent, { once: true });
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -71,7 +88,15 @@ async function attemptLocalOllama(req: LocalOllamaRequest, baseUrl: string, time
 
     if (!res.ok) {
       const reason = res.status >= 500 ? 'http_5xx' : 'http_4xx';
-      return { ok: false, error: `${reason}:${res.status}`, failureReason: reason, durationMs: latency };
+      const retryAfterMs = parseRetryAfterMs(res);
+      return {
+        ok: false,
+        error: `${reason}:${res.status}`,
+        failureReason: reason,
+        durationMs: latency,
+        upstreamStatus: res.status,
+        ...(retryAfterMs ? { retryAfterMs } : {}),
+      };
     }
 
     const json: any = await res.json();
@@ -85,11 +110,12 @@ async function attemptLocalOllama(req: LocalOllamaRequest, baseUrl: string, time
   } catch (err) {
     const latency = Date.now() - start;
     const error = err as { name?: string; code?: string; message?: string };
-    const reason = (error && error.name === 'AbortError') ? 'timeout'
+    const reason = (error && error.name === 'AbortError') ? (req.signal?.aborted ? 'aborted' : 'timeout')
       : (error && error.code === 'ECONNREFUSED') ? 'network' : 'unknown';
     return { ok: false, error: `${reason}:${(error && error.message) || 'unknown'}`, failureReason: reason, durationMs: latency };
   } finally {
     clearTimeout(timer);
+    req.signal?.removeEventListener('abort', abortFromParent);
   }
 }
 
@@ -97,19 +123,39 @@ async function callLocalOllama(req: LocalOllamaRequest) {
   const providerKey = `local/${req.model}`;
   const baseUrl = getBaseUrl(req.baseUrl);
   const { timeoutMs, explicit: explicitTimeout } = resolveRequestTimeoutMs(req.timeoutMs);
+  const attemptDeadlineAt = Number(req.attemptDeadlineAt || 0);
+  const hasAttemptDeadline = Boolean(
+    req.signal
+    && Number.isFinite(attemptDeadlineAt)
+    && attemptDeadlineAt > Date.now(),
+  );
+  const remainingAttemptMs = () => hasAttemptDeadline
+    ? Math.max(0, Math.floor(attemptDeadlineAt - Date.now()))
+    : timeoutMs;
 
   if (!registry.canCall(providerKey)) {
     return { ok: false, provider: 'failed', error: `circuit_open:${providerKey}`, durationMs: 0 };
   }
 
-  const first = await attemptLocalOllama(req, baseUrl, timeoutMs);
+  const firstTimeoutMs = hasAttemptDeadline
+    ? Math.min(DEFAULT_TIMEOUT_MS, remainingAttemptMs())
+    : timeoutMs;
+  const first = await attemptLocalOllama(req, baseUrl, firstTimeoutMs);
   if (first.ok) {
     registry.recordSuccess(providerKey, first.durationMs);
     return { ok: true, provider: 'failed', result: first.result, durationMs: first.durationMs, totalCostUsd: 0 };
   }
 
-  if (shouldRetryColdStart(first, timeoutMs, explicitTimeout)) {
-    const second = await attemptLocalOllama(req, baseUrl, COLD_START_TIMEOUT_MS);
+  const retryEligible = shouldRetryColdStart(
+    first,
+    firstTimeoutMs,
+    hasAttemptDeadline ? false : explicitTimeout,
+  );
+  const retryTimeoutMs = hasAttemptDeadline
+    ? Math.min(COLD_START_TIMEOUT_MS, remainingAttemptMs())
+    : COLD_START_TIMEOUT_MS;
+  if (!req.signal?.aborted && retryEligible && retryTimeoutMs > 0) {
+    const second = await attemptLocalOllama(req, baseUrl, retryTimeoutMs);
     const totalDurationMs = first.durationMs + second.durationMs;
     if (second.ok) {
       registry.recordSuccess(providerKey, totalDurationMs);
@@ -128,12 +174,21 @@ async function callLocalOllama(req: LocalOllamaRequest) {
       provider: 'failed',
       error: second.error,
       durationMs: totalDurationMs,
+      upstreamStatus: second.upstreamStatus,
+      retryAfterMs: second.retryAfterMs,
       coldStartRetried: true,
     };
   }
 
   registry.recordFailure(providerKey, first.failureReason, first.durationMs);
-  return { ok: false, provider: 'failed', error: first.error, durationMs: first.durationMs };
+  return {
+    ok: false,
+    provider: 'failed',
+    error: first.error,
+    durationMs: first.durationMs,
+    upstreamStatus: first.upstreamStatus,
+    retryAfterMs: first.retryAfterMs,
+  };
 }
 
 module.exports = { callLocalOllama };

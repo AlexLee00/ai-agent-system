@@ -108,6 +108,14 @@ export interface HubLLMResult {
   costUsd: number;
   latencyMs: number;
   error?: string;
+  httpStatus?: number;
+  retryAfterMs?: number;
+  limiterBackpressure?: boolean;
+  providerBackpressure?: boolean;
+  backpressureKind?: string | null;
+  noDirectFallback?: boolean;
+  admissionScope?: string | null;
+  errorCode?: string;
 }
 
 export async function recordInvestmentLlmRouteLog(entry: {
@@ -339,34 +347,17 @@ export async function callViaHub(
 
     const latencyMs = Date.now() - t0;
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.warn(`[hub-llm] ${agentName} HTTP ${res.status}: ${errText.slice(0, 120)}`);
-      // Phase G: HTTP 실패 기록
-      recordLLMFailure(agentName, 'hub', userPrompt, 'bad_response', options.market, options.taskType)
-        .catch((err) => noteObservabilityDrop('llm_failure', err));
-      await recordInvestmentLlmRouteLog({
-        agentName,
-        provider: 'hub',
-        ok: false,
-        latencyMs,
-        market: options.market || null,
-        symbol: options.symbol || null,
-        taskType: options.taskType || null,
-        incidentKey: options.incidentKey || null,
-        error: `HTTP ${res.status}`,
-        routeChain: (payload?.chain as unknown[]) || [],
-        routingSource: payload?._routingSource || null,
-      }).catch((err) => noteObservabilityDrop('route_log', err));
-      return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: `HTTP ${res.status}` };
-    }
-
-    const json = await res.json();
-    if (!json.ok) {
-      console.warn(`[hub-llm] ${agentName} 응답 ok:false — ${json.error || '알 수 없음'}`);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      const failure = _hubClient.classifyHubFailureResponse(
+        json,
+        res.status,
+        res.headers.get('retry-after'),
+      );
+      console.warn(`[hub-llm] ${agentName} Hub 실패 HTTP ${res.status} — ${failure.reason}`);
       // Phase G: LLM 호출 실패 기록
-      const errorType = (json.error || '').includes('timeout') ? 'timeout'
-        : (json.error || '').includes('rate') ? 'rate_limit'
+      const errorType = failure.reason.includes('timeout') ? 'timeout'
+        : failure.reason.includes('rate') ? 'rate_limit'
         : 'bad_response';
       recordLLMFailure(agentName, json.provider || 'hub', userPrompt, errorType, options.market, options.taskType)
         .catch((err) => noteObservabilityDrop('llm_failure', err));
@@ -380,11 +371,26 @@ export async function callViaHub(
         taskType: options.taskType || null,
         incidentKey: options.incidentKey || null,
         fallbackCount: json.fallbackCount || 0,
-        error: json.error || 'hub_response_not_ok',
+        error: failure.reason,
         routeChain: (payload?.chain as unknown[]) || [],
         routingSource: payload?._routingSource || null,
       }).catch((err) => noteObservabilityDrop('route_log', err));
-      return { ok: false, text: '', provider: json.provider || 'hub', costUsd: 0, latencyMs, error: json.error };
+      return {
+        ok: false,
+        text: '',
+        provider: json.provider || 'hub',
+        costUsd: 0,
+        latencyMs,
+        error: failure.reason,
+        errorCode: failure.code,
+        httpStatus: failure.httpStatus,
+        retryAfterMs: failure.retryAfterMs,
+        limiterBackpressure: failure.limiterBackpressure,
+        providerBackpressure: failure.providerBackpressure,
+        backpressureKind: failure.backpressureKind,
+        noDirectFallback: failure.noDirectFallback,
+        admissionScope: failure.admissionScope,
+      };
     }
 
     const text: string = json.result || '';
@@ -620,6 +626,13 @@ export async function callLLMWithHub(
     recordInvocation(agentName, opts.market ?? 'any')
       .catch((err) => noteObservabilityDrop('invocation', err));
     return hubResult.text;
+  }
+
+  if (_hubClient.isHubNoDirectFallbackFailure(hubResult)) {
+    throw new Error(
+      `Hub LLM backpressure/policy: ${hubResult.errorCode || hubResult.error || 'admission_rejected'}`
+      + ` (retryAfterMs=${hubResult.retryAfterMs || 0}) — 직접 LLM 폴백 금지`,
+    );
   }
 
   if (!directFallbackEnabled) {

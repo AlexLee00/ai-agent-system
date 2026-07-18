@@ -265,6 +265,7 @@ export async function updateRoutingResult(opts: {
 }, deps: {
   query?: (schema: string, sql: string, params: unknown[]) => Promise<any[]>;
   sleep?: (ms: number) => Promise<void>;
+  logger?: (message: string) => void;
 } = {}): Promise<void> {
   const routingRequestId = String(opts.routingRequestId || '').trim();
   if (!routingRequestId) return;
@@ -293,7 +294,7 @@ export async function updateRoutingResult(opts: {
             routing_signals   = COALESCE(routing_signals, '{}'::jsonb)
               || jsonb_build_object(
                 'execution',
-                jsonb_build_object('provider', $1, 'model', $8)
+                jsonb_build_object('provider', $1::text, 'model', $8::text)
               )
         WHERE routing_signals ->> 'routing_request_id' = $7
           AND success IS NULL
@@ -302,8 +303,11 @@ export async function updateRoutingResult(opts: {
       if (Array.isArray(rows) && rows.length > 0) return;
       if (attempt < 2) await sleep(attempt === 0 ? 25 : 100);
     }
-  } catch {
-    // 무시
+    const logger = deps.logger || console.warn;
+    logger(`[llm/auto-router] outcome update missed request=${routingRequestId}`);
+  } catch (error: any) {
+    const logger = deps.logger || console.warn;
+    logger(`[llm/auto-router] outcome update failed request=${routingRequestId} code=${error?.code || 'unknown'} error=${error?.message || String(error)}`);
   }
 }
 

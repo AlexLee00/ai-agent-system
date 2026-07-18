@@ -14,6 +14,8 @@ const allowedJsFiles = new Map([
   ['bots/hub/jest-esbuild-transform.cjs', 'jest-ts-transform-bridge'],
   ['bots/hub/lib/secrets-meta.js', 'node-test-runner-fixture'],
   ['bots/hub/scripts/telegram-callback-poller.js', 'ts-source-bridge'],
+  ['bots/hub/services/ops-console/web/app.js', 'browser-runtime-asset'],
+  ['bots/hub/services/ops-console/web/sw.js', 'browser-service-worker-asset'],
 ]);
 
 const result = spawnSync('find', [

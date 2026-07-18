@@ -156,6 +156,8 @@ async function assertConcurrentRequestsKeepOwnLabels() {
   assert.match(source, /routing_request_id:\s*result\.routingRequestId/);
   assert.doesNotMatch(source, /ORDER BY created_at DESC/);
   assert.match(source, /success IS NULL/);
+  assert.match(source, /'provider',\s*\$1::text/);
+  assert.match(source, /'model',\s*\$8::text/);
 
   const rows = new Map([
     ['routing-request-a', { id: 1, success: null, selectedModel: null }],
@@ -200,6 +202,23 @@ async function assertConcurrentRequestsKeepOwnLabels() {
     },
   });
   assert.equal(legacyQueryCalls, 0);
+
+  const warnings = [];
+  await updateRoutingResult({
+    autoModel: 'anthropic_sonnet',
+    routingRequestId: 'routing-request-error',
+    success: false,
+  }, {
+    query: async () => {
+      const error: any = new Error('could not determine data type of parameter $8');
+      error.code = '42P18';
+      throw error;
+    },
+    logger: (message) => warnings.push(message),
+  });
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /routing-request-error/);
+  assert.match(warnings[0], /42P18/);
 }
 
 async function assertUnifiedRouteRecordsClusterRecommendation() {

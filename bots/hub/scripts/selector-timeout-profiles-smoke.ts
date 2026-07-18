@@ -39,6 +39,20 @@ function runFixture(envPatch = {}) {
       selectorKey: 'blog.pos.writer',
       maxTokens: 4096,
     });
+    const darwinSynthesisBudget = resolveTokenBudget({
+      callerTeam: 'darwin',
+      agent: 'planner',
+      selectorKey: 'darwin.agent_policy',
+      runtimePurpose: 'synthesis',
+      maxTokens: 4096,
+    });
+    const darwinEvaluatorBudget = resolveTokenBudget({
+      callerTeam: 'darwin',
+      agent: 'evaluator',
+      selectorKey: 'darwin.agent_policy',
+      runtime_purpose: 'evaluator',
+      maxTokens: 4096,
+    });
     console.log(JSON.stringify({
       archerTimeout: archer.primary && archer.primary.timeoutMs,
       archerProfile: timeoutProfiles.resolveSelectorTimeoutProfile('claude.archer.tech_analysis', {
@@ -55,6 +69,10 @@ function runFixture(envPatch = {}) {
       blogPosProfile: blogPos.timeoutProfile,
       blogBudgetTimeout: blogBudget.timeoutMs,
       blogBudgetPerAttempt: blogBudget.perAttemptTimeoutMs,
+      darwinSynthesisBudgetTimeout: darwinSynthesisBudget.timeoutMs,
+      darwinSynthesisBudgetPerAttempt: darwinSynthesisBudget.perAttemptTimeoutMs,
+      darwinEvaluatorBudgetTimeout: darwinEvaluatorBudget.timeoutMs,
+      darwinEvaluatorBudgetPerAttempt: darwinEvaluatorBudget.perAttemptTimeoutMs,
     }));
   `], {
     cwd: repoRoot,
@@ -94,6 +112,10 @@ assert.equal(on.blogPosTimeout, null, 'undeclared selectors must keep their exis
 assert.equal(on.blogPosProfile.enabled, false, 'undeclared selectors must not receive the default tier overlay');
 assert.equal(on.blogBudgetTimeout, 600_000, 'undeclared long-running blog budget must not be reduced by selector profiles');
 assert.equal(on.blogBudgetPerAttempt, 420_000, 'blog writer runtime profile must apply 420s per-attempt timeout');
+assert.equal(on.darwinSynthesisBudgetTimeout, 120_000, 'Darwin synthesis total timeout must preserve its purpose profile');
+assert.equal(on.darwinSynthesisBudgetPerAttempt, 120_000, 'Darwin synthesis attempt timeout must preserve its purpose profile');
+assert.equal(on.darwinEvaluatorBudgetTimeout, 25_000, 'Darwin evaluator total timeout must use the fast purpose profile');
+assert.equal(on.darwinEvaluatorBudgetPerAttempt, 25_000, 'Darwin evaluator attempt timeout must use the fast purpose profile');
 
 const override = runFixture({
   SELECTOR_TIMEOUT_PROFILES_ENABLED: 'true',

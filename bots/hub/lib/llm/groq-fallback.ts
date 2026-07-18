@@ -16,6 +16,8 @@ export interface GroqRequest {
   includeReasoning?: boolean;
   seed?: number;
   serviceTier?: 'auto' | 'on_demand' | 'flex' | 'performance';
+  timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 // Groq Developer Tier 가격 (per token), 공식 model page 기준.
@@ -62,8 +64,18 @@ function parseDurationMs(value: string): number | null {
   return totalMs > 0 ? totalMs : null;
 }
 
+function parseRetryAfterHeaderMs(resp: Response): number | undefined {
+  const raw = String(resp.headers.get('retry-after') || '').trim();
+  if (!raw) return undefined;
+  const durationMs = parseDurationMs(raw);
+  if (durationMs) return durationMs;
+  const retryAt = Date.parse(raw);
+  if (!Number.isFinite(retryAt)) return undefined;
+  return Math.max(0, retryAt - Date.now()) || undefined;
+}
+
 function resolveGroqRetryAfterMs(resp: Response, body: string): number {
-  const headerMs = parseDurationMs(resp.headers.get('retry-after') || '');
+  const headerMs = parseRetryAfterHeaderMs(resp);
   const messageMs = parseDurationMs(String(body || '').match(/try again in ([^."}]+)/i)?.[1] || '');
   const parsed = headerMs || messageMs || DEFAULT_GROQ_RETRY_AFTER_MS;
   return Math.min(Math.max(parsed, DEFAULT_GROQ_RETRY_AFTER_MS), MAX_GROQ_RETRY_AFTER_MS);
@@ -231,9 +243,16 @@ async function doGroqCall(
   apiKey: string,
   attempt = 1,
   maxAttempts = resolveGroqMaxAttempts(),
+  deadlineAt = Date.now() + Math.max(1, Number(req.timeoutMs || 30_000)),
 ): Promise<LLMCallResponse> {
   const started = Date.now();
   const model = req.model ?? 'llama-3.3-70b-versatile';
+  const remainingMs = Math.max(0, deadlineAt - Date.now());
+  if (remainingMs <= 0 || req.signal?.aborted) {
+    return { ok: false, provider: 'failed', durationMs: 0, error: 'Groq timeout_or_abort' };
+  }
+  const timeoutSignal = AbortSignal.timeout(remainingMs);
+  const signal = req.signal ? AbortSignal.any([req.signal, timeoutSignal]) : timeoutSignal;
 
   try {
     const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -243,6 +262,7 @@ async function doGroqCall(
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(buildGroqRequestBody(req, model)),
+      signal,
     });
 
     const durationMs = Date.now() - started;
@@ -255,13 +275,14 @@ async function doGroqCall(
       if (attempt < maxAttempts) {
         const nextKey = pickGroqApiKey();
         if (nextKey && nextKey !== apiKey) {
-          return doGroqCall(req, nextKey, attempt + 1, maxAttempts);
+          return doGroqCall(req, nextKey, attempt + 1, maxAttempts, deadlineAt);
         }
       }
       return {
         ok: false,
         provider: 'failed',
         durationMs,
+        upstreamStatus: resp.status,
         retryAfterMs,
         rateLimit,
         error: `Groq 429: ${body.slice(0, 300) || '전체 계정 풀 rate-limited'}`,
@@ -274,6 +295,7 @@ async function doGroqCall(
         ok: false,
         provider: 'failed',
         durationMs,
+        upstreamStatus: resp.status,
         retryAfterMs: 5_000,
         rateLimit,
         error: `Groq 498 capacity_exceeded: ${body.slice(0, 300)}`,
@@ -282,7 +304,16 @@ async function doGroqCall(
 
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
-      return { ok: false, provider: 'failed', durationMs, rateLimit, error: `Groq ${resp.status}: ${body.slice(0, 300)}` } as LLMCallResponse & { rateLimit: Record<string, string> };
+      const retryAfterMs = parseRetryAfterHeaderMs(resp);
+      return {
+        ok: false,
+        provider: 'failed',
+        durationMs,
+        upstreamStatus: resp.status,
+        ...(retryAfterMs ? { retryAfterMs } : {}),
+        rateLimit,
+        error: `Groq ${resp.status}: ${body.slice(0, 300)}`,
+      };
     }
 
     const data = await resp.json() as any;
@@ -306,17 +337,19 @@ async function doGroqCall(
       rateLimit,
     } as LLMCallResponse & { rateLimit: Record<string, string> };
   } catch (err) {
-    if (attempt < maxAttempts) {
+    if (!signal.aborted && attempt < maxAttempts) {
       const nextKey = pickGroqApiKey();
       if (nextKey && nextKey !== apiKey) {
-        return doGroqCall(req, nextKey, attempt + 1, maxAttempts);
+        return doGroqCall(req, nextKey, attempt + 1, maxAttempts, deadlineAt);
       }
     }
     return {
       ok: false,
       provider: 'failed',
       durationMs: Date.now() - started,
-      error: `Groq fetch error: ${(err as Error).message}`,
+      error: signal.aborted
+        ? 'Groq timeout_or_abort'
+        : `Groq fetch error: ${(err as Error).message}`,
     };
   }
 }

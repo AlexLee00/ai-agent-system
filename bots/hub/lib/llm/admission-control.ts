@@ -35,7 +35,7 @@ type SharedLease = {
   reason?: string;
   scope?: string;
   retryAfterMs?: number;
-  release?: () => void;
+  release?: () => void | Promise<void>;
 };
 
 type Waiter = {
@@ -91,10 +91,10 @@ function drainQueue() {
   }
 }
 
-async function acquireSlot(req: AdmissionRequest): Promise<{ queued: boolean; sharedLease: SharedLease }> {
+async function acquireSlot(req: AdmissionRequest, useSharedLimiter = true): Promise<{ queued: boolean; sharedLease: SharedLease | null }> {
   if (inFlight < DEFAULT_MAX_IN_FLIGHT) {
     inFlight += 1;
-    const sharedLease = await acquireSharedLeaseOrReleaseLocal(req);
+    const sharedLease = useSharedLimiter ? await acquireSharedLeaseOrReleaseLocal(req) : null;
     return { queued: false, sharedLease };
   }
 
@@ -138,7 +138,7 @@ async function acquireSlot(req: AdmissionRequest): Promise<{ queued: boolean; sh
     req.once('close', onClientClose);
   });
 
-  const sharedLease = await acquireSharedLeaseOrReleaseLocal(req);
+  const sharedLease = useSharedLimiter ? await acquireSharedLeaseOrReleaseLocal(req) : null;
   return { queued: true, sharedLease };
 }
 
@@ -236,17 +236,24 @@ async function evaluateCycleBudgetGuard(req: AdmissionRequest, res: AdmissionRes
   return true;
 }
 
-async function llmAdmissionMiddleware(req: AdmissionRequest, res: AdmissionResponse, next: NextFunction) {
+async function runLlmAdmissionMiddleware(
+  req: AdmissionRequest,
+  res: AdmissionResponse,
+  next: NextFunction,
+  useSharedLimiter: boolean,
+) {
   try {
     const cycleOk = await evaluateCycleBudgetGuard(req, res);
     if (!cycleOk) return;
 
-    const acquired = await acquireSlot(req);
+    const acquired = await acquireSlot(req, useSharedLimiter);
     let released = false;
     const releaseOnce = () => {
       if (released) return;
       released = true;
-      acquired.sharedLease?.release?.();
+      void Promise.resolve(acquired.sharedLease?.release?.()).catch((error) => {
+        console.error(`[llm/admission] shared lease release failed: ${(error as Error)?.message || String(error)}`);
+      });
       releaseSlot();
     };
 
@@ -307,6 +314,14 @@ async function llmAdmissionMiddleware(req: AdmissionRequest, res: AdmissionRespo
   }
 }
 
+async function llmAdmissionMiddleware(req: AdmissionRequest, res: AdmissionResponse, next: NextFunction) {
+  return runLlmAdmissionMiddleware(req, res, next, true);
+}
+
+async function llmLocalAdmissionMiddleware(req: AdmissionRequest, res: AdmissionResponse, next: NextFunction) {
+  return runLlmAdmissionMiddleware(req, res, next, false);
+}
+
 function shouldOverflowToJob(req: AdmissionRequest): boolean {
   const enabled = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_OVERFLOW_TO_JOB || '').trim().toLowerCase());
   if (!enabled) return false;
@@ -315,5 +330,6 @@ function shouldOverflowToJob(req: AdmissionRequest): boolean {
 
 module.exports = {
   llmAdmissionMiddleware,
+  llmLocalAdmissionMiddleware,
   getLlmAdmissionState,
 };

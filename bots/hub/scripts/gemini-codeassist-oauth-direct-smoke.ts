@@ -86,11 +86,30 @@ async function main() {
     assert.equal(result.provider, 'gemini-codeassist-oauth');
     assert.equal(calls.length, 1);
 
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      error: { message: 'temporarily unavailable' },
+    }), {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '4',
+      },
+    })) as typeof fetch;
+    const unavailable = await callGeminiCodeAssistOAuth({
+      model: 'gemini-codeassist-oauth/gemini-2.5-pro',
+      prompt: 'Reply with the fixture text.',
+      timeoutMs: 5000,
+    });
+    assert.equal(unavailable.ok, false);
+    assert.equal(unavailable.upstreamStatus, 503);
+    assert.equal(unavailable.retryAfterMs, 4_000);
+
     console.log(JSON.stringify({
       ok: true,
       provider: result.provider,
       model: result.model,
       endpoint: calls[0].url,
+      upstream_backpressure_preserved: true,
     }));
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

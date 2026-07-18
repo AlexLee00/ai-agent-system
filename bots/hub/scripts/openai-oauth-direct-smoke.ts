@@ -124,6 +124,26 @@ async function main() {
     });
     assert.equal(badRequest.ok, false);
     assert.match(badRequest.error, /openai_codex_oauth_bad_request:Unsupported parameter: max_output_tokens/);
+    assert.equal(badRequest.upstreamStatus, 400);
+
+    globalThis.fetch = (async () => new Response(
+      JSON.stringify({ error: { message: 'temporarily unavailable' } }),
+      {
+        status: 503,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': '7',
+        },
+      },
+    )) as typeof fetch;
+    const unavailable = await callOpenAiCodexOAuth({
+      model: 'gpt-5.4-mini',
+      prompt: 'Return a tiny success string.',
+      timeoutMs: 5000,
+    });
+    assert.equal(unavailable.ok, false);
+    assert.equal(unavailable.upstreamStatus, 503);
+    assert.equal(unavailable.retryAfterMs, 7_000);
 
     console.log(JSON.stringify({
       ok: true,
@@ -132,6 +152,7 @@ async function main() {
       endpoint: calls[0].url,
       abort_error_normalized: true,
       bad_request_detail_normalized: true,
+      upstream_backpressure_preserved: true,
       public_api_used: false,
       invalidated_error_classified: true,
     }));

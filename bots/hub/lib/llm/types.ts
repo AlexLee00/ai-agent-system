@@ -43,6 +43,9 @@ export interface LLMCallResponse {
   primaryError?: string;
   fallbackCount?: number;
   error?: string;
+  upstreamStatus?: number;
+  retryAfterMs?: number;
+  rateLimit?: Record<string, string>;
   cacheHit?: boolean;
   cachedAt?: Date;
 }

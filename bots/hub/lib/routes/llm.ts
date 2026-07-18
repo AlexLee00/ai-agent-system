@@ -8,12 +8,14 @@ const { routeModel, updateRoutingResult } = require('../llm/llm-auto-router');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
 const rag = require('../../../../packages/core/lib/rag');
 const { getLlmAdmissionState } = require('../llm/admission-control');
+const { runWithProviderAdmission } = require('../llm/provider-attempt-admission');
 const {
   createLlmJob,
-  readJob,
-  listLlmJobs,
+  readOwnedLlmJob,
+  listOwnedLlmJobs,
   getJobStoreState,
 } = require('../llm/job-store');
+const { canonicalHubTeam } = require('../team-identity');
 const { parseLlmCallPayload } = require('../llm/request-schema');
 const hubLlmSelector = require('../../src/llm-selector');
 const { isHubLlmRouteTargetAllowed, resolveHubLlmSelection, isGeminiDisabled } = hubLlmSelector;
@@ -62,6 +64,10 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
 
   try {
     const resp = await callWithFallback(llmRequest);
+    const providerBackpressure = buildProviderBackpressure(resp);
+    const failureTelemetry = resp.ok === false
+      ? buildSafeFailureTelemetry(resp, providerBackpressure)
+      : {};
     recordHubTelemetry('llm_call_end', {
       traceId: context.traceId || llmRequest.traceId || null,
       callerTeam: llmRequest.callerTeam || null,
@@ -72,6 +78,7 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
       fallbackCount: resp.fallbackCount || 0,
       fallbackUsed: Boolean(resp.fallbackUsed ?? Number(resp.fallbackCount || 0) > 0),
       durationMs: resp.durationMs || 0,
+      ...failureTelemetry,
     });
 
     logRouting(resp, llmRequest).catch((err: any) =>
@@ -81,19 +88,21 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
       console.error('[llm] auto-routing result update 실패:', err.message)
     );
 
-    const providerBackpressure = buildProviderBackpressure(resp);
     if (providerBackpressure?.retryAfterMs) {
       res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1000))));
     }
+    if (isProviderAdmissionBackpressure(resp)) setAdmissionRetryAfterHeader(res, resp);
 
-    return res.json({
+    const payload = {
       ...resp,
       traceId: context.traceId || null,
       admission: {
         queued: Boolean(res.locals?.llmAdmissionQueued),
       },
       ...(providerBackpressure ? { providerBackpressure } : {}),
-    });
+    };
+    const status = providerResponseHttpStatus(resp, providerBackpressure);
+    return status === 200 ? res.json(payload) : res.status(status).json(payload);
   } catch (err: any) {
     const providerBackpressure = buildProviderBackpressure({ error: err.message });
     if (providerBackpressure?.retryAfterMs) {
@@ -116,7 +125,8 @@ export async function llmCallRoute(req: RouteReq, res: RouteRes) {
     recordAutoRoutingResult(autoRouting, failureResp).catch((updateErr: any) =>
       console.error('[llm] auto-routing failure update 실패:', updateErr.message)
     );
-    return res.status(500).json(failureResp);
+    const status = providerResponseHttpStatus(failureResp, providerBackpressure, 500);
+    return res.status(status).json(failureResp);
   }
 }
 
@@ -184,6 +194,7 @@ export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
   }
 
   const started = Date.now();
+  const deadlineAt = started + timeoutMs;
   const input = {
     prompt,
     systemPrompt: body.systemPrompt || '',
@@ -194,29 +205,82 @@ export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
   };
 
   const attempts: AnyRecord[] = [];
+  const admissionRejections: AnyRecord[] = [];
   let resp: AnyRecord | null = null;
+  let lastFailure: AnyRecord | null = null;
   let selectedRoute: string | null = null;
+  const capacityBlockedProviders = new Set<string>();
   for (const route of selection.routes) {
-    const attempt = await callVisionSelectorRoute(route, {
+    const provider = visionProviderFromRoute(route.route);
+    if (capacityBlockedProviders.has(provider)) continue;
+    const remainingMs = Math.max(0, deadlineAt - Date.now());
+    if (remainingMs <= 0) {
+      lastFailure = {
+        ok: false,
+        provider: 'failed',
+        durationMs: Date.now() - started,
+        error: 'llm_total_deadline_exceeded:vision',
+        providerAttempted: false,
+      };
+      break;
+    }
+    const attempt = await runWithProviderAdmission({
+      team: callerTeam,
+      provider,
+    }, ({ signal }: { signal: AbortSignal }) => callVisionSelectorRoute(route, {
       ...input,
       imageDetail: body.imageDetail || 'low',
+      signal,
+    }), {
+      signal: AbortSignal.timeout(remainingMs),
     });
     if (attempt.ok) {
       resp = attempt;
       selectedRoute = route.route;
       break;
     }
-    attempts.push({ provider: route.route, error: attempt.error || 'unknown', durationMs: attempt.durationMs || 0 });
+    lastFailure = attempt;
+    if (attempt.providerAttempted === false && isProviderAdmissionBackpressure(attempt)) {
+      admissionRejections.push({
+        provider: route.route,
+        error: attempt.error || 'shared_limiter_rejected',
+        admissionScope: attempt.admissionScope || null,
+        retryAfterMs: Number(attempt.retryAfterMs || 0),
+      });
+    } else if (attempt.providerAttempted !== false) {
+      attempts.push({
+        provider: route.route,
+        error: attempt.error || 'unknown',
+        durationMs: attempt.durationMs || 0,
+        retryAfterMs: Number(attempt.retryAfterMs || 0),
+        admissionScope: attempt.admissionScope || null,
+        limiterBackpressure: attempt.limiterBackpressure === true,
+        providerAttempted: true,
+      });
+    }
+    if (isProviderCapacityBackpressure(attempt)) capacityBlockedProviders.add(provider);
+    if (shouldStopProviderFallback(attempt)) break;
   }
 
   if (!resp) {
-    resp = {
-      ok: false,
-      provider: 'failed',
-      model: null,
-      durationMs: Date.now() - started,
-      error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'no_vision_route'}`,
-    };
+    const providerBackpressure = buildProviderBackpressure(lastFailure);
+    resp = isProviderAdmissionBackpressure(lastFailure)
+      || isProviderDeadlineFailure(lastFailure)
+      || Boolean(providerBackpressure)
+      ? {
+        ...lastFailure,
+        ok: false,
+        provider: 'failed',
+        model: null,
+        durationMs: Date.now() - started,
+      }
+      : {
+        ok: false,
+        provider: 'failed',
+        model: null,
+        durationMs: Date.now() - started,
+        error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'no_vision_route'}`,
+      };
   }
 
   const logBody = {
@@ -239,15 +303,31 @@ export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
     budgetGuardStatus: budget.status,
     attempted_providers: attempts.map((attempt) => attempt.provider),
     fallbackCount: attempts.length,
+    admissionRejections,
+    admissionFallbackCount: admissionRejections.length,
   }, logBody).catch((err: any) => console.error('[llm] vision routing log 기록 실패:', err.message));
 
   if (!resp.ok) {
-    return res.status(500).json({
+    const limiterBackpressure = isProviderAdmissionBackpressure(resp);
+    const providerBackpressure = buildProviderBackpressure(resp);
+    const retryAfterMs = Math.max(0, Number(resp.retryAfterMs || providerBackpressure?.retryAfterMs || 0) || 0);
+    if (retryAfterMs > 0) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1_000))));
+    }
+    return res.status(providerResponseHttpStatus(resp, providerBackpressure, 500)).json({
       ok: false,
       provider: resp.provider || 'failed',
       error: resp.error || 'vision_call_failed',
       primaryError: resp.primaryError || null,
       durationMs: resp.durationMs || (Date.now() - started),
+      admissionRejections,
+      admissionFallbackCount: admissionRejections.length,
+      ...(providerBackpressure ? { providerBackpressure } : {}),
+      ...(retryAfterMs > 0 ? { retryAfterMs } : {}),
+      ...(limiterBackpressure ? {
+        limiterBackpressure: true,
+        admissionScope: resp.admissionScope || null,
+      } : {}),
       traceId: context.traceId || null,
     });
   }
@@ -263,10 +343,17 @@ export async function llmVisionRoute(req: RouteReq, res: RouteRes) {
     providerTiers: selection.providerTiers || [],
     fallbackCount: attempts.length,
     attempted_providers: attempts.map((attempt) => attempt.provider),
+    admissionRejections,
+    admissionFallbackCount: admissionRejections.length,
     durationMs: resp.durationMs || (Date.now() - started),
     admission: {
       queued: Boolean(res.locals?.llmAdmissionQueued),
     },
+    ...(resp.limiterReleaseWarning ? {
+      limiterReleaseWarning: true,
+      limiterReleaseUncertain: true,
+      releaseError: resp.releaseError || 'shared_limiter_release_uncertain',
+    } : {}),
     traceId: context.traceId || null,
   });
 }
@@ -303,7 +390,55 @@ export async function llmEmbeddingsRoute(req: RouteReq, res: RouteRes) {
 
   const started = Date.now();
   try {
-    const embeddings = await rag.createEmbeddingBatch(nonEmptyTexts);
+    const timeoutMs = Math.max(5_000, Math.min(600_000, Number(body.timeoutMs || 180_000) || 180_000));
+    const admissionResult = await runWithProviderAdmission({
+      team: callerTeam,
+      provider: 'local-embedding',
+    }, async ({ signal }: { signal: AbortSignal }) => ({
+      ok: true,
+      embeddings: await rag.createEmbeddingBatch(nonEmptyTexts, { signal }),
+    }), {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!admissionResult.ok) {
+      const limiterBackpressure = isProviderAdmissionBackpressure(admissionResult);
+      const providerAttempted = admissionResult.providerAttempted !== false;
+      const attemptedProviders = providerAttempted ? [`local/${rag.EMBED_MODEL}`] : [];
+      const routingFailure = {
+        ok: false,
+        provider: 'local-embedding',
+        model: rag.EMBED_MODEL,
+        durationMs: Date.now() - started,
+        totalCostUsd: 0,
+        fallbackCount: attemptedProviders.length,
+        error: `${admissionResult.error || 'embedding_admission_failed'};retry_after_ms=${Number(admissionResult.retryAfterMs || 0)}`,
+        selected_route: `local/${rag.EMBED_MODEL}`,
+        attempted_providers: attemptedProviders,
+        providerAttempted,
+        limiterBackpressure,
+        admissionScope: admissionResult.admissionScope || null,
+        retryAfterMs: Number(admissionResult.retryAfterMs || 0),
+      };
+      logRouting(routingFailure, {
+        ...normalizedRequest,
+        abstractModel: 'embedding',
+        prompt: `[embedding_${providerAttempted ? 'failed' : 'rejected'}:${nonEmptyTexts.length}]`,
+      }).catch((err) => console.error('[llm] embedding routing log 기록 실패:', err.message));
+      setAdmissionRetryAfterHeader(res, admissionResult);
+      return res.status(providerFailureHttpStatus(admissionResult)).json({
+        ok: false,
+        error: admissionResult.error || 'embedding_admission_failed',
+        model: rag.EMBED_MODEL,
+        durationMs: Date.now() - started,
+        ...(limiterBackpressure ? {
+          limiterBackpressure: true,
+          admissionScope: admissionResult.admissionScope || null,
+          retryAfterMs: Number(admissionResult.retryAfterMs || 0),
+        } : {}),
+        traceId: context.traceId || null,
+      });
+    }
+    const embeddings = admissionResult.embeddings;
     const dimensions = embeddings[0]?.length || 0;
     const expectedDimensions = Number(body.expectedDimensions || 0) || null;
     if (expectedDimensions && dimensions !== expectedDimensions) {
@@ -325,6 +460,8 @@ export async function llmEmbeddingsRoute(req: RouteReq, res: RouteRes) {
       totalCostUsd: 0,
       fallbackCount: 0,
       selected_route: `local/${rag.EMBED_MODEL}`,
+      limiterReleaseWarning: admissionResult.limiterReleaseWarning === true,
+      releaseError: admissionResult.releaseError || null,
     }, {
       ...normalizedRequest,
       abstractModel: 'embedding',
@@ -337,6 +474,11 @@ export async function llmEmbeddingsRoute(req: RouteReq, res: RouteRes) {
       dimensions,
       data: embeddings.map((embedding: unknown, index: number) => ({ index, embedding })),
       durationMs: Date.now() - started,
+      ...(admissionResult.limiterReleaseWarning ? {
+        limiterReleaseWarning: true,
+        limiterReleaseUncertain: true,
+        releaseError: admissionResult.releaseError || 'shared_limiter_release_uncertain',
+      } : {}),
       traceId: context.traceId || null,
     });
   } catch (err: any) {
@@ -369,6 +511,7 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
   return res.json({
     ok: true,
     contractVersion: 'hub-llm-gateway/v1',
+    contractRevision: '2026-07-18.1',
     status: 'active',
     auth: {
       scheme: 'bearer',
@@ -385,6 +528,12 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
         method: 'POST',
         path: '/hub/llm/jobs',
         resultPaths: ['/hub/llm/jobs/:id', '/hub/llm/jobs/:id/result'],
+        resultAccess: {
+          readTeamHeader: 'X-Hub-Team',
+          createTeamConsistency: 'X-Hub-Team and body.callerTeam must identify the same canonical team when both are sent',
+          missingReadTeamStatus: 400,
+          crossTeamReadStatus: 404,
+        },
         useCase: 'long research, multi-document synthesis, high-latency work',
       },
       vision: {
@@ -408,8 +557,39 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
       priority: 'X-Hub-Priority',
       traceId: 'X-Hub-Trace-Id',
     },
+    contextSources: {
+      callerTeam: ['body.callerTeam', 'header.X-Hub-Team'],
+      agent: ['body.agent', 'header.X-Hub-Agent'],
+    },
     requiredBody: ['prompt', 'abstractModel'],
-    recommendedBody: ['callerTeam', 'agent', 'selectorKey', 'taskType', 'requestId', 'maxBudgetUsd', 'timeoutMs'],
+    requiredBodyAppliesTo: ['syncCall', 'asyncJob'],
+    requestSchemas: {
+      syncCall: {
+        requiredBody: ['prompt', 'abstractModel'],
+      },
+      asyncJob: {
+        requiredBody: ['prompt', 'abstractModel'],
+      },
+      vision: {
+        requiredBody: ['prompt'],
+        requiredContext: ['callerTeam', 'agent'],
+        oneOfBody: [{
+          name: 'image',
+          canonical: 'imageBase64',
+          fields: ['imageBase64', 'base64', 'imageDataUrl', 'dataUrl'],
+        }],
+      },
+      embeddings: {
+        requiredBody: [],
+        requiredContext: ['callerTeam', 'agent'],
+        oneOfBody: [{
+          name: 'input',
+          canonical: 'input',
+          fields: ['input', 'text', 'prompt'],
+        }],
+      },
+    },
+    recommendedBody: ['callerTeam', 'agent', 'selectorKey', 'runtimePurpose', 'taskType', 'requestId', 'maxBudgetUsd', 'timeoutMs'],
     selectorPolicy: {
       normalPath: 'callerTeam + agent or selectorKey',
       externalProjectDefault: 'Use selectorKey until the external project has approved registry entries.',
@@ -422,6 +602,25 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
       geminiDisableFlag: 'HUB_LLM_GEMINI_DISABLED',
       geminiDisabledError: 'gemini_provider_disabled',
       directTokenRefreshChecks: isGeminiDisabled() ? 'skipped_for_gemini' : 'enabled',
+    },
+    timeoutPolicy: {
+      requestField: 'timeoutMs',
+      semantics: 'total_deadline',
+      effectiveValue: 'minimum of request, token-budget, runtime-purpose, selector profile, and remaining deadline',
+      providerAttemptTimeout: 'bounded independently by the per-attempt profile and remaining total deadline',
+      defaultsMs: {
+        general: 180_000,
+        archer: 300_000,
+        blogWriterTotal: 600_000,
+        blogWriterPerAttempt: 420_000,
+      },
+      specialScope: 'Blog writer limits require callerTeam=blog; other external teams use the general limit unless separately registered.',
+    },
+    backpressurePolicy: {
+      structuredFields: ['upstreamStatus', 'retryAfterMs', 'providerBackpressure', 'limiterBackpressure', 'admissionScope'],
+      retryAfterHeader: 'Retry-After',
+      directProviderFallback: 'forbidden',
+      asyncJobAdmissionRetry: 'same_job_id_requeued',
     },
     observability: {
       requestLog: 'hub.llm_request_log',
@@ -452,6 +651,16 @@ export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
     });
   }
   const body = parsed.data;
+  const headerTeam = canonicalHubTeam(context.callerTeam);
+  const bodyTeam = canonicalHubTeam(body.callerTeam);
+  if (headerTeam && bodyTeam && headerTeam !== bodyTeam) {
+    return res.status(400).json({
+      ok: false,
+      error: 'callerTeam_mismatch',
+      message: 'X-Hub-Team and body.callerTeam must identify the same canonical team.',
+      traceId: context.traceId || null,
+    });
+  }
   const normalizedRequest = normalizeLlmCallRequest(body, context);
   if (!checkLlmRouteTarget(res, context, normalizedRequest)) return;
   const job = await createLlmJob(normalizedRequest, context, { source: 'api' });
@@ -467,7 +676,13 @@ export async function llmJobsCreateRoute(req: RouteReq, res: RouteRes) {
 
 function normalizeLlmCallRequest(
   body: Record<string, any>,
-  context: { callerTeam?: string; agent?: string; priority?: string; traceId?: string | null },
+  context: {
+    callerTeam?: string;
+    agent?: string;
+    priority?: string;
+    traceId?: string | null;
+    authPrincipalId?: string | null;
+  },
 ): AnyRecord {
   return {
     ...body,
@@ -479,6 +694,7 @@ function normalizeLlmCallRequest(
     trace_id: body.trace_id || body.traceId || context.traceId || undefined,
     cycleId: body.cycleId || body.cycle_id || undefined,
     cycle_id: body.cycle_id || body.cycleId || undefined,
+    authPrincipalId: context.authPrincipalId || undefined,
   };
 }
 
@@ -601,19 +817,42 @@ function rejectIfDirectProviderRoutesDisabled(res: RouteRes): boolean {
   return true;
 }
 
+function resolveLlmJobOwner(req: RouteReq): { callerTeam: string; authPrincipalId: string | null } | null {
+  const context = req.hubRequestContext || {};
+  const callerTeam = canonicalHubTeam(context.callerTeam);
+  if (!callerTeam) return null;
+  return {
+    callerTeam,
+    authPrincipalId: context.authPrincipalId || null,
+  };
+}
+
+function sendLlmJobOwnerRequired(req: RouteReq, res: RouteRes) {
+  return res.status(400).json({
+    ok: false,
+    error: 'callerTeam_required',
+    message: 'X-Hub-Team is required when reading async LLM jobs.',
+    traceId: req.hubRequestContext?.traceId || null,
+  });
+}
+
 // GET /hub/llm/jobs — 최근 비동기 LLM job 목록
 export async function llmJobsListRoute(req: RouteReq, res: RouteRes) {
+  const owner = resolveLlmJobOwner(req);
+  if (!owner) return sendLlmJobOwnerRequired(req, res);
   const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
   return res.json({
     ok: true,
-    jobs: await listLlmJobs(limit),
+    jobs: await listOwnedLlmJobs(limit, owner),
     store: await getJobStoreState(),
   });
 }
 
 // GET /hub/llm/jobs/:id — 비동기 LLM job 상태/결과 조회
 export async function llmJobStatusRoute(req: RouteReq, res: RouteRes) {
-  const job = await readJob(req.params?.id);
+  const owner = resolveLlmJobOwner(req);
+  if (!owner) return sendLlmJobOwnerRequired(req, res);
+  const job = await readOwnedLlmJob(req.params?.id, owner);
   if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
   return res.json({
     ok: true,
@@ -623,7 +862,9 @@ export async function llmJobStatusRoute(req: RouteReq, res: RouteRes) {
 
 // GET /hub/llm/jobs/:id/result — 완료된 비동기 LLM job 결과만 조회
 export async function llmJobResultRoute(req: RouteReq, res: RouteRes) {
-  const job = await readJob(req.params?.id);
+  const owner = resolveLlmJobOwner(req);
+  if (!owner) return sendLlmJobOwnerRequired(req, res);
+  const job = await readOwnedLlmJob(req.params?.id, owner);
   if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
   if (job.status !== 'completed') {
     return res.status(202).json({
@@ -649,17 +890,39 @@ export async function llmOAuthRoute(req: RouteReq, res: RouteRes) {
   }
 
   try {
-    const resp = await callClaudeCodeOAuth({
+    const timeoutMs = Math.max(1_000, Math.min(600_000, Number(body.timeoutMs ?? 60_000) || 60_000));
+    const resp = await runWithProviderAdmission({
+      team: String(body.callerTeam || req.hubRequestContext?.callerTeam || 'hub'),
+      provider: 'claude-code-oauth',
+    }, ({ signal }: { signal: AbortSignal }) => callClaudeCodeOAuth({
       prompt: body.prompt,
       model: body.model,
       systemPrompt: body.systemPrompt,
       jsonSchema: body.jsonSchema,
-      timeoutMs: body.timeoutMs ?? 60_000,
+      timeoutMs,
       maxBudgetUsd: body.maxBudgetUsd,
-    });
-    return res.json(resp);
+      signal,
+    }), { signal: AbortSignal.timeout(timeoutMs) });
+    if (!resp.ok && (isProviderAdmissionBackpressure(resp) || isProviderDeadlineFailure(resp))) {
+      setAdmissionRetryAfterHeader(res, resp);
+      return res.status(providerFailureHttpStatus(resp)).json(resp);
+    }
+    const providerBackpressure = buildProviderBackpressure(resp);
+    if (providerBackpressure?.retryAfterMs) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1_000))));
+    }
+    const payload = providerBackpressure ? { ...resp, providerBackpressure } : resp;
+    const status = providerResponseHttpStatus(resp, providerBackpressure);
+    return status === 200 ? res.json(payload) : res.status(status).json(payload);
   } catch (err: any) {
-    return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
+    const failure = { ok: false, provider: 'failed', durationMs: 0, error: err.message };
+    const providerBackpressure = buildProviderBackpressure(failure);
+    const payload = providerBackpressure ? { ...failure, providerBackpressure } : failure;
+    if (providerBackpressure?.retryAfterMs) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1_000))));
+    }
+    const status = providerResponseHttpStatus(failure, providerBackpressure, 500);
+    return res.status(status).json(payload);
   }
 }
 
@@ -672,7 +935,11 @@ export async function llmGroqRoute(req: RouteReq, res: RouteRes) {
   }
 
   try {
-    const resp = await callGroqFallback({
+    const timeoutMs = Math.max(1_000, Math.min(600_000, Number(body.timeoutMs ?? 30_000) || 30_000));
+    const resp = await runWithProviderAdmission({
+      team: String(body.callerTeam || req.hubRequestContext?.callerTeam || 'hub'),
+      provider: 'groq',
+    }, ({ signal }: { signal: AbortSignal }) => callGroqFallback({
       prompt: body.prompt,
       model: body.model,
       systemPrompt: body.systemPrompt,
@@ -687,10 +954,29 @@ export async function llmGroqRoute(req: RouteReq, res: RouteRes) {
       serviceTier: body.serviceTier,
       maxTokens: body.maxTokens,
       temperature: body.temperature,
-    });
-    return res.json(resp);
+      timeoutMs,
+      signal,
+    }), { signal: AbortSignal.timeout(timeoutMs) });
+    if (!resp.ok && (isProviderAdmissionBackpressure(resp) || isProviderDeadlineFailure(resp))) {
+      setAdmissionRetryAfterHeader(res, resp);
+      return res.status(providerFailureHttpStatus(resp)).json(resp);
+    }
+    const providerBackpressure = buildProviderBackpressure(resp);
+    if (providerBackpressure?.retryAfterMs) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1_000))));
+    }
+    const payload = providerBackpressure ? { ...resp, providerBackpressure } : resp;
+    const status = providerResponseHttpStatus(resp, providerBackpressure);
+    return status === 200 ? res.json(payload) : res.status(status).json(payload);
   } catch (err: any) {
-    return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
+    const failure = { ok: false, provider: 'failed', durationMs: 0, error: err.message };
+    const providerBackpressure = buildProviderBackpressure(failure);
+    const payload = providerBackpressure ? { ...failure, providerBackpressure } : failure;
+    if (providerBackpressure?.retryAfterMs) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1_000))));
+    }
+    const status = providerResponseHttpStatus(failure, providerBackpressure, 500);
+    return res.status(status).json(payload);
   }
 }
 
@@ -1021,9 +1307,10 @@ function parseLoadTestNotes(notes: unknown): unknown {
 
 function buildProviderBackpressure(resp: AnyRecord | null | undefined): AnyRecord | null {
   const error = String(resp?.error || '').toLowerCase();
-  if (!error) return null;
+  const upstreamStatus = Number(resp?.upstreamStatus || 0);
+  if (!error && ![429, 498, 503].includes(upstreamStatus)) return null;
   const provider = String(resp?.provider || '').trim() || undefined;
-  if (error.includes('429') || error.includes('rate limit') || error.includes('quota')) {
+  if (upstreamStatus === 429 || error.includes('429') || /rate[_ -]?limit/.test(error) || error.includes('quota')) {
     return {
       kind: 'provider_rate_limit',
       provider,
@@ -1053,7 +1340,64 @@ function buildProviderBackpressure(resp: AnyRecord | null | undefined): AnyRecor
       provider_circuits: getProviderStats(),
     };
   }
+  if (
+    upstreamStatus === 503
+    || upstreamStatus === 498
+    || error.includes('503')
+    || /service[_ -]?unavailable/.test(error)
+    || /over[_ -]?capacity/.test(error)
+    || /capacity[_ -]?exceeded/.test(error)
+  ) {
+    return {
+      kind: 'provider_unavailable',
+      provider,
+      retryAfterMs: Number(resp?.retryAfterMs || process.env.HUB_LLM_PROVIDER_RETRY_AFTER_MS || 60_000),
+      httpStatus: 503,
+      provider_cooldowns: getProviderCooldownSnapshot(),
+      provider_circuits: getProviderStats(),
+    };
+  }
   return null;
+}
+
+function buildSafeFailureTelemetry(
+  resp: AnyRecord | null | undefined,
+  providerBackpressure: AnyRecord | null,
+): AnyRecord {
+  const structuredCode = resp?.error && typeof resp.error === 'object'
+    ? String(resp.error.code || '')
+    : '';
+  const rawCode = structuredCode || String(resp?.error || '').split(':')[0];
+  const normalizedCode = rawCode
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '_')
+    .slice(0, 80);
+  return {
+    errorCode: String(providerBackpressure?.kind || normalizedCode || 'llm_call_failed'),
+    backpressureKind: providerBackpressure?.kind
+      || (isProviderAdmissionBackpressure(resp) ? 'admission_backpressure' : null),
+    admissionScope: String(resp?.admissionScope || '').slice(0, 120) || null,
+    retryAfterMs: Math.max(0, Number(resp?.retryAfterMs || providerBackpressure?.retryAfterMs || 0) || 0),
+    admissionFallbackCount: Math.max(0, Number(resp?.admissionFallbackCount || 0) || 0),
+    providerTerminationUnconfirmed: resp?.providerTerminationUnconfirmed === true,
+    limiterLeaseQuarantined: resp?.limiterLeaseQuarantined === true,
+    limiterReleaseUncertain: resp?.limiterReleaseUncertain === true,
+  };
+}
+
+function providerResponseHttpStatus(
+  result: AnyRecord | null | undefined,
+  providerBackpressure: AnyRecord | null,
+  defaultFailureStatus = 200,
+): number {
+  if (result?.ok !== false) return 200;
+  if (isProviderAdmissionBackpressure(result) || isProviderDeadlineFailure(result)) {
+    return providerFailureHttpStatus(result);
+  }
+  const declaredStatus = Number(providerBackpressure?.httpStatus || 0);
+  if (declaredStatus >= 400 && declaredStatus <= 599) return declaredStatus;
+  return defaultFailureStatus;
 }
 
 function normalizeVisionImage(body: AnyRecord): AnyRecord {
@@ -1184,6 +1528,45 @@ function isVisionRouteSupported(route: unknown): boolean {
     || String(route || '').startsWith('gemini-codeassist-oauth/');
 }
 
+function visionProviderFromRoute(route: unknown): string {
+  return String(route || '').split('/')[0] || 'unknown';
+}
+
+function isProviderAdmissionBackpressure(result: AnyRecord | null | undefined): boolean {
+  return result?.limiterBackpressure === true
+    || String(result?.error || '').startsWith('shared_limiter_');
+}
+
+function isProviderCapacityBackpressure(result: AnyRecord | null | undefined): boolean {
+  return isProviderAdmissionBackpressure(result)
+    && String(result?.error || '').startsWith('shared_limiter_full:');
+}
+
+function isProviderDeadlineFailure(result: AnyRecord | null | undefined): boolean {
+  return String(result?.error || '').startsWith('llm_total_deadline_exceeded');
+}
+
+function shouldStopProviderFallback(result: AnyRecord | null | undefined): boolean {
+  if (isProviderDeadlineFailure(result)) return true;
+  if (!isProviderAdmissionBackpressure(result)) return false;
+  return !isProviderCapacityBackpressure(result)
+    || !String(result?.admissionScope || '').startsWith('provider:');
+}
+
+function providerFailureHttpStatus(result: AnyRecord | null | undefined): number {
+  if (isProviderDeadlineFailure(result)) return 504;
+  if (isProviderCapacityBackpressure(result)) return 429;
+  if (isProviderAdmissionBackpressure(result)) return 503;
+  return 500;
+}
+
+function setAdmissionRetryAfterHeader(res: RouteRes, result: AnyRecord | null | undefined): void {
+  const retryAfterMs = Number(result?.retryAfterMs || 0);
+  if (retryAfterMs > 0) {
+    res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1_000))));
+  }
+}
+
 async function callVisionSelectorRoute(route: AnyRecord, input: AnyRecord): Promise<AnyRecord> {
   if (route.route.startsWith('openai-oauth/')) {
     return callOpenAiCodexOAuth({
@@ -1213,7 +1596,7 @@ async function callVisionSelectorRoute(route: AnyRecord, input: AnyRecord): Prom
 }
 
 function redactJobPayload(job: AnyRecord): AnyRecord {
-  const { payload, ...rest } = job;
+  const { payload, ownerPrincipalId, ...rest } = job;
   return {
     ...rest,
     payloadSummary: job.payloadSummary,
@@ -1306,6 +1689,8 @@ async function insertRoutingLog(
     addValue('runtime_profile', resp.runtimeProfile ?? null);
     addValue('attempted_providers', JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []), '::jsonb');
     addValue('avoided_providers', JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []), '::jsonb');
+    addValue('admission_rejections', JSON.stringify(Array.isArray(resp.admissionRejections) ? resp.admissionRejections : []), '::jsonb');
+    addValue('admission_fallback_count', Math.max(0, Number(resp.admissionFallbackCount || 0) || 0));
     addValue('request_id', body.requestId ?? traceId ?? resp.sessionId ?? null);
     addValue('route_target_kind', resp.routeTargetKind ?? null);
     addValue('runtime_purpose', resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null);
@@ -1376,6 +1761,8 @@ function ensureRoutingLogAuditColumns(): Promise<boolean> {
             ADD COLUMN IF NOT EXISTS runtime_profile TEXT,
             ADD COLUMN IF NOT EXISTS attempted_providers JSONB NOT NULL DEFAULT '[]'::jsonb,
             ADD COLUMN IF NOT EXISTS avoided_providers JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS admission_rejections JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS admission_fallback_count INTEGER NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS request_id TEXT,
             ADD COLUMN IF NOT EXISTS route_target_kind TEXT,
             ADD COLUMN IF NOT EXISTS runtime_purpose TEXT,
@@ -1411,6 +1798,8 @@ async function routingLogAuditColumnsExist() {
       'runtime_profile',
       'attempted_providers',
       'avoided_providers',
+      'admission_rejections',
+      'admission_fallback_count',
       'request_id',
       'route_target_kind',
       'runtime_purpose',
@@ -1418,7 +1807,7 @@ async function routingLogAuditColumnsExist() {
       'budget_guard_status',
       'provider_tier',
     ]]);
-  return Number(rows?.[0]?.count || 0) === 15;
+  return Number(rows?.[0]?.count || 0) === 17;
 }
 
 function routingLogTraceColumnsExist(): Promise<boolean> {
@@ -1523,6 +1912,8 @@ async function ensureHubLlmRequestLogView() {
       runtime_profile,
       attempted_providers,
       avoided_providers,
+      admission_rejections,
+      admission_fallback_count,
       route_target_kind,
       runtime_purpose,
       estimated_cost_usd,
@@ -1566,6 +1957,8 @@ function isRoutingLogAuditColumnError(err: unknown): boolean {
     || message.includes('runtime_profile')
     || message.includes('attempted_providers')
     || message.includes('avoided_providers')
+    || message.includes('admission_rejections')
+    || message.includes('admission_fallback_count')
     || message.includes('request_id')
     || message.includes('route_target_kind')
     || message.includes('runtime_purpose')

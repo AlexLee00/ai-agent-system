@@ -7,6 +7,7 @@
 
 const coreSelector = require('../../../packages/core/lib/llm-model-selector');
 const { PROFILES, selectRuntimeProfile } = require('../lib/runtime-profiles');
+const { canonicalHubTeam } = require('../lib/team-identity');
 
 const NON_LLM_TARGETS = new Set([
   'blog.publ',
@@ -65,10 +66,7 @@ function normalizeTaskTypeInput(input = {}) {
 }
 
 function canonicalTeam(team) {
-  const normalized = normalizeToken(team);
-  if (normalized === 'luna') return 'investment';
-  if (normalized === 'jay') return 'orchestrator';
-  return normalized;
+  return canonicalHubTeam(team);
 }
 
 function nonLlmKeys(input = {}) {

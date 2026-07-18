@@ -390,13 +390,21 @@ function extractHubText(json = {}) {
 }
 
 function isBillingGuardError(status, json = {}, errorText = '') {
+  const structuredError = json.error && typeof json.error === 'object'
+    ? [json.error.code, json.error.message].filter(Boolean).join(' ')
+    : json.error;
   const text = [
     status === 429 ? '429' : '',
-    json.error,
+    structuredError,
     json.message,
     json.reason,
     errorText,
   ].filter(Boolean).join(' ').toLowerCase();
+  const errorCode = String(json.error?.code || json.code || structuredError || '').trim().toLowerCase();
+  const admissionBackpressure = json.limiterBackpressure === true
+    || errorCode.startsWith('shared_limiter_')
+    || ['queue_full', 'queue_timeout', 'admission_rejected'].includes(errorCode);
+  if (admissionBackpressure) return false;
   return status === 429 || /budget|billing|quota|insufficient[_ -]?credit|payment/.test(text);
 }
 
@@ -3468,6 +3476,7 @@ module.exports = {
   gitStatusScoped,
   isNodeExecutableContent,
   isNodeExecutableFile,
+  isBillingGuardError,
   exitCodeForCycleResult,
   heartbeatStatusForCycleResult,
   applyEnabled,

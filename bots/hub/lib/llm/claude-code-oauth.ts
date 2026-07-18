@@ -8,6 +8,7 @@ export interface ClaudeCodeRequest {
   jsonSchema?: Record<string, unknown>;
   timeoutMs?: number;
   maxBudgetUsd?: number;
+  signal?: AbortSignal;
 }
 
 const CLAUDE_CODE_AUTH_ENV_KEYS = [
@@ -24,6 +25,21 @@ function buildClaudeCodeChildEnv() {
     delete childEnv[key];
   }
   return childEnv;
+}
+
+function terminationGraceMs(): number {
+  const configured = Number(process.env.CLAUDE_CODE_TERMINATION_GRACE_MS || 2_000);
+  return Number.isFinite(configured) ? Math.max(10, Math.min(10_000, Math.floor(configured))) : 2_000;
+}
+
+function killProcessTree(proc: ReturnType<typeof spawn>, signal: NodeJS.Signals): boolean {
+  if (process.platform !== 'win32' && proc.pid) {
+    try {
+      process.kill(-proc.pid, signal);
+      return true;
+    } catch {}
+  }
+  return proc.kill(signal);
 }
 
 export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResponse> {
@@ -46,22 +62,40 @@ export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResp
     const proc = spawn(claudeCodeBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: buildClaudeCodeChildEnv(),
+      detached: process.platform !== 'win32',
     });
 
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-
-    const timer = setTimeout(() => {
+    let terminationRequested = false;
+    let escalationTimer: NodeJS.Timeout | null = null;
+    const requestTermination = () => {
       timedOut = true;
-      proc.kill('SIGTERM');
-    }, timeoutMs);
+      if (terminationRequested) return;
+      terminationRequested = true;
+      killProcessTree(proc, 'SIGTERM');
+      escalationTimer = setTimeout(() => {
+        if (proc.exitCode === null && proc.signalCode === null) killProcessTree(proc, 'SIGKILL');
+      }, terminationGraceMs());
+      escalationTimer.unref?.();
+    };
+    if (req.signal?.aborted) requestTermination();
+    else req.signal?.addEventListener('abort', requestTermination, { once: true });
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (escalationTimer) clearTimeout(escalationTimer);
+      req.signal?.removeEventListener('abort', requestTermination);
+    };
+
+    const timer = setTimeout(requestTermination, timeoutMs);
 
     proc.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
     proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
     proc.on('close', (code: number | null) => {
-      clearTimeout(timer);
+      cleanup();
       const durationMs = Date.now() - started;
 
       if (timedOut) {
@@ -112,7 +146,7 @@ export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResp
     });
 
     proc.on('error', (err: Error) => {
-      clearTimeout(timer);
+      cleanup();
       resolve({
         ok: false,
         provider: 'failed',

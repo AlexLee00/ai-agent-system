@@ -26,6 +26,7 @@ export interface CacheKey {
   jsonSchema?: unknown;
   maxTokens?: number | null;
   temperature?: number | null;
+  routingFingerprint?: string | null;
 }
 
 export interface CacheCheckResult {
@@ -37,7 +38,7 @@ export interface CacheCheckResult {
 }
 
 export function computeHash(key: CacheKey): string {
-  const raw = JSON.stringify({
+  const payload: Record<string, unknown> = {
     abstractModel: key.abstractModel,
     callerTeam: key.callerTeam || null,
     agent: key.agent || null,
@@ -48,7 +49,10 @@ export function computeHash(key: CacheKey): string {
     jsonSchema: key.jsonSchema || null,
     maxTokens: key.maxTokens ?? null,
     temperature: key.temperature ?? null,
-  });
+  };
+  // Preserve hashes for legacy direct cache callers; unified routing always supplies v2.
+  if (key.routingFingerprint) payload.routingFingerprint = key.routingFingerprint;
+  const raw = JSON.stringify(payload);
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
 

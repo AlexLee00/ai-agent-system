@@ -27,6 +27,7 @@ async function main(): Promise<void> {
     callerTeam: 'external-blog',
     agent: 'writer',
     selectorKey: 'blog.pos.writer',
+    runtimePurpose: 'external_blog_post',
     taskType: 'external_blog_post',
     requestId: 'external-gateway-contract-smoke',
     maxBudgetUsd: 0.05,
@@ -66,12 +67,43 @@ async function main(): Promise<void> {
       assert.equal(response.status, 200, 'gateway contract endpoint must respond');
       assert.equal(body.ok, true);
       assert.equal(body.contractVersion, 'hub-llm-gateway/v1');
+      assert.equal(body.contractRevision, '2026-07-18.1');
       assert.equal(body.endpoints.syncCall.path, '/hub/llm/call');
       assert.equal(body.endpoints.vision.path, '/hub/llm/vision');
       assert.equal(body.endpoints.embeddings.path, '/hub/llm/embeddings');
       assert.equal(body.selectorPolicy.directProviderRoutes, 'disabled_by_default');
       assert.equal(body.providerPolicy.geminiDisableFlag, 'HUB_LLM_GEMINI_DISABLED');
       assert.equal(typeof body.providerPolicy.geminiDisabled, 'boolean');
+      assert(body.recommendedBody.includes('runtimePurpose'), 'gateway contract must recommend runtimePurpose');
+      assert.deepEqual(body.requestSchemas.syncCall.requiredBody, ['prompt', 'abstractModel']);
+      assert.deepEqual(body.requestSchemas.asyncJob.requiredBody, ['prompt', 'abstractModel']);
+      assert.deepEqual(body.contextSources.callerTeam, ['body.callerTeam', 'header.X-Hub-Team']);
+      assert.deepEqual(body.contextSources.agent, ['body.agent', 'header.X-Hub-Agent']);
+      assert.deepEqual(body.requestSchemas.vision.requiredBody, ['prompt']);
+      assert.deepEqual(body.requestSchemas.vision.requiredContext, ['callerTeam', 'agent']);
+      assert.deepEqual(body.requestSchemas.vision.oneOfBody[0].fields, [
+        'imageBase64',
+        'base64',
+        'imageDataUrl',
+        'dataUrl',
+      ]);
+      assert.deepEqual(body.requestSchemas.embeddings.requiredBody, []);
+      assert.deepEqual(body.requestSchemas.embeddings.requiredContext, ['callerTeam', 'agent']);
+      assert.deepEqual(body.requestSchemas.embeddings.oneOfBody[0].fields, ['input', 'text', 'prompt']);
+      assert.equal(body.endpoints.asyncJob.resultAccess.readTeamHeader, 'X-Hub-Team');
+      assert.match(body.endpoints.asyncJob.resultAccess.createTeamConsistency, /same canonical team/);
+      assert.equal(body.requiredBodyAppliesTo.includes('vision'), false, 'legacy requiredBody must not be presented as a vision schema');
+      assert.equal(body.timeoutPolicy.semantics, 'total_deadline');
+      assert.equal(body.timeoutPolicy.defaultsMs.blogWriterPerAttempt, 420_000);
+      assert.deepEqual(body.backpressurePolicy.structuredFields, [
+        'upstreamStatus',
+        'retryAfterMs',
+        'providerBackpressure',
+        'limiterBackpressure',
+        'admissionScope',
+      ]);
+      assert.equal(body.backpressurePolicy.directProviderFallback, 'forbidden');
+      assert.equal(body.backpressurePolicy.asyncJobAdmissionRetry, 'same_job_id_requeued');
 
       const invalidVision = await fetch(`${baseUrl}/hub/llm/vision`, {
         method: 'POST',

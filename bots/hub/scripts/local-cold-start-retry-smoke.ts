@@ -194,8 +194,32 @@ async function main(): Promise<void> {
     const unifiedSource = fs.readFileSync(unifiedCallerPath, 'utf8');
     assert(!localOllamaSource.includes('local-embedding'), 'local-ollama must not reference local-embedding');
     assert(unifiedSource.includes("normalizedRoute.startsWith('local-embedding/')"), 'unified caller must keep local-embedding branch');
-    assert(unifiedSource.includes('_callLocalEmbeddingOnly(req, model)'), 'local-embedding must stay on its existing caller');
+    assert(unifiedSource.includes('_callLocalEmbeddingOnly(req, model, chainEntry._signal)'), 'local-embedding must stay on its existing signal-aware caller');
     return 'local-ollama has no local-embedding reference; unified local-embedding branch intact';
+  });
+
+  await record('TS-S1-4B', 'Hub attempt signal 안에서 남은 예산으로 cold retry', async () => {
+    setLocalEnv({ timeoutMs: 5, coldStartTimeoutMs: 35, retryEnabled: true });
+    const model = 's1-parent-signal-retry';
+    providerRegistry().resetProviderCircuit(`local/${model}`);
+    const attempts: Array<{ startedAt: number; abortedAfterMs?: number }> = [];
+    global.fetch = sequenceFetch([hangingFetch(attempts), successFetch('signal retry recovered')]);
+    const controller = new AbortController();
+    const attemptDeadlineAt = originalDateNow() + 100;
+
+    const { callLocalOllama } = loadLocalOllama();
+    const result = await callLocalOllama({
+      model,
+      prompt: 'cold start with parent signal',
+      timeoutMs: 100,
+      signal: controller.signal,
+      attemptDeadlineAt,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.coldStartRetried, true);
+    assert.equal(attempts.length, 1);
+    return `coldStartRetried=${result.coldStartRetried} parentAborted=${controller.signal.aborted}`;
   });
 
   await record('TS-S1-5', 'HALF_OPEN probe가 cold retry 성공으로 CLOSED 복귀', async () => {

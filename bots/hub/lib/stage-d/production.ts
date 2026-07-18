@@ -311,6 +311,8 @@ function checkExternalGateway() {
       callerTeam: 'justin-court-appraisal',
       agent: 'justin',
       selectorKey: 'justin.stage-3',
+      abstractModel: 'anthropic_haiku',
+      runtimePurpose: 'external_gateway_canary',
       taskType: 'external_gateway_canary',
       requestId: 'hub-stage-d-production-report',
       maxBudgetUsd: 0.05,

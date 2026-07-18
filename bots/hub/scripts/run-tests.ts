@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-type TestTarget = 'all' | 'secrets-meta' | 'unit' | 'runtime' | 'runtime-live';
+type TestTarget = 'all' | 'secrets-meta' | 'unit' | 'readonly-contract' | 'runtime' | 'runtime-live';
 type Step = {
   label: string;
   command: string;
@@ -92,6 +92,13 @@ function unitJestStep(jestBin: string, hubRoot: string): Step {
       '__tests__/request-context.test.ts',
       '__tests__/llm-request-schema.test.ts',
       '__tests__/admission-control.test.ts',
+      '__tests__/shared-limiter-lease.test.ts',
+      '__tests__/provider-attempt-admission.test.ts',
+      '__tests__/unified-provider-admission.test.ts',
+      '__tests__/llm-total-deadline.test.ts',
+      '__tests__/llm-routing-fingerprint.test.ts',
+      '__tests__/auth-scope-audit.test.ts',
+      '__tests__/oauth-gemini-cli-signal.test.ts',
       '__tests__/oauth-redaction.test.ts',
       '__tests__/oauth-local-import.test.ts',
       '__tests__/oauth-flow.test.ts',
@@ -102,6 +109,48 @@ function unitJestStep(jestBin: string, hubRoot: string): Step {
       '--runInBand',
     ],
   };
+}
+
+function readonlyContractJestStep(jestBin: string, hubRoot: string): Step {
+  const nodeOptions = mergeNodeOptions(
+    process.env.NODE_OPTIONS,
+    `--localstorage-file=${path.join(os.tmpdir(), 'hub-readonly-contract-localstorage.sqlite')}`,
+  );
+  return {
+    label: 'jest read-only Hub contracts',
+    command: jestBin,
+    cwd: hubRoot,
+    env: { ...process.env, NODE_OPTIONS: nodeOptions },
+    args: [
+      '__tests__/request-context.test.ts',
+      '__tests__/llm-request-schema.test.ts',
+      '__tests__/admission-control.test.ts',
+      '__tests__/shared-limiter-lease.test.ts',
+      '__tests__/provider-attempt-admission.test.ts',
+      '__tests__/unified-provider-admission.test.ts',
+      '__tests__/llm-total-deadline.test.ts',
+      '__tests__/llm-routing-fingerprint.test.ts',
+      '__tests__/auth-scope-audit.test.ts',
+      '__tests__/oauth-gemini-cli-signal.test.ts',
+      '--runInBand',
+    ],
+  };
+}
+
+function runReadonlyContract(scriptDir: string, hubRoot: string, jestBin: string, tsxBin: string): void {
+  runStep(readonlyContractJestStep(jestBin, hubRoot));
+  runSteps([
+    'hub-js-ts-island-smoke.ts',
+    'hub-strict-ts-island-smoke.ts',
+    'llm-shared-limiter-smoke.ts',
+    'hub-llm-selector-route-smoke.ts',
+    'llm-auto-routing-shadow-wiring-smoke.ts',
+    'selector-timeout-profiles-smoke.ts',
+    'hub-client-default-model-smoke.ts',
+    'llm-external-integration-guide-smoke.ts',
+    'llm-route-provider-admission-smoke.ts',
+    'llm-runtime-selector-source-smoke.ts',
+  ].map((script) => tsxStep(tsxBin, scriptDir, hubRoot, script)));
 }
 
 function unitSmokeScripts(): string[] {
@@ -317,6 +366,10 @@ function main(): void {
     runUnit(scriptDir, hubRoot, jestBin, tsxBin);
     return;
   }
+  if (target === 'readonly-contract') {
+    runReadonlyContract(scriptDir, hubRoot, jestBin, tsxBin);
+    return;
+  }
   if (target === 'runtime' || target === 'runtime-live') {
     runRuntime(scriptDir, hubRoot, tsxBin);
     return;
@@ -328,7 +381,7 @@ function main(): void {
   }
 
   console.error(`[hub test] unknown target: ${target}`);
-  console.error('[hub test] supported targets: all, secrets-meta, unit, runtime, runtime-live');
+  console.error('[hub test] supported targets: all, secrets-meta, unit, readonly-contract, runtime, runtime-live');
   process.exit(1);
 }
 

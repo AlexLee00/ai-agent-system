@@ -15,6 +15,7 @@ const {
   callGeminiCodeAssistOAuth,
 } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
+const { runWithProviderAdmission } = require('./provider-attempt-admission');
 const { readLocalCredentialsForProvider } = require('../oauth/local-credentials');
 const { setProviderCanary, setProviderToken } = require('../oauth/token-store');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
@@ -45,6 +46,7 @@ const CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE = 'openai-oauth/gpt-5.4';
 const DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS = 1;
 const DEFAULT_OPENAI_OAUTH_RETRY_DELAY_MS = 750;
 const MAX_OPENAI_OAUTH_RETRY_ATTEMPTS = 3;
+const MAX_TOTAL_DEADLINE_MS = 600_000;
 const CLAUDE_CODE_BUDGET_FLOORS_USD = {
   haiku: 0.05,
   sonnet: 0.2,
@@ -112,6 +114,7 @@ async function _callWithFallbackInternal(req: LlmRequest): Promise<LlmResponse> 
   req.maxBudgetUsd = tokenBudget.budgetCostUsd;
   req.tokenBudgetProfile = tokenBudget.profileName;
   req._estimatedCostUsd = _estimatedCostUsd(req);
+  _initializeTotalDeadline(req, tokenBudget);
 
   if (!tokenBudget.ok) {
     const blocked = {
@@ -205,6 +208,119 @@ async function _callWithFallbackInternal(req: LlmRequest): Promise<LlmResponse> 
   return failed;
 }
 
+function _initializeTotalDeadline(req: LlmRequest, tokenBudget: AnyRecord, now = Date.now()): number {
+  const totalTimeoutMs = Math.min(
+    MAX_TOTAL_DEADLINE_MS,
+    Math.max(1, Number(tokenBudget?.timeoutMs || req?.timeoutMs || 30_000)),
+  );
+  const candidate = now + totalTimeoutMs;
+  const existing = Number(req?._deadlineAt || 0);
+  req._deadlineAt = Number.isFinite(existing) && existing > 0
+    ? Math.min(existing, candidate)
+    : candidate;
+  return req._deadlineAt;
+}
+
+function _remainingTotalDeadlineMs(req: LlmRequest, now = Date.now()): number {
+  const deadlineAt = Number(req?._deadlineAt || 0);
+  if (!Number.isFinite(deadlineAt) || deadlineAt <= 0) return MAX_TOTAL_DEADLINE_MS;
+  return Math.max(0, Math.floor(deadlineAt - now));
+}
+
+function _effectiveAttemptTimeoutMs(req: LlmRequest, requested: unknown, now = Date.now()): number {
+  const remaining = _remainingTotalDeadlineMs(req, now);
+  if (remaining <= 0) return 0;
+  const configured = Number(requested);
+  const attemptTimeout = Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : remaining;
+  return Math.min(attemptTimeout, remaining);
+}
+
+function _isTotalDeadlineError(result: LlmResponse): boolean {
+  return String(result?.error || '').startsWith('llm_total_deadline_exceeded');
+}
+
+function _isSharedAdmissionResult(result: LlmResponse): boolean {
+  return result?.limiterBackpressure === true
+    || String(result?.error || '').startsWith('shared_limiter_');
+}
+
+function _isProviderCapacityBackpressure(result: LlmResponse): boolean {
+  return _isSharedAdmissionResult(result)
+    && String(result?.error || '').startsWith('shared_limiter_full:');
+}
+
+function _sharedAdmissionDisposition(result: LlmResponse): 'none' | 'continue' | 'stop' {
+  if (!_isSharedAdmissionResult(result)) return 'none';
+  return _isProviderCapacityBackpressure(result)
+    && String(result?.admissionScope || '').startsWith('provider:')
+    ? 'continue'
+    : 'stop';
+}
+
+function _actualProviderAttempts(attempts: AnyRecord[]): AnyRecord[] {
+  return attempts.filter((attempt) => attempt.providerAttempted !== false);
+}
+
+function _lastActualProviderFailureMetadata(attempts: AnyRecord[]): AnyRecord {
+  const last = [...attempts].reverse().find((attempt) => attempt.providerAttempted !== false);
+  if (!last) return {};
+  const upstreamStatus = Number(last.upstreamStatus || 0);
+  const retryAfterMs = Number(last.retryAfterMs || 0);
+  return {
+    ...(upstreamStatus >= 100 && upstreamStatus <= 599 ? { upstreamStatus } : {}),
+    ...(retryAfterMs > 0 ? { retryAfterMs } : {}),
+  };
+}
+
+function _admissionRejections(attempts: AnyRecord[]): AnyRecord[] {
+  return attempts
+    .filter((attempt) => attempt.sharedAdmission === true && attempt.providerAttempted === false)
+    .map((attempt) => ({
+      provider: attempt.provider,
+      error: attempt.error || 'shared_limiter_rejected',
+      admissionScope: attempt.admissionScope || null,
+      retryAfterMs: Number(attempt.retryAfterMs || 0),
+    }));
+}
+
+function _admissionTelemetry(attempts: AnyRecord[]): AnyRecord {
+  const admissionRejections = _admissionRejections(attempts);
+  return {
+    admissionRejections,
+    admissionFallbackCount: admissionRejections.length,
+  };
+}
+
+function _sharedAdmissionResponse(attempts: AnyRecord[], extra: AnyRecord = {}): LlmResponse | null {
+  const last = attempts[attempts.length - 1];
+  if (!last?.sharedAdmission) return null;
+  const providerAttempts = _actualProviderAttempts(attempts);
+  // Once a provider was actually called, its failure remains authoritative.
+  // Later admission rejections are retained as telemetry on fallback exhaustion.
+  const hasActualProviderFailure = attempts.some((attempt) => (
+    attempt.sharedAdmission !== true && attempt.providerAttempted !== false
+  ));
+  if (hasActualProviderFailure) return null;
+  return {
+    ok: false,
+    provider: 'failed',
+    durationMs: attempts.reduce((sum: number, attempt: AnyRecord) => sum + Number(attempt.durationMs || 0), 0),
+    error: last.error || 'shared_limiter_rejected',
+    retryAfterMs: Number(last.retryAfterMs || 0),
+    admissionScope: last.admissionScope || null,
+    limiterBackpressure: true,
+    providerTerminationUnconfirmed: attempts.some((attempt) => attempt.providerTerminationUnconfirmed === true),
+    limiterLeaseQuarantined: attempts.some((attempt) => attempt.limiterLeaseQuarantined === true),
+    attempted_providers: providerAttempts.map((attempt: AnyRecord) => attempt.provider),
+    fallbackCount: providerAttempts.length,
+    fallbackUsed: providerAttempts.length > 0,
+    ..._admissionTelemetry(attempts),
+    ...extra,
+  };
+}
+
 function _inflightDedupeEnabled(req: LlmRequest): boolean {
   if (_flagDisabled('HUB_LLM_INFLIGHT_DEDUPE_ENABLED')) return false;
   return typeof req?.prompt === 'string' && req.prompt.length > 0;
@@ -226,8 +342,81 @@ function _inflightDedupeKey(req: LlmRequest): string {
     maxBudgetUsd: req?.maxBudgetUsd ?? null,
     strictProviderFamily: req?.strictProviderFamily || null,
     chain: req?.chain || null,
+    routingFingerprint: _routingContractFingerprint(req),
   };
   return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+function _canonicalizeRoutingValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(_canonicalizeRoutingValue);
+  if (!value || typeof value !== 'object') return value;
+  const record = value as AnyRecord;
+  return Object.keys(record)
+    .sort()
+    .reduce((result: AnyRecord, key) => {
+      result[key] = _canonicalizeRoutingValue(record[key]);
+      return result;
+    }, {});
+}
+
+function _normalizedProviderSet(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter(Boolean))]
+    .sort();
+}
+
+function _resolvedRoutingDecision(req: LlmRequest): AnyRecord {
+  try {
+    const selection = resolveHubLlmSelection(req, {
+      allowAdhocChain: _adhocChainAllowed(),
+      shadowDeps: { mode: 'off' },
+    });
+    return {
+      ok: selection?.ok === true,
+      error: selection?.error || null,
+      selectorKey: selection?.selectorKey || null,
+      runtimeProfile: selection?.runtimeProfile || null,
+      runtimePurpose: selection?.runtimePurpose || null,
+      routeTargetKind: selection?.routeTargetKind || selection?.target?.kind || null,
+      source: selection?.routingSource || selection?.source || null,
+      chain: Array.isArray(selection?.chain) ? selection.chain : [],
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      error: String(error?.message || error || 'routing_selection_failed'),
+      selectorKey: req?.selectorKey || null,
+      selectorVersion: req?.selectorVersion || process.env.LLM_TEAM_SELECTOR_VERSION || null,
+      rolloutPercent: req?.rolloutPercent
+        ?? process.env.LLM_TEAM_SELECTOR_AB_PERCENT
+        ?? process.env.LLM_TEAM_SELECTOR_VERSION_PCT
+        ?? null,
+    };
+  }
+}
+
+function _routingContractFingerprint(req: LlmRequest): string {
+  try {
+    const contract = _canonicalizeRoutingValue({
+      runtimePurpose: req?.runtimePurpose || req?.runtime_purpose || null,
+      taskType: req?.taskType || req?.task_type || null,
+      policyOverride: req?.policyOverride || null,
+      avoidProviders: _normalizedProviderSet(req?.avoidProviders),
+      configuredProviders: _normalizedProviderSet(req?.configuredProviders),
+      strictProviderFamily: req?.strictProviderFamily || null,
+      preferredApi: req?.preferredApi || null,
+      groqModel: req?.groqModel || null,
+      routingDecision: _resolvedRoutingDecision(req),
+      chain: req?.chain || null,
+      authPrincipalId: req?.authPrincipalId || null,
+    });
+    return `v2:${crypto.createHash('sha256').update(JSON.stringify(contract)).digest('hex')}`;
+  } catch {
+    // Internal callers can pass non-JSON values. A unique key safely disables reuse.
+    return `uncacheable:${crypto.randomUUID()}`;
+  }
 }
 
 async function _runWithInflightDedupe(req: LlmRequest, executor: () => Promise<LlmResponse>): Promise<LlmResponse> {
@@ -338,17 +527,21 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
   const cooldownPlan = _rateLimitCooldownPlan<RouteEntry>(resiliencePlan.chain as RouteEntry[], req.abstractModel);
   const chainTimeout = tokenBudget.perAttemptTimeoutMs || req.timeoutMs || 30_000;
   const attempts: AnyRecord[] = [];
+  const capacityBlockedProviders = new Set<string>();
 
   for (const entry of cooldownPlan.chain) {
     const route = _chainEntryToRoute(entry);
     const selectedRoute = _normalizeRoute(route, req.abstractModel);
+    const selectedProvider = _routeToProvider(selectedRoute);
+    if (capacityBlockedProviders.has(selectedProvider)) continue;
     const chainEntry = _withCooldownOverride(entry, cooldownPlan.ignoreCooldown);
     const result = await _callRoute(route, req, entry.timeoutMs || chainTimeout, chainEntry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
+      const providerAttempts = _actualProviderAttempts(attempts);
       const success = {
         ...result,
-        provider: _routeToProvider(selectedRoute),
+        provider: selectedProvider,
         selected_route: selectedRoute,
         selectorKey: selectorChain.selectorKey,
         runtimeProfile: selectorChain.runtimeProfile || null,
@@ -361,9 +554,10 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
         tokenBudgetStatus: 'allowed',
         avoidedProviders: selectorChain.avoidedProviders || [],
         strictProviderFamily: selectorChain.strictProviderFamily || null,
-        fallbackCount: attempts.length,
-        fallbackUsed: attempts.length > 0,
-        attempted_providers: attempts.map((a: AnyRecord) => a.provider),
+        fallbackCount: providerAttempts.length,
+        fallbackUsed: providerAttempts.length > 0,
+        attempted_providers: providerAttempts.map((a: AnyRecord) => a.provider),
+        ..._admissionTelemetry(attempts),
         fallbackChain: resiliencePlan.routes,
         resilienceMode: resiliencePlan.mode,
         routingSource: selectorChain.routingSource || selectorChain.source || null,
@@ -371,8 +565,42 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
       await _recordBudgetUsage(req, success, 'success');
       return success;
     }
-    attempts.push({ provider: selectedRoute, error: result.error || 'unknown', durationMs: result.durationMs });
+    attempts.push({
+      provider: selectedRoute,
+      error: result.error || 'unknown',
+      durationMs: result.durationMs,
+      admissionScope: result.admissionScope || null,
+      retryAfterMs: result.retryAfterMs || 0,
+      upstreamStatus: result.upstreamStatus,
+      sharedAdmission: _isSharedAdmissionResult(result),
+      providerAttempted: result.providerAttempted !== false,
+      providerTerminationUnconfirmed: result.providerTerminationUnconfirmed === true,
+      limiterLeaseQuarantined: result.limiterLeaseQuarantined === true,
+    });
+    if (_isProviderCapacityBackpressure(result)) capacityBlockedProviders.add(selectedProvider);
+    if (_isTotalDeadlineError(result) || _sharedAdmissionDisposition(result) === 'stop') break;
     console.warn(`[llm/unified] ${selectorChain.selectorKey}:${selectedRoute} 실패 (${result.error}) → 다음 시도`);
+  }
+
+  const backpressure = _sharedAdmissionResponse(attempts, {
+    avoidedProviders: selectorChain.avoidedProviders || [],
+    strictProviderFamily: selectorChain.strictProviderFamily || null,
+    selectorKey: selectorChain.selectorKey,
+    runtimeProfile: selectorChain.runtimeProfile || null,
+    runtimePurpose: selectorChain.runtimePurpose || null,
+    routeTargetKind: selectorChain.routeTargetKind || selectorChain.target?.kind || null,
+    providerTiers: selectorChain.providerTiers || [],
+    fallbackChain: resiliencePlan.routes,
+    resilienceMode: resiliencePlan.mode,
+    routingSource: selectorChain.routingSource || selectorChain.source || null,
+    estimatedCostUsd: req._estimatedCostUsd || null,
+    budgetGuardStatus: req._budgetGuardStatus || null,
+    tokenBudget,
+    tokenBudgetStatus: 'allowed',
+  });
+  if (backpressure) {
+    await _recordBudgetUsage(req, backpressure, 'backpressure');
+    return backpressure;
   }
 
   const safeFallback = _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team);
@@ -383,16 +611,19 @@ async function _callWithSelectorChain(req: LlmRequest, selectorChain: AnyRecord,
   if (!_shouldSuppressFallbackExhaustionAlarm(req, selectorChain)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
+  const providerAttempts = _actualProviderAttempts(attempts);
   const exhausted = {
     ok: false,
     provider: 'failed',
     durationMs: attempts.reduce((s: number, a: AnyRecord) => s + Number(a.durationMs || 0), 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
-    attempted_providers: attempts.map((a: AnyRecord) => a.provider),
+    attempted_providers: providerAttempts.map((a: AnyRecord) => a.provider),
     avoidedProviders: selectorChain.avoidedProviders || [],
     strictProviderFamily: selectorChain.strictProviderFamily || null,
-    fallbackCount: attempts.length,
-    fallbackUsed: attempts.length > 0,
+    fallbackCount: providerAttempts.length,
+    fallbackUsed: providerAttempts.length > 0,
+    ..._admissionTelemetry(attempts),
+    ..._lastActualProviderFailureMetadata(attempts),
     selectorKey: selectorChain.selectorKey,
     runtimeProfile: selectorChain.runtimeProfile || null,
     runtimePurpose: selectorChain.runtimePurpose || null,
@@ -421,39 +652,69 @@ async function _callWithProfileChain(req: LlmRequest, profile: AnyRecord, team: 
   const cooldownPlan = _rateLimitCooldownPlan<RouteEntry>(budgetedChain, req.abstractModel);
   const chainTimeout = Math.min(profile.timeout_ms || req.timeoutMs || 30_000, tokenBudget.perAttemptTimeoutMs || 30_000);
   const attempts: AnyRecord[] = [];
+  const capacityBlockedProviders = new Set<string>();
 
   for (const route of cooldownPlan.chain) {
     const routeKey = typeof route === 'string' ? route : _chainEntryToRoute(route);
     const selectedRoute = _normalizeRoute(routeKey, req.abstractModel);
+    const selectedProvider = _routeToProvider(selectedRoute);
+    if (capacityBlockedProviders.has(selectedProvider)) continue;
     const chainEntry = _withCooldownOverride(route, cooldownPlan.ignoreCooldown);
     const result = await _callRoute(routeKey, req, route.timeoutMs || chainTimeout, chainEntry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
+      const providerAttempts = _actualProviderAttempts(attempts);
       const success = {
         ...result,
-        provider: _routeToProvider(selectedRoute),
+        provider: selectedProvider,
         selected_route: selectedRoute,
-        fallbackCount: attempts.length,
-        attempted_providers: attempts.map((a: AnyRecord) => a.provider),
+        fallbackCount: providerAttempts.length,
+        attempted_providers: providerAttempts.map((a: AnyRecord) => a.provider),
+        ..._admissionTelemetry(attempts),
         tokenBudget,
         tokenBudgetStatus: 'allowed',
       };
       await _recordBudgetUsage(req, success, 'success');
       return success;
     }
-    attempts.push({ provider: selectedRoute, error: result.error || 'unknown', durationMs: result.durationMs });
+    attempts.push({
+      provider: selectedRoute,
+      error: result.error || 'unknown',
+      durationMs: result.durationMs,
+      admissionScope: result.admissionScope || null,
+      retryAfterMs: result.retryAfterMs || 0,
+      upstreamStatus: result.upstreamStatus,
+      sharedAdmission: _isSharedAdmissionResult(result),
+      providerAttempted: result.providerAttempted !== false,
+      providerTerminationUnconfirmed: result.providerTerminationUnconfirmed === true,
+      limiterLeaseQuarantined: result.limiterLeaseQuarantined === true,
+    });
+    if (_isProviderCapacityBackpressure(result)) capacityBlockedProviders.add(selectedProvider);
+    if (_isTotalDeadlineError(result) || _sharedAdmissionDisposition(result) === 'stop') break;
     console.warn(`[llm/unified] ${selectedRoute} 실패 (${result.error}) → 다음 시도`);
+  }
+
+  const backpressure = _sharedAdmissionResponse(attempts, {
+    tokenBudget,
+    tokenBudgetStatus: 'allowed',
+  });
+  if (backpressure) {
+    await _recordBudgetUsage(req, backpressure, 'backpressure');
+    return backpressure;
   }
 
   if (!_shouldSuppressFallbackExhaustionAlarm(req, null)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
+  const providerAttempts = _actualProviderAttempts(attempts);
   const exhausted = {
     ok: false, provider: 'failed',
     durationMs: attempts.reduce((s: number, a: AnyRecord) => s + Number(a.durationMs || 0), 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
-    attempted_providers: attempts.map((a: AnyRecord) => a.provider),
-    fallbackCount: attempts.length,
+    attempted_providers: providerAttempts.map((a: AnyRecord) => a.provider),
+    fallbackCount: providerAttempts.length,
+    ..._admissionTelemetry(attempts),
+    ..._lastActualProviderFailureMetadata(attempts),
     tokenBudget,
     tokenBudgetStatus: 'allowed',
   };
@@ -465,21 +726,15 @@ async function _callLegacy(req: LlmRequest, _team: string): Promise<LlmResponse>
   const ccModel = (CLAUDE_CODE_MODEL as AnyRecord)[req.abstractModel] || 'haiku';
   const groqModel = _groqModel()[req.abstractModel] || getGroqFallback('anthropic_haiku');
 
-  const primary = await callClaudeCodeOAuth({
-    prompt: req.prompt,
-    model: ccModel,
-    systemPrompt: req.systemPrompt,
-    jsonSchema: req.jsonSchema,
-    timeoutMs: resolveClaudeCodeTimeoutMs(req.timeoutMs, ccModel),
-    maxBudgetUsd: resolveClaudeCodeMaxBudgetUsd(req.maxBudgetUsd, ccModel),
-  });
+  const primary = await _callRoute(`claude-code/${ccModel}`, req, req.timeoutMs);
   if (primary.ok) {
     if (req.cacheEnabled && primary.result) _saveCache(req, primary).catch(() => {});
     return { ...primary, provider: 'claude-code-oauth', cacheHit: false };
   }
+  if (_sharedAdmissionDisposition(primary) === 'stop') return primary;
 
   console.warn(`[llm/unified] Primary 실패: ${primary.error} → Groq 폴백 (${groqModel})`);
-  const fallback = await callGroqFallback({ prompt: req.prompt, model: groqModel, systemPrompt: req.systemPrompt });
+  const fallback = await _callRoute(`groq/${groqModel}`, req, req.timeoutMs);
   return { ...fallback, provider: fallback.ok ? 'groq' : 'failed', primaryError: primary.error, fallbackCount: 1, cacheHit: false };
 }
 
@@ -549,11 +804,11 @@ async function _callRoute(route: unknown, req: LlmRequest, timeoutMs: unknown, c
   const started = Date.now();
 
   if (_isGeminiProvider(provider) && isGeminiDisabled()) {
-    return { ok: false, provider: 'failed', error: 'gemini_provider_disabled', durationMs: 0 };
+    return { ok: false, provider: 'failed', error: 'gemini_provider_disabled', durationMs: 0, providerAttempted: false };
   }
 
   if (!chainEntry?._ignoreRateLimitCooldown && isRateLimitCoolingDown(provider)) {
-    return { ok: false, provider: 'failed', error: `provider_rate_limit_cooling_down:${provider}`, durationMs: 0 };
+    return { ok: false, provider: 'failed', error: `provider_rate_limit_cooling_down:${provider}`, durationMs: 0, providerAttempted: false };
   }
 
   if (_providerCircuitEnabled(provider) && !providerRegistry.canCall(circuitKey)) {
@@ -562,18 +817,55 @@ async function _callRoute(route: unknown, req: LlmRequest, timeoutMs: unknown, c
       provider: 'failed',
       durationMs: 0,
       error: `provider_circuit_open:${circuitKey}`,
+      providerAttempted: false,
     };
   }
 
-  const result = await _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry);
+  const remainingTotalMs = _remainingTotalDeadlineMs(req);
+  const effectiveTimeoutMs = _effectiveAttemptTimeoutMs(req, timeoutMs);
+  if (effectiveTimeoutMs <= 0) {
+    return { ok: false, provider: 'failed', error: 'llm_total_deadline_exceeded', durationMs: 0, providerAttempted: false };
+  }
+
+  const attemptDeadlineAt = Date.now() + effectiveTimeoutMs;
+  const deadlineSignal = AbortSignal.timeout(remainingTotalMs);
+  const attemptSignal = effectiveTimeoutMs < remainingTotalMs
+    ? AbortSignal.timeout(effectiveTimeoutMs)
+    : undefined;
+  const result = await runWithProviderAdmission({
+    team: req.callerTeam || 'hub',
+    provider,
+  }, ({ signal }: { signal: AbortSignal }) => {
+    const remainingAttemptMs = Math.min(
+      _remainingTotalDeadlineMs(req),
+      Math.max(0, attemptDeadlineAt - Date.now()),
+    );
+    if (remainingAttemptMs <= 0) {
+      const totalDeadlineExpired = _remainingTotalDeadlineMs(req) <= 0;
+      return Promise.resolve({
+        ok: false,
+        provider: 'failed',
+        error: totalDeadlineExpired
+          ? 'llm_total_deadline_exceeded:admission'
+          : 'llm_provider_attempt_timeout:admission',
+        durationMs: 0,
+        providerAttempted: false,
+      });
+    }
+    return _callRouteUnchecked(normalizedRoute, req, remainingAttemptMs, {
+      ...chainEntry,
+      _signal: signal,
+      _attemptDeadlineAt: attemptDeadlineAt,
+    });
+  }, { deadlineSignal, attemptSignal });
   const latencyMs = Number(result.durationMs || 0) || (Date.now() - started);
-  if (!result.ok && _isProviderRateLimitError(provider, result.error)) {
+  if (!result.ok && _isProviderRateLimitError(provider, result)) {
     noteRateLimitCooldown(provider, result.retryAfterMs);
   }
-  if (_providerCircuitEnabled(provider)) {
+  if (_providerCircuitEnabled(provider) && result.providerAttempted !== false) {
     if (result.ok) {
       providerRegistry.recordSuccess(circuitKey, latencyMs);
-    } else if (_shouldRecordProviderCircuitFailure(provider, result.error)) {
+    } else if (_shouldRecordProviderCircuitFailure(provider, result)) {
       providerRegistry.recordFailure(circuitKey, result.error || 'provider_failed', latencyMs);
     }
   }
@@ -591,6 +883,7 @@ async function _callRouteUnchecked(normalizedRoute: string, req: LlmRequest, tim
       jsonSchema: req.jsonSchema,
       timeoutMs: resolveClaudeCodeTimeoutMs(timeoutMs, model),
       maxBudgetUsd: resolveClaudeCodeMaxBudgetUsd(req.maxBudgetUsd, model),
+      signal: chainEntry._signal,
     });
   }
   if (normalizedRoute.startsWith('groq/')) {
@@ -610,15 +903,24 @@ async function _callRouteUnchecked(normalizedRoute: string, req: LlmRequest, tim
       serviceTier: chainEntry.serviceTier,
       maxTokens: chainEntry.maxTokens,
       temperature: chainEntry.temperature,
+      timeoutMs,
+      signal: chainEntry._signal,
     });
   }
   if (normalizedRoute.startsWith('local/')) {
     const model = normalizedRoute.slice('local/'.length);
-    return callLocalOllama({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, timeoutMs });
+    return callLocalOllama({
+      prompt: req.prompt,
+      model,
+      systemPrompt: req.systemPrompt,
+      timeoutMs,
+      signal: chainEntry._signal,
+      attemptDeadlineAt: chainEntry._attemptDeadlineAt,
+    });
   }
   if (normalizedRoute.startsWith('local-embedding/')) {
     const model = normalizedRoute.slice('local-embedding/'.length);
-    return _callLocalEmbeddingOnly(req, model);
+    return _callLocalEmbeddingOnly(req, model, chainEntry._signal);
   }
   if (normalizedRoute.startsWith('openai-oauth/')) {
     return _callOpenAiCodexOAuthWithRetry({
@@ -628,6 +930,7 @@ async function _callRouteUnchecked(normalizedRoute: string, req: LlmRequest, tim
       maxTokens: chainEntry.maxTokens,
       temperature: chainEntry.temperature,
       timeoutMs,
+      signal: chainEntry._signal,
       retryAttempts: chainEntry.retryAttempts,
     });
   }
@@ -645,6 +948,7 @@ async function _callRouteUnchecked(normalizedRoute: string, req: LlmRequest, tim
         maxTokens: chainEntry.maxTokens,
         temperature: chainEntry.temperature,
         timeoutMs,
+        signal: chainEntry._signal,
       });
     }
     return callGeminiCliOAuth({
@@ -656,6 +960,7 @@ async function _callRouteUnchecked(normalizedRoute: string, req: LlmRequest, tim
       maxTokens: chainEntry.maxTokens,
       temperature: chainEntry.temperature,
       timeoutMs,
+      signal: chainEntry._signal,
     });
   }
   return { ok: false, provider: 'failed', error: `unsupported_provider:${normalizedRoute}`, durationMs: 0 };
@@ -670,6 +975,15 @@ async function _callOpenAiCodexOAuthWithRetry(input: AnyRecord): Promise<LlmResp
   let invalidatedRecoveryAttempted = false;
 
   for (let attempt = 0; ; attempt += 1) {
+    if (input?.signal?.aborted) {
+      return {
+        ok: false,
+        provider: 'failed',
+        durationMs: Date.now() - started,
+        error: 'openai_oauth_attempt_aborted',
+        retryCount: attempt,
+      };
+    }
     const result = await callOpenAiCodexOAuth(input);
     if (result.ok) {
       return {
@@ -708,7 +1022,7 @@ async function _callOpenAiCodexOAuthWithRetry(input: AnyRecord): Promise<LlmResp
 
     retryErrors.push(error);
     console.warn(`[llm/unified] OpenAI OAuth 일시 오류 (${error}) → 재시도 ${attempt + 1}/${retryAttempts}`);
-    await _sleep(_openAiOAuthRetryDelayMs(attempt));
+    await _sleep(_openAiOAuthRetryDelayMs(attempt), input?.signal);
   }
 }
 
@@ -774,17 +1088,25 @@ function _openAiOAuthRetryDelayMs(attempt: unknown): number {
   return baseDelayMs * Math.max(1, Number(attempt || 0) + 1);
 }
 
-function _sleep(ms: unknown): Promise<void> {
+function _sleep(ms: unknown, signal?: AbortSignal): Promise<void> {
   const delayMs = Number(ms || 0);
-  if (!delayMs) return Promise.resolve();
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
+  if (!delayMs || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(finish, delayMs);
+    function finish() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', finish);
+      resolve();
+    }
+    signal?.addEventListener('abort', finish, { once: true });
+  });
 }
 
-async function _callLocalEmbeddingOnly(req: LlmRequest, model: string): Promise<LlmResponse> {
+async function _callLocalEmbeddingOnly(req: LlmRequest, model: string, signal?: AbortSignal): Promise<LlmResponse> {
   const started = Date.now();
   try {
     const text = String(req.prompt || req.systemPrompt || 'backtest').slice(0, 8000);
-    const embeddings = await rag.createEmbeddingBatch([text]);
+    const embeddings = await rag.createEmbeddingBatch([text], { signal });
     const vector = embeddings?.[0] || [];
     const dimensions = Array.isArray(vector) ? vector.length : 0;
     const digest = crypto.createHash('sha256')
@@ -829,8 +1151,11 @@ function _providerCircuitKey(provider: string, normalizedRoute: unknown): string
 }
 
 function _isProviderRateLimitError(provider: string, error: unknown): boolean {
-  const message = String(error || '');
+  const response = error && typeof error === 'object' ? error as AnyRecord : null;
+  const message = String(response?.error || error || '');
   return provider === 'groq' && (
+    Number(response?.upstreamStatus || 0) === 429
+    ||
     /Groq 429/i.test(message)
     || /rate[-_\s]?limit/i.test(message)
     || /rate-limited/i.test(message)
@@ -839,7 +1164,11 @@ function _isProviderRateLimitError(provider: string, error: unknown): boolean {
 }
 
 function _shouldRecordProviderCircuitFailure(provider: string, error: unknown): boolean {
-  const message = String(error || '');
+  const response = error && typeof error === 'object' ? error as AnyRecord : null;
+  const message = String(response?.error || error || '');
+  if (message.startsWith('shared_limiter_')) {
+    return false;
+  }
   if (_isProviderRateLimitError(provider, error)) {
     return false;
   }
@@ -1199,6 +1528,7 @@ function _cacheKey(req: LlmRequest): AnyRecord {
     jsonSchema: req.jsonSchema || null,
     maxTokens: req.maxTokens ?? null,
     temperature: req.temperature ?? null,
+    routingFingerprint: _routingContractFingerprint(req),
   };
 }
 
@@ -1225,6 +1555,7 @@ function _safeFallbackForSelectorExhaustion(req: LlmRequest, selectorChain: AnyR
   if (req?.jsonSchema) return null;
 
   const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
+  const providerAttempts = _actualProviderAttempts(attempts);
   return {
     ok: true,
     provider: 'safe-fallback',
@@ -1236,10 +1567,11 @@ function _safeFallbackForSelectorExhaustion(req: LlmRequest, selectorChain: AnyR
     degradedReason: 'selector_chain_exhausted',
     suppressedError: `fallback_exhausted: ${lastErr}`,
     fallbackExhaustionSuppressed: true,
-    attempted_providers: attempts.map((attempt: AnyRecord) => attempt.provider),
+    attempted_providers: providerAttempts.map((attempt: AnyRecord) => attempt.provider),
+    ..._admissionTelemetry(attempts),
     avoidedProviders: selectorChain?.avoidedProviders || [],
-    fallbackCount: attempts.length,
-    fallbackUsed: attempts.length > 0,
+    fallbackCount: providerAttempts.length,
+    fallbackUsed: providerAttempts.length > 0,
     selectorKey: selectorChain?.selectorKey || req?.selectorKey || null,
     runtimeProfile: selectorChain?.runtimeProfile || null,
     runtimePurpose: selectorChain?.runtimePurpose || null,
@@ -1252,11 +1584,16 @@ function _safeFallbackForSelectorExhaustion(req: LlmRequest, selectorChain: AnyR
 }
 
 async function _notifyFallbackExhaustion(req: LlmRequest, attempts: AnyRecord[], team: string): Promise<void> {
-  const tried = attempts.map((a: AnyRecord) => a.provider).join(' → ');
-  const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
-  const msg = `🚨 Fallback Exhaustion\n팀: ${team} / 에이전트: ${req.agent || 'default'}\n시도: ${tried}\n최종 에러: ${lastErr}`;
+  const msg = _buildFallbackExhaustionMessage(req, attempts, team);
   console.error('[llm/unified]', msg);
   await sender.sendCritical('general', msg).catch(() => {});
+}
+
+function _buildFallbackExhaustionMessage(req: LlmRequest, attempts: AnyRecord[], team: string): string {
+  const tried = _actualProviderAttempts(attempts).map((attempt: AnyRecord) => attempt.provider).join(' → ') || '없음';
+  const rejected = _admissionRejections(attempts).map((attempt: AnyRecord) => attempt.provider).join(' → ') || '없음';
+  const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
+  return `🚨 Fallback Exhaustion\n팀: ${team} / 에이전트: ${req.agent || 'default'}\n실제 시도: ${tried}\nadmission 거절: ${rejected}\n최종 에러: ${lastErr}`;
 }
 
 module.exports = {
@@ -1267,6 +1604,22 @@ module.exports = {
   noteRateLimitCooldown,
   _testOnly: {
     _inflightDedupeKey,
+    _cacheKey,
+    _routingContractFingerprint,
+    _initializeTotalDeadline,
+    _remainingTotalDeadlineMs,
+    _effectiveAttemptTimeoutMs,
+    _sleep,
+    _isSharedAdmissionResult,
+    _isProviderCapacityBackpressure,
+    _sharedAdmissionDisposition,
+    _sharedAdmissionResponse,
+    _actualProviderAttempts,
+    _lastActualProviderFailureMetadata,
+    _admissionRejections,
+    _admissionTelemetry,
+    _buildFallbackExhaustionMessage,
+    _callRoute,
     _runWithInflightDedupe,
     _inflightDedupeSize: () => inFlightDedupe.size,
     _normalizeRoute,

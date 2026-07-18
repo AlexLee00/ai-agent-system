@@ -81,6 +81,7 @@ async function main() {
 
   assert.equal(first.ok, false);
   assert.match(String(first.error), /Groq 429/);
+  assert.equal(first.upstreamStatus, 429, 'Groq must preserve the upstream HTTP status structurally');
   assert.ok(Number(first.retryAfterMs) >= 120_000, 'retry-after must be propagated from provider');
   assert.equal(second.ok, false);
   assert.match(String(second.error), /cooldown/);

@@ -5,12 +5,15 @@ import path from 'node:path';
 
 const originalClaudeCodeBin = process.env.CLAUDE_CODE_BIN;
 const originalCapturePath = process.env.CLAUDE_CODE_SMOKE_CAPTURE;
+const originalTerminationGrace = process.env.CLAUDE_CODE_TERMINATION_GRACE_MS;
 
 async function main() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-code-oauth-smoke-'));
   const fakeClaudePath = path.join(tmpDir, 'fake-claude.mjs');
   const fakeClaudeBudgetErrorPath = path.join(tmpDir, 'fake-claude-budget-error.mjs');
+  const fakeClaudeStuckPath = path.join(tmpDir, 'fake-claude-stuck.mjs');
   const capturePath = path.join(tmpDir, 'capture.json');
+  const terminationCapturePath = path.join(tmpDir, 'termination.txt');
 
   fs.writeFileSync(fakeClaudePath, `#!/usr/bin/env node
 import fs from 'node:fs';
@@ -51,6 +54,17 @@ process.stdout.write(JSON.stringify({
 process.exit(1);
 `, 'utf8');
   fs.chmodSync(fakeClaudeBudgetErrorPath, 0o755);
+
+  fs.writeFileSync(fakeClaudeStuckPath, `#!/usr/bin/env python3
+import signal
+import subprocess
+import sys
+import time
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+subprocess.Popen([sys.executable, '-c', 'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(3)'])
+time.sleep(3)
+`, 'utf8');
+  fs.chmodSync(fakeClaudeStuckPath, 0o755);
 
   process.env.CLAUDE_CODE_BIN = fakeClaudePath;
   process.env.CLAUDE_CODE_SMOKE_CAPTURE = capturePath;
@@ -97,6 +111,19 @@ process.exit(1);
   assert.match(String(budgetError.error || ''), /error_max_budget_usd|maximum budget/i);
   assert.equal(budgetError.sessionId, 'claude-budget-error-session');
 
+  process.env.CLAUDE_CODE_BIN = fakeClaudeStuckPath;
+  process.env.CLAUDE_CODE_SMOKE_CAPTURE = terminationCapturePath;
+  process.env.CLAUDE_CODE_TERMINATION_GRACE_MS = '50';
+  const terminationStarted = Date.now();
+  const terminated = await callClaudeCodeOAuth({
+    prompt: 'Termination escalation smoke.',
+    model: 'haiku',
+    timeoutMs: 1000,
+  });
+  assert.equal(terminated.ok, false);
+  assert.match(String(terminated.error || ''), /timeout/i);
+  assert(Date.now() - terminationStarted < 1500, 'SIGKILL escalation must confirm close before the stuck child self-exits');
+
   console.log(JSON.stringify({
     ok: true,
     provider: result.provider,
@@ -116,4 +143,6 @@ main()
     else process.env.CLAUDE_CODE_BIN = originalClaudeCodeBin;
     if (originalCapturePath === undefined) delete process.env.CLAUDE_CODE_SMOKE_CAPTURE;
     else process.env.CLAUDE_CODE_SMOKE_CAPTURE = originalCapturePath;
+    if (originalTerminationGrace === undefined) delete process.env.CLAUDE_CODE_TERMINATION_GRACE_MS;
+    else process.env.CLAUDE_CODE_TERMINATION_GRACE_MS = originalTerminationGrace;
   });

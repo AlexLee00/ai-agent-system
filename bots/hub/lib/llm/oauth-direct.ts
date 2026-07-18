@@ -14,6 +14,10 @@ type ImagePart = {
   mimeType: string;
   data: string;
 };
+type ProviderHttpError = Error & {
+  upstreamStatus?: number;
+  retryAfterMs?: number;
+};
 
 const SSE_GUARD_UNTRUSTED_DEBUG_INTERVAL_MS = 300_000;
 let sseGuardUntrustedLastDebugAt = 0;
@@ -157,12 +161,18 @@ function resolveGeminiCodeAssistCredential() {
   return null;
 }
 
-function createTimeoutSignal(timeoutMs: unknown): { signal: AbortSignal; cleanup: () => void } {
+function createTimeoutSignal(timeoutMs: unknown, parentSignal?: AbortSignal): { signal: AbortSignal; cleanup: () => void } {
   const controller = new AbortController();
+  const abortFromParent = () => controller.abort(parentSignal?.reason);
+  if (parentSignal?.aborted) abortFromParent();
+  else parentSignal?.addEventListener('abort', abortFromParent, { once: true });
   const timer = setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs || 30_000)));
   return {
     signal: controller.signal,
-    cleanup: () => clearTimeout(timer),
+    cleanup: () => {
+      clearTimeout(timer);
+      parentSignal?.removeEventListener('abort', abortFromParent);
+    },
   };
 }
 
@@ -174,6 +184,33 @@ async function readJsonResponse(response: Response): Promise<AnyRecord> {
   } catch {
     return { error: { message: text.slice(0, 500) } };
   }
+}
+
+function parseRetryAfterMs(response: Response): number | undefined {
+  const raw = String(response.headers.get('retry-after') || '').trim();
+  if (!raw) return undefined;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const retryAt = Date.parse(raw);
+  if (!Number.isFinite(retryAt)) return undefined;
+  return Math.max(0, retryAt - Date.now()) || undefined;
+}
+
+function createProviderHttpError(message: string, response: Response): ProviderHttpError {
+  const error = new Error(message) as ProviderHttpError;
+  error.upstreamStatus = response.status;
+  const retryAfterMs = parseRetryAfterMs(response);
+  if (retryAfterMs !== undefined) error.retryAfterMs = retryAfterMs;
+  return error;
+}
+
+function providerHttpFailureMetadata(error: ProviderHttpError | null | undefined): AnyRecord {
+  const upstreamStatus = Number(error?.upstreamStatus || 0);
+  const retryAfterMs = Number(error?.retryAfterMs || 0);
+  return {
+    ...(upstreamStatus >= 100 && upstreamStatus <= 599 ? { upstreamStatus } : {}),
+    ...(retryAfterMs > 0 ? { retryAfterMs } : {}),
+  };
 }
 
 function extractErrorMessage(payload: AnyRecord, status: number): string {
@@ -400,7 +437,7 @@ async function callOpenAiCodexOAuth(input: OAuthInput): Promise<AnyRecord> {
     if (!credential?.accessToken) throw new Error('openai_codex_oauth_token_missing');
     if (!credential.accountId) throw new Error('openai_codex_oauth_account_id_missing');
 
-    const { signal, cleanup } = createTimeoutSignal(input?.timeoutMs || 30_000);
+    const { signal, cleanup } = createTimeoutSignal(input?.timeoutMs || 30_000, input?.signal);
     try {
       const response = await fetch(resolveOpenAiCodexResponsesUrl(), {
         method: 'POST',
@@ -434,7 +471,7 @@ async function callOpenAiCodexOAuth(input: OAuthInput): Promise<AnyRecord> {
         const prefix = response.status === 400
           ? 'openai_codex_oauth_bad_request'
           : 'openai_codex_oauth_call_failed';
-        throw new Error(`${prefix}:${message}`);
+        throw createProviderHttpError(`${prefix}:${message}`, response);
       }
 
       const events = await readSseEvents(response);
@@ -461,6 +498,7 @@ async function callOpenAiCodexOAuth(input: OAuthInput): Promise<AnyRecord> {
       model,
       durationMs: Date.now() - started,
       error: normalizeOpenAiCodexOAuthError(error),
+      ...providerHttpFailureMetadata(error),
     };
   }
 }
@@ -688,7 +726,7 @@ async function callGeminiOAuth(input: OAuthInput): Promise<AnyRecord> {
         : 'gemini_oauth_quota_project_missing');
     }
 
-    const { signal, cleanup } = createTimeoutSignal(input?.timeoutMs || 30_000);
+    const { signal, cleanup } = createTimeoutSignal(input?.timeoutMs || 30_000, input?.signal);
     try {
       const response = await fetch(`${getGeminiOAuthBaseUrl(model)}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
@@ -711,7 +749,7 @@ async function callGeminiOAuth(input: OAuthInput): Promise<AnyRecord> {
       const payload = await response.json().catch(() => ({})) as AnyRecord;
       if (!response.ok) {
         const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
-        throw new Error(`gemini_oauth_call_failed:${message}`);
+        throw createProviderHttpError(`gemini_oauth_call_failed:${message}`, response);
       }
       const text = extractGeminiText(payload);
       if (!text) throw new Error('gemini_oauth_empty_response');
@@ -736,6 +774,7 @@ async function callGeminiOAuth(input: OAuthInput): Promise<AnyRecord> {
       model,
       durationMs: Date.now() - started,
       error: error?.message || String(error),
+      ...providerHttpFailureMetadata(error),
     };
   }
 }
@@ -760,6 +799,7 @@ async function callGeminiCliOAuth(input: OAuthInput): Promise<AnyRecord> {
       timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 60_000,
       maxBuffer: Number(process.env.GEMINI_CLI_MAX_BUFFER_BYTES || 4 * 1024 * 1024),
       env: process.env,
+      signal: input?.signal,
     });
     const payload = parseGeminiCliJsonWithDiagnostics(stdout, stderr);
     const text = extractGeminiCliText(payload);
@@ -799,7 +839,7 @@ async function callGeminiCodeAssistOAuth(input: OAuthInput): Promise<AnyRecord> 
     const baseUrl = getGeminiCodeAssistBaseUrl();
     const version = getGeminiCodeAssistApiVersion();
 
-    const { signal, cleanup } = createTimeoutSignal(input?.timeoutMs || 60_000);
+    const { signal, cleanup } = createTimeoutSignal(input?.timeoutMs || 60_000, input?.signal);
     try {
       const response = await fetch(`${baseUrl}/${version}:generateContent`, {
         method: 'POST',
@@ -814,7 +854,7 @@ async function callGeminiCodeAssistOAuth(input: OAuthInput): Promise<AnyRecord> 
       const payload = await response.json().catch(() => ({})) as AnyRecord;
       if (!response.ok) {
         const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
-        throw new Error(`gemini_codeassist_oauth_call_failed:${message}`);
+        throw createProviderHttpError(`gemini_codeassist_oauth_call_failed:${message}`, response);
       }
       const text = extractGeminiCodeAssistText(payload);
       if (!text) throw new Error('gemini_codeassist_oauth_empty_response');
@@ -839,6 +879,7 @@ async function callGeminiCodeAssistOAuth(input: OAuthInput): Promise<AnyRecord> 
       model,
       durationMs: Date.now() - started,
       error: error?.message || String(error),
+      ...providerHttpFailureMetadata(error),
     };
   }
 }

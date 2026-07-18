@@ -135,7 +135,7 @@ type HubRouteOptions = {
   pgLimiter: RequestHandler;
   secretsLimiter: RequestHandler;
   llmLimiter: RequestHandler;
-  llmAdmissionMiddleware: RequestHandler;
+  llmLocalAdmissionMiddleware: RequestHandler;
 };
 
 export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
@@ -149,7 +149,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
     pgLimiter,
     secretsLimiter,
     llmLimiter,
-    llmAdmissionMiddleware,
+    llmLocalAdmissionMiddleware,
   } = opts;
 
   // GitHub Webhook: /hub 인증 밖, GitHub Signature로 검증
@@ -260,9 +260,9 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/secrets-meta', secretsLimiter, secretsMetaAllRoute);
   app.get('/hub/secrets-meta/:category', secretsLimiter, secretsMetaRoute);
 
-  app.post('/hub/llm/call', llmLimiter, llmAdmissionMiddleware, llmCallRoute);
-  app.post('/hub/llm/vision', llmLimiter, llmAdmissionMiddleware, llmVisionRoute);
-  app.post('/hub/llm/embeddings', llmLimiter, llmAdmissionMiddleware, llmEmbeddingsRoute);
+  app.post('/hub/llm/call', llmLimiter, llmLocalAdmissionMiddleware, llmCallRoute);
+  app.post('/hub/llm/vision', llmLimiter, llmLocalAdmissionMiddleware, llmVisionRoute);
+  app.post('/hub/llm/embeddings', llmLimiter, llmLocalAdmissionMiddleware, llmEmbeddingsRoute);
   app.post('/hub/llm/jobs', llmLimiter, llmJobsCreateRoute);
   app.get('/hub/llm/jobs', generalLimiter, llmJobsListRoute);
   app.get('/hub/llm/jobs/:id/result', generalLimiter, llmJobResultRoute);
