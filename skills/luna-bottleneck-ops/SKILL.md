@@ -20,6 +20,8 @@ description: Use when diagnosing or improving Luna investment-team autonomous op
 
 ## Standard Loop
 
+Apply `skills/implementation-governance/SKILL.md` for any source change in this loop.
+
 1. Inspect `git status --short` and preserve unrelated dirty files.
 2. Prefer MCP first when available: call `luna_status`, `luna_bottlenecks`, `luna_llm_usage`, `luna_guardrails`, `luna_discovery_funnel`, and `luna_apply_plan`.
 3. Always run the primary operator with JSON, event publishing, and no-fail mode: `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail`.
