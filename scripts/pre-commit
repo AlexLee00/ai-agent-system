@@ -163,7 +163,7 @@ while IFS= read -r file; do
 done <<< "$STAGED"
 
 # ─── 3.2. retired Worker/Edi 런타임 재도입 차단 ────────────────────────────
-RETIRED_TEAM_SKIP_REGEX='^(docs/archive/retired-teams/|bots/hub/scripts/.*(hub-transition|retired|worker-edi).*$|scripts/pre-commit$)'
+RETIRED_TEAM_SKIP_REGEX='^(docs/history/|docs/archive/retired-teams/|bots/hub/scripts/.*(hub-transition|retired|worker-edi).*$|scripts/pre-commit$)'
 RETIRED_TEAM_PATTERNS=(
   'bots/worker/'
   'bots/video/'
