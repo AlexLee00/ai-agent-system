@@ -6,11 +6,16 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { applyAuthoritativeLaunchdEnvironment } from './llm-launchd-environment.ts';
 
 const require = createRequire(import.meta.url);
+const {
+  isGeminiProvider,
+  isRetiredGeminiSelectorKey,
+} = require('../../../packages/core/lib/llm-provider-retirement.ts');
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
-const DEFAULT_SNAPSHOT_PATH = path.join(PROJECT_ROOT, 'docs', 'hub', 'snapshots', 'llm-chain-snapshot-2026-06-12.json');
+const DEFAULT_SNAPSHOT_PATH = path.join(PROJECT_ROOT, 'docs', 'hub', 'snapshots', 'llm-chain-snapshot-2026-07-19.json');
 const DEFAULT_OUTPUT_PATH = path.join(PROJECT_ROOT, 'packages', 'core', 'lib', 'llm-policy-table.ts');
 const DEFAULT_LAUNCHD_PLIST_PATH = path.join(PROJECT_ROOT, 'bots', 'hub', 'launchd', 'ai.hub.resource-api.plist');
 
@@ -56,22 +61,11 @@ function readLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
     : {};
 }
 
-function applyLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
+function applyLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH, managedKeys = []) {
   const env = readLaunchdEnvironment(plistPath);
-  const injected = [];
-  const preserved = [];
-  for (const [key, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
-    if (process.env[key] !== undefined) {
-      preserved.push(key);
-      continue;
-    }
-    process.env[key] = String(value);
-    injected.push(key);
-  }
   return {
     path: path.relative(PROJECT_ROOT, plistPath),
-    injected,
-    preserved,
+    ...applyAuthoritativeLaunchdEnvironment(env, { managedKeys }),
   };
 }
 
@@ -106,12 +100,16 @@ function buildModelTokenIndex() {
       fallback: clean(constant.fallback),
       providerPrefixes: Array.isArray(constant.providerPrefixes) ? constant.providerPrefixes.map(clean).filter(Boolean) : [],
     }))
+    .filter((constant) => !(
+      isGeminiProvider(constant.value)
+      || isGeminiProvider(constant.fallback)
+      || constant.providerPrefixes.some(isGeminiProvider)
+    ))
     .filter((constant) => constant.name && constant.token);
   const buckets = new Map();
   for (const constant of constants) {
     // Tokenize snapshot defaults, not unrelated literals that merely equal a LaunchAgent override today.
-    const modelCandidates = [constant.fallback];
-    if (constant.value === constant.fallback) modelCandidates.push(constant.value);
+    const modelCandidates = constant.value === constant.fallback ? [constant.fallback] : [];
     for (const model of Array.from(new Set(modelCandidates.filter(Boolean)))) {
       for (const provider of constant.providerPrefixes.length > 0 ? constant.providerPrefixes : ['*']) {
         const key = `${provider}\u0000${model}`;
@@ -259,6 +257,16 @@ function normalizeChainEntry(entry = {}, context = null, sourceKey = null) {
   return row;
 }
 
+function assertNoRetiredGeminiRoute(row) {
+  const selectorKey = clean(row?.key) || 'unknown';
+  const chain = Array.isArray(row?.chain) ? row.chain : [];
+  for (const entry of chain) {
+    if (isGeminiProvider(entry?.provider) || isGeminiProvider(entry?.model)) {
+      throw new Error(`retired Gemini route in snapshot: selector=${selectorKey}`);
+    }
+  }
+}
+
 function ruleFromSnapshotRow(row, context) {
   const selectorKey = clean(row.key);
   const agent = clean(row.agentName);
@@ -270,10 +278,11 @@ function ruleFromSnapshotRow(row, context) {
   };
   if (agent) match.agent = agent;
   if (taskType) match.taskType = taskType;
+  const chain = Array.isArray(row.chain) ? row.chain : [];
   return {
     id: [selectorKey, agent || 'default', variant].map(slug).join('__'),
     match,
-    chain: (Array.isArray(row.chain) ? row.chain : []).map((entry, index) => (
+    chain: chain.map((entry, index) => (
       normalizeChainEntry(entry, context, chainEntrySourceKey(row, index))
     )),
   };
@@ -300,9 +309,12 @@ function stableStringify(value) {
 }
 
 function buildPolicyTableSource(snapshot, snapshotPath = DEFAULT_SNAPSHOT_PATH) {
+  const snapshotRows = (Array.isArray(snapshot?.variants) ? snapshot.variants : [])
+    .filter((row) => !row.error);
+  for (const row of snapshotRows) assertNoRetiredGeminiRoute(row);
   const context = createCodegenContext();
-  const rules = (Array.isArray(snapshot?.variants) ? snapshot.variants : [])
-    .filter((row) => !row.error)
+  const rules = snapshotRows
+    .filter((row) => !isRetiredGeminiSelectorKey(row.key))
     .map((row) => ruleFromSnapshotRow(row, context))
     .sort(sortRule);
   const generatedFrom = path.relative(PROJECT_ROOT, snapshotPath);
@@ -317,7 +329,7 @@ function buildPolicyTableSource(snapshot, snapshotPath = DEFAULT_SNAPSHOT_PATH) 
   const source = [
     '// @ts-nocheck',
     '// Generated by bots/hub/scripts/llm-policy-table-codegen.ts.',
-    '// Do not edit by hand; update the R1 snapshot or codegen and regenerate.',
+    '// Do not edit by hand; update the R1 snapshot, retirement policy, or codegen and regenerate.',
     '// Operational note: run codegen/static diff with --env-from-launchd so env-backed model tokens match Hub runtime.',
     '',
     'export type PolicyChainEntry = string | {',
@@ -375,9 +387,11 @@ function buildReport(args, changed, codegen, launchdEnv = null) {
 
 async function main() {
   const args = parseArgs();
-  // R2d: generated policy tables must be built against the same LaunchAgent env as Hub runtime.
-  const launchdEnv = args.envFromLaunchd ? applyLaunchdEnvironment(args.launchdPlistPath) : null;
   const snapshot = JSON.parse(fs.readFileSync(args.snapshotPath, 'utf8'));
+  // R2d: generated policy tables must be built against the same LaunchAgent env as Hub runtime.
+  const launchdEnv = args.envFromLaunchd
+    ? applyLaunchdEnvironment(args.launchdPlistPath, Object.keys(snapshot?.envBaseline?.values || {}))
+    : null;
   const codegen = buildPolicyTableSource(snapshot, args.snapshotPath);
   const source = codegen.source;
   const current = fs.existsSync(args.outputPath) ? fs.readFileSync(args.outputPath, 'utf8') : '';

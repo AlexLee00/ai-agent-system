@@ -8,6 +8,11 @@
 const coreSelector = require('../../../packages/core/lib/llm-model-selector');
 const { PROFILES, selectRuntimeProfile } = require('../lib/runtime-profiles');
 const { canonicalHubTeam } = require('../lib/team-identity');
+const {
+  getGeminiRetirementState,
+  isGeminiProvider: isRetiredGeminiProvider,
+  warnGeminiRetirementOverride,
+} = require('../../../packages/core/lib/llm-provider-retirement');
 
 const NON_LLM_TARGETS = new Set([
   'blog.publ',
@@ -32,17 +37,12 @@ const PROVIDER_TIERS = {
 };
 
 function isGeminiDisabled() {
-  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase());
+  warnGeminiRetirementOverride('hub-selector');
+  return getGeminiRetirementState().disabled;
 }
 
 function isGeminiProvider(providerOrRoute) {
-  const provider = String(providerOrRoute || '').includes('/')
-    ? providerFromRoute(providerOrRoute)
-    : clean(providerOrRoute);
-  return provider === 'gemini-oauth'
-    || provider === 'gemini-cli-oauth'
-    || provider === 'gemini-codeassist-oauth'
-    || provider === 'gemini';
+  return isRetiredGeminiProvider(providerOrRoute);
 }
 
 function getActiveProviderTiers() {
@@ -134,7 +134,11 @@ function providerTier(providerOrRoute) {
 function getActiveChain(chain = []) {
   const entries = Array.isArray(chain) ? chain : [];
   if (!isGeminiDisabled()) return entries;
-  return entries.filter((entry) => !isGeminiProvider(entry?.provider || routeLabel(entry)));
+  return entries.filter((entry) => !(
+    isGeminiProvider(entry?.provider)
+    || isGeminiProvider(entry?.model)
+    || isGeminiProvider(routeLabel(entry))
+  ));
 }
 
 function enrichChain(chain = []) {
@@ -155,7 +159,7 @@ function selectorOptionsFromRequest(req = {}, extra = {}) {
   return {
     maxTokens: req.maxTokens,
     temperature: req.temperature,
-    agentName: req.agent,
+    agentName: normalizeToken(req.agent || req.agentName || req.runtimeAgent || ''),
     preferredApi: req.preferredApi,
     groqModel: req.groqModel,
     configuredProviders: req.configuredProviders,
@@ -346,8 +350,24 @@ function selectChainWithShadow(selectorKey, options = {}, deps = {}) {
 
 function resolveHubLlmSelection(req = {}, options = {}) {
   const team = normalizeToken(req.callerTeam || req.team || 'hub') || 'hub';
-  const agent = clean(req.agent || '');
+  const agent = normalizeToken(req.agent || req.agentName || req.runtimeAgent || '');
   const shadowDeps = options.shadowDeps || options.policyShadowDeps || {};
+  const describedAgent = agent ? coreSelector.describeAgentModel(team, agent) : null;
+
+  if (describedAgent?.description?.enabled === false && describedAgent?.description?.routingSource === 'yaml') {
+    const target = coreSelector.classifyLlmRouteTarget(team, agent, null);
+    return {
+      ok: false,
+      error: 'llm_non_llm_target_blocked',
+      nonLlm: true,
+      selectorKey: describedAgent.selectorKey,
+      routeTargetKind: target.kind,
+      target,
+      source: 'agent_registry',
+      chain: [],
+      providerTiers: [],
+    };
+  }
 
   if (isHubNonLlmTarget({ callerTeam: team, agent, selectorKey: req.selectorKey, taskType: normalizeTaskTypeInput(req) })) {
     return {
@@ -380,7 +400,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
     const chain = selectChainWithShadow(selectorKey, selectorOptionsFromRequest(req, {
       team,
       callerTeam: team,
-      agentName: req.agent || req.agentName,
+      agentName: agent,
     }), shadowDeps);
     return selectionResult({
       selectorKey,
@@ -433,7 +453,7 @@ function resolveHubLlmSelection(req = {}, options = {}) {
       }, chain);
     }
 
-    const described = coreSelector.describeAgentModel(team, agent);
+    const described = describedAgent;
     if (described?.selected && Array.isArray(described.chain) && described.chain.length > 0) {
       shadowCompareChain(described.selectorKey, selectorOptionsFromRequest(req, {
         team,

@@ -64,14 +64,6 @@ const SCENARIOS = [
     maxBudgetUsd: 0.03,
   },
   {
-    name: 'gemini_cli_readiness',
-    callerTeam: 'hub',
-    agent: 'gemini-cli-readiness',
-    selectorKey: 'hub.gemini.cli.readiness.live',
-    expectedProvider: 'gemini-cli-oauth',
-    maxBudgetUsd: 0.06,
-  },
-  {
     name: 'seed_agent_blog_pos',
     callerTeam: 'blog',
     agent: 'pos',

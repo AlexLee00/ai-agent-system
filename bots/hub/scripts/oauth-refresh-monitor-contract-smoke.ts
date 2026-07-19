@@ -12,14 +12,10 @@ const liveCanarySource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/l
 const {
   buildOAuthMonitorAlarmEnvelope,
 } = require('../lib/oauth/monitor-alarm-policy.ts');
-const {
-  selectLLMChain,
-} = require('../../../packages/core/lib/llm-model-selector.ts');
 
 for (const provider of [
   'claude-code-cli',
   'openai-codex-oauth',
-  'gemini-cli-oauth',
 ]) {
   assert.ok(
     monitorSource.includes(`getProviderRecord('${provider}')`) || monitorSource.includes(`setProviderToken('${provider}'`),
@@ -47,41 +43,13 @@ assert.ok(monitorSource.includes('withOAuthRefreshLock'), 'OAuth monitor must se
 assert.ok(monitorSource.includes('withMonitorOAuthLock'), 'OAuth monitor must fail closed on refresh lock timeout/contention');
 assert.ok(monitorSource.includes('HUB_CLAUDE_OAUTH_REFRESH_HOURS'), 'Claude OAuth refresh window must be separate from alarm window');
 assert.ok(monitorSource.includes('HUB_OPENAI_OAUTH_REFRESH_HOURS'), 'OpenAI OAuth refresh window must be separate from alarm window');
-assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS'), 'Gemini CLI OAuth refresh window must be separate from alarm window');
-assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_WARN_HOURS'), 'Gemini CLI OAuth must have expiry warning thresholds');
-assert.ok(monitorSource.includes('10 / 60'), 'Gemini CLI OAuth must default to a 10-minute refresh/alarm window');
-assert.ok(monitorSource.includes('[Hub OAuth] Gemini CLI OAuth'), 'Gemini CLI OAuth must alarm on expiry/degraded refresh windows');
-assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY'), 'Gemini CLI OAuth expiry monitor must keep the probe runtime-gated');
-assert.ok(monitorSource.includes('runGeminiCliLiveRefreshProbeWithReimport'), 'Gemini CLI monitor must reimport refreshed CLI credentials into token-store after probe');
-assert.ok(monitorSource.includes('refreshGeminiCliOAuthToken'), 'Gemini CLI monitor must perform direct Google OAuth refresh before live probe fallback');
-assert.ok(monitorSource.includes('direct_google_oauth_refresh_token'), 'Gemini CLI monitor must expose the direct refresh auth path');
-assert.ok(monitorSource.includes('token_store_refresh_window_after_direct_refresh'), 'Gemini CLI token-store-only path must direct-refresh and resync token-store');
 assert.ok(monitorSource.includes('finiteNumberOrNull'), 'OAuth monitor reports must not coerce null numeric fields to zero');
-assert.ok(monitorSource.includes('synthetic_openai_oauth_probe_for_gemini_capacity_outage'), 'Gemini CLI monitor fallback probe must expose the capacity-outage bypass path');
-assert.ok(monitorSource.includes('refresh path='), 'Gemini CLI monitor logs must identify the refresh path');
-assert.ok(monitorSource.includes('live_refresh_provider'), 'Gemini CLI monitor report must expose bypass probe provider');
-assert.ok(monitorSource.includes('live_refresh_auth_path'), 'Gemini CLI monitor report must expose bypass auth path');
-assert.ok(monitorSource.includes('HUB_GEMINI_CLI_MONITOR_PROBE_RETRIES'), 'Gemini CLI monitor must retry transient OAuth probe aborts');
-assert.ok(monitorSource.includes('isTransientGeminiCliProbeError'), 'Gemini CLI monitor must classify transient probe aborts before alarming');
-assert.ok(monitorSource.includes('live_refresh_attempts'), 'Gemini CLI monitor report must expose live refresh attempt count');
-assert.ok(fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/oauth-runtime-refresh-gate.ts'), 'utf8').includes('credential_refresh_ok'), 'OAuth runtime refresh gate must accept direct Gemini credential refresh coverage');
-assert.ok(monitorSource.includes('suppressFallbackExhaustionAlarm: true'), 'Gemini CLI monitor retries must suppress inner fallback exhaustion alarms');
 assert.ok(liveCanarySource.includes('suppressFallbackExhaustionAlarm: true'), 'Hub live canaries must not emit production fallback exhaustion alarms');
 assert.ok(fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/llm/unified-caller.ts'), 'utf8').includes('suppressFallbackExhaustionAlarm'), 'Unified caller must support per-request fallback exhaustion alarm suppression');
-const geminiExpiryProbeChain = selectLLMChain('hub.oauth.gemini_cli.expiry_probe', {
-  selectorVersion: 'v3.0_oauth_4',
-});
-assert.equal(geminiExpiryProbeChain[0]?.provider, 'openai-oauth', 'OAuth monitor Gemini expiry probe must bypass gemini-cli-oauth during capacity incidents');
-assert.equal(
-  geminiExpiryProbeChain.some((entry) => entry?.provider === 'gemini-cli-oauth'),
-  false,
-  'OAuth monitor Gemini expiry probe must not fall back to gemini-cli-oauth',
-);
-assert.ok(monitorSource.includes('post_probe_reimport_ok'), 'Gemini CLI monitor result must expose post-probe reimport status');
-assert.ok(monitorSource.includes('local_credential_needs_refresh'), 'Gemini CLI OAuth monitor must distinguish stale local access token from live route failure');
-assert.ok(monitorSource.includes('checkGeminiCodeAssistServiceStatus'), 'OAuth monitor must verify Gemini Code Assist service status');
-assert.ok(monitorSource.includes('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE'), 'Gemini Code Assist service readiness must be runtime-gated');
-assert.ok(monitorSource.includes('gemini_codeassist_service'), 'OAuth monitor report must expose Gemini Code Assist service readiness');
+assert.ok(monitorSource.includes('getGeminiRetirementState'), 'OAuth monitor must use the immutable Gemini retirement policy');
+assert.ok(monitorSource.includes('if (geminiLlmDisabled())'), 'Gemini compatibility checks must fail closed before credential or network access');
+assert.ok(monitorSource.includes("geminiMonitorDisabledResult('retired_provider')"), 'Gemini CLI compatibility result must identify provider retirement');
+assert.ok(monitorSource.includes("error: 'gemini_provider_disabled'"), 'Gemini Code Assist compatibility result must identify provider retirement');
 assert.ok(!monitorSource.includes('checkGeminiOAuth()'), 'retired gemini-oauth must not run in oauth monitor');
 assert.ok(!monitorSource.includes('gemini_oauth:'), 'oauth monitor report must not expose retired gemini_oauth status');
 assert.ok(monitorSource.includes('normalizeOAuthAlarmPayload'), 'OAuth monitor must normalize alarm payload before cooldown/postAlarm routing');
@@ -94,44 +62,6 @@ assert.ok(monitorSource.includes('incidentKey: envelope.incidentKey'), 'OAuth mo
 assert.ok(monitorSource.includes('eventType: envelope.eventType'), 'OAuth monitor must pass explicit eventType to postAlarm');
 assert.ok(monitorSource.includes('dedupeMinutes: envelope.dedupeMinutes'), 'OAuth monitor must propagate producer cooldown to Hub dedupe');
 assert.ok(monitorSource.includes('actionability: envelope.actionability'), 'OAuth monitor must preserve auto-repair actionability');
-const geminiRefreshEnvelope = buildOAuthMonitorAlarmEnvelope({
-  level: 3,
-  title: '[Hub OAuth] Gemini CLI OAuth 재인증/자동갱신 확인 필요',
-  payload: { provider: 'gemini-cli-oauth' },
-  cooldownMs: 120 * 60 * 1000,
-});
-assert.equal(
-  geminiRefreshEnvelope.incidentKey,
-  'hub:hub-oauth-monitor:hub-oauth-monitor_error:f691f557b002',
-  'Gemini CLI OAuth refresh incident key must stay compatible with existing unresolved incident',
-);
-assert.equal(geminiRefreshEnvelope.eventType, 'hub-oauth-monitor_error', 'error envelope eventType mismatch');
-assert.equal(geminiRefreshEnvelope.visibility, 'internal', 'error envelope visibility mismatch');
-assert.equal(geminiRefreshEnvelope.actionability, 'auto_repair', 'error envelope actionability mismatch');
-assert.equal(geminiRefreshEnvelope.dedupeMinutes, 120, 'producer cooldown must be propagated as dedupeMinutes');
-const geminiCodeAssistReauthEnvelope = buildOAuthMonitorAlarmEnvelope({
-  level: 3,
-  title: '[Hub OAuth] Gemini Code Assist 재인증 필요',
-  payload: {
-    provider: 'gemini-cli-oauth',
-    service: 'cloudaicompanion.googleapis.com',
-    error: {
-      kind: 'auth_required',
-      status: 401,
-      google_status: 'UNAUTHENTICATED',
-    },
-    manual_reauth_required: true,
-  },
-  cooldownMs: 120 * 60 * 1000,
-});
-assert.equal(
-  geminiCodeAssistReauthEnvelope.incidentKey,
-  'hub:hub-oauth-monitor:hub-oauth-monitor_error:545330eba13b',
-  'Gemini Code Assist auth-required incident key must stay compatible with existing unresolved incident',
-);
-assert.equal(geminiCodeAssistReauthEnvelope.visibility, 'human_action', 'manual reauth must route to human action visibility');
-assert.equal(geminiCodeAssistReauthEnvelope.actionability, 'needs_human', 'manual reauth must not route to auto repair');
-assert.equal(geminiCodeAssistReauthEnvelope.dedupeMinutes, 120, 'manual reauth cooldown must be propagated');
 const claudeCoveredNearExpiryEnvelope = buildOAuthMonitorAlarmEnvelope({
   level: 3,
   title: '[Hub OAuth] Claude Code OAuth 재인증 예정',
@@ -198,6 +128,6 @@ assert.ok(readinessSource.includes('needs_refresh'), 'team readiness report must
 
 console.log(JSON.stringify({
   ok: true,
-  providers: 3,
-  refresh_contract: 'token-store refresh plus local sync plus alarm',
+  providers: 2,
+  refresh_contract: 'OpenAI and Claude refresh plus retired Gemini skip',
 }));

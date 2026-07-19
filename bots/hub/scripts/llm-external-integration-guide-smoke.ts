@@ -25,6 +25,7 @@ function read(file: string): string {
 const guide = read(guidePath);
 const onboarding = read(onboardingPath);
 const internalGuide = read(internalGuidePath);
+const oauthGuide = read(oauthGuidePath);
 const codingGuide = read(codingGuidePath);
 const hubPackage = JSON.parse(read(hubPackagePath));
 const requestContext = read(requestContextPath);
@@ -66,6 +67,8 @@ for (const required of [
   '현재 운영 기준',
   'HUB_LLM_GEMINI_DISABLED',
   'gemini_provider_disabled',
+  'code_change_only',
+  'declaration_only',
   'team:agent-llm-drill:live',
   'upstreamStatus',
   'retryAfterMs',
@@ -109,6 +112,7 @@ for (const required of [
   'contextSources',
   'requiredContext',
   'oneOfBody',
+  'code_change_only',
 ]) {
   assert(internalGuide.includes(required), `internal guide missing required contract text: ${required}`);
 }
@@ -129,11 +133,15 @@ for (const required of [
   'contextSources',
   'requiredContext',
   'oneOfBody',
+  'code_change_only',
 ]) {
   assert(onboarding.includes(required), `external onboarding missing required contract text: ${required}`);
 }
 
 assert(!guide.includes('"selectorKey": "darwin.research"'), 'external guide must not reference an unregistered Darwin selector');
+assert(!guide.includes('실제 provider 재활성화는 Hub 운영 담당의 별도 승인 후 진행한다'), 'external guide must not imply env/operator reactivation of retired Gemini');
+assert(oauthGuide.includes('gemini_provider_disabled'), 'OAuth guide must document Gemini retirement');
+assert(!oauthGuide.includes('/hub/oauth/gemini/start'), 'OAuth guide must not advertise a retired Gemini login endpoint');
 assert(guide.includes('"selectorKey": "darwin.agent_policy"'), 'external async example must use the registered Darwin policy selector');
 for (const documentedPath of [oauthGuidePath, stageCOperationsPath]) {
   assert(fs.existsSync(documentedPath), `documented Hub guide path must exist: ${documentedPath}`);

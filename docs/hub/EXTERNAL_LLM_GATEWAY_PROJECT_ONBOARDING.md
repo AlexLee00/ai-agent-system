@@ -8,7 +8,8 @@ External projects must use Hub as the standard LLM gateway. They should not call
 - LaunchAgent: `ai.hub.resource-api`
 - Auth: `Authorization: Bearer <HUB_AUTH_TOKEN>`
 - Trust boundary: the legacy root bearer is only for trusted projects. `X-Hub-Team` is not tenant authentication; never share the root token with an untrusted tenant.
-- Gemini disabled flag: `HUB_LLM_GEMINI_DISABLED=true`
+- Gemini: retired. `HUB_LLM_GEMINI_DISABLED=true` is declaration-only and cannot re-enable the provider.
+- Gemini re-enable policy: reviewed code change only (`code_change_only`), never an environment toggle.
 - Direct provider routes: `disabled_by_default`
 - Provider secrets/OAuth tokens: Hub only, never copied into external projects
 - Admission: provider 시도 직전에 `global + team + provider` lease를 획득
@@ -25,7 +26,7 @@ curl -fsS -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
 
 Reject an unsupported `contractVersion`, record `contractRevision`, and validate each endpoint's `requiredBody`, `requiredContext`, and `oneOfBody` against `contextSources`. Do not infer one endpoint's request shape from the legacy top-level `requiredBody` field.
 
-If `providerPolicy.geminiDisabled=true`, do not pin any external project to a Gemini-only selector.
+Require `providerPolicy.geminiRetired=true` and `geminiReenablePolicy=code_change_only`. Never pin an external project to a Gemini selector.
 
 ## Required Request Shape
 

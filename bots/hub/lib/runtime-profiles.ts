@@ -177,11 +177,7 @@ const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
     'roundtable.judge': llm(opsRuntime(), 'hub.roundtable.judge'),
     'control.planner': llm(opsRuntime(), 'hub.control.planner'),
     'session.compaction': llm(opsRuntime(), 'hub.session.compaction'),
-    'oauth.gemini_cli.expiry_probe': llm(opsRuntime(), 'hub.oauth.gemini_cli.expiry_probe'),
-    'gemini.cli.adapter.smoke': llm(opsRuntime(), 'hub.gemini.cli.adapter.smoke'),
-    'gemini.cli.readiness.live': llm(opsRuntime(), 'hub.gemini.cli.readiness.live'),
     'unified.oauth.openai.smoke': llm(opsRuntime(), 'hub.unified.oauth.openai.smoke'),
-    'unified.oauth.gemini.smoke': llm(opsRuntime(), 'hub.unified.oauth.gemini.smoke'),
   },
   ska: {
     default: llm(opsRuntime(), 'ska._default'),

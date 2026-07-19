@@ -26,19 +26,16 @@ async function main() {
   const coreFallback = read('packages/core/lib/llm-fallback.ts');
   const oauthFlowTest = read('bots/hub/__tests__/oauth-flow.test.ts');
 
-  assertIncludes(readiness, "normalized.startsWith('gemini-cli-oauth/')", 'team OAuth readiness');
-  assertIncludes(readiness, 'gemini_cli_oauth', 'team OAuth readiness report');
-  assertIncludes(drill, "normalized.startsWith('gemini-cli-oauth/')", 'team LLM drill');
-  assertIncludes(drill, "'gemini-cli-oauth'", 'team LLM drill OAuth provider list');
-
-  assertIncludes(monitor, 'async function checkGeminiCliOAuth()', 'OAuth monitor');
-  assertIncludes(monitor, "setProviderToken('gemini-cli-oauth'", 'OAuth monitor Gemini CLI sync');
+  assertIncludes(readiness, 'isGeminiDisabled()', 'team OAuth readiness retirement guard');
+  assertIncludes(drill, 'getGeminiRetirementState', 'team LLM drill retirement guard');
+  assertIncludes(monitor, 'getGeminiRetirementState', 'OAuth monitor retirement policy');
+  assertIncludes(monitor, "geminiMonitorDisabledResult('retired_provider')", 'OAuth monitor retired Gemini result');
 
   assertIncludes(hubClaude, 'ANTHROPIC_AUTH_TOKEN', 'Hub Claude Code child env scrub');
   assertIncludes(hubClaude, 'delete childEnv[key]', 'Hub Claude Code child env scrub');
   assertIncludes(coreFallback, 'CLAUDE_CODE_AUTH_ENV_KEYS', 'Core Claude Code child env scrub');
-  assertIncludes(coreFallback, 'GEMINI_CLI_PUBLIC_API_ENV_KEYS', 'Core Gemini CLI child env scrub');
-  assertIncludes(coreFallback, "case 'gemini-cli-oauth'", 'Core fallback Gemini CLI provider');
+  assertIncludes(coreFallback, 'assertProviderNotRetired(provider);', 'Core retired-provider execution guard');
+  assertIncludes(coreFallback, 'assertProviderNotRetired(model);', 'Core retired-model execution guard');
 
   assertIncludes(oauthFlowTest, 'atomically rotates refresh token', 'OpenAI Codex refresh regression');
   assertIncludes(oauthFlowTest, 'rotated-refresh-token', 'OpenAI Codex refresh regression');
@@ -46,9 +43,7 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     checked: [
-      'gemini_cli_oauth_readiness',
-      'gemini_cli_oauth_team_drill',
-      'gemini_cli_oauth_monitor_sync',
+      'gemini_provider_retirement_guard',
       'claude_code_cli_token_boundary',
       'openai_codex_refresh_token_rotation',
     ],

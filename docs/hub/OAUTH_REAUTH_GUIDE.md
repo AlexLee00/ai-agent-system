@@ -97,43 +97,14 @@ OpenClaw 소스 분석 기준으로, OpenClaw는 Codex OAuth를 일반 OpenAI pu
 
 ---
 
-## Gemini OAuth 연결
+## Gemini OAuth 폐기 상태
 
-Google 공식 Gemini OAuth quickstart 기준으로, Hub는 `gemini-oauth` provider를 별도 experimental provider로 둡니다.
+Gemini OAuth, Gemini CLI OAuth, Code Assist OAuth는 운영 provider에서 폐기되었습니다. Hub는 관련 selector/direct caller/refresh/monitor 경로를 네트워크 접근 전에 `gemini_provider_disabled` 또는 retired skip으로 종료합니다.
 
-필수 설정:
-- `HUB_ENABLE_GEMINI_OAUTH=true`
-- `HUB_GEMINI_OAUTH_CLIENT_ID`
-- `HUB_GEMINI_OAUTH_CLIENT_SECRET`
-- `GEMINI_OAUTH_PROJECT_ID` 또는 `GOOGLE_CLOUD_QUOTA_PROJECT` 또는 `GOOGLE_CLOUD_PROJECT`
-
-기본 endpoint/scope:
-- authorize: `https://accounts.google.com/o/oauth2/v2/auth`
-- token: `https://oauth2.googleapis.com/token`
-- scope: `https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language.retriever`
-
-대안: Google ADC import
-Google Cloud CLI가 있는 환경에서는 공식 quickstart처럼 `gcloud auth application-default login --client-id-file=client_secret.json --scopes=...`로 ADC를 만든 뒤 Hub token store로 가져올 수 있습니다. 이 경로는 `HUB_GEMINI_OAUTH_CLIENT_SECRET`를 launchd에 넣지 않고도 `refresh_token -> access_token` 갱신 결과만 Hub에 저장합니다.
-
-```bash
-npx tsx bots/hub/scripts/gemini-oauth-adc-import.ts \
-  --adc-file ~/.config/gcloud/application_default_credentials.json \
-  --project-id "$GEMINI_OAUTH_PROJECT_ID"
-```
-
-상태/시작/콜백/리프레시:
-```bash
-curl -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
-  "http://127.0.0.1:7788/hub/oauth/gemini/status?canary=1"
-
-curl -X POST -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
-  "http://127.0.0.1:7788/hub/oauth/gemini/start"
-
-curl -X POST -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
-  "http://127.0.0.1:7788/hub/oauth/gemini/refresh"
-```
-
-canary는 `GET https://generativelanguage.googleapis.com/v1/models`에 Bearer token과 `x-goog-user-project`를 붙여 검증합니다. 실제 LLM 호출은 `gemini-oauth` provider로 `generateContent` REST endpoint를 사용합니다.
+- `HUB_LLM_GEMINI_DISABLED=true`는 선언/관측용(`declaration_only`)입니다.
+- false 또는 allow 계열 환경변수, OAuth 토큰 import, 운영 명령으로 provider를 다시 켤 수 없습니다.
+- 재도입은 별도 설계 승인 후 공통 폐기 정책·selector·caller·OAuth monitor·회귀 테스트를 함께 수정하는 코드 변경으로만 가능합니다(`code_change_only`).
+- 과거 Gemini 인증 스크립트와 endpoint는 호환성/감사 목적으로 남아 있어도 실행 경계에서 retired 결과만 반환하며, 운영 절차로 사용하지 않습니다.
 
 ---
 

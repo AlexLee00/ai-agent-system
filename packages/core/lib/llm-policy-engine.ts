@@ -5,6 +5,8 @@ import {
   resolveConfiguredModelToken,
   routeEntryFromAbstractRoute,
 } from './llm-model-selector.ts';
+import { applySelectorTimeoutProfileToChain } from './selector-timeout-profiles.ts';
+import { isRetiredGeminiSelectorKey } from './llm-provider-retirement.ts';
 import {
   LLM_POLICY_RULES,
   type PolicyChainEntry,
@@ -51,7 +53,7 @@ function normalizeContext(ctx: PolicyEngineContext = {}) {
   const selectorKey = clean(ctx.selectorKey);
   const selectorTeam = teamFromSelectorKey(selectorKey);
   const team = normalizeToken(selectorTeam || ctx.team || ctx.callerTeam);
-  const agent = clean(ctx.agentName || ctx.agent);
+  const agent = normalizeToken(ctx.agentName || ctx.agent);
   const taskType = normalizeToken(ctx.taskType || ctx.task_type || ctx.runtimePurpose || ctx.runtime_purpose);
   return {
     ...ctx,
@@ -88,6 +90,7 @@ function compareRules(a: PolicyRule, b: PolicyRule): number {
 
 export function resolvePolicyRule(ctx: PolicyEngineContext = {}): PolicyRule | null {
   const normalized = normalizeContext(ctx);
+  if (isRetiredGeminiSelectorKey(normalized.selectorKey)) return null;
   const matches = LLM_POLICY_RULES.filter((rule) => ruleMatches(rule, normalized)).sort(compareRules);
   return matches[0] || null;
 }
@@ -145,7 +148,7 @@ export function resolvePolicyChain(ctx: PolicyEngineContext = {}): LLMChainEntry
   const rule = resolvePolicyRule(normalized);
   if (!rule) return [];
   const chain = buildChain(rule.chain);
-  return normalizePolicyEngineChain(applyProviderRuntimeGuards(chain, {
+  const selectorContext = {
     ...ctx,
     selectorKey: normalized.selectorKey,
     team: normalized.team,
@@ -156,5 +159,11 @@ export function resolvePolicyChain(ctx: PolicyEngineContext = {}): LLMChainEntry
     task_type: normalized.taskType,
     runtimePurpose: normalized.taskType,
     runtime_purpose: normalized.taskType,
-  }));
+  };
+  const guardedChain = applyProviderRuntimeGuards(chain, selectorContext);
+  return normalizePolicyEngineChain(applySelectorTimeoutProfileToChain(
+    normalized.selectorKey,
+    guardedChain,
+    selectorContext,
+  ));
 }

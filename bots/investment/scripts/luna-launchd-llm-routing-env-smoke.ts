@@ -146,7 +146,7 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
   assert.equal(routedPayload.selectorKey, 'investment.luna', 'enabled routing must delegate to Hub selector key');
   assert.equal(routedPayload.chain, undefined, 'enabled routing must not materialize selector chain client-side');
   const providers = selectorProviders(routedPayload.selectorKey, 'luna');
-  assert.ok(providers.length >= 3, 'enabled routing should keep a provider fallback chain in Hub selector');
+  assert.ok(providers.length >= 2, 'enabled routing should keep a provider fallback chain in Hub selector');
   assert.ok(!providers.includes('claude-code'), 'enabled routing should not include Claude Code fallback');
   assert.ok(providers.includes('openai-oauth'), 'enabled routing should include OpenAI OAuth fallback');
   assert.ok(providers.includes('groq'), 'enabled routing should include Groq fallback');
@@ -155,8 +155,8 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
   assert.equal(zeusPayload.selectorKey, 'investment.zeus', 'disabled zeus routing must still delegate to Hub selector key');
   assert.equal(zeusPayload.chain, undefined, 'disabled zeus routing must not materialize chain client-side');
   const zeusProviders = selectorProviders(zeusPayload.selectorKey, 'zeus');
-  assert.ok(zeusProviders.length >= 3, 'disabled zeus routing should still keep Hub fallback chain');
-  assert.equal(zeusProviders[0], 'groq', 'disabled zeus routing should use Hub selector primary');
+  assert.ok(zeusProviders.length >= 2, 'disabled zeus routing should still keep Hub fallback chain');
+  assert.equal(zeusProviders[0], 'openai-oauth', 'disabled zeus routing should use the current Hub selector primary');
   assert.ok(!zeusProviders.includes('claude-code'), 'disabled zeus routing must not leak to Claude Code');
 
   const sentimentPayload = buildAgentPayloadWithRouting('sophia', 'sentiment', true);
@@ -166,17 +166,17 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
   assert.equal(
     sentimentProviders[0],
     'groq',
-    'sentiment routing should use Groq primary; OpenAI/Gemini remain fallback only',
+    'sentiment routing should use Groq primary with OpenAI fallback',
   );
   assert.equal(
-    sentimentProviders.includes('gemini-cli-oauth'),
-    true,
-    'sentiment routing should keep Gemini CLI OAuth as a fallback',
+    sentimentProviders.some((provider) => provider.includes('gemini')),
+    false,
+    'sentiment routing must exclude retired Gemini providers',
   );
   assert.equal(
     sentimentProviders.includes('gemini-oauth'),
     false,
-    'sentiment routing should not include disabled direct gemini-oauth',
+    'sentiment routing must not include retired direct gemini-oauth',
   );
 
   return {

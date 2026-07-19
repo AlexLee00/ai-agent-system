@@ -63,14 +63,16 @@ function main() {
       const models = support.loadModels(fs);
       assert(models.includes('openai/gpt-4o-mini'), 'default Hub-native model catalog should include OpenAI smoke model');
       assert(models.includes('groq/llama-3.3-70b-versatile'), 'default Hub-native model catalog should include Groq smoke model');
+      assert.equal(models.some((model: string) => model.includes('gemini')), false, 'retired Gemini models must be excluded from speed tests');
       assert.equal(support.loadOpenAIKey(fs), null, 'missing auth profile should not throw or read retired gateway');
 
       const selected = support.applyFastest(fs, [
         { ok: true, provider: 'gemini-cli-oauth', modelId: 'gemini-cli-oauth/gemini-2.5-flash' },
+        { ok: true, provider: 'groq', modelId: 'groq/llama-3.1-8b-instant' },
       ]);
-      assert.equal(selected, 'gemini-cli-oauth/gemini-2.5-flash');
+      assert.equal(selected, 'groq/llama-3.1-8b-instant');
       const saved = JSON.parse(fs.readFileSync(support.LLM_CONTROL_CONFIG, 'utf8'));
-      assert.equal(saved.agents.defaults.model.primary, 'gemini-cli-oauth/gemini-2.5-flash');
+      assert.equal(saved.agents.defaults.model.primary, 'groq/llama-3.1-8b-instant');
     });
 
     const speedHome = path.join(tempRoot, 'missing-speed-home');

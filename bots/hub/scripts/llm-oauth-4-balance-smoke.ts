@@ -1,8 +1,13 @@
 #!/usr/bin/env tsx
 
 import assert from 'node:assert/strict';
+import path from 'node:path';
 
 const selector = require('../../../packages/core/lib/llm-model-selector.ts');
+const { getAgentDefinition } = require('../../../packages/core/lib/agent-yaml-loader.ts');
+
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const INVESTMENT_TEAM_DIR = path.join(PROJECT_ROOT, 'bots', 'investment', 'team');
 
 function withEnv(overrides: Record<string, string>, fn: () => void): void {
   const backup: Record<string, string | undefined> = {};
@@ -159,7 +164,14 @@ function main(): void {
 
   for (const agentName of investmentAgents) {
     const chain = selector.selectLLMChain('investment.agent_policy', { ...selectorOptions, agentName });
-    assert(chain.length > 0, `investment/${agentName} chain must be non-empty`);
+    const definition = getAgentDefinition(agentName, { teamDir: INVESTMENT_TEAM_DIR });
+    const isRuleBased = definition?.llm_routing?.primary === 'rule-based';
+    assert.equal(
+      chain.length > 0,
+      !isRuleBased,
+      `investment/${agentName} chain presence must follow its YAML routing policy`,
+    );
+    if (isRuleBased) continue;
     assert.notEqual(chain[0]?.provider, 'anthropic', `investment/${agentName} primary must not use anthropic`);
     if (['zeus', 'athena', 'nemesis', 'hermes', 'sophia'].includes(agentName)) {
       assert.equal(
@@ -177,26 +189,16 @@ function main(): void {
   if (providerCounts[chronosBacktestProvider] != null) providerCounts[chronosBacktestProvider] += 1;
   else providerCounts.other += 1;
 
-  const investmentReporterChain = selector.selectLLMChain('investment.agent_policy', {
-    ...selectorOptions,
-    agentName: 'reporter',
-    openaiPerfModel: 'smoke-openai-perf',
-    policyOverride: {
-      openaiMiniModel: 'smoke-openai-mini',
-    },
-  });
-  assert.equal(
-    investmentReporterChain[0]?.model,
-    'smoke-openai-mini',
-    'investment/reporter must start on OpenAI mini to avoid Stage D reporter latency hotspots',
-  );
-  assert.ok(
-    investmentReporterChain.some((entry: any) => entry.provider === 'groq'),
-    'investment/reporter must keep Groq as the first non-OpenAI fallback',
-  );
-  assert.ok(
-    investmentReporterChain.slice(1).some((entry: any) => entry.model === 'smoke-openai-perf'),
-    'investment/reporter must keep OpenAI perf as a quality fallback instead of removing it',
+  const reporterDefinition = getAgentDefinition('reporter', { teamDir: INVESTMENT_TEAM_DIR });
+  const configuredReporterRoutes = [
+    reporterDefinition?.llm_routing?.primary,
+    ...(reporterDefinition?.llm_routing?.fallbacks || []),
+  ].filter(Boolean);
+  const investmentReporterChain = selector.selectLLMChain('investment.reporter', selectorOptions);
+  assert.deepEqual(
+    investmentReporterChain.map((entry: any) => `${entry.provider}/${entry.model}`),
+    configuredReporterRoutes,
+    'investment/reporter must follow its YAML routing policy',
   );
 
   for (const key of ['sigma.agent_policy', 'darwin.agent_policy']) {
@@ -291,7 +293,11 @@ function main(): void {
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');
 
   const sonnetPrimaryProfiles: string[] = [];
-  const allowedSonnetPrimaryProfiles = new Set(['blog.writer']);
+  const allowedSonnetPrimaryProfiles = new Set(
+    Object.entries(PROFILES?.blog || {})
+      .filter(([, config]) => String((config as any)?.selector_key || '').endsWith('.writer'))
+      .map(([profile]) => `blog.${profile}`),
+  );
   for (const [team, profiles] of Object.entries(PROFILES || {})) {
     for (const [profile, config] of Object.entries(profiles as Record<string, any>)) {
       if ((config as any)?.primary_routes?.[0] === 'claude-code/sonnet') {
@@ -315,7 +321,7 @@ function main(): void {
 }
 
 try {
-  main();
+  withEnv({ LUNA_YAML_ROUTING_ENABLED: 'true' }, main);
 } catch (error: any) {
   console.error('[llm-oauth-4-balance-smoke] failed:', error?.message || error);
   process.exit(1);

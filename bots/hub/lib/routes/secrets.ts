@@ -35,9 +35,23 @@ function sanitizeKisConfig(kis: unknown): Dict {
   return rest;
 }
 
+function isRetiredGeminiConfigKey(key: string): boolean {
+  return String(key || '').trim().toLowerCase().includes('gemini');
+}
+
+function stripRetiredGeminiConfig(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripRetiredGeminiConfig);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Dict)
+      .filter(([key]) => !isRetiredGeminiConfigKey(key))
+      .map(([key, nested]) => [key, stripRetiredGeminiConfig(nested)]),
+  );
+}
+
 function sanitizeConfig(config: unknown): Dict {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
-  const typedConfig = config as Dict;
+  const typedConfig = stripRetiredGeminiConfig(config) as Dict;
   return {
     ...typedConfig,
     kis: sanitizeKisConfig(typedConfig.kis),
@@ -115,11 +129,10 @@ type CategoryHandler = () => Dict;
 const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
   llm: () => {
     const store = loadSecretsStore();
-    if (store?.anthropic || store?.openai || store?.gemini || store?.groq) {
+    if (store?.anthropic || store?.openai || store?.groq) {
       return {
         anthropic: store.anthropic || {},
         openai: store.openai || {},
-        gemini: store.gemini || {},
         groq: { accounts: store.groq?.accounts || [] },
         cerebras: store.cerebras || {},
         sambanova: store.sambanova || {},
@@ -132,7 +145,6 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     return {
       anthropic: { api_key: c.anthropic?.api_key, admin_api_key: c.anthropic?.admin_api_key },
       openai: { api_key: c.openai?.api_key, admin_api_key: c.openai?.admin_api_key, model: c.openai?.model },
-      gemini: { api_key: c.gemini?.api_key, image_api_key: c.gemini?.image_api_key },
       groq: { accounts: c.groq?.accounts || [] },
       cerebras: { api_key: c.cerebras?.api_key },
       sambanova: { api_key: c.sambanova?.api_key },
@@ -506,4 +518,9 @@ export {
   buildCategoryMeta,
   buildRequiredSummary,
   summarizeCategoryCompleteness,
+};
+
+export const _testOnly = {
+  sanitizeConfig,
+  stripRetiredGeminiConfig,
 };

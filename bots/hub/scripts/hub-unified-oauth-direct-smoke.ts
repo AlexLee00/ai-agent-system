@@ -10,6 +10,7 @@ const originalEnv: Record<string, string | undefined> = {
   OPENAI_CODEX_BACKEND_BASE_URL: process.env.OPENAI_CODEX_BACKEND_BASE_URL,
   HUB_BUDGET_GUARDIAN_ENABLED: process.env.HUB_BUDGET_GUARDIAN_ENABLED,
   HUB_LLM_PROVIDER_CIRCUIT_ENABLED: process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED,
+  HUB_LLM_SHARED_LIMITER_ENABLED: process.env.HUB_LLM_SHARED_LIMITER_ENABLED,
   HUB_LLM_ALLOW_ADHOC_CHAIN: process.env.HUB_LLM_ALLOW_ADHOC_CHAIN,
   HUB_LLM_GEMINI_DISABLED: process.env.HUB_LLM_GEMINI_DISABLED,
   HUB_OPENAI_OAUTH_RETRY_ATTEMPTS: process.env.HUB_OPENAI_OAUTH_RETRY_ATTEMPTS,
@@ -45,6 +46,7 @@ async function main() {
   process.env.OPENAI_CODEX_BACKEND_BASE_URL = 'https://hub-unified-openai.local/backend-api';
   process.env.HUB_BUDGET_GUARDIAN_ENABLED = 'false';
   process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED = 'false';
+  process.env.HUB_LLM_SHARED_LIMITER_ENABLED = 'false';
   process.env.HUB_LLM_ALLOW_ADHOC_CHAIN = '1';
 
   const calls: Array<{ provider: string; url: string }> = [];

@@ -6,7 +6,8 @@ const {
 const {
   applySelectorTimeoutProfileToChain,
   resolveSelectorTimeoutProfile,
-} = require('./selector-timeout-profiles.ts');
+} = require('./selector-timeout-profiles');
+const { isGeminiProvider: isRetiredGeminiProvider } = require('./llm-provider-retirement');
 
 type LLMChainEntry = {
   provider: string;
@@ -54,9 +55,19 @@ export type LlmConfiguredModelConstant = {
   providerPrefixes: string[];
 };
 
+const warnedRetiredModelOverrides = new Set<string>();
+
 function configuredModel(name: string, fallback: string, providerPrefixes: string[] = []): string {
-  const raw = String(process.env[name] || fallback || '').trim();
-  if (!raw) return fallback;
+  const fallbackModel = String(fallback || '').trim();
+  const raw = String(process.env[name] || fallbackModel).trim();
+  if (!raw) return fallbackModel;
+  if (isRetiredGeminiProvider(raw) && !isRetiredGeminiProvider(fallbackModel)) {
+    if (!warnedRetiredModelOverrides.has(name)) {
+      warnedRetiredModelOverrides.add(name);
+      console.warn(`[llm-retirement] retired Gemini model override ignored: ${name}`);
+    }
+    return fallbackModel;
+  }
   for (const prefix of providerPrefixes) {
     const marker = `${prefix}/`;
     if (raw.startsWith(marker)) return raw.slice(marker.length);
@@ -479,12 +490,6 @@ function replacementForClaudeCode(entry: LLMChainEntry, options: SelectorOptions
   };
 }
 
-const GEMINI_DIAGNOSTIC_SELECTOR_KEYS = new Set([
-  'hub.gemini.cli.adapter.smoke',
-  'hub.gemini.cli.readiness.live',
-  'hub.unified.oauth.gemini.smoke',
-]);
-
 const CLAUDE_FIRST_WRITING_SELECTOR_KEYS = new Set([
   'blog.pos.writer',
   'blog.gems.writer',
@@ -507,20 +512,12 @@ function providerOfEntry(entry: LLMChainEntry): string {
 }
 
 function isGeminiProviderName(provider: string): boolean {
-  return ['gemini-cli-oauth', 'gemini-oauth', 'gemini-codeassist-oauth', 'gemini-code-assist-oauth'].includes(
-    String(provider || '').trim(),
-  );
+  return isRetiredGeminiProvider(provider);
 }
 
 function isGeminiEntry(entry: LLMChainEntry): boolean {
-  const model = String(entry?.model || '').trim().toLowerCase();
-  return isGeminiProviderName(providerOfEntry(entry))
-    || model.startsWith('gemini-')
-    || model.startsWith('gemini-cli-oauth/')
-    || model.startsWith('gemini-oauth/')
-    || model.startsWith('google-gemini-cli/')
-    || model.startsWith('gemini-codeassist-oauth/')
-    || model.startsWith('gemini-code-assist-oauth/');
+  return isGeminiProviderName(String(entry?.provider || ''))
+    || isGeminiProviderName(String(entry?.model || ''));
 }
 
 function isGroqEntry(entry: LLMChainEntry): boolean {
@@ -545,10 +542,6 @@ function groqRouteMaxTokens(): number {
   const configured = Number(process.env.LLM_GROQ_ROUTE_MAX_TOKENS || process.env.HUB_GROQ_ROUTE_MAX_TOKENS || '');
   if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
   return 4096;
-}
-
-function isExplicitGeminiDiagnosticSelector(selectorKey: string): boolean {
-  return GEMINI_DIAGNOSTIC_SELECTOR_KEYS.has(String(selectorKey || ''));
 }
 
 function isBacktestSelector(selectorKey: string, options: SelectorOptions = {}): boolean {
@@ -714,8 +707,6 @@ function applySelectorOptimizationPolicy(chain: LLMChainEntry[], options: Select
   const selectorKey = String(options.selectorKey || '');
   const agentName = String(options.agentName || '').trim().toLowerCase();
   if (isBacktestSelector(selectorKey, options)) return [localEmbeddingEntry()];
-  if (isExplicitGeminiDiagnosticSelector(selectorKey)) return chain;
-
   let optimized = chain.map((entry) => (isGeminiEntry(entry) ? replacementForGemini(entry, options) : entry));
   optimized = optimized.filter((entry) => !isGeminiEntry(entry));
 
@@ -819,24 +810,8 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
         { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.1 },
       ],
     },
-    'oauth.gemini_cli.expiry_probe': {
-      primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 24, temperature: 0 },
-      fallbacks: [],
-    },
-    'gemini.cli.adapter.smoke': {
-      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_PRO_MODEL, maxTokens: 64, temperature: 0 },
-      fallbacks: [],
-    },
-    'gemini.cli.readiness.live': {
-      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 32, temperature: 0 },
-      fallbacks: [],
-    },
     'unified.oauth.openai.smoke': {
       primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 32, temperature: 0 },
-      fallbacks: [],
-    },
-    'unified.oauth.gemini.smoke': {
-      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 32, temperature: 0 },
       fallbacks: [],
     },
     // k6 load tests should measure Hub routing/backpressure, not slow quality-model latency.
@@ -1824,7 +1799,7 @@ function resolveFromTeamDefault(selectorKey: string, options: SelectorOptions = 
   return normalizeTeamDefaultEntry(teamDefaults[restKey] || teamDefaults[shortKey] || teamDefaults._fallback || null);
 }
 
-export function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
+function routeEntryFromAbstractRouteRaw(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
   const normalized = String(route || 'anthropic_haiku');
   if (normalized === 'openai_perf') {
     return { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 2048, temperature: 0.1 };
@@ -1871,13 +1846,18 @@ export function routeEntryFromAbstractRoute(route: string, selectorVersion: Team
   return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1024, temperature: 0.1 };
 }
 
+export function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
+  const entry = routeEntryFromAbstractRouteRaw(route, selectorVersion);
+  return isGeminiEntry(entry) ? replacementForGemini(entry) : entry;
+}
+
 function buildAbstractRoutePolicy(
   route: string,
   fallbacks: string[] = [],
   selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY,
   primaryOverride: Partial<LLMChainEntry> = {},
 ): any {
-  const chain = [route, ...fallbacks].map((item) => routeEntryFromAbstractRoute(item, selectorVersion));
+  const chain = [route, ...fallbacks].map((item) => routeEntryFromAbstractRouteRaw(item, selectorVersion));
   if (chain[0] && Object.keys(primaryOverride).length > 0) {
     chain[0] = { ...chain[0], ...primaryOverride };
   }
@@ -1892,16 +1872,12 @@ function buildAbstractRoutePolicy(
 function buildJayIntentSelector({ intentPrimary, intentFallback }: SelectorOptions = {}) {
   return {
     primary: {
-      provider: intentPrimary ? inferProviderFromModel(intentPrimary) : 'gemini-cli-oauth',
-      model: intentPrimary || GEMINI_CLI_FLASH_LITE_MODEL,
+      provider: intentPrimary ? inferProviderFromModel(intentPrimary) : 'groq',
+      model: intentPrimary || GROQ_FAST_MODEL,
     },
     fallback: {
       provider: intentFallback ? inferProviderFromModel(intentFallback) : 'groq',
-      model: intentFallback
-        ? (intentFallback.startsWith('gemini-cli-oauth/')
-            ? intentFallback
-            : `gemini-cli-oauth/${intentFallback.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`)
-        : GROQ_FAST_MODEL,
+      model: intentFallback || GROQ_FAST_MODEL,
     },
   };
 }
@@ -1920,11 +1896,7 @@ function buildSelectorRegistry(): Record<string, any> {
     'hub.roundtable.judge': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.roundtable.judge', options),
     'hub.control.planner': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.control.planner', options),
     'hub.session.compaction': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.session.compaction', options),
-    'hub.oauth.gemini_cli.expiry_probe': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.oauth.gemini_cli.expiry_probe', options),
-    'hub.gemini.cli.adapter.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.gemini.cli.adapter.smoke', options),
-    'hub.gemini.cli.readiness.live': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.gemini.cli.readiness.live', options),
     'hub.unified.oauth.openai.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.unified.oauth.openai.smoke', options),
-    'hub.unified.oauth.gemini.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.unified.oauth.gemini.smoke', options),
     'hub.load_test.fast': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.load_test.fast', options),
     'elsa._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa._default', options),
     'elsa.chat.answer': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa.chat.answer', options),
@@ -2095,9 +2067,12 @@ function buildSelectorRegistry(): Record<string, any> {
       const selectorVersion = resolveSelectorVersionForKey('investment.agent_policy', options);
       const taskType = normalizeTaskTypeInput(options);
       const useYamlRouting = normalizedAgentName === 'chronos' ? taskType === 'backtest_embedding' : true;
-      if (useYamlRouting && isLunaYamlRoutingEnabled(process.env)) {
+      if (useYamlRouting) {
         const yamlPolicy = resolveInvestmentYamlRoutingPolicy(normalizedAgentName);
-        if (yamlPolicy) return yamlPolicy;
+        // A rule-based agent must never regain an LLM route when YAML rollout is disabled.
+        if (yamlPolicy?.enabled === false || (yamlPolicy && isLunaYamlRoutingEnabled(process.env))) {
+          return yamlPolicy;
+        }
       }
       const defaultRoutesLegacy: Record<string, string> = {
         default: 'openai_perf',
@@ -2321,11 +2296,47 @@ function normalizeChainFromPolicy(policy: any): LLMChainEntry[] | null {
   return null;
 }
 
+function guardResolvedPolicy(key: string, policy: any, options: SelectorOptions): any {
+  const chain = normalizeChainFromPolicy(policy);
+  if (!chain || policy?.enabled === false) return policy;
+  const guardedChain = applyProviderRuntimeGuards(chain, { ...options, selectorKey: key });
+  if (Array.isArray(policy)) return guardedChain;
+  if (isObject(policy) && typeof policy.model === 'string') {
+    return guardedChain[0] || { enabled: false };
+  }
+
+  const guardedPolicy = clone(policy);
+  if (['gemini_flash', 'gemini_flash_lite'].includes(String(guardedPolicy.route || ''))) {
+    const primary = guardedChain[0];
+    const provider = providerOfEntry(primary);
+    if (provider === 'openai-oauth' || provider === 'openai') {
+      guardedPolicy.route = String(primary?.model || '').includes('mini') ? 'openai_mini' : 'openai_perf';
+    } else if (provider === 'groq') {
+      guardedPolicy.route = String(primary?.model || '').includes('qwen') ? 'qwen_deep' : 'groq_scout';
+    } else {
+      delete guardedPolicy.route;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(guardedPolicy, 'chain')) guardedPolicy.chain = clone(guardedChain);
+  if (Object.prototype.hasOwnProperty.call(guardedPolicy, 'fallbackChain')) guardedPolicy.fallbackChain = clone(guardedChain);
+  if (Object.prototype.hasOwnProperty.call(guardedPolicy, 'primary')) guardedPolicy.primary = guardedChain[0] || null;
+  if (Object.prototype.hasOwnProperty.call(guardedPolicy, 'fallback')) guardedPolicy.fallback = guardedChain[1] || null;
+  if (Object.prototype.hasOwnProperty.call(guardedPolicy, 'fallbacks')) guardedPolicy.fallbacks = clone(guardedChain.slice(1));
+  if (guardedChain.length === 0) guardedPolicy.enabled = false;
+  return guardedPolicy;
+}
+
 export function selectLLMPolicy(key: string, options: SelectorOptions = {}): any {
   const entry = SELECTOR_REGISTRY[key];
   if (!entry) throw new Error(`알 수 없는 LLM selector key: ${key}`);
   const resolved = typeof entry === 'function' ? entry(options) : clone(entry);
-  return applyPolicyOverride(resolved, options.policyOverride, options);
+  const terminalRuleBasedPolicy = resolved?.enabled === false
+    && resolved?.route === 'rule-based'
+    && resolved?.routingSource === 'yaml';
+  const policy = terminalRuleBasedPolicy
+    ? resolved
+    : applyPolicyOverride(resolved, options.policyOverride, options);
+  return guardResolvedPolicy(key, policy, options);
 }
 
 export function selectLLMChain(key: string, options: SelectorOptions = {}): LLMChainEntry[] {

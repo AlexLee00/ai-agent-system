@@ -2,6 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { getGeminiRetirementState } from '../../../packages/core/lib/llm-provider-retirement.js';
 
 type StepResult = {
   id: string;
@@ -94,7 +95,7 @@ function providerSummary(teamReadiness: any) {
 }
 
 function main(): void {
-  const geminiDisabled = flag('HUB_LLM_GEMINI_DISABLED');
+  const geminiDisabled = getGeminiRetirementState().disabled;
   const requireGeminiQuotaProject = flag('HUB_OAUTH_OPS_REQUIRE_GEMINI_QUOTA_PROJECT');
   const liveSteward = flag('HUB_OAUTH_OPS_LIVE_STEWARD_DRILL');
 

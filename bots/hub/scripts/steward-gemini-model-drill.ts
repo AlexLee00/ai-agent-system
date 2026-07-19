@@ -6,6 +6,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const env = require('../../../packages/core/lib/env');
+const { getGeminiRetirementState } = require('../../../packages/core/lib/llm-provider-retirement.ts');
 
 const SCENARIOS = [
   {
@@ -224,6 +225,10 @@ function render(report) {
 }
 
 async function main() {
+  if (getGeminiRetirementState().disabled) {
+    console.log(JSON.stringify({ ok: true, skipped: true, retired: true, reason: 'gemini_provider_disabled' }));
+    return;
+  }
   const args = parseArgs(process.argv);
   const mock = Boolean(args.mock || flag('STEWARD_GEMINI_DRILL_MOCK'));
   const baseUrl = hubBaseUrl();

@@ -214,9 +214,7 @@ function buildRecommendation({ jayUsage, dbStats, dbStatsError, dbAccessError, s
   const commandParseRows = dbStats.rows.filter(row => row.request_type === 'command_parse');
   const chatRows = dbStats.rows.filter(row => row.request_type === 'chat_fallback');
   const openAIParse = commandParseRows.find(row => row.model === 'gpt-5-mini');
-  const geminiParse = commandParseRows.find(row => row.model === 'gemini-2.5-flash');
   const ossChat = chatRows.find(row => row.model === 'openai/gpt-oss-20b');
-  const geminiChat = chatRows.find(row => row.model === 'gemini-2.5-flash');
 
   const lines = [];
 
@@ -228,10 +226,8 @@ function buildRecommendation({ jayUsage, dbStats, dbStatsError, dbAccessError, s
     lines.push('- 명령형 OpenAI 사용량이 아직 적어, 며칠 더 관찰이 필요합니다.');
   }
 
-  if (ossChat && (!geminiChat || Number(ossChat.calls) >= Number(geminiChat.calls))) {
+  if (ossChat) {
     lines.push(`- 대화형은 \`gpt-oss-20b\`가 주력 후보입니다. 최근 ${fmt(ossChat.calls)}회, 평균 ${Math.round(ossChat.avg_latency_ms || 0)}ms입니다.`);
-  } else if (geminiChat) {
-    lines.push(`- 대화형은 아직 Gemini 폴백 비중이 높아, \`gpt-oss-20b\` 정착 여부를 더 봐야 합니다.`);
   }
 
   if (Number(jayUsage.total.totalTokens || 0) > 5_000_000) {

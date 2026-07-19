@@ -28,7 +28,7 @@ export async function runLunaLlmRouteDrillSmoke() {
   assert.ok(finalDecision.chain.length >= 2, 'final_decision should keep fallback chain');
   assert.notEqual(finalDecision.chain[0].provider, 'claude-code', 'avoid provider should not remain first');
   assert.ok(
-    finalDecision.chainProviders.includes('openai-oauth') || finalDecision.chainProviders.includes('gemini-oauth') || finalDecision.chainProviders.includes('groq'),
+    finalDecision.chainProviders.includes('openai-oauth') || finalDecision.chainProviders.includes('groq'),
     'final_decision should retain at least one non-Claude fallback',
   );
 

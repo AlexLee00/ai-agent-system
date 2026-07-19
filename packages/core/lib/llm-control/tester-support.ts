@@ -3,6 +3,7 @@
 
 const path = require('path');
 const os = require('os');
+const { isGeminiProvider } = require('../llm-provider-retirement');
 
 const AI_AGENT_HOME = process.env.AI_AGENT_HOME
   || process.env.JAY_HOME
@@ -33,16 +34,6 @@ const PROVIDER_ENV_KEYS = {
 const SUPPORTED_MODEL_ALIASES = {};
 
 const SPEED_TEST_MODEL_CATALOG = {
-  'gemini-cli-oauth': new Set([
-    'gemini-cli-oauth/gemini-2.5-flash-lite',
-    'gemini-cli-oauth/gemini-2.5-flash',
-    'gemini-cli-oauth/gemini-2.5-pro',
-  ]),
-  'google-gemini-cli': new Set([
-    'google-gemini-cli/gemini-2.5-flash-lite',
-    'google-gemini-cli/gemini-2.5-flash',
-    'google-gemini-cli/gemini-2.5-pro',
-  ]),
   openai: new Set([
     'openai/gpt-4o-mini',
     'openai/gpt-4o',
@@ -96,9 +87,8 @@ function loadModels(fs, { modelArg } = {}) {
 
   const supported = Object.keys(allModels)
     .map((id) => SUPPORTED_MODEL_ALIASES[id] || id)
+    .filter((id) => !isGeminiProvider(id))
     .filter((id) =>
-      id.startsWith('google-gemini-cli/') ||
-      id.startsWith('gemini-cli-oauth/') ||
       id.startsWith('ollama/') ||
       id.startsWith('openai/') ||
       id.startsWith('groq/') ||
@@ -185,17 +175,14 @@ function applyFastest(fs, results) {
   cfg.agents = cfg.agents || {};
   cfg.agents.defaults = cfg.agents.defaults || {};
   cfg.agents.defaults.model = cfg.agents.defaults.model || {};
-  const geminiValid = results.filter((item) => item.ok && (item.provider === 'gemini-cli-oauth' || item.provider === 'google-gemini-cli'));
-  if (geminiValid.length === 0) return null;
+  const valid = results.filter((item) => item.ok && !isGeminiProvider(item.provider || item.modelId));
+  if (valid.length === 0) return null;
 
-  cfg.agents.defaults.model.primary = geminiValid[0].modelId;
-  const geminiRest = geminiValid.slice(1).map((item) => item.modelId);
-  const ollamaList = results.filter((item) => item.ok && item.provider === 'ollama').map((item) => item.modelId);
-  const otherList = results.filter((item) => item.ok && !['gemini-cli-oauth', 'google-gemini-cli', 'ollama'].includes(item.provider)).map((item) => item.modelId);
-  cfg.agents.defaults.model.fallbacks = [...geminiRest, ...ollamaList, ...otherList];
+  cfg.agents.defaults.model.primary = valid[0].modelId;
+  cfg.agents.defaults.model.fallbacks = valid.slice(1).map((item) => item.modelId);
 
   writeJsonFile(fs, LLM_CONTROL_CONFIG, cfg);
-  return geminiValid[0].modelId;
+  return valid[0].modelId;
 }
 
 module.exports = {

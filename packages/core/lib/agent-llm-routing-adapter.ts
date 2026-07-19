@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { resolve } from 'node:path';
-import { getAgentDefinition, listAgentDefinitions } from './agent-yaml-loader.ts';
+import { getAgentDefinition, listAgentDefinitions } from './agent-yaml-loader';
 
 const DEFAULT_INVESTMENT_TEAM_DIR = resolve(__dirname, '../../../bots/investment/team');
 const LUNA_YAML_ROUTING_ENV = 'LUNA_YAML_ROUTING_ENABLED';

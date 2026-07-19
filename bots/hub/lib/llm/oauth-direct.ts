@@ -5,6 +5,10 @@ const { promisify } = require('util');
 const { getProviderRecord } = require('../oauth/token-store');
 const { recordHubTelemetry } = require('../telemetry');
 const { parseSseJsonEvents, summarizeSseGuard } = require('../../../../packages/core/lib/sse-event-guard');
+const {
+  getGeminiRetirementState,
+  warnGeminiRetirementOverride,
+} = require('../../../../packages/core/lib/llm-provider-retirement');
 
 const execFileAsync = promisify(execFile);
 
@@ -100,7 +104,8 @@ function isGeminiProModel(model: unknown): boolean {
 }
 
 function isGeminiDisabled() {
-  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_GEMINI_DISABLED || '').trim().toLowerCase());
+  warnGeminiRetirementOverride('hub-oauth-direct');
+  return getGeminiRetirementState().disabled;
 }
 
 function geminiDisabledResult(model: string, started: number): AnyRecord {

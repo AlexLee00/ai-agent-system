@@ -5,6 +5,7 @@ const {
   readGeminiCliCredentials,
 } = require('../lib/oauth/gemini-cli-credentials.ts');
 const { setProviderCanary, setProviderToken } = require('../lib/oauth/token-store.ts');
+const { getGeminiRetirementState } = require('../../../packages/core/lib/llm-provider-retirement.ts');
 
 function parseArgs(argv) {
   const out = {};
@@ -19,6 +20,10 @@ function parseArgs(argv) {
 }
 
 async function main() {
+  if (getGeminiRetirementState().disabled) {
+    console.log(JSON.stringify({ ok: true, skipped: true, retired: true, reason: 'gemini_provider_disabled' }));
+    return;
+  }
   const args = parseArgs(process.argv);
   const provider = String(args.provider || 'gemini-cli-oauth').trim() || 'gemini-cli-oauth';
   const imported = readGeminiCliCredentials({

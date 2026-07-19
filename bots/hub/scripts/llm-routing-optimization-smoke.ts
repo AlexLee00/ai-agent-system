@@ -13,11 +13,6 @@ const selector = require('../../../packages/core/lib/llm-model-selector.ts');
 const groqFallback = require('../lib/llm/groq-fallback.ts');
 
 const SELECTOR_OPTIONS = { selectorVersion: 'v3.0_oauth_4', rolloutPercent: 100 };
-const GEMINI_DIAGNOSTIC_SELECTORS = new Set([
-  'hub.gemini.cli.adapter.smoke',
-  'hub.gemini.cli.readiness.live',
-  'hub.unified.oauth.gemini.smoke',
-]);
 const CLAUDE_FIRST_WRITING_SELECTORS = new Set([
   'blog.pos.writer',
   'blog.gems.writer',
@@ -54,13 +49,9 @@ for (const key of selectorKeys) {
     .filter((entry) => /llama-4-scout-17b-16e-instruct/.test(String(entry?.model || '')))
     .map((entry) => `${entry.provider}/${entry.model}`);
   if (staleGroqModels.length > 0) staleGroqRoutes.push(`${key}:${staleGroqModels.join('|')}`);
-  if (GEMINI_DIAGNOSTIC_SELECTORS.has(key)) {
-    assert(hasGemini, `${key} must remain available for explicit Gemini diagnostics`);
-  } else if (hasGemini) {
-    unexpectedGeminiRoutes.push(key);
-  }
+  if (hasGemini) unexpectedGeminiRoutes.push(key);
 }
-assert.equal(unexpectedGeminiRoutes.length, 0, `non-diagnostic selectors must not route to Gemini: ${unexpectedGeminiRoutes.join(', ')}`);
+assert.equal(unexpectedGeminiRoutes.length, 0, `selectors must not route to retired Gemini: ${unexpectedGeminiRoutes.join(', ')}`);
 assert.equal(staleGroqRoutes.length, 0, `selectors must not route to stale Groq Scout model: ${staleGroqRoutes.join(', ')}`);
 
 for (const key of ['claude._default', 'claude.archer.tech_analysis', 'claude.lead.system_issue_triage', 'claude.dexter.ai_analyst']) {
@@ -152,7 +143,7 @@ assert.equal(highTokenGroqGuard.reason, 'completion_token_limit');
 console.log(JSON.stringify({
   ok: true,
   checked_selector_keys: selectorKeys.length,
-  gemini_diagnostic_selectors: [...GEMINI_DIAGNOSTIC_SELECTORS],
+  gemini_routes: 0,
   claude_first_writing_selectors: [...CLAUDE_FIRST_WRITING_SELECTORS],
   chronos_route: chronosDirect.map((entry) => `${entry.provider}/${entry.model}`),
   chronos_backtest_route: chronosBacktest.map((entry) => `${entry.provider}/${entry.model}`),

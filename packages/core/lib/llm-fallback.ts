@@ -43,6 +43,7 @@ const { trackTokens } = require('./token-tracker');
 const { fetchHubSecrets } = require('./hub-client');
 const { selectRuntime } = require('./runtime-selector');
 const { parseSseJsonEvents, summarizeSseGuard } = require('./sse-event-guard');
+const { assertProviderNotRetired } = require('./llm-provider-retirement');
 const env = require('./env');
 const fs = require('fs');
 const path = require('path');
@@ -1663,6 +1664,8 @@ async function _callProvider(
   runtimeProfile: RuntimeProfile = null,
 ): Promise<ProviderCallResult> {
   let { provider, model, maxTokens, temperature } = cfg;
+  assertProviderNotRetired(provider);
+  assertProviderNotRetired(model);
   const sonnetReplacement = _resolveClaudeCodeSonnetReplacement(provider, model);
   if (sonnetReplacement) {
     provider = sonnetReplacement.provider as FallbackChainEntry['provider'];

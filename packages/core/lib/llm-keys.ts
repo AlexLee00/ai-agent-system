@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fetchHubSecrets } from './hub-client.js';
+import { getGeminiRetirementState } from './llm-provider-retirement.js';
 
 const CONFIG_PATH = path.join(__dirname, '..', '..', '..', 'bots', 'investment', 'config.yaml');
 
@@ -64,7 +65,6 @@ export async function initHubConfig(): Promise<boolean> {
     _config = {
       anthropic: hubData.anthropic || {},
       openai: hubData.openai || {},
-      gemini: hubData.gemini || {},
       groq: hubData.groq || {},
       cerebras: hubData.cerebras || {},
       sambanova: hubData.sambanova || {},
@@ -100,7 +100,8 @@ export function publicProviderEnabled(provider: 'anthropic' | 'openai' | 'gemini
     return envFlag('HUB_ENABLE_CLAUDE_PUBLIC_API') || envFlag('HUB_ENABLE_ANTHROPIC_PUBLIC_API');
   }
   if (provider === 'gemini') {
-    return envFlag('HUB_ENABLE_GEMINI_PUBLIC_API') || envFlag('HUB_ENABLE_GOOGLE_PUBLIC_API');
+    return !getGeminiRetirementState().disabled
+      && (envFlag('HUB_ENABLE_GEMINI_PUBLIC_API') || envFlag('HUB_ENABLE_GOOGLE_PUBLIC_API'));
   }
   return envFlag('HUB_ENABLE_OPENAI_PUBLIC_API');
 }

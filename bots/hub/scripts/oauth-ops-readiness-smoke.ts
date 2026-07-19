@@ -20,8 +20,8 @@ const packageJson = JSON.parse(read('bots/hub/package.json'));
 const runTests = read('bots/hub/scripts/run-tests.ts');
 
 assert(opsReadiness.includes('team-oauth-readiness-report.ts'), 'OAuth ops readiness must include team OAuth readiness');
-assert(opsReadiness.includes('gemini-cli-oauth-readiness.ts'), 'OAuth ops readiness must include Gemini CLI readiness');
-assert(opsReadiness.includes('steward-gemini-model-drill.ts'), 'OAuth ops readiness must include Steward Gemini drill');
+assert(opsReadiness.includes('getGeminiRetirementState'), 'OAuth ops readiness must use the immutable Gemini retirement policy');
+assert(opsReadiness.includes("skippedStep('gemini_cli_readiness', 'gemini_provider_disabled')"), 'OAuth ops readiness must skip Gemini credential checks');
 assert(opsReadiness.includes('public_api_tokens_are_optional'), 'OAuth ops readiness must document public API optional mode');
 assert(opsReadiness.includes('No provider token'), 'OAuth ops readiness must explicitly avoid raw secret output');
 assert(!opsReadiness.includes('access_token:'), 'OAuth ops readiness must not project raw access_token fields');
@@ -36,7 +36,8 @@ assert(oauthOpsSkill.toLowerCase().includes('refresh 자동화 자체는'), 'oau
 assert(oauthOpsSkill.includes('oauth.ops.status'), 'oauth-ops skill must document Hub OAuth ops tools');
 assert.equal(packageJson.scripts['oauth:ops-readiness'], 'tsx scripts/hub-oauth-operational-readiness.ts');
 assert.equal(packageJson.scripts['oauth:ops-events-smoke'], 'tsx scripts/oauth-ops-events-smoke.ts');
-assert(runTests.includes('steward-gemini-model-drill-smoke.ts'), 'Unit chain must cover Steward Gemini mock report contract');
+assert(runTests.includes('gemini-disabled-guard-smoke.ts'), 'Unit chain must cover the Gemini retirement guard');
+assert(runTests.includes('llm-gemini-residue-audit.ts'), 'Unit chain must cover Gemini residue audit');
 assert(runTests.includes('oauth-ops-readiness-smoke.ts'), 'Unit chain must cover OAuth ops readiness contract');
 assert(runTests.includes('oauth-ops-events-smoke.ts'), 'Unit chain must cover OAuth ops event/redaction contract');
 

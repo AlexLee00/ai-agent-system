@@ -50,11 +50,11 @@ export async function runLunaLlmRouteHealthSmoke() {
 
   const chain = [
     { provider: 'claude-code', model: 'sonnet' },
-    { provider: 'gemini-cli-oauth', model: 'gemini-2.5-flash' },
+    { provider: 'groq', model: 'llama-3.3-70b-versatile' },
     { provider: 'openai-oauth', model: 'gpt-5.4' },
   ];
   const reordered = reorderChainForRouteHealth(chain, ['claude-code']);
-  assert.equal(reordered[0].provider, 'gemini-cli-oauth', 'healthy provider should move ahead of cooldown provider');
+  assert.equal(reordered[0].provider, 'groq', 'healthy provider should move ahead of cooldown provider');
   assert.equal(reordered.at(-1).provider, 'claude-code', 'avoided provider should remain as last-resort fallback');
 
   const previousRoutingEnabled = process.env.LUNA_AGENT_LLM_ROUTING_ENABLED;

@@ -1,6 +1,8 @@
 #!/usr/bin/env tsx
 // @ts-nocheck
 
+const { getGeminiRetirementState } = require('../../../packages/core/lib/llm-provider-retirement.ts');
+
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
@@ -134,6 +136,10 @@ function runLiveFailureDiagnostic(command: string) {
 }
 
 async function main() {
+  if (getGeminiRetirementState().disabled) {
+    console.log(JSON.stringify({ ok: true, skipped: true, retired: true, reason: 'gemini_provider_disabled' }));
+    return;
+  }
   const args = parseArgs(process.argv);
   const record = getProviderRecord('gemini-cli-oauth');
   const projectId = String(

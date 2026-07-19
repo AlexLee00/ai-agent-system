@@ -7,6 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { applyAuthoritativeLaunchdEnvironment } from './llm-launchd-environment.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -18,7 +19,7 @@ const DEFAULT_LAUNCHD_PLIST_PATH = path.join(PROJECT_ROOT, 'bots', 'hub', 'launc
 const SNAPSHOT_TIME_ZONE = process.env.HUB_LLM_CHAIN_SNAPSHOT_TIME_ZONE || 'Asia/Seoul';
 const SNAPSHOT_DATE = process.env.HUB_LLM_CHAIN_SNAPSHOT_DATE || snapshotDateString(new Date(), SNAPSHOT_TIME_ZONE);
 const DEFAULT_OUTPUT_PATH = path.join(SNAPSHOT_DIR, `llm-chain-snapshot-${SNAPSHOT_DATE}.json`);
-const DEFAULT_BASELINE_PATH = path.join(SNAPSHOT_DIR, 'llm-chain-snapshot-2026-06-12.json');
+const DEFAULT_BASELINE_PATH = path.join(SNAPSHOT_DIR, 'llm-chain-snapshot-2026-07-19.json');
 const SNAPSHOT_SOURCE = 'packages/core/lib/llm-model-selector.ts';
 const FIXED_SMOKE_TIMESTAMP = '2026-06-12T00:00:00.000Z';
 const SELECTOR_VERSION = 'v3.0_oauth_4';
@@ -83,9 +84,6 @@ const ENV_BASELINE_KEYS = Object.freeze([
   'LLM_GROQ_FAST_MODEL',
   'LLM_GROQ_DEEP_MODEL',
   'LLM_GROQ_SCOUT_MODEL',
-  'LLM_GEMINI_FLASH_LITE_MODEL',
-  'LLM_GEMINI_FLASH_MODEL',
-  'LLM_GEMINI_PRO_MODEL',
   'LLM_LOCAL_EMBED_MODEL',
 ]);
 
@@ -142,20 +140,9 @@ function readLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
 
 function applyLaunchdEnvironment(plistPath = DEFAULT_LAUNCHD_PLIST_PATH) {
   const env = readLaunchdEnvironment(plistPath);
-  const injected = [];
-  const preserved = [];
-  for (const [key, value] of Object.entries(env).sort(([a], [b]) => a.localeCompare(b))) {
-    if (process.env[key] !== undefined) {
-      preserved.push(key);
-      continue;
-    }
-    process.env[key] = String(value);
-    injected.push(key);
-  }
   return {
     path: path.relative(PROJECT_ROOT, plistPath),
-    injected,
-    preserved,
+    ...applyAuthoritativeLaunchdEnvironment(env, { managedKeys: [...ENV_BASELINE_KEYS] }),
   };
 }
 
@@ -240,6 +227,10 @@ function extractAgentRouteKeys(source = fs.readFileSync(SELECTOR_SOURCE_PATH, 'u
   return {
     darwin: extractRouteKeysFromBlock(findObjectLiteralBlock(source, 'DARWIN_ROUTES')),
     sigma: extractRouteKeysFromBlock(findObjectLiteralBlock(source, 'SIGMA_ROUTES')),
+    investment: getSelector().listLLMSelectorKeys()
+      .filter((key) => /^investment\.[^.]+$/.test(key))
+      .filter((key) => key !== 'investment._default' && key !== 'investment.agent_policy')
+      .map((key) => key.slice('investment.'.length)),
   };
 }
 
@@ -316,7 +307,9 @@ function specsForSelectorKey(key, routeKeys) {
   }));
   const agentNames = key === 'darwin.agent_policy'
     ? routeKeys.darwin
-    : (key === 'sigma.agent_policy' ? routeKeys.sigma : []);
+    : (key === 'sigma.agent_policy'
+      ? routeKeys.sigma
+      : (key === 'investment.agent_policy' ? routeKeys.investment : []));
   const agentSpecs = [];
   for (const agentName of agentNames) {
     for (const taskVariant of TASK_VARIANTS) {
@@ -361,6 +354,7 @@ function buildLlmChainSnapshot(options = {}) {
       selectorKeys: selectorKeys.length,
       darwinAgentRoutes: routeKeys.darwin.length,
       sigmaAgentRoutes: routeKeys.sigma.length,
+      investmentAgentRoutes: routeKeys.investment.length,
       variants: variants.length,
       errors: errors.length,
     },
@@ -535,6 +529,7 @@ function runSmoke() {
     for (const key of selectorKeys) assert(defaultKeys.has(key), `missing default variant for ${key}`);
     assert(first.counts.darwinAgentRoutes > 0, 'missing darwin agent route variants');
     assert(first.counts.sigmaAgentRoutes > 0, 'missing sigma agent route variants');
+    assert(first.counts.investmentAgentRoutes > 0, 'missing investment agent route variants');
     return `${first.counts.selectorKeys} selector keys, ${first.counts.variants} variants`;
   });
 

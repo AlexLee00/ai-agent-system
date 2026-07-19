@@ -26,6 +26,10 @@ const {
 } = require('../lib/oauth/gemini-codeassist-service-status.ts');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
 const { publishOAuthMonitorEvents } = require('../lib/oauth/ops-events.ts');
+const {
+  getGeminiRetirementState,
+  warnGeminiRetirementOverride,
+} = require('../../../packages/core/lib/llm-provider-retirement.ts');
 
 const DEFAULT_GEMINI_CODEASSIST_OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
 const DEFAULT_GEMINI_CODEASSIST_CLIENT_SECRET_FILE = path.join(os.homedir(), '.config/ai-agent-system/oauth/gemini-client-secret.json');
@@ -37,10 +41,11 @@ function flag(name: string, fallback = false): boolean {
 }
 
 function geminiLlmDisabled(): boolean {
-  return flag('HUB_LLM_GEMINI_DISABLED', false);
+  warnGeminiRetirementOverride('hub-oauth-monitor');
+  return getGeminiRetirementState().disabled;
 }
 
-function geminiMonitorDisabledResult(source = 'env') {
+function geminiMonitorDisabledResult(source = 'retired_provider') {
   return {
     healthy: true,
     skipped: true,
@@ -1175,8 +1180,8 @@ function finalizeGeminiCliMonitorState({
 
 async function checkGeminiCliOAuth() {
   if (geminiLlmDisabled()) {
-    console.log('[oauth-monitor] Gemini CLI OAuth 스킵: HUB_LLM_GEMINI_DISABLED=true');
-    return geminiMonitorDisabledResult('disabled_by_env');
+    console.log('[oauth-monitor] Gemini CLI OAuth 스킵: provider retired');
+    return geminiMonitorDisabledResult('retired_provider');
   }
   const record = getProviderRecord('gemini-cli-oauth');
   const required = geminiCliMonitorRequired();
@@ -1435,7 +1440,7 @@ async function checkGeminiCliOAuth() {
 
 async function checkGeminiCodeAssistService() {
   if (geminiLlmDisabled()) {
-    console.log('[oauth-monitor] Gemini Code Assist service 스킵: HUB_LLM_GEMINI_DISABLED=true');
+    console.log('[oauth-monitor] Gemini Code Assist service 스킵: provider retired');
     return {
       healthy: true,
       skipped: true,

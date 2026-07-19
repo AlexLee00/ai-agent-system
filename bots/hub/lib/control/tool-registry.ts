@@ -14,6 +14,9 @@ const {
   validateAgentToolAdmission,
   recordAgentGuardAudit,
 } = require('./agent-guard');
+const {
+  getGeminiRetirementState,
+} = require('../../../../packages/core/lib/llm-provider-retirement');
 
 type JsonRecord = Record<string, unknown>;
 
@@ -64,11 +67,6 @@ type HubControlTool = {
   handler: (input: ToolInput, context?: ToolContext) => Promise<unknown>;
 };
 
-type OAuthTokenLike = {
-  expires_at?: string;
-  expiresAt?: string;
-};
-
 type EventLakeRow = {
   id?: string | number;
   severity?: string;
@@ -93,13 +91,6 @@ function getEventLake() {
   return require('../../../../packages/core/lib/event-lake');
 }
 
-function tokenExpiresInHours(token: OAuthTokenLike | null): number | null {
-  const expiresAt = token?.expires_at || token?.expiresAt || null;
-  const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
-  if (!Number.isFinite(expiresMs)) return null;
-  return (expiresMs - Date.now()) / (60 * 60 * 1000);
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -110,8 +101,6 @@ async function getOAuthOpsStatus() {
     checkOpenAIOAuthHealth,
     checkGroqAccounts,
   } = require('../llm/oauth-monitor');
-  const { getProviderRecord } = require('../oauth/token-store');
-
   const [
     claude,
     openai,
@@ -122,23 +111,17 @@ async function getOAuthOpsStatus() {
     checkGroqAccounts().catch(() => ({ available_accounts: 0, total_accounts: 0 })),
   ]);
 
-  const geminiCliRecord = getProviderRecord('gemini-cli-oauth');
-  const geminiCliHours = tokenExpiresInHours(geminiCliRecord?.token || null);
+  const geminiRetirement = getGeminiRetirementState();
   const geminiCli = {
-    healthy: Boolean(geminiCliRecord?.token?.access_token || geminiCliRecord?.token?.refresh_token),
-    source: geminiCliRecord?.metadata?.source || null,
-    expires_in_hours: Number.isFinite(Number(geminiCliHours)) ? Math.round(Number(geminiCliHours) * 100) / 100 : null,
-    needs_refresh: Number.isFinite(Number(geminiCliHours)) ? Number(geminiCliHours) <= 1 : false,
-    quota_project_configured: Boolean(
-      process.env.GEMINI_CLI_OAUTH_PROJECT_ID
-        || process.env.GEMINI_OAUTH_PROJECT_ID
-        || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
-        || process.env.GOOGLE_CLOUD_PROJECT
-        || geminiCliRecord?.metadata?.quota_project_id
-        || geminiCliRecord?.metadata?.project_id
-        || geminiCliRecord?.token?.quota_project_id
-        || geminiCliRecord?.token?.project_id,
-    ),
+    healthy: true,
+    skipped: true,
+    disabled: geminiRetirement.disabled,
+    retired: geminiRetirement.retired,
+    source: 'retired_provider',
+    expires_in_hours: null,
+    needs_refresh: false,
+    quota_project_configured: false,
+    error: 'gemini_provider_disabled',
   };
 
   return {

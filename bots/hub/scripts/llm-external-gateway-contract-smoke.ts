@@ -67,7 +67,7 @@ async function main(): Promise<void> {
       assert.equal(response.status, 200, 'gateway contract endpoint must respond');
       assert.equal(body.ok, true);
       assert.equal(body.contractVersion, 'hub-llm-gateway/v1');
-      assert.equal(body.contractRevision, '2026-07-18.1');
+      assert.equal(body.contractRevision, '2026-07-19.1');
       assert.equal(body.auth.principalMode, 'legacy_root_with_scoped_audit');
       assert.equal(body.auth.teamHeaderSecurityBoundary, false);
       assert.equal(body.endpoints.syncCall.path, '/hub/llm/call');
@@ -78,6 +78,9 @@ async function main(): Promise<void> {
       assert.equal(body.selectorPolicy.directProviderRoutes, 'disabled_by_default');
       assert.equal(body.providerPolicy.geminiDisableFlag, 'HUB_LLM_GEMINI_DISABLED');
       assert.equal(typeof body.providerPolicy.geminiDisabled, 'boolean');
+      assert.equal(body.providerPolicy.geminiRetired, true);
+      assert.equal(body.providerPolicy.geminiEnvRole, 'declaration_only');
+      assert.equal(body.providerPolicy.geminiReenablePolicy, 'code_change_only');
       assert(body.recommendedBody.includes('runtimePurpose'), 'gateway contract must recommend runtimePurpose');
       assert.deepEqual(body.requestSchemas.syncCall.requiredBody, ['prompt', 'abstractModel']);
       assert.deepEqual(body.requestSchemas.asyncJob.requiredBody, ['prompt', 'abstractModel']);

@@ -76,7 +76,6 @@ function routeKey(entry: ChainEntry): string {
   if (provider === 'claude-code') return model.startsWith('claude-code/') ? model : `claude-code/${model}`;
   if (provider === 'groq') return model.startsWith('groq/') ? model : `groq/${model}`;
   if (provider === 'openai-oauth') return model.startsWith('openai-oauth/') ? model : `openai-oauth/${model}`;
-  if (provider === 'gemini-cli-oauth') return model.startsWith('gemini-cli-oauth/') ? model : `gemini-cli-oauth/${model}`;
   return `${provider}/${model}`;
 }
 

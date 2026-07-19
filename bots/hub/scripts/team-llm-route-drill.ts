@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { PROFILES } = require('../lib/runtime-profiles.ts');
+const { getGeminiRetirementState } = require('../../../packages/core/lib/llm-provider-retirement.ts');
 
 const HUB_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(__dirname, '../../..');
@@ -21,7 +22,7 @@ function usableSecret(value) {
 }
 
 function isGeminiDisabled() {
-  return flag('HUB_LLM_GEMINI_DISABLED');
+  return getGeminiRetirementState().disabled;
 }
 
 function baseUrl() {

@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -62,6 +63,8 @@ function runNodeJson(code, env = {}) {
 }
 
 async function main() {
+  process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = 'true';
+
   await record('TS-R2-1', 'engine full-surface diff is zero', () => {
   const report = runNodeJson(`
     const { runCli } = require(process.cwd() + '/bots/hub/scripts/llm-chain-snapshot.ts');
@@ -69,7 +72,13 @@ async function main() {
       process.exitCode = code;
     });
   `);
-  assert.equal(report.engineDiff.total, 544);
+  const snapshot = JSON.parse(fs.readFileSync(
+    path.join(PROJECT_ROOT, 'docs', 'hub', 'snapshots', 'llm-chain-snapshot-2026-07-19.json'),
+    'utf8',
+  ));
+  const variants = Array.isArray(snapshot?.variants) ? snapshot.variants : [];
+  const expectedTotal = variants.length + variants.filter((row) => row.variant === 'default').length;
+  assert.equal(report.engineDiff.total, expectedTotal);
   assert.equal(report.engineDiff.mismatched, 0);
   return `total=${report.engineDiff.total} mismatched=${report.engineDiff.mismatched} envFromLaunchd=${report.envFromLaunchd}`;
   });
@@ -115,9 +124,8 @@ async function main() {
   assert.equal(hasProvider(darwin, 'groq'), true);
 
   const emptyGuarded = applyProviderRuntimeGuards([], { selectorKey: 'fixture.empty' });
-  assert.equal(emptyGuarded[0]?.provider, 'openai-oauth');
-  assert.equal(emptyGuarded[0]?.model, 'gpt-5.4-mini');
-  return 'backtest local-embedding, darwin no-gemini, empty-chain openai mini';
+  assert.deepEqual(emptyGuarded, []);
+  return 'backtest local-embedding, darwin no-gemini, empty-chain preserved';
   });
 
   await record('TS-R2-4', 'shadow mode records match and mismatch without changing returned chain', async () => {
@@ -304,11 +312,9 @@ async function main() {
     const { selectLLMChain } = require(process.cwd() + '/packages/core/lib/llm-model-selector.ts');
     const { normalizePolicyEngineChain, resolvePolicyChain } = require(process.cwd() + '/packages/core/lib/llm-policy-engine.ts');
     const ctx = {
-      selectorKey: 'investment.luna',
-      team: 'investment',
-      callerTeam: 'investment',
-      agentName: 'luna',
-      agent: 'luna',
+      selectorKey: 'blog.book_review.preview',
+      team: 'blog',
+      callerTeam: 'blog',
       selectorVersion: 'v3.0_oauth_4',
       rolloutPercent: 100,
     };
@@ -322,8 +328,9 @@ async function main() {
     LLM_TEAM_SELECTOR_VERSION_PCT: '100',
   });
   assert.deepEqual(report.newChain, report.oldChain);
-  assert.equal(report.oldChain[0]?.model, 'fixture-r2d-groq-deep-model');
-  return `selector=investment.luna model=${report.oldChain[0]?.model}`;
+  const groqRoute = report.oldChain.find((entry) => entry.provider === 'groq');
+  assert.equal(groqRoute?.model, 'fixture-r2d-groq-deep-model');
+  return `selector=blog.book_review.preview model=${groqRoute?.model}`;
   });
 
   await record('TS-R2-9', 'shared default model tokens preserve scout-specific env overrides', () => {

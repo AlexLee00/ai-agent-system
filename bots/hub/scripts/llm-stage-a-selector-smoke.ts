@@ -208,6 +208,7 @@ function runCodexHReliabilitySmoke(): void {
   });
   recordTs('TS-14', 'local guard kill switch', 'HUB_LLM_LOCAL_BACKTEST_ONLY=false disables local filtering');
 
+  let darwinHubCallFilesChecked = 0;
   for (const file of [
     'bots/darwin/lib/research-evaluator.ts',
     'bots/darwin/lib/applicator.ts',
@@ -216,9 +217,12 @@ function runCodexHReliabilitySmoke(): void {
     'bots/darwin/lib/research-tasks.ts',
   ]) {
     const source = fs.readFileSync(path.join(REPO_ROOT, file), 'utf8');
+    if (!/\bcallHubLlm\s*\(/.test(source)) continue;
+    darwinHubCallFilesChecked += 1;
     assert(source.includes('runtimePurpose:'), `${file} must tag Darwin Hub calls with runtimePurpose`);
   }
-  recordTs('TS-15', 'source grep', 'Darwin Hub call sites include runtimePurpose tags');
+  assert.equal(darwinHubCallFilesChecked, 4, 'expected four Darwin files with Hub LLM call sites');
+  recordTs('TS-15', 'source grep', `${darwinHubCallFilesChecked} Darwin Hub call files include runtimePurpose tags`);
 }
 
 runCodexHReliabilitySmoke();

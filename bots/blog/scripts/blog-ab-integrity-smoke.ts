@@ -39,10 +39,12 @@ async function main() {
     assert.equal(isBlogAbStrictFamilyEnabled(), false, 'strict family must default off');
     assert.deepEqual(buildWriterFamilyRequestOptions('anthropic_sonnet'), {});
     assert.equal(writerModelFamily('anthropic_sonnet'), 'anthropic');
+    assert.equal(writerModelFamily('gemini-2.5-pro'), '', 'retired Gemini must not be a writer family');
     assert.equal(routeFamily('openai-oauth/gpt-5.4'), 'openai');
 
     process.env.BLOG_AB_STRICT_FAMILY = 'true';
     assert.deepEqual(buildWriterFamilyRequestOptions('anthropic_sonnet'), { strictProviderFamily: 'anthropic' });
+    assert.deepEqual(buildWriterFamilyRequestOptions('gemini-2.5-pro'), {}, 'retired Gemini must not create a strict writer route');
 
     const baseChain = {
       selectorKey: 'blog.gems.writer',

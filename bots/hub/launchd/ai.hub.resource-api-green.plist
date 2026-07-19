@@ -42,16 +42,12 @@
     <string>llama-3.1-8b-instant</string>
     <key>LLM_GROQ_DEEP_MODEL</key>
     <string>openai/gpt-oss-120b</string>
-    <key>LLM_GEMINI_FLASH_MODEL</key>
-    <string>gemini-cli-oauth/gemini-2.5-flash</string>
-    <key>LLM_GEMINI_FLASH_LITE_MODEL</key>
-    <string>gemini-cli-oauth/gemini-2.5-flash-lite</string>
+    <key>HUB_LLM_GEMINI_DISABLED</key>
+    <string>true</string>
     <key>LLM_CLAUDE_CODE_REPLACEMENT_MODEL</key>
     <string>openai-oauth/gpt-5.4</string>
     <key>LLM_CLAUDE_CODE_SONNET_REPLACEMENT</key>
     <string>openai-oauth/gpt-5.4</string>
-    <key>GEMINI_CLI_OAUTH_PROJECT_ID</key>
-    <string>gen-lang-client-0627707293</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HUB_PG_USER</key>

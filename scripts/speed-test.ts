@@ -3,8 +3,6 @@
  * speed-test.ts - LLM API 속도 테스트 툴 (무료 모델)
  *
  * 지원 프로바이더:
- *   - Google Gemini (OAuth, 무료)  → cloudcode-pa.googleapis.com
- *       gemini-2.5-flash-lite / gemini-2.5-flash / gemini-2.5-pro
  *   - Ollama (로컬, 무료)
  *   - OpenAI  (데이터공유 무료)     → api.openai.com
  *   - Groq    (영구 무료 티어)      → GROQ_API_KEY
@@ -50,9 +48,9 @@ const {
 const {
   PROVIDER_ENDPOINTS,
   OPENAI_COMPAT_PROVIDERS,
-  refreshGeminiToken,
   benchmarkModel,
 } = require('../packages/core/lib/llm-control/tester');
+const { isGeminiProvider } = require('../packages/core/lib/llm-provider-retirement');
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
 const AI_AGENT_HOME = process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
@@ -162,21 +160,13 @@ async function main() {
   log(dim(`   프롬프트: "${TEST_PROMPT}"`));
   log(dim(`   반복: ${runsArg}회 평균\n`));
 
-  const models = loadModels(fs, { modelArg });
-  if (models.length === 0) { log(red('테스트할 모델 없음')); process.exit(1); }
+  const models = loadModels(fs, { modelArg }).filter((model) => !isGeminiProvider(model));
+  if (models.length === 0) {
+    log(yellow('속도 테스트 스킵 — 실행 가능한 모델/인증 없음 또는 retired provider만 요청됨'));
+    return;
+  }
 
   const ctx = { geminiToken: null, keys: {} };
-
-  // Google Gemini OAuth
-  if (models.some(m => m.startsWith('google-gemini-cli/') || m.startsWith('gemini-cli-oauth/'))) {
-    try {
-      process.stdout.write('🔑 Gemini CLI OAuth 갱신...');
-      ctx.geminiToken = await refreshGeminiToken();
-      log(green(' ✅'));
-    } catch (e) {
-      log(red(` ❌ ${e.message}`));
-    }
-  }
 
   // OpenAI-호환 프로바이더 키 로드
   for (const provider of Object.keys(PROVIDER_ENDPOINTS)) {
@@ -211,7 +201,6 @@ async function main() {
   const results = [];
   for (const modelId of models) {
     const provider = modelId.split('/')[0];
-    if ((provider === 'google-gemini-cli' || provider === 'gemini-cli-oauth') && !ctx.geminiToken) continue;
     if (OPENAI_COMPAT_PROVIDERS.has(provider) && !ctx.keys[provider]) continue;
     const r = await benchmarkModel(modelId, ctx, {
       runs: runsArg,

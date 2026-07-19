@@ -8,6 +8,10 @@ const {
   AUTH_PROFILES_FILE,
   classifySpeedTestError,
 } = require('./tester-support');
+const {
+  assertProviderNotRetired,
+  isGeminiProvider,
+} = require('../llm-provider-retirement');
 
 const GEMINI_CLIENT_ID_ENV = 'GEMINI_CODE_ASSIST_CLIENT_ID';
 const GEMINI_CLIENT_SECRET_ENV = 'GEMINI_CODE_ASSIST_CLIENT_SECRET';
@@ -128,6 +132,7 @@ function resolveGeminiOAuthClient(profile = {}) {
 }
 
 async function refreshGeminiToken() {
+  assertProviderNotRetired('gemini-cli-oauth');
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
   const profile = Object.values(profiles.profiles ?? {})
     .find((item) => (item.provider === 'gemini-cli-oauth' || item.provider === 'google-gemini-cli') && item.type === 'oauth');
@@ -162,6 +167,7 @@ async function refreshGeminiToken() {
 }
 
 async function testGemini(modelId, accessToken, prompt) {
+  assertProviderNotRetired(modelId);
   const model = modelId.split('/')[1];
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
   const profile = Object.values(profiles.profiles ?? {}).find((item) => item.provider === 'gemini-cli-oauth' || item.provider === 'google-gemini-cli');
@@ -288,6 +294,19 @@ async function benchmarkModel(modelId, ctx, options = {}) {
   const runs = Number(options.runs || 1);
   const prompt = options.prompt || 'Reply with exactly one word: ok';
   const progress = typeof options.onProgress === 'function' ? options.onProgress : null;
+
+  if (isGeminiProvider(modelId)) {
+    return {
+      modelId,
+      label,
+      provider,
+      ttft: null,
+      total: null,
+      ok: false,
+      error: 'gemini_provider_disabled',
+      errorClass: 'provider_retired',
+    };
+  }
 
   if (progress) progress({ type: 'start', label, modelId, provider });
 

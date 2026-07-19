@@ -143,17 +143,20 @@
     "claude-code-oauth": { "enabled": true, "tier": 5 },
     "openai-oauth": { "enabled": true, "tier": 1 },
     "gemini-cli-oauth": {
-      "enabled": true,
+      "enabled": false,
+      "retired": true,
       "tier": 3,
       "env_disable_flag": "HUB_LLM_GEMINI_DISABLED"
     },
     "gemini-codeassist-oauth": {
-      "enabled": true,
+      "enabled": false,
+      "retired": true,
       "tier": 3,
       "env_disable_flag": "HUB_LLM_GEMINI_DISABLED"
     },
     "gemini-oauth": {
-      "enabled": true,
+      "enabled": false,
+      "retired": true,
       "tier": 3,
       "env_disable_flag": "HUB_LLM_GEMINI_DISABLED"
     },

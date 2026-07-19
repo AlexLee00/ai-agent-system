@@ -43,6 +43,10 @@ const runtimeEntryPoints = [
   path.join(root, 'packages/playwright-utils/index.ts'),
   path.join(root, 'packages/playwright-utils/src/browser.ts'),
   path.join(root, 'packages/core/lib/llm-timeouts.ts'),
+  path.join(root, 'packages/core/lib/agent-yaml-loader.ts'),
+  path.join(root, 'packages/core/lib/agent-llm-routing-adapter.ts'),
+  path.join(root, 'packages/core/lib/selector-timeout-profiles.ts'),
+  path.join(root, 'packages/core/lib/llm-provider-retirement.ts'),
   path.join(root, 'packages/core/lib/runtime-selector.ts'),
   path.join(root, 'packages/core/lib/llm-keys.ts'),
   path.join(root, 'packages/core/lib/tool-selector.ts'),
@@ -509,6 +513,16 @@ for (const entryPoint of runtimeEntryPoints) {
   } catch {
     // No legacy sidecar for this runtime entry.
   }
+}
+
+const runtimeAssets = [
+  path.join(root, 'packages/core/config/selector-timeout-profiles.json'),
+];
+
+for (const asset of runtimeAssets) {
+  const target = path.join(runtimeOutdir, path.relative(root, asset));
+  await mkdir(path.dirname(target), { recursive: true });
+  await copyFile(asset, target);
 }
 
 await writeFile(

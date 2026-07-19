@@ -14,7 +14,7 @@ async function runSmoke() {
   const sourcePath = path.resolve(__dirname, '..', 'shared', 'agent-llm-routing.ts');
   const source = fs.readFileSync(sourcePath, 'utf8');
   assert.equal(
-    /(?:openai-oauth|groq|gemini-cli-oauth|claude-code)\/[a-z0-9_.\-/]+/i.test(source),
+    /(?:openai-oauth|groq|claude-code)\/[a-z0-9_.\-/]+/i.test(source),
     false,
     'investment agent routing must not hardcode provider/model routes',
   );

@@ -10,8 +10,6 @@ process.env.LLM_OPENAI_PERF_MODEL = 'openai-oauth/gpt-env-perf';
 process.env.LLM_OPENAI_MINI_MODEL = 'openai-oauth/gpt-env-mini';
 process.env.LLM_GROQ_FAST_MODEL = 'groq/groq-env-fast';
 process.env.LLM_GROQ_DEEP_MODEL = 'groq/groq-env-deep';
-process.env.LLM_GEMINI_FLASH_MODEL = 'gemini-cli-oauth/gemini-env-flash';
-process.env.LLM_GEMINI_FLASH_LITE_MODEL = 'gemini-cli-oauth/gemini-env-lite';
 
 const require = createRequire(import.meta.url);
 const selector = require('../../../packages/core/lib/llm-model-selector.ts');
@@ -42,7 +40,5 @@ console.log(JSON.stringify({
     openai_mini_model: process.env.LLM_OPENAI_MINI_MODEL,
     groq_fast_model: process.env.LLM_GROQ_FAST_MODEL,
     groq_deep_model: process.env.LLM_GROQ_DEEP_MODEL,
-    gemini_flash_model: process.env.LLM_GEMINI_FLASH_MODEL,
-    gemini_flash_lite_model: process.env.LLM_GEMINI_FLASH_LITE_MODEL,
   },
 }, null, 2));

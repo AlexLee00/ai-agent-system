@@ -511,7 +511,7 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
   return res.json({
     ok: true,
     contractVersion: 'hub-llm-gateway/v1',
-    contractRevision: '2026-07-18.1',
+    contractRevision: '2026-07-19.1',
     status: 'active',
     auth: {
       scheme: 'bearer',
@@ -605,9 +605,12 @@ export async function llmGatewayContractRoute(req: RouteReq, res: RouteRes) {
     },
     providerPolicy: {
       geminiDisabled: isGeminiDisabled(),
+      geminiRetired: true,
       geminiDisableFlag: 'HUB_LLM_GEMINI_DISABLED',
+      geminiEnvRole: 'declaration_only',
+      geminiReenablePolicy: 'code_change_only',
       geminiDisabledError: 'gemini_provider_disabled',
-      directTokenRefreshChecks: isGeminiDisabled() ? 'skipped_for_gemini' : 'enabled',
+      directTokenRefreshChecks: 'skipped_for_gemini',
     },
     timeoutPolicy: {
       requestField: 'timeoutMs',

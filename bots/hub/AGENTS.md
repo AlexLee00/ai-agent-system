@@ -40,7 +40,7 @@
 
 ## 역할
 
-LLM 라우팅(abstract_model→4사)·비밀 관리(secrets-store)·헬스(:7788)·로깅(llm_routing_log)·리포트.
+LLM 라우팅(abstract_model→활성 provider)·비밀 관리(secrets-store)·헬스(:7788)·로깅(llm_routing_log)·리포트. Gemini는 영구 폐기 상태이며 환경변수로 재활성화하지 않는다.
 
 ## 핵심 구성 (2026-07 기준)
 
@@ -48,7 +48,7 @@ LLM 라우팅(abstract_model→4사)·비밀 관리(secrets-store)·헬스(:7788
 |---|---|---|
 | Hub API | 헬스·라우팅 진입(:7788) | bots/hub/ |
 | secrets-store | 14섹션 단일 진실(news·blog·reservation…) | bots/hub/secrets-store.json |
-| llm-models.json | abstract→provider 매핑(4사·110줄) | bots/hub/ |
+| llm-models.json | abstract→활성 provider 매핑·폐기 provider 상태 | bots/hub/ |
 | llm_routing_log | 전 호출 기록(팀·agent·모델·지연) | DB public.llm_routing_log |
 | oauth 3종 | provider 인증 경로 | Elixir supervisor 경유 |
 
@@ -60,4 +60,3 @@ LLM 라우팅(abstract_model→4사)·비밀 관리(secrets-store)·헬스(:7788
 ## 시스템 위치
 
 bots/hub/ · elixir/team_jay(LLM 스택 상주) · 문서 design/DESIGN_PLATFORM_AI_OS.md·DESIGN_PLATFORM_LLM_AGENT_OPTIMIZATION.md
-

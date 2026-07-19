@@ -12,8 +12,6 @@ process.env.LLM_OPENAI_PERF_MODEL = 'openai-oauth/runtime-env-perf';
 process.env.LLM_OPENAI_MINI_MODEL = 'openai-oauth/runtime-env-mini';
 process.env.LLM_GROQ_FAST_MODEL = 'groq/runtime-env-fast';
 process.env.LLM_GROQ_DEEP_MODEL = 'groq/runtime-env-deep';
-process.env.LLM_GEMINI_FLASH_MODEL = 'gemini-cli-oauth/runtime-env-flash';
-process.env.LLM_GEMINI_FLASH_LITE_MODEL = 'gemini-cli-oauth/runtime-env-lite';
 process.env.HUB_BUDGET_GUARDIAN_ENABLED = 'false';
 
 const require = createRequire(import.meta.url);
@@ -103,7 +101,6 @@ assert.equal(hubDefaultChain.runtimeProfile, 'hub.default');
 const runtimeSelectorKeys = [
   'hub.control.planner',
   'hub.session.compaction',
-  'hub.oauth.gemini_cli.expiry_probe',
   'hub.alarm.classifier',
   'hub.alarm.interpreter.work',
   'hub.alarm.interpreter.report',
@@ -113,10 +110,7 @@ const runtimeSelectorKeys = [
   'hub.roundtable.claude_lead',
   'hub.roundtable.team_commander',
   'hub.roundtable.judge',
-  'hub.gemini.cli.adapter.smoke',
-  'hub.gemini.cli.readiness.live',
   'hub.unified.oauth.openai.smoke',
-  'hub.unified.oauth.gemini.smoke',
   'justin._default',
   'justin.stage-3',
   'justin.analysis',
@@ -126,6 +120,14 @@ const runtimeSelectorKeys = [
   'blog.commenter.classify',
   'blog.master.analyze',
 ];
+for (const retiredPurpose of [
+  'oauth.gemini_cli.expiry_probe',
+  'gemini.cli.adapter.smoke',
+  'gemini.cli.readiness.live',
+  'unified.oauth.gemini.smoke',
+]) {
+  assert.equal(PROFILES.hub?.[retiredPurpose], undefined, `${retiredPurpose} must not remain a runtime profile`);
+}
 for (const key of runtimeSelectorKeys) {
   const chain = selector.selectLLMChain(key);
   assert(Array.isArray(chain) && chain.length > 0, `${key} must resolve through the selector registry`);

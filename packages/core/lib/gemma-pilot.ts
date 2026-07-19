@@ -3,6 +3,7 @@ import { selectRuntime } from './runtime-selector';
 import { callHubLlm } from './hub-client';
 
 const { callLocalLLM } = require('./local-llm-client');
+const { isGeminiProvider } = require('./llm-provider-retirement');
 
 type Runtime = {
   provider?: string;
@@ -90,7 +91,9 @@ export async function generateGemmaPilotText({
       } finally {
         clearTimeout(timer);
       }
-    } else if (runtime.provider === 'groq' || runtime.provider === 'openai-oauth' || runtime.provider === 'openai' || runtime.provider === 'claude-code' || runtime.provider === 'gemini-cli-oauth' || runtime.provider === 'gemini') {
+    } else if (isGeminiProvider(runtime.provider)) {
+      return fallbackResult;
+    } else if (runtime.provider === 'groq' || runtime.provider === 'openai-oauth' || runtime.provider === 'openai' || runtime.provider === 'claude-code') {
       const result = await callHubLlm({
         callerTeam: safeTeam || 'hub',
         agent: runtime.selector_agent || safeBot || safePurpose || 'default',

@@ -13,7 +13,7 @@ async function runSmoke() {
   try {
     await recordInvestmentLlmRouteLog({
       agentName,
-      provider: 'gemini-oauth',
+      provider: 'openai-oauth',
       ok: true,
       costUsd: 0.0001,
       latencyMs: 1234,
@@ -21,7 +21,7 @@ async function runSmoke() {
       symbol: 'BTC/USDT',
       taskType: 'final_decision',
       incidentKey,
-      routeChain: [{ provider: 'gemini-oauth', model: 'gemini-2.5-flash' }],
+      routeChain: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini' }],
     });
     await recordInvestmentLlmRouteLog({
       agentName,

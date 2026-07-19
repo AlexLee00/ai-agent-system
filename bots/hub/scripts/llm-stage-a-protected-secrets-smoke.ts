@@ -96,13 +96,26 @@ function assertLaunchdNodePrebuiltDaemonOrTsx(plistName: string, daemonName: str
 assertLaunchdNodePrebuiltDaemonOrTsx('ai.hub.resource-api.plist', 'ai.hub.resource-api', path.join(repoRoot, 'bots', 'hub', 'src', 'hub.ts'));
 const resourceApiPlist = fs.readFileSync(path.join(launchdDir, 'ai.hub.resource-api.plist'), 'utf8');
 for (const key of [
-  'GEMINI_CLI_OAUTH_PROJECT_ID',
   'HUB_ALARM_RATE_LIMIT_PER_MIN',
   'HUB_EVENTS_RATE_LIMIT_PER_MIN',
   'HUB_BUDGET_GUARDIAN_ENABLED',
 ]) {
   assert(resourceApiPlist.includes(`<key>${key}</key>`), `Hub resource-api launchd must include ${key}`);
 }
+for (const retiredGeminiKey of [
+  'GEMINI_CLI_OAUTH_PROJECT_ID',
+  'LLM_GEMINI_FLASH_MODEL',
+  'LLM_GEMINI_FLASH_LITE_MODEL',
+]) {
+  assert(
+    !resourceApiPlist.includes(`<key>${retiredGeminiKey}</key>`),
+    `Hub resource-api launchd must not retain retired Gemini setting ${retiredGeminiKey}`,
+  );
+}
+assert(
+  /<key>HUB_LLM_GEMINI_DISABLED<\/key>\s*<string>true<\/string>/.test(resourceApiPlist),
+  'Hub resource-api launchd must declare Gemini retired',
+);
 
 const logRotatePlistPath = path.join(launchdDir, 'ai.hub.log-rotate.plist');
 const logRotatePlist = fs.readFileSync(logRotatePlistPath, 'utf8');

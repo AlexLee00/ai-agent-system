@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pgPool = require('../../../packages/core/lib/pg-pool.ts');
 import { listLLMSelectorKeys, selectLLMChain } from '../../../packages/core/lib/llm-model-selector.ts';
+import { RETIRED_GEMINI_SELECTOR_KEYS } from '../../../packages/core/lib/llm-provider-retirement.ts';
 import { PROFILES } from '../lib/runtime-profiles.ts';
 
 type SelectorUsage = {
@@ -37,6 +38,7 @@ const IGNORED_DIRS = new Set([
 ]);
 const IGNORED_SELECTOR_KEYS = new Set([
   'hub.adhoc.chain',
+  ...RETIRED_GEMINI_SELECTOR_KEYS,
 ]);
 
 function argValue(name: string, fallback: string | null = null): string | null {
