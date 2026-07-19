@@ -19,13 +19,15 @@ import * as db from './db.ts';
 
 const _require = createRequire(import.meta.url);
 const _hubClient = _require('../../../packages/core/lib/hub-client');
+const { resolveSelectorTimeoutProfile } = _require('../../../packages/core/lib/selector-timeout-profiles.js');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
-const HUB_DEFAULT_TIMEOUT_MS = 65_000;
-const HUB_MAX_TIMEOUT_MS = Math.max(
-  HUB_DEFAULT_TIMEOUT_MS,
+const HUB_DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const HUB_MAX_REQUEST_TIMEOUT_MS = Math.max(
+  HUB_DEFAULT_REQUEST_TIMEOUT_MS,
   Math.min(180_000, Number(process.env.INVESTMENT_LLM_HUB_MAX_TIMEOUT_MS || 180_000) || 180_000),
 );
+const HUB_MAX_FETCH_TIMEOUT_MS = HUB_MAX_REQUEST_TIMEOUT_MS + 5_000;
 
 let observabilityDropCount = 0;
 let lastObservabilityWarnAt = 0;
@@ -53,13 +55,49 @@ export function getObservabilityDropCount(): number {
 
 function normalizeHubRequestTimeout(value: unknown): number {
   const raw = Number(value || 0);
-  if (!Number.isFinite(raw) || raw <= 0) return HUB_DEFAULT_TIMEOUT_MS - 5_000;
-  return Math.max(5_000, Math.min(HUB_MAX_TIMEOUT_MS - 1_000, Math.round(raw)));
+  if (!Number.isFinite(raw) || raw <= 0) return HUB_DEFAULT_REQUEST_TIMEOUT_MS;
+  return Math.max(5_000, Math.min(HUB_MAX_REQUEST_TIMEOUT_MS, Math.round(raw)));
 }
 
 function normalizeHubFetchTimeout(value: unknown): number {
   const requestTimeoutMs = normalizeHubRequestTimeout(value);
-  return Math.max(6_000, Math.min(HUB_MAX_TIMEOUT_MS, requestTimeoutMs + 5_000));
+  return Math.max(6_000, Math.min(HUB_MAX_FETCH_TIMEOUT_MS, requestTimeoutMs + 5_000));
+}
+
+export function resolveHubRequestTiming({
+  selectorKey,
+  taskType,
+  timeoutMs,
+  env = process.env,
+}: {
+  selectorKey: string;
+  taskType?: string;
+  timeoutMs?: number;
+  env?: NodeJS.ProcessEnv;
+}) {
+  const profileEnv = env.SELECTOR_TIMEOUT_PROFILES_ENABLED == null
+    ? { ...env, SELECTOR_TIMEOUT_PROFILES_ENABLED: 'true' }
+    : env;
+  const requestedTimeoutMs = Number(timeoutMs);
+  const hasExplicitTimeout = Number.isFinite(requestedTimeoutMs) && requestedTimeoutMs > 0;
+  const fallbackTimeoutMs = normalizeHubRequestTimeout(timeoutMs);
+  const resolution = resolveSelectorTimeoutProfile(selectorKey, {
+    env: profileEnv,
+    taskType,
+    runtimePurpose: taskType,
+    fallbackTimeoutMs,
+  });
+  const profileTimeoutMs = normalizeHubRequestTimeout(
+    resolution.enabled && resolution.timeoutMs ? resolution.timeoutMs : fallbackTimeoutMs,
+  );
+  const requestTimeoutMs = hasExplicitTimeout
+    ? Math.min(fallbackTimeoutMs, profileTimeoutMs)
+    : profileTimeoutMs;
+  return {
+    ...resolution,
+    requestTimeoutMs,
+    fetchTimeoutMs: normalizeHubFetchTimeout(requestTimeoutMs),
+  };
 }
 
 export function isHubEnabled(): boolean {
@@ -216,16 +254,22 @@ export function buildHubLlmCallPayload(
       ? options.avoidProviders
     : [];
   const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
+  const selectorKey = routingPlan.selectorKey || 'investment._default';
+  const timing = resolveHubRequestTiming({
+    selectorKey,
+    taskType: options.taskType || 'trade_signal',
+    timeoutMs: options.timeoutMs,
+  });
   const payload: Record<string, unknown> = {
     prompt:        userPrompt,
     systemPrompt,
     abstractModel,
-    timeoutMs:     normalizeHubRequestTimeout(options.timeoutMs),
+    timeoutMs:     timing.requestTimeoutMs,
     agent:         agentName,
     callerTeam:    options.callerTeam || getHubCallerTeam(),
     urgency,
     taskType:      options.taskType || 'trade_signal',
-    selectorKey:   routingPlan.selectorKey || 'investment._default',
+    selectorKey,
     market:        options.market || null,
     symbol:        options.symbol || null,
     maxTokens:     options.maxTokens,
@@ -240,6 +284,10 @@ export function buildHubLlmCallPayload(
   }
   Object.defineProperty(payload, '_routingSource', {
     value: routingPlan.routingSource,
+    enumerable: false,
+  });
+  Object.defineProperty(payload, '_timeoutResolution', {
+    value: timing,
     enumerable: false,
   });
   // Hub owns selector-chain materialization. Luna only passes selectorKey and
@@ -342,7 +390,7 @@ export async function callViaHub(
         'Authorization': `Bearer ${hubToken}`,
       },
       body,
-      signal: AbortSignal.timeout(normalizeHubFetchTimeout(options.timeoutMs)),
+      signal: AbortSignal.timeout(normalizeHubFetchTimeout(payload.timeoutMs)),
     });
 
     const latencyMs = Date.now() - t0;

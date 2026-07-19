@@ -7,6 +7,7 @@ import { buildPredictiveValidationEvidence } from '../shared/predictive-validati
 import { evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
 import { runBuySafetyGuards } from '../team/hephaestos/execution-guards.ts';
 import { buildFixtureBinanceTopVolumeUniverse } from '../shared/binance-top-volume-universe.ts';
+import { evaluateActiveEntryTriggerQualityGate, loadActiveEntryTriggerQuality } from '../shared/entry-trigger-engine.ts';
 
 function baseDeps(overrides = {}) {
   const captured = [];
@@ -98,11 +99,74 @@ const dsrGateSmallSample = evaluateCandidateBacktestStatus(
 assert.equal(dsrGateSmallSample.wouldBlock, true);
 assert.equal(dsrGateSmallSample.reason, 'candidate_backtest_insufficient_trades');
 
-const dsrNullUnaffected = evaluateCandidateBacktestStatus(
+const dsrNullBlocked = evaluateCandidateBacktestStatus(
   { fresh: true, healthy: true, sharpe_oos_deflated: 1.1, max_drawdown: 10, dsr: null, total_trades_oos: 15, block_reasons: [] },
   { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'shadow', LUNA_DSR_GATE_ENABLED: 'true' },
 );
-assert.equal(dsrNullUnaffected.wouldBlock, false, 'DSR null must not block crypto/top30 candidates');
+assert.equal(dsrNullBlocked.wouldBlock, true, 'enabled DSR gate must fail closed when DSR is missing');
+assert.equal(dsrNullBlocked.reason, 'candidate_backtest_dsr_missing');
+
+const psrNotifyHardBlock = evaluateActiveEntryTriggerQualityGate({ symbol: 'BTC/USDT' }, {
+  symbol: 'BTC/USDT',
+  backtest: {
+    fresh: true,
+    healthy: true,
+    sharpeOosDeflated: 1.1,
+    maxDrawdown: 10,
+    psr: 0.31,
+    lastBacktestAt: new Date().toISOString(),
+    blockReasons: [],
+  },
+  predictive: { decision: 'pass', score: 0.8 },
+}, {
+  activeQualityGateMode: 'notify',
+  flags: { shouldAllowLiveEntryFire: () => true },
+  env: { LUNA_PSR_GATE_ENABLED: 'true', LUNA_PSR_MIN: '0.5' },
+});
+assert.equal(psrNotifyHardBlock.ok, false, 'PSR gate failure must block live entry even in notify mode');
+assert.equal(psrNotifyHardBlock.hardBlock, true);
+assert.equal(psrNotifyHardBlock.hardBlockReason, 'candidate_backtest_psr_gate');
+
+const psrMissingNotifyHardBlock = evaluateActiveEntryTriggerQualityGate({ symbol: 'BTC/USDT' }, {
+  symbol: 'BTC/USDT',
+  backtest: {
+    fresh: true,
+    healthy: true,
+    sharpeOosDeflated: 1.1,
+    maxDrawdown: 10,
+    psr: null,
+    lastBacktestAt: new Date().toISOString(),
+    blockReasons: [],
+  },
+  predictive: { decision: 'pass', score: 0.8 },
+}, {
+  activeQualityGateMode: 'notify',
+  flags: { shouldAllowLiveEntryFire: () => true },
+  env: { LUNA_PSR_GATE_ENABLED: 'true', LUNA_PSR_MIN: '0.5' },
+});
+assert.equal(psrMissingNotifyHardBlock.ok, false, 'missing PSR must fail closed for live entry');
+assert.equal(psrMissingNotifyHardBlock.hardBlockReason, 'candidate_backtest_psr_gate');
+
+const pboQualityMap = await loadActiveEntryTriggerQuality(['PBO/USDT'], {
+  market: 'crypto',
+  env: { LUNA_PBO_GATE_ENABLED: 'true', LUNA_PBO_MAX: '0.3' },
+  queryFn: async (sql) => String(sql).includes('candidate_backtest_status')
+    ? [{
+        symbol: 'PBO/USDT',
+        market: 'crypto',
+        fresh: true,
+        healthy: true,
+        last_backtest_at: new Date().toISOString(),
+        gate_status: 'pass',
+        would_block: false,
+        block_reasons: [],
+        pbo: 0.82,
+      }]
+    : [],
+});
+const pboQuality = pboQualityMap.get('PBO/USDT');
+assert.equal(pboQuality?.backtest?.pbo, 0.82, 'stored PBO must reach the entry quality gate');
+assert.ok(pboQuality?.backtest?.blockReasons?.some((reason) => String(reason).startsWith('candidate_backtest_pbo_high')));
 
 const prevMode = process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE;
 process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE = 'shadow';
@@ -147,7 +211,9 @@ const payload = {
   dsrGateLow,
   dsrGateBlankEnv,
   dsrGateSmallSample,
-  dsrNullUnaffected,
+  dsrNullBlocked,
+  psrNotifyHardBlock,
+  psrMissingNotifyHardBlock,
   enforceCode: enforceDeps.captured[0].payload.code,
   predictive: {
     shadowDecision: shadowPredictive.decision,

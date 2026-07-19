@@ -12,7 +12,7 @@ import { createRequire } from 'module';
 import * as db from '../shared/db.ts';
 import { getInvestmentTradeMode, isKisPaper } from '../shared/secrets.ts';
 import { getCapitalConfig, getDailyTradeCount, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
-import { getMarketRegime } from '../shared/market-regime.ts';
+import { getMarketRegime, REGIMES } from '../shared/market-regime.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { buildRiskApprovalTarget, runRiskApprovalChain } from '../shared/risk-approval-chain.ts';
@@ -98,6 +98,18 @@ function normalizeRegimeMarket(exchange = '') {
   if (value === 'kis' || value === 'domestic') return 'domestic';
   if (value === 'kis_overseas' || value === 'overseas') return 'overseas';
   return value || 'unknown';
+}
+
+export function evaluateMarketRegimeExecutionSafety(marketRegime) {
+  if (!marketRegime || marketRegime.dataAvailable === false || marketRegime.regime === REGIMES.UNKNOWN) {
+    return {
+      approved: false,
+      reason: 'market_regime_data_unavailable',
+      nemesis_verdict: 'rejected',
+      retryable: true,
+    };
+  }
+  return { approved: true, reason: 'market_regime_data_available' };
 }
 
 // ─── 시스템 프롬프트 (마켓별 분기) ──────────────────────────────────
@@ -390,6 +402,34 @@ function applyReviewTpslAdjustment(dynamicTPSL, reviewInsight, entryEstimate = n
 
 // ─── v2: LLM 리스크 평가 ────────────────────────────────────────────
 
+const NEMESIS_LLM_DECISIONS = new Set(['APPROVE', 'ADJUST', 'REJECT']);
+
+export function normalizeNemesisLlmDecision(raw) {
+  const parsed = typeof raw === 'string' ? parseJSON(raw) : raw;
+  const decision = String(parsed?.decision || '').trim().toUpperCase();
+  if (!NEMESIS_LLM_DECISIONS.has(decision)) {
+    return {
+      decision: 'REJECT',
+      adjusted_amount: 0,
+      reasoning: 'invalid_nemesis_llm_response',
+      retryable: true,
+    };
+  }
+  if (decision === 'ADJUST') {
+    const nextAmount = Number(parsed?.adjusted_amount);
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+      return {
+        decision: 'REJECT',
+        adjusted_amount: 0,
+        reasoning: 'invalid_nemesis_adjusted_amount',
+        retryable: true,
+      };
+    }
+    return { ...parsed, decision, adjusted_amount: nextAmount };
+  }
+  return { ...parsed, decision };
+}
+
 async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange }) {
   const rules  = getRules(exchange);
   const hints = await consumeAgentHints('nemesis', {
@@ -419,11 +459,7 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     taskType: 'risk_eval',
     incidentKey: signal?.traceId || signal?.incidentLink || `nemesis:${exchange}:${signal.symbol}:${signal.action || 'unknown'}`,
   });
-  const parsed = parseJSON(raw);
-  if (!parsed?.decision) {
-    return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };
-  }
-  return parsed;
+  return normalizeNemesisLlmDecision(raw);
 }
 
 // ─── Phase 2: 동적 TP/SL (ATR 기반, 마스터 승인 후 활성화) ──────────
@@ -836,6 +872,26 @@ export async function evaluateSignal(signal, opts = {}) {
       }).catch(() => {});
     } catch (error) {
       console.warn(`  ⚠️ [네메시스] 시장 체제 감지 실패: ${error.message}`);
+      marketRegime = {
+        regime: REGIMES.UNKNOWN,
+        confidence: 0,
+        reason: `market_regime_detection_failed:${error.message}`,
+        dataAvailable: false,
+        degraded: true,
+      };
+    }
+
+    const marketRegimeSafety = evaluateMarketRegimeExecutionSafety(marketRegime);
+    if (!marketRegimeSafety.approved) {
+      if (persist && signal.id) {
+        await db.updateSignalStatus(signal.id, SIGNAL_STATUS.REJECTED).catch(() => {});
+      }
+      return {
+        ...marketRegimeSafety,
+        adjustedAmount: 0,
+        traceId,
+        marketRegime,
+      };
     }
 
     await ensureAtrColumn();

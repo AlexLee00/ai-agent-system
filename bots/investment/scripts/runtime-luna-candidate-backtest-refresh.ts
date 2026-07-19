@@ -770,17 +770,44 @@ function evaluateQuality(rows: any[], market: string = 'all') {
   const dsrGateActive = envFlagEnabled(process.env.LUNA_DSR_GATE_ENABLED);
   const dsrMin = envNumber(process.env.LUNA_DSR_MIN, 0.90);
   const dsrMinTrades = Math.max(1, Math.floor(envNumber(process.env.LUNA_DSR_MIN_TRADES, 30)));
-  const dsrVals = oosRows.filter((r) => r?.dsr != null).map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
-  const avgDsr = dsrVals.length > 0 ? dsrVals.reduce((s, v) => s + v, 0) / dsrVals.length : null;
+  const dsrVals = qualityRows.filter((r) => r?.dsr != null).map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
+  const minDsr = dsrVals.length > 0 ? Math.min(...dsrVals) : null;
   const dsrInsufficientTrades = minTradesOos != null && minTradesOos < dsrMinTrades;
-  const dsrWouldBlock = dsrGateActive && avgDsr != null && (dsrInsufficientTrades || avgDsr < dsrMin);
+  const dsrMissing = dsrGateActive && dsrVals.length !== qualityRows.length;
+  const dsrWouldBlock = dsrGateActive && (dsrMissing || dsrInsufficientTrades || (minDsr != null && minDsr < dsrMin));
   const dsrReasons: string[] = [];
   if (dsrWouldBlock) {
+    if (dsrMissing) dsrReasons.push('candidate_backtest_dsr_missing');
     if (dsrInsufficientTrades) dsrReasons.push(`candidate_backtest_insufficient_trades(${minTradesOos}<${dsrMinTrades})`);
-    if (avgDsr < dsrMin) dsrReasons.push(`candidate_backtest_dsr_low(${avgDsr.toFixed(4)}<${dsrMin})`);
+    if (minDsr != null && minDsr < dsrMin) dsrReasons.push(`candidate_backtest_dsr_low(${minDsr.toFixed(4)}<${dsrMin})`);
   }
-  const effectiveWouldBlock = wouldBlock || dsrWouldBlock;
-  const effectiveMergedReasons = dsrReasons.length > 0 ? [...new Set([...mergedReasons, ...dsrReasons])] : mergedReasons;
+  const psrGateActive = envFlagEnabled(process.env.LUNA_PSR_GATE_ENABLED);
+  const psrMin = envNumber(process.env.LUNA_PSR_MIN, 0.50);
+  const psrVals = qualityRows.filter((r) => r?.psr != null).map((r) => safeNum(r?.psr, NaN)).filter(Number.isFinite);
+  const minPsr = psrVals.length > 0 ? Math.min(...psrVals) : null;
+  const psrMissing = psrGateActive && psrVals.length !== qualityRows.length;
+  const psrWouldBlock = psrGateActive && (psrMissing || (minPsr != null && minPsr < psrMin));
+  const psrReasons: string[] = [];
+  if (psrMissing) psrReasons.push('candidate_backtest_psr_missing');
+  if (psrGateActive && minPsr != null && minPsr < psrMin) {
+    psrReasons.push(`candidate_backtest_psr_low(${minPsr.toFixed(4)}<${psrMin})`);
+  }
+  const pboGateActive = envFlagEnabled(process.env.LUNA_PBO_GATE_ENABLED);
+  const pboMax = envNumber(process.env.LUNA_PBO_MAX, 0.30);
+  const pboVals = qualityRows.filter((r) => r?.pbo != null).map((r) => safeNum(r?.pbo, NaN)).filter(Number.isFinite);
+  const maxPbo = pboVals.length > 0 ? Math.max(...pboVals) : null;
+  const pboMissing = pboGateActive && pboVals.length !== qualityRows.length;
+  const pboWouldBlock = pboGateActive && (pboMissing || (maxPbo != null && maxPbo > pboMax));
+  const pboReasons: string[] = [];
+  if (pboMissing) pboReasons.push('candidate_backtest_pbo_missing');
+  if (pboGateActive && maxPbo != null && maxPbo > pboMax) {
+    pboReasons.push(`candidate_backtest_pbo_high(${maxPbo.toFixed(4)}>${pboMax})`);
+  }
+  const statisticalReasons = [...dsrReasons, ...psrReasons, ...pboReasons];
+  const effectiveWouldBlock = wouldBlock || dsrWouldBlock || psrWouldBlock || pboWouldBlock;
+  const effectiveMergedReasons = statisticalReasons.length > 0
+    ? [...new Set([...mergedReasons, ...statisticalReasons])]
+    : mergedReasons;
   const metaLabelRows = (() => {
     const seen = new Set<string>();
     const rows = [];
@@ -863,15 +890,9 @@ function evaluateQuality(rows: any[], market: string = 'all') {
     oosReturnsSkew: avgOosSkew != null ? Number(avgOosSkew.toFixed(6)) : null,
     oosReturnsKurt: avgOosKurt != null ? Number(avgOosKurt.toFixed(6)) : null,
     oosBars: oosBars != null ? Math.round(oosBars) : null,
-    // Phase 1b: 정통 DSR/PSR (SHADOW — 기존 판정 불변)
-    dsr: (() => {
-      const vals = oosRows.filter((r) => r?.dsr != null).map((r) => safeNum(r?.dsr, NaN)).filter(Number.isFinite);
-      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
-    })(),
-    psr: (() => {
-      const vals = oosRows.filter((r) => r?.psr != null).map((r) => safeNum(r?.psr, NaN)).filter(Number.isFinite);
-      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
-    })(),
+    // Phase 1b: 정통 DSR/PSR — opt-in promotion gate 입력
+    dsr: minDsr != null ? Number(minDsr.toFixed(6)) : null,
+    psr: minPsr != null ? Number(minPsr.toFixed(6)) : null,
     sr0: (() => {
       const vals = oosRows.filter((r) => r?.sr0 != null).map((r) => safeNum(r?.sr0, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
@@ -884,11 +905,8 @@ function evaluateQuality(rows: any[], market: string = 'all') {
       const vals = qualityRows.filter((r) => r?.periods_per_year != null).map((r) => safeNum(r?.periods_per_year, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)) : null;
     })(),
-    // Phase 1c: CPCV/PBO (SHADOW — healthy/gate_status 판정 미반영)
-    pbo: (() => {
-      const vals = qualityRows.filter((r) => r?.pbo != null).map((r) => safeNum(r?.pbo, NaN)).filter(Number.isFinite);
-      return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;
-    })(),
+    // Phase 1c: CPCV/PBO — PBO opt-in promotion gate 입력
+    pbo: maxPbo != null ? Number(maxPbo.toFixed(6)) : null,
     perfDegradation: (() => {
       const vals = qualityRows.filter((r) => r?.perf_degradation != null).map((r) => safeNum(r?.perf_degradation, NaN)).filter(Number.isFinite);
       return vals.length > 0 ? Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(6)) : null;

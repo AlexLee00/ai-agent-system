@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import fs from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildOpsSchedulerAgentPlan } from '../shared/luna-ops-scheduler-agent-plan.ts';
@@ -12,8 +14,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
 const DEFAULT_STATE_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler-state.json');
 const DEFAULT_LOCK_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler.lock');
-const LOCK_STALE_MS = 20 * 60 * 1000;
+const SCHEDULER_LEASE_PORT_MIN = 40_000;
+const SCHEDULER_LEASE_PORT_SPAN = 20_000;
 const DEFAULT_JOB_TIMEOUT_MS = 3 * 60 * 1000;
+const JOB_TIMEOUT_MS = Object.freeze({
+  marketCycle: 10 * 60 * 1000,
+  longShadowBatch: 15 * 60 * 1000,
+});
+const LEGACY_LOCK_STALE_MS = JOB_TIMEOUT_MS.longShadowBatch + 5 * 60 * 1000;
 const DEFAULT_STDOUT_TAIL_CHARS = 500;
 const DEFAULT_STDERR_TAIL_CHARS = 1000;
 const PRE_MARKET_ANALYSIS_MAX_SYMBOLS = '5';
@@ -32,6 +40,31 @@ function isProcessAlive(pid) {
   } catch (error) {
     return error?.code === 'EPERM';
   }
+}
+
+export function getProcessStartMarker(pid) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) return null;
+  const result = spawnSync('/bin/ps', ['-o', 'lstart=', '-p', String(numericPid)], {
+    encoding: 'utf8',
+    timeout: 2_000,
+  });
+  if (result.status !== 0) return null;
+  return String(result.stdout || '').trim() || null;
+}
+
+function hasFreshLegacyLockTimestamp(lock = {}, nowMs = Date.now()) {
+  const timestamp = new Date(lock.heartbeatAt || lock.lockedAt || '').getTime();
+  return Number.isFinite(timestamp) && nowMs - timestamp <= LEGACY_LOCK_STALE_MS;
+}
+
+function isLockOwnerAlive(lock = {}, nowMs = Date.now()) {
+  if (!isProcessAlive(lock.pid)) return false;
+  const expectedStart = String(lock.processStartMarker || '').trim();
+  if (!expectedStart) return hasFreshLegacyLockTimestamp(lock, nowMs);
+  const actualStart = getProcessStartMarker(lock.pid);
+  if (actualStart) return actualStart === expectedStart;
+  return hasFreshLegacyLockTimestamp(lock, nowMs);
 }
 
 function nodeScript(script, args = []) {
@@ -160,6 +193,7 @@ export function getOpsSchedulerJobs() {
       market: 'crypto',
       immutable: true,
       cadence: { type: 'interval', seconds: 300 },
+      timeoutMs: JOB_TIMEOUT_MS.marketCycle,
       ...marketScript('crypto.ts'),
     },
     {
@@ -199,6 +233,19 @@ export function getOpsSchedulerJobs() {
         '--derive-market-events',
         '--json',
       ]),
+    },
+    {
+      name: 'approved_signal_executor_crypto',
+      category: 'execution',
+      market: 'crypto',
+      immutable: true,
+      cadence: { type: 'interval', seconds: 60 },
+      ...teamScript('hephaestos.ts', [], {
+        PAPER_MODE: 'false',
+        INVESTMENT_TRADE_MODE: 'normal',
+        LUNA_LIVE_FIRE_ENABLED: 'true',
+        HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY: '1',
+      }),
     },
     {
       name: 'entry_llm_shadow',
@@ -354,7 +401,7 @@ export function getOpsSchedulerJobs() {
       category: 'quality_remediation_shadow',
       market: 'all',
       cadence: { type: 'interval', seconds: 3600 },
-      timeoutMs: 360_000,
+      timeoutMs: JOB_TIMEOUT_MS.longShadowBatch,
       ...nodeScript('runtime-luna-candidate-quality-remediation.ts', [
         '--apply',
         '--confirm=luna-candidate-quality-remediation-shadow',
@@ -552,25 +599,13 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
-      name: 'approved_signal_executor_crypto',
-      category: 'execution',
-      market: 'crypto',
-      immutable: true,
-      cadence: { type: 'interval', seconds: 60 },
-      ...teamScript('hephaestos.ts', [], {
-        PAPER_MODE: 'false',
-        INVESTMENT_TRADE_MODE: 'normal',
-        LUNA_LIVE_FIRE_ENABLED: 'true',
-        HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY: '1',
-      }),
-    },
-    {
       name: 'market_cycle_domestic',
       category: 'market_cycle',
       market: 'domestic',
       immutable: true,
       requiresMarketOpen: true,
       cadence: { type: 'interval', seconds: 1800 },
+      timeoutMs: JOB_TIMEOUT_MS.marketCycle,
       ...marketScript('domestic.ts', [], { LUNA_LIVE_DOMESTIC: 'true' }),
     },
     {
@@ -580,6 +615,7 @@ export function getOpsSchedulerJobs() {
       immutable: true,
       requiresMarketOpen: true,
       cadence: { type: 'interval', seconds: 300 },
+      timeoutMs: JOB_TIMEOUT_MS.marketCycle,
       ...marketScript('domestic.ts', ['--open-catchup'], { LUNA_LIVE_DOMESTIC: 'true' }),
     },
     {
@@ -589,6 +625,7 @@ export function getOpsSchedulerJobs() {
       immutable: true,
       requiresMarketOpen: true,
       cadence: { type: 'interval', seconds: 1800 },
+      timeoutMs: JOB_TIMEOUT_MS.marketCycle,
       ...marketScript('overseas.ts', [], { LUNA_LIVE_OVERSEAS: 'true' }),
     },
     {
@@ -905,7 +942,13 @@ function readJsonSafe(filePath, fallback = {}) {
 
 function writeJson(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tempPath, filePath);
+  } finally {
+    fs.rmSync(tempPath, { force: true });
+  }
 }
 
 function sameLocalDate(a, b) {
@@ -1027,25 +1070,118 @@ export function buildOpsSchedulerPlan({
   };
 }
 
-function acquireLock(lockPath, now = new Date()) {
-  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-  if (fs.existsSync(lockPath)) {
-    const current = readJsonSafe(lockPath, {});
-    const lockedAt = current.lockedAt ? new Date(current.lockedAt).getTime() : 0;
-    const lockFresh = lockedAt && now.getTime() - lockedAt < LOCK_STALE_MS;
-    if (lockFresh && isProcessAlive(current.pid)) {
-      return { ok: false, status: 'locked', lockPath, current };
-    }
+function createLockFile(lockPath, payload) {
+  const fd = fs.openSync(lockPath, 'wx', 0o600);
+  try {
+    fs.writeFileSync(fd, JSON.stringify(payload, null, 2), 'utf8');
+  } finally {
+    fs.closeSync(fd);
   }
-  writeJson(lockPath, { lockedAt: now.toISOString(), pid: process.pid });
-  return { ok: true, lockPath };
 }
 
-function releaseLock(lockPath) {
+function sameLockOwner(left = {}, right = {}) {
+  return Number(left.pid) === Number(right.pid)
+    && String(left.token || '') === String(right.token || '')
+    && String(left.lockedAt || '') === String(right.lockedAt || '')
+    && String(left.processStartMarker || '') === String(right.processStartMarker || '');
+}
+
+function resolveSchedulerLeasePort(lockPath) {
+  const configured = Number(process.env.LUNA_OPS_SCHEDULER_LOCK_PORT || 0);
+  if (path.resolve(lockPath) === path.resolve(DEFAULT_LOCK_PATH)
+    && Number.isInteger(configured)
+    && configured > 0
+    && configured < 65_536) {
+    return configured;
+  }
+  const digest = createHash('sha256').update(path.resolve(lockPath)).digest();
+  return SCHEDULER_LEASE_PORT_MIN + (digest.readUInt16BE(0) % SCHEDULER_LEASE_PORT_SPAN);
+}
+
+function acquireSchedulerLease(lockPath) {
+  const port = resolveSchedulerLeasePort(lockPath);
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', (error) => {
+      if (error?.code === 'EADDRINUSE' || error?.code === 'EACCES') {
+        resolve({ ok: false, status: 'lock_contention', port });
+        return;
+      }
+      reject(error);
+    });
+    server.listen({ host: '127.0.0.1', port, exclusive: true }, () => {
+      resolve({ ok: true, server, port });
+    });
+  });
+}
+
+function releaseSchedulerLease(lease) {
+  if (!lease?.server) return Promise.resolve();
+  return new Promise((resolve) => {
+    try {
+      lease.server.close(() => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+function acquireLock(lockPath, now = new Date()) {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  const token = randomUUID();
+  const payload = {
+    lockedAt: now.toISOString(),
+    heartbeatAt: now.toISOString(),
+    pid: process.pid,
+    processStartMarker: getProcessStartMarker(process.pid),
+    token,
+  };
+
   try {
+    createLockFile(lockPath, payload);
+    return { ok: true, lockPath, token };
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    const current = readJsonSafe(lockPath, {});
+    if (isLockOwnerAlive(current, now.getTime())) {
+      return { ok: false, status: 'locked', lockPath, current };
+    }
+    const rechecked = readJsonSafe(lockPath, {});
+    if (!sameLockOwner(current, rechecked)) {
+      return { ok: false, status: 'lock_contention', lockPath, current: rechecked };
+    }
+    try {
+      fs.unlinkSync(lockPath);
+    } catch (unlinkError) {
+      if (unlinkError?.code !== 'ENOENT') throw unlinkError;
+    }
+    try {
+      createLockFile(lockPath, payload);
+      return { ok: true, lockPath, token };
+    } catch (createError) {
+      if (createError?.code !== 'EEXIST') throw createError;
+    }
+  }
+  return { ok: false, status: 'lock_contention', lockPath, current: readJsonSafe(lockPath, {}) };
+}
+
+function refreshLock(lockPath, token, now = new Date()) {
+  const current = readJsonSafe(lockPath, {});
+  if (!token || current.token !== token) return false;
+  writeJson(lockPath, { ...current, heartbeatAt: now.toISOString() });
+  return true;
+}
+
+function releaseLock(lockPath, token) {
+  try {
+    const current = readJsonSafe(lockPath, {});
+    if (!token || current.token !== token) return false;
     fs.unlinkSync(lockPath);
+    return true;
   } catch {
     // best effort cleanup
+    return false;
   }
 }
 
@@ -1118,35 +1254,69 @@ function summarizeOpsSchedulerResultForLog(result = {}) {
   };
 }
 
-function runCommand(job, { timeoutMs = DEFAULT_JOB_TIMEOUT_MS, runner = null } = {}) {
+async function terminalizeTimedOutPipeline(runToken, context = {}) {
+  const { abortPipelineRunsBySchedulerToken } = await import('../shared/pipeline-db.ts');
+  return abortPipelineRunsBySchedulerToken(runToken, context);
+}
+
+async function runCommand(job, {
+  timeoutMs = DEFAULT_JOB_TIMEOUT_MS,
+  runner = null,
+  timeoutFinalizer = terminalizeTimedOutPipeline,
+} = {}) {
+  const schedulerRunToken = randomUUID();
+  const effectiveTimeoutMs = resolveJobTimeoutMs(job, timeoutMs);
+  const effectiveJob = {
+    ...job,
+    env: {
+      ...(job.env || {}),
+      LUNA_SCHEDULER_RUN_TOKEN: schedulerRunToken,
+      LUNA_SCHEDULER_JOB_NAME: String(job.name || ''),
+    },
+  };
+  const startedAtMs = Date.now();
+  let commandResult;
   if (runner) {
-    const result = runner(job);
-    return {
-      ...result,
-      ...(!result?.outcome ? classifyOpsSchedulerOutcome(job, result) : {}),
+    commandResult = await runner(effectiveJob);
+  } else {
+    const result = spawnSync(effectiveJob.command, effectiveJob.args || [], {
+      cwd: INVESTMENT_DIR,
+      encoding: 'utf8',
+      timeout: effectiveTimeoutMs,
+      env: { ...process.env, ...(effectiveJob.env || {}) },
+    });
+    const stdout = String(result.stdout || '');
+    const stderr = String(result.stderr || '');
+    const stdoutTailChars = positiveIntEnv('LUNA_OPS_SCHEDULER_STDOUT_TAIL_CHARS', DEFAULT_STDOUT_TAIL_CHARS);
+    const stderrTailChars = positiveIntEnv('LUNA_OPS_SCHEDULER_STDERR_TAIL_CHARS', DEFAULT_STDERR_TAIL_CHARS);
+    commandResult = {
+      ok: result.status === 0,
+      status: result.status,
+      signal: result.signal || null,
+      stdout,
+      stderr,
+      stdoutTail: tailText(stdout, stdoutTailChars),
+      stderrTail: tailText(stderr, stderrTailChars),
+      error: result.error?.message || null,
     };
   }
-  const result = spawnSync(job.command, job.args || [], {
-    cwd: INVESTMENT_DIR,
-    encoding: 'utf8',
-    timeout: resolveJobTimeoutMs(job, timeoutMs),
-    env: { ...process.env, ...(job.env || {}) },
-  });
-  const stdout = String(result.stdout || '');
-  const stderr = String(result.stderr || '');
-  const stdoutTailChars = positiveIntEnv('LUNA_OPS_SCHEDULER_STDOUT_TAIL_CHARS', DEFAULT_STDOUT_TAIL_CHARS);
-  const stderrTailChars = positiveIntEnv('LUNA_OPS_SCHEDULER_STDERR_TAIL_CHARS', DEFAULT_STDERR_TAIL_CHARS);
-  const baseResult = {
-    ok: result.status === 0,
-    status: result.status,
-    signal: result.signal || null,
-    stdoutTail: tailText(stdout, stdoutTailChars),
-    stderrTail: tailText(stderr, stderrTailChars),
-    error: result.error?.message || null,
-  };
+
+  const classified = commandResult?.outcome
+    ? commandResult
+    : { ...commandResult, ...classifyOpsSchedulerOutcome(job, commandResult) };
+  let timeoutFinalization = null;
+  if (classified.outcome === 'command_timeout' && typeof timeoutFinalizer === 'function') {
+    timeoutFinalization = await timeoutFinalizer(schedulerRunToken, {
+      jobName: job.name,
+      reason: classified.summary || classified.error || 'scheduler_timeout',
+    }).catch((error) => ({ ok: false, error: String(error?.message || error) }));
+  }
   return {
-    ...baseResult,
-    ...classifyOpsSchedulerOutcome(job, { ...baseResult, stdout, stderr }),
+    ...classified,
+    durationMs: Date.now() - startedAtMs,
+    effectiveTimeoutMs,
+    schedulerRunToken,
+    timeoutFinalization,
   };
 }
 
@@ -1283,6 +1453,7 @@ export async function runOpsScheduler({
   writeState = true,
   now = new Date(),
   runner = null,
+  timeoutFinalizer = terminalizeTimedOutPipeline,
   jobs = getOpsSchedulerJobs(),
   agentPlan = null,
 } = {}) {
@@ -1290,10 +1461,12 @@ export async function runOpsScheduler({
     return { ok: true, status: 'disabled', dryRun, generatedAt: now.toISOString(), executed: [] };
   }
 
-  const lock = dryRun ? { ok: true, dryRun: true } : acquireLock(lockPath, now);
-  if (!lock.ok) return { ok: false, status: lock.status, dryRun, lockPath, executed: [] };
-
+  const lease = dryRun ? { ok: true, dryRun: true } : await acquireSchedulerLease(lockPath);
+  if (!lease.ok) return { ok: false, status: lease.status, dryRun, lockPath, executed: [] };
+  let lock = null;
   try {
+    lock = dryRun ? { ok: true, dryRun: true } : acquireLock(lockPath, now);
+    if (!lock.ok) return { ok: false, status: lock.status, dryRun, lockPath, executed: [] };
     const state = readJsonSafe(statePath, { jobs: {} });
     const plan = buildOpsSchedulerPlan({ now, state, jobs, onlyJob, force, agentPlan });
     const scheduledJobs = plan.agentPlan?.jobs || jobs;
@@ -1306,21 +1479,34 @@ export async function runOpsScheduler({
         executed.push({ name: job.name, dryRun: true, planned: true, ok: true });
         continue;
       }
+      refreshLock(lockPath, lock.token);
       const startedAt = new Date().toISOString();
-      const result = runCommand(job, { runner });
+      const result = await runCommand(job, { runner, timeoutFinalizer });
       const finishedAt = new Date().toISOString();
       executed.push({ name: job.name, dryRun: false, startedAt, finishedAt, ...result });
       if (writeState) {
+        const previous = nextState.jobs[job.name] || {};
+        const failed = result.ok !== true;
         nextState.jobs[job.name] = {
-          lastRunAt: now.toISOString(),
-          lastStatus: result.ok ? 'ok' : 'failed',
+          ...previous,
+          lastRunAt: finishedAt,
+          lastStatus: failed ? 'failed' : 'ok',
           lastOutcome: result.outcome || 'ok',
           lastSummary: result.summary || null,
           approvedSignals: result.approvedSignals ?? null,
-          lastError: result.ok ? null : result.error || result.stderrTail || result.signal || null,
+          lastError: failed ? result.error || result.stderrTail || result.signal || null : null,
+          lastDurationMs: result.durationMs ?? null,
+          effectiveTimeoutMs: result.effectiveTimeoutMs ?? null,
+          totalRuns: Number(previous.totalRuns || 0) + 1,
+          totalFailures: Number(previous.totalFailures || 0) + (failed ? 1 : 0),
+          consecutiveFailures: failed ? Number(previous.consecutiveFailures || 0) + 1 : 0,
+          lastFailureAt: failed ? finishedAt : previous.lastFailureAt || null,
+          lastSuccessAt: failed ? previous.lastSuccessAt || null : finishedAt,
+          timeoutFinalization: result.timeoutFinalization || null,
           updatedAt: finishedAt,
         };
       }
+      refreshLock(lockPath, lock.token);
     }
 
     if (!dryRun && writeState) {
@@ -1337,7 +1523,8 @@ export async function runOpsScheduler({
       executed,
     };
   } finally {
-    if (!dryRun) releaseLock(lockPath);
+    if (!dryRun && lock?.ok) releaseLock(lockPath, lock.token);
+    if (!dryRun) await releaseSchedulerLease(lease);
   }
 }
 

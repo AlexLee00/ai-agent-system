@@ -1,8 +1,19 @@
 // @ts-nocheck
 import { randomUUID } from 'crypto';
-import { get, query, run } from './db.ts';
+import { get, query, run, withTransaction } from './db.ts';
 
 let _pipelineInitPromise = null;
+
+function withSchedulerExecutionMetadata(metadata = {}) {
+  const token = String(process.env.LUNA_SCHEDULER_RUN_TOKEN || '').trim();
+  const jobName = String(process.env.LUNA_SCHEDULER_JOB_NAME || '').trim();
+  if (!token) return metadata || {};
+  return {
+    ...(metadata || {}),
+    schedulerRunToken: token,
+    ...(jobName ? { schedulerJobName: jobName } : {}),
+  };
+}
 
 async function ensurePipelineSchema() {
   if (_pipelineInitPromise) return _pipelineInitPromise;
@@ -66,6 +77,7 @@ export async function createPipelineRun({
   await ensurePipelineSchema();
   const sessionId = randomUUID();
   const startedAt = Date.now();
+  const effectiveMeta = withSchedulerExecutionMetadata(meta);
   await run(`
     INSERT INTO pipeline_runs (
       session_id, pipeline, market, symbols, trigger_type, trigger_ref,
@@ -80,7 +92,7 @@ export async function createPipelineRun({
     triggerRef,
     'running',
     startedAt,
-    JSON.stringify(meta || {}),
+    JSON.stringify(effectiveMeta),
   ]);
   return sessionId;
 }
@@ -129,6 +141,7 @@ export async function startNodeRun({
 } = {}) {
   await ensurePipelineSchema();
   const id = randomUUID();
+  const effectiveMetadata = withSchedulerExecutionMetadata(metadata);
   await run(`
     INSERT INTO pipeline_node_runs (
       id, session_id, node_id, node_type, symbol, input_ref,
@@ -144,7 +157,7 @@ export async function startNodeRun({
     'running',
     Date.now(),
     attempt,
-    JSON.stringify(metadata || {}),
+    JSON.stringify(effectiveMetadata),
   ]);
   return id;
 }
@@ -163,11 +176,61 @@ export async function finishNodeRun(nodeRunId, {
     ? row?.metadata ?? null
     : JSON.stringify({ ...(row?.metadata || {}), ...(metadata || {}) });
 
-  await run(`
+  const result = await run(`
     UPDATE pipeline_node_runs
     SET status = ?, output_ref = ?, finished_at = ?, duration_ms = ?, error = ?, metadata = COALESCE(?, metadata)
-    WHERE id = ?
+    WHERE id = ? AND status = 'running'
   `, [status, outputRef, finishedAt, durationMs, error, mergedMeta, nodeRunId]);
+  return { updated: Number(result?.rowCount || 0) > 0, status };
+}
+
+export async function abortPipelineRunsBySchedulerToken(runToken, {
+  reason = 'scheduler_timeout',
+  jobName = null,
+} = {}) {
+  const token = String(runToken || '').trim();
+  if (!token) return { ok: false, reason: 'scheduler_run_token_missing', pipelineRuns: 0, nodeRuns: 0 };
+  await ensurePipelineSchema();
+  const finishedAt = Date.now();
+  const error = String(reason || 'scheduler_timeout').slice(0, 500);
+  return withTransaction(async (tx) => {
+    const nodeResult = await tx.run(`
+      UPDATE pipeline_node_runs AS node
+         SET status = 'aborted_timeout',
+             finished_at = $1,
+             duration_ms = GREATEST(0, $2 - node.started_at),
+             error = $3,
+             metadata = COALESCE(node.metadata, '{}'::jsonb)
+               || jsonb_build_object('schedulerTimeout', true, 'schedulerJobName', $4::text)
+       WHERE node.status = 'running'
+         AND EXISTS (
+           SELECT 1
+             FROM pipeline_runs AS pipeline
+            WHERE pipeline.session_id = node.session_id
+              AND pipeline.status = 'running'
+              AND pipeline.meta->>'schedulerRunToken' = $5
+         )
+    `, [finishedAt, finishedAt, error, jobName, token]);
+    const pipelineResult = await tx.run(`
+      UPDATE pipeline_runs
+         SET status = 'aborted_timeout',
+             finished_at = $1,
+             duration_ms = GREATEST(0, $2 - started_at),
+             meta = COALESCE(meta, '{}'::jsonb)
+               || jsonb_build_object(
+                 'schedulerTimeout', true,
+                 'schedulerTimeoutReason', $3::text,
+                 'schedulerJobName', $4::text
+               )
+       WHERE status = 'running'
+         AND meta->>'schedulerRunToken' = $5
+    `, [finishedAt, finishedAt, error, jobName, token]);
+    return {
+      ok: true,
+      pipelineRuns: Number(pipelineResult?.rowCount || 0),
+      nodeRuns: Number(nodeResult?.rowCount || 0),
+    };
+  });
 }
 
 export async function getPipelineRun(sessionId) {
@@ -199,6 +262,7 @@ export default {
   updatePipelineRunMeta,
   startNodeRun,
   finishNodeRun,
+  abortPipelineRunsBySchedulerToken,
   getPipelineRun,
   getNodeRuns,
   getNodeRunsForSymbol,

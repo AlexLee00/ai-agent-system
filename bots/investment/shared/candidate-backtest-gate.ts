@@ -31,6 +31,8 @@ const GENUINE_BACKTEST_FAIL_PREFIXES = [
   'unrealistic_sharpe',
   'overfit_gap_high',
   'candidate_backtest_dsr_low',
+  'candidate_backtest_psr_low',
+  'candidate_backtest_pbo_high',
 ];
 
 const UNIVERSE_BLOCK_PREFIXES = [
@@ -50,6 +52,9 @@ const DATA_INCOMPLETE_PREFIXES = [
   'fallback_only_backtest',
   'non_vectorbt_backtest',
   'candidate_backtest_insufficient_trades',
+  'candidate_backtest_dsr_missing',
+  'candidate_backtest_psr_missing',
+  'candidate_backtest_pbo_missing',
   'candidate_backtest_missing',
 ];
 
@@ -138,7 +143,7 @@ export async function ensureCandidateBacktestSchema() {
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_returns_skew DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_returns_kurt DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS oos_bars INTEGER`);
-  // Phase 1b: 정통 DSR/PSR 컬럼 (SHADOW — 기존 컬럼/판정 불변)
+  // Phase 1b: 정통 DSR/PSR 컬럼 — opt-in promotion gate 입력
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS dsr DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS psr DOUBLE PRECISION`);
   await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS sr0 DOUBLE PRECISION`);
@@ -268,13 +273,20 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const dsr = row.dsr != null ? finiteNumber(row.dsr, null) : null;
   const totalTradesOos = row.total_trades_oos != null ? finiteNumber(row.total_trades_oos, null) : null;
   const insufficientTrades = totalTradesOos != null && totalTradesOos < dsrMinTrades;
-  const dsrWouldBlock = dsrGateActive && dsr != null && (insufficientTrades || dsr < dsrMin);
+  const dsrMissing = dsrGateActive && dsr == null;
+  const dsrWouldBlock = dsrGateActive && (dsrMissing || insufficientTrades || dsr < dsrMin);
+  const psrGateActive = ENABLED.has(String(env.LUNA_PSR_GATE_ENABLED || 'false').trim().toLowerCase());
+  const psrMin = envNumber(env.LUNA_PSR_MIN, 0.50);
+  const psr = row.psr != null ? finiteNumber(row.psr, null) : null;
+  const psrMissing = psrGateActive && psr == null;
+  const psrWouldBlock = psrGateActive && (psrMissing || psr < psrMin);
   const pboGateActive = ENABLED.has(String(env.LUNA_PBO_GATE_ENABLED || 'false').trim().toLowerCase());
   const pboMax = envNumber(env.LUNA_PBO_MAX, 0.30);
   const pbo = row.pbo != null ? finiteNumber(row.pbo, null) : null;
-  const pboWouldBlock = pboGateActive && pbo != null && Number.isFinite(pboMax) && pbo > pboMax;
+  const pboMissing = pboGateActive && pbo == null;
+  const pboWouldBlock = pboGateActive && (pboMissing || (Number.isFinite(pboMax) && pbo > pboMax));
 
-  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock || pboWouldBlock;
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock || sharpeWouldBlock || dsrWouldBlock || psrWouldBlock || pboWouldBlock;
   const reasons = parseReasons(row.block_reasons);
   const gateStatus = String(row.gate_status || row.gateStatus || '').toLowerCase();
   const unstableBacktest = gateStatus.includes('unstable')
@@ -294,9 +306,11 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
       : drawdownWouldBlock
         ? 'candidate_backtest_drawdown_high'
         : dsrWouldBlock
-          ? (insufficientTrades ? 'candidate_backtest_insufficient_trades' : 'candidate_backtest_dsr_low')
+          ? (dsrMissing ? 'candidate_backtest_dsr_missing' : insufficientTrades ? 'candidate_backtest_insufficient_trades' : 'candidate_backtest_dsr_low')
+          : psrWouldBlock
+            ? (psrMissing ? 'candidate_backtest_psr_missing' : 'candidate_backtest_psr_low')
           : pboWouldBlock
-            ? 'candidate_backtest_pbo_high'
+            ? (pboMissing ? 'candidate_backtest_pbo_missing' : 'candidate_backtest_pbo_high')
           : wouldBlock
             ? 'candidate_backtest_would_block'
           : null;
@@ -311,14 +325,26 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     effectiveReasons = [...effectiveReasons, `sharpe_oos_deflated_low(${effectiveSharpe.toFixed(2)}<${minSharpe})`];
   }
   if (dsrWouldBlock) {
+    if (dsrMissing && !effectiveReasons.includes('candidate_backtest_dsr_missing')) {
+      effectiveReasons = [...effectiveReasons, 'candidate_backtest_dsr_missing'];
+    }
     if (insufficientTrades && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_insufficient_trades'))) {
       effectiveReasons = [...effectiveReasons, `candidate_backtest_insufficient_trades(${totalTradesOos}<${dsrMinTrades})`];
     }
-    if (dsr < dsrMin && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_dsr_low'))) {
+    if (dsr != null && dsr < dsrMin && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_dsr_low'))) {
       effectiveReasons = [...effectiveReasons, `candidate_backtest_dsr_low(${dsr.toFixed(4)}<${dsrMin})`];
     }
   }
-  if (pboWouldBlock && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_pbo_high'))) {
+  if (psrMissing && !effectiveReasons.includes('candidate_backtest_psr_missing')) {
+    effectiveReasons = [...effectiveReasons, 'candidate_backtest_psr_missing'];
+  }
+  if (psrGateActive && psr != null && psr < psrMin && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_psr_low'))) {
+    effectiveReasons = [...effectiveReasons, `candidate_backtest_psr_low(${psr.toFixed(4)}<${psrMin})`];
+  }
+  if (pboMissing && !effectiveReasons.includes('candidate_backtest_pbo_missing')) {
+    effectiveReasons = [...effectiveReasons, 'candidate_backtest_pbo_missing'];
+  }
+  if (pboGateActive && pbo != null && pbo > pboMax && !effectiveReasons.some((item) => String(item).startsWith('candidate_backtest_pbo_high'))) {
     effectiveReasons = [...effectiveReasons, `candidate_backtest_pbo_high(${pbo.toFixed(4)}>${pboMax})`];
   }
   const blockClass = classifyBacktestBlock(effectiveReasons, gateStatus);
@@ -332,6 +358,12 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
     pboWouldBlock,
     pbo,
     pboMax,
+    psrWouldBlock,
+    psr,
+    psrMin,
+    dsrWouldBlock,
+    dsr,
+    dsrMin,
     row,
     ...blockClass,
   };

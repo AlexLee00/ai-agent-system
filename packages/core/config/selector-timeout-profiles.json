@@ -1,5 +1,5 @@
 {
-  "version": "2026-07-10",
+  "version": "2026-07-19",
   "defaultTier": "standard",
   "globalDefaultTimeoutMs": 60000,
   "tiers": {
@@ -28,6 +28,17 @@
     },
     "investment.luna": {
       "tier": "standard"
+    },
+    "investment.chronos": {
+      "tier": "standard",
+      "purposes": {
+        "backtest_judgment": {
+          "tier": "deep",
+          "timeoutMs": 180000,
+          "minMs": 60000,
+          "maxMs": 180000
+        }
+      }
     },
     "darwin.agent_policy": {
       "tier": "standard",

@@ -73,14 +73,12 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
     const staleStep = (result.steps || []).find((step) => step.model === 'execution_freshness') || null;
     const ageMatch = String(staleStep?.reason || result.rejectReason || '').match(/(\d+)초/u);
     const ageSeconds = ageMatch ? Number(ageMatch[1]) : null;
-    // Notify: 승인 만료는 경고 기록 후 계속 진행 (HARD limit 아님)
-    // 실제 시장 조건 변화 학습 데이터 수집 목적
     recordGuardEvent({
       guardName: 'execution_freshness_guard',
       symbol: signal.symbol || null,
       exchange: market || null,
       reason: result.rejectReason || staleStep?.reason || 'stale_approval',
-      severity: 'warning',
+      severity: 'danger',
       decisionBefore: {
         action,
         approved_at: signal.approved_at || signal.approvedAt || null,
@@ -93,10 +91,9 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
       },
     });
     return {
-      approved: true,
-      warned: true,
-      code: `${codePrefix}_stale_approval_notify`,
-      status: 'warned',
+      approved: false,
+      code: `${codePrefix}_stale_approval_guard`,
+      status: 'blocked',
       reason: result.rejectReason || staleStep?.reason || '승인 freshness 재검증 실패',
       meta: {
         market,

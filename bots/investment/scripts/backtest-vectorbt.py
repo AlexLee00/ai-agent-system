@@ -16,6 +16,7 @@ import json
 import math
 import os
 import random
+import statistics
 import sys
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -191,10 +192,26 @@ def calc_rsi(close, period: int, deps: dict):
         return pd.Series(talib.RSI(close.values, timeperiod=period), index=close.index)
 
     delta = close.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = (-delta.clip(upper=0)).rolling(period).mean()
-    rs = gain / loss.replace(0, math.nan)
-    return 100 - (100 / (1 + rs))
+    gains = delta.clip(lower=0)
+    losses = -delta.clip(upper=0)
+    avg_gain = pd.Series(math.nan, index=close.index, dtype="float64")
+    avg_loss = pd.Series(math.nan, index=close.index, dtype="float64")
+    if len(close) <= period:
+        return avg_gain
+
+    avg_gain.iloc[period] = gains.iloc[1 : period + 1].mean()
+    avg_loss.iloc[period] = losses.iloc[1 : period + 1].mean()
+    for index in range(period + 1, len(close)):
+        avg_gain.iloc[index] = ((avg_gain.iloc[index - 1] * (period - 1)) + gains.iloc[index]) / period
+        avg_loss.iloc[index] = ((avg_loss.iloc[index - 1] * (period - 1)) + losses.iloc[index]) / period
+
+    rsi = pd.Series(math.nan, index=close.index, dtype="float64")
+    positive_loss = avg_loss > 0
+    rs = avg_gain[positive_loss] / avg_loss[positive_loss]
+    rsi.loc[positive_loss] = 100 - (100 / (1 + rs))
+    rsi.loc[(avg_loss == 0) & (avg_gain > 0)] = 100.0
+    rsi.loc[(avg_loss == 0) & (avg_gain == 0)] = 0.0
+    return rsi
 
 
 def calc_macd(close, fast: int, slow: int, signal: int, deps: dict):
@@ -371,8 +388,13 @@ def portfolio_sharpe_for_masks(df, params: dict, deps: dict, entries, exits):
             pf_kwargs["high"] = df["high"]
             pf_kwargs["low"] = df["low"]
 
-    stats = vbt.Portfolio.from_signals(**pf_kwargs).stats()
-    sharpe = safe_float(stats.get("Sharpe Ratio"), None)
+    portfolio = vbt.Portfolio.from_signals(**pf_kwargs)
+    stats = portfolio.stats()
+    sharpe = annualized_sharpe(
+        finite_float_values(portfolio.returns().fillna(0).values),
+        portfolio_freq,
+        market_calendar,
+    )
     trades = int(safe_float(stats.get("Total Trades"), 0))
     return sharpe if sharpe is not None and trades > 0 else None
 
@@ -534,9 +556,11 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
 
     # OOS returns 분포 통계 — DSR Phase 1b 입력 (skew/kurt). fisher=False = Pearson 정의(정규=3)
     returns_series = None
+    market_sharpe = 0.0
     try:
         returns_series = pf.returns().fillna(0)
         ret_arr = finite_float_values(returns_series.dropna().values)
+        market_sharpe = annualized_sharpe(ret_arr, portfolio_freq, market_calendar)
         if _scipy_stats is not None and len(ret_arr) >= 4:
             _sk = float(_scipy_stats.skew(ret_arr))
             _kt = float(_scipy_stats.kurtosis(ret_arr, fisher=False))
@@ -551,7 +575,7 @@ def run_backtest(df, params: dict, deps: dict, collect_returns: bool = False, co
 
     result = {
         "total_return": float(stats.get("Total Return [%]", 0) or 0),
-        "sharpe_ratio": float(stats.get("Sharpe Ratio", 0) or 0),
+        "sharpe_ratio": market_sharpe,
         "max_drawdown": float(stats.get("Max Drawdown [%]", 0) or 0),
         "win_rate": float(stats.get("Win Rate [%]", 0) or 0),
         "total_trades": int(stats.get("Total Trades", 0) or 0),
@@ -625,7 +649,9 @@ def safe_float(value, fallback: float = 0.0) -> float:
 
 def finite_float_values(values) -> list[float]:
     out: list[float] = []
-    for value in values or []:
+    if values is None:
+        return out
+    for value in values:
         try:
             number = float(value)
         except Exception:
@@ -733,6 +759,43 @@ def select_consensus_params(fold_grids: list, folds_total: int):
     return best_params, best_sig, best_key
 
 
+def select_causal_consensus_sequence(fold_grids: list):
+    """Select each OOS fold using only grids available up to that fold."""
+    selections = []
+    observed = []
+    for grid in fold_grids:
+        observed.append(grid)
+        params, signature, score = select_consensus_params(observed, len(observed))
+        if not params or not signature:
+            fallback = _select_robust_from_grid(grid)
+            if not fallback:
+                selections.append(None)
+                continue
+            params = fallback.get("params", {})
+            signature = _param_signature(params)
+            score = safe_float(fallback.get("robust_score", robust_rank_score(fallback)), 0.0)
+        coverage = sum(
+            1
+            for prior_grid in observed
+            if any(_param_signature(item.get("params", {})) == signature for item in prior_grid)
+        )
+        selections.append({
+            "params": params,
+            "signature": signature,
+            "score": score,
+            "fold_coverage": coverage,
+            "observed_folds": len(observed),
+        })
+    return selections
+
+
+def compound_return_pct(returns: list) -> float:
+    wealth = 1.0
+    for value in finite_float_values(returns):
+        wealth *= 1.0 + value
+    return (wealth - 1.0) * 100.0
+
+
 def _select_robust_from_grid(is_grid: list):
     """Avoid a single lucky IS peak by selecting the median candidate in top-K."""
     if not is_grid:
@@ -762,21 +825,36 @@ def deflated_sharpe(sharpe: float, n_trials: int, total_trades_oos: int) -> floa
 def periods_per_year(freq: str, market: str = "crypto") -> float:
     """포트폴리오 주파수 → 연간 주기 수.
 
-    기준: crypto 1d=365(24/7), stock 1d=252(영업일). 비연율화 변환 계수로 사용.
+    기준: crypto=365일 24시간, stock=252영업일 정규장 390분.
     """
     freq = (freq or "5min").lower().replace(" ", "")
-    _map: dict[str, float] = {
-        "1min": 525600.0, "1m": 525600.0,
-        "5min": 105120.0, "5m": 105120.0,
-        "15min": 35040.0, "15m": 35040.0,
-        "30min": 17520.0, "30m": 17520.0,
-        "1h": 8760.0, "1hour": 8760.0, "60min": 8760.0, "60m": 8760.0,
-        "4h": 2190.0, "4hour": 2190.0, "240min": 2190.0, "240m": 2190.0,
-        "1d": 365.0 if market == "crypto" else 252.0,
-        "1day": 365.0 if market == "crypto" else 252.0,
-        "d": 365.0 if market == "crypto" else 252.0,
+    normalized_market = str(market or "crypto").strip().lower()
+    crypto_market = normalized_market in {"crypto", "binance"}
+    if freq in {"1d", "1day", "d"}:
+        return 365.0 if crypto_market else 252.0
+    minutes_by_freq: dict[str, float] = {
+        "1min": 1.0, "1m": 1.0,
+        "5min": 5.0, "5m": 5.0,
+        "15min": 15.0, "15m": 15.0,
+        "30min": 30.0, "30m": 30.0,
+        "1h": 60.0, "1hour": 60.0, "60min": 60.0, "60m": 60.0,
+        "4h": 240.0, "4hour": 240.0, "240min": 240.0, "240m": 240.0,
     }
-    return _map.get(freq, 105120.0)  # 매핑 없으면 5m 기본
+    bar_minutes = minutes_by_freq.get(freq, 5.0)
+    annual_days = 365.0 if crypto_market else 252.0
+    session_minutes = 1440.0 if crypto_market else 390.0
+    return annual_days * session_minutes / bar_minutes
+
+
+def annualized_sharpe(returns: list, freq: str, market: str = "crypto") -> float:
+    values = finite_float_values(returns)
+    if len(values) < 2:
+        return 0.0
+    deviation = statistics.stdev(values)
+    if deviation <= 0 or not math.isfinite(deviation):
+        return 0.0
+    value = (statistics.fmean(values) / deviation) * math.sqrt(periods_per_year(freq, market))
+    return value if math.isfinite(value) else 0.0
 
 
 def expected_max_sharpe(var_sr_unann: float, n_trials: int) -> float:
@@ -1043,9 +1121,10 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
     # (var_sharpe = selection bias 측정용, DSR Phase 1b 입력)
     all_trial_sharpes: list[float] = []
     robust_on = bool_env("LUNA_BT_ROBUST_SELECTION_ENABLED", False)
-    pooled_returns_on = bool_env("LUNA_BT_POOLED_RETURNS_SHARPE", False)
+    pooled_returns_on = bool_env("LUNA_BT_POOLED_RETURNS_SHARPE", True)
     consensus_sig = None
     consensus_fold_coverage = None
+    causal_consensus_signatures = []
 
     if robust_on:
         fold_grids = []
@@ -1061,24 +1140,24 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
             fold_grids.append(grid)
             fold_windows_kept.append((fold_index, train_start, train_end, test_end, grid))
 
-        consensus_params, consensus_sig, _ = select_consensus_params(fold_grids, len(windows))
-        if not consensus_params or not consensus_sig:
+        causal_selections = select_causal_consensus_sequence(fold_grids)
+        if not causal_selections or any(selection is None for selection in causal_selections):
             return None
-        consensus_fold_coverage = sum(
-            1
-            for grid in fold_grids
-            if any(_param_signature(item.get("params", {})) == consensus_sig for item in grid)
-        )
+        consensus_sig = causal_selections[-1]["signature"]
+        consensus_fold_coverage = causal_selections[-1]["fold_coverage"]
+        causal_consensus_signatures = [selection["signature"] for selection in causal_selections]
 
-        for fold_index, train_start, train_end, test_end, grid in fold_windows_kept:
+        for (fold_index, train_start, train_end, test_end, grid), selection in zip(fold_windows_kept, causal_selections):
             test_df = df.iloc[train_end:test_end]
+            selected_params = selection["params"]
+            selected_signature = selection["signature"]
             is_entry = next(
-                (item for item in grid if _param_signature(item.get("params", {})) == consensus_sig),
+                (item for item in grid if _param_signature(item.get("params", {})) == selected_signature),
                 None,
             )
             n_trials_fold = (is_entry or grid[0]).get("n_grid_trials", len(grid))
             try:
-                oos_raw = run_backtest(test_df, consensus_params, deps, collect_returns=pooled_returns_on)
+                oos_raw = run_backtest(test_df, selected_params, deps, collect_returns=pooled_returns_on)
             except Exception as exc:
                 fold_raw.append({"fold": fold_index, "error": str(exc)})
                 continue
@@ -1095,8 +1174,10 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
                 "pf_fold": safe_float(oos_raw.get("profit_factor")),
                 "sharpe_is_fold": safe_float((is_entry or {}).get("sharpe_ratio")),
                 "n_grid_trials_fold": n_trials_fold,
-                "params": consensus_params,
-                "consensus_param_signature": consensus_sig,
+                "params": selected_params,
+                "consensus_param_signature": selected_signature,
+                "consensus_fold_coverage": selection["fold_coverage"],
+                "consensus_observed_folds": selection["observed_folds"],
                 # Phase 1a: fold별 OOS returns 분포 (거래수 가중 평균 집계용)
                 "oos_returns_skew": oos_raw.get("oos_returns_skew"),
                 "oos_returns_kurt": oos_raw.get("oos_returns_kurt"),
@@ -1179,6 +1260,7 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
             pooled_sharpe_oos = (mu / sd) * math.sqrt(wf_ppy) if sd > 0 else 0.0
         else:
             pooled_sharpe_oos = 0.0
+        pooled_return = compound_return_pct(ret)
         # IS는 기존 거래수 가중 평균을 유지한다. 따라서 overfit_gap은
         # weighted IS - concatenated OOS로 비대칭이지만, OOS 왜곡 제거를 우선한다.
     overfit_gap = pooled_sharpe_is - pooled_sharpe_oos
@@ -1288,7 +1370,7 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
         "oos_returns_skew": pooled_oos_skew,
         "oos_returns_kurt": pooled_oos_kurt,
         "oos_bars": pooled_bars,  # T — n_obs_oos의 명시적 DSR alias
-        # Phase 1b: 정통 DSR/PSR (SHADOW — 기존 deflated_sharpe/healthy/gate_status 불변)
+        # Phase 1b: 정통 DSR/PSR — promotion gate 입력
         "dsr": wf_dsr,
         "psr": wf_psr,
         "sr0": wf_sr0 if oos_status != "insufficient_data" else None,
@@ -1301,9 +1383,10 @@ def walk_forward(df, deps: dict, folds: int = 5, train_days: int = 60, test_days
     }
     if robust_on:
         aggregate.update({
-            "selection_strategy": "consensus",
+            "selection_strategy": "causal_consensus",
             "consensus_fold_coverage": consensus_fold_coverage,
             "consensus_param_signature": consensus_sig,
+            "causal_consensus_signatures": causal_consensus_signatures,
         })
     if bool_env("LUNA_BT_PERMUTATION_ENABLED", False):
         perm = permutation_test(

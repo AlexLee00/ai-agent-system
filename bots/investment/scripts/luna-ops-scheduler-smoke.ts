@@ -8,6 +8,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   buildOpsSchedulerPlan,
   classifyOpsSchedulerOutcome,
+  getProcessStartMarker,
   getOpsSchedulerJobs,
   resolveAgentPlanArg,
   resolveOnlyJobArg,
@@ -79,6 +80,13 @@ export async function runLunaOpsSchedulerSmoke() {
     jobs: weeklyJob,
   }).due, 1);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);
+  assert.equal(jobs.find((job) => job.name === 'market_cycle_crypto')?.timeoutMs, 600_000);
+  assert.equal(jobs.find((job) => job.name === 'candidate_quality_remediation_shadow_loop')?.timeoutMs, 900_000);
+  assert.ok(
+    jobs.findIndex((job) => job.name === 'approved_signal_executor_crypto')
+      < jobs.findIndex((job) => job.name === 'candidate_quality_remediation_shadow_loop'),
+    'live approved-signal execution must not wait behind long shadow batches',
+  );
   assert.equal(jobs.some((job) => job.name === 'active_entry_trigger_evaluator_crypto'), true);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.cadence?.seconds, 60);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.args?.includes('--derive-market-events'), true);
@@ -458,11 +466,78 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(locked.status, 'locked');
   fs.rmSync(lockPath, { force: true });
 
+  fs.writeFileSync(lockPath, JSON.stringify({
+    lockedAt: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+    pid: process.pid,
+    token: 'old-but-live-owner',
+    processStartMarker: getProcessStartMarker(process.pid),
+  }));
+  const oldLiveLocked = await runOpsScheduler({ now, statePath, lockPath, jobs: [] });
+  assert.equal(oldLiveLocked.ok, false, 'a live owner must keep the lock regardless of lock age');
+  assert.equal(oldLiveLocked.status, 'locked');
+  fs.rmSync(lockPath, { force: true });
+
+  fs.writeFileSync(lockPath, JSON.stringify({
+    lockedAt: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+    pid: process.pid,
+    token: 'legacy-stale-live-pid',
+  }));
+  const legacyStaleRecovered = await runOpsScheduler({ now, statePath, lockPath, jobs: [], runner: () => ({ ok: true }) });
+  assert.equal(legacyStaleRecovered.ok, true, 'an old markerless lock must not deadlock after PID reuse');
+  fs.rmSync(lockPath, { force: true });
+
+  fs.writeFileSync(lockPath, JSON.stringify({
+    lockedAt: now.toISOString(),
+    pid: process.pid,
+    token: 'pid-reuse-fixture',
+    processStartMarker: 'not-the-current-process-start',
+  }));
+  const reusedPidRecovered = await runOpsScheduler({ now, statePath, lockPath, jobs: [], runner: () => ({ ok: true }) });
+  assert.equal(reusedPidRecovered.ok, true, 'a reused PID must not keep a stale scheduler lock forever');
+  fs.rmSync(lockPath, { force: true });
+
   fs.writeFileSync(lockPath, JSON.stringify({ lockedAt: now.toISOString(), pid: 999999 }));
   const staleRecovered = await runOpsScheduler({ now, statePath, lockPath, jobs: [], runner: () => ({ ok: true }) });
   assert.equal(staleRecovered.ok, true);
   assert.equal(staleRecovered.status, 'executed');
   fs.rmSync(lockPath, { force: true });
+
+  const concurrentLockPath = path.join(tmp, 'concurrent-lock.json');
+  const concurrentStatePath = path.join(tmp, 'concurrent-state.json');
+  let signalFirstStarted;
+  let releaseFirstRunner;
+  const firstStarted = new Promise((resolve) => { signalFirstStarted = resolve; });
+  const firstExecutionPromise = runOpsScheduler({
+    now,
+    force: true,
+    statePath: concurrentStatePath,
+    lockPath: concurrentLockPath,
+    jobs: [{
+      name: 'concurrent_lease_fixture',
+      cadence: { type: 'interval', seconds: 1 },
+      command: process.execPath,
+      args: [],
+    }],
+    runner: async () => {
+      signalFirstStarted();
+      await new Promise((resolve) => { releaseFirstRunner = resolve; });
+      return { ok: true, status: 0 };
+    },
+  });
+  await firstStarted;
+  const concurrentBlocked = await runOpsScheduler({
+    now,
+    statePath: concurrentStatePath,
+    lockPath: concurrentLockPath,
+    jobs: [],
+    runner: () => ({ ok: true }),
+  });
+  assert.equal(concurrentBlocked.ok, false, 'kernel lease must reject a concurrent scheduler');
+  assert.equal(concurrentBlocked.status, 'lock_contention');
+  releaseFirstRunner();
+  const firstExecution = await firstExecutionPromise;
+  assert.equal(firstExecution.ok, true);
+  fs.rmSync(concurrentLockPath, { force: true });
 
   const envEchoScript = path.join(tmp, 'echo-env.js');
   fs.writeFileSync(
@@ -505,6 +580,10 @@ export async function runLunaOpsSchedulerSmoke() {
   const failedState = JSON.parse(fs.readFileSync(failedStatePath, 'utf8'));
   assert.equal(failedState.jobs.bounded_failure_job.lastStatus, 'failed');
   assert.equal(failedState.jobs.bounded_failure_job.lastOutcome, 'command_failed');
+  assert.equal(failedState.jobs.bounded_failure_job.totalRuns, 1);
+  assert.equal(failedState.jobs.bounded_failure_job.totalFailures, 1);
+  assert.equal(failedState.jobs.bounded_failure_job.consecutiveFailures, 1);
+  assert.ok(failedState.jobs.bounded_failure_job.lastFailureAt);
   assert.equal(
     buildOpsSchedulerPlan({
       now: new Date(now.getTime() + 60_000),
@@ -534,6 +613,62 @@ export async function runLunaOpsSchedulerSmoke() {
     'command_timeout',
   );
 
+  const timeoutFinalizerCalls = [];
+  const timeoutStatePath = path.join(tmp, 'timeout-state.json');
+  const timeoutLockPath = path.join(tmp, 'timeout-lock.json');
+  const timeoutExecution = await runOpsScheduler({
+    now,
+    statePath: timeoutStatePath,
+    lockPath: timeoutLockPath,
+    jobs: [{
+      name: 'timeout_fixture',
+      cadence: { type: 'interval', seconds: 1 },
+      command: process.execPath,
+      args: [],
+    }],
+    runner: (job) => ({
+      ok: false,
+      status: null,
+      signal: 'SIGTERM',
+      error: 'spawnSync ETIMEDOUT',
+      schedulerRunToken: job.env?.LUNA_SCHEDULER_RUN_TOKEN,
+    }),
+    timeoutFinalizer: async (token, context) => {
+      timeoutFinalizerCalls.push({ token, context });
+      return { pipelineRuns: 1, nodeRuns: 2 };
+    },
+  });
+  assert.equal(timeoutExecution.ok, false);
+  assert.equal(timeoutFinalizerCalls.length, 1, 'timeout must terminalize only the correlated pipeline run');
+  assert.ok(timeoutFinalizerCalls[0].token, 'scheduler must propagate a unique run token');
+  assert.equal(timeoutFinalizerCalls[0].context.jobName, 'timeout_fixture');
+
+  const fencedLockPath = path.join(tmp, 'fenced-lock.json');
+  const fencedStatePath = path.join(tmp, 'fenced-state.json');
+  const fencedExecution = await runOpsScheduler({
+    now,
+    statePath: fencedStatePath,
+    lockPath: fencedLockPath,
+    jobs: [{
+      name: 'fenced_release_fixture',
+      cadence: { type: 'interval', seconds: 1 },
+      command: process.execPath,
+      args: [],
+    }],
+    runner: () => {
+      fs.writeFileSync(fencedLockPath, JSON.stringify({
+        pid: process.pid,
+        token: 'replacement-owner',
+        lockedAt: now.toISOString(),
+      }));
+      return { ok: true, status: 0 };
+    },
+  });
+  assert.equal(fencedExecution.ok, true);
+  assert.equal(fs.existsSync(fencedLockPath), true, 'an old owner must not release a replacement owner lock');
+  assert.equal(JSON.parse(fs.readFileSync(fencedLockPath, 'utf8')).token, 'replacement-owner');
+  fs.rmSync(fencedLockPath, { force: true });
+
   return {
     ok: true,
     jobs: jobs.map((job) => job.name),
@@ -542,6 +677,9 @@ export async function runLunaOpsSchedulerSmoke() {
     executed: calls.length,
     seededDue: seededPlan.due,
     locked: locked.status,
+    oldLiveLocked: oldLiveLocked.status,
+    legacyStaleRecovered: legacyStaleRecovered.ok,
+    reusedPidRecovered: reusedPidRecovered.ok,
     staleRecovered: staleRecovered.ok,
   };
 }

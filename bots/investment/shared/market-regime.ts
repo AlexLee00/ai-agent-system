@@ -7,6 +7,7 @@ export const REGIMES = {
   TRENDING_BEAR: 'trending_bear',
   RANGING: 'ranging',
   VOLATILE: 'volatile',
+  UNKNOWN: 'unknown',
 };
 
 export const JAENONG_C17_PARAMETER_KEYS = Object.freeze({
@@ -246,6 +247,15 @@ export const REGIME_GUIDES = {
     positionSizeMultiplier: 0.3,
     timeframe: 'scalp',
   },
+  [REGIMES.UNKNOWN]: {
+    description: '시장 데이터 확인 불가',
+    agentWeights: {},
+    tradingStyle: 'blocked',
+    tpMultiplier: 1,
+    slMultiplier: 1,
+    positionSizeMultiplier: 0,
+    timeframe: 'none',
+  },
 };
 
 const BENCHMARKS = {
@@ -344,9 +354,10 @@ async function fetchBenchmark(benchmark) {
 }
 
 function summarizeBias(market, snapshots) {
-  const positives = snapshots.filter(item => item.dayChangePct > 0.4).length;
-  const negatives = snapshots.filter(item => item.dayChangePct < -0.4).length;
-  const vix = snapshots.find(item => item.label === 'VIX');
+  const valid = snapshots.filter((item) => !item?.error && Number(item?.last) > 0 && Number.isFinite(item?.dayChangePct));
+  const positives = valid.filter(item => item.dayChangePct > 0.4).length;
+  const negatives = valid.filter(item => item.dayChangePct < -0.4).length;
+  const vix = valid.find(item => item.label === 'VIX');
 
   if (market === 'kis_overseas') {
     if ((vix?.last || 0) >= 28 || negatives >= 2) return 'bearish';
@@ -390,8 +401,42 @@ function summarizeScoutHint(scout = {}) {
   };
 }
 
-function classifyRegime(market, bias, snapshots = [], signals = {}) {
-  const valid = snapshots.filter((item) => Number.isFinite(item?.dayChangePct));
+export function assessMarketRegimeDataQuality(snapshots = [], expectedCount = snapshots.length) {
+  const expected = Math.max(0, Number(expectedCount || 0));
+  const usableCount = snapshots.filter((item) => (
+    !item?.error
+    && Number(item?.last) > 0
+    && Number.isFinite(item?.dayChangePct)
+    && Number.isFinite(item?.trendPct)
+  )).length;
+  return {
+    dataAvailable: usableCount > 0,
+    degraded: expected === 0 || usableCount < expected,
+    expectedCount: expected,
+    usableCount,
+    failedCount: Math.max(0, expected - usableCount),
+  };
+}
+
+export function classifyMarketRegime(market, bias, snapshots = [], signals = {}, expectedCount = snapshots.length) {
+  const dataQuality = assessMarketRegimeDataQuality(snapshots, expectedCount);
+  if (!dataQuality.dataAvailable) {
+    return {
+      regime: REGIMES.UNKNOWN,
+      confidence: 0,
+      guide: REGIME_GUIDES[REGIMES.UNKNOWN],
+      reason: 'benchmark_data_unavailable',
+      dataAvailable: false,
+      degraded: true,
+      dataQuality,
+    };
+  }
+  const valid = snapshots.filter((item) => (
+    !item?.error
+    && Number(item?.last) > 0
+    && Number.isFinite(item?.dayChangePct)
+    && Number.isFinite(item?.trendPct)
+  ));
   const positives = valid.filter((item) => item.dayChangePct > 0.6).length;
   const negatives = valid.filter((item) => item.dayChangePct < -0.6).length;
   const avgAbsDayChange = valid.length > 0
@@ -403,38 +448,64 @@ function classifyRegime(market, bias, snapshots = [], signals = {}) {
   const adjustedBearish = bias === 'bearish' ? 1 - scoutHint.sentimentShift : -scoutHint.sentimentShift;
 
   if ((vix?.last || 0) >= 28 || avgAbsDayChange >= (market === 'binance' ? 4.5 : 2.2)) {
-    return {
+    return withMarketRegimeDataQuality({
       regime: REGIMES.VOLATILE,
       confidence: clamp(Math.max(avgAbsDayChange / 6, (vix?.last || 0) / 40), 0.45, 0.92),
       guide: REGIME_GUIDES[REGIMES.VOLATILE],
       reason: `변동성 확대 (${avgAbsDayChange.toFixed(2)}%, VIX ${Number(vix?.last || 0).toFixed(1)})`,
-    };
+    }, dataQuality);
   }
 
   if (positives > negatives && adjustedBullish >= 0.9) {
-    return {
+    return withMarketRegimeDataQuality({
       regime: REGIMES.TRENDING_BULL,
       confidence: clamp(0.45 + positives * 0.12 + scoutHint.sentimentShift, 0.45, 0.9),
       guide: REGIME_GUIDES[REGIMES.TRENDING_BULL],
       reason: `상승 우위 (${positives}:${negatives})${scoutHint.summary ? `, ${scoutHint.summary}` : ''}`,
-    };
+    }, dataQuality);
   }
 
   if (negatives > positives && adjustedBearish >= 0.9) {
-    return {
+    return withMarketRegimeDataQuality({
       regime: REGIMES.TRENDING_BEAR,
       confidence: clamp(0.45 + negatives * 0.12 - scoutHint.sentimentShift, 0.45, 0.9),
       guide: REGIME_GUIDES[REGIMES.TRENDING_BEAR],
       reason: `하락 우위 (${negatives}:${positives})${scoutHint.summary ? `, ${scoutHint.summary}` : ''}`,
-    };
+    }, dataQuality);
   }
 
-  return {
+  return withMarketRegimeDataQuality({
     regime: REGIMES.RANGING,
     confidence: clamp(0.45 + Math.abs(scoutHint.sentimentShift) * 0.2, 0.45, 0.7),
     guide: REGIME_GUIDES[REGIMES.RANGING],
     reason: `뚜렷한 추세 부재${scoutHint.summary ? `, ${scoutHint.summary}` : ''}`,
+  }, dataQuality);
+}
+
+function withMarketRegimeDataQuality(result, dataQuality) {
+  const coverage = dataQuality.expectedCount > 0
+    ? dataQuality.usableCount / dataQuality.expectedCount
+    : 0;
+  const guide = dataQuality.degraded
+    ? {
+        ...result.guide,
+        positionSizeMultiplier: Math.min(1, Number(result.guide?.positionSizeMultiplier || 1)),
+      }
+    : result.guide;
+  return {
+    ...result,
+    guide,
+    confidence: dataQuality.degraded
+      ? Number((Number(result.confidence || 0) * coverage).toFixed(4))
+      : result.confidence,
+    dataAvailable: true,
+    degraded: dataQuality.degraded,
+    dataQuality,
   };
+}
+
+export function shouldCacheMarketRegimeResult(result = {}) {
+  return result?.dataAvailable === true;
 }
 
 export async function getMarketRegime(market = 'binance', signals = {}) {
@@ -443,7 +514,7 @@ export async function getMarketRegime(market = 'binance', signals = {}) {
   if (cached && (Date.now() - cached.ts) < CACHE_TTL_MS) {
     const result = {
       ...cached.value,
-      ...classifyRegime(market, cached.value.bias, cached.value.snapshots, signals),
+      ...classifyMarketRegime(market, cached.value.bias, cached.value.snapshots, signals, cached.value.expectedBenchmarkCount),
     };
     const jaenongPullbackShadow = market === 'kis_overseas'
       ? await resolveJaenongPullbackShadow(signals)
@@ -493,9 +564,10 @@ export async function getMarketRegime(market = 'binance', signals = {}) {
     })
     .join(' | ');
 
-  const value = { market, bias, summary, snapshots };
-  _cache.set(cacheKey, { ts: Date.now(), value });
-  const result = { ...value, ...classifyRegime(market, bias, snapshots, signals) };
+  const value = { market, bias, summary, snapshots, expectedBenchmarkCount: benchmarks.length };
+  const result = { ...value, ...classifyMarketRegime(market, bias, snapshots, signals, benchmarks.length) };
+  if (shouldCacheMarketRegimeResult(result)) _cache.set(cacheKey, { ts: Date.now(), value });
+  else _cache.delete(cacheKey);
   const jaenongPullbackShadow = market === 'kis_overseas'
     ? await resolveJaenongPullbackShadow(signals)
     : null;

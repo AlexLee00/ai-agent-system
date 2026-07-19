@@ -5,6 +5,7 @@ export const RegimeTypeSchema = z.enum([
   'trending_bear',
   'ranging',
   'volatile',
+  'unknown',
 ]);
 
 export const RegimeGuideSchema = z.object({
@@ -50,6 +51,15 @@ export const MarketRegimeResultSchema = z.object({
   confidence: z.number(),
   guide: RegimeGuideSchema,
   reason: z.string(),
+  dataAvailable: z.boolean().optional(),
+  degraded: z.boolean().optional(),
+  dataQuality: z.object({
+    dataAvailable: z.boolean(),
+    degraded: z.boolean(),
+    expectedCount: z.number(),
+    usableCount: z.number(),
+    failedCount: z.number(),
+  }).optional(),
 });
 
 export type RegimeType = z.infer<typeof RegimeTypeSchema>;
@@ -63,6 +73,7 @@ export const REGIMES = {
   TRENDING_BEAR: 'trending_bear',
   RANGING: 'ranging',
   VOLATILE: 'volatile',
+  UNKNOWN: 'unknown',
 } as const satisfies Record<string, RegimeType>;
 
 export const REGIME_GUIDES: Record<RegimeType, RegimeGuide> = {
@@ -101,5 +112,14 @@ export const REGIME_GUIDES: Record<RegimeType, RegimeGuide> = {
     slMultiplier: 0.5,
     positionSizeMultiplier: 0.3,
     timeframe: 'scalp',
+  },
+  [REGIMES.UNKNOWN]: {
+    description: '시장 데이터 확인 불가',
+    agentWeights: {},
+    tradingStyle: 'blocked',
+    tpMultiplier: 1,
+    slMultiplier: 1,
+    positionSizeMultiplier: 0,
+    timeframe: 'none',
   },
 };

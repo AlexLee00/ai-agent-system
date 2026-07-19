@@ -197,7 +197,54 @@ const dsrNullQuality = withEnv({ LUNA_DSR_GATE_ENABLED: 'true' }, () => candidat
   ...dsrLowRows[0],
   dsr: null,
 }]));
-assert.equal(dsrNullQuality.gateStatus, 'pass', 'DSR null must not affect candidate quality when DSR gate is enabled');
+assert.equal(dsrNullQuality.gateStatus, 'would_block_unhealthy', 'DSR null must fail closed when DSR gate is enabled');
+assert.ok(dsrNullQuality.reasons.includes('candidate_backtest_dsr_missing'), 'missing DSR reason should be explicit');
+
+const psrNullQuality = withEnv({
+  LUNA_DSR_GATE_ENABLED: null,
+  LUNA_PSR_GATE_ENABLED: 'true',
+  LUNA_PSR_MIN: '0.5',
+}, () => candidateBacktestTest.evaluateQuality([{
+  ...dsrLowRows[0],
+  dsr: null,
+  psr: null,
+}]));
+assert.equal(psrNullQuality.gateStatus, 'would_block_unhealthy', 'PSR null must fail closed when PSR gate is enabled');
+assert.ok(psrNullQuality.reasons.includes('candidate_backtest_psr_missing'), 'missing PSR reason should be explicit');
+
+const psrLowQuality = withEnv({
+  LUNA_DSR_GATE_ENABLED: null,
+  LUNA_PSR_GATE_ENABLED: 'true',
+  LUNA_PSR_MIN: '0.5',
+}, () => candidateBacktestTest.evaluateQuality([{
+  ...dsrLowRows[0],
+  dsr: null,
+  psr: 0.31,
+}]));
+assert.equal(psrLowQuality.gateStatus, 'would_block_unhealthy', 'low PSR must block when PSR gate is enabled');
+assert.ok(psrLowQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_psr_low')), 'low PSR reason should be explicit');
+
+const psrPartialMissingQuality = withEnv({
+  LUNA_DSR_GATE_ENABLED: null,
+  LUNA_PSR_GATE_ENABLED: 'true',
+  LUNA_PSR_MIN: '0.5',
+}, () => candidateBacktestTest.evaluateQuality([
+  { ...dsrLowRows[0], walk_forward_days: 90, psr: null },
+  { ...dsrLowRows[0], walk_forward_days: 365, psr: 0.8 },
+]));
+assert.equal(psrPartialMissingQuality.gateStatus, 'would_block_unhealthy', 'PSR must exist for every selected quality period');
+assert.ok(psrPartialMissingQuality.reasons.includes('candidate_backtest_psr_missing'));
+
+const psrWorstPeriodQuality = withEnv({
+  LUNA_DSR_GATE_ENABLED: null,
+  LUNA_PSR_GATE_ENABLED: 'true',
+  LUNA_PSR_MIN: '0.5',
+}, () => candidateBacktestTest.evaluateQuality([
+  { ...dsrLowRows[0], walk_forward_days: 90, psr: 0.1 },
+  { ...dsrLowRows[0], walk_forward_days: 365, psr: 0.9 },
+]));
+assert.equal(psrWorstPeriodQuality.gateStatus, 'would_block_unhealthy', 'a weak PSR period must not be hidden by an average');
+assert.ok(psrWorstPeriodQuality.reasons.some((reason) => reason.startsWith('candidate_backtest_psr_low')));
 
 const officialDomesticRows = candidateBacktestTest.buildOfficialDomesticOhlcvRows([
   { basDt: '20260520', mkp: '1000', hipr: '1030', lopr: '990', clpr: '1020', trqu: '10000' },

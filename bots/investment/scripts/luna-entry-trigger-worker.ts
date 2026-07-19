@@ -36,6 +36,7 @@ import {
   isEntryPreflightMaterializeBlockEnabled,
   runEntryMaterializePreflightShadow,
 } from '../shared/entry-materialize-preflight.ts';
+import { evaluateSignal } from '../team/nemesis.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -665,6 +666,11 @@ async function fetchRecentFiredUnmaterializedEntryTriggers({ exchange = 'binance
             AND trigger_state = 'fired'
             AND fired_at > now() - INTERVAL '1 minute' * $2
             AND COALESCE(trigger_meta->>'materializedSignalId', '') = ''
+            AND COALESCE(trigger_meta->>'materializeTerminal', 'false') <> 'true'
+            AND COALESCE(
+              NULLIF(trigger_meta->>'materializeNextRetryAt', '')::timestamptz,
+              '-infinity'::timestamptz
+            ) <= now()
           ORDER BY fired_at DESC
           LIMIT $3
        ) t`,
@@ -709,6 +715,7 @@ export async function materializeFiredEntryTriggerSignals({
   const triggerFetcher = deps.triggerFetcher || fetchEntryTriggerById;
   const duplicateFinder = deps.duplicateFinder || getRecentSignalDuplicate;
   const signalInserter = deps.signalInserter || insertSignal;
+  const riskEvaluator = deps.riskEvaluator || evaluateSignal;
   const blockMetaMerger = deps.blockMetaMerger || mergeSignalBlockMeta;
   const triggerUpdater = deps.triggerUpdater || updateEntryTriggerState;
   const entryPreflightShadowRunner = deps.entryPreflightShadowRunner || runEntryMaterializePreflightShadow;
@@ -931,16 +938,103 @@ export async function materializeFiredEntryTriggerSignals({
       });
       continue;
     }
+    const confidence = notifyGuardActive
+      ? Math.max(0, Number(trigger.confidence || 0) - 0.05)
+      : Number(trigger.confidence || 0);
+    const reasoning = notifyGuardActive
+      ? `entry_trigger_fired(${trigger.trigger_type}) ${symbol} | trade_data_guard_notify(${strategy._notifyGuardSizingMultiplier})`
+      : `entry_trigger_fired(${trigger.trigger_type}) ${symbol}`;
+    let riskResult;
+    try {
+      riskResult = await Promise.resolve(riskEvaluator({
+        symbol,
+        action: 'BUY',
+        amount_usdt: amountUsdt,
+        confidence,
+        reasoning,
+        exchange,
+        strategy_family: strategy.family,
+        strategy_route: strategy.route,
+      }, {
+        totalUsdt: Number(
+          riskContext.capitalSnapshot?.totalAsset
+          || riskContext.capitalSnapshot?.buyableAmount
+          || amountUsdt,
+        ),
+        persist: false,
+      }));
+    } catch (error) {
+      riskResult = {
+        approved: false,
+        nemesis_verdict: 'rejected',
+        reason: `nemesis_evaluation_failed:${error?.message || error}`,
+        retryable: true,
+      };
+    }
+    const nemesisVerdict = String(riskResult?.nemesis_verdict || '').trim().toLowerCase();
+    const approvedAt = String(riskResult?.approved_at || '').trim();
+    const adjustedAmount = Number(riskResult?.adjustedAmount);
+    const approvalMetadataValid = riskResult?.approved === true
+      && (nemesisVerdict === 'approved' || nemesisVerdict === 'modified')
+      && approvedAt.length > 0
+      && Number.isFinite(Date.parse(approvedAt))
+      && Number.isFinite(adjustedAmount)
+      && adjustedAmount > 0;
+    if (!approvalMetadataValid) {
+      const invalidApproval = riskResult?.approved === true;
+      const retryableFailure = riskResult?.retryable === true || riskResult?.llm?.retryable === true;
+      const previousRetryCount = Math.max(0, Number(trigger.trigger_meta?.nemesisRetryCount || 0));
+      const retryCount = retryableFailure ? previousRetryCount + 1 : previousRetryCount;
+      const maxRetries = Math.max(1, Math.floor(numberEnv('LUNA_ENTRY_TRIGGER_NEMESIS_MAX_RETRIES', 2)));
+      const retryExhausted = retryableFailure && retryCount >= maxRetries;
+      const terminal = !retryableFailure || retryExhausted;
+      const reason = retryExhausted
+        ? 'entry_trigger_nemesis_error_exhausted'
+        : retryableFailure
+          ? 'entry_trigger_nemesis_retry_pending'
+          : invalidApproval
+            ? 'entry_trigger_nemesis_invalid_approval'
+            : 'entry_trigger_nemesis_rejected';
+      const baseDelaySeconds = Math.max(30, numberEnv('LUNA_ENTRY_TRIGGER_NEMESIS_RETRY_DELAY_SECONDS', 120));
+      const retryDelaySeconds = Math.min(600, baseDelaySeconds * (2 ** Math.max(0, retryCount - 1)));
+      const nextRetryAt = retryableFailure && !retryExhausted
+        ? new Date(Date.now() + retryDelaySeconds * 1000).toISOString()
+        : null;
+      skipped += 1;
+      await Promise.resolve(triggerUpdater(trigger.id, {
+        triggerState: 'fired',
+        triggerMetaPatch: {
+          materializeStatus: terminal
+            ? (retryExhausted ? 'blocked_by_nemesis_error_exhausted' : 'blocked_by_nemesis')
+            : 'nemesis_retry_pending',
+          materializeBlockedAt: new Date().toISOString(),
+          materializeTerminal: terminal,
+          materializeTerminalReason: terminal ? reason : null,
+          materializeNextRetryAt: nextRetryAt,
+          ...(retryableFailure ? { nemesisRetryCount: retryCount } : {}),
+          nemesis: {
+            approved: riskResult?.approved === true,
+            verdict: nemesisVerdict || null,
+            reason: riskResult?.reason || reason,
+          },
+        },
+      })).catch(() => null);
+      items.push({
+        triggerId: trigger.id,
+        symbol,
+        status: 'skipped',
+        reason,
+        nemesisReason: riskResult?.reason || null,
+      });
+      continue;
+    }
+    const approvedAmountUsdt = Number(Math.min(amountUsdt, adjustedAmount).toFixed(6));
     const signalId = await signalInserter({
       symbol,
       action: 'BUY',
-      amountUsdt,
-      confidence: notifyGuardActive
-        ? Math.max(0, Number(trigger.confidence || 0) - 0.05)
-        : Number(trigger.confidence || 0),
-      reasoning: notifyGuardActive
-        ? `entry_trigger_fired(${trigger.trigger_type}) ${symbol} | trade_data_guard_notify(${strategy._notifyGuardSizingMultiplier})`
-        : `entry_trigger_fired(${trigger.trigger_type}) ${symbol}`,
+      amountUsdt: approvedAmountUsdt,
+      confidence,
+      reasoning,
       status: 'approved',
       exchange,
       strategyFamily: strategy.family,
@@ -949,8 +1043,8 @@ export async function materializeFiredEntryTriggerSignals({
       strategyRoute: strategy.route,
       executionOrigin: 'entry_trigger',
       qualityFlag: 'trusted',
-      nemesisVerdict: 'approved',
-      approvedAt: new Date().toISOString(),
+      nemesisVerdict,
+      approvedAt,
     });
     if (entryPreflightShadow?.shadowId) {
       await Promise.resolve(entryPreflightShadowAttacher(entryPreflightShadow.shadowId, signalId)).catch(() => null);
@@ -976,6 +1070,12 @@ export async function materializeFiredEntryTriggerSignals({
         minOrderAmount: Number(riskContext.capitalSnapshot?.minOrderAmount || 0),
         remainingSlots: Number(riskContext.capitalSnapshot?.remainingSlots || 0),
       },
+      nemesis: {
+        verdict: nemesisVerdict,
+        approvedAt,
+        requestedAmountUsdt: amountUsdt,
+        approvedAmountUsdt,
+      },
       triggerEvent: event,
     })).catch(() => null);
     await Promise.resolve(triggerUpdater(trigger.id, {
@@ -992,7 +1092,7 @@ export async function materializeFiredEntryTriggerSignals({
       symbol,
       status: 'materialized',
       signalId,
-      amountUsdt,
+      amountUsdt: approvedAmountUsdt,
       entryPreflightShadow: entryPreflightShadow?.enabled ? {
         shadowId: entryPreflightShadow.shadowId || null,
         decision: entryPreflightShadow.preflight?.decision || null,

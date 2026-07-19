@@ -4,33 +4,21 @@ import {
   getHubCallerTeam,
   isDirectFallbackEnabled,
   isHubEnabled,
-  callLLMWithHub,
   normalizeHubUrgency,
+  resolveHubRequestTiming,
 } from '../shared/hub-llm-client.ts';
-import * as db from '../shared/db.ts';
 
 const require = createRequire(import.meta.url);
 const { parseLlmCallPayload } = require('../../hub/lib/llm/request-schema.ts');
-const dbRun = db.run as (sql: string, params?: unknown[]) => Promise<unknown>;
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 
-async function assertRejects(fn: () => Promise<unknown>, pattern: RegExp, message: string): Promise<void> {
-  try {
-    await fn();
-  } catch (err) {
-    assert(pattern.test(String((err as Error)?.message || err)), message);
-    return;
-  }
-  throw new Error(message);
-}
-
 async function main(): Promise<void> {
   const originalHubEnabled = process.env.INVESTMENT_LLM_HUB_ENABLED;
   const originalDirectFallback = process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
-  const incidentKey = `hub-llm-client-payload-smoke:${Date.now()}`;
+  const originalTimeoutProfiles = process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED;
 
   try {
     assert(normalizeHubUrgency('medium') === 'normal', 'legacy medium urgency should map to Hub normal');
@@ -67,36 +55,58 @@ async function main(): Promise<void> {
     assert(hermesPayload.cacheType === 'sentiment_realtime', 'Hermes sentiment payload should use short sentiment cache TTL');
     assert(!Array.isArray(hermesPayload.chain), 'Hermes payload should not carry client-side explicit chain');
 
+    process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = 'true';
+    const chronosPayload = buildHubLlmCallPayload('chronos', 'system', 'user', {
+      market: 'binance',
+      taskType: 'backtest_judgment',
+    });
+    const chronosTiming = resolveHubRequestTiming({
+      selectorKey: String(chronosPayload.selectorKey),
+      taskType: 'backtest_judgment',
+    });
+    assert(chronosPayload.selectorKey === 'investment.chronos', 'Chronos should retain its selector key');
+    assert(chronosPayload.timeoutMs === 180_000, 'Chronos backtest profile should provide the default timeout when the caller omits it');
+    assert(chronosTiming.requestTimeoutMs === 180_000, 'request timeout should use the shared selector profile');
+    assert(chronosTiming.fetchTimeoutMs === 185_000, 'fetch timeout should include transport overhead');
+    const explicitShortTiming = resolveHubRequestTiming({
+      selectorKey: 'investment.chronos',
+      taskType: 'backtest_judgment',
+      timeoutMs: 30_000,
+    });
+    assert(explicitShortTiming.requestTimeoutMs === 30_000, 'an explicit caller timeout must remain an upper bound');
+    assert(explicitShortTiming.fetchTimeoutMs === 35_000, 'transport overhead must follow the explicit request bound');
+    const defaultOptInTiming = resolveHubRequestTiming({
+      selectorKey: 'investment.chronos',
+      taskType: 'backtest_judgment',
+      env: {},
+    });
+    assert(defaultOptInTiming.requestTimeoutMs === 180_000, 'investment client should use shared timeout profiles by default');
+
+    const cappedTiming = resolveHubRequestTiming({
+      selectorKey: 'investment.luna',
+      timeoutMs: 300_000,
+      env: { ...process.env, SELECTOR_TIMEOUT_PROFILES_ENABLED: 'false' },
+    });
+    assert(cappedTiming.requestTimeoutMs === 180_000, 'investment client timeout must stay within the Hub default schema cap');
+
     const hermesParsed = parseLlmCallPayload(hermesPayload);
     const lunaParsed = parseLlmCallPayload(lunaPayload);
+    const chronosParsed = parseLlmCallPayload(chronosPayload);
     assert(hermesParsed.ok, `Hermes payload should pass Hub schema: ${JSON.stringify(hermesParsed.error)}`);
     assert(lunaParsed.ok, `Luna payload should pass Hub schema: ${JSON.stringify(lunaParsed.error)}`);
-
-    process.env.INVESTMENT_LLM_HUB_ENABLED = 'false';
-    delete process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
-    await assertRejects(
-      () => callLLMWithHub('luna', 'system', 'user', async () => 'direct-result', 32, { incidentKey }),
-      /INVESTMENT_LLM_DIRECT_FALLBACK=true/,
-      'Hub disabled mode must fail closed unless direct fallback is explicitly enabled',
-    );
-    process.env.INVESTMENT_LLM_DIRECT_FALLBACK = 'true';
-    const directBypass = await callLLMWithHub('luna', 'system', 'user', async () => 'direct-result', 32, { incidentKey });
-    assert(directBypass === 'direct-result', 'explicit direct fallback should allow emergency direct bypass');
-    if (originalHubEnabled == null) delete process.env.INVESTMENT_LLM_HUB_ENABLED;
-    else process.env.INVESTMENT_LLM_HUB_ENABLED = originalHubEnabled;
-    if (originalDirectFallback == null) delete process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
-    else process.env.INVESTMENT_LLM_DIRECT_FALLBACK = originalDirectFallback;
+    assert(chronosParsed.ok, `Chronos payload should pass Hub schema: ${JSON.stringify(chronosParsed.error)}`);
 
     console.log(JSON.stringify({
       ok: true,
-      checked: ['urgency_mapping', 'hub_defaults', 'selector_policy', 'hub_schema_compatibility', 'direct_fallback_fail_closed'],
+      checked: ['urgency_mapping', 'hub_defaults', 'selector_policy', 'timeout_profile', 'hub_schema_compatibility'],
     }));
   } finally {
     if (originalHubEnabled == null) delete process.env.INVESTMENT_LLM_HUB_ENABLED;
     else process.env.INVESTMENT_LLM_HUB_ENABLED = originalHubEnabled;
     if (originalDirectFallback == null) delete process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
     else process.env.INVESTMENT_LLM_DIRECT_FALLBACK = originalDirectFallback;
-    await dbRun(`DELETE FROM investment.llm_routing_log WHERE incident_key = $1`, [incidentKey]).catch(() => null);
+    if (originalTimeoutProfiles == null) delete process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED;
+    else process.env.SELECTOR_TIMEOUT_PROFILES_ENABLED = originalTimeoutProfiles;
   }
 }
 

@@ -72,10 +72,10 @@ export function runRiskApprovalExecutionGuardSmoke() {
   assert(bypass.status === 'blocked', `unexpected bypass status: ${bypass.status}`);
   assert(bypass.meta?.execution_blocked_by === 'smoke_guard', 'expected blocked_by metadata');
 
-  assert(stale.approved === true, 'expected stale approval to notify but continue');
-  assert(stale.warned === true, 'expected stale approval warning flag');
-  assert(stale.code === 'test_stale_approval_notify', `unexpected stale code: ${stale.code}`);
-  assert(stale.status === 'warned', `unexpected stale status: ${stale.status}`);
+  assert(stale.approved === false, 'expected stale live BUY approval to fail closed');
+  assert(stale.warned !== true, 'stale approval must not continue as a warning');
+  assert(stale.code === 'test_stale_approval_guard', `unexpected stale code: ${stale.code}`);
+  assert(stale.status === 'blocked', `unexpected stale status: ${stale.status}`);
   assert(stale.meta?.risk_approval_execution?.decision === 'REJECT', 'expected freshness model rejection metadata');
   assert(stale.meta?.risk_approval_execution?.steps?.[0]?.model === 'execution_freshness', 'expected execution_freshness step');
 

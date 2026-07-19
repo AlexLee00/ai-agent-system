@@ -189,16 +189,26 @@ function applyBacktestGateEvaluation(backtest = null, env = process.env, options
   };
 }
 
-function hasDsrBacktestHardBlock(backtest = null, options = {}) {
+function getStatisticalBacktestHardBlock(backtest = null, options = {}) {
   const reasons = parseJsonMaybe(backtest?.blockReasons ?? backtest?.block_reasons, []);
-  return reasons.some((reason) => {
+  for (const reason of reasons) {
     const value = String(reason || '');
-    if (value.startsWith('candidate_backtest_dsr_low')) return true;
-    if (value.startsWith('candidate_backtest_insufficient_trades')) {
-      return options.allowInsufficientTrades !== true;
+    if (value.startsWith('candidate_backtest_dsr_low')) return { family: 'dsr', reason: value };
+    if (value.startsWith('candidate_backtest_psr_low')) return { family: 'psr', reason: value };
+    if (value.startsWith('candidate_backtest_pbo_high')) return { family: 'pbo', reason: value };
+    if (
+      value.startsWith('candidate_backtest_insufficient_trades')
+      || value.startsWith('candidate_backtest_dsr_missing')
+      || value.startsWith('candidate_backtest_psr_missing')
+      || value.startsWith('candidate_backtest_pbo_missing')
+    ) {
+      if (options.allowIncompleteEvidence === true) continue;
+      if (value.includes('_psr_')) return { family: 'psr', reason: value };
+      if (value.includes('_pbo_')) return { family: 'pbo', reason: value };
+      return { family: 'dsr', reason: value };
     }
-    return false;
-  });
+  }
+  return null;
 }
 
 function normalizeQualityMap(input = null) {
@@ -259,7 +269,7 @@ export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) 
               last_backtest_at, gate_status, would_block, block_reasons, updated_at,
               sharpe_oos, sharpe_is, sharpe_oos_deflated, overfit_gap,
               n_obs_oos, total_trades_oos, oos_status, selection_method,
-              dsr, psr, sr0, sr_oos_unann, periods_per_year
+              dsr, psr, pbo, sr0, sr_oos_unann, periods_per_year
          FROM candidate_backtest_status
         WHERE symbol = ANY($1::text[])
           AND market = $2`,
@@ -302,6 +312,7 @@ export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) 
       selectionMethod: row.selection_method || null,
       dsr: row.dsr == null ? null : Number(row.dsr),
       psr: row.psr == null ? null : Number(row.psr),
+      pbo: row.pbo == null ? null : Number(row.pbo),
       sr0: row.sr0 == null ? null : Number(row.sr0),
       srOosUnann: row.sr_oos_unann == null ? null : Number(row.sr_oos_unann),
       periodsPerYear: row.periods_per_year == null ? null : Number(row.periods_per_year),
@@ -366,8 +377,8 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     : { backtest: null, evaluation: null };
   const evaluatedBacktest = backtestEvaluation.backtest;
   const shadowUnvalidatedBacktest = evaluatedBacktest?.shadowUnvalidated === true;
-  const dsrHardBlock = hasDsrBacktestHardBlock(evaluatedBacktest, {
-    allowInsufficientTrades: shadowUnvalidatedBacktest,
+  const statisticalHardBlock = getStatisticalBacktestHardBlock(evaluatedBacktest, {
+    allowIncompleteEvidence: shadowUnvalidatedBacktest,
   });
   let backtestRawFresh = false;
   let backtestFresh = false;
@@ -429,19 +440,19 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
   const weakSymbolHardBlock = Boolean(
     weakSymbolHardEnabled
       && notifyMode
-      && !dsrHardBlock
+      && !statisticalHardBlock
       && qualityWouldBlock
       && weakSymbolFeedback?.weak === true,
   );
   const effectiveOk = weakSymbolHardBlock
     ? false
-    : notifyMode && !dsrHardBlock ? true : uniqueReasons.length === 0;
+    : notifyMode && !statisticalHardBlock ? true : uniqueReasons.length === 0;
   return {
     ok: effectiveOk,
     enabled: true,
     notifyMode,
-    hardBlock: dsrHardBlock,
-    hardBlockReason: dsrHardBlock ? 'candidate_backtest_dsr_gate' : null,
+    hardBlock: Boolean(statisticalHardBlock),
+    hardBlockReason: statisticalHardBlock ? `candidate_backtest_${statisticalHardBlock.family}_gate` : null,
     weakSymbolHardEnabled,
     weakSymbolHardBlock,
     weakSymbolFeedback,

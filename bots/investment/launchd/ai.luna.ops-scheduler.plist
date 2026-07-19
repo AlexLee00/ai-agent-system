@@ -129,7 +129,11 @@
     <key>LUNA_INTELLIGENT_DISCOVERY_MODE</key>
     <string>autonomous</string>
     <key>LUNA_DSR_GATE_ENABLED</key>
+    <string>false</string>
+    <key>LUNA_PSR_GATE_ENABLED</key>
     <string>true</string>
+    <key>LUNA_PSR_MIN</key>
+    <string>0.5</string>
     <key>LUNA_SHADOW_BACKTEST_UNVALIDATED_PASSTHROUGH</key>
     <string>true</string>
     <key>LUNA_BT_WALK_FORWARD_ENABLED</key>
@@ -140,6 +144,8 @@
     <string>30</string>
     <key>LUNA_VECTORBT_TIMEOUT_MS</key>
     <string>90000</string>
+    <key>LUNA_BINANCE_TOP_VOLUME_LIMIT</key>
+    <string>50</string>
     <key>ENTRY_PREFLIGHT_SHADOW_ENABLED</key>
     <string>true</string>
   </dict>

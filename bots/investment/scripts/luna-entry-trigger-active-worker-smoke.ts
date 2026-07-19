@@ -1061,6 +1061,12 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       const noRecordEntryPreflightDeps = {
         entryPreflightShadowRunner: async () => ({ enabled: false, reason: 'smoke_no_record' }),
         entryPreflightShadowAttacher: async () => null,
+        riskEvaluator: async (signal) => ({
+          approved: true,
+          adjustedAmount: Number(signal.amount_usdt || 0),
+          nemesis_verdict: 'approved',
+          approved_at: new Date().toISOString(),
+        }),
       };
       const materializeResult = await materializeFiredEntryTriggerSignals({
         exchange: 'binance',
