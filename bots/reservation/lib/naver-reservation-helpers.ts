@@ -2,14 +2,27 @@ import { buildReservationCompositeKey } from './reservation-key';
 
 export type ReservationLike = Record<string, any>;
 
+const ACTIVE_RESERVATION_STATUSES = new Set(['pending', 'processing', 'failed']);
+const TERMINAL_PICKKO_STATUSES = new Set([
+  'manual',
+  'manual_retry',
+  'manual_pending',
+  'verified',
+  'time_elapsed',
+  'cancelled',
+]);
+
 export function isTerminalReservationLike(reservation: ReservationLike | null | undefined): boolean {
   if (!reservation) return false;
+  const status = String(reservation.status || '');
+  if (ACTIVE_RESERVATION_STATUSES.has(status)) return false;
+
   return Boolean(
-    reservation.status === 'completed'
-    || reservation.status === 'cancelled'
+    status === 'completed'
+    || status === 'cancelled'
     || reservation.markedSeen
     || reservation.seenOnly
-    || ['manual', 'manual_retry', 'manual_pending', 'verified', 'time_elapsed', 'cancelled'].includes(reservation.pickkoStatus),
+    || TERMINAL_PICKKO_STATUSES.has(String(reservation.pickkoStatus || '')),
   );
 }
 

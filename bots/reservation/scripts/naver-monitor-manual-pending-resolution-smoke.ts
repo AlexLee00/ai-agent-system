@@ -3,16 +3,21 @@
 
 const assert = require('assert');
 const { createNaverMonitorService } = require('../lib/naver-monitor-service.ts');
+const { isTerminalReservationLike } = require('../lib/naver-reservation-helpers.ts');
 
-function createService(unresolved) {
+function createService(unresolved, reservation = null) {
   const resolvedTitles = [];
+  const resolvedBookings = [];
   const reports = [];
   const service = createNaverMonitorService({
     workspace: '/tmp',
     log: () => {},
     publishReservationAlert: async (payload) => reports.push(payload),
-    findReservationByBooking: async () => null,
-    resolveAlert: async () => 0,
+    findReservationByBooking: async () => reservation,
+    resolveAlert: async (phone, date, start) => {
+      resolvedBookings.push({ phone, date, start });
+      return 1;
+    },
     resolveAlertsByTitle: async (title) => {
       resolvedTitles.push(title);
       return 1;
@@ -22,14 +27,14 @@ function createService(unresolved) {
     updateAlertSent: async () => {},
     pruneOldAlerts: async () => 0,
     cleanupExpiredSeen: async () => {},
-    isTerminalReservationLike: () => false,
+    isTerminalReservationLike,
     getAlertLevelByType: () => 2,
     maskPhone: (phone) => phone,
     toKst: () => '',
     buildMonitorAlertMessage: () => '',
     buildUnresolvedAlertsSummary: () => 'UNRESOLVED',
   });
-  return { service, resolvedTitles, reports };
+  return { service, resolvedTitles, resolvedBookings, reports };
 }
 
 async function main() {
@@ -51,6 +56,31 @@ async function main() {
   await unrelated.service.reportUnresolvedAlerts();
   assert.deepEqual(unrelated.resolvedTitles, [], 'non-manual-pending alert must remain actionable');
   assert.equal(unrelated.reports.length, 1, 'non-manual-pending alert must be reported');
+
+  const bookingAlert = {
+    title: '픽코 예약 실패',
+    message: 'status: failed',
+    phone: 'test-phone',
+    date: '2026-09-06',
+    start_time: '09:00',
+  };
+  const failedSeen = createService([bookingAlert], {
+    status: 'failed',
+    pickkoStatus: null,
+    markedSeen: true,
+    seenOnly: false,
+  });
+  await failedSeen.service.reportUnresolvedAlerts();
+  assert.deepEqual(failedSeen.resolvedBookings, [], 'failed + markedSeen must not resolve its alert');
+  assert.equal(failedSeen.reports.length, 1, 'failed + markedSeen must remain actionable');
+
+  assert.equal(
+    isTerminalReservationLike({ status: 'failed', pickkoStatus: 'manual', seenOnly: true }),
+    false,
+    'an active failed status must override stale terminal markers',
+  );
+  assert.equal(isTerminalReservationLike({ status: 'completed', markedSeen: true }), true);
+  assert.equal(isTerminalReservationLike({ status: 'cancelled' }), true);
 
   console.log('✅ naver monitor manual-pending resolution smoke ok');
 }

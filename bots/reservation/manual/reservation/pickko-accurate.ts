@@ -11,13 +11,13 @@
 
 const puppeteer = require('puppeteer');
 const { spawn } = require('child_process');
-const { transformAndNormalizeData, validateTimeRange } = require('../../lib/validation');
+const { transformAndNormalizeData, validateSingleDayTimeRange } = require('../../lib/validation');
 const { delay, log } = require('../../lib/utils');
 const { loadSecrets, getSecret, initHubSecrets } = require('../../lib/secrets');
 const { parseArgs } = require('../../lib/args');
 const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browser');
 const { loginToPickko, findPickkoMember } = require('../../lib/pickko');
-const { maskPhone, maskName } = require('../../lib/formatting');
+const { maskPhone, maskName, pickkoEndTime } = require('../../lib/formatting');
 const {
   acquirePickkoLock,
   releasePickkoLock,
@@ -285,11 +285,11 @@ async function main() {
     await loginToPickko(page, getSecret('pickko_id', ''), getSecret('pickko_pw', ''), delay);
     log('✅ 로그인 완료');
 
-    const timeRangeCheck = validateTimeRange(START_TIME, END_TIME);
+    const timeRangeCheck = validateSingleDayTimeRange(START_TIME, END_TIME);
     if (!timeRangeCheck.ok) {
       throw new Error(`시간 변환 실패: ${timeRangeCheck.error}`);
     }
-    log(`✅ 시간 변환 완료: ${START_TIME} ~ ${END_TIME}${timeRangeCheck.isCrossMidnight ? ' (자정 넘어감)' : ''}`);
+    log(`✅ 시간 변환 완료: ${START_TIME} ~ ${END_TIME}`);
 
     setStage('OPEN_STUDY_WRITE');
     log('\n[2단계] 예약 등록 페이지');
@@ -429,6 +429,8 @@ async function main() {
       date: DATE,
       room: ROOM,
       phoneNoHyphen: PHONE_NOHYPHEN,
+      start: chosen.start,
+      end: pickkoEndTime(chosen.end),
     });
 
     if (SKIP_FINAL_PAYMENT) {
@@ -467,7 +469,13 @@ async function main() {
     setStage('FINAL_CONFIRM');
     log('\n[9단계] 픽코 예약등록 + 결제 완료 확인');
 
-    const finalStatus = await pickkoFinalizationService.readFinalStatus(page);
+    const finalStatus = await pickkoFinalizationService.readFinalStatus(page, {
+      date: DATE,
+      room: ROOM,
+      start: chosen.start,
+      end: pickkoEndTime(chosen.end),
+      requireZeroAmount: !SKIP_PRICE_ZERO,
+    });
     const paymentOutcome = classifyPickkoPaymentOutcome(paySubmitClicked, finalStatus.isSuccess);
 
     if (paymentOutcome === 'verified_paid') {

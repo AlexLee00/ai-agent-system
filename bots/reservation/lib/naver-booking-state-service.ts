@@ -85,6 +85,21 @@ export function createNaverBookingStateService(deps: CreateNaverBookingStateServ
       } else {
         const oldStatus = existing.status;
         const updates: Record<string, any> = { status: state };
+        const isReactivation = state === 'pending'
+          && (existing.status === 'cancelled' || existing.pickkoStatus === 'cancelled');
+
+        if (isReactivation) {
+          Object.assign(updates, {
+            pickkoStatus: null,
+            pickkoOrderId: null,
+            errorReason: null,
+            retries: 0,
+            pickkoStartTime: null,
+            pickkoCompleteTime: null,
+            markedSeen: false,
+            seenOnly: false,
+          });
+        }
 
         if (state === 'processing') {
           updates.pickkoStartTime = toKst(new Date());

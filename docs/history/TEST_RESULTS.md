@@ -1909,3 +1909,13 @@
 
 ## 2026-07-13
 - post-reboot dry-run: OK 187/WARN 0/FAIL 0·보호 데몬 중지 mock FAIL 검출 ✅·root strict 0·브리지 47~53회차 전부 verified.
+
+## 2026-07-19 — 스카 결제/예약 복구 회귀 검증
+- `npx tsc --noEmit --pretty false` ✅
+- `npm run build:daemons:ska-payment` ✅ — naver-monitor, pickko-verify, pickko-accurate, pickko-pay-pending 4개 번들 생성
+- `npm --prefix bots/reservation run check` ✅ — 취소/복구/DOM/검색/재활성화/자정/단일일자/번들/결제/락/런타임/launchd/drift 스모크 통과
+- `npm --prefix bots/reservation run smoke:pickko-payment-browser` ✅ — Chromium 5/5 및 non-zero serialized payload 제출 차단 확인
+- 실제 픽코 상세 읽기 검증 ✅ — 대상 예약 identity 일치, 결제완료, 최종 금액 0원 판정
+- 실제 픽코 주문상세 읽기 검증 ✅ — 활성 `#order_view`에서 정확한 룸·날짜·시간·0원 결제완료 확인
+- `git diff --check` 및 민감정보/직접 DB client/commit·push 실행 패턴 점검 ✅
+- `bots/reservation/scripts/e2e-test.ts`는 29/32 통과. 3건은 OPS 머신에서 DEV 기본값을 기대하는 환경 전용 assertion으로, 예약·DB·암호화·검증 경로 회귀는 아니었다.

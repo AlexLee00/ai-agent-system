@@ -47,6 +47,45 @@ async function main() {
   for (const name of REQUIRED_EXPORTS) {
     assert.strictEqual(shape[name], 'function', `${name} must survive daemon bundling`);
   }
+
+  const alertProbe = await build({
+    stdin: {
+      contents: [
+        "const alertClient = require('./bots/reservation/lib/alert-client.ts');",
+        "const healthMemory = require('./bots/reservation/lib/health-memory-bridge.ts');",
+        "console.log(JSON.stringify({",
+        "  publishReservationAlert: typeof alertClient.publishReservationAlert,",
+        "  createHealthMemoryHelper: typeof healthMemory.createHealthMemoryHelper,",
+        "}));",
+      ].join('\n'),
+      resolveDir: PROJECT_ROOT,
+      sourcefile: 'reservation-alert-client-bundle-contract-probe.ts',
+      loader: 'ts',
+    },
+    bundle: true,
+    platform: 'node',
+    target: ['node26'],
+    format: 'cjs',
+    write: false,
+    packages: 'external',
+    logLevel: 'silent',
+    tsconfig: path.join(PROJECT_ROOT, 'tsconfig.json'),
+  });
+
+  const alertRun = spawnSync(process.execPath, ['-e', alertProbe.outputFiles[0].text], {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, PROJECT_ROOT: '' },
+  });
+  assert.strictEqual(
+    alertRun.status,
+    0,
+    alertRun.stderr || alertRun.stdout || 'bundled reservation alert client failed to load',
+  );
+  assert.deepStrictEqual(JSON.parse(String(alertRun.stdout || '').trim()), {
+    publishReservationAlert: 'function',
+    createHealthMemoryHelper: 'function',
+  });
   console.log('pickko-module-bundle-contract-smoke: ok');
 }
 

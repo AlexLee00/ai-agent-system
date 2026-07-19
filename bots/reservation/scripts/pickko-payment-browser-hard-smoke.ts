@@ -16,6 +16,7 @@ const fixtureHtml = `<!doctype html>
       const modal = document.createElement('div');
       modal.id = 'order_write';
       modal.innerHTML = [
+        '<form>',
         '<input id="od_add_item_price" value="7000" price="7000">',
         '<input id="od_total_price" value="7000">',
         '<input name="pay_list[0][price]" value="7000">',
@@ -24,6 +25,7 @@ const fixtureHtml = `<!doctype html>
         '<input id="pay_type1_2" type="radio" name="pay_type">',
         '<label for="pay_type1_2">현금</label>',
         '<button id="pay_order">결제하기</button>',
+        '</form>',
       ].join('');
       document.body.appendChild(modal);
       const price = modal.querySelector('#od_add_item_price');
@@ -76,10 +78,34 @@ async function main() {
       assert.equal(state.modalOpen, false, `iteration ${iteration}: modal closed`);
       await page.close();
     }
+
+    const unsafePage = await browser.newPage();
+    await unsafePage.setContent(
+      fixtureHtml.replace('<form>', '<form><input type="hidden" name="od_add_item_price" value="5000">'),
+      { waitUntil: 'domcontentloaded' },
+    );
+    const unsafeService = createPickkoPaymentService({
+      delay: async () => {},
+      log: () => {},
+      stepTimeoutMs: 1_000,
+    });
+    await assert.rejects(
+      () => unsafeService.processPaymentStep(unsafePage, {
+        skipPriceZero: false,
+        buildStageError,
+      }),
+      /총 결제금액|직렬화/,
+    );
+    assert.equal(
+      await unsafePage.evaluate(() => window.submitCount),
+      0,
+      'a non-zero serialized payment field must fail before submit in a real browser',
+    );
+    await unsafePage.close();
   } finally {
     await browser.close();
   }
-  process.stdout.write('pickko-payment-browser-hard-smoke: 5/5 ok\n');
+  process.stdout.write('pickko-payment-browser-hard-smoke: 5/5 + serialized-payload guard ok\n');
 }
 
 main().catch((error) => {

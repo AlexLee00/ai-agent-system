@@ -4,6 +4,8 @@
 const assert = require('assert');
 const { setPickkoPaymentPriceZero } = require('../lib/pickko-payment-service');
 
+(globalThis as any).FocusEvent ||= Event;
+
 async function main() {
   const events: string[] = [];
   const attributes = new Map([['price', '7000']]);
@@ -29,14 +31,17 @@ async function main() {
       querySelector(selector: string) {
         return selector === '#od_add_item_price' ? input : null;
       },
+      querySelectorAll() {
+        return [];
+      },
     };
 
     assert.strictEqual(await setPickkoPaymentPriceZero(page), true);
     assert.strictEqual(input.value, '0');
-    assert.strictEqual(attributes.get('price'), '0');
-    assert.deepStrictEqual(events, ['input', 'change', 'keyup', 'blur']);
+    assert.strictEqual(attributes.get('price'), '7000');
+    assert.deepStrictEqual(events, ['input', 'change', 'keyup', 'blur', 'focusout']);
 
-    (globalThis as any).document = { querySelector: () => null };
+    (globalThis as any).document = { querySelector: () => null, querySelectorAll: () => [] };
     assert.strictEqual(await setPickkoPaymentPriceZero(page), false);
   } finally {
     (globalThis as any).document = originalDocument;

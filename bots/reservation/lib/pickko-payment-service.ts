@@ -12,7 +12,12 @@ type PaymentStepError = Error & {
 type PickkoPaymentSnapshot = {
   od_add_item_price: string | null;
   pay_list_price: string | null;
+  pay_list_prices: string[];
+  serialized_price_values: string[];
   od_total_price3: string;
+  has_top_price: boolean;
+  has_total_price: boolean;
+  has_payment_form: boolean;
 };
 
 function norm(s: unknown) {
@@ -26,7 +31,16 @@ function normalizePaymentSnapshot(value: unknown): PickkoPaymentSnapshot {
   return {
     od_add_item_price: snapshot.od_add_item_price == null ? null : String(snapshot.od_add_item_price),
     pay_list_price: snapshot.pay_list_price == null ? null : String(snapshot.pay_list_price),
+    pay_list_prices: Array.isArray(snapshot.pay_list_prices)
+      ? snapshot.pay_list_prices.map((item) => String(item ?? ''))
+      : (snapshot.pay_list_price == null ? [] : [String(snapshot.pay_list_price)]),
+    serialized_price_values: Array.isArray(snapshot.serialized_price_values)
+      ? snapshot.serialized_price_values.map((item) => String(item ?? ''))
+      : [],
     od_total_price3: String(snapshot.od_total_price3 ?? ''),
+    has_top_price: snapshot.has_top_price === true,
+    has_total_price: snapshot.has_total_price === true,
+    has_payment_form: snapshot.has_payment_form === true,
   };
 }
 
@@ -35,24 +49,13 @@ export async function setPickkoPaymentPriceZero(page: any): Promise<boolean> {
     const input = document.querySelector('#od_add_item_price') as HTMLInputElement | null;
     if (!input) return false;
 
-    const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value')?.set;
-    if (valueSetter) valueSetter.call(input, '0');
-    else input.value = '0';
-    input.setAttribute('price', '0');
-    input.setAttribute('ea', '0');
     input.focus?.();
+    input.value = '0';
     for (const type of ['input', 'change', 'keyup']) {
       input.dispatchEvent(new Event(type, { bubbles: true }));
     }
-    if (typeof input.blur === 'function') input.blur();
-    else input.dispatchEvent(new Event('blur', { bubbles: true }));
-
-    const totalInput = document.querySelector('#od_total_price') as HTMLInputElement | null;
-    if (totalInput) {
-      totalInput.value = '0';
-      totalInput.dispatchEvent(new Event('input', { bubbles: true }));
-      totalInput.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    input.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+    input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
     return true;
   });
   return changed === true;
@@ -129,19 +132,55 @@ export function createPickkoPaymentService({
 
   async function readTotals(page: any): Promise<PickkoPaymentSnapshot> {
     const snapshot = await runPaymentStep<unknown>('read_totals', () => page.evaluate(() => {
-      const v1 = (document.querySelector('#od_add_item_price') as HTMLInputElement | null)?.value ?? null;
-      const v2 = (document.querySelector('input[name*="pay_list"][name*="price"]') as HTMLInputElement | null)?.value ?? null;
-      const total = (document.querySelector('#od_total_price3')?.textContent || '').trim();
-      return { od_add_item_price: v1, pay_list_price: v2, od_total_price3: total };
+      const topPrice = document.querySelector('#od_add_item_price') as HTMLInputElement | null;
+      const totalPrice = document.querySelector('#od_total_price3');
+      const paymentRoot = document.querySelector('#order_write');
+      const paymentForm = topPrice?.closest('form')
+        || (paymentRoot?.tagName === 'FORM' ? paymentRoot as HTMLFormElement : paymentRoot?.querySelector('form'));
+      const payListPrices = Array.from(
+        document.querySelectorAll('input[name*="pay_list"][name*="price"]'),
+      ).map((input) => (input as HTMLInputElement).value ?? '');
+      const serializedPriceValues = paymentForm
+        ? Array.from(new FormData(paymentForm).entries())
+          .filter(([name]) => {
+            const normalizedName = String(name || '').toLowerCase();
+            return normalizedName === 'od_add_item_price'
+              || normalizedName === 'od_total_price'
+              || (normalizedName.includes('pay_list') && normalizedName.includes('price'));
+          })
+          .map(([, value]) => String(value ?? ''))
+        : [];
+      return {
+        od_add_item_price: topPrice?.value ?? null,
+        pay_list_price: payListPrices[0] ?? null,
+        pay_list_prices: payListPrices,
+        serialized_price_values: serializedPriceValues,
+        od_total_price3: (totalPrice?.textContent || '').trim(),
+        has_top_price: topPrice !== null,
+        has_total_price: totalPrice !== null,
+        has_payment_form: paymentForm != null,
+      };
     }));
     return normalizePaymentSnapshot(snapshot);
   }
 
   async function waitTotalZeroStable(page: any) {
+    const isOptionalZero = (value: unknown) => {
+      const normalized = norm(value);
+      return normalized === '' || normalized === '0';
+    };
     const isZeroSnapshot = (snapshot: any) => (
-      norm(snapshot?.od_add_item_price) === '0'
+      snapshot?.has_top_price === true
+      && snapshot?.has_total_price === true
+      && norm(snapshot?.od_add_item_price) === '0'
       && norm(snapshot?.od_total_price3) === '0'
-      && (snapshot?.pay_list_price == null || norm(snapshot.pay_list_price) === '0')
+      && Array.isArray(snapshot?.pay_list_prices)
+      && snapshot.pay_list_prices.length > 0
+      && snapshot.pay_list_prices.every(isOptionalZero)
+      && snapshot?.has_payment_form === true
+      && Array.isArray(snapshot?.serialized_price_values)
+      && snapshot.serialized_price_values.length > 0
+      && snapshot.serialized_price_values.every(isOptionalZero)
     );
     for (let i = 0; i < 10; i++) {
       await delay(250);
@@ -216,6 +255,9 @@ export function createPickkoPaymentService({
         log(`🧾 결제 입력 시도 #${attempt}`);
 
         priceOk = await setTopPriceZero(page);
+        if (!priceOk) {
+          throw buildStageError('PAYMENT', '[PAYMENT_PRICE_INPUT_MISSING] 가격 입력 필드를 찾지 못함');
+        }
         await delay(250);
         memoOk = await setMemo(page);
         await delay(250);

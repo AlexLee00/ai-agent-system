@@ -169,3 +169,16 @@ export function validateTimeRange(start: unknown, end: unknown): { ok: boolean; 
 
   return { ok: true, isCrossMidnight };
 }
+
+export function validateSingleDayTimeRange(
+  start: unknown,
+  end: unknown,
+): { ok: boolean; error?: string; isCrossMidnight?: boolean } {
+  const result = validateTimeRange(start, end);
+  if (!result.ok || !result.isCrossMidnight) return result;
+  return {
+    ok: false,
+    error: `자정 통과 예약은 날짜별 예약 2건으로 분리해야 합니다: ${start} → ${end}`,
+    isCrossMidnight: true,
+  };
+}

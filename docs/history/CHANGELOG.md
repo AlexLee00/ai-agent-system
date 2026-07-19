@@ -2574,3 +2574,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 2026-07-13
 - improve(scripts): 재부팅 검증 v2(b1dac8384·3a7215675) / feat: V2.0 T1(KG search·cluster promotion) / fix: P2 5건 / chore: Langfuse 은퇴(9cd90afff)
+
+## 2026-07-19
+- `fix(reservation)`: 픽코 0원 결제 제출을 실제 form 직렬화 값까지 fail-closed로 검증하고, 제출 후 정확한 예약 identity와 최종 결제금액이 확인된 경우에만 완료 처리.
+- `fix(reservation)`: 결제대기 후속 조회의 시간-only/전화 suffix fallback을 제거하고 전화번호·날짜·룸·전체 시간의 유일한 exact match만 허용.
+- `fix(reservation)`: 취소 예약 재활성화 시 과거 픽코 주문·오류·완료·seen 상태 초기화 및 자정 통과 단일 예약 차단.
+- `fix(reservation)`: daemon 번들에서도 core runtime bridge가 프로젝트 루트를 안정적으로 찾아 alert/health 모듈을 로드하도록 공통화.

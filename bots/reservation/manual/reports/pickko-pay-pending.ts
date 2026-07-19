@@ -11,9 +11,12 @@ const { createPickkoPaymentService } = require('../../lib/pickko-payment-service
 const { buildReservationCliInsight } = require('../../lib/cli-insight');
 const {
   derivePickkoPaymentStateFromBody,
+  extractPickkoFinalPaymentAmount,
   classifyPickkoPaymentOutcome,
-  isConfirmedPickkoPaymentCompletion,
+  isConfirmedExactZeroPickkoPaymentCompletion,
   isMatchingPickkoReservationUrl,
+  matchesExactPickkoReservationText,
+  selectExactPickkoReservationHref,
 } = require('../../lib/report-followup-helpers');
 const { IS_DEV, IS_OPS } = require('../../../../packages/core/lib/env');
 
@@ -97,7 +100,18 @@ async function installBrowserEvalShim(page: any) {
 async function readPaymentState(page: any) {
   try {
     const bodyText = await page.evaluate(() => document.body?.innerText || '');
-    return { ...derivePickkoPaymentStateFromBody(bodyText), bodyText };
+    return {
+      ...derivePickkoPaymentStateFromBody(bodyText),
+      identityMatched: matchesExactPickkoReservationText(bodyText, {
+        phoneRaw: PHONE_RAW,
+        date: DATE,
+        room: ROOM,
+        startText: toKoreanTime(START),
+        endText: toKoreanTime(pickkoEndTime(END)),
+      }),
+      paymentAmountWon: extractPickkoFinalPaymentAmount(bodyText),
+      bodyText,
+    };
   } catch (error: any) {
     log(`⚠️ 결제 상태 DOM 재검증 읽기 실패: ${error.message}`);
     return null;
@@ -126,6 +140,8 @@ async function revalidatePaymentState(page: any, reason: string, expectedHref: s
       isPending: state.isPending,
       isCompleted: state.isCompleted,
       statusText: state.statusText,
+      identityMatched: state.identityMatched,
+      paymentAmountWon: state.paymentAmountWon,
     })}`);
   }
   return state;
@@ -154,6 +170,8 @@ async function revalidatePaymentStateFresh(reason: string, expectedHref: string)
         isPending: state.isPending,
         isCompleted: state.isCompleted,
         statusText: state.statusText,
+        identityMatched: state.identityMatched,
+        paymentAmountWon: state.paymentAmountWon,
       })}`);
     }
     return state;
@@ -232,31 +250,20 @@ async function run() {
     const endKo = toKoreanTime(pickkoEndTime(END));
     log(`🔍 시간 키: "${startKo}" ~ "${endKo}"`);
 
-    viewHref = await page.evaluate((startKo: string, endKo: string, phone: string) => {
+    const listedRows = await page.evaluate(() => {
       const clean = (s: any) => (s ?? '').replace(/\s+/g, ' ').trim();
-      const trs = Array.from(document.querySelectorAll('tbody tr'));
-      for (const tr of trs) {
-        const t = clean((tr as HTMLElement).textContent);
-        if (t.includes(startKo) && t.includes(endKo)) {
-          const a = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
-          if (a) return a.href;
-        }
-      }
-      for (const tr of trs) {
-        if (clean((tr as HTMLElement).textContent).includes(startKo)) {
-          const a = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
-          if (a) return a.href;
-        }
-      }
-      const suf = phone.slice(-8);
-      for (const tr of trs) {
-        if (clean((tr as HTMLElement).textContent).includes(suf)) {
-          const a = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
-          if (a) return a.href;
-        }
-      }
-      return null;
-    }, startKo, endKo, PHONE_RAW);
+      return Array.from(document.querySelectorAll('tbody tr')).map((tr) => {
+        const anchor = (tr as HTMLElement).querySelector('a[href*="/study/view/"]') as HTMLAnchorElement | null;
+        return { text: clean((tr as HTMLElement).textContent), href: anchor?.href || '' };
+      });
+    });
+    viewHref = selectExactPickkoReservationHref(listedRows, {
+      phoneRaw: PHONE_RAW,
+      date: DATE,
+      room: ROOM,
+      startText: startKo,
+      endText: endKo,
+    });
 
     if (!viewHref) {
       const dump = await page.evaluate(() =>
@@ -277,11 +284,13 @@ async function run() {
       isPending: viewState?.isPending ?? false,
       isCompleted: viewState?.isCompleted ?? false,
       statusText: viewState?.statusText || '',
+      identityMatched: viewState?.identityMatched ?? false,
+      paymentAmountWon: viewState?.paymentAmountWon ?? null,
       url: page.url(),
     };
     log(`📊 view 상태: ${JSON.stringify(viewInfo)}`);
 
-    if (isConfirmedPickkoPaymentCompletion(viewInfo)) {
+    if (isConfirmedExactZeroPickkoPaymentCompletion(viewInfo)) {
       log('ℹ️ 이미 결제완료 상태 → 처리 불필요');
       await exitJsonWithInsight({
         payload: { success: true, message: '이미 결제완료 상태' },
@@ -308,7 +317,7 @@ async function run() {
 
     if (!hasPayBtn) {
       const revalidated = await revalidatePaymentState(page, '결제하기 버튼 미검출', viewHref);
-      if (isConfirmedPickkoPaymentCompletion(revalidated)) {
+      if (isConfirmedExactZeroPickkoPaymentCompletion(revalidated)) {
         log('✅ 버튼 미검출 후 재검증에서 이미 결제완료 상태 확인');
         await exitJsonWithInsight({
           payload: { success: true, message: '결제하기 버튼 미검출 후 재검증에서 이미 결제완료 상태' },
@@ -358,7 +367,7 @@ async function run() {
     const confirmedState = await revalidatePaymentStateFresh('결제 제출 후', viewHref);
     const paymentOutcome = classifyPickkoPaymentOutcome(
       payResult.paySubmitClicked,
-      isConfirmedPickkoPaymentCompletion(confirmedState),
+      isConfirmedExactZeroPickkoPaymentCompletion(confirmedState),
     );
 
     const info = `${DATE} ${START}~${END} ${ROOM}룸 (${PHONE_RAW})`;
@@ -404,7 +413,7 @@ async function run() {
     const revalidated = viewHref
       ? await revalidatePaymentStateFresh(`작업 예외: ${err.message}`, viewHref)
       : null;
-    if (isConfirmedPickkoPaymentCompletion(revalidated)) {
+    if (isConfirmedExactZeroPickkoPaymentCompletion(revalidated)) {
       log('✅ 작업 예외 후 재검증에서 이미 결제완료 상태 확인');
       await exitJsonWithInsight({
         payload: { success: true, message: '작업 예외 후 재검증에서 이미 결제완료 상태' },

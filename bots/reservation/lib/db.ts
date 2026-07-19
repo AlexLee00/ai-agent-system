@@ -157,6 +157,8 @@ async function updateReservation(id, updates) {
     retries:            'retries',
     pickkoStartTime:    'pickko_start_time',
     pickkoCompleteTime: 'pickko_complete_time',
+    markedSeen:         'marked_seen',
+    seenOnly:           'seen_only',
   };
 
   const sets = [];
@@ -166,7 +168,10 @@ async function updateReservation(id, updates) {
   for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
     if (jsKey in updates) {
       sets.push(`${dbCol} = $${i++}`);
-      params.push(updates[jsKey]);
+      const value = (jsKey === 'markedSeen' || jsKey === 'seenOnly')
+        ? (updates[jsKey] ? 1 : 0)
+        : updates[jsKey];
+      params.push(value);
     }
   }
 

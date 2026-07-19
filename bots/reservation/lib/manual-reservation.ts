@@ -5,7 +5,7 @@ const { spawnSync } = require('child_process');
 const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 const kst = require('../../../packages/core/lib/kst');
 const { IS_OPS } = require('../../../packages/core/lib/env');
-const { transformPhoneNumber, transformRoom, validateTimeRange } = require('./validation');
+const { transformPhoneNumber, transformRoom, validateSingleDayTimeRange } = require('./validation');
 
 const MANUAL_REGISTRATION_TIMEOUT_MS = 180_000;
 
@@ -265,7 +265,7 @@ function validateReservation(reservation: ReservationRequest): ValidationResult 
     };
   }
 
-  const timeCheck = validateTimeRange(reservation.start, reservation.end);
+  const timeCheck = validateSingleDayTimeRange(reservation.start, reservation.end);
   if (!timeCheck.ok) {
     return {
       ok: false,

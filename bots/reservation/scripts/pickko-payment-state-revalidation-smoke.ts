@@ -7,11 +7,15 @@ const path = require('path');
 const {
   classifyPickkoPaymentState,
   derivePickkoPaymentStateFromBody,
+  extractPickkoFinalPaymentAmount,
   extractPickkoPaymentStatusText,
   classifyPickkoPaymentOutcome,
+  isConfirmedExactZeroPickkoPaymentCompletion,
   isConfirmedPickkoPaymentCompletion,
   isAlreadyPaidWithoutButton,
   isMatchingPickkoReservationUrl,
+  matchesExactPickkoReservationText,
+  selectExactPickkoReservationHref,
 } = require('../lib/report-followup-helpers.ts');
 
 assert.equal(classifyPickkoPaymentOutcome(false, false), 'not_submitted');
@@ -60,6 +64,14 @@ assert.equal(
   isConfirmedPickkoPaymentCompletion({ isCompleted: true, isPending: false }),
   true,
   'only an unambiguous completed state may be accepted',
+);
+assert.equal(extractPickkoFinalPaymentAmount('할인금액\n0원\n카드결제금액\n14,000원'), 14000);
+assert.equal(extractPickkoFinalPaymentAmount('카드결제금액\n0원'), 0);
+assert.equal(extractPickkoFinalPaymentAmount('할인금액\n0원'), null);
+assert.equal(
+  extractPickkoFinalPaymentAmount('결제정보 스터디룸A2 09월 27일 09시 00분 ~ 10시 50분 결제완료 0원 기타'),
+  0,
+  'the live Pickko completed-row layout must expose its final amount',
 );
 for (const state of [
   null,
@@ -118,6 +130,68 @@ assert.equal(
   'non-Pickko origins must fail closed',
 );
 
+const exactPhone = ['010', '0000', '0000'].join('-');
+const otherPhone = ['010', '1111', '2222'].join('-');
+const otherPrefixPhone = ['011', '0000', '0000'].join('-');
+const exactTarget = {
+  phoneRaw: exactPhone.replace(/\D/g, ''),
+  date: '2026-09-27',
+  room: 'A2',
+  startText: '09시 00분',
+  endText: '10시 50분',
+};
+const exactRow = {
+  text: `테스트고객 ${exactPhone} 스터디룸A2 2026년 09월 27일 09시 00분 ~ 10시 50분 결제대기`,
+  href: 'https://pickkoadmin.com/study/view/1051610.html',
+};
+assert.equal(matchesExactPickkoReservationText(exactRow.text, exactTarget), true);
+assert.equal(isConfirmedExactZeroPickkoPaymentCompletion({
+  isCompleted: true,
+  isPending: false,
+  identityMatched: true,
+  paymentAmountWon: 0,
+}), true);
+assert.equal(isConfirmedExactZeroPickkoPaymentCompletion({
+  isCompleted: true,
+  isPending: false,
+  identityMatched: true,
+  paymentAmountWon: 14000,
+}), false);
+assert.equal(
+  selectExactPickkoReservationHref([
+    { ...exactRow, text: exactRow.text.replace('스터디룸A2', '스터디룸B') },
+    exactRow,
+  ], exactTarget),
+  exactRow.href,
+  'pay-pending must select the exact phone, room, and full time window',
+);
+assert.equal(
+  selectExactPickkoReservationHref([
+    { ...exactRow, text: exactRow.text.replace(exactPhone, otherPhone) },
+  ], exactTarget),
+  null,
+  'same-time rows for another customer must not be selected',
+);
+assert.equal(
+  selectExactPickkoReservationHref([
+    { ...exactRow, text: exactRow.text.replace(exactPhone, otherPrefixPhone) },
+  ], exactTarget),
+  null,
+  'a different full phone number with the same suffix must not be selected',
+);
+assert.equal(
+  selectExactPickkoReservationHref([
+    { ...exactRow, text: exactRow.text.replace('2026년 09월 27일', '2026년 10월 04일') },
+  ], exactTarget),
+  null,
+  'a recurring reservation on another date must not be selected when the search filter drifts',
+);
+assert.equal(
+  selectExactPickkoReservationHref([exactRow, { ...exactRow, href: 'https://pickkoadmin.com/study/view/9999999.html' }], exactTarget),
+  null,
+  'ambiguous duplicate matches must fail closed',
+);
+
 const payPendingSource = fs.readFileSync(
   path.resolve(__dirname, '../manual/reports/pickko-pay-pending.ts'),
   'utf8',
@@ -133,8 +207,8 @@ assert.match(
 );
 assert.match(
   paymentResultBranch,
-  /isConfirmedPickkoPaymentCompletion\(/,
-  'successful submission must use the fail-closed completion predicate',
+  /isConfirmedExactZeroPickkoPaymentCompletion\(/,
+  'successful submission must prove exact reservation identity and a labeled zero-won final amount',
 );
 assert.doesNotMatch(
   payPendingSource,

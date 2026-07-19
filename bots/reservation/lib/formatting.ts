@@ -5,7 +5,8 @@ export function toKoreanTime(hhmm: string): string {
 
 export function pickkoEndTime(hhmm: string): string {
   const [h, m] = String(hhmm || '').split(':').map(Number);
-  const total = h * 60 + m - 10;
+  const minutesPerDay = 24 * 60;
+  const total = ((h * 60 + m - 10) % minutesPerDay + minutesPerDay) % minutesPerDay;
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 

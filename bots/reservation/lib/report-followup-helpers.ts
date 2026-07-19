@@ -115,6 +115,55 @@ function normalizePhone(raw: unknown): string {
   return String(raw || '').replace(/\D+/g, '');
 }
 
+type PickkoReservationTextTarget = {
+  phoneRaw?: unknown;
+  date?: unknown;
+  room?: unknown;
+  startText?: unknown;
+  endText?: unknown;
+};
+
+export function matchesExactPickkoReservationText(
+  rowText: unknown,
+  target: PickkoReservationTextTarget = {},
+): boolean {
+  const targetPhone = normalizePhone(target.phoneRaw);
+  const dateMatch = String(target.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  const room = String(target.room || '').replace(/^스터디룸/u, '').replace(/룸$/u, '').trim().toUpperCase();
+  const startText = String(target.startText || '').replace(/\s+/g, ' ').trim();
+  const endText = String(target.endText || '').replace(/\s+/g, ' ').trim();
+  if (!targetPhone || !dateMatch || !room || !startText || !endText) return false;
+
+  const text = String(rowText || '').replace(/\s+/g, ' ').trim();
+  const compactText = text.replace(/\s+/g, '').toUpperCase();
+  const phones = text.match(/01[016789][\s-]?\d{3,4}[\s-]?\d{4}/gu) || [];
+  const [, year, month, day] = dateMatch;
+  const koreanDatePattern = new RegExp(
+    `${year}년0?${Number(month)}월0?${Number(day)}일`,
+    'u',
+  );
+  const isoDate = `${year}-${month}-${day}`;
+
+  return phones.some((phone) => normalizePhone(phone) === targetPhone)
+    && (koreanDatePattern.test(compactText) || compactText.includes(isoDate))
+    && compactText.includes(`스터디룸${room}`)
+    && text.includes(startText)
+    && text.includes(endText);
+}
+
+export function selectExactPickkoReservationHref(
+  rows: Array<{ text?: unknown; href?: unknown }> = [],
+  target: PickkoReservationTextTarget = {},
+): string | null {
+  const matches = rows.filter((row) => {
+    const href = String(row?.href || '');
+    return /\/study\/view\/\d+\.html(?:$|[?#])/u.test(href)
+      && matchesExactPickkoReservationText(row?.text, target);
+  });
+  const uniqueHrefs = [...new Set(matches.map((row) => String(row.href)))];
+  return uniqueHrefs.length === 1 ? uniqueHrefs[0] : null;
+}
+
 function buildPayScanFollowupKey(entry: ReservationLike): string {
   return [
     String(entry?.date || '').trim(),
@@ -321,6 +370,26 @@ export function derivePickkoPaymentStateFromBody(bodyText: unknown): {
 
 export function isConfirmedPickkoPaymentCompletion(state: Record<string, any> | null | undefined): boolean {
   return state?.isCompleted === true && state?.isPending !== true;
+}
+
+export function extractPickkoFinalPaymentAmount(bodyText: unknown): number | null {
+  const text = String(bodyText ?? '').replace(/\u00a0/gu, ' ');
+  const matches = [
+    ...text.matchAll(/(?:최종|총|카드|현금)?\s*결제\s*금액\s*[:：]?\s*([0-9][0-9,\s]*)\s*원/gu),
+    ...text.matchAll(/결제완료\s+([0-9][0-9,]*)\s*원/gu),
+  ];
+  const amounts = matches
+    .map((match) => Number(String(match[1] || '').replace(/\D+/g, '')))
+    .filter(Number.isFinite);
+  return amounts.length > 0 ? Math.max(...amounts) : null;
+}
+
+export function isConfirmedExactZeroPickkoPaymentCompletion(
+  state: Record<string, any> | null | undefined,
+): boolean {
+  return isConfirmedPickkoPaymentCompletion(state)
+    && state?.identityMatched === true
+    && state?.paymentAmountWon === 0;
 }
 
 export function classifyPickkoPaymentOutcome(

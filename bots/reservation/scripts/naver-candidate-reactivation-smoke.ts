@@ -3,6 +3,7 @@
 
 const assert = require('assert');
 const { createNaverCandidateService } = require('../lib/naver-candidate-service.ts');
+const { createNaverBookingStateService } = require('../lib/naver-booking-state-service.ts');
 
 function booking(overrides = {}) {
   return {
@@ -71,7 +72,55 @@ function createHarness(existingRows = {}) {
   return { service, page, logs, updated, alerts, rag, pickkoRuns, seen, removedCancelKeys };
 }
 
+async function verifyReactivationStateReset() {
+  let current = {
+    id: 'reactivated-state',
+    status: 'cancelled',
+    pickkoStatus: 'cancelled',
+    errorReason: 'past cancellation',
+    retries: 5,
+    markedSeen: true,
+    seenOnly: true,
+  };
+  const patches = [];
+  const service = createNaverBookingStateService({
+    log: () => {},
+    maskPhone: (phone) => phone,
+    toKst: () => '2099-01-01 00:00:00',
+    getReservation: async () => current,
+    addReservation: async () => {},
+    updateReservation: async (_id, patch) => {
+      patches.push(patch);
+      current = { ...current, ...patch };
+    },
+    rollbackProcessing: async () => 0,
+    buildReservationCompositeKey: () => 'composite',
+    storeReservationEvent: async () => {},
+    rag: null,
+  });
+
+  await service.updateBookingState(current.id, booking(), 'pending');
+  assert.deepEqual(patches, [{
+    status: 'pending',
+    pickkoStatus: null,
+    pickkoOrderId: null,
+    errorReason: null,
+    retries: 0,
+    pickkoStartTime: null,
+    pickkoCompleteTime: null,
+    markedSeen: false,
+    seenOnly: false,
+  }], 'cancelled rows must clear stale terminal and retry markers when reactivated');
+
+  current = { id: 'ordinary-retry', status: 'failed', retries: 2, markedSeen: false, seenOnly: false };
+  patches.length = 0;
+  await service.updateBookingState(current.id, booking(), 'pending');
+  assert.deepEqual(patches, [{ status: 'pending' }], 'ordinary failed retries must preserve their retry history');
+}
+
 async function main() {
+  await verifyReactivationStateReset();
+
   const restored = booking({ bookingId: 'restored-live-confirmed' });
   const restoredHarness = createHarness({
     [restored.bookingId]: {
