@@ -941,9 +941,13 @@ export async function postAlarmAutoRepairResult({
     const body = await response.json().catch(() => null);
     const mirrorUpdate = body?.mirror_update || null;
     const accepted = response.ok && body?.ok === true && mirrorUpdate?.ok === true;
+    const retryAfterMs = Number(body?.retry_after_ms ?? body?.retryAfterMs);
     return {
       ok: accepted,
       status: response.status,
+      retryable: !accepted && (response.status === 429 || response.status >= 500),
+      retryAfterMs: Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? Math.floor(retryAfterMs) : null,
+      eventId: body?.event_id ?? body?.eventId ?? null,
       body,
       mirrorUpdate,
       source: 'hub_alarm_auto_repair_callback',

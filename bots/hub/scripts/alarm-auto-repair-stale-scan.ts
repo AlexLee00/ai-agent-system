@@ -16,6 +16,7 @@ const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
 const DEFAULT_COMPLETED_ARCHIVE_DIR = path.join(env.PROJECT_ROOT, 'docs', 'archive', 'codex-completed');
 const CURRENT_POLICY_RESOLUTION_MIN_CONFIDENCE = 0.8;
 const STALE_SCAN_MAX_CANDIDATES = 1000;
+const STALE_ALERT_DEDUPE_MINUTES = 24 * 60;
 
 function argValue(name: string, fallback = ''): string {
   const prefix = `--${name}=`;
@@ -404,7 +405,7 @@ function buildStaleAlarmInput(result: Record<string, any>): Record<string, any> 
     actionability: 'needs_human',
     incidentKey: `hub:stale_auto_repair:${fingerprint.slice(0, 16)}`,
     eventType: 'stale_auto_repair_scan',
-    dedupeMinutes: 1440,
+    dedupeMinutes: STALE_ALERT_DEDUPE_MINUTES,
     payload: {
       event_type: 'stale_auto_repair_scan',
       stale_count: activeCount,
@@ -440,16 +441,18 @@ export async function scanStaleAutoRepair({
 
   while (offset < STALE_SCAN_MAX_CANDIDATES) {
     const rows = await db.query('agent', `
-    WITH candidates AS (
+    WITH generations AS (
       SELECT
         alarm.id,
         alarm.team,
         alarm.bot_name,
+        alarm.status AS alarm_status,
         alarm.severity,
         alarm.title,
         alarm.message,
         COALESCE(alarm.metadata->>'event_type', '') AS event_type,
         COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint) AS incident_key,
+        alarm.metadata->>'event_id' AS alarm_event_id,
         enqueued.id AS enqueue_event_id,
         enqueued.metadata->>'auto_dev_path' AS auto_dev_path,
         alarm.received_at AS created_at,
@@ -466,23 +469,12 @@ export async function scanStaleAutoRepair({
         LIMIT 1
       ) enqueued ON TRUE
       WHERE COALESCE(alarm.actionability, '') = 'auto_repair'
-        AND COALESCE(alarm.status, '') IN ('repairing', 'correlating')
-        AND enqueued.created_at < NOW() - ($1::int * INTERVAL '1 minute')
         AND COALESCE(alarm.metadata->>'auto_repair_shadow_skipped', 'false') <> 'true'
         AND COALESCE(alarm.metadata->>'event_type', '') NOT LIKE 'auto_dev_%'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM agent.event_lake result
-          WHERE result.event_type = 'hub_alarm_auto_repair_result'
-            AND result.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
-            AND result.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'
-            AND result.metadata->>'callback_committed' = 'true'
-            AND result.created_at >= enqueued.created_at
-        )
     ), latest_by_incident AS (
       SELECT DISTINCT ON (incident_key) *
-      FROM candidates
-      ORDER BY incident_key, enqueued_at DESC, created_at DESC
+      FROM generations
+      ORDER BY incident_key, created_at DESC, enqueued_at DESC NULLS LAST
     )
     SELECT
       id,
@@ -493,11 +485,23 @@ export async function scanStaleAutoRepair({
       message,
       event_type,
       incident_key,
+      alarm_event_id,
       enqueue_event_id,
       auto_dev_path,
       created_at,
       enqueued_at
     FROM latest_by_incident
+    WHERE COALESCE(alarm_status, '') IN ('repairing', 'correlating')
+      AND enqueued_at < NOW() - ($1::int * INTERVAL '1 minute')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM agent.event_lake result
+        WHERE result.event_type = 'hub_alarm_auto_repair_result'
+          AND result.metadata->>'incident_key' = latest_by_incident.incident_key
+          AND result.metadata->>'alarm_event_id' = latest_by_incident.alarm_event_id
+          AND result.metadata->>'callback_committed' = 'true'
+          AND result.created_at >= latest_by_incident.enqueued_at
+      )
     ORDER BY enqueued_at DESC, created_at DESC
     LIMIT $2 OFFSET $3
     `, [threshold, pageSize, offset]);

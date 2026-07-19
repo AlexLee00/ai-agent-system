@@ -58,6 +58,7 @@ async function main() {
   let mirrorExistingRows: Array<{
     id?: number;
     status: string;
+    team?: string;
     actionability?: string;
     fingerprint?: string;
     metadata?: AnyRecord;
@@ -93,6 +94,82 @@ async function main() {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
+  };
+  const transactionQuery = async (sql: string, params: unknown[] = []) => {
+    const normalizedSql = String(sql);
+    pgRuns.push({ sql: normalizedSql, params });
+    if (normalizedSql.includes('pg_advisory_xact_lock')) return { rowCount: 1, rows: [{}] };
+    if (normalizedSql.includes('SELECT id, status, team, actionability, metadata') && normalizedSql.includes('FOR UPDATE')) {
+      const incidentKey = String(params[0] || '');
+      const alarmEventId = String(params[1] || '');
+      const rows = mirrorExistingRows.filter((row) => (
+        (String(row.metadata?.incident_key || '') === incidentKey || String(row.fingerprint || '') === incidentKey)
+        && String(row.metadata?.event_id || '') === alarmEventId
+      ));
+      return { rowCount: rows.length, rows };
+    }
+    if (normalizedSql.includes('INSERT INTO agent.event_lake')) {
+      eventId += 1;
+      const metadata = JSON.parse(String(params[8] || '{}'));
+      recordedEvents.push({
+        id: eventId,
+        eventType: String(params[0] || ''),
+        team: String(params[1] || ''),
+        botName: String(params[2] || ''),
+        severity: String(params[3] || ''),
+        traceId: String(params[4] || ''),
+        title: String(params[5] || ''),
+        message: String(params[6] || ''),
+        tags: params[7],
+        metadata,
+      });
+      return { rowCount: 1, rows: [{ id: eventId }] };
+    }
+    if (normalizedSql.includes('UPDATE agent.event_lake') && normalizedSql.includes('callback_committed')) {
+      const event = recordedEvents.find((row) => (
+        String(row.id) === String(params[0] || '')
+        && row.eventType === 'hub_alarm_auto_repair_result'
+        && String(row.metadata?.incident_key || '') === String(params[1] || '')
+        && String(row.metadata?.alarm_event_id || '') === String(params[2] || '')
+      ));
+      if (!event) return { rowCount: 0, rows: [] };
+      event.metadata = { ...(event.metadata || {}), callback_committed: 'true' };
+      return { rowCount: 1, rows: [{ id: event.id }] };
+    }
+    if (normalizedSql.includes('UPDATE agent.hub_alarms') && normalizedSql.includes('auto_repair_callback_status')) {
+      const row = mirrorExistingRows.find((candidate) => (
+        String(candidate.id || '') === String(params[4] || '')
+        && String(candidate.metadata?.event_id || '') === String(params[3] || '')
+        && ['repairing', 'correlating'].includes(candidate.status)
+        && candidate.actionability === 'auto_repair'
+      ));
+      if (!row || mirrorUpdateRowCount !== 1) return { rowCount: 0, rows: [] };
+      row.status = String(params[0] || '');
+      row.metadata = {
+        ...(row.metadata || {}),
+        auto_repair_callback_status: String(params[1] || ''),
+        auto_repair_callback_event_id: String(params[2] || ''),
+        auto_repair_callback_alarm_event_id: String(params[3] || ''),
+        auto_repair_callback_delivery_state: 'sending',
+      };
+      return { rowCount: 1, rows: [{ id: row.id, status: row.status }] };
+    }
+    if (normalizedSql.includes('UPDATE agent.hub_alarms') && normalizedSql.includes("'auto_repair_callback_delivery_state', 'sending'")) {
+      const row = mirrorExistingRows.find((candidate) => (
+        String(candidate.id || '') === String(params[0] || '')
+        && String(candidate.metadata?.event_id || '') === String(params[1] || '')
+        && String(candidate.metadata?.auto_repair_callback_event_id || '') === String(params[2] || '')
+      ));
+      if (!row) return { rowCount: 0, rows: [] };
+      row.metadata = {
+        ...(row.metadata || {}),
+        auto_repair_callback_delivery_state: 'sending',
+        auto_repair_callback_delivery_error: null,
+        auto_repair_callback_delivery_started_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      };
+      return { rowCount: 1, rows: [{ id: row.id }] };
+    }
+    return { rowCount: 0, rows: [] };
   };
   _testOnly_setAlarmRouteDbMocks({
     query: async (_schema: string, sql: string, params: unknown[] = []) => {
@@ -188,6 +265,19 @@ async function main() {
         return { rowCount: 1, rows: [] };
       }
       return { rowCount: mirrorUpdateRowCount, rows: [] };
+    },
+    transaction: async (_schema: string, fn: (client: { query: typeof transactionQuery }) => Promise<any>) => {
+      const eventSnapshot = recordedEvents.map((row) => structuredClone(row));
+      const mirrorSnapshot = mirrorExistingRows.map((row) => structuredClone(row));
+      const eventIdSnapshot = eventId;
+      try {
+        return await fn({ query: transactionQuery });
+      } catch (error) {
+        recordedEvents.splice(0, recordedEvents.length, ...eventSnapshot);
+        mirrorExistingRows = mirrorSnapshot;
+        eventId = eventIdSnapshot;
+        throw error;
+      }
     },
   });
 
@@ -314,6 +404,7 @@ async function main() {
     mirrorExistingRows = [{
       id: 501,
       status: 'repairing',
+      team: 'luna',
       actionability: 'auto_repair',
       metadata: {
         incident_key: errorRes.body.incident_key,
@@ -341,11 +432,10 @@ async function main() {
     assert(callbackRes.body.mirror_update?.status === 'resolved', `expected mirror status resolved, got ${callbackRes.body.mirror_update?.status}`);
     assert(callbackRes.body.mirror_update?.updated === 1, `expected one mirror update, got ${callbackRes.body.mirror_update?.updated}`);
     assert(
-      pgRuns.some((entry) => entry.sql.includes('UPDATE agent.hub_alarms')
-        && entry.sql.includes('auto_repair_callback_status')
+      pgRuns.some((entry) => entry.sql.includes('FOR UPDATE')
         && entry.params.includes(errorRes.body.incident_key)
         && entry.params.includes(String(errorRes.body.event_id))),
-      'expected auto-repair callback to close the exact hub_alarms generation',
+      'expected auto-repair callback to lock the exact hub_alarms generation',
     );
     const callbackEvents = recordedEvents.filter((event) => event.eventType === 'hub_alarm_auto_repair_result');
     assert(callbackEvents.length === 1, `expected one callback result event, got ${callbackEvents.length}`);
@@ -381,11 +471,51 @@ async function main() {
     assert(failedCallbackRes.body.ok === false, 'missing mirror transition must not be acknowledged');
     assert(Number(sendCount) === 3, 'failed mirror transition must not send a resolved notification');
 
+    const missingStatusRes = makeRes();
+    await alarmAutoRepairCallbackRoute({
+      body: {
+        incidentKey: 'smoke:missing-status',
+        alarmEventId: 'missing-status-generation',
+      },
+    }, missingStatusRes);
+    assert(missingStatusRes.statusCode === 400, `expected missing callback status 400, got ${missingStatusRes.statusCode}`);
+    assert(missingStatusRes.body.error === 'auto_repair_status_invalid', 'missing callback status must not default to resolved');
+
+    mirrorExistingRows = [{
+      id: 550,
+      status: 'repairing',
+      team: 'reservation',
+      actionability: 'auto_repair',
+      metadata: {
+        incident_key: 'smoke:transaction-rollback',
+        event_id: 'rollback-generation',
+      },
+    }];
+    mirrorUpdateRowCount = 0;
+    const callbackEventCountBeforeRollback = recordedEvents.filter((event) => event.eventType === 'hub_alarm_auto_repair_result').length;
+    const rollbackRes = makeRes();
+    await alarmAutoRepairCallbackRoute({
+      body: {
+        incidentKey: 'smoke:transaction-rollback',
+        alarmEventId: 'rollback-generation',
+        status: 'resolved',
+        summary: 'mirror transition failure must roll back the result event',
+      },
+    }, rollbackRes);
+    assert(rollbackRes.statusCode === 409, `expected mirror rollback callback 409, got ${rollbackRes.statusCode}`);
+    assert(mirrorExistingRows[0].status === 'repairing', 'failed callback transaction must preserve active mirror status');
+    assert(
+      recordedEvents.filter((event) => event.eventType === 'hub_alarm_auto_repair_result').length === callbackEventCountBeforeRollback,
+      'failed callback transaction must roll back its result event',
+    );
+    mirrorUpdateRowCount = 1;
+
     const reusedIncidentKey = 'smoke:reused-incident-key';
     mirrorExistingRows = [
       {
         id: 601,
         status: 'resolved',
+        team: 'luna',
         actionability: 'auto_repair',
         metadata: {
           incident_key: reusedIncidentKey,
@@ -398,6 +528,7 @@ async function main() {
       {
         id: 602,
         status: 'repairing',
+        team: 'luna',
         actionability: 'auto_repair',
         metadata: {
           incident_key: reusedIncidentKey,
@@ -405,6 +536,16 @@ async function main() {
         },
       },
     ];
+    recordedEvents.push({
+      id: 777,
+      eventType: 'hub_alarm_auto_repair_result',
+      team: 'luna',
+      metadata: {
+        incident_key: reusedIncidentKey,
+        alarm_event_id: 'old-generation',
+        callback_committed: 'true',
+      },
+    });
     const staleGenerationCallbackRes = makeRes();
     await alarmAutoRepairCallbackRoute({
       body: {
@@ -514,6 +655,63 @@ async function main() {
     assert(Array.isArray(digestFlushRes.body.teams), 'expected digest flush team list');
     assert(digestFlushRes.body.teams[0]?.sent === true, 'expected digest flush delivered');
     assert(Number(sendCount) === sendBeforeFlush + 1, `expected digest flush to send exactly one telegram summary, got ${Number(sendCount) - sendBeforeFlush}`);
+
+    const leaseIncidentKey = 'smoke:callback-delivery-lease';
+    const leaseAlarmEventId = 'lease-generation';
+    const leaseCallbackEventId = ++eventId;
+    recordedEvents.push({
+      id: leaseCallbackEventId,
+      eventType: 'hub_alarm_auto_repair_result',
+      team: 'reservation',
+      metadata: {
+        incident_key: leaseIncidentKey,
+        alarm_event_id: leaseAlarmEventId,
+        callback_committed: 'true',
+      },
+    });
+    mirrorExistingRows = [{
+      id: 701,
+      status: 'resolved',
+      team: 'reservation',
+      actionability: 'auto_repair',
+      metadata: {
+        incident_key: leaseIncidentKey,
+        event_id: leaseAlarmEventId,
+        auto_repair_callback_status: 'resolved',
+        auto_repair_callback_event_id: String(leaseCallbackEventId),
+        auto_repair_callback_delivery_state: 'sending',
+        auto_repair_callback_delivery_started_at: new Date().toISOString(),
+      },
+    }];
+    const sendBeforeLease = sendCount;
+    const activeLeaseRes = makeRes();
+    await alarmAutoRepairCallbackRoute({
+      body: {
+        incidentKey: leaseIncidentKey,
+        alarmEventId: leaseAlarmEventId,
+        status: 'resolved',
+        summary: 'active delivery lease must not be acknowledged as delivered',
+      },
+    }, activeLeaseRes);
+    assert(activeLeaseRes.statusCode === 503, 'active delivery lease must remain retryable');
+    assert(activeLeaseRes.body.delivery_ambiguous === true, 'active delivery lease must be reported as ambiguous');
+    assert(Number(activeLeaseRes.body.retry_after_ms) > 0, 'active delivery lease must expose retry_after_ms');
+    assert(Number(activeLeaseRes.body.retry_after_ms) <= 60 * 60 * 1000, 'clock skew must not exceed the configured lease ceiling');
+    assert(Number(sendCount) === sendBeforeLease, 'active delivery lease must not send concurrently');
+
+    mirrorExistingRows[0].metadata.auto_repair_callback_delivery_started_at = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const expiredLeaseRes = makeRes();
+    await alarmAutoRepairCallbackRoute({
+      body: {
+        incidentKey: leaseIncidentKey,
+        alarmEventId: leaseAlarmEventId,
+        status: 'resolved',
+        summary: 'expired delivery lease must be reclaimed',
+      },
+    }, expiredLeaseRes);
+    assert(expiredLeaseRes.statusCode === 200, 'expired delivery lease must be reclaimed');
+    assert(expiredLeaseRes.body.delivered === true, 'reclaimed delivery lease must complete delivery');
+    assert(Number(sendCount) === sendBeforeLease + 1, 'expired delivery lease must send exactly once');
 
     console.log('alarm_governor_smoke_ok');
   } finally {

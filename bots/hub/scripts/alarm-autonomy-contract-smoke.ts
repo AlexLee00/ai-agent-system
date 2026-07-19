@@ -297,9 +297,9 @@ async function main() {
     assert(annotatedResolved[5].stale_status === 'terminal_dead_letter', 'expected processed dead-letter result to suppress missing-result stale scan');
     assert(annotatedResolved[6].stale_status === 'active', 'expected dead-letter manifest without processed evidence to stay active');
     const backfillPlan = _testOnly_buildBackfillPlan([
-      { id: 11, incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
-      { id: 12, incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },
-      { id: 13, incident_key: 'blog:dead-letter', team: 'blog', bot_name: 'blog-commenter', stale_status: 'terminal_dead_letter', stale_resolution_reason: 'auto_dev_dead_letter_result_recorded' },
+      { id: 11, alarm_event_id: '1011', incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
+      { id: 12, alarm_event_id: '1012', incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },
+      { id: 13, alarm_event_id: '1013', incident_key: 'blog:dead-letter', team: 'blog', bot_name: 'blog-commenter', stale_status: 'terminal_dead_letter', stale_resolution_reason: 'auto_dev_dead_letter_result_recorded' },
     ]);
     assert(backfillPlan[0].mirror_status === 'resolved', 'manifest-resolved stale rows must backfill mirror status to resolved');
     assert(backfillPlan[0].result_status === 'resolved', 'manifest-resolved stale rows must emit resolved repair result');
@@ -307,6 +307,7 @@ async function main() {
     assert(backfillPlan[1].result_status === 'partially_resolved', 'policy-resolved stale rows must emit partial repair result');
     assert(backfillPlan[2].mirror_status === 'exhausted', 'terminal dead-letter rows must backfill mirror status to exhausted');
     assert(backfillPlan[2].result_status === 'unresolved_needs_human', 'terminal dead-letter rows must preserve unresolved result status');
+    assert(backfillPlan[0].alarm_event_id === '1011', 'backfill must preserve the exact alarm generation');
     assert(_testOnly_isApplyConfirmed(APPLY_CONFIRM_TOKEN), 'expected stale backfill apply confirm token to be accepted');
     assert(!_testOnly_isApplyConfirmed(''), 'expected stale backfill apply without confirm token to be rejected');
     const lowConfidencePolicy = _testOnly_annotateRows([{
@@ -347,13 +348,35 @@ async function main() {
     assert(queryLog.some((sql) => String(sql).includes("auto_repair_shadow_skipped")), 'expected stale scan to exclude shadow-skipped repairs');
     assert(queryLog.some((sql) => String(sql).includes("NOT LIKE 'auto_dev_%'")), 'expected stale scan to exclude auto-dev self-generated stage alarms');
     assert(queryLog.some((sql) => String(sql).includes('DISTINCT ON (incident_key)')), 'expected stale scan to dedupe duplicate mirror rows by incident');
-    assert(queryLog.some((sql) => String(sql).includes('ORDER BY enqueued_at DESC')), 'expected stale scan to prioritize recently enqueued stale repairs');
+    assert(
+      queryLog.some((sql) => String(sql).includes('ORDER BY incident_key, created_at DESC, enqueued_at DESC NULLS LAST')),
+      'expected stale scan to select the latest mirror generation before enqueue filtering',
+    );
     assert(queryLog.some((sql) => String(sql).includes('NOT EXISTS')), 'expected stale scan to exclude completed repairs');
     assert(queryLog.some((sql) => String(sql).includes("COALESCE(event.metadata->>'created', 'true') = 'true'")), 'expected stale generation to ignore created=false re-enqueues');
     assert(queryLog.some((sql) => String(sql).includes("event.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'")), 'expected stale generation to stay bound to the alarm that created the document');
-    assert(queryLog.some((sql) => String(sql).includes("result.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'")), 'expected repair results to stay bound to the same alarm generation');
+    assert(queryLog.some((sql) => String(sql).includes("result.metadata->>'alarm_event_id' = latest_by_incident.alarm_event_id")), 'expected repair results to stay bound to the same alarm generation');
     assert(queryLog.some((sql) => String(sql).includes("result.metadata->>'callback_committed' = 'true'")), 'expected stale scan to ignore uncommitted callback results');
-    assert(queryLog.some((sql) => String(sql).includes('enqueued.created_at < NOW()')), 'expected stale age to start at enqueue time');
+    assert(
+      queryLog.some((sql) => {
+        const text = String(sql);
+        return text.indexOf('latest_by_incident AS') < text.indexOf("enqueued_at < NOW() - ($1::int * INTERVAL '1 minute')");
+      }),
+      'expected stale age filtering to happen after selecting the latest incident generation',
+    );
+    assert(
+      queryLog.some((sql) => {
+        const text = String(sql);
+        const latestGeneration = text.indexOf('latest_by_incident AS');
+        const terminalFilter = text.indexOf("COALESCE(alarm_status, '') IN ('repairing', 'correlating')");
+        const resultFilter = text.indexOf('AND NOT EXISTS');
+        return latestGeneration >= 0
+          && latestGeneration < terminalFilter
+          && latestGeneration < resultFilter;
+      }),
+      'expected terminal/result filtering to happen after selecting the latest incident generation',
+    );
+    assert(queryLog.some((sql) => String(sql).includes('enqueued_at < NOW()')), 'expected stale age to start at the latest enqueue time');
 
     const pagedManifestEntries = {};
     for (let index = 0; index < 100; index += 1) {

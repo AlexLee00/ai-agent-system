@@ -50,12 +50,14 @@ function buildBackfillPlan(rows: Array<Record<string, any>>) {
     .map((row) => {
       const id = Number(row.id);
       const incidentKey = normalizeText(row.incident_key);
-      if (!Number.isFinite(id) || id <= 0 || !incidentKey) return null;
+      const alarmEventId = normalizeText(row.alarm_event_id);
+      if (!Number.isFinite(id) || id <= 0 || !incidentKey || !alarmEventId) return null;
       const mirrorStatus = mirrorStatusForRow(row);
       const resultStatus = resultStatusForRow(row);
       return {
         id,
         incident_key: incidentKey,
+        alarm_event_id: alarmEventId,
         team: normalizeText(row.team, 'hub'),
         bot_name: normalizeText(row.bot_name, 'unknown'),
         auto_dev_path: normalizeText(row.auto_dev_path),
@@ -91,6 +93,9 @@ async function applyBackfillRow(row: Record<string, any>, db = pgPool) {
       JSON.stringify({
         source: 'stale_auto_repair_backfill',
         incident_key: row.incident_key,
+        alarm_event_id: row.alarm_event_id,
+        callback_committed: 'true',
+        callback_committed_at: new Date().toISOString(),
         status: row.result_status,
         mirror_status: row.mirror_status,
         doc_path: row.auto_dev_path || null,

@@ -84,6 +84,7 @@ type SendOptions = {
   disableWebPagePreview?: boolean;
   chatId?: string;
   threadId?: TelegramTopicId | null;
+  queueOnFailure?: boolean;
 };
 
 type BatchEntry = {
@@ -631,8 +632,12 @@ export async function sendFromHubAlarm(team: string, message: string, options: S
   const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, threadId, options);
   if (ok) return true;
-  console.warn(`⚠️ [telegram-sender] Hub alarm 직접 발송 실패 — 대기큐 저장 (team=${team})`);
-  _savePending(deliveryTeam, normalized);
+  if (options.queueOnFailure !== false) {
+    console.warn(`⚠️ [telegram-sender] Hub alarm 직접 발송 실패 — 대기큐 저장 (team=${team})`);
+    _savePending(deliveryTeam, normalized);
+  } else {
+    console.warn(`⚠️ [telegram-sender] Hub alarm 직접 발송 실패 — 호출자 재시도 위임 (team=${team})`);
+  }
   return false;
 }
 
