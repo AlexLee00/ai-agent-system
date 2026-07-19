@@ -699,7 +699,10 @@ async function main() {
     assert(Number(activeLeaseRes.body.retry_after_ms) <= 60 * 60 * 1000, 'clock skew must not exceed the configured lease ceiling');
     assert(Number(sendCount) === sendBeforeLease, 'active delivery lease must not send concurrently');
 
-    mirrorExistingRows[0].metadata.auto_repair_callback_delivery_started_at = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const activeLeaseMirror = mirrorExistingRows[0];
+    assert(activeLeaseMirror, 'active delivery lease mirror fixture must exist');
+    assert(activeLeaseMirror.metadata, 'active delivery lease mirror metadata must exist');
+    activeLeaseMirror.metadata.auto_repair_callback_delivery_started_at = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const expiredLeaseRes = makeRes();
     await alarmAutoRepairCallbackRoute({
       body: {

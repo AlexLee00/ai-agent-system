@@ -17,6 +17,8 @@ const DEFAULT_COMPLETED_ARCHIVE_DIR = path.join(env.PROJECT_ROOT, 'docs', 'archi
 const CURRENT_POLICY_RESOLUTION_MIN_CONFIDENCE = 0.8;
 const STALE_SCAN_MAX_CANDIDATES = 1000;
 const STALE_ALERT_DEDUPE_MINUTES = 24 * 60;
+const RESERVATION_COMPLETION_STATUSES = ['paid', 'manual', 'manual_retry', 'verified'];
+const PICKKO_COMPLETION_ALARM_PATTERN = /(?:픽코 예약 실패|픽코 등록 실패|픽코 등록 포기|픽코 예약 등록됨,\s*결제 대기)/;
 
 function argValue(name: string, fallback = ''): string {
   const prefix = `--${name}=`;
@@ -124,13 +126,10 @@ function manifestEntryHasResolvedReason(entry: Record<string, any> | null): bool
   ].some((item) => isResolvedManifestReason(item));
 }
 
-function listArchiveCandidates(relPath: unknown, archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR): string[] {
-  const normalized = normalizeRelPath(relPath);
-  const basename = path.basename(normalized).replace(/\.md$/i, '');
-  if (!basename) return [];
+function listArchiveFiles(archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR): string[] {
   try {
-    return fs.readdirSync(archiveDir)
-      .filter((name: string) => name.endsWith('.md') && name.includes(basename))
+    return (fs.readdirSync(archiveDir, { recursive: true, encoding: 'utf8' }) as string[])
+      .filter((name: string) => name.endsWith('.md'))
       .sort()
       .map((name: string) => normalizeRelPath(path.relative(env.PROJECT_ROOT, path.join(archiveDir, name))));
   } catch {
@@ -138,29 +137,58 @@ function listArchiveCandidates(relPath: unknown, archiveDir = DEFAULT_COMPLETED_
   }
 }
 
-function archiveDocumentMatches(row: Record<string, any>, relPath: string): boolean {
-  return documentMatchesIncident(row, path.join(env.PROJECT_ROOT, relPath));
+function listArchiveCandidates(relPath: unknown, archiveFiles: string[]): string[] {
+  const basename = path.basename(normalizeRelPath(relPath)).replace(/\.md$/i, '');
+  if (!basename) return [];
+  return archiveFiles.filter((candidate) => path.basename(candidate).includes(basename));
 }
 
-function documentMatchesIncident(row: Record<string, any>, filePath: string): boolean {
+function archiveDocumentMatches(row: Record<string, any>, relPath: string): boolean {
+  return documentMatchesIncident(row, path.join(env.PROJECT_ROOT, relPath), true);
+}
+
+function documentMatchesIncident(
+  row: Record<string, any>,
+  filePath: string,
+  requireGeneration = false,
+): boolean {
   const incidentKey = String(row.incident_key || '').trim();
   if (!incidentKey) return false;
   try {
     const text = fs.readFileSync(filePath, 'utf8');
-    return text.includes(`incident_key: ${incidentKey}`)
+    const incidentMatches = text.includes(`incident_key: ${incidentKey}`)
       || text.includes(`incident_key: ${JSON.stringify(incidentKey).slice(1, -1)}`)
       || text.includes(incidentKey);
+    if (!incidentMatches) return false;
+
+    const alarmEventId = String(row.alarm_event_id || '').trim();
+    if (!requireGeneration || !alarmEventId) return true;
+    return text.split(/\r?\n/).some((line: string) => {
+      const match = line.match(/^\s*(?:[-*]\s*)?(?:alarm_)?event_id\s*:\s*(.+?)\s*$/i);
+      return match && String(match[1]).replace(/^['"]|['"]$/g, '') === alarmEventId;
+    });
   } catch {
     return false;
   }
 }
 
+function manifestMatchesAlarmGeneration(row: Record<string, any>, entry: Record<string, any> | null): boolean {
+  const expected = String(row.alarm_event_id || '').trim();
+  const recorded = String(
+    entry?.callbackPayload?.alarmEventId
+      || entry?.alarmEventId
+      || entry?.alarm_event_id
+      || '',
+  ).trim();
+  return !expected || (Boolean(recorded) && expected === recorded);
+}
+
 function resolveByCompletedArchive(
   row: Record<string, any>,
-  archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
+  archiveFiles: string[],
 ): Record<string, any> | null {
   if (repoFileExists(row.auto_dev_path)) return null;
-  const candidates = listArchiveCandidates(row.auto_dev_path, archiveDir);
+  const candidates = listArchiveCandidates(row.auto_dev_path, archiveFiles);
   const matchedPath = candidates.find((candidate) => archiveDocumentMatches(row, candidate));
   if (!matchedPath) return null;
   return {
@@ -179,10 +207,17 @@ function resolveByManifest(
 ): Record<string, any> | null {
   const entry = findManifestEntry(manifest, row.auto_dev_path);
   if (!entry) return null;
+  const generationMatches = manifestMatchesAlarmGeneration(row, entry);
 
   const state = String(entry.state || '').trim();
   const reason = manifestResolvedReason(entry);
   const archiveExists = repoFileExists(entry.archivedPath);
+  const archiveMatches = archiveExists
+    && documentMatchesIncident(
+      row,
+      path.join(env.PROJECT_ROOT, normalizeRelPath(entry.archivedPath)),
+      Boolean(row.alarm_event_id),
+    );
   const inboxExists = repoFileExists(row.auto_dev_path);
   const reasonResolved = manifestEntryHasResolvedReason(entry);
   if (inboxExists) {
@@ -204,7 +239,8 @@ function resolveByManifest(
       contentHash && baseName ? path.join(processedDir, `${baseName}.${contentHash}.md`) : '',
     ].filter(Boolean);
     const matchedProcessedPath = processedCandidates.find((candidate) => {
-      return fs.existsSync(candidate) && documentMatchesIncident(row, candidate);
+      return fs.existsSync(candidate)
+        && documentMatchesIncident(row, candidate, Boolean(row.alarm_event_id) && !generationMatches);
     });
     if (matchedProcessedPath) {
       return {
@@ -218,10 +254,10 @@ function resolveByManifest(
     }
   }
 
-  if (state === 'archived' && (archiveExists || reasonResolved)) {
+  if (state === 'archived' && (archiveMatches || (generationMatches && !archiveExists && reasonResolved))) {
     return {
       stale_status: 'resolved_manifest',
-      stale_resolution_reason: archiveExists ? 'manifest_archived_file_exists' : `manifest_archived:${reason || 'no_inbox'}`,
+      stale_resolution_reason: archiveMatches ? 'manifest_archived_file_exists' : `manifest_archived:${reason || 'no_inbox'}`,
       manifest_state: state,
       manifest_reason: reason || null,
       archived_path: normalizeRelPath(entry.archivedPath) || null,
@@ -230,7 +266,7 @@ function resolveByManifest(
     };
   }
 
-  if (state === 'archived_missing' && !inboxExists && reasonResolved) {
+  if (state === 'archived_missing' && generationMatches && !inboxExists && reasonResolved) {
     return {
       stale_status: 'resolved_manifest',
       stale_resolution_reason: `manifest_archived_missing:${reason}`,
@@ -268,9 +304,43 @@ function normalizePhoneDigits(value: unknown): string {
 
 function extractReservationPhoneDigits(row: Record<string, any>): string | null {
   const text = `${row.message || ''}\n${row.title || ''}`;
-  const match = text.match(/(?:📞\s*)?(?:번호|전화번호)\s*[:：]\s*([0-9][0-9\-\s]{8,})/);
+  const match = text.match(/(?:📞\s*)?(?:번호|전화번호|고객)\s*[:：]\s*([0-9][0-9\-\s]{8,})/);
   const digits = normalizePhoneDigits(match?.[1] || '');
   return digits.length >= 10 ? digits : null;
+}
+
+function normalizeReservationTime(value: unknown): string | null {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function normalizeIsoTimestamp(value: unknown): string | null {
+  const parsed = value instanceof Date ? value : new Date(String(value || ''));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function parseReservationCompletionTarget(row: Record<string, any>): Record<string, any> | null {
+  const text = `${row.message || ''}\n${row.title || ''}`;
+  if (row.team !== 'reservation' || !PICKKO_COMPLETION_ALARM_PATTERN.test(text)) return null;
+  if (String(row.incident_key || '').includes(':naver_block_retry:')) return null;
+
+  const phoneDigits = extractReservationPhoneDigits(row);
+  const dateMatch = text.match(/(?:날짜|이용일시)\s*[:：]\s*(20\d{2})\D+(\d{1,2})\D+(\d{1,2})/);
+  const timeMatch = text.match(/시간\s*[:：]\s*(\d{1,2}:\d{2})\s*[~～-]\s*(\d{1,2}:\d{2})/);
+  const roomMatch = text.match(/룸\s*[:：]\s*(?:스터디룸\s*)?([AB](?:[12])?)/i)
+    || text.match(/\(([AB](?:[12])?)룸\)/i);
+  const start = normalizeReservationTime(timeMatch?.[1]);
+  const end = normalizeReservationTime(timeMatch?.[2]);
+  const roomKey = normalizeStudyRoomKey(roomMatch?.[1]);
+  const enqueuedAt = normalizeIsoTimestamp(row.enqueued_at);
+  if (!phoneDigits || !dateMatch || !start || !end || !roomKey || !enqueuedAt) return null;
+
+  const date = `${dateMatch[1]}-${String(Number(dateMatch[2])).padStart(2, '0')}-${String(Number(dateMatch[3])).padStart(2, '0')}`;
+  return { phoneDigits, date, start, end, roomKey, enqueuedAt };
 }
 
 function parseReservationNaverBlockRetry(row: Record<string, any>): Record<string, any> | null {
@@ -324,6 +394,58 @@ async function resolveByReservationCurrentState(row: Record<string, any>, db = p
   };
 }
 
+async function resolveByReservationCompletionState(row: Record<string, any>, db = pgPool): Promise<Record<string, any> | null> {
+  const parsed = parseReservationCompletionTarget(row);
+  if (!parsed) return null;
+  const rows = await db.query('reservation', `
+    SELECT
+      id,
+      phone,
+      phone_raw_enc,
+      room,
+      status,
+      pickko_status,
+      pickko_order_id,
+      error_reason,
+      updated_at,
+      updated_at > to_char($4::timestamptz, 'YYYY-MM-DD HH24:MI:SS') AS updated_after_alarm
+    FROM reservation.reservations
+    WHERE date = $1
+      AND start_time = $2
+      AND end_time = $3
+      AND status = 'completed'
+      AND pickko_status = ANY($5::text[])
+      AND seen_only = 0
+      AND (error_reason IS NULL OR error_reason = '')
+  `, [parsed.date, parsed.start, parsed.end, parsed.enqueuedAt, RESERVATION_COMPLETION_STATUSES]);
+  const matched = rows.find((candidate: Record<string, any>) => {
+    if (candidate.updated_after_alarm !== true) return false;
+    if (normalizeStudyRoomKey(candidate.room) !== parsed.roomKey) return false;
+    const phone = normalizePhoneDigits(candidate.phone);
+    if (phone === parsed.phoneDigits) return true;
+    try {
+      return normalizePhoneDigits(decrypt(candidate.phone_raw_enc)) === parsed.phoneDigits;
+    } catch {
+      return false;
+    }
+  });
+  if (!matched) return null;
+  return {
+    stale_status: 'resolved_current_state',
+    stale_resolution_reason: `reservation_completed:${parsed.date}:${parsed.roomKey}:${parsed.start}_${parsed.end}`,
+    current_state_table: 'reservation.reservations',
+    current_state_reservation_id: matched.id,
+    current_state_pickko_status: matched.pickko_status,
+    current_state_pickko_order_id: matched.pickko_order_id || null,
+    current_state_updated_at: matched.updated_at || null,
+  };
+}
+
+const CURRENT_STATE_RESOLVERS = [
+  resolveByReservationCurrentState,
+  resolveByReservationCompletionState,
+];
+
 function annotateRows(rows: Array<Record<string, any>>, {
   manifest = loadManifest(),
   archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
@@ -333,11 +455,12 @@ function annotateRows(rows: Array<Record<string, any>>, {
   archiveDir?: string;
   processedDir?: string;
 } = {}) {
+  const archiveFiles = listArchiveFiles(archiveDir);
   return rows.map((row) => {
     const manifestResolution = resolveByManifest(row, manifest, processedDir);
     if (manifestResolution) return { ...row, ...manifestResolution };
 
-    const archiveResolution = resolveByCompletedArchive(row, archiveDir);
+    const archiveResolution = resolveByCompletedArchive(row, archiveFiles);
     if (archiveResolution) return { ...row, ...archiveResolution };
 
     const policyResolution = resolveByCurrentPolicy(row);
@@ -361,8 +484,23 @@ async function resolveRowsByCurrentState(
       resolvedRows.push(row);
       continue;
     }
-    const currentStateResolution = await resolveByReservationCurrentState(row, db);
-    resolvedRows.push(currentStateResolution ? { ...row, ...currentStateResolution } : row);
+    let currentStateResolution = null;
+    let currentStateResolutionError = null;
+    for (const resolver of CURRENT_STATE_RESOLVERS) {
+      try {
+        currentStateResolution = await resolver(row, db);
+      } catch (error: any) {
+        currentStateResolutionError = String(error?.message || error);
+      }
+      if (currentStateResolution) break;
+    }
+    if (currentStateResolution) {
+      resolvedRows.push({ ...row, ...currentStateResolution });
+    } else if (currentStateResolutionError) {
+      resolvedRows.push({ ...row, current_state_resolution_error: currentStateResolutionError });
+    } else {
+      resolvedRows.push(row);
+    }
   }
   return resolvedRows;
 }
@@ -560,4 +698,5 @@ module.exports = {
   _testOnly_buildActiveIncidentFingerprint: buildActiveIncidentFingerprint,
   _testOnly_buildStaleAlarmInput: buildStaleAlarmInput,
   _testOnly_isResolvedManifestReason: isResolvedManifestReason,
+  _testOnly_resolveRowsByCurrentState: resolveRowsByCurrentState,
 };

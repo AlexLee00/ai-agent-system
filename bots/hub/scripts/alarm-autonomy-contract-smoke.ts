@@ -12,6 +12,7 @@ const {
   _testOnly_buildActiveIncidentFingerprint,
   _testOnly_buildStaleAlarmInput,
   _testOnly_isResolvedManifestReason,
+  _testOnly_resolveRowsByCurrentState,
 } = require('./alarm-auto-repair-stale-scan.ts');
 const { APPLY_CONFIRM_TOKEN, _testOnly_buildBackfillPlan, _testOnly_isApplyConfirmed } = require('./alarm-auto-repair-stale-backfill.ts');
 const {
@@ -172,12 +173,21 @@ async function main() {
     assert(_testOnly_isResolvedManifestReason('manual_review_required') === false, 'manual review must remain active');
     assert(_testOnly_isResolvedManifestReason('manual_action_needed') === false, 'manual action must remain active');
     const completedArchiveDir = path.join(tempRoot, 'codex-completed');
-    fs.mkdirSync(completedArchiveDir, { recursive: true });
-    fs.writeFileSync(path.join(completedArchiveDir, '2026-06-10__replayed__ALARM_INCIDENT_blog_archive_sample.md'), [
+    const nestedCompletedArchiveDir = path.join(completedArchiveDir, 'root-stale', '2026-06-10');
+    fs.mkdirSync(nestedCompletedArchiveDir, { recursive: true });
+    fs.writeFileSync(path.join(nestedCompletedArchiveDir, '2026-06-10__replayed__ALARM_INCIDENT_blog_archive_sample.md'), [
       '---',
       'incident_key: blog:blog-health:archive-sample',
+      '- event_id: 4242',
       '---',
       '# completed archive sample',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(nestedCompletedArchiveDir, '2026-06-10__replayed__ALARM_INCIDENT_blog_generation_sample.md'), [
+      '---',
+      'incident_key: blog:blog-health:generation-sample',
+      'event_id: old-generation',
+      '---',
+      '# completed old generation sample',
     ].join('\n'), 'utf8');
     const deadLetterProcessedDir = path.join(tempRoot, 'processed');
     fs.mkdirSync(deadLetterProcessedDir, { recursive: true });
@@ -216,6 +226,7 @@ async function main() {
         message: 'old repair has completed archive document',
         event_type: 'blog_health_error',
         incident_key: 'blog:blog-health:archive-sample',
+        alarm_event_id: '4242',
         auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_archive_sample.md',
       },
       {
@@ -258,6 +269,28 @@ async function main() {
         incident_key: 'blog:blog-commenter:dead-letter-missing',
         auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_dead_letter_missing.md',
       },
+      {
+        team: 'blog',
+        bot_name: 'blog-health',
+        severity: 'error',
+        title: 'blog alarm',
+        message: 'new generation remains unresolved',
+        event_type: 'blog_health_error',
+        incident_key: 'blog:blog-health:generation-sample',
+        alarm_event_id: 'new-generation',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_generation_sample.md',
+      },
+      {
+        team: 'blog',
+        bot_name: 'blog-health',
+        severity: 'error',
+        title: 'blog alarm',
+        message: 'manifest without generation remains unresolved',
+        event_type: 'blog_health_error',
+        incident_key: 'blog:blog-health:manifest-generation-sample',
+        alarm_event_id: 'manifest-new-generation',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_manifest_generation_sample.md',
+      },
     ], {
       manifest: {
         entries: {
@@ -283,6 +316,11 @@ async function main() {
             contentHash: 'missing',
             deadLetteredAt: '2026-07-17T00:00:00.000Z',
           },
+          'docs/auto_dev/ALARM_INCIDENT_blog_manifest_generation_sample.md': {
+            relPath: 'docs/auto_dev/ALARM_INCIDENT_blog_manifest_generation_sample.md',
+            state: 'archived_missing',
+            reason: 'completed',
+          },
         },
       },
       archiveDir: completedArchiveDir,
@@ -296,6 +334,81 @@ async function main() {
     assert(annotatedResolved[4].stale_status === 'resolved_current_policy', 'expected naver source-unavailable guard to suppress stale auto-repair');
     assert(annotatedResolved[5].stale_status === 'terminal_dead_letter', 'expected processed dead-letter result to suppress missing-result stale scan');
     assert(annotatedResolved[6].stale_status === 'active', 'expected dead-letter manifest without processed evidence to stay active');
+    assert(annotatedResolved[7].stale_status === 'active', 'an archive from an older alarm generation must not resolve a newer generation');
+    assert(annotatedResolved[8].stale_status === 'active', 'a manifest without generation evidence must not resolve a generation-bound alarm');
+
+    const fixturePhone = ['010', '1111', '2222'].join('-');
+    const differentFixturePhone = ['010', '9999', '0000'].join('-');
+    const completedReservationAlarm = {
+      team: 'reservation',
+      bot_name: 'andy',
+      severity: 'error',
+      message: [
+        '❌ 픽코 예약 실패',
+        `📞 번호: ${fixturePhone}`,
+        '📅 날짜: 2026-07-20',
+        '⏰ 시간: 19:00~20:00',
+        '🏛️ 룸: A1',
+      ].join('\n'),
+      event_type: 'alert',
+      incident_key: 'reservation:andy:alert:completion-sample',
+      enqueued_at: '2026-07-19T02:00:00.000Z',
+      stale_status: 'active',
+    };
+    const completionDb = {
+      query: async (schema: string, sql: string, params: unknown[]) => {
+        assert(schema === 'reservation', 'reservation completion resolver must use the reservation schema');
+        assert(String(sql).includes('FROM reservation.reservations'), 'reservation completion resolver must query current reservations');
+        assert(/updated_at\s*>\s*to_char/.test(String(sql)), 'reservation completion resolver must fail closed on same-second evidence');
+        assert(params[0] === '2026-07-20' && params[1] === '19:00' && params[2] === '20:00', 'reservation completion resolver must preserve the exact slot');
+        assert(Array.isArray(params[4]) && params[4].includes('paid'), 'normal completed/paid evidence must resolve stale reservation alarms');
+        return [{
+          id: '1296595063',
+          phone: fixturePhone,
+          room: 'A1',
+          status: 'completed',
+          pickko_status: 'manual_retry',
+          pickko_order_id: '23776596',
+          updated_after_alarm: true,
+        }];
+      },
+    };
+    const resolvedReservation = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], completionDb);
+    assert(resolvedReservation[0].stale_status === 'resolved_current_state', 'exact post-alarm reservation completion must resolve stale state');
+
+    const wrongCustomerDb = {
+      query: async () => [{
+        id: 'other-customer',
+        phone: differentFixturePhone,
+        room: 'A1',
+        status: 'completed',
+        pickko_status: 'manual_retry',
+        pickko_order_id: 'other-order',
+        updated_after_alarm: true,
+      }],
+    };
+    const wrongCustomer = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], wrongCustomerDb);
+    assert(wrongCustomer[0].stale_status === 'active', 'a different customer in the same slot must not resolve stale state');
+
+    const oldEvidenceDb = {
+      query: async () => [{
+        id: 'old-evidence',
+        phone: fixturePhone,
+        room: 'A1',
+        status: 'completed',
+        pickko_status: 'manual_retry',
+        pickko_order_id: 'old-order',
+        updated_after_alarm: false,
+      }],
+    };
+    const oldEvidence = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], oldEvidenceDb);
+    assert(oldEvidence[0].stale_status === 'active', 'completion evidence older than the alarm must not resolve stale state');
+
+    const failedResolver = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], {
+      query: async () => { throw new Error('db unavailable'); },
+    });
+    assert(failedResolver[0].stale_status === 'active', 'current-state lookup failure must fail closed');
+    assert(failedResolver[0].current_state_resolution_error === 'db unavailable', 'current-state lookup failure must remain observable');
     const backfillPlan = _testOnly_buildBackfillPlan([
       { id: 11, alarm_event_id: '1011', incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
       { id: 12, alarm_event_id: '1012', incident_key: 'general:steward:sample', team: 'general', bot_name: 'steward', stale_status: 'resolved_current_policy', stale_resolution_reason: 'current_policy:report' },
@@ -378,7 +491,7 @@ async function main() {
     );
     assert(queryLog.some((sql) => String(sql).includes('enqueued_at < NOW()')), 'expected stale age to start at the latest enqueue time');
 
-    const pagedManifestEntries = {};
+    const pagedManifestEntries: Record<string, Record<string, string>> = {};
     for (let index = 0; index < 100; index += 1) {
       pagedManifestEntries[`docs/auto_dev/ALARM_INCIDENT_resolved_${index}.md`] = {
         relPath: `docs/auto_dev/ALARM_INCIDENT_resolved_${index}.md`,
