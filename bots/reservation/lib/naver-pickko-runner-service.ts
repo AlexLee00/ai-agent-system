@@ -1,6 +1,8 @@
 import { execFile as nodeExecFile, spawn as nodeSpawn } from 'child_process';
+import { buildPickkoBookingIncidentKey } from './naver-pickko-runner-helpers';
 const NODE_BIN = process.execPath || '/opt/homebrew/bin/node';
 export const PICKKO_CANCEL_BLOCKED_CODE = 98;
+const PICKKO_FAILURE_ALERT_DEDUPE_MINUTES = 24 * 60;
 
 type Logger = (message: string) => void;
 type CancelRetrySuccessHook = (payload: {
@@ -280,7 +282,17 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
           from_bot: 'andy',
           event_type: 'alert',
           alert_level: 3,
+          incident_key: buildPickkoBookingIncidentKey('pickko_cancel_failed', booking, booking.bookingId),
+          dedupe_minutes: PICKKO_FAILURE_ALERT_DEDUPE_MINUTES,
           message: buildPickkoCancelManualMessage(booking),
+          payload: {
+            bookingId: booking.bookingId || null,
+            date: booking.date,
+            start: booking.start,
+            end: booking.end,
+            room: booking.room,
+            failureStage: 'cancel_failed',
+          },
         }));
         autoBugReport({
           title: firstCode != null ? '픽코 자동 취소 실패 (재시도 포함)' : '픽코 자동 취소 실패',
@@ -400,7 +412,19 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
             from_bot: 'andy',
             event_type: 'alert',
             alert_level: 3,
+            incident_key: buildPickkoBookingIncidentKey('pickko_retry_exceeded', booking, bookingId),
+            dedupe_minutes: PICKKO_FAILURE_ALERT_DEDUPE_MINUTES,
             message: buildPickkoRetryExceededMessage(booking, currentRetries, maxRetries),
+            payload: {
+              bookingId: String(bookingId),
+              date: booking.date,
+              start: booking.start,
+              end: booking.end,
+              room: booking.room,
+              retries: currentRetries,
+              maxRetries,
+              failureStage: 'max_retries',
+            },
           }));
           resolve(99);
           return;
@@ -595,7 +619,23 @@ export function createNaverPickkoRunnerService(deps: CreateNaverPickkoRunnerServ
             from_bot: 'andy',
             event_type: 'alert',
             alert_level: 3,
+            incident_key: buildPickkoBookingIncidentKey(
+              `pickko_registration_${String(failureStage || 'failed').toLowerCase()}`,
+              booking,
+              bookingId,
+            ),
+            dedupe_minutes: PICKKO_FAILURE_ALERT_DEDUPE_MINUTES,
             message: buildPickkoManualFailureMessage(booking, errorMsg, retryCount, failureStage),
+            payload: {
+              bookingId: String(bookingId),
+              date: booking.date,
+              start: booking.start,
+              end: booking.end,
+              room: booking.room,
+              retries: retryCount,
+              failureStage: failureStage || 'unknown',
+              reason: errorMsg,
+            },
           }));
         }
 

@@ -23,6 +23,34 @@ export function buildPickkoAccurateArgs(baseScriptPath: string, normalized: Reco
   ];
 }
 
+export function buildPickkoBookingIncidentKey(
+  kind: string,
+  booking: Record<string, any>,
+  bookingId?: string | number | null,
+): string {
+  const normalizeSegment = (value: unknown, fallback: string) => {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return normalized || fallback;
+  };
+  const phoneDigits = String(booking.phoneRaw || booking.phone || '').replace(/\D/g, '');
+  const identity = bookingId == null || String(bookingId).trim() === ''
+    ? phoneDigits.slice(-4) || 'unknown'
+    : normalizeSegment(bookingId, phoneDigits.slice(-4) || 'unknown');
+  return [
+    'reservation',
+    'andy',
+    normalizeSegment(kind, 'pickko_failure'),
+    normalizeSegment(booking.date, 'unknown_date'),
+    normalizeSegment(booking.room, 'unknown_room'),
+    `${normalizeSegment(booking.start, 'unknown_start')}_${normalizeSegment(booking.end, 'unknown_end')}`,
+    identity,
+  ].join(':');
+}
+
 export function buildPickkoCancelManualMessage(booking: Record<string, any>): string {
   return (
     `🚨 픽코 취소 실패 — 수동 처리 필요!\n\n`

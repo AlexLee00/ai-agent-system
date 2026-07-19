@@ -5,6 +5,7 @@ const assert = require('assert');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
 const { createNaverPickkoRunnerService } = require('../lib/naver-pickko-runner-service.ts');
+const { buildPickkoBookingIncidentKey } = require('../lib/naver-pickko-runner-helpers.ts');
 
 function booking(overrides = {}) {
   return {
@@ -34,6 +35,7 @@ function createHarness(currentEntry) {
   const patches = [];
   const seen = [];
   const spawns = [];
+  const publishedAlerts = [];
   const service = createNaverPickkoRunnerService({
     isCancelledKey: async () => false,
     getReservation: async () => currentEntry,
@@ -51,7 +53,7 @@ function createHarness(currentEntry) {
     addCancelledKey: async () => {},
     sendAlert: async () => {},
     ragSaveReservation: async () => {},
-    publishReservationAlert: async () => {},
+    publishReservationAlert: async (payload) => { publishedAlerts.push(payload); },
     autoBugReport: () => {},
     transformAndNormalizeData: (item) => item,
     verifyRecoverablePickkoFailure: async () => false,
@@ -70,7 +72,7 @@ function createHarness(currentEntry) {
       return createChild(0);
     },
   });
-  return { service, logs, updates, patches, seen, spawns };
+  return { service, logs, updates, patches, seen, spawns, publishedAlerts };
 }
 
 async function main() {
@@ -108,6 +110,40 @@ async function main() {
   assert.equal(completedCode, 0);
   assert.equal(completed.spawns.length, 0, 'completed/manual row must remain skipped');
   assert.deepEqual(completed.seen, ['already-completed']);
+
+  const retryExceeded = createHarness({
+    id: 'retry-exceeded-booking',
+    status: 'failed',
+    pickkoStatus: null,
+    retries: 5,
+  });
+  const retryBooking = booking({
+    date: '2099-07-22',
+    start: '15:00',
+    end: '16:30',
+    room: 'A1',
+  });
+  const retryCode = await retryExceeded.service.runPickko({
+    booking: retryBooking,
+    bookingId: 'retry-exceeded-booking',
+    scriptsDir: '/tmp',
+    accurateScriptPath: '/tmp/fake-accurate.js',
+    maxRetries: 5,
+  });
+  assert.equal(retryCode, 99);
+  assert.equal(retryExceeded.spawns.length, 0, 'retry-exceeded booking must not spawn another registration');
+  assert.equal(retryExceeded.publishedAlerts.length, 1);
+  assert.equal(
+    retryExceeded.publishedAlerts[0].incident_key,
+    buildPickkoBookingIncidentKey('pickko_retry_exceeded', retryBooking, 'retry-exceeded-booking'),
+    'retry-exceeded alarm must use a booking-specific incident key',
+  );
+  assert.equal(retryExceeded.publishedAlerts[0].dedupe_minutes, 1440);
+  assert.notEqual(
+    buildPickkoBookingIncidentKey('pickko_retry_exceeded', retryBooking, 'retry-exceeded-booking'),
+    buildPickkoBookingIncidentKey('pickko_retry_exceeded', { ...retryBooking, date: '2099-07-23' }, 'another-booking'),
+    'different bookings must not collapse into one incident lifecycle',
+  );
 
   console.log('naver_pickko_runner_reactivation_smoke_ok');
 }
