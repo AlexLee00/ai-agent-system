@@ -218,8 +218,13 @@ async function main(): Promise<void> {
         retryAfterMs: 900,
       }]);
       const requestLogView = fixture.routingRuns.find((entry) => entry.sql.includes('CREATE OR REPLACE VIEW hub.llm_request_log'));
-      assert.match(String(requestLogView?.sql || ''), /admission_fallback_count/);
-      assert.match(String(requestLogView?.sql || ''), /admission_rejections/);
+      const requestLogViewSql = String(requestLogView?.sql || '');
+      assert.match(requestLogViewSql, /admission_fallback_count/);
+      assert.match(requestLogViewSql, /admission_rejections/);
+      assert.ok(
+        requestLogViewSql.indexOf('provider_tier') < requestLogViewSql.indexOf('admission_rejections'),
+        'new request-log view columns must append after the existing view contract',
+      );
     } finally {
       fixture.restore();
     }

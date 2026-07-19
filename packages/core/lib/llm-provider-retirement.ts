@@ -78,6 +78,16 @@ function assertProviderNotRetired(providerOrRoute) {
   throw error;
 }
 
+export {
+  GEMINI_PROVIDER_ALIASES,
+  RETIRED_GEMINI_SELECTOR_KEYS,
+  assertProviderNotRetired,
+  getGeminiRetirementState,
+  isGeminiProvider,
+  isRetiredGeminiSelectorKey,
+  warnGeminiRetirementOverride,
+};
+
 module.exports = {
   GEMINI_PROVIDER_ALIASES,
   RETIRED_GEMINI_SELECTOR_KEYS,

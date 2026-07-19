@@ -1931,13 +1931,13 @@ async function ensureHubLlmRequestLogView() {
       runtime_profile,
       attempted_providers,
       avoided_providers,
-      admission_rejections,
-      admission_fallback_count,
       route_target_kind,
       runtime_purpose,
       estimated_cost_usd,
       budget_guard_status,
-      provider_tier
+      provider_tier,
+      admission_rejections,
+      admission_fallback_count
     FROM public.llm_routing_log
   `);
 }
