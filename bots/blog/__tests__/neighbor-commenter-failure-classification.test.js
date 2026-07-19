@@ -174,6 +174,44 @@ describe('reply commenter failure classification', () => {
     expect(shouldDeferRecoverableReplyRequeue(recent, now)).toBe(true);
     expect(shouldDeferRecoverableReplyRequeue(old, now)).toBe(false);
   });
+
+  test('uses one in-page click instead of an unbounded native reply click', async () => {
+    let domFallbackAttempted = false;
+    const closedState = { replyAreaVisible: false, replyEditorCount: 0 };
+    const openState = { replyAreaVisible: true, replyEditorCount: 1 };
+    const nativeTarget = {
+      evaluate: jest.fn().mockResolvedValue(undefined),
+      click: jest.fn(() => new Promise(() => {})),
+      focus: jest.fn().mockResolvedValue(undefined),
+      press: jest.fn().mockResolvedValue(undefined),
+    };
+    const page = {
+      $: jest.fn().mockResolvedValue(nativeTarget),
+      evaluate: jest.fn(async (script) => {
+        const source = String(script || '');
+        if (source.includes('tagName: String(node.tagName')) {
+          return { tagName: 'a', role: 'button', dataAction: 'reply#toggle' };
+        }
+        if (source.includes('node.click();')) {
+          domFallbackAttempted = true;
+          return true;
+        }
+        if (source.includes('replyEditorIds: replyEditors')) {
+          return domFallbackAttempted ? openState : closedState;
+        }
+        return null;
+      }),
+      waitForFunction: jest.fn().mockResolvedValue(true),
+    };
+
+    const startedAt = Date.now();
+    const opened = await _testOnly.activateReplyMode(page, { openWaitTimeoutMs: 50 });
+
+    expect(opened).toBe(true);
+    expect(nativeTarget.click).not.toHaveBeenCalled();
+    expect(domFallbackAttempted).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+  });
 });
 
 describe('neighbor commenter managed browser connection', () => {

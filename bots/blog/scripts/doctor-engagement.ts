@@ -14,6 +14,7 @@ const { readCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 const { getEngagementOwners, getEngagementOwnerByArea } = require('../lib/engagement-ownership.ts');
+const { classifyEngagementFailure, summarizeEngagementFailure } = require('../lib/engagement-failure.ts');
 
   const runtimeConfig = getBlogHealthRuntimeConfig();
   const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
@@ -35,43 +36,6 @@ function parseArgs(argv = []) {
   return {
     json: argv.includes('--json'),
   };
-}
-
-function classifyEngagementFailure(meta = {}) {
-  const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
-  if (!errorText) {
-    if (meta?.correction_reason === 'reply_verification_false_positive') return 'verification';
-    return 'unknown';
-  }
-  if (
-    errorText.includes('reply_button_not_found')
-    || errorText.includes('reply_submit_not_found')
-    || errorText.includes('reply_submit_not_confirmed')
-    || errorText.includes('comment_submit_not_confirmed')
-    || errorText.includes('sympathy_button_not_found')
-    || errorText.includes('reply_ui_unavailable')
-    || errorText.includes('reply_editor_not_found')
-  ) return 'ui';
-  if (
-    errorText.includes('ECONNREFUSED')
-    || errorText.includes('__name is not defined')
-    || errorText.includes('browser')
-    || errorText.includes('ws 연결 실패')
-  ) return 'browser';
-  if (
-    errorText.includes('fetch failed')
-    || errorText.includes('timeout')
-    || errorText.includes('429')
-    || errorText.includes('Claude Code')
-    || errorText.includes('Groq')
-  ) return 'llm';
-  return 'unknown';
-}
-
-function summarizeEngagementFailure(meta = {}) {
-  const raw = String(meta?.error || meta?.uiError || meta?.previous_error || meta?.message || '').trim();
-  if (!raw) return '';
-  return raw.replace(/\s+/g, ' ').replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix').slice(0, 140);
 }
 
 function isRetiredReplyTarget(linkedComment = null) {

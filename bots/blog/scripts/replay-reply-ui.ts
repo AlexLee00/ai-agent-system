@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
 const { postReply, diagnoseReplyUi, generateReply, getPostSummary } = require('../lib/commenter.ts');
+const { isReplyEditorReadyResult } = require('../lib/engagement-failure.ts');
 
 const BLOG_COMMENTER_DEBUG_DIR = '/Users/alexlee/projects/ai-agent-system/tmp/blog-commenter-debug';
 
@@ -191,9 +192,10 @@ async function runWorker(args) {
     dryRun: true,
     operationTimeoutMs: args.timeoutMs,
   });
+  const editorReady = isReplyEditorReadyResult(result);
 
   const payload = {
-    ok: Boolean(result?.ok),
+    ok: editorReady,
     dryRun: true,
     testMode: true,
     timeoutMs: args.timeoutMs,
@@ -206,10 +208,11 @@ async function runWorker(args) {
     },
     replyLength: replyText.length,
     result,
-    error: '',
+    error: editorReady ? '' : 'reply_editor_not_ready',
   };
 
   console.log(JSON.stringify(payload));
+  if (!editorReady) process.exitCode = 2;
 }
 
 async function runDiagnoseWorker(args) {
@@ -323,11 +326,7 @@ async function runParent(args) {
     throw new Error('reply_replay_comment_not_found');
   }
 
-  const replyText = await resolveReplyText(comment);
-  if (!replyText) {
-    throw new Error('reply_replay_text_not_found');
-  }
-
+  const replyText = String(comment.reply_text || '').trim();
   const timeoutPayload = buildTimeoutPayload({ comment, replyText, timeoutMs: args.timeoutMs });
   const outcome = await runSubprocessJson('--worker', comment.id, args.timeoutMs, 1500);
 

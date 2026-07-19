@@ -38,6 +38,7 @@ const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require(pat
 const { readLatestBlogEvalCase } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/eval-case-telemetry.ts'));
 const { readNaverUrlBackfillTelemetry } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-url-backfill-telemetry.ts'));
 const { getEngagementOwners } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/engagement-ownership.ts'));
+const { classifyEngagementFailure, summarizeEngagementFailure } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/engagement-failure.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -289,56 +290,6 @@ function buildAdaptiveNeighborCadenceView({
     effectiveCollectLimit: Math.max(1, Number(baseCollect || 20)) + collectBoost,
     effectiveSympathyLimit: Math.max(1, Number(baseProcess || 20)) + sympathyBoost,
   };
-}
-
-function classifyEngagementFailure(meta = {}) {
-  const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
-  if (!errorText) {
-    if (meta?.correction_reason === 'reply_verification_false_positive') return 'verification';
-    return 'unknown';
-  }
-
-  if (
-    errorText.includes('reply_button_not_found')
-    || errorText.includes('reply_submit_not_found')
-    || errorText.includes('reply_submit_not_confirmed')
-    || errorText.includes('comment_submit_not_confirmed')
-    || errorText.includes('sympathy_button_not_found')
-    || errorText.includes('reply_ui_unavailable')
-    || errorText.includes('reply_editor_not_found')
-  ) {
-    return 'ui';
-  }
-
-  if (
-    errorText.includes('fetch failed')
-    || errorText.includes('timeout')
-    || errorText.includes('429')
-    || errorText.includes('Claude Code')
-    || errorText.includes('Groq')
-  ) {
-    return 'llm';
-  }
-
-  if (
-    errorText.includes('ECONNREFUSED')
-    || errorText.includes('__name is not defined')
-    || errorText.includes('browser')
-    || errorText.includes('ws 연결 실패')
-  ) {
-    return 'browser';
-  }
-
-  return 'unknown';
-}
-
-function summarizeEngagementFailure(meta = {}) {
-  const raw = String(meta?.error || meta?.uiError || meta?.previous_error || meta?.message || '').trim();
-  if (!raw) return '';
-  return raw
-    .replace(/\s+/g, ' ')
-    .replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix')
-    .slice(0, 140);
 }
 
 async function getNeighborRecoveryStatus(baseline = null) {

@@ -36,6 +36,7 @@ const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseli
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
 const { readNaverUrlBackfillTelemetry } = require('../lib/naver-url-backfill-telemetry.ts');
+const { classifyEngagementFailure, summarizeEngagementFailure } = require('../lib/engagement-failure.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -565,55 +566,6 @@ async function checkInstagramPublishHealth() {
   } catch (e) {
     return { ok: false, detail: `instagram publish 확인 실패: ${e.message.slice(0, 120)}`, latest: null };
   }
-}
-
-function classifyEngagementFailure(meta = {}) {
-  const errorText = String(meta?.error || meta?.uiError || meta?.previous_error || '').trim();
-  if (!errorText) {
-    if (meta?.correction_reason === 'reply_verification_false_positive') return 'verification';
-    return 'unknown';
-  }
-
-  if (
-    errorText.includes('reply_button_not_found')
-    || errorText.includes('reply_submit_not_found')
-    || errorText.includes('comment_submit_not_confirmed')
-    || errorText.includes('sympathy_button_not_found')
-    || errorText.includes('reply_ui_unavailable')
-    || errorText.includes('reply_editor_not_found')
-  ) {
-    return 'ui';
-  }
-
-  if (
-    errorText.includes('ECONNREFUSED')
-    || errorText.includes('__name is not defined')
-    || errorText.includes('browser')
-    || errorText.includes('ws 연결 실패')
-  ) {
-    return 'browser';
-  }
-
-  if (
-    errorText.includes('fetch failed')
-    || errorText.includes('timeout')
-    || errorText.includes('429')
-    || errorText.includes('Claude Code')
-    || errorText.includes('Groq')
-  ) {
-    return 'llm';
-  }
-
-  return 'unknown';
-}
-
-function summarizeEngagementFailure(meta = {}) {
-  const raw = String(meta?.error || meta?.uiError || meta?.previous_error || meta?.message || '').trim();
-  if (!raw) return '';
-  return raw
-    .replace(/\s+/g, ' ')
-    .replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix')
-    .slice(0, 140);
 }
 
 function isCommenterActiveWindow() {

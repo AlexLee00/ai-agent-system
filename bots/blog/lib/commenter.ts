@@ -3130,20 +3130,32 @@ async function waitForReplyThread(page, comment, testMode = false) {
   return page.waitForFunction(predicate, { timeout: timeoutMs }).then(() => true).catch(() => false);
 }
 
-async function activateReplyMode(page) {
-  const targetMeta = await inspectTargetReplyButtonLite(page).catch(() => null);
-  const nativeTarget = await page.$('[data-blog-target-reply-button="true"]');
-  if (nativeTarget) {
-    await nativeTarget.evaluate((node) => {
-      if (node && node.scrollIntoView) {
-        node.scrollIntoView({ block: 'center', behavior: 'instant' });
-      }
-    }).catch(() => {});
-    await nativeTarget.click({ force: true }).catch(() => {});
-    await sleep(120);
+async function waitForReplyModeOpen(page, timeoutMs = 2000) {
+  const deadline = Date.now() + Math.max(100, Number(timeoutMs || 2000));
+  do {
     if (await isReplyModeOpen(page)) return true;
+    await sleep(100);
+  } while (Date.now() < deadline);
+  return false;
+}
+
+async function runUiActionWithin(action, timeoutMs = 1000) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(action).then(() => true).catch(() => false),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve(false), Math.max(100, Number(timeoutMs || 1000)));
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  const clicked = await page.evaluate(`
+}
+
+async function activateReplyMode(page, { openWaitTimeoutMs = 2000, keyboardTimeoutMs = 1000 } = {}) {
+  const targetMeta = await inspectTargetReplyButtonLite(page).catch(() => null);
+  const clickDispatched = await page.evaluate(`
     (() => {
       const visible = (el) => {
         if (!el) return false;
@@ -3153,31 +3165,6 @@ async function activateReplyMode(page) {
       };
       const textOf = (el) =>
         String((el && (el.innerText || el.textContent)) || '').replace(/\\s+/g, ' ').trim();
-      const isReplyOpen = () => {
-        const targetComment = document.querySelector('[data-blog-target-comment="true"]');
-        const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
-        const hasVisibleEditor = (root) => {
-          if (!root) return false;
-          const replyEditors = Array.from(root.querySelectorAll([
-            'textarea',
-            'div[contenteditable="true"]',
-            'div[role="textbox"]',
-            'div[id*="write_textarea"]',
-            '.u_cbox_text.u_cbox_text_mention',
-          ].join(', ')));
-          return replyEditors.some(visible);
-        };
-        if (visible(replyArea) && hasVisibleEditor(replyArea)) return true;
-        const stateOnButton = document.querySelector('[data-blog-target-comment="true"] .u_cbox_btn_reply_on[data-blog-target-reply-button="true"], [data-blog-target-comment="true"] .u_cbox_btn_reply_on');
-        if (visible(stateOnButton)) {
-          const scopedReplyArea = targetComment && (
-            targetComment.querySelector('.u_cbox_reply_area')
-            || targetComment.querySelector('[class*="reply_area"]')
-          );
-          if (visible(scopedReplyArea) && hasVisibleEditor(scopedReplyArea)) return true;
-        }
-        return false;
-      };
       const targetComment = document.querySelector('[data-blog-target-comment="true"]');
       const targetCommentNo = String(targetComment?.getAttribute('data-blog-target-comment-no') || '');
       const targetButton = targetComment
@@ -3196,87 +3183,26 @@ async function activateReplyMode(page) {
       document.querySelectorAll('[data-blog-target-reply-button="true"]').forEach((item) => item.removeAttribute('data-blog-target-reply-button'));
       node.setAttribute('data-blog-target-reply-button', 'true');
       node.scrollIntoView({ block: 'center', behavior: 'instant' });
-      const rect = node.getBoundingClientRect();
-      const eventInit = {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        button: 0,
-        buttons: 1,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2,
-      };
-      const attemptClick = () => {
-        node.focus && node.focus();
-        node.dispatchEvent(new MouseEvent('pointerdown', eventInit));
-        node.dispatchEvent(new MouseEvent('mousedown', eventInit));
-        node.dispatchEvent(new MouseEvent('pointerup', eventInit));
-        node.dispatchEvent(new MouseEvent('mouseup', eventInit));
-        node.dispatchEvent(new MouseEvent('click', eventInit));
-        if (typeof node.click === 'function') {
-          try { node.click(); } catch {}
-        }
-      };
-      attemptClick();
-      return isReplyOpen() || String(node.getAttribute('aria-expanded') || '').trim().toLowerCase() === 'true';
+      if (typeof node.click !== 'function') return false;
+      node.focus && node.focus();
+      node.click();
+      return true;
     })()
   `).catch(() => false);
 
-  if (!clicked) return false;
+  if (!clickDispatched) return false;
+  if (await waitForReplyModeOpen(page, openWaitTimeoutMs)) return true;
 
-  await sleep(120);
-  if (await isReplyModeOpen(page)) return true;
-
-  if (nativeTarget && (targetMeta?.tagName === 'a' || targetMeta?.role === 'button')) {
-    await nativeTarget.focus().catch(() => {});
-    await nativeTarget.press('Enter').catch(() => {});
-    await sleep(120);
-    if (await isReplyModeOpen(page)) return true;
-    await nativeTarget.press('Space').catch(() => {});
-    await sleep(120);
-    if (await isReplyModeOpen(page)) return true;
+  const keyboardTarget = await page.$('[data-blog-target-reply-button="true"]').catch(() => null);
+  if (keyboardTarget && (targetMeta?.tagName === 'a' || targetMeta?.role === 'button')) {
+    await runUiActionWithin(async () => {
+      await keyboardTarget.focus();
+      await keyboardTarget.press('Enter');
+    }, keyboardTimeoutMs);
+    if (await waitForReplyModeOpen(page, openWaitTimeoutMs)) return true;
   }
 
-  return page.waitForFunction(`
-    (() => {
-      const visible = (el) => {
-        if (!el) return false;
-        const style = window.getComputedStyle(el);
-        const rect = el.getBoundingClientRect();
-        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
-      };
-      const hasVisibleEditor = (root) => {
-        if (!root) return false;
-        const replyEditors = Array.from(root.querySelectorAll([
-          'textarea',
-          'div[contenteditable="true"]',
-          'div[role="textbox"]',
-          'div[id*="write_textarea"]',
-          '.u_cbox_text.u_cbox_text_mention',
-        ].join(', ')));
-        return replyEditors.some(visible);
-      };
-
-      const replyArea = document.querySelector('[data-blog-target-reply-area="true"]');
-      if (visible(replyArea) && hasVisibleEditor(replyArea)) {
-        return true;
-      }
-      const stateOnButton = document.querySelector('[data-blog-target-comment=\"true\"] .u_cbox_btn_reply_on[data-blog-target-reply-button=\"true\"], [data-blog-target-comment=\"true\"] .u_cbox_btn_reply_on');
-      if (visible(stateOnButton)) {
-        const targetComment = document.querySelector('[data-blog-target-comment=\"true\"]');
-        const scopedReplyArea = targetComment && (
-          targetComment.querySelector('.u_cbox_reply_area')
-          || targetComment.querySelector('[class*="reply_area"]')
-        );
-        if (visible(scopedReplyArea) && hasVisibleEditor(scopedReplyArea)) {
-          return true;
-        }
-      }
-      const targetReplyButton = document.querySelector('[data-blog-target-reply-button="true"]');
-      const ariaExpanded = String(targetReplyButton?.getAttribute('aria-expanded') || '').trim().toLowerCase();
-      return ariaExpanded === 'true' && visible(stateOnButton);
-    })()
-  `, { timeout: 8000 }).then(() => true).catch(() => false);
+  return false;
 }
 
 async function inspectActivateReplyModeLite(page) {
@@ -6178,6 +6104,8 @@ async function runCommentReply({ testMode = false } = {}) {
         meta: {
           commentId: comment.id,
           error: rawErrorMessage,
+          phase: uiError ? 'reply_ui' : 'process',
+          ...(uiError ? { uiError: rawErrorMessage } : {}),
           terminalStatus: uiError ? 'skipped' : 'failed',
         },
       }).catch(() => {});
@@ -6686,5 +6614,6 @@ module.exports = {
     readNaverMonitorWsEndpoints,
     reconcileTimedOutNeighborComment,
     resolveNeighborCommentTimeouts,
+    activateReplyMode,
   },
 };
