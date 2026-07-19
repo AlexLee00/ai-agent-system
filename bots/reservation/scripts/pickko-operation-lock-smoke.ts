@@ -43,6 +43,7 @@ async function testImmediateAcquire() {
     },
     getLockState: async () => ({ locked: false, by: null }),
     delay: async () => assert.fail('immediate acquire must not wait'),
+    now: () => 0,
   });
 
   assert.deepEqual(result, {

@@ -50,7 +50,16 @@ async function main() {
   assert.strictEqual(differentWindow.calls.updated.length, 0, 'different window must not mark completed');
 
   const sameWindow = createService([
-    { id: 'peer-2h', status: 'completed', pickkoStatus: 'manual', end: '18:00', room: 'A2' },
+    {
+      id: 'peer-2h',
+      status: 'completed',
+      pickkoStatus: 'manual_retry',
+      pickkoOrderId: 'order-123',
+      pickkoStartTime: '2026-06-04 00:00:01',
+      pickkoCompleteTime: '2026-06-04 00:00:02',
+      end: '18:00',
+      room: 'A2',
+    },
   ]);
   const recoveredFromSameWindow = await sameWindow.service.verifyRecoverablePickkoFailure(
     'new-2h',
@@ -60,6 +69,50 @@ async function main() {
   );
   assert.strictEqual(recoveredFromSameWindow, true, 'same end_time may recover as same slot');
   assert.strictEqual(sameWindow.calls.updated.length, 1, 'same window should mark completed');
+  assert.deepStrictEqual(sameWindow.calls.updated[0], {
+    id: 'new-2h',
+    patch: {
+      status: 'completed',
+      pickkoStatus: 'manual_retry',
+      pickkoOrderId: 'order-123',
+      errorReason: null,
+      pickkoStartTime: '2026-06-04 00:00:01',
+      pickkoCompleteTime: '2026-06-04 00:00:02',
+    },
+  }, 'canonical booking must inherit the completed peer evidence before duplicate hiding');
+
+  const visiblePeerPreferred = createService([
+    {
+      id: 'hidden-peer',
+      status: 'completed',
+      pickkoStatus: 'manual_retry',
+      pickkoOrderId: 'stale-order',
+      seenOnly: true,
+      end: '18:00',
+      room: 'A2',
+    },
+    {
+      id: 'visible-peer',
+      status: 'completed',
+      pickkoStatus: 'manual_retry',
+      pickkoOrderId: 'current-order',
+      seenOnly: false,
+      end: '18:00',
+      room: 'A2',
+    },
+  ]);
+  const recoveredFromVisiblePeer = await visiblePeerPreferred.service.verifyRecoverablePickkoFailure(
+    'new-visible',
+    booking,
+    'ALREADY_REGISTERED',
+    'PICKKO_FAILURE_STAGE=ALREADY_REGISTERED',
+  );
+  assert.strictEqual(recoveredFromVisiblePeer, true, 'visible completed peer should recover the canonical booking');
+  assert.strictEqual(
+    visiblePeerPreferred.calls.updated[0]?.patch?.pickkoOrderId,
+    'current-order',
+    'hidden duplicate evidence must not overwrite the canonical Pickko order ID',
+  );
 
   console.log('✅ naver recovery window smoke ok');
 }

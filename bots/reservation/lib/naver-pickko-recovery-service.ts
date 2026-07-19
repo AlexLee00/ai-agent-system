@@ -6,6 +6,13 @@ type ResolveAlertsByBookingFn = (phone: string, date: string, start: string) => 
 type SendAlertFn = (options: Record<string, any>) => Promise<void> | void;
 type RagSaveReservationFn = (booking: Record<string, any>, status?: string) => Promise<void> | void;
 
+const RECOVERABLE_PICKKO_STATUSES = new Set(['paid', 'manual', 'manual_retry', 'verified']);
+
+function isSeenOnly(row: Record<string, any>): boolean {
+  const value = row.seenOnly ?? row.seen_only;
+  return value === true || value === 1 || value === '1';
+}
+
 export type CreateNaverPickkoRecoveryServiceDeps = {
   getReservation: (id: string) => Promise<any>;
   findReservationByCompositeKey: (key: string) => Promise<any>;
@@ -145,21 +152,28 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
       booking.end,
     ).catch(() => []);
 
-    const peerCompleted = Array.isArray(slotRows) && slotRows.some((row) =>
+    const peerCompleted = Array.isArray(slotRows) && slotRows.find((row) =>
       String(row.id) !== String(bookingId) &&
+      !isSeenOnly(row) &&
       row.status === 'completed' &&
-      ['paid', 'manual', 'manual_retry', 'verified'].includes(row.pickkoStatus) &&
+      RECOVERABLE_PICKKO_STATUSES.has(row.pickkoStatus) &&
       String(row.end || row.end_time || '') === String(booking.end || ''),
     );
 
     if (!peerCompleted) return false;
 
-    await updateReservation(String(bookingId), {
+    const recoveredPickkoStatus = peerCompleted.pickkoStatus === 'paid'
+      ? 'manual'
+      : peerCompleted.pickkoStatus;
+    const completionPatch: Record<string, any> = {
       status: 'completed',
-      pickkoStatus: 'manual',
+      pickkoStatus: recoveredPickkoStatus,
       errorReason: null,
-      pickkoCompleteTime: toKst(new Date()),
-    });
+      pickkoCompleteTime: peerCompleted.pickkoCompleteTime || toKst(new Date()),
+    };
+    if (peerCompleted.pickkoOrderId) completionPatch.pickkoOrderId = peerCompleted.pickkoOrderId;
+    if (peerCompleted.pickkoStartTime) completionPatch.pickkoStartTime = peerCompleted.pickkoStartTime;
+    await updateReservation(String(bookingId), completionPatch);
     await markSeen(String(bookingId)).catch(() => {});
     await reconcileSlotDuplicatesAfterRecovery(String(bookingId), booking);
     await resolveAlertsByBooking(booking.phone, booking.date, booking.start);
@@ -171,7 +185,7 @@ export function createNaverPickkoRecoveryService(deps: CreateNaverPickkoRecovery
       date: booking.date,
       time: `${booking.start}~${booking.end}`,
       room: booking.room,
-      status: 'manual',
+      status: recoveredPickkoStatus,
       action: '동일 슬롯의 기존 완료 예약을 확인해 자동 복구함',
     }));
     await Promise.resolve(ragSaveReservation(booking, '픽코완료(실패검증복구)'));
