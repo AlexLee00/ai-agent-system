@@ -210,6 +210,124 @@ function computeJobId(tmpRoot, filePath, content) {
   return crypto.createHash('sha1').update(`${relPath}:${contentHash}`).digest('hex').slice(0, 16);
 }
 
+async function test_manifest_lock_release_preserves_replacement_owner() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const lockPath = path.join(autoDir, '.auto-dev-manifest.json.lock');
+  const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+
+  manifestLib._testOnly_withManifestLock(autoDir, () => {
+    fs.unlinkSync(lockPath);
+    fs.writeFileSync(lockPath, 'replacement-owner\n', 'utf8');
+  });
+
+  assert.strictEqual(fs.existsSync(lockPath), true, 'an old owner must not delete a replacement lock');
+  assert.strictEqual(fs.readFileSync(lockPath, 'utf8').trim(), 'replacement-owner');
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: manifest lock release preserves replacement owner');
+}
+
+async function test_manifest_async_lock_wait_yields_event_loop() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const lockPath = path.join(autoDir, '.auto-dev-manifest.json.lock');
+  const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(lockPath, `${process.pid}:existing-owner\n`, 'utf8');
+
+  let timerFired = false;
+  const releaseTimer = setTimeout(() => {
+    timerFired = true;
+    fs.unlinkSync(lockPath);
+  }, 40);
+  try {
+    await manifestLib._testOnly_withManifestLockAsync(autoDir, async () => {
+      assert.strictEqual(timerFired, true, 'async lock wait must yield to the event loop');
+    });
+  } finally {
+    clearTimeout(releaseTimer);
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+  console.log('✅ auto-dev: async manifest lock wait yields event loop');
+}
+
+async function test_manifest_stale_reclaim_serializes_contenders() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const lockPath = path.join(autoDir, '.auto-dev-manifest.json.lock');
+  const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(lockPath, '99999999:stale-owner\n', 'utf8');
+  const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+  fs.utimesSync(lockPath, staleTime, staleTime);
+
+  let active = 0;
+  let maxActive = 0;
+  const contender = () => manifestLib._testOnly_withManifestLockAsync(autoDir, async () => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    active -= 1;
+  });
+  try {
+    await Promise.all([contender(), contender()]);
+    assert.strictEqual(maxActive, 1, 'stale reclaim must preserve mutual exclusion');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+  console.log('✅ auto-dev: stale manifest lock reclaim serializes contenders');
+}
+
+async function test_manifest_stale_empty_lock_is_recoverable() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const lockPath = path.join(autoDir, '.auto-dev-manifest.json.lock');
+  const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(lockPath, '', 'utf8');
+  const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+  fs.utimesSync(lockPath, staleTime, staleTime);
+
+  let acquired = false;
+  try {
+    await manifestLib._testOnly_withManifestLockAsync(autoDir, async () => {
+      acquired = true;
+    });
+    assert.strictEqual(acquired, true, 'stale tokenless lock must be recoverable');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+  console.log('✅ auto-dev: stale empty manifest lock is recoverable');
+}
+
+async function test_manifest_orphan_reclaim_guard_is_recoverable() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const lockPath = path.join(autoDir, '.auto-dev-manifest.json.lock');
+  const staleOwner = '99999999:stale-owner';
+  const guardHash = crypto.createHash('sha1').update(staleOwner).digest('hex').slice(0, 12);
+  const guardPath = `${lockPath}.reclaim-${guardHash}`;
+  const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(lockPath, `${staleOwner}\n`, 'utf8');
+  fs.writeFileSync(guardPath, '99999998:orphan-reclaimer\n', 'utf8');
+  const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+  fs.utimesSync(lockPath, staleTime, staleTime);
+  fs.utimesSync(guardPath, staleTime, staleTime);
+
+  let acquired = false;
+  try {
+    await manifestLib._testOnly_withManifestLockAsync(autoDir, async () => {
+      acquired = true;
+    });
+    assert.strictEqual(acquired, true, 'orphan reclaim guard must not block recovery permanently');
+    assert.strictEqual(fs.existsSync(guardPath), false, 'orphan reclaim guard must be cleaned');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+  console.log('✅ auto-dev: orphan manifest reclaim guard is recoverable');
+}
+
 async function test_stages_define_required_lifecycle() {
   const tmpRoot = makeTempRoot();
   const { mocks } = makeMocks(tmpRoot);
@@ -391,6 +509,10 @@ async function test_regenerated_archived_document_reenters_inbox() {
         reason: 'completed',
         archivedPath,
         contentHash: oldHash,
+        callbackState: 'delivered',
+        callbackPayload: { incidentKey: 'old-generation' },
+        callbackAttempts: 2,
+        callbackEventId: 123,
       },
     },
   }, null, 2), 'utf8');
@@ -402,6 +524,15 @@ async function test_regenerated_archived_document_reenters_inbox() {
     const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
     assert.strictEqual(manifest.entries[relPath].state, 'inbox');
     assert.strictEqual(manifest.entries[relPath].source, 'regenerated_content');
+    assert.strictEqual(manifest.entries[relPath].callbackState, undefined);
+    assert.strictEqual(manifest.entries[relPath].callbackPayload, undefined);
+    assert.strictEqual(manifest.entries[relPath].callbackAttempts, undefined);
+    assert.strictEqual(manifest.entries[relPath].callbackEventId, undefined);
+    assert.deepStrictEqual(
+      fs.readdirSync(autoDir).filter(name => name.includes('.auto-dev-manifest.json.')),
+      [],
+      'atomic manifest writes must not leave temp or lock files',
+    );
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -710,16 +841,27 @@ async function test_completed_manifest_suppresses_failure_at_notification_bounda
 async function test_alarm_repair_result_uses_callback_contract() {
   const tmpRoot = makeTempRoot();
   const relPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK.md';
+  const contentHash = 'callback-contract-hash';
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    entries: {
+      [relPath]: { relPath, state: 'archived', contentHash, reason: 'completed' },
+    },
+  }, null, 2), 'utf8');
   const { mocks, alarms, repairCallbacks } = makeMocks(tmpRoot);
   await withMocks(mocks, async pipeline => {
     const result = await pipeline._testOnly_sendAlarmRepairResult(
       {
         relPath,
+        contentHash,
         analysis: {
           relPath,
           metadata: {
             source_team: 'reservation',
             incident_key: 'reservation:test:callback',
+            alarm_event_id: '12345',
             alarm_event_type: 'test_error',
           },
         },
@@ -736,9 +878,313 @@ async function test_alarm_repair_result_uses_callback_contract() {
   assert.strictEqual(alarms.length, 0, 'repair results must not use generic /hub/alarm');
   assert.strictEqual(repairCallbacks.length, 1, 'repair result must use the callback contract once');
   assert.strictEqual(repairCallbacks[0].incidentKey, 'reservation:test:callback');
+  assert.strictEqual(repairCallbacks[0].alarmEventId, '12345');
   assert.strictEqual(repairCallbacks[0].status, 'resolved');
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: repair result uses Hub callback contract');
+}
+
+async function test_completed_alarm_callback_failure_is_retried_without_reimplementation() {
+  const tmpRoot = makeTempRoot();
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK_RETRY.md';
+  const doc = makeDoc(tmpRoot, 'ALARM_INCIDENT_CALLBACK_RETRY.md', [
+    '---',
+    'target_team: claude',
+    'owner_agent: codex',
+    'source_team: reservation',
+    'source_bot: jimmy',
+    'incident_key: reservation:test:callback-retry',
+    'alarm_event_id: 54321',
+    'alarm_event_type: reservation_error',
+    'risk_tier: normal',
+    'task_type: development_task',
+    'write_scope:',
+    '  - bots/claude/**',
+    'test_scope:',
+    '  - npm --prefix bots/claude run test:auto-dev',
+    'autonomy_level: autonomous_l5',
+    'requires_live_execution: false',
+    '---',
+    '',
+    '# Callback delivery retry',
+    '',
+    'Implementation and verification are complete.',
+  ].join('\n'));
+  const callbackPayloads = [];
+  let callbackIntentSnapshot = null;
+  let callbackShouldFail = true;
+  const { mocks } = makeMocks(tmpRoot, {
+    '../../../packages/core/lib/hub-alarm-client': {
+      postAlarm: async () => ({ ok: true }),
+      postAlarmAutoRepairResult: async payload => {
+        callbackPayloads.push(payload);
+        callbackIntentSnapshot = JSON.parse(
+          fs.readFileSync(path.join(tmpRoot, 'docs', 'auto_dev', '.auto-dev-manifest.json'), 'utf8')
+        ).entries[relPath];
+        if (callbackShouldFail) {
+          return {
+            ok: false,
+            error: 'hub callback unavailable',
+            retryable: true,
+            retryAfterMs: 2500,
+          };
+        }
+        return { ok: true, eventId: 98765, mirrorUpdate: { ok: true, updated: 1 } };
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      shadow: false,
+      executeImplementation: false,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.implementationCompleted, true);
+    assert.strictEqual(result.callbackPending, true);
+    assert.strictEqual(callbackIntentSnapshot.callbackState, 'pending', 'callback intent must be durable before the HTTP call');
+    assert.strictEqual(callbackIntentSnapshot.callbackAttempts, 0);
+    assert.strictEqual(callbackIntentSnapshot.callbackPayload.alarmEventId, '54321');
+
+    let manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'docs', 'auto_dev', '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'archived');
+    assert.strictEqual(manifest.entries[relPath].callbackState, 'pending');
+    assert.strictEqual(manifest.entries[relPath].callbackAttempts, 1);
+    assert.strictEqual(manifest.entries[relPath].callbackPayload.alarmEventId, '54321');
+    const callbackNextAttemptMs = Date.parse(manifest.entries[relPath].callbackNextAttemptAt);
+    const callbackLastAttemptMs = Date.parse(manifest.entries[relPath].callbackLastAttemptAt);
+    assert(Number.isFinite(callbackNextAttemptMs), 'initial callback failure must schedule a retry');
+    assert.strictEqual(callbackNextAttemptMs - callbackLastAttemptMs, 2500, 'Hub retry-after must override the shorter local backoff');
+
+    const deferredRetry = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({
+      shadow: false,
+      test: false,
+      nowMs: callbackNextAttemptMs - 1,
+    });
+    assert.strictEqual(deferredRetry.attemptedCount, 0, 'callback must not retry before the scheduled time');
+    assert.strictEqual(deferredRetry.deferredCount, 1);
+    assert.strictEqual(callbackPayloads.length, 1);
+
+    callbackShouldFail = false;
+    const retry = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({
+      shadow: false,
+      test: false,
+      nowMs: callbackNextAttemptMs,
+    });
+    assert.strictEqual(retry.ok, true);
+    assert.strictEqual(retry.deliveredCount, 1);
+    assert.strictEqual(retry.failedCount, 0);
+    assert.strictEqual(callbackPayloads.length, 2, 'only the callback should be retried');
+
+    manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'docs', 'auto_dev', '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'archived');
+    assert.strictEqual(manifest.entries[relPath].callbackState, 'delivered');
+    assert.strictEqual(manifest.entries[relPath].callbackAttempts, 2);
+    assert.strictEqual(manifest.entries[relPath].callbackEventId, 98765);
+
+    const noPendingRetry = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({ shadow: false, test: false });
+    assert.strictEqual(noPendingRetry.pendingCount, 0);
+    assert.strictEqual(callbackPayloads.length, 2, 'delivered callback must not be retried again');
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_CALLBACK_RETRY_BASE_MS: '1000',
+    CLAUDE_AUTO_DEV_CALLBACK_RETRY_MAX_MS: '4000',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed implementation retries only the failed Hub callback');
+}
+
+async function test_archived_missing_pending_callback_is_retried() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK_ARCHIVED_MISSING.md';
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived_missing',
+        contentHash: 'archived-missing-callback-hash',
+        reason: 'completed',
+        callbackState: 'pending',
+        callbackAttempts: 1,
+        callbackPayload: {
+          incidentKey: 'reservation:test:archived-missing-callback',
+          alarmEventId: 'archived-missing-generation',
+          status: 'resolved',
+        },
+        createdAt: '2026-07-18T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const callbackPayloads = [];
+  const { mocks } = makeMocks(tmpRoot, {
+    '../../../packages/core/lib/hub-alarm-client': {
+      postAlarm: async () => ({ ok: true }),
+      postAlarmAutoRepairResult: async payload => {
+        callbackPayloads.push(payload);
+        return { ok: true, eventId: 90003, mirrorUpdate: { ok: true, updated: 1 } };
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const retry = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({ shadow: false, test: false });
+    assert.strictEqual(retry.ok, true);
+    assert.strictEqual(retry.deliveredCount, 1);
+    assert.strictEqual(callbackPayloads.length, 1);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].callbackState, 'delivered');
+    assert.strictEqual(manifest.entries[relPath].state, 'archived_missing');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: archived_missing pending callback remains retryable');
+}
+
+async function test_callback_retry_does_not_archive_regenerated_generation() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK_GENERATION.md';
+  const oldHash = 'old-callback-hash';
+  const newHash = 'new-callback-hash';
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    entries: {
+      [relPath]: {
+        relPath,
+        state: 'archived',
+        contentHash: oldHash,
+        reason: 'completed',
+        callbackState: 'pending',
+        callbackAttempts: 1,
+        callbackPayload: {
+          incidentKey: 'reservation:test:generation',
+          alarmEventId: 'old-generation',
+          status: 'resolved',
+        },
+        createdAt: '2026-07-18T00:00:00.000Z',
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot, {
+    '../../../packages/core/lib/hub-alarm-client': {
+      postAlarm: async () => ({ ok: true }),
+      postAlarmAutoRepairResult: async () => {
+        const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+        manifestLib.markAutoDevManifestState(autoDir, relPath, 'inbox', { contentHash: newHash });
+        return { ok: true, eventId: 90001, mirrorUpdate: { ok: true, updated: 1 } };
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const retry = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({ shadow: false, test: false });
+    assert.strictEqual(retry.ok, true);
+    assert.strictEqual(retry.results[0].superseded, true, 'old callback result must detect the new generation');
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[relPath].state, 'inbox', 'new generation must remain actionable');
+    assert.strictEqual(manifest.entries[relPath].contentHash, newHash);
+    assert.strictEqual(manifest.entries[relPath].callbackState, undefined);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: old callback cannot archive regenerated generation');
+}
+
+async function test_permanent_callback_failure_does_not_starve_following_entry() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  const firstRelPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK_PERMANENT.md';
+  const secondRelPath = 'docs/auto_dev/ALARM_INCIDENT_CALLBACK_FOLLOWING.md';
+  fs.mkdirSync(autoDir, { recursive: true });
+  const makeEntry = (relPath, alarmEventId, createdAt) => ({
+    relPath,
+    state: 'archived',
+    contentHash: `${alarmEventId}-hash`,
+    reason: 'completed',
+    callbackState: 'pending',
+    callbackAttempts: 1,
+    callbackPayload: { incidentKey: `reservation:test:${alarmEventId}`, alarmEventId, status: 'resolved' },
+    createdAt,
+  });
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    entries: {
+      [firstRelPath]: makeEntry(firstRelPath, 'permanent-generation', '2026-07-18T00:00:00.000Z'),
+      [secondRelPath]: makeEntry(secondRelPath, 'following-generation', '2026-07-18T00:01:00.000Z'),
+    },
+  }, null, 2), 'utf8');
+
+  const attempted = [];
+  const { mocks } = makeMocks(tmpRoot, {
+    '../../../packages/core/lib/hub-alarm-client': {
+      postAlarm: async () => ({ ok: true }),
+      postAlarmAutoRepairResult: async payload => {
+        attempted.push(payload.alarmEventId);
+        if (payload.alarmEventId === 'permanent-generation') {
+          return { ok: false, status: 409, retryable: false, error: 'hub_alarm_mirror_generation_not_found' };
+        }
+        return { ok: true, eventId: 90002, mirrorUpdate: { ok: true, updated: 1 } };
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const first = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({
+      shadow: false,
+      test: false,
+      callbackBatchLimit: 1,
+    });
+    assert.strictEqual(first.ok, false);
+    assert.strictEqual(first.results[0].terminal, true);
+
+    const second = await pipeline._testOnly_retryPendingAlarmRepairCallbacks({
+      shadow: false,
+      test: false,
+      callbackBatchLimit: 1,
+    });
+    assert.strictEqual(second.ok, true);
+    assert.deepStrictEqual(attempted, ['permanent-generation', 'following-generation']);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(autoDir, '.auto-dev-manifest.json'), 'utf8'));
+    assert.strictEqual(manifest.entries[firstRelPath].callbackState, 'manual_required');
+    assert.strictEqual(manifest.entries[secondRelPath].callbackState, 'delivered');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: permanent callback failure cannot starve following callbacks');
+}
+
+async function test_callback_retry_exception_releases_global_lock() {
+  const tmpRoot = makeTempRoot();
+  const lockPath = path.join(tmpRoot, 'claude-auto-dev.lock');
+  const manifestLib = require(AUTO_DEV_MANIFEST_PATH);
+  const { mocks } = makeMocks(tmpRoot, {
+    '../../../packages/core/lib/auto-dev-manifest.ts': {
+      ...manifestLib,
+      loadAutoDevManifest: () => { throw new Error('manifest_retry_read_failed'); },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    await assert.rejects(
+      () => pipeline.runAutoDevPipeline({ force: true, test: false, shadow: false, once: true }),
+      /manifest_retry_read_failed/,
+    );
+    assert.strictEqual(fs.existsSync(lockPath), false, 'callback retry failure must release the global lock');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: callback retry exception releases global lock');
 }
 
 async function test_regenerated_incident_with_same_path_keeps_failure_alarm() {
@@ -2717,6 +3163,7 @@ async function test_review_cycle_uses_execution_context() {
   }));
 
   assert.ok(reviewerOptions && guardianOptions, 'reviewer/guardian 호출 옵션이 기록되어야 함');
+  assert.strictEqual(reviewerOptions.suppressAlarm, true, 'auto-dev 내부 리뷰는 재귀 Hub 알람을 만들면 안 됨');
   assert.ok(String(reviewerOptions.rootDir || '').includes('claude-auto-dev-worktrees'));
   assert.ok(Array.isArray(reviewerOptions.files), 'reviewer files 전달 필요');
   assert.ok(Array.isArray(guardianOptions.files), 'guardian files 전달 필요');
@@ -3513,6 +3960,11 @@ async function test_selector_agents_persist_actual_fallback_model_metadata() {
 async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
+    test_manifest_lock_release_preserves_replacement_owner,
+    test_manifest_async_lock_wait_yields_event_loop,
+    test_manifest_stale_reclaim_serializes_contenders,
+    test_manifest_stale_empty_lock_is_recoverable,
+    test_manifest_orphan_reclaim_guard_is_recoverable,
     test_stages_define_required_lifecycle,
     test_js_bridge_loads_pipeline_status_snapshot,
     test_status_snapshot_reconciles_stale_missing_running_jobs,
@@ -3526,6 +3978,11 @@ async function main() {
     test_completed_manifest_during_execution_suppresses_failure_alarm,
     test_completed_manifest_suppresses_failure_at_notification_boundary,
     test_alarm_repair_result_uses_callback_contract,
+    test_completed_alarm_callback_failure_is_retried_without_reimplementation,
+    test_archived_missing_pending_callback_is_retried,
+    test_callback_retry_does_not_archive_regenerated_generation,
+    test_permanent_callback_failure_does_not_starve_following_entry,
+    test_callback_retry_exception_releases_global_lock,
     test_regenerated_incident_with_same_path_keeps_failure_alarm,
     test_archived_missing_without_completed_history_requeues,
     test_auto_dev_watch_passes_state_file_to_manifest_sync,

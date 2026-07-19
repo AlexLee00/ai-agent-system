@@ -8,6 +8,28 @@ const env = require('./env');
 
 const MANIFEST_FILE_NAME = '.auto-dev-manifest.json';
 const AUTO_DEV_FILE_PREFIXES = ['ALARM_INCIDENT_', 'CODEX_', 'PATCH_REQUEST'];
+const DEFAULT_MANIFEST_LOCK_STALE_MS = 2 * 60 * 1000;
+const DEFAULT_MANIFEST_LOCK_WAIT_MS = 2 * 1000;
+const DEFAULT_MANIFEST_LOCK_RETRY_MS = 25;
+const MANIFEST_RECLAIM_GUARD_ATTEMPTS = 2;
+
+function positiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+const MANIFEST_LOCK_STALE_MS = positiveInteger(
+  process.env.CLAUDE_AUTO_DEV_MANIFEST_LOCK_STALE_MS,
+  DEFAULT_MANIFEST_LOCK_STALE_MS,
+);
+const MANIFEST_LOCK_WAIT_MS = positiveInteger(
+  process.env.CLAUDE_AUTO_DEV_MANIFEST_LOCK_WAIT_MS,
+  DEFAULT_MANIFEST_LOCK_WAIT_MS,
+);
+const MANIFEST_LOCK_RETRY_MS = positiveInteger(
+  process.env.CLAUDE_AUTO_DEV_MANIFEST_LOCK_RETRY_MS,
+  DEFAULT_MANIFEST_LOCK_RETRY_MS,
+);
 
 function getProjectRoot() {
   const override = String(process.env.PROJECT_ROOT || process.env.CODEX_PROJECT_ROOT || '').trim();
@@ -133,6 +155,14 @@ function resetTerminalManifestEntry(entry, contentHash, source) {
     rootInboxArchivedCopy,
     rootInboxCleanupReason,
     duplicateCleanupAt,
+    callbackState,
+    callbackPayload,
+    callbackAttempts,
+    callbackLastAttemptAt,
+    callbackNextAttemptAt,
+    callbackDeliveredAt,
+    callbackEventId,
+    callbackError,
     ...rest
   } = entry || {};
   const now = new Date().toISOString();
@@ -163,7 +193,192 @@ function loadAutoDevManifest(autoDevDir) {
   }
 }
 
-function saveAutoDevManifest(autoDevDir, manifest) {
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readManifestLockOwner(lockPath) {
+  try {
+    const token = String(fs.readFileSync(lockPath, 'utf8') || '').trim();
+    const pid = Number(token.split(':', 1)[0]);
+    return { token, pid: Number.isSafeInteger(pid) && pid > 0 ? pid : null };
+  } catch {
+    return { token: '', pid: null };
+  }
+}
+
+function isProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function releaseOwnedLock(lockPath, lockFd, lockToken) {
+  try { fs.closeSync(lockFd); } catch {}
+  try {
+    if (readManifestLockOwner(lockPath).token === lockToken) fs.unlinkSync(lockPath);
+  } catch {}
+}
+
+function sameFile(left, right) {
+  return Boolean(left && right && left.dev === right.dev && left.ino === right.ino);
+}
+
+function removeUnchangedLockFile(lockPath, observedStat, observedOwner) {
+  try {
+    const currentStat = fs.statSync(lockPath);
+    const currentOwner = readManifestLockOwner(lockPath);
+    if (
+      !sameFile(currentStat, observedStat)
+      || (observedOwner && currentOwner.token !== observedOwner.token)
+    ) return false;
+    fs.unlinkSync(lockPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createOwnedLockFile(lockPath, lockToken) {
+  let lockFd = null;
+  let createdStat = null;
+  try {
+    lockFd = fs.openSync(lockPath, 'wx', 0o600);
+    createdStat = fs.fstatSync(lockFd);
+    fs.writeFileSync(lockFd, `${lockToken}\n`, 'utf8');
+    return lockFd;
+  } catch (error) {
+    if (lockFd != null) {
+      try { fs.closeSync(lockFd); } catch {}
+      removeUnchangedLockFile(lockPath, createdStat, null);
+    }
+    throw error;
+  }
+}
+
+function lockIdentity(owner, stat) {
+  return owner.token || `empty:${stat.dev}:${stat.ino}:${stat.mtimeMs}`;
+}
+
+function acquireReclaimGuard(reclaimPath, reclaimToken) {
+  for (let attempt = 0; attempt < MANIFEST_RECLAIM_GUARD_ATTEMPTS; attempt += 1) {
+    try {
+      return createOwnedLockFile(reclaimPath, reclaimToken);
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      try {
+        const stat = fs.statSync(reclaimPath);
+        const owner = readManifestLockOwner(reclaimPath);
+        if (
+          Date.now() - stat.mtimeMs > MANIFEST_LOCK_STALE_MS
+          && !isProcessAlive(owner.pid)
+          && removeUnchangedLockFile(reclaimPath, stat, owner)
+        ) {
+          continue;
+        }
+      } catch {}
+      return null;
+    }
+  }
+  return null;
+}
+
+function reclaimStaleManifestLock(lockPath, observedOwner, observedStat) {
+  if (
+    Date.now() - observedStat.mtimeMs <= MANIFEST_LOCK_STALE_MS
+    || isProcessAlive(observedOwner.pid)
+  ) {
+    return false;
+  }
+
+  const observedIdentity = lockIdentity(observedOwner, observedStat);
+  const ownerHash = crypto.createHash('sha1').update(observedIdentity).digest('hex').slice(0, 12);
+  const reclaimPath = `${lockPath}.reclaim-${ownerHash}`;
+  const reclaimToken = `${process.pid}:${crypto.randomBytes(12).toString('hex')}`;
+  let reclaimFd = null;
+  try {
+    reclaimFd = acquireReclaimGuard(reclaimPath, reclaimToken);
+    if (reclaimFd == null) return false;
+
+    const currentStat = fs.statSync(lockPath);
+    const currentOwner = readManifestLockOwner(lockPath);
+    if (
+      lockIdentity(currentOwner, currentStat) !== observedIdentity
+      || Date.now() - currentStat.mtimeMs <= MANIFEST_LOCK_STALE_MS
+      || isProcessAlive(currentOwner.pid)
+    ) {
+      return false;
+    }
+    return removeUnchangedLockFile(lockPath, currentStat, currentOwner);
+  } catch (error) {
+    if (error?.code === 'EEXIST' || error?.code === 'ENOENT') return false;
+    throw error;
+  } finally {
+    if (reclaimFd != null) releaseOwnedLock(reclaimPath, reclaimFd, reclaimToken);
+  }
+}
+
+function tryAcquireManifestLock(lockPath, lockToken) {
+  try {
+    return createOwnedLockFile(lockPath, lockToken);
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    try {
+      const stat = fs.statSync(lockPath);
+      const owner = readManifestLockOwner(lockPath);
+      reclaimStaleManifestLock(lockPath, owner, stat);
+    } catch {}
+    return null;
+  }
+}
+
+function withManifestLock(autoDevDir, operation) {
+  ensureDir(autoDevDir);
+  const lockPath = path.join(autoDevDir, `${MANIFEST_FILE_NAME}.lock`);
+  const lockToken = `${process.pid}:${crypto.randomBytes(12).toString('hex')}`;
+  let lockFd = null;
+  const deadline = Date.now() + MANIFEST_LOCK_WAIT_MS;
+  while (lockFd == null && Date.now() < deadline) {
+    lockFd = tryAcquireManifestLock(lockPath, lockToken);
+    if (lockFd == null) sleepSync(Math.min(MANIFEST_LOCK_RETRY_MS, Math.max(1, deadline - Date.now())));
+  }
+  if (lockFd == null) throw new Error('auto_dev_manifest_lock_timeout');
+
+  try {
+    return operation();
+  } finally {
+    releaseOwnedLock(lockPath, lockFd, lockToken);
+  }
+}
+
+async function withManifestLockAsync(autoDevDir, operation) {
+  ensureDir(autoDevDir);
+  const lockPath = path.join(autoDevDir, `${MANIFEST_FILE_NAME}.lock`);
+  const lockToken = `${process.pid}:${crypto.randomBytes(12).toString('hex')}`;
+  let lockFd = null;
+  const deadline = Date.now() + MANIFEST_LOCK_WAIT_MS;
+  while (lockFd == null && Date.now() < deadline) {
+    lockFd = tryAcquireManifestLock(lockPath, lockToken);
+    if (lockFd == null) await sleep(Math.min(MANIFEST_LOCK_RETRY_MS, Math.max(1, deadline - Date.now())));
+  }
+  if (lockFd == null) throw new Error('auto_dev_manifest_lock_timeout');
+
+  try {
+    return await operation();
+  } finally {
+    releaseOwnedLock(lockPath, lockFd, lockToken);
+  }
+}
+
+function writeAutoDevManifestAtomic(autoDevDir, manifest) {
   ensureDir(autoDevDir);
   const manifestPath = manifestPathForDir(autoDevDir);
   const next = {
@@ -171,11 +386,29 @@ function saveAutoDevManifest(autoDevDir, manifest) {
     updatedAt: new Date().toISOString(),
     entries: manifest?.entries && typeof manifest.entries === 'object' ? manifest.entries : {},
   };
-  fs.writeFileSync(manifestPath, JSON.stringify(next, null, 2), 'utf8');
+  const tempPath = `${manifestPath}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  let tempFd = null;
+  try {
+    tempFd = fs.openSync(tempPath, 'wx', 0o600);
+    fs.writeFileSync(tempFd, JSON.stringify(next, null, 2), 'utf8');
+    fs.fsyncSync(tempFd);
+    fs.closeSync(tempFd);
+    tempFd = null;
+    fs.renameSync(tempPath, manifestPath);
+  } finally {
+    if (tempFd != null) {
+      try { fs.closeSync(tempFd); } catch {}
+    }
+    try { fs.unlinkSync(tempPath); } catch {}
+  }
   return manifestPath;
 }
 
-function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
+function saveAutoDevManifest(autoDevDir, manifest) {
+  return withManifestLock(autoDevDir, () => writeAutoDevManifestAtomic(autoDevDir, manifest));
+}
+
+function upsertAutoDevManifestEntryUnlocked(autoDevDir, relPath, patch = {}) {
   const normalized = normalizeRelPath(relPath);
   if (!normalized) return null;
   const manifest = loadAutoDevManifest(autoDevDir);
@@ -189,7 +422,7 @@ function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
       ...patch,
       relPath: normalized,
     };
-    saveAutoDevManifest(autoDevDir, manifest);
+    writeAutoDevManifestAtomic(autoDevDir, manifest);
     return manifest.entries[normalized];
   }
   manifest.entries[normalized] = {
@@ -200,15 +433,62 @@ function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
     ...patch,
     relPath: normalized,
   };
-  saveAutoDevManifest(autoDevDir, manifest);
+  writeAutoDevManifestAtomic(autoDevDir, manifest);
   return manifest.entries[normalized];
+}
+
+function upsertAutoDevManifestEntry(autoDevDir, relPath, patch = {}) {
+  return withManifestLock(autoDevDir, () => upsertAutoDevManifestEntryUnlocked(autoDevDir, relPath, patch));
+}
+
+async function upsertAutoDevManifestEntryAsync(autoDevDir, relPath, patch = {}) {
+  return withManifestLockAsync(autoDevDir, () => upsertAutoDevManifestEntryUnlocked(autoDevDir, relPath, patch));
 }
 
 function markAutoDevManifestState(autoDevDir, relPath, state, patch = {}) {
   return upsertAutoDevManifestEntry(autoDevDir, relPath, { state, ...patch });
 }
 
-function syncAutoDevManifest(autoDevDir, options = {}) {
+function patchAutoDevManifestEntryIfMatches(autoDevDir, relPath, expected = {}, patch = {}) {
+  const normalized = normalizeRelPath(relPath);
+  if (!normalized) return { updated: false, reason: 'invalid_rel_path', entry: null };
+  return withManifestLock(autoDevDir, () => {
+    const manifest = loadAutoDevManifest(autoDevDir);
+    const current = manifest.entries[normalized];
+    if (!current || typeof current !== 'object') {
+      return { updated: false, reason: 'entry_missing', entry: null };
+    }
+
+    const expectedHash = String(expected.contentHash || '').trim();
+    if (expectedHash && manifestContentHash(current) !== expectedHash) {
+      return { updated: false, reason: 'content_hash_mismatch', entry: current };
+    }
+    const expectedAlarmEventId = String(expected.alarmEventId || '').trim();
+    if (
+      expectedAlarmEventId
+      && String(current.callbackPayload?.alarmEventId || '').trim() !== expectedAlarmEventId
+    ) {
+      return { updated: false, reason: 'alarm_event_id_mismatch', entry: current };
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(expected, 'callbackState')
+      && String(current.callbackState || '') !== String(expected.callbackState || '')
+    ) {
+      return { updated: false, reason: 'callback_state_mismatch', entry: current };
+    }
+
+    manifest.entries[normalized] = {
+      ...current,
+      ...patch,
+      relPath: normalized,
+      updatedAt: new Date().toISOString(),
+    };
+    writeAutoDevManifestAtomic(autoDevDir, manifest);
+    return { updated: true, reason: null, entry: manifest.entries[normalized] };
+  });
+}
+
+function syncAutoDevManifestUnlocked(autoDevDir, options = {}) {
   ensureDir(autoDevDir);
   const manifest = loadAutoDevManifest(autoDevDir);
   const names = fs.readdirSync(autoDevDir).filter(isAutoDevInboxMarkdown);
@@ -331,8 +611,12 @@ function syncAutoDevManifest(autoDevDir, options = {}) {
     }
   }
 
-  saveAutoDevManifest(autoDevDir, manifest);
+  writeAutoDevManifestAtomic(autoDevDir, manifest);
   return manifest;
+}
+
+function syncAutoDevManifest(autoDevDir, options = {}) {
+  return withManifestLock(autoDevDir, () => syncAutoDevManifestUnlocked(autoDevDir, options));
 }
 
 function listAutoDevManifestEntries(autoDevDir, allowedStates = ['inbox'], options = {}) {
@@ -355,7 +639,11 @@ module.exports = {
   loadAutoDevManifest,
   saveAutoDevManifest,
   upsertAutoDevManifestEntry,
+  upsertAutoDevManifestEntryAsync,
   markAutoDevManifestState,
+  patchAutoDevManifestEntryIfMatches,
   syncAutoDevManifest,
   listAutoDevManifestEntries,
+  _testOnly_withManifestLock: withManifestLock,
+  _testOnly_withManifestLockAsync: withManifestLockAsync,
 };

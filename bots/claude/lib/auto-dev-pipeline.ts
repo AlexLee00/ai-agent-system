@@ -22,6 +22,7 @@ const {
   listAutoDevManifestEntries,
   loadAutoDevManifest,
   markAutoDevManifestState,
+  patchAutoDevManifestEntryIfMatches,
   syncAutoDevManifest,
 } = require('../../../packages/core/lib/auto-dev-manifest.ts');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
@@ -61,6 +62,36 @@ function parseNonNegativeIntegerEnv(value, fallback) {
 function parsePositiveIntegerEnv(value, fallback) {
   const parsed = parseNonNegativeIntegerEnv(value, fallback);
   return parsed > 0 ? parsed : fallback;
+}
+
+function resolveCallbackRetryPolicy(envSource = process.env) {
+  const baseMs = parsePositiveIntegerEnv(envSource.CLAUDE_AUTO_DEV_CALLBACK_RETRY_BASE_MS, 60 * 1000);
+  return Object.freeze({
+    maxAttempts: parsePositiveIntegerEnv(envSource.CLAUDE_AUTO_DEV_CALLBACK_MAX_ATTEMPTS, 5),
+    baseMs,
+    maxMs: Math.max(
+      baseMs,
+      parsePositiveIntegerEnv(envSource.CLAUDE_AUTO_DEV_CALLBACK_RETRY_MAX_MS, 60 * 60 * 1000),
+    ),
+  });
+}
+
+const CALLBACK_RETRY_POLICY = resolveCallbackRetryPolicy();
+
+function computeCallbackRetrySchedule(attempts, nowMs = Date.now(), retryAfterMs = 0) {
+  const localDelayMs = Math.min(
+    CALLBACK_RETRY_POLICY.maxMs,
+    CALLBACK_RETRY_POLICY.baseMs * (2 ** Math.max(0, Number(attempts || 1) - 1)),
+  );
+  const hintedDelayMs = parseNonNegativeIntegerEnv(retryAfterMs, 0);
+  const delayMs = Math.min(
+    CALLBACK_RETRY_POLICY.maxMs,
+    Math.max(localDelayMs, hintedDelayMs),
+  );
+  return {
+    delayMs,
+    nextAttemptAt: new Date(nowMs + delayMs).toISOString(),
+  };
 }
 
 function maskSensitiveText(value, maxLength = 1000) {
@@ -1863,26 +1894,176 @@ async function sendAlarmRepairResult(job, status, summary, options = {}, payload
       ? payload.changed_files
       : [];
   const message = formatAlarmRepairResultMessage(context, status, summary, changedFiles);
+  const callbackPayload = {
+    incidentKey: context.incidentKey,
+    alarmEventId: context.alarmEventId,
+    team: context.team,
+    status,
+    summary,
+    docPath: context.docPath,
+    changedFiles,
+    fromBot: 'auto-dev',
+  };
   if (shadow || options.test) {
     console.log(`[auto-dev] [SHADOW] alarm-repair-result ${status}: ${context.incidentKey}`);
-    return { ok: true, shadow: true, message, context };
+    return { ok: true, shadow: true, message, context, callbackPayload };
+  }
+
+  const callbackIntent = patchAutoDevManifestEntryIfMatches(
+    AUTO_DEV_DIR,
+    context.docPath,
+    { contentHash: job?.contentHash },
+    {
+      state: 'archived',
+      callbackState: 'pending',
+      callbackPayload,
+      callbackAttempts: 0,
+      callbackLastAttemptAt: null,
+      callbackNextAttemptAt: null,
+      callbackDeliveredAt: null,
+      callbackEventId: null,
+      callbackError: null,
+    },
+  );
+  if (!callbackIntent.updated) {
+    return {
+      ok: false,
+      retryable: false,
+      superseded: true,
+      error: `alarm_repair_callback_intent_${callbackIntent.reason || 'not_persisted'}`,
+      context,
+      callbackPayload,
+    };
   }
 
   try {
-    return await postAlarmAutoRepairResult({
-      incidentKey: context.incidentKey,
-      alarmEventId: context.alarmEventId,
-      team: context.team,
-      status,
-      summary,
-      docPath: context.docPath,
-      changedFiles,
-      fromBot: 'auto-dev',
-    });
+    const result = await postAlarmAutoRepairResult(callbackPayload);
+    return {
+      ...(result && typeof result === 'object' ? result : {}),
+      ok: result?.ok === true,
+      error: result?.ok === true ? null : (result?.error || 'alarm_repair_callback_failed'),
+      context,
+      callbackPayload,
+    };
   } catch (error) {
     console.warn(`[auto-dev] alarm repair result notification failed: ${error?.message || error}`);
-    return { ok: false, error: error?.message || String(error), context };
+    return {
+      ok: false,
+      error: error?.message || String(error),
+      context,
+      callbackPayload,
+    };
   }
+}
+
+async function retryPendingAlarmRepairCallbacks(options = {}) {
+  const runtimeConfig = getRuntimeConfig(options);
+  if (options.test || options.shadow || runtimeConfig.shadow) {
+    return { ok: true, skipped: true, reason: 'shadow_or_test', pendingCount: 0, deliveredCount: 0, failedCount: 0, results: [] };
+  }
+
+  const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
+  const batchLimit = Math.max(1, Math.min(100, Number(options.callbackBatchLimit || 20) || 20));
+  const manifest = loadAutoDevManifest(AUTO_DEV_DIR);
+  const allPendingEntries = Object.values(manifest.entries || {})
+    .filter(entry => ['archived', 'archived_missing'].includes(String(entry?.state || '')))
+    .filter(entry => entry?.callbackState === 'pending')
+    .filter(entry => entry?.callbackPayload && typeof entry.callbackPayload === 'object');
+  const pendingEntries = allPendingEntries
+    .filter((entry) => {
+      const nextAttemptAt = Date.parse(String(entry.callbackNextAttemptAt || ''));
+      return !Number.isFinite(nextAttemptAt) || nextAttemptAt <= nowMs;
+    })
+    .sort((a, b) => {
+      const aAt = String(a.callbackNextAttemptAt || a.callbackLastAttemptAt || a.createdAt || '');
+      const bAt = String(b.callbackNextAttemptAt || b.callbackLastAttemptAt || b.createdAt || '');
+      return aAt.localeCompare(bAt) || String(a.relPath || '').localeCompare(String(b.relPath || ''));
+    })
+    .slice(0, batchLimit);
+  const results = [];
+
+  for (const entry of pendingEntries) {
+    const attempts = Math.max(0, Number(entry.callbackAttempts || 0)) + 1;
+    const attemptedAtMs = nowMs;
+    const expected = {
+      contentHash: entry.contentHash,
+      alarmEventId: entry.callbackPayload.alarmEventId,
+      callbackState: 'pending',
+    };
+    let callbackResult = null;
+    try {
+      callbackResult = await postAlarmAutoRepairResult(entry.callbackPayload);
+    } catch (error) {
+      callbackResult = { ok: false, error: error?.message || String(error) };
+    }
+
+    if (callbackResult?.ok === true) {
+      const update = patchAutoDevManifestEntryIfMatches(AUTO_DEV_DIR, entry.relPath, expected, {
+        state: entry.state,
+        callbackState: 'delivered',
+        callbackAttempts: attempts,
+        callbackLastAttemptAt: new Date(attemptedAtMs).toISOString(),
+        callbackNextAttemptAt: null,
+        callbackDeliveredAt: nowIso(),
+        callbackEventId: callbackResult.eventId || callbackResult.event_id || null,
+        callbackError: null,
+      });
+      results.push({
+        ok: true,
+        delivered: true,
+        relPath: entry.relPath,
+        attempts,
+        superseded: !update.updated,
+        updateReason: update.reason,
+      });
+      continue;
+    }
+
+    const error = callbackResult?.error || 'alarm_repair_callback_failed';
+    const statusCode = Number(callbackResult?.status || 0);
+    const retryable = typeof callbackResult?.retryable === 'boolean'
+      ? callbackResult.retryable
+      : (!statusCode || statusCode === 429 || statusCode >= 500);
+    const terminal = !retryable || attempts >= CALLBACK_RETRY_POLICY.maxAttempts;
+    const retrySchedule = computeCallbackRetrySchedule(
+      attempts,
+      attemptedAtMs,
+      callbackResult?.retryAfterMs,
+    );
+    const update = patchAutoDevManifestEntryIfMatches(AUTO_DEV_DIR, entry.relPath, expected, {
+      state: entry.state,
+      callbackState: terminal ? 'manual_required' : 'pending',
+      callbackAttempts: attempts,
+      callbackLastAttemptAt: new Date(attemptedAtMs).toISOString(),
+      callbackNextAttemptAt: terminal ? null : retrySchedule.nextAttemptAt,
+      callbackError: error,
+    });
+    results.push({
+      ok: !update.updated,
+      delivered: false,
+      relPath: entry.relPath,
+      attempts,
+      error,
+      retryable,
+      terminal,
+      superseded: !update.updated,
+      updateReason: update.reason,
+    });
+  }
+
+  const deliveredCount = results.filter(result => result.delivered).length;
+  const supersededCount = results.filter(result => result.superseded).length;
+  const effectiveFailedCount = results.filter(result => !result.ok).length;
+  return {
+    ok: effectiveFailedCount === 0,
+    pendingCount: allPendingEntries.length,
+    attemptedCount: pendingEntries.length,
+    deferredCount: allPendingEntries.length - pendingEntries.length,
+    deliveredCount,
+    supersededCount,
+    failedCount: effectiveFailedCount,
+    results,
+  };
 }
 
 async function sendStageAlarm(job, stageId, details = '', options = {}, payload = null) {
@@ -2295,6 +2476,7 @@ async function runReviewCycle(options = {}, executionContext = null, beforeStatu
   const review = await reviewer.runReview({
     force: true,
     test: testMode,
+    suppressAlarm: true,
     rootDir: reviewScope.cwd,
     files: reviewScope.changedFilesAbsolute,
     commitRef: 'HEAD',
@@ -4160,7 +4342,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       archivedPath: archivedPath || null,
       contentHash,
     });
-    await sendAlarmRepairResult(
+    const repairCallback = await sendAlarmRepairResult(
       { ...job, analysis: finalJob.analysis || job.analysis },
       'resolved',
       `auto_dev 구현이 리뷰/테스트를 통과했습니다.\n\n${testResult.message}`,
@@ -4174,6 +4356,67 @@ async function processAutoDevDocument(filePath, options = {}) {
       },
       content,
     );
+    const callbackTerminal = repairCallback.ok !== true && repairCallback.retryable === false;
+    if (!repairCallback.skipped && !repairCallback.shadow) {
+      const callbackAttemptedAtMs = Date.now();
+      const retrySchedule = computeCallbackRetrySchedule(
+        1,
+        callbackAttemptedAtMs,
+        repairCallback.retryAfterMs,
+      );
+      const callbackPatch = repairCallback.ok
+        ? {
+            callbackState: 'delivered',
+            callbackAttempts: 1,
+            callbackLastAttemptAt: new Date(callbackAttemptedAtMs).toISOString(),
+            callbackDeliveredAt: new Date(callbackAttemptedAtMs).toISOString(),
+            callbackEventId: repairCallback.eventId || repairCallback.event_id || null,
+            callbackError: null,
+          }
+        : {
+            callbackState: callbackTerminal ? 'manual_required' : 'pending',
+            callbackPayload: repairCallback.callbackPayload || null,
+            callbackAttempts: 1,
+            callbackLastAttemptAt: new Date(callbackAttemptedAtMs).toISOString(),
+            callbackNextAttemptAt: callbackTerminal ? null : retrySchedule.nextAttemptAt,
+            callbackError: repairCallback.error || 'alarm_repair_callback_failed',
+          };
+      const callbackManifestUpdate = patchAutoDevManifestEntryIfMatches(
+        AUTO_DEV_DIR,
+        relPath,
+        {
+          contentHash,
+          alarmEventId: repairCallback.callbackPayload?.alarmEventId,
+          callbackState: 'pending',
+        },
+        { state: 'archived', ...callbackPatch },
+      );
+      if (!callbackManifestUpdate.updated) {
+        repairCallback.superseded = true;
+        repairCallback.manifestUpdateReason = callbackManifestUpdate.reason;
+      }
+    }
+    if (!repairCallback.ok) {
+      const callbackError = repairCallback.error || 'alarm_repair_callback_failed';
+      await markAgentError(callbackError);
+      return {
+        ok: false,
+        implementationCompleted: true,
+        callbackPending: !callbackTerminal,
+        callbackTerminal,
+        callback: repairCallback,
+        job: finalJob,
+        analysis,
+        plan,
+        review: reviewResult,
+        test: testResult,
+        integration: integrationResult,
+        integrationRollback,
+        worktreeCleanup: cleanupResult,
+        archiveManifestPath,
+        completionDocumentPath,
+      };
+    }
     await markAgentDone();
     return {
       ok: true,
@@ -4446,11 +4689,16 @@ async function runAutoDevPipelineCore(options = {}) {
   }
   const stopGlobalHeartbeat = startLockHeartbeat(globalLock);
 
-  const docs = listAutoDevDocuments();
-  reconcileMissingRunningJobs();
+  let callbackRetry = { ok: true, pendingCount: 0, deliveredCount: 0, failedCount: 0, results: [] };
   const results = [];
   try {
-    if (docs.length === 0) await markAgentDone();
+    callbackRetry = await retryPendingAlarmRepairCallbacks({ ...options, runtimeConfig });
+    const docs = listAutoDevDocuments();
+    reconcileMissingRunningJobs();
+    if (docs.length === 0) {
+      if (callbackRetry.ok) await markAgentDone();
+      else await markAgentError('pending auto-repair callback delivery failed');
+    }
     const runOptions = { ...options, runtimeConfig };
     for (const doc of docs) {
       results.push(await processAutoDevDocument(doc, runOptions));
@@ -4466,7 +4714,7 @@ async function runAutoDevPipelineCore(options = {}) {
   const processedCount = results.length - skippedCount;
 
   return {
-    ok: results.every(result => result.ok || result.skipped),
+    ok: callbackRetry.ok && results.every(result => result.ok || result.skipped),
     count: results.length,
     processedCount,
     skippedCount,
@@ -4496,6 +4744,7 @@ async function runAutoDevPipelineCore(options = {}) {
       acquired: true,
       path: globalLock.lockPath,
     },
+    callbackRetry,
     results,
   };
 }
@@ -4610,7 +4859,10 @@ module.exports = {
   _testOnly_evaluateDocumentPolicy: evaluateDocumentPolicy,
   _testOnly_extractAlarmIncidentContext: extractAlarmIncidentContext,
   _testOnly_formatAlarmRepairResultMessage: formatAlarmRepairResultMessage,
+  _testOnly_resolveCallbackRetryPolicy: resolveCallbackRetryPolicy,
+  _testOnly_computeCallbackRetrySchedule: computeCallbackRetrySchedule,
   _testOnly_sendAlarmRepairResult: sendAlarmRepairResult,
+  _testOnly_retryPendingAlarmRepairCallbacks: retryPendingAlarmRepairCallbacks,
   _testOnly_sendStageAlarm: sendStageAlarm,
   _testOnly_normalizeSymphonyMode: normalizeSymphonyMode,
   _testOnly_partitionDirtyBaseForWriteScope: partitionDirtyBaseForWriteScope,

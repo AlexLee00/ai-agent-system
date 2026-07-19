@@ -195,7 +195,30 @@ async function test_reportToTelegram_calls_postAlarm() {
   console.log('✅ reviewer: reportToTelegram calls postAlarm');
 }
 
-// ─── Test 9: CLI — 리뷰 이슈와 프로세스 실패 종료코드 분리 ──────────
+// ─── Test 9: auto-dev 내부 리뷰 — 외부 알람 억제 ─────────────────────
+
+async function test_runReview_suppressAlarm_skips_postAlarm() {
+  const postAlarmCalls = [];
+  const mocks = makeReviewerMocks({
+    '../../../packages/core/lib/hub-alarm-client': {
+      postAlarm: async (p) => { postAlarmCalls.push(p); return { ok: true }; },
+    },
+  });
+
+  await withMocks(mocks, async (reviewer) => {
+    const result = await reviewer.runReview({
+      force: true,
+      test: false,
+      suppressAlarm: true,
+      files: [REVIEWER_PATH],
+    });
+    assert.strictEqual(result.sent, false, 'suppressAlarm 리뷰는 외부 알람 미발송');
+    assert.strictEqual(postAlarmCalls.length, 0, 'postAlarm 호출 없음');
+  });
+  console.log('✅ reviewer: suppressAlarm prevents recursive Hub alarm');
+}
+
+// ─── Test 10: CLI — 리뷰 이슈와 프로세스 실패 종료코드 분리 ─────────
 
 function test_cli_exit_code_does_not_fail_launchd_on_review_findings() {
   const source = fs.readFileSync(REVIEWER_PATH, 'utf8');
@@ -224,6 +247,7 @@ async function main() {
     test_runReview_docs_only_skips_typescript_check,
     test_analyzeChanges_empty_diff,
     test_reportToTelegram_calls_postAlarm,
+    test_runReview_suppressAlarm_skips_postAlarm,
     test_cli_exit_code_does_not_fail_launchd_on_review_findings,
   ];
 

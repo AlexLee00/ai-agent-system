@@ -282,6 +282,7 @@ function runTypeScriptCheck(files = [], options = {}) {
 async function runReviewCore(options = {}) {
   const enabled  = process.env.CLAUDE_REVIEWER_ENABLED === 'true';
   const testMode = Boolean(options.test) || process.argv.includes('--test');
+  const shouldSendAlarm = !testMode && !options.suppressAlarm;
   const rootDir = resolveRootDir(options);
 
   if (!enabled && !testMode && !options.force) {
@@ -299,10 +300,10 @@ async function runReviewCore(options = {}) {
 
   if (jsFiles.length === 0 && tsIssues.length === 0) {
     const message = '✅ 코드 리뷰 스킵 — 변경된 JS/TS 파일이 없습니다.';
-    if (!testMode) await postAlarm({ message, team: 'claude', alertLevel: 2, fromBot: 'reviewer' });
+    if (shouldSendAlarm) await postAlarm({ message, team: 'claude', alertLevel: 2, fromBot: 'reviewer' });
     return {
       files: [], summary: { totalFiles: 0, syntaxFails: 0, critical: 0, high: 0, medium: 0, pass: true },
-      sent: !testMode, skipped: true, message,
+      sent: shouldSendAlarm, skipped: true, message,
     };
   }
 
@@ -328,7 +329,7 @@ async function runReviewCore(options = {}) {
   const message = formatReport(result, { rootDir });
 
   let sent = false;
-  if (!testMode) {
+  if (shouldSendAlarm) {
     const alertLevel = !summary.pass ? (summary.critical > 0 ? 4 : 3) : 2;
     sent = (await postAlarm({ message, team: 'claude', alertLevel, fromBot: 'reviewer' })).ok;
   }
@@ -348,6 +349,7 @@ async function runReview(options = {}) {
       sent: Boolean(result?.sent),
       forced: Boolean(options.force),
       test: Boolean(options.test),
+      suppressAlarm: Boolean(options.suppressAlarm),
     });
     return result;
   } catch (error) {
@@ -355,6 +357,7 @@ async function runReview(options = {}) {
       durationMs: Date.now() - start,
       forced: Boolean(options.force),
       test: Boolean(options.test),
+      suppressAlarm: Boolean(options.suppressAlarm),
     }));
     throw error;
   }

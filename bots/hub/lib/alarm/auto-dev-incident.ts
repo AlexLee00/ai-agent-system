@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../../packages/core/lib/env');
-const { upsertAutoDevManifestEntry, loadAutoDevManifest } = require('../../../../packages/core/lib/auto-dev-manifest.ts');
+const { upsertAutoDevManifestEntryAsync, loadAutoDevManifest } = require('../../../../packages/core/lib/auto-dev-manifest.ts');
 
 const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
 
@@ -223,13 +223,13 @@ export async function ensureAlarmAutoDevDocument(input: {
         return { ok: true, created: false, path: relPath, skipped: true };
       }
     }
-    upsertAutoDevManifestEntry(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_existing' });
+    await upsertAutoDevManifestEntryAsync(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_existing' });
     return { ok: true, created: false, path: relPath };
   }
   const content = input.consensus
     ? buildAlarmAutoDevDocumentWithConsensus(input, input.consensus)
     : buildAlarmAutoDevDocument(input);
   await fs.promises.writeFile(filePath, content, 'utf8');
-  upsertAutoDevManifestEntry(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_create' });
+  await upsertAutoDevManifestEntryAsync(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_create' });
   return { ok: true, created: true, path: relPath };
 }
