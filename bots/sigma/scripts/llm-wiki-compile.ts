@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { normalizeLibraryCoords } from '../shared/library-coords.ts';
+import { buildVaultNormalizedContentMd5, normalizeVaultContentText } from '../vault/vault-manager.ts';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -49,6 +50,14 @@ const LOW_VALUE_DIGEST_PATTERNS = [
   '%comment/action%',
   '%library/blo/comment%',
 ];
+const DIRECTIVE_TRANSPORT_KEYS = new Set([
+  'createdat',
+  'directiveid',
+  'executedat',
+  'signalid',
+  'sourceid',
+  'timestamp',
+]);
 
 const TOPIC_RULES = [
   { topic: 'hub', pattern: /\bhub\b|resource-api|ops-mcp|llm_routing|routing/i },
@@ -135,20 +144,23 @@ export function readWikiState(outDir = DEFAULT_WIKI_DIR) {
     const raw = fs.readFileSync(statePath(outDir), 'utf8');
     const parsed = JSON.parse(raw);
     return {
-      version: 1,
+      version: Number(parsed.version) === 2 ? 2 : 1,
       processedVaultEntryIds: Array.isArray(parsed.processedVaultEntryIds) ? parsed.processedVaultEntryIds : [],
+      processedContentKeys: Array.isArray(parsed.processedContentKeys) ? parsed.processedContentKeys : [],
       updatedAt: parsed.updatedAt || null,
     };
   } catch {
-    return { version: 1, processedVaultEntryIds: [], updatedAt: null };
+    return { version: 1, processedVaultEntryIds: [], processedContentKeys: [], updatedAt: null };
   }
 }
 
-export function nextWikiState(previous, vaultEntryIds, now = new Date()) {
+export function nextWikiState(previous, vaultEntryIds, now = new Date(), contentKeys = []) {
   const ids = [...new Set([...(previous?.processedVaultEntryIds || []), ...(vaultEntryIds || [])])].slice(-10000);
+  const keys = [...new Set([...(previous?.processedContentKeys || []), ...(contentKeys || [])])].slice(-10000);
   return {
-    version: 1,
+    version: 2,
     processedVaultEntryIds: ids,
+    processedContentKeys: keys,
     updatedAt: now.toISOString(),
   };
 }
@@ -211,6 +223,93 @@ function rowSourceKind(row) {
   return String(row?.source || meta.sourceKind || row?.type || '').trim().toLowerCase();
 }
 
+function normalizedTransportKey(value) {
+  return String(value || '').toLowerCase().replace(/[_-]/g, '');
+}
+
+function stableDirectiveJson(value) {
+  if (value == null) return 'null';
+  if (typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableDirectiveJson).join(',')}]`;
+  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableDirectiveJson(item)}`).join(',')}}`;
+}
+
+function stableDirectiveValue(value, { stripTransport = false } = {}) {
+  if (typeof value === 'string') {
+    const normalized = normalizeVaultContentText(value);
+    if (!normalized) return undefined;
+    try {
+      return stableDirectiveValue(JSON.parse(normalized), { stripTransport });
+    } catch {
+      return normalized;
+    }
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stableDirectiveValue(item, { stripTransport }))
+      .filter((item) => item !== undefined);
+  }
+  if (value && typeof value === 'object') {
+    const normalized = {};
+    for (const key of Object.keys(value).sort()) {
+      if (stripTransport && DIRECTIVE_TRANSPORT_KEYS.has(normalizedTransportKey(key))) continue;
+      const child = stableDirectiveValue(value[key], { stripTransport });
+      if (child === undefined) continue;
+      if (Array.isArray(child) && child.length === 0) continue;
+      if (child && typeof child === 'object' && !Array.isArray(child) && Object.keys(child).length === 0) continue;
+      normalized[key] = child;
+    }
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
+  }
+  return value == null ? undefined : value;
+}
+
+function directiveSemanticBody(row) {
+  const meta = parseMeta(row?.meta);
+  const rawPayload = typeof meta.payload === 'string' ? parseMeta(meta.payload) : meta.payload;
+  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) return null;
+  const legacyRollbackSpec = (() => {
+    if (rawPayload.rollbackSpec != null || rawPayload.rollback_spec != null) return undefined;
+    let remainder = normalizeVaultContentText(row?.content || row?.content_preview || '');
+    for (const value of [rawPayload.outcome, rawPayload.action, rawPayload.principleCheckResult]) {
+      const part = normalizeVaultContentText(
+        typeof value === 'string' ? value : stableDirectiveJson(value),
+      );
+      if (!part || !remainder.startsWith(part)) return undefined;
+      remainder = remainder.slice(part.length).trim();
+    }
+    return remainder ? stableDirectiveValue(remainder) : undefined;
+  })();
+  const projection = stableDirectiveValue({
+    team: meta.team || rawPayload.team,
+    tier: stableDirectiveValue(rawPayload.tier),
+    outcome: stableDirectiveValue(rawPayload.outcome),
+    action: stableDirectiveValue(rawPayload.action),
+    principleCheckResult: stableDirectiveValue(rawPayload.principleCheckResult, { stripTransport: true }),
+    rollbackSpec: stableDirectiveValue(
+      rawPayload.rollbackSpec ?? rawPayload.rollback_spec ?? legacyRollbackSpec,
+    ),
+  });
+  if (!projection || (!projection.outcome && !projection.action && !projection.principleCheckResult)) return null;
+  return JSON.stringify(projection);
+}
+
+export function buildVaultWikiContentDigest(row) {
+  const content = rowSourceKind(row) === 'sigma_directive'
+    ? directiveSemanticBody(row) || row?.content || row?.content_preview || ''
+    : row?.content || row?.content_preview || '';
+  return buildVaultNormalizedContentMd5({ title: '', content });
+}
+
+function compareWikiRepresentativeRows(left, right) {
+  const leftTime = new Date(left?.created_at || 0).getTime();
+  const rightTime = new Date(right?.created_at || 0).getTime();
+  const timeDelta = (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+  if (timeDelta !== 0) return timeDelta;
+  return String(right?.id || '').localeCompare(String(left?.id || ''), 'en', { numeric: true });
+}
+
 function matchesPatternText(text, patterns) {
   const normalizedPatterns = (patterns || []).map((pattern) => String(pattern).replace(/%/g, '').toLowerCase());
   return normalizedPatterns.some((pattern) => pattern && text.includes(pattern));
@@ -234,14 +333,22 @@ export function classifyVaultWikiSource(row) {
   return { lane: 'ignored', reason: 'not_high_value_for_wiki' };
 }
 
-export function buildWikiEntrySetFromVaultRows(rows, { processedVaultEntryIds = [] } = {}) {
+export function buildWikiEntrySetFromVaultRows(rows, {
+  processedVaultEntryIds = [],
+  processedContentKeys = [],
+} = {}) {
   const processed = new Set(processedVaultEntryIds || []);
-  const seen = new Set();
-  const entries = [];
+  const processedContent = new Set(processedContentKeys || []);
+  const seenIds = new Set();
+  const groups = new Map();
   const skipped = [];
+  const sourceVaultEntryIds = [];
+  const seenContentKeys = new Set();
+  let previouslyProcessedContentRows = 0;
   for (const row of rows || []) {
     const id = String(row.id || '').trim();
-    if (!id || processed.has(id)) continue;
+    if (!id || processed.has(id) || seenIds.has(id)) continue;
+    seenIds.add(id);
     const coords = rowCoords(row);
     if (coords.abstraction_level !== 'L0' || coords.time_stage !== 'raw') continue;
     const lane = classifyVaultWikiSource(row);
@@ -259,29 +366,74 @@ export function buildWikiEntrySetFromVaultRows(rows, { processedVaultEntryIds = 
     const title = String(row.title || row.file_path || `vault ${id}`).trim();
     const content = row.content || row.content_preview || '';
     const topic = classifyTopic(`${title}\n${content}\n${row.source || ''}\n${row.file_path || ''}`);
+    const contentDigest = buildVaultWikiContentDigest(row);
+    const contentKey = contentDigest
+      ? [topic, coords.validation_state, coords.prediction_state, contentDigest].join(':')
+      : `${topic}:vault-entry:${id}`;
+    sourceVaultEntryIds.push(id);
+    seenContentKeys.add(contentKey);
+    if (processedContent.has(contentKey)) {
+      previouslyProcessedContentRows += 1;
+      continue;
+    }
     const source = `vault-entry:${id}`;
-    const sourceKey = `${topic}:${source}`;
-    if (seen.has(sourceKey)) continue;
-    seen.add(sourceKey);
+    const candidate = {
+      row,
+      entry: {
+        topic,
+        title,
+        source,
+        excerpt: excerpt(content),
+        coords,
+        vaultEntryId: id,
+        filePath: row.file_path || null,
+        createdAt: row.created_at || null,
+        contentDigest,
+        contentKey,
+      },
+    };
+    const group = groups.get(contentKey) || [];
+    group.push(candidate);
+    groups.set(contentKey, group);
+  }
+  const entries = [];
+  let contentDuplicateGroups = 0;
+  let contentDuplicateRows = previouslyProcessedContentRows;
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((left, right) => compareWikiRepresentativeRows(left.row, right.row));
+    const representative = sorted[0].entry;
+    const occurrenceCount = sorted.length;
+    if (occurrenceCount > 1) contentDuplicateGroups += 1;
+    contentDuplicateRows += occurrenceCount - 1;
     entries.push({
-      topic,
-      title,
-      source,
-      excerpt: excerpt(content),
-      coords,
-      vaultEntryId: id,
-      filePath: row.file_path || null,
-      createdAt: row.created_at || null,
+      ...representative,
+      vaultEntryIds: sorted.map((item) => item.entry.vaultEntryId),
+      occurrenceCount,
+      duplicateCount: occurrenceCount - 1,
     });
   }
-  return { entries, skipped };
+  const sourceVaultEntries = sourceVaultEntryIds.length;
+  return {
+    entries,
+    skipped,
+    sourceVaultEntryIds,
+    contentKeys: [...seenContentKeys],
+    stats: {
+      sourceVaultEntries,
+      contentUniqueEntries: entries.length,
+      contentDuplicateGroups,
+      contentDuplicateRows,
+      previouslyProcessedContentRows,
+      contentDuplicateRate: sourceVaultEntries === 0 ? 0 : contentDuplicateRows / sourceVaultEntries,
+    },
+  };
 }
 
-export function buildWikiEntriesFromVaultRows(rows, { processedVaultEntryIds = [] } = {}) {
-  return buildWikiEntrySetFromVaultRows(rows, { processedVaultEntryIds }).entries;
+export function buildWikiEntriesFromVaultRows(rows, options = {}) {
+  return buildWikiEntrySetFromVaultRows(rows, options).entries;
 }
 
-async function detectCoordColumns(queryReadonly = pgPool.queryReadonly) {
+async function detectCoordColumns(queryReadonly = pgPool.queryReadonly, { failClosed = false } = {}) {
   try {
     const rows = await queryReadonly('sigma', `
       SELECT column_name
@@ -292,7 +444,8 @@ async function detectCoordColumns(queryReadonly = pgPool.queryReadonly) {
     `, [COORD_COLUMNS]);
     const set = new Set((Array.isArray(rows) ? rows : rows?.rows ?? []).map((row) => row.column_name));
     return COORD_COLUMNS.filter((column) => set.has(column));
-  } catch {
+  } catch (error) {
+    if (failClosed) throw error;
     return [];
   }
 }
@@ -302,6 +455,7 @@ async function fetchVaultRowsBySources({ sources, limit, queryReadonly, coordSel
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'active') <> 'archived'
+      AND COALESCE(meta->>'merged_into', '') = ''
       AND (
         LOWER(COALESCE(source, '')) = ANY($1::text[])
         OR LOWER(COALESCE(meta->>'sourceKind', '')) = ANY($1::text[])
@@ -317,6 +471,7 @@ async function fetchVaultRowsByPatterns({ patterns, limit, queryReadonly, coordS
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
     WHERE COALESCE(status, 'active') <> 'archived'
+      AND COALESCE(meta->>'merged_into', '') = ''
       AND (
         COALESCE(title, '') ILIKE ANY($1::text[])
         OR COALESCE(type, '') ILIKE ANY($1::text[])
@@ -332,24 +487,27 @@ async function fetchVaultRowsByPatterns({ patterns, limit, queryReadonly, coordS
 }
 
 export async function fetchVaultWikiEntrySet({ limit = 80, state = null, queryReadonly = pgPool.queryReadonly } = {}) {
-  const coordColumns = await detectCoordColumns(queryReadonly);
+  const rebuildingV1State = Number(state?.version) === 1;
+  const effectiveLimit = rebuildingV1State ? 500 : limit;
+  const coordColumns = await detectCoordColumns(queryReadonly, { failClosed: rebuildingV1State });
   const coordSelect = coordColumns.length > 0
     ? `, ${coordColumns.join(', ')}`
     : '';
   const highValueRows = await fetchVaultRowsBySources({
     sources: HIGH_VALUE_WIKI_SOURCES,
-    limit,
+    limit: effectiveLimit,
     queryReadonly,
     coordSelect,
   });
   const digestRows = await fetchVaultRowsByPatterns({
     patterns: LOW_VALUE_DIGEST_PATTERNS,
-    limit,
+    limit: effectiveLimit,
     queryReadonly,
     coordSelect,
   }).catch(() => []);
   const wikiSet = buildWikiEntrySetFromVaultRows([...highValueRows, ...digestRows], {
-    processedVaultEntryIds: state?.processedVaultEntryIds || [],
+    processedVaultEntryIds: rebuildingV1State ? [] : state?.processedVaultEntryIds || [],
+    processedContentKeys: rebuildingV1State ? [] : state?.processedContentKeys || [],
   });
   const digestCandidates = wikiSet.skipped.filter((item) => item.lane === 'dreaming_digest');
   return {
@@ -383,6 +541,9 @@ export function mergeWikiPages(entries, existingPages = {}) {
         `Source: \`${entry.source}\``,
         entry.coords ? `Coords: \`${formatCoords(entry.coords)}\`` : null,
         entry.filePath ? `Raw: \`${entry.filePath}\`` : null,
+        entry.occurrenceCount > 1
+          ? `Occurrences: ${entry.occurrenceCount} source entries (${entry.duplicateCount} duplicates suppressed)`
+          : null,
         '',
         entry.excerpt || '_No excerpt available._',
       ].filter((line) => line !== null).join('\n'));
@@ -575,23 +736,45 @@ export async function buildLlmWikiCompileReport(options = {}) {
   const outDir = options.outDir || DEFAULT_WIKI_DIR;
   const limit = Math.max(1, Math.min(500, Number(options.limit || 80) || 80));
   const state = options.state || readWikiState(outDir);
+  const rebuildingV1State = Number(state.version) === 1;
   let files = [];
   let docEntries = [];
   let minuteEntries = [];
   let vaultEntries = [];
   let vaultSkipped = [];
   let digestCandidates = [];
+  let vaultStats = {
+    sourceVaultEntries: 0,
+    contentUniqueEntries: 0,
+    contentDuplicateGroups: 0,
+    contentDuplicateRows: 0,
+    previouslyProcessedContentRows: 0,
+    contentDuplicateRate: 0,
+  };
+  let sourceVaultEntryIds = [];
+  let sourceContentKeys = [];
   let sourceMode = 'vault';
 
   if (!options.noDb) {
-    const entrySet = await fetchVaultWikiEntrySet({
-      limit,
-      state,
-      queryReadonly: options.queryReadonly || pgPool.queryReadonly,
-    }).catch(() => ({ entries: [], skipped: [], digestCandidates: [] }));
+    let entrySet;
+    try {
+      entrySet = await fetchVaultWikiEntrySet({
+        limit,
+        state,
+        queryReadonly: options.queryReadonly || pgPool.queryReadonly,
+      });
+    } catch (error) {
+      if (rebuildingV1State) {
+        throw new Error(`llm_wiki_v1_rebuild_source_failed:${error.message}`);
+      }
+      entrySet = { entries: [], skipped: [], digestCandidates: [], stats: vaultStats };
+    }
     vaultEntries = entrySet.entries || [];
     vaultSkipped = entrySet.skipped || [];
     digestCandidates = entrySet.digestCandidates || [];
+    vaultStats = entrySet.stats || vaultStats;
+    sourceVaultEntryIds = entrySet.sourceVaultEntryIds || [];
+    sourceContentKeys = entrySet.contentKeys || [];
   }
 
   if (options.noDb || options.legacyDocSource) {
@@ -608,7 +791,7 @@ export async function buildLlmWikiCompileReport(options = {}) {
 
   const entries = [...vaultEntries, ...docEntries, ...minuteEntries].filter((entry) => entry.excerpt);
   const topics = [...new Set(entries.map((entry) => entry.topic))].sort();
-  const existing = readExistingPages(outDir, topics);
+  const existing = rebuildingV1State ? {} : readExistingPages(outDir, topics);
   const deterministicPages = mergeWikiPages(entries, existing);
   const llm = options.llmPreview && !options.noDb && entries.length > 0
     ? await buildLlmWikiPreviews({
@@ -619,11 +802,8 @@ export async function buildLlmWikiCompileReport(options = {}) {
     })
     : { enabled: false, cycleId: null, traceId: null, calls: 0, previews: [], warnings: [] };
   const pages = applyLlmPreviewToPages(deterministicPages, llm.previews);
-  const sourceKeys = entries.map((entry) => `${entry.topic}:${entry.source}`);
-  const duplicateRate = entries.length === 0
-    ? 0
-    : 1 - (new Set(sourceKeys).size / entries.length);
-  const sourceVaultEntryIds = vaultEntries.map((entry) => entry.vaultEntryId).filter(Boolean);
+  const duplicateRate = vaultStats.contentDuplicateRate;
+  const nextState = nextWikiState(state, sourceVaultEntryIds, options.now || new Date(), sourceContentKeys);
 
   return {
     ok: true,
@@ -638,11 +818,18 @@ export async function buildLlmWikiCompileReport(options = {}) {
       path: statePath(outDir),
       previousProcessedVaultEntryIds: state.processedVaultEntryIds.length,
       newVaultEntryIds: sourceVaultEntryIds,
-      nextProcessedVaultEntryIds: nextWikiState(state, sourceVaultEntryIds).processedVaultEntryIds.length,
+      newContentKeys: sourceContentKeys,
+      nextProcessedVaultEntryIds: nextState.processedVaultEntryIds.length,
+      nextProcessedContentKeys: nextState.processedContentKeys.length,
+      migration: rebuildingV1State ? 'v1_content_rebuild' : null,
     },
     counts: {
       sourceFiles: files.length,
-      sourceVaultEntries: vaultEntries.length,
+      sourceVaultEntries: vaultStats.sourceVaultEntries,
+      contentUniqueVaultEntries: vaultStats.contentUniqueEntries,
+      contentDuplicateGroups: vaultStats.contentDuplicateGroups,
+      contentDuplicateRows: vaultStats.contentDuplicateRows,
+      previouslyProcessedContentRows: vaultStats.previouslyProcessedContentRows,
       skippedVaultEntries: vaultSkipped.length,
       dreamingDigestCandidates: digestCandidates.length,
       dbMinutes: minuteEntries.length,
@@ -682,7 +869,12 @@ async function main() {
     for (const [topic, content] of Object.entries(report.pages)) {
       fs.writeFileSync(path.join(args.outDir, `${topic}.md`), content, 'utf8');
     }
-    writeWikiState(args.outDir, nextWikiState(initialState, report.state.newVaultEntryIds));
+    writeWikiState(args.outDir, nextWikiState(
+      initialState,
+      report.state.newVaultEntryIds,
+      new Date(),
+      report.state.newContentKeys,
+    ));
     report.fileMutation = true;
   }
   if (args.writeVault) {

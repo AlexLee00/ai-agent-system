@@ -392,6 +392,7 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
         outcome: row.outcome,
         action: row.action ?? {},
         principleCheckResult: row.principle_check_result ?? {},
+        rollbackSpec: row.rollback_spec ?? {},
       },
     });
     if (record && allowedTeams.has(record.team)) records.push(record);

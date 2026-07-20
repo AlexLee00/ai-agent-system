@@ -35,6 +35,7 @@
     "smoke:feed-expand": "tsx scripts/sigma-feed-expand-smoke.ts",
     "wiki:llm": "tsx scripts/llm-wiki-compile.ts --json",
     "smoke:llm-wiki": "tsx scripts/llm-wiki-smoke.ts",
+    "smoke:llm-wiki-content-dedupe": "tsx scripts/llm-wiki-content-dedupe-smoke.ts",
     "dreaming:lite": "tsx scripts/sigma-dreaming-lite.ts --json",
     "smoke:dreaming-lite": "tsx scripts/sigma-dreaming-lite-smoke.ts",
     "validation:transition": "tsx scripts/runtime-sigma-validation-transition.ts --json",
