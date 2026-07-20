@@ -3,6 +3,8 @@
 > 레포: AlexLee00/ai-agent-system
 > 최종 업데이트: 2026-05-21
 
+> 저장소 공통 작업 규칙은 루트 `AGENTS.md`가 기준이다. 비자명한 운영 변경은 그 문서의 T1/T2 분류에 따라 `skills/implementation-governance/SKILL.md`를 적용하고, 단순 문구·비운영 문서는 T0 Lean으로 처리한다.
+
 ---
 
 ## 팀 구조

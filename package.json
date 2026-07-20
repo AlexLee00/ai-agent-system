@@ -9,7 +9,7 @@
     "apps/*"
   ],
   "scripts": {
-    "check": "npm run -s typecheck && npm run -s typecheck:strict && npm run -s check:package-script-paths",
+    "check": "npm run -s smoke:harness-principles-audit && npm run -s typecheck && npm run -s typecheck:strict && npm run -s check:package-script-paths",
     "dev": "npm run dev --workspaces --if-present --include-workspace-root=false",
     "build": "npm run build:ts && npm run build:hub-runtime && npm run build:daemons",
     "build:ts": "node scripts/build-ts-phase1.mjs",

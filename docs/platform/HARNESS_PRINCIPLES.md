@@ -19,7 +19,15 @@ The evaluator is permanent. A loop is not autonomous just because the generator 
 
 ## Challenge/Consensus Gate
 
-Non-trivial implementation starts only after developer, domain, SRE/data, and test-harness views have challenged the proposed change. The accepted decision must identify rejected alternatives, mutation boundaries, and rollback conditions. Parallel agents provide evidence; they do not independently patch overlapping source files.
+Non-trivial implementation starts only after developer, domain, SRE/data, and test-harness views have challenged the proposed change. Each view records an objection, evidence, and accepted-or-rejected reason; consensus requires no unresolved correctness, safety, data-loss, or rollback objection. The accepted decision identifies rejected alternatives, mutation boundaries, and rollback conditions. Parallel agents provide evidence, while **one implementation owner** patches the source.
+
+## Proportional Modes
+
+- **T0 Lean** covers copy, comments, formatting, non-operational docs or display-only small settings, and test descriptions that do not change runtime behavior. It uses the smallest direct verification and skips expert, RED, DB, runtime-drift, and hard-test ceremony unless explicitly requested.
+- **T1 Governed** covers non-trivial logic, cross-team contracts, provider/model/timeout/retry/schedule/limit policy, auth, DB reads or state classification, and external I/O behavior. File size and line count do not lower the mode.
+- **T2 Protected** is an approval overlay for launchd mutation, live trade/payment/reservation/publishing, production DB writes or migrations, secret changes, and commit/push. It does not promote a T0 content-only change into the governed loop, but the protected action still requires explicit current approval.
+
+For T1 changes and T2 overlays on T1, evidence, focused soft tests, and independent review remain mandatory. A T2 approval layered on T0 does not promote the underlying change into the governed loop. RED applies to defects and new behavior contracts; DB consistency, runtime drift, read-only hard tests, and relevant refactoring run only when the changed boundary makes them meaningful. An inapplicable gate is recorded as `N/A` with a reason rather than performed for ceremony.
 
 ## Verification Contract
 
