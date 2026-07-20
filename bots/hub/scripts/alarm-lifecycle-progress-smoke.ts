@@ -9,7 +9,7 @@ const path = require('node:path');
 const {
   buildHealthObservationPolicy,
   buildHealthRecoveryContract,
-} = require('../../../packages/core/lib/alarm-lifecycle-contract.ts');
+} = require('../../../packages/core/lib/alarm-lifecycle-contract.js');
 const alarmRouteModule = require('../lib/routes/alarm.ts');
 const staleScan = require('./alarm-auto-repair-stale-scan.ts');
 

@@ -32,7 +32,7 @@ const {
 const {
   buildHealthObservationPolicy,
   buildHealthRecoveryContract,
-} = require('../../../packages/core/lib/alarm-lifecycle-contract.ts');
+} = require('../../../packages/core/lib/alarm-lifecycle-contract.js');
 
 // v2: 핵심 봇 프로세스 빠른 점검 모듈
 const teamLeadsCheck = require('../lib/checks/team-leads.legacy.js');

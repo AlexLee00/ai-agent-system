@@ -24,7 +24,7 @@ const { createHealthMemoryHelper } = require('../lib/health-memory-bridge');
 const {
   buildHealthObservationPolicy,
   buildHealthRecoveryContract,
-} = require('../../../packages/core/lib/alarm-lifecycle-contract.ts');
+} = require('../../../packages/core/lib/alarm-lifecycle-contract.js');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.commander', 'ai.ska.naver-monitor'];
