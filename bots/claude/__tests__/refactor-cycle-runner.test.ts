@@ -740,6 +740,86 @@ async function test_plan_includes_sigma_feedback_context() {
   console.log('✅ refactor-cycle: plan embeds Sigma refactor feedback');
 }
 
+async function test_c_s3_consumes_graph_expanded_vault_feedback() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  const calls = [];
+  const result = await runner.fetchRefactorVaultFeedback({
+    noVaultFeedback: false,
+    dryRun: false,
+    refactorType: 'ts_nocheck',
+    target: { relativePath: ACTIVE_TARGET },
+  }, {
+    file: ACTIVE_TARGET,
+    refactorType: 'ts_nocheck',
+  }, {
+    searchVault: async (query, options) => {
+      calls.push({ query, options });
+      return {
+        ok: true,
+        results: [{
+          id: 'direct-1',
+          title: 'Direct refactor outcome',
+          source: 'claude_refactor',
+          similarity: 0.93,
+          meta: { payload: { stage: 'active_ready' } },
+        }],
+        knowledgeGraph: {
+          enabled: true,
+          maxHops: 1,
+          confidenceThreshold: 0.85,
+          seedEntities: ['typescript'],
+          matchedNodes: [],
+          results: [{
+            id: 'direct-1',
+            title: 'Direct refactor outcome',
+            source: 'claude_refactor',
+            contentPreview: null,
+            confidence: 0.93,
+            hop: 1,
+            meta: { payload: { stage: 'active_ready' } },
+          }, {
+            id: 'graph-1',
+            title: 'Related TypeScript failure',
+            source: 'claude_refactor',
+            contentPreview: null,
+            confidence: 0.9,
+            hop: 1,
+            meta: {
+              payload: {
+                stage: 'failed',
+                outcome: 'failed',
+                meta: {
+                  file: ACTIVE_TARGET,
+                  errorSummary: 'builder=TS2339 graph-related failure',
+                },
+              },
+            },
+          }, {
+            id: 'graph-cross-source',
+            title: 'Legacy source must stay isolated',
+            source: 'claude_auto_dev',
+            contentPreview: null,
+            confidence: 0.99,
+            hop: 1,
+            meta: {},
+          }],
+        },
+      };
+    },
+  });
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].options.graphExpansionEnabled, true);
+  assert.deepStrictEqual(result.results.map((item) => item.title), [
+    'Direct refactor outcome',
+    'Related TypeScript failure',
+  ]);
+  assert.strictEqual(result.results[1].graphHop, 1);
+  assert.strictEqual(result.results[1].graphConfidence, 0.9);
+  assert.deepStrictEqual(runner.deriveFilePriorErrors(result, ACTIVE_TARGET), ['TS2339 graph-related failure']);
+  console.log('✅ refactor-cycle: C-S3 consumes read-only graph-expanded vault feedback');
+}
+
 async function test_active_verifies_and_restores_without_apply() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -3004,6 +3084,7 @@ async function main() {
     test_dirty_scope_mutation_isolation_and_cleanup,
     test_shadow_dry_run_analyze_plan_only,
     test_plan_includes_sigma_feedback_context,
+    test_c_s3_consumes_graph_expanded_vault_feedback,
     test_active_verifies_and_restores_without_apply,
     test_active_verify_skip_defers_and_restores,
     test_apply_off_does_not_commit_and_restores,

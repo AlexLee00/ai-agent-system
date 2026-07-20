@@ -1549,7 +1549,7 @@ function buildPlanContent(context, analysis, candidate) {
   ].join('\n');
 }
 
-async function fetchRefactorVaultFeedback(context, candidate) {
+async function fetchRefactorVaultFeedback(context, candidate, deps = {}) {
   if (context.noVaultFeedback) return { ok: true, skipped: true, reason: 'no_vault_feedback' };
   if (context.dryRun) return { ok: true, skipped: true, reason: 'dry_run' };
 
@@ -1561,35 +1561,53 @@ async function fetchRefactorVaultFeedback(context, candidate) {
   ].filter(Boolean).join(' ');
 
   try {
-    const modulePath = path.join(ROOT, 'bots', 'sigma', 'vault', 'vault-search.ts');
-    const { searchVault } = await import(pathToFileURL(modulePath).href);
+    let searchVault = deps.searchVault;
+    if (typeof searchVault !== 'function') {
+      const modulePath = path.join(ROOT, 'bots', 'sigma', 'vault', 'vault-search.ts');
+      ({ searchVault } = await import(pathToFileURL(modulePath).href));
+    }
     if (typeof searchVault !== 'function') {
       return { ok: false, query, warning: 'searchVault_not_exported', results: [] };
     }
-    const mapResults = (search) => Array.isArray(search?.results) ? search.results.map((item) => {
-      const meta = item.meta || {};
-      const payload = meta.payload || {};
-      const payloadMeta = payload.meta || {};
-      return {
-        title: item.title,
-        source: item.source || null,
-        similarity: item.similarity,
-        cycleId: payloadMeta.cycleId || payload.cycleId || meta.cycleId || null,
-        refactorType: payloadMeta.refactorType || payload.refactorType || meta.refactorType || null,
-        target: payloadMeta.target || payload.target || meta.target || null,
-        file: payloadMeta.file || payload.file || null,
-        candidateFiles: Array.isArray(payloadMeta.candidateFiles) ? payloadMeta.candidateFiles : [],
-        changedFiles: Array.isArray(payloadMeta.changedFiles) ? payloadMeta.changedFiles : [],
-        errorSummary: payloadMeta.errorSummary || payload.errorSummary || null,
-        outcome: payload.outcome || null,
-        stage: payload.stage || null,
-      };
-    }) : [];
+    const mapResults = (search, allowedSources) => {
+      const direct = Array.isArray(search?.results) ? search.results : [];
+      const expanded = Array.isArray(search?.knowledgeGraph?.results) ? search.knowledgeGraph.results : [];
+      const seen = new Set();
+      return [...direct, ...expanded].flatMap((item, index) => {
+        const source = item.source || null;
+        if (allowedSources.length > 0 && !allowedSources.includes(source)) return [];
+        const key = String(item.id || `${source || 'unknown'}:${item.title || index}`);
+        if (seen.has(key)) return [];
+        seen.add(key);
+        const meta = item.meta || {};
+        const payload = meta.payload || {};
+        const payloadMeta = payload.meta || {};
+        return [{
+          id: item.id || null,
+          title: item.title,
+          source,
+          similarity: item.similarity ?? item.confidence,
+          graphHop: item.hop || null,
+          graphConfidence: item.confidence ?? null,
+          cycleId: payloadMeta.cycleId || payload.cycleId || meta.cycleId || null,
+          refactorType: payloadMeta.refactorType || payload.refactorType || meta.refactorType || null,
+          target: payloadMeta.target || payload.target || meta.target || null,
+          file: payloadMeta.file || payload.file || null,
+          candidateFiles: Array.isArray(payloadMeta.candidateFiles) ? payloadMeta.candidateFiles : [],
+          changedFiles: Array.isArray(payloadMeta.changedFiles) ? payloadMeta.changedFiles : [],
+          errorSummary: payloadMeta.errorSummary || payload.errorSummary || null,
+          outcome: payload.outcome || null,
+          stage: payload.stage || null,
+        }];
+      });
+    };
+    const refactorSources = ['claude_refactor'];
     const refactorSearch = await searchVault(query, {
       topK: 3,
-      sourceKinds: ['claude_refactor'],
+      sourceKinds: refactorSources,
+      graphExpansionEnabled: true,
     });
-    const refactorResults = mapResults(refactorSearch);
+    const refactorResults = mapResults(refactorSearch, refactorSources);
     if (refactorSearch?.ok && refactorResults.length > 0) {
       return {
         ok: true,
@@ -1600,11 +1618,13 @@ async function fetchRefactorVaultFeedback(context, candidate) {
       };
     }
 
+    const legacySources = ['claude_auto_dev'];
     const legacySearch = await searchVault(query, {
       topK: 3,
-      sourceKinds: ['claude_auto_dev'],
+      sourceKinds: legacySources,
+      graphExpansionEnabled: true,
     });
-    const legacyResults = mapResults(legacySearch);
+    const legacyResults = mapResults(legacySearch, legacySources);
     return {
       ok: Boolean(refactorSearch?.ok || legacySearch?.ok),
       query,

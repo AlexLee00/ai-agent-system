@@ -1,6 +1,10 @@
 import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.js';
+import {
+  ONTOLOGY_OBJECT_TYPES,
+  resolveOntologyObjectType,
+} from '../../../packages/core/lib/ontology-registry.js';
 
-export type VaultKnowledgeNodeType = 'team_agent' | 'record' | 'topic_theme' | 'entity';
+export type VaultKnowledgeNodeType = 'team_agent' | 'record' | 'topic_theme' | 'entity' | 'object_type';
 
 export interface VaultKnowledgeNode {
   id: string;
@@ -12,9 +16,9 @@ export interface VaultKnowledgeNode {
 export interface VaultKnowledgeEdge {
   source: string;
   target: string;
-  relationship: 'belongs_to' | 'produced_by' | 'member_of' | 'about' | 'mentions';
+  relationship: 'belongs_to' | 'produced_by' | 'member_of' | 'about' | 'mentions' | 'instance_of' | 'subtype_of';
   confidence: number;
-  evidence: 'meta' | 'tag' | 'source_ref';
+  evidence: 'meta' | 'tag' | 'source_ref' | 'registry';
 }
 
 export interface VaultGraphEntry {
@@ -47,6 +51,13 @@ export interface VaultGraphRelatedRecord {
   record: VaultGraphRecord;
   hop: number;
   confidence: number;
+}
+
+export interface VaultGraphSeedQueryOptions {
+  maxHops?: number;
+  minConfidence?: number;
+  maxConceptDegree?: number;
+  limit?: number;
 }
 
 type ReportOptions = {
@@ -180,6 +191,24 @@ export function buildVaultKnowledgeGraph(entries: VaultGraphEntry[]): VaultKnowl
   const edges = new Map<string, VaultKnowledgeEdge>();
   const records: VaultGraphRecord[] = [];
 
+  addNode(nodes, { id: 'object-type:root', type: 'object_type', label: 'Object Type' });
+  for (const objectType of ONTOLOGY_OBJECT_TYPES) {
+    const typeNodeId = `object-type:${objectType.id}`;
+    addNode(nodes, {
+      id: typeNodeId,
+      type: 'object_type',
+      label: objectType.label,
+      metadata: { ontologyVersion: 'o1-v1', objectType: objectType.id },
+    });
+    addEdge(edges, {
+      source: typeNodeId,
+      target: 'object-type:root',
+      relationship: 'subtype_of',
+      confidence: 1,
+      evidence: 'registry',
+    });
+  }
+
   for (const entry of entries) {
     const recordId = String(entry.id || '').trim();
     if (!recordId) continue;
@@ -210,6 +239,27 @@ export function buildVaultKnowledgeGraph(entries: VaultGraphEntry[]): VaultKnowl
       metadata: { recordId, recordType: record.type, team, agent },
     });
 
+    const payload = meta.payload && typeof meta.payload === 'object' ? meta.payload : {};
+    const payloadMeta = payload.meta && typeof payload.meta === 'object' ? payload.meta : {};
+    const objectType = resolveOntologyObjectType(
+      meta.ontologyType,
+      meta.objectType,
+      payloadMeta.ontologyType,
+      payloadMeta.objectType,
+      entry.type,
+    );
+    if (objectType) {
+      addEdge(edges, {
+        source: recordNodeId,
+        target: `object-type:${objectType.id}`,
+        relationship: 'instance_of',
+        confidence: 1,
+        evidence: 'registry',
+      });
+      const recordNode = nodes.get(recordNodeId);
+      if (recordNode?.metadata) recordNode.metadata.ontologyType = objectType.id;
+    }
+
     let teamNodeId: string | null = null;
     if (team) {
       teamNodeId = `team:${slug(team)}`;
@@ -224,10 +274,41 @@ export function buildVaultKnowledgeGraph(entries: VaultGraphEntry[]): VaultKnowl
     }
 
     extractTagRelations(entry, team, nodes, edges, recordNodeId);
-    for (const topic of stringValues(meta.topic, meta.topics, meta.theme, meta.themes, meta.category, meta.genre, meta.actionType)) {
+    for (const topic of stringValues(
+      meta.topic,
+      meta.topics,
+      meta.theme,
+      meta.themes,
+      meta.category,
+      meta.genre,
+      meta.actionType,
+      payload.refactorType,
+      payload.stage,
+      payload.outcome,
+      payloadMeta.refactorType,
+      payloadMeta.stage,
+      payloadMeta.outcome,
+      payloadMeta.errorCodes,
+    )) {
       addTopic(nodes, edges, recordNodeId, topic, 'meta');
     }
-    for (const entity of stringValues(meta.entity, meta.entities, meta.subject, meta.subjects, meta.technologies)) {
+    for (const entity of stringValues(
+      meta.entity,
+      meta.entities,
+      meta.subject,
+      meta.subjects,
+      meta.technologies,
+      payload.file,
+      payload.target,
+      payload.candidateFiles,
+      payload.changedFiles,
+      payloadMeta.file,
+      payloadMeta.target,
+      payloadMeta.candidateFiles,
+      payloadMeta.changedFiles,
+      payloadMeta.avoidedFiles,
+      payloadMeta.localHistoryAvoidedFiles,
+    )) {
       addEntity(nodes, edges, recordNodeId, entity, 'meta');
     }
     for (const sourceTable of new Set(stringValues(sourceRefs.map((ref) => ref.table), meta.sourceTable))) {
@@ -244,6 +325,7 @@ export function buildVaultKnowledgeGraph(entries: VaultGraphEntry[]): VaultKnowl
     record: 0,
     topic_theme: 0,
     entity: 0,
+    object_type: 0,
   };
   for (const node of graphNodes) nodeCounts[node.type] += 1;
   return { nodes: graphNodes, edges: graphEdges, records, nodeCounts };
@@ -279,7 +361,7 @@ export function queryRelatedRecords(
   if (!queryKey) return { matchedNodes: [], records: [] };
 
   const matchedNodes = graph.nodes.filter((node) => {
-    if (node.type === 'record') return false;
+    if (!['team_agent', 'topic_theme', 'entity'].includes(node.type)) return false;
     const labelKey = slug(node.label);
     return labelKey.length >= 2 && queryKey.includes(labelKey);
   });
@@ -339,6 +421,67 @@ export function queryRelatedRecords(
         || left.record.title.localeCompare(right.record.title)
         || left.record.id.localeCompare(right.record.id))
       .slice(0, safeLimit),
+  };
+}
+
+export function queryRelatedRecordsFromSeeds(
+  graph: VaultKnowledgeGraph,
+  seedRecordIds: string[],
+  options: VaultGraphSeedQueryOptions = {},
+): { matchedNodes: VaultKnowledgeNode[]; seedEntities: string[]; records: VaultGraphRelatedRecord[] } {
+  const minConfidence = Math.max(0, Math.min(1, Number(options.minConfidence ?? 0.8)));
+  const maxConceptDegree = Math.max(1, Math.min(50, Math.floor(Number(options.maxConceptDegree) || 12)));
+  const limit = Math.max(1, Math.min(3, Math.floor(Number(options.limit) || 3)));
+  const seedIds = new Set(seedRecordIds.map(String));
+  const seedNodeIds = new Set(graph.records
+    .filter((record) => seedIds.has(record.id))
+    .map((record) => record.nodeId));
+  if (seedNodeIds.size === 0) return { matchedNodes: [], seedEntities: [], records: [] };
+
+  const semanticEdges = graph.edges.filter((edge) => (
+    (edge.relationship === 'mentions' || edge.relationship === 'about')
+      && edge.confidence >= minConfidence
+  ));
+  const conceptDegree = new Map<string, Set<string>>();
+  for (const edge of semanticEdges) {
+    if (!conceptDegree.has(edge.target)) conceptDegree.set(edge.target, new Set());
+    conceptDegree.get(edge.target)?.add(edge.source);
+  }
+
+  const seedConcepts = new Map<string, number>();
+  for (const edge of semanticEdges) {
+    if (!seedNodeIds.has(edge.source)) continue;
+    if ((conceptDegree.get(edge.target)?.size || 0) > maxConceptDegree) continue;
+    seedConcepts.set(edge.target, Math.max(seedConcepts.get(edge.target) || 0, edge.confidence));
+  }
+  if (seedConcepts.size === 0) return { matchedNodes: [], seedEntities: [], records: [] };
+
+  const recordByNodeId = new Map(graph.records.map((record) => [record.nodeId, record]));
+  const related = new Map<string, VaultGraphRelatedRecord>();
+  for (const edge of semanticEdges) {
+    const seedConfidence = seedConcepts.get(edge.target);
+    if (seedConfidence == null || seedNodeIds.has(edge.source)) continue;
+    const record = recordByNodeId.get(edge.source);
+    if (!record) continue;
+    const confidence = Number(Math.min(seedConfidence, edge.confidence).toFixed(4));
+    const existing = related.get(record.id);
+    if (!existing || confidence > existing.confidence) {
+      related.set(record.id, { record, hop: 1, confidence });
+    }
+  }
+
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const matchedNodes = [...seedConcepts.keys()]
+    .flatMap((nodeId) => nodeById.get(nodeId) ? [nodeById.get(nodeId) as VaultKnowledgeNode] : [])
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return {
+    matchedNodes,
+    seedEntities: matchedNodes.filter((node) => node.type === 'entity').map((node) => node.label.toLowerCase()),
+    records: [...related.values()]
+      .sort((left, right) => right.confidence - left.confidence
+        || left.record.title.localeCompare(right.record.title)
+        || left.record.id.localeCompare(right.record.id))
+      .slice(0, limit),
   };
 }
 
@@ -408,5 +551,6 @@ export default {
   fetchVaultKnowledgeGraphReport,
   isVaultKnowledgeGraphReportEnabled,
   queryRelatedRecords,
+  queryRelatedRecordsFromSeeds,
   queryRecordsByEntity,
 };

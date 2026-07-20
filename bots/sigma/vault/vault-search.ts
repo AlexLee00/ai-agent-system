@@ -12,7 +12,7 @@ import {
 } from './layer-router.ts';
 import { normalizeLibraryCoords } from '../shared/library-coords.ts';
 import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.js';
-import { buildVaultKnowledgeGraph, queryRelatedRecords } from './vault-knowledge-graph.js';
+import { buildVaultKnowledgeGraph, queryRelatedRecordsFromSeeds } from './vault-knowledge-graph.js';
 
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
@@ -21,9 +21,11 @@ const PROJECT_ROOT = path.resolve(
 );
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 const KG_SEARCH_ENV = 'SIGMA_KG_SEARCH_ENABLED';
-const KG_SEARCH_MAX_HOPS = 2;
-const KG_SEARCH_RESULT_LIMIT = 5;
+const KG_SEARCH_MAX_HOPS = 1;
+const KG_SEARCH_RESULT_LIMIT = 3;
 const KG_SEARCH_SOURCE_LIMIT = 2000;
+const KG_SEARCH_MIN_CONFIDENCE = 0.8;
+const KG_SEARCH_MAX_CONCEPT_DEGREE = 12;
 
 export interface VaultSearchOptions {
   topK?: number;
@@ -37,6 +39,7 @@ export interface VaultSearchOptions {
   intent?: string;
   coordFilters?: Record<string, unknown>;
   includeRoutingDebug?: boolean;
+  graphExpansionEnabled?: boolean;
   deps?: Record<string, unknown>;
 }
 
@@ -64,6 +67,10 @@ export interface VaultKnowledgeGraphSearchResult {
   enabled: true;
   maxHops: number;
   resultLimit: number;
+  confidenceThreshold: number;
+  maxConceptDegree: number;
+  seedRecordIds: string[];
+  seedEntities: string[];
   matchedNodes: Array<{ id: string; type: string; label: string }>;
   results: VaultKnowledgeGraphSearchRecord[];
   warning?: string;
@@ -115,7 +122,57 @@ function isKnowledgeGraphSearchEnabled(env: Record<string, string | undefined>):
   return String(env[KG_SEARCH_ENV] || '').trim().toLowerCase() === 'true';
 }
 
-async function searchKnowledgeGraph(query: string, queryReadonly: any): Promise<VaultKnowledgeGraphSearchResult> {
+async function searchKnowledgeGraph(
+  seedResults: VaultSearchResult[],
+  queryReadonly: any,
+  scope: {
+    sourceKinds: string[];
+    types: string[];
+    sourceRefIds: string[];
+    paraCategory: string | null;
+    coordFilters: Record<string, unknown> | null;
+    coordColumns: string[];
+  },
+): Promise<VaultKnowledgeGraphSearchResult> {
+  const params: unknown[] = [];
+  const filters = [
+    "COALESCE(status, 'captured') <> 'archived'",
+    "(meta->>'merged_into') IS NULL",
+  ];
+  const scoped = scope.sourceKinds.length > 0
+    || scope.types.length > 0
+    || scope.sourceRefIds.length > 0
+    || Boolean(scope.paraCategory);
+  if (scope.sourceKinds.length > 0) {
+    params.push(scope.sourceKinds);
+    filters.push(`source = ANY($${params.length}::text[])`);
+  }
+  if (scope.types.length > 0) {
+    params.push(scope.types);
+    filters.push(`type = ANY($${params.length}::text[])`);
+  }
+  if (scope.sourceRefIds.length > 0) {
+    params.push(scope.sourceRefIds);
+    filters.push(`${SOURCE_REF_ID_SQL} = ANY($${params.length}::text[])`);
+  }
+  if (scope.paraCategory) {
+    params.push(scope.paraCategory);
+    filters.push(`para_category = $${params.length}`);
+  }
+  if (!scoped) {
+    params.push([...KNOWLEDGE_TYPES]);
+    filters.push(`(
+      type = ANY($${params.length}::text[])
+      OR LOWER(COALESCE(meta->>'vaultTier', meta->>'vault_tier', '')) = 'knowledge'
+    )`);
+  }
+  const graphCoordColumns = scope.coordColumns.filter((column) => (
+    ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state', 'prediction_horizon'].includes(column)
+  ));
+  const coordSelect = graphCoordColumns.length > 0
+    ? `,\n      ${graphCoordColumns.join(',\n      ')}`
+    : '';
+  params.push(KG_SEARCH_SOURCE_LIMIT);
   const rows = normalizeRows(await queryReadonly('sigma', `
     SELECT
       id::text,
@@ -124,34 +181,55 @@ async function searchKnowledgeGraph(query: string, queryReadonly: any): Promise<
       source,
       tags,
       meta,
-      created_at,
+      created_at${coordSelect},
       LEFT(content, 200) AS content_preview
     FROM sigma.vault_entries
-    WHERE COALESCE(status, 'captured') <> 'archived'
-      AND (meta->>'merged_into') IS NULL
-      AND (
-        type = ANY($1::text[])
-        OR LOWER(COALESCE(meta->>'vaultTier', meta->>'vault_tier', '')) = 'knowledge'
-      )
+    WHERE ${filters.join('\n      AND ')}
     ORDER BY created_at DESC, id DESC
-    LIMIT $2
-  `, [[...KNOWLEDGE_TYPES], KG_SEARCH_SOURCE_LIMIT]));
-  const knowledgeRows = rows.filter((row) => resolveVaultTier(row).tier === 'knowledge');
-  const related = queryRelatedRecords(
-    buildVaultKnowledgeGraph(knowledgeRows),
-    query,
-    KG_SEARCH_MAX_HOPS,
-    KG_SEARCH_RESULT_LIMIT,
+    LIMIT $${params.length}
+  `, params));
+  const tierRows = scoped ? rows : rows.filter((row) => resolveVaultTier(row).tier === 'knowledge');
+  const sourceRows = scope.coordFilters
+    ? tierRows.filter((row) => coordsMatchFilters(extractLibraryCoords(row), normalizeCoordFilters(scope.coordFilters || {})))
+    : tierRows;
+  const rowById = new Map(sourceRows.map((row) => [String(row.id), row]));
+  for (const seed of seedResults) {
+    if (rowById.has(String(seed.id))) continue;
+    rowById.set(String(seed.id), {
+      id: String(seed.id),
+      title: seed.title,
+      type: 'search_result',
+      source: seed.source,
+      tags: [],
+      meta: seed.meta,
+      content_preview: seed.contentPreview,
+    });
+  }
+  const seedRecordIds = seedResults.map((row) => String(row.id));
+  const related = queryRelatedRecordsFromSeeds(
+    buildVaultKnowledgeGraph([...rowById.values()]),
+    seedRecordIds,
+    {
+      maxHops: KG_SEARCH_MAX_HOPS,
+      minConfidence: KG_SEARCH_MIN_CONFIDENCE,
+      maxConceptDegree: KG_SEARCH_MAX_CONCEPT_DEGREE,
+      limit: KG_SEARCH_RESULT_LIMIT,
+    },
   );
-  const rowById = new Map(knowledgeRows.map((row) => [String(row.id), row]));
+  const allowedSources = new Set(scope.sourceKinds);
   return {
     enabled: true,
     maxHops: KG_SEARCH_MAX_HOPS,
     resultLimit: KG_SEARCH_RESULT_LIMIT,
+    confidenceThreshold: KG_SEARCH_MIN_CONFIDENCE,
+    maxConceptDegree: KG_SEARCH_MAX_CONCEPT_DEGREE,
+    seedRecordIds,
+    seedEntities: related.seedEntities,
     matchedNodes: related.matchedNodes.map((node) => ({ id: node.id, type: node.type, label: node.label })),
     results: related.records.flatMap(({ record, hop, confidence }) => {
       const row = rowById.get(record.id);
       if (!row) return [];
+      if (allowedSources.size > 0 && !allowedSources.has(String(row.source || ''))) return [];
       return [{
         id: record.id,
         title: record.title,
@@ -305,7 +383,9 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
   const embeddingFactory = deps.embeddingFactory || createVaultEmbedding;
   const queryReadonly = deps.queryReadonly || pgPool.queryReadonly || pgPool.query;
   const env = deps.env || process.env;
-  const knowledgeGraphEnabled = isKnowledgeGraphSearchEnabled(env);
+  const knowledgeGraphEnabled = opts.graphExpansionEnabled == null
+    ? isKnowledgeGraphSearchEnabled(env)
+    : opts.graphExpansionEnabled === true;
   const layerEnabled = Boolean(opts.layerSearchEnabled ?? isLayerSearchEnabled());
   const layerRoute = layerEnabled
     ? buildLayerRoute(normalizedQuery, { intent: opts.intent, coordFilters: opts.coordFilters })
@@ -439,12 +519,23 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     }
     if (knowledgeGraphEnabled) {
       try {
-        response.knowledgeGraph = await searchKnowledgeGraph(normalizedQuery, queryReadonly);
+        response.knowledgeGraph = await searchKnowledgeGraph(results, queryReadonly, {
+          sourceKinds,
+          types,
+          sourceRefIds,
+          paraCategory,
+          coordFilters: layerFallbackReason ? null : (layerRoute?.coordFilters || null),
+          coordColumns: [...coordColumns],
+        });
       } catch (error: any) {
         response.knowledgeGraph = {
           enabled: true,
           maxHops: KG_SEARCH_MAX_HOPS,
           resultLimit: KG_SEARCH_RESULT_LIMIT,
+          confidenceThreshold: KG_SEARCH_MIN_CONFIDENCE,
+          maxConceptDegree: KG_SEARCH_MAX_CONCEPT_DEGREE,
+          seedRecordIds: results.map((row) => String(row.id)),
+          seedEntities: [],
           matchedNodes: [],
           results: [],
           warning: `kg_search_unavailable:${error?.message || String(error)}`,

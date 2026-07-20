@@ -2,6 +2,11 @@
 
 import assert from 'node:assert/strict';
 import {
+  ONTOLOGY_ACTION_TYPES,
+  ONTOLOGY_OBJECT_TYPES,
+  ONTOLOGY_REGISTRY_JSON_SCHEMA,
+} from '../../../packages/core/lib/ontology-registry.js';
+import {
   buildVaultKnowledgeGraph,
   fetchVaultKnowledgeGraphReport,
   queryRecordsByEntity,
@@ -38,16 +43,69 @@ const fixtures = [
       source_refs: [{ team: 'luna', table: 'trade_journal', id: '42' }],
     },
   },
+  {
+    id: 'record-4',
+    title: 'BTC position snapshot',
+    type: 'position',
+    source: 'luna',
+    meta: { objectType: 'position', entities: ['BTC'] },
+  },
 ];
 
 async function main() {
+  const objectTypeIds = ONTOLOGY_OBJECT_TYPES.map(({ id }) => id).sort();
+  assert.deepEqual(objectTypeIds, [
+    'alarm',
+    'brief',
+    'gate',
+    'position',
+    'prediction',
+    'report',
+    'task',
+  ]);
+  const actionTypeIds = ONTOLOGY_ACTION_TYPES.map(({ id }) => id).sort();
+  assert.deepEqual(actionTypeIds, [
+    'alarm.resolve',
+    'brief.publish',
+    'gate.evaluate',
+    'prediction.evaluate',
+    'report.publish',
+    'task.report_progress',
+  ]);
+  assert.equal(ONTOLOGY_REGISTRY_JSON_SCHEMA.type, 'object');
+  assert.deepEqual(ONTOLOGY_REGISTRY_JSON_SCHEMA.required, ['version', 'objectTypes', 'actionTypes']);
+  assert.deepEqual(
+    [...ONTOLOGY_REGISTRY_JSON_SCHEMA.properties.objectTypes.items.properties.id.enum].sort(),
+    objectTypeIds,
+  );
+  assert.deepEqual(
+    [...ONTOLOGY_REGISTRY_JSON_SCHEMA.properties.actionTypes.items.properties.id.enum].sort(),
+    actionTypeIds,
+  );
+  assert(ONTOLOGY_ACTION_TYPES.every(({ objectType }) => objectTypeIds.includes(objectType)));
+
   const graph = buildVaultKnowledgeGraph(fixtures);
-  assert.equal(graph.records.length, 3);
+  assert.equal(graph.records.length, 4);
   assert(graph.nodes.some((node) => node.type === 'team_agent' && node.id === 'team:blog'));
   assert(graph.nodes.some((node) => node.type === 'record' && node.id === 'record:record-1'));
   assert(graph.nodes.some((node) => node.type === 'topic_theme' && node.id === 'topic:seo'));
   assert(graph.nodes.some((node) => node.type === 'entity' && node.id === 'entity:openai'));
   assert(graph.nodes.some((node) => node.type === 'entity' && node.id === 'entity:trade-journal'));
+  assert.deepEqual(
+    graph.nodes.filter((node) => node.type === 'object_type' && node.id !== 'object-type:root').map((node) => node.id).sort(),
+    objectTypeIds.map((id) => `object-type:${id}`).sort(),
+  );
+  assert(graph.nodes.some((node) => node.type === 'object_type' && node.id === 'object-type:position'));
+  assert.equal(graph.edges.some((edge) => (
+    edge.source === 'record:record-4'
+      && edge.target === 'object-type:position'
+      && edge.relationship === 'instance_of'
+  )), true);
+  assert.equal(graph.edges.some((edge) => (
+    edge.source === 'object-type:position'
+      && edge.target === 'object-type:root'
+      && edge.relationship === 'subtype_of'
+  )), true);
   assert.deepEqual(queryRecordsByEntity(graph, 'trade_journal').map((record) => record.id), ['record-3']);
 
   const openAiRecords = queryRecordsByEntity(graph, 'OpenAI');
