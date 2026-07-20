@@ -9,7 +9,7 @@ async function main() {
   assert.equal(Array.isArray(teams), true, 'teams should be array');
   assert.deepEqual(
     teams.sort(),
-    ['blog', 'claude', 'darwin', 'legal', 'luna', 'ska'].sort(),
+    ['blog', 'claude', 'darwin', 'luna', 'ska'].sort(),
     'active commander adapters should match non-retired teams',
   );
 

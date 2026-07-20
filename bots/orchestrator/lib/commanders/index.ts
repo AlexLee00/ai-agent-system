@@ -5,7 +5,6 @@ const { createBlogCommanderAdapter } = require('./blog-adapter');
 const { createClaudeCommanderAdapter } = require('./claude-adapter');
 const { createSkaCommanderAdapter } = require('./ska-adapter');
 const { createDarwinCommanderAdapter } = require('./darwin-adapter');
-const { createLegalCommanderAdapter } = require('./legal-adapter');
 const { createVirtualCommanderAdapter } = require('../../../../packages/core/lib/commander-contract.ts');
 
 const ADAPTER_FACTORIES = {
@@ -14,7 +13,6 @@ const ADAPTER_FACTORIES = {
   claude: createClaudeCommanderAdapter,
   ska: createSkaCommanderAdapter,
   darwin: createDarwinCommanderAdapter,
-  legal: createLegalCommanderAdapter,
 };
 
 type CommanderTeam = keyof typeof ADAPTER_FACTORIES;

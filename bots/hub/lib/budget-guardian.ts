@@ -11,7 +11,6 @@ const DEFAULT_TEAM_QUOTAS: Record<string, number> = {
   claude: 10,
   blog: 15,
   ska: 5,
-  justin: 3,
   hub: 5,
   data: 2,
 };

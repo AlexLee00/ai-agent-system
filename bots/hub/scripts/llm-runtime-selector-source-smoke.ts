@@ -59,11 +59,7 @@ assert.equal(orchestratorSummary.selector_key, 'orchestrator.jay.summary');
 assert.equal(orchestratorSummary.primary_routes[0], 'groq/runtime-env-fast');
 assert(orchestratorSummary.fallback_routes.includes('openai-oauth/runtime-env-mini'));
 
-const justinStage3 = selectRuntimeProfile('justin', 'stage-3');
-assert.equal(justinStage3.selector_key, 'justin.stage-3');
-assert.equal(justinStage3.primary_routes[0], 'openai-oauth/runtime-env-perf');
-assert(justinStage3.fallback_routes.includes('groq/runtime-env-deep'));
-assert(!justinStage3.fallback_routes.some((route: string) => route.startsWith('gemini-cli-oauth/')));
+assert.equal(selectRuntimeProfile('justin', 'stage-3'), null);
 
 const resolveSelectorChain = unifiedCaller._testOnly._resolveSelectorChain;
 const blogDefaultChain = resolveSelectorChain({ callerTeam: 'blog', agent: 'default' }, 'blog');
@@ -111,12 +107,6 @@ const runtimeSelectorKeys = [
   'hub.roundtable.team_commander',
   'hub.roundtable.judge',
   'hub.unified.oauth.openai.smoke',
-  'justin._default',
-  'justin.stage-3',
-  'justin.analysis',
-  'justin.citation',
-  'justin.opinion',
-  'justin.simple-qa',
   'blog.commenter.classify',
   'blog.master.analyze',
 ];
@@ -168,13 +158,13 @@ async function main() {
   assert.equal(adhocChain.chain[0]?.provider, 'openai-oauth');
 
   const selectorWinsOverAdhoc = resolveSelectorChain({
-    callerTeam: 'justin',
-    agent: 'stage-3',
-    selectorKey: 'justin.stage-3',
+    callerTeam: 'hub',
+    agent: 'default',
+    selectorKey: 'hub._default',
     chain: [{ provider: 'openai-oauth', model: 'manual-single-route' }],
-  }, 'justin');
-  assert.equal(selectorWinsOverAdhoc.selectorKey, 'justin.stage-3');
-  assert(selectorWinsOverAdhoc.chain.length >= 2, 'justin.stage-3 must preserve managed fallback routes');
+  }, 'hub');
+  assert.equal(selectorWinsOverAdhoc.selectorKey, 'hub._default');
+  assert(selectorWinsOverAdhoc.chain.length >= 2, 'hub._default must preserve managed fallback routes');
   assert.notEqual(selectorWinsOverAdhoc.chain[0]?.model, 'manual-single-route');
   delete process.env.HUB_LLM_ALLOW_ADHOC_CHAIN;
 

@@ -68,7 +68,7 @@ async function main() {
 
   const external = checkExternalGateway();
   assert.equal(external.ok, true, 'external gateway readiness must pass');
-  assert.equal(external.selector.ok, true, 'justin-court-appraisal selector must resolve');
+  assert.equal(external.selector.ok, true, 'generic external selector must resolve');
 
   const staleDependency = buildDependencyReportStatus({
     ok: true,

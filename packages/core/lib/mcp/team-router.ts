@@ -5,7 +5,6 @@ const { getMcpDefinition, listMcps } = require('./free-registry');
 const { readMcpsFromConfig } = require('./loader');
 
 const TEAM_CONFIG_MAP = {
-  justin: '/Users/alexlee/projects/ai-agent-system/bots/legal/config.json',
   luna: '/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml',
   investment: '/Users/alexlee/projects/ai-agent-system/bots/investment/config.yaml',
 };

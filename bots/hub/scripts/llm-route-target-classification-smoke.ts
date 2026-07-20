@@ -19,7 +19,8 @@ function main(): void {
   assert.equal(kind('darwin', 'planner', 'darwin.agent_policy'), 'alias');
   assert.equal(kind('orchestrator', 'summary', 'orchestrator.jay.summary'), 'runtime_service');
   assert.equal(kind('core', 'chunked-default', 'core.chunked.default'), 'task_route');
-  assert.equal(kind('legal', 'justin', 'legal._default'), 'pending_runtime');
+  assert.equal(kind('justin', 'justin', 'justin._default'), 'retired');
+  assert.equal(kind('legal', 'default', 'legal._default'), 'retired');
   assert.equal(kind('worker', 'lead', 'worker._default'), 'retired');
 
   console.log(JSON.stringify({
@@ -29,7 +30,6 @@ function main(): void {
       'task_route',
       'alias',
       'runtime_service',
-      'pending_runtime',
       'retired',
     ],
   }, null, 2));

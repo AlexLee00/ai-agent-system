@@ -9,7 +9,6 @@ const ROOT = path.resolve(__dirname, '../../../..');
 const BOT_CONFIGS = [
   { id: 'investment',   path: 'bots/investment/config.yaml' },
   { id: 'claude',       path: 'bots/claude/config.json' },
-  { id: 'legal',        path: 'bots/legal/config.json' },
   { id: 'reservation',  path: 'bots/reservation/config.yaml' },
   { id: 'blog',         path: 'bots/blog/config.json' },
   { id: 'orchestrator', path: 'bots/orchestrator/config.json' },

@@ -90,12 +90,12 @@ defmodule Darwin.V2.TeamConnectorTest do
     end
   end
 
-  describe "nine_team_integration" do
+  describe "active_team_integration" do
     test "지원하는 팀 목록 확인" do
-      supported_teams = ~w(luna blog ska worker video justin sigma hub jay darwin)
+      supported_teams = ~w(luna blog ska sigma hub jay darwin)
       assert "luna" in supported_teams
       assert "sigma" in supported_teams
-      assert length(supported_teams) == 10
+      assert length(supported_teams) == 7
     end
 
     test "request_type 목록: prompt / algorithm / library / framework" do

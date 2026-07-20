@@ -51,7 +51,6 @@ const CLAUDE_CODE_SETTINGS: Record<string, string> = {
   'blog-writer': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/blog-writer.settings.json`,
   'claude-ops': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/claude-ops.settings.json`,
   'darwin-research': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/darwin-research.settings.json`,
-  'justin-legal': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/justin-legal.settings.json`,
   'luna-ops': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/luna-ops.settings.json`,
   'sigma-data': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/sigma-data.settings.json`,
 };
@@ -66,7 +65,6 @@ const baseRuntime = (runtimeAgent: keyof typeof CLAUDE_CODE_SETTINGS): RuntimePr
 const blogRuntime = () => baseRuntime('blog-writer');
 const lunaRuntime = () => baseRuntime('luna-ops');
 const darwinRuntime = () => baseRuntime('darwin-research');
-const justinRuntime = () => baseRuntime('justin-legal');
 const sigmaRuntime = () => baseRuntime('sigma-data');
 const claudeRuntime = () => baseRuntime('claude-ops');
 const opsRuntime = () => baseRuntime('claude-ops');
@@ -132,14 +130,6 @@ const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
     paper_evaluation_retry: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
     synthesis: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.synthesis'),
     review: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.verifier'),
-  },
-  justin: {
-    default: llm(justinRuntime(), 'justin._default'),
-    'stage-3': llm(justinRuntime(), 'justin.stage-3'),
-    citation: llm(justinRuntime(), 'justin.citation'),
-    analysis: llm(justinRuntime(), 'justin.analysis'),
-    opinion: llm(justinRuntime(), 'justin.opinion'),
-    'simple-qa': llm(justinRuntime(), 'justin.simple-qa'),
   },
   sigma: {
     default: llm(sigmaRuntime(), 'sigma.agent_policy', 'mapek.monitor'),

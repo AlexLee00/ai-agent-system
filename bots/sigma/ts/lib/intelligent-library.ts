@@ -8,7 +8,6 @@ export const SIGMA_TEAMS = [
   'ska',
   'claude',
   'darwin',
-  'justin',
   'sigma',
   'jay',
   'hub',

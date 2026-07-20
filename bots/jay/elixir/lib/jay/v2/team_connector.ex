@@ -6,7 +6,7 @@ defmodule Jay.V2.TeamConnector do
 
   require Logger
 
-  @teams [:luna, :ska, :blog, :claude, :platform, :darwin, :justin]
+  @teams [:luna, :ska, :blog, :claude, :platform, :darwin]
 
   def all_teams, do: @teams
 
@@ -268,7 +268,7 @@ defmodule Jay.V2.TeamConnector do
     end
   end
 
-  defp do_collect(team) when team in [:platform, :justin] do
+  defp do_collect(team) when team == :platform do
     agents =
       query_one(
         """

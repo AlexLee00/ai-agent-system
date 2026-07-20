@@ -3,6 +3,7 @@
 > 작성: 메티 (Claude Opus 4.6) + 마스터 (Jay)
 > 작성일: 2026-04-03
 > 커뮤니티 검증: Microsoft Azure AI Foundry, mcp-agent, Oracle Enterprise, Cirrius Solutions, MCP vs A2A (AAIF)
+> 상태 메모: 저스틴 팀은 2026-07-02 은퇴했으며 아래 저스틴 예시는 과거 설계 기록으로만 보존한다.
 
 ---
 

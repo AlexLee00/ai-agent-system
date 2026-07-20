@@ -17,11 +17,9 @@ const TEAM_TOPIC_KEYS = [
   'claude_lead',
   'blog',
   'darwin',
-  'justin',
   'sigma',
   'meeting',
   'emergency',
-  'legal',
 ];
 const OPS_TOPIC_KEYS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
 

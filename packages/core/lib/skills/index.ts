@@ -25,11 +25,6 @@ const darwinReplicator = require('./darwin/replicator');
 const darwinSynthesis = require('./darwin/synthesis');
 const darwinSourceAuditor = require('./darwin/source-auditor');
 const darwinGithubAnalysis = require('./darwin/github-analysis');
-const justinCitationAudit = require('./justin/citation-audit');
-const justinEvidenceMap = require('./justin/evidence-map');
-const justinJudgeSimulator = require('./justin/judge-simulator');
-const justinPrecedentComparer = require('./justin/precedent-comparer');
-const justinDamagesAnalyst = require('./justin/damages-analyst');
 const blogBookReviewBook = require('./blog/book-review-book');
 const blogBookSourceVerify = require('./blog/book-source-verify');
 
@@ -64,13 +59,6 @@ module.exports = {
     synthesis: darwinSynthesis,
     sourceAuditor: darwinSourceAuditor,
     githubAnalysis: darwinGithubAnalysis,
-  },
-  justin: {
-    citationAudit: justinCitationAudit,
-    evidenceMap: justinEvidenceMap,
-    judgeSimulator: justinJudgeSimulator,
-    precedentComparer: justinPrecedentComparer,
-    damagesAnalyst: justinDamagesAnalyst,
   },
   sigma: {
     dataQualityGuard: sigmaDataQualityGuard,

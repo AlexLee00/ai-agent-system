@@ -12,7 +12,7 @@ async function main() {
   if (!team) {
     console.log(JSON.stringify({
       success: false,
-      message: 'usage: --team darwin|justin|sigma|luna|investment --task research|citation|quality|trading',
+      message: 'usage: --team darwin|sigma|luna|investment --task research|citation|quality|trading',
     }));
     process.exitCode = 1;
     return;

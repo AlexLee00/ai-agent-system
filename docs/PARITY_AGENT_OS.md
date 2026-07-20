@@ -2,6 +2,7 @@
 
 > 작성: Codex
 > 작성일: 2026-04-03
+> 최종 갱신: 2026-07-21
 > 목적: Agent OS의 설계, 구현, 파이프라인 연결, 운영 검증 상태를 한눈에 관리
 > 상태: living document
 
@@ -34,7 +35,6 @@
 | Blog competition | yes | yes | partial | partial | scheduled path exists, but production stability depends on content pipeline health |
 | Luna shadow hiring | yes | yes | yes | partial | evaluation is connected, but broader strategy-combo analytics are still shallow |
 | Darwin leader team | yes | yes | yes | partial | workflow integration and deeper E2E samples still needed |
-| Justin leader team | yes | yes | yes | partial | citation and evidence skills exist, but legal workflow chaining is incomplete |
 | Sigma leader team | yes | yes | yes | partial | role alignment improved, but tool auto-run and observability loop remain partial |
 
 ---
@@ -66,15 +66,6 @@
 - Workflow status: partial
 - Known gaps: `research-brief` style workflow skill is still missing from live pipeline
 
-## Justin Team
-
-- Leader: `justin`
-- Selectable agents: yes
-- Implemented skills: `citation-audit`, `evidence-map`, `judge-simulator`, `precedent-comparer`, `damages-analyst`
-- Implemented tools/MCP: `filesystem`, `postgresql`
-- Workflow status: partial
-- Known gaps: legal review chain exists in pieces, but standardized workflow insertion is still pending
-
 ## Sigma Team
 
 - Leader: `sigma`
@@ -83,6 +74,10 @@
 - Implemented tools/MCP: `postgresql`, `filesystem`, `desktop-commander`
 - Workflow status: partial
 - Known gaps: quality investigation workflow and telemetry feedback loop are not fully connected
+
+## Retired Teams
+
+- `justin`: retired 2026-07-02; agents and skills archived, Hub legal route and Slack bot fully decommissioned 2026-07-21
 
 ---
 

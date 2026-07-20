@@ -64,14 +64,6 @@ export const options = {
       preAllocatedVUs: 1,
       exec: 'callSka',
     },
-    justin_legal: {
-      executor: 'constant-arrival-rate',
-      rate: SHORT_MODE ? 1 : 2,
-      timeUnit: '1m',
-      duration: SHORT_MODE ? '90s' : '10m',
-      preAllocatedVUs: 1,
-      exec: 'callJustin',
-    },
   },
   thresholds: {
     luna_fail_rate: ['rate<0.05'],
@@ -145,13 +137,6 @@ export function callClaude() {
 export function callSka() {
   const res = callHub('ska', 'default', '오늘 예약 현황을 요약해줘.');
   const ok = check(res, { 'ska ok': (r) => r.status === 200 });
-  overallFailRate.add(!ok);
-  sleep(2);
-}
-
-export function callJustin() {
-  const res = callHub('justin', 'default', '계약 검토 체크리스트를 3줄로 요약해줘.');
-  const ok = check(res, { 'justin ok': (r) => r.status === 200 });
   overallFailRate.add(!ok);
   sleep(2);
 }

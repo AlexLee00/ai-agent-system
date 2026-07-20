@@ -15,7 +15,6 @@ const KNOWN_AGENTS: Record<string, AgentEndpoint> = {
   luna:       { name: 'Luna Trading Agent',  url: process.env.LUNA_A2A_URL    || 'http://localhost:8765' },
   darwin:     { name: 'Darwin R&D Agent',    url: process.env.DARWIN_A2A_URL  || 'http://localhost:8766' },
   sigma:      { name: 'Sigma Meta Agent',    url: process.env.SIGMA_A2A_URL   || 'http://localhost:8767' },
-  justin:     { name: 'Justin Legal Agent',  url: process.env.JUSTIN_A2A_URL  || 'http://localhost:8768' },
   blog:       { name: 'Blog Content Agent',  url: process.env.BLOG_A2A_URL    || 'http://localhost:8770' },
   claude_bot: { name: 'Claude Ops Agent',    url: process.env.CLAUDE_A2A_URL  || 'http://localhost:8771' },
   ska:        { name: 'Ska Revenue Agent',   url: process.env.SKA_A2A_URL     || 'http://localhost:8772' },

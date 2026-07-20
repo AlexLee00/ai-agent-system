@@ -43,7 +43,7 @@ defmodule Jay.V2.Commander do
 
   require Logger
 
-  @teams [:sigma, :darwin, :luna, :blog, :ska, :claude, :justin, :judgment]
+  @teams [:sigma, :darwin, :luna, :blog, :ska, :claude, :judgment]
 
   @doc "일일 성장 사이클 실행 (GrowthCycle 위임 + Commander 판단)"
   def daily_growth_cycle(opts \\ []) do

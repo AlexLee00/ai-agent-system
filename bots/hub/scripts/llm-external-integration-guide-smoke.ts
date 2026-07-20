@@ -161,7 +161,6 @@ for (const selectorKey of [
   'darwin.agent_policy',
   'hub._default',
   'investment.agent_policy',
-  'justin.stage-3',
 ]) {
   const chain = selectLLMChain(selectorKey, { agentName: 'luna', taskType: 'chart_vision' });
   assert(Array.isArray(chain) && chain.length > 0, `guide selector must resolve: ${selectorKey}`);

@@ -18,9 +18,9 @@ function argValue(name: string): string | null {
 
 function buildCanaryRequest() {
   return {
-    callerTeam: 'justin-court-appraisal',
-    agent: 'justin',
-    selectorKey: 'justin.stage-3',
+    callerTeam: 'hub',
+    agent: 'external-gateway-canary',
+    selectorKey: 'hub._default',
     abstractModel: 'anthropic_haiku',
     runtimePurpose: 'external_gateway_canary',
     taskType: 'external_gateway_canary',
@@ -81,7 +81,7 @@ async function main() {
     stage: 'hub_stage_d',
     task: 'D7_external_llm_gateway',
     dryRun: !apply,
-    project: 'justin-court-appraisal',
+    project: 'generic-external-client',
     selector,
     requestContract: {
       ok: requestContract.ok,
@@ -95,7 +95,7 @@ async function main() {
   };
 
   assert.equal(selector.ok, true, `selector route must resolve: ${selector.error || 'unknown'}`);
-  assert.equal(selector.selectorKey, 'justin.stage-3');
+  assert.equal(selector.selectorKey, 'hub._default');
   assert(Array.isArray(selector.providerTiers) && selector.providerTiers.length > 0, 'provider tiers required');
   assert.equal(requestContract.ok, true, 'canary request must satisfy /hub/llm/call schema');
 
@@ -122,8 +122,8 @@ async function main() {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'X-Hub-Team': 'justin-court-appraisal',
-      'X-Hub-Agent': 'justin',
+      'X-Hub-Team': 'hub',
+      'X-Hub-Agent': 'external-gateway-canary',
     },
     body: JSON.stringify(canaryRequest),
     signal: AbortSignal.timeout(30_000),

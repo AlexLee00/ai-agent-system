@@ -25,10 +25,10 @@ defmodule Sigma.V2.Commander do
     Directive 실행 전 반드시 self-critique 수행.
     """
 
-  @rotation ["ska", "claude", "justin", "blog", "luna"]
+  @rotation ["ska", "claude", "blog", "luna"]
   @core_analysts ["pipe", "canvas", "curator"]
   @epsilon 0.2
-  @known_teams MapSet.new(["blog", "luna", "darwin", "claude", "ska", "justin", "sigma"])
+  @known_teams MapSet.new(["blog", "luna", "darwin", "claude", "ska", "sigma"])
 
   @type memory_snippet :: %{optional(:metadata) => map(), optional(:importance) => float()}
 
@@ -276,7 +276,7 @@ defmodule Sigma.V2.Commander do
           case String.downcase(to_string(team)) do
             t when t in ["claude", "ska", "sigma"] -> Map.update!(inner, :risk, &(&1 + weight))
             t when t in ["blog", "luna"] -> Map.update!(inner, :growth, &(&1 + weight))
-            t when t in ["darwin", "justin"] -> Map.update!(inner, :trend, &(&1 + weight))
+            "darwin" -> Map.update!(inner, :trend, &(&1 + weight))
             _ -> inner
           end
         end)

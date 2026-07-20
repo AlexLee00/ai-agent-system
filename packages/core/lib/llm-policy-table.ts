@@ -19,15 +19,15 @@ export type PolicyRule = {
 };
 
 export const LLM_POLICY_TABLE_GENERATED_FROM = "docs/hub/snapshots/llm-chain-snapshot-2026-07-19.json";
-export const LLM_POLICY_TABLE_GENERATED_AT = "2026-07-19T11:49:30.243Z";
+export const LLM_POLICY_TABLE_GENERATED_AT = "2026-07-20T21:02:46.900Z";
 export const LLM_POLICY_TABLE_SELECTOR_VERSION = "v3.0_oauth_4";
-export const LLM_POLICY_TABLE_RULE_COUNT = 468;
-export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = 826;
+export const LLM_POLICY_TABLE_RULE_COUNT = 450;
+export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = 790;
 export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNTS: Record<string, number> = {
-  "@OPENAI_MINI_MODEL": 265,
-  "@GROQ_FAST_MODEL": 258,
-  "@GROQ_DEEP_MODEL": 100,
-  "@OPENAI_PERF_MODEL": 183,
+  "@OPENAI_MINI_MODEL": 259,
+  "@GROQ_FAST_MODEL": 252,
+  "@GROQ_DEEP_MODEL": 88,
+  "@OPENAI_PERF_MODEL": 171,
   "@GROQ_SCOUT_MODEL": 6,
   "@LOCAL_EMBED_MODEL": 8,
   "@OPENAI_OPUS_MODEL": 6
@@ -7058,7 +7058,8 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "local-embedding",
-        "model": "@LOCAL_EMBED_MODEL"
+        "model": "@LOCAL_EMBED_MODEL",
+        "timeoutMs": 60000
       }
     ]
   },
@@ -7074,13 +7075,15 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
         "provider": "groq",
         "model": "@GROQ_DEEP_MODEL",
         "maxTokens": 2048,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "timeoutMs": 180000
       },
       {
         "provider": "openai-oauth",
         "model": "@OPENAI_MINI_MODEL",
         "maxTokens": 2048,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "timeoutMs": 180000
       }
     ]
   },
@@ -7095,13 +7098,15 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
         "provider": "groq",
         "model": "@GROQ_DEEP_MODEL",
         "maxTokens": 2048,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "timeoutMs": 60000
       },
       {
         "provider": "openai-oauth",
         "model": "@OPENAI_MINI_MODEL",
         "maxTokens": 2048,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "timeoutMs": 60000
       }
     ]
   },
@@ -7837,432 +7842,6 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       {
         "provider": "groq",
         "model": "@GROQ_FAST_MODEL"
-      }
-    ]
-  },
-  {
-    "id": "justin-default__default__backtest-embedding",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin._default",
-      "taskType": "backtest_embedding"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-default__default__backtest-judgment",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin._default",
-      "taskType": "backtest_judgment"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-default__default__default",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin._default"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-analysis__default__backtest-embedding",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.analysis",
-      "taskType": "backtest_embedding"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-analysis__default__backtest-judgment",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.analysis",
-      "taskType": "backtest_judgment"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-analysis__default__default",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.analysis"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-citation__default__backtest-embedding",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.citation",
-      "taskType": "backtest_embedding"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_MINI_MODEL",
-        "maxTokens": 2048,
-        "temperature": 0.1,
-        "timeoutMs": 25000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
-        "maxTokens": 2048,
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      }
-    ]
-  },
-  {
-    "id": "justin-citation__default__backtest-judgment",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.citation",
-      "taskType": "backtest_judgment"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_MINI_MODEL",
-        "maxTokens": 2048,
-        "temperature": 0.1,
-        "timeoutMs": 25000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
-        "maxTokens": 2048,
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      }
-    ]
-  },
-  {
-    "id": "justin-citation__default__default",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.citation"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_MINI_MODEL",
-        "maxTokens": 2048,
-        "temperature": 0.1,
-        "timeoutMs": 25000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
-        "maxTokens": 2048,
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      }
-    ]
-  },
-  {
-    "id": "justin-opinion__default__backtest-embedding",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.opinion",
-      "taskType": "backtest_embedding"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-opinion__default__backtest-judgment",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.opinion",
-      "taskType": "backtest_judgment"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-opinion__default__default",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.opinion"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-simple-qa__default__backtest-embedding",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.simple-qa",
-      "taskType": "backtest_embedding"
-    },
-    "chain": [
-      {
-        "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
-        "maxTokens": 700,
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      },
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_MINI_MODEL",
-        "maxTokens": 700,
-        "temperature": 0.1,
-        "timeoutMs": 12000
-      }
-    ]
-  },
-  {
-    "id": "justin-simple-qa__default__backtest-judgment",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.simple-qa",
-      "taskType": "backtest_judgment"
-    },
-    "chain": [
-      {
-        "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
-        "maxTokens": 700,
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      },
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_MINI_MODEL",
-        "maxTokens": 700,
-        "temperature": 0.1,
-        "timeoutMs": 12000
-      }
-    ]
-  },
-  {
-    "id": "justin-simple-qa__default__default",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.simple-qa"
-    },
-    "chain": [
-      {
-        "provider": "groq",
-        "model": "@GROQ_FAST_MODEL",
-        "maxTokens": 700,
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      },
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_MINI_MODEL",
-        "maxTokens": 700,
-        "temperature": 0.1,
-        "timeoutMs": 12000
-      }
-    ]
-  },
-  {
-    "id": "justin-stage-3__default__backtest-embedding",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.stage-3",
-      "taskType": "backtest_embedding"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 60000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-stage-3__default__backtest-judgment",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.stage-3",
-      "taskType": "backtest_judgment"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 60000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
-      }
-    ]
-  },
-  {
-    "id": "justin-stage-3__default__default",
-    "match": {
-      "team": "justin",
-      "selectorKey": "justin.stage-3"
-    },
-    "chain": [
-      {
-        "provider": "openai-oauth",
-        "model": "@OPENAI_PERF_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 60000
-      },
-      {
-        "provider": "groq",
-        "model": "@GROQ_DEEP_MODEL",
-        "maxTokens": 4096,
-        "temperature": 0.2,
-        "timeoutMs": 30000
       }
     ]
   },

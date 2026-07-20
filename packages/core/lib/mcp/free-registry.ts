@@ -17,7 +17,7 @@ const FREE_MCP_REGISTRY = {
     cost: 'free',
     mode: 'local',
     capabilities: ['sql-query', 'jsonb-inspect', 'metrics', 'catalog'],
-    preferredTeams: ['justin', 'sigma'],
+    preferredTeams: ['sigma'],
     taskHints: ['citation', 'evidence', 'quality', 'etl', 'analysis'],
   },
   filesystem: {
@@ -26,7 +26,7 @@ const FREE_MCP_REGISTRY = {
     cost: 'free',
     mode: 'local',
     capabilities: ['read-files', 'write-files', 'artifact-inspect', 'report-assemble'],
-    preferredTeams: ['darwin', 'justin', 'sigma'],
+    preferredTeams: ['darwin', 'sigma'],
     taskHints: ['research', 'citation', 'evidence', 'quality', 'report'],
   },
   'desktop-commander': {

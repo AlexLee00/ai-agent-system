@@ -13,7 +13,7 @@ defmodule Jay.V2.Skill.FormationDecision do
       team_states: Zoi.default(Zoi.list(Zoi.any()), [])
     })
 
-  @teams ~w(sigma darwin luna blog ska claude justin judgment)
+  @teams ~w(sigma darwin luna blog ska claude judgment)
 
   @impl Jido.Action
   def run(params, _ctx) do
@@ -45,7 +45,6 @@ defmodule Jay.V2.Skill.FormationDecision do
   defp default_goal("blog", _), do: "콘텐츠 자동 생산 파이프라인"
   defp default_goal("ska", _), do: "예약 현황 모니터링 + 키오스크 상태"
   defp default_goal("claude", _), do: "Claude 성능 모니터링 + 자기 진화"
-  defp default_goal("justin", _), do: "법률/계약 검토 자동화"
   defp default_goal("judgment", _), do: "법원 SW 감정 작업 처리"
   defp default_goal(_, _), do: "기본 운영"
 

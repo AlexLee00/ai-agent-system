@@ -46,6 +46,7 @@ type AuditIssue = {
 type BuildOptions = {
   generatedAt?: string;
   catalogTeams?: CatalogTeam[];
+  retiredTeams?: CatalogTeam[];
   dbAgents?: RegistryAgent[];
   seedAgents?: SeedAgent[];
   deploymentRegistry?: Record<string, DeploymentEntry>;
@@ -59,7 +60,6 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 const README_PATH = path.join(REPO_ROOT, 'README.md');
 const DEPLOYMENT_REGISTRY_PATH = path.join(REPO_ROOT, 'bots', 'registry.json');
 const DB_TEAM_ALIASES = Object.freeze({
-  legal: 'justin',
   research: 'darwin',
   data: 'sigma',
   orchestrator: 'jay',
@@ -67,7 +67,6 @@ const DB_TEAM_ALIASES = Object.freeze({
   reservation: 'ska',
 });
 const DEPLOYMENT_TEAM_OWNERS = Object.freeze({
-  legal: 'justin',
   orchestrator: 'jay',
 });
 
@@ -123,6 +122,8 @@ function addIssue(issues: AuditIssue[], issue: AuditIssue) {
 
 export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
   const catalogTeams = options.catalogTeams || [];
+  const retiredTeams = options.retiredTeams || [];
+  const retiredTeamIds = uniqueSorted(retiredTeams.map((team) => normalizeText(team.id)));
   const dbAgents = (options.dbAgents || []).filter((agent) => normalizeText(agent.status) !== 'archived');
   const seedAgents = options.seedAgents || [];
   const activeCatalogTeams = uniqueSorted(catalogTeams
@@ -139,6 +140,7 @@ export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
     DB_TEAM_ALIASES,
     normalizeText(agent.team),
   ));
+  const retiredRuntimeRows = dbAgents.filter((agent) => retiredTeamIds.includes(normalizeText(agent.team)));
   const missingSeedAgents = uniqueSorted(seedAgents
     .map((agent) => normalizeText(agent.name))
     .filter((name) => name && !dbNames.has(name)));
@@ -181,6 +183,15 @@ export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
       nextAction: 'alias 방향을 인증 namespace와 혼합하지 말고 agent registry 소속만 canonical team으로 교정',
     });
   }
+  if (retiredRuntimeRows.length > 0) {
+    addIssue(issues, {
+      code: 'retired_team_runtime_rows',
+      severity: 'error',
+      message: '은퇴 팀 에이전트가 운영 registry에 활성 상태로 남아 있습니다.',
+      details: retiredRuntimeRows.map((row) => ({ name: row.name, team: row.team, status: row.status })),
+      nextAction: '해당 팀의 registry 행을 삭제하지 말고 archived 상태로 전환',
+    });
+  }
   if (missingSeedAgents.length > 0) {
     addIssue(issues, {
       code: 'seed_agent_missing',
@@ -220,7 +231,7 @@ export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
       status: entry.status || null,
       inventoryKind: entry.inventoryKind || null,
       canonicalTeam,
-      lifecycleSource: 'team-orchestrator.TEAMS',
+      lifecycleSource: 'team-orchestrator.TEAMS + RETIRED_TEAMS',
       interpretation: 'deployment_inventory_only',
     }];
   }));
@@ -233,7 +244,7 @@ export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
     generatedAt: options.generatedAt || new Date().toISOString(),
     ssot: {
       agentCountOwnershipRuntime: 'agent.registry',
-      teamLifecycle: 'team-orchestrator.TEAMS',
+      teamLifecycle: 'team-orchestrator.TEAMS + RETIRED_TEAMS',
       routingReadiness: 'llm-model-selector',
       deploymentInventory: 'bots/registry.json',
       documentation: 'README.md (derived)',
@@ -242,6 +253,7 @@ export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
       agents: dbAgents.length,
       activeTeams: activeCatalogTeams.length,
       plannedTeams: plannedCatalogTeams.length,
+      retiredTeams: retiredTeamIds.length,
       seededAgents: seedAgents.length,
       errors: errorCount,
       warnings: warningCount,
@@ -250,12 +262,14 @@ export function buildTeamSsotAuditReport(options: BuildOptions = {}) {
       teams: catalogTeams,
       activeTeams: activeCatalogTeams,
       plannedTeams: plannedCatalogTeams,
+      retiredTeams,
     },
     registry: {
       teams: dbTeams,
       missingDbTeams,
       unexpectedDbTeams,
       aliasRows: aliasRows.length,
+      retiredRuntimeRows: retiredRuntimeRows.length,
       missingSeedAgents,
       activeContractDrift,
     },
@@ -309,13 +323,14 @@ async function collectDbSnapshot() {
 async function main() {
   const pgPool = require('../../../packages/core/lib/pg-pool.ts');
   try {
-    const { TEAMS } = require('../../../packages/core/lib/skills/team-orchestrator.ts');
+    const { TEAMS, RETIRED_TEAMS } = require('../../../packages/core/lib/skills/team-orchestrator.ts');
     const { AGENTS } = require('./seed-agent-registry.ts');
     const deploymentRegistry = JSON.parse(fs.readFileSync(DEPLOYMENT_REGISTRY_PATH, 'utf8'))?.bots || {};
     const readmeText = fs.readFileSync(README_PATH, 'utf8');
     const dbSnapshot = await collectDbSnapshot();
     const report = buildTeamSsotAuditReport({
       catalogTeams: TEAMS,
+      retiredTeams: RETIRED_TEAMS,
       dbAgents: dbSnapshot.dbAgents,
       seedAgents: AGENTS,
       deploymentRegistry,

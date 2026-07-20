@@ -78,7 +78,6 @@ type TransactionRunner = <T>(
 
 const TEAM_ALIASES: Record<string, string> = {
   research: 'darwin',
-  legal: 'justin',
   data: 'sigma',
 };
 

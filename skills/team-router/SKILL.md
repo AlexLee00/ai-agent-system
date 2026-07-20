@@ -1,6 +1,6 @@
 ---
 name: team-router
-description: 사용자 요청을 Blog, Luna, Justin, Darwin, Sigma, Ska, Hub/Orchestrator 등 적절한 팀과 런타임으로 라우팅할 때 사용.
+description: 사용자 요청을 Blog, Luna, Darwin, Sigma, Ska, Hub/Orchestrator 등 적절한 팀과 런타임으로 라우팅할 때 사용.
 ---
 
 # Team Router
@@ -15,7 +15,7 @@ description: 사용자 요청을 Blog, Luna, Justin, Darwin, Sigma, Ska, Hub/Orc
 | --- | --- |
 | 매매, 포지션, KIS, Binance, TradingView, 시황 | Luna |
 | 블로그, Edu-X, 콘텐츠, SEO, 게시/삭제 | Blog/Edu-X |
-| 법률, 감정, 판례, 손해 | Justin |
+| 법률, 감정, 판례, 손해 | Jay (수동 판단) |
 | 리서치, 논문, GitHub 분석 | Darwin |
 | 데이터 품질, 실험, 백테스트 품질 | Sigma |
 | 예약, 키오스크, 매출, 매장 운영 | Ska |

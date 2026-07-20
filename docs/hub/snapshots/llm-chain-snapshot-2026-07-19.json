@@ -3,9 +3,9 @@
     "darwinAgentRoutes": 29,
     "errors": 0,
     "investmentAgentRoutes": 20,
-    "selectorKeys": 89,
+    "selectorKeys": 83,
     "sigmaAgentRoutes": 18,
-    "variants": 468
+    "variants": 450
   },
   "envBaseline": {
     "mode": "default_env_no_kill_switch_overrides",
@@ -41,7 +41,7 @@
     }
   },
   "errors": [],
-  "generatedAt": "2026-07-19T11:49:30.243Z",
+  "generatedAt": "2026-07-20T21:02:46.900Z",
   "rolloutPercent": 100,
   "selectorVersion": "v3.0_oauth_4",
   "source": "packages/core/lib/llm-model-selector.ts",
@@ -9620,7 +9620,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -9638,7 +9638,7 @@
       "key": "investment.adaptive-risk",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_embedding",
@@ -9649,7 +9649,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -9667,7 +9667,7 @@
       "key": "investment.adaptive-risk",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_judgment",
@@ -9678,7 +9678,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -9696,7 +9696,7 @@
       "key": "investment.adaptive-risk",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": null,
@@ -9707,7 +9707,7 @@
       "agentName": "adaptive-risk",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -9725,7 +9725,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_embedding",
@@ -9736,7 +9736,7 @@
       "agentName": "adaptive-risk",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -9754,7 +9754,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_judgment",
@@ -9765,7 +9765,7 @@
       "agentName": "adaptive-risk",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -9783,7 +9783,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": null,
@@ -10412,14 +10412,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -10441,14 +10441,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -10470,14 +10470,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -10582,7 +10582,7 @@
       "agentName": "nemesis",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -10600,7 +10600,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_embedding",
@@ -10611,7 +10611,7 @@
       "agentName": "nemesis",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -10629,7 +10629,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_judgment",
@@ -10640,7 +10640,7 @@
       "agentName": "nemesis",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -10658,7 +10658,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": null,
@@ -10673,14 +10673,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -10702,14 +10702,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -10731,14 +10731,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -11104,7 +11104,7 @@
       "agentName": "stock-flow",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -11122,7 +11122,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_embedding",
@@ -11133,7 +11133,7 @@
       "agentName": "stock-flow",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -11151,7 +11151,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_judgment",
@@ -11162,7 +11162,7 @@
       "agentName": "stock-flow",
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -11180,7 +11180,7 @@
       "key": "investment.agent_policy",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": null,
@@ -11684,7 +11684,8 @@
       "chain": [
         {
           "model": "qwen3-embed-0.6b",
-          "provider": "local-embedding"
+          "provider": "local-embedding",
+          "timeoutMs": 60000
         }
       ],
       "error": null,
@@ -11693,7 +11694,8 @@
       "kind": "chain",
       "primary": {
         "model": "qwen3-embed-0.6b",
-        "provider": "local-embedding"
+        "provider": "local-embedding",
+        "timeoutMs": 60000
       },
       "runtimePurpose": "backtest_embedding",
       "taskType": "backtest_embedding",
@@ -11706,13 +11708,15 @@
           "maxTokens": 2048,
           "model": "openai/gpt-oss-120b",
           "provider": "groq",
-          "temperature": 0.1
+          "temperature": 0.1,
+          "timeoutMs": 180000
         },
         {
           "maxTokens": 2048,
           "model": "gpt-5.4-mini",
           "provider": "openai-oauth",
-          "temperature": 0.1
+          "temperature": 0.1,
+          "timeoutMs": 180000
         }
       ],
       "error": null,
@@ -11721,7 +11725,8 @@
           "maxTokens": 2048,
           "model": "gpt-5.4-mini",
           "provider": "openai-oauth",
-          "temperature": 0.1
+          "temperature": 0.1,
+          "timeoutMs": 180000
         }
       ],
       "key": "investment.chronos",
@@ -11730,7 +11735,8 @@
         "maxTokens": 2048,
         "model": "openai/gpt-oss-120b",
         "provider": "groq",
-        "temperature": 0.1
+        "temperature": 0.1,
+        "timeoutMs": 180000
       },
       "runtimePurpose": "backtest_judgment",
       "taskType": "backtest_judgment",
@@ -11743,13 +11749,15 @@
           "maxTokens": 2048,
           "model": "openai/gpt-oss-120b",
           "provider": "groq",
-          "temperature": 0.1
+          "temperature": 0.1,
+          "timeoutMs": 60000
         },
         {
           "maxTokens": 2048,
           "model": "gpt-5.4-mini",
           "provider": "openai-oauth",
-          "temperature": 0.1
+          "temperature": 0.1,
+          "timeoutMs": 60000
         }
       ],
       "error": null,
@@ -11758,7 +11766,8 @@
           "maxTokens": 2048,
           "model": "gpt-5.4-mini",
           "provider": "openai-oauth",
-          "temperature": 0.1
+          "temperature": 0.1,
+          "timeoutMs": 60000
         }
       ],
       "key": "investment.chronos",
@@ -11767,7 +11776,8 @@
         "maxTokens": 2048,
         "model": "openai/gpt-oss-120b",
         "provider": "groq",
-        "temperature": 0.1
+        "temperature": 0.1,
+        "timeoutMs": 60000
       },
       "runtimePurpose": null,
       "taskType": null,
@@ -11940,14 +11950,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -11969,14 +11979,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -11998,14 +12008,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -12122,7 +12132,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -12140,7 +12150,7 @@
       "key": "investment.nemesis",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_embedding",
@@ -12151,7 +12161,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -12169,7 +12179,7 @@
       "key": "investment.nemesis",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_judgment",
@@ -12180,7 +12190,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -12198,7 +12208,7 @@
       "key": "investment.nemesis",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": null,
@@ -12213,14 +12223,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -12242,14 +12252,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -12271,14 +12281,14 @@
           "provider": "openai-oauth"
         },
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
       "error": null,
       "fallbacks": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         }
       ],
@@ -12644,7 +12654,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -12662,7 +12672,7 @@
       "key": "investment.stock-flow",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_embedding",
@@ -12673,7 +12683,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -12691,7 +12701,7 @@
       "key": "investment.stock-flow",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": "backtest_judgment",
@@ -12702,7 +12712,7 @@
       "agentName": null,
       "chain": [
         {
-          "model": "qwen/qwen3-32b",
+          "model": "openai/gpt-oss-120b",
           "provider": "groq"
         },
         {
@@ -12720,7 +12730,7 @@
       "key": "investment.stock-flow",
       "kind": "chain",
       "primary": {
-        "model": "qwen/qwen3-32b",
+        "model": "openai/gpt-oss-120b",
         "provider": "groq"
       },
       "runtimePurpose": null,
@@ -12956,744 +12966,6 @@
       "primary": {
         "model": "llama-3.1-8b-instant",
         "provider": "groq"
-      },
-      "runtimePurpose": null,
-      "taskType": null,
-      "variant": "default"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin._default",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": "backtest_embedding",
-      "taskType": "backtest_embedding",
-      "variant": "backtest_embedding"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin._default",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": "backtest_judgment",
-      "taskType": "backtest_judgment",
-      "variant": "backtest_judgment"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin._default",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": null,
-      "taskType": null,
-      "variant": "default"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.analysis",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": "backtest_embedding",
-      "taskType": "backtest_embedding",
-      "variant": "backtest_embedding"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.analysis",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": "backtest_judgment",
-      "taskType": "backtest_judgment",
-      "variant": "backtest_judgment"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.analysis",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": null,
-      "taskType": null,
-      "variant": "default"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 2048,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 25000
-        },
-        {
-          "maxTokens": 2048,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 2048,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        }
-      ],
-      "key": "justin.citation",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 2048,
-        "model": "gpt-5.4-mini",
-        "provider": "openai-oauth",
-        "temperature": 0.1,
-        "timeoutMs": 25000
-      },
-      "runtimePurpose": "backtest_embedding",
-      "taskType": "backtest_embedding",
-      "variant": "backtest_embedding"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 2048,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 25000
-        },
-        {
-          "maxTokens": 2048,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 2048,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        }
-      ],
-      "key": "justin.citation",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 2048,
-        "model": "gpt-5.4-mini",
-        "provider": "openai-oauth",
-        "temperature": 0.1,
-        "timeoutMs": 25000
-      },
-      "runtimePurpose": "backtest_judgment",
-      "taskType": "backtest_judgment",
-      "variant": "backtest_judgment"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 2048,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 25000
-        },
-        {
-          "maxTokens": 2048,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 2048,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        }
-      ],
-      "key": "justin.citation",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 2048,
-        "model": "gpt-5.4-mini",
-        "provider": "openai-oauth",
-        "temperature": 0.1,
-        "timeoutMs": 25000
-      },
-      "runtimePurpose": null,
-      "taskType": null,
-      "variant": "default"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.opinion",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": "backtest_embedding",
-      "taskType": "backtest_embedding",
-      "variant": "backtest_embedding"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.opinion",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": "backtest_judgment",
-      "taskType": "backtest_judgment",
-      "variant": "backtest_judgment"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 45000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.opinion",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 45000
-      },
-      "runtimePurpose": null,
-      "taskType": null,
-      "variant": "default"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 700,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        },
-        {
-          "maxTokens": 700,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 12000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 700,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 12000
-        }
-      ],
-      "key": "justin.simple-qa",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 700,
-        "model": "llama-3.1-8b-instant",
-        "provider": "groq",
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      },
-      "runtimePurpose": "backtest_embedding",
-      "taskType": "backtest_embedding",
-      "variant": "backtest_embedding"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 700,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        },
-        {
-          "maxTokens": 700,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 12000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 700,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 12000
-        }
-      ],
-      "key": "justin.simple-qa",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 700,
-        "model": "llama-3.1-8b-instant",
-        "provider": "groq",
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      },
-      "runtimePurpose": "backtest_judgment",
-      "taskType": "backtest_judgment",
-      "variant": "backtest_judgment"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 700,
-          "model": "llama-3.1-8b-instant",
-          "provider": "groq",
-          "temperature": 0.1,
-          "timeoutMs": 20000
-        },
-        {
-          "maxTokens": 700,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 12000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 700,
-          "model": "gpt-5.4-mini",
-          "provider": "openai-oauth",
-          "temperature": 0.1,
-          "timeoutMs": 12000
-        }
-      ],
-      "key": "justin.simple-qa",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 700,
-        "model": "llama-3.1-8b-instant",
-        "provider": "groq",
-        "temperature": 0.1,
-        "timeoutMs": 20000
-      },
-      "runtimePurpose": null,
-      "taskType": null,
-      "variant": "default"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 60000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.stage-3",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 60000
-      },
-      "runtimePurpose": "backtest_embedding",
-      "taskType": "backtest_embedding",
-      "variant": "backtest_embedding"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 60000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.stage-3",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 60000
-      },
-      "runtimePurpose": "backtest_judgment",
-      "taskType": "backtest_judgment",
-      "variant": "backtest_judgment"
-    },
-    {
-      "agentName": null,
-      "chain": [
-        {
-          "maxTokens": 4096,
-          "model": "gpt-5.4",
-          "provider": "openai-oauth",
-          "temperature": 0.2,
-          "timeoutMs": 60000
-        },
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "error": null,
-      "fallbacks": [
-        {
-          "maxTokens": 4096,
-          "model": "openai/gpt-oss-120b",
-          "provider": "groq",
-          "temperature": 0.2,
-          "timeoutMs": 30000
-        }
-      ],
-      "key": "justin.stage-3",
-      "kind": "chain",
-      "primary": {
-        "maxTokens": 4096,
-        "model": "gpt-5.4",
-        "provider": "openai-oauth",
-        "temperature": 0.2,
-        "timeoutMs": 60000
       },
       "runtimePurpose": null,
       "taskType": null,

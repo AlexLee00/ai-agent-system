@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🤖 AI Agent System</h1>
   <p align="center">
-    <strong>A self-evolving multi-agent platform with 124 autonomous agents across 8 specialized teams</strong>
+    <strong>A self-evolving multi-agent platform with 106 autonomous agents across 7 specialized teams</strong>
   </p>
   <p align="center">
     <a href="#architecture">Architecture</a> •
@@ -16,10 +16,10 @@
 
 ## What is this?
 
-A **production-grade multi-agent AI platform** running 24/7 on Apple Silicon, orchestrating 124 autonomous agents that trade crypto, publish blogs, manage reservations, conduct research, and continuously improve themselves — all at **$0 API cost** using local LLMs.
+A **production-grade multi-agent AI platform** running 24/7 on Apple Silicon, orchestrating 106 autonomous agents that trade crypto, publish blogs, manage reservations, conduct research, and continuously improve themselves — all at **$0 API cost** using local LLMs.
 
 ```
-8 Teams • 124 Agents • 76 launchd Services • 12 Telegram Topics
+7 Teams • 106 Agents • 76 launchd Services • 12 Telegram Topics
 Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 ```
 
@@ -59,15 +59,15 @@ Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 │Trade│  │Publish │  │Research│  │Monitor│  │Reserve│
 │ 13  │  │  12    │  │  15    │  │  10+  │  │  10+  │
 └─────┘  └────────┘  └────────┘  └───────┘  └───────┘
-                        ┌────────┐  ┌────────┐
-                        │Justin  │  │ Sigma  │
-                        │Forensic│  │  Data  │
-                        │  10    │  │  12    │
-                        └────────┘  └────────┘
+                                      ┌────────┐
+                                      │ Sigma  │
+                                      │  Data  │
+                                      │  12    │
+                                      └────────┘
 ```
 
 
-<h2 id="teams">👥 Teams & Agents (124 total)</h2>
+<h2 id="teams">👥 Teams & Agents (106 total)</h2>
 
 | Team | Mission | Agents | Key Capabilities |
 |------|---------|--------|-----------------|
@@ -76,11 +76,10 @@ Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 | **Darwin** | Autonomous R&D | 15 | arXiv/HF daily scans, 9-domain searchers, auto-propose → prototype → apply pipeline |
 | **Claude** | System monitoring | 10+ | Dexter (health checks), Doctor (auto-recovery), Steward (daily ops summary) |
 | **Ska** | Study café management | 10+ | Naver reservation sync, kiosk monitoring, revenue forecasting, event collection |
-| **Justin** | Legal SW forensics | 10 | Case analysis, precedent search (KR/US/EU), expert report writing, quality review |
 | **Sigma** | Platform intelligence | 12 | Triple feedback loop, hawk/dove/owl analysts, dynamic formation, data asset pipeline |
 | **Jay** | Orchestration | — | Steward, mainbot (retired), event reminders, deploy automation |
 
-Retired teams: Worker and Edi were retired on 2026-04-30. Their design records are archived under `docs/archive/retired-teams/`.
+Retired teams: Worker and Edi were retired on 2026-04-30. Justin and its Slack bot were retired from Team Jay runtime on 2026-07-21. Their records are archived under `docs/archive/retired-teams/`.
 
 
 ## 🔄 Triple Feedback Loop
@@ -139,7 +138,7 @@ ai-agent-system/
 ## 📊 System Stats
 
 ```
-Agents:          124 (across 8 teams)
+Agents:          106 (across 7 teams)
 launchd Services: 193 (42 running continuously)
 Telegram Topics:  4 (per-team routing)
 Codex Archives:   0+ (completed implementation prompts)

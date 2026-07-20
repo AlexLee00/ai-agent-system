@@ -12,7 +12,7 @@ export type LLMProvider =
 
 export type AbstractModel = 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
 
-export type CallerTeam = 'sigma' | 'darwin' | 'luna' | 'claude' | 'blog' | 'ska' | 'justin' | 'hub' | 'orchestrator' | 'data';
+export type CallerTeam = 'sigma' | 'darwin' | 'luna' | 'claude' | 'blog' | 'ska' | 'hub' | 'orchestrator' | 'data';
 
 export interface LLMCallRequest {
   prompt: string;

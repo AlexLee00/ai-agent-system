@@ -15,11 +15,9 @@ const LEGACY_TOPIC_KEYS = [
   'claude_lead',
   'blog',
   'darwin',
-  'justin',
   'sigma',
   'meeting',
   'emergency',
-  'legal',
 ];
 const ENV_TOPIC_KEYS: Record<string, string> = {
   TELEGRAM_TOPIC_GENERAL: 'general',
@@ -27,7 +25,6 @@ const ENV_TOPIC_KEYS: Record<string, string> = {
   TELEGRAM_TOPIC_LUNA: 'luna',
   TELEGRAM_TOPIC_CLAUDE_LEAD: 'claude_lead',
   TELEGRAM_TOPIC_BLOG: 'blog',
-  TELEGRAM_TOPIC_LEGAL: 'legal',
   TELEGRAM_TOPIC_DARWIN: 'darwin',
   TELEGRAM_TOPIC_SIGMA: 'sigma',
   TELEGRAM_TOPIC_MEETING: 'meeting',

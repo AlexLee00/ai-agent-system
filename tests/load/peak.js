@@ -30,7 +30,7 @@ export const options = {
   },
 };
 
-const TEAMS = ['luna', 'blog', 'darwin', 'sigma', 'claude', 'ska', 'justin'];
+const TEAMS = ['luna', 'blog', 'darwin', 'sigma', 'claude', 'ska'];
 
 export default function () {
   const team = TEAMS[Math.floor(Math.random() * TEAMS.length)];

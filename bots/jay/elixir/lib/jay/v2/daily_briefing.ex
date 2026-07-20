@@ -209,6 +209,5 @@ defmodule Jay.V2.DailyBriefing do
 
   defp team_emoji(:platform), do: "🏗️"
   defp team_emoji(:darwin), do: "🔬"
-  defp team_emoji(:justin), do: "⚖️"
   defp team_emoji(_), do: "🤖"
 end

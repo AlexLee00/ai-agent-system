@@ -4,12 +4,10 @@
 const fs = require('fs');
 const { parseArgs } = require('../../reservation/lib/args');
 const darwin = require('../../../packages/core/lib/skills/darwin/source-ranking');
-const justin = require('../../../packages/core/lib/skills/justin/citation-audit');
 const sigma = require('../../sigma/legacy-skills/data-quality-guard');
 
 const SKILL_MAP = {
   'darwin/source-ranking': (input) => darwin.rankSources(input.items || []),
-  'justin/citation-audit': (input) => justin.auditCitations(input.citations || []),
   'sigma/data-quality-guard': (input) => sigma.evaluateDataset(input || {}),
 };
 
@@ -31,7 +29,7 @@ async function main() {
   if (!runner) {
     console.log(JSON.stringify({
       success: false,
-      message: 'usage: --skill darwin/source-ranking|justin/citation-audit|sigma/data-quality-guard [--file path | --input json]',
+      message: 'usage: --skill darwin/source-ranking|sigma/data-quality-guard [--file path | --input json]',
     }));
     process.exitCode = 1;
     return;

@@ -1,7 +1,7 @@
 # 팀 제이 (Team Jay) — Claude Code 세션 가이드
 
 > 레포: AlexLee00/ai-agent-system
-> 최종 업데이트: 2026-05-21
+> 최종 업데이트: 2026-07-21
 
 > 저장소 공통 작업 규칙은 루트 `AGENTS.md`가 기준이다. 비자명한 운영 변경은 그 문서의 T1/T2 분류에 따라 `skills/implementation-governance/SKILL.md`를 적용하고, 단순 문구·비운영 문서는 T0 Lean으로 처리한다.
 
@@ -22,7 +22,7 @@
 | 메타팀장 | 시그마 | 메타 최적화, 시스템 일관성 검증 |
 
 > 워커팀/에디팀은 2026-04-30부로 은퇴 처리됐다. 설계 기록만 `docs/archive/retired-teams/`에 보존한다.
-> 저스틴팀(법원 감정)은 2026-05-05부로 독립 분리됐다. 별도 레포: `justin-court-appraisal/` (Claude Code 100% 패턴).
+> 저스틴팀과 Slack 봇은 2026-07-21부로 Team Jay 런타임에서 은퇴했다. 별도 레포 `justin-court-appraisal/`의 소스와 과거 데이터는 보존한다.
 
 ### 3계층 에이전트 모델
 ```

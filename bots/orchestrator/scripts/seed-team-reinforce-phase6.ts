@@ -22,16 +22,6 @@ const NEW_AGENTS = [
   { name: 'canon', display_name: '캐논', team: 'darwin', role: 'searcher', specialty: '정통성우선서칭(survey/benchmark/official docs)', dot_character: { color: '#0891b2', accessory: 'book' }, config: runtimeConfig('darwin', 'research', 'darwin.agent_policy') },
   { name: 'skeptic-r', display_name: '스켑틱R', team: 'darwin', role: 'reviewer', specialty: '반례중심검토+재현성우선', dot_character: { color: '#b91c1c', accessory: 'shield' }, config: runtimeConfig('darwin', 'review', 'darwin.agent_policy') },
 
-  // Justin team reinforce (8)
-  { name: 'citecheck', display_name: '사이트체크', team: 'justin', role: 'citation_verifier', specialty: '판례/조문/인용진위검증', dot_character: { color: '#334155', accessory: 'shield' }, config: runtimeConfig('justin', 'citation', 'justin.citation') },
-  { name: 'chain', display_name: '체인', team: 'justin', role: 'evidence_mapper', specialty: '주장-증거-반증맵구성', dot_character: { color: '#2563eb', accessory: 'compass' }, config: runtimeConfig('justin', 'analysis', 'justin.analysis') },
-  { name: 'bench', display_name: '벤치', team: 'justin', role: 'judge_simulator', specialty: '판사관점논리검토+비약지적', dot_character: { color: '#475569', accessory: 'glasses' }, config: runtimeConfig('justin', 'opinion', 'justin.opinion') },
-  { name: 'delta', display_name: '델타', team: 'justin', role: 'precedent_comparer', specialty: '유사판례차이점비교', dot_character: { color: '#0ea5e9', accessory: 'magnifier' }, config: runtimeConfig('justin', 'analysis', 'justin.analysis') },
-  { name: 'ledger-law', display_name: '레저로', team: 'justin', role: 'damages_analyst', specialty: '손해액/기여도/정량근거분석', dot_character: { color: '#f59e0b', accessory: 'chart' }, config: runtimeConfig('justin', 'analysis', 'justin.analysis') },
-  { name: 'plaintiff-x', display_name: '플레인티프X', team: 'justin', role: 'analyst', specialty: '원고친화편향분석+공격적구성', dot_character: { color: '#f97316', accessory: 'pen' }, config: runtimeConfig('justin', 'analysis', 'justin.analysis') },
-  { name: 'defense-x', display_name: '디펜스X', team: 'justin', role: 'analyst', specialty: '피고친화편향분석+보수적반박', dot_character: { color: '#ef4444', accessory: 'shield' }, config: runtimeConfig('justin', 'analysis', 'justin.analysis') },
-  { name: 'neutral-bench', display_name: '뉴트럴벤치', team: 'justin', role: 'reviewer', specialty: '중립심판관점균형검토', dot_character: { color: '#64748b', accessory: 'glasses' }, config: runtimeConfig('justin', 'opinion', 'justin.opinion') },
-
   // Sigma team reinforce (8)
   { name: 'lab', display_name: '랩', team: 'sigma', role: 'experiment_designer', specialty: '가설설계+실험설계+검정전략', dot_character: { color: '#7c3aed', accessory: 'glasses' }, config: runtimeConfig('sigma', 'experiment', 'sigma.agent_policy') },
   { name: 'vector', display_name: '벡터', team: 'sigma', role: 'feature_engineer', specialty: '피처발굴+파생변수설계', dot_character: { color: '#0f766e', accessory: 'chart' }, config: runtimeConfig('sigma', 'analysis', 'sigma.agent_policy') },
@@ -62,7 +52,7 @@ async function main() {
   }
 
   console.log(`\n🌱 시딩 완료: ${ok}건 성공, ${fail}건 실패`);
-  console.log(`  다윈팀 보강: ${teamCount.darwin || 0}, 저스틴팀 보강: ${teamCount.justin || 0}, 시그마팀 보강: ${teamCount.sigma || 0}`);
+  console.log(`  다윈팀 보강: ${teamCount.darwin || 0}, 시그마팀 보강: ${teamCount.sigma || 0}`);
   process.exit(fail > 0 ? 1 : 0);
 }
 

@@ -308,9 +308,9 @@ function checkExternalGateway() {
   try {
     const { resolveHubLlmSelection } = require('../../src/llm-selector');
     selector = resolveHubLlmSelection({
-      callerTeam: 'justin-court-appraisal',
-      agent: 'justin',
-      selectorKey: 'justin.stage-3',
+      callerTeam: 'hub',
+      agent: 'external-gateway-canary',
+      selectorKey: 'hub._default',
       abstractModel: 'anthropic_haiku',
       runtimePurpose: 'external_gateway_canary',
       taskType: 'external_gateway_canary',
@@ -324,11 +324,11 @@ function checkExternalGateway() {
   const checks = [
     { name: 'external_canary_script_exists', ok: fileExists('bots/hub/scripts/llm-stage-d-external-gateway-canary.ts') },
     { name: 'external_onboarding_doc_exists', ok: fileExists('docs/hub/EXTERNAL_LLM_GATEWAY_PROJECT_ONBOARDING.md') },
-    { name: 'justin_selector_resolves', ok: Boolean(selector.ok), evidence: selector },
+    { name: 'external_selector_resolves', ok: Boolean(selector.ok), evidence: selector },
   ];
   return {
     ok: checks.every((c) => c.ok),
-    project: 'justin-court-appraisal',
+    project: 'generic-external-client',
     selector,
     canaryGate: '--apply --confirm=hub-stage-d-external-gateway-canary',
     checks,

@@ -376,36 +376,6 @@
         ]
       }
     },
-    "legal": {
-      "name": "저스틴팀",
-      "teamLeader": "저스틴 (Justin)",
-      "description": "법원 SW 감정 자동화 — 마스터(Jay) 법원 감정인 업무 지원. 9에이전트(저스틴/브리핑/렌즈/가람/아틀라스/클레임/디펜스/퀼/밸런스/컨트로)",
-      "status": "pending_runtime",
-      "inventoryKind": "pending_runtime",
-      "contextPath": "bots/legal/context",
-      "model": {
-        "primary": "openai-oauth/gpt-5.4",
-        "fallbacks": [
-          "groq/qwen3-32b",
-          "local/deepseek-r1-32b"
-        ]
-      },
-      "agents": [
-        "justin",
-        "briefing",
-        "lens",
-        "garam",
-        "atlas",
-        "claim",
-        "defense",
-        "quill",
-        "balance",
-        "contro"
-      ],
-      "db_schema": "legal",
-      "security": "cases/ directory gitignored — no push to GitHub",
-      "deployTargets": []
-    },
     "orchestrator": {
       "name": "메인봇 (팀장)",
       "description": "지시 해석, 팀원봇 업무 분배, 결과 취합 및 보고",

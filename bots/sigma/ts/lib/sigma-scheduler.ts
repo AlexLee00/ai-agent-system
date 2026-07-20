@@ -37,10 +37,10 @@ type MemorySnippet = {
   importance?: number;
 };
 
-export const ROTATION = ['ska', 'claude', 'justin', 'darwin', 'blog', 'luna'];
+export const ROTATION = ['ska', 'claude', 'darwin', 'blog', 'luna'];
 export const CORE_ANALYSTS = ['pipe', 'canvas', 'curator'];
 const SIGMA_RANDOM_EPSILON = 0.2;
-const KNOWN_MEMORY_TEAMS = new Set(['blog', 'luna', 'darwin', 'claude', 'ska', 'justin', 'platform']);
+const KNOWN_MEMORY_TEAMS = new Set(['blog', 'luna', 'darwin', 'claude', 'ska', 'platform']);
 
 function safeExec(command: string): string {
   try {
@@ -165,7 +165,7 @@ function deriveMemoryPerspectiveHint(memories: MemorySnippet[] = []): string | n
     for (const team of teams) {
       if (team === 'claude' || team === 'ska') scores.risk += weight;
       if (team === 'blog' || team === 'luna') scores.growth += weight;
-      if (team === 'darwin' || team === 'justin' || team === 'platform') scores.trend += weight;
+      if (team === 'darwin' || team === 'platform') scores.trend += weight;
     }
   }
 

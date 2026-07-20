@@ -519,7 +519,7 @@ function runSmoke() {
 
   assertSmokeResult(results, 'TS-R1-1', 'selector key coverage and deterministic output', () => {
     assert.equal(first.counts.selectorKeys, selectorKeys.length);
-    assert(first.counts.selectorKeys >= 89, `expected at least 89 selector keys, got ${first.counts.selectorKeys}`);
+    assert(first.counts.selectorKeys >= 83, `expected at least 83 selector keys, got ${first.counts.selectorKeys}`);
     assert.equal(stableStringify(first), stableStringify(second));
     const defaultKeys = new Set(
       first.variants

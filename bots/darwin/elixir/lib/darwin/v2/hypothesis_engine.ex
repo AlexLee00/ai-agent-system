@@ -186,7 +186,7 @@ defmodule Darwin.V2.HypothesisEngine do
     ## 가설 형식
     반드시 다음 JSON 형식으로 하나의 가설을 작성하세요:
     {
-      "target_team": "팀명 (luna/blog/ska/worker/video/justin/sigma/hub/jay/darwin)",
+      "target_team": "팀명 (luna/blog/ska/sigma/hub/jay/darwin)",
       "target_module": "구체적 모듈/파일 경로",
       "hypothesis_text": "이 논문 [X]를 [target_module]에 적용하면 [expected_metric]이 [expected_delta] 개선될 것이다",
       "expected_metric": "측정 가능한 지표 (예: win_rate, latency_ms, f1_score)",

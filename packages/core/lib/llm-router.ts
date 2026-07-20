@@ -58,7 +58,6 @@ const TEAM_DEFAULTS: Record<string, Complexity> = {
   blog: 'medium',
   darwin: 'complex',
   sigma: 'medium',
-  justin: 'complex',
 };
 
 function classifyComplexity({ team, requestType, inputLength = 0, urgency = 'normal' }: SelectOptions): Complexity {

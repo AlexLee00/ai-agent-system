@@ -6,7 +6,6 @@ const mcp = require('./mcp') as {
 
 const skills = require('./skills') as {
   darwin: { sourceRanking: { rankSources: (items: unknown[]) => unknown } };
-  justin: { citationAudit: { auditCitations: (citations: unknown[]) => unknown } };
   sigma: { dataQualityGuard: { evaluateDataset: (payload: Record<string, unknown>) => unknown } };
 };
 
@@ -30,10 +29,6 @@ export function selectSkill(team: string, taskType: string): string | null {
       research: 'darwin/source-ranking',
       source: 'darwin/source-ranking',
     },
-    justin: {
-      citation: 'justin/citation-audit',
-      evidence: 'justin/citation-audit',
-    },
     sigma: {
       quality: 'sigma/data-quality-guard',
       analysis: 'sigma/data-quality-guard',
@@ -47,8 +42,6 @@ export function selectSkill(team: string, taskType: string): string | null {
 function getRunner(skillName: string | null): ((payload: Record<string, unknown>) => unknown) | null {
   const runners: Record<string, (payload: Record<string, unknown>) => unknown> = {
     'darwin/source-ranking': (payload) => skills.darwin.sourceRanking.rankSources((payload.items as unknown[]) || []),
-    'justin/citation-audit': (payload) =>
-      skills.justin.citationAudit.auditCitations((payload.citations as unknown[]) || []),
     'sigma/data-quality-guard': (payload) => skills.sigma.dataQualityGuard.evaluateDataset(payload || {}),
   };
   return skillName ? runners[skillName] || null : null;
@@ -85,11 +78,6 @@ export function shouldUseMcp(team: string, taskType: string, skillResult: SkillR
     });
   }
 
-  if (team === 'justin' && normalizedTask === 'citation') {
-    const summary = (skillResult.summary as Record<string, unknown>) || {};
-    return Number(summary.critical || 0) > 0 || Number(summary.high || 0) > 0;
-  }
-
   if (team === 'sigma' && normalizedTask === 'quality') {
     return Array.isArray(skillResult.issues) && skillResult.issues.length > 0;
   }
@@ -100,7 +88,6 @@ export function shouldUseMcp(team: string, taskType: string, skillResult: SkillR
 function getGate(team: string, taskType: string): string {
   const normalizedTask = normalizeTask(taskType);
   if (team === 'darwin' && normalizedTask === 'research') return 'read-only';
-  if (team === 'justin') return 'validate';
   if (team === 'sigma') return 'validate';
   return 'read-only';
 }

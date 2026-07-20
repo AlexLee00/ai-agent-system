@@ -210,7 +210,7 @@ describe('Hub scoped auth audit mode', () => {
     ['POST', '/hub/tasks'],
     ['PATCH', '/hub/tasks/task-1'],
     ['POST', '/hub/agents/hire'],
-    ['POST', '/hub/legal/case/case-1/approve'],
+    ['POST', '/hub/custom/unmatched-action'],
     ['POST', '/hub/budget/reserve'],
   ])('requires a write scope for unmatched mutation %s %s', (method, path) => {
     process.env.HUB_AUTH_SCOPED_PRINCIPALS_JSON = JSON.stringify([

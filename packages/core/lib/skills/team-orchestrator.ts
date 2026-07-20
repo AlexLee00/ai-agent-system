@@ -9,9 +9,17 @@ const TEAMS = [
   { id: 'blog', name: '블로팀', lead: '블로', status: 'active', priority: 5 },
   { id: 'darwin', name: '다윈팀', lead: '다윈', status: 'active', priority: 6 },
   { id: 'sigma', name: '시그마팀', lead: '시그마', status: 'active', priority: 7 },
-  { id: 'justin', name: '저스틴팀', lead: '저스틴', status: 'active', priority: 8 },
   { id: 'research', name: '연구팀', lead: '(예정)', status: 'planned', priority: 9 },
   { id: 'forensic', name: '감정팀', lead: '(예정)', status: 'planned', priority: 10 },
+];
+
+const RETIRED_TEAMS = [
+  {
+    id: 'justin',
+    name: '저스틴팀',
+    retiredAt: '2026-07-02',
+    reason: 'Team Jay 내부 법률 감정 런타임 종료',
+  },
 ];
 
 // 팀 키워드 매핑 (태스크 자동 배분용)
@@ -22,7 +30,6 @@ const TEAM_KEYWORDS = {
   blog: ['블로그', '포스팅', '네이버', '글쓰기', '발행'],
   darwin: ['연구', '논문', 'R&D', '실험', '기술'],
   sigma: ['시그마', '편성', '메타', '품질', '실험설계'],
-  justin: ['법률', '계약', '감정', '판례', '저스틴'],
   research: ['연구', 'R&D', '실험', '기술'],
   forensic: ['감정', '법원', '소프트웨어'],
 };
@@ -31,6 +38,16 @@ const TEAM_KEYWORDS = {
 function getTeamStatus(teamId) {
   const team = TEAMS.find((t) => t.id === teamId);
   if (!team) {
+    const retiredTeam = RETIRED_TEAMS.find((t) => t.id === teamId);
+    if (retiredTeam) {
+      return {
+        id: retiredTeam.id,
+        name: retiredTeam.name,
+        healthy: false,
+        lastCheck: null,
+        issues: [`${retiredTeam.retiredAt} 은퇴`],
+      };
+    }
     console.warn(`[skills/team-orchestrator] 알 수 없는 팀: ${teamId}`);
     return null;
   }
@@ -54,7 +71,7 @@ function distributeTask(task) {
   if (Array.isArray(t.relatedTeams) && t.relatedTeams.length > 0) {
     const teamId = t.relatedTeams[0];
     const team = TEAMS.find((tm) => tm.id === teamId);
-    if (team) {
+    if (team?.status === 'active') {
       return { team: team.id, assignedTo: team.lead, priority: t.urgency || 'MEDIUM' };
     }
   }
@@ -64,7 +81,7 @@ function distributeTask(task) {
     const matched = keywords.some((kw) => desc.includes(kw.toLowerCase()) || taskType.includes(kw.toLowerCase()));
     if (matched) {
       const team = TEAMS.find((tm) => tm.id === teamId);
-      if (team) {
+      if (team?.status === 'active') {
         return { team: team.id, assignedTo: team.lead, priority: t.urgency || 'MEDIUM' };
       }
     }
@@ -131,4 +148,4 @@ function generateTeamReport() {
   };
 }
 
-module.exports = { TEAMS, getTeamStatus, distributeTask, checkDependencies, generateTeamReport };
+module.exports = { TEAMS, RETIRED_TEAMS, getTeamStatus, distributeTask, checkDependencies, generateTeamReport };

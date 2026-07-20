@@ -24,17 +24,6 @@ const NEW_AGENTS = [
   { name: 'scholar', display_name: '스칼라', team: 'darwin', role: 'researcher', specialty: '심층연구+논문분석', dot_character: { color: '#4f46e5', accessory: 'book' }, config: runtimeConfig('darwin', 'research') },
   { name: 'mentor', display_name: '멘토', team: 'darwin', role: 'trainer', specialty: '에이전트재교육+프롬프트튜닝', dot_character: { color: '#a855f7', accessory: 'book' }, config: runtimeConfig('darwin', 'synthesis') },
 
-  { name: 'justin', display_name: '저스틴', team: 'justin', role: 'leader', specialty: '감정총괄+사건배정+최종검토', dot_character: { color: '#64748b', accessory: 'crown' }, config: runtimeConfig('justin', 'default') },
-  { name: 'briefing', display_name: '브리핑', team: 'justin', role: 'analyst', specialty: '사건분석+감정요청분석', dot_character: { color: '#3b82f6', accessory: 'book' }, config: runtimeConfig('justin', 'analysis') },
-  { name: 'lens', display_name: '렌즈', team: 'justin', role: 'analyst', specialty: '소스코드분석전문', dot_character: { color: '#6366f1', accessory: 'magnifier' }, config: runtimeConfig('justin', 'analysis') },
-  { name: 'garam', display_name: '가람', team: 'justin', role: 'searcher', specialty: '국내판례서칭(대법원+하급심)', dot_character: { color: '#14b8a6', accessory: 'magnifier' }, config: runtimeConfig('justin', 'citation') },
-  { name: 'atlas', display_name: '아틀라스', team: 'justin', role: 'searcher', specialty: '해외판례서칭(미국+EU)', dot_character: { color: '#0ea5e9', accessory: 'compass' }, config: runtimeConfig('justin', 'citation') },
-  { name: 'claim', display_name: '클레임', team: 'justin', role: 'analyst', specialty: '원고자료분석', dot_character: { color: '#f59e0b', accessory: 'chart' }, config: runtimeConfig('justin', 'analysis') },
-  { name: 'defense', display_name: '디펜스', team: 'justin', role: 'analyst', specialty: '피고자료분석', dot_character: { color: '#ef4444', accessory: 'shield' }, config: runtimeConfig('justin', 'analysis') },
-  { name: 'quill', display_name: '퀼', team: 'justin', role: 'writer', specialty: '감정서초안작성', dot_character: { color: '#8b5cf6', accessory: 'pen' }, config: runtimeConfig('justin', 'opinion') },
-  { name: 'balance', display_name: '밸런스', team: 'justin', role: 'reviewer', specialty: '감정서품질검증+객관성심사', dot_character: { color: '#10b981', accessory: 'shield' }, config: runtimeConfig('justin', 'opinion') },
-  { name: 'contro', display_name: '컨트로', team: 'justin', role: 'analyst', specialty: '계약서검토+소프트웨어계약분석', dot_character: { color: '#475569', accessory: 'glasses' }, config: runtimeConfig('justin', 'analysis') },
-
   { name: 'sigma', display_name: '시그마', team: 'sigma', role: 'leader', specialty: 'CDO+데이터전략수립', dot_character: { color: '#06b6d4', accessory: 'crown' }, config: runtimeConfig('sigma', 'default') },
   { name: 'pipe', display_name: '파이프', team: 'sigma', role: 'engineer', specialty: '데이터파이프라인+ETL+품질관리', dot_character: { color: '#22c55e', accessory: 'glasses' }, config: runtimeConfig('sigma', 'quality') },
   { name: 'pivot', display_name: '피벗', team: 'sigma', role: 'analyst', specialty: '데이터분석+통계+인사이트', dot_character: { color: '#3b82f6', accessory: 'chart' }, config: runtimeConfig('sigma', 'analysis') },
@@ -75,7 +64,7 @@ async function main() {
   }
 
   console.log(`\n🌱 시딩 완료: ${ok}건 성공, ${fail}건 실패`);
-  console.log(`  다윈팀: ${teamCount.darwin || 0}, 저스틴팀: ${teamCount.justin || 0}, 시그마팀: ${teamCount.sigma || 0}, 루나보강: ${teamCount.luna || 0}`);
+  console.log(`  다윈팀: ${teamCount.darwin || 0}, 시그마팀: ${teamCount.sigma || 0}, 루나보강: ${teamCount.luna || 0}`);
   process.exit(fail > 0 ? 1 : 0);
 }
 

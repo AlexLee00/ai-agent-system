@@ -16,7 +16,7 @@ const HUB_ROOT = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 const DEFAULT_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin'];
-const ALL_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin', 'luna', 'investment', 'justin', 'ska'];
+const ALL_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin', 'luna', 'investment', 'ska'];
 const TEAM_LABELS = {
   orchestrator: 'team-jay',
   blog: 'blog',
@@ -25,7 +25,6 @@ const TEAM_LABELS = {
   darwin: 'darwin',
   luna: 'luna',
   investment: 'investment',
-  justin: 'justin',
   ska: 'ska',
 };
 

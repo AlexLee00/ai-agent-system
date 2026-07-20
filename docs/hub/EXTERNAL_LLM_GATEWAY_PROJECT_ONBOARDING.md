@@ -34,16 +34,16 @@ Require `providerPolicy.geminiRetired=true` and `geminiReenablePolicy=code_chang
 curl -sS "$HUB_BASE_URL/hub/llm/call" \
   -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
-  -H "X-Hub-Team: justin-court-appraisal" \
-  -H "X-Hub-Agent: justin" \
+  -H "X-Hub-Team: <registered-team>" \
+  -H "X-Hub-Agent: <registered-agent>" \
   -d '{
-    "callerTeam": "justin-court-appraisal",
-    "agent": "justin",
-    "selectorKey": "justin.stage-3",
-    "runtimePurpose": "external_case_analysis",
-    "taskType": "external_case_analysis",
+    "callerTeam": "<registered-team>",
+    "agent": "<registered-agent>",
+    "selectorKey": "<approved-selector-key>",
+    "runtimePurpose": "<registered-purpose>",
+    "taskType": "<registered-purpose>",
     "abstractModel": "anthropic_haiku",
-    "prompt": "Analyze this case summary...",
+    "prompt": "Process this request...",
     "timeoutMs": 45000,
     "maxBudgetUsd": 0.05
   }'
@@ -85,6 +85,6 @@ Only after a current approval and cost cap:
 HUB_AUTH_TOKEN=... npm --prefix bots/hub run -s llm:stage-d-external-gateway-canary -- --apply --confirm=hub-stage-d-external-gateway-canary
 ```
 
-The canary project is `justin-court-appraisal`, routed by `selectorKey=justin.stage-3` and `runtimePurpose=external_gateway_canary`. Normal case-analysis requests use the stable `external_case_analysis` purpose shown above.
+The dry-run canary uses the internal `hub` identity with `selectorKey=hub._default` and `runtimePurpose=external_gateway_canary`; it does not represent an external tenant. Production integrations must receive their own registered team, agent, selector, and purpose before making live calls.
 
 For full Node.js/Python clients, Vision/Embedding examples, error classification, and observability checks, follow `docs/hub/EXTERNAL_LLM_INTEGRATION_GUIDE.md`.

@@ -110,14 +110,13 @@ const { getDarwinLlmTimeout }: {
 } = require('./llm-timeout-profile');
 
 const TEAM_CONTEXT = `팀 제이 시스템 구조:
-- 10팀 113에이전트, Node.js 모노레포
+- 7팀 106에이전트, Node.js 모노레포
 - 루나(자동매매 20에이전트): DAG 파이프라인, Bull/Bear 토론, ohlcv→분석→매매
 - 블로(블로그 26에이전트): 작가 경쟁, maestro 오케스트레이션
 - 클로드(모니터링 5에이전트): dexter 점검, doctor 자동복구
 - 다윈(연구 22에이전트): arXiv 스캔, 논문 평가, 적용 제안
-- 저스틴(감정 18에이전트): 소스코드 분석, 감정서 작성
 - 시그마(데이터 13에이전트): ETL, ML, 시각화
-- 스카(스터디카페 4), 워커(SaaS 2), 비디오(영상 1), 제이(오케스트레이터 2)
+- 스카(스터디카페 4), 제이(오케스트레이터 2)
 - LLM: groq + openai + claude-code 중심 폴백 체인, 로컬은 임베딩 전용
 - DB: PostgreSQL + pgvector (RAG)
 - 인프라: Mac Studio M4 Max (OPS) + MacBook Air M3 (DEV)`;

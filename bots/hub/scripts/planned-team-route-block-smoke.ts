@@ -24,19 +24,19 @@ function assertBlocked(team: string, expectedKind: string): void {
 
 function main(): void {
   withEnv('HUB_ALLOW_PLANNED_LLM_ROUTES', undefined, () => {
-    assertBlocked('legal', 'pending_runtime');
+    assertBlocked('legal', 'retired');
   });
 
   withEnv('HUB_ALLOW_PLANNED_LLM_ROUTES', 'true', () => {
     const result = selector.isLlmRouteTargetAllowed({ callerTeam: 'legal', agent: 'default', selectorKey: 'legal._default' });
-    assert.equal(result.ok, true, 'legal may only be allowed behind HUB_ALLOW_PLANNED_LLM_ROUTES');
+    assert.equal(result.ok, false, 'retired legal alias must remain blocked behind planned-route override');
     const retired = selector.isLlmRouteTargetAllowed({ callerTeam: 'worker', agent: 'lead', selectorKey: 'worker._default' });
     assert.equal(retired.ok, false, 'retired teams must remain blocked even when planned routes are allowed');
   });
 
   console.log(JSON.stringify({
     ok: true,
-    pending_runtime_blocked_by_default: ['legal'],
+    retired_alias_blocked: ['legal'],
     planned_override_env: 'HUB_ALLOW_PLANNED_LLM_ROUTES',
   }, null, 2));
 }

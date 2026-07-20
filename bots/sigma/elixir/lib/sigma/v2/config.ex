@@ -7,7 +7,7 @@ defmodule Sigma.V2.Config do
 
   require Logger
 
-  @allowed_teams ~w(blog luna investment ska claude darwin justin sigma)
+  @allowed_teams ~w(blog luna investment ska claude darwin sigma)
 
   @doc "현재 config를 DB에 스냅샷."
   def snapshot(team) when team in @allowed_teams do

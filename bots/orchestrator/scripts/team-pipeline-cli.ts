@@ -23,7 +23,7 @@ async function main() {
   if (!team || !task) {
     console.log(JSON.stringify({
       success: false,
-      message: 'usage: --team darwin|justin|sigma --task research|citation|quality [--file path | --input json]',
+      message: 'usage: --team darwin|sigma --task research|quality [--file path | --input json]',
     }));
     process.exitCode = 1;
     return;
@@ -43,4 +43,3 @@ main().catch((error) => {
   console.error(error?.stack || error?.message || String(error));
   process.exit(1);
 });
-

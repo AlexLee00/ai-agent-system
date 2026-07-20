@@ -115,32 +115,6 @@ function getLunaRoleBonus(requestedRole: string, agentRole: string | null | unde
   return family?.has(agentRole) ? 0.45 : 0;
 }
 
-function getJustinSpecialtyBonus(taskHint: string, agentSpecialty: string): number {
-  if (!taskHint || !agentSpecialty) return 0;
-  const hint = String(taskHint).toLowerCase();
-  const spec = String(agentSpecialty).toLowerCase();
-
-  if ((hint.includes('소스코드') || hint.includes('코드 분석')) && spec.includes('소스코드')) return 1.5;
-  if ((hint.includes('국내 판례') || hint.includes('국내')) && spec.includes('국내판례')) return 1.5;
-  if ((hint.includes('해외 판례') || hint.includes('해외')) && spec.includes('해외판례')) return 1.5;
-  if (hint.includes('원고') && spec.includes('원고자료')) return 1.5;
-  if (hint.includes('피고') && spec.includes('피고자료')) return 1.5;
-  if (hint.includes('계약') && spec.includes('계약서검토')) return 1.5;
-  if ((hint.includes('감정서') || hint.includes('초안') || hint.includes('작성')) && spec.includes('감정서초안')) return 1.5;
-  if ((hint.includes('품질') || hint.includes('검증') || hint.includes('리뷰')) && (spec.includes('품질검증') || spec.includes('객관성심사'))) return 1.5;
-
-  if ((hint.includes('소스코드') || hint.includes('코드 분석')) && spec.includes('코드')) return 1.0;
-  if ((hint.includes('국내 판례') || hint.includes('국내')) && spec.includes('국내')) return 1.0;
-  if ((hint.includes('해외 판례') || hint.includes('해외')) && spec.includes('해외')) return 1.0;
-  if (hint.includes('원고') && spec.includes('원고')) return 1.0;
-  if (hint.includes('피고') && spec.includes('피고')) return 1.0;
-  if (hint.includes('계약') && spec.includes('계약')) return 1.0;
-  if ((hint.includes('감정서') || hint.includes('초안') || hint.includes('작성')) && spec.includes('감정')) return 1.0;
-  if ((hint.includes('품질') || hint.includes('검증') || hint.includes('리뷰')) && (spec.includes('품질') || spec.includes('검증'))) return 1.0;
-
-  return 0;
-}
-
 function getSigmaSpecialtyBonus(taskHint: string, agentSpecialty: string): number {
   if (!taskHint || !agentSpecialty) return 0;
   const hint = String(taskHint).toLowerCase();
@@ -175,16 +149,6 @@ function getTeamRoleAliases(team: string | null): Record<string, Set<string>> {
       researcher: new Set(['researcher', 'searcher', 'synthesizer']),
       searcher: new Set(['searcher', 'researcher']),
       reviewer: new Set(['reviewer', 'source_auditor', 'counterexample']),
-    };
-  }
-
-  if (team === 'justin') {
-    return {
-      verify: new Set(['reviewer', 'citation_verifier', 'judge_simulator']),
-      reviewer: new Set(['reviewer', 'citation_verifier', 'judge_simulator']),
-      evidence: new Set(['evidence_mapper', 'precedent_comparer', 'damages_analyst']),
-      analyst: new Set(['analyst', 'citation_verifier', 'evidence_mapper', 'precedent_comparer', 'damages_analyst']),
-      writer: new Set(['writer']),
     };
   }
 
@@ -260,10 +224,7 @@ async function selectBestAgent(role: string, team: string | null = null, require
     const confidence = normalizeEmotionScore(emotion.confidence, 5);
     const roleBonus = team === 'luna' ? getLunaRoleBonus(role, agent.role) : 0;
     const specialty = String(agent.specialty || '').toLowerCase();
-    let specialtyBonus =
-      team === 'justin' ? getJustinSpecialtyBonus(taskHint, specialty) :
-      team === 'sigma' ? getSigmaSpecialtyBonus(taskHint, specialty) :
-      0;
+    let specialtyBonus = team === 'sigma' ? getSigmaSpecialtyBonus(taskHint, specialty) : 0;
     if (!specialtyBonus && taskHint && specialty) {
       if (specialty.includes(taskHint) || taskHint.split(/\s+/).some((word) => word && specialty.includes(word))) {
         specialtyBonus = 1.0;

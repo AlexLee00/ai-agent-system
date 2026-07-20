@@ -7,30 +7,28 @@ const healthy = buildTeamSsotAuditReport({
   generatedAt: '2026-07-20T14:00:00.000Z',
   catalogTeams: [
     { id: 'jay', status: 'active' },
-    { id: 'justin', status: 'active' },
     { id: 'research', status: 'planned' },
   ],
+  retiredTeams: [{ id: 'justin', status: 'retired' }],
   dbAgents: [
     { name: 'jay', team: 'jay', status: 'idle' },
     { name: 'write', team: 'jay', status: 'idle' },
-    { name: 'justin', team: 'justin', status: 'idle' },
+    { name: 'justin', team: 'justin', status: 'archived' },
   ],
   seedAgents: [
     { name: 'jay', team: 'jay' },
-    { name: 'justin', team: 'justin' },
   ],
   deploymentRegistry: {
-    legal: { status: 'pending_runtime', inventoryKind: 'pending_runtime' },
     orchestrator: { status: 'planned', inventoryKind: 'planned' },
   },
-  readmeText: '3 autonomous agents across 2 specialized teams\n2 Teams • 3 Agents\nAgents: 3 (across 2 teams)',
+  readmeText: '2 autonomous agents across 1 specialized teams\n1 Teams • 2 Agents\nAgents: 2 (across 1 teams)',
   activeContractDrift: [],
 });
 
 assert.equal(healthy.ok, true);
 assert.equal(healthy.status, 'healthy');
-assert.equal(healthy.summary.activeTeams, 2);
-assert.equal(healthy.inventory.legal.canonicalTeam, 'justin');
+assert.equal(healthy.summary.activeTeams, 1);
+assert.equal(healthy.summary.retiredTeams, 1);
 assert.equal(healthy.inventory.orchestrator.canonicalTeam, 'jay');
 assert.equal(healthy.issues.length, 0);
 assert.equal(healthy.dbWrite, false);
@@ -38,16 +36,17 @@ assert.equal(healthy.dbWrite, false);
 const drifted = buildTeamSsotAuditReport({
   generatedAt: '2026-07-20T14:00:00.000Z',
   catalogTeams: healthy.catalog.teams,
+  retiredTeams: [{ id: 'justin', status: 'retired' }],
   dbAgents: [
     { name: 'jay', team: 'jay', status: 'idle' },
-    { name: 'legacy-lawyer', team: 'legal', status: 'idle' },
+    { name: 'legacy-lawyer', team: 'justin', status: 'idle' },
+    { name: 'legacy-researcher', team: 'research', status: 'idle' },
   ],
   seedAgents: [
     { name: 'jay', team: 'jay' },
-    { name: 'justin', team: 'justin' },
+    { name: 'missing-agent', team: 'jay' },
   ],
   deploymentRegistry: {
-    legal: { status: 'pending_runtime', inventoryKind: 'pending_runtime' },
     orchestrator: { status: 'planned', inventoryKind: 'planned' },
   },
   readmeText: '121 autonomous agents across 10 specialized teams',
@@ -60,6 +59,7 @@ assert.equal(drifted.ok, false);
 assert.equal(drifted.status, 'degraded');
 assert.ok(drifted.issues.some((issue) => issue.code === 'db_active_team_mismatch'));
 assert.ok(drifted.issues.some((issue) => issue.code === 'db_alias_team_rows'));
+assert.ok(drifted.issues.some((issue) => issue.code === 'retired_team_runtime_rows'));
 assert.ok(drifted.issues.some((issue) => issue.code === 'seed_agent_missing'));
 assert.ok(drifted.issues.some((issue) => issue.code === 'readme_stats_drift'));
 assert.ok(drifted.issues.some((issue) => issue.code === 'idle_agent_active_contract'));
