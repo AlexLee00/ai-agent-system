@@ -7,6 +7,7 @@ import {
   buildBOnlyWeightDemotionProposal,
   resolveBOnlyWeightDemotion,
 } from '../shared/b-only-weight-demotion.ts';
+import { DEFAULT_BINANCE_MAJOR_WHITELIST } from '../shared/binance-top-volume-universe.ts';
 import {
   buildWeightDemotionSimulation,
   loadRealD20Observations,
@@ -19,7 +20,7 @@ const B_SYMBOLS = [
   'BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'XRP/USDT', 'SOL/USDT',
   'TRX/USDT', 'DOGE/USDT', 'ZEC/USDT', 'XLM/USDT', 'LINK/USDT',
   'ADA/USDT', 'BCH/USDT', 'LTC/USDT', 'SUI/USDT', 'HBAR/USDT',
-  'AVAX/USDT', 'NEAR/USDT', 'SHIB/USDT', 'UNI/USDT', 'TAO/USDT',
+  'AVAX/USDT', 'NEAR/USDT', 'SHIB/USDT', 'UNI/USDT', 'GRAM/USDT',
 ];
 const C_SYMBOLS = B_SYMBOLS.slice(0, 10);
 const A_SYMBOLS = [
@@ -59,6 +60,7 @@ const proposal = buildBOnlyWeightDemotionProposal({
 
 // ① unit + ② exact threshold mapping + ⑧ raw observation fixture.
 assert.equal(B_ONLY_WEIGHT_DEMOTION_DEFAULTS.lookbackDays, 180);
+assert.deepEqual(B_SYMBOLS, DEFAULT_BINANCE_MAJOR_WHITELIST);
 assert.equal(proposal.proposalOnly, true);
 assert.equal(proposal.autoApply, false);
 assert.equal(proposal.symbols['ADA/USDT'].sampleSize, 40);
@@ -67,6 +69,8 @@ assert.equal(proposal.symbols['ADA/USDT'].recommendedWeight, 0.75);
 assert.equal(proposal.symbols['BCH/USDT'].recommendedWeight, 0.5);
 assert.equal(proposal.symbols['SUI/USDT'].recommendedWeight, 1, 'n=39 must fail safe');
 assert.equal(proposal.symbols['BTC/USDT'].recommendedWeight, 1, 'C member is not B-only');
+assert.equal(proposal.symbols['GRAM/USDT'].sampleSize, 0);
+assert.equal(proposal.symbols['GRAM/USDT'].recommendedWeight, 1, 'missing sample must fail safe');
 
 // ③ outlier/sensitivity: raising the minimum sample reverses ADA to neutral.
 const sensitivity = buildBOnlyWeightDemotionProposal({
@@ -226,6 +230,16 @@ const freshRuntimeProposal = {
   generatedAt: new Date().toISOString(),
   windowEndAt: new Date().toISOString(),
 };
+const gramMissingResolution = resolveBOnlyWeightDemotion({
+  symbol: 'GRAM/USDT',
+  downstreamAmountUsdt: 100,
+  proposal: freshRuntimeProposal,
+}, { LUNA_BONLY_WEIGHT_DEMOTION_ENABLED: 'true' });
+assert.equal(gramMissingResolution.evidenceEligible, false);
+assert.equal(gramMissingResolution.recommendedWeight, 1);
+assert.equal(gramMissingResolution.appliedWeight, 1);
+assert.equal(gramMissingResolution.appliedAmountUsdt, 100);
+assert.equal(gramMissingResolution.liveMutation, false);
 const offResolution = resolveBOnlyWeightDemotion({
   symbol: 'ADA/USDT',
   downstreamAmountUsdt: 100,
@@ -481,7 +495,7 @@ assert.equal(proposal.windowEndAt, NOW.toISOString());
 
 console.log(JSON.stringify({
   ok: true,
-  checks: 57,
+  checks: 65,
   boundaries: 9,
   weights: {
     moderate: proposal.symbols['ADA/USDT'].recommendedWeight,

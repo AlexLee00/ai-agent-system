@@ -59,7 +59,7 @@ async function verifyExitIsolation(failClosedUniverse) {
   let persistedBlock = null;
   const sellResult = await runBuySafetyGuards({
     persistFailure: async () => { persisted += 1; },
-    symbol: 'PEPE/USDT',
+    symbol: 'TAO/USDT',
     action: 'SELL',
     signal: { exchange: 'binance' },
     signalTradeMode: 'normal',
@@ -100,6 +100,8 @@ export async function runLunaBinanceMajorUniverseSmoke() {
   assert.equal(defaults.valid, true);
   assert.equal(defaults.symbols.length, 20);
   assert.equal(new Set(defaults.symbols).size, 20);
+  assert.equal(defaults.symbols.includes('GRAM/USDT'), true);
+  assert.equal(defaults.symbols.includes('TAO/USDT'), false);
   const duplicateOverride = parseBinanceMajorWhitelist({
     env: { LUNA_CRYPTO_MAJOR_WHITELIST: Array(20).fill('BTC/USDT').join(',') },
   });
@@ -116,6 +118,10 @@ export async function runLunaBinanceMajorUniverseSmoke() {
     BINANCE_TOP_VOLUME_LEGACY_BLOCK_REASON,
   );
   assert.equal(evaluateBinanceTopVolumeUniverseGate('BTCUSDT', major).ok, true);
+  assert.equal(evaluateBinanceTopVolumeUniverseGate('GRAM/USDT', major).ok, true);
+  const removedMemberGate = evaluateBinanceTopVolumeUniverseGate('TAO/USDT', major);
+  assert.equal(removedMemberGate.blocked, true);
+  assert.equal(removedMemberGate.reason, BINANCE_MAJOR_UNIVERSE_BLOCK_REASON);
   for (const symbol of ['PEPE/USDT', 'USDC/USDT', 'PAXG/USDT', 'BTCUP/USDT', 'DELISTED/USDT']) {
     const gate = evaluateBinanceTopVolumeUniverseGate(symbol, major);
     assert.equal(gate.blocked, true, `${symbol} must be blocked`);

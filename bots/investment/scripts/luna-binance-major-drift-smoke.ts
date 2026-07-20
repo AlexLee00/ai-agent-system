@@ -58,7 +58,7 @@ function changedCoinRows() {
 export async function runLunaBinanceMajorDriftSmoke() {
   const now = new Date('2026-07-17T00:00:00.000Z');
   const currentSymbols = [...DEFAULT_BINANCE_MAJOR_WHITELIST];
-  const info = exchangeInfo(currentSymbols, { 'TAO/USDT': { status: 'BREAK' } });
+  const info = exchangeInfo(currentSymbols, { 'GRAM/USDT': { status: 'BREAK' } });
   const proposal = buildBinanceMajorUniverseDrift({
     coinGeckoRows: changedCoinRows(),
     exchangeInfo: info,
@@ -69,7 +69,9 @@ export async function runLunaBinanceMajorDriftSmoke() {
   assert.equal(proposal.autoApply, false);
   assert.deepEqual(proposal.additions.map((item) => item.symbol), ['TON/USDT', 'DOT/USDT']);
   assert.equal(proposal.removals.find((item) => item.symbol === 'UNI/USDT')?.reason, 'market_cap_rank_decline');
-  assert.equal(proposal.removals.find((item) => item.symbol === 'TAO/USDT')?.reason, 'binance_not_trading');
+  assert.equal(proposal.removals.find((item) => item.symbol === 'GRAM/USDT')?.reason, 'binance_not_trading');
+  assert.equal(proposal.proposedSymbols.length, 20);
+  assert.equal(new Set(proposal.proposedSymbols).size, 20);
   assert.equal(proposal.proposedSymbols.includes('USDC/USDT'), false);
   assert.equal(proposal.proposedSymbols.includes('PAXG/USDT'), false);
   assert.equal(proposal.proposedSymbols.includes('BTCUP/USDT'), false);
