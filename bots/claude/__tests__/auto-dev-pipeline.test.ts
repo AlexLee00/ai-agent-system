@@ -2284,6 +2284,61 @@ async function test_implementation_completed_marker_is_skipped() {
   console.log('✅ auto-dev: implementation-completed marker prevents reprocessing');
 }
 
+async function test_implementation_completed_alarm_emits_resolved_callback() {
+  const tmpRoot = makeTempRoot();
+  const relPath = 'docs/auto_dev/ALARM_INCIDENT_REVIEWER_COMPLETED.md';
+  const doc = makeDoc(tmpRoot, 'ALARM_INCIDENT_REVIEWER_COMPLETED.md', [
+    '---',
+    'target_team: claude',
+    'owner_agent: codex',
+    'source_team: claude',
+    'source_bot: reviewer',
+    'incident_key: claude:reviewer:reviewer_error:test-generation',
+    'alarm_event_id: 12345',
+    'alarm_event_type: reviewer_error',
+    'risk_tier: normal',
+    'task_type: development_task',
+    'implementation_status: auto_dev_implementation_completed',
+    'write_scope:',
+    '  - bots/claude/**',
+    'test_scope:',
+    '  - npm --prefix bots/claude run test:auto-dev',
+    'autonomy_level: supervised_l4',
+    'requires_live_execution: false',
+    '---',
+    '',
+    '# Completed reviewer repair',
+    '<!-- auto_dev:implementation_completed -->',
+  ].join('\n'));
+  const { mocks, repairCallbacks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: false,
+      force: true,
+      shadow: false,
+      executeImplementation: false,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(repairCallbacks.length, 1, 'completed alarm generation must emit one resolved callback');
+    assert.strictEqual(repairCallbacks[0].incidentKey, 'claude:reviewer:reviewer_error:test-generation');
+    assert.strictEqual(repairCallbacks[0].alarmEventId, '12345');
+    assert.strictEqual(repairCallbacks[0].status, 'resolved');
+
+    const manifest = JSON.parse(fs.readFileSync(
+      path.join(tmpRoot, 'docs', 'auto_dev', '.auto-dev-manifest.json'),
+      'utf8',
+    ));
+    assert.strictEqual(manifest.entries[relPath].state, 'archived');
+    assert.strictEqual(manifest.entries[relPath].callbackState, 'delivered');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed alarm marker closes its exact Hub generation');
+}
+
 async function test_completed_job_is_skipped_without_force() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_SKIP.md', '# A\nx');
@@ -4130,6 +4185,7 @@ async function main() {
     test_missing_metadata_is_blocked,
     test_non_development_task_is_blocked,
     test_implementation_completed_marker_is_skipped,
+    test_implementation_completed_alarm_emits_resolved_callback,
     test_non_claude_target_is_routed,
     test_global_lock_blocks_parallel_pipeline,
     test_job_lock_blocks_duplicate_document_execution,

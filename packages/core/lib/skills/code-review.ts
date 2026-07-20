@@ -11,14 +11,18 @@ const PATTERN_SKIP_FILES = new Set(['.checksums.json']);
 function isTestFixturePath(filePath) {
   const normalized = String(filePath || '').replace(/\\/g, '/');
   return normalized.includes('/__tests__/')
-    || /\.(?:test|spec)\.[cm]?[jt]s$/i.test(normalized);
+    || /\.(?:test|spec)\.[cm]?[jt]s$/i.test(normalized)
+    || /-smoke\.[cm]?[jt]sx?$/i.test(normalized);
+}
+
+function looksLikeKnownCredentialLiteral(line) {
+  const text = String(line || '');
+  return /['"`](?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{20,})['"`]/.test(text);
 }
 
 function looksLikeHardcodedCredential(line) {
   const text = String(line || '');
-  if (/['"`](?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{20,})['"`]/.test(text)) {
-    return true;
-  }
+  if (looksLikeKnownCredentialLiteral(text)) return true;
 
   const typedAssignment = text.match(
     /\b([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*[A-Za-z_$][A-Za-z0-9_$<>,\[\]|?. ]{0,79}\s*=\s*['"`]([A-Za-z0-9._-]{24,})['"`]/,
@@ -49,7 +53,8 @@ const SECURITY_PATTERNS = [
   {
     severity: 'HIGH',
     desc: 'API 키 또는 시크릿 하드코딩 의심',
-    match: (line) => looksLikeHardcodedCredential(line),
+    match: (line, _lineNumber, filePath) => looksLikeKnownCredentialLiteral(line)
+      || (!isTestFixturePath(filePath) && looksLikeHardcodedCredential(line)),
   },
   {
     severity: 'HIGH',
@@ -59,7 +64,7 @@ const SECURITY_PATTERNS = [
       if (!match) return false;
       const fallback = match[1];
       if (fallback.includes('${')) return false;
-      return !/^postgres(?:ql)?:\/\/(?:localhost|127\.0\.0\.1)(?::|\/|$)/i.test(fallback);
+      return !/^(?:postgres(?:ql)?|https?):\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(fallback);
     },
   },
   {

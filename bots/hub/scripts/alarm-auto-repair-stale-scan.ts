@@ -172,6 +172,32 @@ function documentMatchesIncident(
   }
 }
 
+function resolveByCompletedInboxDocument(
+  row: Record<string, any>,
+  projectRoot = env.PROJECT_ROOT,
+): Record<string, any> | null {
+  const relPath = normalizeRelPath(row.auto_dev_path);
+  if (!relPath || !String(row.alarm_event_id || '').trim()) return null;
+  const root = path.resolve(projectRoot);
+  const filePath = path.resolve(root, relPath);
+  if (filePath !== root && !filePath.startsWith(`${root}${path.sep}`)) return null;
+  if (!documentMatchesIncident(row, filePath, true)) return null;
+
+  try {
+    const text = fs.readFileSync(filePath, 'utf8');
+    const completed = /^\s*implementation_status\s*:\s*auto_dev_implementation_completed\s*$/mi.test(text)
+      || text.includes('<!-- auto_dev:implementation_completed -->');
+    if (!completed) return null;
+    return {
+      stale_status: 'resolved_manifest',
+      stale_resolution_reason: 'completed_inbox_document_matches_generation',
+      inbox_exists: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function manifestMatchesAlarmGeneration(row: Record<string, any>, entry: Record<string, any> | null): boolean {
   const expected = String(row.alarm_event_id || '').trim();
   const recorded = String(
@@ -450,12 +476,14 @@ function annotateRows(rows: Array<Record<string, any>>, {
   manifest = loadManifest(),
   archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
   processedDir = path.join(DEFAULT_AUTO_DEV_DIR, 'processed'),
+  projectRoot = env.PROJECT_ROOT,
   staleMinutes = 120,
   nowMs = Date.now(),
 }: {
   manifest?: Record<string, any>;
   archiveDir?: string;
   processedDir?: string;
+  projectRoot?: string;
   staleMinutes?: number;
   nowMs?: number;
 } = {}) {
@@ -463,6 +491,9 @@ function annotateRows(rows: Array<Record<string, any>>, {
   return rows.map((row) => {
     const manifestResolution = resolveByManifest(row, manifest, processedDir);
     if (manifestResolution) return { ...row, ...manifestResolution };
+
+    const inboxResolution = resolveByCompletedInboxDocument(row, projectRoot);
+    if (inboxResolution) return { ...row, ...inboxResolution };
 
     const archiveResolution = resolveByCompletedArchive(row, archiveFiles);
     if (archiveResolution) return { ...row, ...archiveResolution };

@@ -1967,6 +1967,50 @@ async function sendAlarmRepairResult(job, status, summary, options = {}, payload
   }
 }
 
+function persistAlarmRepairCallbackOutcome(relPath, contentHash, repairCallback, state = 'archived') {
+  const callbackTerminal = repairCallback.ok !== true && repairCallback.retryable === false;
+  if (repairCallback.skipped || repairCallback.shadow) return { callbackTerminal, updated: false };
+
+  const callbackAttemptedAtMs = Date.now();
+  const retrySchedule = computeCallbackRetrySchedule(
+    1,
+    callbackAttemptedAtMs,
+    repairCallback.retryAfterMs,
+  );
+  const callbackPatch = repairCallback.ok
+    ? {
+        callbackState: 'delivered',
+        callbackAttempts: 1,
+        callbackLastAttemptAt: new Date(callbackAttemptedAtMs).toISOString(),
+        callbackDeliveredAt: new Date(callbackAttemptedAtMs).toISOString(),
+        callbackEventId: repairCallback.eventId || repairCallback.event_id || null,
+        callbackError: null,
+      }
+    : {
+        callbackState: callbackTerminal ? 'manual_required' : 'pending',
+        callbackPayload: repairCallback.callbackPayload || null,
+        callbackAttempts: 1,
+        callbackLastAttemptAt: new Date(callbackAttemptedAtMs).toISOString(),
+        callbackNextAttemptAt: callbackTerminal ? null : retrySchedule.nextAttemptAt,
+        callbackError: repairCallback.error || 'alarm_repair_callback_failed',
+      };
+  const manifestUpdate = patchAutoDevManifestEntryIfMatches(
+    AUTO_DEV_DIR,
+    relPath,
+    {
+      contentHash,
+      alarmEventId: repairCallback.callbackPayload?.alarmEventId,
+      callbackState: 'pending',
+    },
+    { state, ...callbackPatch },
+  );
+  if (!manifestUpdate.updated) {
+    repairCallback.superseded = true;
+    repairCallback.manifestUpdateReason = manifestUpdate.reason;
+  }
+  return { callbackTerminal, updated: manifestUpdate.updated };
+}
+
 async function sendAlarmRepairProgress(job, state, details = {}, options = {}, content = '') {
   const context = extractAlarmIncidentContext(job, content);
   if (!context) return { ok: true, skipped: true, reason: 'not_alarm_incident' };
@@ -4115,8 +4159,11 @@ async function processAutoDevDocument(filePath, options = {}) {
         archivedBy: 'auto-dev-pipeline',
         reason: policy.decision,
         contentHash,
+        ...(policy.decision === 'implementation_completed'
+          ? { implementationStatus: IMPLEMENTATION_COMPLETED_MARKER }
+          : {}),
       });
-      const blockedJob = updateJobState(job, policy.decision, {
+      const terminalJob = updateJobState(job, policy.decision, {
         contentHash,
         reason: policy.reason,
         implementationModelMeta,
@@ -4126,7 +4173,8 @@ async function processAutoDevDocument(filePath, options = {}) {
         policyDecision: policy.policyDecision,
         profile: runtimeConfig.profile,
       });
-      await recordAutoDevOutcome(blockedJob, 'blocked', {
+      const implementationCompleted = policy.decision === 'implementation_completed';
+      await recordAutoDevOutcome(terminalJob, implementationCompleted ? 'skipped' : 'blocked', {
         stage: policy.decision,
         reason: policy.reason,
         profile: runtimeConfig.profile,
@@ -4136,8 +4184,36 @@ async function processAutoDevDocument(filePath, options = {}) {
         policyDecision: policy.policyDecision,
         durationMs: elapsedMsSince(processStartedAtMs),
       });
+      if (implementationCompleted) {
+        const repairCallback = await sendAlarmRepairResult(
+          terminalJob,
+          'resolved',
+          'auto_dev 문서의 구현 완료 증거를 확인했습니다.',
+          options,
+          { event_type: 'auto_dev_alarm_repair_reconciled' },
+          content,
+        );
+        const { callbackTerminal } = persistAlarmRepairCallbackOutcome(
+          relPath,
+          contentHash,
+          repairCallback,
+        );
+        if (!repairCallback.ok) {
+          await markAgentError(repairCallback.error || 'alarm_repair_callback_failed');
+          return {
+            ok: false,
+            skipped: true,
+            implementationCompleted: true,
+            reason: policy.decision,
+            callbackPending: !callbackTerminal,
+            callbackTerminal,
+            callback: repairCallback,
+            job: terminalJob,
+          };
+        }
+      }
       await markAgentDone();
-      return { ok: true, skipped: true, reason: policy.decision, job: blockedJob };
+      return { ok: true, skipped: true, reason: policy.decision, job: terminalJob };
     }
 
     const contextResult = ensureExecutionContext(job, {
@@ -4544,46 +4620,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       },
       content,
     );
-    const callbackTerminal = repairCallback.ok !== true && repairCallback.retryable === false;
-    if (!repairCallback.skipped && !repairCallback.shadow) {
-      const callbackAttemptedAtMs = Date.now();
-      const retrySchedule = computeCallbackRetrySchedule(
-        1,
-        callbackAttemptedAtMs,
-        repairCallback.retryAfterMs,
-      );
-      const callbackPatch = repairCallback.ok
-        ? {
-            callbackState: 'delivered',
-            callbackAttempts: 1,
-            callbackLastAttemptAt: new Date(callbackAttemptedAtMs).toISOString(),
-            callbackDeliveredAt: new Date(callbackAttemptedAtMs).toISOString(),
-            callbackEventId: repairCallback.eventId || repairCallback.event_id || null,
-            callbackError: null,
-          }
-        : {
-            callbackState: callbackTerminal ? 'manual_required' : 'pending',
-            callbackPayload: repairCallback.callbackPayload || null,
-            callbackAttempts: 1,
-            callbackLastAttemptAt: new Date(callbackAttemptedAtMs).toISOString(),
-            callbackNextAttemptAt: callbackTerminal ? null : retrySchedule.nextAttemptAt,
-            callbackError: repairCallback.error || 'alarm_repair_callback_failed',
-          };
-      const callbackManifestUpdate = patchAutoDevManifestEntryIfMatches(
-        AUTO_DEV_DIR,
-        relPath,
-        {
-          contentHash,
-          alarmEventId: repairCallback.callbackPayload?.alarmEventId,
-          callbackState: 'pending',
-        },
-        { state: 'archived', ...callbackPatch },
-      );
-      if (!callbackManifestUpdate.updated) {
-        repairCallback.superseded = true;
-        repairCallback.manifestUpdateReason = callbackManifestUpdate.reason;
-      }
-    }
+    const { callbackTerminal } = persistAlarmRepairCallbackOutcome(relPath, contentHash, repairCallback);
     if (!repairCallback.ok) {
       const callbackError = repairCallback.error || 'alarm_repair_callback_failed';
       await markAgentError(callbackError);

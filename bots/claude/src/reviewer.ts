@@ -19,6 +19,7 @@
  */
 
 const path    = require('path');
+const crypto  = require('crypto');
 const { execSync } = require('child_process');
 const fs      = require('fs');
 
@@ -32,6 +33,39 @@ const DEFAULT_ROOT = env.PROJECT_ROOT;
 function resolveRootDir(options = {}) {
   const candidate = options.rootDir || options.cwd || DEFAULT_ROOT;
   return path.resolve(candidate);
+}
+
+function buildReviewAlarmMeta(review = {}, options = {}) {
+  if (review.summary?.pass !== false) {
+    return { eventType: 'reviewer_report', incidentKey: undefined };
+  }
+  const rootDir = resolveRootDir(options);
+  const signatures = (Array.isArray(review.findings) ? review.findings : [])
+    .map((finding) => {
+      const rawFile = String(finding?.file || '').replace(/\\/g, '/');
+      const relativeFile = rawFile && path.isAbsolute(rawFile)
+        ? path.relative(rootDir, rawFile).replace(/\\/g, '/')
+        : rawFile;
+      return [
+        relativeFile,
+        Math.max(0, Number(finding?.line || 0) || 0),
+        String(finding?.severity || '').toUpperCase(),
+        String(finding?.desc || finding?.message || '').trim().slice(0, 300),
+      ].join(':');
+    })
+    .sort();
+  if (signatures.length === 0) {
+    signatures.push(JSON.stringify({
+      critical: Number(review.summary?.critical || 0),
+      high: Number(review.summary?.high || 0),
+      medium: Number(review.summary?.medium || 0),
+    }));
+  }
+  const fingerprint = crypto.createHash('sha256').update(signatures.join('\n')).digest('hex').slice(0, 16);
+  return {
+    eventType: 'reviewer_error',
+    incidentKey: `claude:reviewer:reviewer_error:${fingerprint}`,
+  };
 }
 
 // ─── 유틸리티 ─────────────────────────────────────────────────────────
@@ -331,7 +365,8 @@ async function runReviewCore(options = {}) {
   let sent = false;
   if (shouldSendAlarm) {
     const alertLevel = !summary.pass ? (summary.critical > 0 ? 4 : 3) : 2;
-    sent = (await postAlarm({ message, team: 'claude', alertLevel, fromBot: 'reviewer' })).ok;
+    const alarmMeta = buildReviewAlarmMeta(result, { rootDir });
+    sent = (await postAlarm({ message, team: 'claude', alertLevel, fromBot: 'reviewer', ...alarmMeta })).ok;
   }
 
   return { files: jsFiles, rootDir, summary, sent, skipped: false, message, findings: allFindings };
@@ -368,10 +403,25 @@ async function runReview(options = {}) {
  */
 async function reportToTelegram(review) {
   const msg = review.message || formatReport(review, { rootDir: review.rootDir || DEFAULT_ROOT });
-  return postAlarm({ message: msg, team: 'claude', alertLevel: review.summary?.pass ? 2 : 3, fromBot: 'reviewer' });
+  const alarmMeta = buildReviewAlarmMeta(review, { rootDir: review.rootDir || DEFAULT_ROOT });
+  return postAlarm({
+    message: msg,
+    team: 'claude',
+    alertLevel: review.summary?.pass ? 2 : 3,
+    fromBot: 'reviewer',
+    ...alarmMeta,
+  });
 }
 
-module.exports = { getChangedFiles, analyzeChanges, testCoverageDelta, runReview, formatReport, reportToTelegram };
+module.exports = {
+  getChangedFiles,
+  analyzeChanges,
+  testCoverageDelta,
+  runReview,
+  formatReport,
+  reportToTelegram,
+  _testOnly_buildReviewAlarmMeta: buildReviewAlarmMeta,
+};
 
 if (require.main === module) {
   runReview({ force: true })

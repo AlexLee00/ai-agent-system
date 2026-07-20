@@ -257,6 +257,79 @@ function test_code_review_ignores_localhost_database_env_fallback() {
   console.log('✅ code-review: localhost DB fallback is not flagged as secret');
 }
 
+function test_code_review_ignores_loopback_http_env_fallback() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-loopback-url-'));
+  const target = path.join(tmpDir, 'client.ts');
+  fs.writeFileSync(target, [
+    "const a = process.env.LUNA_A2A_URL || 'http://localhost:8765';",
+    "const b = process.env.SIGMA_MCP_URL || 'http://127.0.0.1:4097/rpc';",
+    "const secret = process.env.API_TOKEN || '0123456789abcdef0123456789abcdef';",
+  ].join('\n'), 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const findings = codeReview.checkPatterns(target).filter(
+      item => item.desc === 'env 폴백에 시크릿 문자열 사용 의심',
+    );
+    assert.deepStrictEqual(findings.map(item => item.line), [3]);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: loopback HTTP fallbacks are not treated as secrets');
+}
+
+function test_code_review_ignores_smoke_fixture_credentials() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-smoke-credential-'));
+  const smokeTarget = path.join(tmpDir, 'scripts', 'sample-smoke.ts');
+  const productionTarget = path.join(tmpDir, 'src', 'sample.ts');
+  const credential = ['Abcdef0123456789', 'Abcdef0123456789'].join('');
+  const source = `const API_TOKEN = '${credential}';\n`;
+  fs.mkdirSync(path.dirname(smokeTarget), { recursive: true });
+  fs.mkdirSync(path.dirname(productionTarget), { recursive: true });
+  fs.writeFileSync(smokeTarget, source, 'utf8');
+  fs.writeFileSync(productionTarget, source, 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const smokeFindings = codeReview.checkPatterns(smokeTarget).filter(
+      item => item.desc === 'API 키 또는 시크릿 하드코딩 의심',
+    );
+    const productionFindings = codeReview.checkPatterns(productionTarget).filter(
+      item => item.desc === 'API 키 또는 시크릿 하드코딩 의심',
+    );
+    assert.strictEqual(smokeFindings.length, 0);
+    assert.strictEqual(productionFindings.length, 1);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: smoke credentials are fixtures while production stays protected');
+}
+
+function test_code_review_still_flags_known_token_formats_in_smokes() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-smoke-known-token-'));
+  const smokeTarget = path.join(tmpDir, 'scripts', 'sample-smoke.ts');
+  const knownToken = ['sk-', 'A'.repeat(24)].join('');
+  fs.mkdirSync(path.dirname(smokeTarget), { recursive: true });
+  fs.writeFileSync(smokeTarget, `const token = '${knownToken}';\n`, 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const findings = codeReview.checkPatterns(smokeTarget).filter(
+      item => item.desc === 'API 키 또는 시크릿 하드코딩 의심',
+    );
+    assert.strictEqual(findings.length, 1, 'known provider token shapes must remain blocked in smoke files');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: known token formats stay protected in smoke files');
+}
+
 function test_code_review_distinguishes_storage_keys_from_credentials() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-storage-key-'));
   const target = path.join(tmpDir, 'app.js');
@@ -373,6 +446,9 @@ async function main() {
     test_guardian_respects_kill_switch,
     test_cli_exit_code_does_not_fail_launchd_on_security_findings,
     test_code_review_ignores_localhost_database_env_fallback,
+    test_code_review_ignores_loopback_http_env_fallback,
+    test_code_review_ignores_smoke_fixture_credentials,
+    test_code_review_still_flags_known_token_formats_in_smokes,
     test_code_review_distinguishes_storage_keys_from_credentials,
     test_code_review_scans_typescript_files,
     test_code_review_distinguishes_test_fixture_code_writes,

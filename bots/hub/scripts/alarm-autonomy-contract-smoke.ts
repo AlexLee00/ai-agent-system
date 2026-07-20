@@ -197,6 +197,17 @@ async function main() {
       '---',
       '# dead-letter sample',
     ].join('\n'), 'utf8');
+    const completedInboxDir = path.join(tempRoot, 'docs', 'auto_dev');
+    fs.mkdirSync(completedInboxDir, { recursive: true });
+    fs.writeFileSync(path.join(completedInboxDir, 'ALARM_INCIDENT_claude_completed.md'), [
+      '---',
+      'incident_key: claude:reviewer:reviewer_error:completed-sample',
+      'event_id: 9001',
+      'implementation_status: auto_dev_implementation_completed',
+      '---',
+      '# completed reviewer repair',
+      '<!-- auto_dev:implementation_completed -->',
+    ].join('\n'), 'utf8');
     const annotatedResolved = _testOnly_annotateRows([
       {
         team: 'blog',
@@ -291,6 +302,38 @@ async function main() {
         alarm_event_id: 'manifest-new-generation',
         auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_blog_manifest_generation_sample.md',
       },
+      {
+        team: 'claude',
+        bot_name: 'reviewer',
+        severity: 'error',
+        title: 'reviewer repair completed',
+        message: 'completed inbox evidence matches this alarm generation',
+        event_type: 'reviewer_error',
+        incident_key: 'claude:reviewer:reviewer_error:completed-sample',
+        alarm_event_id: '9001',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_claude_completed.md',
+      },
+      {
+        team: 'claude',
+        bot_name: 'reviewer',
+        severity: 'error',
+        title: 'new reviewer generation',
+        message: 'same path but a newer generation',
+        event_type: 'reviewer_error',
+        incident_key: 'claude:reviewer:reviewer_error:completed-sample',
+        alarm_event_id: '9002',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_claude_completed.md',
+      },
+      {
+        team: 'claude',
+        bot_name: 'reviewer',
+        severity: 'error',
+        title: 'legacy reviewer generation',
+        message: 'generation id is missing',
+        event_type: 'reviewer_error',
+        incident_key: 'claude:reviewer:reviewer_error:completed-sample',
+        auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_claude_completed.md',
+      },
     ], {
       manifest: {
         entries: {
@@ -325,6 +368,7 @@ async function main() {
       },
       archiveDir: completedArchiveDir,
       processedDir: deadLetterProcessedDir,
+      projectRoot: tempRoot,
     });
     assert(annotatedResolved[0].stale_status === 'resolved_manifest', 'expected completed manifest entry to suppress stale scan');
     assert(annotatedResolved[1].stale_status === 'resolved_current_policy', 'expected current policy downgrade to suppress stale scan');
@@ -336,6 +380,10 @@ async function main() {
     assert(annotatedResolved[6].stale_status === 'stale', 'expected dead-letter manifest without processed evidence to stay stale');
     assert(annotatedResolved[7].stale_status === 'stale', 'an archive from an older alarm generation must not resolve a newer generation');
     assert(annotatedResolved[8].stale_status === 'stale', 'a manifest without generation evidence must not resolve a generation-bound alarm');
+    assert(annotatedResolved[9].stale_status === 'resolved_manifest', 'completed inbox evidence must resolve the exact alarm generation');
+    assert(annotatedResolved[9].stale_resolution_reason === 'completed_inbox_document_matches_generation');
+    assert(annotatedResolved[10].stale_status === 'stale', 'completed inbox evidence must not resolve a different alarm generation');
+    assert(annotatedResolved[11].stale_status === 'stale', 'completed inbox evidence must not resolve a generation-less alarm');
 
     const fixturePhone = ['010', '1111', '2222'].join('-');
     const differentFixturePhone = ['010', '9999', '0000'].join('-');

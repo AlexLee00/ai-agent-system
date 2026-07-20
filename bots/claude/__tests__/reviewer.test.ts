@@ -234,6 +234,36 @@ function test_cli_exit_code_does_not_fail_launchd_on_review_findings() {
   console.log('✅ reviewer: CLI keeps launchd healthy when review findings exist');
 }
 
+function test_review_alarm_identity_tracks_finding_set() {
+  return withMocks(makeReviewerMocks(), async (reviewer) => {
+    const first = reviewer._testOnly_buildReviewAlarmMeta({
+      summary: { pass: false },
+      findings: [
+        { file: '/tmp/test-project/bots/claude/src/reviewer.ts', line: 20, severity: 'HIGH', desc: 'first' },
+        { file: '/tmp/test-project/bots/claude/src/guardian.ts', line: 10, severity: 'MEDIUM', desc: 'second' },
+      ],
+    }, { rootDir: '/tmp/test-project' });
+    const reordered = reviewer._testOnly_buildReviewAlarmMeta({
+      summary: { pass: false },
+      findings: [
+        { file: '/tmp/test-project/bots/claude/src/guardian.ts', line: 10, severity: 'MEDIUM', desc: 'second' },
+        { file: '/tmp/test-project/bots/claude/src/reviewer.ts', line: 20, severity: 'HIGH', desc: 'first' },
+      ],
+    }, { rootDir: '/tmp/test-project' });
+    const changed = reviewer._testOnly_buildReviewAlarmMeta({
+      summary: { pass: false },
+      findings: [
+        { file: '/tmp/test-project/bots/claude/src/reviewer.ts', line: 21, severity: 'HIGH', desc: 'different' },
+      ],
+    }, { rootDir: '/tmp/test-project' });
+
+    assert.strictEqual(first.eventType, 'reviewer_error');
+    assert.match(first.incidentKey, /^claude:reviewer:reviewer_error:[a-f0-9]{16}$/);
+    assert.strictEqual(first.incidentKey, reordered.incidentKey, 'finding order must not change incident identity');
+    assert.notStrictEqual(first.incidentKey, changed.incidentKey, 'different finding sets need separate incidents');
+  }).then(() => console.log('✅ reviewer: incident identity follows the stable finding set'));
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -249,6 +279,7 @@ async function main() {
     test_reportToTelegram_calls_postAlarm,
     test_runReview_suppressAlarm_skips_postAlarm,
     test_cli_exit_code_does_not_fail_launchd_on_review_findings,
+    test_review_alarm_identity_tracks_finding_set,
   ];
 
   let passed = 0, failed = 0;
