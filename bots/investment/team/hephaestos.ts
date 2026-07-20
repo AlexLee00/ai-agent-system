@@ -78,6 +78,10 @@ import { createRiskAndCapitalGatePolicy } from './hephaestos/risk-and-capital-ga
 import { createPortfolioPositionDelta } from './hephaestos/portfolio-position-delta.ts';
 import { createTelegramTradeAlerts } from './hephaestos/telegram-trade-alerts.ts';
 import { createMarketSignalPersistence } from './hephaestos/market-signal-persistence.ts';
+import {
+  loadBOnlyWeightDemotionProposal,
+  resolveBOnlyWeightDemotion,
+} from '../shared/b-only-weight-demotion.ts';
 import { createSellExecutionResolution } from './hephaestos/sell-execution-resolution.ts';
 import { applyResponsibilityExecutionSizing } from './hephaestos/execution-responsibility-sizing.ts';
 import {
@@ -807,6 +811,8 @@ const signalExecutor = createHephaestosSignalExecutor({
   rejectExecution,
   resolveBuyOrderAmount,
   applyResponsibilityExecutionSizing,
+  loadBOnlyWeightDemotionProposal,
+  resolveBOnlyWeightDemotion,
   buildDeterministicClientOrderId,
   marketBuy,
   persistBuyPosition,

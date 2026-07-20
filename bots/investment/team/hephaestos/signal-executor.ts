@@ -3,6 +3,10 @@
 import { extractExecutionTimestampMs } from '../../shared/binance-order-execution-normalizer.ts';
 import { recordPositionLifecycleStageEvent } from '../../shared/lifecycle-contract.ts';
 import {
+  loadBOnlyWeightDemotionProposal as loadDefaultBOnlyWeightDemotionProposal,
+  resolveBOnlyWeightDemotion as resolveDefaultBOnlyWeightDemotion,
+} from '../../shared/b-only-weight-demotion.ts';
+import {
   resolveGuardSizingAuthority,
 } from './guard-sizing-authority.ts';
 
@@ -65,6 +69,8 @@ export function createHephaestosSignalExecutor(deps = {}) {
     rejectExecution,
     resolveBuyOrderAmount,
     applyResponsibilityExecutionSizing,
+    loadBOnlyWeightDemotionProposal = loadDefaultBOnlyWeightDemotionProposal,
+    resolveBOnlyWeightDemotion = resolveDefaultBOnlyWeightDemotion,
     buildDeterministicClientOrderId,
     marketBuy,
     persistBuyPosition,
@@ -313,6 +319,32 @@ async function executeSignal(signal) {
       });
       if (buyReentryState?.success === false) return buyReentryState;
 
+      let bOnlyWeightProposal = null;
+      try {
+        bOnlyWeightProposal = await loadBOnlyWeightDemotionProposal();
+      } catch (error) {
+        console.warn(`  ⚠️ [B-only 가중] proposal 로드 실패 — fail-safe x1.0 (${error.message})`);
+      }
+      const resolveBOnlySizing = (downstreamAmountUsdt) => {
+        try {
+          return resolveBOnlyWeightDemotion({
+            symbol,
+            downstreamAmountUsdt,
+            minOrderUsdt,
+            proposal: bOnlyWeightProposal,
+          }, env);
+        } catch (error) {
+          console.warn(`  ⚠️ [B-only 가중] 판정 실패 — fail-safe x1.0 (${error.message})`);
+          return resolveDefaultBOnlyWeightDemotion({
+            symbol,
+            downstreamAmountUsdt,
+            minOrderUsdt,
+            proposal: null,
+          }, {});
+        }
+      };
+      const preRouteBOnlyWeightDemotion = resolveBOnlySizing(amountUsdt);
+
       // ── 미추적 BTC로 직접 매수 (BTC 페어 우선) ─────────────────────
       // 1순위: ETH/BTC 같은 직접 페어 → BTC→USDT 변환 없이 1회 수수료로 매수
       // 2순위: BTC 페어 없으면 BTC→USDT 전환 후 매수 (USDT 폴백)
@@ -334,6 +366,8 @@ async function executeSignal(signal) {
       }
       if (preRouteGuardAuthority.enabled && preRouteGuardAuthority.authoritativeCapUsdt != null) {
         console.log(`  🛡️ [가드 사이징 권위] ${symbol} BTC 직접매수 우회 비활성 — 최종 USDT 상한 적용`);
+      } else if (preRouteBOnlyWeightDemotion.enabled && preRouteBOnlyWeightDemotion.wouldReduce) {
+        console.log(`  📉 [B-only 가중] ${symbol} BTC 직접매수 우회 비활성 — 최종 USDT 가중 적용`);
       } else {
         try {
           const btcResult = await _tryBuyWithBtcPair(symbol, base, signalId, signal, effectivePaperMode);
@@ -346,6 +380,7 @@ async function executeSignal(signal) {
               guardCaps: guardAuthorityCaps,
               minOrderUsdt,
             }, {});
+            const btcDirectBOnlyWeightDemotion = resolveBOnlySizing(btcDirectAmountUsdt);
             const counterfactualQuantity = Number(btcResult.price || 0) > 0
               ? btcDirectGuardAuthority.counterfactualAmountUsdt / Number(btcResult.price)
               : null;
@@ -368,10 +403,15 @@ async function executeSignal(signal) {
               evidenceSnapshot: {
                 btcDirect: true,
                 guardSizingAuthority: btcDirectGuardAuthority,
+                bOnlyWeightDemotion: btcDirectBOnlyWeightDemotion,
                 counterfactualQuantity,
               },
             });
-            return { ...btcResult, guardSizingAuthority: btcDirectGuardAuthority };
+            return {
+              ...btcResult,
+              guardSizingAuthority: btcDirectGuardAuthority,
+              bOnlyWeightDemotion: btcDirectBOnlyWeightDemotion,
+            };
           }
         } catch (e) {
           if (shouldBlockUsdtFallbackAfterBtcPairError(e)) {
@@ -462,8 +502,9 @@ async function executeSignal(signal) {
         responsibilityPlan: signal.existingResponsibilityPlan || null,
         executionPlan: signal.existingExecutionPlan || null,
       });
+      const bOnlyWeightDemotion = resolveBOnlySizing(responsibilitySizing.amount);
       const guardSizingAuthority = resolveGuardSizingAuthority({
-        downstreamAmountUsdt: responsibilitySizing.amount,
+        downstreamAmountUsdt: bOnlyWeightDemotion.appliedAmountUsdt,
         guardCaps: guardAuthorityCaps,
         minOrderUsdt,
       }, effectivePaperMode ? {} : env);
@@ -471,6 +512,10 @@ async function executeSignal(signal) {
       if (guardAuthorityCaps.length > 0) {
         const mode = guardSizingAuthority.enabled ? 'authoritative' : 'shadow';
         console.log(`  🛡️ [가드 사이징 권위:${mode}] ${symbol} 현행 $${guardSizingAuthority.downstreamAmountUsdt} / 반사실 $${guardSizingAuthority.counterfactualAmountUsdt}`);
+      }
+      if (bOnlyWeightDemotion.wouldReduce) {
+        const mode = bOnlyWeightDemotion.enabled ? 'authoritative' : 'shadow';
+        console.log(`  📉 [B-only 가중:${mode}] ${symbol} 현행 $${bOnlyWeightDemotion.downstreamAmountUsdt} / 반사실 $${bOnlyWeightDemotion.counterfactualAmountUsdt}`);
       }
       if (!effectivePaperMode && actualAmount < minOrderUsdt) {
         return rejectExecution({
@@ -483,6 +528,7 @@ async function executeSignal(signal) {
             minOrderUsdt,
             responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
             responsibilityExecutionReason: responsibilitySizing.reason,
+            bOnlyWeightDemotion,
             guardSizingAuthority,
           },
           notify: 'skip',
@@ -496,6 +542,7 @@ async function executeSignal(signal) {
         actualAmountUsdt: Number(actualAmount || 0),
         responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
         responsibilityExecutionReason: responsibilitySizing.reason,
+        bOnlyWeightDemotion,
         guardSizingAuthority,
         agentRole: hephaestosRoleState
           ? {
@@ -536,10 +583,12 @@ async function executeSignal(signal) {
           minOrderUsdt,
           softGuards: combinedSoftGuards,
           responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
+          bOnlyWeightDemotionWeight: bOnlyWeightDemotion.appliedWeight,
         },
         evidenceSnapshot: {
           executionClientOrderId,
           riskApproval: 'passed',
+          bOnlyWeightDemotion,
           guardSizingAuthority,
         },
       });
@@ -606,6 +655,7 @@ async function executeSignal(signal) {
         evidenceSnapshot: {
           executionAttachTracked: !effectivePaperMode,
           lifecycleStatus: 'position_open',
+          bOnlyWeightDemotion,
           guardSizingAuthority,
         },
       });
