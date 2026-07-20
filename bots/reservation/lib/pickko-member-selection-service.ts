@@ -12,6 +12,25 @@ type PickkoMemberSelectionDeps = {
   ) => Promise<{ found: boolean; mbNo?: string | null; name?: string | null; selectedPhone?: string | null }>;
 };
 
+type MemberSelectionDetails = {
+  phoneNoHyphen: string;
+  customerName: string;
+  date: string;
+};
+
+type VerifyMemberOptions = {
+  allowMemberRegistration?: boolean;
+};
+
+export function isPickkoMemberSelectionProtocolTimeout(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Runtime.callFunctionOn timed out')
+    || message.includes('ProtocolError')
+    || message.includes('Target closed')
+    || message.includes('Session closed')
+    || message.includes('Execution context was destroyed');
+}
+
 export function createPickkoMemberSelectionService({
   delay,
   log,
@@ -54,17 +73,11 @@ export function createPickkoMemberSelectionService({
 
   async function verifyAndSelectMember(
     page: any,
-    {
-      phoneNoHyphen,
-      customerName,
-      date,
-    }: {
-      phoneNoHyphen: string;
-      customerName: string;
-      date: string;
-    },
+    { phoneNoHyphen, customerName, date }: MemberSelectionDetails,
     retryCount = 0,
+    options: VerifyMemberOptions = {},
   ): Promise<{ name: string; phone: string }> {
+    const allowMemberRegistration = options.allowMemberRegistration !== false;
     if (retryCount >= 5) {
       const errorMsg = '❌ 회원정보 검증 실패: 5회 시도 후에도 정보 불일치';
       log(errorMsg);
@@ -124,9 +137,16 @@ export function createPickkoMemberSelectionService({
           if (error instanceof Error && (error as { stageCode?: string }).stageCode === 'MEMBER_FALLBACK_PHONE_MISMATCH') {
             throw error;
           }
+          if (isPickkoMemberSelectionProtocolTimeout(error)) throw error;
           const message = error instanceof Error ? error.message : String(error);
           log(`⚠️ 기존 회원 fallback 실패: ${message}`);
         }
+      }
+
+      if (!allowMemberRegistration) {
+        const failMsg = `❌ 타임아웃 복구 후 회원 검색 결과를 확인하지 못함 (${maskPhone(phoneNoHyphen)}) → 신규 등록 없이 수동 확인 필요`;
+        log(failMsg);
+        throw buildStageError('MEMBER_SELECT_RECOVERY_UNVERIFIED', failMsg);
       }
 
       log(`⚠️ 픽코 미등록 고객(${phoneNoHyphen}) → 신규 회원 자동 등록 시작`);
@@ -135,7 +155,7 @@ export function createPickkoMemberSelectionService({
       await registerNewMember(page, phoneNoHyphen, customerName, date);
       log('\n[3단계 재실행] 신규 등록 후 재검색');
       await runMemberSearch(page, phoneNoHyphen);
-      return verifyAndSelectMember(page, { phoneNoHyphen, customerName, date }, 1);
+      return verifyAndSelectMember(page, { phoneNoHyphen, customerName, date }, 1, options);
     }
 
     const memberSelectResult = await page.evaluate(() => {
@@ -166,7 +186,7 @@ export function createPickkoMemberSelectionService({
 
     if (!memberInfo) {
       log(`⚠️ 회원정보 추출 실패 (시도 ${retryCount + 1}/5)`);
-      return verifyAndSelectMember(page, { phoneNoHyphen, customerName, date }, retryCount + 1);
+      return verifyAndSelectMember(page, { phoneNoHyphen, customerName, date }, retryCount + 1, options);
     }
 
     log(`📋 선택된 회원: ${maskName(memberInfo.name)}(${maskPhone(memberInfo.phone)})`);
@@ -176,7 +196,7 @@ export function createPickkoMemberSelectionService({
       log(`   입력: ${formatPhoneForComparison(phoneNoHyphen)}`);
       log(`   선택: ${formatPhoneForComparison(memberInfo.phone)}`);
       log(`⏳ 회원 선택 다시 수행... (시도 ${retryCount + 1}/5)`);
-      return verifyAndSelectMember(page, { phoneNoHyphen, customerName, date }, retryCount + 1);
+      return verifyAndSelectMember(page, { phoneNoHyphen, customerName, date }, retryCount + 1, options);
     }
 
     log(`✅ 회원정보 검증 완료 (시도 ${retryCount + 1}/5)`);
@@ -185,9 +205,31 @@ export function createPickkoMemberSelectionService({
     return memberInfo;
   }
 
+  async function selectMemberWithTimeoutRecovery(
+    page: any,
+    details: MemberSelectionDetails,
+    { recoverPage }: { recoverPage: (failedPage: any) => Promise<any> },
+  ): Promise<{ page: any; memberInfo: { name: string; phone: string } }> {
+    try {
+      const memberInfo = await verifyAndSelectMember(page, details);
+      return { page, memberInfo };
+    } catch (error) {
+      if (!isPickkoMemberSelectionProtocolTimeout(error)) throw error;
+
+      log('⚠️ 회원 선택 protocol timeout 감지 — 새 탭에서 회원 검색부터 1회 재시도');
+      const recoveredPage = await recoverPage(page);
+      await runMemberSearch(recoveredPage, details.phoneNoHyphen);
+      const memberInfo = await verifyAndSelectMember(recoveredPage, details, 0, {
+        allowMemberRegistration: false,
+      });
+      return { page: recoveredPage, memberInfo };
+    }
+  }
+
   return {
     formatPhoneForComparison,
     runMemberSearch,
+    selectMemberWithTimeoutRecovery,
     verifyAndSelectMember,
   };
 }

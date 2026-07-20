@@ -274,7 +274,7 @@ async function main() {
     browser = await puppeteer.launch(getPickkoLaunchOptions());
 
     const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    let page = pages.length > 0 ? pages[0] : await browser.newPage();
     page.setDefaultTimeout(30000);
 
     await delay(500);
@@ -302,11 +302,24 @@ async function main() {
     setStage('MEMBER_SELECT');
     log('\n[4단계] 회원 선택');
 
-    const selectedMemberInfo = await pickkoMemberSelectionService.verifyAndSelectMember(page, {
+    const memberSelection = await pickkoMemberSelectionService.selectMemberWithTimeoutRecovery(page, {
       phoneNoHyphen: PHONE_NOHYPHEN,
       customerName: CUSTOMER_NAME,
       date: DATE,
+    }, {
+      recoverPage: async (failedPage) => {
+        try { await failedPage.close(); } catch {}
+        const recoveredPage = await browser.newPage();
+        recoveredPage.setDefaultTimeout(30000);
+        setupDialogHandler(recoveredPage, log);
+        await loginToPickko(recoveredPage, getSecret('pickko_id', ''), getSecret('pickko_pw', ''), delay);
+        await recoveredPage.goto('https://pickkoadmin.com/study/write.html', { waitUntil: 'domcontentloaded' });
+        await delay(3000);
+        return recoveredPage;
+      },
     });
+    page = memberSelection.page;
+    const selectedMemberInfo = memberSelection.memberInfo;
 
     log('\n[4.5단계] 기존회원 이름 비교');
     try {
