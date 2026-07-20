@@ -10,6 +10,7 @@ const assert = require('assert');
 const Module = require('module');
 const path   = require('path');
 const os     = require('os');
+const fs     = require('fs');
 
 const BUILDER_PATH = path.resolve(__dirname, '../src/builder.ts');
 
@@ -170,6 +171,41 @@ async function test_formatBuildReport_returns_string() {
   console.log('✅ builder: formatBuildReport returns non-empty string');
 }
 
+async function test_runBuildCheck_uses_isolated_root() {
+  const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-builder-root-'));
+  const packageRoot = path.join(isolatedRoot, 'packages', 'core');
+  fs.mkdirSync(path.join(packageRoot, 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(packageRoot, 'tsconfig.json'), '{}\n', 'utf8');
+  fs.writeFileSync(path.join(packageRoot, 'lib', 'sample.ts'), 'export {};\n', 'utf8');
+
+  const executedCwds = [];
+  const mocks = makeBuilderMocks({
+    child_process: {
+      execSync: (_command, options: { cwd?: string } = {}) => {
+        executedCwds.push(options.cwd);
+        return '';
+      },
+    },
+  });
+
+  try {
+    await withMocks(mocks, async (builder) => {
+      const result = await builder.runBuildCheck({
+        force: true,
+        test: true,
+        rootDir: isolatedRoot,
+        files: [path.join(packageRoot, 'lib', 'sample.ts')],
+      });
+      assert.strictEqual(result.pass, true);
+      assert.strictEqual(result.skipped, false);
+    });
+    assert.deepStrictEqual(executedCwds, [packageRoot]);
+  } finally {
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  }
+  console.log('✅ builder: runBuildCheck uses isolated worktree root');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -182,6 +218,7 @@ async function main() {
     test_runElixirCompile_skips_missing_dir,
     test_reportBuildStatus_calls_postAlarm,
     test_formatBuildReport_returns_string,
+    test_runBuildCheck_uses_isolated_root,
   ];
 
   let passed = 0, failed = 0;

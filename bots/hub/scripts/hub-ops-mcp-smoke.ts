@@ -8,6 +8,7 @@ import {
   HUB_OPS_MCP_TOOLS,
   callHubOpsTool,
   createHubOpsMcpServer,
+  resolveHubAuthToken,
   startServer,
 } from '../mcp/hub-ops-mcp/src/server.ts';
 
@@ -105,6 +106,12 @@ function assertReadOnlySurface() {
   for (const tool of HUB_OPS_MCP_TOOLS) {
     assert.equal(/apply|write|delete|reset|mutation|restart|kill/i.test(`${tool.name} ${tool.description}`), false);
   }
+}
+
+function assertHubAuthTokenResolution() {
+  assert.equal(resolveHubAuthToken({ HUB_AUTH_TOKEN: 'explicit-token' }, 'fallback-token'), 'explicit-token');
+  assert.equal(resolveHubAuthToken({}, 'fallback-token'), 'fallback-token');
+  assert.equal(resolveHubAuthToken({}, ''), '');
 }
 
 async function assertCostQuerySelectOnly() {
@@ -310,6 +317,7 @@ async function assertHardServerPath() {
 
 export async function runHubOpsMcpSmoke() {
   assertReadOnlySurface();
+  assertHubAuthTokenResolution();
   await assertDirectTools();
   await assertCostQuerySelectOnly();
   await assertTraceQuerySelectOnly();

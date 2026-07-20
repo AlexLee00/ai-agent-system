@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../../../packages/core/lib/pg-pool.ts');
+const coreEnv = require('../../../../../packages/core/lib/env.ts');
 const cycleBudget = require('../../../lib/llm/cycle-budget.ts');
 
 export const HUB_OPS_MCP_TOOLS = [
@@ -51,6 +52,10 @@ function hubBaseUrl() {
   return String(process.env.HUB_OPS_MCP_HUB_BASE_URL || process.env.HUB_BASE_URL || DEFAULT_HUB_BASE).replace(/\/+$/, '');
 }
 
+export function resolveHubAuthToken(envSource = process.env, fallbackToken = coreEnv.HUB_AUTH_TOKEN) {
+  return String(envSource?.HUB_AUTH_TOKEN || fallbackToken || '').trim();
+}
+
 function json(res, status, payload) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(payload));
@@ -76,7 +81,7 @@ function redact(value, depth = 0) {
 }
 
 async function fetchHub(path, { accept = 'json', timeoutMs = 5000 } = {}) {
-  const token = String(process.env.HUB_AUTH_TOKEN || '').trim();
+  const token = resolveHubAuthToken();
   const headers = token ? { authorization: `Bearer ${token}` } : {};
   const response = await fetch(`${hubBaseUrl()}${path}`, {
     method: 'GET',

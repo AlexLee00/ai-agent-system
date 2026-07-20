@@ -238,6 +238,7 @@ function test_code_review_ignores_localhost_database_env_fallback() {
     scripts: {
       local: 'PG_DIRECT=true tsx -e "new Pool({connectionString:process.env.DATABASE_URL||\'postgresql://localhost:5432/jay\'})"',
       secret: 'node -e "const x=process.env.API_TOKEN||\'0123456789abcdef0123456789abcdef\'"',
+      dynamic: 'node -e "const x=process.env.BASE_REF||`${remote}/${branch}`"',
     },
   }, null, 2));
 
@@ -259,14 +260,15 @@ function test_code_review_ignores_localhost_database_env_fallback() {
 function test_code_review_distinguishes_storage_keys_from_credentials() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-storage-key-'));
   const target = path.join(tmpDir, 'app.js');
+  const credential = ['Abcdef0123456789', 'Abcdef0123456789'].join('');
   fs.writeFileSync(target, [
     "const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';",
     "const PWA_INSTALL_DISMISSED_STORAGE_KEY = 'lunaMeetingRoomPwaInstallDismissed';",
     "const storageKey = 'Abcdef0123456789Abcdef0123456789';",
-    "const API_TOKEN = 'Abcdef0123456789Abcdef0123456789';",
-    "const apiKey = 'Zyxwvu9876543210Zyxwvu9876543210';",
-    "const config = { apiKey: 'ObjectKey9876543210ObjectKey987654' };",
-    "module.exports = { authToken: 'ObjectToken987654ObjectToken987654' };",
+    `const API_TOKEN = '${credential}';`,
+    `const apiKey = '${credential}';`,
+    `const config = { apiKey: '${credential}' };`,
+    `module.exports = { authToken: '${credential}' };`,
     "const storage = { cacheKey: 'CacheValue987654CacheValue987654' };",
   ].join('\n'));
 
@@ -284,6 +286,79 @@ function test_code_review_distinguishes_storage_keys_from_credentials() {
   console.log('✅ code-review: storage keys are not treated as credentials');
 }
 
+function test_code_review_scans_typescript_files() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-typescript-'));
+  const target = path.join(tmpDir, 'secret.ts');
+  const credential = ['Abcdef0123456789', 'Abcdef0123456789'].join('');
+  fs.writeFileSync(target, `const API_TOKEN: string = '${credential}';\n`, 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const result = codeReview.runChecklist([target]);
+    assert.strictEqual(result.summary.totalFiles, 1, 'TypeScript 파일도 code-review 대상이어야 함');
+    assert.strictEqual(result.summary.syntaxFails, 0, 'TypeScript 문법은 Node JS parser로 검사하면 안 됨');
+    assert.strictEqual(result.summary.high, 1, 'TypeScript 하드코딩 시크릿을 감지해야 함');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: TypeScript files are scanned');
+}
+
+function test_code_review_distinguishes_test_fixture_code_writes() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-fixture-write-'));
+  const testTarget = path.join(tmpDir, '__tests__', 'writer.test.ts');
+  const productionTarget = path.join(tmpDir, 'src', 'writer.ts');
+  const source = "fs.writeFileSync('sample.ts', 'export {};', 'utf8');\n";
+  fs.mkdirSync(path.dirname(testTarget), { recursive: true });
+  fs.mkdirSync(path.dirname(productionTarget), { recursive: true });
+  fs.writeFileSync(testTarget, source, 'utf8');
+  fs.writeFileSync(productionTarget, source, 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const testFindings = codeReview.checkPatterns(testTarget);
+    const productionFindings = codeReview.checkPatterns(productionTarget);
+    assert.strictEqual(testFindings.some(item => item.severity === 'CRITICAL'), false);
+    assert.strictEqual(productionFindings.some(item => item.severity === 'CRITICAL'), true);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: fixture writes are separated from production writes');
+}
+
+async function test_guardian_scans_typescript_patterns() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-guardian-typescript-'));
+  const target = path.join(tmpDir, 'sample.ts');
+  fs.writeFileSync(target, 'export {};\n', 'utf8');
+  let scanned = false;
+  const mocks = makeGuardianMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
+    '../../../packages/core/lib/skills': {
+      codeReview: {
+        checkPatterns: (file) => {
+          scanned = file === target;
+          return [{ severity: 'HIGH', desc: 'fixture', line: 1 }];
+        },
+      },
+    },
+  });
+
+  try {
+    await withMocks(mocks, async (guardian) => {
+      const result = await guardian.runFullSecurityScan({ force: true, test: true, files: [target], rootDir: tmpDir });
+      assert.strictEqual(scanned, true, 'Guardian이 TypeScript 파일을 패턴 검사해야 함');
+      assert.strictEqual(result.high.some(item => item.file === target), true);
+    });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+  console.log('✅ guardian: TypeScript patterns are scanned');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -299,6 +374,9 @@ async function main() {
     test_cli_exit_code_does_not_fail_launchd_on_security_findings,
     test_code_review_ignores_localhost_database_env_fallback,
     test_code_review_distinguishes_storage_keys_from_credentials,
+    test_code_review_scans_typescript_files,
+    test_code_review_distinguishes_test_fixture_code_writes,
+    test_guardian_scans_typescript_patterns,
   ];
 
   let passed = 0, failed = 0;

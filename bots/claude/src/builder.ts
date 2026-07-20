@@ -99,10 +99,17 @@ const BUILD_PLANS = [
 /**
  * 변경된 파일에 해당하는 BuildPlan 목록 반환
  */
-function needsBuild(changedFiles) {
-  const relative = (Array.isArray(changedFiles) ? changedFiles : []).map(f =>
-    path.relative(ROOT, f).replace(/\\/g, '/')
-  );
+function needsBuild(changedFiles, rootDir = ROOT) {
+  const effectiveRoot = path.resolve(rootDir || ROOT);
+  const relative = (Array.isArray(changedFiles) ? changedFiles : [])
+    .map((file) => {
+      const value = String(file || '').trim();
+      if (!value) return null;
+      if (!path.isAbsolute(value)) return value.replace(/^\.\//, '').replace(/\\/g, '/');
+      const relPath = path.relative(effectiveRoot, value).replace(/\\/g, '/');
+      return relPath === '..' || relPath.startsWith('../') ? null : relPath;
+    })
+    .filter(Boolean);
 
   return BUILD_PLANS.filter(plan => {
     return relative.some(f =>
@@ -327,8 +334,8 @@ async function runTargetedTypeCheck(files = [], options = {}) {
 /**
  * TypeScript 컴파일 (tsc)
  */
-async function runTypescriptBuild(plan) {
-  const cwd = path.join(ROOT, plan.cwd);
+async function runTypescriptBuild(plan, rootDir = ROOT) {
+  const cwd = path.isAbsolute(plan.cwd) ? plan.cwd : path.join(rootDir, plan.cwd);
   if (!fs.existsSync(cwd)) {
     return { plan, pass: true, skipped: true, message: `스킵 — 디렉토리 없음: ${plan.cwd}` };
   }
@@ -350,8 +357,8 @@ async function runTypescriptBuild(plan) {
 /**
  * Elixir 컴파일 (mix compile)
  */
-async function runElixirCompile(plan) {
-  const cwd = path.join(ROOT, plan.cwd);
+async function runElixirCompile(plan, rootDir = ROOT) {
+  const cwd = path.isAbsolute(plan.cwd) ? plan.cwd : path.join(rootDir, plan.cwd);
   if (!fs.existsSync(cwd)) {
     return { plan, pass: true, skipped: true, message: `스킵 — 디렉토리 없음: ${plan.cwd}` };
   }
@@ -377,8 +384,8 @@ async function runElixirCompile(plan) {
 /**
  * Next.js 빌드
  */
-async function runNextJsBuild(plan) {
-  const cwd = path.join(ROOT, plan.cwd);
+async function runNextJsBuild(plan, rootDir = ROOT) {
+  const cwd = path.isAbsolute(plan.cwd) ? plan.cwd : path.join(rootDir, plan.cwd);
   if (!fs.existsSync(cwd)) {
     return { plan, pass: true, skipped: true, message: `스킵 — 디렉토리 없음: ${plan.cwd}` };
   }
@@ -395,11 +402,11 @@ async function runNextJsBuild(plan) {
 /**
  * 빌드 플랜 실행
  */
-async function executeBuildPlan(plan) {
+async function executeBuildPlan(plan, rootDir = ROOT) {
   switch (plan.type) {
-    case 'nextjs':     return runNextJsBuild(plan);
-    case 'typescript': return runTypescriptBuild(plan);
-    case 'elixir':     return runElixirCompile(plan);
+    case 'nextjs':     return runNextJsBuild(plan, rootDir);
+    case 'typescript': return runTypescriptBuild(plan, rootDir);
+    case 'elixir':     return runElixirCompile(plan, rootDir);
     default:
       return { plan, pass: true, skipped: true, message: `알 수 없는 빌드 타입: ${plan.type}` };
   }
@@ -449,11 +456,12 @@ async function runBuildCheckCore(options = {}) {
     };
   }
 
+  const rootDir = path.resolve(options.rootDir || ROOT);
   const changedFiles = Array.isArray(options.files)
     ? options.files
     : await reviewer.getChangedFiles();
 
-  const plans = needsBuild(changedFiles);
+  const plans = needsBuild(changedFiles, rootDir);
 
   if (plans.length === 0) {
     const message = '✅ 빌더 스킵 — 빌드 대상 변경 없음';
@@ -464,7 +472,7 @@ async function runBuildCheckCore(options = {}) {
   // 순차 실행 (병렬 빌드 충돌 방지)
   const results = [];
   for (const plan of plans) {
-    results.push(await executeBuildPlan(plan));
+    results.push(await executeBuildPlan(plan, rootDir));
   }
 
   const anyFailed = results.some(r => !r.pass && !r.skipped);

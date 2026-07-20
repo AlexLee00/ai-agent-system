@@ -103,16 +103,20 @@ function maskSensitiveText(value, maxLength = 1000) {
     .replace(/sk-[A-Za-z0-9_-]{12,}/g, 'sk-***')
     .replace(/sk-proj-[A-Za-z0-9_-]{12,}/g, 'sk-proj-***')
     .replace(/AIza[0-9A-Za-z_-]{20,}/g, 'AIza***')
+    .replace(/\b(?:\+?82[- ]?)?0?1[016789][- ]?\d{3,4}[- ]?\d{4}\b/g, '[redacted-phone]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted-email]')
+    .replace(/\b\d{6}-?[1-4]\d{6}\b/g, '[redacted-id]')
     .replace(/(api[_-]?key|token|secret|password)\s*[:=]\s*['"]?[^'"\s,}]+/gi, '$1=***')
     .replace(/\b[A-Za-z0-9_=-]{32,}\b/g, '[redacted-token]');
   return text.slice(0, maxLength);
 }
 
 const DEFAULT_ALLOWED_TOOLS = 'Edit,Write,Read,Glob,Grep';
-const DEFAULT_HARD_TEST_COMMANDS = [
-  'npm --prefix bots/claude run typecheck',
-  'npm --prefix bots/claude run test:unit',
-];
+const DEFAULT_HARD_TEST_SCRIPT_ORDER = ['typecheck', 'test:unit'];
+const TARGET_TEAM_PACKAGE_ALIASES = Object.freeze({
+  luna: 'investment',
+  ska: 'reservation',
+});
 const DEFAULT_SCOPED_TEST_SCRIPT_ALLOWLIST = [
   'check:agent-memory-routing',
   'check:library',
@@ -2531,6 +2535,14 @@ async function runReviewCycle(options = {}, executionContext = null, beforeStatu
     if (count > 0) guardLayerSummary.push(`${layerKey}:${count}`);
   }
   const guardTopIssue = (guard.critical?.[0] || guard.high?.[0] || {}).desc || null;
+  const reviewerFindings = Array.isArray(review.findings)
+    ? review.findings.filter(item => item && item.severity !== 'low').slice(0, 5)
+    : [];
+  const findingLines = reviewerFindings.map((finding) => {
+    const location = [finding.file, finding.line].filter(Boolean).join(':');
+    const detail = finding.message || finding.description || finding.title || JSON.stringify(finding);
+    return `리뷰 근거${location ? ` (${location})` : ''}: ${maskSensitiveText(detail, 700)}`;
+  });
 
   return {
     pass,
@@ -2549,7 +2561,11 @@ async function runReviewCycle(options = {}, executionContext = null, beforeStatu
       guard.pass === false && guardTopIssue
         ? `가디언 첫 이슈: ${guardTopIssue}`
         : null,
-    ].join('\n'),
+      review.summary?.pass === false && review.message
+        ? `리뷰 상세: ${maskSensitiveText(review.message, 1600)}`
+        : null,
+      ...findingLines,
+    ].filter(Boolean).join('\n').slice(0, 6000),
   };
 }
 
@@ -2744,6 +2760,75 @@ function resolveScopedTestCommands(analysis = null, cwd = ROOT) {
     rejected,
     scriptAllowlist: [...scriptAllowlist],
     prefixAllowlist,
+  };
+}
+
+function resolveTargetPackageCandidates(analysis = null) {
+  const metadata = analysis?.metadata || {};
+  const targetTeam = toSafeString(metadata.target_team || metadata.targetTeam).toLowerCase();
+  const candidates = [];
+  const add = (team) => {
+    const normalized = toSafeString(team).toLowerCase();
+    if (!/^[a-z0-9._-]+$/.test(normalized)) return;
+    const packageTeam = TARGET_TEAM_PACKAGE_ALIASES[normalized] || normalized;
+    const relPath = `bots/${packageTeam}`;
+    if (!candidates.includes(relPath)) candidates.push(relPath);
+  };
+  add(targetTeam);
+
+  const writeScope = Array.isArray(metadata.write_scope) ? metadata.write_scope : [];
+  for (const entry of writeScope) {
+    const match = normalizeWriteScopeEntry(entry).match(/^bots\/([a-z0-9._-]+)(?:\/|$)/i);
+    if (match) add(match[1]);
+  }
+  return { targetTeam: targetTeam || 'unknown', candidates };
+}
+
+function resolveHardTestCommands(analysis = null, cwd = ROOT, envSource = process.env) {
+  const configured = toSafeString(envSource?.CLAUDE_AUTO_DEV_HARD_TEST_COMMANDS);
+  if (configured) {
+    return {
+      commands: [...new Set(configured.split('&&').map(item => item.trim()).filter(Boolean))],
+      source: 'configured',
+      targetTeam: toSafeString(analysis?.metadata?.target_team || analysis?.metadata?.targetTeam || 'unknown').toLowerCase(),
+      packageDir: null,
+    };
+  }
+
+  const { targetTeam, candidates } = resolveTargetPackageCandidates(analysis);
+  for (const packageDir of candidates) {
+    const packagePath = path.join(cwd, packageDir, 'package.json');
+    if (!fs.existsSync(packagePath)) continue;
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+      const scripts = packageJson?.scripts && typeof packageJson.scripts === 'object'
+        ? packageJson.scripts
+        : {};
+      const commands = DEFAULT_HARD_TEST_SCRIPT_ORDER
+        .filter(script => typeof scripts[script] === 'string' && scripts[script].trim())
+        .map(script => `npm --prefix ${shellQuote(packageDir)} run ${script}`);
+      return {
+        commands,
+        source: commands.length > 0 ? 'target_package_scripts' : 'scoped_test_contract',
+        targetTeam,
+        packageDir,
+      };
+    } catch (error) {
+      return {
+        commands: [],
+        source: 'scoped_test_contract',
+        targetTeam,
+        packageDir,
+        warning: `package_json_unreadable:${maskSensitiveText(error?.message || error, 300)}`,
+      };
+    }
+  }
+
+  return {
+    commands: [],
+    source: 'scoped_test_contract',
+    targetTeam,
+    packageDir: null,
   };
 }
 
@@ -3443,14 +3528,68 @@ function updateCompletionDocumentIntegration(completionDocumentPath, summary = {
   }
 }
 
+function formatTestCycleMessage({
+  build = {},
+  commands = [],
+  scopedCommands = [],
+  hardTestSource = 'disabled',
+  targetTeam = 'unknown',
+} = {}) {
+  const lines = [
+    `빌더: ${build.pass === false ? 'FAIL' : 'PASS'}`,
+    `하드 테스트: ${commands.length === 0 ? 'SKIP' : commands.every(result => result.pass) ? 'PASS' : 'FAIL'} (${hardTestSource}, target=${targetTeam})`,
+    `test_scope: ${scopedCommands.every(result => result.pass) ? 'PASS' : 'FAIL'} (${scopedCommands.length}개)`,
+  ];
+  const failures = [];
+  for (const result of Array.isArray(build.results) ? build.results : []) {
+    if (result?.pass !== false || result?.skipped) continue;
+    failures.push({
+      label: `builder:${result.plan?.name || result.plan?.id || 'unknown'}`,
+      detail: result.error || result.message || 'no builder detail',
+    });
+  }
+  for (const [kind, results] of [['hard', commands], ['test_scope', scopedCommands]]) {
+    for (const result of results) {
+      if (result?.pass !== false) continue;
+      failures.push({
+        label: `${kind}:${result.command || 'unknown_command'}`,
+        detail: result.output || result.error || 'no command output',
+      });
+    }
+  }
+  for (const failure of failures.slice(0, 6)) {
+    lines.push(`검증 실패 [${maskSensitiveText(failure.label, 500)}]`);
+    lines.push(maskSensitiveText(failure.detail, 1400));
+  }
+  return lines.join('\n').slice(0, 8000);
+}
+
 async function runTestCycle(options = {}, executionContext = null, analysis = null) {
   const builder = require('../src/builder');
   const testMode = Boolean(options.test);
   const runtimeConfig = getRuntimeConfig(options);
   const cwd = executionContext?.cwd || ROOT;
-  const build = await builder.runBuildCheck({ force: true, test: testMode });
-  const commands = [];
+  const reviewScope = resolveChangedFilesForReview({
+    beforeStatus: options.beforeStatus || [],
+    executionContext,
+  });
+  const build = await builder.runBuildCheck({
+    force: true,
+    test: testMode,
+    rootDir: cwd,
+    files: reviewScope.changedFilesAbsolute,
+  });
   const scoped = resolveScopedTestCommands(analysis, cwd);
+  const hardTestPlan = runtimeConfig.runHardTests
+    ? resolveHardTestCommands(analysis, cwd)
+    : {
+        commands: [],
+        source: 'disabled',
+        targetTeam: toSafeString(analysis?.metadata?.target_team || 'unknown').toLowerCase(),
+      };
+  const scopedCommandSet = new Set(scoped.commands);
+  const hardTestCommands = hardTestPlan.commands.filter(command => !scopedCommandSet.has(command));
+  const commands = [];
 
   if (scoped.commands.length === 0) {
     return {
@@ -3476,9 +3615,7 @@ async function runTestCycle(options = {}, executionContext = null, analysis = nu
   }
 
   if (!testMode && !options.dryRun && runtimeConfig.runHardTests) {
-    const configured = process.env.CLAUDE_AUTO_DEV_HARD_TEST_COMMANDS;
-    const hardTests = configured ? configured.split('&&').map(item => item.trim()).filter(Boolean) : DEFAULT_HARD_TEST_COMMANDS;
-    hardTests.forEach(command => commands.push(runCommand(command, 600000, cwd)));
+    hardTestCommands.forEach(command => commands.push(runCommand(command, 600000, cwd)));
   }
 
   const scopedCommands = testMode
@@ -3494,11 +3631,15 @@ async function runTestCycle(options = {}, executionContext = null, analysis = nu
     commands,
     scopedCommands,
     scopedRejected: scoped.rejected,
-    message: [
-      `빌더: ${build.pass === false ? 'FAIL' : 'PASS'}`,
-      `하드 테스트: ${commands.length === 0 ? 'SKIP' : commands.every(r => r.pass) ? 'PASS' : 'FAIL'}`,
-      `test_scope: ${scopedCommands.every(r => r.pass) ? 'PASS' : 'FAIL'} (${scoped.entries.length}개)`,
-    ].join('\n'),
+    hardTestSource: hardTestPlan.source,
+    targetTeam: hardTestPlan.targetTeam,
+    message: formatTestCycleMessage({
+      build,
+      commands,
+      scopedCommands,
+      hardTestSource: hardTestPlan.source,
+      targetTeam: hardTestPlan.targetTeam,
+    }),
   };
 }
 
@@ -4129,7 +4270,7 @@ async function processAutoDevDocument(filePath, options = {}) {
         );
         if (!revision.pass) throw new Error(`test revision failed: ${revision.error}`);
       }
-      testResult = await runTestCycle(options, executionContext, analysis);
+      testResult = await runTestCycle({ ...options, beforeStatus }, executionContext, analysis);
       if (testResult.pass) break;
     }
     if (!testResult.pass) throw new Error(`tests failed: ${testResult.message}`);
@@ -4952,6 +5093,8 @@ module.exports = {
   _testOnly_resolveCodexCliCommand: resolveCodexCliCommand,
   _testOnly_runCodexImplementation: runCodexImplementation,
   _testOnly_resolveScopedTestCommands: resolveScopedTestCommands,
+  _testOnly_resolveHardTestCommands: resolveHardTestCommands,
+  _testOnly_formatTestCycleMessage: formatTestCycleMessage,
   _testOnly_autoDevPrBranch: autoDevPrBranch,
   _testOnly_publishIntegrationAsPR: publishIntegrationAsPR,
 };

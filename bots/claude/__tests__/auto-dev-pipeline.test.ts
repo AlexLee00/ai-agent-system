@@ -3160,6 +3160,7 @@ async function test_review_cycle_uses_execution_context() {
   const doc = makeDoc(tmpRoot, 'CODEX_REVIEW_SCOPE.md', '# Review\nscope');
   let reviewerOptions = null;
   let guardianOptions = null;
+  let builderOptions = null;
 
   const { mocks } = makeMocks(tmpRoot, {
     '../src/reviewer.ts': {
@@ -3172,6 +3173,12 @@ async function test_review_cycle_uses_execution_context() {
       runFullSecurityScan: async (opts) => {
         guardianOptions = opts;
         return { pass: true, message: 'guardian ok', critical: [], high: [], layers: {} };
+      },
+    },
+    '../src/builder': {
+      runBuildCheck: async (opts) => {
+        builderOptions = opts;
+        return { pass: true, message: 'build ok', results: [] };
       },
     },
     child_process: {
@@ -3202,14 +3209,80 @@ async function test_review_cycle_uses_execution_context() {
     CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE: 'true',
   }));
 
-  assert.ok(reviewerOptions && guardianOptions, 'reviewer/guardian 호출 옵션이 기록되어야 함');
+  assert.ok(reviewerOptions && guardianOptions && builderOptions, 'reviewer/guardian/builder 호출 옵션이 기록되어야 함');
   assert.strictEqual(reviewerOptions.suppressAlarm, true, 'auto-dev 내부 리뷰는 재귀 Hub 알람을 만들면 안 됨');
   assert.ok(String(reviewerOptions.rootDir || '').includes('claude-auto-dev-worktrees'));
   assert.ok(Array.isArray(reviewerOptions.files), 'reviewer files 전달 필요');
   assert.ok(Array.isArray(guardianOptions.files), 'guardian files 전달 필요');
+  assert.strictEqual(builderOptions.rootDir, reviewerOptions.rootDir, 'builder도 같은 worktree root를 사용해야 함');
+  assert.deepStrictEqual(builderOptions.files, reviewerOptions.files, 'builder도 같은 변경 파일 집합을 검사해야 함');
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: review/guardian use worktree execution context');
+}
+
+async function test_hard_tests_follow_target_package_contract() {
+  const tmpRoot = makeTempRoot();
+  const claudePackage = path.join(tmpRoot, 'bots', 'claude');
+  const reservationPackage = path.join(tmpRoot, 'bots', 'reservation');
+  fs.mkdirSync(claudePackage, { recursive: true });
+  fs.mkdirSync(reservationPackage, { recursive: true });
+  fs.writeFileSync(path.join(claudePackage, 'package.json'), JSON.stringify({
+    scripts: { typecheck: 'tsc', 'test:unit': 'node unit.js' },
+  }), 'utf8');
+  fs.writeFileSync(path.join(reservationPackage, 'package.json'), JSON.stringify({ scripts: {} }), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const claude = pipeline._testOnly_resolveHardTestCommands({
+      metadata: { target_team: 'claude', write_scope: ['bots/claude/**'] },
+    }, tmpRoot, {});
+    assert.deepStrictEqual(claude.commands, [
+      "npm --prefix 'bots/claude' run typecheck",
+      "npm --prefix 'bots/claude' run test:unit",
+    ]);
+    assert.strictEqual(claude.source, 'target_package_scripts');
+
+    const reservation = pipeline._testOnly_resolveHardTestCommands({
+      metadata: { target_team: 'reservation', write_scope: ['bots/reservation/**'] },
+    }, tmpRoot, {});
+    assert.deepStrictEqual(reservation.commands, []);
+    assert.strictEqual(reservation.source, 'scoped_test_contract');
+
+    const configured = pipeline._testOnly_resolveHardTestCommands({
+      metadata: { target_team: 'reservation' },
+    }, tmpRoot, { CLAUDE_AUTO_DEV_HARD_TEST_COMMANDS: 'npm --prefix bots/claude run typecheck' });
+    assert.deepStrictEqual(configured.commands, ['npm --prefix bots/claude run typecheck']);
+    assert.strictEqual(configured.source, 'configured');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: hard tests follow target package contract');
+}
+
+async function test_validation_failure_context_is_actionable_and_redacted() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const message = pipeline._testOnly_formatTestCycleMessage({
+      build: { pass: true, results: [] },
+      commands: [{
+        command: "npm --prefix 'bots/claude' run test:unit",
+        pass: false,
+        output: 'AssertionError: member 010-1234-5678 user@example.com expected 1',
+      }],
+      scopedCommands: [{ command: "npm --prefix 'bots/claude' run test:auto-dev", pass: true, output: 'ok' }],
+      hardTestSource: 'target_package_scripts',
+      targetTeam: 'claude',
+    });
+    assert.match(message, /npm --prefix 'bots\/claude' run test:unit/);
+    assert.match(message, /AssertionError/);
+    assert.match(message, /\[redacted-phone\]/);
+    assert.match(message, /\[redacted-email\]/);
+    assert.doesNotMatch(message, /010-1234-5678|user@example\.com/);
+  }, testEnv(tmpRoot));
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: validation failure context is actionable and redacted');
 }
 
 async function test_test_scope_is_executed_in_non_test_mode() {
@@ -4077,6 +4150,8 @@ async function main() {
     test_resolve_node_executable_prefers_stable_node_over_homebrew_cellar,
     test_dirty_base_is_ignored_when_worktree_isolated,
     test_review_cycle_uses_execution_context,
+    test_hard_tests_follow_target_package_contract,
+    test_validation_failure_context_is_actionable_and_redacted,
     test_test_scope_is_executed_in_non_test_mode,
     test_test_scope_rejects_unsafe_shell_command,
     test_test_scope_allows_hub_scoped_commands,

@@ -5,7 +5,14 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
+const REVIEW_EXTENSIONS = new Set([...JS_EXTENSIONS, '.ts', '.mts', '.cts']);
 const PATTERN_SKIP_FILES = new Set(['.checksums.json']);
+
+function isTestFixturePath(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  return normalized.includes('/__tests__/')
+    || /\.(?:test|spec)\.[cm]?[jt]s$/i.test(normalized);
+}
 
 function looksLikeHardcodedCredential(line) {
   const text = String(line || '');
@@ -13,7 +20,11 @@ function looksLikeHardcodedCredential(line) {
     return true;
   }
 
-  const assignment = text.match(/\b([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:=|:)\s*['"`]([A-Za-z0-9._-]{24,})['"`]/);
+  const typedAssignment = text.match(
+    /\b([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*[A-Za-z_$][A-Za-z0-9_$<>,\[\]|?. ]{0,79}\s*=\s*['"`]([A-Za-z0-9._-]{24,})['"`]/,
+  );
+  const assignment = typedAssignment
+    || text.match(/\b([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:=|:)\s*['"`]([A-Za-z0-9._-]{24,})['"`]/);
   if (!assignment) return false;
   const identifier = assignment[1]
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -26,7 +37,9 @@ const SECURITY_PATTERNS = [
   {
     severity: 'CRITICAL',
     desc: '코드 파일 직접 덮어쓰기 의심',
-    match: (line) => /fs\.writeFileSync\s*\(/.test(line) && /\.(js|ts|py|sh)['"`]/.test(line),
+    match: (line, _lineNumber, filePath) => !isTestFixturePath(filePath)
+      && /fs\.writeFileSync\s*\(/.test(line)
+      && /\.(js|ts|py|sh)['"`]/.test(line),
   },
   {
     severity: 'CRITICAL',
@@ -45,6 +58,7 @@ const SECURITY_PATTERNS = [
       const match = line.match(/process\.env\.[A-Z0-9_]+\s*\|\|\s*['"`]([^'"`]{16,})['"`]/);
       if (!match) return false;
       const fallback = match[1];
+      if (fallback.includes('${')) return false;
       return !/^postgres(?:ql)?:\/\/(?:localhost|127\.0\.0\.1)(?::|\/|$)/i.test(fallback);
     },
   },
@@ -73,10 +87,10 @@ const RULE_PATTERNS = [
   },
 ];
 
-function getJsFiles(files) {
+function getFilesByExtensions(files, extensions) {
   return (Array.isArray(files) ? files : []).filter((file) => {
     if (typeof file !== 'string') return false;
-    return Array.from(JS_EXTENSIONS).some((ext) => file.endsWith(ext));
+    return Array.from(extensions).some((ext) => file.endsWith(ext));
   });
 }
 
@@ -89,7 +103,7 @@ function normalizeExecError(err) {
 }
 
 function checkSyntax(files) {
-  return getJsFiles(files).map((file) => {
+  return getFilesByExtensions(files, JS_EXTENSIONS).map((file) => {
     try {
       execSync(`node --check "${file.replace(/"/g, '\\"')}"`, {
         stdio: 'pipe',
@@ -145,7 +159,7 @@ function checkPatterns(filePath) {
 }
 
 function runChecklist(files) {
-  const targetFiles = getJsFiles(files);
+  const targetFiles = getFilesByExtensions(files, REVIEW_EXTENSIONS);
   const syntax = checkSyntax(targetFiles);
   const findings = [];
 

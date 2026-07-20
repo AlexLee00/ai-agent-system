@@ -276,7 +276,7 @@ async function runFullSecurityScanCore(options = {}) {
   const files = Array.isArray(options.files)
     ? options.files.map(file => (path.isAbsolute(file) ? file : path.join(rootDir, file)))
     : await reviewer.getChangedFiles({ rootDir });
-  const jsFiles = files.filter(file => /\.(m?js|cjs|json)$/i.test(file) && fs.existsSync(file));
+  const jsFiles = files.filter(file => /\.(?:[cm]?[jt]s|json)$/i.test(file) && fs.existsSync(file));
 
   // 기존 skills 기반 파일 패턴 체크
   const findings = [];
