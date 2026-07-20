@@ -29,6 +29,22 @@ type ClusterRoutingDeps = {
   embeddingModel?: string;
 };
 
+type HistoryQuery = (schema: string, sql: string, params: unknown[]) => Promise<HistoryRow[]>;
+
+type ClusterRoutingHistoryDeps = {
+  queryReadonly?: HistoryQuery;
+  queryDefault?: HistoryQuery;
+  warn?: (message: string) => void;
+};
+
+type ClusterRoutingUnavailableFamily =
+  | 'embedding'
+  | 'history_permission'
+  | 'history_connection'
+  | 'history_query'
+  | 'history_unknown'
+  | 'processing';
+
 export type ClusterRoutingRecommendation = {
   version: 'v1';
   cluster_id: string;
@@ -39,7 +55,10 @@ export type ClusterRoutingRecommendation = {
   success_rate: number | null;
   avg_latency_ms: number | null;
   avg_cost_usd: number | null;
-  reason: 'recommended' | 'insufficient_samples' | 'recommendation_unavailable';
+  reason:
+    | 'recommended'
+    | 'insufficient_samples'
+    | `recommendation_unavailable:${ClusterRoutingUnavailableFamily}`;
   embedding_model: string;
   embedding_dimensions: number;
   signature_dimensions: number;
@@ -55,6 +74,23 @@ const MAX_CLUSTERS = 4;
 const SIGNATURE_DIMENSIONS = 24;
 const SIGNATURE_VERSION = 'v1';
 const CLUSTER_ALGORITHM_VERSION = 'kmeans-v1';
+const HISTORY_SQL = `
+    SELECT
+      routing_signals,
+      success,
+      latency_ms,
+      cost_usd
+    FROM hub.llm_auto_routing_log
+    WHERE mode = 'shadow'
+      AND success IS NOT NULL
+      AND routing_signals #> '{cluster_recommendation,embedding_signature}' IS NOT NULL
+      AND routing_signals #>> '{cluster_recommendation,signature_key}' = $2
+      AND NULLIF(routing_signals ->> 'routing_request_id', '') IS NOT NULL
+      AND NULLIF(routing_signals #>> '{execution,model}', '') IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT $1
+  `;
+let permissionFallbackWarned = false;
 
 function enabled(env: Record<string, any>): boolean {
   return /^(1|true|yes|on|shadow)$/i.test(String(env.LLM_CLUSTER_ROUTING_SHADOW_ENABLED || '').trim());
@@ -251,23 +287,44 @@ async function embedText(text: string): Promise<number[] | null> {
   return Array.isArray(embedding) ? embedding : null;
 }
 
-async function loadHistory(limit: number, signatureKey: string): Promise<HistoryRow[]> {
-  return pgPool.queryReadonly('public', `
-    SELECT
-      routing_signals,
-      success,
-      latency_ms,
-      cost_usd
-    FROM hub.llm_auto_routing_log
-    WHERE mode = 'shadow'
-      AND success IS NOT NULL
-      AND routing_signals #> '{cluster_recommendation,embedding_signature}' IS NOT NULL
-      AND routing_signals #>> '{cluster_recommendation,signature_key}' = $2
-      AND NULLIF(routing_signals ->> 'routing_request_id', '') IS NOT NULL
-      AND NULLIF(routing_signals #>> '{execution,model}', '') IS NOT NULL
-    ORDER BY created_at DESC
-    LIMIT $1
-  `, [limit, signatureKey]);
+async function queryDefaultHistory(schema: string, sql: string, params: unknown[]): Promise<HistoryRow[]> {
+  const result = await pgPool.getPool(schema).query(sql, params);
+  return result.rows;
+}
+
+export async function loadClusterRoutingHistory(
+  limit: number,
+  signatureKey: string,
+  deps: ClusterRoutingHistoryDeps = {},
+): Promise<HistoryRow[]> {
+  const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  const queryDefault = deps.queryDefault || queryDefaultHistory;
+  const args: [string, string, unknown[]] = ['public', HISTORY_SQL, [limit, signatureKey]];
+  try {
+    return await queryReadonly(...args);
+  } catch (error: any) {
+    if (String(error?.code || '') !== '42501') throw error;
+    if (deps.warn) {
+      deps.warn('cluster_routing_history:readonly_permission_fallback');
+    } else if (!permissionFallbackWarned) {
+      console.warn('cluster_routing_history:readonly_permission_fallback');
+      permissionFallbackWarned = true;
+    }
+    return queryDefault(...args);
+  }
+}
+
+function classifyHistoryError(error: any): ClusterRoutingUnavailableFamily {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || error || '').toLowerCase();
+  if (code === '42501') return 'history_permission';
+  if (
+    code.startsWith('08')
+    || ['ECONNREFUSED', 'ECONNRESET', 'EPIPE', '57P01'].includes(code)
+    || /connection (terminated|destroyed|refused)|server closed the connection/.test(message)
+  ) return 'history_connection';
+  if (/^[A-Z0-9]{5}$/.test(code)) return 'history_query';
+  return 'history_unknown';
 }
 
 export async function buildClusterRoutingRecommendation(
@@ -277,16 +334,44 @@ export async function buildClusterRoutingRecommendation(
   const env = deps.env || process.env;
   if (!enabled(env) || !isClusterRoutingEligible(input)) return null;
 
+  const embeddingModel = String(deps.embeddingModel || rag.EMBED_MODEL || 'qwen3-embed-0.6b');
+  let evidence = {
+    version: SIGNATURE_VERSION,
+    embedding_model: embeddingModel,
+    embedding_dimensions: 0,
+    signature_dimensions: 0,
+    signature_key: buildEmbeddingSignatureKey(embeddingModel, 0, 0),
+    embedding_signature: [] as number[],
+  } as const;
+  const unavailable = (family: ClusterRoutingUnavailableFamily): ClusterRoutingRecommendation => ({
+    ...evidence,
+    cluster_algorithm_version: CLUSTER_ALGORITHM_VERSION,
+    centroid_hash: null,
+    cluster_id: 'unavailable',
+    cluster_count: 0,
+    sample_count: 0,
+    recommended_model: null,
+    model_sample_count: 0,
+    success_rate: null,
+    avg_latency_ms: null,
+    avg_cost_usd: null,
+    reason: `recommendation_unavailable:${family}`,
+  });
+
   try {
     const text = `${String(input.systemPrompt || '')}\n${String(input.prompt || '')}`.trim().slice(0, 8000);
     if (!text) return null;
-    const embedding = await (deps.embedText || embedText)(text);
-    if (!embedding) return null;
+    let embedding: number[] | null;
+    try {
+      embedding = await (deps.embedText || embedText)(text);
+    } catch {
+      return unavailable('embedding');
+    }
+    if (!embedding) return unavailable('embedding');
     const signature = buildEmbeddingSignature(embedding);
-    if (!signature) return null;
-    const embeddingModel = String(deps.embeddingModel || rag.EMBED_MODEL || 'qwen3-embed-0.6b');
+    if (!signature) return unavailable('embedding');
     const signatureKey = buildEmbeddingSignatureKey(embeddingModel, embedding.length, signature.length);
-    const evidence = {
+    evidence = {
       version: SIGNATURE_VERSION,
       embedding_model: embeddingModel,
       embedding_dimensions: embedding.length,
@@ -295,10 +380,16 @@ export async function buildClusterRoutingRecommendation(
       embedding_signature: signature,
     } as const;
 
+    const historyLimit = boundedInt(env.LLM_CLUSTER_ROUTING_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT, 10, 2000);
+    const minSamples = boundedInt(env.LLM_CLUSTER_ROUTING_MIN_SAMPLES, DEFAULT_MIN_SAMPLES, 1, 100);
+    let rawHistory: HistoryRow[];
     try {
-      const historyLimit = boundedInt(env.LLM_CLUSTER_ROUTING_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT, 10, 2000);
-      const minSamples = boundedInt(env.LLM_CLUSTER_ROUTING_MIN_SAMPLES, DEFAULT_MIN_SAMPLES, 1, 100);
-      const rawHistory = await (deps.loadHistory || loadHistory)(historyLimit, signatureKey);
+      rawHistory = await (deps.loadHistory || loadClusterRoutingHistory)(historyLimit, signatureKey);
+    } catch (error) {
+      return unavailable(classifyHistoryError(error));
+    }
+
+    try {
       const history = rawHistory
         .map((row) => ({ row, signature: readSignature(row, signature.length, signatureKey), model: readExecutedModel(row) }))
         .filter((entry): entry is { row: HistoryRow; signature: number[]; model: string } => Boolean(entry.signature && entry.model));
@@ -325,23 +416,10 @@ export async function buildClusterRoutingRecommendation(
         reason: recommendation ? 'recommended' : 'insufficient_samples',
       };
     } catch {
-      return {
-        ...evidence,
-        cluster_algorithm_version: CLUSTER_ALGORITHM_VERSION,
-        centroid_hash: null,
-        cluster_id: 'unavailable',
-        cluster_count: 0,
-        sample_count: 0,
-        recommended_model: null,
-        model_sample_count: 0,
-        success_rate: null,
-        avg_latency_ms: null,
-        avg_cost_usd: null,
-        reason: 'recommendation_unavailable',
-      };
+      return unavailable('processing');
     }
   } catch {
-    return null;
+    return unavailable('processing');
   }
 }
 
@@ -351,4 +429,5 @@ module.exports = {
   buildEmbeddingSignature,
   buildEmbeddingSignatureKey,
   isClusterRoutingEligible,
+  loadClusterRoutingHistory,
 };
