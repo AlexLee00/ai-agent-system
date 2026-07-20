@@ -63,6 +63,8 @@ function main() {
       const models = support.loadModels(fs);
       assert(models.includes('openai/gpt-4o-mini'), 'default Hub-native model catalog should include OpenAI smoke model');
       assert(models.includes('groq/llama-3.3-70b-versatile'), 'default Hub-native model catalog should include Groq smoke model');
+      assert(models.includes('groq/openai/gpt-oss-120b'), 'default catalog should include the admitted Groq deep model');
+      assert.equal(models.includes('groq/qwen/qwen3-32b'), false, 'quarantined Groq route must not be speed-tested');
       assert.equal(models.some((model: string) => model.includes('gemini')), false, 'retired Gemini models must be excluded from speed tests');
       assert.equal(support.loadOpenAIKey(fs), null, 'missing auth profile should not throw or read retired gateway');
 

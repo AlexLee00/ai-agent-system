@@ -15,6 +15,7 @@ const {
 } = require('../../../packages/core/lib/agent-llm-routing-adapter.js');
 
 const RULE_BASED = new Set(['aria', 'budget', 'hanul', 'hephaestos']);
+const TASK_GATED_YAML = new Set(['chronos']);
 
 function withEnv(value, work) {
   const previous = process.env.LUNA_YAML_ROUTING_ENABLED;
@@ -91,6 +92,29 @@ export function runLunaYamlRoutingSmoke() {
       selectorVersion: 'v3.0_oauth_4',
       rolloutPercent: 100,
     });
+    if (TASK_GATED_YAML.has(item.agentName)) {
+      assert.equal(described.routingSource, 'oauth4', `${item.agentName} plain route must remain oauth4`);
+      const embeddingChain = selector.selectLLMChain(`investment.${item.agentName}`, {
+        agentName: item.agentName,
+        taskType: 'backtest_embedding',
+        selectorVersion: 'v3.0_oauth_4',
+        rolloutPercent: 100,
+      });
+      const embeddingDescription = selector.describeLLMSelector(`investment.${item.agentName}`, {
+        agentName: item.agentName,
+        taskType: 'backtest_embedding',
+        selectorVersion: 'v3.0_oauth_4',
+        rolloutPercent: 100,
+      });
+      assert.equal(embeddingDescription.routingSource, 'yaml', `${item.agentName} embedding route must use yaml`);
+      assert.deepEqual(compactChain(embeddingChain), compactChain(policy.fallbackChain));
+      return {
+        agentName: item.agentName,
+        disabled: false,
+        taskGated: true,
+        chain: compactChain(embeddingChain),
+      };
+    }
     assert.equal(described.routingSource, 'yaml', `${item.agentName} describe output must expose yaml routing source`);
     assert.equal(described.enabled === false, RULE_BASED.has(item.agentName));
     if (RULE_BASED.has(item.agentName)) {

@@ -14,8 +14,8 @@ const DEFAULT_OUTPUT = resolve(__dirname, '../output/luna-yaml-model-proposal.md
 
 const PROPOSALS = Object.freeze({
   luna: 'openai-oauth/gpt-5.4 -> groq/llama-3.3-70b-versatile',
-  kairos: 'openai-oauth/gpt-5.4 -> groq/qwen/qwen3-32b',
-  oracle: 'openai-oauth/gpt-5.4 -> groq/qwen/qwen3-32b',
+  kairos: 'openai-oauth/gpt-5.4 -> groq/openai/gpt-oss-120b',
+  oracle: 'openai-oauth/gpt-5.4 -> groq/openai/gpt-oss-120b',
   hermes: 'groq/llama-3.3-70b-versatile -> openai-oauth/gpt-5.4-mini',
   sophia: 'groq/llama-3.3-70b-versatile -> openai-oauth/gpt-5.4-mini',
   chronos: 'local-embedding/qwen3-embed-0.6b',

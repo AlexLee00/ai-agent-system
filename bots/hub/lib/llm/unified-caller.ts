@@ -19,6 +19,7 @@ const { runWithProviderAdmission } = require('./provider-attempt-admission');
 const { readLocalCredentialsForProvider } = require('../oauth/local-credentials');
 const { setProviderCanary, setProviderToken } = require('../oauth/token-store');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
+const { replaceQuarantinedExactLlmRoute } = require('../../../../packages/core/lib/llm-provider-retirement');
 const rag = require('../../../../packages/core/lib/rag');
 const { resolveHubLlmSelection, isGeminiDisabled } = require('../../src/llm-selector');
 const providerRegistry = require('./provider-registry');
@@ -1278,6 +1279,9 @@ function _routeToProvider(route: string): string {
 function _normalizeRoute(route: string, abstractModel: unknown = 'anthropic_haiku'): string {
   const sonnetReplacement = _claudeCodeSonnetReplacementRoute(route);
   if (sonnetReplacement) return sonnetReplacement;
+
+  const quarantinedReplacement = replaceQuarantinedExactLlmRoute(route);
+  if (quarantinedReplacement !== route) return quarantinedReplacement;
 
   const staleGroqRoutes = new Set([
     'groq/llama-4-scout-17b-16e-instruct',

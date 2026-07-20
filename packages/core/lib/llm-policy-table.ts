@@ -22,11 +22,11 @@ export const LLM_POLICY_TABLE_GENERATED_FROM = "docs/hub/snapshots/llm-chain-sna
 export const LLM_POLICY_TABLE_GENERATED_AT = "2026-07-19T11:49:30.243Z";
 export const LLM_POLICY_TABLE_SELECTOR_VERSION = "v3.0_oauth_4";
 export const LLM_POLICY_TABLE_RULE_COUNT = 468;
-export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = 796;
+export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNT = 826;
 export const LLM_POLICY_TABLE_MODEL_TOKEN_COUNTS: Record<string, number> = {
   "@OPENAI_MINI_MODEL": 265,
   "@GROQ_FAST_MODEL": 258,
-  "@GROQ_DEEP_MODEL": 70,
+  "@GROQ_DEEP_MODEL": 100,
   "@OPENAI_PERF_MODEL": 183,
   "@GROQ_SCOUT_MODEL": 6,
   "@LOCAL_EMBED_MODEL": 8,
@@ -81,7 +81,7 @@ export const LLM_POLICY_TABLE_CONFIGURED_MODEL_CONSTANTS = [
     "token": "@GROQ_DEEP_MODEL",
     "envName": "LLM_GROQ_DEEP_MODEL",
     "value": "openai/gpt-oss-120b",
-    "fallback": "qwen/qwen3-32b",
+    "fallback": "openai/gpt-oss-120b",
     "providerPrefixes": [
       "groq"
     ]
@@ -5717,7 +5717,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -5735,7 +5735,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -5752,7 +5752,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -5771,7 +5771,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -5790,7 +5790,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -5808,7 +5808,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -6242,7 +6242,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -6261,7 +6261,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -6279,7 +6279,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -6350,7 +6350,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -6369,7 +6369,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -6387,7 +6387,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -6410,7 +6410,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -6429,7 +6429,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -6447,7 +6447,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -6686,7 +6686,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -6705,7 +6705,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -6723,7 +6723,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -7224,7 +7224,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -7242,7 +7242,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -7259,7 +7259,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -7332,7 +7332,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -7350,7 +7350,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -7367,7 +7367,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -7389,7 +7389,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -7407,7 +7407,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -7424,7 +7424,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
       },
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       }
     ]
   },
@@ -7650,7 +7650,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -7668,7 +7668,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",
@@ -7685,7 +7685,7 @@ export const LLM_POLICY_RULES: PolicyRule[] = [
     "chain": [
       {
         "provider": "groq",
-        "model": "qwen/qwen3-32b"
+        "model": "@GROQ_DEEP_MODEL"
       },
       {
         "provider": "openai-oauth",

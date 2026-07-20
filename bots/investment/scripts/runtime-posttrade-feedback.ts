@@ -150,7 +150,11 @@ async function runPosttradeFeedback(args) {
   if (args.tradeId) {
     candidates = [{ tradeId: Number(args.tradeId), source: 'manual', knowledgeId: null }];
   } else {
-    candidates = await fetchPendingPosttradeCandidates({ limit: args.limit, market: args.market });
+    candidates = await fetchPendingPosttradeCandidates({
+      limit: args.limit,
+      market: args.market,
+      throwOnQueryError: args.strictCandidateQueries === true,
+    });
   }
 
   if (candidates.length === 0) {

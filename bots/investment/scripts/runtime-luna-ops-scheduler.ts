@@ -30,6 +30,18 @@ const PRE_MARKET_REFRESH_WINDOW_MINUTES = Object.freeze({
   domestic: 240,
   overseas: 1080,
 });
+const NON_OPEN_MARKET_CYCLE_OUTCOMES = new Set([
+  'cadence_wait',
+  'kill_switch_off',
+  'market_closed_catchup_wait',
+  'market_closed_research',
+  'market_closed_skip',
+]);
+
+function isCompletedOpenMarketCycle(job, result, failed) {
+  if (job?.category !== 'market_cycle' || failed) return false;
+  return !NON_OPEN_MARKET_CYCLE_OUTCOMES.has(String(result?.outcome || 'ok'));
+}
 
 function isProcessAlive(pid) {
   const numericPid = Number(pid);
@@ -1487,6 +1499,7 @@ export async function runOpsScheduler({
       if (writeState) {
         const previous = nextState.jobs[job.name] || {};
         const failed = result.ok !== true;
+        const completedOpenMarketCycle = isCompletedOpenMarketCycle(job, result, failed);
         nextState.jobs[job.name] = {
           ...previous,
           lastRunAt: finishedAt,
@@ -1502,6 +1515,9 @@ export async function runOpsScheduler({
           consecutiveFailures: failed ? Number(previous.consecutiveFailures || 0) + 1 : 0,
           lastFailureAt: failed ? finishedAt : previous.lastFailureAt || null,
           lastSuccessAt: failed ? previous.lastSuccessAt || null : finishedAt,
+          ...(job.category === 'market_cycle' ? {
+            lastOpenRunAt: completedOpenMarketCycle ? finishedAt : previous.lastOpenRunAt || null,
+          } : {}),
           timeoutFinalization: result.timeoutFinalization || null,
           updatedAt: finishedAt,
         };

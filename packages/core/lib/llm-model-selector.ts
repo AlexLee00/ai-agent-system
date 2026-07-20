@@ -7,7 +7,10 @@ const {
   applySelectorTimeoutProfileToChain,
   resolveSelectorTimeoutProfile,
 } = require('./selector-timeout-profiles');
-const { isGeminiProvider: isRetiredGeminiProvider } = require('./llm-provider-retirement');
+const {
+  getQuarantinedLlmRouteReplacement,
+  isGeminiProvider: isRetiredGeminiProvider,
+} = require('./llm-provider-retirement');
 
 type LLMChainEntry = {
   provider: string;
@@ -79,7 +82,7 @@ const OPENAI_PERF_MODEL = configuredModel('LLM_OPENAI_PERF_MODEL', 'gpt-5.4', ['
 const OPENAI_MINI_MODEL = configuredModel('LLM_OPENAI_MINI_MODEL', 'gpt-5.4-mini', ['openai-oauth', 'openai']);
 const OPENAI_OPUS_MODEL = configuredModel('LLM_OPENAI_OPUS_MODEL', 'gpt-5.5', ['openai-oauth', 'openai']);
 const GROQ_FAST_MODEL = configuredModel('LLM_GROQ_FAST_MODEL', 'llama-3.1-8b-instant', ['groq']);
-const GROQ_DEEP_MODEL = configuredModel('LLM_GROQ_DEEP_MODEL', 'qwen/qwen3-32b', ['groq']);
+const GROQ_DEEP_MODEL = configuredModel('LLM_GROQ_DEEP_MODEL', 'openai/gpt-oss-120b', ['groq']);
 const GROQ_SCOUT_MODEL = configuredModel('LLM_GROQ_SCOUT_MODEL', GROQ_FAST_MODEL, ['groq']);
 const GEMINI_CLI_FLASH_LITE_MODEL = configuredModel(
   'LLM_GEMINI_FLASH_LITE_MODEL',
@@ -149,7 +152,7 @@ export const LLM_CONFIGURED_MODEL_CONSTANTS: ReadonlyArray<LlmConfiguredModelCon
     token: '@GROQ_DEEP_MODEL',
     envName: 'LLM_GROQ_DEEP_MODEL',
     value: GROQ_DEEP_MODEL,
-    fallback: 'qwen/qwen3-32b',
+    fallback: 'openai/gpt-oss-120b',
     providerPrefixes: ['groq'],
   },
   {
@@ -733,9 +736,20 @@ function applyLocalBacktestOnlyGuard(chain: LLMChainEntry[], options: SelectorOp
   return chain.filter((entry) => providerOfEntry(entry) !== 'local');
 }
 
+function replaceQuarantinedExactRoute(entry: LLMChainEntry): LLMChainEntry {
+  const replacement = getQuarantinedLlmRouteReplacement(providerOfEntry(entry), entry?.model);
+  if (!replacement) return entry;
+  const slash = replacement.indexOf('/');
+  return {
+    ...entry,
+    provider: replacement.slice(0, slash),
+    model: replacement.slice(slash + 1),
+  };
+}
+
 export function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
   if (!Array.isArray(chain) || chain.length === 0) return [];
-  const providerGuarded = chain.map((entry) => {
+  const providerGuarded = chain.map(replaceQuarantinedExactRoute).map((entry) => {
     if (shouldAvoidClaudeCode(entry, options)) return replacementForClaudeCode(entry, options);
     if (shouldAvoidPublicOpenAi(entry, options)) return replacementForPublicOpenAi(entry);
     return entry;
@@ -2068,7 +2082,9 @@ function buildSelectorRegistry(): Record<string, any> {
       const taskType = normalizeTaskTypeInput(options);
       const useYamlRouting = normalizedAgentName === 'chronos' ? taskType === 'backtest_embedding' : true;
       if (useYamlRouting) {
-        const yamlPolicy = resolveInvestmentYamlRoutingPolicy(normalizedAgentName);
+        const yamlPolicy = resolveInvestmentYamlRoutingPolicy(normalizedAgentName, {
+          modelTokens: LLM_CONFIGURED_MODEL_TOKEN_VALUES,
+        });
         // A rule-based agent must never regain an LLM route when YAML rollout is disabled.
         if (yamlPolicy?.enabled === false || (yamlPolicy && isLunaYamlRoutingEnabled(process.env))) {
           return yamlPolicy;

@@ -1,5 +1,6 @@
 import { loadGroqAccounts, pickGroqApiKey, blacklistGroqKey } from './secrets-loader';
 import type { LLMCallResponse } from './types';
+import { replaceQuarantinedExactLlmRoute } from '../../../../packages/core/lib/llm-provider-retirement';
 
 export interface GroqRequest {
   prompt: string;
@@ -113,6 +114,12 @@ function normalizeTemperature(value: number | undefined): number {
   // Groq/OpenAI compatibility converts 0 to 1e-8; keep our payload explicit.
   if (temperature <= 0) return 1e-8;
   return Math.min(temperature, 2);
+}
+
+function normalizeGroqRequestModel(model: string | undefined): string | undefined {
+  const normalized = String(model || '').trim();
+  if (!normalized) return model;
+  return replaceQuarantinedExactLlmRoute('groq', normalized).replace(/^groq\//, '');
 }
 
 function resolveGroqMaxAttempts(): number {
@@ -355,7 +362,8 @@ async function doGroqCall(
 }
 
 export async function callGroqFallback(req: GroqRequest): Promise<LLMCallResponse> {
-  const tokenGuard = resolveGroqTokenGuard(req);
+  const guardedReq = { ...req, model: normalizeGroqRequestModel(req.model) };
+  const tokenGuard = resolveGroqTokenGuard(guardedReq);
   if (!tokenGuard.ok) {
     return {
       ok: false,
@@ -376,7 +384,7 @@ export async function callGroqFallback(req: GroqRequest): Promise<LLMCallRespons
       error: 'Groq 계정 풀 비어있음 또는 rate-limit cooldown 중',
     } as LLMCallResponse & { retryAfterMs: number };
   }
-  return doGroqCall(req, apiKey);
+  return doGroqCall(guardedReq, apiKey);
 }
 
 export const _testOnly = {
@@ -387,4 +395,5 @@ export const _testOnly = {
   resolveGroqMaxCompletionTokens,
   resolveGroqMaxTotalTokens,
   resolveGroqTokenGuard,
+  normalizeGroqRequestModel,
 };

@@ -7,7 +7,12 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-posttrade-feedback-drill.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-posttrade-feedback-worker.ts</string>
+    <string>--once</string>
+    <string>--market=all</string>
+    <string>--limit=20</string>
+    <string>--no-auto-apply</string>
+    <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
@@ -18,7 +23,7 @@
     <key>NODE_ENV</key>
     <string>production</string>
   </dict>
-  <!-- 매 15분마다 posttrade 피드백 드릴 실행 (매매 후 자동 분석) -->
+  <!-- 매 15분마다 posttrade 학습을 누적하되 전략 파라미터 자동 적용은 금지한다. -->
   <key>StartCalendarInterval</key>
   <array>
     <dict>

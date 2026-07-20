@@ -598,6 +598,58 @@ export async function runLunaOpsSchedulerSmoke() {
     0,
   );
 
+  const closedStatePath = path.join(tmp, 'closed-market-state.json');
+  const closedLockPath = path.join(tmp, 'closed-market-lock.json');
+  const previousOpenRunAt = '2026-07-01T01:00:00.000Z';
+  fs.writeFileSync(closedStatePath, JSON.stringify({
+    jobs: {
+      market_cycle_domestic: {
+        lastRunAt: previousOpenRunAt,
+        lastOpenRunAt: previousOpenRunAt,
+        lastOutcome: 'no_signals',
+      },
+    },
+  }));
+  await runOpsScheduler({
+    now,
+    force: true,
+    statePath: closedStatePath,
+    lockPath: closedLockPath,
+    jobs: [{
+      name: 'market_cycle_domestic',
+      category: 'market_cycle',
+      market: 'domestic',
+      cadence: { type: 'interval', seconds: 1 },
+      command: process.execPath,
+      args: [],
+    }],
+    runner: () => ({ ok: true, status: 0, outcome: 'market_closed_skip' }),
+  });
+  const closedState = JSON.parse(fs.readFileSync(closedStatePath, 'utf8'));
+  assert.equal(closedState.jobs.market_cycle_domestic.lastOpenRunAt, previousOpenRunAt);
+  assert.notEqual(closedState.jobs.market_cycle_domestic.lastRunAt, previousOpenRunAt);
+  await runOpsScheduler({
+    now,
+    force: true,
+    statePath: closedStatePath,
+    lockPath: closedLockPath,
+    jobs: [{
+      name: 'market_cycle_domestic',
+      category: 'market_cycle',
+      market: 'domestic',
+      cadence: { type: 'interval', seconds: 1 },
+      command: process.execPath,
+      args: [],
+    }],
+    runner: () => ({ ok: true, status: 0, outcome: 'no_signals' }),
+  });
+  const reopenedState = JSON.parse(fs.readFileSync(closedStatePath, 'utf8'));
+  assert.notEqual(reopenedState.jobs.market_cycle_domestic.lastOpenRunAt, previousOpenRunAt);
+  assert.equal(
+    reopenedState.jobs.market_cycle_domestic.lastOpenRunAt,
+    reopenedState.jobs.market_cycle_domestic.lastRunAt,
+  );
+
   assert.equal(
     classifyOpsSchedulerOutcome(
       { name: 'market_cycle_overseas' },

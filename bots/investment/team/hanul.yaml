@@ -9,7 +9,7 @@ outputs: ["execution_result","reconcile_event"]
 collaboration: {"upstream":["luna","nemesis","budget","adaptive-risk"],"downstream":["chronos"],"parallel":["hephaestos"]}
 killSwitches: ["LUNA_HANUL_ENABLED"]
 memory_layers: ["L1","L2","L4"]
-llm_routing: {"primary":"rule-based","fallbacks":["groq/qwen/qwen3-32b"]}
+llm_routing: {"primary":"rule-based","fallbacks":["groq/@GROQ_DEEP_MODEL"]}
 persona: |
   # Hanul Persona
 

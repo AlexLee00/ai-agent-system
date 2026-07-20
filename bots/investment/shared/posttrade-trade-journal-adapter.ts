@@ -109,6 +109,8 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
   market = 'all',
   seen = new Set(),
   includeDevelopment = null,
+  throwOnQueryError = false,
+  queryFn = db.query,
 } = {}) {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = String(market || 'all').trim().toLowerCase();
@@ -128,8 +130,10 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
         return `AND COALESCE(tj.exit_time, tj.entry_time, tj.created_at) >= $${params.length}`;
       })()
     : '';
-  const rows = await db.query(
-    `SELECT ${idExpr} AS trade_id,
+  let rows = [];
+  try {
+    rows = await queryFn(
+      `SELECT ${idExpr} AS trade_id,
             tj.id AS journal_id,
             ${marketExpr} AS market,
             tj.exit_time,
@@ -146,8 +150,18 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
         ${operatingEpochClause}
       ORDER BY tj.exit_time DESC NULLS LAST, tj.created_at DESC NULLS LAST
       LIMIT $1`,
-    params,
-  ).catch(() => []);
+      params,
+    );
+  } catch (error) {
+    if (throwOnQueryError) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      const wrapped: any = new Error(`posttrade_candidate_query_failed:trade_journal: ${message}`);
+      wrapped.code = 'posttrade_candidate_query_failed';
+      wrapped.source = 'trade_journal';
+      wrapped.cause = error;
+      throw wrapped;
+    }
+  }
 
   const output = [];
   for (const row of rows || []) {
@@ -166,6 +180,85 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
   return output;
 }
 
+export async function fetchRecentClosedTradeJournalPosttradeTrades({
+  limit = 20,
+  market = 'all',
+  includeDevelopment = null,
+} = {}) {
+  const safeLimit = Math.max(1, Number(limit || 20));
+  const targetMarket = String(market || 'all').trim().toLowerCase();
+  const idExpr = tradeJournalNumericIdSql('tj');
+  const marketExpr = tradeJournalMarketSql('tj');
+  const scope = resolveTradeJournalPosttradeScope({ includeDevelopment });
+  const params = [safeLimit];
+  const marketClause = targetMarket === 'all'
+    ? ''
+    : (() => {
+        params.push(targetMarket);
+        return `AND ${marketExpr} = $${params.length}`;
+      })();
+  const operatingEpochClause = scope.enforceOperatingEpoch
+    ? (() => {
+        params.push(Number(scope.operatingEpochStartedAtMs));
+        return `AND COALESCE(tj.exit_time, tj.entry_time, tj.created_at) >= $${params.length}`;
+      })()
+    : '';
+  const rows = await db.query(
+    `SELECT ${idExpr} AS numeric_trade_id, tj.*
+       FROM investment.trade_journal tj
+      WHERE LOWER(COALESCE(tj.status, '')) = 'closed'
+        AND tj.exit_time IS NOT NULL
+        AND ${idExpr} IS NOT NULL
+        AND ${learningPnlValidSql('tj')}
+        ${marketClause}
+        ${operatingEpochClause}
+      ORDER BY tj.exit_time DESC NULLS LAST, tj.created_at DESC NULLS LAST
+      LIMIT $1`,
+    params,
+  );
+  return (rows || [])
+    .map((row) => mapTradeJournalRowToPosttradeTrade(row, Number(row.numeric_trade_id)))
+    .filter(Boolean);
+}
+
+export async function countPendingTradeJournalPosttradeCandidates({
+  market = 'all',
+  includeDevelopment = null,
+} = {}) {
+  const targetMarket = String(market || 'all').trim().toLowerCase();
+  const idExpr = tradeJournalNumericIdSql('tj');
+  const marketExpr = tradeJournalMarketSql('tj');
+  const scope = resolveTradeJournalPosttradeScope({ includeDevelopment });
+  const params = [];
+  const marketClause = targetMarket === 'all'
+    ? ''
+    : (() => {
+        params.push(targetMarket);
+        return `AND ${marketExpr} = $${params.length}`;
+      })();
+  const operatingEpochClause = scope.enforceOperatingEpoch
+    ? (() => {
+        params.push(Number(scope.operatingEpochStartedAtMs));
+        return `AND COALESCE(tj.exit_time, tj.entry_time, tj.created_at) >= $${params.length}`;
+      })()
+    : '';
+  const row = await db.get(
+    `SELECT COUNT(*)::int AS cnt
+       FROM investment.trade_journal tj
+       LEFT JOIN investment.trade_quality_evaluations tqe
+         ON tqe.trade_id = ${idExpr}
+      WHERE LOWER(COALESCE(tj.status, '')) = 'closed'
+        AND tj.exit_time IS NOT NULL
+        AND ${idExpr} IS NOT NULL
+        AND ${learningPnlValidSql('tj')}
+        AND tqe.trade_id IS NULL
+        ${marketClause}
+        ${operatingEpochClause}`,
+    params,
+  );
+  return Number(row?.cnt || 0);
+}
+
 export default {
   deriveTradeJournalNumericId,
   tradeJournalNumericIdSql,
@@ -174,5 +267,7 @@ export default {
   mapTradeJournalRowToPosttradeTrade,
   fetchTradeJournalPosttradeTrade,
   fetchPendingTradeJournalPosttradeCandidates,
+  fetchRecentClosedTradeJournalPosttradeTrades,
+  countPendingTradeJournalPosttradeCandidates,
   resolveTradeJournalPosttradeScope,
 };

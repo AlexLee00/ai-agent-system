@@ -176,8 +176,8 @@ async function buildConstitutionSummary(days = 14, market = 'all') {
   return summarizeConstitutionViolationRows(rows || []);
 }
 
-export async function buildPosttradeFeedbackDashboard({ days = 14, market = 'all' } = {}) {
-  await db.initSchema();
+export async function buildPosttradeFeedbackDashboard({ days = 14, market = 'all', initSchema = true } = {}) {
+  if (initSchema) await db.initSchema();
   const normalizedMarket = normalizeMarket(market);
   const qualitySummary = await buildQualitySummary(days, normalizedMarket);
   const constitutionSummary = await buildConstitutionSummary(days, normalizedMarket);

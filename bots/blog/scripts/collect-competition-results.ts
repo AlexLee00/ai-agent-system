@@ -2,6 +2,7 @@
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const agentRegistry = require('../../../packages/core/lib/agent-registry');
 const competitionEngine = require('../../../packages/core/lib/competition-engine');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
@@ -48,7 +49,17 @@ type BlogPostRow = {
 type ContractRow = {
   id: number;
   agent_id?: number | string | null;
+  status?: string | null;
 };
+
+type TransactionClient = {
+  query: (sql: string, params?: unknown[]) => Promise<{ rowCount?: number | null; rows: unknown[] }>;
+};
+
+type TransactionRunner = <T>(
+  schema: string,
+  run: (client: TransactionClient) => Promise<T>,
+) => Promise<T>;
 
 type GroupResult = {
   agents: string[];
@@ -282,81 +293,123 @@ function _collectGroupResultFromRows(rows: BlogPostRow[] = [], agents: unknown =
   };
 }
 
-async function _finalizeContracts(contractIds: unknown[] = [], status = 'completed', scoreResult: number | null = null): Promise<void> {
+async function _finalizeContracts(
+  contractIds: unknown[] = [],
+  status = 'completed',
+  scoreResult: number | null = null,
+  client: TransactionClient | null = null,
+): Promise<void> {
   const ids = _normalizeArray(contractIds)
     .map((id) => Number.parseInt(String(id), 10))
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (ids.length === 0) return;
+  if (!client) {
+    await pgPool.transaction('agent', async (transactionClient: TransactionClient) => {
+      await _finalizeContracts(ids, status, scoreResult, transactionClient);
+    });
+    return;
+  }
 
-  const contracts = await pgPool.query(
-    'agent',
-    `SELECT id, agent_id
+  const contractResult = await client.query(
+    `SELECT id, agent_id, status
      FROM agent.contracts
-     WHERE id = ANY($1::int[])`,
+     WHERE id = ANY($1::int[])
+     FOR UPDATE`,
     [ids],
-  ) as ContractRow[];
+  );
+  const contracts = contractResult.rows as ContractRow[];
   if (contracts.length === 0) return;
 
-  await pgPool.run(
-    'agent',
-    `UPDATE agent.contracts
-     SET status = $1,
-         score_result = COALESCE($2, score_result),
-         completed_at = COALESCE(completed_at, NOW())
-     WHERE id = ANY($3::int[])`,
-    [status, scoreResult, ids],
-  );
+  const activeContractIds = contracts
+    .filter((row) => row.status === 'active')
+    .map((row) => Number(row.id));
+  if (activeContractIds.length > 0) {
+    await client.query(
+      `UPDATE agent.contracts
+       SET status = $1,
+           score_result = COALESCE($2, score_result),
+           completed_at = COALESCE(completed_at, NOW())
+       WHERE id = ANY($3::int[])
+         AND status = 'active'`,
+      [status, scoreResult, activeContractIds],
+    );
+  }
 
   const agentIds = contracts
     .map((row: ContractRow) => Number.parseInt(String(row.agent_id || ''), 10))
     .filter((id) => Number.isInteger(id) && id > 0);
 
   if (agentIds.length > 0) {
-    await pgPool.run(
-      'agent',
-      `UPDATE agent.registry
-       SET status = 'idle', updated_at = NOW()
-       WHERE id = ANY($1::int[])`,
-      [agentIds],
-    );
+    await agentRegistry.markAgentsIdleWithoutActiveContracts(agentIds, client);
   }
 }
 
-async function _markTimeout(competitionId: number, hoursSinceCreated: number): Promise<void> {
-  const competition = await pgPool.get(
-    'agent',
-    `SELECT group_a_contract_ids, group_b_contract_ids
-     FROM agent.competitions
-     WHERE id = $1`,
-    [competitionId],
-  );
-  await pgPool.run(
-    'agent',
-    `UPDATE agent.competitions
-     SET status = 'timeout', completed_at = NOW()
-     WHERE id = $1`,
-    [competitionId],
-  );
-  await _finalizeContracts([
-    ..._normalizeArray(competition?.group_a_contract_ids),
-    ..._normalizeArray(competition?.group_b_contract_ids),
-  ], 'failed', 0);
-  console.log(`[competition-collector] #${competitionId} timeout (${Math.round(hoursSinceCreated)}h)`);
+async function _markTimeout(
+  competitionId: number,
+  hoursSinceCreated: number,
+  transaction: TransactionRunner = pgPool.transaction,
+): Promise<void> {
+  const changed = await transaction('agent', async (client: TransactionClient) => {
+    const competitionResult = await client.query(
+      `SELECT status, group_a_contract_ids, group_b_contract_ids
+       FROM agent.competitions
+       WHERE id = $1
+       FOR UPDATE`,
+      [competitionId],
+    );
+    const competition = competitionResult.rows[0] as CompetitionRow & { status?: string } | undefined;
+    if (!competition || competition.status !== 'running') return false;
+
+    await _finalizeContracts([
+      ..._normalizeArray(competition.group_a_contract_ids),
+      ..._normalizeArray(competition.group_b_contract_ids),
+    ], 'failed', 0, client);
+    const updateResult = await client.query(
+      `UPDATE agent.competitions
+       SET status = 'timeout', completed_at = NOW()
+       WHERE id = $1 AND status = 'running'`,
+      [competitionId],
+    );
+    if (Number(updateResult.rowCount || 0) !== 1) throw new Error(`competition timeout state changed: ${competitionId}`);
+    return true;
+  });
+  if (changed) console.log(`[competition-collector] #${competitionId} timeout (${Math.round(hoursSinceCreated)}h)`);
 }
 
-async function _markSuperseded(competitionId: number, reason: string, metadata: Record<string, unknown> = {}): Promise<void> {
-  await pgPool.run(
-    'agent',
-    `UPDATE agent.competitions
-     SET status = 'superseded',
-         completed_at = COALESCE(completed_at, NOW()),
-         evaluation_detail = COALESCE(evaluation_detail, '{}'::jsonb) || $2::jsonb
-     WHERE id = $1`,
-    [competitionId, JSON.stringify({ resolution: 'superseded', reason, ...metadata })],
-  );
+async function _markSuperseded(
+  competitionId: number,
+  reason: string,
+  metadata: Record<string, unknown> = {},
+  transaction: TransactionRunner = pgPool.transaction,
+): Promise<void> {
+  const changed = await transaction('agent', async (client: TransactionClient) => {
+    const competitionResult = await client.query(
+      `SELECT status, group_a_contract_ids, group_b_contract_ids
+       FROM agent.competitions
+       WHERE id = $1
+       FOR UPDATE`,
+      [competitionId],
+    );
+    const competition = competitionResult.rows[0] as CompetitionRow & { status?: string } | undefined;
+    if (!competition || competition.status !== 'timeout') return false;
 
-  console.log(`[competition-collector] #${competitionId} superseded (${reason})`);
+    await _finalizeContracts([
+      ..._normalizeArray(competition.group_a_contract_ids),
+      ..._normalizeArray(competition.group_b_contract_ids),
+    ], 'failed', 0, client);
+    const updateResult = await client.query(
+      `UPDATE agent.competitions
+       SET status = 'superseded',
+           completed_at = COALESCE(completed_at, NOW()),
+           evaluation_detail = COALESCE(evaluation_detail, '{}'::jsonb) || $2::jsonb
+       WHERE id = $1 AND status = 'timeout'`,
+      [competitionId, JSON.stringify({ resolution: 'superseded', reason, ...metadata })],
+    );
+    if (Number(updateResult.rowCount || 0) !== 1) throw new Error(`competition superseded state changed: ${competitionId}`);
+    return true;
+  });
+  if (changed) console.log(`[competition-collector] #${competitionId} superseded (${reason})`);
 }
 
 async function _collectCompetitionOutcome(comp: CompetitionRow, options: CollectOptions = {}): Promise<CompetitionOutcome> {
@@ -394,12 +447,14 @@ async function _collectCompetitionOutcome(comp: CompetitionRow, options: Collect
     };
   }
 
-  const result = await competitionEngine.completeCompetition(comp.id, resultA, resultB) as CompetitionEngineResult;
-  const winnerContractIds = result.winner === 'a' ? contractIdsA : contractIdsB;
-  const loserContractIds = result.winner === 'a' ? contractIdsB : contractIdsA;
+  const evaluation = competitionEngine.evaluateResults(resultA, resultB) as CompetitionEngineResult;
+  const expectedWinner = evaluation.scoreA >= evaluation.scoreB ? 'a' : 'b';
+  const winnerContractIds = expectedWinner === 'a' ? contractIdsA : contractIdsB;
+  const loserContractIds = expectedWinner === 'a' ? contractIdsB : contractIdsA;
 
   await _finalizeContracts(winnerContractIds, 'completed', 8);
   await _finalizeContracts(loserContractIds, 'completed', 4);
+  const result = await competitionEngine.completeCompetition(comp.id, resultA, resultB) as CompetitionEngineResult;
 
   return {
     status: 'completed',
@@ -597,7 +652,17 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  _testOnly: {
+    finalizeContracts: _finalizeContracts,
+    markSuperseded: _markSuperseded,
+    markTimeout: _markTimeout,
+  },
+};

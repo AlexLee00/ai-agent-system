@@ -41,49 +41,84 @@ export function getNaturalTargets() {
   };
 }
 
-async function countRows(sql, params = []) {
-  const row = await db.get(sql, params).catch(() => null);
-  return Number(row?.cnt || 0);
+async function countRows(metric, sql, params = [], queryFn = db.get) {
+  try {
+    const row = await queryFn(sql, params);
+    return { metric, count: Number(row?.cnt || 0), error: null };
+  } catch (error) {
+    return {
+      metric,
+      count: null,
+      error: String(error?.message || error || 'query_failed'),
+    };
+  }
 }
 
-async function collectNaturalCounts({ lowerBoundSql = null, lowerBoundParams = [] } = {}) {
+export async function collectNaturalCounts({
+  lowerBoundSql = null,
+  lowerBoundParams = [],
+  queryFn = db.get,
+} = {}) {
   const bound = lowerBoundSql ? `WHERE ${lowerBoundSql}` : '';
   const params = lowerBoundParams || [];
-  const [reflexions, skills, rag, agentMessages] = await Promise.all([
+  const results = await Promise.all([
     countRows(
+      'reflexions',
       `SELECT COUNT(*)::int AS cnt FROM investment.luna_failure_reflexions ${bound.replaceAll('{timestamp}', 'created_at')}`,
       params,
+      queryFn,
     ),
     countRows(
+      'skills',
       `SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills ${bound.replaceAll('{timestamp}', 'updated_at')}`,
       params,
+      queryFn,
     ),
     countRows(
+      'rag',
       `SELECT COUNT(*)::int AS cnt FROM investment.luna_rag_documents ${bound.replaceAll('{timestamp}', 'created_at')}`,
       params,
+      queryFn,
     ),
     countRows(
+      'agentMessages',
       `SELECT COUNT(*)::int AS cnt FROM investment.agent_messages ${bound.replaceAll('{timestamp}', 'created_at')}`,
       params,
+      queryFn,
     ),
   ]);
-  return { reflexions, skills, rag, agentMessages };
+  return {
+    ...Object.fromEntries(results.map((result) => [result.metric, result.count])),
+    queryErrors: results
+      .filter((result) => result.error)
+      .map((result) => ({ metric: result.metric, error: result.error })),
+  };
 }
 
-export async function collectNaturalAccumulation({ days = DEFAULT_OBSERVATION_DAYS } = {}) {
+export async function collectNaturalAccumulation({
+  days = DEFAULT_OBSERVATION_DAYS,
+  queryFn = db.get,
+} = {}) {
   const safeDays = Math.max(1, Math.round(Number(days || 7)));
   const epoch = getLunaOperatingEpoch();
   const rolling = await collectNaturalCounts({
     lowerBoundSql: `{timestamp} >= NOW() - ($1::int * INTERVAL '1 day')`,
     lowerBoundParams: [safeDays],
+    queryFn,
   });
-  const allTime = await collectNaturalCounts();
+  const allTime = await collectNaturalCounts({ queryFn });
   const operatingEpoch = epoch.enabled && epoch.valid
     ? await collectNaturalCounts({
         lowerBoundSql: `{timestamp} >= $1::timestamptz`,
         lowerBoundParams: [epoch.startedAt],
+        queryFn,
       })
     : null;
+  const queryErrors = [
+    ...(rolling.queryErrors || []).map((error) => ({ ...error, scope: 'rolling_window' })),
+    ...(allTime.queryErrors || []).map((error) => ({ ...error, scope: 'all_time' })),
+    ...(operatingEpoch?.queryErrors || []).map((error) => ({ ...error, scope: 'operating_epoch' })),
+  ];
   return {
     days: safeDays,
     ...rolling,
@@ -91,6 +126,7 @@ export async function collectNaturalAccumulation({ days = DEFAULT_OBSERVATION_DA
     epoch,
     allTime,
     operatingEpoch,
+    queryErrors,
   };
 }
 
@@ -98,37 +134,47 @@ export function buildNaturalCheckpoint({
   accumulation,
   targets = getNaturalTargets(),
   generatedAt = new Date().toISOString(),
+}: {
+  accumulation?: any;
+  targets?: ReturnType<typeof getNaturalTargets>;
+  generatedAt?: string;
 } = {}) {
+  const queryErrors = Array.isArray(accumulation?.queryErrors) ? accumulation.queryErrors : [];
+  const currentValue = (name) => (
+    accumulation?.[name] === null || accumulation?.[name] === undefined
+      ? null
+      : Number(accumulation[name])
+  );
   const progress = {
     reflexions: {
-      current: Number(accumulation?.reflexions || 0),
+      current: currentValue('reflexions'),
       target: Number(targets.reflexions || 0),
     },
     skills: {
-      current: Number(accumulation?.skills || 0),
+      current: currentValue('skills'),
       target: Number(targets.skills || 0),
     },
     rag: {
-      current: Number(accumulation?.rag || 0),
+      current: currentValue('rag'),
       target: Number(targets.rag || 0),
     },
     agentMessages: {
-      current: Number(accumulation?.agentMessages || 0),
+      current: currentValue('agentMessages'),
       target: Number(targets.agentMessages || 0),
     },
   };
   for (const item of Object.values(progress)) {
-    item.ready = item.current >= item.target;
-    item.ratio = item.target > 0 ? Number((item.current / item.target).toFixed(4)) : 1;
-    item.remaining = Math.max(0, item.target - item.current);
+    item.ready = item.current !== null && item.current >= item.target;
+    item.ratio = item.current === null ? null : (item.target > 0 ? Number((item.current / item.target).toFixed(4)) : 1);
+    item.remaining = item.current === null ? null : Math.max(0, item.target - item.current);
   }
   const pendingObservation = Object.entries(progress)
     .filter(([, item]) => !item.ready)
-    .map(([name, item]) => `${name}:${item.current}/${item.target}`);
-  const allTimeReady = accumulation?.allTime
+    .map(([name, item]) => item.current === null ? `${name}:query_error` : `${name}:${item.current}/${item.target}`);
+  const allTimeReady = accumulation?.allTime && (accumulation.allTime.queryErrors || []).length === 0
     ? Object.entries(targets).every(([name, target]) => Number(accumulation.allTime?.[name] || 0) >= Number(target || 0))
     : null;
-  const operatingEpochReady = accumulation?.operatingEpoch
+  const operatingEpochReady = accumulation?.operatingEpoch && (accumulation.operatingEpoch.queryErrors || []).length === 0
     ? Object.entries(targets).every(([name, target]) => Number(accumulation.operatingEpoch?.[name] || 0) >= Number(target || 0))
     : null;
   const epochAgeHours = accumulation?.epoch?.enabled && accumulation?.epoch?.valid
@@ -139,16 +185,18 @@ export function buildNaturalCheckpoint({
     allTimeReady,
     operatingEpochReady,
     epochAgeHours: Number.isFinite(epochAgeHours) ? Number(epochAgeHours.toFixed(2)) : null,
-    developmentDataImpact: allTimeReady === true && pendingObservation.length > 0
+    developmentDataImpact: queryErrors.length === 0 && allTimeReady === true && pendingObservation.length > 0
       ? 'historical_or_development_data_is_not_sufficient_for_current_rolling_window'
       : null,
-    operatingEpochImpact: accumulation?.epoch?.enabled && pendingObservation.length > 0
+    operatingEpochImpact: queryErrors.length === 0 && accumulation?.epoch?.enabled && pendingObservation.length > 0
       ? 'operating_epoch_data_is_still_accumulating'
       : null,
   };
   return {
-    ok: true,
-    status: pendingObservation.length === 0 ? 'natural_targets_met' : 'pending_natural_accumulation',
+    ok: queryErrors.length === 0,
+    status: queryErrors.length > 0
+      ? 'query_error'
+      : (pendingObservation.length === 0 ? 'natural_targets_met' : 'pending_natural_accumulation'),
     enabled: isLuna7DayNaturalCheckpointEnabled(),
     generatedAt,
     days: Number(accumulation?.days || 7),
@@ -158,8 +206,11 @@ export function buildNaturalCheckpoint({
     operatingEpoch: accumulation?.operatingEpoch || null,
     epoch: accumulation?.epoch || null,
     diagnostics,
+    queryErrors,
     pendingObservation,
-    nextActions: pendingObservation.length === 0
+    nextActions: queryErrors.length > 0
+      ? ['repair natural checkpoint read queries before evaluating accumulation progress']
+      : pendingObservation.length === 0
       ? ['natural accumulation targets met; keep daily checkpoint active']
       : [
         'run failed-reflexion backfill dry-run, then apply only with explicit confirm if accepted',

@@ -7,7 +7,7 @@ import {
   loadClusterRoutingHistory,
 } from '../lib/llm/cluster-routing-shadow.ts';
 
-const require = createRequire(import.meta.url);
+const require = createRequire(__filename);
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const LIVE_SIGNATURE_KEY = 'v1:qwen3-embed-0.6b:1024:24';

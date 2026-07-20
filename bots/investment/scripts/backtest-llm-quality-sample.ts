@@ -21,13 +21,13 @@ const DEFAULT_SAMPLES = 6;
 
 const DEFAULT_LAYER2_MODELS = [
   LOCAL_MODEL_FAST,
-  'groq/qwen/qwen3-32b',
+  'groq/openai/gpt-oss-120b',
   'groq/openai/gpt-oss-20b',
 ];
 
 const DEFAULT_LAYER3_MODELS = [
   LOCAL_MODEL_DEEP,
-  'groq/qwen/qwen3-32b',
+  'groq/openai/gpt-oss-120b',
   'groq/openai/gpt-oss-20b',
 ];
 

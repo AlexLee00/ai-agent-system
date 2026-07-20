@@ -253,12 +253,25 @@ export async function fetchPendingTradeIds(limit = 50): Promise<number[]> {
   return candidates.map((item) => Number(item.tradeId)).filter((id) => Number.isFinite(id));
 }
 
+function createCandidateQueryError(source: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || 'unknown');
+  const wrapped: any = new Error(`posttrade_candidate_query_failed:${source}: ${message}`);
+  wrapped.code = 'posttrade_candidate_query_failed';
+  wrapped.source = source;
+  wrapped.cause = error;
+  return wrapped;
+}
+
 export async function fetchPendingPosttradeCandidates({
   limit = 50,
   market = 'all',
+  throwOnQueryError = false,
+  queryFn = db.query,
 }: {
   limit?: number;
   market?: string;
+  throwOnQueryError?: boolean;
+  queryFn?: any;
 } = {}): Promise<Array<{ tradeId: number; source: 'knowledge' | 'fallback_scan' | 'trade_journal_scan' | 'reflexion_retry'; knowledgeId?: number | null; journalId?: string | null }>> {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = normalizeMarketKey(market);
@@ -266,8 +279,11 @@ export async function fetchPendingPosttradeCandidates({
     ? Math.min(5, Math.max(1, Math.ceil(safeLimit * 0.2)))
     : 0;
   const primaryCandidateLimit = Math.max(1, safeLimit - reflexionRetryReserve);
-  const rows = await db.query(
-    `SELECT
+  let tradeHistoryUnavailable = false;
+  let rows = [];
+  try {
+    rows = await queryFn(
+      `SELECT
        mk.id AS knowledge_id,
        CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
             THEN (mk.payload->>'trade_id')::BIGINT
@@ -292,12 +308,18 @@ export async function fetchPendingPosttradeCandidates({
        AND tqe.trade_id IS NULL
      ORDER BY mk.created_at ASC
      LIMIT $1`,
-    [safeLimit * 5],
-  ).catch(async (error) => {
+      [safeLimit * 5],
+    );
+  } catch (error) {
     const message = String(error?.message || error || '');
-    if (!message.includes('trade_history') && !message.includes('does not exist')) return [];
-    return db.query(
-      `SELECT
+    const missingTradeHistory = message.includes('trade_history') && message.includes('does not exist');
+    if (!missingTradeHistory) {
+      if (throwOnQueryError) throw createCandidateQueryError('knowledge', error);
+    } else {
+      tradeHistoryUnavailable = true;
+      try {
+        rows = await queryFn(
+          `SELECT
          mk.id AS knowledge_id,
          CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
               THEN (mk.payload->>'trade_id')::BIGINT
@@ -317,9 +339,13 @@ export async function fetchPendingPosttradeCandidates({
          AND tqe.trade_id IS NULL
        ORDER BY mk.created_at ASC
        LIMIT $1`,
-      [safeLimit * 5],
-    ).catch(() => []);
-  });
+          [safeLimit * 5],
+        );
+      } catch (fallbackError) {
+        if (throwOnQueryError) throw createCandidateQueryError('knowledge_fallback', fallbackError);
+      }
+    }
+  }
   const fromKnowledge = [];
   const seen = new Set<number>();
   for (const row of rows || []) {
@@ -338,11 +364,16 @@ export async function fetchPendingPosttradeCandidates({
       limit: safeLimit - fromKnowledge.length,
       market: targetMarket,
       seen,
+      queryFn,
+      throwOnQueryError,
     });
     fromKnowledge.push(...reflexionRetryCandidates);
   }
-  const fallbackRows = await db.query(
-    `SELECT th.id
+  let fallbackRows = [];
+  if (fromKnowledge.length < safeLimit && !tradeHistoryUnavailable) {
+    try {
+      fallbackRows = await queryFn(
+        `SELECT th.id
        FROM investment.trade_history th
        LEFT JOIN investment.trade_quality_evaluations tqe ON tqe.trade_id = th.id
       WHERE th.exit_at IS NOT NULL
@@ -350,8 +381,12 @@ export async function fetchPendingPosttradeCandidates({
         ${targetMarket === 'all' ? '' : `AND COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) = $2`}
       ORDER BY th.exit_at DESC
       LIMIT $1`,
-    targetMarket === 'all' ? [safeLimit * 2] : [safeLimit * 2, targetMarket],
-  ).catch(() => []);
+        targetMarket === 'all' ? [safeLimit * 2] : [safeLimit * 2, targetMarket],
+      );
+    } catch (error) {
+      if (throwOnQueryError) throw createCandidateQueryError('trade_history', error);
+    }
+  }
   for (const row of fallbackRows || []) {
     const tradeId = Number(row.id);
     if (!Number.isFinite(tradeId) || tradeId <= 0 || seen.has(tradeId)) continue;
@@ -364,6 +399,8 @@ export async function fetchPendingPosttradeCandidates({
       limit: safeLimit - fromKnowledge.length,
       market: targetMarket,
       seen,
+      throwOnQueryError,
+      queryFn,
     });
     fromKnowledge.push(...journalCandidates);
   }
@@ -377,6 +414,7 @@ export async function fetchRejectedReflexionRetryCandidates({
   market = 'all',
   seen = new Set(),
   queryFn = db.query,
+  throwOnQueryError = false,
 } = {}) {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = normalizeMarketKey(market);
@@ -389,8 +427,10 @@ export async function fetchRejectedReflexionRetryCandidates({
         params.push(targetMarket);
         return `AND ${marketExpr} = $${params.length}`;
       })();
-  const rows = await Promise.resolve(queryFn(
-    `SELECT tqe.trade_id,
+  let rows = [];
+  try {
+    rows = await Promise.resolve(queryFn(
+      `SELECT tqe.trade_id,
             tqe.evaluated_at,
             tj.id AS journal_id,
             tqe.sub_score_breakdown->'reflection'->>'dedupeOfTradeId' AS dedupe_of_trade_id,
@@ -414,8 +454,11 @@ export async function fetchRejectedReflexionRetryCandidates({
         ${marketClause}
       ORDER BY tqe.evaluated_at DESC NULLS LAST
       LIMIT $1`,
-    params,
-  )).catch(() => []);
+      params,
+    ));
+  } catch (error) {
+    if (throwOnQueryError) throw createCandidateQueryError('reflexion_retry', error);
+  }
   const output = [];
   for (const row of rows || []) {
     if (

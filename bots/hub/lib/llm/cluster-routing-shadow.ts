@@ -68,6 +68,16 @@ export type ClusterRoutingRecommendation = {
   centroid_hash: string | null;
 };
 
+type ClusterRoutingEvidence = Pick<
+  ClusterRoutingRecommendation,
+  | 'version'
+  | 'embedding_model'
+  | 'embedding_dimensions'
+  | 'signature_dimensions'
+  | 'signature_key'
+  | 'embedding_signature'
+>;
+
 const DEFAULT_HISTORY_LIMIT = 500;
 const DEFAULT_MIN_SAMPLES = 3;
 const MAX_CLUSTERS = 4;
@@ -335,14 +345,14 @@ export async function buildClusterRoutingRecommendation(
   if (!enabled(env) || !isClusterRoutingEligible(input)) return null;
 
   const embeddingModel = String(deps.embeddingModel || rag.EMBED_MODEL || 'qwen3-embed-0.6b');
-  let evidence = {
+  let evidence: ClusterRoutingEvidence = {
     version: SIGNATURE_VERSION,
     embedding_model: embeddingModel,
     embedding_dimensions: 0,
     signature_dimensions: 0,
     signature_key: buildEmbeddingSignatureKey(embeddingModel, 0, 0),
     embedding_signature: [] as number[],
-  } as const;
+  };
   const unavailable = (family: ClusterRoutingUnavailableFamily): ClusterRoutingRecommendation => ({
     ...evidence,
     cluster_algorithm_version: CLUSTER_ALGORITHM_VERSION,
@@ -378,7 +388,7 @@ export async function buildClusterRoutingRecommendation(
       signature_dimensions: signature.length,
       signature_key: signatureKey,
       embedding_signature: signature,
-    } as const;
+    };
 
     const historyLimit = boundedInt(env.LLM_CLUSTER_ROUTING_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT, 10, 2000);
     const minSamples = boundedInt(env.LLM_CLUSTER_ROUTING_MIN_SAMPLES, DEFAULT_MIN_SAMPLES, 1, 100);

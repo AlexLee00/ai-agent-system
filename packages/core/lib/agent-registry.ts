@@ -67,15 +67,50 @@ type RegistryStats = {
   total_count?: number | string;
 };
 
+type QueryClient = {
+  query: (sql: string, params?: unknown[]) => Promise<{ rowCount?: number | null; rows?: unknown[] }>;
+};
+
+type TransactionRunner = <T>(
+  schema: string,
+  run: (client: QueryClient) => Promise<T>,
+) => Promise<T>;
+
 const TEAM_ALIASES: Record<string, string> = {
   research: 'darwin',
   legal: 'justin',
   data: 'sigma',
 };
 
+const MARK_AGENTS_IDLE_WITHOUT_ACTIVE_CONTRACTS_SQL = `UPDATE agent.registry r
+   SET status = 'idle', updated_at = NOW()
+ WHERE r.id = ANY($1::int[])
+   AND r.status = 'active'
+   AND NOT EXISTS (
+     SELECT 1
+       FROM agent.contracts c
+      WHERE c.agent_id = r.id
+        AND c.status = 'active'
+   )`;
+
 function normalizeTeam(team?: string | null): string {
   const key = String(team || '').trim().toLowerCase();
   return TEAM_ALIASES[key] || key;
+}
+
+async function markAgentsIdleWithoutActiveContracts(
+  agentIds: Array<number | string>,
+  client: QueryClient | null = null,
+): Promise<number> {
+  const normalizedIds = [...new Set(agentIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+  if (normalizedIds.length === 0) return 0;
+
+  const result = client
+    ? await client.query(MARK_AGENTS_IDLE_WITHOUT_ACTIVE_CONTRACTS_SQL, [normalizedIds])
+    : await pgPool.run('agent', MARK_AGENTS_IDLE_WITHOUT_ACTIVE_CONTRACTS_SQL, [normalizedIds]);
+  return Number(result.rowCount || 0);
 }
 
 async function getAgent(name: string): Promise<AgentRow | null> {
@@ -215,26 +250,26 @@ async function createContract(agentName: string, contractData: ContractInput): P
   return { contractId: row?.id || 0, agent: agentName, status: row?.status };
 }
 
-async function completeContract(contractId: number, scoreResult: number | string): Promise<Record<string, unknown> | null> {
-  const contract = await pgPool.get<{ id: number; agent_id: number; status?: string | null; score_result?: number | string | null }>(
-    'agent',
-    `UPDATE agent.contracts
-     SET status = 'completed', score_result = $1, completed_at = NOW()
-     WHERE id = $2
-     RETURNING id, agent_id, status, score_result`,
-    [scoreResult, contractId],
-  );
-  if (!contract) return null;
+async function completeContract(
+  contractId: number,
+  scoreResult: number | string,
+  transaction: TransactionRunner = pgPool.transaction,
+): Promise<Record<string, unknown> | null> {
+  return transaction<Record<string, unknown> | null>('agent', async (client: QueryClient) => {
+    const result = await client.query(
+      `UPDATE agent.contracts
+       SET status = 'completed', score_result = $1, completed_at = NOW()
+       WHERE id = $2
+         AND status = 'active'
+       RETURNING id, agent_id, status, score_result`,
+      [scoreResult, contractId],
+    );
+    const contract = result.rows?.[0] as { id: number; agent_id: number; status?: string | null; score_result?: number | string | null } | undefined;
+    if (!contract) return null;
 
-  const agent = await pgPool.get<{ name: string }>(
-    'agent',
-    'SELECT name FROM agent.registry WHERE id = $1',
-    [contract.agent_id],
-  );
-  if (agent?.name) {
-    await updateStatus(agent.name, 'idle');
-  }
-  return contract;
+    await markAgentsIdleWithoutActiveContracts([contract.agent_id], client);
+    return contract;
+  });
 }
 
 async function registerAgent(data: RegisterAgentInput): Promise<{ id: number; name: string } | null> {
@@ -307,5 +342,9 @@ export = {
   updateStatus,
   createContract,
   completeContract,
+  markAgentsIdleWithoutActiveContracts,
   registerAgent,
+  _testOnly: {
+    MARK_AGENTS_IDLE_WITHOUT_ACTIVE_CONTRACTS_SQL,
+  },
 };

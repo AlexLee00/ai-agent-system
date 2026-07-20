@@ -26,6 +26,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     once: argv.includes('--once') || !argv.includes('--loop'),
     loop: argv.includes('--loop'),
     dryRun: argv.includes('--dry-run'),
+    noAutoApply: argv.includes('--no-auto-apply'),
     force: argv.includes('--force'),
     quiet: argv.includes('--quiet'),
     intervalSec: Math.max(10, Number(intervalRaw || 0) || 0),
@@ -59,9 +60,75 @@ function resolveLearningDays(cfg: any, market: string) {
   );
 }
 
-async function runActionAutoApplyIfEnabled({
+function buildWorkerRunPayload(input: any = {}) {
+  const {
+    startedAt = null,
+    completedAt = null,
+    cfg = {},
+    args = {},
+    result = {},
+    skillExtraction = {},
+    dashboard = {},
+    dashboardRecord = {},
+    actionAutoApply = {},
+    learningDays = null,
+  } = input;
+  const failureCodes = [];
+  const addFailure = (code, fallback) => {
+    const normalized = String(code || fallback || '').trim();
+    if (normalized && !failureCodes.includes(normalized)) failureCodes.push(normalized);
+  };
+
+  if (result?.ok === false) {
+    addFailure(result?.code, 'posttrade_feedback_failed');
+  }
+  if (Number(result?.errors || 0) > 0) {
+    addFailure('posttrade_feedback_errors');
+  }
+  if ((args.force || cfg?.skill_extraction?.enabled === true) && skillExtraction?.ok !== true) {
+    addFailure(skillExtraction?.code, 'posttrade_skill_extraction_failed');
+  }
+  if ((args.force || cfg?.dashboard?.enabled === true) && dashboard?.ok !== true) {
+    addFailure(dashboard?.code, 'posttrade_dashboard_failed');
+  }
+  if (cfg?.dashboard?.enabled === true && dashboard?.ok === true && dashboardRecord?.ok !== true) {
+    addFailure(dashboardRecord?.code, 'posttrade_dashboard_record_failed');
+  }
+  const autoApplyRequired = cfg?.parameter_feedback_map?.auto_apply === true
+    && args.noAutoApply !== true
+    && args.dryRun !== true;
+  if (autoApplyRequired && actionAutoApply?.ok !== true) {
+    addFailure(actionAutoApply?.code, 'posttrade_action_auto_apply_failed');
+  }
+
+  return {
+    ok: failureCodes.length === 0,
+    code: failureCodes.length === 0 ? 'posttrade_worker_ok' : 'posttrade_worker_partial_failure',
+    failureCodes,
+    startedAt,
+    completedAt,
+    mode: cfg?.mode || 'shadow',
+    market: args.market,
+    noAutoApply: args.noAutoApply === true,
+    result,
+    learning: {
+      days: learningDays,
+      skillExtraction,
+      dashboard,
+      dashboardRecord,
+      actionAutoApply,
+    },
+  };
+}
+
+function resolveWorkerExitCode(result) {
+  return result?.ok === true ? 0 : 1;
+}
+
+export async function runActionAutoApplyIfEnabled({
   cfg = {},
   dryRun = false,
+  noAutoApply = false,
   days = 14,
 } = {}) {
   const enabled = cfg?.parameter_feedback_map?.auto_apply === true;
@@ -70,6 +137,17 @@ async function runActionAutoApplyIfEnabled({
       ok: true,
       code: 'posttrade_action_auto_apply_disabled',
       enabled: false,
+      applied: [],
+      candidates: [],
+      skippedByCooldown: [],
+    };
+  }
+  if (noAutoApply) {
+    return {
+      ok: true,
+      code: 'posttrade_action_auto_apply_suppressed',
+      enabled: true,
+      suppressed: true,
       applied: [],
       candidates: [],
       skippedByCooldown: [],
@@ -150,7 +228,15 @@ export async function runPosttradeFeedbackWorker(input = {}) {
       json: false,
       quiet: args.quiet,
       tradeId: null,
-    });
+      strictCandidateQueries: true,
+    }).catch((error) => ({
+      ok: false,
+      code: error?.code || 'posttrade_feedback_failed',
+      source: error?.source || null,
+      processed: 0,
+      errors: 1,
+      error: String(error?.message || error || 'unknown'),
+    }));
     const learningDays = resolveLearningDays(cfg, args.market);
     const skillExtraction = (args.force || cfg?.skill_extraction?.enabled === true)
       ? await runPosttradeSkillExtraction({
@@ -193,6 +279,7 @@ export async function runPosttradeFeedbackWorker(input = {}) {
     const actionAutoApply = await runActionAutoApplyIfEnabled({
       cfg,
       dryRun: args.dryRun,
+      noAutoApply: args.noAutoApply,
       days: learningDays,
     }).catch((error) => ({
       ok: false,
@@ -204,21 +291,18 @@ export async function runPosttradeFeedbackWorker(input = {}) {
       skippedByCooldown: [],
     }));
     const completedAt = new Date().toISOString();
-    const payload = {
-      ok: true,
+    const payload = buildWorkerRunPayload({
       startedAt,
       completedAt,
-      mode: cfg?.mode || 'shadow',
-      market: args.market,
+      cfg,
+      args,
       result,
-      learning: {
-        days: learningDays,
-        skillExtraction,
-        dashboard,
-        dashboardRecord,
-        actionAutoApply,
-      },
-    };
+      skillExtraction,
+      dashboard,
+      dashboardRecord,
+      actionAutoApply,
+      learningDays,
+    });
     writeHeartbeat(args.heartbeatPath, payload);
     return payload;
   };
@@ -239,6 +323,7 @@ export async function runPosttradeFeedbackWorker(input = {}) {
 async function main() {
   const args = parseArgs();
   const result = await runPosttradeFeedbackWorker(args);
+  process.exitCode = resolveWorkerExitCode(result);
   if (args.json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
@@ -248,6 +333,7 @@ async function main() {
       console.log(`posttrade worker blocked — code=${result?.code || 'unknown'}`);
     }
   }
+  return result;
 }
 
 if (isDirectExecution(import.meta.url)) {
@@ -256,3 +342,10 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ runtime-posttrade-feedback-worker 실패:',
   });
 }
+
+export const _testOnly = {
+  parseArgs,
+  buildWorkerRunPayload,
+  resolveWorkerExitCode,
+  writeHeartbeat,
+};

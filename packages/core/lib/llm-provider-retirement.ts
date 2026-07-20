@@ -16,6 +16,9 @@ const RETIRED_GEMINI_SELECTOR_KEYS = Object.freeze([
   'hub.unified.oauth.gemini.smoke',
 ]);
 const retiredGeminiSelectorKeySet = new Set(RETIRED_GEMINI_SELECTOR_KEYS);
+const QUARANTINED_EXACT_LLM_ROUTES = Object.freeze({
+  'groq/qwen/qwen3-32b': 'groq/openai/gpt-oss-120b',
+});
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'y', 'on']);
 const FALSE_VALUES = new Set(['0', 'false', 'no', 'n', 'off']);
 const ENABLE_ENV_KEYS = [
@@ -42,6 +45,28 @@ function isGeminiProvider(value) {
 
 function isRetiredGeminiSelectorKey(value) {
   return retiredGeminiSelectorKeySet.has(normalized(value));
+}
+
+function exactLlmRoute(providerOrRoute, model = '') {
+  const provider = normalized(providerOrRoute);
+  const modelName = normalized(model);
+  if (!modelName) return provider;
+  return `${provider}/${modelName.replace(new RegExp(`^${provider}/`), '')}`;
+}
+
+function getQuarantinedLlmRouteReplacement(providerOrRoute, model = '') {
+  return QUARANTINED_EXACT_LLM_ROUTES[exactLlmRoute(providerOrRoute, model)] || null;
+}
+
+function isQuarantinedExactLlmRoute(providerOrRoute, model = '') {
+  return getQuarantinedLlmRouteReplacement(providerOrRoute, model) != null;
+}
+
+function replaceQuarantinedExactLlmRoute(providerOrRoute, model = '') {
+  const replacement = getQuarantinedLlmRouteReplacement(providerOrRoute, model);
+  if (replacement) return replacement;
+  if (normalized(model)) return exactLlmRoute(providerOrRoute, model);
+  return String(providerOrRoute || '').trim();
 }
 
 function getGeminiRetirementState(env = process.env) {
@@ -80,20 +105,28 @@ function assertProviderNotRetired(providerOrRoute) {
 
 export {
   GEMINI_PROVIDER_ALIASES,
+  QUARANTINED_EXACT_LLM_ROUTES,
   RETIRED_GEMINI_SELECTOR_KEYS,
   assertProviderNotRetired,
+  getQuarantinedLlmRouteReplacement,
   getGeminiRetirementState,
   isGeminiProvider,
+  isQuarantinedExactLlmRoute,
   isRetiredGeminiSelectorKey,
+  replaceQuarantinedExactLlmRoute,
   warnGeminiRetirementOverride,
 };
 
 module.exports = {
   GEMINI_PROVIDER_ALIASES,
+  QUARANTINED_EXACT_LLM_ROUTES,
   RETIRED_GEMINI_SELECTOR_KEYS,
   assertProviderNotRetired,
+  getQuarantinedLlmRouteReplacement,
   getGeminiRetirementState,
   isGeminiProvider,
+  isQuarantinedExactLlmRoute,
   isRetiredGeminiSelectorKey,
+  replaceQuarantinedExactLlmRoute,
   warnGeminiRetirementOverride,
 };

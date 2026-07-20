@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🤖 AI Agent System</h1>
   <p align="center">
-    <strong>A self-evolving multi-agent platform with 121 autonomous agents across 10 specialized teams</strong>
+    <strong>A self-evolving multi-agent platform with 124 autonomous agents across 8 specialized teams</strong>
   </p>
   <p align="center">
     <a href="#architecture">Architecture</a> •
@@ -16,10 +16,10 @@
 
 ## What is this?
 
-A **production-grade multi-agent AI platform** running 24/7 on Apple Silicon, orchestrating 121 autonomous agents that trade crypto, publish blogs, manage reservations, conduct research, and continuously improve themselves — all at **$0 API cost** using local LLMs.
+A **production-grade multi-agent AI platform** running 24/7 on Apple Silicon, orchestrating 124 autonomous agents that trade crypto, publish blogs, manage reservations, conduct research, and continuously improve themselves — all at **$0 API cost** using local LLMs.
 
 ```
-10 Teams • 121 Agents • 76 launchd Services • 12 Telegram Topics
+8 Teams • 124 Agents • 76 launchd Services • 12 Telegram Topics
 Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 ```
 
@@ -67,7 +67,7 @@ Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 ```
 
 
-<h2 id="teams">👥 Teams & Agents (121 total)</h2>
+<h2 id="teams">👥 Teams & Agents (124 total)</h2>
 
 | Team | Mission | Agents | Key Capabilities |
 |------|---------|--------|-----------------|

@@ -43,8 +43,8 @@ const SPEED_TEST_MODEL_CATALOG = {
   groq: new Set([
     'groq/llama-3.1-8b-instant',
     'groq/llama-3.3-70b-versatile',
-    'groq/qwen/qwen3-32b',
     'groq/openai/gpt-oss-20b',
+    'groq/openai/gpt-oss-120b',
   ]),
   cerebras: new Set([
     'cerebras/llama3.1-8b',
