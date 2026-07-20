@@ -122,6 +122,8 @@
     "llm:token-budget-smoke": "tsx ../../packages/core/scripts/token-budget-smoke.ts",
     "llm:token-budget-smoke:live": "tsx ../../packages/core/scripts/token-budget-smoke.ts --live-probe",
     "llm:routing-log-prompt-hash-smoke": "tsx scripts/llm-routing-log-prompt-hash-smoke.ts",
+    "llm:routing-outcome-backfill": "tsx scripts/llm-routing-outcome-backfill.ts",
+    "smoke:llm-routing-outcome-backfill": "tsx scripts/llm-routing-outcome-backfill-smoke.ts",
     "llm:agent-inventory-audit-smoke": "tsx scripts/agent-inventory-audit-smoke.ts",
     "llm:retired-team-selector-gate-smoke": "tsx scripts/retired-team-selector-gate-smoke.ts",
     "llm:planned-team-route-block-smoke": "tsx scripts/planned-team-route-block-smoke.ts",
