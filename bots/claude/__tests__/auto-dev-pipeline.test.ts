@@ -63,6 +63,7 @@ function makeDoc(tmpRoot, fileName = 'CODEX_SAMPLE.md', content = '# A\nx') {
 function makeMocks(tmpRoot, overrides = {}) {
   const alarms = [];
   const repairCallbacks = [];
+  const repairProgress = [];
   const autoDevOutcomes = [];
   const childProcessMock = {
     execFileSync: (command) => {
@@ -77,6 +78,7 @@ function makeMocks(tmpRoot, overrides = {}) {
   return {
     alarms,
     repairCallbacks,
+    repairProgress,
     autoDevOutcomes,
     mocks: {
       '../../../packages/core/lib/env': { PROJECT_ROOT: tmpRoot },
@@ -88,6 +90,10 @@ function makeMocks(tmpRoot, overrides = {}) {
         postAlarmAutoRepairResult: async payload => {
           repairCallbacks.push(payload);
           return { ok: true, mirrorUpdate: { ok: true, updated: 1 } };
+        },
+        postAlarmAutoRepairProgress: async payload => {
+          repairProgress.push(payload);
+          return { ok: true, eventId: repairProgress.length };
         },
       },
       '../../../packages/core/lib/pg-pool.js': {
@@ -140,6 +146,40 @@ function makeMocks(tmpRoot, overrides = {}) {
       ...overrides,
     },
   };
+}
+
+async function test_alarm_repair_progress_carries_attempt_contract() {
+  const tmpRoot = makeTempRoot();
+  const { mocks, repairProgress } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const job = {
+      relPath: 'docs/auto_dev/ALARM_INCIDENT_PROGRESS.md',
+      contentHash: 'progress-hash',
+      analysis: {
+        relPath: 'docs/auto_dev/ALARM_INCIDENT_PROGRESS.md',
+        metadata: {
+          source_team: 'reservation',
+          incident_key: 'reservation:service_health:ai.ska.kiosk-monitor',
+          alarm_event_id: '33310150',
+        },
+      },
+    };
+    const result = await pipeline._testOnly_sendAlarmRepairProgress(job, 'retry_pending', {
+      attempt: 1,
+      maxAttempts: 3,
+      nextRetryAt: '2026-07-20T01:05:00.000Z',
+      summary: 'retry scheduled',
+    }, { shadow: false, test: false });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot));
+
+  assert.strictEqual(repairProgress.length, 1);
+  assert.strictEqual(repairProgress[0].state, 'retry_pending');
+  assert.strictEqual(repairProgress[0].attempt, 1);
+  assert.strictEqual(repairProgress[0].maxAttempts, 3);
+  assert.strictEqual(repairProgress[0].nextRetryAt, '2026-07-20T01:05:00.000Z');
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: repair progress carries retry attempt contract');
 }
 
 async function withMocks(mocks, fn, env = {}) {
@@ -3978,6 +4018,7 @@ async function main() {
     test_completed_manifest_during_execution_suppresses_failure_alarm,
     test_completed_manifest_suppresses_failure_at_notification_boundary,
     test_alarm_repair_result_uses_callback_contract,
+    test_alarm_repair_progress_carries_attempt_contract,
     test_completed_alarm_callback_failure_is_retried_without_reimplementation,
     test_archived_missing_pending_callback_is_retried,
     test_callback_retry_does_not_archive_regenerated_generation,

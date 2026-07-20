@@ -304,6 +304,64 @@ async function recordHubAlarmMirror({
   }
 }
 
+async function resolveAlarmIncidentFromRecovery({
+  resolvesIncidentKey,
+  resourceId,
+  recoveryIncidentKey,
+  team,
+  fromBot,
+}: {
+  resolvesIncidentKey: string;
+  resourceId: string;
+  recoveryIncidentKey: string;
+  team: string;
+  fromBot: string;
+}) {
+  if (!resolvesIncidentKey) return null;
+  if (!resourceId) {
+    return { ok: false, updated: 0, error: 'recovery_resource_id_required' };
+  }
+  try {
+    const result = await alarmDb.run('agent', `
+      UPDATE agent.hub_alarms
+      SET status = 'verified',
+          resolved_at = NOW(),
+          metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+            'resolved_by_incident_key', $1::text,
+            'resolved_by_resource_id', NULLIF($2::text, ''),
+            'recovery_incident_key', $3::text,
+            'recovered_at', NOW()::text
+          )
+      WHERE (metadata->>'incident_key' = $1 OR fingerprint = $1)
+        AND metadata->>'resource_id' = $2
+        AND COALESCE(status, 'new') IN ('new', 'correlating', 'repairing')
+      RETURNING id
+    `, [resolvesIncidentKey, resourceId, recoveryIncidentKey]);
+    const updated = Number(result?.rowCount || 0);
+    await alarmEventLake.record({
+      eventType: 'hub_alarm_incident_recovery',
+      team,
+      botName: fromBot,
+      severity: 'info',
+      traceId: resolvesIncidentKey,
+      title: 'Alarm incident recovery observed',
+      message: `recovery observed for ${resolvesIncidentKey}`,
+      tags: ['hub', 'alarm', 'recovery', `team:${team}`],
+      metadata: {
+        source: 'hub_alarm_route',
+        resolves_incident_key: resolvesIncidentKey,
+        recovery_incident_key: recoveryIncidentKey,
+        resource_id: resourceId || null,
+        updated,
+      },
+    });
+    return { ok: true, updated };
+  } catch (error: any) {
+    console.warn(`[hub/alarm] recovery resolution failed: ${error?.message || error}`);
+    return { ok: false, updated: 0, error: error?.message || 'recovery_resolution_failed' };
+  }
+}
+
 function defaultActionability({
   severity,
   visibility,
@@ -694,6 +752,8 @@ export async function alarmRoute(req: any, res: any) {
     const severity = normalizeSeverity(req.body?.severity);
     const title = normalizeText(req.body?.title, `${team} alarm`);
     const payload = req.body?.payload ?? {};
+    const resourceId = normalizeText((payload as Record<string, unknown>)?.resource_id);
+    const resolvesIncidentKey = normalizeText((payload as Record<string, unknown>)?.resolves_incident_key);
     const eventType = normalizeEventType(payload);
     const traceId = normalizeText(req.body?.traceId)
       || normalizeText(req.body?.trace_id)
@@ -773,6 +833,15 @@ export async function alarmRoute(req: any, res: any) {
         title,
         message,
       });
+    const recoveryResolution = resolvesIncidentKey
+      ? await resolveAlarmIncidentFromRecovery({
+          resolvesIncidentKey,
+          resourceId,
+          recoveryIncidentKey: incidentKey,
+          team,
+          fromBot,
+        })
+      : null;
     const clusterKey = alarmType === 'error'
       ? buildAlarmClusterKey({ team, fromBot, eventType, title, message, payload })
       : '';
@@ -852,6 +921,7 @@ export async function alarmRoute(req: any, res: any) {
         governed: true,
         delivered: false,
         delivery_error: null,
+        recovery_resolution: recoveryResolution,
       });
     }
 
@@ -893,6 +963,8 @@ export async function alarmRoute(req: any, res: any) {
         classification_llm_confidence: llmClassificationConfidence,
         dispatch_mode: dispatchMode,
         auto_repair_shadow_skipped: autoRepairShadowSkipped,
+        resource_id: resourceId || null,
+        resolves_incident_key: resolvesIncidentKey || null,
       },
     });
 
@@ -931,6 +1003,8 @@ export async function alarmRoute(req: any, res: any) {
         classification_source: classificationSource,
         classification_confidence: finalClassificationConfidence,
         auto_repair_shadow_skipped: autoRepairShadowSkipped,
+        resource_id: resourceId || null,
+        resolves_incident_key: resolvesIncidentKey || null,
       },
     });
 
@@ -1108,6 +1182,7 @@ export async function alarmRoute(req: any, res: any) {
       auto_repair: autoRepair,
       auto_repair_shadow_skipped: autoRepairShadowSkipped,
       shadow_observation: shadowObservation,
+      recovery_resolution: recoveryResolution,
       mirror_records: {
         classification: classificationRecord,
         alarm: mirrorRecord,
@@ -1115,6 +1190,87 @@ export async function alarmRoute(req: any, res: any) {
     });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
+const AUTO_REPAIR_PROGRESS_STATES = new Set([
+  'claimed',
+  'in_progress',
+  'failed',
+  'retry_pending',
+  'dead_letter',
+]);
+
+export async function alarmAutoRepairProgressRoute(req: any, res: any) {
+  const incidentKey = normalizeText(req.body?.incidentKey || req.body?.incident_key);
+  if (!incidentKey) return res.status(400).json({ ok: false, error: 'incident_key_required' });
+  const alarmEventId = normalizeText(req.body?.alarmEventId || req.body?.alarm_event_id);
+  if (!alarmEventId) return res.status(400).json({ ok: false, error: 'alarm_event_id_required' });
+  const state = normalizeText(req.body?.state).toLowerCase();
+  if (!AUTO_REPAIR_PROGRESS_STATES.has(state)) {
+    return res.status(400).json({ ok: false, error: 'auto_repair_progress_state_invalid' });
+  }
+  const attempt = Math.max(0, Math.floor(Number(req.body?.attempt) || 0));
+  const maxAttempts = Math.max(0, Math.floor(Number(req.body?.maxAttempts ?? req.body?.max_attempts) || 0));
+  const nextRetryAtRaw = normalizeText(req.body?.nextRetryAt || req.body?.next_retry_at);
+  const nextRetryAtMs = nextRetryAtRaw ? Date.parse(nextRetryAtRaw) : NaN;
+  if (nextRetryAtRaw && !Number.isFinite(nextRetryAtMs)) {
+    return res.status(400).json({ ok: false, error: 'next_retry_at_invalid' });
+  }
+  const nextRetryAt = nextRetryAtRaw ? new Date(nextRetryAtMs).toISOString() : null;
+  const team = normalizeTeam(req.body?.team);
+  const fromBot = normalizeText(req.body?.fromBot || req.body?.from_bot, 'auto-dev');
+  const docPath = normalizeText(req.body?.docPath || req.body?.doc_path);
+  const summary = normalizeText(req.body?.summary).slice(0, 2_000);
+
+  try {
+    const eventId = await alarmEventLake.record({
+      eventType: 'hub_alarm_auto_repair_progress',
+      team,
+      botName: fromBot,
+      severity: state === 'failed' || state === 'dead_letter' ? 'warn' : 'info',
+      traceId: incidentKey,
+      title: 'Alarm auto repair progress',
+      message: summary || `auto repair ${state} (${attempt}/${maxAttempts})`,
+      tags: ['hub', 'alarm', 'auto_repair_progress', `team:${team}`, `state:${state}`],
+      metadata: {
+        source: 'hub_alarm_auto_repair_progress',
+        incident_key: incidentKey,
+        alarm_event_id: alarmEventId,
+        state,
+        attempt,
+        max_attempts: maxAttempts,
+        next_retry_at: nextRetryAt,
+        doc_path: docPath || null,
+      },
+    });
+    const mirrorUpdate = await alarmDb.run('agent', `
+      UPDATE agent.hub_alarms
+      SET metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+        'auto_repair_progress_state', $1::text,
+        'auto_repair_progress_attempt', $2::int,
+        'auto_repair_progress_max_attempts', $3::int,
+        'auto_repair_progress_next_retry_at', NULLIF($4::text, ''),
+        'auto_repair_progress_at', NOW()::text,
+        'auto_repair_progress_event_id', $5::text
+      )
+      WHERE (metadata->>'incident_key' = $6 OR fingerprint = $6)
+        AND metadata->>'event_id' = $7
+        AND COALESCE(status, 'new') IN ('repairing', 'correlating')
+    `, [state, attempt, maxAttempts, nextRetryAt || '', String(eventId), incidentKey, alarmEventId]);
+    return res.json({
+      ok: true,
+      event_id: eventId,
+      incident_key: incidentKey,
+      alarm_event_id: alarmEventId,
+      state,
+      attempt,
+      max_attempts: maxAttempts,
+      next_retry_at: nextRetryAt,
+      mirror_updated: Number(mirrorUpdate?.rowCount || 0),
+    });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message || 'auto_repair_progress_failed' });
   }
 }
 

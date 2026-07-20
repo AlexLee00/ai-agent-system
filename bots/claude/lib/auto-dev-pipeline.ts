@@ -17,7 +17,11 @@ const crypto = require('crypto');
 const { execFileSync, execSync, spawn } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
-const { postAlarm, postAlarmAutoRepairResult } = require('../../../packages/core/lib/hub-alarm-client');
+const {
+  postAlarm,
+  postAlarmAutoRepairProgress,
+  postAlarmAutoRepairResult,
+} = require('../../../packages/core/lib/hub-alarm-client');
 const {
   listAutoDevManifestEntries,
   loadAutoDevManifest,
@@ -1914,7 +1918,7 @@ async function sendAlarmRepairResult(job, status, summary, options = {}, payload
     context.docPath,
     { contentHash: job?.contentHash },
     {
-      state: 'archived',
+      state: status === 'unresolved_needs_human' ? 'dead_letter' : 'archived',
       callbackState: 'pending',
       callbackPayload,
       callbackAttempts: 0,
@@ -1956,6 +1960,35 @@ async function sendAlarmRepairResult(job, status, summary, options = {}, payload
   }
 }
 
+async function sendAlarmRepairProgress(job, state, details = {}, options = {}, content = '') {
+  const context = extractAlarmIncidentContext(job, content);
+  if (!context) return { ok: true, skipped: true, reason: 'not_alarm_incident' };
+  const runtimeConfig = getRuntimeConfig(options);
+  const shadow = options.shadow ?? runtimeConfig.shadow;
+  const payload = {
+    incidentKey: context.incidentKey,
+    alarmEventId: context.alarmEventId,
+    team: context.team,
+    state,
+    attempt: Math.max(0, Math.floor(Number(details.attempt) || 0)),
+    maxAttempts: Math.max(0, Math.floor(Number(details.maxAttempts) || 0)),
+    nextRetryAt: details.nextRetryAt || null,
+    summary: maskSensitiveText(details.summary || '', 2000),
+    docPath: context.docPath,
+    fromBot: 'auto-dev',
+  };
+  if (shadow || options.test) return { ok: true, shadow: true, payload };
+  if (typeof postAlarmAutoRepairProgress !== 'function') {
+    return { ok: false, skipped: true, error: 'auto_repair_progress_client_unavailable', payload };
+  }
+  try {
+    return await postAlarmAutoRepairProgress(payload);
+  } catch (error) {
+    console.warn(`[auto-dev] alarm repair progress failed: ${error?.message || error}`);
+    return { ok: false, error: error?.message || String(error), payload };
+  }
+}
+
 async function retryPendingAlarmRepairCallbacks(options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
   if (options.test || options.shadow || runtimeConfig.shadow) {
@@ -1966,7 +1999,7 @@ async function retryPendingAlarmRepairCallbacks(options = {}) {
   const batchLimit = Math.max(1, Math.min(100, Number(options.callbackBatchLimit || 20) || 20));
   const manifest = loadAutoDevManifest(AUTO_DEV_DIR);
   const allPendingEntries = Object.values(manifest.entries || {})
-    .filter(entry => ['archived', 'archived_missing'].includes(String(entry?.state || '')))
+    .filter(entry => ['archived', 'archived_missing', 'dead_letter'].includes(String(entry?.state || '')))
     .filter(entry => entry?.callbackState === 'pending')
     .filter(entry => entry?.callbackPayload && typeof entry.callbackPayload === 'object');
   const pendingEntries = allPendingEntries
@@ -3755,6 +3788,7 @@ async function processAutoDevDocument(filePath, options = {}) {
   const id = makeJobId(relPath, contentHash);
   const state = loadState();
   const job = { id, filePath, relPath, title: path.basename(filePath, '.md'), contentHash };
+  const executionAttempt = Math.max(1, Math.floor(Number(state.jobs[id]?.failureAttempts) || 0) + 1);
 
   if (state.jobs[id]?.status === 'dead_letter') {
     let deadLetterJob = state.jobs[id];
@@ -3910,6 +3944,11 @@ async function processAutoDevDocument(filePath, options = {}) {
     }
     updateJobState(job, 'received', receivedState);
     await setAgentStatus('received', job);
+    await sendAlarmRepairProgress(job, 'claimed', {
+      attempt: executionAttempt,
+      maxAttempts: MAX_FAILURE_ATTEMPTS,
+      summary: `auto_dev document claimed: ${relPath}`,
+    }, options, content);
 
     const analysis = analyzeAutoDevDocument(filePath, content);
     job.analysis = analysis;
@@ -4038,6 +4077,11 @@ async function processAutoDevDocument(filePath, options = {}) {
       profile: runtimeConfig.profile,
     });
     await setAgentStatus('implementation', job);
+    await sendAlarmRepairProgress(job, 'in_progress', {
+      attempt: executionAttempt,
+      maxAttempts: MAX_FAILURE_ATTEMPTS,
+      summary: `auto_dev implementation started: ${relPath}`,
+    }, options, content);
     const implementation = await runClaudeImplementation(job, 'implementation', options, '', executionContext);
     if (!implementation.pass) {
       const implementationError = new Error(`implementation failed: ${implementation.error}`);
@@ -4537,13 +4581,34 @@ async function processAutoDevDocument(filePath, options = {}) {
         processedPath: moveResult.relPath || null,
         durationMs: elapsedMsSince(processStartedAtMs),
       });
+      await sendAlarmRepairProgress(deadLetterJob, 'failed', {
+        attempt: failureAttempts,
+        maxAttempts: MAX_FAILURE_ATTEMPTS,
+        summary: error.message,
+      }, options, content);
+      await sendAlarmRepairProgress(deadLetterJob, 'dead_letter', {
+        attempt: failureAttempts,
+        maxAttempts: MAX_FAILURE_ATTEMPTS,
+        summary: nonRetryableReason || 'max attempts exhausted',
+      }, options, content);
+      await sendAlarmRepairResult(
+        deadLetterJob,
+        'unresolved_needs_human',
+        `auto_dev 처리가 ${failureAttempts}/${MAX_FAILURE_ATTEMPTS}회 실패해 수동 확인이 필요합니다.`,
+        options,
+        { event_type: 'auto_dev_alarm_repair_exhausted', changedFiles: newlyChangedFiles },
+        content,
+      );
       await markAgentDone();
       return { ok: true, skipped: true, reason: 'dead_letter', job: deadLetterJob };
     }
+    const retryIntervalMs = Math.max(1_000, Number(process.env.CLAUDE_AUTO_DEV_INTERVAL_MS || 5 * 60 * 1000) || 5 * 60 * 1000);
+    const nextRetryAt = new Date(Date.now() + retryIntervalMs).toISOString();
     const failedJob = updateJobState(job, 'failed', {
       error: error.message,
       failureAttempts,
       maxFailureAttempts: MAX_FAILURE_ATTEMPTS,
+      nextRetryAt,
       beforeStatus,
       afterStatus,
       newlyChangedFiles,
@@ -4588,8 +4653,20 @@ async function processAutoDevDocument(filePath, options = {}) {
       updatedAt: nowIso(),
       failedAt: nowIso(),
       failureReason: error.message,
+      nextRetryAt,
       archivedPath: archivedPath || null,
     });
+    await sendAlarmRepairProgress(failedJob, 'failed', {
+      attempt: failureAttempts,
+      maxAttempts: MAX_FAILURE_ATTEMPTS,
+      summary: error.message,
+    }, options, content);
+    await sendAlarmRepairProgress(failedJob, 'retry_pending', {
+      attempt: failureAttempts,
+      maxAttempts: MAX_FAILURE_ATTEMPTS,
+      nextRetryAt,
+      summary: `retry scheduled for ${nextRetryAt}`,
+    }, options, content);
     await markAgentError(error.message);
     return { ok: false, error: error.message, job: failedJob };
   } finally {
@@ -4862,6 +4939,7 @@ module.exports = {
   _testOnly_resolveCallbackRetryPolicy: resolveCallbackRetryPolicy,
   _testOnly_computeCallbackRetrySchedule: computeCallbackRetrySchedule,
   _testOnly_sendAlarmRepairResult: sendAlarmRepairResult,
+  _testOnly_sendAlarmRepairProgress: sendAlarmRepairProgress,
   _testOnly_retryPendingAlarmRepairCallbacks: retryPendingAlarmRepairCallbacks,
   _testOnly_sendStageAlarm: sendStageAlarm,
   _testOnly_normalizeSymphonyMode: normalizeSymphonyMode,

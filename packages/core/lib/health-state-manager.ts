@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 const { isExpectedIdleService, isOptionalService } = require('./service-ownership');
 
-type HealthState = Record<string, string>;
+type HealthState = Record<string, unknown>;
 
 const AI_AGENT_HOME = process.env.AI_AGENT_HOME
   || process.env.JAY_HOME
@@ -47,28 +47,54 @@ const DEV_SERVICES = new Set([
   'ai.blog.health-check',
 ]);
 
-function loadState(): HealthState {
+function normalizeNamespace(namespace: unknown): string {
+  return String(namespace || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-');
+}
+
+function stateFileForNamespace(namespace?: string): string {
+  const normalized = normalizeNamespace(namespace);
+  return normalized
+    ? path.join(AI_AGENT_WORKSPACE, `health-check-state-${normalized}.json`)
+    : STATE_FILE;
+}
+
+function readStateFile(filePath: string): HealthState | null {
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')) as HealthState;
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as HealthState;
   } catch {
-    return {};
+    return null;
   }
 }
 
-function saveState(state: HealthState): boolean {
+function loadState(namespace?: string): HealthState {
+  const target = stateFileForNamespace(namespace);
+  const current = readStateFile(target);
+  if (current) return current;
+  if (normalizeNamespace(namespace)) return readStateFile(STATE_FILE) || {};
+  return {};
+}
+
+function saveState(state: HealthState, namespace?: string): boolean {
+  const target = stateFileForNamespace(namespace);
+  const tempPath = `${target}.${process.pid}.${Date.now()}.tmp`;
   try {
-    const dir = path.dirname(STATE_FILE);
+    const dir = path.dirname(target);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    fs.writeFileSync(tempPath, JSON.stringify(state, null, 2));
+    fs.renameSync(tempPath, target);
     return true;
   } catch (error) {
+    try { fs.rmSync(tempPath, { force: true }); } catch {}
     console.error(`[health-state-manager] 상태 저장 실패: ${(error as Error).message}`);
     return false;
   }
 }
 
 function canAlert(state: HealthState, key: string): boolean {
-  const last = state[key];
+  const last = String(state[key] || '');
   if (!last) return true;
   return Date.now() - new Date(last).getTime() > ALERT_COOLDOWN_MS;
 }
@@ -85,6 +111,21 @@ function clearAlert(state: HealthState, key: string, prefix = false): void {
   } else {
     delete state[key];
   }
+}
+
+function failureCountKey(resourceId: string): string {
+  return `failure-count:${String(resourceId || '').trim()}`;
+}
+
+function recordFailure(state: HealthState, resourceId: string): number {
+  const key = failureCountKey(resourceId);
+  const next = Math.max(0, Number(state[key]) || 0) + 1;
+  state[key] = next;
+  return next;
+}
+
+function clearFailure(state: HealthState, resourceId: string): void {
+  delete state[failureCountKey(resourceId)];
 }
 
 function getTeam(label: string): string | null {
@@ -130,11 +171,14 @@ function isOptionalHealthService(label: string): boolean {
 
 export = {
   STATE_FILE,
+  stateFileForNamespace,
   loadState,
   saveState,
   canAlert,
   recordAlert,
   clearAlert,
+  recordFailure,
+  clearFailure,
   ALERT_COOLDOWN_MS,
   getTeam,
   isDevService,

@@ -21,6 +21,10 @@ const { initHubSecrets } = require('../lib/secrets');
 const hsm = require('../../../packages/core/lib/health-state-manager');
 const { getLaunchctlStatus, DEFAULT_NORMAL_EXIT_CODES } = require('../../../packages/core/lib/health-provider');
 const { createHealthMemoryHelper } = require('../lib/health-memory-bridge');
+const {
+  buildHealthObservationPolicy,
+  buildHealthRecoveryContract,
+} = require('../../../packages/core/lib/alarm-lifecycle-contract.ts');
 
 // 상시 실행 서비스 (PID 있어야 정상)
 const CONTINUOUS = ['ai.ska.commander', 'ai.ska.naver-monitor'];
@@ -69,9 +73,45 @@ function getCurrentKstParts() {
 
 // ─── 상태 파일 (공통 모듈 위임) ─────────────────────────────────
 
-const loadState  = () => hsm.loadState();
-const saveState  = (state) => hsm.saveState(state);
-const canAlert   = (state, key) => hsm.canAlert(state, key);
+const observedFailureCounts = new Map();
+const loadState  = () => hsm.loadState('reservation');
+const saveState  = (state) => hsm.saveState(state, 'reservation');
+
+function resourceIdFromHealthKey(key) {
+  if (String(key).startsWith('audit-')) return 'ai.ska.today-audit';
+  return hsm.parseLabelFromKey(key);
+}
+
+function canAlert(state, key) {
+  const resourceId = resourceIdFromHealthKey(key);
+  let failureCount = observedFailureCounts.get(resourceId);
+  if (!failureCount) {
+    failureCount = hsm.recordFailure(state, resourceId);
+    observedFailureCounts.set(resourceId, failureCount);
+  }
+  return failureCount <= 2 || hsm.canAlert(state, key);
+}
+
+async function publishHealthRecovery(state, resourceId, message) {
+  const contract = buildHealthRecoveryContract({ observerTeam: 'reservation', resourceId });
+  hsm.clearFailure(state, contract.resourceId);
+  return publishReservationAlert({
+    from_bot: 'ska',
+    event_type: 'health_check_recovery',
+    alert_level: contract.alertLevel,
+    message,
+    payload: {
+      health_observation: true,
+      recovery: true,
+      resource_id: contract.resourceId,
+      resolves_incident_key: contract.resolvesIncidentKey,
+    },
+    alarm_type: contract.alarmType,
+    visibility: contract.visibility,
+    actionability: contract.actionability,
+    incident_key: contract.incidentKey,
+  });
+}
 
 // ─── naver-monitor 로그 staleness ───────────────────────────────
 
@@ -206,10 +246,7 @@ async function main() {
     if (isCoreService && state[`unloaded:${label}`]) {
       console.log(`[헬스체크] ${shortName} 로드 회복 확인`);
       const recoveryMsg = `✅ [스카 헬스] ${shortName} 회복\nlaunchd 정상 로드 — 자동 감지`;
-      await publishReservationAlert({
-        from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-        message: recoveryMsg,
-      });
+      await publishHealthRecovery(state, label, recoveryMsg);
       await rememberHealthEvent(`unloaded:${label}`, 'recovery', recoveryMsg, 1);
       delete state[`unloaded:${label}`];
     }
@@ -226,10 +263,7 @@ async function main() {
         if (state[`down:${label}`]) {
           console.log(`[헬스체크] ${shortName} PID 회복 확인`);
           const recoveryMsg = `✅ [스카 헬스] ${shortName} 회복\nPID 정상 확인 — 자동 감지`;
-          await publishReservationAlert({
-            from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-            message: recoveryMsg,
-          });
+          await publishHealthRecovery(state, label, recoveryMsg);
           await rememberHealthEvent(`down:${label}`, 'recovery', recoveryMsg, 1);
           delete state[`down:${label}`];
         }
@@ -249,10 +283,7 @@ async function main() {
       if (prevKeys.length > 0) {
         console.log(`[헬스체크] ${shortName} 회복 확인 (exit code → 0)`);
         const recoveryMsg = `✅ [스카 헬스] ${shortName} 회복\nexit code 정상 (0) — 자동 감지`;
-        await publishReservationAlert({
-          from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-          message: recoveryMsg,
-        });
+        await publishHealthRecovery(state, label, recoveryMsg);
         await rememberHealthEvent(`exitcode:${label}:0`, 'recovery', recoveryMsg, 1);
         prevKeys.forEach(k => delete state[k]);
       }
@@ -273,10 +304,7 @@ async function main() {
     if (state['stale:ai.ska.naver-monitor']) {
       console.log('[헬스체크] naver-monitor 로그 활동 재개 확인');
       const recoveryMsg = `✅ [스카 헬스] naver-monitor 회복\n로그 활동 재개 — 자동 감지`;
-      await publishReservationAlert({
-        from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-        message: recoveryMsg,
-      });
+      await publishHealthRecovery(state, 'ai.ska.naver-monitor', recoveryMsg);
       await rememberHealthEvent('stale:ai.ska.naver-monitor', 'recovery', recoveryMsg, 1);
       delete state['stale:ai.ska.naver-monitor'];
     }
@@ -327,28 +355,40 @@ async function main() {
     if (prevKeys.length > 0) {
       console.log('[헬스체크] today-audit 최근 성공 확인');
       const recoveryMsg = `✅ [스카 헬스] today-audit 회복\n최근 실행 성공 — 자동 감지`;
-      await publishReservationAlert({
-        from_bot: 'ska', event_type: 'health_check', alert_level: 1,
-        message: recoveryMsg,
-      });
+      await publishHealthRecovery(state, 'ai.ska.today-audit', recoveryMsg);
       await rememberHealthEvent('audit-failed:ai.ska.today-audit:0', 'recovery', recoveryMsg, 1);
       prevKeys.forEach((k) => delete state[k]);
     }
   }
 
   // 알림 발송 + 상태 기록
-  for (const { key, level, msg, incidentKey, dedupeMinutes } of issues) {
+  for (const { key, msg, dedupeMinutes } of issues) {
     console.warn(`[헬스체크] 이슈 감지: ${msg}`);
     const memoryHints = await buildIssueHints(key, msg);
+    const resourceId = resourceIdFromHealthKey(key);
+    const policy = buildHealthObservationPolicy({
+      observerTeam: 'reservation',
+      resourceId,
+      failureCount: observedFailureCounts.get(resourceId) || 1,
+    });
     await publishReservationAlert({
       from_bot: 'ska',
-      event_type: 'health_check',
-      alert_level: level,
+      event_type: 'health_check_issue',
+      alert_level: policy.alertLevel,
       message: `${msg}${memoryHints}`,
-      incident_key: incidentKey,
+      payload: {
+        health_observation: true,
+        resource_id: policy.resourceId,
+        failure_count: policy.failureCount,
+        primary_incident_key: policy.primaryIncidentKey,
+      },
+      alarm_type: policy.alarmType,
+      visibility: policy.visibility,
+      actionability: policy.actionability,
+      incident_key: policy.incidentKey,
       dedupe_minutes: dedupeMinutes,
     });
-    await rememberHealthEvent(key, 'issue', msg, level);
+    await rememberHealthEvent(key, 'issue', msg, policy.alertLevel);
     hsm.recordAlert(state, key);
   }
 

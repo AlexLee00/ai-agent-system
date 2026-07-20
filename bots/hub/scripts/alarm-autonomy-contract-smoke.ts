@@ -333,9 +333,9 @@ async function main() {
     assert(annotatedResolved[3].stale_status === 'resolved_manifest', 'expected operational-noise manifest reason to suppress stale scan');
     assert(annotatedResolved[4].stale_status === 'resolved_current_policy', 'expected naver source-unavailable guard to suppress stale auto-repair');
     assert(annotatedResolved[5].stale_status === 'terminal_dead_letter', 'expected processed dead-letter result to suppress missing-result stale scan');
-    assert(annotatedResolved[6].stale_status === 'active', 'expected dead-letter manifest without processed evidence to stay active');
-    assert(annotatedResolved[7].stale_status === 'active', 'an archive from an older alarm generation must not resolve a newer generation');
-    assert(annotatedResolved[8].stale_status === 'active', 'a manifest without generation evidence must not resolve a generation-bound alarm');
+    assert(annotatedResolved[6].stale_status === 'stale', 'expected dead-letter manifest without processed evidence to stay stale');
+    assert(annotatedResolved[7].stale_status === 'stale', 'an archive from an older alarm generation must not resolve a newer generation');
+    assert(annotatedResolved[8].stale_status === 'stale', 'a manifest without generation evidence must not resolve a generation-bound alarm');
 
     const fixturePhone = ['010', '1111', '2222'].join('-');
     const differentFixturePhone = ['010', '9999', '0000'].join('-');
@@ -353,7 +353,7 @@ async function main() {
       event_type: 'alert',
       incident_key: 'reservation:andy:alert:completion-sample',
       enqueued_at: '2026-07-19T02:00:00.000Z',
-      stale_status: 'active',
+      stale_status: 'stale',
     };
     const completionDb = {
       query: async (schema: string, sql: string, params: unknown[]) => {
@@ -388,7 +388,7 @@ async function main() {
       }],
     };
     const wrongCustomer = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], wrongCustomerDb);
-    assert(wrongCustomer[0].stale_status === 'active', 'a different customer in the same slot must not resolve stale state');
+    assert(wrongCustomer[0].stale_status === 'stale', 'a different customer in the same slot must not resolve stale state');
 
     const oldEvidenceDb = {
       query: async () => [{
@@ -402,12 +402,12 @@ async function main() {
       }],
     };
     const oldEvidence = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], oldEvidenceDb);
-    assert(oldEvidence[0].stale_status === 'active', 'completion evidence older than the alarm must not resolve stale state');
+    assert(oldEvidence[0].stale_status === 'stale', 'completion evidence older than the alarm must not resolve stale state');
 
     const failedResolver = await _testOnly_resolveRowsByCurrentState([completedReservationAlarm], {
       query: async () => { throw new Error('db unavailable'); },
     });
-    assert(failedResolver[0].stale_status === 'active', 'current-state lookup failure must fail closed');
+    assert(failedResolver[0].stale_status === 'stale', 'current-state lookup failure must fail closed');
     assert(failedResolver[0].current_state_resolution_error === 'db unavailable', 'current-state lookup failure must remain observable');
     const backfillPlan = _testOnly_buildBackfillPlan([
       { id: 11, alarm_event_id: '1011', incident_key: 'blog:sample', team: 'blog', bot_name: 'blog-health', stale_status: 'resolved_manifest', stale_resolution_reason: 'manifest_archived_file_exists' },
@@ -433,7 +433,7 @@ async function main() {
       incident_key: 'unknown:sample',
       auto_dev_path: 'docs/auto_dev/ALARM_INCIDENT_unknown_policy_sample.md',
     }], { manifest: { entries: {} } });
-    assert(lowConfidencePolicy[0].stale_status === 'active', 'expected low-confidence default work classification to stay active');
+    assert(lowConfidencePolicy[0].stale_status === 'stale', 'expected low-confidence default work classification to stay stale');
     const unresolvedPatchFollowup = _testOnly_annotateRows([{
       team: 'blog',
       bot_name: 'blog-health',
@@ -455,7 +455,7 @@ async function main() {
       },
       archiveDir: path.join(tempRoot, 'missing-archive-dir'),
     });
-    assert(unresolvedPatchFollowup[0].stale_status === 'active', 'expected unresolved patch follow-up reason to stay active');
+    assert(unresolvedPatchFollowup[0].stale_status === 'stale', 'expected unresolved patch follow-up reason to stay stale');
     assert(queryLog.some((sql) => String(sql).includes('FROM agent.hub_alarms')), 'expected stale scan to use hub_alarms state table');
     assert(queryLog.some((sql) => String(sql).includes("hub_alarm_auto_repair_enqueued")), 'expected stale scan to require an auto-repair enqueue event');
     assert(queryLog.some((sql) => String(sql).includes("auto_repair_shadow_skipped")), 'expected stale scan to exclude shadow-skipped repairs');

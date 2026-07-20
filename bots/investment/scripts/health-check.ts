@@ -762,7 +762,7 @@ async function main() {
     process.exit(1);
   }
 
-  const state    = hsm.loadState();
+  const state    = hsm.loadState('investment');
   const issues   = [];
   const recovers = [];
 
@@ -1497,7 +1497,7 @@ async function main() {
     await rememberHealthEvent(key, 'recovery', msg, 1);
   }
 
-  hsm.saveState(state);
+  hsm.saveState(state, 'investment');
 
   if (issues.length === 0) {
     console.log(`[루나 헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);

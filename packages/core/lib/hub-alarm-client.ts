@@ -164,6 +164,19 @@ type PostAlarmAutoRepairResultInput = {
   fromBot?: string;
 };
 
+type PostAlarmAutoRepairProgressInput = {
+  incidentKey: string;
+  alarmEventId: string | number;
+  team?: string;
+  state: 'claimed' | 'in_progress' | 'failed' | 'retry_pending' | 'dead_letter';
+  attempt?: number;
+  maxAttempts?: number;
+  nextRetryAt?: string | null;
+  summary?: string;
+  docPath?: string;
+  fromBot?: string;
+};
+
 type InlineTelegramInput = {
   message: string;
   team: string;
@@ -959,6 +972,65 @@ export async function postAlarmAutoRepairResult({
     return {
       ok: false,
       source: 'hub_alarm_auto_repair_callback',
+      error: (error as Error)?.message || String(error),
+    };
+  }
+}
+
+export async function postAlarmAutoRepairProgress({
+  incidentKey,
+  alarmEventId,
+  team = 'general',
+  state,
+  attempt = 0,
+  maxAttempts = 0,
+  nextRetryAt = null,
+  summary = '',
+  docPath = '',
+  fromBot = 'auto-dev',
+}: PostAlarmAutoRepairProgressInput) {
+  const hubBaseUrl = String(env.HUB_BASE_URL || '').trim().replace(/\/+$/, '');
+  const hubToken = String(env.HUB_AUTH_TOKEN || '').trim();
+  const normalizedIncidentKey = _normalizeAlertText(incidentKey);
+  const normalizedAlarmEventId = _normalizeAlertText(alarmEventId);
+  if (!hubBaseUrl || !hubToken) return { ok: false, skipped: true, error: 'hub_alarm_auth_missing' };
+  if (!normalizedIncidentKey) return { ok: false, error: 'incident_key_required' };
+  if (!normalizedAlarmEventId) return { ok: false, error: 'alarm_event_id_required' };
+
+  try {
+    const response = await fetch(`${hubBaseUrl}/hub/alarm/auto-repair/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${hubToken}`,
+      },
+      body: JSON.stringify({
+        incidentKey: normalizedIncidentKey,
+        alarmEventId: normalizedAlarmEventId,
+        team: _normalizeAlertText(team) || 'general',
+        state,
+        attempt: Math.max(0, Math.floor(Number(attempt) || 0)),
+        maxAttempts: Math.max(0, Math.floor(Number(maxAttempts) || 0)),
+        nextRetryAt: nextRetryAt ? _normalizeAlertText(nextRetryAt) : null,
+        summary: _truncateString(summary, 2_000),
+        docPath: _normalizeAlertText(docPath),
+        fromBot: _normalizeAlertText(fromBot) || 'auto-dev',
+      }),
+      signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),
+    });
+    const body = await response.json().catch(() => null);
+    return {
+      ok: response.ok && body?.ok === true,
+      status: response.status,
+      body,
+      eventId: body?.event_id ?? null,
+      source: 'hub_alarm_auto_repair_progress',
+      error: response.ok && body?.ok === true ? null : (body?.error || `hub_alarm_progress_http_${response.status}`),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'hub_alarm_auto_repair_progress',
       error: (error as Error)?.message || String(error),
     };
   }

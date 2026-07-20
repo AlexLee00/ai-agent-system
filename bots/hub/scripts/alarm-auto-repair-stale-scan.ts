@@ -450,10 +450,14 @@ function annotateRows(rows: Array<Record<string, any>>, {
   manifest = loadManifest(),
   archiveDir = DEFAULT_COMPLETED_ARCHIVE_DIR,
   processedDir = path.join(DEFAULT_AUTO_DEV_DIR, 'processed'),
+  staleMinutes = 120,
+  nowMs = Date.now(),
 }: {
   manifest?: Record<string, any>;
   archiveDir?: string;
   processedDir?: string;
+  staleMinutes?: number;
+  nowMs?: number;
 } = {}) {
   const archiveFiles = listArchiveFiles(archiveDir);
   return rows.map((row) => {
@@ -466,12 +470,43 @@ function annotateRows(rows: Array<Record<string, any>>, {
     const policyResolution = resolveByCurrentPolicy(row);
     if (policyResolution) return { ...row, ...policyResolution };
 
+    const progressResolution = classifyProgressState(row, staleMinutes, nowMs);
+    if (progressResolution.stale_status !== 'stale') return { ...row, ...progressResolution };
+
     return {
       ...row,
-      stale_status: 'active',
+      stale_status: 'stale',
       stale_resolution_reason: null,
     };
   });
+}
+
+function classifyProgressState(row: Record<string, any>, staleMinutes = 120, nowMs = Date.now()) {
+  const state = String(row.progress_state || '').trim().toLowerCase();
+  const progressAtMs = Date.parse(String(row.progress_at || ''));
+  const nextRetryAtMs = Date.parse(String(row.next_retry_at || ''));
+  const freshnessMs = Math.max(5, Number(staleMinutes) || 120) * 60 * 1000;
+  const recentProgress = Number.isFinite(progressAtMs) && nowMs - progressAtMs <= freshnessMs;
+  const retryScheduled = state === 'retry_pending'
+    && Number(row.progress_attempt || 0) < Number(row.progress_max_attempts || 0)
+    && Number.isFinite(progressAtMs)
+    && Number.isFinite(nextRetryAtMs)
+    && nextRetryAtMs >= nowMs
+    && nextRetryAtMs - progressAtMs <= freshnessMs;
+
+  if (state === 'retry_pending' && (retryScheduled || recentProgress)) {
+    return {
+      stale_status: 'retry_pending',
+      stale_resolution_reason: retryScheduled ? 'auto_dev_retry_scheduled' : 'auto_dev_retry_progress_recent',
+    };
+  }
+  if (['claimed', 'in_progress', 'failed'].includes(state) && recentProgress) {
+    return {
+      stale_status: 'in_progress',
+      stale_resolution_reason: `auto_dev_progress_recent:${state}`,
+    };
+  }
+  return { stale_status: 'stale', stale_resolution_reason: null };
 }
 
 async function resolveRowsByCurrentState(
@@ -480,7 +515,7 @@ async function resolveRowsByCurrentState(
 ): Promise<Array<Record<string, any>>> {
   const resolvedRows = [];
   for (const row of rows) {
-    if (row.stale_status !== 'active') {
+    if (row.stale_status !== 'stale') {
       resolvedRows.push(row);
       continue;
     }
@@ -512,7 +547,9 @@ function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: numbe
     `대상: ${rows.length}건`,
   ];
   if (resolvedRows.length > 0) {
-    lines.push(`제외: ${resolvedRows.length}건 (manifest/current policy/terminal state로 처리 결과 판정)`);
+    const inProgress = resolvedRows.filter((row) => row.stale_status === 'in_progress').length;
+    const retryPending = resolvedRows.filter((row) => row.stale_status === 'retry_pending').length;
+    lines.push(`제외: ${resolvedRows.length}건 (in_progress ${inProgress}, retry_pending ${retryPending}, terminal/current ${resolvedRows.length - inProgress - retryPending})`);
   }
   for (const row of rows.slice(0, 8)) {
     lines.push(`- ${row.team}/${row.bot_name}: ${row.incident_key} (${row.created_at})`);
@@ -594,7 +631,12 @@ export async function scanStaleAutoRepair({
         enqueued.id AS enqueue_event_id,
         enqueued.metadata->>'auto_dev_path' AS auto_dev_path,
         alarm.received_at AS created_at,
-        enqueued.created_at AS enqueued_at
+        enqueued.created_at AS enqueued_at,
+        progress.metadata->>'state' AS progress_state,
+        progress.metadata->>'attempt' AS progress_attempt,
+        progress.metadata->>'max_attempts' AS progress_max_attempts,
+        progress.metadata->>'next_retry_at' AS next_retry_at,
+        progress.created_at AS progress_at
       FROM agent.hub_alarms alarm
       JOIN LATERAL (
         SELECT event.id, event.metadata, event.created_at
@@ -606,6 +648,15 @@ export async function scanStaleAutoRepair({
         ORDER BY event.created_at DESC
         LIMIT 1
       ) enqueued ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT event.metadata, event.created_at
+        FROM agent.event_lake event
+        WHERE event.event_type = 'hub_alarm_auto_repair_progress'
+          AND event.metadata->>'incident_key' = COALESCE(alarm.metadata->>'incident_key', alarm.fingerprint)
+          AND event.metadata->>'alarm_event_id' = alarm.metadata->>'event_id'
+        ORDER BY event.created_at DESC
+        LIMIT 1
+      ) progress ON TRUE
       WHERE COALESCE(alarm.actionability, '') = 'auto_repair'
         AND COALESCE(alarm.metadata->>'auto_repair_shadow_skipped', 'false') <> 'true'
         AND COALESCE(alarm.metadata->>'event_type', '') NOT LIKE 'auto_dev_%'
@@ -627,7 +678,12 @@ export async function scanStaleAutoRepair({
       enqueue_event_id,
       auto_dev_path,
       created_at,
-      enqueued_at
+      enqueued_at,
+      progress_state,
+      progress_attempt,
+      progress_max_attempts,
+      next_retry_at,
+      progress_at
     FROM latest_by_incident
     WHERE COALESCE(alarm_status, '') IN ('repairing', 'correlating')
       AND enqueued_at < NOW() - ($1::int * INTERVAL '1 minute')
@@ -644,10 +700,14 @@ export async function scanStaleAutoRepair({
     LIMIT $2 OFFSET $3
     `, [threshold, pageSize, offset]);
     candidateRows.push(...rows);
-    const initiallyAnnotatedRows = annotateRows(rows, { manifest: manifestSnapshot, archiveDir });
+    const initiallyAnnotatedRows = annotateRows(rows, {
+      manifest: manifestSnapshot,
+      archiveDir,
+      staleMinutes: threshold,
+    });
     const annotatedRows = await resolveRowsByCurrentState(initiallyAnnotatedRows, db);
-    activeRows.push(...annotatedRows.filter((row) => row.stale_status === 'active'));
-    resolvedRows.push(...annotatedRows.filter((row) => row.stale_status !== 'active'));
+    activeRows.push(...annotatedRows.filter((row) => row.stale_status === 'stale'));
+    resolvedRows.push(...annotatedRows.filter((row) => row.stale_status !== 'stale'));
     offset += rows.length;
     if (rows.length < pageSize) break;
     if (offset >= STALE_SCAN_MAX_CANDIDATES) truncated = true;
@@ -662,6 +722,8 @@ export async function scanStaleAutoRepair({
     active_count: activeRows.length,
     active_fingerprint: activeFingerprint,
     resolved_rows: resolvedRows,
+    in_progress_count: resolvedRows.filter((row) => row.stale_status === 'in_progress').length,
+    retry_pending_count: resolvedRows.filter((row) => row.stale_status === 'retry_pending').length,
     total_candidates: candidateRows.length,
     truncated,
     message: formatStaleReport(activeRows, threshold, resolvedRows),
@@ -699,4 +761,5 @@ module.exports = {
   _testOnly_buildStaleAlarmInput: buildStaleAlarmInput,
   _testOnly_isResolvedManifestReason: isResolvedManifestReason,
   _testOnly_resolveRowsByCurrentState: resolveRowsByCurrentState,
+  _testOnly_classifyProgressState: classifyProgressState,
 };

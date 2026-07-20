@@ -11,6 +11,7 @@ const {
   alarmNoisyProducersRoute,
   alarmSuppressDryRunRoute,
   alarmDigestFlushRoute,
+  alarmAutoRepairProgressRoute,
   alarmAutoRepairCallbackRoute,
   alarmReadinessRoute,
   alarmSuppressionProposalsRoute,
@@ -192,6 +193,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/alarm/noisy-producers', alarmLimiter, alarmNoisyProducersRoute);
   app.post('/hub/alarm/suppress/dry-run', alarmLimiter, alarmSuppressDryRunRoute);
   app.post('/hub/alarm/digest/flush', alarmLimiter, alarmDigestFlushRoute);
+  app.post('/hub/alarm/auto-repair/progress', alarmLimiter, alarmAutoRepairProgressRoute);
   app.post('/hub/alarm/auto-repair/callback', alarmLimiter, alarmAutoRepairCallbackRoute);
   app.get('/hub/alarm/readiness', alarmLimiter, alarmReadinessRoute);
   app.get('/hub/alarm/suppression/proposals', alarmLimiter, alarmSuppressionProposalsRoute);

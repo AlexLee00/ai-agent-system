@@ -940,7 +940,7 @@ async function main() {
     process.exit(1);
   }
 
-  const state = hsm.loadState();
+  const state = hsm.loadState('blog');
   const issues = [];
 
   for (const label of ALL_SERVICES) {
@@ -1140,7 +1140,7 @@ async function main() {
     hsm.recordAlert(state, key);
   }
 
-  hsm.saveState(state);
+  hsm.saveState(state, 'blog');
 
   if (issues.length === 0) {
     console.log(`[블로그 헬스체크] 정상 — 전체 ${ALL_SERVICES.length}개 서비스 이상 없음`);

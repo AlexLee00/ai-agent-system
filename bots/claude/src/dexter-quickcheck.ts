@@ -29,6 +29,10 @@ const {
   isExpectedIdleService,
   isRetiredService,
 } = require('../../../packages/core/lib/service-ownership.js');
+const {
+  buildHealthObservationPolicy,
+  buildHealthRecoveryContract,
+} = require('../../../packages/core/lib/alarm-lifecycle-contract.ts');
 
 // v2: 핵심 봇 프로세스 빠른 점검 모듈
 const teamLeadsCheck = require('../lib/checks/team-leads.legacy.js');
@@ -97,24 +101,6 @@ function getTeamLeadServiceId(key) {
 function shouldSkipQuickcheckTeamLeadAlert(key) {
   const serviceId = getTeamLeadServiceId(key);
   return serviceId ? QUICKCHECK_SERVICE_IDS.has(serviceId) : false;
-}
-
-function normalizeIncidentPart(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9._:-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 80) || 'unknown';
-}
-
-function buildQuickcheckIncidentKey(kind, rows) {
-  const sourceIds = (rows || [])
-    .map((row) => row.sourceId || row.label)
-    .map(normalizeIncidentPart)
-    .filter(Boolean)
-    .sort();
-  const signature = sourceIds.length > 0 ? sourceIds.join('+') : 'unknown';
-  return `claude:dexter:quickcheck_${normalizeIncidentPart(kind)}:${signature}`;
 }
 
 // ── launchd 조회 ──────────────────────────────────────────────────────
@@ -201,12 +187,10 @@ async function main() {
     const crashed = info.pid === '-' && info.exitCode !== 0;
 
     if (crashed) {
+      const failCount = (prev.failCount || 0) + 1;
       const isNew       = !prev.status || prev.status === 'ok';
       const reAlert     = prev.status === 'down' && cooldownExpired(prev.alertedAt);
-      const needAlert   = isNew || reAlert;
-
-      // 연속 실패 횟수 누적
-      const failCount = (prev.failCount || 0) + 1;
+      const needAlert   = isNew || failCount === 2 || reAlert;
 
       // 상태 업데이트
       state.services[svc.id] = {
@@ -273,12 +257,16 @@ async function main() {
       if (shouldSkipQuickcheckTeamLeadAlert(item._key)) continue;
 
       const prev = state.services?.[`team-lead:${item.label}`] || {};
+      const failCount = (prev.failCount || 0) + 1;
       const needAlert = !prev.status || prev.status === 'ok' ||
+        failCount === 2 ||
         (prev.status === 'down' && cooldownExpired(prev.alertedAt));
 
       state.services = state.services || {};
       state.services[`team-lead:${item.label}`] = {
-        status: 'down', alertedAt: needAlert ? now : (prev.alertedAt || now),
+        status: 'down',
+        failCount,
+        alertedAt: needAlert ? now : (prev.alertedAt || now),
       };
 
       if (needAlert) {
@@ -287,6 +275,7 @@ async function main() {
           detail: item.detail,
           restartable: false,
           restarted: false,
+          failCount,
           sourceId: getTeamLeadServiceId(item._key) || `team-lead:${item.label}`,
         });
       }
@@ -304,7 +293,7 @@ async function main() {
           sourceId: getTeamLeadServiceId(item._key) || `team-lead:${item.label}`,
         });
       }
-      if (state.services) state.services[key] = { status: 'ok' };
+      if (state.services) state.services[key] = { status: 'ok', failCount: 0 };
     }
   } catch { /* 팀장 점검 실패 — 기존 체크에 영향 없음 */ }
 
@@ -314,10 +303,10 @@ async function main() {
   const diskPrev  = state.disk || {};
 
   if (diskUsage >= DISK_CRITICAL) {
+    const failCount = diskPrev.status === 'critical' ? (diskPrev.failCount || 1) + 1 : 1;
     const isNew     = !diskPrev.status || diskPrev.status === 'ok';
     const reAlert   = diskPrev.status === 'critical' && cooldownExpired(diskPrev.alertedAt);
-    const needAlert = isNew || reAlert;
-    const failCount = diskPrev.status === 'critical' ? (diskPrev.failCount || 1) + 1 : 1;
+    const needAlert = isNew || failCount === 2 || reAlert;
 
     state.disk = {
       status:    'critical',
@@ -363,61 +352,69 @@ async function main() {
   if (!TELEGRAM) return;
 
   if (alerts.length > 0) {
-    // 1회 실패는 경고, 2회 이상 연속은 CRITICAL
-    const maxFail    = Math.max(...alerts.map(a => a.failCount || 1));
-    const isCritical = maxFail >= 2;
-    const header     = isCritical ? `🚨 덱스터 긴급 감지 (퀵체크)` : `⚠️ 덱스터 감지 (퀵체크)`;
-    const alertLevel = isCritical ? 4 : 2;
     const dedupeMinutes = Math.max(1, Math.ceil(ALERT_CD_MS / 60000));
-    const incidentKey = buildQuickcheckIncidentKey('issue', alerts);
-
-    const lines = [
-      header,
-      ...alerts.map(a => {
-        const icon = (a.failCount || 1) >= 2 ? '❌' : '⚠️';
-        const restartLine = a.restarted
-          ? '  → 🔄 자동 재시작 완료 — 상태 모니터링 중'
-          : (FIX && a.restartable)
-            ? '  → ❌ 재시작 실패 — 수동 확인 필요'
-            : a.restartable
-              ? '  → ⚠️ 수동 재시작 필요'
-              : (a.failCount || 1) >= 2
-                ? '  → ⚠️ 수동 확인 필요'
-                : '  → 다음 사이클에 자동 재시도';
-        return `${icon} ${a.label}: ${a.detail}\n${restartLine}`;
-      }),
-    ];
-
-    publishToMainBot({
-      from_bot:    'dexter',
-      event_type:  'system',
-      alert_level: alertLevel,
-      incident_key: incidentKey,
-      dedupe_minutes: dedupeMinutes,
-      message:     lines.join('\n'),
-      payload:     { quickcheck: true, issue_count: alerts.length },
-    });
+    for (const alert of alerts) {
+      const policy = buildHealthObservationPolicy({
+        observerTeam: 'claude',
+        resourceId: alert.sourceId || alert.label,
+        failureCount: alert.failCount || 1,
+      });
+      const restartLine = alert.restarted
+        ? '→ 자동 재시작 완료 — 상태 모니터링 중'
+        : (FIX && alert.restartable)
+          ? '→ 재시작 실패 — 수동 확인 필요'
+          : alert.restartable
+            ? '→ 수동 재시작 필요'
+            : policy.failureCount >= 2
+              ? '→ 연속 실패 확인'
+              : '→ 다음 사이클에 자동 재확인';
+      await publishToMainBot({
+        from_bot: 'dexter',
+        event_type: 'health_check_issue',
+        alert_level: policy.alertLevel,
+        alarm_type: policy.alarmType,
+        visibility: policy.visibility,
+        actionability: policy.actionability,
+        incident_key: policy.incidentKey,
+        dedupe_minutes: dedupeMinutes,
+        message: `덱스터 퀵체크: ${alert.label}\n${alert.detail}\n${restartLine}`,
+        payload: {
+          quickcheck: true,
+          health_observation: true,
+          resource_id: policy.resourceId,
+          failure_count: policy.failureCount,
+          primary_incident_key: policy.primaryIncidentKey,
+          secondary_observer: policy.secondaryObserver,
+        },
+      });
+    }
   }
 
   if (recoveries.length > 0) {
     const dedupeMinutes = Math.max(1, Math.ceil(ALERT_CD_MS / 60000));
-    const incidentKey = buildQuickcheckIncidentKey('recovery', recoveries);
-    const lines = [
-      `✅ 덱스터 회복 감지 (퀵체크)`,
-      ...recoveries.map(r =>
-        `✅ ${r.label}${r.downSince ? ` (중단: ${r.downSince}부터)` : ''}${r.detail ? ` — ${r.detail}` : ''}`
-      ),
-    ];
-
-    publishToMainBot({
-      from_bot:    'dexter',
-      event_type:  'system',
-      alert_level: 2,
-      incident_key: incidentKey,
-      dedupe_minutes: dedupeMinutes,
-      message:     lines.join('\n'),
-      payload:     { quickcheck: true, recovery: true },
-    });
+    for (const recovered of recoveries) {
+      const contract = buildHealthRecoveryContract({
+        observerTeam: 'claude',
+        resourceId: recovered.sourceId || recovered.label,
+      });
+      await publishToMainBot({
+        from_bot: 'dexter',
+        event_type: 'health_check_recovery',
+        alert_level: contract.alertLevel,
+        alarm_type: contract.alarmType,
+        visibility: contract.visibility,
+        actionability: contract.actionability,
+        incident_key: contract.incidentKey,
+        dedupe_minutes: dedupeMinutes,
+        message: `덱스터 회복 감지: ${recovered.label}${recovered.downSince ? ` (중단: ${recovered.downSince}부터)` : ''}${recovered.detail ? ` — ${recovered.detail}` : ''}`,
+        payload: {
+          quickcheck: true,
+          recovery: true,
+          resource_id: contract.resourceId,
+          resolves_incident_key: contract.resolvesIncidentKey,
+        },
+      });
+    }
   }
 }
 

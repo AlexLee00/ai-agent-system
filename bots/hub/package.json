@@ -20,6 +20,7 @@
     "alarm:activation-stage2-smoke": "tsx scripts/alarm-activation-stage2-smoke.ts",
     "alarm:activation-stage3-smoke": "tsx scripts/alarm-activation-stage3-smoke.ts",
     "alarm:closure-cycle-smoke": "tsx scripts/alarm-closure-cycle-smoke.ts",
+    "smoke:alarm-lifecycle-progress": "tsx scripts/alarm-lifecycle-progress-smoke.ts",
     "alarm:scheduled-delivery-smoke": "tsx scripts/scheduled-alarm-delivery-smoke.ts",
     "alarm:report-deprecation-matrix": "tsx scripts/report-deprecation-matrix.ts --output=docs/hub/REPORT_DEPRECATION_MATRIX.md",
     "alarm:report-deprecation-preflight": "tsx scripts/report-deprecation-preflight.ts --output=docs/hub/REPORT_DEPRECATION_PREFLIGHT.md --json",

@@ -102,7 +102,7 @@ async function main() {
     process.exit(1);
   }
 
-  const state    = hsm.loadState();
+  const state    = hsm.loadState('claude');
   const issues   = [];
   const recovers = []; // 회복 알림 (나중에 일괄 발송)
   const serviceRows = [];
@@ -190,7 +190,7 @@ async function main() {
     await publishToMainBot(opts);
   }
 
-  hsm.saveState(state);
+  hsm.saveState(state, 'claude');
 
   if (options.json) {
     console.log(JSON.stringify({

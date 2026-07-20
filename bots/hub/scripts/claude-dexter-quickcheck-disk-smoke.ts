@@ -26,6 +26,11 @@ assert(
   'disk critical path must track consecutive failCount',
 );
 assert(
+  source.includes('isNew || failCount === 2 || reAlert') &&
+    source.includes('failCount === 2 ||\n        (prev.status'),
+  'dexter quickcheck must report the second consecutive failure before cooldown',
+);
+assert(
   source.includes("alerts.push({\n        label: '디스크'") &&
     source.includes('failCount,'),
   'disk critical path must push a complete alert object with failCount',
@@ -36,10 +41,11 @@ assert(
   'disk recovery path must keep recovery notification and reset failCount',
 );
 assert(
-  source.includes('function buildQuickcheckIncidentKey') &&
-    source.includes('incident_key: incidentKey') &&
+  source.includes('buildHealthObservationPolicy') &&
+    source.includes('incident_key: policy.incidentKey') &&
+    source.includes('resource_id: policy.resourceId') &&
     source.includes('dedupe_minutes: dedupeMinutes'),
-  'dexter quickcheck telegram alerts must use stable incident keys and dedupe window',
+  'dexter quickcheck alerts must use stable resource lifecycle keys and dedupe window',
 );
 assert(
   source.includes('shouldSkipQuickcheckTeamLeadAlert(item._key)') &&

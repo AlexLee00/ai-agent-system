@@ -61,7 +61,7 @@ function kickstart(label) {
 
 async function run() {
   const items = [];
-  const state = hsm.loadState();
+  const state = hsm.loadState('claude');
 
   if (!LAUNCHD_AVAILABLE) {
     items.push({ label: '헬스 상태 파일', status: 'ok', detail: 'DEV 환경 — launchd 서비스 미등록' });
@@ -134,7 +134,7 @@ async function run() {
   }
 
   if (stateChanged) {
-    hsm.saveState(state);
+    hsm.saveState(state, 'claude');
   }
 
   const hasError = items.some(i => i.status === 'error');

@@ -66,6 +66,11 @@ async function publishToMainBot({
   dedupe_minutes,
   incidentKey,
   dedupeMinutes,
+  alarm_type,
+  alarmType,
+  visibility,
+  actionability,
+  title,
 }) {
   const signature = normalizeAlertSignature({ team, event_type, alert_level, message });
   const incidentState = updateIncidentCache(signature, message);
@@ -92,7 +97,13 @@ async function publishToMainBot({
     team,
     alertLevel: alert_level,
     fromBot: from_bot || event_type || 'claude',
+    payload,
+    alarmType: alarm_type || alarmType,
+    visibility,
+    actionability,
     incidentKey: incident_key || incidentKey,
+    title,
+    eventType: event_type,
     dedupeMinutes: dedupe_minutes ?? dedupeMinutes,
   });
   return result.ok;
