@@ -39,6 +39,7 @@ export async function runBuySafetyGuards({
   formatDailyTradeLimitReason,
   notifyEnabled = true,
   binanceTopVolumeUniverse = null,
+  candidateBacktestAuditSink = undefined,
 }) {
   if (String(action || '').toUpperCase() !== 'BUY') return null;
   if (String(signal.exchange || 'binance') === 'binance') {
@@ -146,7 +147,7 @@ export async function runBuySafetyGuards({
     action,
     exchange: signal.exchange || 'binance',
     market: signal.market || 'crypto',
-  }, process.env).catch((error) => ({
+  }, process.env, { auditSink: candidateBacktestAuditSink }).catch((error) => ({
     ok: true,
     mode: 'shadow',
     blocked: false,

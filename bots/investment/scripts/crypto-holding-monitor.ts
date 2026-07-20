@@ -469,8 +469,13 @@ function writeMonitorState(payload) {
   }
 }
 
-async function recordExitDecision(candidate, decision, details = {}) {
-  await recordGuardEventNow({
+async function recordExitDecision(
+  candidate,
+  decision,
+  details = {},
+  { guardEventSink = recordGuardEventNow } = {},
+) {
+  await guardEventSink({
     guardName: 'regime_dynamic_exit',
     symbol: candidate.symbol,
     exchange: candidate.exchange,

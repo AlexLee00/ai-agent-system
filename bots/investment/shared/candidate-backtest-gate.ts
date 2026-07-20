@@ -381,28 +381,36 @@ export async function getCandidateBacktestStatus(symbol, market) {
   ).catch(() => null);
 }
 
-async function auditBacktestGate({ symbol, market, result, signal }) {
+async function auditBacktestGate({ symbol, market, result, signal }, auditSink = run) {
   if (!result?.wouldBlock) return;
-  await run(`
-    INSERT INTO predictive_validation_log
-      (symbol, market, decision, score, threshold, component_coverage,
-       blocked_reason, components, missing_components, candidate_snapshot)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb)
-  `, [
-    symbol,
-    market,
-    result.blocked ? 'block_backtest_gate' : 'would_block_backtest_gate',
-    reliabilitySharpe(result.row) ?? result.row?.sharpe ?? null,
-    0,
-    signal?.block_meta?.predictiveValidation?.componentCoverage ?? null,
-    result.reason || result.reasons?.join(',') || 'candidate_backtest_gate',
-    JSON.stringify({ backtest: result.row || null, sharpe_oos_deflated: result.row?.sharpe_oos_deflated ?? null }),
-    JSON.stringify([]),
-    JSON.stringify({ symbol, market, action: signal?.action || null, gateMode: result.mode }),
-  ]).catch(() => null);
+  try {
+    await auditSink(`
+      INSERT INTO predictive_validation_log
+        (symbol, market, decision, score, threshold, component_coverage,
+         blocked_reason, components, missing_components, candidate_snapshot)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb)
+    `, [
+      symbol,
+      market,
+      result.blocked ? 'block_backtest_gate' : 'would_block_backtest_gate',
+      reliabilitySharpe(result.row) ?? result.row?.sharpe ?? null,
+      0,
+      signal?.block_meta?.predictiveValidation?.componentCoverage ?? null,
+      result.reason || result.reasons?.join(',') || 'candidate_backtest_gate',
+      JSON.stringify({ backtest: result.row || null, sharpe_oos_deflated: result.row?.sharpe_oos_deflated ?? null }),
+      JSON.stringify([]),
+      JSON.stringify({ symbol, market, action: signal?.action || null, gateMode: result.mode }),
+    ]);
+  } catch {
+    // Audit storage must never change the already-computed gate decision.
+  }
 }
 
-export async function evaluateCandidateBacktestEntryGate(signal = {}, env = process.env) {
+export async function evaluateCandidateBacktestEntryGate(
+  signal = {},
+  env = process.env,
+  { auditSink = run } = {},
+) {
   const mode = getCandidateBacktestGateMode(env);
   if (mode === 'off') return { ok: true, mode, blocked: false, wouldBlock: false, reason: null };
   const symbol = normalizeSymbol(signal.symbol);
@@ -410,7 +418,7 @@ export async function evaluateCandidateBacktestEntryGate(signal = {}, env = proc
   const inline = signal?.block_meta?.candidateBacktestStatus || signal?.candidateBacktestStatus || null;
   const row = inline || await getCandidateBacktestStatus(symbol, market);
   const result = evaluateCandidateBacktestStatus(row, env);
-  await auditBacktestGate({ symbol, market, result, signal });
+  await auditBacktestGate({ symbol, market, result, signal }, auditSink);
   return result;
 }
 
