@@ -60,6 +60,32 @@ function resolveWriteScope(payload: unknown): string[] {
   return ['bots', 'packages', 'scripts'];
 }
 
+const DEFAULT_TEST_SCOPE_BY_TEAM: Record<string, string[]> = {
+  blog: ['npm --prefix bots/blog run test:unit'],
+  claude: ['npm --prefix bots/claude run test:reviewer'],
+  hub: [
+    'npm --prefix bots/hub run test:unit',
+    'npm --prefix bots/hub run transition:completion-gate',
+  ],
+  investment: ['npm --prefix bots/investment run check:agent-memory-routing'],
+  luna: ['npm --prefix bots/investment run check:agent-memory-routing'],
+  reservation: ['npm --prefix bots/reservation run check:ska-self-healing'],
+  sigma: ['npm --prefix bots/sigma run check:library'],
+  ska: ['npm --prefix bots/reservation run check:ska-self-healing'],
+};
+
+function resolveTestScope(payload: unknown, team: string): string[] {
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const raw = (payload as Record<string, unknown>).test_scope || (payload as Record<string, unknown>).testScope;
+    if (Array.isArray(raw)) {
+      const scopes = raw.map((item) => normalizeText(item)).filter(Boolean).slice(0, 8);
+      if (scopes.length > 0) return scopes;
+    }
+  }
+  return DEFAULT_TEST_SCOPE_BY_TEAM[normalizeText(team, 'hub').toLowerCase()]
+    || DEFAULT_TEST_SCOPE_BY_TEAM.hub;
+}
+
 function yamlList(items: string[]): string {
   return items.map((item) => `  - ${item}`).join('\n');
 }
@@ -86,6 +112,7 @@ export function buildAlarmAutoDevDocument({
   payload?: unknown;
 }): string {
   const writeScope = resolveWriteScope(payload);
+  const testScope = resolveTestScope(payload, team);
   const riskTier = severity === 'critical' ? 'high' : 'medium';
   const safeMessage = redactText(message).slice(0, 2400);
   const safePayload = safeJson(payload);
@@ -103,8 +130,7 @@ export function buildAlarmAutoDevDocument({
     'write_scope:',
     yamlList(writeScope),
     'test_scope:',
-    '  - npm --prefix bots/hub run test:unit',
-    '  - npm --prefix bots/hub run transition:completion-gate',
+    yamlList(testScope),
     'autonomy_level: autonomous_l5',
     'requires_live_execution: false',
     '---',

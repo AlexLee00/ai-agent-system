@@ -114,6 +114,9 @@ const DEFAULT_HARD_TEST_COMMANDS = [
   'npm --prefix bots/claude run test:unit',
 ];
 const DEFAULT_SCOPED_TEST_SCRIPT_ALLOWLIST = [
+  'check:agent-memory-routing',
+  'check:library',
+  'check:ska-self-healing',
   'test:auto-dev',
   'test:reviewer',
   'test:guardian',

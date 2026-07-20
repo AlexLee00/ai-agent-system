@@ -3,8 +3,8 @@ import {
   type SelfImprovementSignal,
   type SkillExtractionPlan,
 } from './intelligent-library.js';
-import { initSchema, get } from '../../../investment/shared/db.ts';
-import { upsertPosttradeSkill } from '../../../investment/shared/db/posttrade.ts';
+import { initSchema, get } from '../../../investment/shared/db.js';
+import { upsertPosttradeSkill } from '../../../investment/shared/db/posttrade.js';
 
 export interface PromptCandidate {
   promptName: string;

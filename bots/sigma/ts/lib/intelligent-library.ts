@@ -19,6 +19,7 @@ export type SigmaTeam = (typeof SIGMA_TEAMS)[number];
 export type LibraryMode = 'shadow' | 'supervised' | 'autonomous';
 
 export interface SigmaLibraryEnv {
+  [key: string]: string | undefined;
   SIGMA_V2_ENABLED?: string;
   SIGMA_TEAM_MEMORY_UNIFIED?: string;
   SIGMA_KNOWLEDGE_GRAPH_ENABLED?: string;
@@ -45,6 +46,7 @@ export interface SigmaLibraryEnv {
   SIGMA_AUTONOMOUS_APPROVAL_SOURCE?: string;
   SIGMA_AUTONOMOUS_APPROVAL_AT?: string;
   SIGMA_AUTONOMOUS_APPROVAL_REASON?: string;
+  SIGMA_LLM_DAILY_BUDGET_USD?: string;
 }
 
 export interface LibraryGate {

@@ -37,7 +37,7 @@ async function main(): Promise<void> {
   const { postSigmaAlarmWithRetry, summarizeAlarmResult } = await import('./sigma-alarm-dispatch.js');
 
   let calls = 0;
-  global.fetch = async (url, init = {}) => {
+  global.fetch = async (url: URL | RequestInfo, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     assert(normalizedUrl.endsWith('/hub/alarm'), `unexpected fetch url: ${normalizedUrl}`);
     assert.equal(String(init.method || 'GET'), 'POST');
@@ -78,7 +78,7 @@ async function main(): Promise<void> {
   assert.equal((recovered.result as { ok?: boolean }).ok, true, 'retry should recover after rate limit');
 
   calls = 0;
-  global.fetch = async (url, init = {}) => {
+  global.fetch = async (url: URL | RequestInfo, init: RequestInit = {}) => {
     const normalizedUrl = String(url);
     assert(normalizedUrl.endsWith('/hub/alarm'), `unexpected fetch url: ${normalizedUrl}`);
     assert.equal(String(init.method || 'GET'), 'POST');

@@ -366,7 +366,7 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
         orderPath: null,
       }, { enabled: true, marketView: row.market_view || '' });
       if (!feed.enabled || !feed.record) continue;
-      const record = buildRecord(feed.record);
+      const record = buildRecord({ ...feed.record, sourceKind: 'luna_jaenong_shadow' });
       if (record && allowedTeams.has(record.team)) records.push(record);
     }
   }

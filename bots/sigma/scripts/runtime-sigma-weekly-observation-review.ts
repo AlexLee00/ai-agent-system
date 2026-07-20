@@ -14,7 +14,7 @@ import {
 } from './sigma-observation-history.js';
 import { buildProtectedRuntimeReport } from './sigma-protected-runtime.js';
 import { resolveSigmaRuntimeEnv } from './sigma-runtime-env.js';
-import { buildSigma5AxisTransitionReport } from './runtime-sigma-5axis-transition.ts';
+import { buildSigma5AxisTransitionReport } from './runtime-sigma-5axis-transition.js';
 
 const require = createRequire(import.meta.url);
 const { query } = require('../../../packages/core/lib/pg-pool.js') as {
@@ -201,7 +201,16 @@ async function main(): Promise<void> {
     ok: false,
     reason: `sigma_5axis_transition_unavailable:${String((error as Error)?.message || error).slice(0, 180)}`,
   }));
-  const transition = transitionRaw.ok
+  const transition: {
+    ok: boolean;
+    reason?: string;
+    dryRun?: boolean;
+    liveMutation?: boolean;
+    transitionEnabled?: boolean;
+    sourceCounts?: Record<string, number>;
+    counts?: Record<string, unknown>;
+    warnings?: string[];
+  } = transitionRaw.ok && 'counts' in transitionRaw
     ? {
         ok: true,
         dryRun: transitionRaw.dryRun,
@@ -211,7 +220,7 @@ async function main(): Promise<void> {
         counts: transitionRaw.counts,
         warnings: transitionRaw.warnings,
       }
-    : transitionRaw;
+    : { ok: false, reason: 'reason' in transitionRaw ? transitionRaw.reason : 'sigma_5axis_transition_unavailable' };
   const historyPath = defaultObservationHistoryPath(repoRoot);
   const observationHistory = summarizeObservationHistory(readObservationHistory(historyPath));
   const dailyLimitUsd = numberEnv(envSource.env.SIGMA_LLM_DAILY_BUDGET_USD || process.env.SIGMA_LLM_DAILY_BUDGET_USD, 10);

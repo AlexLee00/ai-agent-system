@@ -37,7 +37,7 @@ try {
   assert.equal(supervised.activation.operatorApplyEnabled, true);
   assert.equal(supervised.activation.voyagerApplyEnabled, true);
 
-  const payloads = supervised.skillCandidates.map(toPosttradeSkillPayload);
+  const payloads = supervised.skillCandidates.map((candidate) => toPosttradeSkillPayload(candidate));
   assert.deepEqual(
     payloads.map((payload) => payload.patternKey).sort(),
     [

@@ -9,6 +9,7 @@ const {
   _testOnly_setAlarmRouteDbMocks,
   _testOnly_resetAlarmRouteDbMocks,
 } = require('../lib/routes/alarm.ts');
+const { buildAlarmAutoDevDocument } = require('../lib/alarm/auto-dev-incident.ts');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -375,10 +376,33 @@ async function main() {
     const autoDevDoc = fs.readFileSync(path.join(autoDevDir, autoDevFiles[0]), 'utf8');
     assert(autoDevDoc.includes('target_team: claude'), 'expected auto_dev doc to target claude');
     assert(autoDevDoc.includes('source_team: luna'), 'expected auto_dev doc to preserve source team');
+    assert(
+      autoDevDoc.includes('npm --prefix bots/investment run check:agent-memory-routing'),
+      'expected Luna auto_dev doc to use the Luna source-team test scope',
+    );
+    assert(
+      !autoDevDoc.includes('npm --prefix bots/hub run test:unit'),
+      'non-Hub auto_dev docs must not inherit the Hub test scope',
+    );
     assert(autoDevDoc.includes(`incident_key: ${errorRes.body.incident_key}`), 'expected auto_dev doc to preserve incident key');
     assert(autoDevDoc.includes('## Council'), 'expected auto_dev doc to include agent council section');
     assert(!autoDevDoc.includes(`super-secret-token-${stamp}`), 'expected message token to be redacted');
     assert(!autoDevDoc.includes(`access-token-${stamp}`), 'expected payload token to be redacted');
+
+    const claudeDoc = buildAlarmAutoDevDocument({
+      team: 'claude',
+      fromBot: 'reviewer',
+      severity: 'error',
+      title: 'reviewer error',
+      message: 'typecheck failed',
+      eventType: 'reviewer_error',
+      incidentKey: 'smoke:claude-reviewer',
+      eventId: 123,
+    });
+    assert(
+      claudeDoc.includes('npm --prefix bots/claude run test:reviewer'),
+      'expected Claude reviewer incidents to use the reviewer test scope',
+    );
 
     const similarErrorReq = {
       body: {

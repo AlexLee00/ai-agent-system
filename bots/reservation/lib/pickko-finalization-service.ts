@@ -21,6 +21,20 @@ type FinalStatusExpectation = {
   requireZeroAmount?: boolean;
 };
 
+type PickkoFinalStatusEvaluation = {
+  pageTitle: string;
+  hasErrorMsg: boolean;
+  hasSuccessMsg: boolean;
+  isPaymentPending: boolean;
+  isPaymentCompleted: boolean;
+  paymentStatusText: string;
+  hasOrderResultRoot: boolean;
+  identityMatched: boolean;
+  bodyText: string;
+  url: string;
+  timestamp: string;
+};
+
 export function matchesPickkoReservationWindow(
   useTime: unknown,
   expected: { date?: unknown; start?: unknown; end?: unknown },
@@ -161,7 +175,7 @@ export function createPickkoFinalizationService({
   }
 
   async function readFinalStatus(page: any, expected: FinalStatusExpectation | null = null) {
-    const rawFinalStatus = await page.evaluate((expectedReservation: FinalStatusExpectation | null) => {
+    const rawFinalStatus: PickkoFinalStatusEvaluation = await page.evaluate((expectedReservation: FinalStatusExpectation | null) => {
       const hasOrderResultUrl = /\/order\/view\/\d+/.test(window.location.href);
       const activeOrderView = hasOrderResultUrl ? document.querySelector('#order_view') : null;
       const statusRoot = (activeOrderView || document.querySelector('body')) as HTMLElement | null;
@@ -202,7 +216,7 @@ export function createPickkoFinalizationService({
         timestamp: new Date().toLocaleString('ko-KR'),
       };
     }, expected);
-    const { bodyText, ...evaluatedStatus } = rawFinalStatus as Record<string, any>;
+    const { bodyText, ...evaluatedStatus } = rawFinalStatus;
     const paymentAmountWon = extractPickkoFinalPaymentAmount(bodyText);
     const finalStatus = {
       ...evaluatedStatus,

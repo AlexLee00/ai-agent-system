@@ -224,7 +224,7 @@ export async function runSelfRagPipeline(input: {
     ? buildMultiHopPlan({
       query: input.query,
       seedEntity,
-      edges: graphEdges,
+      edges: [...graphEdges],
       enabled: input.enabled,
     })
     : null;
