@@ -187,6 +187,12 @@ function findLongParagraphs(content, maxSentences) {
     .slice(0, 3);
 }
 
+function countLongParagraphs(content, maxSentences) {
+  return splitParagraphs(content)
+    .filter((paragraph) => sentenceCount(paragraph) > maxSentences)
+    .length;
+}
+
 function checkBlogFormatRules(content, type = 'general', options = {}) {
   const rules = BLOG_FORMAT_RULES[type] || BLOG_FORMAT_RULES.general;
   const title = String(options.title || extractTitleLine(content) || '').trim();
@@ -255,6 +261,7 @@ module.exports = {
     extractTitleLine,
     getIntroLines,
     countBodyHeadings,
+    countLongParagraphs,
     sentenceCount,
   },
 };

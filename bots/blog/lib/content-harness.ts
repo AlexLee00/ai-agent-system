@@ -13,9 +13,48 @@ const FORBIDDEN_PATTERNS = [
   { code: 'prompt_leak', pattern: /(시스템 프롬프트|위 지시를 무시|다음 JSON 형식)/i },
 ];
 
+const CONTENT_HARNESS_CALIBRATION = Object.freeze({
+  version: 'r1-r6-v2-calibrated',
+  criticalRules: Object.freeze(['R6']),
+  minNoncriticalViolations: 2,
+  r5: Object.freeze({
+    general: Object.freeze({ minimumIntroLines: 1, maximumBodyHeadings: 6, maximumLongParagraphs: 3 }),
+    lecture: Object.freeze({ minimumIntroLines: 1, maximumBodyHeadings: null, maximumLongParagraphs: null }),
+  }),
+});
+
 function countMatches(text = '', pattern) {
   const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
   return (String(text || '').match(new RegExp(pattern.source, flags)) || []).length;
+}
+
+function evaluateHarnessR5(evidence = {}, postType = 'general') {
+  const segment = postType === 'lecture' ? 'lecture' : 'general';
+  const policy = CONTENT_HARNESS_CALIBRATION.r5[segment];
+  const maximumBodyHeadings = policy.maximumBodyHeadings;
+  const maximumLongParagraphs = policy.maximumLongParagraphs;
+  const longParagraphsTotal = Number(evidence.long_paragraphs_total ?? evidence.long_paragraphs ?? 0);
+  const passed = Number(evidence.char_count || 0) >= Number(evidence.minimum_chars || 0)
+    && Number(evidence.intro_lines || 0) >= policy.minimumIntroLines
+    && Number(evidence.body_headings || 0) >= Number(evidence.minimum_body_headings || 0)
+    && (maximumBodyHeadings == null || Number(evidence.body_headings || 0) <= maximumBodyHeadings)
+    && (maximumLongParagraphs == null || longParagraphsTotal <= maximumLongParagraphs);
+  return {
+    passed,
+    policy: {
+      segment,
+      minimum_intro_lines: policy.minimumIntroLines,
+      maximum_body_headings: maximumBodyHeadings,
+      maximum_long_paragraphs: maximumLongParagraphs,
+    },
+  };
+}
+
+function classifyHarnessWouldBlock(rules = [], minNoncriticalViolations = CONTENT_HARNESS_CALIBRATION.minNoncriticalViolations) {
+  const failed = rules.filter((rule) => !rule.passed);
+  const critical = new Set(CONTENT_HARNESS_CALIBRATION.criticalRules);
+  return failed.some((rule) => critical.has(rule.id))
+    || failed.filter((rule) => !critical.has(rule.id)).length >= minNoncriticalViolations;
 }
 
 function buildContentHarnessReport(post = {}) {
@@ -32,9 +71,25 @@ function buildContentHarnessReport(post = {}) {
   const minimumChars = Number(BLOG_FORMAT_RULES[postType]?.minChars || 0);
   const minimumHeadings = Number(BLOG_FORMAT_RULES[postType]?.minBodyHeadings || 0);
   const maximumHeadings = Number(BLOG_FORMAT_RULES[postType]?.maxBodyHeadings || 0);
+  const longParagraphsTotal = formatTest.countLongParagraphs(
+    content,
+    Number(BLOG_FORMAT_RULES[postType]?.maxParagraphSentences || 0),
+  );
   const forbiddenHits = FORBIDDEN_PATTERNS
     .filter((item) => item.pattern.test(plain))
     .map((item) => item.code);
+  const r5Evidence = {
+    char_count: content.length,
+    minimum_chars: minimumChars,
+    intro_lines: format.introLineCount,
+    minimum_intro_lines: Number(BLOG_FORMAT_RULES[postType]?.introLines || 0),
+    body_headings: format.bodyHeadingCount,
+    minimum_body_headings: minimumHeadings,
+    maximum_body_headings: maximumHeadings || null,
+    long_paragraphs: format.longParagraphCount,
+    long_paragraphs_total: longParagraphsTotal,
+  };
+  const r5 = evaluateHarnessR5(r5Evidence, postType);
   const rules = [
     {
       id: 'R1',
@@ -67,22 +122,12 @@ function buildContentHarnessReport(post = {}) {
     {
       id: 'R5',
       name: 'structure_and_length',
-      passed: content.length >= minimumChars
-        && format.introLineCount >= Number(BLOG_FORMAT_RULES[postType]?.introLines || 0)
-        && format.bodyHeadingCount >= minimumHeadings
-        && (!maximumHeadings || format.bodyHeadingCount <= maximumHeadings)
-        && format.longParagraphCount === 0,
+      passed: r5.passed,
       evidence: {
-        char_count: content.length,
-        minimum_chars: minimumChars,
-        intro_lines: format.introLineCount,
-        minimum_intro_lines: Number(BLOG_FORMAT_RULES[postType]?.introLines || 0),
-        body_headings: format.bodyHeadingCount,
-        minimum_body_headings: minimumHeadings,
-        maximum_body_headings: maximumHeadings || null,
-        long_paragraphs: format.longParagraphCount,
+        ...r5Evidence,
+        calibration_policy: r5.policy,
       },
-      message: '최소 길이·도입 3줄·본문 소제목 구조를 충족해야 합니다.',
+      message: '포스트 유형별 최소 길이·도입·소제목·단락 구조를 충족해야 합니다.',
     },
     {
       id: 'R6',
@@ -97,11 +142,15 @@ function buildContentHarnessReport(post = {}) {
     .map((rule) => ({ rule: rule.id, code: rule.name, message: rule.message }));
 
   return {
-    version: 'r1-r6-v1',
+    version: CONTENT_HARNESS_CALIBRATION.version,
     mode: 'report',
     requested_mode: String(process.env.BLOG_CONTENT_HARNESS_MODE || 'report'),
     blocking_enabled: false,
-    would_block: violations.length > 0,
+    would_block: classifyHarnessWouldBlock(rules),
+    calibration: {
+      critical_rules: CONTENT_HARNESS_CALIBRATION.criticalRules,
+      min_noncritical_violations: CONTENT_HARNESS_CALIBRATION.minNoncriticalViolations,
+    },
     score: Math.round((rules.filter((rule) => rule.passed).length / rules.length) * 100),
     violations,
     rules: rules.map(({ message, ...rule }) => rule),
@@ -109,5 +158,8 @@ function buildContentHarnessReport(post = {}) {
 }
 
 module.exports = {
+  CONTENT_HARNESS_CALIBRATION,
   buildContentHarnessReport,
+  classifyHarnessWouldBlock,
+  evaluateHarnessR5,
 };

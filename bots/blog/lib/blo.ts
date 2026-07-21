@@ -92,6 +92,7 @@ const {
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
 const { runTitleFeedbackLoop }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/title-feedback-loop.ts'));
 const { buildContentHarnessReport }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/content-harness.ts'));
+const { resolveBlogWriterAssignment }               = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
 const {
   diagnoseImageGeneration,
   reportImageGenFailure,
@@ -1227,6 +1228,7 @@ function _createLocalDraftRunner({
 }) {
   return async (variation) => {
     let post;
+    const writerModelAssignment = context.writerModelAssignment || null;
     const forceSinglePass = process.env.BLOG_FORCE_SINGLE_PASS === '1';
     try {
       if (forceSinglePass) {
@@ -1239,13 +1241,17 @@ function _createLocalDraftRunner({
       console.warn(`[블로] ${chunkedLabel} 분할 생성 실패 — 단일 생성 폴백:`, e.message);
       post = await singleWriter(...buildSingleArgs(context, variation));
     }
+    if (writerModelAssignment) post = { ...post, writerModelAssignment };
 
     return withBlogTelemetry('scoring', () => _runQualityRepair(
       kind,
       buildRepairContext(context),
       post,
       variation,
-      async (repairContext, currentPost, quality) => repairDraft(...buildRepairArgs(repairContext, currentPost, quality, variation))
+      async (repairContext, currentPost, quality) => {
+        const repaired = await repairDraft(...buildRepairArgs(repairContext, currentPost, quality, variation));
+        return writerModelAssignment ? { ...repaired, writerModelAssignment } : repaired;
+      }
     ), { postType: kind });
   };
 }
@@ -1323,6 +1329,8 @@ function buildWriterAbMetadata(post = {}, traceCtx = {}) {
   const servedModel = post.usedModel || post.servedModel || post.model || null;
   const traceId = post.traceId || post.trace_id || traceCtx.trace_id || traceCtx.traceId || null;
   if (writerModel) metadata.writer_model = writerModel;
+  const writerModelAssignment = post.writerModelAssignment || post.writer_model_assignment || null;
+  if (writerModelAssignment) metadata.writer_model_assignment = writerModelAssignment;
   if (servedModel) metadata.served_model = servedModel;
   if (post.fallbackUsed !== undefined || post.fallback_used !== undefined) {
     metadata.fallback_used = Boolean(post.fallbackUsed ?? post.fallback_used);
@@ -2472,6 +2480,7 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
 
       return await runLecturePost(researchData, traceCtx, {
         number, seriesName, lectureTitle,
+        publicationDate: lectureSchedule?.publish_date || _getBlogRunDate(),
       }, lectureSchedule?.id, options, daily);
     }, {
       maxAttempts: options?.dryRun ? 1 : 2,
@@ -2488,7 +2497,7 @@ async function _runLectureStage(daily, traceCtx, options = {}) {
 }
 
 async function _runGeneralStage(daily, traceCtx, options = {}) {
-  const { config, researchData, generalCtx } = daily;
+  const { config, researchData, generalCtx, generalSchedule } = daily;
   if (!generalCtx || config.general_count <= 0) return null;
 
   if (options.dryRun && options.phase1FastDryRun) {
@@ -2513,6 +2522,7 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
     return await runGeneralPost(researchData, traceCtx, {
       category,
       bookInfo,
+      publicationDate: generalSchedule?.publish_date || _getBlogRunDate(),
     }, scheduleId, options, daily, daily.lunaRequest || null);
   } catch (e) {
     console.error('[블로] 일반 포스팅 실패:', e.message);
@@ -2554,6 +2564,10 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
     senseState: dailyState.senseState || null,
     revenueCorrelation: dailyState.revenueCorrelation || null,
   };
+  context.writerModelAssignment = resolveBlogWriterAssignment({
+    publishDate: preloaded.publicationDate || _getBlogRunDate(),
+    postType: 'lecture',
+  });
   const startTime = Date.now();
   const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
   context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'lecture');
@@ -2577,8 +2591,8 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
         singleWriter: writeLecturePost,
         repairDraft: repairLecturePostDraft,
         buildRepairContext: (ctx) => ctx,
-        buildSingleArgs: (ctx, variation) => [ctx.number, ctx.lectureTitle, ctx.researchData, variation],
-        buildChunkedArgs: (ctx, variation) => [ctx.number, ctx.lectureTitle, ctx.researchData, variation],
+        buildSingleArgs: (ctx, variation) => [ctx.number, ctx.lectureTitle, ctx.researchData, variation, ctx.writerModelAssignment],
+        buildChunkedArgs: (ctx, variation) => [ctx.number, ctx.lectureTitle, ctx.researchData, variation, ctx.writerModelAssignment],
         buildRepairArgs: (ctx, currentPost, quality, variation) => [
           ctx.number,
           ctx.lectureTitle,
@@ -2586,6 +2600,7 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
           currentPost,
           quality,
           variation,
+          ctx.writerModelAssignment,
         ],
       });
 
@@ -2679,6 +2694,10 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     senseState: dailyState.senseState || null,
     revenueCorrelation: dailyState.revenueCorrelation || null,
   };
+  context.writerModelAssignment = resolveBlogWriterAssignment({
+    publishDate: preloaded.publicationDate || _getBlogRunDate(),
+    postType: 'general',
+  });
   const startTime = Date.now();
   const writerName = await _selectBlogWriter(
     context.category === '도서리뷰' ? '도서리뷰' : '일반',
@@ -2706,14 +2725,15 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         singleWriter: writeGeneralPost,
         repairDraft: repairGeneralPostDraft,
         buildRepairContext: (ctx) => ({ category: ctx.category, data: ctx.researchData }),
-        buildSingleArgs: (ctx, variation) => [ctx.category, ctx.researchData, variation],
-        buildChunkedArgs: (ctx, variation) => [ctx.category, ctx.researchData, variation],
+        buildSingleArgs: (ctx, variation) => [ctx.category, ctx.researchData, variation, ctx.writerModelAssignment],
+        buildChunkedArgs: (ctx, variation) => [ctx.category, ctx.researchData, variation, ctx.writerModelAssignment],
         buildRepairArgs: (ctx, currentPost, quality, variation) => [
           ctx.category,
           ctx.data,
           currentPost,
           quality,
           variation,
+          context.writerModelAssignment,
         ],
       });
 

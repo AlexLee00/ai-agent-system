@@ -78,7 +78,7 @@ async function main() {
         assert.match(sql, /^\s*WITH latest_scores AS/i);
         assert.match(sql, /metadata->'harness_report'/);
         assert.doesNotMatch(sql, /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\b/i);
-        assert.deepEqual(params, ['90', 100]);
+        assert.deepEqual(params, ['90', 100, 0, 2_147_483_647]);
         return rows;
       },
     },

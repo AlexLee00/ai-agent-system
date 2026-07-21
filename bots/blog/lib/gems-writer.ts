@@ -30,6 +30,7 @@ const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
 const {
   resolveBlogWriterModel,
+  resolveBlogWriterModelForAssignment,
   writerModelCacheSuffix,
   buildWriterFamilyRequestOptions,
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
@@ -1077,7 +1078,7 @@ function _getShortSections(text, category) {
     .filter(section => section.missing || section.currentChars < section.minChars);
 }
 
-async function _runGeneralPostRepairPasses(category, researchData, content, sectionVariation, usedModel, fallbackUsed, minCharsGeneral, traceId = null) {
+async function _runGeneralPostRepairPasses(category, researchData, content, sectionVariation, usedModel, fallbackUsed, minCharsGeneral, traceId = null, writerModelAssignment = null) {
   let repairedContent = String(content || '').trim();
   let nextUsedModel = usedModel;
   let nextFallbackUsed = fallbackUsed;
@@ -1140,7 +1141,8 @@ async function _runGeneralPostRepairPasses(category, researchData, content, sect
           traceId: nextTraceId,
         },
         { issues },
-        sectionVariation
+        sectionVariation,
+        writerModelAssignment
       );
       repairedContent = String(repaired.content || repairedContent).trim();
       const bodyModel = repaired.model || repaired.usedModel || nextUsedModel;
@@ -1370,12 +1372,12 @@ function _buildVariationBlock(variation = {}) {
  * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  * @returns {{ content, charCount, model, title }}
  */
-async function writeGeneralPost(category, researchData, sectionVariation = {}) {
+async function writeGeneralPost(category, researchData, sectionVariation = {}, writerModelAssignment = null) {
   if (category === '도서리뷰' && !researchData?.book_info?.isbn) {
     throw new Error('검증된 도서 정보가 없어 도서리뷰 작성 불가');
   }
   const today    = new Date().toLocaleDateString('ko-KR');
-  const writerModel = resolveBlogWriterModel();
+  const writerModel = resolveBlogWriterModelForAssignment(writerModelAssignment);
   const cacheKey = `gems_general_${category}_${kst.today()}_${writerModelCacheSuffix(writerModel)}`;
 
   // 캐시 확인
@@ -1626,7 +1628,8 @@ ${_buildVariationBlock(sectionVariation)}
     usedModel,
     fallbackUsed,
     MIN_CHARS_GENERAL,
-    traceId
+    traceId,
+    writerModelAssignment
   );
   content = postRepairPasses.content;
   usedModel = postRepairPasses.bodyModel;
@@ -1700,7 +1703,7 @@ ${_buildVariationBlock(sectionVariation)}
  * @param {object} sectionVariation
  * @returns {Promise<{ content, charCount, model, title, fallbackUsed, repairedFromDraft: true }>}
  */
-async function repairGeneralPostDraft(category, researchData, draft, quality, sectionVariation = {}) {
+async function repairGeneralPostDraft(category, researchData, draft, quality, sectionVariation = {}, writerModelAssignment = null) {
   if (category === '도서리뷰' && !researchData?.book_info?.isbn) {
     throw new Error('검증된 도서 정보가 없어 도서리뷰 보정 불가');
   }
@@ -1770,7 +1773,7 @@ ${content}
   `.trim();
 
   const startTime = Date.now();
-  const writerModel = resolveBlogWriterModel();
+  const writerModel = resolveBlogWriterModelForAssignment(writerModelAssignment);
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let traceId = getTraceId();
@@ -1852,10 +1855,10 @@ ${content}
  * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  * @returns {{ content, charCount, model, title }}
  */
-async function writeGeneralPostChunked(category, researchData, sectionVariation = {}) {
+async function writeGeneralPostChunked(category, researchData, sectionVariation = {}, writerModelAssignment = null) {
   const today    = new Date().toLocaleDateString('ko-KR');
   const model    = 'hub:blog.gems.writer';
-  const writerModel = resolveBlogWriterModel();
+  const writerModel = resolveBlogWriterModelForAssignment(writerModelAssignment);
 
   const weather         = researchData.weather || {};
   const itNews          = researchData.it_news || [];

@@ -25,6 +25,7 @@ const { buildBlogFormatInstruction } = require(path.join(env.PROJECT_ROOT, 'bots
 const { buildWritingLearningsPromptBlock } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writing-learnings.ts'));
 const {
   resolveBlogWriterModel,
+  resolveBlogWriterModelForAssignment,
   writerModelCacheSuffix,
   buildWriterFamilyRequestOptions,
 } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/writer-model-policy.ts'));
@@ -489,8 +490,8 @@ function _buildLectureTopicDirection(lectureNumber, lectureTitle) {
  * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  * @returns {{ content, charCount, model }}
  */
-async function writeLecturePost(lectureNumber, lectureTitle, researchData, sectionVariation = {}) {
-  const writerModel = resolveBlogWriterModel();
+async function writeLecturePost(lectureNumber, lectureTitle, researchData, sectionVariation = {}, writerModelAssignment = null) {
+  const writerModel = resolveBlogWriterModelForAssignment(writerModelAssignment);
   const cacheKey = `pos_lecture_${lectureNumber}_${writerModelCacheSuffix(writerModel)}`;
 
   // 캐시 확인 (당일 재실행 중복 방지)
@@ -662,7 +663,7 @@ ${_buildVariationBlock(sectionVariation)}
   } catch (error) {
     if (!isHubWriterTimeout(error)) throw error;
     console.warn(`[포스] 단일 writer 타임아웃 → chunked writer 폴백: ${error.message}`);
-    const chunked = await writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation);
+    const chunked = await writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation, writerModelAssignment);
     content = chunked.content;
     usedModel = chunked.model || 'chunked-hub:blog.pos.writer';
     traceId = chunked.traceId || traceId;
@@ -759,7 +760,7 @@ ${_buildVariationBlock(sectionVariation)}
 
 // ─── 초안 보정 (전체 재작성 대체) ─────────────────────────────────────
 
-async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData, draft, quality, sectionVariation = {}) {
+async function repairLecturePostDraft(lectureNumber, lectureTitle, researchData, draft, quality, sectionVariation = {}, writerModelAssignment = null) {
   const content = String(draft?.content || '').trim();
   if (!content) {
     throw new Error('repairLecturePostDraft: draft.content 비어 있음');
@@ -803,7 +804,7 @@ ${content}
   `.trim();
 
   const startTime = Date.now();
-  const writerModel = resolveBlogWriterModel();
+  const writerModel = resolveBlogWriterModelForAssignment(writerModelAssignment);
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let traceId = getTraceId();
@@ -874,7 +875,7 @@ const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
  * @param {object} researchData
  * @param {object} sectionVariation — 마에스트로 변형 지시 (옵셔널, 기본값 {})
  */
-async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation = {}) {
+async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation = {}, writerModelAssignment = null) {
   const weather         = researchData.weather        || {};
   const nodejsUpdates   = researchData.nodejs_updates || [];
   const itNews          = researchData.it_news        || [];
@@ -893,7 +894,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
 
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
-  const writerModel     = resolveBlogWriterModel();
+  const writerModel     = resolveBlogWriterModelForAssignment(writerModelAssignment);
   const seriesGuidance  = _buildLectureSeriesGuidance(researchData, lectureTitle);
   const weeklyNewsSection = _buildWeeklyNewsSection(researchData);
   const vaultLectureContextBlock = _buildVaultLectureContextBlock(researchData);

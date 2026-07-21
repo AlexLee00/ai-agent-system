@@ -4,10 +4,12 @@
 
 const assert = require('node:assert/strict');
 const {
+  buildTitleCandidatePrompt,
   loadTitleCorrelationProfile,
   runTitleFeedbackLoop,
   selectTitleCandidate,
   summarizeTitleFeatureCorrelations,
+  validateTitleCandidate,
 } = require('../lib/title-feedback-loop.ts');
 const { buildContentHarnessReport } = require('../lib/content-harness.ts');
 const { _testOnly: bloTest } = require('../lib/blo.ts');
@@ -44,6 +46,71 @@ function buildSeoFixture() {
 }
 
 async function main() {
+  const prompt = buildTitleCandidatePrompt({
+    category: '개발기획과컨설팅',
+    baseTitle: '[개발기획과컨설팅] AI 기능 도입 전 합의해야 할 것들',
+    topic: 'AI 기능 도입 전 합의할 범위와 지표',
+    topicTitleCandidate: 'AI 기능 도입 전 합의할 범위 지표 책임',
+    requiredPhrase: 'AI 기능',
+    content: buildSeoFixture(),
+  });
+  assert.match(prompt, /최종 제목 전체가 35자 이하/);
+  assert.match(prompt, /제목 본문은 최대 24자/);
+  assert.match(prompt, /숫자.*도구명.*구체 결과.*방법.*실제 사례/s);
+  assert.match(prompt, /AI 기능 도입 전 합의할 범위 지표 책임/);
+  assert.match(prompt, /topic_alignment.*0\.20.*0\.40/s);
+  assert.match(prompt, /AI 기능.*바꾸거나 축약하지 않/s);
+
+  const title35 = `AI ${'가'.repeat(32)}`;
+  const title36 = `AI ${'가'.repeat(33)}`;
+  const length35 = validateTitleCandidate(title35, {
+    baseTitle: title35,
+    content: `${title35}\n${buildSeoFixture()}`,
+  });
+  const length36 = validateTitleCandidate(title36, {
+    baseTitle: title35,
+    content: `${title35}\n${buildSeoFixture()}`,
+  });
+  assert.ok(!length35.seoIssues.some((issue) => issue.includes('35자 이하')));
+  assert.ok(length36.seoIssues.some((issue) => issue.includes('35자 이하')));
+
+  const recentFailureInput = {
+    category: '개발기획과컨설팅',
+    baseTitle: '[개발기획과컨설팅] AI 기능 도입 전 합의해야 할 것들',
+    topic: 'AI 기능 도입 전 합의할 범위와 지표',
+    topicTitleCandidate: 'AI 기능 도입 전 합의할 범위 지표 책임',
+    content: buildSeoFixture(),
+  };
+  const replayProfile = {
+    sample_size: 20,
+    eligible_features: ['has_number'],
+    features: { has_number: { delta: 1 } },
+  };
+  const recentBefore = await runTitleFeedbackLoop(recentFailureInput, {
+    generateCandidates: async () => [
+      '챗봇·생성형 AI, 개발 전 꼭 정할 항목',
+      'AI 기능 추가 전 일정이 흔들리지 않게 합의할 것',
+      'AI 도입 전 범위·지표·운영책임을 정했나요?',
+    ],
+    loadCorrelationProfile: async () => replayProfile,
+    assertDistinctTitle: () => {},
+  });
+  assert.match(recentBefore.metadata.title_selected_reason, /^fallback_existing_title:candidate_count_below_3/);
+  assert.equal(recentBefore.metadata.title_candidates.length, 1);
+
+  const recentAfter = await runTitleFeedbackLoop(recentFailureInput, {
+    generateCandidates: async () => [
+      'AI 도입 전 합의 3가지',
+      'AI 기능 범위 정하는 법',
+      'AI 도입 지표 4개 점검법',
+      'AI 운영 책임 3단계',
+    ],
+    loadCorrelationProfile: async () => replayProfile,
+    assertDistinctTitle: () => {},
+  });
+  assert.ok(recentAfter.metadata.title_candidates.length >= 3);
+  assert.doesNotMatch(recentAfter.metadata.title_selected_reason, /^fallback_existing_title:/);
+
   const history = [
     { title: '[IT정보와분석] 자동화 실패를 줄이는 4가지 기준', crank_total: 72 },
     { title: '[홈페이지와App] 첫 화면 이탈을 막는 5가지 신호', crank_total: 70 },
@@ -325,6 +392,10 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     suite: 'blog-title-loop-harness',
+    recentFailureReplay: {
+      beforePassedCandidates: recentBefore.metadata.title_candidates.length,
+      afterPassedCandidates: recentAfter.metadata.title_candidates.length,
+    },
     titleCandidates: titleLoop.metadata.title_candidates,
     titleSelectedReason: titleLoop.metadata.title_selected_reason,
     harness,

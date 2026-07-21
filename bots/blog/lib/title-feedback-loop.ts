@@ -9,6 +9,7 @@ const { _assertDistinctGeneralTitle } = require('./gems-writer.ts');
 
 const DEFAULT_DAYS = 30;
 const PROFILE_CACHE_MS = 30 * 60 * 1000;
+const MAX_FINAL_TITLE_CHARS = 35;
 const SEO_LEVEL_RANK = { poor: 0, fair: 1, good: 2 };
 const FEATURE_DEFINITIONS = [
   { key: 'length_1_20', matches: (title) => title.length <= 20 },
@@ -195,22 +196,34 @@ function parseCandidateResponse(response = '') {
   return Array.isArray(parsed) ? parsed : [];
 }
 
-async function generateTitleCandidates(input = {}) {
+function buildTitleCandidatePrompt(input = {}) {
   const baseTitle = stripCategoryPrefix(input.baseTitle);
   const requiredPhrase = String(input.requiredPhrase || '').trim();
-  const response = await callBlogFast(`다음 블로그 글에 사용할 제목 후보 4개를 만드세요.
+  const category = String(input.category || '').trim();
+  const categoryPrefix = category ? `[${category}] ` : '';
+  const candidateMaxChars = Math.max(1, MAX_FINAL_TITLE_CHARS - categoryPrefix.length);
+  const alignmentReference = String(input.topicTitleCandidate || input.topic || baseTitle).trim();
+  return `다음 블로그 글에 사용할 제목 후보 4개를 만드세요.
 
-카테고리: ${input.category || '일반'}
+카테고리: ${category || '일반'}
 선택된 주제: ${input.topic || baseTitle}
 기존 제목: ${baseTitle}
-${requiredPhrase ? `반드시 모든 제목에 포함할 문구: ${requiredPhrase}` : ''}
+제목 방향 기준: ${alignmentReference || baseTitle}
+${requiredPhrase ? `반드시 모든 제목에 포함할 문구: ${requiredPhrase} (한 글자도 바꾸거나 축약하지 않음)` : ''}
 본문 요약: ${String(input.content || '').replace(/\s+/g, ' ').slice(0, 700)}
 
 규칙:
+- 출력에는 카테고리 대괄호를 붙이지 않음
+- 나중에 "${categoryPrefix || '[카테고리] '}" 접두어가 붙은 최종 제목 전체가 35자 이하가 되도록, 각 제목 본문은 최대 ${candidateMaxChars}자로 작성
+- 각 후보는 숫자, 도구명, 구체 결과, 방법·기준·체크리스트, 실제 사례 중 하나 이상을 반드시 포함
+- 성공적인, 효과적인, 혁신적인, 완벽한, 최고의, 필수적인, 최적의, 궁극의 같은 추상어와 과장 표현을 사용하지 않음
+- topic_alignment 기준: 제목 방향 기준과 후보의 2자 이상 단어 집합 중 큰 쪽을 분모로 한 정확한 교집합 비율을 최소 0.20, 가능하면 0.40 이상 유지하고 다른 주제로 전환하지 않음
 - 같은 주제를 유지하되 길이, 숫자, 질문형, 구체적 결과 표현을 서로 다르게 구성
-- 과장이나 추상어를 피하고 60자 이내
-- 카테고리 대괄호는 붙이지 않음
-- JSON 문자열 배열만 출력`, {
+- JSON 문자열 배열만 출력`;
+}
+
+async function generateTitleCandidates(input = {}) {
+  const response = await callBlogFast(buildTitleCandidatePrompt(input), {
     agent: 'blo',
     selectorKey: 'blog._default',
     taskType: 'blog_title_candidates',
@@ -331,6 +344,7 @@ async function runTitleFeedbackLoop(input = {}, dependencies = {}) {
 }
 
 module.exports = {
+  buildTitleCandidatePrompt,
   extractTitleFeatures,
   generateTitleCandidates,
   loadTitleCorrelationProfile,
