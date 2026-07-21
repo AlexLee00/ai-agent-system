@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -37,6 +39,147 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
+
+MAX_BRIDGE_PAYLOAD_BYTES = 32 * 1024
+BRIDGE_SUBPROCESS_TIMEOUT_SECONDS = 30
+BRIDGE_ACTION_FIELDS = {
+    "health": {"paper", "domesticSymbol", "overseasSymbol"},
+    "quote": {"market", "symbol", "paper"},
+    "domestic_quote": {"market", "symbol", "paper"},
+    "overseas_quote": {"market", "symbol", "paper"},
+    "domestic_price": {"symbol", "paper"},
+    "overseas_price": {"symbol", "paper"},
+    "balance": {"market", "paper"},
+    "domestic_balance": {"market", "paper"},
+    "overseas_balance": {"market", "paper"},
+    "domestic_buy": {"symbol", "amount", "amountKrw", "dryRun", "paper"},
+    "domestic_sell": {"symbol", "qty", "dryRun", "paper"},
+    "overseas_buy": {"symbol", "amount", "amountUsd", "dryRun", "paper"},
+    "overseas_sell": {"symbol", "qty", "dryRun", "paper"},
+    "domestic_fill": {"market", "symbol", "ordNo", "side", "paper"},
+    "overseas_fill": {"market", "symbol", "ordNo", "side", "paper"},
+    "domestic_ranking": {"endpoint", "trId", "params", "paper"},
+    "volume_rank": {"paper"},
+}
+DOMESTIC_SYMBOL_PATTERN = re.compile(r"^[0-9]{6}$")
+OVERSEAS_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,14}$", re.IGNORECASE)
+ORDER_NUMBER_PATTERN = re.compile(r"^[0-9]{1,20}$")
+RANKING_ENDPOINT_PATTERN = re.compile(r"^/uapi/domestic-stock/v1/ranking/[a-z0-9-]+$")
+TR_ID_PATTERN = re.compile(r"^[A-Z0-9]{8,16}$")
+PARAM_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+RESERVED_JSON_KEYS = {"__proto__", "constructor", "prototype"}
+
+
+def _require_bool(payload: dict, key: str):
+    if key in payload and not isinstance(payload[key], bool):
+        raise ValueError(f"{key} must be a boolean")
+
+
+def _require_symbol(value, market: str, field: str = "symbol"):
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    pattern = DOMESTIC_SYMBOL_PATTERN if market == "domestic" else OVERSEAS_SYMBOL_PATTERN
+    if value != value.strip() or not pattern.fullmatch(value):
+        raise ValueError(f"invalid {market} {field}")
+
+
+def _require_positive_number(value, field: str, integer: bool = False):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a positive number")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric <= 0 or (integer and not numeric.is_integer()):
+        raise ValueError(f"{field} must be a positive {'integer' if integer else 'number'}")
+
+
+def _validate_ranking_params(params):
+    if not isinstance(params, dict) or len(params) > 64:
+        raise ValueError("params must be an object with at most 64 fields")
+    for key, value in params.items():
+        if key in RESERVED_JSON_KEYS or not PARAM_KEY_PATTERN.fullmatch(str(key)):
+            raise ValueError("params contains an invalid key")
+        if value is not None and (isinstance(value, (dict, list)) or not isinstance(value, (str, int, float, bool))):
+            raise ValueError(f"params.{key} must be a scalar JSON value")
+
+
+def validate_bridge_request(action: str, payload: dict | None) -> dict:
+    normalized_action = str(action or "").strip().lower()
+    allowed_fields = BRIDGE_ACTION_FIELDS.get(normalized_action)
+    if allowed_fields is None:
+        raise ValueError(f"unsupported bridge action: {normalized_action or '<empty>'}")
+    if not isinstance(payload, dict):
+        raise ValueError("bridge payload must be an object")
+    if not all(isinstance(key, str) for key in payload):
+        raise ValueError("bridge payload keys must be strings")
+
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > MAX_BRIDGE_PAYLOAD_BYTES:
+        raise ValueError(f"bridge payload exceeds {MAX_BRIDGE_PAYLOAD_BYTES} bytes")
+
+    unknown_fields = set(payload) - allowed_fields
+    if unknown_fields:
+        raise ValueError(f"unexpected bridge payload fields: {', '.join(sorted(unknown_fields))}")
+    if any(key in RESERVED_JSON_KEYS for key in payload):
+        raise ValueError("bridge payload contains a reserved key")
+
+    _require_bool(payload, "paper")
+    _require_bool(payload, "dryRun")
+
+    market = payload.get("market")
+    if market is not None and market not in {"domestic", "overseas"}:
+        raise ValueError("market must be domestic or overseas")
+
+    forced_market = None
+    if normalized_action.startswith("domestic_"):
+        forced_market = "domestic"
+    elif normalized_action.startswith("overseas_"):
+        forced_market = "overseas"
+    if forced_market and market is not None and market != forced_market:
+        raise ValueError(f"{normalized_action} requires market={forced_market}")
+
+    symbol_market = forced_market or market
+    if normalized_action == "health":
+        if "domesticSymbol" in payload:
+            _require_symbol(payload["domesticSymbol"], "domestic", "domesticSymbol")
+        if "overseasSymbol" in payload:
+            _require_symbol(payload["overseasSymbol"], "overseas", "overseasSymbol")
+    elif "symbol" in payload:
+        _require_symbol(payload["symbol"], symbol_market or "domestic")
+
+    if normalized_action in {"domestic_fill", "overseas_fill"}:
+        if "symbol" not in payload or "ordNo" not in payload:
+            raise ValueError(f"{normalized_action} requires symbol and ordNo")
+        if not isinstance(payload["ordNo"], str) or not ORDER_NUMBER_PATTERN.fullmatch(payload["ordNo"].strip()):
+            raise ValueError("ordNo must contain 1-20 digits")
+        side = str(payload.get("side", "all")).upper()
+        if side not in {"ALL", "BUY", "SELL", "01", "02"}:
+            raise ValueError("side must be all, BUY, SELL, 01, or 02")
+
+    if normalized_action in {"domestic_buy", "overseas_buy"}:
+        primary = "amountKrw" if normalized_action == "domestic_buy" else "amountUsd"
+        amount_field = primary if primary in payload else "amount"
+        if amount_field not in payload:
+            raise ValueError(f"{normalized_action} requires {primary} or amount")
+        _require_positive_number(payload[amount_field], amount_field)
+    if normalized_action in {"domestic_sell", "overseas_sell"}:
+        if "qty" not in payload:
+            raise ValueError(f"{normalized_action} requires qty")
+        _require_positive_number(payload["qty"], "qty", integer=True)
+
+    if normalized_action == "domestic_ranking":
+        endpoint = payload.get("endpoint", "/uapi/domestic-stock/v1/ranking/volume")
+        tr_id = payload.get("trId", "FHPST01710000")
+        if not isinstance(endpoint, str) or not RANKING_ENDPOINT_PATTERN.fullmatch(endpoint):
+            raise ValueError("invalid domestic ranking endpoint")
+        if not isinstance(tr_id, str) or not TR_ID_PATTERN.fullmatch(tr_id):
+            raise ValueError("invalid domestic ranking trId")
+        _validate_ranking_params(payload.get("params", {}))
+
+    return payload
 
 
 def build_node_env() -> dict:
@@ -92,13 +235,25 @@ def parse_json_from_mixed_stdout(stdout: str) -> dict:
 
 
 def run_node_kis_bridge(action: str, payload: dict | None = None) -> dict:
-    payload_json = json.dumps(payload or {}, ensure_ascii=False)
+    normalized_action = str(action or "").strip().lower()
+    validated_payload = validate_bridge_request(
+        normalized_action,
+        {} if payload is None else payload,
+    )
+    bridge_input = json.dumps(
+        {"action": normalized_action, "payload": validated_payload},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    # Fixed runner template: request data is parsed from stdin and never interpolated into source.
     node_code = f"""
+import fs from 'node:fs';
 import * as kis from './shared/kis-client.ts';
 import {{ initHubSecrets }} from './shared/secrets.ts';
 
-const action = {json.dumps(action)};
-const payload = {payload_json};
+const bridgeRequest = JSON.parse(fs.readFileSync(0, 'utf8'));
+const action = bridgeRequest.action;
+const payload = bridgeRequest.payload;
 const paper = payload.paper === true;
 const asNumber = (value, fallback = 0) => {{
   const numeric = Number(value);
@@ -321,14 +476,22 @@ try {{
 }}
 """
 
-    proc = subprocess.run(
-        ["node", "--input-type=module", "-e", node_code],
-        cwd=str(ROOT),
-        env=build_node_env(),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            ["node", "--input-type=module", "-e", node_code],
+            cwd=str(ROOT),
+            env=build_node_env(),
+            input=bridge_input,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=BRIDGE_SUBPROCESS_TIMEOUT_SECONDS,
+            close_fds=True,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"KIS bridge timed out after {BRIDGE_SUBPROCESS_TIMEOUT_SECONDS}s"
+        ) from exc
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
         stdout = (proc.stdout or "").strip()
@@ -633,7 +796,9 @@ def run_server(deps):
         except Exception as exc:
             return {"status": "error", "message": str(exc)}
 
-    mcp.run()
+    # This local bridge deliberately supports stdio only. Remote HTTP/SSE requires
+    # a separate authenticated deployment contract and is not enabled here.
+    mcp.run(transport="stdio")
     return 0
 
 
