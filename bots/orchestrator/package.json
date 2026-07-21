@@ -25,6 +25,6 @@
     "smoke:jay-orchestration": "tsx scripts/jay-orchestration-smoke.ts"
   },
   "dependencies": {
-    "js-yaml": "*"
+    "js-yaml": "^4.3.0"
   }
 }
