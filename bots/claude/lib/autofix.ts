@@ -15,18 +15,15 @@
  *   - npm audit 취약점
  *   - 반복 오류 패턴
  *
- * 체크섬 변경 감지 시:
- *   - git diff로 의도적 변경 확인 후 자동 갱신
+ * 체크섬 기준선은 `dexter --update-checksums` 명시 실행으로만 갱신한다.
  */
 
 const fs   = require('fs');
-const path = require('path');
 const { execSync } = require('child_process');
 const cfg  = require('./config');
 const bugReport = require('./bug-report');
 const { buildNoticeEvent, renderNoticeEvent } = require('../../../packages/core/lib/reporting-hub');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
-const gitOps = require('./git-ops.ts');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -36,7 +33,6 @@ const ALLOWED_AUTOFIX_ACTIONS = new Set([
   'stale-lock',       // stale lock 파일 제거
   'secrets-perm',     // secrets.json 권한 600
   'log-rotation',     // 로그 로테이션 (백업 후 비움)
-  'checksums-update', // 체크섬 갱신 (git 커밋 변경만)
   'bug-report',       // 버그 레포트 DB 등록
 ]);
 
@@ -150,61 +146,6 @@ function fixLogRotation(fixes) {
   }
 }
 
-// 체크섬 자동 갱신 (git에서 의도적 변경이 감지된 파일)
-function fixChecksums(results, fixes) {
-  const codeSection = results.find(r => r.name === '코드 무결성');
-  if (!codeSection) return;
-
-  const candidates = codeSection.items.filter(
-    (i) => i.status === 'warn'
-      && i.label !== '체크섬'
-      && i.label !== 'git 상태'
-      && !i.label.includes('문법')
-  );
-  if (candidates.length === 0) return;
-
-  const hasSyntaxError = codeSection.items.some(
-    (i) => i.status === 'error' && String(i.label || '').startsWith('문법:')
-  );
-  if (hasSyntaxError) return;
-
-  // git diff로 해당 파일이 실제 변경됐는지 확인
-  try {
-    const gitDiff = gitOps.diffNames('HEAD', { cwd: cfg.ROOT, timeout: 5000 });
-    const changedFiles = gitDiff.split('\n').map(f => f.trim()).filter(Boolean);
-    const gitStatus = String(gitOps.runGit(['status', '--porcelain'], { cwd: cfg.ROOT, timeout: 5000 }) || '')
-      .split('\n')
-      .slice(0, 200)
-      .join('\n')
-      .trim();
-    const isClean = !gitStatus;
-
-    // 1) 워킹트리 clean + 경고만 남은 경우 → 커밋 후 의도적 변경으로 간주
-    // 2) 미커밋 상태라도 git diff에 잡힌 체크섬 불일치 파일 → 의도적 수정으로 간주
-    const baselineMissing = candidates.filter((i) =>
-      String(i.detail || '').includes('체크섬 베이스라인 없음')
-    );
-    const mismatched = candidates.filter((i) =>
-      !String(i.detail || '').includes('체크섬 베이스라인 없음')
-    );
-    const changedMismatch = mismatched.filter((i) =>
-      changedFiles.some((f) => i.label.includes(path.basename(f)))
-    );
-    const toUpdate = isClean ? candidates : [...baselineMissing, ...changedMismatch];
-    if (toUpdate.length === 0) return;
-
-    const { updateChecksums } = require('./checks/code');
-    const result = updateChecksums();
-    fixes.push({
-      label:  `체크섬 자동 갱신`,
-      status: 'ok',
-      detail: isClean
-        ? `git clean + 문법 정상 → ${toUpdate.length}개 항목 기준 ${result.updated}개 갱신`
-        : `git 변경 파일 ${toUpdate.length}개 → ${result.updated}개 갱신`,
-    });
-  } catch { /* git 없으면 무시 */ }
-}
-
 // 버그 레포트 등록 대상 판별 + 등록
 async function reportBugs(results, fixes) {
   const BUG_TRIGGERS = [
@@ -254,7 +195,6 @@ async function run(results) {
   fixStaleLock(fixes);
   fixSecretsPermissions(fixes);
   fixLogRotation(fixes);
-  fixChecksums(results, fixes);
   await reportBugs(results, fixes);
 
   return fixes;

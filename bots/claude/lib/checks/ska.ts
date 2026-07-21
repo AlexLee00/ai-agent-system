@@ -15,6 +15,16 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const kst    = require('../../../../packages/core/lib/kst');
 const SCHEMA = 'reservation';
+const MANUAL_PICKKO_AGENT = 'manual_pickko';
+const WARN_STALE_MS = 10 * 60 * 1000;
+const ERROR_STALE_MS = 30 * 60 * 1000;
+
+function classifyAgentStaleness(agent, status, elapsedMs) {
+  if (agent === MANUAL_PICKKO_AGENT && String(status || '').toLowerCase() === 'idle') return 'ok';
+  if (elapsedMs > ERROR_STALE_MS) return 'error';
+  if (elapsedMs > WARN_STALE_MS) return 'warn';
+  return 'ok';
+}
 
 // ── 체크 1: DB 연결 확인 ──────────────────────────────────────────
 async function checkDbExists(items) {
@@ -56,36 +66,27 @@ async function checkAgentStaleness(items) {
     const elapsedMin = Math.floor(elapsedMs / 60000);
     const status = String(row.status || '').toLowerCase();
     const isIdle = status === 'idle';
+    const staleness = classifyAgentStaleness(row.agent, status, elapsedMs);
 
-    if (elapsedMs > 30 * 60 * 1000 && !isIdle) {
+    if (staleness === 'error') {
       items.push({
         label: `에이전트 ${row.agent}`,
         status: 'error',
         detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status})`,
       });
-    } else if (elapsedMs > 10 * 60 * 1000 && !isIdle) {
+    } else if (staleness === 'warn') {
       items.push({
         label: `에이전트 ${row.agent}`,
         status: 'warn',
         detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status})`,
       });
-    } else if (elapsedMs > 30 * 60 * 1000 && isIdle) {
-      items.push({
-        label: `에이전트 ${row.agent}`,
-        status: 'ok',
-        detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status}, 유휴 상태)`,
-      });
-    } else if (elapsedMs > 10 * 60 * 1000 && isIdle) {
-      items.push({
-        label: `에이전트 ${row.agent}`,
-        status: 'warn',
-        detail: `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status}, 유휴 상태)`,
-      });
     } else {
       items.push({
         label: `에이전트 ${row.agent}`,
         status: 'ok',
-        detail: `${elapsedMin}분 전 업데이트 (상태: ${row.status})`,
+        detail: isIdle
+          ? `${elapsedMin}분 전 마지막 업데이트 (상태: ${row.status}, 유휴 상태)`
+          : `${elapsedMin}분 전 업데이트 (상태: ${row.status})`,
       });
     }
   }
@@ -252,4 +253,7 @@ async function run() {
   };
 }
 
-module.exports = { run };
+module.exports = {
+  run,
+  _testOnly: { classifyAgentStaleness },
+};

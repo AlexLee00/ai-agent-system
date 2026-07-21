@@ -35,6 +35,7 @@
     "test:lead-triage":  "node __tests__/claude-lead-triage-throttle.test.ts",
     "test:dexter-event-filter": "node __tests__/dexter-reportable-event-filter.test.ts",
     "test:dexter-pattern-severity": "node __tests__/dexter-pattern-severity.test.ts",
+    "smoke:dexter-system-warning": "node --disable-warning=DEP0205 --import tsx scripts/dexter-system-warning-smoke.ts",
     "test:git-ops":      "node __tests__/git-ops.test.ts",
     "test:auto-dev":     "node __tests__/auto-dev-pipeline.test.ts",
     "test:refactor-cycle": "node --disable-warning=DEP0205 --import tsx __tests__/refactor-cycle-runner.test.ts",

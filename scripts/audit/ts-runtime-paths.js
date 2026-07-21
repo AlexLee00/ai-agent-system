@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const ts = require('typescript');
 
 const repoRoot = path.resolve(__dirname, '..', '..');
 const roots = ['bots', 'packages', 'elixir', 'scripts']
@@ -11,7 +12,6 @@ const roots = ['bots', 'packages', 'elixir', 'scripts']
 
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 const SOURCE_BASENAMES = ['', '.legacy'];
-const IMPORT_RE = /\b(?:require\(|from\s+|import\()\s*['"]([^'"]+)['"]/g;
 const IGNORE_DIRS = new Set([
   'node_modules',
   '.git',
@@ -114,20 +114,58 @@ function isBrokenReference(specifier, filePath) {
   };
 }
 
+function stringLiteralValue(node) {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return node.text;
+  }
+  return null;
+}
+
+function collectImportSpecifiers(content, fileName = 'source.ts') {
+  const sourceFile = ts.createSourceFile(
+    fileName,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.getScriptKindFromFileName(fileName),
+  );
+  const specifiers = [];
+
+  function visit(node) {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      const value = node.moduleSpecifier ? stringLiteralValue(node.moduleSpecifier) : null;
+      if (value) specifiers.push(value);
+    } else if (ts.isImportEqualsDeclaration(node)
+      && ts.isExternalModuleReference(node.moduleReference)) {
+      const value = node.moduleReference.expression
+        ? stringLiteralValue(node.moduleReference.expression)
+        : null;
+      if (value) specifiers.push(value);
+    } else if (ts.isCallExpression(node)) {
+      const isRequire = ts.isIdentifier(node.expression) && node.expression.text === 'require';
+      const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      if (isRequire || isDynamicImport) {
+        const value = node.arguments[0] ? stringLiteralValue(node.arguments[0]) : null;
+        if (value) specifiers.push(value);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return unique(specifiers);
+}
+
 function scanFile(filePath) {
-  let rawContent = '';
+  let content = '';
   try {
-    rawContent = fs.readFileSync(filePath, 'utf8');
+    content = fs.readFileSync(filePath, 'utf8');
   } catch (error) {
     if (error && error.code === 'ENOENT') return [];
     throw error;
   }
-  const content = rawContent
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|\s)\/\/.*$/gm, '$1');
   const broken = [];
-  for (const match of content.matchAll(IMPORT_RE)) {
-    const specifier = match[1];
+  for (const specifier of collectImportSpecifiers(content, filePath)) {
     const brokenRef = isBrokenReference(specifier, filePath);
     if (brokenRef) broken.push(brokenRef);
   }
@@ -151,4 +189,9 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = {
+  collectImportSpecifiers,
+  scanFile,
+};
