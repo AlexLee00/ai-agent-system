@@ -55,20 +55,40 @@ export async function forecastSymbol(symbol = 'BTC/USDT', opts = {}) {
   const to = opts.to || null;
   const exchange = opts.exchange || 'binance';
   const ohlcvFetcher = opts.ohlcvFetcher || getOHLCV;
+  const fetchedRows = opts.closes
+    ? []
+    : await ohlcvFetcher(symbol, timeframe, from, to, exchange).catch(() => []);
   const candles = opts.closes
-    ? opts.closes
-    : (await ohlcvFetcher(symbol, timeframe, from, to, exchange).catch(() => []))
-      .map((row) => Array.isArray(row) ? Number(row[4]) : Number(row.close))
-      .filter(Number.isFinite);
+    ? opts.closes.map(Number).filter(Number.isFinite)
+    : fetchedRows.map((row) => Array.isArray(row) ? Number(row[4]) : Number(row.close)).filter(Number.isFinite);
   const prediction = predictPrice(candles, horizon);
+  const timeframeMs = TIMEFRAME_MS[timeframe.toLowerCase()] || null;
+  const nowMs = new Date(opts.now || Date.now()).getTime();
+  const closedRows = timeframeMs == null ? [] : fetchedRows.filter((row) => {
+    const candleTs = Number(Array.isArray(row) ? row[0] : row.candle_ts ?? row.timestamp);
+    return Number.isFinite(candleTs) && candleTs + timeframeMs <= nowMs;
+  });
+  const closedCloses = opts.closes
+    ? candles
+    : closedRows.map((row) => Array.isArray(row) ? Number(row[4]) : Number(row.close)).filter(Number.isFinite);
+  const persistencePrediction = predictPrice(closedCloses, horizon, { log: false });
+  const originCandleTs = opts.originCandleTs
+    ? new Date(opts.originCandleTs).toISOString()
+    : closedRows.length
+      ? new Date(Number(Array.isArray(closedRows.at(-1)) ? closedRows.at(-1)[0] : closedRows.at(-1).candle_ts)).toISOString()
+      : null;
   return {
     ok: true,
     agent: 'kairos',
     symbol,
+    exchange,
     active: isKairosActive(),
     shadowMode: isKairosShadowMode() || prediction.shadowMode !== false,
     horizon,
     prediction,
+    persistencePrediction,
+    originCandleTs,
+    originCandleClosed: Boolean(originCandleTs),
     dataHealth: candles.length >= 30 ? 'ok' : 'insufficient_ohlcv',
     source: opts.closes ? 'provided_closes' : 'ohlcv_fetcher',
     timeframe,

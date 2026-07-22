@@ -701,6 +701,89 @@ function resolveMaterializedSignalMarket(exchange = 'binance') {
   return value || 'unknown';
 }
 
+async function findEntryPreflightShadow(triggerId) {
+  if (!triggerId) return null;
+  return dbGet(
+    `SELECT id, trigger_id, preflight_decision, created_at
+      FROM entry_preflight_shadow
+      WHERE trigger_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [triggerId],
+  ).catch(() => null);
+}
+
+function isBlockedEvaluationResult(item = {}) {
+  if (item?.fired === true) return true;
+  const reason = String(item?.reason || '').toLowerCase();
+  return reason.includes('blocked') || reason.includes('quality_gate') || reason.includes('hygiene');
+}
+
+export async function collectEntryPreflightEvidenceForEvaluation({
+  exchange = 'binance',
+  result = {},
+  riskContext = {},
+  events = [],
+  env = process.env,
+  deps = {},
+} = {}) {
+  const shadowEnabled = ['1', 'true', 'yes', 'on'].includes(String(
+    env.ENTRY_PREFLIGHT_SHADOW_ENABLED ?? env.LUNA_ENTRY_PREFLIGHT_SHADOW_ENABLED ?? '',
+  ).trim().toLowerCase());
+  if (!shadowEnabled) return { enabled: false, collected: 0, skipped: 0, byTrigger: new Map() };
+
+  const triggerFetcher = deps.triggerFetcher || fetchEntryTriggerById;
+  const recentPreflightFinder = deps.recentPreflightFinder || findEntryPreflightShadow;
+  const amountResolver = deps.amountResolver || resolveEntryTriggerSignalAmount;
+  const preflightRunner = deps.preflightRunner || runEntryMaterializePreflightShadow;
+  const candidates = (result?.results || [])
+    .filter((item) => item?.triggerId && isBlockedEvaluationResult(item))
+    .slice(0, 20);
+  const byTrigger = new Map();
+  let skipped = 0;
+
+  for (const item of candidates) {
+    const trigger = await Promise.resolve(triggerFetcher(item.triggerId)).catch(() => null);
+    if (!trigger || await Promise.resolve(recentPreflightFinder(item.triggerId)).catch(() => null)) {
+      skipped += 1;
+      continue;
+    }
+    const rawAmountUsdt = Number(riskContext?.capitalSnapshot?.buyableAmount || 0) || null;
+    const amountUsdt = Number(await Promise.resolve(amountResolver({
+      capitalSnapshot: riskContext?.capitalSnapshot || {},
+      trigger,
+    }))) || rawAmountUsdt;
+    const symbol = String(trigger.symbol || item.symbol || '').toUpperCase();
+    const event = events.find((row) => String(row?.symbol || '').toUpperCase() === symbol)
+      || trigger.trigger_meta?.event
+      || null;
+    const collectionContext = {
+      source: 'entry_trigger_evaluation',
+      observationalOnly: true,
+      fired: item.fired === true,
+      blockedReason: item.fired === true ? null : item.reason || 'evaluation_blocked',
+      collectedAt: new Date().toISOString(),
+    };
+    const evidence = await Promise.resolve(preflightRunner({
+      trigger,
+      exchange,
+      amountUsdt,
+      rawAmountUsdt,
+      notifyMultiplier: 1,
+      event,
+      collectionContext,
+      env,
+    })).catch((error) => ({
+      enabled: true,
+      error: String(error?.message || error),
+      preflight: { decision: 'shadow_error', wouldDefer: false },
+    }));
+    byTrigger.set(String(item.triggerId), evidence);
+  }
+
+  return { enabled: true, collected: byTrigger.size, skipped, byTrigger };
+}
+
 export async function materializeFiredEntryTriggerSignals({
   exchange = 'binance',
   result = {},
@@ -730,6 +813,22 @@ export async function materializeFiredEntryTriggerSignals({
     }))
     : null;
   const firedResults = (result?.results || []).filter((item) => item?.fired === true && item?.triggerId);
+  const blockedEvaluationResults = (result?.results || []).filter((item) => item?.fired !== true && isBlockedEvaluationResult(item));
+  const blockedPreflightEvidence = blockedEvaluationResults.length
+    ? await collectEntryPreflightEvidenceForEvaluation({
+      exchange,
+      result: { results: blockedEvaluationResults },
+      riskContext,
+      events,
+      env,
+      deps: {
+        triggerFetcher,
+        recentPreflightFinder: deps.recentPreflightFinder,
+        amountResolver: deps.amountResolver,
+        preflightRunner: entryPreflightShadowRunner,
+      },
+    }).catch(() => null)
+    : null;
   const items = [];
   let materialized = 0;
   let skipped = 0;
@@ -737,6 +836,19 @@ export async function materializeFiredEntryTriggerSignals({
   if (firedResults.length > 0) {
     hygieneGate = await buildMaterializationTradeDataHygieneGate(deps);
     if (hygieneGate.blocked) {
+      const hygienePreflightEvidence = await collectEntryPreflightEvidenceForEvaluation({
+        exchange,
+        result: { results: firedResults.map((item) => ({ ...item, reason: 'trade_data_hygiene_not_ready' })) },
+        riskContext,
+        events,
+        env,
+        deps: {
+          triggerFetcher,
+          recentPreflightFinder: deps.recentPreflightFinder,
+          amountResolver: deps.amountResolver,
+          preflightRunner: entryPreflightShadowRunner,
+        },
+      }).catch(() => null);
       // P0 치명적 데이터 무결성 → batch 전체 차단 유지
       for (const fired of firedResults) {
         skipped += 1;
@@ -757,7 +869,17 @@ export async function materializeFiredEntryTriggerSignals({
           tradeDataHygiene: hygieneGate.report,
         });
       }
-      return { enabled: true, materialized, skipped, items, tradeDataHygiene: hygieneGate.report };
+      return {
+        enabled: true,
+        materialized,
+        skipped,
+        items,
+        tradeDataHygiene: hygieneGate.report,
+        preflightEvidence: {
+          blocked: blockedPreflightEvidence?.collected || 0,
+          hygiene: hygienePreflightEvidence?.collected || 0,
+        },
+      };
     }
     if (hygieneGate.advisory) {
       // 비-P0 경고성 hygiene → batch 차단 해제, 개별 trigger guard 진행 (hygiene_advisory)

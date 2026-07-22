@@ -21,7 +21,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 59);
+  assert.equal(jobs.length, 60);
   const majorDrift = jobs.find((job) => job.name === 'binance_major20_market_cap_drift');
   assert.equal(majorDrift?.category, 'report');
   assert.deepEqual(majorDrift?.cadence, { type: 'weekly', day: 1, hour: 9, minute: 20 });
@@ -109,6 +109,13 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'predictive_evidence_refresh_all'), true);
   assert.equal(jobs.find((job) => job.name === 'predictive_evidence_refresh_all')?.category, 'evidence_shadow');
   assert.equal(jobs.find((job) => job.name === 'predictive_evidence_refresh_all')?.args?.includes('--confirm=luna-predictive-evidence-refresh'), true);
+  const nextbarDaily = jobs.find((job) => job.name === 'nextbar_shadow_daily_multi_symbol');
+  assert.equal(nextbarDaily?.category, 'evidence_shadow');
+  assert.deepEqual(nextbarDaily?.cadence, { type: 'daily', hour: 3, minute: 10 });
+  assert.equal(nextbarDaily?.timeoutMs, 900_000);
+  assert.equal(nextbarDaily?.args?.includes('--confirm=luna-nextbar-shadow-daily'), true);
+  assert.equal(nextbarDaily?.args?.includes('--symbols=BTC/USDT,ETH/USDT,SOL/USDT'), true);
+  assert.equal(nextbarDaily?.env, undefined);
   assert.equal(jobs.some((job) => job.name === 'candidate_bottleneck_diagnostics_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'candidate_bottleneck_diagnostics_shadow')?.args?.includes('--confirm=luna-candidate-bottleneck-shadow'), true);
   assert.equal(jobs.some((job) => job.name === 'weight_vector_shadow_refresh'), true);

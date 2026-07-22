@@ -7,6 +7,11 @@ import { ensureCandidateBacktestSchema } from '../shared/candidate-backtest-gate
 import { buildPredictiveValidationEvidence, logPredictiveValidation } from '../shared/predictive-validation.ts';
 import { forecastSymbol } from '../team/kairos.ts';
 import {
+  buildMlPredictionShadowRecord,
+  matureMlPredictionShadow,
+  persistMlPredictionShadow,
+} from '../shared/ml-prediction-shadow.ts';
+import {
   exchangeForLunaPhase2Market,
   normalizeLunaPhase2Market,
   normalizeLunaPhase2Symbol,
@@ -325,6 +330,23 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
     ? fixtureForecast(symbol)
     : await forecastSymbolWithFallback(symbol, market, options);
 
+  let mlPredictionPersistence: any = { ok: true, status: dryRun ? 'dry_run' : 'not_eligible' };
+  if (!dryRun) {
+    try {
+      const buildRecord = options.buildMlPredictionRecordFn || buildMlPredictionShadowRecord;
+      const persistRecord = options.persistMlPredictionFn || persistMlPredictionShadow;
+      const record = buildRecord({
+        symbol,
+        market,
+        source: 'runtime-luna-predictive-evidence-refresh',
+        forecast,
+      });
+      if (record) mlPredictionPersistence = await persistRecord(record);
+    } catch (error: any) {
+      mlPredictionPersistence = { ok: false, status: 'persistence_error', error: String(error?.message || error) };
+    }
+  }
+
   const predictionScore = predictionScoreFromForecast(forecast);
   const communityScore = scoreCommunity(community);
   const evidence = buildPredictiveValidationEvidence(
@@ -391,6 +413,7 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
     forecastTimeframe: forecast?.timeframe || null,
     forecastCandles: Number(forecast?.observedCandles || 0),
     forecastFallbackReason: forecast?.selectedForecastReason || null,
+    mlPredictionPersistence,
     reason: evidence.reason,
   };
 }
@@ -423,6 +446,17 @@ export async function runLunaPredictiveEvidenceRefresh(options: any = {}) {
   for (const candidate of selectedCandidates) {
     results.push(await refreshPredictiveForCandidate(candidate, { ...options, binanceTopVolumeUniverse }));
   }
+  let mlPredictionMaturity: any = { ok: true, status: 'dry_run', matured: 0 };
+  if (!dryRun) {
+    try {
+      const maturePredictions = options.matureMlPredictionFn || matureMlPredictionShadow;
+      mlPredictionMaturity = await maturePredictions({
+        limit: Number(options.maturityLimit || 200),
+      });
+    } catch (error: any) {
+      mlPredictionMaturity = { ok: false, status: 'maturity_error', matured: 0, error: String(error?.message || error) };
+    }
+  }
   const payload = {
     ok: true,
     status: dryRun ? 'luna_predictive_evidence_planned' : 'luna_predictive_evidence_written',
@@ -440,6 +474,7 @@ export async function runLunaPredictiveEvidenceRefresh(options: any = {}) {
     missingPrediction: results.filter((row) => row.predictionScore <= 0).length,
     missingFreshBacktest: results.filter((row) => !row.backtestFresh).length,
     lowCommunityCoverage: results.filter((row) => row.communitySources < 2).length,
+    mlPredictionMaturity,
     results,
   };
   if (!json) console.log(`[luna-predictive-evidence] ${payload.status} total=${payload.total} fire=${payload.passed} blocked=${payload.blocked}`);

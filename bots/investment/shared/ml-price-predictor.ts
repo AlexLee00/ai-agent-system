@@ -18,6 +18,9 @@ function numEnv(name, fallback = 0) {
   return Number.isFinite(raw) ? raw : fallback;
 }
 
+export const ML_PRICE_MODEL_VERSION = 'ml-price-predictor-v1';
+export const ML_PRICE_CONFIG_VERSION = 'holt-a0.25-b0.08-blend40-60';
+
 // ─── 선형 회귀 ──────────────────────────────────────────────────────
 
 function linearRegression(values) {
@@ -69,7 +72,7 @@ function calcVolatility(logReturns) {
 
 // ─── 메인 예측 함수 ──────────────────────────────────────────────────
 
-export function predictPrice(closes, horizon = 5) {
+export function predictPrice(closes, horizon = 5, options = {}) {
   const enabled    = boolEnv('LUNA_ML_PRICE_PREDICTOR_ENABLED', false);
   const shadowMode = boolEnv('LUNA_ML_PRICE_PREDICTOR_SHADOW_MODE', true);
   const minConf    = numEnv('LUNA_ML_PRICE_PREDICTOR_CONFIDENCE_MIN', 0.7);
@@ -78,7 +81,10 @@ export function predictPrice(closes, horizon = 5) {
     enabled,
     shadowMode,
     horizon,
+    modelVersion: ML_PRICE_MODEL_VERSION,
+    configVersion: ML_PRICE_CONFIG_VERSION,
     currentPrice:  null,
+    predictedPrice: null,
     predictions:   null,
     direction:     'neutral',
     expectedReturn: 0,
@@ -116,6 +122,7 @@ export function predictPrice(closes, horizon = 5) {
   const confidence        = Math.min(1, Math.max(0, trendConsistency * 0.6 + r2 * 0.4 - volPenalty));
 
   result.predictions    = holtsPredictions;
+  result.predictedPrice = ensemblePrice;
   result.expectedReturn = expectedReturn;
   result.direction      = expectedReturn > 0.01 ? 'up' : expectedReturn < -0.01 ? 'down' : 'neutral';
   result.confidence     = confidence;
@@ -125,7 +132,9 @@ export function predictPrice(closes, horizon = 5) {
 
   if (!enabled) return result;
 
-  console.log(`  [ML예측] 방향: ${result.direction} | 신뢰도: ${(confidence * 100).toFixed(0)}% | 예상수익: ${(expectedReturn * 100).toFixed(2)}% | 모드: ${shadowMode ? 'SHADOW' : 'ACTIVE'}`);
+  if (options.log !== false) {
+    console.log(`  [ML예측] 방향: ${result.direction} | 신뢰도: ${(confidence * 100).toFixed(0)}% | 예상수익: ${(expectedReturn * 100).toFixed(2)}% | 모드: ${shadowMode ? 'SHADOW' : 'ACTIVE'}`);
+  }
 
   return result;
 }

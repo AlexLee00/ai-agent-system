@@ -390,6 +390,7 @@ export async function runEntryMaterializePreflightShadow({
   rawAmountUsdt = null,
   notifyMultiplier = 1,
   event = null,
+  collectionContext = null,
   env = process.env,
   deps = {},
 } = {}) {
@@ -399,7 +400,7 @@ export async function runEntryMaterializePreflightShadow({
     return { enabled: false, reason: 'ENTRY_PREFLIGHT_SHADOW_ENABLED=false' };
   }
   const tradeMode = resolveTriggerTradeMode(trigger, DEFAULT_TRADE_MODE);
-  const preflight = normalizeEntryMaterializePreflightDecision(await evaluateEntryMaterializePreflight({
+  const evaluated = normalizeEntryMaterializePreflightDecision(await evaluateEntryMaterializePreflight({
     trigger,
     exchange,
     amountUsdt,
@@ -409,6 +410,15 @@ export async function runEntryMaterializePreflightShadow({
     env,
     deps,
   }));
+  const preflight = collectionContext && typeof collectionContext === 'object'
+    ? {
+      ...evaluated,
+      checks: {
+        ...(evaluated.checks || {}),
+        shadowCollection: collectionContext,
+      },
+    }
+    : evaluated;
   const shadowRow = !shadowEnabled || deps.record === false
     ? null
     : await recordEntryPreflightShadow({

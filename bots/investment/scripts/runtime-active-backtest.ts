@@ -5,6 +5,10 @@ import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runVectorBtGrid } from '../shared/vectorbt-runner.ts';
+import {
+  buildNextbarExecutionComparisons,
+  nextbarComparisonKey,
+} from '../shared/luna-nextbar-shadow-collector.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -144,16 +148,6 @@ function rowParam(row = {}, key: string) {
   return row?.[key] ?? row?.params?.[key] ?? null;
 }
 
-function comparisonKey(row = {}) {
-  return JSON.stringify({
-    label: row?.label || null,
-    strategy: rowParam(row, 'strategy'),
-    tp_pct: rowParam(row, 'tp_pct'),
-    sl_pct: rowParam(row, 'sl_pct'),
-    params: row?.params || {},
-  });
-}
-
 function selectTopResult(rows = [], attention = 'manual', context = {}) {
   return [...rows]
     .filter((row) => (!row?.status || row.status === 'ok') && hasUsableTrades(row))
@@ -234,12 +228,13 @@ async function persistNextbarShadowRows({
       reason: 'missing_rows',
     };
   }
-  const nextbarByKey = new Map(nextbarRows.map((row) => [comparisonKey(row), row]));
+  const comparison = buildNextbarExecutionComparisons({ sameBarRows, nextbarRows });
+  const nextbarByKey = new Map(comparison.comparisons.map((row) => [row.key, row.nextbar]));
   let persisted = 0;
   const unmatchedRows = [];
   for (const item of persistedRows) {
     const sameBar = item.row || {};
-    const nextbar = nextbarByKey.get(comparisonKey(sameBar));
+    const nextbar = nextbarByKey.get(nextbarComparisonKey(sameBar));
     if (!nextbar) {
       unmatchedRows.push({
         runId: item.runId ?? null,

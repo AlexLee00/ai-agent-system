@@ -27,7 +27,7 @@ const REASONS = String(process.env.LUNA_GUARD_COUNTERFACTUAL_REASONS || DEFAULT_
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
-const SOURCE_MODES = new Set(['all', 'entry_triggers', 'trade_data', 'guard_events']);
+const SOURCE_MODES = new Set(['all', 'entry_triggers', 'trade_data', 'guard_events', 'entry_preflight']);
 const DEFAULT_SOURCE_MODE = SOURCE_MODES.has(String(process.env.LUNA_GUARD_COUNTERFACTUAL_SOURCE || '').trim())
   ? String(process.env.LUNA_GUARD_COUNTERFACTUAL_SOURCE).trim()
   : 'all';
@@ -436,6 +436,68 @@ async function loadBlockedGuardEvents(limit = BATCH_LIMIT) {
   }));
 }
 
+export function mapDeferredPreflightCounterfactualRow(row = {}) {
+  return {
+    id: `entry_preflight:${row.id}`,
+    trigger_id: row.trigger_id || null,
+    source_id: row.id,
+    symbol: row.symbol,
+    exchange: row.exchange || 'binance',
+    reason: `entry_preflight:${row.preflight_decision || 'defer_unknown'}`,
+    blocked_at: row.created_at,
+    created_at: row.created_at,
+    target_price: row.target_price ?? null,
+    take_profit: row.take_profit ?? null,
+    stop_loss: row.stop_loss ?? null,
+    preflight_reason: row.preflight_reason || null,
+    preflight_checks: row.preflight_checks || null,
+    materialized_signal_id: row.materialized_signal_id || null,
+    _source: 'entry_preflight_shadow',
+  };
+}
+
+async function loadDeferredBlockedPreflight(limit = BATCH_LIMIT) {
+  const rows = await query(`
+    SELECT
+      eps.id,
+      eps.trigger_id,
+      eps.symbol,
+      eps.exchange,
+      eps.preflight_decision,
+      eps.preflight_reason,
+      eps.preflight_checks,
+      eps.materialized_signal_id,
+      eps.created_at,
+      t.target_price,
+      t.take_profit,
+      t.stop_loss
+    FROM entry_preflight_shadow eps
+    LEFT JOIN entry_triggers t ON t.id::text = eps.trigger_id::text
+    LEFT JOIN signals s ON s.id::text = eps.materialized_signal_id::text
+    LEFT JOIN luna_guard_counterfactual cf
+      ON cf.trigger_id = 'entry_preflight:' || eps.id::text
+    WHERE eps.would_defer IS TRUE
+      AND eps.created_at >= NOW() - INTERVAL '1 day' * $1
+      AND (
+        (eps.materialized_signal_id IS NOT NULL AND s.status = 'blocked')
+        OR (
+          eps.materialized_signal_id IS NULL
+          AND (
+            COALESCE(t.trigger_meta->>'materializeStatus', '') LIKE 'blocked_by_%'
+            OR COALESCE(eps.preflight_checks #>> '{shadowCollection,blockedReason}', '') <> ''
+          )
+        )
+      )
+      AND (
+        cf.trigger_id IS NULL
+        OR (cf.ohlcv_status <> 'ok' AND cf.ohlcv_status NOT LIKE 'skipped_%')
+      )
+    ORDER BY eps.created_at ASC
+    LIMIT $2
+  `, [LOOKBACK_DAYS, limit]).catch(() => []);
+  return (rows || []).map(mapDeferredPreflightCounterfactualRow);
+}
+
 async function loadCounterfactualSources({ limit = BATCH_LIMIT, source = DEFAULT_SOURCE_MODE } = {}) {
   const mode = SOURCE_MODES.has(String(source || '').trim()) ? String(source).trim() : 'all';
   const sources = [];
@@ -444,6 +506,9 @@ async function loadCounterfactualSources({ limit = BATCH_LIMIT, source = DEFAULT
   }
   if (mode === 'all' || mode === 'trade_data') {
     sources.push(...await loadBlockedTradeDataSignals(limit));
+  }
+  if (mode === 'all' || mode === 'entry_preflight') {
+    sources.push(...await loadDeferredBlockedPreflight(limit));
   }
   if (mode === 'guard_events') {
     sources.push(...await loadBlockedGuardEvents(limit));
@@ -534,6 +599,8 @@ async function saveCounterfactual(result) {
       ? 'signals.block_meta.tradeDataGuard.blockers'
       : source === 'guard_events'
       ? 'guard_events.reason'
+      : source === 'entry_preflight_shadow'
+      ? 'entry_preflight_shadow.preflight_decision'
       : 'entry_triggers.trigger_meta.reason',
     strategyFamily: trigger.strategy_family || null,
     strategyRoute: trigger.strategy_route || null,
@@ -541,6 +608,8 @@ async function saveCounterfactual(result) {
     signalBlockReason: trigger.block_reason || null,
     tradeDataGuard: trigger.trade_data_guard || null,
     guardMetadata: trigger.guard_metadata || null,
+    originalTriggerId: trigger.trigger_id || null,
+    preflightReason: trigger.preflight_reason || null,
     entryPriceSource: safeNumber(trigger.target_price, null) ? 'trigger_target_price' : 'first_ohlcv_close_after_block',
     takeProfitSource: safeNumber(trigger.take_profit, null) ? 'trigger_take_profit' : 'env_pct',
     stopLossSource: safeNumber(trigger.stop_loss, null) ? 'trigger_stop_loss' : 'env_pct',

@@ -31,6 +31,7 @@ import {
 import {
   seedLunaComponentRegistry,
 } from './luna-registry-seed.ts';
+import { learningPnlValidSql } from '../shared/trade-journal-learning-guard.ts';
 
 const INVESTMENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const LUNA_REGISTRY_EVALUATOR_CONFIRM = 'luna-registry-evaluator-shadow';
@@ -47,7 +48,73 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'korean-factor-model-shadow': `SELECT COUNT(*)::int AS count FROM korean_factor_log`,
   'rl-policy-shadow': `SELECT COUNT(*)::int AS count FROM luna_guard_counterfactual WHERE guard_reason ILIKE '%rl%'`,
   'stat-arb-shadow': `SELECT COUNT(*)::int AS count FROM luna_signal_policy_shadow WHERE policy_key ILIKE '%stat%'`,
-  'learned-regime-bias': `SELECT COUNT(*)::int AS count FROM luna_regime_weight_snapshots WHERE total_trades >= 3`,
+  'learned-regime-bias': `
+    WITH learner_cells AS (
+      SELECT learner_key, regime
+      FROM unnest(ARRAY['momentum', 'breakout', 'mean_reversion', 'defensive']::text[])
+        AS learner_keys(learner_key)
+      CROSS JOIN unnest(ARRAY['TRENDING_BULL', 'TRENDING_BEAR', 'RANGING', 'VOLATILE']::text[])
+        AS regimes(regime)
+    ),
+    treated AS (
+      SELECT
+        dims.learner_key,
+        dims.regime,
+        COUNT(DISTINCT COALESCE(NULLIF(tj.signal_id::text, ''), NULLIF(tj.trade_id::text, '')))::int AS observations
+      FROM trade_journal tj
+      LEFT JOIN signals s ON s.id::text = tj.signal_id::text
+      CROSS JOIN LATERAL (
+        SELECT
+          lower(replace(COALESCE(NULLIF(tj.strategy_route->>'selectedFamily', ''), ''), '-', '_')) AS route_label,
+          lower(replace(COALESCE(NULLIF(tj.strategy_family, ''), ''), '-', '_')) AS journal_label
+      ) labels
+      CROSS JOIN LATERAL (
+        SELECT CASE
+          WHEN labels.route_label = ANY(ARRAY[
+            'momentum', 'trend_following', 'momentum_rotation', 'equity_swing',
+            'breakout', 'mean_reversion', 'defensive', 'defensive_rotation'
+          ]::text[]) THEN labels.route_label
+          WHEN labels.journal_label = ANY(ARRAY[
+            'momentum', 'trend_following', 'momentum_rotation', 'equity_swing',
+            'breakout', 'mean_reversion', 'defensive', 'defensive_rotation'
+          ]::text[]) THEN labels.journal_label
+          ELSE NULL
+        END AS route_family
+      ) selected
+      CROSS JOIN LATERAL (
+        SELECT
+          CASE
+            WHEN selected.route_family IN ('momentum', 'trend_following', 'momentum_rotation', 'equity_swing') THEN 'momentum'
+            WHEN selected.route_family = 'breakout' THEN 'breakout'
+            WHEN selected.route_family = 'mean_reversion' THEN 'mean_reversion'
+            WHEN selected.route_family IN ('defensive', 'defensive_rotation') THEN 'defensive'
+            ELSE NULL
+          END AS learner_key,
+          CASE
+            WHEN upper(COALESCE(tj.strategy_route->'learnedBias'->>'regime', '')) LIKE '%BULL%' THEN 'TRENDING_BULL'
+            WHEN upper(COALESCE(tj.strategy_route->'learnedBias'->>'regime', '')) LIKE '%BEAR%' THEN 'TRENDING_BEAR'
+            WHEN upper(COALESCE(tj.strategy_route->'learnedBias'->>'regime', '')) LIKE '%VOLAT%' THEN 'VOLATILE'
+            ELSE 'RANGING'
+          END AS regime
+      ) dims
+      WHERE tj.exit_time IS NOT NULL
+        AND NOT COALESCE(tj.is_paper, false)
+        AND COALESCE(s.exclude_from_learning, false) = false
+        AND ${learningPnlValidSql('tj')}
+        AND tj.strategy_route->'learnedBias'->>'mode' = 'shadow'
+        AND COALESCE((tj.strategy_route->'learnedBias'->>'available')::boolean, false)
+        AND selected.route_family IS NOT NULL
+        AND jsonb_typeof(tj.strategy_route->'learnedBias'->'applied') = 'object'
+        AND ABS(CASE
+          WHEN jsonb_typeof((tj.strategy_route->'learnedBias'->'applied') -> selected.route_family) = 'number'
+          THEN ((tj.strategy_route->'learnedBias'->'applied') ->> selected.route_family)::double precision
+          ELSE 0
+        END) > 0
+      GROUP BY dims.learner_key, dims.regime
+    )
+    SELECT COALESCE(MIN(COALESCE(treated.observations, 0)), 0)::int AS count
+    FROM learner_cells
+    LEFT JOIN treated USING (learner_key, regime)`,
   'position-lifecycle': `SELECT COUNT(*)::int AS count FROM position_lifecycle_events`,
   'posttrade-feedback': `SELECT COUNT(*)::int AS count FROM feedback_to_action_map`,
   'candidate-backtest-entry-gate': `SELECT COUNT(*)::int AS count FROM candidate_backtest_status`,
@@ -63,6 +130,7 @@ const SAMPLE_COUNT_SQL = Object.freeze({
   'market-deployment-gate': `SELECT COUNT(*)::int AS count FROM luna_market_gate_history`,
   'regime-engine-hmm': `SELECT COUNT(*)::int AS count FROM luna_regime_calibration`,
   'backtest-nextbar-execution': `SELECT COUNT(*)::int AS count FROM luna_nextbar_execution_shadow`,
+  'ml-price-predictor': `SELECT COUNT(*)::int AS count FROM luna_ml_prediction_shadow WHERE maturity_status = 'matured' AND origin_candle_closed IS TRUE AND shadow_only IS TRUE`,
   'meeting-room-orchestrator': `SELECT COUNT(*)::int AS count FROM luna_meeting_sessions WHERE status = 'closed'`,
   'vault-shadow-eval-adjustments': `SELECT COUNT(*)::int AS count FROM luna_vault_shadow_eval`,
   'meta-neural-reflexion': `SELECT COUNT(*)::int AS count FROM luna_failure_reflexions`,

@@ -46,6 +46,30 @@ export const BASE_SIGNAL_WEIGHTS = {
   VOLATILE:       { momentum: 0.15, breakout: 0.20, mean_reversion: 0.20, defensive: 0.45 },
 };
 
+const LEARNER_SIGNAL_TYPE_ALIASES = Object.freeze({
+  momentum: 'momentum',
+  trend_following: 'momentum',
+  momentum_rotation: 'momentum',
+  equity_swing: 'momentum',
+  breakout: 'breakout',
+  mean_reversion: 'mean_reversion',
+  defensive: 'defensive',
+  defensive_rotation: 'defensive',
+});
+
+function normalizeLearnerSignalType(value = null) {
+  const label = String(value || '').trim().toLowerCase().replace(/-/g, '_');
+  return LEARNER_SIGNAL_TYPE_ALIASES[label] || null;
+}
+
+function resolveLearnerSignalType(row = {}) {
+  const explicitFamilyFields = Object.prototype.hasOwnProperty.call(row, 'route_family')
+    || Object.prototype.hasOwnProperty.call(row, 'strategy_family');
+  return normalizeLearnerSignalType(row.route_family)
+    || normalizeLearnerSignalType(row.strategy_family)
+    || (!explicitFamilyFields ? normalizeLearnerSignalType(row.signal_type) : null);
+}
+
 // ─── 체제 정규화 ──────────────────────────────────────────────────────────────
 function normalizeRegime(regime = 'RANGING') {
   const r = String(regime || 'RANGING').toUpperCase();
@@ -71,6 +95,9 @@ async function fetchRegimeTradeStats(days = DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS
     `SELECT
        COALESCE(tj.market_regime, 'RANGING')  AS regime,
        COALESCE(tj.strategy_family, tj.trade_mode, 'momentum') AS signal_type,
+       NULLIF(tj.strategy_route->>'selectedFamily', '') AS route_family,
+       NULLIF(tj.strategy_family, '') AS strategy_family,
+       tj.trade_mode,
        COALESCE(tj.market, 'crypto')           AS market,
        COUNT(*)                               AS total_trades,
        COUNT(*) FILTER (WHERE COALESCE(tj.pnl_net, tj.pnl_amount, 0) > 0) AS win_trades,
@@ -96,7 +123,12 @@ async function fetchRegimeTradeStats(days = DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS
        AND NOT COALESCE(tj.is_paper, false)
        AND ${learningPnlValidSql('tj')}
        AND to_timestamp(tj.exit_time / 1000.0) >= NOW() - ($1 || ' days')::interval
-     GROUP BY COALESCE(tj.market_regime, 'RANGING'), COALESCE(tj.strategy_family, tj.trade_mode, 'momentum'), COALESCE(tj.market, 'crypto')
+     GROUP BY COALESCE(tj.market_regime, 'RANGING'),
+              COALESCE(tj.strategy_family, tj.trade_mode, 'momentum'),
+              NULLIF(tj.strategy_route->>'selectedFamily', ''),
+              NULLIF(tj.strategy_family, ''),
+              tj.trade_mode,
+              COALESCE(tj.market, 'crypto')
      ORDER BY total_trades DESC`,
     [days],
   ).catch(() => []);
@@ -190,11 +222,13 @@ function computeRegimePerformance(rows) {
     s.grossProfit += Number(row.gross_profit || 0);
     s.grossLoss += Number(row.gross_loss || 0);
 
-    // signal_type별 승률 추적
-    const signalType = String(row.signal_type || 'momentum').toLowerCase();
-    if (!s.signalWins[signalType]) s.signalWins[signalType] = { wins: 0, total: 0 };
-    s.signalWins[signalType].wins += Number(row.win_trades || 0);
-    s.signalWins[signalType].total += Number(row.total_trades || 0);
+    // Concrete router labels are normalized into the learner's four archetypes.
+    const signalType = resolveLearnerSignalType(row);
+    if (signalType) {
+      if (!s.signalWins[signalType]) s.signalWins[signalType] = { wins: 0, total: 0 };
+      s.signalWins[signalType].wins += Number(row.win_trades || 0);
+      s.signalWins[signalType].total += Number(row.total_trades || 0);
+    }
   }
 
   // 승률 + 손익비 계산
@@ -807,8 +841,10 @@ export const _testOnly = {
   computeRegimePerformance,
   fetchRegimeTradeStats,
   maxMapDelta,
+  normalizeLearnerSignalType,
   normalizeRegime,
   parseAdaptiveWindows,
+  resolveLearnerSignalType,
   summarizeLearnerStall,
   timeStageDecayMultiplier,
 };

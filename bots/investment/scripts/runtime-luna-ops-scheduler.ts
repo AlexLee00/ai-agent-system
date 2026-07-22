@@ -290,6 +290,20 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'nextbar_shadow_daily_multi_symbol',
+      category: 'evidence_shadow',
+      market: 'crypto',
+      cadence: { type: 'daily', hour: 3, minute: 10 },
+      timeoutMs: JOB_TIMEOUT_MS.longShadowBatch,
+      ...nodeScript('runtime-luna-nextbar-shadow-daily.ts', [
+        '--apply',
+        '--confirm=luna-nextbar-shadow-daily',
+        '--symbols=BTC/USDT,ETH/USDT,SOL/USDT',
+        '--days=30',
+        '--json',
+      ]),
+    },
+    {
       name: 'candidate_bottleneck_diagnostics_shadow',
       category: 'evidence_shadow',
       market: 'all',
