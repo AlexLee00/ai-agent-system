@@ -94,6 +94,8 @@ if [ -n "$JS_STAGED" ]; then
   SECRET_SKIP_FILES=(
     ".checksums.json"
     "luna-binance-major-universe-smoke.ts"  # HG-2 롤백 동등성 SHA-256 어서션 상수 (오탐 방지·2026-07-17)
+    "write-action-confirm-smoke.ts"  # O-2 계약 SHA-256 플레이스홀더 상수 (오탐 방지·2026-07-23)
+    "task-0094-runner-dry-run-before.json"  # 러너 동등성 골든 픽스처 계획 SHA-256 (오탐 방지·2026-07-23)
   )
 
   for pattern in "${SECRET_PATTERNS[@]}"; do
