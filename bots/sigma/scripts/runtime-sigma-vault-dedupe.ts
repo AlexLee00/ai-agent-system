@@ -18,6 +18,10 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 const pgPool = require(path.join(repoRoot, 'packages/core/lib/pg-pool.ts'));
+const {
+  matchesWriteActionConfirm,
+  writePlanSha256,
+} = require(path.join(repoRoot, 'packages/core/lib/write-action-confirm.js'));
 
 const COORD_RANKS = {
   validation_state: { retired: 0, contradicted: 1, unverified: 2, observed: 3, validated: 4 },
@@ -344,7 +348,7 @@ export function buildDirectiveSemanticDedupePlan(groups = []) {
 }
 
 export function buildVaultDedupePlanSha(plan = []) {
-  return crypto.createHash('sha256').update(stableDirectiveJson(plan)).digest('hex');
+  return writePlanSha256(plan, stableDirectiveJson);
 }
 
 export async function applyVaultDedupePlan(plan = [], {
@@ -354,7 +358,7 @@ export async function applyVaultDedupePlan(plan = [], {
   mode = 'normalized_content',
 } = {}) {
   const directiveSemantic = mode === 'directive_semantic';
-  if (directiveSemantic && (!write || confirm !== buildVaultDedupePlanSha(plan))) {
+  if (directiveSemantic && (!write || !matchesWriteActionConfirm(confirm, buildVaultDedupePlanSha(plan)))) {
     return { applied: 0, skipped: true, reason: 'plan_sha_confirm_required' };
   }
   if (directiveSemantic && plan.some((group) => group.mode !== 'directive_semantic' || !group.semanticMd5)) {

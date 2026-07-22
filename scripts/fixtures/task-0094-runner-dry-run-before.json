@@ -1,0 +1,73 @@
+{
+  "hub": {
+    "ok": true,
+    "dry_run": true,
+    "write_attempted": false,
+    "live_mutation": false,
+    "plan_sha256": "a016cce0ba69b6492463c9080cad4ad68712643bd055ca63d2b4e3812dc0644f",
+    "matched": 0,
+    "excluded": 0,
+    "artifacts": {
+      "summary": "SUMMARY",
+      "pairs": "PAIRS",
+      "rollback_snapshot": "ROLLBACK"
+    }
+  },
+  "sigma": {
+    "ok": true,
+    "source": "sigma_vault_dedupe",
+    "mode": "directive_semantic",
+    "dryRun": true,
+    "liveMutation": false,
+    "targetSource": "sigma_directive",
+    "planSha": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "semanticProjection": "shared/directive-semantic.ts",
+    "counts": {
+      "totalRows": 0,
+      "semanticEligibleRows": 0,
+      "semanticSkippedRows": 0,
+      "semantic": {
+        "groups": 0,
+        "groupRows": 0,
+        "duplicateRows": 0
+      },
+      "plannedGroups": 0,
+      "plannedDuplicateRows": 0,
+      "plannedActiveAfter": 0,
+      "plannedSoftMerged": 0,
+      "writeAttempted": false,
+      "applied": 0
+    },
+    "distribution": {
+      "byTier": {},
+      "bySource": {}
+    },
+    "plan": [],
+    "applyResult": null,
+    "safety": {
+      "hardDelete": false,
+      "archive": false,
+      "softMergeField": "meta.merged_into",
+      "writeGate": "--write --confirm=<planSha>",
+      "groupAtomicity": "transaction+pg_advisory_xact_lock+row_count_verification",
+      "writesOnlySigmaTables": [
+        "sigma.vault_entries",
+        "sigma.vault_audit"
+      ],
+      "knowledgeGraphEdges": "derived_read_time_rebuild_under_keep_record_id",
+      "transferPlanOnly": false
+    }
+  },
+  "nextbar": {
+    "ok": true,
+    "status": "nextbar_shadow_daily_planned",
+    "apply": false,
+    "planned": 3,
+    "written": 0,
+    "symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "SOL/USDT"
+    ]
+  }
+}

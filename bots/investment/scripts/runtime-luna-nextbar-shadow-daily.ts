@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import { createRequire } from 'node:module';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { collectNextbarExecutionShadow } from '../shared/luna-nextbar-shadow-collector.ts';
+
+const require = createRequire(import.meta.url);
+const { matchesWriteActionConfirm } = require('../../../packages/core/lib/write-action-confirm.js');
 
 export const LUNA_NEXTBAR_SHADOW_DAILY_CONFIRM = 'luna-nextbar-shadow-daily';
 const DEFAULT_SYMBOLS = Object.freeze(['BTC/USDT', 'ETH/USDT', 'SOL/USDT']);
@@ -51,7 +55,7 @@ export async function runLunaNextbarShadowDaily(options = {}, deps = {}) {
   if (!apply) {
     return { ok: true, status: 'nextbar_shadow_daily_planned', apply: false, planned: symbols.length, written: 0, symbols };
   }
-  if (options.confirm !== LUNA_NEXTBAR_SHADOW_DAILY_CONFIRM) {
+  if (!matchesWriteActionConfirm(options.confirm, LUNA_NEXTBAR_SHADOW_DAILY_CONFIRM)) {
     return { ok: false, status: 'confirmation_required', apply: true, planned: symbols.length, written: 0 };
   }
 

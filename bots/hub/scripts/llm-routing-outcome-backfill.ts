@@ -6,6 +6,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const {
+  buildLockedRollbackSnapshotPath,
+  defineWriteCountEvidence,
+  matchesWriteActionConfirm,
+  writePlanSha256,
+} = require('../../../packages/core/lib/write-action-confirm.js');
 
 type DbRow = Record<string, any>;
 type QueryReadonly = (schema: string, sql: string, params?: unknown[]) => Promise<DbRow[]>;
@@ -305,9 +311,7 @@ function stablePlanPayload(pairs: DbRow[], inventorySha: string) {
 }
 
 function planSha256(pairs: DbRow[], inventorySha: string): string {
-  return crypto.createHash('sha256')
-    .update(JSON.stringify(stablePlanPayload(pairs, inventorySha)))
-    .digest('hex');
+  return writePlanSha256(stablePlanPayload(pairs, inventorySha), JSON.stringify);
 }
 
 function immutableRunId(): string {
@@ -511,7 +515,10 @@ export function buildRoutingOutcomeBackfillPlan(hubRowsInput: DbRow[], publicRow
     },
     learning_eligibility: learning,
     target_apply_state: applyState,
-    before_after: { before, after: { ...before }, dry_run_unchanged: true },
+    before_after: {
+      ...defineWriteCountEvidence(before, { ...before }),
+      dry_run_unchanged: true,
+    },
   };
 
   return {
@@ -619,10 +626,12 @@ export async function writeRoutingOutcomeBackfillArtifacts(plan: any, artifactDi
 
 async function writeLockedRollbackSnapshot(snapshot: any, artifactDir = DEFAULT_ARTIFACT_DIR): Promise<string> {
   await fs.promises.mkdir(artifactDir, { recursive: true });
-  const filePath = path.join(
+  const filePath = buildLockedRollbackSnapshotPath({
     artifactDir,
-    `TASK-0086-routing-outcome-backfill-${snapshot.plan_sha256.slice(0, 12)}-apply-${immutableRunId()}.locked-rollback-snapshot.json`,
-  );
+    actionPrefix: 'TASK-0086-routing-outcome-backfill',
+    planSha256: snapshot.plan_sha256,
+    runId: immutableRunId(),
+  });
   await writeImmutableFile(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
   return filePath;
 }
@@ -653,7 +662,7 @@ export async function applyRoutingOutcomeBackfillPlan(plan: any, {
   writeReceipt?: (receipt: any) => Promise<string>;
 } = {}) {
   if (!write) throw new Error('write_flag_required');
-  if (confirm !== plan.sha256) throw new Error('write_confirm_sha256_mismatch');
+  if (!matchesWriteActionConfirm(confirm, plan.sha256)) throw new Error('write_confirm_sha256_mismatch');
   if (
     !Array.isArray(plan?.pairs)
     || plan?.version !== PLAN_VERSION
@@ -758,6 +767,16 @@ export async function applyRoutingOutcomeBackfillPlan(plan: any, {
       .update(pending.map((pair) => String(pair.hub_id)).sort(compareIds).join('\n'))
       .digest('hex');
 
+    const countEvidence = defineWriteCountEvidence(
+      {
+        matched: { pending: pending.length, already_applied: alreadyApplied.length, conflict: 0 },
+        fixed_population: outcomeCounts(liveRows.hubRows),
+      },
+      {
+        matched: { pending: 0, already_applied: authoritativePlan.pairs.length, conflict: 0 },
+        fixed_population: outcomeCounts(afterHubRows),
+      },
+    );
     return {
       applied: pending.length,
       already_applied: alreadyApplied.length,
@@ -768,14 +787,8 @@ export async function applyRoutingOutcomeBackfillPlan(plan: any, {
       plan_sha256: plan.sha256,
       inventory_sha256: authoritativePlan.inventory_sha256,
       updated_ids_sha256: updatedIdsSha256,
-      before: {
-        matched: { pending: pending.length, already_applied: alreadyApplied.length, conflict: 0 },
-        fixed_population: outcomeCounts(liveRows.hubRows),
-      },
-      after: {
-        matched: { pending: 0, already_applied: authoritativePlan.pairs.length, conflict: 0 },
-        fixed_population: outcomeCounts(afterHubRows),
-      },
+      before: countEvidence.before,
+      after: countEvidence.after,
     };
   });
   try {
@@ -840,7 +853,7 @@ export async function runRoutingOutcomeBackfill({
       artifacts,
     };
   }
-  if (confirm !== plan.sha256) throw new Error('write_confirm_sha256_mismatch');
+  if (!matchesWriteActionConfirm(confirm, plan.sha256)) throw new Error('write_confirm_sha256_mismatch');
   const applied = await applyRoutingOutcomeBackfillPlan(plan, {
     db,
     write: true,
