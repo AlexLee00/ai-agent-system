@@ -9,7 +9,7 @@
     "apps/*"
   ],
   "scripts": {
-    "check": "npm run -s smoke:harness-principles-audit && npm run -s smoke:justin-retirement && npm run -s typecheck && npm run -s typecheck:strict && npm run -s check:package-script-paths",
+    "check": "npm run -s migration:grant-gate && npm run -s smoke:harness-principles-audit && npm run -s smoke:justin-retirement && npm run -s typecheck && npm run -s typecheck:strict && npm run -s check:package-script-paths",
     "dev": "npm run dev --workspaces --if-present --include-workspace-root=false",
     "build": "npm run build:ts && npm run build:hub-runtime && npm run build:daemons",
     "build:ts": "node scripts/build-ts-phase1.mjs",
@@ -44,6 +44,11 @@
     "platform:convergence-map": "tsx scripts/platform-convergence-map.ts --json",
     "smoke:platform-convergence-map": "tsx scripts/platform-convergence-map.ts --smoke --json",
     "smoke:platform-agent-cards": "tsx scripts/platform-agent-cards-smoke.ts --json",
+    "migration:grant-gate": "tsx scripts/migration-grant-gate.ts",
+    "db:privilege-audit": "tsx scripts/db/read-only-privilege-audit.ts --json",
+    "smoke:migration-grant-contract": "tsx scripts/migration-grant-contract-smoke.ts",
+    "smoke:write-action-confirm": "tsx packages/core/scripts/write-action-confirm-smoke.ts",
+    "smoke:write-action-confirm-runners": "tsx scripts/write-action-confirm-runner-equivalence-smoke.mts",
     "darwin:research-canary": "tsx bots/darwin/scripts/research-scanner-canary.ts --json",
     "security:scan": "tsx bots/hub/scripts/secret-leak-smoke.ts",
     "security:scan-history": "tsx scripts/security/secret-history-scan.ts",

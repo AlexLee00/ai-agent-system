@@ -20,6 +20,8 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -35,6 +37,11 @@ jobs:
 
       - name: TypeScript check
         run: npm run typecheck
+
+      - name: Migration grant gate
+        env:
+          MIGRATION_GRANT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: npm run -s migration:grant-gate
 
       - name: TypeScript Phase 1 build
         run: npm run build:ts
