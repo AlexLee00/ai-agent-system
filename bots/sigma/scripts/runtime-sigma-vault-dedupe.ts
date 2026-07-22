@@ -6,6 +6,11 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { rowsFromPg } from '../shared/zaxis.ts';
+import {
+  buildDirectiveSemanticBody,
+  isSigmaDirectiveEntry,
+  stableDirectiveJson,
+} from '../shared/directive-semantic.ts';
 import { buildVaultNormalizedContentMd5 } from '../vault/vault-manager.ts';
 import { resolveVaultTier } from '../vault/vault-tiering.ts';
 
@@ -78,10 +83,54 @@ function unionSourceRefs(rows = []) {
   return [...refs.values()];
 }
 
+function normalizeProvenanceAlias(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const source = String(value.source ?? '').trim();
+  const filePath = String(value.filePath ?? value.file_path ?? '').trim();
+  const sourceRef = normalizeSourceRef(value.sourceRef ?? value.source_ref);
+  if (!source && !filePath && !sourceRef) return null;
+  return {
+    ...(source ? { source } : {}),
+    ...(filePath ? { filePath } : {}),
+    ...(sourceRef ? { sourceRef } : {}),
+  };
+}
+
+function provenanceAlias(source, filePath, sourceRef) {
+  return normalizeProvenanceAlias({ source, filePath, sourceRef });
+}
+
+function unionProvenanceAliases(rows = []) {
+  const aliases = new Map();
+  const addAlias = (value) => {
+    const alias = normalizeProvenanceAlias(value);
+    if (!alias) return;
+    const key = stableDirectiveJson(alias);
+    if (!aliases.has(key)) aliases.set(key, alias);
+  };
+  for (const row of rows) {
+    const meta = parseMeta(row?.meta);
+    for (const alias of Array.isArray(meta.provenance_aliases) ? meta.provenance_aliases : []) addAlias(alias);
+    addAlias(provenanceAlias(row?.source, row?.file_path, meta.source_ref));
+    for (const sourceRef of Array.isArray(meta.source_refs) ? meta.source_refs : []) {
+      addAlias(provenanceAlias(null, null, sourceRef));
+    }
+  }
+  return [...aliases.values()];
+}
+
 function exactContentMd5(row) {
   return crypto.createHash('md5')
     .update(`${row?.title || ''}\n${row?.content || ''}`)
     .digest('hex');
+}
+
+function directiveSemanticMd5(row) {
+  if (!isSigmaDirectiveEntry(row)) return null;
+  const semanticBody = buildDirectiveSemanticBody(row);
+  return semanticBody
+    ? buildVaultNormalizedContentMd5({ title: '', content: semanticBody })
+    : null;
 }
 
 function rowCoordinates(row) {
@@ -147,6 +196,12 @@ function addDistributionRow(distribution, key, field) {
   distribution[safeKey][field] += 1;
 }
 
+function addSemanticDistributionRow(distribution, key, field) {
+  const safeKey = String(key || 'unknown');
+  distribution[safeKey] ||= { totalRows: 0, semanticDuplicateRows: 0 };
+  distribution[safeKey][field] += 1;
+}
+
 export function buildVaultDuplicateInventory(inputRows = []) {
   const rows = rowsFromPg(inputRows).filter((row) => String(row?.title || '').trim() || String(row?.content || '').trim());
   const exactGroups = duplicateGroups(rows, exactContentMd5);
@@ -178,6 +233,33 @@ export function buildVaultDuplicateInventory(inputRows = []) {
   };
 }
 
+export function buildDirectiveSemanticDedupeInventory(inputRows = []) {
+  const directiveRows = rowsFromPg(inputRows).filter(isSigmaDirectiveEntry);
+  const semanticRows = directiveRows.filter((row) => directiveSemanticMd5(row));
+  const semanticGroups = duplicateGroups(semanticRows, directiveSemanticMd5);
+  const byTier = {};
+  const bySource = {};
+
+  for (const row of directiveRows) {
+    addSemanticDistributionRow(byTier, resolveVaultTier(row).tier, 'totalRows');
+    addSemanticDistributionRow(bySource, row.source, 'totalRows');
+  }
+  for (const row of semanticGroups.flatMap((group) => group.duplicates)) {
+    addSemanticDistributionRow(byTier, resolveVaultTier(row).tier, 'semanticDuplicateRows');
+    addSemanticDistributionRow(bySource, row.source, 'semanticDuplicateRows');
+  }
+
+  return {
+    totalRows: directiveRows.length,
+    semanticEligibleRows: semanticRows.length,
+    semanticSkippedRows: directiveRows.length - semanticRows.length,
+    semantic: duplicateCounts(semanticGroups),
+    semanticGroups,
+    byTier,
+    bySource,
+  };
+}
+
 export async function fetchVaultDedupeRows({
   source = 'all',
   queryReadonly = pgPool.queryReadonly,
@@ -194,6 +276,25 @@ export async function fetchVaultDedupeRows({
       AND NULLIF(TRIM(COALESCE(title, '') || COALESCE(content, '')), '') IS NOT NULL
     ORDER BY id ASC
   `, [sourceFilter]));
+}
+
+export async function fetchDirectiveSemanticDedupeRows({
+  queryReadonly = pgPool.queryReadonly,
+} = {}) {
+  return rowsFromPg(await queryReadonly('sigma', `
+    SELECT id, title, type, content, source, file_path, meta,
+           abstraction_level, time_stage, validation_state, prediction_state,
+           (embedding IS NOT NULL) AS has_embedding, created_at
+    FROM sigma.vault_entries
+    WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
+      AND (
+        LOWER(COALESCE(source, '')) = 'sigma_directive'
+        OR LOWER(COALESCE(meta->>'sourceKind', '')) = 'sigma_directive'
+      )
+      AND NULLIF(TRIM(COALESCE(title, '') || COALESCE(content, '')), '') IS NOT NULL
+    ORDER BY id ASC
+  `));
 }
 
 export async function fetchVaultDuplicateGroups(options = {}) {
@@ -218,12 +319,48 @@ export function buildVaultDedupePlan(groups = []) {
   }));
 }
 
+export function buildDirectiveSemanticDedupePlan(groups = []) {
+  return groups.map((group) => ({
+    mode: 'directive_semantic',
+    contentMd5: group.contentMd5,
+    semanticMd5: group.contentMd5,
+    keepId: group.keep?.id || null,
+    duplicateIds: group.duplicates.map((row) => row.id),
+    duplicateCount: group.duplicates.length,
+    source: group.keep?.source || null,
+    keepTitle: group.keep?.title || null,
+    keepSelection: 'validation>abstraction>time>prediction>created_at>embedding>source_ref>id',
+    transferPlan: {
+      embedding: 'fill_keep_only_when_missing',
+      sourceRefs: 'union_into_keep_meta.source_refs',
+      provenanceAliases: 'union_into_keep_meta.provenance_aliases',
+      knowledgeGraphRefs: 'rebuild_derived_edges_under_keep_record_id',
+    },
+    knowledgeGraphEdgeRedirects: group.duplicates.map((row) => ({
+      fromEntryId: row.id,
+      toEntryId: group.keep?.id || null,
+    })),
+  }));
+}
+
+export function buildVaultDedupePlanSha(plan = []) {
+  return crypto.createHash('sha256').update(stableDirectiveJson(plan)).digest('hex');
+}
+
 export async function applyVaultDedupePlan(plan = [], {
   pg = pgPool,
   write = false,
   confirm = false,
+  mode = 'normalized_content',
 } = {}) {
-  if (!write || !confirm) {
+  const directiveSemantic = mode === 'directive_semantic';
+  if (directiveSemantic && (!write || confirm !== buildVaultDedupePlanSha(plan))) {
+    return { applied: 0, skipped: true, reason: 'plan_sha_confirm_required' };
+  }
+  if (directiveSemantic && plan.some((group) => group.mode !== 'directive_semantic' || !group.semanticMd5)) {
+    return { applied: 0, skipped: true, reason: 'directive_semantic_plan_required' };
+  }
+  if (!directiveSemantic && (!write || !confirm)) {
     return { applied: 0, skipped: true, reason: 'write_confirm_required' };
   }
   if (typeof pg.transaction !== 'function') {
@@ -240,27 +377,76 @@ export async function applyVaultDedupePlan(plan = [], {
     const groupApplied = await pg.transaction('sigma', async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sigma-vault-content:${group.contentMd5}`]);
       const ids = [String(group.keepId), ...duplicateIds];
-      const lockedResult = await client.query(`
-        SELECT id, title, type, content, source, file_path, meta, embedding
-        FROM sigma.vault_entries
-        WHERE id = ANY($1::uuid[])
-          AND COALESCE(status, 'captured') <> 'archived'
-          AND (meta->>'merged_into') IS NULL
-        FOR UPDATE
-      `, [ids]);
+      const lockedResult = directiveSemantic
+        ? await client.query(`
+          SELECT id, title, type, content, source, file_path, meta, embedding, status
+          FROM sigma.vault_entries
+          WHERE id = ANY($1::uuid[])
+          FOR UPDATE
+        `, [ids])
+        : await client.query(`
+          SELECT id, title, type, content, source, file_path, meta, embedding
+          FROM sigma.vault_entries
+          WHERE id = ANY($1::uuid[])
+            AND COALESCE(status, 'captured') <> 'archived'
+            AND (meta->>'merged_into') IS NULL
+          FOR UPDATE
+        `, [ids]);
       const lockedRows = rowsFromPg(lockedResult);
       const rowById = new Map(lockedRows.map((row) => [String(row.id), row]));
       const keep = rowById.get(String(group.keepId));
       if (!keep) throw new Error(`dedupe_keep_missing:${group.keepId}`);
-      const activeDuplicateIds = duplicateIds.filter((id) => rowById.has(id));
+      const semanticMd5 = group.semanticMd5 || group.contentMd5;
+      if (directiveSemantic && ids.some((id) => !rowById.has(id))) {
+        throw new Error(`dedupe_membership_drift:${group.contentMd5}`);
+      }
+
+      if (directiveSemantic) {
+        const keepMeta = parseMeta(keep.meta);
+        if (String(keep.status || 'captured').toLowerCase() === 'archived' || keepMeta.merged_into) {
+          throw new Error(`dedupe_membership_drift:${group.contentMd5}`);
+        }
+        const duplicateRows = duplicateIds.map((id) => rowById.get(id));
+        if (duplicateRows.some((row) => String(row?.status || 'captured').toLowerCase() === 'archived')) {
+          throw new Error(`dedupe_membership_drift:${group.contentMd5}`);
+        }
+        const alreadyMerged = duplicateRows.filter((row) => {
+          const meta = parseMeta(row?.meta);
+          return String(meta.merged_into || '') === String(group.keepId)
+            && meta.directiveSemanticMd5 === semanticMd5;
+        });
+        if (alreadyMerged.length === duplicateRows.length) {
+          if ([keep, ...duplicateRows].some((row) => directiveSemanticMd5(row) !== semanticMd5)) {
+            throw new Error(`dedupe_semantic_drift:${group.contentMd5}`);
+          }
+          return 0;
+        }
+        if (alreadyMerged.length > 0) throw new Error(`dedupe_partial_state_conflict:${group.contentMd5}`);
+        if (duplicateRows.some((row) => parseMeta(row?.meta).merged_into)) {
+          throw new Error(`dedupe_membership_drift:${group.contentMd5}`);
+        }
+        if ([keep, ...duplicateRows].some((row) => directiveSemanticMd5(row) !== semanticMd5)) {
+          throw new Error(`dedupe_semantic_drift:${group.contentMd5}`);
+        }
+      }
+
+      const activeDuplicateIds = directiveSemantic
+        ? duplicateIds
+        : duplicateIds.filter((id) => rowById.has(id));
       if (activeDuplicateIds.length === 0) return 0;
 
       const orderedRows = [keep, ...activeDuplicateIds.map((id) => rowById.get(id))];
       const keepMeta = parseMeta(keep.meta);
       const sourceRefs = unionSourceRefs(orderedRows);
+      const provenanceAliases = directiveSemantic ? unionProvenanceAliases(orderedRows) : [];
       const mergedKeepMeta = {
         ...keepMeta,
         ...(sourceRefs.length ? { source_refs: sourceRefs } : {}),
+        ...(directiveSemantic && provenanceAliases.length ? { provenance_aliases: provenanceAliases } : {}),
+        ...(directiveSemantic ? {
+          directiveSemanticMd5: semanticMd5,
+          normalizedContentMd5: semanticMd5,
+        } : {}),
       };
       const embeddingSourceId = keep.embedding == null
         ? activeDuplicateIds.find((id) => rowById.get(id)?.embedding != null) || null
@@ -282,20 +468,37 @@ export async function applyVaultDedupePlan(plan = [], {
         throw new Error(`dedupe_keep_update_conflict:${group.contentMd5}`);
       }
 
-      const duplicateUpdate = await client.query(`
-        UPDATE sigma.vault_entries
-        SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
-              'merged_into', $1::text,
-              'merged_at', NOW()::text,
-              'merged_reason', 'sigma_vault_dedupe',
-              'dedupe_md5', $2::text
-            ),
-            updated_at = NOW()
-        WHERE id = ANY($3::uuid[])
-          AND id <> $1::uuid
-          AND COALESCE(status, 'captured') <> 'archived'
-          AND (meta->>'merged_into') IS NULL
-      `, [String(group.keepId), group.contentMd5, activeDuplicateIds]);
+      const duplicateUpdate = directiveSemantic
+        ? await client.query(`
+          UPDATE sigma.vault_entries
+          SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+                'merged_into', $1::text,
+                'merged_at', NOW()::text,
+                'merged_reason', 'sigma_vault_dedupe_directive_semantic',
+                'dedupe_md5', $2::text,
+                'directiveSemanticMd5', $2::text,
+                'normalizedContentMd5', $2::text
+              ),
+              updated_at = NOW()
+          WHERE id = ANY($3::uuid[])
+            AND id <> $1::uuid
+            AND COALESCE(status, 'captured') <> 'archived'
+            AND (meta->>'merged_into') IS NULL
+        `, [String(group.keepId), semanticMd5, activeDuplicateIds])
+        : await client.query(`
+          UPDATE sigma.vault_entries
+          SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
+                'merged_into', $1::text,
+                'merged_at', NOW()::text,
+                'merged_reason', 'sigma_vault_dedupe',
+                'dedupe_md5', $2::text
+              ),
+              updated_at = NOW()
+          WHERE id = ANY($3::uuid[])
+            AND id <> $1::uuid
+            AND COALESCE(status, 'captured') <> 'archived'
+            AND (meta->>'merged_into') IS NULL
+        `, [String(group.keepId), group.contentMd5, activeDuplicateIds]);
       if (Number(duplicateUpdate?.rowCount || 0) !== activeDuplicateIds.length) {
         throw new Error(`dedupe_concurrency_conflict:${group.contentMd5}`);
       }
@@ -303,7 +506,9 @@ export async function applyVaultDedupePlan(plan = [], {
         INSERT INTO sigma.vault_audit (entry_id, action, classifier, reasoning, applied, dry_run)
         SELECT duplicate_id, 'tagged', 'rule', $2, true, false
         FROM UNNEST($1::uuid[]) AS duplicate_id
-      `, [activeDuplicateIds, `sigma_vault_dedupe: merged_into=${group.keepId} md5=${group.contentMd5}`]);
+      `, [activeDuplicateIds, directiveSemantic
+        ? `sigma_vault_dedupe: directive_semantic merged_into=${group.keepId} semantic_md5=${semanticMd5}`
+        : `sigma_vault_dedupe: merged_into=${group.keepId} md5=${group.contentMd5}`]);
       return activeDuplicateIds.length;
     });
     applied += groupApplied;
@@ -312,7 +517,70 @@ export async function applyVaultDedupePlan(plan = [], {
   return { applied, groupsApplied, skipped: false };
 }
 
+export async function buildDirectiveSemanticDedupeReport(options = {}) {
+  const rows = options.rows || await fetchDirectiveSemanticDedupeRows({
+    queryReadonly: options.queryReadonly || pgPool.queryReadonly,
+  });
+  const inventory = options.inventory || buildDirectiveSemanticDedupeInventory(rows);
+  const plan = buildDirectiveSemanticDedupePlan(inventory.semanticGroups);
+  const planSha = buildVaultDedupePlanSha(plan);
+  const writeRequested = options.write === true;
+  const applyResult = writeRequested
+    ? await applyVaultDedupePlan(plan, {
+      pg: options.pg || pgPool,
+      write: true,
+      confirm: options.confirm,
+      mode: 'directive_semantic',
+    })
+    : null;
+  const duplicateIdSampleLimit = boundedInt(options.duplicateIdSampleLimit, 10_000, 1, 10_000);
+  return {
+    ok: !writeRequested || applyResult?.skipped === false,
+    source: 'sigma_vault_dedupe',
+    mode: 'directive_semantic',
+    dryRun: !writeRequested,
+    liveMutation: Boolean(writeRequested && applyResult?.skipped === false && applyResult?.applied > 0),
+    generatedAt: new Date().toISOString(),
+    targetSource: 'sigma_directive',
+    planSha,
+    semanticProjection: 'shared/directive-semantic.ts',
+    counts: {
+      totalRows: inventory.totalRows,
+      semanticEligibleRows: inventory.semanticEligibleRows,
+      semanticSkippedRows: inventory.semanticSkippedRows,
+      semantic: inventory.semantic,
+      plannedGroups: plan.length,
+      plannedDuplicateRows: plan.reduce((sum, item) => sum + item.duplicateCount, 0),
+      plannedActiveAfter: inventory.totalRows - plan.reduce((sum, item) => sum + item.duplicateCount, 0),
+      plannedSoftMerged: plan.reduce((sum, item) => sum + item.duplicateCount, 0),
+      writeAttempted: writeRequested,
+      applied: applyResult?.applied || 0,
+    },
+    distribution: {
+      byTier: inventory.byTier,
+      bySource: inventory.bySource,
+    },
+    plan: plan.slice(0, boundedInt(options.planLimit ?? options.limit, 50, 1, 10_000)).map((item) => ({
+      ...item,
+      duplicateIds: item.duplicateIds.slice(0, duplicateIdSampleLimit),
+      duplicateIdsOmitted: Math.max(0, item.duplicateIds.length - duplicateIdSampleLimit),
+    })),
+    applyResult,
+    safety: {
+      hardDelete: false,
+      archive: false,
+      softMergeField: 'meta.merged_into',
+      writeGate: '--write --confirm=<planSha>',
+      groupAtomicity: 'transaction+pg_advisory_xact_lock+row_count_verification',
+      writesOnlySigmaTables: ['sigma.vault_entries', 'sigma.vault_audit'],
+      knowledgeGraphEdges: 'derived_read_time_rebuild_under_keep_record_id',
+      transferPlanOnly: false,
+    },
+  };
+}
+
 export async function buildVaultDedupeReport(options = {}) {
+  if (options.directiveSemantic === true) return buildDirectiveSemanticDedupeReport(options);
   const rows = options.rows || await fetchVaultDedupeRows({
     source: options.source || 'all',
     queryReadonly: options.queryReadonly || pgPool.queryReadonly,
@@ -366,14 +634,19 @@ export async function buildVaultDedupeReport(options = {}) {
 }
 
 async function main() {
+  const directiveSemantic = hasFlag('directive-semantic');
   const report = await buildVaultDedupeReport({
+    directiveSemantic,
     write: hasFlag('write'),
-    confirm: hasFlag('confirm'),
-    source: valueArg('source', 'all'),
+    confirm: directiveSemantic ? valueArg('confirm') : hasFlag('confirm'),
+    source: directiveSemantic ? 'sigma_directive' : valueArg('source', 'all'),
     planLimit: boundedInt(valueArg('limit'), 50, 1, 10_000),
   });
   if (hasFlag('json')) console.log(JSON.stringify(report, null, 2));
-  else console.log(`[sigma-vault-dedupe] groups=${report.counts.normalized.groups} duplicates=${report.counts.normalized.duplicateRows} dryRun=${report.dryRun}`);
+  else {
+    const duplicateCounts = directiveSemantic ? report.counts.semantic : report.counts.normalized;
+    console.log(`[sigma-vault-dedupe] groups=${duplicateCounts.groups} duplicates=${duplicateCounts.duplicateRows} dryRun=${report.dryRun}`);
+  }
   if (!report.ok) process.exitCode = 1;
 }
 

@@ -8,8 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { entryForCandidate, findRecentBloDuplicateByDigest } from './runtime-sigma-blog-vault-feed.ts';
 import {
   applyVaultDedupePlan,
+  buildDirectiveSemanticDedupeInventory,
+  buildDirectiveSemanticDedupePlan,
   buildVaultDedupeReport,
   buildVaultDedupePlan,
+  buildVaultDedupePlanSha,
   buildVaultDuplicateInventory,
 } from './runtime-sigma-vault-dedupe.ts';
 import { buildZAxisBackfillPlan } from './runtime-sigma-zaxis-backfill.ts';
@@ -23,6 +26,7 @@ import {
   fetchVaultRowsForSourceRefs,
 } from '../vault/validation-transition.ts';
 import { fetchVaultTierReport } from '../vault/vault-tiering.ts';
+import { buildVaultKnowledgeGraph } from '../vault/vault-knowledge-graph.ts';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +74,14 @@ function assertOnlySigmaWrites(calls) {
   assert.equal(bad.length, 0, `non-sigma write detected: ${JSON.stringify(bad)}`);
 }
 
+function assertNoDedupeDeleteOrArchive(calls) {
+  const forbidden = calls.filter((call) => (
+    /DELETE\s+FROM\s+sigma\.vault_entries/i.test(call.sql || '')
+    || /UPDATE\s+sigma\.vault_entries[\s\S]*SET[\s\S]*status\s*=[\s\S]*archived/i.test(call.sql || '')
+  ));
+  assert.equal(forbidden.length, 0, `dedupe delete/archive detected: ${JSON.stringify(forbidden)}`);
+}
+
 function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {}) {
   const rows = new Map(seedRows.map((row) => [String(row.id), structuredClone(row)]));
   const calls = [];
@@ -91,8 +103,9 @@ function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {
             if (/pg_advisory_xact_lock/i.test(sql)) return { rows: [], rowCount: 1 };
             if (/SELECT id, title, type, content, source, file_path, meta, embedding/i.test(sql)) {
               const ids = new Set((params[0] || []).map(String));
+              const activeOnly = /meta->>'merged_into'\) IS NULL/i.test(sql);
               return {
-                rows: [...rows.values()].filter((row) => ids.has(String(row.id)) && !row.meta?.merged_into),
+                rows: [...rows.values()].filter((row) => ids.has(String(row.id)) && (!activeOnly || !row.meta?.merged_into)),
                 rowCount: ids.size,
               };
             }
@@ -106,6 +119,7 @@ function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {
             }
             if (/SET meta = COALESCE\(meta/i.test(sql) && /merged_into/i.test(sql)) {
               const duplicateIds = (params[2] || []).map(String);
+              const directiveSemantic = /directiveSemanticMd5/i.test(sql);
               let rowCount = 0;
               for (const id of duplicateIds) {
                 const row = rows.get(id);
@@ -113,8 +127,12 @@ function makeDedupeApplyPg(seedRows = [], { duplicateUpdateRowCount = null } = {
                 row.meta = {
                   ...(row.meta || {}),
                   merged_into: String(params[0]),
-                  merged_reason: 'sigma_vault_dedupe',
+                  merged_reason: directiveSemantic ? 'sigma_vault_dedupe_directive_semantic' : 'sigma_vault_dedupe',
                   dedupe_md5: params[1],
+                  ...(directiveSemantic ? {
+                    directiveSemanticMd5: params[1],
+                    normalizedContentMd5: params[1],
+                  } : {}),
                 };
                 rowCount += 1;
               }
@@ -329,6 +347,244 @@ async function testDedupe() {
   };
 }
 
+function directiveDedupeRow(id, transportId, overrides = {}) {
+  const policyId = overrides.policyId || 'policy-stable';
+  return {
+    id,
+    title: `Directive ${transportId}`,
+    type: 'sigma_directive',
+    content: `Improve Luna KPI reporting ${transportId}`,
+    source: 'sigma_directive',
+    file_path: `sigma/directives/${transportId}.json`,
+    created_at: overrides.created_at || '2026-07-01T00:00:00Z',
+    abstraction_level: overrides.abstraction_level || 'L0',
+    time_stage: overrides.time_stage || 'raw',
+    validation_state: overrides.validation_state || 'unverified',
+    prediction_state: overrides.prediction_state || 'none',
+    has_embedding: Boolean(overrides.embedding),
+    embedding: overrides.embedding || null,
+    meta: {
+      sourceKind: 'sigma_directive',
+      team: 'luna',
+      agent: 'mapek',
+      source_ref: { team: 'sigma', table: 'public.sigma_v2_directive_audit', id: transportId },
+      ...(overrides.source_refs ? { source_refs: overrides.source_refs } : {}),
+      ...(overrides.provenance_aliases ? { provenance_aliases: overrides.provenance_aliases } : {}),
+      payload: {
+        tier: 'T1',
+        outcome: 'Improve Luna KPI reporting',
+        action: {
+          policy_id: policyId,
+          target_team: 'luna',
+          type: 'improve_reporting',
+        },
+        principleCheckResult: { allowed: true, signalId: transportId },
+        rollbackSpec: { strategy: 'advisory_only', directiveId: transportId },
+      },
+    },
+  };
+}
+
+async function testDirectiveSemanticDedupe() {
+  const keepId = '10000000-0000-4000-8000-000000000001';
+  const observedId = '10000000-0000-4000-8000-000000000002';
+  const unverifiedId = '10000000-0000-4000-8000-000000000003';
+  const distinctId = '10000000-0000-4000-8000-000000000004';
+  const malformedId = '10000000-0000-4000-8000-000000000005';
+  const rows = [
+    directiveDedupeRow(keepId, 'transport-1', {
+      validation_state: 'validated',
+      abstraction_level: 'L2',
+      time_stage: 'pattern',
+      prediction_state: 'resolved',
+      created_at: '2026-06-01T00:00:00Z',
+      provenance_aliases: [{ source: 'legacy', filePath: 'legacy/directive.json' }],
+    }),
+    directiveDedupeRow(observedId, 'transport-2', {
+      validation_state: 'observed',
+      created_at: '2026-07-03T00:00:00Z',
+      embedding: '[0.5,0.6]',
+      source_refs: [{ team: 'sigma', table: 'signals', id: 'signal-2' }],
+    }),
+    directiveDedupeRow(unverifiedId, 'transport-3', {
+      created_at: '2026-07-04T00:00:00Z',
+      provenance_aliases: [{ source: 'archive', filePath: 'archive/directive-3.json' }],
+    }),
+    directiveDedupeRow(distinctId, 'transport-4', { policyId: 'policy-distinct' }),
+    {
+      id: malformedId,
+      title: 'Malformed directive',
+      content: 'No structured payload',
+      source: 'sigma_directive',
+      type: 'sigma_directive',
+      meta: { sourceKind: 'sigma_directive' },
+    },
+  ];
+
+  const inventory = buildDirectiveSemanticDedupeInventory(rows);
+  assert.equal(inventory.totalRows, 5);
+  assert.equal(inventory.semanticEligibleRows, 4);
+  assert.equal(inventory.semanticSkippedRows, 1, 'malformed directives must remain active and outside the merge plan');
+  assert.deepEqual(inventory.semantic, { groups: 1, groupRows: 3, duplicateRows: 2 });
+  assert.equal(inventory.semanticGroups[0].keep.id, keepId, 'coordinate precedence must beat recency and embedding');
+  assert.equal(inventory.semanticGroups[0].duplicates.some((row) => row.id === distinctId), false, 'semantic action IDs must remain distinct');
+
+  const plan = buildDirectiveSemanticDedupePlan(inventory.semanticGroups);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].keepId, keepId);
+  assert.deepEqual(new Set(plan[0].duplicateIds), new Set([observedId, unverifiedId]));
+  assert.equal(plan[0].semanticMd5, plan[0].contentMd5);
+  assert.deepEqual(plan[0].transferPlan, {
+    embedding: 'fill_keep_only_when_missing',
+    sourceRefs: 'union_into_keep_meta.source_refs',
+    provenanceAliases: 'union_into_keep_meta.provenance_aliases',
+    knowledgeGraphRefs: 'rebuild_derived_edges_under_keep_record_id',
+  });
+  assert.deepEqual(new Set(plan[0].knowledgeGraphEdgeRedirects.map((item) => item.fromEntryId)), new Set([observedId, unverifiedId]));
+  assert.equal(plan[0].knowledgeGraphEdgeRedirects.every((item) => item.toEntryId === keepId), true);
+
+  const planSha = buildVaultDedupePlanSha(plan);
+  assert.match(planSha, /^[a-f0-9]{64}$/);
+  assert.equal(buildVaultDedupePlanSha(buildDirectiveSemanticDedupePlan(inventory.semanticGroups)), planSha);
+  const wrongConfirm = await applyVaultDedupePlan(plan, {
+    pg: makePg(),
+    write: true,
+    confirm: true,
+    mode: 'directive_semantic',
+  });
+  assert.equal(wrongConfirm.reason, 'plan_sha_confirm_required');
+
+  const driftRows = rows.slice(0, 3).map((row) => structuredClone(row));
+  driftRows[1].meta.payload.action.policy_id = 'policy-drifted-after-review';
+  await assert.rejects(
+    applyVaultDedupePlan(plan, {
+      pg: makeDedupeApplyPg(driftRows),
+      write: true,
+      confirm: planSha,
+      mode: 'directive_semantic',
+    }),
+    /dedupe_semantic_drift/
+  );
+  await assert.rejects(
+    applyVaultDedupePlan(plan, {
+      pg: makeDedupeApplyPg(rows.slice(0, 2)),
+      write: true,
+      confirm: planSha,
+      mode: 'directive_semantic',
+    }),
+    /dedupe_membership_drift/
+  );
+
+  const readonlyPg = makePg({ readonlyRows: rows });
+  const report = await buildVaultDedupeReport({
+    directiveSemantic: true,
+    queryReadonly: readonlyPg.queryReadonly.bind(readonlyPg),
+  });
+  assert.equal(report.mode, 'directive_semantic');
+  assert.equal(report.counts.semantic.groups, 1);
+  assert.equal(report.counts.semanticSkippedRows, 1);
+  assert.equal(report.counts.plannedDuplicateRows, 2);
+  assert.equal(report.counts.plannedActiveAfter, 3);
+  assert.equal(report.planSha, planSha);
+  assert.deepEqual(new Set(report.plan[0].duplicateIds), new Set([observedId, unverifiedId]));
+  assert.equal(readonlyPg.calls.every((call) => call.kind === 'queryReadonly'), true, 'dry-run must remain read-only');
+
+  const implicitLegacy = await buildVaultDedupeReport({ rows });
+  const explicitLegacy = await buildVaultDedupeReport({ rows, directiveSemantic: false });
+  const withoutGeneratedAt = ({ generatedAt, ...value }) => value;
+  assert.deepEqual(withoutGeneratedAt(explicitLegacy), withoutGeneratedAt(implicitLegacy), 'legacy mode output must remain unchanged');
+
+  const applyPg = makeDedupeApplyPg(rows.slice(0, 3));
+  const activeBefore = applyPg.activeCount();
+  const applied = await applyVaultDedupePlan(plan, {
+    pg: applyPg,
+    write: true,
+    confirm: planSha,
+    mode: 'directive_semantic',
+  });
+  assert.equal(applied.applied, 2);
+  assert.equal(applyPg.activeCount(), activeBefore - 2);
+  const keep = applyPg.rows.get(keepId);
+  assert.equal(keep.embedding, '[0.5,0.6]');
+  assert.equal(keep.meta.directiveSemanticMd5, plan[0].semanticMd5);
+  assert.equal(keep.meta.source_refs.length, 4);
+  assert.equal(keep.meta.provenance_aliases.length, 6);
+  for (const duplicateId of [observedId, unverifiedId]) {
+    const duplicate = applyPg.rows.get(duplicateId);
+    assert.equal(duplicate.meta.merged_into, keepId);
+    assert.equal(duplicate.meta.merged_reason, 'sigma_vault_dedupe_directive_semantic');
+    assert.equal(duplicate.meta.directiveSemanticMd5, plan[0].semanticMd5);
+  }
+  assert.equal(applyPg.audits.every((audit) => audit.action === 'tagged'), true);
+  assert.equal(applyPg.audits.every((audit) => /^sigma_vault_dedupe: directive_semantic /.test(audit.reasoning)), true);
+
+  const partialRows = rows.slice(0, 3).map((row) => structuredClone(row));
+  partialRows[1].meta.merged_into = keepId;
+  partialRows[1].meta.directiveSemanticMd5 = plan[0].semanticMd5;
+  await assert.rejects(
+    applyVaultDedupePlan(plan, {
+      pg: makeDedupeApplyPg(partialRows),
+      write: true,
+      confirm: planSha,
+      mode: 'directive_semantic',
+    }),
+    /dedupe_partial_state_conflict/
+  );
+
+  const conflictPg = makeDedupeApplyPg(rows.slice(0, 3), { duplicateUpdateRowCount: 1 });
+  const conflictBefore = structuredClone([...conflictPg.rows.values()]);
+  await assert.rejects(
+    applyVaultDedupePlan(plan, {
+      pg: conflictPg,
+      write: true,
+      confirm: planSha,
+      mode: 'directive_semantic',
+    }),
+    /dedupe_concurrency_conflict/
+  );
+  assert.deepEqual([...conflictPg.rows.values()], conflictBefore, 'semantic row-count conflicts must roll back the whole group');
+
+  const graph = buildVaultKnowledgeGraph([...applyPg.rows.values()].filter((row) => !row.meta?.merged_into));
+  assert.deepEqual(graph.records.map((record) => record.id), [keepId], 'derived KG records must rebuild under the survivor ID');
+  assert.equal(graph.edges.some((edge) => edge.source.includes(observedId) || edge.source.includes(unverifiedId)), false);
+
+  const archivedReapplyPg = makeDedupeApplyPg([...applyPg.rows.values()]);
+  archivedReapplyPg.rows.get(observedId).status = 'archived';
+  await assert.rejects(
+    applyVaultDedupePlan(plan, {
+      pg: archivedReapplyPg,
+      write: true,
+      confirm: planSha,
+      mode: 'directive_semantic',
+    }),
+    /dedupe_membership_drift/
+  );
+
+  const reapplied = await applyVaultDedupePlan(plan, {
+    pg: applyPg,
+    write: true,
+    confirm: planSha,
+    mode: 'directive_semantic',
+  });
+  assert.equal(reapplied.applied, 0);
+  assert.equal(applyPg.activeCount(), activeBefore - 2);
+  assertOnlySigmaWrites(applyPg.calls);
+  assertNoDedupeDeleteOrArchive(applyPg.calls);
+
+  return {
+    groups: inventory.semantic.groups,
+    duplicateRows: inventory.semantic.duplicateRows,
+    survivor: keepId,
+    planSha,
+    exactShaGate: true,
+    snapshotSafety: true,
+    conflictRolledBack: true,
+    readOnlyDryRun: true,
+    idempotentReapply: reapplied.applied,
+    legacyModeUnchanged: true,
+  };
+}
+
 async function testBlogDuplicateGuard() {
   const candidate = {
     title: '[blog_post] same',
@@ -476,6 +732,7 @@ async function testMergedConsumerFilters() {
 async function main() {
   const results = {
     dedupe: await testDedupe(),
+    directiveSemanticDedupe: await testDirectiveSemanticDedupe(),
     blogDuplicateGuard: await testBlogDuplicateGuard(),
     backfill: await testBackfill(),
     librarian: await testLibrarian(),
@@ -486,7 +743,7 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     smoke: 'sigma-als2-sgs2',
-    checks: 7,
+    checks: 8,
     results,
   }, null, 2));
 }
