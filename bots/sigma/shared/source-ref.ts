@@ -80,11 +80,12 @@ export function sourceRefForLibraryRecord(record = {}) {
     luna_trade_journal: 'investment.trade_journal',
     luna_trade_review: 'investment.trade_review',
     mcp_usage: 'public.sigma_mcp_usage_audit',
-    sigma_directive: 'sigma.sigma_v2_directive_audit',
+    sigma_directive: 'public.sigma_v2_directive_audit',
   };
   const idByKind = {
     luna_trade_journal: payload.tradeId || payload.trade_id || sourceId,
     luna_trade_review: payload.tradeId || payload.trade_id || sourceId,
+    sigma_directive: payload.transport?.sourceRowId || sourceId,
   };
   return normalizeSourceRef({
     team,

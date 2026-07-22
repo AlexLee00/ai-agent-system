@@ -301,17 +301,20 @@ defmodule Sigma.V2.MapeKLoop do
   # ─────────────────────────────────────────────────
 
   defp build_directive(feedback, cycle_id) do
+    team = feedback[:target_team] || "unknown"
+
     %Sigma.Directive.ApplyFeedback{
-      team: feedback[:target_team] || "unknown",
+      team: team,
       analyst: feedback[:analyst_used] || "commander",
-      action: %{
-        feedback_type: feedback[:feedback_type] || "general_review",
-        content: feedback[:content] || ""
-      },
+      action: Sigma.V2.DirectiveContent.build(feedback),
       tier: 1,
-      rollback_spec: %{
-        directive_id: "#{cycle_id}_#{feedback[:target_team] || "unknown"}"
-      }
+      metadata: %{
+        transport: %{
+          cycle_id: cycle_id,
+          directive_id: "#{cycle_id}_#{team}"
+        }
+      },
+      rollback_spec: %{mode: "advisory_only"}
     }
   end
 

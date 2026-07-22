@@ -13,6 +13,10 @@ import {
   inferRawLibraryCoords,
   normalizeLibraryCoords,
 } from '../shared/library-coords.ts';
+import {
+  buildDirectiveSemanticBody,
+  isSigmaDirectiveEntry,
+} from '../shared/directive-semantic.ts';
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
@@ -145,6 +149,12 @@ function mergeDuplicateProvenanceMeta(existing: Record<string, unknown>, incomin
   ].filter(Boolean) as Record<string, unknown>[]);
   return {
     ...existingMeta,
+    ...(incomingMeta.directiveSemanticMd5
+      ? {
+          directiveSemanticMd5: incomingMeta.directiveSemanticMd5,
+          normalizedContentMd5: incomingMeta.normalizedContentMd5,
+        }
+      : {}),
     ...(sourceRefs.length ? { source_refs: sourceRefs } : {}),
     ...(aliases.length ? { provenance_aliases: aliases } : {}),
   };
@@ -177,6 +187,14 @@ export function buildVaultNormalizedContentMd5(entry: Partial<VaultEntry>): stri
   return crypto.createHash('md5').update(`${title}\n${content}`).digest('hex');
 }
 
+export function buildVaultUpsertContentMd5(entry: Partial<VaultEntry>): string | null {
+  if (isSigmaDirectiveEntry(entry)) {
+    const semanticBody = buildDirectiveSemanticBody(entry);
+    if (semanticBody) return buildVaultNormalizedContentMd5({ title: '', content: semanticBody });
+  }
+  return buildVaultNormalizedContentMd5(entry);
+}
+
 export class VaultManager {
   private pgPool: any;
   private embeddingFactory: any;
@@ -191,7 +209,7 @@ export class VaultManager {
     try {
       const rawFilePath = originalFilePath(entry.filePath);
       const rawHash = buildVaultRawHash(entry, rawFilePath);
-      const normalizedContentMd5 = buildVaultNormalizedContentMd5(entry);
+      const normalizedContentMd5 = buildVaultUpsertContentMd5(entry);
       const baseCoords = normalizeLibraryCoords(entry.libraryCoords || inferRawLibraryCoords({
         title: entry.title,
         content: entry.content,
@@ -203,11 +221,17 @@ export class VaultManager {
         ...attachLibraryCoordsToMeta(entry.meta || {}, baseCoords),
         rawContentHash: rawHash,
         ...(normalizedContentMd5 ? { normalizedContentMd5 } : {}),
+        ...(normalizedContentMd5 && isSigmaDirectiveEntry(entry)
+          ? { directiveSemanticMd5: normalizedContentMd5 }
+          : {}),
       };
       if (rawFilePath) baseMeta.rawOriginalFilePath = rawFilePath;
 
       if (normalizedContentMd5) {
-        const existing = await this._findAndMergeNormalizedDuplicate(normalizedContentMd5, entry);
+        const existing = await this._findAndMergeNormalizedDuplicate(normalizedContentMd5, {
+          ...entry,
+          meta: baseMeta,
+        });
         if (existing) {
           await this._writeAudit({
             entryId: existing.id,
@@ -326,11 +350,17 @@ export class VaultManager {
       const insertEntry = async (db: any, useAdvisoryLock: boolean) => {
         if (useAdvisoryLock && normalizedContentMd5) {
           await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sigma-vault-content:${normalizedContentMd5}`]);
-          const existing = await this._findEntryByNormalizedMd5(normalizedContentMd5, db);
+          const existing = await this._findEntryByNormalizedMd5(normalizedContentMd5, db, {
+            ...entry,
+            meta: baseMeta,
+          });
           if (existing) {
             return {
               rows: [],
-              normalizedDuplicate: await this._mergeDuplicateProvenance(existing, entry, db),
+              normalizedDuplicate: await this._mergeDuplicateProvenance(existing, {
+                ...entry,
+                meta: baseMeta,
+              }, db),
             };
           }
         }
@@ -412,7 +442,29 @@ export class VaultManager {
     return rows[0] || null;
   }
 
-  private async _findEntryByNormalizedMd5(normalizedContentMd5: string, db: any = this.pgPool): Promise<Record<string, unknown> | null> {
+  private async _findEntryByNormalizedMd5(
+    normalizedContentMd5: string,
+    db: any = this.pgPool,
+    incoming: Partial<VaultEntry> = {},
+  ): Promise<Record<string, unknown> | null> {
+    if (isSigmaDirectiveEntry(incoming)) {
+      const candidates = await this._queryRows(db, `
+        SELECT id, title, type, content, source, file_path, para_category, meta
+        FROM sigma.vault_entries
+        WHERE COALESCE(status, 'captured') <> 'archived'
+          AND (meta->>'merged_into') IS NULL
+          AND source = 'sigma_directive'
+          AND (
+            meta->>'directiveSemanticMd5' = $1
+            OR meta->>'directiveSemanticMd5' IS NULL
+          )
+        ORDER BY created_at DESC, id DESC
+      `, [normalizedContentMd5]);
+      return candidates.find((candidate) => (
+        parseMeta(candidate.meta).directiveSemanticMd5 === normalizedContentMd5
+        || buildVaultUpsertContentMd5(candidate) === normalizedContentMd5
+      )) || null;
+    }
     const rows = await this._queryRows(db, `
       SELECT id, title, type, content, source, file_path, para_category, meta
       FROM sigma.vault_entries
@@ -458,7 +510,7 @@ export class VaultManager {
       if (useAdvisoryLock) {
         await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sigma-vault-content:${normalizedContentMd5}`]);
       }
-      const existing = await this._findEntryByNormalizedMd5(normalizedContentMd5, db);
+      const existing = await this._findEntryByNormalizedMd5(normalizedContentMd5, db, incoming);
       return existing ? this._mergeDuplicateProvenance(existing, incoming, db) : null;
     };
     if (typeof this.pgPool.transaction === 'function') {

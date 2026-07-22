@@ -7,7 +7,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { normalizeLibraryCoords } from '../shared/library-coords.ts';
-import { buildVaultNormalizedContentMd5, normalizeVaultContentText } from '../vault/vault-manager.ts';
+import { buildDirectiveSemanticBody } from '../shared/directive-semantic.ts';
+import { buildVaultNormalizedContentMd5 } from '../vault/vault-manager.ts';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,7 @@ const repoRoot = path.resolve(__dirname, '../../..');
 const DEFAULT_PROJECT_DOCS = path.join(os.homedir(), 'project-docs/ai-agent-system');
 const DEFAULT_WIKI_DIR = path.join(DEFAULT_PROJECT_DOCS, 'wiki');
 const WIKI_STATE_FILE = '.llm-wiki-state.json';
+const WIKI_STATE_VERSION = 3;
 const COORD_COLUMNS = ['abstraction_level', 'time_stage', 'validation_state', 'prediction_state', 'prediction_horizon'];
 const pgPool = require(path.join(repoRoot, 'packages/core/lib/pg-pool.ts'));
 const hubClient = require(path.join(repoRoot, 'packages/core/lib/hub-client.ts'));
@@ -50,15 +52,6 @@ const LOW_VALUE_DIGEST_PATTERNS = [
   '%comment/action%',
   '%library/blo/comment%',
 ];
-const DIRECTIVE_TRANSPORT_KEYS = new Set([
-  'createdat',
-  'directiveid',
-  'executedat',
-  'signalid',
-  'sourceid',
-  'timestamp',
-]);
-
 const TOPIC_RULES = [
   { topic: 'hub', pattern: /\bhub\b|resource-api|ops-mcp|llm_routing|routing/i },
   { topic: 'luna', pattern: /\bluna\b|investment|trading|risk|capital|kis|binance/i },
@@ -143,8 +136,9 @@ export function readWikiState(outDir = DEFAULT_WIKI_DIR) {
   try {
     const raw = fs.readFileSync(statePath(outDir), 'utf8');
     const parsed = JSON.parse(raw);
+    const parsedVersion = Number(parsed.version);
     return {
-      version: Number(parsed.version) === 2 ? 2 : 1,
+      version: [2, WIKI_STATE_VERSION].includes(parsedVersion) ? parsedVersion : 1,
       processedVaultEntryIds: Array.isArray(parsed.processedVaultEntryIds) ? parsed.processedVaultEntryIds : [],
       processedContentKeys: Array.isArray(parsed.processedContentKeys) ? parsed.processedContentKeys : [],
       updatedAt: parsed.updatedAt || null,
@@ -155,10 +149,13 @@ export function readWikiState(outDir = DEFAULT_WIKI_DIR) {
 }
 
 export function nextWikiState(previous, vaultEntryIds, now = new Date(), contentKeys = []) {
-  const ids = [...new Set([...(previous?.processedVaultEntryIds || []), ...(vaultEntryIds || [])])].slice(-10000);
-  const keys = [...new Set([...(previous?.processedContentKeys || []), ...(contentKeys || [])])].slice(-10000);
+  const currentState = Number(previous?.version) === WIKI_STATE_VERSION;
+  const previousIds = currentState ? previous?.processedVaultEntryIds || [] : [];
+  const previousKeys = currentState ? previous?.processedContentKeys || [] : [];
+  const ids = [...new Set([...previousIds, ...(vaultEntryIds || [])])].slice(-10000);
+  const keys = [...new Set([...previousKeys, ...(contentKeys || [])])].slice(-10000);
   return {
-    version: 2,
+    version: WIKI_STATE_VERSION,
     processedVaultEntryIds: ids,
     processedContentKeys: keys,
     updatedAt: now.toISOString(),
@@ -223,81 +220,9 @@ function rowSourceKind(row) {
   return String(row?.source || meta.sourceKind || row?.type || '').trim().toLowerCase();
 }
 
-function normalizedTransportKey(value) {
-  return String(value || '').toLowerCase().replace(/[_-]/g, '');
-}
-
-function stableDirectiveJson(value) {
-  if (value == null) return 'null';
-  if (typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableDirectiveJson).join(',')}]`;
-  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableDirectiveJson(item)}`).join(',')}}`;
-}
-
-function stableDirectiveValue(value, { stripTransport = false } = {}) {
-  if (typeof value === 'string') {
-    const normalized = normalizeVaultContentText(value);
-    if (!normalized) return undefined;
-    try {
-      return stableDirectiveValue(JSON.parse(normalized), { stripTransport });
-    } catch {
-      return normalized;
-    }
-  }
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => stableDirectiveValue(item, { stripTransport }))
-      .filter((item) => item !== undefined);
-  }
-  if (value && typeof value === 'object') {
-    const normalized = {};
-    for (const key of Object.keys(value).sort()) {
-      if (stripTransport && DIRECTIVE_TRANSPORT_KEYS.has(normalizedTransportKey(key))) continue;
-      const child = stableDirectiveValue(value[key], { stripTransport });
-      if (child === undefined) continue;
-      if (Array.isArray(child) && child.length === 0) continue;
-      if (child && typeof child === 'object' && !Array.isArray(child) && Object.keys(child).length === 0) continue;
-      normalized[key] = child;
-    }
-    return Object.keys(normalized).length > 0 ? normalized : undefined;
-  }
-  return value == null ? undefined : value;
-}
-
-function directiveSemanticBody(row) {
-  const meta = parseMeta(row?.meta);
-  const rawPayload = typeof meta.payload === 'string' ? parseMeta(meta.payload) : meta.payload;
-  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) return null;
-  const legacyRollbackSpec = (() => {
-    if (rawPayload.rollbackSpec != null || rawPayload.rollback_spec != null) return undefined;
-    let remainder = normalizeVaultContentText(row?.content || row?.content_preview || '');
-    for (const value of [rawPayload.outcome, rawPayload.action, rawPayload.principleCheckResult]) {
-      const part = normalizeVaultContentText(
-        typeof value === 'string' ? value : stableDirectiveJson(value),
-      );
-      if (!part || !remainder.startsWith(part)) return undefined;
-      remainder = remainder.slice(part.length).trim();
-    }
-    return remainder ? stableDirectiveValue(remainder) : undefined;
-  })();
-  const projection = stableDirectiveValue({
-    team: meta.team || rawPayload.team,
-    tier: stableDirectiveValue(rawPayload.tier),
-    outcome: stableDirectiveValue(rawPayload.outcome),
-    action: stableDirectiveValue(rawPayload.action),
-    principleCheckResult: stableDirectiveValue(rawPayload.principleCheckResult, { stripTransport: true }),
-    rollbackSpec: stableDirectiveValue(
-      rawPayload.rollbackSpec ?? rawPayload.rollback_spec ?? legacyRollbackSpec,
-    ),
-  });
-  if (!projection || (!projection.outcome && !projection.action && !projection.principleCheckResult)) return null;
-  return JSON.stringify(projection);
-}
-
 export function buildVaultWikiContentDigest(row) {
   const content = rowSourceKind(row) === 'sigma_directive'
-    ? directiveSemanticBody(row) || row?.content || row?.content_preview || ''
+    ? buildDirectiveSemanticBody(row) || row?.content || row?.content_preview || ''
     : row?.content || row?.content_preview || '';
   return buildVaultNormalizedContentMd5({ title: '', content });
 }
@@ -487,9 +412,9 @@ async function fetchVaultRowsByPatterns({ patterns, limit, queryReadonly, coordS
 }
 
 export async function fetchVaultWikiEntrySet({ limit = 80, state = null, queryReadonly = pgPool.queryReadonly } = {}) {
-  const rebuildingV1State = Number(state?.version) === 1;
-  const effectiveLimit = rebuildingV1State ? 500 : limit;
-  const coordColumns = await detectCoordColumns(queryReadonly, { failClosed: rebuildingV1State });
+  const rebuildingLegacyState = state != null && Number(state.version) !== WIKI_STATE_VERSION;
+  const effectiveLimit = rebuildingLegacyState ? 500 : limit;
+  const coordColumns = await detectCoordColumns(queryReadonly, { failClosed: rebuildingLegacyState });
   const coordSelect = coordColumns.length > 0
     ? `, ${coordColumns.join(', ')}`
     : '';
@@ -506,8 +431,8 @@ export async function fetchVaultWikiEntrySet({ limit = 80, state = null, queryRe
     coordSelect,
   }).catch(() => []);
   const wikiSet = buildWikiEntrySetFromVaultRows([...highValueRows, ...digestRows], {
-    processedVaultEntryIds: rebuildingV1State ? [] : state?.processedVaultEntryIds || [],
-    processedContentKeys: rebuildingV1State ? [] : state?.processedContentKeys || [],
+    processedVaultEntryIds: rebuildingLegacyState ? [] : state?.processedVaultEntryIds || [],
+    processedContentKeys: rebuildingLegacyState ? [] : state?.processedContentKeys || [],
   });
   const digestCandidates = wikiSet.skipped.filter((item) => item.lane === 'dreaming_digest');
   return {
@@ -736,7 +661,7 @@ export async function buildLlmWikiCompileReport(options = {}) {
   const outDir = options.outDir || DEFAULT_WIKI_DIR;
   const limit = Math.max(1, Math.min(500, Number(options.limit || 80) || 80));
   const state = options.state || readWikiState(outDir);
-  const rebuildingV1State = Number(state.version) === 1;
+  const rebuildingLegacyState = Number(state.version) !== WIKI_STATE_VERSION;
   let files = [];
   let docEntries = [];
   let minuteEntries = [];
@@ -764,8 +689,8 @@ export async function buildLlmWikiCompileReport(options = {}) {
         queryReadonly: options.queryReadonly || pgPool.queryReadonly,
       });
     } catch (error) {
-      if (rebuildingV1State) {
-        throw new Error(`llm_wiki_v1_rebuild_source_failed:${error.message}`);
+      if (rebuildingLegacyState) {
+        throw new Error(`llm_wiki_state_rebuild_source_failed:${error.message}`);
       }
       entrySet = { entries: [], skipped: [], digestCandidates: [], stats: vaultStats };
     }
@@ -791,7 +716,7 @@ export async function buildLlmWikiCompileReport(options = {}) {
 
   const entries = [...vaultEntries, ...docEntries, ...minuteEntries].filter((entry) => entry.excerpt);
   const topics = [...new Set(entries.map((entry) => entry.topic))].sort();
-  const existing = rebuildingV1State ? {} : readExistingPages(outDir, topics);
+  const existing = rebuildingLegacyState ? {} : readExistingPages(outDir, topics);
   const deterministicPages = mergeWikiPages(entries, existing);
   const llm = options.llmPreview && !options.noDb && entries.length > 0
     ? await buildLlmWikiPreviews({
@@ -821,7 +746,9 @@ export async function buildLlmWikiCompileReport(options = {}) {
       newContentKeys: sourceContentKeys,
       nextProcessedVaultEntryIds: nextState.processedVaultEntryIds.length,
       nextProcessedContentKeys: nextState.processedContentKeys.length,
-      migration: rebuildingV1State ? 'v1_content_rebuild' : null,
+      migration: rebuildingLegacyState
+        ? `v${Number(state.version) || 1}_to_v${WIKI_STATE_VERSION}_semantic_key_rebuild`
+        : null,
     },
     counts: {
       sourceFiles: files.length,

@@ -215,12 +215,19 @@ async function main() {
   assert.equal(empty.stats.sourceVaultEntries, 0);
   assert.equal(empty.stats.contentDuplicateRate, 0);
   const state = nextWikiState(
-    { version: 1, processedVaultEntryIds: [], updatedAt: null },
+    {
+      version: 2,
+      processedVaultEntryIds: ['stale-v2-row'],
+      processedContentKeys: ['stale-v2-content-key'],
+      updatedAt: null,
+    },
     deduped.sourceVaultEntryIds,
     new Date('2026-07-20T00:00:04.000Z'),
     deduped.contentKeys,
   );
-  assert.equal(state.version, 2);
+  assert.equal(state.version, 3);
+  assert.doesNotMatch(state.processedVaultEntryIds.join(','), /stale-v2-row/);
+  assert.doesNotMatch(state.processedContentKeys.join(','), /stale-v2-content-key/);
   const later = directiveRow({
     id: 'row-later',
     signalId: '66666666-6666-4666-8666-666666666666',
@@ -256,12 +263,13 @@ async function main() {
   assert.equal(report.duplicateRate, 2 / 3);
   assert.equal(fs.existsSync(path.join(tmp, 'wiki/luna.md')), false);
 
-  const migrationOutDir = path.join(tmp, 'wiki-v1-migration');
+  const migrationOutDir = path.join(tmp, 'wiki-v2-migration');
   assert.equal(readWikiState(path.join(tmp, 'wiki-without-state')).version, 1);
   fs.mkdirSync(migrationOutDir, { recursive: true });
   fs.writeFileSync(path.join(migrationOutDir, '.llm-wiki-state.json'), JSON.stringify({
-    version: 1,
+    version: 2,
     processedVaultEntryIds: [older.id, newer.id, newestWhitespaceVariant.id],
+    processedContentKeys: ['stale-v2-content-key'],
     updatedAt: '2026-07-19T00:00:00.000Z',
   }), 'utf8');
   fs.writeFileSync(path.join(migrationOutDir, 'luna.md'), [
@@ -275,14 +283,14 @@ async function main() {
     '',
     'Source: `vault-entry:row-newer`',
   ].join('\n'), 'utf8');
-  const v1State = readWikiState(migrationOutDir);
-  assert.equal(v1State.version, 1);
+  const legacyState = readWikiState(migrationOutDir);
+  assert.equal(legacyState.version, 2);
   const migrationReport = await buildLlmWikiCompileReport({
     outDir: migrationOutDir,
     limit: 10,
     dryRun: true,
     llmPreview: false,
-    state: v1State,
+    state: legacyState,
     queryReadonly: async (_schema, sql) => {
       if (/information_schema\.columns/i.test(sql)) {
         return Object.keys(rawCoords).map((column_name) => ({ column_name }));
@@ -291,7 +299,7 @@ async function main() {
       return [];
     },
   });
-  assert.equal(migrationReport.state.migration, 'v1_content_rebuild');
+  assert.equal(migrationReport.state.migration, 'v2_to_v3_semantic_key_rebuild');
   assert.equal(migrationReport.counts.entries, 1);
   assert.equal((migrationReport.pages.luna.match(/^## /gm) || []).length, 1);
   assert.doesNotMatch(migrationReport.pages.luna, /polluted older copy/);
@@ -302,13 +310,13 @@ async function main() {
       limit: 10,
       dryRun: true,
       llmPreview: false,
-      state: v1State,
+      state: legacyState,
       queryReadonly: async (_schema, sql) => {
         if (/information_schema\.columns/i.test(sql)) return [];
         throw new Error('fixture_source_unavailable');
       },
     }),
-    /llm_wiki_v1_rebuild_source_failed:fixture_source_unavailable/,
+    /llm_wiki_state_rebuild_source_failed:fixture_source_unavailable/,
   );
   await assert.rejects(
     buildLlmWikiCompileReport({
@@ -316,13 +324,13 @@ async function main() {
       limit: 10,
       dryRun: true,
       llmPreview: false,
-      state: v1State,
+      state: legacyState,
       queryReadonly: async (_schema, sql) => {
         if (/information_schema\.columns/i.test(sql)) throw new Error('fixture_schema_unavailable');
         return [older, newer, newestWhitespaceVariant];
       },
     }),
-    /llm_wiki_v1_rebuild_source_failed:fixture_schema_unavailable/,
+    /llm_wiki_state_rebuild_source_failed:fixture_schema_unavailable/,
   );
 
   console.log(JSON.stringify({ ok: true, checks: 45, boundaries: 9 }, null, 2));

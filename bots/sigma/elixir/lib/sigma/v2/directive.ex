@@ -20,26 +20,33 @@ end
 defimpl Sigma.Directive.Executor, for: Sigma.Directive.ApplyFeedback do
   @moduledoc false
 
+  require Logger
+
   def execute(%{tier: 0} = dir, _ctx) do
     Sigma.V2.Archivist.log_observation(dir)
     {:ok, %{tier: 0, outcome: :observed}}
   end
 
   def execute(%{tier: 1} = dir, _ctx) do
-    case Sigma.V2.Signal.emit(%{
-           type: "sigma.advisory.#{dir.team}",
-           source: "sigma-v2",
-           specversion: "1.0",
-           data: dir.action,
-           metadata: dir.metadata
-         }) do
-      {:ok, signal_id} ->
-        Sigma.V2.Archivist.log_signal_sent(dir, signal_id)
-        {:ok, %{tier: 1, outcome: :signal_emitted, signal_id: signal_id}}
+    if Sigma.V2.Archivist.signal_already_sent?(dir) do
+      Logger.info("[Sigma.V2.Directive] 동일 의미 Signal 억제 team=#{dir.team}")
+      {:ok, %{tier: 1, outcome: :duplicate_suppressed}}
+    else
+      case Sigma.V2.Signal.emit(%{
+             type: "sigma.advisory.#{dir.team}",
+             source: "sigma-v2",
+             specversion: "1.0",
+             data: dir.action,
+             metadata: dir.metadata
+           }) do
+        {:ok, signal_id} ->
+          Sigma.V2.Archivist.log_signal_sent(dir, signal_id)
+          {:ok, %{tier: 1, outcome: :signal_emitted, signal_id: signal_id}}
 
-      {:error, reason} ->
-        Sigma.V2.Archivist.log_failure(dir, reason)
-        {:error, reason}
+        {:error, reason} ->
+          Sigma.V2.Archivist.log_failure(dir, reason)
+          {:error, reason}
+      end
     end
   end
 

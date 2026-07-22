@@ -8,6 +8,10 @@ import {
 } from './intelligent-library.js';
 import { buildLunaLearnedBiasFeedInput } from '../../shared/luna-learned-bias-feed.js';
 import { buildLunaJaenongPredictionFeedInput } from '../../shared/luna-jaenong-feed.js';
+import {
+  stableDirectiveValue,
+  stripDirectiveTransport,
+} from '../../shared/directive-semantic.js';
 
 const require = createRequire(import.meta.url);
 
@@ -111,6 +115,39 @@ function compactText(parts: unknown[]): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 8_000);
+}
+
+export function formatSigmaDirectiveText(input: {
+  team?: unknown;
+  tier?: unknown;
+  outcome?: unknown;
+  action?: unknown;
+}): string {
+  const action = stableDirectiveValue(input.action);
+  if (!action || typeof action !== 'object' || Array.isArray(action) || action.schema_version !== 'sigma.directive.v1') {
+    return compactText([input.outcome, input.action]);
+  }
+  const cadence = action.cadence && typeof action.cadence === 'object' ? action.cadence : {};
+  const report = action.report_format && typeof action.report_format === 'object' ? action.report_format : {};
+  const sections = Array.isArray(report.required_sections) ? report.required_sections.join(', ') : '';
+  const lines = [
+    `Outcome: ${String(input.outcome || 'unknown')}`,
+    `Target team: ${String(action.target_team || input.team || 'unknown')}`,
+    `Owner: ${String(action.owner || action.target_team || input.team || 'unknown')}`,
+    `Purpose: ${String(action.purpose || '')}`,
+    `Feedback type: ${String(action.feedback_type || 'general_review')}`,
+  ];
+  for (const kpi of Array.isArray(action.kpis) ? action.kpis : []) {
+    const threshold = kpi?.threshold && typeof kpi.threshold === 'object' ? kpi.threshold : {};
+    lines.push(
+      `KPI: ${String(kpi?.name || 'unknown')} | Current: ${String(kpi?.current_value ?? 'n/a')} | Threshold: ${String(threshold.operator || '?')} ${String(threshold.value ?? 'n/a')} | Unit: ${String(kpi?.unit || 'value')}`,
+    );
+  }
+  lines.push(
+    `Cadence: measure ${String(cadence.measure_every || 'unspecified')}; report ${String(cadence.report_every || 'unspecified')}`,
+    `Report: ${String(report.format || 'unspecified')}${sections ? `; sections ${sections}` : ''}`,
+  );
+  return lines.join('\n').slice(0, 8_000);
 }
 
 function buildRecord(input: {
@@ -379,20 +416,34 @@ export async function collectLibraryRecords(options: CollectLibraryRecordsOption
      LIMIT $2
   `, [String(sinceHours), limit], warnings);
   for (const row of directives) {
+    const principleCheckResult = stableDirectiveValue(row.principle_check_result) || {};
+    const rollbackSpec = stableDirectiveValue(row.rollback_spec) || {};
+    const signalId = principleCheckResult && typeof principleCheckResult === 'object'
+      ? principleCheckResult.signal_id ?? principleCheckResult.signalId
+      : undefined;
     const record = buildRecord({
       team: row.team,
       agent: 'sigma',
       sourceKind: 'sigma_directive',
       sourceId: row.id ?? row.directive_id,
       createdAt: row.executed_at,
-      text: compactText([row.outcome, row.action, row.principle_check_result, row.rollback_spec]),
+      text: formatSigmaDirectiveText({
+        team: row.team,
+        tier: row.tier,
+        outcome: row.outcome,
+        action: row.action,
+      }),
       payload: {
-        directiveId: row.directive_id,
         tier: row.tier,
         outcome: row.outcome,
         action: row.action ?? {},
-        principleCheckResult: row.principle_check_result ?? {},
-        rollbackSpec: row.rollback_spec ?? {},
+        principleCheckResult: stripDirectiveTransport(principleCheckResult),
+        rollbackSpec: stripDirectiveTransport(rollbackSpec),
+        transport: {
+          sourceRowId: row.id,
+          directiveId: row.directive_id,
+          ...(signalId ? { signalId } : {}),
+        },
       },
     });
     if (record && allowedTeams.has(record.team)) records.push(record);

@@ -172,6 +172,41 @@ defmodule Sigma.V2.Archivist do
     _ -> []
   end
 
+  @doc "같은 팀·피드백 유형의 직전 성공 Signal이 현재 의미 액션과 같은지 조회."
+  def signal_already_sent?(directive, opts \\ []) do
+    query = Keyword.get(opts, :query, &Jay.Core.Repo.query/2)
+    action = Map.get(directive, :action, %{})
+    feedback_type = action[:feedback_type] || action["feedback_type"] || "general_review"
+
+    sql = """
+    SELECT COALESCE((
+      SELECT action = $3::jsonb
+      FROM sigma_v2_directive_audit
+      WHERE team = $1
+        AND outcome = 'signal_sent'
+        AND COALESCE(action->>'feedback_type', '') = $2
+      ORDER BY executed_at DESC, id DESC
+      LIMIT 1
+    ), false)
+    """
+
+    case query.(sql, [directive.team, feedback_type, Jason.encode!(action)]) do
+      {:ok, %{rows: [[true]]}} ->
+        true
+
+      {:ok, %{rows: [[false]]}} ->
+        false
+
+      error ->
+        Logger.warning("[Sigma.V2.Archivist] signal repeat 조회 실패: #{inspect(error)}")
+        true
+    end
+  rescue
+    error ->
+      Logger.warning("[Sigma.V2.Archivist] signal repeat 조회 실패: #{inspect(error)}")
+      true
+  end
+
   @doc "Signal 수용 카운트 기록 (Tier 1 acceptance)."
   def record_acceptance(signal_id) do
     run_query(

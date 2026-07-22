@@ -36,6 +36,7 @@
     "wiki:llm": "tsx scripts/llm-wiki-compile.ts --json",
     "smoke:llm-wiki": "tsx scripts/llm-wiki-smoke.ts",
     "smoke:llm-wiki-content-dedupe": "tsx scripts/llm-wiki-content-dedupe-smoke.ts",
+    "smoke:sigma-directive-quality": "tsx scripts/sigma-directive-quality-smoke.ts",
     "dreaming:lite": "tsx scripts/sigma-dreaming-lite.ts --json",
     "smoke:dreaming-lite": "tsx scripts/sigma-dreaming-lite-smoke.ts",
     "validation:transition": "tsx scripts/runtime-sigma-validation-transition.ts --json",

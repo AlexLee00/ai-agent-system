@@ -53,7 +53,7 @@ function tagsForRecord(record: any): string[] {
   return [...tags].slice(0, 12);
 }
 
-function entryForRecord(record: any) {
+export function entryForRecord(record: any) {
   const sourceMeta = attachSourceRefToMeta({
     contentHash: record.contentHash,
     sourceId: record.sourceId,
