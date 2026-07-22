@@ -6,6 +6,7 @@
  *
  * 목적:
  *   Pickko raw order 수집을 날짜 범위로 실행하고, 5일 단위 batch마다 적재/검증 결과를 요약
+ *   운영 예약 정합용이 아닌 수동 역사 backfill 도구
  *
  * 기본 규칙:
  *   - 날짜별 수집은 collect-pickko-order-raw의 단건 수집 로직을 재사용
@@ -13,8 +14,8 @@
  *   - 각 날짜마다 저장 후 DB 재조회로 건수/합계/축별 상태 검증
  *
  * 사용 예:
- *   PICKKO_HEADLESS=1 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw-range.js --from=2026-03-16 --to=2026-03-20
- *   PICKKO_HEADLESS=1 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw-range.js --from=2025-10-01 --to=2026-03-20 --chunk-days=5 --json
+ *   PICKKO_HEADLESS=1 node --import tsx bots/reservation/scripts/collect-pickko-order-raw-range.ts --from=2026-03-16 --to=2026-03-20
+ *   PICKKO_HEADLESS=1 node --import tsx bots/reservation/scripts/collect-pickko-order-raw-range.ts --from=2025-10-01 --to=2026-03-20 --chunk-days=5 --json
  */
 
 const { getPickkoOrderRawByDate } = require('../lib/db');
@@ -24,8 +25,9 @@ const { spawn } = require('child_process');
 const argv = process.argv.slice(2);
 const collectorScript = path.join(
   __dirname,
-  '../../../dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw.js',
+  'collect-pickko-order-raw.ts',
 );
+const tsxImport = require.resolve('tsx');
 
 type StoredRow = {
   source_axis?: string;
@@ -203,7 +205,7 @@ function verifyDate(result: CollectResult, storedRows: StoredRow[]): Verificatio
 
 async function runCollectorForDate(date: string, timeoutMs: number): Promise<CollectResult> {
   return await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [collectorScript, `--date=${date}`, '--json'], {
+    const child = spawn(process.execPath, ['--import', tsxImport, collectorScript, `--date=${date}`, '--json'], {
       cwd: process.cwd(),
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],

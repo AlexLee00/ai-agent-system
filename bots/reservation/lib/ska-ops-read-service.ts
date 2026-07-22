@@ -4,6 +4,10 @@
 const kst = require('../../../packages/core/lib/kst');
 const crypto = require('node:crypto');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const {
+  assessPickkoLiveSnapshot,
+  loadPickkoLiveSnapshot,
+} = require('./pickko-live-snapshot');
 
 function addDays(dateStr, days) {
   const base = new Date(`${dateStr}T00:00:00+09:00`);
@@ -122,10 +126,11 @@ async function buildCancelPipelineStatus(args = {}, deps = {}) {
 
 async function buildReservationSyncCheck(args = {}, deps = {}) {
   const queryReadonly = deps.queryReadonly || pgPool.queryReadonly;
+  const readPickkoSnapshot = deps.readPickkoSnapshot || loadPickkoLiveSnapshot;
   const from = String(args.from || args.date || kst.today()).slice(0, 10);
   const to = String(args.to || args.date || from).slice(0, 10);
   const limit = clampLimit(args.limit, 30);
-  const [reservationRows, invalidReservationDateRows, pickkoRows] = await Promise.all([
+  const [reservationRows, invalidReservationDateRows, snapshot] = await Promise.all([
     queryReadonly('reservation', `
       SELECT id, date, start_time, end_time, room, status, pickko_status, updated_at
       FROM reservations
@@ -146,16 +151,74 @@ async function buildReservationSyncCheck(args = {}, deps = {}) {
           OR BTRIM(date::text) !~ '^\\d{4}-\\d{2}-\\d{2}$'
         )
     `),
-    queryReadonly('reservation', `
-      SELECT entry_key, use_date, use_start_time, use_end_time, room_type, room_label,
-             order_kind, raw_amount, payment_at
-      FROM pickko_order_raw
-      WHERE use_date BETWEEN $1::date AND $2::date
-        AND use_date IS NOT NULL
-      ORDER BY use_date, use_start_time, room_type, entry_key
-      LIMIT 500
-    `, [from, to]),
+    Promise.resolve(readPickkoSnapshot()),
   ]);
+
+  const assessment = assessPickkoLiveSnapshot(snapshot, {
+    from,
+    to,
+    nowMs: deps.nowMs,
+    maxAgeMs: deps.maxSnapshotAgeMs,
+  });
+  const invalidReservationDates = Number(invalidReservationDateRows[0]?.count || 0);
+  if (!assessment.usable) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: assessment.reason,
+      checkedAt: kst.datetimeStr(),
+      mode: 'read_only_advisory',
+      from,
+      to,
+      evidence: {
+        source: 'pickko_live_snapshot',
+        collectedAt: snapshot?.collectedAt || null,
+        coverage: snapshot?.coverage || null,
+        ageMs: assessment.ageMs ?? null,
+      },
+      counts: {
+        reservations: reservationRows.length,
+        comparableReservations: 0,
+        pickkoRows: 0,
+        naverCompletedMissingPickko: 0,
+        cancelledButPickkoEvidence: 0,
+        pickkoOnly: 0,
+        pendingSnapshotRefresh: reservationRows.length,
+        invalidReservationDates,
+      },
+      hygiene: {
+        invalidReservationDates,
+        invalidReservationDatePolicy: 'excluded_from_sync_check',
+      },
+      naverCompletedMissingPickko: [],
+      cancelledButPickkoEvidence: [],
+      pickkoOnly: [],
+      pendingSnapshotRefresh: reservationRows.slice(0, limit).map(compactReservation),
+    };
+  }
+
+  const pickkoRows = snapshot.entries
+    .filter((entry) => entry.date >= from && entry.date <= to)
+    .map((entry) => ({
+      entry_key: `${entry.date}|${entry.room}|${entry.start}|${entry.end || ''}`,
+      use_date: entry.date,
+      use_start_time: entry.start,
+      use_end_time: entry.end,
+      room_type: entry.room,
+      room_label: entry.room,
+      order_kind: 'paid_snapshot',
+      raw_amount: 0,
+      payment_at: null,
+  }));
+  const comparableReservationRows = reservationRows.filter((row) => {
+    const updatedAtMs = Date.parse(row.updated_at);
+    return Number.isFinite(updatedAtMs) && updatedAtMs <= assessment.collectedAtMs;
+  });
+  const pendingSnapshotRefreshRows = reservationRows
+    .filter((row) => !comparableReservationRows.includes(row));
+  const pendingSnapshotRefresh = pendingSnapshotRefreshRows
+    .slice(0, limit)
+    .map(compactReservation);
 
   const pickkoBySlot = new Map();
   for (const row of pickkoRows) {
@@ -170,11 +233,11 @@ async function buildReservationSyncCheck(args = {}, deps = {}) {
     reservationBySlot.get(key).push(row);
   }
 
-  const naverCompletedMissingPickko = reservationRows
+  const naverCompletedMissingPickko = comparableReservationRows
     .filter((row) => row.status === 'completed' && !pickkoBySlot.has(slotKey(row)))
     .slice(0, limit)
     .map(compactReservation);
-  const cancelledButPickkoEvidence = reservationRows
+  const cancelledButPickkoEvidence = comparableReservationRows
     .filter((row) => row.status === 'cancelled' && pickkoBySlot.has(slotKey(row)))
     .slice(0, limit)
     .map((row) => ({ reservation: compactReservation(row), pickkoEvidence: pickkoBySlot.get(slotKey(row)).slice(0, 3).map(compactPickko) }));
@@ -185,25 +248,35 @@ async function buildReservationSyncCheck(args = {}, deps = {}) {
 
   return {
     ok: true,
+    skipped: false,
     checkedAt: kst.datetimeStr(),
     mode: 'read_only_advisory',
     from,
     to,
+    evidence: {
+      source: 'pickko_live_snapshot',
+      collectedAt: snapshot.collectedAt,
+      coverage: snapshot.coverage,
+      ageMs: assessment.ageMs,
+    },
     counts: {
       reservations: reservationRows.length,
+      comparableReservations: comparableReservationRows.length,
       pickkoRows: pickkoRows.length,
       naverCompletedMissingPickko: naverCompletedMissingPickko.length,
       cancelledButPickkoEvidence: cancelledButPickkoEvidence.length,
       pickkoOnly: pickkoOnly.length,
-      invalidReservationDates: Number(invalidReservationDateRows[0]?.count || 0),
+      pendingSnapshotRefresh: pendingSnapshotRefreshRows.length,
+      invalidReservationDates,
     },
     hygiene: {
-      invalidReservationDates: Number(invalidReservationDateRows[0]?.count || 0),
+      invalidReservationDates,
       invalidReservationDatePolicy: 'excluded_from_sync_check',
     },
     naverCompletedMissingPickko,
     cancelledButPickkoEvidence,
     pickkoOnly,
+    pendingSnapshotRefresh,
   };
 }
 

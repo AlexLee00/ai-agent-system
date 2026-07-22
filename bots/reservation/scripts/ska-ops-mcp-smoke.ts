@@ -2,7 +2,9 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('node:fs');
 const http = require('node:http');
+const path = require('node:path');
 const {
   SKA_OPS_MCP_TOOLS,
   callSkaOpsTool,
@@ -12,9 +14,9 @@ const {
 function createQueryReadonlyMock() {
   const calls = [];
   const reservations = [
-    { id: 1, date: '2026-07-03', start_time: '10:00', end_time: '11:00', room: 'A1', status: 'completed', pickko_status: null },
-    { id: 2, date: '2026-07-03', start_time: '11:00', end_time: '12:00', room: 'A2', status: 'completed', pickko_status: 'paid' },
-    { id: 3, date: '2026-07-03', start_time: '12:00', end_time: '13:00', room: 'B', status: 'cancelled', pickko_status: null },
+    { id: 1, date: '2026-07-03', start_time: '10:00', end_time: '11:00', room: 'A1', status: 'completed', pickko_status: null, updated_at: '2026-07-03T02:00:00.000Z' },
+    { id: 2, date: '2026-07-03', start_time: '11:00', end_time: '12:00', room: 'A2', status: 'completed', pickko_status: 'paid', updated_at: '2026-07-03T02:00:00.000Z' },
+    { id: 3, date: '2026-07-03', start_time: '12:00', end_time: '13:00', room: 'B', status: 'cancelled', pickko_status: null, updated_at: '2026-07-03T02:00:00.000Z' },
   ];
   const pickkoRows = [
     { entry_key: 'pk-a2', use_date: '2026-07-03', use_start_time: '11:00', use_end_time: '12:00', room_type: 'A2', order_kind: 'booking', raw_amount: 10000 },
@@ -23,6 +25,7 @@ function createQueryReadonlyMock() {
   ];
   return {
     calls,
+    pickkoRows,
     async queryReadonly(schema, sql, params = []) {
       calls.push({ schema, sql, params });
       assert.equal(schema, 'reservation');
@@ -45,9 +48,7 @@ function createQueryReadonlyMock() {
         assert.match(sql, /BTRIM\(date::text\) BETWEEN \$1 AND \$2/);
         return reservations;
       }
-      if (/FROM pickko_order_raw/i.test(sql)) {
-        return pickkoRows;
-      }
+      assert.equal(/FROM pickko_order_raw/i.test(sql), false);
       throw new Error(`unexpected query: ${sql}`);
     },
   };
@@ -98,6 +99,12 @@ function getJson({ port, path = '/health' }) {
 }
 
 async function main() {
+  const plist = fs.readFileSync(path.join(__dirname, '../launchd/ai.ska.ops-mcp.plist'), 'utf8');
+  assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/);
+  assert.match(plist, /mcp\/ska-ops-mcp\/src\/server\.ts/);
+  assert.equal(plist.includes('/bin/bash'), false);
+  assert.equal(plist.includes('npm --prefix'), false);
+
   assert.deepStrictEqual(
     SKA_OPS_MCP_TOOLS.map((tool) => tool.name),
     ['cancel-pipeline-status', 'reservation-sync-check'],
@@ -106,6 +113,21 @@ async function main() {
   const mock = createQueryReadonlyMock();
   const deps = {
     queryReadonly: mock.queryReadonly,
+    readPickkoSnapshot: () => ({
+      version: 1,
+      collectedAt: '2026-07-03T03:00:00.000Z',
+      coverage: { from: '2026-07-03', to: '2026-07-03', complete: true },
+      fetchOk: true,
+      entryCount: mock.pickkoRows.length,
+      entries: mock.pickkoRows.map((row) => ({
+        date: row.use_date,
+        start: row.use_start_time,
+        end: row.use_end_time,
+        room: row.room_type,
+        status: 'paid',
+      })),
+    }),
+    nowMs: Date.parse('2026-07-03T04:00:00.000Z'),
   };
 
   const pipeline = await callSkaOpsTool('cancel-pipeline-status', {}, deps);
@@ -151,7 +173,7 @@ async function main() {
 
   console.log(JSON.stringify({
     ok: true,
-    tests: ['tools', 'pipeline-status', 'reservation-sync-check', 'http-json-rpc', 'read-only-sql'],
+    tests: ['tools', 'pipeline-status', 'reservation-sync-check', 'http-json-rpc', 'read-only-sql', 'direct-launchd-supervision'],
     queryCalls: mock.calls.length,
   }));
 }

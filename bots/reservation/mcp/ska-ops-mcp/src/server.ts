@@ -18,7 +18,7 @@ const SKA_OPS_MCP_TOOLS = [
   },
   {
     name: 'reservation-sync-check',
-    description: 'Compare reservation DB rows with pickko_order_raw evidence for a date/range. Read-only advisory.',
+    description: 'Compare reservation DB rows with a fresh, complete Pickko monitor snapshot. Read-only advisory.',
   },
 ];
 
@@ -94,8 +94,25 @@ async function startServer({ port = null, host = DEFAULT_HOST, deps = {} } = {})
   return { server, port: address.port, host };
 }
 
+function installShutdownHandlers(server) {
+  let stopping = false;
+  const shutdown = () => {
+    if (stopping) return;
+    stopping = true;
+    const forceExit = setTimeout(() => process.exit(0), 5000);
+    forceExit.unref();
+    server.close(() => {
+      clearTimeout(forceExit);
+      process.exit(0);
+    });
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+}
+
 async function main() {
-  const { port, host } = await startServer();
+  const { server, port, host } = await startServer();
+  installShutdownHandlers(server);
   console.log(JSON.stringify({ ok: true, service: 'ska-ops-mcp', host, port, mode: 'read_only' }));
 }
 
@@ -104,6 +121,7 @@ module.exports = {
   callSkaOpsTool,
   createSkaOpsMcpServer,
   handleRpc,
+  installShutdownHandlers,
   startServer,
 };
 

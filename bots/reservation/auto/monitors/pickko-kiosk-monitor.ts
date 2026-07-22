@@ -47,6 +47,7 @@ const { createKioskCliService } = require('../../lib/kiosk-cli-service');
 const { createKioskMainService } = require('../../lib/kiosk-main-service');
 const { createNaverListScrapeService } = require('../../lib/naver-list-scrape-service');
 const { createSkaReporter } = require('../../lib/ska-failure-reporter');
+const { persistPickkoLiveSnapshot } = require('../../lib/pickko-live-snapshot');
 
 const SECRETS = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
@@ -251,6 +252,7 @@ const kioskPickkoCycleService = createKioskPickkoCycleService({
   compareEntrySequence,
   maskName,
   maskPhone,
+  persistPickkoLiveSnapshot,
 });
 
 const naverListScrapeService = createNaverListScrapeService({

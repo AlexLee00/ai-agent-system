@@ -19,6 +19,7 @@
     "smoke:cancel-retry-queue": "tsx scripts/cancel-retry-queue-smoke.ts",
     "smoke:pickko-payment-browser": "tsx scripts/pickko-payment-browser-hard-smoke.ts",
     "smoke:pickko-member-select-timeout-recovery": "tsx scripts/pickko-member-select-timeout-recovery-smoke.ts",
+    "smoke:pickko-live-sync-snapshot": "tsx scripts/pickko-live-sync-snapshot-smoke.ts",
     "smoke:ska-ops-mcp": "tsx scripts/ska-ops-mcp-smoke.ts",
     "smoke:ska-cancel-ops-advisory": "tsx scripts/ska-cancel-ops-advisory-smoke.ts"
   },

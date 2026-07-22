@@ -6,6 +6,7 @@
  *
  * 목적:
  *   Pickko 관리자에서 날짜 단위 raw order 메타를 수집해 reservation.pickko_order_raw에 저장
+ *   운영 예약 정합은 이 역사 적재가 아니라 pickko-live-sync-snapshot을 사용
  *
  * 기본 저장 규칙:
  *   - 일반석: payment_day 기준 direct 거래행 저장
@@ -13,8 +14,8 @@
  *   - 스터디룸은 use_day 기준 예약행만 저장
  *
  * 사용 예:
- *   PICKKO_HEADLESS=1 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20
- *   PICKKO_HEADLESS=1 node /Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/collect-pickko-order-raw.js --date=2026-03-20 --json --no-store
+ *   PICKKO_HEADLESS=1 node --import tsx bots/reservation/scripts/collect-pickko-order-raw.ts --date=2026-03-20
+ *   PICKKO_HEADLESS=1 node --import tsx bots/reservation/scripts/collect-pickko-order-raw.ts --date=2026-03-20 --json --no-store
  */
 
 const puppeteer = require('puppeteer');

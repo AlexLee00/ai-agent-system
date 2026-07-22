@@ -24,6 +24,7 @@ export type CreateKioskPickkoCycleServiceDeps = {
   compareEntrySequence: CompareEntrySequenceFn;
   maskName: (name: string) => string;
   maskPhone: (phone: string) => string;
+  persistPickkoLiveSnapshot?: (payload: Record<string, any>) => any;
 };
 
 export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServiceDeps) {
@@ -34,6 +35,7 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
     fetchPickkoEntries,
     maskName,
     maskPhone,
+    persistPickkoLiveSnapshot,
   } = deps;
 
   const SOURCE_SCAN_DAYS_AHEAD = Number(process.env.KIOSK_SOURCE_SCAN_DAYS_AHEAD || 31);
@@ -200,6 +202,23 @@ export function createKioskPickkoCycleService(deps: CreateKioskPickkoCycleServic
       && (todayPaidResult.fetchOk ?? true)
       && (paidResult.fetchOk ?? true);
     const kioskEntries = paidResult.entries;
+
+    if (persistPickkoLiveSnapshot) {
+      try {
+        const snapshotResult = await Promise.resolve(persistPickkoLiveSnapshot({
+          collectedAt: new Date().toISOString(),
+          coverageFrom: today,
+          coverageTo: endDate,
+          complete: (paidResult.fetchOk ?? true) && paidResult.skippedDateFallback !== true,
+          fetchOk: paidResult.fetchOk ?? true,
+          entries: kioskEntries,
+        }));
+        log(`[Pickko snapshot] ${snapshotResult?.trustedUpdated ? 'trusted 갱신' : 'partial 시도 기록'} (${kioskEntries.length}건)`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log(`[Pickko snapshot] 기록 실패 — 모니터 계속 진행: ${message}`);
+      }
+    }
 
     for (const entry of kioskEntries) {
       log(`  • ${maskName(entry.name)} ${maskPhone(entry.phoneRaw)} | ${entry.date} ${entry.start}~${entry.end} | ${entry.room} | ${entry.amount}원`);
