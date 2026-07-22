@@ -20,6 +20,7 @@
     "observation:7day:telegram": "tsx scripts/runtime-sigma-7day-completion-report.ts --telegram --json",
     "consistency:monitor": "tsx scripts/runtime-sigma-consistency-monitor.ts --json",
     "luna:feed": "tsx scripts/runtime-sigma-luna-feed.ts --json",
+    "smoke:luna-feed-runtime": "tsx scripts/sigma-luna-feed-runtime-smoke.ts",
     "luna:feedback": "tsx scripts/runtime-sigma-luna-feedback.ts --json",
     "luna:vault-feed": "tsx scripts/runtime-sigma-luna-vault-feed.ts --json",
     "docs:vault-feed": "tsx scripts/runtime-sigma-docs-vault-feed.ts --json",

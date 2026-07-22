@@ -20,7 +20,7 @@ function postJson(url, body) {
   }).then(async (res) => ({ status: res.status, body: await res.json() }));
 }
 
-function mockDeps() {
+function mockDeps({ aggregateRows = null, aggregateError = false } = {}) {
   const calls = [];
   return {
     calls,
@@ -28,7 +28,7 @@ function mockDeps() {
     queryReadonly: async (schema, sql, params = []) => {
       calls.push({ schema, sql, params });
       assert.equal(schema, 'sigma');
-      assert.match(String(sql).trim(), /^SELECT/i);
+      assert.match(String(sql).trim(), /^(SELECT|WITH)\b/i);
       assert.equal(/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE|MERGE)\b/i.test(sql), false);
       if (String(sql).includes('information_schema.columns')) {
         return [
@@ -48,13 +48,21 @@ function mockDeps() {
           count: 2,
         }];
       }
+      if (String(sql).includes('AS validated') && String(sql).includes('AS contradicted')) {
+        if (aggregateError) throw new Error('aggregate unavailable');
+        return aggregateRows || [{ team: 'luna', total: 7, validated: 4, contradicted: 1, resolved: 6, accuracy_samples: 5 }];
+      }
       return [
         {
           id: 'pred-1',
           title: 'Luna forward view',
           source: 'luna',
           file_path: 'library/luna/pred.md',
-          meta: { team: 'luna', libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'validated', prediction_state: 'forward' } },
+          meta: {
+            team: 'blog',
+            source_ref: { team: 'luna', table: 'investment.trade_journal', id: 'TRD-1' },
+            libraryCoords: { abstraction_level: 'L0', time_stage: 'raw', validation_state: 'validated', prediction_state: 'forward' },
+          },
           created_at: '2026-07-03T00:00:00.000Z',
           abstraction_level: 'L0',
           time_stage: 'raw',
@@ -80,20 +88,75 @@ async function assertDirectTools() {
   const search = await callSigmaLibraryTool('library-search', {
     query: '다음 주 전망',
     layerSearchEnabled: true,
+    teamNamespaces: ['luna'],
+    coordFilters: { validation_state: ['validated'] },
+    strictLayerFilters: true,
+    groupBySourceRef: true,
   }, deps);
   assert.equal(search.ok, true);
   assert.equal(search.mode, 'read_only_search');
   assert.equal(search.routing.intent, 'prediction');
+  const searchCall = deps.calls.find((call) => /FROM sigma\.vault_entries/.test(call.sql));
+  assert.match(searchCall.sql, /meta->>'team'/);
+  assert.match(searchCall.sql, /meta->'source_refs'/);
+  assert.match(searchCall.sql, /COALESCE\(status, 'captured'\) <> 'archived'/);
+  assert.match(searchCall.sql, /validation_state/);
+  assert.match(searchCall.sql, /ROW_NUMBER\(\) OVER/);
+  assert.match(searchCall.sql, /meta->'source_ref'->>'team'/);
+  assert.match(searchCall.sql, /meta->'source_ref'->>'table'/);
+  assert.match(searchCall.sql, /meta->'source_ref'->>'id'/);
+  assert.equal(searchCall.params.some((param) => Array.isArray(param) && param.includes('luna')), true);
+  assert.equal(searchCall.params.some((param) => Array.isArray(param) && param.includes('validated')), true);
 
   const predictions = await callSigmaLibraryTool('library-predictions', { limit: 10 }, deps);
   assert.equal(predictions.ok, true);
   assert.equal(predictions.predictions.length, 1);
+  assert.equal(predictions.predictions[0].team, 'luna');
   assert.equal(predictions.accuracy[0].team, 'luna');
-  assert.equal(predictions.accuracy[0].accuracy, 1);
+  assert.equal(predictions.accuracy[0].total, 7);
+  assert.equal(predictions.accuracy[0].resolved, 6);
+  assert.equal(predictions.accuracy[0].accuracySamples, 5);
+  assert.equal(predictions.accuracy[0].hits, 4);
+  assert.equal(predictions.accuracy[0].misses, 1);
+  assert.equal(predictions.accuracy[0].accuracy, 0.8);
+  assert.deepEqual(predictions.accuracyStatus, {
+    skipped: false,
+    reason: null,
+    source: 'full_aggregate',
+  });
+  const accuracyCall = deps.calls.find((call) => /AS validated/.test(call.sql));
+  assert.equal(Boolean(accuracyCall), true);
+  assert.doesNotMatch(accuracyCall.sql, /LIMIT \$1/);
+  assert.match(accuracyCall.sql, /prediction_outcome/);
+  assert.match(accuracyCall.sql, /= 'resolved'/);
+  assert.ok(accuracyCall.sql.indexOf("meta->'source_ref'->>'team'") < accuracyCall.sql.indexOf("meta->>'team'"));
+  const predictionDetailCall = deps.calls.find((call) => /ORDER BY created_at DESC\s+LIMIT \$1/.test(call.sql));
+  assert.match(predictionDetailCall.sql, /COALESCE\(status, 'captured'\) <> 'archived'/);
+
+  const unresolvedDeps = mockDeps({
+    aggregateRows: [{ team: 'luna', total: 5, validated: 0, contradicted: 0, resolved: 0, accuracy_samples: 0 }],
+  });
+  const unresolved = await callSigmaLibraryTool('library-predictions', { limit: 10 }, unresolvedDeps);
+  assert.equal(unresolved.predictions[0].coords.validation_state, 'validated');
+  assert.equal(unresolved.predictions[0].coords.prediction_state, 'forward');
+  assert.equal(unresolved.accuracy[0].accuracySamples, 0);
+  assert.equal(unresolved.accuracy[0].accuracy, null);
+
+  const aggregateFailureDeps = mockDeps({ aggregateError: true });
+  const aggregateFailure = await callSigmaLibraryTool('library-predictions', { limit: 1 }, aggregateFailureDeps);
+  assert.equal(aggregateFailure.predictions.length, 1);
+  assert.deepEqual(aggregateFailure.accuracy, []);
+  assert.deepEqual(aggregateFailure.accuracyStatus, {
+    skipped: true,
+    reason: 'prediction_aggregate_query_failed',
+    source: null,
+  });
 
   const coords = await callSigmaLibraryTool('library-coords', { limit: 10 }, deps);
   assert.equal(coords.ok, true);
   assert.equal(coords.rows[0].count, 2);
+  const coordCall = deps.calls.find((call) => /GROUP BY 1, 2, 3, 4/.test(call.sql));
+  assert.match(coordCall.sql, /COALESCE\(status, 'captured'\) <> 'archived'/);
   assert.ok(deps.calls.length >= 4);
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sigma-library-mcp-'));

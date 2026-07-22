@@ -215,7 +215,7 @@ export function buildDreamingLitePlan({
         sourceEntryIds: cluster.sourceEntryIds,
       },
     })),
-    decayPlans: decayRows.map((row) => ({ id: row.id, title: row.title, nextTimeStage: 'decayed' })),
+    decayPlans: decayRows.map((row) => ({ id: row.id, title: row.title, nextTimeStage: 'dormant' })),
     duePlans: dueRows.map((row) => ({ id: row.id, title: row.title, nextPredictionState: 'due', predictionHorizon: row.prediction_horizon || rowCoords(row).prediction_horizon })),
   };
 }
@@ -318,6 +318,8 @@ async function updateEntryCoords(id, patch, { pg = pgPool, coordColumns = null }
       params.push(patch[key]);
       sets.push(`${key} = $${params.length}`);
     }
+    params.push(JSON.stringify(patch || {}));
+    sets.push(`meta = jsonb_set(COALESCE(meta, '{}'::jsonb), '{libraryCoords}', COALESCE(meta->'libraryCoords', '{}'::jsonb) || $${params.length}::jsonb, true)`);
     params.push(id);
     if (sets.length) {
       await pg.query('sigma', `UPDATE sigma.vault_entries SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params);
@@ -354,7 +356,7 @@ export async function applyDreamingLitePlan(plan, { pg = pgPool } = {}) {
     }));
   }
   for (const item of plan.decayPlans || []) {
-    await updateEntryCoords(item.id, { time_stage: 'decayed' }, { pg, coordColumns });
+    await updateEntryCoords(item.id, { time_stage: 'dormant' }, { pg, coordColumns });
   }
   for (const item of plan.duePlans || []) {
     await updateEntryCoords(item.id, { prediction_state: 'due' }, { pg, coordColumns });

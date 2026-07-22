@@ -56,6 +56,83 @@ defmodule Sigma.V2.Phase2Test do
       assert is_list(items)
     end
 
+    test "pending_items는 Postgrex UUID와 시간을 JSON-safe 값으로 변환" do
+      uuid = Ecto.UUID.generate()
+      {:ok, dumped_uuid} = Ecto.UUID.dump(uuid)
+      query = fn _sql, [5] ->
+        {:ok,
+         %{
+           columns: ["id", "directive_id", "tier", "team", "action", "enqueued_at", "status"],
+           rows: [[1, dumped_uuid, 3, "blog", %{}, ~N[2026-07-06 00:00:00], "pending"]]
+         }}
+      end
+
+      assert [%{directive_id: ^uuid, enqueued_at: "2026-07-06T00:00:00"}] =
+               Sigma.V2.Mailbox.pending_items(limit: 5, query: query)
+    end
+
+    test "동일 pending directive는 새 row 대신 기존 directive_id를 재사용" do
+      uuid = Ecto.UUID.generate()
+      {:ok, dumped_uuid} = Ecto.UUID.dump(uuid)
+
+      query = fn sql, ["blog", 3, action_json] ->
+        assert Jason.decode!(action_json) == %{"type" => "config_change"}
+
+        if sql =~ "pg_advisory_xact_lock" do
+          {:ok, %{rows: [[nil]]}}
+        else
+          assert sql =~ "status = 'pending'"
+          {:ok, %{rows: [[dumped_uuid]]}}
+        end
+      end
+
+      directive = %{team: "blog", tier: 3, action: %{type: "config_change"}}
+      assert {:ok, ^uuid, :duplicate_suppressed} =
+               Sigma.V2.Mailbox.enqueue_with_status(directive, query: query)
+
+      assert {:ok, ^uuid} = Sigma.V2.Mailbox.enqueue(directive, query: query)
+    end
+
+    test "enqueue는 transaction advisory lock 뒤에 중복 확인과 insert를 수행" do
+      parent = self()
+
+      transaction = fn callback ->
+        send(parent, :transaction_started)
+        {:ok, callback.()}
+      end
+
+      query = fn sql, params ->
+        cond do
+          sql =~ "pg_advisory_xact_lock" ->
+            send(parent, {:lock, params})
+            {:ok, %{rows: [[nil]]}}
+
+          sql =~ "SELECT directive_id" ->
+            send(parent, :duplicate_checked)
+            {:ok, %{rows: []}}
+
+          sql =~ "INSERT INTO sigma_v2_mailbox" ->
+            send(parent, :inserted)
+            {:ok, %{rows: []}}
+        end
+      end
+
+      directive = %{team: "blog", tier: 3, action: %{type: "config_change"}}
+
+      assert {:ok, directive_id, :inserted} =
+               Sigma.V2.Mailbox.enqueue_with_status(directive,
+                 query: query,
+                 transaction: transaction
+               )
+
+      assert is_binary(directive_id)
+      assert_receive :transaction_started
+      assert_receive {:lock, ["blog", 3, action_json]}
+      assert Jason.decode!(action_json) == %{"type" => "config_change"}
+      assert_receive :duplicate_checked
+      assert_receive :inserted
+    end
+
     test "stale_pending_summary/1은 health용 정체 요약을 반환" do
       summary = Sigma.V2.Mailbox.stale_pending_summary(24)
       assert is_map(summary)

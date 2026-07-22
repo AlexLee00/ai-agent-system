@@ -58,6 +58,14 @@ defmodule Sigma.V2.SelfRewardingTest do
       System.delete_env("SIGMA_SELF_REWARDING_ENABLED")
     end
 
+    test "중복 억제 결과는 Self-Rewarding 분모에서 제외됨" do
+      assert [%{status: :ok}] =
+               Sigma.V2.MapeKLoop.actionable_results([
+                 %{status: :suppressed},
+                 %{status: :ok}
+               ])
+    end
+
     test "evaluate_week/0 는 DB 없어도 :ok 반환" do
       System.put_env("SIGMA_SELF_REWARDING_ENABLED", "true")
       result = Sigma.V2.SelfRewarding.evaluate_week()

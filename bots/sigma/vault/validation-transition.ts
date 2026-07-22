@@ -65,7 +65,7 @@ function normalizePolarity(value) {
   return 'neutral';
 }
 
-function normalizeLessonKey(value) {
+export function normalizeLessonKey(value) {
   return String(value || '')
     .toLowerCase()
     .replace(/[^\u3131-\uD79Da-z0-9]+/gi, ' ')
@@ -80,10 +80,26 @@ function entryLessonKey(row = {}, trigger = {}) {
     trigger.lessonKey
     || trigger.lesson
     || trigger.evidence?.lesson
+    || meta.validation_lesson_key
     || meta.lesson
     || meta.titlePattern?.label
     || row.title
     || row.file_path
+  );
+}
+
+function valueEquals(left, right) {
+  if (left === right) return true;
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function changedPatch(current = {}, desired = {}) {
+  return Object.fromEntries(
+    Object.entries(desired || {}).filter(([key, value]) => !valueEquals(current?.[key], value)),
   );
 }
 
@@ -209,13 +225,14 @@ export function buildPredictionLedgerTransitionPlan({ rows = [], now = new Date(
 
 export function buildTeamTransitionPlan({
   vaultRows = [],
+  validatedHistoryRows = [],
   triggers = [],
   minPromotionRepeats = 3,
   predictionEnabled = false,
   now = new Date(),
 } = {}) {
   const rowsByRef = new Map();
-  const normalizedRows = (vaultRows || []).map((row) => {
+  const normalizeTransitionRow = (row, indexSourceRefs = false) => {
     const meta = parseMeta(row.meta);
     const sourceRefs = [...new Map([
       extractSourceRef(row),
@@ -223,13 +240,17 @@ export function buildTeamTransitionPlan({
     ].filter(Boolean).map((ref) => [sourceRefKey(ref), ref])).values()];
     const sourceRef = sourceRefs[0] || null;
     const refKey = sourceRefKey(sourceRef);
-    const normalized = { ...row, sourceRef, sourceRefs, refKey, coords: rowCoords(row) };
-    for (const ref of sourceRefs) {
-      const key = sourceRefKey(ref);
-      if (key && !rowsByRef.has(key)) rowsByRef.set(key, normalized);
+    const normalized = { ...row, parsedMeta: meta, sourceRef, sourceRefs, refKey, coords: rowCoords(row) };
+    if (indexSourceRefs) {
+      for (const ref of sourceRefs) {
+        const key = sourceRefKey(ref);
+        if (key && !rowsByRef.has(key)) rowsByRef.set(key, normalized);
+      }
     }
     return normalized;
-  });
+  };
+  const normalizedRows = (vaultRows || []).map((row) => normalizeTransitionRow(row, true));
+  const normalizedHistoryRows = (validatedHistoryRows || []).map((row) => normalizeTransitionRow(row));
 
   const plans = (triggers || []).map((trigger) => {
     const sourceRef = normalizeSourceRef(trigger.source_ref || trigger.sourceRef || trigger);
@@ -242,13 +263,19 @@ export function buildTeamTransitionPlan({
         ? 'contradicted'
         : null;
     const lessonKey = entryLessonKey(row || {}, trigger);
-    const nextCoords = row && nextValidationState
-      ? { validation_state: nextValidationState }
-      : null;
+    const desiredCoords = {};
+    if (row && nextValidationState && row.coords.validation_state !== nextValidationState) {
+      desiredCoords.validation_state = nextValidationState;
+    }
     const pAxisOutcome = predictionEnabled && row?.coords?.prediction_state === 'due'
       ? predictionOutcomeForValidation(nextValidationState)
       : null;
-    return {
+    if (pAxisOutcome) desiredCoords.prediction_state = 'resolved';
+    const nextCoords = Object.keys(desiredCoords).length ? desiredCoords : null;
+    const lessonMetaPatch = row && nextCoords && lessonKey
+      ? changedPatch(row.parsedMeta, { validation_lesson_key: lessonKey })
+      : {};
+    const planItem = {
       id: row?.id || null,
       title: row?.title || trigger.title || sourceRef?.id || 'unmatched trigger',
       sourceRef,
@@ -263,11 +290,9 @@ export function buildTeamTransitionPlan({
         evidence: trigger.evidence || {},
       },
       lessonKey,
-      apply: Boolean(row && nextCoords),
-      nextCoords: nextCoords && pAxisOutcome
-        ? { ...nextCoords, prediction_state: 'resolved' }
-        : nextCoords,
-      metaPatch: {},
+      apply: Boolean(row && (nextCoords || Object.keys(lessonMetaPatch).length > 0)),
+      nextCoords,
+      metaPatch: lessonMetaPatch,
       reason: row
         ? `sigma_5axis_${polarity}`
         : 'source_ref_unmatched',
@@ -280,38 +305,67 @@ export function buildTeamTransitionPlan({
           }
         : null,
     };
+    Object.defineProperty(planItem, 'currentMeta', {
+      value: row?.parsedMeta || {},
+      enumerable: false,
+    });
+    return planItem;
   });
 
-  const repeatCounts = new Map();
-  for (const row of normalizedRows) {
+  const validatedIdsByLesson = new Map();
+  const repeatRows = [...new Map(
+    [...normalizedHistoryRows, ...normalizedRows]
+      .filter((row) => row.id != null)
+      .map((row) => [String(row.id), row]),
+  ).values()];
+  for (const row of repeatRows) {
     const key = entryLessonKey(row, {});
     if (!key || row.coords.validation_state !== 'validated') continue;
-    repeatCounts.set(key, (repeatCounts.get(key) || 0) + 1);
+    const ids = validatedIdsByLesson.get(key) || new Set();
+    ids.add(String(row.id));
+    validatedIdsByLesson.set(key, ids);
   }
   for (const item of plans) {
-    if (!item.lessonKey || item.trigger.polarity !== 'positive' || !item.matched) continue;
-    repeatCounts.set(item.lessonKey, (repeatCounts.get(item.lessonKey) || 0) + 1);
+    if (!item.lessonKey || !item.matched) continue;
+    const ids = validatedIdsByLesson.get(item.lessonKey) || new Set();
+    if (item.trigger.polarity === 'positive') ids.add(String(item.id));
+    if (item.trigger.polarity === 'negative') ids.delete(String(item.id));
+    validatedIdsByLesson.set(item.lessonKey, ids);
   }
   for (const item of plans) {
-    const count = repeatCounts.get(item.lessonKey) || 0;
+    const count = validatedIdsByLesson.get(item.lessonKey)?.size || 0;
     const promotionEligible = item.trigger.polarity === 'positive';
     if (promotionEligible && item.matched && item.lessonKey && count >= minPromotionRepeats) {
-      item.metaPatch = {
-        ...item.metaPatch,
+      const promotionPatch = changedPatch(item.currentMeta, {
         promotion_candidate: true,
         promotion_candidate_reason: 'validated_repeat_threshold',
         promotion_candidate_count: count,
-      };
-      item.apply = true;
+      });
+      item.metaPatch = { ...item.metaPatch, ...promotionPatch };
+      item.apply = item.apply || Object.keys(promotionPatch).length > 0;
+    } else if (
+      item.matched
+      && item.currentMeta?.promotion_candidate === true
+      && (item.trigger.polarity === 'negative' || (promotionEligible && count < minPromotionRepeats))
+    ) {
+      const promotionPatch = changedPatch(item.currentMeta, {
+        promotion_candidate: false,
+        promotion_candidate_reason: item.trigger.polarity === 'negative'
+          ? 'validation_contradicted'
+          : 'validated_repeat_below_threshold',
+        promotion_candidate_count: count,
+      });
+      item.metaPatch = { ...item.metaPatch, ...promotionPatch };
+      item.apply = item.apply || Object.keys(promotionPatch).length > 0;
     }
     if (item.pAxis?.linked) {
-      item.metaPatch = {
-        ...item.metaPatch,
+      const predictionPatch = changedPatch(item.currentMeta, {
         prediction_outcome: item.pAxis.outcome,
         prediction_resolved_at: item.pAxis.resolvedAt,
         prediction_resolved_by: 'sigma_5axis_validation_transition',
-      };
-      item.apply = true;
+      });
+      item.metaPatch = { ...item.metaPatch, ...predictionPatch };
+      item.apply = item.apply || Object.keys(predictionPatch).length > 0;
     }
   }
 
@@ -463,6 +517,39 @@ export async function fetchVaultRowsForSourceRefs({ sourceRefs = [], limit = 500
   return Array.isArray(rows) ? rows : rows?.rows ?? [];
 }
 
+export async function fetchValidatedVaultRows({ lessonKeys = [], limit = 5000, queryReadonly = pgPool.queryReadonly } = {}) {
+  const normalizedLessonKeys = [...new Set((lessonKeys || []).map(normalizeLessonKey).filter(Boolean))].slice(0, 500);
+  if (normalizedLessonKeys.length === 0) return [];
+  const coordColumns = await detectCoordColumns(queryReadonly);
+  const coordSelect = coordColumns.size ? `, ${[...coordColumns].join(', ')}` : '';
+  const validationExpr = coordColumns.has('validation_state')
+    ? "COALESCE(validation_state, meta->'libraryCoords'->>'validation_state', 'unverified')"
+    : "COALESCE(meta->'libraryCoords'->>'validation_state', 'unverified')";
+  const rows = await queryReadonly('sigma', `
+    SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
+    FROM sigma.vault_entries
+    WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
+      AND ${validationExpr} = 'validated'
+      AND LEFT(TRIM(REGEXP_REPLACE(
+            LOWER(COALESCE(
+              NULLIF(meta->>'validation_lesson_key', ''),
+              NULLIF(meta->>'lesson', ''),
+              NULLIF(meta->'titlePattern'->>'label', ''),
+              NULLIF(title, ''),
+              NULLIF(file_path, ''),
+              ''
+            )),
+            '[^ㄱ-힣a-z0-9]+',
+            ' ',
+            'g'
+          )), 160) = ANY($1::text[])
+    ORDER BY created_at DESC, id DESC
+    LIMIT $2
+  `, [normalizedLessonKeys, Math.max(1, Math.min(5000, Number(limit) || 5000))]);
+  return Array.isArray(rows) ? rows : rows?.rows ?? [];
+}
+
 export async function fetchDuePredictionRows({ limit = 100, queryReadonly = pgPool.queryReadonly } = {}) {
   const coordColumns = await detectCoordColumns(queryReadonly);
   const coordSelect = coordColumns.size ? `, ${[...coordColumns].join(', ')}` : '';
@@ -512,10 +599,13 @@ async function updateEntryCoords(id, patch, { pg = pgPool, coordColumns = null, 
       params.push(patch[key]);
       sets.push(`${key} = $${params.length}`);
     }
+    params.push(JSON.stringify(patch || {}));
+    let metaExpression = `jsonb_set(COALESCE(meta, '{}'::jsonb), '{libraryCoords}', COALESCE(meta->'libraryCoords', '{}'::jsonb) || $${params.length}::jsonb, true)`;
     if (safeMetaPatch) {
       params.push(JSON.stringify(safeMetaPatch));
-      sets.push(`meta = COALESCE(meta, '{}'::jsonb) || $${params.length}::jsonb`);
+      metaExpression = `${metaExpression} || $${params.length}::jsonb`;
     }
+    sets.push(`meta = ${metaExpression}`);
     params.push(id);
     if (sets.length) {
       await pg.query('sigma', `UPDATE sigma.vault_entries SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params);
@@ -573,22 +663,26 @@ export async function applyTeamTransitionPlan(plan = [], { pg = pgPool, env = pr
   }
   const coordColumns = await detectCoordColumns(pg.queryReadonly || pg.query);
   const applied = [];
+  const appliedIds = new Set();
   for (const item of plan) {
-    if (!item.apply || !item.id) continue;
+    if (!item.apply || !item.id || appliedIds.has(String(item.id))) continue;
     const patch = sanitizePredictionAxisPatch(item.nextCoords || {}, item.metaPatch || {}, env);
-    if (!Object.keys(patch.nextCoords).length && !patch.metaPatch) continue;
-    await updateEntryCoords(item.id, patch.nextCoords, {
+    const nextCoords = changedPatch(item.current || {}, patch.nextCoords);
+    const metaPatch = changedPatch(item.currentMeta || {}, patch.metaPatch || {});
+    if (!Object.keys(nextCoords).length && !Object.keys(metaPatch).length) continue;
+    await updateEntryCoords(item.id, nextCoords, {
       pg,
       coordColumns,
-      metaPatch: patch.metaPatch,
+      metaPatch,
       reasoning: `sigma_5axis_transition:${JSON.stringify({
         sourceRef: item.sourceRef,
         polarity: item.trigger?.polarity,
         reason: item.trigger?.reason || item.reason,
-        nextCoords: patch.nextCoords,
-        metaPatch: patch.metaPatch,
+        nextCoords,
+        metaPatch,
       })}`,
     });
+    appliedIds.add(String(item.id));
     applied.push(item.id);
   }
   return { applied, count: applied.length, skipped: false };
@@ -679,7 +773,8 @@ export async function fetchPredictionLedgerRows({ limit = 500, queryReadonly = p
   const rows = await queryReadonly('sigma', `
     SELECT id, title, type, content, source, file_path, meta, created_at${coordSelect}
     FROM sigma.vault_entries
-    WHERE (meta->>'merged_into') IS NULL
+    WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
       AND ${predictionExpr} <> 'none'
     ORDER BY created_at DESC
     LIMIT $1
@@ -699,8 +794,10 @@ export default {
   buildPredictionLedgerReport,
   detectCoordColumns,
   fetchVaultRowsForSourceRefs,
+  fetchValidatedVaultRows,
   fetchDuePredictionRows,
   fetchPredictionLedgerRows,
   isSigmaTransitionEnabled,
   isSigmaPredictionEnabled,
+  normalizeLessonKey,
 };

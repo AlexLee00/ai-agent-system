@@ -2,20 +2,28 @@
 // @ts-nocheck
 
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appendTransitionTelemetry } from '../shared/transition-telemetry.ts';
 import {
   applyTeamTransitionPlan,
   buildTeamTransitionPlan,
+  fetchValidatedVaultRows,
   fetchVaultRowsForSourceRefs,
   isSigmaPredictionEnabled,
   isSigmaTransitionEnabled,
+  normalizeLessonKey,
 } from '../vault/validation-transition.ts';
 
 const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const DEFAULT_SKA_SHADOW_HISTORY = path.join(
+  os.homedir(),
+  '.ai-agent-system/workspace/reservation/cancel-shadow-diff-history.jsonl',
+);
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
@@ -100,12 +108,16 @@ export async function collectBlogTriggers({ sinceHours, limit, warnings = [], qu
     }));
 
   const scores = await safeQuery('blog', 'blog.crank_scores', `
-    SELECT DISTINCT ON (post_id)
-           id, post_id, overall, scored_date, created_at
-    FROM blog.crank_scores
-    WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
-       OR scored_date >= (CURRENT_DATE - ($1::int * INTERVAL '1 hour'))::date
-    ORDER BY post_id, scored_date DESC, id DESC
+    SELECT id, post_id, overall, scored_date, created_at
+    FROM (
+      SELECT DISTINCT ON (post_id)
+             id, post_id, overall, scored_date, created_at
+      FROM blog.crank_scores
+      WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+         OR scored_date >= (CURRENT_DATE - ($1::int * INTERVAL '1 hour'))::date
+      ORDER BY post_id, scored_date DESC, id DESC
+    ) AS latest_by_post
+    ORDER BY created_at DESC, id DESC
     LIMIT $2
   `, [sinceHours, limit], warnings, queryReadonly);
   const scoreTriggers = scores
@@ -191,16 +203,73 @@ export function collectDarwinTriggers({ limit = 100, warnings = [] } = {}) {
   }
 }
 
-export function collectSkaTriggers({ warnings = [] } = {}) {
-  return [];
+export function collectSkaTriggers({
+  warnings = [],
+  historyPath = DEFAULT_SKA_SHADOW_HISTORY,
+  sinceHours = 24 * 7,
+  now = new Date(),
+} = {}) {
+  try {
+    if (!fs.existsSync(historyPath)) {
+      warnings.push('ska:cancel_shadow_history_missing');
+      return [];
+    }
+    const latestLine = fs.readFileSync(historyPath, 'utf8').trim().split(/\r?\n/).filter(Boolean).at(-1);
+    if (!latestLine) {
+      warnings.push('ska:cancel_shadow_history_empty');
+      return [];
+    }
+    const latest = JSON.parse(latestLine);
+    const occurredAt = Date.parse(`${String(latest.recordedAt || '').replace(' ', 'T')}+09:00`);
+    const cutoff = (now instanceof Date ? now : new Date(now)).getTime() - Number(sinceHours) * 3_600_000;
+    if (!Number.isFinite(occurredAt) || occurredAt < cutoff) {
+      warnings.push('ska:cancel_shadow_history_stale');
+      return [];
+    }
+    const counts = latest.counts || {};
+    const mismatchCount = Number(counts.todayMissingInLegacy || 0) + Number(counts.todayMissingInUnified || 0);
+    const failed = latest.ok === false || latest.skipped === true || latest.scannerOk === false || mismatchCount > 0;
+    const date = String(latest.today || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      warnings.push('ska:cancel_shadow_date_invalid');
+      return [];
+    }
+    return [trigger({
+      team: 'ska',
+      table: 'reservation.daily_summary',
+      id: date,
+      polarity: failed ? 'negative' : 'positive',
+      reason: failed ? 'cancel_shadow_mismatch_or_skip' : 'cancel_shadow_clear',
+      occurredAt: new Date(occurredAt).toISOString(),
+      lessonKey: `ska_cancel_shadow_${date}`,
+      evidence: {
+        skipped: Boolean(latest.skipped),
+        scannerOk: latest.scannerOk !== false,
+        todayMissingInLegacy: Number(counts.todayMissingInLegacy || 0),
+        todayMissingInUnified: Number(counts.todayMissingInUnified || 0),
+        futureUnifiedOnly: Number(counts.futureUnifiedOnly || 0),
+      },
+    })];
+  } catch (error) {
+    warnings.push(`ska:cancel_shadow_history_invalid:${String(error?.message || error).slice(0, 120)}`);
+    return [];
+  }
 }
 
 export async function collectClaudeTriggers({ sinceHours, limit, warnings = [], queryReadonly = pgPool.queryReadonly } = {}) {
   const rows = await safeQuery('claude', 'claude.pr_review_scores', `
-    SELECT id, pr_number, total, verdict, created_at
-    FROM claude.pr_review_scores
-    WHERE created_at >= NOW() - ($1::int * INTERVAL '1 hour')
-    ORDER BY created_at DESC
+    SELECT score.id, score.pr_number, score.total, score.verdict, score.created_at,
+           outcome.id AS outcome_id
+    FROM claude.pr_review_scores AS score
+    LEFT JOIN LATERAL (
+      SELECT id
+      FROM claude.auto_dev_outcomes
+      WHERE pr_number = score.pr_number
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    ) AS outcome ON true
+    WHERE score.created_at >= NOW() - ($1::int * INTERVAL '1 hour')
+    ORDER BY score.created_at DESC
     LIMIT $2
   `, [sinceHours, limit], warnings, queryReadonly);
   return rows.map((row) => {
@@ -208,10 +277,11 @@ export async function collectClaudeTriggers({ sinceHours, limit, warnings = [], 
     const total = Number(row.total || 0);
     const negative = /blocked|fail|red|reject/.test(verdict);
     const positive = !negative && (total >= 90 || /pass|eligible|green|approved/.test(verdict));
+    const matchedOutcomeId = row.outcome_id == null ? null : `claude_auto_dev:${row.outcome_id}`;
     return trigger({
       team: 'claude',
-      table: 'claude.pr_review_scores',
-      id: row.id,
+      table: matchedOutcomeId ? 'claude.auto_dev_outcomes' : 'claude.pr_review_scores',
+      id: matchedOutcomeId || row.id,
       polarity: positive ? 'positive' : negative ? 'negative' : 'neutral',
       reason: 'quality_gate_score',
       occurredAt: row.created_at,
@@ -236,7 +306,7 @@ export async function collectSigma5AxisTriggers(options = {}) {
     collectClaudeTriggers({ sinceHours, limit, warnings, queryReadonly }),
   ]);
   const darwin = collectDarwinTriggers({ limit, warnings });
-  const ska = collectSkaTriggers({ warnings });
+  const ska = collectSkaTriggers({ warnings, sinceHours, now: options.now || new Date() });
   return {
     triggers: [...blog, ...luna, ...darwin, ...ska, ...claude],
     warnings: [
@@ -262,8 +332,26 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     limit: options.limit || 100,
     queryReadonly: options.queryReadonly || pgPool.queryReadonly,
   });
+  const validatedHistoryLimit = boundedInt(options.validatedHistoryLimit, 5000, 1, 5000);
+  let validatedHistoryRows = options.validatedHistoryRows;
+  if (!Array.isArray(validatedHistoryRows)) {
+    try {
+      validatedHistoryRows = await fetchValidatedVaultRows({
+        lessonKeys: source.triggers.map((item) => normalizeLessonKey(item.lessonKey || item.title)),
+        limit: validatedHistoryLimit,
+        queryReadonly: options.queryReadonly || pgPool.queryReadonly,
+      });
+      if (validatedHistoryRows.length >= validatedHistoryLimit) {
+        source.warnings.push(`sigma_validated_history_limit_reached:${validatedHistoryLimit}`);
+      }
+    } catch (error) {
+      source.warnings.push(`sigma_validated_history_skipped:${error?.message || String(error)}`);
+      validatedHistoryRows = [];
+    }
+  }
   const plan = buildTeamTransitionPlan({
     vaultRows,
+    validatedHistoryRows,
     triggers: source.triggers,
     minPromotionRepeats: options.minPromotionRepeats || 3,
     predictionEnabled: isSigmaPredictionEnabled(options.env || process.env),
@@ -299,6 +387,7 @@ export async function buildSigma5AxisTransitionReport(options = {}) {
     plannedContradicted: plan.filter((item) => item.nextCoords?.validation_state === 'contradicted').length,
     plannedPredictionResolved: plan.filter((item) => item.nextCoords?.prediction_state === 'resolved').length,
     promotionCandidates: plan.filter((item) => item.metaPatch?.promotion_candidate === true).length,
+    validatedHistoryRows: validatedHistoryRows.length,
     applicable: applicableCount,
     applyLimit,
     applyCapReached: applyLimit != null && applicableCount > applyLimit,

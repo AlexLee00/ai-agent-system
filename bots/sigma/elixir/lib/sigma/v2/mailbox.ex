@@ -6,31 +6,86 @@ defmodule Sigma.V2.Mailbox do
   """
 
   @doc "Tier 3 Directive 대기열 추가."
-  def enqueue(directive) do
-    directive_id = Ecto.UUID.generate()
+  def enqueue(directive, opts \\ []) do
+    case enqueue_with_status(directive, opts) do
+      {:ok, directive_id, _status} -> {:ok, directive_id}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
+  @doc "Tier 3 Directive 대기열 추가 결과와 신규/중복 상태를 함께 반환."
+  def enqueue_with_status(directive, opts \\ []) do
+    query = Keyword.get(opts, :query, &Jay.Core.Repo.query/2)
+    transaction = Keyword.get(opts, :transaction, default_transaction(opts))
+    directive_id = Ecto.UUID.generate()
+    action_json = Jason.encode!(directive.action)
+    lock_sql = """
+    SELECT pg_advisory_xact_lock(
+      hashtextextended(CONCAT_WS('|', $1, $2::text, ($3::jsonb)::text), 0)
+    )
+    """
+
+    duplicate_sql = """
+    SELECT directive_id
+    FROM sigma_v2_mailbox
+    WHERE status = 'pending'
+      AND team = $1
+      AND tier = $2
+      AND action = $3::jsonb
+    ORDER BY enqueued_at ASC, id ASC
+    LIMIT 1
+    """
+
+    result =
+      transaction.(fn ->
+        params = [directive.team, directive.tier, action_json]
+
+        with {:ok, _} <- query.(lock_sql, params) do
+          case query.(duplicate_sql, params) do
+            {:ok, %{rows: [[existing_id]]}} ->
+              {:ok, format_uuid(existing_id), :duplicate_suppressed}
+
+            {:ok, %{rows: []}} ->
+              insert_mailbox(query, directive, directive_id, action_json)
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+        end
+      end)
+
+    case result do
+      {:ok, {:ok, _directive_id, _status} = ok} -> ok
+      {:ok, {:error, reason}} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:unexpected_transaction_result, other}}
+    end
+  rescue
+    e -> {:error, e}
+  end
+
+  defp insert_mailbox(query, directive, directive_id, action_json) do
     sql = """
     INSERT INTO sigma_v2_mailbox
       (directive_id, tier, team, action, enqueued_at, status, inserted_at, updated_at)
     VALUES ($1::uuid, $2, $3, $4::jsonb, NOW(), 'pending', NOW(), NOW())
     """
 
-    case Jay.Core.Repo.query(sql, [
+    case query.(sql, [
            uuid_param(directive_id),
            directive.tier,
            directive.team,
-           Jason.encode!(directive.action)
+           action_json
          ]) do
-      {:ok, _} -> {:ok, directive_id}
+      {:ok, _} -> {:ok, directive_id, :inserted}
       {:error, reason} -> {:error, reason}
     end
-  rescue
-    e -> {:error, e}
   end
 
   @doc "대기 중인 Directive 목록 조회."
   def pending_items(opts \\ []) do
     limit = Keyword.get(opts, :limit, 20)
+    query = Keyword.get(opts, :query, &Jay.Core.Repo.query/2)
 
     sql = """
     SELECT id, directive_id, tier, team, action, enqueued_at, status
@@ -40,10 +95,9 @@ defmodule Sigma.V2.Mailbox do
     LIMIT $1
     """
 
-    case Jay.Core.Repo.query(sql, [limit]) do
+    case query.(sql, [limit]) do
       {:ok, %{rows: rows, columns: cols}} ->
-        atom_cols = Enum.map(cols, &String.to_atom/1)
-        Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))
+        Enum.map(rows, &pending_row(cols, &1))
 
       _ ->
         []
@@ -164,4 +218,36 @@ defmodule Sigma.V2.Mailbox do
   defp format_timestamp(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp format_timestamp(%DateTime{} = value), do: DateTime.to_iso8601(value)
   defp format_timestamp(value), do: to_string(value)
+
+  defp default_transaction(opts) do
+    if Keyword.has_key?(opts, :query) do
+      fn callback -> {:ok, callback.()} end
+    else
+      &Jay.Core.Repo.transaction/1
+    end
+  end
+
+  defp pending_row(columns, values) do
+    columns
+    |> Enum.zip(values)
+    |> Enum.reduce(%{}, fn
+      {"id", value}, acc -> Map.put(acc, :id, value)
+      {"directive_id", value}, acc -> Map.put(acc, :directive_id, format_uuid(value))
+      {"tier", value}, acc -> Map.put(acc, :tier, value)
+      {"team", value}, acc -> Map.put(acc, :team, value)
+      {"action", value}, acc -> Map.put(acc, :action, value)
+      {"enqueued_at", value}, acc -> Map.put(acc, :enqueued_at, format_timestamp(value))
+      {"status", value}, acc -> Map.put(acc, :status, value)
+      _, acc -> acc
+    end)
+  end
+
+  defp format_uuid(<<_::128>> = value) do
+    case Ecto.UUID.load(value) do
+      {:ok, uuid} -> uuid
+      :error -> nil
+    end
+  end
+
+  defp format_uuid(value), do: value
 end

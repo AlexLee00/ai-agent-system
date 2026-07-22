@@ -6,6 +6,17 @@ defmodule Sigma.V2.MapeKLoopTest do
   @sigma_lib Path.join(__DIR__, "../../../lib")
 
   describe "Sigma.V2.MapeKLoop — GenServer 상태" do
+    test "억제된 Signal은 발행 성공으로 집계하지 않음" do
+      assert Sigma.V2.MapeKLoop.directive_result_status(%{outcome: :duplicate_suppressed}) == :suppressed
+      assert Sigma.V2.MapeKLoop.directive_result_status(%{outcome: :signal_emitted}) == :ok
+
+      assert [%{status: :ok}] =
+               Sigma.V2.MapeKLoop.actionable_results([
+                 %{status: :suppressed},
+                 %{status: :ok}
+               ])
+    end
+
     test "status/0 호출 시 맵 반환 (이미 실행 중인 프로세스 또는 {:error, :not_started})" do
       result =
         try do

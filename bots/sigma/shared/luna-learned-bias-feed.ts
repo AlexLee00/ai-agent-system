@@ -58,15 +58,23 @@ export async function fetchLunaLearnedBiasVaultRows(regime = null, options = {})
   const queryReadonly = options.queryReadonly || defaultQueryReadonly;
   const normalizedRegime = regime ? String(regime).trim().toUpperCase() : null;
   return queryReadonly('sigma', `
-    SELECT id, meta, time_stage, created_at, updated_at
-      FROM sigma.vault_entries
-     WHERE source = 'luna_learned_bias'
-       AND COALESCE(status, 'captured') <> 'archived'
-       AND COALESCE(meta->>'constitutionAllowed', 'true') <> 'false'
-       AND ($1::text IS NULL OR UPPER(meta->'payload'->>'regime') = $1)
-     ORDER BY COALESCE(meta->>'createdAt', created_at::text) DESC,
-              created_at DESC,
-              id DESC
+    SELECT vault.id, vault.meta,
+           to_jsonb(vault)->>'time_stage' AS time_stage,
+           to_jsonb(vault)->>'validation_state' AS validation_state,
+           vault.created_at, vault.updated_at
+      FROM sigma.vault_entries AS vault
+     WHERE vault.source = 'luna_learned_bias'
+       AND COALESCE(vault.status, 'captured') <> 'archived'
+       AND COALESCE(vault.meta->>'constitutionAllowed', 'true') <> 'false'
+       AND COALESCE(
+             NULLIF(to_jsonb(vault)->>'validation_state', ''),
+             NULLIF(vault.meta->'libraryCoords'->>'validation_state', ''),
+             'unverified'
+           ) = 'validated'
+       AND ($1::text IS NULL OR UPPER(vault.meta->'payload'->>'regime') = $1)
+     ORDER BY COALESCE(vault.meta->>'createdAt', vault.created_at::text) DESC,
+              vault.created_at DESC,
+              vault.id DESC
      LIMIT 500
   `, [normalizedRegime]);
 }

@@ -205,10 +205,13 @@ async function main() {
   assert.match(shapedCalls[0].sql, /type = ANY/);
   assert.match(shapedCalls[0].sql, /meta->>'sourceId'/);
   assert.match(shapedCalls[0].sql, /meta->'source_ref'->>'id'/);
+  assert.match(shapedCalls[0].sql, /meta->'source_refs'/);
+  assert.match(shapedCalls[0].sql, /meta->'source_ref'->>'team'/);
+  assert.match(shapedCalls[0].sql, /meta->'source_ref'->>'table'/);
   assert.match(shapedCalls[0].sql, /ROW_NUMBER\(\) OVER/i);
   assert.deepEqual(shapedCalls[0].params.slice(1, 4), [['blo'], ['blog_post'], ['61', '62']]);
 
-  console.log(JSON.stringify({ ok: true, smoke: 'sigma-vault-kg-search', checks: 34 }, null, 2));
+  console.log(JSON.stringify({ ok: true, smoke: 'sigma-vault-kg-search', checks: 37 }, null, 2));
 }
 
 main().catch((error: unknown) => {

@@ -133,6 +133,7 @@ async function buildPredictionLedger(args = {}, deps = {}) {
     SELECT id, title, source, file_path, meta, created_at${selectCoords}
     FROM sigma.vault_entries
     WHERE ${stateExpr} IN ('forward', 'due', 'resolved')
+      AND COALESCE(status, 'captured') <> 'archived'
       AND (meta->>'merged_into') IS NULL
     ORDER BY created_at DESC
     LIMIT $1
@@ -148,7 +149,7 @@ async function buildPredictionLedger(args = {}, deps = {}) {
       prediction_state: row.prediction_state,
       prediction_horizon: row.prediction_horizon,
     });
-    const team = meta.team || row.source || 'unknown';
+    const team = meta.source_ref?.team || meta.sourceRef?.team || meta.team || row.source || 'unknown';
     return {
       id: row.id,
       title: row.title,
@@ -156,22 +157,56 @@ async function buildPredictionLedger(args = {}, deps = {}) {
       source: row.source || null,
       filePath: row.file_path || null,
       createdAt: row.created_at || null,
+      predictionOutcome: ['hit', 'miss'].includes(String(meta.prediction_outcome || '').toLowerCase())
+        ? String(meta.prediction_outcome).toLowerCase()
+        : null,
       coords,
     };
   });
-  const byTeam = new Map();
-  for (const item of predictions) {
-    const current = byTeam.get(item.team) || { team: item.team, total: 0, validated: 0, contradicted: 0, resolved: 0 };
-    current.total += 1;
-    if (item.coords.validation_state === 'validated') current.validated += 1;
-    if (item.coords.validation_state === 'contradicted') current.contradicted += 1;
-    if (item.coords.prediction_state === 'resolved') current.resolved += 1;
-    byTeam.set(item.team, current);
+  const outcomeExpr = `LOWER(COALESCE(NULLIF(meta->>'prediction_outcome', ''), ''))`;
+  let aggregateRows = [];
+  let aggregateSkippedReason = null;
+  try {
+    aggregateRows = await readonlyQuery('sigma', `
+      SELECT LOWER(COALESCE(
+               NULLIF(meta->'source_ref'->>'team', ''),
+               NULLIF(meta->'sourceRef'->>'team', ''),
+               NULLIF(meta->>'team', ''),
+               NULLIF(source, ''),
+               'unknown'
+             )) AS team,
+             COUNT(*)::int AS total,
+             COUNT(*) FILTER (
+               WHERE ${stateExpr} = 'resolved' AND ${outcomeExpr} = 'hit'
+             )::int AS validated,
+             COUNT(*) FILTER (
+               WHERE ${stateExpr} = 'resolved' AND ${outcomeExpr} = 'miss'
+             )::int AS contradicted,
+             COUNT(*) FILTER (WHERE ${stateExpr} = 'resolved')::int AS resolved,
+             COUNT(*) FILTER (
+               WHERE ${stateExpr} = 'resolved' AND ${outcomeExpr} IN ('hit', 'miss')
+             )::int AS accuracy_samples
+      FROM sigma.vault_entries
+      WHERE ${stateExpr} IN ('forward', 'due', 'resolved')
+        AND COALESCE(status, 'captured') <> 'archived'
+        AND (meta->>'merged_into') IS NULL
+      GROUP BY 1
+      ORDER BY 1
+    `, [], deps);
+  } catch {
+    aggregateSkippedReason = 'prediction_aggregate_query_failed';
   }
-  const accuracy = [...byTeam.values()].map((item) => ({
+  const accuracy = aggregateRows.map((item) => ({
     ...item,
-    accuracy: item.validated + item.contradicted > 0
-      ? item.validated / (item.validated + item.contradicted)
+    total: Number(item.total || 0),
+    validated: Number(item.validated || 0),
+    contradicted: Number(item.contradicted || 0),
+    hits: Number(item.validated || 0),
+    misses: Number(item.contradicted || 0),
+    resolved: Number(item.resolved || 0),
+    accuracySamples: Number(item.accuracy_samples || 0),
+    accuracy: Number(item.accuracy_samples || 0) > 0
+      ? Number(item.validated || 0) / Number(item.accuracy_samples || 0)
       : null,
   }));
   return {
@@ -180,6 +215,11 @@ async function buildPredictionLedger(args = {}, deps = {}) {
     count: predictions.length,
     predictions,
     accuracy,
+    accuracyStatus: {
+      skipped: Boolean(aggregateSkippedReason),
+      reason: aggregateSkippedReason,
+      source: aggregateSkippedReason ? null : 'full_aggregate',
+    },
   };
 }
 
@@ -196,7 +236,8 @@ async function buildCoordSummary(args = {}, deps = {}) {
       ${expr('prediction_state', 'none')} AS prediction_state,
       COUNT(*)::int AS count
     FROM sigma.vault_entries
-    WHERE (meta->>'merged_into') IS NULL
+    WHERE COALESCE(status, 'captured') <> 'archived'
+      AND (meta->>'merged_into') IS NULL
     GROUP BY 1, 2, 3, 4
     ORDER BY count DESC
     LIMIT $1
@@ -214,7 +255,17 @@ export async function callSigmaLibraryTool(name, args = {}, deps = {}) {
     const result = await searchVault(String(args.query || ''), {
       topK: args.topK || args.limit || 5,
       sourceKinds: Array.isArray(args.sourceKinds) ? args.sourceKinds : undefined,
+      teamNamespaces: Array.isArray(args.teamNamespaces)
+        ? args.teamNamespaces
+        : args.team
+          ? [args.team]
+          : undefined,
       intent: args.intent,
+      coordFilters: args.coordFilters && typeof args.coordFilters === 'object'
+        ? args.coordFilters
+        : undefined,
+      strictLayerFilters: args.strictLayerFilters === true,
+      groupBySourceRef: args.groupBySourceRef === true,
       layerSearchEnabled: Boolean(args.layerSearchEnabled ?? process.env.SIGMA_LAYER_SEARCH_ENABLED === 'true'),
       includeRoutingDebug: true,
       deps,

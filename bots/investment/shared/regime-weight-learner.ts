@@ -636,6 +636,12 @@ function compareVaultRows(left, right) {
   return String(right.id || '').localeCompare(String(left.id || ''), 'en', { numeric: true });
 }
 
+function vaultValidationState(row = {}, meta = {}) {
+  return String(row.validation_state || meta.libraryCoords?.validation_state || 'unverified')
+    .trim()
+    .toLowerCase();
+}
+
 function normalizeMergedWeights(weights = {}, fallback = {}) {
   const entries = Object.entries(weights).filter(([, value]) => Number.isFinite(Number(value)) && Number(value) >= 0);
   const total = entries.reduce((sum, [, value]) => sum + Number(value), 0);
@@ -657,6 +663,7 @@ export function buildVaultRegimeWeights(rows = [], requestedRegime = null) {
   for (const row of [...(rows || [])].sort(compareVaultRows)) {
     const meta = parseVaultMeta(row.meta);
     if (meta.constitutionAllowed === false) continue;
+    if (vaultValidationState(row, meta) !== 'validated') continue;
     const payload = parseVaultMeta(meta.payload || {});
     const regime = normalizeRegime(payload.regime || 'RANGING');
     if (requested && regime !== requested) continue;
@@ -767,6 +774,13 @@ export async function getLatestSnapshotRegimeWeights(regime = null, options = {}
   return mapSnapshotRows(rows);
 }
 
+export const LUNA_LEARNED_BIAS_SNAPSHOT_FALLBACK_ENABLED_KEY = 'LUNA_LEARNED_BIAS_SNAPSHOT_FALLBACK_ENABLED';
+
+function isSnapshotFallbackEnabled(options = {}) {
+  if (options.allowSnapshotFallback === true) return true;
+  return String((options.env || process.env)?.[LUNA_LEARNED_BIAS_SNAPSHOT_FALLBACK_ENABLED_KEY] || '').toLowerCase() === 'true';
+}
+
 export async function getLatestRegimeWeights(regime = null, options = {}) {
   const normalizedRegime = regime ? normalizeRegime(regime) : null;
   const vaultRowsProvider = options.vaultRowsProvider || fetchLunaLearnedBiasVaultRows;
@@ -776,6 +790,7 @@ export async function getLatestRegimeWeights(regime = null, options = {}) {
   const knownRegimes = Object.keys(BASE_FUSION_WEIGHTS);
   const vaultRegimes = new Set(vaultWeights.map((row) => row.regime));
   if (!normalizedRegime && knownRegimes.every((key) => vaultRegimes.has(key))) return vaultWeights;
+  if (!isSnapshotFallbackEnabled(options)) return vaultWeights;
   const snapshotWeights = await getLatestSnapshotRegimeWeights(normalizedRegime, options);
   if (vaultWeights.length === 0) return snapshotWeights;
   return [
@@ -804,6 +819,7 @@ export default {
   getLatestSnapshotRegimeWeights,
   BASE_FUSION_WEIGHTS,
   BASE_SIGNAL_WEIGHTS,
+  LUNA_LEARNED_BIAS_SNAPSHOT_FALLBACK_ENABLED_KEY,
   REGIME_WEIGHT_LEARNER_ENABLED_KEY,
   DEFAULT_WEIGHT_LEARNER_LOOKBACK_DAYS,
   DEFAULT_WEIGHT_LEARNER_ADAPTIVE_WINDOWS,

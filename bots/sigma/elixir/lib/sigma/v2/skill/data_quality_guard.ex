@@ -69,16 +69,14 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
 
   defp count_missing(rows, fields) do
     Enum.reduce(fields, 0, fn field, acc ->
-      key = field_key(field)
-      count = Enum.count(rows, fn row -> missing_value?(Map.get(row, key) || Map.get(row, field)) end)
+      count = Enum.count(rows, fn row -> missing_value?(field_value(row, field)) end)
       acc + count
     end)
   end
 
   defp add_missing_issues(issues, rows, fields) do
     Enum.reduce(fields, issues, fn field, acc ->
-      key = field_key(field)
-      count = Enum.count(rows, fn row -> missing_value?(Map.get(row, key) || Map.get(row, field)) end)
+      count = Enum.count(rows, fn row -> missing_value?(field_value(row, field)) end)
       if count > 0, do: acc ++ [%{type: "missing_required", field: field, count: count}], else: acc
     end)
   end
@@ -87,9 +85,8 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
   defp count_stale(rows, freshness_field, threshold_days) do
     now_ms = System.system_time(:millisecond)
     max_age_ms = threshold_days * 24 * 60 * 60 * 1000
-    key = field_key(freshness_field)
     Enum.count(rows, fn row ->
-      val = Map.get(row, key) || Map.get(row, freshness_field)
+      val = field_value(row, freshness_field)
       case to_timestamp(val) do
         nil -> true
         ts -> now_ms - ts > max_age_ms
@@ -110,10 +107,9 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
   defp count_outliers(_rows, []), do: {0, []}
   defp count_outliers(rows, numeric_fields) do
     Enum.reduce(numeric_fields, {0, []}, fn field, {total_count, all_issues} ->
-      key = field_key(field)
       values =
         rows
-        |> Enum.map(fn row -> Map.get(row, key) || Map.get(row, field) end)
+        |> Enum.map(fn row -> field_value(row, field) end)
         |> Enum.flat_map(fn
           v when is_number(v) -> [v * 1.0]
           v when is_binary(v) ->
@@ -130,7 +126,7 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
         med ->
           threshold = max(10.0, abs(med) * 5.0)
           count = Enum.count(rows, fn row ->
-            val = Map.get(row, key) || Map.get(row, field)
+            val = field_value(row, field)
             is_number(val) and abs(val - med) > threshold
           end)
           if count > 0 do
@@ -164,8 +160,26 @@ defmodule Sigma.V2.Skill.DataQualityGuard do
   defp missing_value?(""), do: true
   defp missing_value?(_), do: false
 
-  defp field_key(field) when is_atom(field), do: field
-  defp field_key(field) when is_binary(field), do: String.to_atom(field)
+  defp field_value(row, field) when is_map(row) do
+    case Map.fetch(row, field) do
+      {:ok, value} -> value
+      :error -> field_value_from_alias(row, field)
+    end
+  end
+
+  defp field_value(_row, _field), do: nil
+
+  defp field_value_from_alias(row, field) when is_atom(field), do: Map.get(row, Atom.to_string(field))
+
+  defp field_value_from_alias(row, field) when is_binary(field) do
+    try do
+      Map.get(row, String.to_existing_atom(field))
+    rescue
+      ArgumentError -> nil
+    end
+  end
+
+  defp field_value_from_alias(_row, _field), do: nil
 
   defp maybe_add(list, false, _item), do: list
   defp maybe_add(list, true, item), do: list ++ [item]

@@ -67,8 +67,9 @@ defmodule Sigma.V2.DirectiveContentTest do
       assert sql =~ "SELECT"
       assert sql =~ "outcome = 'signal_sent'"
       assert sql =~ "action = $3::jsonb"
+      assert sql =~ "executed_at >= NOW()"
       refute sql =~ ~r/\b(INSERT|UPDATE|DELETE|ALTER|CREATE|DROP|TRUNCATE)\b/i
-      assert ["luna", "general_review", encoded] = params
+      assert ["luna", "general_review", encoded, 24] = params
       assert Jason.decode!(encoded)["target_team"] == "luna"
       {:ok, %{rows: [[true]]}}
     end
@@ -91,5 +92,25 @@ defmodule Sigma.V2.DirectiveContentTest do
     assert Archivist.signal_already_sent?(directive,
              query: fn _sql, _params -> raise "db_down" end
            )
+  end
+
+  test "recent signals bind a DateTime and serialize Postgrex UUIDs" do
+    uuid = Ecto.UUID.generate()
+    {:ok, dumped_uuid} = Ecto.UUID.dump(uuid)
+
+    query = fn sql, [team, since] ->
+      assert sql =~ "$2::timestamptz"
+      assert team == "luna"
+      assert %DateTime{} = since
+
+      {:ok,
+       %{
+         columns: ["directive_id", "action", "executed_at", "outcome", "principle_check_result"],
+         rows: [[dumped_uuid, %{}, ~U[2026-07-07 00:00:00Z], "signal_sent", %{}]]
+       }}
+    end
+
+    assert [%{directive_id: ^uuid}] =
+             Archivist.recent_signals("luna", "2026-07-06T00:00:00Z", query: query)
   end
 end

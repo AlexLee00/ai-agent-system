@@ -287,16 +287,17 @@ defmodule Sigma.V2.SelfRewarding do
 
     {success_count, error_count, tier2_applied, total} =
       if is_list(results) do
-        success = Enum.count(results, &(Map.get(&1, :status) == :ok))
-        errors = Enum.count(results, &(Map.get(&1, :status) == :error))
+        actionable = Sigma.V2.MapeKLoop.actionable_results(results)
+        success = Enum.count(actionable, &(Map.get(&1, :status) == :ok))
+        errors = Enum.count(actionable, &(Map.get(&1, :status) == :error))
 
         tier2 =
           Enum.count(
-            results,
+            actionable,
             &(get_in(&1, [:feedback, :tier]) == 2 and Map.get(&1, :status) == :ok)
           )
 
-        {success, errors, tier2, max(length(results), 1)}
+        {success, errors, tier2, max(length(actionable), 1)}
       else
         success = to_int(get.(:success_count, 0))
         errors = to_int(get.(:error_count, 0))

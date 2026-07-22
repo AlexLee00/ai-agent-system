@@ -7,6 +7,8 @@ defmodule Sigma.V2.Archivist do
 
   require Logger
 
+  @signal_repeat_window_hours 24
+
   @doc "Tier 0 관찰 기록."
   def log_observation(directive) do
     run_query(
@@ -149,7 +151,9 @@ defmodule Sigma.V2.Archivist do
   end
 
   @doc "팀의 최근 signal 목록 조회."
-  def recent_signals(team, since_iso) do
+  def recent_signals(team, since_iso, opts \\ []) do
+    query = Keyword.get(opts, :query, &Jay.Core.Repo.query/2)
+
     sql = """
     SELECT directive_id, action, executed_at, outcome, principle_check_result
     FROM sigma_v2_directive_audit
@@ -160,13 +164,11 @@ defmodule Sigma.V2.Archivist do
     LIMIT 50
     """
 
-    case Jay.Core.Repo.query(sql, [team, since_iso]) do
-      {:ok, %{rows: rows, columns: cols}} ->
-        atom_cols = Enum.map(cols, &String.to_atom/1)
-        Enum.map(rows, &(Enum.zip(atom_cols, &1) |> Map.new()))
-
-      _ ->
-        []
+    with {:ok, since} <- parse_datetime(since_iso),
+         {:ok, %{rows: rows, columns: cols}} <- query.(sql, [team, since]) do
+      Enum.map(rows, &signal_row(cols, &1))
+    else
+      _ -> []
     end
   rescue
     _ -> []
@@ -185,12 +187,13 @@ defmodule Sigma.V2.Archivist do
       WHERE team = $1
         AND outcome = 'signal_sent'
         AND COALESCE(action->>'feedback_type', '') = $2
+        AND executed_at >= NOW() - ($4::int * INTERVAL '1 hour')
       ORDER BY executed_at DESC, id DESC
       LIMIT 1
     ), false)
     """
 
-    case query.(sql, [directive.team, feedback_type, Jason.encode!(action)]) do
+    case query.(sql, [directive.team, feedback_type, Jason.encode!(action), @signal_repeat_window_hours]) do
       {:ok, %{rows: [[true]]}} ->
         true
 
@@ -248,6 +251,43 @@ defmodule Sigma.V2.Archivist do
       Logger.warning("[Sigma.V2.Archivist] audit query 예외: #{inspect(e)}")
       {:error, e}
   end
+
+  defp parse_datetime(%DateTime{} = value), do: {:ok, value}
+
+  defp parse_datetime(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> {:ok, datetime}
+      _ -> :error
+    end
+  end
+
+  defp parse_datetime(_value), do: :error
+
+  defp signal_row(columns, values) do
+    columns
+    |> Enum.zip(values)
+    |> Enum.reduce(%{}, fn
+      {"directive_id", value}, acc -> Map.put(acc, :directive_id, format_uuid(value))
+      {"action", value}, acc -> Map.put(acc, :action, value)
+      {"executed_at", value}, acc -> Map.put(acc, :executed_at, format_timestamp(value))
+      {"outcome", value}, acc -> Map.put(acc, :outcome, value)
+      {"principle_check_result", value}, acc -> Map.put(acc, :principle_check_result, value)
+      _, acc -> acc
+    end)
+  end
+
+  defp format_uuid(<<_::128>> = value) do
+    case Ecto.UUID.load(value) do
+      {:ok, uuid} -> uuid
+      :error -> nil
+    end
+  end
+
+  defp format_uuid(value), do: value
+
+  defp format_timestamp(%DateTime{} = value), do: DateTime.to_iso8601(value)
+  defp format_timestamp(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+  defp format_timestamp(value), do: value
 
   defp new_uuid do
     Ecto.UUID.generate()

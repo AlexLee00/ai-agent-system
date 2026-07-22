@@ -4,6 +4,36 @@ defmodule Sigma.V2.MCP.Server do
   Claude Code + Claude.ai + Claude API 어디서든 호출 가능.
   """
 
+  @parameter_keys %{
+    "rows" => :rows,
+    "required_fields" => :required_fields,
+    "freshness_field" => :freshness_field,
+    "freshness_threshold_days" => :freshness_threshold_days,
+    "numeric_fields" => :numeric_fields,
+    "claim" => :claim,
+    "correlation" => :correlation,
+    "controls" => :controls,
+    "confounders" => :confounders,
+    "sample_size" => :sample_size,
+    "hypothesis" => :hypothesis,
+    "metric" => :metric,
+    "primary_metric" => :primary_metric,
+    "baseline_defined" => :baseline_defined,
+    "baseline" => :baseline,
+    "variant_count" => :variant_count,
+    "variants" => :variants,
+    "has_guardrail_metric" => :has_guardrail_metric,
+    "guardrails" => :guardrails,
+    "min_detectable_effect" => :min_detectable_effect,
+    "candidates" => :candidates,
+    "features" => :features,
+    "system" => :system,
+    "service" => :service,
+    "failure_modes" => :failure_modes,
+    "existing_metrics" => :existing_metrics,
+    "alert_channels" => :alert_channels
+  }
+
   # MCP tool discovery — L0 이름만 응답 (Progressive Disclosure)
   def list_tools do
     [
@@ -90,7 +120,7 @@ defmodule Sigma.V2.MCP.Server do
 
   # MCP tool invocation — L1 full action 호출
   def call_tool(name, params) do
-    atom_params = atomize_keys(params)
+    atom_params = normalize_params(params)
 
     case name do
       "data_quality_guard" ->
@@ -113,13 +143,21 @@ defmodule Sigma.V2.MCP.Server do
     end
   end
 
-  defp atomize_keys(map) when is_map(map) do
-    Map.new(map, fn
-      {k, v} when is_binary(k) -> {String.to_atom(k), atomize_keys(v)}
-      {k, v} -> {k, atomize_keys(v)}
+  defp normalize_params(params) when is_map(params) do
+    Enum.reduce(params, %{}, fn
+      {key, value}, acc when is_atom(key) ->
+        if key in Map.values(@parameter_keys), do: Map.put(acc, key, value), else: acc
+
+      {key, value}, acc when is_binary(key) ->
+        case Map.fetch(@parameter_keys, key) do
+          {:ok, atom_key} -> Map.put(acc, atom_key, value)
+          :error -> acc
+        end
+
+      _, acc ->
+        acc
     end)
   end
 
-  defp atomize_keys(list) when is_list(list), do: Enum.map(list, &atomize_keys/1)
-  defp atomize_keys(v), do: v
+  defp normalize_params(_params), do: %{}
 end

@@ -8,6 +8,7 @@ defmodule Sigma.V2.HTTP.Router do
 
   plug(Plug.Logger)
   plug(:match)
+  plug(:require_management_auth)
 
   plug(Plug.Parsers,
     parsers: [:json],
@@ -202,6 +203,16 @@ defmodule Sigma.V2.HTTP.Router do
       |> put_resp_content_type("application/json")
       |> send_resp(404, Jason.encode!(%{error: "mcp_disabled"}))
       |> halt()
+    end
+  end
+
+  defp require_management_auth(%{request_path: "/sigma/v2/health"} = conn, _opts), do: conn
+
+  defp require_management_auth(%{request_path: path} = conn, _opts) do
+    if String.starts_with?(path, "/sigma/") do
+      Sigma.V2.MCP.Auth.call(conn, [])
+    else
+      conn
     end
   end
 end

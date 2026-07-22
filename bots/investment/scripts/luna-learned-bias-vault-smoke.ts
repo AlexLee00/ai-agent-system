@@ -10,7 +10,10 @@ import {
 } from '../shared/regime-weight-learner.ts';
 import { sanitizeLunaLearnedBiasWeightMap } from '../shared/luna-data-contracts.ts';
 import { REGIME_AXIS_WEIGHTS } from '../shared/dynamic-universe-selector.ts';
-import { buildLunaLearnedBiasFeedInput } from '../../sigma/shared/luna-learned-bias-feed.ts';
+import {
+  buildLunaLearnedBiasFeedInput,
+  fetchLunaLearnedBiasVaultRows,
+} from '../../sigma/shared/luna-learned-bias-feed.ts';
 
 const { buildVaultRegimeWeights, timeStageDecayMultiplier } = _testOnly;
 
@@ -42,7 +45,7 @@ function vaultRow(overrides = {}) {
       libraryCoords: {
         abstraction_level: 'L0',
         time_stage: overrides.timeStage || 'raw',
-        validation_state: 'observed',
+        validation_state: overrides.validationState || 'validated',
         prediction_state: 'none',
       },
     },
@@ -94,6 +97,17 @@ export async function runLunaLearnedBiasVaultSmoke() {
   assert.equal(feedRecord.payload.weightUnit, 'ratio_0_1');
   assert.match(feedRecord.text, /VOLATILE/);
 
+  const queryCalls = [];
+  await fetchLunaLearnedBiasVaultRows('VOLATILE', {
+    queryReadonly: async (schema, sql, params) => {
+      queryCalls.push({ schema, sql, params });
+      return [];
+    },
+  });
+  assert.equal(queryCalls[0].schema, 'sigma');
+  assert.match(queryCalls[0].sql, /validation_state/);
+  assert.match(queryCalls[0].sql, /= 'validated'/);
+
   const older = vaultRow({
     id: '100',
     createdAt: '2026-07-13T00:00:00.000Z',
@@ -133,6 +147,13 @@ export async function runLunaLearnedBiasVaultSmoke() {
   assert.equal(selected[0].selectedFactors.signalWeights.defensive.sourceId, '100');
   assert.equal(selected[0].source, 'sigma_vault');
   assert.equal(selected[0].rejectedFactors.some((item) => item.factor === 'defensive'), true);
+
+  const unverifiedIgnored = buildVaultRegimeWeights([vaultRow({
+    id: 'unsafe-1',
+    validationState: 'unverified',
+    signalWeights: { momentum: 0.6 },
+  })], 'VOLATILE');
+  assert.deepEqual(unverifiedIgnored, []);
 
   const fusionOnly = buildVaultRegimeWeights([vaultRow({
     id: '104',
@@ -189,9 +210,18 @@ export async function runLunaLearnedBiasVaultSmoke() {
     total_trades: 3,
     created_at: '2026-07-13T22:00:05.042Z',
   }];
+  const strictColdStart = await getLatestRegimeWeights('VOLATILE', {
+    vaultRowsProvider: async () => [],
+    snapshotRowsProvider: async () => {
+      throw new Error('unvalidated snapshot fallback must remain disabled by default');
+    },
+  });
+  assert.deepEqual(strictColdStart, []);
+
   const coldStart = await getLatestRegimeWeights('VOLATILE', {
     vaultRowsProvider: async () => [],
     snapshotRowsProvider: async () => fallbackRows,
+    env: { LUNA_LEARNED_BIAS_SNAPSHOT_FALLBACK_ENABLED: 'true' },
   });
   assert.equal(coldStart.length, 1);
   assert.equal(coldStart[0].source, 'snapshot_fallback');
@@ -218,6 +248,7 @@ export async function runLunaLearnedBiasVaultSmoke() {
         signal_weights: BASE_SIGNAL_WEIGHTS.RANGING,
       },
     ],
+    env: { LUNA_LEARNED_BIAS_SNAPSHOT_FALLBACK_ENABLED: 'true' },
   });
   assert.deepEqual(mixedSources.map((row) => [row.regime, row.source]), [
     ['RANGING', 'snapshot_fallback'],
@@ -236,8 +267,10 @@ export async function runLunaLearnedBiasVaultSmoke() {
       directionPreservedThroughDecay: true,
       partialUpdateMerge: true,
       concurrentOrderingStable: true,
+      strictValidatedOnlyColdStart: true,
       coldStartSnapshotFallback: true,
       rawFeedRecord: true,
+      validatedOnly: true,
     },
   };
 }

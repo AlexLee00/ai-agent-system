@@ -116,16 +116,20 @@ function parseMeta(meta) {
 
 function collectTeamHints(row = {}) {
   const meta = parseMeta(row.meta);
+  const canonicalTeam = normalizeText(meta.source_ref?.team || meta.sourceRef?.team).toLowerCase();
+  if (canonicalTeam) return [canonicalTeam];
   const tags = Array.isArray(meta.tags) ? meta.tags : [];
+  const sourceRefTeams = Array.isArray(meta.source_refs)
+    ? meta.source_refs.map((ref) => ref?.team)
+    : [];
   return [
     meta.team,
     meta.agent_team,
     meta.sourceTeam,
-    meta.source_ref?.team,
-    meta.sourceRef?.team,
     row.team,
     row.source,
     row.sourceKind,
+    ...sourceRefTeams,
     ...tags,
   ].map((item) => normalizeText(item).toLowerCase()).filter(Boolean);
 }
@@ -218,12 +222,18 @@ async function recallMemories({ team, agent, topic, limit = 8, fetch, url, timeo
   const response = await callSigmaLibrarySearch({
     query,
     limit: effectiveLimit,
+    teamNamespaces: [...teamAliases(team)],
+    intent: 'strategy',
+    coordFilters: { validation_state: ['validated'] },
+    strictLayerFilters: true,
+    groupBySourceRef: true,
     layerSearchEnabled: true,
     includeRoutingDebug: true,
   }, { fetch, url, timeoutMs });
 
   const memories = (response.results || [])
     .filter((row) => matchesTeamNamespace(row, team))
+    .filter((row) => validationState(row) === 'validated')
     .sort((left, right) => {
       const leftValidated = validationState(left) === 'validated' ? 1 : 0;
       const rightValidated = validationState(right) === 'validated' ? 1 : 0;

@@ -31,6 +31,19 @@ defmodule Sigma.V2.E2ETest do
       assert is_list(result.issues)
     end
 
+    test "nested dataset keys never become VM atoms" do
+      key = "untrusted_#{System.unique_integer([:positive])}"
+      assert_raise ArgumentError, fn -> String.to_existing_atom(key) end
+
+      assert {:ok, _result} =
+               Sigma.V2.MCP.Server.call_tool("data_quality_guard", %{
+                 "rows" => [%{key => 1}],
+                 "required_fields" => [key]
+               })
+
+      assert_raise ArgumentError, fn -> String.to_existing_atom(key) end
+    end
+
     test "call_tool causal_check — high risk case" do
       params = %{
         "claim" => "상관관계가 인과관계를 의미한다",
@@ -167,6 +180,35 @@ defmodule Sigma.V2.E2ETest do
 
       assert conn.status == 200
       assert length(Jason.decode!(conn.resp_body)["tools"]) == 5
+    end
+  end
+
+  describe "Sigma management HTTP auth" do
+    test "health remains public but management routes require bearer auth" do
+      preserve_env(["SIGMA_MCP_TOKEN"])
+      System.put_env("SIGMA_MCP_TOKEN", "test-token-e2e")
+
+      health =
+        Plug.Test.conn(:get, "/sigma/v2/health")
+        |> Sigma.V2.HTTP.Router.call([])
+
+      unauthorized =
+        Plug.Test.conn(:get, "/sigma/signals?team=luna")
+        |> Sigma.V2.HTTP.Router.call([])
+
+      authorized =
+        Plug.Test.conn(:get, "/sigma/signals?team=luna")
+        |> Plug.Conn.put_req_header("authorization", "Bearer test-token-e2e")
+        |> Sigma.V2.HTTP.Router.call([])
+
+      assert health.status == 200
+      assert unauthorized.status == 401
+      assert authorized.status == 200
+    end
+
+    test "embedded HTTP binds to loopback" do
+      source = File.read!(Path.join(__DIR__, "../../../lib/sigma/v2/supervisor.ex"))
+      assert source =~ "ip: {127, 0, 0, 1}"
     end
   end
 

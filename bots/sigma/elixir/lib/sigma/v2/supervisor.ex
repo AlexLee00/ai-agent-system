@@ -44,7 +44,7 @@ defmodule Sigma.V2.Supervisor do
         []
 
       port && port_available?(port) ->
-        [{Bandit, plug: Sigma.V2.HTTP.Router, port: port, scheme: :http}]
+        [{Bandit, plug: Sigma.V2.HTTP.Router, port: port, scheme: :http, ip: {127, 0, 0, 1}}]
 
       true ->
         []
@@ -57,7 +57,7 @@ defmodule Sigma.V2.Supervisor do
   end
 
   defp port_available?(port) do
-    case :gen_tcp.listen(port, [:binary, {:reuseaddr, true}]) do
+    case :gen_tcp.listen(port, [:binary, {:reuseaddr, true}, {:ip, {127, 0, 0, 1}}]) do
       {:ok, socket} ->
         :gen_tcp.close(socket)
         true

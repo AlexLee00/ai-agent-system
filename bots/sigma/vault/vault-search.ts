@@ -32,7 +32,9 @@ export interface VaultSearchOptions {
   sourceKinds?: string[];
   types?: string[];
   sourceRefIds?: Array<string | number>;
+  teamNamespaces?: string[];
   groupBySourceRef?: boolean;
+  strictLayerFilters?: boolean;
   paraCategory?: string;
   minSimilarity?: number;
   layerSearchEnabled?: boolean;
@@ -129,6 +131,7 @@ async function searchKnowledgeGraph(
     sourceKinds: string[];
     types: string[];
     sourceRefIds: string[];
+    teamNamespaces: string[];
     paraCategory: string | null;
     coordFilters: Record<string, unknown> | null;
     coordColumns: string[];
@@ -142,6 +145,7 @@ async function searchKnowledgeGraph(
   const scoped = scope.sourceKinds.length > 0
     || scope.types.length > 0
     || scope.sourceRefIds.length > 0
+    || scope.teamNamespaces.length > 0
     || Boolean(scope.paraCategory);
   if (scope.sourceKinds.length > 0) {
     params.push(scope.sourceKinds);
@@ -153,7 +157,11 @@ async function searchKnowledgeGraph(
   }
   if (scope.sourceRefIds.length > 0) {
     params.push(scope.sourceRefIds);
-    filters.push(`${SOURCE_REF_ID_SQL} = ANY($${params.length}::text[])`);
+    filters.push(sourceRefIdPredicate(params.length));
+  }
+  if (scope.teamNamespaces.length > 0) {
+    params.push(scope.teamNamespaces);
+    filters.push(teamNamespacePredicate(params.length));
   }
   if (scope.paraCategory) {
     params.push(scope.paraCategory);
@@ -250,16 +258,84 @@ const DEFAULT_COORDS: Record<string, string> = {
   prediction_state: 'none',
 };
 
-const SOURCE_REF_ID_SQL = `COALESCE(
-  NULLIF(meta->>'sourceId', ''),
-  NULLIF(meta->>'source_id', ''),
+const CANONICAL_SOURCE_REF_ID_SQL = `COALESCE(
   NULLIF(meta->'source_ref'->>'id', ''),
-  NULLIF(meta->'sourceRef'->>'id', ''),
-  NULLIF(meta->>'post_id', ''),
-  NULLIF(meta->>'postId', ''),
-  NULLIF(meta->>'blog_post_id', ''),
-  NULLIF(meta->>'blogPostId', '')
+  NULLIF(meta->'sourceRef'->>'id', '')
 )`;
+
+const CANONICAL_SOURCE_REF_TEAM_SQL = `LOWER(COALESCE(
+  NULLIF(meta->'source_ref'->>'team', ''),
+  NULLIF(meta->'sourceRef'->>'team', '')
+))`;
+
+const CANONICAL_SOURCE_REF_TABLE_SQL = `LOWER(COALESCE(
+  NULLIF(meta->'source_ref'->>'table', ''),
+  NULLIF(meta->'sourceRef'->>'table', '')
+))`;
+
+const SOURCE_REF_GROUP_KEY_SQL = `CASE
+  WHEN ${CANONICAL_SOURCE_REF_TEAM_SQL} IS NOT NULL
+    AND ${CANONICAL_SOURCE_REF_TABLE_SQL} IS NOT NULL
+    AND ${CANONICAL_SOURCE_REF_ID_SQL} IS NOT NULL
+  THEN CONCAT_WS(
+    E'\\x1f',
+    ${CANONICAL_SOURCE_REF_TEAM_SQL},
+    ${CANONICAL_SOURCE_REF_TABLE_SQL},
+    ${CANONICAL_SOURCE_REF_ID_SQL}
+  )
+  ELSE id::text
+END`;
+
+function sourceRefIdPredicate(paramIndex: number): string {
+  return `(
+    ${CANONICAL_SOURCE_REF_ID_SQL} = ANY($${paramIndex}::text[])
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        CASE
+          WHEN jsonb_typeof(meta->'source_refs') = 'array' THEN meta->'source_refs'
+          ELSE '[]'::jsonb
+        END
+      ) AS source_ref_item
+      WHERE NULLIF(source_ref_item->>'id', '') = ANY($${paramIndex}::text[])
+    )
+    OR NULLIF(meta->>'sourceId', '') = ANY($${paramIndex}::text[])
+    OR NULLIF(meta->>'source_id', '') = ANY($${paramIndex}::text[])
+    OR NULLIF(meta->>'post_id', '') = ANY($${paramIndex}::text[])
+    OR NULLIF(meta->>'postId', '') = ANY($${paramIndex}::text[])
+    OR NULLIF(meta->>'blog_post_id', '') = ANY($${paramIndex}::text[])
+    OR NULLIF(meta->>'blogPostId', '') = ANY($${paramIndex}::text[])
+  )`;
+}
+
+const LEGACY_TEAM_NAMESPACE_SQL = `LOWER(COALESCE(
+  NULLIF(meta->>'team', ''),
+  NULLIF(meta->>'agent_team', ''),
+  NULLIF(meta->>'sourceTeam', ''),
+  ''
+))`;
+
+function teamNamespacePredicate(paramIndex: number): string {
+  return `(
+    ${CANONICAL_SOURCE_REF_TEAM_SQL} = ANY($${paramIndex}::text[])
+    OR (
+      ${CANONICAL_SOURCE_REF_TEAM_SQL} IS NULL
+      AND (
+        ${LEGACY_TEAM_NAMESPACE_SQL} = ANY($${paramIndex}::text[])
+        OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(meta->'source_refs') = 'array' THEN meta->'source_refs'
+              ELSE '[]'::jsonb
+            END
+          ) AS source_ref_item
+          WHERE LOWER(COALESCE(source_ref_item->>'team', '')) = ANY($${paramIndex}::text[])
+        )
+      )
+    )
+  )`;
+}
 
 function normalizeFilterValues(values: unknown, limit: number): string[] {
   return [...new Set((Array.isArray(values) ? values : [])
@@ -311,7 +387,7 @@ function buildVectorSearchSql({
         created_at,
         1 - (embedding <=> $1::vector) AS similarity,
         ROW_NUMBER() OVER (
-          PARTITION BY COALESCE(${SOURCE_REF_ID_SQL}, id::text)
+          PARTITION BY ${SOURCE_REF_GROUP_KEY_SQL}
           ORDER BY ${orderBy}, id DESC
         ) AS source_group_rank
         ${coordSelect}
@@ -373,6 +449,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
   const sourceKinds = normalizeSourceKinds(opts.sourceKinds);
   const types = normalizeFilterValues(opts.types, 50);
   const sourceRefIds = normalizeFilterValues(opts.sourceRefIds, 2000);
+  const teamNamespaces = normalizeFilterValues(opts.teamNamespaces, 20).map((value) => value.toLowerCase());
   const groupBySourceRef = opts.groupBySourceRef === true;
   const paraCategory = normalizeParaCategory(opts.paraCategory);
   const minSimilarity = opts.minSimilarity == null
@@ -403,7 +480,11 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
 
   const embeddingVector = `[${embeddingResult.embedding.join(',')}]`;
   const params: any[] = [embeddingVector];
-  const filters = ['embedding IS NOT NULL', "(meta->>'merged_into') IS NULL"];
+  const filters = [
+    'embedding IS NOT NULL',
+    "COALESCE(status, 'captured') <> 'archived'",
+    "(meta->>'merged_into') IS NULL",
+  ];
   let nextParam = 2;
   const coordColumns = layerRoute ? await detectCoordColumns(queryReadonly) : new Set();
 
@@ -420,8 +501,14 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
   }
 
   if (sourceRefIds.length > 0) {
-    filters.push(`${SOURCE_REF_ID_SQL} = ANY($${nextParam}::text[])`);
+    filters.push(sourceRefIdPredicate(nextParam));
     params.push(sourceRefIds);
+    nextParam += 1;
+  }
+
+  if (teamNamespaces.length > 0) {
+    filters.push(teamNamespacePredicate(nextParam));
+    params.push(teamNamespaces);
     nextParam += 1;
   }
 
@@ -482,7 +569,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
     let results = normalizeResults(rows, Boolean(layerRoute));
     let layerFallbackReason: string | null = null;
 
-    if (layerRoute && results.length < topK) {
+    if (layerRoute && results.length < topK && opts.strictLayerFilters !== true) {
       const layerResultCount = results.length;
       const fallbackRows = await queryReadonly('sigma', buildVectorSearchSql({
         filters: broadFilters,
@@ -523,6 +610,7 @@ export async function searchVault(query: string, opts: VaultSearchOptions = {}):
           sourceKinds,
           types,
           sourceRefIds,
+          teamNamespaces,
           paraCategory,
           coordFilters: layerFallbackReason ? null : (layerRoute?.coordFilters || null),
           coordColumns: [...coordColumns],

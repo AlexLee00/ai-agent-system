@@ -723,7 +723,10 @@ async function testMergedConsumerFilters() {
   await fetchPredictionLedgerRows({ queryReadonly: pg.queryReadonly.bind(pg) });
   const vaultReads = pg.calls.filter((call) => /FROM sigma\.vault_entries/i.test(call.sql));
   assert.ok(vaultReads.length >= 6);
-  for (const call of vaultReads) assert.match(call.sql, /meta->>'merged_into'\) IS NULL/);
+  for (const call of vaultReads) {
+    assert.match(call.sql, /meta->>'merged_into'\) IS NULL/);
+    assert.match(call.sql, /COALESCE\(status, 'captured'\) <> 'archived'/);
+  }
   const sourceRefRead = vaultReads.find((call) => /source_ref/.test(call.sql));
   assert.match(sourceRefRead.sql, /jsonb_array_elements/, 'source-ref lookup must include preserved aliases');
   return { checkedQueries: vaultReads.length };

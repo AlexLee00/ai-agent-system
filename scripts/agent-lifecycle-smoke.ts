@@ -64,6 +64,19 @@ const rows = [
     meta: { team: 'blog', libraryCoords: { validation_state: 'unverified' } },
     libraryCoords: { validation_state: 'unverified' },
   },
+  {
+    id: 4,
+    title: 'spoofed top-level team',
+    contentPreview: 'canonical provenance must win',
+    similarity: 1,
+    source: 'blog',
+    meta: {
+      team: 'blog',
+      source_ref: { team: 'investment', table: 'investment.trade_journal', id: '4' },
+      libraryCoords: { validation_state: 'validated' },
+    },
+    libraryCoords: { validation_state: 'validated' },
+  },
 ];
 
 const fetchOk = async (_url, opts) => {
@@ -71,6 +84,11 @@ const fetchOk = async (_url, opts) => {
   assert.equal(body.method, 'tools/call');
   assert.equal(body.params.name, 'library-search');
   assert.equal(body.params.arguments.limit, 10);
+  assert.deepEqual(body.params.arguments.teamNamespaces, ['blog', 'blo']);
+  assert.equal(body.params.arguments.intent, 'strategy');
+  assert.deepEqual(body.params.arguments.coordFilters, { validation_state: ['validated'] });
+  assert.equal(body.params.arguments.strictLayerFilters, true);
+  assert.equal(body.params.arguments.groupBySourceRef, true);
   return response({
     jsonrpc: '2.0',
     id: body.id,
@@ -87,7 +105,7 @@ const fetchOk = async (_url, opts) => {
     fetch: fetchOk,
   });
   assert.equal(recall.effectiveLimit, 10);
-  assert.deepEqual(recall.memories.map((item) => item.id), [1, 3], 'must filter to team namespace and keep validated first');
+  assert.deepEqual(recall.memories.map((item) => item.id), [1], 'must inject only validated memories from the team namespace');
   assert.ok(recall.memories.every((item) => item.sourceTag.startsWith('vault-entry:')));
 
   const skipped = await lifecycle.recallMemories({

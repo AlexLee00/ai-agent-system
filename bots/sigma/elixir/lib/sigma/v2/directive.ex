@@ -89,10 +89,13 @@ defimpl Sigma.Directive.Executor, for: Sigma.Directive.ApplyFeedback do
           {:error, reason}
       end
     else
-      case Sigma.V2.Mailbox.enqueue(dir) do
-        {:ok, directive_id} ->
+      case Sigma.V2.Mailbox.enqueue_with_status(dir) do
+        {:ok, directive_id, :inserted} ->
           Sigma.V2.TelegramBridge.notify_pending(dir, directive_id)
           {:ok, %{tier: 3, outcome: :queued, directive_id: directive_id}}
+
+        {:ok, directive_id, :duplicate_suppressed} ->
+          {:ok, %{tier: 3, outcome: :duplicate_suppressed, directive_id: directive_id}}
 
         {:error, reason} ->
           {:error, reason}

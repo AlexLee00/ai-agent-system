@@ -68,12 +68,12 @@ export function sourceRefForLibraryRecord(record = {}) {
   const sourceId = cleanPart(record.sourceId || payload.id || payload.tradeId || payload.trade_id);
   const team = cleanPart(record.team);
   const tableByKind = {
-    agent_message: 'public.agent_messages',
+    agent_message: 'investment.agent_messages',
     claude_auto_dev: 'claude.auto_dev_outcomes',
     claude_refactor: 'claude.auto_dev_outcomes',
-    dpo_preference: 'public.dpo_preferences',
-    hub_alarm: 'hub.alarms',
-    luna_reflexion: 'investment.luna_reflexion',
+    dpo_preference: 'public.sigma_dpo_preference_pairs',
+    hub_alarm: 'agent.hub_alarms',
+    luna_reflexion: 'investment.luna_failure_reflexions',
     luna_learned_bias: 'investment.luna_regime_weight_snapshots',
     luna_jaenong_shadow: 'investment.jaenong_route_shadow',
     luna_signal: 'investment.signals',

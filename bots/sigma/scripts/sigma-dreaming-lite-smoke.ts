@@ -53,7 +53,7 @@ async function main() {
   assert.equal(plan.digestPlans.length, 1);
   assert.equal(plan.digestPlans[0].libraryCoords.time_stage, 'digest');
   assert.match(plan.digestPlans[0].filePath, /^library\/sigma\/dreaming\/2026-07-03\/dream-[a-f0-9]{12}\.md$/);
-  assert.equal(plan.decayPlans[0].nextTimeStage, 'decayed');
+  assert.equal(plan.decayPlans[0].nextTimeStage, 'dormant');
   assert.equal(plan.duePlans[0].nextPredictionState, 'due');
   assert.match(plan.digestPlans[0].content, /vault-entry:c1/);
 

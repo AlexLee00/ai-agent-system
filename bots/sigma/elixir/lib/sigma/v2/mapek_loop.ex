@@ -54,6 +54,18 @@ defmodule Sigma.V2.MapeKLoop do
     GenServer.call(__MODULE__, :run_cycle_sync, timeout)
   end
 
+  @doc false
+  def directive_result_status(%{outcome: :duplicate_suppressed}), do: :suppressed
+  def directive_result_status(%{"outcome" => "duplicate_suppressed"}), do: :suppressed
+  def directive_result_status(_result), do: :ok
+
+  @doc false
+  def actionable_results(results) when is_list(results) do
+    Enum.reject(results, &(Map.get(&1, :status) == :suppressed or Map.get(&1, "status") == "suppressed"))
+  end
+
+  def actionable_results(_results), do: []
+
   # ─────────────────────────────────────────────────
   # GenServer callbacks
   # ─────────────────────────────────────────────────
@@ -182,18 +194,19 @@ defmodule Sigma.V2.MapeKLoop do
           directive = build_directive(feedback, cycle_id)
 
           case Sigma.V2.Commander.apply_directive(directive) do
-            {:ok, result}       -> %{feedback: feedback, result: result, status: :ok}
+            {:ok, result}       -> %{feedback: feedback, result: result, status: directive_result_status(result)}
             {:blocked, reasons} -> %{feedback: feedback, result: reasons, status: :blocked}
             {:error, reason}    -> %{feedback: feedback, result: reason, status: :error}
           end
         end)
 
       success_count = Enum.count(results, &(&1.status == :ok))
+      suppressed_count = Enum.count(results, &(&1.status == :suppressed))
       error_count = Enum.count(results, &(&1.status == :error))
-      emit_telemetry(:execute, %{success: success_count, error: error_count})
+      emit_telemetry(:execute, %{success: success_count, suppressed: suppressed_count, error: error_count})
 
       # DirectiveTracker 기록
-      record_directive_results(results, cycle_id)
+      record_directive_results(actionable_results(results), cycle_id)
 
       # Knowledge 비동기 트리거
       cycle_result = %{
@@ -203,12 +216,13 @@ defmodule Sigma.V2.MapeKLoop do
         feedbacks: analysis.feedbacks,
         results: results,
         success_count: success_count,
+        suppressed_count: suppressed_count,
         error_count: error_count
       }
 
       handle_knowledge_phase(cycle_result)
       broadcast_cycle_complete(cycle_result)
-      Logger.info("[Sigma.V2.MapeKLoop] MAPE-K 전체 사이클 완료 — 성공 #{success_count}, 실패 #{error_count}")
+      Logger.info("[Sigma.V2.MapeKLoop] MAPE-K 전체 사이클 완료 — 성공 #{success_count}, 억제 #{suppressed_count}, 실패 #{error_count}")
       {:ok, cycle_result}
     rescue
       e ->
@@ -229,7 +243,7 @@ defmodule Sigma.V2.MapeKLoop do
     cycle_id = Map.get(cycle_result, :cycle_id, "unknown")
     Logger.debug("[Sigma.V2.MapeKLoop] Knowledge 단계 — cycle_id=#{cycle_id}")
 
-    if self_rewarding_enabled?() do
+    if self_rewarding_enabled?() and actionable_results(Map.get(cycle_result, :results, [])) != [] do
       try do
         Sigma.V2.SelfRewarding.evaluate_cycle(cycle_result)
       rescue
