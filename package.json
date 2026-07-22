@@ -59,13 +59,15 @@
   "overrides": {
     "tar": "^7.5.9",
     "basic-ftp": "^6.0.1",
-    "ip-address": "^10.2.0"
+    "ip-address": "^10.2.0",
+    "brace-expansion@>=2.0.0 <2.1.2": "2.1.2",
+    "brace-expansion@<1.1.16": "1.1.16"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "docx": "^9.6.1",
     "pg": "^8.20.0",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "technicalindicators": "^3.1.0",
     "tesseract.js": "^7.0.0",
     "typescript": "^5.9.3"

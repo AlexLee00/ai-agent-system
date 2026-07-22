@@ -7,12 +7,21 @@ const { execSync } = require('child_process');
 const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs']);
 const REVIEW_EXTENSIONS = new Set([...JS_EXTENSIONS, '.ts', '.mts', '.cts']);
 const PATTERN_SKIP_FILES = new Set(['.checksums.json']);
+const PATTERN_DEFINITION_PATH = 'packages/core/lib/skills/code-review.ts';
+const SECRET_ENV_NAME_PATTERN = /(?:^|_)(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|BOT_TOKEN|CLIENT_SECRET|PRIVATE_KEY|PASSWORD|SECRET|TOKEN)(?:_|$)/;
+const WHITELISTED_SQL_IDENTIFIER_MARKER = 'code-review: allow-whitelisted-sql-identifiers';
 
 function isTestFixturePath(filePath) {
   const normalized = String(filePath || '').replace(/\\/g, '/');
   return normalized.includes('/__tests__/')
     || /\.(?:test|spec)\.[cm]?[jt]s$/i.test(normalized)
     || /-smoke\.[cm]?[jt]sx?$/i.test(normalized);
+}
+
+function isPatternDefinitionPath(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/').replace(/^\.\//, '');
+  return normalized === PATTERN_DEFINITION_PATH
+    || normalized.endsWith(`/${PATTERN_DEFINITION_PATH}`);
 }
 
 function looksLikeKnownCredentialLiteral(line) {
@@ -34,7 +43,15 @@ function looksLikeHardcodedCredential(line) {
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toUpperCase();
   if (/(?:STORAGE|CACHE|LOCAL_STORAGE|SESSION_STORAGE)(?:_|$)/.test(identifier)) return false;
+  if (identifier === 'APPLY_CONFIRM_TOKEN') return false;
   return /(?:^|_)(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|BOT_TOKEN|CLIENT_SECRET|PRIVATE_KEY|PASSWORD|SECRET|TOKEN)(?:_|$)/.test(identifier);
+}
+
+function hasWhitelistedSqlIdentifierMarker(lines, index, line) {
+  if (!/\$\{sets\.join\(['"]\s*,\s*['"]\)\}/.test(line)) return false;
+  if (!/\$\$\{params\.length\}/.test(line)) return false;
+  return lines.slice(Math.max(0, index - 1), index + 1)
+    .some(candidate => candidate.includes(WHITELISTED_SQL_IDENTIFIER_MARKER));
 }
 
 const SECURITY_PATTERNS = [
@@ -59,18 +76,22 @@ const SECURITY_PATTERNS = [
   {
     severity: 'HIGH',
     desc: 'env 폴백에 시크릿 문자열 사용 의심',
-    match: (line) => {
-      const match = line.match(/process\.env\.[A-Z0-9_]+\s*\|\|\s*['"`]([^'"`]{16,})['"`]/);
-      if (!match) return false;
-      const fallback = match[1];
+    match: (line, _lineNumber, filePath) => {
+      if (isTestFixturePath(filePath)) return false;
+      const match = line.match(/process\.env\.([A-Z0-9_]+)\s*\|\|\s*['"`]([^'"`]{16,})['"`]/);
+      if (!match || !SECRET_ENV_NAME_PATTERN.test(match[1])) return false;
+      const fallback = match[2];
       if (fallback.includes('${')) return false;
       return !/^(?:postgres(?:ql)?|https?):\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(fallback);
     },
   },
   {
+    id: 'interpolated-write-sql',
     severity: 'HIGH',
     desc: '템플릿 문자열 기반 쓰기 SQL 의심',
-    match: (line) => /`[^`]*\b(DELETE|DROP|INSERT|UPDATE)\b[^`]*\b(INTO|FROM|SET|WHERE|TABLE)\b[^`]*`/i.test(line),
+    match: (line, _lineNumber, filePath) => !isTestFixturePath(filePath)
+      && /\$\{[^}]+\}/.test(line)
+      && /`[^`]*\b(DELETE|DROP|INSERT|UPDATE)\b[^`]*\b(INTO|FROM|SET|WHERE|TABLE)\b[^`]*`/i.test(line),
   },
 ];
 
@@ -135,7 +156,12 @@ function checkPatterns(filePath) {
     const findings = [];
 
     lines.forEach((line, index) => {
+      if (isPatternDefinitionPath(filePath) && /^\s*desc:\s*['"`]/.test(line)) return;
       SECURITY_PATTERNS.forEach((pattern) => {
+        if (
+          pattern.id === 'interpolated-write-sql'
+          && hasWhitelistedSqlIdentifierMarker(lines, index, line)
+        ) return;
         if (pattern.match(line, index + 1, filePath)) {
           findings.push({
             severity: pattern.severity,

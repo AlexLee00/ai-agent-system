@@ -330,6 +330,75 @@ function test_code_review_still_flags_known_token_formats_in_smokes() {
   console.log('✅ code-review: known token formats stay protected in smoke files');
 }
 
+function test_code_review_only_flags_secret_env_fallbacks_in_production() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-env-fallback-'));
+  const productionTarget = path.join(tmpDir, 'src', 'config.ts');
+  const fixtureTarget = path.join(tmpDir, '__tests__', 'config.test.ts');
+  const source = [
+    "const model = process.env.EMBED_MODEL || 'qwen3-embed-0.6b';",
+    "const token = process.env.API_TOKEN || '0123456789abcdef0123456789abcdef';",
+  ].join('\n');
+  fs.mkdirSync(path.dirname(productionTarget), { recursive: true });
+  fs.mkdirSync(path.dirname(fixtureTarget), { recursive: true });
+  fs.writeFileSync(productionTarget, source, 'utf8');
+  fs.writeFileSync(fixtureTarget, source, 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const productionFindings = codeReview.checkPatterns(productionTarget).filter(
+      item => item.desc === 'env 폴백에 시크릿 문자열 사용 의심',
+    );
+    const fixtureFindings = codeReview.checkPatterns(fixtureTarget).filter(
+      item => item.desc === 'env 폴백에 시크릿 문자열 사용 의심',
+    );
+    assert.deepStrictEqual(productionFindings.map(item => item.line), [2]);
+    assert.strictEqual(fixtureFindings.length, 0);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: env fallback checks are credential-aware and fixture-safe');
+}
+
+function test_code_review_only_flags_interpolated_write_sql() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-write-sql-'));
+  const target = path.join(tmpDir, 'src', 'queries.ts');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, [
+    'const safe = `UPDATE sigma.vault_entries SET status = $1 WHERE id = $2`;',
+    'const unsafe = `UPDATE sigma.vault_entries SET status = ${status} WHERE id = ${id}`;',
+    '// code-review: allow-whitelisted-sql-identifiers (COORD_COLUMNS)',
+    "const whitelisted = `UPDATE sigma.vault_entries SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`;",
+    '// code-review: allow-whitelisted-sql-identifiers (COORD_COLUMNS)',
+    'const stillUnsafe = `UPDATE sigma.vault_entries SET status = ${status} WHERE id = ${id}`;',
+  ].join('\n'), 'utf8');
+
+  try {
+    delete require.cache[CODE_REVIEW_PATH];
+    const codeReview = require(CODE_REVIEW_PATH);
+    const findings = codeReview.checkPatterns(target).filter(
+      item => item.desc === '템플릿 문자열 기반 쓰기 SQL 의심',
+    );
+    assert.deepStrictEqual(findings.map(item => item.line), [2, 6]);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: parameterized write SQL is not treated as interpolation');
+}
+
+function test_code_review_does_not_flag_its_pattern_descriptions() {
+  delete require.cache[CODE_REVIEW_PATH];
+  try {
+    const codeReview = require(CODE_REVIEW_PATH);
+    assert.deepStrictEqual(codeReview.checkPatterns(CODE_REVIEW_PATH), []);
+  } finally {
+    delete require.cache[CODE_REVIEW_PATH];
+  }
+  console.log('✅ code-review: detector descriptions do not self-trigger');
+}
+
 function test_code_review_distinguishes_storage_keys_from_credentials() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-code-review-storage-key-'));
   const target = path.join(tmpDir, 'app.js');
@@ -338,6 +407,7 @@ function test_code_review_distinguishes_storage_keys_from_credentials() {
     "const SELECTED_MEETING_STORAGE_KEY = 'lunaMeetingRoomSelectedMeetingId';",
     "const PWA_INSTALL_DISMISSED_STORAGE_KEY = 'lunaMeetingRoomPwaInstallDismissed';",
     "const storageKey = 'Abcdef0123456789Abcdef0123456789';",
+    "const APPLY_CONFIRM_TOKEN = 'hub-stale-auto-repair-backfill';",
     `const API_TOKEN = '${credential}';`,
     `const apiKey = '${credential}';`,
     `const config = { apiKey: '${credential}' };`,
@@ -351,7 +421,7 @@ function test_code_review_distinguishes_storage_keys_from_credentials() {
     const findings = codeReview.checkPatterns(target).filter(
       item => item.desc === 'API 키 또는 시크릿 하드코딩 의심',
     );
-    assert.deepStrictEqual(findings.map(item => item.line), [4, 5, 6, 7]);
+    assert.deepStrictEqual(findings.map(item => item.line), [5, 6, 7, 8]);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     delete require.cache[CODE_REVIEW_PATH];
@@ -449,6 +519,9 @@ async function main() {
     test_code_review_ignores_loopback_http_env_fallback,
     test_code_review_ignores_smoke_fixture_credentials,
     test_code_review_still_flags_known_token_formats_in_smokes,
+    test_code_review_only_flags_secret_env_fallbacks_in_production,
+    test_code_review_only_flags_interpolated_write_sql,
+    test_code_review_does_not_flag_its_pattern_descriptions,
     test_code_review_distinguishes_storage_keys_from_credentials,
     test_code_review_scans_typescript_files,
     test_code_review_distinguishes_test_fixture_code_writes,

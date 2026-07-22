@@ -4125,6 +4125,32 @@ async function test_selector_agents_persist_actual_fallback_model_metadata() {
   console.log('✅ auto-dev: selector agents persist actual fallback model metadata');
 }
 
+async function test_repository_immutable_paths_are_non_retryable() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const violations = pipeline._testOnly_findImmutableAutoDevPaths([
+      'bots/sigma/ts/lib/dataset-builder.ts',
+      'bots/sigma/legacy-skills/archived.ts',
+      'packages/core/lib/skills/code-review.ts',
+    ]);
+    assert.deepStrictEqual(violations, [
+      'bots/sigma/ts/lib/dataset-builder.ts',
+      'bots/sigma/legacy-skills/archived.ts',
+    ]);
+
+    assert.throws(
+      () => pipeline._testOnly_assertNoImmutableAutoDevPaths(violations),
+      error => error.nonRetryable === true
+        && error.nonRetryableReason === 'repository_instruction_protected',
+    );
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: repository immutable paths fail closed without retries');
+}
+
 async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
@@ -4224,6 +4250,7 @@ async function main() {
     test_cherry_pick_failure_aborts_and_fails_closed,
     test_status_snapshot_includes_profile_worktree_patch_counts,
     test_selector_agents_persist_actual_fallback_model_metadata,
+    test_repository_immutable_paths_are_non_retryable,
   ];
 
   let passed = 0;

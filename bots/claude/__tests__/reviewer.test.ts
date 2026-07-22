@@ -157,6 +157,40 @@ async function test_runReview_docs_only_skips_typescript_check() {
   console.log('✅ reviewer: docs-only change skips TypeScript check');
 }
 
+async function test_runReview_ignores_frozen_sigma_typescript_baseline() {
+  const rootDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'reviewer-frozen-ts-'));
+  const activeFile = path.join(rootDir, 'bots/sigma/vault/active.ts');
+  fs.mkdirSync(path.dirname(activeFile), { recursive: true });
+  fs.writeFileSync(path.join(rootDir, 'bots/sigma/tsconfig.json'), '{}\n', 'utf8');
+  fs.writeFileSync(activeFile, 'export {};\n', 'utf8');
+  const mocks = makeReviewerMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: rootDir },
+    child_process: {
+      execSync: (cmd) => {
+        if (!cmd.includes('npx tsc')) return '';
+        const error = Object.assign(new Error('typecheck failed'), {
+          stdout: [
+            "ts/lib/dataset-builder.ts(178,19): error TS2367: frozen baseline",
+            "vault/active.ts(2,1): error TS2322: active error",
+          ].join('\n'),
+        });
+        throw error;
+      },
+    },
+  });
+
+  try {
+    await withMocks(mocks, async (reviewer) => {
+      const result = await reviewer.runReview({ force: true, test: true, files: [activeFile], rootDir });
+      const typeIssues = result.findings.filter(item => /^TS\d+:/.test(item.desc));
+      assert.deepStrictEqual(typeIssues.map(item => path.relative(rootDir, item.file)), ['bots/sigma/vault/active.ts']);
+    });
+  } finally {
+    fs.rmSync(rootDir, { recursive: true, force: true });
+  }
+  console.log('✅ reviewer: frozen Sigma TypeScript baseline is excluded');
+}
+
 // ─── Test 7: analyzeChanges — 빈 diff ────────────────────────────────
 
 async function test_analyzeChanges_empty_diff() {
@@ -275,6 +309,7 @@ async function main() {
     test_runReview_kill_switch_off_skips,
     test_runReview_force_executes,
     test_runReview_docs_only_skips_typescript_check,
+    test_runReview_ignores_frozen_sigma_typescript_baseline,
     test_analyzeChanges_empty_diff,
     test_reportToTelegram_calls_postAlarm,
     test_runReview_suppressAlarm_skips_postAlarm,

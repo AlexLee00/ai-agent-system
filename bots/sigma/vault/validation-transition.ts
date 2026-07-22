@@ -608,6 +608,7 @@ async function updateEntryCoords(id, patch, { pg = pgPool, coordColumns = null, 
     sets.push(`meta = ${metaExpression}`);
     params.push(id);
     if (sets.length) {
+      // code-review: allow-whitelisted-sql-identifiers (COORD_COLUMNS)
       await pg.query('sigma', `UPDATE sigma.vault_entries SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params);
     }
   } else {

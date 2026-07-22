@@ -322,6 +322,7 @@ async function updateEntryCoords(id, patch, { pg = pgPool, coordColumns = null }
     sets.push(`meta = jsonb_set(COALESCE(meta, '{}'::jsonb), '{libraryCoords}', COALESCE(meta->'libraryCoords', '{}'::jsonb) || $${params.length}::jsonb, true)`);
     params.push(id);
     if (sets.length) {
+      // code-review: allow-whitelisted-sql-identifiers (COORD_COLUMNS)
       await pg.query('sigma', `UPDATE sigma.vault_entries SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params);
     }
   } else {

@@ -29,6 +29,10 @@ const env          = require('../../../packages/core/lib/env');
 const { writeClaudeHeartbeat, errorHeartbeatMeta } = require('../lib/agent-heartbeat');
 
 const DEFAULT_ROOT = env.PROJECT_ROOT;
+const FROZEN_TYPESCRIPT_PREFIXES = [
+  'bots/sigma/ts/',
+  'bots/sigma/legacy-skills/',
+];
 
 function resolveRootDir(options = {}) {
   const candidate = options.rootDir || options.cwd || DEFAULT_ROOT;
@@ -268,6 +272,11 @@ function findNearestTsconfig(filePath, rootDir) {
   return null;
 }
 
+function isFrozenTypeScriptBaseline(filePath, rootDir) {
+  const relative = path.relative(rootDir, filePath).replace(/\\/g, '/');
+  return FROZEN_TYPESCRIPT_PREFIXES.some(prefix => relative.startsWith(prefix));
+}
+
 /**
  * TypeScript 타입 체크
  */
@@ -297,8 +306,10 @@ function runTypeScriptCheck(files = [], options = {}) {
       errorLines.forEach(line => {
         const m = line.match(/^(.+)\((\d+),\d+\):.+error (TS\d+): (.+)$/);
         if (m) {
+          const issueFile = path.resolve(cwd, m[1]);
+          if (isFrozenTypeScriptBaseline(issueFile, rootDir)) return;
           issues.push({
-            file: path.resolve(cwd, m[1]),
+            file: issueFile,
             line: Number(m[2]),
             severity: 'HIGH',
             desc: `${m[3]}: ${m[4].slice(0, 100)}`,

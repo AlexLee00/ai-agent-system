@@ -14,7 +14,12 @@ const {
   _testOnly_isResolvedManifestReason,
   _testOnly_resolveRowsByCurrentState,
 } = require('./alarm-auto-repair-stale-scan.ts');
-const { APPLY_CONFIRM_TOKEN, _testOnly_buildBackfillPlan, _testOnly_isApplyConfirmed } = require('./alarm-auto-repair-stale-backfill.ts');
+const {
+  APPLY_CONFIRM_TOKEN,
+  _testOnly_buildBackfillPlan,
+  _testOnly_isApplyConfirmed,
+  _testOnly_normalizeIdFilter,
+} = require('./alarm-auto-repair-stale-backfill.ts');
 const {
   applyAlarmSuppressionProposals,
   buildAlarmSuppressionProposals,
@@ -471,6 +476,10 @@ async function main() {
     assert(backfillPlan[0].alarm_event_id === '1011', 'backfill must preserve the exact alarm generation');
     assert(_testOnly_isApplyConfirmed(APPLY_CONFIRM_TOKEN), 'expected stale backfill apply confirm token to be accepted');
     assert(!_testOnly_isApplyConfirmed(''), 'expected stale backfill apply without confirm token to be rejected');
+    assert(
+      JSON.stringify([..._testOnly_normalizeIdFilter('3,1,3,invalid,2')]) === JSON.stringify([3, 1, 2]),
+      'stale backfill id filter must keep only unique positive integer ids',
+    );
     const lowConfidencePolicy = _testOnly_annotateRows([{
       team: 'unknown',
       bot_name: 'unknown',

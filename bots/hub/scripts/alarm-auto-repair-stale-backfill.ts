@@ -31,6 +31,13 @@ function normalizeText(value: unknown, fallback = ''): string {
   return text || fallback;
 }
 
+function normalizeIdFilter(value: unknown): Set<number> {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return new Set(values
+    .map((item) => Number(String(item).trim()))
+    .filter((item) => Number.isSafeInteger(item) && item > 0));
+}
+
 function mirrorStatusForRow(row: Record<string, any>): BackfillStatus {
   if (row.stale_status === 'terminal_dead_letter') return 'exhausted';
   return row.stale_status === 'resolved_current_policy' ? 'verified' : 'resolved';
@@ -147,6 +154,7 @@ export async function backfillResolvedStaleAutoRepair({
   staleMinutes = 120,
   limit = 100,
   maxBatches = 5,
+  ids = [],
   apply = false,
   confirm = '',
   db = pgPool,
@@ -154,6 +162,7 @@ export async function backfillResolvedStaleAutoRepair({
   staleMinutes?: number;
   limit?: number;
   maxBatches?: number;
+  ids?: number[] | string;
   apply?: boolean;
   confirm?: string;
   db?: typeof pgPool;
@@ -161,6 +170,7 @@ export async function backfillResolvedStaleAutoRepair({
   const threshold = normalizeNumber(staleMinutes, 120, 5, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 100, 1, 100);
   const batchLimit = normalizeNumber(maxBatches, 5, 1, 20);
+  const idFilter = normalizeIdFilter(ids);
   if (apply && !isApplyConfirmed(confirm)) {
     return {
       ok: false,
@@ -191,7 +201,8 @@ export async function backfillResolvedStaleAutoRepair({
     activeRows += Number(scan.rows?.length || 0);
     resolvedRows += Number(scan.resolved_rows?.length || 0);
     totalCandidates += Number(scan.total_candidates || 0);
-    const plan = buildBackfillPlan(scan.resolved_rows || []);
+    const plan = buildBackfillPlan(scan.resolved_rows || [])
+      .filter((row) => idFilter.size === 0 || idFilter.has(row.id));
     planned.push(...plan);
 
     if (!apply || plan.length === 0) break;
@@ -206,6 +217,7 @@ export async function backfillResolvedStaleAutoRepair({
     stale_minutes: threshold,
     limit: rowLimit,
     max_batches: batchLimit,
+    requested_ids: [...idFilter],
     active_rows_seen: activeRows,
     resolved_rows_seen: resolvedRows,
     total_candidates_seen: totalCandidates,
@@ -221,6 +233,7 @@ async function main() {
     staleMinutes: normalizeNumber(argValue('stale-minutes', ''), 120, 5, 7 * 24 * 60),
     limit: normalizeNumber(argValue('limit', ''), 100, 1, 100),
     maxBatches: normalizeNumber(argValue('max-batches', ''), 5, 1, 20),
+    ids: argValue('ids', ''),
     apply: hasFlag('apply'),
     confirm: argValue('confirm', ''),
   });
@@ -240,4 +253,5 @@ module.exports = {
   backfillResolvedStaleAutoRepair,
   _testOnly_buildBackfillPlan: buildBackfillPlan,
   _testOnly_isApplyConfirmed: isApplyConfirmed,
+  _testOnly_normalizeIdFilter: normalizeIdFilter,
 };
