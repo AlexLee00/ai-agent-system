@@ -19,14 +19,24 @@ function resolveAdapterMode(team: unknown, defaultMode = 'virtual'): string {
   return defaultMode;
 }
 
+function resolveIncidentTaskTeams(env = process.env): Set<string> {
+  return new Set(
+    normalizeText(env.JAY_COMMANDER_INCIDENT_TASK_TEAMS, '')
+      .split(',')
+      .map((team) => team.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 function createTeamCommanderAdapter(team: unknown, options: { toBot?: unknown; timeoutMs?: unknown } = {}) {
   const normalizedTeam = normalizeText(team, 'general').toLowerCase();
   const toBot = normalizeText(options.toBot, normalizedTeam);
   const timeoutMs = Math.max(15_000, Number(options.timeoutMs || 300_000) || 300_000);
   const commandQueueEnabled = parseBoolean(process.env.JAY_COMMANDER_BOT_QUEUE_ENABLED, true);
-  const defaultMode = commandQueueEnabled ? 'bot_command' : 'virtual';
+  const incidentTaskSupported = resolveIncidentTaskTeams().has(normalizedTeam);
+  const defaultMode = commandQueueEnabled && incidentTaskSupported ? 'bot_command' : 'virtual';
   const mode = resolveAdapterMode(normalizedTeam, defaultMode);
-  if (mode === 'bot_command') {
+  if (mode === 'bot_command' && incidentTaskSupported) {
     return createBotCommandAdapter(normalizedTeam, { toBot, timeoutMs });
   }
   return createBotCommandAdapter(normalizedTeam, { toBot: '', timeoutMs });
@@ -34,4 +44,7 @@ function createTeamCommanderAdapter(team: unknown, options: { toBot?: unknown; t
 
 module.exports = {
   createTeamCommanderAdapter,
+  _testOnly: {
+    resolveIncidentTaskTeams,
+  },
 };

@@ -346,6 +346,15 @@ export function renderSnapshotMarkdown(snapshot) {
   ].join('\n');
 }
 
+export function sessionSnapshotOk({ health, launchd, opsConsoleServe }) {
+  return Boolean(
+    health?.failed === 0
+      && launchd?.ok !== false
+      && (launchd?.failedCount || 0) === 0
+      && opsConsoleServe === 'ok',
+  );
+}
+
 export async function buildSessionSnapshot(options = {}) {
   const startedAt = Date.now();
   const generatedAt = new Date();
@@ -356,7 +365,7 @@ export async function buildSessionSnapshot(options = {}) {
     collectOpsConsoleServeStatus(options),
   ]);
   const snapshot = {
-    ok: health.failed === 0 && (launchd.failedCount || 0) === 0 && opsConsoleServe === 'ok',
+    ok: sessionSnapshotOk({ health, launchd, opsConsoleServe }),
     source: 'jay_session_snapshot',
     generatedAt: generatedAt.toISOString(),
     generatedAtKst: kst.datetimeStr(),
@@ -405,6 +414,7 @@ async function main() {
   });
   if (hasFlag('json')) console.log(JSON.stringify({ ...result, markdown: undefined }, null, 2));
   else console.log(result.markdown);
+  if (!result.ok) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -422,6 +432,7 @@ export default {
   collectServiceHealth,
   renderSnapshotMarkdown,
   runSessionSnapshot,
+  sessionSnapshotOk,
   summarizeOpsConsoleServeStatus,
   summarizeLaunchdList,
   writeSnapshot,

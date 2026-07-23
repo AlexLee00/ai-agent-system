@@ -63,17 +63,30 @@ defmodule Jay.Core.HubClient do
       {:ok, %{suppressed: true, reason: :alerts_disabled}}
     else
       if alarm_delivery_enabled?() do
-        Req.post("#{hub_url()}/hub/alarm",
+        "#{hub_url()}/hub/alarm"
+        |> Req.post(
           json: %{message: message, team: team, fromBot: from_bot},
           headers: headers(),
           retry: false
         )
+        |> normalize_alarm_response()
       else
         Logger.debug("[HubClient] post_alarm suppressed team=#{team} from_bot=#{from_bot}")
         {:ok, %{suppressed: true}}
       end
     end
   end
+
+  @doc false
+  def normalize_alarm_response({:ok, %{status: status, body: body}})
+      when status >= 200 and status < 300,
+      do: {:ok, body}
+
+  def normalize_alarm_response({:ok, %{status: status, body: body}}),
+    do: {:error, "HTTP #{status}: #{inspect(body)}"}
+
+  def normalize_alarm_response({:error, error}), do: {:error, error}
+  def normalize_alarm_response(other), do: {:error, {:unexpected_alarm_response, other}}
 
   def command_inbox(target_team, opts \\ []) do
     params =

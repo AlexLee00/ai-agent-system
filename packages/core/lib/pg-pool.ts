@@ -82,12 +82,69 @@ function shouldUseHub(schema: string, sql: string): boolean {
   return isReadOnlySql(sql);
 }
 
+function stripSqlLiteralsAndComments(sql: string): string {
+  const input = String(sql || '');
+  let output = '';
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    const next = input[index + 1];
+
+    if (char === '-' && next === '-') {
+      index += 2;
+      while (index < input.length && input[index] !== '\n') index += 1;
+      output += '\n';
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      index += 2;
+      while (index < input.length && !(input[index] === '*' && input[index + 1] === '/')) index += 1;
+      index += 1;
+      output += ' ';
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      const quote = char;
+      for (index += 1; index < input.length; index += 1) {
+        if (input[index] !== quote) continue;
+        if (input[index + 1] === quote) {
+          index += 1;
+          continue;
+        }
+        break;
+      }
+      output += ' ';
+      continue;
+    }
+
+    if (char === '$') {
+      const dollarTag = input.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)?.[0];
+      if (dollarTag) {
+        const end = input.indexOf(dollarTag, index + dollarTag.length);
+        index = end === -1 ? input.length : end + dollarTag.length - 1;
+        output += ' ';
+        continue;
+      }
+    }
+
+    output += char;
+  }
+
+  return output;
+}
+
 function isReadOnlySql(sql: string): boolean {
-  const normalized = String(sql || '').trim().toLowerCase();
+  const normalized = stripSqlLiteralsAndComments(sql).trim().toLowerCase();
   if (!normalized) return false;
-  return normalized.startsWith('select')
-    || normalized.startsWith('with')
-    || normalized.startsWith('explain');
+  if (normalized.startsWith('select')) return !/\bfor\s+(update|no\s+key\s+update|share|key\s+share)\b/.test(normalized);
+  if (!normalized.startsWith('with') && !normalized.startsWith('explain')) return false;
+
+  // A CTE may begin with WITH while its outer statement mutates rows. Keep all
+  // locking and data-changing statements on the direct writer pool.
+  const mutatingKeyword = /\b(insert|update|delete|merge|call|create|alter|drop|truncate|grant|revoke|copy|vacuum|refresh|reindex|cluster|analyze)\b/;
+  return normalized.includes('select') && !mutatingKeyword.test(normalized);
 }
 
 function isConnError(err: any): boolean {
@@ -439,6 +496,11 @@ export async function getClient(schema: string): Promise<any> {
   await client.query(`SET search_path = ${schema}, public`);
   return client;
 }
+
+export const _testOnly = {
+  isReadOnlySql,
+  stripSqlLiteralsAndComments,
+};
 
 const monitorTimer = setInterval(() => {
   for (const [schema, pool] of pools) {

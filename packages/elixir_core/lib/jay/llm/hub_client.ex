@@ -211,7 +211,7 @@ defmodule Jay.Core.LLM.HubClient do
 
     defp response_retry_after(_response), do: nil
 
-    defp hub_base, do: System.get_env("HUB_BASE_URL") || @hub_base_default
-    defp hub_token, do: System.get_env("HUB_AUTH_TOKEN") || ""
+    defp hub_base, do: Jay.Core.Config.hub_url() || @hub_base_default
+    defp hub_token, do: Jay.Core.Config.hub_token() || ""
   end
 end

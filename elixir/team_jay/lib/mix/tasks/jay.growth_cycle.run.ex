@@ -24,7 +24,12 @@ defmodule Mix.Tasks.Jay.GrowthCycle.Run do
   end
 
   defp parse_opts(args) do
-    Enum.reduce(args, [], fn
+    defaults = [execute_actions: false, notify: false, record_clean_day: false]
+
+    Enum.reduce(args, defaults, fn
+      "--actions", opts -> Keyword.put(opts, :execute_actions, true)
+      "--notify", opts -> Keyword.put(opts, :notify, true)
+      "--record-clean-day", opts -> Keyword.put(opts, :record_clean_day, true)
       "--no-notify", opts -> Keyword.put(opts, :notify, false)
       "--no-clean-day", opts -> Keyword.put(opts, :record_clean_day, false)
       "--no-actions", opts -> Keyword.put(opts, :execute_actions, false)

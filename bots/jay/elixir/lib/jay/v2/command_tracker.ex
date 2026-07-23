@@ -18,6 +18,10 @@ defmodule Jay.V2.CommandTracker do
     record(:acknowledged, pipeline, target_team, envelope, opts)
   end
 
+  def suppressed(pipeline, target_team, envelope, opts \\ []) do
+    record(:suppressed, pipeline, target_team, envelope, opts)
+  end
+
   def failed(pipeline, target_team, envelope, opts \\ []) do
     record(:failed, pipeline, target_team, envelope, opts)
   end
@@ -60,6 +64,7 @@ defmodule Jay.V2.CommandTracker do
 
   defp status_label(:issued), do: "command issued"
   defp status_label(:acknowledged), do: "dispatch acknowledged"
+  defp status_label(:suppressed), do: "dispatch suppressed"
   defp status_label(:failed), do: "dispatch failed"
   defp status_label(:completed), do: "command completed"
   defp status_label(status), do: to_string(status)

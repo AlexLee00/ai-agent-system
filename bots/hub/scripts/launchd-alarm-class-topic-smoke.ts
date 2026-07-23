@@ -13,9 +13,9 @@ const REQUIRED_PLISTS = [
     installed: path.join(os.homedir(), 'Library', 'LaunchAgents', 'ai.hub.resource-api.plist'),
   },
   {
-    name: 'orchestrator',
-    repo: path.join(repoRoot, 'bots', 'orchestrator', 'launchd', 'ai.orchestrator.plist'),
-    installed: path.join(os.homedir(), 'Library', 'LaunchAgents', 'ai.orchestrator.plist'),
+    name: 'jay_runtime',
+    repo: path.join(repoRoot, 'bots', 'orchestrator', 'launchd', 'ai.jay.runtime.plist'),
+    installed: path.join(os.homedir(), 'Library', 'LaunchAgents', 'ai.jay.runtime.plist'),
   },
   {
     name: 'steward_hourly',

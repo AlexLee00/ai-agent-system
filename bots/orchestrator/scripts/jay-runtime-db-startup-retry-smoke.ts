@@ -7,6 +7,7 @@ const {
   DEFAULT_DB_INIT_RETRY_MS,
   isTransientDbStartupError,
   retryStartupInit,
+  isJayRuntimeCommand,
 } = runtime._testOnly;
 
 async function main() {
@@ -16,6 +17,9 @@ async function main() {
   assert.equal(isTransientDbStartupError({ code: '57P03', message: 'the database system is starting up' }), true);
   assert.equal(isTransientDbStartupError(new Error('database system is in recovery mode')), true);
   assert.equal(isTransientDbStartupError(new Error('permission denied')), false);
+  assert.equal(isJayRuntimeCommand('/opt/homebrew/bin/node /repo/dist/daemons/ai.jay.runtime.cjs'), true);
+  assert.equal(isJayRuntimeCommand('/opt/homebrew/bin/node /repo/bots/orchestrator/src/jay-runtime.ts'), true);
+  assert.equal(isJayRuntimeCommand('/opt/homebrew/bin/node /repo/dist/daemons/ai.orchestrator.mjs'), false);
 
   let attempts = 0;
   const slept: number[] = [];

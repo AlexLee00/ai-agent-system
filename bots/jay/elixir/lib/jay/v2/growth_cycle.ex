@@ -1,6 +1,6 @@
 defmodule Jay.V2.GrowthCycle do
   @moduledoc """
-  9팀 일일 성장 환류 사이클 GenServer.
+  현역 팀과 플랫폼 지표의 일일 성장 환류 사이클 GenServer.
   매일 06:30 KST 자동 실행.
 
   SENSE → ANALYZE → DECIDE → ACT → MEASURE → LEARN
@@ -82,8 +82,9 @@ defmodule Jay.V2.GrowthCycle do
     Logger.info("[GrowthCycle] ▶ #{date} 사이클 시작")
     Topics.broadcast_growth_cycle_started(date)
 
-    # ── SENSE: 9팀 데이터 수집 ─────────────────────────────────
+    # ── SENSE: 현역 팀/플랫폼 데이터 수집 ─────────────────────
     team_data = sense(date)
+    collection = TeamConnector.collection_summary(team_data)
 
     # ── ANALYZE: 성과 지표 분석 ───────────────────────────────
     analysis = analyze(team_data, date)
@@ -99,14 +100,20 @@ defmodule Jay.V2.GrowthCycle do
     end
 
     # ── MEASURE: KPI 저장 ────────────────────────────────────
-    measure(date, team_data, analysis, decisions)
+    measure(date, team_data, collection, analysis, decisions)
 
     # ── LEARN: 브리핑 생성 + 텔레그램 발송 ──────────────────
     briefing = learn(date, team_data, analysis, opts)
-    record_completion(date, team_data, analysis, decisions, briefing)
+    record_completion(date, team_data, collection, analysis, decisions, briefing)
 
     Topics.broadcast(:growth_cycle_completed, %{date: date, briefing: briefing})
-    %{date: date, teams_collected: map_size(team_data), briefing_len: String.length(briefing)}
+    %{
+      date: date,
+      teams_attempted: collection.attempted,
+      teams_collected: collection.succeeded,
+      failed_teams: collection.failed,
+      briefing_len: String.length(briefing)
+    }
   end
 
   # ────────────────────────────────────────────────────────────────
@@ -114,7 +121,7 @@ defmodule Jay.V2.GrowthCycle do
   # ────────────────────────────────────────────────────────────────
 
   defp sense(_date) do
-    Logger.info("[GrowthCycle] SENSE: 9팀 데이터 수집 중...")
+    Logger.info("[GrowthCycle] SENSE: 현역 팀/플랫폼 데이터 수집 중...")
     team_data = TeamConnector.collect_all()
 
     Enum.each(team_data, fn {team, data} ->
@@ -122,7 +129,13 @@ defmodule Jay.V2.GrowthCycle do
       Logger.debug("[GrowthCycle] SENSE #{team}: #{inspect(data, limit: 3)}")
     end)
 
-    Logger.info("[GrowthCycle] SENSE 완료: #{map_size(team_data)}팀")
+    collection = TeamConnector.collection_summary(team_data)
+
+    Logger.info(
+      "[GrowthCycle] SENSE 완료: #{collection.succeeded}/#{collection.attempted} " <>
+        "(failed=#{inspect(collection.failed)})"
+    )
+
     team_data
   end
 
@@ -306,7 +319,7 @@ defmodule Jay.V2.GrowthCycle do
     end
   end
 
-  defp measure(date, team_data, analysis, decisions) do
+  defp measure(date, team_data, collection, analysis, decisions) do
     Jay.Core.EventLake.record_sync(%{
       source: "jay.growth_cycle",
       event_type: "growth_cycle.measured",
@@ -314,11 +327,13 @@ defmodule Jay.V2.GrowthCycle do
       metadata: %{
         date: date,
         cycle_id: cycle_id_for_date(date),
-        teams_collected: map_size(team_data)
+        teams_attempted: collection.attempted,
+        teams_collected: collection.succeeded,
+        failed_teams: collection.failed
       },
       payload: %{
         date: date,
-        teams: Map.keys(team_data),
+        teams: successful_team_keys(team_data),
         analysis: analysis,
         decision_count: length(decisions)
       }
@@ -327,7 +342,7 @@ defmodule Jay.V2.GrowthCycle do
     _ -> :ok
   end
 
-  defp record_completion(date, team_data, analysis, decisions, briefing) do
+  defp record_completion(date, team_data, collection, analysis, decisions, briefing) do
     Jay.Core.EventLake.record_sync(%{
       source: "jay.growth_cycle",
       event_type: "growth_cycle.completed",
@@ -335,12 +350,14 @@ defmodule Jay.V2.GrowthCycle do
       metadata: %{
         date: date,
         cycle_id: cycle_id_for_date(date),
-        teams_collected: map_size(team_data),
+        teams_attempted: collection.attempted,
+        teams_collected: collection.succeeded,
+        failed_teams: collection.failed,
         briefing_len: String.length(briefing)
       },
       payload: %{
         date: date,
-        teams: Map.keys(team_data),
+        teams: successful_team_keys(team_data),
         analysis: analysis,
         decision_count: length(decisions),
         briefing_len: String.length(briefing)
@@ -427,4 +444,11 @@ defmodule Jay.V2.GrowthCycle do
   end
 
   defp cycle_id_for_date(_date), do: Date.to_iso8601(kst_today()) |> String.replace("-", "")
+
+  defp successful_team_keys(team_data) do
+    team_data
+    |> Enum.reject(fn {_team, data} -> is_nil(data) end)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.sort()
+  end
 end

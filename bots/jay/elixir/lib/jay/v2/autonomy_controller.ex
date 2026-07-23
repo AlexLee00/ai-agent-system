@@ -23,6 +23,7 @@ defmodule Jay.V2.AutonomyController do
   defstruct phase: 1,
             phase_since: nil,
             consecutive_clean_days: 0,
+            last_clean_date: nil,
             last_escalation_at: nil,
             master_intervention_count: 0
 
@@ -44,7 +45,19 @@ defmodule Jay.V2.AutonomyController do
 
   @doc "이상 없는 하루 기록"
   def record_clean_day do
-    GenServer.cast(__MODULE__, :clean_day)
+    GenServer.cast(__MODULE__, {:clean_day, kst_today()})
+  end
+
+  @doc false
+  def classify_escalation_result({:ok, %{"rows" => [%{"cnt" => count}]}}) do
+    if parse_int(count, 0) > 0, do: :escalated, else: :clean
+  end
+
+  def classify_escalation_result(_), do: :unknown
+
+  @doc false
+  def clean_day_due?(%__MODULE__{last_clean_date: last_clean_date}, %Date{} = date) do
+    last_clean_date != date
   end
 
   @doc "일일 사이클에서 알림 발송 여부 결정"
@@ -64,7 +77,6 @@ defmodule Jay.V2.AutonomyController do
   @impl true
   def init(_opts) do
     state = load_state_from_db()
-    save_state_to_db(state)
     Process.send_after(self(), :daily_check, @check_interval_ms)
     Logger.info("[AutonomyController] 시작! Phase #{state.phase} (#{phase_label(state.phase)})")
     {:ok, state}
@@ -128,6 +140,7 @@ defmodule Jay.V2.AutonomyController do
       state
       | master_intervention_count: state.master_intervention_count + 1,
         consecutive_clean_days: 0,
+        last_clean_date: kst_today(),
         last_escalation_at: DateTime.utc_now()
     }
 
@@ -148,29 +161,38 @@ defmodule Jay.V2.AutonomyController do
 
   @impl true
   def handle_cast(:clean_day, state) do
-    days = state.consecutive_clean_days + 1
-    new_state = %{state | consecutive_clean_days: days}
+    handle_cast({:clean_day, kst_today()}, state)
+  end
 
-    # 전환 조건 체크
-    new_state =
-      cond do
-        state.phase == 1 and days >= 7 ->
-          Logger.info("[AutonomyController] Phase 1 → Phase 2 전환! (#{days}일 연속 이상 없음)")
-          broadcast_phase_change(1, 2)
-          %{new_state | phase: 2, phase_since: kst_today(), consecutive_clean_days: 0}
+  @impl true
+  def handle_cast({:clean_day, date}, state) do
+    if not clean_day_due?(state, date) do
+      {:noreply, state}
+    else
+      days = state.consecutive_clean_days + 1
+      new_state = %{state | consecutive_clean_days: days, last_clean_date: date}
 
-        state.phase == 2 and days >= 30 ->
-          Logger.info("[AutonomyController] Phase 2 → Phase 3 전환! (#{days}일 연속 마스터 개입 없음)")
-          broadcast_phase_change(2, 3)
-          %{new_state | phase: 3, phase_since: kst_today(), consecutive_clean_days: 0}
+      # 전환 조건 체크
+      new_state =
+        cond do
+          state.phase == 1 and days >= 7 ->
+            Logger.info("[AutonomyController] Phase 1 → Phase 2 전환! (#{days}일 연속 이상 없음)")
+            broadcast_phase_change(1, 2)
+            %{new_state | phase: 2, phase_since: kst_today(), consecutive_clean_days: 0}
 
-        true ->
-          new_state
-      end
+          state.phase == 2 and days >= 30 ->
+            Logger.info("[AutonomyController] Phase 2 → Phase 3 전환! (#{days}일 연속 마스터 개입 없음)")
+            broadcast_phase_change(2, 3)
+            %{new_state | phase: 3, phase_since: kst_today(), consecutive_clean_days: 0}
 
-    save_state_to_db(new_state)
+          true ->
+            new_state
+        end
 
-    {:noreply, new_state}
+      save_state_to_db(new_state)
+
+      {:noreply, new_state}
+    end
   end
 
   defp record_master_intervention_event(metadata, cycle_id) do
@@ -237,33 +259,37 @@ defmodule Jay.V2.AutonomyController do
   # ────────────────────────────────────────────────────────────────
 
   defp check_and_maybe_advance(_state) do
-    # 오늘 escalation 없으면 clean_day 기록
-    escalated_today = escalation_today?()
+    case escalation_status_today() do
+      :clean ->
+        record_clean_day()
 
-    unless escalated_today do
-      record_clean_day()
+      :escalated ->
+        :ok
+
+      :unknown ->
+        Logger.warning(
+          "[AutonomyController] escalation evidence unavailable; clean day not recorded"
+        )
     end
   end
 
-  defp escalation_today? do
+  defp escalation_status_today do
     today = kst_today() |> Date.to_string()
 
-    case Jay.Core.HubClient.pg_query(
-           """
-             SELECT COUNT(*)::int AS cnt
-             FROM agent.event_lake
-             WHERE event_type = 'decision.escalate'
-               AND metadata->>'source' = 'jay.decision_engine'
-               AND created_at >= (TIMESTAMP '#{today} 00:00:00' AT TIME ZONE 'Asia/Seoul')
-               AND created_at < ((TIMESTAMP '#{today} 00:00:00' + INTERVAL '1 day') AT TIME ZONE 'Asia/Seoul')
-           """,
-           "agent"
-         ) do
-      {:ok, %{"rows" => [%{"cnt" => n}]}} -> n > 0
-      _ -> false
-    end
+    Jay.Core.HubClient.pg_query(
+      """
+        SELECT COUNT(*)::int AS cnt
+        FROM agent.event_lake
+        WHERE event_type = 'decision.escalate'
+          AND metadata->>'source' = 'jay.decision_engine'
+          AND created_at >= (TIMESTAMP '#{today} 00:00:00' AT TIME ZONE 'Asia/Seoul')
+          AND created_at < ((TIMESTAMP '#{today} 00:00:00' + INTERVAL '1 day') AT TIME ZONE 'Asia/Seoul')
+      """,
+      "agent"
+    )
+    |> classify_escalation_result()
   rescue
-    _ -> false
+    _ -> :unknown
   end
 
   # ────────────────────────────────────────────────────────────────
@@ -357,8 +383,6 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp load_state_from_repo_kv do
-    ensure_repo_kv_store!()
-
     case Ecto.Adapters.SQL.query!(
            Jay.Core.Repo,
            "SELECT value FROM agent.kv_store WHERE key = $1 LIMIT 1",
@@ -503,29 +527,12 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp save_state_to_repo_kv(%__MODULE__{} = state) do
-    ensure_repo_kv_store!()
     Ecto.Adapters.SQL.query!(Jay.Core.Repo, state_upsert_sql(state), [])
     true
   rescue
     _ -> false
   catch
     :exit, _ -> false
-  end
-
-  defp ensure_repo_kv_store! do
-    Ecto.Adapters.SQL.query!(Jay.Core.Repo, "CREATE SCHEMA IF NOT EXISTS agent", [])
-
-    Ecto.Adapters.SQL.query!(
-      Jay.Core.Repo,
-      """
-        CREATE TABLE IF NOT EXISTS agent.kv_store (
-          key TEXT PRIMARY KEY,
-          value JSONB NOT NULL,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      """,
-      []
-    )
   end
 
   defp state_upsert_sql(%__MODULE__{} = state) do
@@ -570,6 +577,10 @@ defmodule Jay.V2.AutonomyController do
          |> map_get("consecutive_clean_days", 0)
          |> parse_int(0)
          |> max(0),
+       last_clean_date:
+         value
+         |> map_get("last_clean_date")
+         |> parse_date(),
        last_escalation_at:
          value
          |> map_get("last_escalation_at")
@@ -614,6 +625,7 @@ defmodule Jay.V2.AutonomyController do
       "phase" => normalize_phase(state.phase),
       "phase_since" => date_to_iso8601(state.phase_since || kst_today()),
       "consecutive_clean_days" => max(parse_int(state.consecutive_clean_days, 0), 0),
+      "last_clean_date" => date_to_iso8601_or_nil(state.last_clean_date),
       "last_escalation_at" => datetime_to_iso8601(state.last_escalation_at),
       "master_intervention_count" => max(parse_int(state.master_intervention_count, 0), 0),
       "timezone" => "Asia/Seoul",
@@ -665,6 +677,9 @@ defmodule Jay.V2.AutonomyController do
 
   defp date_to_iso8601(%Date{} = date), do: Date.to_iso8601(date)
   defp date_to_iso8601(_), do: Date.to_iso8601(kst_today())
+
+  defp date_to_iso8601_or_nil(%Date{} = date), do: Date.to_iso8601(date)
+  defp date_to_iso8601_or_nil(_), do: nil
 
   defp datetime_to_iso8601(%DateTime{} = datetime) do
     datetime

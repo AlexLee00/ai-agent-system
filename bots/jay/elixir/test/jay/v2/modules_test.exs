@@ -49,12 +49,40 @@ defmodule Jay.V2.ModulesTest do
       assert function_exported?(Jay.V2.AutonomyController, :get_status, 0)
     end
 
+    test "AutonomyController fails closed when clean-day evidence is unavailable" do
+      assert Jay.V2.AutonomyController.classify_escalation_result(
+               {:ok, %{"rows" => [%{"cnt" => 0}]}}
+             ) == :clean
+
+      assert Jay.V2.AutonomyController.classify_escalation_result(
+               {:ok, %{"rows" => [%{"cnt" => 2}]}}
+             ) == :escalated
+
+      assert Jay.V2.AutonomyController.classify_escalation_result({:error, :timeout}) == :unknown
+
+      today = ~D[2026-07-24]
+
+      assert Jay.V2.AutonomyController.clean_day_due?(
+               %Jay.V2.AutonomyController{last_clean_date: nil},
+               today
+             )
+
+      refute Jay.V2.AutonomyController.clean_day_due?(
+               %Jay.V2.AutonomyController{last_clean_date: today},
+               today
+             )
+    end
+
     test "CommandEnvelope.build/5 export" do
       assert function_exported?(Jay.V2.CommandEnvelope, :build, 5)
     end
 
     test "CommandTracker.issued/4 export" do
       assert function_exported?(Jay.V2.CommandTracker, :issued, 4)
+    end
+
+    test "CommandTracker.suppressed/4 export" do
+      assert function_exported?(Jay.V2.CommandTracker, :suppressed, 4)
     end
 
     test "CrossTeamRouter.start_link/1 export" do
@@ -83,6 +111,10 @@ defmodule Jay.V2.ModulesTest do
 
     test "TeamConnector.all_teams/0 export" do
       assert function_exported?(Jay.V2.TeamConnector, :all_teams, 0)
+    end
+
+    test "TeamConnector.active_teams/0 export" do
+      assert function_exported?(Jay.V2.TeamConnector, :active_teams, 0)
     end
 
     test "Topics.broadcast/2 export" do
@@ -162,6 +194,20 @@ defmodule Jay.V2.ModulesTest do
         |> File.read!()
 
       assert task_source =~ "start_process!(Jay.V2.AutonomyController)"
+      assert task_source =~ ~s("--actions")
+      assert task_source =~ ~s("--notify")
+      assert task_source =~ ~s("--record-clean-day")
+      assert task_source =~ "execute_actions: false"
+      assert task_source =~ "notify: false"
+      assert task_source =~ "record_clean_day: false"
+    end
+
+    test "Jay test wrapper never starts the integrated TeamJay application" do
+      mix_source =
+        Path.expand("../../../mix.exs", __DIR__)
+        |> File.read!()
+
+      assert mix_source =~ "mix test --no-start"
     end
 
     test "GrowthCycle records a completed event with briefing length for dashboard seed" do
@@ -172,6 +218,80 @@ defmodule Jay.V2.ModulesTest do
       assert source =~ ~s(event_type: "growth_cycle.completed")
       assert source =~ "briefing_len: String.length(briefing)"
       assert source =~ "cycle_id_for_date(date)"
+    end
+
+    test "AutonomyController startup does not bootstrap schema or persist an unchanged snapshot" do
+      source =
+        Path.expand("../../../lib/jay/v2/autonomy_controller.ex", __DIR__)
+        |> File.read!()
+
+      refute source =~ "CREATE SCHEMA"
+      refute source =~ "CREATE TABLE"
+      refute source =~ "state = load_state_from_db()\n    save_state_to_db(state)"
+    end
+  end
+
+  describe "team_catalog_contracts" do
+    test "active teams match the six current child teams and exclude retired judgment" do
+      assert Jay.V2.TeamConnector.active_teams() == [:sigma, :darwin, :luna, :blog, :ska, :claude]
+      refute :judgment in Jay.V2.TeamConnector.active_teams()
+      assert :sigma in Jay.V2.TeamConnector.all_teams()
+      assert :platform in Jay.V2.TeamConnector.all_teams()
+    end
+
+    test "collection summary counts only successful team reads" do
+      assert Jay.V2.TeamConnector.collection_summary(%{
+               luna: %{metric_type: :trading_ops},
+               sigma: %{metric_type: :knowledge_ops},
+               darwin: nil
+             }) == %{
+               attempted: 3,
+               succeeded: 2,
+               failed: [:darwin]
+             }
+    end
+
+    test "missing Sigma evidence is a failed read, not a zero-valued success" do
+      assert Jay.V2.TeamConnector.build_knowledge_metrics(nil) == nil
+
+      assert Jay.V2.TeamConnector.build_knowledge_metrics(%{
+               "total_entries" => 10,
+               "entries_7d" => 2,
+               "validated" => 1,
+               "contradicted" => 3
+             }) == %{
+               metric_type: :knowledge_ops,
+               total_entries: 10,
+               entries_7d: 2,
+               validated: 1,
+               contradicted: 3
+             }
+    end
+  end
+
+  describe "alarm_delivery_contracts" do
+    test "suppressed alarms are not acknowledged and unknown results fail closed" do
+      assert Jay.V2.CrossTeamRouter.classify_dispatch_result({:ok, %{suppressed: true}}) ==
+               {:suppressed, %{suppressed: true}}
+
+      assert Jay.V2.CrossTeamRouter.classify_dispatch_result({:ok, %{accepted: true}}) ==
+               {:acknowledged, %{accepted: true}}
+
+      assert Jay.V2.CrossTeamRouter.classify_dispatch_result({:error, :closed}) ==
+               {:failed, :closed}
+
+      assert Jay.V2.CrossTeamRouter.classify_dispatch_result(:unexpected) ==
+               {:failed, :unexpected}
+    end
+  end
+
+  describe "scheduler_ownership_contracts" do
+    test "Dexter launchd ownership keeps the embedded periodic scheduler off by default" do
+      refute TeamJay.Claude.Dexter.TestRunner.scheduler_enabled?(%{})
+
+      assert TeamJay.Claude.Dexter.TestRunner.scheduler_enabled?(%{
+               "TEAM_JAY_DEXTER_SCHEDULER_ENABLED" => "true"
+             })
     end
   end
 end

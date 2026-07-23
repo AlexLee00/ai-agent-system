@@ -5,6 +5,16 @@ const confirmStore = require('../lib/confirm.ts');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 async function main() {
+  if (process.env.HUB_ORCHESTRATOR_HARD_SMOKE !== 'true') {
+    const keys = confirmStore._testOnly.buildConfirmKeys('fixture', 1234);
+    assert.deepEqual(keys, {
+      confirmKey: 'yes_fixture_1234',
+      rejectKey: 'no_fixture_1234',
+    });
+    console.log('pending_confirms_smoke_ok mode=contract_no_write');
+    return;
+  }
+
   await confirmStore.ensurePendingConfirmsTable();
 
   const queueId = `smoke_queue_${Date.now()}`;
@@ -36,7 +46,7 @@ async function main() {
   await pgPool.run('claude', 'DELETE FROM pending_confirms WHERE queue_id = $1', [queueId]);
   await pgPool.run('claude', 'DELETE FROM pending_confirms WHERE queue_id = $1', [expiredQueueId]);
 
-  console.log('pending_confirms_smoke_ok');
+  console.log('pending_confirms_smoke_ok mode=explicit_hard_write');
 }
 
 main().catch((error) => {

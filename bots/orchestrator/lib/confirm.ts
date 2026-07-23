@@ -18,6 +18,13 @@ const CONFIRM_TTL_MS = 10 * 60 * 1000;
 
 let ensureTablePromise: Promise<void> | null = null;
 
+function buildConfirmKeys(queueId: string | number, now = Date.now()) {
+  return {
+    confirmKey: `yes_${queueId}_${now}`,
+    rejectKey: `no_${queueId}_${now}`,
+  };
+}
+
 function isMissingPendingConfirmsError(error: unknown): boolean {
   const err = error as { code?: string; message?: string };
   return err?.code === '42P01' || /pending_confirms/i.test(String(err?.message || ''));
@@ -99,8 +106,7 @@ async function createConfirm(
   await ensurePendingConfirmsTable();
   const expiresAt = new Date(Date.now() + CONFIRM_TTL_MS).toISOString();
   const now = Date.now();
-  const confirmKey = `yes_${queueId}_${now}`;
-  const rejectKey = `no_${queueId}_${now}`;
+  const { confirmKey, rejectKey } = buildConfirmKeys(queueId, now);
 
   await pgPool.run(
     SCHEMA,
@@ -178,4 +184,11 @@ async function cleanExpired(): Promise<number> {
   }
 }
 
-module.exports = { cleanExpired, createConfirm, getByKey, resolve, ensurePendingConfirmsTable };
+module.exports = {
+  cleanExpired,
+  createConfirm,
+  getByKey,
+  resolve,
+  ensurePendingConfirmsTable,
+  _testOnly: { buildConfirmKeys },
+};

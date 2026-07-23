@@ -37,5 +37,14 @@ defmodule Jay.V2.Skill.FormationDecisionTest do
       {:ok, result} = Jay.V2.Skill.FormationDecision.run(%{date: "2026-04-18", team_states: []}, %{})
       assert Map.has_key?(result, :darwin)
     end
+
+    test "현역 6개 하위 팀만 편성하고 은퇴 judgment는 제외" do
+      {:ok, result} = Jay.V2.Skill.FormationDecision.run(%{date: "2026-04-18", team_states: []}, %{})
+
+      assert result |> Map.delete(:date) |> Map.keys() |> Enum.sort() ==
+               [:blog, :claude, :darwin, :luna, :sigma, :ska]
+
+      refute Map.has_key?(result, :judgment)
+    end
   end
 end

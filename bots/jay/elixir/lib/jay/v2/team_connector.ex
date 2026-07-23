@@ -6,15 +6,17 @@ defmodule Jay.V2.TeamConnector do
 
   require Logger
 
-  @teams [:luna, :ska, :blog, :claude, :platform, :darwin]
+  @active_teams [:sigma, :darwin, :luna, :blog, :ska, :claude]
+  @metric_domains @active_teams ++ [:platform]
 
-  def all_teams, do: @teams
+  def active_teams, do: @active_teams
+  def all_teams, do: @metric_domains
 
   @doc """
   팀의 어제 KPI 데이터 수집.
   실패 시 nil 반환 (throw 금지).
   """
-  def collect(team) when team in @teams do
+  def collect(team) when team in @metric_domains do
     try do
       do_collect(team)
     rescue
@@ -33,14 +35,42 @@ defmodule Jay.V2.TeamConnector do
     nil
   end
 
-  @doc "현역 팀 병렬 수집. 실패 팀은 nil로 포함."
+  @doc "현역 팀과 플랫폼 지표를 병렬 수집. 실패 도메인은 nil로 포함."
   def collect_all do
-    @teams
+    @metric_domains
     |> Task.async_stream(&{&1, collect(&1)}, timeout: 30_000, on_timeout: :kill_task)
     |> Enum.reduce(%{}, fn
       {:ok, {team, data}}, acc -> Map.put(acc, team, data)
       {:exit, :timeout}, acc -> acc
     end)
+  end
+
+  @doc "수집 시도/성공/실패 도메인을 일관된 형태로 요약한다."
+  def collection_summary(team_data) when is_map(team_data) do
+    failed =
+      team_data
+      |> Enum.filter(fn {_team, data} -> is_nil(data) end)
+      |> Enum.map(&elem(&1, 0))
+      |> Enum.sort()
+
+    %{
+      attempted: map_size(team_data),
+      succeeded: map_size(team_data) - length(failed),
+      failed: failed
+    }
+  end
+
+  @doc false
+  def build_knowledge_metrics(nil), do: nil
+
+  def build_knowledge_metrics(vault) when is_map(vault) do
+    %{
+      metric_type: :knowledge_ops,
+      total_entries: get_in(vault, ["total_entries"]) || 0,
+      entries_7d: get_in(vault, ["entries_7d"]) || 0,
+      validated: get_in(vault, ["validated"]) || 0,
+      contradicted: get_in(vault, ["contradicted"]) || 0
+    }
   end
 
   # ────────────────────────────────────────────────────────────────
@@ -266,6 +296,23 @@ defmodule Jay.V2.TeamConnector do
           avg_score: get_in(research, ["avg_score"]) || 0.0
         }
     end
+  end
+
+  defp do_collect(:sigma) do
+    vault =
+      query_one(
+        """
+          SELECT
+            COUNT(*)::int AS total_entries,
+            COUNT(*) FILTER (WHERE created_at >= NOW() - interval '7 days')::int AS entries_7d,
+            COUNT(*) FILTER (WHERE validation_state = 'validated')::int AS validated,
+            COUNT(*) FILTER (WHERE validation_state = 'contradicted')::int AS contradicted
+          FROM sigma.vault_entries
+        """,
+        "sigma"
+      )
+
+    build_knowledge_metrics(vault)
   end
 
   defp do_collect(team) when team == :platform do

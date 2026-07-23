@@ -10,6 +10,19 @@ const {
 } = require('../lib/night-handler.ts');
 
 async function main() {
+  if (process.env.HUB_ORCHESTRATOR_HARD_SMOKE !== 'true') {
+    const brief = buildMorningBriefing([{
+      queue_id: 'fixture',
+      summary: 'morning queue smoke summary',
+      bot_list: ['jay', 'ska'],
+    }]);
+    assert.match(brief || '', /morning queue smoke summary/);
+    assert.match(brief || '', /jay/);
+    assert.match(brief || '', /ska/);
+    console.log('morning_queue_smoke_ok mode=contract_no_write');
+    return;
+  }
+
   await ensureMorningQueueTable();
 
   const queueId = `smoke_morning_${Date.now()}`;
@@ -37,7 +50,7 @@ async function main() {
 
   await pgPool.run('claude', 'DELETE FROM morning_queue WHERE queue_id = $1', [queueId]);
 
-  console.log('morning_queue_smoke_ok');
+  console.log('morning_queue_smoke_ok mode=explicit_hard_write');
 }
 
 main().catch((error) => {

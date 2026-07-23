@@ -19,7 +19,6 @@ const ACTIVE_RUNTIME_FILES = [
   'bots/orchestrator/scripts/tune-jay-gateway-concurrency.ts',
   'bots/orchestrator/scripts/prune-jay-gateway-fallbacks.ts',
   'bots/orchestrator/src/dashboard.ts',
-  'bots/orchestrator/launchd/ai.orchestrator.plist',
   'bots/reservation/launchd/ai.ska.commander.plist',
   'bots/reservation/auto/monitors/run-kiosk-monitor.sh',
   'bots/reservation/auto/monitors/run-today-audit.sh',

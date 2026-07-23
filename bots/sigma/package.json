@@ -25,6 +25,8 @@
     "luna:vault-feed": "tsx scripts/runtime-sigma-luna-vault-feed.ts --json",
     "docs:vault-feed": "tsx scripts/runtime-sigma-docs-vault-feed.ts --json",
     "team:vault-feed": "tsx scripts/runtime-sigma-team-vault-feed.ts --json",
+    "persona:vault-feed": "tsx scripts/runtime-sigma-agent-persona-feed.ts --json",
+    "smoke:agent-persona-feed": "tsx scripts/sigma-agent-persona-feed-smoke.ts",
     "hub:llm-feed": "tsx scripts/runtime-sigma-hub-llm-feed.ts --json",
     "blog:vault-feed": "tsx scripts/runtime-sigma-blog-vault-feed.ts --json",
     "vault:dedupe": "tsx scripts/runtime-sigma-vault-dedupe.ts --json",

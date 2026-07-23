@@ -34,7 +34,19 @@ function tailFile(filePath: string, maxLines = 12) {
 function redactLine(line: unknown) {
   return String(line || '')
     .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/g, '$1<redacted>')
-    .replace(/(token|secret|password|api[_-]?key)=([^&\s]+)/gi, '$1=<redacted>');
+    .replace(/(token|secret|password|api[_-]?key)(\s*(?:=|=>)\s*)([^&\s]+)/gi, '$1$2<redacted>')
+    .replace(/(postgres(?:ql)?:\/\/[^:\s/]+:)[^@\s/]+@/gi, '$1<redacted>@');
+}
+
+function buildLaunchctlDiagnostic(result: { status: number | null; stdout?: unknown; stderr?: unknown }) {
+  const status = Number.isInteger(result.status) ? Number(result.status) : 1;
+  if (status === 0) return { status, error: null };
+  const error = normalizeText(result.stderr || result.stdout)
+    .split(/\r?\n/)
+    .map(redactLine)
+    .join('\n')
+    .slice(0, 600) || null;
+  return { status, error };
 }
 
 function parsePid(printOutput: unknown) {
@@ -137,10 +149,7 @@ function collectState(strict: boolean) {
       stdoutTail,
       stderrTail,
     },
-    launchctl: {
-      status: Number(print.status || 0),
-      error: normalizeText(print.stderr || print.stdout).slice(0, 600) || null,
-    },
+    launchctl: buildLaunchctlDiagnostic(print),
   };
 }
 
@@ -170,7 +179,14 @@ async function main() {
   if (!payload.ok) process.exit(1);
 }
 
-main().catch((error) => {
-  console.error(`jay_runtime_process_check_failed: ${error?.message || error}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(`jay_runtime_process_check_failed: ${error?.message || error}`);
+    process.exit(1);
+  });
+}
+
+export const _testOnly = {
+  buildLaunchctlDiagnostic,
+  redactLine,
+};

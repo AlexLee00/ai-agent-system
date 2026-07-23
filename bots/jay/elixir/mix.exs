@@ -27,7 +27,7 @@ defmodule Jay.MixProject do
         "cmd --cd #{@team_jay_dir} mix compile"
       ],
       test: [
-        "cmd --cd #{@team_jay_dir} mix test #{jay_test_args}"
+        "cmd --cd #{@team_jay_dir} mix test --no-start #{jay_test_args}"
       ]
     ]
   end

@@ -6,9 +6,7 @@ defmodule TeamJay.Claude.Dexter.TestRunner do
   Layer 2: 코드 무결성 (dexter.ts --full)
   Layer 3: 에러 분석 (dexter.ts --daily-report)
 
-  - 5분마다 Layer 1 (인프라 헬스)
-  - 1시간마다 Layer 2 (코드 무결성)
-  - 매일 08:00 Layer 3 (에러 분석 + 닥터 연동)
+  - 주기 실행은 launchd가 소유한다. Elixir 내부 스케줄은 명시적으로 활성화한 경우만 사용한다.
   - 수동 트리거: run_now(layer)
   """
 
@@ -43,13 +41,23 @@ defmodule TeamJay.Claude.Dexter.TestRunner do
     GenServer.call(__MODULE__, :get_status)
   end
 
+  @doc false
+  def scheduler_enabled?(env \\ System.get_env()) do
+    Map.get(env, "TEAM_JAY_DEXTER_SCHEDULER_ENABLED") == "true"
+  end
+
   # ── GenServer ───────────────────────────────────────────────────────
 
   @impl true
   def init(_opts) do
-    Process.send_after(self(), :layer1_tick, 10_000)      # 10초 후 첫 Layer 1
-    Process.send_after(self(), :layer2_tick, 60_000)      # 1분 후 첫 Layer 2
-    Logger.info("[TestRunner] 덱스터 테스트 오케스트레이터 시작!")
+    if scheduler_enabled?() do
+      Process.send_after(self(), :layer1_tick, 10_000)
+      Process.send_after(self(), :layer2_tick, 60_000)
+      Logger.info("[TestRunner] 덱스터 내부 스케줄러 시작")
+    else
+      Logger.info("[TestRunner] launchd 소유 모드; 수동 트리거만 활성")
+    end
+
     {:ok, %__MODULE__{}}
   end
 
@@ -116,8 +124,8 @@ defmodule TeamJay.Claude.Dexter.TestRunner do
     end
   end
 
-  # launchd ai.claude.dexter.quick 가 canonical owner이므로
-  # Elixir 오케스트레이터의 Layer 1은 5분 주기 dexter PortAgent를 사용한다.
+  # launchd ai.claude.dexter.quick가 주기 실행의 canonical owner다.
+  # 수동 검증 요청만 기존 PortAgent 이름으로 전달한다.
   defp layer_agent(1), do: :dexter
   defp layer_agent(2), do: :dexter         # 전체 체크
   defp layer_agent(3), do: :dexter_daily   # 일일 리포트

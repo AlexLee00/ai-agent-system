@@ -1,8 +1,32 @@
 #!/usr/bin/env tsx
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
 async function main() {
   const dispatcher = require('../lib/control/commander-dispatcher.ts');
+  const liveWrite = process.env.HUB_TEAM_BUS_HARD_SMOKE === 'true';
+
+  if (!liveWrite) {
+    const task = dispatcher._testOnly.rowToTask({
+      id: 'fixture-task',
+      incident_key: 'team-bus-smoke:fixture',
+      team: 'blog',
+      step_id: 'content_health_check',
+      status: 'queued',
+      payload: { goal: 'team bus bridge smoke' },
+    });
+    assert.equal(task.incidentKey, 'team-bus-smoke:fixture');
+    assert.equal(task.team, 'blog');
+    assert.equal(task.status, 'queued');
+
+    const source = fs.readFileSync(path.resolve(__dirname, '../lib/control/commander-dispatcher.ts'), 'utf8');
+    assert.match(source, /createTeamTask\(\{/);
+    assert.match(source, /appendIncidentEvent\(incidentKey, 'commander_task_queued'/);
+    console.log('team_bus_bridging_smoke_ok mode=contract_no_write');
+    return;
+  }
+
   const pgPool = require('../../../packages/core/lib/pg-pool.ts');
 
   await dispatcher.ensureCommanderDispatchTables();
@@ -39,7 +63,7 @@ async function main() {
   assert.equal(String(messageRow?.team || ''), 'blog', 'message team should match');
   assert.equal(String(messageRow?.status || ''), 'queued', 'message status should be queued');
 
-  console.log('team_bus_bridging_smoke_ok');
+  console.log('team_bus_bridging_smoke_ok mode=explicit_hard_write');
 }
 
 main().catch((error) => {

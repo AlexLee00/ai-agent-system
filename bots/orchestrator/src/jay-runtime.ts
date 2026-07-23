@@ -8,6 +8,9 @@ const { execFileSync } = require('child_process');
 const kst      = require('../../../packages/core/lib/kst');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const sender   = require('../../../packages/core/lib/telegram-sender');
+const {
+  buildLifecyclePromptContext,
+} = require('../../../packages/core/lib/agent-lifecycle.ts');
 const { getJayOrchestrationConfig } = require('../lib/runtime-config');
 const {
   ensureIncidentTables,
@@ -87,7 +90,7 @@ function readProcessCommand(pid) {
 }
 
 function isJayRuntimeCommand(command) {
-  return /(^|\s|\/)jay-runtime\.(ts|js)(\s|$)/.test(String(command || ''));
+  return /(^|\s|\/)(jay-runtime\.(ts|js)|ai\.jay\.runtime\.(cjs|mjs|js))(\s|$)/.test(String(command || ''));
 }
 
 function clearForeignLock(pid, command) {
@@ -300,6 +303,7 @@ function resolveOrchestrationConfig() {
     teamBusEnabled: getBool('JAY_TEAM_BUS_ENABLED', 'teamBusEnabled', false),
     threeTierTelegram: getBool('JAY_3TIER_TELEGRAM', 'threeTierTelegram', false),
     skillExtraction: getBool('JAY_SKILL_EXTRACTION', 'skillExtraction', false),
+    lifecycleInject: getBool('JAY_LIFECYCLE_INJECT_ENABLED', 'lifecycleInject', false),
     incidentLoopIntervalMs: getInt('JAY_INCIDENT_LOOP_INTERVAL_MS', 'incidentLoopIntervalMs', 5000),
     commanderDispatchLimit: getInt('JAY_COMMANDER_DISPATCH_LIMIT', 'commanderDispatchLimit', 3),
   };
@@ -377,6 +381,25 @@ function buildIncidentGoal(incident) {
   if (fromArgs) return String(fromArgs).trim();
   const message = String(incident?.message || '').trim();
   return message || `${incident?.team || 'general'} incident orchestration`;
+}
+
+function buildPlannerMessage(goal, skillContext = '', lifecycleBlock = '') {
+  return [goal, skillContext, lifecycleBlock].filter(Boolean).join('\n\n');
+}
+
+async function buildJayLifecycleContext({ incident = {}, goal = '', enabled = false, lifecycleBuilder = buildLifecyclePromptContext } = {}) {
+  return lifecycleBuilder({
+    team: 'jay',
+    agent: 'commander',
+    topic: [incident.team, incident.intent, goal].filter(Boolean).join(' '),
+    enabled,
+    limit: 5,
+    telemetry: {
+      event: 'control_plan_context',
+      incidentKey: incident.incidentKey || null,
+      targetTeam: incident.team || 'general',
+    },
+  });
 }
 
 function extractPlanSteps(plan) {
@@ -573,8 +596,28 @@ async function processIncident(incident, flags) {
     }
   }
 
+  const lifecycleContext = await buildJayLifecycleContext({
+    incident,
+    goal,
+    enabled: flags.lifecycleInject,
+  }).catch((error) => {
+    warnNonBlocking('build_jay_lifecycle_context', error, { incidentKey });
+    return { promptBlock: '', injected: false, recall: { memories: [], skipped: true } };
+  });
+  if (lifecycleContext.injected) {
+    await appendIncidentEvent({
+      incidentKey,
+      eventType: 'jay_lifecycle_context_attached',
+      payload: {
+        personaChars: lifecycleContext.persona?.length || 0,
+        recallCount: lifecycleContext.recall?.memories?.length || 0,
+        topSources: (lifecycleContext.recall?.memories || []).slice(0, 3).map((memory) => memory.sourceTag),
+      },
+    }).catch((error) => warnNonBlocking('append_lifecycle_context_event', error, { incidentKey }));
+  }
+
   const planResponse = await createControlPlanDraft({
-    message: skillContext ? `${goal}\n\n${skillContext}` : goal,
+    message: buildPlannerMessage(goal, skillContext, lifecycleContext.promptBlock),
     goal,
     team: incident.team,
     incidentKey,
@@ -585,6 +628,8 @@ async function processIncident(incident, flags) {
       incidentPriority: incident.priority,
       skillContextAttached: Boolean(skillContext),
       skillCount,
+      lifecycleInjected: Boolean(lifecycleContext.injected),
+      lifecycleRecallCount: lifecycleContext.recall?.memories?.length || 0,
       reusableSkillContext: skillContext ? skillContext.slice(0, 4000) : undefined,
     },
     dryRun: true,
@@ -909,6 +954,8 @@ module.exports = {
   resolveOrchestrationConfig,
   _testOnly: {
     buildIncidentGoal,
+    buildPlannerMessage,
+    buildJayLifecycleContext,
     extractPlanSteps,
     isMutatingPlanStep,
     isCommanderDelegatedStep,

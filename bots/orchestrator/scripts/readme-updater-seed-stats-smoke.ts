@@ -7,11 +7,14 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const readmeUpdater = require('../lib/steward/readme-updater.ts');
+const { TEAMS } = require('../../../packages/core/lib/skills/team-orchestrator.ts');
 
 const stats = readmeUpdater.countAgentStatsFromSeeds();
+const activeTeamCount = TEAMS.filter((team: any) => team.status === 'active').length;
 
 assert(stats.agentCount >= 100, 'README fallback seed stats must include current agent seed sources');
-assert(stats.teamCount >= 8, 'README fallback seed stats must derive active teams from seed files');
+assert.equal(stats.teamCount, activeTeamCount, 'seed team count must match the active-team SSOT');
+assert.equal(readmeUpdater.ACTIVE_TEAM_COUNT, activeTeamCount, 'README fallback must use the active-team SSOT');
 assert(
   stats.seedFiles.some((file: string) => file.endsWith(path.join('scripts', 'seed-agent-registry.ts'))),
   'README fallback seed stats must use the current TypeScript seed-agent-registry source',

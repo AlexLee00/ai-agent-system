@@ -393,5 +393,6 @@ module.exports = {
     MESSAGE_TABLE,
     INCIDENT_EVENT_TABLE,
     isRetryableDispatcherError,
+    rowToTask,
   },
 };

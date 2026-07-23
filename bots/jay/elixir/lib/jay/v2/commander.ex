@@ -29,7 +29,6 @@ defmodule Jay.V2.Commander do
     - 블로팀: 콘텐츠 자동 생산
     - 스카팀: 예약/키오스크 운영
     - 클로드팀: Claude 모니터링 + 자기 진화
-    - 감정팀: 법원 SW 감정 자동화
 
     핵심 원칙:
     1. 팀별 자율 레벨 존중 (L3=승인요청, L4=자동프로토타입, L5=완전자동)
@@ -43,7 +42,7 @@ defmodule Jay.V2.Commander do
 
   require Logger
 
-  @teams [:sigma, :darwin, :luna, :blog, :ska, :claude, :judgment]
+  @teams Jay.V2.TeamConnector.active_teams()
 
   @doc "일일 성장 사이클 실행 (GrowthCycle 위임 + Commander 판단)"
   def daily_growth_cycle(opts \\ []) do

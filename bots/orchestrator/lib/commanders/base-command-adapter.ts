@@ -22,6 +22,12 @@ type SummaryInput = {
   incidentKey?: string;
 };
 
+type FinalSummaryContext = {
+  commandId: number;
+  incidentKey?: string;
+  team: string;
+};
+
 function normalizeText(value: unknown, fallback = '') {
   const text = String(value == null ? fallback : value).trim();
   return text || fallback;
@@ -53,6 +59,38 @@ async function waitForBotCommandResult(id: number, timeoutMs = 120_000) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
   return null;
+}
+
+function buildBotCommandFinalSummary(waited: { status?: unknown; result?: unknown }, context: FinalSummaryContext) {
+  const botStatus = normalizeText(waited?.status, 'unknown').toLowerCase();
+  const successful = ['done', 'completed', 'success', 'succeeded', 'ok'].includes(botStatus);
+  const base = {
+    incidentKey: context.incidentKey || null,
+    team: context.team,
+    result: waited?.result || null,
+    evidence: {
+      commandId: context.commandId,
+      botStatus,
+    },
+  };
+
+  if (successful) {
+    return {
+      ...base,
+      ok: true,
+      status: 'completed',
+    };
+  }
+
+  const resultError = waited?.result && typeof waited.result === 'object'
+    ? normalizeText((waited.result as Record<string, unknown>).error, '')
+    : '';
+  return {
+    ...base,
+    ok: false,
+    status: 'failed',
+    error: resultError || `bot_command_${botStatus}`,
+  };
 }
 
 function createBotCommandAdapter(team: string, options: BotCommandAdapterOptions = {}) {
@@ -108,17 +146,11 @@ function createBotCommandAdapter(team: string, options: BotCommandAdapterOptions
           commandId,
         };
       }
-      return {
-        ok: true,
-        status: waited.status === 'done' ? 'completed' : waited.status,
-        incidentKey: summaryInput?.incidentKey || null,
+      return buildBotCommandFinalSummary(waited, {
+        commandId,
+        incidentKey: summaryInput?.incidentKey,
         team: normalizedTeam,
-        result: waited.result || null,
-        evidence: {
-          commandId,
-          botStatus: waited.status,
-        },
-      };
+      });
     },
   };
 }
@@ -127,4 +159,7 @@ module.exports = {
   createBotCommandAdapter,
   waitForBotCommandResult,
   insertBotCommand,
+  _testOnly: {
+    buildBotCommandFinalSummary,
+  },
 };

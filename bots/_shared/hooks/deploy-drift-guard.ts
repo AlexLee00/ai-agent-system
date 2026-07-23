@@ -7,6 +7,17 @@ import path from 'node:path';
 const SECRET_KEY = /(token|secret|password|authorization|api[_-]?key|credential|cookie)/i;
 
 export const DEFAULT_DEPLOY_DRIFT_TARGETS = [
+  {
+    label: 'ai.jay.runtime',
+    repoPath: 'bots/orchestrator/launchd/ai.jay.runtime.plist',
+    envAllowlist: [
+      'HUB_ALARM_USE_CLASS_TOPICS',
+      'JAY_GROWTH_ENABLED',
+      'JAY_HUB_PLAN_INTEGRATION',
+      'JAY_INCIDENT_STORE_ENABLED',
+    ],
+  },
+  { label: 'ai.jay.growth', repoPath: 'bots/jay/launchd/ai.jay.growth.plist' },
   { label: 'ai.hub.resource-api', repoPath: 'bots/hub/launchd/ai.hub.resource-api.plist' },
   { label: 'ai.hub.ops-mcp', repoPath: 'bots/hub/launchd/ai.hub.ops-mcp.plist' },
   { label: 'ai.investment.commander', repoPath: 'bots/investment/launchd/ai.investment.commander.plist' },
@@ -95,9 +106,14 @@ export function compareLaunchdLiveState(loaded = {}, liveState = {}, options = {
   if (!liveState || liveState.skipped) {
     return { driftDetected: false, diffs: [] };
   }
+  const envAllowlist = options.envAllowlist || [];
   const loadedComparable = comparablePlist(loaded, options);
   const liveComparable = comparableLiveState(liveState, options);
-  const keys = options.liveKeys || Object.keys(liveComparable);
+  const keys = options.liveKeys || (
+    envAllowlist.length > 0
+      ? Object.keys(liveComparable)
+      : ['ProgramArguments', 'WorkingDirectory']
+  );
   const diffs = [];
   for (const key of keys) {
     const a = JSON.stringify(stable(loadedComparable[key] ?? null));

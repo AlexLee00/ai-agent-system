@@ -21,6 +21,7 @@ const MOBILE_LINE_MAX = 88;
 const MOBILE_DIVIDER = '──────────';
 
 const DELIVERY_STATE = new Map();
+const MAX_DELIVERY_STATE_ENTRIES = 1000;
 const PAYLOAD_WARNING_LOG = process.env.REPORTING_PAYLOAD_WARNING_LOG || '/tmp/reporting-payload-warnings.jsonl';
 const LEGACY_QUEUE_USAGE_LOG = process.env.MAINBOT_QUEUE_USAGE_LOG || '/tmp/mainbot-queue-usage.jsonl';
 const LEGACY_QUEUE_PUBLISH_ENABLED = process.env.MAINBOT_QUEUE_PUBLISH_ENABLED === 'true';
@@ -536,6 +537,7 @@ function evaluateDeliveryPolicy(channel: string, normalized: NormalizedEvent, po
 
   const key = buildPolicyKey(channel, normalized, policy);
   const now = Date.now();
+  pruneDeliveryState(now);
   const prev = DELIVERY_STATE.get(key);
   if (prev && now - prev.sentAt < resolved.cooldownMs) {
     return {
@@ -546,8 +548,28 @@ function evaluateDeliveryPolicy(channel: string, normalized: NormalizedEvent, po
       retryAfterMs: resolved.cooldownMs - (now - prev.sentAt),
     };
   }
-  DELIVERY_STATE.set(key, { sentAt: now });
   return { allowed: true, reason: 'allowed', policy: resolved, dedupeKey: key };
+}
+
+function pruneDeliveryState(now = Date.now()): void {
+  for (const [key, value] of DELIVERY_STATE) {
+    if (Number(value?.expiresAt || value?.sentAt || 0) <= now) DELIVERY_STATE.delete(key);
+  }
+  while (DELIVERY_STATE.size > MAX_DELIVERY_STATE_ENTRIES) {
+    const oldestKey = DELIVERY_STATE.keys().next().value;
+    if (oldestKey == null) break;
+    DELIVERY_STATE.delete(oldestKey);
+  }
+}
+
+function commitDelivery(decision: PolicyDecision, delivered: boolean): void {
+  if (!delivered || !decision?.dedupeKey || !decision.policy?.dedupe || decision.policy.cooldownMs <= 0) return;
+  const sentAt = Date.now();
+  DELIVERY_STATE.set(decision.dedupeKey, {
+    sentAt,
+    expiresAt: sentAt + decision.policy.cooldownMs,
+  });
+  pruneDeliveryState(sentAt);
 }
 
 export function normalizeEvent({
@@ -668,6 +690,7 @@ export async function publishToQueue({
       normalized.message,
       normalized.payload ? JSON.stringify(normalized.payload) : null,
     ]);
+    commitDelivery(decision, true);
     return { ok: true, channel: 'queue', event: normalized };
   } catch (error) {
     console.warn(`[reporting-hub] queue publish failed: ${(error as Error).message}`);
@@ -707,6 +730,7 @@ export async function publishToWebhook({
       dedupeMinutes: normalized.dedupe_minutes,
       title: normalized.title,
     });
+    commitDelivery(decision, Boolean(result.ok));
     return {
       ok: result.ok,
       channel: 'webhook',
@@ -748,6 +772,7 @@ export async function publishToTelegram({
           ? await sender.send(topicTeam, finalMessage)
           : await sender.sendCritical(topicTeam, finalMessage))
       : await sender.send(topicTeam, finalMessage);
+    commitDelivery(decision, Boolean(ok));
     return { ok: Boolean(ok), channel: 'telegram', event: normalized };
   } catch (error) {
     console.warn(`[reporting-hub] telegram publish failed: ${(error as Error).message}`);
@@ -799,6 +824,7 @@ export async function publishToTelegramApi({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.ok) {
+        commitDelivery(decision, true);
         return { ok: true, channel: 'telegram_api', event: normalized };
       }
       if (res.status === 429 && attempt < TELEGRAM_API_RETRY_ATTEMPTS) {
@@ -863,6 +889,7 @@ export async function publishToRag({
       },
       sourceBot || normalized.from_bot,
     );
+    commitDelivery(decision, true);
     return { ok: true, channel: 'rag', event: normalized, id };
   } catch (error) {
     console.warn(`[reporting-hub] rag publish failed: ${(error as Error).message}`);
@@ -943,6 +970,14 @@ export async function publishEventPipeline({
     results,
   };
 }
+
+export const _testOnly = {
+  MAX_DELIVERY_STATE_ENTRIES,
+  commitDelivery,
+  deliveryStateSize: () => DELIVERY_STATE.size,
+  evaluateDeliveryPolicy,
+  resetDeliveryState: () => DELIVERY_STATE.clear(),
+};
 
 export function buildSnippetEvent({
   from_bot = 'reporting-hub',

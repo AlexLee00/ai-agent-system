@@ -43,5 +43,5 @@ cd elixir/team_jay && mix compile
 # Jay 전용 테스트
 cd bots/jay/elixir && mix test
 # 또는
-cd elixir/team_jay && mix test bots/jay/elixir/test
+cd elixir/team_jay && mix test --no-start ../../bots/jay/elixir/test
 ```

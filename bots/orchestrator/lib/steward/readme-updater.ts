@@ -11,9 +11,11 @@ const launchdManager = require('./launchd-manager');
 const telegramManager = require('./telegram-manager');
 const codexManager = require('./codex-manager');
 const { shadowRegistryStatsViaHub } = require('../hub-agent-registry-read');
+const { TEAMS } = require('../../../../packages/core/lib/skills/team-orchestrator.ts');
 
 const REPO_ROOT = env.PROJECT_ROOT;
 const README_PATH = path.join(REPO_ROOT, 'README.md');
+const ACTIVE_TEAM_COUNT = TEAMS.filter((team) => team.status === 'active').length;
 
 const SEED_FILE_STEMS = [
   'bots/orchestrator/scripts/seed-agent-registry',
@@ -123,7 +125,7 @@ async function getSystemStats() {
 
   return {
     agentCount: registryStats?.agentCount || seedStats.agentCount,
-    teamCount: registryStats?.teamCount || Math.max(seedStats.teamCount || 0, 10),
+    teamCount: registryStats?.teamCount || ACTIVE_TEAM_COUNT,
     launchdTotal: Number(launchd.total || 0),
     launchdRunning: Number(launchd.running || 0),
     topicCount: topics.filter((item) => item.configured).length,
@@ -168,4 +170,5 @@ module.exports = {
   countAgentsFromSeeds,
   getSystemStats,
   updateReadme,
+  ACTIVE_TEAM_COUNT,
 };

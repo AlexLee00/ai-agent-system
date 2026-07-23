@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   buildDeployDriftGuardReport,
   compareLaunchdPlistState,
+  compareLaunchdLiveState,
   parseLaunchctlPrint,
   scanDeployDriftTargets,
 } from '../bots/_shared/hooks/deploy-drift-guard.ts';
@@ -56,6 +57,16 @@ function main() {
   assert.equal(live.pid, 123);
   assert.deepEqual(live.ProgramArguments, ['/usr/bin/env', 'node', 'server.js']);
   assert.equal(live.EnvironmentVariables.HUB_AUTH_TOKEN, '[redacted]');
+
+  const noEnvAllowlist = compareLaunchdLiveState(
+    expected,
+    {
+      ProgramArguments: expected.ProgramArguments,
+      WorkingDirectory: null,
+      EnvironmentVariables: {},
+    },
+  );
+  assert.equal(noEnvAllowlist.driftDetected, false, 'unread live env must not create drift without an allowlist');
 
   const liveDrift = buildDeployDriftGuardReport({
     expectedPlist: expected,

@@ -150,9 +150,10 @@ async function main() {
         'JAY_COMMANDER_DISPATCH=1',
         'JAY_TEAM_BUS_ENABLED=1',
         'JAY_COMMANDER_BOT_QUEUE_ENABLED=1',
+        'JAY_COMMANDER_INCIDENT_TASK_TEAMS=<teams with deployed incident_task handlers>',
       ],
       verify: ['npx tsx bots/hub/scripts/jay-commander-bot-command-smoke.ts'],
-      note: 'Luna/Blog/Ska가 virtual adapter를 벗어나 bot_commands 큐 기반으로 연결됩니다.',
+      note: '실제 incident_task handler가 배포된 팀만 capability allowlist로 큐에 연결합니다.',
     }),
     stage({
       id: 5,

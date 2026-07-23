@@ -2,8 +2,8 @@
   "name": "Orchestrator Control Plane Agent",
   "description": "공통 제어평면 에이전트 — Jay runtime, commander dispatch, 팀 조율, 승인 대기열, 운영 브리핑을 담당한다. Hub 커널의 레지스트리와 LLM 정책은 수렴 게이트 이후 dual-read로 소비한다.",
   "version": "1.0.0",
-  "url": "local://launchd/ai.orchestrator",
-  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/orchestrator/README.md",
+  "url": "local://launchd/ai.jay.runtime",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/orchestrator/CLAUDE.md",
   "capabilities": {
     "streaming": false,
     "pushNotifications": true,

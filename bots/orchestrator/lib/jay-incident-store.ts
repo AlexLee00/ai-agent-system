@@ -383,6 +383,7 @@ module.exports = {
     buildIncidentKey,
     resolveDedupeWindow,
     resolveIncidentGroup,
+    rowToIncident,
     INCIDENT_TABLE,
     EVENT_TABLE,
   },

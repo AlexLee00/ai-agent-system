@@ -6,6 +6,8 @@
 	<dict>
 		<key>HOME</key>
 		<string>/Users/alexlee</string>
+		<key>HUB_ALARM_USE_CLASS_TOPICS</key>
+		<string>true</string>
 		<key>JAY_3TIER_TELEGRAM</key>
 		<string>true</string>
 		<key>JAY_COMMANDER_BOT_QUEUE_ENABLED</key>
@@ -21,6 +23,8 @@
 		<key>JAY_HUB_PLAN_INTEGRATION</key>
 		<string>true</string>
 		<key>JAY_INCIDENT_STORE_ENABLED</key>
+		<string>true</string>
+		<key>JAY_LIFECYCLE_INJECT_ENABLED</key>
 		<string>true</string>
 		<key>JAY_LLM_DAILY_BUDGET_USD</key>
 		<string>5.0</string>

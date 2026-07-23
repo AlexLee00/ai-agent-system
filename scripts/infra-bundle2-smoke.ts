@@ -8,6 +8,7 @@ import path from 'node:path';
 import { buildTransitionScanOptions } from '../bots/sigma/vault/inbox-processor.ts';
 import {
   buildSessionSnapshot,
+  sessionSnapshotOk,
   summarizeLaunchdList,
   writeSnapshot,
 } from './runtime-session-snapshot.ts';
@@ -62,6 +63,11 @@ async function main() {
   assert.equal(launchd.failed[0].label, 'ai.sigma.llm-wiki-weekly');
   assert.equal(launchd.runningWithLastExitCount, 1);
   assert.equal(launchd.runningWithLastExit[0].label, 'ai.hub.resource-api');
+  assert.equal(sessionSnapshotOk({
+    health: { failed: 0 },
+    launchd: { ok: false, failedCount: 0 },
+    opsConsoleServe: 'ok',
+  }), false, 'launchctl collection failure must fail the snapshot');
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'infra-bundle2-'));
   const snapshot = await buildSessionSnapshot({

@@ -472,12 +472,25 @@ defmodule Jay.V2.CrossTeamRouter do
   defp dispatch_team_command(pipeline, target_team, message, envelope) do
     CommandTracker.issued(pipeline, target_team, envelope, message: message)
 
-    case Jay.Core.HubClient.post_alarm(message, target_team, "jay.cross_team_router") do
-      {:ok, _response} ->
+    Jay.Core.HubClient.post_alarm(message, target_team, "jay.cross_team_router")
+    |> classify_dispatch_result()
+    |> case do
+      {:acknowledged, _response} ->
         CommandTracker.acknowledged(pipeline, target_team, envelope, message: message)
         :ok
 
-      {:error, error} ->
+      {:suppressed, response} ->
+        CommandTracker.suppressed(
+          pipeline,
+          target_team,
+          envelope,
+          message: message,
+          detail: inspect(response)
+        )
+
+        :ok
+
+      {:failed, error} ->
         CommandTracker.failed(
           pipeline,
           target_team,
@@ -488,21 +501,18 @@ defmodule Jay.V2.CrossTeamRouter do
         )
 
         :ok
-
-      other ->
-        CommandTracker.acknowledged(
-          pipeline,
-          target_team,
-          envelope,
-          message: message,
-          detail: inspect(other)
-        )
-
-        :ok
     end
   rescue
     _ -> :ok
   end
+
+  @doc false
+  def classify_dispatch_result({:ok, %{suppressed: true} = response}),
+    do: {:suppressed, response}
+
+  def classify_dispatch_result({:ok, response}), do: {:acknowledged, response}
+  def classify_dispatch_result({:error, error}), do: {:failed, error}
+  def classify_dispatch_result(other), do: {:failed, other}
 
   # ────────────────────────────────────────────────────────────────
   # 유틸
