@@ -2,7 +2,7 @@ import { KNOWLEDGE_TYPES, resolveVaultTier } from './vault-tiering.ts';
 import {
   ONTOLOGY_OBJECT_TYPES,
   resolveOntologyObjectType,
-} from '../../../packages/core/lib/ontology-registry.js';
+} from '../../../packages/core/lib/ontology-registry.ts';
 
 export type VaultKnowledgeNodeType = 'team_agent' | 'record' | 'topic_theme' | 'entity' | 'object_type';
 

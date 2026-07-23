@@ -199,6 +199,32 @@ async function test_mode_defaults_off() {
   console.log('✅ refactor-cycle: mode defaults and normalization are safe');
 }
 
+async function test_refactor_pr_metadata_reads_applied_workflow() {
+  delete require.cache[RUNNER_PATH];
+  const runner = require(RUNNER_PATH);
+  assert.deepStrictEqual(runner.refactorPrMetadata({ applyResults: [{
+    prWorkflow: {
+      prNumber: 4,
+      prUrl: 'https://github.com/example/repo/pull/4',
+      pr: { number: 4, url: 'https://github.com/example/repo/pull/4' },
+    },
+  }] }), {
+    prNumber: 4,
+    prUrl: 'https://github.com/example/repo/pull/4',
+    prWorkflow: {
+      prNumber: 4,
+      prUrl: 'https://github.com/example/repo/pull/4',
+      pr: { number: 4, url: 'https://github.com/example/repo/pull/4' },
+    },
+  });
+  assert.deepStrictEqual(runner.refactorPrMetadata({ applyResults: [] }), {
+    prNumber: null,
+    prUrl: null,
+    prWorkflow: null,
+  });
+  console.log('✅ refactor-cycle: applied PR metadata reaches outcome columns');
+}
+
 async function test_hub_admission_429_does_not_trip_billing_guard() {
   delete require.cache[RUNNER_PATH];
   const runner = require(RUNNER_PATH);
@@ -3074,6 +3100,7 @@ async function main() {
   console.log('=== Refactor Cycle Runner 테스트 시작 ===\n');
   const tests = [
     test_mode_defaults_off,
+    test_refactor_pr_metadata_reads_applied_workflow,
     test_hub_admission_429_does_not_trip_billing_guard,
     test_safe_deferred_cycle_uses_soft_operational_status,
     test_cycle_stamp_uses_kst,

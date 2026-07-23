@@ -94,6 +94,33 @@ function readOnlyApplyPlan(report = {}) {
   };
 }
 
+function boundedInt(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+export async function callLunaOpsToolWithTimeout(name, args = {}, deps = {}) {
+  const callTool = deps.callTool || callLunaOpsTool;
+  const timeoutMs = boundedInt(
+    deps.timeoutMs ?? args.timeoutMs ?? process.env.LUNA_OPS_MCP_TOOL_TIMEOUT_MS,
+    8000,
+    100,
+    60000,
+  );
+  let timer = null;
+  try {
+    return await Promise.race([
+      callTool(name, args),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`luna_ops_tool_timeout:${name}:${timeoutMs}`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function callLunaOpsTool(name, args = {}) {
   const hours = Math.max(1, Number(args.hours || 6) || 6);
   const fixture = args.fixture === true;
@@ -204,10 +231,19 @@ async function handleRpc(body) {
   if (method === 'tools/call') {
     const name = params.name;
     const args = params.arguments || params.args || {};
-    return { jsonrpc: '2.0', id, result: { content: [{ type: 'json', json: await callLunaOpsTool(name, args) }] } };
+    try {
+      const result = await callLunaOpsToolWithTimeout(name, args);
+      return { jsonrpc: '2.0', id, result: { content: [{ type: 'json', json: result }] } };
+    } catch (error) {
+      return { jsonrpc: '2.0', id, error: { code: -32001, message: error?.message || String(error) } };
+    }
   }
   if (LUNA_OPS_MCP_TOOLS.some((tool) => tool.name === method)) {
-    return { jsonrpc: '2.0', id, result: await callLunaOpsTool(method, params) };
+    try {
+      return { jsonrpc: '2.0', id, result: await callLunaOpsToolWithTimeout(method, params) };
+    } catch (error) {
+      return { jsonrpc: '2.0', id, error: { code: -32001, message: error?.message || String(error) } };
+    }
   }
   return { jsonrpc: '2.0', id, error: { code: -32601, message: `method_not_found:${method}` } };
 }

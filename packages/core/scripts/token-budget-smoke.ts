@@ -3,6 +3,7 @@ import {
   applyTokenBudgetToFallbackChain,
   ensureTokenBudgetUsageSchema,
   getTokenBudgetUsageSummary,
+  estimateCostUsd,
   recordTokenBudgetUsage,
   resolveTokenBudget,
 } from '../lib/token-budget';
@@ -72,6 +73,15 @@ async function main() {
   }
   if (refactorBudget.maxOutputTokens !== 8192) {
     throw new Error(`refactor output cap mismatch: ${refactorBudget.maxOutputTokens}`);
+  }
+  const opusFallbackCost = estimateCostUsd({
+    provider: 'claude-code-oauth',
+    model: 'opus',
+    inputTokens: 1_000,
+    outputTokens: refactorBudget.maxOutputTokens,
+  });
+  if (opusFallbackCost > refactorBudget.budgetCostUsd) {
+    throw new Error(`refactor fallback exceeds budget: ${opusFallbackCost}>${refactorBudget.budgetCostUsd}`);
   }
 
   const capped = applyTokenBudgetToFallbackChain([
