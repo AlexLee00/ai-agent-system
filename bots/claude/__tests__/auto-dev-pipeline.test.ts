@@ -1566,6 +1566,51 @@ async function test_ops_emergency_telegram_snapshot_is_skipped() {
   console.log('✅ auto-dev: ops-emergency telegram fallback snapshots are skipped');
 }
 
+async function test_luna_promotion_gate_snapshot_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_ops-error-resolution_promotion_gate.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: ops-error-resolution alarm',
+        '',
+        '## Incident',
+        '- from_bot: telegram-sender',
+        '- incident_key: ops-error-resolution:telegram-sender:telegram_send:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '🚀 [루나] 하이브리드 승급 게이트 — 마스터 검토 요청',
+        '계약 실패: 0 / 10',
+        '보안 실패: 0 / 3',
+        '상태: luna_hybrid_promotion_gate_ready_for_master_review',
+        '⚠️ 자동 LIVE 전환 없음 — gate는 read-only, 마스터 승인 runbook 필요',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'ops-error-resolution',
+        source_bot: 'telegram-sender',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: Luna promotion-gate readiness snapshots are skipped');
+}
+
 async function test_investment_position_watch_alert_is_skipped() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(
@@ -4187,6 +4232,7 @@ async function main() {
     test_reservation_booking_alert_is_skipped,
     test_reservation_cancel_blocked_alert_is_skipped,
     test_ops_emergency_telegram_snapshot_is_skipped,
+    test_luna_promotion_gate_snapshot_is_skipped,
     test_investment_position_watch_alert_is_skipped,
     test_claude_health_snapshot_is_skipped,
     test_blog_instagram_snapshot_is_skipped,

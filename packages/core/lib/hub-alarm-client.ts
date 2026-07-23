@@ -692,6 +692,13 @@ function _mapAlertLevelToSeverity(level: number): 'info' | 'warn' | 'error' | 'c
   return 'info';
 }
 
+function _isReadOnlyPromotionGateSnapshot(message: unknown): boolean {
+  const lower = _normalizeAlertText(message).toLowerCase();
+  return lower.includes('promotion_gate_ready_for_master_review')
+    && lower.includes('자동 live 전환 없음')
+    && lower.includes('read-only');
+}
+
 function _inferAlarmType({
   alarmType,
   alertLevel,
@@ -714,6 +721,7 @@ function _inferAlarmType({
     : '';
   if (['work', 'report', 'error', 'critical'].includes(payloadType)) return payloadType;
   if (alertLevel >= 4) return 'critical';
+  if (_isReadOnlyPromotionGateSnapshot(message)) return 'report';
   const corpus = [
     message,
     _extractEventType(message, payload) || '',

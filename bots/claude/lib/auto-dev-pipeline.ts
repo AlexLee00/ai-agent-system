@@ -808,6 +808,27 @@ function isNonActionableOpsEmergencyTelegramAlert(analysis = {}) {
   );
 }
 
+function isNonActionableLunaPromotionGateSnapshot(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const lower = `${sourceBot}\n${content}`.toLowerCase();
+  return (
+    /source_bot:\s*telegram-sender|from_bot:\s*telegram-sender/.test(lower)
+    && lower.includes('promotion_gate_ready_for_master_review')
+    && lower.includes('자동 live 전환 없음')
+    && lower.includes('read-only')
+  );
+}
+
 function isNonActionableInvestmentPositionWatchAlert(analysis = {}) {
   const metadata = analysis?.metadata || {};
   if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
@@ -975,6 +996,18 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'non_actionable_alarm_snapshot',
       reason: 'ops-emergency telegram fallback snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableLunaPromotionGateSnapshot(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'read-only Luna promotion-gate readiness snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,

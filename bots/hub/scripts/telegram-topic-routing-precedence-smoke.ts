@@ -117,6 +117,12 @@ async function main() {
     assert.equal(calls[0].body.message_thread_id, '77');
     assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'task completed'), 'ops-work');
     assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'daily report summary'), 'ops-reports');
+    assert.equal(sender._testOnly_resolveDeliveryTeam('luna', [
+      '🚀 [루나] 하이브리드 승급 게이트 — 마스터 검토 요청',
+      '계약 실패: 0 / 10',
+      '상태: luna_hybrid_promotion_gate_ready_for_master_review',
+      '⚠️ 자동 LIVE 전환 없음 — gate는 read-only, 마스터 승인 runbook 필요',
+    ].join('\n')), 'ops-reports');
     assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'provider_cooldown error'), 'ops-error-resolution');
     assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'CRITICAL emergency'), 'ops-emergency');
 

@@ -299,7 +299,14 @@ function _isOpsTeam(team: string): boolean {
 }
 
 function _looksLikeReport(message: string): boolean {
-  return /report|summary|digest|readiness|dashboard|briefing|daily|weekly|monthly|리포트|보고|브리핑|정기|요약|대시보드|주간|일간|월간/i.test(String(message || ''));
+  const normalized = String(message || '');
+  const lower = normalized.toLowerCase();
+  if (lower.includes('promotion_gate_ready_for_master_review')
+    && lower.includes('자동 live 전환 없음')
+    && lower.includes('read-only')) {
+    return true;
+  }
+  return /report|summary|digest|readiness|dashboard|briefing|daily|weekly|monthly|리포트|보고|브리핑|정기|요약|대시보드|주간|일간|월간/i.test(normalized);
 }
 
 function _looksLikeError(message: string): boolean {

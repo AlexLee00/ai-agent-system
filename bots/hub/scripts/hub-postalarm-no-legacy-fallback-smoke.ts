@@ -282,6 +282,48 @@ async function runExplicitReportContractCase(tempWorkspace: string) {
   assert(calls[0].body.payload.event_type === 'darwin_weekly_research_report', 'expected payload event_type to match explicit eventType');
 }
 
+async function runPromotionGateSnapshotContractCase(tempWorkspace: string) {
+  resetEnv(tempWorkspace);
+  resetClientModule();
+  const calls: FetchCall[] = [];
+  global.fetch = async (url: RequestInfo | URL, init: RequestInit = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      return new Response(
+        JSON.stringify({ ok: true, delivered: true, event_id: 1261 }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw new Error(`unexpected fetch url for promotion-gate snapshot case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const result = await postAlarm({
+    message: [
+      '🚀 [루나] 하이브리드 승급 게이트 — 마스터 검토 요청',
+      '계약 실패: 0 / 10',
+      '보안 실패: 0 / 3',
+      '상태: luna_hybrid_promotion_gate_ready_for_master_review',
+      '⚠️ 자동 LIVE 전환 없음 — gate는 read-only, 마스터 승인 runbook 필요',
+    ].join('\n'),
+    team: 'ops-reports',
+    alertLevel: 2,
+    fromBot: 'telegram-sender',
+    eventType: 'telegram_send',
+  });
+
+  assert(result && result.ok === true, 'expected promotion-gate snapshot to deliver');
+  assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
+  assert(calls[0].body.alarmType === 'report', `expected report alarm type, got ${calls[0].body.alarmType}`);
+  assert(calls[0].body.visibility === 'notify', `expected notify visibility, got ${calls[0].body.visibility}`);
+  assert(calls[0].body.actionability === 'none', `expected none actionability, got ${calls[0].body.actionability}`);
+}
+
 async function runCanonicalIncidentKeyCase(tempWorkspace: string) {
   resetEnv(tempWorkspace);
   resetClientModule();
@@ -454,6 +496,7 @@ async function main() {
     await runStandardContractFallbackCase(tempWorkspace);
     await runCriticalContractFallbackCase(tempWorkspace);
     await runExplicitReportContractCase(tempWorkspace);
+    await runPromotionGateSnapshotContractCase(tempWorkspace);
     await runCanonicalIncidentKeyCase(tempWorkspace);
     await runHubRateLimitMetadataCase(tempWorkspace);
     await runLargePayloadCappedCase(tempWorkspace);
